@@ -17,6 +17,7 @@ import {
   type MultiResult,
   type MultiSelection,
 } from "~/components/drive/picker-multi";
+import { DriveScopeIcon } from "~/components/drive/scope-icon";
 
 // The one folder picker: a hybrid of type-to-filter search and drill-in
 // browsing (Google Drive / Notion model), used wherever something is moved or
@@ -62,7 +63,7 @@ function destKey(d: Destination): string {
 }
 
 export type Row = { section?: string } & (
-  | { kind: "drive"; key: string; label: string; emoji?: string | null; note?: string | null; dest: Destination }
+  | { kind: "drive"; key: string; driveId: string; label: string; emoji?: string | null; note?: string | null; dest: Destination }
   | { kind: "container"; key: string; label: string; dest: Destination; disabled: boolean }
   | {
       kind: "folder";
@@ -261,6 +262,7 @@ export function buildBrowseRows({
     const driveRows: Row[] = drives.map((d) => ({
       kind: "drive",
       key: `drive:${d.id}`,
+      driveId: d.id,
       label: d.label,
       emoji: d.iconEmoji,
       // Which drive you pick is the part of a move that changes who can see
@@ -735,7 +737,9 @@ export function FolderPicker(props: FolderPickerProps) {
                   <span className="font-medium">{row.label}</span>
                 ) : (
                   <>
-                    {row.emoji ? (
+                    {row.kind === "drive" ? (
+                      <DriveScopeIcon scope={{ id: row.driveId, iconEmoji: row.emoji }} />
+                    ) : row.emoji ? (
                       <span className="shrink-0" aria-hidden>
                         {row.emoji}
                       </span>

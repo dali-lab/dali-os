@@ -19,6 +19,7 @@ import {
   MoreHorizontal,
   X,
   Shapes,
+  NotebookPen,
 } from "lucide-react";
 import { useState, useCallback, useEffect, useRef, useId, useMemo } from "react";
 import type { ReactNode } from "react";
@@ -60,6 +61,7 @@ import type { UploadTarget } from "~/components/drive/useDriveFileUpload";
 import { useDialog } from "~/components/ui/dialog";
 import { useToast } from "~/components/ui/toast";
 import { Menu, Select } from "~/components/ui/floating";
+import { createNotebookRequest, sendJson } from "~/components/notebooks/notebook-requests";
 import { Modal } from "~/components/Modal";
 import { cn } from "~/lib/cn";
 import { isProcessRootSpace, sharedSpaceItems, SHARED_SPACE_KEY } from "~/lib/drive-spaces";
@@ -864,7 +866,32 @@ function CreateLabel({
   );
 }
 
-function NewMenu({
+export type NotebookPlacement =
+  | { kind: "ready"; workspaceType: "Lab" | "Project"; workspaceId: string | null; parentPageId: string | null }
+  | { kind: "blocked"; reason: string }
+  | { kind: "unavailable" };
+
+/** Where a notebook created from this scope and folder lands. My Drive and Education cannot hold one. */
+export function notebookPlacement(scope: DriveScope, currentFolderId: string | null): NotebookPlacement {
+  const kind = scopeKindOf(scope.id);
+  const parentPageId = currentFolderId ?? scope.rootFolderId ?? null;
+  if (kind === "lab") return { kind: "ready", workspaceType: "Lab", workspaceId: null, parentPageId };
+  if (kind === "project") return { kind: "ready", workspaceType: "Project", workspaceId: scope.id, parentPageId };
+  if (kind === "projects-group") {
+    const projectId = resolveWorkspaceId(scope.items, currentFolderId);
+    if (!projectId) return { kind: "blocked", reason: "Open a project first" };
+    const parentNode = scope.items.find((it) => it.id === currentFolderId);
+    return {
+      kind: "ready",
+      workspaceType: "Project",
+      workspaceId: projectId,
+      parentPageId: parentNode?.parentFolderId === null ? null : currentFolderId,
+    };
+  }
+  return { kind: "unavailable" };
+}
+
+export function NewMenu({
   scope,
   actions,
   canViewForms,
@@ -890,6 +917,29 @@ function NewMenu({
   const isEducation = scopeKindOf(scope.id) === "education-group";
   const docBlock = isEducation ? educationCreateBlock(scope.items, currentFolderId, "FreeForm") : null;
   const folderBlock = isEducation ? educationCreateBlock(scope.items, currentFolderId, "Folder") : null;
+  const notebook = notebookPlacement(scope, currentFolderId);
+
+  async function createNotebook() {
+    if (notebook.kind !== "ready") return;
+    const name = await dialog.prompt({
+      title: "New notebook",
+      label: "Name",
+      defaultValue: "New notebook",
+      confirmLabel: "Create",
+      validate: (v) => (v.trim() ? null : "Enter a name"),
+    });
+    if (name === null) return;
+    const created = await sendJson<{ id: string }>(
+      createNotebookRequest({
+        title: name,
+        workspaceType: notebook.workspaceType,
+        workspaceId: notebook.workspaceId,
+        parentPageId: notebook.parentPageId,
+      }),
+    );
+    if (created.ok && created.data) window.location.assign(`/documents/${created.data.id}`);
+    else toast.error(created.error ?? "Couldn't create the notebook");
+  }
 
   // Create a form into the current Drive folder, then navigate to its editor.
   // Prompts for a name first (like New document/folder).
@@ -985,6 +1035,20 @@ function NewMenu({
           New whiteboard
         </CreateLabel>
       </Menu.Item>
+      {notebook.kind !== "unavailable" && (
+        <Menu.Item
+          icon={<NotebookPen className="w-3.5 h-3.5" />}
+          disabled={notebook.kind === "blocked"}
+          onSelect={() => void createNotebook()}
+        >
+          <CreateLabel
+            testId={`drive-new-notebook-${scope.id}`}
+            blockedReason={notebook.kind === "blocked" ? notebook.reason : null}
+          >
+            New notebook
+          </CreateLabel>
+        </Menu.Item>
+      )}
       {canViewForms && (
         <Menu.Item icon={<ClipboardList className="w-3.5 h-3.5" />} onSelect={() => void createForm()}>
           <span data-testid="drive-new-form">New form</span>

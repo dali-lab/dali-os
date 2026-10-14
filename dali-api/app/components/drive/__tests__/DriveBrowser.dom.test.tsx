@@ -1027,6 +1027,17 @@ describe("DriveBrowser drag: dropping on a drive", () => {
       expect(dropped).toHaveBeenCalledWith({ destScopeId: "mine" });
     });
 
+    it.each([
+      ["projects", "lucide-folder-kanban"],
+      ["education", "lucide-graduation-cap"],
+    ])("draws the %s drive with its own icon", async (id, iconClass) => {
+      await mountScopeList();
+      const icon = byTestId(`drive-scope-${id}`).querySelector("svg");
+      expect(icon?.getAttribute("class")).toContain(iconClass);
+      expect(icon?.getAttribute("class")).toContain("text-accent-coral/80");
+      expect(icon?.getAttribute("class")).not.toContain("lucide-folder ");
+    });
+
     it.each(["projects", "education"])("does not take drops on the %s header", async (id) => {
       await mountScopeList();
       place(byTestId("src"), 0);
