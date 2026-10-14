@@ -174,7 +174,7 @@ describe("preferred folder type", () => {
     expect(kids.map((f) => f.id)).toEqual(["a", "b", "m"]);
   });
 
-  it("marks preferred folder rows and gives Meetings the calendar glyph", () => {
+  it("marks preferred folder rows and gives Meetings the meetings glyph", () => {
     const rows = buildBrowseRows({
       cwd: { driveId: "lab", folderId: null },
       drives,
@@ -186,15 +186,16 @@ describe("preferred folder type", () => {
     });
     const folderRows = rows.filter((r) => r.kind === "folder");
     expect(folderRows.map((r) => [r.label, "preferred" in r && r.preferred, "glyph" in r && r.glyph])).toEqual([
-      ["Zed meetings", true, "calendar"],
+      ["Zed meetings", true, "meetings"],
       ["Alpha", false, "folder"],
       ["Beta", false, "folder"],
     ]);
   });
 
-  it("draws the calendar for any Meetings folder, preferred or not", () => {
-    expect(folderGlyph("Meetings")).toBe("calendar");
-    expect(folderGlyph("Agreements")).toBe("folder");
+  it("draws the meetings glyph for any Meetings folder and the system glyph for other typed folders", () => {
+    expect(folderGlyph("Meetings")).toBe("meetings");
+    expect(folderGlyph("Agreements")).toBe("system");
+    expect(folderGlyph("Root")).toBe("system");
     expect(folderGlyph(null)).toBe("folder");
   });
 

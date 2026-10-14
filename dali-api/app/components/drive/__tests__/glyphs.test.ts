@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   CORAL_FOLDER,
+  PINK_FOLDER,
   folderCountLabel,
   folderTintClass,
   glyphLabel,
@@ -9,7 +10,10 @@ import {
   type PlainGlyphSource,
   type ShortcutGlyphSource,
 } from "~/components/drive/glyphs";
+import { RECEIVER_LABELS } from "~/lib/drive-receivers";
 import type { AudienceKind } from "~/lib/page-audience";
+
+const FOLDER_TYPES = ["Root", ...Object.keys(RECEIVER_LABELS)];
 
 describe("folderTintClass", () => {
   const tint = (kind: AudienceKind) => folderTintClass({ kind });
@@ -43,21 +47,34 @@ describe("pickGlyph", () => {
     expect(pickGlyph(folder({ folderType: "Meetings" }))).toMatchObject({ kind: "folder", mark: "calendar" });
   });
 
-  it("marks every other receiver folder with a tag", () => {
-    for (const folderType of ["Agreements", "Hiring", "Receipts"]) {
-      expect(pickGlyph(folder({ folderType }))).toMatchObject({ kind: "folder", mark: "tag" });
+  it.each(FOLDER_TYPES)("draws a %s folder as a pink system folder", (folderType) => {
+    expect(pickGlyph(folder({ folderType }))).toMatchObject({ kind: "folder", tint: PINK_FOLDER, system: true, folderType });
+  });
+
+  it("keeps the calendar mark for Meetings only", () => {
+    for (const folderType of FOLDER_TYPES.filter((t) => t !== "Meetings")) {
+      expect(pickGlyph(folder({ folderType }))).toMatchObject({ mark: null });
     }
   });
 
-  it("leaves a plain folder, and a Root, unmarked", () => {
-    expect(pickGlyph(folder())).toMatchObject({ kind: "folder", mark: null });
-    expect(pickGlyph(folder({ folderType: null }))).toMatchObject({ kind: "folder", mark: null });
-    expect(pickGlyph(folder({ folderType: "Root" }))).toMatchObject({ kind: "folder", mark: null });
+  it("leaves a plain folder a non-system folder with no mark", () => {
+    expect(pickGlyph(folder())).toMatchObject({ kind: "folder", mark: null, system: false, folderType: null });
+    expect(pickGlyph(folder({ folderType: null }))).toMatchObject({ mark: null, system: false });
+  });
+
+  it("paints a system folder pink whatever its audience", () => {
+    for (const kind of ["private", "lab", "group"] as const) {
+      expect(pickGlyph(folder({ folderType: "Agreements", audience: { kind } }))).toMatchObject({ tint: PINK_FOLDER });
+    }
   });
 
   it("tints a folder by its audience", () => {
     expect(pickGlyph(folder({ audience: { kind: "private" } }))).toMatchObject({ tint: "text-muted-foreground" });
     expect(pickGlyph(folder({ audience: { kind: "public" } }))).toMatchObject({ tint: "text-accent-teal/80" });
+  });
+
+  it("keeps the emoji of a system folder", () => {
+    expect(pickGlyph(folder({ folderType: "Meetings", iconEmoji: "🗓" }))).toEqual({ kind: "emoji", emoji: "🗓" });
   });
 
   it("gives a folder or doc its emoji when it has one", () => {
@@ -85,7 +102,7 @@ describe("pickGlyph", () => {
       expect(pickGlyph(shortcut({ targetType: "whiteboard" }))).toMatchObject({ target: { kind: "whiteboard" } });
       expect(pickGlyph(shortcut({ targetType: "notebook" }))).toMatchObject({ target: { kind: "notebook", tabs: null } });
       expect(pickGlyph(shortcut({ targetType: "folder" }))).toMatchObject({
-        target: { kind: "folder", tint: CORAL_FOLDER, mark: null },
+        target: { kind: "folder", tint: CORAL_FOLDER, mark: null, system: false },
       });
     });
 
@@ -160,9 +177,25 @@ describe("glyphLabel", () => {
     expect(label({ type: "folder", folderType: "Meetings" })).toBe("Meetings folder · new notebooks file here");
   });
 
-  it("keeps a tag-marked or Root folder a plain Folder", () => {
-    expect(label({ type: "folder", folderType: "Hiring" })).toBe("Folder");
-    expect(label({ type: "folder", folderType: "Root" })).toBe("Folder");
+  it.each([
+    ["HiringForms", "Hiring forms folder"],
+    ["ApplicationTemplates", "Application templates folder"],
+    ["Agreements", "Agreements folder"],
+    ["EducationTemplates", "Education templates folder"],
+    ["CertificateBackgrounds", "Certificate backgrounds folder"],
+    ["MentorNotebooks", "Mentor notebooks folder"],
+  ])("names a %s folder by what it receives", (folderType, expected) => {
+    expect(label({ type: "folder", folderType })).toBe(expected);
+    expect(label({ type: "folder", folderType }, { audienceLabel: "Only you" })).toBe(`${expected} · Only you`);
+  });
+
+  it("names a Root folder as a drive", () => {
+    expect(label({ type: "folder", folderType: "Root" }, { title: "Core" })).toBe("Core drive");
+    expect(label({ type: "folder", folderType: "Root" })).toBe("Drive");
+  });
+
+  it("names an unknown folder type a plain Folder", () => {
+    expect(label({ type: "folder", folderType: "Receipts" })).toBe("Folder");
   });
 
   it("counts a notebook's tabs", () => {

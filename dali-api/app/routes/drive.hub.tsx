@@ -1928,7 +1928,7 @@ export default function DriveHub() {
       </header>
       {uploadError && <p className="text-sm text-red-600">{uploadError}</p>}
 
-      {homeEnabled && home && !effectiveScopeId && !search && (
+      {homeEnabled && home && !isHiringLibrary && !search && (
         <DriveHome data={home} scopes={driveScopes} onOpen={onOpenItem} onNavigate={onNavigate} />
       )}
 
