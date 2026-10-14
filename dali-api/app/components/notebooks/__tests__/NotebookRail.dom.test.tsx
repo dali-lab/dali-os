@@ -492,9 +492,26 @@ describe("NoteLocationLine", () => {
 
   it("reads the filed path, then the notebook and the tab", async () => {
     await line();
-    expect(text()).toContain("ProjectsProject AlphaMeetings");
-    expect(text()).toContain("Weekly sync · Oct 14, 2026");
+    expect(text()).toContain("ProjectsProject AlphaMeetingsWeekly sync");
+    expect(text()).toContain("Oct 14, 2026");
     expect(text()).not.toContain("In notebook");
+  });
+
+  it("links every crumb, with the notebook last, and leaves the tab unlinked", async () => {
+    await line();
+    const links = [...container.querySelectorAll('[data-testid="note-location"] a')] as HTMLAnchorElement[];
+    expect(links.map((a) => [a.textContent, a.getAttribute("href")])).toEqual([
+      ["Projects", "/drive?scope=projects"],
+      ["Project Alpha", "/drive?scope=projects&folder=p1"],
+      ["Meetings", "/drive?scope=projects&folder=f1"],
+      ["Weekly sync", `/documents/${notebook.id}`],
+    ]);
+    expect(links.some((a) => a.textContent?.includes("Oct 14"))).toBe(false);
+  });
+
+  it("has no tooltip title on the path", async () => {
+    await line();
+    expect(container.querySelector('[data-testid="note-location"] [title]')).toBeNull();
   });
 
   it("explains an edit that comes from the meeting", async () => {

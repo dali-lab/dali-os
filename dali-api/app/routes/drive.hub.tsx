@@ -58,7 +58,7 @@ import {
 } from "~/components/drive/use-drive-history";
 import { useDriveFileUpload } from "~/components/drive/useDriveFileUpload";
 import { DriveUploadInput } from "~/components/drive/DriveUploadInput";
-import type { UploadTarget } from "~/components/drive/useDriveFileUpload";
+import type { UploadDestination, UploadTarget } from "~/components/drive/useDriveFileUpload";
 import { useDialog } from "~/components/ui/dialog";
 import { useToast } from "~/components/ui/toast";
 import { Menu, Select } from "~/components/ui/floating";
@@ -1318,10 +1318,21 @@ export default function DriveHub() {
   // placement-locked — agreements/rubrics/email-templates move like any file.
   const NON_MOVABLE = new Set<DriveItem["type"]>();
   const moveDestinationsFor = useCallback(
-    (item: DriveItem): DriveTreeScope[] =>
-      driveScopes.filter((s) => {
+    (item: DriveItem): DriveTreeScope[] => {
+      const home = driveScopes.find((s) => s.items.some((i) => i.id === item.id));
+      return driveScopes.filter((s) => {
         if (s.id === "mine" || s.id === SHARED_SPACE_KEY || NON_MOVABLE.has(item.type)) return false;
+        // Items under a typed root stay in that root's drive.
+        if (home?.rootFolderId && s.id !== home.id) return false;
         const kind = scopeKindOf(s.id);
+        // A system folder keeps its workspace, so project and offering drives are out.
+        if (
+          item.type === "folder" &&
+          (item as { folderType?: string | null }).folderType &&
+          (kind === "project" || kind === "projects-group" || kind === "education-group")
+        ) {
+          return false;
+        }
         // Files/forms move by folderPageId (no workspace change), so restrict
         // them to the Lab-workspace drives. Docs/folders can also move into
         // project/offering workspaces.
@@ -1335,7 +1346,8 @@ export default function DriveHub() {
         // The bare group ROOT is exposed as a drive row but the move handler
         // requires a specific project/offering folder to be selected.
         return true;
-      }),
+      });
+    },
     [driveScopes],
   );
 
@@ -1649,14 +1661,29 @@ export default function DriveHub() {
   }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const uploadTarget = useMemo(() => uploadTargetFor(currentFolderId), [currentScope, currentFolderId]);
+  function uploadDestinationFor(folderId: string | null): UploadDestination | null {
+    if (!currentScope) return null;
+    const scopeId = currentScope.id;
+    return {
+      label: destinationLabel(currentScope, folderId),
+      onOpen: () => onNavigate(scopeId, folderId),
+    };
+  }
   const { inputRef, uploading, uploadError, handleFileChange, uploadFiles } = useDriveFileUpload(
     uploadTarget,
     () => revalidator.revalidate(),
+    uploadDestinationFor(currentFolderId),
   );
   function onDropFiles(files: File[], opts?: FileDropOptions) {
     const dropped = opts?.folderId ? uploadTargetFor(opts.folderId) : null;
     void uploadFiles(files, {
-      ...(dropped ? { scope: dropped.scope, folderPageId: dropped.folderPageId ?? null } : {}),
+      ...(dropped
+        ? {
+            scope: dropped.scope,
+            folderPageId: dropped.folderPageId ?? null,
+            destination: uploadDestinationFor(opts!.folderId!),
+          }
+        : {}),
       skippedFolders: opts?.skippedFolders,
     });
   }

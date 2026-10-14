@@ -43,10 +43,14 @@ vi.mock("~/lib/notebooks.server", () => {
   }
   return { NotebookError, createNotebook: vi.fn(), loadEditableNotebook: vi.fn() };
 });
+vi.mock("~/lib/pageAccess.server", () => ({ PAGE_ACCESS_SELECT: { id: true }, getPageAccess: vi.fn() }));
+vi.mock("~/lib/drive-crumbs.server", () => ({ driveFolderCrumbs: vi.fn() }));
 vi.mock("~/collab/read", () => ({ readDocAsBlocks: vi.fn(async () => []) }));
 vi.mock("~/components/doc/schema/configs", () => ({ blocksToPlainText: vi.fn(() => "") }));
 
 import { prisma } from "~/lib/db";
+import { getPageAccess } from "~/lib/pageAccess.server";
+import { driveFolderCrumbs } from "~/lib/drive-crumbs.server";
 import { notify } from "~/lib/notify.server";
 import { isCore } from "~/lib/roles";
 import { receiversEnabled, resolveFilingFolder } from "~/lib/drive-receivers.server";
@@ -115,6 +119,8 @@ beforeEach(() => {
     guestEmails: [],
   } as never);
 });
+
+const findFolder = (row: unknown) => vi.mocked(prisma.page.findUnique).mockResolvedValue(row as never);
 
 describe("cancelScheduledMeeting", () => {
   it("flips a meeting to Cancelled and notifies participants (not the actor)", async () => {
@@ -694,6 +700,84 @@ describe("createScheduledMeeting — a new notebook files by the space it was st
     await createScheduledMeeting({ ...base, isCoreMeeting: true, notebook: { title: "Core sync" } });
 
     expect(resolve).toHaveBeenCalledWith({ processType: "Core", processId: "core", folderType: "Meetings" }, "org-1");
+  });
+
+  describe("a folder the organizer picked", () => {
+    const folderRow = (over: Record<string, unknown> = {}) => ({
+      id: "f-1",
+      kind: "Folder",
+      archivedAt: null,
+      workspaceType: "Lab",
+      workspaceId: null,
+      ...over,
+    });
+    const mayEdit = (canEdit: boolean) =>
+      vi.mocked(getPageAccess).mockResolvedValue({ canView: true, canEdit, canComment: canEdit });
+    const inScope = (scope: string) => vi.mocked(driveFolderCrumbs).mockResolvedValue({ scope, folders: [] });
+
+    it("files the notebook in that folder, not the space's receiver", async () => {
+      findFolder(folderRow());
+      mayEdit(true);
+      inScope("lab");
+
+      await createScheduledMeeting({ ...base, notebook: { title: "Sync", folderPageId: "f-1" } });
+
+      expect(resolve).not.toHaveBeenCalled();
+      expect(createNotebook).toHaveBeenCalledWith(
+        expect.objectContaining({ workspaceType: "Lab", workspaceId: null, parentPageId: "f-1" }),
+      );
+      expect(createdMeeting()).toMatchObject({ isCoreMeeting: false, projectId: null });
+    });
+
+    it("makes the meeting Core when the folder sits under the Core root", async () => {
+      findFolder(folderRow());
+      mayEdit(true);
+      inScope("core");
+
+      await createScheduledMeeting({ ...base, notebook: { title: "Sync", folderPageId: "f-1" } });
+
+      expect(createNotebook).toHaveBeenCalledWith(expect.objectContaining({ workspaceType: "Lab", parentPageId: "f-1" }));
+      expect(createdMeeting()).toMatchObject({ isCoreMeeting: true });
+    });
+
+    it("gives the meeting the project of a project folder", async () => {
+      findFolder(folderRow({ workspaceType: "Project", workspaceId: "proj-9" }));
+      mayEdit(true);
+
+      await createScheduledMeeting({ ...base, notebook: { title: "Sync", folderPageId: "f-1" } });
+
+      expect(createNotebook).toHaveBeenCalledWith(
+        expect.objectContaining({ workspaceType: "Project", workspaceId: "proj-9", parentPageId: "f-1" }),
+      );
+      expect(createdMeeting()).toMatchObject({ projectId: "proj-9" });
+    });
+
+    it("lets the folder decide over a space the caller also sent", async () => {
+      findFolder(folderRow({ workspaceType: "Project", workspaceId: "proj-9" }));
+      mayEdit(true);
+
+      await createScheduledMeeting({
+        ...base,
+        notebook: { title: "Sync", folderPageId: "f-1", space: { kind: "project", projectId: "proj-1" } },
+      });
+
+      expect(createdMeeting()).toMatchObject({ projectId: "proj-9" });
+    });
+
+    it.each([
+      ["one the organizer can't edit", () => { findFolder(folderRow()); mayEdit(false); }],
+      ["one that does not exist", () => { findFolder(null); }],
+      ["an archived one", () => { findFolder(folderRow({ archivedAt: new Date() })); mayEdit(true); }],
+      ["a page that is not a folder", () => { findFolder(folderRow({ kind: "Notebook" })); mayEdit(true); }],
+    ])("refuses %s and creates nothing", async (_name, arrange) => {
+      arrange();
+
+      const res = await createScheduledMeeting({ ...base, notebook: { title: "Sync", folderPageId: "f-1" } });
+
+      expect(res).toEqual({ ok: false, error: "You can't file in that folder" });
+      expect(createNotebook).not.toHaveBeenCalled();
+      expect(mockPage.scheduledMeeting.create).not.toHaveBeenCalled();
+    });
   });
 });
 
@@ -2879,6 +2963,29 @@ describe("attachMeetingNote — notebooks", () => {
       expect.objectContaining({ title: "Retro", workspaceType: "Lab", parentPageId: "folder-lab-notes", actorId: "org-1" }),
     );
     expect(res).toMatchObject({ ok: true, notebookId: "nb-new", createdNotebook: true, seriesNotebookId: "nb-new" });
+  });
+
+  it("files a new notebook in the chosen folder", async () => {
+    p.scheduledMeeting.findUnique.mockResolvedValue(meetingRow());
+    findFolder({ id: "f-1", kind: "Folder", archivedAt: null, workspaceType: "Lab", workspaceId: null });
+    vi.mocked(getPageAccess).mockResolvedValue({ canView: true, canEdit: true, canComment: true });
+    vi.mocked(driveFolderCrumbs).mockResolvedValue({ scope: "lab", folders: [] });
+
+    const res = await attachMeetingNote({ meetingId: "m1", actorId: "org-1", notebook: { title: "Retro", folderPageId: "f-1" } });
+
+    expect(createNotebook).toHaveBeenCalledWith(expect.objectContaining({ title: "Retro", parentPageId: "f-1" }));
+    expect(res).toMatchObject({ ok: true, createdNotebook: true });
+  });
+
+  it("refuses a folder the actor can't edit with a 403", async () => {
+    p.scheduledMeeting.findUnique.mockResolvedValue(meetingRow());
+    findFolder({ id: "f-1", kind: "Folder", archivedAt: null, workspaceType: "Lab", workspaceId: null });
+    vi.mocked(getPageAccess).mockResolvedValue({ canView: true, canEdit: false, canComment: false });
+
+    const res = await attachMeetingNote({ meetingId: "m1", actorId: "org-1", notebook: { title: "Retro", folderPageId: "f-1" } });
+
+    expect(res).toEqual({ ok: false, error: "You can't file in that folder", status: 403 });
+    expect(createNotebook).not.toHaveBeenCalled();
   });
 
   it("never moves or links the notebook it files into", async () => {

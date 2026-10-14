@@ -2,7 +2,6 @@ import { useEffect, useId, useState } from "react";
 import { createPortal } from "react-dom";
 import { Link, useNavigate, useRevalidator } from "react-router";
 import {
-  BookOpen,
   ChevronRight,
   FilePlus,
   FileText,
@@ -522,21 +521,16 @@ export function NoteLocationLine({
   editViaMeeting: boolean;
   showControls: boolean;
 }) {
-  const navigate = useNavigate();
   return (
     <div className="flex flex-wrap items-center gap-2 text-sm text-os-grey" data-testid="note-location">
-      <BookOpen className="h-4 w-4 shrink-0" aria-hidden />
       <div className="flex min-w-0 items-center gap-1">
         <LocationLink
           location={location}
-          onNavigate={(scopeId, folderId) =>
-            navigate(`/drive?scope=${scopeId}${folderId ? `&folder=${folderId}` : ""}`)
-          }
+          hrefFor={(scopeId, folderId) => `/drive?scope=${scopeId}${folderId ? `&folder=${folderId}` : ""}`}
+          notebook={{ id: notebook.id, title: notebook.title, href: `/documents/${notebook.id}` }}
         />
         <ChevronRight aria-hidden="true" className="h-3 w-3 shrink-0 opacity-60" />
-        <span className="min-w-0 truncate text-xs text-foreground">
-          {notebook.title} · {tabLabel}
-        </span>
+        <span className="min-w-0 truncate text-xs text-foreground">{tabLabel}</span>
       </div>
       {editViaMeeting && <InfoTip content="You can edit because you're on this meeting." />}
       {showControls && <NotebookControls notebook={notebook} />}

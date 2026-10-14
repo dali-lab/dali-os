@@ -56,6 +56,31 @@ describe("locationOf", () => {
   });
 });
 
+describe("location folders carry what the glyphs need", () => {
+  const scope = (id: string) => ({
+    id,
+    label: id,
+    items: [
+      { id: "p", title: "Atlas", parentFolderId: null, iconEmoji: "🚀" },
+      { id: "t", title: "Forms", parentFolderId: "p", folderType: "OfferingForms" },
+      { id: "u", title: "Plain", parentFolderId: "t" },
+    ],
+  });
+
+  it("marks the top row of Projects and Education as synthetic and keeps emoji and folder type", () => {
+    expect(locationOf(scope("projects"), "u").folders).toEqual([
+      { id: "p", title: "Atlas", iconEmoji: "🚀", synthetic: true },
+      { id: "t", title: "Forms", folderType: "OfferingForms" },
+      { id: "u", title: "Plain" },
+    ]);
+    expect(locationOf(scope("education"), "p").folders[0].synthetic).toBe(true);
+  });
+
+  it("does not mark top-level folders of other spaces as synthetic", () => {
+    expect(locationOf(scope("lab"), "p").folders[0].synthetic).toBeUndefined();
+  });
+});
+
 describe("locateFolder", () => {
   it("finds the space that holds a folder", () => {
     expect(locateFolder(scopes, "c")?.path).toBe("My Drive › Alpha › Beta › Gamma");
@@ -71,10 +96,11 @@ describe("LocationLink", () => {
   const render = (location: ReturnType<typeof locationOf> | null) =>
     renderToStaticMarkup(createElement(LocationLink, { location, onNavigate: vi.fn() }));
 
-  it("renders every segment with the full path as its tooltip", () => {
+  it("renders every segment as its own crumb with no tooltip", () => {
     const html = render(locationOf(scopes[0], "b"));
     expect(html).toContain('data-testid="drive-location"');
-    expect(html).toContain('title="My Drive › Alpha › Beta"');
+    expect(html).not.toContain("title=");
+    expect(html.match(/data-testid="drive-location-crumb"/g)).toHaveLength(3);
     for (const label of ["My Drive", "Alpha", "Beta"]) expect(html).toContain(label);
     expect(html.match(/lucide-chevron-right/g)).toHaveLength(2);
   });

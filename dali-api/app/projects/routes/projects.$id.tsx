@@ -5060,6 +5060,7 @@ function DocumentsBlock({
   const [moveDoc, setMoveDoc] = useState<{ id: string; title: string } | null>(null);
   const moveDestinations = useDriveDestinations({
     enabled: !!moveDoc,
+    movingIds: moveDoc ? [moveDoc.id] : [],
     onError: () => {
       toast.error("Couldn't load destinations.");
       setMoveDoc(null);

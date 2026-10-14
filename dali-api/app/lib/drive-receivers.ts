@@ -11,6 +11,7 @@ export const RECEIVER_LABELS: Record<ReceiverFolderType, string> = {
   EducationTemplates: "Education templates",
   CertificateBackgrounds: "Certificate backgrounds",
   MentorNotebooks: "Mentor notebooks",
+  OfferingForms: "Offering forms",
 };
 
 export const RECEIVER_SLOTS: Record<ReceiverProcessType, readonly ReceiverFolderType[]> = {

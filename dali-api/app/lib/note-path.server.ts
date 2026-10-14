@@ -39,14 +39,23 @@ export async function notebookItemLocation(
 ): Promise<ItemLocation> {
   const where = await driveLocation(notebook.parentPageId, notebook, viewerSub, request);
   const project = isProjectLocation(where)
-    ? await prisma.project.findUnique({ where: { id: where.workspaceFolderId! }, select: { name: true } })
+    ? await prisma.project.findUnique({ where: { id: where.workspaceFolderId! }, select: { name: true, iconEmoji: true } })
     : null;
   const [scopeLabel, ...titles] = locationParts(where, project?.name);
-  const ids = [
-    ...(project ? [where.workspaceFolderId!] : []),
-    ...where.folders.map((f) => f.id),
-  ];
-  const folders = titles.map((title, i) => ({ id: ids[i], title }));
+  const projectFolder = project
+    ? [{ id: where.workspaceFolderId!, iconEmoji: project.iconEmoji, synthetic: true as const }]
+    : [];
+  const real = where.folders.map((f) => ({
+    id: f.id,
+    iconEmoji: f.iconEmoji,
+    ...(f.folderType ? { folderType: f.folderType } : {}),
+  }));
+  const ids = [...projectFolder, ...real].map((f) => f.id);
+  const folders = [...projectFolder, ...real].map(({ iconEmoji, ...rest }, i) => ({
+    ...rest,
+    title: titles[i],
+    ...(iconEmoji ? { iconEmoji } : {}),
+  }));
   return {
     scopeId: where.scope,
     scopeLabel,

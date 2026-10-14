@@ -1,3 +1,4 @@
+import { isSyntheticFolder } from "~/components/drive/picker-rows";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -197,6 +198,15 @@ describe("preferred folder type", () => {
     expect(folderGlyph("Agreements")).toBe("system");
     expect(folderGlyph("Root")).toBe("system");
     expect(folderGlyph(null)).toBe("folder");
+    expect(folderGlyph("OfferingForms")).toBe("system");
+  });
+
+  it("draws a synthetic project or offering row with the system glyph", () => {
+    expect(folderGlyph(null, true)).toBe("system");
+    expect(isSyntheticFolder({ driveId: "projects", parentId: null })).toBe(true);
+    expect(isSyntheticFolder({ driveId: "education", parentId: null })).toBe(true);
+    expect(isSyntheticFolder({ driveId: "projects", parentId: "p1" })).toBe(false);
+    expect(isSyntheticFolder({ driveId: "lab", parentId: null })).toBe(false);
   });
 
   it("isPreferred needs a preferred type that matches", () => {

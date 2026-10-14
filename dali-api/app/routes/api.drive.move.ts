@@ -26,6 +26,8 @@ import { getPageAccess } from "~/lib/pageAccess.server";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson } from "~/lib/validate";
 import { logAuditEvent } from "~/lib/audit";
+import { loadAncestorChain } from "~/lib/page-ancestry.server";
+import { nearestRoot, rootBoundMoveError } from "~/lib/drive-roots";
 
 const BodySchema = z.object({
   itemType: z.enum(["file", "form", "rubric", "agreement"]),
@@ -69,6 +71,8 @@ export async function action({ request }: Route.ActionArgs) {
   const refuse = (error: string, status: number) =>
     withCors(request, Response.json({ error }, { status }));
 
+  let sourceFolderId: string | null = null;
+
   async function refuseSource(): Promise<Response | null> {
     if (itemType === "file") {
       // File manage: Core or, for project-scoped files, a member of the owning
@@ -76,22 +80,24 @@ export async function action({ request }: Route.ActionArgs) {
       const [file, core] = await Promise.all([
         prisma.projectFile.findUnique({
           where: { id: itemId },
-          select: { projectId: true, archivedAt: true },
+          select: { projectId: true, archivedAt: true, folderPageId: true },
         }),
         isCore(userId, request),
       ]);
       if (!file || file.archivedAt !== null) return refuse("File not found", 404);
+      sourceFolderId = file.folderPageId ?? null;
       const canManage =
         core || (file.projectId != null && (await isProjectMember(userId, file.projectId, request)));
       return canManage ? null : refuse("You can't move this file", 403);
     }
     // form — agreements and rubrics are rejected by the guard above.
     const [form, canManage] = await Promise.all([
-      prisma.form.findUnique({ where: { id: itemId }, select: { id: true } }),
+      prisma.form.findUnique({ where: { id: itemId }, select: { id: true, folderPageId: true } }),
       // Form manage: the canViewForms gate, or page edit once forms follow page access.
       canManageFormPlacement(userId, itemId, request),
     ]);
     if (!form) return refuse("Form not found", 404);
+    sourceFolderId = form.folderPageId ?? null;
     return canManage ? null : refuse("You can't move this form", 403);
   }
 
@@ -127,6 +133,13 @@ export async function action({ request }: Route.ActionArgs) {
   const [sourceRefusal, destinationRefusal] = await Promise.all([refuseSource(), refuseDestination()]);
   if (sourceRefusal) return sourceRefusal;
   if (destinationRefusal) return destinationRefusal;
+
+  const [sourceChain, destChain] = await Promise.all([
+    sourceFolderId ? loadAncestorChain(sourceFolderId) : [],
+    destFolderPageId ? loadAncestorChain(destFolderPageId) : [],
+  ]);
+  const rootRefusal = rootBoundMoveError(nearestRoot(sourceChain), nearestRoot(destChain));
+  if (rootRefusal) return refuse(rootRefusal, 400);
 
   // ── Apply the placement ───────────────────────────────────────────────────
 

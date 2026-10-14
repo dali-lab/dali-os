@@ -23,6 +23,8 @@ export type GlyphSource = {
   type: "folder" | "doc" | "file" | "form" | "agreement" | "rubric";
   iconEmoji?: string | null;
   folderType?: string | null;
+  /** A row the app draws rather than a user's folder (a project or offering): pink like a typed folder. */
+  system?: boolean;
   audience?: { kind: AudienceKind } | null;
   isWhiteboard?: boolean;
   isNotebook?: boolean;
@@ -48,7 +50,7 @@ export function pickGlyph(item: GlyphSource): ItemGlyph {
   switch (item.type) {
     case "folder": {
       const type = item.folderType ?? null;
-      if (type) return { kind: "folder", tint: PINK_FOLDER, mark: type === "Meetings" ? "calendar" : null, system: true, folderType: type };
+      if (type || item.system) return { kind: "folder", tint: PINK_FOLDER, mark: type === "Meetings" ? "calendar" : null, system: true, folderType: type };
       return { kind: "folder", tint: folderTintClass(item.audience), mark: null, system: false, folderType: null };
     }
     case "doc":

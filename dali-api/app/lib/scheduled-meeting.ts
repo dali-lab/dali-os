@@ -39,6 +39,8 @@ import { isCore, isProjectMember } from "~/lib/roles";
 import { isGeneralCalendarEvent } from "~/lib/general-calendar";
 import { copyPageBody } from "~/lib/page-copy.server";
 import { createNotebook, loadEditableNotebook, NotebookError } from "~/lib/notebooks.server";
+import { PAGE_ACCESS_SELECT, getPageAccess } from "~/lib/pageAccess.server";
+import { driveFolderCrumbs } from "~/lib/drive-crumbs.server";
 import { isExistingChoice, type NotebookChoice, type NotebookSpaceChoice } from "~/lib/notebook-choice";
 import { readDocAsBlocks } from "~/collab/read";
 import { pageDocName } from "~/collab/roomName";
@@ -535,6 +537,8 @@ async function resolveArtifactFiling(
 type Placement = { workspaceType: string; workspaceId: string | null; parentPageId: string | null };
 
 type ResolvedNotebook = {
+  /** Set when the notebook was filed in a chosen folder: the space that folder sits in. */
+  space?: NotebookSpaceChoice;
   id: string;
   title: string;
   created: boolean;
@@ -555,6 +559,36 @@ function filingBySpace(filing: ArtifactFilingInput, space: NotebookSpaceChoice |
     default:
       return filing;
   }
+}
+
+const FOLDER_REFUSAL = "You can't file in that folder";
+
+/** A folder the actor may file a new notebook in, and the space it sits in: Core
+ *  under the Core root, the project for a project folder, else General. */
+async function resolveFolderFiling(
+  folderPageId: string,
+  actorId: string,
+  request?: Request,
+): Promise<{ space: NotebookSpaceChoice; dest: MeetingNotebookDestination }> {
+  const folder = await prisma.page.findUnique({
+    where: { id: folderPageId },
+    select: { ...PAGE_ACCESS_SELECT, kind: true },
+  });
+  if (!folder || folder.archivedAt !== null || folder.kind !== "Folder") throw new NotebookError(FOLDER_REFUSAL, 403);
+  const access = await getPageAccess(actorId, folder, request);
+  if (!access.canEdit) throw new NotebookError(FOLDER_REFUSAL, 403);
+  if (folder.workspaceType === "Project" && folder.workspaceId) {
+    return {
+      space: { kind: "project", projectId: folder.workspaceId },
+      dest: { workspaceType: "Project", workspaceId: folder.workspaceId, parentPageId: folder.id },
+    };
+  }
+  if (folder.workspaceType !== "Lab") throw new NotebookError(FOLDER_REFUSAL, 403);
+  const { scope } = await driveFolderCrumbs(folder.id, actorId, request);
+  return {
+    space: { kind: scope === "core" ? "core" : "lab" },
+    dest: { workspaceType: "Lab", workspaceId: null, parentPageId: folder.id },
+  };
 }
 
 /**
@@ -580,8 +614,11 @@ async function resolveNotebookChoice(
       primary: own,
     };
   }
-  const filing = filingFor(choice.title);
-  const { dest } = await resolveArtifactFiling(filingBySpace(filing, choice.space), false, formatDateShort(new Date()));
+  const folderFiling = choice.folderPageId ? await resolveFolderFiling(choice.folderPageId, actorId, request) : null;
+  const dest =
+    folderFiling?.dest ??
+    (await resolveArtifactFiling(filingBySpace(filingFor(choice.title), choice.space), false, formatDateShort(new Date())))
+      .dest;
   const created = await createNotebook({
     title: choice.title,
     workspaceType: dest.workspaceType,
@@ -591,6 +628,7 @@ async function resolveNotebookChoice(
     actorId,
   });
   return {
+    ...(folderFiling ? { space: folderFiling.space } : {}),
     id: created.id,
     title: choice.title.trim(),
     created: true,
@@ -645,9 +683,20 @@ export async function createScheduledMeeting(
   }
 
   const wantsAssets = !!input.notebook || input.createNote === true || input.createWhiteboard === true;
-  const chosenSpace = input.notebook && !isExistingChoice(input.notebook) ? input.notebook.space : undefined;
+  const newChoice = input.notebook && !isExistingChoice(input.notebook) ? input.notebook : null;
+  let folderSpace: NotebookSpaceChoice | undefined;
+  if (newChoice?.folderPageId) {
+    try {
+      folderSpace = (await resolveFolderFiling(newChoice.folderPageId, input.organizerId, input.request)).space;
+    } catch (err) {
+      if (err instanceof NotebookError) return { ok: false, error: err.message };
+      throw err;
+    }
+  }
+  const chosenSpace = folderSpace ?? newChoice?.space;
   const givenProjectId = chosenSpace?.kind === "project" ? chosenSpace.projectId : (input.projectId ?? null);
-  if (chosenSpace?.kind === "core" && !input.isCoreMeeting) {
+  const isCoreMeeting = (input.isCoreMeeting ?? false) || folderSpace?.kind === "core";
+  if (chosenSpace?.kind === "core" && !isCoreMeeting) {
     return { ok: false, error: "Only Core can start a notebook in Core" };
   }
   let notebookPlan: ResolvedNotebook | null = null;
@@ -660,7 +709,7 @@ export async function createScheduledMeeting(
           authorId: input.organizerId,
           ...typeForNotebookFiling(input, givenProjectId, title),
           projectId: givenProjectId,
-          isCoreMeeting: input.isCoreMeeting ?? false,
+          isCoreMeeting: isCoreMeeting,
         }),
         input.request,
       );
@@ -709,7 +758,7 @@ export async function createScheduledMeeting(
       projectId: recorded ? givenProjectId : null,
       notebookId: notebookPlan?.id ?? null,
       attendanceMode,
-      isCoreMeeting: input.isCoreMeeting ?? false,
+      isCoreMeeting: isCoreMeeting,
       recordPrompt,
     },
   });
@@ -790,7 +839,7 @@ export async function createScheduledMeeting(
       meetingType: recorded.meetingType,
       meetingTypeLabel: recorded.meetingTypeLabel,
       projectId: givenProjectId,
-      isCoreMeeting: input.isCoreMeeting ?? false,
+      isCoreMeeting: isCoreMeeting,
       startDate,
     };
     if (wantNote) {
@@ -1079,7 +1128,7 @@ export async function attachMeetingNote(
     }
   }
 
-  const projectId = reuseType ? meeting.projectId : (input.projectId ?? null);
+  let projectId = reuseType ? meeting.projectId : (input.projectId ?? null);
   const typeFor = (notebookTitle: string) =>
     reuseType
       ? { meetingType: meeting.meetingType!, meetingTypeLabel: meeting.meetingTypeLabel }
@@ -1112,6 +1161,7 @@ export async function attachMeetingNote(
     if (err instanceof NotebookError) return { ok: false, error: err.message, status: err.status };
     throw err;
   }
+  if (!reuseType && plan?.space?.kind === "project") projectId = plan.space.projectId;
 
   const { meetingType, meetingTypeLabel } = typeFor(plan?.title ?? "");
 

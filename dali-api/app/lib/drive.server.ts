@@ -68,6 +68,8 @@ export type DriveItem =
       iconEmoji: string | null;
       /** The folder's `FolderType` (Meetings, Agreements, ...); null for a plain folder. */
       folderType?: string | null;
+      /** A project or offering row the Projects and Education spaces draw; shown as a system folder. */
+      system?: boolean;
       /** Live items directly inside, counted over the items the viewer can see. */
       itemCount?: number;
       updatedAt: Date;

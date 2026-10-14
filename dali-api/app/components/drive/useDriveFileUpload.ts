@@ -1,5 +1,6 @@
 import { createElement, useRef, useState, type ReactNode } from "react";
 import { useToast } from "~/components/ui/toast";
+import { ACTION_TOAST_MS } from "~/components/drive/action-toast";
 import {
   listNames,
   summarizeFailures,
@@ -21,8 +22,15 @@ export type UploadScope =
 
 export type UploadTarget = { scope: UploadScope; folderPageId?: string | null };
 
+/** Where the files landed, named for the final toast, and how to open it. */
+export type UploadDestination = { label: string; onOpen: () => void };
+
 /** Per-call overrides of the hook's target, plus how many OS folders the drop had to skip. */
-export type UploadOptions = Partial<UploadTarget> & { skippedFolders?: number };
+export type UploadOptions = Partial<UploadTarget> & {
+  skippedFolders?: number;
+  /** Overrides the hook's destination for this call; null names none. */
+  destination?: UploadDestination | null;
+};
 
 export const FOLDERS_UNSUPPORTED = "Folders can't be uploaded yet";
 
@@ -30,11 +38,11 @@ function plural(n: number) {
   return `${n} ${n === 1 ? "file" : "files"}`;
 }
 
-function finalToast(total: number, failed: UploadFailure[], skippedFolders: number) {
+function finalToast(total: number, failed: UploadFailure[], skippedFolders: number, destination: string | null) {
   const details: string[] = [];
   let headline: string;
   if (failed.length === 0) {
-    headline = `Uploaded ${plural(total)}`;
+    headline = `Uploaded ${plural(total)}${destination ? ` to ${destination}` : ""}`;
   } else if (total === 1) {
     headline = "Upload failed";
     details.push(`${failed[0].name}: ${failed[0].error}`);
@@ -105,15 +113,19 @@ async function uploadOne(file: File, target: UploadTarget): Promise<void> {
   }
 }
 
-export function useDriveFileUpload(target: UploadTarget, onComplete: () => void) {
+export function useDriveFileUpload(
+  target: UploadTarget,
+  onComplete: () => void,
+  destination: UploadDestination | null = null,
+) {
   const toast = useToast();
   const [activeBatches, setActiveBatches] = useState(0);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [progress, setProgress] = useState<UploadProgress | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const batchSeq = useRef(0);
-  const latest = useRef({ target, onComplete });
-  latest.current = { target, onComplete };
+  const latest = useRef({ target, onComplete, destination });
+  latest.current = { target, onComplete, destination };
 
   async function uploadFiles(files: File[], options: UploadOptions = {}): Promise<void> {
     const skippedFolders = options.skippedFolders ?? 0;
@@ -126,6 +138,7 @@ export function useDriveFileUpload(target: UploadTarget, onComplete: () => void)
       scope: options.scope ?? base.scope,
       folderPageId: options.folderPageId !== undefined ? options.folderPageId : base.folderPageId,
     };
+    const landed = options.destination !== undefined ? options.destination : latest.current.destination;
     const toastId = `drive-upload-${++batchSeq.current}`;
     const total = files.length;
 
@@ -145,10 +158,14 @@ export function useDriveFileUpload(target: UploadTarget, onComplete: () => void)
       setActiveBatches((n) => n - 1);
     }
     setUploadError(summarizeFailures(failed, total));
-    const result = finalToast(total, failed, skippedFolders);
-    const opts = { id: toastId, ...(result.failed ? { duration: 10_000 } : {}) };
-    if (result.failed) toast.error(result.message, opts);
-    else toast.success(result.message, opts);
+    const result = finalToast(total, failed, skippedFolders, failed.length === 0 ? (landed?.label ?? null) : null);
+    if (result.failed) toast.error(result.message, { id: toastId, duration: 10_000 });
+    else {
+      toast.success(result.message, {
+        id: toastId,
+        ...(landed ? { duration: ACTION_TOAST_MS, actions: [{ label: "Open", onClick: landed.onOpen }] } : {}),
+      });
+    }
   }
 
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {

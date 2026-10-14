@@ -16,14 +16,14 @@ let container: HTMLDivElement;
 let root: Root;
 const onError = vi.fn();
 
-function Harness({ enabled }: { enabled: boolean }) {
-  box.current = useDriveDestinations({ enabled, onError });
+function Harness({ enabled, movingIds }: { enabled: boolean; movingIds?: string[] }) {
+  box.current = useDriveDestinations({ enabled, onError, movingIds });
   return null;
 }
 
-async function render(enabled: boolean) {
+async function render(enabled: boolean, movingIds?: string[]) {
   await act(async () => {
-    root.render(createElement(Harness, { enabled }));
+    root.render(createElement(Harness, { enabled, movingIds }));
   });
 }
 
@@ -41,6 +41,16 @@ afterEach(() => {
 });
 
 describe("useDriveDestinations", () => {
+  it("names the pages being moved and refetches when they change", async () => {
+    const fetchMock = vi.fn(async () => Response.json(rows));
+    vi.stubGlobal("fetch", fetchMock);
+    await render(true, ["a", "b"]);
+    expect(fetchMock).toHaveBeenLastCalledWith("/api/drive/destinations?moving=a%2Cb", { credentials: "include" });
+    await render(true, ["c"]);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenLastCalledWith("/api/drive/destinations?moving=c", { credentials: "include" });
+  });
+
   it("fetches nothing until asked", async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);

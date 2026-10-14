@@ -4,8 +4,9 @@ import { requireMemberSession } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
 import { PAGE_ACCESS_SELECT, getPageAccessBulk } from "~/lib/pageAccess.server";
 import { loadDriveScopes } from "~/lib/drive-scopes.server";
+import { moveConstraintFor } from "~/lib/move-constraint.server";
 import { withCors, handlePreflight } from "~/lib/cors";
-import { buildPickerRows, keepWritable, searchRows } from "~/components/drive/picker-rows";
+import { applyMoveConstraint, buildPickerRows, keepWritable, searchRows } from "~/components/drive/picker-rows";
 
 // GET /api/drive/destinations[?q=] — every place the viewer may put something,
 // as the folder picker's rows: drives (My Drive, Lab, Core, Hiring, Mentorship,
@@ -18,6 +19,10 @@ import { buildPickerRows, keepWritable, searchRows } from "~/components/drive/pi
 // `canEdit`, a process-root drive needs an editable root, and My Drive is
 // always the owner's. Projects are Core's or the viewer's own; Education
 // offerings are Core's or ones they instruct.
+//
+// `moving=id,id` names the pages about to be moved; drives and folders the move
+// rules would refuse (out of a typed root, a system folder out of its
+// workspace) are left out.
 
 export async function loader({ request }: Route.LoaderArgs) {
   const preflight = handlePreflight(request);
@@ -89,7 +94,10 @@ export async function loader({ request }: Route.LoaderArgs) {
   );
 
   let rows = keepWritable(buildPickerRows(scopes), { driveIds, folderIds });
-  const q = new URL(request.url).searchParams.get("q");
+  const params = new URL(request.url).searchParams;
+  const moving = (params.get("moving") ?? "").split(",").filter(Boolean);
+  if (moving.length) rows = applyMoveConstraint(rows, await moveConstraintFor(moving));
+  const q = params.get("q");
   if (q) rows = searchRows(rows, q);
 
   return withCors(request, Response.json(rows));

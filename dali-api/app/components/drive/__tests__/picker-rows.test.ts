@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  applyMoveConstraint,
   buildPickerRows,
   keepWritable,
   pickDrives,
@@ -138,5 +139,65 @@ describe("searchRows", () => {
 
   it("returns nothing when nothing matches", () => {
     expect(searchRows(rows, "zzz")).toEqual({ drives: [], folders: [] });
+  });
+});
+
+describe("applyMoveConstraint", () => {
+  const drive = (id: string, rootFolderId: string | null = null) => ({
+    id,
+    label: id,
+    iconEmoji: null,
+    audience: null,
+    rootFolderId,
+  });
+  const folder = (id: string, driveId: string, parentId: string | null) => ({
+    id,
+    driveId,
+    parentId,
+    title: id,
+    iconEmoji: null,
+    itemCount: 0,
+    folderType: null,
+  });
+  const rows: PickerRows = {
+    drives: [drive("lab"), drive("core", "core-root"), drive("mentorship", "m-root"), drive("projects")],
+    folders: [
+      folder("ops", "lab", null),
+      folder("core-a", "core", null),
+      folder("m-a", "mentorship", null),
+      folder("p1", "projects", null),
+      folder("p1-docs", "projects", "p1"),
+      folder("p2", "projects", null),
+    ],
+  };
+  const ids = (r: PickerRows) => [r.drives.map((d) => d.id), r.folders.map((f) => f.id)];
+
+  it("returns the rows untouched when nothing is pinned", () => {
+    expect(applyMoveConstraint(rows, { rootFolderIds: [], workspaces: [] })).toBe(rows);
+  });
+
+  it("keeps only the drive of the root the page lives under", () => {
+    expect(ids(applyMoveConstraint(rows, { rootFolderIds: ["m-root"], workspaces: [] }))).toEqual([
+      ["mentorship"],
+      ["m-a"],
+    ]);
+  });
+
+  it("leaves nowhere when pages from two roots move together", () => {
+    expect(ids(applyMoveConstraint(rows, { rootFolderIds: ["m-root", "core-root"], workspaces: [] }))).toEqual([[], []]);
+  });
+
+  it("keeps the Lab-workspace drives for a system folder in the Lab", () => {
+    expect(ids(applyMoveConstraint(rows, { rootFolderIds: [], workspaces: [{ type: "Lab", id: null }] }))[0]).toEqual([
+      "lab",
+      "core",
+      "mentorship",
+    ]);
+  });
+
+  it("keeps only the owning project's folders for a project system folder", () => {
+    expect(
+      ids(applyMoveConstraint(rows, { rootFolderIds: [], workspaces: [{ type: "Project", id: "p1" }] })),
+    ).toEqual([["projects"], ["p1", "p1-docs"]]);
   });
 });

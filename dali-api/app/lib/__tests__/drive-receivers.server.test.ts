@@ -98,7 +98,13 @@ describe("RECEIVER_SLOTS", () => {
       EducationTemplates: "Education templates",
       CertificateBackgrounds: "Certificate backgrounds",
       MentorNotebooks: "Mentor notebooks",
+      OfferingForms: "Offering forms",
     });
+  });
+
+  it("offers no process slot for the offering Forms folder", () => {
+    for (const slots of Object.values(RECEIVER_SLOTS)) expect(slots).not.toContain("OfferingForms");
+    expect(acceptsReceiver("Project", "OfferingForms")).toBe(false);
   });
 
   it("acceptsReceiver follows the table", () => {

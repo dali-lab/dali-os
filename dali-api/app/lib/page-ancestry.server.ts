@@ -22,6 +22,7 @@ export type ChainRow = AncestorRow & {
   workspaceId: string | null;
   kind: PageKind;
   archivedAt: Date | null;
+  folderType?: string | null;
 };
 
 /**
@@ -37,19 +38,19 @@ export async function loadAncestorChain(startId: string): Promise<ChainRow[]> {
     `WITH RECURSIVE chain AS (
       SELECT p."id", p."title", p."parentPageId", p."scopeKind", p."scopeGroupId",
              p."scopePermission", p."createdById", p."workspaceType", p."workspaceId",
-             p."kind", p."archivedAt", 0 AS "depth"
+             p."kind", p."archivedAt", p."folderType", 0 AS "depth"
       FROM "Page" p
       WHERE p."id" = $1
       UNION ALL
       SELECT a."id", a."title", a."parentPageId", a."scopeKind", a."scopeGroupId",
              a."scopePermission", a."createdById", a."workspaceType", a."workspaceId",
-             a."kind", a."archivedAt", chain."depth" + 1
+             a."kind", a."archivedAt", a."folderType", chain."depth" + 1
       FROM "Page" a
       JOIN chain ON a."id" = chain."parentPageId"
       WHERE chain."depth" + 1 < ${CHAIN_ROWS}
     )
     SELECT "id", "title", "parentPageId", "scopeKind", "scopeGroupId", "scopePermission",
-           "createdById", "workspaceType", "workspaceId", "kind", "archivedAt"
+           "createdById", "workspaceType", "workspaceId", "kind", "archivedAt", "folderType"
     FROM chain
     ORDER BY "depth"`,
     startId,
