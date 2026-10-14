@@ -457,6 +457,62 @@ describe("loadDriveScope — forms are Form-kind pages", () => {
   });
 });
 
+describe("loadDriveScope — forms by page access", () => {
+  const formRow = (over: Record<string, unknown> = {}) =>
+    pageRow({ id: "form-1", title: "Application", kind: "Form", ...over });
+  const lab = { kind: "Lab" as const };
+  const only = (id: string, access: unknown) => (_u: string, p: any) =>
+    Promise.resolve((p.id === id ? access : VIEW_ONLY) as any);
+
+  it("shows a form the viewer can view, with no canViewForms", async () => {
+    mockPrisma.page.findMany.mockResolvedValue([formRow()]);
+    const items = await loadDriveScope({ userSub: "u1", scope: lab, formsByPageAccess: true });
+    expect(items.find((i) => i.id === "form-1")).toMatchObject({ type: "form", href: "/forms/edit/form-1" });
+    expect(getPageAccess).toHaveBeenCalledWith("u1", expect.objectContaining({ id: "form-1" }));
+  });
+
+  it("hides a form the viewer cannot view, even with canViewForms", async () => {
+    mockPrisma.page.findMany.mockResolvedValue([formRow(), pageRow({ id: "doc-1" })]);
+    vi.mocked(getPageAccess).mockImplementation(only("form-1", DENIED));
+    const items = await loadDriveScope({ userSub: "u1", scope: lab, canViewForms: true, formsByPageAccess: true });
+    expect(items.some((i) => i.id === "form-1")).toBe(false);
+    expect(items.some((i) => i.id === "doc-1")).toBe(true);
+  });
+
+  it("hangs a form off its own parent folder", async () => {
+    mockPrisma.page.findMany.mockResolvedValue([
+      pageRow({ id: "folder-1", kind: "Folder" }),
+      formRow({ parentPageId: "folder-1" }),
+    ]);
+    const items = await loadDriveScope({ userSub: "u1", scope: lab, formsByPageAccess: true });
+    expect(items.find((i) => i.id === "form-1")?.parentFolderId).toBe("folder-1");
+  });
+
+  it("keeps the form out of the doc rows and gives it the audience from the shared summary", async () => {
+    mockPrisma.page.findMany.mockResolvedValue([formRow()]);
+    const items = await loadDriveScope({ userSub: "u1", scope: lab, formsByPageAccess: true });
+    expect(items.filter((i) => i.id === "form-1")).toHaveLength(1);
+    expect(items.find((i) => i.id === "form-1")).toMatchObject({ audience: { label: "aud:form-1" } });
+  });
+
+  it.each([
+    { name: "Project", scope: { kind: "Project" as const, projectId: "proj-1" } },
+    { name: "Education", scope: { kind: "EducationOffering" as const, offeringId: "off-1" } },
+  ])("$name: lists a Form page without canViewForms", async ({ scope }) => {
+    mockPrisma.page.findMany.mockResolvedValue([formRow()]);
+    const items = await loadDriveScope({ userSub: "u1", scope, formsByPageAccess: true });
+    expect(items.find((i) => i.id === "form-1")).toMatchObject({ type: "form", parentFolderId: null });
+  });
+
+  it("Member: asks for Form pages and lists one the viewer owns", async () => {
+    mockPrisma.page.findMany.mockResolvedValue([formRow({ parentPageId: "mine-folder" })]);
+    const items = await loadDriveScope({ userSub: "u1", scope: { kind: "Member" }, formsByPageAccess: true });
+    const kinds = mockPrisma.page.findMany.mock.calls.map((c) => c[0].where.kind?.in).filter(Boolean);
+    for (const k of kinds) expect(k).toContain("Form");
+    expect(items.find((i) => i.id === "form-1")).toMatchObject({ type: "form", parentFolderId: "mine-folder" });
+  });
+});
+
 describe("loadDriveScope — Project scope", () => {
   it("returns project-scoped files, not lab files", async () => {
     mockPrisma.projectFile.findMany.mockResolvedValue([

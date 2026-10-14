@@ -2,7 +2,7 @@ import { redirect } from "react-router";
 import type { Route } from "./+types/forms.edit.$formId";
 import { requireAuth, forbidden, redirectNonMemberToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
-import { isCore } from "~/lib/roles";
+import { canBuildForm, formsUsePageAccess } from "~/forms/lib/form-access.server";
 import { prisma } from "~/lib/db";
 import {
   loadFormForEdit,
@@ -57,7 +57,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   if (!auth.ok) return redirectToLogin(request);
   const portalRedirect = await redirectNonMemberToPortal(auth, request);
   if (portalRedirect) return portalRedirect;
-  if (!(await isCore(auth.user.sub))) return redirect("/");
+  if (!(await canBuildForm(auth.user.sub, params.formId, request))) return redirect("/");
 
   const form = await loadFormForEdit(params.formId);
   if (!form) return redirect("/drive?type=form");
@@ -102,6 +102,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     managing,
     hiringLinks,
     driveCrumbs,
+    page: { workspaceType: form.workspaceType },
+    pageAccess: await formsUsePageAccess(request),
     groups: allGroups
       .filter((g) => !g.archived)
       .map((g) => ({
@@ -117,15 +119,21 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   };
 }
 
-export async function action({ request }: Route.ActionArgs) {
+export async function action({ request, params }: Route.ActionArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return auth.response;
-  if (!(await isCore(auth.user.sub)))
+  if (!(await canBuildForm(auth.user.sub, params.formId, request)))
     return forbidden(request);
 
   // Read formData once so we can branch on intent without consuming the stream.
   const formData = await request.formData();
   const intent = formData.get("intent") as string | null;
+
+  // The gate above is for this route's form; with page access a builder of one
+  // form must not reach another through a crafted id.
+  const targetId = formData.get("id");
+  if (typeof targetId === "string" && targetId && targetId !== params.formId && (await formsUsePageAccess(request)))
+    return forbidden(request);
 
   if (intent === "unlink-hiring-form") {
     const linkType = formData.get("linkType") as "application" | "challenge";

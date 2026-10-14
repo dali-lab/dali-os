@@ -75,7 +75,7 @@ export async function action({ request, params }: Route.ActionArgs) {
       );
     }
 
-    const access = await formFillAccess(meta, userId);
+    const access = await formFillAccess(meta, userId, request);
     if (access === "login") {
       return withCors(request, auth.ok ? unauthorized(request) : auth.response);
     }

@@ -18,9 +18,11 @@ vi.mock("~/lib/roles", () => ({
   isProjectMember: vi.fn(),
   canViewForms: vi.fn(),
 }));
-vi.mock("~/lib/pageAccess.server", () => ({ getPageAccess: vi.fn() }));
+vi.mock("~/lib/pageAccess.server", () => ({ getPageAccess: vi.fn(), PAGE_ACCESS_SELECT: { id: true } }));
+vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabledForEveryone: vi.fn() }));
 vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
 
+import { isFeatureEnabledForEveryone } from "~/lib/feature-flags.server";
 import { moveForm } from "~/forms/lib/form-page.server";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
@@ -51,6 +53,7 @@ beforeEach(() => {
   vi.mocked(isCore).mockResolvedValue(false);
   vi.mocked(isProjectMember).mockResolvedValue(true);
   vi.mocked(canViewForms).mockResolvedValue(true);
+  vi.mocked(isFeatureEnabledForEveryone).mockResolvedValue(false);
   vi.mocked(getPageAccess).mockResolvedValue({ canView: true, canEdit: true, canComment: true } as never);
   m.projectFile.findUnique.mockResolvedValue({ projectId: "proj", archivedAt: null });
   m.form.findUnique.mockResolvedValue({ id: "fm1" });
@@ -154,5 +157,36 @@ describe("POST /api/drive/move", () => {
       vi.mocked(getPageAccess).mockResolvedValue({ canView: true, canEdit: false, canComment: true } as never);
       expect((await call(FILE_MOVE)).status).toBe(404);
     });
+  });
+});
+
+describe("POST /api/drive/move (forms-page-access on)", () => {
+  const formEdit = (canEdit: boolean) =>
+    vi.mocked(getPageAccess).mockImplementation((async (_u: string, page: { id: string }) => ({
+      canView: true,
+      canEdit: page.id === "fm1" ? canEdit : true,
+      canComment: true,
+    })) as never);
+
+  beforeEach(() => {
+    vi.mocked(isFeatureEnabledForEveryone).mockResolvedValue(true);
+    m.page.findUnique.mockImplementation(async ({ where }: { where: { id: string; kind?: string } }) =>
+      where.kind === "Form"
+        ? { id: "fm1" }
+        : { id: where.id, kind: "Folder", archivedAt: null },
+    );
+  });
+
+  it("moves a form the viewer can edit, even without canViewForms", async () => {
+    vi.mocked(canViewForms).mockResolvedValue(false);
+    formEdit(true);
+    expect((await call(FORM_MOVE)).status).toBe(200);
+    expect(moveForm).toHaveBeenCalledWith("fm1", "folder");
+  });
+
+  it("refuses a form the viewer cannot edit, even with canViewForms", async () => {
+    formEdit(false);
+    expect(await call(FORM_MOVE)).toEqual({ status: 403, json: { error: "You can't move this form" } });
+    expect(moveForm).not.toHaveBeenCalled();
   });
 });

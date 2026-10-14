@@ -4,6 +4,7 @@ import { confidentialityCleared, getCycleConfidentialityState } from "~/hiring/l
 import { partnerHasProjectAccess } from "~/partners/lib/partner-access";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { COLLAB_SOURCES } from "~/collab/sources";
+import { canBuildForm } from "~/forms/lib/form-access.server";
 import { PAGE_ACCESS_SELECT, getPageAccess } from "~/lib/pageAccess.server";
 
 /** Hydrate author IDs into `{ id, name, photoUrl }` objects in a single IN
@@ -366,14 +367,14 @@ export async function authorizeCollabDoc(
   }
 
   // form:{formId}:draft — structured draft for a Form's question list.
-  // Edit gate matches the forms.edit.$formId loader: Core-only.
+  // Edit gate matches the forms.edit.$formId loader (canBuildForm).
   if (entity === "form") {
     const form = await prisma.form.findUnique({
       where: { id },
       select: { id: true },
     });
     if (!form) return deny;
-    return (await isCore(userSub)) ? allow : deny;
+    return (await canBuildForm(userSub, id)) ? allow : deny;
   }
 
   // rubric:{rubricId}:draft — structured draft for a Rubric's criteria list.

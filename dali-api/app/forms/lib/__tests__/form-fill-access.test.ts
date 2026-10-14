@@ -23,7 +23,7 @@ function form(
   audience: "Members" | "SignedIn" | "Groups" | "Public",
   audienceGroupIds: string[] = [],
 ) {
-  return { audience, audienceGroupIds };
+  return { id: "f1", audience, audienceGroupIds };
 }
 
 beforeEach(() => {

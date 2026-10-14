@@ -20,7 +20,8 @@ import type { Route } from "./+types/api.drive.move";
 import { z } from "zod";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
-import { isCore, isProjectMember, canViewForms } from "~/lib/roles";
+import { isCore, isProjectMember } from "~/lib/roles";
+import { canManageFormPlacement } from "~/forms/lib/form-access.server";
 import { getPageAccess } from "~/lib/pageAccess.server";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson } from "~/lib/validate";
@@ -87,8 +88,8 @@ export async function action({ request }: Route.ActionArgs) {
     // form — agreements and rubrics are rejected by the guard above.
     const [form, canManage] = await Promise.all([
       prisma.form.findUnique({ where: { id: itemId }, select: { id: true } }),
-      // Form manage: must pass the canViewForms gate (Core/Admin/Instructor).
-      canViewForms(userId),
+      // Form manage: the canViewForms gate, or page edit once forms follow page access.
+      canManageFormPlacement(userId, itemId, request),
     ]);
     if (!form) return refuse("Form not found", 404);
     return canManage ? null : refuse("You can't move this form", 403);
