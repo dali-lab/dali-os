@@ -110,8 +110,9 @@ beforeEach(() => {
     "fetch",
     vi.fn(async (url: string, init?: RequestInit) => {
       if (init?.method === "POST") {
-        posts.push({ url, body: JSON.parse(init.body as string) });
-        return new Response(JSON.stringify({ ok: true }));
+        const body = JSON.parse(init.body as string);
+        posts.push({ url, body });
+        return new Response(JSON.stringify(body.intent === "new-note" ? { ok: true, id: "note9" } : { ok: true }));
       }
       if (url.startsWith("/api/page-templates")) return new Response(JSON.stringify({ templates: [] }));
       if (url.startsWith("/api/notebooks")) return new Response(JSON.stringify({ notebooks: [] }));
@@ -382,6 +383,43 @@ describe("NotebookRail Move to notebook", () => {
     expect(posts).toEqual([{ url: "/api/notebooks/nb2", body: { intent: "add-page", pageId: "p2" } }]);
     expect(document.body.textContent).toContain("Moved to Retro");
     expect(picker()).toBeNull();
+  });
+});
+
+describe("NotebookRail blank note", () => {
+  const addItems = async () => {
+    await click([...container.querySelectorAll("button")].find((b) => b.textContent?.trim() === "Add")!);
+    return [...document.body.querySelectorAll('[role="menuitem"]')].map((el) => el.textContent?.trim());
+  };
+
+  it("is the first item of the Add menu, even for a notebook with no series", async () => {
+    await rail();
+    expect(await addItems()).toEqual(["Blank note", "Existing document…"]);
+  });
+
+  it("is listed before the next-meeting notes", async () => {
+    await rail({
+      nextNotes: [{ meetingId: "m1", meetingTitle: "Weekly sync", occurrenceStart: "2026-10-21T15:00:00.000Z" }],
+    });
+    expect((await addItems())[0]).toBe("Blank note");
+  });
+
+  it("is offered to an editor who cannot manage", async () => {
+    await rail({ canManage: false });
+    expect(await addItems()).toContain("Blank note");
+  });
+
+  it("is not offered to someone who cannot edit", async () => {
+    await rail({ canEdit: false });
+    expect([...container.querySelectorAll("button")].some((b) => b.textContent?.trim() === "Add")).toBe(false);
+  });
+
+  it("posts the new-note intent and opens the note it made", async () => {
+    await rail();
+    await menuItem("Add", "Blank note");
+
+    expect(posts).toEqual([{ url: "/api/notebooks/nb1", body: { intent: "new-note" } }]);
+    expect(container.textContent).toContain("opened");
   });
 });
 
