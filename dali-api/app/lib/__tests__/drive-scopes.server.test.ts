@@ -7,6 +7,7 @@ vi.mock("~/lib/drive.server", () => ({
   loadDriveScope: vi.fn(),
   buildLinkedProcessMap: vi.fn(),
 }));
+vi.mock("~/forms/lib/form-access.server", () => ({ formsUsePageAccess: vi.fn() }));
 vi.mock("~/lib/auth", () => ({ isImpersonating: vi.fn() }));
 vi.mock("~/lib/user-pages.server", () => ({ favoritePageIds: vi.fn() }));
 vi.mock("~/lib/drive-shared.server", () => ({ loadSharedWithMe: vi.fn() }));
@@ -24,6 +25,7 @@ import { favoritePageIds } from "~/lib/user-pages.server";
 import { getPageAccess } from "~/lib/pageAccess.server";
 import { findAllRoots, ensureAllRoots } from "~/lib/drive-roots.server";
 import { loadSharedWithMe } from "~/lib/drive-shared.server";
+import { formsUsePageAccess } from "~/forms/lib/form-access.server";
 import { liftOrphans, loadDriveScopes } from "~/lib/drive-scopes.server";
 import type { DriveItem } from "~/lib/drive.server";
 
@@ -492,6 +494,46 @@ describe("loadDriveScopes: what starts without waiting for the Lab load", () => 
     await finishLab([form("unfiled", null)]);
     const scopes = await pending;
     expect(scopes.find((s) => s.id === "lab")!.items).toEqual([]);
+  });
+
+  describe("forms-page-access on", () => {
+    beforeEach(() => vi.mocked(formsUsePageAccess).mockResolvedValue(true));
+
+    it("hands the cutover to every scope load, My Drive included", async () => {
+      const pending = start({ isCore: false, canViewForms: false, projects: ["p1"] });
+      await finishLab([]);
+      await pending;
+      for (const kind of ["Member", "Lab", "Project", "EducationOffering"]) {
+        expect(loadsFor(kind)[0].formsByPageAccess).toBe(true);
+      }
+    });
+
+    it("keeps the cutover off the loads while the flag is off", async () => {
+      vi.mocked(formsUsePageAccess).mockResolvedValue(false);
+      const pending = start({ projects: ["p1"] });
+      await finishLab([]);
+      await pending;
+      for (const kind of ["Member", "Lab", "Project", "EducationOffering"]) {
+        expect(loadsFor(kind)[0].formsByPageAccess).toBe(false);
+      }
+    });
+
+    it("keeps General's forms for a viewer with neither the gate nor Core", async () => {
+      const pending = start({ isCore: false, canViewForms: false });
+      await vi.waitFor(() => expect(loadDriveScope).toHaveBeenCalled());
+      await finishLab([form("unfiled", null)]);
+      const scopes = await pending;
+      expect(scopes.find((s) => s.id === "lab")!.items.map((i) => i.id)).toEqual(["unfiled"]);
+    });
+
+    it("keeps a form inside a root's space for a viewer who isn't Core", async () => {
+      vi.mocked(getPageAccess).mockResolvedValue({ canView: true, canEdit: false, canComment: true });
+      const pending = start({ isCore: false, canViewForms: false });
+      await vi.waitFor(() => expect(loadDriveScope).toHaveBeenCalled());
+      await finishLab([folderItem("coreRoot", null), form("inCore", "coreRoot")]);
+      const scopes = await pending;
+      expect(scopes.find((s) => s.id === "core")!.items.map((i) => i.id)).toEqual(["inCore"]);
+    });
   });
 
   it("tags a form favorite like a doc", async () => {

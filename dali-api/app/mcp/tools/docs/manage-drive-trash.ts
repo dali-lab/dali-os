@@ -8,17 +8,17 @@
 
 import { deleteForm, setFormArchived } from "~/forms/lib/form-page.server";
 import { prisma } from "~/lib/db";
-import { canViewForms } from "~/lib/roles";
 import { getPageAccess } from "~/lib/pageAccess.server";
 import { canEditFile } from "~/lib/fileAccess.server";
 import { isRoot, ROOT_DELETE_ERROR } from "~/lib/drive-roots";
+import { canManageFormPlacement } from "~/forms/lib/form-access.server";
 import { requireForAction } from "~/mcp/registry";
 import type { McpCtx, McpTool } from "~/mcp/registry";
 
 export const MANAGE_DRIVE_TRASH_TOOL_DEF = {
   name: "manage_drive_trash",
   description:
-    "Restore or permanently purge an archived drive item. Pages require edit access; files require edit-file access; forms require Core/Admin/Instructor role. Purging a form fails if the form is still bound to active hiring or education workflows.",
+    "Restore or permanently purge an archived drive item. Pages require edit access; files require edit-file access; forms require Core/Admin/Instructor role (edit access once forms follow page access). Purging a form fails if the form is still bound to active hiring or education workflows.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -64,7 +64,7 @@ export async function runManageDriveTrash(callerId: string, input: ManageDriveTr
   const { action, type, id } = input;
 
   if (type === "form") {
-    if (!(await canViewForms(callerId))) throw new ManageDriveTrashError("Forbidden", 403);
+    if (!(await canManageFormPlacement(callerId, id))) throw new ManageDriveTrashError("Forbidden", 403);
     const form = await prisma.form.findUnique({ where: { id }, select: { id: true, archivedAt: true } });
     if (!form) throw new ManageDriveTrashError("Form not found", 404);
 

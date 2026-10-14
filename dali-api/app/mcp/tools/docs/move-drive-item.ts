@@ -10,7 +10,8 @@
 
 import { moveForm } from "~/forms/lib/form-page.server";
 import { prisma } from "~/lib/db";
-import { isCore, isProjectMember, canViewForms } from "~/lib/roles";
+import { isCore, isProjectMember } from "~/lib/roles";
+import { canManageFormPlacement } from "~/forms/lib/form-access.server";
 import { getPageAccess } from "~/lib/pageAccess.server";
 import { logAuditEvent } from "~/lib/audit";
 
@@ -70,7 +71,7 @@ export async function runMoveDriveItem(callerId: string, input: Input) {
   } else {
     const form = await prisma.form.findUnique({ where: { id: itemId }, select: { id: true } });
     if (!form) throw new MoveDriveItemError("Form not found", 404);
-    if (!(await canViewForms(callerId))) throw new MoveDriveItemError("You can't move this form", 403);
+    if (!(await canManageFormPlacement(callerId, itemId))) throw new MoveDriveItemError("You can't move this form", 403);
   }
 
   // Authorise the destination folder.

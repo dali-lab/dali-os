@@ -8,6 +8,7 @@
 import type { Route } from "./+types/forms.preview-resolve";
 import { requireAuth, forbidden } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
+import { canBuildForm, formsUsePageAccess } from "~/forms/lib/form-access.server";
 import { isQuestionArray } from "~/forms/lib/forms-data";
 import { resolveReferenceOptions } from "~/forms/lib/reference-sources";
 import { normalizeQuestionBodies } from "~/lib/question-blocks.server";
@@ -16,9 +17,12 @@ export async function action({ request }: Route.ActionArgs) {
   // Resolves reference options for the preview modal; writes nothing.
   const auth = await requireAuth(request, { allowImpersonatedWrite: true });
   if (!auth.ok) return auth.response;
-  if (!(await isCore(auth.user.sub))) return forbidden(request);
-
   const formData = await request.formData();
+  const allowed = (await formsUsePageAccess(request))
+    ? await canBuildForm(auth.user.sub, String(formData.get("formId") ?? ""), request)
+    : await isCore(auth.user.sub);
+  if (!allowed) return forbidden(request);
+
   let questions: unknown;
   try {
     questions = JSON.parse(String(formData.get("questions") ?? ""));

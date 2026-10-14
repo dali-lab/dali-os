@@ -35,6 +35,18 @@ describe("menuEntries", () => {
     expect(menuEntries(item("form"), { ...all, favorite: false })).not.toContain("favorite");
   });
 
+  it("offers Share on a form once forms follow page access, and only then", () => {
+    expect(menuEntries(item("form"), { ...all, formShare: true })).toContain("share");
+    expect(menuEntries(item("form"), { ...all, formShare: false })).not.toContain("share");
+    expect(menuEntries(item("form"), { ...none, formShare: true })).not.toContain("share");
+  });
+
+  it("formShare does not widen Share to files or agreements", () => {
+    for (const type of ["file", "agreement", "rubric"]) {
+      expect(menuEntries(item(type), { ...all, formShare: true })).not.toContain("share");
+    }
+  });
+
   it("still offers no Favorite on a file, agreement or rubric", () => {
     for (const type of ["file", "agreement", "rubric"]) {
       expect(menuEntries(item(type), all)).not.toContain("favorite");

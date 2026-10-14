@@ -65,7 +65,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     const elsewhere = await applicantFillRedirect(meta.id);
     if (elsewhere) return redirect(elsewhere);
 
-    const access = await formFillAccess(meta, userId);
+    const access = await formFillAccess(meta, userId, request);
     if (access === "login") return redirectToLogin(request);
     if (access === "denied") {
       return { accessDenied: true as const, name: meta.name };

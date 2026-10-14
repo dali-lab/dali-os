@@ -1,7 +1,8 @@
 import { prisma } from "~/lib/db";
 import { getPageAccessBulk, PAGE_ACCESS_SELECT } from "~/lib/pageAccess.server";
 import { expandOccurrences } from "~/lib/meeting-occurrences";
-import { pageRowToDriveItem } from "~/lib/drive.server";
+import { formsUsePageAccess } from "~/forms/lib/form-access.server";
+import { formRowToDriveItem, pageRowToDriveItem } from "~/lib/drive.server";
 import type { DriveItem } from "~/lib/drive.server";
 import type { PageKind, Prisma } from "~/generated/prisma/client";
 
@@ -13,7 +14,7 @@ const READ_MULTIPLIER = 3;
 const GUARD_MS = 24 * 60 * 60_000;
 const HOME_PAGE_KINDS: PageKind[] = ["Folder", "FreeForm", "Structured", "Whiteboard", "Notebook"];
 
-export type HomePageItem = Extract<DriveItem, { type: "folder" | "doc" }> & { visitedAt: Date | null };
+export type HomePageItem = Extract<DriveItem, { type: "folder" | "doc" | "form" }> & { visitedAt: Date | null };
 
 export type HomeUpcoming = {
   meetingId: string;
@@ -42,7 +43,8 @@ type PageRow = Prisma.PageGetPayload<{ select: typeof PAGE_SELECT }>;
 export async function loadDriveHome(viewerId: string, request?: Request): Promise<DriveHomeData> {
   const now = new Date();
   const windowEnd = new Date(now.getTime() + UPCOMING_WINDOW_DAYS * 24 * 60 * 60_000);
-  const pageFilter = { is: { archivedAt: null, kind: { in: HOME_PAGE_KINDS } } };
+  const homeKinds: PageKind[] = (await formsUsePageAccess(request)) ? [...HOME_PAGE_KINDS, "Form"] : HOME_PAGE_KINDS;
+  const pageFilter = { is: { archivedAt: null, kind: { in: homeKinds } } };
 
   const [recentRows, meetings] = await Promise.all([
     prisma.userFavorite.findMany({
@@ -65,7 +67,7 @@ export async function loadDriveHome(viewerId: string, request?: Request): Promis
   const recent = recentRows
     .filter((r) => r.page && viewable(r.page.id))
     .slice(0, HOME_LIMIT)
-    .map((r): HomePageItem => ({ ...pageRowToDriveItem(r.page!), favorited: false, visitedAt: r.visitedAt }));
+    .map((r): HomePageItem => ({ ...homeItem(r.page!), favorited: false, visitedAt: r.visitedAt }));
 
   const upcoming = upcomingBySeries
     .filter(({ notebook }) => viewable(notebook.id))
@@ -78,6 +80,10 @@ export async function loadDriveHome(viewerId: string, request?: Request): Promis
     }));
 
   return { recent, upcoming };
+}
+
+function homeItem(row: PageRow): Extract<DriveItem, { type: "folder" | "doc" | "form" }> {
+  return row.kind === "Form" ? formRowToDriveItem(row, row.parentPageId, undefined, undefined) : pageRowToDriveItem(row);
 }
 
 type MeetingRow = Awaited<ReturnType<typeof upcomingMeetings>>[number];
