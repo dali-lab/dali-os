@@ -133,6 +133,39 @@ describe("meeting page — one occurrence of a recurring meeting", () => {
   });
 });
 
+describe("meeting page — a trashed series notebook", () => {
+  const notebookOf = (archivedAt: Date | null) => ({ id: "nb1", title: "Sync notes", archivedAt });
+
+  it("reads only live notes, shows no notebook and nothing to open while it is in Trash", async () => {
+    mockAuth.mockResolvedValue({ ok: true, user: { sub: "member-1", type: "member" } });
+    mockPrisma.scheduledMeeting.findUnique.mockResolvedValue(
+      meeting({ notebookId: "nb1", notebook: notebookOf(new Date("2026-01-10T00:00:00.000Z")), notePages: [] }),
+    );
+
+    const d = (await load()) as unknown as { notebook: { id: string } | null; canOpenNote: boolean };
+
+    expect(d.notebook).toBeNull();
+    expect(d.canOpenNote).toBe(false);
+    expect(mockPrisma.scheduledMeeting.findUnique).toHaveBeenCalledWith(
+      expect.objectContaining({
+        select: expect.objectContaining({ notePages: expect.objectContaining({ where: { archivedAt: null } }) }),
+      }),
+    );
+  });
+
+  it("links the notebook again once it is restored", async () => {
+    mockAuth.mockResolvedValue({ ok: true, user: { sub: "member-1", type: "member" } });
+    mockPrisma.scheduledMeeting.findUnique.mockResolvedValue(
+      meeting({ notebookId: "nb1", notebook: notebookOf(null), notePages: [] }),
+    );
+
+    const d = (await load()) as unknown as { notebook: { id: string; title: string } | null; canOpenNote: boolean };
+
+    expect(d.notebook).toEqual({ id: "nb1", title: "Sync notes" });
+    expect(d.canOpenNote).toBe(true);
+  });
+});
+
 describe("meeting page — Core label", () => {
   it("shows the label placement derives, not the stored column", async () => {
     mockAuth.mockResolvedValue({ ok: true, user: { sub: "organizer-1", type: "member" } });

@@ -170,10 +170,16 @@ async function shareAndLinkGrant(
 ): Promise<PageAccessResult> {
   const groupIds = preloadedGroupIds ?? (await groupIdsForUser(userSub, request));
   const sharesForPage = ignoreShares ? [] : preloadedShares ?? await (async () => {
-    // Single-page path: fetch the shares for this one page (original behaviour).
+    const parentPageId = (page.parentPageId as string | null | undefined) ?? null;
+    const parentIsNotebook = parentPageId
+      ? (await prisma.page.findFirst({
+          where: { id: parentPageId, kind: "Notebook" },
+          select: { id: true },
+        })) !== null
+      : false;
     const rows = await prisma.pageShare.findMany({
       where: {
-        pageId: page.id,
+        pageId: { in: parentIsNotebook && parentPageId ? [page.id, parentPageId] : [page.id] },
         OR: [
           { principalType: "User", principalId: userSub },
           ...(groupIds.length
@@ -575,10 +581,23 @@ export async function getPageAccessBulk(
 
   // One query for all shares across the page list — avoids the N×pageShare.findMany
   // that getPageAccess would fire when called once per page.
+  const parentIds = options?.ignoreShares
+    ? []
+    : [...new Set(pages.map((p) => (p.parentPageId as string | null | undefined) ?? null).filter((id): id is string => !!id))];
+  const notebookParentIds = new Set<string>(
+    parentIds.length
+      ? (
+          await prisma.page.findMany({
+            where: { id: { in: parentIds }, kind: "Notebook" },
+            select: { id: true },
+          })
+        ).map((r: { id: string }) => r.id)
+      : [],
+  );
   const allShareRows = options?.ignoreShares
     ? []
     : await prisma.pageShare.findMany({
-        where: { pageId: { in: pageIds } },
+        where: { pageId: { in: [...new Set([...pageIds, ...notebookParentIds])] } },
         select: { pageId: true, principalType: true, principalId: true, permission: true },
       });
 
@@ -601,7 +620,11 @@ export async function getPageAccessBulk(
   const result = new Map<string, PageAccessResult>();
   await Promise.all(
     pages.map(async (page) => {
-      const sharesForPage = sharesByPage.get(page.id) ?? [];
+      const parentId = (page.parentPageId as string | null | undefined) ?? null;
+      const sharesForPage = [
+        ...(sharesByPage.get(page.id) ?? []),
+        ...(parentId && notebookParentIds.has(parentId) ? sharesByPage.get(parentId) ?? [] : []),
+      ];
       const access = await computePageAccessCore(
         userId,
         page,

@@ -1495,6 +1495,53 @@ describe("updateScheduledMeeting", () => {
       connect: [{ id: "room-1" }],
     });
   });
+
+  it("scope=following keeps filing into the master's notebook and mints no note at the cut", async () => {
+    p.scheduledMeeting.findUnique.mockResolvedValue(
+      meetingRow({
+        recurrenceRule: "FREQ=WEEKLY;BYDAY=WE",
+        participantUserIds: ["org-1", "u2"],
+        scopeType: "UserList",
+        scopeId: null,
+        meetingType: "Other",
+        meetingTypeLabel: "Sync",
+        projectId: null,
+        notebookId: "nb-1",
+        rooms: [],
+      }),
+    );
+    vi.mocked(loadEditableNotebook).mockResolvedValue({
+      id: "nb-1",
+      title: "Sync notes",
+      workspaceType: "Lab",
+      workspaceId: null,
+      parentPageId: null,
+      templatePageId: null,
+    } as never);
+    p.user.findMany.mockResolvedValue([]);
+    const mockCreate = p as unknown as { scheduledMeeting: { create: ReturnType<typeof vi.fn> } };
+    mockCreate.scheduledMeeting.create = vi.fn().mockResolvedValue({
+      id: "m-new",
+      ownerCalendarEmail: "org@test.com",
+      externalEventId: null,
+      meetingUrl: null,
+    });
+    p.meetingAttendance.createMany.mockResolvedValue({});
+
+    const res = await updateScheduledMeeting("m1", "org-1", {
+      title: "Sync",
+      durationMinutes: 60,
+      scope: { type: "UserList", participantUserIds: ["u2"] },
+      startTime: "2026-09-24T14:00:00.000Z",
+      editScope: "following",
+      occurrenceStart: "2026-09-24T14:00:00.000Z",
+    });
+
+    expect(res.ok).toBe(true);
+    expect(loadEditableNotebook).toHaveBeenCalledWith("nb-1", "org-1");
+    expect(mockCreate.scheduledMeeting.create.mock.calls[0]![0].data.notebookId).toBe("nb-1");
+    expect(createNotebookTab).not.toHaveBeenCalled();
+  });
 });
 
 describe("tracksAttendance", () => {
@@ -1634,6 +1681,34 @@ describe("attachMeetingNote", () => {
     });
 
     expect(res).toMatchObject({ ok: true, notebookId: "notebook-new", createdNotebook: true });
+  });
+
+  it("reads only live notes and makes a trashed one give up the occurrence's key", async () => {
+    p.scheduledMeeting.findUnique.mockResolvedValue(meetingRow({ meetingType: "Other", meetingTypeLabel: "Sync" }));
+    vi.mocked(prisma.page.findUnique).mockResolvedValue({
+      kind: "Folder",
+      archivedAt: null,
+      workspaceType: "Lab",
+      workspaceId: null,
+    } as never);
+    mockIsCore.mockResolvedValue(true);
+
+    const res = await attachMeetingNote({ meetingId: "m1", actorId: "org-1" });
+
+    expect(res).toMatchObject({ ok: true, notePageId: "page-tab" });
+    expect(p.scheduledMeeting.findUnique).toHaveBeenCalledWith(
+      expect.objectContaining({
+        select: expect.objectContaining({ notePages: expect.objectContaining({ where: { archivedAt: null } }) }),
+      }),
+    );
+    expect(prisma.page.updateMany).toHaveBeenCalledWith({
+      where: {
+        meetingNoteId: "m1",
+        meetingOccurrenceStart: new Date("2026-09-10T15:00:00Z"),
+        archivedAt: { not: null },
+      },
+      data: { meetingNoteId: null },
+    });
   });
 
   it("hands back the note an occurrence already has instead of making another", async () => {
