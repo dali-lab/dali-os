@@ -7,6 +7,7 @@ import { createNotebook, notebookErrorResponse } from "~/lib/notebooks.server";
 import { listNotebooks } from "~/lib/notebook-listing.server";
 
 // GET  /api/notebooks?q=&projectId=&meetingId=&workspaceType=&workspaceId= — the notebooks the viewer can edit, suggested ones first.
+// workspaceType is Lab, Project (with workspaceId) or Core (the notebooks under Core's Drive root).
 // POST /api/notebooks — create an empty notebook. Placement and the template
 // are checked in createNotebook. Rename is the ordinary POST /api/documents/:id.
 
@@ -29,9 +30,11 @@ export async function loader({ request }: Route.LoaderArgs) {
   const space =
     workspaceType === "Lab"
       ? { workspaceType: "Lab" as const, workspaceId: null }
-      : workspaceType === "Project" && workspaceId
-        ? { workspaceType: "Project" as const, workspaceId }
-        : undefined;
+      : workspaceType === "Core"
+        ? { workspaceType: "Core" as const, workspaceId: null }
+        : workspaceType === "Project" && workspaceId
+          ? { workspaceType: "Project" as const, workspaceId }
+          : undefined;
   const notebooks = await listNotebooks({
     actorId: gate.auth.user.sub,
     space,

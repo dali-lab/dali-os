@@ -36,6 +36,7 @@ const core = group({ id: "g-core", name: "Core", systemKey: "core" });
 const loaderData = (groups: GroupOption[]) =>
   ({
     groups,
+    mentorPairs: [],
     users: [],
     calendarLinks: [],
     myRoles: [],
@@ -160,7 +161,7 @@ describe("CreateEventModal meeting notes", () => {
     await mount({ groups: [atlas], initialGroupIds: ["g-atlas"] });
     await click(checkbox("Meeting notes"));
     const create = Array.from(container.querySelectorAll("button")).find((b) =>
-      b.textContent?.includes("Or create a new notebook"),
+      b.textContent?.includes("New notebook"),
     )!;
     await click(create);
     expect(submitButton().disabled).toBe(true);
@@ -169,7 +170,7 @@ describe("CreateEventModal meeting notes", () => {
     await click(submitButton());
     expect(createBody()).toMatchObject({
       projectId: "p1",
-      notebook: { title: "Atlas sync", templatePageId: null },
+      notebook: { title: "Atlas sync", templatePageId: null, space: { kind: "project", projectId: "p1" } },
     });
   });
 

@@ -3,8 +3,10 @@ import { DRIVE_SPACES } from "~/lib/drive-spaces";
 import { findReceiver, projectSlot, singletonSlot } from "~/lib/drive-receivers.server";
 import { formatFiledPath, notebookLocationParts } from "~/lib/note-path.server";
 import { getPageAccessBulk, PAGE_ACCESS_SELECT } from "~/lib/pageAccess.server";
+import { pairNotebookKey } from "~/mentorship/lib/pair-notebook.server";
+import { findMentorPair } from "~/mentorship/lib/pair-suggestion.server";
 
-export type DefaultNotebookKind = "series" | "history" | "new";
+export type DefaultNotebookKind = "series" | "history" | "pair" | "new";
 
 export type DefaultNotebook = {
   kind: DefaultNotebookKind;
@@ -19,6 +21,8 @@ export type DefaultNotebookInput = {
   groupId?: string | null;
   projectId?: string | null;
   isCoreMeeting?: boolean;
+  /** The one other person on a 1:1 invite: their mentor-to-mentee pair notebook is the default when it already exists. */
+  pairMenteeId?: string | null;
   request?: Request;
 };
 
@@ -79,7 +83,8 @@ export async function newNotebookPath(
 
 /**
  * The notebook a meeting form should start on: the series' own, else the one
- * the same group used last, else a new one.
+ * the same group used last, else a mentor's pair notebook for a 1:1 with their
+ * mentee, else a new one.
  */
 export async function resolveDefaultNotebook(input: DefaultNotebookInput): Promise<DefaultNotebook> {
   const { actorId, request } = input;
@@ -112,6 +117,21 @@ export async function resolveDefaultNotebook(input: DefaultNotebookInput): Promi
     const pick = rows.find((r) => seen.has(r.id));
     if (pick) {
       return { kind: "history", notebook: await describe(pick, actorId, request), newPath: await newPath() };
+    }
+  }
+
+  if (input.pairMenteeId) {
+    const pair = await findMentorPair(actorId, input.pairMenteeId, request);
+    const existing = pair
+      ? await prisma.page.findUnique({
+          where: { notebookKey: pairNotebookKey(pair) },
+          select: { ...notebookSelect, kind: true, archivedAt: true },
+        })
+      : null;
+    if (existing && existing.kind === "Notebook" && existing.archivedAt === null) {
+      if ((await viewable([existing], actorId, request)).length > 0) {
+        return { kind: "pair", notebook: await describe(existing, actorId, request), newPath: await newPath() };
+      }
     }
   }
 

@@ -647,6 +647,110 @@ describe("createScheduledMeeting — where a note is filed with receiver folders
   });
 });
 
+describe("createScheduledMeeting — a new notebook files by the space it was started in", () => {
+  const mockPage = prisma as unknown as {
+    scheduledMeeting: { create: ReturnType<typeof vi.fn> };
+    meetingAttendance: { createMany: ReturnType<typeof vi.fn> };
+  };
+  const resolve = resolveFilingFolder as unknown as ReturnType<typeof vi.fn>;
+  const base = {
+    organizerId: "org-1",
+    organizerEmail: "org@dali.dartmouth.edu",
+    title: "Sync",
+    durationMinutes: 60,
+    scope: { type: "None" } as const,
+    startTime: "2026-09-10T15:00:00.000Z",
+  };
+  const createdMeeting = () => mockPage.scheduledMeeting.create.mock.calls[0]![0].data;
+
+  beforeEach(() => {
+    mockPage.scheduledMeeting.create.mockResolvedValue({ id: "m1", ownerCalendarEmail: base.organizerEmail });
+    mockPage.meetingAttendance.createMany.mockResolvedValue({});
+    vi.mocked(receiversEnabled).mockResolvedValue(true);
+    vi.mocked(createNotebook).mockResolvedValue({ id: "nb-new" });
+    resolve.mockImplementation(async (slot: { processType: string; processId: string }) => ({
+      folderId: `${slot.processType}-${slot.processId}-recv`,
+      viaReceiver: true,
+    }));
+  });
+
+  afterEach(() => {
+    vi.mocked(receiversEnabled).mockResolvedValue(false);
+  });
+
+  it("files a core space in Core's Meetings receiver, with no Core group on the invite", async () => {
+    await createScheduledMeeting({ ...base, isCoreMeeting: true, notebook: { title: "Core sync", space: { kind: "core" } } });
+
+    expect(resolve).toHaveBeenCalledWith({ processType: "Core", processId: "core", folderType: "Meetings" }, "org-1");
+    expect(createNotebook).toHaveBeenCalledWith(
+      expect.objectContaining({ workspaceType: "Lab", workspaceId: null, parentPageId: "Core-core-recv" }),
+    );
+    expect(createdMeeting()).toMatchObject({ isCoreMeeting: true });
+  });
+
+  it("files a core space in Core's Meetings receiver even for a meeting held for a project, and keeps the project", async () => {
+    await createScheduledMeeting({
+      ...base,
+      isCoreMeeting: true,
+      projectId: "proj-7",
+      meetingType: "Team",
+      notebook: { title: "Core sync", space: { kind: "core" } },
+    });
+
+    expect(createNotebook).toHaveBeenCalledWith(expect.objectContaining({ workspaceType: "Lab", parentPageId: "Core-core-recv" }));
+    expect(createdMeeting()).toMatchObject({ isCoreMeeting: true, projectId: "proj-7" });
+  });
+
+  it("refuses a core space for a meeting that is not a Core meeting, and creates nothing", async () => {
+    const res = await createScheduledMeeting({ ...base, notebook: { title: "Core sync", space: { kind: "core" } } });
+
+    expect(res).toEqual({ ok: false, error: "Only Core can start a notebook in Core" });
+    expect(createNotebook).not.toHaveBeenCalled();
+    expect(mockPage.scheduledMeeting.create).not.toHaveBeenCalled();
+  });
+
+  it("files a project space in that project's receiver and gives the meeting that project", async () => {
+    await createScheduledMeeting({ ...base, notebook: { title: "Atlas sync", space: { kind: "project", projectId: "proj-9" } } });
+
+    expect(resolve).toHaveBeenCalledWith({ processType: "Project", processId: "proj-9", folderType: "Meetings" }, "org-1");
+    expect(createNotebook).toHaveBeenCalledWith(
+      expect.objectContaining({ workspaceType: "Project", workspaceId: "proj-9", parentPageId: "Project-proj-9-recv" }),
+    );
+    expect(createdMeeting()).toMatchObject({ projectId: "proj-9", isCoreMeeting: false });
+  });
+
+  it("prefers the space's project over the one the caller gave", async () => {
+    await createScheduledMeeting({
+      ...base,
+      projectId: "proj-1",
+      notebook: { title: "Atlas sync", space: { kind: "project", projectId: "proj-9" } },
+    });
+
+    expect(createNotebook).toHaveBeenCalledWith(expect.objectContaining({ workspaceId: "proj-9" }));
+    expect(createdMeeting()).toMatchObject({ projectId: "proj-9" });
+  });
+
+  it("files a lab space in the General Meetings receiver, not the project or Core the meeting would use", async () => {
+    await createScheduledMeeting({
+      ...base,
+      isCoreMeeting: true,
+      projectId: "proj-1",
+      notebook: { title: "General sync", space: { kind: "lab" } },
+    });
+
+    expect(resolve).toHaveBeenCalledWith({ processType: "Lab", processId: "lab", folderType: "Meetings" }, "org-1");
+    expect(createNotebook).toHaveBeenCalledWith(
+      expect.objectContaining({ workspaceType: "Lab", workspaceId: null, parentPageId: "Lab-lab-recv" }),
+    );
+  });
+
+  it("files by the meeting's own flags when the choice names no space", async () => {
+    await createScheduledMeeting({ ...base, isCoreMeeting: true, notebook: { title: "Core sync" } });
+
+    expect(resolve).toHaveBeenCalledWith({ processType: "Core", processId: "core", folderType: "Meetings" }, "org-1");
+  });
+});
+
 describe("setMeetingProject", () => {
   const p = prisma as unknown as {
     scheduledMeeting: { findUnique: ReturnType<typeof vi.fn>; update: ReturnType<typeof vi.fn> };

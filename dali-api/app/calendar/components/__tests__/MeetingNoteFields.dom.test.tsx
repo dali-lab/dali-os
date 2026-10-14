@@ -141,7 +141,7 @@ describe("the create surface", () => {
     await enable();
     expect(text()).toContain("Pick where the notes go");
     expect(button("Search notebooks")).toBeTruthy();
-    expect(button("Or create a new notebook for this meeting's notes")).toBeTruthy();
+    expect(button("New notebook")).toBeTruthy();
     expect(meetingNoteValid(controller.state)).toBe(false);
   });
 
@@ -193,11 +193,11 @@ describe("suggestion chips", () => {
     expect(pickerProps!.newRow!.label).toBe("New notebook in Atlas");
   });
 
-  it("open the Lab space for Core", async () => {
+  it("open the Core space for Core, not every Lab notebook", async () => {
     await mount({ suggest: suggestOf() });
     await enable();
     await click(button("Core"));
-    expect(pickerProps!.space).toMatchObject({ workspaceType: "Lab", workspaceId: null });
+    expect(pickerProps!.space).toMatchObject({ workspaceType: "Core", workspaceId: null });
     expect(pickerProps!.newRow!.label).toBe("New notebook in Core");
   });
 
@@ -239,6 +239,27 @@ describe("suggestion chips", () => {
   });
 });
 
+describe("a new notebook from the Core chip", () => {
+  it("files in Core and makes the meeting Core, though the Core group is not invited", async () => {
+    await mount({ suggest: suggestOf({ invitedGroups: [] }) });
+    await enable();
+    await click(button("Core"));
+    await act(async () => pickerProps!.newRow!.onNew());
+    expect(meetingNotePayload(controller.state, inviteOf([]))).toMatchObject({
+      isCoreMeeting: true,
+      notebook: { title: "Weekly sync", space: { kind: "core" } },
+    });
+  });
+
+  it("reads General, not Lab, as the space of a plain invite", async () => {
+    await mount({ suggest: suggestOf({ invitedGroups: [] }) });
+    await enable();
+    await click(button("New notebook"));
+    expect(text()).toContain("New notebook “Weekly sync” · General");
+    expect(meetingNotePayload(controller.state, inviteOf([]))).toMatchObject({ notebook: { space: { kind: "lab" } } });
+  });
+});
+
 describe("search", () => {
   it("opens the picker across every space with New notebook first", async () => {
     await mount({ suggest: suggestOf() });
@@ -261,7 +282,7 @@ describe("create a new notebook", () => {
   it("shows the title input prefilled from the meeting title and the template select", async () => {
     await mount({ suggest: suggestOf() });
     await enable();
-    await click(button("Or create a new notebook for this meeting's notes"));
+    await click(button("New notebook"));
     const input = container.querySelector<HTMLInputElement>("#meeting-notebook-name")!;
     expect(input.value).toBe("Weekly sync");
     expect(text()).toContain("Template");
@@ -272,11 +293,11 @@ describe("create a new notebook", () => {
     ["a single project group", [atlasGroup], "Atlas"],
     ["the Core group", [coreGroup], "Core"],
     ["several groups", [atlasGroup, coreGroup], "Core"],
-    ["no group", [], "Lab"],
+    ["no group", [], "General"],
   ])("files in the space of %s", async (_name, invitedGroups, label) => {
     await mount({ suggest: suggestOf({ invitedGroups }) });
     await enable();
-    await click(button("Or create a new notebook for this meeting's notes"));
+    await click(button("New notebook"));
     expect(text()).toContain(`New notebook “Weekly sync” · ${label}`);
   });
 
@@ -284,14 +305,14 @@ describe("create a new notebook", () => {
     const other = group({ id: "g-b", name: "Beta", projectId: "p2", memberIds: ["a"] });
     await mount({ suggest: suggestOf({ invitedGroups: [atlasGroup, other] }) });
     await enable();
-    await click(button("Or create a new notebook for this meeting's notes"));
-    expect(text()).toContain("· Lab");
+    await click(button("New notebook"));
+    expect(text()).toContain("· General");
   });
 
   it("follows the meeting title until the organizer edits the name", async () => {
     await mount();
     await enable();
-    await click(button("Or create a new notebook for this meeting's notes"));
+    await click(button("New notebook"));
     await act(async () => root.render(createElement(Harness, { meetingTitle: "Weekly sync 2" })));
     expect(container.querySelector<HTMLInputElement>("#meeting-notebook-name")!.value).toBe("Weekly sync 2");
     await act(async () => controller.setTitle("Mine"));
@@ -308,7 +329,47 @@ describe("the place row", () => {
     expect(text()).toContain("Weekly · Projects ▸ Atlas ▸ Meetings");
     expect(text()).toContain("this meeting's notebook");
     expect(text()).not.toContain("Pick where the notes go");
-    expect(chips()).toEqual([]);
+  });
+
+  it("keeps the suggestion chips, Search and New below a prefilled place", async () => {
+    defaultResult = { ...seriesDefault, kind: "history" };
+    await mount({ suggest: suggestOf() });
+    await enable();
+    expect(text()).toContain("last used by this group");
+    expect(chips()).toEqual(["Atlas4 of 6 attendees", "Core3 of 6 attendees"]);
+    expect(button("Search notebooks")).toBeTruthy();
+    expect(button("New notebook")).toBeTruthy();
+  });
+
+  it("opens the picker from a chip under a prefilled place and replaces the place on pick", async () => {
+    defaultResult = { ...seriesDefault, kind: "history" };
+    await mount({ suggest: suggestOf() });
+    await enable();
+    await click(button("Atlas"));
+    expect(pickerProps!.space).toMatchObject({ workspaceType: "Project", workspaceId: "p1" });
+    await act(async () =>
+      pickerProps!.onPick({ id: "nb9", title: "Roadmap", path: "Projects ▸ Atlas", workspaceType: "Project", workspaceId: "p1", parentPageId: null }),
+    );
+    expect(text()).toContain("Roadmap · Projects ▸ Atlas");
+    expect(text()).not.toContain("Weekly ·");
+    expect(controller.state.auto).toBe(false);
+  });
+
+  it("opens the picker from Search under a prefilled place", async () => {
+    defaultResult = { ...seriesDefault, kind: "history" };
+    await mount({ suggest: suggestOf() });
+    await enable();
+    await click(button("Search notebooks"));
+    expect(pickerProps!.space).toBeNull();
+  });
+
+  it("starts a new notebook from New under a prefilled place", async () => {
+    defaultResult = { ...seriesDefault, kind: "history" };
+    await mount({ suggest: suggestOf({ invitedGroups: [coreGroup] }) });
+    await enable();
+    await click(button("New notebook"));
+    expect(text()).toContain("New notebook “Weekly sync” · Core");
+    expect(controller.state.place).toMatchObject({ kind: "new", space: { core: true } });
   });
 
   it("shows the group's last notebook with its reason", async () => {
@@ -400,7 +461,7 @@ describe("the edit surface", () => {
     await mount({ surface: "edit", suggest: suggestOf(), meetingId: "m1" });
     await act(async () => controller.setEnabled(true));
     expect(text()).toContain("Meeting notes");
-    expect(button("Or create a new notebook for this meeting's notes")).toBeUndefined();
+    expect(button("New notebook")).toBeUndefined();
     await click(button("Search notebooks"));
     expect(pickerProps!.newRow).toBeUndefined();
   });
@@ -411,5 +472,96 @@ describe("the edit surface", () => {
     await act(async () => controller.setEnabled(true));
     await click(button("Change"));
     expect(pickerProps!.newRow).toBeUndefined();
+  });
+});
+
+describe("a 1:1 with the viewer's mentee", () => {
+  const pairNotebook = {
+    id: "pair-nb",
+    title: "Mia Chen with Me (F26)",
+    path: "Mentorship ▸ Mentor notebooks",
+    workspaceType: "Lab",
+    workspaceId: null,
+    parentPageId: "f-mentor",
+  };
+  const oneOnOne = (over: Partial<Suggest> = {}) =>
+    suggestOf({
+      attendeeIds: ["mia"],
+      groups: [],
+      viewerId: "me",
+      mentorPairs: [{ menteeId: "mia", menteeName: "Mia Chen" }],
+      ...over,
+    });
+
+  function postReturns(res: { ok: boolean; body?: unknown }) {
+    fetchMock.mockImplementation(async (url: string, init?: { method?: string }) =>
+      init?.method === "POST" ? { ok: res.ok, json: async () => res.body } : { ok: true, json: async () => defaultResult },
+    );
+  }
+
+  it("puts the pair chip first with its reason", async () => {
+    await mount({ suggest: oneOnOne({ attendeeIds: ["a"], groups: [atlasGroup], mentorPairs: [{ menteeId: "a", menteeName: "Ann Lee" }] }) });
+    await enable();
+    expect(chips()).toEqual(["Mentorship · Ann Leeyour mentee", "Atlas1 of 1 attendee"]);
+  });
+
+  it("shows no pair chip for anyone but the mentee, or once a group is invited", async () => {
+    await mount({ suggest: oneOnOne({ attendeeIds: ["zed"] }) });
+    await enable();
+    expect(chips()).toEqual([]);
+    await act(async () => root.render(createElement(Harness, { suggest: oneOnOne({ invitedGroups: [atlasGroup] }) })));
+    expect(chips()).toEqual([]);
+  });
+
+  it("files into the pair notebook on a click, asking the server to make it", async () => {
+    await mount({ suggest: oneOnOne() });
+    await enable();
+    postReturns({ ok: true, body: pairNotebook });
+    await click(button("Mentorship · Mia Chen"));
+    const post = fetchMock.mock.calls.find(([, init]) => init?.method === "POST")!;
+    expect(post[0]).toBe("/api/notebooks/mentorship-pair");
+    expect(JSON.parse(post[1].body)).toEqual({ menteeId: "mia" });
+    expect(controller.state.place).toMatchObject({ kind: "existing", notebook: { id: "pair-nb" } });
+    expect(controller.state.auto).toBe(false);
+    expect(meetingNotePayload(controller.state, inviteOf([]))).toMatchObject({ notebook: { existingId: "pair-nb" } });
+  });
+
+  it("says so when the pair notebook cannot be opened and leaves the place empty", async () => {
+    await mount({ suggest: oneOnOne() });
+    await enable();
+    postReturns({ ok: false });
+    await click(button("Mentorship · Mia Chen"));
+    expect(text()).toContain("Couldn't open that notebook");
+    expect(controller.state.place).toBeNull();
+  });
+
+  it("asks the default endpoint about the mentee", async () => {
+    await mount({ suggest: oneOnOne() });
+    await enable();
+    expect(new URL(String(fetchMock.mock.calls[0]![0]), "http://x").searchParams.get("pairMenteeId")).toBe("mia");
+  });
+
+  it("does not name a mentee to the default endpoint on any other invite", async () => {
+    await mount({ suggest: suggestOf() });
+    await enable();
+    expect(new URL(String(fetchMock.mock.calls[0]![0]), "http://x").searchParams.has("pairMenteeId")).toBe(false);
+  });
+
+  it("starts on the pair notebook when it already exists", async () => {
+    defaultResult = { kind: "pair", notebook: pairNotebook, newPath: "General" };
+    await mount({ suggest: oneOnOne() });
+    await enable();
+    expect(text()).toContain("Mia Chen with Me (F26) · Mentorship ▸ Mentor notebooks");
+    expect(text()).toContain("your mentee");
+    expect(controller.state.auto).toBe(true);
+  });
+
+  it("drops that default when the invite stops being the 1:1", async () => {
+    defaultResult = { kind: "pair", notebook: pairNotebook, newPath: "General" };
+    await mount({ suggest: oneOnOne() });
+    await enable();
+    defaultResult = NEW_DEFAULT;
+    await act(async () => root.render(createElement(Harness, { suggest: oneOnOne({ attendeeIds: ["mia", "zed"] }) })));
+    expect(controller.state.place).toBeNull();
   });
 });
