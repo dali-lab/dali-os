@@ -38,7 +38,7 @@ import type { DriveTreeScope } from "~/lib/drive-scopes.server";
 import type { DriveItem } from "~/lib/drive.server";
 import { DriveBrowser } from "~/components/drive/DriveBrowser";
 import { DriveHome } from "~/components/drive/DriveHome";
-import type { RowActions } from "~/components/drive/DriveBrowser";
+import type { FileDropOptions, RowActions } from "~/components/drive/DriveBrowser";
 import { DriveTagFilter } from "~/components/drive/DriveTagFilter";
 import { FolderPicker } from "~/components/drive/FolderPicker";
 import type { PickerDrive, PickerFolder, Destination } from "~/components/drive/FolderPicker";
@@ -58,6 +58,7 @@ import {
   type DriveHistory,
 } from "~/components/drive/use-drive-history";
 import { useDriveFileUpload } from "~/components/drive/useDriveFileUpload";
+import { DriveUploadInput } from "~/components/drive/DriveUploadInput";
 import type { UploadTarget } from "~/components/drive/useDriveFileUpload";
 import { useDialog } from "~/components/ui/dialog";
 import { useToast } from "~/components/ui/toast";
@@ -1081,7 +1082,7 @@ export function NewMenu({
       )}
       <Menu.Separator />
       <Menu.Item icon={<Upload className="w-3.5 h-3.5" />} disabled={uploading} onSelect={onUploadClick}>
-        <span data-testid={`drive-new-upload-${scope.id}`}>{uploading ? "Uploading…" : "Upload file"}</span>
+        <span data-testid={`drive-new-upload-${scope.id}`}>{uploading ? "Uploading…" : "Upload files"}</span>
       </Menu.Item>
     </Menu>
   );
@@ -1628,19 +1629,19 @@ export default function DriveHub() {
   // Upload for the current scope + folder. Called unconditionally (hook rule);
   // when at the Drive root the target defaults to Lab but the New menu (and thus
   // the upload item) isn't rendered there.
-  const uploadTarget: UploadTarget = useMemo(() => {
+  function uploadTargetFor(folderId: string | null): UploadTarget {
     if (!currentScope) return { scope: { kind: "Lab" } };
-    if (currentScope.id === "mine") return { scope: { kind: "Member" }, folderPageId: currentFolderId };
+    if (currentScope.id === "mine") return { scope: { kind: "Member" }, folderPageId: folderId };
     if (currentScope.id === "lab" || isProcessRootSpace(currentScope.id))
-      return { scope: { kind: "Lab" }, folderPageId: currentFolderId ?? currentScope.rootFolderId ?? null };
+      return { scope: { kind: "Lab" }, folderPageId: folderId ?? currentScope.rootFolderId ?? null };
     if (currentScope.id === "projects" || currentScope.id === "education") {
-      // Resolve the workspace from the current folder. If we can't (e.g. at the
+      // Resolve the workspace from the folder. If we can't (e.g. at the
       // group root), fall back to Lab scope as a safe no-op.
-      const workspaceId = resolveWorkspaceId(currentScope.items, currentFolderId);
+      const workspaceId = resolveWorkspaceId(currentScope.items, folderId);
       if (!workspaceId) return { scope: { kind: "Lab" } };
-      // If currentFolderId IS the synthetic workspace folder, the real parent is null.
-      const node = currentFolderId ? currentScope.items.find((it) => it.id === currentFolderId) : null;
-      const realFolder = node?.parentFolderId === null ? null : currentFolderId;
+      // If the folder IS the synthetic workspace folder, the real parent is null.
+      const node = folderId ? currentScope.items.find((it) => it.id === folderId) : null;
+      const realFolder = node?.parentFolderId === null ? null : folderId;
       // An offering is NOT a project. Sending its id as a projectId is what
       // made every upload into a course Drive fail — 403 for an instructor,
       // "Project not found" for Core.
@@ -1648,12 +1649,21 @@ export default function DriveHub() {
         ? { scope: { kind: "EducationOffering", offeringId: workspaceId }, folderPageId: realFolder }
         : { scope: { kind: "Project", projectId: workspaceId }, folderPageId: realFolder };
     }
-    return { scope: { kind: "Project", projectId: currentScope.id }, folderPageId: currentFolderId };
-  }, [currentScope, currentFolderId]);
+    return { scope: { kind: "Project", projectId: currentScope.id }, folderPageId: folderId };
+  }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const uploadTarget = useMemo(() => uploadTargetFor(currentFolderId), [currentScope, currentFolderId]);
   const { inputRef, uploading, uploadError, handleFileChange, uploadFiles } = useDriveFileUpload(
     uploadTarget,
     () => revalidator.revalidate(),
   );
+  function onDropFiles(files: File[], opts?: FileDropOptions) {
+    const dropped = opts?.folderId ? uploadTargetFor(opts.folderId) : null;
+    void uploadFiles(files, {
+      ...(dropped ? { scope: dropped.scope, folderPageId: dropped.folderPageId ?? null } : {}),
+      skippedFolders: opts?.skippedFolders,
+    });
+  }
 
   const currentActions = effectiveScopeId ? scopeActionsMap.get(effectiveScopeId) : undefined;
 
@@ -1952,7 +1962,7 @@ export default function DriveHub() {
         onBulkMove={(items) => void onBulkMove(items)}
         onMoveToScope={onMoveToScope}
         onSharingChanged={() => revalidator.revalidate()}
-        onUploadFiles={currentScope && currentScope.id !== SHARED_SPACE_KEY ? uploadFiles : undefined}
+        onUploadFiles={currentScope && currentScope.id !== SHARED_SPACE_KEY ? onDropFiles : undefined}
         filterControl={filterControl}
         newMenu={toolbarActions}
         overflowMenu={overflowMenu}
@@ -1968,14 +1978,7 @@ export default function DriveHub() {
       />
 
       {/* Hidden upload input (driven by the New menu) + template picker modal */}
-      <input
-        ref={inputRef}
-        type="file"
-        className="sr-only"
-        aria-hidden="true"
-        tabIndex={-1}
-        onChange={handleFileChange}
-      />
+      <DriveUploadInput inputRef={inputRef} onChange={handleFileChange} />
       <TemplatePicker
         open={templatePickerOpen}
         onClose={() => setTemplatePickerOpen(false)}
