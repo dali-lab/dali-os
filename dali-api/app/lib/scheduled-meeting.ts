@@ -29,6 +29,7 @@ import {
   ensureMeetingNotebook,
   createNotebookTab,
   moveIntoNotebook,
+  trashNotebookIfAbandoned,
   type MeetingNotebookDestination,
 } from "~/lib/pages";
 import { receiversEnabled, resolveFilingFolder, projectSlot, singletonSlot } from "~/lib/drive-receivers.server";
@@ -931,11 +932,23 @@ export async function resolveMeetingNoteTemplate(
 }
 
 /**
- * Seed a blank note from a bound template, if one resolves (see
- * resolveMeetingNoteTemplate). The hash is of what was actually written, so a
- * later "still untouched?" check (isUntouchedTemplate) stays correct even after
- * the template itself is edited.
+ * Fill a blank note with a template's body. The hash is of what was actually
+ * written, so a later "still untouched?" check (isUntouchedTemplate) stays
+ * correct even after the template itself is edited.
  */
+export async function seedPageFromTemplate(notePageId: string, templateId: string): Promise<void> {
+  await copyPageBody(templateId, notePageId);
+  const bodyText = blocksToPlainText(await readDocAsBlocks(pageDocName(notePageId)));
+  await prisma.page.update({
+    where: { id: notePageId },
+    data: {
+      seededFromPageId: templateId,
+      seededTemplateHash: hashTemplateText(normalizeTemplateText(bodyText)),
+    },
+  });
+}
+
+/** Seed a blank note from a bound template, if one resolves (see resolveMeetingNoteTemplate). */
 async function seedNoteFromTemplate(
   notePageId: string,
   projectId: string | null,
@@ -943,16 +956,7 @@ async function seedNoteFromTemplate(
   notebookTemplateId: string | null,
 ): Promise<void> {
   const template = await resolveMeetingNoteTemplate(projectId, meetingType, notebookTemplateId);
-  if (!template) return;
-  await copyPageBody(template.id, notePageId);
-  const bodyText = blocksToPlainText(await readDocAsBlocks(pageDocName(notePageId)));
-  await prisma.page.update({
-    where: { id: notePageId },
-    data: {
-      seededFromPageId: template.id,
-      seededTemplateHash: hashTemplateText(normalizeTemplateText(bodyText)),
-    },
-  });
+  if (template) await seedPageFromTemplate(notePageId, template.id);
 }
 
 /**
@@ -1348,7 +1352,7 @@ async function refileMeetingArtifactToProject(input: {
   meetingTypeLabel: string | null;
   authorId: string;
   startDate: Date | null;
-}): Promise<void> {
+}): Promise<string | null> {
   const dateLabel = formatDateShort(input.startDate ?? new Date());
   const noun = input.isBoard ? "whiteboard" : "meeting note";
   const receivers = await receiversEnabled();
@@ -1376,7 +1380,7 @@ async function refileMeetingArtifactToProject(input: {
       dest: { workspaceType: "Project", workspaceId: input.projectId, parentPageId },
     });
     await moveIntoNotebook(input.pageId, notebook.id, title);
-    return;
+    return notebook.id;
   }
   await prisma.page.update({
     where: { id: input.pageId },
@@ -1394,6 +1398,7 @@ async function refileMeetingArtifactToProject(input: {
       linkPermission: "View",
     },
   });
+  return null;
 }
 
 export type SetMeetingProjectInput = {
@@ -1431,7 +1436,12 @@ export async function setMeetingProject(
       selectedAt: true,
       createdAt: true,
       meetingType: true,
-      notePages: { select: { id: true, kind: true, meetingOccurrenceStart: true } },
+      notebookId: true,
+      notePages: {
+        where: { archivedAt: null },
+        select: { id: true, kind: true, meetingOccurrenceStart: true },
+        orderBy: { meetingOccurrenceStart: "desc" },
+      },
       whiteboardPage: { select: { id: true, kind: true } },
     },
   });
@@ -1470,8 +1480,9 @@ export async function setMeetingProject(
     ...meeting.notePages.map((p) => ({ ...p, date: p.meetingOccurrenceStart ?? meeting.selectedAt })),
     ...(meeting.whiteboardPage ? [{ ...meeting.whiteboardPage, date: meeting.selectedAt }] : []),
   ];
+  let notebookId: string | null = null;
   for (const page of artifacts) {
-    await refileMeetingArtifactToProject({
+    const filedIn = await refileMeetingArtifactToProject({
       meetingId: meeting.id,
       pageId: page.id,
       isBoard: page.kind === "Whiteboard",
@@ -1482,6 +1493,7 @@ export async function setMeetingProject(
       authorId: input.actorId,
       startDate: page.date,
     });
+    notebookId ??= filedIn;
   }
 
   await prisma.scheduledMeeting.update({
@@ -1490,8 +1502,13 @@ export async function setMeetingProject(
       meetingType: input.meetingType,
       meetingTypeLabel,
       projectId: proj.id,
+      ...(notebookId ? { notebookId } : {}),
     },
   });
+  if (notebookId && meeting.notebookId && meeting.notebookId !== notebookId) {
+    await trashNotebookIfAbandoned(meeting.notebookId);
+  }
+  if (artifacts.length > 0) await syncMeetingShares(meeting.id);
 
   // A meeting that had no type yet had no attendance roster — back it up now
   // (idempotent) so the note's checklist has rows. One that already had a type
@@ -2086,6 +2103,16 @@ export async function updateScheduledMeeting(
     if (!occurrenceStart) {
       return { ok: false, error: "occurrenceStart is required for scope=following", status: 400 };
     }
+    let notebook: { existingId: string } | undefined;
+    if (meeting.notebookId) {
+      try {
+        await loadEditableNotebook(meeting.notebookId, meeting.organizerId);
+        notebook = { existingId: meeting.notebookId };
+      } catch (err) {
+        if (!(err instanceof NotebookError)) throw err;
+      }
+    }
+
     const untilDate = new Date(new Date(occurrenceStart).getTime() - 1000);
     const truncatedRule = rruleWithUntil(meeting.recurrenceRule ?? "FREQ=WEEKLY", untilDate);
     if (truncatedRule) {
@@ -2142,14 +2169,23 @@ export async function updateScheduledMeeting(
       description: input.description ?? meeting.description,
       roomIds: input.roomIds ?? meeting.rooms.map((r) => r.id),
       guestEmails: input.guestEmails ?? meeting.guestEmails,
-      // The occurrence at the cut may already hold the old series' note, so
-      // the new series keeps filing into the same notebook and mints none now.
-      notebook: meeting.notebookId ? { existingId: meeting.notebookId } : undefined,
+      notebook,
       createNote: false,
     });
 
     if (!newMeetingResult.ok) {
       return { ok: false, error: newMeetingResult.error, status: 500 };
+    }
+
+    const cutNote = await prisma.page.updateMany({
+      where: { meetingNoteId: meetingId, meetingOccurrenceStart: new Date(occurrenceStart), archivedAt: null },
+      data: {
+        meetingNoteId: newMeetingResult.meeting.id,
+        meetingOccurrenceStart: input.startTime ? new Date(input.startTime) : new Date(occurrenceStart),
+      },
+    });
+    if (cutNote.count > 0) {
+      await Promise.all([syncMeetingShares(meetingId), syncMeetingShares(newMeetingResult.meeting.id)]);
     }
     return { ok: true, meeting: newMeetingResult.meeting, gcalError: newMeetingResult.gcalError };
   }

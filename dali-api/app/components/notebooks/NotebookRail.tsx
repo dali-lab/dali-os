@@ -57,13 +57,13 @@ export type NotebookView = {
 /** Runs a notebook request, then toasts any failure or hands back to `onDone`. */
 function useNotebookRequest() {
   const toast = useToast();
-  return async (req: JsonRequest, onDone?: () => void) => {
+  return async (req: JsonRequest, onDone?: (data: Record<string, unknown> | undefined) => void) => {
     const res = await sendJson(req);
     if (!res.ok) {
       toast.error(res.error ?? "Something went wrong");
       return false;
     }
-    onDone?.();
+    onDone?.(res.data);
     return true;
   };
 }
@@ -122,6 +122,14 @@ function NotebookControls({ notebook }: { notebook: NotebookView }) {
             </button>
           }
         >
+          <Menu.Item
+            icon={<FilePlus className="h-3.5 w-3.5" />}
+            onSelect={() =>
+              void run(notebookRequest(notebook.id, { intent: "new-note" }), (data) => navigate(`/documents/${data?.id}`))
+            }
+          >
+            Blank note
+          </Menu.Item>
           {notebook.nextNotes.map((target) => (
             <Menu.Item
               key={`${target.meetingId}:${target.occurrenceStart}`}
