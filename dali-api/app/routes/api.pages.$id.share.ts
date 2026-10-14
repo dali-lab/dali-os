@@ -59,6 +59,24 @@ async function markViaShortcut<T extends { id: string }>(
   }));
 }
 
+/** Share rows a meeting's roster created or raised, with the first meeting that justifies each. */
+async function markViaMeeting<T extends { id: string }>(
+  shares: T[],
+): Promise<Array<T & { viaMeeting: { meetingTitle: string } | null }>> {
+  if (shares.length === 0) return [];
+  const grants = await prisma.meetingShareGrant.findMany({
+    where: { pageShareId: { in: shares.map((s) => s.id) } },
+    select: { pageShareId: true, meeting: { select: { title: true } } },
+    orderBy: { createdAt: "asc" },
+  });
+  const byShare = new Map<string, string>();
+  for (const g of grants) if (!byShare.has(g.pageShareId)) byShare.set(g.pageShareId, g.meeting.title);
+  return shares.map((s) => ({
+    ...s,
+    viaMeeting: byShare.has(s.id) ? { meetingTitle: byShare.get(s.id)! } : null,
+  }));
+}
+
 export async function action({ request, params }: Route.ActionArgs) {
   const preflight = handlePreflight(request);
   if (preflight) return preflight;
@@ -88,7 +106,7 @@ export async function action({ request, params }: Route.ActionArgs) {
         ]);
         return withCors(
           request,
-          Response.json({ ok: true, context, shares: await markViaShortcut(shares), audience, inherited }),
+          Response.json({ ok: true, context, shares: await markViaMeeting(await markViaShortcut(shares)), audience, inherited }),
         );
       }
       case "share-options": {

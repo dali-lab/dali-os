@@ -21,9 +21,12 @@ import { getUserRoles, isProjectMember } from "~/lib/roles";
 import type { MeetingType } from "~/generated/prisma/client";
 import { isFavorited, recordPageVisit } from "~/lib/user-pages.server";
 import { canManageSharing } from "~/lib/page-share-access.server";
+import { groupIdsForUser } from "~/lib/page-sharing.server";
+import { notebookItemLocation } from "~/lib/note-path.server";
 import { normalizePageTypography } from "~/lib/page-typography";
 import { driveFolderCrumbs } from "~/lib/drive-crumbs.server";
 import { workspaceDriveScope } from "~/lib/drive-crumbs";
+import type { ItemLocation } from "~/components/drive/location";
 import { DocumentEditor } from "~/components/DocumentEditor";
 import { AttendanceChecklist, type AttendanceRow } from "~/components/AttendanceChecklist";
 import { CheckInPanel } from "~/components/CheckInPanel";
@@ -61,8 +64,8 @@ import {
 } from "~/components/meeting-recorder/enhance-plan";
 import { pageDocName } from "~/collab/roomName";
 import { canManageNotebook } from "~/lib/notebooks.server";
-import { nextNoteTarget } from "~/lib/notebook-series.server";
-import { NotebookRail, NotebookChip, type NotebookView } from "~/components/notebooks/NotebookRail";
+import { nextNoteTargets } from "~/lib/notebook-series.server";
+import { NotebookRail, NoteLocationLine, type NotebookView } from "~/components/notebooks/NotebookRail";
 import { redirectToLogin } from "~/lib/login-next";
 import { walletTokensConfigured } from "~/lib/wallet-token";
 import { resolveShortcutTarget } from "~/lib/shortcuts.server";
@@ -149,6 +152,20 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   // before the read-only narrowing above.
   const canRestore = trashed && access.canEdit;
 
+  const editViaMeeting =
+    canEdit &&
+    !(await getPageAccess(auth.user.sub, page, request, { ignoreShares: true })).canEdit &&
+    (await prisma.meetingShareGrant.findFirst({
+      where: {
+        pageId: { in: page.parent?.kind === "Notebook" ? [page.parent.id, page.id] : [page.id] },
+        OR: [
+          { principalType: "User", principalId: auth.user.sub },
+          { principalType: "Group", principalId: { in: await groupIdsForUser(auth.user.sub, request) } },
+        ],
+      },
+      select: { id: true },
+    })) !== null;
+
   // Folder pages are Drive containers, not documents — the doc viewer would
   // render them with an editable body and a document breadcrumb. Send folders to
   // the Drive drilled into that folder, whatever the entry point (breadcrumb
@@ -185,8 +202,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   // The other notes in this one's notebook, newest first, for the side tabs.
   let notebook: NotebookView | null = null;
+  let noteLocation: { location: ItemLocation; tabLabel: string } | null = null;
   if (page.parent?.kind === "Notebook") {
-    const [tabRows, notebookAccess, nextNote, notebookManager] = await Promise.all([
+    const [tabRows, notebookAccess, nextNotes, notebookManager, notebookPlace] = await Promise.all([
       prisma.page.findMany({
         where: { parentPageId: page.parent.id, OR: [{ archivedAt: null }, { id: page.id }] },
         orderBy: { meetingOccurrenceStart: "desc" },
@@ -199,9 +217,14 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         },
       }),
       getPageAccess(auth.user.sub, page.parent, request),
-      nextNoteTarget(page.parent.id),
+      nextNoteTargets(page.parent.id),
       canManageNotebook(auth.user.sub, page.parent, request),
+      notebookItemLocation(page.parent, auth.user.sub, request),
     ]);
+    noteLocation = {
+      location: notebookPlace,
+      tabLabel: page.meetingOccurrenceStart ? formatDateShort(page.meetingOccurrenceStart) : page.title,
+    };
     const tabAccess = await getPageAccessBulk(auth.user.sub, tabRows, request, {
       includeArchived: trashed,
     });
@@ -219,7 +242,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       folderId: page.parent.parentPageId,
       templateId: page.parent.templatePage?.id ?? null,
       projectId: page.parent.workspaceType === "Project" ? page.parent.workspaceId : null,
-      nextNote: canEditNotebook ? nextNote : null,
+      nextNotes: canEditNotebook ? nextNotes : [],
       tabs: visible.map((t) => ({
         id: t.id,
         label: t.meetingOccurrenceStart ? formatDateShort(t.meetingOccurrenceStart) : t.title,
@@ -439,6 +462,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     subtitle: presenceUser?.subtitle ?? null,
     attendance,
     notebook,
+    noteLocation,
+    editViaMeeting,
     notebookConversion:
       canEdit &&
       page.kind === "FreeForm" &&
@@ -631,6 +656,8 @@ export default function DocumentPage() {
     updatedAt,
     attendance,
     notebook,
+    noteLocation,
+    editViaMeeting,
     notebookConversion,
     backlinks,
     trashed,
@@ -972,7 +999,15 @@ export default function DocumentPage() {
                   checkInQrSvg={attendance.checkInQrSvg}
                 />
               )}
-              {notebook && notebook.tabs.length <= 1 && <NotebookChip notebook={notebook} />}
+              {notebook && noteLocation && (
+                <NoteLocationLine
+                  notebook={notebook}
+                  location={noteLocation.location}
+                  tabLabel={noteLocation.tabLabel}
+                  editViaMeeting={editViaMeeting}
+                  showControls={notebook.tabs.length <= 1}
+                />
+              )}
               {notebook && notebook.tabs.length > 1 ? (
                 <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
                   <NotebookRail notebook={notebook} currentId={pageId} />

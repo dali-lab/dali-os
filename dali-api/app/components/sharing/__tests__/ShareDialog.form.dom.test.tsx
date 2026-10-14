@@ -191,3 +191,48 @@ describe("ShareDialog form Copy link", () => {
     expect(writeText).toHaveBeenCalledWith(`${window.location.origin}/documents/f1`);
   });
 });
+
+describe("ShareDialog meeting-granted rows", () => {
+  function stubMeetingShares() {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, init?: RequestInit) => {
+        const body = Object.fromEntries((init?.body as FormData).entries()) as Record<string, string>;
+        if (body.intent === "state") {
+          return new Response(
+            JSON.stringify({
+              context: { linkAccess: "Restricted", linkPermission: "View", page: { workspaceType: "Lab", kind: "Notebook" }, owner: null },
+              shares: [
+                { id: "s1", principalType: "User", principalId: "u2", permission: "Edit", label: "Ada Lovelace", viaMeeting: { meetingTitle: "Weekly sync" } },
+                { id: "s2", principalType: "User", principalId: "u3", permission: "View", label: "Grace Hopper", viaMeeting: null },
+              ],
+              audience: null,
+              inherited: null,
+            }),
+          );
+        }
+        return new Response(JSON.stringify({ groups: [], members: [] }));
+      }),
+    );
+  }
+
+  it("names the meeting, locks the role and hides remove", async () => {
+    stubMeetingShares();
+    await mount();
+
+    const via = document.querySelector('[data-testid="share-via-meeting"]') as HTMLElement;
+    expect(via.textContent).toBe("via meeting Weekly sync");
+    expect(via.getAttribute("title")).toBe("Added because they're on the meeting. Uninviting removes it.");
+    expect(byLabel("Access level for Ada Lovelace")!.disabled).toBe(true);
+    expect(byLabel("Remove Ada Lovelace")).toBeNull();
+  });
+
+  it("leaves an ordinary row editable and removable", async () => {
+    stubMeetingShares();
+    await mount();
+
+    expect(document.querySelectorAll('[data-testid="share-via-meeting"]')).toHaveLength(1);
+    expect(byLabel("Access level for Grace Hopper")!.disabled).toBe(false);
+    expect(byLabel("Remove Grace Hopper")).toBeTruthy();
+  });
+});

@@ -277,6 +277,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     // The meeting keeps notes, so this occurrence's doc is made on demand.
     canOpenNote: (meeting.meetingType != null && meeting.notePages.length > 0) || liveNotebook !== null,
     notebook: liveNotebook,
+    recurring: meeting.recurrenceRule !== null,
     whiteboardPageId: meeting.whiteboardPage?.id ?? null,
     // Adding a whiteboard is the same authority as adding a note. hasType lets
     // the add flow skip the About/type step when the meeting already knows it.
@@ -884,7 +885,7 @@ export default function CalendarMeetingPage() {
           onClose={() => setNotebookPickerOpen(false)}
           onPick={(picked) => {
             setNotebookPickerOpen(false);
-            void seriesNotebook.changeNotebook(d.meetingId, picked.id);
+            void seriesNotebook.changeNotebook(d.meetingId, picked, { recurring: d.recurring });
           }}
         />
       )}

@@ -75,6 +75,22 @@ describe("listNotebooks", () => {
     expect(out.map((r) => r.id).sort()).toEqual(["a", "c"]);
   });
 
+  it("scans only the workspace asked for", async () => {
+    await listNotebooks({ actorId: "u1", space: { workspaceType: "Project", workspaceId: "p1" } });
+
+    expect(m.page.findMany.mock.calls[0][0].where).toMatchObject({
+      kind: "Notebook",
+      workspaceType: "Project",
+      workspaceId: "p1",
+    });
+  });
+
+  it("scans every workspace when none is asked for", async () => {
+    await listNotebooks({ actorId: "u1" });
+
+    expect(m.page.findMany.mock.calls[0][0].where).not.toHaveProperty("workspaceType");
+  });
+
   it("returns nothing, and runs no further queries, when none are editable", async () => {
     m.page.findMany.mockResolvedValueOnce([nb("a")]);
     access([], ["a"]);

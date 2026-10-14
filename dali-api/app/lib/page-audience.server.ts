@@ -8,6 +8,7 @@
 import { prisma } from "~/lib/db";
 import { findGoverningScopeFor, governingScopeMap, type AncestorRow } from "~/lib/pageAccess.server";
 import { PERMISSION_RANK } from "~/lib/page-sharing.server";
+import { resolveGroupMembers } from "~/lib/groups";
 import type { SharePermission } from "~/generated/prisma/client";
 import type { Audience, AudiencePermission, AudiencePerson, InheritedScope } from "~/lib/page-audience";
 
@@ -56,6 +57,27 @@ function highest(perms: SharePermission[]): AudiencePermission {
   return tier(best, "View");
 }
 
+async function countMeetingEditors(pageIds: string[]): Promise<Map<string, number>> {
+  const grants = await prisma.meetingShareGrant.findMany({
+    where: { pageId: { in: pageIds } },
+    select: { pageId: true, principalType: true, principalId: true },
+  });
+  const groupIds = [...new Set(grants.filter((g) => g.principalType === "Group").map((g) => g.principalId))];
+  const sizes = new Map(
+    await Promise.all(groupIds.map(async (id) => [id, (await resolveGroupMembers(id)).length] as const)),
+  );
+  const counts = new Map<string, number>();
+  const seen = new Set<string>();
+  for (const g of grants) {
+    const key = `${g.pageId}:${g.principalType}:${g.principalId}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const size = g.principalType === "User" ? 1 : (sizes.get(g.principalId) ?? 0);
+    counts.set(g.pageId, (counts.get(g.pageId) ?? 0) + size);
+  }
+  return counts;
+}
+
 type ShareRow = { pageId: string; principalType: string; principalId: string; permission: SharePermission };
 
 export async function summarizeAudience(
@@ -91,6 +113,8 @@ export async function summarizeAudience(
       : Promise.resolve([] as { id: string; name: string }[]),
   ]);
 
+  const meetingEditors = await countMeetingEditors(rows.map((r) => r.id));
+
   const sharesByPage = new Map<string, ShareRow[]>();
   for (const s of shareRows) {
     const list = sharesByPage.get(s.pageId);
@@ -113,6 +137,7 @@ export async function summarizeAudience(
       ...(shares.length > 0 ? { count: shares.length } : {}),
       ...(viaScope && inheritedFrom ? { inheritedFrom } : {}),
       ...(canManage ? { canManage: true } : {}),
+      ...(meetingEditors.get(row.id) ? { meetingEditors: meetingEditors.get(row.id) } : {}),
     };
     return { row, shares, audience, canManage };
   });

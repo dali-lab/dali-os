@@ -75,7 +75,7 @@ describe("POST /api/pages/:id/share state", () => {
     expect(await res.json()).toEqual({
       ok: true,
       context: CONTEXT,
-      shares: SHARES.map((s) => ({ ...s, viaShortcut: null })),
+      shares: SHARES.map((s) => ({ ...s, viaShortcut: null, viaMeeting: null })),
       audience,
       inherited,
     });
@@ -105,11 +105,33 @@ describe("POST /api/pages/:id/share state", () => {
     );
   });
 
+  it("marks a share a meeting's roster created with the first meeting that justifies it", async () => {
+    vi.mocked(listPageShares).mockResolvedValue([
+      ...SHARES,
+      { id: "s2", principalType: "User", principalId: "u3", permission: "Edit", label: "Grace" },
+    ] as never);
+    vi.mocked(prisma.meetingShareGrant.findMany).mockResolvedValue([
+      { pageShareId: "s2", meeting: { title: "Weekly sync" } },
+      { pageShareId: "s2", meeting: { title: "Retro" } },
+    ] as never);
+
+    const body = await (await run("state")).json();
+
+    expect(body.shares.map((s: { id: string; viaMeeting: unknown }) => [s.id, s.viaMeeting])).toEqual([
+      ["s1", null],
+      ["s2", { meetingTitle: "Weekly sync" }],
+    ]);
+    expect(prisma.meetingShareGrant.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { pageShareId: { in: ["s1", "s2"] } } }),
+    );
+  });
+
   it("asks nothing of the database when nobody has the page shared", async () => {
     vi.mocked(listPageShares).mockResolvedValue([]);
     const body = await (await run("state")).json();
     expect(body.shares).toEqual([]);
     expect(prisma.page.findMany).not.toHaveBeenCalled();
+    expect(prisma.meetingShareGrant.findMany).not.toHaveBeenCalled();
   });
 
   it("sends inherited: null when nothing governs the page", async () => {
