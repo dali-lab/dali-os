@@ -6,6 +6,7 @@
 
 import { randomUUID } from "node:crypto";
 import { prisma } from "~/lib/db";
+import { createForm } from "~/forms/lib/form-page.server";
 import { ensureOfferingFormsFolder } from "~/lib/pages";
 import { ensureProcessFolder, CORE_PROCESS_ID } from "~/lib/bindings.server";
 import { filingFolderOr, singletonSlot } from "~/lib/drive-receivers.server";
@@ -99,8 +100,8 @@ export async function ensureEducationTemplates(actorId: string): Promise<void> {
       });
       continue;
     }
-    await prisma.form.create({
-      data: {
+    await createForm(
+      {
         name,
         templateKey: TEMPLATE_KEYS[type],
         folderPageId,
@@ -113,7 +114,7 @@ export async function ensureEducationTemplates(actorId: string): Promise<void> {
           },
         },
       },
-    });
+    );
   }
 }
 
@@ -147,8 +148,8 @@ export async function createOfferingApplicationForm(
   const questions = (templateVersion?.questions as unknown as Question[]) ?? defaultQuestions(offering.type);
 
   const folderPageId = await ensureOfferingFormsFolder(offering.id, actorId);
-  const form = await prisma.form.create({
-    data: {
+  const form = await createForm(
+    {
       name: `${offering.title} — Application`,
       folderPageId,
       createdById: actorId,
@@ -161,8 +162,8 @@ export async function createOfferingApplicationForm(
         },
       },
     },
-    select: { id: true },
-  });
+    { id: true },
+  );
   await prisma.educationOffering.update({
     where: { id: offeringId },
     data: { applicationFormId: form.id },

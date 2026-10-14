@@ -12,6 +12,7 @@
 // Restore/purge require the same level of access as deletion (edit access for
 // pages; canViewForms for forms; file owner/core for files).
 
+import { deleteForm, setFormArchived } from "~/forms/lib/form-page.server";
 import type { Route } from "./+types/api.drive.trash";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
@@ -83,10 +84,14 @@ export async function loader({ request }: Route.LoaderArgs) {
   // One batched access resolution instead of N sequential getPageAccess calls.
   // includeArchived: every page here is archived by definition, so the default
   // deny would empty the whole listing.
-  const pageAccess = await getPageAccessBulk(userId, archivedPages, request, {
-    includeArchived: true,
-  });
+  const pageAccess = await getPageAccessBulk(
+    userId,
+    archivedPages.filter((p) => p.kind !== "Form"),
+    request,
+    { includeArchived: true },
+  );
   const accessiblePages = archivedPages
+    .filter((p) => p.kind !== "Form")
     .filter((p) => pageAccess.get(p.id)?.canView)
     .slice(0, PER_TYPE_LIMIT);
 
@@ -118,14 +123,10 @@ export async function loader({ request }: Route.LoaderArgs) {
     .filter((_, i) => fileAccess[i])
     .slice(0, PER_TYPE_LIMIT);
 
-  // Archived forms — canViewForms gate is sufficient (organisation-only placement).
+  // Archived forms are pages, but the canViewForms gate (not page access) decides
+  // who sees them: organisation-only placement.
   const archivedForms = userCanViewForms
-    ? await prisma.form.findMany({
-        where: { archivedAt: { not: null } },
-        select: { id: true, name: true, archivedAt: true },
-        orderBy: { archivedAt: "desc" },
-        take: PER_TYPE_LIMIT,
-      })
+    ? archivedPages.filter((p) => p.kind === "Form").slice(0, PER_TYPE_LIMIT)
     : [];
 
   const items = [
@@ -146,7 +147,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     ...archivedForms.map((f) => ({
       id: f.id,
       type: "form" as const,
-      title: f.name,
+      title: f.title,
       parentFolderId: null,
       archivedAt: f.archivedAt!.toISOString(),
     })),
@@ -189,7 +190,7 @@ export async function action({ request }: Route.ActionArgs) {
       // Already archived — idempotent.
       return withCors(request, Response.json({ ok: true }));
     }
-    await prisma.form.update({ where: { id }, data: { archivedAt: new Date() } });
+    await setFormArchived(id, new Date());
     return withCors(request, Response.json({ ok: true }));
   }
 
@@ -200,7 +201,7 @@ export async function action({ request }: Route.ActionArgs) {
     if (type === "form") {
       const userCanViewForms = await checkCanViewForms(userId, request);
       if (!userCanViewForms) return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
-      await prisma.form.update({ where: { id }, data: { archivedAt: null } });
+      await setFormArchived(id, null);
     } else if (type === "file") {
       const file = await prisma.projectFile.findUnique({
         where: { id },
@@ -248,7 +249,7 @@ export async function action({ request }: Route.ActionArgs) {
           ),
         );
       }
-      await prisma.form.delete({ where: { id } });
+      await deleteForm(id);
     } else if (type === "file") {
       const file = await prisma.projectFile.findUnique({
         where: { id },
@@ -271,12 +272,11 @@ export async function action({ request }: Route.ActionArgs) {
       // A folder's children carry an onDelete: SetNull parent link, so a hard
       // delete would silently re-home everything inside it to the drive root.
       // Purge the contents first, or move them out.
-      const [childPages, childFiles, childForms] = await Promise.all([
+      const [childPages, childFiles] = await Promise.all([
         prisma.page.count({ where: { parentPageId: id } }),
         prisma.projectFile.count({ where: { folderPageId: id } }),
-        prisma.form.count({ where: { folderPageId: id } }),
       ]);
-      const held = childPages + childFiles + childForms;
+      const held = childPages + childFiles;
       if (held > 0) {
         return withCors(
           request,

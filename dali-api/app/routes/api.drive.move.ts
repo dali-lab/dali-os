@@ -15,6 +15,7 @@
 // item. Access rules in `drive.server.ts` and in the forms fill routes are
 // unchanged by this write.
 
+import { moveForm } from "~/forms/lib/form-page.server";
 import type { Route } from "./+types/api.drive.move";
 import { z } from "zod";
 import { prisma } from "~/lib/db";
@@ -135,10 +136,7 @@ export async function action({ request }: Route.ActionArgs) {
     });
   } else {
     // form — agreements and rubrics are rejected by the guard above.
-    await prisma.form.update({
-      where: { id: itemId },
-      data: { folderPageId: destFolderPageId },
-    });
+    await moveForm(itemId, destFolderPageId);
   }
 
   await logAuditEvent({

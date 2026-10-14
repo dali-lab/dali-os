@@ -8,6 +8,7 @@
 //   form         — canViewForms (Core/Admin/Instructor)
 //   Destination folder — getPageAccess(...).canEdit (or null to unplace)
 
+import { moveForm } from "~/forms/lib/form-page.server";
 import { prisma } from "~/lib/db";
 import { isCore, isProjectMember, canViewForms } from "~/lib/roles";
 import { getPageAccess } from "~/lib/pageAccess.server";
@@ -89,7 +90,7 @@ export async function runMoveDriveItem(callerId: string, input: Input) {
   if (itemType === "file") {
     await prisma.projectFile.update({ where: { id: itemId }, data: { folderPageId: destFolderPageId } });
   } else {
-    await prisma.form.update({ where: { id: itemId }, data: { folderPageId: destFolderPageId } });
+    await moveForm(itemId, destFolderPageId);
   }
 
   await logAuditEvent({

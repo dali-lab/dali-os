@@ -162,6 +162,9 @@ function summarizeOne(
   if (row.linkAccess === "LabMembers") {
     return { kind: "lab", label: "Everyone in the lab", permission: tier(row.linkPermission, "View") };
   }
+  if (row.linkAccess === "SignedIn") {
+    return { kind: "public", label: "Anyone signed in", permission: tier(row.linkPermission, "View") };
+  }
 
   const ownerLabel = row.createdById === viewerId ? "Only you" : "Owner only";
 

@@ -258,7 +258,7 @@ async function searchDocuments(q: string, like: Like): Promise<SearchResult[]> {
   // where they were and only adds documents search used to miss entirely.
   const [rows, contentHits] = await Promise.all([
     prisma.page.findMany({
-      where: { archivedAt: null, title: like },
+      where: { archivedAt: null, kind: { not: "Form" }, title: like },
       select: { id: true, title: true, iconEmoji: true },
       take: RAW_TAKE,
     }),
@@ -357,7 +357,7 @@ async function searchGroups(q: string, like: Like): Promise<SearchResult[]> {
 
 async function searchForms(q: string, like: Like): Promise<SearchResult[]> {
   const rows = await prisma.form.findMany({
-    where: { name: like },
+    where: { name: like, archivedAt: null },
     select: { id: true, name: true },
     take: RAW_TAKE,
   });

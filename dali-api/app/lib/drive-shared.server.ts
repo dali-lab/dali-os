@@ -9,7 +9,7 @@ import { groupIdsForUser } from "~/lib/page-sharing.server";
 
 /** A shared Folder would open onto children this flat space never loads, so
  *  only leaf pages are listed. */
-const SHARED_KINDS = DRIVE_PAGE_KINDS.filter((k) => k !== "Folder");
+const SHARED_KINDS = DRIVE_PAGE_KINDS.filter((k) => k !== "Folder" && k !== "Form");
 
 const MAX_ROWS = 500;
 

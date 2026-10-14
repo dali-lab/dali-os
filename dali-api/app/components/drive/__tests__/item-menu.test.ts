@@ -28,6 +28,19 @@ describe("menuEntries", () => {
     expect(menuEntries(item("folder"), { ...all, partner: false })).toContain("file-in");
   });
 
+  it("offers Favorite on a form, but never Share", () => {
+    const entries = menuEntries(item("form"), all);
+    expect(entries).toContain("favorite");
+    expect(entries).not.toContain("share");
+    expect(menuEntries(item("form"), { ...all, favorite: false })).not.toContain("favorite");
+  });
+
+  it("still offers no Favorite on a file, agreement or rubric", () => {
+    for (const type of ["file", "agreement", "rubric"]) {
+      expect(menuEntries(item(type), all)).not.toContain("favorite");
+    }
+  });
+
   it("leaves them out when the item can't be filed", () => {
     expect(menuEntries(item("doc"), { ...all, fileIn: false })).not.toContain("file-in");
     expect(menuEntries(item("file"), { ...all, fileIn: false })).not.toContain("add-shortcut");

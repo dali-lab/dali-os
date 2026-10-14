@@ -1567,10 +1567,10 @@ export default function DriveHub() {
     [navigate, driveScopes, onNavigate, effectiveScopeId],
   );
 
-  // Toggle the viewer's personal favorite on a page item (doc/folder).
+  // Toggle the viewer's personal favorite on a page item (doc/folder/form).
   const onToggleFavorite = useCallback(
     async (item: DriveItem) => {
-      if (item.type !== "doc" && item.type !== "folder") return;
+      if (item.type !== "doc" && item.type !== "folder" && item.type !== "form") return;
       await fetch(`/api/pages/${item.id}/favorite`, {
         method: "POST",
         credentials: "include",

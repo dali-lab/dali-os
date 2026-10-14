@@ -137,18 +137,17 @@ export async function action({ request, params }: Route.ActionArgs) {
     }
     if (page.kind === "Folder") {
       // "Empty" has to mean empty of everything a folder can hold, not just of
-      // sub-pages. Files, forms, agreements and rubrics are filed by
-      // folderPageId, and archiving the folder out from under them leaves rows
-      // pointing at a dead parent — which only forms have a safety net for
-      // (loadOrphanForms). Everything else would be silently unreachable.
-      const [pages, files, forms, agreements, rubrics] = await Promise.all([
+      // sub-pages. Files, agreements and rubrics are filed by folderPageId, and
+      // archiving the folder out from under them leaves rows pointing at a dead
+      // parent, which would be silently unreachable. Forms are pages, so they
+      // are counted with the sub-pages.
+      const [pages, files, agreements, rubrics] = await Promise.all([
         prisma.page.count({ where: { parentPageId: pageId, archivedAt: null } }),
         prisma.projectFile.count({ where: { folderPageId: pageId, archivedAt: null } }),
-        prisma.form.count({ where: { folderPageId: pageId, archivedAt: null } }),
         prisma.signingDocument.count({ where: { folderPageId: pageId, archivedAt: null } }),
         prisma.rubric.count({ where: { folderPageId: pageId } }),
       ]);
-      const total = pages + files + forms + agreements + rubrics;
+      const total = pages + files + agreements + rubrics;
       if (total > 0) {
         return withCors(
           request,

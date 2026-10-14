@@ -8,6 +8,8 @@ import {
   createOfferingApplicationForm,
 } from "~/education/lib/application-form.server";
 
+const mockCreateForm = vi.hoisted(() => vi.fn());
+vi.mock("~/forms/lib/form-page.server", () => ({ createForm: mockCreateForm }));
 vi.mock("~/lib/db", () => ({
   prisma: {
     form: { findFirst: vi.fn(), create: vi.fn(), updateMany: vi.fn(), count: vi.fn() },
@@ -79,16 +81,16 @@ describe("ensureEducationTemplates", () => {
       }),
     );
     // Templates already exist (beforeEach) → the create loop is a no-op.
-    expect(mockPrisma.form.create).not.toHaveBeenCalled();
+    expect(mockCreateForm).not.toHaveBeenCalled();
   });
 
   it("creates a missing template form in the binding folder", async () => {
     mockPrisma.form.findFirst.mockResolvedValue(null);
-    mockPrisma.form.create.mockResolvedValue({ id: "tmpl-new" });
+    mockCreateForm.mockResolvedValue({ id: "tmpl-new" });
 
     await ensureEducationTemplates("actor");
 
-    const created = mockPrisma.form.create.mock.calls[0][0].data;
+    const created = mockCreateForm.mock.calls[0][0];
     expect(created.folderPageId).toBe("education-templates-folder");
   });
 
@@ -104,16 +106,16 @@ describe("ensureEducationTemplates", () => {
         { templateKey: "education-template-workshop" },
       ]),
     );
-    expect(mockPrisma.form.create).not.toHaveBeenCalled();
+    expect(mockCreateForm).not.toHaveBeenCalled();
   });
 
   it("stamps the templateKey on each template it creates", async () => {
     mockPrisma.form.findFirst.mockResolvedValue(null);
-    mockPrisma.form.create.mockResolvedValue({ id: "tmpl-new" });
+    mockCreateForm.mockResolvedValue({ id: "tmpl-new" });
 
     await ensureEducationTemplates("actor");
 
-    const keys = mockPrisma.form.create.mock.calls.map((c) => c[0].data.templateKey);
+    const keys = mockCreateForm.mock.calls.map((c) => c[0].templateKey);
     expect(keys).toHaveLength(3);
     expect(keys).toEqual(
       expect.arrayContaining([
@@ -135,13 +137,13 @@ describe("createOfferingApplicationForm", () => {
     });
     // ensureEducationTemplates: managed folder present, templates already exist.
     mockPrisma.page.findUnique.mockResolvedValue({ id: "managed-folder" });
-    mockPrisma.form.create.mockResolvedValue({ id: "new-form" });
+    mockCreateForm.mockResolvedValue({ id: "new-form" });
 
     const id = await createOfferingApplicationForm("off-1", "actor");
 
     expect(id).toBe("new-form");
     expect(ensureOfferingFormsFolder).toHaveBeenCalledWith("off-1", "actor");
-    const created = mockPrisma.form.create.mock.calls[0][0].data;
+    const created = mockCreateForm.mock.calls[0][0];
     expect(created.folderPageId).toBe("offering-forms-folder");
     expect(created.name).toContain("PM Miniseries 26F");
     expect(mockPrisma.educationOffering.update).toHaveBeenCalledWith({
@@ -161,13 +163,13 @@ describe("createOfferingApplicationForm", () => {
       id: "tmpl",
       versions: [{ id: "v1", questions: [{ key: "q", type: "text", required: false, data: { label: "Q" } }], intro: "hi" }],
     });
-    mockPrisma.form.create.mockResolvedValue({ id: "new-form" });
+    mockCreateForm.mockResolvedValue({ id: "new-form" });
 
     await createOfferingApplicationForm("off-1", "actor");
 
     const templateLookup = mockPrisma.form.findFirst.mock.calls.at(-1)![0];
     expect(templateLookup.where).toEqual({ templateKey: "education-template-fellowship" });
-    const created = mockPrisma.form.create.mock.calls[0][0].data;
+    const created = mockCreateForm.mock.calls[0][0];
     expect(created.versions.create.intro).toBe("hi");
   });
 
@@ -179,7 +181,7 @@ describe("createOfferingApplicationForm", () => {
       applicationFormId: "existing",
     });
     await expect(createOfferingApplicationForm("off-1", "actor")).resolves.toBe("existing");
-    expect(mockPrisma.form.create).not.toHaveBeenCalled();
+    expect(mockCreateForm).not.toHaveBeenCalled();
     expect(ensureOfferingFormsFolder).not.toHaveBeenCalled();
   });
 });
@@ -188,7 +190,7 @@ describe("ensureEducationTemplates with receiver folders on", () => {
   it("files templates via the Core EducationTemplates slot, not the binding", async () => {
     receivers.on = true;
     mockPrisma.form.findFirst.mockResolvedValue(null);
-    mockPrisma.form.create.mockResolvedValue({ id: "t" });
+    mockCreateForm.mockResolvedValue({ id: "t" });
 
     await ensureEducationTemplates("actor");
 
@@ -198,6 +200,6 @@ describe("ensureEducationTemplates with receiver folders on", () => {
       expect.any(Function),
     );
     expect(ensureProcessFolder).not.toHaveBeenCalled();
-    expect(mockPrisma.form.create.mock.calls[0][0].data.folderPageId).toBe("receiver-folder");
+    expect(mockCreateForm.mock.calls[0][0].folderPageId).toBe("receiver-folder");
   });
 });

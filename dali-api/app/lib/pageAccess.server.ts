@@ -192,6 +192,9 @@ async function shareAndLinkGrant(
     if (await isLabMember(userSub, request)) {
       level = higher(level, (page.linkPermission as SharePermission | null | undefined) ?? "View");
     }
+  } else if (linkAccess === "SignedIn") {
+    // getPageAccess only ever runs for an authenticated account.
+    level = higher(level, (page.linkPermission as SharePermission | null | undefined) ?? "View");
   } else if (linkAccess === "Public") {
     level = higher(level, "View");
   }

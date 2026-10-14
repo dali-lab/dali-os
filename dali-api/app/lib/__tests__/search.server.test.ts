@@ -330,3 +330,32 @@ describe("runSearch — help articles", () => {
     expect(help.map((r) => r.id)).toContain("mcp");
   });
 });
+
+describe("runSearch — forms", () => {
+  const FORMS_VIEWER: UserRoles = { ...MEMBER, canViewForms: true };
+
+  it("searches only live forms, so a trashed one never matches", async () => {
+    mockPrisma.form.findMany.mockResolvedValue([{ id: "frm1", name: "Query intake" }]);
+
+    const results = await runSearch({ userId: "u1", roles: FORMS_VIEWER, q: "query" });
+
+    expect(mockPrisma.form.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { name: like("query"), archivedAt: null } }),
+    );
+    expect(results).toContainEqual(expect.objectContaining({ type: "form", id: "frm1", subtitle: "Form" }));
+  });
+
+  it("does not search forms for a viewer without the forms gate", async () => {
+    await runSearch({ userId: "u1", roles: MEMBER, q: "query" });
+    expect(mockPrisma.form.findMany).not.toHaveBeenCalled();
+  });
+
+  it("keeps Form pages out of the page-title search so a form is not listed twice or leaked", async () => {
+    await runSearch({ userId: "u1", roles: MEMBER, q: "query" });
+    expect(mockPrisma.page.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { archivedAt: null, kind: { not: "Form" }, title: like("query") },
+      }),
+    );
+  });
+});

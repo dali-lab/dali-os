@@ -55,6 +55,7 @@ const PAGE_SELECT = {
   ...PAGE_ACCESS_SELECT,
   title: true,
   iconEmoji: true,
+  kind: true,
 } as const;
 
 async function viewable<T extends { page: PageShape }>(
@@ -172,7 +173,7 @@ async function computeFavoritesAndRecents(userId: string, request?: Request): Pr
     iconEmoji: (row.page.iconEmoji as string | null) ?? null,
     workspaceType: String(row.page.workspaceType),
     favorited,
-    href: `/documents/${row.page.id}`,
+    href: (row.page as { kind?: string }).kind === "Form" ? `/forms/edit/${row.page.id}` : `/documents/${row.page.id}`,
     isRoute: false,
     iconKind: "page",
   });
