@@ -2639,11 +2639,33 @@ model ScheduledMeeting {
   timeEntries   TimeEntry[]
   timeProposals MeetingTimeProposal[]
   recordings    MeetingRecording[]
+  shareGrants   MeetingShareGrant[]
 
   createdAt DateTime @default(now())
 
   @@index([iCalUID])
   @@index([notebookId])
+}
+
+// A PageShare a meeting justifies on its notebook, so uninviting removes
+// exactly what the meeting added. createdShare = this sync created the share
+// row (vs. raised or reused an existing one).
+model MeetingShareGrant {
+  id                 String             @id @default(cuid())
+  scheduledMeetingId String
+  pageId             String
+  principalType      SharePrincipalType
+  principalId        String
+  pageShareId        String
+  createdShare       Boolean
+  createdAt          DateTime           @default(now())
+
+  meeting   ScheduledMeeting @relation(fields: [scheduledMeetingId], references: [id], onDelete: Cascade)
+  pageShare PageShare        @relation(fields: [pageShareId], references: [id], onDelete: Cascade)
+
+  @@unique([scheduledMeetingId, pageId, principalType, principalId])
+  @@index([pageId, principalType, principalId])
+  @@index([pageShareId])
 }
 
 enum ScopeType {
@@ -5539,6 +5561,8 @@ model PageShare {
 
   // Shortcuts whose placement created this share (Page.grantShareId).
   grantedShortcuts Page[] @relation("ShortcutGrantShare")
+
+  meetingGrants MeetingShareGrant[]
 
   @@unique([pageId, principalType, principalId])
   @@index([principalType, principalId])

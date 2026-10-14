@@ -17,6 +17,7 @@ import {
   pageDepth,
 } from "~/lib/pages";
 import { resolveMeetingOccurrence } from "~/lib/scheduled-meeting";
+import { removeMeetingShares, syncMeetingShares } from "~/lib/meeting-shares.server";
 
 // A notebook is a Page of kind Notebook with no body; its tabs are its child
 // pages. Renaming one is the ordinary page rename (POST /api/documents/:id), so
@@ -395,6 +396,7 @@ export async function attachNote(
   }
 
   if (!meeting.notebookId) return { movedIntoNotebook: false };
+  await syncMeetingShares(meeting.id);
   if (page.parentPageId === meeting.notebookId) return { movedIntoNotebook: false };
   try {
     await addToNotebook(pageId, meeting.notebookId, actorId);
@@ -427,6 +429,7 @@ export async function setSeriesNotebook(
   if (notebookId) await loadEditableNotebook(notebookId, actorId);
 
   await prisma.scheduledMeeting.update({ where: { id: meeting.id }, data: { notebookId } });
+  await syncMeetingShares(meeting.id);
   if (options.scope !== "all" || !notebookId) return { moved: 0, skipped: 0 };
 
   const notes = await prisma.page.findMany({
@@ -462,8 +465,10 @@ export async function mergeNotebooks(sourceId: string, targetId: string, actorId
     select: { id: true },
   });
   for (const tab of tabs) await moveIntoNotebook(tab.id, targetId);
+  const meetings = await prisma.scheduledMeeting.findMany({ where: { notebookId: sourceId }, select: { id: true } });
   await prisma.scheduledMeeting.updateMany({ where: { notebookId: sourceId }, data: { notebookId: targetId } });
   await prisma.page.update({ where: { id: sourceId }, data: retireData(source) });
+  for (const m of meetings) await syncMeetingShares(m.id);
   return { moved: tabs.length };
 }
 
@@ -472,13 +477,14 @@ export async function mergeNotebooks(sourceId: string, targetId: string, actorId
 export async function dissolveNotebook(notebookId: string, actorId: string): Promise<{ moved: number }> {
   const notebook = await loadManageableNotebook(notebookId, actorId);
   await assertCanEditFolder(notebook.parentPageId, actorId);
-  const [tabs, base] = await Promise.all([
+  const [tabs, base, meetings] = await Promise.all([
     prisma.page.findMany({
       where: { parentPageId: notebookId, archivedAt: null },
       orderBy: [{ meetingOccurrenceStart: "asc" }, { position: "asc" }],
       select: { id: true },
     }),
     nextPosition(notebook.workspaceType, notebook.workspaceId, notebook.parentPageId),
+    prisma.scheduledMeeting.findMany({ where: { notebookId }, select: { id: true } }),
   ]);
   await prisma.$transaction([
     ...tabs.map((tab, index) =>
@@ -490,6 +496,7 @@ export async function dissolveNotebook(notebookId: string, actorId: string): Pro
     prisma.scheduledMeeting.updateMany({ where: { notebookId }, data: { notebookId: null } }),
     prisma.page.update({ where: { id: notebookId }, data: retireData(notebook) }),
   ]);
+  for (const m of meetings) await removeMeetingShares(m.id);
   return { moved: tabs.length };
 }
 
@@ -498,10 +505,13 @@ export async function dissolveNotebook(notebookId: string, actorId: string): Pro
 export async function trashNotebook(notebookId: string, actorId: string): Promise<void> {
   await loadManageableNotebook(notebookId, actorId);
   const subtree = await collectSubtree(notebookId);
-  // The series keeps pointing at the notebook: reads skip an archived one, and
-  // a restore re-attaches without anyone re-picking.
-  await prisma.page.updateMany({
-    where: { id: { in: [notebookId, ...subtree.ids] }, archivedAt: null },
-    data: { archivedAt: new Date() },
-  });
+  const meetings = await prisma.scheduledMeeting.findMany({ where: { notebookId }, select: { id: true } });
+  await prisma.$transaction([
+    prisma.page.updateMany({
+      where: { id: { in: [notebookId, ...subtree.ids] }, archivedAt: null },
+      data: { archivedAt: new Date() },
+    }),
+    prisma.scheduledMeeting.updateMany({ where: { notebookId }, data: { notebookId: null } }),
+  ]);
+  for (const m of meetings) await removeMeetingShares(m.id);
 }
