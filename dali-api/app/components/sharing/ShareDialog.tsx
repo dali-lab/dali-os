@@ -15,7 +15,7 @@ import { audienceLine, type Audience, type InheritedScope } from "~/lib/page-aud
 // /api/pages/:id/share; the link people copy is just the doc URL.
 
 type Permission = "View" | "Comment" | "Edit" | "FullAccess";
-type LinkAccess = "Restricted" | "LabMembers" | "Public";
+type LinkAccess = "Restricted" | "LabMembers" | "SignedIn" | "Public";
 type Option = { id: string; label: string };
 type Share = {
   id: string;
@@ -48,6 +48,13 @@ const PERMISSION_OPTIONS: SelectOption<Permission>[] = [
   { value: "Edit", label: "Can edit", description: "Edit the document" },
   { value: "FullAccess", label: "Full access", description: "Edit and manage sharing" },
 ];
+// A form's roles are about the form, not a document: View fills it, Edit builds
+// it and reads responses. There is no commenter.
+const FORM_PERMISSION_OPTIONS: SelectOption<Permission>[] = [
+  { value: "View", label: "Can fill", description: "Fill out the form" },
+  { value: "Edit", label: "Can edit", description: "Edit questions and see responses" },
+  { value: "FullAccess", label: "Full access", description: "Edit and manage sharing" },
+];
 const LINK_PERMISSION_OPTIONS = PERMISSION_OPTIONS.filter((p) => p.value !== "FullAccess");
 
 const AUDIENCE_OPTIONS: SelectOption<LinkAccess>[] = [
@@ -64,6 +71,14 @@ const LAB_AUDIENCE_OPTIONS: SelectOption<LinkAccess>[] = [
   { value: "Restricted", label: "Only people you add", description: "Only you and the people and groups above." },
   { value: "LabMembers", label: "Everyone in the lab", description: "Any lab member can open it." },
   { value: "Public", label: "Anyone with the link", description: "Anyone on the internet — read-only, no account." },
+];
+
+// General access on a form is who may fill it, so every tier is lab wording.
+export const FORM_AUDIENCE_OPTIONS: SelectOption<LinkAccess>[] = [
+  { value: "Restricted", label: "Only people you add", description: "Only you and the people and groups above." },
+  { value: "LabMembers", label: "Everyone in the lab", description: "Any lab member can fill it." },
+  { value: "SignedIn", label: "Anyone signed in", description: "Any account, including applicants and partners." },
+  { value: "Public", label: "Anyone with the link", description: "No account needed." },
 ];
 
 // Folder-level access (the Google-Drive "share this folder" control). "" = the
@@ -108,11 +123,14 @@ export function ShareDialog({
   open,
   onClose,
   onChanged,
+  fillUrl,
 }: {
   page: { id: string; title: string; workspaceType: string };
   open: boolean;
   onClose: () => void;
   onChanged?: () => void;
+  /** A form's fill link (null or absent while unpublished); "Copy link" copies it instead of the page URL. */
+  fillUrl?: string | null;
 }) {
   const [ctx, setCtx] = useState<Context | null>(null);
   const [shares, setShares] = useState<Share[]>([]);
@@ -219,7 +237,9 @@ export function ShareDialog({
   }
 
   async function copyLink() {
-    const url = `${window.location.origin}/documents/${page.id}`;
+    const url = isForm
+      ? new URL(fillUrl!, window.location.origin).toString()
+      : `${window.location.origin}/documents/${page.id}`;
     try {
       await navigator.clipboard.writeText(url);
       setCopied(true);
@@ -233,7 +253,10 @@ export function ShareDialog({
   const isLab = (ctx?.workspaceType ?? page.workspaceType) === "Lab";
   // Lab docs get plain-language audience labels ("Everyone in the lab" / "Only
   // people you add"); every other workspace keeps the link-centric wording.
-  const audienceOptions = isLab ? LAB_AUDIENCE_OPTIONS : AUDIENCE_OPTIONS;
+  const isForm = ctx?.kind === "Form";
+  const audienceOptions = isForm ? FORM_AUDIENCE_OPTIONS : isLab ? LAB_AUDIENCE_OPTIONS : AUDIENCE_OPTIONS;
+  const personOptions = isForm ? FORM_PERMISSION_OPTIONS : PERMISSION_OPTIONS;
+  const noun = isForm ? "form" : "document";
 
   return (
     <Modal
@@ -384,7 +407,7 @@ export function ShareDialog({
                 </span>
                 <Select
                   value={s.permission}
-                  options={PERMISSION_OPTIONS}
+                  options={personOptions}
                   align="right"
                   disabled={busy}
                   ariaLabel={`Access level for ${s.label}`}
@@ -420,7 +443,7 @@ export function ShareDialog({
       <div className="flex flex-col gap-2.5 mb-6 border-t border-border pt-5">
         <h3 className="text-xs font-semibold text-muted-foreground inline-flex items-center gap-1">
           General access
-          <InfoTip content={isLab ? "Controls who can open this document by default. 'Everyone in the lab' makes it accessible to any lab member. 'Only people you add' restricts it to explicit shares above." : "Controls who can open this document via the link. 'Anyone in the lab' means any lab member with the link; 'Anyone with the link' is public read-only."} />
+          <InfoTip content={isForm ? "Controls who can fill out this form. People you add above can fill it, or edit it and see responses." : isLab ? "Controls who can open this document by default. 'Everyone in the lab' makes it accessible to any lab member. 'Only people you add' restricts it to explicit shares above." : "Controls who can open this document via the link. 'Anyone in the lab' means any lab member with the link; 'Anyone with the link' is public read-only."} />
         </h3>
         <div className="flex items-start gap-3 rounded-md border border-border px-3 py-3">
           <Link2 className="w-4 h-4 mt-1 shrink-0 text-muted-foreground" />
@@ -436,9 +459,10 @@ export function ShareDialog({
                 // Restricted need no confirmation.
                 if (linkAccess === "Public") {
                   const ok = await dialog.confirm({
-                    title: "Make this document public?",
-                    description:
-                      "Anyone on the internet will be able to read it — no account required. They won't be able to edit or comment.",
+                    title: `Make this ${noun} public?`,
+                    description: isForm
+                      ? "Anyone with the link will be able to fill it out, no account required. They won't see the responses."
+                      : "Anyone on the internet will be able to read it — no account required. They won't be able to edit or comment.",
                     confirmLabel: "Make public",
                     tone: "destructive",
                   });
@@ -450,7 +474,9 @@ export function ShareDialog({
                   const label = isLab ? "Everyone in the lab" : "Anyone in the lab";
                   const ok = await dialog.confirm({
                     title: `Share with ${label}?`,
-                    description: isLab
+                    description: isForm
+                      ? "Every lab member will be able to fill out this form."
+                      : isLab
                       ? "Every lab member will be able to open this document."
                       : "Any lab member with the link will be able to view this document.",
                     confirmLabel: "Share",
@@ -462,7 +488,7 @@ export function ShareDialog({
                 // "Everyone in the lab" defaults to edit — the historical lab-wide
                 // default — but stays adjustable via the role dropdown.
                 const linkPermission =
-                  linkAccess === "Public"
+                  linkAccess === "Public" || isForm
                     ? "View"
                     : linkAccess === "LabMembers" && isLab
                       ? "Edit"
@@ -474,7 +500,7 @@ export function ShareDialog({
               {audienceOptions.find((a) => a.value === (ctx?.linkAccess ?? "Restricted"))?.description}
             </span>
           </div>
-          {ctx && ctx.linkAccess !== "Restricted" && (
+          {ctx && ctx.linkAccess !== "Restricted" && !isForm && (
             <div className="self-center">
               <Select
                 value={ctx.linkAccess === "Public" ? "View" : ctx.linkPermission}
@@ -568,13 +594,17 @@ export function ShareDialog({
       )}
 
       <div className="flex items-center justify-between border-t border-border pt-4">
-        <button
-          type="button"
-          onClick={copyLink}
-          className={buttonClasses("secondary", "sm")}
-        >
-          {copied ? "Copied!" : "Copy link"}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={copyLink}
+            disabled={isForm && !fillUrl}
+            className={buttonClasses("secondary", "sm")}
+          >
+            {copied ? "Copied!" : "Copy link"}
+          </button>
+          {isForm && !fillUrl && <span className="text-xs text-muted-foreground">Publish to get a link</span>}
+        </div>
         <button type="button" onClick={onClose} className={buttonClasses("primary", "sm")}>
           Done
         </button>

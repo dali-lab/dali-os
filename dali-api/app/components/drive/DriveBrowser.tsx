@@ -137,6 +137,8 @@ export type RowActions = {
   onDelete: (item: DriveItem) => void;
   /** Open the in-place Share dialog for a page-backed item (doc or folder). */
   onShare?: (item: DriveItem) => void;
+  /** Whether forms can be shared (set by the browser from its `formShare` prop). */
+  formShare?: boolean;
   /** Apply a tag to the Drive's tag filter (clicking a tag dot). */
   onTagClick?: (tagId: string) => void;
   /** "File in…" and "Add shortcut to…", injected by the browser for items that can be filed in several places. */
@@ -158,6 +160,8 @@ type ViewMode = "columns" | "list" | "grid";
 type DriveLocation = { scopeId: string | null; folderId: string | null };
 
 export type DriveBrowserProps = {
+  /** Forms follow page access (forms-page-access flag): a form row can be shared like a doc. */
+  formShare?: boolean;
   scopes: DriveTreeScope[];
   currentScopeId: string | null;
   currentFolderId: string | null;
@@ -480,6 +484,7 @@ function itemMenuItems(
     favorite: !!onToggleFavorite,
     partner: !!onTogglePartnerVisible,
     readOnly: !!actions.readOnly,
+    formShare: !!actions.formShare,
   });
   const has = (entry: MenuEntry) => entries.includes(entry);
   const canRename = has("rename");
@@ -777,6 +782,7 @@ export function DriveBrowser({
   onShareItem,
   onTagClick,
   onSharingChanged,
+  formShare = false,
   embeddedScopeId,
   onTogglePartnerVisible,
   hasActivePartner,
@@ -818,6 +824,7 @@ export function DriveBrowser({
     const inSelection = (item: DriveItem) => selected.has(item.id) && selectedItems.length > 1;
     return {
       ...base,
+      formShare,
       onDelete: (item: DriveItem) =>
         inSelection(item) && onBulkDelete ? onBulkDelete(selectedItems) : base.onDelete(item),
       onRequestMove: (item: DriveItem) =>
@@ -830,7 +837,7 @@ export function DriveBrowser({
       ...(onTagClick ? { onTagClick } : {}),
       ...(receiverViewer ? { onFolderSettings: (item: DriveItem) => setFolderSettings({ item, scopeId }) } : {}),
       onShare: (item: DriveItem) => {
-        if (item.type !== "doc" && item.type !== "folder") return;
+        if (item.type !== "doc" && item.type !== "folder" && !(item.type === "form" && formShare)) return;
         // workspaceType is not on DriveItem directly; infer from the scope id
         // so the ShareDialog can show the correct audience label (Lab/Project/Member).
         const scope = scopes.find((s) => s.id === scopeId);
@@ -1583,7 +1590,7 @@ export function DriveBrowser({
   // PageShare, which was previously impossible from the Drive surface.
   const canItemShare =
     !!detailItem &&
-    (detailItem.type === "doc" || detailItem.type === "folder") &&
+    (detailItem.type === "doc" || detailItem.type === "folder" || (detailItem.type === "form" && formShare)) &&
     !!detailActions?.onShare;
 
   // How many items the current column / folder holds. The listing itself no
@@ -2733,7 +2740,7 @@ function RowTags({ item, actions }: { item: DriveItem; actions: RowActions | nul
 function RowAudience({ item, actions }: { item: DriveItem; actions: RowActions | null }) {
   if (item.type !== "doc" && item.type !== "folder" && item.type !== "file" && item.type !== "form") return null;
   if (!item.audience) return null;
-  const share = item.type !== "file" && item.type !== "form" ? actions?.onShare : undefined;
+  const share = item.type !== "file" && (item.type !== "form" || actions?.formShare) ? actions?.onShare : undefined;
   return <AudienceSignal audience={item.audience} onOpenShare={share ? () => share(item) : undefined} />;
 }
 

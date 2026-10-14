@@ -14,14 +14,14 @@ export type MenuEntry =
 /** Which actions a row's menu offers, in order. The menu renders exactly these. */
 export function menuEntries(
   item: DriveItem,
-  caps: { share: boolean; fileIn: boolean; favorite: boolean; partner: boolean; readOnly?: boolean },
+  caps: { share: boolean; fileIn: boolean; favorite: boolean; partner: boolean; readOnly?: boolean; formShare?: boolean },
 ): MenuEntry[] {
   // A shortcut the viewer can't open has nothing to do but go.
   if (item.type === "shortcut" && !item.canOpen) return ["delete"];
   const isPage = item.type === "doc" || item.type === "folder";
   const entries: MenuEntry[] = ["open"];
   if ((isPage || item.type === "form") && caps.favorite) entries.push("favorite");
-  if (isPage && caps.share) entries.push("share");
+  if ((isPage || (item.type === "form" && caps.formShare)) && caps.share) entries.push("share");
   if ((item.type === "doc" || item.type === "file") && caps.partner) entries.push("partner");
   if (!caps.readOnly && (isPage || item.type === "file" || item.type === "form" || item.type === "agreement")) {
     entries.push("rename");

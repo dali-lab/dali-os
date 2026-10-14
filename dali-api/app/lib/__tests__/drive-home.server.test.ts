@@ -11,7 +11,10 @@ vi.mock("~/lib/pageAccess.server", async () => {
   return { ...actual, getPageAccessBulk: vi.fn() };
 });
 
+vi.mock("~/forms/lib/form-access.server", () => ({ formsUsePageAccess: vi.fn() }));
+
 import { prisma } from "~/lib/db";
+import { formsUsePageAccess } from "~/forms/lib/form-access.server";
 import { getPageAccessBulk } from "~/lib/pageAccess.server";
 import { HOME_LIMIT, loadDriveHome } from "~/lib/drive-home.server";
 
@@ -73,9 +76,44 @@ beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(NOW);
   vi.clearAllMocks();
+  vi.mocked(formsUsePageAccess).mockResolvedValue(false);
   allow();
 });
 afterEach(() => vi.useRealTimers());
+
+describe("loadDriveHome recent (forms)", () => {
+  const kindsAsked = () => m.userFavorite.findMany.mock.calls[0][0].where.page.is.kind.in;
+
+  it("leaves Form pages out while forms keep their own gate", async () => {
+    stub();
+    await loadDriveHome("u1");
+    expect(kindsAsked()).not.toContain("Form");
+  });
+
+  it("asks for Form pages once forms follow page access", async () => {
+    vi.mocked(formsUsePageAccess).mockResolvedValue(true);
+    stub();
+    const request = new Request("http://os.test/drive");
+    await loadDriveHome("u1", request);
+    expect(kindsAsked()).toContain("Form");
+    expect(formsUsePageAccess).toHaveBeenCalledWith(request);
+  });
+
+  it("maps a Form page to a form item that opens the editor, and still filters by view access", async () => {
+    vi.mocked(formsUsePageAccess).mockResolvedValue(true);
+    allow(["hidden-form"]);
+    stub({
+      recent: [
+        fav("intake", hours(-1), { kind: "Form", parentPageId: "folder-1" }),
+        fav("hidden-form", hours(-2), { kind: "Form" }),
+      ],
+    });
+    const home = await loadDriveHome("u1");
+    expect(home.recent.map((i) => [i.id, i.type, i.href, i.parentFolderId])).toEqual([
+      ["intake", "form", "/forms/edit/intake", "folder-1"],
+    ]);
+  });
+});
 
 describe("loadDriveHome recent", () => {
   it("maps pages to DriveItems with visitedAt", async () => {

@@ -12,6 +12,7 @@ vi.mock("~/lib/drive-receivers.server", () => ({ receiversEnabled: vi.fn() }));
 vi.mock("~/lib/drive-scopes.server", () => ({ loadDriveScopes: vi.fn() }));
 vi.mock("~/lib/drive-home.server", () => ({ loadDriveHome: vi.fn() }));
 vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabled: vi.fn() }));
+vi.mock("~/forms/lib/form-access.server", () => ({ formsUsePageAccess: vi.fn() }));
 vi.mock("~/lib/drive-hub.server", () => ({
   loadProjectWorkspaces: vi.fn(),
   loadEducationWorkspaces: vi.fn(),
@@ -26,6 +27,7 @@ import { receiversEnabled } from "~/lib/drive-receivers.server";
 import { loadDriveScopes } from "~/lib/drive-scopes.server";
 import { loadDriveHome } from "~/lib/drive-home.server";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
+import { formsUsePageAccess } from "~/forms/lib/form-access.server";
 import {
   loadProjectWorkspaces,
   loadEducationWorkspaces,
@@ -54,9 +56,17 @@ beforeEach(() => {
   vi.mocked(receiversEnabled).mockResolvedValue(true);
   vi.mocked(isFeatureEnabled).mockResolvedValue(true);
   vi.mocked(loadDriveHome).mockResolvedValue({ recent: [] } as never);
+  vi.mocked(formsUsePageAccess).mockResolvedValue(false);
 });
 
 describe("drive hub loader", () => {
+  it("tells the client whether forms follow page access", async () => {
+    expect(await run()).toMatchObject({ formsPageAccess: false });
+    vi.mocked(formsUsePageAccess).mockResolvedValue(true);
+    expect(await run()).toMatchObject({ formsPageAccess: true });
+    expect(formsUsePageAccess).toHaveBeenCalledWith(request);
+  });
+
   it("returns the scopes, tags and flags together", async () => {
     const data = await run();
     expect(data).toMatchObject({

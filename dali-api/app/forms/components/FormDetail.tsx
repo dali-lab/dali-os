@@ -24,6 +24,7 @@ import { BADGE, FormBuilderTab } from "~/components/form-builder/FormBuilder";
 import { InfoBody } from "~/components/form-builder/info-body";
 import { isLayoutOnly } from "~/lib/form-answers";
 import { FormPreviewModal } from "~/forms/components/FormPreviewModal";
+import { ShareDialog } from "~/components/sharing/ShareDialog";
 import { FormSettingsButton } from "~/forms/components/FormSettings";
 import { VersionResults } from "~/forms/components/VersionResults";
 import { DocEditor } from "~/components/doc";
@@ -71,7 +72,7 @@ type FormVersion = ReturnType<
 //                         (save-version) and clears the draft. Frozen versions
 //                         are read-only and are what publishing serves.
 export function FormDetail() {
-  const { form, terms, usages, groups, managing, hiringLinks: rawHiringLinks, collabToken, results } = useLoaderData<typeof loader>();
+  const { form, terms, usages, groups, managing, hiringLinks: rawHiringLinks, collabToken, results, page, pageAccess } = useLoaderData<typeof loader>();
   // The staffing slot binding, if any: {{term}} in this form's questions
   // resolves from it (see FormBuilderTab's termBinding).
   const staffingBinding = usages.find((u) => u.kind === "staffing") ?? null;
@@ -208,6 +209,7 @@ export function FormDetail() {
     previewPendingDescription.current = payload.description;
     const fd = new FormData();
     fd.set("questions", JSON.stringify(payload.questions));
+    fd.set("formId", form.id);
     previewFetcher.submit(fd, { method: "post", action: "/forms/preview-resolve" });
   }
   useEffect(() => {
@@ -374,6 +376,7 @@ export function FormDetail() {
           groups={groups}
           opensAt={form.opensAt}
           closesAt={form.closesAt}
+          pageAccess={pageAccess}
         />
         <Button
           variant="secondary"
@@ -421,10 +424,19 @@ export function FormDetail() {
           </>
         ) : (
           <>
+            {pageAccess && (
+              <FormPageShare
+                formId={form.id}
+                formName={form.name}
+                workspaceType={page.workspaceType ?? "Lab"}
+                fillUrl={form.published && form.publicToken ? `/forms/fill/${form.publicToken}` : null}
+              />
+            )}
             <FormShareButton
               published={form.published}
               publicToken={form.publicToken}
               formName={form.name}
+              label={pageAccess ? "Link" : "Share"}
             />
             <PublishButton
               formId={form.id}
@@ -836,6 +848,36 @@ function FormVersionMenu({
   );
 }
 
+// Page-access Share: the same dialog every Drive page uses, with the form's
+// fill link as its Copy link target.
+function FormPageShare({
+  formId,
+  formName,
+  workspaceType,
+  fillUrl,
+}: {
+  formId: string;
+  formName: string;
+  workspaceType: string;
+  fillUrl: string | null;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <Button variant="secondary" onClick={() => setOpen(true)}>
+        <Share2 className="w-4 h-4" />
+        Share
+      </Button>
+      <ShareDialog
+        page={{ id: formId, title: formName, workspaceType }}
+        open={open}
+        onClose={() => setOpen(false)}
+        fillUrl={fillUrl}
+      />
+    </>
+  );
+}
+
 // The fill link, next to Publish. A published form is fillable at
 // /forms/fill/:publicToken; unpublishing 404s that route but keeps the token
 // so re-publishing restores the same link.
@@ -843,10 +885,12 @@ function FormShareButton({
   published,
   publicToken,
   formName,
+  label,
 }: {
   published: boolean;
   publicToken: string | null;
   formName: string;
+  label: "Share" | "Link";
 }) {
   const { popover } = useOsChrome();
   const [copied, setCopied] = useState(false);
@@ -891,7 +935,7 @@ function FormShareButton({
         <span>
           <Button variant="secondary" disabled>
             <Share2 className="w-4 h-4" />
-            Share
+            {label}
           </Button>
         </span>
       </Tooltip>
@@ -909,7 +953,7 @@ function FormShareButton({
       trigger={
         <Button variant="secondary">
           <Share2 className="w-4 h-4" />
-          Share
+          {label}
         </Button>
       }
     >

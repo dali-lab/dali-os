@@ -54,7 +54,10 @@ vi.mock("~/lib/roles", () => ({
 
 vi.mock("~/lib/pageAccess.server", () => ({
   getPageAccess: vi.fn(),
+  PAGE_ACCESS_SELECT: { id: true },
 }));
+
+vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabledForEveryone: vi.fn() }));
 
 vi.mock("~/lib/fileAccess.server", () => ({
   canEditFile: vi.fn(),
@@ -76,6 +79,7 @@ vi.mock("~/forms/lib/form-usages.server", () => ({
 }));
 
 import { prisma } from "~/lib/db";
+import { isFeatureEnabledForEveryone } from "~/lib/feature-flags.server";
 import { canViewForms, isCore, isProjectMember } from "~/lib/roles";
 import { deleteForm, moveForm, setFormArchived } from "~/forms/lib/form-page.server";
 import { formDeletionBlockers } from "~/forms/lib/form-usages.server";
@@ -123,6 +127,7 @@ const mockPrisma = prisma as unknown as {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(isFeatureEnabledForEveryone).mockResolvedValue(false);
 });
 
 // ─── list_drive_trash ─────────────────────────────────────────────────────────
@@ -373,6 +378,75 @@ describe("move_drive_item", () => {
 
     await expect(
       runMoveDriveItem("u1", { itemType: "file", itemId: "file1", destFolderPageId: "folder1" }),
+    ).rejects.toMatchObject({ name: "MoveDriveItemError", status: 403 });
+  });
+});
+
+// ─── forms-page-access on: forms follow their page ───────────────────────────
+
+describe("forms follow page access (forms-page-access on)", () => {
+  const VIEW = { canView: true, canComment: false, canEdit: false } as never;
+  const EDIT = { canView: true, canComment: true, canEdit: true } as never;
+  const NONE = { canView: false, canComment: false, canEdit: false } as never;
+
+  beforeEach(() => {
+    vi.mocked(isFeatureEnabledForEveryone).mockResolvedValue(true);
+    vi.mocked(canViewForms).mockResolvedValue(false);
+    mockPrisma.page.findUnique.mockResolvedValue({ id: "frm1", archivedAt: new Date() });
+    mockPrisma.form.findUnique.mockResolvedValue({ id: "frm1", archivedAt: new Date() });
+  });
+
+  it("list_drive_trash shows only the archived forms whose page the caller can view", async () => {
+    mockPrisma.page.findMany.mockResolvedValue([]);
+    mockPrisma.projectFile.findMany.mockResolvedValue([]);
+    mockPrisma.form.findMany.mockResolvedValue([
+      { id: "seen", name: "Seen", archivedAt: new Date("2026-03-01") },
+      { id: "hidden", name: "Hidden", archivedAt: new Date("2026-02-01") },
+    ]);
+    mockPrisma.page.findUnique.mockImplementation(async ({ where }: { where: { id: string } }) => ({
+      id: where.id,
+      archivedAt: new Date(),
+    }));
+    vi.mocked(getPageAccess).mockImplementation((async (_u: string, page: { id: string }) =>
+      page.id === "seen" ? VIEW : NONE) as never);
+
+    const out = await runListDriveTrash("u1");
+    expect(out.items.map((i) => i.id)).toEqual(["seen"]);
+    expect(getPageAccess).toHaveBeenCalledWith("u1", expect.objectContaining({ id: "seen" }), undefined, {
+      includeArchived: true,
+    });
+  });
+
+  it("restores a form for a caller who can edit its page, without canViewForms", async () => {
+    vi.mocked(getPageAccess).mockResolvedValue(EDIT);
+    expect(await runManageDriveTrash("u1", { action: "restore", type: "form", id: "frm1" })).toEqual({ ok: true });
+    expect(setFormArchived).toHaveBeenCalledWith("frm1", null);
+  });
+
+  it("refuses restore and purge to a viewer who cannot edit the page, even with canViewForms", async () => {
+    vi.mocked(canViewForms).mockResolvedValue(true);
+    vi.mocked(getPageAccess).mockResolvedValue(VIEW);
+    for (const action of ["restore", "purge"] as const) {
+      await expect(runManageDriveTrash("u1", { action, type: "form", id: "frm1" })).rejects.toMatchObject({
+        status: 403,
+      });
+    }
+    expect(deleteForm).not.toHaveBeenCalled();
+    expect(setFormArchived).not.toHaveBeenCalled();
+  });
+
+  it("move_drive_item moves a form for a caller who can edit its page", async () => {
+    mockPrisma.page.findUnique.mockResolvedValue({ id: "folder1", kind: "Folder", archivedAt: null });
+    vi.mocked(getPageAccess).mockResolvedValue(EDIT);
+    await runMoveDriveItem("u1", { itemType: "form", itemId: "frm1", destFolderPageId: "folder1" });
+    expect(moveForm).toHaveBeenCalledWith("frm1", "folder1");
+  });
+
+  it("move_drive_item refuses a form whose page the caller cannot edit", async () => {
+    vi.mocked(canViewForms).mockResolvedValue(true);
+    vi.mocked(getPageAccess).mockResolvedValue(VIEW);
+    await expect(
+      runMoveDriveItem("u1", { itemType: "form", itemId: "frm1", destFolderPageId: "folder1" }),
     ).rejects.toMatchObject({ name: "MoveDriveItemError", status: 403 });
   });
 });

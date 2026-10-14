@@ -26,6 +26,7 @@ import type { ReactNode } from "react";
 import { requireAuth, redirectPartnerToPortal, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { getUserRoles } from "~/lib/roles";
+import { formsUsePageAccess } from "~/forms/lib/form-access.server";
 import { receiversEnabled } from "~/lib/drive-receivers.server";
 import { resolveTermFilter } from "~/lib/terms";
 import { TermFilter } from "~/components/TermFilter";
@@ -136,9 +137,10 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (partnerRedirect) return partnerRedirect;
 
   const userId = auth.user.sub;
-  const [roles, termFilter] = await Promise.all([
+  const [roles, termFilter, formsPageAccess] = await Promise.all([
     getUserRoles(userId, request),
     resolveTermFilter(request),
+    formsUsePageAccess(request),
   ]);
   // isCore is the gate for agreement authoring. Passed down as canManageAgreements
   // so drive.server.ts doesn't re-derive it (matches the canViewForms pattern).
@@ -188,6 +190,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     terms: termFilter.terms,
     selectedTerm: termFilter.selected,
     canViewForms: userCanViewForms,
+    formsPageAccess,
     canManageAgreements: userCanManageAgreements,
     receiversEnabled: receivers,
     homeEnabled,
@@ -1086,6 +1089,7 @@ export default function DriveHub() {
     terms,
     selectedTerm,
     canViewForms,
+    formsPageAccess,
     canManageAgreements,
     receiversEnabled: receiversOn,
     homeEnabled,
@@ -1769,7 +1773,7 @@ export default function DriveHub() {
       </div>
     ) : null;
 
-  const caps = { canViewForms, canManageAgreements };
+  const caps = { canViewForms: canViewForms || formsPageAccess, canManageAgreements };
   const visibleFilters = TYPE_FILTERS.filter((f) => !f.requiresCap || caps[f.requiresCap]);
 
   // Type filter as the site's Select dropdown (matches members/forms filters),
@@ -1818,7 +1822,7 @@ export default function DriveHub() {
       <NewMenu
         scope={currentScope}
         actions={currentActions}
-        canViewForms={canViewForms}
+        canViewForms={canViewForms || formsPageAccess}
         canManageAgreements={canManageAgreements}
         onUploadClick={() => inputRef.current?.click()}
         uploading={uploading}
@@ -1911,6 +1915,7 @@ export default function DriveHub() {
       )}
 
       <DriveBrowser
+        formShare={formsPageAccess}
         scopes={visibleScopes}
         currentScopeId={effectiveScopeId}
         currentFolderId={currentFolderId}

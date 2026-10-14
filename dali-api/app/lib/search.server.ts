@@ -19,6 +19,8 @@ import { searchPageContent } from "~/lib/doc-search.server";
 import { resolveSections } from "~/lib/page-doc-sections";
 import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
 import { blocksToPlainText } from "~/components/doc/schema/configs";
+import { formsUsePageAccess } from "~/forms/lib/form-access.server";
+import { PAGE_ACCESS_SELECT, getPageAccessBulk } from "~/lib/pageAccess.server";
 import { HELP_ARTICLES } from "~/lib/help-articles";
 
 // Server side of the command-palette search: permission-scoped Prisma queries
@@ -45,6 +47,8 @@ export async function runSearch(opts: {
   const roles = opts.roles;
   const like: Like = { contains: q, mode: "insensitive" };
 
+  const formsByPage = await formsUsePageAccess();
+
   const tasks: Promise<SearchResult[]>[] = [
     searchPeople(q, like),
     searchProjects(q, like),
@@ -61,7 +65,7 @@ export async function runSearch(opts: {
     // Groups & forms — Forms area gate. Form folders are Drive Pages, already
     // surfaced by searchDocuments.
     roles.canViewForms ? searchGroups(q, like) : NONE,
-    roles.canViewForms ? searchForms(q, like) : NONE,
+    formsByPage ? searchFormPages(opts.userId, q, like) : roles.canViewForms ? searchForms(q, like) : NONE,
     // Hiring library (reusable artifacts) — Core or Domain Lead, mirroring the
     // library routes. Names aren't sensitive; the routes already gate.
     roles.isCore || roles.isDomainLead ? searchRubrics(q, like) : NONE,
@@ -362,6 +366,21 @@ async function searchForms(q: string, like: Like): Promise<SearchResult[]> {
     take: RAW_TAKE,
   });
   return simpleResults("form", "Form", rows.map((r) => ({ id: r.id, label: r.name })), q);
+}
+
+async function searchFormPages(userId: string, q: string, like: Like): Promise<SearchResult[]> {
+  const pages = await prisma.page.findMany({
+    where: { kind: "Form", archivedAt: null, title: like },
+    select: { ...PAGE_ACCESS_SELECT, title: true, iconEmoji: true },
+    take: RAW_TAKE,
+  });
+  const access = await getPageAccessBulk(userId, pages);
+  return simpleResults(
+    "form",
+    "Form",
+    pages.filter((p) => access.get(p.id)?.canView).map((p) => ({ id: p.id, label: p.title, iconEmoji: p.iconEmoji })),
+    q,
+  );
 }
 
 async function searchRubrics(q: string, like: Like): Promise<SearchResult[]> {

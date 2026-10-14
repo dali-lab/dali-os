@@ -187,6 +187,7 @@ export type FormDetail = {
   // this; null means start from the latest version (or blank). Never served
   // to fillers.
   draft: { questions: Question[]; description: unknown } | null;
+  workspaceType: string | null;
 };
 
 // The full form + every version (newest last), for the dedicated editor page.
@@ -198,6 +199,7 @@ export async function loadFormForEdit(
     prisma.form.findUnique({
       where: { id: formId },
       include: {
+        page: { select: { workspaceType: true } },
         versions: {
           orderBy: { versionNumber: "asc" },
           include: {
@@ -227,6 +229,7 @@ export async function loadFormForEdit(
     listed: form.listed,
     audience: form.audience,
     audienceGroupIds: form.audienceGroupIds,
+    workspaceType: form.page?.workspaceType ?? null,
     versions: form.versions.map((v) => ({
       id: v.id,
       versionNumber: v.versionNumber,

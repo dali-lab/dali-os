@@ -418,7 +418,7 @@ export async function formFillAccess(
 // "already filled out" panel).
 export type ListedForm = { id: string; name: string; fillUrl: string };
 
-export async function listedFormsFor(userId: string): Promise<ListedForm[]> {
+export async function listedFormsFor(userId: string, request?: Request): Promise<ListedForm[]> {
   const forms = await prisma.form.findMany({
     where: { listed: true, published: true, publicToken: { not: null } },
     orderBy: { name: "asc" },
@@ -439,7 +439,7 @@ export async function listedFormsFor(userId: string): Promise<ListedForm[]> {
   // the number of listed forms. `forms` stays ordered by name; we keep that order.
   const checks = await Promise.all(
     forms.map(async (form) => {
-      if ((await formFillAccess(form, userId)) !== "ok") return false;
+      if ((await formFillAccess(form, userId, request)) !== "ok") return false;
       if (
         form.oneResponsePerMember &&
         (await existingOrdinarySubmission(form.id, userId))

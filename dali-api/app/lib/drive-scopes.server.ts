@@ -11,6 +11,7 @@ import { withChildCounts } from "~/lib/drive-counts.server";
 import { loadSharedWithMe } from "~/lib/drive-shared.server";
 import { visibleDriveSpaces } from "~/lib/drive-spaces";
 import { getPageAccess } from "~/lib/pageAccess.server";
+import { formsUsePageAccess } from "~/forms/lib/form-access.server";
 import { ensureAllRoots, findAllRoots, type RootKey } from "~/lib/drive-roots.server";
 import type { RoleFlags } from "~/lib/nav-areas";
 
@@ -199,6 +200,7 @@ export async function loadDriveScopes({
   const hidePersonal = isImpersonating(auth);
 
   const processSpaces = spaces.filter((s) => s.backing === "process-root" && s.rootKey);
+  const formsByPageAccess = await formsUsePageAccess(request);
   const needForms = canViewForms || isCore;
 
   // Signal ②: build process linkages once for the whole load (no per-row queries).
@@ -232,7 +234,7 @@ export async function loadDriveScopes({
     favoritePageIds(userSub),
     hidePersonal
       ? Promise.resolve<DriveItem[]>([])
-      : loadDriveScope({ userSub, scope: { kind: "Member" }, request }),
+      : loadDriveScope({ userSub, scope: { kind: "Member" }, formsByPageAccess, request }),
     hidePersonal
       ? Promise.resolve<DriveItem[]>([])
       : loadSharedWithMe({ userSub, request }),
@@ -243,6 +245,7 @@ export async function loadDriveScopes({
         // Wide enough for the process roots carved out below, which show forms
         // to Core; the General space narrows back to canViewForms.
         canViewForms: needForms,
+        formsByPageAccess,
         canManageAgreements: isCore,
         request,
         linkedProcessMap,
@@ -257,6 +260,7 @@ export async function loadDriveScopes({
           userSub,
           scope: { kind: "Project", projectId },
           canViewForms,
+          formsByPageAccess,
           request,
           linkedProcessMap,
         }),
@@ -268,6 +272,7 @@ export async function loadDriveScopes({
           userSub,
           scope: { kind: "EducationOffering", offeringId },
           canViewForms,
+          formsByPageAccess,
           request,
           linkedProcessMap,
         }),
@@ -295,7 +300,7 @@ export async function loadDriveScopes({
     rootSpaceItems.set(
       key,
       labItems
-        .filter((it) => inRoot.has(it.id) && it.id !== rootId && (isCore || it.type !== "form"))
+        .filter((it) => inRoot.has(it.id) && it.id !== rootId && (formsByPageAccess || isCore || it.type !== "form"))
         .map((it) => (it.parentFolderId === rootId ? { ...it, parentFolderId: null } : it)),
     );
   }
@@ -320,7 +325,7 @@ export async function loadDriveScopes({
 
   // Strip managed artifacts from the Lab scope (same as legacy).
   const labVisibleItems = labVisibleBase.filter(
-    (it) => it.type !== "agreement" && it.type !== "rubric" && (canViewForms || it.type !== "form"),
+    (it) => it.type !== "agreement" && it.type !== "rubric" && (formsByPageAccess || canViewForms || it.type !== "form"),
   );
 
   const filteredLab = labVisibleItems;

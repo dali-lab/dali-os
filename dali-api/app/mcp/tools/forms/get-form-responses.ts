@@ -3,6 +3,7 @@
 
 import { prisma } from "~/lib/db";
 import { isCore } from "~/lib/roles";
+import { canBuildForm, formsUsePageAccess } from "~/forms/lib/form-access.server";
 import { buildResponseGrid } from "~/forms/lib/answer-rows.server";
 import type { Question } from "~/types";
 import {
@@ -50,7 +51,10 @@ type Args = {
 };
 
 export async function runGetFormResponses(ctx: McpCtx, args: Args) {
-  if (!(await isCore(ctx.user.id))) {
+  const allowed = (await formsUsePageAccess())
+    ? await canBuildForm(ctx.user.id, args.formId)
+    : await isCore(ctx.user.id);
+  if (!allowed) {
     throw new McpForbiddenError("Only Core members can view form responses");
   }
 
