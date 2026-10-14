@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  Link,
   redirect,
   useLoaderData,
   useNavigate,
@@ -553,21 +554,36 @@ export default function MentorshipBrowse() {
           value={data.filters.status}
           onChange={(v) => setFilter("status", v)}
         />
-        {data.termForms && (
-          <Tooltip content={data.filters.termId ? null : "Pick a term first."}>
-            <span className="ml-auto">
-              <button
-                type="button"
-                onClick={() => setLinkFormsOpen(true)}
-                disabled={!data.filters.termId}
-                className="os-edit-btn disabled:opacity-50"
-              >
-                <Link2 className="w-4 h-4 text-os-grey" aria-hidden />
-                Link forms
-              </button>
-            </span>
-          </Tooltip>
-        )}
+        <div className="ml-auto flex items-center gap-2">
+          {data.termForms && (
+            <Tooltip content={data.filters.termId ? null : "Pick a term first."}>
+              <span>
+                <button
+                  type="button"
+                  onClick={() => setLinkFormsOpen(true)}
+                  disabled={!data.filters.termId}
+                  className="os-edit-btn disabled:opacity-50"
+                >
+                  <Link2 className="w-4 h-4 text-os-grey" aria-hidden />
+                  Link forms
+                </button>
+              </span>
+            </Tooltip>
+          )}
+          {params.toString() && (
+            <Link
+              to="/mentorship/browse"
+              onClick={() => {
+                if (typeof window !== "undefined") {
+                  window.localStorage.removeItem(FILTERS_STORAGE_KEY);
+                }
+              }}
+              className="os-btn-ghost"
+            >
+              Clear
+            </Link>
+          )}
+        </div>
       </div>
 
       {data.termForms && data.filters.termId && (
