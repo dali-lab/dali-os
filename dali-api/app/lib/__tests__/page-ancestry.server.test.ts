@@ -5,6 +5,7 @@ vi.mock("~/lib/db", () => ({ prisma: { $queryRawUnsafe: vi.fn() } }));
 import { prisma } from "~/lib/db";
 import {
   loadAncestorChain,
+  loadAncestorChains,
   chainDepth,
   chainHasAncestor,
   chainGoverningScope,
@@ -43,6 +44,69 @@ describe("loadAncestorChain", () => {
     expect(m.$queryRawUnsafe.mock.calls[0][0]).toContain("WITH RECURSIVE");
     expect(m.$queryRawUnsafe.mock.calls[0][1]).toBe("a");
     expect(chain.map((r) => r.id)).toEqual(["a"]);
+  });
+});
+
+describe("loadAncestorChains", () => {
+  beforeEach(() => vi.resetAllMocks());
+
+  const tagged = (startId: string, r: ChainRow) => ({ startId, ...r });
+
+  it("asks for every page and its ancestors in a single parameterised query", async () => {
+    m.$queryRawUnsafe.mockResolvedValue([]);
+    await loadAncestorChains(["a", "b", "c"]);
+    expect(m.$queryRawUnsafe).toHaveBeenCalledTimes(1);
+    const [sql, ids] = m.$queryRawUnsafe.mock.calls[0];
+    expect(sql).toContain("WITH RECURSIVE");
+    expect(sql).toContain("ANY($1::text[])");
+    expect(ids).toEqual(["a", "b", "c"]);
+  });
+
+  it("sends each distinct id once", async () => {
+    m.$queryRawUnsafe.mockResolvedValue([]);
+    await loadAncestorChains(["a", "b", "a"]);
+    expect(m.$queryRawUnsafe.mock.calls[0][1]).toEqual(["a", "b"]);
+  });
+
+  it("does not query for no ids", async () => {
+    expect(await loadAncestorChains([])).toEqual(new Map());
+    expect(m.$queryRawUnsafe).not.toHaveBeenCalled();
+  });
+
+  it("groups rows by the page the walk started from, nearest first", async () => {
+    m.$queryRawUnsafe.mockResolvedValue([
+      tagged("a", row("a", "p")),
+      tagged("a", row("p", null)),
+      tagged("b", row("b", "p")),
+      tagged("b", row("p", null)),
+    ]);
+    const chains = await loadAncestorChains(["a", "b"]);
+    expect([...chains.keys()]).toEqual(["a", "b"]);
+    expect(chains.get("a")!.map((r) => r.id)).toEqual(["a", "p"]);
+    expect(chains.get("b")!.map((r) => r.id)).toEqual(["b", "p"]);
+  });
+
+  it("leaves the start tag off the rows", async () => {
+    m.$queryRawUnsafe.mockResolvedValue([tagged("a", row("a", null))]);
+    expect((await loadAncestorChains(["a"])).get("a")![0]).not.toHaveProperty("startId");
+  });
+
+  it("has no entry for a page that does not exist", async () => {
+    m.$queryRawUnsafe.mockResolvedValue([tagged("a", row("a", null))]);
+    expect((await loadAncestorChains(["a", "gone"])).has("gone")).toBe(false);
+  });
+
+  it("caps chain length at the default row cap, or the one given", async () => {
+    m.$queryRawUnsafe.mockResolvedValue([]);
+    await loadAncestorChains(["a"]);
+    expect(m.$queryRawUnsafe.mock.calls[0][0]).toContain(`< ${MAX_PAGE_DEPTH + 3}`);
+    await loadAncestorChains(["a"], 20);
+    expect(m.$queryRawUnsafe.mock.calls[1][0]).toContain("< 20");
+  });
+
+  it.each([0, -1, Number.NaN, Number.POSITIVE_INFINITY])("rejects a row cap of %s", async (cap) => {
+    await expect(loadAncestorChains(["a"], cap)).rejects.toThrow();
+    expect(m.$queryRawUnsafe).not.toHaveBeenCalled();
   });
 });
 

@@ -9,11 +9,14 @@ vi.mock("~/lib/db", () => ({
 vi.mock("~/lib/pageAccess.server", () => ({ getPageAccessBulk: vi.fn(), PAGE_ACCESS_SELECT: { id: true } }));
 vi.mock("~/lib/note-path.server", () => ({
   formatFiledPath: (parts: string[]) => parts.join(" ▸ "),
-  notebookLocationParts: vi.fn(async () => ["Lab", "Meetings"]),
+  notebookLocationPartsBulk: vi.fn(
+    async (notebooks: { id: string }[]) => new Map(notebooks.map((n) => [n.id, ["Lab", "Meetings"]])),
+  ),
 }));
 
 import { prisma } from "~/lib/db";
 import { getPageAccessBulk } from "~/lib/pageAccess.server";
+import { notebookLocationPartsBulk } from "~/lib/note-path.server";
 import { meetingNotebookIdentity } from "~/lib/meeting-notebook";
 import { listNotebooks, MAX_LISTED } from "~/lib/notebook-listing.server";
 
@@ -201,5 +204,28 @@ describe("listNotebooks", () => {
     access(many.map((r) => r.id));
 
     expect(await listNotebooks({ actorId: "u1" })).toHaveLength(MAX_LISTED);
+  });
+
+  it("resolves every listed path in one bulk call, for the listed notebooks only", async () => {
+    const many = Array.from({ length: MAX_LISTED + 10 }, (_, i) => nb(`n${i}`));
+    m.page.findMany.mockResolvedValueOnce(many);
+    access(many.map((r) => r.id));
+    const request = new Request("http://os.test/api/notebooks");
+
+    const out = await listNotebooks({ actorId: "u1", request });
+
+    expect(notebookLocationPartsBulk).toHaveBeenCalledTimes(1);
+    const [asked, viewer, req] = vi.mocked(notebookLocationPartsBulk).mock.calls[0];
+    expect(asked.map((n) => n.id).sort()).toEqual(out.map((r) => r.id).sort());
+    expect(viewer).toBe("u1");
+    expect(req).toBe(request);
+  });
+
+  it("joins the resolved parts into each row's path", async () => {
+    m.page.findMany.mockResolvedValueOnce([nb("a")]);
+    access(["a"]);
+    vi.mocked(notebookLocationPartsBulk).mockResolvedValueOnce(new Map([["a", ["Projects", "Cortex", "Notes"]]]));
+
+    expect(await listNotebooks({ actorId: "u1" })).toMatchObject([{ path: "Projects ▸ Cortex ▸ Notes" }]);
   });
 });
