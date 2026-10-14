@@ -230,3 +230,32 @@ describe("listNotebooks", () => {
     expect(await listNotebooks({ actorId: "u1" })).toMatchObject([{ path: "Projects ▸ Cortex ▸ Notes" }]);
   });
 });
+
+describe("listNotebooks scoped to a space", () => {
+  it("filters the page query by the space's workspace", async () => {
+    await listNotebooks({ actorId: "u1", space: { workspaceType: "Project", workspaceId: "p1" } });
+
+    expect(m.page.findMany.mock.calls[0][0].where).toMatchObject({
+      kind: "Notebook",
+      archivedAt: null,
+      workspaceType: "Project",
+      workspaceId: "p1",
+    });
+  });
+
+  it("filters Lab by a null workspace id and still honours the title search and the scan cap", async () => {
+    await listNotebooks({ actorId: "u1", q: " sync ", space: { workspaceType: "Lab", workspaceId: null } });
+
+    const args = m.page.findMany.mock.calls[0][0];
+    expect(args.where).toMatchObject({ workspaceType: "Lab", workspaceId: null, title: { contains: "sync" } });
+    expect(args.take).toBe(300);
+  });
+
+  it("scans every workspace when no space is given", async () => {
+    await listNotebooks({ actorId: "u1" });
+
+    const where = m.page.findMany.mock.calls[0][0].where;
+    expect(where).not.toHaveProperty("workspaceType");
+    expect(where).not.toHaveProperty("workspaceId");
+  });
+});

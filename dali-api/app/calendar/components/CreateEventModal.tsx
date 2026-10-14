@@ -389,7 +389,7 @@ export function CreateEventModal({
         setMeetingStatus({ ok: false, error: json.error ?? "Failed to create meeting" });
       } else {
         const filed = filedNoteFrom(json);
-        if (filed) showFiledNote(filed, { undo: true, movedTo: note.state.places[0]?.path });
+        if (filed) showFiledNote(filed, { undo: true });
         setMeetingStatus({
           ok: true,
           count: json.notifiedCount ?? 0,

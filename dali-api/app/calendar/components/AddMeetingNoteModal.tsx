@@ -173,7 +173,7 @@ function AddMeetingNoteModal({
     if (submittedRef.current && fetcher.state !== "submitting" && fetcher.data?.ok) {
       submittedRef.current = false;
       const filed = filedNoteFrom(fetcher.data);
-      if (filed) showFiledNote(filed, { movedTo: note.state.places[0]?.path });
+      if (filed) showFiledNote(filed);
       onClose();
       void offerFutureFiling(meetingId, {
         notebookId: fetcher.data.notebookId ?? null,

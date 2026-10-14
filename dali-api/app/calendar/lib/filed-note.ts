@@ -8,8 +8,6 @@ export type FiledNote = {
   /** True only when the same request created that notebook. */
   createdNotebook: boolean;
   notePath: { label: string; href: string };
-  /** Set when the notebook was asked to move and the server refused. */
-  declinedMove: { error: string } | null;
 };
 
 type Fetch = (input: string, init?: RequestInit) => Promise<{ ok: boolean }>;
@@ -39,7 +37,6 @@ export type FiledNoteResponse = {
   notebookId?: string | null;
   createdNotebook?: boolean;
   notePath?: { label: string; href: string } | null;
-  declinedMove?: { error: string } | null;
 };
 
 /** The filing details from a create response, or null when the server named no path. */
@@ -50,11 +47,5 @@ export function filedNoteFrom(json: FiledNoteResponse): FiledNote | null {
     notebookId: json.notebookId ?? null,
     createdNotebook: json.createdNotebook === true,
     notePath: json.notePath,
-    declinedMove: json.declinedMove ? { error: json.declinedMove.error } : null,
   };
-}
-
-/** What to tell the organizer when a notebook they asked to move stayed put. */
-export function declinedMoveMessage(place: string | undefined): string {
-  return `Could not move the notebook to ${place ?? "that place"}; it stayed where it was.`;
 }

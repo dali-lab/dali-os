@@ -41,8 +41,11 @@ export type ListedNotebook = {
   suggested: boolean;
 };
 
+export type NotebookSpace = { workspaceType: "Lab" | "Project"; workspaceId: string | null };
+
 export async function listNotebooks(input: {
   actorId: string;
+  space?: NotebookSpace;
   q?: string | null;
   projectId?: string | null;
   meetingId?: string | null;
@@ -50,7 +53,12 @@ export async function listNotebooks(input: {
 }): Promise<ListedNotebook[]> {
   const q = input.q?.trim();
   const rows = await prisma.page.findMany({
-    where: { kind: "Notebook", archivedAt: null, ...(q ? { title: { contains: q, mode: "insensitive" } } : {}) },
+    where: {
+      kind: "Notebook",
+      archivedAt: null,
+      ...(input.space ? { workspaceType: input.space.workspaceType, workspaceId: input.space.workspaceId } : {}),
+      ...(q ? { title: { contains: q, mode: "insensitive" } } : {}),
+    },
     orderBy: { updatedAt: "desc" },
     take: MAX_SCANNED,
     select: { ...PAGE_ACCESS_SELECT, title: true, notebookKey: true },

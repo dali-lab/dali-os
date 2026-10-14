@@ -20,7 +20,6 @@ const filed = (over: Partial<FiledNote> = {}): FiledNote => ({
   notebookId: "nb1",
   createdNotebook: false,
   notePath: { label: "Core ▸ Meetings", href: "/documents/n1" },
-  declinedMove: null,
   ...over,
 });
 
@@ -51,18 +50,5 @@ describe("useFiledNoteToast", () => {
     show(filed());
     expect(toast.success).toHaveBeenCalledWith("Filed to Core ▸ Meetings", expect.anything());
     expect(toast.error).not.toHaveBeenCalled();
-  });
-
-  it("adds a second toast when the notebook could not be moved, naming the place it was asked to go", () => {
-    show(filed({ declinedMove: { error: "No access" } }), { movedTo: "Projects / Atlas / Meetings" });
-    expect(toast.success).toHaveBeenCalledTimes(1);
-    expect(toast.error).toHaveBeenCalledWith(
-      "Could not move the notebook to Projects / Atlas / Meetings; it stayed where it was.",
-    );
-  });
-
-  it("still reads when the place is unknown", () => {
-    show(filed({ declinedMove: { error: "No access" } }));
-    expect(toast.error).toHaveBeenCalledWith("Could not move the notebook to that place; it stayed where it was.");
   });
 });

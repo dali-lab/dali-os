@@ -39,8 +39,7 @@ import { isCore, isProjectMember } from "~/lib/roles";
 import { isGeneralCalendarEvent } from "~/lib/general-calendar";
 import { copyPageBody } from "~/lib/page-copy.server";
 import { createNotebook, loadEditableNotebook, NotebookError } from "~/lib/notebooks.server";
-import { movePage } from "~/lib/page-move.server";
-import { isExistingChoice, type NotebookChoice, type NotebookLocation } from "~/lib/notebook-choice";
+import { isExistingChoice, type NotebookChoice } from "~/lib/notebook-choice";
 import { readDocAsBlocks } from "~/collab/read";
 import { pageDocName } from "~/collab/roomName";
 import { blocksToPlainText } from "~/components/doc/schema/configs";
@@ -291,15 +290,6 @@ export type CreateScheduledMeetingInput = {
   notebook?: NotebookChoice | null;
   /** Lets shortcut creation honour the viewer's impersonation and link access. */
   request?: Request;
-  // General ("Other") meetings only: where to file the note page. Authorized and
-  // resolved by resolveNoteDestination — an unauthorized/invalid location (or an
-  // omitted one) falls back to the Lab root. Ignored for Team/Partner, which file
-  // into the project's meeting-notes folder.
-  noteLocation?: {
-    workspaceType: "Lab" | "Project";
-    workspaceId: string | null;
-    parentPageId: string | null;
-  } | null;
   // Roster (default): organizer/Core check attendees off by hand (needs a
   // meeting note for the checklist UI). SelfCheckIn: attendees mark themselves
   // present via the check-in route — works with or without a meeting note (QR
@@ -308,7 +298,7 @@ export type CreateScheduledMeetingInput = {
   // Core marker — see ScheduledMeeting.isCoreMeeting. Callers are responsible
   // for checking the setter is Core; this layer just persists the flag. It also
   // decides where a project-less note is filed: Core's own meeting-notes folder
-  // rather than the organizer's chosen `noteLocation`.
+  // rather than the Lab's.
   isCoreMeeting?: boolean;
   // Mint a Google Meet link for the meeting. Only takes effect when the meeting
   // is actually pushed to the organizer's linked Google calendar (a start time,
@@ -332,10 +322,6 @@ export type CreateScheduledMeetingResult =
       notebookId: string | null;
       createdNotebook: boolean;
       whiteboardPageId: string | null;
-      /** Links in the notebook choice the actor couldn't file. */
-      declinedLinks: DeclinedNotebookLink[];
-      /** The move the notebook choice asked for, when the actor couldn't make it. */
-      declinedMove: DeclinedNotebookMove | null;
     }
   | { ok: false; error: string };
 
@@ -356,58 +342,6 @@ export function tracksAttendance(meeting: {
     meeting.attendanceMode === "SelfCheckIn" ||
     meeting.participantUserIds.length > 0
   );
-}
-
-export function folderOfNote(note: {
-  parentPageId: string | null;
-  parent?: { kind: string; parentPageId: string | null } | null;
-}): string | null {
-  return note.parent?.kind === "Notebook" ? note.parent.parentPageId : note.parentPageId;
-}
-
-// Authorize + resolve a General meeting's chosen note location. Mirrors the
-// /api/move-destinations eligibility (Lab-wide, plus any project the organizer
-// can edit) so a note can only land where the organizer may write. Anything
-// unauthorized or malformed quietly falls back to the Lab root.
-async function resolveNoteDestination(
-  organizerId: string,
-  loc: CreateScheduledMeetingInput["noteLocation"],
-): Promise<{ workspaceType: "Lab" | "Project"; workspaceId: string | null; parentPageId: string | null }> {
-  const labRoot = { workspaceType: "Lab" as const, workspaceId: null, parentPageId: null };
-  if (!loc) return labRoot;
-
-  if (loc.workspaceType === "Project") {
-    if (!loc.workspaceId) return labRoot;
-    const core = await isCore(organizerId);
-    const proj = await prisma.project.findFirst({
-      where: { id: loc.workspaceId, ...(core ? {} : { assignments: { some: { userId: organizerId } } }) },
-      select: { id: true },
-    });
-    if (!proj) return labRoot;
-  }
-
-  // Validate the parent folder (if any) is a live Folder in the target workspace;
-  // otherwise drop to that workspace's top level rather than misfiling the note.
-  let parentPageId: string | null = null;
-  if (loc.parentPageId) {
-    const folder = await prisma.page.findUnique({
-      where: { id: loc.parentPageId },
-      select: { kind: true, archivedAt: true, workspaceType: true, workspaceId: true },
-    });
-    const wsMatch =
-      !!folder &&
-      folder.workspaceType === loc.workspaceType &&
-      (loc.workspaceType === "Lab" ? folder.workspaceId === null : folder.workspaceId === loc.workspaceId);
-    if (folder && folder.kind === "Folder" && !folder.archivedAt && wsMatch) {
-      parentPageId = loc.parentPageId;
-    }
-  }
-
-  return {
-    workspaceType: loc.workspaceType,
-    workspaceId: loc.workspaceType === "Project" ? loc.workspaceId : null,
-    parentPageId,
-  };
 }
 
 // The notebook a meeting's note for `date` is filed in, created at `dest` when
@@ -476,8 +410,7 @@ type ArtifactFilingInput = {
   meetingTypeLabel: string | null;
   projectId: string | null;
   isCoreMeeting: boolean;
-  noteLocation: CreateScheduledMeetingInput["noteLocation"];
-  /** Whiteboards only: file exactly here (beside the meeting's notebook) instead of by project, Core or noteLocation. */
+  /** Whiteboards only: file exactly here (beside the meeting's notebook) instead of by project, Core or the Lab. */
   fileAt?: Placement | null;
 };
 
@@ -584,20 +517,6 @@ async function resolveArtifactFiling(
   const receivers = await receiversEnabled();
 
   if (input.projectId) {
-    // A board filed in a folder of this very project (whiteboard-only create)
-    // goes where the organizer chose; resolveNoteDestination checks they may.
-    const chosen =
-      isBoard && input.noteLocation?.workspaceType === "Project" && input.noteLocation.workspaceId === input.projectId
-        ? await resolveNoteDestination(input.authorId, input.noteLocation)
-        : null;
-    if (
-      chosen?.workspaceType === "Project" &&
-      chosen.workspaceId === input.projectId &&
-      chosen.parentPageId === input.noteLocation?.parentPageId
-    ) {
-      return file(chosen);
-    }
-
     // Team/Partner assets nest under their default, undeletable folder;
     // "Other" assets stay top-level (no default folder for a custom label).
     // With receivers on, every project meeting files to the project's Meetings
@@ -630,18 +549,9 @@ async function resolveArtifactFiling(
     });
   }
 
-  const dest = await resolveNoteDestination(input.authorId, input.noteLocation);
-  if (dest.workspaceType === "Project" && dest.workspaceId) return file(dest);
-  // No folder chosen: the picker defaults to the top of the Lab drive and
-  // resolveNoteDestination falls back there for anything it can't honour. The
-  // Lab's own "Meeting assets" folder is the default instead of the root, where
-  // an asset titled just its date went loose among every other Lab doc. An
-  // explicitly chosen folder still wins.
-  const parentPageId =
-    dest.parentPageId ??
-    (receivers
-      ? (await resolveFilingFolder(singletonSlot("Lab", "Meetings"), input.authorId)).folderId
-      : await ensureLabMeetingNotesFolder(input.authorId));
+  const parentPageId = receivers
+    ? (await resolveFilingFolder(singletonSlot("Lab", "Meetings"), input.authorId)).folderId
+    : await ensureLabMeetingNotesFolder(input.authorId);
   return file({ workspaceType: "Lab", workspaceId: null, parentPageId });
 }
 
@@ -654,62 +564,7 @@ type ResolvedNotebook = {
   templatePageId: string | null;
   /** Where the notebook itself lives: a link to this place is not a link. */
   primary: Placement;
-  /** The move the choice asked for, when the actor couldn't make it. */
-  declinedMove?: DeclinedNotebookMove | null;
 };
-
-/** A link the actor couldn't file: the place and why. */
-export type DeclinedNotebookLink = { location: NotebookLocation; error: string };
-
-/** The move an existing notebook was asked to make and couldn't: the place and why. */
-export type DeclinedNotebookMove = { location: NotebookLocation; error: string };
-
-const locationKey = (l: Placement) => `${l.workspaceType}:${l.workspaceId ?? ""}:${l.parentPageId ?? ""}`;
-
-/** A shortcut to the notebook at each link, best effort like shortcutNotebookIntoCore: a place the actor can't file into is reported, never fatal. */
-async function fileNotebookLinks(
-  notebook: ResolvedNotebook,
-  links: NotebookLocation[] | undefined,
-  actorId: string,
-  request?: Request,
-): Promise<DeclinedNotebookLink[]> {
-  const declined: DeclinedNotebookLink[] = [];
-  const seen = new Set([locationKey(notebook.primary)]);
-  for (const link of links ?? []) {
-    if (seen.has(locationKey(link))) continue;
-    seen.add(locationKey(link));
-    try {
-      await createShortcut({ targetPageId: notebook.id, dest: link, actorId, request });
-    } catch (err) {
-      if (!(err instanceof ShortcutError)) throw err;
-      declined.push({ location: link, error: err.message });
-    }
-  }
-  return declined;
-}
-
-/** Moves the notebook to `location`; the reason it stayed put, or null once it moved. */
-async function moveNotebook(
-  notebookId: string,
-  location: NotebookLocation,
-  actorId: string,
-  request?: Request,
-): Promise<string | null> {
-  const moved = await movePage({
-    pageId: notebookId,
-    userId: actorId,
-    request,
-    input: {
-      parentPageId: location.parentPageId,
-      workspaceType: location.workspaceType,
-      workspaceId: location.workspaceId,
-    },
-  });
-  if (moved.ok) return null;
-  if ("error" in moved) return moved.error;
-  const body = (await moved.response.json().catch(() => null)) as { error?: string } | null;
-  return body?.error ?? "Couldn't move the notebook";
-}
 
 /**
  * The notebook a caller's choice names: an existing one the actor can edit, or
@@ -726,23 +581,15 @@ async function resolveNotebookChoice(
   if (isExistingChoice(choice)) {
     const row = await loadEditableNotebook(choice.existingId, actorId);
     const own: Placement = { workspaceType: row.workspaceType, workspaceId: row.workspaceId, parentPageId: row.parentPageId };
-    const resolved: ResolvedNotebook = {
+    return {
       id: row.id,
       title: row.title,
       created: false,
       templatePageId: row.templatePageId,
       primary: own,
     };
-    if (!choice.location || locationKey(choice.location) === locationKey(own)) return resolved;
-    const error = await moveNotebook(row.id, choice.location, actorId, request);
-    return error
-      ? { ...resolved, declinedMove: { location: choice.location, error } }
-      : { ...resolved, primary: choice.location };
   }
-  const location = choice.location ?? null;
-  const explicit = location && !(location.workspaceType === "Lab" && location.parentPageId === null) ? location : null;
-  const dest =
-    explicit ?? (await resolveArtifactFiling(filingFor(choice.title), false, formatDateShort(new Date()))).dest;
+  const { dest } = await resolveArtifactFiling(filingFor(choice.title), false, formatDateShort(new Date()));
   const created = await createNotebook({
     title: choice.title,
     workspaceType: dest.workspaceType,
@@ -818,7 +665,6 @@ export async function createScheduledMeeting(
           ...typeForNotebookFiling(input, givenProjectId, title),
           projectId: givenProjectId,
           isCoreMeeting: input.isCoreMeeting ?? false,
-          noteLocation: null,
         }),
         input.request,
       );
@@ -949,7 +795,6 @@ export async function createScheduledMeeting(
       meetingTypeLabel: recorded.meetingTypeLabel,
       projectId: givenProjectId,
       isCoreMeeting: input.isCoreMeeting ?? false,
-      noteLocation: input.noteLocation ?? null,
       startDate,
     };
     if (wantNote) {
@@ -972,11 +817,6 @@ export async function createScheduledMeeting(
       ).id;
     }
   }
-
-  const declinedLinks =
-    notebookPlan && input.notebook
-      ? await fileNotebookLinks(notebookPlan, input.notebook.links, input.organizerId, input.request)
-      : [];
 
   if (recorded || attendanceMode === "SelfCheckIn" || participantUserIds.length > 0) {
     await seedMeetingRoster({
@@ -1017,8 +857,6 @@ export async function createScheduledMeeting(
     notebookId,
     createdNotebook,
     whiteboardPageId,
-    declinedLinks,
-    declinedMove: notebookPlan?.declinedMove ?? null,
   };
 }
 
@@ -1036,7 +874,6 @@ export type AttachMeetingNoteInput = {
   meetingType?: MeetingType | null;
   meetingTypeLabel?: string | null;
   projectId?: string | null;
-  noteLocation?: CreateScheduledMeetingInput["noteLocation"];
   /** The notebook this note files into. Omitted = the series' default, else the
    *  type-keyed notebook. Naming one is the organizer's or Core's call. */
   notebook?: NotebookChoice | null;
@@ -1052,10 +889,6 @@ export type AttachMeetingNoteResult =
       createdNotebook: boolean;
       /** The series' default notebook after this call. */
       seriesNotebookId: string | null;
-      /** Links in the notebook choice the actor couldn't file. */
-      declinedLinks: DeclinedNotebookLink[];
-      /** The move the notebook choice asked for, when the actor couldn't make it. */
-      declinedMove: DeclinedNotebookMove | null;
     }
   | { ok: false; error: string; status: number };
 
@@ -1193,8 +1026,6 @@ export async function attachMeetingNote(
       notebookId: existing.parentPageId,
       createdNotebook: false,
       seriesNotebookId: meeting.notebookId,
-      declinedLinks: [],
-      declinedMove: null,
     };
   }
 
@@ -1267,7 +1098,6 @@ export async function attachMeetingNote(
           ...typeFor(title),
           projectId,
           isCoreMeeting: meeting.isCoreMeeting,
-          noteLocation: null,
         }),
         input.request,
       );
@@ -1305,13 +1135,6 @@ export async function attachMeetingNote(
       meetingTypeLabel,
       projectId,
       isCoreMeeting: meeting.isCoreMeeting,
-      noteLocation: previous
-        ? {
-            workspaceType: previous.workspaceType === "Project" ? "Project" : "Lab",
-            workspaceId: previous.workspaceId,
-            parentPageId: folderOfNote(previous),
-          }
-        : (input.noteLocation ?? null),
       startDate: occurrence.start,
       occurrenceStart: occurrence.originalStart,
       notebookId: plan?.id ?? null,
@@ -1334,8 +1157,6 @@ export async function attachMeetingNote(
         notebookId: raced.parentPageId,
         createdNotebook: false,
         seriesNotebookId: meeting.notebookId,
-        declinedLinks: [],
-        declinedMove: null,
       };
     }
     throw err;
@@ -1374,17 +1195,12 @@ export async function attachMeetingNote(
 
   await seedNoteFromTemplate(notePageId, projectId, meetingType, plan?.templatePageId ?? null);
 
-  const declinedLinks =
-    chosen && plan ? await fileNotebookLinks(plan, chosen.links, input.actorId, input.request) : [];
-
   return {
     ok: true,
     notePageId,
     notebookId,
     createdNotebook,
     seriesNotebookId,
-    declinedLinks,
-    declinedMove: plan?.declinedMove ?? null,
   };
 }
 
@@ -1399,7 +1215,6 @@ export type AttachMeetingWhiteboardInput = {
   meetingType?: MeetingType | null;
   meetingTypeLabel?: string | null;
   projectId?: string | null;
-  noteLocation?: CreateScheduledMeetingInput["noteLocation"];
 };
 
 export type AttachMeetingWhiteboardResult =
@@ -1485,19 +1300,6 @@ export async function attachMeetingWhiteboard(
     }
   }
 
-  // Co-locate with the note when it lives in the Lab drive (a General meeting
-  // whose note went to a chosen folder). Project/Core assets file into their
-  // fixed folder regardless, so no override is needed there.
-  let noteLocation = useExisting ? null : (input.noteLocation ?? null);
-  const note = meeting.notePages[0];
-  if (note && note.workspaceType === "Lab") {
-    noteLocation = {
-      workspaceType: "Lab",
-      workspaceId: null,
-      parentPageId: folderOfNote(note),
-    };
-  }
-
   const { id: whiteboardPageId } = await buildMeetingArtifactPage({
     meetingId: meeting.id,
     authorId: input.actorId,
@@ -1506,7 +1308,6 @@ export async function attachMeetingWhiteboard(
     meetingTypeLabel: meetingType === "Other" ? meetingTypeLabel : null,
     projectId: projectId ?? null,
     isCoreMeeting: meeting.isCoreMeeting,
-    noteLocation,
     fileAt: meeting.notebook,
     startDate: meeting.selectedAt,
   });

@@ -102,47 +102,22 @@ describe("add-meeting-note action notebook choice", () => {
   });
 
   it("passes a new-notebook choice through", async () => {
-    const notebook = {
-      title: "Retro",
-      location: { workspaceType: "Lab", workspaceId: null, parentPageId: "f1" },
-      templatePageId: "tpl",
-    };
+    const notebook = { title: "Retro", templatePageId: "tpl" };
 
     await post({ intent: "add-meeting-note", meetingId: "m1", projectId: "p1", notebook: JSON.stringify(notebook) });
 
     expect(mockAttach).toHaveBeenCalledWith(expect.objectContaining({ notebook, projectId: "p1" }));
   });
 
-  it("passes links through with the request, and returns the links that were declined", async () => {
-    const links = [{ workspaceType: "Lab", workspaceId: null, parentPageId: "f2" }];
-    const declinedLinks = [{ location: links[0], error: "You can't add to that folder" }];
-    mockAttach.mockResolvedValue({ ...filed, declinedLinks });
-
+  it("refuses a notebook choice that carries a location", async () => {
     const res = await post({
       intent: "add-meeting-note",
       meetingId: "m1",
-      notebook: JSON.stringify({ existingId: "nb-1", links }),
+      notebook: JSON.stringify({ existingId: "nb-1", location: { workspaceType: "Lab", workspaceId: null, parentPageId: "f2" } }),
     });
 
-    expect(mockAttach).toHaveBeenCalledWith(
-      expect.objectContaining({ notebook: { existingId: "nb-1", links }, request: expect.any(Request) }),
-    );
-    expect((await res.json()).declinedLinks).toEqual(declinedLinks);
-  });
-
-  it("passes the location to move an existing notebook to, and returns a refused move", async () => {
-    const location = { workspaceType: "Lab", workspaceId: null, parentPageId: "f2" };
-    const declinedMove = { location, error: "You can't edit that folder" };
-    mockAttach.mockResolvedValue({ ...filed, declinedMove });
-
-    const res = await post({
-      intent: "add-meeting-note",
-      meetingId: "m1",
-      notebook: JSON.stringify({ existingId: "nb-1", location }),
-    });
-
-    expect(mockAttach).toHaveBeenCalledWith(expect.objectContaining({ notebook: { existingId: "nb-1", location } }));
-    expect((await res.json()).declinedMove).toEqual(declinedMove);
+    expect(res.status).toBeGreaterThanOrEqual(400);
+    expect(mockAttach).not.toHaveBeenCalled();
   });
 
   it("passes no notebook when the field is absent, so the series default decides", async () => {
