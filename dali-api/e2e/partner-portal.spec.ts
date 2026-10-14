@@ -400,6 +400,12 @@ test.describe('bound application form', () => {
         `SELECT id FROM "User" WHERE "daliEmail" = 'admin@dali.dartmouth.edu'`,
       );
       const adminId = admin.rows[0].id as string;
+      // A Form shares its id with a Page (kind Form); the FK needs the page first.
+      await c.query(
+        `INSERT INTO "Page" (id, "workspaceType", title, kind, "createdById", "updatedAt")
+         VALUES ($1, 'Lab', 'E2E Partner Questions', 'Form', $2, now())`,
+        [formId, adminId],
+      );
       await c.query(
         `INSERT INTO "Form" (id, name, "createdById", published, "publicToken", "updatedAt")
          VALUES ($1, 'E2E Partner Questions', $2, true, $3, now())`,
@@ -447,7 +453,8 @@ test.describe('bound application form', () => {
       );
       // Cascades the version and the submission; the application keeps its
       // row (formSubmissionId is SetNull).
-      await c.query(`DELETE FROM "Form" WHERE id = $1`, [formId]);
+      // Deleting the page cascades to the Form and its versions.
+      await c.query(`DELETE FROM "Page" WHERE id = $1`, [formId]);
     });
   }
 

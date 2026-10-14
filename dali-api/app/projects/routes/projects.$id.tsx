@@ -12,7 +12,8 @@ import {
   type ShouldRevalidateFunctionArgs,
 } from "react-router";
 import { Select, Menu, Popover, InfoTip } from "~/components/ui/floating";
-import { CalendarDays, CalendarPlus, CalendarX, Check, Globe, Handshake, History, Pencil, Pin, X, Settings, Folder, FolderInput, FolderPlus, ChevronRight, ChevronDown, FileText, Info, Users, Paperclip, Plus, Trash2, Upload, Unlink, MoreHorizontal, ExternalLink, Star, Mail, Github, Slack, Layers, Figma } from "lucide-react";
+import { CalendarDays, CalendarPlus, CalendarX, Check, Globe, Handshake, History, Pencil, Pin, X, Settings, Folder, FolderInput, FolderPlus, ChevronRight, ChevronDown, FileText, Info, Users, Paperclip, Plus, Trash2, Upload, Unlink, MoreHorizontal, ExternalLink, Star, Mail, Github, Slack, Layers, Figma, NotebookPen, Shapes } from "lucide-react";
+import type { DriveTypeFilter } from "~/components/drive/type-filter";
 import { DriveFolderBindings } from "~/components/drive/DriveFolderBindings";
 import { DriveReceivers } from "~/components/drive/DriveReceivers";
 import { useOsChrome } from "~/components/os-chrome";
@@ -684,8 +685,10 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     auth.user.email;
   const userName = presenceUser?.name ?? fallbackName;
 
+  // Forms are Pages too but are listed by the Drive tab, not as documents here.
+  const docRows = pageRows.filter((p) => p.kind !== "Form");
   const childrenByParent = new Map<string, typeof pageRows>();
-  for (const p of pageRows) {
+  for (const p of docRows) {
     if (!p.parentPageId) continue;
     const list = childrenByParent.get(p.parentPageId);
     if (list) list.push(p);
@@ -703,7 +706,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   });
   // Top-level docs for the main list. Pinned ones are lifted into
   // `pinnedDocuments` (rendered above), so they don't appear twice.
-  const documents = pageRows
+  const documents = docRows
     .filter((p) => p.parentPageId === null && p.pinnedAt === null)
     .map((p) => ({
       ...toDocumentDto(p),
@@ -712,7 +715,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   // Pinned docs — any page a teammate pinned, most-recent pin first, rendered
   // at the top of the Documents block (and lifted out of the list above).
-  const pinnedDocuments = pageRows
+  const pinnedDocuments = docRows
     .filter((p) => p.pinnedAt !== null && p.parentPageId === null)
     .sort((a, b) => (b.pinnedAt?.getTime() ?? 0) - (a.pinnedAt?.getTime() ?? 0))
     .map((p) => ({
@@ -4520,10 +4523,12 @@ function DocRow({
 
 // Project drives hold docs, folders and files. Folders are always shown (the
 // browser never filters them out), so the filter only needs the leaf kinds.
-type ProjectDriveTypeFilter = "all" | "doc" | "file";
+type ProjectDriveTypeFilter = Extract<DriveTypeFilter, "all" | "doc" | "notebook" | "whiteboard" | "file">;
 const PROJECT_TYPE_FILTERS: { value: ProjectDriveTypeFilter; label: string; icon?: ReactNode }[] = [
   { value: "all", label: "All types" },
   { value: "doc", label: "Documents", icon: <FileText className="w-3.5 h-3.5" /> },
+  { value: "notebook", label: "Notebooks", icon: <NotebookPen className="w-3.5 h-3.5" /> },
+  { value: "whiteboard", label: "Whiteboards", icon: <Shapes className="w-3.5 h-3.5" /> },
   { value: "file", label: "Files", icon: <Paperclip className="w-3.5 h-3.5" /> },
 ];
 

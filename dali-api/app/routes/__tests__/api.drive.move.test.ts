@@ -7,6 +7,7 @@ vi.mock("~/lib/db", () => ({
     page: { findUnique: vi.fn() },
   },
 }));
+vi.mock("~/forms/lib/form-page.server", () => ({ moveForm: vi.fn() }));
 vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn() }));
 vi.mock("~/lib/cors", () => ({
   withCors: (_req: unknown, res: unknown) => res,
@@ -20,6 +21,7 @@ vi.mock("~/lib/roles", () => ({
 vi.mock("~/lib/pageAccess.server", () => ({ getPageAccess: vi.fn() }));
 vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
 
+import { moveForm } from "~/forms/lib/form-page.server";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isCore, isProjectMember, canViewForms } from "~/lib/roles";
@@ -67,7 +69,7 @@ describe("POST /api/drive/move", () => {
 
   it("files a form", async () => {
     expect((await call(FORM_MOVE)).status).toBe(200);
-    expect(m.form.update).toHaveBeenCalledWith({ where: { id: "fm1" }, data: { folderPageId: "folder" } });
+    expect(moveForm).toHaveBeenCalledWith("fm1", "folder");
   });
 
   it("unplaces an item without looking at any folder", async () => {
@@ -115,7 +117,7 @@ describe("POST /api/drive/move", () => {
     it("403s a form for a viewer without the forms gate", async () => {
       vi.mocked(canViewForms).mockResolvedValue(false);
       expect(await call(FORM_MOVE)).toEqual({ status: 403, json: { error: "You can't move this form" } });
-      expect(m.form.update).not.toHaveBeenCalled();
+      expect(moveForm).not.toHaveBeenCalled();
     });
   });
 

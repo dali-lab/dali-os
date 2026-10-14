@@ -9,6 +9,7 @@ import { DialogProvider } from "~/components/ui/dialog";
 import { ToastProvider } from "~/components/ui/toast";
 import type { DriveTreeScope } from "~/lib/drive-scopes.server";
 import type { DriveItem } from "~/lib/drive.server";
+import type { DriveTypeFilter } from "~/components/drive/type-filter";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -49,6 +50,8 @@ type MountOptions = {
   search?: string;
   onHistory?: boolean;
   initialSelectedId?: string;
+  typeFilter?: DriveTypeFilter;
+  scopes?: DriveTreeScope[];
 };
 
 /** The browser at a location, with `onNavigate` moving it the way the hub's URL does. */
@@ -57,10 +60,10 @@ async function mount(opts: MountOptions = {}) {
   function Harness() {
     const [loc, setLoc] = useState({ scopeId: opts.scopeId === undefined ? "lab" : opts.scopeId, folderId: opts.folderId ?? null });
     return createElement(ToastProvider, null, createElement(DialogProvider, null, createElement(DriveBrowser, {
-      scopes: [lab, mine],
+      scopes: opts.scopes ?? [lab, mine],
       currentScopeId: loc.scopeId,
       currentFolderId: loc.folderId,
-      typeFilter: "all",
+      typeFilter: opts.typeFilter ?? "all",
       search: opts.search ?? "",
       onSearchChange: vi.fn(),
       onNavigate: (scopeId: string | null, folderId: string | null) => {

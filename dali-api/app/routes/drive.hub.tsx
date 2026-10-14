@@ -61,6 +61,7 @@ import type { UploadTarget } from "~/components/drive/useDriveFileUpload";
 import { useDialog } from "~/components/ui/dialog";
 import { useToast } from "~/components/ui/toast";
 import { Menu, Select } from "~/components/ui/floating";
+import { parseTypeFilter, type DriveTypeFilter } from "~/components/drive/type-filter";
 import { createNotebookRequest, sendJson } from "~/components/notebooks/notebook-requests";
 import { Modal } from "~/components/Modal";
 import { cn } from "~/lib/cn";
@@ -202,8 +203,6 @@ type DriveScope = LoaderData["driveScopes"][number];
 
 // ── Type filter ────────────────────────────────────────────────────────────────
 
-export type DriveTypeFilter = "all" | "doc" | "file" | "form" | "agreement" | "rubric";
-
 const TYPE_FILTERS: {
   value: DriveTypeFilter;
   label: string;
@@ -213,6 +212,8 @@ const TYPE_FILTERS: {
 }[] = [
   { value: "all", label: "All", icon: null },
   { value: "doc", label: "Documents", icon: <FileText className="w-3.5 h-3.5" /> },
+  { value: "notebook", label: "Notebooks", icon: <NotebookPen className="w-3.5 h-3.5" /> },
+  { value: "whiteboard", label: "Whiteboards", icon: <Shapes className="w-3.5 h-3.5" /> },
   { value: "file", label: "Files", icon: <Paperclip className="w-3.5 h-3.5" /> },
   { value: "form", label: "Forms", icon: <ClipboardList className="w-3.5 h-3.5" />, requiresCap: "canViewForms" },
   { value: "agreement", label: "Agreements", icon: <FileSignature className="w-3.5 h-3.5" />, requiresCap: "canManageAgreements" },
@@ -1164,15 +1165,7 @@ export default function DriveHub() {
     () => new Set(searchParams.getAll("tag").filter(Boolean)),
     [searchParams],
   );
-  const rawType = searchParams.get("type") as DriveTypeFilter | null;
-  const typeFilter: DriveTypeFilter =
-    rawType === "doc" ||
-    rawType === "file" ||
-    rawType === "form" ||
-    rawType === "agreement" ||
-    rawType === "rubric"
-      ? rawType
-      : "all";
+  const typeFilter = parseTypeFilter(searchParams.get("type"));
 
   const currentScope = useMemo(
     () => driveScopes.find((s) => s.id === currentScopeId) ?? null,
@@ -1574,10 +1567,10 @@ export default function DriveHub() {
     [navigate, driveScopes, onNavigate, effectiveScopeId],
   );
 
-  // Toggle the viewer's personal favorite on a page item (doc/folder).
+  // Toggle the viewer's personal favorite on a page item (doc/folder/form).
   const onToggleFavorite = useCallback(
     async (item: DriveItem) => {
-      if (item.type !== "doc" && item.type !== "folder") return;
+      if (item.type !== "doc" && item.type !== "folder" && item.type !== "form") return;
       await fetch(`/api/pages/${item.id}/favorite`, {
         method: "POST",
         credentials: "include",

@@ -229,8 +229,7 @@ export async function movePage({
     // Files are placed by `folderPageId` but scoped by their own columns, so a
     // cross-workspace move has to rewrite both. Leaving the scope behind strands
     // every upload inside the folder exactly the way a stale grandchild strands.
-    // Forms need no equivalent: `Form` has no scope column — loadForms resolves a
-    // form's drive purely from the folder it points at, which just moved.
+    // Forms need no equivalent: a form is a Page, so it travels with the subtree.
     needsFiles ? folderIdsPending.then(findFilesInFolders) : Promise.resolve([] as string[]),
     appendOnly
       ? Promise.resolve([] as { id: string }[])

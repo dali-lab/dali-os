@@ -1,9 +1,18 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/db");
+vi.mock("~/forms/lib/form-page.server", () => ({
+  createForm: vi.fn(),
+  renameForm: vi.fn(),
+  moveForm: vi.fn(),
+  deleteForm: vi.fn(),
+  setFormAudience: vi.fn(),
+  setFormArchived: vi.fn(),
+}));
 
 import { prisma } from "~/lib/db";
 import { runFormsAction } from "~/forms/lib/forms-data";
+import { moveForm } from "~/forms/lib/form-page.server";
 
 const mockPrisma = prisma as unknown as {
   form: {
@@ -35,10 +44,7 @@ describe("runFormsAction move-form", () => {
     );
 
     expect(res).toEqual({ ok: true });
-    expect(mockPrisma.form.update).toHaveBeenCalledWith({
-      where: { id: "form-1" },
-      data: { folderPageId: null },
-    });
+    expect(moveForm).toHaveBeenCalledWith("form-1", null);
     // "" short-circuits resolveFolderPageId — no folder existence query.
     expect(mockPrisma.page.findFirst).not.toHaveBeenCalled();
   });
@@ -53,10 +59,7 @@ describe("runFormsAction move-form", () => {
     );
 
     expect(res).toEqual({ ok: true });
-    expect(mockPrisma.form.update).toHaveBeenCalledWith({
-      where: { id: "form-1" },
-      data: { folderPageId: "folder-1" },
-    });
+    expect(moveForm).toHaveBeenCalledWith("form-1", "folder-1");
   });
 
   it("404s when the destination folder is gone", async () => {
@@ -69,7 +72,7 @@ describe("runFormsAction move-form", () => {
     );
 
     expect(res).toEqual({ error: "Folder not found", status: 404 });
-    expect(mockPrisma.form.update).not.toHaveBeenCalled();
+    expect(moveForm).not.toHaveBeenCalled();
   });
 
   it("404s when the form is gone", async () => {
@@ -81,6 +84,6 @@ describe("runFormsAction move-form", () => {
     );
 
     expect(res).toEqual({ error: "Not found", status: 404 });
-    expect(mockPrisma.form.update).not.toHaveBeenCalled();
+    expect(moveForm).not.toHaveBeenCalled();
   });
 });
