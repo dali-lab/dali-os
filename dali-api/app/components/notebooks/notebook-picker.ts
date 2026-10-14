@@ -6,6 +6,8 @@ export type PickedNotebook = {
   path: string;
   workspaceType: string;
   workspaceId: string | null;
+  /** The folder the notebook sits in; null at the top of its workspace. */
+  parentPageId: string | null;
 };
 
 export type NotebookRow = PickedNotebook & { tabCount: number; lastNoteAt: string | null; suggested: boolean };

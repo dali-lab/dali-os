@@ -4,6 +4,7 @@ import { act, createElement, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import type { PickerRows } from "~/components/drive/picker-rows";
 import type { GroupOption } from "~/calendar/lib/types";
+import type { PickedNotebook } from "~/components/notebooks/notebook-picker";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -111,97 +112,129 @@ afterEach(() => {
   container.remove();
 });
 
-const radio = (label: string) =>
-  Array.from(container.querySelectorAll("label"))
-    .find((l) => l.textContent === label)
-    ?.querySelector("input") as HTMLInputElement | undefined;
-const choose = (label: string) => act(() => radio(label)!.click());
-const chipText = () =>
-  Array.from(container.querySelectorAll("[data-testid='filed-in-chip']")).map((c) => c.textContent);
 const checkbox = (label: string) =>
   Array.from(container.querySelectorAll("label"))
-    .find((l) => l.textContent === label)
+    .find((l) => l.textContent?.startsWith(label))
     ?.querySelector("input") as HTMLInputElement | undefined;
 const click = (el: Element | undefined | null) => act(() => (el as HTMLElement).click());
+const addNotebook = () => click(checkbox("Notebook"));
+const segment = (label: string) =>
+  Array.from(container.querySelectorAll("[role='radiogroup'][aria-label='Notebook'] [role='radio']")).find(
+    (b) => b.textContent === label,
+  );
+const choose = (label: "New" | "Existing") => click(segment(label));
+const chipText = () =>
+  Array.from(container.querySelectorAll("[data-testid='filed-in-chip']")).map((c) => c.textContent);
+const locationText = () =>
+  Array.from(container.querySelectorAll("ul[aria-label='Location'] [data-testid='filed-in-chip']")).map((c) => c.textContent);
+const shortcutText = () =>
+  Array.from(container.querySelectorAll("ul[aria-label='Shortcuts'] [data-testid='filed-in-chip']")).map((c) => c.textContent);
 const button = (text: string) =>
   Array.from(container.querySelectorAll("button")).find((b) => b.textContent?.includes(text));
 
 describe("MeetingNoteFields in the create modal", () => {
-  it("offers No note, New notebook and Add to existing notebook, with no note chosen", () => {
+  it("offers a Notebook and a Whiteboard checkbox, both unchecked, each with a description", () => {
     mount();
-    const labels = Array.from(container.querySelectorAll("input[type='radio']")).map((i) => i.closest("label")?.textContent);
-    expect(labels).toEqual(["No note", "New notebook", "Add to existing notebook"]);
-    expect(radio("No note")!.checked).toBe(true);
-    expect(container.textContent).not.toContain("Filed in");
-    expect(container.textContent).not.toContain("About");
+    expect(checkbox("Notebook")!.checked).toBe(false);
+    expect(checkbox("Whiteboard")!.checked).toBe(false);
+    expect(container.textContent).toContain("Shared meeting notes, one tab per meeting.");
+    expect(container.textContent).toContain("A shared whiteboard, filed with the notebook.");
   });
 
-  it("titles the section Meeting assets with a Notes row and, under it, a Whiteboard row", () => {
+  it("uses square default-size checkboxes, not radios or the large round ones", () => {
     mount();
+    expect(container.querySelector("input[type='radio']")).toBeNull();
+    expect(container.querySelectorAll(".rounded-full.h-5")).toHaveLength(0);
+    expect(container.querySelectorAll("input[type='checkbox']")).toHaveLength(2);
+  });
+
+  it("drops the old Meeting assets, Notes and Filed in labels", () => {
+    mount();
+    addNotebook();
     const text = container.textContent!;
-    expect(text.indexOf("Meeting assets")).toBeGreaterThanOrEqual(0);
-    expect(text.indexOf("Notes")).toBeLessThan(text.indexOf("Whiteboard"));
-    expect(text).toContain("Start a whiteboard");
-    expect(text).not.toContain("Also start a whiteboard");
-    expect(container.querySelector("[role='radiogroup'][aria-label='Notes']")).toBeTruthy();
+    for (const gone of ["Meeting assets", "Filed in", "No note", "New notebook", "Add to existing notebook", "Start a whiteboard", "About"]) {
+      expect(text).not.toContain(gone);
+    }
   });
 
-  it("shows the name and Filed in once a note is chosen, with no About select", () => {
+  it("shows nothing about the notebook until it is checked", () => {
     mount();
-    choose("New notebook");
+    expect(container.querySelector("[role='radiogroup']")).toBeNull();
+    expect(container.querySelector("#meeting-notebook-name")).toBeNull();
+    expect(container.textContent).not.toContain("Location");
+  });
+
+  it("shows New and Existing, the name and the places once the notebook is checked", () => {
+    mount();
+    addNotebook();
+    expect(Array.from(container.querySelectorAll("[role='radiogroup'] [role='radio']")).map((r) => r.textContent)).toEqual([
+      "New",
+      "Existing",
+    ]);
+    expect(segment("New")!.getAttribute("aria-checked")).toBe("true");
     expect(container.querySelector("#meeting-notebook-name")).toBeTruthy();
-    expect(container.textContent).toContain("Filed in");
-    expect(container.textContent).not.toContain("About");
+    expect(container.textContent).toContain("Location");
+    expect(container.textContent).toContain("Shortcuts");
   });
 
-  it("offers the whiteboard without a note", () => {
+  it("indents the details under the checkbox", () => {
     mount();
-    click(checkbox("Start a whiteboard"));
+    addNotebook();
+    expect(container.querySelector("[role='radiogroup']")!.closest(".pl-6")).toBeTruthy();
+  });
+
+  it("offers the whiteboard without a notebook", () => {
+    mount();
+    click(checkbox("Whiteboard"));
     expect(controller.state).toMatchObject({ enabled: false, whiteboard: true });
     expect(container.querySelector("#meeting-notebook-name")).toBeNull();
   });
 
-  it("seeds the invited project's Meetings receiver as the primary chip", () => {
+  it("seeds the invited project's Meetings receiver as the location", () => {
     mount({ prefillProject: "p1" });
-    choose("New notebook");
-    expect(chipText()).toEqual(["Projects / Atlas / MeetingsPrimary"]);
+    addNotebook();
+    expect(locationText()).toEqual(["Projects / Atlas / Meetings"]);
+    expect(shortcutText()).toEqual([]);
   });
 
-  it("leaves Filed in empty with no invited project", () => {
+  it("leaves Location empty with no invited project", () => {
     mount();
-    choose("New notebook");
+    addNotebook();
     expect(chipText()).toEqual([]);
     expect(controller.state.places).toEqual([]);
+    expect(container.textContent).toContain("Goes in the default Meetings folder.");
+    expect(container.textContent).toContain("No shortcuts. Add places where this notebook should also appear.");
   });
 
-  it("stops following the invited project once the organizer removes the chip", () => {
+  it("stops following the invited project once the organizer removes the row", () => {
     mount({ prefillProject: "p1" });
-    choose("New notebook");
+    addNotebook();
     click(container.querySelector("button[aria-label='Remove Projects / Atlas / Meetings']"));
     expect(chipText()).toEqual([]);
     expect(controller.state.placesTouched).toBe(true);
   });
 
-  it("keeps the whiteboard when the note is dropped", () => {
+  it("keeps the whiteboard when the notebook is unchecked", () => {
     mount();
-    choose("New notebook");
+    addNotebook();
     act(() => controller.setWhiteboard(true));
-    choose("No note");
+    addNotebook();
     expect(controller.state.whiteboard).toBe(true);
     expect(controller.state.enabled).toBe(false);
   });
 
-  it("derives the project from the primary place", () => {
+  it("derives the project from the location", () => {
     mount({ prefillProject: "p1" });
-    choose("New notebook");
+    addNotebook();
     expect(meetingNotePayload(controller.state)).toMatchObject({ projectId: "p1" });
   });
 
-  it("sends the primary and links in the payload", () => {
+  it("sends the location and shortcuts in the payload", () => {
     mount({ prefillProject: "p1", suggest: { attendeeIds: ["a", "b", "c"], groups: [coreGroup] } });
-    choose("New notebook");
+    addNotebook();
     click(button("Suggested: Core"));
-    expect(chipText()).toEqual(["Projects / Atlas / MeetingsPrimary", "Core / MeetingsLink"]);
+    expect(locationText()).toEqual(["Projects / Atlas / Meetings"]);
+    expect(shortcutText()).toEqual(["Core / Meetings"]);
     expect(meetingNotePayload(controller.state)).toMatchObject({
       note: true,
       projectId: "p1",
@@ -213,21 +246,44 @@ describe("MeetingNoteFields in the create modal", () => {
     });
   });
 
-  it("promotes a link when its badge is clicked", () => {
+  it("makes a shortcut the location with Make location", () => {
     mount({ prefillProject: "p1", suggest: { attendeeIds: ["a", "b", "c"], groups: [coreGroup] } });
-    choose("New notebook");
+    addNotebook();
     click(button("Suggested: Core"));
-    click(container.querySelector("button[aria-label='Make Core / Meetings primary']"));
-    expect(chipText()).toEqual(["Core / MeetingsPrimary", "Projects / Atlas / MeetingsLink"]);
+    click(container.querySelector("ul[aria-label='Shortcuts'] button[aria-label='Make location']"));
+    expect(locationText()).toEqual(["Core / Meetings"]);
+    expect(shortcutText()).toEqual(["Projects / Atlas / Meetings"]);
+    expect(controller.state.placesTouched).toBe(true);
   });
 
-  it("opens the multi picker seeded with the current places, primary first", () => {
+  it("reorders places through the controller, the top one being the location", () => {
+    mount({ prefillProject: "p1", suggest: { attendeeIds: ["a", "b", "c"], groups: [coreGroup] } });
+    addNotebook();
+    click(button("Suggested: Core"));
+    act(() => controller.reorderPlaces(1, 0));
+    expect(locationText()).toEqual(["Core / Meetings"]);
+    expect(shortcutText()).toEqual(["Projects / Atlas / Meetings"]);
+  });
+
+  it("gives each row a keyboard-reachable drag handle", () => {
+    mount({ prefillProject: "p1", suggest: { attendeeIds: ["a", "b", "c"], groups: [coreGroup] } });
+    addNotebook();
+    click(button("Suggested: Core"));
+    const handles = Array.from(container.querySelectorAll("button[aria-label^='Reorder ']"));
+    expect(handles.map((h) => h.getAttribute("aria-label"))).toEqual([
+      "Reorder Projects / Atlas / Meetings",
+      "Reorder Core / Meetings",
+    ]);
+  });
+
+  it("opens the multi picker seeded with the current places, location first", () => {
     mount({ prefillProject: "p1" });
-    choose("New notebook");
+    addNotebook();
     click(button("Add a place"));
     const props = pickerProps.mock.lastCall![0];
     expect(props).toMatchObject({
       mode: "multi",
+      heading: "File the notebook in",
       preferFolderType: "Meetings",
       initialDestinations: [{ driveId: "projects", folderId: "p1-m" }],
     });
@@ -236,7 +292,7 @@ describe("MeetingNoteFields in the create modal", () => {
 
   it("takes the picker's result as the new places", () => {
     mount({ prefillProject: "p1" });
-    choose("New notebook");
+    addNotebook();
     click(button("Add a place"));
     const { onConfirm } = pickerProps.mock.lastCall![0];
     act(() =>
@@ -249,21 +305,33 @@ describe("MeetingNoteFields in the create modal", () => {
         primaryIndex: 2,
       }),
     );
-    expect(chipText()).toEqual([
-      "Lab / Meeting assetsPrimary",
-      "Projects / Atlas / MeetingsLink",
-      "Core / MeetingsLink",
-    ]);
+    expect(locationText()).toEqual(["Lab / Meeting assets"]);
+    expect(shortcutText()).toEqual(["Projects / Atlas / Meetings", "Core / Meetings"]);
     expect(container.querySelector("[data-testid='folder-picker']")).toBeNull();
   });
 
-  it("treats every chip as a link for an existing notebook", () => {
+  it("switches to Existing with the places held as shortcuts until a notebook is picked", () => {
     mount({ prefillProject: "p1", suggest: { attendeeIds: ["a", "b", "c"], groups: [coreGroup] } });
-    choose("Add to existing notebook");
-    expect(chipText()).toEqual([]);
+    addNotebook();
+    choose("Existing");
+    expect(controller.state.notebookMode).toBe("existing");
+    expect(locationText()).toEqual([]);
     click(button("Suggested: Core"));
-    expect(chipText()).toEqual(["Core / MeetingsLink"]);
-    expect(container.querySelector("button[aria-label^='Make']")).toBeNull();
+    expect(shortcutText()).toEqual(["Core / Meetings"]);
+    expect(container.querySelector("button[aria-label='Make location']")).toBeNull();
+  });
+
+  it("opens the notebook picker when Existing is chosen with none picked", () => {
+    mount();
+    addNotebook();
+    choose("Existing");
+    expect(notebookPickerProps.mock.lastCall![0]).toMatchObject({ open: true });
+  });
+
+  it("does not open the notebook picker for New", () => {
+    mount();
+    addNotebook();
+    expect(notebookPickerProps).not.toHaveBeenCalled();
   });
 });
 
@@ -271,33 +339,42 @@ describe("filing suggestions", () => {
   const suggestionButtons = () =>
     Array.from(container.querySelectorAll("ul[aria-label='Suggested places'] button")).map((b) => b.textContent);
 
-  it("shows none until a note is chosen", () => {
+  it("shows none until a notebook is chosen", () => {
     mount({ suggest: { attendeeIds: ["a", "b", "c"], groups: [coreGroup] } });
     expect(suggestionButtons()).toEqual([]);
   });
 
   it("names the group and why", () => {
     mount({ suggest: { attendeeIds: ["a", "b", "c", "d"], groups: [atlasGroup, coreGroup] } });
-    choose("New notebook");
+    addNotebook();
     expect(suggestionButtons()).toEqual([
       "Suggested: Atlas · 4 of 4 attendees",
       "Suggested: Core · 3 of 4 attendees",
     ]);
   });
 
-  it("makes the first click primary when nothing is chosen", () => {
+  it("makes the first click the location when nothing is chosen", () => {
     mount({ suggest: { attendeeIds: ["a", "b", "c"], groups: [coreGroup] } });
-    choose("New notebook");
+    addNotebook();
     click(button("Suggested: Core"));
-    expect(chipText()).toEqual(["Core / MeetingsPrimary"]);
+    expect(locationText()).toEqual(["Core / Meetings"]);
   });
 
-  it("makes a picked suggestion the primary with no project chosen first", () => {
+  it("adds a later click as a shortcut", () => {
+    mount({ suggest: { attendeeIds: ["a", "b", "c", "d"], groups: [atlasGroup, coreGroup] } });
+    addNotebook();
+    click(button("Suggested: Atlas"));
+    click(button("Suggested: Core"));
+    expect(locationText()).toEqual(["Projects / Atlas / Meetings"]);
+    expect(shortcutText()).toEqual(["Core / Meetings"]);
+  });
+
+  it("sends a picked suggestion as the location with no project chosen first", () => {
     mount({ suggest: { attendeeIds: ["a", "b", "c", "d"], groups: [atlasGroup] } });
-    choose("New notebook");
+    addNotebook();
     expect(controller.state.places).toEqual([]);
     click(button("Suggested: Atlas"));
-    expect(chipText()).toEqual(["Projects / Atlas / MeetingsPrimary"]);
+    expect(locationText()).toEqual(["Projects / Atlas / Meetings"]);
     expect(meetingNotePayload(controller.state)).toMatchObject({
       projectId: "p1",
       notebook: { location: { workspaceType: "Project", workspaceId: "p1", parentPageId: "p1-m" } },
@@ -306,117 +383,236 @@ describe("filing suggestions", () => {
 
   it("hides a suggestion once its place is selected", () => {
     mount({ suggest: { attendeeIds: ["a", "b", "c"], groups: [coreGroup] } });
-    choose("New notebook");
+    addNotebook();
     click(button("Suggested: Core"));
     expect(suggestionButtons()).toEqual([]);
   });
 
   it("is never applied on its own", () => {
     mount({ suggest: { attendeeIds: ["a", "b", "c"], groups: [coreGroup] } });
-    choose("New notebook");
+    addNotebook();
     expect(controller.state.places).toEqual([]);
   });
 
   it("skips groups with nowhere a note can be filed", () => {
     const offering = group({ id: "g-off", name: "Intro to Design", systemKey: "offering:o1", memberIds: ["a", "b", "c"] });
     mount({ suggest: { attendeeIds: ["a", "b", "c"], groups: [offering] } });
-    choose("New notebook");
+    addNotebook();
     expect(suggestionButtons()).toEqual([]);
   });
 
   it("suggests the next group when the best one is unfilable", () => {
     const offering = group({ id: "g-off", name: "Intro to Design", systemKey: "offering:o1", memberIds: ["a", "b", "c"] });
     mount({ suggest: { attendeeIds: ["a", "b", "c"], groups: [offering, coreGroup] } });
-    choose("New notebook");
+    addNotebook();
     expect(suggestionButtons()).toEqual(["Suggested: Core · 3 of 3 attendees"]);
   });
 
   it("follows the meeting title", () => {
     mount({ suggest: { attendeeIds: [], groups: [atlasGroup] }, meetingTitle: "Atlas kickoff" });
-    choose("New notebook");
+    addNotebook();
     expect(suggestionButtons()).toEqual(["Suggested: Atlas · named in the title"]);
   });
 });
 
 describe("choosing an existing notebook", () => {
-  const picked = {
+  const inCore: PickedNotebook = {
     id: "nb1",
     title: "Weekly sync",
-    path: "Projects ▸ Atlas",
+    path: "Core ▸ Meetings",
+    workspaceType: "Lab",
+    workspaceId: null,
+    parentPageId: "core-m",
+  };
+  const inAtlas: PickedNotebook = {
+    id: "nb2",
+    title: "Atlas sync",
+    path: "Projects ▸ Atlas ▸ Meetings",
     workspaceType: "Project",
     workspaceId: "p1",
+    parentPageId: "p1-m",
   };
+  const hidden = { ...inCore, id: "nb3", path: "Somewhere ▸ Private", parentPageId: "not-in-rows" };
   const removeButton = () => container.querySelector("button[aria-label='Remove notebook']");
+  const pick = (nb: PickedNotebook) => act(() => notebookPickerProps.mock.lastCall![0].onPick(nb));
+  const openExisting = (props: Parameters<typeof mount>[0] = {}) => {
+    mount(props);
+    addNotebook();
+    choose("Existing");
+  };
 
   it("has no remove button until a notebook is chosen", () => {
-    mount();
-    choose("Add to existing notebook");
+    openExisting();
     expect(container.textContent).toContain("No notebook chosen");
     expect(removeButton()).toBeNull();
   });
 
-  it("removes the chosen notebook but keeps the links", () => {
-    mount({ suggest: { attendeeIds: ["a", "b", "c"], groups: [coreGroup] } });
-    choose("Add to existing notebook");
-    click(button("Suggested: Core"));
-    act(() => controller.setExisting(picked));
+  it("seeds its own place as the location when it is picked", () => {
+    openExisting();
+    pick(inCore);
+    expect(locationText()).toEqual(["Core / Meetings"]);
+    expect(shortcutText()).toEqual([]);
     expect(container.textContent).toContain("Weekly sync");
     expect(button("Change")).toBeTruthy();
+  });
 
+  it("sends no location while the notebook stays at its own place", () => {
+    openExisting();
+    pick(inCore);
+    expect(meetingNotePayload(controller.state)).toMatchObject({ note: true, notebook: { existingId: "nb1" } });
+    expect(meetingNotePayload(controller.state).notebook).not.toHaveProperty("location");
+  });
+
+  it("can't remove the notebook's own place from the top, only drag another above it", () => {
+    openExisting({ suggest: { attendeeIds: ["a", "b", "c"], groups: [coreGroup, atlasGroup] } });
+    pick(inCore);
+    expect(container.querySelector("button[aria-label='Remove Core / Meetings']")).toBeNull();
+    click(button("Suggested: Atlas"));
+    expect(container.querySelector("button[aria-label='Remove Projects / Atlas / Meetings']")).toBeTruthy();
+  });
+
+  it("moves the notebook when another place is put on top, and keeps the old place as a shortcut", () => {
+    openExisting({ suggest: { attendeeIds: ["a", "b", "c", "d"], groups: [atlasGroup] } });
+    pick(inCore);
+    click(button("Suggested: Atlas"));
+    expect(shortcutText()).toEqual(["Projects / Atlas / Meetings"]);
+    click(container.querySelector("ul[aria-label='Shortcuts'] button[aria-label='Make location']"));
+    expect(locationText()).toEqual(["Projects / Atlas / Meetings"]);
+    expect(shortcutText()).toEqual(["Core / Meetings"]);
+    expect(meetingNotePayload(controller.state)).toMatchObject({
+      projectId: "p1",
+      notebook: {
+        existingId: "nb1",
+        location: { workspaceType: "Project", workspaceId: "p1", parentPageId: "p1-m" },
+        links: [{ workspaceType: "Lab", workspaceId: null, parentPageId: "core-m" }],
+      },
+    });
+  });
+
+  it("sends no move when the place is dragged away and back", () => {
+    openExisting({ suggest: { attendeeIds: ["a", "b", "c", "d"], groups: [atlasGroup] } });
+    pick(inCore);
+    click(button("Suggested: Atlas"));
+    act(() => controller.reorderPlaces(1, 0));
+    act(() => controller.reorderPlaces(1, 0));
+    expect(locationText()).toEqual(["Core / Meetings"]);
+    expect(meetingNotePayload(controller.state).notebook).not.toHaveProperty("location");
+  });
+
+  it("shows a notebook whose folder can't be picked as a fixed location that is never moved", () => {
+    openExisting({ suggest: { attendeeIds: ["a", "b", "c"], groups: [coreGroup] } });
+    pick(hidden);
+    expect(locationText()).toEqual(["Somewhere ▸ Private"]);
+    expect(container.querySelector("ul[aria-label='Location'] button")).toBeNull();
+    click(button("Suggested: Core"));
+    expect(shortcutText()).toEqual(["Core / Meetings"]);
+    expect(container.querySelector("button[aria-label='Make location']")).toBeNull();
+    expect(meetingNotePayload(controller.state).notebook).toEqual({
+      existingId: "nb3",
+      links: [{ workspaceType: "Lab", workspaceId: null, parentPageId: "core-m" }],
+    });
+  });
+
+  it("opens the picker with the notebook's place and shortcuts and a title that says so", () => {
+    openExisting();
+    pick(inCore);
+    click(button("Add a place"));
+    expect(pickerProps.mock.lastCall![0]).toMatchObject({
+      heading: "Notebook location and shortcuts",
+      initialDestinations: [{ driveId: "core", folderId: "core-m" }],
+    });
+  });
+
+  it("removes the chosen notebook with its place but keeps the shortcuts", () => {
+    openExisting({ suggest: { attendeeIds: ["a", "b", "c", "d"], groups: [atlasGroup] } });
+    pick(inCore);
+    click(button("Suggested: Atlas"));
     click(removeButton());
-
     expect(controller.state.existing).toBeNull();
     expect(container.textContent).toContain("No notebook chosen");
     expect(button("Choose")).toBeTruthy();
     expect(removeButton()).toBeNull();
-    expect(chipText()).toEqual(["Core / MeetingsLink"]);
+    expect(locationText()).toEqual([]);
+    expect(shortcutText()).toEqual(["Projects / Atlas / Meetings"]);
+  });
+
+  it("swaps the old notebook's place for the new one's when another notebook is picked", () => {
+    openExisting();
+    pick(inCore);
+    pick(inAtlas);
+    expect(locationText()).toEqual(["Projects / Atlas / Meetings"]);
+    expect(shortcutText()).toEqual([]);
+  });
+
+  it("takes the place off when switching back to New, and puts it back on switching to Existing", () => {
+    openExisting();
+    pick(inCore);
+    choose("New");
+    expect(controller.state.places).toEqual([]);
+    expect(controller.state.existing).toMatchObject({ id: "nb1" });
+    choose("Existing");
+    expect(locationText()).toEqual(["Core / Meetings"]);
+  });
+
+  it("drops the notebook's place when the notebook is unchecked, and restores it when checked again", () => {
+    openExisting();
+    pick(inCore);
+    addNotebook();
+    expect(controller.state.places).toEqual([]);
+    addNotebook();
+    expect(locationText()).toEqual(["Core / Meetings"]);
   });
 
   it("sends the chosen notebook's project, and none once it is removed", () => {
-    mount();
-    choose("Add to existing notebook");
-    act(() => controller.setExisting(picked));
-    expect(meetingNotePayload(controller.state)).toMatchObject({ projectId: "p1", notebook: { existingId: "nb1" } });
+    openExisting();
+    pick(inAtlas);
+    expect(meetingNotePayload(controller.state)).toMatchObject({ projectId: "p1", notebook: { existingId: "nb2" } });
     click(removeButton());
     expect(meetingNotePayload(controller.state)).not.toHaveProperty("projectId");
   });
 
   it("orders the notebook list by the project it is derived from, falling back to the invited project", () => {
-    mount({ prefillProject: "p1" });
-    choose("Add to existing notebook");
+    openExisting({ prefillProject: "p1" });
     expect(notebookListArgs.mock.lastCall![0]).toMatchObject({ enabled: true, projectId: "p1" });
     expect(notebookPickerProps.mock.lastCall![0]).toMatchObject({ projectId: "p1" });
   });
 
-  it("loads the notebook list as soon as a note is chosen, and not before", () => {
+  it("loads the notebook list as soon as the notebook is checked, and not before", () => {
     mount();
     expect(notebookListArgs.mock.lastCall![0]).toMatchObject({ enabled: false });
-    choose("New notebook");
+    addNotebook();
     expect(notebookListArgs.mock.lastCall![0]).toMatchObject({ enabled: true });
   });
 
   it("hands the picker the preloaded list", () => {
-    mount();
-    choose("Add to existing notebook");
+    openExisting();
     expect(notebookPickerProps.mock.lastCall![0].preloaded).toEqual({ rows: [], status: "ready" });
+  });
+
+  it("goes back to New from the picker's New notebook instead", () => {
+    openExisting();
+    act(() => notebookPickerProps.mock.lastCall![0].onNewInstead());
+    expect(controller.state.notebookMode).toBe("new");
   });
 });
 
 describe("a whiteboard with no note in the create modal", () => {
-  const startBoard = () => click(checkbox("Start a whiteboard"));
+  const startBoard = () => click(checkbox("Whiteboard"));
 
-  it("shows Filed in with the whiteboard hint and no notebook fields", () => {
+  it("shows Location with the whiteboard hint and no notebook fields or shortcuts", () => {
     mount();
     startBoard();
-    expect(container.textContent).toContain("Filed in");
-    expect(container.textContent).toContain("Nothing chosen. The whiteboard goes in the default Meeting assets folder.");
+    expect(container.textContent).toContain("Location");
+    expect(container.textContent).toContain("Goes in the default Meeting assets folder.");
+    expect(container.textContent).not.toContain("Shortcuts");
     expect(container.querySelector("#meeting-notebook-name")).toBeNull();
   });
 
-  it("seeds the invited project's folder as the only place, without a Primary or Link badge", () => {
+  it("seeds the invited project's folder as the only place, with no handle or ranking", () => {
     mount({ prefillProject: "p1" });
     startBoard();
     expect(chipText()).toEqual(["Projects / Atlas / Meetings"]);
+    expect(container.querySelector("button[aria-label^='Reorder']")).toBeNull();
     expect(meetingNotePayload(controller.state)).toMatchObject({
       note: false,
       whiteboard: true,
@@ -455,42 +651,75 @@ describe("a whiteboard with no note in the create modal", () => {
     expect(container.querySelector("ul[aria-label='Suggested places']")).toBeNull();
   });
 
-  it("keeps only the first place when the note is dropped", () => {
+  it("keeps only the first place when the notebook is dropped", () => {
     mount({ prefillProject: "p1", suggest: { attendeeIds: ["a", "b", "c"], groups: [coreGroup] } });
-    choose("New notebook");
+    addNotebook();
     click(button("Suggested: Core"));
     startBoard();
-    choose("No note");
+    addNotebook();
     expect(chipText()).toEqual(["Projects / Atlas / Meetings"]);
     expect(controller.state.places).toHaveLength(1);
   });
 
-  it("drops the places of an existing notebook, which were only links", () => {
+  it("drops the places of an existing notebook, which were only shortcuts", () => {
     mount({ suggest: { attendeeIds: ["a", "b", "c"], groups: [coreGroup] } });
-    choose("Add to existing notebook");
+    addNotebook();
+    choose("Existing");
     click(button("Suggested: Core"));
     startBoard();
-    choose("No note");
+    addNotebook();
     expect(controller.state.places).toEqual([]);
     expect(meetingNotePayload(controller.state)).toEqual({ note: false, whiteboard: true });
   });
 
-  it("goes back to ranked places once a note is chosen again", () => {
+  it("goes back to the notebook's places once the notebook is checked again", () => {
     mount({ prefillProject: "p1" });
     startBoard();
-    choose("New notebook");
-    expect(chipText()).toEqual(["Projects / Atlas / MeetingsPrimary"]);
+    addNotebook();
+    expect(locationText()).toEqual(["Projects / Atlas / Meetings"]);
+  });
+
+  it("shows the places once, under the notebook, when both are checked", () => {
+    mount({ prefillProject: "p1" });
+    startBoard();
+    addNotebook();
+    expect(container.querySelectorAll("[data-testid='filed-in-chip']")).toHaveLength(1);
+    expect(container.querySelectorAll("ul[aria-label='Location']")).toHaveLength(1);
   });
 });
 
 describe("MeetingNoteFields in the add-note modal", () => {
-  it("has no No note option and no whiteboard checkbox", () => {
+  it("has no Notebook or Whiteboard checkbox, and shows New and Existing once the note is on", () => {
     mount({ surface: "note" });
     act(() => controller.setEnabled(true));
-    expect(radio("No note")).toBeUndefined();
+    expect(container.querySelector("input[type='checkbox']")).toBeNull();
     expect(container.textContent).not.toContain("Start a whiteboard");
     expect(container.textContent).not.toContain("About");
-    expect(container.textContent).toContain("Filed in");
+    expect(Array.from(container.querySelectorAll("[role='radio']")).map((r) => r.textContent)).toEqual(["New", "Existing"]);
+    expect(container.textContent).toContain("Location");
+    expect(container.textContent).toContain("Shortcuts");
+  });
+
+  it("moves an existing notebook the same way as the create modal", () => {
+    mount({ surface: "note", suggest: { attendeeIds: ["a", "b", "c"], groups: [coreGroup] } });
+    act(() => controller.setEnabled(true));
+    choose("Existing");
+    act(() =>
+      notebookPickerProps.mock.lastCall![0].onPick({
+        id: "nb9",
+        title: "Atlas",
+        path: "Projects ▸ Atlas ▸ Meetings",
+        workspaceType: "Project",
+        workspaceId: "p1",
+        parentPageId: "p1-m",
+      }),
+    );
+    click(button("Suggested: Core"));
+    click(container.querySelector("button[aria-label='Make location']"));
+    expect(meetingNotePayload(controller.state).notebook).toMatchObject({
+      existingId: "nb9",
+      location: { workspaceType: "Lab", workspaceId: null, parentPageId: "core-m" },
+    });
   });
 });
 
@@ -498,10 +727,11 @@ describe("MeetingNoteFields in the add-whiteboard modal", () => {
   it("shows only where the board is filed, as a single place", () => {
     mount({ surface: "whiteboard" });
     act(() => controller.setWhiteboard(true));
-    expect(container.textContent).toContain("Filed in");
+    expect(container.textContent).toContain("Location");
+    expect(container.textContent).not.toContain("Shortcuts");
     expect(container.textContent).not.toContain("About");
     expect(container.textContent).not.toContain("Save whiteboard to");
-    expect(container.querySelector("input[type='radio']")).toBeNull();
+    expect(container.querySelector("input")).toBeNull();
   });
 
   it("picks the place with the single-place picker and sends the project it is in", () => {

@@ -14,11 +14,16 @@ import {
   notebookChoiceOf,
   noteDestinationRows,
   noteLocationFromDest,
+  notebookHomePlace,
   placeFromDest,
   placesFromPicker,
   projectIdOf,
   receiverDest,
   removePlace,
+  reorderPlaces,
+  withHomeOnTop,
+  withoutPlace,
+  locationPlace,
   type FilingPlace,
   type MeetingNoteLocation,
   type MeetingNoteState,
@@ -46,6 +51,7 @@ const existing: PickedNotebook = {
   path: "Core / Meetings",
   workspaceType: "Lab",
   workspaceId: null,
+  parentPageId: "core-m",
 };
 const projectNotebook: PickedNotebook = { ...existing, workspaceType: "Project", workspaceId: "proj_1" };
 const projectPlace = (key: string, projectId = "proj_1") =>
@@ -540,6 +546,203 @@ describe("filing places", () => {
 
     it("is empty when nothing can be filed", () => {
       expect(placesFromPicker({ destinations: [{ driveId: "mine", folderId: null }], primaryIndex: 0 }, [], rows)).toEqual([]);
+    });
+  });
+});
+
+describe("reorderPlaces", () => {
+  const [a, b, c] = [place("a"), place("b"), place("c")];
+  const ids = (ps: FilingPlace[]) => ps.map((p) => p.dest.folderId);
+
+  it("moves a shortcut to the top, making it the location", () => {
+    expect(ids(reorderPlaces([a, b, c], 2, 0))).toEqual(["c", "a", "b"]);
+  });
+
+  it("moves the location down, promoting the next place", () => {
+    expect(ids(reorderPlaces([a, b, c], 0, 1))).toEqual(["b", "a", "c"]);
+  });
+
+  it("reorders shortcuts among themselves and leaves the location", () => {
+    expect(ids(reorderPlaces([a, b, c], 1, 2))).toEqual(["a", "c", "b"]);
+  });
+
+  it("returns the same list for no move or an index out of range", () => {
+    const places = [a, b, c];
+    expect(reorderPlaces(places, 1, 1)).toBe(places);
+    expect(reorderPlaces(places, -1, 0)).toBe(places);
+    expect(reorderPlaces(places, 0, 3)).toBe(places);
+    expect(reorderPlaces(places, 3, 0)).toBe(places);
+  });
+
+  it("does not change the list it was given", () => {
+    const places = [a, b, c];
+    reorderPlaces(places, 2, 0);
+    expect(ids(places)).toEqual(["a", "b", "c"]);
+  });
+});
+
+describe("withHomeOnTop and withoutPlace", () => {
+  const [a, b, c] = [place("a"), place("b"), place("c")];
+  const ids = (ps: FilingPlace[]) => ps.map((p) => p.dest.folderId);
+
+  it("puts the home first and drops another copy of it", () => {
+    expect(ids(withHomeOnTop([a, b, c], c))).toEqual(["c", "a", "b"]);
+    expect(ids(withHomeOnTop([a, b], c))).toEqual(["c", "a", "b"]);
+  });
+
+  it("leaves the list alone when the home can't be shown", () => {
+    const places = [a, b];
+    expect(withHomeOnTop(places, null)).toBe(places);
+    expect(withoutPlace(places, null)).toBe(places);
+  });
+
+  it("removes a place wherever it sits", () => {
+    expect(ids(withoutPlace([a, b, c], b))).toEqual(["a", "c"]);
+  });
+});
+
+describe("an existing notebook's own place", () => {
+  const rows = {
+    drives: [
+      { id: "lab", label: "Lab" },
+      { id: "core", label: "Core", rootFolderId: "core-root" },
+      { id: "projects", label: "Projects" },
+    ],
+    folders: [
+      { id: "core-m", driveId: "core", parentId: null, title: "Meetings", folderType: "Meetings" },
+      { id: "p1", driveId: "projects", parentId: null, title: "Atlas" },
+      { id: "p1-m", driveId: "projects", parentId: "p1", title: "Meetings", folderType: "Meetings" },
+    ],
+  };
+  const inCore: PickedNotebook = { ...existing, parentPageId: "core-m" };
+  const inAtlas: PickedNotebook = {
+    ...existing,
+    workspaceType: "Project",
+    workspaceId: "p1",
+    parentPageId: "p1-m",
+  };
+  const home = notebookHomePlace(inCore, rows)!;
+  const atlasHome = notebookHomePlace(inAtlas, rows)!;
+  const other = place("other");
+
+  const state = (over: Partial<MeetingNoteState> = {}) =>
+    base({ enabled: true, notebookMode: "existing", existing: inCore, existingHome: home, places: [home], ...over });
+
+  describe("notebookHomePlace", () => {
+    it("finds the folder it sits in among the pickable folders, with the picker's path", () => {
+      expect(home).toEqual({
+        dest: { driveId: "core", folderId: "core-m" },
+        location: { workspaceType: "Lab", workspaceId: null, parentPageId: "core-m", label: "Core / Meetings" },
+        path: "Core / Meetings",
+      });
+      expect(atlasHome.location).toMatchObject({ workspaceType: "Project", workspaceId: "p1", parentPageId: "p1-m" });
+    });
+
+    it("finds the top of the Lab drive for a notebook with no folder", () => {
+      expect(notebookHomePlace({ ...existing, parentPageId: null }, rows)?.dest).toEqual({ driveId: "lab", folderId: null });
+    });
+
+    it("is null when its folder is not one the viewer can pick", () => {
+      expect(notebookHomePlace({ ...existing, parentPageId: "hidden" }, rows)).toBeNull();
+    });
+
+    it("is null when the folder found is in a different workspace than the notebook says", () => {
+      expect(notebookHomePlace({ ...existing, workspaceType: "Project", workspaceId: "p9" }, rows)).toBeNull();
+    });
+
+    it("is null for a notebook that lives where a note can't be filed", () => {
+      expect(notebookHomePlace({ ...existing, workspaceType: "Member", workspaceId: "u1" }, rows)).toBeNull();
+    });
+  });
+
+  describe("the location and shortcuts", () => {
+    it("treats the top row as the location and the rest as shortcuts", () => {
+      const s = state({ places: [home, other] });
+      expect(locationPlace(s)).toBe(home);
+      expect(linkPlaces(s)).toEqual([other]);
+    });
+
+    it("treats every place as a shortcut when the notebook's own place is not shown", () => {
+      const s = state({ existingHome: null, places: [other] });
+      expect(locationPlace(s)).toBeNull();
+      expect(linkPlaces(s)).toEqual([other]);
+    });
+
+    it("treats every place as a shortcut before a notebook is picked", () => {
+      const s = state({ existing: null, existingHome: null, places: [other] });
+      expect(locationPlace(s)).toBeNull();
+      expect(linkPlaces(s)).toEqual([other]);
+    });
+  });
+
+  describe("the payload", () => {
+    it("sends no location while the notebook stays where it is", () => {
+      expect(notebookChoiceOf(state())).toEqual({ existingId: "nb_1" });
+    });
+
+    it("sends the shortcuts below the notebook's own place", () => {
+      expect(notebookChoiceOf(state({ places: [home, other] }))).toEqual({
+        existingId: "nb_1",
+        links: [locationOf(other)],
+      });
+    });
+
+    it("sends the new top row as a location to move to, and the old place as a shortcut", () => {
+      expect(notebookChoiceOf(state({ places: [other, home] }))).toEqual({
+        existingId: "nb_1",
+        location: locationOf(other),
+        links: [locationOf(home)],
+      });
+    });
+
+    it("never sends a location for a notebook whose own place is not shown", () => {
+      expect(notebookChoiceOf(state({ existingHome: null, places: [other] }))).toEqual({
+        existingId: "nb_1",
+        links: [locationOf(other)],
+      });
+    });
+
+    it("never sends a location for a notebook that lives where a note can't be filed", () => {
+      const member: PickedNotebook = { ...existing, workspaceType: "Member", workspaceId: "u1" };
+      expect(notebookChoiceOf(state({ existing: member, existingHome: null, places: [other] }))).not.toHaveProperty("location");
+    });
+
+    it("sends no location when the list is empty", () => {
+      expect(notebookChoiceOf(state({ places: [] }))).toEqual({ existingId: "nb_1" });
+    });
+
+    it("is accepted by the server's schema, moved or not", () => {
+      for (const places of [[home], [other, home], [home, other]]) {
+        expect(notebookChoiceSchema.safeParse(notebookChoiceOf(state({ places }))).success).toBe(true);
+      }
+    });
+
+    it("lands in the meetings payload", () => {
+      expect(meetingNotePayload(state({ places: [other, home] }))).toMatchObject({
+        note: true,
+        notebook: { existingId: "nb_1", location: locationOf(other) },
+      });
+    });
+  });
+
+  describe("the project", () => {
+    it("is the notebook's own project while it stays", () => {
+      expect(projectIdOf(state({ existing: inAtlas, existingHome: atlasHome, places: [atlasHome] }))).toBe("p1");
+    });
+
+    it("follows the notebook to the project it is moved into, or out of one", () => {
+      const toProject = state({ places: [atlasHome, home] });
+      expect(projectIdOf(toProject)).toBe("p1");
+      const outOfProject = state({ existing: inAtlas, existingHome: atlasHome, places: [home, atlasHome] });
+      expect(projectIdOf(outOfProject)).toBeNull();
+    });
+  });
+
+  describe("validity", () => {
+    it("counts only shortcuts toward the limit", () => {
+      const shortcuts = Array.from({ length: MAX_FILING_LINKS }, (_, i) => place(`s${i}`));
+      expect(meetingNoteValid(state({ places: [home, ...shortcuts] }))).toBe(true);
+      expect(meetingNoteValid(state({ places: [home, ...shortcuts, place("one-more")] }))).toBe(false);
     });
   });
 });

@@ -149,6 +149,7 @@ function NotebookGroup({
                   path: row.path,
                   workspaceType: row.workspaceType,
                   workspaceId: row.workspaceId,
+                  parentPageId: row.parentPageId,
                 })
               }
               className="flex w-full flex-col px-3 py-2 text-left text-sm text-foreground transition-colors hover:bg-muted/60 focus-visible:bg-muted/60 focus-visible:outline-none"

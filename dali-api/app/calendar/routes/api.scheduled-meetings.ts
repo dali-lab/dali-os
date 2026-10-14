@@ -203,6 +203,7 @@ export async function action({ request }: Route.ActionArgs) {
         notebookId: result.notebookId,
         createdNotebook: result.createdNotebook,
         declinedLinks: result.declinedLinks,
+        declinedMove: result.declinedMove,
         notePath: result.notePageId
           ? await meetingNotePath({
               notePageId: result.notePageId,

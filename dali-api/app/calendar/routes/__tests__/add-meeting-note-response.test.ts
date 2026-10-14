@@ -130,6 +130,21 @@ describe("add-meeting-note action notebook choice", () => {
     expect((await res.json()).declinedLinks).toEqual(declinedLinks);
   });
 
+  it("passes the location to move an existing notebook to, and returns a refused move", async () => {
+    const location = { workspaceType: "Lab", workspaceId: null, parentPageId: "f2" };
+    const declinedMove = { location, error: "You can't edit that folder" };
+    mockAttach.mockResolvedValue({ ...filed, declinedMove });
+
+    const res = await post({
+      intent: "add-meeting-note",
+      meetingId: "m1",
+      notebook: JSON.stringify({ existingId: "nb-1", location }),
+    });
+
+    expect(mockAttach).toHaveBeenCalledWith(expect.objectContaining({ notebook: { existingId: "nb-1", location } }));
+    expect((await res.json()).declinedMove).toEqual(declinedMove);
+  });
+
   it("passes no notebook when the field is absent, so the series default decides", async () => {
     await post({ intent: "add-meeting-note", meetingId: "m1" });
 

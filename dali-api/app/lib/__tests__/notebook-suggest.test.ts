@@ -14,6 +14,7 @@ const row = (over: Partial<NotebookCandidate> = {}): NotebookCandidate => ({
   lastNoteAt: null,
   workspaceType: "Lab",
   workspaceId: null,
+  parentPageId: null,
   holdsSeriesNote: false,
   audienceKeys: [],
   ...over,

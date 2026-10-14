@@ -173,14 +173,14 @@ function AddMeetingNoteModal({
     if (submittedRef.current && fetcher.state !== "submitting" && fetcher.data?.ok) {
       submittedRef.current = false;
       const filed = filedNoteFrom(fetcher.data);
-      if (filed) showFiledNote(filed);
+      if (filed) showFiledNote(filed, { movedTo: note.state.places[0]?.path });
       onClose();
       void offerFutureFiling(meetingId, {
         notebookId: fetcher.data.notebookId ?? null,
         seriesNotebookId: fetcher.data.seriesNotebookId ?? null,
       });
     }
-  }, [fetcher.state, fetcher.data, onClose, showFiledNote, offerFutureFiling, meetingId]);
+  }, [fetcher.state, fetcher.data, onClose, showFiledNote, offerFutureFiling, meetingId, note.state.places]);
 
   const valid = meetingNoteValid(note.state);
 

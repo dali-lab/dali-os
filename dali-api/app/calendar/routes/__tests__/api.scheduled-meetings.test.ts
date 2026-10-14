@@ -144,6 +144,18 @@ describe("POST /api/scheduled-meetings: notebook choice", () => {
     expect((await res.json()).declinedLinks).toEqual(declinedLinks);
   });
 
+  it("passes the location to move an existing notebook to, and reports a refused move", async () => {
+    const location = { workspaceType: "Lab", workspaceId: null, parentPageId: "f2" };
+    const declinedMove = { location, error: "You can't edit that folder" };
+    mockCreate.mockResolvedValue({ ...created, declinedMove });
+
+    const res = await post({ ...noType, notebook: { existingId: "nb-1", location } });
+
+    expect(res.status).toBe(201);
+    expect(mockCreate).toHaveBeenCalledWith(expect.objectContaining({ notebook: { existingId: "nb-1", location } }));
+    expect((await res.json()).declinedMove).toEqual(declinedMove);
+  });
+
   it("rejects more than eight links", async () => {
     const link = { workspaceType: "Lab", workspaceId: null, parentPageId: "f2" };
 

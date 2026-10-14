@@ -1068,6 +1068,20 @@ export function DriveBrowser({
 
   const focusEntry = focusId ? (itemIndex.get(focusId) ?? null) : null;
 
+  // Arriving somewhere new leaves behind whatever was picked elsewhere: only
+  // rows of the destination's own listing (the keyboard's first-row pick on
+  // stepping into a column) survive. Declared before the reveal effect below
+  // so a reveal's selection lands after this and wins.
+  useEffect(() => {
+    const here = new Set(listing.map((i) => i.id));
+    setSelected((prev) => {
+      const next = new Set([...prev].filter((id) => here.has(id)));
+      return next.size === prev.size ? prev : next;
+    });
+    setAnchorId((a) => (a && here.has(a) ? a : null));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentScopeId, currentFolderId]);
+
   // Reveal in Drive lands here with the item to show: select it on first
   // mount only (a later folder that happens to hold it is not a reveal), and
   // the focus effect above scrolls it into view.
@@ -1089,7 +1103,7 @@ export function DriveBrowser({
     setFocusId(null);
   }
 
-  /** Select just this row and focus it. Drives take focus but never selection. */
+  /** Focus this row and select it alone, or with `selectable` false just focus it (clearing the selection). Drives take focus but never selection. */
   function focusOnly(id: string, selectable = true) {
     setSelected(selectable ? new Set([id]) : new Set());
     setAnchorId(selectable ? id : null);
@@ -1158,7 +1172,7 @@ export function DriveBrowser({
       selectWithModifier(id, intent, poolIds);
       return;
     }
-    focusOnly(id);
+    focusOnly(id, false);
     const level = levelIndexOf(id);
     if (level > 0) setFocusLevel(level);
     openById(id);

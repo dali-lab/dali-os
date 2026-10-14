@@ -2274,6 +2274,7 @@ export async function submitCalendarAction(request: Request) {
       return Response.json({
         ok: true,
         declinedLinks: result.declinedLinks,
+        declinedMove: result.declinedMove,
         notePageId: result.notePageId,
         notebookId: result.notebookId,
         createdNotebook: result.createdNotebook,

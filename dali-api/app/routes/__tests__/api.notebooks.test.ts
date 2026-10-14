@@ -94,7 +94,7 @@ function get(query = "") {
 
 describe("GET /api/notebooks", () => {
   const listed = [
-    { id: "nb1", title: "Weekly", path: "Lab ▸ Meetings", workspaceType: "Lab", workspaceId: null, tabCount: 3, lastNoteAt: "2026-09-10T15:00:00.000Z", suggested: true },
+    { id: "nb1", title: "Weekly", path: "Lab ▸ Meetings", workspaceType: "Lab", workspaceId: null, parentPageId: null, tabCount: 3, lastNoteAt: "2026-09-10T15:00:00.000Z", suggested: true },
   ];
 
   beforeEach(() => {

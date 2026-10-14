@@ -35,6 +35,7 @@ export type ListedNotebook = {
   path: string;
   workspaceType: string;
   workspaceId: string | null;
+  parentPageId: string | null;
   tabCount: number;
   lastNoteAt: string | null;
   suggested: boolean;
@@ -112,6 +113,7 @@ export async function listNotebooks(input: {
       lastNoteAt: dates.length ? new Date(Math.max(...dates.map((d) => d.getTime()))) : null,
       workspaceType: r.workspaceType,
       workspaceId: r.workspaceId,
+      parentPageId: r.parentPageId,
       holdsSeriesNote: seriesHolders.has(r.id),
       audienceKeys: [...keys],
     };
@@ -135,6 +137,7 @@ export async function listNotebooks(input: {
     path: formatFiledPath(paths.get(r.id) ?? []),
     workspaceType: r.workspaceType,
     workspaceId: r.workspaceId,
+    parentPageId: r.parentPageId,
     tabCount: r.tabCount,
     lastNoteAt: r.lastNoteAt?.toISOString() ?? null,
     suggested: r.suggested,
