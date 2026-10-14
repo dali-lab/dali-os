@@ -60,6 +60,7 @@ import {
   type SnapshotBlock,
 } from "~/components/meeting-recorder/enhance-plan";
 import { pageDocName } from "~/collab/roomName";
+import { canManageNotebook } from "~/lib/notebooks.server";
 import { nextNoteTarget } from "~/lib/notebook-series.server";
 import { NotebookRail, NotebookChip, type NotebookView } from "~/components/notebooks/NotebookRail";
 import { redirectToLogin } from "~/lib/login-next";
@@ -185,7 +186,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   // The other notes in this one's notebook, newest first, for the side tabs.
   let notebook: NotebookView | null = null;
   if (page.parent?.kind === "Notebook") {
-    const [tabRows, notebookAccess, nextNote] = await Promise.all([
+    const [tabRows, notebookAccess, nextNote, notebookManager] = await Promise.all([
       prisma.page.findMany({
         where: { parentPageId: page.parent.id, OR: [{ archivedAt: null }, { id: page.id }] },
         orderBy: { meetingOccurrenceStart: "desc" },
@@ -199,6 +200,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       }),
       getPageAccess(auth.user.sub, page.parent, request),
       nextNoteTarget(page.parent.id),
+      canManageNotebook(auth.user.sub, page.parent, request),
     ]);
     const tabAccess = await getPageAccessBulk(auth.user.sub, tabRows, request, {
       includeArchived: trashed,
@@ -211,6 +213,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       id: page.parent.id,
       title: page.parent.title,
       canEdit: canEditNotebook,
+      canManage: notebookManager && !trashed,
       workspaceType: page.parent.workspaceType,
       workspaceId: page.parent.workspaceId,
       folderId: page.parent.parentPageId,

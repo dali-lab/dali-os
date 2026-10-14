@@ -15,6 +15,7 @@ const notebook: NotebookView = {
   id: "nb1",
   title: "Weekly sync",
   canEdit: true,
+  canManage: true,
   workspaceType: "Lab",
   workspaceId: null,
   folderId: null,
@@ -210,9 +211,36 @@ describe("NotebookRail title", () => {
   });
 
   it("shows read-only viewers plain text", async () => {
-    await rail({ canEdit: false });
+    await rail({ canEdit: false, canManage: false });
     expect(byLabel("Notebook title")).toBeNull();
     expect(nav().querySelector("p")?.textContent).toBe("Weekly sync");
+  });
+});
+
+describe("NotebookRail manage authority", () => {
+  const openMenu = async (label: string) => {
+    const button =
+      byLabel(label) ?? [...container.querySelectorAll("button")].find((b) => b.textContent?.trim() === label);
+    await click(button!);
+    return [...document.body.querySelectorAll('[role="menuitem"]')].map((el) => el.textContent?.trim());
+  };
+
+  it("lets an editor who cannot manage add but not restructure", async () => {
+    await rail({ canManage: false });
+    expect(byLabel("Notebook options")).toBeNull();
+    expect(byLabel("Options for Oct 6")).toBeNull();
+    expect(byLabel("Notebook title")).toBeNull();
+    expect(nav().querySelector("p")?.textContent).toBe("Weekly sync");
+    expect(await openMenu("Add")).toContain("Existing document…");
+  });
+
+  it("shows every structure item to a manager", async () => {
+    await rail();
+    expect(await openMenu("Notebook options")).toEqual(["Set template…", "Merge into…", "Dissolve", "Move to Trash"]);
+    expect(byLabel("Notebook title")).toBeTruthy();
+    expect(await openMenu("Options for Oct 6")).toEqual(
+      expect.arrayContaining(["Detach from meeting", "Remove from notebook"]),
+    );
   });
 });
 

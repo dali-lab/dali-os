@@ -38,6 +38,7 @@ export type NotebookView = {
   id: string;
   title: string;
   canEdit: boolean;
+  canManage: boolean;
   workspaceType: string;
   workspaceId: string | null;
   /** The folder the notebook sits in; null at the top of its workspace. */
@@ -134,23 +135,25 @@ function NotebookControls({ notebook }: { notebook: NotebookView }) {
             Existing document…
           </Menu.Item>
         </Menu>
-        <Menu
-          align="right"
-          ariaLabel="Notebook options"
-          trigger={
-            <button type="button" aria-label="Notebook options" className={buttonClasses("ghost", "xs")}>
-              <MoreHorizontal className="h-4 w-4" aria-hidden />
-            </button>
-          }
-        >
-          <Menu.Item onSelect={() => setPanel("template")}>Set template…</Menu.Item>
-          <Menu.Item onSelect={() => setPanel("merge")}>Merge into…</Menu.Item>
-          <Menu.Item onSelect={() => void dissolve()}>Dissolve</Menu.Item>
-          <Menu.Separator />
-          <Menu.Item destructive onSelect={() => void trash()}>
-            Move to Trash
-          </Menu.Item>
-        </Menu>
+        {notebook.canManage && (
+          <Menu
+            align="right"
+            ariaLabel="Notebook options"
+            trigger={
+              <button type="button" aria-label="Notebook options" className={buttonClasses("ghost", "xs")}>
+                <MoreHorizontal className="h-4 w-4" aria-hidden />
+              </button>
+            }
+          >
+            <Menu.Item onSelect={() => setPanel("template")}>Set template…</Menu.Item>
+            <Menu.Item onSelect={() => setPanel("merge")}>Merge into…</Menu.Item>
+            <Menu.Item onSelect={() => void dissolve()}>Dissolve</Menu.Item>
+            <Menu.Separator />
+            <Menu.Item destructive onSelect={() => void trash()}>
+              Move to Trash
+            </Menu.Item>
+          </Menu>
+        )}
       </div>
 
       {panel === "add-document" && (
@@ -324,7 +327,7 @@ function NotebookTitle({ notebook }: { notebook: NotebookView }) {
     if (!ok) setDraft(notebook.title);
   }
 
-  if (!notebook.canEdit) {
+  if (!notebook.canManage) {
     return <p className="min-w-0 flex-1 truncate px-2 text-sm font-semibold text-foreground">{notebook.title}</p>;
   }
   return (
@@ -460,7 +463,7 @@ export function NotebookRail({ notebook, currentId }: { notebook: NotebookView; 
                   <span className="block truncate">{tab.label}</span>
                   {tab.meeting && <span className="block truncate text-xs">{tab.meeting}</span>}
                 </Link>
-                {notebook.canEdit && <TabMenu notebook={notebook} tab={tab} />}
+                {notebook.canManage && <TabMenu notebook={notebook} tab={tab} />}
               </li>
             );
           })}

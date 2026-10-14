@@ -29,7 +29,11 @@ vi.mock("~/lib/pages", async (importActual) => ({
 }));
 vi.mock("~/lib/drive-receivers.server", () => ({ clearTypeIfLeavingRoot: vi.fn() }));
 vi.mock("~/lib/pageAccess.server", () => ({ getPageAccess: vi.fn() }));
-vi.mock("~/lib/notebooks.server", () => ({ addToNotebook: vi.fn(), notebookErrorResponse: vi.fn() }));
+vi.mock("~/lib/notebooks.server", () => ({
+  addToNotebook: vi.fn(),
+  loadManageableNotebook: vi.fn(),
+  notebookErrorResponse: vi.fn(),
+}));
 vi.mock("~/lib/page-ancestry.server", async (importActual) => ({
   ...(await importActual<typeof import("~/lib/page-ancestry.server")>()),
   loadAncestorChain: vi.fn(),
@@ -42,7 +46,7 @@ import { logAuditEvent } from "~/lib/audit";
 import { collectSubtree, MAX_PAGE_DEPTH } from "~/lib/pages";
 import { clearTypeIfLeavingRoot } from "~/lib/drive-receivers.server";
 import { getPageAccess } from "~/lib/pageAccess.server";
-import { addToNotebook } from "~/lib/notebooks.server";
+import { addToNotebook, loadManageableNotebook, notebookErrorResponse } from "~/lib/notebooks.server";
 import { loadAncestorChain, type ChainRow } from "~/lib/page-ancestry.server";
 import { movePage, type MovePageBody } from "~/lib/page-move.server";
 
@@ -343,6 +347,42 @@ describe("movePage: notebooks", () => {
     vi.mocked(loadAncestorChain).mockResolvedValue([ancestor("dest", null, { kind: "Notebook" })]);
     expect(await move({ parentPageId: "dest" })).toMatchObject({ ok: false, status: 400 });
     expect(addToNotebook).not.toHaveBeenCalled();
+  });
+});
+
+describe("movePage: leaving a notebook", () => {
+  const tab = () =>
+    sourcePage({ parent: { id: "nb1", kind: "Notebook", archivedAt: null } });
+
+  it("needs manage authority on the notebook to move a tab out", async () => {
+    m.page.findUnique.mockResolvedValue(tab());
+    await move({ parentPageId: null });
+    expect(loadManageableNotebook).toHaveBeenCalledWith("nb1", "u1", undefined);
+  });
+
+  it("refuses with the notebook's error when the actor cannot manage it", async () => {
+    m.page.findUnique.mockResolvedValue(tab());
+    const refusal = Response.json({ error: "no" }, { status: 403 });
+    vi.mocked(loadManageableNotebook).mockRejectedValue(new Error("403"));
+    vi.mocked(notebookErrorResponse).mockReturnValue(refusal);
+    expect(await move({ parentPageId: null })).toEqual({ ok: false, response: refusal });
+    expect(m.$transaction).not.toHaveBeenCalled();
+  });
+
+  it("does not ask when the tab stays in its notebook or the notebook is trashed", async () => {
+    m.page.findUnique.mockResolvedValue(tab());
+    vi.mocked(loadAncestorChain).mockResolvedValue([ancestor("nb1", null, { kind: "Notebook" })]);
+    await move({ parentPageId: "nb1" });
+    m.page.findUnique.mockResolvedValue(
+      sourcePage({ parent: { id: "nb1", kind: "Notebook", archivedAt: new Date() } }),
+    );
+    await move({ parentPageId: null });
+    expect(loadManageableNotebook).not.toHaveBeenCalled();
+  });
+
+  it("does not ask for a page that is not in a notebook", async () => {
+    await move({ parentPageId: null });
+    expect(loadManageableNotebook).not.toHaveBeenCalled();
   });
 });
 
