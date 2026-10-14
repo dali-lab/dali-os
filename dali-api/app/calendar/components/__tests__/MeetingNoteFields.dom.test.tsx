@@ -11,7 +11,45 @@ vi.mock("~/components/notebooks/use-note-templates", () => ({
   useNoteTemplates: () => ({ templates: [{ id: "t1", title: "Retro" }] }),
 }));
 
+const DEST_ROWS = {
+  drives: [
+    { id: "projects", label: "Projects" },
+    { id: "lab", label: "Lab" },
+    { id: "core", label: "Core", rootFolderId: "core-root" },
+    { id: "mine", label: "My Drive" },
+  ],
+  folders: [
+    { id: "p1", driveId: "projects", parentId: null, title: "Atlas" },
+    { id: "p1-meetings", driveId: "projects", parentId: "p1", title: "Meetings" },
+    { id: "core-f", driveId: "core", parentId: null, title: "Retros" },
+    { id: "lab-f", driveId: "lab", parentId: null, title: "Design" },
+  ],
+};
+vi.mock("~/components/drive/use-drive-destinations", () => ({
+  useDriveDestinations: ({ enabled }: { enabled?: boolean }) => ({
+    rows: DEST_ROWS,
+    status: enabled ? "ready" : "idle",
+    load: vi.fn(),
+  }),
+}));
+
+type FolderPickerProps = {
+  drives: { id: string }[];
+  initial?: { driveId: string; folderId: string | null };
+  onConfirm: (dest: { driveId: string; folderId: string | null }) => void;
+  onClose: () => void;
+};
+let folderPickerProps: FolderPickerProps | null = null;
+vi.mock("~/components/drive/FolderPicker", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("~/components/drive/FolderPicker")>()),
+  FolderPicker: (props: FolderPickerProps) => {
+    folderPickerProps = props;
+    return createElement("div", { "data-testid": "folder-picker" });
+  },
+}));
+
 type PickerProps = {
+  preloaded?: { rows: { id: string }[]; status: string };
   space?: { workspaceType: string; workspaceId: string | null; label: string } | null;
   meetingId?: string | null;
   newRow?: { label: string; onNew: () => void };
@@ -61,6 +99,7 @@ let container: HTMLDivElement;
 let root: Root;
 let controller: Controller;
 let defaultResult: DefaultNotebookResult;
+let listRows: { id: string }[] = [];
 const fetchMock = vi.fn();
 
 function Harness({
@@ -99,9 +138,13 @@ async function mount(props: Parameters<typeof Harness>[0] = {}) {
 
 beforeEach(() => {
   pickerProps = null;
+  folderPickerProps = null;
   defaultResult = NEW_DEFAULT;
   fetchMock.mockReset();
-  fetchMock.mockImplementation(async () => ({ ok: true, json: async () => defaultResult }));
+  fetchMock.mockImplementation(async (url: string) => ({
+    ok: true,
+    json: async () => (String(url).startsWith("/api/notebooks/default") ? defaultResult : { notebooks: listRows }),
+  }));
   vi.stubGlobal("fetch", fetchMock);
 });
 afterEach(() => {
@@ -119,6 +162,9 @@ const button = (text: string) => Array.from(container.querySelectorAll("button")
 const chips = () => Array.from(container.querySelectorAll("ul[aria-label='Suggested notebooks'] button")).map((b) => b.textContent);
 const enable = () => click(checkbox("Meeting notes"));
 const text = () => container.textContent ?? "";
+const removeButton = () => container.querySelector("[aria-label='Remove notebook']");
+const defaultCalls = () => fetchMock.mock.calls.filter(([u]) => String(u).startsWith("/api/notebooks/default"));
+const listCalls = () => fetchMock.mock.calls.map(([u]) => String(u)).filter((u) => u.startsWith("/api/notebooks?"));
 
 describe("the create surface", () => {
   it("offers Meeting notes and Whiteboard checkboxes, both off", async () => {
@@ -322,51 +368,86 @@ describe("create a new notebook", () => {
 });
 
 describe("the place row", () => {
-  it("shows the series notebook with its reason and a Change button", async () => {
+  it("shows the series notebook with its reason and a Remove button", async () => {
     defaultResult = seriesDefault;
     await mount({ suggest: suggestOf() });
     await enable();
     expect(text()).toContain("Weekly · Projects ▸ Atlas ▸ Meetings");
     expect(text()).toContain("this meeting's notebook");
     expect(text()).not.toContain("Pick where the notes go");
+    expect(removeButton()).toBeTruthy();
   });
 
-  it("keeps the suggestion chips, Search and New below a prefilled place", async () => {
+  it("hides the suggestion chips, Search and New while a notebook is chosen", async () => {
     defaultResult = { ...seriesDefault, kind: "history" };
     await mount({ suggest: suggestOf() });
     await enable();
     expect(text()).toContain("last used by this group");
+    expect(chips()).toEqual([]);
+    expect(button("Search notebooks")).toBeUndefined();
+    expect(button("New notebook")).toBeUndefined();
+    expect(button("Change")).toBeUndefined();
+  });
+
+  it("clears an existing notebook with the X and brings the options back", async () => {
+    defaultResult = { ...seriesDefault, kind: "history" };
+    await mount({ suggest: suggestOf() });
+    await enable();
+    await click(removeButton());
+    expect(controller.state.place).toBeNull();
+    expect(text()).toContain("Pick where the notes go");
     expect(chips()).toEqual(["Atlas4 of 6 attendees", "Core3 of 6 attendees"]);
     expect(button("Search notebooks")).toBeTruthy();
     expect(button("New notebook")).toBeTruthy();
   });
 
-  it("opens the picker from a chip under a prefilled place and replaces the place on pick", async () => {
+  it("does not fill a removed notebook back in from the default", async () => {
+    defaultResult = seriesDefault;
+    await mount({ suggest: suggestOf() });
+    await enable();
+    await click(removeButton());
+    await act(async () => root.render(createElement(Harness, { suggest: suggestOf({ invitedGroups: [atlasGroup] }) })));
+    expect(controller.state.place).toBeNull();
+  });
+
+  it("clears a picked notebook with the X without refetching the default", async () => {
+    await mount({ suggest: suggestOf() });
+    await enable();
+    await act(async () => controller.pickNotebook({ id: "mine", title: "Mine", path: "General", workspaceType: "Lab", workspaceId: null }));
+    const before = defaultCalls().length;
+    await click(removeButton());
+    expect(controller.state.place).toBeNull();
+    expect(defaultCalls()).toHaveLength(before);
+  });
+
+  it("opens the picker from a chip after the X and replaces nothing on cancel", async () => {
     defaultResult = { ...seriesDefault, kind: "history" };
     await mount({ suggest: suggestOf() });
     await enable();
+    await click(removeButton());
     await click(button("Atlas"));
     expect(pickerProps!.space).toMatchObject({ workspaceType: "Project", workspaceId: "p1" });
     await act(async () =>
       pickerProps!.onPick({ id: "nb9", title: "Roadmap", path: "Projects ▸ Atlas", workspaceType: "Project", workspaceId: "p1", parentPageId: null }),
     );
     expect(text()).toContain("Roadmap · Projects ▸ Atlas");
-    expect(text()).not.toContain("Weekly ·");
     expect(controller.state.auto).toBe(false);
   });
 
-  it("opens the picker from Search under a prefilled place", async () => {
+  it("opens the picker from Search after the X", async () => {
     defaultResult = { ...seriesDefault, kind: "history" };
     await mount({ suggest: suggestOf() });
     await enable();
+    await click(removeButton());
     await click(button("Search notebooks"));
     expect(pickerProps!.space).toBeNull();
   });
 
-  it("starts a new notebook from New under a prefilled place", async () => {
+  it("starts a new notebook from New after the X", async () => {
     defaultResult = { ...seriesDefault, kind: "history" };
     await mount({ suggest: suggestOf({ invitedGroups: [coreGroup] }) });
     await enable();
+    await click(removeButton());
     await click(button("New notebook"));
     expect(text()).toContain("New notebook “Weekly sync” · Core");
     expect(controller.state.place).toMatchObject({ kind: "new", space: { core: true } });
@@ -383,7 +464,7 @@ describe("the place row", () => {
     await mount({ suggest: suggestOf() });
     await enable();
     expect(controller.state.place).toBeNull();
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(defaultCalls()).toHaveLength(1);
   });
 
   it("asks the default endpoint about the meeting, the group and the project", async () => {
@@ -403,15 +484,6 @@ describe("the place row", () => {
     await mount({ suggest: suggestOf({ invitedGroups: [coreGroup] }) });
     await enable();
     expect(new URL(String(fetchMock.mock.calls[0]![0]), "http://x").searchParams.get("isCoreMeeting")).toBe("1");
-  });
-
-  it("opens the picker across every space with New notebook first on Change", async () => {
-    defaultResult = seriesDefault;
-    await mount({ suggest: suggestOf() });
-    await enable();
-    await click(button("Change"));
-    expect(pickerProps!.space).toBeNull();
-    expect(pickerProps!.newRow!.label).toBe("New notebook…");
   });
 
   it("replaces an auto-set place when the invited groups change, but not a picked one", async () => {
@@ -466,11 +538,12 @@ describe("the edit surface", () => {
     expect(pickerProps!.newRow).toBeUndefined();
   });
 
-  it("leaves Change without a new-notebook row", async () => {
+  it("leaves Search without a new-notebook row once the notebook is removed", async () => {
     defaultResult = seriesDefault;
     await mount({ surface: "edit", meetingId: "m1" });
     await act(async () => controller.setEnabled(true));
-    await click(button("Change"));
+    await click(removeButton());
+    await click(button("Search notebooks"));
     expect(pickerProps!.newRow).toBeUndefined();
   });
 });
@@ -563,5 +636,179 @@ describe("a 1:1 with the viewer's mentee", () => {
     defaultResult = NEW_DEFAULT;
     await act(async () => root.render(createElement(Harness, { suggest: oneOnOne({ attendeeIds: ["mia", "zed"] }) })));
     expect(controller.state.place).toBeNull();
+  });
+});
+
+
+describe("Change folder on a new notebook", () => {
+  async function newNotebook(invitedGroups: GroupOption[] = []) {
+    await mount({ suggest: suggestOf({ invitedGroups }) });
+    await enable();
+    await click(button("New notebook"));
+  }
+  const folderPick = (driveId: string, folderId: string | null) =>
+    act(async () => folderPickerProps!.onConfirm({ driveId, folderId }));
+
+  it("offers Change folder and the X, not the notebook search", async () => {
+    await newNotebook();
+    expect(button("Change folder")).toBeTruthy();
+    expect(button("Change")?.textContent).toBe("Change folder");
+    expect(removeButton()).toBeTruthy();
+    expect(folderPickerProps).toBeNull();
+  });
+
+  it("opens the folder picker without My Drive, starting where the notebook already sits", async () => {
+    await newNotebook();
+    await click(button("Change folder"));
+    expect(container.querySelector("[data-testid='folder-picker']")).not.toBeNull();
+    expect(folderPickerProps!.drives.map((d) => d.id)).toEqual(["projects", "lab", "core"]);
+    expect(pickerProps).toBeNull();
+  });
+
+  it("reads the picked path on the row and sends the folder", async () => {
+    await newNotebook();
+    await click(button("Change folder"));
+    await folderPick("projects", "p1-meetings");
+    expect(text()).toContain("New notebook “Weekly sync” · Projects ▸ Atlas ▸ Meetings");
+    expect(container.querySelector("[data-testid='folder-picker']")).toBeNull();
+    expect(meetingNotePayload(controller.state, inviteOf([]))).toMatchObject({
+      projectId: "p1",
+      notebook: { title: "Weekly sync", folderPageId: "p1-meetings", space: { kind: "project", projectId: "p1" } },
+    });
+  });
+
+  it("makes a Core folder a Core notebook", async () => {
+    await newNotebook();
+    await click(button("Change folder"));
+    await folderPick("core", "core-f");
+    expect(text()).toContain("· Core ▸ Retros");
+    expect(meetingNotePayload(controller.state, inviteOf([]))).toMatchObject({
+      isCoreMeeting: true,
+      notebook: { folderPageId: "core-f", space: { kind: "core" } },
+    });
+  });
+
+  it("files a project's top level by space alone, with no folder id", async () => {
+    await newNotebook();
+    await click(button("Change folder"));
+    await folderPick("projects", "p1");
+    expect(text()).toContain("· Projects ▸ Atlas");
+    const payload = meetingNotePayload(controller.state, inviteOf([])) as { notebook: Record<string, unknown> };
+    expect(payload.notebook).not.toHaveProperty("folderPageId");
+    expect(payload.notebook.space).toEqual({ kind: "project", projectId: "p1" });
+  });
+
+  it("keeps the space label until a folder is picked", async () => {
+    await newNotebook([atlasGroup]);
+    expect(text()).toContain("New notebook “Weekly sync” · Atlas");
+    expect(meetingNotePayload(controller.state, inviteOf([])).notebook).not.toHaveProperty("folderPageId");
+  });
+
+  it("refuses the bare Lab drive, which is no folder, and keeps the picker open", async () => {
+    await newNotebook();
+    await click(button("Change folder"));
+    await folderPick("lab", null);
+    expect(text()).toContain("Pick a folder to file the notebook in.");
+    expect(container.querySelector("[data-testid='folder-picker']")).not.toBeNull();
+    expect(controller.state.place).toMatchObject({ kind: "new", space: { label: "General" } });
+  });
+
+  it("drops a template that belongs to the space the folder leaves", async () => {
+    await newNotebook([atlasGroup]);
+    await act(async () => controller.setTemplatePageId("t1"));
+    await click(button("Change folder"));
+    await folderPick("lab", "lab-f");
+    expect(controller.state.place).toMatchObject({ templatePageId: null });
+  });
+
+  it("goes away with the X, which also drops the chosen folder", async () => {
+    await newNotebook();
+    await click(button("Change folder"));
+    await folderPick("projects", "p1-meetings");
+    await click(removeButton());
+    expect(controller.state.place).toBeNull();
+    await click(button("New notebook"));
+    expect(text()).not.toContain("Atlas ▸ Meetings");
+  });
+});
+
+describe("the Whiteboard description", () => {
+  it("says it is saved next to the notes while Meeting notes is on", async () => {
+    await mount({ suggest: suggestOf({ invitedGroups: [atlasGroup] }) });
+    await enable();
+    expect(text()).toContain("Saved next to the notes.");
+    expect(text()).not.toContain("Meetings.");
+  });
+
+  it.each([
+    ["no group", [], "General"],
+    ["the Core group", [coreGroup], "Core"],
+    ["one project group", [atlasGroup], "Atlas"],
+  ])("names the invite space for %s while Meeting notes is off", async (_n, invitedGroups, label) => {
+    await mount({ suggest: suggestOf({ invitedGroups }) });
+    expect(text()).toContain(`Saved in ${label} ▸ Meetings.`);
+    expect(text()).not.toContain("Saved next to the notes.");
+  });
+});
+
+describe("prefetching notebook lists", () => {
+  const listSpaces = () =>
+    listCalls().map((u) => {
+      const q = new URL(u, "http://x").searchParams;
+      return `${q.get("workspaceType")}:${q.get("workspaceId") ?? ""}`;
+    });
+
+  it("fetches nothing until Meeting notes is on", async () => {
+    await mount({ suggest: suggestOf() });
+    expect(listCalls()).toEqual([]);
+  });
+
+  it("fetches General and each suggested chip space once, Core as workspaceType=Core", async () => {
+    await mount({ suggest: suggestOf() });
+    await enable();
+    expect(listSpaces().sort()).toEqual(["Core:", "Lab:", "Project:p1"]);
+    await act(async () => root.render(createElement(Harness, { suggest: suggestOf() })));
+    expect(listCalls()).toHaveLength(3);
+  });
+
+  it("fetches only General without suggestions", async () => {
+    await mount();
+    await enable();
+    expect(listSpaces()).toEqual(["Lab:"]);
+  });
+
+  it("hands the picker the chip space's rows the moment it opens", async () => {
+    listRows = [{ id: "nb-a" }];
+    await mount({ suggest: suggestOf() });
+    await enable();
+    await click(button("Atlas"));
+    expect(pickerProps!.preloaded).toEqual({ rows: [{ id: "nb-a" }], status: "ready" });
+    expect(listCalls()).toHaveLength(3);
+    listRows = [];
+  });
+
+  it("leaves a search across every space to the picker", async () => {
+    await mount({ suggest: suggestOf() });
+    await enable();
+    await click(button("Search notebooks"));
+    expect(pickerProps!.preloaded).toBeUndefined();
+  });
+
+  it("leaves the picker to fetch when the prefetch failed", async () => {
+    fetchMock.mockImplementation(async (url: string) =>
+      String(url).startsWith("/api/notebooks/default")
+        ? { ok: true, json: async () => defaultResult }
+        : { ok: false, json: async () => ({}) },
+    );
+    await mount({ suggest: suggestOf() });
+    await enable();
+    await click(button("Atlas"));
+    expect(pickerProps!.preloaded).toBeUndefined();
+  });
+
+  it("scopes the lists to the meeting being edited", async () => {
+    await mount({ surface: "note", meetingId: "m9" });
+    await act(async () => controller.setEnabled(true));
+    expect(new URL(listCalls()[0]!, "http://x").searchParams.get("meetingId")).toBe("m9");
   });
 });

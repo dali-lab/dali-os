@@ -2,6 +2,9 @@ import type { PickedNotebook } from "~/components/notebooks/notebook-picker";
 import type { NotebookChoice, NotebookSpaceChoice } from "~/lib/notebook-choice";
 import type { GroupOption } from "~/calendar/lib/types";
 import { PAIR_REASON } from "~/calendar/lib/suggest-filing";
+import { destinationPath, type Destination } from "~/components/drive/FolderPicker";
+import { resolveMoveTarget } from "~/components/drive/move-target";
+import type { PickerRows } from "~/components/drive/picker-rows";
 
 export type NoteSpace = {
   workspaceType: "Lab" | "Project";
@@ -32,9 +35,19 @@ export type PlaceNotebook = Pick<PickedNotebook, "id" | "title" | "path"> & {
   workspaceId: string | null;
 };
 
+/** The folder a new notebook was filed in by hand; `id` is null at a project's top level. */
+export type PlaceFolder = { id: string | null; path: string };
+
 export type MeetingPlace =
   | { kind: "existing"; notebook: PlaceNotebook }
-  | { kind: "new"; title: string; titleEdited: boolean; templatePageId: string | null; space: NoteSpace };
+  | {
+      kind: "new";
+      title: string;
+      titleEdited: boolean;
+      templatePageId: string | null;
+      space: NoteSpace;
+      folder?: PlaceFolder;
+    };
 
 export type MeetingNoteState = {
   enabled: boolean;
@@ -42,6 +55,8 @@ export type MeetingNoteState = {
   place: MeetingPlace | null;
   reason: string | null;
   auto: boolean;
+  /** The organizer removed the notebook, so a default must not fill it back in. */
+  dismissed?: boolean;
 };
 
 export const emptyMeetingNote: MeetingNoteState = {
@@ -100,7 +115,12 @@ export function meetingNoteActive(s: MeetingNoteState): boolean {
 export function notebookChoiceOf(s: MeetingNoteState): NotebookChoice | null {
   if (!s.enabled || !s.place) return null;
   if (s.place.kind === "existing") return { existingId: s.place.notebook.id };
-  return { title: s.place.title.trim(), templatePageId: s.place.templatePageId, space: spaceChoiceOf(s.place.space) };
+  return {
+    title: s.place.title.trim(),
+    templatePageId: s.place.templatePageId,
+    space: spaceChoiceOf(s.place.space),
+    ...(s.place.folder?.id ? { folderPageId: s.place.folder.id } : {}),
+  };
 }
 
 function placeProjectId(place: MeetingPlace | null): string | null {
@@ -125,7 +145,7 @@ export function meetingNotePayload(s: MeetingNoteState, invite: NoteInvite): Rec
 export function placeLine(place: MeetingPlace): string {
   return place.kind === "existing"
     ? `${place.notebook.title} · ${place.notebook.path}`
-    : `New notebook “${place.title.trim()}” · ${place.space.label}`;
+    : `New notebook “${place.title.trim()}” · ${place.folder?.path ?? place.space.label}`;
 }
 
 export function placeSpaceLabel(place: MeetingPlace): string {
@@ -133,7 +153,9 @@ export function placeSpaceLabel(place: MeetingPlace): string {
 }
 
 export function withEnabled(s: MeetingNoteState, enabled: boolean): MeetingNoteState {
-  return enabled ? { ...s, enabled } : { ...s, enabled, place: null, reason: null, auto: false };
+  return enabled
+    ? { ...s, enabled, dismissed: false }
+    : { ...s, enabled, place: null, reason: null, auto: false, dismissed: false };
 }
 
 export function withPickedNotebook(
@@ -141,7 +163,7 @@ export function withPickedNotebook(
   notebook: PlaceNotebook,
   reason: string | null = null,
 ): MeetingNoteState {
-  return { ...s, place: { kind: "existing", notebook }, reason, auto: false };
+  return { ...s, place: { kind: "existing", notebook }, reason, auto: false, dismissed: false };
 }
 
 export function withNewNotebook(s: MeetingNoteState, space: NoteSpace, title: string): MeetingNoteState {
@@ -150,6 +172,36 @@ export function withNewNotebook(s: MeetingNoteState, space: NoteSpace, title: st
     place: { kind: "new", title, titleEdited: false, templatePageId: null, space },
     reason: null,
     auto: false,
+    dismissed: false,
+  };
+}
+
+/** The space and path a picked folder files a new notebook in; null for a place notebooks can't live (My Drive, Education). */
+export function folderFilingOf(dest: Destination, rows: PickerRows): { space: NoteSpace; folder: PlaceFolder } | null {
+  const target = resolveMoveTarget(dest, rows);
+  if (!target || target.workspaceType === "EducationOffering") return null;
+  if (target.workspaceType === "Lab" && !target.parentPageId) return null;
+  const path = destinationPath(
+    dest,
+    new Map(rows.drives.map((d) => [d.id, d])),
+    new Map(rows.folders.map((f) => [f.id, f])),
+  ).join(" ▸ ");
+  const space: NoteSpace =
+    target.workspaceType === "Project"
+      ? { workspaceType: "Project", workspaceId: target.workspaceId, label: target.label }
+      : target.rootDriveId === "core"
+        ? CORE_SPACE
+        : GENERAL_SPACE;
+  return { space, folder: { id: target.parentPageId, path } };
+}
+
+export function withNewFolder(s: MeetingNoteState, filing: { space: NoteSpace; folder: PlaceFolder }): MeetingNoteState {
+  const p = s.place;
+  if (p?.kind !== "new") return s;
+  const sameSpace = p.space.workspaceType === filing.space.workspaceType && p.space.workspaceId === filing.space.workspaceId;
+  return {
+    ...s,
+    place: { ...p, space: filing.space, folder: filing.folder, templatePageId: sameSpace ? p.templatePageId : null },
   };
 }
 
@@ -170,7 +222,7 @@ export function withTemplate(s: MeetingNoteState, templatePageId: string | null)
 const DEFAULT_REASONS = { series: SERIES_REASON, history: HISTORY_REASON, pair: PAIR_REASON } as const;
 
 export function withDefault(s: MeetingNoteState, def: DefaultNotebookResult): MeetingNoteState {
-  if (s.place && !s.auto) return s;
+  if ((s.place && !s.auto) || s.dismissed) return s;
   if (def.kind === "new" || !def.notebook) return s.auto ? { ...s, place: null, reason: null, auto: false } : s;
   return {
     ...s,
@@ -181,7 +233,7 @@ export function withDefault(s: MeetingNoteState, def: DefaultNotebookResult): Me
 }
 
 export function clearPlace(s: MeetingNoteState): MeetingNoteState {
-  return { ...s, place: null, reason: null, auto: false };
+  return { ...s, place: null, reason: null, auto: false, dismissed: true };
 }
 
 export type DefaultNotebookQuery = {

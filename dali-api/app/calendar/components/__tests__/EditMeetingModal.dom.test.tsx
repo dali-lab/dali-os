@@ -69,6 +69,7 @@ const updateCall = () => fetchMock.mock.calls.find((c) => String(c[0]) === "/api
 const button = (text: string) =>
   Array.from(document.body.querySelectorAll("button")).find((b) => b.textContent === text) as HTMLButtonElement;
 const click = (el: Element) => act(async () => (el as HTMLElement).click());
+const removeNotebook = () => click(document.body.querySelector("[aria-label='Remove notebook']")!);
 const pickNotebook = (id: string) =>
   act(async () =>
     pickerProps!.onPick({ id, title: id, path: "General", workspaceType: "Lab", workspaceId: null, parentPageId: null }),
@@ -106,8 +107,10 @@ describe("EditMeetingModal notebook", () => {
     expect(document.body.textContent).toContain("this meeting's notebook");
   });
 
-  it("offers Change without a new-notebook row", async () => {
-    await click(button("Change"));
+  it("offers only Remove on the notebook, then Search without a new-notebook row", async () => {
+    expect(button("Change")).toBeUndefined();
+    await removeNotebook();
+    await click(button("Search notebooks"));
     expect(pickerProps!.newRow).toBeUndefined();
   });
 
@@ -119,7 +122,8 @@ describe("EditMeetingModal notebook", () => {
   });
 
   it("confirms, saves the meeting, then points future meetings at the new notebook", async () => {
-    await click(button("Change"));
+    await removeNotebook();
+    await click(button("Search notebooks"));
     await pickNotebook("nb2");
     await click(button("Save changes"));
     expect(confirm).toHaveBeenCalledWith({
@@ -136,7 +140,8 @@ describe("EditMeetingModal notebook", () => {
 
   it("changes nothing when the question is declined", async () => {
     confirm.mockResolvedValue(false);
-    await click(button("Change"));
+    await removeNotebook();
+    await click(button("Search notebooks"));
     await pickNotebook("nb2");
     await click(button("Save changes"));
     expect(updateCall()).toBeUndefined();
@@ -144,7 +149,8 @@ describe("EditMeetingModal notebook", () => {
   });
 
   it("does not ask when the pick is the series' own notebook", async () => {
-    await click(button("Change"));
+    await removeNotebook();
+    await click(button("Search notebooks"));
     await pickNotebook("nb1");
     await click(button("Save changes"));
     expect(confirm).not.toHaveBeenCalled();

@@ -1,9 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Plus, Search } from "lucide-react";
+import { Plus, Search, X } from "lucide-react";
 import { Select } from "~/components/ui/floating";
 import { Checkbox } from "~/components/ui/Checkbox";
 import { Button } from "~/components/ui/Button";
+import { IconButton } from "~/components/ui/IconButton";
+import { FolderPicker, type Destination } from "~/components/drive/FolderPicker";
+import { useDriveDestinations } from "~/components/drive/use-drive-destinations";
+import { pickDrives } from "~/components/drive/picker-rows";
 import { NotebookPicker } from "~/components/notebooks/NotebookPicker";
+import { useNotebookPrefetch } from "~/components/notebooks/use-notebook-list";
 import { useNoteTemplates } from "~/components/notebooks/use-note-templates";
 import {
   PICK_PLACE_COPY,
@@ -11,6 +16,8 @@ import {
   emptyMeetingNote,
   fetchDefaultNotebook,
   fetchPairNotebook,
+  folderFilingOf,
+  GENERAL_SPACE,
   inviteOf,
   inviteSpaceOf,
   pickerSpaceOf,
@@ -18,6 +25,7 @@ import {
   spaceOfGroup,
   withDefault,
   withEnabled,
+  withNewFolder,
   withNewNotebook,
   withPickedNotebook,
   withPrefilledTitle,
@@ -25,9 +33,12 @@ import {
   withTitle,
   type DefaultNotebookResult,
   type NoteSpace,
+  type MeetingPlace,
+  type PlaceFolder,
   type PlaceNotebook,
 } from "~/calendar/components/meeting-note";
 import { suggestFiling, suggestPairFiling, type PairSuggestion } from "~/calendar/lib/suggest-filing";
+import type { PickerRows } from "~/components/drive/picker-rows";
 import type { GroupOption, MentorPairOption } from "~/calendar/lib/types";
 
 export {
@@ -51,6 +62,11 @@ export function useMeetingNote() {
     pickNotebook: (notebook: PlaceNotebook, reason: string | null = null) =>
       setState((s) => withPickedNotebook(s, notebook, reason)),
     startNew: (space: NoteSpace, title: string) => setState((s) => withNewNotebook(s, space, title)),
+    setFolder: (dest: Destination, rows: PickerRows) => {
+      const filing = folderFilingOf(dest, rows);
+      if (filing) setState((s) => withNewFolder(s, filing));
+      return filing !== null;
+    },
     setTitle: (title: string) => setState((s) => withTitle(s, title)),
     prefillTitle: (title: string) => setState((s) => withPrefilledTitle(s, title)),
     setTemplatePageId: (templatePageId: string | null) => setState((s) => withTemplate(s, templatePageId)),
@@ -134,6 +150,21 @@ function FilingOptions({
   );
 }
 
+export function whiteboardCopy(notesOn: boolean, spaceLabel: string): string {
+  return notesOn ? "Saved next to the notes." : `Saved in ${spaceLabel} ▸ Meetings.`;
+}
+
+function folderPickerRows(rows: PickerRows, place: MeetingPlace | null) {
+  const writable = pickDrives(rows, (id) => id !== "mine" && id !== "education");
+  const folder = place?.kind === "new" ? place.folder : undefined;
+  return { drives: writable.drives, folders: writable.folders, initial: initialDestOf(folder, writable) };
+}
+
+function initialDestOf(folder: PlaceFolder | undefined, rows: PickerRows): Destination | undefined {
+  const found = folder?.id ? rows.folders.find((f) => f.id === folder.id) : undefined;
+  return found ? { driveId: found.driveId, folderId: found.id } : undefined;
+}
+
 export function MeetingNoteFields({
   note,
   surface = "note",
@@ -164,6 +195,15 @@ export function MeetingNoteFields({
   const inviteSpace = inviteSpaceOf(invitedGroups);
   const [picker, setPicker] = useState<PickerRequest | null>(null);
   const [pairError, setPairError] = useState<string | null>(null);
+  const [folderOpen, setFolderOpen] = useState(false);
+  const [folderError, setFolderError] = useState<string | null>(null);
+  const destinations = useDriveDestinations({
+    enabled: folderOpen,
+    onError: () => {
+      setFolderError("Couldn't load folders. Try again.");
+      setFolderOpen(false);
+    },
+  });
 
   useEffect(() => {
     if (meetingTitle.trim()) note.prefillTitle(meetingTitle.trim());
@@ -185,7 +225,7 @@ export function MeetingNoteFields({
   const onLoaded = useRef(onDefaultLoaded);
   onLoaded.current = onDefaultLoaded;
   useEffect(() => {
-    if (!state.enabled || manual) return;
+    if (!state.enabled || manual || state.dismissed) return;
     let cancelled = false;
     fetchDefaultNotebook({ meetingId, scopeGroupId, invite, pairMenteeId })
       .then((def) => {
@@ -198,7 +238,7 @@ export function MeetingNoteFields({
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.enabled, manual, meetingId, scopeGroupId, invite.projectId, invite.coreInvited, pairMenteeId]);
+  }, [state.enabled, manual, state.dismissed, meetingId, scopeGroupId, invite.projectId, invite.coreInvited, pairMenteeId]);
 
   const chips = useMemo(() => {
     if (!suggest || !state.enabled) return [];
@@ -208,6 +248,12 @@ export function MeetingNoteFields({
       return space ? [{ ...s, space }] : [];
     });
   }, [suggest, state.enabled, meetingTitle]);
+
+  const prefetchSpaces = useMemo(
+    () => [GENERAL_SPACE, ...chips.map((c) => c.space)].map(pickerSpaceOf),
+    [chips],
+  );
+  const preloadedFor = useNotebookPrefetch({ enabled: state.enabled, spaces: prefetchSpaces, meetingId });
 
   const templateProject = place?.kind === "new" && place.space.workspaceType === "Project" ? place.space.workspaceId : null;
   const { templates } = useNoteTemplates({ enabled: place?.kind === "new", projectId: templateProject });
@@ -233,6 +279,7 @@ export function MeetingNoteFields({
     <NotebookPicker
       open
       space={picker.space && pickerSpaceOf(picker.space)}
+      preloaded={preloadedFor(picker.space && pickerSpaceOf(picker.space))}
       meetingId={meetingId}
       heading={picker.space ? `Notebooks in ${picker.space.label}` : "Add to a notebook"}
       newRow={
@@ -250,6 +297,23 @@ export function MeetingNoteFields({
       onPick={(picked) => {
         note.pickNotebook(picked);
         setPicker(null);
+      }}
+    />
+  );
+
+  const folderPicker = folderOpen && destinations.status === "ready" && (
+    <FolderPicker
+      open
+      heading="File the notebook in"
+      confirmLabel="File here"
+      pendingLabel="File in:"
+      intoVerb="File into"
+      emptyText="There's no folder you can file in."
+      {...folderPickerRows(destinations.rows, place)}
+      onClose={() => setFolderOpen(false)}
+      onConfirm={(dest) => {
+        if (note.setFolder(dest, destinations.rows)) setFolderOpen(false);
+        else setFolderError("Pick a folder to file the notebook in.");
       }}
     />
   );
@@ -273,10 +337,21 @@ export function MeetingNoteFields({
           <p className="truncate text-foreground">{placeLine(place)}</p>
           {state.reason && <p className="truncate text-xs text-muted-foreground">{state.reason}</p>}
         </div>
-        <Button variant="secondary" size="sm" onClick={() => openPicker(null)}>
-          Change
-        </Button>
+        {place.kind === "new" && (
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => {
+              setFolderError(null);
+              setFolderOpen(true);
+            }}
+          >
+            Change folder
+          </Button>
+        )}
+        <IconButton label="Remove notebook" icon={X} onClick={note.clearPlace} />
       </div>
+      {folderError && <p className="text-xs text-red-600">{folderError}</p>}
       {place.kind === "new" && (
         <div className="space-y-3">
           <div>
@@ -309,7 +384,6 @@ export function MeetingNoteFields({
           </div>
         </div>
       )}
-      {options}
     </div>
   ) : (
     <div className="space-y-2">
@@ -324,6 +398,7 @@ export function MeetingNoteFields({
         {surface === "edit" && <span className={labelClass}>Meeting notes</span>}
         {placeRow}
         {pickerModal}
+        {folderPicker}
       </div>
     );
   }
@@ -343,9 +418,10 @@ export function MeetingNoteFields({
         checked={state.whiteboard}
         onChange={(e) => note.setWhiteboard(e.target.checked)}
         label="Whiteboard"
-        description="A shared whiteboard, filed with the notebook."
+        description={whiteboardCopy(state.enabled, inviteSpace.label)}
       />
       {pickerModal}
+      {folderPicker}
     </div>
   );
 }

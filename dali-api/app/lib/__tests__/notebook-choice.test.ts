@@ -85,3 +85,23 @@ describe("add-note schemas", () => {
     expect(parsed).not.toHaveProperty("noteLocation");
   });
 });
+
+
+describe("a new notebook filed in a folder", () => {
+  it("accepts a folder page id beside the space", () => {
+    const choice = { title: "A", space: { kind: "core" }, folderPageId: "f1" };
+    expect(notebookChoiceSchema.parse(choice)).toEqual(choice);
+  });
+
+  it("accepts a folder page id alone", () => {
+    expect(notebookChoiceSchema.parse({ title: "A", folderPageId: "f1" })).toEqual({ title: "A", folderPageId: "f1" });
+  });
+
+  it("rejects an empty folder page id", () => {
+    expect(notebookChoiceSchema.safeParse({ title: "A", folderPageId: "" }).success).toBe(false);
+  });
+
+  it("rejects a folder page id on an existing notebook", () => {
+    expect(notebookChoiceSchema.safeParse({ existingId: "nb1", folderPageId: "f1" }).success).toBe(false);
+  });
+});
