@@ -7,7 +7,7 @@ vi.mock("~/lib/drive-reveal.server", () => ({ driveLocation: vi.fn() }));
 
 import { prisma } from "~/lib/db";
 import { driveLocation } from "~/lib/drive-reveal.server";
-import { formatFiledPath, meetingNotePath } from "~/lib/note-path.server";
+import { formatFiledPath, meetingNotePath, notebookItemLocation } from "~/lib/note-path.server";
 
 const m = prisma as any;
 const crumb = (title: string) => ({ id: title, title, iconEmoji: null });
@@ -73,5 +73,48 @@ describe("meetingNotePath", () => {
     expect(await meetingNotePath({ notePageId: "n", notebookId: null, viewerSub: "u1" })).toBeNull();
     m.page.findUnique.mockResolvedValue(null);
     expect(await run()).toBeNull();
+  });
+});
+
+describe("notebookItemLocation", () => {
+  const place = { parentPageId: "f1", workspaceType: "Project", workspaceId: "p1" };
+
+  it("carries the ids the Drive opens: the project, then each folder, ending at the nearest", async () => {
+    m.project.findUnique.mockResolvedValue({ name: "Project Alpha" });
+    vi.mocked(driveLocation).mockResolvedValue({
+      scope: "projects",
+      folders: [crumb("Meetings")],
+      workspaceFolderId: "p1",
+    });
+
+    expect(await notebookItemLocation(place, "u1")).toEqual({
+      scopeId: "projects",
+      scopeLabel: "Projects",
+      folderId: "Meetings",
+      folders: [
+        { id: "p1", title: "Project Alpha" },
+        { id: "Meetings", title: "Meetings" },
+      ],
+      path: "Projects ▸ Project Alpha ▸ Meetings",
+    });
+  });
+
+  it("opens the project when the notebook sits at its top", async () => {
+    m.project.findUnique.mockResolvedValue({ name: "Project Alpha" });
+    vi.mocked(driveLocation).mockResolvedValue({ scope: "projects", folders: [], workspaceFolderId: "p1" });
+
+    expect(await notebookItemLocation(place, "u1")).toMatchObject({ folderId: "p1", path: "Projects ▸ Project Alpha" });
+  });
+
+  it("has no folder for a notebook at the top of its space", async () => {
+    vi.mocked(driveLocation).mockResolvedValue({ scope: "core", folders: [], workspaceFolderId: null });
+
+    expect(await notebookItemLocation({ parentPageId: null, workspaceType: "Lab", workspaceId: null }, "u1")).toEqual({
+      scopeId: "core",
+      scopeLabel: "Core",
+      folderId: null,
+      folders: [],
+      path: "Core",
+    });
   });
 });

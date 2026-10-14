@@ -23,4 +23,21 @@ describe("audienceLine", () => {
       "Project team · lab can view",
     );
   });
+
+  it("appends the meeting attendees who can edit, to any kind of audience", () => {
+    expect(audienceLine(a({ kind: "project", label: "Project team", meetingEditors: 6 }))).toBe(
+      "Project team · 6 meeting attendees can edit",
+    );
+    expect(audienceLine(a({ kind: "group", label: "Core", permission: "Edit", meetingEditors: 2 }))).toBe(
+      "Core · can edit · 2 meeting attendees can edit",
+    );
+  });
+
+  it("says attendee in the singular", () => {
+    expect(audienceLine(a({ meetingEditors: 1 }))).toBe("Only you · 1 meeting attendee can edit");
+  });
+
+  it("adds nothing for none", () => {
+    expect(audienceLine(a({ meetingEditors: 0 }))).toBe("Only you");
+  });
 });

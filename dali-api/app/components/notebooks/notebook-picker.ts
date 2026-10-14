@@ -14,18 +14,28 @@ export type NotebookRow = PickedNotebook & { tabCount: number; lastNoteAt: strin
 
 export type NotebookListState = { rows: NotebookRow[]; status: "loading" | "ready" | "error" };
 
-export async function fetchNotebookRows(query: string, ctx: { projectId?: string | null; meetingId?: string | null }): Promise<NotebookRow[]> {
+export type NotebookListContext = {
+  projectId?: string | null;
+  meetingId?: string | null;
+  space?: { workspaceType: string; workspaceId: string | null } | null;
+};
+
+export async function fetchNotebookRows(query: string, ctx: NotebookListContext): Promise<NotebookRow[]> {
   const qs = notebookQueryString(query, ctx);
   const res = await fetch(`/api/notebooks${qs ? `?${qs}` : ""}`, { credentials: "include" });
   if (!res.ok) throw new Error("Request failed");
   return ((await res.json()) as { notebooks: NotebookRow[] }).notebooks;
 }
 
-export function notebookQueryString(q: string, ctx: { projectId?: string | null; meetingId?: string | null }): string {
+export function notebookQueryString(q: string, ctx: NotebookListContext): string {
   const params = new URLSearchParams();
   if (q.trim()) params.set("q", q.trim());
   if (ctx.projectId) params.set("projectId", ctx.projectId);
   if (ctx.meetingId) params.set("meetingId", ctx.meetingId);
+  if (ctx.space) {
+    params.set("workspaceType", ctx.space.workspaceType);
+    if (ctx.space.workspaceId) params.set("workspaceId", ctx.space.workspaceId);
+  }
   return params.toString();
 }
 

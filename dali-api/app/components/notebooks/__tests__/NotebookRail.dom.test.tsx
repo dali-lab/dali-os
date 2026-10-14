@@ -2,8 +2,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { createRoutesStub } from "react-router";
-import { NotebookRail, type NotebookView } from "~/components/notebooks/NotebookRail";
+import { Outlet, createRoutesStub } from "react-router";
+import { NotebookRail, NoteLocationLine, type NotebookView } from "~/components/notebooks/NotebookRail";
 import { NotebookPicker } from "~/components/notebooks/NotebookPicker";
 import { NOTEBOOK_RAIL_COLLAPSED_KEY } from "~/components/notebooks/use-rail-collapsed";
 import { DialogProvider } from "~/components/ui/dialog";
@@ -21,7 +21,7 @@ const notebook: NotebookView = {
   folderId: null,
   templateId: null,
   projectId: null,
-  nextNote: null,
+  nextNotes: [],
   tabs: [
     { id: "nb1", label: "Oct 6", meeting: "Weekly sync", isNote: true },
     { id: "p2", label: "Oct 13", meeting: "Weekly sync", isNote: true },
@@ -32,6 +32,7 @@ const notebook: NotebookView = {
 let container: HTMLDivElement;
 let root: Root;
 let posts: Array<{ url: string; body: unknown }>;
+let calendarPosts: Array<Record<string, unknown>>;
 
 function tick() {
   return act(async () => {
@@ -42,8 +43,18 @@ function tick() {
 async function mount(element: () => ReturnType<typeof createElement>) {
   const Stub = createRoutesStub([
     {
-      path: "/",
-      Component: () => createElement(ToastProvider, null, createElement(DialogProvider, null, element())),
+      Component: () => createElement(ToastProvider, null, createElement(DialogProvider, null, createElement(Outlet))),
+      children: [
+        { path: "/", Component: () => element() },
+        { path: "/documents/:id", Component: () => createElement("p", null, "opened") },
+        {
+          path: "/calendar",
+          action: async ({ request }) => {
+            calendarPosts.push(Object.fromEntries(await request.formData()));
+            return { notePageId: null };
+          },
+        },
+      ],
     },
   ]);
   container = document.createElement("div");
@@ -94,6 +105,7 @@ function key(el: Element, k: string) {
 beforeEach(() => {
   window.localStorage.clear();
   posts = [];
+  calendarPosts = [];
   vi.stubGlobal(
     "fetch",
     vi.fn(async (url: string, init?: RequestInit) => {
@@ -307,5 +319,162 @@ describe("NotebookRail collapse", () => {
     expect(wrapper.className).not.toMatch(/(^|\s)hidden(\s|$)/);
     expect(strip()!.className).toMatch(/(^|\s)hidden(\s|$)/);
     expect(strip()!.className).toContain("lg:flex");
+  });
+});
+
+describe("NotebookRail Move to notebook", () => {
+  const openMenu = async (label: string) => {
+    await click(byLabel(label)!);
+    return [...document.body.querySelectorAll('[role="menuitem"]')].map((el) => el.textContent?.trim());
+  };
+  const picker = () => document.body.querySelector('[role="dialog"]');
+
+  beforeEach(() => {
+    vi.mocked(fetch).mockImplementation((async (url: string, init?: RequestInit) => {
+      if (init?.method === "POST") {
+        posts.push({ url, body: JSON.parse(init.body as string) });
+        return new Response(JSON.stringify({ ok: true }));
+      }
+      if (url.startsWith("/api/notebooks")) {
+        return new Response(
+          JSON.stringify({
+            notebooks: [
+              { id: "nb1", title: "Weekly sync", path: "Lab", workspaceType: "Lab", workspaceId: null, parentPageId: null, tabCount: 3, lastNoteAt: null, suggested: false },
+              { id: "nb2", title: "Retro", path: "Lab", workspaceType: "Lab", workspaceId: null, parentPageId: null, tabCount: 1, lastNoteAt: null, suggested: false },
+            ],
+          }),
+        );
+      }
+      return new Response(JSON.stringify({ templates: [], results: [] }));
+    }) as never);
+  });
+
+  it("is offered to a manager, above Remove from notebook", async () => {
+    await rail();
+    const items = await openMenu("Options for Oct 6");
+    expect(items).toEqual(["Detach from meeting", "Move to notebook…", "Remove from notebook"]);
+  });
+
+  it("is not offered to someone who cannot manage", async () => {
+    await rail({ canManage: false });
+    expect(byLabel("Options for Oct 6")).toBeNull();
+  });
+
+  it("opens a picker scoped to the notebook's space that leaves the current notebook out", async () => {
+    await rail({ workspaceType: "Project", workspaceId: "p1" });
+    await menuItem("Options for Oct 6", "Move to notebook");
+
+    expect(picker()?.textContent).toContain("Move to notebook");
+    const listing = vi.mocked(fetch).mock.calls.map((c) => String(c[0])).find((u) => u.startsWith("/api/notebooks"))!;
+    const params = new URLSearchParams(listing.split("?")[1]);
+    expect(params.get("workspaceType")).toBe("Project");
+    expect(params.get("workspaceId")).toBe("p1");
+    expect(picker()?.textContent).toContain("Retro");
+    expect(picker()?.textContent).not.toContain("Weekly sync");
+  });
+
+  it("moves the note into the pick and says where it went", async () => {
+    await rail();
+    await menuItem("Options for Oct 13", "Move to notebook");
+    const retro = [...picker()!.querySelectorAll("button")].find((b) => b.textContent?.includes("Retro"))!;
+    await click(retro);
+
+    expect(posts).toEqual([{ url: "/api/notebooks/nb2", body: { intent: "add-page", pageId: "p2" } }]);
+    expect(document.body.textContent).toContain("Moved to Retro");
+    expect(picker()).toBeNull();
+  });
+});
+
+describe("NotebookRail next notes", () => {
+  const noteItems = async () => {
+    await click([...container.querySelectorAll("button")].find((b) => b.textContent?.trim() === "Add")!);
+    return [...document.body.querySelectorAll('[role="menuitem"]')].filter((el) => el.textContent?.includes("Note for"));
+  };
+
+  it("shows nothing for a notebook with no series to continue", async () => {
+    await rail();
+    expect(await noteItems()).toHaveLength(0);
+  });
+
+  it("keeps the single item for one target and posts its occurrence", async () => {
+    await rail({ nextNotes: [{ meetingId: "m1", meetingTitle: "Weekly sync", occurrenceStart: "2026-10-21T15:00:00.000Z" }] });
+    const items = await noteItems();
+    expect(items.map((i) => i.textContent?.trim())).toEqual(["Note for the next meeting"]);
+
+    await click(items[0]);
+    expect(calendarPosts).toEqual([
+      { intent: "add-meeting-note", meetingId: "m1", occurrence: "2026-10-21T15:00:00.000Z" },
+    ]);
+  });
+
+  it("lists one labelled item per series, each posting its own meeting and occurrence", async () => {
+    await rail({
+      nextNotes: [
+        { meetingId: "m1", meetingTitle: "Weekly sync", occurrenceStart: "2026-10-21T15:00:00.000Z" },
+        { meetingId: "m2", meetingTitle: "Retro", occurrenceStart: "2026-10-23T15:00:00.000Z" },
+      ],
+    });
+
+    const items = await noteItems();
+    expect(items.map((i) => i.textContent?.trim())).toEqual([
+      "Note for Weekly sync · Oct 21, 2026",
+      "Note for Retro · Oct 23, 2026",
+    ]);
+
+    await click(items[1]);
+    expect(calendarPosts).toEqual([
+      { intent: "add-meeting-note", meetingId: "m2", occurrence: "2026-10-23T15:00:00.000Z" },
+    ]);
+  });
+});
+
+describe("NoteLocationLine", () => {
+  const location = {
+    scopeId: "projects",
+    scopeLabel: "Projects",
+    folderId: "f1",
+    folders: [
+      { id: "p1", title: "Project Alpha" },
+      { id: "f1", title: "Meetings" },
+    ],
+    path: "Projects ▸ Project Alpha ▸ Meetings",
+  };
+  const line = (over: Partial<Parameters<typeof NoteLocationLine>[0]> = {}) =>
+    mount(() =>
+      createElement(NoteLocationLine, {
+        notebook,
+        location,
+        tabLabel: "Oct 14, 2026",
+        editViaMeeting: false,
+        showControls: true,
+        ...over,
+      }),
+    );
+  const text = () => container.querySelector('[data-testid="note-location"]')!.textContent;
+
+  it("reads the filed path, then the notebook and the tab", async () => {
+    await line();
+    expect(text()).toContain("ProjectsProject AlphaMeetings");
+    expect(text()).toContain("Weekly sync · Oct 14, 2026");
+    expect(text()).not.toContain("In notebook");
+  });
+
+  it("explains an edit that comes from the meeting", async () => {
+    await line({ editViaMeeting: true });
+    expect(byLabel("More information")).toBeTruthy();
+  });
+
+  it("says nothing extra for an edit that comes from base access", async () => {
+    await line();
+    expect(byLabel("More information")).toBeNull();
+  });
+
+  it("carries the Add menu only when it stands in for the hidden rail", async () => {
+    await line();
+    expect([...container.querySelectorAll("button")].some((b) => b.textContent?.trim() === "Add")).toBe(true);
+    act(() => root.unmount());
+    container.remove();
+    await line({ showControls: false });
+    expect([...container.querySelectorAll("button")].some((b) => b.textContent?.trim() === "Add")).toBe(false);
   });
 });

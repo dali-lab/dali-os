@@ -32,8 +32,8 @@ export function useOpenMeetingNote({
   occurrenceStart,
   actionPath,
 }: {
-  meetingId: string;
-  occurrenceStart: string;
+  meetingId?: string;
+  occurrenceStart?: string;
   actionPath?: string;
 }) {
   const fetcher = useFetcher<FiledNoteResponse>();
@@ -51,14 +51,21 @@ export function useOpenMeetingNote({
       navigate(`/documents/${fetcher.data.notePageId}`);
     }
   }, [fetcher.state, fetcher.data, navigate, showFiledNote]);
-  const open = useCallback(() => {
-    submittedRef.current = true;
-    fetcher.submit(
-      { intent: "add-meeting-note", meetingId, occurrence: occurrenceStart },
-      { method: "post", ...(actionPath ? { action: actionPath } : {}) },
-    );
-  }, [fetcher, meetingId, occurrenceStart, actionPath]);
-  return { open, pending: fetcher.state !== "idle", error: fetcher.data?.error ?? null };
+  const openOccurrence = useCallback(
+    (target: { meetingId: string; occurrenceStart: string }) => {
+      submittedRef.current = true;
+      fetcher.submit(
+        { intent: "add-meeting-note", meetingId: target.meetingId, occurrence: target.occurrenceStart },
+        { method: "post", ...(actionPath ? { action: actionPath } : {}) },
+      );
+    },
+    [fetcher, actionPath],
+  );
+  const open = useCallback(
+    () => openOccurrence({ meetingId: meetingId ?? "", occurrenceStart: occurrenceStart ?? "" }),
+    [openOccurrence, meetingId, occurrenceStart],
+  );
+  return { open, openOccurrence, pending: fetcher.state !== "idle", error: fetcher.data?.error ?? null };
 }
 
 /** "Meeting note" for an occurrence of a meeting that already keeps notes but
