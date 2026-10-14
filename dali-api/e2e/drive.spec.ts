@@ -240,7 +240,7 @@ test.describe('Drive hub', () => {
   });
 
   // ── Test G: My Drive create via naming prompt ───────────────────────────────
-  test('(G) My Drive scope creates a document via the naming prompt', async ({ page }) => {
+  test('(G) My Drive scope creates a document via the naming prompt and reveals it in place', async ({ page }) => {
     const stamp = Date.now();
     await page.goto('/drive?scope=mine&embed=1');
     await page.waitForLoadState('networkidle');
@@ -253,11 +253,9 @@ test.describe('Drive hub', () => {
     await expect(input).toBeVisible();
     await input.fill(`My note ${stamp}`);
 
-    await Promise.all([
-      page.waitForURL(/\/documents\//, { timeout: 10_000 }),
-      page.getByRole('button', { name: 'Create' }).click(),
-    ]);
-    expect(page.url()).toMatch(/\/documents\//);
+    await page.getByRole('button', { name: 'Create' }).click();
+    await expect(page.getByText(`My note ${stamp}`).first()).toBeVisible();
+    expect(page.url()).toContain('/drive');
   });
 
   // ── Test H: Core drive auto-provisions for Core members ─────────────────────
@@ -280,11 +278,9 @@ test.describe('Drive hub', () => {
     await expect(input).toBeVisible();
     await input.fill(`Core doc ${stamp}`);
 
-    await Promise.all([
-      page.waitForURL(/\/documents\//, { timeout: 10_000 }),
-      page.getByRole('button', { name: 'Create' }).click(),
-    ]);
-    expect(page.url()).toMatch(/\/documents\//);
+    await page.getByRole('button', { name: 'Create' }).click();
+    await expect(page.getByText(`Core doc ${stamp}`).first()).toBeVisible();
+    expect(page.url()).toContain('/drive');
   });
 
   // ── Test I: New→Agreement (Core) ─────────────────────────────────────────────

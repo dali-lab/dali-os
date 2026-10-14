@@ -43,6 +43,8 @@ const onHistory = vi.fn();
 const onMove = vi.fn();
 const onMoveToScope = vi.fn();
 
+let swapScopes: (scopes: DriveTreeScope[]) => void = () => {};
+
 type MountOptions = {
   view?: "columns" | "list" | "grid";
   scopeId?: string | null;
@@ -50,6 +52,7 @@ type MountOptions = {
   search?: string;
   onHistory?: boolean;
   initialSelectedId?: string;
+  revealId?: string;
   typeFilter?: DriveTypeFilter;
   scopes?: DriveTreeScope[];
 };
@@ -58,9 +61,11 @@ type MountOptions = {
 async function mount(opts: MountOptions = {}) {
   if (opts.view && opts.view !== "columns") window.localStorage.setItem("dali_drive_view", opts.view);
   function Harness() {
+    const [scopesState, setScopesState] = useState(opts.scopes ?? [lab, mine]);
+    swapScopes = setScopesState;
     const [loc, setLoc] = useState({ scopeId: opts.scopeId === undefined ? "lab" : opts.scopeId, folderId: opts.folderId ?? null });
     return createElement(ToastProvider, null, createElement(DialogProvider, null, createElement(DriveBrowser, {
-      scopes: opts.scopes ?? [lab, mine],
+      scopes: scopesState,
       currentScopeId: loc.scopeId,
       currentFolderId: loc.folderId,
       typeFilter: opts.typeFilter ?? "all",
@@ -72,6 +77,7 @@ async function mount(opts: MountOptions = {}) {
       },
       onHistory: opts.onHistory ? onHistory : undefined,
       initialSelectedId: opts.initialSelectedId,
+      revealId: opts.revealId,
       onMove,
       onMoveToScope,
       onOpenItem,
@@ -1557,5 +1563,40 @@ describe("DriveBrowser reveal: survives the navigation clear", () => {
     await mount({ folderId: "f1", initialSelectedId: "d5" });
     expect(isChecked("d5")).toBe(true);
     expect(checkedCount()).toBe(1);
+  });
+});
+
+describe("DriveBrowser reveal: revealId", () => {
+  beforeEach(() => {
+    Element.prototype.scrollIntoView = () => {};
+  });
+
+  it("selects the revealed row once it appears in the listing, after the browser is already showing", async () => {
+    await mount({ view: "list", revealId: "dNew" });
+    expect(checkedCount()).toBe(0);
+    await act(async () => {
+      swapScopes([{ ...lab, items: [...lab.items, doc("dNew")] }, mine]);
+    });
+    expect(isChecked("dNew")).toBe(true);
+    expect(checkedCount()).toBe(1);
+  });
+
+  it("does not re-select it after the user has moved on", async () => {
+    await mount({ view: "list", revealId: "dNew" });
+    await act(async () => {
+      swapScopes([{ ...lab, items: [...lab.items, doc("dNew")] }, mine]);
+    });
+    await click(checkbox("dNew"));
+    expect(checkedCount()).toBe(0);
+    await act(async () => {
+      swapScopes([{ ...lab, items: [...lab.items, doc("dNew"), doc("dOther")] }, mine]);
+    });
+    expect(checkedCount()).toBe(0);
+  });
+
+  it("focuses the revealed row so the keyboard continues from it", async () => {
+    await mount({ view: "list", revealId: "d1" });
+    await key(pane("list"), "ArrowDown");
+    expect(isChecked("d2")).toBe(true);
   });
 });

@@ -176,6 +176,8 @@ export type DriveBrowserProps = {
   onHistory?: (delta: -1 | 1) => void;
   /** A row to select and scroll to once, when the browser first shows it (Reveal in Drive). */
   initialSelectedId?: string;
+  /** A row to select and scroll to whenever this changes, once it appears in the listing (a freshly created item). */
+  revealId?: string;
   onOpenItem: (item: DriveItem) => void;
   /** Re-file every item into `destFolderId` within the scope it already sits
    *  in. Takes a list because dragging one row of a multi-selection drags the
@@ -788,6 +790,7 @@ export function DriveBrowser({
   onNavigate,
   onHistory,
   initialSelectedId,
+  revealId,
   onOpenItem: hostOpenItem,
   onMove,
   getScopeActions,
@@ -1134,6 +1137,16 @@ export function DriveBrowser({
     if (level > 0) setFocusLevel(level);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialSelectedId, itemIndex]);
+
+  const revealedIdRef = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (!revealId || revealedIdRef.current === revealId || !itemIndex.has(revealId)) return;
+    revealedIdRef.current = revealId;
+    focusOnly(revealId);
+    const level = levelIndexOf(revealId);
+    if (level > 0) setFocusLevel(level);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [revealId, itemIndex]);
 
   // ── Selection ──────────────────────────────────────────────────────────────
   function clearSelection() {

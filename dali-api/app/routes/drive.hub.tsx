@@ -551,12 +551,13 @@ function educationCreateBlock(
   return null;
 }
 
-function makeScopeActions({
+export function makeScopeActions({
   scope,
   currentFolderId,
   dialog,
   toast,
   revalidate,
+  onCreated,
   hiding,
   history,
 }: {
@@ -567,6 +568,8 @@ function makeScopeActions({
   dialog: ReturnType<typeof useDialog>;
   toast: ReturnType<typeof useToast>;
   revalidate: () => void;
+  /** Called with the id of an item just created in place, so the browser can reveal it. */
+  onCreated: (id: string) => void;
   hiding: Pick<PendingHidden, "hide">;
   history: DriveHistory;
 }): ScopeActions {
@@ -651,7 +654,7 @@ function makeScopeActions({
     });
     if (name === null) return;
     const id = await createPage("FreeForm", name.trim(), createParent);
-    if (id) window.location.assign(`/documents/${id}`);
+    if (id) onCreated(id);
     else toast.error("Couldn't create the document");
   }
 
@@ -667,7 +670,7 @@ function makeScopeActions({
     const id = await createPage("Folder", name.trim(), createParent);
     if (id) {
       toast.success("Folder created");
-      revalidate();
+      onCreated(id);
     } else {
       toast.error("Couldn't create the folder");
     }
@@ -683,7 +686,7 @@ function makeScopeActions({
     });
     if (name === null) return;
     const id = await createPage("Whiteboard", name.trim(), createParent);
-    if (id) window.location.assign(`/whiteboard/${id}`);
+    if (id) onCreated(id);
     else toast.error("Couldn't create the whiteboard");
   }
 
@@ -904,6 +907,7 @@ export function NewMenu({
   uploading,
   onTemplate,
   currentFolderId,
+  onCreated,
 }: {
   scope: DriveScope;
   actions: ScopeActions;
@@ -913,6 +917,7 @@ export function NewMenu({
   uploading: boolean;
   onTemplate: () => void;
   currentFolderId: string | null;
+  onCreated: (id: string) => void;
 }) {
   const isLab = scope.id === "lab";
   const label = scope.id === "mine" ? "My Drive" : isLab ? "Lab" : scope.label;
@@ -941,7 +946,7 @@ export function NewMenu({
         parentPageId: notebook.parentPageId,
       }),
     );
-    if (created.ok && created.data) window.location.assign(`/documents/${created.data.id}`);
+    if (created.ok && created.data) onCreated(created.data.id);
     else toast.error(created.error ?? "Couldn't create the notebook");
   }
 
@@ -1117,6 +1122,14 @@ export default function DriveHub() {
   const toast = useToast();
   const revalidator = useRevalidator();
   const revalidate = useCallback(() => void revalidator.revalidate(), [revalidator]);
+  const [revealId, setRevealId] = useState<string>();
+  const onCreated = useCallback(
+    (id: string) => {
+      setRevealId(id);
+      revalidate();
+    },
+    [revalidate],
+  );
   const history = useDriveHistory({ onChange: revalidate });
   useDriveHistoryKeys(history);
   const pendingHidden = usePendingHidden(revalidator.state, loadedScopes);
@@ -1246,6 +1259,7 @@ export default function DriveHub() {
           dialog,
           toast,
           revalidate,
+          onCreated,
           hiding: { hide: pendingHidden.hide },
           history,
         }),
@@ -1254,7 +1268,7 @@ export default function DriveHub() {
     return map;
     // pendingHidden.hide is stable; the object changes with the hidden set, which the actions don't read.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [driveScopes, effectiveScopeId, currentFolderId, dialog, toast, revalidate, history, pendingHidden.hide]);
+  }, [driveScopes, effectiveScopeId, currentFolderId, dialog, toast, revalidate, onCreated, history, pendingHidden.hide]);
   const scopeActionsRef = useRef(scopeActionsMap);
   scopeActionsRef.current = scopeActionsMap;
 
@@ -1828,6 +1842,7 @@ export default function DriveHub() {
         uploading={uploading}
         onTemplate={() => setTemplatePickerOpen(true)}
         currentFolderId={currentFolderId}
+        onCreated={onCreated}
       />
     ) : (
       <button
@@ -1925,6 +1940,7 @@ export default function DriveHub() {
         onNavigate={onNavigate}
         onHistory={(delta) => void navigate(delta)}
         initialSelectedId={initialSelectedId}
+        revealId={revealId}
         onOpenItem={onOpenItem}
         onMove={onMove}
         getScopeActions={getScopeActions}

@@ -24,7 +24,7 @@ const toastError = vi.fn();
 vi.mock("~/components/ui/dialog", () => ({ useDialog: () => ({ prompt }) }));
 vi.mock("~/components/ui/toast", () => ({ useToast: () => ({ error: toastError, success: vi.fn() }) }));
 
-import { NewMenu, notebookPlacement } from "~/routes/drive.hub";
+import { NewMenu, makeScopeActions, notebookPlacement } from "~/routes/drive.hub";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -40,12 +40,14 @@ const projectsGroup = scope({ id: "projects", items: [node("proj-1", null), node
 let container: HTMLDivElement | undefined;
 let root: Root | undefined;
 const assign = vi.fn();
+const onCreated = vi.fn();
 const originalLocation = window.location;
 
 beforeEach(() => {
   prompt.mockReset();
   toastError.mockReset();
   assign.mockReset();
+  onCreated.mockReset();
   Object.defineProperty(window, "location", { configurable: true, value: { assign } });
 });
 afterEach(() => {
@@ -57,7 +59,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-async function mountMenu(s: Scope, currentFolderId: string | null = null) {
+async function mountMenu(s: Scope, currentFolderId: string | null = null, canViewForms = false) {
   container = document.createElement("div");
   document.body.appendChild(container);
   const mounted = createRoot(container);
@@ -67,12 +69,13 @@ async function mountMenu(s: Scope, currentFolderId: string | null = null) {
       createElement(NewMenu, {
         scope: s,
         actions: {} as never,
-        canViewForms: false,
+        canViewForms,
         canManageAgreements: false,
         onUploadClick: () => {},
         uploading: false,
         onTemplate: () => {},
         currentFolderId,
+        onCreated,
       }),
     );
   });
@@ -158,7 +161,7 @@ describe("New menu: New notebook", () => {
     expect(labels.indexOf("New notebook")).toBe(labels.indexOf("New whiteboard") + 1);
   });
 
-  it("posts a lab notebook and opens it", async () => {
+  it("posts a lab notebook and reveals it in place", async () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ id: "nb1" }) });
     vi.stubGlobal("fetch", fetchMock);
     prompt.mockResolvedValue("  Weekly  ");
@@ -176,7 +179,8 @@ describe("New menu: New notebook", () => {
       parentPageId: "f1",
       templatePageId: null,
     });
-    expect(assign).toHaveBeenCalledWith("/documents/nb1");
+    expect(onCreated).toHaveBeenCalledWith("nb1");
+    expect(assign).not.toHaveBeenCalled();
   });
 
   it("posts a project notebook with the project id", async () => {
@@ -191,7 +195,7 @@ describe("New menu: New notebook", () => {
       workspaceId: "p1",
       parentPageId: null,
     });
-    expect(assign).toHaveBeenCalledWith("/documents/nb2");
+    expect(onCreated).toHaveBeenCalledWith("nb2");
   });
 
   it("posts nothing when the name prompt is cancelled", async () => {
@@ -202,6 +206,7 @@ describe("New menu: New notebook", () => {
     await choose("lab");
     expect(fetchMock).not.toHaveBeenCalled();
     expect(assign).not.toHaveBeenCalled();
+    expect(onCreated).not.toHaveBeenCalled();
   });
 
   it("shows the server's message and stays put when the create fails", async () => {
@@ -214,5 +219,58 @@ describe("New menu: New notebook", () => {
     await choose("lab");
     expect(toastError).toHaveBeenCalledWith("Folder is too deeply nested");
     expect(assign).not.toHaveBeenCalled();
+    expect(onCreated).not.toHaveBeenCalled();
+  });
+});
+
+describe("New menu: creating in place", () => {
+  const toastSuccess = vi.fn();
+  const revalidate = vi.fn();
+  const actionsFor = (id: string) =>
+    makeScopeActions({
+      scope: scope({ id }) as never,
+      currentFolderId: "f1",
+      dialog: { prompt } as never,
+      toast: { error: toastError, success: toastSuccess } as never,
+      revalidate,
+      onCreated,
+      hiding: { hide: vi.fn() },
+      history: {} as never,
+    });
+
+  beforeEach(() => {
+    toastSuccess.mockReset();
+    revalidate.mockReset();
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ id: "new1" }) }));
+  });
+
+  it.each([
+    ["document", "createDoc"],
+    ["folder", "createFolder"],
+    ["whiteboard", "createWhiteboard"],
+  ] as const)("a new %s is revealed in the browser and never navigated to", async (_kind, method) => {
+    prompt.mockResolvedValue("Thing");
+    await actionsFor("lab")[method]();
+    expect(onCreated).toHaveBeenCalledWith("new1");
+    expect(assign).not.toHaveBeenCalled();
+  });
+
+  it.each(["createDoc", "createFolder", "createWhiteboard"] as const)("%s reveals nothing when the create fails", async (method) => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, json: async () => ({ error: "nope" }) }));
+    prompt.mockResolvedValue("Thing");
+    await actionsFor("lab")[method]();
+    expect(onCreated).not.toHaveBeenCalled();
+    expect(toastError).toHaveBeenCalled();
+  });
+
+  it("a new form still opens its editor", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true, formId: "form1" }) }));
+    prompt.mockResolvedValue("Survey");
+    await mountMenu(scope({ id: "lab" }), null, true);
+    await act(async () => {
+      document.querySelector<HTMLElement>('[data-testid="drive-new-form"]')!.closest<HTMLElement>('[role="menuitem"]')!.click();
+    });
+    expect(assign).toHaveBeenCalledWith("/forms/edit/form1");
+    expect(onCreated).not.toHaveBeenCalled();
   });
 });
