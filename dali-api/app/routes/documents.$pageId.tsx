@@ -165,6 +165,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   if (page.kind === "Whiteboard") {
     return redirect(`/whiteboard/${page.id}`);
   }
+  if (page.kind === "Form") {
+    return redirect(`/forms/edit/${page.id}`);
+  }
 
   // A meeting notebook has no body of its own: it opens on the note for the
   // latest meeting that has started, or the first one coming up.
