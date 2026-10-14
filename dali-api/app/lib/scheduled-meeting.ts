@@ -40,7 +40,7 @@ import { isCore, isProjectMember } from "~/lib/roles";
 import { isGeneralCalendarEvent } from "~/lib/general-calendar";
 import { copyPageBody } from "~/lib/page-copy.server";
 import { createNotebook, loadEditableNotebook, NotebookError } from "~/lib/notebooks.server";
-import { isExistingChoice, type NotebookChoice } from "~/lib/notebook-choice";
+import { isExistingChoice, type NotebookChoice, type NotebookSpaceChoice } from "~/lib/notebook-choice";
 import { readDocAsBlocks } from "~/collab/read";
 import { pageDocName } from "~/collab/roomName";
 import { blocksToPlainText } from "~/components/doc/schema/configs";
@@ -567,6 +567,20 @@ type ResolvedNotebook = {
   primary: Placement;
 };
 
+/** A new notebook goes where its chosen space says, not where the meeting's own flags would put it. */
+function filingBySpace(filing: ArtifactFilingInput, space: NotebookSpaceChoice | undefined): ArtifactFilingInput {
+  switch (space?.kind) {
+    case "core":
+      return { ...filing, projectId: null, isCoreMeeting: true };
+    case "project":
+      return { ...filing, projectId: space.projectId };
+    case "lab":
+      return { ...filing, projectId: null, isCoreMeeting: false };
+    default:
+      return filing;
+  }
+}
+
 /**
  * The notebook a caller's choice names: an existing one the actor can edit, or
  * a new one made at the chosen folder (else where the meeting's About files its
@@ -590,7 +604,8 @@ async function resolveNotebookChoice(
       primary: own,
     };
   }
-  const { dest } = await resolveArtifactFiling(filingFor(choice.title), false, formatDateShort(new Date()));
+  const filing = filingFor(choice.title);
+  const { dest } = await resolveArtifactFiling(filingBySpace(filing, choice.space), false, formatDateShort(new Date()));
   const created = await createNotebook({
     title: choice.title,
     workspaceType: dest.workspaceType,
@@ -654,7 +669,11 @@ export async function createScheduledMeeting(
   }
 
   const wantsAssets = !!input.notebook || input.createNote === true || input.createWhiteboard === true;
-  const givenProjectId = input.projectId ?? null;
+  const chosenSpace = input.notebook && !isExistingChoice(input.notebook) ? input.notebook.space : undefined;
+  const givenProjectId = chosenSpace?.kind === "project" ? chosenSpace.projectId : (input.projectId ?? null);
+  if (chosenSpace?.kind === "core" && !input.isCoreMeeting) {
+    return { ok: false, error: "Only Core can start a notebook in Core" };
+  }
   let notebookPlan: ResolvedNotebook | null = null;
   if (input.notebook) {
     try {

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { suggestFiling } from "~/calendar/lib/suggest-filing";
+import { PAIR_REASON, suggestFiling, suggestPairFiling } from "~/calendar/lib/suggest-filing";
 import type { GroupOption } from "~/calendar/lib/types";
 
 const group = (over: Partial<GroupOption> & { id: string; name: string }): GroupOption => ({
@@ -55,14 +55,15 @@ describe("suggestFiling", () => {
   });
 
   describe("threshold", () => {
-    it("needs two invited members", () => {
-      expect(suggestFiling({ attendeeIds: ["a", "z"], groups: [atlas], title: "Sync" })).toEqual([]);
+    it("needs one invited member", () => {
+      expect(suggestFiling({ attendeeIds: ["z"], groups: [atlas], title: "Sync" })).toEqual([]);
+      expect(suggestFiling({ attendeeIds: ["a", "z"], groups: [atlas], title: "Sync" })).toHaveLength(1);
       expect(suggestFiling({ attendeeIds: ["a", "b"], groups: [atlas], title: "Sync" })).toHaveLength(1);
     });
 
-    it("keeps a low-coverage group with two members in the room", () => {
-      const out = suggestFiling({ attendeeIds: ["a", "b"], groups: [core], title: "Sync" });
-      expect(out[0]).toMatchObject({ score: 0.5 });
+    it("keeps a low-coverage group with one member in the room", () => {
+      const out = suggestFiling({ attendeeIds: ["a", "z"], groups: [core], title: "Sync" });
+      expect(out[0]).toMatchObject({ score: 0.25, overlap: 1, reason: "1 of 2 attendees" });
     });
 
     it("lets a name in the title stand in for the overlap", () => {
@@ -163,5 +164,45 @@ describe("suggestFiling", () => {
       const out = suggestFiling({ attendeeIds: ["a", "b", "c", "d"], groups: [small, big], title: "Zeta sync" });
       expect(out.map((s) => s.groupId)).toEqual(["g-big", "g-small"]);
     });
+  });
+});
+
+describe("suggestPairFiling", () => {
+  const pairs = [
+    { menteeId: "mia", menteeName: "Mia Chen" },
+    { menteeId: "noa", menteeName: "Noa Park" },
+  ];
+  const base = { viewerId: "me", groupsInvited: false, pairs };
+
+  it("names the mentee on a 1:1 with them", () => {
+    expect(suggestPairFiling({ ...base, attendeeIds: ["mia"] })).toEqual({
+      menteeId: "mia",
+      label: "Mentorship · Mia Chen",
+      reason: PAIR_REASON,
+    });
+  });
+
+  it("reads the reason as your mentee", () => {
+    expect(PAIR_REASON).toBe("your mentee");
+  });
+
+  it("ignores the viewer on the invite", () => {
+    expect(suggestPairFiling({ ...base, attendeeIds: ["me", "noa"] })?.menteeId).toBe("noa");
+  });
+
+  it("counts each person once", () => {
+    expect(suggestPairFiling({ ...base, attendeeIds: ["mia", "mia", "me"] })?.menteeId).toBe("mia");
+  });
+
+  it("is silent for a third person, a stranger, no one, or any invited group", () => {
+    expect(suggestPairFiling({ ...base, attendeeIds: ["mia", "noa"] })).toBeNull();
+    expect(suggestPairFiling({ ...base, attendeeIds: ["mia", "zed"] })).toBeNull();
+    expect(suggestPairFiling({ ...base, attendeeIds: ["zed"] })).toBeNull();
+    expect(suggestPairFiling({ ...base, attendeeIds: [] })).toBeNull();
+    expect(suggestPairFiling({ ...base, attendeeIds: ["mia"], groupsInvited: true })).toBeNull();
+  });
+
+  it("is silent without any pairs", () => {
+    expect(suggestPairFiling({ ...base, attendeeIds: ["mia"], pairs: [] })).toBeNull();
   });
 });
