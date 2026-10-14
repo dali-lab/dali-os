@@ -1,5 +1,6 @@
 import { prisma } from "~/lib/db";
 import type { PageKind } from "~/generated/prisma/client";
+import { assertUniqueName } from "~/lib/page-names.server";
 import { ensureProcessFolder, CORE_PROCESS_ID, LAB_PROCESS_ID } from "~/lib/bindings.server";
 
 // Creates a Page in a project's workspace (the same Page model the project
@@ -19,6 +20,15 @@ export async function createProjectPage(input: {
   kind?: PageKind;
 }): Promise<{ id: string }> {
   const parentPageId = input.parentPageId ?? null;
+  if (!input.meetingNoteId && !input.meetingWhiteboardId && !input.notebookKey) {
+    await assertUniqueName({
+      workspaceType: "Project",
+      workspaceId: input.projectId,
+      parentPageId,
+      kind: input.kind ?? "FreeForm",
+      title: input.title,
+    });
+  }
   const last = await prisma.page.findFirst({
     where: { workspaceType: "Project", workspaceId: input.projectId, parentPageId },
     orderBy: { position: "desc" },
@@ -330,6 +340,13 @@ export async function createLabPage(input: {
   restricted?: boolean;
 }): Promise<{ id: string }> {
   const parentPageId = input.parentPageId ?? null;
+  await assertUniqueName({
+    workspaceType: "Lab",
+    workspaceId: null,
+    parentPageId,
+    kind: input.kind ?? "FreeForm",
+    title: input.title,
+  });
   const last = await prisma.page.findFirst({
     where: { workspaceType: "Lab", workspaceId: null, parentPageId },
     orderBy: { position: "desc" },

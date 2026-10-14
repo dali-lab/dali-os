@@ -551,12 +551,20 @@ function educationCreateBlock(
   return null;
 }
 
-function makeScopeActions({
+type CreatedPage = { id: string } | { error: string | undefined };
+
+async function createdPage(res: Response): Promise<CreatedPage> {
+  if (res.ok) return { id: ((await res.json()) as { id: string }).id };
+  return { error: await driveErrorFrom(res) };
+}
+
+export function makeScopeActions({
   scope,
   currentFolderId,
   dialog,
   toast,
   revalidate,
+  onCreated,
   hiding,
   history,
 }: {
@@ -567,6 +575,8 @@ function makeScopeActions({
   dialog: ReturnType<typeof useDialog>;
   toast: ReturnType<typeof useToast>;
   revalidate: () => void;
+  /** Called with the id of an item just created in place, so the browser can reveal it. */
+  onCreated: (id: string) => void;
   hiding: Pick<PendingHidden, "hide">;
   history: DriveHistory;
 }): ScopeActions {
@@ -582,7 +592,7 @@ function makeScopeActions({
     pageKind: "FreeForm" | "Folder" | "Whiteboard",
     title: string,
     parentPageId: string | null,
-  ): Promise<string | null> {
+  ): Promise<CreatedPage> {
     if (kind === "mine") {
       const fd = new FormData();
       fd.set("intent", "create");
@@ -591,8 +601,7 @@ function makeScopeActions({
       fd.set("kind", pageKind);
       if (parentPageId) fd.set("parentPageId", parentPageId);
       const res = await fetch("/api/notes", { method: "POST", body: fd, credentials: "include" });
-      if (!res.ok) return null;
-      return ((await res.json()) as { id: string }).id;
+      return createdPage(res);
     }
     if (kind === "projects-group") {
       // Resolve the project from the current folder. When parentPageId is a
@@ -600,7 +609,7 @@ function makeScopeActions({
       // that id IS the projectId and we pass parentPageId=null to the project API.
       // When deeper inside a real sub-folder, walk up to find the synthetic root.
       const projectId = resolveWorkspaceId(scope.items, parentPageId);
-      if (!projectId) return null; // no-op: at the group root, no project selected
+      if (!projectId) return { error: undefined }; // no-op: at the group root, no project selected
       // If parentPageId IS the synthetic project folder, the real parentPageId is null.
       const parentNode = parentPageId ? scope.items.find((it) => it.id === parentPageId) : null;
       const realParent = parentNode?.parentFolderId === null ? null : parentPageId;
@@ -610,15 +619,14 @@ function makeScopeActions({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ title, kind: pageKind, ...(realParent ? { parentPageId: realParent } : {}) }),
       });
-      if (!res.ok) return null;
-      return ((await res.json()) as { id: string }).id;
+      return createdPage(res);
     }
     if (kind === "education-group") {
       // Mirror the projects-group branch: resolve the offering, strip the
       // synthetic top-level node from parentPageId, then POST to the offering
       // documents endpoint. Instructors and Core only (server-enforced).
       const offeringId = resolveWorkspaceId(scope.items, parentPageId);
-      if (!offeringId) return null; // no-op: at the group root, no offering selected
+      if (!offeringId) return { error: undefined }; // no-op: at the group root, no offering selected
       const parentNode = parentPageId ? scope.items.find((it) => it.id === parentPageId) : null;
       const realParent = parentNode?.parentFolderId === null ? null : parentPageId;
       const res = await fetch(`/api/education/${offeringId}/documents`, {
@@ -627,8 +635,7 @@ function makeScopeActions({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ title, kind: pageKind, ...(realParent ? { parentPageId: realParent } : {}) }),
       });
-      if (!res.ok) return null;
-      return ((await res.json()) as { id: string }).id;
+      return createdPage(res);
     }
     const url = kind === "lab" ? "/api/lab-documents" : `/api/projects/${scope.id}/documents`;
     const res = await fetch(url, {
@@ -637,8 +644,7 @@ function makeScopeActions({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ title, kind: pageKind, ...(parentPageId ? { parentPageId } : {}) }),
     });
-    if (!res.ok) return null;
-    return ((await res.json()) as { id: string }).id;
+    return createdPage(res);
   }
 
   async function createDoc() {
@@ -650,9 +656,9 @@ function makeScopeActions({
       validate: (v) => (v.trim() ? null : "Enter a name"),
     });
     if (name === null) return;
-    const id = await createPage("FreeForm", name.trim(), createParent);
-    if (id) window.location.assign(`/documents/${id}`);
-    else toast.error("Couldn't create the document");
+    const created = await createPage("FreeForm", name.trim(), createParent);
+    if ("id" in created) onCreated(created.id);
+    else toast.error(created.error ?? "Couldn't create the document");
   }
 
   async function createFolder() {
@@ -664,12 +670,12 @@ function makeScopeActions({
       validate: (v) => (v.trim() ? null : "Enter a name"),
     });
     if (name === null) return;
-    const id = await createPage("Folder", name.trim(), createParent);
-    if (id) {
+    const created = await createPage("Folder", name.trim(), createParent);
+    if ("id" in created) {
       toast.success("Folder created");
-      revalidate();
+      onCreated(created.id);
     } else {
-      toast.error("Couldn't create the folder");
+      toast.error(created.error ?? "Couldn't create the folder");
     }
   }
 
@@ -682,9 +688,9 @@ function makeScopeActions({
       validate: (v) => (v.trim() ? null : "Enter a name"),
     });
     if (name === null) return;
-    const id = await createPage("Whiteboard", name.trim(), createParent);
-    if (id) window.location.assign(`/whiteboard/${id}`);
-    else toast.error("Couldn't create the whiteboard");
+    const created = await createPage("Whiteboard", name.trim(), createParent);
+    if ("id" in created) onCreated(created.id);
+    else toast.error(created.error ?? "Couldn't create the whiteboard");
   }
 
   async function rename(item: DriveItem) {
@@ -904,6 +910,7 @@ export function NewMenu({
   uploading,
   onTemplate,
   currentFolderId,
+  onCreated,
 }: {
   scope: DriveScope;
   actions: ScopeActions;
@@ -913,6 +920,7 @@ export function NewMenu({
   uploading: boolean;
   onTemplate: () => void;
   currentFolderId: string | null;
+  onCreated: (id: string) => void;
 }) {
   const isLab = scope.id === "lab";
   const label = scope.id === "mine" ? "My Drive" : isLab ? "Lab" : scope.label;
@@ -941,7 +949,7 @@ export function NewMenu({
         parentPageId: notebook.parentPageId,
       }),
     );
-    if (created.ok && created.data) window.location.assign(`/documents/${created.data.id}`);
+    if (created.ok && created.data) onCreated(created.data.id);
     else toast.error(created.error ?? "Couldn't create the notebook");
   }
 
@@ -1117,6 +1125,14 @@ export default function DriveHub() {
   const toast = useToast();
   const revalidator = useRevalidator();
   const revalidate = useCallback(() => void revalidator.revalidate(), [revalidator]);
+  const [revealId, setRevealId] = useState<string>();
+  const onCreated = useCallback(
+    (id: string) => {
+      setRevealId(id);
+      revalidate();
+    },
+    [revalidate],
+  );
   const history = useDriveHistory({ onChange: revalidate });
   useDriveHistoryKeys(history);
   const pendingHidden = usePendingHidden(revalidator.state, loadedScopes);
@@ -1246,6 +1262,7 @@ export default function DriveHub() {
           dialog,
           toast,
           revalidate,
+          onCreated,
           hiding: { hide: pendingHidden.hide },
           history,
         }),
@@ -1254,7 +1271,7 @@ export default function DriveHub() {
     return map;
     // pendingHidden.hide is stable; the object changes with the hidden set, which the actions don't read.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [driveScopes, effectiveScopeId, currentFolderId, dialog, toast, revalidate, history, pendingHidden.hide]);
+  }, [driveScopes, effectiveScopeId, currentFolderId, dialog, toast, revalidate, onCreated, history, pendingHidden.hide]);
   const scopeActionsRef = useRef(scopeActionsMap);
   scopeActionsRef.current = scopeActionsMap;
 
@@ -1828,6 +1845,7 @@ export default function DriveHub() {
         uploading={uploading}
         onTemplate={() => setTemplatePickerOpen(true)}
         currentFolderId={currentFolderId}
+        onCreated={onCreated}
       />
     ) : (
       <button
@@ -1925,6 +1943,7 @@ export default function DriveHub() {
         onNavigate={onNavigate}
         onHistory={(delta) => void navigate(delta)}
         initialSelectedId={initialSelectedId}
+        revealId={revealId}
         onOpenItem={onOpenItem}
         onMove={onMove}
         getScopeActions={getScopeActions}

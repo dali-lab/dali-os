@@ -43,6 +43,8 @@ const onHistory = vi.fn();
 const onMove = vi.fn();
 const onMoveToScope = vi.fn();
 
+let swapScopes: (scopes: DriveTreeScope[]) => void = () => {};
+
 type MountOptions = {
   view?: "columns" | "list" | "grid";
   scopeId?: string | null;
@@ -50,6 +52,7 @@ type MountOptions = {
   search?: string;
   onHistory?: boolean;
   initialSelectedId?: string;
+  revealId?: string;
   typeFilter?: DriveTypeFilter;
   scopes?: DriveTreeScope[];
 };
@@ -58,9 +61,11 @@ type MountOptions = {
 async function mount(opts: MountOptions = {}) {
   if (opts.view && opts.view !== "columns") window.localStorage.setItem("dali_drive_view", opts.view);
   function Harness() {
+    const [scopesState, setScopesState] = useState(opts.scopes ?? [lab, mine]);
+    swapScopes = setScopesState;
     const [loc, setLoc] = useState({ scopeId: opts.scopeId === undefined ? "lab" : opts.scopeId, folderId: opts.folderId ?? null });
     return createElement(ToastProvider, null, createElement(DialogProvider, null, createElement(DriveBrowser, {
-      scopes: opts.scopes ?? [lab, mine],
+      scopes: scopesState,
       currentScopeId: loc.scopeId,
       currentFolderId: loc.folderId,
       typeFilter: opts.typeFilter ?? "all",
@@ -72,6 +77,7 @@ async function mount(opts: MountOptions = {}) {
       },
       onHistory: opts.onHistory ? onHistory : undefined,
       initialSelectedId: opts.initialSelectedId,
+      revealId: opts.revealId,
       onMove,
       onMoveToScope,
       onOpenItem,
@@ -986,6 +992,106 @@ describe("DriveBrowser drag: dropping on a folder", () => {
   });
 });
 
+describe("DriveBrowser drag: dropping on a notebook", () => {
+  const notebook = { ...doc("nb1"), title: "Weekly sync", isNotebook: true, tabCount: 2 } as DriveItem;
+  const board = { ...doc("w1"), isWhiteboard: true } as DriveItem;
+  const withNotebook: DriveTreeScope = { ...lab, items: [folder("f1"), notebook, doc("d1"), doc("d2"), board] };
+  const views = [
+    ["columns", { view: "columns" as const }],
+    ["list", { view: "list" as const }],
+    ["grid", { view: "grid" as const }],
+  ] as const;
+  const fetchMock = vi.fn();
+
+  beforeEach(() => {
+    fetchMock.mockReset();
+    fetchMock.mockResolvedValue({ ok: true, json: async () => ({ ok: true }) });
+    vi.stubGlobal("fetch", fetchMock);
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const toastText = () => document.body.textContent ?? "";
+
+  describe.each(views)("%s", (_name, opts) => {
+    it("rings the notebook under the pointer", async () => {
+      await mount({ ...opts, scopes: [withNotebook, mine] });
+      place(row("doc", "d1"), 0);
+      place(row("doc", "nb1"), 100);
+      await carry(row("doc", "d1"), 100);
+      expect(row("doc", "nb1").className).toContain("ring-2");
+      expect(row("doc", "nb1").className).toContain("ring-accent-coral");
+      await release();
+    });
+
+    it("adds the dropped document to the notebook and says so", async () => {
+      await mount({ ...opts, scopes: [withNotebook, mine] });
+      place(row("doc", "d1"), 0);
+      place(row("doc", "nb1"), 100);
+      await carry(row("doc", "d1"), 100);
+      await release();
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(fetchMock.mock.calls[0][0]).toBe("/api/notebooks/nb1");
+      expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ intent: "add-page", pageId: "d1" });
+      expect(toastText()).toContain("Added to Weekly sync");
+      expect(onMove).not.toHaveBeenCalled();
+    });
+
+    it("refuses a folder with a toast and sends nothing", async () => {
+      await mount({ ...opts, scopes: [withNotebook, mine] });
+      place(row("folder", "f1"), 0);
+      place(row("doc", "nb1"), 100);
+      await carry(row("folder", "f1"), 100);
+      await release();
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(toastText()).toContain("Only documents can go in a notebook.");
+    });
+
+    it("refuses a whiteboard", async () => {
+      await mount({ ...opts, scopes: [withNotebook, mine] });
+      place(row("doc", "w1"), 0);
+      place(row("doc", "nb1"), 100);
+      await carry(row("doc", "w1"), 100);
+      await release();
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(toastText()).toContain("Only documents can go in a notebook.");
+    });
+  });
+
+  it("adds every document of a multi-selection", async () => {
+    await mount({ view: "grid", scopes: [withNotebook, mine] });
+    await click(row("doc", "d1"), { metaKey: true });
+    await click(row("doc", "d2"), { metaKey: true });
+    place(row("doc", "d1"), 0);
+    place(row("doc", "nb1"), 100);
+    await carry(row("doc", "d1"), 100);
+    await release();
+    const ids = fetchMock.mock.calls.map((c) => JSON.parse(c[1].body).pageId).sort();
+    expect(ids).toEqual(["d1", "d2"]);
+  });
+
+  it("surfaces the server's refusal instead of claiming success", async () => {
+    fetchMock.mockResolvedValue({ ok: false, json: async () => ({ error: "You can't move this document" }) });
+    await mount({ view: "list", scopes: [withNotebook, mine] });
+    place(row("doc", "d1"), 0);
+    place(row("doc", "nb1"), 100);
+    await carry(row("doc", "d1"), 100);
+    await release();
+    expect(toastText()).toContain("You can't move this document");
+    expect(toastText()).not.toContain("Added to");
+  });
+
+  it("does not ring a plain document", async () => {
+    await mount({ view: "list", scopes: [withNotebook, mine] });
+    place(row("doc", "d1"), 0);
+    place(row("doc", "d2"), 100);
+    await carry(row("doc", "d1"), 100);
+    expect(row("doc", "d2").className).not.toContain("ring-accent-coral");
+    await release();
+  });
+});
+
 describe("DriveBrowser drag: dropping on the breadcrumb", () => {
   it("moves to the drive's top level from its crumb, with the same ring", async () => {
     await mount({ view: "list", folderId: "f1" });
@@ -1457,5 +1563,40 @@ describe("DriveBrowser reveal: survives the navigation clear", () => {
     await mount({ folderId: "f1", initialSelectedId: "d5" });
     expect(isChecked("d5")).toBe(true);
     expect(checkedCount()).toBe(1);
+  });
+});
+
+describe("DriveBrowser reveal: revealId", () => {
+  beforeEach(() => {
+    Element.prototype.scrollIntoView = () => {};
+  });
+
+  it("selects the revealed row once it appears in the listing, after the browser is already showing", async () => {
+    await mount({ view: "list", revealId: "dNew" });
+    expect(checkedCount()).toBe(0);
+    await act(async () => {
+      swapScopes([{ ...lab, items: [...lab.items, doc("dNew")] }, mine]);
+    });
+    expect(isChecked("dNew")).toBe(true);
+    expect(checkedCount()).toBe(1);
+  });
+
+  it("does not re-select it after the user has moved on", async () => {
+    await mount({ view: "list", revealId: "dNew" });
+    await act(async () => {
+      swapScopes([{ ...lab, items: [...lab.items, doc("dNew")] }, mine]);
+    });
+    await click(checkbox("dNew"));
+    expect(checkedCount()).toBe(0);
+    await act(async () => {
+      swapScopes([{ ...lab, items: [...lab.items, doc("dNew"), doc("dOther")] }, mine]);
+    });
+    expect(checkedCount()).toBe(0);
+  });
+
+  it("focuses the revealed row so the keyboard continues from it", async () => {
+    await mount({ view: "list", revealId: "d1" });
+    await key(pane("list"), "ArrowDown");
+    expect(isChecked("d2")).toBe(true);
   });
 });

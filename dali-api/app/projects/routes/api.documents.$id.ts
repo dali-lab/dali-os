@@ -4,6 +4,7 @@ import { prisma } from "~/lib/db";
 import { requireProjectEditAccess, requireMemberSession } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { logAuditEvent } from "~/lib/audit";
+import { findNameConflict } from "~/lib/page-names.server";
 import { getPageAccess } from "~/lib/pageAccess.server";
 import { loadManageableNotebook, notebookErrorResponse, trashNotebook } from "~/lib/notebooks.server";
 import { isRoot, ROOT_DELETE_ERROR, CLEARED_FOLDER_TYPE } from "~/lib/drive-roots";
@@ -63,7 +64,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   const pageId = params.id!;
   const page = await prisma.page.findUnique({
     where: { id: pageId },
-    select: { id: true, workspaceType: true, workspaceId: true, kind: true, folderType: true },
+    select: { id: true, workspaceType: true, workspaceId: true, parentPageId: true, kind: true, folderType: true },
   });
   if (
     !page ||
@@ -196,6 +197,15 @@ export async function action({ request, params }: Route.ActionArgs) {
     if (!title) {
       return withCors(request, Response.json({ error: "Title is required" }, { status: 400 }));
     }
+    const conflict = await findNameConflict({
+      workspaceType: page.workspaceType,
+      workspaceId: page.workspaceId,
+      parentPageId: page.parentPageId,
+      kind: page.kind,
+      title,
+      excludeId: pageId,
+    });
+    if (conflict) return withCors(request, Response.json({ error: conflict }, { status: 409 }));
     data.title = title;
     if (page.kind === "Notebook") {
       try {

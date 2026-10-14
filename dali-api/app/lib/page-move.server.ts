@@ -9,6 +9,7 @@ import { MAX_PAGE_DEPTH, collectSubtree } from "~/lib/pages";
 import { loadAncestorChain, chainDepth, chainHasAncestor, chainGoverningScope } from "~/lib/page-ancestry.server";
 import { isRoot, ROOT_MOVE_ERROR } from "~/lib/drive-roots";
 import { clearTypeIfLeavingRoot } from "~/lib/drive-receivers.server";
+import { findNameConflict } from "~/lib/page-names.server";
 import { getPageAccess } from "~/lib/pageAccess.server";
 import { addToNotebook, loadManageableNotebook, notebookErrorResponse } from "~/lib/notebooks.server";
 
@@ -114,6 +115,8 @@ export async function movePage({
     where: { id: pageId },
     select: {
       id: true,
+      title: true,
+      parentPageId: true,
       workspaceType: true,
       workspaceId: true,
       kind: true,
@@ -321,6 +324,18 @@ export async function movePage({
       return fail(400, "A document can't be moved into its own descendant");
     }
     parentPageId = body.parentPageId;
+  }
+
+  if (!sameWorkspace || parentPageId !== page.parentPageId) {
+    const nameConflict = await findNameConflict({
+      workspaceType: dest.type,
+      workspaceId: dest.id,
+      parentPageId,
+      kind: page.kind,
+      title: page.title,
+      excludeId: pageId,
+    });
+    if (nameConflict) return fail(409, nameConflict);
   }
 
   // When a folder crosses workspaces its whole subtree comes along — not just

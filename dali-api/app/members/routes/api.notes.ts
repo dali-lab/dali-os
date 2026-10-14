@@ -4,6 +4,7 @@ import { withCors, handlePreflight } from "~/lib/cors";
 import { isCore, isLabMember } from "~/lib/roles";
 import { prisma } from "~/lib/db";
 import { listVisibleGroupsForUser } from "~/lib/groups";
+import { nameConflictResponse } from "~/lib/page-names.server";
 import {
   NoteForbiddenError,
   NoteNotFoundError,
@@ -164,6 +165,8 @@ export async function action({ request }: Route.ActionArgs) {
     if (err instanceof NoteNotFoundError) {
       return withCors(request, Response.json({ error: err.message }, { status: 404 }));
     }
+    const conflict = nameConflictResponse(err);
+    if (conflict) return withCors(request, conflict);
     if (err instanceof NoteForbiddenError) {
       return withCors(request, Response.json({ error: err.message }, { status: 403 }));
     }
