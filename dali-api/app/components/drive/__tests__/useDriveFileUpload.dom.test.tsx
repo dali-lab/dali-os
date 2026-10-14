@@ -70,6 +70,61 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+describe("useDriveFileUpload destination", () => {
+  it("names where the files landed and offers Open", async () => {
+    const onOpen = vi.fn();
+    const onComplete = vi.fn();
+    const h = renderHook((t: UploadTarget) => useDriveFileUpload(t, onComplete, { label: "Projects ▸ DALI OS ▸ Assets", onOpen }), {
+      initialProps: lab,
+    });
+    await act(async () => {
+      await h.result.current.uploadFiles([file("a.txt")]);
+    });
+    const [message, opts] = toast.success.mock.calls[0];
+    expect(message).toBe("Uploaded 1 file to Projects ▸ DALI OS ▸ Assets");
+    expect(opts.actions).toEqual([{ label: "Open", onClick: onOpen }]);
+    h.unmount();
+  });
+
+  it("lets a call name its own destination, such as a folder it was dropped on", async () => {
+    const mine = vi.fn();
+    const dropped = vi.fn();
+    const h = renderHook((t: UploadTarget) => useDriveFileUpload(t, vi.fn(), { label: "Lab-wide", onOpen: mine }), {
+      initialProps: lab,
+    });
+    await act(async () => {
+      await h.result.current.uploadFiles([file("a.txt"), file("b.txt")], {
+        destination: { label: "Lab-wide ▸ Plans", onOpen: dropped },
+      });
+    });
+    expect(toast.success.mock.calls[0][0]).toBe("Uploaded 2 files to Lab-wide ▸ Plans");
+    toast.success.mock.calls[0][1].actions[0].onClick();
+    expect(dropped).toHaveBeenCalled();
+    expect(mine).not.toHaveBeenCalled();
+    h.unmount();
+  });
+
+  it("keeps the plain toast, with no action, when no destination is known", async () => {
+    const h = mountHook();
+    await upload(h, [file("a.txt")]);
+    expect(toast.success.mock.calls[0][1].actions).toBeUndefined();
+    h.unmount();
+  });
+
+  it("does not claim a destination when the upload failed", async () => {
+    mock.failOn = () => true;
+    const h = renderHook((t: UploadTarget) => useDriveFileUpload(t, vi.fn(), { label: "Lab-wide", onOpen: vi.fn() }), {
+      initialProps: lab,
+    });
+    await act(async () => {
+      await h.result.current.uploadFiles([file("a.txt")]);
+    });
+    expect(toast.success).not.toHaveBeenCalled();
+    expect(JSON.stringify(toast.error.mock.calls.at(-1))).not.toContain("Lab-wide");
+    h.unmount();
+  });
+});
+
 describe("useDriveFileUpload batches", () => {
   it("never has more than the concurrency limit in flight and registers every file", async () => {
     const h = mountHook();

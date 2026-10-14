@@ -192,6 +192,7 @@ export function DocumentEditor({
   const toast = useToast();
   const moveDestinations = useDriveDestinations({
     enabled: moveOpen,
+    movingIds: [pageId],
     onError: () => {
       toast.error("Couldn't load destinations.");
       setMoveOpen(false);

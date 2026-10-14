@@ -486,3 +486,70 @@ describe("movePage: names", () => {
     expect(findNameConflict).not.toHaveBeenCalled();
   });
 });
+
+describe("movePage: items stay under their typed root", () => {
+  const chains = (byId: Record<string, ChainRow[]>) =>
+    vi.mocked(loadAncestorChain).mockImplementation(async (id: string) => byId[id] ?? []);
+  const mentorship = [
+    ancestor("notebooks", "mroot", { folderType: "MentorNotebooks" }),
+    ancestor("mroot", null, { title: "Mentorship", folderType: "Root" }),
+  ];
+  const core = [ancestor("core-sub", "croot"), ancestor("croot", null, { title: "Core", folderType: "Root" })];
+  const general = [ancestor("general", null)];
+
+  it("refuses a Mentorship notebook moving to a General folder", async () => {
+    m.page.findUnique.mockResolvedValue(sourcePage({ kind: "Notebook", parentPageId: "notebooks" }));
+    chains({ notebooks: mentorship, general });
+
+    const result = await move({ parentPageId: "general" });
+
+    expect(result).toEqual({ ok: false, status: 400, error: "Mentorship items stay in Mentorship" });
+    expect(m.$transaction).not.toHaveBeenCalled();
+  });
+
+  it("refuses a Core folder moving to the top of a project", async () => {
+    m.page.findUnique.mockResolvedValue(sourcePage({ kind: "Folder", parentPageId: "core-sub" }));
+    chains({ "core-sub": core });
+    vi.mocked(isCore).mockResolvedValue(true);
+
+    const result = await move({ parentPageId: null, workspaceType: "Project", workspaceId: "proj" });
+
+    expect(result).toEqual({ ok: false, status: 400, error: "Core items stay in Core" });
+  });
+
+  it("allows a move to another folder under the same root", async () => {
+    m.page.findUnique.mockResolvedValue(sourcePage({ kind: "Folder", parentPageId: "core-sub" }));
+    chains({ "core-sub": core, other: [ancestor("other", "croot"), ...core.slice(1)] });
+
+    const result = await move({ parentPageId: "other" });
+
+    expect(result.ok).toBe(true);
+  });
+
+  it("does not restrict a page that is not under a root", async () => {
+    m.page.findUnique.mockResolvedValue(sourcePage({ parentPageId: "general" }));
+    chains({ general, "core-sub": core });
+
+    const result = await move({ parentPageId: "core-sub" });
+
+    expect(result.ok).toBe(true);
+  });
+});
+
+describe("movePage: typed folders stay in their workspace", () => {
+  it("refuses a typed folder moving to another workspace", async () => {
+    m.page.findUnique.mockResolvedValue(sourcePage({ kind: "Folder", folderType: "Agreements" }));
+
+    const result = await move({ parentPageId: null, workspaceType: "Project", workspaceId: "proj" });
+
+    expect(result).toEqual({ ok: false, status: 400, error: "System folders stay in their drive" });
+  });
+
+  it("lets a typed folder be reordered inside its workspace", async () => {
+    m.page.findUnique.mockResolvedValue(sourcePage({ kind: "Folder", folderType: "Agreements" }));
+
+    const result = await move({ parentPageId: "dest" });
+
+    expect(result.ok).toBe(true);
+  });
+});

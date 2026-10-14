@@ -18,6 +18,11 @@ export type PickerScope = {
   }[];
 };
 
+/** A project or offering row of the Projects and Education drives, not a user's folder. */
+export function isSyntheticFolder(f: Pick<PickerFolder, "driveId" | "parentId">): boolean {
+  return f.parentId === null && (f.driveId === "projects" || f.driveId === "education");
+}
+
 export type PickerRows = { drives: PickerDrive[]; folders: PickerFolder[] };
 
 /** Scope-to-picker mapping shared by the Drive hub (from its loader) and
@@ -107,4 +112,53 @@ export function searchRows(rows: PickerRows, query: string): PickerRows {
   );
   const driveIds = new Set(folders.map((f) => f.driveId));
   return { drives: rows.drives.filter((d) => driveIds.has(d.id)), folders };
+}
+
+/** What the pages being moved pin down: the typed roots they live under and the
+ *  workspaces of their system folders. More than one of either leaves nowhere. */
+export type MoveConstraint = {
+  rootFolderIds: string[];
+  workspaces: { type: "Lab" | "Project" | "EducationOffering" | "Member"; id: string | null }[];
+};
+
+function topLevelAncestor(folder: PickerFolder, byId: Map<string, PickerFolder>): PickerFolder {
+  let cur = folder;
+  const seen = new Set<string>();
+  while (cur.parentId && byId.has(cur.parentId) && !seen.has(cur.id)) {
+    seen.add(cur.id);
+    cur = byId.get(cur.parentId)!;
+  }
+  return cur;
+}
+
+/** Drops the drives and folders a move would be refused into, so the picker never offers them. */
+export function applyMoveConstraint(rows: PickerRows, constraint: MoveConstraint): PickerRows {
+  const { rootFolderIds, workspaces } = constraint;
+  if (rootFolderIds.length === 0 && workspaces.length === 0) return rows;
+  let keepDrive = (d: PickerDrive) => true;
+  let keepFolder = (f: PickerFolder, byId: Map<string, PickerFolder>) => true;
+  if (rootFolderIds.length > 0) {
+    const only = rootFolderIds.length === 1 ? rootFolderIds[0] : null;
+    keepDrive = (d) => only !== null && d.rootFolderId === only;
+  }
+  if (workspaces.length > 0) {
+    const ws = workspaces.length === 1 ? workspaces[0] : null;
+    const rootKeep = keepDrive;
+    keepDrive = (d) => {
+      if (!rootKeep(d) || !ws) return false;
+      if (ws.type === "Lab") return d.id === "lab" || !!d.rootFolderId;
+      if (ws.type === "Project") return d.id === "projects";
+      if (ws.type === "EducationOffering") return d.id === "education";
+      return false;
+    };
+    keepFolder = (f, byId) =>
+      !ws || ws.type === "Lab" || ws.type === "Member" || topLevelAncestor(f, byId).id === ws.id;
+  }
+  const drives = rows.drives.filter(keepDrive);
+  const ids = new Set(drives.map((d) => d.id));
+  const byId = new Map(rows.folders.map((f) => [f.id, f]));
+  return {
+    drives,
+    folders: rows.folders.filter((f) => ids.has(f.driveId) && keepFolder(f, byId)),
+  };
 }

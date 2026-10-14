@@ -9,12 +9,14 @@ vi.mock("~/lib/cors", () => ({
 vi.mock("~/lib/roles", () => ({ isCore: vi.fn() }));
 vi.mock("~/lib/pageAccess.server", async (orig) => ({ ...(await orig<typeof import("~/lib/pageAccess.server")>()), getPageAccessBulk: vi.fn() }));
 vi.mock("~/lib/drive-scopes.server", () => ({ loadDriveScopes: vi.fn() }));
+vi.mock("~/lib/move-constraint.server", () => ({ moveConstraintFor: vi.fn() }));
 
 import { prisma } from "~/lib/db";
 import { requireMemberSession } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
 import { getPageAccessBulk } from "~/lib/pageAccess.server";
 import { loadDriveScopes } from "~/lib/drive-scopes.server";
+import { moveConstraintFor } from "~/lib/move-constraint.server";
 import { loader } from "~/routes/api.drive.destinations";
 
 const mockPrisma = prisma as unknown as {
@@ -94,6 +96,22 @@ beforeEach(() => {
       new Map(pages.map((p) => [p.id, { canView: true, canEdit: editable.has(p.id), canComment: true }])) as never,
   );
   vi.mocked(loadDriveScopes).mockResolvedValue(scopes as never);
+});
+
+describe("GET /api/drive/destinations?moving=", () => {
+  it("offers only the root's own drive for a page under a typed root", async () => {
+    vi.mocked(moveConstraintFor).mockResolvedValue({ rootFolderIds: ["core-root"], workspaces: [] });
+    const { body } = await call("?moving=a,b");
+    expect(moveConstraintFor).toHaveBeenCalledWith(["a", "b"]);
+    expect(body.drives.map((d: { id: string }) => d.id)).toEqual(["core"]);
+    expect(body.folders.map((f: { id: string }) => f.id)).toEqual(["core-m"]);
+  });
+
+  it("does not constrain the rows without a moving param", async () => {
+    const { body } = await call();
+    expect(moveConstraintFor).not.toHaveBeenCalled();
+    expect(body.drives.length).toBeGreaterThan(1);
+  });
 });
 
 describe("GET /api/drive/destinations", () => {

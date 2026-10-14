@@ -7,7 +7,7 @@ import { logAuditEvent } from "~/lib/audit";
 import type { Prisma, WorkspaceType } from "~/generated/prisma/client";
 import { MAX_PAGE_DEPTH, collectSubtree } from "~/lib/pages";
 import { loadAncestorChain, chainDepth, chainHasAncestor, chainGoverningScope } from "~/lib/page-ancestry.server";
-import { isRoot, ROOT_MOVE_ERROR } from "~/lib/drive-roots";
+import { isRoot, nearestRoot, rootBoundMoveError, ROOT_MOVE_ERROR, SYSTEM_FOLDER_MOVE_ERROR } from "~/lib/drive-roots";
 import { clearTypeIfLeavingRoot } from "~/lib/drive-receivers.server";
 import { findNameConflict } from "~/lib/page-names.server";
 import { getPageAccess } from "~/lib/pageAccess.server";
@@ -185,6 +185,7 @@ export async function movePage({
     dest = { type: body.workspaceType, id: body.workspaceId };
   }
   const sameWorkspace = dest.type === page.workspaceType && dest.id === page.workspaceId;
+  if (page.folderType && !sameWorkspace) return fail(400, SYSTEM_FOLDER_MOVE_ERROR);
 
   // None of these reads depends on another, so they run together; their results
   // are then checked in the order the refusals have always taken precedence.
@@ -201,6 +202,9 @@ export async function movePage({
   const parentChainPending = body.parentPageId
     ? loadAncestorChain(body.parentPageId)
     : Promise.resolve([]);
+  const sourceChainPending = page.parentPageId
+    ? loadAncestorChain(page.parentPageId)
+    : Promise.resolve([]);
   const appendOnly = !body.beforeId;
   const siblingScope = {
     workspaceType: dest.type,
@@ -215,6 +219,7 @@ export async function movePage({
     subtree,
     subtreeFolderIds,
     parentChain,
+    sourceChain,
     parentAccess,
     heldArtifacts,
     movedFileIds,
@@ -236,6 +241,7 @@ export async function movePage({
     subtreePending,
     folderIdsPending,
     parentChainPending,
+    sourceChainPending,
     // Being able to edit in the destination WORKSPACE is not the same as being
     // able to edit in the destination FOLDER: any lab member passes the Lab
     // check, scoped folders included. Without this, a member could file a doc
@@ -276,6 +282,9 @@ export async function movePage({
   if (!canDest) {
     return fail(403, "You can't move documents into that destination");
   }
+
+  const rootRefusal = rootBoundMoveError(nearestRoot(sourceChain), nearestRoot(parentChain));
+  if (rootRefusal) return fail(400, rootRefusal);
 
   // Guardrails.
   if (body.parentPageId === pageId) {

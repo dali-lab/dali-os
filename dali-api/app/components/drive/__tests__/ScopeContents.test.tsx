@@ -115,7 +115,8 @@ describe("SearchResults location column", () => {
     );
     expect(out).toContain(">Location<");
     expect(out).toContain('data-testid="drive-search-hit-d1"');
-    expect(out).toContain('title="Lab-wide › Folder f1"');
+    expect(out).not.toContain('title="Lab-wide');
+    expect(out.match(/data-testid="drive-location-crumb"/g)).toHaveLength(2);
   });
 
   it("labels a checkbox on each hit", () => {

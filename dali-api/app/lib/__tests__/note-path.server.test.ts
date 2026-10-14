@@ -92,11 +92,25 @@ describe("notebookItemLocation", () => {
       scopeLabel: "Projects",
       folderId: "Meetings",
       folders: [
-        { id: "p1", title: "Project Alpha" },
+        { id: "p1", title: "Project Alpha", synthetic: true },
         { id: "Meetings", title: "Meetings" },
       ],
       path: "Projects ▸ Project Alpha ▸ Meetings",
     });
+  });
+
+  it("carries the project emoji and each folder's type for the crumb glyphs", async () => {
+    m.project.findUnique.mockResolvedValue({ name: "Project Alpha", iconEmoji: "🚀" });
+    vi.mocked(driveLocation).mockResolvedValue({
+      scope: "projects",
+      folders: [{ ...crumb("Meetings"), folderType: "Meetings" }],
+      workspaceFolderId: "p1",
+    });
+
+    expect((await notebookItemLocation(place, "u1")).folders).toEqual([
+      { id: "p1", title: "Project Alpha", iconEmoji: "🚀", synthetic: true },
+      { id: "Meetings", title: "Meetings", folderType: "Meetings" },
+    ]);
   });
 
   it("opens the project when the notebook sits at its top", async () => {

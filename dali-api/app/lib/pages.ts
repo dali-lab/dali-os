@@ -429,6 +429,7 @@ export async function ensureOfferingFormsFolder(
         parentPageId: null,
         title: OFFERING_FORMS_FOLDER_TITLE,
         kind: "Folder",
+        folderType: "OfferingForms",
         position: last ? last.position + 1 : 0,
         createdById,
       },

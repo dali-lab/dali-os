@@ -6,6 +6,7 @@ import { Modal, ModalHeader } from "~/components/Modal";
 import { buttonClasses } from "~/components/ui/Button";
 import { modalCardClass } from "~/components/os-chrome";
 import { DriveScopeIcon } from "~/components/drive/scope-icon";
+import { isSyntheticFolder } from "~/components/drive/picker-rows";
 
 // The one folder picker: a hybrid of type-to-filter search and drill-in
 // browsing (Google Drive / Notion model), used wherever something is moved or
@@ -79,8 +80,8 @@ export type Row = { section?: string } & (
 
 export type FolderGlyphKind = "folder" | "system" | "meetings";
 
-export function folderGlyph(folderType: string | null | undefined): FolderGlyphKind {
-  if (!folderType) return "folder";
+export function folderGlyph(folderType: string | null | undefined, synthetic = false): FolderGlyphKind {
+  if (!folderType) return synthetic ? "system" : "folder";
   return folderType === "Meetings" ? "meetings" : "system";
 }
 
@@ -238,7 +239,7 @@ export function buildBrowseRows({
         dest,
         disabled: isDisabled(dest),
         preferred: isPreferred(folder?.folderType, preferFolderType),
-        glyph: folderGlyph(folder?.folderType),
+        glyph: folderGlyph(folder?.folderType, !!folder && isSyntheticFolder(folder)),
         section: "Recent",
       };
     });
@@ -282,7 +283,7 @@ export function buildBrowseRows({
       hasChildren: childrenByParent.has(`${cwd.driveId}\0${f.id}`),
       disabled: isDisabled(dest),
       preferred: isPreferred(f.folderType, preferFolderType),
-      glyph: folderGlyph(f.folderType),
+      glyph: folderGlyph(f.folderType, isSyntheticFolder(f)),
     });
   }
   return rows;
@@ -424,7 +425,7 @@ export function FolderPicker(props: FolderPickerProps) {
           dest,
           disabled: isDisabled(dest),
           preferred: isPreferred(f.folderType, preferFolderType),
-          glyph: folderGlyph(f.folderType),
+          glyph: folderGlyph(f.folderType, isSyntheticFolder(f)),
         });
     }
     return preferFirst(rows).slice(0, 100);

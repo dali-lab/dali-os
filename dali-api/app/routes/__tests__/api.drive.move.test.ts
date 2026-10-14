@@ -21,6 +21,7 @@ vi.mock("~/lib/roles", () => ({
 vi.mock("~/lib/pageAccess.server", () => ({ getPageAccess: vi.fn(), PAGE_ACCESS_SELECT: { id: true } }));
 vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabledForEveryone: vi.fn() }));
 vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
+vi.mock("~/lib/page-ancestry.server", () => ({ loadAncestorChain: vi.fn() }));
 
 import { isFeatureEnabledForEveryone } from "~/lib/feature-flags.server";
 import { moveForm } from "~/forms/lib/form-page.server";
@@ -29,6 +30,7 @@ import { requireAuth } from "~/lib/auth";
 import { isCore, isProjectMember, canViewForms } from "~/lib/roles";
 import { getPageAccess } from "~/lib/pageAccess.server";
 import { logAuditEvent } from "~/lib/audit";
+import { loadAncestorChain } from "~/lib/page-ancestry.server";
 import { action } from "~/routes/api.drive.move";
 
 const m = prisma as any;
@@ -58,6 +60,28 @@ beforeEach(() => {
   m.projectFile.findUnique.mockResolvedValue({ projectId: "proj", archivedAt: null });
   m.form.findUnique.mockResolvedValue({ id: "fm1" });
   m.page.findUnique.mockResolvedValue({ id: "folder", kind: "Folder", archivedAt: null });
+  vi.mocked(loadAncestorChain).mockResolvedValue([]);
+});
+
+describe("POST /api/drive/move root-bound items", () => {
+  const root = (id: string, title: string) => ({ id, title, folderType: "Root" });
+
+  it("refuses a file leaving a typed root", async () => {
+    m.projectFile.findUnique.mockResolvedValue({ projectId: "proj", archivedAt: null, folderPageId: "src" });
+    vi.mocked(loadAncestorChain).mockImplementation(async (id: string) =>
+      (id === "src" ? [root("mroot", "Mentorship")] : []) as never,
+    );
+    const res = await call(FILE_MOVE);
+    expect(res).toEqual({ status: 400, json: { error: "Mentorship items stay in Mentorship" } });
+    expect(m.projectFile.update).not.toHaveBeenCalled();
+  });
+
+  it("allows a form to move within the same root", async () => {
+    m.form.findUnique.mockResolvedValue({ id: "fm1", folderPageId: "src" });
+    vi.mocked(loadAncestorChain).mockResolvedValue([root("core", "Core")] as never);
+    const res = await call(FORM_MOVE);
+    expect(res.status).toBe(200);
+  });
 });
 
 describe("POST /api/drive/move", () => {

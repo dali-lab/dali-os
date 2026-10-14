@@ -5691,6 +5691,7 @@ enum FolderType {
   EducationTemplates
   CertificateBackgrounds
   MentorNotebooks
+  OfferingForms
 }
 
 enum ScopeKind {

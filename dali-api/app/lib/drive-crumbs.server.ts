@@ -28,7 +28,7 @@ import { rootKeyFor } from "~/lib/drive-roots.server";
 // can't view are dropped and an unviewable scoped root collapses to the plain
 // Lab drive, mirroring what Drive's own listing already hides.
 
-export type DriveCrumb = { id: string; title: string; iconEmoji: string | null };
+export type DriveCrumb = { id: string; title: string; iconEmoji: string | null; folderType?: string | null };
 
 export type DriveCrumbs = {
   /** Drive scope the item lives in: "lab" | "core" | "hiring" | "mentorship" (Lab workspace) or
@@ -97,7 +97,7 @@ function crumbPathFromRows(rows: ReadonlyArray<CrumbRow>, coreGroupId: string | 
       scope = "core";
       scopeRootId = p.id;
     }
-    chain.unshift({ id: p.id, title: p.title, iconEmoji: p.iconEmoji });
+    chain.unshift({ id: p.id, title: p.title, iconEmoji: p.iconEmoji, ...(p.folderType ? { folderType: p.folderType } : {}) });
   }
 
   // Non-Lab workspaces map straight to their Drive space. A parent chain never

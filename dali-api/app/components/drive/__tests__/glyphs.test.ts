@@ -50,6 +50,23 @@ describe("pickGlyph", () => {
     expect(pickGlyph(folder({ folderType }))).toMatchObject({ kind: "folder", tint: PINK_FOLDER, system: true, folderType });
   });
 
+  it("draws the offering Forms folder as a pink system folder", () => {
+    expect(FOLDER_TYPES).toContain("OfferingForms");
+    expect(pickGlyph(folder({ folderType: "OfferingForms" }))).toMatchObject({ tint: PINK_FOLDER, system: true });
+    expect(glyphLabel(pickGlyph(folder({ folderType: "OfferingForms" })))).toBe("Offering forms folder");
+  });
+
+  it("draws a synthetic project or offering row as a pink system folder, keeping its emoji", () => {
+    expect(pickGlyph(folder({ system: true }))).toMatchObject({
+      kind: "folder",
+      tint: PINK_FOLDER,
+      system: true,
+      mark: null,
+      folderType: null,
+    });
+    expect(pickGlyph(folder({ system: true, iconEmoji: "🚀" }))).toEqual({ kind: "emoji", emoji: "🚀" });
+  });
+
   it("keeps the calendar mark for Meetings only", () => {
     for (const folderType of FOLDER_TYPES.filter((t) => t !== "Meetings")) {
       expect(pickGlyph(folder({ folderType }))).toMatchObject({ mark: null });
