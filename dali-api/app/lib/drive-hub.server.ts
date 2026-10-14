@@ -4,15 +4,14 @@ import type { DriveItem } from "~/lib/drive.server";
 type Viewer = { userId: string; isCore: boolean; termId: string | null };
 
 /**
- * The projects whose drives the viewer sees. Same access filter as
- * documents.hub: Core sees all projects; others see only projects they're
- * staffed on, scoped to the selected term ("All terms" drops the gate).
+ * The projects whose drives the viewer sees: every project, scoped to the
+ * selected term ("All terms" drops the gate). Page access already lets any lab
+ * member view a project page; members edit through the project root's scope.
  */
-export async function loadProjectWorkspaces({ userId, isCore, termId }: Viewer) {
+export async function loadProjectWorkspaces({ termId }: Viewer) {
   const rows = await prisma.project.findMany({
     where: {
       ...(termId ? { projectTerms: { some: { termId } } } : {}),
-      ...(isCore ? {} : { assignments: { some: { userId } } }),
     },
     orderBy: [{ status: "asc" }, { name: "asc" }],
     select: { id: true, name: true, iconEmoji: true },

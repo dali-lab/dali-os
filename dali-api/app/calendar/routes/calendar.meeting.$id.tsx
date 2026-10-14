@@ -97,7 +97,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       meetingType: true,
       meetingTypeLabel: true,
       notebookId: true,
-      notebook: { select: { id: true, title: true } },
+      notebook: { select: { id: true, title: true, archivedAt: true } },
       attendanceMode: true,
       projectId: true,
       project: { select: { name: true, recordingPolicy: true } },
@@ -118,7 +118,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       exceptions: {
         select: { originalStart: true, overrideStart: true, overrideDurationMin: true, cancelled: true },
       },
-      notePages: { select: { id: true, meetingOccurrenceStart: true } },
+      notePages: { where: { archivedAt: null }, select: { id: true, meetingOccurrenceStart: true } },
       whiteboardPage: { select: { id: true } },
     },
   });
@@ -179,6 +179,10 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   // meeting's doc), and the same authority attachMeetingNote re-checks.
   const canAddNote = auth.user.sub === meeting.organizerId || roles.isCore;
   const canEdit = canAddNote;
+  const canStartNote =
+    canAddNote ||
+    ((meeting.notePages.length > 0 || !!meeting.notebookId) &&
+      (canManage || meeting.participantUserIds.includes(auth.user.sub)));
 
   // Switching every door display to this event is the organizer's or Core's
   // call.
@@ -246,6 +250,12 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         })
       : null;
   const recordingEnabled = await isFeatureEnabled("ai-meeting-notes", auth.user.sub, roles, request);
+  // A trashed notebook stays the series default so a restore re-attaches,
+  // but the page treats it as none until then.
+  const liveNotebook =
+    meeting.notebook && meeting.notebook.archivedAt === null
+      ? { id: meeting.notebook.id, title: meeting.notebook.title }
+      : null;
 
   return {
     meetingId: meeting.id,
@@ -265,14 +275,15 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     description: meeting.description,
     notePageId: noteForOccurrence(meeting.notePages, occurrence.originalStart)?.id ?? null,
     // The meeting keeps notes, so this occurrence's doc is made on demand.
-    canOpenNote: (meeting.meetingType != null && meeting.notePages.length > 0) || !!meeting.notebookId,
-    notebook: meeting.notebook,
+    canOpenNote: (meeting.meetingType != null && meeting.notePages.length > 0) || liveNotebook !== null,
+    notebook: liveNotebook,
     whiteboardPageId: meeting.whiteboardPage?.id ?? null,
     // Adding a whiteboard is the same authority as adding a note. hasType lets
     // the add flow skip the About/type step when the meeting already knows it.
     canAddWhiteboard: canAddNote,
     hasType: meeting.meetingType != null,
     canAddNote,
+    canStartNote,
     // Adding/changing the meeting's project after the fact (behind the
     // unified-core-project-meetings flag) is the same authority as adding a
     // note; the action re-checks organizer/Core + project membership.
@@ -753,7 +764,7 @@ export default function CalendarMeetingPage() {
               className={actionBtnClass}
             />
           ) : (
-            d.canAddNote && (
+            d.canStartNote && (
               // A meeting created before notes existed (or with the note
               // toggle off) has no doc and, unless it synced to Google, never
               // appears on the calendar grid either, so this page is the only
