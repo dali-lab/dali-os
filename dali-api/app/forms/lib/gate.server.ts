@@ -88,8 +88,9 @@ export async function getBoundFormGateOutstanding(
     // mismatch would dead-end them on the fill page's access screen. Re-check
     // the real fill gate before redirecting.
     const access = await formFillAccess(
-      { audience: b.form.audience, audienceGroupIds: b.form.audienceGroupIds },
+      { id: b.formId, audience: b.form.audience, audienceGroupIds: b.form.audienceGroupIds },
       userId,
+      request,
     );
     if (access !== "ok") continue;
     // Filled already (one-and-done) ⇒ nothing owed. Spans every cycle the form

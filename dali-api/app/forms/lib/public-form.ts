@@ -13,6 +13,7 @@ import { resolveReferenceOptions } from "./reference-sources";
 import { safeParseJsonString } from "./forms-data";
 import { requireMember } from "~/lib/roles";
 import { isUserInAnyGroup } from "~/lib/groups";
+import { fillAccessByPage, formsUsePageAccess } from "./form-access.server";
 import { interpretBidForm } from "~/projects/lib/bid-form-interpreter";
 import { validateBids, replaceBidSet } from "~/projects/lib/bid-validation";
 import { interpretIntentForm } from "~/projects/lib/intent-form-interpreter";
@@ -386,14 +387,18 @@ export async function formAccessMeta(
 
 export type FillAccess = "ok" | "login" | "denied";
 
-// The single audience gate — the fill loader and the submit action both call
-// this so their decisions can't drift. `userId` is null when there is no
-// session. Note Groups does NOT fall back to lab membership: only the
-// selected groups admit.
+// The single fill gate — the fill loader, the submit action, the bound-form
+// app lock, and "Forms for you" all call this so their decisions can't drift.
+// `userId` is null when there is no session. Under `forms-page-access` the
+// form's Drive page decides (see form-access.server.ts); otherwise the form's
+// own audience does. Note Groups does NOT fall back to lab membership: only
+// the selected groups admit.
 export async function formFillAccess(
-  form: Pick<FormAccessMeta, "audience" | "audienceGroupIds">,
+  form: Pick<FormAccessMeta, "id" | "audience" | "audienceGroupIds">,
   userId: string | null,
+  request?: Request,
 ): Promise<FillAccess> {
+  if (await formsUsePageAccess(request)) return fillAccessByPage(form.id, userId, request);
   if (form.audience === "Public") return "ok";
   if (!userId) return "login";
   if (form.audience === "SignedIn") return "ok";

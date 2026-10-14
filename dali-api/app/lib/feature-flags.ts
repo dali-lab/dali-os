@@ -135,6 +135,12 @@ export const FEATURE_FLAGS = [
     description:
       "Shows your upcoming meetings and recently opened documents above the space chooser at the Drive root. Ships off.",
   },
+  {
+    key: "forms-page-access",
+    label: "Forms use page access",
+    description:
+      "Who can see, build, and fill a form comes from its Drive page (folder scope, named shares, general access) instead of the Core/Instructor role gate and the form's own audience setting. Share a form from the same dialog as a document. A cutover switch: only 'everyone' counts, role or user targeting is ignored. Ships off.",
+  },
 ] as const satisfies readonly FeatureFlagDef[];
 
 export type FeatureFlagKey = (typeof FEATURE_FLAGS)[number]["key"];
