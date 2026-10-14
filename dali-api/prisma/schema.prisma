@@ -4857,7 +4857,11 @@ enum FormAudience {
 }
 
 model Form {
+  // Shares its id with the Page (kind Form) that carries placement, title,
+  // and access. Create both through createForm() in form-page.server.ts.
   id        String   @id @default(cuid())
+  page      Page     @relation("FormPage", fields: [id], references: [id], onDelete: Cascade)
+  // Mirrored on Page.title until the cleanup PR drops this column.
   name      String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -5297,6 +5301,9 @@ model Page {
   shares    PageShare[]
   favorites UserFavorite[]
 
+  // Set only when kind == Form: the form body sharing this page's id.
+  form Form? @relation("FormPage")
+
   // Pinned to the top of the project's Documents block. Timestamp so pins can
   // be ordered most-recent-first. Null = not pinned. (Distinct from the
   // system Overview/PRD docs, which are always shown pinned.)
@@ -5607,6 +5614,9 @@ enum SharePermission {
 enum LinkAccess {
   Restricted
   LabMembers
+  // Any authenticated account, including partner, applicant, and non-member
+  // Dartmouth users. Added for forms (the old "SignedIn" fill audience).
+  SignedIn
   Public
 }
 
@@ -5643,6 +5653,10 @@ enum PageKind {
   // A pointer to another page, placed like any page. No body, no shares, no
   // scope; opening it redirects to the target (Page.targetPageId).
   Shortcut
+  // A form. The page carries placement, title, and access; the question set,
+  // versions, submissions, and publish state live on the 1:1 Form row that
+  // shares this page's id (specs/forms-vs-drive-items-review.md, section 9).
+  Form
 }
 
 // What a folder is or receives. Root = a Drive space root; the rest mark a
