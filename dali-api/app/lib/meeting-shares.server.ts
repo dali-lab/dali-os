@@ -1,6 +1,6 @@
 import { prisma } from "~/lib/db";
 import { resolveGroupMembers } from "~/lib/groups";
-import { getPageAccess, PAGE_ACCESS_SELECT } from "~/lib/pageAccess.server";
+import { getPageAccess, PAGE_ACCESS_SELECT, type PageShape } from "~/lib/pageAccess.server";
 import type { SharePrincipalType } from "~/generated/prisma/client";
 
 type Principal = { principalType: SharePrincipalType; principalId: string };
@@ -13,7 +13,7 @@ async function desiredPrincipals(
     scopeId: string | null;
     participantUserIds: string[];
     organizerId: string;
-    notebook: ({ id: string } & Record<string, unknown>) | null;
+    notebook: PageShape | null;
   },
   request?: Request,
 ): Promise<Principal[]> {
