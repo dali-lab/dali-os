@@ -30,16 +30,14 @@ beforeEach(() => vi.clearAllMocks());
 describe("loadTermForms", () => {
   it("returns no forms when none are linked", async () => {
     m.mentorshipTermForm.findMany.mockResolvedValue([]);
-    const result = await loadTermForms(TERM, ["u1"]);
-    expect(result.mentee.form).toBeNull();
-    expect(result.mentor.form).toBeNull();
+    expect(await loadTermForms(TERM, ["u1"])).toEqual({});
     expect(m.formSubmission.findMany).not.toHaveBeenCalled();
   });
 
-  it("maps each person's latest response this term to their side", async () => {
+  it("maps each person's latest response this term to their domain and side", async () => {
     m.mentorshipTermForm.findMany.mockResolvedValue([
-      { role: "mentee", form: { id: "f-mentee", name: "Mentee check-in" } },
-      { role: "mentor", form: { id: "f-mentor", name: "Mentor check-in" } },
+      { domainId: "dev", role: "mentee", form: { id: "f-mentee", name: "Mentee check-in" } },
+      { domainId: "dev", role: "mentor", form: { id: "f-mentor", name: "Mentor check-in" } },
     ]);
     m.formSubmission.findMany.mockImplementation(async ({ where }: any) =>
       where.formId === "f-mentee"
@@ -49,15 +47,33 @@ describe("loadTermForms", () => {
 
     const result = await loadTermForms(TERM, ["mentee1", "mentor1"]);
 
-    expect(result.mentee.form?.name).toBe("Mentee check-in");
-    expect(result.mentee.responses.mentee1.rows[0].value).toBe("newer");
-    expect(result.mentor.responses.mentor1.rows[0].value).toBe("fine");
-    expect(result.mentee.responses.mentor1).toBeUndefined();
+    expect(result.dev.mentee.form?.name).toBe("Mentee check-in");
+    expect(result.dev.mentee.responses.mentee1.rows[0].value).toBe("newer");
+    expect(result.dev.mentor.responses.mentor1.rows[0].value).toBe("fine");
+    expect(result.dev.mentee.responses.mentor1).toBeUndefined();
+  });
+
+  it("keeps each domain's forms apart", async () => {
+    m.mentorshipTermForm.findMany.mockResolvedValue([
+      { domainId: "dev", role: "mentee", form: { id: "f-dev", name: "Dev mentee" } },
+      { domainId: "design", role: "mentee", form: { id: "f-design", name: "Design mentee" } },
+    ]);
+    m.formSubmission.findMany.mockImplementation(async ({ where }: any) =>
+      where.formId === "f-dev" ? [sub("u1", "dev answer", "2026-10-14")] : [],
+    );
+
+    const result = await loadTermForms(TERM, ["u1"]);
+
+    expect(result.dev.mentee.form?.name).toBe("Dev mentee");
+    expect(result.design.mentee.form?.name).toBe("Design mentee");
+    expect(result.dev.mentee.responses.u1.rows[0].value).toBe("dev answer");
+    expect(result.design.mentee.responses).toEqual({});
+    expect(result.dev.mentor.form).toBeNull();
   });
 
   it("only reads responses from people on the page, submitted since the term began", async () => {
     m.mentorshipTermForm.findMany.mockResolvedValue([
-      { role: "mentee", form: { id: "f1", name: "F" } },
+      { domainId: "dev", role: "mentee", form: { id: "f1", name: "F" } },
     ]);
     m.formSubmission.findMany.mockResolvedValue([]);
 
@@ -72,28 +88,26 @@ describe("loadTermForms", () => {
 
   it("ignores rows with an unknown role", async () => {
     m.mentorshipTermForm.findMany.mockResolvedValue([
-      { role: "lead", form: { id: "f1", name: "F" } },
+      { domainId: "dev", role: "lead", form: { id: "f1", name: "F" } },
     ]);
-    const result = await loadTermForms(TERM, ["u1"]);
-    expect(result.mentee.form).toBeNull();
-    expect(result.mentor.form).toBeNull();
+    expect(await loadTermForms(TERM, ["u1"])).toEqual({});
   });
 });
 
 describe("setTermForm", () => {
-  it("links a form by upserting the term's slot for that side", async () => {
-    await setTermForm("term1", "mentor", "f1");
+  it("links a form by upserting the term's slot for that domain and side", async () => {
+    await setTermForm("term1", "dev", "mentor", "f1");
     expect(m.mentorshipTermForm.upsert).toHaveBeenCalledWith({
-      where: { termId_role: { termId: "term1", role: "mentor" } },
-      create: { termId: "term1", role: "mentor", formId: "f1" },
+      where: { termId_domainId_role: { termId: "term1", domainId: "dev", role: "mentor" } },
+      create: { termId: "term1", domainId: "dev", role: "mentor", formId: "f1" },
       update: { formId: "f1" },
     });
   });
 
   it("unlinks when no form is given", async () => {
-    await setTermForm("term1", "mentee", null);
+    await setTermForm("term1", "dev", "mentee", null);
     expect(m.mentorshipTermForm.deleteMany).toHaveBeenCalledWith({
-      where: { termId: "term1", role: "mentee" },
+      where: { termId: "term1", domainId: "dev", role: "mentee" },
     });
     expect(m.mentorshipTermForm.upsert).not.toHaveBeenCalled();
   });

@@ -21,7 +21,7 @@ function post(fields: Record<string, string>) {
   } as any);
 }
 
-const LINK = { intent: "link-form", termId: "term1", role: "mentee", formId: "f1" };
+const LINK = { intent: "link-form", termId: "term1", domainId: "dev", role: "mentee", formId: "f1" };
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -32,12 +32,12 @@ beforeEach(() => {
 describe("mentorship browse action", () => {
   it("links a form for Core", async () => {
     expect(await post(LINK)).toEqual({ ok: true });
-    expect(setTermForm).toHaveBeenCalledWith("term1", "mentee", "f1");
+    expect(setTermForm).toHaveBeenCalledWith("term1", "dev", "mentee", "f1");
   });
 
   it("unlinks when the form is cleared", async () => {
     await post({ ...LINK, formId: "" });
-    expect(setTermForm).toHaveBeenCalledWith("term1", "mentee", null);
+    expect(setTermForm).toHaveBeenCalledWith("term1", "dev", "mentee", null);
   });
 
   it("refuses anyone who isn't Core", async () => {
@@ -50,6 +50,7 @@ describe("mentorship browse action", () => {
   it.each([
     { ...LINK, role: "lead" },
     { ...LINK, termId: "" },
+    { ...LINK, domainId: "" },
     { ...LINK, intent: "other" },
   ])("rejects a malformed request (%o)", async (fields) => {
     const res = (await post(fields)) as Response;
