@@ -80,7 +80,6 @@ import { runDailyDigest, runWeeklyDigest } from "~/lib/notification-digest.serve
 import { runRetentionJanitor } from "~/jobs/retention-janitor.server";
 import { runDriveRootsReparent } from "~/jobs/drive-roots-reparent.server";
 import { runMentorNotesToNotebooks } from "~/jobs/mentor-notes-to-notebooks.server";
-import { runCoreFlagToShortcuts } from "~/jobs/core-flag-to-shortcuts.server";
 import { runSprintLifecycle } from "~/jobs/sprint-lifecycle.server";
 import { runFormWindows } from "~/jobs/form-windows.server";
 import { runInterviewReminders } from "~/jobs/interview-reminders.server";
@@ -488,14 +487,6 @@ export const JOBS: JobDefinition[] = [
     intervalMinutes: 1,
     enabledByDefault: false,
     handler: runMentorNotesToNotebooks,
-  },
-  {
-    name: "core-flag-to-shortcuts",
-    description:
-      "One-time: Core is now decided by where a meeting's notebook is filed. Adds a shortcut in Core's Meetings folder for each notebook of a meeting still flagged Core, 200 per run, as the organizer when they can file there, else a Core member. Turn off once 'remaining' reaches 0 (a nonzero 'declined' stays in remaining).",
-    intervalMinutes: 1,
-    enabledByDefault: false,
-    handler: runCoreFlagToShortcuts,
   },
   {
     name: "recording-finalizer",

@@ -120,7 +120,6 @@ import type { RowActions } from "~/components/drive/DriveBrowser";
 import { FolderPicker } from "~/components/drive/FolderPicker";
 import type { PickerDrive, PickerFolder, Destination } from "~/components/drive/FolderPicker";
 import { moveDriveItem, driveErrorFrom } from "~/components/drive/move-item";
-import { deleteShortcutRequest } from "~/components/drive/shortcut-api";
 import { destinationLabel } from "~/components/drive/action-toast";
 import { reportMoveBatch, runHiddenMoveBatch, itemCount } from "~/components/drive/move-batch";
 import { withoutHidden, usePendingHidden } from "~/components/drive/pending-hidden";
@@ -4812,9 +4811,7 @@ function ProjectDriveTab({
           description:
             item.type === "folder"
               ? "The folder must be empty first."
-              : item.type === "shortcut"
-                ? "Only the shortcut is removed. The original stays where it is."
-                : "This moves it to the trash.",
+              : "This moves it to the trash.",
           tone: "destructive",
           confirmLabel: "Delete",
         });
@@ -4888,7 +4885,6 @@ function ProjectDriveTab({
   }, [dialog, createPage, revalidate, toast]);
 
   function deleteDriveItemRequest(item: DriveItem): Promise<Response> {
-    if (item.type === "shortcut") return deleteShortcutRequest(item.id);
     const endpoint = item.type === "file" ? `/api/files/${item.id}` : `/api/documents/${item.id}`;
     return fetch(endpoint, { method: "DELETE", credentials: "include" });
   }
@@ -4910,9 +4906,7 @@ function ProjectDriveTab({
 
   const onBulkMove = useCallback(
     async (items: DriveItem[]) => {
-      const movable = items.filter(
-        (i) => i.type === "doc" || i.type === "folder" || i.type === "file" || i.type === "shortcut",
-      );
+      const movable = items.filter((i) => i.type === "doc" || i.type === "folder" || i.type === "file");
       if (movable.length === 0) return;
       const dest = await pickMoveDestination(movable[0], `Move ${itemCount(movable.length)}`);
       if (dest) await moveItems(movable, dest.folderId);

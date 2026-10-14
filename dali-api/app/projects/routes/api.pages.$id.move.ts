@@ -21,7 +21,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     request,
     input: () => parseJson(request, MovePageBodySchema),
   });
-  if (result.ok) return withCors(request, Response.json({ ok: true, clearedReceivers: result.clearedReceivers }));
+  if (result.ok) return withCors(request, Response.json({ ok: true, clearedReceivers: result.clearedReceivers, from: result.from }));
   if ("response" in result) return withCors(request, result.response);
   return withCors(request, Response.json({ error: result.error }, { status: result.status }));
 }

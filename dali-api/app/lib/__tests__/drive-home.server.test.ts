@@ -152,14 +152,13 @@ describe("loadDriveHome recent", () => {
     expect(home.recent[0].id).toBe("p2");
   });
 
-  it("asks only for the viewer's live, non-shortcut pages ordered by recency", async () => {
+  it("asks only for the viewer's live pages ordered by recency", async () => {
     stub();
     await loadDriveHome("u1");
     const args = m.userFavorite.findMany.mock.calls[0][0];
     expect(args.where).toMatchObject({ userId: "u1", visitedAt: { not: null } });
     expect(args.orderBy).toEqual({ visitedAt: "desc" });
     expect(args.where.page.is.archivedAt).toBeNull();
-    expect(args.where.page.is.kind.in).not.toContain("Shortcut");
   });
 
   it("checks access once across recents and upcoming notebooks", async () => {

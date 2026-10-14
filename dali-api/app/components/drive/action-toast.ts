@@ -1,6 +1,6 @@
 import type { DriveItem } from "~/lib/drive.server";
 
-/** How long a move, filing or trash toast stays up: long enough to reach for Undo. */
+/** How long a move or trash toast stays up: long enough to reach for Undo. */
 export const ACTION_TOAST_MS = 8000;
 
 const PATH_SEPARATOR = " ▸ ";
@@ -42,58 +42,8 @@ export function movedToast({
   return `Moved ${subject(titles)}${into(destination)}`;
 }
 
-const MAX_NAMED_SHORTCUTS = 2;
-
-function alsoIn(shortcutDestinations: string[]): string {
-  if (shortcutDestinations.length === 0) return "";
-  const named = shortcutDestinations.slice(0, MAX_NAMED_SHORTCUTS);
-  const rest = shortcutDestinations.length - named.length;
-  if (rest > 0) return `, also in ${named.join(", ")} and ${rest} more`;
-  return `, also in ${named.join(" and ")}`;
-}
-
-const declinedSentence = (declined: number) => ` ${declined} could not be shared; ask the owner.`;
-
-/** The toast after "File in…": the primary location, the shortcuts left behind, and any declined grants. */
-export function filedToast({
-  title,
-  destination,
-  shortcutDestinations = [],
-  declined = 0,
-}: {
-  title: string;
-  destination: string;
-  shortcutDestinations?: string[];
-  declined?: number;
-}): string {
-  const base = `Filed ${quoted(title)} in ${destination}${alsoIn(shortcutDestinations)}`;
-  return declined > 0 ? `${base}.${declinedSentence(declined)}` : base;
-}
-
-/** The toast after "Add shortcut to…", including the case where one was already there. */
-export function shortcutToast({
-  created,
-  title,
-  destination,
-  grantDeclined = false,
-}: {
-  created: boolean;
-  title: string;
-  destination: string;
-  grantDeclined?: boolean;
-}): string {
-  if (!created) return `There is already a shortcut in ${destination}.`;
-  const base = `Added a shortcut to ${quoted(title)} in ${destination}`;
-  return grantDeclined ? `${base}. It could not be shared; ask the owner.` : base;
-}
-
-export const SHORTCUT_REMOVED_TOAST = "Shortcut removed. The original is untouched.";
-
-/** The toast after trashing. Shortcuts alone say the originals are untouched, because nothing went to Trash. */
-export function trashedToast(items: Array<Pick<DriveItem, "type" | "title">>): string {
-  if (items.length > 0 && items.every((i) => i.type === "shortcut")) {
-    return items.length === 1 ? SHORTCUT_REMOVED_TOAST : `${items.length} shortcuts removed. The originals are untouched.`;
-  }
+/** The toast after trashing. */
+export function trashedToast(items: Array<Pick<DriveItem, "title">>): string {
   return `Moved ${subject(items.map((i) => i.title))} to Trash`;
 }
 

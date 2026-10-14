@@ -195,16 +195,7 @@ describe("loadDriveScope — notebooks", () => {
   });
 });
 
-describe("loadDriveScope — shortcuts", () => {
-  const shortcutRow = (over: Record<string, unknown> = {}) =>
-    pageRow({ id: "sc-1", title: "Shortcut", kind: "Shortcut", parentPageId: "folder-1", targetPageId: "t-1", ...over });
-  const targetRow = (over: Record<string, unknown> = {}) =>
-    pageRow({ id: "t-1", title: "Kickoff notes", kind: "FreeForm", archivedAt: null, ...over });
-
-  /** Page rows for the workspace query, target rows for the distinct-target query. */
-  function pages(rows: unknown[], targets: unknown[]) {
-    mockPrisma.page.findMany.mockImplementation(async (args: any) => (args.where.id?.in ? targets : rows));
-  }
+describe("loadDriveScope — page kinds", () => {
   const scopes = [
     ["Lab", { kind: "Lab" as const }],
     ["Project", { kind: "Project" as const, projectId: "proj-1" }],
@@ -212,110 +203,12 @@ describe("loadDriveScope — shortcuts", () => {
     ["Member", { kind: "Member" as const }],
   ] as const;
 
-  it.each(scopes)("%s: lists a shortcut as the target's title and glyph, opening the target", async (_n, scope) => {
-    pages([shortcutRow()], [targetRow({ kind: "Whiteboard" })]);
+  it.each(scopes)("%s: never asks for Shortcut pages", async (_n, scope) => {
+    await loadDriveScope({ userSub: "u1", scope });
 
-    const items = await loadDriveScope({ userSub: "u1", scope });
-
-    expect(items.find((i) => i.id === "sc-1")).toMatchObject({
-      type: "shortcut",
-      title: "Kickoff notes",
-      parentFolderId: "folder-1",
-      targetId: "t-1",
-      targetType: "whiteboard",
-      canOpen: true,
-      originalInTrash: false,
-      href: "/whiteboard/t-1",
-    });
-  });
-
-  it.each([
-    ["Folder", "folder", "/documents/t-1"],
-    ["Notebook", "notebook", "/documents/t-1"],
-    ["FreeForm", "doc", "/documents/t-1"],
-    ["Structured", "doc", "/documents/t-1"],
-  ])("types a %s target as %s", async (kind, targetType, href) => {
-    pages([shortcutRow()], [targetRow({ kind })]);
-    const items = await loadDriveScope({ userSub: "u1", scope: { kind: "Lab" } });
-    expect(items.find((i) => i.id === "sc-1")).toMatchObject({ targetType, href });
-  });
-
-  it("asks for the targets of all shortcuts in one query over distinct ids", async () => {
-    pages(
-      [shortcutRow(), shortcutRow({ id: "sc-2" }), shortcutRow({ id: "sc-3", targetPageId: "t-2" })],
-      [targetRow(), targetRow({ id: "t-2" })],
-    );
-
-    await loadDriveScope({ userSub: "u1", scope: { kind: "Lab" } });
-
-    const targetQueries = mockPrisma.page.findMany.mock.calls.filter((c) => c[0].where.id?.in);
-    expect(targetQueries).toHaveLength(1);
-    expect(targetQueries[0][0].where.id.in).toEqual(["t-1", "t-2"]);
-  });
-
-  it("makes no target query when the drive holds no shortcut", async () => {
-    pages([pageRow({ id: "d1" })], []);
-    await loadDriveScope({ userSub: "u1", scope: { kind: "Lab" } });
-    expect(mockPrisma.page.findMany.mock.calls.filter((c) => c[0].where.id?.in)).toHaveLength(0);
-  });
-
-  it("hides the title of a target the viewer can't open and refuses to open it", async () => {
-    pages([shortcutRow()], [targetRow()]);
-    vi.mocked(getPageAccess).mockImplementation(async (_u: string, p: any) =>
-      (p.id === "t-1" ? DENIED : VIEW_ONLY) as any,
-    );
-
-    const items = await loadDriveScope({ userSub: "u1", scope: { kind: "Lab" } });
-
-    expect(items.find((i) => i.id === "sc-1")).toMatchObject({
-      type: "shortcut",
-      title: "Shortcut (no access)",
-      canOpen: false,
-      originalInTrash: false,
-      targetType: "doc",
-      href: "/documents/sc-1",
-    });
-  });
-
-  it("treats a target that no longer exists the same as one the viewer can't open", async () => {
-    pages([shortcutRow()], []);
-    const items = await loadDriveScope({ userSub: "u1", scope: { kind: "Lab" } });
-    expect(items.find((i) => i.id === "sc-1")).toMatchObject({ title: "Shortcut (no access)", canOpen: false });
-  });
-
-  it("marks a trashed original, keeps its title, and does not open it", async () => {
-    pages([shortcutRow()], [targetRow({ archivedAt: new Date() })]);
-
-    const items = await loadDriveScope({ userSub: "u1", scope: { kind: "Lab" } });
-
-    expect(items.find((i) => i.id === "sc-1")).toMatchObject({
-      title: "Kickoff notes",
-      canOpen: false,
-      originalInTrash: true,
-    });
-    expect(getPageAccessBulk).toHaveBeenCalledWith("u1", expect.anything(), undefined, { includeArchived: true });
-  });
-
-  it("hides the shortcut row itself when its folder is hidden from the viewer", async () => {
-    pages([shortcutRow()], [targetRow()]);
-    vi.mocked(getPageAccess).mockImplementation(async (_u: string, p: any) =>
-      (p.id === "sc-1" ? DENIED : VIEW_ONLY) as any,
-    );
-
-    const items = await loadDriveScope({ userSub: "u1", scope: { kind: "Lab" } });
-
-    expect(items.find((i) => i.id === "sc-1")).toBeUndefined();
-  });
-
-  it("asks for Shortcut pages in every page query", async () => {
-    mockPrisma.projectFile.findMany.mockResolvedValue([]);
-    for (const [, scope] of scopes) {
-      mockPrisma.page.findMany.mockClear();
-      await loadDriveScope({ userSub: "u1", scope });
-      for (const call of mockPrisma.page.findMany.mock.calls.filter((c) => c[0].where.kind?.in)) {
-        expect(call[0].where.kind.in).toContain("Shortcut");
-      }
-    }
+    const kindQueries = mockPrisma.page.findMany.mock.calls.filter((c) => c[0].where.kind?.in);
+    expect(kindQueries.length).toBeGreaterThan(0);
+    for (const call of kindQueries) expect(call[0].where.kind.in).not.toContain("Shortcut");
   });
 });
 
@@ -735,32 +628,6 @@ describe("file folder checks", () => {
     const folders = vi.mocked(getPageAccess).mock.calls.map((c) => c[1]);
     expect(folders.sort()).toEqual(["hidden", "slow"]);
     expect(peak()).toBe(2);
-  });
-});
-
-describe("loadDriveScope — Lab shortcuts", () => {
-  it("looks up shortcut targets while the audiences are still being summarised", async () => {
-    mockPrisma.page.findMany.mockImplementation(async (args: any) =>
-      args.where.id?.in
-        ? [pageRow({ id: "t-1", title: "Kickoff notes" })]
-        : [pageRow({ id: "sc-1", kind: "Shortcut", targetPageId: "t-1" })],
-    );
-    let release!: () => void;
-    vi.mocked(summarizeAudience).mockImplementationOnce(
-      () => new Promise((resolve) => (release = () => resolve(new Map([["sc-1", { kind: "lab", label: "L", permission: "View" }]])))) as never,
-    );
-
-    const pending = loadDriveScope({ userSub: "u1", scope: { kind: "Lab" } });
-    await vi.waitFor(() =>
-      expect(mockPrisma.page.findMany.mock.calls.some(([a]) => a.where.id?.in)).toBe(true),
-    );
-    release();
-    const items = await pending;
-
-    expect(items.find((i) => i.id === "sc-1")).toMatchObject({
-      title: "Kickoff notes",
-      audience: { kind: "lab", label: "L" },
-    });
   });
 });
 

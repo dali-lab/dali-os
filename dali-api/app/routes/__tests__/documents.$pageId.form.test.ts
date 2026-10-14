@@ -12,7 +12,6 @@ vi.mock("~/lib/pageAccess.server", () => ({
   getPageAccess: vi.fn(),
   getPageAccessBulk: vi.fn(),
 }));
-vi.mock("~/lib/shortcuts.server", () => ({ resolveShortcutTarget: vi.fn() }));
 
 import { prisma } from "~/lib/db";
 import { requireAuth, redirectPartnerToPortal, isNonMember } from "~/lib/auth";

@@ -147,20 +147,11 @@ async function applyMeetingShares(meetingId: string, request?: Request): Promise
 
       const candidateShareIds = stale.filter((g) => g.createdShare).map((g) => g.pageShareId);
       if (candidateShareIds.length > 0) {
-        const [stillGranted, shortcuts] = await Promise.all([
-          tx.meetingShareGrant.findMany({
-            where: { pageShareId: { in: candidateShareIds } },
-            select: { pageShareId: true },
-          }),
-          tx.page.findMany({
-            where: { grantShareId: { in: candidateShareIds } },
-            select: { grantShareId: true },
-          }),
-        ]);
-        const inUse = new Set([
-          ...stillGranted.map((g) => g.pageShareId),
-          ...shortcuts.map((p) => p.grantShareId),
-        ]);
+        const stillGranted = await tx.meetingShareGrant.findMany({
+          where: { pageShareId: { in: candidateShareIds } },
+          select: { pageShareId: true },
+        });
+        const inUse = new Set(stillGranted.map((g) => g.pageShareId));
         const deletable = candidateShareIds.filter((id) => !inUse.has(id));
         if (deletable.length > 0) await tx.pageShare.deleteMany({ where: { id: { in: deletable } } });
       }
