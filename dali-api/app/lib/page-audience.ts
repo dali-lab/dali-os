@@ -22,6 +22,8 @@ export interface Audience {
   people?: AudiencePerson[];
   /** The viewer may manage sharing on this page. */
   canManage?: boolean;
+  /** People a meeting's roster lets edit this page; present only when there are some. */
+  meetingEditors?: number;
 }
 
 export const AUDIENCE_PERMISSION_LABEL: Record<AudiencePermission, string> = {
@@ -41,6 +43,12 @@ export interface InheritedScope {
 
 /** One line of "who has access by default", for the Share dialog. */
 export function audienceLine(audience: Audience): string {
+  const base = baseAudienceLine(audience);
+  const n = audience.meetingEditors;
+  return n ? `${base} · ${n} meeting ${n === 1 ? "attendee" : "attendees"} can edit` : base;
+}
+
+function baseAudienceLine(audience: Audience): string {
   if (audience.kind !== "group" && audience.kind !== "lab" && audience.kind !== "public") {
     return audience.label;
   }

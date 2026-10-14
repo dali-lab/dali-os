@@ -119,6 +119,14 @@ describe("GET /api/notebooks", () => {
     );
   });
 
+  it("passes the workspace through", async () => {
+    await get("?workspaceType=Project&workspaceId=p1");
+
+    expect(listNotebooks).toHaveBeenCalledWith(
+      expect.objectContaining({ space: { workspaceType: "Project", workspaceId: "p1" } }),
+    );
+  });
+
   it("returns the session gate's response when not a member, and lists nothing", async () => {
     vi.mocked(requireMemberSession).mockResolvedValue({
       ok: false,

@@ -26,6 +26,7 @@ export function NotebookPicker({
   onNewInstead,
   projectId,
   meetingId,
+  space,
   heading = "Add to a notebook",
   excludeId,
   preloaded,
@@ -37,6 +38,8 @@ export function NotebookPicker({
   onNewInstead?: () => void;
   projectId?: string | null;
   meetingId?: string | null;
+  /** Limits the list to notebooks in one workspace. */
+  space?: { workspaceType: string; workspaceId: string | null } | null;
   heading?: string;
   /** A notebook that can't be picked (the one being merged away). */
   excludeId?: string;
@@ -55,7 +58,7 @@ export function NotebookPicker({
     setFetched((f) => ({ ...f, status: "loading" }));
     const timer = setTimeout(async () => {
       try {
-        const rows = await fetchNotebookRows(query, { projectId, meetingId });
+        const rows = await fetchNotebookRows(query, { projectId, meetingId, space });
         if (!cancelled) setFetched({ rows, status: "ready" });
       } catch {
         if (!cancelled) setFetched((f) => ({ ...f, status: "error" }));
@@ -65,7 +68,7 @@ export function NotebookPicker({
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [open, usePreloaded, query, projectId, meetingId]);
+  }, [open, usePreloaded, query, projectId, meetingId, space?.workspaceType, space?.workspaceId]);
 
   const { rows, status } = usePreloaded ? preloaded : fetched;
   const offered = rows.filter((r) => r.id !== excludeId);

@@ -4,6 +4,7 @@
 import { prisma } from "~/lib/db";
 import { DRIVE_SPACES } from "~/lib/drive-spaces";
 import { driveLocation, locationFromCrumbs } from "~/lib/drive-reveal.server";
+import type { ItemLocation } from "~/components/drive/location";
 import { driveFolderCrumbsBulk, type DriveCrumbs } from "~/lib/drive-crumbs.server";
 
 const LAB_ROOT_CRUMBS: DriveCrumbs = { scope: "lab", folders: [] };
@@ -30,17 +31,39 @@ function locationParts(
 const isProjectLocation = (where: { scope: string; workspaceFolderId: string | null }) =>
   where.scope === "projects" && where.workspaceFolderId !== null;
 
+/** Where a notebook sits, with the ids the Drive opens: its space, the project, and the folders above it. */
+export async function notebookItemLocation(
+  notebook: NotebookPlace,
+  viewerSub: string,
+  request?: Request,
+): Promise<ItemLocation> {
+  const where = await driveLocation(notebook.parentPageId, notebook, viewerSub, request);
+  const project = isProjectLocation(where)
+    ? await prisma.project.findUnique({ where: { id: where.workspaceFolderId! }, select: { name: true } })
+    : null;
+  const [scopeLabel, ...titles] = locationParts(where, project?.name);
+  const ids = [
+    ...(project ? [where.workspaceFolderId!] : []),
+    ...where.folders.map((f) => f.id),
+  ];
+  const folders = titles.map((title, i) => ({ id: ids[i], title }));
+  return {
+    scopeId: where.scope,
+    scopeLabel,
+    folderId: ids.at(-1) ?? where.workspaceFolderId,
+    folders,
+    path: formatFiledPath([scopeLabel, ...titles]),
+  };
+}
+
 /** Where a notebook sits: its space, the project, and the folders above it. */
 export async function notebookLocationParts(
   notebook: NotebookPlace,
   viewerSub: string,
   request?: Request,
 ): Promise<string[]> {
-  const where = await driveLocation(notebook.parentPageId, notebook, viewerSub, request);
-  const project = isProjectLocation(where)
-    ? await prisma.project.findUnique({ where: { id: where.workspaceFolderId! }, select: { name: true } })
-    : null;
-  return locationParts(where, project?.name);
+  const location = await notebookItemLocation(notebook, viewerSub, request);
+  return [location.scopeLabel, ...location.folders.map((f) => f.title)];
 }
 
 /** `notebookLocationParts` for many notebooks at once, keyed by notebook id, in a fixed number of queries. */

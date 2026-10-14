@@ -333,6 +333,10 @@ export const prisma = {
     create: vi.fn(),
     deleteMany: vi.fn(),
   },
+  meetingShareGrant: {
+    findMany: vi.fn().mockResolvedValue([]),
+    findFirst: vi.fn().mockResolvedValue(null),
+  },
   page: {
     findUnique: vi.fn(),
     findUniqueOrThrow: vi.fn(),
