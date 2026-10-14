@@ -2,7 +2,7 @@ import { prisma } from "~/lib/db";
 import { getPageAccessBulk, PAGE_ACCESS_SELECT } from "~/lib/pageAccess.server";
 import { meetingNotebookIdentity, type NotebookMeeting } from "~/lib/meeting-notebook";
 import { suggestNotebooks, type NotebookCandidate } from "~/lib/notebook-suggest";
-import { formatFiledPath, notebookLocationParts } from "~/lib/note-path.server";
+import { formatFiledPath, notebookLocationPartsBulk } from "~/lib/note-path.server";
 
 // The notebooks the picker offers: ones the viewer can edit, in any workspace
 // they belong to, with the signals that make some of them suggested.
@@ -33,6 +33,8 @@ export type ListedNotebook = {
   id: string;
   title: string;
   path: string;
+  workspaceType: string;
+  workspaceId: string | null;
   tabCount: number;
   lastNoteAt: string | null;
   suggested: boolean;
@@ -122,14 +124,19 @@ export async function listNotebooks(input: {
   }).slice(0, MAX_LISTED);
 
   const pageById = new Map(editable.map((r) => [r.id, r]));
-  return Promise.all(
-    ranked.map(async (r) => ({
-      id: r.id,
-      title: r.title,
-      path: formatFiledPath(await notebookLocationParts(pageById.get(r.id)!, input.actorId, input.request)),
-      tabCount: r.tabCount,
-      lastNoteAt: r.lastNoteAt?.toISOString() ?? null,
-      suggested: r.suggested,
-    })),
+  const paths = await notebookLocationPartsBulk(
+    ranked.map((r) => pageById.get(r.id)!),
+    input.actorId,
+    input.request,
   );
+  return ranked.map((r) => ({
+    id: r.id,
+    title: r.title,
+    path: formatFiledPath(paths.get(r.id) ?? []),
+    workspaceType: r.workspaceType,
+    workspaceId: r.workspaceId,
+    tabCount: r.tabCount,
+    lastNoteAt: r.lastNoteAt?.toISOString() ?? null,
+    suggested: r.suggested,
+  }));
 }

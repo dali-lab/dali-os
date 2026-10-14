@@ -5,7 +5,7 @@
 
 import { prisma } from "~/lib/db";
 import { PAGE_ACCESS_SELECT, getPageAccess } from "~/lib/pageAccess.server";
-import { driveFolderCrumbs } from "~/lib/drive-crumbs.server";
+import { driveFolderCrumbs, type DriveCrumbs } from "~/lib/drive-crumbs.server";
 import { workspaceDriveScope } from "~/lib/drive-crumbs";
 import { SHARED_SPACE_KEY } from "~/lib/drive-spaces";
 
@@ -25,7 +25,13 @@ export async function driveLocation(
   viewerSub: string,
   request?: Request,
 ) {
-  const crumbs = await driveFolderCrumbs(anchor, viewerSub, request);
+  return locationFromCrumbs(await driveFolderCrumbs(anchor, viewerSub, request), page);
+}
+
+export function locationFromCrumbs(
+  crumbs: DriveCrumbs,
+  page: { workspaceType: string; workspaceId: string | null },
+) {
   const scope = workspaceDriveScope(page.workspaceType) ?? crumbs.scope;
   const workspaceFolderId =
     (scope === "projects" || scope === "education") && page.workspaceId ? page.workspaceId : null;

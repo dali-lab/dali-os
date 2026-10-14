@@ -86,12 +86,16 @@ const CreateSchema = z
     message: "A project is required for Team and Partner meetings",
     path: ["projectId"],
   })
-  // A custom note location only makes sense for General meetings (Other, or no
-  // type yet, with no project) — project meetings file into the project itself.
+  // A custom location suits a General meeting (Other, or no type yet, no
+  // project); a project meeting may only name a place inside its own project.
   .refine(
-    (v) => (v.noteLocation ? (v.meetingType === undefined || v.meetingType === "Other") && !v.projectId : true),
+    (v) => {
+      if (!v.noteLocation) return true;
+      if (v.projectId) return v.noteLocation.workspaceType === "Project" && v.noteLocation.workspaceId === v.projectId;
+      return v.meetingType === undefined || v.meetingType === "Other";
+    },
     {
-      message: "noteLocation is only allowed for General meetings",
+      message: "noteLocation must be a General meeting's, or inside the meeting's project",
       path: ["noteLocation"],
     },
   )

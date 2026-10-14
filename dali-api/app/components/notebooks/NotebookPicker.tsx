@@ -4,11 +4,15 @@ import { Modal, ModalHeader } from "~/components/Modal";
 import { modalCardClass } from "~/components/os-chrome";
 import { buttonClasses } from "~/components/ui/Button";
 import { SearchInput } from "~/components/ui/SearchInput";
-import { notebookQueryString, notebookStats, type PickedNotebook } from "~/components/notebooks/notebook-picker";
+import {
+  fetchNotebookRows,
+  notebookStats,
+  type NotebookListState,
+  type NotebookRow,
+  type PickedNotebook,
+} from "~/components/notebooks/notebook-picker";
 
-type NotebookRow = PickedNotebook & { tabCount: number; lastNoteAt: string | null; suggested: boolean };
-
-export type { PickedNotebook };
+export type { NotebookRow, PickedNotebook };
 
 /**
  * Pick one notebook the viewer can edit: suggested ones (this series' default,
@@ -24,6 +28,7 @@ export function NotebookPicker({
   meetingId,
   heading = "Add to a notebook",
   excludeId,
+  preloaded,
 }: {
   open: boolean;
   onClose: () => void;
@@ -35,36 +40,34 @@ export function NotebookPicker({
   heading?: string;
   /** A notebook that can't be picked (the one being merged away). */
   excludeId?: string;
+  /** The list for an empty search, already loaded by the caller; a typed search still fetches. */
+  preloaded?: NotebookListState;
 }) {
   const titleId = useId();
   const searchRef = useRef<HTMLInputElement | null>(null);
   const [query, setQuery] = useState("");
-  const [rows, setRows] = useState<NotebookRow[]>([]);
-  const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
+  const [fetched, setFetched] = useState<NotebookListState>({ rows: [], status: "loading" });
+  const usePreloaded = !!preloaded && query.trim() === "";
 
   useEffect(() => {
-    if (!open) return;
+    if (!open || usePreloaded) return;
     let cancelled = false;
-    setStatus("loading");
+    setFetched((f) => ({ ...f, status: "loading" }));
     const timer = setTimeout(async () => {
       try {
-        const qs = notebookQueryString(query, { projectId, meetingId });
-        const res = await fetch(`/api/notebooks${qs ? `?${qs}` : ""}`, { credentials: "include" });
-        if (!res.ok) throw new Error("Request failed");
-        const json = (await res.json()) as { notebooks: NotebookRow[] };
-        if (cancelled) return;
-        setRows(json.notebooks);
-        setStatus("ready");
+        const rows = await fetchNotebookRows(query, { projectId, meetingId });
+        if (!cancelled) setFetched({ rows, status: "ready" });
       } catch {
-        if (!cancelled) setStatus("error");
+        if (!cancelled) setFetched((f) => ({ ...f, status: "error" }));
       }
     }, query ? 200 : 0);
     return () => {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [open, query, projectId, meetingId]);
+  }, [open, usePreloaded, query, projectId, meetingId]);
 
+  const { rows, status } = usePreloaded ? preloaded : fetched;
   const offered = rows.filter((r) => r.id !== excludeId);
   const suggested = offered.filter((r) => r.suggested);
   const recent = offered.filter((r) => !r.suggested);
@@ -139,7 +142,15 @@ function NotebookGroup({
           <li key={row.id}>
             <button
               type="button"
-              onClick={() => onPick({ id: row.id, title: row.title, path: row.path })}
+              onClick={() =>
+                onPick({
+                  id: row.id,
+                  title: row.title,
+                  path: row.path,
+                  workspaceType: row.workspaceType,
+                  workspaceId: row.workspaceId,
+                })
+              }
               className="flex w-full flex-col px-3 py-2 text-left text-sm text-foreground transition-colors hover:bg-muted/60 focus-visible:bg-muted/60 focus-visible:outline-none"
             >
               <span className="truncate">{row.title}</span>

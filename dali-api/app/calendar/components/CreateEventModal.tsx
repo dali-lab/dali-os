@@ -191,14 +191,10 @@ export function CreateEventModal({
     [resolvedParticipantIds.join("\0"), data.groups],
   );
 
-  // Prefill "About" when exactly one invited group is a project group — a default
-  // the sender can still change; it never enables the note on its own. A Core
-  // project meeting still prefills its project.
-  useEffect(() => {
-    if (selectedGroupIds.length !== 1) return;
-    note.applyGroupPrefill(groupsById.get(selectedGroupIds[0]!)?.projectId ?? null);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedGroupIds]);
+  // Exactly one invited project group makes its Meetings folder the default
+  // place, a default the sender can change; it never enables the note on its own.
+  // A Core project meeting still prefills its project.
+  const prefillProjectId = selectedGroupIds.length === 1 ? (groupsById.get(selectedGroupIds[0]!)?.projectId ?? null) : null;
 
   // Send the invite from a specific calendar, not just an account — the same
   // sub-calendars the event destination offers. Starts on the event default
@@ -925,7 +921,7 @@ export function CreateEventModal({
                 <MeetingNoteFields
                   note={note}
                   surface="create"
-                  myProjects={data.myProjects}
+                  prefillProjectId={prefillProjectId}
                   fieldClass={fieldClass}
                   labelClass={labelClass}
                   meetingTitle={title}

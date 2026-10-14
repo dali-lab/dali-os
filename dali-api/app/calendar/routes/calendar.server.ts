@@ -1456,7 +1456,6 @@ export async function loadCalendarData(
     userRow,
     whRows,
     links,
-    myProjects,
     myRoles,
     canSetSelfCheckIn,
     canMarkCoreMeeting,
@@ -1484,11 +1483,6 @@ export async function loadCalendarData(
       prisma.userCalendarLink.findMany({
         where: { userId },
         orderBy: { linkedAt: "asc" },
-      }),
-      prisma.project.findMany({
-        where: { assignments: { some: { userId } } },
-        select: { id: true, name: true },
-        orderBy: { name: "asc" },
       }),
       getUserRoleInstances(userId, termId, request),
       // Same gate as Forms: Core, Admin, or Instructor.
@@ -1770,7 +1764,6 @@ export async function loadCalendarData(
     groups,
     users: allUsers,
     currentUserId: userId,
-    myProjects,
     myRoles,
     canSetSelfCheckIn,
     canMarkCoreMeeting,

@@ -202,7 +202,7 @@ async function shareAndLinkGrant(
 //
 // Rows fetched while walking the parent chain. We batch-fetch up to
 // MAX_ANCESTOR_WALK levels to avoid N+1 loops.
-const MAX_ANCESTOR_WALK = 8; // generous ceiling above MAX_PAGE_DEPTH
+export const MAX_ANCESTOR_WALK = 8; // generous ceiling above MAX_PAGE_DEPTH
 
 export type AncestorRow = {
   id: string;

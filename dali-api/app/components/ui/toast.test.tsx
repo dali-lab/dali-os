@@ -145,4 +145,162 @@ describe("useToast", () => {
     ]);
     cleanup();
   });
+
+  function timer(container: HTMLElement) {
+    return container.querySelector<HTMLElement>("[data-toast-timer]");
+  }
+  function card(container: HTMLElement) {
+    return container.querySelector<HTMLElement>('[role="status"],[role="alert"]')!;
+  }
+  const hover = (el: HTMLElement) =>
+    act(() => {
+      el.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+    });
+  const unhover = (el: HTMLElement) =>
+    act(() => {
+      el.dispatchEvent(new MouseEvent("mouseout", { bubbles: true }));
+    });
+
+  describe("time bar", () => {
+    it("draws a bar that runs for the toast's duration", () => {
+      const { container, api, cleanup } = captureToast();
+      act(() => {
+        api.info("Timed", { duration: 1000 });
+      });
+      const bar = timer(container)!;
+      expect(bar).not.toBeNull();
+      expect(bar.getAttribute("aria-hidden")).toBe("true");
+      expect(bar.style.animationDuration).toBe("1000ms");
+      expect(bar.style.animationPlayState).toBe("running");
+      cleanup();
+    });
+
+    it("draws no bar on a toast that never auto-dismisses", () => {
+      const { container, api, cleanup } = captureToast();
+      act(() => {
+        api.error("Sticky", { duration: 0 });
+      });
+      expect(timer(container)).toBeNull();
+      expect(card(container).hasAttribute("data-paused")).toBe(false);
+      cleanup();
+    });
+
+    it("pauses the timer and the bar while hovered, then waits only for the remaining time", () => {
+      vi.useFakeTimers();
+      const { container, api, cleanup } = captureToast();
+      act(() => {
+        api.info("Hover me", { duration: 1000 });
+      });
+      act(() => {
+        vi.advanceTimersByTime(600);
+      });
+      hover(card(container));
+      expect(timer(container)!.style.animationPlayState).toBe("paused");
+      expect(card(container).hasAttribute("data-paused")).toBe(true);
+      act(() => {
+        vi.advanceTimersByTime(5000);
+      });
+      expect(container.textContent).toContain("Hover me");
+
+      unhover(card(container));
+      expect(timer(container)!.style.animationPlayState).toBe("running");
+      act(() => {
+        vi.advanceTimersByTime(399);
+      });
+      expect(container.textContent).toContain("Hover me");
+      act(() => {
+        vi.advanceTimersByTime(1);
+      });
+      expect(container.textContent).not.toContain("Hover me");
+      cleanup();
+    });
+
+    it("pauses while a button inside has focus and resumes when focus leaves", () => {
+      vi.useFakeTimers();
+      const { container, api, cleanup } = captureToast();
+      act(() => {
+        api.success("Focus me", {
+          duration: 1000,
+          actions: [
+            { label: "Open", onClick: () => {} },
+            { label: "Undo", onClick: () => {} },
+          ],
+        });
+      });
+      const buttons = [...container.querySelectorAll("button")];
+      act(() => {
+        buttons[0].focus();
+      });
+      expect(card(container).hasAttribute("data-paused")).toBe(true);
+      act(() => {
+        buttons[1].focus();
+      });
+      expect(card(container).hasAttribute("data-paused")).toBe(true);
+      act(() => {
+        vi.advanceTimersByTime(5000);
+      });
+      expect(container.textContent).toContain("Focus me");
+
+      act(() => {
+        buttons[1].blur();
+      });
+      expect(card(container).hasAttribute("data-paused")).toBe(false);
+      act(() => {
+        vi.advanceTimersByTime(1000);
+      });
+      expect(container.textContent).not.toContain("Focus me");
+      cleanup();
+    });
+
+    it("pauses while the tab is hidden", () => {
+      vi.useFakeTimers();
+      const { container, api, cleanup } = captureToast();
+      act(() => {
+        api.info("Away", { duration: 1000 });
+      });
+      const original = Object.getOwnPropertyDescriptor(Document.prototype, "visibilityState");
+      let state = "hidden";
+      Object.defineProperty(document, "visibilityState", { configurable: true, get: () => state });
+      try {
+        act(() => {
+          document.dispatchEvent(new Event("visibilitychange"));
+        });
+        expect(card(container).hasAttribute("data-paused")).toBe(true);
+        act(() => {
+          vi.advanceTimersByTime(5000);
+        });
+        expect(container.textContent).toContain("Away");
+
+        state = "visible";
+        act(() => {
+          document.dispatchEvent(new Event("visibilitychange"));
+        });
+        act(() => {
+          vi.advanceTimersByTime(1000);
+        });
+        expect(container.textContent).not.toContain("Away");
+      } finally {
+        delete (document as { visibilityState?: unknown }).visibilityState;
+        if (original) Object.defineProperty(Document.prototype, "visibilityState", original);
+      }
+      cleanup();
+    });
+
+    it("still dismisses on an action click while paused", () => {
+      vi.useFakeTimers();
+      const { container, api, cleanup } = captureToast();
+      const undo = vi.fn();
+      act(() => {
+        api.info("Paused action", { duration: 1000, actions: [{ label: "Undo", onClick: undo }] });
+      });
+      hover(card(container));
+      const undoButton = [...container.querySelectorAll("button")].find((b) => b.textContent === "Undo")!;
+      act(() => {
+        undoButton.click();
+      });
+      expect(undo).toHaveBeenCalledTimes(1);
+      expect(container.textContent).not.toContain("Paused action");
+      cleanup();
+    });
+  });
 });

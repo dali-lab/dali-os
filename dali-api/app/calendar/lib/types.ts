@@ -338,7 +338,6 @@ export type LoaderData = {
   groups: GroupOption[];
   users: UserOption[];
   currentUserId: string;
-  myProjects: ProjectOption[];
   myRoles: RoleInstance[];
   timeEntries: TimeEntryDTO[];
   /** Core, Admin, or Instructor — can enable Self check-in (QR) on meetings. */
