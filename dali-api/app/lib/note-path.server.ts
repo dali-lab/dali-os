@@ -3,7 +3,10 @@
 
 import { prisma } from "~/lib/db";
 import { DRIVE_SPACES } from "~/lib/drive-spaces";
-import { driveLocation } from "~/lib/drive-reveal.server";
+import { driveLocation, locationFromCrumbs } from "~/lib/drive-reveal.server";
+import { driveFolderCrumbsBulk, type DriveCrumbs } from "~/lib/drive-crumbs.server";
+
+const LAB_ROOT_CRUMBS: DriveCrumbs = { scope: "lab", folders: [] };
 
 export type NotePath = { label: string; href: string };
 
@@ -14,22 +17,60 @@ export function formatFiledPath(parts: string[]): string {
   return parts.join(PATH_SEPARATOR);
 }
 
+type NotebookPlace = { parentPageId: string | null; workspaceType: string; workspaceId: string | null };
+
+function locationParts(
+  where: { scope: string; workspaceFolderId: string | null; folders: { title: string }[] },
+  projectName: string | undefined,
+): string[] {
+  const space = DRIVE_SPACES.find((s) => s.key === where.scope)?.label ?? where.scope;
+  return [space, ...(projectName !== undefined ? [projectName] : []), ...where.folders.map((f) => f.title || "Untitled folder")];
+}
+
+const isProjectLocation = (where: { scope: string; workspaceFolderId: string | null }) =>
+  where.scope === "projects" && where.workspaceFolderId !== null;
+
 /** Where a notebook sits: its space, the project, and the folders above it. */
 export async function notebookLocationParts(
-  notebook: { parentPageId: string | null; workspaceType: string; workspaceId: string | null },
+  notebook: NotebookPlace,
   viewerSub: string,
   request?: Request,
 ): Promise<string[]> {
   const where = await driveLocation(notebook.parentPageId, notebook, viewerSub, request);
-  const space = DRIVE_SPACES.find((s) => s.key === where.scope)?.label ?? where.scope;
-  const project =
-    where.scope === "projects" && where.workspaceFolderId
-      ? await prisma.project.findUnique({
-          where: { id: where.workspaceFolderId },
-          select: { name: true },
-        })
-      : null;
-  return [space, ...(project ? [project.name] : []), ...where.folders.map((f) => f.title || "Untitled folder")];
+  const project = isProjectLocation(where)
+    ? await prisma.project.findUnique({ where: { id: where.workspaceFolderId! }, select: { name: true } })
+    : null;
+  return locationParts(where, project?.name);
+}
+
+/** `notebookLocationParts` for many notebooks at once, keyed by notebook id, in a fixed number of queries. */
+export async function notebookLocationPartsBulk(
+  notebooks: ReadonlyArray<NotebookPlace & { id: string }>,
+  viewerSub: string,
+  request?: Request,
+): Promise<Map<string, string[]>> {
+  const crumbs = await driveFolderCrumbsBulk(
+    notebooks.flatMap((n) => (n.parentPageId ? [n.parentPageId] : [])),
+    viewerSub,
+    request,
+  );
+  const locations = notebooks.map((n) => ({
+    id: n.id,
+    where: locationFromCrumbs((n.parentPageId && crumbs.get(n.parentPageId)) || LAB_ROOT_CRUMBS, n),
+  }));
+
+  const projectIds = [...new Set(locations.flatMap(({ where }) => (isProjectLocation(where) ? [where.workspaceFolderId!] : [])))];
+  const projects = projectIds.length
+    ? await prisma.project.findMany({ where: { id: { in: projectIds } }, select: { id: true, name: true } })
+    : [];
+  const nameById = new Map(projects.map((p) => [p.id, p.name]));
+
+  return new Map(
+    locations.map(({ id, where }) => [
+      id,
+      locationParts(where, isProjectLocation(where) ? nameById.get(where.workspaceFolderId!) : undefined),
+    ]),
+  );
 }
 
 /** Null when the note has no notebook to name. */
