@@ -7,20 +7,19 @@ const item = (type: string, id = "i1") =>
 
 afterEach(() => vi.unstubAllGlobals());
 
-describe("moving a shortcut", () => {
-  it("treats a shortcut as a page", () => {
-    expect(isPageItem(item("shortcut"))).toBe(true);
+describe("moving a drive item", () => {
+  it("treats docs and folders as pages, not files", () => {
     expect(isPageItem(item("doc"))).toBe(true);
+    expect(isPageItem(item("folder"))).toBe(true);
     expect(isPageItem(item("file"))).toBe(false);
   });
 
-  it("moves the shortcut row through the page move route, never a target id or the drive move route", async () => {
+  it("sends a page through the page move route", async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response("{}"));
     vi.stubGlobal("fetch", fetchMock);
-    await moveDriveItem({ ...item("shortcut", "shortcut-row"), targetId: "the-original" } as DriveItem, "folder-2");
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await moveDriveItem(item("doc", "page-1"), "folder-2");
     const [url, init] = fetchMock.mock.calls[0];
-    expect(url).toBe("/api/pages/shortcut-row/move");
+    expect(url).toBe("/api/pages/page-1/move");
     expect(JSON.parse(init.body)).toEqual({ parentPageId: "folder-2" });
   });
 

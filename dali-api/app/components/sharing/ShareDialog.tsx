@@ -24,8 +24,6 @@ type Share = {
   permission: Permission;
   label: string;
   memberCount?: number;
-  /** Set when a shortcut created this grant; names the folder the shortcut sits in. */
-  viaShortcut?: { folderTitle: string | null } | null;
   /** Set when a meeting's roster put this person on the document; names the meeting. */
   viaMeeting?: { meetingTitle: string } | null;
 };
@@ -91,10 +89,6 @@ const FOLDER_SCOPE_OPTIONS: SelectOption<string>[] = [
   { value: "Lab", label: "Everyone in the lab", description: "Any lab member can open it and everything inside." },
   { value: "Group", label: "A group…", description: "Everyone in a specific group (e.g. Core, a project team)." },
 ];
-
-export function viaShortcutLabel(via: { folderTitle: string | null }): string {
-  return via.folderTitle ? `via shortcut in ${via.folderTitle}` : "via shortcut";
-}
 
 // The inherited folder scope as one sentence for the "Inherited from" block.
 function inheritedSummary(i: InheritedScope): string {
@@ -404,15 +398,6 @@ export function ShareDialog({
                       className="block truncate text-xs text-muted-foreground"
                     >
                       via meeting {s.viaMeeting.meetingTitle}
-                    </span>
-                  )}
-                  {s.viaShortcut && (
-                    <span
-                      data-testid="share-via-shortcut"
-                      title="Shared when the shortcut was added. Changing the folder's sharing later does not change this."
-                      className="block truncate text-xs text-muted-foreground"
-                    >
-                      {viaShortcutLabel(s.viaShortcut)}
                     </span>
                   )}
                 </span>

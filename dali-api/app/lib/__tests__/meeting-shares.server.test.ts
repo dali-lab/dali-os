@@ -185,18 +185,6 @@ describe("syncMeetingShares — revoking", () => {
     expect(m.pageShare.deleteMany).not.toHaveBeenCalled();
   });
 
-  it("keeps the share when a shortcut references it", async () => {
-    m.page.findMany.mockResolvedValue([{ grantShareId: "s-gone" }]);
-
-    await syncMeetingShares("m1");
-
-    expect(m.page.findMany).toHaveBeenCalledWith({
-      where: { grantShareId: { in: ["s-gone"] } },
-      select: { grantShareId: true },
-    });
-    expect(m.pageShare.deleteMany).not.toHaveBeenCalled();
-  });
-
   it("keeps a share it only raised or reused", async () => {
     m.meetingShareGrant.findMany.mockReset();
     m.meetingShareGrant.findMany.mockResolvedValueOnce([

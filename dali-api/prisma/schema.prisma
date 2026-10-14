@@ -5356,23 +5356,6 @@ model Page {
   processType ProcessType?
   processId   String?
 
-  // Shortcut columns (kind = Shortcut). targetPageId is the page this points at;
-  // deleting the target hard-deletes its shortcuts. grantShareId is the
-  // PageShare created when the shortcut was placed (null when the target was
-  // already shared with the folder's audience, or the grant was declined);
-  // deleting the shortcut deletes only that share. Plus a partial unique
-  // index, Page_shortcut_target_parent_live, on (targetPageId, workspaceType,
-  // COALESCE(workspaceId, ''), COALESCE(parentPageId, '')) WHERE
-  // kind = 'Shortcut' AND archivedAt IS NULL: one live shortcut to a target per
-  // folder. The COALESCEs make top-level (NULL parent) and Lab (NULL workspace)
-  // placements collide too, which a plain column list would not. Raw SQL in
-  // migration 20261013140100_drive_shortcuts_index; Prisma can't express it.
-  targetPageId String?
-  targetPage   Page?   @relation("PageShortcutTarget", fields: [targetPageId], references: [id], onDelete: Cascade)
-  shortcuts    Page[]  @relation("PageShortcutTarget")
-  grantShareId String?
-  grantShare   PageShare? @relation("ShortcutGrantShare", fields: [grantShareId], references: [id], onDelete: SetNull)
-
   // Series that use this notebook page as their default notebook.
   seriesUsingAsNotebook ScheduledMeeting[] @relation("MeetingSeriesNotebook")
 
@@ -5461,8 +5444,6 @@ model Page {
   @@unique([defaultMeetingNoteFor])
   @@index([workspaceType, workspaceId, parentPageId])
   @@index([archivedAt])
-  @@index([targetPageId])
-  @@index([grantShareId])
   // Trigram index behind the typo-tolerant title match in doc-search.server.ts
   // (`query <% "title"`). Ordinary exact/substring title search still uses the
   // plain ILIKE path.
@@ -5558,9 +5539,6 @@ model PageShare {
   createdAt   DateTime @default(now())
 
   page Page @relation(fields: [pageId], references: [id], onDelete: Cascade)
-
-  // Shortcuts whose placement created this share (Page.grantShareId).
-  grantedShortcuts Page[] @relation("ShortcutGrantShare")
 
   meetingGrants MeetingShareGrant[]
 
@@ -5674,8 +5652,7 @@ enum PageKind {
   // A run of meeting notes shown as one Drive item; each note is a child page
   // rendered as a tab. No body of its own.
   Notebook
-  // A pointer to another page, placed like any page. No body, no shares, no
-  // scope; opening it redirects to the target (Page.targetPageId).
+  // Retired. Postgres cannot drop an enum value cheaply; nothing creates it.
   Shortcut
   // A form. The page carries placement, title, and access; the question set,
   // versions, submissions, and publish state live on the 1:1 Form row that
