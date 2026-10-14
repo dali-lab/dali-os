@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("~/lib/db", () => ({
   prisma: {
-    page: { findUnique: vi.fn() },
+    page: { findUnique: vi.fn(), findFirst: vi.fn(), findMany: vi.fn() },
     pageShare: { findMany: vi.fn() },
     instructorAssignment: { findFirst: vi.fn() },
     educationOffering: { findUnique: vi.fn() },
@@ -91,6 +91,8 @@ beforeEach(() => {
   vi.mocked(listVisibleGroupIdsForUser).mockResolvedValue([]);
   vi.mocked(resolveGroupMembers).mockResolvedValue(["design-member"]);
   mockPrisma.pageShare.findMany.mockResolvedValue([]);
+  mockPrisma.page.findFirst.mockResolvedValue(null);
+  mockPrisma.page.findMany.mockResolvedValue([]);
 });
 
 describe.each([
