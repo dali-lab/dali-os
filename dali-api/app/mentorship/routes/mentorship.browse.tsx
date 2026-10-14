@@ -1,14 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  Form,
-  Link,
   redirect,
   useLoaderData,
   useNavigate,
   useRevalidator,
   useSearchParams,
 } from "react-router";
-import { LayoutTemplate, PencilLine, Send } from "lucide-react";
+import { LayoutTemplate, Link2, PencilLine, Send } from "lucide-react";
 import type { Route } from "./+types/mentorship.browse";
 import { requireAuth, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
@@ -24,7 +22,7 @@ import { TemplatesModal } from "../components/TemplatesModal";
 import { NudgeModal } from "../components/NudgeModal";
 import { MentorGrid, type MentorGridEdit } from "../components/MentorGrid";
 import { EmptyState } from "../components/EmptyState";
-import { Select } from "~/components/ui/floating";
+import { Select, Tooltip } from "~/components/ui/floating";
 import { SearchInput } from "~/components/ui/SearchInput";
 import { filterPillClass } from "~/components/ui/floating/styles";
 import { useOsChrome } from "~/components/os-chrome";
@@ -43,6 +41,10 @@ import {
   useRoster,
 } from "../components/pair-editing";
 import { VIBES, VIBE_META } from "../lib/vibe";
+import { emptyTermForms, isTermFormRole, type TermForms } from "../lib/term-forms";
+import { loadTermForms, setTermForm } from "../lib/term-forms.server";
+import { LinkFormsModal } from "../components/TermFormStatus";
+import { listSelectableForms } from "~/projects/lib/form-slots";
 
 export const meta: Route.MetaFunction = () => [
   { title: "Notes · DALI OS" },
@@ -75,6 +77,10 @@ type LoaderData = {
   // nudge action re-derives server-side). Feeds the bulk-nudge recipient
   // preview and the per-mentor nudge buttons.
   nudgeRecipients: { id: string; name: string; count: number }[];
+  // Core only: the week 5 forms linked to the selected term, and the forms
+  // that can be linked. Mentees' answers may be about their mentor.
+  termForms: TermForms | null;
+  formOptions: { id: string; name: string }[];
   isCore: boolean;
   viewerId: string;
   collabToken: string | null;
@@ -223,17 +229,51 @@ export async function loader({ request }: Route.LoaderArgs) {
     select: { firstName: true, lastName: true },
   });
 
+  const viewerIsCore = await isCore(auth.user.sub);
+  const people = grid.mentors.flatMap((m) => [m.mentor.id, ...m.rows.map((r) => r.menteeId)]);
+  const [termForms, formOptions] = viewerIsCore
+    ? await Promise.all([
+        selectedTerm ? loadTermForms(selectedTerm, [...new Set(people)]) : emptyTermForms(),
+        listSelectableForms(),
+      ])
+    : [null, []];
+
   const data: LoaderData = {
     filters,
     options,
     grid,
     nudgeRecipients,
-    isCore: await isCore(auth.user.sub),
+    termForms,
+    formOptions: formOptions.map((f) => ({ id: f.id, name: f.name })),
+    isCore: viewerIsCore,
     viewerId: auth.user.sub,
     collabToken: await getCollabToken(request),
     userName: [me?.firstName, me?.lastName].filter(Boolean).join(" ") || "Core",
   };
   return data;
+}
+
+export async function action({ request }: Route.ActionArgs) {
+  const auth = await requireAuth(request);
+  if (!auth.ok) return redirectToLogin(request);
+  if (!(await isCore(auth.user.sub))) {
+    return Response.json({ error: "Forbidden" }, { status: 403 });
+  }
+  const form = await request.formData();
+  const termId = form.get("termId");
+  const role = form.get("role");
+  const formId = form.get("formId");
+  if (
+    form.get("intent") !== "link-form" ||
+    typeof termId !== "string" ||
+    !termId ||
+    !isTermFormRole(role) ||
+    typeof formId !== "string"
+  ) {
+    return Response.json({ error: "Bad request" }, { status: 400 });
+  }
+  await setTermForm(termId, role, formId || null);
+  return { ok: true };
 }
 
 
@@ -271,6 +311,7 @@ export default function MentorshipBrowse() {
   const [nudgeOpen, setNudgeOpen] = useState(false);
   const [nudgingId, setNudgingId] = useState<string | null>(null);
   const [query, setQuery] = useState(data.filters.query);
+  const [linkFormsOpen, setLinkFormsOpen] = useState(false);
   const restored = useRef(false);
   const toast = useToast();
 
@@ -286,7 +327,7 @@ export default function MentorshipBrowse() {
   const revalidator = useRevalidator();
   const dialog = useDialog();
 
-  // `q` only enters the URL on Apply / Clear / a deep link, so re-syncing on
+  // `q` only enters the URL on a filter change or a deep link, so re-syncing on
   // its value can't fight the keystrokes it isn't recording.
   useEffect(() => setQuery(data.filters.query), [data.filters.query]);
 
@@ -334,6 +375,16 @@ export default function MentorshipBrowse() {
           },
         }
       : undefined;
+
+  function setFilter(name: string, value: string) {
+    const next = new URLSearchParams(params);
+    next.set("termId", data.filters.termId);
+    if (value) next.set(name, value);
+    else next.delete(name);
+    if (query.trim()) next.set("q", query);
+    else next.delete("q");
+    navigate(`/mentorship/browse?${next.toString()}`);
+  }
 
   async function nudgeMentor(mentorId: string) {
     setNudgingId(mentorId);
@@ -483,54 +534,51 @@ export default function MentorshipBrowse() {
         containerClassName="sm:max-w-sm"
       />
 
-      <Form
-        method="get"
-        className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm"
-      >
-        {/* Keep the header term and the live search when applying secondary
-            filters — neither is a field of this form. */}
-        <input type="hidden" name="termId" value={data.filters.termId} />
-        <input type="hidden" name="q" value={query} />
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
         <FilterSelect
-          name="projectId"
           label="Project"
           options={data.options.projects}
           value={data.filters.projectId}
+          onChange={(v) => setFilter("projectId", v)}
         />
         <FilterSelect
-          name="domainId"
           label="Domain"
           options={data.options.domains}
           value={data.filters.domainId}
+          onChange={(v) => setFilter("domainId", v)}
         />
         <FilterSelect
-          name="status"
           label="Status"
           options={data.options.statuses}
           value={data.filters.status}
+          onChange={(v) => setFilter("status", v)}
         />
-        <div className="ml-auto flex items-center gap-2">
-          <button
-            type="submit"
-            className="os-btn-primary"
-          >
-            Apply
-          </button>
-          {params.toString() && (
-            <Link
-              to="/mentorship/browse"
-              onClick={() => {
-                if (typeof window !== "undefined") {
-                  window.localStorage.removeItem(FILTERS_STORAGE_KEY);
-                }
-              }}
-              className="os-btn-ghost"
-            >
-              Clear
-            </Link>
-          )}
-        </div>
-      </Form>
+        {data.termForms && (
+          <Tooltip content={data.filters.termId ? null : "Pick a term first."}>
+            <span className="ml-auto">
+              <button
+                type="button"
+                onClick={() => setLinkFormsOpen(true)}
+                disabled={!data.filters.termId}
+                className="os-edit-btn disabled:opacity-50"
+              >
+                <Link2 className="w-4 h-4 text-os-grey" aria-hidden />
+                Link forms
+              </button>
+            </span>
+          </Tooltip>
+        )}
+      </div>
+
+      {data.termForms && data.filters.termId && (
+        <LinkFormsModal
+          open={linkFormsOpen}
+          onClose={() => setLinkFormsOpen(false)}
+          termId={data.filters.termId}
+          termForms={data.termForms}
+          forms={data.formOptions}
+        />
+      )}
 
       {editing &&
         canManage &&
@@ -567,6 +615,7 @@ export default function MentorshipBrowse() {
             termId={data.filters.termId}
             highlightMissing={data.isCore}
             edit={gridEdit}
+            termForms={data.termForms ?? undefined}
             nudge={
               canNudge
                 ? {
@@ -584,23 +633,24 @@ export default function MentorshipBrowse() {
 }
 
 function FilterSelect({
-  name,
   label,
   options,
   value,
+  onChange,
 }: {
-  name: string;
   label: string;
   options: FilterOption[];
   value: string;
+  onChange: (value: string) => void;
 }) {
   const { bodyText } = useOsChrome();
   return (
     <label className={cn("inline-flex items-center gap-1.5", bodyText)}>
       {label}
       <Select
-        name={name}
-        defaultValue={value}
+        ariaLabel={`Filter by ${label.toLowerCase()}`}
+        value={value}
+        onChange={onChange}
         options={[
           { value: "", label: "Any" },
           ...options.map((o) => ({ value: o.id, label: o.label })),
