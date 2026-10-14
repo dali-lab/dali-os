@@ -11,7 +11,7 @@ vi.mock("~/lib/db", () => ({
       count: vi.fn(),
     },
     project: { findUnique: vi.fn() },
-    scheduledMeeting: { findUnique: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
+    scheduledMeeting: { findUnique: vi.fn(), findMany: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
     $transaction: vi.fn(),
   },
 }));
@@ -31,12 +31,14 @@ vi.mock("~/lib/pages", () => ({
   MAX_PAGE_DEPTH: 6,
 }));
 vi.mock("~/lib/scheduled-meeting", () => ({ resolveMeetingOccurrence: vi.fn() }));
+vi.mock("~/lib/meeting-shares.server", () => ({ syncMeetingShares: vi.fn(), removeMeetingShares: vi.fn() }));
 
 import { prisma } from "~/lib/db";
 import { isCore, isLabMember, isProjectMember } from "~/lib/roles";
 import { getPageAccess, getPageAccessBulk, isUnderGoverningScope } from "~/lib/pageAccess.server";
 import { collectSubtree, createLabPage, createProjectPage, moveIntoNotebook, pageDepth } from "~/lib/pages";
 import { resolveMeetingOccurrence } from "~/lib/scheduled-meeting";
+import { removeMeetingShares, syncMeetingShares } from "~/lib/meeting-shares.server";
 import {
   NotebookError,
   addToNotebook,
@@ -140,6 +142,9 @@ beforeEach(() => {
   m.page.findFirst.mockResolvedValue(null);
   m.page.count.mockResolvedValue(0);
   m.scheduledMeeting.update.mockResolvedValue({});
+  m.scheduledMeeting.findMany.mockResolvedValue([]);
+  vi.mocked(syncMeetingShares).mockResolvedValue(undefined);
+  vi.mocked(removeMeetingShares).mockResolvedValue(undefined);
   m.scheduledMeeting.updateMany.mockResolvedValue({ count: 0 });
   m.$transaction.mockResolvedValue([]);
 });
@@ -513,6 +518,16 @@ describe("attachNote", () => {
     expect(moveIntoNotebook).not.toHaveBeenCalled();
   });
 
+  it("syncs the meeting's notebook shares only when the series has a notebook", async () => {
+    await attachNote("doc1", "m1", OCC, "org1");
+    expect(syncMeetingShares).not.toHaveBeenCalled();
+
+    pages({ doc1: docRow({ parentPageId: "folder1" }), nb1: notebookRow() });
+    m.scheduledMeeting.findUnique.mockResolvedValue(meetingRow({ notebookId: "nb1" }));
+    await attachNote("doc1", "m1", OCC, "org1");
+    expect(syncMeetingShares).toHaveBeenCalledWith("m1");
+  });
+
   it("snaps the requested instant to the occurrence's original start", async () => {
     const snapped = new Date("2026-09-17T15:00:00.000Z");
     vi.mocked(resolveMeetingOccurrence).mockResolvedValue({ originalStart: snapped, start: snapped, end: snapped });
@@ -609,6 +624,14 @@ describe("setSeriesNotebook", () => {
     expect(moveIntoNotebook).not.toHaveBeenCalled();
   });
 
+  it("syncs the meeting's shares for a new notebook and for unsetting it", async () => {
+    await setSeriesNotebook("m1", "nb1", { scope: "future" }, "org1");
+    expect(syncMeetingShares).toHaveBeenCalledWith("m1");
+    vi.mocked(syncMeetingShares).mockClear();
+    await setSeriesNotebook("m1", null, { scope: "future" }, "org1");
+    expect(syncMeetingShares).toHaveBeenCalledWith("m1");
+  });
+
   it("all also moves every live note that is not already in the notebook", async () => {
     m.page.findMany.mockResolvedValue([
       { id: "a", parentPageId: "x" },
@@ -688,6 +711,14 @@ describe("mergeNotebooks", () => {
     expect(m.page.update).toHaveBeenCalledWith({ where: { id: "src" }, data: { archivedAt: expect.any(Date) } });
   });
 
+  it("syncs shares for every series that moved", async () => {
+    m.scheduledMeeting.findMany.mockResolvedValue([{ id: "m1" }, { id: "m2" }]);
+    await mergeNotebooks("src", "dst", "u1");
+    expect(m.scheduledMeeting.findMany).toHaveBeenCalledWith({ where: { notebookId: "src" }, select: { id: true } });
+    expect(syncMeetingShares).toHaveBeenCalledWith("m1");
+    expect(syncMeetingShares).toHaveBeenCalledWith("m2");
+  });
+
   it("frees a legacy auto-grouping key when it retires the source", async () => {
     pages({ src: notebookRow({ id: "src", notebookKey: "project:p1:Team" }), dst: notebookRow({ id: "dst" }) });
     await mergeNotebooks("src", "dst", "u1");
@@ -756,6 +787,13 @@ describe("dissolveNotebook", () => {
     expect(m.page.update).toHaveBeenCalledWith({ where: { id: "nb1" }, data: { archivedAt: expect.any(Date) } });
   });
 
+  it("removes the shares of every series that used it", async () => {
+    m.scheduledMeeting.findMany.mockResolvedValue([{ id: "m1" }, { id: "m2" }]);
+    await dissolveNotebook("nb1", "u1");
+    expect(removeMeetingShares).toHaveBeenCalledWith("m1");
+    expect(removeMeetingShares).toHaveBeenCalledWith("m2");
+  });
+
   it("frees a legacy auto-grouping key", async () => {
     pages({ nb1: notebookRow({ notebookKey: "general:users:a" }) });
     await dissolveNotebook("nb1", "u1");
@@ -799,6 +837,12 @@ describe("trashNotebook", () => {
       where: { notebookId: "nb1" },
       data: { notebookId: null },
     });
+  });
+
+  it("removes the shares of every series that used it", async () => {
+    m.scheduledMeeting.findMany.mockResolvedValue([{ id: "m1" }]);
+    await trashNotebook("nb1", "u1");
+    expect(removeMeetingShares).toHaveBeenCalledWith("m1");
   });
 
   it("needs edit on the notebook", async () => {

@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
 vi.mock("~/lib/db");
 vi.mock("~/lib/notify.server", () => ({ notify: vi.fn() }));
+vi.mock("~/lib/meeting-shares.server", () => ({ syncMeetingShares: vi.fn() }));
 vi.mock("~/lib/pages", () => ({
   createProjectPage: vi.fn(async () => ({ id: "page-project" })),
   createLabMeetingPage: vi.fn(async () => ({ id: "page-lab" })),
@@ -73,6 +74,7 @@ import {
 import { copyPageBody } from "~/lib/page-copy.server";
 import { movePage } from "~/lib/page-move.server";
 import { NotebookError, createNotebook, loadEditableNotebook } from "~/lib/notebooks.server";
+import { syncMeetingShares } from "~/lib/meeting-shares.server";
 import { readDocAsBlocks } from "~/collab/read";
 import { blocksToPlainText } from "~/components/doc/schema/configs";
 import { hashTemplateText, normalizeTemplateText } from "~/lib/meeting-note-template";
@@ -1160,6 +1162,7 @@ describe("updateScheduledMeeting", () => {
     expect(p.meetingAttendance.deleteMany).toHaveBeenCalledWith({
       where: { scheduledMeetingId: "m1", userId: { in: ["u3"] } },
     });
+    expect(syncMeetingShares).toHaveBeenCalledWith("m1");
     expect(mockPatch).toHaveBeenCalledTimes(1);
     const patch = mockPatch.mock.calls[0][0];
     expect(patch).toMatchObject({
@@ -2193,6 +2196,7 @@ describe("trackExternalEventAsMeeting", () => {
       where: { id: "m-existing" },
       data: { participantUserIds: { push: "core-1" } },
     });
+    expect(syncMeetingShares).toHaveBeenCalledWith("m-existing");
     expect(p.meetingAttendance!.createMany).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.arrayContaining([
@@ -2424,6 +2428,7 @@ describe("createScheduledMeeting — filing the first note through a notebook ch
     expect(res).toMatchObject({ ok: true, notePageId: "page-tab", notebookId: "nb-9", createdNotebook: false });
     expect(loadEditableNotebook).toHaveBeenCalledWith("nb-9", "org-1");
     expect(recorded()).toMatchObject({ notebookId: "nb-9", meetingType: "Other", meetingTypeLabel: "Weekly", projectId: null });
+    expect(syncMeetingShares).toHaveBeenCalledWith("m1", undefined);
     expect(createNotebookTab).toHaveBeenCalledWith(expect.objectContaining({ notebookId: "nb-9", meetingNoteId: "m1" }));
     expect(ensureMeetingNotebook).not.toHaveBeenCalled();
     expect(createNotebook).not.toHaveBeenCalled();
@@ -2760,6 +2765,7 @@ describe("attachMeetingNote — notebooks", () => {
       declinedMove: null,
     });
     expect(createNotebookTab).toHaveBeenCalledWith(expect.objectContaining({ notebookId: "nb-s" }));
+    expect(syncMeetingShares).toHaveBeenCalledWith("m1", undefined);
     expect(ensureMeetingNotebook).not.toHaveBeenCalled();
     const data = p.scheduledMeeting.update.mock.calls[0]![0].data;
     expect(data).toMatchObject({ meetingType: "Other", meetingTypeLabel: "Weekly" });

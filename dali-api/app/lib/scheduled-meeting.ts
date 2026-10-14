@@ -46,6 +46,7 @@ import { pageDocName } from "~/collab/roomName";
 import { blocksToPlainText } from "~/components/doc/schema/configs";
 import { hashTemplateText, normalizeTemplateText } from "~/lib/meeting-note-template";
 import { normalizeGuestEmails } from "~/calendar/lib/guest-emails";
+import { syncMeetingShares } from "~/lib/meeting-shares.server";
 import {
   expandOccurrences,
   noteForOccurrence,
@@ -870,6 +871,7 @@ export async function createScheduledMeeting(
       recordPrompt,
     },
   });
+  if (notebookPlan) await syncMeetingShares(meeting.id, input.request);
 
   let externalEventId: string | null = null;
   let meetingUrl: string | null = null;
@@ -1356,6 +1358,8 @@ export async function attachMeetingNote(
       },
     });
   }
+
+  if (notebookId) await syncMeetingShares(meeting.id, input.request);
 
   // Backfill the attendance roster the note's checklist reads. Idempotent — a
   // SelfCheckIn meeting may already have rows, so skip the duplicates.
@@ -2398,6 +2402,7 @@ export async function updateScheduledMeeting(
       where: { scheduledMeetingId: meetingId, userId: { in: toRemove } },
     });
   }
+  await syncMeetingShares(meetingId);
 
   // Re-sync the Google event (title, time, guests, recurrence) when one exists.
   // Best-effort — the DALI-side edit already landed; a Google hiccup is surfaced
@@ -2615,6 +2620,7 @@ export async function trackExternalEventAsMeeting(
         data: { participantUserIds: { push: input.actorId } },
       });
       await ensureOccurrenceRoster(updated, startDate);
+      await syncMeetingShares(updated.id);
       return { ok: true, meeting: { id: updated.id } };
     }
     return { ok: false, error: "This event is already tracked in DALI", status: 409 };

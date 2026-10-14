@@ -461,8 +461,18 @@ describe("deleteShortcut", () => {
     await deleteShortcut("s1", "actor");
 
     expect(m.page.delete).toHaveBeenCalledWith({ where: { id: "s1" } });
-    expect(m.pageShare.deleteMany).toHaveBeenCalledWith({ where: { id: "share-1" } });
+    expect(m.pageShare.deleteMany).toHaveBeenCalledWith({
+      where: { id: "share-1", meetingGrants: { none: {} } },
+    });
     expect(m.$transaction).toHaveBeenCalledWith(["delete-page", "delete-share"]);
+  });
+
+  it("keeps a share a meeting grant still references", async () => {
+    put(shortcut());
+
+    await deleteShortcut("s1", "actor");
+
+    expect(m.pageShare.deleteMany.mock.calls[0][0].where.meetingGrants).toEqual({ none: {} });
   });
 
   it("touches no share when the shortcut recorded none", async () => {

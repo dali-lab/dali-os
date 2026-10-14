@@ -358,7 +358,7 @@ export async function deleteShortcut(shortcutId: string, actorId: string, reques
 
   await prisma.$transaction([
     prisma.page.delete({ where: { id: shortcut.id } }),
-    ...(shortcut.grantShareId ? [prisma.pageShare.deleteMany({ where: { id: shortcut.grantShareId } })] : []),
+    ...(shortcut.grantShareId ? [prisma.pageShare.deleteMany({ where: { id: shortcut.grantShareId, meetingGrants: { none: {} } } })] : []),
   ]);
   await logAuditEvent({
     action: "page.shortcut-delete",
