@@ -126,26 +126,11 @@ function ownLocation(nb: ExistingNotebook): ReturnType<typeof locationPayload> |
   return { workspaceType: nb.workspaceType, workspaceId: nb.workspaceId, parentPageId: nb.parentPageId };
 }
 
-/** The notebook the note files into, as the create payloads carry it. A
- *  Lab-wide top-level primary is the default, so it is left out. */
+/** The notebook the note files into, as the create payloads carry it. */
 export function notebookChoiceOf(s: MeetingNoteState): NotebookChoice | null {
   if (!s.enabled) return null;
-  const links = linkPlaces(s).map((p) => locationPayload(p.location));
-  const withLinks = links.length > 0 ? { links } : {};
-  if (s.notebookMode === "existing") {
-    if (!s.existing) return null;
-    const top = locationPlace(s);
-    const own = ownLocation(s.existing);
-    const move = top && own && placementKey(top.location) !== placementKey(own) ? { location: locationPayload(top.location) } : {};
-    return { existingId: s.existing.id, ...move, ...withLinks };
-  }
-  const primary = s.places[0]?.location;
-  return {
-    title: s.title.trim(),
-    location: primary && !isLabTop(primary) ? locationPayload(primary) : null,
-    templatePageId: s.templatePageId,
-    ...withLinks,
-  };
+  if (s.notebookMode === "existing") return s.existing ? { existingId: s.existing.id } : null;
+  return { title: s.title.trim(), templatePageId: s.templatePageId };
 }
 
 /** The project the meeting's assets belong to: the one the chosen notebook
@@ -162,9 +147,7 @@ export function projectIdOf(s: MeetingNoteState): string | null {
 
 /** The meeting-asset fields to merge into the /api/scheduled-meetings payload.
  *  Sends the `note`/`whiteboard` flags telling the server which artifacts to
- *  create, the project the assets belong to, and the notebook choice. A
- *  whiteboard without a note has no notebook, so the place it is filed rides
- *  as `noteLocation`. */
+ *  create, the project the assets belong to, and the notebook choice. */
 export function meetingNotePayload(s: MeetingNoteState): Record<string, unknown> {
   if (!meetingNoteActive(s)) return {};
   const out: Record<string, unknown> = { note: s.enabled, whiteboard: s.whiteboard };
@@ -172,8 +155,6 @@ export function meetingNotePayload(s: MeetingNoteState): Record<string, unknown>
   if (projectId) out.projectId = projectId;
   const notebook = notebookChoiceOf(s);
   if (notebook) out.notebook = notebook;
-  const boardPlace = s.enabled ? undefined : s.places[0]?.location;
-  if (boardPlace && !isLabTop(boardPlace)) out.noteLocation = locationPayload(boardPlace);
   return out;
 }
 

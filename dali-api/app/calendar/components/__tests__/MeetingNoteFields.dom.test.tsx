@@ -229,7 +229,7 @@ describe("MeetingNoteFields in the create modal", () => {
     expect(meetingNotePayload(controller.state)).toMatchObject({ projectId: "p1" });
   });
 
-  it("sends the location and shortcuts in the payload", () => {
+  it("sends the project and the notebook name, not the places", () => {
     mount({ prefillProject: "p1", suggest: { attendeeIds: ["a", "b", "c"], groups: [coreGroup] } });
     addNotebook();
     click(button("Suggested: Core"));
@@ -238,12 +238,10 @@ describe("MeetingNoteFields in the create modal", () => {
     expect(meetingNotePayload(controller.state)).toMatchObject({
       note: true,
       projectId: "p1",
-      notebook: {
-        title: "Weekly sync",
-        location: { workspaceType: "Project", workspaceId: "p1", parentPageId: "p1-m" },
-        links: [{ workspaceType: "Lab", workspaceId: null, parentPageId: "core-m" }],
-      },
+      notebook: { title: "Weekly sync" },
     });
+    expect(meetingNotePayload(controller.state).notebook).not.toHaveProperty("location");
+    expect(meetingNotePayload(controller.state).notebook).not.toHaveProperty("links");
   });
 
   it("makes a shortcut the location with Make location", () => {
@@ -369,7 +367,7 @@ describe("filing suggestions", () => {
     expect(shortcutText()).toEqual(["Core / Meetings"]);
   });
 
-  it("sends a picked suggestion as the location with no project chosen first", () => {
+  it("sends the project of a picked suggestion with no project chosen first", () => {
     mount({ suggest: { attendeeIds: ["a", "b", "c", "d"], groups: [atlasGroup] } });
     addNotebook();
     expect(controller.state.places).toEqual([]);
@@ -377,8 +375,8 @@ describe("filing suggestions", () => {
     expect(locationText()).toEqual(["Projects / Atlas / Meetings"]);
     expect(meetingNotePayload(controller.state)).toMatchObject({
       projectId: "p1",
-      notebook: { location: { workspaceType: "Project", workspaceId: "p1", parentPageId: "p1-m" } },
     });
+    expect(meetingNotePayload(controller.state).notebook).not.toHaveProperty("location");
   });
 
   it("hides a suggestion once its place is selected", () => {
@@ -471,7 +469,7 @@ describe("choosing an existing notebook", () => {
     expect(container.querySelector("button[aria-label='Remove Projects / Atlas / Meetings']")).toBeTruthy();
   });
 
-  it("moves the notebook when another place is put on top, and keeps the old place as a shortcut", () => {
+  it("follows the place put on top for the project, and sends only the notebook id", () => {
     openExisting({ suggest: { attendeeIds: ["a", "b", "c", "d"], groups: [atlasGroup] } });
     pick(inCore);
     click(button("Suggested: Atlas"));
@@ -481,11 +479,7 @@ describe("choosing an existing notebook", () => {
     expect(shortcutText()).toEqual(["Core / Meetings"]);
     expect(meetingNotePayload(controller.state)).toMatchObject({
       projectId: "p1",
-      notebook: {
-        existingId: "nb1",
-        location: { workspaceType: "Project", workspaceId: "p1", parentPageId: "p1-m" },
-        links: [{ workspaceType: "Lab", workspaceId: null, parentPageId: "core-m" }],
-      },
+      notebook: { existingId: "nb1" },
     });
   });
 
@@ -496,7 +490,7 @@ describe("choosing an existing notebook", () => {
     act(() => controller.reorderPlaces(1, 0));
     act(() => controller.reorderPlaces(1, 0));
     expect(locationText()).toEqual(["Core / Meetings"]);
-    expect(meetingNotePayload(controller.state).notebook).not.toHaveProperty("location");
+    expect(meetingNotePayload(controller.state).notebook).toEqual({ existingId: "nb1" });
   });
 
   it("shows a notebook whose folder can't be picked as a fixed location that is never moved", () => {
@@ -507,10 +501,7 @@ describe("choosing an existing notebook", () => {
     click(button("Suggested: Core"));
     expect(shortcutText()).toEqual(["Core / Meetings"]);
     expect(container.querySelector("button[aria-label='Make location']")).toBeNull();
-    expect(meetingNotePayload(controller.state).notebook).toEqual({
-      existingId: "nb3",
-      links: [{ workspaceType: "Lab", workspaceId: null, parentPageId: "core-m" }],
-    });
+    expect(meetingNotePayload(controller.state).notebook).toEqual({ existingId: "nb3" });
   });
 
   it("opens the picker with the notebook's place and shortcuts and a title that says so", () => {
@@ -617,8 +608,8 @@ describe("a whiteboard with no note in the create modal", () => {
       note: false,
       whiteboard: true,
       projectId: "p1",
-      noteLocation: { workspaceType: "Project", workspaceId: "p1", parentPageId: "p1-m" },
     });
+    expect(meetingNotePayload(controller.state)).not.toHaveProperty("noteLocation");
   });
 
   it("opens a single-place picker, not the multi picker", () => {
@@ -638,11 +629,7 @@ describe("a whiteboard with no note in the create modal", () => {
     expect(chipText()).toEqual(["Core / Meetings"]);
     expect(button("Change place")).toBeTruthy();
     expect(container.querySelector("[data-testid='folder-picker']")).toBeNull();
-    expect(meetingNotePayload(controller.state).noteLocation).toEqual({
-      workspaceType: "Lab",
-      workspaceId: null,
-      parentPageId: "core-m",
-    });
+    expect(meetingNotePayload(controller.state)).not.toHaveProperty("noteLocation");
   });
 
   it("shows no suggestions", () => {
@@ -700,7 +687,7 @@ describe("MeetingNoteFields in the add-note modal", () => {
     expect(container.textContent).toContain("Shortcuts");
   });
 
-  it("moves an existing notebook the same way as the create modal", () => {
+  it("sends an existing notebook as its id, like the create modal", () => {
     mount({ surface: "note", suggest: { attendeeIds: ["a", "b", "c"], groups: [coreGroup] } });
     act(() => controller.setEnabled(true));
     choose("Existing");
@@ -716,10 +703,7 @@ describe("MeetingNoteFields in the add-note modal", () => {
     );
     click(button("Suggested: Core"));
     click(container.querySelector("button[aria-label='Make location']"));
-    expect(meetingNotePayload(controller.state).notebook).toMatchObject({
-      existingId: "nb9",
-      location: { workspaceType: "Lab", workspaceId: null, parentPageId: "core-m" },
-    });
+    expect(meetingNotePayload(controller.state).notebook).toEqual({ existingId: "nb9" });
   });
 });
 
@@ -742,7 +726,7 @@ describe("MeetingNoteFields in the add-whiteboard modal", () => {
     expect(chipText()).toEqual(["Projects / Atlas / Meetings"]);
     expect(meetingNotePayload(controller.state)).toMatchObject({
       projectId: "p1",
-      noteLocation: { workspaceType: "Project", workspaceId: "p1", parentPageId: "p1-m" },
     });
+    expect(meetingNotePayload(controller.state)).not.toHaveProperty("noteLocation");
   });
 });

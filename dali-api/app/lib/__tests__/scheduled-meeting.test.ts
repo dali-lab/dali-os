@@ -91,7 +91,6 @@ import {
   trackExternalEventAsMeeting,
   tracksAttendance,
   updateScheduledMeeting,
-  folderOfNote,
 } from "~/lib/scheduled-meeting";
 import { isGeneralCalendarEvent } from "~/lib/general-calendar";
 
@@ -438,13 +437,10 @@ describe("createScheduledMeeting — where a note is filed", () => {
     expect(labPage).not.toHaveBeenCalled();
   });
 
-  it("files a Core meeting's note in Core's own folder, ignoring a chosen location", async () => {
+  it("files a Core meeting's note in Core's own folder", async () => {
     await createScheduledMeeting({
       ...base,
       isCoreMeeting: true,
-      // Even an explicit destination doesn't move a Core note — Core's folder
-      // is where it belongs, the way a project's note belongs to its project.
-      noteLocation: { workspaceType: "Project", workspaceId: "proj-9", parentPageId: null },
     });
 
     expect(coreFolder).toHaveBeenCalledWith("org-1");
@@ -474,29 +470,6 @@ describe("createScheduledMeeting — where a note is filed", () => {
     expect(notebook).toHaveBeenCalledWith(
       expect.objectContaining({ workspaceType: "Lab", parentPageId: "folder-lab-notes" }),
     );
-  });
-
-  it("honours an explicitly chosen Lab folder over the default", async () => {
-    // resolveNoteDestination validates the folder before honouring it.
-    (
-      prisma as unknown as { page: { findUnique: ReturnType<typeof vi.fn> } }
-    ).page.findUnique.mockResolvedValue({
-      kind: "Folder",
-      archivedAt: null,
-      workspaceType: "Lab",
-      workspaceId: null,
-    });
-
-    await createScheduledMeeting({
-      ...base,
-      isCoreMeeting: false,
-      noteLocation: { workspaceType: "Lab", workspaceId: null, parentPageId: "folder-chosen" },
-    });
-
-    expect(notebook).toHaveBeenCalledWith(
-      expect.objectContaining({ parentPageId: "folder-chosen" }),
-    );
-    expect(labFolder).not.toHaveBeenCalled();
   });
 });
 
@@ -528,6 +501,18 @@ describe("createScheduledMeeting — where a note is filed with receiver folders
 
   afterEach(() => {
     vi.mocked(receiversEnabled).mockResolvedValue(false);
+  });
+
+  it("files a new notebook at the project's Meetings receiver, with the project from the caller", async () => {
+    resolve.mockResolvedValue({ folderId: "recv-1", viaReceiver: true });
+    vi.mocked(createNotebook).mockResolvedValue({ id: "nb-new" });
+
+    await createScheduledMeeting({ ...base, meetingType: undefined, meetingTypeLabel: undefined, projectId: "proj-7", notebook: { title: "Team sync" } });
+
+    expect(resolve).toHaveBeenCalledWith({ processType: "Project", processId: "proj-7", folderType: "Meetings" }, "org-1");
+    expect(createNotebook).toHaveBeenCalledWith(
+      expect.objectContaining({ workspaceType: "Project", workspaceId: "proj-7", parentPageId: "recv-1" }),
+    );
   });
 
   describe("a Core meeting held for a project", () => {
@@ -659,25 +644,6 @@ describe("createScheduledMeeting — where a note is filed with receiver folders
     await createScheduledMeeting({ ...base, isCoreMeeting: false });
 
     expect(notebook).toHaveBeenCalledWith(expect.objectContaining({ workspaceType: "Lab", parentPageId: null }));
-  });
-
-  it("lets a chosen Lab folder win over the Lab receiver and never looks the receiver up", async () => {
-    resolve.mockResolvedValue({ folderId: "lab-recv", viaReceiver: true });
-    (prisma as unknown as { page: { findUnique: ReturnType<typeof vi.fn> } }).page.findUnique.mockResolvedValue({
-      kind: "Folder",
-      archivedAt: null,
-      workspaceType: "Lab",
-      workspaceId: null,
-    });
-
-    await createScheduledMeeting({
-      ...base,
-      isCoreMeeting: false,
-      noteLocation: { workspaceType: "Lab", workspaceId: null, parentPageId: "folder-chosen" },
-    });
-
-    expect(notebook).toHaveBeenCalledWith(expect.objectContaining({ parentPageId: "folder-chosen" }));
-    expect(resolve).not.toHaveBeenCalled();
   });
 });
 
@@ -1571,29 +1537,6 @@ describe("tracksAttendance", () => {
   });
 });
 
-describe("folderOfNote", () => {
-  it("is the folder a note sits in directly", () => {
-    expect(folderOfNote({ parentPageId: "folder-a", parent: { kind: "Folder", parentPageId: "elsewhere" } })).toBe("folder-a");
-    expect(folderOfNote({ parentPageId: "folder-a" })).toBe("folder-a");
-  });
-
-  it("is the notebook's folder for a note that is a tab in a notebook", () => {
-    expect(
-      folderOfNote({ parentPageId: "notebook-1", parent: { kind: "Notebook", parentPageId: "folder-a" } }),
-    ).toBe("folder-a");
-  });
-
-  it("is null for a note in a notebook at the workspace root", () => {
-    expect(
-      folderOfNote({ parentPageId: "notebook-1", parent: { kind: "Notebook", parentPageId: null } }),
-    ).toBeNull();
-  });
-
-  it("is null for a note at the workspace root", () => {
-    expect(folderOfNote({ parentPageId: null, parent: null })).toBeNull();
-  });
-});
-
 describe("meetingIsUpcoming", () => {
   const now = new Date("2026-09-16T12:00:00Z");
 
@@ -1732,7 +1675,7 @@ describe("attachMeetingNote", () => {
 
     const res = await attachMeetingNote({ meetingId: "m1", actorId: "u2" });
 
-    expect(res).toEqual({ ok: true, notePageId: "page-x", notebookId: null, createdNotebook: false, declinedLinks: [], declinedMove: null });
+    expect(res).toEqual({ ok: true, notePageId: "page-x", notebookId: null, createdNotebook: false });
     expect(createNotebookTab).not.toHaveBeenCalled();
   });
 
@@ -1773,8 +1716,6 @@ describe("attachMeetingNote", () => {
       notebookId: "notebook-1",
       createdNotebook: false,
       seriesNotebookId: null,
-      declinedLinks: [],
-      declinedMove: null,
     });
     expect(createNotebookTab).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -1794,7 +1735,7 @@ describe("attachMeetingNote", () => {
     });
   });
 
-  it("files a replacement notebook in the folder the earlier notes' notebook sat in, not under the notebook", async () => {
+  it("files a replacement notebook at the Lab's meeting folder, not where the earlier notes sat", async () => {
     p.scheduledMeeting.findUnique.mockResolvedValue(
       meetingRow({
         recurrenceRule: "FREQ=WEEKLY",
@@ -1812,10 +1753,6 @@ describe("attachMeetingNote", () => {
         ],
       }),
     );
-    vi.mocked(prisma.page.findUnique).mockImplementation((async (args: { where: { id: string } }) =>
-      args.where.id === "folder-standups"
-        ? { kind: "Folder", archivedAt: null, workspaceType: "Lab", workspaceId: null }
-        : { kind: "FreeForm", archivedAt: null, workspaceType: "Lab", workspaceId: null }) as never);
 
     await attachMeetingNote({
       meetingId: "m1",
@@ -1824,7 +1761,7 @@ describe("attachMeetingNote", () => {
     });
 
     expect(ensureMeetingNotebook).toHaveBeenCalledWith(
-      expect.objectContaining({ workspaceType: "Lab", parentPageId: "folder-standups" }),
+      expect.objectContaining({ workspaceType: "Lab", parentPageId: "folder-lab-notes" }),
     );
   });
 
@@ -1897,8 +1834,6 @@ describe("attachMeetingNote", () => {
       notebookId: "notebook-1",
       createdNotebook: false,
       seriesNotebookId: null,
-      declinedLinks: [],
-      declinedMove: null,
     });
     expect(p.scheduledMeeting.update).toHaveBeenCalledWith({
       where: { id: "m1" },
@@ -1933,8 +1868,6 @@ describe("attachMeetingNote", () => {
       notebookId: "notebook-1",
       createdNotebook: false,
       seriesNotebookId: null,
-      declinedLinks: [],
-      declinedMove: null,
     });
     expect(p.scheduledMeeting.update).toHaveBeenCalledWith({
       where: { id: "m1" },
@@ -1966,8 +1899,6 @@ describe("attachMeetingNote", () => {
       notebookId: "notebook-1",
       createdNotebook: false,
       seriesNotebookId: null,
-      declinedLinks: [],
-      declinedMove: null,
     });
     expect(copyPageBody).toHaveBeenCalledWith("tpl-1", "page-tab");
     expect(p.page.update).toHaveBeenCalledWith({
@@ -1996,8 +1927,6 @@ describe("attachMeetingNote", () => {
       notebookId: "notebook-1",
       createdNotebook: false,
       seriesNotebookId: null,
-      declinedLinks: [],
-      declinedMove: null,
     });
     expect(copyPageBody).not.toHaveBeenCalled();
     expect(p.page.update).not.toHaveBeenCalled();
@@ -2515,23 +2444,19 @@ describe("createScheduledMeeting — filing the first note through a notebook ch
     expect(recorded()).toMatchObject({ meetingType: "Team", meetingTypeLabel: null, projectId: "proj-7", notebookId: "nb-9" });
   });
 
-  it("creates a new notebook at the chosen folder with its template and reports it as created", async () => {
+  it("creates a new notebook at the space's folder with its template and reports it as created", async () => {
     mockPage.page.findUnique.mockResolvedValue({ id: "tpl-1", isTemplate: true, archivedAt: null });
 
     const res = await createScheduledMeeting({
       ...base,
-      notebook: {
-        title: "Standup",
-        location: { workspaceType: "Lab", workspaceId: null, parentPageId: "folder-9" },
-        templatePageId: "tpl-1",
-      },
+      notebook: { title: "Standup", templatePageId: "tpl-1" },
     });
 
     expect(createNotebook).toHaveBeenCalledWith({
       title: "Standup",
       workspaceType: "Lab",
       workspaceId: null,
-      parentPageId: "folder-9",
+      parentPageId: "folder-lab-notes",
       templatePageId: "tpl-1",
       actorId: "org-1",
     });
@@ -2540,19 +2465,10 @@ describe("createScheduledMeeting — filing the first note through a notebook ch
     expect(copyPageBody).toHaveBeenCalledWith("tpl-1", "page-tab");
   });
 
-  it("puts a new notebook in the lab's Meeting assets folder when no location is chosen", async () => {
+  it("puts a new notebook in the lab's Meeting assets folder", async () => {
     await createScheduledMeeting({ ...base, notebook: { title: "Standup" } });
 
     expect(createNotebook).toHaveBeenCalledWith(expect.objectContaining({ workspaceType: "Lab", parentPageId: "folder-lab-notes" }));
-  });
-
-  it("treats the Lab-wide top level as the default location too", async () => {
-    await createScheduledMeeting({
-      ...base,
-      notebook: { title: "Standup", location: { workspaceType: "Lab", workspaceId: null, parentPageId: null } },
-    });
-
-    expect(createNotebook).toHaveBeenCalledWith(expect.objectContaining({ parentPageId: "folder-lab-notes" }));
   });
 
   it("puts a Core meeting's new notebook in Core's folder by default", async () => {
@@ -2569,209 +2485,18 @@ describe("createScheduledMeeting — filing the first note through a notebook ch
     );
   });
 
-  describe("links", () => {
-    const folder = (id: string) => ({ workspaceType: "Lab" as const, workspaceId: null, parentPageId: id });
-    const project = { workspaceType: "Project" as const, workspaceId: "proj-7", parentPageId: null };
+  it("never moves or links an existing notebook", async () => {
+    await createScheduledMeeting({ ...base, notebook: { existingId: "nb-9" } });
 
-    beforeEach(() => {
-      vi.mocked(createShortcut).mockResolvedValue({
-        shortcutId: "sc-1",
-        created: true,
-        grantShareId: null,
-        grantDeclined: false,
-      });
-    });
-
-    it("adds one shortcut per link to a new notebook, acting as the organizer", async () => {
-      const request = new Request("http://os.test/api/scheduled-meetings");
-      const res = await createScheduledMeeting({
-        ...base,
-        request,
-        notebook: { title: "Standup", location: folder("folder-9"), links: [folder("folder-2"), project] },
-      });
-
-      expect(createShortcut).toHaveBeenCalledTimes(2);
-      expect(createShortcut).toHaveBeenNthCalledWith(1, {
-        targetPageId: "nb-new",
-        dest: folder("folder-2"),
-        actorId: "org-1",
-        request,
-      });
-      expect(createShortcut).toHaveBeenNthCalledWith(2, expect.objectContaining({ targetPageId: "nb-new", dest: project }));
-      expect(res).toMatchObject({ ok: true, declinedLinks: [] });
-    });
-
-    it("skips a link equal to the new notebook's primary location and repeated links", async () => {
-      await createScheduledMeeting({
-        ...base,
-        notebook: { title: "Standup", location: folder("folder-9"), links: [folder("folder-9"), folder("folder-2"), folder("folder-2")] },
-      });
-
-      expect(createShortcut).toHaveBeenCalledTimes(1);
-      expect(createShortcut).toHaveBeenCalledWith(expect.objectContaining({ dest: folder("folder-2") }));
-    });
-
-    it("compares a link with the default location when none was chosen", async () => {
-      await createScheduledMeeting({
-        ...base,
-        notebook: { title: "Standup", links: [folder("folder-lab-notes")] },
-      });
-
-      expect(createShortcut).not.toHaveBeenCalled();
-    });
-
-    it("links an existing notebook too, skipping the place it already lives", async () => {
-      vi.mocked(loadEditableNotebook).mockResolvedValue({
-        id: "nb-9",
-        title: "Weekly",
-        templatePageId: null,
-        workspaceType: "Lab",
-        workspaceId: null,
-        parentPageId: "folder-1",
-      } as never);
-
-      await createScheduledMeeting({ ...base, notebook: { existingId: "nb-9", links: [folder("folder-1"), folder("folder-2")] } });
-
-      expect(createShortcut).toHaveBeenCalledTimes(1);
-      expect(createShortcut).toHaveBeenCalledWith(expect.objectContaining({ targetPageId: "nb-9", dest: folder("folder-2") }));
-    });
-
-    it("reports a refused link and still creates the meeting and the other links", async () => {
-      vi.mocked(createShortcut)
-        .mockRejectedValueOnce(new ShortcutError("You can't add to that folder"))
-        .mockResolvedValueOnce({ shortcutId: "sc-2", created: true, grantShareId: null, grantDeclined: false });
-
-      const res = await createScheduledMeeting({
-        ...base,
-        notebook: { title: "Standup", links: [folder("folder-2"), project] },
-      });
-
-      expect(res).toMatchObject({
-        ok: true,
-        notebookId: "nb-new",
-        declinedLinks: [{ location: folder("folder-2"), error: "You can't add to that folder" }],
-      });
-      expect(createShortcut).toHaveBeenCalledTimes(2);
-    });
-
-    it("lets a non-shortcut failure through", async () => {
-      vi.mocked(createShortcut).mockRejectedValue(new Error("db down"));
-
-      await expect(
-        createScheduledMeeting({ ...base, notebook: { title: "Standup", links: [folder("folder-2")] } }),
-      ).rejects.toThrow("db down");
-    });
-
-    it("files no links when the choice names none", async () => {
-      await createScheduledMeeting({ ...base, notebook: { title: "Standup" } });
-
-      expect(createShortcut).not.toHaveBeenCalled();
-    });
+    expect(movePage).not.toHaveBeenCalled();
+    expect(createShortcut).not.toHaveBeenCalled();
   });
 
-  describe("moving an existing notebook", () => {
-    const folder = (id: string) => ({ workspaceType: "Lab" as const, workspaceId: null, parentPageId: id });
-    const sitting = { workspaceType: "Lab", workspaceId: null, parentPageId: "folder-1" };
+  it("answers without declined links or moves", async () => {
+    const res = await createScheduledMeeting({ ...base, notebook: { title: "Standup" } });
 
-    beforeEach(() => {
-      vi.mocked(loadEditableNotebook).mockResolvedValue({
-        id: "nb-9",
-        title: "Weekly",
-        templatePageId: null,
-        ...sitting,
-      } as never);
-      vi.mocked(movePage).mockResolvedValue({ ok: true, clearedReceivers: [] });
-      vi.mocked(createShortcut).mockResolvedValue({
-        shortcutId: "sc-1",
-        created: true,
-        grantShareId: null,
-        grantDeclined: false,
-      });
-    });
-
-    it("moves the notebook to a different location as the organizer", async () => {
-      const request = new Request("http://os.test/api/scheduled-meetings");
-      const res = await createScheduledMeeting({
-        ...base,
-        request,
-        notebook: { existingId: "nb-9", location: folder("folder-2") },
-      });
-
-      expect(movePage).toHaveBeenCalledWith({
-        pageId: "nb-9",
-        userId: "org-1",
-        request,
-        input: { parentPageId: "folder-2", workspaceType: "Lab", workspaceId: null },
-      });
-      expect(res).toMatchObject({ ok: true, declinedMove: null });
-    });
-
-    it("moves it into a project", async () => {
-      await createScheduledMeeting({
-        ...base,
-        notebook: { existingId: "nb-9", location: { workspaceType: "Project", workspaceId: "proj-7", parentPageId: null } },
-      });
-
-      expect(movePage).toHaveBeenCalledWith(
-        expect.objectContaining({ input: { parentPageId: null, workspaceType: "Project", workspaceId: "proj-7" } }),
-      );
-    });
-
-    it("sends no move when the location is where the notebook already is", async () => {
-      await createScheduledMeeting({ ...base, notebook: { existingId: "nb-9", location: folder("folder-1") } });
-
-      expect(movePage).not.toHaveBeenCalled();
-    });
-
-    it("sends no move when the choice names no location", async () => {
-      await createScheduledMeeting({ ...base, notebook: { existingId: "nb-9" } });
-
-      expect(movePage).not.toHaveBeenCalled();
-    });
-
-    it("skips a link to the place it was moved to and files the others", async () => {
-      await createScheduledMeeting({
-        ...base,
-        notebook: { existingId: "nb-9", location: folder("folder-2"), links: [folder("folder-2"), folder("folder-1")] },
-      });
-
-      expect(createShortcut).toHaveBeenCalledTimes(1);
-      expect(createShortcut).toHaveBeenCalledWith(expect.objectContaining({ dest: folder("folder-1") }));
-    });
-
-    it("reports a refused move, keeps the notebook where it was and still files the links", async () => {
-      vi.mocked(movePage).mockResolvedValue({ ok: false, status: 403, error: "You can't edit that folder" });
-
-      const res = await createScheduledMeeting({
-        ...base,
-        notebook: { existingId: "nb-9", location: folder("folder-2"), links: [folder("folder-2"), folder("folder-3")] },
-      });
-
-      expect(res).toMatchObject({
-        ok: true,
-        notebookId: "nb-9",
-        declinedMove: { location: folder("folder-2"), error: "You can't edit that folder" },
-      });
-      expect(createShortcut).toHaveBeenCalledTimes(2);
-      expect(createShortcut).toHaveBeenCalledWith(expect.objectContaining({ dest: folder("folder-2") }));
-    });
-
-    it("reads the reason from a response-style refusal", async () => {
-      vi.mocked(movePage).mockResolvedValue({
-        ok: false,
-        response: Response.json({ error: "Depth limit" }, { status: 400 }),
-      });
-
-      const res = await createScheduledMeeting({ ...base, notebook: { existingId: "nb-9", location: folder("folder-2") } });
-
-      expect(res).toMatchObject({ ok: true, declinedMove: { error: "Depth limit" } });
-    });
-
-    it("does not move a new notebook, which is made where it belongs", async () => {
-      await createScheduledMeeting({ ...base, notebook: { title: "Standup", location: folder("folder-2") } });
-
-      expect(movePage).not.toHaveBeenCalled();
-    });
+    expect(res).not.toHaveProperty("declinedLinks");
+    expect(res).not.toHaveProperty("declinedMove");
   });
 
   it("refuses without creating the meeting when the notebook can't be used", async () => {
@@ -2836,8 +2561,6 @@ describe("attachMeetingNote — notebooks", () => {
       notebookId: "nb-s",
       createdNotebook: false,
       seriesNotebookId: "nb-s",
-      declinedLinks: [],
-      declinedMove: null,
     });
     expect(createNotebookTab).toHaveBeenCalledWith(expect.objectContaining({ notebookId: "nb-s" }));
     expect(syncMeetingShares).toHaveBeenCalledWith("m1", undefined);
@@ -2947,99 +2670,24 @@ describe("attachMeetingNote — notebooks", () => {
       meetingId: "m1",
       actorId: "org-1",
       projectId: null,
-      notebook: { title: "Retro", location: { workspaceType: "Lab", workspaceId: null, parentPageId: "folder-9" } },
+      notebook: { title: "Retro" },
     });
 
     expect(createNotebook).toHaveBeenCalledWith(
-      expect.objectContaining({ title: "Retro", workspaceType: "Lab", parentPageId: "folder-9", actorId: "org-1" }),
+      expect.objectContaining({ title: "Retro", workspaceType: "Lab", parentPageId: "folder-lab-notes", actorId: "org-1" }),
     );
     expect(res).toMatchObject({ ok: true, notebookId: "nb-new", createdNotebook: true, seriesNotebookId: "nb-new" });
   });
 
-  describe("links", () => {
-    const folder = (id: string) => ({ workspaceType: "Lab" as const, workspaceId: null, parentPageId: id });
+  it("never moves or links the notebook it files into", async () => {
+    p.scheduledMeeting.findUnique.mockResolvedValue(meetingRow());
 
-    beforeEach(() => {
-      vi.mocked(createShortcut).mockResolvedValue({
-        shortcutId: "sc-1",
-        created: true,
-        grantShareId: null,
-        grantDeclined: false,
-      });
-    });
+    const res = await attachMeetingNote({ meetingId: "m1", actorId: "org-1", notebook: { existingId: "nb-x" } });
 
-    it("files links for a chosen notebook, acting as the actor", async () => {
-      p.scheduledMeeting.findUnique.mockResolvedValue(meetingRow());
-      const request = new Request("http://os.test/calendar");
-
-      const res = await attachMeetingNote({
-        meetingId: "m1",
-        actorId: "org-1",
-        request,
-        notebook: { existingId: "nb-x", links: [folder("folder-2")] },
-      });
-
-      expect(createShortcut).toHaveBeenCalledWith({
-        targetPageId: "nb-x",
-        dest: folder("folder-2"),
-        actorId: "org-1",
-        request,
-      });
-      expect(res).toMatchObject({ ok: true, declinedLinks: [] });
-    });
-
-    it("skips a link equal to a new notebook's location and reports a refused one", async () => {
-      p.scheduledMeeting.findUnique.mockResolvedValue(meetingRow());
-      vi.mocked(createShortcut).mockRejectedValue(new ShortcutError("Nope"));
-
-      const res = await attachMeetingNote({
-        meetingId: "m1",
-        actorId: "org-1",
-        notebook: { title: "Retro", location: folder("folder-9"), links: [folder("folder-9"), folder("folder-2")] },
-      });
-
-      expect(createShortcut).toHaveBeenCalledTimes(1);
-      expect(res).toMatchObject({ ok: true, declinedLinks: [{ location: folder("folder-2"), error: "Nope" }] });
-    });
-
-    it("moves a chosen notebook to the top location and reports a refusal without failing", async () => {
-      p.scheduledMeeting.findUnique.mockResolvedValue(meetingRow());
-      vi.mocked(loadEditableNotebook).mockResolvedValue({
-        id: "nb-x",
-        title: "Weekly",
-        templatePageId: null,
-        workspaceType: "Lab",
-        workspaceId: null,
-        parentPageId: "folder-1",
-      } as never);
-      vi.mocked(movePage).mockResolvedValue({ ok: true, clearedReceivers: [] });
-
-      const moved = await attachMeetingNote({
-        meetingId: "m1",
-        actorId: "org-1",
-        notebook: { existingId: "nb-x", location: folder("folder-2") },
-      });
-      expect(movePage).toHaveBeenCalledWith(
-        expect.objectContaining({ pageId: "nb-x", input: { parentPageId: "folder-2", workspaceType: "Lab", workspaceId: null } }),
-      );
-      expect(moved).toMatchObject({ ok: true, declinedMove: null });
-
-      vi.mocked(movePage).mockResolvedValue({ ok: false, status: 403, error: "Nope" });
-      const refused = await attachMeetingNote({
-        meetingId: "m1",
-        actorId: "org-1",
-        notebook: { existingId: "nb-x", location: folder("folder-2") },
-      });
-      expect(refused).toMatchObject({ ok: true, declinedMove: { location: folder("folder-2"), error: "Nope" } });
-    });
-
-    it("files no links for the series' own notebook", async () => {
-      p.scheduledMeeting.findUnique.mockResolvedValue(meetingRow({ notebookId: "nb-s", notebook: series }));
-
-      await attachMeetingNote({ meetingId: "m1", actorId: "org-1" });
-
-      expect(createShortcut).not.toHaveBeenCalled();
-    });
+    expect(movePage).not.toHaveBeenCalled();
+    expect(createShortcut).not.toHaveBeenCalled();
+    expect(res).not.toHaveProperty("declinedLinks");
+    expect(res).not.toHaveProperty("declinedMove");
   });
 
   it("only lets the organizer or Core name a notebook, even for a meeting that has notes", async () => {
@@ -3128,39 +2776,22 @@ describe("where a whiteboard is filed", () => {
   });
 
   describe("created with a note", () => {
-    it("beside a new notebook's primary place in a project folder", async () => {
+    it("beside a new notebook in the project's folder", async () => {
       const res = await createScheduledMeeting({
         ...base,
         createNote: true,
         projectId: "proj-7",
-        notebook: {
-          title: "Team sync",
-          location: { workspaceType: "Project", workspaceId: "proj-7", parentPageId: "folder-sub" },
-        },
+        notebook: { title: "Team sync" },
       });
 
       expect(res).toMatchObject({ ok: true, whiteboardPageId: "page-project" });
       expect(projectPage).toHaveBeenCalledWith(
-        expect.objectContaining({ projectId: "proj-7", parentPageId: "folder-sub", kind: "Whiteboard", meetingWhiteboardId: "m1" }),
+        expect.objectContaining({ projectId: "proj-7", parentPageId: "folder-project", kind: "Whiteboard", meetingWhiteboardId: "m1" }),
       );
-      expect(ensureMeetingNotesFolder).not.toHaveBeenCalled();
       expect(labPage).not.toHaveBeenCalled();
     });
 
-    it("beside a new notebook's primary place in a Lab folder, not the default Meeting assets folder", async () => {
-      await createScheduledMeeting({
-        ...base,
-        createNote: true,
-        notebook: { title: "Standup", location: { workspaceType: "Lab", workspaceId: null, parentPageId: "folder-9" } },
-      });
-
-      expect(labPage).toHaveBeenCalledWith(
-        expect.objectContaining({ parentPageId: "folder-9", kind: "Whiteboard", meetingWhiteboardId: "m1" }),
-      );
-      expect(ensureLabMeetingNotesFolder).not.toHaveBeenCalled();
-    });
-
-    it("beside a new notebook with no chosen place, in the folder the notebook defaulted to", async () => {
+    it("beside a new notebook, in the Lab folder the notebook defaulted to", async () => {
       await createScheduledMeeting({ ...base, createNote: true, notebook: { title: "Standup" } });
 
       expect(createNotebook).toHaveBeenCalledWith(expect.objectContaining({ parentPageId: "folder-lab-notes" }));
@@ -3189,7 +2820,7 @@ describe("where a whiteboard is filed", () => {
       await createScheduledMeeting({
         ...base,
         createNote: true,
-        notebook: { title: "Standup", location: { workspaceType: "Lab", workspaceId: null, parentPageId: "folder-9" } },
+        notebook: { title: "Standup" },
       });
 
       expect(labPage).toHaveBeenCalledWith(expect.objectContaining({ title: "Standup whiteboard (Sep 10, 2026)" }));
@@ -3197,51 +2828,7 @@ describe("where a whiteboard is filed", () => {
   });
 
   describe("created without a note", () => {
-    it("honours a folder inside the meeting's project", async () => {
-      p.project.findFirst.mockResolvedValue({ id: "proj-7" });
-      p.page.findUnique.mockResolvedValue({ kind: "Folder", archivedAt: null, workspaceType: "Project", workspaceId: "proj-7" });
-
-      await createScheduledMeeting({
-        ...base,
-        createNote: false,
-        projectId: "proj-7",
-        noteLocation: { workspaceType: "Project", workspaceId: "proj-7", parentPageId: "folder-sub" },
-      });
-
-      expect(projectPage).toHaveBeenCalledWith(
-        expect.objectContaining({ projectId: "proj-7", parentPageId: "folder-sub", kind: "Whiteboard" }),
-      );
-      expect(ensureMeetingNotesFolder).not.toHaveBeenCalled();
-    });
-
-    it("falls back to the project's own folder when the chosen folder is not usable", async () => {
-      p.project.findFirst.mockResolvedValue({ id: "proj-7" });
-      p.page.findUnique.mockResolvedValue({ kind: "Folder", archivedAt: null, workspaceType: "Project", workspaceId: "other" });
-
-      await createScheduledMeeting({
-        ...base,
-        createNote: false,
-        projectId: "proj-7",
-        meetingType: "Team",
-        noteLocation: { workspaceType: "Project", workspaceId: "proj-7", parentPageId: "folder-elsewhere" },
-      });
-
-      expect(projectPage).toHaveBeenCalledWith(expect.objectContaining({ parentPageId: "folder-project" }));
-    });
-
-    it("ignores a location in a different project", async () => {
-      await createScheduledMeeting({
-        ...base,
-        createNote: false,
-        projectId: "proj-7",
-        meetingType: "Team",
-        noteLocation: { workspaceType: "Project", workspaceId: "proj-8", parentPageId: "folder-sub" },
-      });
-
-      expect(projectPage).toHaveBeenCalledWith(expect.objectContaining({ projectId: "proj-7", parentPageId: "folder-project" }));
-    });
-
-    it("still files a Team meeting's board in its Meetings notes folder when no location is given", async () => {
+    it("still files a Team meeting's board in its Meetings notes folder", async () => {
       await createScheduledMeeting({ ...base, createNote: false, projectId: "proj-7", meetingType: "Team" });
 
       expect(projectPage).toHaveBeenCalledWith(expect.objectContaining({ projectId: "proj-7", parentPageId: "folder-project" }));
@@ -3317,19 +2904,13 @@ describe("where a whiteboard is filed", () => {
       expect(labPage).toHaveBeenCalledWith(expect.objectContaining({ parentPageId: "folder-lab-notes" }));
     });
 
-    it("honours a folder in the chosen project for a meeting with no type yet", async () => {
+    it("files a typeless meeting's board in the chosen project's folder", async () => {
       p.scheduledMeeting.findUnique.mockResolvedValue(meetingRow({ meetingType: null, meetingTypeLabel: null }));
       p.project.findFirst.mockResolvedValue({ id: "proj-7" });
-      p.page.findUnique.mockResolvedValue({ kind: "Folder", archivedAt: null, workspaceType: "Project", workspaceId: "proj-7" });
 
-      await attachMeetingWhiteboard({
-        meetingId: "m1",
-        actorId: "org-1",
-        projectId: "proj-7",
-        noteLocation: { workspaceType: "Project", workspaceId: "proj-7", parentPageId: "folder-sub" },
-      });
+      await attachMeetingWhiteboard({ meetingId: "m1", actorId: "org-1", projectId: "proj-7" });
 
-      expect(projectPage).toHaveBeenCalledWith(expect.objectContaining({ projectId: "proj-7", parentPageId: "folder-sub" }));
+      expect(projectPage).toHaveBeenCalledWith(expect.objectContaining({ projectId: "proj-7", parentPageId: "folder-project" }));
     });
   });
 });

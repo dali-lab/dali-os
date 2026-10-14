@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { declinedMoveMessage, filedNoteFrom, undoFiledNote } from "../filed-note";
+import { filedNoteFrom, undoFiledNote } from "../filed-note";
 
 const ok = { ok: true };
 const fail = { ok: false };
@@ -56,12 +56,7 @@ describe("filedNoteFrom", () => {
   it("reads the filing details out of a create response", () => {
     expect(
       filedNoteFrom({ notePageId: "n1", notebookId: "nb1", createdNotebook: true, notePath }),
-    ).toEqual({ notePageId: "n1", notebookId: "nb1", createdNotebook: true, notePath, declinedMove: null });
-  });
-
-  it("carries a refused notebook move", () => {
-    const declinedMove = { location: { workspaceType: "Lab", workspaceId: null, parentPageId: "f2" }, error: "Nope" };
-    expect(filedNoteFrom({ notePageId: "n1", notePath, declinedMove })?.declinedMove).toEqual({ error: "Nope" });
+    ).toEqual({ notePageId: "n1", notebookId: "nb1", createdNotebook: true, notePath });
   });
 
   it("treats a missing createdNotebook as false", () => {
@@ -72,21 +67,5 @@ describe("filedNoteFrom", () => {
     expect(filedNoteFrom({ notePageId: null, notePath })).toBeNull();
     expect(filedNoteFrom({ notePageId: "n1", notePath: null })).toBeNull();
     expect(filedNoteFrom({})).toBeNull();
-  });
-});
-
-describe("declinedMoveMessage", () => {
-  it("names the place the notebook was asked to go and says it stayed", () => {
-    expect(declinedMoveMessage("Core / Meetings")).toBe(
-      "Could not move the notebook to Core / Meetings; it stayed where it was.",
-    );
-  });
-
-  it("still reads when no place is known", () => {
-    expect(declinedMoveMessage(undefined)).toBe("Could not move the notebook to that place; it stayed where it was.");
-  });
-
-  it("has no em dash", () => {
-    expect(declinedMoveMessage("X")).not.toContain("\u2014");
   });
 });

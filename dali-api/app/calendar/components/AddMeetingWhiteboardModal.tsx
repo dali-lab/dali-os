@@ -110,7 +110,6 @@ function AddMeetingWhiteboardModal({
     if (!hasType) {
       const payload = meetingNotePayload(note.state);
       if (payload.projectId) fields.projectId = String(payload.projectId);
-      if (payload.noteLocation) fields.noteLocation = JSON.stringify(payload.noteLocation);
     }
     submittedRef.current = true;
     fetcher.submit(fields, { method: "post", ...(actionPath ? { action: actionPath } : {}) });

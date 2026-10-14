@@ -1332,19 +1332,9 @@ function coerceFormToAction(raw: Record<string, FormDataEntryValue>): unknown {
       };
     case "add-meeting-note":
     case "add-meeting-whiteboard": {
-      // noteLocation is a nested object, so it rides across as a JSON string
-      // (same pattern as seed-working-hours' `days`). meetingType is optional for
-      // the whiteboard intent (a meeting with a note reuses its type), so an
-      // empty field coerces to undefined rather than a failing enum value.
-      let noteLocation: unknown = undefined;
-      const locRaw = get("noteLocation");
-      if (locRaw) {
-        try {
-          noteLocation = JSON.parse(locRaw);
-        } catch {
-          // Leave undefined; the asset falls back to its default destination.
-        }
-      }
+      // meetingType is optional for the whiteboard intent (a meeting with a note
+      // reuses its type), so an empty field coerces to undefined rather than a
+      // failing enum value.
       let notebook: unknown = undefined;
       const notebookRaw = get("notebook");
       if (notebookRaw) {
@@ -1361,7 +1351,6 @@ function coerceFormToAction(raw: Record<string, FormDataEntryValue>): unknown {
         meetingType: get("meetingType") || undefined,
         meetingTypeLabel: get("meetingTypeLabel") || undefined,
         projectId: get("projectId") || undefined,
-        noteLocation,
         notebook,
       };
     }
@@ -2264,7 +2253,6 @@ export async function submitCalendarAction(request: Request) {
         meetingType: input.meetingType,
         meetingTypeLabel: input.meetingTypeLabel ?? null,
         projectId: input.projectId ?? null,
-        noteLocation: input.noteLocation ?? null,
         notebook: input.notebook ?? null,
         request,
       });
@@ -2273,8 +2261,6 @@ export async function submitCalendarAction(request: Request) {
       }
       return Response.json({
         ok: true,
-        declinedLinks: result.declinedLinks,
-        declinedMove: result.declinedMove,
         notePageId: result.notePageId,
         notebookId: result.notebookId,
         createdNotebook: result.createdNotebook,
@@ -2295,7 +2281,6 @@ export async function submitCalendarAction(request: Request) {
         meetingType: input.meetingType ?? null,
         meetingTypeLabel: input.meetingTypeLabel ?? null,
         projectId: input.projectId ?? null,
-        noteLocation: input.noteLocation ?? null,
       });
       if (!result.ok) {
         return Response.json({ error: result.error }, { status: result.status });

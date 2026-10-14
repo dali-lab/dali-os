@@ -117,12 +117,8 @@ describe("POST /api/scheduled-meetings: notebook choice", () => {
     );
   });
 
-  it("accepts a new notebook with a location and template", async () => {
-    const notebook = {
-      title: "Standup",
-      location: { workspaceType: "Project", workspaceId: "p1", parentPageId: "f1" },
-      templatePageId: "tpl-1",
-    };
+  it("accepts a new notebook with a template", async () => {
+    const notebook = { title: "Standup", templatePageId: "tpl-1" };
 
     const res = await post({ ...noType, projectId: "p1", notebook });
 
@@ -130,37 +126,19 @@ describe("POST /api/scheduled-meetings: notebook choice", () => {
     expect(mockCreate).toHaveBeenCalledWith(expect.objectContaining({ notebook, projectId: "p1" }));
   });
 
-  it("passes the notebook's links through and reports the ones that were declined", async () => {
-    const links = [{ workspaceType: "Lab", workspaceId: null, parentPageId: "f2" }];
-    const declinedLinks = [{ location: links[0], error: "You can't add to that folder" }];
-    mockCreate.mockResolvedValue({ ...created, declinedLinks });
-
-    const res = await post({ ...noType, notebook: { title: "Standup", links } });
-
-    expect(res.status).toBe(201);
-    expect(mockCreate).toHaveBeenCalledWith(
-      expect.objectContaining({ notebook: { title: "Standup", links }, request: expect.any(Request) }),
-    );
-    expect((await res.json()).declinedLinks).toEqual(declinedLinks);
-  });
-
-  it("passes the location to move an existing notebook to, and reports a refused move", async () => {
+  it("rejects a notebook carrying a location or links", async () => {
     const location = { workspaceType: "Lab", workspaceId: null, parentPageId: "f2" };
-    const declinedMove = { location, error: "You can't edit that folder" };
-    mockCreate.mockResolvedValue({ ...created, declinedMove });
 
-    const res = await post({ ...noType, notebook: { existingId: "nb-1", location } });
-
-    expect(res.status).toBe(201);
-    expect(mockCreate).toHaveBeenCalledWith(expect.objectContaining({ notebook: { existingId: "nb-1", location } }));
-    expect((await res.json()).declinedMove).toEqual(declinedMove);
+    expect((await post({ ...noType, notebook: { title: "A", links: [location] } })).status).toBe(400);
+    expect((await post({ ...noType, notebook: { existingId: "nb-1", location } })).status).toBe(400);
+    expect(mockCreate).not.toHaveBeenCalled();
   });
 
-  it("rejects more than eight links", async () => {
-    const link = { workspaceType: "Lab", workspaceId: null, parentPageId: "f2" };
+  it("answers without declined links or moves", async () => {
+    const body = await (await post({ ...noType, notebook: { title: "Standup" } })).json();
 
-    expect((await post({ ...noType, notebook: { title: "A", links: Array(9).fill(link) } })).status).toBe(400);
-    expect(mockCreate).not.toHaveBeenCalled();
+    expect(body).not.toHaveProperty("declinedLinks");
+    expect(body).not.toHaveProperty("declinedMove");
   });
 
   it("still accepts the older meetingType payload with no notebook", async () => {
@@ -178,13 +156,7 @@ describe("POST /api/scheduled-meetings: notebook choice", () => {
     expect(mockCreate).not.toHaveBeenCalled();
   });
 
-  it("rejects a Project location with no project", async () => {
-    const notebook = { title: "A", location: { workspaceType: "Project", workspaceId: null, parentPageId: null } };
-
-    expect((await post({ ...noType, notebook })).status).toBe(400);
-  });
-
-  it("lets a whiteboard-only General meeting carry a noteLocation without naming a type", async () => {
+  it("drops a noteLocation instead of passing it on", async () => {
     const res = await post({
       meetingType: undefined,
       meetingTypeLabel: undefined,
@@ -194,56 +166,6 @@ describe("POST /api/scheduled-meetings: notebook choice", () => {
     });
 
     expect(res.status).toBe(201);
-  });
-
-  it("accepts a project folder as a project meeting's noteLocation", async () => {
-    const noteLocation = { workspaceType: "Project", workspaceId: "p1", parentPageId: "f1" };
-    const res = await post({ meetingType: undefined, meetingTypeLabel: undefined, projectId: "p1", note: false, whiteboard: true, noteLocation });
-
-    expect(res.status).toBe(201);
-    expect(mockCreate).toHaveBeenCalledWith(expect.objectContaining({ projectId: "p1", noteLocation }));
-  });
-
-  it("accepts the project's top level as the noteLocation", async () => {
-    const res = await post({
-      meetingType: undefined,
-      meetingTypeLabel: undefined,
-      projectId: "p1",
-      noteLocation: { workspaceType: "Project", workspaceId: "p1", parentPageId: null },
-    });
-
-    expect(res.status).toBe(201);
-  });
-
-  it("refuses a noteLocation in a different project", async () => {
-    const res = await post({
-      meetingType: undefined,
-      meetingTypeLabel: undefined,
-      projectId: "p1",
-      noteLocation: { workspaceType: "Project", workspaceId: "p2", parentPageId: "f1" },
-    });
-
-    expect(res.status).toBe(400);
-  });
-
-  it("refuses a Lab noteLocation on a project meeting", async () => {
-    const res = await post({
-      meetingType: undefined,
-      meetingTypeLabel: undefined,
-      projectId: "p1",
-      noteLocation: { workspaceType: "Lab", workspaceId: null, parentPageId: "f1" },
-    });
-
-    expect(res.status).toBe(400);
-  });
-
-  it("still allows a project folder for a General meeting with no project", async () => {
-    const res = await post({
-      meetingType: undefined,
-      meetingTypeLabel: undefined,
-      noteLocation: { workspaceType: "Project", workspaceId: "p1", parentPageId: "f1" },
-    });
-
-    expect(res.status).toBe(201);
+    expect(mockCreate.mock.calls[0][0]).not.toHaveProperty("noteLocation");
   });
 });

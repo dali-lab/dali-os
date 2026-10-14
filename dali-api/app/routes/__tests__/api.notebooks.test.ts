@@ -129,3 +129,30 @@ describe("GET /api/notebooks", () => {
     expect(listNotebooks).not.toHaveBeenCalled();
   });
 });
+
+describe("GET /api/notebooks space params", () => {
+  const list = (query: string) =>
+    loader({ request: new Request(`http://os.test/api/notebooks${query}`) } as never) as Promise<Response>;
+
+  beforeEach(() => {
+    vi.mocked(listNotebooks).mockResolvedValue([]);
+  });
+
+  it("passes a project space through", async () => {
+    await list("?workspaceType=Project&workspaceId=p1");
+    expect(listNotebooks).toHaveBeenCalledWith(
+      expect.objectContaining({ space: { workspaceType: "Project", workspaceId: "p1" } }),
+    );
+  });
+
+  it("passes the Lab space with a null workspace, whatever id is sent", async () => {
+    await list("?workspaceType=Lab&workspaceId=p1");
+    expect(listNotebooks).toHaveBeenCalledWith(expect.objectContaining({ space: { workspaceType: "Lab", workspaceId: null } }));
+  });
+
+  it("ignores a project space without an id, and an unknown type", async () => {
+    await list("?workspaceType=Project");
+    await list("?workspaceType=Member&workspaceId=u1");
+    for (const call of vi.mocked(listNotebooks).mock.calls) expect(call[0].space).toBeUndefined();
+  });
+});

@@ -233,14 +233,6 @@ export const AddMeetingNoteSchema = z.object({
   meetingType: z.enum(["Team", "Partner", "Other"]).optional(),
   meetingTypeLabel: z.string().optional(),
   projectId: z.string().optional(),
-  noteLocation: z
-    .object({
-      workspaceType: z.enum(["Lab", "Project"]),
-      workspaceId: z.string().nullable(),
-      parentPageId: z.string().nullable(),
-    })
-    .nullable()
-    .optional(),
   // The notebook the note files into; with it the type fields above are derived.
   notebook: notebookChoiceSchema.optional(),
 });
@@ -255,14 +247,6 @@ export const AddMeetingWhiteboardSchema = z.object({
   meetingType: z.enum(["Team", "Partner", "Other"]).optional(),
   meetingTypeLabel: z.string().optional(),
   projectId: z.string().optional(),
-  noteLocation: z
-    .object({
-      workspaceType: z.enum(["Lab", "Project"]),
-      workspaceId: z.string().nullable(),
-      parentPageId: z.string().nullable(),
-    })
-    .nullable()
-    .optional(),
 });
 
 // "Mirror my timesheet to Google" opt-in toggle (Calendars panel). Persists the
