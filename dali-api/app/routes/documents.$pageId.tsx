@@ -81,6 +81,34 @@ export const handle = {
   hideBreadcrumbs: true,
 };
 
+type NotebookPage = {
+  id: string;
+  title: string;
+  workspaceType: string;
+  workspaceId: string | null;
+  parentPageId: string | null;
+  templatePage?: { id: string } | null;
+};
+
+function notebookShell(
+  nb: NotebookPage,
+  gate: { canEdit: boolean; manager: boolean; nextNotes: NotebookView["nextNotes"] },
+): NotebookView {
+  return {
+    id: nb.id,
+    title: nb.title,
+    canEdit: gate.canEdit,
+    canManage: gate.manager,
+    workspaceType: nb.workspaceType,
+    workspaceId: nb.workspaceId,
+    folderId: nb.parentPageId,
+    templateId: nb.templatePage?.id ?? null,
+    projectId: nb.workspaceType === "Project" ? nb.workspaceId : null,
+    nextNotes: gate.canEdit ? gate.nextNotes : [],
+    tabs: [],
+  };
+}
+
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   // Child loaders run alongside the shell's, and the deepest redirect wins, so
@@ -101,6 +129,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       meetingOccurrenceStart: true,
       seededFromPageId: true,
       seededTemplateHash: true,
+      templatePage: { select: { id: true, title: true } },
       parent: {
         select: {
           ...PAGE_ACCESS_SELECT,
@@ -198,6 +227,14 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     const now = new Date();
     const tab = tabs.find((t) => (t.meetingOccurrenceStart ?? now) <= now) ?? tabs.at(-1);
     if (tab) return redirect(`/documents/${tab.id}${new URL(request.url).search}`);
+    const [nextNotes, manager] = await Promise.all([
+      nextNoteTargets(page.id),
+      canManageNotebook(auth.user.sub, page, request),
+    ]);
+    return {
+      title: page.title,
+      emptyNotebook: notebookShell(page, { canEdit, manager: manager && !trashed, nextNotes }),
+    };
   }
 
   // The other notes in this one's notebook, newest first, for the side tabs.
@@ -233,16 +270,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     const mixed = new Set(visible.map((t) => t.meetingNote?.title)).size > 1;
     const canEditNotebook = notebookAccess.canEdit && !trashed;
     notebook = {
-      id: page.parent.id,
-      title: page.parent.title,
-      canEdit: canEditNotebook,
-      canManage: notebookManager && !trashed,
-      workspaceType: page.parent.workspaceType,
-      workspaceId: page.parent.workspaceId,
-      folderId: page.parent.parentPageId,
-      templateId: page.parent.templatePage?.id ?? null,
-      projectId: page.parent.workspaceType === "Project" ? page.parent.workspaceId : null,
-      nextNotes: canEditNotebook ? nextNotes : [],
+      ...notebookShell(page.parent, { canEdit: canEditNotebook, manager: notebookManager && !trashed, nextNotes }),
       tabs: visible.map((t) => ({
         id: t.id,
         label: t.meetingOccurrenceStart ? formatDateShort(t.meetingOccurrenceStart) : t.title,
@@ -632,7 +660,25 @@ function RecordingMountInner({
   return <>{children(rec)}</>;
 }
 
-export default function DocumentPage() {
+export default function DocumentRoute() {
+  const { emptyNotebook } = useLoaderData() as { emptyNotebook?: NotebookView };
+  if (emptyNotebook) return <EmptyNotebook notebook={emptyNotebook} />;
+  return <DocumentPage />;
+}
+
+export function EmptyNotebook({ notebook }: { notebook: NotebookView }) {
+  const { card } = useOsChrome();
+  return (
+    <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
+      <NotebookRail notebook={notebook} currentId={notebook.id} />
+      <div className={`${card} flex min-w-0 flex-1 items-center justify-center p-10`}>
+        <p className="text-sm text-muted-foreground">No notes yet. Add one from the menu.</p>
+      </div>
+    </div>
+  );
+}
+
+function DocumentPage() {
   const {
     pageId,
     title,
@@ -670,7 +716,7 @@ export default function DocumentPage() {
     hasActiveRecording,
     projectId: meetingProjectId,
     canCreateTasks,
-  } = useLoaderData() as Exclude<Awaited<ReturnType<typeof loader>>, Response>;
+  } = useLoaderData() as Extract<Awaited<ReturnType<typeof loader>>, { pageId: string }>;
 
   // Arriving from a comment-mention notification (?comment=<id>): open the
   // comments panel and scroll to that comment once threads load.
