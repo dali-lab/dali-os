@@ -6,7 +6,7 @@ import { createRoutesStub } from "react-router";
 import type { NotebookView } from "~/components/notebooks/NotebookRail";
 import { DialogProvider } from "~/components/ui/dialog";
 import { ToastProvider } from "~/components/ui/toast";
-import { EmptyNotebook } from "../documents.$pageId";
+import { EmptyNotebook } from "~/components/notebooks/EmptyNotebook";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
