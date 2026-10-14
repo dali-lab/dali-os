@@ -242,3 +242,77 @@ describe("removing a meeting's shares", () => {
     expect(m.meetingShareGrant.deleteMany).toHaveBeenCalledWith({ where: { id: { in: ["g-org", "g-grp"] } } });
   });
 });
+
+describe("syncMeetingShares — pages a meeting justifies", () => {
+  const noteIn = (notebookId: string, over: Record<string, unknown> = {}) => ({
+    id: `note-${notebookId}`,
+    meetingNoteId: "m1",
+    meetingWhiteboardId: null,
+    parent: { id: notebookId, kind: "Notebook", archivedAt: null },
+    ...over,
+  });
+  const pageIdsGranted = () =>
+    m.meetingShareGrant.createMany.mock.calls.flatMap(([a]: any) => a.data).map((d: any) => d.pageId);
+
+  it("keeps grants on a past note's notebook after the series pointer moves on", async () => {
+    m.page.findMany.mockResolvedValueOnce([noteIn("old-nb")]);
+    m.meetingShareGrant.findMany.mockResolvedValue([grant("User", "org", { pageId: "old-nb" })]);
+
+    await syncMeetingShares("m1");
+
+    expect(m.meetingShareGrant.deleteMany).not.toHaveBeenCalled();
+    expect(pageIdsGranted()).toEqual(["nb1"]);
+  });
+
+  it("grants on the notebook a note was moved to, keeping the series notebook while notes remain there", async () => {
+    m.page.findMany.mockResolvedValueOnce([noteIn("dest"), noteIn("nb1", { id: "other-note" })]);
+    m.meetingShareGrant.findMany.mockResolvedValue([grant("User", "org", { pageId: "nb1" })]);
+
+    await syncMeetingShares("m1");
+
+    expect(m.meetingShareGrant.deleteMany).not.toHaveBeenCalled();
+    expect(pageIdsGranted()).toEqual(["dest"]);
+    expect(m.pageShare.findMany.mock.calls.map(([a]: any) => a.where.pageId)).toContain("dest");
+  });
+
+  it("grants on a live meeting whiteboard", async () => {
+    m.page.findMany.mockResolvedValueOnce([
+      { id: "wb", meetingNoteId: null, meetingWhiteboardId: "m1", parent: null },
+    ]);
+
+    await syncMeetingShares("m1");
+
+    expect(pageIdsGranted().sort()).toEqual(["nb1", "wb"]);
+  });
+
+  it("looks only at live notes and whiteboards", async () => {
+    await syncMeetingShares("m1");
+
+    expect(m.page.findMany.mock.calls[0][0].where).toEqual({
+      archivedAt: null,
+      OR: [{ meetingNoteId: "m1" }, { meetingWhiteboardId: "m1" }],
+    });
+  });
+
+  it("ignores a note whose parent is trashed or is not a notebook", async () => {
+    m.page.findMany.mockResolvedValueOnce([
+      noteIn("trashed-nb", { parent: { id: "trashed-nb", kind: "Notebook", archivedAt: new Date() } }),
+      noteIn("folder", { parent: { id: "folder", kind: "Folder", archivedAt: null } }),
+    ]);
+
+    await syncMeetingShares("m1");
+
+    expect(pageIdsGranted()).toEqual(["nb1"]);
+  });
+
+  it("revokes a notebook that has no remaining notes and is not the series pointer", async () => {
+    m.meetingShareGrant.findMany.mockResolvedValue([
+      grant("User", "org", { pageId: "nb1" }),
+      grant("User", "org", { id: "g-left", pageId: "left-nb", pageShareId: "s-left" }),
+    ]);
+
+    await syncMeetingShares("m1");
+
+    expect(m.meetingShareGrant.deleteMany).toHaveBeenCalledWith({ where: { id: { in: ["g-left"] } } });
+  });
+});

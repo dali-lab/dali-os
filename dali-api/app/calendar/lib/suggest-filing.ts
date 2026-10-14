@@ -1,4 +1,4 @@
-import type { GroupOption } from "~/calendar/lib/types";
+import type { GroupOption, MentorPairOption } from "~/calendar/lib/types";
 
 export type SuggestionKind = "project" | "core";
 
@@ -12,7 +12,7 @@ export type Suggestion = {
   reason: string;
 };
 
-const MIN_OVERLAP = 2;
+const MIN_OVERLAP = 1;
 const MIN_NAME_LENGTH = 4;
 const MAX_SUGGESTIONS = 3;
 const NAME_IN_TITLE_BONUS = 0.5;
@@ -71,4 +71,28 @@ export function suggestFiling({
   return out
     .sort((a, b) => b.score - a.score || b.overlap - a.overlap || a.label.localeCompare(b.label) || a.groupId.localeCompare(b.groupId))
     .slice(0, MAX_SUGGESTIONS);
+}
+
+export type PairSuggestion = { menteeId: string; label: string; reason: string };
+
+export const PAIR_REASON = "your mentee";
+
+/** A 1:1 with one of the viewer's mentees: no groups, nobody else, and the mentee on the invite. */
+export function suggestPairFiling({
+  attendeeIds,
+  viewerId,
+  groupsInvited,
+  pairs,
+}: {
+  attendeeIds: string[];
+  viewerId: string;
+  groupsInvited: boolean;
+  pairs: MentorPairOption[];
+}): PairSuggestion | null {
+  if (groupsInvited) return null;
+  const others = new Set(attendeeIds.filter((id) => id !== viewerId));
+  if (others.size !== 1) return null;
+  const [other] = others;
+  const pair = pairs.find((p) => p.menteeId === other);
+  return pair ? { menteeId: pair.menteeId, label: `Mentorship · ${pair.menteeName}`, reason: PAIR_REASON } : null;
 }

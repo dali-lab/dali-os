@@ -48,7 +48,7 @@ export function eligibleSlotsFor(
   return [];
 }
 
-type TreeItem = { id: string; parentFolderId: string | null };
+type TreeItem = { id: string; parentFolderId: string | null; title?: string };
 
 /** The project a folder belongs to: the embedded `project:<id>` scope names it, and in the Projects drive it is the
  *  synthetic top-level folder at the end of the parent chain. */
@@ -65,6 +65,34 @@ export function projectIdFor(scopeId: string, items: TreeItem[], folderId: strin
   return cur && cur.parentFolderId === null && cur.id !== folderId ? cur.id : null;
 }
 
+export type MeetingsOption = { slot: SlotChoice; space: string };
+
+/** The one setting Folder settings offers: whether new meeting notebooks of this folder's space file here. Null where
+ *  the space has no Meetings slot (Hiring, Mentorship, Education) or the viewer can't change it. */
+export function meetingsOptionFor({
+  scopeId,
+  scopeLabel,
+  items,
+  folderId,
+  isCore,
+  isProjectMember,
+}: {
+  scopeId: string;
+  scopeLabel: string;
+  items: TreeItem[];
+  folderId: string;
+  isCore: boolean;
+  isProjectMember: boolean;
+}): MeetingsOption | null {
+  const projectId = projectIdFor(scopeId, items, folderId);
+  const slot = eligibleSlotsFor(scopeId, projectId, isCore, isProjectMember).find((s) => s.folderType === "Meetings");
+  if (!slot) return null;
+  if (slot.processType === "Core") return { slot, space: "Core" };
+  if (slot.processType === "Lab") return { slot, space: "General" };
+  const projectName = scopeId.startsWith("project:") ? scopeLabel : items.find((i) => i.id === projectId)?.title;
+  return { slot, space: projectName || "this project" };
+}
+
 /** A real page folder: not a Drive root, and not the synthetic project/offering rows the Projects and Education
  *  drives list as folders. */
 export function isPageFolder(item: { type: string; href: string; folderType?: string | null }): boolean {
@@ -73,13 +101,6 @@ export function isPageFolder(item: { type: string; href: string; folderType?: st
 
 export function slotChoice(slot: SlotChoice): Choice {
   return `slot:${slot.processType}:${slot.folderType}`;
-}
-
-export function choiceLabel(choice: Choice, slots: SlotChoice[]): string {
-  if (choice === CHOICE_NONE) return "None";
-  const slot = slots.find((s) => slotChoice(s) === choice);
-  if (!slot) return "None";
-  return slot.folderType === "Meetings" ? "New meeting notebooks file here" : RECEIVER_LABELS[slot.folderType];
 }
 
 /** Which option reflects the folder today. A slot is the folder's own when the slot's receiver is this folder. */

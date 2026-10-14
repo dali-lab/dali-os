@@ -3,12 +3,14 @@ import { getPageAccessBulk, PAGE_ACCESS_SELECT } from "~/lib/pageAccess.server";
 import { meetingNotebookIdentity, type NotebookMeeting } from "~/lib/meeting-notebook";
 import { suggestNotebooks, type NotebookCandidate } from "~/lib/notebook-suggest";
 import { formatFiledPath, notebookLocationPartsBulk } from "~/lib/note-path.server";
+import { findRoot } from "~/lib/drive-roots.server";
 
 // The notebooks the picker offers: ones the viewer can edit, in any workspace
 // they belong to, with the signals that make some of them suggested.
 
 const MAX_SCANNED = 300;
 export const MAX_LISTED = 50;
+const CORE_FOLDER_LEVELS = 8;
 
 const meetingIdentitySelect = {
   title: true,
@@ -41,7 +43,34 @@ export type ListedNotebook = {
   suggested: boolean;
 };
 
-export type NotebookSpace = { workspaceType: "Lab" | "Project"; workspaceId: string | null };
+export type NotebookSpace =
+  | { workspaceType: "Lab" | "Project"; workspaceId: string | null }
+  | { workspaceType: "Core"; workspaceId: null };
+
+/** Every live folder under the Core root, the root included: the places a Core notebook can sit. */
+async function coreFolderIds(): Promise<string[]> {
+  const rootId = await findRoot("core");
+  if (!rootId) return [];
+  const all = [rootId];
+  let frontier = [rootId];
+  for (let depth = 0; depth < CORE_FOLDER_LEVELS && frontier.length > 0; depth++) {
+    const children = await prisma.page.findMany({
+      where: { parentPageId: { in: frontier }, kind: "Folder", archivedAt: null },
+      select: { id: true },
+    });
+    frontier = children.map((c) => c.id);
+    all.push(...frontier);
+  }
+  return all;
+}
+
+async function spaceWhere(space: NotebookSpace | undefined) {
+  if (!space) return {};
+  if (space.workspaceType === "Core") {
+    return { workspaceType: "Lab" as const, parentPageId: { in: await coreFolderIds() } };
+  }
+  return { workspaceType: space.workspaceType, workspaceId: space.workspaceId };
+}
 
 export async function listNotebooks(input: {
   actorId: string;
@@ -56,7 +85,7 @@ export async function listNotebooks(input: {
     where: {
       kind: "Notebook",
       archivedAt: null,
-      ...(input.space ? { workspaceType: input.space.workspaceType, workspaceId: input.space.workspaceId } : {}),
+      ...(await spaceWhere(input.space)),
       ...(q ? { title: { contains: q, mode: "insensitive" } } : {}),
     },
     orderBy: { updatedAt: "desc" },

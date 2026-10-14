@@ -14,8 +14,6 @@ import {
 import { Select, Menu, Popover, InfoTip } from "~/components/ui/floating";
 import { CalendarDays, CalendarPlus, CalendarX, Check, Globe, Handshake, History, Pencil, Pin, X, Settings, Folder, FolderInput, FolderPlus, ChevronRight, ChevronDown, FileText, Info, Users, Paperclip, Plus, Trash2, Upload, Unlink, MoreHorizontal, ExternalLink, Star, Mail, Github, Slack, Layers, Figma, NotebookPen, Shapes } from "lucide-react";
 import type { DriveTypeFilter } from "~/components/drive/type-filter";
-import { DriveFolderBindings } from "~/components/drive/DriveFolderBindings";
-import { DriveReceivers } from "~/components/drive/DriveReceivers";
 import { useOsChrome } from "~/components/os-chrome";
 import { DomainChips } from "~/components/DomainChips";
 import { ChartStringPanel } from "~/projects/components/ChartStringPanel";
@@ -2082,12 +2080,6 @@ export default function ProjectDetail() {
             canEdit={canEditScope}
             actionError={actionError}
           />
-          {canEditScope &&
-            (receiversOn ? (
-              <DriveReceivers processType="Project" processId={project.id} />
-            ) : (
-              <DriveFolderBindings processType="Project" processId={project.id} />
-            ))}
           {canEditScope && (
             <SaveAsTemplateSection projectId={project.id} projectName={project.name} />
           )}

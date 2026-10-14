@@ -57,6 +57,7 @@ type MountOptions = {
   typeFilter?: DriveTypeFilter;
   scopes?: DriveTreeScope[];
   canUpload?: boolean;
+  receiverViewer?: { isCore: boolean; isProjectMember: boolean };
 };
 
 /** The browser at a location, with `onNavigate` moving it the way the hub's URL does. */
@@ -87,6 +88,7 @@ async function mount(opts: MountOptions = {}) {
       onBulkMove,
       onBulkDelete,
       onUploadFiles: opts.canUpload === false ? undefined : onUploadFiles,
+      receiverViewer: opts.receiverViewer,
     })));
   }
   const Stub = createRoutesStub([{ path: "/", Component: Harness }]);
@@ -765,6 +767,17 @@ describe("DriveBrowser glyph tooltips", () => {
       await new Promise((r) => setTimeout(r, 400));
     });
     expect(document.querySelector('[role="tooltip"]')?.textContent).toBe("Folder · Everyone in the lab");
+  });
+
+  it("labels a system folder by what it receives, in pink", async () => {
+    await mount({ scopes: [{ ...lab, items: [folder("hf", { folderType: "HiringForms" } as Partial<DriveItem>)] }] });
+    const glyph = row("folder", "hf").querySelector('[data-testid="item-glyph"]')!;
+    expect(glyph.querySelector("svg.lucide-folder-cog.text-accent-pink")).not.toBeNull();
+    await act(async () => {
+      glyph.dispatchEvent(new MouseEvent("mouseenter", { bubbles: false }));
+      await new Promise((r) => setTimeout(r, 400));
+    });
+    expect(document.querySelector('[role="tooltip"]')?.textContent).toBe("Hiring forms folder · Everyone in the lab");
   });
 
   it("leaves row clicks working through the glyph wrapper", async () => {
@@ -1742,5 +1755,32 @@ describe("DriveBrowser list and grid: dropping OS files on a folder inside a fol
     fileDrag("drop", row("folder", "f2"), { files });
     expect(onUploadFiles).toHaveBeenCalledWith(files, { folderId: "f2" });
     expect(lit(row("folder", "f2"))).toBe(false);
+describe("DriveBrowser: Folder settings", () => {
+  const hiring: DriveTreeScope = { id: "hiring", label: "Hiring", iconEmoji: null, items: [folder("h1")] };
+  const core: DriveTreeScope = { id: "core", label: "Core", iconEmoji: null, items: [folder("c1")] };
+  const menuFor = async (scopes: DriveTreeScope[], scopeId: string, id: string, receiverViewer?: MountOptions["receiverViewer"]) => {
+    await mount({ scopes, scopeId, receiverViewer });
+    await contextMenu(row("folder", id));
+    return menuLabels();
+  };
+
+  it("is offered on a folder in a drive with a Meetings slot", async () => {
+    expect(await menuFor([lab], "lab", "f1", { isCore: true, isProjectMember: false })).toContain("Folder settings…");
+  });
+
+  it("is offered in Core", async () => {
+    expect(await menuFor([core], "core", "c1", { isCore: true, isProjectMember: false })).toContain("Folder settings…");
+  });
+
+  it("is not offered in Hiring, which has no Meetings slot", async () => {
+    expect(await menuFor([hiring], "hiring", "h1", { isCore: true, isProjectMember: false })).not.toContain("Folder settings…");
+  });
+
+  it("is not offered to someone who can't change where meetings file", async () => {
+    expect(await menuFor([lab], "lab", "f1", { isCore: false, isProjectMember: true })).not.toContain("Folder settings…");
+  });
+
+  it("is not offered while the receivers flag is off", async () => {
+    expect(await menuFor([lab], "lab", "f1")).not.toContain("Folder settings…");
   });
 });
