@@ -1,6 +1,23 @@
 import { formatDateShort } from "~/lib/display";
 
-export type PickedNotebook = { id: string; title: string; path: string };
+export type PickedNotebook = {
+  id: string;
+  title: string;
+  path: string;
+  workspaceType: string;
+  workspaceId: string | null;
+};
+
+export type NotebookRow = PickedNotebook & { tabCount: number; lastNoteAt: string | null; suggested: boolean };
+
+export type NotebookListState = { rows: NotebookRow[]; status: "loading" | "ready" | "error" };
+
+export async function fetchNotebookRows(query: string, ctx: { projectId?: string | null; meetingId?: string | null }): Promise<NotebookRow[]> {
+  const qs = notebookQueryString(query, ctx);
+  const res = await fetch(`/api/notebooks${qs ? `?${qs}` : ""}`, { credentials: "include" });
+  if (!res.ok) throw new Error("Request failed");
+  return ((await res.json()) as { notebooks: NotebookRow[] }).notebooks;
+}
 
 export function notebookQueryString(q: string, ctx: { projectId?: string | null; meetingId?: string | null }): string {
   const params = new URLSearchParams();

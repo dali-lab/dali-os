@@ -13,13 +13,11 @@ import { useFiledNoteToast } from "~/calendar/lib/useFiledNoteToast";
 import { useSeriesNotebook } from "~/calendar/lib/useSeriesNotebook";
 
 // Post-hoc counterpart to the create modal's meeting-note fields: adds a notes
-// doc to a meeting that was created without one. The note config (About, which
-// notebook) isn't captured for a note-less meeting, so this collects it the same
-// way the create form does and posts the `add-meeting-note` calendar action,
-// which files the doc and links it. A revalidation then swaps the popover's "Add meeting notes" affordance for
-// the "Meeting notes" link.
-
-type MoveDestination = { type: "Lab" | "Project"; id: string | null; label: string };
+// doc to a meeting that was created without one. The note config (which
+// notebook, where it is filed) isn't captured for a note-less meeting, so this
+// collects it the same way the create form does and posts the `add-meeting-note`
+// calendar action, which files the doc and links it. A revalidation then swaps
+// the popover's "Add meeting notes" affordance for the "Meeting notes" link.
 
 const fieldClass =
   "w-full px-3.5 py-2.5 text-sm border border-border rounded-[10px] bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-os-accent/40";
@@ -143,38 +141,12 @@ function AddMeetingNoteModal({
   const fetcher = useFetcher<FiledNoteResponse & { seriesNotebookId?: string | null }>();
   const showFiledNote = useFiledNoteToast();
   const { offerFutureFiling } = useSeriesNotebook();
-  const [myProjects, setMyProjects] = useState<{ id: string; name: string }[]>([]);
 
   // The note is being added explicitly, so it's always "enabled" — the toggle
   // that gates it in the create form has no place here.
   useEffect(() => {
     note.setEnabled(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Project list for the About picker — the same authorized set the create form
-  // feeds it (Lab-wide dropped).
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      try {
-        const res = await fetch("/api/move-destinations", { credentials: "include" });
-        const json = await res.json();
-        const dests = (json.destinations ?? []) as MoveDestination[];
-        if (!cancelled) {
-          setMyProjects(
-            dests
-              .filter((d) => d.type === "Project" && d.id)
-              .map((d) => ({ id: d.id!, name: d.label })),
-          );
-        }
-      } catch {
-        // No projects → About offers only "General"; the modal still works.
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
   }, []);
 
   // Close only this modal on Escape — capture-phase + stopPropagation keeps the
@@ -254,7 +226,6 @@ function AddMeetingNoteModal({
           <MeetingNoteFields
             note={note}
             surface="note"
-            myProjects={myProjects}
             fieldClass={fieldClass}
             labelClass={labelClass}
             meetingTitle={meetingTitle}

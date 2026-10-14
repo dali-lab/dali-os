@@ -218,3 +218,44 @@ describe("FolderPicker single mode", () => {
     expect(document.body.textContent).toContain("There's nowhere to file this.");
   });
 });
+
+describe("FolderPicker: drive row icons", () => {
+  const iconDrives: PickerDrive[] = [
+    { id: "mine", label: "My Drive" },
+    { id: "lab", label: "Lab" },
+    { id: "core", label: "Core" },
+    { id: "hiring", label: "Hiring" },
+    { id: "mentorship", label: "Mentorship" },
+    { id: "projects", label: "Projects" },
+    { id: "education", label: "Education" },
+    { id: "proj-1", label: "Atlas", iconEmoji: "🚀" },
+    { id: "proj-2", label: "Plain" },
+  ];
+
+  it.each([
+    ["My Drive", "lucide-user"],
+    ["Lab", "lucide-users"],
+    ["Core", "lucide-shield"],
+    ["Hiring", "lucide-briefcase"],
+    ["Mentorship", "lucide-heart"],
+    ["Projects", "lucide-folder-kanban"],
+    ["Education", "lucide-graduation-cap"],
+    ["Plain", "lucide-folder"],
+  ])("draws %s with %s", (label, iconClass) => {
+    mountMulti({ drives: iconDrives, folders: [] });
+    const row = Array.from(container.querySelectorAll('[role="option"]')).find((r) =>
+      r.textContent?.startsWith(label),
+    );
+    const classes = row?.querySelector("svg")?.getAttribute("class")?.split(/\s+/) ?? [];
+    expect(classes).toContain(iconClass);
+  });
+
+  it("draws a drive's emoji when it has no dedicated icon", () => {
+    mountMulti({ drives: iconDrives, folders: [] });
+    const row = Array.from(container.querySelectorAll('[role="option"]')).find((r) =>
+      r.textContent?.includes("Atlas"),
+    );
+    expect(row?.textContent).toContain("🚀");
+    expect(row?.querySelector("svg.lucide-folder")).toBeNull();
+  });
+});

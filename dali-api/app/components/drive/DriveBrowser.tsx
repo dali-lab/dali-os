@@ -47,11 +47,6 @@ import {
   Pencil,
   Trash2,
   FolderInput,
-  User,
-  Users,
-  Shield,
-  Briefcase,
-  Heart,
   HardDrive,
   Search,
   X,
@@ -71,7 +66,6 @@ import {
   NotebookPen,
   CalendarDays,
   Tag,
-  UserPlus,
   SlidersHorizontal,
 } from "lucide-react";
 import type { DriveItem } from "~/lib/drive.server";
@@ -85,6 +79,7 @@ import { relativeTime } from "~/lib/relative-time";
 import { useRevalidator } from "react-router";
 import { cn } from "~/lib/cn";
 import { isProcessRootSpace, SHARED_SPACE_KEY } from "~/lib/drive-spaces";
+import { scopeIconFor } from "~/components/drive/scope-icon";
 import { ProcessLinkPill } from "~/components/drive/ProcessLinkPill";
 import { AudienceSignal, AudienceDetail } from "~/components/drive/AudienceSignal";
 import { TagDots, TagLabels } from "~/components/drive/TagDots";
@@ -449,20 +444,7 @@ function ItemGlyphTip({ item, size }: { item: DriveItem; size?: IconSize }) {
 }
 
 function scopeIcon(scope: DriveTreeScope, size: IconSize = "sm") {
-  const cls = `${size === "xl" ? "w-10 h-10" : size === "lg" ? "w-8 h-8" : "w-4 h-4"} shrink-0`;
-  const emojiCls = `leading-none shrink-0 ${
-    size === "xl" ? "text-3xl" : size === "lg" ? "text-2xl" : "text-base"
-  }`;
-  if (scope.id === "mine") return <User className={`${cls} text-muted-foreground`} />;
-  if (scope.id === SHARED_SPACE_KEY) return <UserPlus className={`${cls} text-muted-foreground`} />;
-  if (scope.id === "core") return <Shield className={`${cls} text-accent-coral/80`} />;
-  if (scope.id === "hiring") return <Briefcase className={`${cls} text-accent-coral/80`} />;
-  if (scope.id === "mentorship") return <Heart className={`${cls} text-accent-coral/80`} />;
-  if (scope.id === "lab") return <Users className={`${cls} text-muted-foreground`} />;
-  // Synthetic group scopes use a folder icon (no emoji on the group itself).
-  if (scope.id === "projects" || scope.id === "education") return <Folder className={`${cls} text-accent-coral/80`} />;
-  if (scope.iconEmoji) return <span className={emojiCls}>{scope.iconEmoji}</span>;
-  return <Folder className={`${cls} text-accent-coral/80`} />;
+  return scopeIconFor(scope, size);
 }
 
 function scopeLabel(scope: DriveTreeScope): string {

@@ -1,6 +1,12 @@
 import { prisma } from "~/lib/db";
 import { driveRootCrumbs, workspaceDriveScope } from "~/lib/drive-crumbs";
-import { getPageAccess } from "~/lib/pageAccess.server";
+import {
+  MAX_ANCESTOR_WALK,
+  getPageAccess,
+  getPageAccessBulk,
+  governingScopeMap,
+} from "~/lib/pageAccess.server";
+import { loadAncestorChains, type LocationChainRow } from "~/lib/page-ancestry.server";
 import { rootKeyFor } from "~/lib/drive-roots.server";
 
 // Breadcrumb ancestry for an item that lives in the Drive tree. Walks up the
@@ -34,66 +40,57 @@ export type DriveCrumbs = {
 
 const MAX_DEPTH = 12; // guards against cyclic/broken parent chains
 
-export async function driveFolderCrumbs(
-  folderPageId: string | null | undefined,
-  viewerSub: string,
-  request?: Request,
-): Promise<DriveCrumbs> {
-  if (!folderPageId) return { scope: "lab", folders: [] };
+type CrumbRow = {
+  id: string;
+  title: string;
+  iconEmoji: string | null;
+  parentPageId: string | null;
+  scopeKind: string | null;
+  scopeGroupId: string | null;
+  folderType: string | null;
+  processType: string | null;
+  processId: string | null;
+  workspaceType: string;
+  archivedAt: Date | null;
+};
 
+const CRUMB_SELECT = {
+  id: true,
+  title: true,
+  iconEmoji: true,
+  parentPageId: true,
+  scopeKind: true,
+  scopeGroupId: true,
+  folderType: true,
+  processType: true,
+  processId: true,
+  workspaceType: true,
+  archivedAt: true,
+} as const;
+
+type CrumbPath = { scope: string; scopeRootId: string | null; chain: DriveCrumb[] };
+
+const LAB_ROOT: CrumbPath = { scope: "lab", scopeRootId: null, chain: [] };
+
+/** The scope and unfiltered folder trail for `rows`: the folder's own row first, then each ancestor. */
+function crumbPathFromRows(rows: ReadonlyArray<CrumbRow>, coreGroupId: string | null): CrumbPath {
   const chain: DriveCrumb[] = [];
   let scope = "lab";
   let scopeRootId: string | null = null;
   let leafWorkspaceType: string | null = null;
-  let cursor: string | null = folderPageId;
 
-  // Not-yet-reparented Core folders are detected by their group scope.
-  const coreGroupId =
-    (await prisma.groupDefinition.findUnique({ where: { systemKey: "core" }, select: { id: true } }))
-      ?.id ?? null;
-
-  for (let i = 0; i < MAX_DEPTH && cursor; i++) {
-    const p: {
-      id: string;
-      title: string;
-      iconEmoji: string | null;
-      parentPageId: string | null;
-      scopeKind: string | null;
-      scopeGroupId: string | null;
-      folderType: string | null;
-      processType: string | null;
-      processId: string | null;
-      workspaceType: string;
-      archivedAt: Date | null;
-    } | null = await prisma.page.findUnique({
-      where: { id: cursor },
-      select: {
-        id: true,
-        title: true,
-        iconEmoji: true,
-        parentPageId: true,
-        scopeKind: true,
-        scopeGroupId: true,
-        folderType: true,
-        processType: true,
-        processId: true,
-        workspaceType: true,
-        archivedAt: true,
-      },
-    });
-    if (!p) break;
+  for (const [i, p] of rows.slice(0, MAX_DEPTH).entries()) {
     if (i === 0) {
-      // Orphan: the item's own folder is archived (or, via the !p break above,
-      // deleted). The Drive listing drops it and the safety-net surfaces it at
-      // the General root, so the crumb must match that — Drive ▸ item.
-      if (p.archivedAt) return { scope: "lab", folders: [] };
+      // Orphan: the item's own folder is archived (or, via the empty rows of a
+      // deleted folder, gone). The Drive listing drops it and the safety-net
+      // surfaces it at the General root, so the crumb must match that.
+      if (p.archivedAt) return LAB_ROOT;
       leafWorkspaceType = p.workspaceType;
     }
     const rootKey = p.folderType === "Root" ? rootKeyFor(p) : null;
     if (rootKey) {
       scope = rootKey;
       scopeRootId = p.id;
-      cursor = p.parentPageId;
       continue;
     }
     if (scope === "lab" && coreGroupId && p.scopeKind === "Group" && p.scopeGroupId === coreGroupId) {
@@ -101,28 +98,100 @@ export async function driveFolderCrumbs(
       scopeRootId = p.id;
     }
     chain.unshift({ id: p.id, title: p.title, iconEmoji: p.iconEmoji });
-    cursor = p.parentPageId;
   }
 
   // Non-Lab workspaces map straight to their Drive space. A parent chain never
   // crosses workspaces, so the leaf's workspaceType decides the scope; only Lab
   // pages carry the Core/Hiring scoped-root distinction resolved in the loop.
   const wsScope = workspaceDriveScope(leafWorkspaceType);
-  if (wsScope) scope = wsScope;
+  return { scope: wsScope ?? scope, scopeRootId, chain };
+}
 
-  // Access-filter: don't advertise the Core drive to a viewer who can't enter
-  // it, and drop any ancestor folder they can't view. getPageAccess
-  // walks each folder's own scope, so a non-member is denied the scoped root
-  // and its Restricted children alike.
-  if (scopeRootId && !(await getPageAccess(viewerSub, scopeRootId, request)).canView) {
-    scope = "lab";
+// Don't advertise the Core drive to a viewer who can't enter it, and drop any
+// ancestor folder they can't view. Access walks each folder's own scope, so a
+// non-member is denied the scoped root and its Restricted children alike.
+function withViewAccess({ scope, scopeRootId, chain }: CrumbPath, canView: (id: string) => boolean): DriveCrumbs {
+  return {
+    scope: scopeRootId && !canView(scopeRootId) ? "lab" : scope,
+    folders: chain.filter((f) => canView(f.id)),
+  };
+}
+
+async function coreGroupId(): Promise<string | null> {
+  // Not-yet-reparented Core folders are detected by their group scope.
+  return (await prisma.groupDefinition.findUnique({ where: { systemKey: "core" }, select: { id: true } }))?.id ?? null;
+}
+
+export async function driveFolderCrumbs(
+  folderPageId: string | null | undefined,
+  viewerSub: string,
+  request?: Request,
+): Promise<DriveCrumbs> {
+  if (!folderPageId) return { scope: "lab", folders: [] };
+
+  const coreId = await coreGroupId();
+  const rows: CrumbRow[] = [];
+  let cursor: string | null = folderPageId;
+  while (rows.length < MAX_DEPTH && cursor) {
+    const p: CrumbRow | null = await prisma.page.findUnique({ where: { id: cursor }, select: CRUMB_SELECT });
+    if (!p) break;
+    rows.push(p);
+    if (rows.length === 1 && p.archivedAt) break;
+    cursor = p.parentPageId;
   }
-  const folderAccess = await Promise.all(
-    chain.map((f) => getPageAccess(viewerSub, f.id, request)),
-  );
-  const folders = chain.filter((_, i) => folderAccess[i].canView);
 
-  return { scope, folders };
+  const path = crumbPathFromRows(rows, coreId);
+  const ids = [...new Set([...(path.scopeRootId ? [path.scopeRootId] : []), ...path.chain.map((f) => f.id)])];
+  const viewable = new Set<string>();
+  await Promise.all(
+    ids.map(async (id) => {
+      if ((await getPageAccess(viewerSub, id, request)).canView) viewable.add(id);
+    }),
+  );
+  return withViewAccess(path, (id) => viewable.has(id));
+}
+
+/**
+ * `driveFolderCrumbs` for many folders at once: one ancestor query, one
+ * access computation over every distinct folder, and one Core-group lookup,
+ * however many folders are asked about. Keyed by folder id.
+ */
+export async function driveFolderCrumbsBulk(
+  folderPageIds: ReadonlyArray<string>,
+  viewerSub: string,
+  request?: Request,
+): Promise<Map<string, DriveCrumbs>> {
+  const ids = [...new Set(folderPageIds)];
+  const result = new Map<string, DriveCrumbs>();
+  if (ids.length === 0) return result;
+
+  // Enough rows past the deepest crumb for the governing-scope walk of every
+  // folder in the trail to stay inside what was loaded.
+  const [chains, coreId] = await Promise.all([
+    loadAncestorChains(ids, MAX_DEPTH + MAX_ANCESTOR_WALK),
+    coreGroupId(),
+  ]);
+
+  const rowsById = new Map<string, LocationChainRow>();
+  for (const chain of chains.values()) for (const row of chain) rowsById.set(row.id, row);
+
+  const paths = new Map(ids.map((id) => [id, crumbPathFromRows(chains.get(id) ?? [], coreId)]));
+  const checked = new Set<string>();
+  for (const path of paths.values()) {
+    if (path.scopeRootId) checked.add(path.scopeRootId);
+    for (const f of path.chain) checked.add(f.id);
+  }
+  const access = await getPageAccessBulk(
+    viewerSub,
+    [...checked].map((id) => rowsById.get(id)!),
+    request,
+    undefined,
+    governingScopeMap([...rowsById.values()]),
+  );
+
+  const canView = (id: string) => access.get(id)?.canView === true;
+  for (const [id, path] of paths) result.set(id, withViewAccess(path, canView));
+  return result;
 }
 
 /** The "Drive" root crumb + each ancestor folder, as plain {label, to} entries

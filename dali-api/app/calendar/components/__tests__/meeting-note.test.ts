@@ -13,16 +13,17 @@ import {
   meetingNotePayload,
   notebookChoiceOf,
   noteDestinationRows,
-  noteInitialDest,
   noteLocationFromDest,
   placeFromDest,
   placesFromPicker,
+  projectIdOf,
   receiverDest,
   removePlace,
   type FilingPlace,
   type MeetingNoteLocation,
   type MeetingNoteState,
 } from "~/calendar/components/meeting-note";
+import type { PickedNotebook } from "~/components/notebooks/notebook-picker";
 import type { Destination } from "~/components/drive/FolderPicker";
 import { notebookChoiceSchema } from "~/lib/notebook-choice";
 
@@ -39,7 +40,16 @@ const loc = (over: Partial<MeetingNoteLocation> = {}): MeetingNoteLocation => ({
   ...over,
 });
 
-const existing = { id: "nb_1", title: "Weekly check-in", path: "Core / Meetings" };
+const existing: PickedNotebook = {
+  id: "nb_1",
+  title: "Weekly check-in",
+  path: "Core / Meetings",
+  workspaceType: "Lab",
+  workspaceId: null,
+};
+const projectNotebook: PickedNotebook = { ...existing, workspaceType: "Project", workspaceId: "proj_1" };
+const projectPlace = (key: string, projectId = "proj_1") =>
+  place(key, { workspaceType: "Project", workspaceId: projectId });
 
 const place = (key: string, over: Partial<MeetingNoteLocation> = {}): FilingPlace => ({
   dest: { driveId: "lab", folderId: key },
@@ -93,8 +103,9 @@ describe("meetingNoteValid", () => {
     expect(meetingNoteValid(existingWith(MAX_FILING_LINKS + 1))).toBe(false);
   });
 
-  it("needs no project name: About is optional in both modes", () => {
-    expect(meetingNoteValid(base({ enabled: true, about: "proj_1", title: "Sync" }))).toBe(true);
+  it("needs nothing more for a whiteboard alone, with or without a place", () => {
+    expect(meetingNoteValid(base({ whiteboard: true }))).toBe(true);
+    expect(meetingNoteValid(base({ whiteboard: true, places: [place("f1")] }))).toBe(true);
   });
 });
 
@@ -171,9 +182,36 @@ describe("linkPlaces", () => {
   });
 });
 
+describe("projectIdOf", () => {
+  it("is the project of a new notebook's primary place, not of its links", () => {
+    expect(projectIdOf(inState(projectPlace("f1", "a"), projectPlace("f2", "b")))).toBe("a");
+    expect(projectIdOf(inState(place("f1"), projectPlace("f2")))).toBeNull();
+  });
+
+  it("is the chosen notebook's project in existing mode, whatever the links are", () => {
+    const existingIn = (nb: PickedNotebook | null, ...places: FilingPlace[]) =>
+      base({ enabled: true, notebookMode: "existing", existing: nb, places });
+    expect(projectIdOf(existingIn(projectNotebook))).toBe("proj_1");
+    expect(projectIdOf(existingIn(projectNotebook, projectPlace("f1", "other")))).toBe("proj_1");
+    expect(projectIdOf(existingIn(existing, projectPlace("f1")))).toBeNull();
+    expect(projectIdOf(existingIn(null, projectPlace("f1")))).toBeNull();
+  });
+
+  it("is the place's project for a whiteboard with no note, even after an existing-notebook choice", () => {
+    expect(projectIdOf(base({ whiteboard: true, places: [projectPlace("f1")] }))).toBe("proj_1");
+    expect(
+      projectIdOf(base({ whiteboard: true, notebookMode: "existing", existing: projectNotebook })),
+    ).toBeNull();
+  });
+
+  it("is null with nothing chosen", () => {
+    expect(projectIdOf(base())).toBeNull();
+  });
+});
+
 describe("meetingNotePayload", () => {
   it("emits nothing when neither asset is requested", () => {
-    expect(meetingNotePayload(base({ about: "proj_1", title: "Sync" }))).toEqual({});
+    expect(meetingNotePayload(base({ title: "Sync", places: [projectPlace("f1")] }))).toEqual({});
   });
 
   it("a note into a new notebook", () => {
@@ -192,53 +230,76 @@ describe("meetingNotePayload", () => {
     });
   });
 
-  it("carries the project the meeting is about", () => {
-    expect(meetingNotePayload(base({ enabled: true, about: "proj_1", title: "Sync" }))).toMatchObject({
-      projectId: "proj_1",
-    });
+  it("carries the project of the new notebook's primary place", () => {
+    expect(meetingNotePayload(inState(projectPlace("f1")))).toMatchObject({ projectId: "proj_1" });
+  });
+
+  it("carries the project of the chosen existing notebook", () => {
+    const out = meetingNotePayload(base({ enabled: true, notebookMode: "existing", existing: projectNotebook }));
+    expect(out).toMatchObject({ projectId: "proj_1", notebook: { existingId: "nb_1" } });
+  });
+
+  it("sends no project for a lab-wide notebook, existing or new", () => {
+    expect(meetingNotePayload(inState(place("f1")))).not.toHaveProperty("projectId");
+    expect(meetingNotePayload(base({ enabled: true, notebookMode: "existing", existing }))).not.toHaveProperty("projectId");
+    expect(meetingNotePayload(base({ enabled: true, title: "Sync" }))).not.toHaveProperty("projectId");
   });
 
   it("no longer carries a meeting type", () => {
-    const out = meetingNotePayload(base({ enabled: true, about: "proj_1", title: "Sync" }));
+    const out = meetingNotePayload(inState(projectPlace("f1")));
     expect(out).not.toHaveProperty("meetingType");
     expect(out).not.toHaveProperty("meetingTypeLabel");
   });
 
-  it("a whiteboard alone has no notebook", () => {
-    expect(meetingNotePayload(base({ whiteboard: true, about: "proj_1" }))).toEqual({
-      note: false,
-      whiteboard: true,
-      projectId: "proj_1",
-    });
+  it("a whiteboard alone has no notebook and, with no place, files by the server default", () => {
+    expect(meetingNotePayload(base({ whiteboard: true }))).toEqual({ note: false, whiteboard: true });
   });
 
   it("a note carries its primary and links in one notebook object", () => {
-    const out = meetingNotePayload(base({ enabled: true, whiteboard: true, about: "p1", title: "Sync", places: [place("f1"), place("f2")] }));
+    const out = meetingNotePayload(
+      base({ enabled: true, whiteboard: true, title: "Sync", places: [projectPlace("f1", "p1"), place("f2")] }),
+    );
     expect(out).toEqual({
       note: true,
       whiteboard: true,
       projectId: "p1",
       notebook: {
         title: "Sync",
-        location: locationOf(place("f1")),
+        location: locationOf(projectPlace("f1", "p1")),
         templatePageId: null,
         links: [locationOf(place("f2"))],
       },
     });
   });
 
-  it("a General whiteboard alone files in the chosen folder via noteLocation", () => {
-    const out = meetingNotePayload(base({ whiteboard: true, location: loc({ parentPageId: "f1" }) }));
+  it("a whiteboard alone files at its place via noteLocation", () => {
+    const out = meetingNotePayload(base({ whiteboard: true, places: [place("f1")] }));
+    expect(out.noteLocation).toEqual({ workspaceType: "Lab", workspaceId: null, parentPageId: "f1" });
+    expect(out).not.toHaveProperty("projectId");
+  });
+
+  it("a whiteboard alone in a project folder sends the project and the folder", () => {
+    const out = meetingNotePayload(base({ whiteboard: true, places: [projectPlace("f1")] }));
+    expect(out).toMatchObject({
+      note: false,
+      whiteboard: true,
+      projectId: "proj_1",
+      noteLocation: { workspaceType: "Project", workspaceId: "proj_1", parentPageId: "f1" },
+    });
+  });
+
+  it("a whiteboard alone uses only the first place", () => {
+    const out = meetingNotePayload(base({ whiteboard: true, places: [place("f1"), place("f2")] }));
     expect(out.noteLocation).toEqual({ workspaceType: "Lab", workspaceId: null, parentPageId: "f1" });
   });
 
-  it("never sends noteLocation for the Lab-wide default, for a project, or alongside a note", () => {
-    expect(meetingNotePayload(base({ whiteboard: true, location: loc() }))).not.toHaveProperty("noteLocation");
-    expect(
-      meetingNotePayload(base({ whiteboard: true, about: "proj_1", location: loc({ parentPageId: "f1" }) })),
-    ).not.toHaveProperty("noteLocation");
+  it("never sends noteLocation for the Lab-wide default or alongside a note", () => {
+    expect(meetingNotePayload(base({ whiteboard: true, places: [labTop] }))).not.toHaveProperty("noteLocation");
     expect(
       meetingNotePayload(base({ enabled: true, whiteboard: true, title: "Sync", places: [place("f1")] })),
+    ).not.toHaveProperty("noteLocation");
+    expect(
+      meetingNotePayload(base({ enabled: true, whiteboard: true, notebookMode: "existing", existing, places: [place("f1")] })),
     ).not.toHaveProperty("noteLocation");
   });
 
@@ -317,25 +378,6 @@ describe("note destination picking", () => {
     expect(noteLocationFromDest({ driveId: "education", folderId: "o1" }, rows)).toBeNull();
     expect(noteLocationFromDest({ driveId: "projects", folderId: null }, rows)).toBeNull();
     expect(noteLocationFromDest({ driveId: "mine", folderId: null }, rows)).toBeNull();
-  });
-
-  it("opens at Lab-wide when no location is chosen", () => {
-    expect(noteInitialDest(null, rows)).toEqual({ driveId: "lab", folderId: null });
-  });
-
-  it("reopens at a chosen Lab folder, its drive, or a project folder", () => {
-    const loc = (over: object) => ({ workspaceType: "Lab" as const, workspaceId: null, parentPageId: null, label: "", ...over });
-    expect(noteInitialDest(loc({ parentPageId: "core-m" }), rows)).toEqual({ driveId: "core", folderId: "core-m" });
-    expect(noteInitialDest(loc({ parentPageId: "core-root" }), rows)).toEqual({ driveId: "core", folderId: null });
-    expect(noteInitialDest(loc({ parentPageId: "gone" }), rows)).toEqual({ driveId: "lab", folderId: null });
-    expect(noteInitialDest(loc({ workspaceType: "Project", workspaceId: "p1" }), rows)).toEqual({
-      driveId: "projects",
-      folderId: "p1",
-    });
-    expect(noteInitialDest(loc({ workspaceType: "Project", workspaceId: "p1", parentPageId: "p1-n" }), rows)).toEqual({
-      driveId: "projects",
-      folderId: "p1-n",
-    });
   });
 });
 
@@ -420,8 +462,9 @@ describe("filing places", () => {
   });
 
   describe("defaultPlaceFor", () => {
-    it("is the project's Meetings receiver, and nothing for General", () => {
+    it("is the project's Meetings receiver, and nothing without a project", () => {
       expect(defaultPlaceFor("p1", rows)?.dest).toEqual(atlasM);
+      expect(defaultPlaceFor(null, rows)).toBeNull();
       expect(defaultPlaceFor("", rows)).toBeNull();
       expect(defaultPlaceFor("gone", rows)).toBeNull();
     });

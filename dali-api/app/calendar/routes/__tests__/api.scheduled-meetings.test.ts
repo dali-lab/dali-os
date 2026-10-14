@@ -184,7 +184,37 @@ describe("POST /api/scheduled-meetings: notebook choice", () => {
     expect(res.status).toBe(201);
   });
 
-  it("still refuses a noteLocation on a project meeting", async () => {
+  it("accepts a project folder as a project meeting's noteLocation", async () => {
+    const noteLocation = { workspaceType: "Project", workspaceId: "p1", parentPageId: "f1" };
+    const res = await post({ meetingType: undefined, meetingTypeLabel: undefined, projectId: "p1", note: false, whiteboard: true, noteLocation });
+
+    expect(res.status).toBe(201);
+    expect(mockCreate).toHaveBeenCalledWith(expect.objectContaining({ projectId: "p1", noteLocation }));
+  });
+
+  it("accepts the project's top level as the noteLocation", async () => {
+    const res = await post({
+      meetingType: undefined,
+      meetingTypeLabel: undefined,
+      projectId: "p1",
+      noteLocation: { workspaceType: "Project", workspaceId: "p1", parentPageId: null },
+    });
+
+    expect(res.status).toBe(201);
+  });
+
+  it("refuses a noteLocation in a different project", async () => {
+    const res = await post({
+      meetingType: undefined,
+      meetingTypeLabel: undefined,
+      projectId: "p1",
+      noteLocation: { workspaceType: "Project", workspaceId: "p2", parentPageId: "f1" },
+    });
+
+    expect(res.status).toBe(400);
+  });
+
+  it("refuses a Lab noteLocation on a project meeting", async () => {
     const res = await post({
       meetingType: undefined,
       meetingTypeLabel: undefined,
@@ -193,5 +223,15 @@ describe("POST /api/scheduled-meetings: notebook choice", () => {
     });
 
     expect(res.status).toBe(400);
+  });
+
+  it("still allows a project folder for a General meeting with no project", async () => {
+    const res = await post({
+      meetingType: undefined,
+      meetingTypeLabel: undefined,
+      noteLocation: { workspaceType: "Project", workspaceId: "p1", parentPageId: "f1" },
+    });
+
+    expect(res.status).toBe(201);
   });
 });
