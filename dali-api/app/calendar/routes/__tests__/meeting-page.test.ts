@@ -177,7 +177,7 @@ describe("meeting page — adding a note after the fact", () => {
     mockPrisma.scheduledMeeting.findUnique.mockResolvedValue(
       meeting({ notebookId: "nb-1", notebook: { id: "nb-1", title: "Weekly" } }),
     );
-    const d = (await load()) as { canAddNote: boolean; canStartNote: boolean };
+    const d = (await load()) as unknown as { canAddNote: boolean; canStartNote: boolean };
     expect(d.canStartNote).toBe(true);
     expect(d.canAddNote).toBe(false);
   });
@@ -187,12 +187,12 @@ describe("meeting page — adding a note after the fact", () => {
     mockPrisma.scheduledMeeting.findUnique.mockResolvedValue(
       meeting({ notePages: [{ id: "n1", meetingOccurrenceStart: new Date("2025-12-29T15:00:00.000Z") }] }),
     );
-    expect(((await load()) as { canStartNote: boolean }).canStartNote).toBe(true);
+    expect(((await load()) as unknown as { canStartNote: boolean }).canStartNote).toBe(true);
   });
 
   it("withholds it from a participant when the series has no notebook and no notes", async () => {
     mockAuth.mockResolvedValue({ ok: true, user: { sub: "member-1", type: "member" } });
-    expect(((await load()) as { canStartNote: boolean }).canStartNote).toBe(false);
+    expect(((await load()) as unknown as { canStartNote: boolean }).canStartNote).toBe(false);
   });
 });
 
