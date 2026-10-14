@@ -115,3 +115,28 @@ describe("NotebookPicker without a preloaded list", () => {
     expect(titles()).toEqual(["Notebook typed"]);
   });
 });
+
+describe("NotebookPicker new row", () => {
+  const newButton = () =>
+    Array.from(document.body.querySelectorAll("button")).find((b) => b.textContent?.includes("New notebook in Atlas"));
+
+  it("puts the new-notebook row first and calls it", async () => {
+    const onNew = vi.fn();
+    mount({ preloaded: { rows: [row("a")], status: "ready" }, newRow: { label: "New notebook in Atlas", onNew } });
+    expect(newButton()).toBeTruthy();
+    const list = document.body.querySelector("section")!;
+    expect(newButton()!.compareDocumentPosition(list) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    act(() => newButton()!.click());
+    expect(onNew).toHaveBeenCalledTimes(1);
+  });
+
+  it("has no such row unless asked", () => {
+    mount({ preloaded: { rows: [row("a")], status: "ready" } });
+    expect(newButton()).toBeUndefined();
+  });
+
+  it("keeps the row while the list is empty", () => {
+    mount({ preloaded: { rows: [], status: "ready" }, newRow: { label: "New notebook in Atlas", onNew: () => {} } });
+    expect(newButton()).toBeTruthy();
+  });
+});

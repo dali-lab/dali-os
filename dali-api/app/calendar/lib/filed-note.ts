@@ -49,3 +49,21 @@ export function filedNoteFrom(json: FiledNoteResponse): FiledNote | null {
     notePath: json.notePath,
   };
 }
+
+const PATH_SEPARATOR = " ▸ ";
+
+/** The notebook's title and the space it sits in (the project's name inside
+ *  Projects), read from the server's filed path. */
+export function filedWhere(filed: Pick<FiledNote, "notePath">): { title: string; space: string } {
+  const parts = filed.notePath.label.split(PATH_SEPARATOR);
+  const title = parts.at(-1) ?? "";
+  if (parts.length < 2) return { title, space: "" };
+  const space = parts[0] === "Projects" && parts.length > 2 ? parts[1]! : parts[0]!;
+  return { title, space };
+}
+
+/** "Weekly sync · Project Alpha", or just the title when no space is named. */
+export function filedWhereLabel(filed: Pick<FiledNote, "notePath">): string {
+  const { title, space } = filedWhere(filed);
+  return space ? `${title} · ${space}` : title;
+}

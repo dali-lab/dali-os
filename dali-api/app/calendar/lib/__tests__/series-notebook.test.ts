@@ -1,5 +1,10 @@
 import { describe, it, expect, vi } from "vitest";
-import { seriesDefaultDiffers, setSeriesNotebookRequest } from "~/calendar/lib/series-notebook";
+import {
+  SERIES_CHANGE_CONFIRM,
+  changedSeriesNotebook,
+  seriesDefaultDiffers,
+  setSeriesNotebookRequest,
+} from "~/calendar/lib/series-notebook";
 
 describe("seriesDefaultDiffers", () => {
   it("offers a change only when both are set and they differ", () => {
@@ -49,5 +54,28 @@ describe("setSeriesNotebookRequest", () => {
       skipped: 0,
       error: "Meeting not found",
     });
+  });
+});
+
+describe("changedSeriesNotebook", () => {
+  const picked = { kind: "existing", notebook: { id: "nb2" } } as const;
+
+  it("names the notebook picked by hand when it differs from the series'", () => {
+    expect(changedSeriesNotebook(picked, false, "nb1")).toBe("nb2");
+    expect(changedSeriesNotebook(picked, false, null)).toBe("nb2");
+  });
+
+  it("is null when the pick is the series' own notebook", () => {
+    expect(changedSeriesNotebook(picked, false, "nb2")).toBeNull();
+  });
+
+  it("is null for a default the form filled in, a new notebook or no place", () => {
+    expect(changedSeriesNotebook(picked, true, "nb1")).toBeNull();
+    expect(changedSeriesNotebook({ kind: "new" }, false, "nb1")).toBeNull();
+    expect(changedSeriesNotebook(null, false, "nb1")).toBeNull();
+  });
+
+  it("confirms with the future-only promise", () => {
+    expect(SERIES_CHANGE_CONFIRM.description).toBe("Notes already taken stay where they are.");
   });
 });
