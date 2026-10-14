@@ -11,7 +11,7 @@ vi.mock("~/lib/db", () => ({
       count: vi.fn(),
     },
     project: { findUnique: vi.fn() },
-    scheduledMeeting: { findUnique: vi.fn(), findMany: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
+    scheduledMeeting: { findUnique: vi.fn(), findFirst: vi.fn(), findMany: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
     $transaction: vi.fn(),
   },
 }));
@@ -836,10 +836,10 @@ describe("trashNotebook", () => {
     expect(m.scheduledMeeting.updateMany).not.toHaveBeenCalled();
   });
 
-  it("removes the shares of every series that used it", async () => {
+  it("keeps the shares of every series that used it, so a restore needs no re-sharing", async () => {
     m.scheduledMeeting.findMany.mockResolvedValue([{ id: "m1" }]);
     await trashNotebook("nb1", "u1");
-    expect(removeMeetingShares).toHaveBeenCalledWith("m1");
+    expect(removeMeetingShares).not.toHaveBeenCalled();
   });
 
   it("needs edit on the notebook", async () => {
