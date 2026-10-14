@@ -69,6 +69,6 @@ describe("EmptyNotebook", () => {
       add.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
     const items = [...document.body.querySelectorAll('[role="menuitem"]')].map((e) => e.textContent?.trim());
-    expect(items).toEqual(["Note for the next meeting", "Existing document…"]);
+    expect(items).toEqual(["Blank note", "Note for the next meeting", "Existing document…"]);
   });
 });

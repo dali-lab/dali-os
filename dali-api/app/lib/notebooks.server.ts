@@ -11,12 +11,15 @@ import {
 import {
   collectSubtree,
   createLabPage,
+  createNotebookTab,
   createProjectPage,
   MAX_PAGE_DEPTH,
   moveIntoNotebook,
   pageDepth,
+  trashNotebookIfAbandoned,
 } from "~/lib/pages";
-import { resolveMeetingOccurrence } from "~/lib/scheduled-meeting";
+import { resolveMeetingOccurrence, seedPageFromTemplate } from "~/lib/scheduled-meeting";
+import { formatDateShort } from "~/lib/display";
 import { nameConflictResponse } from "~/lib/page-names.server";
 import { removeMeetingShares, syncMeetingShares } from "~/lib/meeting-shares.server";
 
@@ -244,6 +247,28 @@ export async function getNotebook(notebookId: string, actorId: string) {
   };
 }
 
+/** A new empty tab titled with today's date, seeded from the notebook's template when it has a usable one. */
+export async function createBlankNote(notebookId: string, actorId: string): Promise<{ id: string }> {
+  const notebook = await loadEditableNotebook(notebookId, actorId);
+  const now = new Date();
+  const note = await createNotebookTab({
+    notebookId,
+    title: formatDateShort(now),
+    createdById: actorId,
+    meetingOccurrenceStart: now,
+  });
+  if (notebook.templatePageId) {
+    const template = await prisma.page.findUnique({
+      where: { id: notebook.templatePageId },
+      select: { isTemplate: true, archivedAt: true },
+    });
+    if (template?.isTemplate && template.archivedAt === null) {
+      await seedPageFromTemplate(note.id, notebook.templatePageId);
+    }
+  }
+  return note;
+}
+
 export async function setNotebookTemplate(
   notebookId: string,
   templatePageId: string | null,
@@ -288,7 +313,8 @@ export async function addToNotebook(pageId: string, notebookId: string, actorId:
 /**
  * Turn a meeting note into a plain doc: both meeting columns are cleared
  * together (which frees the occurrence) and the page moves out to the folder
- * its notebook lives in. A notebook this empties is trashed.
+ * its notebook lives in. A notebook this empties is trashed unless a series
+ * points at it.
  */
 export async function detachNote(pageId: string, actorId: string): Promise<void> {
   const page = await prisma.page.findUnique({
@@ -328,15 +354,15 @@ export async function detachNote(pageId: string, actorId: string): Promise<void>
       pinnedAt: null,
     },
   });
-  const left = await prisma.page.count({ where: { parentPageId: notebook.id, archivedAt: null } });
-  if (left === 0) await prisma.page.update({ where: { id: notebook.id }, data: { archivedAt: new Date() } });
+  await trashNotebookIfAbandoned(notebook.id);
+  await syncMeetingShares(page.meetingNoteId);
 }
 
 /**
  * Make a plain doc the note for one occurrence of a meeting. The occurrence
- * must have no note, live or in the trash. The page stays where it is, unless
- * the series has a default notebook the actor can edit and the page is not in
- * it: then it moves in.
+ * must have no live note; a trashed one gives up its slot. The page stays where
+ * it is, unless the series has a default notebook the actor can edit and the
+ * page is not in it: then it moves in.
  */
 export async function attachNote(
   pageId: string,
@@ -374,17 +400,14 @@ export async function attachNote(
 
   const occurrence = await resolveMeetingOccurrence(meeting, occurrenceStart);
   const holder = await prisma.page.findFirst({
-    where: { meetingNoteId: meeting.id, meetingOccurrenceStart: occurrence.originalStart },
-    select: { id: true, archivedAt: true },
+    where: { meetingNoteId: meeting.id, meetingOccurrenceStart: occurrence.originalStart, archivedAt: null },
+    select: { id: true },
   });
-  if (holder) {
-    throw new NotebookError(
-      holder.archivedAt === null
-        ? "That occurrence already has a note"
-        : "That occurrence has a note in the trash. Delete it from Trash first",
-      409,
-    );
-  }
+  if (holder) throw new NotebookError("That occurrence already has a note", 409);
+  await prisma.page.updateMany({
+    where: { meetingNoteId: meeting.id, meetingOccurrenceStart: occurrence.originalStart, archivedAt: { not: null } },
+    data: { meetingNoteId: null },
+  });
 
   try {
     await prisma.page.update({

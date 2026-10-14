@@ -42,7 +42,6 @@ import {
   FileSignature,
   FileText,
   Shapes,
-  Folder,
   Handshake,
   MoreHorizontal,
   Pencil,
@@ -65,8 +64,6 @@ import {
   PanelRightClose,
   History,
   NotebookPen,
-  CalendarDays,
-  Tag,
   SlidersHorizontal,
 } from "lucide-react";
 import type { DriveItem } from "~/lib/drive.server";
@@ -101,8 +98,9 @@ import { clickIntent } from "~/components/drive/column-click";
 import { gridStepBlocks, perRowFromTops, type GridBlock } from "~/components/drive/grid-nav";
 import { MarqueeBox, useMarquee } from "~/components/drive/use-marquee";
 import { CORAL_FOLDER, folderCountLabel, glyphLabel, pickGlyph, type ItemGlyph } from "~/components/drive/glyphs";
+import { FolderGlyph, GlyphBadge } from "~/components/drive/FolderGlyph";
 import { FolderSettingsModal } from "~/components/drive/FolderSettingsModal";
-import { eligibleSlotsFor, isPageFolder, projectIdFor, receivesLabel } from "~/components/drive/receiver-options";
+import { isPageFolder, meetingsOptionFor, receivesLabel } from "~/components/drive/receiver-options";
 
 function useDriveText() {
   return {
@@ -152,8 +150,9 @@ export type RowActions = {
   };
   /** Rename, Move and Delete are left off the item menu (the Shared with me space). */
   readOnly?: boolean;
-  /** Open the "This folder receives" settings for a page folder. */
+  /** Open Folder settings for a page folder; `canFolderSettings` says which folders have something to set. */
   onFolderSettings?: (item: DriveItem) => void;
+  canFolderSettings?: (item: DriveItem) => boolean;
 };
 
 type SortKey = "name" | "modified" | "size" | "shared";
@@ -234,7 +233,7 @@ export type DriveBrowserProps = {
   /** Whether the project has an active partner relationship. Controls whether
    *  the partner-visibility toggle is shown in item menus. */
   hasActivePartner?: boolean;
-  /** Turns on "Folder settings…" (what a folder receives). Omitted while the `drive-receivers` flag is off. */
+  /** Turns on "Folder settings…" (where the space's new meeting notebooks file). Omitted while the `drive-receivers` flag is off. */
   receiverViewer?: { isCore: boolean; isProjectMember: boolean };
 };
 
@@ -358,20 +357,6 @@ function folderDescendants(items: DriveItem[], folderId: string): Set<string> {
 
 type IconSize = "sm" | "lg" | "xl";
 
-const FOLDER_MARKS = { calendar: CalendarDays, tag: Tag } as const;
-
-/** A small mark pinned to a glyph's bottom-right corner, on a disc that cuts it out of the artwork. */
-function GlyphBadge({ children, badge }: { children: ReactNode; badge: ReactNode }) {
-  return (
-    <span className="relative inline-flex shrink-0">
-      {children}
-      <span className="absolute -bottom-1 -right-1 flex items-center justify-center rounded-full bg-background">
-        {badge}
-      </span>
-    </span>
-  );
-}
-
 export function itemIcon(item: DriveItem, size: IconSize = "sm") {
   return glyphIcon(pickGlyph(item), item, size);
 }
@@ -385,12 +370,8 @@ function glyphIcon(glyph: ItemGlyph, item: DriveItem, size: IconSize): ReactNode
   switch (glyph.kind) {
     case "emoji":
       return <span className={emojiCls}>{glyph.emoji}</span>;
-    case "folder": {
-      const folder = <Folder className={`${cls} ${glyph.tint} shrink-0`} />;
-      if (!glyph.mark) return folder;
-      const Mark = FOLDER_MARKS[glyph.mark];
-      return <GlyphBadge badge={<Mark className={`${markCls} ${CORAL_FOLDER}`} />}>{folder}</GlyphBadge>;
-    }
+    case "folder":
+      return <FolderGlyph glyph={glyph} className={cls} markClassName={markCls} />;
     case "notebook": {
       const notebook = <NotebookPen className={`${cls} ${CORAL_FOLDER} shrink-0`} />;
       if (!glyph.tabs) return notebook;
@@ -443,6 +424,7 @@ function ItemGlyphTip({ item, size }: { item: DriveItem; size?: IconSize }) {
     tabCount: item.type === "doc" ? item.tabCount : undefined,
     originalInTrash: item.type === "shortcut" ? item.originalInTrash : undefined,
     itemType: item.type,
+    title: item.title,
   });
   return (
     <Tooltip content={label} variant="label" placement="top">
@@ -536,7 +518,7 @@ function itemMenuItems(
           {itemPartnerVisible ? "Stop sharing with partner" : "Share with partner"}
         </Menu.Item>
       )}
-      {item.type === "folder" && isPageFolder(item) && actions.onFolderSettings && (
+      {item.type === "folder" && isPageFolder(item) && actions.onFolderSettings && actions.canFolderSettings?.(item) && (
         <Menu.Item icon={<SlidersHorizontal className="h-3.5 w-3.5" />} onSelect={() => actions.onFolderSettings!(item)}>
           Folder settings…
         </Menu.Item>
@@ -853,6 +835,18 @@ export function DriveBrowser({
 
   const [folderSettings, setFolderSettings] = useState<{ item: DriveItem; scopeId: string } | null>(null);
 
+  function meetingsOptionIn(scopeId: string, folderId: string) {
+    if (!receiverViewer) return null;
+    const scope = scopes.find((sc) => sc.id === scopeId);
+    return meetingsOptionFor({
+      scopeId,
+      scopeLabel: scope?.label ?? "",
+      items: scope?.items ?? [],
+      folderId,
+      ...receiverViewer,
+    });
+  }
+
   // Wrap the hub's getScopeActions to inject the in-place Share handler.
   // Sharing only applies to doc/folder (Page-backed) items; the wrapper passes
   // onShare so itemMenuItems and the leaf toolbar can show it without the hub
@@ -877,7 +871,12 @@ export function DriveBrowser({
         openSingle: (item: DriveItem) => openFileIn(item, "single"),
       },
       ...(onTagClick ? { onTagClick } : {}),
-      ...(receiverViewer ? { onFolderSettings: (item: DriveItem) => setFolderSettings({ item, scopeId }) } : {}),
+      ...(receiverViewer
+        ? {
+            onFolderSettings: (item: DriveItem) => setFolderSettings({ item, scopeId }),
+            canFolderSettings: (item: DriveItem) => meetingsOptionIn(scopeId, item.id) !== null,
+          }
+        : {}),
       onShare: (item: DriveItem) => {
         if (item.type !== "doc" && item.type !== "folder" && !(item.type === "form" && formShare)) return;
         // workspaceType is not on DriveItem directly; infer from the scope id
@@ -2211,22 +2210,13 @@ export function DriveBrowser({
       />
     )}
 
-    {folderSettings && receiverViewer && (
+    {folderSettings && meetingsOptionIn(folderSettings.scopeId, folderSettings.item.id) && (
       <FolderSettingsModal
         key={folderSettings.item.id}
         open
         onClose={() => setFolderSettings(null)}
         folder={folderSettings.item}
-        slots={eligibleSlotsFor(
-          folderSettings.scopeId,
-          projectIdFor(
-            folderSettings.scopeId,
-            scopes.find((sc) => sc.id === folderSettings.scopeId)?.items ?? [],
-            folderSettings.item.id,
-          ),
-          receiverViewer.isCore,
-          receiverViewer.isProjectMember,
-        )}
+        meetings={meetingsOptionIn(folderSettings.scopeId, folderSettings.item.id)!}
       />
     )}
 

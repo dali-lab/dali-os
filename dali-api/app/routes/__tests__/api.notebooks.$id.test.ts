@@ -21,6 +21,7 @@ vi.mock("~/lib/notebooks.server", () => {
       throw err;
     },
     addToNotebook: vi.fn(),
+    createBlankNote: vi.fn(),
     dissolveNotebook: vi.fn(),
     getNotebook: vi.fn(),
     mergeNotebooks: vi.fn(),
@@ -74,6 +75,14 @@ describe("GET /api/notebooks/:id", () => {
 });
 
 describe("POST /api/notebooks/:id", () => {
+  it("new-note creates a blank note for the actor and returns its id", async () => {
+    vi.mocked(lib.createBlankNote).mockResolvedValue({ id: "note9" });
+    const res = await post({ intent: "new-note" });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, id: "note9" });
+    expect(lib.createBlankNote).toHaveBeenCalledWith("nb1", "u1");
+  });
+
   it("set-template", async () => {
     expect((await post({ intent: "set-template", templatePageId: "t1" })).status).toBe(200);
     expect(lib.setNotebookTemplate).toHaveBeenCalledWith("nb1", "t1", "u1");
@@ -127,6 +136,7 @@ describe("POST /api/notebooks/:id", () => {
   });
 
   it.each([
+    ["new-note", { intent: "new-note" }, "createBlankNote"],
     ["set-template", { intent: "set-template", templatePageId: "t1" }, "setNotebookTemplate"],
     ["add-page", { intent: "add-page", pageId: "d1" }, "addToNotebook"],
     ["merge-into", { intent: "merge-into", targetId: "nb2" }, "mergeNotebooks"],
