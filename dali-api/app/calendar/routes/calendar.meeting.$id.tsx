@@ -179,6 +179,10 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   // meeting's doc), and the same authority attachMeetingNote re-checks.
   const canAddNote = auth.user.sub === meeting.organizerId || roles.isCore;
   const canEdit = canAddNote;
+  const canStartNote =
+    canAddNote ||
+    ((meeting.notePages.length > 0 || !!meeting.notebookId) &&
+      (canManage || meeting.participantUserIds.includes(auth.user.sub)));
 
   // Switching every door display to this event is the organizer's or Core's
   // call.
@@ -273,6 +277,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     canAddWhiteboard: canAddNote,
     hasType: meeting.meetingType != null,
     canAddNote,
+    canStartNote,
     // Adding/changing the meeting's project after the fact (behind the
     // unified-core-project-meetings flag) is the same authority as adding a
     // note; the action re-checks organizer/Core + project membership.
@@ -753,7 +758,7 @@ export default function CalendarMeetingPage() {
               className={actionBtnClass}
             />
           ) : (
-            d.canAddNote && (
+            d.canStartNote && (
               // A meeting created before notes existed (or with the note
               // toggle off) has no doc and, unless it synced to Google, never
               // appears on the calendar grid either, so this page is the only
