@@ -101,6 +101,7 @@ describe("listNotebooks", () => {
         path: "Lab ▸ Meetings",
         workspaceType: "Lab",
         workspaceId: null,
+        parentPageId: "f1",
         tabCount: 4,
         lastNoteAt: "2026-09-12T15:00:00.000Z",
         suggested: false,

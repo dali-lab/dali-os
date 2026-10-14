@@ -12,6 +12,7 @@ const row = (id: string, over: Partial<NotebookRow> = {}): NotebookRow => ({
   path: "Projects ▸ Atlas",
   workspaceType: "Project",
   workspaceId: "p1",
+  parentPageId: null,
   tabCount: 2,
   lastNoteAt: null,
   suggested: false,
@@ -91,9 +92,9 @@ describe("NotebookPicker with a preloaded list", () => {
     expect(titles()).toEqual(["Notebook b"]);
   });
 
-  it("hands back the picked notebook with its project", async () => {
+  it("hands back the picked notebook with its project and the folder it sits in", async () => {
     const onPick = vi.fn();
-    mount({ preloaded: { rows: [row("a")], status: "ready" }, onPick });
+    mount({ preloaded: { rows: [row("a", { parentPageId: "p1-m" })], status: "ready" }, onPick });
     act(() => (document.body.querySelector("li button") as HTMLElement).click());
     expect(onPick).toHaveBeenCalledWith({
       id: "a",
@@ -101,6 +102,7 @@ describe("NotebookPicker with a preloaded list", () => {
       path: "Projects ▸ Atlas",
       workspaceType: "Project",
       workspaceId: "p1",
+      parentPageId: "p1-m",
     });
   });
 });

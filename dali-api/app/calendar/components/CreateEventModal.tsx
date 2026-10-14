@@ -1,12 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useFetcher, useRevalidator } from "react-router";
-import { AlignLeft, CalendarDays, Clock, MapPin, Repeat, UsersRound, Video, X } from "lucide-react";
+import { AlignLeft, CalendarDays, Clock, MapPin, Repeat, UsersRound, X } from "lucide-react";
 import { cn } from "~/lib/cn";
 import { Checkbox } from "~/components/ui/Checkbox";
 import { DateField } from "~/components/ui/DateField";
 import { TimeField as TimeComboField } from "~/components/ui/TimeField";
 import { Select } from "~/components/ui/floating";
-import { Toggle } from "~/components/ui/Toggle";
 import { RoomLocationField } from "~/rooms/components/RoomLocationField";
 import { filedNoteFrom } from "~/calendar/lib/filed-note";
 import { useFiledNoteToast } from "~/calendar/lib/useFiledNoteToast";
@@ -390,7 +389,7 @@ export function CreateEventModal({
         setMeetingStatus({ ok: false, error: json.error ?? "Failed to create meeting" });
       } else {
         const filed = filedNoteFrom(json);
-        if (filed) showFiledNote(filed, { undo: true });
+        if (filed) showFiledNote(filed, { undo: true, movedTo: note.state.places[0]?.path });
         setMeetingStatus({
           ok: true,
           count: json.notifiedCount ?? 0,
@@ -472,7 +471,7 @@ export function CreateEventModal({
   // ── Shared timesheet section ──────────────────────────────────────────────
   // The same TimesheetFields block in both Event and Meeting modes; the helper
   // line adapts to whether a repeating meeting is being scheduled. Hidden only
-  // when the viewer has no roles to log against (the toggle would dead-end).
+  // when the viewer has no roles to log against (the checkbox would dead-end).
   const timesheetSection =
     data.myRoles.length > 0 ? (
       <TimesheetFields
@@ -498,6 +497,7 @@ export function CreateEventModal({
             : "Automatically logs this event to your timesheet once it's created."
         }
         fieldClass={fieldClass}
+        control="checkbox"
       />
     ) : null;
 
@@ -745,7 +745,12 @@ export function CreateEventModal({
 
               {/* Timesheet — hidden for all-day and repeating events, which
                   have nothing for hours to attach to. */}
-              {eventCanLogWork && timesheetSection}
+              {eventCanLogWork && timesheetSection && (
+                <div>
+                  <span className={labelClass}>Add to this event</span>
+                  <div className="rounded-md border border-border bg-muted/20 p-3">{timesheetSection}</div>
+                </div>
+              )}
 
               {/* Error from fetcher */}
               {eventFetcher.data?.error && (
@@ -857,27 +862,6 @@ export function CreateEventModal({
                 </div>
               )}
 
-              {/* Google Meet */}
-              {inviteDests.length > 0 && (
-                <div className="rounded-md border border-border bg-muted/20 p-3">
-                  <Toggle
-                    checked={canAddMeet && addMeet}
-                    disabled={!canAddMeet}
-                    onChange={(e) => setAddMeet(e.target.checked)}
-                    label={
-                      <span className="inline-flex items-center gap-1.5">
-                        <Video className="h-3.5 w-3.5" /> Add Google Meet
-                      </span>
-                    }
-                    description={
-                      canAddMeet
-                        ? "Generates a Meet link on the selected calendar and includes it in the invite."
-                        : "Pick a Google calendar to send from and add guests to enable a Meet link."
-                    }
-                  />
-                </div>
-              )}
-
               {/* Location */}
               <div>
                 <label htmlFor="cem-mtg-location" className={labelClass}>
@@ -917,20 +901,36 @@ export function CreateEventModal({
                 />
               </div>
 
-              <div className="rounded-md border border-border bg-muted/20 p-3">
-                <MeetingNoteFields
-                  note={note}
-                  surface="create"
-                  prefillProjectId={prefillProjectId}
-                  fieldClass={fieldClass}
-                  labelClass={labelClass}
-                  meetingTitle={title}
-                  suggest={filingSuggestions}
-                />
+              {/* Everything optional about the meeting, one control style. A
+                  repeating meeting logs its first occurrence to the timesheet. */}
+              <div>
+                <span className={labelClass}>Add to this meeting</span>
+                <div className="space-y-3 rounded-md border border-border bg-muted/20 p-3">
+                  {inviteDests.length > 0 && (
+                    <Checkbox
+                      checked={canAddMeet && addMeet}
+                      disabled={!canAddMeet}
+                      onChange={(e) => setAddMeet(e.target.checked)}
+                      label="Google Meet"
+                      description={
+                        canAddMeet
+                          ? "Adds a Meet link on the selected calendar to the invite."
+                          : "Pick a Google calendar to send from and add guests to enable a Meet link."
+                      }
+                    />
+                  )}
+                  <MeetingNoteFields
+                    note={note}
+                    surface="create"
+                    prefillProjectId={prefillProjectId}
+                    fieldClass={fieldClass}
+                    labelClass={labelClass}
+                    meetingTitle={title}
+                    suggest={filingSuggestions}
+                  />
+                  {timesheetSection}
+                </div>
               </div>
-
-              {/* Timesheet — a repeating meeting logs its first occurrence. */}
-              {timesheetSection}
 
               {/* Status */}
               {meetingStatus?.ok === true && (

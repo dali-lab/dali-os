@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { X } from "lucide-react";
 import { Select } from "~/components/ui/floating";
 import { Checkbox } from "~/components/ui/Checkbox";
-import { Radio } from "~/components/ui/Radio";
+import { Segmented } from "~/components/ui/Segmented";
 import { FolderPicker, type Destination } from "~/components/drive/FolderPicker";
 import { useDriveDestinations } from "~/components/drive/use-drive-destinations";
 import { IconButton } from "~/components/ui/IconButton";
@@ -18,10 +18,14 @@ import {
   makePrimaryPlace,
   meetingNoteActive,
   noteDestinationRows,
+  notebookHomePlace,
   placeFromDest,
   placesFromPicker,
   projectIdOf,
   removePlace,
+  reorderPlaces,
+  withHomeOnTop,
+  withoutPlace,
   type ExistingNotebook,
   type FilingPlace,
   type MeetingNoteState,
@@ -47,8 +51,6 @@ export {
 
 export type MeetingNoteController = ReturnType<typeof useMeetingNote>;
 
-export type NoteChoice = "none" | MeetingNoteState["notebookMode"];
-
 export function useMeetingNote() {
   const [state, setState] = useState<MeetingNoteState>(emptyMeetingNote);
   const patch = (p: Partial<MeetingNoteState>) => setState((s) => ({ ...s, ...p }));
@@ -64,17 +66,39 @@ export function useMeetingNote() {
     setState((s) => ({ ...s, places: edit(s.places), placesTouched: true }));
   return {
     state,
-    setEnabled: (enabled: boolean) => patch({ enabled }),
-    setChoice: (choice: NoteChoice) =>
-      choice === "none"
-        ? setState((s) => ({
-            ...s,
-            enabled: false,
-            places: s.notebookMode === "existing" ? [] : s.places.slice(0, 1),
-          }))
-        : patch({ enabled: true, notebookMode: choice }),
+    setEnabled: (enabled: boolean) =>
+      setState((s) => {
+        if (enabled) {
+          return { ...s, enabled, places: s.notebookMode === "existing" ? withHomeOnTop(s.places, s.existingHome) : s.places };
+        }
+        return { ...s, enabled, places: s.notebookMode === "existing" ? [] : s.places.slice(0, 1) };
+      }),
+    // Switching to an existing notebook puts its own place on top; switching away takes it off.
+    setNotebookMode: (notebookMode: MeetingNoteState["notebookMode"]) =>
+      setState((s) =>
+        s.notebookMode === notebookMode
+          ? s
+          : {
+              ...s,
+              notebookMode,
+              places:
+                notebookMode === "existing" && s.existing
+                  ? withHomeOnTop(s.places, s.existingHome)
+                  : withoutPlace(s.places, s.existingHome),
+            },
+      ),
     setWhiteboard: (whiteboard: boolean) => patch({ whiteboard }),
-    setExisting: (existing: ExistingNotebook | null) => patch({ existing }),
+    // `home` is the notebook's own place as a row; without it the notebook stays where it is.
+    setExisting: (existing: ExistingNotebook | null, home: FilingPlace | null = null) =>
+      setState((s) => {
+        const rest = withoutPlace(s.places, s.existingHome);
+        return {
+          ...s,
+          existing,
+          existingHome: existing ? home : null,
+          places: existing ? withHomeOnTop(rest, home) : rest,
+        };
+      }),
     setTitle: (title: string) => patch({ title, titleEdited: true }),
     // The meeting's own title seeds the notebook name until the organizer types one.
     prefillTitle: (title: string) => setState((s) => (s.titleEdited || s.title === title ? s : { ...s, title })),
@@ -84,7 +108,8 @@ export function useMeetingNote() {
     setPlaces: (places: FilingPlace[]) => editPlaces(() => places),
     addPlace: (place: FilingPlace) => editPlaces((places) => addPlace(places, place)),
     removePlace: (place: FilingPlace) => editPlaces((places) => removePlace(places, place.dest)),
-    makePrimary: (place: FilingPlace) => editPlaces((places) => makePrimaryPlace(places, place.dest)),
+    makeLocation: (place: FilingPlace) => editPlaces((places) => makePrimaryPlace(places, place.dest)),
+    reorderPlaces: (from: number, to: number) => editPlaces((places) => reorderPlaces(places, from, to)),
     reset: () => setState(emptyMeetingNote),
   };
 }
@@ -108,8 +133,9 @@ export function MeetingNoteFields({
   prefillProjectId = null,
 }: {
   note: MeetingNoteController;
-  /** "create" can skip the note and start a whiteboard with it or alone; "note"
-   *  always makes a note; "whiteboard" is a board with no note. */
+  /** "create" renders the Notebook and Whiteboard checkbox rows for the caller's
+   *  "Add to this meeting" well; "note" always makes a note; "whiteboard" is a
+   *  board with no note. */
   surface?: "create" | "note" | "whiteboard";
   fieldClass: string;
   labelClass: string;
@@ -150,10 +176,11 @@ export function MeetingNoteFields({
   });
 
   const { seedPlace } = note;
+  const hasExisting = state.existing !== null;
   useEffect(() => {
-    if (!active || !rowsReady || state.placesTouched) return;
+    if (!active || !rowsReady || state.placesTouched || (existingNotebook && hasExisting)) return;
     seedPlace(existingNotebook ? null : defaultPlaceFor(prefillProjectId, noteRows));
-  }, [active, rowsReady, state.placesTouched, existingNotebook, prefillProjectId, noteRows, seedPlace]);
+  }, [active, rowsReady, state.placesTouched, existingNotebook, hasExisting, prefillProjectId, noteRows, seedPlace]);
 
   const suggestions = useMemo(() => {
     if (!suggest || !state.enabled || !rowsReady) return [];
@@ -170,9 +197,9 @@ export function MeetingNoteFields({
     }).map((s) => ({ ...s, place: placeByGroup.get(s.groupId)! }));
   }, [suggest, state.enabled, rowsReady, noteRows, state.places, meetingTitle]);
 
-  function chooseNote(choice: "none" | "new" | "existing") {
-    note.setChoice(choice);
-    if (choice === "existing" && !state.existing) setNotebookPickerOpen(true);
+  function chooseMode(mode: MeetingNoteState["notebookMode"]) {
+    note.setNotebookMode(mode);
+    if (mode === "existing" && !state.existing) setNotebookPickerOpen(true);
   }
 
   const notebookPicker = notebookPickerOpen && (
@@ -183,20 +210,23 @@ export function MeetingNoteFields({
       preloaded={notebookList}
       onClose={() => setNotebookPickerOpen(false)}
       onPick={(picked) => {
-        note.setExisting(picked);
+        note.setExisting(picked, notebookHomePlace(picked, noteRows));
         setNotebookPickerOpen(false);
       }}
       onNewInstead={() => {
-        note.setChoice("new");
+        note.setNotebookMode("new");
         setNotebookPickerOpen(false);
       }}
     />
   );
 
+  const fixedLocation = existingNotebook ? (state.existing ? (state.existingHome ? undefined : state.existing.path) : null) : undefined;
+
   const filedIn = (
     <FiledInChips
       places={boardOnly ? state.places.slice(0, 1) : state.places}
-      existingNotebook={existingNotebook}
+      fixedLocation={fixedLocation}
+      lockTop={existingNotebook && !!state.existingHome}
       boardOnly={boardOnly}
       suggestions={suggestions}
       labelClass={labelClass}
@@ -204,7 +234,8 @@ export function MeetingNoteFields({
         const picked = suggestions.find((s) => s.groupId === groupId);
         if (picked) note.addPlace(picked.place);
       }}
-      onMakePrimary={note.makePrimary}
+      onMakeLocation={note.makeLocation}
+      onReorder={note.reorderPlaces}
       onRemove={note.removePlace}
       onAdd={() => setPlacesPickerOpen(true)}
     />
@@ -234,7 +265,7 @@ export function MeetingNoteFields({
       <FolderPicker
         open
         mode="multi"
-        heading={existingNotebook ? "Also link the notebook in" : "File the notebook in"}
+        heading={existingNotebook ? "Notebook location and shortcuts" : "File the notebook in"}
         drives={noteRows.drives}
         folders={noteRows.folders}
         preferFolderType="Meetings"
@@ -257,105 +288,108 @@ export function MeetingNoteFields({
     );
   }
 
-  const choice: NoteChoice = state.enabled ? state.notebookMode : "none";
-  const rowLabelClass = "w-20 shrink-0 text-sm text-muted-foreground";
-  const radios = (
-    <div role="radiogroup" aria-label="Notes" className="flex flex-wrap items-center gap-x-5 gap-y-1">
-      {surface === "create" && (
-        <Radio name="meeting-notes-choice" checked={choice === "none"} onChange={() => chooseNote("none")} label="No note" />
+  const modeChoice = (
+    <Segmented
+      ariaLabel="Notebook"
+      value={state.notebookMode}
+      onChange={chooseMode}
+      options={[
+        { value: "new", label: "New" },
+        { value: "existing", label: "Existing" },
+      ]}
+    />
+  );
+
+  const notebookDetails = existingNotebook ? (
+    <div className="flex items-center gap-2">
+      <span className="flex min-w-0 flex-1 flex-col rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground">
+        {state.existing ? (
+          <>
+            <span className="truncate">{state.existing.title}</span>
+            <span className="truncate text-xs text-muted-foreground">{state.existing.path}</span>
+          </>
+        ) : (
+          <span className="text-muted-foreground">No notebook chosen</span>
+        )}
+      </span>
+      <button type="button" onClick={() => setNotebookPickerOpen(true)} className={secondaryButtonClass}>
+        {state.existing ? "Change…" : "Choose…"}
+      </button>
+      {state.existing && (
+        <IconButton label="Remove notebook" icon={X} className="shrink-0" onClick={() => note.setExisting(null)} />
       )}
-      <Radio name="meeting-notes-choice" checked={choice === "new"} onChange={() => chooseNote("new")} label="New notebook" />
-      <Radio
-        name="meeting-notes-choice"
-        checked={choice === "existing"}
-        onChange={() => chooseNote("existing")}
-        label="Add to existing notebook"
-      />
+    </div>
+  ) : (
+    <div className="space-y-3">
+      <div>
+        <label htmlFor="meeting-notebook-name" className={labelClass}>
+          Name
+        </label>
+        <input
+          id="meeting-notebook-name"
+          type="text"
+          value={state.title}
+          onChange={(e) => note.setTitle(e.target.value)}
+          placeholder="e.g. Weekly check-in"
+          maxLength={200}
+          required
+          className={fieldClass}
+        />
+      </div>
+      <div>
+        <span className={labelClass}>Template</span>
+        <Select
+          value={state.templatePageId ?? ""}
+          onChange={(v) => note.setTemplatePageId(v || null)}
+          ariaLabel="Notebook template"
+          options={[
+            { value: "", label: "Default template" },
+            ...templates.map((t) => ({ value: t.id, label: t.title })),
+          ]}
+          buttonClassName={`${fieldClass} inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40`}
+        />
+      </div>
     </div>
   );
 
+  const notebookBody = (
+    <div className="space-y-3">
+      {modeChoice}
+      {notebookDetails}
+      {filedIn}
+    </div>
+  );
+
+  if (surface === "note") {
+    return (
+      <div className="space-y-3">
+        {state.enabled && notebookBody}
+        {notebookPicker}
+        {placesPicker}
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-3">
-      {surface === "create" ? (
-        <div>
-          <span className={labelClass}>Meeting assets</span>
-          <div className="space-y-1.5 pt-1">
-            <div className="flex items-center gap-3">
-              <span className={rowLabelClass}>Notes</span>
-              {radios}
-            </div>
-            <div className="flex items-center gap-3">
-              <span className={rowLabelClass}>Whiteboard</span>
-              <Checkbox
-                checked={state.whiteboard}
-                onChange={(e) => note.setWhiteboard(e.target.checked)}
-                label="Start a whiteboard"
-              />
-            </div>
-          </div>
-        </div>
-      ) : (
-        <div>
-          <span className={labelClass}>Notes</span>
-          <div className="pt-1">{radios}</div>
-        </div>
-      )}
-
-      {state.enabled &&
-        (existingNotebook ? (
-          <div className="flex items-center gap-2">
-            <span className="flex min-w-0 flex-1 flex-col rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground">
-              {state.existing ? (
-                <>
-                  <span className="truncate">{state.existing.title}</span>
-                  <span className="truncate text-xs text-muted-foreground">{state.existing.path}</span>
-                </>
-              ) : (
-                <span className="text-muted-foreground">No notebook chosen</span>
-              )}
-            </span>
-            <button type="button" onClick={() => setNotebookPickerOpen(true)} className={secondaryButtonClass}>
-              {state.existing ? "Change…" : "Choose…"}
-            </button>
-            {state.existing && (
-              <IconButton label="Remove notebook" icon={X} className="shrink-0" onClick={() => note.setExisting(null)} />
-            )}
-          </div>
-        ) : (
-          <div className="space-y-3">
-            <div>
-              <label htmlFor="meeting-notebook-name" className={labelClass}>
-                Name
-              </label>
-              <input
-                id="meeting-notebook-name"
-                type="text"
-                value={state.title}
-                onChange={(e) => note.setTitle(e.target.value)}
-                placeholder="e.g. Weekly check-in"
-                maxLength={200}
-                required
-                className={fieldClass}
-              />
-            </div>
-            <div>
-              <span className={labelClass}>Template</span>
-              <Select
-                value={state.templatePageId ?? ""}
-                onChange={(v) => note.setTemplatePageId(v || null)}
-                ariaLabel="Notebook template"
-                options={[
-                  { value: "", label: "Default template" },
-                  ...templates.map((t) => ({ value: t.id, label: t.title })),
-                ]}
-                buttonClassName={`${fieldClass} inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40`}
-              />
-            </div>
-          </div>
-        ))}
-
-      {(state.enabled || boardOnly) && filedIn}
-
+      <div>
+        <Checkbox
+          checked={state.enabled}
+          onChange={(e) => note.setEnabled(e.target.checked)}
+          label="Notebook"
+          description="Shared meeting notes, one tab per meeting."
+        />
+        {state.enabled && <div className="mt-3 pl-6">{notebookBody}</div>}
+      </div>
+      <div>
+        <Checkbox
+          checked={state.whiteboard}
+          onChange={(e) => note.setWhiteboard(e.target.checked)}
+          label="Whiteboard"
+          description="A shared whiteboard, filed with the notebook."
+        />
+        {boardOnly && state.whiteboard && <div className="mt-3 pl-6">{filedIn}</div>}
+      </div>
       {notebookPicker}
       {placesPicker}
     </div>

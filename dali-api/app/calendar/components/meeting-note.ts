@@ -3,11 +3,12 @@
 // MeetingNoteFields.tsx and re-exports these.
 //
 // "Which notebook?" is the notebook choice: an existing one, or a new one with
-// a name and an optional template. Where it is filed is `places`: the first is
-// the primary location, the rest are links (shortcuts). A whiteboard with no
-// note is filed at the first place alone. The meeting's project is derived
-// from where the assets go (projectIdOf); the server derives the legacy
-// meeting type from the choice.
+// a name and an optional template. Where it is filed is `places`, one ordered
+// list: the first is the location, the rest are shortcuts. An existing
+// notebook already lives somewhere, so its own place seeds the top; putting a
+// different place on top moves it there. A whiteboard with no note is filed at
+// the first place alone. The meeting's project is derived from where the assets
+// go (projectIdOf); the server derives the legacy meeting type from the choice.
 
 import { destinationPath, type Destination, type MultiResult } from "~/components/drive/FolderPicker";
 import { resolveMoveTarget } from "~/components/drive/move-target";
@@ -53,8 +54,11 @@ export type MeetingNoteState = {
   title: string;
   /** True once the organizer typed a name, which stops the meeting-title prefill. */
   titleEdited: boolean;
-  /** Where the notebook is filed, primary first. In "existing" mode the
-   *  notebook already has its own location, so every place is a link. */
+  /** The picked notebook's own place, as a row in `places`. Null while none is
+   *  picked, or when its folder is not one the viewer can pick (it then stays
+   *  put and every place is a shortcut). */
+  existingHome: FilingPlace | null;
+  /** Where the notebook is filed: the location first, then shortcuts. */
   places: FilingPlace[];
   /** True once the organizer added, removed or re-ranked a place, which stops the invited project from choosing one. */
   placesTouched: boolean;
@@ -67,6 +71,7 @@ export const emptyMeetingNote: MeetingNoteState = {
   whiteboard: false,
   notebookMode: "new",
   existing: null,
+  existingHome: null,
   title: "",
   titleEdited: false,
   places: [],
@@ -94,10 +99,31 @@ function locationPayload(l: MeetingNoteLocation) {
   return { workspaceType: l.workspaceType, workspaceId: l.workspaceId, parentPageId: l.parentPageId };
 }
 
-/** The places filed as shortcuts: every place but the primary, or all of them
- *  when the notebook already exists. */
+/** How many leading places make up the location: none when the notebook's own
+ *  place cannot be shown (or none is picked yet), else the first. */
+function locationCount(s: MeetingNoteState): number {
+  if (s.notebookMode === "existing" && (!s.existing || !s.existingHome)) return 0;
+  return Math.min(1, s.places.length);
+}
+
+/** The place the notebook is filed at, when the list says so. */
+export function locationPlace(s: MeetingNoteState): FilingPlace | null {
+  return locationCount(s) > 0 ? s.places[0]! : null;
+}
+
+/** The places filed as shortcuts: every place but the location. */
 export function linkPlaces(s: MeetingNoteState): FilingPlace[] {
-  return s.notebookMode === "existing" ? s.places : s.places.slice(1);
+  return s.places.slice(locationCount(s));
+}
+
+const placementKey = (l: { workspaceType: string; workspaceId: string | null; parentPageId: string | null }) =>
+  `${l.workspaceType}:${l.workspaceId ?? ""}:${l.parentPageId ?? ""}`;
+
+/** The picked notebook's own placement, in the shape the payloads carry. Null
+ *  for a notebook that lives where a note cannot be filed. */
+function ownLocation(nb: ExistingNotebook): ReturnType<typeof locationPayload> | null {
+  if (nb.workspaceType !== "Lab" && nb.workspaceType !== "Project") return null;
+  return { workspaceType: nb.workspaceType, workspaceId: nb.workspaceId, parentPageId: nb.parentPageId };
 }
 
 /** The notebook the note files into, as the create payloads carry it. A
@@ -106,7 +132,13 @@ export function notebookChoiceOf(s: MeetingNoteState): NotebookChoice | null {
   if (!s.enabled) return null;
   const links = linkPlaces(s).map((p) => locationPayload(p.location));
   const withLinks = links.length > 0 ? { links } : {};
-  if (s.notebookMode === "existing") return s.existing ? { existingId: s.existing.id, ...withLinks } : null;
+  if (s.notebookMode === "existing") {
+    if (!s.existing) return null;
+    const top = locationPlace(s);
+    const own = ownLocation(s.existing);
+    const move = top && own && placementKey(top.location) !== placementKey(own) ? { location: locationPayload(top.location) } : {};
+    return { existingId: s.existing.id, ...move, ...withLinks };
+  }
   const primary = s.places[0]?.location;
   return {
     title: s.title.trim(),
@@ -116,10 +148,12 @@ export function notebookChoiceOf(s: MeetingNoteState): NotebookChoice | null {
   };
 }
 
-/** The project the meeting's assets belong to: the chosen notebook's, or the
- *  project the primary place is in. Null files them lab-wide. */
+/** The project the meeting's assets belong to: the one the chosen notebook
+ *  will be in, or the project the location is in. Null files them lab-wide. */
 export function projectIdOf(s: MeetingNoteState): string | null {
   if (s.enabled && s.notebookMode === "existing") {
+    const moved = locationPlace(s)?.location;
+    if (moved) return moved.workspaceType === "Project" ? moved.workspaceId : null;
     return s.existing?.workspaceType === "Project" ? s.existing.workspaceId : null;
   }
   const primary = s.places[0]?.location;
@@ -212,6 +246,43 @@ export function removePlace(places: FilingPlace[], dest: Destination): FilingPla
 
 export function makePrimaryPlace(places: FilingPlace[], dest: Destination): FilingPlace[] {
   return orderedBy(places, setPrimary(selectionOf(places), dest));
+}
+
+/** Moves the place at `from` to `to`, shifting the ones between. The top of
+ *  the list is the location, so moving a place there makes it the location. */
+export function reorderPlaces(places: FilingPlace[], from: number, to: number): FilingPlace[] {
+  if (from === to || from < 0 || to < 0 || from >= places.length || to >= places.length) return places;
+  const next = [...places];
+  const [moved] = next.splice(from, 1);
+  next.splice(to, 0, moved!);
+  return next;
+}
+
+/** An existing notebook's own place as a row, found among the folders the viewer
+ *  can pick. Null when its folder is not one of them. */
+export function notebookHomePlace(nb: ExistingNotebook, rows: PickerRows): FilingPlace | null {
+  const own = ownLocation(nb);
+  if (!own) return null;
+  const folder = nb.parentPageId ? rows.folders.find((f) => f.id === nb.parentPageId) : undefined;
+  const dest: Destination | null = folder
+    ? { driveId: folder.driveId, folderId: folder.id }
+    : own.workspaceType === "Lab" && own.parentPageId === null
+      ? { driveId: "lab", folderId: null }
+      : null;
+  const place = dest ? placeFromDest(dest, rows) : null;
+  return place && placementKey(place.location) === placementKey(own) ? place : null;
+}
+
+/** `places` with `home` as the location and any other copy of it removed. */
+export function withHomeOnTop(places: FilingPlace[], home: FilingPlace | null): FilingPlace[] {
+  return home ? [home, ...withoutPlace(places, home)] : places;
+}
+
+/** `places` without `place`, wherever it sits. */
+export function withoutPlace(places: FilingPlace[], place: FilingPlace | null): FilingPlace[] {
+  if (!place) return places;
+  const key = destinationKey(place.dest);
+  return places.filter((p) => destinationKey(p.dest) !== key);
 }
 
 /** The places a multi-mode FolderPicker confirmed. Places the picker could not

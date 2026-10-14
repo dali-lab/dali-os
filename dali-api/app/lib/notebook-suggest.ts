@@ -9,6 +9,7 @@ export type NotebookCandidate = {
   lastNoteAt: Date | null;
   workspaceType: string;
   workspaceId: string | null;
+  parentPageId: string | null;
   /** True when the notebook already holds a note of the series being filed. */
   holdsSeriesNote: boolean;
   /** Audience keys (see meetingNotebookIdentity) of the meetings that use it. */
