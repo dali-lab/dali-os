@@ -5,7 +5,7 @@ import { requireProjectEditAccess, requireMemberSession } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { logAuditEvent } from "~/lib/audit";
 import { getPageAccess } from "~/lib/pageAccess.server";
-import { notebookErrorResponse, trashNotebook } from "~/lib/notebooks.server";
+import { loadManageableNotebook, notebookErrorResponse, trashNotebook } from "~/lib/notebooks.server";
 import { isRoot, ROOT_DELETE_ERROR, CLEARED_FOLDER_TYPE } from "~/lib/drive-roots";
 
 // POST   /api/documents/:id — partial update. Body: any of
@@ -197,6 +197,13 @@ export async function action({ request, params }: Route.ActionArgs) {
       return withCors(request, Response.json({ error: "Title is required" }, { status: 400 }));
     }
     data.title = title;
+    if (page.kind === "Notebook") {
+      try {
+        await loadManageableNotebook(pageId, auth.user.sub, request);
+      } catch (err) {
+        return withCors(request, notebookErrorResponse(err));
+      }
+    }
   }
   if (body.iconEmoji !== undefined) {
     const icon = typeof body.iconEmoji === "string" ? body.iconEmoji.trim() : "";

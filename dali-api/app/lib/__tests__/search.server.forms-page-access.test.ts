@@ -44,6 +44,7 @@ beforeEach(() => {
     m[model].findMany.mockResolvedValue([]);
   }
   vi.mocked(searchPageContent).mockResolvedValue([]);
+  access([]);
   m.page.findMany.mockResolvedValue([]);
   m.form.findMany.mockResolvedValue([]);
 });
@@ -88,6 +89,7 @@ describe("runSearch forms with forms-page-access off", () => {
     expect(m.form.findMany).not.toHaveBeenCalled();
     await runSearch({ userId: "u1", roles: { ...MEMBER, canViewForms: true }, q: "intake" });
     expect(m.form.findMany).toHaveBeenCalledTimes(1);
-    expect(getPageAccessBulk).not.toHaveBeenCalled();
+    // Only the document pass checks access here, and it had no pages to check.
+    expect(vi.mocked(getPageAccessBulk).mock.calls.every(([, pages]) => pages.length === 0)).toBe(true);
   });
 });

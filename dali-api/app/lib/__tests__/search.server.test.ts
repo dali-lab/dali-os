@@ -10,9 +10,14 @@ vi.mock("~/hiring/lib/confidentiality", () => ({
 // Page-body search is raw SQL against tsvector/pg_trgm, which the Prisma mock
 // can't stand in for — its own behavior is covered in doc-search.test.ts.
 vi.mock("~/lib/doc-search.server", () => ({ searchPageContent: vi.fn() }));
+vi.mock("~/lib/pageAccess.server", () => ({
+  PAGE_ACCESS_SELECT: { id: true, accessMarker: true },
+  getPageAccessBulk: vi.fn(),
+}));
 
 import { prisma } from "~/lib/db";
 import { searchPageContent } from "~/lib/doc-search.server";
+import { getPageAccessBulk } from "~/lib/pageAccess.server";
 import { runSearch } from "~/lib/search.server";
 import type { UserRoles } from "~/lib/roles";
 
@@ -172,8 +177,32 @@ describe("runSearch — documents", () => {
     fuzzy: false,
   });
 
+  // Title pass and the content-hit access lookup share prisma.page.findMany;
+  // the lookup is the only call filtering by id.
+  const stubPages = (titleRows: Array<{ id: string; title: string; iconEmoji: string | null }>) =>
+    mockPrisma.page.findMany.mockImplementation(async (args: any) =>
+      args.where.id?.in ? args.where.id.in.map((id: string) => ({ id })) : titleRows,
+    );
+  const allow = (viewable: string[] | "all") =>
+    vi.mocked(getPageAccessBulk).mockImplementation(
+      async (_u, pages) =>
+        new Map(
+          pages.map((p) => [
+            p.id,
+            { canView: viewable === "all" || viewable.includes(p.id), canEdit: false, canComment: false },
+          ]),
+        ),
+    );
+  const docsOf = async (userId = "u1") =>
+    (await runSearch({ userId, roles: MEMBER, q: "query" })).filter((r) => r.type === "document");
+
+  beforeEach(() => {
+    stubPages([]);
+    allow("all");
+  });
+
   it("surfaces a page whose body matches even though its title does not", async () => {
-    mockPrisma.page.findMany.mockResolvedValue([]);
+    stubPages([]);
     mockPageContent.mockResolvedValue([hit("pg1", "Week 3 notes", "the query engine rollout")]);
 
     const results = await runSearch({ userId: "u1", roles: MEMBER, q: "query" });
@@ -190,7 +219,7 @@ describe("runSearch — documents", () => {
   });
 
   it("ranks title matches above body matches", async () => {
-    mockPrisma.page.findMany.mockResolvedValue([
+    stubPages([
       { id: "pg-title", title: "Query runbook", iconEmoji: null },
     ]);
     mockPageContent.mockResolvedValue([hit("pg-body", "Unrelated title")]);
@@ -202,7 +231,7 @@ describe("runSearch — documents", () => {
   });
 
   it("does not list a page twice when its title and body both match", async () => {
-    mockPrisma.page.findMany.mockResolvedValue([
+    stubPages([
       { id: "pg1", title: "Query runbook", iconEmoji: null },
     ]);
     mockPageContent.mockResolvedValue([hit("pg1", "Query runbook")]);
@@ -217,7 +246,7 @@ describe("runSearch — documents", () => {
   });
 
   it("caps the category even when both sources are full", async () => {
-    mockPrisma.page.findMany.mockResolvedValue(
+    stubPages(
       Array.from({ length: 5 }, (_, i) => ({ id: `t${i}`, title: `Query ${i}`, iconEmoji: null })),
     );
     mockPageContent.mockResolvedValue(
@@ -233,7 +262,7 @@ describe("runSearch — documents", () => {
   });
 
   it("falls back to the type label when a hit has no snippet", async () => {
-    mockPrisma.page.findMany.mockResolvedValue([]);
+    stubPages([]);
     mockPageContent.mockResolvedValue([hit("pg1", "Notes", "")]);
 
     const docs = (await runSearch({ userId: "u1", roles: MEMBER, q: "query" })).filter(
@@ -241,6 +270,64 @@ describe("runSearch — documents", () => {
     );
 
     expect(docs[0].subtitle).toBe("Document");
+  });
+
+  it("drops a member's personal note the viewer cannot open and keeps a viewable page", async () => {
+    stubPages([
+      { id: "note-private", title: "Query journal", iconEmoji: null },
+      { id: "pg-open", title: "Query runbook", iconEmoji: null },
+    ]);
+    allow(["pg-open"]);
+
+    expect((await docsOf()).map((d) => d.id)).toEqual(["pg-open"]);
+  });
+
+  it("hides a Core-folder doc from a non-Core viewer but keeps it for a Core viewer", async () => {
+    stubPages([{ id: "core-doc", title: "Query budget", iconEmoji: null }]);
+    vi.mocked(getPageAccessBulk).mockImplementation(
+      async (userId, pages) =>
+        new Map(pages.map((p) => [p.id, { canView: userId === "core-user", canEdit: false, canComment: false }])),
+    );
+
+    expect(await docsOf("plain-user")).toEqual([]);
+    expect((await docsOf("core-user")).map((d) => d.id)).toEqual(["core-doc"]);
+  });
+
+  it("drops a body hit on a non-viewable page and keeps the snippet on a viewable one", async () => {
+    mockPageContent.mockResolvedValue([hit("secret", "Private", "secret text"), hit("open", "Open", "open text")]);
+    allow(["open"]);
+
+    const docs = await docsOf();
+
+    expect(docs).toEqual([expect.objectContaining({ id: "open", subtitle: "open text" })]);
+  });
+
+  it("selects the access fields and over-fetches the title query", async () => {
+    await docsOf();
+
+    const titleCall = mockPrisma.page.findMany.mock.calls
+      .map((c) => c[0])
+      .find((args) => args.where.title);
+    expect(titleCall.select).toEqual({ id: true, accessMarker: true, title: true, iconEmoji: true });
+    expect(titleCall.take).toBe(120);
+  });
+
+  it("asks the content pass for 3x the cap, then caps the merged list with titles first", async () => {
+    stubPages(Array.from({ length: 2 }, (_, i) => ({ id: `t${i}`, title: `Query ${i}`, iconEmoji: null })));
+    mockPageContent.mockResolvedValue(Array.from({ length: 15 }, (_, i) => hit(`b${i}`, `Body ${i}`)));
+
+    const docs = await docsOf();
+
+    expect(mockPageContent).toHaveBeenCalledWith("query", 15);
+    expect(docs.map((d) => d.id)).toEqual(["t0", "t1", "b0", "b1", "b2"]);
+  });
+
+  it("skips the content access lookup when the body pass finds nothing", async () => {
+    await docsOf();
+
+    expect(
+      mockPrisma.page.findMany.mock.calls.some((c) => c[0].where.id?.in),
+    ).toBe(false);
   });
 });
 

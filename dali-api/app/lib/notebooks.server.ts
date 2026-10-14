@@ -6,6 +6,7 @@ import {
   getPageAccessBulk,
   isUnderGoverningScope,
   PAGE_ACCESS_SELECT,
+  type PageShape,
 } from "~/lib/pageAccess.server";
 import {
   collectSubtree,
@@ -47,14 +48,37 @@ const notebookRowSelect = {
 } as const;
 
 /** A live notebook the actor can edit. 404 hides one they cannot see. */
-export async function loadEditableNotebook(notebookId: string, actorId: string) {
+export async function loadEditableNotebook(notebookId: string, actorId: string, request?: Request) {
   const notebook = await prisma.page.findUnique({ where: { id: notebookId }, select: notebookRowSelect });
   if (!notebook || notebook.kind !== "Notebook" || notebook.archivedAt !== null) {
     throw new NotebookError("Notebook not found", 404);
   }
-  const access = await getPageAccess(actorId, notebook);
+  const access = await getPageAccess(actorId, notebook, request);
   if (!access.canView) throw new NotebookError("Notebook not found", 404);
   if (!access.canEdit) throw new NotebookError("You can't edit this notebook", 403);
+  return notebook;
+}
+
+export async function canManageNotebook(
+  userId: string,
+  notebook: { id: string; createdById?: string | null } & PageShape,
+  request?: Request,
+): Promise<boolean> {
+  const base = await getPageAccess(userId, notebook, request, { ignoreShares: true });
+  if (base.canEdit || notebook.createdById === userId) return true;
+  const organizing = await prisma.scheduledMeeting.findFirst({
+    where: { notebookId: notebook.id, organizerId: userId },
+    select: { id: true },
+  });
+  return organizing !== null;
+}
+
+/** A live notebook the actor can restructure, not just write in. */
+export async function loadManageableNotebook(notebookId: string, actorId: string, request?: Request) {
+  const notebook = await loadEditableNotebook(notebookId, actorId, request);
+  if (!(await canManageNotebook(actorId, notebook, request))) {
+    throw new NotebookError("You can't manage this notebook", 403);
+  }
   return notebook;
 }
 
@@ -222,7 +246,7 @@ export async function setNotebookTemplate(
   templatePageId: string | null,
   actorId: string,
 ): Promise<void> {
-  await loadEditableNotebook(notebookId, actorId);
+  await loadManageableNotebook(notebookId, actorId);
   if (templatePageId) await assertViewableTemplate(templatePageId, actorId);
   await prisma.page.update({ where: { id: notebookId }, data: { templatePageId } });
 }
@@ -269,7 +293,7 @@ export async function detachNote(pageId: string, actorId: string): Promise<void>
     select: {
       ...PAGE_ACCESS_SELECT,
       meetingNoteId: true,
-      parent: { select: { id: true, kind: true, parentPageId: true } },
+      parent: { select: { ...PAGE_ACCESS_SELECT, kind: true } },
     },
   });
   if (!page || page.archivedAt !== null) throw new NotebookError("Document not found", 404);
@@ -279,6 +303,9 @@ export async function detachNote(pageId: string, actorId: string): Promise<void>
   if (!page.meetingNoteId) throw new NotebookError("This document isn't a meeting note", 400);
 
   const notebook = page.parent?.kind === "Notebook" ? page.parent : null;
+  if (notebook && !(await canManageNotebook(actorId, notebook))) {
+    throw new NotebookError("You can't manage this notebook", 403);
+  }
   if (!notebook) {
     await prisma.page.update({
       where: { id: pageId },
@@ -429,7 +456,7 @@ export async function setSeriesNotebook(
 export async function mergeNotebooks(sourceId: string, targetId: string, actorId: string): Promise<{ moved: number }> {
   if (sourceId === targetId) throw new NotebookError("A notebook can't be merged into itself", 400);
   const [source] = await Promise.all([
-    loadEditableNotebook(sourceId, actorId),
+    loadManageableNotebook(sourceId, actorId),
     loadEditableNotebook(targetId, actorId),
   ]);
   const tabs = await prisma.page.findMany({
@@ -448,7 +475,7 @@ export async function mergeNotebooks(sourceId: string, targetId: string, actorId
 /** Every tab becomes a plain doc in the notebook's folder (a note keeps its
  *  meeting link), the series stop pointing at it, and the notebook is archived. */
 export async function dissolveNotebook(notebookId: string, actorId: string): Promise<{ moved: number }> {
-  const notebook = await loadEditableNotebook(notebookId, actorId);
+  const notebook = await loadManageableNotebook(notebookId, actorId);
   await assertCanEditFolder(notebook.parentPageId, actorId);
   const [tabs, base, meetings] = await Promise.all([
     prisma.page.findMany({
@@ -476,7 +503,7 @@ export async function dissolveNotebook(notebookId: string, actorId: string): Pro
 /** Archive the notebook and its tabs at one instant, so Trash can restore the
  *  tabs that went with it and not ones trashed earlier. */
 export async function trashNotebook(notebookId: string, actorId: string): Promise<void> {
-  await loadEditableNotebook(notebookId, actorId);
+  await loadManageableNotebook(notebookId, actorId);
   const subtree = await collectSubtree(notebookId);
   const meetings = await prisma.scheduledMeeting.findMany({ where: { notebookId }, select: { id: true } });
   await prisma.$transaction([

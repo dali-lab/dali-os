@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/db", () => ({
   prisma: {
-    page: { findUnique: vi.fn(), findFirst: vi.fn(), findMany: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
+    page: { findUnique: vi.fn(), findFirst: vi.fn(), findMany: vi.fn(), update: vi.fn(), updateMany: vi.fn(), create: vi.fn() },
     $transaction: vi.fn(),
   },
 }));
@@ -396,10 +396,66 @@ describe("resolveFilingFolder", () => {
     expect(ensureRoot).toHaveBeenCalledWith(key, "u1");
   });
 
-  it("falls back to the workspace top level for a project and for the Lab", async () => {
-    expect(await resolveFilingFolder(projectSlot("p1"), "u1")).toEqual({ folderId: null, viaReceiver: false });
+  it("falls back to the workspace top level for the Lab", async () => {
     expect(await resolveFilingFolder(singletonSlot("Lab", "Meetings"), "u1")).toEqual({ folderId: null, viaReceiver: false });
     expect(ensureRoot).not.toHaveBeenCalled();
+  });
+
+  describe("a project with no Meetings receiver", () => {
+    const tx = { $queryRaw: vi.fn(), page: { findFirst: vi.fn(), update: vi.fn(), create: vi.fn() } };
+    const mark = { folderType: "Meetings", processType: "Project", processId: "p1" };
+
+    beforeEach(() => {
+      tx.$queryRaw.mockReset().mockResolvedValue([]);
+      tx.page.findFirst.mockReset().mockResolvedValue(null);
+      tx.page.update.mockReset().mockResolvedValue({});
+      tx.page.create.mockReset().mockResolvedValue({ id: "made" });
+      m.$transaction.mockImplementation(async (fn: unknown) => (typeof fn === "function" ? fn(tx) : Promise.all(fn as Promise<unknown>[])));
+    });
+
+    it("makes a Meetings folder at the project's top level and marks it as the receiver", async () => {
+      tx.page.findFirst.mockResolvedValueOnce(null).mockResolvedValueOnce(null).mockResolvedValueOnce({ position: 3 });
+
+      expect(await resolveFilingFolder(projectSlot("p1"), "u1")).toEqual({ folderId: "made", viaReceiver: true });
+
+      expect(tx.page.create).toHaveBeenCalledWith({
+        data: {
+          workspaceType: "Project",
+          workspaceId: "p1",
+          parentPageId: null,
+          title: "Meetings",
+          kind: "Folder",
+          position: 4,
+          createdById: "u1",
+          ...mark,
+        },
+        select: { id: true },
+      });
+      expect(ensureRoot).not.toHaveBeenCalled();
+    });
+
+    it("adopts a live top-level folder already titled Meetings instead of making a second one", async () => {
+      tx.page.findFirst.mockResolvedValueOnce(null).mockResolvedValueOnce({ id: "theirs" });
+
+      expect(await resolveFilingFolder(projectSlot("p1"), "u1")).toEqual({ folderId: "theirs", viaReceiver: true });
+
+      expect(tx.page.update).toHaveBeenCalledWith({ where: { id: "theirs" }, data: mark });
+      expect(tx.page.create).not.toHaveBeenCalled();
+    });
+
+    it("returns the receiver another request marked while this one waited on the lock", async () => {
+      tx.page.findFirst.mockResolvedValueOnce({ id: "raced" });
+
+      expect(await resolveFilingFolder(projectSlot("p1"), "u1")).toEqual({ folderId: "raced", viaReceiver: true });
+
+      expect(tx.page.update).not.toHaveBeenCalled();
+      expect(tx.page.create).not.toHaveBeenCalled();
+    });
+
+    it("locks the project row before deciding", async () => {
+      await resolveFilingFolder(projectSlot("p1"), "u1");
+      expect(tx.$queryRaw).toHaveBeenCalledTimes(1);
+    });
   });
 });
 

@@ -1167,6 +1167,7 @@ export async function attachMeetingNote(
         },
       },
       notePages: {
+        where: { archivedAt: null },
         select: {
           id: true,
           meetingOccurrenceStart: true,
@@ -1208,7 +1209,7 @@ export async function attachMeetingNote(
       ? meeting.notebook
       : null;
 
-  if (previous && !chosen) {
+  if ((previous || series) && !chosen) {
     const takesPart =
       isOrganizer ||
       core ||
@@ -1289,6 +1290,12 @@ export async function attachMeetingNote(
   let notePageId: string;
   let notebookId: string | null;
   let createdNotebook: boolean;
+  // A trashed note still holds the occurrence's unique key; it gives it up and
+  // comes back from Trash as a plain tab, so the meeting can offer a fresh one.
+  await prisma.page.updateMany({
+    where: { meetingNoteId: meeting.id, meetingOccurrenceStart: occurrence.originalStart, archivedAt: { not: null } },
+    data: { meetingNoteId: null },
+  });
   try {
     const built = await buildMeetingArtifactPage({
       meetingId: meeting.id,
@@ -1317,7 +1324,7 @@ export async function attachMeetingNote(
     // (meetingNoteId, meetingOccurrenceStart) key lets one create it, and the
     // other gets that one.
     const raced = await prisma.page.findFirst({
-      where: { meetingNoteId: meeting.id, meetingOccurrenceStart: occurrence.originalStart },
+      where: { meetingNoteId: meeting.id, meetingOccurrenceStart: occurrence.originalStart, archivedAt: null },
       select: { id: true, parentPageId: true },
     });
     if (raced) {
@@ -2334,6 +2341,10 @@ export async function updateScheduledMeeting(
       description: input.description ?? meeting.description,
       roomIds: input.roomIds ?? meeting.rooms.map((r) => r.id),
       guestEmails: input.guestEmails ?? meeting.guestEmails,
+      // The occurrence at the cut may already hold the old series' note, so
+      // the new series keeps filing into the same notebook and mints none now.
+      notebook: meeting.notebookId ? { existingId: meeting.notebookId } : undefined,
+      createNote: false,
     });
 
     if (!newMeetingResult.ok) {

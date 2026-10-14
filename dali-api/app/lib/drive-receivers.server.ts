@@ -324,9 +324,66 @@ export async function resolveFilingFolder(
 ): Promise<{ folderId: string | null; viaReceiver: boolean }> {
   const receiver = await findReceiver(slot);
   if (receiver) return { folderId: receiver, viaReceiver: true };
+  if (slot.processType === "Project" && slot.folderType === "Meetings") {
+    return { folderId: await ensureProjectMeetingsReceiver(slot.processId, actorId), viaReceiver: true };
+  }
   const rootKey = ROOT_KEY_FOR_PROCESS[slot.processType];
   if (!rootKey) return { folderId: null, viaReceiver: false };
   return { folderId: await ensureRoot(rootKey, actorId), viaReceiver: false };
+}
+
+const PROJECT_MEETINGS_TITLE = "Meetings";
+
+/** A project with no Meetings receiver gets one made at its top level, so the
+ *  folder a project's notebooks land in is the same folder its members can
+ *  re-point from folder settings. A live top-level folder already titled
+ *  Meetings is adopted rather than duplicated. */
+async function ensureProjectMeetingsReceiver(projectId: string, createdById: string): Promise<string> {
+  const slot = projectSlot(projectId);
+  return prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT id FROM "Project" WHERE id = ${projectId} FOR UPDATE`;
+    const marked = await tx.page.findFirst({
+      where: { processType: slot.processType, processId: slot.processId, folderType: slot.folderType, archivedAt: null },
+      select: { id: true },
+    });
+    if (marked) return marked.id;
+    const mark = { folderType: slot.folderType, processType: slot.processType, processId: slot.processId };
+    const existing = await tx.page.findFirst({
+      where: {
+        workspaceType: "Project",
+        workspaceId: projectId,
+        parentPageId: null,
+        kind: "Folder",
+        title: PROJECT_MEETINGS_TITLE,
+        archivedAt: null,
+        folderType: null,
+      },
+      select: { id: true },
+    });
+    if (existing) {
+      await tx.page.update({ where: { id: existing.id }, data: mark });
+      return existing.id;
+    }
+    const last = await tx.page.findFirst({
+      where: { workspaceType: "Project", workspaceId: projectId, parentPageId: null },
+      orderBy: { position: "desc" },
+      select: { position: true },
+    });
+    const folder = await tx.page.create({
+      data: {
+        workspaceType: "Project",
+        workspaceId: projectId,
+        parentPageId: null,
+        title: PROJECT_MEETINGS_TITLE,
+        kind: "Folder",
+        position: last ? last.position + 1 : 0,
+        createdById,
+        ...mark,
+      },
+      select: { id: true },
+    });
+    return folder.id;
+  });
 }
 
 export async function receiversEnabled(request?: Request): Promise<boolean> {
