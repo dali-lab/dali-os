@@ -74,6 +74,15 @@ afterEach(() => {
   vi.stubGlobal("fetch", undefined);
 });
 
+describe("TimesheetEditPopover size", () => {
+  it("grows with its content, capped only by the viewport, so an error message never adds a scrollbar", () => {
+    mount();
+    const dialog = container.querySelector('[role="dialog"]')!;
+    expect(dialog.className).not.toMatch(/max-h-\[\d/);
+    expect(dialog.className).toContain("max-h-[calc(100dvh-2rem)]");
+  });
+});
+
 describe("TimesheetEditPopover delete", () => {
   it("steps aside while the confirm is up and comes back on cancel", async () => {
     mount();

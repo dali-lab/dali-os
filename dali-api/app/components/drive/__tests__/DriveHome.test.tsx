@@ -4,7 +4,6 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { DriveHome, homeItemHref } from "~/components/drive/DriveHome";
 import { homeSections } from "~/components/drive/home-sections";
 import type { DriveHomeData, HomePageItem, HomeUpcoming } from "~/lib/drive-home.server";
-import type { LocatableScope } from "~/components/drive/location";
 
 const NOW = new Date("2026-10-13T12:00:00Z");
 const hours = (n: number) => new Date(NOW.getTime() + n * 3_600_000);
@@ -30,12 +29,7 @@ const notebook = (id: string, nextAt: Date, meetingTitle: string): HomeUpcoming 
 });
 
 const empty: DriveHomeData = { recent: [], upcoming: [] };
-const scopes: LocatableScope[] = [
-  { id: "lab", label: "Lab", items: [{ id: "f1", title: "Plans", parentFolderId: null }, { id: "a", title: "Doc a", parentFolderId: "f1" }] },
-];
-
-const render = (data: DriveHomeData) =>
-  renderToStaticMarkup(createElement(DriveHome, { data, scopes, onOpen: vi.fn(), onNavigate: vi.fn() }));
+const render = (data: DriveHomeData) => renderToStaticMarkup(createElement(DriveHome, { data, onOpen: vi.fn() }));
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -82,24 +76,17 @@ describe("DriveHome", () => {
     expect(html).not.toContain('data-testid="drive-location"');
   });
 
-  it("shows recent rows with the opened time and a location link", () => {
+  it("shows recent rows with the opened time and no location trail after the name", () => {
     const html = render({ ...empty, recent: [doc("a")] });
     expect(html).toContain("Doc a");
     expect(html).toContain("Opened 2 hours ago");
-    expect(html).toContain('data-testid="drive-location"');
-    expect(html).toContain("Lab");
-    expect(html).toContain("Plans");
+    expect(html).not.toContain('data-testid="drive-location"');
+    expect(html).not.toContain("Plans");
   });
 
-  it("keeps the location on one line and hides it below lg", () => {
-    const html = render({ ...empty, recent: [doc("a")] });
-    expect(html).toMatch(/<button [^>]*class="[^"]*\btruncate\b/);
-    expect(html).toMatch(/<div class="[^"]*\bhidden\b[^"]*\bmin-w-0\b[^"]*\blg:block\b/);
-  });
-
-  it("puts Upcoming and Recent side by side so the browser stays on the first screen", () => {
+  it("is its own card, with Upcoming and Recent side by side so the browser stays on the first screen", () => {
     const both = render({ upcoming: [notebook("n1", hours(3), "Weekly sync")], recent: [doc("a")] });
-    expect(both).toMatch(/data-testid="drive-home"[^>]*/);
+    expect(both).toMatch(/<div class="[^"]*\brounded-os-card\b[^"]*\bbg-os-card\b[^"]*" data-testid="drive-home"/);
     expect(both).toMatch(/<div class="[^"]*\bgrid\b[^"]*\bmd:grid-cols-2\b/);
     const one = render({ ...empty, recent: [doc("a")] });
     expect(one).not.toContain("md:grid-cols-2");
@@ -113,11 +100,6 @@ describe("DriveHome", () => {
     expect(html).toContain("rounded-os-item");
     expect(html).not.toContain("overflow-x-auto");
     expect(html).not.toContain("w-56");
-  });
-
-  it("leaves the location out when the item's space is not loaded", () => {
-    const html = render({ ...empty, recent: [doc("zzz")] });
-    expect(html).not.toContain('data-testid="drive-location"');
   });
 
   it("omits the opened text when there is no visit time", () => {

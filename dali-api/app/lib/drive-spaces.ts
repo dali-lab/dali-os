@@ -12,6 +12,7 @@ import {
   HardDrive,
   Heart,
   Shield,
+  Star,
   UserPlus,
   type LucideIcon,
 } from "lucide-react";
@@ -34,6 +35,8 @@ import type { DriveItem } from "~/lib/drive.server";
  *                        Partners (deferred): pages where `partnerVisible=true`.
  * - `shared-with-me`   — pages the viewer holds a named share on, flat, that
  *                        workspace membership does not already show them.
+ * - `favorites`        — the items the viewer has favorited, from every space,
+ *                        with a favorited folder's contents under it.
  */
 export type DriveSpaceBacking =
   | "member"
@@ -41,7 +44,8 @@ export type DriveSpaceBacking =
   | "workspace-multi"
   | "process-root"
   | "virtual-filter"
-  | "shared-with-me";
+  | "shared-with-me"
+  | "favorites";
 
 export type DriveRootKey = "core" | "hiring" | "mentorship";
 
@@ -88,6 +92,12 @@ export const DRIVE_SPACES: DriveSpaceDef[] = [
     icon: HardDrive,
     backing: "member",
     // Always visible — every signed-in member has a private drive.
+  },
+  {
+    key: "favorites",
+    label: "Favorites",
+    icon: Star,
+    backing: "favorites",
   },
   {
     key: "shared",
@@ -160,15 +170,15 @@ export function isProcessRootSpace(scopeId: string): boolean {
 /** The id of the "Shared with me" space (its registry key doubles as the scope id). */
 export const SHARED_SPACE_KEY = "shared";
 
-export type SharedView = "with-me" | "by-me";
+/** The id of the "Favorites" space. */
+export const FAVORITES_SPACE_KEY = "favorites";
 
-/**
- * Narrow the "Shared with me" space to one direction. The loader sends pages
- * shared with the viewer and pages they shared with others in one list so the
- * chip toggles without a refetch; each item says which direction it belongs to.
- */
-export function sharedSpaceItems(items: DriveItem[], view: SharedView): DriveItem[] {
-  return items.filter((it) =>
-    it.type !== "doc" ? false : view === "by-me" ? it.sharedByMe === true : it.sharedWithMe === true,
-  );
+/** A listing over items that live in other spaces: nothing is created in, moved to or deleted from it. */
+export function isVirtualSpace(scopeId: string): boolean {
+  return scopeId === SHARED_SPACE_KEY || scopeId === FAVORITES_SPACE_KEY;
+}
+
+/** The "Shared with me" space: the pages shared with the viewer by name. */
+export function sharedSpaceItems(items: DriveItem[]): DriveItem[] {
+  return items.filter((it) => it.type === "doc" && it.sharedWithMe === true);
 }

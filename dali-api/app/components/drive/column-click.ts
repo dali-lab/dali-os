@@ -1,9 +1,9 @@
-export type ClickIntent = "open" | "toggle" | "range" | "ignore";
+export type ClickIntent = "select" | "open" | "toggle" | "range" | "ignore";
 
 /**
  * What a click on a row, tile or card means, in every view. A plain click
- * opens the item (a folder is entered); the modifier keys select without
- * opening.
+ * selects the item alone, as in Finder; the modifier keys toggle or extend the
+ * selection. A tap opens, since touch has no double-click to open with.
  */
 export function clickIntent(input: {
   metaKey: boolean;
@@ -13,9 +13,11 @@ export function clickIntent(input: {
   anchorInPool: boolean;
   /** This click is the tail of a drag. */
   suppressed: boolean;
+  /** The click came from a touch pointer. */
+  touch?: boolean;
 }): ClickIntent {
   if (input.suppressed) return "ignore";
   if (input.metaKey || input.ctrlKey) return "toggle";
   if (input.shiftKey && input.anchorInPool) return "range";
-  return "open";
+  return input.touch ? "open" : "select";
 }

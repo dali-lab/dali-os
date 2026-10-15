@@ -15,7 +15,7 @@ const doc = (id: string): DriveItem => ({
 
 const scope: DriveTreeScope = { id: "lab", label: "Lab-wide", iconEmoji: null, items: [] };
 const actions = { onRename: vi.fn(), onRequestMove: vi.fn(), onDelete: vi.fn() };
-const handlers = { onClick: vi.fn(), onToggle: vi.fn(), onContext: vi.fn(), onOpen: vi.fn() };
+const handlers = { onClick: vi.fn(), onDoubleClick: vi.fn(), onContext: vi.fn(), onOpen: vi.fn() };
 
 function render(listing: DriveItem[], opts: { atScopeTop: boolean; viewMode?: "list" | "grid" }) {
   return renderToStaticMarkup(
@@ -44,8 +44,9 @@ describe("ScopeContents folder band", () => {
     const out = render(listing, { atScopeTop: true });
     expect(out).toContain('data-testid="drive-folder-band"');
     expect(out).toContain('data-testid="drive-item-folder-f1"');
-    expect(out).toContain("12 items");
-    expect(out).toContain(">Empty<");
+    expect(out).not.toContain("12 items");
+    expect(out).not.toContain(">Empty<");
+    expect(out.match(/data-testid="item-modified"/g)).toHaveLength(2);
     expect(out.indexOf("drive-folder-band")).toBeLessThan(out.indexOf("drive-item-doc-d1"));
     expect(out).toContain(">Files<");
   });
@@ -83,16 +84,16 @@ describe("ScopeContents folder band", () => {
     expect(out).toContain("drive-sort-name");
   });
 
-  it.each(["list", "grid"] as const)("gives every row, tile and band card a labelled checkbox and an id to find it by in %s view", (viewMode) => {
+  it.each(["list", "grid"] as const)("gives every row, tile and band card an id to find it by, and no checkbox, in %s view", (viewMode) => {
     const out = render(listing, { atScopeTop: true, viewMode });
-    for (const [id, title] of [["f1", "Folder f1"], ["f2", "Folder f2"], ["d1", "Doc d1"]]) {
-      expect(out).toContain(`aria-label="Select ${title}"`);
-      expect(out).toContain(`data-item-id="${id}"`);
-    }
+    for (const id of ["f1", "f2", "d1"]) expect(out).toContain(`data-item-id="${id}"`);
+    expect(out).not.toContain("<input");
   });
 
-  it("shows the folder count under the name in grid tiles inside a folder", () => {
-    expect(render([folder("f1", 3)], { atScopeTop: false, viewMode: "grid" })).toContain("3 items");
+  it("shows when a folder last changed under its name in grid tiles, not its item count", () => {
+    const out = render([folder("f1", 3)], { atScopeTop: false, viewMode: "grid" });
+    expect(out).toContain('data-testid="item-modified"');
+    expect(out).not.toContain("3 items");
   });
 });
 
@@ -119,7 +120,7 @@ describe("SearchResults location column", () => {
     expect(out.match(/data-testid="drive-location-crumb"/g)).toHaveLength(2);
   });
 
-  it("labels a checkbox on each hit", () => {
+  it("gives each hit an id to find it by, and no checkbox", () => {
     const hits = searchAll(scopes, "doc", "all");
     const out = renderToStaticMarkup(
       <SearchResults
@@ -131,7 +132,7 @@ describe("SearchResults location column", () => {
         getScopeActions={() => actions}
       />,
     );
-    expect(out).toContain('aria-label="Select Doc d1"');
     expect(out).toContain('data-item-id="d1"');
+    expect(out).not.toContain("<input");
   });
 });

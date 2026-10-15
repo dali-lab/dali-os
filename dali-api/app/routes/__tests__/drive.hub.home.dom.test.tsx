@@ -91,9 +91,15 @@ async function mountHub(url: string, data: Partial<typeof loaderData> = {}) {
 const home = () => container!.querySelector('[data-testid="drive-home"]');
 
 describe("DriveHub home rows", () => {
-  it("shows them at the Drive root", async () => {
+  it("shows them at the Drive root, as their own card above the browser", async () => {
     await mountHub("/drive");
-    expect(home()).not.toBeNull();
+    const card = home()!;
+    expect(card).not.toBeNull();
+    expect(card.className).toContain("rounded-os-card");
+    expect(card.className).toContain("bg-os-card");
+    const browser = container!.querySelector('[data-testid="drive-columns"], [data-testid="drive-list-pane"]')!;
+    expect(browser.contains(card)).toBe(false);
+    expect(card.compareDocumentPosition(browser) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it("keeps them above the browser while a drive is open", async () => {

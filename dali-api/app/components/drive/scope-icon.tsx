@@ -5,11 +5,12 @@ import {
   GraduationCap,
   Heart,
   Shield,
+  Star,
   User,
   UserPlus,
   Users,
 } from "lucide-react";
-import { SHARED_SPACE_KEY } from "~/lib/drive-spaces";
+import { FAVORITES_SPACE_KEY, SHARED_SPACE_KEY } from "~/lib/drive-spaces";
 
 export type ScopeIconSize = "sm" | "lg" | "xl";
 
@@ -20,6 +21,7 @@ const CORAL = "text-accent-coral/80";
 
 const SCOPE_GLYPHS = {
   mine: [User, MUTED],
+  [FAVORITES_SPACE_KEY]: [Star, MUTED],
   [SHARED_SPACE_KEY]: [UserPlus, MUTED],
   lab: [Users, MUTED],
   core: [Shield, CORAL],

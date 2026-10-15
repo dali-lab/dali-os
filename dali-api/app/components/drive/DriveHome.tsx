@@ -1,7 +1,5 @@
 import type { MouseEvent as ReactMouseEvent, ReactNode } from "react";
 import { itemIcon } from "~/components/drive/DriveBrowser";
-import { LocationLink } from "~/components/drive/LocationLink";
-import { locateItem, type LocatableScope } from "~/components/drive/location";
 import { HOME_SECTION_TITLES, homeSections, type HomeSectionKey } from "~/components/drive/home-sections";
 import { relativeTime } from "~/lib/relative-time";
 import { cn } from "~/lib/cn";
@@ -23,9 +21,7 @@ function isPlainClick(e: ReactMouseEvent) {
 }
 
 type RowActions = {
-  scopes: LocatableScope[];
   onOpen: (item: DriveItem) => void;
-  onNavigate: (scopeId: string, folderId: string | null) => void;
 };
 
 const since = (at: Date) => relativeTime(new Date(at).toISOString());
@@ -35,15 +31,11 @@ function HomeRow({
   item,
   title = item.title,
   reason,
-  showLocation,
-  scopes,
   onOpen,
-  onNavigate,
 }: RowActions & {
   item: DriveItem;
   title?: string;
   reason: string | null;
-  showLocation?: boolean;
 }) {
   return (
     <li className={ROW} data-testid={`drive-home-row-${item.id}`}>
@@ -63,11 +55,6 @@ function HomeRow({
         <span className={REASON} suppressHydrationWarning>
           {reason}
         </span>
-      )}
-      {showLocation && (
-        <div className="relative z-10 hidden w-2/5 min-w-0 lg:block">
-          <LocationLink location={locateItem(scopes, item)} onNavigate={onNavigate} />
-        </div>
       )}
     </li>
   );
@@ -89,11 +76,14 @@ export function DriveHome({ data, ...actions }: RowActions & { data: DriveHomeDa
         />
       )),
     recent: () =>
-      data.recent.map((item) => <HomeRow key={item.id} item={item} reason={opened(item.visitedAt)} showLocation {...actions} />),
+      data.recent.map((item) => <HomeRow key={item.id} item={item} reason={opened(item.visitedAt)} {...actions} />),
   };
 
   return (
-    <div className={cn("grid gap-x-6 gap-y-4", sections.length > 1 && "md:grid-cols-2")} data-testid="drive-home">
+    <div
+      className={cn("grid gap-x-6 gap-y-4 rounded-os-card bg-os-card p-5", sections.length > 1 && "md:grid-cols-2")}
+      data-testid="drive-home"
+    >
       {sections.map((key) => (
         <section key={key} aria-labelledby={`drive-home-${key}`} data-testid={`drive-home-${key}`}>
           <h2 id={`drive-home-${key}`} className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">

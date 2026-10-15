@@ -283,7 +283,7 @@ describe("NotebookRail collapse", () => {
   it("expands again and clears the key", async () => {
     window.localStorage.setItem(NOTEBOOK_RAIL_COLLAPSED_KEY, "1");
     await rail();
-    await click(byLabel("Show tabs")!);
+    await click(byLabel("Show 3 tabs")!);
     expect(strip()).toBeNull();
     expect(window.localStorage.getItem(NOTEBOOK_RAIL_COLLAPSED_KEY)).toBeNull();
   });
@@ -295,12 +295,24 @@ describe("NotebookRail collapse", () => {
     expect(container.querySelector('[data-testid="notebook-rail-count"]')?.textContent).toBe("3");
   });
 
-  it("expands when the glyph or count is clicked", async () => {
+  it("collapses to one flat pill holding the list glyph and the count, with no card around it", async () => {
     window.localStorage.setItem(NOTEBOOK_RAIL_COLLAPSED_KEY, "1");
     await rail();
-    await click(byLabel("Show 3 tabs")!);
-    expect(strip()).toBeNull();
-    expect(window.localStorage.getItem(NOTEBOOK_RAIL_COLLAPSED_KEY)).toBeNull();
+    const pill = byLabel("Show 3 tabs")!;
+    expect(pill.className).toContain("rounded-full");
+    expect(pill.querySelector("svg.lucide-list")).toBeTruthy();
+    expect(pill.querySelector('[data-testid="notebook-rail-count"]')?.textContent).toBe("3");
+    expect(strip()!.querySelectorAll("button")).toHaveLength(1);
+    // One surface: nothing inside the pill paints its own background.
+    for (const el of pill.querySelectorAll("*")) expect(el.className.toString()).not.toMatch(/\bbg-/);
+    expect(nav().className).toContain("lg:bg-transparent");
+    expect(nav().className).toContain("lg:border-0");
+  });
+
+  it("keeps the card while expanded", async () => {
+    await rail();
+    expect(nav().className).not.toContain("lg:bg-transparent");
+    expect(nav().className).toContain("bg-os-card");
   });
 
   it("ignores any other stored value", async () => {
@@ -320,6 +332,53 @@ describe("NotebookRail collapse", () => {
     expect(wrapper.className).not.toMatch(/(^|\s)hidden(\s|$)/);
     expect(strip()!.className).toMatch(/(^|\s)hidden(\s|$)/);
     expect(strip()!.className).toContain("lg:flex");
+  });
+});
+
+describe("NotebookRail tab list", () => {
+  const items = () => [...nav().querySelectorAll("li")];
+  const linkOf = (li: Element) => li.querySelector("a")!;
+
+  it("draws every tab as a pill with a document glyph, the open one filled and tinted", async () => {
+    await rail();
+    const [open, ...rest] = items();
+    expect(linkOf(open).getAttribute("aria-current")).toBe("page");
+    expect(open.className).toContain("rounded-full");
+    expect(open.className).toContain("bg-os-accent/15");
+    expect(linkOf(open).className).toContain("text-os-accent");
+    expect(linkOf(open).querySelector("svg.lucide-file-text")).toBeTruthy();
+    for (const li of rest) {
+      expect(li.className).not.toContain("bg-os-accent/15");
+      expect(linkOf(li).getAttribute("aria-current")).toBeNull();
+      expect(linkOf(li).querySelector("svg.lucide-file-text")).toBeTruthy();
+    }
+  });
+
+  it("keeps the meeting name under a note's label", async () => {
+    await rail();
+    expect(items()[0].textContent).toContain("Oct 6");
+    expect(items()[0].textContent).toContain("Weekly sync");
+    expect(items()[2].textContent).toBe("Agenda");
+  });
+
+  it("keeps the open tab's ⋮ visible and reveals the others on hover", async () => {
+    await rail();
+    const open = byLabel("Options for Oct 6")!;
+    const other = byLabel("Options for Oct 13")!;
+    expect(open.className).not.toContain("lg:opacity-0");
+    expect(other.className).toContain("lg:opacity-0");
+    expect(other.className).toContain("lg:group-hover:opacity-100");
+    expect(open.querySelector("svg.lucide-ellipsis-vertical")).toBeTruthy();
+  });
+
+  it("puts the title, a plus and the options on one header row", async () => {
+    await rail();
+    const header = nav().querySelector("input[aria-label='Notebook title']")!.parentElement!;
+    const add = [...header.querySelectorAll("button")].find((b) => b.textContent?.trim() === "Add")!;
+    expect(add.querySelector("svg.lucide-plus")).toBeTruthy();
+    expect(add.querySelector(".sr-only")?.textContent).toBe("Add");
+    expect(header.querySelector("[aria-label='Notebook options']")).toBeTruthy();
+    expect(header.querySelector("[aria-label='Hide tabs']")).toBeTruthy();
   });
 });
 
@@ -467,51 +526,21 @@ describe("NotebookRail next notes", () => {
 });
 
 describe("NoteLocationLine", () => {
-  const location = {
-    scopeId: "projects",
-    scopeLabel: "Projects",
-    folderId: "f1",
-    folders: [
-      { id: "p1", title: "Project Alpha" },
-      { id: "f1", title: "Meetings" },
-    ],
-    path: "Projects ▸ Project Alpha ▸ Meetings",
-  };
   const line = (over: Partial<Parameters<typeof NoteLocationLine>[0]> = {}) =>
     mount(() =>
       createElement(NoteLocationLine, {
         notebook,
-        location,
-        tabLabel: "Oct 14, 2026",
         editViaMeeting: false,
         showControls: true,
         ...over,
       }),
     );
-  const text = () => container.querySelector('[data-testid="note-location"]')!.textContent;
+  const el = () => container.querySelector('[data-testid="note-location"]');
 
-  it("reads the filed path, then the notebook and the tab", async () => {
+  it("carries no trail of its own: the shell's breadcrumb row names the note's place", async () => {
     await line();
-    expect(text()).toContain("ProjectsProject AlphaMeetingsWeekly sync");
-    expect(text()).toContain("Oct 14, 2026");
-    expect(text()).not.toContain("In notebook");
-  });
-
-  it("links every crumb, with the notebook last, and leaves the tab unlinked", async () => {
-    await line();
-    const links = [...container.querySelectorAll('[data-testid="note-location"] a')] as HTMLAnchorElement[];
-    expect(links.map((a) => [a.textContent, a.getAttribute("href")])).toEqual([
-      ["Projects", "/drive?scope=projects"],
-      ["Project Alpha", "/drive?scope=projects&folder=p1"],
-      ["Meetings", "/drive?scope=projects&folder=f1"],
-      ["Weekly sync", `/documents/${notebook.id}`],
-    ]);
-    expect(links.some((a) => a.textContent?.includes("Oct 14"))).toBe(false);
-  });
-
-  it("has no tooltip title on the path", async () => {
-    await line();
-    expect(container.querySelector('[data-testid="note-location"] [title]')).toBeNull();
+    expect(el()!.querySelector("a")).toBeNull();
+    expect(el()!.textContent).not.toContain("Weekly sync");
   });
 
   it("explains an edit that comes from the meeting", async () => {
@@ -531,5 +560,14 @@ describe("NoteLocationLine", () => {
     container.remove();
     await line({ showControls: false });
     expect([...container.querySelectorAll("button")].some((b) => b.textContent?.trim() === "Add")).toBe(false);
+  });
+
+  it("renders nothing when there is neither a tip nor a menu to show", async () => {
+    await line({ showControls: false });
+    expect(el()).toBeNull();
+    act(() => root.unmount());
+    container.remove();
+    await line({ notebook: { ...notebook, canEdit: false } });
+    expect(el()).toBeNull();
   });
 });

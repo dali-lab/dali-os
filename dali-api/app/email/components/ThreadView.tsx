@@ -167,11 +167,31 @@ export function ThreadView({
         })}
       </div>
 
+      {replying || threadDraft ? (
+        <Composer
+          key={threadDraft?.id ?? "new"}
+          accounts={accounts}
+          accountId={accountId}
+          threadId={threadId}
+          draft={threadDraft}
+          replyTo={replyTo}
+          aiEnabled={aiEnabled}
+          directory={directory}
+          onDone={() => setReplying(false)}
+        />
+      ) : (
+        <div>
+          <Button variant="secondary" size="sm" onClick={() => setReplying(true)}>
+            <Reply className="h-3.5 w-3.5" />
+            Reply
+          </Button>
+        </div>
+      )}
       {thread.applicantLinksEnabled && (
         <ApplicantLinkSection accountId={accountId} threadId={threadId} link={thread.applicantLink} />
       )}
 
-      <section className="flex flex-col gap-2 rounded-os-card bg-os-container/60 p-4" aria-label="Private comments">
+      <section className="flex flex-col gap-2 rounded-os-card bg-os-card p-4" aria-label="Private comments">
         <h3 className="flex items-center gap-1.5 text-xs font-semibold text-os-muted">
           <Lock className="h-3.5 w-3.5" />
           Private comments. Only people with this inbox see them.
@@ -213,26 +233,6 @@ export function ThreadView({
         </div>
       </section>
 
-      {replying || threadDraft ? (
-        <Composer
-          key={threadDraft?.id ?? "new"}
-          accounts={accounts}
-          accountId={accountId}
-          threadId={threadId}
-          draft={threadDraft}
-          replyTo={replyTo}
-          aiEnabled={aiEnabled}
-          directory={directory}
-          onDone={() => setReplying(false)}
-        />
-      ) : (
-        <div>
-          <Button variant="secondary" size="sm" onClick={() => setReplying(true)}>
-            <Reply className="h-3.5 w-3.5" />
-            Reply
-          </Button>
-        </div>
-      )}
     </div>
   );
 }

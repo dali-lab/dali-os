@@ -3,6 +3,9 @@ import {
   DRIVE_SPACES,
   visibleDriveSpaces,
   isProcessRootSpace,
+  isVirtualSpace,
+  FAVORITES_SPACE_KEY,
+  SHARED_SPACE_KEY,
   sharedSpaceItems,
   type DriveSpaceDef,
 } from "~/lib/drive-spaces";
@@ -49,6 +52,7 @@ describe("DRIVE_SPACES registry", () => {
   it("contains exactly the expected keys in order", () => {
     expect(DRIVE_SPACES.map((s) => s.key)).toEqual([
       "mine",
+      "favorites",
       "shared",
       "lab",
       "projects",
@@ -116,7 +120,7 @@ describe("visibleDriveSpaces", () => {
   it("shows the process-root spaces to every viewer; the loader filters them by root access", () => {
     for (const flags of [NOBODY, CORE, HIRING_ONLY]) {
       const keys = visibleDriveSpaces(flags).map((s) => s.key);
-      expect(keys).toEqual(["mine", "shared", "lab", "projects", "education", "core", "hiring", "mentorship"]);
+      expect(keys).toEqual(["mine", "favorites", "shared", "lab", "projects", "education", "core", "hiring", "mentorship"]);
     }
   });
 
@@ -128,6 +132,25 @@ describe("visibleDriveSpaces", () => {
     for (const flags of [NOBODY, CORE, HIRING_ONLY]) {
       expect(visibleDriveSpaces(flags).map((s) => s.key)).toContain("shared");
     }
+  });
+});
+
+describe("Favorites space", () => {
+  it("sits right under My Drive, ungated, backed by favorites", () => {
+    expect(DRIVE_SPACES[1]).toMatchObject({ key: FAVORITES_SPACE_KEY, label: "Favorites", backing: "favorites" });
+    expect(DRIVE_SPACES[1].gate).toBeUndefined();
+    for (const flags of [NOBODY, CORE, HIRING_ONLY]) {
+      expect(visibleDriveSpaces(flags).map((s) => s.key)[1]).toBe("favorites");
+    }
+  });
+
+  it("is a virtual space, like Shared with me, and nothing else is", () => {
+    expect(isVirtualSpace(FAVORITES_SPACE_KEY)).toBe(true);
+    expect(isVirtualSpace(SHARED_SPACE_KEY)).toBe(true);
+    for (const key of DRIVE_SPACES.map((s) => s.key).filter((k) => k !== "favorites" && k !== "shared")) {
+      expect(isVirtualSpace(key)).toBe(false);
+    }
+    expect(isVirtualSpace("some-project-id")).toBe(false);
   });
 });
 
@@ -148,16 +171,12 @@ describe("sharedSpaceItems", () => {
     doc("both", { sharedWithMe: true, sharedByMe: true }),
   ];
 
-  it("with-me keeps pages shared with the viewer, including ones they re-shared", () => {
-    expect(sharedSpaceItems(items, "with-me").map((i) => i.id)).toEqual(["received", "both"]);
-  });
-
-  it("by-me keeps pages the viewer shared, including ones also shared with them", () => {
-    expect(sharedSpaceItems(items, "by-me").map((i) => i.id)).toEqual(["granted", "both"]);
+  it("keeps pages shared with the viewer, including ones they re-shared, and leaves out pages they only shared", () => {
+    expect(sharedSpaceItems(items).map((i) => i.id)).toEqual(["received", "both"]);
   });
 
   it("drops anything that is not a flagged doc", () => {
     const folder: DriveItem = { ...doc("f", {}), type: "folder" } as DriveItem;
-    expect(sharedSpaceItems([folder, doc("plain", {})], "with-me")).toEqual([]);
+    expect(sharedSpaceItems([folder, doc("plain", {})])).toEqual([]);
   });
 });

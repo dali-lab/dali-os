@@ -9,7 +9,7 @@ import { isImpersonating, type AuthSuccess } from "~/lib/auth";
 import { favoritePageIds } from "~/lib/user-pages.server";
 import { withChildCounts } from "~/lib/drive-counts.server";
 import { loadSharedWithMe } from "~/lib/drive-shared.server";
-import { visibleDriveSpaces } from "~/lib/drive-spaces";
+import { FAVORITES_SPACE_KEY, visibleDriveSpaces } from "~/lib/drive-spaces";
 import { getPageAccess } from "~/lib/pageAccess.server";
 import { formsUsePageAccess } from "~/forms/lib/form-access.server";
 import { ensureAllRoots, findAllRoots, type RootKey } from "~/lib/drive-roots.server";
@@ -83,6 +83,28 @@ export function liftOrphans(items: DriveItem[]): DriveItem[] {
       ? { ...it, parentFolderId: null }
       : it,
   );
+}
+
+/**
+ * The Favorites space: every favorited item from the given pools, plus the
+ * contents of each favorited folder so it can be browsed in place. A favorite
+ * whose parent is not along stands at the top level. First pool wins an id.
+ */
+export function favoriteSpaceItems(pools: DriveItem[][], favIds: Set<string>): DriveItem[] {
+  const seen = new Set<string>();
+  const out: DriveItem[] = [];
+  for (const pool of pools) {
+    const inside = new Set<string>();
+    for (const it of pool) {
+      if (it.type === "folder" && favIds.has(it.id)) for (const id of subtreeIds(pool, it.id)) inside.add(id);
+    }
+    for (const it of pool) {
+      if (seen.has(it.id) || !(favIds.has(it.id) || inside.has(it.id))) continue;
+      seen.add(it.id);
+      out.push(favIds.has(it.id) ? { ...it, favorited: true } : it);
+    }
+  }
+  return liftOrphans(out);
 }
 
 const ROOT_AUDIENCE: Record<RootKey, string> = {
@@ -344,6 +366,21 @@ export async function loadDriveScopes({
           iconEmoji: null,
           items: tagFavorites(memberItems, favIds),
           scopeAudience: "Private",
+        });
+        break;
+
+      case "favorites":
+        result.push({
+          id: FAVORITES_SPACE_KEY,
+          label: space.label,
+          iconEmoji: null,
+          items: hidePersonal
+            ? []
+            : favoriteSpaceItems(
+                [memberItems, sharedItems, labItems, ...projectItemArrays, ...educationItemArrays],
+                favIds,
+              ),
+          scopeAudience: "Your favorites",
         });
         break;
 
