@@ -27,7 +27,7 @@ import { addDomainChallenge, removeDomainChallenge } from "~/hiring/lib/applicat
 import { saveCycleTimeline } from "~/hiring/lib/cycle-timeline.server";
 import { STANDARD_TIMELINE, defaultTimeline } from "~/hiring/lib/cycle-timeline";
 import { defaultTimelineFor } from "~/hiring/lib/applicant-groups";
-import { action } from "~/hiring/routes/lead.cycle.$id";
+import { action, DECISION_SLICES } from "~/hiring/routes/lead.cycle.$id";
 
 const HIRING_LEAD_ID = "hiring-lead-1";
 const CYCLE_ID = "cycle-1";
@@ -920,5 +920,28 @@ describe("lead.cycle.$id action — save-term-dates start terms", () => {
       },
       data: { startTermId: null },
     });
+  });
+});
+
+describe("DECISION_SLICES", () => {
+  const row = (stage: string, type: string) => ({ id: `${type}-${stage}`, stage, type });
+
+  it("lists invite Finals under both the round's invites and the Decisions tab", () => {
+    const invite = row("Final", "InvitedToInterview");
+    expect(DECISION_SLICES.invites.include(invite)).toBe(true);
+    expect(DECISION_SLICES.outcomes.include(invite)).toBe(true);
+  });
+
+  it("lists outcome Finals only on the Decisions tab", () => {
+    const accept = row("Final", "Accepted");
+    expect(DECISION_SLICES.invites.include(accept)).toBe(false);
+    expect(DECISION_SLICES.outcomes.include(accept)).toBe(true);
+  });
+
+  it("keeps Drafts out of every release list", () => {
+    const draft = row("Draft", "InvitedToInterview");
+    expect(DECISION_SLICES.invites.include(draft)).toBe(false);
+    expect(DECISION_SLICES.outcomes.include(draft)).toBe(false);
+    expect(DECISION_SLICES.finalize.include(draft)).toBe(true);
   });
 });

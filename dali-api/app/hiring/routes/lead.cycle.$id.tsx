@@ -64,6 +64,7 @@ import {
   type DecisionSlotType,
   type NotificationSlotType,
 } from "~/hiring/lib/email-variables";
+import { pendingForHiringLead } from "~/hiring/lib/decision-pills";
 import { Modal, ModalFooter, ModalHeader } from "~/components/Modal";
 import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
 import { Checkbox } from "~/components/ui/Checkbox";
@@ -329,35 +330,31 @@ export async function loader({ request, params }: Route.LoaderArgs) {
             },
           },
         }),
-    // Decisions awaiting the hiring lead: Drafts to finalize and Finals to
-    // release, on every kind of cycle. Students cycles used to load Finals only,
-    // on the theory that domain leads finalize on their own page — but a Draft
-    // made outside that flow (moved by hand, or left behind when the cycle
-    // closed) was then invisible here, which is the one place a lead looks.
-    // Exclude rows that already have a Released child — Decision is append-only,
-    // so released rows still match their stage and would otherwise re-appear here
-    // after the optimistic UI update is undone by a loader refetch.
+    // Every decision row on the cycle, reduced to the ones still awaiting the
+    // lead. Drafts belong here on every kind of cycle: one made outside the
+    // domain-lead flow (moved by hand, or left behind when the cycle closed)
+    // is otherwise invisible, and this is the one place a lead looks.
     confidentialityRequired
       ? Promise.resolve([] as never[])
-      : prisma.decision.findMany({
-          where: {
-            stage: { in: ["Draft", "Final"] },
-            children: { none: { stage: "Released" } },
-            domainApplication: {
-              application: { applicationCycleId: params.id },
-            },
-          },
-          include: {
-            domainApplication: {
-              include: {
-                application: { include: { user: { select: { firstName: true, lastName: true, dartmouthEmail: true, netId: true } } } },
-                domain: { select: { name: true } },
+      : prisma.decision
+          .findMany({
+            where: {
+              domainApplication: {
+                application: { applicationCycleId: params.id },
               },
             },
-            madeBy: { select: { firstName: true, lastName: true } },
-          },
-          orderBy: { createdAt: "desc" },
-        }),
+            include: {
+              domainApplication: {
+                include: {
+                  application: { include: { user: { select: { firstName: true, lastName: true, dartmouthEmail: true, netId: true } } } },
+                  domain: { select: { name: true } },
+                },
+              },
+              madeBy: { select: { firstName: true, lastName: true } },
+            },
+            orderBy: { createdAt: "desc" },
+          })
+          .then(pendingForHiringLead),
     // Hiring's emails are shared by every cycle, one per slot (decision or
     // notification). Keyed by slot for the editors, release gating and previews.
     listHiringEmails(),
@@ -1293,7 +1290,10 @@ function CoverageHeatmap({ coverage }: { coverage: CoverageData | null }) {
 
 type DecisionSlice = 'invites' | 'finalize' | 'outcomes'
 
-const DECISION_SLICES: Record<DecisionSlice, { title: string; empty: string; include: (d: any) => boolean }> = {
+// `invites` only renders on the round tab that hands off to Interviews, so
+// `outcomes` on the Decisions tab takes every Final: an invite finalized after
+// the lead has moved past that round would otherwise be releasable nowhere.
+export const DECISION_SLICES: Record<DecisionSlice, { title: string; empty: string; include: (d: any) => boolean }> = {
   invites: {
     title: 'Interview invites',
     empty: 'No invites ready to send.',
@@ -1307,7 +1307,7 @@ const DECISION_SLICES: Record<DecisionSlice, { title: string; empty: string; inc
   outcomes: {
     title: 'Decisions ready to release',
     empty: 'No decisions awaiting release.',
-    include: (d) => d.stage === 'Final' && d.type !== 'InvitedToInterview',
+    include: (d) => d.stage === 'Final',
   },
 }
 
@@ -2307,7 +2307,156 @@ export default function HiringLeadCycleDetails() {
       )}
 
 
-      {/* ── Interviews Tab — schedule, then coverage, then roster, then config ── */}
+      {/* ── Interviews Tab — config, then schedule, then coverage ── */}
+      {tab === 'interviews' && (
+        <NavSection id="interview-config" title="Interview schedule">
+        <SetupCard title="Interview schedule" description="When applicants can book and how much notice they need.">
+          <div className={cn(os.formClass, 'grid grid-cols-1 gap-4 md:grid-cols-2')}>
+            <label className={os.fieldLabel}>
+              Slot length
+              <Select
+                ariaLabel="Slot length"
+                value={String(config.slotDurationMinutes)}
+                onChange={(value) => setConfig(c => ({ ...c, slotDurationMinutes: Number(value) }))}
+                options={DURATION_OPTIONS.map((d): SelectOption => ({ value: String(d), label: `${d} minutes` }))}
+                buttonClassName={rowTrigger(os.formTrigger)}
+              />
+            </label>
+            <label className={os.fieldLabel}>
+              Buffer between interviews
+              <Select
+                ariaLabel="Buffer between interviews"
+                value={String(config.bufferMinutes)}
+                onChange={(value) => setConfig(c => ({ ...c, bufferMinutes: Number(value) }))}
+                options={BUFFER_OPTIONS.map((b): SelectOption => ({ value: String(b), label: `${b} minutes` }))}
+                buttonClassName={rowTrigger(os.formTrigger)}
+              />
+            </label>
+            <label className={os.fieldLabel}>
+              Day start
+              <Select
+                ariaLabel="Day start"
+                value={String(config.dayStartHour)}
+                onChange={(value) => setConfig(c => ({ ...c, dayStartHour: Number(value) }))}
+                options={HOUR_OPTIONS.map((h): SelectOption => ({ value: String(h), label: formatHour(h) }))}
+                buttonClassName={rowTrigger(os.formTrigger)}
+              />
+            </label>
+            <label className={os.fieldLabel}>
+              Day end
+              <Select
+                ariaLabel="Day end"
+                value={String(config.dayEndHour)}
+                onChange={(value) => setConfig(c => ({ ...c, dayEndHour: Number(value) }))}
+                options={HOUR_OPTIONS.map((h): SelectOption => ({ value: String(h), label: formatHour(h) }))}
+                buttonClassName={rowTrigger(os.formTrigger)}
+              />
+            </label>
+            <div className={os.fieldLabel}>
+              Interview start date
+              <DateField
+                mode="date"
+                value={config.interviewStartDate}
+                onChange={(value) => setConfig(c => ({ ...c, interviewStartDate: value }))}
+                className="w-full"
+                buttonClassName={rowTrigger(os.formTrigger)}
+                ariaLabel="Interview start date"
+              />
+            </div>
+            <div className={os.fieldLabel}>
+              Interview end date
+              <DateField
+                mode="date"
+                value={config.interviewEndDate}
+                onChange={(value) => setConfig(c => ({ ...c, interviewEndDate: value }))}
+                className="w-full"
+                buttonClassName={rowTrigger(os.formTrigger)}
+                ariaLabel="Interview end date"
+              />
+            </div>
+            <label className={os.fieldLabel}>
+              Booking notice
+              <Select
+                ariaLabel="Booking notice"
+                value={String(config.bookingNoticeHours)}
+                onChange={(value) => setConfig(c => ({ ...c, bookingNoticeHours: Number(value) }))}
+                options={[0, 1, 2, 4, 6, 8, 12, 24, 48].map((h): SelectOption => ({ value: String(h), label: h === 0 ? 'No minimum' : `${h} hours ahead` }))}
+                buttonClassName={rowTrigger(os.formTrigger)}
+              />
+            </label>
+            <label className={os.fieldLabel}>
+              Reschedule notice
+              <Select
+                ariaLabel="Reschedule notice"
+                value={String(config.rescheduleNoticeHours)}
+                onChange={(value) => setConfig(c => ({ ...c, rescheduleNoticeHours: Number(value) }))}
+                options={[0, 2, 4, 6, 8, 12, 24, 48].map((h): SelectOption => ({ value: String(h), label: h === 0 ? 'No minimum' : `${h} hours before` }))}
+                buttonClassName={rowTrigger(os.formTrigger)}
+              />
+            </label>
+            <label className={os.fieldLabel}>
+              Cancel notice
+              <Select
+                ariaLabel="Cancel notice"
+                value={String(config.cancelNoticeHours)}
+                onChange={(value) => setConfig(c => ({ ...c, cancelNoticeHours: Number(value) }))}
+                options={[0, 2, 4, 6, 8, 12, 24, 48].map((h): SelectOption => ({ value: String(h), label: h === 0 ? 'Up until start' : `${h} hours before` }))}
+                buttonClassName={rowTrigger(os.formTrigger)}
+              />
+            </label>
+          </div>
+          <div className={cn(os.formClass, 'mt-4')}>
+            <div className={os.fieldLabel}>
+              Interview rooms
+              <div className="flex flex-wrap gap-4">
+                {availableRooms.map(room => (
+                  <Checkbox
+                    key={room.id}
+                    label={room.name}
+                    checked={config.roomIds.includes(room.id)}
+                    onChange={(e) => {
+                      const checked = e.target.checked
+                      setConfig(c => ({
+                        ...c,
+                        roomIds: checked ? [...c.roomIds, room.id] : c.roomIds.filter(id => id !== room.id),
+                      }))
+                    }}
+                  />
+                ))}
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground">In-person slots are booked into these rooms.</p>
+            <Toggle
+              tone="os"
+              label="Hold these rooms for interviews"
+              description="Blocks other bookings during interview hours across the interview window."
+              checked={config.holdRooms}
+              disabled={config.roomIds.length === 0}
+              onChange={(e) => setConfig(c => ({ ...c, holdRooms: e.target.checked }))}
+            />
+          </div>
+          <div>
+            <button
+              type="button"
+              onClick={() => saveConfig()}
+              disabled={configSaving || !config.interviewStartDate || !config.interviewEndDate}
+              className={buttonClasses('primary', 'md')}
+            >
+              {configSaving ? 'Saving…' : configSaved ? 'Saved' : 'Save'}
+            </button>
+          </div>
+          {holdConflicts && (
+            <RoomHoldConflictModal
+              conflicts={holdConflicts}
+              timezone={config.timezone}
+              saving={configSaving}
+              onKeep={keepTheirBookings}
+              onOverride={() => saveConfig(true)}
+            />
+          )}
+        </SetupCard>
+        </NavSection>
+      )}
       {tab === 'interviews' && (
       <NavSection id="schedule" title="Schedule">
       {tab === 'interviews' && loaderData?.confidentialityRequired ? (
@@ -2755,156 +2904,6 @@ export default function HiringLeadCycleDetails() {
         />
         </NavSection>
       )}
-      {tab === 'interviews' && (
-        <NavSection id="interview-config" title="Interview schedule">
-        <SetupCard title="Interview schedule" description="When applicants can book and how much notice they need.">
-          <div className={cn(os.formClass, 'grid grid-cols-1 gap-4 md:grid-cols-2')}>
-            <label className={os.fieldLabel}>
-              Slot length
-              <Select
-                ariaLabel="Slot length"
-                value={String(config.slotDurationMinutes)}
-                onChange={(value) => setConfig(c => ({ ...c, slotDurationMinutes: Number(value) }))}
-                options={DURATION_OPTIONS.map((d): SelectOption => ({ value: String(d), label: `${d} minutes` }))}
-                buttonClassName={rowTrigger(os.formTrigger)}
-              />
-            </label>
-            <label className={os.fieldLabel}>
-              Buffer between interviews
-              <Select
-                ariaLabel="Buffer between interviews"
-                value={String(config.bufferMinutes)}
-                onChange={(value) => setConfig(c => ({ ...c, bufferMinutes: Number(value) }))}
-                options={BUFFER_OPTIONS.map((b): SelectOption => ({ value: String(b), label: `${b} minutes` }))}
-                buttonClassName={rowTrigger(os.formTrigger)}
-              />
-            </label>
-            <label className={os.fieldLabel}>
-              Day start
-              <Select
-                ariaLabel="Day start"
-                value={String(config.dayStartHour)}
-                onChange={(value) => setConfig(c => ({ ...c, dayStartHour: Number(value) }))}
-                options={HOUR_OPTIONS.map((h): SelectOption => ({ value: String(h), label: formatHour(h) }))}
-                buttonClassName={rowTrigger(os.formTrigger)}
-              />
-            </label>
-            <label className={os.fieldLabel}>
-              Day end
-              <Select
-                ariaLabel="Day end"
-                value={String(config.dayEndHour)}
-                onChange={(value) => setConfig(c => ({ ...c, dayEndHour: Number(value) }))}
-                options={HOUR_OPTIONS.map((h): SelectOption => ({ value: String(h), label: formatHour(h) }))}
-                buttonClassName={rowTrigger(os.formTrigger)}
-              />
-            </label>
-            <div className={os.fieldLabel}>
-              Interview start date
-              <DateField
-                mode="date"
-                value={config.interviewStartDate}
-                onChange={(value) => setConfig(c => ({ ...c, interviewStartDate: value }))}
-                className="w-full"
-                buttonClassName={rowTrigger(os.formTrigger)}
-                ariaLabel="Interview start date"
-              />
-            </div>
-            <div className={os.fieldLabel}>
-              Interview end date
-              <DateField
-                mode="date"
-                value={config.interviewEndDate}
-                onChange={(value) => setConfig(c => ({ ...c, interviewEndDate: value }))}
-                className="w-full"
-                buttonClassName={rowTrigger(os.formTrigger)}
-                ariaLabel="Interview end date"
-              />
-            </div>
-            <label className={os.fieldLabel}>
-              Booking notice
-              <Select
-                ariaLabel="Booking notice"
-                value={String(config.bookingNoticeHours)}
-                onChange={(value) => setConfig(c => ({ ...c, bookingNoticeHours: Number(value) }))}
-                options={[0, 1, 2, 4, 6, 8, 12, 24, 48].map((h): SelectOption => ({ value: String(h), label: h === 0 ? 'No minimum' : `${h} hours ahead` }))}
-                buttonClassName={rowTrigger(os.formTrigger)}
-              />
-            </label>
-            <label className={os.fieldLabel}>
-              Reschedule notice
-              <Select
-                ariaLabel="Reschedule notice"
-                value={String(config.rescheduleNoticeHours)}
-                onChange={(value) => setConfig(c => ({ ...c, rescheduleNoticeHours: Number(value) }))}
-                options={[0, 2, 4, 6, 8, 12, 24, 48].map((h): SelectOption => ({ value: String(h), label: h === 0 ? 'No minimum' : `${h} hours before` }))}
-                buttonClassName={rowTrigger(os.formTrigger)}
-              />
-            </label>
-            <label className={os.fieldLabel}>
-              Cancel notice
-              <Select
-                ariaLabel="Cancel notice"
-                value={String(config.cancelNoticeHours)}
-                onChange={(value) => setConfig(c => ({ ...c, cancelNoticeHours: Number(value) }))}
-                options={[0, 2, 4, 6, 8, 12, 24, 48].map((h): SelectOption => ({ value: String(h), label: h === 0 ? 'Up until start' : `${h} hours before` }))}
-                buttonClassName={rowTrigger(os.formTrigger)}
-              />
-            </label>
-          </div>
-          <div className={cn(os.formClass, 'mt-4')}>
-            <div className={os.fieldLabel}>
-              Interview rooms
-              <div className="flex flex-wrap gap-4">
-                {availableRooms.map(room => (
-                  <Checkbox
-                    key={room.id}
-                    label={room.name}
-                    checked={config.roomIds.includes(room.id)}
-                    onChange={(e) => {
-                      const checked = e.target.checked
-                      setConfig(c => ({
-                        ...c,
-                        roomIds: checked ? [...c.roomIds, room.id] : c.roomIds.filter(id => id !== room.id),
-                      }))
-                    }}
-                  />
-                ))}
-              </div>
-            </div>
-            <p className="text-xs text-muted-foreground">In-person slots are booked into these rooms.</p>
-            <Toggle
-              tone="os"
-              label="Hold these rooms for interviews"
-              description="Blocks other bookings during interview hours across the interview window."
-              checked={config.holdRooms}
-              disabled={config.roomIds.length === 0}
-              onChange={(e) => setConfig(c => ({ ...c, holdRooms: e.target.checked }))}
-            />
-          </div>
-          <div>
-            <button
-              type="button"
-              onClick={() => saveConfig()}
-              disabled={configSaving || !config.interviewStartDate || !config.interviewEndDate}
-              className={buttonClasses('primary', 'md')}
-            >
-              {configSaving ? 'Saving…' : configSaved ? 'Saved' : 'Save'}
-            </button>
-          </div>
-          {holdConflicts && (
-            <RoomHoldConflictModal
-              conflicts={holdConflicts}
-              timezone={config.timezone}
-              saving={configSaving}
-              onKeep={keepTheirBookings}
-              onOverride={() => saveConfig(true)}
-            />
-          )}
-        </SetupCard>
-        </NavSection>
-      )}
-
       {/* ── A delib round: its boards, then what it hands on ── */}
       {activeRound && (
         <NavSection id="round-boards" title={activeRound?.label ?? 'Boards'}>

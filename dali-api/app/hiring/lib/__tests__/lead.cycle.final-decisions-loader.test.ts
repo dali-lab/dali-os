@@ -91,28 +91,49 @@ beforeEach(() => {
   mockPrisma.decision.findMany.mockResolvedValue([]);
 });
 
-describe("lead.cycle.$id loader — pending decisions filter", () => {
+const dec = (
+  id: string,
+  domainApplicationId: string,
+  type: string,
+  stage: string,
+  createdAt: string,
+) => ({ id, domainApplicationId, type, stage, createdAt: new Date(createdAt) });
+
+describe("lead.cycle.$id loader — pending decisions", () => {
   // Drafts belong here on every kind of cycle, not just member ones: a Draft
   // made outside the delibs flow (moved by hand, or left behind when the cycle
   // closed) is otherwise invisible on the one page a lead looks at.
-  it("loads Drafts and Finals, excluding rows that already have a Released child", async () => {
+  it("loads every decision on the cycle and keeps only the rows awaiting the lead", async () => {
+    mockPrisma.decision.findMany.mockResolvedValue([
+      dec("rej-d", "da3", "Rejected", "Draft", "2026-10-04"),
+      dec("acc-r", "da2", "Accepted", "Released", "2026-10-03"),
+      dec("acc-f", "da2", "Accepted", "Final", "2026-10-02"),
+      dec("inv-f", "da1", "InvitedToInterview", "Final", "2026-10-02"),
+      dec("inv-d", "da1", "InvitedToInterview", "Draft", "2026-10-01"),
+    ]);
     const req = new Request(`http://localhost/hiring-lead-admin/cycle/${CYCLE_ID}`);
-    await loader({ request: req, params: { id: CYCLE_ID }, context: {} } as any);
+    const data: any = await loader({ request: req, params: { id: CYCLE_ID }, context: {} } as any);
 
-    const pendingCall = mockPrisma.decision.findMany.mock.calls.find(
-      (c: any[]) => Array.isArray(c[0]?.where?.stage?.in),
-    );
-    expect(pendingCall).toBeDefined();
-    expect(pendingCall![0].where.stage.in.slice().sort()).toEqual(["Draft", "Final"]);
-    expect(pendingCall![0].where).toMatchObject({
-      children: { none: { stage: "Released" } },
-      domainApplication: { application: { applicationCycleId: CYCLE_ID } },
-    });
+    expect(mockPrisma.decision.findMany).toHaveBeenCalledTimes(1);
+    const where = mockPrisma.decision.findMany.mock.calls[0][0].where;
+    expect(where).toEqual({ domainApplication: { application: { applicationCycleId: CYCLE_ID } } });
+    expect(data.pendingDecisions.map((d: any) => d.id)).toEqual(["rej-d", "inv-f"]);
+  });
+
+  it("retires a finalized Draft even when delibs re-created it after the Final", async () => {
+    mockPrisma.decision.findMany.mockResolvedValue([
+      dec("inv-d2", "da1", "InvitedToInterview", "Draft", "2026-10-03"),
+      dec("inv-f", "da1", "InvitedToInterview", "Final", "2026-10-02"),
+      dec("inv-d1", "da1", "InvitedToInterview", "Draft", "2026-10-01"),
+    ]);
+    const req = new Request(`http://localhost/hiring-lead-admin/cycle/${CYCLE_ID}`);
+    const data: any = await loader({ request: req, params: { id: CYCLE_ID }, context: {} } as any);
+    expect(data.pendingDecisions.map((d: any) => d.id)).toEqual(["inv-f"]);
   });
 });
 
 describe("lead.cycle.$id loader — member cycles", () => {
-  it("includes Draft decisions (the lead finalizes) and loads the reviewer pool", async () => {
+  it("loads pending decisions and the reviewer pool", async () => {
     mockPrisma.applicationCycle.findUniqueOrThrow.mockResolvedValue({
       id: CYCLE_ID,
       name: "Fellowship",
@@ -135,10 +156,7 @@ describe("lead.cycle.$id loader — member cycles", () => {
     const req = new Request(`http://localhost/hiring/lead/cycle/${CYCLE_ID}`);
     const data: any = await loader({ request: req, params: { id: CYCLE_ID }, context: {} } as any);
 
-    const pendingCall = mockPrisma.decision.findMany.mock.calls.find(
-      (c: any[]) => c[0]?.where?.children,
-    );
-    expect(pendingCall![0].where.stage).toEqual({ in: ["Draft", "Final"] });
+    expect(mockPrisma.decision.findMany).toHaveBeenCalledTimes(1);
     // One CycleReviewer row per domain collapses to one pool member.
     expect(data.memberSetup.reviewerPool).toEqual([{ userId: "u1", displayName: "Ada L" }]);
   });
