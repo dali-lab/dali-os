@@ -14,3 +14,20 @@ export function requestOpenTabIfEmbedded(url: string, label: string): boolean {
   );
   return true;
 }
+
+/**
+ * The form the workspace stores and navigates by: path + query + hash. A link
+ * handed over as a full URL on our own origin (the desktop shell's new-tab
+ * hand-off does this) is reduced to that; anything else is left alone.
+ */
+export function workspacePath(url: string, origin: string): string {
+  if (!/^(?:[a-z][a-z0-9+.-]*:|\/\/)/i.test(url)) return url;
+  let parsed: URL;
+  try {
+    parsed = new URL(url, origin);
+  } catch {
+    return url;
+  }
+  if (parsed.origin !== origin) return url;
+  return parsed.pathname + parsed.search + parsed.hash;
+}
