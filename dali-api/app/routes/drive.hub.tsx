@@ -61,6 +61,7 @@ import { DriveUploadInput } from "~/components/drive/DriveUploadInput";
 import type { UploadDestination, UploadTarget } from "~/components/drive/useDriveFileUpload";
 import { useDialog } from "~/components/ui/dialog";
 import { useToast } from "~/components/ui/toast";
+import { driveNoticeMessage } from "~/lib/drive-notices";
 import { Menu, Select } from "~/components/ui/floating";
 import { parseTypeFilter, type DriveTypeFilter } from "~/components/drive/type-filter";
 import { createNotebookRequest, sendJson } from "~/components/notebooks/notebook-requests";
@@ -1102,15 +1103,20 @@ export default function DriveHub() {
     viewerId,
   } = useLoaderData() as LoaderData;
   const [searchParams, setSearchParams] = useSearchParams();
-  // Reveal in Drive arrives with ?select=<id>: the browser takes it once, and
-  // it leaves the URL so a refresh or a shared link does not re-select it.
+  const hubToast = useToast();
+  // Reveal in Drive arrives with ?select=<id>, and a redirect into Drive can
+  // carry ?notice=<key>: the browser takes each once, and they leave the URL so
+  // a refresh or a shared link does not replay them.
   const [initialSelectedId] = useState(() => searchParams.get("select") ?? undefined);
+  const [initialNotice] = useState(() => driveNoticeMessage(searchParams.get("notice")));
   useEffect(() => {
-    if (!initialSelectedId) return;
+    if (initialNotice) hubToast.info(initialNotice);
+    if (!initialSelectedId && !searchParams.has("notice")) return;
     setSearchParams(
       (prev) => {
         const next = new URLSearchParams(prev);
         next.delete("select");
+        next.delete("notice");
         return next;
       },
       { replace: true },

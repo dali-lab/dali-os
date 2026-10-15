@@ -2,7 +2,8 @@ import { redirect } from "react-router";
 import type { Route } from "./+types/forms.edit.$formId";
 import { requireAuth, forbidden, redirectNonMemberToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
-import { canBuildForm, formsUsePageAccess } from "~/forms/lib/form-access.server";
+import { canBuildForm, canSeeForm, formsUsePageAccess } from "~/forms/lib/form-access.server";
+import type { DriveNoticeKey } from "~/lib/drive-notices";
 import { prisma } from "~/lib/db";
 import {
   loadFormForEdit,
@@ -52,12 +53,32 @@ export const handle = {
   },
 };
 
+// Where a caller who may not build this form lands. Drive lists every form the
+// viewer can see but links each one here, so a viewer without edit (a scoped
+// folder's member, a View share) used to bounce to the home page. A published
+// form opens for filling; otherwise Drive, with a one-shot notice.
+async function viewerRedirect(userId: string, formId: string, request: Request) {
+  const toDrive = (notice: DriveNoticeKey, scope = "lab", folderPageId: string | null = null) =>
+    redirect(`/drive?scope=${scope}${folderPageId ? `&folder=${folderPageId}` : ""}&notice=${notice}`);
+  if (!(await canSeeForm(userId, formId, request))) return toDrive("form-no-access");
+  const form = await prisma.form.findUnique({
+    where: { id: formId },
+    select: { published: true, publicToken: true, folderPageId: true },
+  });
+  if (!form) return toDrive("form-no-access");
+  if (form.published && form.publicToken) return redirect(`/forms/fill/${form.publicToken}`);
+  const crumbs = await driveFolderCrumbs(form.folderPageId, userId, request);
+  return toDrive("form-view-only", crumbs?.scope ?? "lab", form.folderPageId);
+}
+
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
   const portalRedirect = await redirectNonMemberToPortal(auth, request);
   if (portalRedirect) return portalRedirect;
-  if (!(await canBuildForm(auth.user.sub, params.formId, request))) return redirect("/");
+  if (!(await canBuildForm(auth.user.sub, params.formId, request))) {
+    return viewerRedirect(auth.user.sub, params.formId, request);
+  }
 
   const form = await loadFormForEdit(params.formId);
   if (!form) return redirect("/drive?type=form");
