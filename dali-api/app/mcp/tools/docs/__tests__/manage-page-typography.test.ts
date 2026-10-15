@@ -35,7 +35,8 @@ vi.mock("~/lib/roles", () => ({
   isProjectMember: vi.fn(),
 }));
 
-vi.mock("~/lib/pageAccess.server", () => ({
+vi.mock("~/lib/pageAccess.server", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("~/lib/pageAccess.server")>()),
   getPageAccess: vi.fn(),
 }));
 

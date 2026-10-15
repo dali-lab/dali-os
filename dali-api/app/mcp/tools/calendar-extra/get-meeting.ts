@@ -52,6 +52,7 @@ export async function runGetMeeting(callerId: string, input: Input) {
       durationMinutes: true,
       status: true,
       isCoreMeeting: true,
+      notebookId: true,
       meetingUrl: true,
       recurrenceRule: true,
       organizer: { select: { firstName: true, lastName: true } },

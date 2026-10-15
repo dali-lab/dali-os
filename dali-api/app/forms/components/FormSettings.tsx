@@ -155,7 +155,10 @@ function FormSettingsFields({
   groups,
   opensAt,
   closesAt,
+  pageAccess = false,
 }: {
+  /** Who can fill is set under Share (forms-page-access), not here. */
+  pageAccess?: boolean;
   formId: string;
   oneResponsePerMember: boolean;
   notifyOnSubmission: boolean;
@@ -314,6 +317,9 @@ function FormSettingsFields({
         )}
       </div>
 
+      {pageAccess ? (
+        <p className="text-sm text-os-grey">Who can fill this form is set under Share.</p>
+      ) : (
       <div className="flex flex-col gap-2">
         <span className={heading}>Who can fill this form</span>
         {AUDIENCE_OPTIONS.map((opt) => (
@@ -358,6 +364,7 @@ function FormSettingsFields({
           </div>
         )}
       </div>
+      )}
 
       {err && <div className="text-destructive text-xs">{err}</div>}
     </div>

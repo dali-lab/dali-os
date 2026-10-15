@@ -66,6 +66,9 @@ export type PollRecordingResponse = {
   notes?: StoredEnhanceNotes | null;
   enhancedAt?: string | null;
   enhancedBy?: string | null;
+  /** ISO timestamp set when the last Enhance mark on this note cleared, by
+   *  any means — informational (specs/meeting-recording-rail.md Step 2). */
+  reviewedAt?: string | null;
   /** When the most recent chunk landed, for the "last audio …" status-line
    *  suffix a follower sees while the owner's device is uploading. */
   lastChunkAt?: string | null;

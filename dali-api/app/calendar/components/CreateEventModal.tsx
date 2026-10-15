@@ -1,13 +1,14 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useFetcher, useRevalidator } from "react-router";
-import { AlignLeft, CalendarDays, Clock, MapPin, Repeat, UsersRound, Video, X } from "lucide-react";
+import { AlignLeft, CalendarDays, Clock, MapPin, Repeat, UsersRound, X } from "lucide-react";
 import { cn } from "~/lib/cn";
 import { Checkbox } from "~/components/ui/Checkbox";
 import { DateField } from "~/components/ui/DateField";
 import { TimeField as TimeComboField } from "~/components/ui/TimeField";
 import { Select } from "~/components/ui/floating";
-import { Toggle } from "~/components/ui/Toggle";
 import { RoomLocationField } from "~/rooms/components/RoomLocationField";
+import { filedNoteFrom, filedWhere } from "~/calendar/lib/filed-note";
+import { useFiledNoteToast } from "~/calendar/lib/useFiledNoteToast";
 import {
   ScheduleWeekGrid,
   ParticipantPicker,
@@ -34,6 +35,7 @@ import {
   useMeetingNote,
   meetingNoteValid,
   meetingNotePayload,
+  inviteOf,
   MeetingNoteFields,
 } from "~/calendar/components/MeetingNoteFields";
 import { TimesheetFields } from "~/calendar/components/TimesheetFields";
@@ -181,28 +183,22 @@ export function CreateEventModal({
   const hasGuests = selectedUserIds.length > 0 || selectedGroupIds.length > 0 || guestEmails.length > 0;
   const type = hasGuests ? "Meeting" : "Event";
 
-  // ── Core meeting ─────────────────────────────────────────────────────────
-  // Core-only marker that flags the meeting as Core's without touching its
-  // guest list. Inviting the Core group implies it.
-  const coreSelected = selectedGroupIds.some((gid) => groupsById.get(gid)?.systemKey === "core");
-  const [coreMeeting, setCoreMeeting] = useState(false);
-  useEffect(() => {
-    if (coreSelected) setCoreMeeting(true);
-  }, [coreSelected]);
-  const isCoreMeeting = coreSelected || (data.canMarkCoreMeeting && coreMeeting);
-
   // ── Meeting note fields (only shown in Meeting mode) ─────────────────────
-  // Derive-type-from-project model; see MeetingNoteFields.
   const note = useMeetingNote();
-
-  // Prefill "About" when exactly one invited group is a project group — a default
-  // the sender can still change; it never enables the note on its own. A Core
-  // project meeting still prefills its project.
-  useEffect(() => {
-    if (selectedGroupIds.length !== 1) return;
-    note.applyGroupPrefill(groupsById.get(selectedGroupIds[0]!)?.projectId ?? null);
+  const invitedGroups = selectedGroupIds.flatMap((id) => groupsById.get(id) ?? []);
+  const scopeGroupId = selectedGroupIds.length === 1 && selectedUserIds.length === 0 ? selectedGroupIds[0]! : null;
+  const filingSuggestions = useMemo(
+    () => ({
+      attendeeIds: resolvedParticipantIds,
+      groups: data.groups,
+      invitedGroups,
+      scopeGroupId,
+      viewerId: data.currentUserId,
+      mentorPairs: data.mentorPairs,
+    }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedGroupIds]);
+    [resolvedParticipantIds.join("\0"), data.groups, data.mentorPairs, data.currentUserId, selectedGroupIds.join("\0"), scopeGroupId],
+  );
 
   // Send the invite from a specific calendar, not just an account — the same
   // sub-calendars the event destination offers. Starts on the event default
@@ -296,6 +292,7 @@ export function CreateEventModal({
   const eventFetcher = useFetcher<{ error?: string }>();
   const timeFetcher = useFetcher();
   const revalidator = useRevalidator();
+  const showFiledNote = useFiledNoteToast();
   const [meetingStatus, setMeetingStatus] = useState<
     | null
     | {
@@ -303,6 +300,7 @@ export function CreateEventModal({
         count: number;
         gcalError?: string | null;
         notePageId?: string | null;
+        filed?: { title: string; space: string; href: string } | null;
         whiteboardPageId?: string | null;
       }
     | { ok: false; error: string }
@@ -372,10 +370,7 @@ export function CreateEventModal({
       const rrule = repeatSpecToRRule(repeat, selectedStartLocal);
       if (rrule) payload.recurrenceRule = rrule;
       if (canAddMeet && addMeet) payload.addMeet = true;
-      Object.assign(payload, meetingNotePayload(note.state));
-      if (isCoreMeeting) {
-        payload.isCoreMeeting = true;
-      }
+      Object.assign(payload, meetingNotePayload(note.state, inviteOf(invitedGroups)));
       if (guestEmails.length > 0) payload.guestEmails = guestEmails;
       if (selectedGroupIds.length === 1 && selectedUserIds.length === 0) {
         payload.scopeType = "Group";
@@ -397,11 +392,14 @@ export function CreateEventModal({
       if (!res.ok) {
         setMeetingStatus({ ok: false, error: json.error ?? "Failed to create meeting" });
       } else {
+        const filed = filedNoteFrom(json);
+        if (filed) showFiledNote(filed, { undo: true });
         setMeetingStatus({
           ok: true,
           count: json.notifiedCount ?? 0,
           gcalError: json.gcalError ?? null,
           notePageId: json.notePageId ?? null,
+          filed: filed ? { ...filedWhere(filed), href: filed.notePath.href } : null,
           whiteboardPageId: json.whiteboardPageId ?? null,
         });
         // If isWork, log the organizer's time against the meeting we just
@@ -477,7 +475,7 @@ export function CreateEventModal({
   // ── Shared timesheet section ──────────────────────────────────────────────
   // The same TimesheetFields block in both Event and Meeting modes; the helper
   // line adapts to whether a repeating meeting is being scheduled. Hidden only
-  // when the viewer has no roles to log against (the toggle would dead-end).
+  // when the viewer has no roles to log against (the checkbox would dead-end).
   const timesheetSection =
     data.myRoles.length > 0 ? (
       <TimesheetFields
@@ -503,6 +501,7 @@ export function CreateEventModal({
             : "Automatically logs this event to your timesheet once it's created."
         }
         fieldClass={fieldClass}
+        control="checkbox"
       />
     ) : null;
 
@@ -750,7 +749,12 @@ export function CreateEventModal({
 
               {/* Timesheet — hidden for all-day and repeating events, which
                   have nothing for hours to attach to. */}
-              {eventCanLogWork && timesheetSection}
+              {eventCanLogWork && timesheetSection && (
+                <div>
+                  <span className={labelClass}>Add to this event</span>
+                  <div className="rounded-md border border-border bg-muted/20 p-3">{timesheetSection}</div>
+                </div>
+              )}
 
               {/* Error from fetcher */}
               {eventFetcher.data?.error && (
@@ -862,27 +866,6 @@ export function CreateEventModal({
                 </div>
               )}
 
-              {/* Google Meet */}
-              {inviteDests.length > 0 && (
-                <div className="rounded-md border border-border bg-muted/20 p-3">
-                  <Toggle
-                    checked={canAddMeet && addMeet}
-                    disabled={!canAddMeet}
-                    onChange={(e) => setAddMeet(e.target.checked)}
-                    label={
-                      <span className="inline-flex items-center gap-1.5">
-                        <Video className="h-3.5 w-3.5" /> Add Google Meet
-                      </span>
-                    }
-                    description={
-                      canAddMeet
-                        ? "Generates a Meet link on the selected calendar and includes it in the invite."
-                        : "Pick a Google calendar to send from and add guests to enable a Meet link."
-                    }
-                  />
-                </div>
-              )}
-
               {/* Location */}
               <div>
                 <label htmlFor="cem-mtg-location" className={labelClass}>
@@ -922,62 +905,54 @@ export function CreateEventModal({
                 />
               </div>
 
-              {/* Core meeting (Core only) */}
-              {data.canMarkCoreMeeting && (
-                <div className="rounded-md border border-border bg-muted/20 p-3">
-                  <Toggle
-                    checked={coreSelected || coreMeeting}
-                    disabled={coreSelected}
-                    onChange={(e) => setCoreMeeting(e.target.checked)}
-                    label="Core meeting"
-                    description={
-                      coreSelected
-                        ? "The Core group is invited, so this is already a Core meeting."
-                        : "Marks this as a Core meeting. Doesn't change who's invited."
-                    }
-                  />
-                </div>
-              )}
-
-              {/* Meeting assets: a note doc and/or a whiteboard, sharing the
-                  same About/type. The fields appear once either is enabled. */}
-              <div className="rounded-md border border-border bg-muted/20 p-3">
-                <Toggle
-                  checked={note.state.enabled}
-                  onChange={(e) => note.setEnabled(e.target.checked)}
-                  label="Create meeting note"
-                  description="Starts a shared note doc linked to this meeting."
-                />
-                <div className="mt-3">
-                  <Toggle
-                    checked={note.state.whiteboard}
-                    onChange={(e) => note.setWhiteboard(e.target.checked)}
-                    label="Create whiteboard"
-                    description="Starts a shared whiteboard canvas linked to this meeting."
-                  />
-                </div>
-                {(note.state.enabled || note.state.whiteboard) && (
-                  <div className="mt-3 pt-1">
-                    <MeetingNoteFields
-                      note={note}
-                      myProjects={data.myProjects}
-                      fieldClass={fieldClass}
-                      labelClass={labelClass}
-                      core={isCoreMeeting}
+              {/* Everything optional about the meeting, one control style. A
+                  repeating meeting logs its first occurrence to the timesheet. */}
+              <div>
+                <span className={labelClass}>Add to this meeting</span>
+                <div className="space-y-3 rounded-md border border-border bg-muted/20 p-3">
+                  {inviteDests.length > 0 && (
+                    <Checkbox
+                      checked={canAddMeet && addMeet}
+                      disabled={!canAddMeet}
+                      onChange={(e) => setAddMeet(e.target.checked)}
+                      label="Google Meet"
+                      description={
+                        canAddMeet
+                          ? "Adds a Meet link on the selected calendar to the invite."
+                          : "Pick a Google calendar to send from and add guests to enable a Meet link."
+                      }
                     />
-                  </div>
-                )}
+                  )}
+                  <MeetingNoteFields
+                    note={note}
+                    surface="create"
+                    fieldClass={fieldClass}
+                    labelClass={labelClass}
+                    meetingTitle={title}
+                    suggest={filingSuggestions}
+                  />
+                  {timesheetSection}
+                </div>
               </div>
-
-              {/* Timesheet — a repeating meeting logs its first occurrence. */}
-              {timesheetSection}
 
               {/* Status */}
               {meetingStatus?.ok === true && (
                 <p className="text-sm text-green-700">
-                  Meeting created. Notified {meetingStatus.count} participant
+                  Meeting created.
+                  {meetingStatus.filed && (
+                    <>
+                      {" "}
+                      Note in {meetingStatus.filed.title}
+                      {meetingStatus.filed.space && ` (${meetingStatus.filed.space})`}.{" "}
+                      <a href={meetingStatus.filed.href} className="underline font-medium">
+                        Open
+                      </a>
+                      .
+                    </>
+                  )}{" "}
+                  Notified {meetingStatus.count} participant
                   {meetingStatus.count === 1 ? "" : "s"}.
-                  {meetingStatus.notePageId && (
+                  {meetingStatus.notePageId && !meetingStatus.filed && (
                     <>
                       {" "}
                       <a href={`/documents/${meetingStatus.notePageId}`} className="underline font-medium">

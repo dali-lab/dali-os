@@ -216,6 +216,35 @@ export const EMAIL_TEMPLATES = {
     footer: "transactional",
     whenMissing: "skip",
   },
+  "hiring:notification:DomainAddedNotice": {
+    area: "Hiring",
+    label: "Domain added to an open cycle",
+    description:
+      "Sent by hand once per domain, to everyone with a non-Withdrawn application in the cycle, when a domain joins after the cycle opened with its own close date.",
+    purpose: "Hiring",
+    variables: ["firstName", "domain", "closeDate", "applyUrl"],
+    sample: {
+      firstName: "Alex",
+      domain: "Product Design",
+      closeDate: "Monday, October 19, 2026, 11:59 PM ET",
+      applyUrl: "https://dalilab.dartmouth.edu/portal/apply/cycle123",
+    },
+    footer: "transactional",
+    // Clearing it would mean a domain could open with no way to tell the
+    // applicant pool it exists, so it falls back rather than vanishing —
+    // same reasoning as waitlist:ContinuedInterest above.
+    whenMissing: "default",
+    defaults: {
+      subject: "{{domain}} is now open",
+      body: [
+        "Hi {{firstName}},",
+        "{{domain}} just opened in the cycle you applied to. It closes {{closeDate}}.",
+        "If you already submitted, your general application stays as it is; you can add {{domain}} and submit again before it closes.",
+        "Apply here: {{applyUrl}}",
+        "Best,\nDALI Hiring",
+      ].join("\n\n"),
+    },
+  },
 
   // ── Hiring: interviews ───────────────────────────────────────────────────
   "hiring:notification:InterviewInviteReminder": {

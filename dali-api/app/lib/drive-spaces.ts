@@ -6,13 +6,17 @@
 // as `feature-flags.ts`).
 
 import {
+  Briefcase,
   FolderKanban,
   GraduationCap,
   HardDrive,
+  Heart,
   Shield,
+  UserPlus,
   type LucideIcon,
 } from "lucide-react";
 import type { RoleFlags } from "~/lib/nav-areas";
+import type { DriveItem } from "~/lib/drive.server";
 
 // ── Backing strategies ────────────────────────────────────────────────────────
 
@@ -23,15 +27,23 @@ import type { RoleFlags } from "~/lib/nav-areas";
  * - `lab-open`         — lab-wide pages/files, top-level, no scoped-root carve-outs.
  * - `workspace-multi`  — one sub-space per workspace the viewer can access
  *                        (Projects / Education offerings).
- * - `virtual-filter`   — a view over existing items, no physical root. Core:
- *                        Core-group-scoped Lab folders. Partners (deferred):
- *                        pages where `partnerVisible=true`.
+ * - `process-root`      — the contents of a real root folder (`rootKey`), found
+ *                        by process type and id. Visible to whoever can view
+ *                        the root; the loader decides, not a role gate.
+ * - `virtual-filter`   — a view over existing items, no physical root.
+ *                        Partners (deferred): pages where `partnerVisible=true`.
+ * - `shared-with-me`   — pages the viewer holds a named share on, flat, that
+ *                        workspace membership does not already show them.
  */
 export type DriveSpaceBacking =
   | "member"
   | "lab-open"
   | "workspace-multi"
-  | "virtual-filter";
+  | "process-root"
+  | "virtual-filter"
+  | "shared-with-me";
+
+export type DriveRootKey = "core" | "hiring" | "mentorship";
 
 // ── Space definition ──────────────────────────────────────────────────────────
 
@@ -57,6 +69,8 @@ export type DriveSpaceDef = {
    * (e.g. `"core"`). Documents which group's scoped folders the space filters to.
    */
   groupQuery?: string;
+  /** For `process-root` spaces: which root folder backs the space. */
+  rootKey?: DriveRootKey;
 };
 
 // ── Registry ──────────────────────────────────────────────────────────────────
@@ -74,6 +88,13 @@ export const DRIVE_SPACES: DriveSpaceDef[] = [
     icon: HardDrive,
     backing: "member",
     // Always visible — every signed-in member has a private drive.
+  },
+  {
+    key: "shared",
+    label: "Shared with me",
+    icon: UserPlus,
+    backing: "shared-with-me",
+    // Always visible, even when empty: the empty state explains what lands here.
   },
   {
     key: "lab",
@@ -102,13 +123,22 @@ export const DRIVE_SPACES: DriveSpaceDef[] = [
     key: "core",
     label: "Core",
     icon: Shield,
-    // A view over Core-group-scoped folders (ordinary folders shared with the
-    // Core group), not a system-owned scoped root. Hiring's folder set is
-    // Core-group-scoped too, so it surfaces here as an ordinary "Hiring"
-    // folder rather than as a space of its own.
-    backing: "virtual-filter",
-    groupQuery: "core",
-    gate: (r) => r.isCore,
+    backing: "process-root",
+    rootKey: "core",
+  },
+  {
+    key: "hiring",
+    label: "Hiring",
+    icon: Briefcase,
+    backing: "process-root",
+    rootKey: "hiring",
+  },
+  {
+    key: "mentorship",
+    label: "Mentorship",
+    icon: Heart,
+    backing: "process-root",
+    rootKey: "mentorship",
   },
 ];
 
@@ -120,4 +150,25 @@ export const DRIVE_SPACES: DriveSpaceDef[] = [
  */
 export function visibleDriveSpaces(r: RoleFlags): DriveSpaceDef[] {
   return DRIVE_SPACES.filter((s) => !s.gate || s.gate(r));
+}
+
+/** Whether a Drive scope id names a process-root space (Core, Hiring, Mentorship). */
+export function isProcessRootSpace(scopeId: string): boolean {
+  return DRIVE_SPACES.some((s) => s.key === scopeId && s.backing === "process-root");
+}
+
+/** The id of the "Shared with me" space (its registry key doubles as the scope id). */
+export const SHARED_SPACE_KEY = "shared";
+
+export type SharedView = "with-me" | "by-me";
+
+/**
+ * Narrow the "Shared with me" space to one direction. The loader sends pages
+ * shared with the viewer and pages they shared with others in one list so the
+ * chip toggles without a refetch; each item says which direction it belongs to.
+ */
+export function sharedSpaceItems(items: DriveItem[], view: SharedView): DriveItem[] {
+  return items.filter((it) =>
+    it.type !== "doc" ? false : view === "by-me" ? it.sharedByMe === true : it.sharedWithMe === true,
+  );
 }

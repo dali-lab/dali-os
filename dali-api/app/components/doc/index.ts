@@ -40,9 +40,20 @@ export {
   citationHref,
   appendTaskMentionContent,
   transcriptToggleBlock,
+  enhanceSnapshotBlocks,
   findTranscriptToggle,
   hasTranscriptToggle,
+  findEnhanceMarks,
+  hasEnhanceMarks,
+  clearEnhanceMark,
+  keepEnhanceBlock,
+  revertEnhanceBlock,
+  keepAllEnhance,
+  revertAllEnhance,
+  stripEnhanceMarksFromHtml,
+  enhancePasteHandler,
 } from "./enhance-render";
+export { EnhanceReviewContext, type EnhanceReviewHandlers } from "./enhance-review-context";
 
 // Schema factory + editor/document types (heavy — client-only imports).
 export {

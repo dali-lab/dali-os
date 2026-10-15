@@ -15,15 +15,19 @@
 // item. Access rules in `drive.server.ts` and in the forms fill routes are
 // unchanged by this write.
 
+import { moveForm } from "~/forms/lib/form-page.server";
 import type { Route } from "./+types/api.drive.move";
 import { z } from "zod";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
-import { isCore, isProjectMember, canViewForms } from "~/lib/roles";
+import { isCore, isProjectMember } from "~/lib/roles";
+import { canManageFormPlacement } from "~/forms/lib/form-access.server";
 import { getPageAccess } from "~/lib/pageAccess.server";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson } from "~/lib/validate";
 import { logAuditEvent } from "~/lib/audit";
+import { loadAncestorChain } from "~/lib/page-ancestry.server";
+import { nearestRoot, rootBoundMoveError } from "~/lib/drive-roots";
 
 const BodySchema = z.object({
   itemType: z.enum(["file", "form", "rubric", "agreement"]),
@@ -62,48 +66,43 @@ export async function action({ request }: Route.ActionArgs) {
     );
   }
 
-  // ── Authorise the caller for the source item ─────────────────────────────
+  // The source and destination checks read independent rows, so they run
+  // together; the source verdict still wins when both refuse.
+  const refuse = (error: string, status: number) =>
+    withCors(request, Response.json({ error }, { status }));
 
-  if (itemType === "file") {
-    const file = await prisma.projectFile.findUnique({
-      where: { id: itemId },
-      select: { projectId: true, archivedAt: true },
-    });
-    if (!file || file.archivedAt !== null) {
-      return withCors(request, Response.json({ error: "File not found" }, { status: 404 }));
+  let sourceFolderId: string | null = null;
+
+  async function refuseSource(): Promise<Response | null> {
+    if (itemType === "file") {
+      // File manage: Core or, for project-scoped files, a member of the owning
+      // project. Lab-scoped files (no projectId) require Core for now.
+      const [file, core] = await Promise.all([
+        prisma.projectFile.findUnique({
+          where: { id: itemId },
+          select: { projectId: true, archivedAt: true, folderPageId: true },
+        }),
+        isCore(userId, request),
+      ]);
+      if (!file || file.archivedAt !== null) return refuse("File not found", 404);
+      sourceFolderId = file.folderPageId ?? null;
+      const canManage =
+        core || (file.projectId != null && (await isProjectMember(userId, file.projectId, request)));
+      return canManage ? null : refuse("You can't move this file", 403);
     }
-    // File manage: Core or, for project-scoped files, a member of the owning
-    // project. Lab-scoped files (no projectId) require Core for now.
-    const canManage =
-      (await isCore(userId, request)) ||
-      (file.projectId != null && (await isProjectMember(userId, file.projectId, request)));
-    if (!canManage) {
-      return withCors(
-        request,
-        Response.json({ error: "You can't move this file" }, { status: 403 }),
-      );
-    }
-  } else if (itemType === "form") {
-    const form = await prisma.form.findUnique({
-      where: { id: itemId },
-      select: { id: true },
-    });
-    if (!form) {
-      return withCors(request, Response.json({ error: "Form not found" }, { status: 404 }));
-    }
-    // Form manage: must pass the canViewForms gate (Core/Admin/Instructor).
-    const canManage = await canViewForms(userId);
-    if (!canManage) {
-      return withCors(
-        request,
-        Response.json({ error: "You can't move this form" }, { status: 403 }),
-      );
-    }
+    // form — agreements and rubrics are rejected by the guard above.
+    const [form, canManage] = await Promise.all([
+      prisma.form.findUnique({ where: { id: itemId }, select: { id: true, folderPageId: true } }),
+      // Form manage: the canViewForms gate, or page edit once forms follow page access.
+      canManageFormPlacement(userId, itemId, request),
+    ]);
+    if (!form) return refuse("Form not found", 404);
+    sourceFolderId = form.folderPageId ?? null;
+    return canManage ? null : refuse("You can't move this form", 403);
   }
 
-  // ── Authorise the destination folder ─────────────────────────────────────
-
-  if (destFolderPageId !== null) {
+  async function refuseDestination(): Promise<Response | null> {
+    if (destFolderPageId === null) return null;
     const folder = await prisma.page.findUnique({
       where: { id: destFolderPageId },
       select: {
@@ -125,22 +124,22 @@ export async function action({ request }: Route.ActionArgs) {
       },
     });
     if (!folder || folder.archivedAt !== null || folder.kind !== "Folder") {
-      return withCors(
-        request,
-        Response.json({ error: "Destination folder not found" }, { status: 404 }),
-      );
+      return refuse("Destination folder not found", 404);
     }
     const folderAccess = await getPageAccess(userId, folder, request);
-    if (!folderAccess.canEdit) {
-      return withCors(
-        request,
-        Response.json(
-          { error: "You can't place items in that folder" },
-          { status: 403 },
-        ),
-      );
-    }
+    return folderAccess.canEdit ? null : refuse("You can't place items in that folder", 403);
   }
+
+  const [sourceRefusal, destinationRefusal] = await Promise.all([refuseSource(), refuseDestination()]);
+  if (sourceRefusal) return sourceRefusal;
+  if (destinationRefusal) return destinationRefusal;
+
+  const [sourceChain, destChain] = await Promise.all([
+    sourceFolderId ? loadAncestorChain(sourceFolderId) : [],
+    destFolderPageId ? loadAncestorChain(destFolderPageId) : [],
+  ]);
+  const rootRefusal = rootBoundMoveError(nearestRoot(sourceChain), nearestRoot(destChain));
+  if (rootRefusal) return refuse(rootRefusal, 400);
 
   // ── Apply the placement ───────────────────────────────────────────────────
 
@@ -151,10 +150,7 @@ export async function action({ request }: Route.ActionArgs) {
     });
   } else {
     // form — agreements and rubrics are rejected by the guard above.
-    await prisma.form.update({
-      where: { id: itemId },
-      data: { folderPageId: destFolderPageId },
-    });
+    await moveForm(itemId, destFolderPageId);
   }
 
   await logAuditEvent({

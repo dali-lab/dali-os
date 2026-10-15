@@ -46,6 +46,14 @@ export const TEMPLATE_VARIABLES_REGISTRY = {
     description: "Link to the DALI Slack workspace.",
     contexts: ["email"],
   },
+  closeDate: {
+    description: "A domain or cycle close date, formatted in Eastern Time.",
+    contexts: ["email"],
+  },
+  applyUrl: {
+    description: "Link to the cycle's apply page.",
+    contexts: ["email"],
+  },
 
   // ── Notifications ───────────────────────────────────────────────────────
   // Deliberately generic and few. 24 of the 44 notify() call sites interpolate

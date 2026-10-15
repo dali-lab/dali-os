@@ -131,6 +131,50 @@ describe("meeting page — one occurrence of a recurring meeting", () => {
   });
 });
 
+describe("meeting page — a trashed series notebook", () => {
+  const notebookOf = (archivedAt: Date | null) => ({ id: "nb1", title: "Sync notes", archivedAt });
+
+  it("reads only live notes, shows no notebook and nothing to open while it is in Trash", async () => {
+    mockAuth.mockResolvedValue({ ok: true, user: { sub: "member-1", type: "member" } });
+    mockPrisma.scheduledMeeting.findUnique.mockResolvedValue(
+      meeting({ notebookId: "nb1", notebook: notebookOf(new Date("2026-01-10T00:00:00.000Z")), notePages: [] }),
+    );
+
+    const d = (await load()) as unknown as { notebook: { id: string } | null; canOpenNote: boolean };
+
+    expect(d.notebook).toBeNull();
+    expect(d.canOpenNote).toBe(false);
+    expect(mockPrisma.scheduledMeeting.findUnique).toHaveBeenCalledWith(
+      expect.objectContaining({
+        select: expect.objectContaining({ notePages: expect.objectContaining({ where: { archivedAt: null } }) }),
+      }),
+    );
+  });
+
+  it("links the notebook again once it is restored", async () => {
+    mockAuth.mockResolvedValue({ ok: true, user: { sub: "member-1", type: "member" } });
+    mockPrisma.scheduledMeeting.findUnique.mockResolvedValue(
+      meeting({ notebookId: "nb1", notebook: notebookOf(null), notePages: [] }),
+    );
+
+    const d = (await load()) as unknown as { notebook: { id: string; title: string } | null; canOpenNote: boolean };
+
+    expect(d.notebook).toEqual({ id: "nb1", title: "Sync notes" });
+    expect(d.canOpenNote).toBe(true);
+  });
+});
+
+describe("meeting page — Core label", () => {
+  it.each([true, false])("shows the stored isCoreMeeting column (%s)", async (isCoreMeeting) => {
+    mockAuth.mockResolvedValue({ ok: true, user: { sub: "organizer-1", type: "member" } });
+    mockPrisma.scheduledMeeting.findUnique.mockResolvedValue(meeting({ notebookId: "nb1", isCoreMeeting }));
+
+    const d = (await load()) as unknown as { isCoreMeeting: boolean };
+
+    expect(d.isCoreMeeting).toBe(isCoreMeeting);
+  });
+});
+
 describe("meeting page — adding a note after the fact", () => {
   it("offers it to the organizer of a note-less meeting", async () => {
     mockAuth.mockResolvedValue({ ok: true, user: { sub: "organizer-1", type: "member" } });
@@ -154,6 +198,29 @@ describe("meeting page — adding a note after the fact", () => {
   it("withholds it from a plain invitee", async () => {
     mockAuth.mockResolvedValue({ ok: true, user: { sub: "member-1", type: "member" } });
     expect((await load()).canAddNote).toBe(false);
+  });
+
+  it("offers a participant the start-a-note affordance once the series has a notebook", async () => {
+    mockAuth.mockResolvedValue({ ok: true, user: { sub: "member-1", type: "member" } });
+    mockPrisma.scheduledMeeting.findUnique.mockResolvedValue(
+      meeting({ notebookId: "nb-1", notebook: { id: "nb-1", title: "Weekly" } }),
+    );
+    const d = (await load()) as unknown as { canAddNote: boolean; canStartNote: boolean };
+    expect(d.canStartNote).toBe(true);
+    expect(d.canAddNote).toBe(false);
+  });
+
+  it("offers a participant the affordance once a previous note exists", async () => {
+    mockAuth.mockResolvedValue({ ok: true, user: { sub: "member-1", type: "member" } });
+    mockPrisma.scheduledMeeting.findUnique.mockResolvedValue(
+      meeting({ notePages: [{ id: "n1", meetingOccurrenceStart: new Date("2025-12-29T15:00:00.000Z") }] }),
+    );
+    expect(((await load()) as unknown as { canStartNote: boolean }).canStartNote).toBe(true);
+  });
+
+  it("withholds it from a participant when the series has no notebook and no notes", async () => {
+    mockAuth.mockResolvedValue({ ok: true, user: { sub: "member-1", type: "member" } });
+    expect(((await load()) as unknown as { canStartNote: boolean }).canStartNote).toBe(false);
   });
 });
 

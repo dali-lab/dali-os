@@ -96,6 +96,7 @@ export async function duplicatePage(
     id: source.id,
     workspaceType: targetWorkspaceType,
     workspaceId: targetWorkspaceId,
+    parentPageId: targetParentPageId,
     archivedAt: null,
   });
   if (!access.canEdit) {

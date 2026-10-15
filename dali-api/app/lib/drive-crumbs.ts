@@ -26,8 +26,15 @@ export function workspaceDriveScope(
 export function driveRootCrumbs(scope: string | null | undefined): DriveRootCrumb[] {
   const root = { label: "Drive", to: "/drive" };
   if (scope === "core") return [root, { label: "Core", to: "/drive?scope=core" }];
+  if (scope === "hiring") return [root, { label: "Hiring", to: "/drive?scope=hiring" }];
+  if (scope === "mentorship") return [root, { label: "Mentorship", to: "/drive?scope=mentorship" }];
   if (scope === "mine") return [root, { label: "My Drive", to: "/drive?scope=mine" }];
   if (scope === "projects") return [root, { label: "Projects", to: "/drive?scope=projects" }];
   if (scope === "education") return [root, { label: "Education", to: "/drive?scope=education" }];
   return [root];
+}
+
+/** The route that resolves a page to its place in the Drive (Reveal in Drive). */
+export function revealInDriveHref(pageId: string): string {
+  return `/drive/reveal/${pageId}`;
 }

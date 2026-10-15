@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { meetingNotebookIdentity, termForDate, type NotebookMeeting } from "~/lib/meeting-notebook";
+import {
+  meetingNotebookIdentity,
+  meetingTypeForNotebook,
+  termForDate,
+  type NotebookMeeting,
+} from "~/lib/meeting-notebook";
 
 const fall = { id: "t-26f", code: "26F", startDate: new Date("2026-09-14T00:00:00Z") };
 const summer = { id: "t-26x", code: "26X", startDate: new Date("2026-06-22T00:00:00Z") };
@@ -90,5 +95,26 @@ describe("meetingNotebookIdentity", () => {
     expect(meetingNotebookIdentity(meeting({ meetingTypeLabel: null }), fall).title).toBe(
       "Sync meeting notes",
     );
+  });
+});
+
+describe("meetingTypeForNotebook", () => {
+  it("reads a project meeting as Team with no label", () => {
+    expect(meetingTypeForNotebook("proj_1", "Weekly check-in")).toEqual({ meetingType: "Team", meetingTypeLabel: null });
+  });
+
+  it("reads anything else as Other, labelled with the notebook title", () => {
+    expect(meetingTypeForNotebook(null, "  Weekly check-in ")).toEqual({
+      meetingType: "Other",
+      meetingTypeLabel: "Weekly check-in",
+    });
+  });
+
+  it("keeps the label within the 80 characters the meeting stores", () => {
+    expect(meetingTypeForNotebook(null, "x".repeat(200)).meetingTypeLabel).toHaveLength(80);
+  });
+
+  it("falls back to a generic label for a blank title", () => {
+    expect(meetingTypeForNotebook(null, "   ").meetingTypeLabel).toBe("Meeting");
   });
 });

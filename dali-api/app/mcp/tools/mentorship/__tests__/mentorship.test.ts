@@ -9,6 +9,12 @@ vi.mock("~/collab/legacy/pm-to-blocknote", () => ({
   ensureBlocks: (v: unknown) => v ?? [],
 }));
 vi.mock("~/collab/write", () => ({ replaceCollabDocContent: vi.fn() }));
+vi.mock("~/collab/read", () => ({ readDocAsBlocks: vi.fn() }));
+vi.mock("~/lib/pageAccess.server", () => ({ getPageAccess: vi.fn() }));
+vi.mock("~/mentorship/lib/pair-notebook.server", () => ({
+  ensureMentorNotePage: vi.fn(),
+  archiveMentorNotePage: vi.fn(),
+}));
 vi.mock("~/collab/blocknote-server", () => ({
   markdownToBlocks: vi.fn(async () => [{ type: "paragraph" }]),
 }));
@@ -73,6 +79,9 @@ import {
   MANAGE_MENTOR_NOTE_TEMPLATE_TOOL,
 } from "~/mcp/tools/mentorship/manage-mentor-note-template";
 import { replaceCollabDocContent } from "~/collab/write";
+import { readDocAsBlocks } from "~/collab/read";
+import { getPageAccess } from "~/lib/pageAccess.server";
+import { archiveMentorNotePage, ensureMentorNotePage } from "~/mentorship/lib/pair-notebook.server";
 import { markdownToBlocks } from "~/collab/blocknote-server";
 
 type MockFn = ReturnType<typeof vi.fn>;
@@ -246,6 +255,40 @@ describe("get_mentor_note", () => {
     mockPrisma.mentorNote.findUnique.mockResolvedValue(null);
     await expect(runGetMentorNote(ME, { id: "nope" })).rejects.toMatchObject({ status: 404 });
   });
+
+  it("reads the body from the page's room, not contentJson, once the note has a page", async () => {
+    const roomBlocks = [{ type: "paragraph", content: "from the room" }];
+    mockPrisma.mentorNote.findUnique.mockResolvedValue({
+      ...BASE_NOTE,
+      pageId: "page-1",
+      contentJson: [{ type: "paragraph", content: "stale" }],
+    });
+    vi.mocked(getPageAccess).mockResolvedValue({ canView: true, canEdit: false, canComment: false });
+    vi.mocked(readDocAsBlocks).mockResolvedValue(roomBlocks as never);
+
+    const out = (await runGetMentorNote(ME, { id: NOTE_ID })) as Record<string, unknown>;
+
+    expect(readDocAsBlocks).toHaveBeenCalledWith("doc:page-1:body");
+    expect(out.contentJson).toEqual(roomBlocks);
+  });
+
+  it("falls back to contentJson while the note has no page", async () => {
+    const blocks = [{ type: "paragraph", content: "column" }];
+    mockPrisma.mentorNote.findUnique.mockResolvedValue({ ...BASE_NOTE, pageId: null, contentJson: blocks });
+
+    const out = (await runGetMentorNote(ME, { id: NOTE_ID })) as Record<string, unknown>;
+
+    expect(readDocAsBlocks).not.toHaveBeenCalled();
+    expect(out.contentJson).toEqual(blocks);
+  });
+
+  it("forbids a caller the note's page does not admit", async () => {
+    mockPrisma.mentorNote.findUnique.mockResolvedValue({ ...BASE_NOTE, pageId: "page-1" });
+    vi.mocked(getPageAccess).mockResolvedValue({ canView: false, canEdit: false, canComment: false });
+
+    await expect(runGetMentorNote(ME, { id: NOTE_ID })).rejects.toMatchObject({ status: 403 });
+    expect(readDocAsBlocks).not.toHaveBeenCalled();
+  });
 });
 
 // ─── list_mentorship_pairs happy path ────────────────────────────────────────
@@ -293,7 +336,7 @@ describe("manage_mentor_note", () => {
   it("upsert creates and seeds from default template", async () => {
     mockPrisma.mentorNote.findUnique.mockResolvedValue(null);
     mockPrisma.mentorNoteTemplate.findFirst.mockResolvedValue({ contentJson: { blocks: [] } });
-    mockPrisma.mentorNote.create.mockResolvedValue({ id: "note-new" });
+    mockPrisma.mentorNote.create.mockResolvedValue({ id: "note-new", mentorId: ME });
 
     const out = await runManageMentorNote(ME, {
       action: "upsert",
@@ -309,6 +352,39 @@ describe("manage_mentor_note", () => {
         data: expect.objectContaining({ contentJson: { blocks: [] } }),
       }),
     );
+  });
+
+  it("upsert gives a newly created note its notebook tab, as the caller", async () => {
+    const created = { id: "note-new", mentorId: ME, pageId: null, contentJson: { blocks: [] } };
+    mockPrisma.mentorNote.findUnique.mockResolvedValue(null);
+    mockPrisma.mentorNoteTemplate.findFirst.mockResolvedValue(null);
+    mockPrisma.mentorNote.create.mockResolvedValue(created);
+
+    await runManageMentorNote(ME, {
+      action: "upsert",
+      menteeId: MENTEE,
+      projectId: "proj-1",
+      termId: "term-1",
+      domainId: "dom-1",
+      weekOf: "2026-08-04",
+    });
+
+    expect(ensureMentorNotePage).toHaveBeenCalledWith(created, ME);
+  });
+
+  it("upsert of an existing note creates no second tab", async () => {
+    mockPrisma.mentorNote.findUnique.mockResolvedValue({ id: NOTE_ID });
+
+    await runManageMentorNote(ME, {
+      action: "upsert",
+      menteeId: MENTEE,
+      projectId: "proj-1",
+      termId: "term-1",
+      domainId: "dom-1",
+      weekOf: "2026-08-04",
+    });
+
+    expect(ensureMentorNotePage).not.toHaveBeenCalled();
   });
 
   it("set_vibe updates the vibe field for the author", async () => {
@@ -336,6 +412,15 @@ describe("manage_mentor_note", () => {
     const out = await runManageMentorNote(ME, { action: "delete", id: NOTE_ID });
     expect(out).toMatchObject({ ok: true });
     expect(mockPrisma.mentorNote.delete).toHaveBeenCalledWith({ where: { id: NOTE_ID } });
+  });
+
+  it("delete trashes the note's page", async () => {
+    mockPrisma.mentorNote.findUnique.mockResolvedValue({ id: NOTE_ID, mentorId: ME, pageId: "page-1" });
+    mockPrisma.mentorNote.delete.mockResolvedValue({});
+
+    await runManageMentorNote(ME, { action: "delete", id: NOTE_ID });
+
+    expect(archiveMentorNotePage).toHaveBeenCalledWith("page-1");
   });
 
   it("rejects unknown action", async () => {

@@ -9,6 +9,8 @@ import {
   inferDomainApplicationStatus,
   domainApplicationStatusInclude,
 } from "~/hiring/lib/domain-application-status";
+import { domainCloseDate, isDomainClosed } from "~/hiring/lib/domain-windows";
+import { APPLICATION_TZ, formatInTimeZone } from "~/lib/timezone";
 import { listMyApplications } from "~/education/lib/offerings.server";
 import { MyStatusChip } from "~/education/components/OfferingCard";
 import { ApplicantErrorBoundary } from "~/components/ApplicantErrorBoundary";
@@ -38,6 +40,19 @@ async function loadHiringSummaries(userId: string) {
     orderBy: { createdAt: "desc" },
   });
 
+  // Per-domain close windows (DomainApplicationCycle.closeDate), keyed by
+  // cycle+domain — not on DomainApplication itself, so a separate batch read.
+  const cycleIds = [...new Set(applications.map((a) => a.applicationCycleId))];
+  const domainWindows = cycleIds.length
+    ? await prisma.domainApplicationCycle.findMany({
+        where: { applicationCycleId: { in: cycleIds } },
+        select: { applicationCycleId: true, domainId: true, closeDate: true },
+      })
+    : [];
+  const closeDateByKey = new Map(
+    domainWindows.map((d) => [`${d.applicationCycleId}:${d.domainId}`, d.closeDate]),
+  );
+
   return applications.map((application) => {
     const cycle = application.applicationCycle;
     const latestCycleStatus = cycle.statusUpdates[0]?.newStatus ?? "Draft";
@@ -59,14 +74,19 @@ async function loadHiringSummaries(userId: string) {
           ? "Submitted"
           : "Draft";
 
-    const domains = application.domainApplications.map((da) => ({
-      id: da.id,
-      domainName: da.domain?.name ?? "Unknown",
-      status: inferDomainApplicationStatus(
-        { ...da, application: { statusUpdates: application.statusUpdates } } as any,
-        cycleStatus,
-      ),
-    }));
+    const domains = application.domainApplications.map((da) => {
+      const window = { closeDate: closeDateByKey.get(`${cycle.id}:${da.domainId}`) ?? null };
+      return {
+        id: da.id,
+        domainName: da.domain?.name ?? "Unknown",
+        status: inferDomainApplicationStatus(
+          { ...da, application: { statusUpdates: application.statusUpdates } } as any,
+          cycleStatus,
+        ),
+        closed: isDomainClosed(window, cycle),
+        closeDate: domainCloseDate(window, cycle)?.toISOString() ?? null,
+      };
+    });
 
     return {
       id: application.id,
@@ -109,6 +129,18 @@ const HIRING_STATUS: Record<string, { label: string; dot: PillTone }> = {
   Rejected: { label: "Not accepted", dot: "danger" },
   Withdrawn: { label: "Withdrawn", dot: "neutral" },
 };
+
+// "Nov 13" — appended to the "Not submitted" pill for a still-open or closed
+// domain, pinned to APPLICATION_TZ like the apply page's own close pills.
+function formatShortDate(iso: string): string {
+  return formatInTimeZone(iso, APPLICATION_TZ, { month: "short", day: "numeric" });
+}
+
+export function hiringPillLabel(d: { status: string; closed: boolean; closeDate: string | null }): string {
+  const base = HIRING_STATUS[d.status]?.label ?? d.status;
+  if (d.status !== "ApplicationOpen" || !d.closeDate) return base;
+  return `${base} · ${d.closed ? "closed" : "closes"} ${formatShortDate(d.closeDate)}`;
+}
 
 const SECTION_HEADING =
   "font-heading text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-2";
@@ -167,7 +199,7 @@ export default function PortalApplications() {
                         const st = HIRING_STATUS[d.status];
                         return (
                           <Pill outline key={d.id} dot={st?.dot ?? "neutral"}>
-                            {d.domainName} · {st?.label ?? d.status}
+                            {d.domainName} · {hiringPillLabel(d)}
                           </Pill>
                         );
                       })}

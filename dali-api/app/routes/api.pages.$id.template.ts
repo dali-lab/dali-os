@@ -4,7 +4,7 @@ import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson } from "~/lib/validate";
-import { getPageAccess } from "~/lib/pageAccess.server";
+import { PAGE_ACCESS_SELECT, getPageAccess } from "~/lib/pageAccess.server";
 import { isCore, isProjectMember } from "~/lib/roles";
 
 // POST /api/pages/:id/template
@@ -49,10 +49,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   const page = await prisma.page.findUnique({
     where: { id: params.id },
     select: {
-      id: true,
-      workspaceType: true,
-      workspaceId: true,
-      archivedAt: true,
+      ...PAGE_ACCESS_SELECT,
       kind: true,
       isTemplate: true,
     },
@@ -68,12 +65,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   }
 
   if (body.intent === "setTemplate") {
-    const access = await getPageAccess(auth.user.sub, {
-      id: page.id,
-      workspaceType: page.workspaceType,
-      workspaceId: page.workspaceId,
-      archivedAt: page.archivedAt,
-    });
+    const access = await getPageAccess(auth.user.sub, page);
     if (!access.canEdit) {
       return withCors(request, Response.json({ error: "Permission denied" }, { status: 403 }));
     }

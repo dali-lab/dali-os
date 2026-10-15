@@ -7,7 +7,6 @@ import { Button } from "~/components/ui/Button";
 import { useToast } from "~/components/ui/toast";
 import { Modal, ModalHeader } from "~/components/Modal";
 import { modalCardClass, useOsChrome } from "~/components/os-chrome";
-import { cn } from "~/lib/cn";
 import type { Route } from "./+types/documents.$pageId";
 import { prisma } from "~/lib/db";
 import { ensureOccurrenceRoster } from "~/lib/scheduled-meeting";
@@ -17,14 +16,17 @@ import { publicDocRedirectForPath } from "~/lib/public-doc.server";
 import { getCollabToken } from "~/lib/collab-token.server";
 import { fullName, formatDateShort } from "~/lib/display";
 import { getPresenceUser } from "~/lib/presence-user";
-import { getPageAccess, getPageAccessBulk } from "~/lib/pageAccess.server";
+import { PAGE_ACCESS_SELECT, getPageAccess, getPageAccessBulk } from "~/lib/pageAccess.server";
 import { getUserRoles, isProjectMember } from "~/lib/roles";
 import type { MeetingType } from "~/generated/prisma/client";
 import { isFavorited, recordPageVisit } from "~/lib/user-pages.server";
 import { canManageSharing } from "~/lib/page-share-access.server";
+import { groupIdsForUser } from "~/lib/page-sharing.server";
+import { notebookItemLocation } from "~/lib/note-path.server";
 import { normalizePageTypography } from "~/lib/page-typography";
 import { driveFolderCrumbs } from "~/lib/drive-crumbs.server";
 import { workspaceDriveScope } from "~/lib/drive-crumbs";
+import type { ItemLocation } from "~/components/drive/location";
 import { DocumentEditor } from "~/components/DocumentEditor";
 import { AttendanceChecklist, type AttendanceRow } from "~/components/AttendanceChecklist";
 import { CheckInPanel } from "~/components/CheckInPanel";
@@ -39,14 +41,32 @@ import {
   appendTaskMentionContent,
   blockOwnText,
   blocksToPlainText,
+  enhanceSnapshotBlocks,
+  findEnhanceMarks,
   findTranscriptToggle,
   hasTranscriptToggle,
+  keepAllEnhance,
+  keepEnhanceBlock,
   renderEnhanceOps,
+  revertAllEnhance,
+  revertEnhanceBlock,
   transcriptToggleBlock,
+  EnhanceReviewContext,
 } from "~/components/doc";
 import type { DocEditorInstance, DocPartialBlock } from "~/components/doc/schema/build";
-import { actionItemMatchesBlock, type EditorOp, type EnhanceActionItem, type SnapshotBlock } from "~/components/meeting-recorder/enhance-plan";
+import {
+  actionItemMatchesBlock,
+  type EditorOp,
+  type EnhanceActionItem,
+  type EnhanceBlockChange,
+  type EnhanceMarkEntry,
+  type SnapshotBlock,
+} from "~/components/meeting-recorder/enhance-plan";
 import { pageDocName } from "~/collab/roomName";
+import { canManageNotebook } from "~/lib/notebooks.server";
+import { nextNoteTargets } from "~/lib/notebook-series.server";
+import { NotebookRail, NoteLocationLine, type NotebookView } from "~/components/notebooks/NotebookRail";
+import { EmptyNotebook } from "~/components/notebooks/EmptyNotebook";
 import { redirectToLogin } from "~/lib/login-next";
 import { walletTokensConfigured } from "~/lib/wallet-token";
 
@@ -61,6 +81,34 @@ export const handle = {
   hideBreadcrumbs: true,
 };
 
+type NotebookPage = {
+  id: string;
+  title: string;
+  workspaceType: string;
+  workspaceId: string | null;
+  parentPageId: string | null;
+  templatePage?: { id: string } | null;
+};
+
+function notebookShell(
+  nb: NotebookPage,
+  gate: { canEdit: boolean; manager: boolean; nextNotes: NotebookView["nextNotes"] },
+): NotebookView {
+  return {
+    id: nb.id,
+    title: nb.title,
+    canEdit: gate.canEdit,
+    canManage: gate.manager,
+    workspaceType: nb.workspaceType,
+    workspaceId: nb.workspaceId,
+    folderId: nb.parentPageId,
+    templateId: nb.templatePage?.id ?? null,
+    projectId: nb.workspaceType === "Project" ? nb.workspaceId : null,
+    nextNotes: gate.canEdit ? gate.nextNotes : [],
+    tabs: [],
+  };
+}
+
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   // Child loaders run alongside the shell's, and the deepest redirect wins, so
@@ -74,30 +122,27 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const page = await prisma.page.findUnique({
     where: { id: params.pageId },
     select: {
-      id: true,
+      ...PAGE_ACCESS_SELECT,
       title: true,
       kind: true,
-      workspaceType: true,
-      workspaceId: true,
-      parentPageId: true,
-      archivedAt: true,
       meetingNoteId: true,
       meetingOccurrenceStart: true,
       seededFromPageId: true,
       seededTemplateHash: true,
-      notebookKey: true,
-      parent: { select: { id: true, title: true, notebookKey: true } },
+      templatePage: { select: { id: true, title: true } },
+      parent: {
+        select: {
+          ...PAGE_ACCESS_SELECT,
+          title: true,
+          kind: true,
+          templatePage: { select: { id: true, title: true } },
+        },
+      },
       iconEmoji: true,
       coverImageUrl: true,
       isTemplate: true,
       typography: true,
       updatedAt: true,
-      createdById: true,
-      partnerVisible: true,
-      profileVisible: true,
-      labListing: true,
-      linkAccess: true,
-      linkPermission: true,
       defaultMeetingNoteFor: true,
       createdBy: { select: { firstName: true, lastName: true } },
       lastEditedBy: { select: { firstName: true, lastName: true } },
@@ -115,40 +160,33 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     throw new Response("Not found", { status: 404 });
   }
 
-  // Unified permission resolution. Passing the full field set (createdById, the
-  // general-access + note-visibility flags) makes this match the by-id path
-  // exactly — the Lab branch keys off createdById/Core plus the General-access
-  // and share layers. The Member read gate is folded in here (getPageAccess
-  // handles notes), so there's no separate noteAccess pre-check.
   // Only a meeting note reaches this line archived (checked above). Its access
   // has to be resolved from the page's ordinary rules — the default deny would
   // 404 the meeting's "Open meeting note" link and the printed check-in QR the
   // moment someone trashes the note — and is then narrowed to read-only: a
   // trashed doc is readable, never writable, until it's restored.
   const trashed = page.archivedAt !== null;
-  const access = await getPageAccess(
-    auth.user.sub,
-    {
-      id: page.id,
-      workspaceType: page.workspaceType,
-      workspaceId: page.workspaceId,
-      archivedAt: page.archivedAt,
-      createdById: page.createdById,
-      partnerVisible: page.partnerVisible,
-      profileVisible: page.profileVisible,
-      labListing: page.labListing,
-      linkAccess: page.linkAccess,
-      linkPermission: page.linkPermission,
-    },
-    request,
-    { includeArchived: trashed },
-  );
+  const access = await getPageAccess(auth.user.sub, page, request, { includeArchived: trashed });
   if (!access.canView) throw new Response("Not found", { status: 404 });
   const canEdit = access.canEdit && !trashed;
   const canComment = access.canComment && !trashed;
   // Restoring is the same gate the Trash panel applies (edit access), read
   // before the read-only narrowing above.
   const canRestore = trashed && access.canEdit;
+
+  const editViaMeeting =
+    canEdit &&
+    !(await getPageAccess(auth.user.sub, page, request, { ignoreShares: true })).canEdit &&
+    (await prisma.meetingShareGrant.findFirst({
+      where: {
+        pageId: { in: page.parent?.kind === "Notebook" ? [page.parent.id, page.id] : [page.id] },
+        OR: [
+          { principalType: "User", principalId: auth.user.sub },
+          { principalType: "Group", principalId: { in: await groupIdsForUser(auth.user.sub, request) } },
+        ],
+      },
+      select: { id: true },
+    })) !== null;
 
   // Folder pages are Drive containers, not documents — the doc viewer would
   // render them with an editable body and a document breadcrumb. Send folders to
@@ -167,10 +205,13 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   if (page.kind === "Whiteboard") {
     return redirect(`/whiteboard/${page.id}`);
   }
+  if (page.kind === "Form") {
+    return redirect(`/forms/edit/${page.id}`);
+  }
 
   // A meeting notebook has no body of its own: it opens on the note for the
   // latest meeting that has started, or the first one coming up.
-  if (page.notebookKey) {
+  if (page.kind === "Notebook") {
     const tabs = await prisma.page.findMany({
       where: { parentPageId: page.id, archivedAt: null },
       orderBy: { meetingOccurrenceStart: "desc" },
@@ -179,46 +220,55 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     const now = new Date();
     const tab = tabs.find((t) => (t.meetingOccurrenceStart ?? now) <= now) ?? tabs.at(-1);
     if (tab) return redirect(`/documents/${tab.id}${new URL(request.url).search}`);
+    const [nextNotes, manager] = await Promise.all([
+      nextNoteTargets(page.id),
+      canManageNotebook(auth.user.sub, page, request),
+    ]);
+    return {
+      title: page.title,
+      emptyNotebook: notebookShell(page, { canEdit, manager: manager && !trashed, nextNotes }),
+    };
   }
 
   // The other notes in this one's notebook, newest first, for the side tabs.
-  let notebook: {
-    title: string;
-    tabs: { id: string; label: string; meeting: string | null }[];
-  } | null = null;
-  if (page.parent?.notebookKey) {
-    const tabRows = await prisma.page.findMany({
-      where: { parentPageId: page.parent.id, OR: [{ archivedAt: null }, { id: page.id }] },
-      orderBy: { meetingOccurrenceStart: "desc" },
-      select: {
-        id: true,
-        title: true,
-        meetingOccurrenceStart: true,
-        meetingNote: { select: { title: true } },
-        // The same access shape the page itself was judged on above.
-        workspaceType: true,
-        workspaceId: true,
-        archivedAt: true,
-        createdById: true,
-        partnerVisible: true,
-        profileVisible: true,
-        labListing: true,
-        linkAccess: true,
-        linkPermission: true,
-      },
-    });
+  let notebook: NotebookView | null = null;
+  let noteLocation: { location: ItemLocation; tabLabel: string } | null = null;
+  if (page.parent?.kind === "Notebook") {
+    const [tabRows, notebookAccess, nextNotes, notebookManager, notebookPlace] = await Promise.all([
+      prisma.page.findMany({
+        where: { parentPageId: page.parent.id, OR: [{ archivedAt: null }, { id: page.id }] },
+        orderBy: { meetingOccurrenceStart: "desc" },
+        select: {
+          ...PAGE_ACCESS_SELECT,
+          title: true,
+          meetingNoteId: true,
+          meetingOccurrenceStart: true,
+          meetingNote: { select: { title: true } },
+        },
+      }),
+      getPageAccess(auth.user.sub, page.parent, request),
+      nextNoteTargets(page.parent.id),
+      canManageNotebook(auth.user.sub, page.parent, request),
+      notebookItemLocation(page.parent, auth.user.sub, request),
+    ]);
+    noteLocation = {
+      location: notebookPlace,
+      tabLabel: page.meetingOccurrenceStart ? formatDateShort(page.meetingOccurrenceStart) : page.title,
+    };
     const tabAccess = await getPageAccessBulk(auth.user.sub, tabRows, request, {
       includeArchived: trashed,
     });
     const visible = tabRows.filter((t) => tabAccess.get(t.id)?.canView);
     // Naming the meeting only helps when the notebook holds more than one.
     const mixed = new Set(visible.map((t) => t.meetingNote?.title)).size > 1;
+    const canEditNotebook = notebookAccess.canEdit && !trashed;
     notebook = {
-      title: page.parent.title,
+      ...notebookShell(page.parent, { canEdit: canEditNotebook, manager: notebookManager && !trashed, nextNotes }),
       tabs: visible.map((t) => ({
         id: t.id,
         label: t.meetingOccurrenceStart ? formatDateShort(t.meetingOccurrenceStart) : t.title,
         meeting: mixed ? (t.meetingNote?.title ?? null) : null,
+        isNote: t.meetingNoteId !== null,
       })),
     };
   }
@@ -433,6 +483,16 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     subtitle: presenceUser?.subtitle ?? null,
     attendance,
     notebook,
+    noteLocation,
+    editViaMeeting,
+    notebookConversion:
+      canEdit &&
+      page.kind === "FreeForm" &&
+      page.parent?.kind !== "Notebook" &&
+      page.meetingNoteId === null &&
+      (page.workspaceType === "Lab" || page.workspaceType === "Project")
+        ? { parentPageId: page.parentPageId }
+        : null,
     backlinks,
     trashed,
     canRestore,
@@ -457,48 +517,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       latestRecordingRow !== null &&
       (ACTIVE_RECORDING_STATUSES as readonly string[]).includes(latestRecordingRow.status),
   };
-}
-
-// A notebook's notes as side tabs, the way a Google Doc lists its tabs: one
-// document in the Drive, one tab per meeting.
-function NotebookTabs({
-  notebook,
-  currentId,
-}: {
-  notebook: { title: string; tabs: { id: string; label: string; meeting: string | null }[] };
-  currentId: string;
-}) {
-  const { card } = useOsChrome();
-  return (
-    <nav
-      aria-label={notebook.title}
-      className={cn(card, "flex min-w-0 shrink-0 flex-col gap-2 p-3 lg:sticky lg:top-4 lg:w-56")}
-    >
-      <p className="truncate px-2 text-sm font-semibold text-foreground">{notebook.title}</p>
-      <ul className="flex gap-1 overflow-x-auto lg:max-h-[70vh] lg:flex-col lg:overflow-y-auto">
-        {notebook.tabs.map((tab) => {
-          const current = tab.id === currentId;
-          return (
-            <li key={tab.id} className="shrink-0">
-              <Link
-                to={`/documents/${tab.id}`}
-                aria-current={current ? "page" : undefined}
-                className={cn(
-                  "block rounded-os-item px-2 py-1.5 text-sm transition-colors",
-                  current
-                    ? "bg-os-accent/15 text-os-accent"
-                    : "text-os-grey hover:bg-os-container hover:text-foreground",
-                )}
-              >
-                <span className="block truncate">{tab.label}</span>
-                {tab.meeting && <span className="block truncate text-xs">{tab.meeting}</span>}
-              </Link>
-            </li>
-          );
-        })}
-      </ul>
-    </nav>
-  );
 }
 
 // A trashed meeting note still opens (read-only) so check-in and the meeting's
@@ -635,7 +653,13 @@ function RecordingMountInner({
   return <>{children(rec)}</>;
 }
 
-export default function DocumentPage() {
+export default function DocumentRoute() {
+  const { emptyNotebook } = useLoaderData() as { emptyNotebook?: NotebookView };
+  if (emptyNotebook) return <EmptyNotebook notebook={emptyNotebook} />;
+  return <DocumentPage />;
+}
+
+function DocumentPage() {
   const {
     pageId,
     title,
@@ -659,6 +683,9 @@ export default function DocumentPage() {
     updatedAt,
     attendance,
     notebook,
+    noteLocation,
+    editViaMeeting,
+    notebookConversion,
     backlinks,
     trashed,
     canRestore,
@@ -670,7 +697,7 @@ export default function DocumentPage() {
     hasActiveRecording,
     projectId: meetingProjectId,
     canCreateTasks,
-  } = useLoaderData() as Exclude<Awaited<ReturnType<typeof loader>>, Response>;
+  } = useLoaderData() as Extract<Awaited<ReturnType<typeof loader>>, { pageId: string }>;
 
   // Arriving from a comment-mention notification (?comment=<id>): open the
   // comments panel and scroll to that comment once threads load.
@@ -707,9 +734,43 @@ export default function DocumentPage() {
   // Meeting recording writes into the doc through the live editor, so
   // collaborators see the notes arrive like any other edit.
   const editorRef = useRef<DocEditorInstance | null>(null);
+  // Document-change listeners registered by useMeetingRecording's
+  // subscribeDocumentChanges prop (specs/meeting-recording-rail.md Step 2) —
+  // a Set so the single editor.onChange subscription below fans out to every
+  // registered hook instance (notebook tabs can mount more than one
+  // RecordingMount in the same render, though only one is ever enabled).
+  // Kept as a ref, not state: registering/unregistering must never itself
+  // trigger a re-render.
+  const docChangeListenersRef = useRef<Set<(ctx: { marks: EnhanceMarkEntry[]; changes: EnhanceBlockChange[] }) => void>>(
+    new Set(),
+  );
   const onEditorReady = useCallback((ed: DocEditorInstance) => {
     editorRef.current = ed;
+    const marks = findEnhanceMarks(ed.document);
+    for (const cb of docChangeListenersRef.current) cb({ marks, changes: [] });
+    ed.onChange((editor, { getChanges }) => {
+      const liveMarks = findEnhanceMarks(editor.document);
+      const changes = getChanges() as unknown as EnhanceBlockChange[];
+      for (const cb of docChangeListenersRef.current) cb({ marks: liveMarks, changes });
+    });
   }, []);
+  // Lets useMeetingRecording subscribe without this route importing anything
+  // BlockNote-specific into the hook: it hands over plain data (a mark scan
+  // + the transaction's change list), computed here where the real editor
+  // and its onChange API live. Called once immediately with the document's
+  // current marks if the editor is already up; otherwise onEditorReady seeds
+  // it once the editor mounts.
+  const subscribeDocumentChanges = useCallback(
+    (cb: (ctx: { marks: EnhanceMarkEntry[]; changes: EnhanceBlockChange[] }) => void) => {
+      docChangeListenersRef.current.add(cb);
+      const editor = editorRef.current;
+      if (editor) cb({ marks: findEnhanceMarks(editor.document), changes: [] });
+      return () => {
+        docChangeListenersRef.current.delete(cb);
+      };
+    },
+    [],
+  );
   const insertMeetingNotes = useCallback((markdown: string, transcript: string[]) => {
     const editor = editorRef.current;
     if (!editor) return false;
@@ -731,26 +792,56 @@ export default function DocumentPage() {
     if (!editor) return null;
     const doc = editor.document;
     return {
-      blocks: doc.map((b) => ({ id: b.id, type: b.type, text: blockOwnText(b) })),
+      blocks: enhanceSnapshotBlocks(doc),
       bodyText: blocksToPlainText(doc),
     };
   }, []);
 
-  // Replays Enhance's merge ops against the live editor, then inserts the
-  // transcript toggle if Apply didn't already find one — same toggle
-  // insertMeetingNotes uses, de-duplicated by heading text.
+  // Replays Enhance's merge ops against the live editor (marking every
+  // touched block, Step 2), then inserts the transcript toggle if nothing
+  // did already — same toggle insertMeetingNotes uses, de-duplicated by
+  // heading text. Returns renderEnhanceOps's captured priorBlocks for the
+  // hook to persist as StoredEnhanceNotes.priorBlocks.
   const onApplyEnhance = useCallback(
-    (ops: EditorOp[], recordingId: string, transcript: string[], actionItems: EnhanceActionItem[]): boolean => {
+    (
+      ops: EditorOp[],
+      recordingId: string,
+      transcript: string[],
+      actionItems: EnhanceActionItem[],
+    ): { ok: boolean; priorBlocks?: Record<string, unknown> } => {
       const editor = editorRef.current;
-      if (!editor) return false;
-      renderEnhanceOps(editor, ops, { pageId, recordingId, actionItems, projectId: meetingProjectId });
+      if (!editor) return { ok: false };
+      const { priorBlocks } = renderEnhanceOps(editor, ops, { pageId, recordingId, actionItems, projectId: meetingProjectId });
       if (transcript.length && !hasTranscriptToggle(editor)) {
         appendBlocks(editor, [transcriptToggleBlock(transcript)]);
       }
-      return true;
+      return { ok: true, priorBlocks };
     },
     [pageId, meetingProjectId],
   );
+
+  // Keep/Revert — one block or every marked block at once (specs/meeting-
+  // recording-rail.md Step 2). Backs the rail's row buttons and header
+  // actions, the side-menu items (via EnhanceReviewContext below), and the
+  // hook's own local-edit-counts-as-Keep detection.
+  const onKeepBlock = useCallback((id: string) => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    keepEnhanceBlock(editor, id);
+  }, []);
+  const onRevertBlock = useCallback((id: string, priorBlocks: Record<string, unknown>) => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    revertEnhanceBlock(editor, id, priorBlocks);
+  }, []);
+  const onKeepAllBlocks = useCallback((): number => {
+    const editor = editorRef.current;
+    return editor ? keepAllEnhance(editor) : 0;
+  }, []);
+  const onRevertAllBlocks = useCallback((priorBlocks: Record<string, unknown>): number => {
+    const editor = editorRef.current;
+    return editor ? revertAllEnhance(editor, priorBlocks) : 0;
+  }, []);
 
   // A speaker rename after Insert/Enhance leaves the names baked into the
   // Transcript toggle stale — rewrite its children from the current
@@ -817,6 +908,11 @@ export default function DocumentPage() {
       seededTemplateHash={seededTemplateHash}
       getNoteState={getNoteState}
       onApplyEnhance={onApplyEnhance}
+      subscribeDocumentChanges={subscribeDocumentChanges}
+      onKeepBlock={onKeepBlock}
+      onRevertBlock={onRevertBlock}
+      onKeepAllBlocks={onKeepAllBlocks}
+      onRevertAllBlocks={onRevertAllBlocks}
       onSpeakersChanged={onSpeakersChanged}
       projectId={meetingProjectId}
       canCreateTasks={canCreateTasks}
@@ -858,6 +954,7 @@ export default function DocumentPage() {
             backlinks={backlinks}
             focusMentionUserId={focusMentionUserId}
             meetingNoteTemplateAction={meetingNoteTemplateAction}
+            notebookConversion={notebookConversion}
             aiEnabled
             onEditorReady={onEditorReady}
             onContainerWideChange={setContainerWide}
@@ -893,48 +990,67 @@ export default function DocumentPage() {
           />
         );
 
+        // Lets DocSideMenu offer Keep change/Revert change on a marked block
+        // without the generic side menu knowing anything about Enhance
+        // (specs/meeting-recording-rail.md Step 2). Null when the recording
+        // hook isn't mounted — the side menu then renders nothing extra.
+        const enhanceReview = rec
+          ? { keepBlock: rec.keepBlock, revertBlock: rec.revertBlock, priorBlocks: rec.enhanceNotes?.priorBlocks }
+          : null;
+
         return (
-          <div className="flex flex-col gap-4">
-            {trashed && <TrashedNoteBanner pageId={pageId} canRestore={canRestore} />}
-            {attendance && recordingEnabled && recordingAllowed && (
-              <RecordPromptBanner
-                meetingId={attendance.meetingId}
-                occurrenceStart={attendance.occurrenceStart}
-                windowEndIso={attendance.windowEndIso}
-                canEdit={canEdit}
-                recordingEnabled={recordingEnabled}
-                recordPromptEnabled={attendance.recordPromptEnabled}
-                hasActiveRecording={hasActiveRecording}
-                canDontSuggest={attendance.canDontSuggestRecording}
-                onRecord={() => setRecordAutoOpen(true)}
-                onDontSuggest={() => void dontSuggestRecording()}
-              />
-            )}
-            {attendance?.selfCheckIn && (
-              <CheckInPanel
-                meetingId={attendance.meetingId}
-                meetingLabel={attendance.meetingLabel}
-                viewerInvited={attendance.viewerInvited}
-                initialPresent={attendance.viewerPresent}
-                checkInUrl={attendance.checkInUrl}
-                checkInQrSvg={attendance.checkInQrSvg}
-              />
-            )}
-            {notebook ? (
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
-                <NotebookTabs notebook={notebook} currentId={pageId} />
-                <div className="min-w-0 flex-1">
-                  <TranscriptChipHoverLayer onChipClick={onChipClick} railOpen={Boolean(rec?.open)}>
-                    {editor}
-                  </TranscriptChipHoverLayer>
+          <EnhanceReviewContext.Provider value={enhanceReview}>
+            <div className="flex flex-col gap-4">
+              {trashed && <TrashedNoteBanner pageId={pageId} canRestore={canRestore} />}
+              {attendance && recordingEnabled && recordingAllowed && (
+                <RecordPromptBanner
+                  meetingId={attendance.meetingId}
+                  occurrenceStart={attendance.occurrenceStart}
+                  windowEndIso={attendance.windowEndIso}
+                  canEdit={canEdit}
+                  recordingEnabled={recordingEnabled}
+                  recordPromptEnabled={attendance.recordPromptEnabled}
+                  hasActiveRecording={hasActiveRecording}
+                  canDontSuggest={attendance.canDontSuggestRecording}
+                  onRecord={() => setRecordAutoOpen(true)}
+                  onDontSuggest={() => void dontSuggestRecording()}
+                />
+              )}
+              {attendance?.selfCheckIn && (
+                <CheckInPanel
+                  meetingId={attendance.meetingId}
+                  meetingLabel={attendance.meetingLabel}
+                  viewerInvited={attendance.viewerInvited}
+                  initialPresent={attendance.viewerPresent}
+                  checkInUrl={attendance.checkInUrl}
+                  checkInQrSvg={attendance.checkInQrSvg}
+                />
+              )}
+              {notebook && noteLocation && (
+                <NoteLocationLine
+                  notebook={notebook}
+                  location={noteLocation.location}
+                  tabLabel={noteLocation.tabLabel}
+                  editViaMeeting={editViaMeeting}
+                  showControls={notebook.tabs.length <= 1}
+                />
+              )}
+              {notebook && notebook.tabs.length > 1 ? (
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
+                  <NotebookRail notebook={notebook} currentId={pageId} />
+                  <div className="min-w-0 flex-1">
+                    <TranscriptChipHoverLayer onChipClick={onChipClick} railOpen={Boolean(rec?.open)}>
+                      {editor}
+                    </TranscriptChipHoverLayer>
+                  </div>
                 </div>
-              </div>
-            ) : (
-              <TranscriptChipHoverLayer onChipClick={onChipClick} railOpen={Boolean(rec?.open)}>
-                {editor}
-              </TranscriptChipHoverLayer>
-            )}
-          </div>
+              ) : (
+                <TranscriptChipHoverLayer onChipClick={onChipClick} railOpen={Boolean(rec?.open)}>
+                  {editor}
+                </TranscriptChipHoverLayer>
+              )}
+            </div>
+          </EnhanceReviewContext.Provider>
         );
       }}
     </RecordingMount>

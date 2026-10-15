@@ -1,9 +1,11 @@
 // Custom drag-handle side menu for DocEditor (A8).
 //
 // Notion-ordered items:
-//   1. Duplicate — deep-copies the block (new IDs) immediately after itself.
-//   2. Colors    — BlockNote's BlockColorsItem (text + background sub-menu).
-//   3. Delete    — BlockNote's RemoveBlockItem.
+//   1. Duplicate     — deep-copies the block (new IDs) immediately after itself.
+//   1b. Keep/Revert change — only on a block carrying a reserved Enhance mark
+//       (specs/meeting-recording-rail.md Step 2); see EnhanceReviewMenuItems.
+//   2. Colors        — BlockNote's BlockColorsItem (text + background sub-menu).
+//   3. Delete        — BlockNote's RemoveBlockItem.
 //
 // Commenting starts from a text selection (the formatting toolbar), not here.
 //
@@ -21,9 +23,12 @@ import {
   useComponentsContext,
   useExtensionState,
 } from "@blocknote/react";
-import { useCallback } from "react";
+import { useCallback, useContext } from "react";
 import type { FC } from "react";
 import type { SideMenuProps } from "@blocknote/react";
+import { markOfProps, firstLineOf } from "~/components/meeting-recorder/enhance-plan";
+import { blockOwnText } from "./schema/configs";
+import { EnhanceReviewContext } from "./enhance-review-context";
 
 // ── 1. Duplicate item ────────────────────────────────────────────────────────
 
@@ -64,12 +69,48 @@ function DuplicateBlockItem({ children }: { children: React.ReactNode }) {
   );
 }
 
+// ── 1b. Keep change / Revert change (specs/meeting-recording-rail.md Step 2) ─
+// Shown only when the hovered block carries a reserved Enhance mark, and
+// only when a recording hook up the tree provided handlers (documents.
+// $pageId.tsx wraps the page in EnhanceReviewContext when one is mounted).
+// The side menu stays generic otherwise — it has no idea what "Enhance"
+// means, only that this context exists or doesn't.
+
+function EnhanceReviewMenuItems() {
+  const Components = useComponentsContext()!;
+  const editor = useBlockNoteEditor<any, any, any>();
+  const review = useContext(EnhanceReviewContext);
+
+  const block = useExtensionState(SideMenuExtension, {
+    editor,
+    selector: (state) => state?.block,
+  });
+
+  if (!review || !block) return null;
+  const mark = markOfProps(block.props as Record<string, unknown>);
+  if (!mark) return null;
+
+  const firstLine = firstLineOf(blockOwnText(block as Parameters<typeof blockOwnText>[0])) || "this block";
+
+  return (
+    <>
+      <Components.Generic.Menu.Item className="bn-menu-item" onClick={() => review.keepBlock(block.id)}>
+        {`Keep change: ${firstLine}`}
+      </Components.Generic.Menu.Item>
+      <Components.Generic.Menu.Item className="bn-menu-item" onClick={() => review.revertBlock(block.id)}>
+        {`Revert change: ${firstLine}`}
+      </Components.Generic.Menu.Item>
+    </>
+  );
+}
+
 // ── Custom DragHandleMenu ────────────────────────────────────────────────────
 
 function DaliDragHandleMenu() {
   return (
     <DragHandleMenu>
       <DuplicateBlockItem>Duplicate</DuplicateBlockItem>
+      <EnhanceReviewMenuItems />
       <BlockColorsItem>Colors</BlockColorsItem>
       <RemoveBlockItem>Delete</RemoveBlockItem>
     </DragHandleMenu>

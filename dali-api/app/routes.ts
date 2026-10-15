@@ -180,6 +180,8 @@ export default [
     // Unified Templates gallery (documents, forms, mentor notes, email,
     // agreements), gated behind the `templates` feature flag.
     route("drive/templates", "routes/drive.templates.tsx"),
+    // Resolves a page id to its place in the Drive (Reveal in Drive).
+    route("drive/reveal/:pageId", "routes/drive.reveal.$pageId.ts"),
 
     // Documents & files — full-page reusable editor + file viewer. Literal
     // "file" segment precedes the :pageId param so it isn't captured. Browsing
@@ -248,6 +250,7 @@ export default [
     // endpoint the Drive and editor POST to.
     route("api/forms", "routes/api.forms.ts"),
     route("api/folder-bindings", "routes/api.folder-bindings.ts"),
+    route("api/folder-receivers", "routes/api.folder-receivers.ts"),
     route("api/passkey-prompt", "routes/api.passkey-prompt.ts"),
     route("forms/edit/:formId", "forms/routes/forms.edit.$formId.tsx"),
     route("forms/preview-resolve", "forms/routes/forms.preview-resolve.ts"),
@@ -425,6 +428,9 @@ export default [
   // Global command-palette search (⌘K) — permission-scoped in the loader.
   route("api/search", "routes/api.search.ts"),
 
+  // High scores for the tetris game on the week 5 home landing scene.
+  route("api/landing/tetris-scores", "routes/api.landing.tetris-scores.ts"),
+
   // Activities (specs/activities.md): the time-boxed "mode" layer — the
   // onboarding scavenger hunt is mechanic #1. This endpoint feeds the shell's
   // activity modal (progress + leaderboard on GET; code submit on POST); the
@@ -483,8 +489,10 @@ export default [
   route("api/scheduled-meetings", "calendar/routes/api.scheduled-meetings.ts"),
   route("api/scheduled-meetings/:id/update", "calendar/routes/api.scheduled-meetings.$id.update.ts"),
   route("api/scheduled-meetings/:id/edit-context", "calendar/routes/api.scheduled-meetings.$id.edit-context.ts"),
+  route("api/scheduled-meetings/:id/attendees", "calendar/routes/api.scheduled-meetings.$id.attendees.ts"),
   route("api/scheduled-meetings/:id/cancel", "calendar/routes/api.scheduled-meetings.$id.cancel.ts"),
   route("api/scheduled-meetings/:id/attendance", "calendar/routes/api.scheduled-meetings.$id.attendance.ts"),
+  route("api/scheduled-meetings/:id/notebook", "calendar/routes/api.scheduled-meetings.$id.notebook.ts"),
   route("api/scheduled-meetings/:id/check-in", "calendar/routes/api.scheduled-meetings.$id.check-in.ts"),
   route("api/scheduled-meetings/:id/propose-time", "calendar/routes/api.scheduled-meetings.$id.propose-time.ts"),
   route("api/scheduled-meetings/:id/proposal", "calendar/routes/api.scheduled-meetings.$id.proposal.ts"),
@@ -607,6 +615,11 @@ export default [
   // Lab-wide documents (collab Pages scoped to the Lab workspace)
   route("api/lab-documents", "routes/api.lab-documents.ts"),
   route("api/documents/:id", "projects/routes/api.documents.$id.ts"),
+  route("api/notebooks", "routes/api.notebooks.ts"),
+  route("api/notebooks/default", "routes/api.notebooks.default.ts"),
+  route("api/notebooks/mentorship-pair", "routes/api.notebooks.mentorship-pair.ts"),
+  route("api/notebooks/:id", "routes/api.notebooks.$id.ts"),
+  route("api/pages/:id/meeting", "routes/api.pages.$id.meeting.ts"),
   route("api/pages/:id/partner-visible", "projects/routes/api.pages.$id.partner-visible.ts"),
   route("api/pages/:id/public-visible", "projects/routes/api.pages.$id.public-visible.ts"),
 
@@ -621,6 +634,7 @@ export default [
   route("api/favorites", "routes/api.favorites.ts"),
   route("api/favorites/route", "routes/api.favorites.route.ts"),
   route("api/move-destinations", "routes/api.move-destinations.ts"),
+  route("api/drive/destinations", "routes/api.drive.destinations.ts"),
   // Drive unified tree: placement move for files and forms (Wave 3).
   route("api/drive/move", "routes/api.drive.move.ts"),
   // Drive unified file upload: scope-agnostic file registration (Lab or Project).

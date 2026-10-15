@@ -591,22 +591,17 @@ export function CalendarEventDetailPopover({
 const popoverActionBtn =
   "inline-flex items-center gap-1.5 rounded-full border border-os-container bg-os-well px-3 py-1.5 text-[13px] font-medium text-foreground transition-colors hover:border-os-container-hi";
 
-// Per-meeting toggles in the event detail popover: log the meeting on your own
-// timesheet, and (Core only) flag it as a Core meeting. Both write through the
-// calendar route action, so a success revalidates the loader and the Timesheet
-// tab picks the entry up without a reload.
+// Per-meeting controls in the event detail popover: log the meeting on your own
+// timesheet. The timesheet toggle writes
+// through the calendar route action, so a success revalidates the loader and
+// the Timesheet tab picks the entry up without a reload.
 export function MeetingDetailToggles({ meeting }: { meeting: NonNullable<EventBlock["meeting"]> }) {
   const timesheetFetcher = useFetcher<{ error?: string }>();
-  const coreFetcher = useFetcher<{ error?: string }>();
-
   // Revalidation lands a beat after the submission, so read the in-flight value
   // off formData — otherwise the box visibly snaps back before settling.
   const onTimesheet = timesheetFetcher.formData
     ? timesheetFetcher.formData.get("onTimesheet") === "true"
     : meeting.onTimesheet;
-  const isCoreMeeting = coreFetcher.formData
-    ? coreFetcher.formData.get("isCoreMeeting") === "true"
-    : meeting.isCoreMeeting;
 
   return (
     <div className="mt-3 flex flex-col gap-2.5 rounded-os-item bg-os-well px-3 py-2.5 text-[13px]">
@@ -628,28 +623,6 @@ export function MeetingDetailToggles({ meeting }: { meeting: NonNullable<EventBl
       />
       {timesheetFetcher.data?.error && (
         <p className="text-[12px] text-red-600">{timesheetFetcher.data.error}</p>
-      )}
-      {meeting.canMarkCoreMeeting && (
-        <>
-          <Toggle
-            checked={isCoreMeeting}
-            disabled={coreFetcher.state !== "idle"}
-            onChange={(ev) =>
-              coreFetcher.submit(
-                {
-                  intent: "set-meeting-core",
-                  meetingId: meeting.meetingId,
-                  isCoreMeeting: String(ev.target.checked),
-                },
-                { method: "post", action: meeting.actionPath },
-              )
-            }
-            label="Core meeting"
-          />
-          {coreFetcher.data?.error && (
-            <p className="text-[12px] text-red-600">{coreFetcher.data.error}</p>
-          )}
-        </>
       )}
     </div>
   );
@@ -1161,6 +1134,7 @@ export function WeekGridEvent({
                     ) : e.meeting.canAddNote ? (
                       <AddMeetingNoteButton
                         meetingId={e.meeting.meetingId}
+                        meetingTitle={e.label}
                         occurrenceStart={e.meeting.occurrenceStart}
                         isCoreMeeting={e.meeting.isCoreMeeting}
                         actionPath={e.meeting.actionPath}

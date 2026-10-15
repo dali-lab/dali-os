@@ -20,6 +20,8 @@ import { coreHandle } from "~/core/coreNav";
 // component) so React Router strips this import from the client bundle.
 import { CORE_PROCESS_ID } from "~/lib/bindings.server";
 import { DriveFolderBindings } from "~/components/drive/DriveFolderBindings";
+import { DriveReceivers } from "~/components/drive/DriveReceivers";
+import { receiversEnabled } from "~/lib/drive-receivers.server";
 
 export const handle = coreHandle("drive-folders");
 
@@ -29,21 +31,38 @@ export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
   if (!(await isCore(auth.user.sub))) return redirect("/");
-  return { isAdmin: await isAdmin(auth.user.sub), processId: CORE_PROCESS_ID };
+  return {
+    isAdmin: await isAdmin(auth.user.sub),
+    processId: CORE_PROCESS_ID,
+    receiversEnabled: await receiversEnabled(request),
+  };
 }
 
 export default function CoreDriveFoldersPage() {
-  const { processId } = useLoaderData<typeof loader>();
+  const { processId, receiversEnabled: receiversOn } = useLoaderData<typeof loader>();
   return (
     <div className="mx-auto max-w-2xl px-4 py-6">
       <h1 className="text-lg font-semibold text-gray-900">Drive folders</h1>
-      <p className="mt-1 text-sm text-gray-500">
-        Where Core auto-files shared lab artifacts — meeting notes, agreements, and templates.
-        Point each at any Drive folder, or let DALI create one. These are normal folders: rename,
-        move, or share them like anything else in Drive. (Hiring artifacts live under Hiring ▸
-        Drive folders.)
-      </p>
-      <DriveFolderBindings processType="Core" processId={processId} className="mt-6" />
+      {receiversOn ? (
+        <>
+          <p className="mt-1 text-sm text-gray-500">
+            Where Core files meeting notes, agreements, and templates. Each slot takes any folder inside
+            Core, and you can also mark a folder from its Folder settings in Drive. Hiring has its own
+            under Hiring ▸ Drive folders.
+          </p>
+          <DriveReceivers processType="Core" processId={processId} title="Folders" className="mt-6" />
+        </>
+      ) : (
+        <>
+          <p className="mt-1 text-sm text-gray-500">
+            Where Core auto-files shared lab artifacts — meeting notes, agreements, and templates.
+            Point each at any Drive folder, or let DALI create one. These are normal folders: rename,
+            move, or share them like anything else in Drive. (Hiring artifacts live under Hiring ▸
+            Drive folders.)
+          </p>
+          <DriveFolderBindings processType="Core" processId={processId} className="mt-6" />
+        </>
+      )}
     </div>
   );
 }

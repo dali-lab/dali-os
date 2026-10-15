@@ -1,14 +1,13 @@
 import type { ReactNode } from "react";
 import { Select } from "~/components/ui/floating";
+import { Checkbox } from "~/components/ui/Checkbox";
 import { Toggle } from "~/components/ui/Toggle";
 import { cn } from "~/lib/cn";
 
 // The one timesheet block shared by the Create Event modal and the edit
-// composer, so "log this event's hours" reads and behaves identically in both.
-// It is purely presentational: the parent owns the role-key ENCODING (the two
-// surfaces historically encode it differently) and the hidden inputs / payload
-// that actually submit — this component only renders the toggle, role picker
-// and work note, all controlled via props.
+// composer. It is purely presentational: the parent owns the role-key ENCODING
+// (the two surfaces historically encode it differently) and the payload that
+// actually submits.
 export function TimesheetFields({
   isWork,
   onIsWorkChange,
@@ -19,6 +18,7 @@ export function TimesheetFields({
   onWorkNoteChange,
   description,
   fieldClass,
+  control = "toggle",
   className,
 }: {
   isWork: boolean;
@@ -33,18 +33,31 @@ export function TimesheetFields({
   description: ReactNode;
   /** The host modal's field styling, so the inputs match their container. */
   fieldClass: string;
+  /** "toggle" is a standalone well with a switch; "checkbox" is a row for a
+   *  well that holds other checkbox rows, with the details indented under it. */
+  control?: "toggle" | "checkbox";
   className?: string;
 }) {
+  const asCheckbox = control === "checkbox";
   return (
-    <div className={cn("rounded-md border border-border bg-muted/20 p-3", className)}>
-      <Toggle
-        checked={isWork}
-        onChange={(e) => onIsWorkChange(e.target.checked)}
-        label="Add to timesheet"
-        description={description}
-      />
+    <div className={cn(!asCheckbox && "rounded-md border border-border bg-muted/20 p-3", className)}>
+      {asCheckbox ? (
+        <Checkbox
+          checked={isWork}
+          onChange={(e) => onIsWorkChange(e.target.checked)}
+          label="Timesheet"
+          description={description}
+        />
+      ) : (
+        <Toggle
+          checked={isWork}
+          onChange={(e) => onIsWorkChange(e.target.checked)}
+          label="Add to timesheet"
+          description={description}
+        />
+      )}
       {isWork && (
-        <div className="mt-3 space-y-3">
+        <div className={cn("mt-3 space-y-3", asCheckbox && "pl-6")}>
           <div>
             <p className="mb-1.5 text-xs font-medium text-muted-foreground">Role</p>
             <Select

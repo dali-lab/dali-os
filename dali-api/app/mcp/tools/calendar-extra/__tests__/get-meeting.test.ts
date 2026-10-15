@@ -100,6 +100,16 @@ describe("get_meeting", () => {
     });
   });
 
+  it.each([true, false])("reports the stored isCoreMeeting column (%s)", async (isCoreMeeting) => {
+    mockPrisma.scheduledMeeting.findUnique.mockResolvedValue({ ...MEETING_BASE, notebookId: "nb1", isCoreMeeting });
+    vi.mocked(isCore).mockResolvedValue(false);
+    vi.mocked(isProjectMember).mockResolvedValue(false);
+
+    const out = await runGetMeeting("u-org", { meetingId: "m1" });
+
+    expect(out.isCoreMeeting).toBe(isCoreMeeting);
+  });
+
   it("returns full detail for organizer", async () => {
     mockPrisma.scheduledMeeting.findUnique.mockResolvedValue({
       ...MEETING_BASE,

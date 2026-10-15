@@ -137,3 +137,51 @@ describe("runFormsAction save-version", () => {
     expect(mockPrisma.$transaction).not.toHaveBeenCalled();
   });
 });
+
+describe("runFormsAction — layout rows", () => {
+  const BODY = JSON.stringify([{ type: "paragraph", content: "Read this first." }]);
+  const text = { key: "q1", type: "text", required: false, data: { label: "Name" } };
+
+  it("accepts a draft containing an info row", async () => {
+    mockPrisma.form.findUnique.mockResolvedValue({ id: "form-1" });
+    const questions = JSON.stringify([
+      { key: "i1", type: "info", required: false, data: { label: "", body: JSON.parse(BODY) } },
+      text,
+    ]);
+    const res = await runFormsAction(
+      fd({ intent: "save-draft", id: "form-1", questions }),
+      "user-1",
+    );
+    expect(res).toEqual({ ok: true });
+  });
+
+  it("versions an info row with no label and a page break with no title", async () => {
+    mockPrisma.form.findUnique.mockResolvedValue({ id: "form-1" });
+    mockPrisma.formVersion.findFirst.mockResolvedValue({ versionNumber: 1 });
+    const questions = JSON.stringify([
+      { key: "i1", type: "info", required: false, data: { label: "", body: "Legacy plain text" } },
+      { key: "pb", type: "pageBreak", required: false, data: { label: "" } },
+      text,
+    ]);
+    const res = await runFormsAction(
+      fd({ intent: "save-version", id: "form-1", questions }),
+      "user-1",
+    );
+    expect(res).not.toHaveProperty("error");
+    expect(mockPrisma.$transaction).toHaveBeenCalled();
+  });
+
+  it("rejects a version whose info row has no text", async () => {
+    mockPrisma.form.findUnique.mockResolvedValue({ id: "form-1" });
+    const questions = JSON.stringify([
+      { key: "i1", type: "info", required: false, data: { label: "", body: [] } },
+      text,
+    ]);
+    const res = await runFormsAction(
+      fd({ intent: "save-version", id: "form-1", questions }),
+      "user-1",
+    );
+    expect(res).toEqual({ error: "Every text block needs some text.", status: 400 });
+    expect(mockPrisma.$transaction).not.toHaveBeenCalled();
+  });
+});

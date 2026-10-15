@@ -130,6 +130,7 @@ describe("slot registry", () => {
     // An offering's Drive home is fixed at Education > the offering, so it
     // exposes nothing to repoint — see ensureOfferingFormsFolder in ~/lib/pages.
     expect(FOLDER_SLOTS.EducationOffering).toEqual([]);
+    expect(FOLDER_SLOTS.Mentorship).toEqual([]);
     // Core files its own meeting notes the way a project does — see
     // ensureCoreMeetingNotesFolder.
     expect(FOLDER_SLOTS.Core.map((s) => s.purpose)).toContain("meeting-notes");

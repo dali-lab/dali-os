@@ -10,11 +10,15 @@
 
 import { z } from "zod";
 import { prisma, Prisma } from "~/lib/db";
+import { createForm, deleteForm, moveForm, renameForm, setFormAudience } from "./form-page.server";
 import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
 import type { Question } from "~/types";
 import { isReferenceSourceKey, referenceSourceNeedsTerm } from "./reference-sources.shared";
 import { formDeletionBlockers, formUsages, managingUsage } from "./form-usages.server";
 import { isGroupArchived, loadGroupArchiveContext } from "~/lib/groups";
+import { isEmptyBlocks } from "~/lib/blocks";
+import { isLayoutOnly } from "~/lib/form-answers";
+import { normalizeQuestionBodies } from "~/lib/question-blocks.server";
 
 const QUESTION_TYPES: Question["type"][] = [
   "text",
@@ -27,8 +31,14 @@ const QUESTION_TYPES: Question["type"][] = [
   "skills_rating",
   "checkbox",
   "reference",
+  "info",
   "pageBreak",
 ];
+
+function hasInfoBody(body: unknown): boolean {
+  if (typeof body === "string") return body.trim().length > 0;
+  return !isEmptyBlocks(body);
+}
 
 export function isQuestionArray(x: unknown): x is Question[] {
   return (
@@ -64,7 +74,9 @@ function validateVersionQuestions(
   if (!isQuestionArray(questions) || questions.length === 0)
     return { error: "Add at least one valid question.", status: 400 };
   for (const q of questions) {
-    if (!q.data.label.trim())
+    if (q.type === "info" && !hasInfoBody(q.data.body))
+      return { error: "Every text block needs some text.", status: 400 };
+    if (!isLayoutOnly(q.type) && !q.data.label.trim())
       return { error: "Every question needs a label.", status: 400 };
     if (q.type === "reference" && !isReferenceSourceKey(q.data.referenceSource))
       return {
@@ -175,6 +187,7 @@ export type FormDetail = {
   // this; null means start from the latest version (or blank). Never served
   // to fillers.
   draft: { questions: Question[]; description: unknown } | null;
+  workspaceType: string | null;
 };
 
 // The full form + every version (newest last), for the dedicated editor page.
@@ -186,6 +199,7 @@ export async function loadFormForEdit(
     prisma.form.findUnique({
       where: { id: formId },
       include: {
+        page: { select: { workspaceType: true } },
         versions: {
           orderBy: { versionNumber: "asc" },
           include: {
@@ -215,13 +229,14 @@ export async function loadFormForEdit(
     listed: form.listed,
     audience: form.audience,
     audienceGroupIds: form.audienceGroupIds,
+    workspaceType: form.page?.workspaceType ?? null,
     versions: form.versions.map((v) => ({
       id: v.id,
       versionNumber: v.versionNumber,
       createdAt: v.createdAt.toISOString(),
       updatedAt: v.updatedAt.toISOString(),
       createdByName: `${v.createdBy.firstName} ${v.createdBy.lastName}`.trim(),
-      questions: (v.questions as unknown as Question[]) ?? [],
+      questions: normalizeQuestionBodies((v.questions as unknown as Question[]) ?? []),
       // intro holds serialized rich-text JSON: block JSON going forward,
       // ProseMirror on legacy versions — normalized on read.
       description: v.intro ? ensureBlocks(safeParseJsonString(v.intro)) : null,
@@ -230,7 +245,7 @@ export async function loadFormForEdit(
     })),
     draft: draftQuestions
       ? {
-          questions: draftQuestions,
+          questions: normalizeQuestionBodies(draftQuestions),
           // draftIntro mirrors FormVersion.intro. Drafts are rewritten in
           // block format on the next save; legacy PM drafts convert on read.
           description: ensureBlocks(safeParseJsonString(form.draftIntro)),
@@ -397,14 +412,10 @@ export async function runFormsAction(
     case "create-form": {
       const folder = await resolveFolderPageId(input.folderPageId);
       if (!folder.ok) return { error: "Folder not found", status: 404 };
-      const created = await prisma.form.create({
-        data: {
-          name: input.name,
-          folderPageId: folder.value,
-          createdById: userId,
-        },
-        select: { id: true },
-      });
+      const created = await createForm(
+        { name: input.name, folderPageId: folder.value, createdById: userId },
+        { id: true },
+      );
       return { ok: true, formId: created.id };
     }
     case "duplicate-form": {
@@ -435,16 +446,16 @@ export async function runFormsAction(
         ? source.draftIntro
         : (latest?.intro ?? null);
 
-      const created = await prisma.form.create({
-        data: {
+      const created = await createForm(
+        {
           name: `Copy of ${source.name}`.slice(0, 120),
           folderPageId: source.folderPageId,
           createdById: userId,
           draftQuestions: questions === null ? undefined : (questions as object),
           draftIntro: intro,
         },
-        select: { id: true },
-      });
+        { id: true },
+      );
       return { ok: true, formId: created.id };
     }
     case "move-form": {
@@ -455,10 +466,7 @@ export async function runFormsAction(
       if (!exists) return { error: "Not found", status: 404 };
       const folder = await resolveFolderPageId(input.folderPageId);
       if (!folder.ok) return { error: "Folder not found", status: 404 };
-      await prisma.form.update({
-        where: { id: input.id },
-        data: { folderPageId: folder.value },
-      });
+      await moveForm(input.id, folder.value);
       return { ok: true };
     }
     case "rename-form": {
@@ -467,10 +475,7 @@ export async function runFormsAction(
         select: { id: true },
       });
       if (!exists) return { error: "Not found", status: 404 };
-      await prisma.form.update({
-        where: { id: input.id },
-        data: { name: input.name },
-      });
+      await renameForm(input.id, input.name);
       return { ok: true };
     }
     case "delete-form": {
@@ -488,7 +493,7 @@ export async function runFormsAction(
           status: 409,
         };
       }
-      await prisma.form.delete({ where: { id: input.id } });
+      await deleteForm(input.id);
       return { ok: true };
     }
     case "save-draft": {
@@ -748,10 +753,7 @@ export async function runFormsAction(
 
       // Ids are cleared for non-Groups audiences so stored state stays
       // canonical (toggling away and back means re-selecting).
-      await prisma.form.update({
-        where: { id: input.id },
-        data: { audience: input.audience, audienceGroupIds: ids },
-      });
+      await setFormAudience(input.id, input.audience, ids, userId);
       return { ok: true };
     }
   }

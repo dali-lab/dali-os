@@ -15,6 +15,8 @@
 // NEVER log transcript text.
 
 import type { Route } from "./+types/api.meeting-recordings.$id";
+import { z } from "zod";
+import type { Prisma } from "~/generated/prisma/client";
 import { requireAuth } from "~/lib/auth";
 import { prisma } from "~/lib/db";
 import { isCore } from "~/lib/roles";
@@ -44,6 +46,13 @@ const notFound = () => Response.json({ error: "Not found" }, { status: 404 });
 // device still looks live: stopRequested not yet set and a chunk within
 // this window. Older than this (or no chunk ever) reads as abandoned.
 const EDITOR_FINAL_STOP_STALE_MS = 2 * 60_000;
+
+// priorBlocks (specs/meeting-recording-rail.md Step 2): full prior DocBlock
+// JSON for every block Enhance changed, keyed by block id — capped well
+// under the request body's own ceiling so one outsized note can't bloat the
+// recording row indefinitely.
+const MAX_PRIOR_BLOCKS_BYTES = 512 * 1024;
+const PriorBlocksSchema = z.record(z.string(), z.unknown());
 
 // POST {action:"createTasks"} body (specs/meeting-notes-model.md §4).
 type CreateTasksItem = { index: number; title: string; assigneeId?: string; dueAt?: string };
@@ -110,6 +119,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       notes: rec.notes ?? null,
       enhancedAt: rec.enhancedAt?.toISOString() ?? null,
       enhancedBy: rec.enhancedBy ?? null,
+      reviewedAt: (rec.notes as StoredEnhanceNotes | null)?.reviewedAt ?? null,
       lastChunkAt: rec.lastChunkAt?.toISOString() ?? null,
     });
   }
@@ -125,6 +135,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     notes: rec.notes ?? null,
     enhancedAt: rec.enhancedAt?.toISOString() ?? null,
     enhancedBy: rec.enhancedBy ?? null,
+    reviewedAt: (rec.notes as StoredEnhanceNotes | null)?.reviewedAt ?? null,
     lastChunkAt: rec.lastChunkAt?.toISOString() ?? null,
   });
 }
@@ -153,12 +164,13 @@ export async function action({ request, params }: Route.ActionArgs) {
     return Response.json({ error: "Update the DALI OS app to record." }, { status: 410 });
   }
 
-  // speakers, inserted, enhanced, and createTasks are the actions any editor
-  // of the note may take; everything else is owner-only.
+  // speakers, inserted, enhanced, reviewed, and createTasks are the actions
+  // any editor of the note may take; everything else is owner-only.
   if (
     body.action === "speakers" ||
     body.action === "inserted" ||
     body.action === "enhanced" ||
+    body.action === "reviewed" ||
     body.action === "createTasks"
   ) {
     if (!(await canRecordInto(auth.user.sub, rec.documentName))) {
@@ -183,7 +195,7 @@ export async function action({ request, params }: Route.ActionArgs) {
         if (created.length === 0 || !notes) return;
         await prisma.meetingRecording.update({
           where: { id: rec.id },
-          data: { notes: { ...notes, plan: { ...notes.plan, actionItems } } },
+          data: { notes: { ...notes, plan: { ...notes.plan, actionItems } } as Prisma.InputJsonValue },
         });
       };
 
@@ -263,13 +275,38 @@ export async function action({ request, params }: Route.ActionArgs) {
       ) {
         return Response.json({ error: "stale" }, { status: 409 });
       }
+
+      let priorBlocks: Record<string, unknown> | undefined;
+      if (body.priorBlocks !== undefined) {
+        const parsed = PriorBlocksSchema.safeParse(body.priorBlocks);
+        if (!parsed.success) return Response.json({ error: "Invalid priorBlocks" }, { status: 400 });
+        if (JSON.stringify(parsed.data).length > MAX_PRIOR_BLOCKS_BYTES) {
+          return Response.json({ error: "priorBlocks too large" }, { status: 413 });
+        }
+        priorBlocks = parsed.data;
+      }
+
       const enhancedBy = [auth.user.firstName, auth.user.lastName].filter(Boolean).join(" ") || auth.user.email;
       const enhancedAt = new Date();
       await prisma.meetingRecording.update({
         where: { id: rec.id },
-        data: { enhancedAt, enhancedBy },
+        data: {
+          enhancedAt,
+          enhancedBy,
+          ...(priorBlocks !== undefined
+            ? { notes: { ...((rec.notes as object) ?? {}), priorBlocks } as Prisma.InputJsonValue }
+            : {}),
+        },
       });
       return Response.json({ ok: true, enhancedAt: enhancedAt.toISOString(), enhancedBy });
+    }
+    if (body.action === "reviewed") {
+      const reviewedAt = new Date().toISOString();
+      await prisma.meetingRecording.update({
+        where: { id: rec.id },
+        data: { notes: { ...((rec.notes as object) ?? {}), reviewedAt } as Prisma.InputJsonValue },
+      });
+      return Response.json({ ok: true, reviewedAt });
     }
     const patch = parseSpeakerMap(body.speakers);
     if (!patch) return Response.json({ error: "Invalid speakers" }, { status: 400 });

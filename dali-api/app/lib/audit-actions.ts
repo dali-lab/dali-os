@@ -101,6 +101,8 @@ export const AUDIT_ACTIONS = [
   "staffing.externalMentor.remove",
   "staffing.eligibility.set",
   "project.assignment.level",
+  "project.assignment.backfill",
+  "member.create",
   "project.chart-string.set",
   "project.delete",
   "slack.connect",
@@ -115,6 +117,7 @@ export const AUDIT_ACTIONS = [
   "email.send",
   "email.extension_notice",
   "email.event_announcement",
+  "email.domain_added_notice",
   // A member agreeing to the risk notice before connecting their personal
   // DALI mailbox. targetId is the notice version they agreed to.
   "email.personal_consent",
@@ -158,6 +161,7 @@ export const AUDIT_ACTIONS = [
   "page.general-access",
   "page.folder-scope",
   "page.move-workspace",
+  "page.receiver",
   "page.pin",
   "project.showcase-status",
   "education.offering.create",

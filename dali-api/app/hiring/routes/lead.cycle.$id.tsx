@@ -13,9 +13,13 @@ import { getUserRoles, isAdmin, isCore, isCycleAdmin } from "~/lib/roles";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { listHiringEvents, isEventCheckInOpen } from "~/hiring/lib/hiring-events.server";
 import { countAnnouncementRecipients } from "~/hiring/lib/hiring-event-notice";
+import { countDomainAddedRecipients, sendDomainAddedNotice } from "~/hiring/lib/domain-added-notice";
+import { openSiblingDomains } from "~/hiring/lib/accept-preemption.server";
 import QRCode from "qrcode";
 import { changeApplicants } from "~/hiring/lib/cycle-applicants.server";
 import { invalidateActiveCycles } from "~/hiring/lib/cycles";
+import { canEditDomainSetup, setDomainReady } from "~/hiring/lib/domain-windows.server";
+import { domainCloseDate } from "~/hiring/lib/domain-windows";
 import {
   loadStartTermCandidates,
   parseStartTermIds,
@@ -392,6 +396,29 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   }
   const reviewedDomainIds = Array.from(reviewedDomainIdSet);
 
+  // An Accept release closes every other still-selected, undecided sibling
+  // DomainApplication as AcceptedElsewhere (api.decisions.$id.release.ts). A
+  // lead should see, before clicking Release, when that would also cut off a
+  // domain whose own window (domain-windows.ts) is still open.
+  const pendingDecisionsWithWarnings = await Promise.all(
+    pendingDecisions.map(async (d: any) => ({
+      ...d,
+      openSiblingDomains:
+        d.stage === "Final" && d.type === "Accepted"
+          ? await openSiblingDomains(d.domainApplicationId)
+          : [],
+    })),
+  );
+
+  const cycleStatus = cycleBase.statusUpdates[0]?.newStatus ?? "Draft";
+  // The "Email applicants" button's recipient count is cycle-wide (every
+  // non-Withdrawn applicant), not per-domain — compute it once, only when some
+  // domain could actually show the button.
+  const domainAddedRecipientCount =
+    cycleStatus === "Open" && cycleBase.domains.some((d) => d.isReady)
+      ? await countDomainAddedRecipients(params.id!)
+      : 0;
+
   const isMemberCycle = isMemberApplicants(cycleBase.applicants);
   const hiringEmails: Record<string, { subject: string; body: string }> = Object.fromEntries(
     hiringEmailRows.map((e) => [e.slot, { subject: e.subject, body: e.body }]),
@@ -453,7 +480,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       phaseStatusByDomain,
       allDomains,
       allForms,
-      pendingDecisions,
+      pendingDecisions: pendingDecisionsWithWarnings,
       rubricVersionOptions,
       cycleApplicationReviewCount,
       hiringEmails,
@@ -467,6 +494,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       hiringEvents,
       hiringEventCheckIns,
       announcementRecipientCount,
+      domainAddedRecipientCount,
       collabToken,
       currentUserId: auth.user.sub,
       presenceUserName: presenceUser?.name ?? auth.user.email,
@@ -1016,31 +1044,29 @@ export async function action({ request, params }: Route.ActionArgs) {
     if (!domainId || confirm !== "true") {
       return cycleRedirect(request, params.id!);
     }
-    const latestUpdate = await prisma.applicationCycleStatusUpdate.findFirst({
-      where: { applicationCycleId: params.id },
-      orderBy: { createdAt: "desc" },
-    });
-    if ((latestUpdate?.newStatus ?? "Draft") !== "Draft") {
-      return cycleRedirect(request, params.id!);
+    const refused = await setDomainReady(params.id!, domainId, intent === "hl-force-mark-ready");
+    if (refused) {
+      return new Response(JSON.stringify({ error: refused }), { status: 409, headers: { "Content-Type": "application/json" } });
     }
-    const isReady = intent === "hl-force-mark-ready";
-    await prisma.domainApplicationCycle.upsert({
-      where: { domainId_applicationCycleId: { domainId, applicationCycleId: params.id } },
-      update: { isReady },
-      create: { domainId, applicationCycleId: params.id, isReady },
-    });
     return cycleRedirect(request, params.id!);
   }
 
   if (intent === "remove-domain" || intent === "add-domain") {
+    const domainId = formData.get("domainId") as string;
     const latestUpdate = await prisma.applicationCycleStatusUpdate.findFirst({
       where: { applicationCycleId: params.id },
       orderBy: { createdAt: "desc" },
     });
-    if ((latestUpdate?.newStatus ?? "Draft") !== "Draft") {
-      return new Response(JSON.stringify({ error: "Domains can only be modified in Draft" }), { status: 409, headers: { "Content-Type": "application/json" } });
+    const status = latestUpdate?.newStatus ?? "Draft";
+    // A domain joins an Open cycle staged (not ready), invisible to applicants
+    // until its lead marks it ready. Removal after Open is only for a staged one.
+    const allowed =
+      intent === "add-domain"
+        ? status === "Draft" || status === "Open"
+        : await canEditDomainSetup(params.id!, domainId);
+    if (!allowed) {
+      return new Response(JSON.stringify({ error: "Domains can only be modified in Draft, or staged while Open" }), { status: 409, headers: { "Content-Type": "application/json" } });
     }
-    const domainId = formData.get("domainId") as string;
     if (intent === "remove-domain") {
       await prisma.domainApplicationCycle.delete({
         where: { domainId_applicationCycleId: { domainId, applicationCycleId: params.id } },
@@ -1051,6 +1077,82 @@ export async function action({ request, params }: Route.ActionArgs) {
       });
     }
     return cycleRedirect(request, params.id!);
+  }
+
+  if (intent === "set-domain-close-date") {
+    const domainId = formData.get("domainId") as string;
+    if (!domainId) return Response.json({ error: "Missing domain" }, { status: 400 });
+    const latestUpdate = await prisma.applicationCycleStatusUpdate.findFirst({
+      where: { applicationCycleId: params.id },
+      orderBy: { createdAt: "desc" },
+      select: { newStatus: true },
+    });
+    const status = latestUpdate?.newStatus ?? "Draft";
+    if (status !== "Draft" && status !== "Open") {
+      return Response.json(
+        { error: "Domain close dates can only change while the cycle is Draft or Open." },
+        { status: 409 },
+      );
+    }
+    const raw = (formData.get("closeDate") as string) || null;
+    let closeDate: Date | null = null;
+    if (raw) {
+      const [y, m, d] = raw.split("-").map(Number);
+      closeDate = endOfDayInAppTz(new Date(Date.UTC(y, m - 1, d)));
+      if (closeDate.getTime() < Date.now()) {
+        return Response.json({ error: "Pick a date that hasn't passed" }, { status: 400 });
+      }
+    }
+    await prisma.domainApplicationCycle.update({
+      where: { domainId_applicationCycleId: { domainId, applicationCycleId: params.id } },
+      data: { closeDate },
+    });
+    invalidateActiveCycles();
+    return { ok: true };
+  }
+
+  if (intent === "notify-domain-added") {
+    const domainId = formData.get("domainId") as string;
+    const confirm = formData.get("confirm");
+    if (!domainId || confirm !== "true") {
+      return cycleRedirect(request, params.id!);
+    }
+    const latestUpdate = await prisma.applicationCycleStatusUpdate.findFirst({
+      where: { applicationCycleId: params.id },
+      orderBy: { createdAt: "desc" },
+      select: { newStatus: true },
+    });
+    const status = latestUpdate?.newStatus ?? "Draft";
+    const dac = await prisma.domainApplicationCycle.findUnique({
+      where: { domainId_applicationCycleId: { domainId, applicationCycleId: params.id } },
+      select: { isReady: true },
+    });
+    if (status !== "Open" || !dac?.isReady) {
+      return Response.json(
+        { error: "This domain can only be announced while the cycle is Open and the domain is ready." },
+        { status: 409 },
+      );
+    }
+    const result = await sendDomainAddedNotice(params.id!, domainId, auth.user.sub);
+    const attempted = result.sent + result.alreadySent + result.skipped;
+    let notice: string;
+    if (attempted === 0) {
+      notice = "domain-added-notice-noop";
+    } else if (result.sent === 0 && result.alreadySent === attempted) {
+      notice = "domain-added-notice-all-sent";
+    } else if (result.sent === 0 && result.skipped === attempted) {
+      notice = "domain-added-notice-not-configured";
+    } else if (result.skipped > 0) {
+      notice = "domain-added-notice-partial";
+    } else {
+      notice = "domain-added-notice-sent";
+    }
+    return cycleRedirect(request, params.id!, {
+      notice,
+      sent: result.sent,
+      skipped: result.skipped,
+      alreadySent: result.alreadySent,
+    });
   }
 
   return cycleRedirect(request, params.id!);
@@ -1430,16 +1532,22 @@ export default function HiringLeadCycleDetails() {
   const [releasingAll, setReleasingAll] = useState(false)
 
   // Release a single decision behind a confirm — sends an irreversible email.
+  // An Accept that would also close a still-open sibling domain application
+  // (acceptPreemptionWarning) gets a stronger warning naming that domain.
   async function confirmReleaseOne(d: any) {
     if (releasing === d.id) return
+    const warning = acceptPreemptionWarning(d)
     if (
-      !(await dialog.confirm({
-        title: `Release this decision to ${d.domainApplication.application.user.firstName}?`,
-        description:
-          "This emails the applicant their decision. It can't be undone.",
-        confirmLabel: "Release",
-        tone: "destructive",
-      }))
+      !(await dialog.confirm(
+        warning
+          ? { title: warning.title, description: warning.description, confirmLabel: "Accept and close", tone: "destructive" }
+          : {
+              title: `Release this decision to ${d.domainApplication.application.user.firstName}?`,
+              description: "This emails the applicant their decision. It can't be undone.",
+              confirmLabel: "Release",
+              tone: "destructive",
+            },
+      ))
     )
       return
     setReleasing(d.id)
@@ -1791,11 +1899,24 @@ export default function HiringLeadCycleDetails() {
       if (releasingAll) return
       const ids = releasable.map((d: any) => d.id)
       if (ids.length === 0) return
+      // Among the releasable Accepts, the ones that would also close a
+      // still-open sibling application as AcceptedElsewhere — surfaced once
+      // here rather than per-row, so releasing in bulk doesn't skip the warning.
+      const preemptions = releasable.filter((d: any) => acceptPreemptionWarning(d) !== null)
+      const preemptionNote =
+        preemptions.length > 0
+          ? ` ${preemptions.length} of these acceptance${preemptions.length === 1 ? '' : 's'} will also close a still-open sibling application: ${joinNames(
+              preemptions.map(
+                (d: any) =>
+                  `${d.domainApplication.application.user.firstName} (${joinNames((d.openSiblingDomains ?? []).map((s: any) => s.name))})`,
+              ),
+            )}.`
+          : ''
       if (
         !(await dialog.confirm({
           title: `Release ${ids.length} decision${ids.length === 1 ? '' : 's'}?`,
           description:
-            `This emails ${ids.length === 1 ? 'this applicant' : `all ${ids.length} applicants`} their decision right now. It can't be undone.`,
+            `This emails ${ids.length === 1 ? 'this applicant' : `all ${ids.length} applicants`} their decision right now. It can't be undone.${preemptionNote}`,
           confirmLabel: `Release ${ids.length}`,
           tone: "destructive",
         }))
@@ -2186,17 +2307,19 @@ export default function HiringLeadCycleDetails() {
                       key={d.domainId}
                       domain={d}
                       cycleStatus={cycleStatus}
+                      cycleCloseDate={cycle?.closeDate ?? null}
                       showRubric={!!cycle?.hasChallenges}
                       challenge={challengeFor(d.domainId)}
                       rubricOptions={loaderData?.domainRubricVersions ?? []}
                       rubricLocked={(loaderData?.reviewedDomainIds ?? []).includes(d.domainId)}
+                      domainAddedRecipientCount={loaderData?.domainAddedRecipientCount ?? 0}
                     />
                   ))}
                 </div>
               ) : (
                 <p className={cn(os.bodyText, 'py-4 text-center')}>No domains added yet.</p>
               )}
-              {cycleStatus === 'Draft' && (
+              {(cycleStatus === 'Draft' || cycleStatus === 'Open') && (
                 <Form method="post" preventScrollReset className="flex flex-wrap items-end gap-3">
                   <input type="hidden" name="intent" value="add-domain" />
                   <div className={cn(os.fieldLabel, 'min-w-[14rem] flex-1')}>
@@ -3314,6 +3437,11 @@ function CloseDateNotice() {
     "extension-notice-all-sent": { text: "Every draft applicant has already received the extension notice — nothing to resend.", tone: "ok" },
     "extension-notice-no-extension": { text: "No extension is currently set on this cycle. Set an extension first.", tone: "warn" },
     "extension-notice-not-configured": { text: "Extension notice not sent — no template is bound to the “Deadline Extension Notice” slot, or the gmail account isn't configured.", tone: "warn" },
+    "domain-added-notice-sent": { text: "Email sent to everyone in this cycle.", tone: "ok" },
+    "domain-added-notice-partial": { text: "Email sent. Some recipients failed, see server logs.", tone: "warn" },
+    "domain-added-notice-noop": { text: "No email sent. There are no applicants in this cycle yet.", tone: "warn" },
+    "domain-added-notice-all-sent": { text: "Everyone in this cycle already received this email. Nothing to resend.", tone: "ok" },
+    "domain-added-notice-not-configured": { text: "Email not sent. Write the “Domain added to an open cycle” template on Setup first.", tone: "warn" },
   };
   const m = messages[notice];
   if (!m) return null;
@@ -3777,27 +3905,89 @@ function GeneralApplicationSection({
   );
 }
 
+function toYmd(d: Date | string | null): string {
+  if (!d) return '';
+  const { year, month, day } = getZonedYMD(new Date(d), APPLICATION_TZ);
+  return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+}
+
+function formatMonD(d: Date | string | null): string {
+  if (!d) return '';
+  return formatInTimeZone(new Date(d), APPLICATION_TZ, { month: 'short', day: 'numeric' });
+}
+
+function joinNames(names: string[]): string {
+  return new Intl.ListFormat('en', { style: 'long', type: 'conjunction' }).format(names);
+}
+
+// An Accept decision closes every other still-selected, undecided sibling
+// DomainApplication as AcceptedElsewhere (api.decisions.$id.release.ts). When
+// the loader found such a sibling still open (openSiblingDomains, from
+// accept-preemption.server.ts), releasing needs a stronger confirm than the
+// default "this emails the applicant" one. Null when there's nothing to warn
+// about.
+function acceptPreemptionWarning(d: any): { title: string; description: string } | null {
+  const siblings: { name: string; closeDate: Date | string | null }[] = d.openSiblingDomains ?? [];
+  if (d.type !== 'Accepted' || siblings.length === 0) return null;
+  const firstName = d.domainApplication.application.user.firstName;
+  const names = siblings.map((s) => s.name);
+  const nounPhrase =
+    siblings.length > 1
+      ? `${joinNames(
+          siblings.map((s) => (s.closeDate ? `${s.name} (until ${formatMonD(s.closeDate)})` : s.name)),
+        )} applications`
+      : `${siblings[0].name} application${siblings[0].closeDate ? ` until ${formatMonD(siblings[0].closeDate)}` : ''}`;
+  const pronoun = siblings.length > 1 ? 'them' : 'it';
+  return {
+    title: `Accept and close ${joinNames(names)}?`,
+    description: `${firstName} can still edit their ${nounPhrase}. Accepting here closes ${pronoun} as placed elsewhere. This can't be undone.`,
+  };
+}
+
 function DomainOverridePanel({
   domain,
   cycleStatus,
+  cycleCloseDate,
   showRubric,
   challenge,
   rubricOptions,
   rubricLocked,
+  domainAddedRecipientCount,
 }: {
   domain: any;
   cycleStatus: string;
+  /** The cycle's own close date, for the "Same as cycle" label when this domain inherits it. */
+  cycleCloseDate: Date | string | null;
   /** The per-domain rubric scores the challenge; hidden when there is none. */
   showRubric: boolean;
   /** This domain's challenges; null when the cycle has none. */
   challenge: DomainChallenge | null;
   rubricOptions: any[];
   rubricLocked: boolean;
+  /** How many applicants "Email applicants" would reach — cycle-wide, not per-domain. */
+  domainAddedRecipientCount: number;
 }) {
   const [showRubricPreview, setShowRubricPreview] = useState(false);
 
-  const readyLocked = cycleStatus !== 'Draft';
   const isReady: boolean = !!domain.isReady;
+  // A domain staged into an Open cycle stays editable until it's marked ready,
+  // which is what publishes it to applicants (canEditDomainSetup).
+  const staged = cycleStatus === 'Open' && !isReady;
+  const setupEditable = cycleStatus === 'Draft' || staged;
+  const readyLocked = !setupEditable;
+  // Unlike the rest of this panel's setup, the close date can move any time
+  // the cycle is still taking or reviewing changes — a lead may need to give
+  // one domain more (or less) time after it's already live to applicants.
+  const closeDateEditable = cycleStatus === 'Draft' || cycleStatus === 'Open';
+  const effectiveCloseDate = domainCloseDate({ closeDate: domain.closeDate }, { closeDate: cycleCloseDate });
+
+  const closeFetcher = useFetcher<{ error?: string }>();
+  const [editingClose, setEditingClose] = useState(false);
+  const [closeValue, setCloseValue] = useState(toYmd(domain.closeDate));
+  useEffect(() => { setCloseValue(toYmd(domain.closeDate)); }, [domain.closeDate]);
+  useEffect(() => {
+    if (closeFetcher.state === 'idle' && !closeFetcher.data?.error) setEditingClose(false);
+  }, [closeFetcher.state, closeFetcher.data]);
 
   const [selectedRubricId, setSelectedRubricId] = useState(domain.rubricVersionId ?? '');
   // Like the Challenge line, the rubric shows what's set and opens a picker on demand.
@@ -3834,6 +4024,7 @@ function DomainOverridePanel({
         <div className="flex flex-wrap items-center gap-2">
           {!isReady && <NotReadyIcon />}
           <span className="text-sm font-semibold text-foreground">{domainName}</span>
+          {staged && <Pill tone="warning">Not visible to applicants yet</Pill>}
         </div>
         <div className="flex items-center gap-1">
           {!readyLocked && (
@@ -3849,12 +4040,19 @@ function DomainOverridePanel({
                         'It goes back to "not ready" until the domain lead (or a hiring lead) marks it ready again.',
                       confirmLabel: 'Unmark ready',
                     }
-                  : {
-                      title: `Mark ${domainName} ready on the domain lead's behalf?`,
-                      description:
-                        'Use this when the domain lead is unavailable and the cycle needs to advance.',
-                      confirmLabel: 'Force ready',
-                    },
+                  : staged
+                    ? {
+                        title: `Open ${domainName} to applicants?`,
+                        description:
+                          'The cycle is already open. Marking this domain ready publishes it: applicants can pick it from now until its close date.',
+                        confirmLabel: 'Open domain',
+                      }
+                    : {
+                        title: `Mark ${domainName} ready on the domain lead's behalf?`,
+                        description:
+                          'Use this when the domain lead is unavailable and the cycle needs to advance.',
+                        confirmLabel: 'Force ready',
+                      },
               )}
             >
               <input
@@ -3869,7 +4067,32 @@ function DomainOverridePanel({
               </button>
             </Form>
           )}
-          {cycleStatus === 'Draft' && (
+          {cycleStatus === 'Open' && isReady && (
+            <Form
+              method="post"
+              preventScrollReset
+              className="inline flex items-center gap-1"
+              onSubmit={confirmSubmit({
+                title: `Email everyone in this cycle about ${domainName}?`,
+                description:
+                  `Sends to ${domainAddedRecipientCount} applicant${domainAddedRecipientCount === 1 ? '' : 's'}` +
+                  (effectiveCloseDate
+                    ? `, telling them ${domainName} is open and closes ${formatMonD(effectiveCloseDate)}.`
+                    : `, telling them ${domainName} is open.`) +
+                  ' One-time: resending only reaches anyone who missed it the first time.',
+                confirmLabel: 'Send',
+              })}
+            >
+              <input type="hidden" name="intent" value="notify-domain-added" />
+              <input type="hidden" name="domainId" value={domain.domainId} />
+              <input type="hidden" name="confirm" value="true" />
+              <EmailMarker recipients={`everyone in the cycle (${domainAddedRecipientCount})`} />
+              <button type="submit" className={buttonClasses('secondary', 'sm')}>
+                Email applicants
+              </button>
+            </Form>
+          )}
+          {setupEditable && (
             <Form
               method="post"
               preventScrollReset
@@ -3899,8 +4122,77 @@ function DomainOverridePanel({
       </div>
 
       {challenge && (
-        <ChallengeLine domainId={domain.domainId} challenge={challenge} editable={cycleStatus === 'Draft'} />
+        <ChallengeLine domainId={domain.domainId} challenge={challenge} editable={setupEditable} />
       )}
+
+      <DomainSubRow
+        label="Closes"
+        value={
+          domain.closeDate ? (
+            <span>{formatMonD(domain.closeDate)}</span>
+          ) : (
+            <SubRowEmpty>
+              {cycleCloseDate ? `Same as cycle (${formatMonD(cycleCloseDate)})` : "Same as cycle (no date set)"}
+            </SubRowEmpty>
+          )
+        }
+        action={
+          closeDateEditable &&
+          !editingClose && (
+            <>
+              <button type="button" onClick={() => setEditingClose(true)} className={buttonClasses('secondary', 'sm')}>
+                {domain.closeDate ? 'Change' : 'Set'}
+              </button>
+              {domain.closeDate && (
+                <button
+                  type="button"
+                  disabled={closeFetcher.state !== 'idle'}
+                  onClick={() =>
+                    closeFetcher.submit(
+                      { intent: 'set-domain-close-date', domainId: domain.domainId, closeDate: '' },
+                      { method: 'post', preventScrollReset: true },
+                    )
+                  }
+                  className={buttonClasses('ghost', 'sm')}
+                >
+                  Clear
+                </button>
+              )}
+            </>
+          )
+        }
+        editor={
+          closeDateEditable && editingClose ? (
+            <closeFetcher.Form method="post" preventScrollReset className="flex flex-wrap items-end gap-2">
+              <input type="hidden" name="intent" value="set-domain-close-date" />
+              <input type="hidden" name="domainId" value={domain.domainId} />
+              <DateField
+                mode="date"
+                name="closeDate"
+                value={closeValue}
+                onChange={setCloseValue}
+                ariaLabel={`${domainName} closes`}
+                className="w-44"
+                buttonClassName={rowTrigger(os.formTrigger)}
+              />
+              <button type="submit" disabled={closeFetcher.state !== 'idle'} className={buttonClasses('primary', 'sm', 'h-9')}>
+                Save
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setCloseValue(toYmd(domain.closeDate));
+                  setEditingClose(false);
+                }}
+                className={buttonClasses('secondary', 'sm', 'h-9')}
+              >
+                Cancel
+              </button>
+              {closeFetcher.data?.error && <p className="w-full text-xs text-red-700">{closeFetcher.data.error}</p>}
+            </closeFetcher.Form>
+          ) : null
+        }
+      />
 
       {showRubric && (
         <DomainSubRow
@@ -4106,6 +4398,7 @@ const NOTIFICATION_EMAIL_SLOTS: ReadonlyArray<{ type: NotificationSlotType; labe
   { type: "ApplicationReceived", label: "Application received", description: "Sent when an applicant first submits." },
   { type: "ApplicationExtensionNotice", label: "Deadline extension notice", description: "Sent once to unsubmitted applicants after the original close." },
   { type: "ApplicationEventAnnouncement", label: "Application event announcement", description: "Sent by hand from an event card to everyone who started an application." },
+  { type: "DomainAddedNotice", label: "Domain added to an open cycle", description: "Sent by hand from a domain row, once per domain, to everyone with a non-Withdrawn application." },
   { type: "InterviewInviteMentor", label: "Interview invite (interviewer)", description: "Sent when an interview is booked or reassigned." },
   { type: "InterviewInviteReminder", label: "Invite reminder (applicant)", description: "Sent by Resend invite when an applicant hasn't booked." },
   { type: "InterviewConfirmedApplicant", label: "Interview confirmed (applicant)", description: "Sent when the applicant books." },

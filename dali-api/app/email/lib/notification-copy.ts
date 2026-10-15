@@ -656,6 +656,8 @@ export const NOTIFICATION_SAMPLES: Record<TemplateVariableName, string> = {
   originalCloseDate: "Friday, April 4",
   newCloseDate: "Monday, April 7",
   slackUrl: "https://dali-lab.slack.com",
+  closeDate: "Monday, October 19, 2026, 11:59 PM ET",
+  applyUrl: "https://dalilab.dartmouth.edu/portal/apply/cycle123",
   term: "26F",
   upcomingTerm: "27W",
   today: "April 8, 2026",

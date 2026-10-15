@@ -3,6 +3,7 @@ import { prisma } from "~/lib/db";
 import { requireAuth, forbidden, redirectNonMemberToPortal, isImpersonating } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { listAllGroups } from "~/lib/groups";
+import { listMentorPairs } from "~/mentorship/lib/pair-suggestion.server";
 import {
   canViewForms,
   isCore,
@@ -74,6 +75,7 @@ import {
   noteForOccurrence,
   resolveOccurrence,
 } from "~/lib/meeting-occurrences";
+import { meetingNotePath } from "~/lib/note-path.server";
 import { getZonedYMD, resolveUserTimeZone, zonedDayStartUtc } from "~/lib/timezone";
 import {
   bookRoomsForEvent,
@@ -88,6 +90,7 @@ import type {
   SubCalendarDTO,
   CalendarLinkDTO,
   GroupOption,
+  MentorPairOption,
   UserOption,
   ProjectOption,
   TimeEntryDTO,
@@ -144,6 +147,9 @@ function externalLinks(meetingUrl?: string, htmlLink?: string): EventLinkDTO[] {
   ];
 }
 
+const viewerOnEvent = (e: CalendarEvent): boolean =>
+  e.organizerSelf === true || e.responseStatus !== undefined;
+
 /**
  * The DALI meetings behind a set of Google events, keyed by the event id to
  * attach them to. A meeting DALI created records the Google event it made in
@@ -163,8 +169,12 @@ function externalLinks(meetingUrl?: string, htmlLink?: string): EventLinkDTO[] {
  * they would for a meeting they were invited to individually. Without this, a
  * lab-wide event showed a popover with no note and no attendance while every
  * other meeting on the grid had both.
+ *
+ * A viewer Google already has on the event — its organizer or a guest — sees
+ * its tracked meeting even when the DALI roster missed them (an organizer
+ * Google didn't list as a guest, for instance).
  */
-async function meetingsForExternalEvents(
+export async function meetingsForExternalEvents(
   events: CalendarEvent[],
   userId: string,
   canMarkCoreMeeting: boolean,
@@ -176,15 +186,21 @@ async function meetingsForExternalEvents(
   // Ids that reach the viewer through the general calendar, which admits any
   // lab member rather than only the invited.
   const labWideIds = new Set<string>();
+  // Ids where Google itself says the viewer is on the event (organizer or
+  // guest), independent of whether the DALI roster agrees.
+  const viewerOnEventIds = new Set<string>();
   for (const e of events) {
     const labWide = viewerIsLabMember && isGeneralCalendarEvent(e.calendarId);
+    const onEvent = viewerOnEvent(e);
     if (e.eventId) {
       seriesIds.add(e.eventId);
       if (labWide) labWideIds.add(e.eventId);
+      if (onEvent) viewerOnEventIds.add(e.eventId);
     }
     if (e.recurringEventId) {
       seriesIds.add(e.recurringEventId);
       if (labWide) labWideIds.add(e.recurringEventId);
+      if (onEvent) viewerOnEventIds.add(e.recurringEventId);
     }
     if (e.iCalUID) uidSet.add(e.iCalUID);
   }
@@ -193,6 +209,7 @@ async function meetingsForExternalEvents(
     { organizerId: userId },
     { participantUserIds: { has: userId } },
   ];
+  const admittedIds = new Set([...labWideIds, ...viewerOnEventIds]);
   const meetings = await prisma.scheduledMeeting.findMany({
     where: {
       status: { not: "Cancelled" },
@@ -207,11 +224,12 @@ async function meetingsForExternalEvents(
               : [{ externalEventId: { in: [...seriesIds] } }],
         },
         // Access: the invited (organizer/participant), plus any lab member for an
-        // event on the general calendar.
+        // event on the general calendar, plus any event Google itself says the
+        // viewer is on.
         {
           OR:
-            labWideIds.size > 0
-              ? [...invited, { externalEventId: { in: [...labWideIds] } }]
+            admittedIds.size > 0
+              ? [...invited, { externalEventId: { in: [...admittedIds] } }]
               : invited,
         },
       ],
@@ -223,6 +241,7 @@ async function meetingsForExternalEvents(
       iCalUID: true,
       isCoreMeeting: true,
       meetingType: true,
+      notebookId: true,
       participantUserIds: true,
       selectedAt: true,
       createdAt: true,
@@ -293,9 +312,11 @@ async function meetingsForExternalEvents(
       // Once the meeting has notes, anyone in it opens the next occurrence's.
       canAddNote: isOrganizer || canMarkCoreMeeting,
       canOpenNote:
-        m.meetingType != null &&
-        m.notePages.length > 0 &&
-        (isOrganizer || canMarkCoreMeeting || m.participantUserIds.includes(userId)),
+        ((m.meetingType != null && m.notePages.length > 0) || !!m.notebookId) &&
+        (isOrganizer ||
+          canMarkCoreMeeting ||
+          m.participantUserIds.includes(userId) ||
+          viewerOnEvent(e)),
       canAddWhiteboard: isOrganizer || canMarkCoreMeeting,
       canInvite: isOrganizer || canMarkCoreMeeting,
     });
@@ -1282,8 +1303,6 @@ function coerceFormToAction(raw: Record<string, FormDataEntryValue>): unknown {
         onTimesheet: asBool(get("onTimesheet")),
         occurrence: get("occurrence") || undefined,
       };
-    case "set-meeting-core":
-      return { intent, meetingId: get("meetingId"), isCoreMeeting: asBool(get("isCoreMeeting")) };
     case "set-meeting-project":
       return {
         intent,
@@ -1294,17 +1313,16 @@ function coerceFormToAction(raw: Record<string, FormDataEntryValue>): unknown {
       };
     case "add-meeting-note":
     case "add-meeting-whiteboard": {
-      // noteLocation is a nested object, so it rides across as a JSON string
-      // (same pattern as seed-working-hours' `days`). meetingType is optional for
-      // the whiteboard intent (a meeting with a note reuses its type), so an
-      // empty field coerces to undefined rather than a failing enum value.
-      let noteLocation: unknown = undefined;
-      const locRaw = get("noteLocation");
-      if (locRaw) {
+      // meetingType is optional for the whiteboard intent (a meeting with a note
+      // reuses its type), so an empty field coerces to undefined rather than a
+      // failing enum value.
+      let notebook: unknown = undefined;
+      const notebookRaw = get("notebook");
+      if (notebookRaw) {
         try {
-          noteLocation = JSON.parse(locRaw);
+          notebook = JSON.parse(notebookRaw);
         } catch {
-          // Leave undefined; the asset falls back to its default destination.
+          // Left undefined; the schema then asks for the type fields instead.
         }
       }
       return {
@@ -1314,7 +1332,7 @@ function coerceFormToAction(raw: Record<string, FormDataEntryValue>): unknown {
         meetingType: get("meetingType") || undefined,
         meetingTypeLabel: get("meetingTypeLabel") || undefined,
         projectId: get("projectId") || undefined,
-        noteLocation,
+        notebook,
       };
     }
     case "set-timesheet-sync":
@@ -1331,9 +1349,10 @@ function coerceFormToAction(raw: Record<string, FormDataEntryValue>): unknown {
 // user id. Shared by the calendar loader and the meeting edit-context endpoint.
 export async function loadParticipantOptions(
   request: Request,
-): Promise<{ groups: GroupOption[]; users: UserOption[] }> {
+  viewerId: string,
+): Promise<{ groups: GroupOption[]; users: UserOption[]; mentorPairs: MentorPairOption[] }> {
   const memberWhere = await currentTermMemberWhere(request);
-  const [groups, users] = await Promise.all([
+  const [groups, users, mentorPairs] = await Promise.all([
     listAllGroups().then((rows) =>
       rows
         .filter((r) => !r.archived)
@@ -1352,6 +1371,7 @@ export async function loadParticipantOptions(
       select: { id: true, firstName: true, lastName: true, daliEmail: true },
       orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
     }),
+    listMentorPairs(viewerId, request),
   ]);
   const knownUserIds = new Set(users.map((u) => u.id));
   const missingMemberIds = Array.from(
@@ -1363,7 +1383,7 @@ export async function loadParticipantOptions(
         select: { id: true, firstName: true, lastName: true, daliEmail: true },
       })
     : [];
-  return { groups, users: [...users, ...extraGroupMembers] };
+  return { groups, users: [...users, ...extraGroupMembers], mentorPairs };
 }
 
 /**
@@ -1400,15 +1420,14 @@ export async function loadCalendarData(
   // edit-context endpoint). Kicked off here so it runs alongside the fan-out
   // below; awaited once the rest resolves.
   const participantOptionsP = labMember
-    ? loadParticipantOptions(request)
-    : Promise.resolve({ groups: [] as GroupOption[], users: [] as UserOption[] });
+    ? loadParticipantOptions(request, userId)
+    : Promise.resolve({ groups: [] as GroupOption[], users: [] as UserOption[], mentorPairs: [] as MentorPairOption[] });
 
   const [
     settings,
     userRow,
     whRows,
     links,
-    myProjects,
     myRoles,
     canSetSelfCheckIn,
     canMarkCoreMeeting,
@@ -1437,18 +1456,13 @@ export async function loadCalendarData(
         where: { userId },
         orderBy: { linkedAt: "asc" },
       }),
-      prisma.project.findMany({
-        where: { assignments: { some: { userId } } },
-        select: { id: true, name: true },
-        orderBy: { name: "asc" },
-      }),
       getUserRoleInstances(userId, termId, request),
       // Same gate as Forms: Core, Admin, or Instructor.
       canViewForms(userId, request),
       isCore(userId, request),
     ]);
 
-  const { groups, users: allUsers } = await participantOptionsP;
+  const { groups, users: allUsers, mentorPairs } = await participantOptionsP;
 
   // The whole calendar renders in the user's display zone (User.timeZone) —
   // the single source of truth shared with the rest of the app. Working hours
@@ -1688,7 +1702,7 @@ export async function loadCalendarData(
       Boolean(e.eventId) &&
       !eventMeetings.has(e.eventId) &&
       ((canMarkCoreMeeting && isGeneralCalendarEvent(e.calendarId)) ||
-        (roles.isLabMember && (e.organizerSelf === true || e.responseStatus !== undefined))),
+        (roles.isLabMember && viewerOnEvent(e))),
   }));
 
   // Classes: load all current+upcoming terms for the modal picker.
@@ -1720,9 +1734,9 @@ export async function loadCalendarData(
     ingestionError,
     googleHidden: hideGoogle,
     groups,
+    mentorPairs,
     users: allUsers,
     currentUserId: userId,
-    myProjects,
     myRoles,
     canSetSelfCheckIn,
     canMarkCoreMeeting,
@@ -1758,7 +1772,7 @@ export async function loadCalendarData(
 }
 
 // The intents that write lab records rather than the viewer's own calendar:
-// meeting notes and their Drive pages, the Core-meeting marker, the logged-time
+// meeting notes and their Drive pages, the logged-time
 // link on a meeting, promoting a Google event into a DALI meeting, and
 // subscribing to the lab's general calendar. The portal calendar posts here
 // too, so these stay member-only — everything else (working hours, linked
@@ -1767,7 +1781,6 @@ export async function loadCalendarData(
 const MEMBER_ONLY_CALENDAR_INTENTS = new Set([
   "subscribe-general-calendar",
   "toggle-meeting-time-entry",
-  "set-meeting-core",
   "add-meeting-note",
   "track-event-as-meeting",
 ]);
@@ -1779,7 +1792,6 @@ const MEMBER_ONLY_CALENDAR_INTENTS = new Set([
 const DB_ONLY_CALENDAR_INTENTS = new Set([
   "add-meeting-note",
   "add-meeting-whiteboard",
-  "set-meeting-core",
   "set-meeting-project",
   "set-working-segments",
   "copy-weekdays",
@@ -2202,25 +2214,6 @@ export async function submitCalendarAction(request: Request) {
       return null;
     }
 
-    case "set-meeting-core": {
-      // The checkbox is hidden for non-Core, but the gate lives here — the
-      // form is a hint, the server decides (same rule as the create route).
-      if (!(await isCore(userId, request))) return forbidden(request);
-      const meeting = await prisma.scheduledMeeting.findUnique({
-        where: { id: input.meetingId },
-        select: { id: true, organizerId: true, participantUserIds: true, scopeType: true },
-      });
-      if (!meeting) return Response.json({ error: "Not found" }, { status: 404 });
-      if (!(await canActOnMeeting(meeting, userId, request))) {
-        return Response.json({ error: "You weren't invited to this meeting" }, { status: 403 });
-      }
-      await prisma.scheduledMeeting.update({
-        where: { id: meeting.id },
-        data: { isCoreMeeting: input.isCoreMeeting },
-      });
-      return null;
-    }
-
     case "set-meeting-project": {
       // setMeetingProject checks organizer/Core + project membership.
       const result = await setMeetingProject({
@@ -2244,12 +2237,25 @@ export async function submitCalendarAction(request: Request) {
         meetingType: input.meetingType,
         meetingTypeLabel: input.meetingTypeLabel ?? null,
         projectId: input.projectId ?? null,
-        noteLocation: input.noteLocation ?? null,
+        notebook: input.notebook ?? null,
+        request,
       });
       if (!result.ok) {
         return Response.json({ error: result.error }, { status: result.status });
       }
-      return Response.json({ ok: true, notePageId: result.notePageId });
+      return Response.json({
+        ok: true,
+        notePageId: result.notePageId,
+        notebookId: result.notebookId,
+        createdNotebook: result.createdNotebook,
+        seriesNotebookId: result.seriesNotebookId,
+        notePath: await meetingNotePath({
+          notePageId: result.notePageId,
+          notebookId: result.notebookId,
+          viewerSub: userId,
+          request,
+        }),
+      });
     }
 
     case "add-meeting-whiteboard": {
@@ -2259,7 +2265,6 @@ export async function submitCalendarAction(request: Request) {
         meetingType: input.meetingType ?? null,
         meetingTypeLabel: input.meetingTypeLabel ?? null,
         projectId: input.projectId ?? null,
-        noteLocation: input.noteLocation ?? null,
       });
       if (!result.ok) {
         return Response.json({ error: result.error }, { status: result.status });

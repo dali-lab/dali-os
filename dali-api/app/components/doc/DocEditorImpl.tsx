@@ -65,6 +65,7 @@ import { DocEditorFallback } from "./DocEditor";
 import { DaliSideMenuController } from "./DocSideMenu";
 import { resolveFeatures, type Features } from "./features";
 import { createFindReplacePlugin } from "./find";
+import { enhancePasteHandler } from "./enhance-render";
 import { buildSchema, type DocEditorInstance, type DocPartialBlock } from "./schema/build";
 import { BLOCKNOTE_FRAGMENT } from "./schema/configs";
 import { getMentionMenuItems, PageMentionTitleProvider } from "./schema/mention";
@@ -114,6 +115,7 @@ function LocalDoc(props: ResolvedProps) {
       dictionary,
       uploadFile: (props.features.images || props.features.files) ? uploadEditorImage : undefined,
       tables: { splitCells: true, cellBackgroundColor: true, cellTextColor: true, headers: true },
+      pasteHandler: enhancePasteHandler,
       ...(props.features.columns ? { dropCursor: multiColumnDropCursor } : {}),
     },
     [schema, dictionary],
@@ -162,6 +164,7 @@ function CollabDocInner(
       dictionary,
       uploadFile: (props.features.images || props.features.files) ? uploadEditorImage : undefined,
       tables: { splitCells: true, cellBackgroundColor: true, cellTextColor: true, headers: true },
+      pasteHandler: enhancePasteHandler,
       // The edge-drop cursor is what turns "drag a block to the side of
       // another" into a column split; without it columns are slash-menu only.
       ...(props.features.columns ? { dropCursor: multiColumnDropCursor } : {}),

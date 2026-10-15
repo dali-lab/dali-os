@@ -28,7 +28,7 @@ type GroupLike = { systemKey: string | null };
 export function groupKind(g: GroupLike): GroupKind {
   const key = g.systemKey;
   if (!key) return "custom";
-  if (key === "core" || key === "hiring" || key === "alumni") return "lab";
+  if (key === "core" || key === "hiring" || key === "mentors" || key === "alumni") return "lab";
   const prefix = key.split(":", 1)[0];
   if (prefix === "project" || prefix === "domain" || prefix === "term" || prefix === "offering") {
     return prefix;

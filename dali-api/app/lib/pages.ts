@@ -1,6 +1,8 @@
 import { prisma } from "~/lib/db";
 import type { PageKind } from "~/generated/prisma/client";
+import { assertUniqueName } from "~/lib/page-names.server";
 import { ensureProcessFolder, CORE_PROCESS_ID, LAB_PROCESS_ID } from "~/lib/bindings.server";
+import { syncMeetingShares } from "~/lib/meeting-shares.server";
 
 // Creates a Page in a project's workspace (the same Page model the project
 // Overview/PRD/Documents-block use). Appends after the current max position
@@ -19,6 +21,15 @@ export async function createProjectPage(input: {
   kind?: PageKind;
 }): Promise<{ id: string }> {
   const parentPageId = input.parentPageId ?? null;
+  if (!input.meetingNoteId && !input.meetingWhiteboardId && !input.notebookKey) {
+    await assertUniqueName({
+      workspaceType: "Project",
+      workspaceId: input.projectId,
+      parentPageId,
+      kind: input.kind ?? "FreeForm",
+      title: input.title,
+    });
+  }
   const last = await prisma.page.findFirst({
     where: { workspaceType: "Project", workspaceId: input.projectId, parentPageId },
     orderBy: { position: "desc" },
@@ -115,7 +126,7 @@ export type MeetingNotebookDestination = {
  */
 export async function ensureMeetingNotebook(
   input: { key: string; title: string; createdById: string } & MeetingNotebookDestination,
-): Promise<{ id: string }> {
+): Promise<{ id: string; created?: true }> {
   const existing = await prisma.page.findUnique({
     where: { notebookKey: input.key },
     select: { id: true, archivedAt: true },
@@ -133,11 +144,14 @@ export async function ensureMeetingNotebook(
     createdById: input.createdById,
     parentPageId: input.parentPageId,
     notebookKey: input.key,
+    kind: "Notebook" as const,
   };
   try {
-    return input.workspaceType === "Project" && input.workspaceId
-      ? await createProjectPage({ projectId: input.workspaceId, ...fields })
-      : await createLabMeetingPage({ ...fields, restricted: input.restricted });
+    const page =
+      input.workspaceType === "Project" && input.workspaceId
+        ? await createProjectPage({ projectId: input.workspaceId, ...fields })
+        : await createLabMeetingPage({ ...fields, restricted: input.restricted });
+    return { id: page.id, created: true };
   } catch (err) {
     // Two notes for the same notebook created at once: the unique key lets one
     // create it, and the other files into that one.
@@ -160,12 +174,13 @@ async function notebookTabPlacement(notebookId: string) {
   return { ...notebook, parentPageId: notebookId };
 }
 
-/** Create one meeting's note as a tab of `notebookId`. */
+/** Create one tab of `notebookId`: a meeting's note, or (no `meetingNoteId`) a
+ *  plain doc ordered by `meetingOccurrenceStart`. */
 export async function createNotebookTab(input: {
   notebookId: string;
   title: string;
   createdById: string;
-  meetingNoteId: string;
+  meetingNoteId?: string;
   meetingOccurrenceStart: Date;
 }): Promise<{ id: string }> {
   const placement = await notebookTabPlacement(input.notebookId);
@@ -174,7 +189,7 @@ export async function createNotebookTab(input: {
       ...placement,
       title: input.title,
       createdById: input.createdById,
-      meetingNoteId: input.meetingNoteId,
+      meetingNoteId: input.meetingNoteId ?? null,
       meetingOccurrenceStart: input.meetingOccurrenceStart,
     },
     select: { id: true },
@@ -182,16 +197,28 @@ export async function createNotebookTab(input: {
 }
 
 /**
- * Re-file an existing note page as a tab of `notebookId`. Sharing that only
- * makes sense where the note used to live is reset, as on any move. The
- * notebook it left is trashed if that emptied it.
+ * Re-file an existing page as a tab of `notebookId`, after the tabs already
+ * there. Sharing that only makes sense where the page used to live is reset, as
+ * on any move; the meeting link (meetingNoteId) is left alone. The notebook it
+ * left is trashed if that emptied it and no series points at it.
  */
 export async function moveIntoNotebook(pageId: string, notebookId: string, title?: string): Promise<void> {
-  const [placement, page] = await Promise.all([
+  const [placement, page, last] = await Promise.all([
     notebookTabPlacement(notebookId),
     prisma.page.findUniqueOrThrow({
       where: { id: pageId },
-      select: { parentPageId: true, workspaceType: true, workspaceId: true, parent: { select: { notebookKey: true } } },
+      select: {
+        parentPageId: true,
+        workspaceType: true,
+        workspaceId: true,
+        meetingNoteId: true,
+        parent: { select: { kind: true } },
+      },
+    }),
+    prisma.page.findFirst({
+      where: { parentPageId: notebookId, archivedAt: null },
+      orderBy: { position: "desc" },
+      select: { position: true },
     }),
   ]);
   if (page.parentPageId === notebookId) return;
@@ -202,15 +229,26 @@ export async function moveIntoNotebook(pageId: string, notebookId: string, title
     data: {
       ...placement,
       ...(title ? { title } : {}),
+      position: last ? last.position + 1 : 0,
       pinnedAt: null,
       ...(sameWorkspace ? {} : { partnerVisible: false, publicVisible: false }),
+      ...(page.workspaceType === "Member"
+        ? { profileVisible: false, labListing: "None" as const, labListingNote: null }
+        : {}),
     },
   });
-  if (page.parentPageId && page.parent?.notebookKey) {
-    const left = await prisma.page.count({ where: { parentPageId: page.parentPageId, archivedAt: null } });
-    if (left === 0) {
-      await prisma.page.update({ where: { id: page.parentPageId }, data: { archivedAt: new Date() } });
-    }
+  if (page.parentPageId && page.parent?.kind === "Notebook") await trashNotebookIfAbandoned(page.parentPageId);
+  if (page.meetingNoteId) await syncMeetingShares(page.meetingNoteId);
+}
+
+/** Trash a notebook with no live tabs, unless a series still files into it. */
+export async function trashNotebookIfAbandoned(notebookId: string): Promise<void> {
+  const [left, pointedAt] = await Promise.all([
+    prisma.page.count({ where: { parentPageId: notebookId, archivedAt: null } }),
+    prisma.scheduledMeeting.findFirst({ where: { notebookId }, select: { id: true } }),
+  ]);
+  if (left === 0 && !pointedAt) {
+    await prisma.page.update({ where: { id: notebookId }, data: { archivedAt: new Date() } });
   }
 }
 
@@ -316,6 +354,13 @@ export async function createLabPage(input: {
   restricted?: boolean;
 }): Promise<{ id: string }> {
   const parentPageId = input.parentPageId ?? null;
+  await assertUniqueName({
+    workspaceType: "Lab",
+    workspaceId: null,
+    parentPageId,
+    kind: input.kind ?? "FreeForm",
+    title: input.title,
+  });
   const last = await prisma.page.findFirst({
     where: { workspaceType: "Lab", workspaceId: null, parentPageId },
     orderBy: { position: "desc" },
@@ -384,6 +429,7 @@ export async function ensureOfferingFormsFolder(
         parentPageId: null,
         title: OFFERING_FORMS_FOLDER_TITLE,
         kind: "Folder",
+        folderType: "OfferingForms",
         position: last ? last.position + 1 : 0,
         createdById,
       },

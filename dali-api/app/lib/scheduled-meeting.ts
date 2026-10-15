@@ -29,18 +29,25 @@ import {
   ensureMeetingNotebook,
   createNotebookTab,
   moveIntoNotebook,
+  trashNotebookIfAbandoned,
   type MeetingNotebookDestination,
 } from "~/lib/pages";
-import { meetingNotebookIdentity, termForDate } from "~/lib/meeting-notebook";
+import { receiversEnabled, resolveFilingFolder, projectSlot, singletonSlot } from "~/lib/drive-receivers.server";
+import { meetingNotebookIdentity, meetingTypeForNotebook, termForDate } from "~/lib/meeting-notebook";
 import { termWindows } from "~/lib/terms";
 import { isCore, isProjectMember } from "~/lib/roles";
 import { isGeneralCalendarEvent } from "~/lib/general-calendar";
 import { copyPageBody } from "~/lib/page-copy.server";
+import { createNotebook, loadEditableNotebook, NotebookError } from "~/lib/notebooks.server";
+import { PAGE_ACCESS_SELECT, getPageAccess } from "~/lib/pageAccess.server";
+import { driveFolderCrumbs } from "~/lib/drive-crumbs.server";
+import { isExistingChoice, type NotebookChoice, type NotebookSpaceChoice } from "~/lib/notebook-choice";
 import { readDocAsBlocks } from "~/collab/read";
 import { pageDocName } from "~/collab/roomName";
 import { blocksToPlainText } from "~/components/doc/schema/configs";
 import { hashTemplateText, normalizeTemplateText } from "~/lib/meeting-note-template";
 import { normalizeGuestEmails } from "~/calendar/lib/guest-emails";
+import { syncMeetingShares } from "~/lib/meeting-shares.server";
 import {
   expandOccurrences,
   noteForOccurrence,
@@ -280,15 +287,10 @@ export type CreateScheduledMeetingInput = {
   // is set (back-compat for callers that only set meetingType), no whiteboard.
   createNote?: boolean;
   createWhiteboard?: boolean;
-  // General ("Other") meetings only: where to file the note page. Authorized and
-  // resolved by resolveNoteDestination — an unauthorized/invalid location (or an
-  // omitted one) falls back to the Lab root. Ignored for Team/Partner, which file
-  // into the project's meeting-notes folder.
-  noteLocation?: {
-    workspaceType: "Lab" | "Project";
-    workspaceId: string | null;
-    parentPageId: string | null;
-  } | null;
+  /** Which notebook the first note files into (and the series defaults to).
+   *  When set without a meetingType, the type is derived from it. */
+  notebook?: NotebookChoice | null;
+  request?: Request;
   // Roster (default): organizer/Core check attendees off by hand (needs a
   // meeting note for the checklist UI). SelfCheckIn: attendees mark themselves
   // present via the check-in route — works with or without a meeting note (QR
@@ -297,7 +299,7 @@ export type CreateScheduledMeetingInput = {
   // Core marker — see ScheduledMeeting.isCoreMeeting. Callers are responsible
   // for checking the setter is Core; this layer just persists the flag. It also
   // decides where a project-less note is filed: Core's own meeting-notes folder
-  // rather than the organizer's chosen `noteLocation`.
+  // rather than the Lab's.
   isCoreMeeting?: boolean;
   // Mint a Google Meet link for the meeting. Only takes effect when the meeting
   // is actually pushed to the organizer's linked Google calendar (a start time,
@@ -317,53 +319,30 @@ export type CreateScheduledMeetingResult =
       notifiedCount: number;
       gcalError: string | null;
       notePageId: string | null;
+      /** The notebook the note is a tab of, and whether this call created it. */
+      notebookId: string | null;
+      createdNotebook: boolean;
       whiteboardPageId: string | null;
     }
   | { ok: false; error: string };
 
-// Authorize + resolve a General meeting's chosen note location. Mirrors the
-// /api/move-destinations eligibility (Lab-wide, plus any project the organizer
-// can edit) so a note can only land where the organizer may write. Anything
-// unauthorized or malformed quietly falls back to the Lab root.
-async function resolveNoteDestination(
-  organizerId: string,
-  loc: CreateScheduledMeetingInput["noteLocation"],
-): Promise<{ workspaceType: "Lab" | "Project"; workspaceId: string | null; parentPageId: string | null }> {
-  const labRoot = { workspaceType: "Lab" as const, workspaceId: null, parentPageId: null };
-  if (!loc) return labRoot;
-
-  if (loc.workspaceType === "Project") {
-    if (!loc.workspaceId) return labRoot;
-    const core = await isCore(organizerId);
-    const proj = await prisma.project.findFirst({
-      where: { id: loc.workspaceId, ...(core ? {} : { assignments: { some: { userId: organizerId } } }) },
-      select: { id: true },
-    });
-    if (!proj) return labRoot;
-  }
-
-  // Validate the parent folder (if any) is a live Folder in the target workspace;
-  // otherwise drop to that workspace's top level rather than misfiling the note.
-  let parentPageId: string | null = null;
-  if (loc.parentPageId) {
-    const folder = await prisma.page.findUnique({
-      where: { id: loc.parentPageId },
-      select: { kind: true, archivedAt: true, workspaceType: true, workspaceId: true },
-    });
-    const wsMatch =
-      !!folder &&
-      folder.workspaceType === loc.workspaceType &&
-      (loc.workspaceType === "Lab" ? folder.workspaceId === null : folder.workspaceId === loc.workspaceId);
-    if (folder && folder.kind === "Folder" && !folder.archivedAt && wsMatch) {
-      parentPageId = loc.parentPageId;
-    }
-  }
-
-  return {
-    workspaceType: loc.workspaceType,
-    workspaceId: loc.workspaceType === "Project" ? loc.workspaceId : null,
-    parentPageId,
-  };
+/**
+ * Whether a meeting keeps an attendance roster: it has a type, a notebook, a
+ * self check-in, or invited people. Shared by the roster reconcile on edit and
+ * the manual attendance route and MCP tool.
+ */
+export function tracksAttendance(meeting: {
+  meetingType: MeetingType | null;
+  notebookId: string | null;
+  attendanceMode: string | null;
+  participantUserIds: string[];
+}): boolean {
+  return (
+    meeting.meetingType != null ||
+    meeting.notebookId != null ||
+    meeting.attendanceMode === "SelfCheckIn" ||
+    meeting.participantUserIds.length > 0
+  );
 }
 
 // The notebook a meeting's note for `date` is filed in, created at `dest` when
@@ -377,7 +356,7 @@ async function ensureNotebookForNote(input: {
   date: Date;
   authorId: string;
   dest: MeetingNotebookDestination;
-}): Promise<{ id: string }> {
+}): Promise<{ id: string; created?: true }> {
   const [meeting, windows] = await Promise.all([
     prisma.scheduledMeeting.findUniqueOrThrow({
       where: { id: input.meetingId },
@@ -405,89 +384,130 @@ async function ensureNotebookForNote(input: {
   return ensureMeetingNotebook({ ...identity, createdById: input.authorId, ...input.dest });
 }
 
+/** A meeting asset just filed. For a note, `notebookId` is the notebook it is a
+ *  tab of and `createdNotebook` says whether this very call made that notebook. */
+type BuiltArtifactPage = { id: string; notebookId: string | null; createdNotebook: boolean };
+
+type ArtifactFilingInput = {
+  authorId: string;
+  meetingType: MeetingType;
+  meetingTypeLabel: string | null;
+  projectId: string | null;
+  isCoreMeeting: boolean;
+  /** Whiteboards only: file exactly here (beside the meeting's notebook) instead of by project, Core or the Lab. */
+  fileAt?: Placement | null;
+};
+
 // Create a meeting-asset Page (note doc or whiteboard) for a meeting and return
-// its id. Shared by createScheduledMeeting (asset requested at creation) and the
+// where it landed. Shared by createScheduledMeeting (asset requested at creation) and the
 // attach* helpers (asset added to an already-created meeting) so the three
 // filing paths — project (Team/Partner), Core, and General (chosen Drive
 // location) — live in one place for both artifacts. `authorId` is the creator
 // and the identity destination authorization runs against (the organizer at
 // creation, the actor after). A whiteboard is filed in that folder directly; a
 // note becomes a tab of the meeting's notebook, which sits in that folder.
-async function buildMeetingArtifactPage(input: {
-  meetingId: string;
-  authorId: string;
-  artifact: "note" | "whiteboard";
-  meetingType: MeetingType;
-  meetingTypeLabel: string | null;
-  projectId: string | null;
-  isCoreMeeting: boolean;
-  noteLocation: CreateScheduledMeetingInput["noteLocation"];
-  startDate: Date | null;
-  /** Notes only: which occurrence the note is for (see resolveOccurrence). */
-  occurrenceStart?: Date;
-}): Promise<string> {
+async function buildMeetingArtifactPage(
+  input: ArtifactFilingInput & {
+    meetingId: string;
+    artifact: "note" | "whiteboard";
+    startDate: Date | null;
+    /** Notes only: which occurrence the note is for (see resolveOccurrence). */
+    occurrenceStart?: Date;
+    /** Notes only: file as a tab of this notebook instead of the type-keyed one. */
+    notebookId?: string | null;
+  },
+): Promise<BuiltArtifactPage> {
   const noteDate = input.startDate ?? new Date();
   const dateLabel = formatDateShort(noteDate);
   const isBoard = input.artifact === "whiteboard";
   const occurrenceStart = input.occurrenceStart ?? noteDate;
-  const file = async (dest: MeetingNotebookDestination, pageTitle: string): Promise<string> => {
-    if (!isBoard) {
-      const notebook = await ensureNotebookForNote({ ...input, date: occurrenceStart, dest });
-      const tab = await createNotebookTab({
-        notebookId: notebook.id,
-        title: pageTitle,
-        createdById: input.authorId,
-        meetingNoteId: input.meetingId,
-        meetingOccurrenceStart: occurrenceStart,
-      });
-      return tab.id;
-    }
-    const fields = {
-      title: pageTitle,
+  if (!isBoard && input.notebookId) {
+    const tab = await createNotebookTab({
+      notebookId: input.notebookId,
+      title: input.projectId || !input.meetingTypeLabel ? dateLabel : `${input.meetingTypeLabel} (${dateLabel})`,
       createdById: input.authorId,
-      parentPageId: dest.parentPageId,
-      meetingWhiteboardId: input.meetingId,
-      kind: "Whiteboard" as const,
-    };
-    const page =
-      dest.workspaceType === "Project" && dest.workspaceId
-        ? await createProjectPage({ projectId: dest.workspaceId, ...fields })
-        : await createLabMeetingPage({ ...fields, restricted: dest.restricted });
-    return page.id;
+      meetingNoteId: input.meetingId,
+      meetingOccurrenceStart: occurrenceStart,
+    });
+    return { id: tab.id, notebookId: input.notebookId, createdNotebook: false };
+  }
+  const { dest, title } = await resolveArtifactFiling(input, isBoard, dateLabel);
+  if (!isBoard) {
+    const notebook = await ensureNotebookForNote({ ...input, date: occurrenceStart, dest });
+    const tab = await createNotebookTab({
+      notebookId: notebook.id,
+      title,
+      createdById: input.authorId,
+      meetingNoteId: input.meetingId,
+      meetingOccurrenceStart: occurrenceStart,
+    });
+    return { id: tab.id, notebookId: notebook.id, createdNotebook: notebook.created === true };
+  }
+  const fields = {
+    title,
+    createdById: input.authorId,
+    parentPageId: dest.parentPageId,
+    meetingWhiteboardId: input.meetingId,
+    kind: "Whiteboard" as const,
   };
-  // The artifact noun in the title, so a note and a board for the same meeting
-  // stay distinguishable in Drive and search. Whiteboards always carry
-  // "whiteboard"; notes keep their existing "meeting note" naming.
-  const noun = isBoard ? "whiteboard" : "meeting note";
-  let title = isBoard ? `${dateLabel} whiteboard` : dateLabel;
+  const page =
+    dest.workspaceType === "Project" && dest.workspaceId
+      ? await createProjectPage({ projectId: dest.workspaceId, ...fields })
+      : await createLabMeetingPage({ ...fields, restricted: dest.restricted });
+  return { id: page.id, notebookId: null, createdNotebook: false };
+}
+
+/** The title a meeting asset carries wherever it is filed. The artifact noun
+ *  keeps a note and a board for the same meeting distinguishable in Drive and
+ *  search; a project's Team/Partner assets are named for the project so they
+ *  stay identifiable once they leave its folder. */
+async function artifactTitle(input: ArtifactFilingInput, isBoard: boolean, dateLabel: string): Promise<string> {
+  const plain = isBoard ? `${dateLabel} whiteboard` : dateLabel;
+  if (input.projectId && (input.meetingType === "Team" || input.meetingType === "Partner")) {
+    const project = await prisma.project.findUnique({ where: { id: input.projectId }, select: { name: true } });
+    const noun = isBoard ? "whiteboard" : "meeting note";
+    return project ? `${project.name} ${input.meetingType} ${noun} (${dateLabel})` : plain;
+  }
+  if (!input.meetingTypeLabel) return plain;
+  return isBoard ? `${input.meetingTypeLabel} whiteboard (${dateLabel})` : `${input.meetingTypeLabel} (${dateLabel})`;
+}
+
+function destinationOf(p: Placement): MeetingNotebookDestination | null {
+  if (p.workspaceType === "Lab") return { workspaceType: "Lab", workspaceId: null, parentPageId: p.parentPageId };
+  if (p.workspaceType === "Project" && p.workspaceId) {
+    return { workspaceType: "Project", workspaceId: p.workspaceId, parentPageId: p.parentPageId };
+  }
+  return null;
+}
+
+/** Where a meeting asset is filed (beside its notebook, in its project, Core,
+ *  or the author's chosen Drive location) and the title it carries there. */
+async function resolveArtifactFiling(
+  input: ArtifactFilingInput,
+  isBoard: boolean,
+  dateLabel: string,
+): Promise<{ dest: MeetingNotebookDestination; title: string }> {
+  const title = await artifactTitle(input, isBoard, dateLabel);
+  const file = (dest: MeetingNotebookDestination) => ({ dest, title });
+
+  const beside = isBoard && input.fileAt ? destinationOf(input.fileAt) : null;
+  if (beside) return file(beside);
+
+  const receivers = await receiversEnabled();
 
   if (input.projectId) {
     // Team/Partner assets nest under their default, undeletable folder;
     // "Other" assets stay top-level (no default folder for a custom label).
-    let parentPageId: string | null = null;
-    if (input.meetingType === "Team" || input.meetingType === "Partner") {
-      const folder = await ensureMeetingNotesFolder(
-        input.projectId,
-        input.meetingType,
-        input.authorId,
-      );
+    // With receivers on, every project meeting files to the project's Meetings
+    // receiver, else the project top level.
+    let parentPageId: string | null = receivers
+      ? (await resolveFilingFolder(projectSlot(input.projectId), input.authorId)).folderId
+      : null;
+    if (!receivers && (input.meetingType === "Team" || input.meetingType === "Partner")) {
+      const folder = await ensureMeetingNotesFolder(input.projectId, input.meetingType, input.authorId);
       parentPageId = folder.id;
-      // Named for the project and kind they belong to, so they stay
-      // identifiable once they leave that folder — in search, in Drive, and on
-      // the meeting itself.
-      const project = await prisma.project.findUnique({
-        where: { id: input.projectId },
-        select: { name: true },
-      });
-      if (project) {
-        title = `${project.name} ${input.meetingType} ${noun} (${dateLabel})`;
-      }
-    } else if (input.meetingTypeLabel) {
-      title = isBoard
-        ? `${input.meetingTypeLabel} whiteboard (${dateLabel})`
-        : `${input.meetingTypeLabel} (${dateLabel})`;
     }
-    return file({ workspaceType: "Project", workspaceId: input.projectId, parentPageId }, title);
+    return file({ workspaceType: "Project", workspaceId: input.projectId, parentPageId });
   }
 
   if (input.isCoreMeeting) {
@@ -495,41 +515,141 @@ async function buildMeetingArtifactPage(input: {
     // to its project: always Core's own meeting-assets folder, never a location
     // the organizer picked. The folder is Core-scoped, so the asset is Core-only
     // without depending on its own link access.
-    if (input.meetingTypeLabel) {
-      title = isBoard
-        ? `${input.meetingTypeLabel} whiteboard (${dateLabel})`
-        : `${input.meetingTypeLabel} (${dateLabel})`;
-    }
-    const coreFolderId = await ensureCoreMeetingNotesFolder(input.authorId);
-    return file(
-      {
-        workspaceType: "Lab",
-        workspaceId: null,
-        // Null only when the Core group isn't seeded yet — the asset lands at
-        // the Lab root rather than not existing at all.
-        parentPageId: coreFolderId,
-        restricted: coreFolderId !== null,
-      },
-      title,
-    );
+    const coreFolderId = receivers
+      ? (await resolveFilingFolder(singletonSlot("Core", "Meetings"), input.authorId)).folderId
+      : await ensureCoreMeetingNotesFolder(input.authorId);
+    return file({
+      workspaceType: "Lab",
+      workspaceId: null,
+      // Null only when the Core group isn't seeded yet: the asset lands at
+      // the Lab root rather than not existing at all.
+      parentPageId: coreFolderId,
+      restricted: coreFolderId !== null,
+    });
   }
 
-  // General meeting: file at the author's chosen Drive location. Include the
-  // label in the title so the asset stays identifiable wherever it lands.
-  if (input.meetingTypeLabel) {
-    title = isBoard
-      ? `${input.meetingTypeLabel} whiteboard (${dateLabel})`
-      : `${input.meetingTypeLabel} (${dateLabel})`;
+  const parentPageId = receivers
+    ? (await resolveFilingFolder(singletonSlot("Lab", "Meetings"), input.authorId)).folderId
+    : await ensureLabMeetingNotesFolder(input.authorId);
+  return file({ workspaceType: "Lab", workspaceId: null, parentPageId });
+}
+
+type Placement = { workspaceType: string; workspaceId: string | null; parentPageId: string | null };
+
+type ResolvedNotebook = {
+  /** Set when the notebook was filed in a chosen folder: the space that folder sits in. */
+  space?: NotebookSpaceChoice;
+  id: string;
+  title: string;
+  created: boolean;
+  templatePageId: string | null;
+  /** Where the notebook itself lives: a link to this place is not a link. */
+  primary: Placement;
+};
+
+/** A new notebook goes where its chosen space says, not where the meeting's own flags would put it. */
+function filingBySpace(filing: ArtifactFilingInput, space: NotebookSpaceChoice | undefined): ArtifactFilingInput {
+  switch (space?.kind) {
+    case "core":
+      return { ...filing, projectId: null, isCoreMeeting: true };
+    case "project":
+      return { ...filing, projectId: space.projectId };
+    case "lab":
+      return { ...filing, projectId: null, isCoreMeeting: false };
+    default:
+      return filing;
   }
-  const dest = await resolveNoteDestination(input.authorId, input.noteLocation);
-  if (dest.workspaceType === "Project" && dest.workspaceId) return file(dest, title);
-  // No folder chosen — the common case, since the picker defaults to the top of
-  // the Lab drive and resolveNoteDestination falls back there for anything it
-  // can't honour. The Lab's own "Meeting assets" folder is the default instead
-  // of the root, where an asset titled just its date went loose among every
-  // other Lab doc. An explicitly chosen folder still wins.
-  const parentPageId = dest.parentPageId ?? (await ensureLabMeetingNotesFolder(input.authorId));
-  return file({ workspaceType: "Lab", workspaceId: null, parentPageId }, title);
+}
+
+const FOLDER_REFUSAL = "You can't file in that folder";
+
+/** A folder the actor may file a new notebook in, and the space it sits in: Core
+ *  under the Core root, the project for a project folder, else General. */
+async function resolveFolderFiling(
+  folderPageId: string,
+  actorId: string,
+  request?: Request,
+): Promise<{ space: NotebookSpaceChoice; dest: MeetingNotebookDestination }> {
+  const folder = await prisma.page.findUnique({
+    where: { id: folderPageId },
+    select: { ...PAGE_ACCESS_SELECT, kind: true },
+  });
+  if (!folder || folder.archivedAt !== null || folder.kind !== "Folder") throw new NotebookError(FOLDER_REFUSAL, 403);
+  const access = await getPageAccess(actorId, folder, request);
+  if (!access.canEdit) throw new NotebookError(FOLDER_REFUSAL, 403);
+  if (folder.workspaceType === "Project" && folder.workspaceId) {
+    return {
+      space: { kind: "project", projectId: folder.workspaceId },
+      dest: { workspaceType: "Project", workspaceId: folder.workspaceId, parentPageId: folder.id },
+    };
+  }
+  if (folder.workspaceType !== "Lab") throw new NotebookError(FOLDER_REFUSAL, 403);
+  const { scope } = await driveFolderCrumbs(folder.id, actorId, request);
+  return {
+    space: { kind: scope === "core" ? "core" : "lab" },
+    dest: { workspaceType: "Lab", workspaceId: null, parentPageId: folder.id },
+  };
+}
+
+/**
+ * The notebook a caller's choice names: an existing one the actor can edit, or
+ * a new one made at the chosen folder (else where the meeting's About files its
+ * notes). Throws NotebookError for a notebook or folder the actor can't use.
+ * `filingFor` supplies the default placement once the notebook's title is known.
+ */
+async function resolveNotebookChoice(
+  choice: NotebookChoice,
+  actorId: string,
+  filingFor: (title: string) => ArtifactFilingInput,
+  request?: Request,
+): Promise<ResolvedNotebook> {
+  if (isExistingChoice(choice)) {
+    const row = await loadEditableNotebook(choice.existingId, actorId);
+    const own: Placement = { workspaceType: row.workspaceType, workspaceId: row.workspaceId, parentPageId: row.parentPageId };
+    return {
+      id: row.id,
+      title: row.title,
+      created: false,
+      templatePageId: row.templatePageId,
+      primary: own,
+    };
+  }
+  const folderFiling = choice.folderPageId ? await resolveFolderFiling(choice.folderPageId, actorId, request) : null;
+  const dest =
+    folderFiling?.dest ??
+    (await resolveArtifactFiling(filingBySpace(filingFor(choice.title), choice.space), false, formatDateShort(new Date())))
+      .dest;
+  const created = await createNotebook({
+    title: choice.title,
+    workspaceType: dest.workspaceType,
+    workspaceId: dest.workspaceType === "Project" ? dest.workspaceId : null,
+    parentPageId: dest.parentPageId,
+    templatePageId: choice.templatePageId ?? null,
+    actorId,
+  });
+  return {
+    ...(folderFiling ? { space: folderFiling.space } : {}),
+    id: created.id,
+    title: choice.title.trim(),
+    created: true,
+    templatePageId: choice.templatePageId ?? null,
+    primary: {
+      workspaceType: dest.workspaceType,
+      workspaceId: dest.workspaceType === "Project" ? dest.workspaceId : null,
+      parentPageId: dest.parentPageId,
+    },
+  };
+}
+
+/** The type a note filed via a notebook is recorded under: the caller's own if
+ *  it gave one, else derived from the notebook (see meetingTypeForNotebook). */
+function typeForNotebookFiling(
+  given: { meetingType?: MeetingType | null; meetingTypeLabel?: string | null },
+  projectId: string | null,
+  notebookTitle: string,
+): { meetingType: MeetingType; meetingTypeLabel: string | null } {
+  if (given.meetingType) return { meetingType: given.meetingType, meetingTypeLabel: given.meetingTypeLabel ?? null };
+  return meetingTypeForNotebook(projectId, notebookTitle);
 }
 
 export async function createScheduledMeeting(
@@ -562,6 +682,47 @@ export async function createScheduledMeeting(
     }
   }
 
+  const wantsAssets = !!input.notebook || input.createNote === true || input.createWhiteboard === true;
+  const newChoice = input.notebook && !isExistingChoice(input.notebook) ? input.notebook : null;
+  let folderSpace: NotebookSpaceChoice | undefined;
+  if (newChoice?.folderPageId) {
+    try {
+      folderSpace = (await resolveFolderFiling(newChoice.folderPageId, input.organizerId, input.request)).space;
+    } catch (err) {
+      if (err instanceof NotebookError) return { ok: false, error: err.message };
+      throw err;
+    }
+  }
+  const chosenSpace = folderSpace ?? newChoice?.space;
+  const givenProjectId = chosenSpace?.kind === "project" ? chosenSpace.projectId : (input.projectId ?? null);
+  const isCoreMeeting = (input.isCoreMeeting ?? false) || folderSpace?.kind === "core";
+  if (chosenSpace?.kind === "core" && !isCoreMeeting) {
+    return { ok: false, error: "Only Core can start a notebook in Core" };
+  }
+  let notebookPlan: ResolvedNotebook | null = null;
+  if (input.notebook) {
+    try {
+      notebookPlan = await resolveNotebookChoice(
+        input.notebook,
+        input.organizerId,
+        (title) => ({
+          authorId: input.organizerId,
+          ...typeForNotebookFiling(input, givenProjectId, title),
+          projectId: givenProjectId,
+          isCoreMeeting: isCoreMeeting,
+        }),
+        input.request,
+      );
+    } catch (err) {
+      if (err instanceof NotebookError) return { ok: false, error: err.message };
+      throw err;
+    }
+  }
+  const recorded =
+    input.meetingType || wantsAssets
+      ? typeForNotebookFiling(input, givenProjectId, notebookPlan?.title ?? input.title)
+      : null;
+
   const attendanceMode = input.attendanceMode ?? "Roster";
   // A self-check-in event this large (an all-lab Group meeting, a big
   // workshop) is exactly the "too many people to usefully record" case the
@@ -592,14 +753,16 @@ export async function createScheduledMeeting(
       ownerCalendarEmail: organizerLink?.externalEmail ?? input.organizerEmail,
       organizerCalendarLinkId: organizerLink?.id ?? null,
       organizerCalendarId: organizerLink ? (input.organizerCalendarId ?? null) : null,
-      meetingType: input.meetingType ?? null,
-      meetingTypeLabel: input.meetingType === "Other" ? (input.meetingTypeLabel ?? null) : null,
-      projectId: input.meetingType ? (input.projectId ?? null) : null,
+      meetingType: recorded?.meetingType ?? null,
+      meetingTypeLabel: recorded?.meetingType === "Other" ? recorded.meetingTypeLabel : null,
+      projectId: recorded ? givenProjectId : null,
+      notebookId: notebookPlan?.id ?? null,
       attendanceMode,
-      isCoreMeeting: input.isCoreMeeting ?? false,
+      isCoreMeeting: isCoreMeeting,
       recordPrompt,
     },
   });
+  if (notebookPlan) await syncMeetingShares(meeting.id, input.request);
 
   let externalEventId: string | null = null;
   let meetingUrl: string | null = null;
@@ -663,7 +826,9 @@ export async function createScheduledMeeting(
   // participants (+ organizer), never the whole lab.
   let notePageId: string | null = null;
   let whiteboardPageId: string | null = null;
-  if (input.meetingType) {
+  let notebookId: string | null = null;
+  let createdNotebook = false;
+  if (recorded) {
     // Default to a note (and no board) when the caller only set meetingType —
     // matches the pre-whiteboard behaviour for MCP and other callers.
     const wantNote = input.createNote ?? true;
@@ -671,25 +836,34 @@ export async function createScheduledMeeting(
     const common = {
       meetingId: meeting.id,
       authorId: input.organizerId,
-      meetingType: input.meetingType,
-      meetingTypeLabel: input.meetingTypeLabel ?? null,
-      projectId: input.projectId ?? null,
-      isCoreMeeting: input.isCoreMeeting ?? false,
-      noteLocation: input.noteLocation ?? null,
+      meetingType: recorded.meetingType,
+      meetingTypeLabel: recorded.meetingTypeLabel,
+      projectId: givenProjectId,
+      isCoreMeeting: isCoreMeeting,
       startDate,
     };
     if (wantNote) {
-      notePageId = await buildMeetingArtifactPage({
+      const note = await buildMeetingArtifactPage({
         ...common,
         artifact: "note",
         occurrenceStart: startDate ?? meeting.createdAt,
+        notebookId: notebookPlan?.id ?? null,
       });
+      notePageId = note.id;
+      notebookId = note.notebookId;
+      createdNotebook = notebookPlan?.created ?? note.createdNotebook;
+      if (notebookPlan) {
+        await seedNoteFromTemplate(note.id, givenProjectId, recorded.meetingType, notebookPlan.templatePageId);
+      }
     }
-    if (wantWhiteboard)
-      whiteboardPageId = await buildMeetingArtifactPage({ ...common, artifact: "whiteboard" });
+    if (wantWhiteboard) {
+      whiteboardPageId = (
+        await buildMeetingArtifactPage({ ...common, artifact: "whiteboard", fileAt: notebookPlan?.primary })
+      ).id;
+    }
   }
 
-  if (input.meetingType || attendanceMode === "SelfCheckIn" || participantUserIds.length > 0) {
+  if (recorded || attendanceMode === "SelfCheckIn" || participantUserIds.length > 0) {
     await seedMeetingRoster({
       id: meeting.id,
       organizerId: input.organizerId,
@@ -725,6 +899,8 @@ export async function createScheduledMeeting(
     notifiedCount,
     gcalError,
     notePageId,
+    notebookId,
+    createdNotebook,
     whiteboardPageId,
   };
 }
@@ -743,24 +919,42 @@ export type AttachMeetingNoteInput = {
   meetingType?: MeetingType | null;
   meetingTypeLabel?: string | null;
   projectId?: string | null;
-  noteLocation?: CreateScheduledMeetingInput["noteLocation"];
+  /** The notebook this note files into. Omitted = the series' default, else the
+   *  type-keyed notebook. Naming one is the organizer's or Core's call. */
+  notebook?: NotebookChoice | null;
+  request?: Request;
 };
 
 export type AttachMeetingNoteResult =
-  | { ok: true; notePageId: string }
+  | {
+      ok: true;
+      notePageId: string;
+      notebookId: string | null;
+      createdNotebook: boolean;
+      /** The series' default notebook after this call. */
+      seriesNotebookId: string | null;
+    }
   | { ok: false; error: string; status: number };
 
 /**
  * Which template page (if any) should seed a brand-new meeting note:
- * `projectId`'s bound template, else the Lab default for `meetingType`, else
- * none. A bound page that's since been unmarked as a template or archived is
+ * the notebook's own template, else `projectId`'s bound template, else the Lab
+ * default for `meetingType`, else none. A bound page that's since been unmarked as a template or archived is
  * ignored (falls through to the Lab default) rather than erroring — the note
  * just comes back blank, same as an unset binding.
  */
 export async function resolveMeetingNoteTemplate(
   projectId: string | null,
   meetingType: MeetingType,
+  notebookTemplateId: string | null = null,
 ): Promise<{ id: string } | null> {
+  if (notebookTemplateId) {
+    const bound = await prisma.page.findUnique({
+      where: { id: notebookTemplateId },
+      select: { id: true, isTemplate: true, archivedAt: true },
+    });
+    if (bound && bound.isTemplate && bound.archivedAt === null) return { id: bound.id };
+  }
   if (projectId) {
     const project = await prisma.project.findUnique({
       where: { id: projectId },
@@ -778,6 +972,34 @@ export async function resolveMeetingNoteTemplate(
     where: { defaultMeetingNoteFor: meetingType, isTemplate: true, archivedAt: null },
     select: { id: true },
   });
+}
+
+/**
+ * Fill a blank note with a template's body. The hash is of what was actually
+ * written, so a later "still untouched?" check (isUntouchedTemplate) stays
+ * correct even after the template itself is edited.
+ */
+export async function seedPageFromTemplate(notePageId: string, templateId: string): Promise<void> {
+  await copyPageBody(templateId, notePageId);
+  const bodyText = blocksToPlainText(await readDocAsBlocks(pageDocName(notePageId)));
+  await prisma.page.update({
+    where: { id: notePageId },
+    data: {
+      seededFromPageId: templateId,
+      seededTemplateHash: hashTemplateText(normalizeTemplateText(bodyText)),
+    },
+  });
+}
+
+/** Seed a blank note from a bound template, if one resolves (see resolveMeetingNoteTemplate). */
+async function seedNoteFromTemplate(
+  notePageId: string,
+  projectId: string | null,
+  meetingType: MeetingType,
+  notebookTemplateId: string | null,
+): Promise<void> {
+  const template = await resolveMeetingNoteTemplate(projectId, meetingType, notebookTemplateId);
+  if (template) await seedPageFromTemplate(notePageId, template.id);
 }
 
 /**
@@ -811,13 +1033,28 @@ export async function attachMeetingNote(
       meetingType: true,
       meetingTypeLabel: true,
       projectId: true,
+      notebookId: true,
+      notebook: {
+        select: {
+          id: true,
+          title: true,
+          kind: true,
+          archivedAt: true,
+          templatePageId: true,
+          workspaceType: true,
+          workspaceId: true,
+          parentPageId: true,
+        },
+      },
       notePages: {
+        where: { archivedAt: null },
         select: {
           id: true,
           meetingOccurrenceStart: true,
           workspaceType: true,
           workspaceId: true,
           parentPageId: true,
+          parent: { select: { kind: true, parentPageId: true } },
         },
         orderBy: { meetingOccurrenceStart: "desc" },
       },
@@ -829,14 +1066,28 @@ export async function attachMeetingNote(
 
   const occurrence = await resolveMeetingOccurrence(meeting, input.occurrence);
   const existing = noteForOccurrence(meeting.notePages, occurrence.originalStart);
-  if (existing) return { ok: true, notePageId: existing.id };
+  if (existing) {
+    return {
+      ok: true,
+      notePageId: existing.id,
+      notebookId: existing.parentPageId,
+      createdNotebook: false,
+      seriesNotebookId: meeting.notebookId,
+    };
+  }
 
   const core = await isCore(input.actorId);
   const isOrganizer = meeting.organizerId === input.actorId;
   const previous = meeting.notePages[0] ?? null;
   const reuseType = meeting.meetingType != null;
+  const chosen = input.notebook ?? null;
+  // A series default that has since left use (trashed by hand) files nothing.
+  const series =
+    meeting.notebook && meeting.notebook.kind === "Notebook" && meeting.notebook.archivedAt === null
+      ? meeting.notebook
+      : null;
 
-  if (previous) {
+  if ((previous || series) && !chosen) {
     const takesPart =
       isOrganizer ||
       core ||
@@ -848,13 +1099,14 @@ export async function attachMeetingNote(
   } else {
     // Same authority as cancelling: the organizer owns the meeting, Core has
     // broad access. The client only shows the affordance to those two, but the
-    // gate lives here.
+    // gate lives here. Naming a notebook is the organizer's call even when the
+    // meeting already has notes.
     if (!isOrganizer && !core) {
       return { ok: false, error: "Only the organizer or Core can add notes", status: 403 };
     }
   }
   if (!reuseType) {
-    if (!input.meetingType) {
+    if (!input.meetingType && !chosen && !series) {
       return { ok: false, error: "Choose what this meeting is about", status: 400 };
     }
     // Same hard constraint as createScheduledMeeting: a project meeting
@@ -876,13 +1128,54 @@ export async function attachMeetingNote(
     }
   }
 
-  const meetingType = reuseType ? meeting.meetingType! : input.meetingType!;
-  const meetingTypeLabel = reuseType ? meeting.meetingTypeLabel : (input.meetingTypeLabel ?? null);
-  const projectId = reuseType ? meeting.projectId : (input.projectId ?? null);
+  let projectId = reuseType ? meeting.projectId : (input.projectId ?? null);
+  const typeFor = (notebookTitle: string) =>
+    reuseType
+      ? { meetingType: meeting.meetingType!, meetingTypeLabel: meeting.meetingTypeLabel }
+      : typeForNotebookFiling(input, projectId, notebookTitle);
+
+  let plan: ResolvedNotebook | null = null;
+  try {
+    if (chosen) {
+      plan = await resolveNotebookChoice(
+        chosen,
+        input.actorId,
+        (title) => ({
+          authorId: input.actorId,
+          ...typeFor(title),
+          projectId,
+          isCoreMeeting: meeting.isCoreMeeting,
+        }),
+        input.request,
+      );
+    } else if (series) {
+      plan = {
+        id: series.id,
+        title: series.title,
+        created: false,
+        templatePageId: series.templatePageId,
+        primary: series,
+      };
+    }
+  } catch (err) {
+    if (err instanceof NotebookError) return { ok: false, error: err.message, status: err.status };
+    throw err;
+  }
+  if (!reuseType && plan?.space?.kind === "project") projectId = plan.space.projectId;
+
+  const { meetingType, meetingTypeLabel } = typeFor(plan?.title ?? "");
 
   let notePageId: string;
+  let notebookId: string | null;
+  let createdNotebook: boolean;
+  // A trashed note still holds the occurrence's unique key; it gives it up and
+  // comes back from Trash as a plain tab, so the meeting can offer a fresh one.
+  await prisma.page.updateMany({
+    where: { meetingNoteId: meeting.id, meetingOccurrenceStart: occurrence.originalStart, archivedAt: { not: null } },
+    data: { meetingNoteId: null },
+  });
   try {
-    notePageId = await buildMeetingArtifactPage({
+    const built = await buildMeetingArtifactPage({
       meetingId: meeting.id,
       authorId: input.actorId,
       artifact: "note",
@@ -890,64 +1183,73 @@ export async function attachMeetingNote(
       meetingTypeLabel,
       projectId,
       isCoreMeeting: meeting.isCoreMeeting,
-      noteLocation: previous
-        ? {
-            workspaceType: previous.workspaceType === "Project" ? "Project" : "Lab",
-            workspaceId: previous.workspaceId,
-            parentPageId: previous.parentPageId,
-          }
-        : (input.noteLocation ?? null),
       startDate: occurrence.start,
       occurrenceStart: occurrence.originalStart,
+      notebookId: plan?.id ?? null,
     });
+    notePageId = built.id;
+    notebookId = built.notebookId;
+    createdNotebook = plan?.created ?? built.createdNotebook;
   } catch (err) {
     // Two people opening the same occurrence's notes at once: the unique
     // (meetingNoteId, meetingOccurrenceStart) key lets one create it, and the
     // other gets that one.
     const raced = await prisma.page.findFirst({
-      where: { meetingNoteId: meeting.id, meetingOccurrenceStart: occurrence.originalStart },
-      select: { id: true },
+      where: { meetingNoteId: meeting.id, meetingOccurrenceStart: occurrence.originalStart, archivedAt: null },
+      select: { id: true, parentPageId: true },
     });
-    if (raced) return { ok: true, notePageId: raced.id };
+    if (raced) {
+      return {
+        ok: true,
+        notePageId: raced.id,
+        notebookId: raced.parentPageId,
+        createdNotebook: false,
+        seriesNotebookId: meeting.notebookId,
+      };
+    }
     throw err;
   }
 
-  if (!reuseType) {
+  // A notebook named where the series has none becomes the series' default, so
+  // later occurrences file there with no prompt. A different default stays; the
+  // caller offers to change it.
+  const becomesDefault = chosen !== null && plan !== null && series === null;
+  const seriesNotebookId = becomesDefault ? plan!.id : (series?.id ?? null);
+
+  if (!reuseType || becomesDefault) {
     // Record the derived type/project on the meeting so it reads the same as
     // one configured at creation (the note page is linked via its
     // meetingNoteId FK).
     await prisma.scheduledMeeting.update({
       where: { id: meeting.id },
       data: {
-        meetingType,
-        meetingTypeLabel: meetingType === "Other" ? meetingTypeLabel : null,
-        projectId,
+        ...(reuseType
+          ? {}
+          : {
+              meetingType,
+              meetingTypeLabel: meetingType === "Other" ? meetingTypeLabel : null,
+              projectId,
+            }),
+        ...(becomesDefault ? { notebookId: plan!.id } : {}),
       },
     });
   }
+
+  if (notebookId) await syncMeetingShares(meeting.id, input.request);
 
   // Backfill the attendance roster the note's checklist reads. Idempotent — a
   // SelfCheckIn meeting may already have rows, so skip the duplicates.
   await seedMeetingRoster(meeting, occurrence.originalStart);
 
-  // Seed the blank note from a bound template, if one resolves (see
-  // resolveMeetingNoteTemplate). The hash is of what was actually written, so
-  // a later "still untouched?" check (isUntouchedTemplate) stays correct even
-  // after the template itself is edited.
-  const template = await resolveMeetingNoteTemplate(projectId, meetingType);
-  if (template) {
-    await copyPageBody(template.id, notePageId);
-    const bodyText = blocksToPlainText(await readDocAsBlocks(pageDocName(notePageId)));
-    await prisma.page.update({
-      where: { id: notePageId },
-      data: {
-        seededFromPageId: template.id,
-        seededTemplateHash: hashTemplateText(normalizeTemplateText(bodyText)),
-      },
-    });
-  }
+  await seedNoteFromTemplate(notePageId, projectId, meetingType, plan?.templatePageId ?? null);
 
-  return { ok: true, notePageId };
+  return {
+    ok: true,
+    notePageId,
+    notebookId,
+    createdNotebook,
+    seriesNotebookId,
+  };
 }
 
 export type AttachMeetingWhiteboardInput = {
@@ -961,7 +1263,6 @@ export type AttachMeetingWhiteboardInput = {
   meetingType?: MeetingType | null;
   meetingTypeLabel?: string | null;
   projectId?: string | null;
-  noteLocation?: CreateScheduledMeetingInput["noteLocation"];
 };
 
 export type AttachMeetingWhiteboardResult =
@@ -988,13 +1289,21 @@ export async function attachMeetingWhiteboard(
       selectedAt: true,
       createdAt: true,
       status: true,
+      title: true,
       meetingType: true,
       meetingTypeLabel: true,
       projectId: true,
+      notebook: { select: { workspaceType: true, workspaceId: true, parentPageId: true } },
       whiteboardPage: { select: { id: true } },
       // The whiteboard is one per series; it files beside the first note.
       notePages: {
-        select: { id: true, workspaceType: true, workspaceId: true, parentPageId: true },
+        select: {
+          id: true,
+          workspaceType: true,
+          workspaceId: true,
+          parentPageId: true,
+          parent: { select: { kind: true, parentPageId: true } },
+        },
         orderBy: { meetingOccurrenceStart: "asc" },
         take: 1,
       },
@@ -1018,13 +1327,11 @@ export async function attachMeetingWhiteboard(
   // side under the same folder); otherwise take it from the caller the way the
   // add-note flow does, applying the same project constraint + membership gate.
   const useExisting = meeting.meetingType != null;
-  const meetingType = useExisting ? meeting.meetingType : (input.meetingType ?? null);
-  const meetingTypeLabel = useExisting ? meeting.meetingTypeLabel : (input.meetingTypeLabel ?? null);
   const projectId = useExisting ? meeting.projectId : (input.projectId ?? null);
+  const { meetingType, meetingTypeLabel } = useExisting
+    ? { meetingType: meeting.meetingType!, meetingTypeLabel: meeting.meetingTypeLabel }
+    : typeForNotebookFiling(input, projectId, meeting.title);
 
-  if (!meetingType) {
-    return { ok: false, error: "Choose what this meeting is about", status: 400 };
-  }
   if ((meetingType === "Team" || meetingType === "Partner") && !projectId) {
     return { ok: false, error: "A project is required for Team and Partner meetings", status: 400 };
   }
@@ -1041,20 +1348,7 @@ export async function attachMeetingWhiteboard(
     }
   }
 
-  // Co-locate with the note when it lives in the Lab drive (a General meeting
-  // whose note went to a chosen folder). Project/Core assets file into their
-  // fixed folder regardless, so no override is needed there.
-  let noteLocation = useExisting ? null : (input.noteLocation ?? null);
-  const note = meeting.notePages[0];
-  if (note && note.workspaceType === "Lab") {
-    noteLocation = {
-      workspaceType: "Lab",
-      workspaceId: null,
-      parentPageId: note.parentPageId,
-    };
-  }
-
-  const whiteboardPageId = await buildMeetingArtifactPage({
+  const { id: whiteboardPageId } = await buildMeetingArtifactPage({
     meetingId: meeting.id,
     authorId: input.actorId,
     artifact: "whiteboard",
@@ -1062,7 +1356,7 @@ export async function attachMeetingWhiteboard(
     meetingTypeLabel: meetingType === "Other" ? meetingTypeLabel : null,
     projectId: projectId ?? null,
     isCoreMeeting: meeting.isCoreMeeting,
-    noteLocation,
+    fileAt: meeting.notebook,
     startDate: meeting.selectedAt,
   });
 
@@ -1102,14 +1396,19 @@ async function refileMeetingArtifactToProject(input: {
   meetingTypeLabel: string | null;
   authorId: string;
   startDate: Date | null;
-}): Promise<void> {
+}): Promise<string | null> {
   const dateLabel = formatDateShort(input.startDate ?? new Date());
   const noun = input.isBoard ? "whiteboard" : "meeting note";
-  let parentPageId: string | null = null;
+  const receivers = await receiversEnabled();
+  let parentPageId: string | null = receivers
+    ? (await resolveFilingFolder(projectSlot(input.projectId), input.authorId)).folderId
+    : null;
   let title: string;
   if (input.meetingType === "Team" || input.meetingType === "Partner") {
-    const folder = await ensureMeetingNotesFolder(input.projectId, input.meetingType, input.authorId);
-    parentPageId = folder.id;
+    if (!receivers) {
+      const folder = await ensureMeetingNotesFolder(input.projectId, input.meetingType, input.authorId);
+      parentPageId = folder.id;
+    }
     title = `${input.projectName} ${input.meetingType} ${noun} (${dateLabel})`;
   } else {
     // "Other": no default folder for a custom label, so it sits at the project
@@ -1125,7 +1424,7 @@ async function refileMeetingArtifactToProject(input: {
       dest: { workspaceType: "Project", workspaceId: input.projectId, parentPageId },
     });
     await moveIntoNotebook(input.pageId, notebook.id, title);
-    return;
+    return notebook.id;
   }
   await prisma.page.update({
     where: { id: input.pageId },
@@ -1143,6 +1442,7 @@ async function refileMeetingArtifactToProject(input: {
       linkPermission: "View",
     },
   });
+  return null;
 }
 
 export type SetMeetingProjectInput = {
@@ -1180,7 +1480,12 @@ export async function setMeetingProject(
       selectedAt: true,
       createdAt: true,
       meetingType: true,
-      notePages: { select: { id: true, kind: true, meetingOccurrenceStart: true } },
+      notebookId: true,
+      notePages: {
+        where: { archivedAt: null },
+        select: { id: true, kind: true, meetingOccurrenceStart: true },
+        orderBy: { meetingOccurrenceStart: "desc" },
+      },
       whiteboardPage: { select: { id: true, kind: true } },
     },
   });
@@ -1219,8 +1524,9 @@ export async function setMeetingProject(
     ...meeting.notePages.map((p) => ({ ...p, date: p.meetingOccurrenceStart ?? meeting.selectedAt })),
     ...(meeting.whiteboardPage ? [{ ...meeting.whiteboardPage, date: meeting.selectedAt }] : []),
   ];
+  let notebookId: string | null = null;
   for (const page of artifacts) {
-    await refileMeetingArtifactToProject({
+    const filedIn = await refileMeetingArtifactToProject({
       meetingId: meeting.id,
       pageId: page.id,
       isBoard: page.kind === "Whiteboard",
@@ -1231,6 +1537,7 @@ export async function setMeetingProject(
       authorId: input.actorId,
       startDate: page.date,
     });
+    notebookId ??= filedIn;
   }
 
   await prisma.scheduledMeeting.update({
@@ -1239,8 +1546,13 @@ export async function setMeetingProject(
       meetingType: input.meetingType,
       meetingTypeLabel,
       projectId: proj.id,
+      ...(notebookId ? { notebookId } : {}),
     },
   });
+  if (notebookId && meeting.notebookId && meeting.notebookId !== notebookId) {
+    await trashNotebookIfAbandoned(meeting.notebookId);
+  }
+  if (artifacts.length > 0) await syncMeetingShares(meeting.id);
 
   // A meeting that had no type yet had no attendance roster — back it up now
   // (idempotent) so the note's checklist has rows. One that already had a type
@@ -1745,6 +2057,7 @@ export async function updateScheduledMeeting(
       organizerCalendarLinkId: true,
       organizerCalendarId: true,
       meetingType: true,
+      notebookId: true,
       attendanceMode: true,
       recurrenceRule: true,
       scopeType: true,
@@ -1834,6 +2147,16 @@ export async function updateScheduledMeeting(
     if (!occurrenceStart) {
       return { ok: false, error: "occurrenceStart is required for scope=following", status: 400 };
     }
+    let notebook: { existingId: string } | undefined;
+    if (meeting.notebookId) {
+      try {
+        await loadEditableNotebook(meeting.notebookId, meeting.organizerId);
+        notebook = { existingId: meeting.notebookId };
+      } catch (err) {
+        if (!(err instanceof NotebookError)) throw err;
+      }
+    }
+
     const untilDate = new Date(new Date(occurrenceStart).getTime() - 1000);
     const truncatedRule = rruleWithUntil(meeting.recurrenceRule ?? "FREQ=WEEKLY", untilDate);
     if (truncatedRule) {
@@ -1890,10 +2213,23 @@ export async function updateScheduledMeeting(
       description: input.description ?? meeting.description,
       roomIds: input.roomIds ?? meeting.rooms.map((r) => r.id),
       guestEmails: input.guestEmails ?? meeting.guestEmails,
+      notebook,
+      createNote: false,
     });
 
     if (!newMeetingResult.ok) {
       return { ok: false, error: newMeetingResult.error, status: 500 };
+    }
+
+    const cutNote = await prisma.page.updateMany({
+      where: { meetingNoteId: meetingId, meetingOccurrenceStart: new Date(occurrenceStart), archivedAt: null },
+      data: {
+        meetingNoteId: newMeetingResult.meeting.id,
+        meetingOccurrenceStart: input.startTime ? new Date(input.startTime) : new Date(occurrenceStart),
+      },
+    });
+    if (cutNote.count > 0) {
+      await Promise.all([syncMeetingShares(meetingId), syncMeetingShares(newMeetingResult.meeting.id)]);
     }
     return { ok: true, meeting: newMeetingResult.meeting, gcalError: newMeetingResult.gcalError };
   }
@@ -1923,14 +2259,9 @@ export async function updateScheduledMeeting(
     },
   });
 
-  // Reconcile the roster to the new guest list. A meeting stays attendance-tracked
-  // while it has a note, self check-in, or any guests; editing it down to none
-  // drops its roster (and with it the Attendance-tab row), same as create's gate.
-  const tracksAttendance =
-    meeting.meetingType !== null ||
-    meeting.attendanceMode === "SelfCheckIn" ||
-    participantUserIds.length > 0;
-  const desiredIds = tracksAttendance
+  // Reconcile the roster to the new guest list; a meeting that no longer
+  // tracksAttendance drops its roster (and with it the Attendance-tab row).
+  const desiredIds = tracksAttendance({ ...meeting, participantUserIds })
     ? new Set([...participantUserIds, meeting.organizerId])
     : new Set<string>();
   const existingRows = await prisma.meetingAttendance.findMany({
@@ -1963,6 +2294,7 @@ export async function updateScheduledMeeting(
       where: { scheduledMeetingId: meetingId, userId: { in: toRemove } },
     });
   }
+  await syncMeetingShares(meetingId);
 
   // Re-sync the Google event (title, time, guests, recurrence) when one exists.
   // Best-effort — the DALI-side edit already landed; a Google hiccup is surfaced
@@ -2085,7 +2417,7 @@ export type TrackExternalEventInput = {
 };
 
 export type TrackExternalEventResult =
-  | { ok: true; meeting: ScheduledMeeting }
+  | { ok: true; meeting: Pick<ScheduledMeeting, "id"> }
   | { ok: false; error: string; status: number };
 
 /**
@@ -2109,6 +2441,10 @@ export type TrackExternalEventResult =
  * A series binds to its master id, matching how meetingsForExternalEvents
  * resolves an expanded instance, so tracking one occurrence covers the series —
  * one note and one roster for a weekly lab meeting, not one per week.
+ *
+ * Re-tracking an already-tracked event joins the actor to its roster instead of
+ * refusing, because an incomplete roster — e.g. an organizer Google didn't list
+ * as a guest — must not lock that person out of their own meeting.
  */
 export async function trackExternalEventAsMeeting(
   input: TrackExternalEventInput,
@@ -2143,13 +2479,6 @@ export async function trackExternalEventAsMeeting(
   }
 
   const externalEventId = input.recurringEventId || event.id;
-  const existing = await prisma.scheduledMeeting.findFirst({
-    where: { externalEventId, status: { not: "Cancelled" } },
-    select: { id: true },
-  });
-  if (existing) {
-    return { ok: false, error: "This event is already tracked in DALI", status: 409 };
-  }
 
   const startDate = event.startIso
     ? new Date(event.startIso)
@@ -2169,11 +2498,37 @@ export async function trackExternalEventAsMeeting(
       ? Math.round((endDate.getTime() - startDate.getTime()) / 60_000)
       : 60;
 
-  // The roster starts as whoever Google already has on the event, resolved to
-  // DALI members. An event on the general calendar often has no guest list at
+  const existing = await prisma.scheduledMeeting.findFirst({
+    where: { externalEventId, status: { not: "Cancelled" } },
+    select: { id: true, organizerId: true, participantUserIds: true },
+  });
+  if (existing) {
+    if (existing.organizerId === input.actorId || existing.participantUserIds.includes(input.actorId)) {
+      return { ok: true, meeting: { id: existing.id } };
+    }
+    if (event.viewerInvited || labWide) {
+      const updated = await prisma.scheduledMeeting.update({
+        where: { id: existing.id },
+        data: { participantUserIds: { push: input.actorId } },
+      });
+      await ensureOccurrenceRoster(updated, startDate);
+      await syncMeetingShares(updated.id);
+      return { ok: true, meeting: { id: updated.id } };
+    }
+    return { ok: false, error: "This event is already tracked in DALI", status: 409 };
+  }
+
+  // The roster starts as Google's organizer plus guests, resolved to DALI
+  // members. An event on the general calendar often has no guest list at
   // all, and that's fine — the roster is editable on the meeting page, and the
   // actor is always on it.
-  const attendeeEmails = event.attendeeEmails.map((e) => e.toLowerCase());
+  const attendeeEmails = Array.from(
+    new Set(
+      [...event.attendeeEmails, ...(event.organizerEmail ? [event.organizerEmail] : [])].map((e) =>
+        e.toLowerCase(),
+      ),
+    ),
+  );
   const attendees = attendeeEmails.length
     ? await prisma.user.findMany({
         where: {

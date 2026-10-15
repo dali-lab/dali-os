@@ -4,7 +4,6 @@ vi.mock("~/lib/db", () => ({
   prisma: {
     page: { findUnique: vi.fn(), update: vi.fn(), count: vi.fn() },
     projectFile: { count: vi.fn() },
-    form: { count: vi.fn() },
     signingDocument: { count: vi.fn() },
     rubric: { count: vi.fn() },
   },
@@ -15,6 +14,30 @@ vi.mock("~/lib/auth", () => ({
 }));
 vi.mock("~/lib/pageAccess.server", () => ({ getPageAccess: vi.fn() }));
 vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
+vi.mock("~/lib/notebooks.server", () => {
+  class NotebookError extends Error {
+    constructor(
+      message: string,
+      public status: number,
+    ) {
+      super(message);
+    }
+  }
+  return {
+    NotebookError,
+    notebookErrorResponse: (err: unknown) => {
+      if (err instanceof NotebookError) return Response.json({ error: err.message }, { status: err.status });
+      throw err;
+    },
+    trashNotebook: vi.fn(),
+    loadManageableNotebook: vi.fn(),
+  };
+});
+vi.mock("~/lib/page-names.server", async (importActual) => ({
+  ...(await importActual<typeof import("~/lib/page-names.server")>()),
+  findNameConflict: vi.fn(),
+  assertUniqueName: vi.fn(),
+}));
 vi.mock("~/lib/cors", () => ({
   withCors: (_req: Request, res: Response) => res,
   handlePreflight: () => null,
@@ -23,6 +46,8 @@ vi.mock("~/lib/cors", () => ({
 import { prisma } from "~/lib/db";
 import { requireMemberSession, requireProjectEditAccess } from "~/lib/auth";
 import { getPageAccess } from "~/lib/pageAccess.server";
+import { NotebookError, loadManageableNotebook, trashNotebook } from "~/lib/notebooks.server";
+import { findNameConflict } from "~/lib/page-names.server";
 import { action } from "../api.documents.$id";
 
 const m = prisma as any;
@@ -37,16 +62,16 @@ function post(body: unknown) {
     params: { id: "p1" },
   } as any);
 }
-function del() {
+function del(query = "") {
   return action({
-    request: new Request("http://localhost/api/documents/p1", { method: "DELETE" }),
+    request: new Request(`http://localhost/api/documents/p1${query}`, { method: "DELETE" }),
     params: { id: "p1" },
   } as any);
 }
 
 /** A personal note in My Drive, owned by u1. */
 function notePage(over: Record<string, unknown> = {}) {
-  return { id: "p1", workspaceType: "Member", workspaceId: "u1", kind: "FreeForm", ...over };
+  return { id: "p1", workspaceType: "Member", workspaceId: "u1", parentPageId: "f1", kind: "FreeForm", ...over };
 }
 
 beforeEach(() => {
@@ -63,7 +88,6 @@ beforeEach(() => {
   m.page.update.mockResolvedValue({});
   m.page.count.mockResolvedValue(0);
   m.projectFile.count.mockResolvedValue(0);
-  m.form.count.mockResolvedValue(0);
   m.signingDocument.count.mockResolvedValue(0);
   m.rubric.count.mockResolvedValue(0);
 });
@@ -92,10 +116,9 @@ describe("DELETE /api/documents/:id — folder contents guard", () => {
 
   it.each([
     ["files", "projectFile"],
-    ["forms", "form"],
     ["agreements", "signingDocument"],
     ["rubrics", "rubric"],
-    ["sub-pages", "page"],
+    ["sub-pages and forms", "page"],
   ])("refuses a folder that still holds %s", async (_label, model) => {
     m.page.findUnique.mockResolvedValue(labFolder());
     m[model].count.mockResolvedValue(2);
@@ -109,7 +132,7 @@ describe("DELETE /api/documents/:id — folder contents guard", () => {
     m.page.findUnique.mockResolvedValue(labFolder());
     m.page.count.mockResolvedValue(1);
     m.projectFile.count.mockResolvedValue(1);
-    m.form.count.mockResolvedValue(1);
+    m.signingDocument.count.mockResolvedValue(1);
     const res = await del();
     expect((await res.json()).error).toMatch(/still holds 3 items/);
   });
@@ -122,8 +145,79 @@ describe("DELETE /api/documents/:id — folder contents guard", () => {
   });
 });
 
+// The filing toast's Undo trashes the notebook it created, but only if the note
+// it just removed was the last one in it.
+describe("DELETE /api/documents/:id?ifEmpty=1 — notebooks", () => {
+  beforeEach(() => {
+    vi.mocked(getPageAccess).mockResolvedValue({ canEdit: true } as any);
+    m.page.findUnique.mockResolvedValue(labFolder({ kind: "Notebook" }));
+  });
+
+  it("trashes a notebook with no live notes", async () => {
+    const res = await del("?ifEmpty=1");
+    expect(res.status).toBe(200);
+    expect(m.page.count).toHaveBeenCalledWith({ where: { parentPageId: "p1", archivedAt: null } });
+    expect(trashNotebook).toHaveBeenCalledWith("p1", expect.any(String));
+  });
+
+  it("keeps a notebook that still has notes", async () => {
+    m.page.count.mockResolvedValue(1);
+    const res = await del("?ifEmpty=1");
+    expect(res.status).toBe(409);
+    expect(trashNotebook).not.toHaveBeenCalled();
+  });
+
+  it("trashes a notebook with notes when the guard is not asked for", async () => {
+    m.page.count.mockResolvedValue(3);
+    const res = await del();
+    expect(res.status).toBe(200);
+    expect(trashNotebook).toHaveBeenCalledWith("p1", expect.any(String));
+  });
+
+  it("ignores the guard on a page that is not a notebook", async () => {
+    m.page.findUnique.mockResolvedValue(labFolder({ kind: "FreeForm" }));
+    m.page.count.mockResolvedValue(5);
+    const res = await del("?ifEmpty=1");
+    expect(res.status).toBe(200);
+    expect(trashNotebook).not.toHaveBeenCalled();
+  });
+});
+
 // The doc editor's title box posts here whatever workspace the page is in, so a
 // personal note has to be renameable through this route.
+describe("DELETE /api/documents/:id — Drive roots", () => {
+  beforeEach(() => {
+    vi.mocked(getPageAccess).mockResolvedValue({ canEdit: true } as any);
+  });
+
+  it("400s on a root and archives nothing, even an empty one", async () => {
+    m.page.findUnique.mockResolvedValue(labFolder({ folderType: "Root" }));
+    const res = await del();
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe("This is a Drive root and can't be deleted");
+    expect(m.page.update).not.toHaveBeenCalled();
+  });
+
+  it("still archives a folder that only carries a receiver type", async () => {
+    m.page.findUnique.mockResolvedValue(labFolder({ folderType: "Meetings" }));
+    const res = await del();
+    expect(res.status).toBe(200);
+  });
+
+  it("clears the receiver columns in the same update that archives the folder", async () => {
+    m.page.findUnique.mockResolvedValue(labFolder({ folderType: "HiringForms" }));
+    const res = await del();
+    expect(res.status).toBe(200);
+    expect(m.page.update).toHaveBeenCalledTimes(1);
+    expect(m.page.update.mock.calls[0][0].data).toEqual({
+      archivedAt: expect.any(Date),
+      folderType: null,
+      processType: null,
+      processId: null,
+    });
+  });
+});
+
 describe("POST /api/documents/:id — personal notes", () => {
   it("renames the owner's own note", async () => {
     m.page.findUnique.mockResolvedValue(notePage());
@@ -223,5 +317,91 @@ describe("EducationOffering pages", () => {
     vi.mocked(getPageAccess).mockResolvedValue({ canEdit: false } as any);
     expect((await post({ title: "x" })).status).toBe(404);
     expect(m.page.update).not.toHaveBeenCalled();
+  });
+});
+
+describe("DELETE /api/documents/:id — notebooks", () => {
+  const notebook = (over: Record<string, unknown> = {}) => labFolder({ kind: "Notebook", ...over });
+
+  beforeEach(() => {
+    vi.mocked(getPageAccess).mockResolvedValue({ canEdit: true } as any);
+    vi.mocked(trashNotebook).mockReset();
+  });
+
+  it("trashes the notebook with its tabs instead of archiving the container alone", async () => {
+    m.page.findUnique.mockResolvedValue(notebook());
+    const res = await del();
+    expect(res.status).toBe(200);
+    expect(trashNotebook).toHaveBeenCalledWith("p1", "u1");
+    expect(m.page.update).not.toHaveBeenCalled();
+    expect(m.page.count).not.toHaveBeenCalled();
+  });
+
+  it("does the same for a project notebook behind the project gate", async () => {
+    m.page.findUnique.mockResolvedValue(notebook({ workspaceType: "Project", workspaceId: "proj1" }));
+    const res = await del();
+    expect(res.status).toBe(200);
+    expect(requireProjectEditAccess).toHaveBeenCalled();
+    expect(trashNotebook).toHaveBeenCalledWith("p1", "u1");
+  });
+
+  it("maps a library refusal to its status", async () => {
+    m.page.findUnique.mockResolvedValue(notebook());
+    vi.mocked(trashNotebook).mockRejectedValue(new NotebookError("You can't edit this notebook", 403));
+    expect((await del()).status).toBe(403);
+  });
+
+  it("404s a caller who cannot edit the page before trashing anything", async () => {
+    m.page.findUnique.mockResolvedValue(notebook());
+    vi.mocked(getPageAccess).mockResolvedValue({ canEdit: false } as any);
+    expect((await del()).status).toBe(404);
+    expect(trashNotebook).not.toHaveBeenCalled();
+  });
+
+  it("renames a notebook for a manager", async () => {
+    m.page.findUnique.mockResolvedValue(notebook());
+    expect((await post({ title: "Renamed" })).status).toBe(200);
+    expect(loadManageableNotebook).toHaveBeenCalledWith("p1", "u1", expect.any(Request));
+    expect(m.page.update.mock.calls[0][0].data.title).toBe("Renamed");
+    expect(trashNotebook).not.toHaveBeenCalled();
+  });
+
+  it("refuses a rename from an editor who cannot manage the notebook", async () => {
+    m.page.findUnique.mockResolvedValue(notebook());
+    vi.mocked(loadManageableNotebook).mockRejectedValue(new NotebookError("You can't manage this notebook", 403));
+    expect((await post({ title: "Renamed" })).status).toBe(403);
+    expect(m.page.update).not.toHaveBeenCalled();
+  });
+
+  it("does not ask for manage authority when only the icon changes", async () => {
+    m.page.findUnique.mockResolvedValue(notebook());
+    expect((await post({ iconEmoji: "x" })).status).toBe(200);
+    expect(loadManageableNotebook).not.toHaveBeenCalled();
+  });
+});
+
+describe("POST /api/documents/:id — names", () => {
+  it("409s a rename onto a name already used by the same kind in the same folder", async () => {
+    m.page.findUnique.mockResolvedValue(notePage());
+    vi.mocked(findNameConflict).mockResolvedValueOnce("A document named “Retreat notes” already exists here");
+    const res = await post({ title: "Retreat notes" });
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toBe("A document named “Retreat notes” already exists here");
+    expect(m.page.update).not.toHaveBeenCalled();
+    expect(findNameConflict).toHaveBeenCalledWith({
+      workspaceType: "Member",
+      workspaceId: "u1",
+      parentPageId: "f1",
+      kind: "FreeForm",
+      title: "Retreat notes",
+      excludeId: "p1",
+    });
+  });
+
+  it("does not check a change that leaves the title alone", async () => {
+    m.page.findUnique.mockResolvedValue(notePage());
+    const res = await post({ iconEmoji: "x" });
+    expect(res.status).toBe(200);
+    expect(findNameConflict).not.toHaveBeenCalled();
   });
 });

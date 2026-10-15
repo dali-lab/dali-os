@@ -39,6 +39,11 @@ import {
   IMPORT_PAYROLL_CSVS_TOOL,
   runImportPayrollCsvs,
 } from "./payroll-import";
+import { CREATE_MEMBER_TOOL, runCreateMember } from "./create-member";
+import {
+  BACKFILL_PROJECT_ASSIGNMENTS_TOOL,
+  runBackfillProjectAssignments,
+} from "./backfill-project-assignments";
 
 export const ADMIN_TOOLS: McpTool[] = [
   {
@@ -135,5 +140,15 @@ export const ADMIN_TOOLS: McpTool[] = [
   {
     def: LIST_INFRASTRUCTURE_TOOL,
     run: (ctx) => runListInfrastructure(ctx),
+  },
+  {
+    def: CREATE_MEMBER_TOOL,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    run: (ctx, args) => runCreateMember(ctx, args as any),
+  },
+  {
+    def: BACKFILL_PROJECT_ASSIGNMENTS_TOOL,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    run: (ctx, args) => runBackfillProjectAssignments(ctx, args as any),
   },
 ];

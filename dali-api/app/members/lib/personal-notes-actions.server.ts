@@ -19,6 +19,7 @@ import {
   NoteNotFoundError,
   requireNoteOwner,
 } from "./personal-notes.server";
+import { assertUniqueName } from "~/lib/page-names.server";
 import { pageDepth, MAX_PAGE_DEPTH, isAncestorOf } from "~/lib/pages";
 import type { SharePrincipalType } from "~/generated/prisma/client";
 
@@ -58,6 +59,10 @@ export async function createNote(
     await requireOwnedParentFolder(ownerId, parentPageId);
   }
 
+  const title = input.title?.trim() || (input.isFolder ? "Untitled folder" : "Untitled");
+  const kind = input.kind ?? (input.isFolder ? "Folder" : "FreeForm");
+  await assertUniqueName({ workspaceType: "Member", workspaceId: ownerId, parentPageId, kind, title });
+
   const last = await prisma.page.findFirst({
     where: { workspaceType: "Member", workspaceId: ownerId, parentPageId },
     orderBy: { position: "desc" },
@@ -69,8 +74,8 @@ export async function createNote(
       workspaceType: "Member",
       workspaceId: ownerId,
       parentPageId,
-      title: input.title?.trim() || (input.isFolder ? "Untitled folder" : "Untitled"),
-      kind: input.kind ?? (input.isFolder ? "Folder" : "FreeForm"),
+      title,
+      kind,
       position: last ? last.position + 1 : 0,
       createdById: ownerId,
     },
@@ -106,6 +111,20 @@ export async function updateNote(
     data.parentPageId = parentPageId;
   }
   if (Object.keys(data).length === 0) return;
+  if (data.title !== undefined || data.parentPageId !== undefined) {
+    const current = await prisma.page.findUniqueOrThrow({
+      where: { id: pageId },
+      select: { kind: true, title: true, parentPageId: true },
+    });
+    await assertUniqueName({
+      workspaceType: "Member",
+      workspaceId: ownerId,
+      parentPageId: data.parentPageId !== undefined ? (data.parentPageId as string | null) : current.parentPageId,
+      kind: current.kind,
+      title: (data.title as string | undefined) ?? current.title,
+      excludeId: pageId,
+    });
+  }
   data.lastEditedById = ownerId;
   await prisma.page.update({ where: { id: pageId }, data });
 }

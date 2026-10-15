@@ -156,6 +156,9 @@ describe("delete_project_document", () => {
     expect(mockPrisma.page.update.mock.calls[0][0].data).toMatchObject({
       partnerVisible: false,
       publicVisible: false,
+      folderType: null,
+      processType: null,
+      processId: null,
     });
     expect(mockPrisma.page.delete).not.toHaveBeenCalled();
   });

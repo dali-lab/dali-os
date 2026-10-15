@@ -11,8 +11,9 @@ import {
   CaptureUpdateAction,
 } from "@excalidraw/excalidraw";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
-import { Trash2, Maximize2, Minimize2, Workflow, Frame, Wand2, FileText, Users } from "lucide-react";
+import { Trash2, Maximize2, Minimize2, Workflow, Frame, Wand2, FileText, Users, FolderSearch } from "lucide-react";
 import { useDialog } from "~/components/ui/dialog";
+import { revealInDriveHref } from "~/lib/drive-crumbs";
 import { acquireCollabDoc, releaseCollabDoc, nameToHexColor } from "~/components/doc/collab-doc";
 import { whiteboardRoomName } from "~/collab/roomName";
 import { bindExcalidrawToYjs, type WhiteboardBinding } from "./whiteboard-yjs";
@@ -187,6 +188,12 @@ export default function WhiteboardImpl(props: WhiteboardEditorProps) {
             onSelect={() => api?.setActiveTool({ type: "laser" })}
           >
             Laser pointer
+          </MainMenu.Item>
+          <MainMenu.Item
+            icon={<FolderSearch className="h-4 w-4" />}
+            onSelect={() => window.location.assign(revealInDriveHref(pageId))}
+          >
+            Reveal in Drive
           </MainMenu.Item>
           <MainMenu.Separator />
           <MainMenu.DefaultItems.SaveAsImage />

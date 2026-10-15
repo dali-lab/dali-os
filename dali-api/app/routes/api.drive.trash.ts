@@ -12,12 +12,16 @@
 // Restore/purge require the same level of access as deletion (edit access for
 // pages; canViewForms for forms; file owner/core for files).
 
+import { deleteForm, setFormArchived } from "~/forms/lib/form-page.server";
 import type { Route } from "./+types/api.drive.trash";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { canViewForms as checkCanViewForms } from "~/lib/roles";
 import { getPageAccess, getPageAccessBulk } from "~/lib/pageAccess.server";
 import { canEditFile } from "~/lib/fileAccess.server";
+import { DRIVE_PAGE_KINDS } from "~/lib/drive.server";
+import { isRoot, ROOT_DELETE_ERROR } from "~/lib/drive-roots";
+import { canManageFormPlacement, formsUsePageAccess } from "~/forms/lib/form-access.server";
 import { withCors, handlePreflight } from "~/lib/cors";
 
 // How many archived rows of each kind to look at before filtering, and how
@@ -37,7 +41,8 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (!auth.ok) return withCors(request, auth.response);
   const userId = auth.user.sub;
 
-  const userCanViewForms = await checkCanViewForms(userId, request);
+  const formsByPage = await formsUsePageAccess(request);
+  const userCanViewForms = formsByPage ? false : await checkCanViewForms(userId, request);
 
   // Archived pages (docs, folders, whiteboards) — filtered through access
   // checks. Whiteboard belongs here with the rest: the Drive deletes one
@@ -51,7 +56,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   const archivedPages = await prisma.page.findMany({
     where: {
       archivedAt: { not: null },
-      kind: { in: ["FreeForm", "Folder", "Structured", "Whiteboard"] },
+      kind: { in: DRIVE_PAGE_KINDS },
     },
     // The full access shape, not just what the listing renders: the bulk
     // resolver reads these off the row instead of re-fetching each page, and a
@@ -81,10 +86,9 @@ export async function loader({ request }: Route.LoaderArgs) {
   // One batched access resolution instead of N sequential getPageAccess calls.
   // includeArchived: every page here is archived by definition, so the default
   // deny would empty the whole listing.
-  const pageAccess = await getPageAccessBulk(userId, archivedPages, request, {
-    includeArchived: true,
-  });
-  const accessiblePages = archivedPages
+  const listedPages = formsByPage ? archivedPages : archivedPages.filter((p) => p.kind !== "Form");
+  const pageAccess = await getPageAccessBulk(userId, listedPages, request, { includeArchived: true });
+  const accessiblePages = listedPages
     .filter((p) => pageAccess.get(p.id)?.canView)
     .slice(0, PER_TYPE_LIMIT);
 
@@ -116,33 +120,32 @@ export async function loader({ request }: Route.LoaderArgs) {
     .filter((_, i) => fileAccess[i])
     .slice(0, PER_TYPE_LIMIT);
 
-  // Archived forms — canViewForms gate is sufficient (organisation-only placement).
+  // Until the forms-page-access cutover, the canViewForms gate (not page
+  // access) decides who sees archived forms.
   const archivedForms = userCanViewForms
-    ? await prisma.form.findMany({
-        where: { archivedAt: { not: null } },
-        select: { id: true, name: true, archivedAt: true },
-        orderBy: { archivedAt: "desc" },
-        take: PER_TYPE_LIMIT,
-      })
+    ? archivedPages.filter((p) => p.kind === "Form").slice(0, PER_TYPE_LIMIT)
     : [];
 
   const items = [
     ...accessiblePages.map((p) => ({
       id: p.id,
-      type: p.kind === "Folder" ? ("folder" as const) : ("doc" as const),
+      type: p.kind === "Folder" ? ("folder" as const) : p.kind === "Form" ? ("form" as const) : ("doc" as const),
       title: p.title ?? "",
+      parentFolderId: p.parentPageId,
       archivedAt: p.archivedAt!.toISOString(),
     })),
     ...accessibleFiles.map((f) => ({
       id: f.id,
       type: "file" as const,
       title: f.title,
+      parentFolderId: f.folderPageId,
       archivedAt: f.archivedAt!.toISOString(),
     })),
     ...archivedForms.map((f) => ({
       id: f.id,
       type: "form" as const,
-      title: f.name,
+      title: f.title,
+      parentFolderId: null,
       archivedAt: f.archivedAt!.toISOString(),
     })),
   ].sort((a, b) => new Date(b.archivedAt).getTime() - new Date(a.archivedAt).getTime());
@@ -174,8 +177,7 @@ export async function action({ request }: Route.ActionArgs) {
 
   // ── archive-form: soft-delete a form from Drive ────────────────────────────
   if (intent === "archive-form") {
-    const userCanViewForms = await checkCanViewForms(userId, request);
-    if (!userCanViewForms) {
+    if (!(await canManageFormPlacement(userId, id, request))) {
       return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
     }
     const form = await prisma.form.findUnique({ where: { id }, select: { id: true, archivedAt: true } });
@@ -184,7 +186,7 @@ export async function action({ request }: Route.ActionArgs) {
       // Already archived — idempotent.
       return withCors(request, Response.json({ ok: true }));
     }
-    await prisma.form.update({ where: { id }, data: { archivedAt: new Date() } });
+    await setFormArchived(id, new Date());
     return withCors(request, Response.json({ ok: true }));
   }
 
@@ -193,9 +195,8 @@ export async function action({ request }: Route.ActionArgs) {
     if (!type) return withCors(request, Response.json({ error: "Missing type" }, { status: 400 }));
 
     if (type === "form") {
-      const userCanViewForms = await checkCanViewForms(userId, request);
-      if (!userCanViewForms) return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
-      await prisma.form.update({ where: { id }, data: { archivedAt: null } });
+      if (!(await canManageFormPlacement(userId, id, request))) return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
+      await setFormArchived(id, null);
     } else if (type === "file") {
       const file = await prisma.projectFile.findUnique({
         where: { id },
@@ -208,7 +209,16 @@ export async function action({ request }: Route.ActionArgs) {
     } else if (type === "doc" || type === "folder") {
       const access = await getPageAccess(userId, id, request, { includeArchived: true });
       if (!access.canEdit) return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
+      const trashed = await prisma.page.findUnique({ where: { id }, select: { kind: true, archivedAt: true } });
       await prisma.page.update({ where: { id }, data: { archivedAt: null } });
+      // A notebook was archived together with its tabs at one instant; bring
+      // back exactly those, not tabs that were trashed on their own earlier.
+      if (trashed?.kind === "Notebook" && trashed.archivedAt) {
+        await prisma.page.updateMany({
+          where: { parentPageId: id, archivedAt: trashed.archivedAt },
+          data: { archivedAt: null },
+        });
+      }
     } else {
       return withCors(request, Response.json({ error: "Unknown type" }, { status: 400 }));
     }
@@ -220,8 +230,7 @@ export async function action({ request }: Route.ActionArgs) {
     if (!type) return withCors(request, Response.json({ error: "Missing type" }, { status: 400 }));
 
     if (type === "form") {
-      const userCanViewForms = await checkCanViewForms(userId, request);
-      if (!userCanViewForms) return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
+      if (!(await canManageFormPlacement(userId, id, request))) return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
       // Purge respects the same blocker check as the hard-delete path.
       const { formDeletionBlockers } = await import("~/forms/lib/form-usages.server");
       const blockers = await formDeletionBlockers(id);
@@ -234,7 +243,7 @@ export async function action({ request }: Route.ActionArgs) {
           ),
         );
       }
-      await prisma.form.delete({ where: { id } });
+      await deleteForm(id);
     } else if (type === "file") {
       const file = await prisma.projectFile.findUnique({
         where: { id },
@@ -250,15 +259,18 @@ export async function action({ request }: Route.ActionArgs) {
       // could never succeed for a doc or a folder.
       const access = await getPageAccess(userId, id, request, { includeArchived: true });
       if (!access.canEdit) return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
+      const target = await prisma.page.findUnique({ where: { id }, select: { folderType: true } });
+      if (target && isRoot(target)) {
+        return withCors(request, Response.json({ error: ROOT_DELETE_ERROR }, { status: 400 }));
+      }
       // A folder's children carry an onDelete: SetNull parent link, so a hard
       // delete would silently re-home everything inside it to the drive root.
       // Purge the contents first, or move them out.
-      const [childPages, childFiles, childForms] = await Promise.all([
+      const [childPages, childFiles] = await Promise.all([
         prisma.page.count({ where: { parentPageId: id } }),
         prisma.projectFile.count({ where: { folderPageId: id } }),
-        prisma.form.count({ where: { folderPageId: id } }),
       ]);
-      const held = childPages + childFiles + childForms;
+      const held = childPages + childFiles;
       if (held > 0) {
         return withCors(
           request,

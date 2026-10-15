@@ -1,14 +1,22 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/db");
+vi.mock("~/forms/lib/form-page.server", () => ({
+  createForm: vi.fn(),
+  renameForm: vi.fn(),
+  moveForm: vi.fn(),
+  deleteForm: vi.fn(),
+  setFormAudience: vi.fn(),
+  setFormArchived: vi.fn(),
+}));
 
 import { prisma } from "~/lib/db";
 import { runFormsAction } from "~/forms/lib/forms-data";
+import { createForm } from "~/forms/lib/form-page.server";
 
 const mockPrisma = prisma as unknown as {
   form: {
     findUnique: ReturnType<typeof vi.fn>;
-    create: ReturnType<typeof vi.fn>;
   };
 };
 
@@ -27,7 +35,7 @@ const VERSION_QUESTIONS = [
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mockPrisma.form.create.mockResolvedValue({ id: "copy-1" });
+  vi.mocked(createForm).mockResolvedValue({ id: "copy-1" } as never);
 });
 
 describe("runFormsAction duplicate-form", () => {
@@ -46,16 +54,16 @@ describe("runFormsAction duplicate-form", () => {
     );
 
     expect(res).toEqual({ ok: true, formId: "copy-1" });
-    expect(mockPrisma.form.create).toHaveBeenCalledWith({
-      data: {
+    expect(createForm).toHaveBeenCalledWith(
+      {
         name: "Copy of Snack Poll",
         folderPageId: "folder-1",
         createdById: "user-1",
         draftQuestions: DRAFT_QUESTIONS,
         draftIntro: "draft intro",
       },
-      select: { id: true },
-    });
+      { id: true },
+    );
   });
 
   it("falls back to the latest version when there is no draft", async () => {
@@ -73,13 +81,9 @@ describe("runFormsAction duplicate-form", () => {
     );
 
     expect(res).toEqual({ ok: true, formId: "copy-1" });
-    expect(mockPrisma.form.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({
-          draftQuestions: VERSION_QUESTIONS,
-          draftIntro: "version intro",
-        }),
-      }),
+    expect(createForm).toHaveBeenCalledWith(
+      expect.objectContaining({ draftQuestions: VERSION_QUESTIONS, draftIntro: "version intro" }),
+      { id: true },
     );
   });
 
@@ -98,7 +102,7 @@ describe("runFormsAction duplicate-form", () => {
     );
 
     expect(res).toEqual({ ok: true, formId: "copy-1" });
-    const data = mockPrisma.form.create.mock.calls[0][0].data;
+    const data = vi.mocked(createForm).mock.calls[0][0];
     expect(data.draftQuestions).toBeUndefined();
   });
 
@@ -113,7 +117,7 @@ describe("runFormsAction duplicate-form", () => {
 
     await runFormsAction(fd({ intent: "duplicate-form", id: "form-1" }), "user-1");
 
-    const data = mockPrisma.form.create.mock.calls[0][0].data;
+    const data = vi.mocked(createForm).mock.calls[0][0];
     for (const key of [
       "published",
       "publicToken",
@@ -134,6 +138,6 @@ describe("runFormsAction duplicate-form", () => {
       "user-1",
     );
     expect(res).toEqual({ error: "Not found", status: 404 });
-    expect(mockPrisma.form.create).not.toHaveBeenCalled();
+    expect(createForm).not.toHaveBeenCalled();
   });
 });

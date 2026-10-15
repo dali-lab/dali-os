@@ -102,6 +102,103 @@ describe('POST /api/meeting-recordings/:id { action: "enhanced" }', () => {
     expect(res.status).toBe(409);
     expect(prisma.meetingRecording.update).not.toHaveBeenCalled();
   });
+
+  it("stores priorBlocks onto notes when the client sends them", async () => {
+    vi.mocked(prisma.meetingRecording.findUnique).mockResolvedValue({
+      id: "rec1",
+      userId: "u1",
+      documentName: "doc:p1:body",
+      notes: { snapshotAt: "2026-10-10T00:00:00.000Z", plan: { blocks: [], actionItems: [] } },
+    } as never);
+    const priorBlocks = { b1: { id: "b1", type: "paragraph", props: {}, content: [], children: [] } };
+    const res = await run({ action: "enhanced", snapshotAt: "2026-10-10T00:00:00.000Z", priorBlocks });
+    expect(res.status).toBe(200);
+    expect(prisma.meetingRecording.update).toHaveBeenCalledWith({
+      where: { id: "rec1" },
+      data: {
+        enhancedAt: expect.any(Date),
+        enhancedBy: "Ada Lovelace",
+        notes: {
+          snapshotAt: "2026-10-10T00:00:00.000Z",
+          plan: { blocks: [], actionItems: [] },
+          priorBlocks,
+        },
+      },
+    });
+  });
+
+  it("rejects a priorBlocks value that isn't an object map", async () => {
+    const res = await run({
+      action: "enhanced",
+      snapshotAt: "2026-10-10T00:00:00.000Z",
+      priorBlocks: "nope",
+    });
+    expect(res.status).toBe(400);
+    expect(prisma.meetingRecording.update).not.toHaveBeenCalled();
+  });
+
+  it("413s a priorBlocks payload over the size cap", async () => {
+    const priorBlocks = { b1: { text: "x".repeat(600_000) } };
+    const res = await run({ action: "enhanced", snapshotAt: "2026-10-10T00:00:00.000Z", priorBlocks });
+    expect(res.status).toBe(413);
+    expect(prisma.meetingRecording.update).not.toHaveBeenCalled();
+  });
+});
+
+describe('POST /api/meeting-recordings/:id { action: "reviewed" }', () => {
+  it("requires edit access to the note", async () => {
+    vi.mocked(canRecordInto).mockResolvedValue(false);
+    const res = await run({ action: "reviewed" });
+    expect(res.status).toBe(403);
+  });
+
+  it("stamps notes.reviewedAt and returns it", async () => {
+    vi.mocked(prisma.meetingRecording.findUnique).mockResolvedValue({
+      id: "rec1",
+      userId: "u1",
+      documentName: "doc:p1:body",
+      notes: { snapshotAt: "2026-10-10T00:00:00.000Z", plan: { blocks: [], actionItems: [] } },
+    } as never);
+    const res = await run({ action: "reviewed" });
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(typeof json.reviewedAt).toBe("string");
+    expect(prisma.meetingRecording.update).toHaveBeenCalledWith({
+      where: { id: "rec1" },
+      data: {
+        notes: {
+          snapshotAt: "2026-10-10T00:00:00.000Z",
+          plan: { blocks: [], actionItems: [] },
+          reviewedAt: json.reviewedAt,
+        },
+      },
+    });
+  });
+
+  it("works even when the recording has no notes yet", async () => {
+    vi.mocked(prisma.meetingRecording.findUnique).mockResolvedValue({
+      id: "rec1",
+      userId: "u1",
+      documentName: "doc:p1:body",
+      notes: null,
+    } as never);
+    const res = await run({ action: "reviewed" });
+    expect(res.status).toBe(200);
+    expect(prisma.meetingRecording.update).toHaveBeenCalledWith({
+      where: { id: "rec1" },
+      data: { notes: { reviewedAt: expect.any(String) } },
+    });
+  });
+
+  it("any editor (not just the owner) may mark reviewed", async () => {
+    vi.mocked(requireAuth).mockResolvedValue({
+      ok: true,
+      user: { sub: "u2", email: "u2@dali.edu", firstName: "Grace", lastName: "Hopper", type: "member" },
+      sessionId: "s2",
+    } as never);
+    const res = await run({ action: "reviewed" });
+    expect(res.status).toBe(200);
+  });
 });
 
 // POST /api/meeting-recordings/:id { action: "stop" } — the incident fix: a

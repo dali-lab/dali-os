@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   inReviewPipelineFilter,
+  submittedDomainApplicationFilter,
   isWithdrawn,
   isInReviewPipeline,
 } from "~/hiring/lib/application-pipeline-filter";
@@ -13,6 +14,12 @@ describe("inReviewPipelineFilter", () => {
       statusUpdates: { some: { newStatus: "Submitted" } },
       NOT: { statusUpdates: { some: { newStatus: "Withdrawn" } } },
     });
+  });
+});
+
+describe("submittedDomainApplicationFilter", () => {
+  it("requires the DomainApplication's own submittedAt to be set", () => {
+    expect(submittedDomainApplicationFilter).toEqual({ submittedAt: { not: null } });
   });
 });
 

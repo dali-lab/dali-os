@@ -145,6 +145,19 @@ describe("POST /api/ai/meeting-notes/enhance", () => {
     expect(res.status).toBe(400);
     expect(generateShortText).not.toHaveBeenCalled();
   });
+
+  it("409s when the client reports marks still pending review", async () => {
+    const res = await run({ ...BODY, hasMarks: true });
+    expect(res.status).toBe(409);
+    const json = await res.json();
+    expect(json.error).toBe("Keep or revert the current changes first");
+    expect(generateShortText).not.toHaveBeenCalled();
+  });
+
+  it("proceeds normally when hasMarks is false or omitted", async () => {
+    expect((await run({ ...BODY, hasMarks: false })).status).toBe(200);
+    expect((await run(BODY)).status).toBe(200);
+  });
 });
 
 // A re-run (Enhance again) stores a fresh plan with no taskIds — Create tasks

@@ -14,7 +14,7 @@ vi.mock("~/lib/roles", async (importOriginal) => ({
 import { prisma } from "~/lib/db";
 import { requireAuth, isNonMember } from "~/lib/auth";
 import { isCore, isProjectMember } from "~/lib/roles";
-import { action } from "~/routes/attendance";
+import { action, loader } from "~/routes/attendance";
 
 const mockPrisma = prisma as unknown as Record<
   string,
@@ -140,5 +140,56 @@ describe("POST /attendance — set-absence-note", () => {
   it("rejects an unknown intent", async () => {
     const res = await post({ intent: "delete-everything", meetingId: "m", userId: "u" });
     expect(res.status).toBe(400);
+  });
+});
+
+describe("GET /attendance - scope label", () => {
+  const row = (id: string, over: Record<string, unknown> = {}) => ({
+    id,
+    title: id,
+    selectedAt: new Date("2026-10-01T15:00:00Z"),
+    durationMinutes: 60,
+    meetingType: "Other",
+    meetingTypeLabel: "Sync",
+    isCoreMeeting: false,
+    notebookId: null,
+    organizerId: "viewer-1",
+    project: null,
+    organizer: { firstName: "A", lastName: "B", daliEmail: null },
+    exceptions: [],
+    attendance: [
+      {
+        occurrenceStart: new Date("2026-10-01T15:00:00Z"),
+        present: false,
+        markedAt: null,
+        absenceNote: null,
+        userId: "viewer-1",
+        user: { id: "viewer-1", firstName: "A", lastName: "B", daliEmail: null },
+      },
+    ],
+    ...over,
+  });
+
+  it("labels a meeting Core by its isCoreMeeting column, a project meeting by its project, the rest General", async () => {
+    mockPrisma.scheduledMeeting.findMany.mockResolvedValue([
+      row("flagged", { isCoreMeeting: true, notebookId: "nb1" }),
+      row("unflagged-with-notebook", { notebookId: "nb2" }),
+      row("project", { project: { id: "p1", name: "Atlas" }, isCoreMeeting: true, notebookId: "nb3" }),
+      row("plain"),
+    ]);
+    mockPrisma.projectAssignment.findMany.mockResolvedValue([]);
+
+    const { events } = (await loader({
+      request: new Request("http://localhost/attendance"),
+      params: {},
+      context: {},
+    } as never)) as { events: Array<{ meetingId: string; scope: string }> };
+
+    expect(Object.fromEntries(events.map((e) => [e.meetingId, e.scope]))).toEqual({
+      flagged: "Core",
+      "unflagged-with-notebook": "General",
+      project: "Atlas",
+      plain: "General",
+    });
   });
 });

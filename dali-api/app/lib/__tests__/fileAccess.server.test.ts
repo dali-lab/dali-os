@@ -10,11 +10,10 @@ vi.mock("~/lib/roles", () => ({
 
 vi.mock("~/lib/pageAccess.server", () => ({
   getPageAccess: vi.fn(),
-  isUnderGoverningScope: vi.fn().mockResolvedValue(false),
 }));
 
 import { isCore, isProjectMember, isLabMember } from "~/lib/roles";
-import { getPageAccess, isUnderGoverningScope } from "~/lib/pageAccess.server";
+import { getPageAccess } from "~/lib/pageAccess.server";
 import { canViewFile, canEditFile } from "../fileAccess.server";
 
 const denied = { canView: false, canEdit: false, canComment: false };
@@ -26,7 +25,6 @@ beforeEach(() => {
   vi.mocked(isCore).mockResolvedValue(false);
   vi.mocked(isProjectMember).mockResolvedValue(false);
   vi.mocked(isLabMember).mockResolvedValue(false);
-  vi.mocked(isUnderGoverningScope).mockResolvedValue(false);
 });
 
 describe("canViewFile", () => {
@@ -36,8 +34,7 @@ describe("canViewFile", () => {
     expect(await canViewFile("u2", file)).toBe(false);
   });
 
-  it("scoped-folder (Core) file: follows the folder's view access", async () => {
-    vi.mocked(isUnderGoverningScope).mockResolvedValue(true);
+  it("folder file: follows the folder's view access", async () => {
     const file = { workspaceType: "Lab", workspaceId: null, folderPageId: "core-root" };
     vi.mocked(getPageAccess).mockResolvedValue(viewOnly);
     expect(await canViewFile("core-user", file)).toBe(true);
@@ -45,10 +42,48 @@ describe("canViewFile", () => {
     expect(await canViewFile("lab-user", file)).toBe(false);
   });
 
-  it("unscoped lab/project file: open (no folder scope check)", async () => {
-    const labFile = { workspaceType: "Lab", workspaceId: null, folderPageId: null };
-    expect(await canViewFile("anyone", labFile)).toBe(true);
+  it("file in an unscoped lab folder the viewer can view: viewable", async () => {
+    const file = { workspaceType: "Lab", workspaceId: null, folderPageId: "plain-folder" };
+    vi.mocked(getPageAccess).mockResolvedValue(viewOnly);
+    expect(await canViewFile("labber", file)).toBe(true);
+    expect(getPageAccess).toHaveBeenCalledWith("labber", "plain-folder", undefined);
+  });
+
+  it("file in a Restricted lab folder the viewer cannot view: not viewable", async () => {
+    const file = { workspaceType: "Lab", workspaceId: null, folderPageId: "restricted-folder" };
+    vi.mocked(isLabMember).mockResolvedValue(true);
+    vi.mocked(getPageAccess).mockResolvedValue(denied);
+    expect(await canViewFile("labber", file)).toBe(false);
+  });
+
+  it("file in a project folder: viewable by a lab member via the folder", async () => {
+    const file = { projectId: "p1", workspaceType: null, workspaceId: null, folderPageId: "proj-folder" };
+    vi.mocked(getPageAccess).mockResolvedValue(viewOnly);
+    expect(await canViewFile("labber", file)).toBe(true);
+  });
+
+  it("loose lab-root file: viewable by a lab member, not by a non-member", async () => {
+    const file = { workspaceType: "Lab", workspaceId: null, folderPageId: null };
+    expect(await canViewFile("outsider", file)).toBe(false);
+    vi.mocked(isLabMember).mockResolvedValue(true);
+    expect(await canViewFile("labber", file)).toBe(true);
     expect(getPageAccess).not.toHaveBeenCalled();
+  });
+
+  it("loose project file: viewable by a lab member, not by a non-member", async () => {
+    const file = { projectId: "p1", workspaceType: null, workspaceId: null, folderPageId: null };
+    expect(await canViewFile("outsider", file)).toBe(false);
+    vi.mocked(isLabMember).mockResolvedValue(true);
+    expect(await canViewFile("labber", file)).toBe(true);
+  });
+
+  it("forwards the request so role checks stay memoised per navigation", async () => {
+    const request = new Request("http://localhost/");
+    vi.mocked(getPageAccess).mockResolvedValue(viewOnly);
+    await canViewFile("u", { folderPageId: "f" }, request);
+    expect(getPageAccess).toHaveBeenCalledWith("u", "f", request);
+    await canViewFile("u", { workspaceType: "Lab", folderPageId: null }, request);
+    expect(isLabMember).toHaveBeenCalledWith("u", request);
   });
 });
 
@@ -59,8 +94,7 @@ describe("canEditFile", () => {
     expect(await canEditFile("u2", file)).toBe(false);
   });
 
-  it("scoped-folder file: follows the folder's edit access", async () => {
-    vi.mocked(isUnderGoverningScope).mockResolvedValue(true);
+  it("folder file: follows the folder's edit access", async () => {
     const file = { workspaceType: "Lab", workspaceId: null, folderPageId: "core-root" };
     vi.mocked(getPageAccess).mockResolvedValue(full);
     expect(await canEditFile("core-user", file)).toBe(true);
@@ -80,5 +114,27 @@ describe("canEditFile", () => {
     expect(await canEditFile("outsider", file)).toBe(false);
     vi.mocked(isLabMember).mockResolvedValue(true);
     expect(await canEditFile("labber", file)).toBe(true);
+  });
+
+  it("file in a project folder: editable by a project member or Core, not by a lab member", async () => {
+    const file = { projectId: "p1", workspaceType: null, workspaceId: null, folderPageId: "proj-folder" };
+    vi.mocked(getPageAccess).mockResolvedValue(viewOnly);
+    expect(await canEditFile("labber", file)).toBe(false);
+    vi.mocked(getPageAccess).mockResolvedValue(full);
+    expect(await canEditFile("member", file)).toBe(true);
+    expect(await canEditFile("core", file)).toBe(true);
+  });
+
+  it("loose project file: editable by Core or a project member only", async () => {
+    const file = { projectId: "p1", workspaceType: null, workspaceId: null, folderPageId: null };
+    vi.mocked(isLabMember).mockResolvedValue(true);
+    expect(await canEditFile("labber", file)).toBe(false);
+    vi.mocked(isCore).mockResolvedValue(true);
+    expect(await canEditFile("core", file)).toBe(true);
+  });
+
+  it("file with no folder, project or workspace: not editable", async () => {
+    vi.mocked(isLabMember).mockResolvedValue(true);
+    expect(await canEditFile("labber", { folderPageId: null })).toBe(false);
   });
 });

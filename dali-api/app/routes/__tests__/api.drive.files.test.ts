@@ -18,6 +18,11 @@ vi.mock("~/lib/pageAccess.server", () => ({
 vi.mock("~/lib/audit", () => ({
   logAuditEvent: vi.fn(),
 }));
+vi.mock("~/lib/page-names.server", async (importActual) => ({
+  ...(await importActual<typeof import("~/lib/page-names.server")>()),
+  findNameConflict: vi.fn(),
+  assertUniqueName: vi.fn(),
+}));
 vi.mock("~/education/lib/access.server", () => ({ isOfferingManager: vi.fn() }));
 
 import { prisma } from "~/lib/db";
@@ -25,6 +30,7 @@ import { requireAuth } from "~/lib/auth";
 import { isCore, isLabMember, isProjectMember } from "~/lib/roles";
 import { getPageAccess } from "~/lib/pageAccess.server";
 import { isOfferingManager } from "~/education/lib/access.server";
+import { assertUniqueName, PageNameConflictError } from "~/lib/page-names.server";
 import { action } from "~/routes/api.drive.files";
 
 const mockPrisma = prisma as unknown as {
@@ -254,5 +260,32 @@ describe("POST /api/drive/files — Project scope folder check", () => {
     const res = (await action({ request: makeRequest(VALID_PROJECT_BODY) })) as Response;
 
     expect(res.status).toBe(201);
+  });
+});
+
+describe("POST /api/drive/files — names", () => {
+  const MEMBER_BODY = { ...VALID_LAB_BODY, scope: { kind: "Member" }, folderPageId: "f1" };
+
+  it.each([
+    ["Lab", VALID_LAB_BODY, { workspaceType: "Lab", workspaceId: null, parentPageId: null }],
+    ["Member", MEMBER_BODY, { workspaceType: "Member", workspaceId: "u1", parentPageId: "f1" }],
+    ["EducationOffering", VALID_OFFERING_BODY, { workspaceType: "EducationOffering", workspaceId: "off-1", parentPageId: null }],
+    ["Project", VALID_PROJECT_BODY, { workspaceType: "Project", workspaceId: "proj-1", parentPageId: null }],
+  ])("checks the file name against the %s folder it lands in", async (_name, body, place) => {
+    vi.mocked(isOfferingManager).mockResolvedValue(true);
+    vi.mocked(isProjectMember).mockResolvedValue(true);
+    const res = await action({ request: makeRequest(body) } as any);
+    expect(res.status).toBe(201);
+    expect(assertUniqueName).toHaveBeenCalledWith({ ...place, kind: "File", title: body.title });
+  });
+
+  it("409s a same-named file and registers nothing", async () => {
+    vi.mocked(assertUniqueName).mockRejectedValueOnce(
+      new PageNameConflictError("A file named “Logo” already exists here"),
+    );
+    const res = await action({ request: makeRequest(VALID_LAB_BODY) } as any);
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: "A file named “Logo” already exists here" });
+    expect(mockPrisma.$transaction).not.toHaveBeenCalled();
   });
 });

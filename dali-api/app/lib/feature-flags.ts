@@ -50,6 +50,26 @@ export type FeatureFlagDef = {
 
 export const FEATURE_FLAGS = [
   {
+    key: "landing-leaderboard",
+    label: "Home landing high scores",
+    description:
+      "Keeps a high-score board for the tetris game on the week 5 (\"Build\") home landing scene: one personal best per member, listed by name, shown on the attract screen and the game-over card. Off, the game plays exactly as before and nothing is recorded. Ships on — the kill switch exists because the scores are the player's own word for them.",
+    defaultEnabled: true,
+    defaultEveryone: true,
+  },
+  {
+    key: "email-layout",
+    label: "Standard email layout",
+    description:
+      "Wraps outbound email in one branded layout instead of the four hand-rolled styles it uses today: a real HTML document with a light/dark-aware single-column 600px body, one greeting, one button style, and one footer. Also gives every email a plain-text alternative, which most currently ship without. Content is unchanged — only the frame around it. Ships off.",
+  },
+  {
+    key: "optimal-times",
+    label: "Find best meeting times",
+    description:
+      "Suggests the best meeting times in the scheduler. Once people are added, the top 3 slots where the most participants (with a linked calendar) are free show as numbered dotted outlines on the availability grid, with a matching button for each above Starts / Ends that fills in the time. Ships off.",
+  },
+  {
     key: "infra-dashboard",
     label: "Infrastructure dashboard",
     description:
@@ -102,6 +122,24 @@ export const FEATURE_FLAGS = [
     label: "Application events",
     description:
       "Help hours, socials and info sessions on a hiring cycle. Core creates events on the cycle page, emails everyone who started an application, and takes attendance by QR self check-in or by hand. Attendance shows on application reviews as an engagement signal. Ships off.",
+  },
+  {
+    key: "drive-receivers",
+    label: "Drive receiver folders",
+    description:
+      "Files everything the app creates on its own (hiring forms, application templates, agreements, education templates, certificate backgrounds, meeting notes) into a folder Core has marked to receive it, or at the top of the matching Drive space when none is marked, instead of into the auto-made subfolders used today. Turns off the automatic meeting folders on projects. Ships off.",
+  },
+  {
+    key: "drive-home",
+    label: "Drive Home",
+    description:
+      "Shows your upcoming meetings and recently opened documents above the space chooser at the Drive root. Ships off.",
+  },
+  {
+    key: "forms-page-access",
+    label: "Forms use page access",
+    description:
+      "Who can see, build, and fill a form comes from its Drive page (folder scope, named shares, general access) instead of the Core/Instructor role gate and the form's own audience setting. Share a form from the same dialog as a document. A cutover switch: only 'everyone' counts, role or user targeting is ignored. Ships off.",
   },
 ] as const satisfies readonly FeatureFlagDef[];
 

@@ -16,6 +16,7 @@ import { prisma } from "~/lib/db";
 import { isCore } from "~/lib/roles";
 import { canViewMentorship } from "~/mentorship/lib/visibility";
 import { startOfWeekUTC } from "~/mentorship/lib/week";
+import { archiveMentorNotePage, ensureMentorNotePage } from "~/mentorship/lib/pair-notebook.server";
 import type { McpCtx, McpTool } from "../../registry";
 import {
   McpForbiddenError,
@@ -137,15 +138,26 @@ export async function runManageMentorNote(
         weekOf,
         contentJson: (template?.contentJson ?? {}) as object,
       },
-      select: { id: true },
+      select: {
+        id: true,
+        mentorId: true,
+        menteeId: true,
+        projectId: true,
+        termId: true,
+        domainId: true,
+        weekOf: true,
+        pageId: true,
+        contentJson: true,
+      },
     });
+    await ensureMentorNotePage(created, callerId);
     return { id: created.id, created: true };
   }
 
   // ── set_vibe / delete — load and authorize ─────────────────────────────────
   const note = await prisma.mentorNote.findUnique({
     where: { id: input.id! },
-    select: { id: true, mentorId: true },
+    select: { id: true, mentorId: true, pageId: true },
   });
   if (!note) throw new McpNotFoundError(`Mentor note ${input.id} not found`);
 
@@ -168,6 +180,7 @@ export async function runManageMentorNote(
 
   // ── delete ─────────────────────────────────────────────────────────────────
   await prisma.mentorNote.delete({ where: { id: note.id } });
+  await archiveMentorNotePage(note.pageId);
   return { ok: true };
 }
 

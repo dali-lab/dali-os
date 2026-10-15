@@ -8,6 +8,7 @@ import {
 import { interpretIntentForm } from "../app/projects/lib/intent-form-interpreter.js";
 import { replaceIntentSet } from "../app/projects/lib/intent-validation.js";
 import { syncDefaultGroups } from "../app/lib/groups.js";
+import { ensureAllRoots } from "../app/lib/drive-roots.server.js";
 import { parseChartString } from "../app/lib/chart-string.js";
 import { seedEducationDemo } from "./seeds/education-demo.js";
 import { seedResourcesDemo } from "./seeds/resources-demo.js";
@@ -307,9 +308,19 @@ async function main() {
       where: { id: "form-challenge-design" },
       update: {},
       create: {
-        id: "form-challenge-design",
         name: "Design Challenge",
-        createdById: admin.id,
+        createdBy: { connect: { id: admin.id } },
+        page: {
+          create: {
+            id: "form-challenge-design",
+            workspaceType: "Lab" as const,
+            title: "Design Challenge",
+            kind: "Form" as const,
+            createdById: admin.id,
+            linkAccess: "LabMembers" as const,
+            linkPermission: "View" as const,
+          },
+        },
         versions: {
           create: {
             id: "fv-design-v1",
@@ -325,9 +336,19 @@ async function main() {
       where: { id: "form-challenge-eng" },
       update: {},
       create: {
-        id: "form-challenge-eng",
         name: "Engineering Challenge",
-        createdById: admin.id,
+        createdBy: { connect: { id: admin.id } },
+        page: {
+          create: {
+            id: "form-challenge-eng",
+            workspaceType: "Lab" as const,
+            title: "Engineering Challenge",
+            kind: "Form" as const,
+            createdById: admin.id,
+            linkAccess: "LabMembers" as const,
+            linkPermission: "View" as const,
+          },
+        },
         versions: {
           create: {
             id: "fv-eng-v1",
@@ -343,9 +364,19 @@ async function main() {
       where: { id: "form-challenge-eng-v2" },
       update: {},
       create: {
-        id: "form-challenge-eng-v2",
         name: "Engineering Challenge v2",
-        createdById: admin.id,
+        createdBy: { connect: { id: admin.id } },
+        page: {
+          create: {
+            id: "form-challenge-eng-v2",
+            workspaceType: "Lab" as const,
+            title: "Engineering Challenge v2",
+            kind: "Form" as const,
+            createdById: admin.id,
+            linkAccess: "LabMembers" as const,
+            linkPermission: "View" as const,
+          },
+        },
         versions: {
           create: {
             id: "fv-eng-v2",
@@ -361,9 +392,19 @@ async function main() {
       where: { id: "form-challenge-pm" },
       update: {},
       create: {
-        id: "form-challenge-pm",
         name: "Product Challenge",
-        createdById: admin.id,
+        createdBy: { connect: { id: admin.id } },
+        page: {
+          create: {
+            id: "form-challenge-pm",
+            workspaceType: "Lab" as const,
+            title: "Product Challenge",
+            kind: "Form" as const,
+            createdById: admin.id,
+            linkAccess: "LabMembers" as const,
+            linkPermission: "View" as const,
+          },
+        },
         versions: {
           create: {
             id: "fv-pm-v1",
@@ -528,9 +569,19 @@ async function main() {
     where: { id: "form-general-application" },
     update: {},
     create: {
-      id: "form-general-application",
       name: "General Application Form",
-      createdById: admin.id,
+      createdBy: { connect: { id: admin.id } },
+      page: {
+        create: {
+          id: "form-general-application",
+          workspaceType: "Lab" as const,
+          title: "General Application Form",
+          kind: "Form" as const,
+          createdById: admin.id,
+          linkAccess: "LabMembers" as const,
+          linkPermission: "View" as const,
+        },
+      },
       versions: {
         create: {
           id: "fv-general-application-v1",
@@ -661,11 +712,13 @@ async function main() {
       startTermIds: [seedTerm.id, ...upcomingTerms.map((t) => t.id)],
       generalRubricVersionId: "rv-general-v1",
       applicationFormId: generalApplicationForm.id,
+      // Every domain is ready: an Open cycle only reaches Open once they all
+      // are, and applicants see ready domains only.
       domains: {
         create: [
-          { domainId: designDomain.id, rubricVersionId: designRubricVersion.id },
-          { domainId: engDomain.id, rubricVersionId: engRubricVersion.id },
-          { domainId: pmDomain.id, rubricVersionId: pmRubricVersion.id },
+          { domainId: designDomain.id, rubricVersionId: designRubricVersion.id, isReady: true },
+          { domainId: engDomain.id, rubricVersionId: engRubricVersion.id, isReady: true },
+          { domainId: pmDomain.id, rubricVersionId: pmRubricVersion.id, isReady: true },
         ],
       },
       domainChallengeForms: {
@@ -1504,9 +1557,9 @@ async function main() {
       applicationFormId: generalApplicationForm.id,
       domains: {
         create: [
-          { domainId: designDomain.id },
-          { domainId: engDomain.id },
-          { domainId: pmDomain.id },
+          { domainId: designDomain.id, isReady: true },
+          { domainId: engDomain.id, isReady: true },
+          { domainId: pmDomain.id, isReady: true },
         ],
       },
       domainChallengeForms: {
@@ -3209,9 +3262,19 @@ async function main() {
     where: { id: "form-partner-application" },
     update: { published: true },
     create: {
-      id: "form-partner-application",
       name: "Partner application questions",
-      createdById: admin.id,
+      createdBy: { connect: { id: admin.id } },
+      page: {
+        create: {
+          id: "form-partner-application",
+          workspaceType: "Lab" as const,
+          title: "Partner application questions",
+          kind: "Form" as const,
+          createdById: admin.id,
+          linkAccess: "LabMembers" as const,
+          linkPermission: "View" as const,
+        },
+      },
       published: true,
       publicToken: "seed-partner-application-form",
     },
@@ -3694,9 +3757,19 @@ async function main() {
         where: { id: "form-project-bids-26s" },
         update: { published: true },
         create: {
-          id: "form-project-bids-26s",
           name: "26S Project Bids",
-          createdById: admin.id,
+          createdBy: { connect: { id: admin.id } },
+          page: {
+            create: {
+              id: "form-project-bids-26s",
+              workspaceType: "Lab" as const,
+              title: "26S Project Bids",
+              kind: "Form" as const,
+              createdById: admin.id,
+              linkAccess: "LabMembers" as const,
+              linkPermission: "View" as const,
+            },
+          },
           published: true,
           publicToken: "seed-project-bids-26s",
         },
@@ -3828,9 +3901,19 @@ async function main() {
         where: { id: "form-intent-to-work-26s" },
         update: { published: true },
         create: {
-          id: "form-intent-to-work-26s",
           name: "26S Intent to Work",
-          createdById: admin.id,
+          createdBy: { connect: { id: admin.id } },
+          page: {
+            create: {
+              id: "form-intent-to-work-26s",
+              workspaceType: "Lab" as const,
+              title: "26S Intent to Work",
+              kind: "Form" as const,
+              createdById: admin.id,
+              linkAccess: "LabMembers" as const,
+              linkPermission: "View" as const,
+            },
+          },
           published: true,
           publicToken: "seed-intent-to-work-26s",
         },
@@ -4708,7 +4791,7 @@ async function main() {
       });
       await prisma.page.create({
         data: {
-          workspaceType: "Lab",
+          workspaceType: "Lab" as const,
           title: "Lab Handbook",
           kind: "FreeForm",
           contentDocId: "page:lab-handbook",
@@ -4839,6 +4922,8 @@ async function main() {
   // Default system-managed user groups: one per Term/Project/Domain + Core.
   // Idempotent; safe to re-run.
   await syncDefaultGroups();
+
+  await ensureAllRoots(admin.id);
 
   // Re-run now that the Core group exists (and thus the Core drive can be
   // provisioned): converges the education templates into the managed

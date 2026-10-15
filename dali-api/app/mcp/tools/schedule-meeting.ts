@@ -1,11 +1,12 @@
 // MCP `schedule_meeting` — create a ScheduledMeeting on behalf of the
 // authenticated user. Supports Group scope, meetingType, project meetings,
-// Core meetings, note location, and SelfCheckIn attendance. Mirrors the web
+// Core meetings, a note notebook, and SelfCheckIn attendance. Mirrors the web
 // api.scheduled-meetings.ts POST. Requires the `mcp:write` scope.
 
 import { createScheduledMeeting, type ScheduledMeetingScope } from "~/lib/scheduled-meeting";
 import { isCore, canViewForms } from "~/lib/roles";
 import { isCoreGroup } from "~/lib/groups";
+import { notebookChoiceSchema } from "~/lib/notebook-choice";
 
 export const SCHEDULE_MEETING_TOOL = {
   name: "schedule_meeting",
@@ -86,16 +87,15 @@ export const SCHEDULE_MEETING_TOOL = {
         minLength: 1,
         description: "Project.id — required for 'Team' and 'Partner' meeting types.",
       },
-      noteLocation: {
+      notebook: {
         type: "object",
         description:
-          "Where to file the meeting note for 'Other' meetings. Defaults to Lab root when omitted.",
+          "The notebook the meeting's note files into: { existingId } for a notebook you can edit, or { title, templatePageId? } to create one at the meeting's space. Omit for the default.",
         properties: {
-          workspaceType: { type: "string", enum: ["Lab", "Project"] },
-          workspaceId: { type: "string", nullable: true },
-          parentPageId: { type: "string", nullable: true },
+          existingId: { type: "string", minLength: 1 },
+          title: { type: "string", minLength: 1, maxLength: 200 },
+          templatePageId: { type: "string", minLength: 1, nullable: true },
         },
-        required: ["workspaceType", "workspaceId", "parentPageId"],
         additionalProperties: false,
       },
       attendanceMode: {
@@ -107,7 +107,7 @@ export const SCHEDULE_MEETING_TOOL = {
       isCoreMeeting: {
         type: "boolean",
         description:
-          "Mark as a Core meeting (Core-only). Only takes effect when the caller is Core. Defaults to false.",
+          "Legacy. Core is decided by where the meeting's notebook is filed; this only files a project-less note in Core's Meetings folder. Only takes effect when the caller is Core. Defaults to false.",
       },
       addMeet: {
         type: "boolean",
@@ -134,11 +134,7 @@ type Input = {
   meetingType?: "Team" | "Partner" | "Other";
   meetingTypeLabel?: string;
   projectId?: string;
-  noteLocation?: {
-    workspaceType: "Lab" | "Project";
-    workspaceId: string | null;
-    parentPageId: string | null;
-  };
+  notebook?: { existingId: string } | { title: string; templatePageId?: string | null };
   attendanceMode?: "Roster" | "SelfCheckIn";
   isCoreMeeting?: boolean;
   addMeet?: boolean;
@@ -176,6 +172,10 @@ export async function runScheduleMeeting(
   }
   if (input.meetingType === "Other" && input.projectId) {
     throw new ScheduleMeetingError("General meetings cannot be attached to a project");
+  }
+  const notebook = input.notebook === undefined ? undefined : notebookChoiceSchema.safeParse(input.notebook);
+  if (notebook && !notebook.success) {
+    throw new ScheduleMeetingError("notebook must be { existingId } or { title, templatePageId? }");
   }
 
   // SelfCheckIn requires Core / Instructor (mirrors canViewForms)
@@ -215,7 +215,7 @@ export async function runScheduleMeeting(
     meetingType: input.meetingType,
     meetingTypeLabel: input.meetingTypeLabel,
     projectId: input.projectId,
-    noteLocation: input.noteLocation,
+    notebook: notebook?.data,
     attendanceMode: input.attendanceMode,
     isCoreMeeting: resolvedIsCore,
     addMeet: input.addMeet,

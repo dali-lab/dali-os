@@ -10,6 +10,7 @@ import {
   removePageShare,
   SharePrincipalError,
 } from "~/lib/page-sharing.server";
+import { describePageAudience } from "~/lib/page-audience.server";
 import {
   requirePageShareManager,
   setGeneralAccess,
@@ -32,7 +33,7 @@ const PERMISSIONS: readonly string[] = ["View", "Comment", "Edit", "FullAccess"]
 function parsePermission(v: string | undefined, fallback: SharePermission = "View"): SharePermission {
   return v && PERMISSIONS.includes(v) ? (v as SharePermission) : fallback;
 }
-const LINK_ACCESSES: readonly string[] = ["Restricted", "LabMembers", "Public"];
+const LINK_ACCESSES: readonly string[] = ["Restricted", "LabMembers", "SignedIn", "Public"];
 function parseLinkAccess(v: string | undefined): LinkAccess {
   return v && LINK_ACCESSES.includes(v) ? (v as LinkAccess) : "Restricted";
 }
@@ -40,6 +41,24 @@ const SCOPE_KINDS: readonly string[] = ["Private", "Lab", "Group"];
 // "" / anything else → null, meaning "inherit" (clear the folder scope).
 function parseScopeKind(v: string | undefined): ScopeKind | null {
   return v && SCOPE_KINDS.includes(v) ? (v as ScopeKind) : null;
+}
+
+/** Share rows a meeting's roster created or raised, with the first meeting that justifies each. */
+async function markViaMeeting<T extends { id: string }>(
+  shares: T[],
+): Promise<Array<T & { viaMeeting: { meetingTitle: string } | null }>> {
+  if (shares.length === 0) return [];
+  const grants = await prisma.meetingShareGrant.findMany({
+    where: { pageShareId: { in: shares.map((s) => s.id) } },
+    select: { pageShareId: true, meeting: { select: { title: true } } },
+    orderBy: { createdAt: "asc" },
+  });
+  const byShare = new Map<string, string>();
+  for (const g of grants) if (!byShare.has(g.pageShareId)) byShare.set(g.pageShareId, g.meeting.title);
+  return shares.map((s) => ({
+    ...s,
+    viaMeeting: byShare.has(s.id) ? { meetingTitle: byShare.get(s.id)! } : null,
+  }));
 }
 
 export async function action({ request, params }: Route.ActionArgs) {
@@ -65,9 +84,13 @@ export async function action({ request, params }: Route.ActionArgs) {
     switch (intent) {
       case "state": {
         const context = await requirePageShareManager(pageId, me);
+        const [shares, { audience, inherited }] = await Promise.all([
+          listPageShares(pageId),
+          describePageAudience(me, pageId),
+        ]);
         return withCors(
           request,
-          Response.json({ ok: true, context, shares: await listPageShares(pageId) }),
+          Response.json({ ok: true, context, shares: await markViaMeeting(shares), audience, inherited }),
         );
       }
       case "share-options": {
