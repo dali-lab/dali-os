@@ -36,6 +36,9 @@ export const HIRING_PROCESS_ID = "hiring";
 // share this constant.
 export const LAB_PROCESS_ID = "lab";
 
+// Singleton processId for the Mentorship Drive root.
+export const MENTORSHIP_PROCESS_ID = "mentorship";
+
 // Singleton processId for certificate-template background images — one lab-wide,
 // Core-scoped folder that every uploaded template background auto-files into.
 export const CERTIFICATE_TEMPLATES_PROCESS_ID = "certificate-templates";
@@ -86,6 +89,7 @@ export const FOLDER_SLOTS: Record<ProcessType, FolderSlot[]> = {
   CertificateTemplates: [
     { purpose: "background", label: "Certificate backgrounds", defaultTitle: "Certificate Backgrounds" },
   ],
+  Mentorship: [],
 };
 
 export function slotFor(processType: ProcessType, purpose: string): FolderSlot | undefined {
@@ -110,6 +114,7 @@ function workspaceFor(
     case "HiringCycle":
     case "Core":
     case "CertificateTemplates":
+    case "Mentorship":
       return { workspaceType: "Lab", workspaceId: null, coreScoped: true };
     case "Lab":
       // Same workspace as Core, deliberately unscoped: a Lab folder inherits the

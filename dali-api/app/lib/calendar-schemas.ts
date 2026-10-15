@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import type { AssignmentType } from "~/generated/prisma/client";
+import { notebookChoiceSchema } from "~/lib/notebook-choice";
 
 // Minutes from local midnight: 0..1440 (inclusive end allowed for endMinute).
 const minuteOfDay = z.number().int().min(0).max(1440);
@@ -208,14 +209,6 @@ export const ToggleMeetingTimeEntrySchema = z.object({
   occurrence: isoString.optional(),
 });
 
-// "Mark as a Core meeting" on a meeting's detail popover — the same flag the
-// create form sets, editable after the fact. Core-only; the action re-checks.
-export const SetMeetingCoreSchema = z.object({
-  intent: z.literal("set-meeting-core"),
-  meetingId: z.string().min(1),
-  isCoreMeeting: z.boolean(),
-});
-
 // Associate an existing meeting with a project after creation (behind the
 // unified-core-project-meetings flag). Sets its type/project and re-files any
 // note. Requires a real project; the action re-checks organizer/Core + project
@@ -240,14 +233,8 @@ export const AddMeetingNoteSchema = z.object({
   meetingType: z.enum(["Team", "Partner", "Other"]).optional(),
   meetingTypeLabel: z.string().optional(),
   projectId: z.string().optional(),
-  noteLocation: z
-    .object({
-      workspaceType: z.enum(["Lab", "Project"]),
-      workspaceId: z.string().nullable(),
-      parentPageId: z.string().nullable(),
-    })
-    .nullable()
-    .optional(),
+  // The notebook the note files into; with it the type fields above are derived.
+  notebook: notebookChoiceSchema.optional(),
 });
 
 // Post-hoc "Add whiteboard" — the whiteboard counterpart of AddMeetingNoteSchema.
@@ -260,14 +247,6 @@ export const AddMeetingWhiteboardSchema = z.object({
   meetingType: z.enum(["Team", "Partner", "Other"]).optional(),
   meetingTypeLabel: z.string().optional(),
   projectId: z.string().optional(),
-  noteLocation: z
-    .object({
-      workspaceType: z.enum(["Lab", "Project"]),
-      workspaceId: z.string().nullable(),
-      parentPageId: z.string().nullable(),
-    })
-    .nullable()
-    .optional(),
 });
 
 // "Mirror my timesheet to Google" opt-in toggle (Calendars panel). Persists the
@@ -306,7 +285,6 @@ export const CalendarActionSchema = z.discriminatedUnion("intent", [
   UpdateTimeEntrySchema,
   DeleteTimeEntrySchema,
   ToggleMeetingTimeEntrySchema,
-  SetMeetingCoreSchema,
   SetMeetingProjectSchema,
   AddMeetingNoteSchema,
   AddMeetingWhiteboardSchema,

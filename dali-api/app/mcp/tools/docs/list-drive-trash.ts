@@ -6,6 +6,7 @@
 
 import { prisma } from "~/lib/db";
 import { canViewForms } from "~/lib/roles";
+import { canSeeForm, formsUsePageAccess } from "~/forms/lib/form-access.server";
 import { getPageAccess } from "~/lib/pageAccess.server";
 import { canEditFile } from "~/lib/fileAccess.server";
 
@@ -36,7 +37,7 @@ export async function runListDriveTrash(callerId: string) {
   const archivedPages = await prisma.page.findMany({
     where: {
       archivedAt: { not: null },
-      kind: { in: ["FreeForm", "Folder", "Structured"] },
+      kind: { in: ["FreeForm", "Folder", "Structured", "Notebook"] },
     },
     select: { id: true, title: true, archivedAt: true, kind: true },
     orderBy: { archivedAt: "desc" },
@@ -78,13 +79,21 @@ export async function runListDriveTrash(callerId: string) {
   ).filter(Boolean) as typeof archivedFiles;
 
   // Archived forms — canViewForms gate.
-  const archivedForms = userCanViewForms
-    ? await prisma.form.findMany({
-        where: { archivedAt: { not: null } },
-        select: { id: true, name: true, archivedAt: true },
-        orderBy: { archivedAt: "desc" },
-      })
-    : [];
+  // With forms-page-access on, each one is filtered by its page like a doc.
+  const byPage = await formsUsePageAccess();
+  const archivedFormRows =
+    byPage || userCanViewForms
+      ? await prisma.form.findMany({
+          where: { archivedAt: { not: null } },
+          select: { id: true, name: true, archivedAt: true },
+          orderBy: { archivedAt: "desc" },
+        })
+      : [];
+  const archivedForms = byPage
+    ? (await Promise.all(archivedFormRows.map((f) => canSeeForm(callerId, f.id)))).flatMap((ok, i) =>
+        ok ? [archivedFormRows[i]] : [],
+      )
+    : archivedFormRows;
 
   const items = [
     ...accessiblePages.map((p) => ({

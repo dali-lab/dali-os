@@ -53,25 +53,31 @@ type DomainApplicationWithStatusRelations = DomainApplicationGetPayload<{
 
 /**
  * Derives a `DomainApplicationStatus` from a domain application's loaded
- * relations and the enclosing cycle's current status. No database calls are
- * made — all required data must already be loaded (use
- * `domainApplicationStatusInclude` to fetch it).
+ * relations. No database calls are made — all required data must already be
+ * loaded (use `domainApplicationStatusInclude` to fetch it).
+ *
+ * `cycleStatus` is accepted for signature compatibility with existing callers
+ * but is otherwise unused: ApplicationOpen now keys off this DA's own
+ * `submittedAt` rather than the cycle's status, so a domain added after the
+ * applicant's first submission (and therefore never itself submitted) reads
+ * as ApplicationOpen even once the cycle has moved past Open.
  *
  * Decision tree (evaluated in order):
- *  1. cycle Open  AND  no Submitted status update          → ApplicationOpen
- *  1b. Application has a Withdrawn status update            → Withdrawn
- *  2. Has Submitted update AND no Released decision         → Pending
- *  3. Latest Released decision type == Rejected             → Rejected
- *  4. Latest Released decision type == InvitedToInterview
- *     AND no interview record exists                        → InvitedToInterview
- *  5. Latest Released decision type == InvitedToInterview
- *     AND interview.status == Scheduled                     → InterviewScheduled
- *  6. interview.status == Completed
- *     AND latest Released decision == InvitedToInterview    → PostInterviewPending
- *  6b. No Scheduled/Completed interview but a
- *      CancelledByApplicant interview exists                → Withdrawn
- *  7. Latest Released decision type == Accepted             → Accepted
- *  8. Latest Released decision type == Waitlisted           → Waitlisted
+ *  1. Application has a Withdrawn status update              → Withdrawn
+ *  2. closureReason == AcceptedElsewhere                      → AcceptedElsewhere
+ *  3. This DA's submittedAt is null                           → ApplicationOpen
+ *  4. submittedAt set AND no Released decision                → Pending
+ *  5. Latest Released decision type == Rejected                → Rejected
+ *  6. Latest Released decision type == InvitedToInterview
+ *     AND no interview record exists                          → InvitedToInterview
+ *  7. Latest Released decision type == InvitedToInterview
+ *     AND interview.status == Scheduled                       → InterviewScheduled
+ *  8. interview.status == Completed
+ *     AND latest Released decision == InvitedToInterview      → PostInterviewPending
+ *  8b. No Scheduled/Completed interview but a
+ *      CancelledByApplicant interview exists                  → Withdrawn
+ *  9. Latest Released decision type == Accepted                → Accepted
+ *  10. Latest Released decision type == Waitlisted              → Waitlisted
  */
 export function inferDomainApplicationStatus(
   domainApplication: DomainApplicationWithStatusRelations,
@@ -79,21 +85,18 @@ export function inferDomainApplicationStatus(
 ): DomainApplicationStatus {
   const { application, decisions, interviews } = domainApplication;
 
-  const hasSubmitted = application.statusUpdates.some(
-    (u) => u.newStatus === "Submitted",
-  );
   const hasWithdrawn = application.statusUpdates.some(
     (u) => u.newStatus === "Withdrawn",
   );
 
-  // Step 1a: applicant withdrew after submission. Withdrawal is terminal
+  // Step 1: applicant withdrew after submission. Withdrawal is terminal
   // today (see portal.application.tsx) and is the applicant's own action, so it
   // wins over every derived branch below.
   if (hasWithdrawn) {
     return "Withdrawn";
   }
 
-  // Step 1b: this DA was administratively closed because the applicant was
+  // Step 2: this DA was administratively closed because the applicant was
   // accepted into another domain in the same cycle (single placement). Only
   // ever set on DAs with no Released decision, so it never overrides a real
   // outcome — it replaces what would otherwise be a stale "Pending".
@@ -101,21 +104,17 @@ export function inferDomainApplicationStatus(
     return "AcceptedElsewhere";
   }
 
-  // Step 1c: cycle is open and application has not been submitted yet
-  if (cycleStatus === "Open" && !hasSubmitted) {
+  // Step 3: this DA has never itself been submitted — whether because the
+  // applicant hasn't submitted at all yet, or because the domain was added
+  // (or reopened) after their last submission.
+  if (!domainApplication.submittedAt) {
     return "ApplicationOpen";
   }
 
   // Decisions are ordered desc by createdAt, so the first Released entry is the latest.
   const latestReleased = decisions.find((d) => d.stage === "Released") ?? null;
 
-  // Step 2: submitted but no Released decision yet
-  if (hasSubmitted && !latestReleased) {
-    return "Pending";
-  }
-
-  // Steps 3–8 all require a Released decision. Guard against edge cases where
-  // the cycle has advanced past Open but the application was never submitted.
+  // Step 4: submitted but no Released decision yet
   if (!latestReleased) {
     return "Pending";
   }

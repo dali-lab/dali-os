@@ -9,7 +9,7 @@ import {
   type RefObject,
 } from "react";
 import { useNavigate, useRevalidator } from "react-router";
-import { Check, CloudOff, Copy, Download, FileDown, FolderInput, History, LayoutTemplate, Link, Loader2, MessageSquare, MoreHorizontal, Printer, Search, Upload, Users } from "lucide-react";
+import { BookOpen, Check, CloudOff, Copy, Download, FileDown, FolderInput, FolderSearch, History, LayoutTemplate, Link, Loader2, MessageSquare, MoreHorizontal, Printer, Search, Upload, Users } from "lucide-react";
 import { DocEditor, appendBlocks, stripBlockIds, type DocSyncState, type TocHeading } from "~/components/doc";
 import type { DocEditorInstance } from "~/components/doc/schema/build";
 import { DocCommentsPanel, useDocThreadCount } from "~/components/doc/comments";
@@ -24,10 +24,15 @@ import { PageCover } from "./doc-chrome/PageCover";
 import { DocToc } from "./doc-chrome/DocToc";
 import { relativeTime } from "~/lib/relative-time";
 import { Menu, Select, type SelectOption, Tooltip } from "~/components/ui/floating";
+import { revealInDriveHref } from "~/lib/drive-crumbs";
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
 import { ShareDialog } from "~/components/sharing/ShareDialog";
-import { MoveToDialog } from "~/components/sharing/MoveToDialog";
+import { FolderPicker } from "~/components/drive/FolderPicker";
+import { useDriveDestinations } from "~/components/drive/use-drive-destinations";
+import { useMovePage } from "~/components/drive/use-move-page";
+import { useToast } from "~/components/ui/toast";
+import { createNotebookRequest, notebookRequest, sendJson } from "~/components/notebooks/notebook-requests";
 import { ImportTemplateDialog } from "./doc-chrome/ImportTemplateDialog";
 import { FindReplaceBar } from "./doc/find";
 import {
@@ -96,6 +101,7 @@ export function DocumentEditor({
   meetingNoteTemplateAction = null,
   rail,
   onContainerWideChange,
+  notebookConversion = null,
 }: {
   pageId: string;
   initialTitle: string;
@@ -160,6 +166,9 @@ export function DocumentEditor({
   // to know too (narrow canvases answer a live recording with a Popover
   // instead of toggling the rail).
   onContainerWideChange?: (wide: boolean) => void;
+  // Set when this plain document can become a notebook's first tab; the ⋯ menu
+  // then offers "Convert to notebook", filed in the folder the document is in.
+  notebookConversion?: { parentPageId: string | null } | null;
 }) {
   const revalidator = useRevalidator();
   const navigate = useNavigate();
@@ -180,6 +189,25 @@ export function DocumentEditor({
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
   const [accessOpen, setAccessOpen] = useState(false);
   const [moveOpen, setMoveOpen] = useState(false);
+  const toast = useToast();
+  const moveDestinations = useDriveDestinations({
+    enabled: moveOpen,
+    movingIds: [pageId],
+    onError: () => {
+      toast.error("Couldn't load destinations.");
+      setMoveOpen(false);
+    },
+  });
+  const movePage = useMovePage({
+    pageId,
+    title: initialTitle,
+    current: { type: workspaceType, id: workspaceId },
+    rows: moveDestinations.rows,
+    onMoved: () => {
+      setMoveOpen(false);
+      revalidator.revalidate();
+    },
+  });
   const [templateImportOpen, setTemplateImportOpen] = useState(false);
   // Optimistic local reflection of isTemplate — revalidator syncs server truth.
   const [templateMarked, setTemplateMarked] = useState(isTemplate);
@@ -398,6 +426,30 @@ export function DocumentEditor({
     if (!res.ok) return;
     const { id } = (await res.json()) as { id: string };
     navigate(`/documents/${id}`);
+  }
+
+  async function convertToNotebook() {
+    setMoreMenuOpen(false);
+    const title = titleRef.current?.textContent?.trim() || initialTitle;
+    const created = await sendJson<{ id: string }>(
+      createNotebookRequest({
+        title,
+        workspaceType: workspaceType,
+        workspaceId: workspaceId ?? null,
+        parentPageId: notebookConversion?.parentPageId ?? null,
+      }),
+    );
+    if (!created.ok || !created.data) {
+      toast.error(created.error ?? "Couldn't create the notebook");
+      return;
+    }
+    const added = await sendJson(notebookRequest(created.data.id, { intent: "add-page", pageId }));
+    if (!added.ok) {
+      toast.error(added.error ?? "Couldn't add this document to the notebook");
+      void fetch(`/api/documents/${created.data.id}?ifEmpty=1`, { method: "DELETE", credentials: "include" });
+      return;
+    }
+    navigate(`/documents/${created.data.id}`);
   }
 
   async function toggleTemplate() {
@@ -710,6 +762,14 @@ export function DocumentEditor({
               <Copy className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
               Duplicate
             </button>
+            <button
+              type="button"
+              onClick={() => window.location.assign(revealInDriveHref(pageId))}
+              className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-foreground hover:bg-muted"
+            >
+              <FolderSearch className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              Reveal in Drive
+            </button>
             {canManageAccess && (
               <button
                 type="button"
@@ -721,6 +781,16 @@ export function DocumentEditor({
               >
                 <FolderInput className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                 Move to…
+              </button>
+            )}
+            {notebookConversion && (
+              <button
+                type="button"
+                onClick={() => void convertToNotebook()}
+                className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-foreground hover:bg-muted"
+              >
+                <BookOpen className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                Convert to notebook
               </button>
             )}
             {canEdit && (
@@ -1184,14 +1254,12 @@ export function DocumentEditor({
           onChanged={() => revalidator.revalidate()}
         />
       )}
-      {canManageAccess && (
-        <MoveToDialog
-          pageId={pageId}
-          title={initialTitle}
-          current={{ type: workspaceType, id: workspaceId }}
-          open={moveOpen}
+      {canManageAccess && moveOpen && moveDestinations.status === "ready" && (
+        <FolderPicker
+          open
+          heading={`Move “${initialTitle}”`}
+          {...movePage.pickerProps}
           onClose={() => setMoveOpen(false)}
-          onMoved={() => revalidator.revalidate()}
         />
       )}
       {canEdit && (

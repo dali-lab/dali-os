@@ -113,6 +113,31 @@ describe("delete_lab_document", () => {
     });
   });
 
+  it("refuses to archive a Drive root, even for Core", async () => {
+    mockPrisma.page.findUnique.mockResolvedValue({ id: "p1", workspaceType: "Lab", workspaceId: null, archivedAt: null, createdById: "u1", folderType: "Root" });
+    vi.mocked(isCore).mockResolvedValue(true);
+
+    await expect(runDeleteLabDocument("u1", { pageId: "p1" })).rejects.toMatchObject({
+      name: "LabDocumentError",
+      status: 400,
+      message: "This is a Drive root and can't be deleted",
+    });
+    expect(mockPrisma.page.update).not.toHaveBeenCalled();
+  });
+
+  it("clears a receiver's type columns in the same update that archives it", async () => {
+    mockPrisma.page.findUnique.mockResolvedValue({ id: "p1", workspaceType: "Lab", workspaceId: null, archivedAt: null, createdById: "u1", folderType: "Agreements" });
+    vi.mocked(isCore).mockResolvedValue(true);
+    mockPrisma.page.update.mockResolvedValue({ id: "p1" });
+
+    await runDeleteLabDocument("u1", { pageId: "p1" });
+
+    expect(mockPrisma.page.update).toHaveBeenCalledWith({
+      where: { id: "p1" },
+      data: { archivedAt: expect.any(Date), folderType: null, processType: null, processId: null },
+    });
+  });
+
   it("archives the page when caller is the creator", async () => {
     mockPrisma.page.findUnique.mockResolvedValue({ id: "p1", workspaceType: "Lab", workspaceId: null, archivedAt: null, createdById: "u1" });
     vi.mocked(isCore).mockResolvedValue(false);

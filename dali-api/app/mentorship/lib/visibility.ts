@@ -1,4 +1,5 @@
 import { isCore, isLabMentor } from "~/lib/roles";
+import { getPageAccess } from "~/lib/pageAccess.server";
 
 // Area gate for `/mentorship` surfaces. Mentees are excluded: only active lab
 // mentors and Core/Admin may enter. Once past this gate every lab mentor may
@@ -36,11 +37,14 @@ export async function mentorshipPairWhere(
   return { mentorUserId: userId };
 }
 
-/** Single-note read check. The note's author, any lab mentor, or Core/Admin. */
+/** Single-note read check. A note with a Drive page is gated by that page's
+ *  access (mentors through the Mentorship root, the author and Core through
+ *  shares); one not yet migrated falls back to author, any lab mentor or Core. */
 export async function canViewMentorNote(
   userId: string,
-  note: { mentorId: string },
+  note: { mentorId: string; pageId?: string | null },
 ): Promise<boolean> {
+  if (note.pageId) return (await getPageAccess(userId, note.pageId)).canView;
   if (await isCore(userId)) return true;
   if (note.mentorId === userId) return true;
   return isLabMentor(userId);

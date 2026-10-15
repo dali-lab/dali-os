@@ -12,6 +12,8 @@ import type {
   GridMentorGroup,
   GridPerson,
 } from "../lib/mentor-grid.server";
+import { domainTermForms, type TermForms, type TermFormSlot } from "../lib/term-forms";
+import { TermFormStatus } from "./TermFormStatus";
 
 // Core-only inline editing (behind the mentorship-manage flag). When present,
 // each mentee row gains a reassign picker + a remove button. Left undefined for
@@ -52,6 +54,7 @@ export function MentorGrid({
   heading,
   edit,
   nudge,
+  termForms,
 }: {
   group: GridMentorGroup;
   weeks: number[];
@@ -61,7 +64,16 @@ export function MentorGrid({
   heading?: string;
   edit?: MentorGridEdit;
   nudge?: MentorGridNudge;
+  termForms?: TermForms;
 }) {
+  const formsFor = (domainId: string) => (termForms ? domainTermForms(termForms, domainId) : null);
+  const showMenteeForms = group.rows.some((r) => formsFor(r.domainId)?.mentee.form);
+  // A mentor fills their domain's form; one per domain if they mentor across domains.
+  const mentorForms = [...new Map(group.rows.map((r) => [r.domainId, r.domainCode])).entries()]
+    .flatMap(([domainId, domainCode]) => {
+      const slot = formsFor(domainId)?.mentor;
+      return slot?.form ? [{ domainId, domainCode, form: slot.form, responses: slot.responses }] : [];
+    });
   const { panel, panelPad, heading: headingClass } = useOsChrome();
   return (
     <section className={cn(panel, panelPad, "flex flex-col gap-3")}>
@@ -78,6 +90,18 @@ export function MentorGrid({
               {fullName(group.mentor)}
             </>
           )}
+          {mentorForms.map(({ domainId, domainCode, form, responses }) => (
+            <span key={domainId} className="inline-flex items-center gap-1.5">
+              {mentorForms.length > 1 && (
+                <span className="text-xs font-normal text-muted-foreground">{domainCode}</span>
+              )}
+              <TermFormStatus
+                response={responses[group.mentor.id]}
+                formName={form.name}
+                personName={fullName(group.mentor)}
+              />
+            </span>
+          ))}
         </h2>
         {nudge && nudge.count > 0 && (
           <Tooltip content={`Slack-DM ${fullName(group.mentor)} about their ${nudge.count} unfilled note${nudge.count === 1 ? "" : "s"}`}>
@@ -117,6 +141,11 @@ export function MentorGrid({
                   </Tooltip>
                 </th>
               ))}
+              {showMenteeForms && (
+                <th className="pl-3 text-left font-medium text-muted-foreground pb-1 whitespace-nowrap">
+                  Week 5 form
+                </th>
+              )}
               {edit && (
                 <th className="pl-3 text-left font-medium text-muted-foreground pb-1">
                   Mentor
@@ -164,6 +193,11 @@ export function MentorGrid({
                     />
                   </td>
                 ))}
+                {showMenteeForms && (
+                  <td className="pl-3">
+                    <MenteeFormStatus slot={formsFor(row.domainId)?.mentee} row={row} />
+                  </td>
+                )}
                 {edit && (
                   <td className="pl-3 whitespace-nowrap">
                     <div className="inline-flex items-center gap-2">
@@ -325,5 +359,22 @@ function GridCellView({
         <span className="sr-only">Open note for week {cell.week}</span>
       </button>
     </Tooltip>
+  );
+}
+
+function MenteeFormStatus({
+  slot,
+  row,
+}: {
+  slot: TermFormSlot | undefined;
+  row: GridMenteeRow;
+}) {
+  if (!slot?.form) return null;
+  return (
+    <TermFormStatus
+      response={slot.responses[row.menteeId]}
+      formName={slot.form.name}
+      personName={fullName(row.mentee)}
+    />
   );
 }

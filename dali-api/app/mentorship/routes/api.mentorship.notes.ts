@@ -4,6 +4,7 @@ import { requireAuth } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { canViewMentorship, mentorNoteWhere } from "../lib/visibility";
 import { startOfWeekUTC } from "../lib/week";
+import { ensureMentorNotePage } from "../lib/pair-notebook.server";
 
 // GET  /api/mentorship/notes — filterable note list. Every lab mentor (and
 //      Core/Admin) sees all mentor notes lab-wide.
@@ -16,7 +17,8 @@ import { startOfWeekUTC } from "../lib/week";
 //      that's the only authorial path the UI offers. If a row already exists
 //      for that combination it is returned as-is (idempotent open-or-create).
 //      Newly created notes get their contentJson pre-filled from the current
-//      default MentorNoteTemplate, if one exists.
+//      default MentorNoteTemplate, if one exists, and a tab in the pair's
+//      Mentorship notebook.
 
 type UpsertBody = {
   menteeId: string;
@@ -184,7 +186,18 @@ export async function action({ request }: Route.ActionArgs) {
       weekOf,
       contentJson: (template?.contentJson ?? {}) as object,
     },
-    select: { id: true },
+    select: {
+      id: true,
+      mentorId: true,
+      menteeId: true,
+      projectId: true,
+      termId: true,
+      domainId: true,
+      weekOf: true,
+      pageId: true,
+      contentJson: true,
+    },
   });
+  await ensureMentorNotePage(created, auth.user.sub);
   return withCors(request, Response.json({ id: created.id, created: true }));
 }

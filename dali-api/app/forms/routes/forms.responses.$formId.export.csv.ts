@@ -3,7 +3,7 @@ import { redirect } from "react-router";
 import { prisma } from "~/lib/db";
 import { requireAuth, redirectNonMemberToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
-import { isCore } from "~/lib/roles";
+import { canBuildForm } from "~/forms/lib/form-access.server";
 import { csvResponse, rowsToCsv } from "~/lib/csv";
 import {
   buildResponseGrid,
@@ -25,7 +25,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   if (!auth.ok) return redirectToLogin(request);
   const portalRedirect = await redirectNonMemberToPortal(auth, request);
   if (portalRedirect) return portalRedirect;
-  if (!(await isCore(auth.user.sub))) return redirect("/");
+  if (!(await canBuildForm(auth.user.sub, params.formId, request))) return redirect("/");
 
   const form = await prisma.form.findUnique({
     where: { id: params.formId },

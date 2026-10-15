@@ -11,10 +11,12 @@ vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
 vi.mock("~/lib/roles", () => ({ isCore: vi.fn(), isProjectMember: vi.fn() }));
 vi.mock("~/lib/page-sharing.server", () => ({ sharePermissionFor: vi.fn() }));
 vi.mock("~/lib/pages", () => ({ collectSubtree: vi.fn() }));
+vi.mock("~/lib/groups", () => ({ resolveGroupMembers: vi.fn() }));
 
 import { prisma } from "~/lib/db";
 import { collectSubtree } from "~/lib/pages";
-import { setFolderScope } from "~/lib/page-share-access.server";
+import { resolveGroupMembers } from "~/lib/groups";
+import { setFolderScope, setGeneralAccess } from "~/lib/page-share-access.server";
 
 const m = prisma as any;
 
@@ -103,5 +105,94 @@ describe("setFolderScope — narrowing a folder restricts what's already inside"
 
   it("refuses a Group scope with no group", async () => {
     await expect(setFolderScope("f1", "u1", { scopeKind: "Group" })).rejects.toThrow(/pick a group/i);
+  });
+});
+
+// A Drive root's visibility decides who sees the whole space, so its sharing is
+// the one thing that cannot be narrowed away from Core or opened to the world.
+describe("Drive roots keep a group that includes Core", () => {
+  const rootPage = { kind: "Folder", folderType: "Root" };
+
+  beforeEach(() => {
+    m.page.findUnique.mockResolvedValue(rootPage);
+    m.groupDefinition.findUnique.mockImplementation(({ where }: any) =>
+      Promise.resolve(where.systemKey === "core" ? { id: "grp_core" } : { id: where.id }),
+    );
+    vi.mocked(resolveGroupMembers).mockImplementation(async (id: string) =>
+      id === "grp_core" ? ["a", "b"] : id === "grp_wide" ? ["a", "b", "c"] : ["a"],
+    );
+  });
+
+  it("accepts the Core group itself", async () => {
+    await expect(
+      setFolderScope("root", "u1", { scopeKind: "Group", scopeGroupId: "grp_core" }),
+    ).resolves.toMatchObject({ scopeKind: "Group", scopeGroupId: "grp_core" });
+  });
+
+  it("accepts a group whose members are a superset of Core", async () => {
+    await expect(
+      setFolderScope("root", "u1", { scopeKind: "Group", scopeGroupId: "grp_wide" }),
+    ).resolves.toMatchObject({ scopeGroupId: "grp_wide" });
+  });
+
+  it("refuses a group that leaves a Core member out", async () => {
+    await expect(
+      setFolderScope("root", "u1", { scopeKind: "Group", scopeGroupId: "grp_narrow" }),
+    ).rejects.toThrow("A Drive root stays shared with a group that includes Core");
+    expect(m.$transaction).not.toHaveBeenCalled();
+  });
+
+  it("refuses when the Core group is missing", async () => {
+    m.groupDefinition.findUnique.mockImplementation(({ where }: any) =>
+      Promise.resolve(where.systemKey === "core" ? null : { id: where.id }),
+    );
+    await expect(
+      setFolderScope("root", "u1", { scopeKind: "Group", scopeGroupId: "grp_wide" }),
+    ).rejects.toThrow(/includes Core/);
+  });
+
+  it.each([["Lab"], ["Private"]] as const)("refuses a %s scope", async (scopeKind) => {
+    await expect(setFolderScope("root", "u1", { scopeKind })).rejects.toThrow(/includes Core/);
+  });
+
+  it("refuses clearing the scope", async () => {
+    await expect(setFolderScope("root", "u1", { scopeKind: null })).rejects.toThrow(/includes Core/);
+    expect(m.page.update).not.toHaveBeenCalled();
+  });
+
+  it("does not apply the rule to an ordinary folder", async () => {
+    m.page.findUnique.mockResolvedValue({ kind: "Folder", folderType: null });
+    await expect(setFolderScope("f1", "u1", { scopeKind: "Private" })).resolves.toMatchObject({
+      scopeKind: "Private",
+    });
+    expect(resolveGroupMembers).not.toHaveBeenCalled();
+  });
+});
+
+describe("setGeneralAccess — Drive roots", () => {
+  beforeEach(() => {
+    m.page.update.mockResolvedValue({});
+  });
+
+  it("refuses Public on a root", async () => {
+    m.page.findUnique.mockResolvedValue({ folderType: "Root" });
+    await expect(
+      setGeneralAccess("root", "u1", { linkAccess: "Public", linkPermission: "View" }),
+    ).rejects.toThrow("A Drive root can't be shared publicly");
+    expect(m.page.update).not.toHaveBeenCalled();
+  });
+
+  it("allows lab-wide access on a root (Core widening it)", async () => {
+    m.page.findUnique.mockResolvedValue({ folderType: "Root" });
+    await expect(
+      setGeneralAccess("root", "u1", { linkAccess: "LabMembers", linkPermission: "View" }),
+    ).resolves.toEqual({ linkAccess: "LabMembers", linkPermission: "View" });
+  });
+
+  it("allows Public on an ordinary page", async () => {
+    m.page.findUnique.mockResolvedValue({ folderType: null });
+    await expect(
+      setGeneralAccess("p1", "u1", { linkAccess: "Public", linkPermission: "View" }),
+    ).resolves.toEqual({ linkAccess: "Public", linkPermission: "View" });
   });
 });

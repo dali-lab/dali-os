@@ -45,12 +45,13 @@ function makeRec(overrides: Partial<UseMeetingRecording> = {}): UseMeetingRecord
     enhanceNotes: null,
     enhancedAt: null,
     enhancedByName: null,
-    enhanceSheetOpen: false,
-    setEnhanceSheetOpen: vi.fn(),
     enhanceBusy: false,
     enhanceError: null,
-    applyBusy: false,
     stalePreview: false,
+    pendingMarks: [],
+    enhanceSkipped: 0,
+    reviewedAt: null,
+    reviewAnnouncement: null,
 
     useDesktopApp: false,
     setUseDesktopApp: vi.fn(),
@@ -90,11 +91,16 @@ function makeRec(overrides: Partial<UseMeetingRecording> = {}): UseMeetingRecord
     discard: vi.fn(),
     insert: vi.fn(() => true),
     currentlyUntouched: vi.fn(() => false),
-    generateEnhance: vi.fn(async () => true),
-    onEnhanceClick: vi.fn(async () => {}),
+    enhanceNow: vi.fn(async () => {}),
+    cancelEnhanceGenerating: vi.fn(),
     reloadStalePreview: vi.fn(),
-    closeEnhancePreview: vi.fn(),
-    applyEnhance: vi.fn(async () => {}),
+    dismissStalePreview: vi.fn(),
+    revertAllAndEnhanceAgain: vi.fn(async () => {}),
+    keepBlock: vi.fn(),
+    revertBlock: vi.fn(),
+    keepAll: vi.fn(() => 0),
+    revertAll: vi.fn(() => 0),
+    scrollToBlock: vi.fn(),
     createTasksFromItems: vi.fn(async () => true),
     setSpeaker: vi.fn(async () => {}),
     jumpToTranscript: vi.fn(),
@@ -115,20 +121,26 @@ describe("deriveRailState", () => {
     expect(deriveRailState(makeRec({ phase: "failed" }))).toBe("failed");
   });
 
-  it("splits phase 'done' into ready/generating/preview/enhanced/inserted/stalePreview", () => {
+  it("splits phase 'done' into ready/generating/pendingReview/enhanced/inserted/stalePreview", () => {
     const done = { phase: "done" as const };
     expect(deriveRailState(makeRec({ ...done }))).toBe("ready");
     expect(deriveRailState(makeRec({ ...done, enhancedAt: "2026-10-10T00:00:00Z" }))).toBe("enhanced");
-    expect(deriveRailState(makeRec({ ...done, enhanceSheetOpen: true }))).toBe("generating");
+    expect(deriveRailState(makeRec({ ...done, enhanceBusy: true }))).toBe("generating");
     expect(
-      deriveRailState(
-        makeRec({ ...done, enhanceSheetOpen: true, enhanceNotes: { plan: { blocks: [], actionItems: [] }, verified: { droppedBlocks: 0, droppedCites: 0, unmatchedOwners: 0 }, snapshotAt: "x", snapshot: [] } }),
-      ),
-    ).toBe("preview");
+      deriveRailState(makeRec({ ...done, pendingMarks: [{ id: "b1", mark: "enhance-added", type: "paragraph", text: "x" }] })),
+    ).toBe("pendingReview");
     expect(deriveRailState(makeRec({ ...done, insertedAt: "2026-10-10T00:00:00Z" }))).toBe("inserted");
     expect(deriveRailState(makeRec({ ...done, stalePreview: true }))).toBe("stalePreview");
-    // insertedAt wins even once enhanced/stale — "inserted" is terminal.
-    expect(deriveRailState(makeRec({ ...done, insertedAt: "x", enhancedAt: "y", stalePreview: true }))).toBe("inserted");
+    // Insert is not terminal: Enhance after Insert still flows through generating/pendingReview/enhanced.
+    expect(deriveRailState(makeRec({ ...done, insertedAt: "x", enhanceBusy: true }))).toBe("generating");
+    expect(deriveRailState(makeRec({ ...done, insertedAt: "x", enhancedAt: "y" }))).toBe("enhanced");
+    expect(deriveRailState(makeRec({ ...done, insertedAt: "x", stalePreview: true }))).toBe("stalePreview");
+    // Marks present outrank an already-set enhancedAt — still something to review.
+    expect(
+      deriveRailState(
+        makeRec({ ...done, enhancedAt: "y", pendingMarks: [{ id: "b1", mark: "enhance-prior", type: "heading", text: "" }] }),
+      ),
+    ).toBe("pendingReview");
   });
 });
 
@@ -257,28 +269,72 @@ describe("RecordingRail per state (specs/meeting-recording-rail.md state table)"
   });
 
   it("generating: reading-notes status, Cancel secondary, no primary", () => {
-    const html = render(makeRec({ phase: "done", enhanceSheetOpen: true, enhanceNotes: null }));
+    const html = render(makeRec({ phase: "done", enhanceBusy: true, enhanceNotes: null }));
     expect(html).toContain("Reading your notes and the transcript…");
     expect(html).toContain(">Cancel<");
-    expect(html).not.toContain(">Apply<");
   });
 
-  it("preview: preview-counts status, Apply primary, Cancel secondary", () => {
+  it("pendingReview: change-counts status by the enhancer, Keep all primary, Revert all + enhance-again secondaries", () => {
     const html = render(
       makeRec({
         phase: "done",
-        enhanceSheetOpen: true,
+        enhancedByName: "Ada",
+        pendingMarks: [
+          { id: "b1", mark: "enhance-added", type: "paragraph", text: "x" },
+          { id: "b2", mark: "enhance-added", type: "paragraph", text: "y" },
+          { id: "b3", mark: "enhance-prior", type: "heading", text: "" },
+        ],
         enhanceNotes: {
           plan: { blocks: [], actionItems: [] },
           verified: { droppedBlocks: 0, droppedCites: 0, unmatchedOwners: 0 },
           snapshotAt: "x",
           snapshot: [],
+          priorBlocks: { b1: { id: "b1" } },
         },
       }),
     );
-    expect(html).toContain("Preview: 0 blocks changed, 0 added.");
-    expect(html).toContain(">Apply<");
-    expect(html).toContain(">Cancel<");
+    expect(html).toContain("Ada enhanced this note: 1 changed, 1 added, 1 removed.");
+    expect(html).toContain("Keep all");
+    expect(html).toContain("Revert all");
+    expect(html).toContain("Revert all and enhance again");
+  });
+
+  it("pendingReview: a viewer without edit sees the status but no Keep/Revert", () => {
+    const html = render(
+      makeRec({
+        phase: "done",
+        canEdit: false,
+        pendingMarks: [{ id: "b1", mark: "enhance-added", type: "paragraph", text: "x" }],
+      }),
+    );
+    expect(html).toContain("Enhanced this note");
+    expect(html).not.toContain("Keep all");
+    expect(html).not.toContain("Revert all");
+  });
+
+  it("pendingReview: omits a zero count and uses singular wording for one", () => {
+    const html = render(
+      makeRec({
+        phase: "done",
+        enhancedByName: "Ada",
+        pendingMarks: [{ id: "b1", mark: "enhance-added", type: "paragraph", text: "x" }],
+      }),
+    );
+    expect(html).toContain("Ada enhanced this note: 1 added.");
+    expect(html).not.toContain("changed");
+    expect(html).not.toContain("removed");
+  });
+
+  it("pendingReview: appends the left-as-typed note only when blocks were skipped", () => {
+    const html = render(
+      makeRec({
+        phase: "done",
+        enhancedByName: "Ada",
+        enhanceSkipped: 2,
+        pendingMarks: [{ id: "b1", mark: "enhance-added", type: "paragraph", text: "x" }],
+      }),
+    );
+    expect(html).toContain("2 blocks changed while this ran and were left as typed.");
   });
 
   it("enhanced: enhanced-by status, Enhance again primary, Discard secondary", () => {
@@ -289,6 +345,26 @@ describe("RecordingRail per state (specs/meeting-recording-rail.md state table)"
     expect(html).not.toContain("rebuilds the notes");
     expect(html).toContain("Enhance again");
     expect(html).toContain('aria-label="Discard recording"');
+  });
+
+  it("enhanced: appends 'Reviewed.' once reviewedAt is set", () => {
+    const html = render(
+      makeRec({
+        phase: "done",
+        enhancedAt: "2026-10-10T18:14:00Z",
+        enhancedByName: "Ada",
+        reviewedAt: "2026-10-10T18:15:00Z",
+        hasTranscript: true,
+      }),
+    );
+    expect(html).toContain("Reviewed.");
+  });
+
+  it("enhanced: no 'Reviewed.' when reviewedAt is unset", () => {
+    const html = render(
+      makeRec({ phase: "done", enhancedAt: "2026-10-10T18:14:00Z", enhancedByName: "Ada", hasTranscript: true }),
+    );
+    expect(html).not.toContain("Reviewed.");
   });
 
   it("enhanced: appends a names-changed notice once a speaker is renamed after Enhance ran", () => {
@@ -324,11 +400,17 @@ describe("RecordingRail per state (specs/meeting-recording-rail.md state table)"
     expect(html).not.toContain("Names changed");
   });
 
-  it("inserted: already-inserted status, no primary, Discard secondary only", () => {
+  it("inserted: transcript-inserted status, Enhance notes primary, Discard secondary", () => {
     const html = render(makeRec({ phase: "done", insertedAt: "2026-10-10T18:14:00Z", hasTranscript: true }));
-    expect(html).toContain("Already in this note. Discarding only removes the recording, not what was inserted.");
-    expect(html).not.toContain("Enhance");
+    expect(html).toContain("Transcript inserted. Enhance can still write notes from it. Discarding only removes the recording, not what was inserted.");
+    expect(html).toContain("Enhance notes");
     expect(html).toContain('aria-label="Discard recording"');
+  });
+
+  it("inserted with AI off: no Enhance button or mention", () => {
+    const html = render(makeRec({ phase: "done", insertedAt: "2026-10-10T18:14:00Z", hasTranscript: true, aiEnabled: false }));
+    expect(html).toContain("Transcript inserted. Discarding only removes the recording, not what was inserted.");
+    expect(html).not.toContain("Enhance");
   });
 
   it("stale preview: someone-else-enhanced status, Reload preview primary, Cancel secondary", () => {

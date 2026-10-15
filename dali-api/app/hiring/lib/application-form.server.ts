@@ -7,13 +7,17 @@
 
 import { randomUUID } from "node:crypto";
 import { prisma } from "~/lib/db";
+import { createForm } from "~/forms/lib/form-page.server";
+import { canEditDomainSetup } from "~/hiring/lib/domain-windows.server";
 import { ensureProcessFolder, HIRING_PROCESS_ID } from "~/lib/bindings.server";
+import { filingFolderOr, singletonSlot } from "~/lib/drive-receivers.server";
 import type { Question } from "~/types";
 import { resolveReferenceOptions } from "~/forms/lib/reference-sources";
 import { safeParseJsonString } from "~/forms/lib/forms-data";
 import type { CycleApplicants } from "~/generated/prisma/client";
 
 const TEMPLATE_NAME = "Internal Application Template";
+const TEMPLATE_KEY = "hiring-application-template";
 
 function defaultQuestions(): Question[] {
   return [
@@ -50,14 +54,16 @@ function defaultQuestions(): Question[] {
  * Hiring drive). We converge its placement on every call.
  */
 export async function ensureHiringTemplate(actorId: string): Promise<string> {
-  const folderPageId = await ensureProcessFolder({
-    processType: "HiringCycle",
-    processId: HIRING_PROCESS_ID,
-    purpose: "application-templates",
-    createdById: actorId,
-  });
+  const folderPageId = await filingFolderOr(singletonSlot("HiringCycle", "ApplicationTemplates"), actorId, () =>
+    ensureProcessFolder({
+      processType: "HiringCycle",
+      processId: HIRING_PROCESS_ID,
+      purpose: "application-templates",
+      createdById: actorId,
+    }),
+  );
   const existing = await prisma.form.findFirst({
-    where: { name: TEMPLATE_NAME, folderPageId },
+    where: { templateKey: TEMPLATE_KEY },
     select: { id: true, versions: { select: { id: true }, take: 1 } },
   });
   if (existing?.versions.length) return existing.id;
@@ -72,9 +78,10 @@ export async function ensureHiringTemplate(actorId: string): Promise<string> {
     });
     return existing.id;
   }
-  const created = await prisma.form.create({
-    data: {
+  const created = await createForm(
+    {
       name: TEMPLATE_NAME,
+      templateKey: TEMPLATE_KEY,
       folderPageId,
       createdById: actorId,
       versions: {
@@ -85,8 +92,8 @@ export async function ensureHiringTemplate(actorId: string): Promise<string> {
         },
       },
     },
-    select: { id: true },
-  });
+    { id: true },
+  );
   return created.id;
 }
 
@@ -126,15 +133,17 @@ export async function createCycleApplicationForm(
   const templateVersion = template?.versions[0];
   const questions = (templateVersion?.questions as unknown as Question[]) ?? defaultQuestions();
 
-  const folderPageId = await ensureProcessFolder({
-    processType: "HiringCycle",
-    processId: HIRING_PROCESS_ID,
-    purpose: "hiring-forms",
-    createdById: actorId,
-  });
+  const folderPageId = await filingFolderOr(singletonSlot("HiringCycle", "HiringForms"), actorId, () =>
+    ensureProcessFolder({
+      processType: "HiringCycle",
+      processId: HIRING_PROCESS_ID,
+      purpose: "hiring-forms",
+      createdById: actorId,
+    }),
+  );
   const label = APPLICANTS_FORM_LABEL[cycle.applicants];
-  const form = await prisma.form.create({
-    data: {
+  const form = await createForm(
+    {
       name: `${cycle.name} — ${label} application`,
       folderPageId,
       createdById: actorId,
@@ -147,8 +156,8 @@ export async function createCycleApplicationForm(
         },
       },
     },
-    select: { id: true },
-  });
+    { id: true },
+  );
   await prisma.applicationCycle.update({
     where: { id: cycleId },
     data: { applicationFormId: form.id },
@@ -190,14 +199,16 @@ export async function createCycleContinuedInterestForm(
       },
     },
   ];
-  const folderPageId = await ensureProcessFolder({
-    processType: "HiringCycle",
-    processId: HIRING_PROCESS_ID,
-    purpose: "hiring-forms",
-    createdById: actorId,
-  });
-  const form = await prisma.form.create({
-    data: {
+  const folderPageId = await filingFolderOr(singletonSlot("HiringCycle", "HiringForms"), actorId, () =>
+    ensureProcessFolder({
+      processType: "HiringCycle",
+      processId: HIRING_PROCESS_ID,
+      purpose: "hiring-forms",
+      createdById: actorId,
+    }),
+  );
+  const form = await createForm(
+    {
       name: `${cycle.name} — Continued interest`,
       folderPageId,
       createdById: actorId,
@@ -205,8 +216,8 @@ export async function createCycleContinuedInterestForm(
         create: { versionNumber: 1, questions: questions as unknown as object, createdById: actorId },
       },
     },
-    select: { id: true },
-  });
+    { id: true },
+  );
   await prisma.applicationCycle.update({
     where: { id: cycleId },
     data: { continuedInterestFormId: form.id },
@@ -238,14 +249,16 @@ export async function createDomainChallengeForm(
   const templateVersion = template?.versions[0];
   const questions = (templateVersion?.questions as unknown as Question[]) ?? defaultQuestions();
 
-  const folderPageId = await ensureProcessFolder({
-    processType: "HiringCycle",
-    processId: HIRING_PROCESS_ID,
-    purpose: "hiring-forms",
-    createdById: actorId,
-  });
-  const form = await prisma.form.create({
-    data: {
+  const folderPageId = await filingFolderOr(singletonSlot("HiringCycle", "HiringForms"), actorId, () =>
+    ensureProcessFolder({
+      processType: "HiringCycle",
+      processId: HIRING_PROCESS_ID,
+      purpose: "hiring-forms",
+      createdById: actorId,
+    }),
+  );
+  const form = await createForm(
+    {
       name: `${cycle.name} — ${domain.displayName} challenge`,
       folderPageId,
       createdById: actorId,
@@ -258,26 +271,18 @@ export async function createDomainChallengeForm(
         },
       },
     },
-    select: { id: true },
-  });
+    { id: true },
+  );
   await prisma.cycleDomainForm.create({
     data: { applicationCycleId: cycleId, domainId, formId: form.id },
   });
   return form.id;
 }
 
-async function cycleIsDraft(cycleId: string): Promise<boolean> {
-  const latest = await prisma.applicationCycleStatusUpdate.findFirst({
-    where: { applicationCycleId: cycleId },
-    orderBy: { createdAt: "desc" },
-    select: { newStatus: true },
-  });
-  return (latest?.newStatus ?? "Draft") === "Draft";
-}
-
 /**
- * Add a challenge to a domain while the cycle is still being set up: link
- * `formId` when the lead picked an existing form, else create a fresh one.
+ * Add a challenge to a domain while its setup is still editable (see
+ * canEditDomainSetup): link `formId` when the lead picked an existing form,
+ * else create a fresh one.
  */
 export async function addDomainChallenge(
   cycleId: string,
@@ -285,7 +290,7 @@ export async function addDomainChallenge(
   actorId: string,
   formId?: string | null,
 ): Promise<"not-draft" | "not-found" | null> {
-  if (!(await cycleIsDraft(cycleId))) return "not-draft";
+  if (!(await canEditDomainSetup(cycleId, domainId))) return "not-draft";
   if (!formId) {
     await createDomainChallengeForm(cycleId, domainId, actorId);
     return null;
@@ -302,8 +307,9 @@ export async function addDomainChallenge(
 }
 
 /**
- * Unlink a domain's challenge form, in Draft only, and never once an applicant
- * has picked it. `cycleId`, when given, must be the link's cycle.
+ * Unlink a domain's challenge form while its setup is still editable, and
+ * never once an applicant has picked it. `cycleId`, when given, must be the
+ * link's cycle.
  */
 export async function removeDomainChallenge(
   cdfId: string,
@@ -311,7 +317,7 @@ export async function removeDomainChallenge(
 ): Promise<"not-found" | "not-draft" | "in-use" | null> {
   const cdf = await prisma.cycleDomainForm.findUnique({ where: { id: cdfId } });
   if (!cdf || (cycleId && cdf.applicationCycleId !== cycleId)) return "not-found";
-  if (!(await cycleIsDraft(cdf.applicationCycleId))) return "not-draft";
+  if (!(await canEditDomainSetup(cdf.applicationCycleId, cdf.domainId))) return "not-draft";
   const inUse = await prisma.domainApplication.count({
     where: {
       challengeFormVersion: { formId: cdf.formId },

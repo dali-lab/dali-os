@@ -12,6 +12,7 @@ import { createRoutesStub } from "react-router";
 import { ToastProvider } from "~/components/ui/toast";
 import { DialogProvider } from "~/components/ui/dialog";
 import { useMeetingRecording, type UseMeetingRecording } from "./use-meeting-recording";
+import type { EnhanceBlockChange, EnhanceMarkEntry, SnapshotBlock } from "./enhance-plan";
 import type { LatestRecording } from "./types";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -341,7 +342,7 @@ describe("latestRecording pickup (Fix 1B: a finished recording reaches any viewe
     expect(box.current!.open).toBe(false);
   });
 
-  it("does not start the Enhance auto-preview for someone else's finished recording (one AI call per note, not per viewer)", async () => {
+  it("never auto-runs Enhance in the background, for the owner or anyone else (specs/meeting-recording-rail.md Step 2: cut)", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       if (String(input).includes("/api/ai/meeting-notes/enhance")) return jsonRes({ error: "unexpected" }, 500);
       return jsonRes({
@@ -354,46 +355,17 @@ describe("latestRecording pickup (Fix 1B: a finished recording reaches any viewe
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    await mountWithLatest("doc-done-other", {
-      id: "rDone",
-      ownerName: "Priya",
-      ownerIsYou: false,
-      status: "Done",
-      since: new Date().toISOString(),
-    }, () => ({ blocks: [], bodyText: "typed notes" }));
+    await mountWithLatest(
+      "doc-done-mine-no-autorun",
+      { id: "rMine", ownerName: "You", ownerIsYou: true, status: "Done", since: new Date().toISOString() },
+      () => ({ blocks: [], bodyText: "typed notes" }),
+    );
     await act(async () => {
       await new Promise((r) => setTimeout(r, 0));
     });
 
     expect(box.current!.phase).toBe("done");
     expect(fetchMock.mock.calls.some((c) => String(c[0]).includes("/api/ai/meeting-notes/enhance"))).toBe(false);
-  });
-
-  it("starts the Enhance auto-preview when the finished recording is the viewer's own", async () => {
-    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
-      if (String(input).includes("/api/ai/meeting-notes/enhance")) return jsonRes({ error: "stub" }, 500);
-      return jsonRes({
-        status: "Done",
-        channels: [],
-        recordedSeconds: 42,
-        lines: [{ at: 1, end: 2, text: "hi", speaker: "mic:1", channel: "mic" }],
-        speakers: {},
-      });
-    });
-    vi.stubGlobal("fetch", fetchMock);
-
-    await mountWithLatest("doc-done-mine", {
-      id: "rMine",
-      ownerName: "You",
-      ownerIsYou: true,
-      status: "Done",
-      since: new Date().toISOString(),
-    }, () => ({ blocks: [], bodyText: "typed notes" }));
-    await act(async () => {
-      await new Promise((r) => setTimeout(r, 0));
-    });
-
-    expect(fetchMock.mock.calls.some((c) => String(c[0]).includes("/api/ai/meeting-notes/enhance"))).toBe(true);
   });
 
   it("follows a live latestRecording read-only, same as before this fix", async () => {
@@ -514,5 +486,377 @@ describe("setSpeaker: onSpeakersChanged + speakersChangedAt (Fix 4: stale names 
 
     expect(box.current!.speakersChangedAt).toBeNull();
     expect(box.current!.speakers["mic:1"]).toBeUndefined();
+  });
+});
+
+// ─── Inline review (specs/meeting-recording-rail.md Step 2) ────────────────
+// A docChangeCb ref stands in for the route's editor.onChange wiring: the
+// hook's subscribeDocumentChanges prop just hands back an unsubscribe, and
+// the route is the one that actually calls back with a mark scan + change
+// list (see documents.$pageId.tsx) — these tests drive that callback
+// directly instead of mounting a real BlockNote editor.
+const docChangeCb: {
+  current: ((ctx: { marks: EnhanceMarkEntry[]; changes: EnhanceBlockChange[] }) => void) | null;
+} = { current: null };
+
+type EnhanceHarnessProps = {
+  documentName: string;
+  getNoteState?: () => { blocks: SnapshotBlock[]; bodyText: string } | null;
+  onApplyEnhance?: (
+    ops: never[],
+    recordingId: string,
+    transcript: string[],
+    actionItems: never[],
+  ) => { ok: boolean; priorBlocks?: Record<string, unknown> };
+  onKeepBlock?: (id: string) => void;
+  onRevertBlock?: (id: string, priorBlocks: Record<string, unknown>) => void;
+  onKeepAllBlocks?: () => number;
+  onRevertAllBlocks?: (priorBlocks: Record<string, unknown>) => number;
+};
+
+function EnhanceHarness(props: EnhanceHarnessProps) {
+  box.current = useMeetingRecording({
+    documentName: props.documentName,
+    canEdit: true,
+    onInsert: () => true,
+    getNoteState: props.getNoteState,
+    onApplyEnhance: props.onApplyEnhance as never,
+    subscribeDocumentChanges: (cb) => {
+      docChangeCb.current = cb;
+      return () => {
+        docChangeCb.current = null;
+      };
+    },
+    onKeepBlock: props.onKeepBlock,
+    onRevertBlock: props.onRevertBlock,
+    onKeepAllBlocks: props.onKeepAllBlocks,
+    onRevertAllBlocks: props.onRevertAllBlocks,
+  });
+  return null;
+}
+
+async function mountEnhanceHarness(props: EnhanceHarnessProps) {
+  const Stub = createRoutesStub([{ path: "/test", Component: () => createElement(EnhanceHarness, props) }]);
+  container = document.createElement("div");
+  document.body.appendChild(container);
+  root = createRoot(container);
+  await act(async () => {
+    root.render(
+      createElement(
+        ToastProvider,
+        null,
+        createElement(DialogProvider, null, createElement(Stub, { initialEntries: ["/test"] })),
+      ),
+    );
+    await new Promise((r) => setTimeout(r, 0));
+  });
+}
+
+function doneRecordingGet() {
+  return jsonRes({
+    status: "Done",
+    channels: [],
+    recordedSeconds: 10,
+    lines: [{ at: 0, end: 1, text: "hi", speaker: "mic:1", channel: "mic" }],
+    speakers: {},
+  });
+}
+
+describe("useMeetingRecording inline review: pendingMarks subscription + Keep/Revert", () => {
+  it("adopts the document's reserved-mark scan as pendingMarks", async () => {
+    await mountEnhanceHarness({ documentName: "doc-marks-1" });
+    expect(box.current!.pendingMarks).toEqual([]);
+
+    const marks: EnhanceMarkEntry[] = [{ id: "b1", mark: "enhance-added", type: "paragraph", text: "x" }];
+    act(() => {
+      docChangeCb.current?.({ marks, changes: [] });
+    });
+
+    expect(box.current!.pendingMarks).toEqual(marks);
+  });
+
+  it("keepBlock/revertBlock delegate to the route's onKeepBlock/onRevertBlock with the recording's priorBlocks", async () => {
+    const onKeepBlock = vi.fn();
+    const onRevertBlock = vi.fn();
+    await mountEnhanceHarness({ documentName: "doc-marks-2", onKeepBlock, onRevertBlock });
+
+    act(() => {
+      box.current!.keepBlock("b1");
+      box.current!.revertBlock("b2");
+    });
+
+    expect(onKeepBlock).toHaveBeenCalledWith("b1");
+    // enhanceNotes is null in this harness, so priorBlocks falls back to {}.
+    expect(onRevertBlock).toHaveBeenCalledWith("b2", {});
+  });
+
+  it("keepAll/revertAll announce the count and return it", async () => {
+    const onKeepAllBlocks = vi.fn(() => 3);
+    const onRevertAllBlocks = vi.fn(() => 1);
+    await mountEnhanceHarness({ documentName: "doc-marks-3", onKeepAllBlocks, onRevertAllBlocks });
+
+    let kept = 0;
+    act(() => {
+      kept = box.current!.keepAll();
+    });
+    expect(kept).toBe(3);
+    expect(box.current!.reviewAnnouncement).toBe("Kept 3 changes.");
+
+    let reverted = 0;
+    act(() => {
+      reverted = box.current!.revertAll();
+    });
+    expect(reverted).toBe(1);
+    expect(box.current!.reviewAnnouncement).toBe("Reverted 1 change.");
+  });
+
+  it("does not announce when nothing was kept or reverted", async () => {
+    await mountEnhanceHarness({
+      documentName: "doc-marks-4",
+      onKeepAllBlocks: () => 0,
+      onRevertAllBlocks: () => 0,
+    });
+    act(() => {
+      box.current!.keepAll();
+    });
+    expect(box.current!.reviewAnnouncement).toBeNull();
+  });
+
+  it("posts {action: reviewed} once the last mark clears, and not again on a later no-op scan", async () => {
+    window.localStorage.setItem(backupKey("doc-marks-5"), JSON.stringify({ id: "r5", link: "l", aiEnabled: true }));
+    const posted: Record<string, unknown>[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, init?: RequestInit) => {
+        if ((init?.method ?? "GET") === "GET") return doneRecordingGet();
+        const body = init?.body ? JSON.parse(String(init.body)) : {};
+        posted.push(body);
+        return jsonRes({ ok: true, reviewedAt: "2026-01-02T00:00:00Z" });
+      }),
+    );
+    await mountEnhanceHarness({ documentName: "doc-marks-5" });
+    expect(box.current!.recordingId).toBe("r5");
+
+    const marks: EnhanceMarkEntry[] = [{ id: "b1", mark: "enhance-added", type: "paragraph", text: "x" }];
+    act(() => {
+      docChangeCb.current?.({ marks, changes: [] });
+    });
+    expect(box.current!.pendingMarks).toHaveLength(1);
+
+    await act(async () => {
+      docChangeCb.current?.({ marks: [], changes: [] });
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    expect(box.current!.pendingMarks).toEqual([]);
+    expect(posted.filter((b) => b.action === "reviewed")).toHaveLength(1);
+    expect(box.current!.reviewedAt).toBe("2026-01-02T00:00:00Z");
+
+    // A later scan that's still empty (e.g. an unrelated remote edit) must
+    // not post a second "reviewed" — there was no 1-to-0 transition this time.
+    await act(async () => {
+      docChangeCb.current?.({ marks: [], changes: [] });
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    expect(posted.filter((b) => b.action === "reviewed")).toHaveLength(1);
+  });
+
+  it("a local edit on an already-marked block clears it via onKeepBlock, without the enhance-apply transaction itself triggering a false Keep", async () => {
+    const onKeepBlock = vi.fn();
+    await mountEnhanceHarness({ documentName: "doc-marks-6", onKeepBlock });
+
+    const marks: EnhanceMarkEntry[] = [{ id: "b1", mark: "enhance-added", type: "paragraph", text: "x" }];
+    // The write that FIRST marks b1: prevBlock carries no mark yet, so this
+    // must not be treated as a local-edit Keep.
+    act(() => {
+      docChangeCb.current?.({
+        marks,
+        changes: [
+          { type: "update", source: { type: "local" }, block: { id: "b1", props: { backgroundColor: "enhance-added" } }, prevBlock: { id: "b1", props: {} } },
+        ],
+      });
+    });
+    expect(onKeepBlock).not.toHaveBeenCalled();
+    expect(box.current!.pendingMarks).toEqual(marks);
+
+    // A later edit to that SAME already-marked block: prevBlock now carries
+    // the mark too — this is the real "typed into a marked block" case.
+    act(() => {
+      docChangeCb.current?.({
+        marks,
+        changes: [
+          {
+            type: "update",
+            source: { type: "local" },
+            block: { id: "b1", props: { backgroundColor: "enhance-added" } },
+            prevBlock: { id: "b1", props: { backgroundColor: "enhance-added" } },
+          },
+        ],
+      });
+    });
+    expect(onKeepBlock).toHaveBeenCalledWith("b1");
+  });
+});
+
+describe("useMeetingRecording.enhanceNow (specs/meeting-recording-rail.md Step 2: preview is a write)", () => {
+  function stubEnhanceFlow(posted: { url: string; body: Record<string, unknown> }[]) {
+    return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = init?.method ?? "GET";
+      if (method === "GET") return doneRecordingGet();
+      const body = init?.body ? (JSON.parse(String(init.body)) as Record<string, unknown>) : {};
+      posted.push({ url, body });
+      if (url.includes("/api/ai/meeting-notes/enhance")) {
+        return jsonRes({
+          plan: { blocks: [], actionItems: [] },
+          verified: { droppedBlocks: 0, droppedCites: 0, unmatchedOwners: 0 },
+          snapshotAt: "2026-01-01T00:00:00Z",
+          snapshot: [],
+        });
+      }
+      if (url.includes("/api/collab/versions")) return jsonRes({ ok: true });
+      return jsonRes({ ok: true, enhancedAt: "2026-01-01T00:05:00Z", enhancedBy: "Ada" });
+    });
+  }
+
+  it("generates, locks, applies, and persists priorBlocks from onApplyEnhance's result in a follow-up call", async () => {
+    window.localStorage.setItem(backupKey("doc-enhance-1"), JSON.stringify({ id: "r1", link: "l", aiEnabled: true }));
+    const posted: { url: string; body: Record<string, unknown> }[] = [];
+    vi.stubGlobal("fetch", stubEnhanceFlow(posted));
+    const onApplyEnhance = vi.fn(() => ({ ok: true, priorBlocks: { b1: { id: "b1" } } }));
+
+    await mountEnhanceHarness({
+      documentName: "doc-enhance-1",
+      getNoteState: () => ({ blocks: [], bodyText: "" }),
+      onApplyEnhance,
+    });
+    expect(box.current!.recordingId).toBe("r1");
+
+    await act(async () => {
+      await box.current!.enhanceNow();
+    });
+
+    expect(onApplyEnhance).toHaveBeenCalled();
+    expect(box.current!.enhancedAt).toBe("2026-01-01T00:05:00Z");
+    expect(box.current!.enhancedByName).toBe("Ada");
+
+    const lockPosts = posted.filter((p) => p.url.includes("/api/meeting-recordings/r1") && p.body.action === "enhanced");
+    expect(lockPosts).toHaveLength(2);
+    expect(lockPosts[0]!.body.priorBlocks).toBeUndefined();
+    expect(lockPosts[1]!.body.priorBlocks).toEqual({ b1: { id: "b1" } });
+  });
+
+  it("sends hasMarks:true to the generate endpoint while a mark is already pending", async () => {
+    window.localStorage.setItem(backupKey("doc-enhance-2"), JSON.stringify({ id: "r2", link: "l", aiEnabled: true }));
+    const posted: { url: string; body: Record<string, unknown> }[] = [];
+    vi.stubGlobal("fetch", stubEnhanceFlow(posted));
+    const onApplyEnhance = vi.fn(() => ({ ok: true }));
+
+    await mountEnhanceHarness({
+      documentName: "doc-enhance-2",
+      getNoteState: () => ({ blocks: [], bodyText: "" }),
+      onApplyEnhance,
+    });
+
+    act(() => {
+      docChangeCb.current?.({ marks: [{ id: "b1", mark: "enhance-added", type: "paragraph", text: "x" }], changes: [] });
+    });
+    expect(box.current!.pendingMarks).toHaveLength(1);
+
+    await act(async () => {
+      await box.current!.enhanceNow();
+    });
+
+    const genPost = posted.find((p) => p.url.includes("/api/ai/meeting-notes/enhance"));
+    expect(genPost?.body.hasMarks).toBe(true);
+  });
+
+  it("sets stalePreview on a 409 from the enhanced lock, without calling onApplyEnhance", async () => {
+    window.localStorage.setItem(backupKey("doc-enhance-3"), JSON.stringify({ id: "r3", link: "l", aiEnabled: true }));
+    const onApplyEnhance = vi.fn(() => ({ ok: true }));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        const method = init?.method ?? "GET";
+        if (method === "GET") return doneRecordingGet();
+        if (url.includes("/api/ai/meeting-notes/enhance")) {
+          return jsonRes({
+            plan: { blocks: [], actionItems: [] },
+            verified: { droppedBlocks: 0, droppedCites: 0, unmatchedOwners: 0 },
+            snapshotAt: "2026-01-01T00:00:00Z",
+            snapshot: [],
+          });
+        }
+        if (url.includes("/api/collab/versions")) return jsonRes({ ok: true });
+        return jsonRes({ error: "stale" }, 409);
+      }),
+    );
+
+    await mountEnhanceHarness({
+      documentName: "doc-enhance-3",
+      getNoteState: () => ({ blocks: [], bodyText: "" }),
+      onApplyEnhance,
+    });
+
+    await act(async () => {
+      await box.current!.enhanceNow();
+    });
+
+    expect(box.current!.stalePreview).toBe(true);
+    expect(onApplyEnhance).not.toHaveBeenCalled();
+  });
+
+  it("cancelEnhanceGenerating stops the run short of writing, even though the in-flight generate call still resolves", async () => {
+    window.localStorage.setItem(backupKey("doc-enhance-4"), JSON.stringify({ id: "r4", link: "l", aiEnabled: true }));
+    const onApplyEnhance = vi.fn(() => ({ ok: true }));
+    let resolveGenerate!: (res: Response) => void;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        const method = init?.method ?? "GET";
+        if (method === "GET") return doneRecordingGet();
+        if (url.includes("/api/ai/meeting-notes/enhance")) {
+          return new Promise<Response>((resolve) => {
+            resolveGenerate = resolve;
+          });
+        }
+        return jsonRes({ ok: true });
+      }),
+    );
+
+    await mountEnhanceHarness({
+      documentName: "doc-enhance-4",
+      getNoteState: () => ({ blocks: [], bodyText: "" }),
+      onApplyEnhance,
+    });
+
+    let settled = false;
+    act(() => {
+      void box.current!.enhanceNow().then(() => (settled = true));
+    });
+    expect(box.current!.enhanceBusy).toBe(true);
+
+    act(() => {
+      box.current!.cancelEnhanceGenerating();
+    });
+    expect(box.current!.enhanceBusy).toBe(false);
+
+    await act(async () => {
+      resolveGenerate(
+        jsonRes({
+          plan: { blocks: [], actionItems: [] },
+          verified: { droppedBlocks: 0, droppedCites: 0, unmatchedOwners: 0 },
+          snapshotAt: "2026-01-01T00:00:00Z",
+          snapshot: [],
+        }),
+      );
+      await new Promise((r) => setTimeout(r, 0));
+    });
+
+    expect(settled).toBe(true);
+    expect(onApplyEnhance).not.toHaveBeenCalled();
+    expect(box.current!.enhancedAt).toBeNull();
+    expect(box.current!.enhanceBusy).toBe(false);
   });
 });

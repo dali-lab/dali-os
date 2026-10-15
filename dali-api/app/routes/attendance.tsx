@@ -80,6 +80,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       meetingType: true,
       meetingTypeLabel: true,
       isCoreMeeting: true,
+      notebookId: true,
       organizerId: true,
       project: { select: { id: true, name: true } },
       organizer: { select: { firstName: true, lastName: true, daliEmail: true } },

@@ -51,9 +51,16 @@ pub fn record_prompt_open(app: AppHandle, id: String) {
     notify::record_prompt_open(&app, id);
 }
 
+// `id` is None when the page never received its payload; the window still
+// has to hide.
 #[tauri::command]
-pub fn record_prompt_dismiss(app: AppHandle, id: String) {
+pub fn record_prompt_dismiss(app: AppHandle, id: Option<String>) {
     notify::record_prompt_dismiss(&app, id);
+}
+
+#[tauri::command]
+pub fn record_prompt_get_view(state: State<'_, AppState>) -> Option<serde_json::Value> {
+    state.record_prompt_view.lock().ok().and_then(|g| g.clone())
 }
 
 #[tauri::command]

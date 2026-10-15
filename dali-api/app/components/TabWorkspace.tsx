@@ -20,6 +20,8 @@ import { CSS } from '@dnd-kit/utilities'
 // Reuse the board's pointer-first collision so hovering a tab resolves to that
 // tab and a pointer in a pane body resolves to the body's drop zone.
 import { pointerFirstCollision } from './board/KanbanBoard'
+import { workspacePath } from './workspace-link'
+import { TabAddressBar } from './TabAddressBar'
 import {
   GUIDE_OPEN_MESSAGE,
   readGuideState,
@@ -286,6 +288,16 @@ function splitVisibleOverflow(
 // (e.g. a cycle detail under Cycles) intentionally does NOT match — the user
 // gets a fresh tab on the section page rather than being snapped to the
 // drifted child, which lets them keep both views side-by-side.
+// A request's url in the form tabs store. An absolute url on our origin would
+// otherwise be filed as-is, and the frame's first `dali:tabNavigated` (always a
+// path) would then read as a navigation away from it, leaving the absolute url
+// on the back stack for navigate() to mangle into a 404.
+function localize(req: OpenTabRequest): OpenTabRequest {
+  if (typeof window === 'undefined') return req
+  const url = workspacePath(req.url, window.location.origin)
+  return url === req.url ? req : { ...req, url }
+}
+
 function findTabPane(state: WorkspaceState, url: string): { paneId: string; tabId: string } | null {
   for (const pane of state.panes) {
     const tab = pane.tabs.find((t) => t.url === url)
@@ -880,7 +892,8 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange, onGuideCh
   useEffect(() => {
     if (!apiRef) return
     apiRef.current = {
-      openTab: (req, opts) => {
+      openTab: (rawReq, opts) => {
+        const req = localize(rawReq)
         const ephemeral = opts?.ephemeral ?? false
         // The tab filed under this url may not be showing it: its stored url
         // only follows the frame through messages, so one that goes missing
@@ -983,7 +996,8 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange, onGuideCh
           }
         })
       },
-      openTabInBackground: (req) => {
+      openTabInBackground: (rawReq) => {
+        const req = localize(rawReq)
         setState((prev) => {
           // If already open, leave it alone — middle-clicking a sidebar item
           // for an open tab shouldn't yank the user away from what they're
@@ -1014,7 +1028,8 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange, onGuideCh
           }
         })
       },
-      openTabToSide: (req) => {
+      openTabToSide: (rawReq) => {
+        const req = localize(rawReq)
         setState((prev) => {
           // Already open somewhere — just focus it (don't duplicate).
           const existing = findTabPane(prev, req.url)
@@ -2062,6 +2077,8 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange, onGuideCh
                 </Tooltip>
               )}
             </div>
+
+            {activeTab && <TabAddressBar path={activeTab.url} />}
 
             {/* One iframe per opened tab; non-active tabs hidden via
                 display:none so switching preserves scroll/form/JS state

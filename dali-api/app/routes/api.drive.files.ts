@@ -6,6 +6,7 @@ import { isCore, isLabMember, isProjectMember } from "~/lib/roles";
 import { parseJson } from "~/lib/validate";
 import { logAuditEvent } from "~/lib/audit";
 import { getPageAccess } from "~/lib/pageAccess.server";
+import { assertUniqueName, nameConflictResponse } from "~/lib/page-names.server";
 
 // POST /api/drive/files
 //
@@ -54,6 +55,16 @@ const CreateDriveFileSchema = z.object({
 });
 
 export async function action({ request }: { request: Request }) {
+  try {
+    return await registerFile(request);
+  } catch (err) {
+    const conflict = nameConflictResponse(err);
+    if (conflict) return withCors(request, conflict);
+    throw err;
+  }
+}
+
+async function registerFile(request: Request) {
   const preflight = handlePreflight(request);
   if (preflight) return preflight;
 
@@ -88,6 +99,14 @@ export async function action({ request }: { request: Request }) {
         );
       }
     }
+    await assertUniqueName({
+      workspaceType: "Member",
+      workspaceId: userId,
+      parentPageId: folderPageId ?? null,
+      kind: "File",
+      title: body.title,
+    });
+
     const file = await prisma.$transaction(async (tx) => {
       const created = await tx.projectFile.create({
         data: {
@@ -146,6 +165,14 @@ export async function action({ request }: { request: Request }) {
     }
 
     // Create the file + first version atomically, then point the file at it.
+    await assertUniqueName({
+      workspaceType: "Lab",
+      workspaceId: null,
+      parentPageId: folderPageId ?? null,
+      kind: "File",
+      title: body.title,
+    });
+
     const file = await prisma.$transaction(async (tx) => {
       const created = await tx.projectFile.create({
         data: {
@@ -205,6 +232,14 @@ export async function action({ request }: { request: Request }) {
         );
       }
     }
+
+    await assertUniqueName({
+      workspaceType: "EducationOffering",
+      workspaceId: offeringId,
+      parentPageId: folderPageId ?? null,
+      kind: "File",
+      title: body.title,
+    });
 
     const file = await prisma.$transaction(async (tx) => {
       const created = await tx.projectFile.create({
@@ -276,6 +311,14 @@ export async function action({ request }: { request: Request }) {
       );
     }
   }
+
+  await assertUniqueName({
+    workspaceType: "Project",
+    workspaceId: projectId,
+    parentPageId: folderPageId ?? null,
+    kind: "File",
+    title: body.title,
+  });
 
   const file = await prisma.$transaction(async (tx) => {
     const created = await tx.projectFile.create({

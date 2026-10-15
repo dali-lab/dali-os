@@ -4,7 +4,7 @@ import * as Y from "yjs";
 // Mock the DB + roles before importing the module under test.
 vi.mock("~/lib/db", () => {
   const mock: any = {
-    mentorNote: { findUnique: vi.fn(), update: vi.fn() },
+    mentorNote: { findUnique: vi.fn(), updateMany: vi.fn() },
     mentorNoteTemplate: { findUnique: vi.fn(), update: vi.fn() },
   };
   return { prisma: mock };
@@ -58,6 +58,13 @@ describe("seedRegistryDoc", () => {
     expect(doc.getXmlFragment(BLOCKNOTE_FRAGMENT).length).toBe(0);
   });
 
+  it("seeds nothing for a note that has moved to a page", async () => {
+    mockPrisma.mentorNote.findUnique.mockResolvedValue({ contentJson: HELLO_PM_DOC, pageId: "p1" });
+    const doc = new Y.Doc();
+    expect(await seedRegistryDoc("mentorNote", "n1", doc)).toBe(true);
+    expect(doc.getXmlFragment(BLOCKNOTE_FRAGMENT).length).toBe(0);
+  });
+
   it("returns false for a non-registry entity (legacy plain-text path)", async () => {
     const doc = new Y.Doc();
     expect(await seedRegistryDoc("review", "r1", doc)).toBe(false);
@@ -72,9 +79,9 @@ describe("syncRegistryDocBack", () => {
 
     const handled = await syncRegistryDocBack("mentorNote", "n1", doc);
     expect(handled).toBe(true);
-    expect(mockPrisma.mentorNote.update).toHaveBeenCalledTimes(1);
-    const arg = mockPrisma.mentorNote.update.mock.calls[0][0];
-    expect(arg.where).toEqual({ id: "n1" });
+    expect(mockPrisma.mentorNote.updateMany).toHaveBeenCalledTimes(1);
+    const arg = mockPrisma.mentorNote.updateMany.mock.calls[0][0];
+    expect(arg.where).toEqual({ id: "n1", pageId: null });
     // Sync-back stores BLOCK JSON (an array), not a PM doc.
     expect(Array.isArray(arg.data.contentJson)).toBe(true);
     expect(blocksToPlainText(arg.data.contentJson)).toBe("Hello");
@@ -103,6 +110,13 @@ describe("authorize", () => {
     mockPrisma.mentorNote.findUnique.mockResolvedValue({ mentorId: "u1" });
     mockIsCore.mockResolvedValue(true);
     expect(await COLLAB_SOURCES.mentorNote.authorize("u2", "n1")).toBe(true);
+  });
+
+  it("mentorNote: a note that has moved to a page is closed to everyone, Core included", async () => {
+    mockPrisma.mentorNote.findUnique.mockResolvedValue({ mentorId: "u1", pageId: "p1" });
+    mockIsCore.mockResolvedValue(true);
+    expect(await COLLAB_SOURCES.mentorNote.authorize("u1", "n1")).toBe(false);
+    expect(await COLLAB_SOURCES.mentorNote.authorize("u2", "n1")).toBe(false);
   });
 
   it("mentorNote: a missing note is denied", async () => {

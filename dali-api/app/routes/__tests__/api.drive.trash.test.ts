@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/db");
+vi.mock("~/forms/lib/form-page.server", () => ({ setFormArchived: vi.fn(), deleteForm: vi.fn() }));
+vi.mock("~/forms/lib/form-usages.server", () => ({ formDeletionBlockers: vi.fn() }));
 vi.mock("~/lib/auth", () => ({
   requireAuth: vi.fn(),
 }));
@@ -25,6 +27,8 @@ import { canViewForms } from "~/lib/roles";
 import { getPageAccess, getPageAccessBulk } from "~/lib/pageAccess.server";
 import { canEditFile } from "~/lib/fileAccess.server";
 import { loader, action } from "~/routes/api.drive.trash";
+import { deleteForm, setFormArchived } from "~/forms/lib/form-page.server";
+import { formDeletionBlockers } from "~/forms/lib/form-usages.server";
 
 const mockPrisma = prisma as unknown as {
   page: {
@@ -34,7 +38,6 @@ const mockPrisma = prisma as unknown as {
     count: ReturnType<typeof vi.fn>;
   };
   projectFile: { findMany: ReturnType<typeof vi.fn>; count: ReturnType<typeof vi.fn> };
-  form: { findMany: ReturnType<typeof vi.fn>; count: ReturnType<typeof vi.fn> };
 };
 
 /** Resolve every page in the batch to the same access result. */
@@ -73,8 +76,6 @@ beforeEach(() => {
   mockPrisma.page.count.mockResolvedValue(0);
   mockPrisma.projectFile.findMany.mockResolvedValue([]);
   mockPrisma.projectFile.count.mockResolvedValue(0);
-  mockPrisma.form.findMany.mockResolvedValue([]);
-  mockPrisma.form.count.mockResolvedValue(0);
   bulkAccess(DENIED);
 });
 
@@ -113,6 +114,21 @@ describe("GET /api/drive/trash", () => {
     expect(mockPrisma.page.findMany.mock.calls[0][0].where.kind.in).toContain("Whiteboard");
   });
 
+  it("includes archived notebooks", async () => {
+    mockPrisma.page.findMany.mockResolvedValue([
+      { id: "nb-1", title: "Weekly sync", archivedAt: ARCHIVED_AT, kind: "Notebook" },
+    ]);
+    bulkAccess(FULL);
+
+    const res = (await loader({
+      request: new Request("http://os.test/api/drive/trash"),
+    } as never)) as Response;
+    const body = (await res.json()) as { items: { id: string }[] };
+
+    expect(body.items.map((i) => i.id)).toEqual(["nb-1"]);
+    expect(mockPrisma.page.findMany.mock.calls[0][0].where.kind.in).toContain("Notebook");
+  });
+
   it("bounds the scan rather than reading every archived row", async () => {
     await loader({ request: new Request("http://os.test/api/drive/trash") } as never);
     expect(mockPrisma.page.findMany.mock.calls[0][0].take).toBeGreaterThan(0);
@@ -131,6 +147,93 @@ describe("GET /api/drive/trash", () => {
     const body = (await res.json()) as { items: unknown[] };
 
     expect(body.items).toEqual([]);
+  });
+});
+
+describe("GET /api/drive/trash (forms)", () => {
+  const formPage = { id: "form-1", title: "Intake", archivedAt: ARCHIVED_AT, kind: "Form", parentPageId: "folder-1" };
+  const list = async () => {
+    const res = (await loader({ request: new Request("http://os.test/api/drive/trash") } as never)) as Response;
+    return ((await res.json()) as { items: { id: string; type: string; title: string }[] }).items;
+  };
+
+  it("lists an archived Form page as a form when the viewer has the forms gate", async () => {
+    vi.mocked(canViewForms).mockResolvedValue(true);
+    mockPrisma.page.findMany.mockResolvedValue([formPage]);
+
+    expect(await list()).toEqual([
+      { id: "form-1", type: "form", title: "Intake", parentFolderId: null, archivedAt: ARCHIVED_AT.toISOString() },
+    ]);
+    expect(mockPrisma.page.findMany.mock.calls[0][0].where.kind.in).toContain("Form");
+  });
+
+  it("drops Form pages for a viewer without the forms gate, whatever page access says", async () => {
+    mockPrisma.page.findMany.mockResolvedValue([formPage]);
+    bulkAccess(FULL);
+
+    expect(await list()).toEqual([]);
+  });
+
+  it("does not run a Form page through page access", async () => {
+    vi.mocked(canViewForms).mockResolvedValue(true);
+    mockPrisma.page.findMany.mockResolvedValue([formPage]);
+
+    await list();
+
+    expect(vi.mocked(getPageAccessBulk).mock.calls[0]?.[1]).toEqual([]);
+  });
+});
+
+describe("POST /api/drive/trash (forms)", () => {
+  const post = (fields: Record<string, string>) => {
+    const body = new FormData();
+    for (const [k, v] of Object.entries(fields)) body.set(k, v);
+    return action({ request: new Request("http://os.test/api/drive/trash", { method: "POST", body }) } as never) as Promise<Response>;
+  };
+  const formModel = () => prisma.form as unknown as { findUnique: ReturnType<typeof vi.fn> };
+
+  it("archives a form through the helper", async () => {
+    vi.mocked(canViewForms).mockResolvedValue(true);
+    formModel().findUnique.mockResolvedValue({ id: "form-1", archivedAt: null });
+
+    expect((await post({ intent: "archive-form", id: "form-1" })).status).toBe(200);
+    expect(setFormArchived).toHaveBeenCalledWith("form-1", expect.any(Date));
+  });
+
+  it("restores a form through the helper", async () => {
+    vi.mocked(canViewForms).mockResolvedValue(true);
+
+    expect((await post({ intent: "restore", type: "form", id: "form-1" })).status).toBe(200);
+    expect(setFormArchived).toHaveBeenCalledWith("form-1", null);
+  });
+
+  it("purges a form through the helper", async () => {
+    vi.mocked(canViewForms).mockResolvedValue(true);
+    vi.mocked(formDeletionBlockers).mockResolvedValue([]);
+
+    expect((await post({ intent: "purge", type: "form", id: "form-1" })).status).toBe(200);
+    expect(deleteForm).toHaveBeenCalledWith("form-1");
+  });
+
+  it("refuses to purge a form that is still in use", async () => {
+    vi.mocked(canViewForms).mockResolvedValue(true);
+    vi.mocked(formDeletionBlockers).mockResolvedValue(["the 26F application"]);
+
+    expect((await post({ intent: "purge", type: "form", id: "form-1" })).status).toBe(409);
+    expect(deleteForm).not.toHaveBeenCalled();
+  });
+
+  it("refuses every form action without the forms gate", async () => {
+    const attempts: Record<string, string>[] = [
+      { intent: "archive-form", id: "form-1" },
+      { intent: "restore", type: "form", id: "form-1" },
+      { intent: "purge", type: "form", id: "form-1" },
+    ];
+    for (const fields of attempts) {
+      expect((await post(fields)).status).toBe(403);
+    }
+    expect(setFormArchived).not.toHaveBeenCalled();
+    expect(deleteForm).not.toHaveBeenCalled();
   });
 });
 
@@ -155,6 +258,38 @@ describe("POST /api/drive/trash (restore)", () => {
 
     expect(res.status).toBe(403);
     expect(mockPrisma.page.update).not.toHaveBeenCalled();
+  });
+});
+
+describe("POST /api/drive/trash (restore a notebook)", () => {
+  const pageMock = prisma.page as unknown as {
+    findUnique: ReturnType<typeof vi.fn>;
+    updateMany: ReturnType<typeof vi.fn>;
+  };
+
+  beforeEach(() => {
+    vi.mocked(getPageAccess).mockResolvedValue(FULL);
+  });
+
+  it("brings back the tabs that were trashed with it, by the same instant", async () => {
+    pageMock.findUnique.mockResolvedValue({ kind: "Notebook", archivedAt: ARCHIVED_AT });
+
+    const res = (await action({ request: restoreRequest("doc", "nb-1") } as never)) as Response;
+
+    expect(res.status).toBe(200);
+    expect(mockPrisma.page.update).toHaveBeenCalledWith({ where: { id: "nb-1" }, data: { archivedAt: null } });
+    expect(pageMock.updateMany).toHaveBeenCalledWith({
+      where: { parentPageId: "nb-1", archivedAt: ARCHIVED_AT },
+      data: { archivedAt: null },
+    });
+  });
+
+  it("restores only the page itself for anything that is not a notebook", async () => {
+    pageMock.findUnique.mockResolvedValue({ kind: "FreeForm", archivedAt: ARCHIVED_AT });
+
+    await action({ request: restoreRequest("doc", "page-1") } as never);
+
+    expect(pageMock.updateMany).not.toHaveBeenCalled();
   });
 });
 
@@ -204,6 +339,17 @@ describe("POST /api/drive/trash (purge)", () => {
 
     expect(res.status).toBe(409);
     expect((await res.json()).error).toMatch(/still holds 3 items/);
+    expect(mockPrisma.page.delete).not.toHaveBeenCalled();
+  });
+
+  it("refuses to purge a Drive root", async () => {
+    vi.mocked(getPageAccess).mockResolvedValue(FULL);
+    (prisma.page.findUnique as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ folderType: "Root" });
+
+    const res = (await action({ request: purgeRequest("folder", "root1") } as never)) as Response;
+
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe("This is a Drive root and can't be deleted");
     expect(mockPrisma.page.delete).not.toHaveBeenCalled();
   });
 

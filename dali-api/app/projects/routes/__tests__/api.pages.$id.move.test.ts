@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("~/lib/db", () => ({
   prisma: {
-    page: { findUnique: vi.fn(), findMany: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
+    page: { findUnique: vi.fn(), findMany: vi.fn(), aggregate: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
     projectFile: { findMany: vi.fn(), updateMany: vi.fn() },
     signingDocument: { count: vi.fn() },
     rubric: { count: vi.fn() },
@@ -18,7 +18,10 @@ vi.mock("~/lib/roles", () => ({
 vi.mock("~/lib/page-share-access.server", () => ({ canManageSharing: vi.fn() }));
 vi.mock("~/lib/pageAccess.server", () => ({
   getPageAccess: vi.fn(),
-  isUnderGoverningScope: vi.fn(),
+}));
+vi.mock("~/lib/page-ancestry.server", async (importActual) => ({
+  ...(await importActual<typeof import("~/lib/page-ancestry.server")>()),
+  loadAncestorChain: vi.fn(),
 }));
 vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
 vi.mock("~/lib/cors", () => ({
@@ -26,14 +29,42 @@ vi.mock("~/lib/cors", () => ({
   handlePreflight: () => null,
 }));
 vi.mock("~/education/lib/access.server", () => ({ isOfferingManager: vi.fn() }));
+vi.mock("~/lib/notebooks.server", () => {
+  class NotebookError extends Error {
+    constructor(
+      message: string,
+      public status: number,
+    ) {
+      super(message);
+    }
+  }
+  return {
+    NotebookError,
+    notebookErrorResponse: (err: unknown) => {
+      if (err instanceof NotebookError) return Response.json({ error: err.message }, { status: err.status });
+      throw err;
+    },
+    addToNotebook: vi.fn(),
+  };
+});
+vi.mock("~/lib/page-names.server", async (importActual) => ({
+  ...(await importActual<typeof import("~/lib/page-names.server")>()),
+  findNameConflict: vi.fn(),
+  assertUniqueName: vi.fn(),
+}));
+vi.mock("~/lib/drive-receivers.server", () => ({ clearTypeIfLeavingRoot: vi.fn() }));
 
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isCore, isProjectMember, isLabMember } from "~/lib/roles";
 import { canManageSharing } from "~/lib/page-share-access.server";
-import { getPageAccess, isUnderGoverningScope } from "~/lib/pageAccess.server";
+import { getPageAccess } from "~/lib/pageAccess.server";
+import { loadAncestorChain } from "~/lib/page-ancestry.server";
 import { isOfferingManager } from "~/education/lib/access.server";
 import { logAuditEvent } from "~/lib/audit";
+import { NotebookError, addToNotebook } from "~/lib/notebooks.server";
+import { clearTypeIfLeavingRoot } from "~/lib/drive-receivers.server";
+import { findNameConflict } from "~/lib/page-names.server";
 import { action } from "../api.pages.$id.move";
 
 const m = prisma as any;
@@ -50,6 +81,8 @@ const call = (body: unknown) => action({ request: req(body), params: { id: "p1" 
 function labPage(over: Record<string, unknown> = {}) {
   return {
     id: "p1",
+    title: "Plans",
+    parentPageId: null,
     workspaceType: "Lab",
     workspaceId: null,
     kind: "FreeForm",
@@ -77,7 +110,7 @@ function notePage(over: Record<string, unknown> = {}) {
  * `where` shape is the only stable way to script them.
  */
 let childrenByParent: Record<string, string[]> = {};
-/** Extra `page.findUnique` answers by id, for the parent-folder + depth walk. */
+/** Extra page rows by id: the destination folder and its ancestors, served as one chain. */
 let pagesById: Record<string, Record<string, unknown>> = {};
 
 beforeEach(() => {
@@ -89,9 +122,16 @@ beforeEach(() => {
   vi.mocked(isLabMember).mockResolvedValue(false);
   vi.mocked(isOfferingManager).mockResolvedValue(false);
   vi.mocked(getPageAccess).mockResolvedValue({ canView: true, canEdit: true, canComment: true });
-  vi.mocked(isUnderGoverningScope).mockResolvedValue(false);
   childrenByParent = {};
   pagesById = {};
+  vi.mocked(loadAncestorChain).mockImplementation((async (startId: string) => {
+    const chain: Record<string, unknown>[] = [];
+    for (let id: string | null = startId; id !== null && pagesById[id]; id = pagesById[id].parentPageId as string | null) {
+      chain.push({ id, scopeKind: null, ...pagesById[id] });
+    }
+    return chain;
+  }) as never);
+  m.page.aggregate.mockResolvedValue({ _max: { position: null } });
   m.page.findMany.mockImplementation(async ({ where }: any) => {
     // Subtree BFS: `parentPageId: { in: [...] }`. Siblings: a plain parentPageId.
     const inList = where?.parentPageId?.in;
@@ -102,6 +142,7 @@ beforeEach(() => {
   m.signingDocument.count.mockResolvedValue(0);
   m.rubric.count.mockResolvedValue(0);
   m.$transaction.mockResolvedValue([]);
+  vi.mocked(clearTypeIfLeavingRoot).mockResolvedValue([]);
 });
 
 /** Data passed to the FIRST prisma.page.update — the moved page. */
@@ -114,6 +155,67 @@ function carriedPageIds(): string[] {
   const call = m.page.updateMany.mock.calls.find((c: any) => c[0].data?.workspaceType);
   return call ? call[0].where.id.in : [];
 }
+
+describe("POST /api/pages/:id/move — Drive roots", () => {
+  it("400s a move of a root and writes nothing", async () => {
+    m.page.findUnique.mockResolvedValue(labPage({ kind: "Folder", folderType: "Root" }));
+    const res = await call({ parentPageId: null });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe("Drive roots can't be moved");
+    expect(m.page.update).not.toHaveBeenCalled();
+  });
+
+  it("400s a cross-workspace move of a root", async () => {
+    m.page.findUnique.mockResolvedValue(labPage({ kind: "Folder", folderType: "Root" }));
+    vi.mocked(isProjectMember).mockResolvedValue(true);
+    const res = await call({ parentPageId: null, workspaceType: "Project", workspaceId: "projA" });
+    expect(res.status).toBe(400);
+    expect(m.page.update).not.toHaveBeenCalled();
+  });
+
+  it("still moves a receiver-typed folder", async () => {
+    m.page.findUnique.mockResolvedValue(labPage({ kind: "Folder", folderType: "Meetings" }));
+    const res = await call({ parentPageId: null });
+    expect(res.status).toBe(200);
+  });
+});
+
+describe("POST /api/pages/:id/move — receiver lifecycle", () => {
+  it("checks the moved folder and its whole subtree after the move", async () => {
+    m.page.findUnique.mockResolvedValue(labPage({ kind: "Folder", folderType: "HiringForms" }));
+    childrenByParent = { p1: ["c1"], c1: ["g1"] };
+    await call({ parentPageId: null });
+    expect(clearTypeIfLeavingRoot).toHaveBeenCalledWith(["p1", "c1", "g1"]);
+    expect(vi.mocked(clearTypeIfLeavingRoot).mock.invocationCallOrder[0]).toBeGreaterThan(
+      m.$transaction.mock.invocationCallOrder[0],
+    );
+  });
+
+  it("reports the receivers it cleared", async () => {
+    m.page.findUnique.mockResolvedValue(labPage({ kind: "Folder", folderType: "HiringForms" }));
+    vi.mocked(clearTypeIfLeavingRoot).mockResolvedValue(["p1"]);
+    const res = await call({ parentPageId: null });
+    expect(await res.json()).toMatchObject({ ok: true, clearedReceivers: ["p1"] });
+  });
+
+  it("reports an empty list when nothing was cleared", async () => {
+    m.page.findUnique.mockResolvedValue(labPage());
+    const res = await call({ parentPageId: null });
+    expect(await res.json()).toMatchObject({ ok: true, clearedReceivers: [] });
+  });
+
+  it("reports where the page was", async () => {
+    m.page.findUnique.mockResolvedValue(labPage({ parentPageId: "old" }));
+    const res = await call({ parentPageId: null });
+    expect((await res.json()).from).toEqual({ workspaceType: "Lab", workspaceId: null, parentPageId: "old" });
+  });
+
+  it("has no folders to check when a plain document moves", async () => {
+    m.page.findUnique.mockResolvedValue(labPage());
+    await call({ parentPageId: null });
+    expect(clearTypeIfLeavingRoot).toHaveBeenCalledWith([]);
+  });
+});
 
 describe("POST /api/pages/:id/move", () => {
   it("same-workspace reorder works with no workspace fields (back-compat)", async () => {
@@ -293,6 +395,26 @@ describe("POST /api/pages/:id/move", () => {
     });
   });
 
+  it("carries a notebook's tabs by its kind, without needing a notebookKey", async () => {
+    m.page.findUnique.mockResolvedValue(projectPage({ kind: "Notebook", notebookKey: null }));
+    vi.mocked(isProjectMember).mockResolvedValue(true);
+    vi.mocked(isLabMember).mockResolvedValue(true);
+    childrenByParent = { p1: ["tab1", "tab2"] };
+    const res = await call({ parentPageId: null, workspaceType: "Lab", workspaceId: null });
+    expect(res.status).toBe(200);
+    expect(carriedPageIds().sort()).toEqual(["tab1", "tab2"]);
+  });
+
+  it("does not collect a subtree for a plain document", async () => {
+    m.page.findUnique.mockResolvedValue(projectPage({ kind: "FreeForm", notebookKey: null }));
+    vi.mocked(isProjectMember).mockResolvedValue(true);
+    vi.mocked(isLabMember).mockResolvedValue(true);
+    childrenByParent = { p1: ["stray"] };
+    const res = await call({ parentPageId: null, workspaceType: "Lab", workspaceId: null });
+    expect(res.status).toBe(200);
+    expect(carriedPageIds()).toEqual([]);
+  });
+
   it("files landing in a project are keyed by projectId, not workspaceType", async () => {
     m.page.findUnique.mockResolvedValue(labPage({ kind: "Folder" }));
     vi.mocked(isCore).mockResolvedValue(true);
@@ -397,5 +519,81 @@ describe("POST /api/pages/:id/move", () => {
     const res = await call({ parentPageId: null });
     expect(res.status).toBe(200);
     expect(getPageAccess).not.toHaveBeenCalled();
+  });
+});
+describe("POST /api/pages/:id/move — into a notebook", () => {
+  const notebook = { workspaceType: "Lab", workspaceId: null, parentPageId: null, kind: "Notebook", archivedAt: null };
+  const mockPage = (page: Record<string, unknown>) =>
+    m.page.findUnique.mockImplementation(async ({ where }: any) =>
+      where.id === "p1" ? page : (pagesById[where.id] ?? null),
+    );
+
+  beforeEach(() => {
+    pagesById = { nb1: notebook };
+    vi.mocked(addToNotebook).mockReset();
+  });
+
+  it("files a doc into the notebook through addToNotebook and writes nothing itself", async () => {
+    mockPage(labPage());
+    const res = await call({ parentPageId: "nb1" });
+    expect(res.status).toBe(200);
+    expect(addToNotebook).toHaveBeenCalledWith("p1", "nb1", "u1");
+    expect(m.$transaction).not.toHaveBeenCalled();
+    expect(m.page.update).not.toHaveBeenCalled();
+  });
+
+  it("files a meeting note the same way", async () => {
+    mockPage(labPage({ meetingNoteId: "m1" }));
+    expect((await call({ parentPageId: "nb1" })).status).toBe(200);
+    expect(addToNotebook).toHaveBeenCalledWith("p1", "nb1", "u1");
+  });
+
+  it("files into a notebook of another workspace without a workspace in the body", async () => {
+    mockPage(projectPage());
+    pagesById = { nb1: { ...notebook, workspaceType: "Lab", workspaceId: null } };
+    expect((await call({ parentPageId: "nb1" })).status).toBe(200);
+    expect(addToNotebook).toHaveBeenCalled();
+  });
+
+  it.each(["Folder", "Whiteboard", "Notebook"])("refuses a %s as a tab", async (kind) => {
+    mockPage(labPage({ kind }));
+    const res = await call({ parentPageId: "nb1" });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toMatch(/only documents/i);
+    expect(addToNotebook).not.toHaveBeenCalled();
+  });
+
+  it("maps the library's refusal to its status", async () => {
+    mockPage(labPage());
+    vi.mocked(addToNotebook).mockRejectedValue(new NotebookError("You can't edit this notebook", 403));
+    const res = await call({ parentPageId: "nb1" });
+    expect(res.status).toBe(403);
+    expect(m.$transaction).not.toHaveBeenCalled();
+  });
+
+  it("still 404s a trashed notebook", async () => {
+    mockPage(labPage());
+    pagesById = { nb1: { ...notebook, archivedAt: new Date() } };
+    expect((await call({ parentPageId: "nb1" })).status).toBe(404);
+    expect(addToNotebook).not.toHaveBeenCalled();
+  });
+
+  it("still refuses a plain doc as a parent", async () => {
+    mockPage(labPage());
+    pagesById = { d2: { ...notebook, kind: "FreeForm" } };
+    expect((await call({ parentPageId: "d2" })).status).toBe(400);
+    expect(addToNotebook).not.toHaveBeenCalled();
+  });
+});
+
+describe("POST /api/pages/:id/move — names", () => {
+  it("409s with the clash message and writes nothing", async () => {
+    m.page.findUnique.mockResolvedValue(labPage({ kind: "Folder" }));
+    vi.mocked(findNameConflict).mockResolvedValueOnce("A folder named “Plans” already exists here");
+    pagesById = { dest: { id: "dest", parentPageId: null, kind: "Folder", workspaceType: "Lab", workspaceId: null, archivedAt: null } };
+    const res = await call({ parentPageId: "dest" });
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toBe("A folder named “Plans” already exists here");
+    expect(m.page.update).not.toHaveBeenCalled();
   });
 });

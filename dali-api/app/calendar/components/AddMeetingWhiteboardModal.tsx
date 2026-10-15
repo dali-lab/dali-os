@@ -2,39 +2,23 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useFetcher } from "react-router";
 import { Shapes, X } from "lucide-react";
-import {
-  useMeetingNote,
-  meetingNoteValid,
-  meetingNotePayload,
-  MeetingNoteFields,
-} from "~/calendar/components/MeetingNoteFields";
 
 // Post-hoc counterpart to the create modal's whiteboard toggle: adds a whiteboard
 // to a meeting that doesn't have one, posting the `add-meeting-whiteboard`
-// calendar action. When the meeting already knows its type (it has a note), the
-// board files alongside it, so the modal is a one-click confirm; a note-less
-// meeting collects the About/type the same way the add-note flow does. A
-// revalidation then swaps the "Add whiteboard" affordance for the "Whiteboard"
-// link. Only rendered when the whiteboard flag is on and no board exists yet.
-
-type MoveDestination = { type: "Lab" | "Project"; id: string | null; label: string };
-
-const fieldClass =
-  "w-full px-3.5 py-2.5 text-sm border border-border rounded-[10px] bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-os-accent/40";
-const labelClass =
-  "block text-[11px] font-bold text-muted-foreground uppercase tracking-[0.08em] mb-2";
+// calendar action. The server files the board beside the meeting's note, or at
+// its space's receiver folder. A revalidation then swaps the "Add whiteboard"
+// affordance for the "Whiteboard" link. Only rendered when the whiteboard flag
+// is on and no board exists yet.
 
 export function AddMeetingWhiteboardButton({
   meetingId,
-  isCoreMeeting,
-  /** The meeting already has a recorded type (e.g. a note): the board reuses it,
-   *  so the modal skips the About/type fields. */
   hasType,
   actionPath,
   className,
 }: {
   meetingId: string;
-  isCoreMeeting: boolean;
+  /** Callers that still pass it are ignored: where the board is filed decides Core. */
+  isCoreMeeting?: boolean;
   hasType: boolean;
   actionPath?: string;
   className?: string;
@@ -48,7 +32,6 @@ export function AddMeetingWhiteboardButton({
       {open && (
         <AddMeetingWhiteboardModal
           meetingId={meetingId}
-          isCoreMeeting={isCoreMeeting}
           hasType={hasType}
           actionPath={actionPath}
           onClose={() => setOpen(false)}
@@ -60,51 +43,16 @@ export function AddMeetingWhiteboardButton({
 
 function AddMeetingWhiteboardModal({
   meetingId,
-  isCoreMeeting,
   hasType,
   actionPath,
   onClose,
 }: {
   meetingId: string;
-  isCoreMeeting: boolean;
   hasType: boolean;
   actionPath?: string;
   onClose: () => void;
 }) {
-  const note = useMeetingNote();
   const fetcher = useFetcher<{ ok?: boolean; error?: string }>();
-  const [myProjects, setMyProjects] = useState<{ id: string; name: string }[]>([]);
-
-  // Marks the board (not the note) as the requested asset for the shared fields.
-  useEffect(() => {
-    note.setWhiteboard(true);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Only need the About picker's projects when the meeting has no type yet.
-  useEffect(() => {
-    if (hasType || isCoreMeeting) return;
-    let cancelled = false;
-    void (async () => {
-      try {
-        const res = await fetch("/api/move-destinations", { credentials: "include" });
-        const json = await res.json();
-        const dests = (json.destinations ?? []) as MoveDestination[];
-        if (!cancelled) {
-          setMyProjects(
-            dests
-              .filter((d) => d.type === "Project" && d.id)
-              .map((d) => ({ id: d.id!, name: d.label })),
-          );
-        }
-      } catch {
-        // No projects → About offers only "General"; the modal still works.
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [hasType, isCoreMeeting]);
 
   // Close only this modal on Escape (capture + stopPropagation) so the key
   // doesn't also close the popover behind it.
@@ -132,21 +80,12 @@ function AddMeetingWhiteboardModal({
     }
   }, [fetcher.state, fetcher.data, onClose]);
 
-  // With a known type the board reuses it; otherwise the shared fields must be
-  // complete (a General/Other meeting needs a name).
-  const valid = hasType || meetingNoteValid(note.state);
-
   function submit() {
-    const fields: Record<string, string> = { intent: "add-meeting-whiteboard", meetingId };
-    if (!hasType) {
-      const payload = meetingNotePayload(note.state);
-      if (payload.meetingType) fields.meetingType = String(payload.meetingType);
-      if (payload.meetingTypeLabel) fields.meetingTypeLabel = String(payload.meetingTypeLabel);
-      if (payload.projectId) fields.projectId = String(payload.projectId);
-      if (payload.noteLocation) fields.noteLocation = JSON.stringify(payload.noteLocation);
-    }
     submittedRef.current = true;
-    fetcher.submit(fields, { method: "post", ...(actionPath ? { action: actionPath } : {}) });
+    fetcher.submit(
+      { intent: "add-meeting-whiteboard", meetingId },
+      { method: "post", ...(actionPath ? { action: actionPath } : {}) },
+    );
   }
 
   if (typeof document === "undefined") return null;
@@ -177,19 +116,6 @@ function AddMeetingWhiteboardModal({
               ? "Starts a shared whiteboard canvas linked to this meeting, filed alongside the meeting note."
               : "Starts a shared whiteboard canvas linked to this meeting."}
           </p>
-          {!hasType && (
-            // MeetingNoteFields indents its rows for the create form's toggle; a
-            // negative left margin pulls them back flush inside this modal.
-            <div className="-ml-6">
-              <MeetingNoteFields
-                note={note}
-                myProjects={myProjects}
-                fieldClass={fieldClass}
-                labelClass={labelClass}
-                core={isCoreMeeting}
-              />
-            </div>
-          )}
           {fetcher.data?.error && <p className="text-sm text-red-600">{fetcher.data.error}</p>}
         </div>
 
@@ -204,7 +130,7 @@ function AddMeetingWhiteboardModal({
           <button
             type="button"
             onClick={submit}
-            disabled={!valid || submitting}
+            disabled={submitting}
             className="inline-flex items-center gap-1.5 rounded-lg bg-os-accent px-4 py-2 text-sm font-semibold text-white hover:bg-os-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
           >
             {submitting ? "Creating…" : "Create whiteboard"}

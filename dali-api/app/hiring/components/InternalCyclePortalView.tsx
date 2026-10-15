@@ -94,6 +94,7 @@ export function InternalCyclePortalView({
               cycleName={cycle.name}
               viewerTimeZone={viewerTimeZone}
               tracker={data.tracker}
+              applyHref={portalPath}
             />
           )}
         </>
@@ -118,11 +119,13 @@ function Tracker({
   cycleName,
   viewerTimeZone,
   tracker,
+  applyHref,
 }: {
   cycleId: string;
   cycleName: string;
   viewerTimeZone: string;
   tracker: NonNullable<Extract<PortalLoaderData, { reason: "ok" }>["tracker"]>;
+  applyHref: string;
 }) {
   const revalidator = useRevalidator();
   return (
@@ -137,6 +140,7 @@ function Tracker({
           slotDurationMinutes={tracker.slotDurationMinutes}
           viewerTimeZone={viewerTimeZone}
           onRevalidate={() => revalidator.revalidate()}
+          applyHref={applyHref}
           forMembers
         />
       ))}

@@ -106,6 +106,30 @@ export function findFinalizableDraft<T extends DecisionRow>(
   );
 }
 
+// The rows still waiting on the hiring lead: per (domain application, type),
+// the newest row at the highest stage reached, unless that stage is Released.
+// Decision is append-only, so a finalized Draft and a released Final both keep
+// their own stage; what marks them as handled is the later sibling. Reading
+// siblings (rather than the parent link) also retires a Draft that delibs
+// re-created after the Final was written, which the finalize route refuses
+// with "already finalized".
+export function pendingForHiringLead<
+  T extends { domainApplicationId: string; type: DecisionType; stage: DecisionStage; createdAt: Date | string },
+>(rows: T[]): T[] {
+  const best = new Map<string, T>();
+  for (const row of rows) {
+    const key = `${row.domainApplicationId}:${row.type}`;
+    const current = best.get(key);
+    if (!current) { best.set(key, row); continue; }
+    const rowRank = STAGE_RANK[row.stage];
+    const currentRank = STAGE_RANK[current.stage];
+    if (rowRank > currentRank || (rowRank === currentRank && toDate(row.createdAt) > toDate(current.createdAt))) {
+      best.set(key, row);
+    }
+  }
+  return rows.filter((row) => best.get(`${row.domainApplicationId}:${row.type}`) === row && row.stage !== "Released");
+}
+
 export type PrePipelinePill = "Reviewing" | "InterviewScheduled" | "PostInterview";
 
 type PrePipelineInput = {

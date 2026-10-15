@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("~/lib/db", () => ({
   prisma: {
-    page: { findUnique: vi.fn() },
+    page: { findUnique: vi.fn(), findFirst: vi.fn(), findMany: vi.fn() },
     instructorAssignment: { findFirst: vi.fn() },
     // sharePermissionFor / isSharedWith resolve group membership and named
     // shares against these; default to "no groups, no shares".
@@ -30,7 +30,13 @@ import { prisma } from "~/lib/db";
 import { isCore, isProjectMember, isLabMember } from "~/lib/roles";
 import { partnerHasProjectAccess } from "~/partners/lib/partner-access";
 import { resolveGroupMembers, listVisibleGroupIdsForUser } from "~/lib/groups";
-import { getPageAccess } from "../pageAccess.server";
+import {
+  getPageAccess,
+  getPageAccessBulk,
+  governingScopeMap,
+  isUnderGoverningScope,
+  PAGE_ACCESS_SELECT,
+} from "../pageAccess.server";
 
 const mockPrisma = prisma as any;
 
@@ -45,6 +51,8 @@ beforeEach(() => {
   mockPrisma.groupDefinition.findMany.mockResolvedValue([]);
   mockPrisma.pageShare.findMany.mockResolvedValue([]);
   mockPrisma.pageShare.findFirst.mockResolvedValue(null);
+  mockPrisma.page.findFirst.mockResolvedValue(null);
+  mockPrisma.page.findMany.mockResolvedValue([]);
   mockPrisma.instructorAssignment.findFirst.mockResolvedValue(null);
 });
 
@@ -413,5 +421,401 @@ describe("Core drive (Group scope)", () => {
     const result = await getPageAccess("core-user", child);
     expect(result.canView).toBe(true);
     expect(result.canEdit).toBe(true);
+  });
+});
+
+describe("PAGE_ACCESS_SELECT", () => {
+  it("selects exactly the columns the access computation reads", () => {
+    expect(Object.keys(PAGE_ACCESS_SELECT).sort()).toEqual(
+      [
+        "id",
+        "workspaceType",
+        "workspaceId",
+        "parentPageId",
+        "archivedAt",
+        "createdById",
+        "partnerVisible",
+        "profileVisible",
+        "labListing",
+        "linkAccess",
+        "linkPermission",
+        "scopeKind",
+        "scopeGroupId",
+        "scopePermission",
+      ].sort(),
+    );
+  });
+
+  it("selects every column with true", () => {
+    expect(Object.values(PAGE_ACCESS_SELECT).every((v) => v === true)).toBe(true);
+  });
+
+  it("is what the by-id path selects", async () => {
+    mockPrisma.page.findUnique.mockResolvedValue(null);
+    await getPageAccess("u1", "page-1");
+    expect(mockPrisma.page.findUnique).toHaveBeenCalledWith({
+      where: { id: "page-1" },
+      select: PAGE_ACCESS_SELECT,
+    });
+  });
+});
+
+// ── Group scope that is not Core, via the object path ───────────────────────
+//
+// Callers that hand getPageAccess a row instead of an id only get the scope
+// cascade if the row carries parentPageId; omitting it silently falls through
+// to the Lab creator/Core rule.
+describe("Group scope on the object path (non-Core group)", () => {
+  const DESIGN_GROUP = "g-design";
+  const governingFolder = (permission: "View" | "Edit") => ({
+    id: "design-root",
+    parentPageId: null,
+    scopeKind: "Group",
+    scopeGroupId: DESIGN_GROUP,
+    scopePermission: permission,
+    createdById: "someone-else",
+  });
+  const childDoc = (over: Record<string, unknown> = {}) =>
+    page({
+      id: "child-doc",
+      workspaceType: "Lab",
+      parentPageId: "design-root",
+      scopeKind: null,
+      linkAccess: "Restricted",
+      createdById: "someone-else",
+      ...over,
+    });
+
+  beforeEach(() => {
+    vi.mocked(isLabMember).mockResolvedValue(true);
+    vi.mocked(resolveGroupMembers).mockResolvedValue(["design-member"]);
+  });
+
+  it("lets a group member edit a doc under the folder when scopePermission is Edit", async () => {
+    mockPrisma.page.findUnique.mockResolvedValue(governingFolder("Edit"));
+    const result = await getPageAccess("design-member", childDoc());
+    expect(result).toEqual(full);
+    expect(resolveGroupMembers).toHaveBeenCalledWith(DESIGN_GROUP);
+  });
+
+  it("lets a group member view but not edit when scopePermission is View", async () => {
+    mockPrisma.page.findUnique.mockResolvedValue(governingFolder("View"));
+    const result = await getPageAccess("design-member", childDoc());
+    expect(result).toEqual({ canView: true, canEdit: false, canComment: false });
+  });
+
+  it("denies the same member when the object omits parentPageId", async () => {
+    mockPrisma.page.findUnique.mockResolvedValue(governingFolder("Edit"));
+    const { parentPageId: _omitted, scopeKind: _scope, ...withoutScopeFields } = childDoc() as Record<string, unknown> & { id: string; workspaceType: string; workspaceId: string | null };
+    const result = await getPageAccess("design-member", withoutScopeFields);
+    expect(result).toEqual(denied());
+    expect(mockPrisma.page.findUnique).not.toHaveBeenCalled();
+  });
+
+  it("denies a lab member who is not in the group", async () => {
+    mockPrisma.page.findUnique.mockResolvedValue(governingFolder("Edit"));
+    const result = await getPageAccess("other-lab-member", childDoc());
+    expect(result).toEqual(denied());
+  });
+
+  it("still lets the creator in when they are not in the group", async () => {
+    mockPrisma.page.findUnique.mockResolvedValue(governingFolder("Edit"));
+    const result = await getPageAccess("author", childDoc({ createdById: "author" }));
+    expect(result).toEqual(full);
+  });
+});
+
+describe("ignoreShares option", () => {
+  const memberNote = (overrides: Record<string, unknown> = {}) =>
+    page({ workspaceType: "Member", workspaceId: "someone-else", ...overrides });
+
+  it("denies a note reached only by a named share", async () => {
+    withShare("View");
+    expect(await getPageAccess("viewer", memberNote())).toEqual({
+      canView: true,
+      canEdit: false,
+      canComment: false,
+    });
+    expect(await getPageAccess("viewer", memberNote(), undefined, { ignoreShares: true })).toEqual(
+      denied(),
+    );
+  });
+
+  it("does not query shares on the single-page path", async () => {
+    await getPageAccess("viewer", memberNote(), undefined, { ignoreShares: true });
+    expect(mockPrisma.pageShare.findMany).not.toHaveBeenCalled();
+  });
+
+  it("does not query shares on the bulk path", async () => {
+    const result = await getPageAccessBulk("viewer", [memberNote()], undefined, {
+      ignoreShares: true,
+    });
+    expect(result.get("page-1")).toEqual(denied());
+    expect(mockPrisma.pageShare.findMany).not.toHaveBeenCalled();
+  });
+
+  it("keeps access the workspace already gives", async () => {
+    withShare("View");
+    const result = await getPageAccessBulk(
+      "viewer",
+      [memberNote({ labListing: "Listed" })],
+      undefined,
+      { ignoreShares: true },
+    );
+    expect(result.get("page-1")?.canView).toBe(true);
+  });
+
+  it("keeps General access: a public link still grants view", async () => {
+    withShare("Edit");
+    const result = await getPageAccessBulk(
+      "viewer",
+      [memberNote({ linkAccess: "Public" })],
+      undefined,
+      { ignoreShares: true },
+    );
+    expect(result.get("page-1")).toEqual({ canView: true, canEdit: false, canComment: false });
+  });
+
+  it("keeps General access: lab-members link grants a lab member", async () => {
+    vi.mocked(isLabMember).mockResolvedValue(true);
+    const result = await getPageAccessBulk(
+      "viewer",
+      [page({ linkAccess: "LabMembers", linkPermission: "Edit" })],
+      undefined,
+      { ignoreShares: true },
+    );
+    expect(result.get("page-1")?.canEdit).toBe(true);
+  });
+
+  it("keeps Core's full base on a lab page", async () => {
+    vi.mocked(isCore).mockResolvedValue(true);
+    const result = await getPageAccessBulk("viewer", [page()], undefined, { ignoreShares: true });
+    expect(result.get("page-1")).toEqual(full);
+  });
+});
+
+describe("governingScopeMap", () => {
+  const node = (id: string, parentPageId: string | null, scope: Record<string, unknown> = {}) => ({
+    id,
+    parentPageId,
+    scopeKind: null,
+    scopeGroupId: null,
+    scopePermission: null,
+    createdById: "author",
+    ...scope,
+  });
+  const group = { scopeKind: "Group", scopeGroupId: "g1", scopePermission: "Edit" };
+  const priv = { scopeKind: "Private" };
+
+  // root
+  // ├─ a (Group g1)
+  // │   └─ b ── c
+  // ├─ d
+  // │   └─ f (Private) ── g
+  // └─ (orphan e, parent not in the set)
+  const tree = [
+    node("root", null),
+    node("a", "root", group),
+    node("b", "a"),
+    node("c", "b"),
+    node("d", "root"),
+    node("f", "d", priv),
+    node("g", "f"),
+    node("e", "missing-parent"),
+  ];
+  const expected: Record<string, string | null> = {
+    root: null,
+    a: "a",
+    b: "a",
+    c: "a",
+    d: null,
+    f: "f",
+    g: "f",
+    e: null,
+  };
+
+  it("resolves the nearest scoped ancestor, the page itself when scoped, else null", () => {
+    const map = governingScopeMap(tree);
+    for (const [id, governingId] of Object.entries(expected)) {
+      expect(map.get(id)?.id ?? null, id).toBe(governingId);
+    }
+    expect(map.size).toBe(tree.length);
+  });
+
+  it("nearest scope shadows a further ancestor", () => {
+    const rows = [node("top", null, group), node("mid", "top", priv), node("leaf", "mid")];
+    expect(governingScopeMap(rows).get("leaf")?.id).toBe("mid");
+  });
+
+  it("returns null when a parent is missing from the rows", () => {
+    expect(governingScopeMap([node("lonely", "gone")]).get("lonely")).toBeNull();
+  });
+
+  it("stops after eight ancestors, like the DB walk", () => {
+    const chain = [node("n0", null, group)];
+    for (let i = 1; i <= 10; i++) chain.push(node(`n${i}`, `n${i - 1}`));
+    const map = governingScopeMap(chain);
+    expect(map.get("n8")?.id).toBe("n0");
+    expect(map.get("n9")).toBeNull();
+    expect(map.get("n10")).toBeNull();
+  });
+
+  describe("agrees with the DB walk", () => {
+    const byId = new Map(tree.map((r) => [r.id, r]));
+    beforeEach(() => {
+      mockPrisma.page.findUnique.mockImplementation(async ({ where }: { where: { id: string } }) =>
+        byId.get(where.id) ?? null,
+      );
+    });
+
+    it("on the governing folder of every page's parent chain", async () => {
+      const map = governingScopeMap(tree);
+      for (const row of tree) {
+        const viaDb = await isUnderGoverningScope(row.parentPageId);
+        const parentGoverned = row.parentPageId !== null && (map.get(row.parentPageId) ?? null) !== null;
+        expect(parentGoverned, row.id).toBe(viaDb);
+      }
+    });
+
+    it("on the access getPageAccessBulk computes for every viewer", async () => {
+      const pages = tree.map((r) => ({
+        ...page({ id: r.id, createdById: r.createdById }),
+        ...r,
+      }));
+      vi.mocked(isLabMember).mockResolvedValue(true);
+      vi.mocked(resolveGroupMembers).mockImplementation(async (id: string) =>
+        id === "g1" ? ["member"] : [],
+      );
+      for (const viewer of ["member", "author", "stranger"]) {
+        mockPrisma.page.findUnique.mockClear();
+        const viaDb = await getPageAccessBulk(viewer, pages);
+        const dbWalks = mockPrisma.page.findUnique.mock.calls.length;
+        mockPrisma.page.findUnique.mockClear();
+        const viaMap = await getPageAccessBulk(viewer, pages, undefined, undefined, governingScopeMap(tree));
+        expect(viaMap, viewer).toEqual(viaDb);
+        expect(dbWalks).toBeGreaterThan(0);
+        expect(mockPrisma.page.findUnique).not.toHaveBeenCalled();
+      }
+    });
+  });
+
+  it("falls back to the DB walk for a page missing from the map", async () => {
+    mockPrisma.page.findUnique.mockResolvedValue({
+      id: "folder",
+      parentPageId: null,
+      scopeKind: "Private",
+      scopeGroupId: null,
+      scopePermission: null,
+      createdById: "someone-else",
+    });
+    vi.mocked(isLabMember).mockResolvedValue(true);
+    const child = { ...page({ id: "child", createdById: "x" }), parentPageId: "folder", scopeKind: null };
+    const res = await getPageAccessBulk("viewer", [child], undefined, undefined, new Map());
+    expect(res.get("child")).toEqual(denied());
+    expect(mockPrisma.page.findUnique).toHaveBeenCalled();
+  });
+});
+
+describe("notebook shares reach tabs", () => {
+  type Row = { pageId: string; principalType: string; principalId: string; permission: string };
+  const tab = (overrides: Record<string, unknown> = {}) => page({ id: "tab1", parentPageId: "nb1", ...overrides });
+
+  function shareRows(rows: Row[]) {
+    mockPrisma.pageShare.findMany.mockImplementation(async ({ where }: any) =>
+      rows.filter((r) => where.pageId.in.includes(r.pageId)),
+    );
+  }
+  const nbShare = (permission: string, principalType = "User", principalId = "viewer"): Row => ({
+    pageId: "nb1",
+    principalType,
+    principalId,
+    permission,
+  });
+
+  it.each([
+    ["View", { canView: true, canEdit: false, canComment: false }],
+    ["Comment", { canView: true, canEdit: false, canComment: true }],
+    ["Edit", full],
+  ])("a %s share on the notebook gives the same tier on the tab", async (permission, expected) => {
+    mockPrisma.page.findFirst.mockResolvedValue({ id: "nb1" });
+    shareRows([nbShare(permission)]);
+    expect(await getPageAccess("viewer", tab())).toEqual(expected);
+    expect(mockPrisma.page.findFirst).toHaveBeenCalledWith({
+      where: { id: "nb1", kind: "Notebook" },
+      select: { id: true },
+    });
+    expect(mockPrisma.pageShare.findMany.mock.calls[0][0].where.pageId).toEqual({ in: ["tab1", "nb1"] });
+  });
+
+  it("a Group share on the notebook reaches the tab for a group member", async () => {
+    vi.mocked(listVisibleGroupIdsForUser).mockResolvedValue([{ id: "g1", archivedAt: null }] as any);
+    mockPrisma.page.findFirst.mockResolvedValue({ id: "nb1" });
+    shareRows([nbShare("Edit", "Group", "g1")]);
+    expect(await getPageAccess("viewer", tab())).toEqual(full);
+  });
+
+  it("a Group share does not reach a non-member", async () => {
+    mockPrisma.page.findFirst.mockResolvedValue({ id: "nb1" });
+    shareRows([nbShare("Edit", "Group", "g1")]);
+    expect(await getPageAccess("viewer", tab())).toEqual(denied());
+  });
+
+  it("does not inherit when the parent is not a notebook", async () => {
+    mockPrisma.page.findFirst.mockResolvedValue(null);
+    shareRows([nbShare("Edit")]);
+    expect(await getPageAccess("viewer", tab())).toEqual(denied());
+    expect(mockPrisma.pageShare.findMany.mock.calls[0][0].where.pageId).toEqual({ in: ["tab1"] });
+  });
+
+  it("a page without a parent makes no notebook lookup", async () => {
+    shareRows([]);
+    await getPageAccess("viewer", page());
+    expect(mockPrisma.page.findFirst).not.toHaveBeenCalled();
+    expect(mockPrisma.pageShare.findMany.mock.calls[0][0].where.pageId).toEqual({ in: ["page-1"] });
+  });
+
+  it("the tab's own share and the notebook's share combine to the higher tier", async () => {
+    mockPrisma.page.findFirst.mockResolvedValue({ id: "nb1" });
+    shareRows([nbShare("Edit"), { ...nbShare("View"), pageId: "tab1" }]);
+    expect(await getPageAccess("viewer", tab())).toEqual(full);
+    shareRows([nbShare("View"), { ...nbShare("Comment"), pageId: "tab1" }]);
+    expect(await getPageAccess("viewer", tab())).toEqual({ canView: true, canEdit: false, canComment: true });
+  });
+
+  it("ignoreShares skips both lookups", async () => {
+    mockPrisma.page.findFirst.mockResolvedValue({ id: "nb1" });
+    shareRows([nbShare("Edit")]);
+    expect(await getPageAccess("viewer", tab(), undefined, { ignoreShares: true })).toEqual(denied());
+    expect(mockPrisma.page.findFirst).not.toHaveBeenCalled();
+    expect(mockPrisma.pageShare.findMany).not.toHaveBeenCalled();
+  });
+
+  it("bulk: only the notebook's tab inherits, with one shares query and one parent-kind query", async () => {
+    mockPrisma.page.findMany.mockResolvedValue([{ id: "nb1" }]);
+    mockPrisma.page.findFirst.mockResolvedValue({ id: "nb1" });
+    shareRows([nbShare("Edit")]);
+    const pages = [
+      page({ id: "nb1", parentPageId: null }),
+      tab(),
+      page({ id: "plain", parentPageId: null }),
+    ];
+    const bulk = await getPageAccessBulk("viewer", pages);
+    expect(bulk.get("tab1")).toEqual(full);
+    expect(bulk.get("plain")).toEqual(denied());
+    expect(mockPrisma.pageShare.findMany).toHaveBeenCalledTimes(1);
+    expect(mockPrisma.pageShare.findMany.mock.calls[0][0].where.pageId.in).toContain("nb1");
+    expect(mockPrisma.page.findMany).toHaveBeenCalledTimes(1);
+    expect(mockPrisma.page.findMany).toHaveBeenCalledWith({
+      where: { id: { in: ["nb1"] }, kind: "Notebook" },
+      select: { id: true },
+    });
+    for (const p of pages) {
+      expect(bulk.get(p.id)).toEqual(await getPageAccess("viewer", p));
+    }
+  });
+
+  it("bulk: no parent lookup when no page has a parent", async () => {
+    await getPageAccessBulk("viewer", [page()]);
+    expect(mockPrisma.page.findMany).not.toHaveBeenCalled();
   });
 });

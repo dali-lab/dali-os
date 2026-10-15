@@ -3,7 +3,6 @@ import {
   AddTimeEntrySchema,
   ASSIGNMENT_TYPES,
   CalendarActionSchema,
-  SetMeetingCoreSchema,
   ToggleMeetingTimeEntrySchema,
   UpdateTimeEntrySchema,
   validateTimeEntryRange,
@@ -131,19 +130,12 @@ describe("UpdateTimeEntrySchema", () => {
 });
 
 describe("meeting detail-popover toggles", () => {
-  it("parses both toggles through the action union", () => {
+  it("parses the timesheet toggle through the action union", () => {
     expect(
       CalendarActionSchema.safeParse({
         intent: "toggle-meeting-time-entry",
         meetingId: "m-1",
         onTimesheet: true,
-      }).success,
-    ).toBe(true);
-    expect(
-      CalendarActionSchema.safeParse({
-        intent: "set-meeting-core",
-        meetingId: "m-1",
-        isCoreMeeting: false,
       }).success,
     ).toBe(true);
   });
@@ -156,8 +148,15 @@ describe("meeting detail-popover toggles", () => {
         onTimesheet: true,
       }).success,
     ).toBe(false);
+  });
+
+  it("no longer accepts the retired set-meeting-core intent", () => {
     expect(
-      SetMeetingCoreSchema.safeParse({ intent: "set-meeting-core", meetingId: "m-1" }).success,
+      CalendarActionSchema.safeParse({
+        intent: "set-meeting-core",
+        meetingId: "m-1",
+        isCoreMeeting: false,
+      }).success,
     ).toBe(false);
   });
 });

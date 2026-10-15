@@ -65,7 +65,7 @@ const FLAG_ROWS_TTL_MS = 15_000;
 export async function getFeatureFlagRows(request?: Request) {
   const compute = () =>
     cachedForTtl("featureFlag:rows", FLAG_ROWS_TTL_MS, async () => {
-      const rows = await prisma.featureFlag.findMany();
+      const rows = (await prisma.featureFlag.findMany()) ?? [];
       return new Map(rows.map((r) => [r.key, r]));
     });
   if (!request) return compute();

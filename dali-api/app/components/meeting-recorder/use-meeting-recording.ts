@@ -25,7 +25,16 @@ import {
 } from "./capture";
 import { ChunkConflictError, ChunkUploadQueue } from "./upload-queue";
 import { countSpeakersByChannel, formatClock, meetingNotesMarkdown, transcriptParagraphs } from "./transcript";
-import { applyEnhancePlan, type EditorOp, type EnhanceActionItem, type SnapshotBlock, type StoredEnhanceNotes } from "./enhance-plan";
+import {
+  applyEnhancePlan,
+  localEditKeepIds,
+  type EditorOp,
+  type EnhanceActionItem,
+  type EnhanceBlockChange,
+  type EnhanceMarkEntry,
+  type SnapshotBlock,
+  type StoredEnhanceNotes,
+} from "./enhance-plan";
 import { isUntouchedTemplate } from "~/lib/meeting-note-template";
 import type {
   Channel,
@@ -53,6 +62,22 @@ export function formatDateTime(iso: string): string {
   } catch {
     return iso;
   }
+}
+
+/** Shallow equality on id+mark+type+text, in order — lets the subscription
+ *  callback keep pendingMarks's array identity stable across an unrelated
+ *  keystroke (specs/meeting-recording-rail.md Step 2: "Memoize so the rail
+ *  does not rerender per keystroke when marks are unchanged"), while an edit
+ *  to a marked block's own text (which changes its `text` field) still
+ *  updates the rail row. */
+function sameMarks(a: readonly EnhanceMarkEntry[], b: readonly EnhanceMarkEntry[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    const x = a[i]!;
+    const y = b[i]!;
+    if (x.id !== y.id || x.mark !== y.mark || x.type !== y.type || x.text !== y.text) return false;
+  }
+  return true;
 }
 
 export function formatIsoDate(iso: string): string {
@@ -158,9 +183,39 @@ export type UseMeetingRecordingProps = {
    *  ready yet. */
   getNoteState?: () => { blocks: SnapshotBlock[]; bodyText: string } | null;
   /** Replays Enhance's merge ops against the live editor and inserts the
-   *  transcript toggle if it isn't already there. False when the editor
-   *  isn't ready. */
-  onApplyEnhance?: (ops: EditorOp[], recordingId: string, transcript: string[], actionItems: EnhanceActionItem[]) => boolean;
+   *  transcript toggle if it isn't already there. `ok: false` when the editor
+   *  isn't ready; `priorBlocks` is renderEnhanceOps's captured prior JSON for
+   *  every updated block, for the hook to persist as StoredEnhanceNotes.
+   *  priorBlocks. */
+  onApplyEnhance?: (
+    ops: EditorOp[],
+    recordingId: string,
+    transcript: string[],
+    actionItems: EnhanceActionItem[],
+  ) => { ok: boolean; priorBlocks?: Record<string, unknown> };
+  /** Subscribes to every document change (local or remote) once the editor is
+   *  ready; returns an unsubscribe. The callback receives the reserved-mark
+   *  scan of the CURRENT document (findEnhanceMarks) and the change list from
+   *  that one transaction (editor.onChange's getChanges()) — this hook stays
+   *  BlockNote-free, so the route computes both and hands over plain data
+   *  (specs/meeting-recording-rail.md Step 2: "Pending is derived from the
+   *  document, not from a flag"). Called once immediately on subscribe with
+   *  the document's current marks and an empty change list, so a note that
+   *  already has marks on arrival starts in "pending review" without
+   *  waiting for an edit. */
+  subscribeDocumentChanges?: (
+    cb: (ctx: { marks: EnhanceMarkEntry[]; changes: EnhanceBlockChange[] }) => void,
+  ) => () => void;
+  /** Clears one block's tint (Keep) / restores or removes it (Revert) on the
+   *  live editor. Single-block versions back the rail row buttons, the
+   *  side-menu items, and a local edit on an already-marked block; the "all"
+   *  versions re-derive the marks fresh at call time and skip ids already
+   *  gone (specs/meeting-recording-rail.md Step 2: "Concurrent review"),
+   *  returning the count kept/reverted for the live-region announcement. */
+  onKeepBlock?: (id: string) => void;
+  onRevertBlock?: (id: string, priorBlocks: Record<string, unknown>) => void;
+  onKeepAllBlocks?: () => number;
+  onRevertAllBlocks?: (priorBlocks: Record<string, unknown>) => number;
   /** The meeting note's project, when it's on one (specs/meeting-notes-model.md
    *  §4) — tasks need a project, so Create tasks is hidden without one. */
   projectId?: string | null;
@@ -193,6 +248,11 @@ export function useMeetingRecording({
   seededTemplateHash = null,
   getNoteState,
   onApplyEnhance,
+  subscribeDocumentChanges,
+  onKeepBlock,
+  onRevertBlock,
+  onKeepAllBlocks,
+  onRevertAllBlocks,
   projectId = null,
   canCreateTasks = false,
   onTaskCreated,
@@ -255,19 +315,38 @@ export function useMeetingRecording({
   // model.md §2 follow-up: renaming after Insert/Enhance left stale names).
   const [speakersChangedAt, setSpeakersChangedAt] = useState<string | null>(null);
 
-  // Enhance (specs/meeting-notes-model.md §2).
+  // Enhance (specs/meeting-notes-model.md §2; inline review in
+  // specs/meeting-recording-rail.md Step 2).
   const [enhanceNotes, setEnhanceNotes] = useState<StoredEnhanceNotes | null>(null);
   const [enhancedAt, setEnhancedAt] = useState<string | null>(null);
   const [enhancedByName, setEnhancedByName] = useState<string | null>(null);
-  const [enhanceSheetOpen, setEnhanceSheetOpen] = useState(false);
   const [enhanceBusy, setEnhanceBusy] = useState(false);
   const [enhanceError, setEnhanceError] = useState<string | null>(null);
-  const [applyBusy, setApplyBusy] = useState(false);
-  const autoEnhanceTried = useRef(false);
-  // True when this page adopted someone else's recording from the loader (not
-  // a backup or a ?transcript= link): the auto-preview is the owner's job, or
-  // every viewer who opens the note would start an AI call.
-  const adoptedFromOthers = useRef(false);
+  // Blocks the live document currently carries a reserved tint on — derived
+  // from the document on every change, not a flag (Step 2: "Pending is
+  // derived from the document"). Drives the "pending review" rail state.
+  const [pendingMarks, setPendingMarks] = useState<EnhanceMarkEntry[]>([]);
+  // Mirrors pendingMarks for the subscription callback's own "had marks
+  // before this change" check — a ref so the callback (identity-stable across
+  // renders via subscribeDocumentChanges's effect deps) always reads the
+  // latest value rather than one captured at subscribe time.
+  const pendingMarksRef = useRef<EnhanceMarkEntry[]>([]);
+  // "N blocks changed while this ran and were left as typed" — captured once,
+  // at the moment Enhance writes, from applyEnhancePlan's own `skipped` count;
+  // nothing to re-derive from the document afterward (a skipped block was
+  // never marked).
+  const [enhanceSkipped, setEnhanceSkipped] = useState(0);
+  // ISO timestamp set when the last mark cleared, by any means (Step 2).
+  const [reviewedAt, setReviewedAt] = useState<string | null>(null);
+  // "Kept N changes."/"Reverted N changes." — the rail's dedicated live-region
+  // text for Keep all/Revert all, distinct from the status line (Step 2
+  // Accessibility).
+  const [reviewAnnouncement, setReviewAnnouncement] = useState<string | null>(null);
+  // Set true as soon as a "reviewed" POST is sent for the marks currently
+  // clearing, so a transaction that fires onChange more than once for the
+  // same clear-to-zero never double-posts; reset whenever a fresh Enhance
+  // write lands (new marks on the way, so a future clear should post again).
+  const reviewedPostedRef = useRef(false);
   // "Someone enhanced this note after your preview." — the 409 case
   // (specs/meeting-recording-rail.md's "stale preview" state, replacing the
   // old reload confirm dialog).
@@ -333,10 +412,14 @@ export function useMeetingRecording({
     setEnhanceNotes(null);
     setEnhancedAt(null);
     setEnhancedByName(null);
-    setEnhanceSheetOpen(false);
     setEnhanceError(null);
+    setPendingMarks([]);
+    pendingMarksRef.current = [];
+    setEnhanceSkipped(0);
+    setReviewedAt(null);
+    setReviewAnnouncement(null);
+    reviewedPostedRef.current = false;
     setStalePreview(false);
-    autoEnhanceTried.current = false;
     segmentRef.current = 0;
     conflictedRef.current = false;
     setPhase("idle");
@@ -375,7 +458,6 @@ export function useMeetingRecording({
       (transcriptParam ? { id: transcriptParam, link: "", aiEnabled: false } : null) ??
       (latestRecording ? { id: latestRecording.id, link: "", aiEnabled: false } : null);
     if (!saved) return;
-    adoptedFromOthers.current = !own && !transcriptParam && Boolean(latestRecording && !latestRecording.ownerIsYou);
     const following =
       !own && !transcriptParam && latestRecording && LIVE_STATUSES.has(latestRecording.status)
         ? latestRecording
@@ -406,6 +488,7 @@ export function useMeetingRecording({
       setEnhanceNotes(data.notes ?? null);
       setEnhancedAt(data.enhancedAt ?? null);
       setEnhancedByName(data.enhancedBy ?? null);
+      setReviewedAt(data.reviewedAt ?? null);
       segmentRef.current = Math.max(0, (data.segmentStarts?.length ?? 1) - 1);
       if (data.error) setError(data.error);
       if (following) {
@@ -526,6 +609,7 @@ export function useMeetingRecording({
       if (data.notes !== undefined) setEnhanceNotes(data.notes ?? null);
       if (data.enhancedAt !== undefined) setEnhancedAt(data.enhancedAt ?? null);
       if (data.enhancedBy !== undefined) setEnhancedByName(data.enhancedBy ?? null);
+      if (data.reviewedAt !== undefined) setReviewedAt(data.reviewedAt ?? null);
       if (data.status === "Recording") {
         setAppUnreachable(false);
         setPhase((p) => {
@@ -579,6 +663,7 @@ export function useMeetingRecording({
       if (data.notes !== undefined) setEnhanceNotes(data.notes ?? null);
       if (data.enhancedAt !== undefined) setEnhancedAt(data.enhancedAt ?? null);
       if (data.enhancedBy !== undefined) setEnhancedByName(data.enhancedBy ?? null);
+      if (data.reviewedAt !== undefined) setReviewedAt(data.reviewedAt ?? null);
       if (data.status === "Done") {
         setLines(data.lines);
         setSpeakers(data.speakers);
@@ -646,17 +731,41 @@ export function useMeetingRecording({
     highlightLineRef.current?.scrollIntoView({ block: "center" });
   }, [phase, highlightAt, lines.length]);
 
-  // Enhance auto-preview (specs/meeting-notes-model.md §2): runs once, for
-  // the owner, the moment the transcript lands with no plan yet — the sheet
-  // is then ready the instant someone opens it, no 10-20s wait. Never applies.
+  // ─── Inline review: scan the document for Enhance marks on every change ──
+  // Cut: the owner-only background auto-preview (specs/meeting-recording-
+  // rail.md Step 2: "there is nothing to pre-compute when preview and apply
+  // are the same write, and a background write to a shared note is not
+  // acceptable"). Enhance now runs only on a click (enhanceNow, below).
   useEffect(() => {
-    if (autoEnhanceTried.current) return;
-    if (phase !== "done" || lines.length === 0 || enhanceNotes) return;
-    if (!canEdit || (remote && !remote.ownerIsYou) || adoptedFromOthers.current) return;
-    autoEnhanceTried.current = true;
-    void generateEnhance();
+    if (!subscribeDocumentChanges) return;
+    return subscribeDocumentChanges(({ marks, changes }) => {
+      const keepIds = localEditKeepIds(changes, marks);
+      for (const id of keepIds) onKeepBlock?.(id);
+      const effective = keepIds.length ? marks.filter((m) => !keepIds.includes(m.id)) : marks;
+
+      const hadMarks = pendingMarksRef.current.length > 0;
+      setPendingMarks((prev) => (sameMarks(prev, effective) ? prev : effective));
+      pendingMarksRef.current = effective;
+
+      if (hadMarks && effective.length === 0 && !reviewedPostedRef.current && recordingId) {
+        reviewedPostedRef.current = true;
+        const postedAt = new Date().toISOString();
+        setReviewedAt(postedAt);
+        void fetch(`/api/meeting-recordings/${recordingId}`, {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "reviewed" }),
+        })
+          .then((res) => res.json())
+          .then((json: { reviewedAt?: string }) => {
+            if (typeof json?.reviewedAt === "string") setReviewedAt(json.reviewedAt);
+          })
+          .catch(() => null);
+      }
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phase, lines.length, enhanceNotes, canEdit, remote]);
+  }, [subscribeDocumentChanges, recordingId]);
 
   function openInApp(href: string) {
     try {
@@ -941,6 +1050,8 @@ export function useMeetingRecording({
       tone: "destructive",
     });
     if (!ok) return;
+    // Tints never outlive the rail (specs/meeting-recording-rail.md Step 2).
+    if (pendingMarks.length > 0) revertAll();
     reset();
   }
 
@@ -974,115 +1085,170 @@ export function useMeetingRecording({
     return isUntouchedTemplate({ seededFromPageId, seededTemplateHash }, state.bodyText);
   }
 
-  async function generateEnhance(): Promise<boolean> {
-    if (!recordingId) return false;
+  // Bumped by cancelEnhanceGenerating; enhanceNow checks it after every await
+  // so a Cancel click during "generating" (no AbortController — the fetches
+  // themselves still finish) stops short of writing marks into the document,
+  // the one effect that matters once someone's told it to stop.
+  const enhanceGenRef = useRef(0);
+
+  /** Generates the plan and immediately applies it — specs/meeting-recording-
+   *  rail.md Step 2: "Preview is a write. There is no separate Apply step."
+   *  Snapshots "Before enhance", takes the enhanced lock (still first, same
+   *  as the old Apply), replays the ops in one editor transaction
+   *  (onApplyEnhance → renderEnhanceOps), then persists the priorBlocks that
+   *  render captured. Always regenerates fresh: there's no cached preview to
+   *  reuse when every click is a write. */
+  async function enhanceNow(): Promise<void> {
+    if (!recordingId || !onApplyEnhance || enhanceBusy) return;
     const state = getNoteState?.();
     if (!state) {
       setEnhanceError("The note is still loading. Try again in a moment.");
-      return false;
+      return;
     }
+    const myGen = ++enhanceGenRef.current;
+    const live = () => enhanceGenRef.current === myGen;
     setEnhanceBusy(true);
     setEnhanceError(null);
+    setStalePreview(false);
     try {
+      const untouchedTemplate = isUntouchedTemplate({ seededFromPageId, seededTemplateHash }, state.bodyText);
       const res = await fetch("/api/ai/meeting-notes/enhance", {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          recordingId,
-          blocks: state.blocks,
-          untouchedTemplate: isUntouchedTemplate({ seededFromPageId, seededTemplateHash }, state.bodyText),
-        }),
+        body: JSON.stringify({ recordingId, blocks: state.blocks, untouchedTemplate, hasMarks: pendingMarks.length > 0 }),
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.plan) {
-        setEnhanceError(json?.error ?? "Couldn't generate notes.");
-        return false;
-      }
-      setEnhanceNotes(json as StoredEnhanceNotes);
-      return true;
-    } catch {
-      setEnhanceError("Couldn't generate notes.");
-      return false;
-    } finally {
-      setEnhanceBusy(false);
-    }
-  }
-
-  /** Opens the preview; generates (or regenerates, with forceRegenerate) only
-   *  if nothing's already in flight, so auto-preview and a click racing each
-   *  other don't fire two requests. The per-user consent confirm that used to
-   *  gate this moved to a static sentence on the start sheet. */
-  async function onEnhanceClick(forceRegenerate = false) {
-    setEnhanceSheetOpen(true);
-    setStalePreview(false);
-    if (enhanceBusy) return;
-    if (forceRegenerate) setEnhanceNotes(null);
-    if (forceRegenerate || !enhanceNotes) void generateEnhance();
-  }
-
-  /** "Reload preview" on the stale-preview state: regenerates from the
-   *  current text and the transcript, same as Enhance again. */
-  function reloadStalePreview() {
-    void onEnhanceClick(true);
-  }
-
-  /** Closes the preview (Cancel, in the "generating"/"preview" states) or the
-   *  stale-preview notice (Cancel there too) without discarding anything. */
-  function closeEnhancePreview() {
-    setStalePreview(false);
-    setEnhanceSheetOpen(false);
-  }
-
-  async function applyEnhance() {
-    if (!recordingId || !enhanceNotes || !onApplyEnhance) return;
-    setApplyBusy(true);
-    setEnhanceError(null);
-    try {
-      const state = getNoteState?.();
-      if (!state) {
-        setEnhanceError("The note is still loading. Try again in a moment.");
+        if (live()) setEnhanceError(json?.error ?? "Couldn't generate notes.");
         return;
       }
+      if (!live()) return;
+      const notes = json as StoredEnhanceNotes;
+      setEnhanceNotes(notes);
+
       await fetch("/api/collab/versions", {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: documentName, label: "Before enhance" }),
       }).catch(() => null);
+      if (!live()) return;
 
       const lockRes = await fetch(`/api/meeting-recordings/${recordingId}`, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "enhanced", snapshotAt: enhanceNotes.snapshotAt }),
+        body: JSON.stringify({ action: "enhanced", snapshotAt: notes.snapshotAt }),
       });
       if (lockRes.status === 409) {
-        setStalePreview(true);
+        if (live()) setStalePreview(true);
         return;
       }
       const lockJson = await lockRes.json().catch(() => null);
       if (!lockRes.ok) {
-        setEnhanceError(lockJson?.error ?? "Couldn't save.");
+        if (live()) setEnhanceError(lockJson?.error ?? "Couldn't save.");
         return;
       }
+      if (!live()) return;
 
-      const untouched = isUntouchedTemplate({ seededFromPageId, seededTemplateHash }, state.bodyText);
-      const { ops } = applyEnhancePlan(enhanceNotes.snapshot, state.blocks, enhanceNotes.plan, {
-        untouchedTemplate: untouched,
-      });
+      const { ops, skipped } = applyEnhancePlan(notes.snapshot, state.blocks, notes.plan, { untouchedTemplate });
       const paragraphs = transcriptParagraphs(lines, speakers, roster);
-      if (!onApplyEnhance(ops, recordingId, paragraphs, enhanceNotes.plan.actionItems)) {
+      const result = onApplyEnhance(ops, recordingId, paragraphs, notes.plan.actionItems);
+      if (!result.ok) {
         setEnhanceError("The note is still loading. Try again in a moment.");
         return;
       }
 
+      setEnhanceSkipped(skipped);
+      reviewedPostedRef.current = false;
       setEnhancedAt(typeof lockJson?.enhancedAt === "string" ? lockJson.enhancedAt : new Date().toISOString());
       setEnhancedByName(typeof lockJson?.enhancedBy === "string" ? lockJson.enhancedBy : null);
-      setEnhanceSheetOpen(false);
+
+      // priorBlocks is only known once render has captured it, so it rides a
+      // second call to the same lock action (its own staleness check still
+      // passes: nothing wrote notes.snapshotAt in between).
+      if (result.priorBlocks && Object.keys(result.priorBlocks).length > 0) {
+        const priorBlocks = result.priorBlocks;
+        setEnhanceNotes((prev) => (prev ? { ...prev, priorBlocks } : prev));
+        void fetch(`/api/meeting-recordings/${recordingId}`, {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "enhanced", snapshotAt: notes.snapshotAt, priorBlocks }),
+        }).catch(() => null);
+      }
+    } catch {
+      if (live()) setEnhanceError("Couldn't generate notes.");
     } finally {
-      setApplyBusy(false);
+      if (live()) setEnhanceBusy(false);
     }
+  }
+
+  /** "Cancel" while generating: stops this run short of writing anything
+   *  (the in-flight requests still finish; their results are ignored). */
+  function cancelEnhanceGenerating() {
+    enhanceGenRef.current++;
+    setEnhanceBusy(false);
+  }
+
+  /** "Reload preview" on the stale-preview state: just re-runs enhanceNow —
+   *  there's no separate preview step to regenerate into any more. */
+  function reloadStalePreview() {
+    setStalePreview(false);
+    void enhanceNow();
+  }
+
+  /** "Cancel" on the stale-preview state: dismisses the notice without
+   *  retrying. */
+  function dismissStalePreview() {
+    setStalePreview(false);
+  }
+
+  /** "Revert all and enhance again" while pending review (Step 2: "so an
+   *  unreviewed note is never stuck"). */
+  async function revertAllAndEnhanceAgain() {
+    if (pendingMarks.length > 0) revertAll();
+    await enhanceNow();
+  }
+
+  /** Keep/Revert one block — the rail row buttons, the side-menu items, and
+   *  a local edit on an already-marked block (the subscription effect
+   *  above) all funnel through these. */
+  function keepBlock(id: string) {
+    onKeepBlock?.(id);
+  }
+
+  function revertBlock(id: string) {
+    onRevertBlock?.(id, enhanceNotes?.priorBlocks ?? {});
+  }
+
+  /** Keep all / Revert all: iterate the marks present at click time (the
+   *  route's keepAllEnhance/revertAllEnhance re-derive from the live editor,
+   *  skipping ids already gone — Step 2: "Concurrent review"). Announces the
+   *  count on the rail's dedicated live region. */
+  function keepAll(): number {
+    const count = onKeepAllBlocks?.() ?? 0;
+    if (count > 0) setReviewAnnouncement(`Kept ${count} change${count === 1 ? "" : "s"}.`);
+    return count;
+  }
+
+  function revertAll(): number {
+    const count = onRevertAllBlocks?.(enhanceNotes?.priorBlocks ?? {}) ?? 0;
+    if (count > 0) setReviewAnnouncement(`Reverted ${count} change${count === 1 ? "" : "s"}.`);
+    return count;
+  }
+
+  /** Scrolls the note to a marked block and flashes it. Plain DOM — every
+   *  BlockNote block carries a `data-id` attribute on its outer element, so
+   *  no editor reference is needed (same attribute the read-only-checklist
+   *  toggle in DocEditorImpl.tsx already keys off). */
+  function scrollToBlock(id: string) {
+    const el = document.querySelector<HTMLElement>(`[data-id="${id}"]`);
+    if (!el) return;
+    el.scrollIntoView({ block: "center" });
+    el.classList.add("dali-cursor-flash");
+    setTimeout(() => el.classList.remove("dali-cursor-flash"), 1500);
   }
 
   // Action items into Tasks (specs/meeting-notes-model.md §4). Dedup and the
@@ -1261,12 +1427,13 @@ export function useMeetingRecording({
     enhanceNotes,
     enhancedAt,
     enhancedByName,
-    enhanceSheetOpen,
-    setEnhanceSheetOpen,
     enhanceBusy,
     enhanceError,
-    applyBusy,
     stalePreview,
+    pendingMarks,
+    enhanceSkipped,
+    reviewedAt,
+    reviewAnnouncement,
 
     // Start-sheet config.
     useDesktopApp,
@@ -1309,11 +1476,16 @@ export function useMeetingRecording({
     discard,
     insert,
     currentlyUntouched,
-    generateEnhance,
-    onEnhanceClick,
+    enhanceNow,
+    cancelEnhanceGenerating,
     reloadStalePreview,
-    closeEnhancePreview,
-    applyEnhance,
+    dismissStalePreview,
+    revertAllAndEnhanceAgain,
+    keepBlock,
+    revertBlock,
+    keepAll,
+    revertAll,
+    scrollToBlock,
     createTasksFromItems,
     setSpeaker,
     jumpToTranscript,

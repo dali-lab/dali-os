@@ -240,7 +240,7 @@ test.describe('Drive hub', () => {
   });
 
   // ── Test G: My Drive create via naming prompt ───────────────────────────────
-  test('(G) My Drive scope creates a document via the naming prompt', async ({ page }) => {
+  test('(G) My Drive scope creates a document via the naming prompt and reveals it in place', async ({ page }) => {
     const stamp = Date.now();
     await page.goto('/drive?scope=mine&embed=1');
     await page.waitForLoadState('networkidle');
@@ -253,11 +253,9 @@ test.describe('Drive hub', () => {
     await expect(input).toBeVisible();
     await input.fill(`My note ${stamp}`);
 
-    await Promise.all([
-      page.waitForURL(/\/documents\//, { timeout: 10_000 }),
-      page.getByRole('button', { name: 'Create' }).click(),
-    ]);
-    expect(page.url()).toMatch(/\/documents\//);
+    await page.getByRole('button', { name: 'Create' }).click();
+    await expect(page.getByText(`My note ${stamp}`).first()).toBeVisible();
+    expect(page.url()).toContain('/drive');
   });
 
   // ── Test H: Core drive auto-provisions for Core members ─────────────────────
@@ -280,11 +278,9 @@ test.describe('Drive hub', () => {
     await expect(input).toBeVisible();
     await input.fill(`Core doc ${stamp}`);
 
-    await Promise.all([
-      page.waitForURL(/\/documents\//, { timeout: 10_000 }),
-      page.getByRole('button', { name: 'Create' }).click(),
-    ]);
-    expect(page.url()).toMatch(/\/documents\//);
+    await page.getByRole('button', { name: 'Create' }).click();
+    await expect(page.getByText(`Core doc ${stamp}`).first()).toBeVisible();
+    expect(page.url()).toContain('/drive');
   });
 
   // ── Test I: New→Agreement (Core) ─────────────────────────────────────────────
@@ -312,8 +308,15 @@ test.describe('Drive hub', () => {
   // ── Test J: real dnd-kit drag moves a doc into a folder ──────────────────────
   test('(J) Dragging a doc into a folder persists the move', async ({ page }) => {
     const stamp = Date.now();
+    // A decoy folder that sorts ahead of the target: the folder band lays tiles
+    // side by side, and a drop must land in the tile under the pointer rather
+    // than the first tile the dragged row overlaps.
+    const decoyRes = await page.request.post('/api/lab-documents', {
+      data: { title: `E2E drag folder ${stamp} a decoy`, kind: 'Folder' },
+    });
+    expect(decoyRes.ok(), `Create decoy folder failed: ${await decoyRes.text()}`).toBe(true);
     const folderRes = await page.request.post('/api/lab-documents', {
-      data: { title: `E2E drag folder ${stamp}`, kind: 'Folder' },
+      data: { title: `E2E drag folder ${stamp} b target`, kind: 'Folder' },
     });
     expect(folderRes.ok(), `Create folder failed: ${await folderRes.text()}`).toBe(true);
     const { id: folderId } = await folderRes.json() as { id: string };
@@ -324,6 +327,9 @@ test.describe('Drive hub', () => {
     expect(docRes.ok(), `Create doc failed: ${await docRes.text()}`).toBe(true);
     const { id: docId } = await docRes.json() as { id: string };
 
+    // The folder band and the doc row both have to be on screen for one drag,
+    // and earlier attempts leave their rows in this listing.
+    await page.setViewportSize({ width: 1280, height: 1800 });
     await page.goto('/drive?scope=lab&embed=1');
     await page.waitForLoadState('networkidle');
 
@@ -367,8 +373,8 @@ test.describe('Drive hub', () => {
     await page.goto('/drive?scope=lab&embed=1');
     await page.waitForLoadState('networkidle');
 
-    await page.getByTestId(`drive-item-doc-${idA}`).click();
-    await page.getByTestId(`drive-item-doc-${idB}`).click({ modifiers: ['Control'] });
+    await page.getByTestId(`drive-item-doc-${idA}`).click({ modifiers: ['ControlOrMeta'] });
+    await page.getByTestId(`drive-item-doc-${idB}`).click({ modifiers: ['ControlOrMeta'] });
 
     const bar = page.getByTestId('drive-bulk-bar');
     await expect(bar).toBeVisible();
@@ -423,6 +429,9 @@ test.describe('Drive hub', () => {
 
 // ── Drag helper (adapted from kanban-drag.spec.ts) ────────────────────────────
 async function dragHandleTo(page: Page, handle: Locator, target: Locator) {
+  // The folder band scrolls sideways, so the target may sit past the right
+  // edge; bring it in first, then the handle, so both boxes are on screen.
+  await target.scrollIntoViewIfNeeded();
   await handle.scrollIntoViewIfNeeded();
 
   const handleBox = await handle.boundingBox();
@@ -434,17 +443,30 @@ async function dragHandleTo(page: Page, handle: Locator, target: Locator) {
 
   const startX = handleBox.x + handleBox.width / 2;
   const startY = handleBox.y + handleBox.height / 2;
-  const endX = targetBox.x + targetBox.width / 2;
-  const endY = Math.min(
-    Math.max(targetBox.y + 8, startY),
-    Math.min(targetBox.y + targetBox.height - 8, viewport.height - 8),
-  );
+  const dropPoint = (box: { x: number; y: number; width: number; height: number }) => ({
+    x: box.x + box.width / 2,
+    y: Math.min(
+      Math.max(box.y + 8, startY),
+      Math.min(box.y + box.height - 8, viewport.height - 8),
+    ),
+  });
+  const end = dropPoint(targetBox);
+  // Activation nudges head toward the target: nudging away pushes a handle
+  // that sits at the viewport edge further into dnd-kit's auto-scroll zone.
+  const dx = Math.sign(end.x - startX) || 1;
+  const dy = Math.sign(end.y - startY) || 1;
 
   await page.mouse.move(startX, startY);
   await page.mouse.down();
-  await page.mouse.move(startX + 4, startY + 4, { steps: 3 });
-  await page.mouse.move(startX + 12, startY + 12, { steps: 5 });
-  await page.mouse.move(endX, endY, { steps: 15 });
-  await page.mouse.move(endX, endY);
+  await page.mouse.move(startX + 4 * dx, startY + 4 * dy, { steps: 3 });
+  await page.mouse.move(startX + 12 * dx, startY + 12 * dy, { steps: 5 });
+  await page.mouse.move(end.x, end.y, { steps: 15 });
+  // dnd-kit auto-scrolls while the pointer sits near a viewport edge, which
+  // moves the target under a point measured before the drag. Re-measure and
+  // settle on where the target is now before releasing.
+  const settledBox = await target.boundingBox();
+  if (!settledBox) throw new Error('dragHandleTo: target left the page mid-drag');
+  const settled = dropPoint(settledBox);
+  await page.mouse.move(settled.x, settled.y, { steps: 5 });
   await page.mouse.up();
 }

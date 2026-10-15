@@ -67,6 +67,9 @@ export type GroupOption = {
   systemKey: string | null;
 };
 
+/** A mentee the viewer mentors this term, for suggesting the pair's notebook on a 1:1. */
+export type MentorPairOption = { menteeId: string; menteeName: string };
+
 export type UserOption = {
   id: string;
   firstName: string;
@@ -206,7 +209,7 @@ export type EventMeetingDTO = {
   /** Whether the viewer already has a TimeEntry for this meeting. */
   onTimesheet: boolean;
   isCoreMeeting: boolean;
-  /** Core only — hides the "Core meeting" checkbox for everyone else. */
+  /** Core only; the Add note and whiteboard permissions derive from it. */
   canMarkCoreMeeting: boolean;
   /** Whether the viewer (organizer or Core) may add a notes doc to a meeting
    *  that doesn't have one yet — gates the popover's "Add meeting notes"
@@ -331,9 +334,9 @@ export type LoaderData = {
    *  calendar. Lab-native layers are unaffected. */
   googleHidden: boolean;
   groups: GroupOption[];
+  mentorPairs: MentorPairOption[];
   users: UserOption[];
   currentUserId: string;
-  myProjects: ProjectOption[];
   myRoles: RoleInstance[];
   timeEntries: TimeEntryDTO[];
   /** Core, Admin, or Instructor — can enable Self check-in (QR) on meetings. */

@@ -6,7 +6,7 @@
 // out of your list silently rather than becoming a way back in.
 
 import { prisma } from "~/lib/db";
-import { getPageAccessBulk, type PageShape } from "~/lib/pageAccess.server";
+import { PAGE_ACCESS_SELECT, getPageAccessBulk, type PageShape } from "~/lib/pageAccess.server";
 import { isNavbarRoute } from "~/lib/navbar-routes";
 import { isAreaSubtabPath } from "~/lib/nav-areas";
 import { cachedForRequest } from "~/lib/request-cache";
@@ -52,18 +52,10 @@ export const RECENT_LIMIT = 5;
 const READ_MULTIPLIER = 3;
 
 const PAGE_SELECT = {
-  id: true,
+  ...PAGE_ACCESS_SELECT,
   title: true,
   iconEmoji: true,
-  workspaceType: true,
-  workspaceId: true,
-  archivedAt: true,
-  createdById: true,
-  partnerVisible: true,
-  profileVisible: true,
-  labListing: true,
-  linkAccess: true,
-  linkPermission: true,
+  kind: true,
 } as const;
 
 async function viewable<T extends { page: PageShape }>(
@@ -181,7 +173,7 @@ async function computeFavoritesAndRecents(userId: string, request?: Request): Pr
     iconEmoji: (row.page.iconEmoji as string | null) ?? null,
     workspaceType: String(row.page.workspaceType),
     favorited,
-    href: `/documents/${row.page.id}`,
+    href: (row.page as { kind?: string }).kind === "Form" ? `/forms/edit/${row.page.id}` : `/documents/${row.page.id}`,
     isRoute: false,
     iconKind: "page",
   });

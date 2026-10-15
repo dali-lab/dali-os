@@ -1,0 +1,45 @@
+import { cn } from "~/lib/cn";
+
+export type SegmentedOption<T extends string> = { value: T; label: string };
+
+/** A short either/or choice drawn as one pill with a thumb on the picked side. */
+export function Segmented<T extends string>({
+  value,
+  onChange,
+  options,
+  ariaLabel,
+  className,
+}: {
+  value: T;
+  onChange: (next: T) => void;
+  options: SegmentedOption<T>[];
+  ariaLabel: string;
+  className?: string;
+}) {
+  return (
+    <div
+      role="radiogroup"
+      aria-label={ariaLabel}
+      className={cn("inline-flex rounded-full border border-border bg-muted/40 p-0.5", className)}
+    >
+      {options.map((o) => {
+        const checked = o.value === value;
+        return (
+          <button
+            key={o.value}
+            type="button"
+            role="radio"
+            aria-checked={checked}
+            onClick={() => onChange(o.value)}
+            className={cn(
+              "rounded-full px-3 py-1 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-os-accent/40",
+              checked ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+            )}
+          >
+            {o.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}

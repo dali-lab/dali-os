@@ -41,6 +41,13 @@ export interface PageAccessOptions {
    * documents.$pageId, which downgrades the result to read-only itself.
    */
   includeArchived?: boolean;
+  /**
+   * Compute the access the viewer would have with every named PageShare
+   * removed: workspace role rules plus General access (link) only. Lets the
+   * Drive's "Shared with me" tell a page reached by name from one the viewer
+   * already sees through membership or a link.
+   */
+  ignoreShares?: boolean;
 }
 
 export interface PageShape {
@@ -59,6 +66,24 @@ export interface PageShape {
   linkPermission?: string | null;
   [key: string]: unknown;
 }
+
+/** Every Page column `computePageAccessCore` reads. Select all of it wherever a row is passed to `getPageAccess`/`getPageAccessBulk`. */
+export const PAGE_ACCESS_SELECT = {
+  id: true,
+  workspaceType: true,
+  workspaceId: true,
+  parentPageId: true,
+  archivedAt: true,
+  createdById: true,
+  partnerVisible: true,
+  profileVisible: true,
+  labListing: true,
+  linkAccess: true,
+  linkPermission: true,
+  scopeKind: true,
+  scopeGroupId: true,
+  scopePermission: true,
+} as const;
 
 const DENIED: PageAccessResult = {
   canView: false,
@@ -141,13 +166,20 @@ async function shareAndLinkGrant(
   request?: Request,
   preloadedShares?: Array<{ principalType: string; principalId: string; permission: SharePermission }>,
   preloadedGroupIds?: string[],
+  ignoreShares?: boolean,
 ): Promise<PageAccessResult> {
   const groupIds = preloadedGroupIds ?? (await groupIdsForUser(userSub, request));
-  const sharesForPage = preloadedShares ?? await (async () => {
-    // Single-page path: fetch the shares for this one page (original behaviour).
+  const sharesForPage = ignoreShares ? [] : preloadedShares ?? await (async () => {
+    const parentPageId = (page.parentPageId as string | null | undefined) ?? null;
+    const parentIsNotebook = parentPageId
+      ? (await prisma.page.findFirst({
+          where: { id: parentPageId, kind: "Notebook" },
+          select: { id: true },
+        })) !== null
+      : false;
     const rows = await prisma.pageShare.findMany({
       where: {
-        pageId: page.id,
+        pageId: { in: parentIsNotebook && parentPageId ? [page.id, parentPageId] : [page.id] },
         OR: [
           { principalType: "User", principalId: userSub },
           ...(groupIds.length
@@ -166,6 +198,9 @@ async function shareAndLinkGrant(
     if (await isLabMember(userSub, request)) {
       level = higher(level, (page.linkPermission as SharePermission | null | undefined) ?? "View");
     }
+  } else if (linkAccess === "SignedIn") {
+    // getPageAccess only ever runs for an authenticated account.
+    level = higher(level, (page.linkPermission as SharePermission | null | undefined) ?? "View");
   } else if (linkAccess === "Public") {
     level = higher(level, "View");
   }
@@ -176,10 +211,11 @@ async function shareAndLinkGrant(
 //
 // Rows fetched while walking the parent chain. We batch-fetch up to
 // MAX_ANCESTOR_WALK levels to avoid N+1 loops.
-const MAX_ANCESTOR_WALK = 8; // generous ceiling above MAX_PAGE_DEPTH
+export const MAX_ANCESTOR_WALK = 8; // generous ceiling above MAX_PAGE_DEPTH
 
-type AncestorRow = {
+export type AncestorRow = {
   id: string;
+  title?: string;
   parentPageId: string | null;
   scopeKind: ScopeKind | null;
   scopeGroupId: string | null;
@@ -207,6 +243,51 @@ export async function isUnderGoverningScope(parentPageId: string | null): Promis
   return (await findGoverningScope(parentPageId)) !== null;
 }
 
+/**
+ * The governing scope of every page in `rows`, computed in-process: the page
+ * itself when it carries a scopeKind, otherwise its nearest scoped ancestor,
+ * otherwise null. A parent missing from `rows` ends the walk with null, the
+ * same as the DB walk reaching the root. Bounded by MAX_ANCESTOR_WALK like
+ * findGoverningScope, so both agree on pathologically deep trees.
+ */
+export function governingScopeMap<R extends AncestorRow>(
+  rows: ReadonlyArray<R>,
+): Map<string, R | null> {
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  const result = new Map<string, R | null>();
+  for (const row of rows) {
+    if (row.scopeKind !== null) {
+      result.set(row.id, row);
+      continue;
+    }
+    let found: R | null = null;
+    let id = row.parentPageId;
+    let steps = 0;
+    while (id !== null && steps < MAX_ANCESTOR_WALK) {
+      const ancestor = byId.get(id);
+      if (!ancestor) break;
+      if (ancestor.scopeKind !== null) {
+        found = ancestor;
+        break;
+      }
+      id = ancestor.parentPageId;
+      steps++;
+    }
+    result.set(row.id, found);
+  }
+  return result;
+}
+
+/**
+ * The governing scope for one page whose fields are in hand: the page itself
+ * when it carries a scope, otherwise the nearest scoped ancestor (one DB query
+ * per level), otherwise null.
+ */
+export async function findGoverningScopeFor(page: AncestorRow): Promise<AncestorRow | null> {
+  if (page.scopeKind !== null) return page;
+  return findGoverningScope(page.parentPageId);
+}
+
 async function findGoverningScope(
   startParentId: string | null,
 ): Promise<AncestorRow | null> {
@@ -217,6 +298,7 @@ async function findGoverningScope(
       where: { id },
       select: {
         id: true,
+        title: true,
         parentPageId: true,
         scopeKind: true,
         scopeGroupId: true,
@@ -304,22 +386,7 @@ export async function getPageAccess(
   if (typeof pageOrId === "string") {
     const row = await prisma.page.findUnique({
       where: { id: pageOrId },
-      select: {
-        id: true,
-        workspaceType: true,
-        workspaceId: true,
-        archivedAt: true,
-        partnerVisible: true,
-        createdById: true,
-        profileVisible: true,
-        labListing: true,
-        linkAccess: true,
-        linkPermission: true,
-        parentPageId: true,
-        scopeKind: true,
-        scopeGroupId: true,
-        scopePermission: true,
-      },
+      select: PAGE_ACCESS_SELECT,
     });
     if (!row) return DENIED;
     page = row;
@@ -347,6 +414,7 @@ async function computePageAccessCore(
   preloadedShares?: Array<{ principalType: string; principalId: string; permission: SharePermission }>,
   preloadedGroupIds?: string[],
   options?: PageAccessOptions,
+  governingByPageId?: ReadonlyMap<string, AncestorRow | null>,
 ): Promise<PageAccessResult> {
   // Archived pages: no access at all (collab/comments gate), so that neither
   // the collab socket nor the comments rail opens on a trashed page. Callers
@@ -360,7 +428,14 @@ async function computePageAccessCore(
   // each workspace's role-based base below. They only ever grant more access —
   // never a downgrade — and carry the exact View/Comment/Edit/FullAccess tier,
   // so a "View" share does not confer comment the way role-based viewing does.
-  const extra = await shareAndLinkGrant(page, userSub, request, preloadedShares, preloadedGroupIds);
+  const extra = await shareAndLinkGrant(
+    page,
+    userSub,
+    request,
+    preloadedShares,
+    preloadedGroupIds,
+    options?.ignoreShares,
+  );
 
   // ── Member-workspace (personal notes) ────────────────────────────────────
   // Privacy is the whole point. Core gets NO bypass here — only the owner (full)
@@ -393,10 +468,6 @@ async function computePageAccessCore(
   // (the spec says the nearest governing folder shadows further ancestors), so
   // one walk is sufficient.
   //
-  // The ancestry walk (findGoverningScope) is kept per-page — batching it safely
-  // would require materialising the full parent chain for every page upfront,
-  // which is not straightforward and the common case (no scope set) already
-  // terminates at the root and returns null immediately.
   const pageScopeKind = page.scopeKind as ScopeKind | null | undefined;
   const pageParentPageId = page.parentPageId as string | null | undefined;
 
@@ -413,7 +484,9 @@ async function computePageAccessCore(
     };
   } else if (pageParentPageId) {
     // Walk up; terminates fast (returns null) when no ancestor has a scope set.
-    governing = await findGoverningScope(pageParentPageId);
+    governing = governingByPageId?.has(page.id)
+      ? (governingByPageId.get(page.id) ?? null)
+      : await findGoverningScope(pageParentPageId);
   }
 
   if (governing !== null) {
@@ -490,16 +563,17 @@ async function computePageAccessCore(
  * the outcome. That holds only if each row carries the fields the computation
  * reads, so callers must select the full PageShape, not a display subset.
  *
- * The governing-scope ancestry walk (findGoverningScope) remains per-page
- * because materialising the full parent chain for all pages upfront is not
- * straightforward and the common case (no scope set) already returns null
- * immediately — no extra round-trips in practice.
+ * The governing-scope ancestry walk (findGoverningScope) is one query per
+ * level per page. A caller that already holds the whole workspace's rows passes
+ * `governingByPageId` (from `governingScopeMap`) and the walk happens in
+ * process; pages absent from the map still fall back to the DB walk.
  */
 export async function getPageAccessBulk(
   userId: string,
   pages: PageShape[],
   request?: Request,
   options?: PageAccessOptions,
+  governingByPageId?: ReadonlyMap<string, AncestorRow | null>,
 ): Promise<Map<string, PageAccessResult>> {
   if (pages.length === 0) return new Map();
 
@@ -507,10 +581,25 @@ export async function getPageAccessBulk(
 
   // One query for all shares across the page list — avoids the N×pageShare.findMany
   // that getPageAccess would fire when called once per page.
-  const allShareRows = await prisma.pageShare.findMany({
-    where: { pageId: { in: pageIds } },
-    select: { pageId: true, principalType: true, principalId: true, permission: true },
-  });
+  const parentIds = options?.ignoreShares
+    ? []
+    : [...new Set(pages.map((p) => (p.parentPageId as string | null | undefined) ?? null).filter((id): id is string => !!id))];
+  const notebookParentIds = new Set<string>(
+    parentIds.length
+      ? (
+          await prisma.page.findMany({
+            where: { id: { in: parentIds }, kind: "Notebook" },
+            select: { id: true },
+          })
+        ).map((r: { id: string }) => r.id)
+      : [],
+  );
+  const allShareRows = options?.ignoreShares
+    ? []
+    : await prisma.pageShare.findMany({
+        where: { pageId: { in: [...new Set([...pageIds, ...notebookParentIds])] } },
+        select: { pageId: true, principalType: true, principalId: true, permission: true },
+      });
 
   // Group by pageId for O(1) per-page lookup below.
   const sharesByPage = new Map<string, Array<{ principalType: string; principalId: string; permission: SharePermission }>>();
@@ -531,7 +620,11 @@ export async function getPageAccessBulk(
   const result = new Map<string, PageAccessResult>();
   await Promise.all(
     pages.map(async (page) => {
-      const sharesForPage = sharesByPage.get(page.id) ?? [];
+      const parentId = (page.parentPageId as string | null | undefined) ?? null;
+      const sharesForPage = [
+        ...(sharesByPage.get(page.id) ?? []),
+        ...(parentId && notebookParentIds.has(parentId) ? sharesByPage.get(parentId) ?? [] : []),
+      ];
       const access = await computePageAccessCore(
         userId,
         page,
@@ -539,6 +632,7 @@ export async function getPageAccessBulk(
         sharesForPage,
         groupIds,
         options,
+        governingByPageId,
       );
       result.set(page.id, access);
     }),

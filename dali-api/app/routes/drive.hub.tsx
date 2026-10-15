@@ -19,33 +19,55 @@ import {
   MoreHorizontal,
   X,
   Shapes,
+  NotebookPen,
 } from "lucide-react";
 import { useState, useCallback, useEffect, useRef, useId, useMemo } from "react";
 import type { ReactNode } from "react";
 import { requireAuth, redirectPartnerToPortal, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { getUserRoles } from "~/lib/roles";
+import { formsUsePageAccess } from "~/forms/lib/form-access.server";
+import { receiversEnabled } from "~/lib/drive-receivers.server";
 import { resolveTermFilter } from "~/lib/terms";
 import { TermFilter } from "~/components/TermFilter";
-import { prisma } from "~/lib/db";
+import { loadProjectWorkspaces, loadEducationWorkspaces, loadAllDocTags, loadItemTagIds } from "~/lib/drive-hub.server";
 import { loadDriveScopes } from "~/lib/drive-scopes.server";
-import { getBoundFolderId, HIRING_PROCESS_ID } from "~/lib/bindings.server";
+import { loadDriveHome } from "~/lib/drive-home.server";
+import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import type { DriveTreeScope } from "~/lib/drive-scopes.server";
 import type { DriveItem } from "~/lib/drive.server";
 import { DriveBrowser } from "~/components/drive/DriveBrowser";
-import type { RowActions } from "~/components/drive/DriveBrowser";
+import { DriveHome } from "~/components/drive/DriveHome";
+import type { FileDropOptions, RowActions } from "~/components/drive/DriveBrowser";
 import { DriveTagFilter } from "~/components/drive/DriveTagFilter";
-import { DestinationPicker } from "~/components/drive/DestinationPicker";
-import type { PickerDrive, PickerFolder, Destination } from "~/components/drive/DestinationPicker";
-import { moveDriveItem, driveErrorFrom } from "~/components/drive/move-item";
-import { reportMoveBatch, runMoveBatch, itemCount } from "~/components/drive/move-batch";
+import { FolderPicker } from "~/components/drive/FolderPicker";
+import type { PickerDrive, PickerFolder, Destination } from "~/components/drive/FolderPicker";
+import { buildPickerRows } from "~/components/drive/picker-rows";
+import { LocationLink } from "~/components/drive/LocationLink";
+import { locateFolder, type LocatableScope } from "~/components/drive/location";
+import { moveDriveItem, driveErrorFrom, isPageItem } from "~/components/drive/move-item";
+import { destinationLabel, restoredToast } from "~/components/drive/action-toast";
+import { reportMoveBatch, runHiddenMoveBatch, itemCount, type Landed } from "~/components/drive/move-batch";
+import { withoutHidden, usePendingHidden, type PendingHidden } from "~/components/drive/pending-hidden";
+import { restoreFromTrashRequest, runTrash } from "~/components/drive/trash-batch";
+import {
+  DriveHistoryContext,
+  useDriveHistory,
+  useDriveHistoryKeys,
+  type DriveHistory,
+} from "~/components/drive/use-drive-history";
 import { useDriveFileUpload } from "~/components/drive/useDriveFileUpload";
-import type { UploadTarget } from "~/components/drive/useDriveFileUpload";
+import { DriveUploadInput } from "~/components/drive/DriveUploadInput";
+import type { UploadDestination, UploadTarget } from "~/components/drive/useDriveFileUpload";
 import { useDialog } from "~/components/ui/dialog";
 import { useToast } from "~/components/ui/toast";
 import { Menu, Select } from "~/components/ui/floating";
+import { parseTypeFilter, type DriveTypeFilter } from "~/components/drive/type-filter";
+import { createNotebookRequest, sendJson } from "~/components/notebooks/notebook-requests";
 import { Modal } from "~/components/Modal";
 import { cn } from "~/lib/cn";
+import { isProcessRootSpace, sharedSpaceItems, SHARED_SPACE_KEY } from "~/lib/drive-spaces";
+import type { SharedView } from "~/lib/drive-spaces";
 import { filterPillClass } from "~/components/ui/floating/styles";
 import { modalCardClass } from "~/components/os-chrome";
 
@@ -62,8 +84,11 @@ export const handle = {
     const scope = params.get("scope");
     if (!scope) return { key: "drive.root", title: "Drive" };
     if (scope === "mine") return { key: "drive.mine", title: "My Drive" };
+    if (scope === "shared") return { key: "drive.shared", title: "Shared with me" };
     if (scope === "lab") return { key: "drive.lab", title: "Lab-wide Drive" };
     if (scope === "core") return { key: "drive.core", title: "Core Drive" };
+    if (scope === "hiring") return { key: "drive.hiring", title: "Hiring Drive" };
+    if (scope === "mentorship") return { key: "drive.mentorship", title: "Mentorship Drive" };
     return { key: "drive.project", title: "Project Drive" };
   },
 };
@@ -111,147 +136,52 @@ export async function loader({ request }: Route.LoaderArgs) {
   const partnerRedirect = await redirectPartnerToPortal(auth);
   if (partnerRedirect) return partnerRedirect;
 
-  // /hiring/library is this same hub, opened on the hiring folder set. Hiring
-  // is no longer a drive space of its own — its folders are Core-group-scoped,
-  // so they live inside Core — which means the embed needs the folder's id
-  // rather than a scope name. Resolved from the binding, so renaming or
-  // repointing the folder keeps the Library pointing at the right place.
-  // Depends only on the request's pathname, so it joins this first wave
-  // alongside the other two request-scoped, mutually independent lookups.
-  const isHiringLibrary = new URL(request.url).pathname.startsWith("/hiring/library");
-  const [roles, termFilter, hiringLibraryFolderId] = await Promise.all([
-    getUserRoles(auth.user.sub, request),
+  const userId = auth.user.sub;
+  const [roles, termFilter, formsPageAccess] = await Promise.all([
+    getUserRoles(userId, request),
     resolveTermFilter(request),
-    isHiringLibrary
-      ? getBoundFolderId("HiringCycle", HIRING_PROCESS_ID, "hiring-forms")
-      : Promise.resolve(null),
+    formsUsePageAccess(request),
   ]);
   // isCore is the gate for agreement authoring. Passed down as canManageAgreements
   // so drive.server.ts doesn't re-derive it (matches the canViewForms pattern).
   const userCanViewForms = roles.canViewForms;
   const userCanManageAgreements = roles.isCore;
 
-  // Load only the project list needed to build Drive scopes — same access
-  // filter as documents.hub: Core sees all projects; others see only projects
-  // they're staffed on, scoped to the selected term. `?term=` scopes which
-  // project (and Education) drives appear, exactly as it scopes the projects
-  // hub; "All terms" drops the gate so older drives stay reachable. My Drive /
-  // General / Core are never term-filtered.
-  const termId = termFilter.isAll ? null : termFilter.termId;
-  // rawProjects and termWindow don't depend on each other — both only need
-  // termId/roles — so they run as one wave instead of two round-trips.
-  const [rawProjects, termWindow] = await Promise.all([
-    prisma.project.findMany({
-      where: {
-        ...(termId ? { projectTerms: { some: { termId } } } : {}),
-        ...(roles.isCore ? {} : { assignments: { some: { userId: auth.user.sub } } }),
-      },
-      orderBy: [{ status: "asc" }, { name: "asc" }],
-      select: { id: true, name: true, iconEmoji: true },
-    }),
-    // Education workspaces. Access rule mirrors pageAccess.server: Core sees
-    // all offerings; non-Core sees offerings where they are an instructor
-    // (any term) OR have an Approved application. Offerings don't store a
-    // term — one belongs to the selected term when its run starts inside
-    // that term's date window — so the term gate is a date range on
-    // `startsAt`, not the instructor-assignment term.
-    termId
-      ? prisma.term.findUnique({
-          where: { id: termId },
-          select: { startDate: true, endDate: true },
-        })
-      : null,
-  ]);
-  const projectWorkspaces = rawProjects.map((p) => ({
-    key: p.id,
-    label: p.name,
-    kind: "project" as const,
-    projectIconEmoji: p.iconEmoji,
-  }));
-
-  const startsInTerm = termWindow
-    ? { startsAt: { gte: termWindow.startDate, lte: termWindow.endDate } }
-    : {};
-  const approvedOrInstructor = roles.isCore
-    ? // Core sees all offerings; gate on the term window when a specific term
-      // is selected, or show all when "all terms" is chosen.
-      await prisma.educationOffering.findMany({
-        where: termWindow ? startsInTerm : undefined,
-        orderBy: { title: "asc" },
-        select: { id: true, title: true },
-      })
-    : // Non-Core: instructor on the offering (any term) OR Approved application.
-      // When a specific term is selected, ALSO require the run to start in it.
-      await prisma.educationOffering.findMany({
-        where: {
-          AND: [
-            startsInTerm,
-            {
-              OR: [
-                { instructors: { some: { userId: auth.user.sub } } },
-                { applications: { some: { applicantUserId: auth.user.sub, status: "Approved" } } },
-              ],
-            },
-          ],
-        },
-        orderBy: { title: "asc" },
-        select: { id: true, title: true },
-      });
-  const educationWorkspaces = approvedOrInstructor.map((o) => ({
-    key: o.id,
-    label: o.title,
-    kind: "education" as const,
-  }));
-
-  const driveScopes = await loadDriveScopes({
-    userSub: auth.user.sub,
-    projectWorkspaces,
-    educationWorkspaces,
-    canViewForms: userCanViewForms,
-    canManageAgreements: userCanManageAgreements,
+  // `?term=` scopes which project (and Education) drives appear, exactly as it
+  // scopes the projects hub; "All terms" drops the gate so older drives stay
+  // reachable. My Drive / General / Core are never term-filtered.
+  const viewer = {
+    userId,
     isCore: roles.isCore,
-    request,
-  });
+    termId: termFilter.isAll ? null : termFilter.termId,
+  };
 
-  // Tags come from the join tables keyed by the ids the scopes actually
-  // resolved to, rather than being selected into every page/file query in
-  // drive.server. Two bounded queries instead of a join on each of the six
-  // scope loaders, and drive.server keeps knowing nothing about tags.
-  const pageIds: string[] = [];
-  const fileIds: string[] = [];
-  for (const scope of driveScopes) {
-    for (const item of scope.items) {
-      if (item.type === "doc" || item.type === "folder") pageIds.push(item.id);
-      else if (item.type === "file") fileIds.push(item.id);
-    }
-  }
-  const [allTags, pageTags, fileTags] = await Promise.all([
-    // Every live tag, not just the ones already on something visible here.
-    // Restricting it to what's in view hides the control completely until
-    // somebody has tagged a document — which reads as "the filter is missing"
-    // rather than "nothing is tagged yet". Matches the old documents hub.
-    prisma.docTag.findMany({
-      where: { archivedAt: null },
-      orderBy: { label: "asc" },
-      select: { id: true, label: true, slug: true, color: true },
-    }),
-    pageIds.length
-      ? prisma.pageTag.findMany({
-          where: { pageId: { in: pageIds }, tag: { archivedAt: null } },
-          select: { pageId: true, tag: { select: { id: true } } },
-        })
-      : Promise.resolve([]),
-    fileIds.length
-      ? prisma.projectFileTag.findMany({
-          where: { fileId: { in: fileIds }, tag: { archivedAt: null } },
-          select: { fileId: true, tag: { select: { id: true } } },
-        })
-      : Promise.resolve([]),
+  // Only the item tags wait on the scopes (they're keyed by the ids the scopes
+  // resolved to). Everything else starts now and is awaited together.
+  const [{ driveScopes, itemTagIds }, allTags, receivers, { homeEnabled, home }] = await Promise.all([
+    (async () => {
+      const [projectWorkspaces, educationWorkspaces] = await Promise.all([
+        loadProjectWorkspaces(viewer),
+        loadEducationWorkspaces(viewer),
+      ]);
+      const driveScopes = await loadDriveScopes({
+        auth,
+        projectWorkspaces,
+        educationWorkspaces,
+        canViewForms: userCanViewForms,
+        canManageAgreements: userCanManageAgreements,
+        isCore: roles.isCore,
+        request,
+      });
+      return { driveScopes, itemTagIds: await loadItemTagIds(driveScopes) };
+    })(),
+    loadAllDocTags(),
+    receiversEnabled(request),
+    (async () => {
+      const homeEnabled = await isFeatureEnabled("drive-home", userId, roles, request);
+      return { homeEnabled, home: homeEnabled ? await loadDriveHome(userId, request) : null };
+    })(),
   ]);
-
-  const itemTagIds: Record<string, string[]> = {};
-  for (const { pageId, tag } of pageTags) (itemTagIds[pageId] ??= []).push(tag.id);
-  for (const { fileId, tag } of fileTags) (itemTagIds[fileId] ??= []).push(tag.id);
 
   return {
     driveScopes,
@@ -260,11 +190,14 @@ export async function loader({ request }: Route.LoaderArgs) {
     terms: termFilter.terms,
     selectedTerm: termFilter.selected,
     canViewForms: userCanViewForms,
+    formsPageAccess,
     canManageAgreements: userCanManageAgreements,
+    receiversEnabled: receivers,
+    homeEnabled,
+    home,
     // My Drive is the Member workspace keyed by the viewer's own id — the
     // cross-drive move needs it to name the source workspace it's leaving.
-    viewerId: auth.user.sub,
-    hiringLibraryFolderId,
+    viewerId: userId,
   };
 }
 
@@ -272,8 +205,6 @@ type LoaderData = Exclude<Awaited<ReturnType<typeof loader>>, Response>;
 type DriveScope = LoaderData["driveScopes"][number];
 
 // ── Type filter ────────────────────────────────────────────────────────────────
-
-export type DriveTypeFilter = "all" | "doc" | "file" | "form" | "agreement" | "rubric";
 
 const TYPE_FILTERS: {
   value: DriveTypeFilter;
@@ -284,10 +215,17 @@ const TYPE_FILTERS: {
 }[] = [
   { value: "all", label: "All", icon: null },
   { value: "doc", label: "Documents", icon: <FileText className="w-3.5 h-3.5" /> },
+  { value: "notebook", label: "Notebooks", icon: <NotebookPen className="w-3.5 h-3.5" /> },
+  { value: "whiteboard", label: "Whiteboards", icon: <Shapes className="w-3.5 h-3.5" /> },
   { value: "file", label: "Files", icon: <Paperclip className="w-3.5 h-3.5" /> },
   { value: "form", label: "Forms", icon: <ClipboardList className="w-3.5 h-3.5" />, requiresCap: "canViewForms" },
   { value: "agreement", label: "Agreements", icon: <FileSignature className="w-3.5 h-3.5" />, requiresCap: "canManageAgreements" },
   { value: "rubric", label: "Rubrics", icon: <ClipboardList className="w-3.5 h-3.5" />, requiresCap: "canManageAgreements" },
+];
+
+const SHARED_VIEWS: { value: SharedView; label: string }[] = [
+  { value: "with-me", label: "Shared with me" },
+  { value: "by-me", label: "Shared by me" },
 ];
 
 // ── Template picker ────────────────────────────────────────────────────────────
@@ -494,7 +432,7 @@ type ScopeKind = "mine" | "lab" | "project" | "projects-group" | "education-grou
 // "projects" and "education" are the new synthetic parent scopes (flag ON).
 function scopeKindOf(id: string): ScopeKind {
   if (id === "mine") return "mine";
-  if (id === "lab" || id === "core") return "lab";
+  if (id === "lab" || isProcessRootSpace(id)) return "lab";
   if (id === "projects") return "projects-group";
   if (id === "education") return "education-group";
   return "project";
@@ -503,7 +441,8 @@ function scopeKindOf(id: string): ScopeKind {
 // Who can see items in a scope — shown in the cross-drive move confirmation so
 // the mover knows a move re-scopes visibility.
 function scopeAudience(scopeId: string): string {
-  if (scopeId === "core") return "Core only";
+  if (scopeId === "core" || scopeId === "hiring") return "Core only";
+  if (scopeId === "mentorship") return "mentors";
   if (scopeId === "lab") return "everyone in the lab";
   // Synthetic group scopes shouldn't appear in move dialogs, but guard anyway.
   if (scopeId === "projects") return "the project team";
@@ -570,10 +509,11 @@ type ScopeActions = {
   remove: (item: DriveItem) => Promise<void>;
   /** Delete request without the confirm/toast — used by bulk delete. */
   deleteItem: (item: DriveItem) => Promise<Response>;
+  /** Move within this scope. Reports nothing: the caller speaks for the whole batch. `onError` gets the reason a move was refused. */
   performMove: (
     item: DriveItem,
     destFolderId: string | null,
-    opts?: { silent?: boolean },
+    opts?: { onError?: (message: string) => void },
   ) => Promise<boolean>;
 };
 
@@ -611,12 +551,22 @@ function educationCreateBlock(
   return null;
 }
 
-function makeScopeActions({
+type CreatedPage = { id: string } | { error: string | undefined };
+
+async function createdPage(res: Response): Promise<CreatedPage> {
+  if (res.ok) return { id: ((await res.json()) as { id: string }).id };
+  return { error: await driveErrorFrom(res) };
+}
+
+export function makeScopeActions({
   scope,
   currentFolderId,
   dialog,
   toast,
   revalidate,
+  onCreated,
+  hiding,
+  history,
 }: {
   scope: DriveScope;
   /** Folder the browser is currently in within this scope — new items land
@@ -625,6 +575,10 @@ function makeScopeActions({
   dialog: ReturnType<typeof useDialog>;
   toast: ReturnType<typeof useToast>;
   revalidate: () => void;
+  /** Called with the id of an item just created in place, so the browser can reveal it. */
+  onCreated: (id: string) => void;
+  hiding: Pick<PendingHidden, "hide">;
+  history: DriveHistory;
 }): ScopeActions {
   const kind = scopeKindOf(scope.id);
   // The DB parent that this scope's "top level" maps to — null for most drives,
@@ -638,7 +592,7 @@ function makeScopeActions({
     pageKind: "FreeForm" | "Folder" | "Whiteboard",
     title: string,
     parentPageId: string | null,
-  ): Promise<string | null> {
+  ): Promise<CreatedPage> {
     if (kind === "mine") {
       const fd = new FormData();
       fd.set("intent", "create");
@@ -647,8 +601,7 @@ function makeScopeActions({
       fd.set("kind", pageKind);
       if (parentPageId) fd.set("parentPageId", parentPageId);
       const res = await fetch("/api/notes", { method: "POST", body: fd, credentials: "include" });
-      if (!res.ok) return null;
-      return ((await res.json()) as { id: string }).id;
+      return createdPage(res);
     }
     if (kind === "projects-group") {
       // Resolve the project from the current folder. When parentPageId is a
@@ -656,7 +609,7 @@ function makeScopeActions({
       // that id IS the projectId and we pass parentPageId=null to the project API.
       // When deeper inside a real sub-folder, walk up to find the synthetic root.
       const projectId = resolveWorkspaceId(scope.items, parentPageId);
-      if (!projectId) return null; // no-op: at the group root, no project selected
+      if (!projectId) return { error: undefined }; // no-op: at the group root, no project selected
       // If parentPageId IS the synthetic project folder, the real parentPageId is null.
       const parentNode = parentPageId ? scope.items.find((it) => it.id === parentPageId) : null;
       const realParent = parentNode?.parentFolderId === null ? null : parentPageId;
@@ -666,15 +619,14 @@ function makeScopeActions({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ title, kind: pageKind, ...(realParent ? { parentPageId: realParent } : {}) }),
       });
-      if (!res.ok) return null;
-      return ((await res.json()) as { id: string }).id;
+      return createdPage(res);
     }
     if (kind === "education-group") {
       // Mirror the projects-group branch: resolve the offering, strip the
       // synthetic top-level node from parentPageId, then POST to the offering
       // documents endpoint. Instructors and Core only (server-enforced).
       const offeringId = resolveWorkspaceId(scope.items, parentPageId);
-      if (!offeringId) return null; // no-op: at the group root, no offering selected
+      if (!offeringId) return { error: undefined }; // no-op: at the group root, no offering selected
       const parentNode = parentPageId ? scope.items.find((it) => it.id === parentPageId) : null;
       const realParent = parentNode?.parentFolderId === null ? null : parentPageId;
       const res = await fetch(`/api/education/${offeringId}/documents`, {
@@ -683,8 +635,7 @@ function makeScopeActions({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ title, kind: pageKind, ...(realParent ? { parentPageId: realParent } : {}) }),
       });
-      if (!res.ok) return null;
-      return ((await res.json()) as { id: string }).id;
+      return createdPage(res);
     }
     const url = kind === "lab" ? "/api/lab-documents" : `/api/projects/${scope.id}/documents`;
     const res = await fetch(url, {
@@ -693,8 +644,7 @@ function makeScopeActions({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ title, kind: pageKind, ...(parentPageId ? { parentPageId } : {}) }),
     });
-    if (!res.ok) return null;
-    return ((await res.json()) as { id: string }).id;
+    return createdPage(res);
   }
 
   async function createDoc() {
@@ -706,9 +656,9 @@ function makeScopeActions({
       validate: (v) => (v.trim() ? null : "Enter a name"),
     });
     if (name === null) return;
-    const id = await createPage("FreeForm", name.trim(), createParent);
-    if (id) window.location.assign(`/documents/${id}`);
-    else toast.error("Couldn't create the document");
+    const created = await createPage("FreeForm", name.trim(), createParent);
+    if ("id" in created) onCreated(created.id);
+    else toast.error(created.error ?? "Couldn't create the document");
   }
 
   async function createFolder() {
@@ -720,12 +670,12 @@ function makeScopeActions({
       validate: (v) => (v.trim() ? null : "Enter a name"),
     });
     if (name === null) return;
-    const id = await createPage("Folder", name.trim(), createParent);
-    if (id) {
+    const created = await createPage("Folder", name.trim(), createParent);
+    if ("id" in created) {
       toast.success("Folder created");
-      revalidate();
+      onCreated(created.id);
     } else {
-      toast.error("Couldn't create the folder");
+      toast.error(created.error ?? "Couldn't create the folder");
     }
   }
 
@@ -738,9 +688,9 @@ function makeScopeActions({
       validate: (v) => (v.trim() ? null : "Enter a name"),
     });
     if (name === null) return;
-    const id = await createPage("Whiteboard", name.trim(), createParent);
-    if (id) window.location.assign(`/whiteboard/${id}`);
-    else toast.error("Couldn't create the whiteboard");
+    const created = await createPage("Whiteboard", name.trim(), createParent);
+    if ("id" in created) onCreated(created.id);
+    else toast.error(created.error ?? "Couldn't create the whiteboard");
   }
 
   async function rename(item: DriveItem) {
@@ -838,54 +788,19 @@ function makeScopeActions({
       confirmLabel: "Delete",
     });
     if (!confirmed) return;
-
-    const prevFolderId = item.parentFolderId;
-    const res = await deleteItem(item);
-    if (res.ok) {
-      // Undo: restore the item from Trash. For forms, restore via Trash API;
-      // for files/docs the existing archive path already handles it.
-      if (item.type === "form") {
-        toast.info(
-          <span className="flex items-center gap-2">
-            Moved to Trash
-            <button
-              type="button"
-              className="underline font-medium hover:no-underline"
-              onClick={async () => {
-                const fd = new FormData();
-                fd.set("intent", "restore");
-                fd.set("type", "form");
-                fd.set("id", item.id);
-                await fetch("/api/drive/trash", { method: "POST", body: fd, credentials: "include" });
-                revalidate();
-              }}
-            >
-              Undo
-            </button>
-          </span>,
-          { duration: 6000 },
-        );
-      } else {
-        toast.success("Deleted");
-      }
-      revalidate();
-    } else {
-      toast.error((await driveErrorFrom(res)) ?? "Couldn't delete");
-    }
+    await runTrash({ items: [item], deleteOne: deleteItem, hiding, history, toast, revalidate });
   }
 
-  // `silent` suppresses this move's own toast and revalidate so a multi-item
-  // drag can report once at the end. Returns whether the move landed.
   async function performMove(
     item: DriveItem,
     destFolderId: string | null,
-    opts?: { silent?: boolean },
+    opts?: { onError?: (message: string) => void },
   ): Promise<boolean> {
     // The scope's top level maps to rootParent (the Core folder for the Core
     // drive; null elsewhere), so "move to top" keeps items inside the scope.
     const target = destFolderId ?? rootParent;
     let res: Response;
-    if (item.type === "doc" || item.type === "folder") {
+    if (isPageItem(item)) {
       if (kind === "mine") {
         const fd = new FormData();
         fd.set("intent", "update");
@@ -901,7 +816,7 @@ function makeScopeActions({
         const wsId = resolveWorkspaceId(scope.items, target);
         if (!wsId) {
           // No workspace resolved (e.g. dropped at the group root) — no-op.
-          if (!opts?.silent) toast.error("Select a project or offering to move into");
+          opts?.onError?.("Select a project or offering to move into");
           return false;
         }
         const wsType = kind === "projects-group" ? "Project" : "EducationOffering";
@@ -925,32 +840,10 @@ function makeScopeActions({
     } else {
       res = await moveDriveItem(item, target);
     }
-    if (opts?.silent) {
-      // The caller reports for the whole batch — see the hub's onMove.
-      return res.ok;
+    if (!res.ok) {
+      const reason = await driveErrorFrom(res);
+      if (reason) opts?.onError?.(reason);
     }
-    if (res.ok) {
-      // Undo: move the item back to its previous folder.
-      const prevFolderId = item.parentFolderId;
-      toast.info(
-        <span className="flex items-center gap-2">
-          Moved
-          <button
-            type="button"
-            className="underline font-medium hover:no-underline"
-            onClick={async () => {
-              await performMove({ ...item, parentFolderId: destFolderId }, prevFolderId);
-            }}
-          >
-            Undo
-          </button>
-        </span>,
-        { duration: 6000 },
-      );
-    } else {
-      toast.error((await driveErrorFrom(res)) ?? "Couldn't move");
-    }
-    revalidate();
     return res.ok;
   }
 
@@ -980,7 +873,32 @@ function CreateLabel({
   );
 }
 
-function NewMenu({
+export type NotebookPlacement =
+  | { kind: "ready"; workspaceType: "Lab" | "Project"; workspaceId: string | null; parentPageId: string | null }
+  | { kind: "blocked"; reason: string }
+  | { kind: "unavailable" };
+
+/** Where a notebook created from this scope and folder lands. My Drive and Education cannot hold one. */
+export function notebookPlacement(scope: DriveScope, currentFolderId: string | null): NotebookPlacement {
+  const kind = scopeKindOf(scope.id);
+  const parentPageId = currentFolderId ?? scope.rootFolderId ?? null;
+  if (kind === "lab") return { kind: "ready", workspaceType: "Lab", workspaceId: null, parentPageId };
+  if (kind === "project") return { kind: "ready", workspaceType: "Project", workspaceId: scope.id, parentPageId };
+  if (kind === "projects-group") {
+    const projectId = resolveWorkspaceId(scope.items, currentFolderId);
+    if (!projectId) return { kind: "blocked", reason: "Open a project first" };
+    const parentNode = scope.items.find((it) => it.id === currentFolderId);
+    return {
+      kind: "ready",
+      workspaceType: "Project",
+      workspaceId: projectId,
+      parentPageId: parentNode?.parentFolderId === null ? null : currentFolderId,
+    };
+  }
+  return { kind: "unavailable" };
+}
+
+export function NewMenu({
   scope,
   actions,
   canViewForms,
@@ -989,6 +907,7 @@ function NewMenu({
   uploading,
   onTemplate,
   currentFolderId,
+  onCreated,
 }: {
   scope: DriveScope;
   actions: ScopeActions;
@@ -998,6 +917,7 @@ function NewMenu({
   uploading: boolean;
   onTemplate: () => void;
   currentFolderId: string | null;
+  onCreated: (id: string) => void;
 }) {
   const isLab = scope.id === "lab";
   const label = scope.id === "mine" ? "My Drive" : isLab ? "Lab" : scope.label;
@@ -1006,6 +926,29 @@ function NewMenu({
   const isEducation = scopeKindOf(scope.id) === "education-group";
   const docBlock = isEducation ? educationCreateBlock(scope.items, currentFolderId, "FreeForm") : null;
   const folderBlock = isEducation ? educationCreateBlock(scope.items, currentFolderId, "Folder") : null;
+  const notebook = notebookPlacement(scope, currentFolderId);
+
+  async function createNotebook() {
+    if (notebook.kind !== "ready") return;
+    const name = await dialog.prompt({
+      title: "New notebook",
+      label: "Name",
+      defaultValue: "New notebook",
+      confirmLabel: "Create",
+      validate: (v) => (v.trim() ? null : "Enter a name"),
+    });
+    if (name === null) return;
+    const created = await sendJson<{ id: string }>(
+      createNotebookRequest({
+        title: name,
+        workspaceType: notebook.workspaceType,
+        workspaceId: notebook.workspaceId,
+        parentPageId: notebook.parentPageId,
+      }),
+    );
+    if (created.ok && created.data) onCreated(created.data.id);
+    else toast.error(created.error ?? "Couldn't create the notebook");
+  }
 
   // Create a form into the current Drive folder, then navigate to its editor.
   // Prompts for a name first (like New document/folder).
@@ -1101,6 +1044,20 @@ function NewMenu({
           New whiteboard
         </CreateLabel>
       </Menu.Item>
+      {notebook.kind !== "unavailable" && (
+        <Menu.Item
+          icon={<NotebookPen className="w-3.5 h-3.5" />}
+          disabled={notebook.kind === "blocked"}
+          onSelect={() => void createNotebook()}
+        >
+          <CreateLabel
+            testId={`drive-new-notebook-${scope.id}`}
+            blockedReason={notebook.kind === "blocked" ? notebook.reason : null}
+          >
+            New notebook
+          </CreateLabel>
+        </Menu.Item>
+      )}
       {canViewForms && (
         <Menu.Item icon={<ClipboardList className="w-3.5 h-3.5" />} onSelect={() => void createForm()}>
           <span data-testid="drive-new-form">New form</span>
@@ -1121,7 +1078,7 @@ function NewMenu({
       )}
       <Menu.Separator />
       <Menu.Item icon={<Upload className="w-3.5 h-3.5" />} disabled={uploading} onSelect={onUploadClick}>
-        <span data-testid={`drive-new-upload-${scope.id}`}>{uploading ? "Uploading…" : "Upload file"}</span>
+        <span data-testid={`drive-new-upload-${scope.id}`}>{uploading ? "Uploading…" : "Upload files"}</span>
       </Menu.Item>
     </Menu>
   );
@@ -1131,21 +1088,51 @@ function NewMenu({
 
 export default function DriveHub() {
   const {
-    driveScopes,
+    driveScopes: loadedScopes,
     allTags,
     itemTagIds,
     terms,
     selectedTerm,
     canViewForms,
+    formsPageAccess,
     canManageAgreements,
+    receiversEnabled: receiversOn,
+    homeEnabled,
+    home,
     viewerId,
-    hiringLibraryFolderId,
   } = useLoaderData() as LoaderData;
   const [searchParams, setSearchParams] = useSearchParams();
+  // Reveal in Drive arrives with ?select=<id>: the browser takes it once, and
+  // it leaves the URL so a refresh or a shared link does not re-select it.
+  const [initialSelectedId] = useState(() => searchParams.get("select") ?? undefined);
+  useEffect(() => {
+    if (!initialSelectedId) return;
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete("select");
+        return next;
+      },
+      { replace: true },
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const navigate = useNavigate();
   const dialog = useDialog();
   const toast = useToast();
   const revalidator = useRevalidator();
+  const revalidate = useCallback(() => void revalidator.revalidate(), [revalidator]);
+  const [revealId, setRevealId] = useState<string>();
+  const onCreated = useCallback(
+    (id: string) => {
+      setRevealId(id);
+      revalidate();
+    },
+    [revalidate],
+  );
+  const history = useDriveHistory({ onChange: revalidate });
+  useDriveHistoryKeys(history);
+  const pendingHidden = usePendingHidden(revalidator.state, loadedScopes);
   const [templatePickerOpen, setTemplatePickerOpen] = useState(false);
   const [trashOpen, setTrashOpen] = useState(false);
   // Search is a client-side filter over already-loaded items, so it lives in
@@ -1173,33 +1160,38 @@ export default function DriveHub() {
   }, []);
 
   // Location + view state from the URL. No scope/folder = Drive root — except
-  // when this same hub is embedded at /hiring/library, where it opens straight
-  // on the hiring folder set, which now lives inside Core.
+  // when this same hub is embedded at /hiring/library, where it opens on the
+  // Hiring space.
   const location = useLocation();
   const isHiringLibrary = location.pathname.startsWith("/hiring/library");
-  // The Library opens inside Core, drilled into the bound hiring folder.
-  const currentScopeId = searchParams.get("scope") ?? (isHiringLibrary ? "core" : null);
-  const currentFolderId =
-    searchParams.get("folder") ?? (isHiringLibrary ? hiringLibraryFolderId : null);
+  const currentScopeId = searchParams.get("scope") ?? (isHiringLibrary ? "hiring" : null);
+  const currentFolderId = searchParams.get("folder");
+  const sharedView: SharedView = searchParams.get("shared") === "by-me" ? "by-me" : "with-me";
+  // The loader sends both directions in one list (the query string never
+  // refetches), so the chip narrows it here.
+  const driveScopes = useMemo(
+    () =>
+      loadedScopes.map((s) =>
+        s.id === SHARED_SPACE_KEY ? { ...s, items: sharedSpaceItems(s.items, sharedView) } : s,
+      ),
+    [loadedScopes, sharedView],
+  );
   // In the URL like ?type= and ?term=, so "everything tagged onboarding" is a
   // link someone can send, and the back button steps through filters.
   const selectedTagIds = useMemo(
     () => new Set(searchParams.getAll("tag").filter(Boolean)),
     [searchParams],
   );
-  const rawType = searchParams.get("type") as DriveTypeFilter | null;
-  const typeFilter: DriveTypeFilter =
-    rawType === "doc" ||
-    rawType === "file" ||
-    rawType === "form" ||
-    rawType === "agreement" ||
-    rawType === "rubric"
-      ? rawType
-      : "all";
+  const typeFilter = parseTypeFilter(searchParams.get("type"));
 
   const currentScope = useMemo(
     () => driveScopes.find((s) => s.id === currentScopeId) ?? null,
     [driveScopes, currentScopeId],
+  );
+  // What the browser shows: rows being moved or trashed are already gone.
+  const visibleScopes = useMemo(
+    () => withoutHidden(driveScopes, pendingHidden.ids),
+    [driveScopes, pendingHidden.ids],
   );
   // A scope id in the URL that no longer resolves (e.g. left the project) →
   // treat as root rather than a blank screen.
@@ -1238,6 +1230,13 @@ export default function DriveHub() {
 
   const onSearchChange = useCallback((q: string) => setSearch(q), []);
 
+  function setSharedView(v: SharedView) {
+    patchParams((p) => {
+      if (v === "with-me") p.delete("shared");
+      else p.set("shared", v);
+    });
+  }
+
   function setTypeFilter(f: DriveTypeFilter) {
     patchParams((p) => {
       if (f === "all") p.delete("type");
@@ -1251,6 +1250,7 @@ export default function DriveHub() {
   const scopeActionsMap = useMemo(() => {
     const map = new Map<string, ScopeActions>();
     for (const scope of driveScopes) {
+      if (scope.id === SHARED_SPACE_KEY) continue;
       map.set(
         scope.id,
         makeScopeActions({
@@ -1258,48 +1258,54 @@ export default function DriveHub() {
           currentFolderId: scope.id === effectiveScopeId ? currentFolderId : null,
           dialog,
           toast,
-          revalidate: () => revalidator.revalidate(),
+          revalidate,
+          onCreated,
+          hiding: { hide: pendingHidden.hide },
+          history,
         }),
       );
     }
     return map;
-  }, [driveScopes, effectiveScopeId, currentFolderId, dialog, toast, revalidator]);
+    // pendingHidden.hide is stable; the object changes with the hidden set, which the actions don't read.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [driveScopes, effectiveScopeId, currentFolderId, dialog, toast, revalidate, onCreated, history, pendingHidden.hide]);
+  const scopeActionsRef = useRef(scopeActionsMap);
+  scopeActionsRef.current = scopeActionsMap;
 
-  // Dropping a selection onto a folder within the same drive. One item keeps
-  // the single-move toast; several report once, the way the bulk bar does.
+  // Dropping a selection onto a folder within the same drive.
   const onMove = useCallback(
     (scopeId: string, items: DriveItem[], destFolderId: string | null) => {
+      const scope = driveScopes.find((s) => s.id === scopeId);
       const actions = scopeActionsMap.get(scopeId);
-      if (!actions || items.length === 0) return;
-      if (items.length === 1) {
-        void actions.performMove(items[0], destFolderId);
-        return;
-      }
+      if (!scope || !actions || items.length === 0) return;
       void (async () => {
-        const moved = await runMoveBatch(items, (item) =>
-          actions.performMove(item, destFolderId, { silent: true }),
+        let failure: string | undefined;
+        const landed = await runHiddenMoveBatch(
+          items,
+          (item) =>
+            actions.performMove(item, destFolderId, {
+              onError: (message) => {
+                failure ??= message;
+              },
+            }),
+          pendingHidden,
         );
-        const destName = driveScopes
-          .find((s) => s.id === scopeId)
-          ?.items.find((i) => i.id === destFolderId)?.title;
-        reportMoveBatch(toast, () => revalidator.revalidate(), {
-          moved: moved.length,
-          total: items.length,
-          summary:
-            moved.length < items.length
-              ? `Moved ${moved.length} of ${itemCount(items.length)}`
-              : `Moved ${itemCount(moved.length)}${destName ? ` to ${destName}` : ""}`,
-          undo: async () => {
-            for (const o of moved) {
-              await actions.performMove({ ...o.item, parentFolderId: destFolderId }, o.folderId, {
-                silent: true,
-              });
-            }
+        reportMoveBatch(
+          { toast, history, revalidate },
+          {
+            landed,
+            total: items.length,
+            destination: destinationLabel(scope, destFolderId),
+            forward: (l) => scopeActionsRef.current.get(scopeId)?.performMove(l.item, destFolderId) ?? Promise.resolve(false),
+            back: (l) =>
+              scopeActionsRef.current.get(scopeId)?.performMove({ ...l.item, parentFolderId: destFolderId }, l.folderId) ??
+              Promise.resolve(false),
+            failure: items.length === 1 ? failure : undefined,
           },
-        });
+        );
       })();
     },
-    [scopeActionsMap, driveScopes, toast, revalidator],
+    [scopeActionsMap, driveScopes, toast, history, revalidate, pendingHidden],
   );
 
   // ── Cross-drive move: relocate an item to another drive (Lab/Core/a
@@ -1312,14 +1318,25 @@ export default function DriveHub() {
   // placement-locked — agreements/rubrics/email-templates move like any file.
   const NON_MOVABLE = new Set<DriveItem["type"]>();
   const moveDestinationsFor = useCallback(
-    (item: DriveItem): DriveTreeScope[] =>
-      driveScopes.filter((s) => {
-        if (s.id === "mine" || NON_MOVABLE.has(item.type)) return false;
+    (item: DriveItem): DriveTreeScope[] => {
+      const home = driveScopes.find((s) => s.items.some((i) => i.id === item.id));
+      return driveScopes.filter((s) => {
+        if (s.id === "mine" || s.id === SHARED_SPACE_KEY || NON_MOVABLE.has(item.type)) return false;
+        // Items under a typed root stay in that root's drive.
+        if (home?.rootFolderId && s.id !== home.id) return false;
         const kind = scopeKindOf(s.id);
+        // A system folder keeps its workspace, so project and offering drives are out.
+        if (
+          item.type === "folder" &&
+          (item as { folderType?: string | null }).folderType &&
+          (kind === "project" || kind === "projects-group" || kind === "education-group")
+        ) {
+          return false;
+        }
         // Files/forms move by folderPageId (no workspace change), so restrict
         // them to the Lab-workspace drives. Docs/folders can also move into
         // project/offering workspaces.
-        const isDocOrFolder = item.type === "doc" || item.type === "folder";
+        const isDocOrFolder = isPageItem(item);
         if (!isDocOrFolder) {
           // Files/forms: Lab workspace only (no project/offering cross-move).
           return kind !== "project" && kind !== "projects-group" && kind !== "education-group";
@@ -1329,19 +1346,20 @@ export default function DriveHub() {
         // The bare group ROOT is exposed as a drive row but the move handler
         // requires a specific project/offering folder to be selected.
         return true;
-      }),
+      });
+    },
     [driveScopes],
   );
 
+  // One item to a drive and folder, with no confirm and no reporting: the
+  // batch below owns both. `onError` gets the reason a move was refused.
   const moveItemToScope = useCallback(
     async (
       item: DriveItem,
       sourceScopeId: string,
       destScopeId: string,
       destFolderPageId: string | null,
-      // `silent` suppresses this call's own toast and revalidate so a batch can
-      // report once at the end instead of once per item.
-      opts?: { skipConfirm?: boolean; silent?: boolean },
+      onError?: (message: string) => void,
     ): Promise<boolean> => {
       const destScope = driveScopes.find((s) => s.id === destScopeId);
       if (!destScope) return false;
@@ -1359,19 +1377,14 @@ export default function DriveHub() {
       let d: { workspaceType: "Lab" | "Project" | "EducationOffering"; workspaceId: string | null; root: string | null };
       let parent: string | null;
       if (destKind === "projects-group" || destKind === "education-group") {
-        if (!destFolderPageId) {
-          // Dropped at the bare group root — can't resolve a specific workspace.
-          if (!opts?.silent) toast.error("Select a project or offering to move into");
+        // Dropped at the bare group root — can't resolve a specific workspace.
+        const wsId = destFolderPageId ? resolveWorkspaceId(destScope.items, destFolderPageId) : null;
+        if (!destFolderPageId || !wsId) {
+          onError?.("Select a project or offering to move into");
           return false;
         }
-        // Walk up to the synthetic top-level to get the workspace id, then
-        // determine whether the pick was ON the synthetic root (→ null parent)
-        // or inside a real sub-folder (→ keep real parentPageId).
-        const wsId = resolveWorkspaceId(destScope.items, destFolderPageId);
-        if (!wsId) {
-          if (!opts?.silent) toast.error("Select a project or offering to move into");
-          return false;
-        }
+        // Whether the pick was ON the synthetic root (→ null parent) or inside a
+        // real sub-folder (→ keep real parentPageId).
         const destNode = destScope.items.find((it) => it.id === destFolderPageId);
         const realParent = destNode?.parentFolderId === null ? null : destFolderPageId;
         d = {
@@ -1388,17 +1401,8 @@ export default function DriveHub() {
       // No-op if it's already there.
       if (destScopeId === sourceScopeId && (parent ?? null) === (item.parentFolderId ?? null)) return true;
 
-      if (!opts?.skipConfirm && destScopeId !== sourceScopeId) {
-        const ok = await dialog.confirm({
-          title: `Move to ${destScope.label}?`,
-          description: `"${item.title || "Untitled"}" will move to ${destScope.label} and become visible to ${scopeAudience(destScopeId)}.`,
-          confirmLabel: "Move",
-        });
-        if (!ok) return false;
-      }
-
       let res: Response;
-      if (item.type === "doc" || item.type === "folder") {
+      if (isPageItem(item)) {
         const crossWs = d.workspaceType !== srcWs.workspaceType || d.workspaceId !== srcWs.workspaceId;
         res = await fetch(`/api/pages/${item.id}/move`, {
           method: "POST",
@@ -1417,43 +1421,81 @@ export default function DriveHub() {
           body: JSON.stringify({ itemType: item.type, itemId: item.id, destFolderPageId: parent }),
         });
       }
-      if (opts?.silent) {
-        // The caller reports for the whole batch — see onBulkMove.
-        return res.ok;
+      if (!res.ok) {
+        const reason = await driveErrorFrom(res);
+        if (reason) onError?.(reason);
       }
-      if (res.ok) {
-        // Undo: move back to the original scope + folder. Nothing can be moved
-        // back INTO My Drive (the move endpoint refuses a Member destination),
-        // so a move off it is one-way and gets a plain confirmation instead of
-        // an Undo that would only fail.
-        const prevScopeId = sourceScopeId;
-        const prevFolderId = item.parentFolderId;
-        if (scopeKindOf(prevScopeId) === "mine") {
-          toast.success("Moved");
-        } else {
-          toast.info(
-            <span className="flex items-center gap-2">
-              Moved
-              <button
-                type="button"
-                className="underline font-medium hover:no-underline"
-                onClick={() =>
-                  void moveItemToScope(item, destScopeId, prevScopeId, prevFolderId, { skipConfirm: true })
-                }
-              >
-                Undo
-              </button>
-            </span>,
-            { duration: 6000 },
-          );
-        }
-      } else {
-        toast.error((await driveErrorFrom(res)) ?? "Couldn't move");
-      }
-      revalidator.revalidate();
       return res.ok;
     },
-    [driveScopes, viewerId, dialog, toast, revalidator],
+    [driveScopes, viewerId],
+  );
+  const moveItemToScopeRef = useRef(moveItemToScope);
+  moveItemToScopeRef.current = moveItemToScope;
+
+  // Move a selection to another drive (or another folder of one): confirm a
+  // change of audience, hide the rows, move them one by one, then report once.
+  // Toasting per item stacked a notification (and fired a full tree revalidate)
+  // for every file in the selection, and left as many single-item Undos as
+  // there were items.
+  const moveBatchToScope = useCallback(
+    async (items: DriveItem[], sourceScopeId: string, destScopeId: string, destFolderId: string | null) => {
+      if (sourceScopeId === SHARED_SPACE_KEY || destScopeId === SHARED_SPACE_KEY) {
+        toast.error("Open the document to change where it lives");
+        return;
+      }
+      const destScope = driveScopes.find((s) => s.id === destScopeId);
+      if (!destScope) return;
+      const destLabel = destScope.label;
+      if (destScopeId !== sourceScopeId) {
+        const ok = await dialog.confirm(
+          items.length === 1
+            ? {
+                title: `Move to ${destLabel}?`,
+                description: `"${items[0].title || "Untitled"}" will move to ${destLabel} and become visible to ${scopeAudience(destScopeId)}.`,
+                confirmLabel: "Move",
+              }
+            : {
+                title: `Move ${itemCount(items.length)}?`,
+                description: `They'll move to ${destLabel} and become visible to ${scopeAudience(destScopeId)}.`,
+                confirmLabel: "Move",
+              },
+        );
+        if (!ok) return;
+      }
+      let failure: string | undefined;
+      const landed = await runHiddenMoveBatch(
+        items,
+        (item) =>
+          moveItemToScope(item, sourceScopeId, destScopeId, destFolderId, (message) => {
+            failure ??= message;
+          }),
+        pendingHidden,
+      );
+      reportMoveBatch(
+        { toast, history, revalidate },
+        {
+          landed,
+          total: items.length,
+          destination: destinationLabel(destScope, destFolderId),
+          forward: (l: Landed<DriveItem>) =>
+            moveItemToScopeRef.current(l.item, sourceScopeId, destScopeId, destFolderId),
+          // A move out of My Drive is one-way: the endpoint refuses a Member
+          // destination, so an Undo could only fail.
+          back:
+            scopeKindOf(sourceScopeId) === "mine"
+              ? null
+              : (l: Landed<DriveItem>) =>
+                  moveItemToScopeRef.current(
+                    { ...l.item, parentFolderId: destFolderId },
+                    destScopeId,
+                    sourceScopeId,
+                    l.folderId,
+                  ),
+          failure: items.length === 1 ? failure : undefined,
+        },
+      );
+    },
+    [driveScopes, moveItemToScope, dialog, toast, history, revalidate, pendingHidden],
   );
 
   // Open the hybrid destination picker over every drive the item(s) may move to
@@ -1470,38 +1512,7 @@ export default function DriveHub() {
         item.type === "folder"
           ? folderAndDescendants(driveScopes.find((s) => s.id === sourceScopeId)?.items ?? [], item.id)
           : undefined;
-      const drives: PickerDrive[] = scopes.map((s) => ({
-        id: s.id,
-        label: s.id === "lab" ? "Lab" : s.label,
-        iconEmoji: s.iconEmoji,
-        // Picking a drive is the part of a move that changes who can see the
-        // item, so the row says so. The loader already derives this per scope.
-        audience: s.scopeAudience ?? null,
-      }));
-      const folders: PickerFolder[] = [];
-      for (const s of scopes) {
-        const rootId = s.rootFolderId ?? null;
-        // One pass over the scope's items gives every folder its child count,
-        // so the picker can say what's inside instead of only its name.
-        const childCount = new Map<string, number>();
-        for (const it of s.items) {
-          if (it.parentFolderId === null) continue;
-          childCount.set(it.parentFolderId, (childCount.get(it.parentFolderId) ?? 0) + 1);
-        }
-        for (const f of s.items) {
-          if (f.type !== "folder") continue;
-          // Normalise a scope's top-level folders so parentId === null uniformly
-          // means "drive top level".
-          folders.push({
-            id: f.id,
-            driveId: s.id,
-            parentId: (f.parentFolderId ?? null) === rootId ? null : f.parentFolderId,
-            title: f.title,
-            iconEmoji: f.iconEmoji,
-            itemCount: childCount.get(f.id) ?? 0,
-          });
-        }
-      }
+      const { drives, folders } = buildPickerRows(scopes);
       const sourceRoot = driveScopes.find((s) => s.id === sourceScopeId)?.rootFolderId ?? null;
       const currentFolder = (item.parentFolderId ?? null) === sourceRoot ? null : (item.parentFolderId ?? null);
       const currentDest: Destination = { driveId: sourceScopeId, folderId: currentFolder };
@@ -1525,71 +1536,24 @@ export default function DriveHub() {
   const requestMoveCrossDrive = useCallback(
     async (sourceScopeId: string, item: DriveItem) => {
       const dest = await pickMoveDestination(item, sourceScopeId, `Move "${item.title || "Untitled"}"`);
-      if (dest) await moveItemToScope(item, sourceScopeId, dest.scopeId, dest.folderId);
+      if (dest) await moveBatchToScope([item], sourceScopeId, dest.scopeId, dest.folderId);
     },
-    [pickMoveDestination, moveItemToScope],
+    [pickMoveDestination, moveBatchToScope],
   );
 
-  // Bulk move: pick a destination once, move everything there, then report
-  // once. Toasting per item stacked a notification (and fired a full tree
-  // revalidate) for every file in the selection, and left as many single-item
-  // Undos as there were items — so undoing a move of twelve meant clicking
-  // twelve times before the first toast expired.
+  // Bulk move: pick a destination once, move everything there, report once.
   const onBulkMove = useCallback(
     async (items: DriveItem[]) => {
       const movable = items.filter((i) => !NON_MOVABLE.has(i.type));
       if (movable.length === 0 || !effectiveScopeId) return;
-      const sourceScopeId = effectiveScopeId;
-      const dest = await pickMoveDestination(
-        movable[0],
-        sourceScopeId,
-        `Move ${itemCount(movable.length)}`,
-      );
-      if (!dest) return;
-      const destScope = driveScopes.find((s) => s.id === dest.scopeId);
-      const destLabel = destScope?.label ?? "the selected drive";
-      if (dest.scopeId !== sourceScopeId) {
-        const ok = await dialog.confirm({
-          title: `Move ${itemCount(movable.length)}?`,
-          description: `They'll move to ${destLabel} and become visible to ${scopeAudience(dest.scopeId)}.`,
-          confirmLabel: "Move",
-        });
-        if (!ok) return;
+      if (effectiveScopeId === SHARED_SPACE_KEY) {
+        toast.error("Open the document to change where it lives");
+        return;
       }
-
-      const moved = await runMoveBatch(movable, (item) =>
-        moveItemToScope(item, sourceScopeId, dest.scopeId, dest.folderId, {
-          skipConfirm: true,
-          silent: true,
-        }),
-      );
-
-      reportMoveBatch(toast, () => revalidator.revalidate(), {
-        moved: moved.length,
-        total: movable.length,
-        summary:
-          moved.length < movable.length
-            ? `Moved ${moved.length} of ${itemCount(movable.length)} to ${destLabel}`
-            : `Moved ${itemCount(moved.length)} to ${destLabel}`,
-        // A move out of My Drive is one-way: the endpoint refuses a Member
-        // destination, so an Undo could only fail.
-        undo:
-          scopeKindOf(sourceScopeId) === "mine"
-            ? null
-            : async () => {
-                for (const o of moved) {
-                  await moveItemToScope(
-                    { ...o.item, parentFolderId: dest.folderId },
-                    dest.scopeId,
-                    sourceScopeId,
-                    o.folderId,
-                    { skipConfirm: true, silent: true },
-                  );
-                }
-              },
-      });
+      const dest = await pickMoveDestination(movable[0], effectiveScopeId, `Move ${itemCount(movable.length)}`);
+      if (dest) await moveBatchToScope(movable, effectiveScopeId, dest.scopeId, dest.folderId);
     },
-    [pickMoveDestination, moveItemToScope, effectiveScopeId, driveScopes, dialog, toast, revalidator],
+    [pickMoveDestination, moveBatchToScope, effectiveScopeId, toast],
   );
 
   // Cross-drive drag-and-drop: dropping an item onto a drive row (column-view
@@ -1598,56 +1562,15 @@ export default function DriveHub() {
     (sourceScopeId: string, destScopeId: string, items: DriveItem[]) => {
       const movable = items.filter((i) => !NON_MOVABLE.has(i.type));
       if (movable.length === 0) return;
-      if (movable.length === 1) {
-        void moveItemToScope(movable[0], sourceScopeId, destScopeId, null);
-        return;
-      }
-      void (async () => {
-        const destLabel =
-          driveScopes.find((s) => s.id === destScopeId)?.label ?? "the selected drive";
-        const ok = await dialog.confirm({
-          title: `Move ${itemCount(movable.length)}?`,
-          description: `They'll move to ${destLabel} and become visible to ${scopeAudience(destScopeId)}.`,
-          confirmLabel: "Move",
-        });
-        if (!ok) return;
-        const moved = await runMoveBatch(movable, (item) =>
-          moveItemToScope(item, sourceScopeId, destScopeId, null, {
-            skipConfirm: true,
-            silent: true,
-          }),
-        );
-        reportMoveBatch(toast, () => revalidator.revalidate(), {
-          moved: moved.length,
-          total: movable.length,
-          summary:
-            moved.length < movable.length
-              ? `Moved ${moved.length} of ${itemCount(movable.length)} to ${destLabel}`
-              : `Moved ${itemCount(moved.length)} to ${destLabel}`,
-          undo:
-            scopeKindOf(sourceScopeId) === "mine"
-              ? null
-              : async () => {
-                  for (const o of moved) {
-                    await moveItemToScope(
-                      { ...o.item, parentFolderId: null },
-                      destScopeId,
-                      sourceScopeId,
-                      o.folderId,
-                      { skipConfirm: true, silent: true },
-                    );
-                  }
-                },
-        });
-      })();
+      void moveBatchToScope(movable, sourceScopeId, destScopeId, null);
     },
-    [moveItemToScope, driveScopes, dialog, toast, revalidator],
+    [moveBatchToScope],
   );
 
   const getScopeActions = useCallback(
     (scopeId: string): RowActions => {
       const a = scopeActionsMap.get(scopeId);
-      if (!a) return { onRename: () => {}, onRequestMove: () => {}, onDelete: () => {} };
+      if (!a) return { onRename: () => {}, onRequestMove: () => {}, onDelete: () => {}, readOnly: scopeId === SHARED_SPACE_KEY };
       return {
         onRename: a.rename,
         onRequestMove: (item: DriveItem) => void requestMoveCrossDrive(scopeId, item),
@@ -1674,10 +1597,10 @@ export default function DriveHub() {
     [navigate, driveScopes, onNavigate, effectiveScopeId],
   );
 
-  // Toggle the viewer's personal favorite on a page item (doc/folder).
+  // Toggle the viewer's personal favorite on a page item (doc/folder/form).
   const onToggleFavorite = useCallback(
     async (item: DriveItem) => {
-      if (item.type !== "doc" && item.type !== "folder") return;
+      if (item.type !== "doc" && item.type !== "folder" && item.type !== "form") return;
       await fetch(`/api/pages/${item.id}/favorite`, {
         method: "POST",
         credentials: "include",
@@ -1695,7 +1618,10 @@ export default function DriveHub() {
     async (items: DriveItem[]) => {
       if (items.length === 0 || !effectiveScopeId) return;
       const actions = scopeActionsMap.get(effectiveScopeId);
-      if (!actions) return;
+      if (!actions) {
+        if (effectiveScopeId === SHARED_SPACE_KEY) toast.error("Open the document to delete it");
+        return;
+      }
       const confirmed = await dialog.confirm({
         title: `Delete ${items.length} item${items.length === 1 ? "" : "s"}?`,
         description: "Folders must be empty first.",
@@ -1703,34 +1629,27 @@ export default function DriveHub() {
         confirmLabel: "Delete",
       });
       if (!confirmed) return;
-      let fail = 0;
-      for (const it of items) {
-        const res = await actions.deleteItem(it);
-        if (!res.ok) fail++;
-      }
-      revalidator.revalidate();
-      if (fail) toast.error(`${fail} item${fail === 1 ? "" : "s"} couldn't be deleted`);
-      else toast.success(`Deleted ${items.length}`);
+      await runTrash({ items, deleteOne: actions.deleteItem, hiding: pendingHidden, history, toast, revalidate });
     },
-    [effectiveScopeId, scopeActionsMap, dialog, toast, revalidator],
+    [effectiveScopeId, scopeActionsMap, dialog, toast, history, revalidate, pendingHidden],
   );
 
   // Upload for the current scope + folder. Called unconditionally (hook rule);
   // when at the Drive root the target defaults to Lab but the New menu (and thus
   // the upload item) isn't rendered there.
-  const uploadTarget: UploadTarget = useMemo(() => {
+  function uploadTargetFor(folderId: string | null): UploadTarget {
     if (!currentScope) return { scope: { kind: "Lab" } };
-    if (currentScope.id === "mine") return { scope: { kind: "Member" }, folderPageId: currentFolderId };
-    if (currentScope.id === "lab" || currentScope.id === "core")
-      return { scope: { kind: "Lab" }, folderPageId: currentFolderId ?? currentScope.rootFolderId ?? null };
+    if (currentScope.id === "mine") return { scope: { kind: "Member" }, folderPageId: folderId };
+    if (currentScope.id === "lab" || isProcessRootSpace(currentScope.id))
+      return { scope: { kind: "Lab" }, folderPageId: folderId ?? currentScope.rootFolderId ?? null };
     if (currentScope.id === "projects" || currentScope.id === "education") {
-      // Resolve the workspace from the current folder. If we can't (e.g. at the
+      // Resolve the workspace from the folder. If we can't (e.g. at the
       // group root), fall back to Lab scope as a safe no-op.
-      const workspaceId = resolveWorkspaceId(currentScope.items, currentFolderId);
+      const workspaceId = resolveWorkspaceId(currentScope.items, folderId);
       if (!workspaceId) return { scope: { kind: "Lab" } };
-      // If currentFolderId IS the synthetic workspace folder, the real parent is null.
-      const node = currentFolderId ? currentScope.items.find((it) => it.id === currentFolderId) : null;
-      const realFolder = node?.parentFolderId === null ? null : currentFolderId;
+      // If the folder IS the synthetic workspace folder, the real parent is null.
+      const node = folderId ? currentScope.items.find((it) => it.id === folderId) : null;
+      const realFolder = node?.parentFolderId === null ? null : folderId;
       // An offering is NOT a project. Sending its id as a projectId is what
       // made every upload into a course Drive fail — 403 for an instructor,
       // "Project not found" for Core.
@@ -1738,12 +1657,36 @@ export default function DriveHub() {
         ? { scope: { kind: "EducationOffering", offeringId: workspaceId }, folderPageId: realFolder }
         : { scope: { kind: "Project", projectId: workspaceId }, folderPageId: realFolder };
     }
-    return { scope: { kind: "Project", projectId: currentScope.id }, folderPageId: currentFolderId };
-  }, [currentScope, currentFolderId]);
+    return { scope: { kind: "Project", projectId: currentScope.id }, folderPageId: folderId };
+  }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const uploadTarget = useMemo(() => uploadTargetFor(currentFolderId), [currentScope, currentFolderId]);
+  function uploadDestinationFor(folderId: string | null): UploadDestination | null {
+    if (!currentScope) return null;
+    const scopeId = currentScope.id;
+    return {
+      label: destinationLabel(currentScope, folderId),
+      onOpen: () => onNavigate(scopeId, folderId),
+    };
+  }
   const { inputRef, uploading, uploadError, handleFileChange, uploadFiles } = useDriveFileUpload(
     uploadTarget,
     () => revalidator.revalidate(),
+    uploadDestinationFor(currentFolderId),
   );
+  function onDropFiles(files: File[], opts?: FileDropOptions) {
+    const dropped = opts?.folderId ? uploadTargetFor(opts.folderId) : null;
+    void uploadFiles(files, {
+      ...(dropped
+        ? {
+            scope: dropped.scope,
+            folderPageId: dropped.folderPageId ?? null,
+            destination: uploadDestinationFor(opts!.folderId!),
+          }
+        : {}),
+      skippedFolders: opts?.skippedFolders,
+    });
+  }
 
   const currentActions = effectiveScopeId ? scopeActionsMap.get(effectiveScopeId) : undefined;
 
@@ -1802,6 +1745,13 @@ export default function DriveHub() {
     [],
   );
 
+  const applyTag = useCallback(
+    (id: string) => {
+      if (!selectedTagIds.has(id)) toggleTag(id);
+    },
+    [selectedTagIds, toggleTag],
+  );
+
   const clearTags = useCallback(() => {
     patchParams((p) => p.delete("tag"));
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1850,7 +1800,30 @@ export default function DriveHub() {
       </div>
     ) : null;
 
-  const caps = { canViewForms, canManageAgreements };
+  const sharedChips =
+    effectiveScopeId === SHARED_SPACE_KEY ? (
+      <div className="flex items-center gap-2 flex-wrap pb-1" data-testid="drive-shared-views">
+        {SHARED_VIEWS.map((v) => (
+          <button
+            key={v.value}
+            type="button"
+            aria-pressed={sharedView === v.value}
+            data-testid={`drive-shared-view-${v.value}`}
+            onClick={() => setSharedView(v.value)}
+            className={cn(
+              "inline-flex items-center gap-1 rounded-full border font-medium transition-colors px-3.5 py-1.5 text-sm",
+              sharedView === v.value
+                ? "border-os-accent bg-os-accent/15 text-os-accent"
+                : "border-border bg-card text-muted-foreground hover:bg-muted/50 hover:text-foreground",
+            )}
+          >
+            {v.label}
+          </button>
+        ))}
+      </div>
+    ) : null;
+
+  const caps = { canViewForms: canViewForms || formsPageAccess, canManageAgreements };
   const visibleFilters = TYPE_FILTERS.filter((f) => !f.requiresCap || caps[f.requiresCap]);
 
   // Type filter as the site's Select dropdown (matches members/forms filters),
@@ -1899,19 +1872,24 @@ export default function DriveHub() {
       <NewMenu
         scope={currentScope}
         actions={currentActions}
-        canViewForms={canViewForms}
+        canViewForms={canViewForms || formsPageAccess}
         canManageAgreements={canManageAgreements}
         onUploadClick={() => inputRef.current?.click()}
         uploading={uploading}
         onTemplate={() => setTemplatePickerOpen(true)}
         currentFolderId={currentFolderId}
+        onCreated={onCreated}
       />
     ) : (
       <button
         type="button"
         disabled
         data-testid="drive-new-menu-disabled"
-        title="Open a drive to create something"
+        title={
+          effectiveScopeId === SHARED_SPACE_KEY
+            ? "Nothing can be created in Shared with me"
+            : "Open a drive to create something"
+        }
         className="os-add-btn shrink-0 cursor-not-allowed opacity-40"
       >
         <Plus className="w-4 h-4" /> New
@@ -1953,10 +1931,7 @@ export default function DriveHub() {
   );
 
   return (
-    // Off-flag this keeps its own p-4. Under the design the shell already lays
-    // a 64px/60px gutter on every page, so a second inset here started Drive's
-    // content 16px in from where every other page's begins — visible as soon as
-    // two tabs sit side by side.
+    <DriveHistoryContext.Provider value={history}>
     <div className="w-full flex flex-col gap-4">
       {/* Drive used to treat its breadcrumb as the page title. That worked when
           no page had a title; under the design every hub opens with one, and a
@@ -1986,14 +1961,22 @@ export default function DriveHub() {
       </header>
       {uploadError && <p className="text-sm text-red-600">{uploadError}</p>}
 
+      {homeEnabled && home && !isHiringLibrary && !search && (
+        <DriveHome data={home} scopes={driveScopes} onOpen={onOpenItem} onNavigate={onNavigate} />
+      )}
+
       <DriveBrowser
-        scopes={driveScopes}
+        formShare={formsPageAccess}
+        scopes={visibleScopes}
         currentScopeId={effectiveScopeId}
         currentFolderId={currentFolderId}
         typeFilter={typeFilter}
         search={search}
         onSearchChange={onSearchChange}
         onNavigate={onNavigate}
+        onHistory={(delta) => void navigate(delta)}
+        initialSelectedId={initialSelectedId}
+        revealId={revealId}
         onOpenItem={onOpenItem}
         onMove={onMove}
         getScopeActions={getScopeActions}
@@ -2001,23 +1984,24 @@ export default function DriveHub() {
         onBulkDelete={onBulkDelete}
         onBulkMove={(items) => void onBulkMove(items)}
         onMoveToScope={onMoveToScope}
-        onUploadFiles={currentScope ? uploadFiles : undefined}
+        onSharingChanged={() => revalidator.revalidate()}
+        onUploadFiles={currentScope && currentScope.id !== SHARED_SPACE_KEY ? onDropFiles : undefined}
         filterControl={filterControl}
         newMenu={toolbarActions}
         overflowMenu={overflowMenu}
-        tagChips={tagChips}
+        tagChips={
+          <>
+            {sharedChips}
+            {tagChips}
+          </>
+        }
         tagFilter={tagFilter}
+        onTagClick={applyTag}
+        receiverViewer={receiversOn ? { isCore: canManageAgreements, isProjectMember: true } : undefined}
       />
 
       {/* Hidden upload input (driven by the New menu) + template picker modal */}
-      <input
-        ref={inputRef}
-        type="file"
-        className="sr-only"
-        aria-hidden="true"
-        tabIndex={-1}
-        onChange={handleFileChange}
-      />
+      <DriveUploadInput inputRef={inputRef} onChange={handleFileChange} />
       <TemplatePicker
         open={templatePickerOpen}
         onClose={() => setTemplatePickerOpen(false)}
@@ -2025,7 +2009,7 @@ export default function DriveHub() {
       />
 
       {movePicker && (
-        <DestinationPicker
+        <FolderPicker
           open
           heading={movePicker.heading}
           drives={movePicker.drives}
@@ -2040,6 +2024,11 @@ export default function DriveHub() {
 
       {trashOpen && (
         <TrashPanel
+          scopes={driveScopes}
+          onNavigate={(scopeId, folderId) => {
+            setTrashOpen(false);
+            onNavigate(scopeId, folderId);
+          }}
           onClose={() => setTrashOpen(false)}
           onRevalidate={() => revalidator.revalidate()}
           dialog={dialog}
@@ -2047,6 +2036,7 @@ export default function DriveHub() {
         />
       )}
     </div>
+    </DriveHistoryContext.Provider>
   );
 }
 
@@ -2056,15 +2046,20 @@ type TrashItem = {
   id: string;
   type: "doc" | "folder" | "file" | "form";
   title: string;
+  parentFolderId: string | null;
   archivedAt: string;
 };
 
 function TrashPanel({
+  scopes,
+  onNavigate,
   onClose,
   onRevalidate,
   dialog,
   toast,
 }: {
+  scopes: LocatableScope[];
+  onNavigate: (scopeId: string, folderId: string | null) => void;
   onClose: () => void;
   onRevalidate: () => void;
   dialog: ReturnType<typeof useDialog>;
@@ -2092,13 +2087,9 @@ function TrashPanel({
   useEffect(() => { void fetchTrash(); }, []);
 
   async function restore(item: TrashItem) {
-    const fd = new FormData();
-    fd.set("intent", "restore");
-    fd.set("type", item.type);
-    fd.set("id", item.id);
-    const res = await fetch("/api/drive/trash", { method: "POST", body: fd, credentials: "include" });
+    const res = await restoreFromTrashRequest(item);
     if (res.ok) {
-      toast.success("Restored");
+      toast.success(restoredToast([item.title]));
       void fetchTrash();
       onRevalidate();
     } else {
@@ -2169,6 +2160,9 @@ function TrashPanel({
                 <span className="text-xs text-muted-foreground">
                   Deleted {new Date(item.archivedAt).toLocaleDateString()}
                 </span>
+              </span>
+              <span className="flex w-44 shrink-0 min-w-0">
+                <LocationLink location={locateFolder(scopes, item.parentFolderId)} onNavigate={onNavigate} />
               </span>
               <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
                 <button

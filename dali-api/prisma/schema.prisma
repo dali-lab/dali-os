@@ -328,6 +328,9 @@ model User {
 
   // ─── Public showcase ──────────────────────────────────────────────────────
   projectShowcasesUpdated ProjectShowcase[] @relation("ProjectShowcaseUpdatedBy")
+
+  // ─── Home landing ─────────────────────────────────────────────────────────
+  tetrisScore TetrisScore?
 }
 
 // A DALI lab member. userId is optional because a member may be known (e.g. via daliEmail)
@@ -693,6 +696,11 @@ model DomainApplication {
   closedAt      DateTime?
   closureReason DomainApplicationClosureReason?
 
+  // When the applicant last submitted with this domain selected. Submission
+  // is recorded once per Application; a domain added afterwards stays null
+  // (and reads "Not submitted") until the applicant submits again.
+  submittedAt DateTime?
+
   applicationId          String
   application            Application  @relation(fields: [applicationId], references: [id])
   // The FormVersion of the picked per-domain challenge Form the applicant
@@ -790,6 +798,7 @@ model Domain {
   eligibilities             DomainEligibility[]
   projectAssignments        ProjectAssignment[]
   mentorshipPairs           MentorshipPair[]
+  mentorshipTermForms       MentorshipTermForm[]
   externalMentors           ExternalMentor[]
   tasks                     Task[]
   projectRoleRequests       ProjectRoleRequest[]
@@ -836,6 +845,12 @@ model DomainApplicationCycle {
 
   // True once the domain lead has explicitly confirmed their challenge config is ready
   isReady Boolean @default(false)
+
+  // Per-domain application close. Null inherits the cycle's closeDate. Set
+  // when a domain joins a cycle after it opened and needs its own window
+  // (app/hiring/lib/domain-windows.ts). Students cycles only; never drives
+  // the cycle's own Open→UnderReview transition.
+  closeDate DateTime?
 
   // Rubric assigned for this domain in this cycle (shared across all challenge versions for the domain)
   rubricVersionId         String?
@@ -1884,6 +1899,10 @@ enum NotificationType {
   // Manual "Send announcement" blast from a hiring-cycle application event
   // to everyone who started an application in that cycle.
   ApplicationEventAnnouncement
+  // One-time notice when a domain joins an already-Open cycle with its own
+  // close date (domain-windows.ts), to everyone with a non-Withdrawn
+  // Application in the cycle.
+  DomainAddedNotice
 }
 
 // One row per (cycle, notificationType, applicant). Enforces single-send
@@ -1958,6 +1977,30 @@ model AiUsage {
   @@unique([userId, day])
 }
 
+// A member's best run at the tetris game on the week 5 ("Build") home landing
+// scene. One row per player, holding their personal best rather than a log of
+// every game: the board is "the highest score each person has reached", so a
+// history would only let one good night fill all ten places.
+//
+// The score arrives from the browser and is therefore the player's word for it;
+// it is bounded on the way in but not verified, which is the right trade for a
+// landing-page easter egg and the wrong one for anything that matters. Scores
+// go with the user if the account is deleted.
+model TetrisScore {
+  // The player, and the row's identity: a personal best is one per person.
+  userId     String   @id
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  score      Int
+  lines      Int
+  level      Int
+  // When the best was set — shown on the board and used to break ties, so the
+  // player who got there first is listed first.
+  achievedAt DateTime @default(now())
+
+  // The board is read as "top N by score", which is this index read backwards.
+  @@index([score])
+}
+
 // A browser- or desktop-captured recording for a collaborative document (any
 // DocEditor room the user can write to), batch-transcribed and diarized by
 // the self-hosted dali-asr Modal app once the recording stops. The page (or
@@ -1967,6 +2010,7 @@ model AiUsage {
 // Rows are owner-written, but reads follow the note's audience (see
 // canReadRecording). A user's stale, never-finalized rows are swept whenever
 // they start a new recording.
+
 model MeetingRecording {
   id            String                 @id @default(cuid())
   // The collab room the notes land in, e.g. "doc:<pageId>:body".
@@ -2565,6 +2609,9 @@ model ScheduledMeeting {
   // recurring series gets a fresh doc each week rather than one shared doc.
   notePages        Page[]       @relation("MeetingNotePage")
   whiteboardPage   Page?        @relation("MeetingWhiteboardPage")
+  // The series' default notebook: each occurrence note files as a child of it.
+  notebookId       String?
+  notebook         Page?        @relation("MeetingSeriesNotebook", fields: [notebookId], references: [id], onDelete: SetNull)
 
   // Roster (default): organizer/Core check people off by hand via
   // AttendanceChecklist. SelfCheckIn: attendees mark themselves present via
@@ -2593,10 +2640,33 @@ model ScheduledMeeting {
   timeEntries   TimeEntry[]
   timeProposals MeetingTimeProposal[]
   recordings    MeetingRecording[]
+  shareGrants   MeetingShareGrant[]
 
   createdAt DateTime @default(now())
 
   @@index([iCalUID])
+  @@index([notebookId])
+}
+
+// A PageShare a meeting justifies on its notebook, so uninviting removes
+// exactly what the meeting added. createdShare = this sync created the share
+// row (vs. raised or reused an existing one).
+model MeetingShareGrant {
+  id                 String             @id @default(cuid())
+  scheduledMeetingId String
+  pageId             String
+  principalType      SharePrincipalType
+  principalId        String
+  pageShareId        String
+  createdShare       Boolean
+  createdAt          DateTime           @default(now())
+
+  meeting   ScheduledMeeting @relation(fields: [scheduledMeetingId], references: [id], onDelete: Cascade)
+  pageShare PageShare        @relation(fields: [pageShareId], references: [id], onDelete: Cascade)
+
+  @@unique([scheduledMeetingId, pageId, principalType, principalId])
+  @@index([pageId, principalType, principalId])
+  @@index([pageShareId])
 }
 
 enum ScopeType {
@@ -3156,6 +3226,7 @@ model Term {
   memberClasses         MemberClass[]
   courseOfferings       CourseOffering[]
   projectChartStrings   ProjectChartString[]
+  mentorshipForms       MentorshipTermForm[]
 
   @@index([sortKey])
 }
@@ -3329,6 +3400,28 @@ model MentorshipPair {
 
   @@index([menteeUserId, projectId, termId])
   @@index([mentorUserId, termId])
+}
+
+// The week 5 check-in forms Core links to a term's mentorship notes page, one
+// per domain and side of the pairing. Each person's response shows beside
+// their name.
+model MentorshipTermForm {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  termId   String
+  term     Term   @relation(fields: [termId], references: [id], onDelete: Cascade)
+  domainId String
+  domain   Domain @relation(fields: [domainId], references: [id], onDelete: Cascade)
+  // "mentor" | "mentee"
+  role     String
+  formId   String
+  form     Form   @relation(fields: [formId], references: [id], onDelete: Cascade)
+
+  @@unique([termId, domainId, role])
+  @@index([domainId])
+  @@index([formId])
 }
 
 // Per-cycle override of a member's mentor/mentee role on the staffing board.
@@ -4810,7 +4903,11 @@ enum FormAudience {
 }
 
 model Form {
+  // Shares its id with the Page (kind Form) that carries placement, title,
+  // and access. Create both through createForm() in form-page.server.ts.
   id        String   @id @default(cuid())
+  page      Page     @relation("FormPage", fields: [id], references: [id], onDelete: Cascade)
+  // Mirrored on Page.title until the cleanup PR drops this column.
   name      String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -4824,6 +4921,10 @@ model Form {
   // controls. This field is consumed only for display ordering in the unified
   // drive tree; it does not affect fill/visibility semantics in any way.
   folderPageId String?
+
+  // Stable identity for the hiring and education template forms, so they are
+  // found by key rather than by name plus placement. Null on every other form.
+  templateKey String? @unique
 
   createdById String
   createdBy   User   @relation(fields: [createdById], references: [id])
@@ -4884,6 +4985,7 @@ model Form {
   hiringCyclesAsApplicationForm       ApplicationCycle[]              @relation("CycleApplicationForm")
   hiringCyclesAsContinuedInterestForm ApplicationCycle[]              @relation("CycleContinuedInterestForm")
   hiringDomainChallenges              CycleDomainForm[]
+  mentorshipTermForms                 MentorshipTermForm[]
 
   @@index([folderPageId])
   @@index([createdById])
@@ -5246,6 +5348,9 @@ model Page {
   shares    PageShare[]
   favorites UserFavorite[]
 
+  // Set only when kind == Form: the form body sharing this page's id.
+  form Form? @relation("FormPage")
+
   // Pinned to the top of the project's Documents block. Timestamp so pins can
   // be ordered most-recent-first. Null = not pinned. (Distinct from the
   // system Overview/PRD docs, which are always shown pinned.)
@@ -5266,6 +5371,18 @@ model Page {
   // app/lib/meeting-notebook.ts) and makes find-or-create race safe. The
   // notebook has no body of its own; opening it lands on a tab.
   notebookKey String? @unique
+
+  // Typed folder columns. Plus a partial unique index, Page_process_folder_type_live,
+  // on (processType, processId, folderType) WHERE archivedAt IS NULL AND
+  // folderType IS NOT NULL: one live root or receiver per process. Raw SQL in
+  // migration 20261013120000_drive_typed_folders_and_notebooks; Prisma can't
+  // express it.
+  folderType  FolderType?
+  processType ProcessType?
+  processId   String?
+
+  // Series that use this notebook page as their default notebook.
+  seriesUsingAsNotebook ScheduledMeeting[] @relation("MeetingSeriesNotebook")
 
   // Set when this page is a meeting's linked whiteboard (kind = Whiteboard).
   // Parallel to meetingNoteId: a meeting can have a note doc and/or a whiteboard,
@@ -5299,8 +5416,15 @@ model Page {
   seededFromPageId   String?
   seededTemplateHash String?
 
+  // Notebook only: the template page new notes in this notebook seed from.
+  // A real relation (unlike seededFromPageId) so deleting the template clears it.
+  templatePageId           String?
+  templatePage             Page?   @relation("NotebookTemplate", fields: [templatePageId], references: [id], onDelete: SetNull)
+  notebooksUsingAsTemplate Page[]  @relation("NotebookTemplate")
+
   parent   Page?  @relation("PageTree", fields: [parentPageId], references: [id])
   children Page[] @relation("PageTree")
+  mentorNote MentorNote? @relation("MentorNotePage")
 
   // Lab-wide tags applied to this document. Comments (doc-level + inline) live
   // in DocComment with targetType=doc, targetId=Page.id — referenced loosely
@@ -5410,6 +5534,8 @@ enum ProcessType {
   Lab
   // Lab-wide singleton for certificate-template background images (Core-scoped).
   CertificateTemplates
+  // Lab-wide singleton for the mentorship space (sentinel id "mentorship").
+  Mentorship
 }
 
 // Who a personal note has been shared with, beyond its own profileVisible
@@ -5438,6 +5564,8 @@ model PageShare {
   createdAt   DateTime @default(now())
 
   page Page @relation(fields: [pageId], references: [id], onDelete: Cascade)
+
+  meetingGrants MeetingShareGrant[]
 
   @@unique([pageId, principalType, principalId])
   @@index([principalType, principalId])
@@ -5513,6 +5641,9 @@ enum SharePermission {
 enum LinkAccess {
   Restricted
   LabMembers
+  // Any authenticated account, including partner, applicant, and non-member
+  // Dartmouth users. Added for forms (the old "SignedIn" fill audience).
+  SignedIn
   Public
 }
 
@@ -5543,6 +5674,29 @@ enum PageKind {
   // A collaborative Excalidraw canvas. Body lives in a whiteboard:{id}:canvas
   // collab room (Y.Map of elements), not in contentDocId.
   Whiteboard
+  // A run of meeting notes shown as one Drive item; each note is a child page
+  // rendered as a tab. No body of its own.
+  Notebook
+  // Retired. Postgres cannot drop an enum value cheaply; nothing creates it.
+  Shortcut
+  // A form. The page carries placement, title, and access; the question set,
+  // versions, submissions, and publish state live on the 1:1 Form row that
+  // shares this page's id (specs/forms-vs-drive-items-review.md, section 9).
+  Form
+}
+
+// What a folder is or receives. Root = a Drive space root; the rest mark a
+// folder as the receiver for one kind of auto-filed artifact.
+enum FolderType {
+  Root
+  Meetings
+  HiringForms
+  ApplicationTemplates
+  Agreements
+  EducationTemplates
+  CertificateBackgrounds
+  MentorNotebooks
+  OfferingForms
 }
 
 enum ScopeKind {
@@ -5569,6 +5723,11 @@ model MentorNote {
   // Mentor's at-a-glance read on how the mentee is doing this week. Null until
   // the mentor picks one — the browse grid renders it as a colored cell.
   vibe        MentorNoteVibe?
+
+  // The note's body and Drive presence: a tab in the pair's notebook. Null
+  // until the note is migrated or first opened; a deleted Page just unlinks.
+  pageId String? @unique
+  page   Page?   @relation("MentorNotePage", fields: [pageId], references: [id], onDelete: SetNull)
 
   mentor User @relation("MentorNoteMentor", fields: [mentorId], references: [id])
   mentee User @relation("MentorNoteMentee", fields: [menteeId], references: [id])
@@ -7072,6 +7231,7 @@ model BlogPost {
   visibility     BlogVisibility @default(Internal)
   // Null = draft, seen only by its author and Core.
   publishedAt    DateTime?
+
   // Set while a draft waits for an Admin to approve it; cleared once it is
   // published or withdrawn.
   submittedAt    DateTime?

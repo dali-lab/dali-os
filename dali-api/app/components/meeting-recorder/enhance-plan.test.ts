@@ -1,5 +1,21 @@
 import { describe, expect, it } from "vitest";
-import { actionItemMatchesBlock, applyEnhancePlan, type EnhancePlan, type SnapshotBlock } from "./enhance-plan";
+import {
+  actionItemMatchesBlock,
+  applyEnhancePlan,
+  buildEnhanceChangeRows,
+  classifyEnhanceMark,
+  ENHANCE_MARK_ADDED,
+  ENHANCE_MARK_PRIOR,
+  firstLineOf,
+  headingAbove,
+  localEditKeepIds,
+  markOfProps,
+  summarizeEnhanceMarks,
+  type EnhanceBlockChange,
+  type EnhanceMarkEntry,
+  type EnhancePlan,
+  type SnapshotBlock,
+} from "./enhance-plan";
 
 const block = (id: string, type: string, text: string): SnapshotBlock => ({ id, type, text });
 
@@ -299,5 +315,198 @@ describe("actionItemMatchesBlock", () => {
   it("does not match empty text", () => {
     expect(actionItemMatchesBlock("", "")).toBe(false);
     expect(actionItemMatchesBlock("   ", "Send the revised scope")).toBe(false);
+  });
+});
+
+describe("markOfProps", () => {
+  it("recognizes both reserved values", () => {
+    expect(markOfProps({ backgroundColor: ENHANCE_MARK_ADDED })).toBe(ENHANCE_MARK_ADDED);
+    expect(markOfProps({ backgroundColor: ENHANCE_MARK_PRIOR })).toBe(ENHANCE_MARK_PRIOR);
+  });
+
+  it("returns null for any other value, including a normal Colors swatch", () => {
+    expect(markOfProps({ backgroundColor: "yellow" })).toBeNull();
+    expect(markOfProps({ backgroundColor: "default" })).toBeNull();
+    expect(markOfProps({})).toBeNull();
+    expect(markOfProps(undefined)).toBeNull();
+  });
+});
+
+describe("localEditKeepIds (specs/meeting-recording-rail.md Step 2: local edit counts as Keep)", () => {
+  const marks: EnhanceMarkEntry[] = [{ id: "b1", mark: ENHANCE_MARK_ADDED, type: "paragraph", text: "x" }];
+
+  function change(overrides: Partial<EnhanceBlockChange> = {}): EnhanceBlockChange {
+    return {
+      type: "update",
+      source: { type: "local" },
+      block: { id: "b1", props: { backgroundColor: ENHANCE_MARK_ADDED } },
+      prevBlock: { id: "b1", props: { backgroundColor: ENHANCE_MARK_ADDED } },
+      ...overrides,
+    };
+  }
+
+  it("keeps a block a local edit touched while it was already marked", () => {
+    expect(localEditKeepIds([change()], marks)).toEqual(["b1"]);
+  });
+
+  it("does not keep the Enhance-apply transaction itself (prevBlock had no mark yet)", () => {
+    const c = change({ prevBlock: { id: "b1", props: {} } });
+    expect(localEditKeepIds([c], marks)).toEqual([]);
+  });
+
+  it("does not keep a remote (Yjs) change", () => {
+    const c = change({ source: { type: "yjs-remote" } });
+    expect(localEditKeepIds([c], marks)).toEqual([]);
+  });
+
+  it("does not keep an undo/redo change", () => {
+    expect(localEditKeepIds([change({ source: { type: "undo" } })], marks)).toEqual([]);
+    expect(localEditKeepIds([change({ source: { type: "redo" } })], marks)).toEqual([]);
+    expect(localEditKeepIds([change({ source: { type: "undo-redo" } })], marks)).toEqual([]);
+  });
+
+  it("treats paste and drop as local", () => {
+    expect(localEditKeepIds([change({ source: { type: "paste" } })], marks)).toEqual(["b1"]);
+    expect(localEditKeepIds([change({ source: { type: "drop" } })], marks)).toEqual(["b1"]);
+  });
+
+  it("ignores insert/delete/move changes", () => {
+    expect(localEditKeepIds([change({ type: "insert", prevBlock: undefined })], marks)).toEqual([]);
+    expect(localEditKeepIds([change({ type: "delete", prevBlock: undefined })], marks)).toEqual([]);
+    expect(localEditKeepIds([change({ type: "move" })], marks)).toEqual([]);
+  });
+
+  it("does not re-trigger on the change produced by clearing the mark itself (no recursion)", () => {
+    // The block is no longer in the current marks list — this is exactly the
+    // follow-up change keepEnhanceBlock's own update produces.
+    const c = change({ block: { id: "b1", props: {} } });
+    expect(localEditKeepIds([c], [])).toEqual([]);
+  });
+
+  it("ignores a change to a block that was never marked", () => {
+    const c: EnhanceBlockChange = {
+      type: "update",
+      source: { type: "local" },
+      block: { id: "other", props: {} },
+      prevBlock: { id: "other", props: {} },
+    };
+    expect(localEditKeepIds([c], marks)).toEqual([]);
+  });
+});
+
+describe("firstLineOf", () => {
+  it("returns the whole string when there is no newline", () => {
+    expect(firstLineOf("Discussed the budget")).toBe("Discussed the budget");
+  });
+
+  it("returns only the first line, trimmed", () => {
+    expect(firstLineOf("Discussed the budget\nMore detail here")).toBe("Discussed the budget");
+  });
+});
+
+describe("classifyEnhanceMark", () => {
+  it("is Removed for the prior mark, regardless of priorBlocks", () => {
+    expect(classifyEnhanceMark({ id: "b1", mark: ENHANCE_MARK_PRIOR }, { b1: {} })).toBe("Removed");
+    expect(classifyEnhanceMark({ id: "b1", mark: ENHANCE_MARK_PRIOR }, undefined)).toBe("Removed");
+  });
+
+  it("is Changed for the added mark when the id is in priorBlocks", () => {
+    expect(classifyEnhanceMark({ id: "b1", mark: ENHANCE_MARK_ADDED }, { b1: {} })).toBe("Changed");
+  });
+
+  it("is Added for the added mark when the id is not in priorBlocks", () => {
+    expect(classifyEnhanceMark({ id: "b1", mark: ENHANCE_MARK_ADDED }, { b2: {} })).toBe("Added");
+    expect(classifyEnhanceMark({ id: "b1", mark: ENHANCE_MARK_ADDED }, undefined)).toBe("Added");
+  });
+});
+
+describe("summarizeEnhanceMarks", () => {
+  it("counts changed/added/removed across a mixed mark list", () => {
+    const marks: EnhanceMarkEntry[] = [
+      { id: "b1", mark: ENHANCE_MARK_ADDED, type: "paragraph", text: "changed" },
+      { id: "b2", mark: ENHANCE_MARK_ADDED, type: "paragraph", text: "added" },
+      { id: "b3", mark: ENHANCE_MARK_ADDED, type: "paragraph", text: "added too" },
+      { id: "b4", mark: ENHANCE_MARK_PRIOR, type: "heading", text: "" },
+    ];
+    expect(summarizeEnhanceMarks(marks, { b1: {} })).toEqual({ changed: 1, added: 2, removed: 1 });
+  });
+
+  it("is all zero for an empty mark list", () => {
+    expect(summarizeEnhanceMarks([], undefined)).toEqual({ changed: 0, added: 0, removed: 0 });
+  });
+});
+
+describe("headingAbove", () => {
+  const blocks: SnapshotBlock[] = [
+    block("h1", "heading", "Agenda"),
+    block("p1", "paragraph", "Intro line"),
+    block("h2", "heading", "Notes"),
+    block("p2", "paragraph", "Discussion"),
+    block("p3", "paragraph", "More discussion"),
+  ];
+
+  it("finds the nearest preceding heading, skipping non-heading blocks", () => {
+    expect(headingAbove(blocks, "p3")).toBe("Notes");
+  });
+
+  it("returns the immediately preceding heading when the block follows it directly", () => {
+    expect(headingAbove(blocks, "p1")).toBe("Agenda");
+  });
+
+  it("returns null for the first block (nothing above it)", () => {
+    expect(headingAbove(blocks, "h1")).toBeNull();
+  });
+
+  it("returns null for an id not in the list", () => {
+    expect(headingAbove(blocks, "missing")).toBeNull();
+  });
+
+  it("returns null when no heading precedes the block", () => {
+    const noHeadings: SnapshotBlock[] = [block("p1", "paragraph", "a"), block("p2", "paragraph", "b")];
+    expect(headingAbove(noHeadings, "p2")).toBeNull();
+  });
+});
+
+describe("buildEnhanceChangeRows", () => {
+  const blocks: SnapshotBlock[] = [
+    block("h1", "heading", "Notes"),
+    block("b1", "paragraph", "New text for b1"),
+    block("b2", "paragraph", "A brand new block"),
+    block("b3", "heading", "Untouched template heading"),
+  ];
+  const marks: EnhanceMarkEntry[] = [
+    { id: "b1", mark: ENHANCE_MARK_ADDED, type: "paragraph", text: "New text for b1\nextra" },
+    { id: "b2", mark: ENHANCE_MARK_ADDED, type: "paragraph", text: "A brand new block" },
+    { id: "b3", mark: ENHANCE_MARK_PRIOR, type: "heading", text: "Untouched template heading" },
+  ];
+  const priorBlocks = {
+    b1: { id: "b1", type: "paragraph", props: {}, content: [{ type: "text", text: "Old text for b1", styles: {} }], children: [] },
+  };
+
+  it("emits one row per mark, in document order, with the kind classified from priorBlocks", () => {
+    const rows = buildEnhanceChangeRows(marks, blocks, priorBlocks);
+    expect(rows.map((r) => r.id)).toEqual(["b1", "b2", "b3"]);
+    expect(rows.map((r) => r.kind)).toEqual(["Changed", "Added", "Removed"]);
+  });
+
+  it("takes only the first line of the block's current text", () => {
+    const rows = buildEnhanceChangeRows(marks, blocks, priorBlocks);
+    expect(rows[0]!.text).toBe("New text for b1");
+  });
+
+  it("looks up the nearest heading above each block", () => {
+    const rows = buildEnhanceChangeRows(marks, blocks, priorBlocks);
+    expect(rows.every((r) => r.heading === "Notes")).toBe(true);
+  });
+
+  it("shows 'Was: …' (first line of the prior block's own text) only for a Changed row", () => {
+    const rows = buildEnhanceChangeRows(marks, blocks, priorBlocks);
+    expect(rows[0]!.priorText).toBe("Old text for b1");
+    expect(rows[1]!.priorText).toBeNull();
+    expect(rows[2]!.priorText).toBeNull();
+  });
+
+  it("returns an empty list for no marks", () => {
+    expect(buildEnhanceChangeRows([], blocks, priorBlocks)).toEqual([]);
   });
 });

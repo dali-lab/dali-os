@@ -34,9 +34,11 @@ export function MeetingRecorder({ rec, containerWide }: { rec: UseMeetingRecordi
         : rec.phase === "processing"
           ? "Transcribing…"
           : rec.hasTranscript
-            ? rec.enhancedAt
-              ? "Enhanced"
-              : "Transcript"
+            ? rec.pendingMarks.length > 0
+              ? `Review (${rec.pendingMarks.length})`
+              : rec.enhancedAt
+                ? "Enhanced"
+                : "Transcript"
             : "Show recording";
 
   const button = (

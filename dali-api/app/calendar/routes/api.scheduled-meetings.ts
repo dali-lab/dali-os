@@ -11,6 +11,8 @@ import {
   type ScheduledMeetingScope,
 } from "~/lib/scheduled-meeting";
 import { assertMeetingRoomsFree } from "~/lib/rooms.server";
+import { meetingNotePath } from "~/lib/note-path.server";
+import { notebookChoiceSchema } from "~/lib/notebook-choice";
 
 const Base = {
   title: z.string().trim().min(1).max(200),
@@ -33,16 +35,6 @@ const Base = {
   // General one ("Other", no project). The constraint is enforced by the refines
   // below — see createScheduledMeeting in ~/lib/scheduled-meeting.
   projectId: z.string().min(1).optional(),
-  // General ("Other") meetings may file their note at any Drive location the
-  // organizer can write to (default: Lab root when omitted). Authorized + resolved
-  // server-side in createScheduledMeeting; the client feeds it /api/move-destinations.
-  noteLocation: z
-    .object({
-      workspaceType: z.enum(["Lab", "Project"]),
-      workspaceId: z.string().min(1).nullable(),
-      parentPageId: z.string().min(1).nullable(),
-    })
-    .optional(),
   // SelfCheckIn is independent of meeting notes — attendance rows fan out
   // whenever SelfCheckIn (or meetingType) is set; see createScheduledMeeting.
   attendanceMode: z.enum(["Roster", "SelfCheckIn"]).optional(),
@@ -57,6 +49,10 @@ const Base = {
   // (a note whenever meetingType is set).
   note: z.boolean().optional(),
   whiteboard: z.boolean().optional(),
+  // Which notebook the first note files into (and the series defaults to): one
+  // that exists, or one to create. With it, meetingType/meetingTypeLabel are
+  // derived server-side and may be omitted.
+  notebook: notebookChoiceSchema.optional(),
   // People with no DALI profile, invited by address through the Google event.
   guestEmails: z.array(z.string().trim().email().max(320)).max(MAX_GUEST_EMAILS).optional(),
 } as const;
@@ -79,22 +75,7 @@ const CreateSchema = z
   .refine((v) => (v.meetingType === "Team" || v.meetingType === "Partner" ? !!v.projectId : true), {
     message: "A project is required for Team and Partner meetings",
     path: ["projectId"],
-  })
-  // A custom note location only makes sense for General meetings (Other with no
-  // project) — project meetings file into the project itself.
-  .refine((v) => (v.noteLocation ? v.meetingType === "Other" && !v.projectId : true), {
-    message: "noteLocation is only allowed for General meetings",
-    path: ["noteLocation"],
-  })
-  // Lab locations carry no workspaceId; Project locations require one.
-  .refine(
-    (v) =>
-      !v.noteLocation ||
-      (v.noteLocation.workspaceType === "Project"
-        ? !!v.noteLocation.workspaceId
-        : v.noteLocation.workspaceId === null),
-    { message: "noteLocation workspaceId must be set for Project and null for Lab", path: ["noteLocation"] },
-  );
+  });
 
 export async function action({ request }: Route.ActionArgs) {
   const preflight = handlePreflight(request);
@@ -163,9 +144,10 @@ export async function action({ request }: Route.ActionArgs) {
     meetingType: body.meetingType,
     meetingTypeLabel: body.meetingTypeLabel,
     projectId: body.projectId,
-    noteLocation: body.noteLocation,
     createNote: body.note,
     createWhiteboard: body.whiteboard,
+    notebook: body.notebook,
+    request,
     attendanceMode: body.attendanceMode,
     isCoreMeeting: coreMeeting,
     addMeet: body.addMeet,
@@ -185,6 +167,16 @@ export async function action({ request }: Route.ActionArgs) {
         notifiedCount: result.notifiedCount,
         gcalError: result.gcalError,
         notePageId: result.notePageId,
+        notebookId: result.notebookId,
+        createdNotebook: result.createdNotebook,
+        notePath: result.notePageId
+          ? await meetingNotePath({
+              notePageId: result.notePageId,
+              notebookId: result.notebookId,
+              viewerSub: auth.user.sub,
+              request,
+            })
+          : null,
         whiteboardPageId: result.whiteboardPageId,
       },
       { status: 201 },

@@ -4,6 +4,7 @@ import {
   synthesizePrePipelinePill,
   currentDecisionId,
   findFinalizableDraft,
+  pendingForHiringLead,
 } from "~/hiring/lib/decision-pills";
 import type { DecisionStage, DecisionType } from "~/types";
 
@@ -329,5 +330,67 @@ describe("findFinalizableDraft", () => {
         draft("Accepted", "d1"),
       ])?.id,
     ).toBe("d1");
+  });
+});
+
+describe("pendingForHiringLead", () => {
+  const dec = (id: string, da: string, type: DecisionType, stage: DecisionStage, at: string) => ({
+    id,
+    domainApplicationId: da,
+    type,
+    stage,
+    createdAt: new Date(at),
+  });
+  const ids = (rows: { id: string }[]) => rows.map((r) => r.id);
+
+  it("keeps a lone Draft and a lone Final", () => {
+    const rows = [
+      dec("d", "da1", "InvitedToInterview", "Draft", "2026-10-01"),
+      dec("f", "da2", "Accepted", "Final", "2026-10-02"),
+    ];
+    expect(ids(pendingForHiringLead(rows))).toEqual(["d", "f"]);
+  });
+
+  it("retires a Draft once a Final of the same type exists, keeping the Final", () => {
+    const rows = [
+      dec("f", "da1", "InvitedToInterview", "Final", "2026-10-02"),
+      dec("d", "da1", "InvitedToInterview", "Draft", "2026-10-01"),
+    ];
+    expect(ids(pendingForHiringLead(rows))).toEqual(["f"]);
+  });
+
+  it("retires a Draft re-created after the Final (delibs closed again)", () => {
+    const rows = [
+      dec("d2", "da1", "InvitedToInterview", "Draft", "2026-10-03"),
+      dec("f", "da1", "InvitedToInterview", "Final", "2026-10-02"),
+      dec("d1", "da1", "InvitedToInterview", "Draft", "2026-10-01"),
+    ];
+    expect(ids(pendingForHiringLead(rows))).toEqual(["f"]);
+  });
+
+  it("drops the whole lineage once released", () => {
+    const rows = [
+      dec("r", "da1", "Accepted", "Released", "2026-10-03"),
+      dec("f", "da1", "Accepted", "Final", "2026-10-02"),
+      dec("d", "da1", "Accepted", "Draft", "2026-10-01"),
+    ];
+    expect(pendingForHiringLead(rows)).toEqual([]);
+  });
+
+  it("keeps only the newest of two Drafts of the same type", () => {
+    const rows = [
+      dec("d2", "da1", "Rejected", "Draft", "2026-10-02"),
+      dec("d1", "da1", "Rejected", "Draft", "2026-10-01"),
+    ];
+    expect(ids(pendingForHiringLead(rows))).toEqual(["d2"]);
+  });
+
+  it("tracks types independently on one application", () => {
+    const rows = [
+      dec("rej", "da1", "Rejected", "Draft", "2026-10-03"),
+      dec("inv-r", "da1", "InvitedToInterview", "Released", "2026-10-02"),
+      dec("inv-f", "da1", "InvitedToInterview", "Final", "2026-10-01"),
+    ];
+    expect(ids(pendingForHiringLead(rows))).toEqual(["rej"]);
   });
 });

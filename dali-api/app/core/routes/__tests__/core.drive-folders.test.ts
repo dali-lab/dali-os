@@ -1,0 +1,38 @@
+import { describe, it, expect, beforeEach, vi } from "vitest";
+
+vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn() }));
+vi.mock("~/lib/roles", () => ({ isCore: vi.fn(), isAdmin: vi.fn() }));
+vi.mock("~/lib/login-next", () => ({ redirectToLogin: vi.fn(() => new Response(null, { status: 302 })) }));
+vi.mock("~/core/coreNav", () => ({ coreHandle: vi.fn(() => ({})) }));
+vi.mock("~/lib/bindings.server", () => ({ CORE_PROCESS_ID: "core" }));
+vi.mock("~/lib/drive-receivers.server", () => ({ receiversEnabled: vi.fn() }));
+
+import { requireAuth } from "~/lib/auth";
+import { isCore, isAdmin } from "~/lib/roles";
+import { receiversEnabled } from "~/lib/drive-receivers.server";
+import { loader } from "../core.drive-folders";
+
+const run = () => loader({ request: new Request("http://x/core/drive-folders") } as never);
+
+describe("core.drive-folders loader", () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+    vi.mocked(requireAuth).mockResolvedValue({ ok: true, user: { sub: "u1" } } as never);
+    vi.mocked(isCore).mockResolvedValue(true);
+    vi.mocked(isAdmin).mockResolvedValue(false);
+  });
+
+  it("reports the drive-receivers flag so the page can choose receivers or bindings", async () => {
+    vi.mocked(receiversEnabled).mockResolvedValue(true);
+    expect(await run()).toEqual({ isAdmin: false, processId: "core", receiversEnabled: true });
+    vi.mocked(receiversEnabled).mockResolvedValue(false);
+    expect(await run()).toMatchObject({ receiversEnabled: false });
+  });
+
+  it("sends non-Core members home without reading the flag", async () => {
+    vi.mocked(isCore).mockResolvedValue(false);
+    const res = (await run()) as Response;
+    expect(res.status).toBe(302);
+    expect(receiversEnabled).not.toHaveBeenCalled();
+  });
+});

@@ -1,0 +1,655 @@
+/*
+ * The game layer on the week 5 landing page.
+ *
+ * The background it sits in is pointer-events: none so the page's own search box and links stay
+ * clickable through it. Interactivity is switched back on only for the things you actually press.
+ *
+ * Sizes are in the landing frame's container units (cqw/cqh) and the breakpoints ask the frame
+ * rather than the window, because the landing is a column beside the app's sidebar: measured
+ * against the viewport the board would be sized for space the page doesn't have.
+ */
+
+.t-stage {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  gap: clamp(1rem, 3cqw, 3rem);
+  padding: clamp(1rem, 4cqh, 3rem) clamp(1rem, 3cqw, 3rem);
+  pointer-events: none;
+}
+
+/* ---------- The blinking invitation ---------- */
+
+/*
+ * Centred on the board rather than the window: the board occupies the left of the frame and the
+ * milestone copy the right, so a button in the middle of the viewport would land on the text.
+ */
+.t-stage-idle {
+  /* A column since the high-score board joined the button: side by side they are
+     two things competing for the same gap between the art and the copy, and the
+     board is the one that loses, ending up under the title. */
+  flex-direction: column;
+  justify-content: center;
+  align-items: flex-start;
+  padding-left: clamp(1rem, 11cqw, 11rem);
+}
+
+/*
+ * The button is built the way a block is built, because it is standing on a board made of them:
+ * a flat face with a light bevel up and left and a dark one down and right. Square corners, no
+ * blur anywhere, and a hard offset shadow instead of a soft one -- a rounded pill with a gradient
+ * is the one shape that would read as a web page rather than a cabinet.
+ */
+.t-play {
+  pointer-events: auto;
+  position: relative;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75em;
+  padding: 1.25em 2.1em 1.1em;
+  border: 0;
+  border-radius: 0;
+  background: #0e2a47;
+  color: #ffffff;
+  font-family: var(--font-arcade);
+  cursor: pointer;
+  /*
+   * Four layers, outward: the block bevel in navy, a hard teal ring, the glow that ring throws,
+   * and the slab's own shadow on the board. The ring is a zero-blur shadow rather than a border
+   * so it sits outside the padding box and the bevel keeps the full width of the face.
+   */
+  box-shadow:
+    inset 7px 7px 0 0 #1d4a74,
+    inset -7px -7px 0 0 #061a2e,
+    0 0 0 3px #8ce0d6,
+    0 0 1.7rem 0.15rem rgb(140 224 214 / 0.55),
+    10px 10px 0 0 rgb(0 0 0 / 0.55);
+  transition: translate 90ms steps(2, end), box-shadow 90ms steps(2, end);
+  animation: t-attract 1.5s steps(1, end) infinite;
+}
+
+/*
+ * The corner blocks. Each is the same three-part recipe as a tetromino -- face, lit edge, shadowed
+ * edge -- shrunk to a chip, so they read as loose pieces resting on the slab rather than as dots.
+ */
+.t-play-chip {
+  position: absolute;
+  width: 0.85rem;
+  height: 0.85rem;
+}
+
+.t-play-chip-tl {
+  top: 0.5rem;
+  left: 0.5rem;
+  background: #8ce0d6;
+  box-shadow: inset 3px 3px 0 0 #aeebe4, inset -3px -3px 0 0 #6dccc1;
+}
+
+.t-play-chip-tr {
+  top: 0.5rem;
+  right: 0.5rem;
+  background: #e68fbe;
+  box-shadow: inset 3px 3px 0 0 #f1a8cf, inset -3px -3px 0 0 #d97bae;
+}
+
+.t-play-chip-bl {
+  bottom: 0.5rem;
+  left: 0.5rem;
+  background: #fff3b5;
+  box-shadow: inset 3px 3px 0 0 #fff7d0, inset -3px -3px 0 0 #ffeb84;
+}
+
+.t-play-chip-br {
+  bottom: 0.5rem;
+  right: 0.5rem;
+  background: #a2d483;
+  box-shadow: inset 3px 3px 0 0 #bde6a4, inset -3px -3px 0 0 #80b75e;
+}
+
+/*
+ * Pressed in: the slab travels along its own shadow until it sits flush with the board, and the
+ * bevel flips so the lit edge is underneath. It is the whole trick of a physical arcade button
+ * and it costs two lines.
+ */
+.t-play:active {
+  translate: 10px 10px;
+  box-shadow:
+    inset 7px 7px 0 0 #061a2e,
+    inset -7px -7px 0 0 #1d4a74,
+    0 0 0 3px #8ce0d6,
+    0 0 1.7rem 0.15rem rgb(140 224 214 / 0.55),
+    0 0 0 0 rgb(0 0 0 / 0.55);
+}
+
+.t-play:hover,
+.t-play:focus-visible {
+  /* It has your attention; it can stop shouting. */
+  animation: none;
+  opacity: 1;
+}
+
+.t-play:focus-visible {
+  outline: 4px solid #fff3b5;
+  outline-offset: 6px;
+}
+
+.t-play-face {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.7em;
+  font-size: clamp(0.72rem, 1.25cqw, 1.05rem);
+  line-height: 1;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/*
+ * The marker and the words blink together -- they are one line and reading "PRESS START" with a
+ * bright arrow still beside it looks like a rendering fault rather than a flash. The slab and the
+ * line beneath hold steady, the way a marquee holds while its headline flashes.
+ */
+.t-play-face {
+  animation: t-blink 1.5s steps(1, end) infinite;
+}
+
+.t-play-sub {
+  font-size: clamp(0.4rem, 0.62cqw, 0.52rem);
+  letter-spacing: 0.12em;
+  line-height: 1.5;
+  text-transform: uppercase;
+  opacity: 0.62;
+}
+
+/*
+ * The play mark, drawn in steps so its edges land on whole pixels -- a smooth CSS triangle beside
+ * a pixel typeface is the detail that gives the whole thing away.
+ */
+.t-play-mark {
+  width: 0;
+  height: 0;
+  border-left: 0.9em solid currentColor;
+  border-top: 0.52em solid transparent;
+  border-bottom: 0.52em solid transparent;
+}
+
+/*
+ * The words cut out and back, no fade. Down to a dim ghost rather than to nothing: a label that
+ * vanishes outright leaves a blank slab for a third of every cycle, which looks less like an
+ * arcade cabinet than like a button that failed to render.
+ */
+@keyframes t-blink {
+  0%, 64% { opacity: 1; }
+  65%, 100% { opacity: 0.22; }
+}
+
+/*
+ * The slab breathes its glow rather than blinking, so the button never leaves the board -- only
+ * its lettering does. Driven with filter rather than by animating the box-shadow stack, because
+ * animating that would mean restating all five layers in both keyframes.
+ */
+@keyframes t-attract {
+  0%, 64% { filter: brightness(1.12) drop-shadow(0 0 0.55rem rgb(140 224 214 / 0.45)); }
+  65%, 100% { filter: brightness(1) drop-shadow(0 0 0 rgb(140 224 214 / 0)); }
+}
+
+/* ---------- The playfield ---------- */
+
+.t-frame {
+  position: relative;
+  height: 100%;
+  aspect-ratio: 10 / 20;
+  flex: 0 0 auto;
+  pointer-events: auto;
+}
+
+.t-board {
+  width: 100%;
+  height: 100%;
+  display: block;
+  filter: drop-shadow(0 1.2rem 2.5rem rgb(0 0 0 / 0.55));
+}
+
+/* The landing spot, shown as a flat tint of the piece's own colour. */
+.t-ghost {
+  opacity: 0.22;
+}
+
+/* ---------- Readouts ---------- */
+
+.t-hud {
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  /* A flex item refuses to shrink past its content by default, and the next-piece row is the
+     widest thing in here -- without this the readouts push out of the stage and back under the
+     milestone copy on a narrower frame. */
+  min-width: 0;
+  gap: clamp(0.5rem, 1.6cqh, 1.1rem);
+  color: #eafffb;
+}
+
+.t-readout {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15em;
+}
+
+.t-readout-label {
+  font-family: var(--font-arcade);
+  font-size: 0.5rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  opacity: 0.6;
+}
+
+.t-readout-value {
+  font-family: var(--font-arcade);
+  font-size: clamp(0.85rem, 1.6cqw, 1.25rem);
+  line-height: 1.2;
+  /* The pixel face is already monospaced, so the numbers hold their columns on their own. */
+}
+
+.t-hud-next {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4em;
+}
+
+.t-next {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.t-next-piece {
+  width: clamp(2.6rem, 5cqw, 4rem);
+  height: auto;
+  opacity: 0.9;
+}
+
+.t-keys {
+  margin: 0;
+  max-width: 17rem;
+  font-family: var(--font-arcade);
+  font-size: 0.45rem;
+  line-height: 2.2;
+  text-transform: uppercase;
+  opacity: 0.5;
+}
+
+.t-keys kbd {
+  padding: 0.1em 0.4em;
+  border: 1px solid rgb(234 255 251 / 0.3);
+  border-radius: 4px;
+  font: inherit;
+}
+
+/* ---------- Pause and game over ---------- */
+
+.t-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.8rem;
+  padding: 1rem;
+  background: rgb(4 12 20 / 0.82);
+  backdrop-filter: blur(3px);
+  text-align: center;
+  color: #eafffb;
+}
+
+.t-overlay-title {
+  margin: 0;
+  font-family: var(--font-arcade);
+  font-size: clamp(0.85rem, 1.8cqw, 1.3rem);
+  line-height: 1.4;
+  text-transform: uppercase;
+}
+
+.t-overlay-score {
+  margin: 0;
+  font-family: var(--font-arcade);
+  font-size: clamp(1.2rem, 2.6cqw, 2rem);
+  line-height: 1.3;
+  color: #8ce0d6;
+}
+
+.t-overlay-score span {
+  display: block;
+  margin-top: 0.6em;
+  font-size: 0.45rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  opacity: 0.65;
+  color: #eafffb;
+}
+
+.t-overlay-actions {
+  display: flex;
+  gap: 0.6rem;
+}
+
+/* The same slab as the start button, at a size that suits a dialogue rather than a marquee. */
+.t-button {
+  pointer-events: auto;
+  padding: 0.95em 1.2em 0.85em;
+  border: 0;
+  border-radius: 0;
+  background: #8ce0d6;
+  color: #092940;
+  font-family: var(--font-arcade);
+  font-size: 0.6rem;
+  line-height: 1;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+  box-shadow:
+    inset 5px 5px 0 0 #aeebe4,
+    inset -5px -5px 0 0 #6dccc1,
+    6px 6px 0 0 rgb(0 0 0 / 0.5);
+  transition: translate 90ms steps(2, end), box-shadow 90ms steps(2, end);
+}
+
+.t-button:active {
+  translate: 6px 6px;
+  box-shadow:
+    inset 5px 5px 0 0 #6dccc1,
+    inset -5px -5px 0 0 #aeebe4,
+    0 0 0 0 rgb(0 0 0 / 0.5);
+}
+
+.t-button:focus-visible {
+  outline: 3px solid #fff3b5;
+  outline-offset: 4px;
+}
+
+/* The secondary choice: the same slab, unlit. */
+.t-button-quiet {
+  background: #1d2b36;
+  color: #eafffb;
+  box-shadow:
+    inset 5px 5px 0 0 #2d3f4d,
+    inset -5px -5px 0 0 #111b23,
+    6px 6px 0 0 rgb(0 0 0 / 0.5);
+}
+
+.t-button-quiet:active {
+  box-shadow:
+    inset 5px 5px 0 0 #111b23,
+    inset -5px -5px 0 0 #2d3f4d,
+    0 0 0 0 rgb(0 0 0 / 0.5);
+}
+
+/* ---------- Beside the milestone copy ---------- */
+
+/*
+ * The prototype laid this out across a whole window. Here the landing is a column beside the
+ * app's sidebar, and the copy takes a fixed slice of it (landing.css sets --content-w and --pad
+ * for that column), so a stage spanning the frame puts the readouts under the title.
+ *
+ * The playing stage is held to what the copy leaves. The board then has to give up some width or
+ * the readouts are left a few dozen pixels, which is narrower than the next-piece row -- so it is
+ * capped as a share of that space and its height follows from its own 1:2 aspect instead of from
+ * the frame. The idle stage is left alone: one button clears the copy on its own.
+ */
+@container landing (min-width: 900px) and (min-aspect-ratio: 11/10) {
+  .t-stage:not(.t-stage-idle) {
+    right: calc(var(--content-w) + var(--pad));
+    padding-right: 0;
+  }
+
+  .t-frame {
+    max-width: 52%;
+  }
+}
+
+/* ---------- Narrow windows ---------- */
+
+/*
+ * Below the desktop layout the milestone copy sits over the middle of the frame, so a playfield
+ * beside it has nowhere to go. The board shrinks and the readouts move under it.
+ */
+@container landing (max-width: 899px) or (max-aspect-ratio: 11/10) {
+  /*
+   * Only the playing stage stacks. Letting this reach the idle stage too drove the play button
+   * to the bottom edge, where the recents row already is, and off the screen entirely on a
+   * phone -- the one control the whole feature depends on.
+   */
+  .t-stage:not(.t-stage-idle) {
+    flex-direction: column;
+    justify-content: flex-end;
+    gap: 0.75rem;
+  }
+
+  /*
+   * The button goes under the copy rather than beside a board that no longer has a free side.
+   * Under, not over: this site's stacked landing starts its copy at the very top and ends it
+   * around a third of the way down, so the clear ground is everything below -- and the copy sits
+   * above the game layer, which means a button in its half is covered by it rather than merely
+   * crowded by it.
+   */
+  .t-stage-idle {
+    flex-direction: column;
+    justify-content: flex-end;
+    align-items: center;
+    padding: 0 1rem clamp(1.5rem, 8cqh, 5rem);
+  }
+
+  .t-frame {
+    height: auto;
+    width: min(62cqw, 48cqh);
+    aspect-ratio: 10 / 20;
+  }
+
+  .t-hud {
+    flex-flow: row wrap;
+    align-items: baseline;
+    gap: 0.9rem;
+  }
+
+  .t-keys {
+    display: none;
+  }
+}
+
+/* ---------- Reduced motion ---------- */
+
+/* A button that flashes is the one thing on this page someone may genuinely need stopped. */
+@media (prefers-reduced-motion: reduce) {
+  .t-play,
+  .t-play-face {
+    animation: none;
+  }
+}
+
+/* ---------- Touch controls ---------- */
+
+/*
+ * Only shown where they are needed. `pointer: coarse` catches phones and tablets; the width and
+ * aspect queries catch a narrow desktop window, where the stacked layout leaves room for them
+ * and they do no harm. A desktop with a mouse and a keyboard never sees them.
+ */
+.t-pad {
+  display: none;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  pointer-events: auto;
+}
+
+.t-pad-key {
+  font-family: var(--font-arcade);
+  width: 3.1rem;
+  height: 3.1rem;
+  border: 1px solid rgb(140 224 214 / 0.45);
+  border-radius: 0;
+  background: rgb(9 41 64 / 0.75);
+  color: #eafffb;
+  font-size: 1.35rem;
+  line-height: 1;
+  cursor: pointer;
+  /* Stops the long-press menu and the double-tap zoom from firing on a rapid tap. */
+  touch-action: manipulation;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.t-pad-key:active {
+  background: #8ce0d6;
+  color: #092940;
+}
+
+.t-pad-key-wide {
+  width: 6.7rem;
+}
+
+/*
+ * Two rules rather than one list: `pointer: coarse` is a media feature and has no container
+ * equivalent, while the size conditions have to be asked of the landing frame rather than the
+ * window. Together they mean what the single query meant -- show the keys on a touch device, or
+ * whenever the frame is too narrow for the keyboard layout.
+ */
+@media (pointer: coarse) {
+  .t-pad {
+    display: flex;
+    justify-content: center;
+  }
+}
+
+@container landing (max-width: 899px) or (max-aspect-ratio: 11/10) {
+  .t-pad {
+    display: flex;
+    justify-content: center;
+  }
+}
+
+/* ---------- High scores ---------- */
+
+/*
+ * The leaderboard, in the same pixel chrome as everything else here. It shows up
+ * twice -- short on the attract screen, in full on the game-over card -- and the
+ * only thing that differs is how many places it lists, so there is one block of
+ * rules rather than two.
+ */
+.t-scores {
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  min-width: 0;
+  max-width: 22rem;
+  width: 100%;
+  font-family: var(--font-arcade);
+  color: #eafffb;
+}
+
+.t-scores-title {
+  margin: 0;
+  font-size: clamp(0.4rem, 0.62cqw, 0.52rem);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #8ce0d6;
+}
+
+.t-scores-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+/*
+ * Rank, name, score. The name is the only column that gives: a long one
+ * truncates rather than pushing the score off the end, since the score is the
+ * thing the row exists to show.
+ */
+.t-scores-row {
+  display: grid;
+  grid-template-columns: 1.6em minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 0.6rem;
+  padding: 0.25rem 0.4rem;
+  font-size: clamp(0.42rem, 0.78cqw, 0.62rem);
+  line-height: 1.5;
+  background: rgb(10 30 40 / 0.5);
+}
+
+.t-scores-rank {
+  color: #8ce0d6;
+}
+
+.t-scores-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.t-scores-score {
+  color: #fff3b5;
+}
+
+/* The player's own row, so it can be picked out of ten without reading them. */
+.t-scores-row-you {
+  background: rgb(36 177 177 / 0.3);
+  box-shadow: inset 0 0 0 1px rgb(140 224 214 / 0.55);
+}
+
+/* Someone who didn't place: set apart from the listed ranks rather than
+   continuing them, so the jump in numbering reads as deliberate. */
+.t-scores-row-adrift {
+  margin-top: 0.45rem;
+  opacity: 0.85;
+}
+
+.t-scores-empty {
+  margin: 0;
+  font-size: clamp(0.42rem, 0.78cqw, 0.62rem);
+  line-height: 1.6;
+  color: rgb(234 255 251 / 0.65);
+}
+
+/* Said once, on the card, when the run that just ended beat the player's own. */
+.t-overlay-best {
+  margin: 0;
+  font-family: var(--font-arcade);
+  font-size: clamp(0.45rem, 0.85cqw, 0.68rem);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #fff3b5;
+}
+
+/*
+ * On the attract screen the board sits under the button, which is centred on
+ * the art rather than on the stage -- so the board lines up with the button
+ * instead of with the column.
+ */
+.t-stage-idle .t-scores {
+  /* Lined up under the button and no wider than it needs to be: this one shares
+     the frame with the milestone copy, where the game-over card has the whole
+     board to itself. */
+  width: min(100%, 20rem);
+  margin-top: 1.1rem;
+  pointer-events: none;
+}
+
+/*
+ * The game-over card holds a title, a score, ten places and two buttons. On a
+ * short board that is more than fits, so the list is what scrolls -- the score
+ * and the way out stay put.
+ */
+.t-overlay .t-scores {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.t-overlay .t-scores-list {
+  overflow-y: auto;
+  pointer-events: auto;
+}

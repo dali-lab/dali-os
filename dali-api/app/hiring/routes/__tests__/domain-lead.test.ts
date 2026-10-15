@@ -39,6 +39,13 @@ beforeEach(() => {
   };
   mockPrisma.domainApplication = { count: vi.fn().mockResolvedValue(0) };
   mockPrisma.domainLeadAssignment = { findFirst: vi.fn().mockResolvedValue({ id: "a1" }) };
+  // The domain is live (ready) unless a test stages it.
+  mockPrisma.domainApplicationCycle = {
+    findUnique: vi.fn().mockResolvedValue({ isReady: true }),
+    upsert: vi.fn().mockResolvedValue({}),
+    update: vi.fn(),
+  };
+  mockPrisma.applicationCycle = { findUnique: vi.fn().mockResolvedValue({ hasChallenges: true }) };
 
   vi.mocked(requireAuth).mockResolvedValue({
     ok: true,
@@ -170,6 +177,52 @@ describe("domain-lead action — remove-challenge-form", () => {
     });
 
     expect(mockPrisma.cycleDomainForm.delete).not.toHaveBeenCalled();
+  });
+});
+
+describe("domain-lead action — mark-ready in an Open cycle", () => {
+  const status = (newStatus: string) =>
+    mockPrisma.applicationCycleStatusUpdate.findFirst.mockResolvedValue({ newStatus });
+
+  it("publishes a staged domain once its challenge form is linked", async () => {
+    status("Open");
+    mockPrisma.cycleDomainForm.count = vi.fn().mockResolvedValue(1);
+
+    const res = await callAction({ intent: "mark-ready", cycleId: CYCLE_ID, domainId: DOMAIN_ID });
+
+    expect(mockPrisma.domainApplicationCycle.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({ update: { isReady: true } }),
+    );
+    expect((res as Response).status).toBe(302);
+  });
+
+  it("refuses to publish a staged domain with no challenge form", async () => {
+    status("Open");
+    mockPrisma.cycleDomainForm.count = vi.fn().mockResolvedValue(0);
+
+    const res = await callAction({ intent: "mark-ready", cycleId: CYCLE_ID, domainId: DOMAIN_ID });
+
+    expect(mockPrisma.domainApplicationCycle.upsert).not.toHaveBeenCalled();
+    expect((res as { error?: string }).error).toMatch(/challenge form/);
+  });
+
+  it("never unmarks a domain while the cycle is open", async () => {
+    status("Open");
+
+    const res = await callAction({ intent: "unmark-ready", cycleId: CYCLE_ID, domainId: DOMAIN_ID });
+
+    expect(mockPrisma.domainApplicationCycle.upsert).not.toHaveBeenCalled();
+    expect((res as { error?: string }).error).toBeTruthy();
+  });
+
+  it("refuses both once review has started", async () => {
+    status("UnderReview");
+    mockPrisma.cycleDomainForm.count = vi.fn().mockResolvedValue(1);
+
+    await callAction({ intent: "mark-ready", cycleId: CYCLE_ID, domainId: DOMAIN_ID });
+    await callAction({ intent: "unmark-ready", cycleId: CYCLE_ID, domainId: DOMAIN_ID });
+
+    expect(mockPrisma.domainApplicationCycle.upsert).not.toHaveBeenCalled();
   });
 });
 

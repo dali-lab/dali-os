@@ -19,6 +19,8 @@ import { searchPageContent } from "~/lib/doc-search.server";
 import { resolveSections } from "~/lib/page-doc-sections";
 import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
 import { blocksToPlainText } from "~/components/doc/schema/configs";
+import { formsUsePageAccess } from "~/forms/lib/form-access.server";
+import { PAGE_ACCESS_SELECT, getPageAccessBulk } from "~/lib/pageAccess.server";
 import { HELP_ARTICLES } from "~/lib/help-articles";
 
 // Server side of the command-palette search: permission-scoped Prisma queries
@@ -45,13 +47,15 @@ export async function runSearch(opts: {
   const roles = opts.roles;
   const like: Like = { contains: q, mode: "insensitive" };
 
+  const formsByPage = await formsUsePageAccess();
+
   const tasks: Promise<SearchResult[]>[] = [
     searchPeople(q, like),
     searchProjects(q, like),
     searchTasks(q, like),
     searchOfferings(q, like),
     searchPartnerOrgs(q, like),
-    searchDocuments(q, like),
+    searchDocuments(opts.userId, q, like),
     // Page guides ("Docs") and /help articles — both readable by every lab
     // member, so ungated like docs.
     searchGuides(q),
@@ -61,7 +65,7 @@ export async function runSearch(opts: {
     // Groups & forms — Forms area gate. Form folders are Drive Pages, already
     // surfaced by searchDocuments.
     roles.canViewForms ? searchGroups(q, like) : NONE,
-    roles.canViewForms ? searchForms(q, like) : NONE,
+    formsByPage ? searchFormPages(opts.userId, q, like) : roles.canViewForms ? searchForms(q, like) : NONE,
     // Hiring library (reusable artifacts) — Core or Domain Lead, mirroring the
     // library routes. Names aren't sensitive; the routes already gate.
     roles.isCore || roles.isDomainLead ? searchRubrics(q, like) : NONE,
@@ -247,23 +251,34 @@ async function searchPartnerOrgs(q: string, like: Like): Promise<SearchResult[]>
   return simpleResults("partner", "Partner", rows.map((r) => ({ id: r.id, label: r.name })), q);
 }
 
-async function searchDocuments(q: string, like: Like): Promise<SearchResult[]> {
-  // Any authenticated member may already open any live page by URL (only
-  // editing is gated), so both passes match that existing view surface.
-  //
+async function searchDocuments(userId: string, q: string, like: Like): Promise<SearchResult[]> {
   // Titles and bodies are searched separately and merged rather than scored
   // together: a title match is what someone means the overwhelming majority of
   // the time, so it keeps its place at the top of the category and body
-  // matches fill whatever room is left. That leaves existing results exactly
-  // where they were and only adds documents search used to miss entirely.
-  const [rows, contentHits] = await Promise.all([
+  // matches fill whatever room is left.
+  //
+  // Both passes over-fetch because access is checked after the query; filtering
+  // a tight limit would starve the category when the viewer cannot open most hits.
+  const [titleRows, rawContentHits] = await Promise.all([
     prisma.page.findMany({
-      where: { archivedAt: null, title: like },
-      select: { id: true, title: true, iconEmoji: true },
-      take: RAW_TAKE,
+      where: { archivedAt: null, kind: { not: "Form" }, title: like },
+      select: { ...PAGE_ACCESS_SELECT, title: true, iconEmoji: true },
+      take: RAW_TAKE * 3,
     }),
-    searchPageContent(q, PER_CATEGORY_CAP),
+    searchPageContent(q, PER_CATEGORY_CAP * 3),
   ]);
+
+  const contentPages = rawContentHits.length
+    ? await prisma.page.findMany({
+        where: { id: { in: rawContentHits.map((h) => h.pageId) } },
+        select: PAGE_ACCESS_SELECT,
+      })
+    : [];
+  const access = await getPageAccessBulk(userId, [...titleRows, ...contentPages]);
+  const canView = (id: string) => access.get(id)?.canView === true;
+
+  const rows = titleRows.filter((r) => canView(r.id));
+  const contentHits = rawContentHits.filter((h) => canView(h.pageId));
 
   const titleResults = simpleResults(
     "document",
@@ -357,11 +372,26 @@ async function searchGroups(q: string, like: Like): Promise<SearchResult[]> {
 
 async function searchForms(q: string, like: Like): Promise<SearchResult[]> {
   const rows = await prisma.form.findMany({
-    where: { name: like },
+    where: { name: like, archivedAt: null },
     select: { id: true, name: true },
     take: RAW_TAKE,
   });
   return simpleResults("form", "Form", rows.map((r) => ({ id: r.id, label: r.name })), q);
+}
+
+async function searchFormPages(userId: string, q: string, like: Like): Promise<SearchResult[]> {
+  const pages = await prisma.page.findMany({
+    where: { kind: "Form", archivedAt: null, title: like },
+    select: { ...PAGE_ACCESS_SELECT, title: true, iconEmoji: true },
+    take: RAW_TAKE,
+  });
+  const access = await getPageAccessBulk(userId, pages);
+  return simpleResults(
+    "form",
+    "Form",
+    pages.filter((p) => access.get(p.id)?.canView).map((p) => ({ id: p.id, label: p.title, iconEmoji: p.iconEmoji })),
+    q,
+  );
 }
 
 async function searchRubrics(q: string, like: Like): Promise<SearchResult[]> {

@@ -6,8 +6,10 @@
 
 import { randomUUID } from "node:crypto";
 import { prisma } from "~/lib/db";
+import { createForm } from "~/forms/lib/form-page.server";
 import { ensureOfferingFormsFolder } from "~/lib/pages";
 import { ensureProcessFolder, CORE_PROCESS_ID } from "~/lib/bindings.server";
+import { filingFolderOr, singletonSlot } from "~/lib/drive-receivers.server";
 import type { Question } from "~/types";
 import { resolveReferenceOptions } from "~/forms/lib/reference-sources";
 import { safeParseJsonString } from "~/forms/lib/forms-data";
@@ -17,6 +19,12 @@ const TEMPLATE_NAMES: Record<OfferingType, string> = {
   Miniseries: "Miniseries Application Template",
   Fellowship: "Fellowship Application Template",
   Workshop: "Workshop RSVP Template",
+};
+
+const TEMPLATE_KEYS: Record<OfferingType, string> = {
+  Miniseries: "education-template-miniseries",
+  Fellowship: "education-template-fellowship",
+  Workshop: "education-template-workshop",
 };
 
 function defaultQuestions(type: OfferingType): Question[] {
@@ -56,13 +64,15 @@ function defaultQuestions(type: OfferingType): Question[] {
 
 // Resolve the education form-template folder — a Core-scoped binding folder
 // (Core / "education-templates"). A normal folder now, not a systemKey root.
-async function ensureTemplatesFolder(actorId: string): Promise<string> {
-  return ensureProcessFolder({
-    processType: "Core",
-    processId: CORE_PROCESS_ID,
-    purpose: "education-templates",
-    createdById: actorId,
-  });
+async function ensureTemplatesFolder(actorId: string): Promise<string | null> {
+  return filingFolderOr(singletonSlot("Core", "EducationTemplates"), actorId, () =>
+    ensureProcessFolder({
+      processType: "Core",
+      processId: CORE_PROCESS_ID,
+      purpose: "education-templates",
+      createdById: actorId,
+    }),
+  );
 }
 
 /**
@@ -75,7 +85,7 @@ export async function ensureEducationTemplates(actorId: string): Promise<void> {
   for (const type of OFFERING_TYPES) {
     const name = TEMPLATE_NAMES[type];
     const existing = await prisma.form.findFirst({
-      where: { name, folderPageId },
+      where: { templateKey: TEMPLATE_KEYS[type] },
       select: { id: true, versions: { select: { id: true }, take: 1 } },
     });
     if (existing?.versions.length) continue;
@@ -90,9 +100,10 @@ export async function ensureEducationTemplates(actorId: string): Promise<void> {
       });
       continue;
     }
-    await prisma.form.create({
-      data: {
+    await createForm(
+      {
         name,
+        templateKey: TEMPLATE_KEYS[type],
         folderPageId,
         createdById: actorId,
         versions: {
@@ -103,7 +114,7 @@ export async function ensureEducationTemplates(actorId: string): Promise<void> {
           },
         },
       },
-    });
+    );
   }
 }
 
@@ -124,7 +135,7 @@ export async function createOfferingApplicationForm(
 
   await ensureEducationTemplates(actorId);
   const template = await prisma.form.findFirst({
-    where: { name: TEMPLATE_NAMES[offering.type] },
+    where: { templateKey: TEMPLATE_KEYS[offering.type] },
     select: {
       versions: {
         orderBy: { versionNumber: "desc" },
@@ -137,8 +148,8 @@ export async function createOfferingApplicationForm(
   const questions = (templateVersion?.questions as unknown as Question[]) ?? defaultQuestions(offering.type);
 
   const folderPageId = await ensureOfferingFormsFolder(offering.id, actorId);
-  const form = await prisma.form.create({
-    data: {
+  const form = await createForm(
+    {
       name: `${offering.title} — Application`,
       folderPageId,
       createdById: actorId,
@@ -151,8 +162,8 @@ export async function createOfferingApplicationForm(
         },
       },
     },
-    select: { id: true },
-  });
+    { id: true },
+  );
   await prisma.educationOffering.update({
     where: { id: offeringId },
     data: { applicationFormId: form.id },

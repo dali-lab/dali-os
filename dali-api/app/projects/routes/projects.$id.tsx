@@ -12,8 +12,8 @@ import {
   type ShouldRevalidateFunctionArgs,
 } from "react-router";
 import { Select, Menu, Popover, InfoTip } from "~/components/ui/floating";
-import { CalendarDays, CalendarPlus, CalendarX, Check, Globe, Handshake, History, Pencil, Pin, X, Settings, Folder, FolderInput, FolderPlus, ChevronRight, ChevronDown, FileText, Info, Users, Paperclip, Plus, Trash2, Upload, Unlink, MoreHorizontal, ExternalLink, Star, Mail, Github, Slack, Layers, Figma } from "lucide-react";
-import { DriveFolderBindings } from "~/components/drive/DriveFolderBindings";
+import { CalendarDays, CalendarPlus, CalendarX, Check, Globe, Handshake, History, Pencil, Pin, X, Settings, Folder, FolderInput, FolderPlus, ChevronRight, ChevronDown, FileText, Info, Users, Paperclip, Plus, Trash2, Upload, Unlink, MoreHorizontal, ExternalLink, Star, Mail, Github, Slack, Layers, Figma, NotebookPen, Shapes } from "lucide-react";
+import type { DriveTypeFilter } from "~/components/drive/type-filter";
 import { useOsChrome } from "~/components/os-chrome";
 import { DomainChips } from "~/components/DomainChips";
 import { ChartStringPanel } from "~/projects/components/ChartStringPanel";
@@ -34,7 +34,8 @@ import {
   PROJECT_FUNDING_TYPES,
 } from "~/lib/chart-string.server";
 import { Modal, ModalHeader } from "~/components/Modal";
-import { MoveToDialog } from "~/components/sharing/MoveToDialog";
+import { useDriveDestinations } from "~/components/drive/use-drive-destinations";
+import { useMovePage } from "~/components/drive/use-move-page";
 import { useDialog, useConfirmSubmit } from "~/components/ui/dialog";
 import { Tooltip } from "~/components/ui/floating";
 import { Checkbox } from "~/components/ui/Checkbox";
@@ -56,6 +57,7 @@ import { listProjectInfraRequests } from "~/lib/infra/requests.server";
 import { ProjectInfraSection } from "~/projects/components/ProjectInfraSection";
 import { ensureProjectGroup } from "~/lib/groups";
 import { ensureMeetingNotesFolder } from "~/lib/pages";
+import { receiversEnabled } from "~/lib/drive-receivers.server";
 import { requireAuth, redirectNonMemberToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { formatDateShort, formatDateTime, fullName, UNKNOWN_LABEL } from "~/lib/display";
@@ -115,11 +117,21 @@ import { PROJECT_PAGE_SELECT, PROJECT_FILE_SELECT } from "~/lib/drive.server";
 import type { DriveItem } from "~/lib/drive.server";
 import { DriveBrowser } from "~/components/drive/DriveBrowser";
 import type { RowActions } from "~/components/drive/DriveBrowser";
-import { DestinationPicker } from "~/components/drive/DestinationPicker";
-import type { PickerDrive, PickerFolder, Destination } from "~/components/drive/DestinationPicker";
+import { FolderPicker } from "~/components/drive/FolderPicker";
+import type { PickerDrive, PickerFolder, Destination } from "~/components/drive/FolderPicker";
 import { moveDriveItem, driveErrorFrom } from "~/components/drive/move-item";
-import { reportMoveBatch, runMoveBatch, itemCount } from "~/components/drive/move-batch";
+import { destinationLabel } from "~/components/drive/action-toast";
+import { reportMoveBatch, runHiddenMoveBatch, itemCount } from "~/components/drive/move-batch";
+import { withoutHidden, usePendingHidden } from "~/components/drive/pending-hidden";
+import { runTrash } from "~/components/drive/trash-batch";
+import {
+  DriveHistoryContext,
+  useDriveHistory,
+  useDriveHistoryKeys,
+} from "~/components/drive/use-drive-history";
 import { useDriveFileUpload } from "~/components/drive/useDriveFileUpload";
+import { DriveUploadInput } from "~/components/drive/DriveUploadInput";
+import { summarizeFailures, uploadAll } from "~/lib/upload-batch";
 import { useToast } from "~/components/ui/toast";
 import { filterPillClass } from "~/components/ui/floating/styles";
 import { Button } from "~/components/ui/Button";
@@ -528,10 +540,14 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   // ── Stage 2: everything that depends on the project row ──────────────────────
   // ensureMeetingNotesFolder must complete before pageRows (creates the system
   // folders that pageRows needs to return), so run them first then fan out.
-  await Promise.all([
-    ensureMeetingNotesFolder(project.id, "Team", auth.user.sub),
-    ensureMeetingNotesFolder(project.id, "Partner", auth.user.sub),
-  ]);
+  // With receivers on nothing auto-creates a folder, so the backfill stops.
+  const receiversOn = await receiversEnabled(request);
+  if (!receiversOn) {
+    await Promise.all([
+      ensureMeetingNotesFolder(project.id, "Team", auth.user.sub),
+      ensureMeetingNotesFolder(project.id, "Partner", auth.user.sub),
+    ]);
+  }
 
   const [
     pageRows,
@@ -668,8 +684,10 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     auth.user.email;
   const userName = presenceUser?.name ?? fallbackName;
 
+  // Forms are Pages too but are listed by the Drive tab, not as documents here.
+  const docRows = pageRows.filter((p) => p.kind !== "Form");
   const childrenByParent = new Map<string, typeof pageRows>();
-  for (const p of pageRows) {
+  for (const p of docRows) {
     if (!p.parentPageId) continue;
     const list = childrenByParent.get(p.parentPageId);
     if (list) list.push(p);
@@ -687,7 +705,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   });
   // Top-level docs for the main list. Pinned ones are lifted into
   // `pinnedDocuments` (rendered above), so they don't appear twice.
-  const documents = pageRows
+  const documents = docRows
     .filter((p) => p.parentPageId === null && p.pinnedAt === null)
     .map((p) => ({
       ...toDocumentDto(p),
@@ -696,7 +714,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   // Pinned docs — any page a teammate pinned, most-recent pin first, rendered
   // at the top of the Documents block (and lifted out of the list above).
-  const pinnedDocuments = pageRows
+  const pinnedDocuments = docRows
     .filter((p) => p.pinnedAt !== null && p.parentPageId === null)
     .sort((a, b) => (b.pinnedAt?.getTime() ?? 0) - (a.pinnedAt?.getTime() ?? 0))
     .map((p) => ({
@@ -1308,6 +1326,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     aiLineEnabled,
     canEdit,
     canEditScope,
+    receiversEnabled: receiversOn,
     canEditAssignmentLevel: core,
     canViewScope,
     hasActivePartner,
@@ -1787,6 +1806,7 @@ export default function ProjectDetail() {
     domainScopeGrid,
     canEdit,
     canEditScope,
+    receiversEnabled: receiversOn,
     canEditAssignmentLevel,
     canViewScope,
     hasActivePartner,
@@ -2059,7 +2079,6 @@ export default function ProjectDetail() {
             canEdit={canEditScope}
             actionError={actionError}
           />
-          {canEditScope && <DriveFolderBindings processType="Project" processId={project.id} />}
           {canEditScope && (
             <SaveAsTemplateSection projectId={project.id} projectName={project.name} />
           )}
@@ -2112,6 +2131,7 @@ export default function ProjectDetail() {
             projectDriveScope={projectDriveScope}
             canEdit={canEdit}
             hasActivePartner={hasActivePartner}
+            receiverViewer={receiversOn ? { isCore: canEditScope, isProjectMember: canEdit } : undefined}
           />
         )}
 
@@ -4496,10 +4516,12 @@ function DocRow({
 
 // Project drives hold docs, folders and files. Folders are always shown (the
 // browser never filters them out), so the filter only needs the leaf kinds.
-type ProjectDriveTypeFilter = "all" | "doc" | "file";
+type ProjectDriveTypeFilter = Extract<DriveTypeFilter, "all" | "doc" | "notebook" | "whiteboard" | "file">;
 const PROJECT_TYPE_FILTERS: { value: ProjectDriveTypeFilter; label: string; icon?: ReactNode }[] = [
   { value: "all", label: "All types" },
   { value: "doc", label: "Documents", icon: <FileText className="w-3.5 h-3.5" /> },
+  { value: "notebook", label: "Notebooks", icon: <NotebookPen className="w-3.5 h-3.5" /> },
+  { value: "whiteboard", label: "Whiteboards", icon: <Shapes className="w-3.5 h-3.5" /> },
   { value: "file", label: "Files", icon: <Paperclip className="w-3.5 h-3.5" /> },
 ];
 
@@ -4532,11 +4554,13 @@ function ProjectDriveTab({
   projectDriveScope,
   canEdit,
   hasActivePartner,
+  receiverViewer,
 }: {
   projectId: string;
   projectDriveScope: DriveTreeScope;
   canEdit: boolean;
   hasActivePartner: boolean;
+  receiverViewer?: { isCore: boolean; isProjectMember: boolean };
 }) {
   const revalidator = useRevalidator();
   const navigate = useNavigate();
@@ -4547,6 +4571,13 @@ function ProjectDriveTab({
   const [typeFilter, setTypeFilter] = useState<ProjectDriveTypeFilter>("all");
   const scopeId = projectDriveScope.id;
   const revalidate = useCallback(() => revalidator.revalidate(), [revalidator]);
+  const history = useDriveHistory({ onChange: revalidate });
+  useDriveHistoryKeys(history);
+  const pendingHidden = usePendingHidden(revalidator.state, projectDriveScope);
+  const visibleScopes = useMemo(
+    () => withoutHidden([projectDriveScope], pendingHidden.ids),
+    [projectDriveScope, pendingHidden.ids],
+  );
 
   // Upload into the current project folder via the shared presign→register flow
   // (identical path to the main Drive hub — see useDriveFileUpload).
@@ -4639,38 +4670,59 @@ function ProjectDriveTab({
     [navigate],
   );
 
-  // One item's move, with no reporting — the callers below decide whether to
-  // speak for one item or for a batch.
+  // One item's move, with no reporting: the batch below speaks for the
+  // selection. `onError` gets the reason a move was refused.
   const moveOne = useCallback(
-    async (item: DriveItem, destFolderId: string | null): Promise<boolean> => {
+    async (item: DriveItem, destFolderId: string | null, onError?: (message: string) => void): Promise<boolean> => {
       // Both endpoints (and what each calls its destination field) live in
       // move-item.ts, shared with the Drive hub — this embed had its own copy
       // and it drifted out of step with the pages endpoint's schema.
       try {
         const res = await moveDriveItem(item, destFolderId);
         if (res.ok) return true;
-        toast.error((await driveErrorFrom(res)) ?? "Couldn't move");
+        onError?.((await driveErrorFrom(res)) ?? "Couldn't move");
         return false;
       } catch {
-        toast.error("Couldn't move");
+        onError?.("Couldn't move");
         return false;
       }
     },
-    [toast],
+    [],
+  );
+
+  // Move a selection into a folder (null = the project's top level): hide the
+  // rows, move them one by one, then revalidate and report once.
+  const moveItems = useCallback(
+    async (items: DriveItem[], destFolderId: string | null) => {
+      let failure: string | undefined;
+      const landed = await runHiddenMoveBatch(
+        items,
+        (item) =>
+          moveOne(item, destFolderId, (message) => {
+            failure ??= message;
+          }),
+        pendingHidden,
+      );
+      reportMoveBatch(
+        { toast, history, revalidate },
+        {
+          landed,
+          total: items.length,
+          destination: destinationLabel(projectDriveScope, destFolderId),
+          forward: (l) => moveOne(l.item, destFolderId),
+          back: (l) => moveOne({ ...l.item, parentFolderId: destFolderId }, l.folderId),
+          failure: items.length === 1 ? failure : undefined,
+        },
+      );
+    },
+    [moveOne, pendingHidden, toast, history, revalidate, projectDriveScope],
   );
 
   // Dropping a selection onto a folder. Dragging one row of a multi-selection
-  // now brings the whole selection, so this takes a list and revalidates once
-  // for the batch rather than once per item.
+  // brings the whole selection, so this takes a list.
   const onMove = useCallback(
-    async (_scopeId: string, items: DriveItem[], destFolderId: string | null) => {
-      let moved = 0;
-      for (const item of items) {
-        if (await moveOne(item, destFolderId)) moved++;
-      }
-      if (moved > 0) revalidator.revalidate();
-    },
-    [moveOne, revalidator],
+    (_scopeId: string, items: DriveItem[], destFolderId: string | null) => moveItems(items, destFolderId),
+    [moveItems],
   );
 
   // Open the destination picker over this project's folders and resolve with the
@@ -4758,19 +4810,18 @@ function ProjectDriveTab({
       onDelete: async (item) => {
         const ok = await dialog.confirm({
           title: `Delete "${item.title || "this item"}"?`,
-          description: item.type === "folder" ? "The folder must be empty first." : "This moves it to the trash.",
+          description:
+            item.type === "folder"
+              ? "The folder must be empty first."
+              : "This moves it to the trash.",
           tone: "destructive",
           confirmLabel: "Delete",
         });
         if (!ok) return;
-        const isFile = item.type === "file";
-        const endpoint = isFile ? `/api/files/${item.id}` : `/api/documents/${item.id}`;
-        const res = await fetch(endpoint, { method: "DELETE", credentials: "include" });
-        if (res.ok) revalidate();
-        else toast.error("Couldn't delete");
+        await runTrash({ items: [item], deleteOne: deleteDriveItemRequest, hiding: pendingHidden, history, toast, revalidate });
       },
     }),
-    [dialog, toast, revalidate, pickMoveDestination, onMove, scopeId],
+    [dialog, toast, revalidate, pickMoveDestination, onMove, scopeId, pendingHidden, history],
   );
 
   // Toggle the viewer's personal favorite on a doc/folder.
@@ -4835,6 +4886,11 @@ function ProjectDriveTab({
     }
   }, [dialog, createPage, revalidate, toast]);
 
+  function deleteDriveItemRequest(item: DriveItem): Promise<Response> {
+    const endpoint = item.type === "file" ? `/api/files/${item.id}` : `/api/documents/${item.id}`;
+    return fetch(endpoint, { method: "DELETE", credentials: "include" });
+  }
+
   const onBulkDelete = useCallback(
     async (items: DriveItem[]) => {
       if (items.length === 0) return;
@@ -4845,17 +4901,9 @@ function ProjectDriveTab({
         confirmLabel: "Delete",
       });
       if (!ok) return;
-      let fail = 0;
-      for (const it of items) {
-        const endpoint = it.type === "file" ? `/api/files/${it.id}` : `/api/documents/${it.id}`;
-        const res = await fetch(endpoint, { method: "DELETE", credentials: "include" });
-        if (!res.ok) fail++;
-      }
-      revalidate();
-      if (fail) toast.error(`${fail} item${fail === 1 ? "" : "s"} couldn't be deleted`);
-      else toast.success(`Deleted ${items.length}`);
+      await runTrash({ items, deleteOne: deleteDriveItemRequest, hiding: pendingHidden, history, toast, revalidate });
     },
-    [dialog, toast, revalidate],
+    [dialog, toast, revalidate, pendingHidden, history],
   );
 
   const onBulkMove = useCallback(
@@ -4863,22 +4911,9 @@ function ProjectDriveTab({
       const movable = items.filter((i) => i.type === "doc" || i.type === "folder" || i.type === "file");
       if (movable.length === 0) return;
       const dest = await pickMoveDestination(movable[0], `Move ${itemCount(movable.length)}`);
-      if (!dest) return;
-      const moved = await runMoveBatch(movable, (item) => moveOne(item, dest.folderId));
-      const destName = projectDriveScope.items.find((i) => i.id === dest.folderId)?.title;
-      reportMoveBatch(toast, revalidate, {
-        moved: moved.length,
-        total: movable.length,
-        summary:
-          moved.length < movable.length
-            ? `Moved ${moved.length} of ${itemCount(movable.length)}`
-            : `Moved ${itemCount(moved.length)}${destName ? ` to ${destName}` : ""}`,
-        undo: async () => {
-          for (const o of moved) await moveOne(o.item, o.folderId);
-        },
-      });
+      if (dest) await moveItems(movable, dest.folderId);
     },
-    [pickMoveDestination, moveOne, revalidate, projectDriveScope, toast],
+    [pickMoveDestination, moveItems],
   );
 
   const filterControl = (
@@ -4932,20 +4967,20 @@ function ProjectDriveTab({
       </Menu.Item>
       <Menu.Separator />
       <Menu.Item icon={<Upload className="w-3.5 h-3.5" />} disabled={uploading} onSelect={() => inputRef.current?.click()}>
-        <span data-testid={`drive-new-upload-${scopeId}`}>{uploading ? "Uploading…" : "Upload file"}</span>
+        <span data-testid={`drive-new-upload-${scopeId}`}>{uploading ? "Uploading…" : "Upload files"}</span>
       </Menu.Item>
     </Menu>
   );
 
   return (
-    <>
+    <DriveHistoryContext.Provider value={history}>
       {uploadError && (
         <div className="mb-2 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-1.5 text-sm text-destructive">
           {uploadError}
         </div>
       )}
       <DriveBrowser
-        scopes={[projectDriveScope]}
+        scopes={visibleScopes}
         currentScopeId={scopeId}
         currentFolderId={currentFolderId}
         typeFilter={typeFilter}
@@ -4958,23 +4993,26 @@ function ProjectDriveTab({
         onToggleFavorite={onToggleFavorite}
         onBulkDelete={canEdit ? onBulkDelete : undefined}
         onBulkMove={canEdit ? onBulkMove : undefined}
-        onUploadFiles={canEdit ? uploadFiles : undefined}
+        onUploadFiles={
+          canEdit
+            ? (files, opts) =>
+                void uploadFiles(files, { folderPageId: opts?.folderId, skippedFolders: opts?.skippedFolders })
+            : undefined
+        }
         filterControl={filterControl}
         newMenu={newMenu}
         embeddedScopeId={scopeId}
         onTogglePartnerVisible={canEdit ? togglePagePartnerVisible : undefined}
         hasActivePartner={hasActivePartner}
+        receiverViewer={receiverViewer}
       />
-      <input
-        ref={inputRef}
-        type="file"
-        multiple
-        hidden
+      <DriveUploadInput
+        inputRef={inputRef}
         onChange={handleFileChange}
-        data-testid={`drive-upload-input-${scopeId}`}
+        testId={`drive-upload-input-${scopeId}`}
       />
       {movePicker && (
-        <DestinationPicker
+        <FolderPicker
           open
           heading={movePicker.heading}
           drives={movePicker.drives}
@@ -4986,7 +5024,7 @@ function ProjectDriveTab({
           onConfirm={(dest) => resolveMovePicker(dest)}
         />
       )}
-    </>
+    </DriveHistoryContext.Provider>
   );
 }
 
@@ -5008,6 +5046,7 @@ function DocumentsBlock({
   hasActivePartner: boolean;
 }) {
   const dialog = useDialog();
+  const toast = useToast();
   const revalidator = useRevalidator();
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -5019,6 +5058,24 @@ function DocumentsBlock({
   const uploadFolderIdRef = useRef<string | null>(null);
   // "Move to…" dialog state — tracks which doc the user wants to move.
   const [moveDoc, setMoveDoc] = useState<{ id: string; title: string } | null>(null);
+  const moveDestinations = useDriveDestinations({
+    enabled: !!moveDoc,
+    movingIds: moveDoc ? [moveDoc.id] : [],
+    onError: () => {
+      toast.error("Couldn't load destinations.");
+      setMoveDoc(null);
+    },
+  });
+  const movePage = useMovePage({
+    pageId: moveDoc?.id ?? "",
+    title: moveDoc?.title ?? "",
+    current: { type: "Project", id: projectId },
+    rows: moveDestinations.rows,
+    onMoved: () => {
+      setMoveDoc(null);
+      revalidator.revalidate();
+    },
+  });
   // Folders start collapsed (Finder/Drive convention). Newly created folders are
   // added to this set so their contents show right after creation.
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
@@ -5253,10 +5310,42 @@ function DocumentsBlock({
 
   // ── File upload (new file or new version) ────────────────────────────────
   // The hidden <input> is shared for both flows; refs decide what to do on pick.
+  async function addProjectFile(file: File, folderId: string | null) {
+    const meta = await uploadFileToS3(file, `project-files/${projectId}`);
+    const res = await fetch(`/api/projects/${projectId}/files`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: file.name,
+        ...(folderId ? { folderPageId: folderId } : {}),
+        ...meta,
+      }),
+    });
+    if (!res.ok) {
+      const b = (await res.json().catch(() => ({}))) as { error?: string };
+      throw new Error(b.error ?? "Failed to add file");
+    }
+  }
+
+  async function addProjectFileVersion(file: File, fileId: string) {
+    const meta = await uploadFileToS3(file, `project-files/${projectId}`);
+    const res = await fetch(`/api/files/${fileId}`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ intent: "version", ...meta }),
+    });
+    if (!res.ok) {
+      const b = (await res.json().catch(() => ({}))) as { error?: string };
+      throw new Error(b.error ?? "Failed to upload new version");
+    }
+  }
+
   async function onFilePick(e: React.ChangeEvent<HTMLInputElement>) {
-    const picked = e.target.files?.[0];
+    const picked = Array.from(e.target.files ?? []);
     e.target.value = "";
-    if (!picked) return;
+    if (picked.length === 0) return;
     const targetId = versionForId.current;
     const folderId = uploadFolderIdRef.current;
     versionForId.current = null;
@@ -5264,53 +5353,31 @@ function DocumentsBlock({
 
     setBusy(true);
     setError(null);
-    try {
-      const meta = await uploadFileToS3(picked, `project-files/${projectId}`);
-      if (targetId) {
-        const res = await fetch(`/api/files/${targetId}`, {
-          method: "POST",
-          credentials: "include",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ intent: "version", ...meta }),
-        });
-        if (!res.ok) {
-          const b = (await res.json().catch(() => ({}))) as { error?: string };
-          throw new Error(b.error ?? "Failed to upload new version");
-        }
-      } else {
-        const res = await fetch(`/api/projects/${projectId}/files`, {
-          method: "POST",
-          credentials: "include",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            title: picked.name,
-            ...(folderId ? { folderPageId: folderId } : {}),
-            ...meta,
-          }),
-        });
-        if (!res.ok) {
-          const b = (await res.json().catch(() => ({}))) as { error?: string };
-          throw new Error(b.error ?? "Failed to add file");
-        }
-      }
-      revalidator.revalidate();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Upload failed");
-    } finally {
-      setBusy(false);
-    }
+    const failed = await uploadAll(picked, (file) =>
+      targetId ? addProjectFileVersion(file, targetId) : addProjectFile(file, folderId),
+    );
+    if (failed.length < picked.length) revalidator.revalidate();
+    setError(summarizeFailures(failed, picked.length));
+    setBusy(false);
+  }
+
+  function openFilePicker(multiple: boolean) {
+    const input = fileInputRef.current;
+    if (!input) return;
+    input.multiple = multiple;
+    input.click();
   }
 
   function triggerUpload(folderId?: string) {
     versionForId.current = null;
     uploadFolderIdRef.current = folderId ?? null;
-    fileInputRef.current?.click();
+    openFilePicker(true);
   }
 
   function triggerVersionUpload(fileId: string) {
     versionForId.current = fileId;
     uploadFolderIdRef.current = null;
-    fileInputRef.current?.click();
+    openFilePicker(false);
   }
 
   async function deleteFile(id: string, title: string) {
@@ -5472,7 +5539,7 @@ function DocumentsBlock({
   return (
     <section className="bg-card border border-border rounded-lg p-4">
       {/* Hidden file input shared for new-file and new-version uploads. */}
-      <input ref={fileInputRef} type="file" className="hidden" onChange={onFilePick} />
+      <input ref={fileInputRef} type="file" multiple className="hidden" onChange={onFilePick} />
 
       <div className="flex items-center justify-between mb-3">
         <h2 className="text-sm font-semibold text-foreground flex items-center gap-2">
@@ -5537,7 +5604,7 @@ function DocumentsBlock({
               </Menu.Item>
               <Menu.Separator />
               <Menu.Item icon={<Upload className="w-3.5 h-3.5" />} onSelect={() => triggerUpload()}>
-                Upload file
+                Upload files
               </Menu.Item>
             </Menu>
           )}
@@ -5695,12 +5762,12 @@ function DocumentsBlock({
                           <Plus className="w-3.5 h-3.5" />
                         </button>
                       </Tooltip>
-                      <Tooltip content="Upload file into folder">
+                      <Tooltip content="Upload files into folder">
                         <button
                           type="button"
                           disabled={busy}
                           onClick={() => triggerUpload(doc.id)}
-                          aria-label="Upload file into folder"
+                          aria-label="Upload files into folder"
                           className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-60"
                         >
                           <Upload className="w-3.5 h-3.5" />
@@ -5747,17 +5814,14 @@ function DocumentsBlock({
         </div>
       )}
 
-      <MoveToDialog
-        open={!!moveDoc}
-        pageId={moveDoc?.id ?? ""}
-        title={moveDoc?.title ?? ""}
-        current={{ type: "Project", id: projectId }}
-        onClose={() => setMoveDoc(null)}
-        onMoved={() => {
-          setMoveDoc(null);
-          revalidator.revalidate();
-        }}
-      />
+      {moveDoc && moveDestinations.status === "ready" && (
+        <FolderPicker
+          open
+          heading={`Move “${moveDoc.title}”`}
+          {...movePage.pickerProps}
+          onClose={() => setMoveDoc(null)}
+        />
+      )}
     </section>
   );
 }

@@ -132,7 +132,17 @@ async function ensureProfileForm(createdById: string): Promise<void> {
     await prisma.form.create({
       data: {
         name: NEW_MEMBER_PROFILE_FORM_NAME,
-        createdById,
+        createdBy: { connect: { id: createdById } },
+        page: {
+          create: {
+            workspaceType: "Lab" as const,
+            title: NEW_MEMBER_PROFILE_FORM_NAME,
+            kind: "Form" as const,
+            createdById,
+            linkAccess: "LabMembers" as const,
+            linkPermission: "View" as const,
+          },
+        },
         published: true,
         publicToken: newPublicToken(),
         versions: {

@@ -26,7 +26,13 @@ import { forceSnapshot } from "~/collab/persistence";
 import { readDocAsBlocks } from "~/collab/read";
 import { replaceCollabDocContent } from "~/collab/write";
 import { blockOwnText, blocksToPlainText } from "~/components/doc/schema/configs";
-import { applyEnhancePlan, type SnapshotBlock, type StoredEnhanceNotes } from "~/components/meeting-recorder/enhance-plan";
+import {
+  applyEnhancePlan,
+  ENHANCE_MARK_ADDED,
+  ENHANCE_MARK_PRIOR,
+  type SnapshotBlock,
+  type StoredEnhanceNotes,
+} from "~/components/meeting-recorder/enhance-plan";
 import { transcriptParagraphs } from "~/components/meeting-recorder/transcript";
 import type { Channel, RosterUser, Speakers } from "~/components/meeting-recorder/types";
 import { isUntouchedTemplate } from "~/lib/meeting-note-template";
@@ -131,9 +137,16 @@ export async function runEnhanceMeetingNotes(ctx: McpCtx, input: Input) {
   const server = getCollabServer();
   if (!server) throw new McpError("Collab server not running", 503);
 
+  // Refuse before snapshotting or writing anything (specs/meeting-recording-
+  // rail.md Step 2: "Server write paths refuse while marks exist") — an
+  // unreviewed Enhance pass is still sitting in the note.
+  const liveBlocks = await readDocAsBlocks(rec.documentName);
+  if (liveBlocks.some((b) => b.props.backgroundColor === ENHANCE_MARK_ADDED || b.props.backgroundColor === ENHANCE_MARK_PRIOR)) {
+    throw new McpError("Keep or revert the current changes first", 409);
+  }
+
   await forceSnapshot(server, rec.documentName, "Before enhance", [callerId]);
 
-  const liveBlocks = await readDocAsBlocks(rec.documentName);
   const currentTop: SnapshotBlock[] = liveBlocks.map((b) => ({ id: b.id, type: b.type, text: blockOwnText(b) }));
   const untouchedTemplate = isUntouchedTemplate(
     { seededFromPageId, seededTemplateHash },

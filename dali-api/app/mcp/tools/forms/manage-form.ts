@@ -4,6 +4,7 @@
 
 import { runFormsAction } from "~/forms/lib/forms-data";
 import { isCore } from "~/lib/roles";
+import { canBuildForm, canCreateForm, formsUsePageAccess } from "~/forms/lib/form-access.server";
 import {
   requireForAction,
   McpForbiddenError,
@@ -143,11 +144,20 @@ type Args = {
 };
 
 export async function runManageForm(ctx: McpCtx, args: Args) {
-  if (!(await isCore(ctx.user.id))) {
+  const byPage = await formsUsePageAccess();
+  if (!byPage && !(await isCore(ctx.user.id))) {
     throw new McpForbiddenError("Only Core members can manage forms");
   }
 
   requireForAction(args.action, args, ACTION_REQUIRED);
+
+  if (byPage) {
+    const allowed =
+      args.action === "create"
+        ? await canCreateForm(ctx.user.id, args.folderPageId || null)
+        : await canBuildForm(ctx.user.id, args.formId!);
+    if (!allowed) throw new McpForbiddenError("You do not have edit access to this form");
+  }
 
   const intent = ACTION_INTENT[args.action];
   const fd = new FormData();

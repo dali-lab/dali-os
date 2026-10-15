@@ -7,6 +7,7 @@ import { Breadcrumbs } from '~/components/Breadcrumbs'
 import { PageDocProvider, PageDocButton, PageDocOutlet, ShellGuideProvider } from '~/components/page-docs/PageDocButton'
 import { useLiveFavorites } from '~/components/favorites-live'
 import { LaunchWelcome } from '~/components/LaunchWelcome'
+import { workspacePath } from '~/components/workspace-link'
 import { NavPreloader } from '~/components/NavPreloader'
 import { TimeZonePrompt } from '~/components/TimeZonePrompt'
 import { requireAuth, redirectPartnerToPortal, impersonationAllowsWrites, isNonMember } from "~/lib/auth"
@@ -434,7 +435,9 @@ export default function AppLayoutRoute() {
       if (e.origin !== window.location.origin) return
       const d = e.data
       if (!d || d.type !== 'dali:navigate' || typeof d.url !== 'string') return
-      navigate(d.url)
+      // navigate() treats an absolute url as a relative path, so a stored full
+      // url (an older persisted tab) would land on a 404.
+      navigate(workspacePath(d.url, window.location.origin))
     }
     window.addEventListener('message', onMsg)
     return () => window.removeEventListener('message', onMsg)

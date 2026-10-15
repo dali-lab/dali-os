@@ -88,6 +88,34 @@ describe("get_hiring_cycle", () => {
     });
   });
 
+  it("reports each domain's effective close date, own or inherited", async () => {
+    vi.mocked(hasCycleAccess).mockResolvedValue(true);
+    mockPrisma.applicationCycle.findUnique.mockResolvedValue({
+      ...fakeCycle,
+      domains: [
+        {
+          domainId: "d1",
+          isReady: true,
+          closeDate: null,
+          domain: { name: "ai", displayName: "AI" },
+        },
+        {
+          domainId: "d2",
+          isReady: true,
+          closeDate: new Date("2026-11-01"),
+          domain: { name: "web", displayName: "Web" },
+        },
+      ],
+    });
+    mockPrisma.interviewConfig.findUnique.mockResolvedValue(null);
+
+    const result = (await runGetHiringCycle("u1", { cycleId: "cy1" })) as any;
+    expect(result.domains).toEqual([
+      { domainId: "d1", name: "AI", isReady: true, closeDate: fakeCycle.closeDate.toISOString() },
+      { domainId: "d2", name: "Web", isReady: true, closeDate: new Date("2026-11-01").toISOString() },
+    ]);
+  });
+
   it("returns coverage summary when interview config exists", async () => {
     vi.mocked(hasCycleAccess).mockResolvedValue(true);
     mockPrisma.applicationCycle.findUnique.mockResolvedValue(fakeCycle);

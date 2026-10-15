@@ -15,8 +15,11 @@ import { isCore, canViewForms } from "~/lib/roles";
 import { graduateProgramLabel } from "~/lib/dartmouth-people";
 import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
 import { prisma } from "~/lib/db";
-import { promoteToMember } from "~/members/lib/membership.server";
-import { assignHandleIfMissing } from "~/lib/handle";
+import {
+  createOrPromoteMember,
+  MemberInputError,
+  PROFILE_TEXT_FIELDS,
+} from "~/members/lib/membership.server";
 import { fullName, primaryEmail } from "~/lib/display";
 import { Avatar } from "~/components/ui/Avatar";
 import { RolePills } from "~/components/ui/RolePills";
@@ -246,17 +249,6 @@ export async function loader({ request }: Route.LoaderArgs) {
   };
 }
 
-// Profile fields offered on the create form. Mirrors the editable text fields
-// on members/$id so a member can be filled in fully at creation time; all are
-// optional except first/last name. classYear is handled separately (numeric).
-const PROFILE_TEXT_FIELDS = [
-  "pronouns",
-  "major",
-  "hometown",
-  "linkedinUrl",
-  "personalSite",
-] as const;
-
 export async function action({ request }: Route.ActionArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
@@ -267,118 +259,24 @@ export async function action({ request }: Route.ActionArgs) {
   }
 
   const form = await request.formData();
-  const firstName = (form.get("firstName") as string | null)?.trim() ?? "";
-  const lastName = (form.get("lastName") as string | null)?.trim() ?? "";
-  const email = (form.get("email") as string | null)?.trim() ?? "";
-  if (!firstName || !lastName) {
-    return { error: "First and last name are required." };
+  const text = (key: string) => (form.get(key) as string | null) ?? "";
+  try {
+    const { id } = await createOrPromoteMember(
+      {
+        firstName: text("firstName"),
+        lastName: text("lastName"),
+        email: text("email"),
+        dartmouthEmail: text("dartmouthEmail"),
+        classYear: text("classYear"),
+        ...Object.fromEntries(PROFILE_TEXT_FIELDS.map((f) => [f, text(f)])),
+      },
+      auth.user.sub,
+    );
+    return redirect(`/members/${id}`);
+  } catch (err) {
+    if (err instanceof MemberInputError) return { error: err.message };
+    throw err;
   }
-  if (!email) {
-    return { error: "An email is required." };
-  }
-
-  // Dartmouth-issued addresses route to their typed columns so the existing
-  // auth paths (CAS/Google) can match this user later; anything else is a
-  // personal email. All three are @unique — a collision means the person
-  // already has a User row.
-  const lower = email.toLowerCase();
-  const emailField = lower.endsWith("@dali.dartmouth.edu")
-    ? "daliEmail"
-    : lower.endsWith("@dartmouth.edu")
-      ? "dartmouthEmail"
-      : "personalEmail";
-
-  // Optional @dartmouth alias so this member's Dartmouth address also resolves
-  // to their one account at login (the alias-resolver). Members hired through a
-  // cycle already carry it from Dartmouth-door signup; this covers the manual
-  // add path, which otherwise captures only the primary email. If the primary
-  // IS the @dartmouth address there is nothing extra to store.
-  const dartmouthAlias = (form.get("dartmouthEmail") as string | null)?.trim().toLowerCase() ?? "";
-  if (dartmouthAlias && !dartmouthAlias.endsWith("@dartmouth.edu")) {
-    return { error: "The Dartmouth email must be an @dartmouth.edu address." };
-  }
-  const dartmouthEmailToSet =
-    emailField === "dartmouthEmail" ? lower : dartmouthAlias || null;
-
-  // firstName/lastName/email pass explicitly into create() below so Prisma
-  // sees the required scalars; the optional profile fields collect here.
-  const profile: Record<string, string> = {};
-  for (const field of PROFILE_TEXT_FIELDS) {
-    const raw = (form.get(field) as string | null)?.trim() ?? "";
-    if (raw !== "") profile[field] = raw;
-  }
-  let classYear: number | undefined;
-  const classYearRaw = (form.get("classYear") as string | null)?.trim() ?? "";
-  if (classYearRaw !== "") {
-    const n = Number(classYearRaw);
-    if (!Number.isInteger(n) || n < 1900 || n > 2100) {
-      return { error: "Class year must be a 4-digit year." };
-    }
-    classYear = n;
-  }
-
-  const existing = await prisma.user.findFirst({
-    where: {
-      OR: [
-        { daliEmail: lower },
-        { dartmouthEmail: lower },
-        { personalEmail: lower },
-      ],
-    },
-    select: { id: true, dartmouthEmail: true, daliMember: { select: { id: true } } },
-  });
-  if (existing) {
-    // The User already exists — promote them to a lab member rather than
-    // erroring out, then send the editor to their profile.
-    await promoteToMember({ userId: existing.id, actorId: auth.user.sub });
-    // Attach the @dartmouth alias if the row lacks one and it isn't taken.
-    if (dartmouthEmailToSet && !existing.dartmouthEmail) {
-      const taken = await prisma.user.findFirst({
-        where: { dartmouthEmail: dartmouthEmailToSet },
-        select: { id: true },
-      });
-      if (taken && taken.id !== existing.id) {
-        return { error: "That Dartmouth email is already on another account." };
-      }
-      await prisma.user.update({
-        where: { id: existing.id },
-        data: { dartmouthEmail: dartmouthEmailToSet },
-      });
-    }
-    return redirect(`/members/${existing.id}`);
-  }
-
-  // New person: User + the thin DALIMember marker that makes them show in
-  // this directory (loader filters on daliMember != null). The chosen email
-  // column is dynamic, hence the small typed partial.
-  const emailData: {
-    daliEmail?: string;
-    dartmouthEmail?: string;
-    personalEmail?: string;
-  } = { [emailField]: lower };
-  if (dartmouthEmailToSet && emailField !== "dartmouthEmail") {
-    const taken = await prisma.user.findFirst({
-      where: { dartmouthEmail: dartmouthEmailToSet },
-      select: { id: true },
-    });
-    if (taken) {
-      return { error: "That Dartmouth email is already on another account." };
-    }
-    emailData.dartmouthEmail = dartmouthEmailToSet;
-  }
-  const created = await prisma.user.create({
-    data: {
-      firstName,
-      lastName,
-      ...emailData,
-      ...profile,
-      classYear,
-      daliMember: { create: {} },
-    },
-    select: { id: true },
-  });
-  await assignHandleIfMissing(created.id);
-  return redirect(`/members/${created.id}`);
 }
 
 export default function MembersList() {

@@ -1,10 +1,26 @@
 // Unit tests for the doc package's pure helpers (node environment — no DOM,
 // no BlockNote imports, no ~/lib/db).
 
-import { describe, expect, it } from "vitest";
-import type { EnhanceActionItem, EnhanceOpBlock } from "~/components/meeting-recorder/enhance-plan";
-import { appendTaskMentionContent, findTranscriptToggle, toPartialBlock, transcriptToggleBlock } from "../enhance-render";
-import type { DocBlock } from "../schema/build";
+import { describe, expect, it, vi } from "vitest";
+import { ENHANCE_MARK_ADDED, ENHANCE_MARK_PRIOR } from "~/components/meeting-recorder/enhance-plan";
+import type { EditorOp, EnhanceActionItem, EnhanceOpBlock } from "~/components/meeting-recorder/enhance-plan";
+import {
+  appendTaskMentionContent,
+  clearEnhanceMark,
+  enhancePasteHandler,
+  findEnhanceMarks,
+  findTranscriptToggle,
+  hasEnhanceMarks,
+  keepAllEnhance,
+  keepEnhanceBlock,
+  renderEnhanceOps,
+  revertAllEnhance,
+  revertEnhanceBlock,
+  stripEnhanceMarksFromHtml,
+  toPartialBlock,
+  transcriptToggleBlock,
+} from "../enhance-render";
+import type { DocBlock, DocEditorInstance } from "../schema/build";
 
 describe("appendTaskMentionContent", () => {
   it("appends a space + taskMention node to existing content", () => {
@@ -126,5 +142,377 @@ describe("transcriptToggleBlock / findTranscriptToggle", () => {
       children: [],
     } as unknown as DocBlock;
     expect(findTranscriptToggle([plainHeading])).toBeNull();
+  });
+});
+
+// ─── Enhance marks (specs/meeting-recording-rail.md Step 2) ───────────────
+
+// Real BlockNote blocks always resolve every registered prop (backgroundColor
+// included) to an explicit value — "default" when unset, never absent — since
+// nodeToBlock reads the ProseMirror node's full resolved attrs. The fake
+// editor below mirrors that so a revert's merge-with-old-attrs semantics
+// (props spread, not replaced) behaves the same as the real editor.updateBlock.
+function block(id: string, type: string, text: string, props: Record<string, unknown> = {}): DocBlock {
+  return {
+    id,
+    type,
+    props: { backgroundColor: "default", ...props },
+    content: [{ type: "text", text, styles: {} }],
+    children: [],
+  } as unknown as DocBlock;
+}
+
+/** A minimal BlockNoteEditor double — just enough surface for renderEnhanceOps
+ *  and the Keep/Revert helpers to drive, with no real BlockNote/ProseMirror
+ *  underneath. `transact` just runs the callback synchronously, matching
+ *  editor.transact's documented behavior (changes grouped, dispatched when
+ *  the callback returns) closely enough for these ops-replay tests. */
+function fakeEditor(initial: DocBlock[]) {
+  let blocks = initial;
+  const editor = {
+    get document() {
+      return blocks;
+    },
+    getBlock: (id: string) => blocks.find((b) => b.id === id),
+    updateBlock: (id: string, update: { content?: unknown; props?: Record<string, unknown> }) => {
+      blocks = blocks.map((b) =>
+        b.id === id
+          ? ({
+              ...b,
+              ...(update.content !== undefined ? { content: update.content } : {}),
+              ...("children" in update ? { children: (update as { children?: unknown }).children } : {}),
+              props: { ...b.props, ...(update.props ?? {}) },
+            } as DocBlock)
+          : b,
+      );
+    },
+    insertBlocks: (toInsert: DocBlock[], afterId: string, placement: "before" | "after" = "before") => {
+      const idx = blocks.findIndex((b) => b.id === afterId);
+      const at = placement === "after" ? idx + 1 : idx;
+      blocks = [...blocks.slice(0, at), ...toInsert, ...blocks.slice(at)];
+    },
+    removeBlocks: (ids: string[]) => {
+      blocks = blocks.filter((b) => !ids.includes(b.id));
+    },
+    replaceBlocks: (_remove: DocBlock[], insert: DocBlock[]) => {
+      blocks = insert;
+    },
+    transact: vi.fn(<T>(cb: () => T): T => cb()),
+  };
+  return editor as unknown as DocEditorInstance & typeof editor;
+}
+
+describe("renderEnhanceOps", () => {
+  it("runs every op inside a single editor.transact call", () => {
+    const editor = fakeEditor([block("b1", "paragraph", "Hello"), block("b2", "heading", "Agenda")]);
+    const ops: EditorOp[] = [
+      { kind: "update", id: "b1", text: "Hello there", cites: [] },
+      { kind: "remove", id: "b2" },
+    ];
+    renderEnhanceOps(editor, ops, { pageId: "p1", recordingId: "rec1" });
+    expect(editor.transact).toHaveBeenCalledTimes(1);
+  });
+
+  it("tints an updated block enhance-added and captures its prior JSON", () => {
+    const editor = fakeEditor([block("b1", "paragraph", "Hello")]);
+    const ops: EditorOp[] = [{ kind: "update", id: "b1", text: "Hello there", cites: [] }];
+
+    const { priorBlocks } = renderEnhanceOps(editor, ops, { pageId: "p1", recordingId: "rec1" });
+
+    const updated = editor.getBlock("b1")!;
+    expect((updated.props as { backgroundColor?: unknown }).backgroundColor).toBe(ENHANCE_MARK_ADDED);
+    expect(priorBlocks.b1).toMatchObject({ id: "b1", type: "paragraph" });
+    expect((priorBlocks.b1 as DocBlock).content).toEqual([{ type: "text", text: "Hello", styles: {} }]);
+  });
+
+  it("deep-clones the prior block — mutating the live block afterward doesn't change it", () => {
+    const editor = fakeEditor([block("b1", "paragraph", "Hello")]);
+    const ops: EditorOp[] = [{ kind: "update", id: "b1", text: "Hello there", cites: [] }];
+
+    const { priorBlocks } = renderEnhanceOps(editor, ops, { pageId: "p1", recordingId: "rec1" });
+    editor.updateBlock("b1", { content: [{ type: "text", text: "Mutated later", styles: {} }] });
+
+    expect((priorBlocks.b1 as DocBlock).content).toEqual([{ type: "text", text: "Hello", styles: {} }]);
+  });
+
+  it("tints every inserted block enhance-added", () => {
+    const editor = fakeEditor([block("b1", "heading", "Decisions")]);
+    const ops: EditorOp[] = [
+      { kind: "insertAfter", afterId: "b1", blocks: [{ type: "bulletListItem", text: "Ship v1", cites: [], added: true }] },
+    ];
+
+    renderEnhanceOps(editor, ops, { pageId: "p1", recordingId: "rec1" });
+
+    const inserted = editor.document.find((b) => b.type === "bulletListItem")!;
+    expect((inserted.props as { backgroundColor?: unknown }).backgroundColor).toBe(ENHANCE_MARK_ADDED);
+  });
+
+  it("tints a removed block enhance-prior instead of deleting it", () => {
+    const editor = fakeEditor([block("b1", "heading", "Agenda")]);
+    const ops: EditorOp[] = [{ kind: "remove", id: "b1" }];
+
+    renderEnhanceOps(editor, ops, { pageId: "p1", recordingId: "rec1" });
+
+    expect(editor.document).toHaveLength(1);
+    expect((editor.getBlock("b1")!.props as { backgroundColor?: unknown }).backgroundColor).toBe(ENHANCE_MARK_PRIOR);
+  });
+
+  it("only records priorBlocks for update ops, not inserts or removes", () => {
+    const editor = fakeEditor([block("b1", "heading", "Agenda"), block("b2", "paragraph", "Keep me")]);
+    const ops: EditorOp[] = [
+      { kind: "remove", id: "b1" },
+      { kind: "insertAfter", afterId: "b2", blocks: [{ type: "paragraph", text: "New", cites: [], added: true }] },
+    ];
+
+    const { priorBlocks } = renderEnhanceOps(editor, ops, { pageId: "p1", recordingId: "rec1" });
+
+    expect(priorBlocks).toEqual({});
+  });
+});
+
+describe("findEnhanceMarks / hasEnhanceMarks", () => {
+  it("finds every top-level block carrying a reserved mark, in order", () => {
+    const blocks = [
+      block("b1", "paragraph", "Added text", { backgroundColor: ENHANCE_MARK_ADDED }),
+      block("b2", "paragraph", "Untouched"),
+      block("b3", "heading", "Gone heading", { backgroundColor: ENHANCE_MARK_PRIOR }),
+    ];
+    expect(findEnhanceMarks(blocks)).toEqual([
+      { id: "b1", mark: ENHANCE_MARK_ADDED, type: "paragraph", text: "Added text" },
+      { id: "b3", mark: ENHANCE_MARK_PRIOR, type: "heading", text: "Gone heading" },
+    ]);
+  });
+
+  it("ignores a normal color swatch and the default value", () => {
+    const blocks = [
+      block("b1", "paragraph", "Blue", { backgroundColor: "blue" }),
+      block("b2", "paragraph", "Default", { backgroundColor: "default" }),
+    ];
+    expect(findEnhanceMarks(blocks)).toEqual([]);
+    expect(hasEnhanceMarks(blocks)).toBe(false);
+  });
+
+  it("hasEnhanceMarks is true when any block carries either reserved value", () => {
+    expect(hasEnhanceMarks([block("b1", "paragraph", "x", { backgroundColor: ENHANCE_MARK_PRIOR })])).toBe(true);
+  });
+});
+
+describe("clearEnhanceMark", () => {
+  it("resets backgroundColor to default", () => {
+    const editor = fakeEditor([block("b1", "paragraph", "x", { backgroundColor: ENHANCE_MARK_ADDED })]);
+    clearEnhanceMark(editor, "b1");
+    expect((editor.getBlock("b1")!.props as { backgroundColor?: unknown }).backgroundColor).toBe("default");
+  });
+
+  it("is a no-op when the block no longer exists", () => {
+    const editor = fakeEditor([]);
+    expect(() => clearEnhanceMark(editor, "gone")).not.toThrow();
+  });
+});
+
+describe("keepEnhanceBlock", () => {
+  it("clears the tint on an enhance-added block, keeping its content", () => {
+    const editor = fakeEditor([block("b1", "paragraph", "New text", { backgroundColor: ENHANCE_MARK_ADDED })]);
+    keepEnhanceBlock(editor, "b1");
+    const kept = editor.getBlock("b1")!;
+    expect((kept.props as { backgroundColor?: unknown }).backgroundColor).toBe("default");
+    expect(kept.content).toEqual([{ type: "text", text: "New text", styles: {} }]);
+  });
+
+  it("deletes an enhance-prior block outright", () => {
+    const editor = fakeEditor([block("b1", "heading", "Agenda", { backgroundColor: ENHANCE_MARK_PRIOR })]);
+    keepEnhanceBlock(editor, "b1");
+    expect(editor.document).toHaveLength(0);
+  });
+
+  it("is a no-op on a block with no mark", () => {
+    const editor = fakeEditor([block("b1", "paragraph", "Plain")]);
+    keepEnhanceBlock(editor, "b1");
+    expect(editor.document).toHaveLength(1);
+  });
+
+  it("is a no-op when the id no longer exists", () => {
+    const editor = fakeEditor([]);
+    expect(() => keepEnhanceBlock(editor, "gone")).not.toThrow();
+  });
+});
+
+describe("revertEnhanceBlock", () => {
+  it("restores a changed block from priorBlocks", () => {
+    const prior: DocBlock = block("b1", "paragraph", "Original text");
+    const editor = fakeEditor([block("b1", "paragraph", "Enhanced text", { backgroundColor: ENHANCE_MARK_ADDED })]);
+
+    revertEnhanceBlock(editor, "b1", { b1: prior });
+
+    const reverted = editor.getBlock("b1")!;
+    expect(reverted.content).toEqual([{ type: "text", text: "Original text", styles: {} }]);
+    expect((reverted.props as { backgroundColor?: unknown }).backgroundColor).toBe("default");
+  });
+
+  it("deletes an added block with no prior entry (a genuine insert)", () => {
+    const editor = fakeEditor([block("b1", "paragraph", "New block", { backgroundColor: ENHANCE_MARK_ADDED })]);
+    revertEnhanceBlock(editor, "b1", {});
+    expect(editor.document).toHaveLength(0);
+  });
+
+  it("clears the tint on an enhance-prior block, leaving it as it was", () => {
+    const editor = fakeEditor([block("b1", "heading", "Agenda", { backgroundColor: ENHANCE_MARK_PRIOR })]);
+    revertEnhanceBlock(editor, "b1", {});
+    const reverted = editor.getBlock("b1")!;
+    expect((reverted.props as { backgroundColor?: unknown }).backgroundColor).toBe("default");
+    expect(editor.document).toHaveLength(1);
+  });
+
+  it("is a no-op on a block with no mark, even with a priorBlocks entry", () => {
+    const prior: DocBlock = block("b1", "paragraph", "Original");
+    const editor = fakeEditor([block("b1", "paragraph", "Plain")]);
+    revertEnhanceBlock(editor, "b1", { b1: prior });
+    expect(editor.getBlock("b1")!.content).toEqual([{ type: "text", text: "Plain", styles: {} }]);
+  });
+
+  it("is a no-op when the id no longer exists", () => {
+    const editor = fakeEditor([]);
+    expect(() => revertEnhanceBlock(editor, "gone", {})).not.toThrow();
+  });
+});
+
+describe("keepAllEnhance / revertAllEnhance", () => {
+  it("keeps every currently-marked block in one transaction and returns the count", () => {
+    const editor = fakeEditor([
+      block("b1", "paragraph", "Added", { backgroundColor: ENHANCE_MARK_ADDED }),
+      block("b2", "heading", "Gone", { backgroundColor: ENHANCE_MARK_PRIOR }),
+      block("b3", "paragraph", "Untouched"),
+    ]);
+
+    const count = keepAllEnhance(editor);
+
+    expect(count).toBe(2);
+    expect(editor.transact).toHaveBeenCalledTimes(1);
+    expect(editor.document.map((b) => b.id)).toEqual(["b1", "b3"]);
+    expect((editor.getBlock("b1")!.props as { backgroundColor?: unknown }).backgroundColor).toBe("default");
+  });
+
+  it("reverts every currently-marked block in one transaction and returns the count", () => {
+    const prior: DocBlock = block("b1", "paragraph", "Original");
+    const editor = fakeEditor([
+      block("b1", "paragraph", "Enhanced", { backgroundColor: ENHANCE_MARK_ADDED }),
+      block("b2", "heading", "Gone", { backgroundColor: ENHANCE_MARK_PRIOR }),
+    ]);
+
+    const count = revertAllEnhance(editor, { b1: prior });
+
+    expect(count).toBe(2);
+    expect(editor.getBlock("b1")!.content).toEqual([{ type: "text", text: "Original", styles: {} }]);
+    expect(editor.getBlock("b2")).toBeDefined();
+  });
+
+  it("skips an id that's already gone by the time its turn comes", () => {
+    const editor = fakeEditor([
+      block("b1", "paragraph", "Added", { backgroundColor: ENHANCE_MARK_ADDED }),
+      block("b2", "paragraph", "Also added", { backgroundColor: ENHANCE_MARK_ADDED }),
+    ]);
+    // Simulate a concurrent removal of b2 between the scan and its turn.
+    const realGetBlock = editor.getBlock.bind(editor);
+    editor.getBlock = ((id: string) => (id === "b2" ? undefined : realGetBlock(id))) as typeof editor.getBlock;
+
+    const count = keepAllEnhance(editor);
+
+    expect(count).toBe(1);
+  });
+
+  it("returns 0 when nothing is marked", () => {
+    const editor = fakeEditor([block("b1", "paragraph", "Plain")]);
+    expect(keepAllEnhance(editor)).toBe(0);
+    expect(revertAllEnhance(editor, {})).toBe(0);
+  });
+});
+
+describe("stripEnhanceMarksFromHtml", () => {
+  it("strips a double-quoted enhance-added attribute", () => {
+    const html = '<div data-background-color="enhance-added">x</div>';
+    expect(stripEnhanceMarksFromHtml(html)).toBe("<div>x</div>");
+  });
+
+  it("strips a single-quoted enhance-prior attribute", () => {
+    const html = "<div data-background-color='enhance-prior'>x</div>";
+    expect(stripEnhanceMarksFromHtml(html)).toBe("<div>x</div>");
+  });
+
+  it("leaves a normal color swatch value alone", () => {
+    const html = '<div data-background-color="blue">x</div>';
+    expect(stripEnhanceMarksFromHtml(html)).toBe(html);
+  });
+
+  it("does not strip a value that merely starts with a reserved word", () => {
+    const html = '<div data-background-color="enhance-added-extra">x</div>';
+    expect(stripEnhanceMarksFromHtml(html)).toBe(html);
+  });
+
+  it("strips every occurrence across multiple blocks", () => {
+    const html =
+      '<div data-background-color="enhance-added">a</div><div data-background-color="enhance-prior">b</div>';
+    expect(stripEnhanceMarksFromHtml(html)).toBe("<div>a</div><div>b</div>");
+  });
+});
+
+function clipboardEvent(entries: Record<string, string>): ClipboardEvent {
+  return {
+    clipboardData: {
+      types: Object.keys(entries),
+      getData: (format: string) => entries[format] ?? "",
+    },
+  } as unknown as ClipboardEvent;
+}
+
+describe("enhancePasteHandler", () => {
+  it("delegates to defaultPasteHandler when there is no clipboard data", () => {
+    const defaultPasteHandler = vi.fn().mockReturnValue(true);
+    const event = { clipboardData: null } as unknown as ClipboardEvent;
+    const result = enhancePasteHandler({ event, editor: { pasteHTML: vi.fn() }, defaultPasteHandler });
+    expect(result).toBe(true);
+    expect(defaultPasteHandler).toHaveBeenCalledWith();
+  });
+
+  it("delegates when the top-priority HTML format carries no reserved mark", () => {
+    const defaultPasteHandler = vi.fn().mockReturnValue(true);
+    const pasteHTML = vi.fn();
+    const event = clipboardEvent({ "blocknote/html": "<p>hi</p>", "text/plain": "hi" });
+    const result = enhancePasteHandler({ event, editor: { pasteHTML }, defaultPasteHandler });
+    expect(result).toBe(true);
+    expect(pasteHTML).not.toHaveBeenCalled();
+    expect(defaultPasteHandler).toHaveBeenCalled();
+  });
+
+  it("strips marks from blocknote/html and pastes it raw itself", () => {
+    const defaultPasteHandler = vi.fn();
+    const pasteHTML = vi.fn();
+    const html = '<div data-background-color="enhance-added">hi</div>';
+    const event = clipboardEvent({ "blocknote/html": html, "text/html": html });
+    const result = enhancePasteHandler({ event, editor: { pasteHTML }, defaultPasteHandler });
+    expect(result).toBe(true);
+    expect(pasteHTML).toHaveBeenCalledWith("<div>hi</div>", true);
+    expect(defaultPasteHandler).not.toHaveBeenCalled();
+  });
+
+  it("strips marks from text/html (not raw) when blocknote/html isn't present", () => {
+    const defaultPasteHandler = vi.fn();
+    const pasteHTML = vi.fn();
+    const html = '<div data-background-color="enhance-prior">hi</div>';
+    const event = clipboardEvent({ "text/html": html });
+    const result = enhancePasteHandler({ event, editor: { pasteHTML }, defaultPasteHandler });
+    expect(result).toBe(true);
+    expect(pasteHTML).toHaveBeenCalledWith("<div>hi</div>", false);
+  });
+
+  it("ignores a mark sitting in a lower-priority format when the top format present is unmarked", () => {
+    const defaultPasteHandler = vi.fn().mockReturnValue(true);
+    const pasteHTML = vi.fn();
+    const event = clipboardEvent({
+      "blocknote/html": "<p>hi</p>",
+      "text/html": '<div data-background-color="enhance-added">hi</div>',
+    });
+    enhancePasteHandler({ event, editor: { pasteHTML }, defaultPasteHandler });
+    expect(pasteHTML).not.toHaveBeenCalled();
+    expect(defaultPasteHandler).toHaveBeenCalled();
   });
 });
