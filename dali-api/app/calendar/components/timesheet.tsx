@@ -321,6 +321,10 @@ export function TimesheetEditPopover({
   const [note, setNote] = useState(entry.note ?? "");
   const [submitting, setSubmitting] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  // The delete confirm is a Modal in the page tree, while this card is portaled
+  // to the end of <body> at the same z-index, so the card would paint over the
+  // confirm and cover its buttons. Step aside while the confirm is up.
+  const [confirming, setConfirming] = useState(false);
   const dialog = useDialog();
   const [error, setError] = useState<string | null>(null);
 
@@ -372,13 +376,19 @@ export function TimesheetEditPopover({
   }
 
   async function del() {
-    const ok = await dialog.confirm({
-      title: "Delete this timesheet entry?",
-      description:
-        "The hours come off your timesheet for this pay period. Re-log them if you delete by mistake.",
-      confirmLabel: "Delete",
-      tone: "destructive",
-    });
+    setConfirming(true);
+    let ok: boolean;
+    try {
+      ok = await dialog.confirm({
+        title: "Delete this timesheet entry?",
+        description:
+          "The hours come off your timesheet for this pay period. Re-log them if you delete by mistake.",
+        confirmLabel: "Delete",
+        tone: "destructive",
+      });
+    } finally {
+      setConfirming(false);
+    }
     if (!ok) return;
     setDeleting(true);
     setError(null);
@@ -403,7 +413,10 @@ export function TimesheetEditPopover({
 
   return (
     <div
-      className="cal-surface max-h-[26rem] overflow-y-auto rounded-lg sm:flex sm:overflow-hidden"
+      className={cn(
+        "cal-surface max-h-[26rem] overflow-y-auto rounded-lg sm:flex sm:overflow-hidden",
+        confirming && "invisible",
+      )}
       role="dialog"
       aria-modal="false"
       aria-label="Edit timesheet entry"
