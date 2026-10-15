@@ -38,15 +38,19 @@ interface AnnouncementRecipient {
   firstName: string;
 }
 
-// Everyone who started an application in the cycle: an Application row that
-// was never Withdrawn (Draft and Submitted both included — "started", not
-// "finished"). One Application per applicant per cycle, so one email each.
+// Everyone still in the running: never Withdrawn and not yet hired (a
+// Released Accepted decision). Draft and Submitted both count as "started".
 async function getAnnouncementRecipients(cycleId: string): Promise<AnnouncementRecipient[]> {
   const applications = await prisma.application.findMany({
     where: {
       applicationCycleId: cycleId,
       domainApplications: { some: { selected: true } },
       statusUpdates: { none: { newStatus: "Withdrawn" } },
+      NOT: {
+        domainApplications: {
+          some: { selected: true, decisions: { some: { type: "Accepted", stage: "Released" } } },
+        },
+      },
     },
     include: {
       user: { select: { firstName: true, dartmouthEmail: true, netId: true } },

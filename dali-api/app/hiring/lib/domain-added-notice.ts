@@ -32,16 +32,19 @@ interface Recipient {
   firstName: string;
 }
 
-// Everyone with an Application row in the cycle that was never Withdrawn
-// (Draft and Submitted both included): a domain opening after the fact is
-// relevant to anyone still in the applicant pool, whether or not they've
-// already submitted. One Application per applicant per cycle, so one email
-// each.
+// Everyone still in the applicant pool: never Withdrawn and not yet hired (a
+// Released Accepted decision). Draft and Submitted both count, since a domain
+// opening after the fact is relevant whether or not they already submitted.
 async function getRecipients(cycleId: string): Promise<Recipient[]> {
   const applications = await prisma.application.findMany({
     where: {
       applicationCycleId: cycleId,
       statusUpdates: { none: { newStatus: "Withdrawn" } },
+      NOT: {
+        domainApplications: {
+          some: { selected: true, decisions: { some: { type: "Accepted", stage: "Released" } } },
+        },
+      },
     },
     include: {
       user: { select: { firstName: true, dartmouthEmail: true, netId: true } },
