@@ -523,6 +523,36 @@ describe("Group scope on the object path (non-Core group)", () => {
     const result = await getPageAccess("author", childDoc({ createdById: "author" }));
     expect(result).toEqual(full);
   });
+
+  it("gives Core full access under the folder without group membership", async () => {
+    vi.mocked(isCore).mockResolvedValue(true);
+    mockPrisma.page.findUnique.mockResolvedValue(governingFolder("View"));
+    const result = await getPageAccess("core-user", childDoc());
+    expect(result).toEqual(full);
+    expect(resolveGroupMembers).not.toHaveBeenCalled();
+  });
+
+  it("gives Core full access under a lab-scoped View folder", async () => {
+    vi.mocked(isCore).mockResolvedValue(true);
+    mockPrisma.page.findUnique.mockResolvedValue({
+      ...governingFolder("View"),
+      scopeKind: "Lab",
+      scopeGroupId: null,
+    });
+    const result = await getPageAccess("core-user", childDoc());
+    expect(result).toEqual(full);
+  });
+
+  it("gives Core no bypass under a Private folder", async () => {
+    vi.mocked(isCore).mockResolvedValue(true);
+    mockPrisma.page.findUnique.mockResolvedValue({
+      ...governingFolder("Edit"),
+      scopeKind: "Private",
+      scopeGroupId: null,
+    });
+    const result = await getPageAccess("core-user", childDoc());
+    expect(result).toEqual(denied());
+  });
 });
 
 describe("ignoreShares option", () => {
