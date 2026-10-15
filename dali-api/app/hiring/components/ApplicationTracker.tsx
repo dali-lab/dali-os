@@ -392,6 +392,7 @@ export function InvitedToInterviewView({
 }) {
   const [slots, setSlots] = useState<TimeSlot[]>([]);
   const [loadingSlots, setLoadingSlots] = useState(false);
+  const [slotsFailed, setSlotsFailed] = useState(false);
   const [selectedSlot, setSelectedSlot] = useState<string | null>(null);
   const [booking, setBooking] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -399,14 +400,18 @@ export function InvitedToInterviewView({
   useEffect(() => {
     if (!domainApp.domainId) return;
     setLoadingSlots(true);
+    setSlotsFailed(false);
     fetch(`/api/hiring/cycles/${cycleId}/available-slots?domainId=${domainApp.domainId}&mode=in-person`, {
       credentials: "include",
     })
-      .then(r => r.ok ? r.json() : [])
+      .then(r => {
+        if (!r.ok) throw new Error(`available-slots ${r.status}`);
+        return r.json();
+      })
       .then((apiSlots: { startTime: string; endTime: string }[]) => {
         setSlots(apiSlots.map((s, i) => apiSlotToTimeSlot(s, i, viewerTimeZone)));
       })
-      .catch(() => {})
+      .catch(() => setSlotsFailed(true))
       .finally(() => setLoadingSlots(false));
   }, [cycleId, domainApp.domainId]);
 
@@ -466,9 +471,13 @@ export function InvitedToInterviewView({
         <div className={`px-6 py-8 rounded-os-card ${cardBg} text-center`}>
           <p className="text-muted-foreground">Loading available times...</p>
         </div>
+      ) : slotsFailed ? (
+        <div className={`px-6 py-8 rounded-os-card ${cardBg} text-center`}>
+          <p className="text-muted-foreground">Interview times could not be loaded. Refresh the page to try again.</p>
+        </div>
       ) : slots.length === 0 ? (
         <div className={`px-6 py-8 rounded-os-card ${cardBg} text-center`}>
-          <p className="text-muted-foreground">No interview slots are available yet. The DALI team is still setting up interview times — check back soon.</p>
+          <p className="text-muted-foreground">No interview slots are available yet. The DALI team is still setting up interview times. Check back soon.</p>
         </div>
       ) : (
         <>
