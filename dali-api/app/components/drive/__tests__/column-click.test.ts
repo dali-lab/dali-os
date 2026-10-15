@@ -4,9 +4,21 @@ import { clickIntent, type ClickIntent } from "~/components/drive/column-click";
 const plain = { metaKey: false, ctrlKey: false, shiftKey: false, anchorInPool: false, suppressed: false };
 
 describe("clickIntent", () => {
-  it("opens on a plain click, with or without an anchor", () => {
-    expect(clickIntent(plain)).toBe("open");
-    expect(clickIntent({ ...plain, anchorInPool: true })).toBe("open");
+  it("selects on a plain click, with or without an anchor", () => {
+    expect(clickIntent(plain)).toBe("select");
+    expect(clickIntent({ ...plain, anchorInPool: true })).toBe("select");
+  });
+
+  it("opens on a tap, since touch has no double-click", () => {
+    expect(clickIntent({ ...plain, touch: true })).toBe("open");
+    expect(clickIntent({ ...plain, touch: true, anchorInPool: true })).toBe("open");
+    expect(clickIntent({ ...plain, touch: true, shiftKey: true })).toBe("open");
+  });
+
+  it("keeps the modifiers and the drag guard working from touch too", () => {
+    expect(clickIntent({ ...plain, touch: true, metaKey: true })).toBe("toggle");
+    expect(clickIntent({ ...plain, touch: true, shiftKey: true, anchorInPool: true })).toBe("range");
+    expect(clickIntent({ ...plain, touch: true, suppressed: true })).toBe("ignore");
   });
 
   it.each([{ metaKey: true }, { ctrlKey: true }, { metaKey: true, ctrlKey: true }])("toggles on %o", (mods) => {
@@ -19,7 +31,7 @@ describe("clickIntent", () => {
   });
 
   it("treats shift-click as a plain click when the anchor is elsewhere", () => {
-    expect(clickIntent({ ...plain, shiftKey: true, anchorInPool: false })).toBe("open");
+    expect(clickIntent({ ...plain, shiftKey: true, anchorInPool: false })).toBe("select");
   });
 
   it("lets cmd/ctrl win over shift", () => {
@@ -38,7 +50,7 @@ describe("clickIntent", () => {
           }
   });
 
-  it("never returns anything but the four intents", () => {
+  it("never returns anything but the five intents", () => {
     const bools = [false, true];
     const seen = new Set<string>();
     for (const metaKey of bools)
@@ -46,7 +58,8 @@ describe("clickIntent", () => {
         for (const shiftKey of bools)
           for (const anchorInPool of bools)
             for (const suppressed of bools)
-              seen.add(clickIntent({ metaKey, ctrlKey, shiftKey, anchorInPool, suppressed }));
-    expect([...seen].sort()).toEqual(["ignore", "open", "range", "toggle"]);
+              for (const touch of bools)
+                seen.add(clickIntent({ metaKey, ctrlKey, shiftKey, anchorInPool, suppressed, touch }));
+    expect([...seen].sort()).toEqual(["ignore", "open", "range", "select", "toggle"]);
   });
 });

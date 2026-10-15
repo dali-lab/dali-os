@@ -238,15 +238,13 @@ function CrumbSwitcher({
 export function Breadcrumbs() {
   const matches = useMatches()
   const { pathname, search } = useLocation()
-  // A page can suppress the trail entirely via handle.hideBreadcrumbs. Hiring
-  // and Mentorship drop it section-wide; their sidebar sub-tabs are the
-  // wayfinding there.
+  // Hiring and Mentorship drop the trail section-wide; their sidebar sub-tabs
+  // are the wayfinding there.
   if (
     pathname === '/hiring' ||
     pathname.startsWith('/hiring/') ||
     pathname === '/mentorship' ||
-    pathname.startsWith('/mentorship/') ||
-    matches.some((m) => (m as { handle?: Handle }).handle?.hideBreadcrumbs)
+    pathname.startsWith('/mentorship/')
   ) {
     return null
   }
@@ -261,6 +259,13 @@ export function Breadcrumbs() {
       const t = m.handle.breadcrumbTrail(m.data)
       if (t && t.length > 0) fullTrail = t
     }
+  }
+
+  // handle.hideBreadcrumbs suppresses the URL-derived trail, since the page
+  // has nothing sensible to show from its path alone; a trail the route built
+  // itself from its data still shows.
+  if (!fullTrail && matches.some((m) => (m as { handle?: Handle }).handle?.hideBreadcrumbs)) {
+    return null
   }
 
   // Build crumbs from the path segments. Any matched route may supply a

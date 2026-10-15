@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   CORAL_FOLDER,
   PINK_FOLDER,
-  folderCountLabel,
   folderTintClass,
   glyphLabel,
   pickGlyph,
@@ -73,6 +72,14 @@ describe("pickGlyph", () => {
     }
   });
 
+  it("marks a plain folder that files meeting notes with a calendar, keeping its own tint", () => {
+    const bound = pickGlyph(folder({ meetingNotes: true, audience: { kind: "private" } }));
+    expect(bound).toMatchObject({ kind: "folder", mark: "calendar", system: false, folderType: null, tint: "text-muted-foreground" });
+    expect(glyphLabel(bound)).toBe("Meeting notes folder");
+    expect(pickGlyph(folder({ meetingNotes: false }))).toMatchObject({ mark: null });
+    expect(pickGlyph(folder({ meetingNotes: true, iconEmoji: "📝" }))).toEqual({ kind: "emoji", emoji: "📝" });
+  });
+
   it("leaves a plain folder a non-system folder with no mark", () => {
     expect(pickGlyph(folder())).toMatchObject({ kind: "folder", mark: null, system: false, folderType: null });
     expect(pickGlyph(folder({ folderType: null }))).toMatchObject({ mark: null, system: false });
@@ -123,18 +130,6 @@ describe("tabBadge", () => {
     expect(tabBadge(1)).toBe("1");
     expect(tabBadge(99)).toBe("99");
     expect(tabBadge(100)).toBe("99+");
-  });
-});
-
-describe("folderCountLabel", () => {
-  it("says nothing until counts are known", () => {
-    expect(folderCountLabel(undefined)).toBeNull();
-  });
-
-  it("says Empty, singular and plural", () => {
-    expect(folderCountLabel(0)).toBe("Empty");
-    expect(folderCountLabel(1)).toBe("1 item");
-    expect(folderCountLabel(12)).toBe("12 items");
   });
 });
 

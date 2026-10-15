@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { cn } from "~/lib/cn";
+import { SegmentedTabButtons } from "./AreaPillNav";
 
 // The parts a dali.os hub page is built from — the hero's labelled clusters,
 // the tab strip under it, and the hairlined facts card its sections state their
@@ -84,10 +84,9 @@ export function HeroClusterLabel({
   );
 }
 
-// The dali.os page tab strip: the design marks the open tab with a filled,
-// top-rounded plate that meets the rule below it, not an underline. Shared by
-// the project detail page and the member profile so a hub page's tabs are one
-// shape, not two that drift.
+// The hub page's tab strip is the same segmented pill the rest of the os uses,
+// so a project page, a member profile and the Core hub switch sections with
+// one control.
 
 export function OsTabBar<T extends string>({
   tabs,
@@ -99,34 +98,21 @@ export function OsTabBar<T extends string>({
   tabs: { key: T; label: string }[];
   active: T;
   onSelect: (key: T) => void;
-  /** Pinned to the far right of the strip — a settings gear, an action. */
+  /** Pinned to the far right of the row — a settings gear, an action. */
   trailing?: ReactNode;
   ariaLabel?: string;
 }) {
   return (
-    <div
-      role="tablist"
-      aria-label={ariaLabel}
-      className="flex items-center gap-2 border-b border-border"
-    >
-      {tabs.map((t) => (
-        <button
-          key={t.key}
-          type="button"
-          role="tab"
-          aria-selected={active === t.key}
-          onClick={() => onSelect(t.key)}
-          className={cn(
-            "rounded-t-[10px] px-5 py-2.5 text-base font-medium transition-colors",
-            active === t.key
-              ? "bg-os-container text-foreground"
-              : "text-os-grey hover:text-foreground",
-          )}
-        >
-          {t.label}
-        </button>
-      ))}
-      {trailing}
+    <div className="flex items-center gap-3">
+      <SegmentedTabButtons
+        label={ariaLabel}
+        items={tabs.map((t) => ({
+          label: t.label,
+          active: active === t.key,
+          onClick: () => onSelect(t.key),
+        }))}
+      />
+      {trailing && <div className="ml-auto">{trailing}</div>}
     </div>
   );
 }

@@ -24,13 +24,25 @@ export function MeetingRecorder({ rec, containerWide }: { rec: UseMeetingRecordi
   const live = rec.phase === "recording" || rec.phase === "starting" || rec.phase === "stopping";
   const following = Boolean(rec.remote && !rec.remote.ownerIsYou);
 
+  // While live the button stays the Record button, turned red; who is
+  // recording and for how long is the tooltip's job, and the rail's.
+  const status = live
+    ? following
+      ? `Recording · ${rec.remote!.ownerName}`
+      : rec.phase === "recording"
+        ? `Recording · ${formatClock(rec.elapsed)}`
+        : rec.phase === "starting"
+          ? "Starting…"
+          : "Stopping…"
+    : null;
+
   const triggerLabel =
-    rec.phase === "idle"
-      ? rec.canEdit
-        ? "Record"
-        : "Transcript"
-      : following && live
-        ? `Recording · ${rec.remote!.ownerName}`
+    live
+      ? "Record"
+      : rec.phase === "idle"
+        ? rec.canEdit
+          ? "Record"
+          : "Transcript"
         : rec.phase === "processing"
           ? "Transcribing…"
           : rec.hasTranscript
@@ -45,22 +57,17 @@ export function MeetingRecorder({ rec, containerWide }: { rec: UseMeetingRecordi
     <button
       type="button"
       onClick={live && !containerWide ? undefined : () => rec.setOpen(!rec.open)}
-      aria-label={triggerLabel}
+      aria-label={status ?? triggerLabel}
       aria-pressed={rec.phase !== "idle" ? rec.open : undefined}
+      data-recording={live || undefined}
       className={cn(
         actionBtnPrimary,
         live && "border-accent-coral bg-accent-coral text-navy-deep hover:border-accent-coral-light hover:bg-accent-coral-light",
       )}
     >
       <Mic className={actionIcon} />
-      {rec.phase === "recording" ? (
-        <>
-          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-current" />
-          {formatClock(rec.elapsed)}
-        </>
-      ) : (
-        <span className="hidden sm:inline">{triggerLabel}</span>
-      )}
+      {rec.phase === "recording" && <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-current" />}
+      <span className="hidden sm:inline">{triggerLabel}</span>
     </button>
   );
 
@@ -71,7 +78,7 @@ export function MeetingRecorder({ rec, containerWide }: { rec: UseMeetingRecordi
           <LivePopoverBody rec={rec} />
         </Popover>
       ) : (
-        <Tooltip content={triggerLabel}>{button}</Tooltip>
+        <Tooltip content={status ?? triggerLabel}>{button}</Tooltip>
       )}
       <RecordStartSheet rec={rec} />
     </>

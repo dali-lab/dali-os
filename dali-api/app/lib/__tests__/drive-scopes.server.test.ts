@@ -26,7 +26,7 @@ import { getPageAccess } from "~/lib/pageAccess.server";
 import { findAllRoots, ensureAllRoots } from "~/lib/drive-roots.server";
 import { loadSharedWithMe } from "~/lib/drive-shared.server";
 import { formsUsePageAccess } from "~/forms/lib/form-access.server";
-import { liftOrphans, loadDriveScopes } from "~/lib/drive-scopes.server";
+import { favoriteSpaceItems, liftOrphans, loadDriveScopes } from "~/lib/drive-scopes.server";
 import type { DriveItem } from "~/lib/drive.server";
 
 const m = prisma as any;
@@ -203,7 +203,7 @@ describe("loadDriveScopes: process-root spaces", () => {
       canComment: false,
     }));
     const scopes = await load({ isCore: false });
-    expect(scopes.map((s) => s.id)).toEqual(["mine", "shared", "lab", "mentorship"]);
+    expect(scopes.map((s) => s.id)).toEqual(["mine", "favorites", "shared", "lab", "mentorship"]);
     expect(scopes.find((s) => s.id === "hiring")).toBeUndefined();
     expect(ids(scopes, "lab")).not.toContain("hiringRoot");
     expect(ids(scopes, "lab")).not.toContain("mentorRoot");
@@ -212,7 +212,7 @@ describe("loadDriveScopes: process-root spaces", () => {
   it("skips a space whose root does not exist yet", async () => {
     vi.mocked(findAllRoots).mockResolvedValue({ byKey: { core: "coreRoot" }, ids: ["coreRoot"] });
     const scopes = await load({ isCore: false });
-    expect(scopes.map((s) => s.id)).toEqual(["mine", "shared", "lab", "core"]);
+    expect(scopes.map((s) => s.id)).toEqual(["mine", "favorites", "shared", "lab", "core"]);
   });
 
   it("creates missing roots for a Core viewer, then re-reads them", async () => {
@@ -224,7 +224,7 @@ describe("loadDriveScopes: process-root spaces", () => {
       });
     const scopes = await load();
     expect(ensureAllRoots).toHaveBeenCalledWith("viewer");
-    expect(scopes.map((s) => s.id)).toEqual(["mine", "shared", "lab", "core", "hiring", "mentorship"]);
+    expect(scopes.map((s) => s.id)).toEqual(["mine", "favorites", "shared", "lab", "core", "hiring", "mentorship"]);
   });
 
   it("never creates roots on behalf of a non-Core viewer", async () => {
@@ -243,7 +243,7 @@ describe("loadDriveScopes: process-root spaces", () => {
     vi.mocked(findAllRoots).mockResolvedValue({ byKey: {}, ids: [] });
     vi.mocked(ensureAllRoots).mockRejectedValue(new Error("no core group"));
     const scopes = await load();
-    expect(scopes.map((s) => s.id)).toEqual(["mine", "shared", "lab"]);
+    expect(scopes.map((s) => s.id)).toEqual(["mine", "favorites", "shared", "lab"]);
   });
 
   it("keeps the forms the Lab load returns inside the Core root's space, re-rooting one filed on the root", async () => {
@@ -302,9 +302,9 @@ describe("loadDriveScopes: Shared with me space", () => {
     m.page.findMany.mockResolvedValue([]);
   });
 
-  it("sits right after My Drive", async () => {
+  it("sits right after Favorites", async () => {
     const scopes = await load();
-    expect(scopes.slice(0, 3).map((s) => s.id)).toEqual(["mine", "shared", "lab"]);
+    expect(scopes.slice(0, 4).map((s) => s.id)).toEqual(["mine", "favorites", "shared", "lab"]);
     expect(scopes.find((s) => s.id === "shared")?.label).toBe("Shared with me");
   });
 
@@ -331,6 +331,111 @@ describe("loadDriveScopes: Shared with me space", () => {
     const scope = (await load()).find((s) => s.id === "shared");
     expect(scope?.items).toEqual([]);
     expect(loadSharedWithMe).not.toHaveBeenCalled();
+  });
+});
+
+describe("favoriteSpaceItems", () => {
+  const doc = (id: string, parentFolderId: string | null): DriveItem => ({
+    type: "doc",
+    id,
+    title: id,
+    parentFolderId,
+    iconEmoji: null,
+    updatedAt: new Date(0),
+    href: `/documents/${id}`,
+  });
+
+  it("lists favorited items from every pool, lifted to the top level, tagged favorited", () => {
+    const items = favoriteSpaceItems(
+      [[doc("a", null), doc("b", "deep"), folder("deep", null)], [doc("c", "elsewhere")]],
+      new Set(["b", "c"]),
+    );
+    expect(items).toEqual([
+      { ...doc("b", null), favorited: true },
+      { ...doc("c", null), favorited: true },
+    ]);
+  });
+
+  it("brings a favorited folder's whole subtree along, in place, so it can be browsed", () => {
+    const items = favoriteSpaceItems(
+      [[folder("f", "parent"), folder("parent", null), folder("sub", "f"), doc("d", "sub"), doc("x", null)]],
+      new Set(["f"]),
+    );
+    expect(items.map((i) => [i.id, i.parentFolderId, i.favorited ?? false])).toEqual([
+      ["f", null, true],
+      ["sub", "f", false],
+      ["d", "sub", false],
+    ]);
+  });
+
+  it("keeps a favorite nested when its parent is along, and lists an id once across pools", () => {
+    const pool = [folder("f", null), doc("d", "f")];
+    const items = favoriteSpaceItems([pool, pool], new Set(["f", "d"]));
+    expect(items.map((i) => [i.id, i.parentFolderId, i.favorited])).toEqual([
+      ["f", null, true],
+      ["d", "f", true],
+    ]);
+  });
+
+  it("is empty without favorites", () => {
+    expect(favoriteSpaceItems([[doc("a", null)]], new Set())).toEqual([]);
+  });
+});
+
+describe("loadDriveScopes: Favorites space", () => {
+  const item = (id: string, parentFolderId: string | null = null): DriveItem => ({
+    type: "doc",
+    id,
+    title: id,
+    parentFolderId,
+    iconEmoji: null,
+    updatedAt: new Date(0),
+    href: `/documents/${id}`,
+  });
+
+  function load() {
+    return loadDriveScopes({
+      auth: VIEWER,
+      projectWorkspaces: [{ key: "p1", label: "Project One", kind: "project" }],
+      educationWorkspaces: [],
+      canViewForms: false,
+      canManageAgreements: false,
+      isCore: false,
+      request: new Request("http://localhost/drive"),
+    });
+  }
+
+  beforeEach(() => {
+    vi.resetAllMocks();
+    vi.mocked(buildLinkedProcessMap).mockResolvedValue(new Map() as any);
+    vi.mocked(favoritePageIds).mockResolvedValue(new Set(["mine-doc", "lab-doc", "proj-doc"]));
+    vi.mocked(isImpersonating).mockReturnValue(false);
+    vi.mocked(findAllRoots).mockResolvedValue({ byKey: {}, ids: [] } as any);
+    vi.mocked(loadSharedWithMe).mockResolvedValue([]);
+    m.page.findMany.mockResolvedValue([]);
+    vi.mocked(loadDriveScope).mockImplementation(async ({ scope }: any) => {
+      if (scope.kind === "Member") return [item("mine-doc"), item("mine-other")];
+      if (scope.kind === "Lab") return [item("lab-doc", "some-folder"), folder("some-folder", null)];
+      if (scope.kind === "Project") return [item("proj-doc")];
+      return [];
+    });
+  });
+
+  it("sits right under My Drive and gathers favorites from My Drive, the Lab and projects", async () => {
+    const scopes = await load();
+    expect(scopes.slice(0, 2).map((s) => s.id)).toEqual(["mine", "favorites"]);
+    const favorites = scopes.find((s) => s.id === "favorites")!;
+    expect(favorites.label).toBe("Favorites");
+    expect(favorites.items.map((i) => [i.id, i.parentFolderId, i.favorited])).toEqual([
+      ["mine-doc", null, true],
+      ["lab-doc", null, true],
+      ["proj-doc", null, true],
+    ]);
+  });
+
+  it("is empty while an admin is impersonating", async () => {
+    vi.mocked(isImpersonating).mockReturnValue(true);
+    expect((await load()).find((s) => s.id === "favorites")?.items).toEqual([]);
   });
 });
 
@@ -561,6 +666,6 @@ describe("loadDriveScopes: what starts without waiting for the Lab load", () => 
     );
     const pending = start();
     await finishLab([folderItem("coreRoot", null), folderItem("hiringRoot", null), folderItem("mentorRoot", null)]);
-    expect((await pending).map((s) => s.id)).toEqual(["mine", "shared", "lab", "education", "core", "hiring", "mentorship"]);
+    expect((await pending).map((s) => s.id)).toEqual(["mine", "favorites", "shared", "lab", "education", "core", "hiring", "mentorship"]);
   });
 });

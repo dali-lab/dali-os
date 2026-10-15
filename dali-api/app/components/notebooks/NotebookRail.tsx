@@ -1,24 +1,13 @@
 import { useEffect, useId, useState } from "react";
 import { createPortal } from "react-dom";
 import { Link, useNavigate, useRevalidator } from "react-router";
-import {
-  ChevronRight,
-  FilePlus,
-  FileText,
-  MoreHorizontal,
-  NotebookPen,
-  PanelLeftClose,
-  PanelLeftOpen,
-  Plus,
-} from "lucide-react";
+import { EllipsisVertical, FilePlus, FileText, List, MoreHorizontal, PanelLeftClose, Plus } from "lucide-react";
 import { Modal, ModalHeader } from "~/components/Modal";
 import { modalCardClass, useOsChrome } from "~/components/os-chrome";
 import { buttonClasses } from "~/components/ui/Button";
 import { IconButton } from "~/components/ui/IconButton";
 import { useDialog } from "~/components/ui/dialog";
-import { Combobox, InfoTip, Menu, Select } from "~/components/ui/floating";
-import { LocationLink } from "~/components/drive/LocationLink";
-import type { ItemLocation } from "~/components/drive/location";
+import { Combobox, InfoTip, Menu, Select, Tooltip } from "~/components/ui/floating";
 import { useToast } from "~/components/ui/toast";
 import { NotebookPicker } from "~/components/notebooks/NotebookPicker";
 import { useNoteTemplates } from "~/components/notebooks/use-note-templates";
@@ -70,8 +59,8 @@ function useNotebookRequest() {
 type Panel = "add-document" | "merge" | "template" | null;
 
 /** The Add and ⋯ menus plus the dialogs they open; shared by the tab rail and
- *  the single-note chip. */
-function NotebookControls({ notebook }: { notebook: NotebookView }) {
+ *  the single-note line. `iconOnly` draws Add as a bare plus, the rail's header style. */
+function NotebookControls({ notebook, iconOnly = false }: { notebook: NotebookView; iconOnly?: boolean }) {
   const dialog = useDialog();
   const toast = useToast();
   const navigate = useNavigate();
@@ -116,9 +105,18 @@ function NotebookControls({ notebook }: { notebook: NotebookView }) {
         <Menu
           ariaLabel="Add to notebook"
           trigger={
-            <button type="button" className={buttonClasses("secondary", "xs")}>
-              <Plus className="h-3.5 w-3.5" aria-hidden /> Add
-            </button>
+            iconOnly ? (
+              <Tooltip content="Add">
+                <button type="button" className="os-icon-btn">
+                  <Plus className="h-4 w-4" aria-hidden />
+                  <span className="sr-only">Add</span>
+                </button>
+              </Tooltip>
+            ) : (
+              <button type="button" className={buttonClasses("secondary", "xs")}>
+                <Plus className="h-3.5 w-3.5" aria-hidden /> Add
+              </button>
+            )
           }
         >
           <Menu.Item
@@ -150,7 +148,11 @@ function NotebookControls({ notebook }: { notebook: NotebookView }) {
             align="right"
             ariaLabel="Notebook options"
             trigger={
-              <button type="button" aria-label="Notebook options" className={buttonClasses("ghost", "xs")}>
+              <button
+                type="button"
+                aria-label="Notebook options"
+                className={iconOnly ? "os-icon-btn" : buttonClasses("ghost", "xs")}
+              >
                 <MoreHorizontal className="h-4 w-4" aria-hidden />
               </button>
             }
@@ -360,7 +362,7 @@ function NotebookTitle({ notebook }: { notebook: NotebookView }) {
   );
 }
 
-function TabMenu({ notebook, tab }: { notebook: NotebookView; tab: NotebookTab }) {
+function TabMenu({ notebook, tab, current }: { notebook: NotebookView; tab: NotebookTab; current: boolean }) {
   const dialog = useDialog();
   const toast = useToast();
   const navigate = useNavigate();
@@ -400,9 +402,12 @@ function TabMenu({ notebook, tab }: { notebook: NotebookView; tab: NotebookTab }
           <button
             type="button"
             aria-label={`Options for ${tab.label}`}
-            className="rounded-md p-1 text-os-grey transition-opacity hover:bg-os-container hover:text-foreground focus-visible:opacity-100 lg:opacity-0 lg:group-hover:opacity-100 lg:group-focus-within:opacity-100"
+            className={cn(
+              "shrink-0 rounded-full p-1 transition-opacity hover:bg-os-container-hi focus-visible:opacity-100 lg:group-hover:opacity-100 lg:group-focus-within:opacity-100",
+              current ? "text-os-accent" : "text-os-grey hover:text-foreground lg:opacity-0",
+            )}
           >
-            <MoreHorizontal className="h-4 w-4" aria-hidden />
+            <EllipsisVertical className="h-4 w-4" aria-hidden />
           </button>
         }
       >
@@ -442,25 +447,22 @@ export function NotebookRail({ notebook, currentId }: { notebook: NotebookView; 
     <nav
       aria-label={notebook.title}
       className={cn(
-        card,
-        "flex min-w-0 shrink-0 flex-col gap-2 p-3 lg:sticky lg:top-4",
-        collapsed ? "lg:w-10 lg:items-center lg:p-1.5" : "lg:w-56",
+        "flex min-w-0 shrink-0 flex-col gap-3 lg:sticky lg:top-4",
+        // Collapsed, the pill stands on the page by itself: a card around it
+        // made a third nested surface.
+        collapsed ? cn(card, "p-3 lg:w-auto lg:items-start lg:border-0 lg:bg-transparent lg:p-0") : cn(card, "p-3 lg:w-60"),
       )}
     >
       {collapsed && (
-        <div data-testid="notebook-rail-strip" className="hidden flex-col items-center gap-2 lg:flex">
-          <IconButton label="Show tabs" icon={PanelLeftOpen} onClick={() => setCollapsed(false)} />
+        <div data-testid="notebook-rail-strip" className="hidden flex-col items-center lg:flex">
           <button
             type="button"
             aria-label={`Show ${count} ${count === 1 ? "tab" : "tabs"}`}
             onClick={() => setCollapsed(false)}
-            className="flex flex-col items-center gap-1 rounded-md p-1 text-os-grey transition-colors hover:bg-os-container hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-teal"
+            className="inline-flex items-center gap-2 rounded-full bg-os-container px-3 py-2 text-foreground transition-colors hover:bg-os-container-hi focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-os-accent"
           >
-            <NotebookPen className="h-4 w-4" aria-hidden />
-            <span
-              data-testid="notebook-rail-count"
-              className="min-w-4 rounded-full bg-os-accent/15 px-1 text-center text-[10px] font-semibold leading-4 tabular-nums text-os-accent"
-            >
+            <List className="h-4 w-4" aria-hidden />
+            <span data-testid="notebook-rail-count" className="text-sm font-semibold tabular-nums">
               {count}
             </span>
           </button>
@@ -469,6 +471,7 @@ export function NotebookRail({ notebook, currentId }: { notebook: NotebookView; 
       <div className={cn("contents", collapsed && "lg:hidden")}>
         <div className="flex items-center gap-1">
           <NotebookTitle notebook={notebook} />
+          <NotebookControls notebook={notebook} iconOnly />
           <IconButton
             label="Hide tabs"
             icon={PanelLeftClose}
@@ -476,26 +479,32 @@ export function NotebookRail({ notebook, currentId }: { notebook: NotebookView; 
             onClick={() => setCollapsed(true)}
           />
         </div>
-        <NotebookControls notebook={notebook} />
-        <ul className="flex gap-1 overflow-x-auto lg:max-h-[70vh] lg:flex-col lg:overflow-y-auto">
+        <ul className="flex gap-1 overflow-x-auto lg:max-h-[70vh] lg:flex-col lg:gap-0.5 lg:overflow-y-auto">
           {notebook.tabs.map((tab) => {
             const current = tab.id === currentId;
             return (
-              <li key={tab.id} className="group relative flex shrink-0 items-center gap-1">
+              <li
+                key={tab.id}
+                className={cn(
+                  "group relative flex shrink-0 items-center rounded-full pr-1 transition-colors",
+                  current ? "bg-os-accent/15" : "hover:bg-os-container",
+                )}
+              >
                 <Link
                   to={`/documents/${tab.id}`}
                   aria-current={current ? "page" : undefined}
                   className={cn(
-                    "block min-w-0 flex-1 rounded-os-item px-2 py-1.5 text-sm transition-colors",
-                    current
-                      ? "bg-os-accent/15 text-os-accent"
-                      : "text-os-grey hover:bg-os-container hover:text-foreground",
+                    "flex min-w-0 flex-1 items-center gap-3 rounded-full py-2 pl-3 pr-2 text-sm",
+                    current ? "font-medium text-os-accent" : "text-foreground",
                   )}
                 >
-                  <span className="block truncate">{tab.label}</span>
-                  {tab.meeting && <span className="block truncate text-xs">{tab.meeting}</span>}
+                  <FileText className={cn("h-4 w-4 shrink-0", current ? "text-os-accent" : "text-os-grey")} aria-hidden />
+                  <span className="min-w-0">
+                    <span className="block truncate">{tab.label}</span>
+                    {tab.meeting && <span className="block truncate text-xs text-os-grey">{tab.meeting}</span>}
+                  </span>
                 </Link>
-                {notebook.canManage && <TabMenu notebook={notebook} tab={tab} />}
+                {notebook.canManage && <TabMenu notebook={notebook} tab={tab} current={current} />}
               </li>
             );
           })}
@@ -505,33 +514,21 @@ export function NotebookRail({ notebook, currentId }: { notebook: NotebookView; 
   );
 }
 
-/** Where the note is filed, under the title. One-note notebooks hide the rail, so
- *  this line is also where "add to existing" is discovered: it carries the same
- *  Add and ⋯ menus. */
+/** What sits under a note's title besides the shell's trail: why a meeting lets the
+ *  viewer edit, and, for a one-note notebook whose rail is hidden, the same Add and
+ *  ⋯ menus the rail would carry. Nothing at all otherwise. */
 export function NoteLocationLine({
   notebook,
-  location,
-  tabLabel,
   editViaMeeting,
   showControls,
 }: {
   notebook: NotebookView;
-  location: ItemLocation;
-  tabLabel: string;
   editViaMeeting: boolean;
   showControls: boolean;
 }) {
+  if (!editViaMeeting && !(showControls && notebook.canEdit)) return null;
   return (
     <div className="flex flex-wrap items-center gap-2 text-sm text-os-grey" data-testid="note-location">
-      <div className="flex min-w-0 items-center gap-1">
-        <LocationLink
-          location={location}
-          hrefFor={(scopeId, folderId) => `/drive?scope=${scopeId}${folderId ? `&folder=${folderId}` : ""}`}
-          notebook={{ id: notebook.id, title: notebook.title, href: `/documents/${notebook.id}` }}
-        />
-        <ChevronRight aria-hidden="true" className="h-3 w-3 shrink-0 opacity-60" />
-        <span className="min-w-0 truncate text-xs text-foreground">{tabLabel}</span>
-      </div>
       {editViaMeeting && <InfoTip content="You can edit because you're on this meeting." />}
       {showControls && <NotebookControls notebook={notebook} />}
     </div>

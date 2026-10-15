@@ -33,4 +33,17 @@ describe("relativeTime", () => {
   it("says now for the present", () => {
     expect(relativeTime(at(0))).toBe("now");
   });
+
+  it("counts days up to a month, then names the date", () => {
+    expect(relativeTime(at(-30 * DAY))).toBe("30 days ago");
+    expect(relativeTime(at(-31 * DAY))).toBe("Sep 12");
+    expect(relativeTime(at(-150 * DAY))).toBe("May 16");
+    expect(relativeTime(at(31 * DAY))).toBe("Nov 13");
+  });
+
+  it("adds the year to a date outside this one", () => {
+    expect(relativeTime(at(-400 * DAY))).toBe("Sep 8, 2025");
+    expect(relativeTime("2020-03-03T12:00:00Z")).toBe("Mar 3, 2020");
+    expect(relativeTime(at(100 * DAY))).toBe("Jan 21, 2027");
+  });
 });

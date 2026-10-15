@@ -25,8 +25,8 @@ import { USER_SEARCH_MIN_CHARS as MIN_CHARS, useUserSearch } from "~/hooks/useUs
 type ApplicantLink = { userId: string; name: string; photoUrl: string | null; source: "Auto" | "Manual" };
 
 // "Linked applicant" section of a Shared-inbox thread: who this thread is
-// matched to (by address, or by hand), with manual link/unlink. Sits directly
-// above the Private comments section in ThreadView.
+// matched to (by address, or by hand), with manual link/unlink. Sits between
+// the reply and the Private comments section in ThreadView.
 export function ApplicantLinkSection({
   accountId,
   threadId,
@@ -106,7 +106,7 @@ export function ApplicantLinkSection({
   const listId = "applicant-link-suggestions";
 
   return (
-    <section className="flex items-center gap-2 rounded-os-card bg-os-container/60 px-4 py-3">
+    <section className="flex items-center gap-2 rounded-os-card bg-os-card px-4 py-3">
       {link ? (
         <>
           <Avatar name={link.name} photoUrl={link.photoUrl} userId={link.userId} size="xs" />

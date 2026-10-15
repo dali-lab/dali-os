@@ -2,9 +2,9 @@
 //
 // VIEWS: Miller columns (the default, Finder-style), list and grid. Search
 //   results are a flat list. All of them share one interaction model: a plain
-//   click opens (a folder is entered), cmd/ctrl-click toggles, shift-click
-//   extends, the hover checkbox and a rubber-band drag select without opening,
-//   and one keyboard handler drives every view.
+//   click selects, cmd/ctrl-click toggles, shift-click extends, a rubber-band
+//   drag selects, a double-click opens (a folder is entered), and one keyboard
+//   handler drives every view.
 //
 // Also here: type filter, search, drag-and-drop internal move, drag-to-upload,
 //   favorites, rename, move, delete, bulk actions, context menu, breadcrumb, sort.
@@ -72,14 +72,13 @@ import { categorize } from "~/lib/file-type";
 import { iconForCategory } from "~/lib/file-icon";
 import type { DriveTreeScope } from "~/lib/drive-scopes.server";
 import { Menu, ContextMenu, Tooltip, isInFloatingLayer } from "~/components/ui/floating";
-import { Checkbox } from "~/components/ui/Checkbox";
 import { ShareDialog } from "~/components/sharing/ShareDialog";
 import { relativeTime } from "~/lib/relative-time";
 import { useRevalidator } from "react-router";
 import { useToast } from "~/components/ui/toast";
 import { notebookRequest, sendJson } from "~/components/notebooks/notebook-requests";
 import { cn } from "~/lib/cn";
-import { isProcessRootSpace, SHARED_SPACE_KEY } from "~/lib/drive-spaces";
+import { FAVORITES_SPACE_KEY, isProcessRootSpace, SHARED_SPACE_KEY } from "~/lib/drive-spaces";
 import { scopeIconFor } from "~/components/drive/scope-icon";
 import { ProcessLinkPill } from "~/components/drive/ProcessLinkPill";
 import { AudienceSignal, AudienceDetail } from "~/components/drive/AudienceSignal";
@@ -94,7 +93,7 @@ import { menuEntries, type MenuEntry } from "~/components/drive/item-menu";
 import { clickIntent } from "~/components/drive/column-click";
 import { gridStepBlocks, perRowFromTops, type GridBlock } from "~/components/drive/grid-nav";
 import { MarqueeBox, useMarquee } from "~/components/drive/use-marquee";
-import { CORAL_FOLDER, folderCountLabel, glyphLabel, pickGlyph, type ItemGlyph } from "~/components/drive/glyphs";
+import { CORAL_FOLDER, glyphLabel, pickGlyph, type ItemGlyph } from "~/components/drive/glyphs";
 import { droppedFiles } from "~/components/drive/dropped-files";
 import { FolderGlyph, GlyphBadge } from "~/components/drive/FolderGlyph";
 import { FolderSettingsModal } from "~/components/drive/FolderSettingsModal";
@@ -120,10 +119,10 @@ function useDriveText() {
 
 /** What a row, tile or card does with the pointer; one set, shared by every view. */
 export type RowHandlers = {
-  /** Plain click opens, cmd/ctrl toggles, shift extends. */
+  /** Plain click selects, cmd/ctrl toggles, shift extends. */
   onClick: (id: string, e: ReactMouseEvent<HTMLElement>) => void;
-  /** The hover checkbox: select without opening, shift extends. */
-  onToggle: (id: string, shift: boolean) => void;
+  /** Double-click opens. */
+  onDoubleClick: (id: string, e: ReactMouseEvent<HTMLElement>) => void;
   /** Right-click: focus the row, and select it alone unless it is already selected. */
   onContext: (id: string) => void;
   /** Open (the row menu's "Open"). */
@@ -559,98 +558,10 @@ function RowActionsMenu({
   );
 }
 
-// Inline favorite star (doc/folder only).
-function FavoriteButton({
-  item,
-  onToggleFavorite,
-}: {
-  item: DriveItem;
-  onToggleFavorite?: (item: DriveItem) => void;
-}) {
-  if ((item.type !== "doc" && item.type !== "folder" && item.type !== "form") || !onToggleFavorite) {
-    return <span className="w-6 shrink-0" aria-hidden="true" />;
-  }
-  return (
-    <button
-      type="button"
-      aria-label={item.favorited ? "Remove from favorites" : "Add to favorites"}
-      aria-pressed={item.favorited ?? false}
-      onClick={(e) => {
-        e.stopPropagation();
-        onToggleFavorite(item);
-      }}
-      onPointerDown={(e) => e.stopPropagation()}
-      className={`shrink-0 rounded p-1 transition-opacity ${
-        item.favorited
-          ? "text-accent-coral opacity-100"
-          : "text-muted-foreground opacity-0 hover:text-foreground group-hover:opacity-100"
-      }`}
-    >
-      <Star className={`h-3.5 w-3.5 ${item.favorited ? "fill-current" : ""}`} />
-    </button>
-  );
-}
 
 /** Give the keyboard to the pane a row sits in, so arrows and shortcuts work without a second click. */
 function focusPane(el: Element) {
   el.closest<HTMLElement>("[data-drive-pane]")?.focus({ preventScroll: true });
-}
-
-/**
- * Select-without-opening control, shown on hover or once checked. It is inside
- * the draggable row, so every event that could start a drag or reach the row's
- * click is stopped here.
- */
-function RowCheckbox({
-  item,
-  checked,
-  onToggle,
-  className,
-}: {
-  item: DriveItem;
-  checked: boolean;
-  onToggle: (shift: boolean) => void;
-  className?: string;
-}) {
-  return (
-    <span
-      data-marquee-ignore
-      onClick={(e) => e.stopPropagation()}
-      onPointerDown={(e) => e.stopPropagation()}
-      onMouseDown={(e) => e.stopPropagation()}
-      onTouchStart={(e) => e.stopPropagation()}
-      className={cn(
-        "transition-opacity [&_label]:items-center [&_label>span]:mt-0",
-        checked ? "opacity-100" : "opacity-0 focus-within:opacity-100 group-hover:opacity-100",
-        className,
-      )}
-    >
-      <Checkbox
-        tone="os"
-        checked={checked}
-        aria-label={`Select ${item.title || "Untitled"}`}
-        onChange={(e) => {
-          onToggle(!!(e.nativeEvent as MouseEvent).shiftKey);
-          focusPane(e.currentTarget);
-        }}
-      />
-    </span>
-  );
-}
-
-/** A row's leading edge: a checkbox slot that keeps its width while the box is hidden, then the glyph, whose tooltip stays reachable. */
-function RowLead({ item, checked, onToggle }: { item: DriveItem; checked: boolean; onToggle: (shift: boolean) => void }) {
-  return (
-    <>
-      <RowCheckbox
-        item={item}
-        checked={checked}
-        onToggle={onToggle}
-        className="flex w-5 shrink-0 items-center justify-center"
-      />
-      <ItemGlyphTip item={item} />
-    </>
-  );
 }
 
 const GRID_COLUMNS = "minmax(0,1fr) 9rem 5rem 3.75rem";
@@ -1173,7 +1084,7 @@ export function DriveBrowser({
     if (level > 0) setFocusLevel(level);
   }
 
-  /** A click on a row, tile or card: plain opens it, cmd/ctrl toggles, shift extends. */
+  /** A click on a row, tile or card: plain selects it alone, cmd/ctrl toggles, shift extends; a tap opens. */
   function handleRowClick(id: string, e: ReactMouseEvent<HTMLElement>) {
     // A row's own menu renders in a portal but its clicks still bubble here.
     if (isInFloatingLayer(e.target)) return;
@@ -1184,6 +1095,7 @@ export function DriveBrowser({
       shiftKey: e.shiftKey,
       anchorInPool: !!anchorId && poolIds.includes(anchorId),
       suppressed: suppressClickRef.current,
+      touch: (e.nativeEvent as Partial<PointerEvent>).pointerType === "touch",
     });
     e.stopPropagation();
     if (intent === "ignore") {
@@ -1195,17 +1107,28 @@ export function DriveBrowser({
       selectWithModifier(id, intent, poolIds);
       return;
     }
-    focusOnly(id, false);
     const level = levelIndexOf(id);
     if (level > 0) setFocusLevel(level);
-    openById(id);
+    // A drive at the root, and a folder in the columns, open on the click
+    // itself: Finder shows a folder's contents in the next column as soon as
+    // it is picked. Everything else waits for a double-click.
+    const entry = itemIndex.get(id);
+    if (intent === "open" || !entry || (columnsActive && entry.item.type === "folder")) {
+      focusOnly(id, false);
+      openById(id);
+      return;
+    }
+    focusOnly(id);
   }
 
-  /** The hover checkbox: selects without opening; shift extends from the anchor. */
-  function handleCheckboxToggle(id: string, shift: boolean) {
-    const poolIds = poolIdsFor(id);
-    const range = shift && !!anchorId && poolIds.includes(anchorId);
-    selectWithModifier(id, range ? "range" : "toggle", poolIds);
+  /** A double-click opens: a document in its editor, a folder as the location. */
+  function handleRowDoubleClick(id: string, e: ReactMouseEvent<HTMLElement>) {
+    if (isInFloatingLayer(e.target)) return;
+    e.stopPropagation();
+    const level = levelIndexOf(id);
+    if (level > 0) setFocusLevel(level);
+    focusOnly(id, false);
+    openById(id);
   }
 
   /** Right-click: focus the row, and select it alone unless it is already part of the selection. */
@@ -1850,7 +1773,7 @@ export function DriveBrowser({
 
   const rowHandlers: RowHandlers = {
     onClick: handleRowClick,
-    onToggle: handleCheckboxToggle,
+    onDoubleClick: handleRowDoubleClick,
     onContext: handleContextSelect,
     onOpen: openById,
   };
@@ -1993,7 +1916,13 @@ export function DriveBrowser({
                       key={`col-${levelIdx}`}
                       testid={`drive-col-${levelIdx}`}
                       isEmpty={items.length === 0}
-                      emptyMessage={sId === SHARED_SPACE_KEY ? "Documents shared with you by name appear here." : "This folder is empty."}
+                      emptyMessage={
+                        sId === SHARED_SPACE_KEY
+                          ? "Documents shared with you by name appear here."
+                          : sId === FAVORITES_SPACE_KEY
+                            ? "Items you favorite appear here."
+                            : "This folder is empty."
+                      }
                       marquee={marqueeFor(levelIdx)}
                     >
                       {items.map((item) => {
@@ -2563,7 +2492,6 @@ function ColumnScopeRow({
       {scopeIcon(scope)}
       <span className="min-w-0 flex-1 truncate font-medium">{scopeLabel(scope)}</span>
       {audienceChip}
-      <ChevronRight className="w-3.5 h-3.5 text-muted-foreground shrink-0 opacity-60" />
     </div>
   );
 }
@@ -2600,7 +2528,6 @@ function ColumnItemRow({
   onContextMenu?: (e: ReactMouseEvent) => void;
 }) {
   const t = useDriveText();
-  const isFolder = item.type === "folder";
   const isManaged = item.type === "agreement" || item.type === "rubric";
   const drag = useDraggable({
     id: `col::${scopeId}::${item.id}`,
@@ -2632,6 +2559,8 @@ function ColumnItemRow({
       data-row-id={item.id}
       data-item-id={item.id}
       onClick={(e) => handlers.onClick(item.id, e)}
+      onDoubleClick={(e) => handlers.onDoubleClick(item.id, e)}
+      data-selected={isSelected}
       onContextMenu={(e) => {
         handlers.onContext(item.id);
         onContextMenu?.(e);
@@ -2648,11 +2577,11 @@ function ColumnItemRow({
             : "text-foreground hover:bg-os-hover"
       } ${isFocused && !drop.isOver && !fileDrop.over ? "ring-1 ring-inset ring-os-accent/50" : ""}`}
     >
-      <RowLead item={item} checked={isSelected} onToggle={(shift) => handlers.onToggle(item.id, shift)} />
+      <ItemGlyphTip item={item} />
       <span className="min-w-0 flex-1 truncate font-medium">
         {item.title || "Untitled"}
       </span>
-      <FolderCount item={item} />
+      <ModifiedCaption item={item} />
       <RowTags item={item} actions={scopeActions} />
       <RowAudience item={item} actions={scopeActions} />
       {/* Signal ②: process linkage pill. */}
@@ -2670,22 +2599,6 @@ function ColumnItemRow({
             </span>
           </Tooltip>
         )}
-      {/* Inline star for favorites */}
-      {(item.type === "doc" || item.type === "folder") && onToggleFavorite && (
-        <button
-          type="button"
-          aria-label={item.favorited ? "Remove from favorites" : "Add to favorites"}
-          onClick={(e) => { e.stopPropagation(); onToggleFavorite(item); }}
-          onPointerDown={(e) => e.stopPropagation()}
-          className={`shrink-0 rounded p-0.5 transition-opacity ${
-            item.favorited
-              ? "text-accent-coral opacity-100"
-              : "text-muted-foreground opacity-0 hover:text-foreground group-hover:opacity-100"
-          }`}
-        >
-          <Star className={`h-3.5 w-3.5 ${item.favorited ? "fill-current" : ""}`} />
-        </button>
-      )}
       {/* Actions menu */}
       {scopeActions && (
         <RowActionsMenu
@@ -2695,9 +2608,6 @@ function ColumnItemRow({
           onToggleFavorite={onToggleFavorite}
           onTogglePartnerVisible={onTogglePartnerVisible}
         />
-      )}
-      {isFolder && (
-        <ChevronRight className="w-3.5 h-3.5 text-muted-foreground shrink-0 opacity-60" />
       )}
     </div>
   );
@@ -2715,13 +2625,14 @@ function ColumnItemRow({
 const COLUMN_SIZE = "flex-1 min-w-[12.5rem]";
 
 /** "12 items" / "Empty" after a folder's name; nothing for other items or before counts load. */
-function FolderCount({ item, className = "" }: { item: DriveItem; className?: string }) {
+/** When the item last changed, after its name in the listings that have no Modified column. */
+function ModifiedCaption({ item, className = "" }: { item: DriveItem; className?: string }) {
   const t = useDriveText();
-  const label = item.type === "folder" ? folderCountLabel(item.itemCount) : null;
-  if (!label) return null;
+  // A project or offering row is drawn by the app, not edited: it has no modified time.
+  if (item.type === "folder" && item.system) return null;
   return (
-    <span data-testid="folder-count" className={`shrink-0 ${t.meta} text-muted-foreground ${className}`}>
-      {label}
+    <span data-testid="item-modified" className={`shrink-0 ${t.meta} text-muted-foreground tabular-nums ${className}`}>
+      {relativeTime(item.updatedAt as unknown as string)}
     </span>
   );
 }
@@ -3309,6 +3220,8 @@ function ListRow({
       data-testid={`drive-item-${item.type}-${item.id}`}
       data-item-id={item.id}
       onClick={(e) => handlers.onClick(item.id, e)}
+      onDoubleClick={(e) => handlers.onDoubleClick(item.id, e)}
+      data-selected={selected}
       onContextMenu={() => handlers.onContext(item.id)}
       style={{ gridTemplateColumns: scopeId === SHARED_SPACE_KEY ? SHARED_GRID_COLUMNS : GRID_COLUMNS }}
       className={`group grid items-center dnd-touch-handle ${t.itemRow} rounded-lg ${t.row} cursor-default select-none ${
@@ -3324,9 +3237,8 @@ function ListRow({
       }`}
     >
       <span className="flex items-center gap-2 min-w-0">
-        <RowLead item={item} checked={selected} onToggle={(shift) => handlers.onToggle(item.id, shift)} />
+        <ItemGlyphTip item={item} />
         <span className="truncate font-medium text-foreground">{item.title || "Untitled"}</span>
-          <FolderCount item={item} />
         <RowTags item={item} actions={actions} />
         <RowAudience item={item} actions={actions} />
         {/* Signal ②: process linkage pill. */}
@@ -3351,7 +3263,6 @@ function ListRow({
       <span className={`${t.meta} text-muted-foreground tabular-nums truncate`}>{relativeTime(item.updatedAt as unknown as string)}</span>
       <span className={`${t.meta} text-muted-foreground tabular-nums text-right`}>{formatSize(item.sizeBytes)}</span>
       <span className="flex items-center justify-end">
-        <FavoriteButton item={item} onToggleFavorite={onToggleFavorite} />
         <RowActionsMenu
           item={item}
           actions={actions}
@@ -3420,6 +3331,8 @@ function GridTile({
       data-testid={`drive-item-${item.type}-${item.id}`}
       data-item-id={item.id}
       onClick={(e) => handlers.onClick(item.id, e)}
+      onDoubleClick={(e) => handlers.onDoubleClick(item.id, e)}
+      data-selected={selected}
       onContextMenu={() => handlers.onContext(item.id)}
       // No card around a tile: the icon is the object, the way a Finder icon
       // view reads. Selection lives on the label chip below (Finder's blue
@@ -3437,14 +3350,7 @@ function GridTile({
               : "hover:bg-os-hover"
       }`}
     >
-      <RowCheckbox
-        item={item}
-        checked={selected}
-        onToggle={(shift) => handlers.onToggle(item.id, shift)}
-        className="absolute left-1.5 top-1.5"
-      />
       <div className="absolute right-1 top-1 flex items-center">
-        <FavoriteButton item={item} onToggleFavorite={onToggleFavorite} />
         <RowActionsMenu
           item={item}
           actions={actions}
@@ -3471,7 +3377,7 @@ function GridTile({
       >
         {item.title || "Untitled"}
       </span>
-      <FolderCount item={item} />
+      <ModifiedCaption item={item} />
       <RowTags item={item} actions={actions} />
       <RowAudience item={item} actions={actions} />
       {/* Signal ②: process linkage pill. Centered below the title. */}
@@ -3532,6 +3438,8 @@ function FolderCard({
       data-testid={`drive-item-${item.type}-${item.id}`}
       data-item-id={item.id}
       onClick={(e) => handlers.onClick(item.id, e)}
+      onDoubleClick={(e) => handlers.onDoubleClick(item.id, e)}
+      data-selected={selected}
       onContextMenu={() => handlers.onContext(item.id)}
       className={`group relative flex w-48 shrink-0 flex-col gap-3 rounded-os-card border border-border p-3 dnd-touch-handle cursor-default select-none transition-colors ${
         drag.isDragging ? "opacity-40" : ""
@@ -3545,14 +3453,7 @@ function FolderCard({
               : "bg-os-card hover:bg-os-card-hover"
       }`}
     >
-      <RowCheckbox
-        item={item}
-        checked={selected}
-        onToggle={(shift) => handlers.onToggle(item.id, shift)}
-        className="absolute left-1.5 top-1.5"
-      />
       <div className="absolute right-1.5 top-1.5 flex items-center">
-        <FavoriteButton item={item} onToggleFavorite={onToggleFavorite} />
         <RowActionsMenu
           item={item}
           actions={actions}
@@ -3565,7 +3466,7 @@ function FolderCard({
       <div className="flex min-w-0 flex-col gap-1">
         <span className={`truncate ${t.row} font-medium text-foreground`}>{item.title || "Untitled"}</span>
         <span className="flex items-center gap-2">
-          <FolderCount item={item} />
+          <ModifiedCaption item={item} />
           <RowTags item={item} actions={actions} />
           <RowAudience item={item} actions={actions} />
         </span>
@@ -3631,6 +3532,8 @@ export function SearchResults({
               data-testid={`drive-search-hit-${hit.item.id}`}
               data-item-id={hit.item.id}
               onClick={(e) => handlers.onClick(hit.item.id, e)}
+              onDoubleClick={(e) => handlers.onDoubleClick(hit.item.id, e)}
+              data-selected={selected.has(hit.item.id)}
               onContextMenu={() => handlers.onContext(hit.item.id)}
               style={{ gridTemplateColumns: GRID_COLUMNS_FLAT }}
               className={`group grid items-center ${t.itemRow} ${t.row} cursor-default select-none rounded-md ${
@@ -3642,13 +3545,8 @@ export function SearchResults({
               }`}
             >
               <span className="flex min-w-0 items-center gap-2">
-                <RowLead
-                  item={hit.item}
-                  checked={selected.has(hit.item.id)}
-                  onToggle={(shift) => handlers.onToggle(hit.item.id, shift)}
-                />
+                <ItemGlyphTip item={hit.item} />
                 <span className="truncate font-medium text-foreground">{hit.item.title || "Untitled"}</span>
-                <FolderCount item={hit.item} />
                 <RowTags item={hit.item} actions={getScopeActions(hit.scope.id)} />
                 {/* Signal ②: process linkage pill in search results. */}
                 {hit.item.linkedProcess && (

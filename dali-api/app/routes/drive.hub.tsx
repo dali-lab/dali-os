@@ -67,8 +67,7 @@ import { parseTypeFilter, type DriveTypeFilter } from "~/components/drive/type-f
 import { createNotebookRequest, sendJson } from "~/components/notebooks/notebook-requests";
 import { Modal } from "~/components/Modal";
 import { cn } from "~/lib/cn";
-import { isProcessRootSpace, sharedSpaceItems, SHARED_SPACE_KEY } from "~/lib/drive-spaces";
-import type { SharedView } from "~/lib/drive-spaces";
+import { isProcessRootSpace, isVirtualSpace, sharedSpaceItems, SHARED_SPACE_KEY } from "~/lib/drive-spaces";
 import { filterPillClass } from "~/components/ui/floating/styles";
 import { modalCardClass } from "~/components/os-chrome";
 
@@ -222,11 +221,6 @@ const TYPE_FILTERS: {
   { value: "form", label: "Forms", icon: <ClipboardList className="w-3.5 h-3.5" />, requiresCap: "canViewForms" },
   { value: "agreement", label: "Agreements", icon: <FileSignature className="w-3.5 h-3.5" />, requiresCap: "canManageAgreements" },
   { value: "rubric", label: "Rubrics", icon: <ClipboardList className="w-3.5 h-3.5" />, requiresCap: "canManageAgreements" },
-];
-
-const SHARED_VIEWS: { value: SharedView; label: string }[] = [
-  { value: "with-me", label: "Shared with me" },
-  { value: "by-me", label: "Shared by me" },
 ];
 
 // ── Template picker ────────────────────────────────────────────────────────────
@@ -1172,15 +1166,9 @@ export default function DriveHub() {
   const isHiringLibrary = location.pathname.startsWith("/hiring/library");
   const currentScopeId = searchParams.get("scope") ?? (isHiringLibrary ? "hiring" : null);
   const currentFolderId = searchParams.get("folder");
-  const sharedView: SharedView = searchParams.get("shared") === "by-me" ? "by-me" : "with-me";
-  // The loader sends both directions in one list (the query string never
-  // refetches), so the chip narrows it here.
   const driveScopes = useMemo(
-    () =>
-      loadedScopes.map((s) =>
-        s.id === SHARED_SPACE_KEY ? { ...s, items: sharedSpaceItems(s.items, sharedView) } : s,
-      ),
-    [loadedScopes, sharedView],
+    () => loadedScopes.map((s) => (s.id === SHARED_SPACE_KEY ? { ...s, items: sharedSpaceItems(s.items) } : s)),
+    [loadedScopes],
   );
   // In the URL like ?type= and ?term=, so "everything tagged onboarding" is a
   // link someone can send, and the back button steps through filters.
@@ -1236,13 +1224,6 @@ export default function DriveHub() {
 
   const onSearchChange = useCallback((q: string) => setSearch(q), []);
 
-  function setSharedView(v: SharedView) {
-    patchParams((p) => {
-      if (v === "with-me") p.delete("shared");
-      else p.set("shared", v);
-    });
-  }
-
   function setTypeFilter(f: DriveTypeFilter) {
     patchParams((p) => {
       if (f === "all") p.delete("type");
@@ -1256,7 +1237,7 @@ export default function DriveHub() {
   const scopeActionsMap = useMemo(() => {
     const map = new Map<string, ScopeActions>();
     for (const scope of driveScopes) {
-      if (scope.id === SHARED_SPACE_KEY) continue;
+      if (isVirtualSpace(scope.id)) continue;
       map.set(
         scope.id,
         makeScopeActions({
@@ -1327,7 +1308,7 @@ export default function DriveHub() {
     (item: DriveItem): DriveTreeScope[] => {
       const home = driveScopes.find((s) => s.items.some((i) => i.id === item.id));
       return driveScopes.filter((s) => {
-        if (s.id === "mine" || s.id === SHARED_SPACE_KEY || NON_MOVABLE.has(item.type)) return false;
+        if (s.id === "mine" || isVirtualSpace(s.id) || NON_MOVABLE.has(item.type)) return false;
         // Items under a typed root stay in that root's drive.
         if (home?.rootFolderId && s.id !== home.id) return false;
         const kind = scopeKindOf(s.id);
@@ -1445,7 +1426,7 @@ export default function DriveHub() {
   // there were items.
   const moveBatchToScope = useCallback(
     async (items: DriveItem[], sourceScopeId: string, destScopeId: string, destFolderId: string | null) => {
-      if (sourceScopeId === SHARED_SPACE_KEY || destScopeId === SHARED_SPACE_KEY) {
+      if (isVirtualSpace(sourceScopeId) || isVirtualSpace(destScopeId)) {
         toast.error("Open the document to change where it lives");
         return;
       }
@@ -1552,7 +1533,7 @@ export default function DriveHub() {
     async (items: DriveItem[]) => {
       const movable = items.filter((i) => !NON_MOVABLE.has(i.type));
       if (movable.length === 0 || !effectiveScopeId) return;
-      if (effectiveScopeId === SHARED_SPACE_KEY) {
+      if (isVirtualSpace(effectiveScopeId)) {
         toast.error("Open the document to change where it lives");
         return;
       }
@@ -1576,7 +1557,7 @@ export default function DriveHub() {
   const getScopeActions = useCallback(
     (scopeId: string): RowActions => {
       const a = scopeActionsMap.get(scopeId);
-      if (!a) return { onRename: () => {}, onRequestMove: () => {}, onDelete: () => {}, readOnly: scopeId === SHARED_SPACE_KEY };
+      if (!a) return { onRename: () => {}, onRequestMove: () => {}, onDelete: () => {}, readOnly: isVirtualSpace(scopeId) };
       return {
         onRename: a.rename,
         onRequestMove: (item: DriveItem) => void requestMoveCrossDrive(scopeId, item),
@@ -1625,7 +1606,7 @@ export default function DriveHub() {
       if (items.length === 0 || !effectiveScopeId) return;
       const actions = scopeActionsMap.get(effectiveScopeId);
       if (!actions) {
-        if (effectiveScopeId === SHARED_SPACE_KEY) toast.error("Open the document to delete it");
+        if (isVirtualSpace(effectiveScopeId)) toast.error("Open the document to delete it");
         return;
       }
       const confirmed = await dialog.confirm({
@@ -1806,29 +1787,6 @@ export default function DriveHub() {
       </div>
     ) : null;
 
-  const sharedChips =
-    effectiveScopeId === SHARED_SPACE_KEY ? (
-      <div className="flex items-center gap-2 flex-wrap pb-1" data-testid="drive-shared-views">
-        {SHARED_VIEWS.map((v) => (
-          <button
-            key={v.value}
-            type="button"
-            aria-pressed={sharedView === v.value}
-            data-testid={`drive-shared-view-${v.value}`}
-            onClick={() => setSharedView(v.value)}
-            className={cn(
-              "inline-flex items-center gap-1 rounded-full border font-medium transition-colors px-3.5 py-1.5 text-sm",
-              sharedView === v.value
-                ? "border-os-accent bg-os-accent/15 text-os-accent"
-                : "border-border bg-card text-muted-foreground hover:bg-muted/50 hover:text-foreground",
-            )}
-          >
-            {v.label}
-          </button>
-        ))}
-      </div>
-    ) : null;
-
   const caps = { canViewForms: canViewForms || formsPageAccess, canManageAgreements };
   const visibleFilters = TYPE_FILTERS.filter((f) => !f.requiresCap || caps[f.requiresCap]);
 
@@ -1892,8 +1850,8 @@ export default function DriveHub() {
         disabled
         data-testid="drive-new-menu-disabled"
         title={
-          effectiveScopeId === SHARED_SPACE_KEY
-            ? "Nothing can be created in Shared with me"
+          effectiveScopeId && isVirtualSpace(effectiveScopeId)
+            ? `Nothing can be created in ${driveScopes.find((s) => s.id === effectiveScopeId)?.label ?? "this space"}`
             : "Open a drive to create something"
         }
         className="os-add-btn shrink-0 cursor-not-allowed opacity-40"
@@ -1967,9 +1925,7 @@ export default function DriveHub() {
       </header>
       {uploadError && <p className="text-sm text-red-600">{uploadError}</p>}
 
-      {homeEnabled && home && !isHiringLibrary && !search && (
-        <DriveHome data={home} scopes={driveScopes} onOpen={onOpenItem} onNavigate={onNavigate} />
-      )}
+      {homeEnabled && home && !isHiringLibrary && !search && <DriveHome data={home} onOpen={onOpenItem} />}
 
       <DriveBrowser
         formShare={formsPageAccess}
@@ -1991,13 +1947,12 @@ export default function DriveHub() {
         onBulkMove={(items) => void onBulkMove(items)}
         onMoveToScope={onMoveToScope}
         onSharingChanged={() => revalidator.revalidate()}
-        onUploadFiles={currentScope && currentScope.id !== SHARED_SPACE_KEY ? onDropFiles : undefined}
+        onUploadFiles={currentScope && !isVirtualSpace(currentScope.id) ? onDropFiles : undefined}
         filterControl={filterControl}
         newMenu={toolbarActions}
         overflowMenu={overflowMenu}
         tagChips={
           <>
-            {sharedChips}
             {tagChips}
           </>
         }

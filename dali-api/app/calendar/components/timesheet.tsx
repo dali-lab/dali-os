@@ -213,7 +213,7 @@ export function TimesheetDragPopover({
 
   return (
     <div
-      className="cal-surface w-80 max-h-[26rem] overflow-y-auto rounded-lg"
+      className="cal-surface w-80 max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-lg"
       role="dialog"
       aria-modal="false"
       aria-label="New timesheet entry"
@@ -414,7 +414,7 @@ export function TimesheetEditPopover({
   return (
     <div
       className={cn(
-        "cal-surface max-h-[26rem] overflow-y-auto rounded-lg sm:flex sm:overflow-hidden",
+        "cal-surface max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-lg sm:flex sm:overflow-hidden",
         confirming && "invisible",
       )}
       role="dialog"

@@ -25,6 +25,8 @@ export type GlyphSource = {
   folderType?: string | null;
   /** A row the app draws rather than a user's folder (a project or offering): pink like a typed folder. */
   system?: boolean;
+  /** A plain folder a process files its meeting notes into. */
+  meetingNotes?: boolean;
   audience?: { kind: AudienceKind } | null;
   isWhiteboard?: boolean;
   isNotebook?: boolean;
@@ -51,7 +53,13 @@ export function pickGlyph(item: GlyphSource): ItemGlyph {
     case "folder": {
       const type = item.folderType ?? null;
       if (type || item.system) return { kind: "folder", tint: PINK_FOLDER, mark: type === "Meetings" ? "calendar" : null, system: true, folderType: type };
-      return { kind: "folder", tint: folderTintClass(item.audience), mark: null, system: false, folderType: null };
+      return {
+        kind: "folder",
+        tint: folderTintClass(item.audience),
+        mark: item.meetingNotes ? "calendar" : null,
+        system: false,
+        folderType: null,
+      };
     }
     case "doc":
       return item.isWhiteboard ? { kind: "whiteboard" } : { kind: "doc" };
@@ -66,16 +74,9 @@ export function tabBadge(tabCount?: number): string | null {
   return tabCount > 99 ? "99+" : String(tabCount);
 }
 
-/** Muted caption after a folder's name. */
-export function folderCountLabel(itemCount?: number): string | null {
-  if (itemCount === undefined) return null;
-  if (itemCount === 0) return "Empty";
-  return itemCount === 1 ? "1 item" : `${itemCount} items`;
-}
-
 function systemFolderName(glyph: Extract<ItemGlyph, { kind: "folder" }>, title?: string): string {
   const type = glyph.folderType;
-  if (!type) return "Folder";
+  if (!type) return glyph.mark === "calendar" ? "Meeting notes folder" : "Folder";
   if (type === "Meetings") return "Meetings folder · new notebooks file here";
   if (type === "Root") return title ? `${title} drive` : "Drive";
   const label = RECEIVER_LABELS[type as ReceiverFolderType];

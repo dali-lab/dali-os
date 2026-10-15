@@ -36,6 +36,7 @@ const actions = { onRename: vi.fn(), onRequestMove: vi.fn(), onDelete: vi.fn() }
 let container: HTMLDivElement;
 let root: Root;
 const onOpenItem = vi.fn();
+const onToggleFavorite = vi.fn();
 const onBulkMove = vi.fn();
 const onBulkDelete = vi.fn();
 const onNavigate = vi.fn();
@@ -84,6 +85,7 @@ async function mount(opts: MountOptions = {}) {
       onMove,
       onMoveToScope,
       onOpenItem,
+      onToggleFavorite,
       getScopeActions: () => actions,
       onBulkMove,
       onBulkDelete,
@@ -126,8 +128,17 @@ const pointer = (el: Element, type: "pointerdown" | "pointermove" | "pointerup",
     el.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0, ...init }));
   });
 const bar = () => container.querySelector('[data-testid="drive-bulk-bar"]');
-const checkbox = (id: string) => container.querySelector<HTMLInputElement>(`input[aria-label="Select Doc ${id}"], input[aria-label="Select Folder ${id}"]`)!;
-const isChecked = (id: string) => checkbox(id).checked;
+const isSelected = (id: string) =>
+  container.querySelector<HTMLElement>(`[data-item-id="${id}"]`)?.getAttribute("data-selected") === "true";
+const selectedCount = () => container.querySelectorAll('[data-selected="true"]').length;
+/** Add a row to the selection without opening it, as cmd-click does. */
+const toggle = (id: string) => click(row(id.startsWith("f") ? "folder" : "doc", id), { metaKey: true });
+const tap = (el: Element) =>
+  act(async () => {
+    const ev = new MouseEvent("click", { bubbles: true, cancelable: true });
+    Object.defineProperty(ev, "pointerType", { value: "touch" });
+    el.dispatchEvent(ev);
+  });
 const pane = (view: "columns" | "list" = "columns") => byTestId(view === "columns" ? "drive-columns" : "drive-list-pane");
 const crumbRoot = () => container.querySelector('[data-testid="drive-crumb-root"]');
 
@@ -150,27 +161,55 @@ afterEach(() => {
   document.body.innerHTML = "";
 });
 
-describe.each(["columns", "list"] as const)("DriveBrowser %s: click opens, modifiers select", (view) => {
-  it("opens a document on a plain click", async () => {
+describe.each(["columns", "list"] as const)("DriveBrowser %s: click selects, double-click opens", (view) => {
+  it("selects a document alone on a plain click, opening nothing", async () => {
     await mount({ view });
     await click(row("doc", "d1"));
-    expect(onOpenItem).toHaveBeenCalledTimes(1);
-    expect(onOpenItem).toHaveBeenCalledWith(expect.objectContaining({ id: "d1" }));
+    expect(isSelected("d1")).toBe(true);
+    expect(selectedCount()).toBe(1);
+    expect(bar()).toBeNull();
+    expect(onOpenItem).not.toHaveBeenCalled();
+    expect(onNavigate).not.toHaveBeenCalled();
   });
 
-  it("navigates into a folder on a plain click", async () => {
+  it(
+    view === "columns"
+      ? "shows a folder's contents in the next column on a plain click, without selecting it"
+      : "selects a folder on a plain click without entering it",
+    async () => {
+      await mount({ view });
+      await click(row("folder", "f1"));
+      if (view === "columns") {
+        expect(onNavigate).toHaveBeenCalledWith("lab", "f1");
+        expect(selectedCount()).toBe(0);
+      } else {
+        expect(onNavigate).not.toHaveBeenCalled();
+        expect(isSelected("f1")).toBe(true);
+      }
+      expect(onOpenItem).not.toHaveBeenCalled();
+    },
+  );
+
+  it("opens a document on a double-click", async () => {
     await mount({ view });
-    await click(row("folder", "f1"));
+    await dblClick(row("doc", "d1"));
+    expect(onOpenItem).toHaveBeenCalledTimes(1);
+    expect(onOpenItem).toHaveBeenCalledWith(expect.objectContaining({ id: "d1" }));
+    expect(selectedCount()).toBe(0);
+  });
+
+  it("enters a folder on a double-click", async () => {
+    await mount({ view });
+    await dblClick(row("folder", "f1"));
     expect(onNavigate).toHaveBeenCalledWith("lab", "f1");
     expect(onOpenItem).not.toHaveBeenCalled();
   });
 
-  it("does nothing extra on double-click", async () => {
+  it("opens on a tap, since touch has no double-click", async () => {
     await mount({ view });
-    await dblClick(row("doc", "d1"));
-    await dblClick(row("folder", "f1"));
-    expect(onOpenItem).not.toHaveBeenCalled();
-    expect(onNavigate).not.toHaveBeenCalled();
+    await tap(row("doc", "d1"));
+    expect(onOpenItem).toHaveBeenCalledWith(expect.objectContaining({ id: "d1" }));
+    expect(selectedCount()).toBe(0);
   });
 
   it("builds a multi-selection with cmd/ctrl-click without opening anything", async () => {
@@ -189,52 +228,33 @@ describe.each(["columns", "list"] as const)("DriveBrowser %s: click opens, modif
 
   it("extends a range with shift-click from the anchor", async () => {
     await mount({ view });
-    await click(row("doc", "d1"), { metaKey: true });
+    await click(row("doc", "d1"));
     await click(row("doc", "d3"), { shiftKey: true });
     expect(onOpenItem).not.toHaveBeenCalled();
     expect(bar()?.textContent).toContain("3 selected");
-    expect(["d1", "d2", "d3"].map(isChecked)).toEqual([true, true, true]);
+    expect(["d1", "d2", "d3"].map(isSelected)).toEqual([true, true, true]);
   });
 
   it("treats shift-click with no anchor as a plain click", async () => {
     await mount({ view });
     await click(row("doc", "d2"), { shiftKey: true });
-    expect(onOpenItem).toHaveBeenCalledWith(expect.objectContaining({ id: "d2" }));
-  });
-
-  it("selects with the hover checkbox without opening", async () => {
-    await mount({ view });
-    expect(isChecked("d1")).toBe(false);
-    await click(checkbox("d1"));
-    expect(isChecked("d1")).toBe(true);
-    await click(checkbox("d2"));
-    expect(bar()?.textContent).toContain("2 selected");
-    await click(checkbox("d2"));
-    expect(bar()).toBeNull();
-    expect(onOpenItem).not.toHaveBeenCalled();
-    expect(onNavigate).not.toHaveBeenCalled();
-  });
-
-  it("extends from the anchor with shift on the checkbox", async () => {
-    await mount({ view });
-    await click(checkbox("d1"));
-    await click(checkbox("d3"), { shiftKey: true });
-    expect(bar()?.textContent).toContain("3 selected");
+    expect(isSelected("d2")).toBe(true);
+    expect(selectedCount()).toBe(1);
     expect(onOpenItem).not.toHaveBeenCalled();
   });
 
   it("clears the selection on a click on empty space deeper than a drive's top level", async () => {
     await mount({ view, folderId: "f1" });
-    await click(checkbox("d4"));
-    expect(isChecked("d4")).toBe(true);
+    await click(row("doc", "d4"));
+    expect(isSelected("d4")).toBe(true);
     await click(pane(view));
-    expect(isChecked("d4")).toBe(false);
+    expect(isSelected("d4")).toBe(false);
     expect(onNavigate).not.toHaveBeenCalled();
   });
 
   it("goes back to the list of drives on a click on empty space at a drive's top level", async () => {
     await mount({ view });
-    await click(checkbox("d1"));
+    await click(row("doc", "d1"));
     await click(pane(view));
     expect(onNavigate).toHaveBeenCalledWith(null, null);
   });
@@ -266,8 +286,8 @@ describe.each(["columns", "list"] as const)("DriveBrowser %s: click opens, modif
     await mount({ view });
     await click(row("doc", "d1"), { metaKey: true });
     await contextMenu(row("doc", "d3"));
-    expect(isChecked("d1")).toBe(false);
-    expect(isChecked("d3")).toBe(true);
+    expect(isSelected("d1")).toBe(false);
+    expect(isSelected("d3")).toBe(true);
     expect(bar()).toBeNull();
   });
 
@@ -302,15 +322,15 @@ describe.each(["columns", "list"] as const)("DriveBrowser %s: keyboard", (view) 
     const p = pane(view);
     await key(p, "ArrowDown");
     const first = view === "list" ? "f1" : "f1";
-    expect(isChecked(first)).toBe(true);
+    expect(isSelected(first)).toBe(true);
     await key(p, "ArrowDown");
     await key(p, "ArrowDown");
-    expect(isChecked("d2")).toBe(true);
-    expect(isChecked("f1")).toBe(false);
+    expect(isSelected("d2")).toBe(true);
+    expect(isSelected("f1")).toBe(false);
     expect(bar()).toBeNull();
     await key(p, "ArrowUp");
-    expect(isChecked("d1")).toBe(true);
-    expect(isChecked("d2")).toBe(false);
+    expect(isSelected("d1")).toBe(true);
+    expect(isSelected("d2")).toBe(false);
   });
 
   it("does not navigate when focus lands on a folder, but Enter does", async () => {
@@ -363,7 +383,7 @@ describe.each(["columns", "list"] as const)("DriveBrowser %s: keyboard", (view) 
     expect(bar()).not.toBeNull();
     await key(pane(view), "Escape");
     expect(bar()).toBeNull();
-    expect(isChecked("d1")).toBe(false);
+    expect(isSelected("d1")).toBe(false);
   });
 
   it("selects the whole pool with cmd-A", async () => {
@@ -383,7 +403,7 @@ describe.each(["columns", "list"] as const)("DriveBrowser %s: keyboard", (view) 
 
   it("deletes the single selected item through the item path", async () => {
     await mount({ view });
-    await click(checkbox("d3"));
+    await click(row("doc", "d3"));
     await key(pane(view), "#");
     expect(actions.onDelete).toHaveBeenCalledWith(expect.objectContaining({ id: "d3" }));
     expect(onBulkDelete).not.toHaveBeenCalled();
@@ -401,9 +421,9 @@ describe.each(["columns", "list"] as const)("DriveBrowser %s: keyboard", (view) 
     await mount({ view });
     const p = pane(view);
     await key(p, "d");
-    expect(isChecked("d1")).toBe(true);
+    expect(isSelected("d1")).toBe(true);
     await key(p, "f");
-    expect(isChecked("d1")).toBe(true);
+    expect(isSelected("d1")).toBe(true);
     expect(onNavigate).not.toHaveBeenCalled();
   });
 
@@ -413,10 +433,10 @@ describe.each(["columns", "list"] as const)("DriveBrowser %s: keyboard", (view) 
       await mount({ view });
       const p = pane(view);
       await key(p, "f");
-      expect(isChecked("f1")).toBe(true);
+      expect(isSelected("f1")).toBe(true);
       vi.setSystemTime(Date.now() + 1500);
       await key(p, "d");
-      expect(isChecked("d1")).toBe(true);
+      expect(isSelected("d1")).toBe(true);
     } finally {
       vi.useRealTimers();
     }
@@ -441,18 +461,18 @@ describe("DriveBrowser columns: layout follows the URL", () => {
   it("moves between columns with left and right, focusing the open folder going left", async () => {
     await mount({ folderId: "f1" });
     const p = pane();
-    await click(checkbox("d4"));
+    await click(row("doc", "d4"));
     await key(p, "ArrowLeft");
-    expect(isChecked("f1")).toBe(true);
-    expect(isChecked("d4")).toBe(false);
+    expect(isSelected("f1")).toBe(true);
+    expect(isSelected("d4")).toBe(false);
     await key(p, "ArrowDown");
-    expect(isChecked("d1")).toBe(true);
+    expect(isSelected("d1")).toBe(true);
     expect(onNavigate).not.toHaveBeenCalled();
     await key(p, "ArrowUp");
     await key(p, "ArrowUp");
-    expect(isChecked("f1")).toBe(true);
+    expect(isSelected("f1")).toBe(true);
     await key(p, "ArrowRight");
-    expect(isChecked("f2")).toBe(true);
+    expect(isSelected("f2")).toBe(true);
   });
 
   it("enters a folder with the right arrow when it is not open yet", async () => {
@@ -461,7 +481,7 @@ describe("DriveBrowser columns: layout follows the URL", () => {
     await key(p, "ArrowDown");
     await key(p, "ArrowRight");
     expect(onNavigate).toHaveBeenCalledWith("lab", "f1");
-    expect(isChecked("f2")).toBe(true);
+    expect(isSelected("f2")).toBe(true);
   });
 
   it("does not open a document with the right arrow", async () => {
@@ -521,7 +541,7 @@ describe("DriveBrowser: drag past the threshold selects (marquee)", () => {
     expect(byTestId("drive-marquee").className).toContain("border-os-accent");
     await pointer(col, "pointerup", 10, 75);
     expect(byTestId("drive-marquee")).toBeNull();
-    expect(["f1", "d1", "d2", "d3"].map(isChecked)).toEqual([false, false, true, true]);
+    expect(["f1", "d1", "d2", "d3"].map(isSelected)).toEqual([false, false, true, true]);
     expect(bar()?.textContent).toContain("2 selected");
     expect(onOpenItem).not.toHaveBeenCalled();
   });
@@ -533,41 +553,38 @@ describe("DriveBrowser: drag past the threshold selects (marquee)", () => {
     await pointer(host, "pointerdown", 10, 380);
     await pointer(host, "pointermove", 10, 40);
     await pointer(host, "pointerup", 10, 40);
-    expect(["f1", "d1", "d2", "d3"].map(isChecked)).toEqual([false, true, true, true]);
+    expect(["f1", "d1", "d2", "d3"].map(isSelected)).toEqual([false, true, true, true]);
   });
 
   it("replaces the selection, or adds to it when shift was held at pointer-down", async () => {
     await mount();
     const col = byTestId("drive-col-1");
     layOut(col, [row("folder", "f1"), row("doc", "d1"), row("doc", "d2"), row("doc", "d3")]);
-    await click(checkbox("d1"));
+    await click(row("doc", "d1"));
     await pointer(col, "pointerdown", 10, 200);
     await pointer(col, "pointermove", 10, 75);
     await pointer(col, "pointerup", 10, 75);
-    expect(["d1", "d2", "d3"].map(isChecked)).toEqual([false, true, true]);
+    expect(["d1", "d2", "d3"].map(isSelected)).toEqual([false, true, true]);
     await pointer(col, "pointerdown", 10, 130, { shiftKey: true });
     await pointer(col, "pointermove", 10, 100, { shiftKey: true });
     await pointer(col, "pointerup", 10, 100, { shiftKey: true });
-    expect(["d1", "d2", "d3"].map(isChecked)).toEqual([false, true, true]);
-    await click(checkbox("d1"));
+    expect(["d1", "d2", "d3"].map(isSelected)).toEqual([false, true, true]);
+    await toggle("d1");
     await pointer(col, "pointerdown", 10, 200, { metaKey: true });
     await pointer(col, "pointermove", 10, 100, { metaKey: true });
     await pointer(col, "pointerup", 10, 100, { metaKey: true });
-    expect(["d1", "d2", "d3"].map(isChecked)).toEqual([true, true, true]);
+    expect(["d1", "d2", "d3"].map(isSelected)).toEqual([true, true, true]);
   });
 
-  it("never starts from a row, from its checkbox, or from the bulk bar", async () => {
+  it("never starts from a row", async () => {
     await mount();
     const col = byTestId("drive-col-1");
     layOut(col, [row("folder", "f1"), row("doc", "d1"), row("doc", "d2"), row("doc", "d3")]);
     await pointer(row("doc", "d1"), "pointerdown", 10, 45);
     await pointer(row("doc", "d1"), "pointermove", 10, 100);
     await pointer(row("doc", "d1"), "pointerup", 10, 100);
-    await pointer(checkbox("d2"), "pointerdown", 10, 75);
-    await pointer(checkbox("d2"), "pointermove", 10, 120);
-    await pointer(checkbox("d2"), "pointerup", 10, 120);
     expect(bar()).toBeNull();
-    expect(["d1", "d2", "d3"].map(isChecked)).toEqual([false, false, false]);
+    expect(["d1", "d2", "d3"].map(isSelected)).toEqual([false, false, false]);
   });
 
   it("is a click, not a selection, while the pointer stays within 4px", async () => {
@@ -606,11 +623,11 @@ describe("DriveBrowser: views and search", () => {
     await click(row("doc", "d4"), { metaKey: true });
     expect(bar()?.textContent).toContain("2 selected");
     await click(byTestId("drive-view-list"));
-    expect(isChecked("d4")).toBe(true);
+    expect(isSelected("d4")).toBe(true);
     expect(bar()).toBeNull();
     await click(byTestId("drive-view-columns"));
-    expect(isChecked("d4")).toBe(true);
-    expect(isChecked("d1")).toBe(false);
+    expect(isSelected("d4")).toBe(true);
+    expect(isSelected("d1")).toBe(false);
   });
 
   it("keeps everything selected across a switch that shows the same rows", async () => {
@@ -635,8 +652,11 @@ describe("DriveBrowser: views and search", () => {
     expect(container.querySelector('[data-testid="drive-view-list"]')).toBeNull();
     const p = byTestId("drive-list-pane");
     await key(p, "ArrowDown");
-    expect(isChecked("d1")).toBe(true);
+    expect(isSelected("d1")).toBe(true);
     await click(byTestId("drive-search-hit-d2"));
+    expect(isSelected("d2")).toBe(true);
+    expect(onOpenItem).not.toHaveBeenCalled();
+    await dblClick(byTestId("drive-search-hit-d2"));
     expect(onOpenItem).toHaveBeenCalledWith(expect.objectContaining({ id: "d2" }));
   });
 
@@ -646,16 +666,19 @@ describe("DriveBrowser: views and search", () => {
     expect(onNavigate).toHaveBeenCalledWith("lab", null);
   });
 
-  it("enters a folder from the band at a drive's top level with a plain click", async () => {
+  it("enters a folder from the band at a drive's top level with a double-click", async () => {
     await mount({ view: "grid" });
     await click(row("folder", "f1"));
+    expect(isSelected("f1")).toBe(true);
+    expect(onNavigate).not.toHaveBeenCalled();
+    await dblClick(row("folder", "f1"));
     expect(onNavigate).toHaveBeenCalledWith("lab", "f1");
   });
 
-  it("selects a band card and a tile with their checkboxes in the grid", async () => {
+  it("selects a band card and a tile together with cmd-click in the grid", async () => {
     await mount({ view: "grid" });
-    await click(checkbox("f1"));
-    await click(checkbox("d1"));
+    await toggle("f1");
+    await toggle("d1");
     expect(bar()?.textContent).toContain("2 selected");
     expect(onNavigate).not.toHaveBeenCalled();
   });
@@ -664,11 +687,11 @@ describe("DriveBrowser: views and search", () => {
     await mount({ view: "grid" });
     const p = pane("list");
     await key(p, "ArrowRight");
-    expect(isChecked("f1")).toBe(true);
+    expect(isSelected("f1")).toBe(true);
     await key(p, "ArrowRight");
-    expect(isChecked("d1")).toBe(true);
+    expect(isSelected("d1")).toBe(true);
     await key(p, "ArrowLeft");
-    expect(isChecked("f1")).toBe(true);
+    expect(isSelected("f1")).toBe(true);
   });
 
   it("walks the drives at the root without selecting them", async () => {
@@ -782,7 +805,10 @@ describe("DriveBrowser glyph tooltips", () => {
 
   it("leaves row clicks working through the glyph wrapper", async () => {
     await mount();
-    await click(row("doc", "d1").querySelector('[data-testid="item-glyph"]')!);
+    const glyph = row("doc", "d1").querySelector('[data-testid="item-glyph"]')!;
+    await click(glyph);
+    expect(isSelected("d1")).toBe(true);
+    await dblClick(glyph);
     expect(onOpenItem).toHaveBeenCalledTimes(1);
   });
 });
@@ -833,7 +859,7 @@ const menuItem = (label: string) =>
   Array.from(document.querySelectorAll<HTMLElement>('[role="menuitem"]')).find((el) => el.textContent === label)!;
 const actionsButton = (id: string) => byTestId(`drive-item-actions-${id}`);
 
-describe("DriveBrowser: the checkbox has its own slot before the glyph", () => {
+describe("DriveBrowser: the glyph leads the row", () => {
   const leadViews = [
     ["columns", { view: "columns" as const }, () => row("folder", "f1")],
     ["list", { view: "list" as const, folderId: "f1" }, () => row("folder", "f2")],
@@ -841,47 +867,23 @@ describe("DriveBrowser: the checkbox has its own slot before the glyph", () => {
   ] as const;
 
   describe.each(leadViews)("%s", (_name, opts, target) => {
-    it("keeps a fixed-width slot that does not hold the glyph", async () => {
+    it("puts nothing before the glyph, and no checkbox anywhere in the row", async () => {
       await mount(opts);
-      const slot = target().querySelector("[data-marquee-ignore]")!;
-      expect(slot.className).toContain("w-5");
-      expect(slot.className).toContain("shrink-0");
-      expect(slot.querySelector('[data-testid="item-glyph"]')).toBeNull();
-      expect(slot.nextElementSibling?.querySelector('[data-testid="item-glyph"]') ?? slot.nextElementSibling).toBe(
-        target().querySelector('[data-testid="item-glyph"]')!.parentElement === slot.nextElementSibling
-          ? slot.nextElementSibling
-          : target().querySelector('[data-testid="item-glyph"]'),
-      );
-    });
-
-    it("shows the checkbox on hover, on focus within, or when selected, and holds its place otherwise", async () => {
-      await mount(opts);
-      const slot = target().querySelector("[data-marquee-ignore]") as HTMLElement;
-      expect(slot.className).toContain("opacity-0");
-      expect(slot.className).toContain("group-hover:opacity-100");
-      expect(slot.className).toContain("focus-within:opacity-100");
-      await click(slot.querySelector("input")!);
-      expect(slot.className).toContain("opacity-100");
-      expect(slot.className).not.toContain("opacity-0");
+      const glyph = target().querySelector('[data-testid="item-glyph"]')!;
+      expect(glyph.parentElement!.previousElementSibling).toBeNull();
+      expect(target().querySelector("input")).toBeNull();
     });
 
     it("leaves the glyph uncovered so its tooltip shows on hover", async () => {
       await mount(opts);
-      const glyph = target().querySelector('[data-testid="item-glyph"]')!;
-      expect(glyph.closest('[class*="group-hover:opacity-0"]')).toBeNull();
       await hoverGlyph(target());
       expect(document.querySelector('[role="tooltip"]')?.textContent).toBe("Folder · Everyone in the lab");
     });
   });
 
-  it("keeps a tile's and a band card's checkbox in the top-left corner", async () => {
+  it("has no checkbox on a tile or a band card either", async () => {
     await mount({ view: "grid" });
-    for (const el of [row("folder", "f1"), row("doc", "d1")]) {
-      const box = el.querySelector("[data-marquee-ignore]")!;
-      expect(box.className).toContain("absolute");
-      expect(box.className).toContain("left-1.5");
-      expect(box.className).toContain("top-1.5");
-    }
+    for (const el of [row("folder", "f1"), row("doc", "d1")]) expect(el.querySelector("input")).toBeNull();
   });
 });
 
@@ -1258,6 +1260,27 @@ describe("DriveBrowser: the click that ends a drag", () => {
   });
 });
 
+describe.each(["columns", "list", "grid"] as const)("DriveBrowser %s: rows carry no star, chevron or item count", (view) => {
+  it("offers Add to favorites from the ... menu and nowhere on the row", async () => {
+    await mount({ view });
+    const el = row("doc", "d1");
+    expect(el.querySelector('[aria-label="Add to favorites"]')).toBeNull();
+    expect(el.querySelector("svg.lucide-star")).toBeNull();
+    await click(actionsButton("d1"));
+    expect(menuLabels()).toContain("Add to favorites");
+    await click(menuItem("Add to favorites"));
+    expect(onToggleFavorite).toHaveBeenCalledWith(expect.objectContaining({ id: "d1" }));
+  });
+
+  it("shows when a folder last changed, with no chevron and no item count", async () => {
+    await mount({ view });
+    const el = row("folder", "f1");
+    expect(el.querySelector("svg.lucide-chevron-right")).toBeNull();
+    expect(el.textContent).not.toMatch(/\d+ items|Empty/);
+    if (view !== "list") expect(el.querySelector('[data-testid="item-modified"]')).not.toBeNull();
+  });
+});
+
 describe("DriveBrowser: the row menu on tiles and cards", () => {
   it("offers the same ... button on a tile and a band card as on a list row", async () => {
     await mount({ view: "grid" });
@@ -1309,8 +1332,8 @@ describe.each([
     await mount(opts);
     await click(first(), { metaKey: true });
     await contextMenu(outside());
-    expect(isChecked(idOf(first()))).toBe(false);
-    expect(isChecked(idOf(outside()))).toBe(true);
+    expect(isSelected(idOf(first()))).toBe(false);
+    expect(isSelected(idOf(outside()))).toBe(true);
     expect(bar()).toBeNull();
   });
 
@@ -1359,29 +1382,29 @@ describe("DriveBrowser reveal: initialSelectedId", () => {
 
   it.each(["columns", "list", "grid"] as const)("selects and scrolls to the given row on mount in %s", async (view) => {
     await mount({ view, initialSelectedId: "d2" });
-    expect(isChecked("d2")).toBe(true);
-    expect(isChecked("d1")).toBe(false);
+    expect(isSelected("d2")).toBe(true);
+    expect(isSelected("d1")).toBe(false);
     expect(bar()).toBeNull();
     expect(scrolled).toContain("d2");
   });
 
   it("finds a row inside the folder the location points at", async () => {
     await mount({ folderId: "f1", initialSelectedId: "d4" });
-    expect(isChecked("d4")).toBe(true);
+    expect(isSelected("d4")).toBe(true);
     expect(scrolled).toContain("d4");
   });
 
   it("focuses it too, so the keyboard continues from there", async () => {
     await mount({ view: "list", initialSelectedId: "d1" });
     await key(pane("list"), "ArrowDown");
-    expect(isChecked("d2")).toBe(true);
+    expect(isSelected("d2")).toBe(true);
   });
 
   it("selects nothing for an id that is not on screen, and does not catch up when it appears later", async () => {
     await mount({ initialSelectedId: "d4" });
-    expect(["d1", "d2", "d3"].map(isChecked)).toEqual([false, false, false]);
+    expect(["d1", "d2", "d3"].map(isSelected)).toEqual([false, false, false]);
     await click(row("folder", "f1"));
-    expect(isChecked("d4")).toBe(false);
+    expect(isSelected("d4")).toBe(false);
   });
 
   it("selects nothing without an id", async () => {
@@ -1427,15 +1450,15 @@ describe("DriveBrowser grid: up and down move a visual row", () => {
     twoPerRow();
     const p = pane("list");
     await key(p, "ArrowRight");
-    expect(isChecked("f1")).toBe(true);
+    expect(isSelected("f1")).toBe(true);
     await key(p, "ArrowDown");
-    expect(isChecked("d1")).toBe(true);
+    expect(isSelected("d1")).toBe(true);
     await key(p, "ArrowDown");
-    expect(isChecked("d3")).toBe(true);
+    expect(isSelected("d3")).toBe(true);
     await key(p, "ArrowUp");
-    expect(isChecked("d1")).toBe(true);
+    expect(isSelected("d1")).toBe(true);
     await key(p, "ArrowUp");
-    expect(isChecked("f1")).toBe(true);
+    expect(isSelected("f1")).toBe(true);
   });
 
   it("lands on the last tile when the row below is shorter, and stays at the end", async () => {
@@ -1445,11 +1468,11 @@ describe("DriveBrowser grid: up and down move a visual row", () => {
     await key(p, "ArrowRight");
     await key(p, "ArrowRight");
     await key(p, "ArrowRight");
-    expect(isChecked("d2")).toBe(true);
+    expect(isSelected("d2")).toBe(true);
     await key(p, "ArrowDown");
-    expect(isChecked("d3")).toBe(true);
+    expect(isSelected("d3")).toBe(true);
     await key(p, "ArrowDown");
-    expect(isChecked("d3")).toBe(true);
+    expect(isSelected("d3")).toBe(true);
   });
 
   it("stays on the first row going up from the band", async () => {
@@ -1458,7 +1481,7 @@ describe("DriveBrowser grid: up and down move a visual row", () => {
     const p = pane("list");
     await key(p, "ArrowRight");
     await key(p, "ArrowUp");
-    expect(isChecked("f1")).toBe(true);
+    expect(isSelected("f1")).toBe(true);
   });
 
   it("keeps stepping one row at a time in the list view", async () => {
@@ -1466,7 +1489,7 @@ describe("DriveBrowser grid: up and down move a visual row", () => {
     const p = pane("list");
     await key(p, "ArrowDown");
     await key(p, "ArrowDown");
-    expect(isChecked("d1")).toBe(true);
+    expect(isSelected("d1")).toBe(true);
   });
 
   it("steps through the drives at the root as a grid too", async () => {
@@ -1480,31 +1503,31 @@ describe("DriveBrowser grid: up and down move a visual row", () => {
   });
 });
 
-const checkedCount = () => container.querySelectorAll("input:checked").length;
-
-describe.each(["columns", "list"] as const)("DriveBrowser %s: a plain click focuses but never selects", (view) => {
-  it("leaves nothing selected after opening a folder or a document", async () => {
+describe.each(["columns", "list"] as const)("DriveBrowser %s: a plain click selects", (view) => {
+  it("selects the clicked row alone and opens nothing", async () => {
     await mount({ view });
-    await click(row("folder", "f1"));
-    expect(checkedCount()).toBe(0);
+    await click(row("doc", "d1"));
+    expect(isSelected("d1")).toBe(true);
+    expect(selectedCount()).toBe(1);
     expect(bar()).toBeNull();
-    await click(row("doc", "d4"));
-    expect(onOpenItem).toHaveBeenCalledWith(expect.objectContaining({ id: "d4" }));
-    expect(checkedCount()).toBe(0);
+    expect(onOpenItem).not.toHaveBeenCalled();
   });
 
-  it("drops a selection made earlier instead of replacing it with the clicked row", async () => {
+  it("replaces an earlier selection with the clicked row", async () => {
     await mount({ view });
-    await click(checkbox("d1"));
+    await click(row("doc", "d1"), { metaKey: true });
+    await click(row("doc", "d3"), { metaKey: true });
+    expect(bar()?.textContent).toContain("2 selected");
     await click(row("doc", "d2"));
-    expect(checkedCount()).toBe(0);
+    expect(["d1", "d2", "d3"].map(isSelected)).toEqual([false, true, false]);
+    expect(bar()).toBeNull();
   });
 
-  it("still deletes, renames and details the clicked row, since it holds the focus", async () => {
+  it("deletes, renames and details the clicked row", async () => {
     await mount({ view });
     await click(byTestId("drive-details-toggle"));
     await click(row("doc", "d2"));
-    expect(checkedCount()).toBe(0);
+    expect(selectedCount()).toBe(1);
     expect(byTestId("drive-details-pane").textContent).toContain("Doc d2");
     await key(pane(view), "F2");
     expect(actions.onRename).toHaveBeenCalledWith(expect.objectContaining({ id: "d2" }));
@@ -1517,27 +1540,29 @@ describe.each(["columns", "list"] as const)("DriveBrowser %s: a plain click focu
     await mount({ view });
     await click(row("doc", "d1"));
     await key(pane(view), "ArrowDown");
-    expect(isChecked("d2")).toBe(true);
-    expect(checkedCount()).toBe(1);
+    expect(isSelected("d2")).toBe(true);
+    expect(selectedCount()).toBe(1);
   });
 
   it("clears the selection and anchor when a folder is entered", async () => {
     await mount({ view });
-    await click(checkbox("d1"));
-    expect(isChecked("d1")).toBe(true);
-    await click(row("folder", "f1"));
+    await click(row("doc", "d1"));
+    expect(isSelected("d1")).toBe(true);
+    await dblClick(row("folder", "f1"));
     expect(bar()).toBeNull();
-    expect(checkedCount()).toBe(0);
+    expect(selectedCount()).toBe(0);
     await click(row("doc", "d4"), { shiftKey: true });
-    expect(onOpenItem).toHaveBeenCalledWith(expect.objectContaining({ id: "d4" }));
-    expect(checkedCount()).toBe(0);
+    expect(isSelected("d4")).toBe(true);
+    expect(selectedCount()).toBe(1);
+    expect(onOpenItem).not.toHaveBeenCalled();
   });
 
   it("clears the selection when going up", async () => {
     await mount({ view, folderId: "f1" });
-    await click(checkbox("d4"));
+    await click(row("doc", "d4"));
+    expect(selectedCount()).toBe(1);
     await key(pane(view), "Backspace");
-    expect(checkedCount()).toBe(0);
+    expect(selectedCount()).toBe(0);
   });
 });
 
@@ -1550,12 +1575,12 @@ describe("DriveBrowser columns: the open trail is not a selection", () => {
       expect(row("folder", id).className).toContain("bg-os-container");
       expect(row("folder", id).className).not.toContain("text-os-accent");
     }
-    expect(checkedCount()).toBe(0);
+    expect(selectedCount()).toBe(0);
   });
 
   it("tints a row as selected only when it is actually selected", async () => {
     await mount({ folderId: "f1" });
-    await click(checkbox("d4"));
+    await click(row("doc", "d4"));
     expect(row("doc", "d4").className).toContain("text-os-accent");
     expect(row("folder", "f1").className).not.toContain("text-os-accent");
   });
@@ -1565,20 +1590,20 @@ describe("DriveBrowser columns: stepping into a folder with the keyboard", () =>
   it("leaves the folder behind and selects only the first row of the new column", async () => {
     await mount();
     await key(pane(), "ArrowDown");
-    expect(isChecked("f1")).toBe(true);
+    expect(isSelected("f1")).toBe(true);
     await key(pane(), "ArrowRight");
     expect(onNavigate).toHaveBeenCalledWith("lab", "f1");
-    expect(isChecked("f1")).toBe(false);
-    expect(isChecked("f2")).toBe(true);
-    expect(checkedCount()).toBe(1);
+    expect(isSelected("f1")).toBe(false);
+    expect(isSelected("f2")).toBe(true);
+    expect(selectedCount()).toBe(1);
   });
 });
 
 describe("DriveBrowser reveal: survives the navigation clear", () => {
   it("keeps a revealed row selected when it sits in the folder the location points at", async () => {
     await mount({ folderId: "f1", initialSelectedId: "d5" });
-    expect(isChecked("d5")).toBe(true);
-    expect(checkedCount()).toBe(1);
+    expect(isSelected("d5")).toBe(true);
+    expect(selectedCount()).toBe(1);
   });
 });
 
@@ -1589,12 +1614,12 @@ describe("DriveBrowser reveal: revealId", () => {
 
   it("selects the revealed row once it appears in the listing, after the browser is already showing", async () => {
     await mount({ view: "list", revealId: "dNew" });
-    expect(checkedCount()).toBe(0);
+    expect(selectedCount()).toBe(0);
     await act(async () => {
       swapScopes([{ ...lab, items: [...lab.items, doc("dNew")] }, mine]);
     });
-    expect(isChecked("dNew")).toBe(true);
-    expect(checkedCount()).toBe(1);
+    expect(isSelected("dNew")).toBe(true);
+    expect(selectedCount()).toBe(1);
   });
 
   it("does not re-select it after the user has moved on", async () => {
@@ -1602,18 +1627,18 @@ describe("DriveBrowser reveal: revealId", () => {
     await act(async () => {
       swapScopes([{ ...lab, items: [...lab.items, doc("dNew")] }, mine]);
     });
-    await click(checkbox("dNew"));
-    expect(checkedCount()).toBe(0);
+    await toggle("dNew");
+    expect(selectedCount()).toBe(0);
     await act(async () => {
       swapScopes([{ ...lab, items: [...lab.items, doc("dNew"), doc("dOther")] }, mine]);
     });
-    expect(checkedCount()).toBe(0);
+    expect(selectedCount()).toBe(0);
   });
 
   it("focuses the revealed row so the keyboard continues from it", async () => {
     await mount({ view: "list", revealId: "d1" });
     await key(pane("list"), "ArrowDown");
-    expect(isChecked("d2")).toBe(true);
+    expect(isSelected("d2")).toBe(true);
   });
 });
 

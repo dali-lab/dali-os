@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Tooltip } from "~/components/ui/floating";
-import { X, Maximize2, SplitSquareHorizontal, Loader2, ChevronLeft, ChevronRight, Copy, Pin, PinOff, ChevronDown } from 'lucide-react'
+import { X, Maximize2, SplitSquareHorizontal, Loader2, ChevronLeft, ChevronRight, Copy, Link, Pin, PinOff, ChevronDown } from 'lucide-react'
 import {
   DndContext,
   DragOverlay,
@@ -21,7 +21,6 @@ import { CSS } from '@dnd-kit/utilities'
 // tab and a pointer in a pane body resolves to the body's drop zone.
 import { pointerFirstCollision } from './board/KanbanBoard'
 import { workspacePath } from './workspace-link'
-import { TabAddressBar } from './TabAddressBar'
 import {
   GUIDE_OPEN_MESSAGE,
   readGuideState,
@@ -460,10 +459,10 @@ function SortableTab({
         onMiddleClose()
       }}
       onContextMenu={onContextMenu}
-      className={`group relative flex-none flex items-center gap-2 ${tab.pinned ? 'px-2.5' : 'px-3'} border-r border-border text-xs font-medium whitespace-nowrap transition-colors cursor-grab active:cursor-grabbing ${
+      className={`group relative flex-none flex items-center gap-2 ${tab.pinned ? 'px-2.5' : 'px-3'} rounded-os-item text-xs font-medium whitespace-nowrap transition-colors cursor-grab active:cursor-grabbing ${
         isActive
-          ? 'bg-card text-foreground shadow-[inset_0_2px_0_0_var(--color-os-accent)]'
-          : 'text-muted-foreground hover:text-foreground hover:bg-card/50'
+          ? 'bg-os-container text-foreground'
+          : 'text-os-grey hover:text-foreground hover:bg-os-hover'
       }`}
     >
       {tab.pinned && (
@@ -485,7 +484,7 @@ function SortableTab({
             e.stopPropagation()
             onClose()
           }}
-          className="p-0.5 rounded-sm text-muted-foreground/60 hover:text-foreground hover:bg-muted opacity-60 group-hover:opacity-100"
+          className="p-0.5 rounded-full text-muted-foreground/60 hover:text-foreground hover:bg-os-hover-strong opacity-60 group-hover:opacity-100"
         >
           <X className="w-3 h-3" />
         </span>
@@ -494,12 +493,21 @@ function SortableTab({
   )
 }
 
+/** The tab's page as a shareable url. Clipboard access can be refused; nothing more to do then. */
+export async function copyTabLink(tab: Pick<Tab, 'url'>) {
+  try {
+    await navigator.clipboard.writeText(`${window.location.origin}${tab.url}`)
+  } catch {
+    // The page is still open in the tab; the address can be read from there.
+  }
+}
+
 // The floating copy under the cursor while a tab is dragged (DragOverlay).
 function TabDragPreview({ tab }: { tab: Tab }) {
   return (
     <div
       style={{ width: tab.pinned ? PINNED_TAB_W : TAB_W }}
-      className="flex items-center gap-2 h-10 px-3 bg-card text-foreground text-xs font-medium whitespace-nowrap border border-border rounded-sm shadow-lg cursor-grabbing"
+      className="flex items-center gap-2 h-7 px-3 bg-os-container text-foreground text-xs font-medium whitespace-nowrap rounded-os-item shadow-lg cursor-grabbing"
     >
       {tab.pinned && (
         <Pin className="w-3 h-3 shrink-0 text-accent-coral fill-accent-coral" />
@@ -1946,14 +1954,14 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange, onGuideCh
                 leaving 39px to centre in and pushing every child (the back /
                 forward chevrons most visibly) half a pixel high. */}
             <div className="flex items-stretch h-10 bg-section-bg">
-              <div className="flex items-stretch border-r border-border">
+              <div className="flex items-center gap-0.5 px-1.5">
                 {(() => {
                   const canBack = !!activeTab && activeTab.backStack.length > 0
                   const canFwd = !!activeTab && activeTab.forwardStack.length > 0
                   const navBtn = (enabled: boolean) =>
-                    `flex items-center px-2.5 ${
+                    `flex items-center h-7 px-1.5 rounded-os-item ${
                       enabled
-                        ? 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                        ? 'text-os-grey hover:text-foreground hover:bg-os-hover'
                         : 'text-muted-foreground/30 cursor-default'
                     }`
                   return (
@@ -2024,7 +2032,7 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange, onGuideCh
                 ref={stripRefCb(pane.id)}
                 className="flex flex-1 min-w-0 items-stretch"
               >
-                <div className="flex-1 min-w-0 flex items-stretch overflow-x-auto">
+                <div className="flex-1 min-w-0 flex items-stretch gap-1 overflow-x-auto py-1.5 pr-1.5">
                   <SortableContext items={renderedTabIds} strategy={horizontalListSortingStrategy}>
                     {renderedTabs.map(renderTab)}
                   </SortableContext>
@@ -2053,7 +2061,7 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange, onGuideCh
                       }}
                       aria-label={`Show ${overflowUnpinned.length} more tabs`}
                       style={{ width: OVERFLOW_BTN_W }}
-                      className="flex-none flex items-center justify-center gap-0.5 border-l border-border text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-card/50 transition-colors"
+                      className="my-1.5 mr-1.5 flex-none flex items-center justify-center gap-0.5 rounded-os-item text-xs font-medium text-os-grey hover:text-foreground hover:bg-os-hover transition-colors"
                     >
                       +{overflowUnpinned.length}
                       <ChevronDown className="w-3 h-3" />
@@ -2070,15 +2078,13 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange, onGuideCh
                       closePane(pane.id)
                     }}
                     aria-label="Close pane"
-                    className="px-2 text-muted-foreground/70 hover:text-foreground hover:bg-muted border-l border-border"
+                    className="my-1.5 mr-1.5 px-2 rounded-os-item text-muted-foreground/70 hover:text-foreground hover:bg-os-hover"
                   >
                     <X className="w-3.5 h-3.5" />
                   </button>
                 </Tooltip>
               )}
             </div>
-
-            {activeTab && <TabAddressBar path={activeTab.url} />}
 
             {/* One iframe per opened tab; non-active tabs hidden via
                 display:none so switching preserves scroll/form/JS state
@@ -2225,6 +2231,17 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange, onGuideCh
           >
             <Copy className="w-3.5 h-3.5" />
             Duplicate tab
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              void copyTabLink(cmTab)
+              setContextMenu(null)
+            }}
+            className={item}
+          >
+            <Link className="w-3.5 h-3.5" />
+            Copy link
           </button>
           <div className="my-1 border-t border-border" />
           <button

@@ -308,6 +308,22 @@ describe("loadDriveScope — forms are Form-kind pages", () => {
     expect(getPageAccess).not.toHaveBeenCalledWith("u1", expect.objectContaining({ id: "form-1" }));
   });
 
+  it("flags a folder a process files meeting notes into, and asks only for those bindings", async () => {
+    mockPrisma.page.findMany.mockResolvedValue([
+      pageRow({ id: "notes", kind: "Folder", processFolderBindings: [{ purpose: "meeting-notes-team" }] }),
+      pageRow({ id: "plain", kind: "Folder", processFolderBindings: [] }),
+      pageRow({ id: "legacy", kind: "Folder" }),
+    ]);
+    const items = await loadDriveScope({ userSub: "u1", scope: { kind: "Lab" } });
+    expect(items.find((i) => i.id === "notes")).toMatchObject({ meetingNotes: true });
+    expect(items.find((i) => i.id === "plain")).toMatchObject({ meetingNotes: false });
+    expect(items.find((i) => i.id === "legacy")).toMatchObject({ meetingNotes: false });
+    expect(mockPrisma.page.findMany.mock.calls[0][0].select.processFolderBindings).toEqual({
+      where: { purpose: { startsWith: "meeting-notes" } },
+      select: { purpose: true },
+    });
+  });
+
   it("keeps a form in a live folder under that folder", async () => {
     mockPrisma.page.findMany.mockResolvedValue([
       pageRow({ id: "folder-1", kind: "Folder" }),

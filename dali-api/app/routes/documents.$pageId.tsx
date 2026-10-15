@@ -66,6 +66,7 @@ import { pageDocName } from "~/collab/roomName";
 import { canManageNotebook } from "~/lib/notebooks.server";
 import { nextNoteTargets } from "~/lib/notebook-series.server";
 import { NotebookRail, NoteLocationLine, type NotebookView } from "~/components/notebooks/NotebookRail";
+import { noteTrail } from "~/components/notebooks/note-trail";
 import { EmptyNotebook } from "~/components/notebooks/EmptyNotebook";
 import { redirectToLogin } from "~/lib/login-next";
 import { walletTokensConfigured } from "~/lib/wallet-token";
@@ -79,6 +80,13 @@ export const handle = {
   docKey: "document.editor",
   docTitle: "Documents",
   hideBreadcrumbs: true,
+  /** A note in a notebook names its place in the shell's trail: space, folders, notebook, tab. */
+  breadcrumbTrail: (data: unknown) => {
+    const d = data as
+      | { notebook?: { id: string; title: string } | null; noteLocation?: { location: ItemLocation; tabLabel: string } | null }
+      | undefined;
+    return d?.notebook && d.noteLocation ? noteTrail(d.noteLocation.location, d.notebook, d.noteLocation.tabLabel) : null;
+  },
 };
 
 type NotebookPage = {
@@ -1026,11 +1034,9 @@ function DocumentPage() {
                   checkInQrSvg={attendance.checkInQrSvg}
                 />
               )}
-              {notebook && noteLocation && (
+              {notebook && (
                 <NoteLocationLine
                   notebook={notebook}
-                  location={noteLocation.location}
-                  tabLabel={noteLocation.tabLabel}
                   editViaMeeting={editViaMeeting}
                   showControls={notebook.tabs.length <= 1}
                 />
