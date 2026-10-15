@@ -65,6 +65,16 @@ function buildMemberAggregations(
   return { memberIntervals, memberActiveCount };
 }
 
+// The second seat is cross-domain whenever the cycle has an interviewer from
+// outside the applicant's domains. A cycle whose interviewers all share the
+// applicant's domain (a single-domain program) pairs any two of them instead.
+function isSingleDomainPool(
+  interviewers: Array<{ domainId: string }>,
+  applicantDomainIds: string[],
+): boolean {
+  return interviewers.every((r) => applicantDomainIds.includes(r.domainId));
+}
+
 // ─── computeAvailableSlots ───────────────────────────────────────────────────
 //
 // Returns time windows where at least 1 in-domain interviewer AND 1 cross-domain
@@ -123,9 +133,10 @@ export async function explainAvailableSlots(
     },
   });
   if (interviewers.length === 0) return blocked("no-interviewers");
+  if (new Set(interviewers.map((r) => r.userId)).size < 2) return blocked("one-interviewer");
   const isInDomain = (r: { domainId: string }) => applicantDomainIds.includes(r.domainId);
   if (!interviewers.some(isInDomain)) return blocked("no-in-domain-interviewer");
-  if (interviewers.every(isInDomain)) return blocked("no-cross-domain-interviewer");
+  const singleDomainPool = isSingleDomainPool(interviewers, applicantDomainIds);
 
   // Booked intervals are aggregated per member, not per row, so a conflict on
   // one of a cross-listed member's rows blocks the other row too.
@@ -174,6 +185,7 @@ export async function explainAvailableSlots(
       if (!isInterviewerFree(r, slotStart, slotEnd)) continue;
       if (isInDomain(r)) {
         inDomainFreeMembers.add(r.userId);
+        if (singleDomainPool) crossDomainFreeMembers.add(r.userId);
       } else {
         crossDomainFreeMembers.add(r.userId);
       }
@@ -329,17 +341,22 @@ async function assignInterviewersWithTx(
   // in-domain interviewer's MEMBER (not just their row): if Mira is the
   // in-domain pick under her Eng row, her Design row must not be the
   // cross-domain pick for the same interview.
+  const singleDomainPool = isSingleDomainPool(interviewers, applicantDomainIds);
   const crossDomainCandidates = checks
     .filter(
       (r) =>
-        !applicantDomainIds.includes(r.domainId) &&
+        (singleDomainPool || !applicantDomainIds.includes(r.domainId)) &&
         r.userId !== inDomainPick.userId &&
         isInterviewerFree(r, slotStart, slotEnd),
     )
     .sort((a, b) => a.activeCount - b.activeCount);
 
   if (crossDomainCandidates.length === 0) {
-    throw new Error("No cross-domain interviewer available for this slot");
+    throw new Error(
+      singleDomainPool
+        ? "No second interviewer available for this slot"
+        : "No cross-domain interviewer available for this slot",
+    );
   }
 
   // Auto-assign a room for in-person, booking it through rooms.server so
@@ -489,10 +506,11 @@ export async function reassignInterviewer(
       bufferMinutes,
     );
 
+    const singleDomainPool = isSingleDomainPool(allInterviewers, [applicantDomainId]);
     const candidates = allInterviewers.filter((r) => {
       if (existingMemberIds.has(r.userId)) return false;
       if (role === "InDomain") return r.domainId === applicantDomainId;
-      return r.domainId !== applicantDomainId;
+      return singleDomainPool || r.domainId !== applicantDomainId;
     });
 
     const freeAndSorted = candidates

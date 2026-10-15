@@ -14,8 +14,8 @@ describe("slotBlockerMessage", () => {
     expect(slotBlockerMessage("booking-notice", { bookingNoticeHours: 48 })).toContain("48 hour");
   });
 
-  it("explains the in-domain plus cross-domain pairing when a cycle has one domain of interviewers", () => {
-    expect(slotBlockerMessage("no-cross-domain-interviewer", { bookingNoticeHours: 12 })).toMatch(/cross-domain/);
+  it("says a lone interviewer cannot fill both seats", () => {
+    expect(slotBlockerMessage("one-interviewer", { bookingNoticeHours: 12 })).toMatch(/two different people/);
   });
 
   it("tells the lead in-person slots need a room", () => {

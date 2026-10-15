@@ -1219,7 +1219,7 @@ function BookableSlotsCard({ coverage }: { coverage: CoverageData | null }) {
   if (domains.length === 0) return null
   const shared = domains.every((d) => d.blocker === domains[0].blocker) ? domains[0].blocker : null
   const sharedMessage =
-    shared && (shared === 'no-config' || shared === 'no-rooms' || shared === 'no-candidates' || shared === 'no-interviewers')
+    shared && (shared === 'no-config' || shared === 'no-rooms' || shared === 'no-candidates' || shared === 'no-interviewers' || shared === 'one-interviewer')
       ? slotBlockerMessage(shared, { bookingNoticeHours: domains[0].bookingNoticeHours })
       : null
   return (

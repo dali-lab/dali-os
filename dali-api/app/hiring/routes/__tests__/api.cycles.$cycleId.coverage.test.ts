@@ -62,14 +62,14 @@ describe("coverage loader", () => {
     vi.mocked(explainAvailableSlots).mockImplementation(async (_cycleId, domainIds) =>
       domainIds[0] === "dev"
         ? { slots: [{ startTime: "a", endTime: "b" }], blocker: null, bookingNoticeHours: 12 }
-        : { slots: [], blocker: "no-cross-domain-interviewer", bookingNoticeHours: 12 },
+        : { slots: [], blocker: "one-interviewer", bookingNoticeHours: 12 },
     );
 
     const body = await (await run()).json();
 
     expect(body.configured).toBe(true);
     expect(body.domains).toEqual([
-      { domainId: "design", domainName: "Design", bookableSlotCount: 0, blocker: "no-cross-domain-interviewer", bookingNoticeHours: 12 },
+      { domainId: "design", domainName: "Design", bookableSlotCount: 0, blocker: "one-interviewer", bookingNoticeHours: 12 },
       { domainId: "dev", domainName: "Developer", bookableSlotCount: 1, blocker: null, bookingNoticeHours: 12 },
     ]);
     expect(explainAvailableSlots).toHaveBeenCalledWith("cycle1", ["design"], "in-person");

@@ -307,7 +307,7 @@ describe("computeAvailableSlots", () => {
     }
   });
 
-  it("returns empty when no cross-domain reviewer is available", async () => {
+  it("returns empty when the cycle has a single interviewer", async () => {
     mockPrisma.interviewConfig.findUnique.mockResolvedValue({
       slotDurationMinutes: 30,
       bufferMinutes: 0,
@@ -1273,13 +1273,26 @@ describe("explainAvailableSlots", () => {
   });
 
   it("reports no-in-domain-interviewer when nobody interviews for the applicant's domain", async () => {
-    mockPrisma.cycleInterviewer.findMany.mockResolvedValue([crossDomain]);
+    mockPrisma.cycleInterviewer.findMany.mockResolvedValue([crossDomain, { ...crossDomain, id: "r3", userId: "m3" }]);
     expect((await explainAvailableSlots("cycle1", ["domain1"], "in-person")).blocker).toBe("no-in-domain-interviewer");
   });
 
-  it("reports no-cross-domain-interviewer when every interviewer is in the applicant's domain", async () => {
+  it("pairs two in-domain interviewers when every interviewer is in the applicant's domain", async () => {
     mockPrisma.cycleInterviewer.findMany.mockResolvedValue([inDomain, { ...inDomain, id: "r3", userId: "m3" }]);
-    expect((await explainAvailableSlots("cycle1", ["domain1"], "in-person")).blocker).toBe("no-cross-domain-interviewer");
+    const result = await explainAvailableSlots("cycle1", ["domain1"], "in-person");
+    expect(result.blocker).toBeNull();
+    expect(result.slots.length).toBeGreaterThan(0);
+  });
+
+  it("reports one-interviewer when the cycle's rows all belong to one person", async () => {
+    mockPrisma.cycleInterviewer.findMany.mockResolvedValue([inDomain, { ...crossDomain, userId: "m1" }]);
+    expect((await explainAvailableSlots("cycle1", ["domain1"], "in-person")).blocker).toBe("one-interviewer");
+  });
+
+  it("still needs a cross-domain interviewer once the cycle has one", async () => {
+    setCalendarFree("m2", []);
+    mockPrisma.cycleInterviewer.findMany.mockResolvedValue([inDomain, { ...inDomain, id: "r3", userId: "m3" }, crossDomain]);
+    expect((await explainAvailableSlots("cycle1", ["domain1"], "in-person")).blocker).toBe("cross-domain-never-free");
   });
 
   it("reports in-domain-never-free when the in-domain interviewer's calendar is full", async () => {
@@ -1299,7 +1312,8 @@ describe("explainAvailableSlots", () => {
   });
 
   it("reports no-pair when the only free in-domain and cross-domain rows are the same person", async () => {
-    mockPrisma.cycleInterviewer.findMany.mockResolvedValue([inDomain, { ...crossDomain, userId: "m1" }]);
+    setCalendarFree("m3", []);
+    mockPrisma.cycleInterviewer.findMany.mockResolvedValue([inDomain, { ...crossDomain, userId: "m1" }, { ...crossDomain, id: "r3", userId: "m3" }]);
     expect((await explainAvailableSlots("cycle1", ["domain1"], "in-person")).blocker).toBe("no-pair");
   });
 
@@ -1331,5 +1345,119 @@ describe("explainAvailableSlots", () => {
       interviewEndDate: day,
     });
     expect(await explainAvailableSlots("cycle1", ["domain1"], "in-person")).toMatchObject({ slots: [], blocker: "booking-notice" });
+  });
+});
+
+// ─── single-domain pools ───────────────────────────────────────────────────────
+
+describe("single-domain interviewer pools", () => {
+  const monday2 = new Date("2026-04-13T14:00:00Z");
+  const monday230 = new Date("2026-04-13T14:30:00Z");
+  const rows = [
+    { id: "r1", userId: "m1", domainId: "domain1", interviewAssignments: [] },
+    { id: "r2", userId: "m2", domainId: "domain1", interviewAssignments: [] },
+  ];
+
+  it("books two in-domain interviewers when nobody from another domain is on the cycle", async () => {
+    const create = vi.fn().mockResolvedValue({
+      id: "int1",
+      assignments: [{ role: "InDomain" }, { role: "CrossDomain" }],
+    });
+    mockPrisma.$transaction.mockImplementation(async (fn: any) =>
+      fn({
+        interviewConfig: { findUnique: vi.fn().mockResolvedValue({ bufferMinutes: 15, rooms: [] }) },
+        cycleInterviewer: {
+          findMany: vi.fn().mockResolvedValueOnce(rows.map((r) => ({ id: r.id }))).mockResolvedValueOnce(rows),
+        },
+        interview: { create },
+        $executeRaw: vi.fn().mockResolvedValue(0),
+      }),
+    );
+
+    await assignInterviewers("cycle1", "app1", ["domain1"], monday2, monday230);
+
+    const created = create.mock.calls[0][0].data.assignments.create;
+    expect(created.map((a: any) => a.role)).toEqual(["InDomain", "CrossDomain"]);
+    expect(new Set(created.map((a: any) => a.cycleInterviewerId)).size).toBe(2);
+  });
+
+  it("refuses to seat the same person twice in a single-domain pool", async () => {
+    const onePerson = [rows[0], { ...rows[1], userId: "m1" }];
+    mockPrisma.$transaction.mockImplementation(async (fn: any) =>
+      fn({
+        interviewConfig: { findUnique: vi.fn().mockResolvedValue({ bufferMinutes: 15, rooms: [] }) },
+        cycleInterviewer: {
+          findMany: vi.fn().mockResolvedValueOnce(onePerson.map((r) => ({ id: r.id }))).mockResolvedValueOnce(onePerson),
+        },
+        interview: { create: vi.fn() },
+        $executeRaw: vi.fn().mockResolvedValue(0),
+      }),
+    );
+    await expect(assignInterviewers("cycle1", "app1", ["domain1"], monday2, monday230)).rejects.toThrow(
+      "No second interviewer available for this slot",
+    );
+  });
+
+  it("replaces the second seat with another in-domain interviewer in a single-domain pool", async () => {
+    mockPrisma.$transaction.mockImplementation(async (fn: any) =>
+      fn({
+        interviewAssignment: {
+          findUnique: vi.fn().mockResolvedValue({
+            id: "a2",
+            role: "CrossDomain",
+            cycleInterviewer: { id: "r2", userId: "m2", domainId: "domain1" },
+            interview: {
+              id: "int1",
+              applicationCycleId: "cycle1",
+              startTime: monday2,
+              endTime: monday230,
+              domainApplication: { domain: { id: "domain1" } },
+            },
+          }),
+          findMany: vi.fn().mockResolvedValue([{ cycleInterviewer: { userId: "m1" } }, { cycleInterviewer: { userId: "m2" } }]),
+          update: vi.fn().mockResolvedValue({}),
+          create: vi.fn().mockResolvedValue({ cycleInterviewerId: "r3" }),
+        },
+        interviewConfig: { findUnique: vi.fn().mockResolvedValue({ bufferMinutes: 15 }) },
+        cycleInterviewer: {
+          findMany: vi.fn().mockResolvedValue([...rows, { id: "r3", userId: "m3", domainId: "domain1", interviewAssignments: [] }]),
+        },
+        interview: { update: vi.fn() },
+      }),
+    );
+
+    const result = await reassignInterviewer("int1", "a2");
+    expect(result.reassigned).toBe(true);
+    expect(result.newInterviewerId).toBe("r3");
+  });
+
+  it("keeps the second seat cross-domain when the cycle has interviewers from another domain", async () => {
+    mockPrisma.$transaction.mockImplementation(async (fn: any) =>
+      fn({
+        interviewAssignment: {
+          findUnique: vi.fn().mockResolvedValue({
+            id: "a2",
+            role: "CrossDomain",
+            cycleInterviewer: { id: "r9", userId: "m9", domainId: "domain-other" },
+            interview: {
+              id: "int1",
+              applicationCycleId: "cycle1",
+              startTime: monday2,
+              endTime: monday230,
+              domainApplication: { domain: { id: "domain1" } },
+            },
+          }),
+          findMany: vi.fn().mockResolvedValue([{ cycleInterviewer: { userId: "m1" } }, { cycleInterviewer: { userId: "m9" } }]),
+          update: vi.fn().mockResolvedValue({}),
+          create: vi.fn().mockResolvedValue({}),
+        },
+        interviewConfig: { findUnique: vi.fn().mockResolvedValue({ bufferMinutes: 15 }) },
+        cycleInterviewer: {
+          findMany: vi.fn().mockResolvedValue([...rows, { id: "r9", userId: "m9", domainId: "domain-other", interviewAssignments: [] }]),
+        },
+        interview: { update: vi.fn() },
+      }),
+    );
+    await expect(reassignInterviewer("int1", "a2")).rejects.toThrow("No replacement interviewer available");
   });
 });
