@@ -193,8 +193,20 @@ pub fn record_prompt_open(app: &AppHandle, id: String) {
 /// `record_prompt_dismiss` command: the window's close (x) button. Marks
 /// nothing read — the bell item stays unread — it just stops suggesting
 /// recording for the rest of this session.
-pub fn record_prompt_dismiss(app: &AppHandle, id: String) {
+pub fn record_prompt_dismiss(app: &AppHandle, id: Option<String>) {
+    // Read the current id before hide clears it, so a page that never got
+    // its payload still retires the prompt it was showing.
+    let id = id.or_else(|| {
+        app.state::<AppState>()
+            .current_record_prompt
+            .lock()
+            .ok()
+            .and_then(|g| g.as_ref().map(|(id, _)| id.clone()))
+    });
     window::hide_record_prompt(app);
+    let Some(id) = id else {
+        return;
+    };
     let _ = take_record_prompt(&id);
     if let Ok(mut dismissed) = app.state::<AppState>().dismissed_record_prompts.lock() {
         dismissed.insert(id);

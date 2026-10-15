@@ -128,6 +128,11 @@ pub struct AppState {
     // seconds) so the 10s watcher (poller.rs) can auto-hide it 30 minutes
     // past start without re-touching the notify:: stash.
     pub current_record_prompt: Mutex<Option<(String, i64)>>,
+    // The view JSON last pushed to the record-prompt window, kept so the
+    // page can pull it on load (`record_prompt_get_view`): on the first raise
+    // of a session the `record-prompt://show` emit races the webview's
+    // script and is lost.
+    pub record_prompt_view: Mutex<Option<serde_json::Value>>,
     // Notification ids the user explicitly closed (the window's X) this
     // session — a defensive guard against a second raise for the same id;
     // cleared on sign-out like the other per-session delivery state above.
@@ -167,6 +172,7 @@ impl AppState {
             recording: Mutex::new(None),
             pending_record_prompts: Mutex::new(Vec::new()),
             current_record_prompt: Mutex::new(None),
+            record_prompt_view: Mutex::new(None),
             dismissed_record_prompts: Mutex::new(HashSet::new()),
             recording_title: Mutex::new(None),
             agenda: Mutex::new(None),

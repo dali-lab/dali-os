@@ -301,6 +301,9 @@ pub fn show_record_prompt(app: &AppHandle, view: serde_json::Value) {
     };
     set_record_prompt_expanded(app, false);
     position_record_prompt(app, &w);
+    if let Ok(mut stored) = app.state::<AppState>().record_prompt_view.lock() {
+        *stored = Some(view.clone());
+    }
     let _ = app.emit_to("record-prompt", "record-prompt://show", view);
     let _ = w.show();
 }
@@ -312,6 +315,9 @@ pub fn hide_record_prompt(app: &AppHandle) {
     set_record_prompt_expanded(app, false);
     if let Ok(mut current) = app.state::<AppState>().current_record_prompt.lock() {
         *current = None;
+    }
+    if let Ok(mut stored) = app.state::<AppState>().record_prompt_view.lock() {
+        *stored = None;
     }
 }
 

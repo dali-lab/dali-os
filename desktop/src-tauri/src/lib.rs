@@ -55,6 +55,7 @@ pub fn run() {
             commands::record_prompt_start,
             commands::record_prompt_open,
             commands::record_prompt_dismiss,
+            commands::record_prompt_get_view,
             commands::record_prompt_mute,
             commands::record_prompt_set_expanded,
             commands::tray_get_view,

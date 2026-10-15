@@ -52,11 +52,21 @@ listen("record-prompt://show", (event) => {
   if (current) render(current);
 });
 
+// The first raise of a session emits `record-prompt://show` before this
+// script has registered its listener, so pull the view Rust stored for it.
+invoke("record_prompt_get_view").then((view) => {
+  if (view && !current) {
+    current = view;
+    render(current);
+  }
+});
+
 el("btn-start").addEventListener("click", () => {
   if (current) invoke("record_prompt_start", { id: current.id });
 });
+// Never gated on `current`: the window must close even if its payload was lost.
 el("btn-close").addEventListener("click", () => {
-  if (current) invoke("record_prompt_dismiss", { id: current.id });
+  invoke("record_prompt_dismiss", { id: current?.id ?? null });
 });
 el("btn-chevron").addEventListener("click", (e) => {
   e.stopPropagation();
@@ -70,7 +80,7 @@ el("menu-mute").addEventListener("click", () => {
   if (current) invoke("record_prompt_mute", { id: current.id });
 });
 el("menu-dismiss").addEventListener("click", () => {
-  if (current) invoke("record_prompt_dismiss", { id: current.id });
+  invoke("record_prompt_dismiss", { id: current?.id ?? null });
 });
 
 // Click anywhere outside the menu (or Escape) closes it, same as a native
