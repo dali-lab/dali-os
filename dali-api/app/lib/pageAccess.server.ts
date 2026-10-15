@@ -490,8 +490,13 @@ async function computePageAccessCore(
   }
 
   if (governing !== null) {
-    // A scope is in effect. Creator always keeps a base grant (softener); the
-    // scope's member set is the authoritative base otherwise.
+    // A scope is in effect. Core keeps its full base under a Lab or Group
+    // scope, as on an unscoped lab page; a Private scope stays the owner's.
+    // The creator always keeps a base grant (softener); the scope's member set
+    // is the authoritative base otherwise.
+    if (governing.scopeKind !== "Private" && (await isCore(userSub, request))) {
+      return merge(FULL, extra);
+    }
     const creatorBase =
       page.createdById === userSub ? permToAccess(governing.scopePermission ?? "Edit") : DENIED;
     const memberBase = await scopeBase(governing, userSub, page.workspaceId, request);

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db", () => ({ prisma: { term: { findMany: vi.fn() } } }));
+vi.mock("~/lib/db", () => ({ prisma: { term: { findMany: vi.fn() }, form: { findUnique: vi.fn() } } }));
 vi.mock("~/lib/auth", () => ({
   requireAuth: vi.fn(),
   forbidden: vi.fn(() => new Response("Forbidden", { status: 403 })),
@@ -9,6 +9,7 @@ vi.mock("~/lib/auth", () => ({
 vi.mock("~/lib/login-next", () => ({ redirectToLogin: vi.fn() }));
 vi.mock("~/forms/lib/form-access.server", () => ({
   canBuildForm: vi.fn(),
+  canSeeForm: vi.fn(),
   formsUsePageAccess: vi.fn(),
 }));
 vi.mock("~/forms/lib/forms-data", () => ({ loadFormForEdit: vi.fn(), runFormsAction: vi.fn() }));
@@ -23,7 +24,7 @@ vi.mock("~/components/PageIcon", () => ({ PageIcon: () => null }));
 
 import { prisma } from "~/lib/db";
 import { requireAuth, redirectNonMemberToPortal } from "~/lib/auth";
-import { canBuildForm, formsUsePageAccess } from "~/forms/lib/form-access.server";
+import { canBuildForm, canSeeForm, formsUsePageAccess } from "~/forms/lib/form-access.server";
 import { loadFormForEdit, runFormsAction } from "~/forms/lib/forms-data";
 import { driveFolderCrumbs } from "~/lib/drive-crumbs.server";
 import { formUsages, managingUsage } from "~/forms/lib/form-usages.server";
@@ -64,12 +65,36 @@ describe("forms.edit loader", () => {
     expect(data.form.id).toBe("f1");
   });
 
-  it("sends everyone else home", async () => {
-    vi.mocked(canBuildForm).mockResolvedValue(false);
-    const res = await run();
-    expect(res.status).toBe(302);
-    expect(res.headers.get("Location")).toBe("/");
-    expect(loadFormForEdit).not.toHaveBeenCalled();
+  describe("a caller who cannot build the form", () => {
+    beforeEach(() => {
+      vi.mocked(canBuildForm).mockResolvedValue(false);
+    });
+
+    it("is sent to Drive with a notice when they cannot see it either", async () => {
+      vi.mocked(canSeeForm).mockResolvedValue(false);
+      const res = await run();
+      expect(res.status).toBe(302);
+      expect(res.headers.get("Location")).toBe("/drive?scope=lab&notice=form-no-access");
+      expect(loadFormForEdit).not.toHaveBeenCalled();
+    });
+
+    it("opens a published form for filling when they can see it", async () => {
+      vi.mocked(canSeeForm).mockResolvedValue(true);
+      (prisma as any).form.findUnique.mockResolvedValue({ published: true, publicToken: "tok123", folderPageId: "fold" });
+      const res = await run();
+      expect(res.status).toBe(302);
+      expect(res.headers.get("Location")).toBe("/forms/fill/tok123");
+    });
+
+    it("returns an unpublished form's viewer to its folder with a notice", async () => {
+      vi.mocked(canSeeForm).mockResolvedValue(true);
+      (prisma as any).form.findUnique.mockResolvedValue({ published: false, publicToken: null, folderPageId: "fold" });
+      vi.mocked(driveFolderCrumbs).mockResolvedValue({ scope: "group:g1", folders: [] } as never);
+      const res = await run();
+      expect(res.status).toBe(302);
+      expect(res.headers.get("Location")).toBe("/drive?scope=group:g1&folder=fold&notice=form-view-only");
+      expect(driveFolderCrumbs).toHaveBeenCalledWith("fold", "u1", request);
+    });
   });
 
   it("returns the page workspace and the access mode for the UI", async () => {
