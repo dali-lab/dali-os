@@ -21,6 +21,7 @@ import { CSS } from '@dnd-kit/utilities'
 // tab and a pointer in a pane body resolves to the body's drop zone.
 import { pointerFirstCollision } from './board/KanbanBoard'
 import { workspacePath } from './workspace-link'
+import { TabAddressBar } from './TabAddressBar'
 import {
   GUIDE_OPEN_MESSAGE,
   readGuideState,
@@ -2076,6 +2077,8 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange, onGuideCh
                 </Tooltip>
               )}
             </div>
+
+            {activeTab && <TabAddressBar path={activeTab.url} />}
 
             {/* One iframe per opened tab; non-active tabs hidden via
                 display:none so switching preserves scroll/form/JS state
