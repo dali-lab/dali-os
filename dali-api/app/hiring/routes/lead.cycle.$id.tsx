@@ -90,6 +90,7 @@ import { ChallengeLine, NotReadyIcon, type DomainChallenge } from "~/hiring/comp
 import { DomainRosterCard } from "~/hiring/components/cycle-setup/DomainRosterCard";
 import { TimelineCard } from "~/hiring/components/cycle-setup/TimelineCard";
 import { AlertIcon, Pill, SetupCard, rowTrigger } from "~/hiring/components/cycle-setup/SetupCard";
+import { slotBlockerMessage, type SlotBlocker } from "~/hiring/lib/slot-blockers";
 import { DomainStatusList } from "~/hiring/components/cycle-setup/DomainStatusList";
 import { formatVersionLabel } from "~/lib/formatVersion";
 import { confidentialityBlock, getCycleConfidentialityState } from "~/hiring/lib/confidentiality";
@@ -1194,9 +1195,57 @@ type CoverageData = {
     freeInterviewers?: { id: string; firstName: string | null; lastName: string | null; domains: string[] }[]
     bookedInterviewCount: number
   }[]
+  domains?: BookableDomain[]
   slotDurationMinutes: number
   timezone: string
   totalInterviewers?: number
+}
+
+type BookableDomain = {
+  domainId: string
+  domainName: string
+  bookableSlotCount: number
+  blocker: SlotBlocker | null
+  bookingNoticeHours: number
+}
+
+// What applicants in each domain are offered on the portal, with the reason
+// a domain gets nothing. The heatmap shows who is free; this shows whether a
+// free in-domain and cross-domain pair, a room and the booking notice line up.
+function BookableSlotsCard({ coverage }: { coverage: CoverageData | null }) {
+  const { bodyText } = useOsChrome()
+  if (!coverage || !coverage.configured) return null
+  const domains = coverage.domains ?? []
+  if (domains.length === 0) return null
+  const shared = domains.every((d) => d.blocker === domains[0].blocker) ? domains[0].blocker : null
+  const sharedMessage =
+    shared && (shared === 'no-config' || shared === 'no-rooms' || shared === 'no-candidates' || shared === 'no-interviewers')
+      ? slotBlockerMessage(shared, { bookingNoticeHours: domains[0].bookingNoticeHours })
+      : null
+  return (
+    <SetupCard title="Bookable slots" description="What applicants in each domain can book on the portal right now.">
+      {sharedMessage ? (
+        <p className={cn(bodyText, 'text-amber-700')}>{sharedMessage}</p>
+      ) : (
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+          {domains.map((d) => (
+            <div key={d.domainId} className="flex flex-col gap-0.5 rounded-os-item bg-os-well px-4 py-3">
+              <span className="text-sm font-semibold text-foreground">{d.domainName}</span>
+              {d.blocker ? (
+                <span className="text-sm text-amber-700">
+                  No slots. {slotBlockerMessage(d.blocker, { bookingNoticeHours: d.bookingNoticeHours })}
+                </span>
+              ) : (
+                <span className="text-sm text-os-grey">
+                  {d.bookableSlotCount} slot{d.bookableSlotCount === 1 ? '' : 's'} open
+                </span>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </SetupCard>
+  )
 }
 
 // A list filter: "all" plus each value present in the list.
@@ -1482,13 +1531,7 @@ export default function HiringLeadCycleDetails() {
   const [showCancelledInterviews, setShowCancelledInterviews] = useState<boolean>(false)
 
   // ── Coverage heatmap state ──
-  const [coverage, setCoverage] = useState<{
-    configured: boolean
-    slots: { startTime: string; endTime: string; freeInterviewerCount: number; bookedInterviewCount: number }[]
-    slotDurationMinutes: number
-    timezone: string
-    totalInterviewers?: number
-  } | null>(null)
+  const [coverage, setCoverage] = useState<CoverageData | null>(null)
 
   // ── Cycle status ──
   // Hydrate from the loader's statusUpdates so reload renders the correct
@@ -2946,6 +2989,7 @@ export default function HiringLeadCycleDetails() {
               </SetupCard>
             )
           })()}
+          <BookableSlotsCard coverage={coverage} />
           <CoverageHeatmap coverage={coverage} />
         </div>
         )

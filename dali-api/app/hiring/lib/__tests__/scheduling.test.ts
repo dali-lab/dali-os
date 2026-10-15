@@ -14,7 +14,7 @@ vi.mock("~/lib/rooms.server", () => ({
 
 import { prisma } from "~/lib/db";
 import { interviewerCalendars } from "~/hiring/lib/interview-availability.server";
-import { createRoomBooking } from "~/lib/rooms.server";
+import { createRoomBooking, getRoomSchedule, blockedBy } from "~/lib/rooms.server";
 
 const ALWAYS_FREE = [{ startTime: new Date("2000-01-01T00:00:00Z"), endTime: new Date("2100-01-01T00:00:00Z") }];
 let calendarFree: Map<string, { startTime: Date; endTime: Date }[]> = new Map();
@@ -25,6 +25,7 @@ import {
   isInterviewerFree,
   generateCandidateSlots,
   computeAvailableSlots,
+  explainAvailableSlots,
   assignInterviewers,
   reassignInterviewer,
 } from "~/hiring/lib/scheduling";
@@ -1211,5 +1212,124 @@ describe("reassignInterviewer", () => {
     });
 
     await expect(reassignInterviewer("int1", "missing")).rejects.toThrow("Assignment not found");
+  });
+});
+
+// ─── explainAvailableSlots ─────────────────────────────────────────────────────
+
+describe("explainAvailableSlots", () => {
+  const oneDayConfig = {
+    slotDurationMinutes: 30,
+    bufferMinutes: 0,
+    dayStartHour: 9,
+    dayEndHour: 10,
+    bookingNoticeHours: 12,
+    interviewStartDate: new Date("2030-04-15T04:00:00Z"), // Monday midnight ET
+    interviewEndDate: new Date("2030-04-15T04:00:00Z"),
+    timezone: "America/New_York",
+    rooms: [{ id: "room1", name: "Pod Appa" }],
+  };
+  const inDomain = { id: "r1", userId: "m1", domainId: "domain1", interviewAssignments: [] };
+  const crossDomain = { id: "r2", userId: "m2", domainId: "domain-other", interviewAssignments: [] };
+
+  beforeEach(() => {
+    mockPrisma.interviewConfig.findUnique.mockResolvedValue(oneDayConfig);
+    mockPrisma.cycleInterviewer.findMany.mockResolvedValue([inDomain, crossDomain]);
+    vi.mocked(getRoomSchedule).mockResolvedValue([]);
+    vi.mocked(blockedBy).mockReturnValue(true);
+  });
+
+  it("reports no blocker alongside the slots when a pair and a room line up", async () => {
+    const result = await explainAvailableSlots("cycle1", ["domain1"], "in-person");
+    expect(result.blocker).toBeNull();
+    expect(result.slots.length).toBeGreaterThan(0);
+    expect(result.bookingNoticeHours).toBe(12);
+    expect(await computeAvailableSlots("cycle1", ["domain1"], "in-person")).toEqual(result.slots);
+  });
+
+  it("reports no-config when the cycle has no interview window", async () => {
+    mockPrisma.interviewConfig.findUnique.mockResolvedValue(null);
+    expect(await explainAvailableSlots("cycle1", ["domain1"], "in-person")).toMatchObject({ slots: [], blocker: "no-config" });
+  });
+
+  it("reports no-rooms for in-person mode only", async () => {
+    mockPrisma.interviewConfig.findUnique.mockResolvedValue({ ...oneDayConfig, rooms: [] });
+    expect((await explainAvailableSlots("cycle1", ["domain1"], "in-person")).blocker).toBe("no-rooms");
+    expect((await explainAvailableSlots("cycle1", ["domain1"], "online")).blocker).toBeNull();
+  });
+
+  it("reports no-candidates when the whole window is in the past", async () => {
+    mockPrisma.interviewConfig.findUnique.mockResolvedValue({
+      ...oneDayConfig,
+      interviewStartDate: new Date("2020-04-13T04:00:00Z"),
+      interviewEndDate: new Date("2020-04-13T04:00:00Z"),
+    });
+    expect((await explainAvailableSlots("cycle1", ["domain1"], "in-person")).blocker).toBe("no-candidates");
+  });
+
+  it("reports no-interviewers when the cycle has none", async () => {
+    mockPrisma.cycleInterviewer.findMany.mockResolvedValue([]);
+    expect((await explainAvailableSlots("cycle1", ["domain1"], "in-person")).blocker).toBe("no-interviewers");
+  });
+
+  it("reports no-in-domain-interviewer when nobody interviews for the applicant's domain", async () => {
+    mockPrisma.cycleInterviewer.findMany.mockResolvedValue([crossDomain]);
+    expect((await explainAvailableSlots("cycle1", ["domain1"], "in-person")).blocker).toBe("no-in-domain-interviewer");
+  });
+
+  it("reports no-cross-domain-interviewer when every interviewer is in the applicant's domain", async () => {
+    mockPrisma.cycleInterviewer.findMany.mockResolvedValue([inDomain, { ...inDomain, id: "r3", userId: "m3" }]);
+    expect((await explainAvailableSlots("cycle1", ["domain1"], "in-person")).blocker).toBe("no-cross-domain-interviewer");
+  });
+
+  it("reports in-domain-never-free when the in-domain interviewer's calendar is full", async () => {
+    setCalendarFree("m1", []);
+    expect((await explainAvailableSlots("cycle1", ["domain1"], "in-person")).blocker).toBe("in-domain-never-free");
+  });
+
+  it("reports cross-domain-never-free when the cross-domain interviewer's calendar is full", async () => {
+    setCalendarFree("m2", []);
+    expect((await explainAvailableSlots("cycle1", ["domain1"], "in-person")).blocker).toBe("cross-domain-never-free");
+  });
+
+  it("reports no-pair when the two are free at different times", async () => {
+    setCalendarFree("m1", [{ startTime: new Date("2030-04-15T13:00:00Z"), endTime: new Date("2030-04-15T13:30:00Z") }]);
+    setCalendarFree("m2", [{ startTime: new Date("2030-04-15T13:30:00Z"), endTime: new Date("2030-04-15T14:00:00Z") }]);
+    expect((await explainAvailableSlots("cycle1", ["domain1"], "in-person")).blocker).toBe("no-pair");
+  });
+
+  it("reports no-pair when the only free in-domain and cross-domain rows are the same person", async () => {
+    mockPrisma.cycleInterviewer.findMany.mockResolvedValue([inDomain, { ...crossDomain, userId: "m1" }]);
+    expect((await explainAvailableSlots("cycle1", ["domain1"], "in-person")).blocker).toBe("no-pair");
+  });
+
+  it("reports rooms-busy when every room is booked whenever a pair is free", async () => {
+    vi.mocked(getRoomSchedule).mockResolvedValue([
+      { start: new Date("2030-04-15T00:00:00Z"), end: new Date("2030-04-16T00:00:00Z") },
+    ] as any);
+    expect((await explainAvailableSlots("cycle1", ["domain1"], "in-person")).blocker).toBe("rooms-busy");
+  });
+
+  it("ignores room items blockedBy says this cycle may book over", async () => {
+    vi.mocked(getRoomSchedule).mockResolvedValue([
+      { start: new Date("2030-04-15T00:00:00Z"), end: new Date("2030-04-16T00:00:00Z") },
+    ] as any);
+    vi.mocked(blockedBy).mockReturnValue(false);
+    expect((await explainAvailableSlots("cycle1", ["domain1"], "in-person")).blocker).toBeNull();
+  });
+
+  it("reports booking-notice when the only open times are inside the notice", async () => {
+    const day = new Date();
+    day.setUTCHours(0, 0, 0, 0);
+    do day.setUTCDate(day.getUTCDate() + 1);
+    while (day.getUTCDay() === 0 || day.getUTCDay() === 6);
+    mockPrisma.interviewConfig.findUnique.mockResolvedValue({
+      ...oneDayConfig,
+      timezone: "UTC",
+      bookingNoticeHours: 24 * 7,
+      interviewStartDate: day,
+      interviewEndDate: day,
+    });
+    expect(await explainAvailableSlots("cycle1", ["domain1"], "in-person")).toMatchObject({ slots: [], blocker: "booking-notice" });
   });
 });
