@@ -64,13 +64,18 @@ describe("countDomainAddedRecipients", () => {
 });
 
 describe("recipient query", () => {
-  it("excludes Withdrawn and includes everyone else (Submitted and Draft), with no domain-selection filter", async () => {
+  it("excludes Withdrawn and hired applicants, includes everyone else (Submitted and Draft), with no domain-selection filter", async () => {
     await sendDomainAddedNotice(CYCLE_ID, DOMAIN_ID, ACTOR_ID);
     expect(mockPrisma.application.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: {
           applicationCycleId: CYCLE_ID,
           statusUpdates: { none: { newStatus: "Withdrawn" } },
+          NOT: {
+            domainApplications: {
+              some: { selected: true, decisions: { some: { type: "Accepted", stage: "Released" } } },
+            },
+          },
         },
       }),
     );
