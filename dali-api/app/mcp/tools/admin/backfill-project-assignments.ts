@@ -14,10 +14,10 @@ export const BACKFILL_PROJECT_ASSIGNMENTS_TOOL = {
   name: "backfill_project_assignments",
   description:
     "Write historical ProjectAssignment rows directly, for backfill. Bypasses the staffing cycle: " +
-    "no StaffingAssignment rows, no notifications, no mentorship pair derivation. Idempotent " +
-    "(re-running updates the level on existing rows). Optionally adds missing ProjectTerm rows and " +
-    "raises DomainEligibility to at least each assignment's level; eligibility is never lowered. " +
-    "Admins only.",
+    "no StaffingAssignment rows, no notifications, no mentorship pair derivation. Rows that already " +
+    "exist are skipped and counted; pass overwriteLevels=true to update their level instead. " +
+    "Optionally adds missing ProjectTerm rows and raises DomainEligibility to at least each written " +
+    "assignment's level; eligibility is never lowered. Admins only.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -48,6 +48,13 @@ export const BACKFILL_PROJECT_ASSIGNMENTS_TOOL = {
         default: true,
         description: "Ensure DomainEligibility for (userId, domainId) is at least the assigned level.",
       },
+      overwriteLevels: {
+        type: "boolean",
+        default: false,
+        description:
+          "Replace the level on ProjectAssignment rows that already exist. Off by default so a " +
+          "backfill cannot clobber live staffing data; existing rows are reported as skipped.",
+      },
     },
     required: ["assignments"],
     additionalProperties: false,
@@ -56,7 +63,12 @@ export const BACKFILL_PROJECT_ASSIGNMENTS_TOOL = {
 };
 
 type Row = { userId: string; projectId: string; termId: string; domainId: string; level: Level };
-type Input = { assignments: Row[]; addProjectTerms?: boolean; raiseEligibility?: boolean };
+type Input = {
+  assignments: Row[];
+  addProjectTerms?: boolean;
+  raiseEligibility?: boolean;
+  overwriteLevels?: boolean;
+};
 
 const distinct = (values: string[]) => [...new Set(values)];
 
@@ -69,6 +81,7 @@ export async function runBackfillProjectAssignments(ctx: McpCtx, args: Input) {
 
   const addProjectTerms = args.addProjectTerms ?? true;
   const raiseEligibility = args.raiseEligibility ?? true;
+  const overwriteLevels = args.overwriteLevels ?? false;
 
   const byKey = new Map<string, Row>();
   for (const row of args.assignments) {
@@ -118,10 +131,18 @@ export async function runBackfillProjectAssignments(ctx: McpCtx, args: Input) {
 
     let created = 0;
     let updated = 0;
+    let skipped = 0;
+    const written: Row[] = [];
     for (const row of rows) {
       const key = `${row.userId}|${row.projectId}|${row.termId}|${row.domainId}`;
-      if (existingKeys.has(key)) updated++;
-      else created++;
+      if (existingKeys.has(key)) {
+        if (!overwriteLevels) {
+          skipped++;
+          continue;
+        }
+        updated++;
+      } else created++;
+      written.push(row);
       await tx.projectAssignment.upsert({
         where: {
           userId_projectId_termId_domainId: {
@@ -137,9 +158,9 @@ export async function runBackfillProjectAssignments(ctx: McpCtx, args: Input) {
     }
 
     let projectTermsAdded = 0;
-    if (addProjectTerms) {
+    if (addProjectTerms && written.length) {
       const pairs = new Map<string, { projectId: string; termId: string }>();
-      for (const { projectId, termId } of rows) {
+      for (const { projectId, termId } of written) {
         pairs.set(`${projectId}|${termId}`, { projectId, termId });
       }
       const res = await tx.projectTerm.createMany({
@@ -150,9 +171,9 @@ export async function runBackfillProjectAssignments(ctx: McpCtx, args: Input) {
     }
 
     let eligibilityRaised = 0;
-    if (raiseEligibility) {
+    if (raiseEligibility && written.length) {
       const wanted = new Map<string, { userId: string; domainId: string; level: Level }>();
-      for (const { userId, domainId, level } of rows) {
+      for (const { userId, domainId, level } of written) {
         const key = `${userId}|${domainId}`;
         const prev = wanted.get(key);
         if (!prev || LEVEL_RANK[level] > LEVEL_RANK[prev.level]) {
@@ -176,7 +197,7 @@ export async function runBackfillProjectAssignments(ctx: McpCtx, args: Input) {
       }
     }
 
-    return { rows: rows.length, created, updated, projectTermsAdded, eligibilityRaised };
+    return { rows: rows.length, created, updated, skipped, projectTermsAdded, eligibilityRaised };
   });
 
   await logAuditEvent({

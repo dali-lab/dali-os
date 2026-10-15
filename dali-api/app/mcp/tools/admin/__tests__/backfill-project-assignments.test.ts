@@ -80,28 +80,42 @@ describe("backfill_project_assignments", () => {
     expect(mockPrisma.$transaction).not.toHaveBeenCalled();
   });
 
-  it("counts created and updated rows from one existing-rows read", async () => {
-    mockPrisma.projectAssignment.findMany.mockResolvedValue([
-      { userId: "u1", projectId: "p1", termId: "t1", domainId: "d1" },
-    ]);
-    const out = await runBackfillProjectAssignments(makeCtx(), {
-      assignments: [ROW, { ...ROW, userId: "u2" }],
+  describe("existing rows", () => {
+    const EXISTING = { userId: "u1", projectId: "p1", termId: "t1", domainId: "d1" };
+
+    it("are skipped by default so a backfill never clobbers a live level", async () => {
+      mockPrisma.projectAssignment.findMany.mockResolvedValue([EXISTING]);
+      const out = await runBackfillProjectAssignments(makeCtx(), {
+        assignments: [ROW, { ...ROW, userId: "u2" }],
+      });
+      expect(mockPrisma.projectAssignment.findMany).toHaveBeenCalledTimes(1);
+      expect(mockPrisma.projectAssignment.upsert).toHaveBeenCalledTimes(1);
+      expect(mockPrisma.projectAssignment.upsert.mock.calls[0][0].create.userId).toBe("u2");
+      expect(out).toMatchObject({ ok: true, rows: 2, created: 1, updated: 0, skipped: 1 });
     });
-    expect(mockPrisma.projectAssignment.findMany).toHaveBeenCalledTimes(1);
-    expect(mockPrisma.projectAssignment.upsert).toHaveBeenCalledTimes(2);
-    expect(mockPrisma.projectAssignment.upsert).toHaveBeenCalledWith({
-      where: {
-        userId_projectId_termId_domainId: {
-          userId: "u1",
-          projectId: "p1",
-          termId: "t1",
-          domainId: "d1",
-        },
-      },
-      update: { level: "P2" },
-      create: ROW,
+
+    it("do not add project terms or raise eligibility when skipped", async () => {
+      mockPrisma.projectAssignment.findMany.mockResolvedValue([EXISTING]);
+      const out = await runBackfillProjectAssignments(makeCtx(), { assignments: [ROW] });
+      expect(mockPrisma.projectTerm.createMany).not.toHaveBeenCalled();
+      expect(mockPrisma.domainEligibility.findMany).not.toHaveBeenCalled();
+      expect(out).toMatchObject({ skipped: 1, projectTermsAdded: 0, eligibilityRaised: 0 });
     });
-    expect(out).toMatchObject({ ok: true, rows: 2, created: 1, updated: 1 });
+
+    it("have their level replaced only when overwriteLevels is true", async () => {
+      mockPrisma.projectAssignment.findMany.mockResolvedValue([EXISTING]);
+      const out = await runBackfillProjectAssignments(makeCtx(), {
+        assignments: [ROW, { ...ROW, userId: "u2" }],
+        overwriteLevels: true,
+      });
+      expect(mockPrisma.projectAssignment.upsert).toHaveBeenCalledTimes(2);
+      expect(mockPrisma.projectAssignment.upsert).toHaveBeenCalledWith({
+        where: { userId_projectId_termId_domainId: EXISTING },
+        update: { level: "P2" },
+        create: ROW,
+      });
+      expect(out).toMatchObject({ ok: true, rows: 2, created: 1, updated: 1, skipped: 0 });
+    });
   });
 
   it("collapses duplicate rows and lets the last level win", async () => {
@@ -202,7 +216,14 @@ describe("backfill_project_assignments", () => {
       expect.objectContaining({
         action: "project.assignment.backfill",
         userId: "admin-u7",
-        metadata: { rows: 1, created: 1, updated: 0, projectTermsAdded: 0, eligibilityRaised: 1 },
+        metadata: {
+          rows: 1,
+          created: 1,
+          updated: 0,
+          skipped: 0,
+          projectTermsAdded: 0,
+          eligibilityRaised: 1,
+        },
       }),
     );
   });
