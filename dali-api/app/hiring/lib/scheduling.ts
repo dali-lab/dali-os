@@ -6,6 +6,7 @@ import { syncInterviewMeetAttendees } from "~/hiring/lib/interview-meet";
 import { zonedWallTimeUtc } from "~/lib/timezone";
 import { interviewerCalendars, type InterviewerCalendar } from "~/hiring/lib/interview-availability.server";
 import { createRoomBooking, cancelRoomBooking, getRoomSchedule, blockedBy } from "~/lib/rooms.server";
+import type { SlotBlocker } from "~/hiring/lib/slot-blockers";
 
 // New-assignee notifications fire outside transactions (best-effort), so
 // scheduling.ts hands callers the cycleInterviewerIds that need notifying
@@ -64,6 +65,16 @@ function buildMemberAggregations(
   return { memberIntervals, memberActiveCount };
 }
 
+// The second seat is cross-domain whenever the cycle has an interviewer from
+// outside the applicant's domains. A cycle whose interviewers all share the
+// applicant's domain (a single-domain program) pairs any two of them instead.
+function isSingleDomainPool(
+  interviewers: Array<{ domainId: string }>,
+  applicantDomainIds: string[],
+): boolean {
+  return interviewers.every((r) => applicantDomainIds.includes(r.domainId));
+}
+
 // ─── computeAvailableSlots ───────────────────────────────────────────────────
 //
 // Returns time windows where at least 1 in-domain interviewer AND 1 cross-domain
@@ -74,19 +85,44 @@ export async function computeAvailableSlots(
   applicantDomainIds: string[],
   mode: "in-person" | "online" = "online",
 ): Promise<AvailableSlot[]> {
+  return (await explainAvailableSlots(cycleId, applicantDomainIds, mode)).slots;
+}
+
+export interface SlotAvailability {
+  slots: AvailableSlot[];
+  /** Why `slots` is empty; null whenever there is at least one slot. */
+  blocker: SlotBlocker | null;
+  bookingNoticeHours: number;
+}
+
+export async function explainAvailableSlots(
+  cycleId: string,
+  applicantDomainIds: string[],
+  mode: "in-person" | "online" = "online",
+): Promise<SlotAvailability> {
   const config = await prisma.interviewConfig.findUnique({
     where: { applicationCycleId: cycleId },
     include: { rooms: { where: { archivedAt: null }, select: { id: true, name: true } } },
   });
-  if (!config) return [];
-  if (mode === "in-person" && config.rooms.length === 0) return [];
-
+  if (!config) return { slots: [], blocker: "no-config", bookingNoticeHours: 0 };
   const { slotDurationMinutes, bufferMinutes, dayStartHour, dayEndHour, interviewStartDate, interviewEndDate, timezone, bookingNoticeHours } = config;
+  const blocked = (blocker: SlotBlocker): SlotAvailability => ({ slots: [], blocker, bookingNoticeHours });
+  if (mode === "in-person" && config.rooms.length === 0) return blocked("no-rooms");
+
   const earliestBookable = new Date(Date.now() + bookingNoticeHours * 60 * 60_000);
 
-  // Load all cycle interviewers with their booked interviews. The
-  // interviewAssignments include filters out assignments whose parent
-  // interview has been cancelled or completed — those no longer block slots.
+  const candidates = generateCandidateSlots(
+    interviewStartDate,
+    interviewEndDate,
+    dayStartHour,
+    dayEndHour,
+    slotDurationMinutes,
+    timezone,
+  );
+  if (candidates.length === 0) return blocked("no-candidates");
+
+  // The interviewAssignments include filters out assignments whose parent
+  // interview has been cancelled or completed, so those no longer block slots.
   const interviewers = await prisma.cycleInterviewer.findMany({
     where: { applicationCycleId: cycleId },
     include: {
@@ -96,13 +132,16 @@ export async function computeAvailableSlots(
       },
     },
   });
+  if (interviewers.length === 0) return blocked("no-interviewers");
+  if (new Set(interviewers.map((r) => r.userId)).size < 2) return blocked("one-interviewer");
+  const isInDomain = (r: { domainId: string }) => applicantDomainIds.includes(r.domainId);
+  if (!interviewers.some(isInDomain)) return blocked("no-in-domain-interviewer");
+  const singleDomainPool = isSingleDomainPool(interviewers, applicantDomainIds);
 
-  // Aggregate booked intervals per MEMBER (not per row). A member with
-  // multiple CycleInterviewer rows in this cycle shares one set of
-  // bookedIntervals, so a conflict on one row blocks the other row too.
+  // Booked intervals are aggregated per member, not per row, so a conflict on
+  // one of a cross-listed member's rows blocks the other row too.
   const { memberIntervals } = buildMemberAggregations(interviewers, bufferMinutes);
 
-  // Availability comes straight from each member's DALI OS calendar.
   const calendars = await interviewerCalendars(interviewers.map((r) => r.userId), config);
   const interviewerChecks: InterviewerFreeCheck[] = interviewers.map((r) => ({
     cycleInterviewerId: r.id,
@@ -126,23 +165,16 @@ export async function computeAvailableSlots(
     }
   }
 
-  // Generate candidate slot start times
-  const candidates = generateCandidateSlots(
-    interviewStartDate,
-    interviewEndDate,
-    dayStartHour,
-    dayEndHour,
-    slotDurationMinutes,
-    timezone,
-  );
-
   const results: AvailableSlot[] = [];
+  let inDomainEverFree = false;
+  let crossDomainEverFree = false;
+  let pairEverFree = false;
+  let pairWithRoom = false;
 
   for (const slotStart of candidates) {
-    if (slotStart < earliestBookable) continue;
     const slotEnd = new Date(slotStart.getTime() + slotDurationMinutes * 60_000);
 
-    // Require two distinct humans — one free in-domain, one free cross-domain.
+    // Require two distinct humans: one free in-domain, one free cross-domain.
     // assignInterviewers rejects same-human pairs (a member cross-listed in
     // two domains can't fill both seats), so a slot whose only free in-domain
     // and cross-domain rows belong to the same person would look bookable
@@ -151,36 +183,46 @@ export async function computeAvailableSlots(
     const crossDomainFreeMembers = new Set<string>();
     for (const r of interviewerChecks) {
       if (!isInterviewerFree(r, slotStart, slotEnd)) continue;
-      if (applicantDomainIds.includes(r.domainId)) {
+      if (isInDomain(r)) {
         inDomainFreeMembers.add(r.userId);
+        if (singleDomainPool) crossDomainFreeMembers.add(r.userId);
       } else {
         crossDomainFreeMembers.add(r.userId);
       }
     }
+    if (inDomainFreeMembers.size > 0) inDomainEverFree = true;
+    if (crossDomainFreeMembers.size > 0) crossDomainEverFree = true;
 
     const haveDistinctPair =
       inDomainFreeMembers.size > 0 &&
       crossDomainFreeMembers.size > 0 &&
       new Set([...inDomainFreeMembers, ...crossDomainFreeMembers]).size >= 2;
+    if (!haveDistinctPair) continue;
+    pairEverFree = true;
 
-    if (haveDistinctPair) {
-      // For in-person mode, skip slots where every room is occupied
-      if (mode === "in-person") {
-        const anyRoomFree = config.rooms.some((room) => {
-          const items = roomSchedules.get(room.id) ?? [];
-          return !items.some((item) => item.start < slotEnd && item.end > slotStart);
-        });
-        if (!anyRoomFree) continue;
-      }
-
-      results.push({
-        startTime: slotStart.toISOString(),
-        endTime: slotEnd.toISOString(),
+    if (mode === "in-person") {
+      const anyRoomFree = config.rooms.some((room) => {
+        const items = roomSchedules.get(room.id) ?? [];
+        return !items.some((item) => item.start < slotEnd && item.end > slotStart);
       });
+      if (!anyRoomFree) continue;
     }
+    pairWithRoom = true;
+
+    if (slotStart < earliestBookable) continue;
+
+    results.push({
+      startTime: slotStart.toISOString(),
+      endTime: slotEnd.toISOString(),
+    });
   }
 
-  return results;
+  if (results.length > 0) return { slots: results, blocker: null, bookingNoticeHours };
+  if (!inDomainEverFree) return blocked("in-domain-never-free");
+  if (!crossDomainEverFree) return blocked("cross-domain-never-free");
+  if (!pairEverFree) return blocked("no-pair");
+  if (!pairWithRoom) return blocked("rooms-busy");
+  return blocked("booking-notice");
 }
 
 // ─── assignInterviewers ──────────────────────────────────────────────────────
@@ -299,17 +341,22 @@ async function assignInterviewersWithTx(
   // in-domain interviewer's MEMBER (not just their row): if Mira is the
   // in-domain pick under her Eng row, her Design row must not be the
   // cross-domain pick for the same interview.
+  const singleDomainPool = isSingleDomainPool(interviewers, applicantDomainIds);
   const crossDomainCandidates = checks
     .filter(
       (r) =>
-        !applicantDomainIds.includes(r.domainId) &&
+        (singleDomainPool || !applicantDomainIds.includes(r.domainId)) &&
         r.userId !== inDomainPick.userId &&
         isInterviewerFree(r, slotStart, slotEnd),
     )
     .sort((a, b) => a.activeCount - b.activeCount);
 
   if (crossDomainCandidates.length === 0) {
-    throw new Error("No cross-domain interviewer available for this slot");
+    throw new Error(
+      singleDomainPool
+        ? "No second interviewer available for this slot"
+        : "No cross-domain interviewer available for this slot",
+    );
   }
 
   // Auto-assign a room for in-person, booking it through rooms.server so
@@ -459,10 +506,11 @@ export async function reassignInterviewer(
       bufferMinutes,
     );
 
+    const singleDomainPool = isSingleDomainPool(allInterviewers, [applicantDomainId]);
     const candidates = allInterviewers.filter((r) => {
       if (existingMemberIds.has(r.userId)) return false;
       if (role === "InDomain") return r.domainId === applicantDomainId;
-      return r.domainId !== applicantDomainId;
+      return singleDomainPool || r.domainId !== applicantDomainId;
     });
 
     const freeAndSorted = candidates

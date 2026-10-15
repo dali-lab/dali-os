@@ -6,6 +6,8 @@ import { redirectToLogin } from "~/lib/login-next";
 import { getActiveCycles } from "~/hiring/lib/cycles";
 import { applicantPortalPath } from "~/hiring/lib/applicant-groups";
 import { cycleDeadlineSummary } from "~/hiring/lib/domain-windows";
+import { domainApplicationStatusInclude, inferDomainApplicationStatus } from "~/hiring/lib/domain-application-status";
+import { portalCycleCard } from "~/hiring/lib/portal-cycle-card";
 import { listCatalog, registrationOpen } from "~/education/lib/offerings.server";
 import { Clock } from "lucide-react";
 import { buttonClasses } from "~/components/ui/Button";
@@ -55,7 +57,10 @@ export async function loader({ request }: Route.LoaderArgs) {
           take: 1,
           select: { newStatus: true },
         },
-        domainApplications: { where: { selected: true }, select: { domainId: true } },
+        domainApplications: {
+          where: { selected: true },
+          include: { ...domainApplicationStatusInclude, domain: { select: { name: true } } },
+        },
       },
     }),
     prisma.domainApplicationCycle.findMany({
@@ -68,6 +73,20 @@ export async function loader({ request }: Route.LoaderArgs) {
   );
   const selectedDomainIdsByCycle = new Map(
     myActiveApps.map((a) => [a.applicationCycleId, a.domainApplications.map((da) => da.domainId)]),
+  );
+  // Each selected domain's status as the tracker derives it, so the home card
+  // moves past "Submitted" when a decision or interview lands.
+  const domainsByCycle = new Map(
+    myActiveApps.map((a) => {
+      const cycleStatus = cycles.find((c) => c.id === a.applicationCycleId)?.currentStatus ?? "Draft";
+      return [
+        a.applicationCycleId,
+        a.domainApplications.map((da) => ({
+          name: da.domain.name,
+          status: inferDomainApplicationStatus(da, cycleStatus),
+        })),
+      ];
+    }),
   );
   const readyDomainsByCycle = new Map<string, { domainId: string; closeDate: Date | null }[]>();
   for (const d of readyDomainRows) {
@@ -115,6 +134,7 @@ export async function loader({ request }: Route.LoaderArgs) {
         open: c.currentStatus === "Open",
         closesOn: closesOnFor(c),
         applicationStatus: statusByCycle.get(c.id) ?? null,
+        domains: domainsByCycle.get(c.id) ?? [],
         applyHref: applicantPortalPath("Students", c.id),
         trackHref: `/portal/hiring?cycle=${c.id}`,
       })),
@@ -159,42 +179,21 @@ type HiringCycle = PortalData["hiring"]["cycles"][number];
 // One cycle in the task-card language (AttentionPanel): the name carries the
 // weight, a single meta line gives its state.
 function CycleInfo({ cycle }: { cycle: HiringCycle }) {
-  const due = cycle.closesOn ? `Due ${cycle.closesOn}` : null;
-  const text =
-    cycle.applicationStatus === "Submitted"
-      ? "Submitted"
-      : cycle.applicationStatus === "Draft"
-        ? due ? `Draft · ${due}` : "Draft"
-        : cycle.open
-          ? (due ?? "Open")
-          : "Under review";
+  const { meta } = portalCycleCard(cycle);
   return (
     <div className="flex min-w-0 flex-col gap-1">
       <h3 className="text-lg font-bold leading-7 text-foreground">{cycle.name}</h3>
-      <Meta icon={text.includes("Due") ? Clock : undefined} text={text} />
+      <Meta icon={meta.includes("Due") ? Clock : undefined} text={meta} />
     </div>
   );
 }
 
 function CycleAction({ cycle }: { cycle: HiringCycle }) {
-  // A draft goes straight back into the form; the tracker is for what comes
-  // after submitting.
-  if (cycle.applicationStatus === "Draft" && cycle.open)
-    return (
-      <Link to={cycle.applyHref} className={buttonClasses("primary", "md")}>
-        Finish
-      </Link>
-    );
-  if (cycle.applicationStatus)
-    return (
-      <Link to={cycle.trackHref} className={buttonClasses("primary", "md")}>
-        {cycle.applicationStatus === "Draft" ? "Finish" : "Track"}
-      </Link>
-    );
-  if (!cycle.open) return null;
+  const { action } = portalCycleCard(cycle);
+  if (!action) return null;
   return (
-    <Link to={cycle.applyHref} className={buttonClasses("primary", "md")}>
-      Apply
+    <Link to={action.href} className={buttonClasses("primary", "md")}>
+      {action.label}
     </Link>
   );
 }

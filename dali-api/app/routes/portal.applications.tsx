@@ -1,6 +1,7 @@
 import { redirect, useLoaderData, Link } from "react-router";
 import { applicantPortalPath } from "~/hiring/lib/applicant-groups";
-import { Pill, type PillTone } from "~/hiring/components/cycle-setup/SetupCard";
+import { Pill } from "~/hiring/components/cycle-setup/SetupCard";
+import { HIRING_STATUS } from "~/hiring/lib/portal-cycle-card";
 import type { Route } from "./+types/portal.applications";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
@@ -114,21 +115,6 @@ export async function loader({ request }: Route.LoaderArgs) {
   ]);
   return { educationApps, hiring };
 }
-
-// Per-domain hiring status → a labelled dot pill. Kept local (not the full
-// StageIndicator) because this is a summary line, not the interactive tracker.
-const HIRING_STATUS: Record<string, { label: string; dot: PillTone }> = {
-  ApplicationOpen: { label: "Not submitted", dot: "neutral" },
-  Pending: { label: "Under review", dot: "warning" },
-  InvitedToInterview: { label: "Interview invite", dot: "accent" },
-  InterviewScheduled: { label: "Interview scheduled", dot: "accent" },
-  PostInterviewPending: { label: "Decision pending", dot: "accent" },
-  Accepted: { label: "Accepted", dot: "success" },
-  AcceptedElsewhere: { label: "Placed elsewhere", dot: "neutral" },
-  Waitlisted: { label: "Waitlisted", dot: "warning" },
-  Rejected: { label: "Not accepted", dot: "danger" },
-  Withdrawn: { label: "Withdrawn", dot: "neutral" },
-};
 
 // "Nov 13" — appended to the "Not submitted" pill for a still-open or closed
 // domain, pinned to APPLICATION_TZ like the apply page's own close pills.

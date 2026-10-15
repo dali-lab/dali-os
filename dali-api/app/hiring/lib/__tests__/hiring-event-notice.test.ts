@@ -80,6 +80,11 @@ describe("countAnnouncementRecipients", () => {
     expect(vi.mocked(prisma.application.findMany).mock.calls[0][0]?.where).toMatchObject({
       applicationCycleId: "cycle-1",
       statusUpdates: { none: { newStatus: "Withdrawn" } },
+      NOT: {
+        domainApplications: {
+          some: { selected: true, decisions: { some: { type: "Accepted", stage: "Released" } } },
+        },
+      },
     });
   });
 });
@@ -127,7 +132,7 @@ describe("sendEventAnnouncement — not_configured", () => {
 });
 
 describe("sendEventAnnouncement — recipient query", () => {
-  it("excludes Withdrawn and includes everyone else (Submitted and Draft)", async () => {
+  it("excludes Withdrawn and hired applicants, includes everyone else (Submitted and Draft)", async () => {
     await sendEventAnnouncement(EVENT_ID, ACTOR_ID);
     expect(mockPrisma.application.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -135,6 +140,11 @@ describe("sendEventAnnouncement — recipient query", () => {
           applicationCycleId: CYCLE_ID,
           domainApplications: { some: { selected: true } },
           statusUpdates: { none: { newStatus: "Withdrawn" } },
+          NOT: {
+            domainApplications: {
+              some: { selected: true, decisions: { some: { type: "Accepted", stage: "Released" } } },
+            },
+          },
         },
       }),
     );

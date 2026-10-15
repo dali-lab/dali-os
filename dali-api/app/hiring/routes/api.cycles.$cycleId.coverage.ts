@@ -2,7 +2,7 @@ import type { Route } from "./+types/api.cycles.$cycleId.coverage";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { hasCycleAccess } from "~/lib/roles";
-import { generateCandidateSlots, isInterviewerFree } from "~/hiring/lib/scheduling";
+import { generateCandidateSlots, isInterviewerFree, explainAvailableSlots } from "~/hiring/lib/scheduling";
 import { interviewerCalendars } from "~/hiring/lib/interview-availability.server";
 import { APPLICATION_TZ } from "~/lib/timezone";
 
@@ -20,6 +20,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     return Response.json({
       configured: false,
       slots: [],
+      domains: [],
       slotDurationMinutes: 30,
       timezone: APPLICATION_TZ,
     });
@@ -122,9 +123,30 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     };
   });
 
+  // What an applicant in each domain is offered on the portal, which books
+  // in-person slots, with the first reason a domain is offered nothing.
+  const cycleDomains = await prisma.domainApplicationCycle.findMany({
+    where: { applicationCycleId: params.cycleId },
+    select: { domainId: true, domain: { select: { name: true } } },
+    orderBy: { domain: { name: "asc" } },
+  });
+  const domains = await Promise.all(
+    cycleDomains.map(async (d) => {
+      const availability = await explainAvailableSlots(params.cycleId!, [d.domainId], "in-person");
+      return {
+        domainId: d.domainId,
+        domainName: d.domain.name,
+        bookableSlotCount: availability.slots.length,
+        blocker: availability.blocker,
+        bookingNoticeHours: availability.bookingNoticeHours,
+      };
+    }),
+  );
+
   return Response.json({
     configured: true,
     slots,
+    domains,
     slotDurationMinutes: config.slotDurationMinutes,
     timezone: config.timezone,
     totalInterviewers: interviewers.length,
