@@ -52,9 +52,52 @@ describe("create_member", () => {
     expect(CREATE_MEMBER_TOOL.requiredScope).toBe("mcp:admin");
   });
 
-  it("rejects unknown properties and requires name and email", () => {
+  it("rejects unknown properties and requires only the name", () => {
     expect(CREATE_MEMBER_TOOL.inputSchema.additionalProperties).toBe(false);
-    expect(CREATE_MEMBER_TOOL.inputSchema.required).toEqual(["firstName", "lastName", "email"]);
+    expect(CREATE_MEMBER_TOOL.inputSchema.required).toEqual(["firstName", "lastName"]);
+  });
+
+  it("declares every identity and profile property", () => {
+    expect(Object.keys(CREATE_MEMBER_TOOL.inputSchema.properties)).toEqual(
+      expect.arrayContaining([
+        "email",
+        "daliEmail",
+        "dartmouthEmail",
+        "personalEmail",
+        "netId",
+        "githubUsername",
+        "phoneNumber",
+        "birthday",
+        "dietaryRestrictions",
+      ]),
+    );
+  });
+
+  it("works with only a daliEmail and passes the new fields to the helper", async () => {
+    await runCreateMember(makeCtx(), {
+      ...BASE,
+      daliEmail: "ada@dali.dartmouth.edu",
+      netId: "F001",
+      githubUsername: "ada",
+      phoneNumber: "555",
+      birthday: "2001-02-03",
+      dietaryRestrictions: "vegan",
+    });
+    expect(mockPrisma.user.create.mock.calls[0][0].data).toMatchObject({
+      daliEmail: "ada@dali.dartmouth.edu",
+      netId: "f001",
+      githubUsername: "ada",
+      phoneNumber: "555",
+      birthday: new Date("2001-02-03T00:00:00.000Z"),
+      dietaryRestrictions: "vegan",
+    });
+  });
+
+  it("throws InvalidError when no email field is given", async () => {
+    await expect(runCreateMember(makeCtx(), BASE)).rejects.toMatchObject({
+      name: "McpInvalidError",
+      message: "An email is required.",
+    });
   });
 
   it("throws Forbidden and writes nothing for a non-core caller", async () => {
@@ -149,7 +192,16 @@ describe("create_member", () => {
         action: "member.create",
         userId: "core-u9",
         targetId: "new-1",
-        metadata: { created: true, email: "ada@example.com" },
+        metadata: { created: true, email: "ada@example.com", identityFields: ["email"] },
+      }),
+    );
+  });
+
+  it("lists which identity fields were provided in the audit metadata", async () => {
+    await runCreateMember(makeCtx(), { ...BASE, daliEmail: "ada@dali.dartmouth.edu", netId: "f1" });
+    expect(logAuditEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: expect.objectContaining({ identityFields: ["daliEmail", "netId"] }),
       }),
     );
   });
