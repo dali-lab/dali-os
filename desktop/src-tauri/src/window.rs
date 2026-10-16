@@ -456,6 +456,15 @@ pub fn apply_zoom(app: &AppHandle, factor: f64) {
     }
 }
 
+/// Asks the page to report its canonical URL back via `dalios://copy` (deeplink.rs).
+pub fn copy_page_link(app: &AppHandle) {
+    if let Some(w) = app.get_webview_window("main") {
+        let _ = w.eval(
+            "window.dispatchEvent(new CustomEvent('dali:copy-page-link', { detail: { native: true } }));",
+        );
+    }
+}
+
 /// Find-in-page (Edit → Find). The remote page has no IPC access, so the bar
 /// is driven by eval: the script defines `window.__daliFindBar` once (its own
 /// guard makes re-eval a no-op) and each menu action calls into it. `action`

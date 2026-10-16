@@ -4,6 +4,7 @@ import { useNavigate, useRevalidator } from 'react-router'
 import type { TabWorkspaceHandle, OpenTabRequest } from '~/components/TabWorkspace'
 import { TASKS_CHANGED_EVENT } from '~/components/NotificationBell'
 import { FAVORITES_CHANGED_EVENT } from '~/components/favorites-live'
+import { COPY_PAGE_LINK_EVENT, isCopyPageLinkShortcut } from '~/lib/page-link'
 
 /**
  * The navigation behaviour every app shell shares: how a sidebar row opens a
@@ -47,6 +48,9 @@ export function useShellNav(tabless: boolean) {
       if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && (e.key === 'k' || e.key === 'K')) {
         e.preventDefault()
         togglePalette()
+      } else if (isCopyPageLinkShortcut(e)) {
+        e.preventDefault()
+        window.dispatchEvent(new CustomEvent(COPY_PAGE_LINK_EVENT))
       }
     }
     window.addEventListener('keydown', onKey)

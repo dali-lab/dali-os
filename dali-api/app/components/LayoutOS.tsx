@@ -8,6 +8,7 @@ import {
   Check,
   ChevronsUpDown,
   HelpCircle,
+  Link as LinkIcon,
   LogOut,
   Mail,
   Menu,
@@ -40,6 +41,8 @@ import {
   useTablessHistoryShortcuts,
 } from '~/components/TablessHistoryNav'
 import { useShellNav } from '~/components/shell-nav'
+import { buildPageLink, COPY_PAGE_LINK_EVENT, writePageLink } from '~/lib/page-link'
+import { useToast } from '~/components/ui/toast'
 import { setFocusPreference } from '~/lib/focus-mode'
 import { useOsShellRoot } from '~/lib/os-shell'
 import { cn } from '~/lib/cn'
@@ -143,6 +146,26 @@ export function LayoutOS({
   } = useShellNav(tabless)
 
   const [focusedTabUrl, setFocusedTabUrl] = useState<string | null>(null)
+  const toast = useToast()
+
+  const copyCurrentPageLink = useCallback(
+    async (opts: { native?: boolean; url?: string } = {}) => {
+      const source = !tabless && focusedTabUrl !== null ? focusedTabUrl : window.location
+      const url = opts.url ?? buildPageLink(source, window.location.origin)
+      if (await writePageLink(url, opts)) toast.success('Link copied')
+      else toast.error(<span>Couldn&apos;t copy. {url}</span>)
+    },
+    [tabless, focusedTabUrl, toast],
+  )
+
+  useEffect(() => {
+    const onCopy = (e: Event) => {
+      const detail = (e as CustomEvent<{ native?: boolean; url?: string } | undefined>).detail
+      void copyCurrentPageLink({ native: detail?.native === true, url: detail?.url })
+    }
+    window.addEventListener(COPY_PAGE_LINK_EVENT, onCopy)
+    return () => window.removeEventListener(COPY_PAGE_LINK_EVENT, onCopy)
+  }, [copyCurrentPageLink])
   // Tab mode: the focused tab's frame reports its page guide over the guide
   // bridge, since only that document knows the route's docKey.
   const [workspaceGuide, setWorkspaceGuide] = useState<GuideState | null>(null)
@@ -709,6 +732,16 @@ export function LayoutOS({
       </div>
 
       <div className="flex flex-shrink-0 items-center gap-3">
+        <Tooltip content="Copy link to this page">
+          <button
+            type="button"
+            onClick={() => void copyCurrentPageLink()}
+            aria-label="Copy link to this page"
+            className="os-topbar-btn"
+          >
+            <LinkIcon className="h-5 w-5" />
+          </button>
+        </Tooltip>
         {/* The page's guide, on the same plate as the bell beside it, in both
             shells. Tabless mode shares this document with the page and reads
             the route itself; tab mode takes the focused frame's report and

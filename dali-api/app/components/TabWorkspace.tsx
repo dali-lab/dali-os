@@ -21,6 +21,7 @@ import { CSS } from '@dnd-kit/utilities'
 // tab and a pointer in a pane body resolves to the body's drop zone.
 import { pointerFirstCollision } from './board/KanbanBoard'
 import { workspacePath } from './workspace-link'
+import { buildPageLink, COPY_PAGE_LINK_EVENT, isCopyPageLinkShortcut, stripHash } from '~/lib/page-link'
 import {
   GUIDE_OPEN_MESSAGE,
   readGuideState,
@@ -297,9 +298,9 @@ function localize(req: OpenTabRequest): OpenTabRequest {
   return url === req.url ? req : { ...req, url }
 }
 
-function findTabPane(state: WorkspaceState, url: string): { paneId: string; tabId: string } | null {
+export function findTabPane(state: WorkspaceState, url: string): { paneId: string; tabId: string } | null {
   for (const pane of state.panes) {
-    const tab = pane.tabs.find((t) => t.url === url)
+    const tab = pane.tabs.find((t) => stripHash(t.url) === stripHash(url))
     if (tab) return { paneId: pane.id, tabId: tab.id }
   }
   return null
@@ -491,15 +492,6 @@ function SortableTab({
       )}
     </button>
   )
-}
-
-/** The tab's page as a shareable url. Clipboard access can be refused; nothing more to do then. */
-export async function copyTabLink(tab: Pick<Tab, 'url'>) {
-  try {
-    await navigator.clipboard.writeText(`${window.location.origin}${tab.url}`)
-  } catch {
-    // The page is still open in the tab; the address can be read from there.
-  }
 }
 
 // The floating copy under the cursor while a tab is dragged (DragOverlay).
@@ -1102,7 +1094,7 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange, onGuideCh
           const panes = prev.panes.map((p) => ({
             ...p,
             tabs: p.tabs.map((t) => {
-              if ((t.url === url || t.origin === url) && t.label !== label) {
+              if ((stripHash(t.url) === url || t.origin === url) && t.label !== label) {
                 changed = true
                 return { ...t, label }
               }
@@ -1256,6 +1248,12 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange, onGuideCh
             setActiveTab(focusedPane.id, tabs[tabs.length - 1].id)
             return
           }
+        }
+
+        if (isCopyPageLinkShortcut(e)) {
+          e.preventDefault()
+          window.top?.dispatchEvent(new CustomEvent(COPY_PAGE_LINK_EVENT))
+          return
         }
 
         // mod + shift + k — close active tab
@@ -2235,7 +2233,11 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange, onGuideCh
           <button
             type="button"
             onClick={() => {
-              void copyTabLink(cmTab)
+              window.dispatchEvent(
+                new CustomEvent(COPY_PAGE_LINK_EVENT, {
+                  detail: { url: buildPageLink(cmTab.url, window.location.origin) },
+                }),
+              )
               setContextMenu(null)
             }}
             className={item}
