@@ -84,6 +84,7 @@ import { runSprintLifecycle } from "~/jobs/sprint-lifecycle.server";
 import { runFormWindows } from "~/jobs/form-windows.server";
 import { runInterviewReminders } from "~/jobs/interview-reminders.server";
 import { runStandupPrompts } from "~/jobs/standup-prompts.server";
+import { runTimesheetDueReminders } from "~/jobs/timesheet-due-reminders.server";
 import { runTaskAutoArchive } from "~/jobs/task-auto-archive.server";
 import { runMembershipStatusSync } from "~/jobs/membership-status-sync.server";
 import { runSigningIssuance } from "~/jobs/signing-issuance.server";
@@ -253,6 +254,31 @@ export const JOBS: JobDefinition[] = [
     handler: runStandupPrompts,
   },
   {
+    name: "timesheet-due-reminders",
+    description:
+      "Reminds every member with a paid role to log and submit their hours before the biweekly pay period closes. Fires once per period, on the configured day before the period's last day (Saturday).",
+    intervalMinutes: 15,
+    settings: [
+      {
+        key: "daysBeforeEnd",
+        label: "Days before period end (0 = the last day)",
+        unit: "days",
+        min: 0,
+        max: 13,
+        default: 1,
+      },
+      {
+        key: "sendHourEt",
+        label: "Send hour (ET, 0–23)",
+        unit: "h",
+        min: 0,
+        max: 23,
+        default: 10,
+      },
+    ],
+    handler: runTimesheetDueReminders,
+  },
+  {
     name: "retention-janitor",
     description:
       "Deletes read notifications and stale reminder-ledger rows older than the retention window, plus finalized meeting transcripts older than their own window.",
@@ -380,23 +406,6 @@ export const JOBS: JobDefinition[] = [
       { key: "lockSeconds", label: "Claim lock TTL", unit: "s", min: 30, max: 900, default: 120 },
     ],
     handler: runOutboundDrain,
-  },
-  {
-    name: "slack-identity-sync",
-    description:
-      "Resolves Slack user ids for members who joined the workspace after their provisioning step ran, so Hiring → Onboarding reports Slack status from live data instead of a one-shot snapshot. Only fills blanks — never clears a stored id.",
-    intervalMinutes: 720,
-    settings: [
-      {
-        key: "maxApiPerRun",
-        label: "Max Slack lookups per run",
-        unit: "",
-        min: 10,
-        max: 1000,
-        default: 200,
-      },
-    ],
-    handler: runSlackIdentitySync,
   },
   {
     name: "infra-snapshot",
