@@ -53,6 +53,7 @@ export interface DocContentHit {
   pageId: string;
   title: string;
   iconEmoji: string | null;
+  kind: string;
   /** Matched region of the body, or a leading excerpt for a fuzzy hit. */
   snippet: string;
   /** True when this came from the fuzzy pass — the query did not match exactly. */
@@ -116,6 +117,7 @@ type ExactRow = {
   id: string;
   title: string;
   iconEmoji: string | null;
+  kind: string;
   snippet: string | null;
 };
 
@@ -123,6 +125,7 @@ type FuzzyRow = {
   id: string;
   title: string;
   iconEmoji: string | null;
+  kind: string;
   snippet: string | null;
 };
 
@@ -169,6 +172,7 @@ async function exactPass(query: string, limit: number): Promise<DocContentHit[]>
       t.id,
       t.title,
       t."iconEmoji",
+      t.kind,
       ts_headline(
         'english',
         t.content,
@@ -183,6 +187,7 @@ async function exactPass(query: string, limit: number): Promise<DocContentHit[]>
         p.id,
         p.title,
         p."iconEmoji",
+        p.kind,
         i.content,
         ts_rank(
           i.tsv,
@@ -208,6 +213,7 @@ async function exactPass(query: string, limit: number): Promise<DocContentHit[]>
     pageId: r.id,
     title: r.title,
     iconEmoji: r.iconEmoji,
+    kind: r.kind,
     snippet: oneLine(r.snippet),
     fuzzy: false,
   }));
@@ -258,11 +264,12 @@ async function fuzzyPass(query: string, limit: number): Promise<DocContentHit[]>
         p.id,
         p.title,
         p."iconEmoji",
+        p.kind,
         left(max(h.content), ${FUZZY_SNIPPET_CHARS}) AS snippet
       FROM hits h
       JOIN "Page" p ON p.id = h.page_id
       WHERE p."archivedAt" IS NULL
-      GROUP BY p.id, p.title, p."iconEmoji"
+      GROUP BY p.id, p.title, p."iconEmoji", p.kind
       ORDER BY max(h.sim) DESC, p.title ASC
       LIMIT ${limit}
     `;
@@ -272,6 +279,7 @@ async function fuzzyPass(query: string, limit: number): Promise<DocContentHit[]>
     pageId: r.id,
     title: r.title,
     iconEmoji: r.iconEmoji,
+    kind: r.kind,
     snippet: oneLine(r.snippet),
     fuzzy: true,
   }));

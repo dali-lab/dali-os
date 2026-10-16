@@ -15,7 +15,7 @@ import {
 } from "~/components/home/landing/backgrounds/schedule";
 import { currentTermStrict } from "~/lib/roles";
 import { termWeekNumber } from "~/lib/terms.shared";
-import { TYPE_META } from "~/components/CommandPalette";
+import { resultIcon } from "~/components/CommandPalette";
 import { MIN_QUERY_LENGTH, type SearchResult } from "~/lib/search";
 import { Avatar } from "~/components/ui/Avatar";
 import {
@@ -319,7 +319,7 @@ function HomeSearch() {
           )
         ) : (
           results.map((r, i) => {
-            const Icon = TYPE_META[r.type].icon;
+            const Icon = resultIcon(r);
             return (
               <button
                 key={`${r.type}-${r.id}`}

@@ -21,7 +21,9 @@ import {
   BookOpen,
   ClipboardCheck,
   Mail,
-  ShieldCheck,
+  FileSignature,
+  Shapes,
+  NotebookPen,
   CalendarRange,
   PanelLeftClose,
   PanelLeftOpen,
@@ -39,6 +41,7 @@ import { setTablessPreference } from "~/lib/tabless";
 import { setFocusPreference } from "~/lib/focus-mode";
 import { COPY_PAGE_LINK_EVENT } from "~/lib/page-link";
 import type { SearchResult, SearchResultType } from "~/lib/search";
+import { iconForCategory } from "~/lib/file-icon";
 import { ADMIN_CLUSTERS } from "~/admin/adminNav";
 import { CORE_CLUSTERS } from "~/core/coreNav";
 import type { NavCluster } from "~/lib/cluster-nav";
@@ -93,6 +96,7 @@ export const TYPE_META: Record<SearchResultType, { icon: LucideIcon; section: st
   person: { icon: UsersRound, section: "People" },
   group: { icon: Users2, section: "Groups" },
   project: { icon: FolderKanban, section: "Projects" },
+  task: { icon: ListTodo, section: "Tasks" },
   education: { icon: GraduationCap, section: "Education" },
   partner: { icon: Handshake, section: "Partners" },
   document: { icon: FileText, section: "Documents" },
@@ -100,16 +104,25 @@ export const TYPE_META: Record<SearchResultType, { icon: LucideIcon; section: st
   form: { icon: ClipboardList, section: "Forms" },
   challenge: { icon: FileQuestion, section: "Hiring library" },
   rubric: { icon: ClipboardCheck, section: "Hiring library" },
-  confidentialityAgreement: { icon: ShieldCheck, section: "Hiring library" },
+  confidentialityAgreement: { icon: FileSignature, section: "Hiring library" },
   cycle: { icon: CalendarRange, section: "Hiring cycles" },
   partnerApplication: { icon: Handshake, section: "Partner applications" },
   guide: { icon: BookOpen, section: "Guides" },
   helpArticle: { icon: HelpCircle, section: "Help" },
 };
 
+const PAGE_KIND_ICON = { Folder, Whiteboard: Shapes, Notebook: NotebookPen } as const;
+
+export function resultIcon(r: Pick<SearchResult, "type" | "pageKind" | "fileCategory">): LucideIcon {
+  if (r.pageKind) return PAGE_KIND_ICON[r.pageKind];
+  if (r.fileCategory) return iconForCategory(r.fileCategory);
+  return TYPE_META[r.type].icon;
+}
+
 const SECTION_ORDER = [
   "People",
   "Projects",
+  "Tasks",
   "Education",
   "Partners",
   "Documents",
@@ -353,7 +366,7 @@ export function CommandPalette({ open, onClose, tabless, focusMode, roles = NO_R
     for (const section of effectiveSectionOrder) {
       const items = results
         .filter((r) => effectiveMeta[r.type].section === section)
-        .map((r) => resultItem(r, effectiveMeta));
+        .map((r) => resultItem(r));
       if (items.length) out.push({ key: section, label: section, items });
     }
     return out;
@@ -525,12 +538,12 @@ function navItem(title: string, url: string, icon: LucideIcon): PaletteItem {
   return { id: `nav-${url}`, title, subtitle: "Go to", icon, action: { kind: "navigate", url, label: title } };
 }
 
-function resultItem(r: SearchResult, meta: typeof TYPE_META = TYPE_META): PaletteItem {
+function resultItem(r: SearchResult): PaletteItem {
   return {
     id: `${r.type}-${r.id}`,
     title: r.title,
     subtitle: r.subtitle,
-    icon: meta[r.type].icon,
+    icon: resultIcon(r),
     type: r.type,
     photoUrl: r.photoUrl,
     iconEmoji: r.iconEmoji,

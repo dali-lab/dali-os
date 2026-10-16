@@ -3,10 +3,13 @@
 // the browser bundle and in unit tests without a generated client. The DB
 // queries live in search.server.ts.
 
+import type { FileCategory } from "~/lib/file-type";
+
 export type SearchResultType =
   | "person"
   | "group"
   | "project"
+  | "task"
   | "education"
   | "partner"
   | "document"
@@ -31,6 +34,26 @@ export interface SearchResult {
   /** Custom emoji for entity results — project icons and page/document icons
    *  (files fall back to the type icon). Null → the type's default glyph. */
   iconEmoji?: string | null;
+  /** Drive items that are not plain documents, so they keep their Drive glyph. */
+  pageKind?: SearchPageKind;
+  /** Uploaded files only, so the glyph matches the file type. */
+  fileCategory?: FileCategory;
+}
+
+export type SearchPageKind = "Folder" | "Whiteboard" | "Notebook";
+
+const PAGE_KIND_LABEL: Record<SearchPageKind, string> = {
+  Folder: "Folder",
+  Whiteboard: "Whiteboard",
+  Notebook: "Notebook",
+};
+
+export function searchPageKind(kind: string | null | undefined): SearchPageKind | undefined {
+  return kind && kind in PAGE_KIND_LABEL ? (kind as SearchPageKind) : undefined;
+}
+
+export function pageKindLabel(kind: SearchPageKind | undefined): string {
+  return kind ? PAGE_KIND_LABEL[kind] : "Document";
 }
 
 export const MIN_QUERY_LENGTH = 2;
@@ -71,7 +94,8 @@ const GUIDE_PATH_BY_KEY = new Map(GUIDE_PAGES.map((g) => [g.pageKey, g.path]));
 // Canonical detail URLs. Centralized so the route-param gotchas live in one
 // place: members key on User.id, education on :offeringId, partners on :orgId,
 // applications on the DomainApplication id.
-export const buildUrl: Record<SearchResultType, (id: string) => string> = {
+// Tasks are absent: their URL needs the project id, so searchTasks builds it.
+export const buildUrl: Record<Exclude<SearchResultType, "task">, (id: string) => string> = {
   person: (id) => `/members/${id}`,
   // The groups page has no per-group deep link; land on the list (client filter).
   group: () => `/members/groups`,

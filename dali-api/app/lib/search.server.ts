@@ -11,7 +11,9 @@ import {
   GUIDE_PAGES,
   MIN_QUERY_LENGTH,
   PER_CATEGORY_CAP,
+  pageKindLabel,
   rankResults,
+  searchPageKind,
   type SearchResult,
   type SearchResultType,
 } from "~/lib/search";
@@ -22,6 +24,7 @@ import { blocksToPlainText } from "~/components/doc/schema/configs";
 import { formsUsePageAccess } from "~/forms/lib/form-access.server";
 import { PAGE_ACCESS_SELECT, getPageAccessBulk } from "~/lib/pageAccess.server";
 import { HELP_ARTICLES } from "~/lib/help-articles";
+import { categorize } from "~/lib/file-type";
 
 // Server side of the command-palette search: permission-scoped Prisma queries
 // that feed the pure ranking in lib/search.ts. Each category is a small helper
@@ -82,7 +85,7 @@ export async function runSearch(opts: {
 // Map a set of {id, label} rows of a single type to ranked results. Used by the
 // simple name/title categories; richer ones (people, partner apps) inline it.
 function simpleResults(
-  type: SearchResultType,
+  type: Exclude<SearchResultType, "task">,
   subtitle: string,
   rows: { id: string; label: string | null; iconEmoji?: string | null }[],
   q: string,
@@ -169,8 +172,6 @@ async function searchProjects(q: string, like: Like): Promise<SearchResult[]> {
 async function searchTasks(q: string, like: Like): Promise<SearchResult[]> {
   // Every member can open every project's board, so tasks get the same
   // scoping as projects: members-only auth, Archived projects excluded.
-  // Reuses the "project" result type so the palette needs no new icon/section;
-  // the url deep-links to the task modal on the project board.
   const rows = await prisma.task.findMany({
     // archivedAt: auto-archived Done/Cancelled tasks are off the board, so
     // they shouldn't surface here either.
@@ -187,7 +188,7 @@ async function searchTasks(q: string, like: Like): Promise<SearchResult[]> {
   return rankResults(
     rows.map((t) => ({
       result: {
-        type: "project" as const,
+        type: "task" as const,
         id: t.id,
         title: t.title,
         subtitle: `${t.project.name} · ${TASK_STATUS_LABELS[t.status]}`,
@@ -203,7 +204,7 @@ async function searchProjectFiles(q: string, like: Like): Promise<SearchResult[]
   // Uploaded project files; archived ones are out, mirroring pages. Matches
   // the display title or the current version's original filename (a file is
   // often remembered by what it was uploaded as). Reuses the "document" result
-  // type — same section/icon as pages.
+  // type so files share the Drive section with pages.
   const rows = await prisma.projectFile.findMany({
     where: {
       archivedAt: null,
@@ -225,6 +226,7 @@ async function searchProjectFiles(q: string, like: Like): Promise<SearchResult[]
         title: f.title || "Untitled",
         subtitle: f.project?.name ?? "",
         url: `/documents/file/${f.id}`,
+        fileCategory: categorize({ fileName: f.currentVersion?.fileName || f.title || "" }),
       },
       text: [f.title, f.currentVersion?.fileName ?? ""],
     })),
@@ -262,7 +264,7 @@ async function searchDocuments(userId: string, q: string, like: Like): Promise<S
   const [titleRows, rawContentHits] = await Promise.all([
     prisma.page.findMany({
       where: { archivedAt: null, kind: { not: "Form" }, title: like },
-      select: { ...PAGE_ACCESS_SELECT, title: true, iconEmoji: true },
+      select: { ...PAGE_ACCESS_SELECT, title: true, iconEmoji: true, kind: true },
       take: RAW_TAKE * 3,
     }),
     searchPageContent(q, PER_CATEGORY_CAP * 3),
@@ -280,26 +282,34 @@ async function searchDocuments(userId: string, q: string, like: Like): Promise<S
   const rows = titleRows.filter((r) => canView(r.id));
   const contentHits = rawContentHits.filter((h) => canView(h.pageId));
 
+  const kindById = new Map(rows.map((r) => [r.id, searchPageKind(r.kind)]));
   const titleResults = simpleResults(
     "document",
     "Document",
     rows.map((r) => ({ id: r.id, label: r.title, iconEmoji: r.iconEmoji })),
     q,
-  );
+  ).map((r) => {
+    const pageKind = kindById.get(r.id);
+    return pageKind ? { ...r, pageKind, subtitle: pageKindLabel(pageKind) } : r;
+  });
 
   const seen = new Set(titleResults.map((r) => r.id));
   const contentResults = contentHits
     .filter((hit) => !seen.has(hit.pageId))
-    .map((hit) => ({
-      type: "document" as const,
-      id: hit.pageId,
-      title: hit.title,
-      // The matched sentence says why this document came back when its title
-      // gave nothing away. Falls back to the type label for an empty snippet.
-      subtitle: hit.snippet || "Document",
-      url: buildUrl.document(hit.pageId),
-      iconEmoji: hit.iconEmoji,
-    }));
+    .map((hit) => {
+      const pageKind = searchPageKind(hit.kind);
+      return {
+        type: "document" as const,
+        id: hit.pageId,
+        title: hit.title,
+        // The matched sentence says why this document came back when its title
+        // gave nothing away.
+        subtitle: hit.snippet || pageKindLabel(pageKind),
+        url: buildUrl.document(hit.pageId),
+        iconEmoji: hit.iconEmoji,
+        ...(pageKind && { pageKind }),
+      };
+    });
 
   return [...titleResults, ...contentResults].slice(0, PER_CATEGORY_CAP);
 }
