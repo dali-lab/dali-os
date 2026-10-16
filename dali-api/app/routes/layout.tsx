@@ -360,7 +360,7 @@ export default function AppLayoutRoute() {
   // Starring a page is a fetcher write, which shouldRevalidate below keeps out
   // of this loader — so the shells read the list through this instead, and a
   // new favorite reaches the header without a reload.
-  const liveFavorites = useLiveFavorites(favorites)
+  const [liveFavorites, setLiveFavorites] = useLiveFavorites(favorites)
 
   // After a client-side navigation inside the workspace iframe, the loader
   // re-runs via fetch — which carries `Sec-Fetch-Dest: empty`, not `iframe` —
@@ -585,7 +585,7 @@ export default function AppLayoutRoute() {
       {/* Above Layout, not inside pageContent: the tabless desktop nav row
           renders the Guide CTA from the shell, outside the routed page. */}
       <PageDocProvider>
-        <LayoutOS fitViewport={fitViewport} user={user} photoUrl={photoUrl} isCore={isCore} isAdmin={isAdmin} isDomainLead={isDomainLead} canViewForms={canViewForms} canViewStaffing={canViewStaffing} isInterviewer={isInterviewer} hasHiringAccess={hasHiringAccess} hasActiveHiringAccess={hasActiveHiringAccess} isInstructor={isInstructor} isLabMentor={isLabMentorFlag} isAlumni={isAlumni} favorites={liveFavorites} impersonating={impersonating} impersonationAllowsWrites={impersonationWrites} focusMode={focus}>
+        <LayoutOS fitViewport={fitViewport} user={user} photoUrl={photoUrl} isCore={isCore} isAdmin={isAdmin} isDomainLead={isDomainLead} canViewForms={canViewForms} canViewStaffing={canViewStaffing} isInterviewer={isInterviewer} hasHiringAccess={hasHiringAccess} hasActiveHiringAccess={hasActiveHiringAccess} isInstructor={isInstructor} isLabMentor={isLabMentorFlag} isAlumni={isAlumni} favorites={liveFavorites} onFavoritesChange={setLiveFavorites} impersonating={impersonating} impersonationAllowsWrites={impersonationWrites} focusMode={focus}>
           {tablessChild}
         </LayoutOS>
       </PageDocProvider>

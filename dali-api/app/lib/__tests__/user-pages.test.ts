@@ -21,7 +21,9 @@ import { getPageAccess } from "~/lib/pageAccess.server";
 import {
   favoriteHrefs,
   listFavoritesAndRecents,
+  reorderFavorites,
   setFavorite,
+  starTargetForUrl,
   setRouteFavorite,
 } from "~/lib/user-pages.server";
 
@@ -303,4 +305,164 @@ describe("setFavorite", () => {
     expect(arg.update.favoritedAt).toBeNull();
     expect(mockPrisma.userFavorite.delete).toBeUndefined();
   });
+});
+
+describe("favorites ordering", () => {
+  const d = (n: number) => new Date(2_000_000_000_000 + n);
+  const pageRow = (id: string, position: number | null, n: number) => ({
+    ...page(id),
+    position,
+    favoritedAt: d(n),
+  });
+
+  function ordered(
+    pages: ReturnType<typeof pageRow>[],
+    routes: { href: string; label: string; position: number | null; favoritedAt: Date }[],
+  ) {
+    mockPrisma.userFavorite.findMany
+      .mockResolvedValueOnce(routes)
+      .mockResolvedValueOnce(pages)
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([]);
+  }
+
+  it("interleaves pages and routes by position", async () => {
+    ordered(
+      [pageRow("pg-a", 0, 1), pageRow("pg-b", 2, 2)],
+      [{ href: "/projects/p1", label: "P", position: 1, favoritedAt: d(3) }],
+    );
+    const { favorites } = await listFavoritesAndRecents(USER);
+    expect(favorites.map((f) => f.id)).toEqual(["pg-a", "/projects/p1", "pg-b"]);
+  });
+
+  it("sorts rows without a position after positioned ones, newest first", async () => {
+    ordered(
+      [pageRow("old", null, 1), pageRow("new", null, 5), pageRow("first", 0, 0)],
+      [],
+    );
+    const { favorites } = await listFavoritesAndRecents(USER);
+    expect(favorites.map((f) => f.id)).toEqual(["first", "new", "old"]);
+  });
+
+  it("asks the database for position order with nulls last, and does not cap pages at ten", async () => {
+    const many = Array.from({ length: 25 }, (_, i) => pageRow(`p${i}`, i, i));
+    ordered(many, []);
+    const { favorites } = await listFavoritesAndRecents(USER);
+    expect(favorites).toHaveLength(25);
+    for (const call of mockPrisma.userFavorite.findMany.mock.calls.slice(0, 2)) {
+      expect(call[0].orderBy).toEqual([
+        { position: { sort: "asc", nulls: "last" } },
+        { favoritedAt: "desc" },
+      ]);
+      expect(call[0].take).toBe(200);
+    }
+  });
+});
+
+describe("favorite positions", () => {
+  it("appends a new page favorite after the current maximum", async () => {
+    mockPrisma.userFavorite.aggregate.mockResolvedValueOnce({ _max: { position: 4 } });
+    await setFavorite(USER, "page-1", true);
+    const arg = mockPrisma.userFavorite.upsert.mock.calls[0][0];
+    expect(arg.create.position).toBe(5);
+    expect(arg.update.position).toBe(5);
+  });
+
+  it("starts at zero when the user has no favorites", async () => {
+    mockPrisma.userFavorite.aggregate.mockResolvedValueOnce({ _max: { position: null } });
+    await setFavorite(USER, "page-1", true);
+    expect(mockPrisma.userFavorite.upsert.mock.calls[0][0].create.position).toBe(0);
+  });
+
+  it("clears the position when a page is unfavorited", async () => {
+    await setFavorite(USER, "page-1", false);
+    expect(mockPrisma.userFavorite.aggregate).not.toHaveBeenCalled();
+    expect(mockPrisma.userFavorite.upsert.mock.calls[0][0].update.position).toBeNull();
+  });
+
+  it("appends a route favorite, including a re-star of an existing row", async () => {
+    mockPrisma.userFavorite.aggregate.mockResolvedValueOnce({ _max: { position: 2 } });
+    mockPrisma.userFavorite.findFirst.mockResolvedValue({ id: "row-1" });
+    await setRouteFavorite(USER, "/projects/p1", "Hood", true);
+    expect(mockPrisma.userFavorite.update.mock.calls[0][0].data.position).toBe(3);
+  });
+
+  it("sets the position on a newly created route favorite", async () => {
+    mockPrisma.userFavorite.aggregate.mockResolvedValueOnce({ _max: { position: 0 } });
+    mockPrisma.userFavorite.findFirst.mockResolvedValue(null);
+    await setRouteFavorite(USER, "/projects/p1", "Hood", true);
+    expect(mockPrisma.userFavorite.create.mock.calls[0][0].data.position).toBe(1);
+  });
+
+  it("clears the position when a route is unfavorited, including stale variants", async () => {
+    mockPrisma.userFavorite.findFirst.mockResolvedValue({ id: "row-1" });
+    await setRouteFavorite(USER, "/projects/p1", "Hood", false);
+    expect(mockPrisma.userFavorite.update.mock.calls[0][0].data.position).toBeNull();
+    expect(mockPrisma.userFavorite.updateMany.mock.calls[0][0].data.position).toBeNull();
+  });
+});
+
+describe("reorderFavorites", () => {
+  const transaction = (prisma as unknown as { $transaction: ReturnType<typeof vi.fn> }).$transaction;
+
+  beforeEach(() => {
+    transaction.mockImplementation(async (ops: unknown[]) => Promise.all(ops));
+  });
+
+  it("writes 0..n-1 in the given order, only for the caller's favorited rows", async () => {
+    mockPrisma.userFavorite.findMany.mockResolvedValueOnce([
+      { id: "r1", pageId: "pg-a", href: null },
+      { id: "r2", pageId: null, href: "/projects/p1" },
+      { id: "r3", pageId: "pg-b", href: null },
+    ]);
+    await reorderFavorites(USER, ["/projects/p1", "not-mine", "pg-b", "pg-a"]);
+    expect(mockPrisma.userFavorite.findMany.mock.calls[0][0].where).toMatchObject({
+      userId: USER,
+      favoritedAt: { not: null },
+    });
+    const writes = mockPrisma.userFavorite.updateMany.mock.calls.map((c) => c[0]);
+    expect(writes).toEqual([
+      { where: { id: "r2", userId: USER }, data: { position: 0 } },
+      { where: { id: "r3", userId: USER }, data: { position: 1 } },
+      { where: { id: "r1", userId: USER }, data: { position: 2 } },
+    ]);
+  });
+
+  it("keeps favorites the client did not list after the listed ones", async () => {
+    mockPrisma.userFavorite.findMany.mockResolvedValueOnce([
+      { id: "r1", pageId: "pg-a", href: null },
+      { id: "r2", pageId: "pg-b", href: null },
+    ]);
+    await reorderFavorites(USER, ["pg-b"]);
+    const writes = mockPrisma.userFavorite.updateMany.mock.calls.map((c) => [c[0].where.id, c[0].data.position]);
+    expect(writes).toEqual([["r2", 0], ["r1", 1]]);
+  });
+
+  it("ignores duplicate ids and writes nothing when none match", async () => {
+    mockPrisma.userFavorite.findMany.mockResolvedValue([{ id: "r1", pageId: "pg-a", href: null }]);
+    await reorderFavorites(USER, ["pg-a", "pg-a"]);
+    expect(mockPrisma.userFavorite.updateMany).toHaveBeenCalledTimes(1);
+    mockPrisma.userFavorite.updateMany.mockClear();
+    transaction.mockClear();
+    await reorderFavorites(USER, ["zzz"]);
+    expect(transaction).not.toHaveBeenCalled();
+  });
+});
+
+describe("starTargetForUrl", () => {
+  it.each([
+    ["/documents/d1", "d1"],
+    ["/documents/d1?x=1#h", "d1"],
+    ["/forms/edit/f1", "f1"],
+    ["/whiteboard/w1", "w1"],
+  ])("treats %s as page %s", (url, pageId) => {
+    expect(starTargetForUrl(url)).toEqual({ kind: "page", pageId });
+  });
+
+  it.each(["/projects/p1", "/forms/f1", "/documents", "/documents/a/b", "/education?term=25F"])(
+    "treats %s as a route",
+    (url) => {
+      expect(starTargetForUrl(url)).toEqual({ kind: "route", href: url });
+    },
+  );
 });

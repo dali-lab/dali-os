@@ -4,7 +4,7 @@ import { Star } from "lucide-react";
 import { Tooltip } from "~/components/ui/floating";
 import { isNavbarRoute } from "~/lib/navbar-routes";
 import { useFeatureFlag } from "~/components/FeatureFlags";
-import { notifyFavoritesChanged } from "~/components/favorites-live";
+import { useFavoriteToggle } from "~/components/favorites-live";
 
 // Stars a page you're currently on — for DB-backed detail pages (project,
 // person, partner org). Document pages use FavoriteStar instead.
@@ -47,16 +47,19 @@ export function FavoriteRouteButton({
     labelProp ??
     (typeof document !== "undefined" ? document.title.split(" · ")[0] : "") ??
     href;
-  const [favorited, setFavorited] = useState(favoritedProp ?? false);
+  const { favorited, setFavorited, busy, toggle } = useFavoriteToggle(
+    { href, label },
+    favoritedProp ?? false,
+    onToggled,
+  );
   const [ready, setReady] = useState(known);
-  const [busy, setBusy] = useState(false);
 
   // The owner may learn the answer after we first render — a tab bar resolves
   // its whole row in one request — and useState only reads its initial value,
   // so adopt the prop when it changes.
   useEffect(() => {
     if (favoritedProp !== undefined) setFavorited(favoritedProp);
-  }, [favoritedProp]);
+  }, [favoritedProp, setFavorited]);
 
   // Ask the server whether this URL is already starred. Client-side because the
   // bar renders on 41 different routes — threading the answer through every one
@@ -84,33 +87,11 @@ export function FavoriteRouteButton({
     return () => {
       live = false;
     };
-  }, [href, known]);
+  }, [href, known, setFavorited]);
 
   // The in-page pill row no longer renders under the dali.os shell, so a page
   // never suppresses this control for pills.
   const hasAreaPills = false;
-
-  async function toggle() {
-    const next = !favorited;
-    setFavorited(next);
-    setBusy(true);
-    try {
-      const res = await fetch("/api/favorites/route", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ href, label, favorited: next }),
-      });
-      if (res.ok) {
-        notifyFavoritesChanged();
-        onToggled?.(next);
-      } else setFavorited(!next);
-    } catch {
-      setFavorited(!next);
-    } finally {
-      setBusy(false);
-    }
-  }
 
   if (suppressWhenPills && hasAreaPills) return null;
   if (isNavbarRoute(href)) return null;
@@ -118,7 +99,7 @@ export function FavoriteRouteButton({
   return (
     // The tip portals out of the tab bar's horizontal scroller so it can't add
     // phantom overflow scroll to that container (the Tooltip always portals).
-    <Tooltip content={favorited ? "In your favorites" : "Add this page to your favorites"}>
+    <Tooltip content={favorited ? "Remove from favorites" : "Add this page to favorites"}>
       <button
         type="button"
         disabled={busy || !ready}
