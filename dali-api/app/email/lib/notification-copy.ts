@@ -298,6 +298,15 @@ export const NOTIFICATION_COPY = {
     subject: "You're on {{itemTitle}}",
     body: "{{itemDetail}}",
   },
+  "timesheet.due_reminder": {
+    eventType: "timesheet.due_reminder",
+    label: "Timesheet due",
+    description: "Sent to every member with a paid role before a pay period closes.",
+    variables: ["itemTitle"],
+    subject: "Your timesheet for {{itemTitle}} is due",
+    body: "The pay period is closing. Check that your hours are logged on the Timesheet tab, then submit your timesheet in JobX.",
+    linkLabel: "Open timesheet",
+  },
   "hiring.interview_assigned": {
     purpose: "Hiring",
     eventType: "hiring.interview_assigned",

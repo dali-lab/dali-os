@@ -258,6 +258,13 @@ export const EVENT_TYPES = {
     description: "When your project assignment for a term is confirmed.",
     defaults: { inApp: true, desktop: true, slackDm: false, email: "Instant" },
   },
+  "timesheet.due_reminder": {
+    kind: "General",
+    area: "Staffing",
+    label: "Timesheet reminders",
+    description: "Before each biweekly pay period closes, a nudge to log and submit your hours.",
+    defaults: { inApp: true, desktop: true, slackDm: true, email: "Off" },
+  },
   "hiring.interview_assigned": {
     kind: "General",
     area: "Hiring",
