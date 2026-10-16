@@ -123,7 +123,7 @@ describe("runSearch — tasks", () => {
       }),
     );
     expect(results).toContainEqual({
-      type: "project",
+      type: "task",
       id: "t1",
       title: "Query builder",
       subtitle: "DALI OS · In progress",
@@ -163,23 +163,55 @@ describe("runSearch — project files", () => {
       title: "Pitch deck",
       subtitle: "Atlas",
       url: "/documents/file/f1",
+      fileCategory: "pdf",
     });
+  });
+
+  it.each([
+    ["roster.xlsx", "office"],
+    ["headshot.png", "image"],
+    ["demo.mp4", "video"],
+    ["bundle.zip", "archive"],
+    ["mystery.bin", "other"],
+  ])("classifies %s as %s from the uploaded filename", async (fileName, category) => {
+    mockPrisma.projectFile.findMany.mockResolvedValue([
+      { id: "f1", title: "Query file", currentVersion: { fileName }, project: { name: "Atlas" } },
+    ]);
+
+    const [file] = (await runSearch({ userId: "u1", roles: MEMBER, q: "query" })).filter(
+      (r) => r.type === "document",
+    );
+
+    expect(file.fileCategory).toBe(category);
+  });
+
+  it("falls back to the title for a file with no current version", async () => {
+    mockPrisma.projectFile.findMany.mockResolvedValue([
+      { id: "f1", title: "query-notes.pdf", currentVersion: null, project: null },
+    ]);
+
+    const [file] = (await runSearch({ userId: "u1", roles: MEMBER, q: "query" })).filter(
+      (r) => r.type === "document",
+    );
+
+    expect(file.fileCategory).toBe("pdf");
   });
 });
 
 
 describe("runSearch — documents", () => {
-  const hit = (id: string, title: string, snippet = "…matched sentence…") => ({
+  const hit = (id: string, title: string, snippet = "…matched sentence…", kind = "FreeForm") => ({
     pageId: id,
     title,
     iconEmoji: null,
+    kind,
     snippet,
     fuzzy: false,
   });
 
   // Title pass and the content-hit access lookup share prisma.page.findMany;
   // the lookup is the only call filtering by id.
-  const stubPages = (titleRows: Array<{ id: string; title: string; iconEmoji: string | null }>) =>
+  const stubPages = (titleRows: Array<{ id: string; title: string; iconEmoji: string | null; kind?: string }>) =>
     mockPrisma.page.findMany.mockImplementation(async (args: any) =>
       args.where.id?.in ? args.where.id.in.map((id: string) => ({ id })) : titleRows,
     );
@@ -308,7 +340,7 @@ describe("runSearch — documents", () => {
     const titleCall = mockPrisma.page.findMany.mock.calls
       .map((c) => c[0])
       .find((args) => args.where.title);
-    expect(titleCall.select).toEqual({ id: true, accessMarker: true, title: true, iconEmoji: true });
+    expect(titleCall.select).toEqual({ id: true, accessMarker: true, title: true, iconEmoji: true, kind: true });
     expect(titleCall.take).toBe(120);
   });
 
@@ -320,6 +352,48 @@ describe("runSearch — documents", () => {
 
     expect(mockPageContent).toHaveBeenCalledWith("query", 15);
     expect(docs.map((d) => d.id)).toEqual(["t0", "t1", "b0", "b1", "b2"]);
+  });
+
+  it.each(["Folder", "Whiteboard", "Notebook"])(
+    "labels a %s title match by its kind instead of as a document",
+    async (kind) => {
+      stubPages([{ id: "pg1", title: "Query", iconEmoji: null, kind }]);
+
+      const [doc] = await docsOf();
+
+      expect(doc).toMatchObject({ id: "pg1", pageKind: kind, subtitle: kind });
+    },
+  );
+
+  it.each(["FreeForm", "Structured"])("leaves a %s page as a plain document", async (kind) => {
+    stubPages([{ id: "pg1", title: "Query", iconEmoji: null, kind }]);
+
+    const [doc] = await docsOf();
+
+    expect(doc.subtitle).toBe("Document");
+    expect(doc).not.toHaveProperty("pageKind");
+  });
+
+  it("keeps a folder's custom emoji alongside its kind", async () => {
+    stubPages([{ id: "pg1", title: "Query", iconEmoji: "📁", kind: "Folder" }]);
+
+    const [doc] = await docsOf();
+
+    expect(doc).toMatchObject({ iconEmoji: "📁", pageKind: "Folder" });
+  });
+
+  it("carries the kind on a body hit and labels it by kind when there is no snippet", async () => {
+    mockPageContent.mockResolvedValue([
+      hit("nb", "Standups", "", "Notebook"),
+      hit("wb", "Sketch", "the query flow", "Whiteboard"),
+    ]);
+
+    const docs = await docsOf();
+
+    expect(docs).toEqual([
+      expect.objectContaining({ id: "nb", pageKind: "Notebook", subtitle: "Notebook" }),
+      expect.objectContaining({ id: "wb", pageKind: "Whiteboard", subtitle: "the query flow" }),
+    ]);
   });
 
   it("skips the content access lookup when the body pass finds nothing", async () => {

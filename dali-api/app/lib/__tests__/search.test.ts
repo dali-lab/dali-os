@@ -5,7 +5,9 @@ import {
   rankResults,
   buildUrl,
   computeHiringVisibility,
+  pageKindLabel,
   PER_CATEGORY_CAP,
+  searchPageKind,
   type Rankable,
 } from "~/lib/search";
 
@@ -101,5 +103,27 @@ describe("computeHiringVisibility (leak-proofing)", () => {
 
   it("a non-Core user with no reviewer rows sees nothing", () => {
     expect(computeHiringVisibility(false, [])).toEqual({ all: false, pairs: [] });
+  });
+});
+
+describe("searchPageKind", () => {
+  it.each(["Folder", "Whiteboard", "Notebook"])("keeps %s, which has its own Drive glyph", (kind) => {
+    expect(searchPageKind(kind)).toBe(kind);
+  });
+
+  it.each(["FreeForm", "Structured", "Form", "Shortcut", "", null, undefined])(
+    "drops %s, which reads as a document",
+    (kind) => {
+      expect(searchPageKind(kind)).toBeUndefined();
+    },
+  );
+});
+
+describe("pageKindLabel", () => {
+  it("names each non-document kind and falls back to Document", () => {
+    expect(pageKindLabel("Folder")).toBe("Folder");
+    expect(pageKindLabel("Whiteboard")).toBe("Whiteboard");
+    expect(pageKindLabel("Notebook")).toBe("Notebook");
+    expect(pageKindLabel(undefined)).toBe("Document");
   });
 });

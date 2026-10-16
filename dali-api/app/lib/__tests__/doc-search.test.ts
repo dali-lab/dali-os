@@ -89,13 +89,13 @@ describe("searchPageContent", () => {
   it("falls back to the fuzzy pass when the exact pass comes up short", async () => {
     mockPrisma.$queryRaw
       .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([{ id: "p9", title: "Onboarding", iconEmoji: "📗", snippet: "text" }]);
+      .mockResolvedValueOnce([{ id: "p9", title: "Onboarding", iconEmoji: "📗", kind: "Notebook", snippet: "text" }]);
 
     const hits = await searchPageContent("onbaording", 5);
 
     expect(mockPrisma.$transaction).toHaveBeenCalledTimes(1);
     expect(hits).toEqual([
-      { pageId: "p9", title: "Onboarding", iconEmoji: "📗", snippet: "text", fuzzy: true },
+      { pageId: "p9", title: "Onboarding", iconEmoji: "📗", kind: "Notebook", snippet: "text", fuzzy: true },
     ]);
   });
 
@@ -119,6 +119,27 @@ describe("searchPageContent", () => {
     expect(hits).toHaveLength(2);
     expect(hits[0]).toMatchObject({ pageId: "p1", snippet: "exact", fuzzy: false });
     expect(hits[1]).toMatchObject({ pageId: "p2", fuzzy: true });
+  });
+
+  it("carries the page kind on an exact hit so the palette can pick its glyph", async () => {
+    mockPrisma.$queryRaw.mockResolvedValueOnce([
+      { id: "p1", title: "Board", iconEmoji: null, kind: "Whiteboard", snippet: "a" },
+    ]);
+
+    const [hit] = await searchPageContent("board", 1);
+
+    expect(hit.kind).toBe("Whiteboard");
+  });
+
+  it("selects and groups by the page kind in both passes", async () => {
+    mockPrisma.$queryRaw.mockResolvedValue([]);
+
+    await searchPageContent("onboarding", 5);
+
+    const [exactSql, fuzzySql] = mockPrisma.$queryRaw.mock.calls.map((c) => c[0].join("?"));
+    expect(exactSql).toContain("t.kind");
+    expect(exactSql).toContain("p.kind");
+    expect(fuzzySql).toContain('GROUP BY p.id, p.title, p."iconEmoji", p.kind');
   });
 
   it("folds a multi-line snippet onto one line for the palette", async () => {
