@@ -75,6 +75,20 @@ describe("listFavoritesAndRecents", () => {
     expect(recents.map((p) => p.id)).toEqual(["recent-1", "recent-2"]);
   });
 
+  it.each([
+    ["FreeForm", "/documents/p1"],
+    ["Form", "/forms/edit/p1"],
+    ["Whiteboard", "/whiteboard/p1"],
+  ])("links a %s favorite to %s", async (kind, href) => {
+    mockPrisma.userFavorite.findMany
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ page: { ...page("p1").page, kind } }])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([]);
+    const { favorites } = await listFavoritesAndRecents(USER);
+    expect(favorites[0].href).toBe(href);
+  });
+
   it("marks favorites so the caller can tell the two lists apart", async () => {
     rows(["fav-1"], ["recent-1"]);
     const { favorites, recents } = await listFavoritesAndRecents(USER);

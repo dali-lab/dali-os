@@ -64,6 +64,12 @@ function byFavoriteOrder(a: Ordered, b: Ordered): number {
   return (b.favoritedAt?.getTime() ?? 0) - (a.favoritedAt?.getTime() ?? 0);
 }
 
+function pageHref(id: string, kind: string | undefined): string {
+  if (kind === "Form") return `/forms/edit/${id}`;
+  if (kind === "Whiteboard") return `/whiteboard/${id}`;
+  return `/documents/${id}`;
+}
+
 const PAGE_SELECT = {
   ...PAGE_ACCESS_SELECT,
   title: true,
@@ -196,7 +202,7 @@ async function computeFavoritesAndRecents(userId: string, request?: Request): Pr
     iconEmoji: (row.page.iconEmoji as string | null) ?? null,
     workspaceType: String(row.page.workspaceType),
     favorited,
-    href: (row.page as { kind?: string }).kind === "Form" ? `/forms/edit/${row.page.id}` : `/documents/${row.page.id}`,
+    href: pageHref(row.page.id, (row.page as { kind?: string }).kind),
     isRoute: false,
     iconKind: "page",
   });
