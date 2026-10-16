@@ -37,6 +37,7 @@ import { InstructorChrome } from '~/components/InstructorChrome'
 import { timed } from '~/lib/server-timing'
 import { educationPortalTwin } from '~/education/lib/portal-twin'
 import { publicDocRedirectForPath } from '~/lib/public-doc.server'
+import { cleanTabUrl } from '~/lib/page-link'
 import type { Route } from './+types/layout'
 
 export async function loader({ request }: Route.LoaderArgs) {
@@ -396,10 +397,7 @@ export default function AppLayoutRoute() {
     if (!embedded) return
     if (typeof window === 'undefined') return
 
-    const params = new URLSearchParams(location.search)
-    params.delete('embed')
-    const query = params.toString()
-    const cleanUrl = location.pathname + (query ? `?${query}` : '')
+    const cleanUrl = cleanTabUrl(location)
 
     window.parent.postMessage(
       { type: 'dali:tabNavigated', url: cleanUrl },
@@ -420,7 +418,7 @@ export default function AppLayoutRoute() {
       )
     }, 50)
     return () => window.clearTimeout(id)
-  }, [embedded, location.pathname, location.search])
+  }, [embedded, location.pathname, location.search, location.hash])
 
   // When embedded, accept `dali:navigate` from the parent TabWorkspace —
   // that's how the per-tab back/forward arrows drive in-iframe navigation.

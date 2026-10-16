@@ -31,11 +31,13 @@ import {
   LogOut,
   CornerDownLeft,
   Loader2,
+  Link as LinkIcon,
 } from "lucide-react";
 import { Modal } from "~/components/Modal";
 import { Avatar } from "~/components/ui/Avatar";
 import { setTablessPreference } from "~/lib/tabless";
 import { setFocusPreference } from "~/lib/focus-mode";
+import { COPY_PAGE_LINK_EVENT } from "~/lib/page-link";
 import type { SearchResult, SearchResultType } from "~/lib/search";
 import { ADMIN_CLUSTERS } from "~/admin/adminNav";
 import { CORE_CLUSTERS } from "~/core/coreNav";
@@ -286,6 +288,13 @@ export function CommandPalette({ open, onClose, tabless, focusMode, roles = NO_R
         subtitle: "Command",
         icon: Compass,
         action: { kind: "run", run: () => window.dispatchEvent(new Event("dali:start-tour")) },
+      },
+      {
+        id: "copy-page-link",
+        title: "Copy link to this page",
+        subtitle: "Command",
+        icon: LinkIcon,
+        action: { kind: "run", run: () => window.dispatchEvent(new CustomEvent(COPY_PAGE_LINK_EVENT)) },
       },
       {
         id: "cmd-logout",

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { comparableUrl } from "~/components/TabWorkspace";
+import { comparableUrl, findTabPane, type WorkspaceState } from "~/components/TabWorkspace";
 import { workspacePath } from "~/components/workspace-link";
 
 describe("comparableUrl", () => {
@@ -41,5 +41,36 @@ describe("workspacePath", () => {
 
   it("leaves something that is not a url alone", () => {
     expect(workspacePath("::not a url::", origin)).toBe("::not a url::");
+  });
+});
+
+describe("tab matching with a hash", () => {
+  const state = (url: string): WorkspaceState => ({
+    focusedPaneId: "p",
+    panes: [
+      {
+        id: "p",
+        activeTabId: "t",
+        tabs: [
+          {
+            id: "t", label: "t", url, origin: "/docs/abc", lastActivatedAt: 0,
+            backStack: [], forwardStack: [], pinned: false, ephemeral: false,
+          },
+        ],
+      },
+    ],
+    closedTabs: [],
+  } as WorkspaceState);
+
+  it("comparableUrl ignores the hash", () => {
+    expect(comparableUrl("/docs/abc?embed=1#section")).toBe("/docs/abc");
+  });
+
+  it("a tab sitting on an anchor still matches its sidebar url", () => {
+    expect(findTabPane(state("/docs/abc#section"), "/docs/abc")).toEqual({ paneId: "p", tabId: "t" });
+  });
+
+  it("different pages do not match", () => {
+    expect(findTabPane(state("/docs/abc#section"), "/docs/other")).toBeNull();
   });
 });
