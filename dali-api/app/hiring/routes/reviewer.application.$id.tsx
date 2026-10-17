@@ -483,23 +483,25 @@ export default function ReviewerApplicationReview() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Left: Application Content */}
         <div className="lg:col-span-2 space-y-6">
-          <EducationEngagementPanel entries={educationEngagement} />
-          <ApplicationEventsPanel entries={hiringEventEngagement} currentCycleId={cycle.id} />
-          <PriorApplicationsPanel
-            entries={priorApplications}
-            outcomesHidden={blinded}
-            hrefFor={(entry) => `/hiring/reviewer/application/${application.id}/prior/${entry.id}`}
-          />
-          <ApplicantEmailPanel
-            engagement={emailEngagement}
-            blinded={blinded}
-            applicationId={application.id}
-          />
           <ApplicationViewer
             application={application}
             questionLabels={questionLabels}
             initialAnnotations={annotations}
             onAnnotationsChange={setAnnotations}
+          />
+          <EducationEngagementPanel entries={educationEngagement} defaultOpen={false} />
+          <ApplicationEventsPanel entries={hiringEventEngagement} currentCycleId={cycle.id} defaultOpen={false} />
+          <PriorApplicationsPanel
+            entries={priorApplications}
+            outcomesHidden={blinded}
+            hrefFor={(entry) => `/hiring/reviewer/application/${application.id}/prior/${entry.id}`}
+            defaultOpen={false}
+          />
+          <ApplicantEmailPanel
+            engagement={emailEngagement}
+            blinded={blinded}
+            applicationId={application.id}
+            defaultOpen={false}
           />
         </div>
 

@@ -1061,7 +1061,7 @@ export function WeekGridEvent({
         {(e.label || e.issue) && (
           <span className="flex items-start gap-1" title={e.issue || undefined}>
             {e.issue && (
-              <IssueIcon className="mt-px h-3 w-3" />
+              <IssueIcon className="mt-px" />
             )}
             <span className="truncate block">{e.label}</span>
           </span>

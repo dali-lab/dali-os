@@ -513,7 +513,7 @@ input::placeholder, textarea::placeholder {
 }
 
 /* Number inputs: drop the browser's up/down spinner arrows (they clash with the
-   custom form styling). Range sliders inherit the brand accent. */
+   custom form styling). Range sliders take the os accent. */
 input[type="number"] {
   appearance: textfield;
   -moz-appearance: textfield;
@@ -524,7 +524,7 @@ input[type="number"]::-webkit-inner-spin-button {
   margin: 0;
 }
 input[type="range"] {
-  accent-color: var(--color-accent-coral);
+  accent-color: var(--color-os-accent);
 }
 
 @utility border-border {

@@ -79,9 +79,9 @@ export function InterviewNotesCard({
 
   if (variant === "compact") {
     return (
-      <div className="px-4 py-3 space-y-2">
+      <div className="px-6 pb-5 space-y-2">
         <div className="flex items-center justify-between">
-          <span className="text-sm text-muted-foreground">
+          <span className="text-sm text-os-grey">
             {start.toLocaleDateString(undefined, { month: "short", day: "numeric" })}{" "}
             {start.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}
           </span>
@@ -89,30 +89,30 @@ export function InterviewNotesCard({
         </div>
         {interview.recommendation && (
           <div className="text-sm">
-            <span className="text-muted-foreground">Recommendation:</span>{" "}
+            <span className="text-os-grey">Recommendation:</span>{" "}
             <span className="font-medium text-foreground">{interview.recommendation}</span>
           </div>
         )}
         {interview.recommendationNotes && (
-          <p className="text-xs text-muted-foreground bg-muted/50 rounded p-2">
+          <p className="text-xs text-os-grey bg-os-well rounded-os-item p-2">
             {interview.recommendationNotes}
           </p>
         )}
         {interviewers.length > 0 && (
-          <div className="text-xs text-muted-foreground pt-1">
+          <div className="text-xs text-os-grey pt-1">
             Interviewers: {interviewers.map((a) => a.name).join(", ")}
           </div>
         )}
 
         {/* Joint interview notes (shared by both interviewers). */}
-        <div className="pt-2 border-t border-border">
-          <div className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
+        <div className="pt-2 border-t border-os-container">
+          <div className="os-field-label">
             Interview notes
           </div>
           {joint ? (
             <p className="mt-1 text-sm text-foreground whitespace-pre-wrap">{joint.text}</p>
           ) : (
-            <p className="mt-1 text-xs text-muted-foreground/70 italic">No interview notes.</p>
+            <p className="mt-1 text-xs text-os-grey/70 italic">No interview notes.</p>
           )}
         </div>
 
@@ -121,7 +121,7 @@ export function InterviewNotesCard({
           <div className="pt-2 space-y-2">
             {interviewersWithNotes.map((a) => (
               <div key={a.id}>
-                <div className="text-xs font-medium text-muted-foreground">
+                <div className="text-xs font-medium text-os-grey">
                   {a.name}&rsquo;s notes
                 </div>
                 <p className="mt-0.5 text-sm text-foreground whitespace-pre-wrap">{a.notes}</p>
@@ -138,7 +138,7 @@ export function InterviewNotesCard({
       <div className="flex flex-wrap items-center gap-3">
         <Pill dot={statusTone}>{statusLabel}</Pill>
         <span className="inline-flex items-center gap-1.5 text-sm text-foreground">
-          <Calendar className="w-3.5 h-3.5 text-muted-foreground" aria-hidden />
+          <Calendar className="w-3.5 h-3.5 text-os-grey" aria-hidden />
           {start.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
           {" · "}
           {start.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}
@@ -149,7 +149,7 @@ export function InterviewNotesCard({
             </>
           )}
         </span>
-        <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+        <span className="inline-flex items-center gap-1.5 text-xs text-os-grey">
           <MapPin className="w-3.5 h-3.5" aria-hidden />
           {interview.room?.name ?? "Online"}
           {!interview.room && (interview.videoUrl ?? interview.zoomJoinUrl) && (
@@ -157,28 +157,28 @@ export function InterviewNotesCard({
               href={interview.videoUrl ?? interview.zoomJoinUrl ?? ''}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-blue-600 hover:underline ml-1"
+              className="text-os-accent hover:text-os-accent-hover ml-1"
             >
               Join Google Meet
             </a>
           )}
         </span>
-        <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+        <span className="inline-flex items-center gap-1.5 text-xs text-os-grey">
           <Users className="w-3.5 h-3.5" aria-hidden />
           {interviewers.length === 0
             ? "No interviewers assigned"
             : interviewers.map((a) => `${a.name} (${interviewerMetaLabel(a)})`).join(", ")}
         </span>
       </div>
-      <div className="rounded-md border border-border bg-background/50 p-3">
+      <div className="rounded-os-item bg-os-card p-3">
         <div className="flex items-center justify-between gap-2">
-          <div className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
+          <div className="os-field-label">
             Joint notes
           </div>
           {interview.openInInterviewerHref && (
             <Link
               to={interview.openInInterviewerHref}
-              className="text-xs text-blue-600 hover:underline"
+              className="text-xs text-os-accent hover:text-os-accent-hover"
             >
               Open in interviewer view
             </Link>
@@ -188,7 +188,7 @@ export function InterviewNotesCard({
           <>
             <p className="mt-2 text-sm text-foreground whitespace-pre-wrap">{joint.text}</p>
             {joint.updatedAt != null && (
-              <p className="mt-1 text-[11px] text-muted-foreground/80">
+              <p className="mt-1 text-[11px] text-os-grey/80">
                 Last edit{" "}
                 {new Date(joint.updatedAt).toLocaleString(undefined, {
                   month: "short",
@@ -200,12 +200,12 @@ export function InterviewNotesCard({
             )}
           </>
         ) : (
-          <p className="mt-2 text-xs text-muted-foreground/70 italic">No notes yet.</p>
+          <p className="mt-2 text-xs text-os-grey/70 italic">No notes yet.</p>
         )}
       </div>
       {(interview.recommendation || interview.recommendationNotes) && (
-        <div className="rounded-md border border-border bg-background/50 p-3">
-          <div className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
+        <div className="rounded-os-item bg-os-card p-3">
+          <div className="os-field-label">
             Joint recommendation
           </div>
           {interview.recommendation && (
@@ -224,20 +224,20 @@ export function InterviewNotesCard({
       )}
       {interviewersWithNotes.length > 0 && (
         <div className="space-y-2 pl-1">
-          <div className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
+          <div className="os-field-label">
             Per-interviewer notes
           </div>
           {interviewersWithNotes.map((a) => (
-            <div key={a.id} className="rounded-md border border-border bg-background/50 p-3">
+            <div key={a.id} className="rounded-os-item bg-os-card p-3">
               <div className="text-sm font-medium text-foreground">
                 {a.name}{" "}
-                <span className="text-xs font-normal text-muted-foreground">
+                <span className="text-xs font-normal text-os-grey">
                   · {interviewerNoteLabel(a)}
                 </span>
               </div>
               <p className="mt-2 text-sm text-foreground whitespace-pre-wrap">{a.notes}</p>
               {a.notesUpdatedAt != null && (
-                <p className="mt-1 text-[11px] text-muted-foreground/80">
+                <p className="mt-1 text-[11px] text-os-grey/80">
                   Last edit{" "}
                   {new Date(a.notesUpdatedAt).toLocaleString(undefined, {
                     month: "short",

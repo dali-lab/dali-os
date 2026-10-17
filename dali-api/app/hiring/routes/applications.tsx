@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { usePersistedState } from "~/hooks/usePersistedState";
 import {
-  APPLICATION_SORT_COLUMNS,
+  applicationColumns,
+  visibleSort,
   DEFAULT_SORT,
   EMPTY_FILTERS,
   ENGAGEMENT_FILTERS,
@@ -161,6 +162,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   // Core and domain leads get the pipeline pie, so their rows carry the
   // relations stage inference needs.
   const showPipeline = isCore || isDomainLead;
+  const showAssignees = selected.currentStatus === "UnderReview";
 
   // Domain filter options and the DomainApplications for the selected cycle
   // both depend only on `visibleDomainIds` (not on each other), so they run
@@ -205,15 +207,32 @@ export async function loader({ request }: Route.LoaderArgs) {
                 },
               },
             },
-            _count: { select: { reviews: true } },
+            ...(showAssignees && {
+              reviews: {
+                orderBy: { createdAt: "asc" as const },
+                select: { cycleReviewer: { select: { user: { select: PERSON_NAME } } } },
+              },
+            }),
             ...(showPipeline && {
               closureReason: true,
               decisions: { orderBy: { createdAt: "desc" as const } },
+            }),
+            // Pipeline stage inference reads the interviews; the under-review
+            // columns read who is on them.
+            ...((showPipeline || showAssignees) && {
               interviews: {
                 where: {
                   status: { in: ["Scheduled", "Completed", "CancelledByApplicant"] as const },
                 },
                 orderBy: { createdAt: "desc" as const },
+                ...(showAssignees && {
+                  include: {
+                    assignments: {
+                      where: { status: "Active" as const },
+                      select: { cycleInterviewer: { select: { user: { select: PERSON_NAME } } } },
+                    },
+                  },
+                }),
               },
             }),
           },
@@ -323,7 +342,14 @@ export async function loader({ request }: Route.LoaderArgs) {
         domain: da.domain?.displayName ?? "—",
         status: status as string,
         submittedAt: submittedAt ? submittedAt.toISOString() : null,
-        reviewCount: da._count.reviews,
+        reviewers: joinNames(
+          ((da as any).reviews ?? []).map((r: any) => r.cycleReviewer.user),
+        ),
+        interviewers: joinNames(
+          ((da as any).interviews ?? [])
+            .filter((i: any) => i.status !== "CancelledByApplicant")
+            .flatMap((i: any) => (i.assignments ?? []).map((a: any) => a.cycleInterviewer.user)),
+        ),
         returning: returningUserIds.has(da.application.user.id),
         emailed: emailedUserIds.has(da.application.user.id),
         educated: educatedUserIds.has(da.application.user.id),
@@ -350,11 +376,23 @@ export async function loader({ request }: Route.LoaderArgs) {
     })),
     selectedCycleId: selected.id,
     selectedCycleName: selected.name,
+    selectedCycleStatus: selected.currentStatus as string,
     domainOptions,
     eventOptions,
     showPipeline,
     rows,
   };
+}
+
+const PERSON_NAME = { firstName: true, lastName: true, daliEmail: true } as const;
+
+function joinNames(users: { firstName: string | null; lastName: string | null; daliEmail: string | null }[]) {
+  const names = [
+    ...new Set(
+      users.map((u) => `${u.firstName ?? ""} ${u.lastName ?? ""}`.trim() || u.daliEmail || "").filter(Boolean),
+    ),
+  ];
+  return names.length > 0 ? names.join(", ") : null;
 }
 
 function formatDate(iso: string): string {
@@ -459,9 +497,12 @@ export default function ApplicationsDatabase() {
     DEFAULT_SORT,
     isApplicationSort,
   );
+  const columns = applicationColumns(data.gate === "ok" ? data.selectedCycleStatus : "");
+  const activeSort = visibleSort(sort, columns);
   const filteredRows = useMemo(
-    () => sortApplications(stage ? pieRows.filter((r) => r.stage === stage) : pieRows, sort),
-    [pieRows, stage, sort],
+    () => sortApplications(stage ? pieRows.filter((r) => r.stage === stage) : pieRows, activeSort),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [pieRows, stage, activeSort.key, activeSort.dir],
   );
   // One applicant can hold several domain applications, so the row count
   // overstates how many people are in the cycle.
@@ -674,13 +715,13 @@ export default function ApplicationsDatabase() {
             <table className="w-full text-sm min-w-[640px]">
               <thead className="text-os-grey text-xs uppercase tracking-wide">
                 <tr>
-                  {APPLICATION_SORT_COLUMNS.map((col) => (
+                  {columns.map((col) => (
                     <th
                       key={col.key}
                       aria-sort={
-                        sort.key !== col.key
+                        activeSort.key !== col.key
                           ? undefined
-                          : sort.dir === "asc"
+                          : activeSort.dir === "asc"
                             ? "ascending"
                             : "descending"
                       }
@@ -690,7 +731,7 @@ export default function ApplicationsDatabase() {
                         {col.label}
                         <span className="inline-flex flex-col">
                           {SORT_DIRECTIONS.map(({ dir, Icon, label }) => {
-                            const active = sort.key === col.key && sort.dir === dir;
+                            const active = activeSort.key === col.key && activeSort.dir === dir;
                             return (
                               <button
                                 key={dir}
@@ -733,12 +774,17 @@ export default function ApplicationsDatabase() {
                         {r.status}
                       </span>
                     </td>
-                    <td className="px-6 py-3.5 text-os-grey">
-                      {r.submittedAt ? formatDate(r.submittedAt) : "—"}
-                    </td>
-                    <td className="px-6 py-3.5 text-os-grey tabular-nums">
-                      {r.reviewCount}
-                    </td>
+                    {columns.some((c) => c.key === "submittedAt") && (
+                      <td className="px-6 py-3.5 text-os-grey">
+                        {r.submittedAt ? formatDate(r.submittedAt) : "—"}
+                      </td>
+                    )}
+                    {columns.some((c) => c.key === "reviewers") && (
+                      <td className="px-6 py-3.5 text-os-grey">{r.reviewers ?? "—"}</td>
+                    )}
+                    {columns.some((c) => c.key === "interviewers") && (
+                      <td className="px-6 py-3.5 text-os-grey">{r.interviewers ?? "—"}</td>
+                    )}
                   </tr>
                 ))}
               </tbody>

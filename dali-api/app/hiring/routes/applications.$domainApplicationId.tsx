@@ -13,8 +13,8 @@ import { presignAnswers } from "~/hiring/lib/presign";
 import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
 import { ApplicationViewer } from "~/hiring/components/ApplicationViewer";
 import { loadContinuedInterestView } from "~/hiring/lib/continued-interest.server";
-import { ReviewSummary } from "~/hiring/components/ReviewSummary";
 import { DetailCard } from "~/hiring/components/DetailCard";
+import { ReviewsCard } from "~/hiring/components/ReviewsCard";
 import { ApplicantDetailHeader } from "~/hiring/components/ApplicantDetailHeader";
 import {
   InterviewNotesCard,
@@ -44,7 +44,6 @@ import { getApplicantEmailEngagement } from "~/hiring/lib/email-engagement.serve
 import { ApplicantEmailPanel } from "~/hiring/components/ApplicantEmailPanel";
 import type { Question, RubricCriterion } from "~/types";
 import { findRound, parseTimeline } from "~/hiring/lib/cycle-timeline";
-import { Select } from "~/components/ui/floating";
 
 export const meta: Route.MetaFunction = ({ data }) => {
   const name = (data as { applicantName?: string } | undefined)?.applicantName;
@@ -564,99 +563,55 @@ export default function ApplicationReadOnlyDetail() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Left: application content (read-only annotations from the selected
             review render inline). */}
-        <div className="lg:col-span-2">
+        <div className="lg:col-span-2 space-y-6">
           <ApplicationViewer
             application={data.application}
             questionLabels={data.questionLabels}
             initialAnnotations={selected?.annotations ?? []}
             readOnly
           />
+          <EducationEngagementPanel entries={data.educationEngagement} defaultOpen={false} />
+          <ApplicationEventsPanel
+            entries={data.hiringEventEngagement}
+            currentCycleId={data.cycleId}
+            defaultOpen={false}
+          />
+          <PriorApplicationsPanel
+            entries={data.priorApplications}
+            outcomesHidden={data.blinded}
+            hrefFor={(entry, domainApplicationId) =>
+              data.blinded
+                ? `/hiring/reviewer/application/${data.applicationId}/prior/${entry.id}`
+                : `/hiring/applications/${domainApplicationId}`
+            }
+            defaultOpen={false}
+          />
+          <ApplicantEmailPanel
+            engagement={data.emailEngagement}
+            blinded={data.blinded}
+            applicationId={data.applicationId}
+            defaultOpen={false}
+          />
         </div>
 
         {/* Right: review viewer. */}
         <div className="space-y-4">
-          <DetailCard
-            title="Reviews"
-            subtitle={
-              data.reviews.length === 0
-                ? "No submitted reviews yet."
-                : `${data.reviews.length} submitted`
-            }
-            className="sticky top-24"
-          >
-            {data.reviews.length > 0 && (
-              <div className="p-6 space-y-5">
-                {/* Reviewer selector */}
-                <div>
-                  <label
-                    htmlFor="review-select"
-                    className="block text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1"
-                  >
-                    Reviewer
-                  </label>
-                  <Select
-                    value={data.selectedReviewId ?? ""}
-                    onChange={(reviewId) => {
-                      const next = new URLSearchParams(searchParams);
-                      next.set("review", reviewId);
-                      setSearchParams(next);
-                    }}
-                    options={data.reviews.map((r) => ({ value: r.id, label: r.reviewerName }))}
-                    buttonClassName="w-full px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
-                  />
-                </div>
-
-                {selected && (
-                  <ReviewSummary
-                    reviewerName={selected.reviewerName}
-                    reviewerPhotoUrl={selected.reviewerPhotoUrl}
-                    overallRecommendation={selected.overallRecommendation}
-                    scores={selected.scores}
-                    criteria={Object.fromEntries(
-                      Object.entries(data.criterionLabels).map(([key, label]) => [
-                        key,
-                        { label },
-                      ]),
-                    )}
-                    feedback={selected.feedback}
-                    rejectionRationale={selected.rejectionRationale}
-                    footerNote={
-                      selected.submittedAt ? (
-                        <>
-                          Submitted{" "}
-                          {new Date(selected.submittedAt).toLocaleDateString(undefined, {
-                            month: "short",
-                            day: "numeric",
-                            year: "numeric",
-                          })}
-                          . Highlighted passages from this review appear inline on the left.
-                        </>
-                      ) : null
-                    }
-                  />
-                )}
-              </div>
+          <ReviewsCard
+            reviews={data.reviews}
+            criteria={Object.fromEntries(
+              Object.entries(data.criterionLabels).map(([key, label]) => [key, { label }]),
             )}
-          </DetailCard>
+            selectedId={data.selectedReviewId}
+            onSelect={(reviewId) => {
+              const next = new URLSearchParams(searchParams);
+              next.set("review", reviewId);
+              setSearchParams(next);
+            }}
+            footerSuffix=" Highlighted passages from this review appear inline on the left."
+          />
         </div>
       </div>
 
-      <EducationEngagementPanel entries={data.educationEngagement} />
-      <ApplicationEventsPanel entries={data.hiringEventEngagement} currentCycleId={data.cycleId} />
-      <PriorApplicationsPanel
-        entries={data.priorApplications}
-        outcomesHidden={data.blinded}
-        hrefFor={(entry, domainApplicationId) =>
-          data.blinded
-            ? `/hiring/reviewer/application/${data.applicationId}/prior/${entry.id}`
-            : `/hiring/applications/${domainApplicationId}`
-        }
-      />
-      <ApplicantEmailPanel
-        engagement={data.emailEngagement}
-        blinded={data.blinded}
-        applicationId={data.applicationId}
-      />
 
       <InterviewsSection
         interviews={data.interviews}
@@ -693,27 +648,25 @@ function InterviewsSection({
           : `${interviews.length} ${interviews.length === 1 ? "interview" : "interviews"}`
       }
     >
-      {hasPrepNote && (
-        <div className="px-6 py-3 border-b border-border bg-amber-50/40">
-          <div className="text-xs font-bold text-amber-900 uppercase tracking-wider">
-            Interview prep note
-          </div>
-          <p className="mt-1 text-sm text-foreground whitespace-pre-wrap">
-            {interviewPrepNote}
-          </p>
-          <p className="mt-1 text-[11px] text-muted-foreground/80">
-            Set by leads during Initial delibs.
-          </p>
+      {(hasPrepNote || interviews.length > 0) && (
+        <div className="flex flex-col gap-3 px-6 pb-6">
+          {hasPrepNote && (
+            <div className="rounded-os-item bg-os-amber/10 px-4 py-3">
+              <div className="text-[11px] font-bold uppercase tracking-[1px] text-os-amber">Interview prep note</div>
+              <p className="mt-1 text-sm text-foreground whitespace-pre-wrap">{interviewPrepNote}</p>
+              <p className="mt-1 text-xs text-os-grey">Set by leads during Initial delibs.</p>
+            </div>
+          )}
+          {interviews.length > 0 && (
+            <ul className="flex flex-col gap-3">
+              {interviews.map((iv) => (
+                <li key={iv.id} className="rounded-os-item bg-os-well">
+                  <InterviewNotesCard interview={toInterviewNotesData(iv)} />
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
-      )}
-      {interviews.length > 0 && (
-        <ul className="divide-y divide-border">
-          {interviews.map((iv) => (
-            <li key={iv.id}>
-              <InterviewNotesCard interview={toInterviewNotesData(iv)} />
-            </li>
-          ))}
-        </ul>
       )}
     </DetailCard>
   );

@@ -198,3 +198,83 @@ describe("applications.tsx loader — attendedEvent engagement signal", () => {
     expect(result.rows[0].attendedEventIds).toEqual([]);
   });
 });
+
+describe("applications.tsx loader — reviewer and interviewer columns", () => {
+  const person = (firstName: string, lastName: string) => ({ firstName, lastName, daliEmail: null });
+
+  function useCycleStatus(newStatus: string) {
+    mockPrisma.applicationCycle.findMany.mockResolvedValue([
+      {
+        id: CYCLE_ID,
+        name: "Fall Cycle",
+        createdAt: new Date("2026-01-01"),
+        applicants: "Students",
+        anonymizeReview: false,
+        statusUpdates: [{ newStatus }],
+      },
+    ]);
+  }
+
+  function rowsSelect() {
+    const call = mockPrisma.domainApplication.findMany.mock.calls.find(([arg]: any) => arg.where.domainId);
+    return call[0].select;
+  }
+
+  it("names the assigned reviewers and active interviewers while the cycle is under review", async () => {
+    useCycleStatus("UnderReview");
+    mockPrisma.domainApplication.findMany.mockImplementation(({ where }: any) => {
+      if (!where.domainId) return Promise.resolve([{ id: DA_ID, applicationId: APPLICATION_ID }]);
+      return Promise.resolve([
+        {
+          ...baseDomainApp(),
+          reviews: [
+            { cycleReviewer: { user: person("Rae", "One") } },
+            { cycleReviewer: { user: person("Sam", "Two") } },
+          ],
+          interviews: [
+            {
+              status: "Completed",
+              assignments: [
+                { cycleInterviewer: { user: person("Ivy", "Three") } },
+                { cycleInterviewer: { user: person("Rae", "One") } },
+              ],
+            },
+            { status: "CancelledByApplicant", assignments: [{ cycleInterviewer: { user: person("Old", "Slot") } }] },
+          ],
+        },
+      ]);
+    });
+
+    const result: any = await callLoader();
+
+    expect(result.selectedCycleStatus).toBe("UnderReview");
+    expect(result.rows[0].reviewers).toBe("Rae One, Sam Two");
+    expect(result.rows[0].interviewers).toBe("Ivy Three, Rae One");
+    expect(rowsSelect().reviews).toBeDefined();
+    expect(rowsSelect().interviews.include.assignments.where).toEqual({ status: "Active" });
+  });
+
+  it("leaves both columns empty when nobody is assigned yet", async () => {
+    useCycleStatus("UnderReview");
+    mockPrisma.domainApplication.findMany.mockImplementation(({ where }: any) => {
+      if (!where.domainId) return Promise.resolve([{ id: DA_ID, applicationId: APPLICATION_ID }]);
+      return Promise.resolve([{ ...baseDomainApp(), reviews: [], interviews: [] }]);
+    });
+
+    const result: any = await callLoader();
+
+    expect(result.rows[0].reviewers).toBeNull();
+    expect(result.rows[0].interviewers).toBeNull();
+  });
+
+  it("skips the assignee lookups outside of review", async () => {
+    useCycleStatus("Open");
+
+    const result: any = await callLoader();
+
+    expect(rowsSelect().reviews).toBeUndefined();
+    expect(rowsSelect().interviews?.include).toBeUndefined();
+    expect(result.rows[0].reviewers).toBeNull();
+    expect(result.rows[0].interviewers).toBeNull();
+  });
+});
