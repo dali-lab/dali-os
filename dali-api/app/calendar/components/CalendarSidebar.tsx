@@ -384,13 +384,10 @@ function CalendarSidebarContent({
           here is what the mode needs: the roles being logged against. */}
       {layers.logged && (
         <div className="flex flex-col gap-2">
-          <div className="flex flex-col gap-1.5">
-            <h2 className="px-1 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-              Roles
-            </h2>
-            {/* Payroll approves by period; a member paces by week. The totals
-                below answer whichever one is selected, and the range underneath
-                spells out the days so neither reading is a guess. */}
+          {/* Payroll approves by period; a member paces by week. The totals
+              below answer whichever one is selected, and the range underneath
+              spells out the days so neither reading is a guess. */}
+          <div className="mb-1 flex flex-col gap-2.5">
             <SegmentedTabButtons
               size="sm"
               stretch
@@ -404,8 +401,11 @@ function CalendarSidebarContent({
                 },
               ]}
             />
-            <p className="px-1 text-xs text-muted-foreground">{hoursRangeLabel}</p>
+            <p className="text-center text-xs text-muted-foreground">{hoursRangeLabel}</p>
           </div>
+          <h2 className="px-1 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+            Roles
+          </h2>
           <ul className="flex flex-col gap-0.5">
             {myRoles.map((r) => {
               const key = `${r.assignmentType}:${r.roleRefId}`;

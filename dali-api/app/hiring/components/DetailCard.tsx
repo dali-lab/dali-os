@@ -1,10 +1,10 @@
 import type React from "react";
+import { cn } from "~/lib/cn";
+import { PANEL_CARD, PANEL_HEADER, PANEL_TITLE } from "~/hiring/components/ApplicantPanel";
 
-// Shared card shell for the hiring detail routes: rounded-xl card with a
-// muted header band (title + optional subtitle + optional right-aligned extra)
-// and an arbitrary body. This is a hiring-local composition — the global
-// ~/components/ui/Card uses a different visual contract (rounded-os-card,
-// no header slot) and does not cover this shell.
+// A titled block on the hiring detail routes (Reviews, Interviews) with a
+// right-aligned header slot. Same card as ApplicantPanel, so an empty block
+// reads like its neighbours.
 export function DetailCard({
   title,
   subtitle,
@@ -19,15 +19,11 @@ export function DetailCard({
   className?: string;
 }): React.ReactElement {
   return (
-    <section
-      className={`bg-card rounded-xl border border-border shadow-sm${className ? ` ${className}` : ""}`}
-    >
-      <div className="px-6 py-4 border-b border-border bg-muted/50 flex items-start justify-between gap-3">
+    <section className={cn(PANEL_CARD, className)}>
+      <div className={cn(PANEL_HEADER, "flex items-start justify-between gap-3 pb-5")}>
         <div className="min-w-0">
-          <h2 className="text-lg font-bold text-foreground">{title}</h2>
-          {subtitle != null && (
-            <p className="text-xs text-muted-foreground mt-0.5">{subtitle}</p>
-          )}
+          <h2 className={PANEL_TITLE}>{title}</h2>
+          {subtitle != null && <p className="mt-1 text-sm text-os-grey">{subtitle}</p>}
         </div>
         {headerExtra != null && <div className="flex-shrink-0">{headerExtra}</div>}
       </div>

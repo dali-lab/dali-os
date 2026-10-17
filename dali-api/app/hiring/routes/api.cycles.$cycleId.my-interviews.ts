@@ -34,7 +34,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       // cancel path forgot to decline its assignments (the reschedule path
       // historically did). Gate on the interview itself so the dashboard
       // never surfaces a cancelled slot regardless of assignment bookkeeping.
-      interview: { status: "Scheduled" },
+      // Completed ones stay so the interviewer can get back to their notes.
+      interview: { status: { in: ["Scheduled", "Completed"] } },
     },
     include: {
       interview: {

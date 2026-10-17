@@ -8,6 +8,8 @@ import { CycleSelector } from '~/hiring/components/CycleSelector'
 import { ConfidentialityGate } from '~/hiring/components/ConfidentialityGate'
 import { useDialog } from '~/components/ui/dialog'
 import { useToast } from '~/components/ui/toast'
+import { Pill } from '~/hiring/components/cycle-setup/SetupCard'
+import { splitInterviewsByTime } from '~/hiring/lib/interview-status'
 
 // My work → Interviews: the interviewer's assigned interviews. Applicants book
 // against each interviewer's DALI OS calendar directly, so there's no
@@ -27,13 +29,13 @@ export function InterviewsView({
 }) {
   const dialog = useDialog()
   const toast = useToast()
-  const { panel, bodyText } = useOsChrome()
+  const { panel, bodyText, sectionTitle } = useOsChrome()
   const [scheduledInterviews, setScheduledInterviews] = useState<any[]>([])
 
   const loadScheduledInterviews = useCallback(() => {
     fetch(`/api/hiring/cycles/${cycleId}/my-interviews`, { credentials: 'include' })
       .then(r => r.ok ? r.json() : [])
-      .then((assignments: any[]) => setScheduledInterviews(assignments))
+      .then((assignments: any[]) => setScheduledInterviews(assignments.filter((a) => a.interview)))
       .catch(() => {})
   }, [cycleId])
 
@@ -91,6 +93,75 @@ export function InterviewsView({
     d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })
   const formatTime = (d: Date) => d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
 
+  const { upcoming, past } = splitInterviewsByTime(scheduledInterviews, new Date())
+
+  const renderCard = (assignment: any, isPast: boolean) => {
+    const interview = assignment.interview
+    const startDate = new Date(interview.startTime)
+    const endDate = new Date(interview.endTime)
+    const applicant = interview.domainApplication?.application?.user
+    const domain =
+      interview.domainApplication?.domain?.name ??
+      interview.domainApplication?.challengeVersion?.domain?.name
+    return (
+      <div
+        key={assignment.id}
+        className={cn(
+          'flex flex-col gap-4 p-5',
+          isPast ? 'rounded-os-card border border-os-container bg-transparent' : panel,
+        )}
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h3
+              className={cn(
+                'truncate font-heading text-lg font-semibold',
+                isPast ? 'text-os-grey' : 'text-foreground',
+              )}
+            >
+              {applicant ? `${applicant.firstName} ${applicant.lastName}` : 'Applicant'}
+            </h3>
+            {domain && <p className="text-sm text-os-grey">{domain}</p>}
+          </div>
+          <div className={cn('shrink-0 text-right', !isPast && 'rounded-os-item bg-os-well px-3 py-2')}>
+            <p className={cn('text-sm font-semibold', isPast ? 'text-os-grey' : 'text-foreground')}>
+              {formatDay(startDate)}
+            </p>
+            <p className="text-sm tabular-nums text-os-grey">
+              {formatTime(startDate)} to {formatTime(endDate)}
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          {isPast ? (
+            <>
+              <Link to={`/hiring/interviews/${interview.id}`} className={buttonClasses('secondary', 'sm')}>
+                View notes
+              </Link>
+              <Pill dot={interview.status === 'Completed' ? 'success' : 'warning'}>
+                {interview.status === 'Completed' ? 'Completed' : 'Needs recommendation'}
+              </Pill>
+            </>
+          ) : (
+            <>
+              <Link to={`/hiring/interviews/${interview.id}`} className={buttonClasses('primary', 'sm')}>
+                Open interview
+              </Link>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => handleDeclineInterview(interview.id)}
+                disabled={decliningId === interview.id}
+              >
+                {decliningId === interview.id ? 'Marking…' : 'Mark unavailable'}
+              </Button>
+            </>
+          )}
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="flex flex-col gap-8">
       {cycles.length > 1 && <CycleSelector cycles={cycles} activeId={cycleId} />}
@@ -118,49 +189,21 @@ export function InterviewsView({
           </p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          {scheduledInterviews.map((assignment: any) => {
-            const interview = assignment.interview
-            if (!interview) return null
-            const startDate = new Date(interview.startTime)
-            const endDate = new Date(interview.endTime)
-            const applicant = interview.domainApplication?.application?.user
-            const domain =
-              interview.domainApplication?.domain?.name ??
-              interview.domainApplication?.challengeVersion?.domain?.name
-            return (
-              <div key={assignment.id} className={cn(panel, 'flex flex-col gap-4 p-5')}>
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <h3 className="truncate font-heading text-lg font-semibold text-foreground">
-                      {applicant ? `${applicant.firstName} ${applicant.lastName}` : 'Applicant'}
-                    </h3>
-                    {domain && <p className="text-sm text-os-grey">{domain}</p>}
-                  </div>
-                  <div className="shrink-0 rounded-os-item bg-os-well px-3 py-2 text-right">
-                    <p className="text-sm font-semibold text-foreground">{formatDay(startDate)}</p>
-                    <p className="text-sm tabular-nums text-os-grey">
-                      {formatTime(startDate)} to {formatTime(endDate)}
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Link to={`/hiring/interviews/${interview.id}`} className={buttonClasses('primary', 'sm')}>
-                    Open interview
-                  </Link>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => handleDeclineInterview(interview.id)}
-                    disabled={decliningId === interview.id}
-                  >
-                    {decliningId === interview.id ? 'Marking…' : 'Mark unavailable'}
-                  </Button>
-                </div>
+        <>
+          {upcoming.length > 0 && (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              {upcoming.map((assignment: any) => renderCard(assignment, false))}
+            </div>
+          )}
+          {past.length > 0 && (
+            <section className="flex flex-col gap-3">
+              <h2 className={sectionTitle}>Past interviews</h2>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                {past.map((assignment: any) => renderCard(assignment, true))}
               </div>
-            )
-          })}
-        </div>
+            </section>
+          )}
+        </>
       )}
     </div>
   )

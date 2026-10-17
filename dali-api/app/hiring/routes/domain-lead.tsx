@@ -1061,26 +1061,26 @@ function DomainPanel({ entry, allForms }: { entry: any; allForms: { id: string; 
                   if (rows.length === 0) return null;
                   return (
                     <div>
-                      <div className="hidden sm:block overflow-x-auto border border-border rounded-lg">
+                      <div className="hidden sm:block -mx-6 overflow-x-auto">
                         <table className="w-full text-sm min-w-[900px]">
-                          <thead className="bg-muted/50 text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                          <thead className={OS_TABLE_HEAD}>
                             <tr>
-                              <th className="px-6 py-3 text-left">Applicant</th>
-                              <th className="px-6 py-3 text-left">Time</th>
-                              <th className="px-6 py-3 text-left">Location</th>
-                              <th className="px-6 py-3 text-left">Status</th>
-                              <th className="px-6 py-3 text-left">Decisions</th>
-                              <th className="px-6 py-3 text-left">In-Domain</th>
-                              <th className="px-6 py-3 text-left">Cross-Domain</th>
-                              <th className="px-6 py-3 text-right">Actions</th>
+                              <th className="px-6 py-3 text-left font-medium">Applicant</th>
+                              <th className="px-6 py-3 text-left font-medium">Time</th>
+                              <th className="px-6 py-3 text-left font-medium">Location</th>
+                              <th className="px-6 py-3 text-left font-medium">Status</th>
+                              <th className="px-6 py-3 text-left font-medium">Decisions</th>
+                              <th className="px-6 py-3 text-left font-medium">In-Domain</th>
+                              <th className="px-6 py-3 text-left font-medium">Cross-Domain</th>
+                              <th className="px-6 py-3 text-right font-medium">Actions</th>
                             </tr>
                           </thead>
-                          <tbody className="divide-y divide-gray-100">
+                          <tbody>
                             {rows.map((row) => (
                               <tr
                                 key={row.key}
                                 onClick={() => openReview(row)}
-                                className={`hover:bg-muted/50 ${row.daId ? "cursor-pointer" : ""}`}
+                                className={cn(OS_TABLE_ROW, row.daId && "cursor-pointer")}
                               >
                                 <td className="px-6 py-4 font-medium text-foreground">{row.name}</td>
                                 <td className="px-6 py-4 text-muted-foreground">{row.time}</td>
@@ -1089,7 +1089,7 @@ function DomainPanel({ entry, allForms }: { entry: any; allForms: { id: string; 
                                   {(row.videoUrl ?? row.zoomJoinUrl) && (
                                     <a href={row.videoUrl ?? row.zoomJoinUrl ?? ''} target="_blank" rel="noopener noreferrer"
                                        onClick={(e) => e.stopPropagation()}
-                                       className="block text-xs text-blue-600 hover:underline mt-0.5">Join Google Meet</a>
+                                       className="block text-xs text-os-accent hover:text-os-accent-hover mt-0.5">Join Google Meet</a>
                                   )}
                                 </td>
                                 <td className="px-6 py-4">
@@ -1120,7 +1120,7 @@ function DomainPanel({ entry, allForms }: { entry: any; allForms: { id: string; 
                           <li
                             key={row.key}
                             onClick={() => openReview(row)}
-                            className={`border border-border rounded-lg p-3 space-y-2 ${row.daId ? "cursor-pointer hover:bg-muted/50" : ""}`}
+                            className={cn("rounded-os-item bg-os-well p-3 space-y-2", row.daId && "cursor-pointer hover:bg-os-container")}
                           >
                             <div className="flex items-start justify-between gap-2">
                               <div className="font-medium text-foreground min-w-0 truncate">{row.name}</div>
@@ -1134,7 +1134,7 @@ function DomainPanel({ entry, allForms }: { entry: any; allForms: { id: string; 
                                   {(row.videoUrl ?? row.zoomJoinUrl) && (
                                     <a href={row.videoUrl ?? row.zoomJoinUrl ?? ''} target="_blank" rel="noopener noreferrer"
                                        onClick={(e) => e.stopPropagation()}
-                                       className="ml-2 text-blue-600 hover:underline">Join Google Meet</a>
+                                       className="ml-2 text-os-accent hover:text-os-accent-hover">Join Google Meet</a>
                                   )}
                                 </div>
                                 <div className="text-xs text-muted-foreground"><span className="font-medium">In-Domain:</span> {row.inDomain}</div>
@@ -1169,6 +1169,9 @@ function DomainPanel({ entry, allForms }: { entry: any; allForms: { id: string; 
     </div>
   );
 }
+
+const OS_TABLE_HEAD = "text-os-grey text-xs uppercase tracking-wide";
+const OS_TABLE_ROW = "border-t border-os-container hover:bg-os-card-hover transition-colors";
 
 function personName(u: any): string | undefined {
   return (u?.firstName && u?.lastName ? `${u.firstName} ${u.lastName}` : u?.daliEmail) ?? undefined;
@@ -1613,30 +1616,20 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
   const displayedApps = sortedApps;
 
   return (
-    <div className="border border-border rounded-lg overflow-hidden">
-      <div className="px-4 sm:px-6 py-3 border-b border-border bg-muted/30 flex flex-wrap items-center gap-x-3 gap-y-2">
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
         {/* The way into the finalize filter, so it outlives the cycle being
             live: a closed cycle still shows it while anything is left to
             finalize, and drops it once nothing is. */}
         {(isUnderReview || finalizableApps.length > 0) && (
-          <div className="flex items-center gap-1 bg-muted rounded-lg p-0.5">
-            <button
-              onClick={() => setFilter("all")}
-              className={`px-3 py-1 text-xs font-medium rounded-md transition ${
-                filter === "all" ? "bg-accent-coral text-white shadow-sm" : "text-muted-foreground hover:text-foreground/80"
-              }`}
-            >
-              All Applicants ({apps.length})
-            </button>
-            <button
-              onClick={() => setFilter("finalize")}
-              className={`px-3 py-1 text-xs font-medium rounded-md transition ${
-                filter === "finalize" ? "bg-accent-coral text-white shadow-sm" : "text-muted-foreground hover:text-foreground/80"
-              }`}
-            >
-              Needs Finalization ({finalizableApps.length})
-            </button>
-          </div>
+          <SegmentedTabButtons
+            label="Applicants"
+            size="sm"
+            items={[
+              { label: "All applicants", count: apps.length, active: filter === "all", onClick: () => setFilter("all") },
+              { label: "Needs finalization", count: finalizableApps.length, active: filter === "finalize", onClick: () => setFilter("finalize") },
+            ]}
+          />
         )}
         <SearchInput
           value={query}
@@ -1658,12 +1651,12 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
                 return sp;
               }, { preventScrollReset: true });
             }}
-            className="text-xs text-muted-foreground hover:text-foreground/80"
+            className="text-xs text-os-grey hover:text-foreground"
           >
             Reset
           </button>
         )}
-        <span className="text-xs text-muted-foreground">
+        <span className="text-xs text-os-grey tabular-nums">
           {displayedApps.length} of {baseApps.length}
         </span>
         <div className="ml-auto flex items-center gap-2">
@@ -1685,9 +1678,9 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
                 }
                 revalidator.revalidate();
               }}
-              className="px-3 py-1.5 text-xs font-medium rounded-lg bg-accent-coral hover:bg-accent-coral/90 text-white transition"
+              className={buttonClasses("primary", "sm")}
             >
-              Finalize All ({finalizableApps.length})
+              Finalize all ({finalizableApps.length})
             </button>
           )}
           {currentStatus === "UnderReview" && (
@@ -1715,24 +1708,24 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
                     }
                   }}
                   disabled={!canAssignReviewers || cycleReviewersForDomain.length === 0}
-                  className="px-3 py-1.5 text-xs font-medium rounded-lg bg-muted hover:bg-muted/70 text-foreground border border-border transition disabled:opacity-50"
+                  className={buttonClasses("secondary", "sm")}
                 >
-                  Auto-Assign Reviewers
+                  Auto-assign reviewers
                 </button>
               </span>
             </Tooltip>
           )}
         </div>
       </div>
-      <div className="hidden sm:block overflow-x-auto">
+      <div className="hidden sm:block -mx-6 overflow-x-auto">
       <table className="w-full text-sm min-w-[640px]">
-        <thead className="bg-muted/50 text-xs font-medium text-muted-foreground uppercase tracking-wide">
+        <thead className={OS_TABLE_HEAD}>
           <tr>
-            <th className="px-6 py-3 text-left">
+            <th className="px-6 py-3 text-left font-medium">
               <button
                 type="button"
                 onClick={() => toggleSort("name")}
-                className="inline-flex items-center gap-1 uppercase tracking-wide hover:text-foreground/80"
+                className="inline-flex items-center gap-1 uppercase tracking-wide hover:text-foreground"
                 aria-label={`Sort by applicant name (${sortKey === "name" ? (sortDir === "asc" ? "ascending" : "descending") : "not sorted"})`}
               >
                 Applicant
@@ -1741,11 +1734,11 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
                   : <ChevronDown className="w-3 h-3" />)}
               </button>
             </th>
-            <th className="px-6 py-3 text-left">
+            <th className="px-6 py-3 text-left font-medium">
               <button
                 type="button"
                 onClick={() => toggleSort("reviewers")}
-                className="inline-flex items-center gap-1 uppercase tracking-wide hover:text-foreground/80"
+                className="inline-flex items-center gap-1 uppercase tracking-wide hover:text-foreground"
                 aria-label={`Sort by reviewer progress (${sortKey === "reviewers" ? (sortDir === "asc" ? "ascending" : "descending") : "not sorted"})`}
               >
                 Reviewers
@@ -1754,16 +1747,16 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
                   : <ChevronDown className="w-3 h-3" />)}
               </button>
             </th>
-            <th className="px-6 py-3 text-left">
+            <th className="px-6 py-3 text-left font-medium">
               <span className="inline-flex items-center gap-1">
                 Decisions
                 <InfoTip content="Pre-pipeline pills show where this application stands before a formal decision — Reviewing, Interview scheduled, or Post-interview. Formal decision pills (Draft → Final → Released) appear once a decision is made." />
               </span>
             </th>
-            <th className="px-6 py-3 text-right">Actions</th>
+            <th className="px-6 py-3 text-right font-medium">Actions</th>
           </tr>
         </thead>
-        <tbody className="divide-y divide-gray-100">
+        <tbody>
           {displayedApps.map((app: any) => {
             const da = app.domainApplications[0];
             const reviews = da?.reviews ?? [];
@@ -1787,7 +1780,7 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
               : null;
             const daId = da?.id as string | undefined;
             return (
-              <tr key={app.id} className="hover:bg-muted/50">
+              <tr key={app.id} className={OS_TABLE_ROW}>
                 <td className="px-6 py-4 font-medium">
                   {daId ? (
                     <Link
@@ -1797,7 +1790,7 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
                         const label = `${app.user.firstName ?? ''} ${app.user.lastName ?? ''}`.trim() || 'Applicant'
                         if (requestOpenTabIfEmbedded(url, label)) e.preventDefault()
                       }}
-                      className="text-foreground hover:text-accent-coral hover:underline"
+                      className="text-foreground hover:text-os-accent"
                     >
                       {app.user.firstName} {app.user.lastName}
                     </Link>
@@ -1824,7 +1817,7 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
                   ) : prePill ? (
                     <PrePipelinePillBadge pill={prePill} />
                   ) : (
-                    <span className="text-xs text-muted-foreground">—</span>
+                    <span className="text-xs text-os-grey">—</span>
                   )}
                 </td>
                 <td className="px-6 py-4 text-right">
@@ -1833,12 +1826,12 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
                     <button
                       onClick={() => handleFinalize(draftToFinalize.id)}
                       disabled={finalizingId === draftToFinalize.id}
-                      className="px-2 py-1 text-xs font-medium rounded bg-accent-coral hover:bg-accent-coral/90 text-white transition disabled:opacity-50 disabled:cursor-not-allowed"
+                      className={buttonClasses("secondary", "xs")}
                     >
                       {finalizingId === draftToFinalize.id ? "Finalizing…" : "Finalize"}
                     </button>
                   ) : (
-                    <span className="text-xs text-muted-foreground/60">—</span>
+                    <span className="text-xs text-os-grey">—</span>
                   )}
                   </div>
                 </td>
@@ -1846,14 +1839,14 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
             );
           })}
           {displayedApps.length === 0 && (
-            <tr><td colSpan={isUnderReview && canAssignReviewers ? 5 : 4} className="px-6 py-8 text-center text-muted-foreground/70 text-sm">
+            <tr><td colSpan={isUnderReview && canAssignReviewers ? 5 : 4} className="px-6 py-8 text-center text-os-grey text-sm">
               {filter === "finalize" ? "No applications need finalization." : "No applications."}
             </td></tr>
           )}
         </tbody>
       </table>
       </div>
-      <ul className="sm:hidden divide-y divide-gray-100">
+      <ul className="sm:hidden -mx-6 divide-y divide-os-container border-t border-os-container">
         {displayedApps.map((app: any) => {
           const da = app.domainApplications[0];
           const reviews = da?.reviews ?? [];
@@ -1877,7 +1870,7 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
             : null;
           const daId = da?.id as string | undefined;
           return (
-            <li key={app.id} className="px-4 py-3 space-y-2">
+            <li key={app.id} className="px-6 py-3 space-y-2">
               <div className="flex items-center gap-2">
                 {daId ? (
                   <Link
@@ -1887,7 +1880,7 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
                       const label = `${app.user.firstName ?? ''} ${app.user.lastName ?? ''}`.trim() || 'Applicant'
                       if (requestOpenTabIfEmbedded(url, label)) e.preventDefault()
                     }}
-                    className="font-medium text-foreground hover:text-accent-coral hover:underline"
+                    className="font-medium text-foreground hover:text-os-accent"
                   >
                     {app.user.firstName} {app.user.lastName}
                   </Link>
@@ -1898,7 +1891,7 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
                 )}
               </div>
               <div>
-                <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1">Reviewers</div>
+                <div className="text-[10px] font-bold text-os-grey uppercase tracking-wider mb-1">Reviewers</div>
                 <ReviewerAssignmentCell
                   domainApplicationId={da?.id}
                   reviews={reviews}
@@ -1908,7 +1901,7 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
                 />
               </div>
               <div>
-                <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1">Decisions</div>
+                <div className="text-[10px] font-bold text-os-grey uppercase tracking-wider mb-1">Decisions</div>
                 {pills.length > 0 ? (
                   <div className="flex flex-wrap gap-1">
                     {pills.map((pill, i) => (
@@ -1918,7 +1911,7 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
                 ) : prePill ? (
                   <PrePipelinePillBadge pill={prePill} />
                 ) : (
-                  <span className="text-xs text-muted-foreground">—</span>
+                  <span className="text-xs text-os-grey">—</span>
                 )}
               </div>
               {canFinalize && draftToFinalize && (
@@ -1926,7 +1919,7 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
                   <button
                     onClick={() => handleFinalize(draftToFinalize.id)}
                     disabled={finalizingId === draftToFinalize.id}
-                    className="px-2 py-1 text-xs font-medium rounded bg-accent-coral hover:bg-accent-coral/90 text-white transition disabled:opacity-50 disabled:cursor-not-allowed"
+                    className={buttonClasses("secondary", "xs")}
                   >
                     {finalizingId === draftToFinalize.id ? "Finalizing…" : "Finalize"}
                   </button>
@@ -1936,7 +1929,7 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
           );
         })}
         {displayedApps.length === 0 && (
-          <li className="px-6 py-8 text-center text-muted-foreground/70 text-sm">
+          <li className="px-6 py-8 text-center text-os-grey text-sm">
             {filter === "finalize" ? "No applications need finalization." : "No applications."}
           </li>
         )}
@@ -2037,7 +2030,7 @@ function ReviewerAssignmentCell({ domainApplicationId, reviews, cycleReviewers, 
   }
 
   const cellClass = editable && adding
-    ? "flex flex-wrap items-center gap-1 border-2 border-blue-400/50 bg-blue-50 dark:bg-blue-900/20 rounded-md p-1"
+    ? "flex flex-wrap items-center gap-1 rounded-os-item bg-os-well p-1.5"
     : "flex flex-wrap items-center gap-1";
   return (
     <div className={cellClass}>
@@ -2072,7 +2065,7 @@ function ReviewerAssignmentCell({ domainApplicationId, reviews, cycleReviewers, 
               }
             }}
             aria-label={tooltip}
-            className="inline-flex cursor-pointer items-center gap-1 rounded-full transition hover:brightness-95"
+            className="inline-flex cursor-pointer items-center gap-1 rounded-full transition-opacity hover:opacity-80"
           >
             <Pill dot={dot}>
             {name}
@@ -2083,7 +2076,7 @@ function ReviewerAssignmentCell({ domainApplicationId, reviews, cycleReviewers, 
                   void requestRemoveReview(r);
                 }}
                 disabled={removing === r.id}
-                className="ml-0.5 text-muted-foreground/70 hover:text-red-500 transition"
+                className="ml-0.5 text-os-grey hover:text-red-500 transition-colors"
                 aria-label={status === "submitted" ? "Remove reviewer (deletes submitted review)" : "Remove reviewer"}
               >
                 <Trash2 className="w-3 h-3" />
@@ -2096,7 +2089,7 @@ function ReviewerAssignmentCell({ domainApplicationId, reviews, cycleReviewers, 
       })}
       {editable && adding ? (
         <div className="inline-flex items-center gap-1">
-          <span className="text-[10px] uppercase tracking-wide font-bold text-blue-700 dark:text-blue-300">
+          <span className="text-[10px] uppercase tracking-wide font-bold text-os-accent">
             Adding reviewer
           </span>
           <Select
@@ -2112,19 +2105,19 @@ function ReviewerAssignmentCell({ domainApplicationId, reviews, cycleReviewers, 
                   : m?.daliEmail ?? cr.id,
               };
             })}
-            buttonClassName="rounded border border-border bg-card text-card-foreground px-1.5 py-0.5 text-xs inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+            buttonClassName="rounded-full border border-os-container bg-os-card px-2.5 py-1 text-xs text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:border-os-container-hi"
           />
           <button
             onClick={addReviewer}
             disabled={!selectedReviewerId}
-            className="px-1.5 py-0.5 text-xs font-medium rounded bg-accent-teal text-white hover:bg-accent-teal/90 disabled:opacity-50"
+            className={buttonClasses("primary", "xs")}
           >
             Add
           </button>
           <button
             type="button"
             onClick={() => { setAdding(false); setSelectedReviewerId(""); }}
-            className="px-1.5 py-0.5 text-xs font-medium rounded border border-border bg-card text-foreground hover:bg-muted/50"
+            className={buttonClasses("ghost", "xs")}
           >
             Cancel
           </button>
@@ -2132,7 +2125,7 @@ function ReviewerAssignmentCell({ domainApplicationId, reviews, cycleReviewers, 
       ) : editable ? (
         <button
           onClick={() => setAdding(true)}
-          className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-xs border border-dashed border-gray-300 text-muted-foreground/70 hover:border-blue-400 hover:text-blue-600 transition"
+          className="inline-flex items-center gap-1 rounded-full border border-dashed border-os-container px-2.5 py-1 text-xs text-os-grey transition-colors hover:border-os-accent hover:text-os-accent"
           title="Add reviewer"
         >
           <Plus className="w-3 h-3" /> Add

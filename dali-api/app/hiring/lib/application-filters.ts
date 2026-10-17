@@ -62,12 +62,32 @@ export const APPLICATION_SORT_COLUMNS = [
   { key: "domain", label: "Domain" },
   { key: "status", label: "Status" },
   { key: "submittedAt", label: "Submitted" },
-  { key: "reviewCount", label: "Reviews" },
+  { key: "reviewers", label: "Reviewers" },
+  { key: "interviewers", label: "Interviewers" },
 ] as const;
 export type ApplicationSortKey = (typeof APPLICATION_SORT_COLUMNS)[number]["key"];
 export type ApplicationSort = { key: ApplicationSortKey; dir: "asc" | "desc" };
 
 export const DEFAULT_SORT: ApplicationSort = { key: "name", dir: "asc" };
+
+// While a cycle is under review the table tracks who is on each applicant;
+// otherwise it shows when they submitted.
+export function applicationColumns(cycleStatus: string) {
+  const keys: ApplicationSortKey[] =
+    cycleStatus === "UnderReview"
+      ? ["name", "domain", "status", "reviewers", "interviewers"]
+      : ["name", "domain", "status", "submittedAt"];
+  return APPLICATION_SORT_COLUMNS.filter((c) => keys.includes(c.key));
+}
+
+// A remembered sort on a column the current cycle doesn't show falls back to
+// the default rather than ordering rows by something invisible.
+export function visibleSort(
+  sort: ApplicationSort,
+  columns: readonly { key: ApplicationSortKey }[],
+): ApplicationSort {
+  return columns.some((c) => c.key === sort.key) ? sort : DEFAULT_SORT;
+}
 
 export function isApplicationSort(v: unknown): v is ApplicationSort {
   if (!v || typeof v !== "object") return false;
@@ -83,7 +103,8 @@ type SortableApplication = {
   domain: string;
   status: string;
   submittedAt: string | null;
-  reviewCount: number;
+  reviewers: string | null;
+  interviewers: string | null;
 };
 
 // The sort is stable, so ties keep the order the rows arrived in (name, then
@@ -99,6 +120,6 @@ export function sortApplications<T extends SortableApplication>(
     if (x === y) return 0;
     if (x === null) return 1;
     if (y === null) return -1;
-    return sign * (typeof x === "number" ? x - (y as number) : x.localeCompare(y as string));
+    return sign * x.localeCompare(y);
   });
 }

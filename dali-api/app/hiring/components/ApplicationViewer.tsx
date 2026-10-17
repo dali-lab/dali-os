@@ -6,12 +6,11 @@ import { DocEditor } from '~/components/doc'
 import { useDialog } from '~/components/ui/dialog'
 import { isEmptyBlocks } from '~/lib/blocks'
 import { AnswerDisplay } from '~/hiring/components/ApplicationAnswers'
-
-// The dali.os card dress (see os-chrome.ts): a borderless rounded surface
-// titled on its own, rather than a bordered box with a shaded header band.
-const CARD = 'rounded-os-card bg-os-card overflow-hidden'
-const CARD_HEADER = 'px-6 pt-5'
-const CARD_TITLE = 'font-heading text-[19px] font-semibold text-foreground'
+import {
+  PANEL_CARD as CARD,
+  PANEL_HEADER as CARD_HEADER,
+  PANEL_TITLE as CARD_TITLE,
+} from '~/hiring/components/ApplicantPanel'
 
 // Question types where the answer is a URL or structured value rather than
 // freeform prose. We render these via AnswerDisplay (download links, etc.)

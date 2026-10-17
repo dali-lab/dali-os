@@ -4,21 +4,21 @@ import { formatDateShort } from "~/lib/display";
 import { useUserTimeZone } from "~/hooks/useUserTimeZone";
 import { ApplicantEmailThreadModal } from "~/hiring/components/ApplicantEmailThreadModal";
 import type { EmailEngagement } from "~/hiring/lib/email-engagement.server";
+import { ApplicantPanel, PANEL_ROW } from "~/hiring/components/ApplicantPanel";
 
-// "Email with applications@" panel on the hiring application views: this
-// applicant's mail history with the shared applications@ inbox, grouped into
-// threads. Same card chrome as EducationEngagementPanel / PriorApplicationsPanel.
 // Subjects and the thread pointer are already stripped server-side while the
-// viewer is blinded — this component just renders whatever it's handed.
+// viewer is blinded, so this component renders whatever it's handed.
 
 export function ApplicantEmailPanel({
   engagement,
   blinded,
   applicationId,
+  defaultOpen,
 }: {
   engagement: EmailEngagement | null;
   blinded: boolean;
   applicationId: string;
+  defaultOpen?: boolean;
 }) {
   const tz = useUserTimeZone();
   const [openIndexId, setOpenIndexId] = useState<string | null>(null);
@@ -27,31 +27,25 @@ export function ApplicantEmailPanel({
   const { totals, threads } = engagement;
 
   return (
-    <section className="bg-card border border-border rounded-lg">
-      <div className="px-6 py-4 border-b border-border">
-        <h2 className="font-heading font-bold text-foreground">Email with applications@</h2>
-        <p className="text-xs text-muted-foreground mt-0.5">
-          {totals.inbound} received · {totals.outbound} sent
-          {totals.firstAt && totals.lastAt
-            ? ` · first ${formatDateShort(totals.firstAt, tz)} · last ${formatDateShort(totals.lastAt, tz)}`
-            : ""}
-        </p>
-      </div>
-      <ul className="divide-y divide-border">
+    <ApplicantPanel
+      title="Email with applications@"
+      defaultOpen={defaultOpen}
+      subtitle={`${totals.inbound} received · ${totals.outbound} sent`}
+    >
         {threads.map((t, i) => {
           const dominant = t.inbound >= t.outbound ? "inbound" : "outbound";
           const count = t.inbound + t.outbound;
           const content = (
             <>
               {dominant === "inbound" ? (
-                <ArrowDownLeft className="h-4 w-4 shrink-0 text-muted-foreground" />
+                <ArrowDownLeft className="h-4 w-4 shrink-0 text-os-grey" />
               ) : (
-                <ArrowUpRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+                <ArrowUpRight className="h-4 w-4 shrink-0 text-os-grey" />
               )}
               <span className="text-sm font-medium text-foreground truncate">
                 {t.subject || (blinded ? "Subject hidden during blind review" : "(no subject)")}
               </span>
-              <span className="ml-auto shrink-0 text-xs text-muted-foreground">
+              <span className="ml-auto shrink-0 text-xs text-os-grey">
                 {formatDateShort(t.firstAt, tz)}
                 {t.firstAt !== t.lastAt ? ` – ${formatDateShort(t.lastAt, tz)}` : ""} · {count} message
                 {count === 1 ? "" : "s"}
@@ -60,22 +54,21 @@ export function ApplicantEmailPanel({
           );
           const key = t.indexId ?? `${i}-${t.firstAt}`;
           return (
-            <li key={key} className="px-6 py-3">
+            <li key={key}>
               {t.indexId ? (
                 <button
                   type="button"
                   onClick={() => setOpenIndexId(t.indexId)}
-                  className="flex w-full items-center gap-2 text-left hover:text-foreground"
+                  className={`${PANEL_ROW} flex w-full items-center gap-2 text-left transition-colors hover:bg-os-container`}
                 >
                   {content}
                 </button>
               ) : (
-                <div className="flex items-center gap-2">{content}</div>
+                <div className={`${PANEL_ROW} flex items-center gap-2`}>{content}</div>
               )}
             </li>
           );
         })}
-      </ul>
       {openIndexId && (
         <ApplicantEmailThreadModal
           applicationId={applicationId}
@@ -83,6 +76,6 @@ export function ApplicantEmailPanel({
           onClose={() => setOpenIndexId(null)}
         />
       )}
-    </section>
+    </ApplicantPanel>
   );
 }

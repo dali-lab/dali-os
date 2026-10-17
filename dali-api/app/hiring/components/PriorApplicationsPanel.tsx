@@ -2,13 +2,12 @@ import { Link } from "react-router";
 import { formatDateShort } from "~/lib/display";
 import { useUserTimeZone } from "~/hooks/useUserTimeZone";
 import { HiringStatusPill } from "./HiringStatusPill";
+import { ApplicantPanel, PANEL_ROW } from "./ApplicantPanel";
+import { Pill } from "./cycle-setup/SetupCard";
 import type { PriorApplicationRow } from "~/hiring/lib/prior-applications.server";
 
-// "Prior applications" panel on the hiring application views: this
-// applicant's other submitted cycles, so a reviewer/lead doesn't have to go
-// digging for hiring history. Sits beside EducationEngagementPanel, same card
-// chrome. Outcomes are already nulled server-side when outcomesHidden is set
-// (blind review) — this component never has the real statuses to leak.
+// Outcomes are already nulled server-side when outcomesHidden is set (blind
+// review), so this component never has the real statuses to leak.
 
 const APPLICATION_TYPE_LABEL: Record<string, string> = {
   Intern: "Intern",
@@ -21,23 +20,23 @@ export function PriorApplicationsPanel({
   entries,
   outcomesHidden,
   hrefFor,
+  defaultOpen,
 }: {
   entries: PriorApplicationRow[];
   outcomesHidden: boolean;
   hrefFor: (entry: PriorApplicationRow, domainId: string) => string | null;
+  defaultOpen?: boolean;
 }) {
   const tz = useUserTimeZone();
   if (entries.length === 0) return null;
 
   return (
-    <section className="bg-card border border-border rounded-lg">
-      <div className="px-6 py-4 border-b border-border">
-        <h2 className="font-heading font-bold text-foreground">Prior applications</h2>
-        <p className="text-xs text-muted-foreground mt-0.5">
-          Applied {entries.length === 1 ? "once" : `${entries.length} times`} before
-        </p>
-      </div>
-      <ul className="divide-y divide-border">
+    <ApplicantPanel
+      title="Prior applications"
+      defaultOpen={defaultOpen}
+      subtitle={`Applied ${entries.length === 1 ? "once" : `${entries.length} times`} before`}
+      footer={outcomesHidden ? "Outcomes from earlier cycles are hidden during blind review." : undefined}
+    >
         {entries.map((entry) => {
           const typeLabel = APPLICATION_TYPE_LABEL[entry.applicationType];
           const hrefGroups = new Map<string, string[]>();
@@ -55,15 +54,11 @@ export function PriorApplicationsPanel({
           const links = [...hrefGroups.entries()];
 
           return (
-            <li key={entry.id} className="px-6 py-4">
+            <li key={entry.id} className={PANEL_ROW}>
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-sm font-semibold text-foreground">{entry.cycleName}</span>
-                {typeLabel && (
-                  <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-[11px] font-semibold text-muted-foreground">
-                    {typeLabel}
-                  </span>
-                )}
-                <span className="text-xs text-muted-foreground">
+                {typeLabel && <Pill outline>{typeLabel}</Pill>}
+                <span className="text-xs text-os-grey">
                   {entry.applicationStatus === "Withdrawn"
                     ? "Withdrawn"
                     : entry.submittedAt
@@ -76,9 +71,7 @@ export function PriorApplicationsPanel({
                 <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5">
                   {entry.domains.map((domain) => (
                     <span key={domain.id} className="inline-flex items-center gap-1.5">
-                      <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-foreground">
-                        {domain.domainName}
-                      </span>
+                      <span className="text-sm text-foreground">{domain.domainName}</span>
                       {domain.status != null && <HiringStatusPill status={domain.status} />}
                     </span>
                   ))}
@@ -91,7 +84,7 @@ export function PriorApplicationsPanel({
                     <Link
                       key={href}
                       to={href}
-                      className="text-xs font-semibold text-accent-coral hover:text-accent-coral/80"
+                      className="text-xs font-semibold text-os-accent hover:text-os-accent-hover"
                     >
                       View submission{links.length > 1 ? ` · ${domainNames.join(", ")}` : ""}
                     </Link>
@@ -101,12 +94,6 @@ export function PriorApplicationsPanel({
             </li>
           );
         })}
-      </ul>
-      {outcomesHidden && (
-        <p className="px-6 py-3 text-xs text-muted-foreground border-t border-border">
-          Outcomes from earlier cycles are hidden during blind review.
-        </p>
-      )}
-    </section>
+    </ApplicantPanel>
   );
 }

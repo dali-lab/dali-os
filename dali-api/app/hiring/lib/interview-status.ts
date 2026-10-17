@@ -19,3 +19,18 @@ export function activeInterview<T extends { status: InterviewStatus }>(
 ): T | null {
   return (interviews ?? []).find((i) => isActiveInterviewStatus(i.status)) ?? null;
 }
+
+// My work's interview list: still-to-come first (soonest at top), then the
+// ones already conducted (most recent at top). An interview is past once it
+// is Completed or its slot has ended, whichever comes first.
+export function splitInterviewsByTime<
+  T extends { interview: { status: InterviewStatus; startTime: string | Date; endTime: string | Date } },
+>(rows: T[], now: Date): { upcoming: T[]; past: T[] } {
+  const isPast = (r: T) =>
+    r.interview.status === "Completed" || new Date(r.interview.endTime).getTime() <= now.getTime();
+  const start = (r: T) => new Date(r.interview.startTime).getTime();
+  return {
+    upcoming: rows.filter((r) => !isPast(r)).sort((a, b) => start(a) - start(b)),
+    past: rows.filter(isPast).sort((a, b) => start(b) - start(a)),
+  };
+}
