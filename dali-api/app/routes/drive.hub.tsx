@@ -29,6 +29,7 @@ import { getUserRoles } from "~/lib/roles";
 import { formsUsePageAccess } from "~/forms/lib/form-access.server";
 import { receiversEnabled } from "~/lib/drive-receivers.server";
 import { resolveTermFilter } from "~/lib/terms";
+import { setPageFavorite } from "~/components/favorites-live";
 import { TermFilter } from "~/components/TermFilter";
 import { loadProjectWorkspaces, loadEducationWorkspaces, loadAllDocTags, loadItemTagIds } from "~/lib/drive-hub.server";
 import { loadDriveScopes } from "~/lib/drive-scopes.server";
@@ -1584,16 +1585,10 @@ export default function DriveHub() {
     [navigate, driveScopes, onNavigate, effectiveScopeId],
   );
 
-  // Toggle the viewer's personal favorite on a page item (doc/folder/form).
   const onToggleFavorite = useCallback(
     async (item: DriveItem) => {
       if (item.type !== "doc" && item.type !== "folder" && item.type !== "form") return;
-      await fetch(`/api/pages/${item.id}/favorite`, {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ favorited: !item.favorited }),
-      });
+      await setPageFavorite(item.id, !item.favorited);
       revalidator.revalidate();
     },
     [revalidator],

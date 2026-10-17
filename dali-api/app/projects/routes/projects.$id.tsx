@@ -15,6 +15,7 @@ import { Select, Menu, Popover, InfoTip } from "~/components/ui/floating";
 import { CalendarDays, CalendarPlus, CalendarX, Check, Globe, Handshake, History, Pencil, Pin, X, Settings, Folder, FolderInput, FolderPlus, ChevronRight, ChevronDown, FileText, Info, Users, Paperclip, Plus, Trash2, Upload, Unlink, MoreHorizontal, ExternalLink, Star, Mail, Github, Slack, Layers, Figma, NotebookPen, Shapes } from "lucide-react";
 import type { DriveTypeFilter } from "~/components/drive/type-filter";
 import { useOsChrome } from "~/components/os-chrome";
+import { setPageFavorite } from "~/components/favorites-live";
 import { DomainChips } from "~/components/DomainChips";
 import { ChartStringPanel } from "~/projects/components/ChartStringPanel";
 import {
@@ -4824,16 +4825,10 @@ function ProjectDriveTab({
     [dialog, toast, revalidate, pickMoveDestination, onMove, scopeId, pendingHidden, history],
   );
 
-  // Toggle the viewer's personal favorite on a doc/folder.
   const onToggleFavorite = useCallback(
     async (item: DriveItem) => {
       if (item.type !== "doc" && item.type !== "folder") return;
-      await fetch(`/api/pages/${item.id}/favorite`, {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ favorited: !item.favorited }),
-      });
+      await setPageFavorite(item.id, !item.favorited);
       revalidate();
     },
     [revalidate],
@@ -5168,20 +5163,11 @@ function DocumentsBlock({
     }
   }
 
-  // Toggle the viewer's personal favorite for a page (same endpoint as
-  // FavoriteStar). Used by the row "⋯" menu under the Drive redesign, where the
-  // star lives in the menu rather than inline.
   async function toggleFavorite(id: string, next: boolean) {
     setBusy(true);
     setError(null);
     try {
-      const res = await fetch(`/api/pages/${id}/favorite`, {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ favorited: next }),
-      });
-      if (!res.ok) throw new Error("Failed to update favorite");
+      if (!(await setPageFavorite(id, next))) throw new Error("Failed to update favorite");
       revalidator.revalidate();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Something went wrong");

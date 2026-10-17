@@ -51,6 +51,25 @@ export const RECENT_LIMIT = 5;
 // a heavy user has ever opened.
 const READ_MULTIPLIER = 3;
 
+/** Bounded read of the favorites list; far above what a person stars by hand. */
+const FAVORITES_LIMIT = 200;
+
+type Ordered = { position?: number | null; favoritedAt?: Date | null };
+
+/** Explicit order first (nulls last), then newest-starred, for rows with no position yet. */
+function byFavoriteOrder(a: Ordered, b: Ordered): number {
+  const ap = a.position ?? Number.POSITIVE_INFINITY;
+  const bp = b.position ?? Number.POSITIVE_INFINITY;
+  if (ap !== bp) return ap < bp ? -1 : 1;
+  return (b.favoritedAt?.getTime() ?? 0) - (a.favoritedAt?.getTime() ?? 0);
+}
+
+function pageHref(id: string, kind: string | undefined): string {
+  if (kind === "Form") return `/forms/edit/${id}`;
+  if (kind === "Whiteboard") return `/whiteboard/${id}`;
+  return `/documents/${id}`;
+}
+
 const PAGE_SELECT = {
   ...PAGE_ACCESS_SELECT,
   title: true,
@@ -109,14 +128,15 @@ async function computeFavoritesAndRecents(userId: string, request?: Request): Pr
     // opened, and the worst case is a dead link the owner can un-star.
     prisma.userFavorite.findMany({
       where: { userId, favoritedAt: { not: null }, href: { not: null } },
-      orderBy: { favoritedAt: "desc" },
-      select: { href: true, label: true },
+      orderBy: [{ position: { sort: "asc", nulls: "last" } }, { favoritedAt: "desc" }],
+      take: FAVORITES_LIMIT,
+      select: { href: true, label: true, position: true, favoritedAt: true },
     }),
     prisma.userFavorite.findMany({
       where: { userId, favoritedAt: { not: null }, page: { is: { archivedAt: null } } },
-      orderBy: { favoritedAt: "desc" },
-      take: RECENT_LIMIT * READ_MULTIPLIER,
-      select: { page: { select: PAGE_SELECT } },
+      orderBy: [{ position: { sort: "asc", nulls: "last" } }, { favoritedAt: "desc" }],
+      take: FAVORITES_LIMIT,
+      select: { page: { select: PAGE_SELECT }, position: true, favoritedAt: true },
     }),
     prisma.userFavorite.findMany({
       // Pinned pages are shown above; repeating them under "Recent" would be
@@ -150,19 +170,28 @@ async function computeFavoritesAndRecents(userId: string, request?: Request): Pr
   // canonicalized can point at one project under several tab queries, and the
   // panel should list it once (most recently pinned wins, since routeRows is
   // already ordered by favoritedAt).
-  const routeFavRows: { href: string; label: string | null }[] = [];
+  const routeFavRows: ({ href: string; label: string | null } & Ordered)[] = [];
   const seenRouteFavs = new Set<string>();
   for (const row of routeRows) {
     const href = canonicalRouteHref(row.href!);
     if (isNavbarRoute(href) || seenRouteFavs.has(href)) continue;
     seenRouteFavs.add(href);
-    routeFavRows.push({ href, label: row.label });
+    routeFavRows.push({
+      href,
+      label: row.label,
+      position: row.position,
+      favoritedAt: row.favoritedAt,
+    });
   }
   const routeFavHrefs = routeFavRows.map((r) => r.href);
   const routeRecentHrefs = routeRecentRows.map((r) => r.href!);
 
+  const pinnedOrder = new Map<string, Ordered>(
+    withPage(pinnedRows).map((r) => [r.page.id, { position: r.position, favoritedAt: r.favoritedAt }]),
+  );
+
   const [favorites, pageRecents, resolved] = await Promise.all([
-    viewable(withPage(pinnedRows), userId, RECENT_LIMIT * 2, request),
+    viewable(withPage(pinnedRows), userId, FAVORITES_LIMIT, request),
     viewable(withPage(recentRows), userId, RECENT_LIMIT * READ_MULTIPLIER, request),
     resolveRouteIcons([...new Set([...routeFavHrefs, ...routeRecentHrefs])]),
   ]);
@@ -173,7 +202,7 @@ async function computeFavoritesAndRecents(userId: string, request?: Request): Pr
     iconEmoji: (row.page.iconEmoji as string | null) ?? null,
     workspaceType: String(row.page.workspaceType),
     favorited,
-    href: (row.page as { kind?: string }).kind === "Form" ? `/forms/edit/${row.page.id}` : `/documents/${row.page.id}`,
+    href: pageHref(row.page.id, (row.page as { kind?: string }).kind),
     isRoute: false,
     iconKind: "page",
   });
@@ -213,9 +242,18 @@ async function computeFavoritesAndRecents(userId: string, request?: Request): Pr
     };
   };
 
-  const routeFavorites = routeFavRows
-    .map((r) => shapeRoute(r.href, r.label, true, false))
-    .filter((f): f is FavoritePage => f != null);
+  const routeFavorites: { fav: FavoritePage; order: Ordered }[] = [];
+  for (const r of routeFavRows) {
+    const fav = shapeRoute(r.href, r.label, true, false);
+    if (fav) routeFavorites.push({ fav, order: r });
+  }
+  const pageFavorites = favorites.map((r) => ({
+    fav: shape(r, true),
+    order: pinnedOrder.get(r.page.id) ?? {},
+  }));
+  const orderedFavorites = [...routeFavorites, ...pageFavorites]
+    .sort((a, b) => byFavoriteOrder(a.order, b.order))
+    .map((x) => x.fav);
 
   // Merge page + route recents by visit recency, then cap.
   const recentItems: { fav: FavoritePage; visitedAt: Date }[] = [
@@ -230,10 +268,7 @@ async function computeFavoritesAndRecents(userId: string, request?: Request): Pr
   recentItems.sort((a, b) => b.visitedAt.getTime() - a.visitedAt.getTime());
 
   return {
-    // Routes and pages interleave by nothing in particular — both are pins, so
-    // they share one list rather than being split into headings the user never
-    // asked for.
-    favorites: [...routeFavorites, ...favorites.map((r) => shape(r, true))],
+    favorites: orderedFavorites,
     recents: recentItems.slice(0, RECENT_LIMIT).map((x) => x.fav),
   };
 }
@@ -430,6 +465,7 @@ export async function setRouteFavorite(
 ): Promise<void> {
   const canonical = canonicalRouteHref(href);
   const favoritedAt = favorited ? new Date() : null;
+  const position = favorited ? await nextFavoritePosition(userId) : null;
   // Toggling the star has to reach every row for this destination, not just the
   // canonical one: a project starred before this from one of its tabs left a
   // `?tab=` row behind, and leaving it pinned would keep a duplicate in the
@@ -438,7 +474,7 @@ export async function setRouteFavorite(
   if (stale.length > 0) {
     await prisma.userFavorite.updateMany({
       where: { userId, favoritedAt: { not: null }, OR: stale },
-      data: { favoritedAt: null },
+      data: { favoritedAt: null, position: null },
     });
   }
   const existing = await prisma.userFavorite.findFirst({
@@ -448,11 +484,13 @@ export async function setRouteFavorite(
   if (existing) {
     await prisma.userFavorite.update({
       where: { id: existing.id },
-      data: { favoritedAt, label },
+      data: { favoritedAt, label, position },
     });
     return;
   }
-  await prisma.userFavorite.create({ data: { userId, href: canonical, label, favoritedAt } });
+  await prisma.userFavorite.create({
+    data: { userId, href: canonical, label, favoritedAt, position },
+  });
 }
 
 /**
@@ -516,6 +554,7 @@ export function recordRouteVisit(
 export async function favoritePageIds(userId: string): Promise<Set<string>> {
   const rows = await prisma.userFavorite.findMany({
     where: { userId, favoritedAt: { not: null }, pageId: { not: null } },
+    orderBy: [{ position: { sort: "asc", nulls: "last" } }, { favoritedAt: "desc" }],
     select: { pageId: true },
   });
   return new Set(rows.map((r) => r.pageId!));
@@ -541,9 +580,69 @@ export async function setFavorite(
   favorited: boolean,
 ): Promise<void> {
   const favoritedAt = favorited ? new Date() : null;
+  const position = favorited ? await nextFavoritePosition(userId) : null;
   await prisma.userFavorite.upsert({
     where: { userId_pageId: { userId, pageId } },
-    create: { userId, pageId, favoritedAt },
-    update: { favoritedAt },
+    create: { userId, pageId, favoritedAt, position },
+    update: { favoritedAt, position },
   });
+}
+
+async function nextFavoritePosition(userId: string): Promise<number> {
+  const top = await prisma.userFavorite.aggregate({
+    where: { userId, favoritedAt: { not: null } },
+    _max: { position: true },
+  });
+  return (top._max.position ?? -1) + 1;
+}
+
+/**
+ * Persist a drag-reorder. `ids` are FavoritePage.id values (page id, or the
+ * canonical href for a route). Ids that aren't one of the caller's favorites are
+ * skipped, so positions stay dense over the rows that actually moved.
+ */
+export async function reorderFavorites(userId: string, ids: string[]): Promise<void> {
+  const rows = await prisma.userFavorite.findMany({
+    where: { userId, favoritedAt: { not: null } },
+    orderBy: [{ position: { sort: "asc", nulls: "last" } }, { favoritedAt: "desc" }],
+    select: { id: true, pageId: true, href: true },
+  });
+  const rowByKey = new Map<string, string>();
+  for (const r of rows) {
+    const key = r.pageId ?? (r.href ? canonicalRouteHref(r.href) : null);
+    if (key && !rowByKey.has(key)) rowByKey.set(key, r.id);
+  }
+  const seen = new Set<string>();
+  const rowIds: string[] = [];
+  for (const id of ids) {
+    const rowId = rowByKey.get(id);
+    if (!rowId || seen.has(rowId)) continue;
+    seen.add(rowId);
+    rowIds.push(rowId);
+  }
+  if (rowIds.length === 0) return;
+  // Favorites the client didn't list (hidden by an access check, or starred in
+  // another window) keep their relative order after the reordered ones.
+  for (const r of rows) if (!seen.has(r.id)) rowIds.push(r.id);
+  await prisma.$transaction(
+    rowIds.map((id, position) =>
+      prisma.userFavorite.updateMany({ where: { id, userId }, data: { position } }),
+    ),
+  );
+}
+
+export type StarTarget =
+  | { kind: "page"; pageId: string }
+  | { kind: "route"; href: string };
+
+/** Classify an in-app URL: documents, forms and whiteboards are Pages; the rest are routes. */
+export function starTargetForUrl(url: string): StarTarget {
+  let path: string;
+  try {
+    path = new URL(url, "http://local").pathname;
+  } catch {
+    return { kind: "route", href: url };
+  }
+  const m = /^\/(?:documents|forms\/edit|whiteboard)\/([^/]+)\/?$/.exec(path);
+  return m ? { kind: "page", pageId: decodeURIComponent(m[1]) } : { kind: "route", href: url };
 }

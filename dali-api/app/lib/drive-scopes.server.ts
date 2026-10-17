@@ -89,6 +89,8 @@ export function liftOrphans(items: DriveItem[]): DriveItem[] {
  * The Favorites space: every favorited item from the given pools, plus the
  * contents of each favorited folder so it can be browsed in place. A favorite
  * whose parent is not along stands at the top level. First pool wins an id.
+ * `favIds` iterates in the user's favorites order (see favoritePageIds), which
+ * favorited items follow.
  */
 export function favoriteSpaceItems(pools: DriveItem[][], favIds: Set<string>): DriveItem[] {
   const seen = new Set<string>();
@@ -104,6 +106,13 @@ export function favoriteSpaceItems(pools: DriveItem[][], favIds: Set<string>): D
       out.push(favIds.has(it.id) ? { ...it, favorited: true } : it);
     }
   }
+  const rank = new Map([...favIds].map((id, i) => [id, i]));
+  const rankOf = (it: DriveItem) => rank.get(it.id) ?? Number.POSITIVE_INFINITY;
+  out.sort((a, b) => {
+    const ra = rankOf(a);
+    const rb = rankOf(b);
+    return ra === rb ? 0 : ra < rb ? -1 : 1;
+  });
   return liftOrphans(out);
 }
 

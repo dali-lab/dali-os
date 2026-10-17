@@ -3,7 +3,7 @@ import type React from 'react'
 import { useNavigate, useRevalidator } from 'react-router'
 import type { TabWorkspaceHandle, OpenTabRequest } from '~/components/TabWorkspace'
 import { TASKS_CHANGED_EVENT } from '~/components/NotificationBell'
-import { FAVORITES_CHANGED_EVENT } from '~/components/favorites-live'
+import { FAVORITES_CHANGED_EVENT, TOGGLE_FAVORITE_EVENT } from '~/components/favorites-live'
 import { COPY_PAGE_LINK_EVENT, isCopyPageLinkShortcut } from '~/lib/page-link'
 
 /**
@@ -51,6 +51,9 @@ export function useShellNav(tabless: boolean) {
       } else if (isCopyPageLinkShortcut(e)) {
         e.preventDefault()
         window.dispatchEvent(new CustomEvent(COPY_PAGE_LINK_EVENT))
+      } else if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && (e.key === 'd' || e.key === 'D')) {
+        const handled = !window.dispatchEvent(new CustomEvent(TOGGLE_FAVORITE_EVENT, { cancelable: true }))
+        if (handled) e.preventDefault()
       }
     }
     window.addEventListener('keydown', onKey)

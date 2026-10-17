@@ -238,6 +238,7 @@ function CrumbSwitcher({
 export function Breadcrumbs() {
   const matches = useMatches()
   const { pathname, search } = useLocation()
+  const favoritesBar = useFeatureFlag('favorites-bar')
   // Hiring and Mentorship drop the trail section-wide; their sidebar sub-tabs
   // are the wayfinding there.
   if (
@@ -370,7 +371,7 @@ export function Breadcrumbs() {
                 ) : (
                   <span className="text-foreground font-medium">{c.label}</span>
                 )}
-                {favoriteRoute && leaf && <FavoriteRouteButton inline />}
+                {favoriteRoute && leaf && !favoritesBar && <FavoriteRouteButton inline />}
               </span>
             )
           })}
