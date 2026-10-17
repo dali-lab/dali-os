@@ -34,7 +34,7 @@ function MonthChip({ block, onOpen }: { block: EventBlock; onOpen: () => void })
         skin.className,
       )}
     >
-      {block.issue && <IssueIcon className="h-3 w-3" />}
+      {block.issue && <IssueIcon />}
       <span className="truncate">{block.label}</span>
       {block.issue && <span className="sr-only">{block.issue}</span>}
     </button>

@@ -1,16 +1,7 @@
-import React, { useState, useCallback } from 'react'
+import { useState, useCallback } from 'react'
 import { useLoaderData } from 'react-router'
 import { redirect } from 'react-router'
-import {
-  Clock,
-  Check,
-  Video,
-  ChevronDown,
-  FileText,
-  MapPin,
-  MessageSquare,
-  Users,
-} from 'lucide-react'
+import { Check, Video, MapPin, Users } from 'lucide-react'
 import { prisma } from '~/lib/db'
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from '~/lib/login-next'
@@ -27,13 +18,29 @@ import { PresenceBar } from '~/components/collab/PresenceBar'
 import { useSharedString } from '~/components/collab/useSharedString'
 import { ApplicationViewer } from '~/hiring/components/ApplicationViewer'
 import { loadContinuedInterestView } from '~/hiring/lib/continued-interest.server'
-import { ReviewSummary } from '~/hiring/components/ReviewSummary'
 import { buildCriteriaLabelMap } from '~/hiring/lib/rubric-criteria'
 import type { Route } from './+types/interviews.$interviewId'
 import type { Question } from '~/types'
 import { INTERVIEW_STATUS_TONES } from '~/hiring/lib/labels'
 import { Pill } from '~/hiring/components/cycle-setup/SetupCard'
-import { Select, type SelectOption } from "~/components/ui/floating";
+import { Select, InfoTip } from "~/components/ui/floating";
+import { useOsChrome } from '~/components/os-chrome'
+import { buttonClasses } from '~/components/ui/Button'
+import { cn } from '~/lib/cn'
+import { getUserRoles } from '~/lib/roles'
+import { isFeatureEnabled } from '~/lib/feature-flags.server'
+import { applicationBlindLabel } from '~/hiring/lib/anonymization.server'
+import { listPriorApplications } from '~/hiring/lib/prior-applications.server'
+import { getApplicantEmailEngagement } from '~/hiring/lib/email-engagement.server'
+import { getHiringEventEngagement } from '~/hiring/lib/hiring-events.server'
+import { getEducationEngagement } from '~/education/lib/engagement.server'
+import { EducationEngagementPanel } from '~/education/components/EducationEngagementPanel'
+import { ApplicationEventsPanel } from '~/hiring/components/ApplicationEventsPanel'
+import { PriorApplicationsPanel } from '~/hiring/components/PriorApplicationsPanel'
+import { ApplicantEmailPanel } from '~/hiring/components/ApplicantEmailPanel'
+import { ApplicantDetailHeader } from '~/hiring/components/ApplicantDetailHeader'
+import { DetailCard } from '~/hiring/components/DetailCard'
+import { ReviewsCard, type ReviewsCardReview } from '~/hiring/components/ReviewsCard'
 
 const RECOMMENDATION_OPTIONS = [
   'Strong Hire',
@@ -81,6 +88,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
             include: {
               user: true,
               applicationFormVersion: { select: { questions: true, intro: true } },
+              applicationCycle: { select: { anonymizeReview: true, name: true } },
             },
           },
           challengeFormVersion: { select: { questions: true, intro: true } },
@@ -198,8 +206,37 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const presenceUser = await getPresenceUser(auth.user.sub, fallbackName)
   const userName = presenceUser?.name ?? fallbackName
 
+  // Same applicant context the review page shows. Blinding follows the
+  // applicant-wide release, which is also what gates the email thread modal.
+  const application = interview.domainApplication.application
+  const blinded =
+    (await applicationBlindLabel({
+      cycleId: interview.applicationCycleId,
+      applicationId: application.id,
+      anonymizeReview: application.applicationCycle.anonymizeReview,
+    })) != null
+  const roles = await getUserRoles(auth.user.sub, request)
+  const [educationEngagement, hiringEventEngagement, priorApplications, emailEngagement] =
+    await Promise.all([
+      getEducationEngagement(application.userId),
+      isFeatureEnabled('application-events', auth.user.sub, roles, request).then((on) =>
+        on ? getHiringEventEngagement(application.userId) : [],
+      ),
+      listPriorApplications({
+        userId: application.userId,
+        currentApplicationId: application.id,
+        hideOutcomes: blinded,
+      }),
+      getApplicantEmailEngagement(application.userId, { blinded }),
+    ])
+
   return {
       interview: interviewWithPresignedAnswers,
+      educationEngagement,
+      hiringEventEngagement,
+      priorApplications,
+      emailEngagement,
+      blinded,
       myAssignment,
       criteriaByKey,
       collabToken,
@@ -220,6 +257,11 @@ export default function InterviewDetailPage() {
     currentUserId,
     presencePhotoUrl,
     presenceSubtitle,
+    educationEngagement,
+    hiringEventEngagement,
+    priorApplications,
+    emailEngagement,
+    blinded,
   } = useLoaderData<typeof loader>() as any
 
   const applicant = interview.domainApplication?.application?.user
@@ -239,10 +281,6 @@ export default function InterviewDetailPage() {
           : u?.daliEmail ?? 'Interviewer'
       return { id: a.id, name, roleLabel: ROLE_LABELS[a.role] ?? a.role }
     })
-
-  // Collapsible panel state
-  const [showApplication, setShowApplication] = useState(false)
-  const [showReviews, setShowReviews] = useState(false)
 
   const application = interview.domainApplication?.application
   const generalQuestions: any[] =
@@ -348,6 +386,37 @@ export default function InterviewDetailPage() {
     }
   }, [interview.id])
 
+  const { heading, formTrigger } = useOsChrome()
+  const [selectedReviewId, setSelectedReviewId] = useState<string | null>(submittedReviews[0]?.id ?? null)
+  const reviewCards: ReviewsCardReview[] = submittedReviews.map((review: any) => {
+    const m = review.cycleReviewer?.user
+    return {
+      id: review.id,
+      reviewerName: m?.firstName && m?.lastName ? `${m.firstName} ${m.lastName}` : m?.daliEmail ?? 'Reviewer',
+      reviewerPhotoUrl: review.reviewerPhotoUrl,
+      overallRecommendation: review.overallRecommendation,
+      scores: review.scores,
+      feedback: review.feedback,
+      rejectionRationale: review.rejectionRationale,
+      submittedAt: review.submittedAt,
+    }
+  })
+  const editorClass = cn(
+    'rounded-lg border border-transparent bg-os-well',
+    isCompleted ? 'opacity-75' : 'focus-within:ring-2 focus-within:ring-os-accent/40',
+  )
+  const sessionExpired = (
+    <p className="rounded-os-item bg-os-amber/10 px-3 py-2 text-sm text-os-amber">
+      Session expired. Refresh to keep editing.
+    </p>
+  )
+  const timeRange = `${startDate.toLocaleDateString(undefined, {
+    weekday: 'long',
+    month: 'long',
+    day: 'numeric',
+  })}, ${startDate.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })} to ${endDate.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}`
+  const prepNote = interview.domainApplication?.interviewPrepNote?.trim()
+
   return (
     <PresenceProvider
       pageId={`interview:${interview.id}`}
@@ -357,308 +426,181 @@ export default function InterviewDetailPage() {
       photoUrl={presencePhotoUrl}
       subtitle={presenceSubtitle}
     >
-    <div className="space-y-8 max-w-6xl mx-auto">
-      <div className="flex items-center justify-end">
-        <PresenceBar />
-      </div>
+    <div className="space-y-6 pb-12">
+      <ApplicantDetailHeader
+        name={applicant ? `${applicant.firstName} ${applicant.lastName}` : 'Applicant'}
+        domainName={domain ?? 'Interview'}
+        cycleName={application?.applicationCycle?.name ?? ''}
+        statusSlot={
+          <>
+            <PresenceBar />
+            <Pill dot={isCompleted ? 'success' : INTERVIEW_STATUS_TONES[interview.status] ?? 'neutral'}>
+              {isCompleted ? 'Completed' : interview.status}
+            </Pill>
+          </>
+        }
+      />
 
-      {/* Header */}
-      <div className="bg-card rounded-xl border border-border shadow-sm p-6">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <div>
-            <h1 className="text-xl font-bold text-foreground flex items-center">
-              <Video className="w-5 h-5 mr-2 text-blue-600" />
-              Interview:{' '}
-              {applicant
-                ? `${applicant.firstName} ${applicant.lastName}`
-                : 'Applicant'}
-            </h1>
-            <div className="mt-2 flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
-              <span className="flex items-center">
-                <Clock className="w-4 h-4 mr-1 text-muted-foreground/70" />
-                {startDate.toLocaleDateString(undefined, {
-                  weekday: 'long',
-                  month: 'long',
-                  day: 'numeric',
-                  year: 'numeric',
-                })}{' '}
-                {startDate.toLocaleTimeString(undefined, {
-                  hour: 'numeric',
-                  minute: '2-digit',
-                })}{' '}
-                -{' '}
-                {endDate.toLocaleTimeString(undefined, {
-                  hour: 'numeric',
-                  minute: '2-digit',
-                })}
-              </span>
-              {domain && (
-                <Pill>{domain}</Pill>
-              )}
-              <span className="flex items-center">
-                <MapPin className="w-4 h-4 mr-1 text-muted-foreground/70" />
-                {interview.room?.name ?? 'Online'}
-              </span>
-              {!interview.room && (interview.videoUrl ?? interview.zoomJoinUrl) && (
-                <a href={interview.videoUrl ?? interview.zoomJoinUrl ?? ''} target="_blank" rel="noopener noreferrer"
-                   className="flex items-center text-sm text-blue-600 hover:underline">
-                  <Video className="w-4 h-4 mr-1" />
-                  Join Google Meet
-                </a>
-              )}
-              <Pill dot={isCompleted ? 'success' : INTERVIEW_STATUS_TONES[interview.status] ?? 'neutral'}>
-                {isCompleted ? 'Completed' : interview.status}
-              </Pill>
-              <span className="flex items-center">
-                <Users className="w-4 h-4 mr-1 text-muted-foreground/70" />
-                {coInterviewers.length > 0 ? (
-                  <>
-                    with{' '}
-                    {coInterviewers
-                      .map(
-                        (c: { name: string; roleLabel: string }) =>
-                          `${c.name} (${c.roleLabel})`,
-                      )
-                      .join(', ')}
-                  </>
-                ) : (
-                  'No co-interviewer assigned'
-                )}
-              </span>
-            </div>
-          </div>
+      <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
+        <div className="space-y-6 lg:col-span-2">
+          <ApplicationViewer
+            application={viewerApplication as any}
+            questionLabels={questionLabels}
+            readOnly
+          />
+          <EducationEngagementPanel entries={educationEngagement} defaultOpen={false} />
+          <ApplicationEventsPanel
+            entries={hiringEventEngagement}
+            currentCycleId={interview.applicationCycleId}
+            defaultOpen={false}
+          />
+          <PriorApplicationsPanel
+            entries={priorApplications}
+            outcomesHidden={blinded}
+            hrefFor={() => null}
+            defaultOpen={false}
+          />
+          <ApplicantEmailPanel
+            engagement={emailEngagement}
+            blinded={blinded}
+            applicationId={application.id}
+            defaultOpen={false}
+          />
+        </div>
+
+        <div className="space-y-4">
+          <ReviewsCard
+            reviews={reviewCards}
+            criteria={criteriaByKey}
+            selectedId={selectedReviewId}
+            onSelect={setSelectedReviewId}
+          />
         </div>
       </div>
 
-      {/* Prep note from deliberations (read-only) */}
-      {interview.domainApplication?.interviewPrepNote?.trim() && (
-        <div className="bg-blue-50 rounded-xl border border-blue-200 shadow-sm p-6">
-          <h2 className="text-sm font-semibold text-blue-900 uppercase tracking-wide mb-2">
-            From deliberations — to bring up in the interview
-          </h2>
-          <p className="text-sm text-blue-900 whitespace-pre-wrap">
-            {interview.domainApplication.interviewPrepNote}
-          </p>
-        </div>
-      )}
-
-      {/* Application (collapsible) */}
-      <div className="bg-card rounded-xl border border-border shadow-sm">
-        <button
-          onClick={() => setShowApplication(!showApplication)}
-          className="w-full flex items-center justify-between px-6 py-4 text-left hover:bg-muted/50 rounded-xl"
-        >
-          <span className="flex items-center text-lg font-semibold text-foreground">
-            <FileText className="w-5 h-5 mr-2 text-blue-600" />
-            Application
-          </span>
-          <ChevronDown
-            className={`w-5 h-5 text-muted-foreground/70 transition-transform ${
-              showApplication ? 'rotate-180' : ''
-            }`}
-          />
-        </button>
-        {showApplication && (
-          <div className="px-6 pb-6 border-t border-border pt-6">
-            <ApplicationViewer
-              application={viewerApplication as any}
-              questionLabels={questionLabels}
-              readOnly
-            />
-          </div>
-        )}
-      </div>
-
-      {/* Reviewer Notes (collapsible) */}
-      <div className="bg-card rounded-xl border border-border shadow-sm">
-        <button
-          onClick={() => setShowReviews(!showReviews)}
-          className="w-full flex items-center justify-between px-6 py-4 text-left hover:bg-muted/50 rounded-xl"
-        >
-          <span className="flex items-center text-lg font-semibold text-foreground">
-            <MessageSquare className="w-5 h-5 mr-2 text-blue-600" />
-            Reviewer Notes ({submittedReviews.length})
-          </span>
-          <ChevronDown
-            className={`w-5 h-5 text-muted-foreground/70 transition-transform ${
-              showReviews ? 'rotate-180' : ''
-            }`}
-          />
-        </button>
-        {showReviews && (
-          <div className="px-6 pb-6 border-t border-border pt-6">
-            {submittedReviews.length === 0 ? (
-              <p className="text-sm text-muted-foreground italic">
-                No submitted reviews for this applicant.
-              </p>
-            ) : (
-              <div className="space-y-6">
-                {submittedReviews.map((review: any) => {
-                  const m = review.cycleReviewer?.user
-                  const reviewerName =
-                    m?.firstName && m?.lastName
-                      ? `${m.firstName} ${m.lastName}`
-                      : m?.daliEmail ?? 'Reviewer'
-                  return (
-                    <div
-                      key={review.id}
-                      className="border border-border rounded-lg p-4"
-                    >
-                      <ReviewSummary
-                        reviewerName={reviewerName}
-                        reviewerPhotoUrl={review.reviewerPhotoUrl}
-                        submittedAt={review.submittedAt}
-                        overallRecommendation={review.overallRecommendation}
-                        scores={review.scores}
-                        criteria={criteriaByKey}
-                        feedback={review.feedback}
-                        rejectionRationale={review.rejectionRationale}
-                      />
-                    </div>
-                  )
-                })}
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* Joint Interview Notes — collaborative editor */}
-      <div className="bg-card rounded-xl border border-border shadow-sm p-6">
-        <h2 className="text-lg font-semibold text-foreground mb-4">
-          Interview Notes
-        </h2>
-        <p className="text-xs text-muted-foreground mb-3">
-          Shared notes — both interviewers edit this document in real-time.
-        </p>
-        {collabToken ? (
-          <DocEditor
-            features="notes"
-            editable={!isCompleted}
-            placeholder="Write your interview notes here..."
-            className={`rounded-lg border ${
-              isCompleted
-                ? 'border-border bg-muted/50 opacity-75'
-                : 'border-gray-300 bg-card focus-within:ring-2 focus-within:ring-accent-coral focus-within:border-transparent'
-            }`}
-            collab={{
-              documentName: `interview:${interview.id}:notes`,
-              token: collabToken,
-              userName,
-              userId: currentUserId,
-            }}
-          />
-        ) : (
-          <div className="p-4 bg-yellow-50 rounded-lg border border-yellow-200 text-sm text-yellow-800">
-            Session expired — please refresh to enable collaborative editing.
-          </div>
-        )}
-      </div>
-
-      {/* Your Notes — per-interviewer. Only this interviewer can edit them
-          (owner-gated in collabAuth on the rec-notes-{assignmentId} room), but
-          they're surfaced read-only to domain leads in deliberations via
-          InterviewNotesCard's "Per-interviewer notes" — same rooms the delibs
-          read surfaces already show. Optional: a place for your own take,
-          independent of the shared joint notes above. */}
-      <div className="bg-card rounded-xl border border-border shadow-sm p-6">
-        <h2 className="text-lg font-semibold text-foreground mb-1">
-          Personal Notes
-        </h2>
-        <p className="text-xs text-muted-foreground mb-3">
-          Optional personal notes — only you can edit them, kept separate from
-          the joint notes above. Shown to the hiring team during deliberations.
-        </p>
-        {collabToken ? (
-          <DocEditor
-            features="notes"
-            editable={!isCompleted}
-            placeholder="Your own notes on this candidate…"
-            className={`rounded-lg border ${
-              isCompleted
-                ? 'border-border bg-muted/50 opacity-75'
-                : 'border-gray-300 bg-card focus-within:ring-2 focus-within:ring-accent-coral focus-within:border-transparent'
-            }`}
-            collab={{
-              documentName: `interview:${interview.id}:rec-notes-${myAssignment.id}`,
-              token: collabToken,
-              userName,
-              userId: currentUserId,
-            }}
-          />
-        ) : (
-          <div className="p-4 bg-yellow-50 rounded-lg border border-yellow-200 text-sm text-yellow-800">
-            Session expired — please refresh to enable collaborative editing.
-          </div>
-        )}
-      </div>
-
-      {/* Joint Recommendation */}
-      <div className="bg-card rounded-xl border border-border shadow-sm p-6">
-        <h2 className="text-lg font-semibold text-foreground mb-1">
-          Joint Recommendation
-        </h2>
-        <p className="text-xs text-muted-foreground mb-4">
-          One shared recommendation for this interview. Either interviewer
-          submits it on behalf of both — only one of you needs to mark it
-          complete.
-        </p>
-
-        {isCompleted ? (
-          <div className="p-4 bg-green-50 rounded-lg border border-green-200">
-            <div className="flex items-start justify-between mb-2">
-              <div className="flex items-center">
-                <Check className="w-5 h-5 text-green-600 mr-2" />
-                <span className="font-medium text-green-800">
-                  Interview Completed
-                </span>
-              </div>
-              <button
-                onClick={handleReopen}
-                disabled={completing}
-                className="text-xs font-medium text-green-700 hover:text-green-900 underline disabled:text-muted-foreground/70 disabled:no-underline"
+      <DetailCard title="Interview" subtitle={timeRange}>
+        <div className="flex flex-col gap-5 px-6 pb-6">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-os-grey">
+            <span className="inline-flex items-center gap-1.5">
+              <MapPin className="h-4 w-4" aria-hidden />
+              {interview.room?.name ?? 'Online'}
+            </span>
+            {!interview.room && (interview.videoUrl ?? interview.zoomJoinUrl) && (
+              <a
+                href={interview.videoUrl ?? interview.zoomJoinUrl ?? ''}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 text-os-accent hover:text-os-accent-hover"
               >
-                {completing ? 'Reopening…' : 'Reopen'}
-              </button>
-            </div>
-            <p className="text-sm text-green-700">
-              <strong>Recommendation:</strong>{' '}
-              {interview.recommendation ?? recommendation}
-            </p>
-            {interview.recommendationNotes && (
-              <p className="text-sm text-green-700 mt-1">
-                <strong>Notes:</strong> {interview.recommendationNotes}
-              </p>
+                <Video className="h-4 w-4" aria-hidden />
+                Join Google Meet
+              </a>
             )}
+            <span className="inline-flex items-center gap-1.5">
+              <Users className="h-4 w-4" aria-hidden />
+              {coInterviewers.length > 0
+                ? `With ${coInterviewers
+                    .map((c: { name: string; roleLabel: string }) => `${c.name} (${c.roleLabel})`)
+                    .join(', ')}`
+                : 'No co-interviewer assigned'}
+            </span>
           </div>
-        ) : (
-          <div className="space-y-4">
+
+          {prepNote && (
+            <div className="rounded-os-item bg-os-amber/10 px-4 py-3">
+              <div className="text-[11px] font-bold uppercase tracking-[1px] text-os-amber">Interview prep note</div>
+              <p className="mt-1 whitespace-pre-wrap text-sm text-foreground">{prepNote}</p>
+              <p className="mt-1 text-xs text-os-grey">Set by leads during Initial delibs.</p>
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
             <div>
-              <label className="block text-sm font-medium text-foreground/80 mb-1">
-                Recommendation
-              </label>
-              <Select
-                value={recommendation}
-                placeholder="Select a recommendation..."
-                onChange={(v) => setRecommendation(v)}
-                options={RECOMMENDATION_OPTIONS.map((opt) => ({ value: opt, label: opt }))}
-                buttonClassName="w-full sm:w-64 px-3 py-2 border border-gray-300 rounded-lg text-sm inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
-              />
+              <h3 className={cn(heading, 'mb-2')}>Interview notes</h3>
+              <p className="mb-2 text-xs text-os-grey">Shared with your co-interviewer.</p>
+              {collabToken ? (
+                <DocEditor
+                  features="notes"
+                  density="compact"
+                  editable={!isCompleted}
+                  placeholder="Write your interview notes here..."
+                  className={editorClass}
+                  collab={{
+                    documentName: `interview:${interview.id}:notes`,
+                    token: collabToken,
+                    userName,
+                    userId: currentUserId,
+                  }}
+                />
+              ) : sessionExpired}
             </div>
 
-            <div className="flex items-center gap-3">
-              <button
-                onClick={handleMarkComplete}
-                disabled={!recommendation || completing}
-                className="inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-green-600 rounded-lg hover:bg-green-700 disabled:opacity-50"
-              >
-                <Check className="w-4 h-4 mr-1.5" />
-                {completing ? 'Completing...' : 'Mark Complete'}
-              </button>
+            {/* Owner-gated in collabAuth on the rec-notes-{assignmentId} room;
+                domain leads read them in deliberations via InterviewNotesCard. */}
+            <div>
+              <h3 className={cn(heading, 'mb-2')}>Personal notes</h3>
+              <p className="mb-2 text-xs text-os-grey">Only you edit these. Shown to the hiring team in delibs.</p>
+              {collabToken ? (
+                <DocEditor
+                  features="notes"
+                  density="compact"
+                  editable={!isCompleted}
+                  placeholder="Your own notes on this candidate..."
+                  className={editorClass}
+                  collab={{
+                    documentName: `interview:${interview.id}:rec-notes-${myAssignment.id}`,
+                    token: collabToken,
+                    userName,
+                    userId: currentUserId,
+                  }}
+                />
+              ) : sessionExpired}
             </div>
           </div>
-        )}
-      </div>
+
+          <div className="border-t border-os-container pt-4">
+            <h3 className={cn(heading, 'mb-3')}>
+              Joint recommendation
+              <InfoTip content="One recommendation for both interviewers. Either of you can mark it complete." />
+            </h3>
+            {isCompleted ? (
+              <div className="flex flex-wrap items-center gap-3">
+                <span className="inline-flex items-center gap-2 rounded-os-item bg-os-well px-4 py-2">
+                  <Check className="h-4 w-4 text-os-accent" aria-hidden />
+                  <span className="text-sm font-medium text-foreground">
+                    {interview.recommendation ?? recommendation}
+                  </span>
+                </span>
+                <button onClick={handleReopen} disabled={completing} className={buttonClasses('secondary', 'md')}>
+                  {completing ? 'Reopening…' : 'Reopen'}
+                </button>
+                {interview.recommendationNotes && (
+                  <p className="w-full text-sm text-os-grey">{interview.recommendationNotes}</p>
+                )}
+              </div>
+            ) : (
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="w-full sm:w-64">
+                  <Select
+                    value={recommendation}
+                    placeholder="Select a recommendation..."
+                    onChange={(v) => setRecommendation(v)}
+                    options={RECOMMENDATION_OPTIONS.map((opt) => ({ value: opt, label: opt }))}
+                    buttonClassName={formTrigger}
+                  />
+                </div>
+                <button
+                  onClick={handleMarkComplete}
+                  disabled={!recommendation || completing}
+                  className={buttonClasses('primary', 'md')}
+                >
+                  {completing ? 'Completing…' : 'Mark complete'}
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      </DetailCard>
     </div>
     </PresenceProvider>
   )

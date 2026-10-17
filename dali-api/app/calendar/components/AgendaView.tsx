@@ -52,7 +52,7 @@ function AgendaRow({ block, onDrill }: { block: EventBlock; onDrill: () => void 
       />
       <span className="min-w-0 flex-1">
         <span className="flex items-center gap-1 text-sm text-foreground">
-          {block.issue && <IssueIcon className="h-3.5 w-3.5" />}
+          {block.issue && <IssueIcon className="h-[18px] w-[18px] text-xs" />}
           <span className="truncate">{block.label}</span>
           {block.issue && <span className="sr-only">{block.issue}</span>}
         </span>

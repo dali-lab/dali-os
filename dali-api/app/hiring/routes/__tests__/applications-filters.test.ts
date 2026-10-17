@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  applicationColumns,
+  visibleSort,
   DEFAULT_SORT,
   EMPTY_FILTERS,
   isApplicationFilters,
@@ -43,7 +45,9 @@ describe("isApplicationFilters", () => {
 describe("isApplicationSort", () => {
   it("accepts known columns and rejects anything else", () => {
     expect(isApplicationSort(DEFAULT_SORT)).toBe(true);
-    expect(isApplicationSort({ key: "reviewCount", dir: "desc" })).toBe(true);
+    expect(isApplicationSort({ key: "reviewers", dir: "desc" })).toBe(true);
+    expect(isApplicationSort({ key: "interviewers", dir: "asc" })).toBe(true);
+    expect(isApplicationSort({ key: "reviewCount", dir: "desc" })).toBe(false);
     expect(isApplicationSort(null)).toBe(false);
     expect(isApplicationSort({ key: "email", dir: "asc" })).toBe(false);
     expect(isApplicationSort({ key: "name", dir: "up" })).toBe(false);
@@ -56,7 +60,8 @@ describe("sortApplications", () => {
     domain: "Dev",
     status: "Submitted",
     submittedAt: null as string | null,
-    reviewCount: 0,
+    reviewers: null as string | null,
+    interviewers: null as string | null,
     ...over,
   });
   const names = (rows: { name: string }[]) => rows.map((r) => r.name);
@@ -68,10 +73,12 @@ describe("sortApplications", () => {
     expect(names(rows)).toEqual(["Bo", "Ada", "Cy"]);
   });
 
-  it("sorts review counts numerically", () => {
-    const rows = [row("Ada", { reviewCount: 10 }), row("Bo", { reviewCount: 2 })];
-    expect(names(sortApplications(rows, { key: "reviewCount", dir: "asc" }))).toEqual(["Bo", "Ada"]);
-    expect(names(sortApplications(rows, { key: "reviewCount", dir: "desc" }))).toEqual(["Ada", "Bo"]);
+  it("sorts reviewer and interviewer names, with unassigned rows last", () => {
+    const rows = [row("Ada", { reviewers: "Zed Q" }), row("Bo"), row("Cy", { reviewers: "Amy R" })];
+    expect(names(sortApplications(rows, { key: "reviewers", dir: "asc" }))).toEqual(["Cy", "Ada", "Bo"]);
+    expect(names(sortApplications(rows, { key: "reviewers", dir: "desc" }))).toEqual(["Ada", "Cy", "Bo"]);
+    const iv = [row("Ada"), row("Bo", { interviewers: "Kim L" })];
+    expect(names(sortApplications(iv, { key: "interviewers", dir: "asc" }))).toEqual(["Bo", "Ada"]);
   });
 
   it("keeps unsubmitted rows last in both directions", () => {
@@ -87,5 +94,31 @@ describe("sortApplications", () => {
   it("keeps the incoming order for ties", () => {
     const rows = [row("Ada", { domain: "Design" }), row("Bo"), row("Cy", { domain: "Design" })];
     expect(names(sortApplications(rows, { key: "domain", dir: "desc" }))).toEqual(["Bo", "Ada", "Cy"]);
+  });
+});
+
+describe("applicationColumns", () => {
+  const keys = (status: string) => applicationColumns(status).map((c) => c.key);
+
+  it("shows reviewers and interviewers instead of the submitted date while under review", () => {
+    expect(keys("UnderReview")).toEqual(["name", "domain", "status", "reviewers", "interviewers"]);
+  });
+
+  it("shows the submitted date and no assignee columns in every other stage", () => {
+    for (const status of ["Draft", "Open", "Completed", ""]) {
+      expect(keys(status)).toEqual(["name", "domain", "status", "submittedAt"]);
+    }
+  });
+});
+
+describe("visibleSort", () => {
+  it("keeps a sort on a column that is shown", () => {
+    const sort = { key: "reviewers", dir: "desc" } as const;
+    expect(visibleSort(sort, applicationColumns("UnderReview"))).toEqual(sort);
+  });
+
+  it("falls back to the default when the sorted column is hidden for this cycle", () => {
+    expect(visibleSort({ key: "reviewers", dir: "desc" }, applicationColumns("Open"))).toEqual(DEFAULT_SORT);
+    expect(visibleSort({ key: "submittedAt", dir: "asc" }, applicationColumns("UnderReview"))).toEqual(DEFAULT_SORT);
   });
 });

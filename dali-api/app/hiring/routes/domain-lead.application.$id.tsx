@@ -436,11 +436,13 @@ export default function DomainLeadApplicationView() {
                 ? `/hiring/reviewer/application/${application.id}/prior/${entry.id}`
                 : `/hiring/applications/${domainApplicationId}`
             }
+            defaultOpen={false}
           />
           <ApplicantEmailPanel
             engagement={emailEngagement}
             blinded={blinded}
             applicationId={application.id}
+            defaultOpen={false}
           />
         </div>
 
@@ -457,7 +459,7 @@ export default function DomainLeadApplicationView() {
             className="overflow-hidden"
           >
             {reviews.length > 0 && (
-              <div className="divide-y divide-gray-100">
+              <div className="flex flex-col gap-2 px-6 pb-6">
                 {reviews.map((review: any) => (
                   <ReviewCard key={review.id} review={review} criteriaByKey={criteriaByKey} />
                 ))}
@@ -523,7 +525,7 @@ function ReviewCard({
   const scores = (review.scores ?? {}) as Record<string, number>;
 
   return (
-    <div className="px-4 py-3">
+    <div className="rounded-os-item bg-os-well px-4 py-3">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Avatar photoUrl={review.reviewerPhotoUrl} name={name} size="sm" className="shrink-0" />
@@ -550,7 +552,7 @@ function ReviewCard({
             const label = meta?.label ?? key;
             return (
               <Tooltip key={key} content={label}>
-                <span className="text-xs bg-muted text-foreground/80 px-1.5 py-0.5 rounded">
+                <span className="text-xs bg-os-container text-foreground px-2 py-0.5 rounded-full">
                   {label.split(" ")[0]}: {score}
                   {meta?.maxScore != null ? `/${meta.maxScore}` : ""}
                 </span>
@@ -564,7 +566,7 @@ function ReviewCard({
       {(review.feedback || review.rejectionRationale) && (
         <button
           onClick={() => setExpanded(!expanded)}
-          className="mt-2 text-xs text-accent-coral hover:text-accent-coral/80 flex items-center gap-1"
+          className="mt-2 text-xs text-os-accent hover:text-os-accent-hover flex items-center gap-1"
         >
           {expanded ? "Hide" : "Show"} feedback
           <ChevronDown className={`w-3 h-3 transition-transform ${expanded ? "rotate-180" : ""}`} />
