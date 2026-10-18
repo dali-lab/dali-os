@@ -41,7 +41,7 @@ export function Toggle({ label, description, className, labelClassName, disabled
         <span
           aria-hidden="true"
           className={cn(
-            "absolute inset-0 rounded-full bg-muted-foreground/30 ring-1 ring-inset ring-black/10 transition-colors peer-checked:ring-transparent peer-focus-visible:ring-2 peer-focus-visible:ring-offset-1",
+            "dali-switch absolute inset-0 rounded-full bg-muted-foreground/30 ring-1 ring-inset ring-black/10 transition-colors peer-checked:ring-transparent peer-focus-visible:ring-2 peer-focus-visible:ring-offset-1",
             tone === "os"
               ? "peer-checked:bg-os-accent peer-focus-visible:ring-os-accent/40"
               : "peer-checked:bg-accent-coral peer-focus-visible:ring-accent-coral/40",
