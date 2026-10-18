@@ -50,7 +50,7 @@ export function InternalCyclePortalView({
             <li key={c.id}>
               <Link
                 to={c.href}
-                className="flex items-center justify-between gap-4 rounded-os-card border border-border bg-card px-5 py-4 hover:border-accent-coral/50 transition"
+                className="flex items-center justify-between gap-4 rounded-os-card border border-border bg-card px-5 py-4 hover:border-os-accent/50 transition"
               >
                 <span className="font-medium text-foreground">{c.name}</span>
                 {c.closeDate && (
@@ -243,8 +243,8 @@ function FormView({
                   label={<span className="text-sm font-medium text-foreground">{d.displayName}</span>}
                   className={`px-4 py-3 rounded-lg border transition ${
                     checked
-                      ? "border-accent-coral bg-accent-coral/10"
-                      : "border-border hover:border-accent-coral/50"
+                      ? "border-os-accent bg-os-accent/10"
+                      : "border-border hover:border-os-accent/50"
                   }`}
                 />
               );
@@ -269,12 +269,12 @@ function FormView({
       </section>
 
       {error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+        <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
           {error}
         </div>
       )}
       {justSaved && !error && (
-        <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
+        <div className="rounded-lg border border-os-green/40 bg-os-green/10 px-4 py-3 text-sm text-os-green">
           Draft saved.
         </div>
       )}
@@ -285,7 +285,7 @@ function FormView({
             type="button"
             onClick={pager.goBack}
             disabled={busy}
-            className="px-5 py-2 rounded-full border-2 border-border text-sm font-semibold text-muted-foreground hover:border-accent-coral hover:text-accent-coral transition disabled:opacity-50"
+            className="px-5 py-2 rounded-full border-2 border-border text-sm font-semibold text-muted-foreground hover:border-os-accent hover:text-os-accent transition disabled:opacity-50"
           >
             Back
           </button>
@@ -299,7 +299,7 @@ function FormView({
           type="button"
           onClick={() => submitForm("save-draft")}
           disabled={busy}
-          className="px-5 py-2 rounded-full border-2 border-border text-sm font-semibold text-muted-foreground hover:border-accent-coral hover:text-accent-coral transition disabled:opacity-50"
+          className="px-5 py-2 rounded-full border-2 border-border text-sm font-semibold text-muted-foreground hover:border-os-accent hover:text-os-accent transition disabled:opacity-50"
         >
           {busy && fetcher.formData?.get("intent") === "save-draft" ? "Saving…" : "Save draft"}
         </button>
@@ -350,7 +350,7 @@ function SubmittedView({ submittedBody, portalPath }: { submittedBody: string; p
 
   return (
     <div className="space-y-6">
-      <div className="rounded-os-card border border-green-200 bg-green-50/50 px-6 py-8 text-center">
+      <div className="rounded-os-card border border-os-green/40 bg-os-green/10 px-6 py-8 text-center">
         <h2 className="font-heading text-xl font-bold text-foreground mb-2">Submitted</h2>
         <p className="text-sm text-muted-foreground">{submittedBody}</p>
       </div>

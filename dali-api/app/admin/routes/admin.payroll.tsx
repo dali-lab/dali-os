@@ -254,7 +254,7 @@ export default function PayrollReconcile() {
                 className={cn(
                   "flex items-center gap-1.5 whitespace-nowrap px-3 py-2 text-sm font-medium -mb-px border-b-2",
                   tab === t.key
-                    ? "border-accent-coral text-foreground"
+                    ? "border-os-accent text-foreground"
                     : "border-transparent text-muted-foreground hover:text-foreground",
                 )}
               >
@@ -264,7 +264,7 @@ export default function PayrollReconcile() {
                     className={cn(
                       "inline-flex items-center justify-center min-w-[18px] h-[18px] px-1.5 rounded-full text-[11px] font-bold",
                       t.badgeTone === "coral"
-                        ? "bg-accent-coral text-white"
+                        ? "bg-os-accent text-os-bg"
                         : "bg-muted text-muted-foreground",
                     )}
                   >
@@ -330,15 +330,15 @@ function ChartStringWarning({
   return (
     <div
       role="alert"
-      className="flex items-start gap-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+      className="flex items-start gap-3 rounded-lg border border-os-amber/40 bg-os-amber/10 px-4 py-3 text-sm text-os-amber"
     >
-      <AlertTriangle className="mt-0.5 w-4 h-4 flex-shrink-0 text-amber-600" aria-hidden />
+      <AlertTriangle className="mt-0.5 w-4 h-4 flex-shrink-0 text-os-amber" aria-hidden />
       <div className="flex-1">
         <p className="font-medium">
           {projects.length} staffed project{projects.length === 1 ? "" : "s"} with no chart
           string this term
         </p>
-        <p className="mt-0.5 text-amber-800">
+        <p className="mt-0.5 text-os-amber">
           {projects.join(", ")} had {projects.length === 1 ? "its own" : "their own"} in an
           earlier term and {projects.length === 1 ? "is" : "are"} now charging the lab
           default. If that's wrong, add this term's string on the project page.
@@ -348,7 +348,7 @@ function ChartStringWarning({
         type="button"
         onClick={onDismiss}
         aria-label="Dismiss chart string warning"
-        className="text-amber-600 hover:text-amber-900"
+        className="text-os-amber hover:text-os-amber"
       >
         <X className="w-4 h-4" />
       </button>
@@ -590,7 +590,7 @@ function PayrollDataPanel({ rec }: { rec: ReconciliationResult }) {
         className="inline-flex items-center gap-1 hover:text-foreground"
       >
         {label}
-        {sortKey === k && <span className="text-accent-coral">↓</span>}
+        {sortKey === k && <span className="text-os-accent">↓</span>}
       </button>
     </th>
   );
@@ -652,7 +652,7 @@ function PayrollDataPanel({ rec }: { rec: ReconciliationResult }) {
                         className={cn(
                           "inline-flex items-center gap-1",
                           count > 0
-                            ? "text-accent-coral hover:text-accent-coral/80"
+                            ? "text-os-accent hover:text-os-accent/80"
                             : "text-muted-foreground/40 hover:text-foreground",
                         )}
                       >
@@ -723,7 +723,7 @@ function NotesModal({
                     href={n.linkToTimesheet}
                     target="_blank"
                     rel="noreferrer"
-                    className="text-accent-coral underline hover:text-accent-coral/80"
+                    className="text-os-accent underline hover:text-os-accent/80"
                   >
                     timesheet
                   </a>
@@ -876,7 +876,7 @@ function ChartStringsPanel({ rec }: { rec: ReconciliationResult }) {
                         <>
                           {cs.projects.map((p) => p.name).join(", ")}
                           {cs.ambiguousProject && (
-                            <span className="ml-1.5 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] bg-amber-50 text-amber-700">
+                            <span className="ml-1.5 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] bg-os-amber/10 text-os-amber">
                               <AlertTriangle className="w-3 h-3" /> ambiguous
                             </span>
                           )}
@@ -1016,7 +1016,7 @@ function DiscrepanciesPanel({ rec }: { rec: ReconciliationResult }) {
                 <td
                   className={cn(
                     TD_NUM,
-                    x.difference < 0 ? "text-red-600 font-semibold" : "text-foreground",
+                    x.difference < 0 ? "text-destructive font-semibold" : "text-foreground",
                   )}
                 >
                   {x.difference < 0 ? "−" : "+"}
@@ -1053,7 +1053,7 @@ function DiscrepanciesPanel({ rec }: { rec: ReconciliationResult }) {
                 <td className={TD_NUM}>{x.hours.toLocaleString()}</td>
                 <td className={TD_NUM}>{formatUsd(x.pay)}</td>
                 <td className={TD}>
-                  <span className="px-2 py-0.5 rounded-full text-xs bg-red-50 text-red-600">
+                  <span className="px-2 py-0.5 rounded-full text-xs bg-destructive/10 text-destructive">
                     not in DALI OS — still counted
                   </span>
                 </td>
@@ -1080,7 +1080,7 @@ function DiscCard({
     <Card className="overflow-hidden border-l-[3px] border-l-amber-500">
       <div className="flex items-center gap-2 px-4 py-3">
         <h3 className="font-heading text-sm font-semibold text-foreground">{title}</h3>
-        <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-amber-50 text-amber-700">
+        <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-os-amber/10 text-os-amber">
           {count}
         </span>
       </div>

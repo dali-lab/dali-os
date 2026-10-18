@@ -405,7 +405,7 @@ export default function PayrollExport() {
             <button
               type="button"
               onClick={clearFilters}
-              className="ml-auto text-xs font-medium text-accent-coral hover:underline"
+              className="ml-auto text-xs font-medium text-os-accent hover:underline"
             >
               Clear filter
             </button>
@@ -433,7 +433,7 @@ export default function PayrollExport() {
             </span>
           </div>
           {projectWarnings > 0 && (
-            <span className="inline-flex items-center gap-1 text-xs text-amber-700">
+            <span className="inline-flex items-center gap-1 text-xs text-os-amber">
               <AlertTriangle className="w-3.5 h-3.5" />
               {projectWarnings} row{projectWarnings === 1 ? "" : "s"} with missing data
             </span>
@@ -480,7 +480,7 @@ export default function PayrollExport() {
                   <td className="px-3 py-2 text-muted-foreground">{r.hireEnd}</td>
                   <td className="px-3 py-2 text-foreground">{r.chartStringType || "—"}</td>
                   <td className="px-3 py-2 text-foreground font-mono break-all">{r.chartString || "—"}</td>
-                  <td className="px-3 py-2 text-amber-700">
+                  <td className="px-3 py-2 text-os-amber">
                     {r.warnings.length > 0 ? r.warnings.join("; ") : ""}
                   </td>
                 </tr>
@@ -600,7 +600,7 @@ function TechnigalaSection({
             <button
               type="button"
               onClick={toggleAll}
-              className="text-xs font-medium text-accent-coral hover:underline"
+              className="text-xs font-medium text-os-accent hover:underline"
             >
               {allChecked ? "Clear all" : "Select all"}
             </button>
@@ -721,7 +721,7 @@ function CandidateSection({
           <button
             type="button"
             onClick={toggleAll}
-            className="text-xs font-medium text-accent-coral hover:underline"
+            className="text-xs font-medium text-os-accent hover:underline"
           >
             {allChecked ? "Clear all" : "Select all"}
           </button>
@@ -796,7 +796,7 @@ function FilterPill({
       aria-pressed={active}
       className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${
         active
-          ? "bg-accent-coral/15 border-accent-coral/40 text-accent-coral"
+          ? "bg-os-accent/15 border-os-accent/40 text-os-accent"
           : "bg-background border-border text-muted-foreground hover:bg-muted/50"
       }`}
     >

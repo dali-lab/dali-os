@@ -56,7 +56,7 @@ export function SigningDocumentsPage() {
               name="name"
               required
               placeholder="DALI Term Agreement"
-              className="px-3 py-2 border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+              className="px-3 py-2 border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-os-accent/30"
               autoFocus
             />
           </label>
@@ -138,11 +138,11 @@ export function SigningDocumentsPage() {
               >
                 <div className="flex items-start justify-between">
                   <div className="flex items-center gap-3 min-w-0">
-                    <div className="p-2 bg-accent-coral/10 text-accent-coral rounded-lg shrink-0">
+                    <div className="p-2 bg-os-accent/10 text-os-accent rounded-lg shrink-0">
                       <FileSignature className="w-6 h-6" />
                     </div>
                     <div className="min-w-0">
-                      <h3 className="font-bold text-foreground group-hover:text-accent-coral transition-colors truncate">
+                      <h3 className="font-bold text-foreground group-hover:text-os-accent transition-colors truncate">
                         {doc.name}
                       </h3>
                       <p className="text-xs text-muted-foreground mt-1">
@@ -152,7 +152,7 @@ export function SigningDocumentsPage() {
                       </p>
                     </div>
                   </div>
-                  <ChevronRight className="w-5 h-5 text-muted-foreground/40 group-hover:text-accent-coral transition-colors shrink-0" />
+                  <ChevronRight className="w-5 h-5 text-muted-foreground/40 group-hover:text-os-accent transition-colors shrink-0" />
                 </div>
                 <p className="text-xs text-muted-foreground mt-3">
                   {SCOPE_LABELS[doc.gateScope] ?? doc.gateScope}

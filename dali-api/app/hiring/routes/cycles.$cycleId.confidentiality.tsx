@@ -9,6 +9,7 @@ import { getCycleConfidentialityState } from "~/hiring/lib/confidentiality";
 import { DocEditor } from "~/components/doc";
 import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
 import { isEmptyBody } from "~/lib/signing-fields";
+import { buttonClasses } from "~/components/ui/Button";
 
 export const meta: Route.MetaFunction = () => [
   { title: "Confidentiality agreement · DALI OS" },
@@ -126,7 +127,7 @@ export default function CycleConfidentialityPage() {
     return (
       <div className="max-w-3xl mx-auto py-10 space-y-6">
         <div className="flex items-center gap-3">
-          <AlertTriangle className="w-6 h-6 text-amber-500" />
+          <AlertTriangle className="w-6 h-6 text-os-amber" />
           <h1 className="text-2xl font-bold text-foreground">
             Confidentiality agreement unavailable
           </h1>
@@ -150,7 +151,7 @@ export default function CycleConfidentialityPage() {
     return (
       <div className="max-w-3xl mx-auto py-10 space-y-6">
         <div className="flex items-center gap-3">
-          <ShieldCheck className="w-6 h-6 text-green-600" />
+          <ShieldCheck className="w-6 h-6 text-os-green" />
           <h1 className="text-2xl font-bold text-foreground">
             You have signed the confidentiality agreement
           </h1>
@@ -162,7 +163,7 @@ export default function CycleConfidentialityPage() {
         {next && (
           <Link
             to={next}
-            className="inline-block px-4 py-2 text-sm font-medium text-white bg-accent-coral rounded-md hover:bg-accent-coral/90"
+            className={buttonClasses("primary", "md")}
           >
             Continue
           </Link>
@@ -211,7 +212,7 @@ export default function CycleConfidentialityPage() {
         <button
           type="submit"
           disabled={empty}
-          className="px-4 py-2 text-sm font-medium text-white bg-accent-coral rounded-md hover:bg-accent-coral/90 disabled:opacity-50"
+          className={buttonClasses("primary", "md")}
         >
           I agree and sign
         </button>
