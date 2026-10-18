@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, afterEach } from "vitest";
-import { createElement, act } from "react";
+import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { MemoryRouter } from "react-router";
 import { Menu } from "./Menu";
@@ -20,17 +20,13 @@ function openMenu() {
   root = createRoot(container);
   act(() =>
     root.render(
-      createElement(
-        MemoryRouter,
-        null,
-        createElement(
-          Menu,
-          { trigger: createElement("button", { type: "button" }, "Open"), ariaLabel: "Actions" },
-          createElement(Menu.Item, null, "Rename"),
-          createElement(Menu.Item, { destructive: true }, "Delete"),
-          createElement(Menu.LinkItem, { to: "/x" }, "Open page"),
-        ),
-      ),
+      <MemoryRouter>
+        <Menu trigger={<button type="button">Open</button>} ariaLabel="Actions">
+          <Menu.Item>Rename</Menu.Item>
+          <Menu.Item destructive>Delete</Menu.Item>
+          <Menu.LinkItem to="/x">Open page</Menu.LinkItem>
+        </Menu>
+      </MemoryRouter>,
     ),
   );
   act(() => (container.querySelector("button") as HTMLButtonElement).click());
