@@ -1617,11 +1617,11 @@ export function WeekGrid({
                   "border-r-2 border-r-accent-teal"
                 : "border-r last:border-r-0 border-border"
             } ${periodStart ? "border-l-2 border-l-accent-teal" : ""} ${
-              isToday ? "bg-accent-coral/10" : periodStart || periodEnd ? "bg-accent-teal/10" : ""
+              isToday ? "bg-os-accent/10" : periodStart || periodEnd ? "bg-accent-teal/10" : ""
             }`}
           >
-            <div className={`mb-0.5 text-[10px] font-semibold tracking-wide ${isToday ? "text-accent-coral" : "text-muted-foreground"}`}>{DAY_KEYS[d.dayOfWeek]}</div>
-            <div className={isToday ? "flex items-center justify-center w-6 h-6 rounded-full bg-accent-coral text-sm font-bold text-white" : "text-sm font-bold text-foreground"}>{d.num}</div>
+            <div className={`mb-0.5 text-[10px] font-semibold tracking-wide ${isToday ? "text-os-accent" : "text-muted-foreground"}`}>{DAY_KEYS[d.dayOfWeek]}</div>
+            <div className={isToday ? "flex items-center justify-center w-6 h-6 rounded-full bg-os-accent text-sm font-bold text-os-bg" : "text-sm font-bold text-foreground"}>{d.num}</div>
             {periodStart && !showProviderRow && (
               <Tooltip content="First day of this pay period" placement="bottom">
                 <span
@@ -1822,11 +1822,11 @@ export function WeekGrid({
               ))}
             {isToday && nowLineTop != null && (
               <div
-                className="absolute left-0 right-0 h-0.5 bg-accent-coral pointer-events-none z-30"
+                className="absolute left-0 right-0 h-0.5 bg-os-accent pointer-events-none z-30"
                 style={{ top: nowLineTop }}
                 aria-label="Current time"
               >
-                <div className="absolute left-0 -top-[3px] w-2 h-2 rounded-full bg-accent-coral" />
+                <div className="absolute left-0 -top-[3px] w-2 h-2 rounded-full bg-os-accent" />
               </div>
             )}
             {drag && drag.dayIdx === idx && (() => {
@@ -1841,11 +1841,11 @@ export function WeekGrid({
               const captionBelow = top < 16;
               return (
                 <div
-                  className="absolute left-0 right-0 border-2 border-accent-coral bg-accent-coral/15 pointer-events-none rounded-sm z-30 shadow-md"
+                  className="absolute left-0 right-0 border-2 border-os-accent bg-os-accent/15 pointer-events-none rounded-sm z-30 shadow-md"
                   style={{ top, height: heightHours * HOUR_PX }}
                 >
                   <div
-                    className={`absolute left-0 px-1 py-0.5 rounded bg-white/75 text-[11px] font-semibold leading-none whitespace-nowrap text-accent-coral ${
+                    className={`absolute left-0 px-1 py-0.5 rounded bg-white/75 text-[11px] font-semibold leading-none whitespace-nowrap text-os-accent ${
                       captionBelow ? "top-1" : "bottom-full mb-1"
                     }`}
                   >
@@ -1869,14 +1869,14 @@ export function WeekGrid({
                   // Body drag moves the whole block; the edge handles below
                   // resize it (they stopPropagation so they win over this).
                   onPointerDown={resizable ? startMove : undefined}
-                  className={`absolute left-0 right-0 border-2 border-accent-coral bg-accent-coral/15 rounded-sm z-30 ${
+                  className={`absolute left-0 right-0 border-2 border-os-accent bg-os-accent/15 rounded-sm z-30 ${
                     resizable ? (move ? "cursor-grabbing" : "cursor-grab") : "pointer-events-none"
                   }`}
                   style={{ top, height }}
                 >
                   {/* Caption above the top edge — see drag-preview note. */}
                   <div
-                    className={`absolute left-0 px-1 py-0.5 rounded bg-white/75 text-[11px] font-semibold leading-none whitespace-nowrap text-accent-coral pointer-events-none ${
+                    className={`absolute left-0 px-1 py-0.5 rounded bg-white/75 text-[11px] font-semibold leading-none whitespace-nowrap text-os-accent pointer-events-none ${
                       top < 16 ? "top-1" : "bottom-full mb-1"
                     }`}
                   >
@@ -1890,7 +1890,7 @@ export function WeekGrid({
                         className="absolute -top-1 left-0 right-0 h-2 cursor-ns-resize flex items-center justify-center group dnd-touch-handle"
                         aria-label="Adjust start time"
                       >
-                        <span className="w-8 h-1 rounded-full bg-accent-coral group-hover:h-1.5 transition-all" />
+                        <span className="w-8 h-1 rounded-full bg-os-accent group-hover:h-1.5 transition-all" />
                       </div>
                       {/* Bottom handle */}
                       <div
@@ -1898,7 +1898,7 @@ export function WeekGrid({
                         className="absolute -bottom-1 left-0 right-0 h-2 cursor-ns-resize flex items-center justify-center group dnd-touch-handle"
                         aria-label="Adjust end time"
                       >
-                        <span className="w-8 h-1 rounded-full bg-accent-coral group-hover:h-1.5 transition-all" />
+                        <span className="w-8 h-1 rounded-full bg-os-accent group-hover:h-1.5 transition-all" />
                       </div>
                     </>
                   )}
