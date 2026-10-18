@@ -449,7 +449,7 @@ export function CommandPalette({ open, onClose, tabless, focusMode, roles = NO_R
               aria-live="polite"
             >
               <Loader2
-                className="h-5 w-5 animate-spin motion-reduce:animate-none text-accent-coral"
+                className="h-5 w-5 animate-spin motion-reduce:animate-none text-os-accent"
                 aria-hidden
               />
               Searching…
@@ -482,7 +482,7 @@ export function CommandPalette({ open, onClose, tabless, focusMode, roles = NO_R
                     onMouseMove={() => setSelectedIndex(idx)}
                     onClick={(e) => select(item, e.metaKey || e.ctrlKey)}
                     className={`flex w-full items-center gap-3 px-4 py-2 text-left text-sm transition-colors ${
-                      active ? "bg-accent-coral/10 text-foreground" : "text-foreground/80 hover:bg-muted/50"
+                      active ? "bg-os-accent/15 text-foreground" : "text-foreground/80 hover:bg-muted/50"
                     }`}
                   >
                     {isPerson ? (
@@ -496,7 +496,7 @@ export function CommandPalette({ open, onClose, tabless, focusMode, roles = NO_R
                       </span>
                     ) : (
                       <Icon
-                        className={`w-4 h-4 shrink-0 ${active ? "text-accent-coral" : "text-muted-foreground"}`}
+                        className={`w-4 h-4 shrink-0 ${active ? "text-os-accent" : "text-muted-foreground"}`}
                         aria-hidden
                       />
                     )}

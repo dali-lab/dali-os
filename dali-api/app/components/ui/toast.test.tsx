@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach } from "vitest";
+import { OS_SURFACE_CLASS } from "./floating/styles";
 import { createElement, act, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { ToastProvider, useToast } from "./toast";
@@ -62,6 +63,28 @@ describe("useToast", () => {
     });
     expect(container.querySelector('[role="status"]')).not.toBeNull();
     expect(container.textContent).toContain("Saved.");
+    cleanup();
+  });
+
+  it("marks success in the os status green, not brand teal", () => {
+    const { container, api, cleanup } = captureToast();
+    act(() => {
+      api.success("Saved.");
+    });
+    const html = container.innerHTML;
+    expect(html).toContain("text-os-green");
+    expect(html).not.toContain("accent-teal");
+    cleanup();
+  });
+
+  it("wears the floating-layer surface and not cal-surface, whose border:none overrode it", () => {
+    const { container, api, cleanup } = captureToast();
+    act(() => {
+      api.info("Heads up.");
+    });
+    const frame = container.querySelector('[role="status"]')!;
+    expect(frame.className).not.toContain("cal-surface");
+    for (const cls of OS_SURFACE_CLASS.split(" ")) expect(frame.classList.contains(cls)).toBe(true);
     cleanup();
   });
 
