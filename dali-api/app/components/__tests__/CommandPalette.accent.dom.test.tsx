@@ -20,7 +20,7 @@ describe("CommandPalette highlight", () => {
     container = document.createElement("div");
     document.body.appendChild(container);
     root = createRoot(container);
-    act(() => root.render(createElement(CommandPalette, { open: true, onClose: () => {} })));
+    act(() => root.render(createElement(CommandPalette, { open: true, onClose: () => {}, tabless: false, focusMode: false, onOpen: () => {} })));
 
     const rows = document.body.querySelectorAll("button[data-idx]");
     expect(rows.length).toBeGreaterThan(0);

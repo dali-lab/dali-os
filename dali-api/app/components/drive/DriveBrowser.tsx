@@ -1824,13 +1824,13 @@ export function DriveBrowser({
             once — never its vertical position — so the columns/rows the cursor
             is over stay put. ── */}
         <div className="flex gap-3 min-w-0 items-start">
-          {/* The listing is a window: one bordered surface whose header carries
+          {/* The listing is a window: one surface whose header carries
               where you are (the trail), how you got there (< >), how you are
               looking at it (the view toggle) and what you are looking for
               (search). The page title above no longer has a stray folder name
               hanging under it, and every control that acts on the table now
               sits on the table. */}
-          <div className="relative min-w-0 flex-1 overflow-hidden rounded-os-card border border-border bg-card p-5">
+          <div className="relative min-w-0 flex-1 overflow-hidden rounded-os-card bg-card p-5">
             <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-2">
               {historyPair}
               <Breadcrumb
@@ -2245,7 +2245,7 @@ function DriveDetailsPane({
     <aside
       data-testid="drive-details-pane"
       onClick={(e) => e.stopPropagation()}
-      className="hidden w-[280px] shrink-0 self-stretch rounded-os-card border border-border bg-card md:flex md:flex-col"
+      className="hidden w-[280px] shrink-0 self-stretch rounded-os-card bg-card md:flex md:flex-col"
     >
       {/* The close control sits alone at the top: the item's identity is the
           centred block below, so repeating its name up here would say it

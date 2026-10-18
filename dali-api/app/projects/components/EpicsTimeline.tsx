@@ -2003,7 +2003,7 @@ function UnscheduledEpics({
   const [open, setOpen] = useState(false);
 
   return (
-    <section className="overflow-hidden rounded-os-card border border-border bg-card">
+    <section className="overflow-hidden rounded-os-card bg-card">
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
