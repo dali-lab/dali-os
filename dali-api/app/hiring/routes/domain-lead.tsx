@@ -2076,7 +2076,7 @@ function ReviewerAssignmentCell({ domainApplicationId, reviews, cycleReviewers, 
                   void requestRemoveReview(r);
                 }}
                 disabled={removing === r.id}
-                className="ml-0.5 text-os-grey hover:text-red-500 transition-colors"
+                className="ml-0.5 text-os-grey hover:text-destructive transition-colors"
                 aria-label={status === "submitted" ? "Remove reviewer (deletes submitted review)" : "Remove reviewer"}
               >
                 <Trash2 className="w-3 h-3" />

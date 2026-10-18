@@ -174,13 +174,13 @@ function DailyCapRow({
       <div className="mt-2 flex flex-wrap items-center gap-3">
         <span className="text-xs text-muted-foreground">
           Today:{" "}
-          <span className={capped ? "font-semibold text-red-600" : "font-medium text-foreground"}>
+          <span className={capped ? "font-semibold text-destructive" : "font-medium text-foreground"}>
             {todayCount}
           </span>
           {dailyCap != null ? ` / ${dailyCap}` : ""}
           {capped && (
             <Tooltip content="This sender has reached its daily cap — outbound email for this purpose is paused until midnight UTC." variant="rich">
-              <span className="ml-1.5 rounded-full bg-red-100 px-2 py-0.5 text-[11px] font-semibold text-red-700 cursor-default">
+              <span className="ml-1.5 rounded-full bg-destructive/15 px-2 py-0.5 text-[11px] font-semibold text-destructive cursor-default">
                 capped
               </span>
             </Tooltip>
@@ -211,10 +211,10 @@ function DailyCapRow({
             {busy ? "Saving…" : "Save"}
           </button>
           {fetcher.data?.error && (
-            <span className="text-xs text-red-600">{fetcher.data.error}</span>
+            <span className="text-xs text-destructive">{fetcher.data.error}</span>
           )}
           {fetcher.data?.ok && (
-            <span className="text-xs text-emerald-600">Saved</span>
+            <span className="text-xs text-os-green">Saved</span>
           )}
         </fetcher.Form>
       </div>
@@ -304,12 +304,12 @@ export default function EmailSendersAdmin() {
       </header>
 
       {justAuthorized && (
-        <p className="rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+        <p className="rounded-md bg-os-green/10 px-3 py-2 text-sm text-os-green">
           Account connected.
         </p>
       )}
       {gmailError && (
-        <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
+        <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
           Connecting failed ({gmailError}). Try again.
         </p>
       )}

@@ -903,14 +903,14 @@ export function EventComposer({
               // Editing pushed the event into a shape hours can't hang off (made
               // it all-day, say). Say so rather than silently dropping the log
               // the save is about to clear.
-              <p className="text-xs text-amber-600">
+              <p className="text-xs text-os-amber">
                 Saving will remove the {linkedEntry.hours}h logged against this event — hours need a
                 single event with a start and end time.
               </p>
             ) : null}
 
             {(fetcher.data?.error || deleteFetcher.data?.error) && (
-              <p className="text-xs text-red-600">{fetcher.data?.error || deleteFetcher.data?.error}</p>
+              <p className="text-xs text-destructive">{fetcher.data?.error || deleteFetcher.data?.error}</p>
             )}
             {editing && !canEdit && (
               <p className="text-xs text-muted-foreground">This event is read-only.</p>
@@ -920,7 +920,7 @@ export function EventComposer({
               <button
                 type="submit"
                 disabled={!canSubmit || submitting || (editing && !canEdit)}
-                className="inline-flex items-center gap-1.5 rounded-lg bg-os-accent px-3 py-1.5 text-sm font-semibold text-white hover:bg-os-accent-hover disabled:opacity-50"
+                className="inline-flex items-center gap-1.5 rounded-lg bg-os-accent px-3 py-1.5 text-sm font-semibold text-os-bg hover:bg-os-accent-hover disabled:opacity-50"
               >
                 {editing ? "Save changes" : "Create event"}
               </button>
@@ -1026,7 +1026,7 @@ export function CalendarManagerModal({ data, onClose }: { data: LoaderData; onCl
                             <button
                               type="button"
                               aria-label={`Delete ${cal.summary}`}
-                              className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-red-600"
+                              className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-destructive"
                               onClick={async () => {
                                 const ok = await dialog.confirm({
                                   title: `Delete "${cal.summary}"?`,
@@ -1066,7 +1066,7 @@ export function CalendarManagerModal({ data, onClose }: { data: LoaderData; onCl
                 />
               )}
               <input type="hidden" name="linkId" value={newLink} />
-              {fetcher.data?.error && <p className="text-xs text-red-600">{fetcher.data.error}</p>}
+              {fetcher.data?.error && <p className="text-xs text-destructive">{fetcher.data.error}</p>}
               <button
                 type="submit"
                 disabled={newName.trim() === "" || newLink === "" || fetcher.state !== "idle"}
@@ -1352,7 +1352,7 @@ export function ClassesManagerBody({ data }: { data: LoaderData }) {
                       <button
                         type="button"
                         aria-label={`Remove ${c.title}`}
-                        className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-red-600"
+                        className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-destructive"
                         onClick={async () => {
                           const ok = await dialog.confirm({
                             title: `Remove "${c.title}"?`,
@@ -1468,7 +1468,7 @@ export function ClassesManagerBody({ data }: { data: LoaderData }) {
                                   {seats && (
                                     <>
                                       {" · "}
-                                      <span className={seats.open ? "text-emerald-600" : "text-red-600"}>
+                                      <span className={seats.open ? "text-os-green" : "text-destructive"}>
                                         {seats.open ? `${seats.label} seats` : "full"}
                                       </span>
                                     </>
@@ -1530,7 +1530,7 @@ export function ClassesManagerBody({ data }: { data: LoaderData }) {
               </label>
 
               {unknownPeriodHint && mode === "" && (
-                <p className="text-xs text-amber-600">
+                <p className="text-xs text-os-amber">
                   Dartmouth lists this as “{unknownPeriodHint}” — pick a matching period above, or
                   choose a custom day &amp; time.
                 </p>
@@ -1607,12 +1607,12 @@ export function ClassesManagerBody({ data }: { data: LoaderData }) {
               )}
 
               {overlapClass && (
-                <p className="text-xs text-amber-600">
+                <p className="text-xs text-os-amber">
                   Heads up — this overlaps {overlapClass.title} ({classScheduleSummary(overlapClass.meetings)}).
                 </p>
               )}
 
-              {fetcher.data?.error && <p className="text-xs text-red-600">{fetcher.data.error}</p>}
+              {fetcher.data?.error && <p className="text-xs text-destructive">{fetcher.data.error}</p>}
 
               <div className="flex items-center gap-2">
                 <button

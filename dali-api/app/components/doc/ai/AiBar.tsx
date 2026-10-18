@@ -724,7 +724,7 @@ export const AiBar = forwardRef<AiBarHandle, AiBarProps>(function AiBar(
                 onClick={handleAccept}
                 className="w-full flex items-center gap-2 px-3 py-2 text-sm text-foreground hover:bg-muted transition-colors text-left"
               >
-                <Check size={14} className="text-green-600 shrink-0" />
+                <Check size={14} className="text-os-green shrink-0" />
                 Accept
               </button>
               <button

@@ -92,7 +92,7 @@ export async function action({ request }: Route.ActionArgs) {
 
 const STATUS_BADGE: Record<string, string> = {
   Draft: "bg-muted text-muted-foreground",
-  Published: "bg-accent-coral/10 text-accent-coral",
+  Published: "bg-os-accent/10 text-os-accent",
   Archived: "bg-muted text-muted-foreground line-through",
 };
 

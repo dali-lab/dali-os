@@ -51,7 +51,7 @@ export function ComplianceBlock({
             {ce.compliant ? (
               <Check className="h-4 w-4 text-accent-green" aria-hidden />
             ) : (
-              <TriangleAlert className="h-4 w-4 text-amber-600" aria-hidden />
+              <TriangleAlert className="h-4 w-4 text-os-amber" aria-hidden />
             )}
           </span>
           <div className="min-w-0">

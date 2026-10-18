@@ -145,7 +145,7 @@ export default function AdminSiteUsers() {
         </div>
 
         {!impersonationEnabled && (
-          <p className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-900 dark:text-amber-200">
+          <p className="rounded-md border border-os-amber bg-os-amber px-3 py-2 text-sm text-os-amber">
             Turn on the <span className="font-semibold">betterauth</span> flag for
             everyone (Admin → Feature Flags) to enable “Log in as”.
           </p>
@@ -198,13 +198,13 @@ export default function AdminSiteUsers() {
                         {u.kind}
                       </span>
                       {u.isAdmin && (
-                        <span className="inline-flex shrink-0 items-center gap-1 rounded-md border border-accent-coral/30 bg-accent-coral/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-accent-coral">
+                        <span className="inline-flex shrink-0 items-center gap-1 rounded-md border border-os-accent/30 bg-os-accent/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-os-accent">
                           <Shield className="h-3 w-3" />
                           Admin
                         </span>
                       )}
                       {u.banned && (
-                        <span className="inline-flex shrink-0 items-center gap-1 rounded-md border border-red-500/30 bg-red-500/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-red-600 dark:text-red-400">
+                        <span className="inline-flex shrink-0 items-center gap-1 rounded-md border border-destructive bg-destructive px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-destructive">
                           <Ban className="h-3 w-3" />
                           Banned
                         </span>

@@ -441,7 +441,7 @@ export default function StaffingPage() {
       {!data.bidsFormBound && (
         <div
           className={cn(
-            "border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800",
+            "border border-os-amber/40 bg-os-amber/10 px-3 py-2 text-sm text-os-amber",
             os ? "rounded-os-item" : "rounded-md",
           )}
         >

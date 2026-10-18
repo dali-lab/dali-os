@@ -250,7 +250,7 @@ export function AddPairForm({
         className={cn(
           os
             ? "os-btn-primary"
-            : "inline-flex items-center gap-1 px-3 py-1 rounded-md bg-accent-coral text-white text-sm hover:opacity-90",
+            : "inline-flex items-center gap-1 px-3 py-1 rounded-md bg-os-accent text-os-bg text-sm hover:opacity-90",
           "disabled:opacity-50",
         )}
       >

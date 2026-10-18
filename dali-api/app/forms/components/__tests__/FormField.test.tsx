@@ -21,7 +21,7 @@ describe("FormField", () => {
     expect(html).toContain("bg-muted/30");
     expect(html).not.toMatch(/<input[^>]*type="text"/);
     // No label / required star on a prose block.
-    expect(html).not.toContain("text-accent-coral");
+    expect(html).not.toContain("os-required-mark");
   });
 
   it("renders exactly one standardized required asterisk for a required question", () => {
@@ -34,7 +34,7 @@ describe("FormField", () => {
     const html = renderToStaticMarkup(
       createElement(FormField, { question: reqQ, value: "", onChange: noop }),
     );
-    const stars = html.match(/text-accent-coral ml-0\.5/g) ?? [];
+    const stars = html.match(/os-required-mark/g) ?? [];
     expect(stars.length).toBe(1);
     // The legacy text-destructive star must be gone.
     expect(html).not.toContain("text-destructive");
@@ -50,7 +50,7 @@ describe("FormField", () => {
     const html = renderToStaticMarkup(
       createElement(FormField, { question: optQ, value: "", onChange: noop }),
     );
-    expect(html).not.toContain("text-accent-coral");
+    expect(html).not.toContain("os-required-mark");
   });
 
   it("uses the renderField override instead of the default field renderer", () => {

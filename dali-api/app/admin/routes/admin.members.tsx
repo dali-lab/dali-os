@@ -306,7 +306,7 @@ export default function AdminConsoleMembers() {
                 aria-pressed={active}
                 className={`inline-flex items-center gap-2 border px-3 py-1.5 text-sm font-medium transition-colors rounded-full ${
                   active
-                    ? "border-accent-coral bg-accent-coral/10 text-accent-coral"
+                    ? "border-os-accent bg-os-accent/10 text-os-accent"
                     : "border-border bg-card text-muted-foreground hover:bg-muted"
                 }`}
               >
@@ -395,7 +395,7 @@ function MemberRow({
             {member.daliEmail ?? "No DALI email"}
           </p>
           {held.length > 0 && (
-            <p className="mt-0.5 truncate text-[11px] text-accent-coral">{held.join(" · ")}</p>
+            <p className="mt-0.5 truncate text-[11px] text-os-accent">{held.join(" · ")}</p>
           )}
         </div>
         {!member.isLabMember && (

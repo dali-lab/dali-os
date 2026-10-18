@@ -12,7 +12,7 @@ import { cn } from "~/lib/cn";
 const LEVEL_BADGE: Record<Level, { label: string; cls: string }> = {
   P1: { label: "P1", cls: "bg-muted text-muted-foreground" },
   P2: { label: "P2", cls: "bg-accent-teal/15 text-accent-teal" },
-  P3: { label: "P3", cls: "bg-accent-coral/15 text-accent-coral" },
+  P3: { label: "P3", cls: "bg-os-accent/15 text-os-accent" },
 };
 
 const OS_LEVEL_BADGE: Record<Level, string> = {
@@ -266,7 +266,7 @@ function MemberCardBody({
                 <span
                   className={cn(
                     "inline-flex items-center px-1.5 py-0.5 text-[10px] font-medium rounded",
-                    os ? "bg-os-amber/20 text-os-amber" : "bg-amber-100 text-amber-800",
+                    os ? "bg-os-amber/20 text-os-amber" : "bg-os-amber/15 text-os-amber",
                   )}
                 >
                   Bid unresolved
@@ -465,7 +465,7 @@ function DomainLevelStrip({
             }}
             className={cn(
               "rounded px-1.5 py-0.5 text-[10px] font-medium disabled:opacity-50",
-              os ? "bg-os-accent text-os-bg" : "bg-accent-coral text-white",
+              os ? "bg-os-accent text-os-bg" : "bg-os-accent text-os-bg",
             )}
           >
             Add
@@ -541,7 +541,7 @@ function DomainLevelChip({
         isAssignment
           ? os
             ? "bg-os-accent/15 text-foreground ring-1 ring-os-accent/40"
-            : "bg-accent-coral/10 text-foreground ring-1 ring-accent-coral/30"
+            : "bg-os-accent/10 text-foreground ring-1 ring-os-accent/30"
           : "bg-muted text-foreground"
       }`}
       aria-label={chipTitle}
@@ -555,7 +555,7 @@ function DomainLevelChip({
           options={ALL_LEVELS.map((l) => ({ value: l, label: l }))}
           buttonClassName={cn(
             "rounded border-0 px-1 py-0 text-[10px] font-bold focus:outline-none focus:ring-1 inline-flex items-center justify-between gap-0.5 transition-colors",
-            os ? "focus:ring-os-accent/40" : "focus:ring-accent-coral/40",
+            os ? "focus:ring-os-accent/40" : "focus:ring-os-accent/40",
             levelBadgeClass(domain.level, os),
           )}
         />

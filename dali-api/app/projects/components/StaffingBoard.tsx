@@ -699,8 +699,8 @@ export function StaffingBoard({
             : "Lock the roster and set up the project's Slack channel and GitHub team. Run this once all members are placed.";
       const finalizeIconClass = cn(
         "w-4 h-4",
-        finalizeState === "finalized" && (os ? "text-os-green" : "text-emerald-500"),
-        finalizeState === "drifted" && (os ? "text-os-amber" : "text-amber-500"),
+        finalizeState === "finalized" && (os ? "text-os-green" : "text-os-green"),
+        finalizeState === "drifted" && (os ? "text-os-amber" : "text-os-amber"),
       );
       const finalizeIcon =
         finalizeState === "drifted" ? (
@@ -709,7 +709,7 @@ export function StaffingBoard({
             <span
               className={cn(
                 "rounded-full px-1.5 py-0.5 text-[10px] font-semibold leading-none",
-                os ? "bg-os-amber/15 text-os-amber" : "bg-amber-500/15 text-amber-600",
+                os ? "bg-os-amber/15 text-os-amber" : "bg-os-amber text-os-amber",
               )}
             >
               {pending}
@@ -748,7 +748,7 @@ export function StaffingBoard({
                   "shrink-0 rounded p-0.5 transition-colors",
                   os
                     ? "text-os-muted hover:text-foreground"
-                    : "text-muted-foreground/70 hover:text-accent-coral",
+                    : "text-muted-foreground/70 hover:text-os-accent",
                 )}
               >
                 <ArrowUpRight className="h-3.5 w-3.5" aria-hidden />
@@ -773,7 +773,7 @@ export function StaffingBoard({
                   ? undefined
                   : os
                     ? "text-os-muted hover:text-os-accent"
-                    : "text-muted-foreground hover:text-accent-coral",
+                    : "text-muted-foreground hover:text-os-accent",
               )}
             >
               {finalizeIcon}
@@ -807,7 +807,7 @@ export function StaffingBoard({
               onChange={(e) => setBoardQuery(e.target.value)}
               placeholder="Search people, domains, application…"
               aria-label="Search the board"
-              className="w-56 sm:w-72 text-sm pl-9 pr-8 py-1.5 border border-border rounded-full bg-card text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+              className="w-56 sm:w-72 text-sm pl-9 pr-8 py-1.5 border border-border rounded-full bg-card text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-os-accent/30"
             />
             {boardQuery && (
               <button
@@ -881,7 +881,7 @@ export function StaffingBoard({
             "px-3 py-2 text-sm",
             os
               ? "rounded-os-item border border-os-amber/30 bg-os-amber/10 text-os-amber"
-              : "rounded-os-item border border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400",
+              : "rounded-os-item border border-os-amber bg-os-amber text-os-amber",
           )}
         >
           {driftedProjects.length} project{driftedProjects.length === 1 ? "" : "s"}{" "}
@@ -1065,7 +1065,7 @@ function IssueTermAgreementsBanner({ termId, termCode }: { termId: string; termC
         "w-full px-4 py-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between",
         os
           ? "rounded-os-card bg-os-card"
-          : "rounded-lg border border-accent-coral/30 bg-accent-coral/10",
+          : "rounded-lg border border-os-accent/30 bg-os-accent/10",
       )}
     >
       <div className="min-w-0">
@@ -1141,7 +1141,7 @@ function TermChannelBanner({ termId, termCode }: { termId: string; termCode: str
         "w-full px-4 py-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between",
         os
           ? "rounded-os-card bg-os-card"
-          : "rounded-lg border border-accent-coral/30 bg-accent-coral/10",
+          : "rounded-lg border border-os-accent/30 bg-os-accent/10",
       )}
     >
       <div className="min-w-0">
@@ -1173,7 +1173,7 @@ function TermChannelBanner({ termId, termCode }: { termId: string; termCode: str
             "w-32 px-2 py-1 text-sm border border-border bg-background text-foreground disabled:opacity-60 focus:outline-none focus:ring-2",
             os
               ? "rounded-os-item focus:ring-os-accent/40"
-              : "rounded-md focus:ring-accent-coral/30",
+              : "rounded-md focus:ring-os-accent/30",
           )}
         />
         <Tooltip content="Creates the Slack channel and invites all Core, Admins, and everyone staffed this term">

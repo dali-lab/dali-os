@@ -95,7 +95,7 @@ export function HiringFormEmbed({
               <button
                 type="submit"
                 aria-label={`Remove ${name}`}
-                className="text-muted-foreground hover:text-red-600 transition p-1"
+                className="text-muted-foreground hover:text-destructive transition p-1"
               >
                 <Trash2 className="w-4 h-4" />
               </button>

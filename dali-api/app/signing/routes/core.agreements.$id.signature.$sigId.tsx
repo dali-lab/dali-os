@@ -96,7 +96,7 @@ export default function SignatureViewPage() {
       <div className="flex items-start justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
-            <ShieldCheck className="w-5 h-5 text-green-600" />
+            <ShieldCheck className="w-5 h-5 text-os-green" />
             <h1 className="text-xl font-bold text-foreground">{data.documentName}</h1>
           </div>
           <p className="mt-1 text-sm text-muted-foreground">

@@ -24,7 +24,7 @@ import type { PortalProfileData } from "~/lib/portal-profile.server";
 
 const CARD = "rounded-os-card border border-border bg-card px-5";
 const FIELD =
-  "w-full rounded-xl border border-border bg-card px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent-coral";
+  "w-full rounded-xl border border-border bg-card px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-os-accent";
 
 function Dash() {
   return <span className="text-muted-foreground">—</span>;
@@ -262,7 +262,7 @@ export function PortalProfileCard({
       </div>
 
       {error && (
-        <p className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-600">{error}</p>
+        <p className="rounded-lg bg-destructive/10 px-4 py-3 text-sm text-destructive">{error}</p>
       )}
 
       <Form method="post" ref={formRef} key={resetKey}>

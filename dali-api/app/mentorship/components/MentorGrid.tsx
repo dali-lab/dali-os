@@ -224,7 +224,7 @@ export function MentorGrid({
                         type="button"
                         onClick={() => edit.onRemove(row)}
                         disabled={edit.busy}
-                        className="text-muted-foreground hover:text-red-500 disabled:opacity-50"
+                        className="text-muted-foreground hover:text-destructive disabled:opacity-50"
                         title="Remove pairing"
                       >
                         <Trash2 className="w-4 h-4" aria-hidden />
@@ -273,7 +273,7 @@ function GridCellView({
     const cls = cell.vibe
       ? `${VIBE_META[cell.vibe].dot} text-white`
       : highlightMissing
-      ? "border border-dashed border-amber-400 text-amber-500"
+      ? "border border-dashed border-os-amber text-os-amber"
       : "bg-muted-foreground/40 text-white";
     const vibeLabel = cell.vibe ? VIBE_META[cell.vibe].label : "no rating yet";
     const vibeDesc = cell.vibe === "Good"
@@ -303,12 +303,12 @@ function GridCellView({
   const missing = cell.state === "missing";
   const style =
     missing && highlightMissing
-      ? "border border-dashed border-red-400 text-red-400"
+      ? "border border-dashed border-destructive text-destructive"
       : missing
       ? "border border-dashed border-border text-muted-foreground"
       : "bg-muted text-muted-foreground";
   const hover =
-    missing && highlightMissing ? "hover:bg-red-400/10" : "hover:bg-muted/60";
+    missing && highlightMissing ? "hover:bg-destructive" : "hover:bg-muted/60";
 
   // A non-mentor viewer has nothing to open.
   if (!cell.canCreate) {

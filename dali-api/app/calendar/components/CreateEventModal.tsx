@@ -682,7 +682,7 @@ export function CreateEventModal({
                   </div>
                 )}
                 {!startEndValid && (
-                  <p className="mt-1 text-xs text-red-600">
+                  <p className="mt-1 text-xs text-destructive">
                     {allDay ? "End date must not be before start date." : "End must be after start."}
                   </p>
                 )}
@@ -758,7 +758,7 @@ export function CreateEventModal({
 
               {/* Error from fetcher */}
               {eventFetcher.data?.error && (
-                <p className="text-sm text-red-600">{eventFetcher.data.error}</p>
+                <p className="text-sm text-destructive">{eventFetcher.data.error}</p>
               )}
 
               {/* Submit */}
@@ -839,7 +839,7 @@ export function CreateEventModal({
                   />
                 </div>
                 {!startEndValid && (
-                  <p className="mt-1 text-xs text-red-600">End must be after start.</p>
+                  <p className="mt-1 text-xs text-destructive">End must be after start.</p>
                 )}
               </div>
 
@@ -937,7 +937,7 @@ export function CreateEventModal({
 
               {/* Status */}
               {meetingStatus?.ok === true && (
-                <p className="text-sm text-green-700">
+                <p className="text-sm text-os-green">
                   Meeting created.
                   {meetingStatus.filed && (
                     <>
@@ -974,7 +974,7 @@ export function CreateEventModal({
                 </p>
               )}
               {meetingStatus?.ok === false && (
-                <p className="text-sm text-red-600">{meetingStatus.error}</p>
+                <p className="text-sm text-destructive">{meetingStatus.error}</p>
               )}
 
               {/* Submit */}

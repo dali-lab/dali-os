@@ -70,7 +70,7 @@ export function TimesheetFields({
           </div>
           <div>
             <label className="mb-1 block text-xs font-medium text-muted-foreground">
-              What did you work on? <span className="text-red-500">*</span>
+              What did you work on? <span className="text-destructive">*</span>
             </label>
             <textarea
               value={workNote}

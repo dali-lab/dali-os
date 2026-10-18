@@ -24,7 +24,7 @@ export function SaveStatusIndicator({
   }
   if (lastSaved) {
     return (
-      <span className={`${base} text-green-600`}>
+      <span className={`${base} text-os-green`}>
         <Check className="w-3 h-3" />
         Saved at{" "}
         {lastSaved.toLocaleTimeString(undefined, {

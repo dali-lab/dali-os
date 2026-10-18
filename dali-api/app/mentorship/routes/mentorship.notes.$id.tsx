@@ -195,7 +195,7 @@ export default function MentorNoteEditor() {
       <div className="flex items-center gap-2 flex-wrap">
         <span className={cn(bodyText, "inline-flex items-center gap-1")}>
           Vibe check
-          <span className="text-accent-coral ml-0.5" aria-hidden>
+          <span className="os-required-mark" aria-hidden>
             *
           </span>
           <InfoTip content="How this week went. Excellent means things are going well, Room for improvement means something to work on, Concerning means it needs follow-up. Mentors and Core can see this, the mentee can't." />

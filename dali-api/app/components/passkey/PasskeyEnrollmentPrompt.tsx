@@ -85,7 +85,7 @@ export function PasskeyEnrollmentPrompt() {
         your device, no code to type.
       </p>
       {error && (
-        <p className="mt-3 text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">
+        <p className="mt-3 text-sm text-destructive bg-destructive/10 rounded-lg px-3 py-2">
           {error}
         </p>
       )}
@@ -103,7 +103,7 @@ export function PasskeyEnrollmentPrompt() {
           type="button"
           onClick={dismiss}
           disabled={busy}
-          className="w-full rounded-xl border border-border bg-card text-foreground font-heading font-semibold py-3 hover:border-accent-coral transition disabled:opacity-50"
+          className="w-full rounded-xl border border-border bg-card text-foreground font-heading font-semibold py-3 hover:border-os-accent transition disabled:opacity-50"
         >
           Not now
         </button>

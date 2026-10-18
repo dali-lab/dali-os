@@ -269,8 +269,8 @@ export function DocCommentsRail({
       {/* Rail header */}
       <div className="dali-doc-rail__header flex items-center justify-between px-1 pb-2">
         <div className="flex items-center gap-1.5">
-          <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-accent-coral/15">
-            <MessageSquare className="w-3 h-3 text-accent-coral" />
+          <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-os-accent/15">
+            <MessageSquare className="w-3 h-3 text-os-accent" />
           </span>
           <span className="text-xs font-semibold text-foreground">Comments</span>
           {displayCount > 0 && (

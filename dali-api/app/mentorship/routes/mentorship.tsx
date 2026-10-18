@@ -225,7 +225,7 @@ export default function MentorshipHub() {
               </>
             ) : behind ? (
               <>
-                <AlertCircle className="w-4 h-4 text-accent-coral shrink-0" />
+                <AlertCircle className="w-4 h-4 text-os-accent shrink-0" />
                 <span>
                   <strong>{data.behindCount}</strong> mentor
                   {data.behindCount === 1 ? " is" : "s are"} missing a note this
@@ -244,7 +244,7 @@ export default function MentorshipHub() {
               to={`/mentorship/browse?termId=${data.termId}`}
               className={cn(
                 "text-sm hover:underline inline-flex items-center gap-1 shrink-0",
-                behind ? "text-accent-coral" : "text-muted-foreground",
+                behind ? "text-os-accent" : "text-muted-foreground",
               )}
             >
               View <ChevronRight className="w-4 h-4" />

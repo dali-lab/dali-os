@@ -97,7 +97,7 @@ export function MiniMonth({
               className={cn(
                 "grid h-8 place-items-center rounded-md text-xs",
                 isToday
-                  ? "bg-accent-coral font-semibold text-white"
+                  ? "bg-os-accent font-semibold text-os-bg"
                   : isFocus
                     ? "bg-muted font-semibold text-foreground"
                     : inMonth

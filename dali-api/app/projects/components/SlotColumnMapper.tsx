@@ -531,7 +531,7 @@ export function SlotColumnMapper({
 
       {error && <p className="text-xs text-destructive">{error}</p>}
       {canManage && missing.length > 0 && (
-        <p className="text-xs text-amber-600 dark:text-amber-400">
+        <p className="text-xs text-os-amber">
           Still need: {missing.join(", ")}.
         </p>
       )}

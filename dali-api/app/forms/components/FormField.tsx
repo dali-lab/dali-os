@@ -64,7 +64,7 @@ export function FormField({
     <div id={id}>
       <label className={`block text-sm ${labelClassName} text-foreground mb-1`}>
         {question.data.label}
-        {question.required && <span className="text-accent-coral ml-0.5">*</span>}
+        {question.required && <span className="os-required-mark">*</span>}
         {labelSuffix}
       </label>
       {question.data.description && (

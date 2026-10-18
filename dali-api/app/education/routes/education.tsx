@@ -34,7 +34,7 @@ const DOT_TONE = {
   neutral: "bg-muted-foreground/50",
   success: "bg-accent-teal",
   warning: "bg-accent-yellow",
-  danger: "bg-red-500",
+  danger: "bg-destructive",
 } as const;
 
 const APPLICATION_TONE: Record<string, keyof typeof DOT_TONE> = {
@@ -138,7 +138,7 @@ export default function EducationHub() {
                 <div className="min-w-0">
                   <Link
                     to={`/education/${a.offeringId}`}
-                    className="truncate text-sm font-medium text-foreground hover:text-accent-coral"
+                    className="truncate text-sm font-medium text-foreground hover:text-os-accent"
                   >
                     {a.offeringTitle}
                   </Link>

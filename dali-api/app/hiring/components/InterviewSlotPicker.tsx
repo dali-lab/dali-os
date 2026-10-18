@@ -83,8 +83,8 @@ export function InterviewSlotPicker({
                     onClick={() => onSelect(slot)}
                     className={`px-4 py-3 rounded-xl text-sm font-medium border-2 transition-all text-left ${
                       isSelected
-                        ? "border-accent-coral bg-accent-coral/5 text-accent-coral"
-                        : "border-border text-foreground hover:border-accent-coral/50"
+                        ? "border-os-accent bg-os-accent/5 text-os-accent"
+                        : "border-border text-foreground hover:border-os-accent/50"
                     }`}
                   >
                     {slot.time}

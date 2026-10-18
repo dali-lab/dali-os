@@ -129,7 +129,7 @@ function TimesheetEntryForm({
         </div>
       </div>
       {!startEndValid ? (
-        <p className="text-xs text-red-600">End must be after start.</p>
+        <p className="text-xs text-destructive">End must be after start.</p>
       ) : (
         <p className="text-xs text-muted-foreground">{hours.toFixed(2)} hrs</p>
       )}
@@ -139,7 +139,7 @@ function TimesheetEntryForm({
           Role
         </label>
         {myRoles.length === 0 ? (
-          <p className="text-xs text-red-600">{NO_ROLES_MESSAGE}</p>
+          <p className="text-xs text-destructive">{NO_ROLES_MESSAGE}</p>
         ) : (
           <Select
             value={roleKey}
@@ -147,7 +147,7 @@ function TimesheetEntryForm({
             placeholder="Select a role…"
             options={myRoles.map((r) => ({ value: roleOptionKey(r), label: r.label }))}
             buttonClassName={`${formTrigger} ${
-              roleKey ? "border-border" : "border-red-500"
+              roleKey ? "border-border" : "border-destructive"
             }`}
           />
         )}
@@ -166,11 +166,11 @@ function TimesheetEntryForm({
           className="w-full px-3 py-2 text-sm border border-border rounded-md bg-background text-foreground resize-y min-h-[4.5rem]"
         />
         {note.trim() === "" && (
-          <p className="mt-1 text-xs text-red-600">Add a note describing the work.</p>
+          <p className="mt-1 text-xs text-destructive">Add a note describing the work.</p>
         )}
       </div>
 
-      {error && <p className="text-sm text-red-700">{error}</p>}
+      {error && <p className="text-sm text-destructive">{error}</p>}
 
       <div className="flex items-center justify-end gap-2 pt-1">
         <button
@@ -463,7 +463,7 @@ export function TimesheetEditPopover({
             </div>
           </div>
           {!startEndValid ? (
-            <p className="text-xs text-red-600">End must be after start.</p>
+            <p className="text-xs text-destructive">End must be after start.</p>
           ) : (
             <p className="text-xs text-muted-foreground">{hours.toFixed(2)} hrs</p>
           )}
@@ -483,10 +483,10 @@ export function TimesheetEditPopover({
                 ...myRoles.map((r) => ({ value: roleOptionKey(r), label: r.label })),
               ]}
               buttonClassName={`${formTrigger} ${
-                roleKey ? "border-border" : "border-red-500"
+                roleKey ? "border-border" : "border-destructive"
               }`}
             />
-            {!roleKey && <p className="mt-1 text-xs text-red-600">Pick a role to save this entry.</p>}
+            {!roleKey && <p className="mt-1 text-xs text-destructive">Pick a role to save this entry.</p>}
           </div>
 
           <div>
@@ -502,11 +502,11 @@ export function TimesheetEditPopover({
               className="w-full px-3 py-2 text-sm border border-border rounded-md bg-background text-foreground resize-y min-h-[4.5rem]"
             />
             {note.trim() === "" && (
-              <p className="mt-1 text-xs text-red-600">Add a note describing the work.</p>
+              <p className="mt-1 text-xs text-destructive">Add a note describing the work.</p>
             )}
           </div>
 
-          {error && <p className="text-sm text-red-700">{error}</p>}
+          {error && <p className="text-sm text-destructive">{error}</p>}
 
           <div className="flex items-center justify-between gap-2 pt-1">
             <button

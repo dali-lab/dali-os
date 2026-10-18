@@ -189,7 +189,7 @@ function AccountSection({
             {link.displayName ?? link.externalEmail}
           </span>
           {link.syncError && (
-            <span className="shrink-0 text-[11px] text-red-600">Sync error</span>
+            <span className="shrink-0 text-[11px] text-destructive">Sync error</span>
           )}
         </button>
         <removeFetcher.Form
@@ -208,7 +208,7 @@ function AccountSection({
             <button
               type="submit"
               aria-label={`Disconnect ${link.externalEmail}`}
-              className="rounded-md p-1 text-muted-foreground hover:bg-red-50 hover:text-red-600"
+              className="rounded-md p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
             >
               <Trash2 className="h-3.5 w-3.5" />
             </button>

@@ -208,7 +208,7 @@ function SpeakerChip({ speakerKey, rec }: { speakerKey: string; rec: UseMeetingR
             value={otherText}
             onChange={(e) => setOtherText(e.target.value)}
             placeholder="e.g. a guest"
-            className="w-28 rounded-md border border-border bg-card px-2 py-1 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-coral/30"
+            className="w-28 rounded-md border border-border bg-card px-2 py-1 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-os-accent/30"
           />
           <button
             type="button"

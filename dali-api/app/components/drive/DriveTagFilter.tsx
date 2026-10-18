@@ -45,7 +45,7 @@ export function DriveTagFilter({
             count > 0 &&
               (os
                 ? "border-os-accent text-os-accent"
-                : "border-accent-coral text-accent-coral"),
+                : "border-os-accent text-os-accent"),
           )}
         >
           <span className="inline-flex min-w-0 items-center gap-2">

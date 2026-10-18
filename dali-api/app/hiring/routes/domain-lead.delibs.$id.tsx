@@ -348,7 +348,7 @@ export default function DelibsKanban() {
       <div className="flex flex-col gap-3">
         <h1 className={os.pageTitle}>Delibs · {session.domain.name}</h1>
         <p className={os.bodyText}>This board's round was removed from the cycle's timeline.</p>
-        <Link to="/hiring/domain-lead" className="text-sm text-accent-coral hover:underline">
+        <Link to="/hiring/domain-lead" className="text-sm text-os-accent hover:underline">
           Back to the domain page
         </Link>
       </div>

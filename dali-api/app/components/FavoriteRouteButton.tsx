@@ -113,7 +113,7 @@ export function FavoriteRouteButton({
         className={`inline-flex items-center justify-center transition-colors disabled:opacity-40 ${
           compact ? "" : inline ? "shrink-0 rounded-md p-1" : "ml-auto shrink-0 rounded-md p-1.5"
         } ${
-          favorited ? "text-accent-coral" : "text-muted-foreground hover:text-foreground"
+          favorited ? "text-os-accent" : "text-muted-foreground hover:text-foreground"
         } ${compact ? "" : "hover:bg-muted"} ${className}`}
       >
         <Star

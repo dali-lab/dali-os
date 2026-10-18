@@ -72,7 +72,7 @@ export function CheckInPanel({
             <p className="text-sm text-os-grey mt-1">
               {present ? "You're checked in." : "Check in to mark yourself present."}
             </p>
-            {error && <p className="text-xs text-red-700 mt-1">{error}</p>}
+            {error && <p className="text-xs text-destructive mt-1">{error}</p>}
           </div>
           <button
             type="button"

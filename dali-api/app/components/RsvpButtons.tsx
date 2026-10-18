@@ -109,7 +109,7 @@ export function RsvpButtons({
           {submitting === "declined" ? "…" : "Can't make it"}
         </button>
       </div>
-      {error && <p className="text-[10px] text-red-700 mt-1">{error}</p>}
+      {error && <p className="text-[10px] text-destructive mt-1">{error}</p>}
     </>
   );
 }

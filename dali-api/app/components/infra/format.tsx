@@ -72,7 +72,7 @@ export function Sparkline({ points }: { points: { at: string; value: number }[] 
     )
     .join(" ");
   return (
-    <svg width={w} height={h} className="text-accent-coral">
+    <svg width={w} height={h} className="text-os-accent">
       <path d={d} fill="none" stroke="currentColor" strokeWidth={1.5} />
     </svg>
   );
@@ -85,10 +85,10 @@ export function StateBadge({ state }: { state: string }) {
     <span
       className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${
         good
-          ? "bg-green-100 text-green-800"
+          ? "bg-os-green/15 text-os-green"
           : idle
             ? "bg-muted text-muted-foreground"
-            : "bg-amber-100 text-amber-800"
+            : "bg-os-amber/15 text-os-amber"
       }`}
     >
       {state}
