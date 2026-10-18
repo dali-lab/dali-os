@@ -5,7 +5,7 @@ vi.mock("~/lib/collabAuth", () => ({ authorizeCollabDoc: vi.fn() }));
 vi.mock("~/lib/transcription/chunks.server", () => ({ deletePrefix: vi.fn() }));
 vi.mock("~/lib/transcription/provider", () => ({ getTranscriptionProvider: vi.fn() }));
 
-import { prisma } from "~/lib/db";
+import { prisma, Prisma } from "~/lib/db";
 import { authorizeCollabDoc } from "~/lib/collabAuth";
 import { deletePrefix } from "~/lib/transcription/chunks.server";
 import { getTranscriptionProvider } from "~/lib/transcription/provider";
@@ -496,6 +496,20 @@ describe("applyResult", () => {
       }),
     );
     expect(deletePrefix).toHaveBeenCalledWith("r1");
+  });
+
+  it("clears progress on Done", async () => {
+    await applyResult(rec({ status: "Processing" }), success);
+    expect(prisma.meetingRecording.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ progress: Prisma.DbNull }) }),
+    );
+  });
+
+  it("clears progress on Failed", async () => {
+    await applyResult(rec({ status: "Processing" }), { channels: {}, error: "ASR crashed" });
+    expect(prisma.meetingRecording.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ progress: Prisma.DbNull }) }),
+    );
   });
 
   it("is idempotent once Done", async () => {

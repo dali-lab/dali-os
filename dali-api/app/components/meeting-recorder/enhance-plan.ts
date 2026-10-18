@@ -300,6 +300,15 @@ export type EnhanceBlockChange = {
 
 const LOCAL_CHANGE_SOURCE_TYPES = new Set(["local", "paste", "drop"]);
 
+/** True when the transaction is purely an undo/redo: some change says so and
+ *  none is a local, paste or drop edit. */
+export function isUndoRedoTransaction(changes: readonly EnhanceBlockChange[]): boolean {
+  return (
+    changes.some((c) => c.source.type === "undo-redo") &&
+    !changes.some((c) => LOCAL_CHANGE_SOURCE_TYPES.has(c.source.type))
+  );
+}
+
 /**
  * Block ids a local edit should count as Keep for: an "update" change, from
  * this client (not a remote Yjs update, not undo/redo), where the block

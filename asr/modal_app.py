@@ -26,6 +26,7 @@ from __future__ import annotations
 import logging
 import os
 import time
+from concurrent.futures import ThreadPoolExecutor
 from typing import Optional
 
 import fastapi
@@ -50,6 +51,7 @@ DIARIZATION_MODEL_NAME = "pyannote/speaker-diarization-community-1"
 
 CALLBACK_TIMEOUT_SECONDS = 30
 CHUNK_FETCH_TIMEOUT_SECONDS = 30
+PROGRESS_TIMEOUT_SECONDS = 3
 
 
 def _bake_model_weights():
@@ -94,7 +96,7 @@ image = (
         # to load next to torch's CUDA 12 libraries.
         "onnxruntime-gpu==1.22.0",
         "onnx-asr[hub]",
-        "pyannote.audio",
+        "pyannote.audio==4.0.7",
         "fastapi[standard]",
         "httpx",
         "numpy",
@@ -173,7 +175,7 @@ def _run_parakeet(pcm: bytes) -> list:
     return pipeline.tokens_to_words(result.tokens or [], result.timestamps or [])
 
 
-def _run_pyannote(pcm: bytes, max_speakers: Optional[int]) -> list:
+def _run_pyannote(pcm: bytes, max_speakers: Optional[int], hook=None) -> list:
     """-> [{"start": s, "end": s, "speaker": label}, ...] relative to the
     start of this segment's PCM."""
     if not pcm:
@@ -185,6 +187,8 @@ def _run_pyannote(pcm: bytes, max_speakers: Optional[int]) -> list:
     diarization_pipeline = _get_diarization_model()
     waveform = torch.from_numpy(_pcm_to_float32(pcm)).unsqueeze(0)
     kwargs = {"max_speakers": max_speakers} if max_speakers else {}
+    if hook is not None:
+        kwargs["hook"] = hook
     output = diarization_pipeline({"waveform": waveform, "sample_rate": pipeline.SAMPLE_RATE_HZ}, **kwargs)
     # pyannote 4 returns a DiarizeOutput wrapper; 3.x returned the Annotation
     # itself. The plain track (not the exclusive one, which fragments turns
@@ -213,7 +217,7 @@ def _fetch_chunk(url: str) -> Optional[bytes]:
     return response.content
 
 
-def _deliver_callback(callback_url: str, payload: dict) -> None:
+def _post_signed(callback_url: str, payload: dict, timeout: float) -> None:
     import json
 
     import pipeline
@@ -228,8 +232,28 @@ def _deliver_callback(callback_url: str, payload: dict) -> None:
         "X-Dali-Timestamp": str(timestamp),
         "X-Dali-Signature": signature,
     }
-    response = httpx.post(callback_url, content=raw_body, headers=headers, timeout=CALLBACK_TIMEOUT_SECONDS)
+    response = httpx.post(callback_url, content=raw_body, headers=headers, timeout=timeout)
     response.raise_for_status()
+
+
+def _deliver_callback(callback_url: str, payload: dict) -> None:
+    _post_signed(callback_url, payload, CALLBACK_TIMEOUT_SECONDS)
+
+
+def _make_progress_sender(callback_url: str, executor):
+    """Fire-and-forget on a single background worker so a slow or failing
+    callback never blocks or fails the job."""
+
+    def post(body: dict) -> None:
+        try:
+            _post_signed(callback_url, body, PROGRESS_TIMEOUT_SECONDS)
+        except Exception:
+            logger.warning("dali-asr: progress post failed", exc_info=True)
+
+    def send(body: dict) -> None:
+        executor.submit(post, body)
+
+    return send
 
 
 # --- the processing job -----------------------------------------------------
@@ -241,16 +265,23 @@ def run_job(raw_body: dict) -> None:
 
     req = pipeline.parse_process_request(raw_body)
     job_start = time.monotonic()
+    executor = ThreadPoolExecutor(max_workers=1)
+    reporter = pipeline.ProgressReporter(
+        req.recording_id, _make_progress_sender(req.callback_url, executor), time.monotonic
+    )
 
     try:
         channels_out = {}
-        for channel in req.channels:
+        for index, channel in enumerate(req.channels, start=1):
             stage_start = time.monotonic()
             channels_out[channel.channel] = pipeline.process_channel(
                 channel,
                 fetch_chunk=_fetch_chunk,
                 transcribe=_run_parakeet,
                 diarize=_run_pyannote,
+                on_progress=reporter.for_channel(
+                    index, len(req.channels), pipeline.channel_audio_seconds(channel)
+                ),
             )
             logger.info(
                 "dali-asr: channel done recording_id=%s channel=%s segments=%d audio_s=%.1f stage_s=%.1f",
@@ -269,6 +300,7 @@ def run_job(raw_body: dict) -> None:
         )
         payload = pipeline.build_error_callback(req.recording_id, "processing_failed")
 
+    executor.shutdown(wait=True)
     _deliver_callback(req.callback_url, payload)
     logger.info(
         "dali-asr: job complete recording_id=%s total_s=%.1f",

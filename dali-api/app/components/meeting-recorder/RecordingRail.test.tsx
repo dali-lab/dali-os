@@ -52,6 +52,8 @@ function makeRec(overrides: Partial<UseMeetingRecording> = {}): UseMeetingRecord
     enhanceSkipped: 0,
     reviewedAt: null,
     reviewAnnouncement: null,
+    progress: null,
+    processingStage: null,
 
     useDesktopApp: false,
     setUseDesktopApp: vi.fn(),

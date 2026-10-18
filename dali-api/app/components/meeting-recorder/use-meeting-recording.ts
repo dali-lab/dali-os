@@ -28,6 +28,7 @@ import { countSpeakersByChannel, formatClock, meetingNotesMarkdown, transcriptPa
 import {
   applyEnhancePlan,
   localEditKeepIds,
+  isUndoRedoTransaction,
   type EditorOp,
   type EnhanceActionItem,
   type EnhanceBlockChange,
@@ -41,6 +42,8 @@ import type {
   ChunkResponse,
   LatestRecording,
   PollRecordingResponse,
+  ProcessingStage,
+  RecordingProgress,
   RecordingStatus,
   RosterUser,
   Speakers,
@@ -338,6 +341,7 @@ export function useMeetingRecording({
   const [enhanceSkipped, setEnhanceSkipped] = useState(0);
   // ISO timestamp set when the last mark cleared, by any means (Step 2).
   const [reviewedAt, setReviewedAt] = useState<string | null>(null);
+  const [progress, setProgress] = useState<RecordingProgress | null>(null);
   // "Kept N changes."/"Reverted N changes." — the rail's dedicated live-region
   // text for Keep all/Revert all, distinct from the status line (Step 2
   // Accessibility).
@@ -610,6 +614,7 @@ export function useMeetingRecording({
       if (data.enhancedAt !== undefined) setEnhancedAt(data.enhancedAt ?? null);
       if (data.enhancedBy !== undefined) setEnhancedByName(data.enhancedBy ?? null);
       if (data.reviewedAt !== undefined) setReviewedAt(data.reviewedAt ?? null);
+      setProgress(data.status === "Processing" ? (data.progress ?? null) : null);
       if (data.status === "Recording") {
         setAppUnreachable(false);
         setPhase((p) => {
@@ -664,6 +669,7 @@ export function useMeetingRecording({
       if (data.enhancedAt !== undefined) setEnhancedAt(data.enhancedAt ?? null);
       if (data.enhancedBy !== undefined) setEnhancedByName(data.enhancedBy ?? null);
       if (data.reviewedAt !== undefined) setReviewedAt(data.reviewedAt ?? null);
+      setProgress(data.status === "Processing" ? (data.progress ?? null) : null);
       if (data.status === "Done") {
         setLines(data.lines);
         setSpeakers(data.speakers);
@@ -742,12 +748,13 @@ export function useMeetingRecording({
       const keepIds = localEditKeepIds(changes, marks);
       for (const id of keepIds) onKeepBlock?.(id);
       const effective = keepIds.length ? marks.filter((m) => !keepIds.includes(m.id)) : marks;
+      const undoRedo = isUndoRedoTransaction(changes);
 
       const hadMarks = pendingMarksRef.current.length > 0;
       setPendingMarks((prev) => (sameMarks(prev, effective) ? prev : effective));
       pendingMarksRef.current = effective;
 
-      if (hadMarks && effective.length === 0 && !reviewedPostedRef.current && recordingId) {
+      if (hadMarks && effective.length === 0 && !undoRedo && !reviewedPostedRef.current && recordingId) {
         reviewedPostedRef.current = true;
         const postedAt = new Date().toISOString();
         setReviewedAt(postedAt);
@@ -1434,6 +1441,8 @@ export function useMeetingRecording({
     enhanceSkipped,
     reviewedAt,
     reviewAnnouncement,
+    progress,
+    processingStage: (phase === "processing" ? (progress?.stage ?? "starting") : null) as ProcessingStage | null,
 
     // Start-sheet config.
     useDesktopApp,
