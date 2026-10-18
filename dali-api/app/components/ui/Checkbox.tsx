@@ -33,7 +33,7 @@ export function Checkbox({ label, description, className, disabled, tone = "bran
         <span
           aria-hidden="true"
           className={cn(
-            "absolute inset-0 border border-border bg-background transition-colors peer-focus-visible:ring-2 peer-focus-visible:ring-offset-1",
+            "dali-check absolute inset-0 border border-border bg-background transition-colors peer-focus-visible:ring-2 peer-focus-visible:ring-offset-1",
             size === "lg" ? "rounded-full" : "rounded",
             tone === "os"
               ? "peer-checked:border-os-accent peer-checked:bg-os-accent peer-focus-visible:ring-os-accent/40"
@@ -43,7 +43,10 @@ export function Checkbox({ label, description, className, disabled, tone = "bran
         <Check
           aria-hidden="true"
           strokeWidth={3}
-          className="pointer-events-none absolute inset-0 h-full w-full scale-[0.65] text-white opacity-0 transition-opacity peer-checked:opacity-100"
+          className={cn(
+            "dali-check-mark pointer-events-none absolute inset-0 h-full w-full scale-[0.65] opacity-0 transition-opacity peer-checked:opacity-100",
+            tone === "os" ? "text-os-bg" : "text-white",
+          )}
         />
       </span>
       {(label || description) && (

@@ -49,3 +49,44 @@ describe("Checkbox / Radio / Toggle", () => {
     expect(input.value).toBe("a");
   });
 });
+
+describe("Checkbox / Radio / Toggle os-shell markers", () => {
+  it("Checkbox marks its box and check for the .os-shell rules in app.css", () => {
+    mount(createElement(Checkbox, { checked: true, onChange: () => {} }));
+    const input = container.querySelector("input")!;
+    expect(input.nextElementSibling?.classList.contains("dali-check")).toBe(true);
+    expect(container.querySelector(".dali-check-mark")).toBeTruthy();
+  });
+
+  it("Radio marks its ring and dot, with the ring right after the input", () => {
+    mount(createElement(Radio, { name: "r", value: "a" }));
+    const input = container.querySelector("input")!;
+    expect(input.nextElementSibling?.classList.contains("dali-radio")).toBe(true);
+    expect(container.querySelector(".dali-radio-dot")).toBeTruthy();
+  });
+
+  it("Toggle marks its track right after the input", () => {
+    mount(createElement(Toggle, { checked: true, onChange: () => {} }));
+    const input = container.querySelector("input")!;
+    expect(input.nextElementSibling?.classList.contains("dali-switch")).toBe(true);
+  });
+
+  it("brand tone stays coral with a white check by default", () => {
+    mount(createElement(Checkbox, { checked: true, onChange: () => {} }));
+    expect(container.querySelector(".dali-check")!.className).toContain("peer-checked:bg-accent-coral");
+    expect(container.querySelector(".dali-check-mark")!.getAttribute("class")).toContain("text-white");
+  });
+
+  it("os tone draws the check in the page colour so it reads on the pale dark accent", () => {
+    mount(createElement(Checkbox, { checked: true, onChange: () => {}, tone: "os" }));
+    const mark = container.querySelector(".dali-check-mark")!.getAttribute("class")!;
+    expect(mark).toContain("text-os-bg");
+    expect(mark).not.toContain("text-white");
+    expect(container.querySelector(".dali-check")!.className).toContain("peer-checked:bg-os-accent");
+  });
+
+  it("Toggle os tone fills with the os accent; brand stays coral", () => {
+    mount(createElement(Toggle, { checked: true, onChange: () => {}, tone: "os" }));
+    expect(container.querySelector(".dali-switch")!.className).toContain("peer-checked:bg-os-accent");
+  });
+});
