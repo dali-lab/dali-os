@@ -24,11 +24,11 @@ export function Radio({ label, description, className, disabled, ...props }: Rad
         <input type="radio" disabled={disabled} className="peer sr-only" {...props} />
         <span
           aria-hidden="true"
-          className="absolute inset-0 rounded-full border border-border bg-background transition-colors peer-checked:border-accent-coral peer-focus-visible:ring-2 peer-focus-visible:ring-accent-coral/40 peer-focus-visible:ring-offset-1"
+          className="dali-radio absolute inset-0 rounded-full border border-border bg-background transition-colors peer-checked:border-accent-coral peer-focus-visible:ring-2 peer-focus-visible:ring-accent-coral/40 peer-focus-visible:ring-offset-1"
         />
         <span
           aria-hidden="true"
-          className="pointer-events-none absolute inset-0 m-auto h-2 w-2 rounded-full bg-accent-coral opacity-0 transition-opacity peer-checked:opacity-100"
+          className="dali-radio-dot pointer-events-none absolute inset-0 m-auto h-2 w-2 rounded-full bg-accent-coral opacity-0 transition-opacity peer-checked:opacity-100"
         />
       </span>
       {(label || description) && (
