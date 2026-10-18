@@ -3,6 +3,7 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import { createElement, act, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { DialogProvider, useDialog, useConfirmSubmit } from "./dialog";
+import { MODAL_TITLE_CLASS } from "~/components/Modal";
 
 // Tell React we drive updates through act() (no setupFile in this repo).
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
@@ -477,6 +478,79 @@ describe("useDialog().prompt", () => {
       (b) => b.textContent?.trim() === "Delete project",
     )!;
     expect(confirm.className).toContain("dali-btn--destructive");
+    cleanup();
+  });
+});
+
+describe("useDialog dress matches Modal", () => {
+  function setup() {
+    let api!: ReturnType<typeof useDialog>;
+    function Capture() {
+      api = useDialog();
+      return null;
+    }
+    const mounted = mount(createElement(DialogProvider, null, createElement(Capture)));
+    return { ...mounted, get api() { return api; } };
+  }
+  // Button's own utilities still name coral; the shell's .dali-btn rules
+  // repaint it, so only the dialog's own elements are checked.
+  const ownCoral = (c: HTMLElement) =>
+    Array.from(c.querySelectorAll("*")).filter(
+      (el) => !el.classList.contains("dali-btn") && (el.getAttribute("class") ?? "").includes("accent-coral"),
+    );
+  const cancelButton = (c: HTMLElement) =>
+    Array.from(c.querySelectorAll("button")).find((b) => b.textContent?.trim() === "Cancel")!;
+
+  it("confirm uses the ModalHeader title and the ModalFooter ghost cancel", async () => {
+    const { container, api, cleanup } = setup();
+    await act(async () => { void api.confirm({ title: "Archive?" }); });
+    expect(container.querySelector("h2")!.className).toBe(MODAL_TITLE_CLASS);
+    expect(cancelButton(container).classList.contains("os-btn-ghost")).toBe(true);
+    expect(ownCoral(container)).toEqual([]);
+    cleanup();
+  });
+
+  it("destructive confirm keeps the destructive button and leaves focus on Cancel", async () => {
+    const { container, api, cleanup } = setup();
+    await act(async () => { void api.confirm({ title: "Delete?", tone: "destructive", confirmLabel: "Delete" }); });
+    await flush();
+    const del = Array.from(container.querySelectorAll("button")).find((b) => b.textContent?.trim() === "Delete")!;
+    expect(del.className).toContain("dali-btn--destructive");
+    expect(document.activeElement).not.toBe(del);
+    cleanup();
+  });
+
+  it("disables Cancel while an onConfirm action runs", async () => {
+    const { container, api, cleanup } = setup();
+    let finish!: () => void;
+    await act(async () => {
+      void api.confirm({ title: "Send?", confirmLabel: "Send", onConfirm: () => new Promise<void>((r) => { finish = r; }) });
+    });
+    clickButton(container, "Send");
+    expect(cancelButton(container).disabled).toBe(true);
+    await act(async () => { finish(); });
+    cleanup();
+  });
+
+  it("prompt wraps its field in .os-form with no coral focus ring", async () => {
+    const { container, api, cleanup } = setup();
+    await act(async () => { void api.prompt({ title: "Rename", label: "Name" }); });
+    const input = container.querySelector("input[type='text']")!;
+    expect(input.closest(".os-form")).not.toBeNull();
+    expect(input.className).not.toContain("coral");
+    expect(container.querySelector("h2")!.className).toBe(MODAL_TITLE_CLASS);
+    cleanup();
+  });
+
+  it("choice rows are os wells, not coral-tinted cards", async () => {
+    const { container, api, cleanup } = setup();
+    await act(async () => {
+      void api.choice({ title: "Pick", options: [{ value: "a", label: "Alpha" }] });
+    });
+    const row = Array.from(container.querySelectorAll("button")).find((b) => b.textContent?.includes("Alpha"))!;
+    expect(row.classList.contains("bg-os-well")).toBe(true);
+    expect(ownCoral(container)).toEqual([]);
+    expect(cancelButton(container).classList.contains("os-btn-ghost")).toBe(true);
     cleanup();
   });
 });
