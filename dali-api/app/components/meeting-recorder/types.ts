@@ -43,6 +43,17 @@ export type ChunkResponse = {
  * (stopRequested, total/since paging, error); any other viewer who can read
  * the note gets the read-only subset — those fields come back undefined.
  */
+export type RecordingProgressStage = "fetching" | "transcribing" | "labeling";
+export type RecordingProgress = {
+  stage: RecordingProgressStage;
+  channel: number;
+  channels: number;
+  completed: number;
+  total: number;
+  audioSeconds: number;
+};
+export type ProcessingStage = "starting" | RecordingProgressStage;
+
 export type PollRecordingResponse = {
   status: RecordingStatus;
   channels: Channel[];
@@ -72,6 +83,8 @@ export type PollRecordingResponse = {
   /** When the most recent chunk landed, for the "last audio …" status-line
    *  suffix a follower sees while the owner's device is uploading. */
   lastChunkAt?: string | null;
+  /** Latest Modal progress while Processing; null before the first report. */
+  progress?: RecordingProgress | null;
 };
 
 /** The note's newest recording (any status) as the page loader saw it, for a

@@ -6,7 +6,7 @@
 //
 // NEVER log transcript text, chunk bytes, or a presigned chunk URL.
 
-import { prisma } from "~/lib/db";
+import { prisma, Prisma } from "~/lib/db";
 import { authorizeCollabDoc } from "~/lib/collabAuth";
 import { isPresenceRoom } from "~/collab/roomName";
 import { getApiBaseUrl } from "~/lib/app-env";
@@ -409,6 +409,7 @@ export async function applyResult(
       where: { id: rec.id },
       data: {
         status: "Failed",
+        progress: Prisma.DbNull,
         error: body.error.slice(0, 500),
         finalizedAt: rec.finalizedAt ?? new Date(),
       },
@@ -434,6 +435,7 @@ export async function applyResult(
     where: { id: rec.id },
     data: {
       status: "Done",
+      progress: Prisma.DbNull,
       error: null,
       words,
       lines,

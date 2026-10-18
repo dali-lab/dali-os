@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi, afterEach } from "vitest";
+import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 import { createElement, act, type ReactElement } from "react";
 import { createRoot } from "react-dom/client";
-import { TranscriptChipHoverLayer } from "./TranscriptChipHoverLayer";
+import { TranscriptChipHoverLayer, clearChipRecordingCache } from "./TranscriptChipHoverLayer";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -121,6 +121,93 @@ describe("TranscriptChipHoverLayer citation chip clicks", () => {
     rerender(layer({ onChipClick, railOpen: false }));
 
     expect(document.activeElement).toBe(chip(container));
+    unmount();
+  });
+});
+
+describe("TranscriptChipHoverLayer hover card", () => {
+  const recording = {
+    lines: [
+      { at: 842, end: 850, text: "We're eleven behind.", channel: "call", speaker: "call:1" },
+      { at: 900, end: 905, text: "Other line", channel: "call", speaker: "call:2" },
+    ],
+    speakers: { "call:1": "u1" },
+    speakerNames: { "call:1": "Maya Chen" },
+  };
+
+  beforeEach(() => {
+    clearChipRecordingCache();
+    vi.useFakeTimers();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({ ok: true, json: async () => recording })),
+    );
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  async function hoverChip(container: HTMLElement) {
+    const anchor = chip(container);
+    await act(async () => {
+      anchor.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+      await vi.advanceTimersByTimeAsync(300);
+    });
+  }
+
+  const card = () => document.querySelector('[aria-label="Transcript quote"]') as HTMLElement | null;
+
+  it("shows who said the cited line, when, and the quote", async () => {
+    const { container, unmount } = mount(layer({}, "/documents/p1?transcript=rec-1&at=843"));
+    await hoverChip(container);
+    expect(card()!.textContent).toContain("Maya Chen");
+    expect(card()!.textContent).toContain("14:02");
+    expect(card()!.textContent).toContain("“We're eleven behind.”");
+    expect(card()!.textContent).toContain("Open in transcript");
+    unmount();
+  });
+
+  it("falls back to the channel label while the speaker is unnamed", async () => {
+    const { container, unmount } = mount(layer({}, "/documents/p1?transcript=rec-1&at=903"));
+    await hoverChip(container);
+    expect(card()!.textContent).toContain("Speaker 2");
+    unmount();
+  });
+
+  it("Open in transcript hands the chip's recording and second to onChipClick and closes", async () => {
+    const onChipClick = vi.fn(() => true);
+    const { container, unmount } = mount(layer({ onChipClick }, "/documents/p1?transcript=rec-1&at=843"));
+    await hoverChip(container);
+    const open = [...card()!.querySelectorAll("button")].find((b) => b.textContent === "Open in transcript")!;
+    act(() => open.click());
+    expect(onChipClick).toHaveBeenCalledWith("rec-1", 843);
+    expect(card()).toBeNull();
+    unmount();
+  });
+
+  it("stays open while the pointer moves from the chip onto the card", async () => {
+    const { container, unmount } = mount(layer({}));
+    await hoverChip(container);
+    await act(async () => {
+      chip(container).dispatchEvent(new MouseEvent("mouseout", { bubbles: true, relatedTarget: card() }));
+      card()!.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+      card()!.dispatchEvent(new MouseEvent("mouseenter", { bubbles: false }));
+      await vi.advanceTimersByTimeAsync(400);
+    });
+    expect(card()).not.toBeNull();
+    unmount();
+  });
+
+  it("closes shortly after the pointer leaves the chip", async () => {
+    const { container, unmount } = mount(layer({}));
+    await hoverChip(container);
+    await act(async () => {
+      chip(container).dispatchEvent(new MouseEvent("mouseout", { bubbles: true }));
+      await vi.advanceTimersByTimeAsync(200);
+    });
+    expect(card()).toBeNull();
     unmount();
   });
 });

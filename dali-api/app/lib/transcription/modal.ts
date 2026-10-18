@@ -27,6 +27,17 @@ export type ModalCallbackBody = {
   error: string | null;
 };
 
+export type ModalProgressStage = "fetching" | "transcribing" | "labeling";
+export type ModalProgress = {
+  stage: ModalProgressStage;
+  channel: number;
+  channels: number;
+  completed: number;
+  total: number;
+  audioSeconds: number;
+};
+export type ModalProgressBody = { recordingId: string; progress: ModalProgress };
+
 export class ModalTranscriptionProvider implements TranscriptionProvider {
   async process(req: ProcessRequest): Promise<void> {
     const url = process.env.DIARIZE_URL;

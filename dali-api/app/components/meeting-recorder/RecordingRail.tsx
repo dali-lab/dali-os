@@ -8,10 +8,9 @@ import { summarizeEnhanceMarks } from "./enhance-plan";
 import { formatDateTime } from "./use-meeting-recording";
 import type { UseMeetingRecording } from "./use-meeting-recording";
 import type { Channel } from "./types";
-import { EnhancePreview } from "./EnhancePreview";
 import { RecordingTranscript } from "./RecordingTranscript";
 
-const ENHANCE_AGAIN_TIP = "Rebuilds the notes from the current text and the transcript.";
+export const ENHANCE_AGAIN_TIP = "Rebuilds the notes from the current text and the transcript.";
 
 /** Stable id for the rail's own `<h2>` — ui/Drawer's narrow-canvas
  *  rendering passes this as `labelledBy` instead of rendering a second
@@ -367,24 +366,6 @@ function RailActions({ rec, state }: { rec: UseMeetingRecording; state: RailStat
         </button>
       );
 
-    case "pendingReview":
-      if (!rec.canEdit) return null;
-      return (
-        <div className="flex flex-wrap items-center gap-1.5">
-          <button type="button" onClick={() => rec.keepAll()} className={buttonClasses("primary", "sm")}>
-            Keep all
-          </button>
-          <button type="button" onClick={() => rec.revertAll()} className={buttonClasses("secondary", "sm")}>
-            Revert all
-          </button>
-          <Tooltip content={ENHANCE_AGAIN_TIP} variant="rich">
-            <button type="button" onClick={() => void rec.revertAllAndEnhanceAgain()} className={buttonClasses("secondary", "sm")}>
-              Revert all and enhance again
-            </button>
-          </Tooltip>
-        </div>
-      );
-
     case "enhanced":
       if (!rec.canEdit) return null;
       return (
@@ -462,12 +443,6 @@ function RailBody({ rec, state }: { rec: UseMeetingRecording; state: RailState }
         </p>
       ) : null;
     }
-
-    case "pendingReview":
-      return <EnhancePreview rec={rec} mode="pendingReview" />;
-
-    case "enhanced":
-      return <EnhancePreview rec={rec} mode="enhanced" />;
 
     default:
       return null;

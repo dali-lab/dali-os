@@ -21,6 +21,7 @@ function makeRec(overrides: Partial<UseMeetingRecording> = {}): UseMeetingRecord
     projectId: null,
     canCreateTasks: false,
     getNoteState: () => null,
+    noteVersion: 0,
     seededFromPageId: null,
     seededTemplateHash: null,
 
@@ -60,6 +61,8 @@ function makeRec(overrides: Partial<UseMeetingRecording> = {}): UseMeetingRecord
     enhanceSkipped: 0,
     reviewedAt: null,
     reviewAnnouncement: null,
+    progress: null,
+    processingStage: null,
 
     useDesktopApp: false,
     setUseDesktopApp: vi.fn(),

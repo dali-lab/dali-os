@@ -55,6 +55,30 @@ export function speakerLabelFor(
   return `Speaker ${n}`;
 }
 
+/** The line nearest `at` seconds. */
+export function nearestLine<T extends { at: number }>(lines: readonly T[], at: number): T | null {
+  let best: T | null = null;
+  for (const line of lines) {
+    if (!best || Math.abs(line.at - at) < Math.abs(best.at - at)) best = line;
+  }
+  return best;
+}
+
+/** First name of whoever spoke the line nearest `at`, only when that speaker
+ *  has been given a name; null for "You", "Others" or "Speaker N". */
+export function speakerFirstNameAt(
+  lines: TranscriptLine[],
+  at: number,
+  speakers: Speakers,
+  roster: RosterUser[],
+  speakerNames: Record<SpeakerKey, string> = {},
+): string | null {
+  const line = nearestLine(lines, at);
+  if (!line?.speaker || !speakers[line.speaker]) return null;
+  const label = speakerLabelFor(line, countSpeakersByChannel(lines), speakers, roster, speakerNames);
+  return label.trim().split(/\s+/)[0] || null;
+}
+
 /** One "[mm:ss] Label: text" paragraph per line, in time order. */
 export function transcriptParagraphs(
   lines: TranscriptLine[],

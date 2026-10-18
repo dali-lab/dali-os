@@ -268,6 +268,73 @@ describe("useMeetingRecording phase transitions (mocked fetch, no browser captur
   });
 });
 
+describe("processing progress", () => {
+  const progress = { stage: "transcribing", channel: 1, channels: 2, completed: 3, total: 10, audioSeconds: 90 };
+  const processingBody = (extra: Record<string, unknown> = {}) => ({
+    status: "Processing",
+    channels: [],
+    recordedSeconds: 90,
+    lines: [],
+    speakers: {},
+    ...extra,
+  });
+
+  function stubProcessing(responses: (call: number) => Record<string, unknown>) {
+    const fetchMock = vi.fn(async () => jsonRes(responses(fetchMock.mock.calls.length)));
+    vi.stubGlobal("fetch", fetchMock);
+  }
+
+  function seedBackup(documentName: string) {
+    window.localStorage.setItem(
+      backupKey(documentName),
+      JSON.stringify({ id: "rp", link: "l", aiEnabled: true, captureMode: "desktop" }),
+    );
+  }
+
+  it("stores the polled progress and reports its stage", async () => {
+    seedBackup("doc-progress-1");
+    stubProcessing(() => processingBody({ progress }));
+    await mount("doc-progress-1");
+    expect(box.current!.phase).toBe("processing");
+    expect(box.current!.progress).toEqual(progress);
+    expect(box.current!.processingStage).toBe("transcribing");
+  });
+
+  it("reads as starting before any progress row exists", async () => {
+    seedBackup("doc-progress-2");
+    stubProcessing(() => processingBody({ progress: null }));
+    await mount("doc-progress-2");
+    expect(box.current!.progress).toBeNull();
+    expect(box.current!.processingStage).toBe("starting");
+  });
+
+  it("never opens the rail for a recording that is processing", async () => {
+    seedBackup("doc-progress-closed");
+    stubProcessing(() => processingBody({ progress }));
+    await mount("doc-progress-closed");
+    expect(box.current!.phase).toBe("processing");
+    expect(box.current!.open).toBe(false);
+  });
+
+  it("has no stage outside processing", async () => {
+    await mount("doc-progress-3");
+    expect(box.current!.processingStage).toBeNull();
+  });
+
+  it("clears progress once the recording is Done", async () => {
+    seedBackup("doc-progress-4");
+    stubProcessing((call) =>
+      call === 1
+        ? processingBody({ progress })
+        : { ...processingBody({ progress }), status: "Done", lines: [], speakers: {} },
+    );
+    await mount("doc-progress-4");
+    expect(box.current!.phase).toBe("done");
+    expect(box.current!.progress).toBeNull();
+    expect(box.current!.processingStage).toBeNull();
+  });
+});
+
 describe("notebook tab switch: remounting by key resets state (Fix 1A)", () => {
   it("without a key, a documentName change on the same instance keeps the old tab's state (the bug)", async () => {
     window.localStorage.setItem(
@@ -660,6 +727,64 @@ describe("useMeetingRecording inline review: pendingMarks subscription + Keep/Re
     expect(posted.filter((b) => b.action === "reviewed")).toHaveLength(1);
   });
 
+  it("does not post reviewed when an undo/redo clears the last mark", async () => {
+    window.localStorage.setItem(backupKey("doc-marks-undo"), JSON.stringify({ id: "r7", link: "l", aiEnabled: true }));
+    const posted: Record<string, unknown>[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, init?: RequestInit) => {
+        if ((init?.method ?? "GET") === "GET") return doneRecordingGet();
+        posted.push(init?.body ? JSON.parse(String(init.body)) : {});
+        return jsonRes({ ok: true, reviewedAt: "2026-01-02T00:00:00Z" });
+      }),
+    );
+    await mountEnhanceHarness({ documentName: "doc-marks-undo" });
+
+    const marks: EnhanceMarkEntry[] = [{ id: "b1", mark: "enhance-added", type: "paragraph", text: "x" }];
+    act(() => {
+      docChangeCb.current?.({ marks, changes: [] });
+    });
+    await act(async () => {
+      docChangeCb.current?.({
+        marks: [],
+        changes: [{ type: "update", source: { type: "undo-redo" }, block: { id: "b1", props: {} }, prevBlock: { id: "b1", props: { backgroundColor: "enhance-added" } } }],
+      });
+      await new Promise((r) => setTimeout(r, 0));
+    });
+
+    expect(box.current!.pendingMarks).toEqual([]);
+    expect(posted.filter((b) => b.action === "reviewed")).toHaveLength(0);
+    expect(box.current!.reviewedAt).toBeNull();
+  });
+
+  it("still posts reviewed when a local Keep clears the last mark", async () => {
+    window.localStorage.setItem(backupKey("doc-marks-keep"), JSON.stringify({ id: "r8", link: "l", aiEnabled: true }));
+    const posted: Record<string, unknown>[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, init?: RequestInit) => {
+        if ((init?.method ?? "GET") === "GET") return doneRecordingGet();
+        posted.push(init?.body ? JSON.parse(String(init.body)) : {});
+        return jsonRes({ ok: true, reviewedAt: "2026-01-02T00:00:00Z" });
+      }),
+    );
+    await mountEnhanceHarness({ documentName: "doc-marks-keep", onKeepBlock: vi.fn() });
+
+    const marks: EnhanceMarkEntry[] = [{ id: "b1", mark: "enhance-added", type: "paragraph", text: "x" }];
+    act(() => {
+      docChangeCb.current?.({ marks, changes: [] });
+    });
+    await act(async () => {
+      docChangeCb.current?.({
+        marks,
+        changes: [{ type: "update", source: { type: "local" }, block: { id: "b1", props: { backgroundColor: "enhance-added" } }, prevBlock: { id: "b1", props: { backgroundColor: "enhance-added" } } }],
+      });
+      await new Promise((r) => setTimeout(r, 0));
+    });
+
+    expect(posted.filter((b) => b.action === "reviewed")).toHaveLength(1);
+  });
+
   it("a local edit on an already-marked block clears it via onKeepBlock, without the enhance-apply transaction itself triggering a false Keep", async () => {
     const onKeepBlock = vi.fn();
     await mountEnhanceHarness({ documentName: "doc-marks-6", onKeepBlock });
@@ -717,6 +842,29 @@ describe("useMeetingRecording.enhanceNow (specs/meeting-recording-rail.md Step 2
       return jsonRes({ ok: true, enhancedAt: "2026-01-01T00:05:00Z", enhancedBy: "Ada" });
     });
   }
+
+  it("bumps noteVersion once per frame however many document changes arrive", async () => {
+    vi.useFakeTimers({ toFake: ["requestAnimationFrame", "cancelAnimationFrame"] });
+    try {
+      await mountEnhanceHarness({ documentName: "doc-version", getNoteState: () => null });
+      expect(box.current!.noteVersion).toBe(0);
+      act(() => {
+        for (let i = 0; i < 5; i++) docChangeCb.current!({ marks: [], changes: [] });
+      });
+      expect(box.current!.noteVersion).toBe(0);
+      act(() => {
+        vi.advanceTimersByTime(40);
+      });
+      expect(box.current!.noteVersion).toBe(1);
+      act(() => {
+        docChangeCb.current!({ marks: [], changes: [] });
+        vi.advanceTimersByTime(40);
+      });
+      expect(box.current!.noteVersion).toBe(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 
   it("generates, locks, applies, and persists priorBlocks from onApplyEnhance's result in a follow-up call", async () => {
     window.localStorage.setItem(backupKey("doc-enhance-1"), JSON.stringify({ id: "r1", link: "l", aiEnabled: true }));

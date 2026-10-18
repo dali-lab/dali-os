@@ -2,7 +2,7 @@
 // and open/setOpen — everything MeetingRecorder.tsx did before rendering was
 // split out of it (specs/meeting-recording-rail.md "Component split"). No
 // rendering lives here; RecordingRail / RecordStartSheet / RecordingTranscript
-// / EnhancePreview take this hook's return value as props.
+// / EnhanceBar take this hook's return value as props.
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useBlocker, useSearchParams } from "react-router";
@@ -24,10 +24,17 @@ import {
   WorkletCapture,
 } from "./capture";
 import { ChunkConflictError, ChunkUploadQueue } from "./upload-queue";
-import { countSpeakersByChannel, formatClock, meetingNotesMarkdown, transcriptParagraphs } from "./transcript";
+import {
+  countSpeakersByChannel,
+  formatClock,
+  meetingNotesMarkdown,
+  speakerFirstNameAt,
+  transcriptParagraphs,
+} from "./transcript";
 import {
   applyEnhancePlan,
   localEditKeepIds,
+  isUndoRedoTransaction,
   type EditorOp,
   type EnhanceActionItem,
   type EnhanceBlockChange,
@@ -41,6 +48,8 @@ import type {
   ChunkResponse,
   LatestRecording,
   PollRecordingResponse,
+  ProcessingStage,
+  RecordingProgress,
   RecordingStatus,
   RosterUser,
   Speakers,
@@ -192,6 +201,7 @@ export type UseMeetingRecordingProps = {
     recordingId: string,
     transcript: string[],
     actionItems: EnhanceActionItem[],
+    speakerAt: (atSeconds: number) => string | null,
   ) => { ok: boolean; priorBlocks?: Record<string, unknown> };
   /** Subscribes to every document change (local or remote) once the editor is
    *  ready; returns an unsubscribe. The callback receives the reserved-mark
@@ -265,9 +275,13 @@ export function useMeetingRecording({
 
   const [phase, setPhase] = useState<Phase>("idle");
   const [open, setOpen] = useState(false);
+  const [noteVersion, setNoteVersion] = useState(0);
   useEffect(() => {
     if (autoOpen) setOpen(true);
   }, [autoOpen]);
+  useEffect(() => {
+    if (phase === "processing") setOpen(false);
+  }, [phase]);
   // `?transcript=<id>` opens an existing recording's Done view read-only for
   // anyone who can view the note (the GET route widens for them), even a
   // viewer this component otherwise wouldn't render anything for.
@@ -338,6 +352,7 @@ export function useMeetingRecording({
   const [enhanceSkipped, setEnhanceSkipped] = useState(0);
   // ISO timestamp set when the last mark cleared, by any means (Step 2).
   const [reviewedAt, setReviewedAt] = useState<string | null>(null);
+  const [progress, setProgress] = useState<RecordingProgress | null>(null);
   // "Kept N changes."/"Reverted N changes." — the rail's dedicated live-region
   // text for Keep all/Revert all, distinct from the status line (Step 2
   // Accessibility).
@@ -519,7 +534,6 @@ export function useMeetingRecording({
         if (!following) setOpen(true);
       } else if (data.status === "Processing") {
         setPhase("processing");
-        if (!following) setOpen(true);
       } else if (data.status === "Done") {
         setPhase("done");
         if (transcriptParam) setOpen(true);
@@ -610,6 +624,7 @@ export function useMeetingRecording({
       if (data.enhancedAt !== undefined) setEnhancedAt(data.enhancedAt ?? null);
       if (data.enhancedBy !== undefined) setEnhancedByName(data.enhancedBy ?? null);
       if (data.reviewedAt !== undefined) setReviewedAt(data.reviewedAt ?? null);
+      setProgress(data.status === "Processing" ? (data.progress ?? null) : null);
       if (data.status === "Recording") {
         setAppUnreachable(false);
         setPhase((p) => {
@@ -664,6 +679,7 @@ export function useMeetingRecording({
       if (data.enhancedAt !== undefined) setEnhancedAt(data.enhancedAt ?? null);
       if (data.enhancedBy !== undefined) setEnhancedByName(data.enhancedBy ?? null);
       if (data.reviewedAt !== undefined) setReviewedAt(data.reviewedAt ?? null);
+      setProgress(data.status === "Processing" ? (data.progress ?? null) : null);
       if (data.status === "Done") {
         setLines(data.lines);
         setSpeakers(data.speakers);
@@ -738,16 +754,24 @@ export function useMeetingRecording({
   // acceptable"). Enhance now runs only on a click (enhanceNow, below).
   useEffect(() => {
     if (!subscribeDocumentChanges) return;
-    return subscribeDocumentChanges(({ marks, changes }) => {
+    let bump = 0;
+    const unsubscribe = subscribeDocumentChanges(({ marks, changes }) => {
+      if (!bump) {
+        bump = requestAnimationFrame(() => {
+          bump = 0;
+          setNoteVersion((v) => v + 1);
+        });
+      }
       const keepIds = localEditKeepIds(changes, marks);
       for (const id of keepIds) onKeepBlock?.(id);
       const effective = keepIds.length ? marks.filter((m) => !keepIds.includes(m.id)) : marks;
+      const undoRedo = isUndoRedoTransaction(changes);
 
       const hadMarks = pendingMarksRef.current.length > 0;
       setPendingMarks((prev) => (sameMarks(prev, effective) ? prev : effective));
       pendingMarksRef.current = effective;
 
-      if (hadMarks && effective.length === 0 && !reviewedPostedRef.current && recordingId) {
+      if (hadMarks && effective.length === 0 && !undoRedo && !reviewedPostedRef.current && recordingId) {
         reviewedPostedRef.current = true;
         const postedAt = new Date().toISOString();
         setReviewedAt(postedAt);
@@ -764,6 +788,10 @@ export function useMeetingRecording({
           .catch(() => null);
       }
     });
+    return () => {
+      if (bump) cancelAnimationFrame(bump);
+      unsubscribe();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [subscribeDocumentChanges, recordingId]);
 
@@ -1154,7 +1182,9 @@ export function useMeetingRecording({
 
       const { ops, skipped } = applyEnhancePlan(notes.snapshot, state.blocks, notes.plan, { untouchedTemplate });
       const paragraphs = transcriptParagraphs(lines, speakers, roster);
-      const result = onApplyEnhance(ops, recordingId, paragraphs, notes.plan.actionItems);
+      const result = onApplyEnhance(ops, recordingId, paragraphs, notes.plan.actionItems, (at) =>
+        speakerFirstNameAt(lines, at, speakers, roster, speakerNames),
+      );
       if (!result.ok) {
         setEnhanceError("The note is still loading. Try again in a moment.");
         return;
@@ -1393,6 +1423,7 @@ export function useMeetingRecording({
     projectId,
     canCreateTasks,
     getNoteState,
+    noteVersion,
     seededFromPageId,
     seededTemplateHash,
 
@@ -1434,6 +1465,8 @@ export function useMeetingRecording({
     enhanceSkipped,
     reviewedAt,
     reviewAnnouncement,
+    progress,
+    processingStage: (phase === "processing" ? (progress?.stage ?? "starting") : null) as ProcessingStage | null,
 
     // Start-sheet config.
     useDesktopApp,

@@ -101,6 +101,7 @@ export function DocumentEditor({
   topBarActions,
   meetingNoteTemplateAction = null,
   rail,
+  belowTabs,
   onContainerWideChange,
   notebookConversion = null,
 }: {
@@ -162,6 +163,8 @@ export function DocumentEditor({
   // the Drawer on a narrow canvas — recording/stopping never render in a
   // blocking surface, since people type notes while they run.
   rail?: { node: ReactNode; open: boolean; onClose: () => void; live?: boolean };
+  // Sticks to the top of the paper card, above the cover and title.
+  belowTabs?: ReactNode;
   // Reports the ≥ 1150px check back to the host — DocumentEditor is the only
   // component that measures it, but the route's top-bar Record button needs
   // to know too (narrow canvases answer a live recording with a Popover
@@ -948,6 +951,12 @@ export function DocumentEditor({
           typo.smallText ? " doc-canvas--small" : ""
         }${typo.nestingGuides ? " doc-canvas--guides" : ""}`}
       >
+        {belowTabs && (
+          <div className="sticky z-10 overflow-hidden rounded-t-xl bg-card" style={{ top: topBarHeight }}>
+            {belowTabs}
+          </div>
+        )}
+
         {/* Cover lives at the top edge of the canvas, full-bleed.
             FIX 6: Only render PageCover here when a cover IS set (so it shows
             the image + change/remove controls). When no cover, the hover-reveal
