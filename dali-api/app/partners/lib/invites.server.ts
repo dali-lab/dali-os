@@ -35,7 +35,7 @@ export async function createPartnerInvite(
   if (identity.kind === "member-conflict") {
     return {
       error:
-        "That address belongs to a DALI member or Dartmouth account — partners use a separate (work) email",
+        "That address belongs to a DALI member or Dartmouth account. Partners use a separate (work) email",
     };
   }
   if (identity.kind === "existing") {
@@ -180,7 +180,7 @@ export async function acceptPartnerInvite(
   // (became a member) — re-check at accept time.
   const identity = await classifyPartnerEmail(invite.email);
   if (identity.kind === "member-conflict") {
-    return { error: "This email now belongs to a DALI account — sign in at /login instead" };
+    return { error: "This email now belongs to a DALI account. Sign in at /login instead" };
   }
 
   // Find or create the User row. Invitees accepting before they've ever signed

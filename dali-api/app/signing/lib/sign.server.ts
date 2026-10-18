@@ -29,6 +29,12 @@ export interface RecordSignatureArgs {
   // mentor's receipt until the mentee countersigns and send both parties the
   // fully co-signed copy instead of a half-signed one.
   sendReceipt?: boolean;
+  // Extra signing-context variables merged OVER the resolved member set before
+  // baking the frozen body. Lets a caller outside the member/term context (a
+  // partner contract, signed by a PartnerContact's User) supply tokens
+  // resolveSigningVariablesForSigner has no way to know about (fee, orgName,
+  // etc.) — caller-supplied keys win over the resolved defaults.
+  variables?: Record<string, string>;
 }
 
 export type RecordSignatureResult =
@@ -82,11 +88,12 @@ export async function recordSignature(
     typedName = u ? fullName(u) : "";
   }
 
-  const variables = await resolveSigningVariablesForSigner(args.signerUserId, {
+  const resolvedVariables = await resolveSigningVariablesForSigner(args.signerUserId, {
     termCode: binding.term?.code ?? undefined,
     role: roleKey === "mentee" ? "mentee" : "member",
     termId: binding.termId ?? undefined,
   });
+  const variables = { ...resolvedVariables, ...(args.variables ?? {}) };
   const frozenBody = bakeSigningBody(body, {
     fieldValues: args.fieldValues,
     variables,

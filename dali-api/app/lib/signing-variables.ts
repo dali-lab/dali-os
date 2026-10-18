@@ -18,6 +18,17 @@ export const SIGNING_VARIABLE_DESCRIPTIONS = {
   memberName: TEMPLATE_VARIABLES_REGISTRY.memberName.description,
   supervisorName: TEMPLATE_VARIABLES_REGISTRY.supervisorName.description,
   menteeName: TEMPLATE_VARIABLES_REGISTRY.menteeName.description,
+  // Partner contracts resolve these via resolvePartnerContractVariables
+  // (app/partners/lib/partner-contract.server.ts), not resolveSigningVariables
+  // below — listed here so the document editor's "+Variable" menu and the
+  // unknown-token lint recognize them on a PartnerContract document.
+  partnerName: TEMPLATE_VARIABLES_REGISTRY.partnerName.description,
+  orgName: TEMPLATE_VARIABLES_REGISTRY.orgName.description,
+  legalEntityName: TEMPLATE_VARIABLES_REGISTRY.legalEntityName.description,
+  legalEntityAddress: TEMPLATE_VARIABLES_REGISTRY.legalEntityAddress.description,
+  fee: TEMPLATE_VARIABLES_REGISTRY.fee.description,
+  fundingType: TEMPLATE_VARIABLES_REGISTRY.fundingType.description,
+  projectTitle: TEMPLATE_VARIABLES_REGISTRY.projectTitle.description,
 } as const;
 
 export type SigningVariableName = keyof typeof SIGNING_VARIABLE_DESCRIPTIONS;
@@ -48,6 +59,16 @@ export interface SigningVariableInputs {
   memberName?: string;
   supervisorName?: string;
   menteeName?: string;
+  // Partner-contract-only inputs. Unused by the member resolver
+  // (resolveSigningVariablesForSigner never passes these) — defaulted to ""
+  // here only so this stays a total function over SigningVariableName.
+  partnerName?: string;
+  orgName?: string;
+  legalEntityName?: string;
+  legalEntityAddress?: string;
+  fee?: string;
+  fundingType?: string;
+  projectTitle?: string;
 }
 
 export function resolveSigningVariables(
@@ -60,5 +81,12 @@ export function resolveSigningVariables(
     memberName: inputs.memberName ?? "",
     supervisorName: inputs.supervisorName ?? "",
     menteeName: inputs.menteeName ?? "",
+    partnerName: inputs.partnerName ?? "",
+    orgName: inputs.orgName ?? "",
+    legalEntityName: inputs.legalEntityName ?? "",
+    legalEntityAddress: inputs.legalEntityAddress ?? "",
+    fee: inputs.fee ?? "",
+    fundingType: inputs.fundingType ?? "",
+    projectTitle: inputs.projectTitle ?? "",
   };
 }

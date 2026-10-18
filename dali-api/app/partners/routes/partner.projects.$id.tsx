@@ -27,7 +27,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     ctx.memberships.map((m) => m.orgId),
   );
 
-  const data = await loadPartnerProjectView(params.id!, partnerOrgId);
+  const data = await loadPartnerProjectView(params.id!, partnerOrgId, { email: ctx.contact.email });
   if (!data) throw new Response("Not found", { status: 404 });
   return data;
 }
@@ -39,6 +39,7 @@ export default function PartnerProjectView() {
       data={data}
       backLink={{ to: "/partner", label: "Back to portal" }}
       pageHref={(pageId) => `/partner/projects/${data.project.id}/pages/${pageId}`}
+      requestMeetingScope={{ projectId: data.project.id }}
     />
   );
 }

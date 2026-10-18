@@ -153,16 +153,6 @@ export const NAV_AREAS: NavArea[] = [
     ],
   },
   {
-    key: "partners",
-    label: "Partners",
-    icon: Handshake,
-    hubPath: "/partners",
-    subtabs: [
-      { label: "Hub", href: "/partners", icon: LayoutGrid },
-      { label: "Applications", href: "/partners/applications", icon: FileText, gate: (r) => r.canViewStaffing },
-    ],
-  },
-  {
     key: "hiring",
     label: "Hiring",
     icon: Briefcase,
@@ -221,7 +211,6 @@ const REGROUPED_AREAS: NavArea[] = [
       { label: "Projects", href: "/projects", icon: LayoutGrid },
       { label: "People", href: "/members", icon: UsersRound },
       { label: "Connect", href: "/connect", icon: MapPinned },
-      { label: "Partners", href: "/partners", icon: Handshake },
       { label: "Mentorship", href: "/mentorship", icon: Heart, gate: (r) => !r.isAlumni && (r.isLabMentor || r.isCore) },
       // Lab-wide Attendance: every meeting/event you're invited to, with each
       // event's roster (invited-scoped, see app/routes/attendance.tsx).
@@ -248,6 +237,7 @@ const REGROUPED_AREAS: NavArea[] = [
     subtabs: [
       { label: "Milestones", href: "/core", icon: Flag },
       { label: "Staffing", href: "/core/staffing", icon: Kanban },
+      { label: "Partner CRM", href: "/core/partners", icon: Handshake },
       { label: "Intent to Work", href: "/core/intent-to-work", icon: ClipboardPen },
       { label: "Project Bids", href: "/core/project-bids", icon: Gavel },
       { label: "Level Up", href: "/core/level-up", icon: ArrowUpCircle },
@@ -378,9 +368,9 @@ function queryHrefMatchLen(url: string, href: string): number {
 }
 
 // The area that owns a path. Two rules, in order:
-//  1. an exact sub-tab href — the regrouped Projects area owns /members,
-//     /partners and /mentorship, which are not under its hubPath at all, so
-//     prefix matching alone would hand them to no area (or the wrong one);
+//  1. an exact sub-tab href — the regrouped Projects area owns /members
+//     and /mentorship, which are not under its hubPath at all, so prefix
+//     matching alone would hand them to no area (or the wrong one);
 //  2. otherwise the area whose hubPath is the path or a path-segment prefix.
 // Longest match wins in both passes. Sub-tab subtrees (e.g. /members/:id) fall
 // through to rule 2 via the borrowed area's own hubPath when it still exists,

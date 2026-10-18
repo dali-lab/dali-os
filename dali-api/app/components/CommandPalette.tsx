@@ -99,6 +99,7 @@ export const TYPE_META: Record<SearchResultType, { icon: LucideIcon; section: st
   task: { icon: ListTodo, section: "Tasks" },
   education: { icon: GraduationCap, section: "Education" },
   partner: { icon: Handshake, section: "Partners" },
+  partnerContact: { icon: UserCircle, section: "Partners" },
   document: { icon: FileText, section: "Documents" },
   application: { icon: Briefcase, section: "Applicants" },
   form: { icon: ClipboardList, section: "Forms" },
