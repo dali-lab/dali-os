@@ -16,7 +16,7 @@ export function ImpersonationBanner({
   allowsWrites?: boolean;
 }) {
   return (
-    <div className="flex-none flex items-center gap-3 border-b border-amber-500/40 bg-amber-500/10 px-4 py-2 text-amber-900 dark:text-amber-200">
+    <div className="flex-none flex items-center gap-3 border-b border-os-amber/40 bg-os-amber/10 px-4 py-2 text-os-amber">
       <UserCog className="h-4 w-4 shrink-0" />
       <span className="text-sm flex-1 min-w-0">
         You're viewing DALI OS as{" "}
