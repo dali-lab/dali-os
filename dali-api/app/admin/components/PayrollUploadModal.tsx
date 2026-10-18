@@ -148,7 +148,7 @@ function ImportSummary({ result }: { result: PayrollUploadResult }) {
 
   return (
     <div className="mt-4 rounded-md bg-muted px-3 py-2.5 text-xs text-foreground">
-      <div className="flex items-center gap-1.5 font-semibold text-accent-green">
+      <div className="flex items-center gap-1.5 font-semibold text-os-green">
         <CheckCircle2 className="w-4 h-4" aria-hidden /> Import complete
       </div>
       <ul className="mt-1.5 space-y-0.5 text-muted-foreground">

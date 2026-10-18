@@ -2126,7 +2126,7 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange, onGuideCh
                   still doing its initial load (before onLoad fires). */}
               {activeTab && mountedTabIds.has(activeTab.id) && !loadedTabIds.has(activeTab.id) && (
                 <div className="absolute inset-0 flex items-center justify-center bg-section-bg">
-                  <Loader2 className="w-6 h-6 text-accent-teal animate-spin motion-reduce:animate-none" />
+                  <Loader2 className="w-6 h-6 text-os-accent animate-spin motion-reduce:animate-none" />
                 </div>
               )}
               {!activeTab && (

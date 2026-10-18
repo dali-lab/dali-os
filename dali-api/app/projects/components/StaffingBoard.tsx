@@ -639,7 +639,7 @@ export function StaffingBoard({
       }
     : {
         muted: "border-border bg-muted/20",
-        active: "border-accent-teal/40 bg-accent-teal/[0.04]",
+        active: "border-os-accent/40 bg-os-accent/[0.04]",
         dim: "border-border bg-card",
       };
   // pt-1/px on the row (the primitive's default row layout) keeps each column's
@@ -1152,7 +1152,7 @@ function TermChannelBanner({ termId, termCode }: { termId: string; termCode: str
           <p
             className={cn(
               "text-xs mt-1",
-              result.ok ? (os ? "text-os-green" : "text-accent-teal") : "text-destructive",
+              result.ok ? (os ? "text-os-green" : "text-os-green") : "text-destructive",
             )}
           >
             {result.ok ? "✓ " : "✗ "}

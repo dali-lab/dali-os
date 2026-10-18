@@ -32,7 +32,7 @@ export function CalendarSettingsBlock({
           Timesheet mirror are now on the{" "}
           <Link
             to="/calendar"
-            className="inline-flex items-center gap-1 font-medium text-accent-teal hover:underline"
+            className="inline-flex items-center gap-1 font-medium text-os-accent hover:underline"
           >
             Calendar page
             <ExternalLink className="h-3 w-3" />
@@ -83,8 +83,8 @@ function LinkedAccountRow({ link }: { link: CalendarLinkDTO }) {
   const Chevron = open ? ChevronDown : ChevronRight;
 
   return (
-    <div className="overflow-hidden rounded-md border border-border border-l-4 border-l-accent-teal bg-card">
-      <div className="flex items-center justify-between bg-accent-teal/10 pr-3">
+    <div className="overflow-hidden rounded-md border border-border border-l-4 border-l-os-accent bg-card">
+      <div className="flex items-center justify-between bg-os-accent/10 pr-3">
         <button
           type="button"
           onClick={() => setOpen((o) => !o)}
@@ -130,7 +130,7 @@ function LinkedAccountRow({ link }: { link: CalendarLinkDTO }) {
           <SyncErrorNotice syncError={link.syncError} />
           <p className="text-xs text-muted-foreground">
             Per-calendar visibility and availability settings are now on the{" "}
-            <Link to="/calendar" className="font-medium text-accent-teal hover:underline">
+            <Link to="/calendar" className="font-medium text-os-accent hover:underline">
               Calendar page
             </Link>
             .

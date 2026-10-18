@@ -756,7 +756,7 @@ export default function PartnerOrgDetail() {
               <span
                 className={`text-xs rounded-full px-2 py-0.5 ${
                   soleContact.userId
-                    ? "bg-accent-teal/15 text-accent-teal"
+                    ? "bg-os-accent/15 text-os-accent"
                     : "bg-muted text-muted-foreground"
                 }`}
               >
@@ -837,7 +837,7 @@ export default function PartnerOrgDetail() {
                       {memberName(m.contact)}
                     </span>
                     {org.primaryContactId === m.id && (
-                      <span className="ml-2 text-xs rounded-full bg-accent-teal/15 text-accent-teal px-2 py-0.5">
+                      <span className="ml-2 text-xs rounded-full bg-os-accent/15 text-os-accent px-2 py-0.5">
                         Primary contact
                       </span>
                     )}
@@ -1019,7 +1019,7 @@ export default function PartnerOrgDetail() {
                     <span
                       className={`ml-2 text-xs rounded-full px-2 py-0.5 ${
                         pp.active
-                          ? "bg-accent-teal/15 text-accent-teal"
+                          ? "bg-os-accent/15 text-os-accent"
                           : "bg-muted text-muted-foreground"
                       }`}
                     >

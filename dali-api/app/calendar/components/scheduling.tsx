@@ -1255,7 +1255,7 @@ export function ParticipantAvailabilityList({
         className={cn(
           "inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium transition-colors",
           active
-            ? "bg-accent-green text-[hsl(203_38%_18%)]"
+            ? "bg-os-accent text-os-bg"
             : "bg-muted text-muted-foreground hover:bg-muted/70",
         )}
       >

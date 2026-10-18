@@ -143,7 +143,7 @@ function ProgressTrack({ status }: { status: PartnerApplicationStatus }) {
             {!last && (
               <span
                 className={`absolute left-1/2 top-[7px] h-0.5 w-full ${
-                  done ? "bg-accent-teal" : "bg-border"
+                  done ? "bg-os-accent" : "bg-border"
                 }`}
               />
             )}
@@ -152,9 +152,9 @@ function ProgressTrack({ status }: { status: PartnerApplicationStatus }) {
                 declinedNode
                   ? "border-destructive bg-destructive"
                   : done || isCurrent
-                    ? "border-accent-teal bg-accent-teal"
+                    ? "border-os-accent bg-os-accent"
                     : "border-border bg-card"
-              } ${isCurrent && !declinedNode ? "ring-2 ring-accent-teal/30" : ""}`}
+              } ${isCurrent && !declinedNode ? "ring-2 ring-os-accent/30" : ""}`}
             />
             <span
               className={`mt-2 text-[11px] leading-tight ${

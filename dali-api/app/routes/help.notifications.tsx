@@ -28,7 +28,7 @@ export default function HelpNotificationsPage() {
           system announcement, a meeting reminder. These collect in the same
           panel and mark themselves read when you've seen them; the full
           history lives on{" "}
-          <Link to="/notifications" className="text-accent-teal hover:underline">
+          <Link to="/notifications" className="text-os-accent hover:underline">
             My Tasks
           </Link>
           .

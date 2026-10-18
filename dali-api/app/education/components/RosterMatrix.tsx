@@ -43,7 +43,7 @@ export type PerformanceSubmissions = Record<
 const MARK_CHOICES = ["Present", "Absent", "Excused"] as const;
 
 const MARK_STYLE: Record<Status, { icon: typeof Check; className: string; label: string }> = {
-  Present: { icon: Check, className: "text-accent-green", label: "Present" },
+  Present: { icon: Check, className: "text-os-green", label: "Present" },
   Absent: { icon: X, className: "text-destructive", label: "Absent" },
   Excused: { icon: Minus, className: "text-os-grey", label: "Excused" },
 };
@@ -248,7 +248,7 @@ export function RosterMatrix({
                       <span
                         className={
                           pct >= 75
-                            ? "text-accent-green"
+                            ? "text-os-green"
                             : pct >= 50
                               ? "text-os-grey"
                               : "text-destructive"
@@ -356,7 +356,7 @@ function PerformanceTable({
                     <span
                       className={
                         pct >= 80
-                          ? "text-accent-green"
+                          ? "text-os-green"
                           : pct >= 50
                             ? "text-os-grey"
                             : "text-destructive"
@@ -390,7 +390,7 @@ function PerformanceTable({
                   })}
                   <td className="px-4 py-2 text-center">
                     {eligible ? (
-                      <span className="inline-flex items-center gap-1 text-accent-green text-xs font-semibold">
+                      <span className="inline-flex items-center gap-1 text-os-green text-xs font-semibold">
                         <Check className="h-3.5 w-3.5" aria-hidden />
                         Eligible
                       </span>

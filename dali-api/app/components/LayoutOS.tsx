@@ -508,7 +508,7 @@ export function LayoutOS({
                 {!collapsed && 'Email'}
                 {collapsed ? (
                   emailUnread > 0 && (
-                    <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-accent-yellow" aria-hidden />
+                    <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-os-accent" aria-hidden />
                   )
                 ) : (
                   <UnreadBadge count={emailUnread} className="ml-auto" />

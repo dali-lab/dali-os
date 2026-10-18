@@ -53,7 +53,7 @@ const PAGE_MENTION_CLASS =
 // reads as a third distinct mention family (coral @user, blue page, teal
 // task) and carries a small status dot (TaskStatusDot).
 const TASK_MENTION_CLASS =
-  "inline-flex items-center gap-1 rounded bg-accent-teal/10 px-1 py-0.5 font-medium text-accent-teal cursor-pointer hover:bg-accent-teal/20";
+  "inline-flex items-center gap-1 rounded bg-os-accent/10 px-1 py-0.5 font-medium text-os-accent cursor-pointer hover:bg-os-accent/20";
 
 // ─── Live page-title resolution ──────────────────────────────────────────────
 //

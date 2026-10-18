@@ -102,7 +102,7 @@ export function TagPicker({
       {applied.map((t) => (
         <span
           key={t.id}
-          className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded bg-accent-teal/10 text-accent-teal border border-accent-teal/20"
+          className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded bg-os-accent/10 text-os-accent border border-os-accent/20"
         >
           {t.label}
           {canEdit && (

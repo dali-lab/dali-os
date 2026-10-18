@@ -32,8 +32,8 @@ export async function loader({ request }: Route.LoaderArgs) {
 // chip — the same shape the rest of the app uses for a status.
 const DOT_TONE = {
   neutral: "bg-muted-foreground/50",
-  success: "bg-accent-teal",
-  warning: "bg-accent-yellow",
+  success: "bg-os-green",
+  warning: "bg-os-amber",
   danger: "bg-destructive",
 } as const;
 
@@ -83,9 +83,9 @@ export default function EducationHub() {
           // tile-and-heading block that size read as a second page header.
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-xl border border-border bg-card px-4 py-3">
             {ceStanding.compliant ? (
-              <CircleCheck className="h-4 w-4 shrink-0 text-accent-teal" />
+              <CircleCheck className="h-4 w-4 shrink-0 text-os-green" />
             ) : (
-              <CircleAlert className="h-4 w-4 shrink-0 text-accent-yellow" />
+              <CircleAlert className="h-4 w-4 shrink-0 text-os-amber" />
             )}
             <span className="font-heading text-sm font-semibold text-foreground">
               CE credit

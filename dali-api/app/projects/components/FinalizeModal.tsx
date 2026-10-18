@@ -7,6 +7,7 @@ import { Button } from "~/components/ui/Button";
 import { Checkbox } from "~/components/ui/Checkbox";
 import { useDialog } from "~/components/ui/dialog";
 import { PairingReviewPanel } from "~/mentorship/components/PairingReviewPanel";
+import { buttonClasses } from "~/components/ui/Button";
 
 type Automation = "assignments" | "slack" | "gmail" | "github";
 
@@ -261,7 +262,7 @@ export function FinalizeModal({
       )}
 
       {nonP3Mentors.length > 0 && (
-        <div className="mb-3 rounded-md border border-accent-yellow/40 bg-accent-yellow/10 px-3 py-2.5">
+        <div className="mb-3 rounded-md border border-os-amber/40 bg-os-amber/10 px-3 py-2.5">
           <Checkbox
             checked={promoteMentors}
             disabled={running}
@@ -369,7 +370,7 @@ export function FinalizeModal({
                   <p
                     className={`text-xs mt-1.5 ${
                       r.status === "ok"
-                        ? "text-accent-teal"
+                        ? "text-os-green"
                         : r.status === "error"
                           ? "text-destructive"
                           : "text-muted-foreground"
@@ -407,7 +408,7 @@ export function FinalizeModal({
                 type="button"
                 disabled={savingFields || running}
                 onClick={saveFields}
-                className="px-3 py-1.5 text-sm font-medium rounded-md bg-accent-teal text-white hover:bg-accent-teal/90 disabled:opacity-60 transition-colors"
+                className={buttonClasses("primary", "sm")}
               >
                 {savingFields ? "Saving…" : "Save fields"}
               </button>
@@ -422,7 +423,7 @@ export function FinalizeModal({
             </>
           )}
           {savedNote && !fieldsDirty && (
-            <span className="text-xs text-accent-teal">{savedNote}</span>
+            <span className="text-xs text-os-green">{savedNote}</span>
           )}
         </div>
 

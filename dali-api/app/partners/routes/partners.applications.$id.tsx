@@ -1518,7 +1518,7 @@ const OUTCOME_LABELS: Record<string, string> = {
 };
 
 const OUTCOME_PILL: Record<string, string> = {
-  Advance: "bg-accent-teal/15 text-accent-teal",
+  Advance: "bg-os-green/15 text-os-green",
   Hold: "bg-os-amber text-os-amber",
   Reject: "bg-destructive/10 text-destructive",
   MoreInfoNeeded: "bg-muted text-muted-foreground",
