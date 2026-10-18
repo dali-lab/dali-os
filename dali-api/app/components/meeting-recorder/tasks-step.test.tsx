@@ -86,7 +86,10 @@ beforeEach(() => {
 afterEach(() => {
   vi.useRealTimers();
   document.body.innerHTML = "";
+  for (const style of document.head.querySelectorAll("style[data-enhance-rules]")) style.remove();
 });
+
+const chipRules = () => document.querySelector('style[data-enhance-rules="chips"]')?.textContent ?? "";
 
 describe("tasks bar visibility", () => {
   it("shows with counts once nothing is pending", () => {
@@ -114,6 +117,21 @@ describe("tasks bar visibility", () => {
     const { unmount } = mount(recWith([ITEMS[0]!]));
     expect(bar()?.textContent).toContain("1 action item");
     expect(button("Create 1 task")).toBeTruthy();
+    unmount();
+  });
+
+  it("is hidden once Enhance's lines are gone from the note, even with a plan", () => {
+    const { unmount } = mount(recWith(ITEMS, { getNoteState: () => ({ blocks: [BLOCKS[2]!], bodyText: "" }) }));
+    expect(document.body.textContent).not.toContain("action items");
+    expect(document.querySelector("[data-action-chips-for]")).toBeNull();
+    unmount();
+  });
+
+  it("is hidden when no checked item has a live checklist line", () => {
+    const { unmount } = mount(recWith(ITEMS, { getNoteState: () => ({ blocks: [BLOCKS[0]!], bodyText: "" }) }));
+    expect(button("Create 2 tasks")).toBeTruthy();
+    click(document.querySelector(`input[aria-label="Make a task: ${ITEMS[0]!.text}"]`)!);
+    expect(bar()).toBeNull();
     unmount();
   });
 
@@ -276,7 +294,67 @@ describe("action item chips", () => {
     expect(chipsFor(0)).not.toBeNull();
     expect(chipsFor(1)).not.toBeNull();
     expect(document.querySelectorAll("[data-action-chips-for]")).toHaveLength(2);
-    expect(editorRoot.querySelectorAll("[data-action-chips]")).toHaveLength(2);
+    expect(editorRoot.querySelectorAll("[data-action-chips], [style]")).toHaveLength(0);
+    unmount();
+  });
+
+  it("reserves exactly the rendered chip width plus 12px on the right, and the chip height plus 8px when narrow", () => {
+    const original = Element.prototype.getBoundingClientRect;
+    Element.prototype.getBoundingClientRect = function (this: Element) {
+      if (this.hasAttribute("data-action-chips-for")) {
+        return { top: 0, left: 0, right: 300, bottom: 64, width: 300, height: 64, x: 0, y: 0, toJSON() {} } as DOMRect;
+      }
+      return original.call(this);
+    };
+    const { unmount } = mount(recWith());
+    expect(chipRules()).toContain(
+      '@media (min-width: 700px) {\n.dali-doc .bn-block-outer[data-id="b1"] > .bn-block > .bn-block-content { padding-right: 312px; }',
+    );
+    expect(chipRules()).toContain('[data-id="b2"] > .bn-block > .bn-block-content { padding-right: 312px; }');
+    expect(chipRules()).toContain(
+      '@media (max-width: 699px) {\n.dali-doc .bn-block-outer[data-id="b1"] > .bn-block > .bn-block-content { padding-bottom: 72px; }',
+    );
+    expect(chipRules()).not.toContain("20rem");
+    unmount();
+    expect(document.querySelector("style[data-enhance-rules]")).toBeNull();
+    Element.prototype.getBoundingClientRect = original;
+  });
+
+  it("never sets an attribute on the editor's nodes when its observers fire", async () => {
+    const spy = vi.spyOn(Element.prototype, "setAttribute");
+    const { unmount } = mount(recWith());
+    editorRoot.querySelector('[data-id="b1"] p')!.textContent = `${BLOCKS[0]!.text} `;
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 60));
+    });
+    expect(spy.mock.contexts.filter((el) => el instanceof Element && editorRoot.contains(el))).toHaveLength(0);
+    spy.mockRestore();
+    unmount();
+  });
+
+  it("hides chips whose line is under the sticky bar", () => {
+    const original = Element.prototype.getBoundingClientRect;
+    Element.prototype.getBoundingClientRect = function (this: Element) {
+      if (this.classList.contains("bn-block-content")) {
+        return { top: 10, bottom: 40, left: 0, right: 500, width: 500, height: 30, x: 0, y: 10, toJSON() {} } as DOMRect;
+      }
+      if (this.hasAttribute("data-enhance-bar")) {
+        return { top: 0, bottom: 90, left: 0, right: 500, width: 500, height: 90, x: 0, y: 0, toJSON() {} } as DOMRect;
+      }
+      return original.call(this);
+    };
+    const { unmount } = mount(recWith());
+    expect((chipsFor(0) as HTMLElement).style.visibility).toBe("hidden");
+    unmount();
+    Element.prototype.getBoundingClientRect = original;
+  });
+
+  it("read-only chips explain an owner with no roster match", () => {
+    const { unmount } = mount(recWith(ITEMS, { canCreateTasks: false }));
+    const owner = [...chipsFor(1)!.querySelectorAll("span")].find((el) => el.textContent === "Jordan")!;
+    act(() => owner.dispatchEvent(new FocusEvent("focus", { bubbles: true })));
+    act(() => owner.focus());
+    expect(document.body.textContent).toContain("Jordan: no match on the roster");
     unmount();
   });
 
@@ -337,5 +415,58 @@ describe("action item chips", () => {
     expect(style.right).toBe("");
     unmount();
     Object.defineProperty(window, "innerWidth", { configurable: true, value: original });
+  });
+});
+
+describe("tasks whose checklist line was removed", () => {
+  const tasked = ITEMS.map((i, n) => ({ ...i, taskId: `t${n}` }));
+  const without = (id: string) => ({ getNoteState: () => ({ blocks: BLOCKS.filter((b) => b.id !== id), bodyText: "" }) });
+
+  it("keeps a link to the task so it is never unreachable", () => {
+    const { unmount } = mount(recWith(tasked, without("b2")));
+    expect(bar()?.textContent).toContain("1 task's line was removed");
+    const link = bar()!.querySelector("a")!;
+    expect(link.textContent).toBe("View task");
+    expect(link.getAttribute("href")).toBe("/projects/p1?tab=progress&task=t1");
+    unmount();
+  });
+
+  it("names each task when several lines were removed", () => {
+    const { unmount } = mount(recWith(tasked, { getNoteState: () => ({ blocks: [BLOCKS[2]!], bodyText: "" }) }));
+    expect(bar()?.textContent).toContain("2 tasks' lines were removed");
+    expect([...bar()!.querySelectorAll("a")].map((a) => a.textContent)).toEqual([
+      `View task: ${ITEMS[0]!.text}`,
+      `View task: ${ITEMS[1]!.text}`,
+    ]);
+    unmount();
+  });
+
+  it("shows nothing while every tasked line is still in the note", () => {
+    const { unmount } = mount(recWith(tasked));
+    expect(bar()).toBeNull();
+    unmount();
+  });
+
+  it("shows nothing when the note state is not available yet", () => {
+    const { unmount } = mount(recWith(tasked, { getNoteState: () => null }));
+    expect(bar()).toBeNull();
+    unmount();
+  });
+});
+
+describe("enhance error note", () => {
+  it("shows the error under the tasks bar", () => {
+    const { unmount } = mount(recWith(ITEMS, { enhanceError: "The note is still loading. Try again in a moment." }));
+    expect(bar()?.textContent).toContain("The note is still loading. Try again in a moment.");
+    unmount();
+  });
+});
+
+describe("bar menu for non-editors", () => {
+  it("hides More from a viewer who is not allowed to edit", () => {
+    const { unmount } = mount(recWith(ITEMS, { canEdit: false }));
+    expect(bar()?.textContent).toContain("2 action items");
+    expect(document.querySelector('[aria-label="More"]')).toBeNull();
+    unmount();
   });
 });

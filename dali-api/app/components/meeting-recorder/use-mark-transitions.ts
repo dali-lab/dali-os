@@ -1,12 +1,11 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { animate, DUR, prefersReducedMotion } from "./motion";
 import { findBlock } from "./block-dom";
+import { useBlockStyleRules } from "./block-style-rules";
+import { markMotionCss, otherVariant, type MarkMotion, type TransitionKind } from "./enhance-rules";
 import { classifyEnhanceMark, firstLineOf, priorBlockFirstLine, type EnhanceMarkEntry } from "./enhance-plan";
 
-export const ANIM_ATTR = "data-enhance-anim";
-export const DELAY_VAR = "--enhance-delay";
-
-export type TransitionKind = "bloom" | "drain" | "revert";
+export type { TransitionKind };
 export type MarkTransition = { id: string; kind: TransitionKind; added: boolean };
 
 type PlanInput = {
@@ -90,14 +89,20 @@ export function useMarkTransitions({
   getRoot: () => HTMLElement | null;
 }) {
   const previous = useRef<readonly EnhanceMarkEntry[] | null>(null);
-  const timers = useRef(new Map<HTMLElement, ReturnType<typeof setTimeout>>());
+  const timers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  const [motions, setMotions] = useState<Record<string, MarkMotion>>({});
   const key = marks.map((m) => `${m.id}:${m.mark}`).join("|");
 
-  function release(el: HTMLElement) {
-    clearTimeout(timers.current.get(el));
-    timers.current.delete(el);
-    el.removeAttribute(ANIM_ATTR);
-    el.style.removeProperty(DELAY_VAR);
+  useBlockStyleRules("anim", markMotionCss(Object.values(motions)));
+
+  function release(id: string) {
+    clearTimeout(timers.current.get(id));
+    timers.current.delete(id);
+    setMotions((prev) => {
+      if (!(id in prev)) return prev;
+      const { [id]: _gone, ...rest } = prev;
+      return rest;
+    });
   }
 
   useEffect(() => {
@@ -113,8 +118,10 @@ export function useMarkTransitions({
       blockExists: (id) => findBlock(root, id) !== null,
       blockText: (id) => findBlock(root, id)?.querySelector(".bn-inline-content")?.textContent ?? "",
     });
+    if (plan.length === 0) return;
     const reduced = prefersReducedMotion();
 
+    const started: MarkMotion[] = [];
     for (const kind of ["bloom", "drain", "revert"] as const) {
       const group = inDocumentOrder(
         plan
@@ -123,23 +130,28 @@ export function useMarkTransitions({
       );
       group.forEach(({ el, t }, i) => {
         const delay = reduced ? 0 : i * STAGGER[kind];
-        release(el);
-        el.setAttribute(ANIM_ATTR, kind);
-        el.style.setProperty(DELAY_VAR, `${delay}ms`);
+        started.push({ id: t.id, kind, delay, variant: "a" });
+        clearTimeout(timers.current.get(t.id));
         timers.current.set(
-          el,
-          setTimeout(() => release(el), delay + TOTAL[kind] + SETTLE_MS),
+          t.id,
+          setTimeout(() => release(t.id), delay + TOTAL[kind] + SETTLE_MS),
         );
         if (kind !== "bloom") return;
         if (t.added) growIn(el, delay);
         else riseIn(el.querySelector(".bn-inline-content"), delay);
       });
     }
+    setMotions((current) => {
+      const next = { ...current };
+      for (const m of started) next[m.id] = { ...m, variant: current[m.id] ? otherVariant(current[m.id]!.variant) : "a" };
+      return next;
+    });
   }, [key]);
 
   useEffect(
     () => () => {
-      for (const el of [...timers.current.keys()]) release(el);
+      for (const timer of timers.current.values()) clearTimeout(timer);
+      timers.current.clear();
     },
     [],
   );

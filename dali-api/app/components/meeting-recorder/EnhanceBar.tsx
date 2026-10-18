@@ -5,7 +5,8 @@ import { Avatar } from "~/components/ui/Avatar";
 import { buttonClasses } from "~/components/ui/Button";
 import { IconButton } from "~/components/ui/IconButton";
 import { Menu, MenuItem } from "~/components/ui/floating";
-import { useActionItemDraft, type ActionItemDraft } from "./action-item-draft";
+import { enhanceWasUndone, useActionItemDraft, type ActionItemDraft } from "./action-item-draft";
+import { BAR_ATTR } from "./block-dom";
 import { BarTransition, type BarContent } from "./BarTransition";
 import { DUR, enterRef } from "./motion";
 import { PopIn } from "./PopIn";
@@ -50,7 +51,7 @@ function BarShell({
   note?: ReactNode;
 }) {
   return (
-    <div role="region" aria-label="Recording progress" className="border-b border-os-accent/20 bg-os-accent/5 px-4 py-2.5 sm:px-7">
+    <div role="region" aria-label="Recording progress" {...{ [BAR_ATTR]: "" }} className="border-b border-os-accent/20 bg-os-accent/5 px-4 py-2.5 sm:px-7">
       <div className="flex min-h-9 flex-wrap items-center gap-x-3.5 gap-y-2.5">
         {icon && <span className="text-os-accent">{icon}</span>}
         <div aria-live="polite" className="flex min-w-[170px] flex-col">
@@ -60,7 +61,7 @@ function BarShell({
         {middle}
         {actions && <div className="ml-auto flex items-center gap-1.5">{actions}</div>}
       </div>
-      {note && <div className="mt-1.5 flex flex-col gap-0.5 text-xs text-muted-foreground">{note}</div>}
+      {note && <div className="mt-1.5 flex flex-col gap-0.5 text-xs text-muted-foreground empty:hidden">{note}</div>}
     </div>
   );
 }
@@ -74,6 +75,7 @@ function ghost(onClick: () => void, label: string) {
 }
 
 function BarMenu({ rec, enhanceAgain }: { rec: UseMeetingRecording; enhanceAgain: () => void }) {
+  if (!rec.canEdit) return null;
   return (
     <Menu align="right" ariaLabel="More" trigger={<IconButton label="More" icon={MoreHorizontal} />}>
       <MenuItem onSelect={enhanceAgain} label="Enhance again">
@@ -88,6 +90,32 @@ function BarMenu({ rec, enhanceAgain }: { rec: UseMeetingRecording; enhanceAgain
         </MenuItem>
       )}
     </Menu>
+  );
+}
+
+function EnhanceErrorNote({ rec }: { rec: UseMeetingRecording }) {
+  return rec.enhanceError ? <p>{rec.enhanceError}</p> : null;
+}
+
+function taskHref(draft: ActionItemDraft, taskId: string): string {
+  return `/projects/${draft.projectId}?tab=progress&task=${taskId}`;
+}
+
+function OrphanedTasksNote({ draft }: { draft: ActionItemDraft }) {
+  const { orphanedTasks } = draft;
+  if (orphanedTasks.length === 0 || !draft.projectId) return null;
+  return (
+    <p>
+      {orphanedTasks.length === 1 ? "1 task's line was removed" : `${orphanedTasks.length} tasks' lines were removed`}
+      {orphanedTasks.map((item) => (
+        <span key={item.taskId}>
+          {" · "}
+          <Link to={taskHref(draft, item.taskId!)} className="font-medium text-os-accent hover:underline">
+            View task{orphanedTasks.length > 1 ? `: ${item.text}` : ""}
+          </Link>
+        </span>
+      ))}
+    </p>
   );
 }
 
@@ -110,12 +138,19 @@ function tasksBar(rec: UseMeetingRecording, draft: ActionItemDraft | null): BarC
               </Link>
             ) : null
           }
+          note={<OrphanedTasksNote draft={draft} />}
         />
       ),
     };
   }
 
-  if (!draft.stepVisible) return null;
+  if (!draft.stepVisible) {
+    if (draft.orphanedTasks.length === 0 || !draft.projectId) return null;
+    return {
+      key: "tasks-orphaned",
+      node: <BarShell icon={<ListChecks className="h-4 w-4" aria-hidden />} title="Tasks from this meeting" note={<OrphanedTasksNote draft={draft} />} />,
+    };
+  }
 
   const unmatched =
     draft.unmatchedCount > 0
@@ -147,9 +182,40 @@ function tasksBar(rec: UseMeetingRecording, draft: ActionItemDraft | null): BarC
             <BarMenu rec={rec} enhanceAgain={() => void rec.enhanceNow()} />
           </>
         }
+        note={
+          <>
+            <OrphanedTasksNote draft={draft} />
+            <EnhanceErrorNote rec={rec} />
+          </>
+        }
       />
     ),
   };
+}
+
+function ReviewTitle({ rec }: { rec: UseMeetingRecording }) {
+  const last = useRef<string | null>(null);
+  const text = `${plural(rec.pendingMarks.length, "suggestion")} from the transcript`;
+  function jump() {
+    const order = (rec.getNoteState?.()?.blocks ?? []).map((b) => b.id);
+    const ids = rec.pendingMarks.map((m) => m.id);
+    const sorted = order.length > 0 ? [...ids].sort((a, b) => rank(order, a) - rank(order, b)) : ids;
+    if (sorted.length === 0) return;
+    const at = last.current ? sorted.indexOf(last.current) : -1;
+    const next = sorted[(at + 1) % sorted.length]!;
+    last.current = next;
+    rec.scrollToBlock(next);
+  }
+  return (
+    <button type="button" onClick={jump} className="text-left text-sm font-bold text-foreground hover:underline">
+      {text}
+    </button>
+  );
+}
+
+function rank(order: string[], id: string): number {
+  const at = order.indexOf(id);
+  return at === -1 ? Number.MAX_SAFE_INTEGER : at;
 }
 
 function ReviewNotes({ rec }: { rec: UseMeetingRecording }) {
@@ -174,6 +240,59 @@ function ReviewNotes({ rec }: { rec: UseMeetingRecording }) {
       ))}
     </>
   );
+}
+
+function readyBar(rec: UseMeetingRecording, state: "ready" | "inserted", celebrate: boolean, owner: string): BarContent {
+  if (!rec.canEdit) return null;
+  if (state === "inserted" && !rec.aiEnabled) return null;
+  const names = speakerNamesFor(rec);
+  const minutes = Math.max(1, Math.round(rec.recordedSeconds / 60));
+  const detail = `${minutes} min${names.length > 0 ? ` · ${plural(names.length, "speaker")}` : ""}${owner}`;
+  const label = !rec.aiEnabled ? "Insert transcript" : state === "ready" && rec.currentlyUntouched() ? "Write notes" : "Enhance notes";
+  const showWave = celebrate && state === "ready";
+  return {
+    key: state,
+    node: (
+      <BarShell
+        title={state === "inserted" ? "Transcript inserted" : "Transcript ready"}
+        detail={detail}
+        middle={
+          <>
+            {showWave && (
+              <ProcessingWaveform stage="ready" fraction={1} lines={rec.sortedLines} totalSeconds={rec.recordedSeconds} />
+            )}
+            {names.length > 0 ? (
+              <span className="flex items-center" aria-hidden>
+                {names.slice(0, MAX_AVATARS).map((name, i) => (
+                  <PopIn key={i} from={0.6} ms={DUR.avatar} delay={i * DUR.avatarStagger} enabled={celebrate} className={i === 0 ? "" : "-ml-1.5"}>
+                    <Avatar name={name} size="compact" className="ring-2 ring-background" />
+                  </PopIn>
+                ))}
+              </span>
+            ) : null}
+          </>
+        }
+        actions={
+          <>
+            {rec.aiEnabled && state === "ready" && (
+              <button type="button" onClick={() => rec.insert(null)} disabled={rec.busy} className={buttonClasses("ghost", "sm")}>
+                Insert transcript
+              </button>
+            )}
+            <button
+              ref={celebrate ? RISE_IN : undefined}
+              type="button"
+              onClick={!rec.aiEnabled ? () => rec.insert(null) : () => void rec.enhanceNow()}
+              disabled={!rec.hasTranscript || rec.busy}
+              className={buttonClasses("primary", "sm")}
+            >
+              {label}
+            </button>
+          </>
+        }
+      />
+    ),
+  };
 }
 
 /**
@@ -207,7 +326,7 @@ function barContent(
         node: (
           <BarShell
             title={d.title}
-            detail={`${d.detail}${owner}`}
+            detail={d.detail}
             middle={<ProcessingWaveform stage={rec.processingStage ?? "starting"} fraction={d.fraction} />}
             actions={
               rec.canDiscard ? (
@@ -219,59 +338,38 @@ function barContent(
       };
     }
 
-    case "ready":
-    case "inserted": {
-      if (!rec.canEdit) return null;
-      if (state === "inserted" && !rec.aiEnabled) return null;
-      const names = speakerNamesFor(rec);
-      const minutes = Math.max(1, Math.round(rec.recordedSeconds / 60));
-      const detail = `${minutes} min${names.length > 0 ? ` · ${plural(names.length, "speaker")}` : ""}${owner}`;
-      const label = !rec.aiEnabled ? "Insert transcript" : state === "ready" && rec.currentlyUntouched() ? "Write notes" : "Enhance notes";
-      const showWave = celebrate && state === "ready";
+    case "failed":
       return {
-        key: state,
+        key: "failed",
         node: (
           <BarShell
-            title={state === "inserted" ? "Transcript inserted" : "Transcript ready"}
-            detail={detail}
-            middle={
-              <>
-                {showWave && (
-                  <ProcessingWaveform stage="ready" fraction={1} lines={rec.sortedLines} totalSeconds={rec.recordedSeconds} />
-                )}
-                {names.length > 0 ? (
-                  <span className="flex items-center" aria-hidden>
-                    {names.slice(0, MAX_AVATARS).map((name, i) => (
-                      <PopIn key={i} from={0.6} ms={DUR.avatar} delay={i * DUR.avatarStagger} enabled={celebrate} className={i === 0 ? "" : "-ml-1.5"}>
-                        <Avatar name={name} size="xs" className="ring-2 ring-card" />
-                      </PopIn>
-                    ))}
-                  </span>
-                ) : null}
-              </>
-            }
+            title="Transcription failed"
+            middle={<p className="min-w-0 flex-1 text-[13px] text-muted-foreground">{rec.error ?? "Something went wrong while transcribing."}</p>}
             actions={
-              <>
-                {rec.aiEnabled && state === "ready" && (
-                  <button type="button" onClick={() => rec.insert(null)} disabled={rec.busy} className={buttonClasses("ghost", "sm")}>
-                    Insert transcript
-                  </button>
-                )}
-                <button
-                  ref={celebrate ? RISE_IN : undefined}
-                  type="button"
-                  onClick={!rec.aiEnabled ? () => rec.insert(null) : () => void rec.enhanceNow()}
-                  disabled={!rec.hasTranscript || rec.busy}
-                  className={buttonClasses("primary", "sm")}
-                >
-                  {label}
-                </button>
-              </>
+              rec.canEdit ? (
+                <>
+                  {rec.canDiscard && (
+                    <IconButton label="Discard recording" icon={Trash2} tone="destructive" onClick={() => void rec.discard()} />
+                  )}
+                  {rec.drives && !rec.finalized && (
+                    <button type="button" onClick={() => void rec.retryProcessing()} className={buttonClasses("primary", "sm")}>
+                      Try again
+                    </button>
+                  )}
+                </>
+              ) : null
             }
           />
         ),
       };
-    }
+
+    case "enhanced":
+      if (!enhanceWasUndone(rec)) return tasksBar(rec, draft);
+      return readyBar(rec, "ready", celebrate, owner);
+
+    case "ready":
+    case "inserted":
+      return readyBar(rec, state, celebrate, owner);
 
     case "generating":
       return {
@@ -295,18 +393,18 @@ function barContent(
             }
             detail="Reading your notes and the transcript"
             actions={ghost(rec.cancelEnhanceGenerating, "Cancel")}
+            note={<EnhanceErrorNote rec={rec} />}
           />
         ),
       };
 
     case "pendingReview": {
-      const n = rec.pendingMarks.length;
       return {
         key: "review",
         node: (
           <BarShell
             icon={<Sparkles className="h-4 w-4" aria-hidden />}
-            title={`${plural(n, "suggestion")} from the transcript`}
+            title={<ReviewTitle rec={rec} />}
             middle={
               rec.canEdit ? (
                 <p className="min-w-0 flex-1 text-[13px] text-muted-foreground">Edit any line to keep it. Your own lines stay as typed.</p>
@@ -323,14 +421,16 @@ function barContent(
                 </>
               ) : null
             }
-            note={<ReviewNotes rec={rec} />}
+            note={
+              <>
+                <ReviewNotes rec={rec} />
+                <EnhanceErrorNote rec={rec} />
+              </>
+            }
           />
         ),
       };
     }
-
-    case "enhanced":
-      return tasksBar(rec, draft);
 
     case "stalePreview":
       return {

@@ -5,6 +5,7 @@ import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
 import { ProgressRing } from "./meeting-recorder/ProgressRing";
 import { describeProcessing } from "./meeting-recorder/processing-progress";
+import { recorderTriggerLabel } from "./meeting-recorder/trigger-label";
 import { RecordStartSheet } from "./meeting-recorder/RecordStartSheet";
 import { deriveRailState, statusLineFor, RecordingBody } from "./meeting-recorder/RecordingRail";
 import { formatClock } from "./meeting-recorder/transcript";
@@ -41,22 +42,7 @@ export function MeetingRecorder({ rec, containerWide }: { rec: UseMeetingRecordi
   const processing =
     rec.phase === "processing" ? describeProcessing(rec.processingStage ?? "starting", rec.progress) : null;
 
-  const triggerLabel =
-    live
-      ? "Record"
-      : rec.phase === "idle"
-        ? rec.canEdit
-          ? "Record"
-          : "Transcript"
-        : processing
-          ? processing.pillLabel
-          : rec.hasTranscript
-            ? rec.pendingMarks.length > 0
-              ? `Review (${rec.pendingMarks.length})`
-              : rec.enhancedAt
-                ? "Enhanced"
-                : "Transcript"
-            : "Show recording";
+  const triggerLabel = recorderTriggerLabel(rec, live, processing?.pillLabel ?? null);
 
   const button = (
     <button

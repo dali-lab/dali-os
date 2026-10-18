@@ -28,6 +28,7 @@ vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabled: vi.fn() }));
 vi.mock("~/lib/meeting-recording.server", () => ({
   canRecordInto: vi.fn(),
   storedLines: vi.fn().mockReturnValue([]),
+  resolveSpeakerNames: vi.fn().mockResolvedValue({}),
 }));
 vi.mock("~/collab/server", () => ({ getCollabServer: vi.fn() }));
 vi.mock("~/collab/persistence", () => ({ forceSnapshot: vi.fn() }));
@@ -45,7 +46,8 @@ vi.mock("~/lib/meeting-notes-apply.server", () => ({
 import { prisma } from "~/lib/db";
 import { getUserRoles } from "~/lib/roles";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
-import { canRecordInto } from "~/lib/meeting-recording.server";
+import { canRecordInto, resolveSpeakerNames, storedLines } from "~/lib/meeting-recording.server";
+import { applyEnhanceOpsToDocBlocks } from "~/lib/meeting-notes-apply.server";
 import { getCollabServer } from "~/collab/server";
 import { forceSnapshot } from "~/collab/persistence";
 import { readDocAsBlocks } from "~/collab/read";
@@ -266,5 +268,31 @@ describe("enhance_meeting_notes", () => {
     await expect(
       runEnhanceMeetingNotes(ctxFor("u1"), { recordingId: "rec1", apply: true }),
     ).rejects.toMatchObject({ status: 503 });
+  });
+
+  it("apply hands the merge a speakerAt that only names assigned speakers, like the in-app chips", async () => {
+    const stored = {
+      plan: { blocks: [], actionItems: [] },
+      verified: { droppedCites: 0, droppedBlocks: 0, unmatchedOwners: 0 },
+      snapshotAt: "2026-10-10T00:00:00.000Z",
+      snapshot: [],
+    };
+    vi.mocked(storedLines).mockReturnValue([
+      { at: 10, end: 14, text: "ship it", channel: "call", speaker: "call:1" },
+      { at: 60, end: 64, text: "ok", channel: "call", speaker: "call:2" },
+      { at: 120, end: 124, text: "me", channel: "mic", speaker: "mic:1" },
+    ] as never);
+    vi.mocked(resolveSpeakerNames).mockResolvedValue({ "call:1": "Maya Chen" });
+    mockPrisma.meetingRecording.findUnique.mockImplementation((args: { select?: { notes?: boolean } }) => {
+      if (args?.select?.notes) return Promise.resolve({ notes: stored });
+      return Promise.resolve(recording({ notes: stored, speakers: { "call:1": "user-maya" } }));
+    });
+
+    await runEnhanceMeetingNotes(ctxFor("u1"), { recordingId: "rec1", apply: true });
+
+    const ctx = vi.mocked(applyEnhanceOpsToDocBlocks).mock.calls[0]![2] as { speakerAt: (at: number) => string | null };
+    expect(ctx.speakerAt(11)).toBe("Maya");
+    expect(ctx.speakerAt(61)).toBeNull();
+    expect(ctx.speakerAt(121)).toBeNull();
   });
 });

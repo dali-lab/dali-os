@@ -8,12 +8,13 @@ import { animate, DUR, enterRef } from "./motion";
 import { deriveRailState } from "./RecordingRail";
 import { useEnhancingWash } from "./use-enhancing-wash";
 import { useMarkTransitions } from "./use-mark-transitions";
-import { contentOf, findBlock } from "./block-dom";
+import { contentOf, findBlock, frameThrottle, inBounds, overlayBounds } from "./block-dom";
+import { useBlockStyleRules } from "./block-style-rules";
+import { wasSpaceCss } from "./enhance-rules";
 import type { UseMeetingRecording } from "./use-meeting-recording";
 
-type BlockBox = { top: number; bottom: number; left: number; right: number };
+type BlockBox = { top: number; bottom: number; left: number; right: number; visible: boolean };
 
-export const WAS_ATTR = "data-enhance-was";
 const PILL_IN = enterRef(
   [
     { opacity: 0, transform: "scale(.94)" },
@@ -61,13 +62,14 @@ function pendingBlockAt(node: Node | null, root: HTMLElement, ids: ReadonlySet<s
 }
 
 function sameBox(a: BlockBox | undefined, b: BlockBox): boolean {
-  return Boolean(a) && a!.top === b.top && a!.bottom === b.bottom && a!.left === b.left && a!.right === b.right;
+  return Boolean(a) && a!.top === b.top && a!.bottom === b.bottom && a!.left === b.left && a!.right === b.right && a!.visible === b.visible;
 }
 
 /**
  * Keep / Revert on the hovered or caret block, and the "You wrote" line under
  * a changed block. React overlays positioned over the editor's blocks: nothing
- * here writes into the document except through rec.keepBlock / rec.revertBlock.
+ * here writes into the editor's DOM or the document, except through
+ * rec.keepBlock / rec.revertBlock and the generated style rules.
  */
 export function EnhanceBlockActions({
   rec,
@@ -99,6 +101,7 @@ export function EnhanceBlockActions({
     if (box && prior) wasLines[id] = { box, prior };
   }
   const leavingKey = Object.keys(leaving).join("|");
+  useBlockStyleRules("was", wasSpaceCss([...Object.keys(wasLines), ...Object.keys(leaving)]));
 
   useMarkTransitions({ marks, priorBlocks, getRoot });
   useEnhancingWash({
@@ -120,16 +123,6 @@ export function EnhanceBlockActions({
   });
 
   useEffect(() => {
-    const host = getRoot();
-    if (!host || leavingKey === "") return;
-    const els = leavingKey.split("|").map((id) => findBlock(host, id)).filter((el): el is HTMLElement => el !== null);
-    for (const el of els) el.setAttribute(WAS_ATTR, "");
-    return () => {
-      for (const el of els) el.removeAttribute(WAS_ATTR);
-    };
-  }, [leavingKey]);
-
-  useEffect(() => {
     if (!root) {
       setBoxes({});
       return;
@@ -137,12 +130,14 @@ export function EnhanceBlockActions({
 
     function measure() {
       const next: Record<string, BlockBox> = {};
+      const bounds = overlayBounds(root!);
       for (const id of ids) {
         const block = findBlock(root!, id);
         if (!block) continue;
-        if (changedIds.includes(id)) block.setAttribute(WAS_ATTR, "");
-        const r = contentOf(block).getBoundingClientRect();
-        next[id] = { top: r.top, bottom: r.bottom, left: r.left, right: r.right };
+        const content = contentOf(block);
+        resize?.observe(content);
+        const r = content.getBoundingClientRect();
+        next[id] = { top: r.top, bottom: r.bottom, left: r.left, right: r.right, visible: inBounds(r, bounds) };
       }
       setBoxes((prev) => {
         const keys = Object.keys(next);
@@ -151,13 +146,14 @@ export function EnhanceBlockActions({
       });
     }
 
-    measure();
-    const resize = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measure);
+    const frame = frameThrottle(measure);
+    const resize = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(frame.run);
     resize?.observe(root);
-    const mutation = new MutationObserver(measure);
+    measure();
+    const mutation = new MutationObserver(frame.run);
     mutation.observe(root, { childList: true, subtree: true, characterData: true });
-    window.addEventListener("scroll", measure, true);
-    window.addEventListener("resize", measure);
+    window.addEventListener("scroll", frame.run, true);
+    window.addEventListener("resize", frame.run);
 
     function onOver(e: MouseEvent) {
       setHoverId(pendingBlockAt(e.target as Node, root!, ids));
@@ -176,16 +172,16 @@ export function EnhanceBlockActions({
     document.addEventListener("selectionchange", onSelection);
 
     return () => {
+      frame.cancel();
       resize?.disconnect();
       mutation.disconnect();
-      window.removeEventListener("scroll", measure, true);
-      window.removeEventListener("resize", measure);
+      window.removeEventListener("scroll", frame.run, true);
+      window.removeEventListener("resize", frame.run);
       root.removeEventListener("mouseover", onOver);
       root.removeEventListener("mouseout", onOut);
       document.removeEventListener("selectionchange", onSelection);
-      for (const el of root.querySelectorAll(`[${WAS_ATTR}]`)) el.removeAttribute(WAS_ATTR);
     };
-  }, [root, ids, changedIds]);
+  }, [root, ids]);
 
   if ((!root || marks.length === 0) && leavingKey === "") return null;
 
@@ -196,7 +192,7 @@ export function EnhanceBlockActions({
 
   return createPortal(
     <>
-      {Object.entries(wasLines).map(([id, line]) => (
+      {Object.entries(wasLines).filter(([, line]) => line.box.visible).map(([id, line]) => (
         <WasText key={id} id={id} line={line} ref={WAS_IN} />
       ))}
       {Object.entries(leaving)
@@ -214,7 +210,7 @@ export function EnhanceBlockActions({
             }
           />
         ))}
-      {rec.canEdit && active && activeBox && (
+      {rec.canEdit && active && activeBox?.visible && (
         <div
           key={active.id}
           ref={PILL_IN}

@@ -1085,10 +1085,6 @@ a.dali-cmp-piece:hover .dali-cmp-row__title { text-decoration: underline; }
   box-shadow: inset 3px 0 0 var(--enhance-edge);
 }
 
-.dali-doc .bn-block-outer[data-enhance-was] > .bn-block > .bn-block-content {
-  padding-bottom: 28px;
-}
-
 .dali-doc [data-background-color="enhance-prior"],
 .dali-doc .bn-block:has(> .bn-block-content[data-background-color="enhance-prior"]) {
   background-color: var(--color-muted);
@@ -1110,131 +1106,25 @@ body[data-modal-open] .bn-side-menu {
   display: none;
 }
 
-@media (min-width: 700px) {
-  .dali-doc [data-action-chips] {
-    padding-right: 20rem;
-  }
-}
-
-@media (max-width: 699px) {
-  .dali-doc [data-action-chips] {
-    padding-bottom: 36px;
-  }
-}
-
 /* ── Enhance motion ──────────────────────────────────────────────────────────
- * Driven by DOM-only attributes on the block wrapper (use-mark-transitions.ts,
- * use-enhancing-wash.ts); never by block props, so none of this reaches the
- * Y.Doc. The tint and edge are pseudo-elements so the static mark styling
- * above is the final state when the attribute is removed. */
-.dali-doc .bn-block-outer[data-enhance-anim] > .bn-block {
-  position: relative;
-  isolation: isolate;
-  background-color: transparent;
-  box-shadow: none;
-}
-
-.dali-doc .bn-block-outer[data-enhance-anim] > .bn-block > .bn-block-content[data-background-color] {
-  background-color: transparent;
-}
-
-.dali-doc .bn-block-outer[data-enhance-anim] > .bn-block::before,
-.dali-doc .bn-block-outer[data-enhance-anim] > .bn-block::after {
-  content: "";
-  position: absolute;
-  z-index: -1;
-  pointer-events: none;
-  animation-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1);
-  animation-fill-mode: both;
-  animation-delay: var(--enhance-delay, 0ms);
-}
-
-.dali-doc .bn-block-outer[data-enhance-anim] > .bn-block::before {
-  inset: 0;
-  border-radius: 4px;
-  background: var(--enhance-tint);
-  transform-origin: left center;
-}
-
-.dali-doc .bn-block-outer[data-enhance-anim] > .bn-block::after {
-  top: 0;
-  bottom: 0;
-  left: 0;
-  width: 3px;
-  background: var(--enhance-edge);
-}
-
-.dali-doc .bn-block-outer[data-enhance-anim="bloom"] > .bn-block::before {
-  animation-name: enhance-tint-in;
-  animation-duration: 360ms;
-}
-.dali-doc .bn-block-outer[data-enhance-anim="bloom"] > .bn-block::after {
-  transform-origin: top center;
-  animation-name: enhance-edge-in;
-  animation-duration: 240ms;
-}
-
-.dali-doc .bn-block-outer[data-enhance-anim="drain"] > .bn-block::before {
-  animation-name: enhance-tint-out;
-  animation-duration: 240ms;
-}
-.dali-doc .bn-block-outer[data-enhance-anim="drain"] > .bn-block::after {
-  transform-origin: bottom center;
-  animation-name: enhance-edge-out;
-  animation-duration: 200ms;
-  animation-delay: calc(var(--enhance-delay, 0ms) + 240ms);
-}
-
-.dali-doc .bn-block-outer[data-enhance-anim="revert"] > .bn-block::before {
-  animation-name: enhance-fade-out;
-  animation-duration: 200ms;
-}
-.dali-doc .bn-block-outer[data-enhance-anim="revert"] > .bn-block::after {
-  transform-origin: bottom center;
-  animation-name: enhance-edge-out;
-  animation-duration: 200ms;
-}
-
-.dali-doc .bn-block-outer[data-enhance-wash="active"] > .bn-block > .bn-block-content {
-  background-image: linear-gradient(
-    90deg,
-    transparent,
-    color-mix(in srgb, var(--enhance-edge) 22%, transparent),
-    transparent
-  );
-  background-size: 40% 100%;
-  background-repeat: no-repeat;
-  animation: enhance-wash 1100ms linear both;
-}
-
-@keyframes enhance-tint-in {
-  from { transform: scaleX(0); }
-  to { transform: scaleX(1); }
-}
-@keyframes enhance-tint-out {
-  from { transform: scaleX(1); }
-  to { transform: scaleX(0); }
-}
-@keyframes enhance-edge-in {
-  from { transform: scaleY(0); }
-  to { transform: scaleY(1); }
-}
-@keyframes enhance-edge-out {
-  from { transform: scaleY(1); }
-  to { transform: scaleY(0); }
-}
-@keyframes enhance-fade-out {
-  from { opacity: 1; }
-  to { opacity: 0; }
-}
-@keyframes enhance-fade-in {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-@keyframes enhance-wash {
-  from { background-position: -67% 0; }
-  to { background-position: 167% 0; }
-}
+ * Keyframes only. The per-block rules that apply them (and the reserved
+ * space for "You wrote" lines and action-item chips) are generated into a
+ * <style data-enhance-rules> in <head> by meeting-recorder/block-style-rules.ts, because
+ * ProseMirror owns every node in the editor and re-renders any node an
+ * attribute is written onto. Each keyframe exists twice (-a / -b) so a rule
+ * can restart by swapping names. */
+@keyframes enhance-tint-in-a { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+@keyframes enhance-tint-in-b { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+@keyframes enhance-tint-out-a { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+@keyframes enhance-tint-out-b { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+@keyframes enhance-edge-in-a { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+@keyframes enhance-edge-in-b { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+@keyframes enhance-edge-out-a { from { transform: scaleY(1); } to { transform: scaleY(0); } }
+@keyframes enhance-edge-out-b { from { transform: scaleY(1); } to { transform: scaleY(0); } }
+@keyframes enhance-fade-out-a { from { opacity: 1; } to { opacity: 0; } }
+@keyframes enhance-fade-out-b { from { opacity: 1; } to { opacity: 0; } }
+@keyframes enhance-wash-a { from { background-position: -67% 0; } to { background-position: 167% 0; } }
+@keyframes enhance-wash-b { from { background-position: -67% 0; } to { background-position: 167% 0; } }
 @keyframes enhance-wave-breathe {
   0%, 100% { transform: scaleY(0.55); }
   50% { transform: scaleY(1); }
@@ -1245,23 +1135,17 @@ body[data-modal-open] .bn-side-menu {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .dali-doc .bn-block-outer[data-enhance-anim] > .bn-block::before,
-  .dali-doc .bn-block-outer[data-enhance-anim] > .bn-block::after {
-    animation-duration: 120ms;
-    animation-delay: 0ms;
-    transform: none;
+  .dali-doc .bn-block-outer[data-id] > .bn-block::before,
+  .dali-doc .bn-block-outer[data-id] > .bn-block::after {
+    animation-duration: 120ms !important;
+    animation-delay: 0ms !important;
   }
-  .dali-doc .bn-block-outer[data-enhance-anim="bloom"] > .bn-block::before,
-  .dali-doc .bn-block-outer[data-enhance-anim="bloom"] > .bn-block::after {
-    animation-name: enhance-fade-in;
-  }
-  .dali-doc .bn-block-outer[data-enhance-anim="drain"] > .bn-block::before,
-  .dali-doc .bn-block-outer[data-enhance-anim="drain"] > .bn-block::after,
-  .dali-doc .bn-block-outer[data-enhance-anim="revert"] > .bn-block::after {
-    animation-name: enhance-fade-out;
-  }
-  .dali-doc .bn-block-outer[data-enhance-wash] > .bn-block > .bn-block-content {
-    animation: none;
-    background-image: none;
-  }
+  @keyframes enhance-tint-in-a { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes enhance-tint-in-b { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes enhance-edge-in-a { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes enhance-edge-in-b { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes enhance-tint-out-a { from { opacity: 1; } to { opacity: 0; } }
+  @keyframes enhance-tint-out-b { from { opacity: 1; } to { opacity: 0; } }
+  @keyframes enhance-edge-out-a { from { opacity: 1; } to { opacity: 0; } }
+  @keyframes enhance-edge-out-b { from { opacity: 1; } to { opacity: 0; } }
 }

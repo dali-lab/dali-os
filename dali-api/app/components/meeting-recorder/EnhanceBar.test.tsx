@@ -73,8 +73,8 @@ describe("EnhanceBar processing", () => {
     const rec = makeRec({ phase: "processing", processingStage: "transcribing", progress: progress({ completed: 6 }) });
     const { container, unmount } = mountBar(rec);
     expect(container.textContent).toContain("Transcribing");
-    expect(container.textContent).toContain("30 of 58 min");
-    expect(container.querySelectorAll('[data-solid="true"]')).toHaveLength(30);
+    expect(container.textContent).toContain("29 of 58 min");
+    expect(container.querySelectorAll('[data-solid="true"]')).toHaveLength(24);
     unmount();
   });
 
@@ -100,14 +100,26 @@ describe("EnhanceBar processing", () => {
     without.unmount();
   });
 
-  it("names the owner to a follower", () => {
+  it("drops the owner suffix while processing", () => {
     const rec = makeRec({
       phase: "processing",
       processingStage: "starting",
       remote: { ownerName: "Priya", ownerIsYou: false },
     });
     const { container, unmount } = mountBar(rec);
-    expect(container.textContent).toContain("· Priya");
+    expect(container.textContent).not.toContain("Priya");
+    expect(container.textContent).not.toContain("another device");
+    unmount();
+  });
+
+  it("names the channel on a two-channel recording", () => {
+    const rec = makeRec({
+      phase: "processing",
+      processingStage: "transcribing",
+      progress: progress({ channel: 2, channels: 2, completed: 6 }),
+    });
+    const { container, unmount } = mountBar(rec);
+    expect(container.textContent).toContain("29 of 58 min · channel 2 of 2");
     unmount();
   });
 });
@@ -289,12 +301,166 @@ describe("EnhanceBar other states", () => {
   it.each([
     ["recording", { phase: "recording" as const }],
     ["review", { phase: "review" as const }],
-    ["failed", { phase: "failed" as const }],
-    ["enhanced", { phase: "done" as const, enhancedAt: "2026-10-10T00:00:00Z" }],
+    ["enhanced", { phase: "done" as const, enhancedAt: "2026-10-10T00:00:00Z", reviewedAt: "2026-10-10T01:00:00Z" }],
     ["idle", { phase: "idle" as const }],
   ])("renders nothing while %s", (_name, extra) => {
     const { container, unmount } = mountBar(makeRec(extra));
     expect(container.textContent).toBe("");
     unmount();
+  });
+});
+
+describe("EnhanceBar avatar stack", () => {
+  it("renders whole initials at the compact size with a background ring and overlap", () => {
+    const rec = makeRec({
+      phase: "done",
+      hasTranscript: true,
+      speakerKeys: ["mic:1", "call:1"],
+      speakers: { "mic:1": "u1", "call:1": "u2" },
+      speakerNames: { "mic:1": "Kiran Jones", "call:1": "Maya Chen" },
+    });
+    const { container, unmount } = mountBar(rec);
+    const kiran = container.querySelector("[aria-label='Kiran Jones']")!;
+    const maya = container.querySelector("[aria-label='Maya Chen']")!;
+    expect(kiran.textContent).toBe("KJ");
+    expect(maya.textContent).toBe("MC");
+    for (const avatar of [kiran, maya]) {
+      expect(avatar.className).toContain("w-6");
+      expect(avatar.className).toContain("ring-2");
+      expect(avatar.className).toContain("ring-background");
+    }
+    expect(maya.parentElement!.className).toContain("-ml-1.5");
+    unmount();
+  });
+});
+
+describe("EnhanceBar failed", () => {
+  const failed = (extra: Partial<UseMeetingRecording> = {}) => makeRec({ phase: "failed", ...extra });
+
+  it("says what happened, with the server's error when there is one", () => {
+    const { container, unmount } = mountBar(failed({ error: "The audio could not be decoded." }));
+    expect(container.textContent).toContain("Transcription failed");
+    expect(container.textContent).toContain("The audio could not be decoded.");
+    unmount();
+  });
+
+  it("falls back to a generic message", () => {
+    const { container, unmount } = mountBar(failed({ error: null }));
+    expect(container.textContent).toContain("Something went wrong while transcribing.");
+    unmount();
+  });
+
+  it("offers Try again to the driver and Discard when allowed", () => {
+    const rec = failed();
+    const { container, unmount } = mountBar(rec);
+    click(button(container, "Try again"));
+    expect(rec.retryProcessing).toHaveBeenCalledTimes(1);
+    click(container.querySelector('[aria-label="Discard recording"]')!);
+    expect(rec.discard).toHaveBeenCalledTimes(1);
+    unmount();
+  });
+
+  it("hides Try again for a follower or a finalized recording, and Discard without the guard", () => {
+    const follower = mountBar(failed({ drives: false, canDiscard: false }));
+    expect(follower.container.textContent).not.toContain("Try again");
+    expect(follower.container.querySelector('[aria-label="Discard recording"]')).toBeNull();
+    follower.unmount();
+    const done = mountBar(failed({ finalized: true }));
+    expect(done.container.textContent).not.toContain("Try again");
+    done.unmount();
+  });
+
+  it("shows a viewer the text only", () => {
+    const { container, unmount } = mountBar(failed({ canEdit: false }));
+    expect(container.textContent).toContain("Transcription failed");
+    expect(container.querySelectorAll("button")).toHaveLength(0);
+    unmount();
+  });
+});
+
+describe("EnhanceBar after Enhance is undone", () => {
+  const enhanced = (extra: Partial<UseMeetingRecording> = {}) =>
+    makeRec({
+      phase: "done",
+      hasTranscript: true,
+      enhancedAt: "2026-10-10T00:00:00Z",
+      getNoteState: () => ({ blocks: [{ id: "p", type: "paragraph", text: "typed" }], bodyText: "typed" }),
+      enhanceNotes: {
+        plan: { blocks: [], actionItems: [{ text: "Send the catering quote", ownerName: null, ownerUserId: null, due: null }] },
+        verified: { droppedBlocks: 0, droppedCites: 0, unmatchedOwners: 0 },
+        snapshotAt: "x",
+        snapshot: [],
+      },
+      ...extra,
+    });
+
+  it("offers Enhance notes again when none of Enhance's lines remain and the note was never reviewed", () => {
+    const rec = enhanced();
+    const { container, unmount } = mountBar(rec);
+    expect(container.textContent).toContain("Transcript ready");
+    click(button(container, "Enhance notes"));
+    expect(rec.enhanceNow).toHaveBeenCalledTimes(1);
+    unmount();
+  });
+
+  it("stays quiet once the note was reviewed", () => {
+    const { container, unmount } = mountBar(enhanced({ reviewedAt: "2026-10-10T01:00:00Z" }));
+    expect(container.textContent).toBe("");
+    unmount();
+  });
+
+  it("stays quiet while Enhance's action item is still a line in the note", () => {
+    const rec = enhanced({
+      getNoteState: () => ({ blocks: [{ id: "c", type: "checkListItem", text: "Send the catering quote" }], bodyText: "" }),
+    });
+    const { container, unmount } = mountBar(rec);
+    expect(container.textContent).not.toContain("Transcript ready");
+    unmount();
+  });
+
+  it("stays quiet when the note state is not available yet", () => {
+    const { container, unmount } = mountBar(enhanced({ getNoteState: () => null }));
+    expect(container.textContent).toBe("");
+    unmount();
+  });
+});
+
+describe("EnhanceBar review title and notes", () => {
+  const withOrder = (ids: string[], extra: Partial<UseMeetingRecording> = {}) =>
+    makeRec({
+      phase: "done",
+      pendingMarks: ["b3", "b1", "b2"].map((id) => ({ id, mark: "enhance-added" as const, type: "paragraph", text: id })),
+      enhanceNotes: notes(),
+      getNoteState: () => ({ blocks: ids.map((id) => ({ id, type: "paragraph", text: id })), bodyText: "" }),
+      ...extra,
+    });
+
+  it("jumps to the next suggestion in document order, cycling", () => {
+    const rec = withOrder(["b1", "x", "b2", "b3"]);
+    const { container, unmount } = mountBar(rec);
+    const title = button(container, "3 suggestions from the transcript");
+    for (let i = 0; i < 4; i++) click(title);
+    expect((rec.scrollToBlock as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[0])).toEqual(["b1", "b2", "b3", "b1"]);
+    unmount();
+  });
+
+  it("falls back to the mark order when the note state is unavailable, and works for viewers", () => {
+    const rec = withOrder([], { canEdit: false, getNoteState: () => null });
+    const { container, unmount } = mountBar(rec);
+    click(button(container, "3 suggestions from the transcript"));
+    expect(rec.scrollToBlock).toHaveBeenCalledWith("b3");
+    unmount();
+  });
+
+  it("shows the enhance error in the review and generating bars", () => {
+    const review = mountBar(withOrder(["b1", "b2", "b3"], { enhanceError: "Couldn't save." }));
+    expect(review.container.textContent).toContain("Couldn't save.");
+    review.unmount();
+    const generating = mountBar(makeRec({ phase: "done", enhanceBusy: true, enhanceError: "Couldn't save." }));
+    expect(generating.container.textContent).toContain("Couldn't save.");
+    generating.unmount();
+    const quiet = mountBar(withOrder(["b1", "b2", "b3"]));
+    expect(quiet.container.textContent).not.toContain("Couldn't save.");
+    quiet.unmount();
   });
 });

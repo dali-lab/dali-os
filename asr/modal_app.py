@@ -26,7 +26,6 @@ from __future__ import annotations
 import logging
 import os
 import time
-from concurrent.futures import ThreadPoolExecutor
 from typing import Optional
 
 import fastapi
@@ -51,7 +50,8 @@ DIARIZATION_MODEL_NAME = "pyannote/speaker-diarization-community-1"
 
 CALLBACK_TIMEOUT_SECONDS = 30
 CHUNK_FETCH_TIMEOUT_SECONDS = 30
-PROGRESS_TIMEOUT_SECONDS = 3
+PROGRESS_TIMEOUT_SECONDS = 3.0
+PROGRESS_CONNECT_TIMEOUT_SECONDS = 2.0
 
 
 def _bake_model_weights():
@@ -240,20 +240,17 @@ def _deliver_callback(callback_url: str, payload: dict) -> None:
     _post_signed(callback_url, payload, CALLBACK_TIMEOUT_SECONDS)
 
 
-def _make_progress_sender(callback_url: str, executor):
-    """Fire-and-forget on a single background worker so a slow or failing
-    callback never blocks or fails the job."""
+def _post_progress(callback_url: str, body: dict) -> None:
+    import httpx
 
-    def post(body: dict) -> None:
-        try:
-            _post_signed(callback_url, body, PROGRESS_TIMEOUT_SECONDS)
-        except Exception:
-            logger.warning("dali-asr: progress post failed", exc_info=True)
-
-    def send(body: dict) -> None:
-        executor.submit(post, body)
-
-    return send
+    try:
+        _post_signed(
+            callback_url,
+            body,
+            httpx.Timeout(PROGRESS_TIMEOUT_SECONDS, connect=PROGRESS_CONNECT_TIMEOUT_SECONDS),
+        )
+    except Exception:
+        logger.warning("dali-asr: progress post failed", exc_info=True)
 
 
 # --- the processing job -----------------------------------------------------
@@ -265,10 +262,8 @@ def run_job(raw_body: dict) -> None:
 
     req = pipeline.parse_process_request(raw_body)
     job_start = time.monotonic()
-    executor = ThreadPoolExecutor(max_workers=1)
-    reporter = pipeline.ProgressReporter(
-        req.recording_id, _make_progress_sender(req.callback_url, executor), time.monotonic
-    )
+    sender = pipeline.LatestOnlySender(lambda body: _post_progress(req.callback_url, body))
+    reporter = pipeline.ProgressReporter(req.recording_id, sender.submit, time.monotonic)
 
     try:
         channels_out = {}
@@ -300,7 +295,7 @@ def run_job(raw_body: dict) -> None:
         )
         payload = pipeline.build_error_callback(req.recording_id, "processing_failed")
 
-    executor.shutdown(wait=True)
+    sender.close()
     _deliver_callback(req.callback_url, payload)
     logger.info(
         "dali-asr: job complete recording_id=%s total_s=%.1f",

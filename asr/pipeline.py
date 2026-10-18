@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import threading
 from array import array
 from dataclasses import dataclass
 from typing import Callable, Optional
@@ -397,6 +398,48 @@ class ProgressReporter:
             self._send(body)
         except Exception:
             pass
+
+
+class LatestOnlySender:
+    """Delivers progress bodies on one background thread with a single pending
+    slot: while a post is in flight a newer body replaces the pending one, so
+    a slow endpoint can never build a backlog. `close` drops whatever is
+    pending and waits at most `timeout` seconds for the in-flight post."""
+
+    def __init__(self, post: Callable[[dict], None]):
+        self._post = post
+        self._cond = threading.Condition()
+        self._pending: Optional[dict] = None
+        self._closed = False
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+
+    def submit(self, body: dict) -> None:
+        with self._cond:
+            if self._closed:
+                return
+            self._pending = body
+            self._cond.notify()
+
+    def close(self, timeout: float = 1.0) -> None:
+        with self._cond:
+            self._closed = True
+            self._pending = None
+            self._cond.notify_all()
+        self._thread.join(timeout)
+
+    def _run(self) -> None:
+        while True:
+            with self._cond:
+                while self._pending is None and not self._closed:
+                    self._cond.wait()
+                if self._closed:
+                    return
+                body, self._pending = self._pending, None
+            try:
+                self._post(body)
+            except Exception:
+                pass
 
 
 def labeling_hook(emit: Callable[[int, int], None]) -> Callable:

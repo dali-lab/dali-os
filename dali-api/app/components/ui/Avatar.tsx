@@ -4,7 +4,7 @@ import { Tooltip } from "~/components/ui/floating";
 import { useAvatarStatus } from "~/components/presence/PresenceStatusProvider";
 import { formatLastActive } from "~/lib/presence";
 
-export type AvatarSize = "xs" | "sm" | "md" | "lg";
+export type AvatarSize = "xs" | "compact" | "sm" | "md" | "lg";
 
 export interface AvatarProps {
   photoUrl?: string | null;
@@ -17,6 +17,7 @@ export interface AvatarProps {
 
 const SIZES: Record<AvatarSize, string> = {
   xs: "w-5 h-5 text-[9px]",
+  compact: "w-6 h-6 text-[10px]",
   sm: "w-8 h-8 text-[11px]",
   md: "w-10 h-10 text-sm",
   lg: "w-12 h-12 text-base",
@@ -45,7 +46,7 @@ export function useInitialsTint(): string {
 export function Avatar({ photoUrl, name, size = "md", className, userId }: AvatarProps) {
   // Only sizes that have visual weight warrant a presence dot; xs contexts
   // (stacked avatar groups, tight lists) are too small and too numerous.
-  const showDot = !!userId && size !== "xs";
+  const showDot = !!userId && size !== "xs" && size !== "compact";
   const tint = useInitialsTint();
 
   const avatarEl = photoUrl ? (

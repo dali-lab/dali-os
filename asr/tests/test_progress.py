@@ -1,7 +1,11 @@
+import threading
+import time
+
 from asr.pipeline import (
     CHUNK_SECONDS,
     Channel,
     Chunk,
+    LatestOnlySender,
     ProgressReporter,
     Segment,
     labeling_hook,
@@ -165,3 +169,69 @@ def test_process_channel_without_progress_keeps_two_arg_diarize():
     channel = Channel(channel="mic", segments=(Segment(0.0, (Chunk(seq=0, url="a"),)),))
     result = process_channel(channel, lambda url: silence_pcm(CHUNK_SECONDS), lambda pcm: [], lambda pcm, n: [])
     assert result == {"words": [], "segments": []}
+
+
+class _GatedPost:
+    def __init__(self):
+        self.started = threading.Event()
+        self.release = threading.Event()
+        self.bodies = []
+
+    def __call__(self, body):
+        self.bodies.append(body)
+        self.started.set()
+        self.release.wait(5)
+
+
+def _wait_until(predicate, timeout=2.0):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if predicate():
+            return True
+        time.sleep(0.005)
+    return False
+
+
+def test_latest_only_sender_keeps_one_in_flight_and_the_latest_pending():
+    post = _GatedPost()
+    sender = LatestOnlySender(post)
+    sender.submit({"n": 1})
+    assert post.started.wait(2)
+    for n in range(2, 8):
+        sender.submit({"n": n})
+    post.release.set()
+    assert _wait_until(lambda: len(post.bodies) == 2)
+    sender.close()
+    assert post.bodies == [{"n": 1}, {"n": 7}]
+
+
+def test_latest_only_sender_close_drops_pending_and_returns_promptly():
+    post = _GatedPost()
+    sender = LatestOnlySender(post)
+    sender.submit({"n": 1})
+    assert post.started.wait(2)
+    sender.submit({"n": 2})
+    began = time.monotonic()
+    sender.close(timeout=0.1)
+    assert time.monotonic() - began < 1.0
+    post.release.set()
+    time.sleep(0.05)
+    assert post.bodies == [{"n": 1}]
+
+
+def test_latest_only_sender_ignores_submits_after_close_and_survives_post_errors():
+    calls = []
+
+    def post(body):
+        calls.append(body)
+        raise RuntimeError("down")
+
+    sender = LatestOnlySender(post)
+    sender.submit({"n": 1})
+    assert _wait_until(lambda: calls == [{"n": 1}])
+    sender.submit({"n": 2})
+    assert _wait_until(lambda: len(calls) == 2)
+    sender.close()
+    sender.submit({"n": 3})
+    time.sleep(0.05)
+    assert len(calls) == 2

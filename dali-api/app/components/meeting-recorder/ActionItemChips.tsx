@@ -1,35 +1,37 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Link } from "react-router";
 import { ListChecks } from "lucide-react";
 import { Avatar } from "~/components/ui/Avatar";
 import { Checkbox } from "~/components/ui/Checkbox";
 import { DateField } from "~/components/ui/DateField";
-import { Combobox, type SelectOption } from "~/components/ui/floating";
+import { Combobox, Tooltip, type SelectOption } from "~/components/ui/floating";
 import { cn } from "~/lib/cn";
 import { useActionItemDraft } from "./action-item-draft";
 import { actionItemMatchesBlock } from "./enhance-plan";
-import { contentOf, findBlock } from "./block-dom";
+import { contentOf, findBlock, frameThrottle, inBounds, overlayBounds } from "./block-dom";
+import { useBlockStyleRules } from "./block-style-rules";
+import { chipSpaceCss, NARROW_BREAKPOINT } from "./enhance-rules";
 import { DUR, POP_FRAMES, animate } from "./motion";
 import { PopIn } from "./PopIn";
 import { isSearchableQuery, useLabMemberSearch } from "./member-search";
 import { formatIsoDate, type UseMeetingRecording } from "./use-meeting-recording";
 
-export const CHIPS_ATTR = "data-action-chips";
-export const NARROW_BREAKPOINT = 700;
+export { NARROW_BREAKPOINT };
 
 const CHIP_BASE = "h-7 rounded-full border px-2.5 text-xs font-medium";
 const CHIP_CLASS = cn(CHIP_BASE, "border-border bg-card text-foreground");
 const UNMATCHED_CLASS = cn(CHIP_BASE, "border-dashed border-os-amber/60 bg-os-amber/10 text-foreground");
 
-type Placement = { index: number; box: { top: number; bottom: number; left: number; right: number } };
+type Placement = { index: number; id: string; visible: boolean; box: { top: number; bottom: number; left: number; right: number } };
+type Size = { width: number; height: number };
 
 function samePlacements(a: Placement[], b: Placement[]): boolean {
   return (
     a.length === b.length &&
     a.every((p, i) => {
       const q = b[i]!;
-      return p.index === q.index && p.box.top === q.box.top && p.box.bottom === q.box.bottom && p.box.left === q.box.left && p.box.right === q.box.right;
+      return p.index === q.index && p.id === q.id && p.visible === q.visible && p.box.top === q.box.top && p.box.bottom === q.box.bottom && p.box.left === q.box.left && p.box.right === q.box.right;
     })
   );
 }
@@ -100,9 +102,19 @@ function ReadOnlyChips({ index }: { index: number }) {
   const draft = useActionItemDraft()!;
   const item = draft.items[index]!;
   if (!item.ownerName && !item.due) return null;
+  const unmatched = Boolean(item.ownerName) && !item.ownerUserId;
   return (
     <>
-      {item.ownerName && <span className={cn(CHIP_CLASS, "inline-flex items-center")}>{item.ownerName}</span>}
+      {item.ownerName &&
+        (unmatched ? (
+          <Tooltip content={`${item.ownerName}: no match on the roster`}>
+            <span tabIndex={0} className={cn(CHIP_CLASS, "inline-flex items-center")}>
+              {item.ownerName}
+            </span>
+          </Tooltip>
+        ) : (
+          <span className={cn(CHIP_CLASS, "inline-flex items-center")}>{item.ownerName}</span>
+        ))}
       {item.due && <span className={cn(CHIP_CLASS, "inline-flex items-center")}>{formatIsoDate(item.due)}</span>}
     </>
   );
@@ -153,16 +165,50 @@ function ItemChips({ index, order }: { index: number; order: number }) {
   );
 }
 
+function ChipGroup({
+  index,
+  style,
+  onSize,
+  children,
+}: {
+  index: number;
+  style: CSSProperties;
+  onSize: (index: number, size: Size) => void;
+  children: ReactNode;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const report = () => {
+      const r = el.getBoundingClientRect();
+      onSize(index, { width: r.width, height: r.height });
+    };
+    report();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(report);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [index]);
+  return (
+    <div ref={ref} data-action-chips-for={index} style={style} className="z-20 flex flex-wrap items-center gap-1.5">
+      {children}
+    </div>
+  );
+}
+
 /**
  * Owner and due chips at the right edge of each checklist block that matches
  * one of the plan's action items. A React overlay driven by the plan: nothing
- * here writes into the document.
+ * here writes into the editor's DOM or the document. The room the chips need
+ * is reserved by a generated style rule sized to the rendered chip group.
  */
 export function ActionItemChips({ rec, getRoot }: { rec: UseMeetingRecording; getRoot: () => HTMLElement | null }) {
   const draft = useActionItemDraft();
   const [root, setRoot] = useState<HTMLElement | null>(null);
   const [placements, setPlacements] = useState<Placement[]>([]);
   const [narrow, setNarrow] = useState(false);
+  const [sizes, setSizes] = useState<Record<number, Size>>({});
   const recRef = useRef(rec);
   recRef.current = rec;
 
@@ -173,6 +219,17 @@ export function ActionItemChips({ rec, getRoot }: { rec: UseMeetingRecording; ge
     const next = active ? getRoot() : null;
     if (next !== root) setRoot(next);
   });
+
+  const reportSize = (index: number, size: Size) =>
+    setSizes((prev) => {
+      const old = prev[index];
+      return old && old.width === size.width && old.height === size.height ? prev : { ...prev, [index]: size };
+    });
+
+  useBlockStyleRules(
+    "chips",
+    chipSpaceCss(placements.map((p) => ({ id: p.id, width: sizes[p.index]?.width ?? 0, height: sizes[p.index]?.height ?? 0 }))),
+  );
 
   useEffect(() => {
     if (!root || !draft) {
@@ -185,6 +242,7 @@ export function ActionItemChips({ rec, getRoot }: { rec: UseMeetingRecording; ge
       const blocks = (recRef.current.getNoteState?.()?.blocks ?? []).filter((b) => b.type === "checkListItem");
       const used = new Set<string>();
       const next: Placement[] = [];
+      const bounds = overlayBounds(root!);
       for (let index = 0; index < items.length; index++) {
         const block = blocks.find((b) => !used.has(b.id) && actionItemMatchesBlock(items[index]!.text, b.text));
         if (!block) continue;
@@ -192,27 +250,28 @@ export function ActionItemChips({ rec, getRoot }: { rec: UseMeetingRecording; ge
         if (!el) continue;
         used.add(block.id);
         const content = contentOf(el);
-        content.setAttribute(CHIPS_ATTR, "");
+        resize?.observe(content);
         const r = content.getBoundingClientRect();
-        next.push({ index, box: { top: r.top, bottom: r.bottom, left: r.left, right: r.right } });
+        next.push({ index, id: block.id, visible: inBounds(r, bounds), box: { top: r.top, bottom: r.bottom, left: r.left, right: r.right } });
       }
       setPlacements((prev) => (samePlacements(prev, next) ? prev : next));
       setNarrow(window.innerWidth < NARROW_BREAKPOINT);
     }
 
-    measure();
-    const resize = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measure);
+    const frame = frameThrottle(measure);
+    const resize = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(frame.run);
     resize?.observe(root);
-    const mutation = new MutationObserver(measure);
+    measure();
+    const mutation = new MutationObserver(frame.run);
     mutation.observe(root, { childList: true, subtree: true, characterData: true });
-    window.addEventListener("scroll", measure, true);
-    window.addEventListener("resize", measure);
+    window.addEventListener("scroll", frame.run, true);
+    window.addEventListener("resize", frame.run);
     return () => {
+      frame.cancel();
       resize?.disconnect();
       mutation.disconnect();
-      window.removeEventListener("scroll", measure, true);
-      window.removeEventListener("resize", measure);
-      for (const el of root.querySelectorAll(`[${CHIPS_ATTR}]`)) el.removeAttribute(CHIPS_ATTR);
+      window.removeEventListener("scroll", frame.run, true);
+      window.removeEventListener("resize", frame.run);
     };
   }, [root, itemsKey]);
 
@@ -220,19 +279,20 @@ export function ActionItemChips({ rec, getRoot }: { rec: UseMeetingRecording; ge
 
   return createPortal(
     <>
-      {placements.map(({ index, box }, order) => (
-        <div
+      {placements.map(({ index, box, visible }, order) => (
+        <ChipGroup
           key={index}
-          data-action-chips-for={index}
-          style={
-            narrow
+          index={index}
+          onSize={reportSize}
+          style={{
+            ...(narrow
               ? { position: "fixed", top: box.bottom - 32, left: box.left + 28 }
-              : { position: "fixed", top: box.top + 1, right: window.innerWidth - box.right + 8 }
-          }
-          className="z-20 flex flex-wrap items-center gap-1.5"
+              : { position: "fixed", top: box.top + 1, right: window.innerWidth - box.right + 8 }),
+            visibility: visible ? undefined : "hidden",
+          }}
         >
           <ItemChips index={index} order={order} />
-        </div>
+        </ChipGroup>
       ))}
     </>,
     document.body,

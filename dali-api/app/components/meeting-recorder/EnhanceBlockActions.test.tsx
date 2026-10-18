@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect, afterEach, vi } from "vitest";
 import { createElement, act } from "react";
-import { EnhanceBlockActions, WAS_ATTR } from "./EnhanceBlockActions";
+import { EnhanceBlockActions } from "./EnhanceBlockActions";
 import { makeRec, mountDom } from "./test-support";
 import type { UseMeetingRecording } from "./use-meeting-recording";
 
@@ -18,7 +18,10 @@ function buildEditor() {
 
 afterEach(() => {
   document.body.innerHTML = "";
+  for (const style of document.head.querySelectorAll("style[data-enhance-rules]")) style.remove();
 });
+
+const wasRules = () => document.querySelector('style[data-enhance-rules="was"]')?.textContent ?? "";
 
 const marks = [
   { id: "b1", mark: "enhance-added" as const, type: "paragraph", text: "Changed line" },
@@ -125,14 +128,64 @@ describe("EnhanceBlockActions", () => {
     unmount();
   });
 
-  it("shows 'You wrote' under a changed block only, and reserves its space", () => {
+  it("shows 'You wrote' under a changed block only, and reserves its space with a generated rule", () => {
     const { unmount } = mount(recWith());
     expect(document.querySelector('[data-was-for="b1"]')!.textContent).toBe("You wrote: “my rough line”");
     expect(document.querySelector('[data-was-for="b2"]')).toBeNull();
-    expect(editorRoot.querySelector('[data-id="b1"]')!.hasAttribute(WAS_ATTR)).toBe(true);
-    expect(editorRoot.querySelector('[data-id="b2"]')!.hasAttribute(WAS_ATTR)).toBe(false);
+    expect(wasRules()).toContain('.dali-doc .bn-block-outer[data-id="b1"] > .bn-block > .bn-block-content { padding-bottom: 28px; }');
+    expect(wasRules()).not.toContain('data-id="b2"');
+    expect(editorRoot.querySelectorAll("[data-id]")[0]!.attributes).toHaveLength(2);
     unmount();
-    expect(editorRoot.querySelector('[data-id="b1"]')!.hasAttribute(WAS_ATTR)).toBe(false);
+    expect(document.querySelector("style[data-enhance-rules]")).toBeNull();
+  });
+
+  it("never sets an attribute on the editor's nodes, even when its observers fire", async () => {
+    const spy = vi.spyOn(Element.prototype, "setAttribute");
+    const { unmount } = mount(recWith());
+    editorRoot.querySelector('[data-id="b1"] p')!.textContent = "Changed line again";
+    editorRoot.appendChild(document.createElement("div"));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 60));
+    });
+    const onEditor = spy.mock.contexts.filter((el) => el instanceof Element && editorRoot.contains(el));
+    expect(onEditor).toHaveLength(0);
+    expect(editorRoot.querySelectorAll("[data-enhance-was], [style]")).toHaveLength(0);
+    expect(wasRules()).toContain('data-id="b1"');
+    spy.mockRestore();
+    unmount();
+  });
+
+  it("holds the reserved space while the line fades out, then releases it", async () => {
+    const rec = recWith();
+    const { unmount, rerender } = mount(rec);
+    expect(wasRules()).toContain('data-id="b1"');
+    rerender(createElement(EnhanceBlockActions, { rec: recWith({ pendingMarks: [] }), getRoot: () => editorRoot }));
+    expect(document.querySelector('[data-was-for="b1"]')).not.toBeNull();
+    expect(wasRules()).toContain('data-id="b1"');
+    unmount();
+  });
+
+  it("hides overlays whose block is scrolled out of the editor's visible area", () => {
+    const rects: Record<string, DOMRect> = {};
+    const original = Element.prototype.getBoundingClientRect;
+    Element.prototype.getBoundingClientRect = function (this: Element) {
+      const id = this.closest("[data-id]")?.getAttribute("data-id");
+      return (id && this.classList.contains("bn-block-content") ? rects[id] : undefined) ?? original.call(this);
+    };
+    const box = (top: number) => ({ top, bottom: top + 40, left: 0, right: 500, width: 500, height: 40, x: 0, y: top, toJSON() {} }) as DOMRect;
+    rects.b1 = box(10);
+    const bar = document.createElement("div");
+    bar.setAttribute("data-enhance-bar", "");
+    bar.getBoundingClientRect = () => ({ ...box(0), bottom: 80 }) as DOMRect;
+    document.body.appendChild(bar);
+    const { unmount } = mount(recWith());
+    expect(document.querySelector('[data-was-for="b1"]')).toBeNull();
+    unmount();
+    rects.b1 = box(200);
+    const again = mount(recWith());
+    expect(document.querySelector('[data-was-for="b1"]')).not.toBeNull();
+    again.unmount();
+    Element.prototype.getBoundingClientRect = original;
   });
 
   it("renders nothing once no marks remain", () => {

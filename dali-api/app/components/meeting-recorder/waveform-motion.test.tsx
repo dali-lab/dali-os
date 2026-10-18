@@ -5,6 +5,8 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { mountDom } from "./test-support";
 import { ProcessingWaveform } from "./ProcessingWaveform";
+import { markMotionCss } from "./enhance-rules";
+import { DUR } from "./motion";
 
 afterEach(() => {
   delete (Element.prototype as { animate?: unknown }).animate;
@@ -43,15 +45,28 @@ describe("waveform animation", () => {
 describe("theme.css motion", () => {
   const css = readFileSync(join(process.cwd(), "app/components/doc/theme.css"), "utf8");
 
-  it("defines the keyframes the hooks and bar rely on", () => {
-    for (const name of ["enhance-tint-in", "enhance-tint-out", "enhance-edge-in", "enhance-edge-out", "enhance-wash", "enhance-wave-breathe", "enhance-dot-pulse"]) {
-      expect(css).toContain(`@keyframes ${name}`);
+  it("defines every keyframe the generated rules and the bar rely on, with a twin for restarts", () => {
+    for (const base of ["enhance-tint-in", "enhance-tint-out", "enhance-edge-in", "enhance-edge-out", "enhance-fade-out", "enhance-wash"]) {
+      for (const variant of ["a", "b"]) expect(css).toContain(`@keyframes ${base}-${variant}`);
+    }
+    for (const name of ["enhance-wave-breathe", "enhance-dot-pulse"]) expect(css).toContain(`@keyframes ${name}`);
+  });
+
+  it("holds no attribute selectors for state the editor would strip", () => {
+    for (const attr of ["data-enhance-anim", "data-enhance-was", "data-enhance-wash", "data-action-chips"]) {
+      expect(css).not.toContain(attr);
     }
   });
 
-  it("keeps the CSS durations in step with the shared timing table", () => {
-    expect(css).toMatch(/data-enhance-anim="bloom"\] > \.bn-block::before \{\s*animation-name: enhance-tint-in;\s*animation-duration: 360ms/);
-    expect(css).toMatch(/data-enhance-anim="drain"\] > \.bn-block::before \{\s*animation-name: enhance-tint-out;\s*animation-duration: 240ms/);
+  it("keeps the generated rules' durations in step with the shared timing table", () => {
+    const bloom = markMotionCss([{ id: "a", kind: "bloom", delay: 0, variant: "a" }]);
+    expect(bloom).toContain(`enhance-tint-in-a ${DUR.bloomTint}ms`);
+    expect(bloom).toContain(`enhance-edge-in-a ${DUR.bloomEdge}ms`);
+    const drain = markMotionCss([{ id: "a", kind: "drain", delay: 70, variant: "b" }]);
+    expect(drain).toContain(`enhance-tint-out-b ${DUR.drainTint}ms`);
+    expect(drain).toContain(`enhance-edge-out-b ${DUR.drainEdge}ms`);
+    expect(drain).toMatch(new RegExp(`enhance-edge-out-b ${DUR.drainEdge}ms [^;]* ${70 + DUR.drainTint}ms both`));
+    expect(markMotionCss([{ id: "a", kind: "revert", delay: 0, variant: "a" }])).toContain(`enhance-fade-out-a ${DUR.revertFade}ms`);
   });
 
   it("stops loops and shortens transitions under reduced motion", () => {

@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import type { EnhanceActionItem } from "./enhance-plan";
+import { actionItemMatchesBlock, type EnhanceActionItem } from "./enhance-plan";
 import type { RosterUser } from "./types";
 import type { UseMeetingRecording } from "./use-meeting-recording";
 
@@ -15,6 +15,7 @@ export type ActionItemDraft = {
   roster: RosterUser[];
   editable: boolean;
   projectId: string | null;
+  orphanedTasks: EnhanceActionItem[];
   untaskedCount: number;
   checkedCount: number;
   unmatchedCount: number;
@@ -29,6 +30,25 @@ const DraftContext = createContext<ActionItemDraft | null>(null);
 
 export function useActionItemDraft(): ActionItemDraft | null {
   return useContext(DraftContext);
+}
+
+function liveChecklist(rec: Pick<UseMeetingRecording, "getNoteState">): string[] | null {
+  const state = rec.getNoteState?.();
+  return state ? state.blocks.filter((b) => b.type === "checkListItem").map((b) => b.text) : null;
+}
+
+function onLiveChecklist(item: EnhanceActionItem, lines: string[] | null): boolean {
+  return lines !== null && lines.some((line) => actionItemMatchesBlock(item.text, line));
+}
+
+/** True when ⌘Z took Enhance's writing back out: the note was never reviewed
+ *  and none of the plan's action items is a checklist line any more (an item
+ *  with a task keeps the note in its enhanced state). */
+export function enhanceWasUndone(rec: Pick<UseMeetingRecording, "getNoteState" | "reviewedAt" | "enhanceNotes">): boolean {
+  const lines = liveChecklist(rec);
+  if (lines === null || rec.reviewedAt) return false;
+  const items = rec.enhanceNotes?.plan.actionItems ?? NO_ITEMS;
+  return !items.some((item) => item.taskId || onLiveChecklist(item, lines));
 }
 
 function seedRow(item: EnhanceActionItem): ActionItemRow {
@@ -98,7 +118,14 @@ export function ActionItemDraftProvider({ rec, children }: { rec: UseMeetingReco
   const untasked = items.map((item, i) => ({ item, i })).filter(({ item }) => !item.taskId);
   const checked = untasked.filter(({ i }) => rowFor(i).checked);
   const unmatchedCount = checked.filter(({ item, i }) => item.ownerName && !rowFor(i).ownerUserId).length;
-  const stepVisible = Boolean(notes) && rec.pendingMarks.length === 0 && canTasks && untasked.length > 0 && !dismissed;
+  const lines = liveChecklist(rec);
+  const anyOnNote = checked.some(({ item }) => onLiveChecklist(item, lines));
+  const orphanKey = lines === null ? "" : items.filter((item) => item.taskId && !onLiveChecklist(item, lines)).map((item) => item.taskId).join("|");
+  const orphanedTasks = useMemo(
+    () => (orphanKey === "" ? NO_ITEMS : items.filter((item) => item.taskId && orphanKey.split("|").includes(item.taskId))),
+    [items, orphanKey],
+  );
+  const stepVisible = Boolean(notes) && rec.pendingMarks.length === 0 && canTasks && anyOnNote && !dismissed;
 
   const itemsRef = useRef({ checked, rowFor });
   itemsRef.current = { checked, rowFor };
@@ -142,6 +169,7 @@ export function ActionItemDraftProvider({ rec, children }: { rec: UseMeetingReco
       roster,
       editable: canTasks,
       projectId: rec.projectId ?? null,
+      orphanedTasks,
       untaskedCount: untasked.length,
       checkedCount: checked.length,
       unmatchedCount,
@@ -151,7 +179,7 @@ export function ActionItemDraftProvider({ rec, children }: { rec: UseMeetingReco
       created,
       create,
     }),
-    [items, rowFor, setRow, roster, canTasks, rec.projectId, untasked.length, checked.length, unmatchedCount, stepVisible, dismiss, busy, created, create],
+    [items, rowFor, setRow, roster, canTasks, rec.projectId, orphanedTasks, untasked.length, checked.length, unmatchedCount, stepVisible, dismiss, busy, created, create],
   );
 
   return <DraftContext.Provider value={value}>{children}</DraftContext.Provider>;
