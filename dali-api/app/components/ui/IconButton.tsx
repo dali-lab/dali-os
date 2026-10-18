@@ -41,7 +41,7 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(
           type={type}
           aria-label={label}
           className={cn(
-            "inline-flex items-center justify-center rounded-md p-1.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-teal focus-visible:ring-offset-1 disabled:pointer-events-none disabled:opacity-50",
+            "inline-flex items-center justify-center rounded-md p-1.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-os-accent focus-visible:ring-offset-1 disabled:pointer-events-none disabled:opacity-50",
             TONES[tone],
             className,
           )}
