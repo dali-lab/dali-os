@@ -264,11 +264,11 @@ export function TranscriptChipHoverLayer({
             {card.state === "unavailable" && <p>Transcript unavailable.</p>}
             {card.state === "ready" && (
               <>
-                <p className="mb-1.5 flex items-center gap-2 font-bold">
+                <div className="mb-1.5 flex items-center gap-2 font-bold">
                   <Avatar name={card.name} size="xs" />
                   {card.name}
                   <span className="font-medium text-muted-foreground">{card.clock}</span>
-                </p>
+                </div>
                 <p>“{card.quote}”</p>
               </>
             )}

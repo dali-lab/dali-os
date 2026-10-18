@@ -275,6 +275,7 @@ export function useMeetingRecording({
 
   const [phase, setPhase] = useState<Phase>("idle");
   const [open, setOpen] = useState(false);
+  const [noteVersion, setNoteVersion] = useState(0);
   useEffect(() => {
     if (autoOpen) setOpen(true);
   }, [autoOpen]);
@@ -753,7 +754,14 @@ export function useMeetingRecording({
   // acceptable"). Enhance now runs only on a click (enhanceNow, below).
   useEffect(() => {
     if (!subscribeDocumentChanges) return;
-    return subscribeDocumentChanges(({ marks, changes }) => {
+    let bump = 0;
+    const unsubscribe = subscribeDocumentChanges(({ marks, changes }) => {
+      if (!bump) {
+        bump = requestAnimationFrame(() => {
+          bump = 0;
+          setNoteVersion((v) => v + 1);
+        });
+      }
       const keepIds = localEditKeepIds(changes, marks);
       for (const id of keepIds) onKeepBlock?.(id);
       const effective = keepIds.length ? marks.filter((m) => !keepIds.includes(m.id)) : marks;
@@ -780,6 +788,10 @@ export function useMeetingRecording({
           .catch(() => null);
       }
     });
+    return () => {
+      if (bump) cancelAnimationFrame(bump);
+      unsubscribe();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [subscribeDocumentChanges, recordingId]);
 
@@ -1411,6 +1423,7 @@ export function useMeetingRecording({
     projectId,
     canCreateTasks,
     getNoteState,
+    noteVersion,
     seededFromPageId,
     seededTemplateHash,
 

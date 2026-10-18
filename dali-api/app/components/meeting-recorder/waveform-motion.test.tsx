@@ -52,6 +52,13 @@ describe("theme.css motion", () => {
     for (const name of ["enhance-wave-breathe", "enhance-dot-pulse"]) expect(css).toContain(`@keyframes ${name}`);
   });
 
+  it("keeps the suggestion edge visible by clearing the content tint that would cover it", () => {
+    const row = '.dali-doc .bn-block:has(> .bn-block-content[data-background-color="enhance-added"])';
+    expect(css).toMatch(new RegExp(`${row.replace(/[.()[\]>=*"]/g, "\\$&")} \\{\\s*box-shadow: inset 3px 0 0 var\\(--enhance-edge\\);`));
+    expect(css).toContain(`${row} > .bn-block-content[data-background-color="enhance-added"] {\n  background-color: transparent;`);
+    expect(css).toContain("--enhance-edge: var(--color-accent-teal);");
+  });
+
   it("holds no attribute selectors for state the editor would strip", () => {
     for (const attr of ["data-enhance-anim", "data-enhance-was", "data-enhance-wash", "data-action-chips"]) {
       expect(css).not.toContain(attr);

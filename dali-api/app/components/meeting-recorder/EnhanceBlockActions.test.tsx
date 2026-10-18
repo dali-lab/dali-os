@@ -188,6 +188,42 @@ describe("EnhanceBlockActions", () => {
     Element.prototype.getBoundingClientRect = original;
   });
 
+  describe("pill placement", () => {
+    const original = Element.prototype.getBoundingClientRect;
+    const width = window.innerWidth;
+    afterEach(() => {
+      Element.prototype.getBoundingClientRect = original;
+      window.innerWidth = width;
+    });
+
+    function mountWithBlockRect(viewportWidth: number) {
+      window.innerWidth = viewportWidth;
+      Element.prototype.getBoundingClientRect = function (this: Element) {
+        const isB2 = this.classList.contains("bn-block-content") && this.closest("[data-id]")?.getAttribute("data-id") === "b2";
+        return (isB2 ? { top: 300, bottom: 340, left: 100, right: 500, width: 400, height: 40, x: 100, y: 300, toJSON() {} } : original.call(this)) as DOMRect;
+      };
+      const ui = mount(recWith());
+      hover("b2");
+      return { ui, style: (pill() as HTMLElement).style };
+    }
+
+    it("sits in the right gutter, centred on the first line, when there is room beside the column", () => {
+      const { ui, style } = mountWithBlockRect(1000);
+      expect(style.left).toBe("508px");
+      expect(style.top).toBe("298px");
+      expect(style.right).toBe("");
+      ui.unmount();
+    });
+
+    it("moves above the block's top-right corner when the gutter is too narrow", () => {
+      const { ui, style } = mountWithBlockRect(600);
+      expect(style.bottom).toBe(`${window.innerHeight - 300 + 4}px`);
+      expect(style.right).toBe("100px");
+      expect(style.left).toBe("");
+      ui.unmount();
+    });
+  });
+
   it("renders nothing once no marks remain", () => {
     const { unmount } = mount(recWith({ pendingMarks: [] }));
     hover("b1");

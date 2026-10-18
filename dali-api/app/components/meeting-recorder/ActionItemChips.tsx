@@ -273,7 +273,7 @@ export function ActionItemChips({ rec, getRoot }: { rec: UseMeetingRecording; ge
       window.removeEventListener("scroll", frame.run, true);
       window.removeEventListener("resize", frame.run);
     };
-  }, [root, itemsKey]);
+  }, [root, itemsKey, rec.noteVersion]);
 
   if (!draft || !root || placements.length === 0) return null;
 

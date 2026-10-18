@@ -92,6 +92,23 @@ afterEach(() => {
 const chipRules = () => document.querySelector('style[data-enhance-rules="chips"]')?.textContent ?? "";
 
 describe("tasks bar visibility", () => {
+  it("appears once the editor becomes ready and the note version bumps", () => {
+    let state: { blocks: typeof BLOCKS; bodyText: string } | null = null;
+    const getNoteState = () => state;
+    buildEditor();
+    const ui = mountDom(
+      createElement(MemoryRouter, null, createElement(ActionItemDraftProvider, { rec: recWith(ITEMS, { getNoteState, noteVersion: 0 }), children: createElement(EnhanceBar, { rec: recWith(ITEMS, { getNoteState, noteVersion: 0 }) }) })),
+    );
+    expect(bar()?.textContent ?? "").not.toContain("action items");
+    state = { blocks: BLOCKS, bodyText: "" };
+    const next = recWith(ITEMS, { getNoteState, noteVersion: 1 });
+    ui.rerender(
+      createElement(MemoryRouter, null, createElement(ActionItemDraftProvider, { rec: next, children: createElement(EnhanceBar, { rec: next }) })),
+    );
+    expect(bar()?.textContent).toContain("2 action items");
+    ui.unmount();
+  });
+
   it("shows with counts once nothing is pending", () => {
     const { unmount } = mount(recWith());
     expect(bar()?.textContent).toContain("2 action items");

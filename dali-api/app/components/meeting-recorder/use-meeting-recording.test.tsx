@@ -843,6 +843,29 @@ describe("useMeetingRecording.enhanceNow (specs/meeting-recording-rail.md Step 2
     });
   }
 
+  it("bumps noteVersion once per frame however many document changes arrive", async () => {
+    vi.useFakeTimers({ toFake: ["requestAnimationFrame", "cancelAnimationFrame"] });
+    try {
+      await mountEnhanceHarness({ documentName: "doc-version", getNoteState: () => null });
+      expect(box.current!.noteVersion).toBe(0);
+      act(() => {
+        for (let i = 0; i < 5; i++) docChangeCb.current!({ marks: [], changes: [] });
+      });
+      expect(box.current!.noteVersion).toBe(0);
+      act(() => {
+        vi.advanceTimersByTime(40);
+      });
+      expect(box.current!.noteVersion).toBe(1);
+      act(() => {
+        docChangeCb.current!({ marks: [], changes: [] });
+        vi.advanceTimersByTime(40);
+      });
+      expect(box.current!.noteVersion).toBe(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("generates, locks, applies, and persists priorBlocks from onApplyEnhance's result in a follow-up call", async () => {
     window.localStorage.setItem(backupKey("doc-enhance-1"), JSON.stringify({ id: "r1", link: "l", aiEnabled: true }));
     const posted: { url: string; body: Record<string, unknown> }[] = [];

@@ -13,7 +13,19 @@ import { useBlockStyleRules } from "./block-style-rules";
 import { wasSpaceCss } from "./enhance-rules";
 import type { UseMeetingRecording } from "./use-meeting-recording";
 
-type BlockBox = { top: number; bottom: number; left: number; right: number; visible: boolean };
+type BlockBox = { top: number; bottom: number; left: number; right: number; visible: boolean; edge: number };
+
+const PILL_WIDTH = 152;
+const PILL_HEIGHT = 28;
+const FIRST_LINE_CENTER = 12;
+const GUTTER = 8;
+
+function pillPosition(box: BlockBox): { top: number; left: number } | { bottom: number; right: number } {
+  if (box.edge - box.right >= PILL_WIDTH + 2 * GUTTER) {
+    return { top: box.top + FIRST_LINE_CENTER - PILL_HEIGHT / 2, left: box.right + GUTTER };
+  }
+  return { bottom: window.innerHeight - box.top + 4, right: window.innerWidth - box.right };
+}
 
 const PILL_IN = enterRef(
   [
@@ -62,7 +74,7 @@ function pendingBlockAt(node: Node | null, root: HTMLElement, ids: ReadonlySet<s
 }
 
 function sameBox(a: BlockBox | undefined, b: BlockBox): boolean {
-  return Boolean(a) && a!.top === b.top && a!.bottom === b.bottom && a!.left === b.left && a!.right === b.right && a!.visible === b.visible;
+  return Boolean(a) && a!.top === b.top && a!.bottom === b.bottom && a!.left === b.left && a!.right === b.right && a!.visible === b.visible && a!.edge === b.edge;
 }
 
 /**
@@ -137,7 +149,7 @@ export function EnhanceBlockActions({
         const content = contentOf(block);
         resize?.observe(content);
         const r = content.getBoundingClientRect();
-        next[id] = { top: r.top, bottom: r.bottom, left: r.left, right: r.right, visible: inBounds(r, bounds) };
+        next[id] = { top: r.top, bottom: r.bottom, left: r.left, right: r.right, visible: inBounds(r, bounds), edge: bounds.right };
       }
       setBoxes((prev) => {
         const keys = Object.keys(next);
@@ -219,7 +231,7 @@ export function EnhanceBlockActions({
           aria-label="Review this change"
           onMouseEnter={() => setHoverId(active.id)}
           onMouseLeave={() => setHoverId(null)}
-          style={{ position: "fixed", top: activeBox.top + 2, right: window.innerWidth - activeBox.right + 8 }}
+          style={{ position: "fixed", ...pillPosition(activeBox) }}
           className={cn("z-30 flex gap-0.5 rounded-full border border-border bg-card p-0.5 shadow-sm")}
         >
           <button

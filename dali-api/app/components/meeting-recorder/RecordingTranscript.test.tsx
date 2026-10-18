@@ -21,6 +21,7 @@ function makeRec(overrides: Partial<UseMeetingRecording> = {}): UseMeetingRecord
     projectId: null,
     canCreateTasks: false,
     getNoteState: () => null,
+    noteVersion: 0,
     seededFromPageId: null,
     seededTemplateHash: null,
 

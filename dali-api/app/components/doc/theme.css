@@ -1085,6 +1085,11 @@ a.dali-cmp-piece:hover .dali-cmp-row__title { text-decoration: underline; }
   box-shadow: inset 3px 0 0 var(--enhance-edge);
 }
 
+/* The block's own tint is opaque and would paint over the row's inset edge. */
+.dali-doc .bn-block:has(> .bn-block-content[data-background-color="enhance-added"]) > .bn-block-content[data-background-color="enhance-added"] {
+  background-color: transparent;
+}
+
 .dali-doc [data-background-color="enhance-prior"],
 .dali-doc .bn-block:has(> .bn-block-content[data-background-color="enhance-prior"]) {
   background-color: var(--color-muted);
