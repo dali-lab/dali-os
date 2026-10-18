@@ -468,7 +468,7 @@ function SortableTab({
       }`}
     >
       {tab.pinned && (
-        <Pin className="w-3 h-3 shrink-0 text-accent-coral fill-accent-coral pointer-events-none" />
+        <Pin className="w-3 h-3 shrink-0 text-os-accent fill-os-accent pointer-events-none" />
       )}
       <span
         className={`truncate flex-1 text-left pointer-events-none ${tab.ephemeral ? 'italic' : ''}`}
@@ -503,7 +503,7 @@ function TabDragPreview({ tab }: { tab: Tab }) {
       className="flex items-center gap-2 h-7 px-3 bg-os-container text-foreground text-xs font-medium whitespace-nowrap rounded-os-item shadow-lg cursor-grabbing"
     >
       {tab.pinned && (
-        <Pin className="w-3 h-3 shrink-0 text-accent-coral fill-accent-coral" />
+        <Pin className="w-3 h-3 shrink-0 text-os-accent fill-os-accent" />
       )}
       <span className={`truncate ${tab.ephemeral ? 'italic' : ''}`}>{tab.label}</span>
     </div>
@@ -516,7 +516,7 @@ function DropZone({ id, className }: { id: string; className: string }) {
   return (
     <div ref={setNodeRef} className={`relative ${className}`}>
       {isOver && (
-        <div className="absolute inset-0 bg-accent-coral/20 border-2 border-accent-coral pointer-events-none" />
+        <div className="absolute inset-0 bg-os-accent/20 border-2 border-os-accent pointer-events-none" />
       )}
     </div>
   )

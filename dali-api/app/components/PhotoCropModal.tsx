@@ -1,4 +1,5 @@
 import { useCallback, useState } from "react";
+import { buttonClasses } from "~/components/ui/Button";
 import Cropper, { type Area } from "react-easy-crop";
 import { Modal, ModalHeader } from "./Modal";
 import { modalCardClass } from "~/components/os-chrome";
@@ -144,7 +145,7 @@ export function PhotoCropModal({
           value={zoom}
           onChange={(e) => setZoom(Number(e.target.value))}
           aria-label="Zoom"
-          className="flex-1 accent-accent-coral"
+          className="flex-1 accent-os-accent"
         />
       </label>
 
@@ -163,7 +164,7 @@ export function PhotoCropModal({
           type="button"
           onClick={handleConfirm}
           disabled={processing || !area}
-          className="px-3 py-1.5 text-sm font-medium rounded-md bg-accent-coral text-white hover:bg-accent-coral/90 transition-colors disabled:opacity-60"
+          className={buttonClasses("primary", "sm")}
         >
           {processing ? "Processing…" : "Confirm"}
         </button>
