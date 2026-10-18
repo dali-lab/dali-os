@@ -5608,6 +5608,10 @@ model UserFavorite {
   // they don't drown the list out.
   visitedAt   DateTime?
 
+  // Display order in the favorites bar, 0-based per user. Null = not
+  // favourited, or favourited before ordering existed (sorts last).
+  position Int?
+
   user User  @relation(fields: [userId], references: [id], onDelete: Cascade)
   page Page? @relation(fields: [pageId], references: [id], onDelete: Cascade)
 
@@ -5615,6 +5619,7 @@ model UserFavorite {
   @@unique([userId, href])
   @@index([userId, favoritedAt])
   @@index([userId, visitedAt])
+  @@index([userId, position])
 }
 
 enum SharePrincipalType {

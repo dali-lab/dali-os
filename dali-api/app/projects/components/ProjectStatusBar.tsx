@@ -38,8 +38,8 @@ import type { ProjectTldrResponse } from "~/routes/api.ai.project-tldr";
 // loader as `breakdown`.
 
 const STATUS_DOT: Record<ProjectStatusFacts["projectStatus"], string> = {
-  Active: "bg-emerald-500",
-  Paused: "bg-amber-500",
+  Active: "bg-os-green",
+  Paused: "bg-os-amber",
   Archived: "bg-muted-foreground",
 };
 
@@ -67,8 +67,8 @@ const Chip = forwardRef<
       {...rest}
       className={cn(
         "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium whitespace-nowrap",
-        tone === "attention" && "border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400",
-        tone === "good" && "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
+        tone === "attention" && "border-os-amber bg-os-amber text-os-amber",
+        tone === "good" && "border-os-green bg-os-green text-os-green",
         tone === "neutral" && "border-border bg-muted text-muted-foreground",
         className,
       )}
@@ -310,7 +310,7 @@ export function ProjectStatusBar({
                   )}
                 >
                   <span
-                    className="block h-full rounded-full bg-emerald-500"
+                    className="block h-full rounded-full bg-os-green"
                     style={{ width: `${progressPct}%` }}
                   />
                 </span>
@@ -388,7 +388,7 @@ export function ProjectStatusBar({
 
       {aiLineEnabled && facts.hasWork ? (
         <div className={cn("flex items-start gap-2 border-t pt-2", os ? "border-os-container" : "border-border")}>
-          <Sparkles className={cn("mt-0.5 h-3.5 w-3.5 shrink-0", os ? "text-os-accent" : "text-accent-coral")} />
+          <Sparkles className={cn("mt-0.5 h-3.5 w-3.5 shrink-0", os ? "text-os-accent" : "text-os-accent")} />
           <p className="min-w-0 flex-1 text-[13px] leading-snug text-muted-foreground">
             {aiLoading && !tldrText ? (
               <span className="animate-pulse">Summarizing project status…</span>

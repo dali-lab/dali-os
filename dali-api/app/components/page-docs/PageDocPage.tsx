@@ -473,7 +473,7 @@ function SectionSidebar({
             <div
               key={s.id}
               // Selection follows whichever shell this is in: the brand shell's
-              // active-nav convention (accent-coral edge + text, as in
+              // active-nav convention (os-accent edge + text, as in
               // AreaPillNav) rather than a muted tint, which was too faint to
               // read as selected in light mode; under dali.os, the sidebar's own
               // marker (.os-subtab-active) — a filled well whose left border is

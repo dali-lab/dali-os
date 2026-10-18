@@ -308,8 +308,8 @@ export default function AttendancePage() {
 
       {events.length === 0 ? (
         <div className={cn(panel, "p-10 text-center")}>
-          <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-accent-teal/10">
-            <ClipboardCheck className="w-6 h-6 text-accent-teal" aria-hidden />
+          <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-os-accent/10">
+            <ClipboardCheck className="w-6 h-6 text-os-accent" aria-hidden />
           </div>
           <p className="font-heading font-semibold text-foreground">
             No attendance events yet
@@ -422,7 +422,7 @@ function EventCard({
           type="button"
           onClick={() => setOpen(!open)}
           aria-expanded={open}
-          className="min-w-0 flex-1 text-left px-4 py-3.5 flex items-start gap-3 hover:bg-muted/30 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent-teal/40"
+          className="min-w-0 flex-1 text-left px-4 py-3.5 flex items-start gap-3 hover:bg-muted/30 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-os-accent/40"
         >
           <span className="mt-1 text-muted-foreground flex-shrink-0" aria-hidden>
             {open ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
@@ -432,14 +432,14 @@ function EventCard({
               <h3 className="font-heading font-semibold text-foreground truncate">
                 {event.title}
               </h3>
-              <span className="text-[11px] rounded-md px-2 py-0.5 bg-accent-teal/10 text-accent-teal font-medium">
+              <span className="text-[11px] rounded-md px-2 py-0.5 bg-os-accent/10 text-os-accent font-medium">
                 {event.typeLabel}
               </span>
               <span className="text-[11px] rounded-md px-2 py-0.5 bg-muted text-muted-foreground font-medium">
                 {event.scope}
               </span>
               {event.viewerPresent && (
-                <span className="text-[11px] rounded-md px-2 py-0.5 bg-accent-teal/15 text-accent-teal font-medium inline-flex items-center gap-1">
+                <span className="text-[11px] rounded-md px-2 py-0.5 bg-os-green/15 text-os-green font-medium inline-flex items-center gap-1">
                   <UserCheck className="w-3 h-3" aria-hidden /> You're checked in
                 </span>
               )}
@@ -453,7 +453,7 @@ function EventCard({
             <div className="mt-2.5 flex items-center gap-3">
               <div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden max-w-xs">
                 <div
-                  className="h-full bg-accent-teal rounded-full transition-[width] duration-300"
+                  className="h-full bg-os-accent rounded-full transition-[width] duration-300"
                   style={{ width: `${pct}%` }}
                 />
               </div>
@@ -466,7 +466,7 @@ function EventCard({
         <div className="flex items-start gap-0.5 pr-3 pt-3.5 flex-shrink-0">
           <Link
             to={meetingOccurrenceHref(event.meetingId, event.occurrenceStart)}
-            className="p-1.5 rounded-md text-muted-foreground hover:text-accent-teal hover:bg-accent-teal/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-teal/40"
+            className="p-1.5 rounded-md text-muted-foreground hover:text-os-accent hover:bg-os-accent/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-os-accent/40"
             aria-label="Open meeting — check in or mark attendance"
             title="Open meeting"
           >
@@ -480,7 +480,7 @@ function EventCard({
                   type="button"
                   aria-label="Event options"
                   disabled={cancelFetcher.state !== "idle"}
-                  className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-teal/40 disabled:opacity-50"
+                  className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-os-accent/40 disabled:opacity-50"
                 >
                   <MoreHorizontal className="w-4 h-4" />
                 </button>
@@ -566,7 +566,7 @@ function RosterColumn({
     <div className="min-w-0">
       <div className="px-4 py-2.5 flex items-center gap-2 border-b border-border/80">
         <Icon
-          className={cn("w-3.5 h-3.5", tone === "present" ? "text-accent-teal" : "text-muted-foreground")}
+          className={cn("w-3.5 h-3.5", tone === "present" ? "text-os-green" : "text-muted-foreground")}
           aria-hidden
         />
         <h4 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{title}</h4>

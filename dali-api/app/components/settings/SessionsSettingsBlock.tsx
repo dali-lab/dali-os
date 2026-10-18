@@ -117,7 +117,7 @@ export function SessionsSettingsBlock({
                     <button
                       type="submit"
                       disabled={submitting}
-                      className="rounded border border-red-300 px-3 py-1 text-sm text-red-700 hover:bg-red-50 disabled:opacity-50"
+                      className="rounded border border-destructive/40 px-3 py-1 text-sm text-destructive hover:bg-destructive/10 disabled:opacity-50"
                     >
                       {isCurrent ? "Sign out" : "Revoke"}
                     </button>

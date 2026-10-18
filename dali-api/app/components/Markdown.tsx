@@ -28,7 +28,7 @@ export function Markdown({ children }: { children: string }) {
             <a
               target="_blank"
               rel="noreferrer"
-              className="text-accent-coral hover:underline break-all"
+              className="text-os-accent hover:underline break-all"
               {...props}
             />
           ),

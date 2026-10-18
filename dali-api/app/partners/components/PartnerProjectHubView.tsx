@@ -483,7 +483,7 @@ function SharedFilePreviewModal({
             <a
               href={url}
               download={file.fileName ?? undefined}
-              className="inline-flex items-center gap-1 text-sm font-medium text-accent-teal hover:underline"
+              className="inline-flex items-center gap-1 text-sm font-medium text-os-accent hover:underline"
             >
               <Download className="w-4 h-4" />
               Download
@@ -523,7 +523,7 @@ function SharedFilePreviewModal({
               <a
                 href={url}
                 download={file.fileName ?? undefined}
-                className="mt-3 inline-flex items-center gap-1 text-accent-teal hover:underline"
+                className="mt-3 inline-flex items-center gap-1 text-os-accent hover:underline"
               >
                 <Download className="w-3.5 h-3.5" />
                 Download to view

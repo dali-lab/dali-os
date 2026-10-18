@@ -57,9 +57,9 @@ const MEDAL: Record<
   },
   veteran: {
     Icon: Trees,
-    ring: "ring-amber-500/30",
-    fill: "bg-amber-500/15",
-    ink: "text-amber-600",
+    ring: "ring-os-amber",
+    fill: "bg-os-amber",
+    ink: "text-os-amber",
     // Shield.
     shape: "rounded-t-xl [clip-path:polygon(0%_0%,100%_0%,100%_62%,50%_100%,0%_62%)]",
   },
@@ -91,7 +91,7 @@ const MEDAL: Record<
     Icon: UserSearch,
     ring: "ring-accent-yellow/40",
     fill: "bg-accent-yellow/20",
-    ink: "text-amber-600",
+    ink: "text-os-amber",
     // Octagon.
     shape: "[clip-path:polygon(30%_0%,70%_0%,100%_30%,100%_70%,70%_100%,30%_100%,0%_70%,0%_30%)]",
   },

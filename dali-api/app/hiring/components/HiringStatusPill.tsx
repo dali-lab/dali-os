@@ -4,13 +4,13 @@
 // StageIndicator, which belongs to the /portal/hiring tracker.
 const HIRING_STATUS: Record<string, { label: string; className: string }> = {
   ApplicationOpen: { label: "Not submitted", className: "bg-muted text-muted-foreground" },
-  Pending: { label: "Under review", className: "bg-amber-100 text-amber-800" },
+  Pending: { label: "Under review", className: "bg-os-amber/15 text-os-amber" },
   InvitedToInterview: { label: "Interview invite", className: "bg-blue-100 text-blue-800" },
   InterviewScheduled: { label: "Interview scheduled", className: "bg-blue-100 text-blue-800" },
   PostInterviewPending: { label: "Decision pending", className: "bg-blue-100 text-blue-800" },
-  Accepted: { label: "Accepted", className: "bg-green-100 text-green-800" },
+  Accepted: { label: "Accepted", className: "bg-os-green/15 text-os-green" },
   AcceptedElsewhere: { label: "Placed elsewhere", className: "bg-muted text-muted-foreground" },
-  Waitlisted: { label: "Waitlisted", className: "bg-amber-100 text-amber-800" },
+  Waitlisted: { label: "Waitlisted", className: "bg-os-amber/15 text-os-amber" },
   Rejected: { label: "Not accepted", className: "bg-muted text-muted-foreground" },
   Withdrawn: { label: "Withdrawn", className: "bg-muted text-muted-foreground" },
 };

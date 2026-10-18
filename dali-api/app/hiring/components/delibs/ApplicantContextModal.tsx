@@ -89,7 +89,7 @@ export function ApplicantContextModal({
             <p className="text-sm text-muted-foreground">Loading applicant context…</p>
           )}
           {isError && (
-            <p className="text-sm text-red-600">
+            <p className="text-sm text-destructive">
               Failed to load applicant context: {data.error ?? "unknown error"}
             </p>
           )}
@@ -160,7 +160,7 @@ export function InterviewPrepNoteSection({
               features="notes"
               density="compact"
               placeholder="Specific things to bring up in the interview…"
-              className="rounded-lg border border-gray-300 bg-card focus-within:ring-2 focus-within:ring-accent-coral focus-within:border-transparent"
+              className="rounded-lg border border-gray-300 bg-card focus-within:ring-2 focus-within:ring-os-accent focus-within:border-transparent"
               collab={{
                 documentName: `domainApplication:${domainApplicationId}:prepNote`,
                 token: collabToken,
@@ -168,7 +168,7 @@ export function InterviewPrepNoteSection({
               }}
             />
           ) : (
-            <div className="p-3 bg-yellow-50 rounded-lg border border-yellow-200 text-sm text-yellow-800">
+            <div className="p-3 bg-os-amber/10 rounded-lg border border-os-amber/40 text-sm text-os-amber">
               Session expired — please refresh to enable collaborative editing.
             </div>
           )}
@@ -311,7 +311,7 @@ function ReviewAnnotations({
                   ? answer.slice(Math.max(0, a.start), Math.max(a.start, a.end))
                   : "";
                 return (
-                  <li key={a.id} className="bg-yellow-50 border-l-2 border-yellow-300 rounded-r p-2">
+                  <li key={a.id} className="bg-os-amber/10 border-l-2 border-os-amber/40 rounded-r p-2">
                     {excerpt && (
                       <div className="italic text-muted-foreground mb-1 whitespace-pre-wrap">
                         “{excerpt}”
@@ -415,7 +415,7 @@ export function ReviewsSection({
                     Rejection Rationale
                   </div>
                   {review.rejectionRationale ? (
-                    <p className="text-xs text-red-600 bg-red-50 rounded p-2 whitespace-pre-wrap">
+                    <p className="text-xs text-destructive bg-destructive/10 rounded p-2 whitespace-pre-wrap">
                       {review.rejectionRationale}
                     </p>
                   ) : (

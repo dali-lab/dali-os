@@ -94,7 +94,7 @@ const STATE_DOT: Record<NotificationState, string> = {
   Open: "bg-os-accent",
   Submitted: "bg-os-green",
   Cleared: "bg-os-grey",
-  Cancelled: "bg-red-500",
+  Cancelled: "bg-destructive",
   Expired: "bg-os-muted",
 };
 

@@ -204,7 +204,7 @@ export function ProfilePhotoAvatar({
         className="hidden"
       />
 
-      {error && <p className="text-xs text-red-500 max-w-[12rem] text-center">{error}</p>}
+      {error && <p className="text-xs text-destructive max-w-[12rem] text-center">{error}</p>}
 
       <PhotoCropModal
         open={cropSrc !== null}

@@ -377,6 +377,11 @@ describe("favoriteSpaceItems", () => {
     ]);
   });
 
+  it("orders top-level favorites by the favorites order, not pool order", () => {
+    const items = favoriteSpaceItems([[doc("a", null), doc("b", null), doc("c", null)]], new Set(["c", "a", "b"]));
+    expect(items.map((i) => i.id)).toEqual(["c", "a", "b"]);
+  });
+
   it("is empty without favorites", () => {
     expect(favoriteSpaceItems([[doc("a", null)]], new Set())).toEqual([]);
   });

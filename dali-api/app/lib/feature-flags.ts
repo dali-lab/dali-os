@@ -50,6 +50,12 @@ export type FeatureFlagDef = {
 
 export const FEATURE_FLAGS = [
   {
+    key: "favorites-bar",
+    label: "Favorites bar",
+    description:
+      "Browser-style favorites: one star in the topbar (next to Copy link, or Cmd/Ctrl+D) that stars whatever page is open, and topbar favorite pills you can drag to reorder or right-click to move and remove. Hides the breadcrumb star and the document title star. Ships off.",
+  },
+  {
     key: "landing-leaderboard",
     label: "Home landing high scores",
     description:

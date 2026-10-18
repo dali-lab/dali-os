@@ -91,11 +91,11 @@ export function MonthCalendarPanel({
   const rows = Math.ceil(days.length / 7);
 
   return (
-    <section className="bg-card border border-border rounded-os-card p-4">
+    <section className="bg-card rounded-os-card p-4">
       <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
         <div>
           <h2 className="inline-flex items-center gap-2 font-heading font-semibold text-foreground">
-            <CalendarDays className="w-4 h-4 text-accent-coral" />
+            <CalendarDays className="w-4 h-4 text-os-accent" />
             {monthLabel}
           </h2>
           <p className="text-xs text-muted-foreground mt-0.5">{sourceLabel}</p>
@@ -161,7 +161,7 @@ export function MonthCalendarPanel({
                 className={cn(
                   "inline-flex h-5 min-w-5 items-center justify-center self-start rounded-full px-1 text-xs font-semibold tabular-nums",
                   day.isToday
-                    ? "bg-accent-coral text-white"
+                    ? "bg-os-accent text-os-bg"
                     : day.inMonth
                       ? "text-foreground"
                       : "text-muted-foreground",

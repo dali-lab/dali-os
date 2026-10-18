@@ -3,6 +3,7 @@ import { Link, useMatches, useLocation } from 'react-router'
 import { Check, ChevronDown, ChevronRight } from 'lucide-react'
 import { cn } from '~/lib/cn'
 import { Menu } from "~/components/ui/floating";
+import { OS_MENU_ITEM_CLASS } from "~/components/ui/floating/styles";
 import { FavoriteRouteButton } from '~/components/FavoriteRouteButton'
 import { isNavbarRoute } from '~/lib/navbar-routes'
 import { isAreaSubtabPath } from '~/lib/nav-areas'
@@ -183,7 +184,7 @@ function isOpaqueId(seg: string) {
 
 // A breadcrumb crumb that is also a switcher: clicking it opens a menu of
 // sibling destinations.
-function CrumbSwitcher({
+export function CrumbSwitcher({
   label,
   siblings,
 }: {
@@ -197,7 +198,7 @@ function CrumbSwitcher({
       trigger={(open) => (
         <button
           type="button"
-          className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 font-medium text-foreground transition hover:bg-muted/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-coral"
+          className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 font-medium text-foreground transition hover:bg-muted/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-os-accent"
         >
           {label}
           <ChevronDown
@@ -217,14 +218,15 @@ function CrumbSwitcher({
           icon={
             <Check
               className={cn(
-                'h-3.5 w-3.5 shrink-0 text-accent-coral',
+                'h-3.5 w-3.5 shrink-0 text-os-accent',
                 s.current ? 'opacity-100' : 'opacity-0',
               )}
               aria-hidden
             />
           }
           className={cn(
-            'flex items-center gap-2 px-3 py-1.5 text-sm transition hover:bg-muted/50',
+            OS_MENU_ITEM_CLASS,
+            'hover:bg-muted',
             s.current ? 'font-medium text-foreground' : 'text-muted-foreground',
           )}
         >
@@ -238,6 +240,7 @@ function CrumbSwitcher({
 export function Breadcrumbs() {
   const matches = useMatches()
   const { pathname, search } = useLocation()
+  const favoritesBar = useFeatureFlag('favorites-bar')
   // Hiring and Mentorship drop the trail section-wide; their sidebar sub-tabs
   // are the wayfinding there.
   if (
@@ -370,7 +373,7 @@ export function Breadcrumbs() {
                 ) : (
                   <span className="text-foreground font-medium">{c.label}</span>
                 )}
-                {favoriteRoute && leaf && <FavoriteRouteButton inline />}
+                {favoriteRoute && leaf && !favoritesBar && <FavoriteRouteButton inline />}
               </span>
             )
           })}

@@ -19,6 +19,7 @@ import { PresenceBar } from "./collab/PresenceBar";
 import { VersionHistoryPanel } from "./collab/VersionHistoryPanel";
 import { TagPicker, type DocTag } from "./TagPicker";
 import { FavoriteStar } from "./FavoriteStar";
+import { useFeatureFlag } from "~/components/FeatureFlags";
 import { PageIconPicker } from "./doc-chrome/PageIconPicker";
 import { PageCover } from "./doc-chrome/PageCover";
 import { DocToc } from "./doc-chrome/DocToc";
@@ -170,6 +171,7 @@ export function DocumentEditor({
   // then offers "Convert to notebook", filed in the folder the document is in.
   notebookConversion?: { parentPageId: string | null } | null;
 }) {
+  const favoritesBar = useFeatureFlag("favorites-bar");
   const revalidator = useRevalidator();
   const navigate = useNavigate();
   // Editor instance captured via onEditorReady — used for the Import Markdown action.
@@ -624,7 +626,7 @@ export function DocumentEditor({
       {syncState && (
         <span
           className={`shrink-0 inline-flex items-center gap-1 ${
-            syncState === "offline" ? "text-amber-600 dark:text-amber-500" : ""
+            syncState === "offline" ? "text-os-amber" : ""
           }`}
           title={
             syncState === "offline"
@@ -1038,9 +1040,11 @@ export function DocumentEditor({
               {/* Favorite: personal, unlike the ⋯ "Pin" which moves the
                   document for everyone. Anyone who can read the page can
                   bookmark it. Same first-line box as the icon. */}
-              <div className="flex h-[50px] shrink-0 items-center print:hidden">
-                <FavoriteStar pageId={pageId} favorited={initialFavorited} iconClassName="h-5 w-5" />
-              </div>
+              {!favoritesBar && (
+                <div className="flex h-[50px] shrink-0 items-center print:hidden">
+                  <FavoriteStar pageId={pageId} favorited={initialFavorited} iconClassName="h-5 w-5" />
+                </div>
+              )}
             </div>
 
             {/* Tags row — just below the title */}

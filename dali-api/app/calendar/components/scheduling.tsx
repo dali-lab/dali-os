@@ -292,9 +292,9 @@ export function ParticipantPicker({
     "inline-flex items-center gap-1 rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-foreground";
   // Google-style RSVP dot: green accepted, red declined, amber maybe.
   const RSVP_DOT: Record<RsvpStatus, string> = {
-    Accepted: "text-green-600",
-    Declined: "text-red-600",
-    Tentative: "text-amber-500",
+    Accepted: "text-os-green",
+    Declined: "text-destructive",
+    Tentative: "text-os-amber",
     Pending: "text-muted-foreground/40",
   };
   const listId = "participant-list";
@@ -313,7 +313,7 @@ export function ParticipantPicker({
           inputRef.current?.focus();
         }}
         className={cn(
-          "flex min-h-11 cursor-text flex-wrap items-center gap-1.5 border border-border bg-background px-2.5 py-1.5 text-sm transition-shadow focus-within:ring-2 focus-within:ring-accent-coral/30",
+          "flex min-h-11 cursor-text flex-wrap items-center gap-1.5 border border-border bg-background px-2.5 py-1.5 text-sm transition-shadow focus-within:ring-2 focus-within:ring-os-accent/30",
           fieldRadius,
         )}
       >
@@ -527,9 +527,9 @@ const SUGGESTION_COLORS = [
     fill: "bg-sky-500/20 dark:bg-sky-400/20",
   },
   {
-    dot: "bg-amber-500 dark:bg-amber-400",
-    border: "border-amber-500 dark:border-amber-400",
-    fill: "bg-amber-400/25 dark:bg-amber-400/20",
+    dot: "bg-os-amber",
+    border: "border-os-amber",
+    fill: "bg-os-amber",
   },
 ];
 
@@ -591,7 +591,7 @@ export function OptimalTimePills({
                 className={cn(
                   "rounded-full px-1.5 py-0.5 text-[10px] font-semibold",
                   allFree
-                    ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+                    ? "bg-os-green text-os-green"
                     : "text-muted-foreground",
                 )}
               >
@@ -1147,7 +1147,7 @@ export function ScheduleWeekGrid({
             <div className="px-4 py-1 text-xs text-muted-foreground">Loading availability…</div>
           )}
           {!hideAvailability && error && (
-            <div className="px-4 py-2 text-xs text-red-700">{error}</div>
+            <div className="px-4 py-2 text-xs text-destructive">{error}</div>
           )}
           {enableOptimalTimes && !hideAvailability && !showingSelfOnly && (
             <div className="mb-3 flex flex-wrap items-center gap-2 px-2">
@@ -1255,7 +1255,7 @@ export function ParticipantAvailabilityList({
         className={cn(
           "inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium transition-colors",
           active
-            ? "bg-accent-green text-[hsl(203_38%_18%)]"
+            ? "bg-os-accent text-os-bg"
             : "bg-muted text-muted-foreground hover:bg-muted/70",
         )}
       >
@@ -1266,8 +1266,8 @@ export function ParticipantAvailabilityList({
             free === null
               ? "bg-muted-foreground/40"
               : free
-                ? "bg-green-600 dark:bg-green-400"
-                : "bg-red-600 dark:bg-red-400",
+                ? "bg-os-green"
+                : "bg-destructive",
           )}
         />
         {userLabel(user)}
@@ -1368,7 +1368,7 @@ export function SelectedSlotBlock({
       className={cn(
         "absolute left-0 right-0 z-30 rounded-sm border-2",
         everyoneFree
-          ? "border-green-600 bg-green-500/15 dark:border-green-400"
+          ? "border-os-green bg-os-green"
           : "border-os-accent bg-os-accent/10",
       )}
       style={{ top, height }}
@@ -1376,7 +1376,7 @@ export function SelectedSlotBlock({
       <div
         className={cn(
           "m-1 inline-flex items-center gap-1 rounded-sm px-1.5 py-0.5 text-[11px] font-semibold shadow-sm",
-          everyoneFree ? "bg-green-600 text-white dark:bg-green-500" : "bg-os-accent text-os-bg",
+          everyoneFree ? "bg-os-green text-os-bg" : "bg-os-accent text-os-bg",
         )}
       >
         {everyoneFree ? (

@@ -354,9 +354,9 @@ function EventRow({
         </div>
       </div>
 
-      {deleteFetcher.data?.error && <p className="text-xs text-red-700">{deleteFetcher.data.error}</p>}
-      {checkInFetcher.data?.error && <p className="text-xs text-red-700">{checkInFetcher.data.error}</p>}
-      {broadcastFetcher.data?.error && <p className="text-xs text-red-700">{broadcastFetcher.data.error}</p>}
+      {deleteFetcher.data?.error && <p className="text-xs text-destructive">{deleteFetcher.data.error}</p>}
+      {checkInFetcher.data?.error && <p className="text-xs text-destructive">{checkInFetcher.data.error}</p>}
+      {broadcastFetcher.data?.error && <p className="text-xs text-destructive">{broadcastFetcher.data.error}</p>}
 
       {expanded && (
         <div className="flex flex-col gap-4 border-t border-os-container pt-3">
@@ -517,7 +517,7 @@ function EventForm({
         </label>
       </div>
       {(validationError || fetcher.data?.error) && (
-        <p className="text-xs text-red-700">{validationError ?? fetcher.data?.error}</p>
+        <p className="text-xs text-destructive">{validationError ?? fetcher.data?.error}</p>
       )}
       <div className="flex items-center justify-end gap-2">
         <button type="button" onClick={onClose} disabled={submitting} className={buttonClasses("secondary", "sm")}>

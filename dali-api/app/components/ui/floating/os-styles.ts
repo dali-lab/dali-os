@@ -1,5 +1,4 @@
 import {
-  OS_MENU_ITEM_CLASS,
   OS_PANEL_CLASS,
   OS_SELECT_TRIGGER_CLASS,
 } from "./styles";
@@ -10,10 +9,6 @@ import {
 
 export function usePanelClass() {
   return OS_PANEL_CLASS;
-}
-
-export function useMenuItemClass() {
-  return OS_MENU_ITEM_CLASS;
 }
 
 export function useSelectTriggerClass() {

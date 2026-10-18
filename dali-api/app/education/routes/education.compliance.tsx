@@ -109,7 +109,7 @@ export default function CECompliance() {
         </p>
       )}
       {actionData?.reminded !== undefined && (
-        <p className="text-sm text-foreground bg-green-50 border border-green-200 rounded-md px-3 py-2">
+        <p className="text-sm text-foreground bg-os-green/10 border border-os-green/40 rounded-md px-3 py-2">
           Reminded {actionData.reminded} member{actionData.reminded === 1 ? "" : "s"}.
         </p>
       )}
@@ -117,7 +117,7 @@ export default function CECompliance() {
       <div className="flex items-center justify-between gap-3">
         <p className="text-sm text-foreground">
           {rows.length} current member{rows.length === 1 ? "" : "s"} ·{" "}
-          <span className={nonCompliant > 0 ? "text-amber-700 font-semibold" : ""}>
+          <span className={nonCompliant > 0 ? "text-os-amber font-semibold" : ""}>
             {nonCompliant} without a credit
           </span>
         </p>
@@ -146,7 +146,7 @@ export default function CECompliance() {
             <div className="flex items-center justify-between gap-4">
               <a
                 href={`?term=${selected}&member=${r.userId}`}
-                className="text-sm text-foreground hover:text-accent-coral"
+                className="text-sm text-foreground hover:text-os-accent"
               >
                 {r.name}
               </a>
@@ -159,8 +159,8 @@ export default function CECompliance() {
                   className={cn(
                     "inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold",
                     r.compliant
-                      ? "bg-green-100 text-green-800"
-                      : "bg-amber-100 text-amber-800",
+                      ? "bg-os-green/15 text-os-green"
+                      : "bg-os-amber/15 text-os-amber",
                   )}
                 >
                   {r.credits} credit{r.credits === 1 ? "" : "s"}

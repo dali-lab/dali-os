@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { buttonClasses } from "~/components/ui/Button";
 import { Form, Link, useLoaderData, useActionData, useSubmit } from "react-router";
 import { Menu, Tooltip, InfoTip } from "~/components/ui/floating";
 import { nextTermCode } from "~/lib/terms.shared";
@@ -390,7 +391,7 @@ export function SigningDocumentDetail() {
               }}
               className={`w-full text-left rounded-lg border px-3 py-2 transition ${
                 active
-                  ? "border-accent-coral bg-accent-coral/5 text-foreground"
+                  ? "border-os-accent bg-os-accent/5 text-foreground"
                   : "border-border bg-card hover:bg-muted/40 text-foreground"
               }`}
             >
@@ -398,7 +399,7 @@ export function SigningDocumentDetail() {
                 <span className="font-medium">v{v.versionNumber}</span>
                 <div className="flex items-center gap-1.5">
                   {inForceVersionIds.has(v.id) && (
-                    <span className="text-xs text-accent-coral font-medium inline-flex items-center gap-1">
+                    <span className="text-xs text-os-accent font-medium inline-flex items-center gap-1">
                       <Zap className="w-3 h-3" /> In force
                     </span>
                   )}
@@ -548,7 +549,7 @@ export function SigningDocumentDetail() {
         <button
           type="button"
           onClick={startCreate}
-          className="inline-flex items-center px-4 py-2 text-sm font-medium rounded-lg text-white bg-accent-coral hover:bg-accent-coral/90 shadow-sm"
+          className={buttonClasses("primary", "md")}
         >
           {tailDraftEditable ? (
             <PenLine className="w-4 h-4 mr-2" />
@@ -628,7 +629,7 @@ export function SigningDocumentDetail() {
                   <button
                     type="button"
                     onClick={() => setPreviewing((p) => !p)}
-                    className="font-medium text-accent-coral hover:underline"
+                    className="font-medium text-os-accent hover:underline"
                   >
                     {previewing ? "← Back to editing" : "Preview as signer"}
                   </button>
@@ -697,7 +698,7 @@ export function SigningDocumentDetail() {
               </button>
               <button
                 type="submit"
-                className="px-3 py-2 text-sm font-medium text-white bg-accent-coral rounded-md hover:bg-accent-coral/90 disabled:opacity-50"
+                className={buttonClasses("primary", "md")}
               >
                 {tailDraftEditable ? "Save draft" : "Save Version"}
               </button>
@@ -731,7 +732,7 @@ export function SigningDocumentDetail() {
                     return (
                       <>
                         <Tooltip content="This version is already in force. Signatories are tracked in the panel below." variant="rich">
-                          <span className="inline-flex items-center gap-1 px-3 py-1.5 text-sm font-medium rounded-md text-accent-coral bg-accent-coral/10 border border-accent-coral/30 cursor-default select-none">
+                          <span className="inline-flex items-center gap-1 px-3 py-1.5 text-sm font-medium rounded-md text-os-accent bg-os-accent/10 border border-os-accent/30 cursor-default select-none">
                             <Zap className="w-4 h-4" /> In force
                           </span>
                         </Tooltip>
@@ -771,7 +772,7 @@ export function SigningDocumentDetail() {
                       <Tooltip content="Bind this version: send sign requests to everyone in the configured audience and start tracking completion." variant="rich">
                         <button
                           type="submit"
-                          className="inline-flex items-center gap-1 px-3 py-1.5 text-sm font-medium rounded-md text-white bg-accent-coral hover:bg-accent-coral/90"
+                          className={buttonClasses("primary", "sm")}
                         >
                           <Zap className="w-4 h-4" /> Put in force
                         </button>
@@ -922,7 +923,7 @@ function BindingsPanel() {
                     {i > 0 ? ", " : ""}
                     <Link
                       to={`/core/agreements/${document.id}/signature/${s.id}`}
-                      className="text-accent-coral hover:underline"
+                      className="text-os-accent hover:underline"
                     >
                       {s.name}
                     </Link>
@@ -945,7 +946,7 @@ function BindingsPanel() {
                         <Tooltip content="View signed copy">
                           <Link
                             to={`/core/agreements/${document.id}/signature/${s.signatureId}`}
-                            className="block truncate text-xs text-accent-coral hover:underline"
+                            className="block truncate text-xs text-os-accent hover:underline"
                           >
                             {s.name}
                           </Link>

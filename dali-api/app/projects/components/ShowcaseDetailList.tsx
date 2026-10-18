@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { buttonClasses } from "~/components/ui/Button";
 import { Form, useNavigation } from "react-router";
 import { Plus, X } from "lucide-react";
 import type { ShowcaseDetail } from "../lib/showcase-content";
@@ -45,7 +46,7 @@ export function ShowcaseDetailList({
               placeholder="Section title (e.g. The Problem)"
               disabled={!canEdit}
               aria-label="Section title"
-              className="bg-transparent font-semibold text-foreground border border-transparent rounded px-1 -mx-1 hover:border-dashed hover:border-border focus:outline-none focus:border-solid focus:border-accent-coral/60 focus:bg-background transition-colors disabled:hover:border-transparent"
+              className="bg-transparent font-semibold text-foreground border border-transparent rounded px-1 -mx-1 hover:border-dashed hover:border-border focus:outline-none focus:border-solid focus:border-os-accent/60 focus:bg-background transition-colors disabled:hover:border-transparent"
             />
             <textarea
               name="detailDescription"
@@ -54,7 +55,7 @@ export function ShowcaseDetailList({
               disabled={!canEdit}
               rows={2}
               aria-label="Section text"
-              className="bg-transparent text-sm text-muted-foreground border border-transparent rounded px-1 -mx-1 hover:border-dashed hover:border-border focus:outline-none focus:border-solid focus:border-accent-coral/60 focus:bg-background transition-colors disabled:hover:border-transparent resize-y"
+              className="bg-transparent text-sm text-muted-foreground border border-transparent rounded px-1 -mx-1 hover:border-dashed hover:border-border focus:outline-none focus:border-solid focus:border-os-accent/60 focus:bg-background transition-colors disabled:hover:border-transparent resize-y"
             />
           </div>
           {canEdit && (
@@ -92,7 +93,7 @@ export function ShowcaseDetailList({
           <button
             type="submit"
             disabled={saving}
-            className="px-3 py-1.5 text-sm font-medium rounded-md bg-accent-coral text-white hover:bg-accent-coral/90 transition-colors disabled:opacity-60"
+            className={buttonClasses("primary", "sm")}
           >
             {saving ? "Saving…" : "Save sections"}
           </button>

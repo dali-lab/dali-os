@@ -203,10 +203,10 @@ function RequestHistory({ requests }: { requests: ProjectInfraRequest[] }) {
             <span
               className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ${
                 r.status === "Fulfilled"
-                  ? "bg-green-100 text-green-800"
+                  ? "bg-os-green/15 text-os-green"
                   : r.status === "Rejected"
-                    ? "bg-red-100 text-red-700"
-                    : "bg-amber-100 text-amber-800"
+                    ? "bg-destructive/15 text-destructive"
+                    : "bg-os-amber/15 text-os-amber"
               }`}
               title={timeAgo(r.createdAt)}
             >

@@ -43,15 +43,15 @@ export function ComplianceBlock({
         <div
           className={`flex items-start gap-2.5 rounded-os-item border px-3 py-2.5 ${
             ce.compliant
-              ? "border-accent-green/40 bg-accent-green/10"
-              : "border-accent-yellow/50 bg-accent-yellow/10"
+              ? "border-os-green/40 bg-os-green/10"
+              : "border-os-amber/40 bg-os-amber/10"
           }`}
         >
           <span className="mt-0.5 shrink-0">
             {ce.compliant ? (
-              <Check className="h-4 w-4 text-accent-green" aria-hidden />
+              <Check className="h-4 w-4 text-os-green" aria-hidden />
             ) : (
-              <TriangleAlert className="h-4 w-4 text-amber-600" aria-hidden />
+              <TriangleAlert className="h-4 w-4 text-os-amber" aria-hidden />
             )}
           </span>
           <div className="min-w-0">

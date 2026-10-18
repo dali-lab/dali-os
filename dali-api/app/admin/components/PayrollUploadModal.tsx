@@ -148,7 +148,7 @@ function ImportSummary({ result }: { result: PayrollUploadResult }) {
 
   return (
     <div className="mt-4 rounded-md bg-muted px-3 py-2.5 text-xs text-foreground">
-      <div className="flex items-center gap-1.5 font-semibold text-accent-green">
+      <div className="flex items-center gap-1.5 font-semibold text-os-green">
         <CheckCircle2 className="w-4 h-4" aria-hidden /> Import complete
       </div>
       <ul className="mt-1.5 space-y-0.5 text-muted-foreground">
@@ -166,14 +166,14 @@ function ImportSummary({ result }: { result: PayrollUploadResult }) {
           </li>
         )}
         {timesheet.invalidPeriods.length > 0 && (
-          <li className="text-amber-700">
+          <li className="text-os-amber">
             {timesheet.invalidPeriods.length} pay-period label
             {timesheet.invalidPeriods.length === 1 ? "" : "s"} could not be parsed
             and {timesheet.invalidPeriods.length === 1 ? "was" : "were"} skipped.
           </li>
         )}
         {rowErrors > 0 && (
-          <li className="text-amber-700">
+          <li className="text-os-amber">
             {rowErrors} row{rowErrors === 1 ? "" : "s"} had errors and{" "}
             {rowErrors === 1 ? "was" : "were"} skipped.
           </li>

@@ -32,9 +32,9 @@ export async function loader({ request }: Route.LoaderArgs) {
 // chip — the same shape the rest of the app uses for a status.
 const DOT_TONE = {
   neutral: "bg-muted-foreground/50",
-  success: "bg-accent-teal",
-  warning: "bg-accent-yellow",
-  danger: "bg-red-500",
+  success: "bg-os-green",
+  warning: "bg-os-amber",
+  danger: "bg-destructive",
 } as const;
 
 const APPLICATION_TONE: Record<string, keyof typeof DOT_TONE> = {
@@ -83,9 +83,9 @@ export default function EducationHub() {
           // tile-and-heading block that size read as a second page header.
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-xl border border-border bg-card px-4 py-3">
             {ceStanding.compliant ? (
-              <CircleCheck className="h-4 w-4 shrink-0 text-accent-teal" />
+              <CircleCheck className="h-4 w-4 shrink-0 text-os-green" />
             ) : (
-              <CircleAlert className="h-4 w-4 shrink-0 text-accent-yellow" />
+              <CircleAlert className="h-4 w-4 shrink-0 text-os-amber" />
             )}
             <span className="font-heading text-sm font-semibold text-foreground">
               CE credit
@@ -111,7 +111,7 @@ export default function EducationHub() {
       />
 
       {dashboard.myCourses.length === 0 && myApplications.length === 0 && (
-        <div className="rounded-os-card border border-border bg-card p-8 text-center">
+        <div className="rounded-os-card bg-card p-8 text-center">
           <p className="font-heading font-semibold text-foreground">
             You&apos;re not in a course yet
           </p>
@@ -132,13 +132,13 @@ export default function EducationHub() {
           <h2 className="mb-2 font-heading text-sm font-semibold uppercase tracking-wide text-muted-foreground">
             Your applications
           </h2>
-          <ul className="divide-y divide-border rounded-os-card border border-border bg-card">
+          <ul className="divide-y divide-border rounded-os-card bg-card">
             {myApplications.map((a) => (
               <li key={a.id} className="flex items-center justify-between gap-3 px-4 py-3">
                 <div className="min-w-0">
                   <Link
                     to={`/education/${a.offeringId}`}
-                    className="truncate text-sm font-medium text-foreground hover:text-accent-coral"
+                    className="truncate text-sm font-medium text-foreground hover:text-os-accent"
                   >
                     {a.offeringTitle}
                   </Link>

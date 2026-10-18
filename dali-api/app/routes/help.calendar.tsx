@@ -19,11 +19,11 @@ export default function HelpCalendarPage() {
         <h2 className="text-lg font-semibold">Linking a Google account</h2>
         <p className="mt-2 text-sm text-foreground">
           Go to{" "}
-          <Link to="/settings/calendar" className="text-accent-teal hover:underline">
+          <Link to="/settings/calendar" className="text-os-accent hover:underline">
             Settings → Calendar
           </Link>{" "}
           (or the right rail on the{" "}
-          <Link to="/calendar" className="text-accent-teal hover:underline">
+          <Link to="/calendar" className="text-os-accent hover:underline">
             Calendar page
           </Link>
           ) and click <em>Add Google account</em>. You'll be redirected to
@@ -48,7 +48,7 @@ export default function HelpCalendarPage() {
         <h2 className="text-lg font-semibold">Working hours and buffers</h2>
         <p className="mt-2 text-sm text-foreground">
           On the{" "}
-          <Link to="/calendar" className="text-accent-teal hover:underline">
+          <Link to="/calendar" className="text-os-accent hover:underline">
             Calendar page
           </Link>{" "}
           you can set the hours you're generally available on each weekday and
@@ -75,7 +75,7 @@ export default function HelpCalendarPage() {
         <h2 className="text-lg font-semibold">Removing a link</h2>
         <p className="mt-2 text-sm text-foreground">
           From{" "}
-          <Link to="/settings/calendar" className="text-accent-teal hover:underline">
+          <Link to="/settings/calendar" className="text-os-accent hover:underline">
             Settings → Calendar
           </Link>
           , click the trash icon next to an account. Existing meetings

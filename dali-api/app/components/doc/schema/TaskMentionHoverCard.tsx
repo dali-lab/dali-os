@@ -48,16 +48,15 @@ async function loadTask(id: string): Promise<CardTask | null> {
   return task;
 }
 
-/** Status→color for the chip's dot and the hover card's status line. Mirrors
- *  the task board's own status accents (TaskBoard.tsx's STATUS_ACCENT_OS
- *  `edge` colors) without importing that component-local map. */
+/** Status→color for the chip's dot and the hover card's status line: the same
+ *  `--os-status-*-edge` tokens the task board's columns use. */
 const STATUS_DOT_COLOR: Record<TaskStatus, string> = {
-  Backlog: "var(--color-brand-gray)",
-  Todo: "#7c5ce0",
-  InProgress: "var(--color-accent-teal)",
-  InReview: "var(--color-accent-yellow)",
-  Done: "var(--color-accent-green)",
-  Cancelled: "var(--color-border)",
+  Backlog: "var(--os-status-backlog-edge)",
+  Todo: "var(--os-status-todo-edge)",
+  InProgress: "var(--os-status-progress-edge)",
+  InReview: "var(--os-status-review-edge)",
+  Done: "var(--os-status-done-edge)",
+  Cancelled: "var(--os-status-cancelled-edge)",
 };
 
 /** Resolves a task's live card data, lazily (only once a chip for that

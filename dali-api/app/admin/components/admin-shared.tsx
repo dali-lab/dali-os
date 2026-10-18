@@ -272,7 +272,7 @@ export function AdminToggle({ member, disabled }: { member: Member; disabled?: b
           onClick={() => void handleClick()}
           className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
             isAdminMember
-              ? "border border-accent-coral/30 bg-accent-coral/10 text-accent-coral hover:bg-accent-coral/20"
+              ? "border border-os-accent/30 bg-os-accent/10 text-os-accent hover:bg-os-accent/20"
               : "border border-border bg-card text-muted-foreground hover:bg-muted hover:text-foreground"
           } disabled:opacity-60 disabled:cursor-not-allowed`}
         >
@@ -326,7 +326,7 @@ export function StaffToggle({ member, disabled }: { member: Member; disabled?: b
           onClick={() => void handleClick()}
           className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
             isStaffMember
-              ? "border border-accent-teal/30 bg-accent-teal/10 text-accent-teal hover:bg-accent-teal/20"
+              ? "border border-os-accent/30 bg-os-accent/10 text-os-accent hover:bg-os-accent/20"
               : "border border-border bg-card text-muted-foreground hover:bg-muted hover:text-foreground"
           } disabled:opacity-60 disabled:cursor-not-allowed`}
         >
@@ -427,7 +427,7 @@ function RemoveCoreTitleButton({
       <button
         type="submit"
         aria-label={`Remove the "${title}" Core title from ${name}`}
-        className="hover:text-green-900 ml-0.5 p-2 -m-1.5 inline-flex items-center justify-center"
+        className="hover:text-os-green ml-0.5 p-2 -m-1.5 inline-flex items-center justify-center"
       >
         <X className="w-3 h-3" />
       </button>
@@ -514,13 +514,13 @@ export function CorePicker({ member }: { member: Member }) {
                 setOpen(false);
               }
             }}
-            className="px-2 py-0.5 text-xs border border-border rounded-md bg-background text-foreground w-28 focus:outline-none focus:ring-2 focus:ring-green-500/30"
+            className="px-2 py-0.5 text-xs border border-border rounded-md bg-background text-foreground w-28 focus:outline-none focus:ring-2 focus:ring-os-green"
           />
           <button
             type="button"
             disabled={submitting || !value.trim()}
             onClick={() => void submitTitle(value)}
-            className="inline-flex items-center px-1.5 py-0.5 rounded-md text-xs bg-green-700 text-white hover:bg-green-800 disabled:opacity-60"
+            className="inline-flex items-center px-1.5 py-0.5 rounded-md text-xs bg-os-green text-os-bg hover:bg-os-green disabled:opacity-60"
             aria-label="Add Core title"
           >
             <Check className="w-3 h-3" />

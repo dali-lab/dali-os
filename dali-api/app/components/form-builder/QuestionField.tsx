@@ -25,7 +25,7 @@ export function UrlCheckIndicator({ state }: { state: UrlCheckState }) {
   if (state.status === "checking") {
     return (
       <span className="text-xs text-muted-foreground/70 flex items-center gap-1 mt-1">
-        <span className="inline-block w-3 h-3 border-2 border-border border-t-accent-coral rounded-full animate-spin" />
+        <span className="inline-block w-3 h-3 border-2 border-border border-t-os-accent rounded-full animate-spin" />
         Checking URL...
       </span>
     );
@@ -131,8 +131,8 @@ function ReferenceProjectCard({
     <div
       className={`rounded-lg border transition-colors ${
         selected
-          ? "border-accent-coral bg-accent-coral/5"
-          : "border-border bg-card hover:border-accent-coral/40"
+          ? "border-os-accent bg-os-accent/5"
+          : "border-border bg-card hover:border-os-accent/40"
       }`}
     >
       <Radio
@@ -190,7 +190,7 @@ function ReferenceProjectCard({
             aria-expanded={expanded}
             aria-controls={detailsId}
             onClick={() => setExpanded((x) => !x)}
-            className="inline-flex items-center gap-1 text-xs font-medium text-accent-coral hover:text-accent-coral/80"
+            className="inline-flex items-center gap-1 text-xs font-medium text-os-accent hover:text-os-accent/80"
           >
             <ChevronDown
               className={`w-3 h-3 transition-transform ${expanded ? "rotate-180" : ""}`}
@@ -233,7 +233,7 @@ function ReferenceProjectCard({
                       window.location.href = url;
                     }
                   }}
-                  className="self-start inline-flex items-center gap-1.5 mt-0.5 text-xs font-medium px-2.5 py-1 rounded-full border border-accent-coral/40 text-accent-coral hover:bg-accent-coral/10"
+                  className="self-start inline-flex items-center gap-1.5 mt-0.5 text-xs font-medium px-2.5 py-1 rounded-full border border-os-accent/40 text-os-accent hover:bg-os-accent/10"
                 >
                   <ExternalLink className="w-3 h-3" />
                   Statement of Work
@@ -419,7 +419,7 @@ function FileUploadField({
   if (uploading) {
     return (
       <div className="flex items-center gap-2 px-4 py-3 rounded-lg border border-border bg-card text-sm text-muted-foreground">
-        <span className="inline-block w-4 h-4 border-2 border-border border-t-accent-coral rounded-full animate-spin" />
+        <span className="inline-block w-4 h-4 border-2 border-border border-t-os-accent rounded-full animate-spin" />
         Uploading...
       </div>
     );
@@ -428,7 +428,7 @@ function FileUploadField({
   if (fileName) {
     return (
       <div className={`flex items-center gap-3 px-4 py-3 rounded-lg border border-border bg-card ${disabled ? "opacity-60" : ""}`}>
-        <svg className="w-5 h-5 text-accent-coral shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+        <svg className="w-5 h-5 text-os-accent shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
         </svg>
         <span className="text-sm text-foreground truncate flex-1">{fileName}</span>
@@ -444,7 +444,7 @@ function FileUploadField({
           type="button"
           disabled={disabled}
           onClick={() => { if (disabled) return; fileRef.current?.click(); }}
-          className={`text-xs text-accent-coral transition ${disabled ? "cursor-not-allowed" : "hover:text-accent-coral/80"}`}
+          className={`text-xs text-os-accent transition ${disabled ? "cursor-not-allowed" : "hover:text-os-accent/80"}`}
         >
           Replace
         </button>
@@ -467,7 +467,7 @@ function FileUploadField({
         disabled={disabled}
         aria-disabled={disabled || undefined}
         onClick={() => { if (disabled) return; fileRef.current?.click(); }}
-        className={`flex items-center gap-2 px-4 py-3 rounded-lg border-2 border-dashed border-border bg-card text-sm text-muted-foreground transition w-full ${disabled ? "cursor-not-allowed" : "hover:border-accent-coral hover:text-accent-coral"}`}
+        className={`flex items-center gap-2 px-4 py-3 rounded-lg border-2 border-dashed border-border bg-card text-sm text-muted-foreground transition w-full ${disabled ? "cursor-not-allowed" : "hover:border-os-accent hover:text-os-accent"}`}
       >
         <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
@@ -505,7 +505,7 @@ export function FormQuestionField({
   disabled = false,
 }: FormQuestionFieldProps) {
   const inputBase =
-    "w-full rounded-lg border border-border bg-card text-base sm:text-sm text-foreground placeholder:text-muted-foreground/70 focus:outline-none focus:border-accent-coral px-4 py-2";
+    "w-full rounded-lg border border-border bg-card text-base sm:text-sm text-foreground placeholder:text-muted-foreground/70 focus:outline-none focus:border-os-accent px-4 py-2";
   const disabledClass = disabled ? " opacity-60 cursor-not-allowed" : "";
 
   if (question.type === "textarea") {

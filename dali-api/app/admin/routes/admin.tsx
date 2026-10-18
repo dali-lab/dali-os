@@ -262,14 +262,14 @@ export default function AdminHub() {
 
       {/* Recent activity + email-sender usage */}
       <div className="grid gap-4 lg:grid-cols-2">
-        <section className="rounded-os-card border border-border bg-card p-4">
+        <section className="rounded-os-card bg-card p-4">
           <div className="mb-2 flex items-center justify-between gap-2">
             <h2 className="font-heading text-sm font-semibold uppercase tracking-wide text-muted-foreground">
               Recent activity
             </h2>
             <Link
               to="/admin/activity"
-              className="inline-flex items-center gap-1 text-xs font-medium text-accent-coral hover:underline"
+              className="inline-flex items-center gap-1 text-xs font-medium text-os-accent hover:underline"
             >
               Full audit log <ArrowRight className="h-3 w-3" aria-hidden />
             </Link>
@@ -303,14 +303,14 @@ export default function AdminHub() {
           )}
         </section>
 
-        <section className="rounded-os-card border border-border bg-card p-4">
+        <section className="rounded-os-card bg-card p-4">
           <div className="mb-2 flex items-center justify-between gap-2">
             <h2 className="font-heading text-sm font-semibold uppercase tracking-wide text-muted-foreground">
               Email senders
             </h2>
             <Link
               to="/admin/email-senders"
-              className="inline-flex items-center gap-1 text-xs font-medium text-accent-coral hover:underline"
+              className="inline-flex items-center gap-1 text-xs font-medium text-os-accent hover:underline"
             >
               Configure <ArrowRight className="h-3 w-3" aria-hidden />
             </Link>
@@ -354,7 +354,7 @@ export default function AdminHub() {
               {cluster.hubPath && (
                 <Link
                   to={cluster.hubPath}
-                  className="inline-flex items-center gap-1 text-xs font-medium text-accent-coral hover:underline"
+                  className="inline-flex items-center gap-1 text-xs font-medium text-os-accent hover:underline"
                 >
                   Open <ArrowRight className="h-3 w-3" aria-hidden />
                 </Link>
@@ -370,7 +370,7 @@ export default function AdminHub() {
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex min-w-0 items-center gap-2">
                       <s.icon
-                        className="h-4 w-4 shrink-0 text-accent-coral"
+                        className="h-4 w-4 shrink-0 text-os-accent"
                         aria-hidden
                       />
                       <h3 className="truncate font-heading font-semibold text-foreground">
@@ -382,8 +382,8 @@ export default function AdminHub() {
                         className={cn(
                           "shrink-0 rounded-full px-2 py-0.5 text-xs font-medium",
                           s.key === "jobs"
-                            ? "bg-amber-100 text-amber-700"
-                            : "bg-accent-coral/10 text-accent-coral",
+                            ? "bg-os-amber/10 text-os-amber"
+                            : "bg-os-accent/10 text-os-accent",
                         )}
                       >
                         {badgeLabel(s.key, badges[s.key])}

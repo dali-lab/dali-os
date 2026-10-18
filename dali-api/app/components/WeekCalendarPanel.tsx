@@ -132,7 +132,7 @@ export function WeekCalendarPanel({
   }, [selected]);
 
   return (
-    <section className="bg-card border border-border rounded-os-card p-4 flex flex-col overflow-visible">
+    <section className="bg-card rounded-os-card p-4 flex flex-col overflow-visible">
       <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
         <h2 className="inline-flex items-center gap-2 font-heading font-semibold text-foreground">
           <CalendarDays className="w-4 h-4 text-accent-coral" />

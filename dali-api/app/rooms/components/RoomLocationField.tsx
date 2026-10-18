@@ -204,7 +204,7 @@ export function RoomLocationField({
         })}
       />
       {selected.length > 0 && (
-        <p className={cn("mt-1 px-2.5 text-xs", unavailable.length ? "text-red-600" : "text-muted-foreground")}>
+        <p className={cn("mt-1 px-2.5 text-xs", unavailable.length ? "text-destructive" : "text-muted-foreground")}>
           {unavailable.length
             ? unavailableOn
               ? `${roomsLocation(unavailable)} is not available on ${unavailableOn}.`

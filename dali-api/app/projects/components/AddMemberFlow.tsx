@@ -224,7 +224,7 @@ export function AddMemberFlow({
           "focus:outline-none focus:ring-2",
           os
             ? cn(filterPillClass(true), "focus:ring-os-accent/40")
-            : "inline-flex items-center gap-1.5 text-sm px-2.5 py-1 border border-border rounded-md bg-background text-foreground hover:bg-muted focus:ring-accent-coral/30",
+            : "inline-flex items-center gap-1.5 text-sm px-2.5 py-1 border border-border rounded-md bg-background text-foreground hover:bg-muted focus:ring-os-accent/30",
         )}
       >
         <UserPlus className="w-4 h-4" />
@@ -336,7 +336,7 @@ export function AddMemberFlow({
                           "self-start disabled:opacity-50",
                           os
                             ? "os-btn-primary"
-                            : "px-3 py-1.5 text-sm rounded-lg bg-accent-coral text-white hover:opacity-90",
+                            : "px-3 py-1.5 text-sm rounded-lg bg-os-accent text-os-bg hover:opacity-90",
                         )}
                       >
                         {busy ? "Adding…" : "Add to board"}
@@ -400,7 +400,7 @@ export function AddMemberFlow({
                       "self-end disabled:opacity-50",
                       os
                         ? "os-btn-primary"
-                        : "px-3 py-1.5 text-sm rounded-lg bg-accent-coral text-white hover:opacity-90",
+                        : "px-3 py-1.5 text-sm rounded-lg bg-os-accent text-os-bg hover:opacity-90",
                     )}
                   >
                     {busy ? "Adding…" : "Add mentor"}
@@ -425,7 +425,7 @@ function BoardBadge({ onBoard, os }: { onBoard: boolean; os: boolean }) {
         onBoard
           ? os
             ? "bg-os-accent/15 text-os-accent"
-            : "bg-accent-teal/15 text-accent-teal"
+            : "bg-os-accent/15 text-os-accent"
           : "bg-muted text-muted-foreground",
       )}
     >

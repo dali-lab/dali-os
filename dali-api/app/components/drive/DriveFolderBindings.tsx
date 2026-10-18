@@ -86,7 +86,7 @@ export function DriveFolderBindings({
                     <ExternalLink className="h-3 w-3 text-gray-400" />
                   </a>
                 ) : row.missing ? (
-                  <span className="inline-flex items-center gap-1.5 text-xs text-amber-600">
+                  <span className="inline-flex items-center gap-1.5 text-xs text-os-amber">
                     <AlertTriangle className="h-3.5 w-3.5" />
                     Folder was deleted
                   </span>
@@ -138,7 +138,7 @@ export function DriveFolderBindings({
           ))}
         </ul>
       )}
-      {mut.data?.error && <p className="mt-2 text-xs text-red-600">{mut.data.error}</p>}
+      {mut.data?.error && <p className="mt-2 text-xs text-destructive">{mut.data.error}</p>}
     </div>
   );
 }

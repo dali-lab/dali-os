@@ -41,8 +41,10 @@ import {
   useTablessHistoryShortcuts,
 } from '~/components/TablessHistoryNav'
 import { useShellNav } from '~/components/shell-nav'
-import { buildPageLink, COPY_PAGE_LINK_EVENT, writePageLink } from '~/lib/page-link'
+import { buildPageLink, cleanTabUrl, COPY_PAGE_LINK_EVENT, stripHash, writePageLink } from '~/lib/page-link'
 import { useToast } from '~/components/ui/toast'
+import { FavoritesBar } from '~/components/FavoritesBar'
+import { TOGGLE_FAVORITE_EVENT, useCurrentPageFavorite } from '~/components/favorites-live'
 import { setFocusPreference } from '~/lib/focus-mode'
 import { useOsShellRoot } from '~/lib/os-shell'
 import { cn } from '~/lib/cn'
@@ -83,6 +85,8 @@ interface LayoutOSProps {
   isAlumni?: boolean
   /** Starred pages/routes, most-recently pinned first — carried by the top bar. */
   favorites?: FavoritePage[]
+  /** Receives local reorders of `favorites` (drag, Move left/right, Remove). */
+  onFavoritesChange?: (next: FavoritePage[]) => void
   /** True when this session is an admin "log in as" — shows the exit banner. */
   impersonating?: boolean
   impersonationAllowsWrites?: boolean
@@ -122,6 +126,7 @@ export function LayoutOS({
   isInstructor = false,
   isAlumni = false,
   favorites = [],
+  onFavoritesChange,
   impersonating = false,
   impersonationAllowsWrites = false,
   focusMode = false,
@@ -146,6 +151,11 @@ export function LayoutOS({
   } = useShellNav(tabless)
 
   const [focusedTabUrl, setFocusedTabUrl] = useState<string | null>(null)
+  const [focusedTabLabel, setFocusedTabLabel] = useState<string | null>(null)
+  const onActiveTabChange = useCallback((url: string | null, label: string | null) => {
+    setFocusedTabUrl(url)
+    setFocusedTabLabel(label)
+  }, [])
   const toast = useToast()
 
   const copyCurrentPageLink = useCallback(
@@ -166,6 +176,30 @@ export function LayoutOS({
     window.addEventListener(COPY_PAGE_LINK_EVENT, onCopy)
     return () => window.removeEventListener(COPY_PAGE_LINK_EVENT, onCopy)
   }, [copyCurrentPageLink])
+  const favoritesBar = useFeatureFlag('favorites-bar')
+  const starUrl = favoritesBar
+    ? stripHash(cleanTabUrl(!tabless && focusedTabUrl !== null ? focusedTabUrl : location.pathname + location.search))
+    : null
+  // Titles are "<page> · DALI OS"; keep the page part.
+  const starLabel =
+    (!tabless && focusedTabLabel) ||
+    (typeof document !== 'undefined' ? document.title.split(' · ')[0] : '') ||
+    starUrl ||
+    ''
+  const pageStar = useCurrentPageFavorite(starUrl, starLabel, favoritesBar)
+  const toggleStarRef = useRef(pageStar)
+  toggleStarRef.current = pageStar
+
+  useEffect(() => {
+    if (!favoritesBar) return
+    const onToggle = (e: Event) => {
+      e.preventDefault()
+      if (toggleStarRef.current.canToggle) void toggleStarRef.current.toggle()
+    }
+    window.addEventListener(TOGGLE_FAVORITE_EVENT, onToggle)
+    return () => window.removeEventListener(TOGGLE_FAVORITE_EVENT, onToggle)
+  }, [favoritesBar])
+
   // Tab mode: the focused tab's frame reports its page guide over the guide
   // bridge, since only that document knows the route's docKey.
   const [workspaceGuide, setWorkspaceGuide] = useState<GuideState | null>(null)
@@ -474,7 +508,7 @@ export function LayoutOS({
                 {!collapsed && 'Email'}
                 {collapsed ? (
                   emailUnread > 0 && (
-                    <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-accent-yellow" aria-hidden />
+                    <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-os-accent" aria-hidden />
                   )
                 ) : (
                   <UnreadBadge count={emailUnread} className="ml-auto" />
@@ -713,25 +747,55 @@ export function LayoutOS({
         ) : (
           <div className="flex min-w-0 items-center gap-3 overflow-x-auto">
             <Star className="h-4 w-4 flex-shrink-0 text-os-accent" aria-hidden />
-            <div className="flex items-center gap-2">
-              {favorites.map((p) => (
-                <Tooltip key={p.id} content={p.title || 'Untitled'}>
-                  <button
-                    type="button"
-                    {...tabClickProps({ url: p.href, label: p.title || 'Untitled' })}
-                    className="flex max-w-[180px] flex-shrink-0 items-center gap-1.5 rounded-full bg-os-card px-2.5 py-1 text-xs text-os-grey transition-colors hover:bg-os-card-hover hover:text-foreground"
-                  >
-                    <FavoriteIcon page={p} glyphClassName="text-os-accent" />
-                    <span className="truncate">{p.title || 'Untitled'}</span>
-                  </button>
-                </Tooltip>
-              ))}
-            </div>
+            {favoritesBar && onFavoritesChange ? (
+              <FavoritesBar
+                favorites={favorites}
+                onChange={onFavoritesChange}
+                tabClickProps={tabClickProps}
+              />
+            ) : (
+              <div className="flex items-center gap-2">
+                {favorites.map((p) => (
+                  <Tooltip key={p.id} content={p.title || 'Untitled'}>
+                    <button
+                      type="button"
+                      {...tabClickProps({ url: p.href, label: p.title || 'Untitled' })}
+                      className="flex max-w-[180px] flex-shrink-0 items-center gap-1.5 rounded-full bg-os-card px-2.5 py-1 text-xs text-os-grey transition-colors hover:bg-os-card-hover hover:text-foreground"
+                    >
+                      <FavoriteIcon page={p} glyphClassName="text-os-accent" />
+                      <span className="truncate">{p.title || 'Untitled'}</span>
+                    </button>
+                  </Tooltip>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </div>
 
       <div className="flex flex-shrink-0 items-center gap-3">
+        {favoritesBar && (
+          <Tooltip
+            content={
+              pageStar.inSidebar
+                ? 'Already in the sidebar'
+                : pageStar.favorited
+                  ? 'Remove this page from favorites'
+                  : 'Add this page to favorites'
+            }
+          >
+            <button
+              type="button"
+              disabled={!pageStar.canToggle}
+              onClick={() => void pageStar.toggle()}
+              aria-label={pageStar.favorited ? 'Remove this page from favorites' : 'Add this page to favorites'}
+              aria-pressed={pageStar.favorited}
+              className={cn('os-topbar-btn disabled:opacity-40', pageStar.favorited && 'text-os-accent')}
+            >
+              <Star className={cn('h-5 w-5', pageStar.favorited && 'fill-current')} />
+            </button>
+          </Tooltip>
+        )}
         <Tooltip content="Copy link to this page">
           <button
             type="button"
@@ -932,7 +996,7 @@ export function LayoutOS({
               { url: '/', label: 'Home' },
               ...(deepLinkTab ? [deepLinkTab] : []),
             ]}
-            onActiveUrlChange={setFocusedTabUrl}
+            onActiveUrlChange={onActiveTabChange}
             onGuideChange={setWorkspaceGuide}
           />
         )}

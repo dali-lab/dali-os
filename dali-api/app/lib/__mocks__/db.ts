@@ -359,6 +359,7 @@ export const prisma = {
     create: vi.fn(),
     update: vi.fn(),
     updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+    aggregate: vi.fn().mockResolvedValue({ _max: { position: null } }),
   },
   projectFile: {
     findUnique: vi.fn(),

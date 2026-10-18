@@ -21,7 +21,7 @@ export function SyncErrorNotice({
   return (
     <div
       className={cn(
-        "flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-red-600",
+        "flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-destructive",
         className,
       )}
     >

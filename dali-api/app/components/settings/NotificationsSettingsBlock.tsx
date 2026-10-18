@@ -243,9 +243,9 @@ export function NotificationsSettingsBlock({
           >
             {busy ? "Saving…" : "Save preferences"}
           </button>
-          {saved && <span className="text-sm text-green-700">Saved.</span>}
+          {saved && <span className="text-sm text-os-green">Saved.</span>}
           {fetcher.data && fetcher.data.ok === false && (
-            <span className="text-sm text-red-700">{fetcher.data.error}</span>
+            <span className="text-sm text-destructive">{fetcher.data.error}</span>
           )}
         </div>
       </fetcher.Form>

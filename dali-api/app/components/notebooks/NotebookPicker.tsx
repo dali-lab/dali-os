@@ -111,7 +111,7 @@ export function NotebookPicker({
           <p className="px-3 py-6 text-center text-sm text-muted-foreground">Loading notebooks</p>
         )}
         {status === "error" && (
-          <p className="px-3 py-6 text-center text-sm text-red-600">Couldn't load notebooks. Close this and try again.</p>
+          <p className="px-3 py-6 text-center text-sm text-destructive">Couldn't load notebooks. Close this and try again.</p>
         )}
         {status === "ready" && offered.length === 0 && (
           <p className="px-3 py-6 text-center text-sm text-muted-foreground">

@@ -1,10 +1,6 @@
 // Shared Tailwind for the floating primitives so Select / Menu / ContextMenu read
 // identically. Kept in one place so a look change lands everywhere at once.
 
-// Row inside a Menu / ContextMenu (single line, icon + label).
-export const MENU_ITEM_CLASS =
-  "flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm text-foreground transition-colors disabled:opacity-50 disabled:hover:bg-transparent";
-
 /* ── dali.os dress ───────────────────────────────────────────────────────
  * The design has no square-cornered controls, so the floating primitives get
  * fully-rounded triggers, a 12px card panel and roomier rows.
@@ -21,8 +17,10 @@ export const OS_SURFACE_CLASS =
 
 export const OS_PANEL_CLASS = `z-[60] overflow-y-auto ${OS_SURFACE_CLASS} p-1.5 focus:outline-none`;
 
+// No text colour: cn() has no tailwind-merge, so a row's own colour
+// (destructive, muted) would race a base text-foreground on stylesheet order.
 export const OS_MENU_ITEM_CLASS =
-  "flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-foreground transition-colors disabled:opacity-50 disabled:hover:bg-transparent";
+  "flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors disabled:opacity-50 disabled:hover:bg-transparent";
 
 export const OS_SELECT_TRIGGER_CLASS =
   "inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1.5 text-xs text-foreground transition-colors hover:bg-muted/40 disabled:opacity-60 disabled:hover:bg-transparent";

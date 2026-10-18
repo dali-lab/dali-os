@@ -612,7 +612,7 @@ export default function PartnersApplications() {
               {formBinding ? formBinding.formName : "None bound"}
             </span>
             {formBinding && (!formBinding.published || !formBinding.hasVersion) && (
-              <span className="shrink-0 text-[10px] font-medium uppercase tracking-wide text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">
+              <span className="shrink-0 text-[10px] font-medium uppercase tracking-wide text-os-amber bg-os-amber/10 border border-os-amber/40 rounded px-1.5 py-0.5">
                 Not live
               </span>
             )}
@@ -676,7 +676,7 @@ export default function PartnersApplications() {
               </div>
             </div>
             {formBinding && (!formBinding.published || !formBinding.hasVersion) && (
-              <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-2 py-1.5">
+              <p className="text-xs text-os-amber bg-os-amber/10 border border-os-amber/40 rounded-md px-2 py-1.5">
                 {formBinding.hasVersion
                   ? "This form isn't published yet"
                   : "This form has no saved version yet"}

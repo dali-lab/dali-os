@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { buttonClasses } from "~/components/ui/Button";
 import { X, Plus, Check } from "lucide-react";
 import { Popover } from "~/components/ui/floating";
 
@@ -101,7 +102,7 @@ export function TagPicker({
       {applied.map((t) => (
         <span
           key={t.id}
-          className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded bg-accent-teal/10 text-accent-teal border border-accent-teal/20"
+          className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded bg-os-accent/10 text-os-accent border border-os-accent/20"
         >
           {t.label}
           {canEdit && (
@@ -170,13 +171,13 @@ export function TagPicker({
                     }
                   }}
                   placeholder="New lab tag…"
-                  className="flex-1 px-2 py-1 text-xs border border-border rounded bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-accent-coral/40"
+                  className="flex-1 px-2 py-1 text-xs border border-border rounded bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-os-accent/40"
                 />
                 <button
                   type="button"
                   disabled={busy || !newLabel.trim()}
                   onClick={() => void createTag()}
-                  className="px-2 py-1 text-xs rounded bg-accent-coral text-white disabled:opacity-50"
+                  className={buttonClasses("primary", "xs")}
                 >
                   Add
                 </button>

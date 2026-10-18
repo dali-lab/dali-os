@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Modal } from "~/components/Modal";
 import { APPLICATION_TZ, APPLICATION_TZ_LABEL } from "~/lib/timezone";
+import { buttonClasses } from "~/components/ui/Button";
 
 // Confirms Draft to Open on a cycle: opening applications is irreversible in
 // practice (applicants start drafting), so the lead sees the close date first.
@@ -94,7 +95,7 @@ export function OpenApplicationsConfirmModal({
             type="button"
             onClick={confirmOpen}
             disabled={submitting}
-            className="px-3 py-2 text-sm font-medium text-white bg-accent-coral hover:bg-accent-coral/90 rounded-md disabled:opacity-50"
+            className={buttonClasses("primary", "md")}
           >
             {submitting ? 'Opening...' : 'Open applications'}
           </button>

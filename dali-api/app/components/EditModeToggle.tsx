@@ -46,7 +46,7 @@ export function EditModeToggle({
         aria-label={editMode ? "Done editing" : "Edit"}
         className={`inline-flex items-center justify-center p-1.5 rounded-md border transition-colors ${
           editMode
-            ? "bg-accent-coral text-white border-transparent hover:bg-accent-coral/90"
+            ? "bg-os-accent text-os-bg border-transparent hover:bg-os-accent/90"
             : "border-border text-muted-foreground hover:bg-muted hover:text-foreground"
         }`}
       >

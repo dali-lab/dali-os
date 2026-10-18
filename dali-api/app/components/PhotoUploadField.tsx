@@ -200,7 +200,7 @@ export function PhotoUploadField({
                   type="button"
                   disabled={uploading}
                   onClick={handleRemove}
-                  className="px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-red-500 transition-colors disabled:opacity-60"
+                  className="px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-destructive transition-colors disabled:opacity-60"
                 >
                   Remove
                 </button>
@@ -225,12 +225,12 @@ export function PhotoUploadField({
       {/* The upload only lands when the surrounding form is saved — say so,
           or a user who uploads and navigates away silently loses it. */}
       {!readOnly && key !== (initialKey ?? "") && !uploading && (
-        <p className="text-xs text-amber-700">
+        <p className="text-xs text-os-amber">
           Not saved yet — save this form to keep the change.
         </p>
       )}
 
-      {error && <p className="text-xs text-red-500">{error}</p>}
+      {error && <p className="text-xs text-destructive">{error}</p>}
 
       <PhotoCropModal
         open={cropSrc !== null}

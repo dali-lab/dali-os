@@ -104,7 +104,7 @@ export function MentionHoverCard({
               className="h-9 w-9 flex-shrink-0 rounded-full object-cover"
             />
           ) : (
-            <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-accent-coral/15 text-xs font-semibold text-accent-coral">
+            <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-os-accent/15 text-xs font-semibold text-os-accent">
               {initials(member?.name)}
             </span>
           )}
@@ -113,7 +113,7 @@ export function MentionHoverCard({
               {member?.name ?? "Loading…"}
             </span>
             {member?.handle && (
-              <span className="truncate text-xs text-accent-coral">@{member.handle}</span>
+              <span className="truncate text-xs text-os-accent">@{member.handle}</span>
             )}
           </span>
         </span>

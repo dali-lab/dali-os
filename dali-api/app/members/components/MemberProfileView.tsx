@@ -448,8 +448,8 @@ function MemberHeader({
                     aria-hidden
                     className={`w-1.5 h-1.5 rounded-full ${
                       presenceState === "active"
-                        ? "bg-accent-green"
-                        : "border border-accent-yellow bg-background"
+                        ? "bg-os-green"
+                        : "border border-os-amber bg-background"
                     }`}
                   />
                 </Tooltip>

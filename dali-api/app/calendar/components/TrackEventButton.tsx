@@ -42,7 +42,7 @@ export function TrackEventButton({
         </button>
       </fetcher.Form>
       {fetcher.data?.error && (
-        <p className="mt-1.5 text-xs text-red-600">{fetcher.data.error}</p>
+        <p className="mt-1.5 text-xs text-destructive">{fetcher.data.error}</p>
       )}
     </>
   );

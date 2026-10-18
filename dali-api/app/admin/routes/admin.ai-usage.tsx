@@ -220,7 +220,7 @@ export default function AdminConsoleAiUsage() {
                 <div className="text-right shrink-0 space-y-0.5">
                   <div className="text-sm font-semibold text-foreground tabular-nums">
                     {r.requests.toLocaleString()}{" "}
-                    <span className="text-xs font-normal text-accent-coral tabular-nums">
+                    <span className="text-xs font-normal text-os-accent tabular-nums">
                       {share}%
                     </span>
                   </div>

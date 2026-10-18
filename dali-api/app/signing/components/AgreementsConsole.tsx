@@ -94,7 +94,7 @@ export function AgreementsConsole() {
           <p className="mt-1 text-muted-foreground">
             Signing status across every agreement
             {termCode ? ` · ${termCode}` : ""}. Author versions, place fields, and publish in the{" "}
-            <Link to="/drive?type=agreement" className="text-accent-coral hover:underline">
+            <Link to="/drive?type=agreement" className="text-os-accent hover:underline">
               Drive
             </Link>
             ; issue, track completion, and nudge signers here.
@@ -145,7 +145,7 @@ export function AgreementsConsole() {
             <button
               type="button"
               onClick={() => setShowPast((v) => !v)}
-              className="text-xs font-medium text-accent-coral hover:underline"
+              className="text-xs font-medium text-os-accent hover:underline"
             >
               {showPast ? "Hide past terms" : `Show past terms (${pastCount})`}
             </button>
@@ -177,7 +177,7 @@ export function AgreementsConsole() {
               {activity.map((s) => (
                 <li key={s.signatureId} className="text-sm text-muted-foreground">
                   <span className="text-foreground">{s.signerName}</span> signed{" "}
-                  <Link to={driveHref(s.documentId)} className="text-accent-coral hover:underline">
+                  <Link to={driveHref(s.documentId)} className="text-os-accent hover:underline">
                     {s.documentName}
                   </Link>{" "}
                   · <Tooltip content={formatDateTime(s.signedAt, tz)}><span>{timeAgo(s.signedAt)}</span></Tooltip>
@@ -204,7 +204,7 @@ export function AgreementsConsole() {
                     className="flex items-center justify-between gap-3 rounded-lg border border-border bg-card px-3 py-2 hover:bg-muted/40 group"
                   >
                     <div className="min-w-0">
-                      <p className="font-medium text-foreground truncate group-hover:text-accent-coral transition-colors">
+                      <p className="font-medium text-foreground truncate group-hover:text-os-accent transition-colors">
                         {a.name}
                       </p>
                       <div className="mt-1 flex flex-wrap items-center gap-1 text-[11px] text-muted-foreground">
@@ -228,7 +228,7 @@ export function AgreementsConsole() {
                         )}
                       </div>
                     </div>
-                    <ChevronRight className="w-4 h-4 text-muted-foreground/40 group-hover:text-accent-coral transition-colors shrink-0" />
+                    <ChevronRight className="w-4 h-4 text-muted-foreground/40 group-hover:text-os-accent transition-colors shrink-0" />
                   </Link>
                 </li>
               ))}
@@ -277,7 +277,7 @@ function NeedsAttentionCard({
         <div className="min-w-0 flex-1">
           <Link
             to={driveHref(agreement.id)}
-            className="font-medium text-foreground hover:text-accent-coral truncate block"
+            className="font-medium text-foreground hover:text-os-accent truncate block"
           >
             {agreement.name}
           </Link>
@@ -352,7 +352,7 @@ function BindingRow({
         <div className="min-w-0">
           <Link
             to={driveHref(agreement.id)}
-            className="font-medium text-foreground hover:text-accent-coral truncate"
+            className="font-medium text-foreground hover:text-os-accent truncate"
           >
             {agreement.name}
           </Link>
@@ -373,7 +373,7 @@ function BindingRow({
           <>
             <div className="h-1.5 flex-1 rounded-full bg-muted overflow-hidden">
               <div
-                className={`h-full ${complete ? "bg-green-500" : "bg-accent-coral"}`}
+                className={`h-full ${complete ? "bg-os-green" : "bg-os-accent"}`}
                 style={{ width: `${pct}%` }}
               />
             </div>

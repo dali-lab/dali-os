@@ -513,7 +513,7 @@ function CreateField({
         required={required}
         autoFocus={autoFocus}
         placeholder={placeholder}
-        className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+        className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-os-accent/30"
       />
     </label>
   );
@@ -571,7 +571,7 @@ function MembersTable({ rows, status }: { rows: MemberRow[]; status: MemberStatu
                   {m.isStaff && (
                     <span
                       className={cn(
-                        "inline-flex items-center px-1.5 py-0.5 rounded-full font-semibold bg-accent-teal/15 text-accent-teal flex-shrink-0",
+                        "inline-flex items-center px-1.5 py-0.5 rounded-full font-semibold bg-os-accent/15 text-os-accent flex-shrink-0",
                         "text-xs",
                       )}
                     >

@@ -363,7 +363,7 @@ export default function PartnerSettings({ actionData }: Route.ComponentProps) {
             </div>
 
             {invited && (
-              <p className="text-sm text-accent-teal bg-accent-teal/10 rounded-lg px-4 py-3 mb-3">
+              <p className="text-sm text-os-green bg-os-green/10 rounded-lg px-4 py-3 mb-3">
                 Invitation sent.
               </p>
             )}
@@ -403,7 +403,7 @@ export default function PartnerSettings({ actionData }: Route.ComponentProps) {
                     <div className="min-w-0 flex-1">
                       <span className="text-sm font-medium text-foreground">{name}</span>
                       {org.primaryContactId === m.id && (
-                        <span className="ml-2 text-xs rounded-full bg-accent-teal/15 text-accent-teal px-2 py-0.5">
+                        <span className="ml-2 text-xs rounded-full bg-os-accent/15 text-os-accent px-2 py-0.5">
                           Primary contact
                         </span>
                       )}

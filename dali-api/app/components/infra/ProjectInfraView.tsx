@@ -22,7 +22,7 @@ export function ProjectInfraView({ project: p }: { project: ProjectFleet }) {
             href={`https://fly.io/dashboard/${p.flyOrgSlug}/billing`}
             target="_blank"
             rel="noreferrer"
-            className="inline-flex items-center gap-1 text-accent-coral hover:underline"
+            className="inline-flex items-center gap-1 text-os-accent hover:underline"
           >
             Fly billing <ExternalLink className="h-3 w-3" />
           </a>
@@ -32,7 +32,7 @@ export function ProjectInfraView({ project: p }: { project: ProjectFleet }) {
             href={`https://console.neon.tech/app/orgs/${p.neonOrgId}/billing`}
             target="_blank"
             rel="noreferrer"
-            className="inline-flex items-center gap-1 text-accent-coral hover:underline"
+            className="inline-flex items-center gap-1 text-os-accent hover:underline"
           >
             Neon billing <ExternalLink className="h-3 w-3" />
           </a>

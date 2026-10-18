@@ -12,7 +12,7 @@ export function ConnectedAppsSettingsBlock({ grants }: { grants: GrantRowDTO[] }
     <div className="flex flex-col gap-4">
       <p className="text-sm text-muted-foreground">
         Apps you've authorized to access DALI OS on your behalf.{" "}
-        <Link to="/help/mcp" className="text-accent-teal hover:underline">
+        <Link to="/help/mcp" className="text-os-accent hover:underline">
           How to connect Claude to DALI OS
         </Link>
         .
@@ -57,7 +57,7 @@ export function ConnectedAppsSettingsBlock({ grants }: { grants: GrantRowDTO[] }
                   <Tooltip content={`Revoke ${g.clientName}'s access to your account`}>
                     <button
                       type="submit"
-                      className="rounded border border-red-300 px-3 py-1 text-sm text-red-700 hover:bg-red-50"
+                      className="rounded border border-destructive/40 px-3 py-1 text-sm text-destructive hover:bg-destructive/10"
                     >
                       Revoke
                     </button>

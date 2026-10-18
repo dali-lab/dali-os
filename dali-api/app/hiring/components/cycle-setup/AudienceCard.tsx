@@ -69,7 +69,7 @@ export function AudienceCard({
           )
         }
       />
-      {fetcher.data?.error && <p className="text-xs text-red-700">{fetcher.data.error}</p>}
+      {fetcher.data?.error && <p className="text-xs text-destructive">{fetcher.data.error}</p>}
     </SetupCard>
   );
 }

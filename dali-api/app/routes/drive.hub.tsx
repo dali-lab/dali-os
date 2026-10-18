@@ -29,6 +29,7 @@ import { getUserRoles } from "~/lib/roles";
 import { formsUsePageAccess } from "~/forms/lib/form-access.server";
 import { receiversEnabled } from "~/lib/drive-receivers.server";
 import { resolveTermFilter } from "~/lib/terms";
+import { setPageFavorite } from "~/components/favorites-live";
 import { TermFilter } from "~/components/TermFilter";
 import { loadProjectWorkspaces, loadEducationWorkspaces, loadAllDocTags, loadItemTagIds } from "~/lib/drive-hub.server";
 import { loadDriveScopes } from "~/lib/drive-scopes.server";
@@ -318,7 +319,7 @@ function TemplatePicker({
         <p className="text-sm text-muted-foreground py-6 text-center">Loading templates…</p>
       )}
       {error && (
-        <p className="text-sm text-red-600 py-2">{error}</p>
+        <p className="text-sm text-destructive py-2">{error}</p>
       )}
       {!loading && !error && labTemplates.length === 0 && scopeTemplates.length === 0 && (
         <p className="text-sm text-muted-foreground italic py-4 text-center">
@@ -1584,16 +1585,10 @@ export default function DriveHub() {
     [navigate, driveScopes, onNavigate, effectiveScopeId],
   );
 
-  // Toggle the viewer's personal favorite on a page item (doc/folder/form).
   const onToggleFavorite = useCallback(
     async (item: DriveItem) => {
       if (item.type !== "doc" && item.type !== "folder" && item.type !== "form") return;
-      await fetch(`/api/pages/${item.id}/favorite`, {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ favorited: !item.favorited }),
-      });
+      await setPageFavorite(item.id, !item.favorited);
       revalidator.revalidate();
     },
     [revalidator],
@@ -1923,7 +1918,7 @@ export default function DriveHub() {
           )}
         </h1>
       </header>
-      {uploadError && <p className="text-sm text-red-600">{uploadError}</p>}
+      {uploadError && <p className="text-sm text-destructive">{uploadError}</p>}
 
       {homeEnabled && home && !isHiringLibrary && !search && <DriveHome data={home} onOpen={onOpenItem} />}
 
@@ -2082,7 +2077,7 @@ function TrashPanel({
 
   function trashItemIcon(type: TrashItem["type"]) {
     switch (type) {
-      case "folder": return <Folder className="w-4 h-4 text-accent-coral/80 shrink-0" />;
+      case "folder": return <Folder className="w-4 h-4 text-os-accent/80 shrink-0" />;
       case "form": return <ClipboardList className="w-4 h-4 text-muted-foreground shrink-0" />;
       case "file": return <Paperclip className="w-4 h-4 text-muted-foreground shrink-0" />;
       default: return <FileText className="w-4 h-4 text-muted-foreground shrink-0" />;

@@ -345,7 +345,7 @@ function DomainLeadsForDomain({ domain, members }: { domain: DomainWithCounts; m
 const LEVEL_BADGE: Record<Level, string> = {
   P1: "text-muted-foreground",
   P2: "text-accent-teal",
-  P3: "text-accent-coral",
+  P3: "text-os-accent",
 };
 
 function EligibilityLevelSelect({
@@ -415,7 +415,7 @@ function RemoveEligibilityButton({
       <button
         type="submit"
         aria-label="Remove eligibility"
-        className="inline-flex items-center justify-center rounded-full p-0.5 text-amber-700/70 hover:text-amber-900 hover:bg-amber-100"
+        className="inline-flex items-center justify-center rounded-full p-0.5 text-os-amber hover:text-os-amber hover:bg-os-amber/15"
       >
         <X className="w-3 h-3" />
       </button>
@@ -496,7 +496,7 @@ function DomainMembersForDomain({ domain, members }: { domain: DomainWithCounts;
       {domain.eligibilities.map((e) => (
         <span
           key={e.id}
-          className="inline-flex items-center gap-1.5 pl-2 pr-1 py-0.5 rounded-full text-xs font-medium bg-amber-50 text-amber-900 border border-amber-200"
+          className="inline-flex items-center gap-1.5 pl-2 pr-1 py-0.5 rounded-full text-xs font-medium bg-os-amber/10 text-os-amber border border-os-amber/40"
         >
           {memberLabel(e.user)}
           <EligibilityLevelSelect domainId={domain.id} userId={e.user.id} level={e.level} />
@@ -669,7 +669,7 @@ export default function AdminConsoleDomains() {
               onChange={(e) => setName(e.target.value)}
               placeholder="Add a domain — e.g. Design"
               className={cn(
-                "min-w-0 flex-1 border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30 sm:max-w-xs",
+                "min-w-0 flex-1 border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-os-accent/30 sm:max-w-xs",
                 "rounded-full",
               )}
               disabled={isCreating}

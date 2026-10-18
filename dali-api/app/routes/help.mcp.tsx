@@ -185,7 +185,7 @@ export default function McpHelpPage({ loaderData }: Route.ComponentProps) {
         <h2 className="text-lg font-semibold">Managing connections</h2>
         <p className="mt-2 text-sm text-muted-foreground">
           Visit{" "}
-          <a className="text-accent-teal hover:underline" href="/settings/connected-apps">
+          <a className="text-os-accent hover:underline" href="/settings/connected-apps">
             Settings → Connected apps
           </a>{" "}
           to review or revoke an authorization at any time.

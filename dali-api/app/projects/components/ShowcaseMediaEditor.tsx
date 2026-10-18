@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { buttonClasses } from "~/components/ui/Button";
 import { Form, useNavigation } from "react-router";
 import { Film, Loader2, Plus, X } from "lucide-react";
 import {
@@ -183,7 +184,7 @@ export function ShowcaseMediaEditor({
                 placeholder="Caption (optional)"
                 disabled={!canEdit}
                 aria-label="Media caption"
-                className="w-full bg-transparent text-xs text-muted-foreground border border-transparent rounded px-1 hover:border-dashed hover:border-border focus:outline-none focus:border-solid focus:border-accent-coral/60 focus:bg-background transition-colors disabled:hover:border-transparent"
+                className="w-full bg-transparent text-xs text-muted-foreground border border-transparent rounded px-1 hover:border-dashed hover:border-border focus:outline-none focus:border-solid focus:border-os-accent/60 focus:bg-background transition-colors disabled:hover:border-transparent"
               />
             </div>
           ))}
@@ -224,7 +225,7 @@ export function ShowcaseMediaEditor({
           <button
             type="submit"
             disabled={saving || uploading}
-            className="px-3 py-1.5 text-sm font-medium rounded-md bg-accent-coral text-white hover:bg-accent-coral/90 transition-colors disabled:opacity-60"
+            className={buttonClasses("primary", "sm")}
           >
             {saving ? "Saving…" : "Save media"}
           </button>

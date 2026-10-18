@@ -126,7 +126,7 @@ export function SigningFillView({
           }}
           className={`rounded-md px-4 py-2 text-sm font-medium ${
             allRequiredFilled
-              ? "bg-accent-coral text-white hover:bg-accent-coral/90"
+              ? "bg-os-accent text-os-bg hover:bg-os-accent-hover"
               : "border border-border bg-card text-muted-foreground hover:bg-muted/50"
           }`}
         >
@@ -145,7 +145,7 @@ export function SigningFillView({
             <div className="flex items-center gap-2">
               <div className="h-1.5 w-24 overflow-hidden rounded-full bg-muted">
                 <div
-                  className="h-full rounded-full bg-accent-coral transition-[width] duration-300"
+                  className="h-full rounded-full bg-os-accent transition-[width] duration-300"
                   style={{ width: `${pct}%` }}
                 />
               </div>

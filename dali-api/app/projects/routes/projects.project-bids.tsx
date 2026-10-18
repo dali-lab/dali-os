@@ -336,7 +336,7 @@ function Loaded({
       )}
 
       {data.mappingWarning && (
-        <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+        <div className="rounded-md border border-os-amber/40 bg-os-amber/10 px-3 py-2 text-sm text-os-amber">
           <span className="font-medium">Heads up:</span> {data.mappingWarning}{" "}
           Submissions are still recorded; affected columns just won’t feed
           staffing until you fix the mapping.

@@ -263,7 +263,7 @@ export function TimelineCard({
         </Menu>
       )}
       {(fetcher.data?.error || (dirty && invalid)) && (
-        <p className="text-sm text-red-700">{fetcher.data?.error ?? invalid}</p>
+        <p className="text-sm text-destructive">{fetcher.data?.error ?? invalid}</p>
       )}
       <div className="flex flex-wrap items-center gap-2">
         <button

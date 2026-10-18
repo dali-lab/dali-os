@@ -25,7 +25,7 @@ export default function SignInboxPage() {
       <h1 className="text-2xl font-bold text-foreground">Documents to sign</h1>
 
       {outstanding.length === 0 ? (
-        <div className="flex items-center gap-3 rounded-lg border border-green-200 bg-green-50 p-6 text-green-800">
+        <div className="flex items-center gap-3 rounded-lg border border-os-green/40 bg-os-green/10 p-6 text-os-green">
           <CheckCircle2 className="w-6 h-6 shrink-0" />
           <p className="text-sm">You're all caught up — nothing to sign right now.</p>
         </div>
@@ -38,12 +38,12 @@ export default function SignInboxPage() {
                 className="flex items-center justify-between gap-3 rounded-lg border border-border bg-card p-4 shadow-sm hover:shadow-md transition-shadow"
               >
                 <span className="flex items-center gap-3 min-w-0">
-                  <span className="p-2 bg-accent-coral/10 text-accent-coral rounded-lg shrink-0">
+                  <span className="p-2 bg-os-accent/10 text-os-accent rounded-lg shrink-0">
                     <FileSignature className="w-5 h-5" />
                   </span>
                   <span className="font-medium text-foreground truncate">{o.documentName}</span>
                 </span>
-                <span className="text-sm font-medium text-accent-coral shrink-0">
+                <span className="text-sm font-medium text-os-accent shrink-0">
                   {o.role === "mentee" ? "Countersign →" : "Review & sign →"}
                 </span>
               </Link>

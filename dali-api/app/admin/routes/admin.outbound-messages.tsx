@@ -177,10 +177,10 @@ function formatTime(iso: string | null): string {
 }
 
 const STATUS_BADGE: Record<string, string> = {
-  Pending: "bg-amber-100 text-amber-800",
+  Pending: "bg-os-amber/15 text-os-amber",
   Sending: "bg-blue-100 text-blue-800",
-  Sent: "bg-emerald-100 text-emerald-800",
-  Dead: "bg-red-100 text-red-800",
+  Sent: "bg-os-green/15 text-os-green",
+  Dead: "bg-destructive/15 text-destructive",
   Canceled: "bg-zinc-100 text-zinc-600",
 };
 
@@ -264,7 +264,7 @@ function Row({ msg }: { msg: MessageRow }) {
       <td className="px-3 py-3 max-w-[220px]">
         {msg.lastError && (
           <Tooltip content={msg.lastError} variant="rich" placement="bottom">
-            <p className="break-all text-xs text-red-600">
+            <p className="break-all text-xs text-destructive">
               {msg.lastError.length > 120
                 ? `${msg.lastError.slice(0, 120)}…`
                 : msg.lastError}

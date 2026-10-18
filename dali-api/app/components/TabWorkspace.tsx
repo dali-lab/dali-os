@@ -21,6 +21,7 @@ import { CSS } from '@dnd-kit/utilities'
 // tab and a pointer in a pane body resolves to the body's drop zone.
 import { pointerFirstCollision } from './board/KanbanBoard'
 import { workspacePath } from './workspace-link'
+import { TOGGLE_FAVORITE_EVENT } from '~/components/favorites-live'
 import { buildPageLink, COPY_PAGE_LINK_EVENT, isCopyPageLinkShortcut, stripHash } from '~/lib/page-link'
 import {
   GUIDE_OPEN_MESSAGE,
@@ -367,7 +368,7 @@ export interface TabWorkspaceProps {
   /** Exposes the imperative `openTab` API to the parent. */
   apiRef?: React.MutableRefObject<TabWorkspaceHandle | null>
   /** Notified when the focused pane's active tab URL changes (null when no tab). */
-  onActiveUrlChange?: (url: string | null) => void
+  onActiveUrlChange?: (url: string | null, label: string | null) => void
   /** Notified when the focused pane's active tab reports its page guide, so the
    *  shell's top bar can carry the CTA (null when the tab hasn't reported). */
   onGuideChange?: (guide: GuideState | null) => void
@@ -467,7 +468,7 @@ function SortableTab({
       }`}
     >
       {tab.pinned && (
-        <Pin className="w-3 h-3 shrink-0 text-accent-coral fill-accent-coral pointer-events-none" />
+        <Pin className="w-3 h-3 shrink-0 text-os-accent fill-os-accent pointer-events-none" />
       )}
       <span
         className={`truncate flex-1 text-left pointer-events-none ${tab.ephemeral ? 'italic' : ''}`}
@@ -502,7 +503,7 @@ function TabDragPreview({ tab }: { tab: Tab }) {
       className="flex items-center gap-2 h-7 px-3 bg-os-container text-foreground text-xs font-medium whitespace-nowrap rounded-os-item shadow-lg cursor-grabbing"
     >
       {tab.pinned && (
-        <Pin className="w-3 h-3 shrink-0 text-accent-coral fill-accent-coral" />
+        <Pin className="w-3 h-3 shrink-0 text-os-accent fill-os-accent" />
       )}
       <span className={`truncate ${tab.ephemeral ? 'italic' : ''}`}>{tab.label}</span>
     </div>
@@ -515,7 +516,7 @@ function DropZone({ id, className }: { id: string; className: string }) {
   return (
     <div ref={setNodeRef} className={`relative ${className}`}>
       {isOver && (
-        <div className="absolute inset-0 bg-accent-coral/20 border-2 border-accent-coral pointer-events-none" />
+        <div className="absolute inset-0 bg-os-accent/20 border-2 border-os-accent pointer-events-none" />
       )}
     </div>
   )
@@ -1134,7 +1135,7 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange, onGuideCh
     if (!onActiveUrlChange) return
     const pane = state.panes.find((p) => p.id === state.focusedPaneId) ?? state.panes[0]
     const tab = pane?.tabs.find((t) => t.id === pane.activeTabId) ?? null
-    onActiveUrlChange(tab?.url ?? null)
+    onActiveUrlChange(tab?.url ?? null, tab?.label ?? null)
   }, [state, onActiveUrlChange])
 
   // --- Keyboard shortcuts -------------------------------------------------
@@ -1204,6 +1205,17 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange, onGuideCh
         if (!e.altKey && !e.shiftKey && (e.key === 'k' || e.key === 'K')) {
           e.preventDefault()
           onOpenPaletteRef.current?.()
+          return
+        }
+
+        // mod + d — favorite the focused page, like a browser bookmark. The
+        // shell cancels the event only when the favorites bar is on, so the
+        // browser's own shortcut is left alone otherwise.
+        if (!e.altKey && !e.shiftKey && (e.key === 'd' || e.key === 'D')) {
+          const handled = !window.top?.dispatchEvent(
+            new CustomEvent(TOGGLE_FAVORITE_EVENT, { cancelable: true }),
+          )
+          if (handled) e.preventDefault()
           return
         }
 
@@ -2114,7 +2126,7 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange, onGuideCh
                   still doing its initial load (before onLoad fires). */}
               {activeTab && mountedTabIds.has(activeTab.id) && !loadedTabIds.has(activeTab.id) && (
                 <div className="absolute inset-0 flex items-center justify-center bg-section-bg">
-                  <Loader2 className="w-6 h-6 text-accent-teal animate-spin motion-reduce:animate-none" />
+                  <Loader2 className="w-6 h-6 text-os-accent animate-spin motion-reduce:animate-none" />
                 </div>
               )}
               {!activeTab && (
