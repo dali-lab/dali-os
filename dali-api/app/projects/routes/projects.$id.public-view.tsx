@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { buttonClasses } from "~/components/ui/Button";
 import { Form, redirect, useLoaderData, useNavigation } from "react-router";
 import { useDialog } from "~/components/ui/dialog";
 import { Select } from "~/components/ui/floating";
@@ -232,7 +233,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 // the only affordance — enough to find the fields, quiet enough that the
 // preview still shows what a visitor will see.
 const FIELD =
-  "bg-transparent border border-transparent rounded px-1 -mx-1 hover:border-dashed hover:border-border focus:outline-none focus:border-solid focus:border-accent-coral/60 focus:bg-background transition-colors disabled:hover:border-transparent";
+  "bg-transparent border border-transparent rounded px-1 -mx-1 hover:border-dashed hover:border-border focus:outline-none focus:border-solid focus:border-os-accent/60 focus:bg-background transition-colors disabled:hover:border-transparent";
 
 // A list of free-text chips (tags, links). Rendered as the pills the public
 // card shows, each an input sized to its content, with an add button and a
@@ -361,7 +362,7 @@ export default function ProjectPublicView() {
       <header className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <h1 className="font-heading text-xl font-bold text-foreground inline-flex items-center gap-2">
-            <Globe className="w-5 h-5 text-accent-coral" />
+            <Globe className="w-5 h-5 text-os-accent" />
             Public view
           </h1>
           <p className="text-sm text-muted-foreground">
@@ -504,7 +505,7 @@ export default function ProjectPublicView() {
                 ).map(([field, label, value]) => (
                   <label key={field} className="flex items-center gap-2">
                     <span className="text-xs shrink-0 w-28">
-                      <span className="text-accent-coral">{label}</span>
+                      <span className="text-os-accent">{label}</span>
                       <span className="text-muted-foreground/60"> (optional)</span>
                     </span>
                     <input
@@ -525,7 +526,7 @@ export default function ProjectPublicView() {
               <button
                 type="submit"
                 disabled={saving}
-                className="px-3 py-1.5 text-sm font-medium rounded-md bg-accent-coral text-white hover:bg-accent-coral/90 transition-colors disabled:opacity-60"
+                className={buttonClasses("primary", "sm")}
               >
                 {saving ? "Saving…" : "Save card"}
               </button>

@@ -1,4 +1,5 @@
 import { type CSSProperties, type ReactNode, useState } from 'react'
+import { buttonClasses } from "~/components/ui/Button";
 import { Form, useLoaderData } from 'react-router'
 import {
   Plus,
@@ -208,9 +209,9 @@ export function RubricDetail() {
         Version History
       </h2>
       {isCreatingVersion && (
-        <button className="w-full text-left rounded-lg border border-accent-coral bg-accent-coral/5 px-3 py-2">
+        <button className="w-full text-left rounded-lg border border-os-accent bg-os-accent/5 px-3 py-2">
           <span className="font-medium text-foreground">v{nextVersionNumber}</span>
-          <span className="block text-xs text-accent-coral mt-0.5">Unsaved draft</span>
+          <span className="block text-xs text-os-accent mt-0.5">Unsaved draft</span>
         </button>
       )}
       {rubric.versions
@@ -229,7 +230,7 @@ export function RubricDetail() {
                 }}
                 className={`w-full text-left rounded-lg border px-3 py-2 transition ${
                   active
-                    ? 'border-accent-coral bg-accent-coral/5 text-foreground'
+                    ? 'border-os-accent bg-os-accent/5 text-foreground'
                     : 'border-border bg-card hover:bg-muted/40 text-foreground'
                 }`}
               >
@@ -268,7 +269,7 @@ export function RubricDetail() {
         !isCreatingVersion ? (
           <button
             onClick={handleStartCreate}
-            className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-lg text-white bg-accent-coral hover:bg-accent-coral/90 shadow-sm"
+            className={buttonClasses("primary", "md")}
           >
             <Plus className="w-4 h-4 mr-2" />
             New Version
@@ -327,7 +328,7 @@ export function RubricDetail() {
                 <input type="hidden" name="criteria" value={JSON.stringify(criteria)} />
                 <button
                   type="submit"
-                  className="px-3 py-1.5 text-sm font-medium text-white bg-accent-coral hover:bg-accent-coral/90 rounded-md"
+                  className={buttonClasses("primary", "sm")}
                 >
                   Save Version
                 </button>
@@ -358,7 +359,7 @@ export function RubricDetail() {
                       {(dragHandleProps, isDragging) =>
                         editingKey === c.key ? (
                           // Inline edit form — no separate panel; edits commit on "Done".
-                          <div className="bg-accent-coral/5 border border-accent-coral/30 rounded-lg p-4 space-y-3">
+                          <div className="bg-os-accent/5 border border-os-accent/30 rounded-lg p-4 space-y-3">
                             <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
                               <div className="col-span-3">
                                 <label className="block text-xs font-medium text-foreground/70 mb-1">Label</label>
@@ -366,7 +367,7 @@ export function RubricDetail() {
                                   type="text"
                                   value={editLabel}
                                   onChange={(e) => setEditLabel(e.target.value)}
-                                  className="w-full border border-border rounded-md p-2 text-sm text-foreground bg-card focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+                                  className="w-full border border-border rounded-md p-2 text-sm text-foreground bg-card focus:outline-none focus:ring-2 focus:ring-os-accent/30"
                                   autoFocus
                                 />
                               </div>
@@ -378,7 +379,7 @@ export function RubricDetail() {
                                   max="100"
                                   value={editMaxScore}
                                   onChange={(e) => setEditMaxScore(parseInt(e.target.value) || 1)}
-                                  className="w-full border border-border rounded-md p-2 text-sm text-foreground bg-card focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+                                  className="w-full border border-border rounded-md p-2 text-sm text-foreground bg-card focus:outline-none focus:ring-2 focus:ring-os-accent/30"
                                 />
                               </div>
                             </div>
@@ -387,7 +388,7 @@ export function RubricDetail() {
                               placeholder="Description (optional)"
                               value={editDescription}
                               onChange={(e) => setEditDescription(e.target.value)}
-                              className="w-full border border-border rounded-md p-2 text-sm text-foreground bg-card focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+                              className="w-full border border-border rounded-md p-2 text-sm text-foreground bg-card focus:outline-none focus:ring-2 focus:ring-os-accent/30"
                             />
                             <div className="flex justify-between">
                               <Tooltip content="Remove criterion">
@@ -402,7 +403,7 @@ export function RubricDetail() {
                               <button
                                 type="button"
                                 onClick={commitEdit}
-                                className="px-3 py-1.5 text-sm font-medium text-white bg-accent-coral hover:bg-accent-coral/90 rounded-md"
+                                className={buttonClasses("primary", "sm")}
                               >
                                 Done
                               </button>
@@ -472,7 +473,7 @@ export function RubricDetail() {
                         placeholder="Label (e.g. Communication)"
                         value={newLabel}
                         onChange={(e) => setNewLabel(e.target.value)}
-                        className="w-full border border-border rounded-md p-2 text-sm text-foreground bg-card focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+                        className="w-full border border-border rounded-md p-2 text-sm text-foreground bg-card focus:outline-none focus:ring-2 focus:ring-os-accent/30"
                       />
                     </div>
                     <div className="col-span-1">
@@ -483,7 +484,7 @@ export function RubricDetail() {
                         placeholder="Max Score"
                         value={newMaxScore}
                         onChange={(e) => setNewMaxScore(parseInt(e.target.value) || 5)}
-                        className="w-full border border-border rounded-md p-2 text-sm text-foreground bg-card focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+                        className="w-full border border-border rounded-md p-2 text-sm text-foreground bg-card focus:outline-none focus:ring-2 focus:ring-os-accent/30"
                       />
                     </div>
                   </div>
@@ -493,7 +494,7 @@ export function RubricDetail() {
                     value={newDescription}
                     onChange={(e) => setNewDescription(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && handleAddCriterion()}
-                    className="w-full border border-border rounded-md p-2 text-sm text-foreground bg-card focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+                    className="w-full border border-border rounded-md p-2 text-sm text-foreground bg-card focus:outline-none focus:ring-2 focus:ring-os-accent/30"
                   />
                   <button
                     type="button"

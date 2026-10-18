@@ -166,7 +166,7 @@ export default function GradeAssignment() {
                       href={`/api/upload/raw?key=${encodeURIComponent(f.key)}`}
                       target="_blank"
                       rel="noreferrer"
-                      className="text-sm text-accent-coral hover:underline"
+                      className="text-sm text-os-accent hover:underline"
                     >
                       {f.name}
                     </a>
@@ -181,7 +181,7 @@ export default function GradeAssignment() {
                   href={s.link}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-sm text-accent-coral hover:underline break-all"
+                  className="text-sm text-os-accent hover:underline break-all"
                 >
                   {s.link}
                 </a>

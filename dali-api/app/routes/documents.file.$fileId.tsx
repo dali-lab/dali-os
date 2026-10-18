@@ -280,7 +280,7 @@ export default function FilePage() {
                   type="button"
                   disabled={uploading}
                   onClick={() => fileInputRef.current?.click()}
-                  className="inline-flex items-center gap-1 text-xs font-medium text-accent-coral hover:underline disabled:opacity-60"
+                  className="inline-flex items-center gap-1 text-xs font-medium text-os-accent hover:underline disabled:opacity-60"
                 >
                   <Upload className="w-3.5 h-3.5" />
                   {uploading ? "Uploading…" : "Upload new version"}
@@ -309,7 +309,7 @@ export default function FilePage() {
                     setSelectedVersionId(v.id);
                   }
                 }}
-                className={`flex items-center justify-between gap-3 px-3 py-2.5 text-sm cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-coral/40 ${
+                className={`flex items-center justify-between gap-3 px-3 py-2.5 text-sm cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-os-accent/40 ${
                   v.id === selected?.id ? "bg-accent-teal/10" : "hover:bg-muted/40"
                 }`}
               >

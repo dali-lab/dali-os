@@ -194,7 +194,7 @@ function BudgetRowView({
           {row.adjustedRevenue > 0 || row.revenue > 0 ? (
             <>
               {formatUsd(row.adjustedRevenue)}
-              {row.isPateo && <span className="ml-0.5 text-accent-coral">*</span>}
+              {row.isPateo && <span className="ml-0.5 text-os-accent">*</span>}
             </>
           ) : (
             "—"
@@ -211,7 +211,7 @@ function BudgetRowView({
             aria-label={`${row.note ? "Edit" : "Add"} note for ${row.chartString}`}
             className={cn(
               "text-muted-foreground hover:text-foreground",
-              row.note && "text-accent-coral",
+              row.note && "text-os-accent",
             )}
           >
             <StickyNote className="w-4 h-4" />
@@ -278,7 +278,7 @@ function RevenueEdit({
           }
         }}
         aria-label={`Revenue for ${row.chartString}`}
-        className="w-24 rounded border border-border bg-card px-2 py-1 text-right text-xs tabular-nums text-foreground focus:border-accent-coral focus:outline-none"
+        className="w-24 rounded border border-border bg-card px-2 py-1 text-right text-xs tabular-nums text-foreground focus:border-os-accent focus:outline-none"
       />
     </fetcher.Form>
   );
@@ -358,7 +358,7 @@ function NoteEditor({
         placeholder="Add a note…"
         autoFocus
         aria-label={`Note for ${row.chartString}`}
-        className="flex-1 rounded border border-border bg-card px-2 py-1 text-xs text-foreground focus:border-accent-coral focus:outline-none"
+        className="flex-1 rounded border border-border bg-card px-2 py-1 text-xs text-foreground focus:border-os-accent focus:outline-none"
       />
       <Button type="submit" size="xs">
         Save
@@ -387,7 +387,7 @@ function DeleteButton({ entryId }: { entryId: string }) {
       <button
         type="submit"
         aria-label="Delete budget line"
-        className="text-muted-foreground hover:text-red-600"
+        className="text-muted-foreground hover:text-destructive"
       >
         <Trash2 className="w-4 h-4" />
       </button>
@@ -398,8 +398,8 @@ function DeleteButton({ entryId }: { entryId: string }) {
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
 function netClass(net: number): string {
-  if (net > 0) return "text-green-600";
-  if (net < 0) return "text-red-600";
+  if (net > 0) return "text-os-green";
+  if (net < 0) return "text-destructive";
   return "text-muted-foreground";
 }
 

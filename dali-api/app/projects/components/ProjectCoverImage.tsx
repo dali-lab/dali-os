@@ -21,10 +21,10 @@ export function ProjectCoverImage({
 
   return (
     <div
-      className={`${placeholderClassName} bg-gradient-to-br from-accent-coral/30 via-accent-coral/15 to-accent-green/20 flex items-center justify-center border-b border-border`}
+      className={`${placeholderClassName} bg-gradient-to-br from-os-accent/30 via-os-accent/15 to-os-green/20 flex items-center justify-center border-b border-border`}
       aria-hidden
     >
-      <span className="font-heading font-bold text-3xl text-accent-coral/70">
+      <span className="font-heading font-bold text-3xl text-os-accent/70">
         {initial}
       </span>
     </div>

@@ -10,7 +10,7 @@
 //     is in progress (collab autosave covers the working draft; this guard is
 //     for the explicit "Save Version" workflow gate)
 //
-// Styled with DALI tokens (accent-coral, muted, card, border). No blue.
+// Styled with os tokens (os-accent, muted, card, border).
 //
 // Usage:
 //   <ManagedEditorShell
@@ -29,6 +29,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { buttonClasses } from "~/components/ui/Button";
 import { Form } from "react-router";
 import { Pencil, RotateCcw } from "lucide-react";
 import { useDialog } from "~/components/ui/dialog";
@@ -100,12 +101,12 @@ function InlineRename({
           name="name"
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
-          className="px-3 py-2 text-base border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-accent-coral/30 min-w-[18rem]"
+          className="px-3 py-2 text-base border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-os-accent/30 min-w-[18rem]"
           autoFocus
         />
         <button
           type={isForm ? "submit" : "button"}
-          className="px-3 py-2 text-sm font-medium text-white bg-accent-coral rounded-md hover:bg-accent-coral/90"
+          className={buttonClasses("primary", "md")}
           onClick={isForm ? undefined : commit}
         >
           Save
@@ -188,7 +189,7 @@ export function RestoreVersionButton({
       disabled={disabled}
       onClick={handleClick}
       title="Restore this version into the working draft"
-      className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-accent-coral disabled:opacity-40"
+      className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-os-accent disabled:opacity-40"
     >
       <RotateCcw className="w-3 h-3" />
       Restore

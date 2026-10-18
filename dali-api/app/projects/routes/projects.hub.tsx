@@ -396,7 +396,7 @@ export default function ProjectsListPage() {
                   autoFocus
                   required
                   placeholder="Project name"
-                  className="flex-1 px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+                  className="flex-1 px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-os-accent/30"
                 />
               </div>
             </label>
@@ -406,7 +406,7 @@ export default function ProjectsListPage() {
                 name="description"
                 rows={2}
                 placeholder="Short blurb shown at the top of the project page."
-                className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+                className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-os-accent/30"
               />
             </label>
             {projectTemplates.length > 0 && (
@@ -540,7 +540,7 @@ export default function ProjectsListPage() {
                   next.delete("public");
                   setSearchParams(next);
                 }}
-                className="font-medium text-accent-coral hover:underline"
+                className="font-medium text-os-accent hover:underline"
               >
                 Clear the filter
               </button>
@@ -557,7 +557,7 @@ export default function ProjectsListPage() {
                   next.set("term", ALL_TERMS);
                   setSearchParams(next);
                 }}
-                className="font-medium text-accent-coral hover:underline"
+                className="font-medium text-os-accent hover:underline"
               >
                 Show all terms
               </button>

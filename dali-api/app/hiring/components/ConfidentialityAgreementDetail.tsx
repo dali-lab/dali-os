@@ -6,6 +6,7 @@ import { DocEditor } from "~/components/doc";
 import { isEmptyBody } from "~/lib/signing-fields";
 import { formatDateTime, fullName, UNKNOWN_LABEL } from "~/lib/display";
 import { useUserTimeZone } from "~/hooks/useUserTimeZone";
+import { buttonClasses } from "~/components/ui/Button";
 
 export function ConfidentialityAgreementDetail() {
   const { agreement, canEdit } = useLoaderData<typeof loader>();
@@ -51,7 +52,7 @@ export function ConfidentialityAgreementDetail() {
               />
               <button
                 type="submit"
-                className="px-3 py-2 text-sm font-medium text-white bg-accent-coral rounded-md hover:bg-accent-coral/90"
+                className={buttonClasses("primary", "md")}
               >
                 Save
               </button>
@@ -93,7 +94,7 @@ export function ConfidentialityAgreementDetail() {
           <button
             type="button"
             onClick={handleStartCreate}
-            className="inline-flex items-center px-4 py-2 text-sm font-medium rounded-lg text-white bg-accent-coral hover:bg-accent-coral/90 shadow-sm"
+            className={buttonClasses("primary", "md")}
           >
             <Plus className="w-4 h-4 mr-2" />
             New Version
@@ -182,7 +183,7 @@ export function ConfidentialityAgreementDetail() {
                 <button
                   type="submit"
                   disabled={isEmptyBody(draftBody)}
-                  className="px-3 py-2 text-sm font-medium text-white bg-accent-coral rounded-md hover:bg-accent-coral/90 disabled:opacity-50"
+                  className={buttonClasses("primary", "md")}
                 >
                   Save Version
                 </button>

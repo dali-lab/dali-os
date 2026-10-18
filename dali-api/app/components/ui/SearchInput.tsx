@@ -22,7 +22,7 @@ export interface SearchInputProps
 // look change lands everywhere at once. The ref forwards to the <input> so a
 // modal's initialFocusRef (or any focus/scroll logic) still lands on the field.
 const BASE =
-  "w-full border border-border rounded-full bg-card text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30";
+  "w-full border border-border rounded-full bg-card text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-os-accent/30";
 
 const SIZES = {
   md: { input: "pl-10 pr-4 py-2.5 text-sm", icon: "left-4 w-4 h-4" },

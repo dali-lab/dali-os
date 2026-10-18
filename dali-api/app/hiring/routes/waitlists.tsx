@@ -282,7 +282,7 @@ function RemoveAllModal({
         })}
       </ul>
       {fetcher.data?.error && (
-        <p className="mt-3 text-sm text-accent-coral">{fetcher.data.error}</p>
+        <p className="mt-3 text-sm text-destructive">{fetcher.data.error}</p>
       )}
       <div className="flex justify-end gap-3 pt-5">
         <Button variant="secondary" onClick={onClose} disabled={busy}>
@@ -370,7 +370,7 @@ function DomainSection({
         </div>
       )}
       {reorderFetcher.data?.error && (
-        <p className="text-sm text-accent-coral">{reorderFetcher.data.error}</p>
+        <p className="text-sm text-destructive">{reorderFetcher.data.error}</p>
       )}
 
       <div className={cn(panel, "overflow-hidden")}>
@@ -504,7 +504,7 @@ function WaitlistRow({
             year: "numeric",
           })}
         </div>
-        {error && <div className="mt-1 text-sm text-accent-coral">{error}</div>}
+        {error && <div className="mt-1 text-sm text-destructive">{error}</div>}
       </div>
 
       <div className="flex shrink-0 items-center gap-2">

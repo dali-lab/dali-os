@@ -139,19 +139,19 @@ export function NoteShareModal({
             }}
             className={`items-start rounded-md border px-3 py-2 transition-colors ${
               isPublic === value
-                ? "border-accent-coral bg-accent-coral/5"
+                ? "border-os-accent bg-os-accent/5"
                 : "border-border hover:bg-muted/30"
             }`}
             label={
               <>
                 <Icon
-                  className={`w-4 h-4 mt-0.5 shrink-0 ${isPublic === value ? "text-accent-coral" : "text-muted-foreground"}`}
+                  className={`w-4 h-4 mt-0.5 shrink-0 ${isPublic === value ? "text-os-accent" : "text-muted-foreground"}`}
                 />
                 <span className="flex flex-col min-w-0">
                   <span className="text-sm font-medium text-foreground">{label}</span>
                   <span className="text-xs text-muted-foreground">{hint}</span>
                 </span>
-                {isPublic === value && <Check className="w-4 h-4 text-accent-coral shrink-0" />}
+                {isPublic === value && <Check className="w-4 h-4 text-os-accent shrink-0" />}
               </>
             }
           />

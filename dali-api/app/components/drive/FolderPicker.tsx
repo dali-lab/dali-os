@@ -575,7 +575,7 @@ export function FolderPicker(props: FolderPickerProps) {
           onKeyDown={onListKeyDown}
           placeholder="Search folders…"
           aria-label="Search destination folders"
-          className="w-full rounded-md border border-border bg-background py-2 pl-9 pr-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-accent-coral focus:outline-none"
+          className="w-full rounded-md border border-border bg-background py-2 pl-9 pr-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-os-accent focus:outline-none"
         />
       </div>
 
@@ -639,7 +639,7 @@ export function FolderPicker(props: FolderPickerProps) {
                 className={[
                   "flex cursor-pointer items-center gap-2 px-3 py-2 text-sm",
                   i === active ? "bg-muted/60" : "",
-                  selected ? "bg-accent-coral/10 text-foreground" : "text-foreground",
+                  selected ? "bg-os-accent/10 text-foreground" : "text-foreground",
                   "disabled" in row && row.disabled ? "cursor-not-allowed opacity-40" : "",
                 ].join(" ")}
               >
