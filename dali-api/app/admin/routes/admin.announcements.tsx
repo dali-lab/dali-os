@@ -314,7 +314,7 @@ export default function AnnouncementsPage() {
         <div
           className={`text-sm rounded-md px-3 py-2 border ${
             result.ok
-              ? "bg-accent-coral/10 border-accent-coral/30 text-foreground"
+              ? "bg-os-accent/10 border-os-accent/30 text-foreground"
               : "bg-destructive/10 border-destructive/30 text-destructive"
           }`}
         >
@@ -375,7 +375,7 @@ export default function AnnouncementsPage() {
           editable
           onChange={setBodyBlocks}
           placeholder="Body (optional) — select text to format or add a link"
-          className="min-h-[8rem] px-1 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus-within:border-accent-coral/50"
+          className="min-h-[8rem] px-1 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus-within:border-os-accent/50"
         />
         <p className="text-xs text-muted-foreground">
           Links (to DALI OS pages or external URLs) and formatting carry through
@@ -413,8 +413,8 @@ export default function AnnouncementsPage() {
           <p className="text-sm text-muted-foreground">No published forms yet.</p>
         ) : selectedForm ? (
           <div className="flex items-center gap-2">
-            <span className="inline-flex items-center gap-2 px-3 py-1.5 text-sm rounded-md border border-accent-coral/40 bg-accent-coral/10 text-foreground">
-              <Paperclip className="w-3.5 h-3.5 text-accent-coral" />
+            <span className="inline-flex items-center gap-2 px-3 py-1.5 text-sm rounded-md border border-os-accent/40 bg-os-accent/10 text-foreground">
+              <Paperclip className="w-3.5 h-3.5 text-os-accent" />
               {selectedForm.name}
             </span>
             <button
@@ -474,7 +474,7 @@ export default function AnnouncementsPage() {
         <Checkbox
           className={`flex items-center gap-2.5 rounded-lg border p-3 transition-colors ${
             allMembers
-              ? "border-accent-coral bg-accent-coral/10"
+              ? "border-os-accent bg-os-accent/10"
               : "border-border hover:bg-muted/40"
           }`}
           checked={allMembers}
@@ -482,7 +482,7 @@ export default function AnnouncementsPage() {
           label={
             <>
               <Globe
-                className={`w-4 h-4 ${allMembers ? "text-accent-coral" : "text-muted-foreground"}`}
+                className={`w-4 h-4 ${allMembers ? "text-os-accent" : "text-muted-foreground"}`}
               />
               <span className="text-sm text-foreground font-medium">Whole lab</span>
               <span className="text-xs text-muted-foreground">
@@ -502,7 +502,7 @@ export default function AnnouncementsPage() {
                   User groups
                 </span>
                 {pickedGroups.size > 0 && (
-                  <span className="text-xs text-accent-coral font-medium">
+                  <span className="text-xs text-os-accent font-medium">
                     {pickedGroups.size} selected
                   </span>
                 )}
@@ -533,7 +533,7 @@ export default function AnnouncementsPage() {
                             onClick={() => toggleIn(setPickedGroups, g.id)}
                             className={`px-3 py-1.5 text-sm rounded-full border transition-colors ${
                               on
-                                ? "bg-accent-coral text-white border-accent-coral"
+                                ? "bg-os-accent text-os-bg border-os-accent"
                                 : "border-border bg-card text-foreground hover:bg-muted/50"
                             }`}
                           >
@@ -555,7 +555,7 @@ export default function AnnouncementsPage() {
                   Specific people
                 </span>
                 {pickedUsers.size > 0 && (
-                  <span className="text-xs text-accent-coral font-medium">
+                  <span className="text-xs text-os-accent font-medium">
                     {pickedUsers.size} selected
                   </span>
                 )}

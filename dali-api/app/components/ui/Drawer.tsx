@@ -1,6 +1,6 @@
 import { useId, type ReactNode } from "react";
 import { X } from "lucide-react";
-import { Modal } from "~/components/Modal";
+import { MODAL_TITLE_CLASS, Modal } from "~/components/Modal";
 import { IconButton } from "~/components/ui/IconButton";
 import { cn } from "~/lib/cn";
 
@@ -44,7 +44,7 @@ export function Drawer({ open, onClose, title, headerActions, labelledBy, childr
     >
       {title !== undefined && (
         <div className="flex items-center gap-2 px-6 pt-6 pb-4">
-          <h2 id={titleId} className="flex-1 text-lg font-bold text-foreground">
+          <h2 id={titleId} className={cn("flex-1", MODAL_TITLE_CLASS)}>
             {title}
           </h2>
           {headerActions}

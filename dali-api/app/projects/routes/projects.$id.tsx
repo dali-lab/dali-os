@@ -2789,7 +2789,7 @@ function DomainsChipsEditor({
               aria-pressed={isOn}
               className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md border text-sm cursor-pointer transition-colors ${
                 isOn
-                  ? "bg-accent-coral/15 border-accent-coral/40 text-foreground"
+                  ? "bg-os-accent/15 border-os-accent/40 text-foreground"
                   : "bg-background border-border text-muted-foreground hover:text-foreground"
               }`}
             >
@@ -2911,7 +2911,7 @@ function TermsChipsEditor({
               aria-pressed={isOn}
               className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md border text-sm cursor-pointer transition-colors ${
                 isOn
-                  ? "bg-accent-coral/15 border-accent-coral/40 text-foreground"
+                  ? "bg-os-accent/15 border-os-accent/40 text-foreground"
                   : "bg-background border-border text-muted-foreground hover:text-foreground"
               }`}
             >
@@ -3003,7 +3003,7 @@ function DetailsReadOs({
                 href={url}
                 target="_blank"
                 rel="noreferrer"
-                className="rounded-full bg-os-container px-2.5 py-0.5 text-xs font-medium text-foreground transition-colors hover:text-accent-coral"
+                className="rounded-full bg-os-container px-2.5 py-0.5 text-xs font-medium text-foreground transition-colors hover:text-os-accent"
               >
                 {repoName(url)}
               </a>
@@ -3023,7 +3023,7 @@ function DetailsReadOs({
                 href={url}
                 target="_blank"
                 rel="noreferrer"
-                className="rounded-full bg-os-container px-2.5 py-0.5 text-xs font-medium text-foreground transition-colors hover:text-accent-coral"
+                className="rounded-full bg-os-container px-2.5 py-0.5 text-xs font-medium text-foreground transition-colors hover:text-os-accent"
               >
                 {figmaName(url)}
               </a>
@@ -3319,7 +3319,7 @@ function DomainScopesSegment({
                             defaultValue={value}
                             rows={3}
                             placeholder="+ Add challenge"
-                            className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30 resize-y"
+                            className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-os-accent/30 resize-y"
                           />
                         ) : value ? (
                           <p className="text-sm text-foreground whitespace-pre-wrap">
@@ -3556,7 +3556,7 @@ function MeetingsSection({
             to="/calendar"
             className="py-2.5 flex items-center justify-between gap-3 text-sm group"
           >
-            <span className="truncate font-medium text-foreground group-hover:text-accent-coral">
+            <span className="truncate font-medium text-foreground group-hover:text-os-accent">
               {m.title}
             </span>
             <span className="text-xs text-muted-foreground flex-shrink-0">
@@ -3588,7 +3588,7 @@ function ChallengeDomain({
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
-        className="flex w-full items-center gap-1.5 text-left text-[15px] font-semibold text-foreground transition-colors hover:text-accent-coral"
+        className="flex w-full items-center gap-1.5 text-left text-[15px] font-semibold text-foreground transition-colors hover:text-os-accent"
       >
         {open ? (
           <ChevronDown className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
@@ -3716,7 +3716,7 @@ function OverviewTab({
                 <button
                   type="button"
                   onClick={() => setShowFutureChallenges((v) => !v)}
-                  className="text-xs font-medium text-accent-coral hover:underline"
+                  className="text-xs font-medium text-os-accent hover:underline"
                 >
                   {showFutureChallenges
                     ? "Hide upcoming terms"
@@ -3896,11 +3896,11 @@ function SaveAsTemplateSection({
             name="templateName"
             required
             defaultValue={`${projectName} template`}
-            className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+            className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-os-accent/30"
           />
         </label>
         <label className="flex items-center gap-1.5 text-xs text-muted-foreground pb-2">
-          <input type="checkbox" name="includeOverviewPage" className="accent-accent-coral" />
+          <input type="checkbox" name="includeOverviewPage" className="accent-os-accent" />
           Include Overview page
         </label>
         <Button type="submit" size="sm">
@@ -4301,7 +4301,7 @@ function PartnersSection({
           <button
             type="button"
             onClick={() => setLinking((v) => !v)}
-            className="text-xs font-medium text-accent-coral hover:underline"
+            className="text-xs font-medium text-os-accent hover:underline"
           >
             + Link organization
           </button>
@@ -4381,7 +4381,7 @@ function DocRowMenu({ doc, indent, ctx }: { doc: DocRowItem; indent: boolean; ct
     >
       {doc.kind !== "Folder" && (
         <Menu.Item
-          icon={<Star className={`w-3.5 h-3.5 ${doc.favorited ? "fill-current text-accent-coral" : ""}`} />}
+          icon={<Star className={`w-3.5 h-3.5 ${doc.favorited ? "fill-current text-os-accent" : ""}`} />}
           onSelect={() => ctx.toggleFavorite(doc.id, !doc.favorited)}
         >
           {doc.favorited ? "Remove from favorites" : "Add to favorites"}
@@ -4429,7 +4429,7 @@ function DocRowInner({ doc, indent, ctx }: { doc: DocRowItem; indent: boolean; c
       <button
         type="button"
         onClick={() => openDocumentTab(doc.id, doc.title)}
-        className="flex items-center gap-2 min-w-0 text-left font-medium text-foreground hover:text-accent-coral"
+        className="flex items-center gap-2 min-w-0 text-left font-medium text-foreground hover:text-os-accent"
       >
         <PageIcon iconEmoji={doc.iconEmoji} />
         <span className="truncate">{doc.title}</span>
@@ -4445,7 +4445,7 @@ function DocRowInner({ doc, indent, ctx }: { doc: DocRowItem; indent: boolean; c
         )}
         {doc.publicVisible && (
           <Tooltip content="Public write-up — rendered on this project's page on dali.website">
-            <span className="flex items-center text-accent-coral">
+            <span className="flex items-center text-os-accent">
               <Globe className="w-3.5 h-3.5" />
             </span>
           </Tooltip>
@@ -4491,7 +4491,7 @@ function DocRow({
       }
     : {};
   return (
-    <div {...dragProps} className={ctx.drag && ctx.dropTarget === doc.id ? "border-t-2 border-accent-coral" : ""}>
+    <div {...dragProps} className={ctx.drag && ctx.dropTarget === doc.id ? "border-t-2 border-os-accent" : ""}>
       <DocRowInner doc={doc} indent={indent} ctx={ctx} />
     </div>
   );
@@ -5445,7 +5445,7 @@ function DocumentsBlock({
       <div key={f.id} className={`group py-2.5 flex items-center justify-between gap-3 text-sm ${indent ? "pl-6" : ""}`}>
         <Link
           to={`/documents/file/${f.id}`}
-          className="flex items-center gap-2 min-w-0 text-left font-medium text-foreground hover:text-accent-coral"
+          className="flex items-center gap-2 min-w-0 text-left font-medium text-foreground hover:text-os-accent"
         >
           <Paperclip className="w-3.5 h-3.5 flex-shrink-0 text-muted-foreground" />
           <span className="truncate">{f.title}</span>
@@ -5564,7 +5564,7 @@ function DocumentsBlock({
           )}
           <Link
             to={`/drive?scope=${projectId}`}
-            className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-accent-coral transition-colors"
+            className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-os-accent transition-colors"
           >
             Open in Drive <ExternalLink className="w-3.5 h-3.5" />
           </Link>
@@ -5671,7 +5671,7 @@ function DocumentsBlock({
               : undefined
           }
           className={`flex flex-col divide-y divide-border rounded-md ${
-            dropTarget === "root" ? "ring-2 ring-accent-coral/40" : ""
+            dropTarget === "root" ? "ring-2 ring-os-accent/40" : ""
           }`}
         >
           {/* Pinned docs on top — full document rows (share/pin/delete), just
@@ -5719,7 +5719,7 @@ function DocumentsBlock({
                       : undefined
                   }
                   className={`flex items-center justify-between gap-3 text-sm rounded-md ${
-                    dropTarget === doc.id ? "ring-2 ring-accent-coral/60 bg-accent-coral/5" : ""
+                    dropTarget === doc.id ? "ring-2 ring-os-accent/60 bg-os-accent/5" : ""
                   }`}
                 >
                   <button
@@ -5743,7 +5743,7 @@ function DocumentsBlock({
                           disabled={busy}
                           onClick={() => void createDocument(doc.id)}
                           aria-label="Add document"
-                          className="p-1 rounded text-accent-coral hover:bg-accent-coral/10 disabled:opacity-60"
+                          className="p-1 rounded text-os-accent hover:bg-os-accent/10 disabled:opacity-60"
                         >
                           <Plus className="w-3.5 h-3.5" />
                         </button>

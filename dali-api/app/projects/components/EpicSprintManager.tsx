@@ -100,7 +100,7 @@ export function isStoryIncomplete(st: {
 const EPIC_FIELD =
   "w-full px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40";
 const STORY_PRIORITY_TONE: Record<StoryPriority, string> = {
-  Must: "text-accent-coral font-semibold",
+  Must: "text-os-accent font-semibold",
   Should: "text-foreground",
   Could: "text-muted-foreground",
   Wont: "text-muted-foreground line-through",
@@ -894,7 +894,7 @@ export function EpicDetail({
                 }}
                 aria-label="Epic name"
                 className={cn(
-                  "os-record-name w-full font-heading text-lg font-bold text-foreground bg-transparent rounded px-1 -mx-1 py-0.5 hover:bg-muted/40 focus:bg-transparent focus:outline-none focus:ring-2 focus:ring-accent-coral/30",
+                  "os-record-name w-full font-heading text-lg font-bold text-foreground bg-transparent rounded px-1 -mx-1 py-0.5 hover:bg-muted/40 focus:bg-transparent focus:outline-none focus:ring-2 focus:ring-os-accent/30",
                 )}
               />
             ) : (
@@ -1080,7 +1080,7 @@ export function EpicDetail({
               }}
               editable={canEditContent}
               placeholder="What is this epic about?"
-              className="rounded-md border border-border bg-background focus-within:ring-2 focus-within:ring-accent-coral/30"
+              className="rounded-md border border-border bg-background focus-within:ring-2 focus-within:ring-os-accent/30"
             />
           </PresenceProvider>
         ) : epic.description ? (

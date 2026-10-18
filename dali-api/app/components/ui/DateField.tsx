@@ -156,7 +156,7 @@ function TimePart({
           onCommit(value <= min ? max : value - 1);
         }
       }}
-      className="w-12 min-w-0 rounded-md border border-border bg-background px-1.5 py-1 text-center text-sm tabular-nums text-foreground focus:outline-none focus:ring-1 focus:ring-accent-coral/40"
+      className="w-12 min-w-0 rounded-md border border-border bg-background px-1.5 py-1 text-center text-sm tabular-nums text-foreground focus:outline-none focus:ring-1 focus:ring-os-accent/40"
     />
   );
 }
@@ -397,7 +397,7 @@ export function DateField({
   }
 
   const chipClass =
-    "rounded px-1.5 py-0.5 text-sm font-medium text-foreground hover:bg-muted focus:outline-none focus:ring-1 focus:ring-accent-coral/40";
+    "rounded px-1.5 py-0.5 text-sm font-medium text-foreground hover:bg-muted focus:outline-none focus:ring-1 focus:ring-os-accent/40";
 
   return (
     <span className={cn("inline-block", className)}>
@@ -512,7 +512,7 @@ export function DateField({
                         className={cn(
                           "rounded py-1.5 text-sm transition-colors",
                           m === viewM
-                            ? "bg-accent-coral text-white"
+                            ? "bg-os-accent text-os-bg"
                             : "text-foreground hover:bg-muted",
                         )}
                       >
@@ -541,7 +541,7 @@ export function DateField({
                           className={cn(
                             "rounded py-1.5 text-sm tabular-nums transition-colors",
                             selected
-                              ? "bg-accent-coral text-white"
+                              ? "bg-os-accent text-os-bg"
                               : "text-foreground hover:bg-muted",
                           )}
                         >
@@ -585,9 +585,9 @@ export function DateField({
                           className={cn(
                             "aspect-square rounded text-sm transition-colors",
                             selected
-                              ? "bg-accent-coral text-white"
+                              ? "bg-os-accent text-os-bg"
                               : isToday
-                                ? "font-semibold text-accent-coral ring-1 ring-inset ring-accent-coral/60 hover:bg-muted"
+                                ? "font-semibold text-os-accent ring-1 ring-inset ring-os-accent/60 hover:bg-muted"
                                 : "text-foreground hover:bg-muted",
                             disabledDay && "cursor-not-allowed opacity-30 hover:bg-transparent",
                           )}
@@ -631,7 +631,7 @@ export function DateField({
                         onClick={() => setTime(((cur?.hh ?? 0) % 12) + (pm ? 12 : 0), cur?.mm ?? 0)}
                         className={cn(
                           "px-2 py-1 text-xs font-medium transition-colors",
-                          active ? "bg-accent-coral text-white" : "text-muted-foreground hover:bg-muted",
+                          active ? "bg-os-accent text-os-bg" : "text-muted-foreground hover:bg-muted",
                         )}
                       >
                         {label}

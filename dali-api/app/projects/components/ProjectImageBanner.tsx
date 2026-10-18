@@ -204,8 +204,8 @@ export function ProjectImageBanner({
             <img src={previewUrl} alt="" className="w-full h-full object-cover" />
           ) : (
             // Default banner: deterministic gradient + project initial.
-            <div className="w-full h-full bg-gradient-to-br from-accent-coral/30 via-accent-coral/15 to-accent-green/20 flex items-center justify-center">
-              <span className="font-heading font-bold text-5xl text-accent-coral/70">
+            <div className="w-full h-full bg-gradient-to-br from-os-accent/30 via-os-accent/15 to-os-green/20 flex items-center justify-center">
+              <span className="font-heading font-bold text-5xl text-os-accent/70">
                 {initial}
               </span>
             </div>

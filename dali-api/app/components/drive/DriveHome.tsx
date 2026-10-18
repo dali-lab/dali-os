@@ -7,7 +7,7 @@ import type { DriveItem } from "~/lib/drive.server";
 import type { DriveHomeData } from "~/lib/drive-home.server";
 
 const ROW =
-  "group relative flex min-h-8 items-center gap-3 rounded-os-item px-2 py-1 transition-colors hover:bg-os-container focus-within:ring-2 focus-within:ring-inset focus-within:ring-accent-coral";
+  "group relative flex min-h-8 items-center gap-3 rounded-os-item px-2 py-1 transition-colors hover:bg-os-container focus-within:ring-2 focus-within:ring-inset focus-within:ring-os-accent";
 const TITLE =
   "min-w-0 flex-1 truncate text-sm font-medium text-foreground after:absolute after:inset-0 focus-visible:outline-none";
 const REASON = "min-w-0 max-w-[45%] truncate text-xs text-muted-foreground md:shrink-0";
