@@ -898,7 +898,7 @@ export function TaskModal({
               onChange={(e) => setDescription(e.target.value)}
               rows={isCreate ? 3 : 6}
               placeholder="What does this task involve?"
-              className="w-full px-2 py-1.5 text-sm font-mono border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+              className="w-full px-2 py-1.5 text-sm font-mono border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-os-accent/30"
             />
           ) : description ? (
             <div className={cn("px-2 py-1.5 text-sm", readOnly && "os-selectable")}>
@@ -966,7 +966,7 @@ export function TaskModal({
                     ? "What are the requirements for this task?"
                     : "Add checklist item and press Enter"
                 }
-                className="w-full px-2 py-1.5 text-sm font-mono border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+                className="w-full px-2 py-1.5 text-sm font-mono border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-os-accent/30"
               />
             )}
             {!canManage && checklist.length === 0 && (
@@ -1146,7 +1146,7 @@ export function TaskModal({
                   href={github.url}
                   target="_blank"
                   rel="noreferrer noopener"
-                  className="text-accent-coral hover:underline"
+                  className="text-os-accent hover:underline"
                 >
                   GitHub issue #{github.issueNumber} ↗
                 </a>
@@ -1213,12 +1213,12 @@ export function TaskModal({
               <button
                 type="button"
                 onClick={() => setLinkOpen(true)}
-                className="self-start text-accent-coral hover:underline"
+                className="self-start text-os-accent hover:underline"
               >
                 Add GitHub issue
               </button>
             )}
-            {linkError && <p className="text-accent-coral">{linkError}</p>}
+            {linkError && <p className="text-destructive">{linkError}</p>}
           </ModalSection>
         )}
 
@@ -1236,7 +1236,7 @@ export function TaskModal({
               <div key={a.id} className="flex items-center justify-between gap-2">
                 <Link
                   to={`/documents/file/${a.id}`}
-                  className="min-w-0 truncate text-sm text-accent-coral hover:underline"
+                  className="min-w-0 truncate text-sm text-os-accent hover:underline"
                 >
                   {a.title}
                 </Link>
@@ -1268,7 +1268,7 @@ export function TaskModal({
                   type="button"
                   onClick={() => artifactInputRef.current?.click()}
                   disabled={artifactBusy}
-                  className="text-accent-coral hover:underline disabled:opacity-60"
+                  className="text-os-accent hover:underline disabled:opacity-60"
                 >
                   {artifactBusy ? "Working…" : "Upload files"}
                 </button>
@@ -1293,7 +1293,7 @@ export function TaskModal({
                         type="button"
                         onClick={() => void handleAttachArtifact()}
                         disabled={artifactBusy || !attachFileId}
-                        className="text-accent-coral hover:underline disabled:opacity-60"
+                        className="text-os-accent hover:underline disabled:opacity-60"
                       >
                         Attach
                       </button>
@@ -1313,14 +1313,14 @@ export function TaskModal({
                       type="button"
                       onClick={() => setAttachOpen(true)}
                       disabled={artifactBusy}
-                      className="text-accent-coral hover:underline disabled:opacity-60"
+                      className="text-os-accent hover:underline disabled:opacity-60"
                     >
                       Attach existing
                     </button>
                   ))}
               </div>
             )}
-            {artifactError && <p className="text-accent-coral">{artifactError}</p>}
+            {artifactError && <p className="text-destructive">{artifactError}</p>}
           </ModalSection>
         )}
 
@@ -1340,7 +1340,7 @@ export function TaskModal({
             ) : (
               <>
                 {commentsError && (
-                  <p className="text-xs text-accent-coral">{commentsError}</p>
+                  <p className="text-xs text-destructive">{commentsError}</p>
                 )}
                 {comments.length === 0 && !commentsError && (
                   <p className="text-xs text-muted-foreground italic">No comments yet.</p>
@@ -1383,7 +1383,7 @@ export function TaskModal({
                   className="w-full px-2.5 py-2 text-sm border border-border rounded-md bg-background text-foreground"
                 />
                 {commentPostError && (
-                  <p className="text-xs text-accent-coral">{commentPostError}</p>
+                  <p className="text-xs text-destructive">{commentPostError}</p>
                 )}
                 <div className="flex justify-end">
                   <Button
@@ -1403,7 +1403,7 @@ export function TaskModal({
       </div>
 
       <div className="flex-shrink-0 border-t border-border px-5 sm:px-6 py-4 flex flex-col gap-2">
-        {saveError && <p className="text-xs text-accent-coral">{saveError}</p>}
+        {saveError && <p className="text-xs text-destructive">{saveError}</p>}
 
         <div className="flex items-center gap-2">
           {!isCreate && canManage && onDelete ? (
