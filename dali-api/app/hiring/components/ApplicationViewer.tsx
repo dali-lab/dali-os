@@ -81,9 +81,9 @@ function clampPopoverPosition(
 }
 
 const COLOR_CLASSES: Record<HighlightColor, string> = {
-  yellow: 'bg-yellow-200 border-b-2 border-yellow-400',
-  green: 'bg-green-200 border-b-2 border-green-400',
-  red: 'bg-red-200 border-b-2 border-red-400',
+  yellow: 'bg-os-amber/15 border-b-2 border-os-amber',
+  green: 'bg-os-green/15 border-b-2 border-os-green',
+  red: 'bg-destructive/15 border-b-2 border-destructive',
   blue: 'bg-blue-200 border-b-2 border-blue-400',
 }
 
@@ -336,7 +336,7 @@ function AnnotatableField({
                 <div className="flex gap-1.5 mb-2">
                   {COLOR_OPTIONS.map((c) => (
                     <button key={c} onClick={() => setPendingColor(c)}
-                      className={`w-6 h-6 rounded-full border-2 transition-transform ${c === 'yellow' ? 'bg-yellow-300' : c === 'green' ? 'bg-green-300' : c === 'red' ? 'bg-red-300' : 'bg-blue-300'} ${pendingColor === c ? 'border-gray-700 scale-110' : 'border-transparent'}`} />
+                      className={`w-6 h-6 rounded-full border-2 transition-transform ${c === 'yellow' ? 'bg-os-amber/25' : c === 'green' ? 'bg-os-green/25' : c === 'red' ? 'bg-destructive/25' : 'bg-blue-300'} ${pendingColor === c ? 'border-gray-700 scale-110' : 'border-transparent'}`} />
                   ))}
                 </div>
                 <textarea autoFocus rows={3} value={pendingComment}
@@ -346,7 +346,7 @@ function AnnotatableField({
                   onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleSave(); if (e.key === 'Escape') setPopover(null) }}
                 />
                 <div className="flex gap-2 mt-2">
-                  <button onClick={handleSave} className="flex-1 text-xs font-medium bg-accent-coral text-white rounded-lg py-1.5 hover:bg-accent-coral/90">
+                  <button onClick={handleSave} className="flex-1 text-xs font-medium bg-os-accent text-os-bg rounded-lg py-1.5 hover:bg-os-accent/90">
                     {popover.annotationId ? 'Update' : 'Highlight'}
                   </button>
                   {popover.annotationId && (

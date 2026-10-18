@@ -116,7 +116,7 @@ export function MonthGrid({
                 <span
                   className={cn(
                     "grid h-6 w-6 place-items-center rounded-full text-xs font-semibold",
-                    isToday ? "bg-accent-coral text-white" : inMonth ? "text-foreground" : "text-muted-foreground",
+                    isToday ? "bg-os-accent text-os-bg" : inMonth ? "text-foreground" : "text-muted-foreground",
                   )}
                 >
                   {day.dateUtc.getUTCDate()}

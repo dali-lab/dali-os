@@ -537,7 +537,7 @@ export function FormBuilderTab({
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="col-span-2">
             <label className="block text-sm font-medium text-foreground/80 mb-1">
-              Question Label <span className="text-os-accent">*</span>
+              Question Label <span className="os-required-mark">*</span>
             </label>
             <input
               type="text"
@@ -561,7 +561,7 @@ export function FormBuilderTab({
               else it stays as written.
             </p>
             {labelUnknownVars.length > 0 && (
-              <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
+              <p className="mt-1 text-xs text-os-amber">
                 Not a variable:{" "}
                 {labelUnknownVars.map((v) => `{{${v}}}`).join(", ")}. It will
                 show to members as written.
@@ -578,7 +578,7 @@ export function FormBuilderTab({
                   while this form is on {termBinding.label}.
                 </p>
               ) : (
-                <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
+                <p className="mt-1 text-xs text-os-amber">
                   This form isn't bound to a staffing slot, so{" "}
                   <span className="font-mono">{placeholder("term")}</span> has
                   no term to fill in and members will see it as written. Bind it

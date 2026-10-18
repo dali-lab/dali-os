@@ -1058,7 +1058,7 @@ export default function ManageOffering() {
             .
           </p>
           {actionData.closeOutPreview.belowThreshold.length > 0 && (
-            <p className="text-xs text-amber-700">
+            <p className="text-xs text-os-amber">
               Below threshold: {actionData.closeOutPreview.belowThreshold.join(", ")}
             </p>
           )}
@@ -2196,7 +2196,7 @@ function DecisionEmailRow({
         <div className="flex items-center gap-2">
           <span className="text-sm font-medium">{slot.label}</span>
           {email ? null : (
-            <span className="text-xs text-amber-600 dark:text-amber-500">
+            <span className="text-xs text-os-amber">
               Nothing sends for this
             </span>
           )}

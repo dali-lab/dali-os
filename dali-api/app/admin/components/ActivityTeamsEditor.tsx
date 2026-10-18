@@ -226,7 +226,7 @@ export function ActivityTeamsEditor({
                     <span
                       className={
                         team.memberIds.length > teamSize
-                          ? "shrink-0 text-xs text-amber-600 dark:text-amber-500"
+                          ? "shrink-0 text-xs text-os-amber"
                           : "shrink-0 text-xs text-muted-foreground"
                       }
                     >

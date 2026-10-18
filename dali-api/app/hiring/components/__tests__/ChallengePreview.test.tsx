@@ -67,12 +67,12 @@ describe("ChallengePreview", () => {
     expect(html).toMatch(/<button[^>]*disabled[\s\S]*?Choose file to upload/);
   });
 
-  it("flags required questions with a red asterisk", () => {
+  it("flags required questions with the required mark", () => {
     const html = renderToStaticMarkup(
       createElement(ChallengePreview, { questions: allTypes }),
     );
     // Two required questions in the fixture.
-    const asteriskCount = (html.match(/text-accent-coral/g) ?? []).length;
+    const asteriskCount = (html.match(/os-required-mark/g) ?? []).length;
     expect(asteriskCount).toBeGreaterThanOrEqual(2);
   });
 

@@ -163,7 +163,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 function Sparkline({ series, accent }: { series: DayRow[]; accent: "primary" | "amber" }) {
   const max = Math.max(1, ...series.map((d) => d.count));
   const barClass =
-    accent === "primary" ? "bg-primary/70 hover:bg-primary" : "bg-amber-500/70 hover:bg-amber-500";
+    accent === "primary" ? "bg-primary/70 hover:bg-primary" : "bg-os-amber hover:bg-os-amber";
   return (
     <div className="flex items-end gap-0.5 h-16">
       {series.map((d) => {
@@ -292,7 +292,7 @@ export default function AdminConsoleAnalytics() {
 
       <section className="bg-card border border-border rounded-lg overflow-hidden">
         <div className="px-4 py-3 border-b border-border flex items-center gap-2">
-          <AlertTriangle className="w-4 h-4 text-amber-500" />
+          <AlertTriangle className="w-4 h-4 text-os-amber" />
           <h2 className="text-sm font-medium text-foreground">Client errors</h2>
           <span className="text-xs text-muted-foreground font-normal ml-1">
             ({totalErrors} in {rangeDays}d · {errors.length} distinct)

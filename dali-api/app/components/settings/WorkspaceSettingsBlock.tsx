@@ -104,7 +104,7 @@ export function WorkspaceSettingsBlock({ hideActivity }: { hideActivity: boolean
                 className={cn(
                   "flex flex-col items-start gap-2 rounded-lg border px-3 py-3 text-left transition-colors",
                   selected
-                    ? "border-accent-coral bg-accent-coral/10 ring-1 ring-accent-coral/40"
+                    ? "border-os-accent bg-os-accent/10 ring-1 ring-os-accent/40"
                     : "border-border bg-card hover:bg-muted/50",
                 )}
               >
@@ -138,7 +138,7 @@ export function WorkspaceSettingsBlock({ hideActivity }: { hideActivity: boolean
           onClick={toggleFocus}
           className={cn(
             "relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors",
-            focus ? "bg-accent-coral" : "bg-muted",
+            focus ? "bg-os-accent" : "bg-muted",
           )}
         >
           <span
@@ -169,7 +169,7 @@ export function WorkspaceSettingsBlock({ hideActivity }: { hideActivity: boolean
           onClick={toggleAppearAway}
           className={cn(
             "relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors",
-            appearAway ? "bg-accent-coral" : "bg-muted",
+            appearAway ? "bg-os-accent" : "bg-muted",
           )}
         >
           <span

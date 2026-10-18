@@ -1124,7 +1124,7 @@ export function TaskBoard({
                     onClick={() => persistCollapsed([])}
                     className={cn(
                       "self-start text-xs underline-offset-2 hover:underline",
-                      os ? "text-os-accent" : "text-accent-coral",
+                      os ? "text-os-accent" : "text-os-accent",
                     )}
                   >
                     Expand {collapsedCols.length} collapsed column
@@ -1385,13 +1385,13 @@ function FilterCombobox({
               "w-full rounded-full border py-1.5 pl-3 pr-8 text-xs transition-colors focus:outline-none",
               os
                 ? "border-os-container bg-os-well text-foreground placeholder:text-os-muted focus:border-os-accent"
-                : "border-border bg-background text-foreground placeholder:text-muted-foreground focus:border-accent-coral",
+                : "border-border bg-background text-foreground placeholder:text-muted-foreground focus:border-os-accent",
               disabled && "cursor-not-allowed opacity-50",
               !open &&
                 active &&
                 (os
                   ? "border-os-accent bg-os-accent/15 text-os-accent"
-                  : "border-accent-coral bg-accent-coral/10 text-accent-coral"),
+                  : "border-os-accent bg-os-accent/10 text-os-accent"),
             )}
           />
           {/* Without an end affordance the field reads as a text input someone
@@ -1405,7 +1405,7 @@ function FilterCombobox({
               onClick={() => commit(null)}
               className={cn(
                 "absolute right-2 top-1/2 -translate-y-1/2 rounded-full p-0.5 transition-colors",
-                os ? "text-os-accent hover:bg-os-accent/20" : "text-accent-coral hover:bg-accent-coral/20",
+                os ? "text-os-accent hover:bg-os-accent/20" : "text-os-accent hover:bg-os-accent/20",
               )}
             >
               <X className="h-3 w-3" aria-hidden />
@@ -1467,7 +1467,7 @@ function FilterCombobox({
                     o.value === value
                       ? os
                         ? "text-os-accent"
-                        : "text-accent-coral"
+                        : "text-os-accent"
                       : "text-foreground",
                   )}
                 >
@@ -1652,7 +1652,7 @@ function TaskCard({
         "relative border border-l-4 flex focus-within:ring-2",
         os
           ? "rounded-os-item border-transparent bg-os-well text-[15px] focus-within:ring-os-accent/40"
-          : "rounded-md border-border bg-background text-sm focus-within:ring-accent-coral/30",
+          : "rounded-md border-border bg-background text-sm focus-within:ring-os-accent/30",
         isDragging ? "opacity-40" : os ? "hover:bg-os-container/60" : "hover:bg-muted/20",
       )}
     >
@@ -1684,7 +1684,7 @@ function TaskCard({
                 aria-label={`Updated ${formatSince(card.activityAt)} ago — you haven't opened it since`}
                 className={cn(
                   "mt-0.5 h-3.5 w-3.5 shrink-0",
-                  os ? "text-os-accent" : "text-accent-coral",
+                  os ? "text-os-accent" : "text-os-accent",
                 )}
               />
             </Tooltip>
@@ -1719,7 +1719,7 @@ function TaskCard({
                   "inline-flex items-center gap-1 px-1.5 py-0.5 border font-medium",
                   os
                     ? "rounded-full border-transparent bg-os-amber/15 text-os-amber"
-                    : "rounded-md border-amber-200 bg-amber-50 text-amber-800",
+                    : "rounded-md border-os-amber/40 bg-os-amber/10 text-os-amber",
                 )}
               >
                 <Lock aria-hidden className="w-3 h-3" />
@@ -1739,7 +1739,7 @@ function TaskCard({
                   aria-hidden
                   className={cn(
                     "w-3.5 h-3.5",
-                    overdue && (os ? "text-os-amber" : "text-accent-coral"),
+                    overdue && (os ? "text-os-amber" : "text-os-accent"),
                   )}
                 />
               }

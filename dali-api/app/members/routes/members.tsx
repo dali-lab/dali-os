@@ -513,7 +513,7 @@ function CreateField({
         required={required}
         autoFocus={autoFocus}
         placeholder={placeholder}
-        className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+        className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-os-accent/30"
       />
     </label>
   );

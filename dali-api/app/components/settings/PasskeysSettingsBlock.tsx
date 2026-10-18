@@ -158,7 +158,7 @@ export function PasskeysSettingsBlock() {
       </p>
 
       {error && (
-        <p className="text-sm text-red-600 bg-red-50 rounded-lg px-4 py-3">{error}</p>
+        <p className="text-sm text-destructive bg-destructive/10 rounded-lg px-4 py-3">{error}</p>
       )}
 
       {passkeys === null ? (
@@ -184,7 +184,7 @@ export function PasskeysSettingsBlock() {
                       }}
                       placeholder={autoLabel(pk)}
                       maxLength={64}
-                      className="min-w-0 flex-1 rounded-lg border border-border bg-background px-2 py-1 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral"
+                      className="min-w-0 flex-1 rounded-lg border border-border bg-background px-2 py-1 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-os-accent"
                     />
                     <button
                       type="button"

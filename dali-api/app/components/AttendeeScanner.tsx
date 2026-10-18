@@ -372,7 +372,7 @@ export function AttendeeScanner({
 
       {status === "error" && (
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-6 text-center text-white">
-          <XCircle className="w-8 h-8 text-red-400" aria-hidden />
+          <XCircle className="w-8 h-8 text-destructive" aria-hidden />
           <p className="text-sm">{cameraError}</p>
           <button
             type="button"
@@ -388,7 +388,7 @@ export function AttendeeScanner({
       {result && (
         <div
           className={`absolute inset-0 flex flex-col items-center justify-center gap-3 p-6 text-center text-white ${
-            result.kind === "success" ? "bg-emerald-600/90" : "bg-red-600/90"
+            result.kind === "success" ? "bg-os-green" : "bg-destructive"
           }`}
           role="status"
           aria-live="polite"

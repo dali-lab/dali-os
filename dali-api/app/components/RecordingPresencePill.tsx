@@ -43,8 +43,8 @@ export function RecordingPresencePill({
 
   if (!name) return null;
   return (
-    <span className="inline-flex items-center gap-1.5 rounded-full bg-red-100 px-3 py-1.5 text-sm font-medium text-red-800">
-      <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-red-600" />
+    <span className="inline-flex items-center gap-1.5 rounded-full bg-destructive/15 px-3 py-1.5 text-sm font-medium text-destructive">
+      <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-destructive" />
       Recording · {name}
     </span>
   );

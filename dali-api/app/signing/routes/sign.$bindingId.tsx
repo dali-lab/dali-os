@@ -25,6 +25,7 @@ import { recordSignature } from "~/signing/lib/sign.server";
 import { notifyCountersignRequest, sendCoSignedReceipts } from "~/signing/lib/notify.server";
 import { resolveSigningVariablesForSigner } from "~/signing/lib/variables.server";
 import { SigningFillView } from "~/signing/components/SigningFillView";
+import { buttonClasses } from "~/components/ui/Button";
 
 // Which slot this user fills on a binding, and whether they've completed it.
 // Prefer an outstanding member obligation (a mentor signs before their mentee);
@@ -312,7 +313,7 @@ export default function SignBindingPage() {
       <div className="max-w-3xl mx-auto py-10 space-y-6">
         <div className="space-y-1">
           <div className="flex items-center gap-3">
-            <ShieldCheck className="w-6 h-6 text-green-600" />
+            <ShieldCheck className="w-6 h-6 text-os-green" />
             <h1 className="text-2xl font-bold text-foreground">
               You have {data.signerRole === "mentee" ? "countersigned" : "signed"} {data.name}
             </h1>
@@ -345,7 +346,7 @@ export default function SignBindingPage() {
         <div className="flex items-center gap-3">
           <Link
             to={data.next ?? "/sign"}
-            className="inline-block px-4 py-2 text-sm font-medium text-white bg-accent-coral rounded-md hover:bg-accent-coral/90"
+            className={buttonClasses("primary", "md")}
           >
             Continue
           </Link>

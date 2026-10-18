@@ -205,7 +205,7 @@ describe("CreateEventModal status line", () => {
   it("names the notebook and space with an Open link, then the participants", async () => {
     createResponse = filedResponse;
     await createWithNote();
-    const status = container.querySelector("p.text-green-700")!;
+    const status = container.querySelector("p.text-os-green")!;
     expect(status.textContent).toBe("Meeting created. Note in Weekly (Atlas). Open. Notified 3 participants.");
     expect(status.querySelector("a")!.getAttribute("href")).toBe("/documents/n1");
   });
@@ -219,13 +219,13 @@ describe("CreateEventModal status line", () => {
   it("keeps the plain line when no note was filed", async () => {
     await mount({ groups: [atlas], initialGroupIds: ["g-atlas"] });
     await click(submitButton());
-    expect(container.querySelector("p.text-green-700")!.textContent).toBe("Meeting created. Notified 3 participants.");
+    expect(container.querySelector("p.text-os-green")!.textContent).toBe("Meeting created. Notified 3 participants.");
   });
 
   it("uses the singular for one participant", async () => {
     createResponse = { ok: true, meeting: { id: "m1" }, notifiedCount: 1 };
     await mount({ groups: [atlas], initialGroupIds: ["g-atlas"] });
     await click(submitButton());
-    expect(container.querySelector("p.text-green-700")!.textContent).toBe("Meeting created. Notified 1 participant.");
+    expect(container.querySelector("p.text-os-green")!.textContent).toBe("Meeting created. Notified 1 participant.");
   });
 });

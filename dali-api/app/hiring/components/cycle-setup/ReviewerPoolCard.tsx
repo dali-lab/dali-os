@@ -114,7 +114,7 @@ export function ReviewerPoolCard({
           </div>
         </>
       )}
-      {fetcher.data?.error && <p className="text-sm text-red-700">{fetcher.data.error}</p>}
+      {fetcher.data?.error && <p className="text-sm text-destructive">{fetcher.data.error}</p>}
     </SetupCard>
   );
 }

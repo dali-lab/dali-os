@@ -72,7 +72,7 @@ export function PresenceBar({ className, max = 4 }: PresenceBarProps) {
           variant="rich"
         >
           <span
-            className="w-1.5 h-1.5 rounded-full bg-yellow-500 animate-pulse"
+            className="w-1.5 h-1.5 rounded-full bg-os-amber animate-pulse"
             aria-label="Connecting to presence"
           />
         </Tooltip>

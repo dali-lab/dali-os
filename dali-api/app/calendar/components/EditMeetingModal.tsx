@@ -379,7 +379,7 @@ export function EditMeetingModal({
       <ModalHeader titleId="edit-meeting-title" title="Edit event" onClose={onClose} />
 
       {loadError ? (
-        <p className="text-sm text-red-600">{loadError}</p>
+        <p className="text-sm text-destructive">{loadError}</p>
       ) : !ctx ? (
         <p className="text-sm text-muted-foreground">Loading…</p>
       ) : (
@@ -469,7 +469,7 @@ export function EditMeetingModal({
               />
             </div>
             {!timeValid && (
-              <p className="mt-1 text-xs text-red-600">End must be after start.</p>
+              <p className="mt-1 text-xs text-destructive">End must be after start.</p>
             )}
             {recurrenceRule && (
               <p className="mt-1.5 text-xs text-muted-foreground">
@@ -530,7 +530,7 @@ export function EditMeetingModal({
             }}
           />
 
-          {saveError && <p className="text-sm text-red-600">{saveError}</p>}
+          {saveError && <p className="text-sm text-destructive">{saveError}</p>}
         </div>
         </div>
       )}

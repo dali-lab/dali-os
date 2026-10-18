@@ -133,7 +133,7 @@ function FilingOptions({
           ))}
         </ul>
       )}
-      {error && <p className="text-xs text-red-600">{error}</p>}
+      {error && <p className="text-xs text-destructive">{error}</p>}
       <div className="flex flex-wrap items-center gap-2">
         <Button variant="secondary" size="sm" onClick={onSearch}>
           <Search className="h-3.5 w-3.5" aria-hidden />
@@ -351,7 +351,7 @@ export function MeetingNoteFields({
         )}
         <IconButton label="Remove notebook" icon={X} onClick={note.clearPlace} />
       </div>
-      {folderError && <p className="text-xs text-red-600">{folderError}</p>}
+      {folderError && <p className="text-xs text-destructive">{folderError}</p>}
       {place.kind === "new" && (
         <div className="space-y-3">
           <div>

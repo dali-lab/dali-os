@@ -39,8 +39,8 @@ const PILL_TONES = {
   accent: "bg-os-accent/15 text-os-accent",
   // Real states that must stand out: something is set, or something is missing.
   success: "bg-os-green/15 text-os-green",
-  warning: "bg-amber-100 text-amber-800",
-  danger: "bg-red-100 text-red-800",
+  warning: "bg-os-amber/15 text-os-amber",
+  danger: "bg-destructive/15 text-destructive",
 } as const;
 
 export type PillTone = keyof typeof PILL_TONES;
@@ -51,8 +51,8 @@ const DOT_TONES: Record<PillTone, string> = {
   neutral: "bg-os-grey",
   accent: "bg-os-accent",
   success: "bg-os-green",
-  warning: "bg-amber-500",
-  danger: "bg-red-500",
+  warning: "bg-os-amber",
+  danger: "bg-destructive",
 };
 
 export function Pill({
@@ -100,7 +100,7 @@ export function pillTrigger(formTrigger: string): string {
 export function AlertIcon({ label }: { label: string }) {
   return (
     <Tooltip content={label}>
-      <CircleAlert className="h-4 w-4 shrink-0 text-amber-600" aria-label={label} role="img" />
+      <CircleAlert className="h-4 w-4 shrink-0 text-os-amber" aria-label={label} role="img" />
     </Tooltip>
   );
 }

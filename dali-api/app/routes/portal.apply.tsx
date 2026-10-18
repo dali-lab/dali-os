@@ -898,9 +898,9 @@ export async function action({ request }: Route.ActionArgs) {
 const DOMAIN_COLORS = [
   { border: "border-l-accent-pink", text: "text-accent-pink", bg: "bg-accent-pink", pillText: "text-white", cardBg: "bg-accent-pink/20" },
   { border: "border-l-accent-teal", text: "text-accent-teal", bg: "bg-accent-teal", pillText: "text-white", cardBg: "bg-accent-teal/20" },
-  { border: "border-l-accent-yellow", text: "text-yellow-700", bg: "bg-accent-yellow", pillText: "text-foreground", cardBg: "bg-accent-yellow/30" },
-  { border: "border-l-accent-coral", text: "text-accent-coral", bg: "bg-accent-coral", pillText: "text-white", cardBg: "bg-accent-coral/20" },
-  { border: "border-l-accent-green", text: "text-green-700", bg: "bg-accent-green", pillText: "text-foreground", cardBg: "bg-accent-green/30" },
+  { border: "border-l-accent-yellow", text: "text-os-amber", bg: "bg-accent-yellow", pillText: "text-foreground", cardBg: "bg-accent-yellow/30" },
+  { border: "border-l-os-accent", text: "text-os-accent", bg: "bg-os-accent", pillText: "text-white", cardBg: "bg-os-accent/20" },
+  { border: "border-l-accent-green", text: "text-os-green", bg: "bg-accent-green", pillText: "text-foreground", cardBg: "bg-accent-green/30" },
 ];
 
 function getDomainColor(index: number) {
@@ -1870,7 +1870,7 @@ function ApplyForm() {
     return (
       <div className="px-6 py-5 rounded-os-card bg-os-card">
         <h3 className="font-heading text-base font-bold text-foreground mb-1">
-          Domains <span className="text-os-accent">*</span>
+          Domains <span className="os-required-mark">*</span>
         </h3>
         <p className="text-xs text-muted-foreground mb-3">
           Select the domains you'd like to apply for. You can change this anytime before submitting.
@@ -1930,7 +1930,7 @@ function ApplyForm() {
     return (
       <div className="px-6 py-5 rounded-os-card bg-os-card">
         <h3 className="font-heading text-base font-bold text-foreground mb-1">
-          Start term <span className="text-os-accent">*</span>
+          Start term <span className="os-required-mark">*</span>
         </h3>
         <p className="text-xs text-muted-foreground mb-3">
           Which term would you begin in if you're hired? You can change this anytime before submitting.
@@ -2288,7 +2288,7 @@ function ApplyForm() {
               {showPicker && (
                 <div>
                   <p className="text-xs font-semibold text-foreground mb-2">
-                    Choose your {domain.name} challenge <span className="text-os-accent">*</span>
+                    Choose your {domain.name} challenge <span className="os-required-mark">*</span>
                   </p>
                   <div className="space-y-2">
                     {domain.challenges.map(c => (

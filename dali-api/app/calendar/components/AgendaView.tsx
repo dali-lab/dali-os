@@ -128,7 +128,7 @@ export function AgendaView({
                 <span
                   className={cn(
                     "grid h-8 w-8 place-items-center rounded-full text-sm font-semibold",
-                    isToday ? "bg-accent-coral text-white" : "text-foreground",
+                    isToday ? "bg-os-accent text-os-bg" : "text-foreground",
                   )}
                 >
                   {day.dateUtc.getUTCDate()}

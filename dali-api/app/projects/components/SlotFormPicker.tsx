@@ -189,7 +189,7 @@ export function SlotFormPicker({
                   if (requestOpenTabIfEmbedded(fillUrl, binding.formName))
                     e.preventDefault();
                 }}
-                className="text-accent-coral hover:underline"
+                className="text-os-accent hover:underline"
               >
                 {fillUrl}
               </a>

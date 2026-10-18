@@ -24,7 +24,7 @@ export function SlackSettingsBlock({
   return (
     <div className="flex flex-col gap-3">
       {!configured && (
-        <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+        <div className="rounded-md border border-os-amber/40 bg-os-amber/10 p-3 text-sm text-os-amber">
           Slack isn't configured on the server, so connecting is unavailable right now.
         </div>
       )}
@@ -37,7 +37,7 @@ export function SlackSettingsBlock({
               <span className="truncate text-sm font-semibold text-foreground">
                 Slack connected
               </span>
-              <CheckCircle2 className="h-4 w-4 flex-shrink-0 text-green-600" />
+              <CheckCircle2 className="h-4 w-4 flex-shrink-0 text-os-green" />
             </div>
             <fetcher.Form
               method="post"
@@ -56,7 +56,7 @@ export function SlackSettingsBlock({
                   type="submit"
                   disabled={busy}
                   aria-label="Disconnect Slack"
-                  className="rounded-md p-1 text-muted-foreground hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
+                  className="rounded-md p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
                 >
                   <Trash2 className="h-3.5 w-3.5" />
                 </button>
@@ -95,7 +95,7 @@ export function SlackSettingsBlock({
       )}
 
       {error && (
-        <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+        <div className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
           {error}
         </div>
       )}

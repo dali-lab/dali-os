@@ -71,7 +71,7 @@ describe("InterviewSlotPicker", () => {
       }),
     );
     // The selected button should have the coral accent class
-    expect(html).toContain("border-accent-coral");
+    expect(html).toContain("border-os-accent");
   });
 
   it("uses 4-column grid for schedule variant and 2-column for selectable", () => {

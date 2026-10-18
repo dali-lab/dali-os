@@ -153,7 +153,7 @@ function FlagCard({ flag, members }: { flag: AdminFlagView; members: Member[] })
           onClick={() => setEnabled((v) => !v)}
           className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs font-semibold ${
             enabled
-              ? "bg-green-100 text-green-800 hover:bg-green-200"
+              ? "bg-os-green/15 text-os-green hover:bg-os-green/15"
               : "bg-zinc-200 text-zinc-600 hover:bg-zinc-300"
           } disabled:opacity-50`}
         >
@@ -173,7 +173,7 @@ function FlagCard({ flag, members }: { flag: AdminFlagView; members: Member[] })
                   key={v.value}
                   className={`flex items-start gap-2 rounded-md border px-2.5 py-2 text-sm ${
                     variant === v.value
-                      ? "border-accent-coral bg-accent-coral/5"
+                      ? "border-os-accent bg-os-accent/5"
                       : "border-zinc-200"
                   } ${enabled ? "cursor-pointer" : "opacity-50"}`}
                 >
@@ -218,7 +218,7 @@ function FlagCard({ flag, members }: { flag: AdminFlagView; members: Member[] })
                 key={r}
                 className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs ${
                   roles.includes(r)
-                    ? "border-accent-coral bg-accent-coral/10 text-accent-coral"
+                    ? "border-os-accent bg-os-accent/10 text-os-accent"
                     : "border-zinc-300 text-zinc-600"
                 } ${everyone || !enabled ? "opacity-50" : "cursor-pointer"}`}
               >
@@ -308,10 +308,10 @@ function FlagCard({ flag, members }: { flag: AdminFlagView; members: Member[] })
           {busy ? "Saving…" : "Save"}
         </button>
         {saveFetcher.data?.error && (
-          <span className="text-xs text-red-600">{saveFetcher.data.error}</span>
+          <span className="text-xs text-destructive">{saveFetcher.data.error}</span>
         )}
         {justSaved && !dirty && (
-          <span className="text-xs text-green-700">Saved</span>
+          <span className="text-xs text-os-green">Saved</span>
         )}
       </div>
     </div>

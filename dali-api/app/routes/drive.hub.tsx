@@ -319,7 +319,7 @@ function TemplatePicker({
         <p className="text-sm text-muted-foreground py-6 text-center">Loading templates…</p>
       )}
       {error && (
-        <p className="text-sm text-red-600 py-2">{error}</p>
+        <p className="text-sm text-destructive py-2">{error}</p>
       )}
       {!loading && !error && labTemplates.length === 0 && scopeTemplates.length === 0 && (
         <p className="text-sm text-muted-foreground italic py-4 text-center">
@@ -1918,7 +1918,7 @@ export default function DriveHub() {
           )}
         </h1>
       </header>
-      {uploadError && <p className="text-sm text-red-600">{uploadError}</p>}
+      {uploadError && <p className="text-sm text-destructive">{uploadError}</p>}
 
       {homeEnabled && home && !isHiringLibrary && !search && <DriveHome data={home} onOpen={onOpenItem} />}
 
@@ -2077,7 +2077,7 @@ function TrashPanel({
 
   function trashItemIcon(type: TrashItem["type"]) {
     switch (type) {
-      case "folder": return <Folder className="w-4 h-4 text-accent-coral/80 shrink-0" />;
+      case "folder": return <Folder className="w-4 h-4 text-os-accent/80 shrink-0" />;
       case "form": return <ClipboardList className="w-4 h-4 text-muted-foreground shrink-0" />;
       case "file": return <Paperclip className="w-4 h-4 text-muted-foreground shrink-0" />;
       default: return <FileText className="w-4 h-4 text-muted-foreground shrink-0" />;

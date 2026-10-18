@@ -360,7 +360,7 @@ function NotesFields({ application: a }: { application: ReviewApplication }) {
           />
         </label>
         <label className="block">
-          <span className="os-field-label inline-flex items-center gap-1 !text-amber-800">
+          <span className="os-field-label inline-flex items-center gap-1 !text-os-amber">
             Internal note, hiring only, never shown to the student
             <InfoTip content="Visible only to instructors and Core members. Used as a hiring signal when this student applies to DALI. The student never sees it." />
           </span>
@@ -372,7 +372,7 @@ function NotesFields({ application: a }: { application: ReviewApplication }) {
               setInternalNote(e.target.value);
             }}
             placeholder="Engagement/competency signal for future hiring…"
-            className="mt-2 w-full !border-amber-300 !bg-amber-50"
+            className="mt-2 w-full !border-os-amber/40 !bg-os-amber/10"
           />
         </label>
       </div>
