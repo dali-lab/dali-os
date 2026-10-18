@@ -19,7 +19,6 @@ import { requireAuth, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { isCore, getUserRoles } from "~/lib/roles";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
-import { coreHandle } from "~/core/coreNav";
 import { Select } from "~/components/ui/floating";
 import { Card } from "~/components/ui/Card";
 import { formatUsd } from "~/lib/money";
@@ -40,7 +39,7 @@ import {
   PARTNER_REJECT_REASON_LABELS,
 } from "../lib/partner-application";
 
-export const handle = { ...coreHandle("partners"), areaSubnav: true };
+export const handle = { hideBreadcrumbs: true, areaSubnav: true };
 
 export const meta: Route.MetaFunction = () => [{ title: "Partner reports · DALI OS" }];
 
@@ -157,8 +156,8 @@ export default function PartnerReports() {
   return (
     <div className="flex flex-col gap-6">
       <PartnerCrmNav />
-      <header className="flex items-center justify-between gap-3 flex-wrap">
-        <h1 className="font-heading text-foreground text-4xl font-medium">Reports</h1>
+      <h1 className="sr-only">Reports</h1>
+      <div className="flex items-center gap-3 flex-wrap">
         <div className="flex items-center gap-2">
           <label className="text-sm text-muted-foreground">Term</label>
           <Select
@@ -175,7 +174,7 @@ export default function PartnerReports() {
             }}
           />
         </div>
-      </header>
+      </div>
 
       {/* ── Funnel ──────────────────────────────────────────────────────── */}
       <section className="flex flex-col gap-3">

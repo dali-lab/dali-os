@@ -3,24 +3,34 @@
 // pill palette, derived sets, and guard, imported by every route, API and MCP
 // tool that touches PartnerApplication.stage.
 //
-// Four board columns. "Promoted" is not a stage — an Accepted application with
+// Five board columns. "Promoted" is not a stage — an Accepted application with
 // a resultingProjectId is shown with a Project chip. Hold and learn-more are
 // actions (holdUntil, the Request-more-info email), not columns.
 
-export const PARTNER_STAGES = ["New", "Interview", "Accepted", "Rejected"] as const;
+export const PARTNER_STAGES = ["Backlog", "New", "Interview", "Accepted", "Rejected"] as const;
 
 export type PartnerStage = (typeof PARTNER_STAGES)[number];
 
 export const PARTNER_STAGE_LABELS: Record<PartnerStage, string> = {
+  Backlog: "Backlog",
   New: "New",
   Interview: "Interview",
   Accepted: "Accepted",
   Rejected: "Rejected",
 };
 
+export const PARTNER_SOURCE_LABELS: Record<string, string> = {
+  Email: "Email",
+  Form: "Application form",
+  Referral: "Referral",
+  Manual: "Added by Core",
+  Renewal: "Renewal",
+};
+
 // Pill tint per stage (Tailwind classes), shared by lists, the board columns
 // and the modal so a stage looks identical wherever it appears.
 export const PARTNER_STAGE_PILL: Record<PartnerStage, string> = {
+  Backlog: "bg-muted text-muted-foreground",
   New: "bg-muted text-foreground",
   Interview: "bg-accent-coral/15 text-accent-coral",
   Accepted: "bg-accent-teal/25 text-accent-teal",
@@ -34,10 +44,14 @@ export const PARTNER_STAGE_PILL: Record<PartnerStage, string> = {
 export const PROJECTING_STAGES: PartnerStage[] = ["Interview", "Accepted"];
 
 // Still in play: anything a stale sweep or next-step reminder should watch.
+// Backlog is parked on purpose, so it is left out.
 export const OPEN_STAGES: PartnerStage[] = ["New", "Interview"];
 
+// Not yet decided, parked or not: an org with one of these has no need for a renewal.
+export const UNDECIDED_STAGES: PartnerStage[] = ["Backlog", ...OPEN_STAGES];
+
 // Stages in which the partner may still edit their own pitch from the portal.
-export const PARTNER_EDITABLE_STAGES: PartnerStage[] = ["New"];
+export const PARTNER_EDITABLE_STAGES: PartnerStage[] = ["Backlog", "New"];
 
 export function isPartnerStage(x: unknown): x is PartnerStage {
   return typeof x === "string" && (PARTNER_STAGES as readonly string[]).includes(x);
@@ -86,6 +100,7 @@ export function partnerTrackIndex(input: {
 }): number {
   if (input.resultingProjectId) return 3;
   switch (input.stage) {
+    case "Backlog":
     case "New":
       return 0;
     case "Interview":

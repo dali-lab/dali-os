@@ -5,12 +5,12 @@
 // panel is just a reusable, consistently-styled editor for those same fields.
 
 import { useState } from "react";
-import { CircleDollarSign } from "lucide-react";
 import { Select } from "~/components/ui/floating";
 import { Button } from "~/components/ui/Button";
 import { PROJECT_FUNDING_TYPES, PROJECT_FUNDING_TYPE_LABELS, type ProjectFundingType } from "~/lib/chart-string";
 import { formatUsd } from "~/lib/money";
 import { postPartnerApplicationIntent } from "../../lib/partner-detail-fetch";
+import { RAIL_CONTROL, RailFact, RailField } from "./rail";
 
 export function FinancePanel({
   applicationId,
@@ -39,9 +39,6 @@ export function FinancePanel({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const inputClass =
-    "w-full rounded-md border border-border bg-card px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-accent-coral/30";
-
   async function save() {
     setSaving(true);
     setError(null);
@@ -68,81 +65,71 @@ export function FinancePanel({
   }
 
   return (
-    <section className="bg-card border border-border rounded-lg p-4 flex flex-col gap-3">
-      <h2 className="text-sm font-semibold text-foreground flex items-center gap-2">
-        <CircleDollarSign className="h-4 w-4 text-muted-foreground" />
-        Deal terms
-      </h2>
-
+    <div className="flex flex-col gap-3">
       {canEdit ? (
-        <div className="grid gap-3 sm:grid-cols-2">
-          <label className="flex flex-col gap-1 text-xs">
-            <span className="font-medium text-foreground/80">Funding type</span>
+        <>
+          <RailField label="Funding type">
             <Select
               value={funding}
               onChange={(v) => setFunding(v as ProjectFundingType)}
               options={PROJECT_FUNDING_TYPES.map((t) => ({ value: t, label: PROJECT_FUNDING_TYPE_LABELS[t] }))}
-              buttonClassName="px-2.5 py-1.5 border border-border rounded-md inline-flex items-center justify-between gap-1 text-sm hover:bg-muted/40"
+              placeholder="Choose"
+              ariaLabel="Funding type"
+              buttonClassName={RAIL_CONTROL}
             />
-          </label>
-          <label className="flex flex-col gap-1 text-xs">
-            <span className="font-medium text-foreground/80">Fee (USD)</span>
+          </RailField>
+          <RailField label="Fee (USD)">
             <input
               type="number"
               min="0"
               step="0.01"
               value={feeDollars}
               onChange={(e) => setFeeDollars(e.target.value)}
-              className={inputClass}
+              aria-label="Fee (USD)"
+              className={RAIL_CONTROL}
             />
-          </label>
-          <label className="flex flex-col gap-1 text-xs">
-            <span className="font-medium text-foreground/80">Legal entity name</span>
+          </RailField>
+          <RailField label="Legal entity">
             <input
               type="text"
               value={entityName}
               onChange={(e) => setEntityName(e.target.value)}
-              className={inputClass}
+              aria-label="Legal entity name"
+              className={RAIL_CONTROL}
             />
-          </label>
-          <label className="flex flex-col gap-1 text-xs">
-            <span className="font-medium text-foreground/80">Legal entity address</span>
+          </RailField>
+          <RailField label="Entity address">
             <input
               type="text"
               value={entityAddress}
               onChange={(e) => setEntityAddress(e.target.value)}
-              className={inputClass}
+              aria-label="Legal entity address"
+              className={RAIL_CONTROL}
             />
-          </label>
-          <label className="flex flex-col gap-1 text-xs sm:col-span-2">
-            <span className="font-medium text-foreground/80">Payment schedule</span>
+          </RailField>
+          <RailField label="Payment schedule">
             <input
               type="text"
               value={schedule}
               onChange={(e) => setSchedule(e.target.value)}
               placeholder="e.g. Net 30 on invoice"
-              className={inputClass}
+              aria-label="Payment schedule"
+              className={RAIL_CONTROL}
             />
-          </label>
-          <div className="sm:col-span-2 flex items-center gap-2">
-            <Button variant="primary" size="sm" onClick={() => void save()} disabled={saving}>
+          </RailField>
+          <div className="flex items-center gap-2">
+            <Button variant="secondary" size="xs" onClick={() => void save()} disabled={saving}>
               {saving ? "Saving…" : "Save deal terms"}
             </Button>
             {error && <p className="text-xs text-destructive">{error}</p>}
           </div>
-        </div>
+        </>
       ) : (
-        <dl className="grid gap-2 sm:grid-cols-2 text-sm">
-          <div>
-            <dt className="text-xs text-muted-foreground">Funding type</dt>
-            <dd className="text-foreground">{fundingType ? PROJECT_FUNDING_TYPE_LABELS[fundingType] : "—"}</dd>
-          </div>
-          <div>
-            <dt className="text-xs text-muted-foreground">Fee</dt>
-            <dd className="text-foreground">{feeCents != null ? formatUsd(feeCents / 100) : "—"}</dd>
-          </div>
-        </dl>
+        <>
+          <RailFact label="Funding type">{fundingType ? PROJECT_FUNDING_TYPE_LABELS[fundingType] : "Not set"}</RailFact>
+          <RailFact label="Fee">{feeCents != null ? formatUsd(feeCents / 100) : "Not set"}</RailFact>
+        </>
       )}
-    </section>
+    </div>
   );
 }

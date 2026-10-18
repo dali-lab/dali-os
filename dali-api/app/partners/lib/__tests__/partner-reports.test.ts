@@ -28,14 +28,15 @@ describe("median", () => {
 describe("computeFunnel", () => {
   it("counts applications per current stage", () => {
     const apps = [
+      { id: "a0", stage: "Backlog" as const },
       { id: "a1", stage: "New" as const },
       { id: "a2", stage: "Interview" as const },
       { id: "a3", stage: "Accepted" as const },
       { id: "a4", stage: "Rejected" as const },
     ];
     const result = computeFunnel(apps, []);
-    expect(result.stageCounts).toEqual({ New: 1, Interview: 1, Accepted: 1, Rejected: 1 });
-    expect(result.total).toBe(4);
+    expect(result.stageCounts).toEqual({ Backlog: 1, New: 1, Interview: 1, Accepted: 1, Rejected: 1 });
+    expect(result.total).toBe(5);
   });
 
   it("credits a Rejected card that passed through Interview first toward newToInterviewRate", () => {

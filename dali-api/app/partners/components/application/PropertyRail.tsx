@@ -1,5 +1,5 @@
-// The application record's right-hand property panel — shared by
-// PartnerApplicationModal and the full detail page. Saves route through
+// The application record's editable properties, the first sections of the
+// Details tab in both PartnerApplicationModal and the full detail page. Saves route through
 // the detail route's action intents (see partner-detail-fetch.ts for why a
 // plain fetch(), not a <Form>/fetcher, is what lets this work from the modal
 // too) except Stage, which the design calls out as posting straight to the
@@ -11,9 +11,11 @@ import { Link } from "react-router";
 import { Plus, X } from "lucide-react";
 import { Select, MultiSelect } from "~/components/ui/floating";
 import { DateField } from "~/components/ui/DateField";
-import { PropRow, PROP_CONTROL } from "~/components/ui/modal-fields";
+import { IconButton } from "~/components/ui/IconButton";
+import { useDialog } from "~/components/ui/dialog";
 import { useToast } from "~/components/ui/toast";
 import {
+  PARTNER_SOURCE_LABELS,
   PARTNER_STAGES,
   PARTNER_STAGE_LABELS,
   type PartnerStage,
@@ -22,9 +24,12 @@ import type { ApplicationDetail } from "../../lib/partner-application-detail";
 import type { PartnerContractStatus } from "../../lib/partner-contract.server";
 import type { ProjectFundingType } from "~/lib/chart-string";
 import { postPartnerApplicationIntent } from "../../lib/partner-detail-fetch";
-import { SowStatePanel } from "./SowStatePanel";
 import { ContractPanel } from "./ContractPanel";
 import { FinancePanel } from "./FinancePanel";
+import { RAIL_CONTROL, RAIL_LINK, RailFact, RailField, RailGroup } from "./rail";
+
+// Moving here skips the stage's email, unlike the Accept and Reject actions.
+const SILENT_DECISION_STAGES = new Set<PartnerStage>(["Accepted", "Rejected"]);
 
 // Only the fields this panel actually reads — a Pick rather than the full
 // ApplicationDetail so the full detail page (whose loader shapes target
@@ -78,8 +83,17 @@ export function PropertyRail({
   const [stageBusy, setStageBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const toast = useToast();
+  const dialog = useDialog();
 
   async function changeStage(next: PartnerStage) {
+    if (SILENT_DECISION_STAGES.has(next)) {
+      const ok = await dialog.confirm({
+        title: `Move to ${PARTNER_STAGE_LABELS[next]}?`,
+        description: "This doesn't email the partner. Use Accept or Reject to notify them.",
+        confirmLabel: "Move anyway",
+      });
+      if (!ok) return;
+    }
     setStageBusy(true);
     setError(null);
     try {
@@ -113,102 +127,81 @@ export function PropertyRail({
   }
 
   return (
-    <div className="flex flex-col gap-1">
-      {error && <p className="text-xs text-destructive">{error}</p>}
-
-      <PropRow label="Stage">
-        <Select
-          value={application.stage}
-          disabled={!canEdit || stageBusy}
-          onChange={(v) => void changeStage(v as PartnerStage)}
-          options={PARTNER_STAGES.map((s) => ({ value: s, label: PARTNER_STAGE_LABELS[s] }))}
-          buttonClassName={PROP_CONTROL}
-        />
-      </PropRow>
-
-      <PropRow label="Contact">
-        <Link
-          to={`/core/partners/contacts/${application.applicant.id}`}
-          className="text-sm text-accent-coral hover:underline"
-        >
-          {application.applicant.name}
-        </Link>
-      </PropRow>
-
-      <PropRow label="Organization">
-        {application.partner ? (
-          <Link
-            to={`/core/partners/orgs/${application.partner.id}`}
-            className="text-sm text-accent-coral hover:underline"
-          >
-            {application.partner.name}
-          </Link>
-        ) : application.resultingProjectId ? (
-          <Link
-            to={`/projects/${application.resultingProjectId}`}
-            className="text-sm text-accent-coral hover:underline"
-          >
-            Created at project
-          </Link>
-        ) : (
-          <span className="text-sm text-muted-foreground">Not yet</span>
-        )}
-      </PropRow>
-
-      <PropRow label="Source">
-        <span className="text-sm text-foreground">{application.source}</span>
-      </PropRow>
-
-      <NextStepField application={application} canEdit={canEdit} run={run} />
-      <PausedUntilField application={application} canEdit={canEdit} run={run} />
-
-      <PropRow label="Target terms">
-        <MultiSelect
-          values={application.targetTerms.map((t) => t.id)}
-          disabled={!canEdit}
-          onChange={(ids) =>
-            void run("details", {
-              summary: application.summary ?? "",
-              targetTermId: ids,
-            }).then((ok) => {
-              if (!ok) toast.error("Couldn't save target terms.");
-            })
-          }
-          options={termOptions.map((t) => ({ value: t.id, label: t.code }))}
-          ariaLabel="Target terms"
-          placeholder="None"
-          emptyLabel="No terms"
-          buttonClassName={PROP_CONTROL}
-        />
-      </PropRow>
-
-      <DomainsField
-        applicationId={application.id}
-        domains={application.domains}
-        availableDomains={domainOptions}
-        canEdit={canEdit}
-        onChanged={onChanged}
-      />
-
-      <PropRow label="SOW">
-        <div className="flex flex-col gap-1.5">
-          <Link
-            to={`/core/partners/applications/${application.id}?tab=sow`}
-            className="self-start text-sm text-accent-coral hover:underline"
-          >
-            Open
-          </Link>
-          <SowStatePanel
-            applicationId={application.id}
-            sowState={application.sowState}
-            canEdit={canEdit}
-            onChanged={onChanged}
-            compact
+    <>
+      <RailGroup title="Status">
+        {error && <p className="text-sm text-destructive">{error}</p>}
+        <RailField label="Stage">
+          <Select
+            value={application.stage}
+            disabled={!canEdit || stageBusy}
+            onChange={(v) => void changeStage(v as PartnerStage)}
+            options={PARTNER_STAGES.map((s) => ({ value: s, label: PARTNER_STAGE_LABELS[s] }))}
+            ariaLabel="Stage"
+            buttonClassName={RAIL_CONTROL}
           />
-        </div>
-      </PropRow>
+        </RailField>
+        <NextStepField application={application} canEdit={canEdit} run={run} />
+        <PausedUntilField application={application} canEdit={canEdit} run={run} />
+        {application.resultingProjectId && (
+          <RailFact label="Project">
+            <Link to={`/projects/${application.resultingProjectId}`} className={RAIL_LINK}>
+              Open project
+            </Link>
+          </RailFact>
+        )}
+      </RailGroup>
 
-      <PropRow label="Contract">
+      <RailGroup title="People">
+        <RailField label="Contact">
+          <Link to={`/core/partners/contacts/${application.applicant.id}`} className={RAIL_LINK}>
+            {application.applicant.name}
+          </Link>
+          {application.applicant.email && (
+            <span className="block truncate text-xs text-os-grey">{application.applicant.email}</span>
+          )}
+        </RailField>
+        <RailField label="Organization">
+          {application.partner ? (
+            <Link to={`/core/partners/orgs/${application.partner.id}`} className={RAIL_LINK}>
+              {application.partner.name}
+            </Link>
+          ) : (
+            <span className="text-os-grey">None yet</span>
+          )}
+        </RailField>
+        <RailFact label="Source">{PARTNER_SOURCE_LABELS[application.source] ?? application.source}</RailFact>
+      </RailGroup>
+
+      <RailGroup title="Terms and team">
+        <RailField label="Target terms">
+          <MultiSelect
+            values={application.targetTerms.map((t) => t.id)}
+            disabled={!canEdit}
+            onChange={(ids) =>
+              void run("details", {
+                summary: application.summary ?? "",
+                targetTermId: ids,
+              }).then((ok) => {
+                if (!ok) toast.error("Couldn't save target terms.");
+              })
+            }
+            options={termOptions.map((t) => ({ value: t.id, label: t.code }))}
+            ariaLabel="Target terms"
+            placeholder="None"
+            emptyLabel="No terms"
+            buttonClassName={RAIL_CONTROL}
+          />
+        </RailField>
+        <DomainsField
+          applicationId={application.id}
+          domains={application.domains}
+          availableDomains={domainOptions}
+          canEdit={canEdit}
+          onChanged={onChanged}
+        />
+      </RailGroup>
+
+      <RailGroup title="Contract">
         <ContractPanel
           applicationId={application.id}
           status={contract}
@@ -217,32 +210,23 @@ export function PropertyRail({
           onChanged={onChanged}
           compact
         />
-      </PropRow>
+      </RailGroup>
 
       {financeOn && (
-        <FinancePanel
-          applicationId={application.id}
-          fundingType={application.fundingType as ProjectFundingType | null}
-          feeCents={application.feeCents}
-          legalEntityName={application.legalEntityName}
-          legalEntityAddress={application.legalEntityAddress}
-          paymentSchedule={application.paymentSchedule}
-          canEdit={canEdit}
-          onChanged={onChanged}
-        />
+        <RailGroup title="Deal terms">
+          <FinancePanel
+            applicationId={application.id}
+            fundingType={application.fundingType as ProjectFundingType | null}
+            feeCents={application.feeCents}
+            legalEntityName={application.legalEntityName}
+            legalEntityAddress={application.legalEntityAddress}
+            paymentSchedule={application.paymentSchedule}
+            canEdit={canEdit}
+            onChanged={onChanged}
+          />
+        </RailGroup>
       )}
-
-      {application.resultingProjectId && (
-        <PropRow label="Project">
-          <Link
-            to={`/projects/${application.resultingProjectId}`}
-            className="text-sm text-accent-coral hover:underline"
-          >
-            View project
-          </Link>
-        </PropRow>
-      )}
-    </div>
+    </>
   );
 }
 
@@ -274,18 +258,16 @@ function NextStepField({
 
   if (!canEdit) {
     return (
-      <PropRow label="Next step">
-        <span className="text-sm text-foreground">
-          {application.nextStep ?? "—"}
-          {application.nextStepDueAt && ` · due ${application.nextStepDueAt.slice(0, 10)}`}
-        </span>
-      </PropRow>
+      <RailField label="Next step">
+        {application.nextStep ?? "None"}
+        {application.nextStepDueAt && `, due ${application.nextStepDueAt.slice(0, 10)}`}
+      </RailField>
     );
   }
 
   return (
-    <PropRow label="Next step">
-      <div className="flex flex-col gap-1.5">
+    <RailField label="Next step">
+      <div className="flex flex-col gap-2">
         <input
           type="text"
           value={nextStep}
@@ -293,7 +275,8 @@ function NextStepField({
           onBlur={save}
           disabled={busy}
           placeholder="What's next?"
-          className={PROP_CONTROL}
+          aria-label="Next step"
+          className={RAIL_CONTROL}
         />
         <DateField
           mode="date"
@@ -306,10 +289,12 @@ function NextStepField({
             });
           }}
           ariaLabel="Next step due date"
+          placeholder="Due date"
           className="w-full"
+          buttonClassName={RAIL_CONTROL}
         />
       </div>
-    </PropRow>
+    </RailField>
   );
 }
 
@@ -328,17 +313,15 @@ function PausedUntilField({
 
   if (!canEdit) {
     return (
-      <PropRow label="Paused until">
-        <span className="text-sm text-foreground">
-          {application.holdUntil ? application.holdUntil.slice(0, 10) : "—"}
-        </span>
-      </PropRow>
+      <RailField label="Paused until">
+        {application.holdUntil ? application.holdUntil.slice(0, 10) : "Not paused"}
+      </RailField>
     );
   }
 
   return (
-    <PropRow label="Paused until">
-      <div className="flex items-center gap-1.5">
+    <RailField label="Paused until">
+      <div className="flex items-center gap-1">
         <DateField
           mode="date"
           value={holdUntil}
@@ -347,23 +330,22 @@ function PausedUntilField({
             void run("hold", { holdUntil: v ? `${v}T00:00:00.000Z` : null });
           }}
           ariaLabel="Paused until"
+          placeholder="Not paused"
           className="w-full"
+          buttonClassName={RAIL_CONTROL}
         />
         {holdUntil && (
-          <button
-            type="button"
+          <IconButton
+            label="Resume now"
+            icon={X}
             onClick={() => {
               setHoldUntil("");
               void run("hold", { holdUntil: null });
             }}
-            aria-label="Clear paused-until date"
-            className="text-muted-foreground hover:text-foreground"
-          >
-            <X className="h-3.5 w-3.5" aria-hidden />
-          </button>
+          />
         )}
       </div>
-    </PropRow>
+    </RailField>
   );
 }
 
@@ -453,13 +435,13 @@ function DomainsField({
   }
 
   return (
-    <PropRow label="Domains">
-      <div className="flex flex-col gap-1.5">
+    <RailField label="Domains and team size">
+      <div className="flex flex-col gap-2">
         {error && <p className="text-xs text-destructive">{error}</p>}
-        {domains.length === 0 && <p className="text-sm text-muted-foreground">None yet.</p>}
+        {domains.length === 0 && <p className="text-os-grey">None yet</p>}
         {domains.map((d) => (
-          <div key={d.id} className="flex items-center gap-1.5 text-sm">
-            <span className="min-w-0 flex-1 truncate text-foreground">{d.domainName}</span>
+          <div key={d.id} className="flex items-center gap-2">
+            <span className="min-w-0 flex-1 truncate">{d.domainName}</span>
             {canEdit ? (
               <input
                 type="number"
@@ -471,61 +453,54 @@ function DomainsField({
                   if (n !== d.expectedMembers) void setExpectedMembers(d.id, n, d.expectedChallenges);
                 }}
                 aria-label={`Expected members for ${d.domainName}`}
-                className="w-14 rounded-md border border-border bg-background px-1.5 py-0.5 text-right text-xs"
+                className="w-14 rounded-lg bg-os-card px-2 py-1 text-right text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-os-accent/40"
               />
             ) : (
-              <span className="text-xs text-muted-foreground">{d.expectedMembers}</span>
+              <span className="text-os-grey">{d.expectedMembers}</span>
             )}
             {canEdit && (
-              <button
-                type="button"
+              <IconButton
+                label={`Remove ${d.domainName}`}
+                icon={X}
+                tone="destructive"
                 onClick={() => void removeDomain(d.id)}
                 disabled={busy}
-                aria-label={`Remove ${d.domainName}`}
-                className="text-muted-foreground hover:text-destructive"
-              >
-                <X className="h-3.5 w-3.5" aria-hidden />
-              </button>
+              />
             )}
           </div>
         ))}
         {canEdit && availableDomains.length > 0 && (
           adding ? (
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-2">
               <Select
                 value={newDomainId}
                 onChange={setNewDomainId}
-                placeholder="Choose a domain…"
+                placeholder="Choose a domain"
                 options={availableDomains.map((d) => ({ value: d.id, label: d.name }))}
-                buttonClassName="flex-1 rounded-md border border-border bg-background px-2 py-1 text-xs inline-flex items-center justify-between gap-1"
+                ariaLabel="Domain to add"
+                buttonClassName={RAIL_CONTROL}
               />
               <button
                 type="button"
                 onClick={() => void addDomain()}
                 disabled={!newDomainId || busy}
-                className="text-xs font-medium text-accent-coral hover:underline disabled:opacity-60"
+                className="text-sm font-medium text-os-accent hover:underline disabled:opacity-60"
               >
                 Add
               </button>
-              <button
-                type="button"
-                onClick={() => setAdding(false)}
-                className="text-xs text-muted-foreground hover:underline"
-              >
-                Cancel
-              </button>
+              <IconButton label="Cancel" icon={X} onClick={() => setAdding(false)} />
             </div>
           ) : (
             <button
               type="button"
               onClick={() => setAdding(true)}
-              className="inline-flex items-center gap-1 self-start text-xs font-medium text-accent-coral hover:underline"
+              className="inline-flex items-center gap-1 self-start text-sm font-medium text-os-accent hover:underline"
             >
-              <Plus className="h-3 w-3" aria-hidden /> Add domain
+              <Plus className="h-3.5 w-3.5" aria-hidden /> Add domain
             </button>
           )
         )}
       </div>
-    </PropRow>
+    </RailField>
   );
 }

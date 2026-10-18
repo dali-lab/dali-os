@@ -6,9 +6,8 @@ import {
   useActionData,
   useLoaderData,
   useRevalidator,
-  useSubmit,
+  useSearchParams,
 } from "react-router";
-import { Select, type SelectOption } from "~/components/ui/floating";
 import {
   Pencil,
   Calendar,
@@ -18,9 +17,10 @@ import {
   FileText,
   Mail,
 } from "lucide-react";
-import { UnderlineTabButtons } from "~/components/AreaPillNav";
+import { SegmentedTabButtons } from "~/components/AreaPillNav";
+import { IconButton } from "~/components/ui/IconButton";
+import { Pill } from "~/hiring/components/cycle-setup/SetupCard";
 import { buttonClasses } from "~/components/ui/Button";
-import { cn } from "~/lib/cn";
 import type { Route } from "./+types/core.partners.applications.$id";
 import { prisma } from "~/lib/db";
 import { githubTeamSlug } from "~/lib/github-slug";
@@ -30,22 +30,18 @@ import { getCollabToken } from "~/lib/collab-token.server";
 import { isCore, getActiveCoreCycleTermIds } from "~/lib/roles";
 import { coreHandle } from "~/core/coreNav";
 import {
-  PARTNER_STAGES as STAGES,
   PARTNER_STAGE_LABELS as STAGE_LABEL,
   PARTNER_REJECT_REASONS,
   PARTNER_REJECT_REASON_LABELS,
   isPartnerStage,
   isPartnerRejectReason,
-  type PartnerStage as Status,
 } from "../lib/partner-application";
 import { PROJECT_FUNDING_TYPES, PROJECT_FUNDING_TYPE_LABELS } from "~/lib/chart-string";
 import { formAnswerRows } from "~/forms/lib/answer-rows.server";
 import type { Question } from "~/types";
 import { DocEditor } from "~/components/doc";
-import { PresenceProvider } from "~/components/collab/PresenceProvider";
 import { isEmptyBlocks } from "~/lib/blocks";
 import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
-import { useDialog } from "~/components/ui/dialog";
 import { EVAL_CRITERIA, EVAL_CRITERIA_VERSION } from "../lib/discovery-rubric";
 import {
   sendTriageNextStepsEmail,
@@ -70,11 +66,14 @@ import {
 } from "../lib/partner-contract.server";
 import { handleSowIntent } from "../lib/partner-finance.server";
 import { PropertyRail } from "../components/application/PropertyRail";
+import { DetailsLayout, RailGroup, STAGE_TONE } from "../components/application/rail";
+import { initialRecordTab, type RecordTab } from "../lib/record-tab";
 import { EvaluationTab } from "../components/application/EvaluationTab";
 import { ActivityTab } from "../components/application/ActivityTab";
 import { EmailTab } from "../components/application/EmailTab";
 import { MeetingsTab } from "../components/application/MeetingsTab";
 import { StageActions } from "../components/application/StageActions";
+import { SowTab } from "../components/application/SowTab";
 import { ScheduleInterviewModal } from "../components/ScheduleInterviewModal";
 
 export const meta: Route.MetaFunction = ({ data }) => {
@@ -959,9 +958,8 @@ export default function PartnerApplicationDetail() {
   const actionData = useActionData<typeof action>();
   const revalidator = useRevalidator();
   const refresh = () => revalidator.revalidate();
-  const [tab, setTab] = useState<
-    "overview" | "evaluation" | "meetings" | "details" | "sow" | "email"
-  >("overview");
+  const [searchParams] = useSearchParams();
+  const [tab, setTab] = useState<RecordTab>(() => initialRecordTab(searchParams.get("tab")));
   const [showScheduler, setShowScheduler] = useState(false);
 
   const topBar = actionData?.error ? (
@@ -972,7 +970,7 @@ export default function PartnerApplicationDetail() {
 
   const header = <Header application={application} canEdit={canEdit} />;
   const details = (
-    <DetailsSection application={application} terms={terms} canEdit={canEdit} />
+    <DetailsSection application={application} canEdit={canEdit} />
   );
   // CRM working sections (only meaningful with edit permission). StageActions
   // is the same stage-aware footer the modal uses (specs/partner-crm.md §5) —
@@ -1008,38 +1006,26 @@ export default function PartnerApplicationDetail() {
   ) : null;
   const answers =
     formAnswers.length > 0 ? (
-      <section className="bg-card border border-border rounded-lg p-4">
-        <h2 className="text-sm font-semibold text-foreground mb-3">
-          Application answers
-        </h2>
-        <dl className="flex flex-col gap-3">
+      <RailGroup title="Answers">
+        <div className="flex flex-col gap-3">
           {formAnswers.map((row) => (
             <div key={row.key}>
-              <dt className="text-xs font-medium text-muted-foreground mb-0.5">
-                {row.label}
-              </dt>
-              <dd className="text-sm text-foreground whitespace-pre-wrap">
-                {row.value || "—"}
-              </dd>
+              <p className="mb-0.5 text-sm text-os-grey">{row.label}</p>
+              <p className="whitespace-pre-wrap text-sm text-foreground">{row.value || "—"}</p>
             </div>
           ))}
-        </dl>
-      </section>
+        </div>
+      </RailGroup>
     ) : null;
-  const domainScope = (
-    <DomainScopeBlock
-      applicationId={application.id}
-      domains={application.domains}
-      availableDomains={availableDomains}
-      canEdit={canEdit}
-    />
-  );
+  const domainScope = <DomainScopeBlock domains={application.domains} canEdit={canEdit} />;
   const sow = (
-    <SowBlock
+    <SowTab
       applicationId={application.id}
+      sowState={application.sowState}
       canEdit={canEdit}
       collabToken={collabToken}
       userName={userName}
+      onChanged={refresh}
     />
   );
 
@@ -1070,8 +1056,7 @@ export default function PartnerApplicationDetail() {
         nextStep: application.nextStep,
         nextStepDueAt: application.nextStepDueAt,
         holdUntil: application.holdUntil,
-        // This file's target terms are {termId, code} (TargetTermsField below
-        // reads `.termId`); the rail's shared type keys them {id, code}.
+        // This loader keys target terms {termId, code}; the rail keys them {id, code}.
         targetTerms: application.targetTerms.map((t) => ({ id: t.termId, code: t.code })),
         summary: application.summary,
         domains: application.domains,
@@ -1102,25 +1087,23 @@ export default function PartnerApplicationDetail() {
     { key: "evaluation", label: "Evaluation", icon: ClipboardList },
     { key: "meetings", label: "Meetings", icon: Calendar },
     { key: "details", label: "Details", icon: Info },
-    { key: "sow", label: "Statement of Work", icon: FileText },
+    { key: "sow", label: "Statement of work", icon: FileText },
     { key: "email", label: "Email", icon: Mail },
   ] as const;
 
   return (
     <>
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-6">
       {topBar}
 
-      {/* Top band — identity, stage progression, and triage/advance actions,
-          always visible above the tabs. */}
-      <div className="flex flex-col gap-3 rounded-lg border border-border bg-card p-4">
+      <div className="flex flex-wrap items-start justify-between gap-4">
         {header}
-        <StageStepper stage={application.stage} />
         {stageActions}
       </div>
 
-      <UnderlineTabButtons
+      <SegmentedTabButtons
         label="Record sections"
+        className="self-start"
         items={TABS.map((t) => ({
           label: t.label,
           icon: t.icon,
@@ -1129,12 +1112,7 @@ export default function PartnerApplicationDetail() {
         }))}
       />
 
-      {tab === "overview" && (
-        <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(0,1fr)_300px]">
-          <div className="min-w-0">{activityFeed}</div>
-          {propertyRail}
-        </div>
-      )}
+      {tab === "overview" && activityFeed}
       {tab === "evaluation" &&
         (evaluation ?? (
           <p className="text-sm text-muted-foreground">
@@ -1148,10 +1126,13 @@ export default function PartnerApplicationDetail() {
           </p>
         ))}
       {tab === "details" && (
-        <div className="flex flex-col gap-4">
-          {details}
-          {domainScope}
-          {answers}
+        <div className="rounded-os-card bg-os-card p-6">
+          <DetailsLayout>
+            {propertyRail}
+            {details}
+            {domainScope}
+            {answers}
+          </DetailsLayout>
         </div>
       )}
       {tab === "sow" && sow}
@@ -1174,61 +1155,7 @@ export default function PartnerApplicationDetail() {
 }
 
 
-// ─── CRM: Triage / decision bar ────────────────────────────────────────────────
-
-// Happy-path funnel order for the stepper + the sequential "advance" CTA.
-// Rejected is the off-ramp and sits off this main line.
-const FUNNEL_ORDER = ["New", "Interview", "Accepted"] as const;
-
-// Rejected can happen from New or Interview; anchor its stepper position at
-// Interview so the chip reads as "got this far, then rejected" rather than
-// resetting to the start.
-const REJECTED_ANCHOR_IDX = FUNNEL_ORDER.indexOf("Interview");
-
-function StageStepper({ stage }: { stage: Status }) {
-  const onPath = (FUNNEL_ORDER as readonly string[]).includes(stage);
-  const currentIdx = onPath
-    ? FUNNEL_ORDER.indexOf(stage as (typeof FUNNEL_ORDER)[number])
-    : REJECTED_ANCHOR_IDX;
-  return (
-    <ol className="flex flex-wrap items-center gap-1">
-      {FUNNEL_ORDER.map((s, i) => {
-        const done = i < currentIdx;
-        const current = i === currentIdx && onPath;
-        return (
-          <li key={s} className="flex items-center gap-1">
-            <span
-              className={cn(
-                "text-[11px] px-2 py-0.5 rounded-full border whitespace-nowrap",
-                current
-                  ? "bg-os-accent text-os-bg border-os-accent"
-                  : done
-                    ? "bg-os-accent/10 text-os-accent border-os-accent/20"
-                    : "bg-muted/40 text-muted-foreground border-border",
-              )}
-            >
-              {STAGE_LABEL[s]}
-            </span>
-            {i < FUNNEL_ORDER.length - 1 && (
-              <span className="text-muted-foreground/40 text-[10px]">›</span>
-            )}
-          </li>
-        );
-      })}
-      {stage === "Rejected" && (
-        <li className="ml-1 text-[11px] px-2 py-0.5 rounded-full border bg-destructive/10 text-destructive border-destructive/20">
-          Rejected
-        </li>
-      )}
-    </ol>
-  );
-}
-
 // ─── Existing components (unchanged below) ────────────────────────────────────
-
-// Decision stages that silently skip the email pipeline — selecting either of
-// these via the dropdown should warn that no email is sent.
-const SILENT_DECISION_STAGES = new Set<Status>(["Accepted", "Rejected"]);
 
 function Header({
   application,
@@ -1238,28 +1165,9 @@ function Header({
   canEdit: boolean;
 }) {
   const [editing, setEditing] = useState(false);
-  const submit = useSubmit();
-  const dialog = useDialog();
-
-  const handleStageChange = async (value: string) => {
-    const toStage = value as Status;
-    if (SILENT_DECISION_STAGES.has(toStage)) {
-      const ok = await dialog.confirm({
-        title: `Move to "${STAGE_LABEL[toStage]}"?`,
-        description:
-          "This does NOT email the partner. Use the Accept/Reject buttons to notify them.",
-        confirmLabel: "Move anyway",
-      });
-      if (!ok) return;
-    }
-    const fd = new FormData();
-    fd.set("intent", "stage");
-    fd.set("stage", value);
-    submit(fd, { method: "post" });
-  };
 
   return (
-    <header className="flex flex-col gap-2">
+    <header className="flex min-w-0 flex-col gap-3">
       <div className="flex items-center gap-2 flex-wrap">
         {editing ? (
           <Form
@@ -1288,116 +1196,66 @@ function Header({
           </Form>
         ) : (
           <>
-            <h1 className="font-heading text-2xl font-bold text-foreground">
-              {application.title}
-            </h1>
+            <h1 className="font-heading text-4xl text-foreground">{application.title}</h1>
             {canEdit && (
-              <button
-                type="button"
-                onClick={() => setEditing(true)}
-                aria-label="Edit title"
-                title="Edit title"
-                className="text-muted-foreground hover:text-os-accent transition-colors"
-              >
-                <Pencil className="w-3.5 h-3.5" />
-              </button>
+              <IconButton label="Edit title" icon={Pencil} onClick={() => setEditing(true)} />
             )}
           </>
         )}
-
-        {canEdit ? (
-          <Select
-            name="stage"
-            defaultValue={application.stage}
-            ariaLabel="Application stage"
-            onChange={handleStageChange}
-            options={STAGES.map((s) => ({ value: s, label: STAGE_LABEL[s] }))}
-            buttonClassName="text-xs px-2 py-1 border border-border rounded-full bg-background text-muted-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
-          />
-        ) : (
-          <span className="text-[11px] px-2 py-0.5 rounded-full border border-border text-muted-foreground">
-            {STAGE_LABEL[application.stage]}
-          </span>
-        )}
       </div>
 
-      <p className="text-sm text-muted-foreground">
-        {application.partner ? (
-          <Link
-            to={`/projects?q=${encodeURIComponent(application.partner.name)}`}
-            className="text-os-accent hover:underline"
-          >
-            {application.partner.name}
-          </Link>
-        ) : (
-          <span className="text-foreground">
-            {application.applicant?.name ?? "Unknown applicant"}
-            {application.applicant?.email ? ` · ${application.applicant.email}` : ""}
-          </span>
-        )}
-        {application.targetTerms.length > 0
-          ? ` · Target ${application.targetTerms.map((t) => t.code).join(", ")}`
-          : " · No target term"}
-        {application.resultingProjectId && (
-          <>
-            {" · "}
-            <Link
-              to={`/projects/${application.resultingProjectId}`}
-              className="text-os-accent hover:underline"
-            >
-              View project
-            </Link>
-          </>
-        )}
-      </p>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-os-grey">
+        <Pill dot={STAGE_TONE[application.stage]}>{STAGE_LABEL[application.stage]}</Pill>
+        <span className="min-w-0">
+          {application.applicant?.name ?? "Unknown applicant"}
+          {application.partner && (
+            <>
+              {" · "}
+              <Link to={`/core/partners/orgs/${application.partner.id}`} className="text-os-accent hover:underline">
+                {application.partner.name}
+              </Link>
+            </>
+          )}
+        </span>
+      </div>
     </header>
   );
 }
 
 function DetailsSection({
   application,
-  terms,
   canEdit,
 }: {
   application: LoaderData["application"];
-  terms: LoaderData["terms"];
   canEdit: boolean;
 }) {
   return (
-    <Form
-      method="post"
-      className="bg-card border border-border rounded-lg p-4 flex flex-col gap-4"
-    >
+    <RailGroup title="Summary">
+    <Form method="post" className="flex flex-col gap-3">
       <input type="hidden" name="intent" value="details" />
-      <h2 className="text-sm font-semibold text-foreground">Details</h2>
+      {/* The details intent replaces the term set wholesale, so the terms the
+          rail owns ride along unchanged or saving the summary would clear them. */}
+      {application.targetTerms.map((t) => (
+        <input key={t.termId} type="hidden" name="targetTermId" value={t.termId} />
+      ))}
 
       {/* Core-written synopsis — partners never see or set this (their prose
           lives in the application answers). Hidden in read mode when empty
           so partner-submitted applications don't render a blank row. */}
       {(canEdit || application.summary !== null) && (
-        <label className="flex flex-col gap-1 text-xs">
-          <span className="text-muted-foreground">Internal summary</span>
-          {canEdit ? (
-            <textarea
-              name="summary"
-              rows={3}
-              defaultValue={application.summary ?? ""}
-              placeholder="One-paragraph synopsis for the lab. Partners don't see this. The full SOW lives below."
-              className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-os-accent/30"
-            />
-          ) : (
-            <span className="px-2 py-1.5 text-sm text-foreground whitespace-pre-wrap">
-              {application.summary}
-            </span>
-          )}
-        </label>
+        canEdit ? (
+          <textarea
+            name="summary"
+            rows={3}
+            defaultValue={application.summary ?? ""}
+            aria-label="Internal summary"
+            placeholder="A short synopsis for the lab. Partners don't see this."
+            className="w-full"
+          />
+        ) : (
+          <p className="whitespace-pre-wrap text-sm text-foreground">{application.summary}</p>
+        )
       )}
-
-      <TargetTermsField
-        terms={terms}
-        selected={application.targetTerms}
-        canEdit={canEdit}
-      />
 
       {canEdit && (
         <div className="flex justify-end">
@@ -1410,329 +1268,79 @@ function DetailsSection({
         </div>
       )}
     </Form>
+    </RailGroup>
   );
 }
 
-// Multiple target terms: one dropdown row per selected term, each posting its
-// value as `targetTermId` (the action reads all of them). A term already
-// picked in another row is hidden from the remaining dropdowns so the same
-// term can't be added twice. An empty list posts no targetTermId, which the
-// action treats as "clear all target terms".
-function TargetTermsField({
-  terms,
-  selected,
-  canEdit,
-}: {
-  terms: LoaderData["terms"];
-  selected: LoaderData["application"]["targetTerms"];
-  canEdit: boolean;
-}) {
-  // "" is the placeholder for a freshly-added, not-yet-chosen row.
-  const [rows, setRows] = useState<string[]>(() =>
-    selected.map((t) => t.termId),
-  );
-
-  if (!canEdit) {
-    return (
-      <div className="flex flex-col gap-1 text-xs sm:max-w-xs">
-        <span className="text-muted-foreground">Target terms</span>
-        <span className="px-2 py-1.5 text-sm text-foreground">
-          {selected.length > 0
-            ? selected.map((t) => t.code).join(", ")
-            : "—"}
-        </span>
-      </div>
-    );
-  }
-
-  const chosen = new Set(rows.filter(Boolean));
-
-  return (
-    <fieldset className="flex flex-col gap-2 text-xs sm:max-w-xs">
-      <legend className="text-muted-foreground mb-1">
-        Target terms
-        <span className="ml-1 text-muted-foreground/70">
-          (add one per expected term)
-        </span>
-      </legend>
-
-      {rows.length === 0 && (
-        <p className="text-sm text-muted-foreground italic">
-          No target terms.
-        </p>
-      )}
-
-      {rows.map((value, i) => (
-        <div key={i} className="flex items-center gap-2">
-          <Select
-            name="targetTermId"
-            value={value}
-            onChange={(newValue) =>
-              setRows((r) => r.map((v, j) => (j === i ? newValue : v)))
-            }
-            placeholder="Select a term…"
-            options={[
-              { value: "", label: "Select a term…" },
-              ...terms
-                .filter((t) => t.id === value || !chosen.has(t.id))
-                .map((t) => ({ value: t.id, label: t.code })),
-            ]}
-            buttonClassName="flex-1 px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
-          />
-          <button
-            type="button"
-            onClick={() => setRows((r) => r.filter((_, j) => j !== i))}
-            aria-label="Remove term"
-            className="px-2 py-1.5 text-xs font-medium rounded-md border border-border hover:bg-muted transition-colors"
-          >
-            Remove
-          </button>
-        </div>
-      ))}
-
-      {chosen.size < terms.length && (
-        <button
-          type="button"
-          onClick={() => setRows((r) => [...r, ""])}
-          className="self-start text-xs font-medium text-os-accent hover:underline"
-        >
-          + Add term
-        </button>
-      )}
-    </fieldset>
-  );
-}
-
+// Team size, adding and removing domains live in the property rail; this block
+// only holds what the rail has no room for, the scope text per domain.
 function DomainScopeBlock({
-  applicationId,
   domains,
-  availableDomains,
   canEdit,
 }: {
-  applicationId: string;
   domains: LoaderData["application"]["domains"];
-  availableDomains: LoaderData["availableDomains"];
   canEdit: boolean;
 }) {
   const revalidator = useRevalidator();
-  const dialog = useDialog();
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [adding, setAdding] = useState(false);
-  const [newDomainId, setNewDomainId] = useState("");
   const [editId, setEditId] = useState<string | null>(null);
 
-  function run(fn: () => Promise<void>) {
+  async function save(d: LoaderData["application"]["domains"][number], challenges: unknown) {
     setBusy(true);
     setError(null);
-    fn()
-      .then(() => revalidator.revalidate())
-      .catch((e) =>
-        setError(e instanceof Error ? e.message : "Something went wrong"),
-      )
-      .finally(() => setBusy(false));
-  }
-
-  async function call(url: string, method: "POST" | "DELETE", body?: unknown) {
-    const res = await fetch(url, {
-      method,
-      credentials: "include",
-      headers: body ? { "Content-Type": "application/json" } : undefined,
-      body: body ? JSON.stringify(body) : undefined,
-    });
-    if (!res.ok) {
-      const b = (await res.json().catch(() => ({}))) as { error?: string };
-      throw new Error(b.error ?? `Request failed: ${res.status}`);
+    try {
+      const res = await fetch(`/api/partner-application-domains/${d.id}`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ expectedMembers: d.expectedMembers, expectedChallenges: challenges }),
+      });
+      if (!res.ok) {
+        const b = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(b.error ?? `Request failed: ${res.status}`);
+      }
+      setEditId(null);
+      revalidator.revalidate();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Something went wrong");
+    } finally {
+      setBusy(false);
     }
   }
 
-  const total = domains.reduce((s, d) => s + d.expectedMembers, 0);
+  if (domains.length === 0) return null;
 
   return (
-    <section className="bg-card border border-border rounded-lg p-4">
-      <div className="flex items-center justify-between mb-3">
-        <div>
-          <h2 className="text-sm font-semibold text-foreground">
-            Expected scope per domain
-          </h2>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            Drives the projected lab headcount for the target term.
-          </p>
-        </div>
-        {canEdit && !adding && availableDomains.length > 0 && (
-          <button
-            type="button"
-            onClick={() => setAdding(true)}
-            className="text-xs font-medium text-os-accent hover:underline"
-          >
-            + Add domain
-          </button>
+    <RailGroup title="Domain scope">
+      {error && <p className="text-sm text-destructive">{error}</p>}
+      <div className="flex flex-col divide-y divide-os-container">
+        {domains.map((d) =>
+          editId === d.id ? (
+            <DomainScopeEditRow key={d.id} row={d} busy={busy} onCancel={() => setEditId(null)} onSave={(c) => void save(d, c)} />
+          ) : (
+            <div key={d.id} className="flex items-start justify-between gap-3 py-3">
+              <div className="min-w-0">
+                <span className="text-sm font-medium text-foreground">{d.domainName}</span>
+                {!isEmptyBlocks(d.expectedChallenges) ? (
+                  <DocEditor
+                    key={d.id}
+                    features="notes"
+                    density="compact"
+                    editable={false}
+                    initialContent={d.expectedChallenges}
+                    className="mt-1 text-sm text-os-grey"
+                  />
+                ) : (
+                  <p className="mt-1 text-sm text-os-grey">Not described yet</p>
+                )}
+              </div>
+              {canEdit && <IconButton label={`Edit ${d.domainName}`} icon={Pencil} onClick={() => setEditId(d.id)} />}
+            </div>
+          ),
         )}
       </div>
-
-      {error && (
-        <div className="bg-destructive/10 border border-destructive/30 text-destructive text-xs rounded-md px-3 py-2 mb-3">
-          {error}
-        </div>
-      )}
-
-      {adding && canEdit && (
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (!newDomainId) return;
-            run(async () => {
-              await call(
-                `/api/partner-applications/${applicationId}/domains`,
-                "POST",
-                { domainId: newDomainId },
-              );
-              setAdding(false);
-              setNewDomainId("");
-            });
-          }}
-          className="flex items-end gap-2 mb-3"
-        >
-          <label className="flex flex-col gap-1 text-xs flex-1">
-            <span className="text-muted-foreground">Domain</span>
-            <Select
-              value={newDomainId}
-              onChange={(value) => setNewDomainId(value)}
-              placeholder="Select a domain…"
-              options={[
-                { value: "", label: "Select a domain…" },
-                ...availableDomains.map((d) => ({ value: d.id, label: d.displayName })),
-              ]}
-              buttonClassName="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
-            />
-          </label>
-          <button
-            type="submit"
-            disabled={busy || !newDomainId}
-            className={buttonClasses("primary", "sm")}
-          >
-            Add
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setAdding(false);
-              setNewDomainId("");
-            }}
-            className="px-3 py-1.5 text-xs font-medium rounded-md border border-border hover:bg-muted transition-colors"
-          >
-            Cancel
-          </button>
-        </form>
-      )}
-
-      {domains.length === 0 && !adding ? (
-        <p className="text-sm text-muted-foreground italic">
-          No domain scope defined yet.
-        </p>
-      ) : (
-        <div className="flex flex-col divide-y divide-border">
-          {domains.map((d) =>
-            editId === d.id ? (
-              <DomainScopeEditRow
-                key={d.id}
-                row={d}
-                busy={busy}
-                onCancel={() => setEditId(null)}
-                onSave={(members, challenges) => {
-                  run(async () => {
-                    await call(
-                      `/api/partner-application-domains/${d.id}`,
-                      "POST",
-                      {
-                        expectedMembers: members,
-                        expectedChallenges: challenges,
-                      },
-                    );
-                    setEditId(null);
-                  });
-                }}
-              />
-            ) : (
-              <div key={d.id} className="py-3">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium text-foreground">
-                        {d.domainName}
-                      </span>
-                      <span className="text-xs px-1.5 py-0.5 rounded bg-muted text-foreground tabular-nums">
-                        {d.expectedMembers}{" "}
-                        {d.expectedMembers === 1 ? "member" : "members"}
-                      </span>
-                    </div>
-                    {!isEmptyBlocks(d.expectedChallenges) ? (
-                      <DocEditor
-                        key={d.id}
-                        features="notes"
-                        density="compact"
-                        editable={false}
-                        initialContent={d.expectedChallenges}
-                        className="text-sm text-muted-foreground mt-1"
-                      />
-                    ) : (
-                      <p className="text-xs text-muted-foreground italic mt-1">
-                        No scope description.
-                      </p>
-                    )}
-                  </div>
-                  {canEdit && (
-                    <div className="flex items-center gap-3 flex-shrink-0">
-                      <button
-                        type="button"
-                        onClick={() => setEditId(d.id)}
-                        className="text-xs text-muted-foreground hover:text-foreground"
-                      >
-                        Edit
-                      </button>
-                      <button
-                        type="button"
-                        disabled={busy}
-                        onClick={async () => {
-                          if (
-                            !(await dialog.confirm({
-                              title: `Remove ${d.domainName} from this application?`,
-                              description: "Answers given for this domain are deleted.",
-                              confirmLabel: "Remove",
-                              tone: "destructive",
-                            }))
-                          )
-                            return;
-                          run(() =>
-                            call(
-                              `/api/partner-application-domains/${d.id}`,
-                              "DELETE",
-                            ),
-                          );
-                        }}
-                        className="text-xs text-destructive hover:underline disabled:opacity-60"
-                      >
-                        Remove
-                      </button>
-                    </div>
-                  )}
-                </div>
-              </div>
-            ),
-          )}
-          {domains.length > 0 && (
-            <div className="py-3 flex items-center justify-between text-sm">
-              <span className="text-muted-foreground">
-                Total expected members
-              </span>
-              <span className="font-semibold text-foreground tabular-nums">
-                {total}
-              </span>
-            </div>
-          )}
-        </div>
-      )}
-    </section>
+    </RailGroup>
   );
 }
 
@@ -1745,110 +1353,35 @@ function DomainScopeEditRow({
   row: LoaderData["application"]["domains"][number];
   busy: boolean;
   onCancel: () => void;
-  onSave: (expectedMembers: number, expectedChallenges: unknown) => void;
+  onSave: (expectedChallenges: unknown) => void;
 }) {
-  const [members, setMembers] = useState<string>(String(row.expectedMembers));
   const [challenges, setChallenges] = useState<unknown>(row.expectedChallenges);
   return (
     <form
       onSubmit={(e) => {
         e.preventDefault();
-        const n = Math.max(0, Number(members) || 0);
-        onSave(n, isEmptyBlocks(challenges) ? null : challenges);
+        onSave(isEmptyBlocks(challenges) ? null : challenges);
       }}
-      className="py-3 flex flex-col gap-2"
+      className="flex flex-col gap-2 py-3"
     >
-      <div className="flex items-center justify-between">
-        <span className="text-sm font-medium text-foreground">
-          {row.domainName}
-        </span>
-        <div className="flex items-center gap-2">
-          <button
-            type="submit"
-            disabled={busy}
-            className={buttonClasses("primary", "sm")}
-          >
-            Save
-          </button>
-          <button
-            type="button"
-            onClick={onCancel}
-            className="px-3 py-1.5 text-xs font-medium rounded-md border border-border hover:bg-muted transition-colors"
-          >
-            Cancel
-          </button>
-        </div>
+      <span className="text-sm font-medium text-foreground">{row.domainName}</span>
+      <DocEditor
+        features="notes"
+        density="compact"
+        initialContent={row.expectedChallenges}
+        onChange={setChallenges}
+        placeholder="What should this domain deliver?"
+        className="rounded-xl border bg-os-card py-2"
+      />
+      <div className="flex justify-end gap-2">
+        <button type="button" onClick={onCancel} className={buttonClasses("secondary", "sm")}>
+          Cancel
+        </button>
+        <button type="submit" disabled={busy} className={buttonClasses("primary", "sm")}>
+          Save
+        </button>
       </div>
-      <label className="flex flex-col gap-1 text-xs sm:max-w-[180px]">
-        <span className="text-muted-foreground">Expected members</span>
-        <input
-          type="number"
-          min={0}
-          value={members}
-          onChange={(e) => setMembers(e.target.value)}
-          className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-os-accent/30"
-        />
-      </label>
-      <label className="flex flex-col gap-1 text-xs">
-        <span className="text-muted-foreground">
-          Expected challenges / scope
-        </span>
-        <DocEditor
-          features="notes"
-          density="compact"
-          initialContent={row.expectedChallenges}
-          onChange={setChallenges}
-          placeholder="What does the partner expect this domain to deliver?"
-          className="rounded-md border border-border bg-card py-2"
-        />
-      </label>
     </form>
   );
 }
 
-function SowBlock({
-  applicationId,
-  canEdit,
-  collabToken,
-  userName,
-}: {
-  applicationId: string;
-  canEdit: boolean;
-  collabToken: string | null;
-  userName: string;
-}) {
-  // The SOW is a single collab doc per application. Versioning + history come
-  // for free from the CollabDocumentVersion auto-snapshot machinery (same as
-  // project documents); the editor exposes the version-history panel itself.
-  const documentName = `partnersow:${applicationId}:body`;
-  return (
-    <section className="bg-card border border-border rounded-lg p-4">
-      <h2 className="text-sm font-semibold text-foreground mb-3">
-        Statement of Work
-      </h2>
-      {collabToken ? (
-        <PresenceProvider
-          pageId={`partnersow:${applicationId}`}
-          token={collabToken}
-          userName={userName}
-        >
-          <DocEditor
-            features="notes"
-            editable={canEdit}
-            placeholder="Draft the statement of work…"
-            className="border border-border rounded-md bg-card py-2"
-            collab={{
-              documentName,
-              token: collabToken,
-              userName,
-            }}
-          />
-        </PresenceProvider>
-      ) : (
-        <p className="text-xs text-muted-foreground italic">
-          Sign in again to edit the statement of work.
-        </p>
-      )}
-    </section>
-  );
-}

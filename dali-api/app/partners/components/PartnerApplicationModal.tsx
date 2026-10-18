@@ -1,7 +1,7 @@
-// Partner application record modal — follows TaskModal's conventions (type
-// badge, record mode with a pencil to edit, useDialog guarded close) but
-// wide, with a two-column body: tabs on the left, a property rail on the
-// right. specs/partner-crm.md §5.
+// Partner application record modal — follows TaskModal's conventions (record
+// mode with a pencil to edit, useDialog guarded close) but
+// wide, with one column of tabs; the editable properties lead the Details
+// tab. specs/partner-crm.md §5.
 //
 // Mounted from the board route (app/partners/components/PartnerBoard.tsx),
 // so every save posts through a plain fetch() to the detail route's action
@@ -10,14 +10,16 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router";
-import { Pencil, X } from "lucide-react";
+import { Maximize2, Pencil, X } from "lucide-react";
 import { Modal } from "~/components/Modal";
-import { MultiSelect, Select } from "~/components/ui/floating";
+import { MultiSelect, Select, Tooltip } from "~/components/ui/floating";
 import { Button, buttonClasses } from "~/components/ui/Button";
-import { UnderlineTabButtons } from "~/components/AreaPillNav";
+import { SegmentedTabButtons } from "~/components/AreaPillNav";
 import { useDialog } from "~/components/ui/dialog";
 import { modalCardClass } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
+import { Pill } from "~/hiring/components/cycle-setup/SetupCard";
+import { PARTNER_STAGE_LABELS } from "../lib/partner-application";
 import type { PartnerCardModel } from "../lib/partner-board";
 import type { ApplicationDetailResponse } from "../lib/partner-application-detail";
 import { ActivityTab } from "./application/ActivityTab";
@@ -26,15 +28,18 @@ import { MeetingsTab } from "./application/MeetingsTab";
 import { EvaluationTab } from "./application/EvaluationTab";
 import { EmailTab } from "./application/EmailTab";
 import { PropertyRail } from "./application/PropertyRail";
+import { DetailsLayout, STAGE_TONE } from "./application/rail";
 import { StageActions } from "./application/StageActions";
+import { SowTab } from "./application/SowTab";
 import { ScheduleInterviewModal } from "./ScheduleInterviewModal";
 
 const TAB_ROW_LIMIT = 8;
 
-type Tab = "activity" | "details" | "meetings" | "evaluation" | "email";
+type Tab = "activity" | "details" | "sow" | "meetings" | "evaluation" | "email";
 const TABS: { key: Tab; label: string }[] = [
   { key: "activity", label: "Activity" },
   { key: "details", label: "Details" },
+  { key: "sow", label: "Statement of work" },
   { key: "meetings", label: "Meetings" },
   { key: "evaluation", label: "Evaluation" },
   { key: "email", label: "Email" },
@@ -192,36 +197,79 @@ export function PartnerApplicationModal({
         open
         onClose={() => void guardedClose()}
         labelledBy="partner-application-modal-title"
-        containerClassName={cn(modalCardClass("max-w-4xl max-h-[85vh]"), "flex flex-col")}
+        containerClassName={cn(
+          modalCardClass("max-w-4xl"),
+          // A fixed frame, so switching to a short tab doesn't resize the dialog.
+          isCreate ? "flex flex-col" : "flex h-[85vh] flex-col",
+        )}
       >
         <div className="flex flex-shrink-0 items-start justify-between gap-3 px-6 pt-6 pb-0">
-          <span className="os-type-badge os-type-badge--partner mt-1.5 flex-shrink-0">
-            Partner application
-          </span>
-          {isCreate ? (
-            <h2 id="partner-application-modal-title" className="os-modal-title min-w-0 flex-1">
-              New partner application
-            </h2>
-          ) : editingTitle ? (
-            <input
-              autoFocus
-              value={titleDraft}
-              onChange={(e) => setTitleDraft(e.target.value)}
-              onBlur={() => void saveTitle()}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-              }}
-              className="min-w-0 flex-1 border-0 border-b border-border bg-transparent px-0 py-1 text-lg font-semibold text-foreground focus:border-accent-coral focus:outline-none"
-            />
-          ) : (
-            <h2
-              id="partner-application-modal-title"
-              className="os-record-name os-modal-title min-w-0 flex-1 break-words"
-            >
-              {detail?.application.title ?? "Loading…"}
-            </h2>
-          )}
+          <div className="flex min-w-0 flex-1 flex-col gap-2">
+            {isCreate ? (
+              <h2 id="partner-application-modal-title" className="os-modal-title min-w-0 flex-1">
+                New partner application
+              </h2>
+            ) : editingTitle ? (
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  void saveTitle();
+                }}
+                className="flex min-w-0 items-center gap-2"
+              >
+                <input
+                  autoFocus
+                  type="text"
+                  value={titleDraft}
+                  onChange={(e) => setTitleDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Escape") {
+                      e.stopPropagation();
+                      setEditingTitle(false);
+                    }
+                  }}
+                  aria-label="Application title"
+                  className="min-w-0 flex-1 rounded-xl border px-3 py-1.5 text-lg text-foreground focus:border-os-accent focus:outline-none"
+                />
+                <Button type="button" variant="secondary" size="sm" onClick={() => setEditingTitle(false)}>
+                  Cancel
+                </Button>
+                <Button type="submit" variant="primary" size="sm" disabled={!titleDraft.trim()}>
+                  Save
+                </Button>
+              </form>
+            ) : (
+              <h2
+                id="partner-application-modal-title"
+                className="os-record-name os-modal-title min-w-0 flex-1 break-words"
+              >
+                {detail?.application.title ?? "Loading…"}
+              </h2>
+            )}
+            {!isCreate && detail && (
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-os-grey">
+                <Pill dot={STAGE_TONE[detail.application.stage]}>
+                  {PARTNER_STAGE_LABELS[detail.application.stage]}
+                </Pill>
+                <span className="min-w-0 truncate">
+                  {detail.application.applicant.name}
+                  {detail.application.partner && ` · ${detail.application.partner.name}`}
+                </span>
+              </div>
+            )}
+          </div>
           <div className="flex flex-shrink-0 items-center gap-1.5">
+            {!isCreate && detail && (
+              <Tooltip content="Open full page">
+                <Link
+                  to={`/core/partners/applications/${detail.application.id}`}
+                  className="os-icon-btn"
+                  aria-label="Open full page"
+                >
+                  <Maximize2 className="h-4 w-4" aria-hidden />
+                </Link>
+              </Tooltip>
+            )}
             {!isCreate && !editingTitle && canEdit && detail && (
               <button
                 type="button"
@@ -329,13 +377,12 @@ export function PartnerApplicationModal({
           ) : !detail ? (
             <p className="text-sm text-muted-foreground">Loading…</p>
           ) : (
-            <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[minmax(0,1fr)_18rem]">
-              <div className="min-w-0">
-                <UnderlineTabButtons
+            <div className="min-w-0">
+                <SegmentedTabButtons
                   label="Application sections"
                   items={TABS.map((t) => ({ label: t.label, active: tab === t.key, onClick: () => setTab(t.key) }))}
                 />
-                <div className="mt-4">
+                <div className="mt-5">
                   {tab === "activity" && (
                     <ActivityTab
                       applicationId={detail.application.id}
@@ -349,12 +396,33 @@ export function PartnerApplicationModal({
                     />
                   )}
                   {tab === "details" && (
+                    <DetailsLayout>
+                    <PropertyRail
+                      application={detail.application}
+                      canEdit={canEdit}
+                      domainOptions={availableDomains}
+                      termOptions={termOptions}
+                      contract={detail.contract}
+                      contractDocuments={detail.contractDocuments}
+                      financeOn={detail.financeOn}
+                      onChanged={refresh}
+                    />
                     <DetailsTab
                       summary={detail.application.summary}
                       formAnswers={detail.formAnswers}
                       domains={detail.application.domains}
-                      targetTerms={detail.application.targetTerms}
                       viewAllHref={`/core/partners/applications/${detail.application.id}?tab=details`}
+                    />
+                    </DetailsLayout>
+                  )}
+                  {tab === "sow" && (
+                    <SowTab
+                      applicationId={detail.application.id}
+                      sowState={detail.application.sowState}
+                      canEdit={canEdit}
+                      collabToken={detail.collabToken}
+                      userName={detail.userName}
+                      onChanged={refresh}
                     />
                   )}
                   {tab === "meetings" && (
@@ -387,32 +455,11 @@ export function PartnerApplicationModal({
                     />
                   )}
                 </div>
-              </div>
-              <div className="border-border lg:w-72 lg:border-l lg:pl-6">
-                <PropertyRail
-                  application={detail.application}
-                  canEdit={canEdit}
-                  domainOptions={availableDomains}
-                  termOptions={termOptions}
-                  contract={detail.contract}
-                  contractDocuments={detail.contractDocuments}
-                  financeOn={detail.financeOn}
-                  onChanged={refresh}
-                />
-              </div>
             </div>
           )}
         </div>
 
         <div className="flex flex-shrink-0 items-center gap-3 border-t border-border px-5 py-4 sm:px-6">
-          {!isCreate && detail && (
-            <Link
-              to={`/core/partners/applications/${detail.application.id}`}
-              className={buttonClasses("ghost", "sm")}
-            >
-              Open full page
-            </Link>
-          )}
           <div className="ml-auto flex items-center gap-3">
             {isCreate ? (
               <div className="flex gap-2">

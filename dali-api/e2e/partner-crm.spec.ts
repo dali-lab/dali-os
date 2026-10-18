@@ -69,13 +69,24 @@ test.describe('partner CRM settings (Core)', () => {
     await loginAs({ daliEmail: 'admin@dali.dartmouth.edu' });
   });
 
-  test('saves the stale threshold', async ({ page }) => {
-    await page.goto('/core/partners/settings?embed=1');
-    await page.getByRole('button', { name: 'Edit Interview scheduling' }).click();
+  test('saves the stale threshold from the settings modal', async ({ page }) => {
+    await page.goto('/core/partners?embed=1&settings=1');
     const staleInput = page.locator('input[name="staleDays"]');
     await staleInput.fill('21');
-    await page.getByRole('button', { name: 'Save changes' }).click();
-    await expect(page.getByText('21 days')).toBeVisible();
+    await page.getByRole('button', { name: 'Save', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeEnabled();
+    await page.reload();
+    await expect(page.locator('input[name="staleDays"]')).toHaveValue('21');
+  });
+
+  test('opens settings from the gear on the board, and the old URL lands there', async ({ page }) => {
+    await page.goto('/core/partners?embed=1');
+    await page.getByRole('button', { name: 'Partner settings' }).click();
+    await expect(page.getByRole('heading', { name: 'Partner settings' })).toBeVisible();
+
+    await page.goto('/core/partners/settings?embed=1');
+    await expect(page).toHaveURL(/\/core\/partners\?settings=1/);
+    await expect(page.getByRole('heading', { name: 'Partner settings' })).toBeVisible();
   });
 });
 
@@ -88,7 +99,8 @@ test.describe('partner CRM reports (Core)', () => {
     await page.goto('/core/partners/reports?embed=1');
     await expect(page.getByRole('heading', { name: 'Reports' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Funnel' })).toBeVisible();
-    await expect(page.getByText('Applications', { exact: true })).toBeVisible();
+    const funnel = page.locator('section', { has: page.getByRole('heading', { name: 'Funnel' }) });
+    await expect(funnel.getByText('Applications', { exact: true })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Cycle time' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Rejection reasons' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Partner mix' })).toBeVisible();

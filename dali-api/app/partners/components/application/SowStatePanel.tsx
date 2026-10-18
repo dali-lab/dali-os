@@ -1,19 +1,24 @@
-// Statement-of-work state control for one application. Mounted on the Core
-// application detail page alongside the co-drafted SOW editor. Posts intent
-// "sow-state" {to} to that route's action, which must call handleSowIntent
-// (app/partners/lib/partner-finance.server.ts).
+// Statement-of-work state and its next action, above the co-drafted SOW
+// editor in the Statement of work tab. Posts intent "sow-state" {to} to the
+// application detail route's action (handleSowIntent in partner-finance.server.ts).
 
 import { useState } from "react";
-import { FileText } from "lucide-react";
 import { Button } from "~/components/ui/Button";
+import { Pill, type PillTone } from "~/hiring/components/cycle-setup/SetupCard";
 import { postPartnerApplicationIntent } from "../../lib/partner-detail-fetch";
 
 export type PartnerSowState = "Draft" | "Shared" | "Accepted";
 
-const STATE_PILL: Record<PartnerSowState, string> = {
-  Draft: "bg-muted text-muted-foreground",
-  Shared: "bg-accent-coral/15 text-accent-coral",
-  Accepted: "bg-accent-teal/15 text-accent-teal",
+const STATE_HINT: Record<PartnerSowState, string> = {
+  Draft: "Share emails it to the partner to review.",
+  Shared: "Waiting for the partner to accept it in their portal.",
+  Accepted: "The partner accepted it.",
+};
+
+const STATE_TONE: Record<PartnerSowState, PillTone> = {
+  Draft: "neutral",
+  Shared: "accent",
+  Accepted: "success",
 };
 
 export function SowStatePanel({
@@ -21,14 +26,11 @@ export function SowStatePanel({
   sowState,
   canEdit,
   onChanged,
-  compact = false,
 }: {
   applicationId: string;
   sowState: PartnerSowState;
   canEdit: boolean;
   onChanged: () => void;
-  /** Chip + the single next action, no header — for the property rail. */
-  compact?: boolean;
 }) {
   const [moving, setMoving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -45,58 +47,25 @@ export function SowStatePanel({
     onChanged();
   }
 
-  if (compact) {
-    return (
-      <div className="flex flex-col gap-1.5">
-        <div className="flex items-center gap-2">
-          <span className={`rounded-full px-2 py-0.5 text-xs ${STATE_PILL[sowState]}`}>{sowState}</span>
-          {canEdit && sowState === "Draft" && (
-            <Button variant="primary" size="xs" onClick={() => void move("Shared")} disabled={moving}>
-              {moving ? "Sharing…" : "Share"}
-            </Button>
-          )}
-          {canEdit && sowState === "Shared" && (
-            <Button variant="secondary" size="xs" onClick={() => void move("Accepted")} disabled={moving}>
-              {moving ? "Accepting…" : "Accept"}
-            </Button>
-          )}
-        </div>
-        {error && <p className="text-xs text-destructive">{error}</p>}
-      </div>
-    );
-  }
-
   return (
-    <section className="bg-card border border-border rounded-lg p-4 flex flex-col gap-3">
-      <div className="flex items-center justify-between gap-3">
-        <h2 className="text-sm font-semibold text-foreground flex items-center gap-2">
-          <FileText className="h-4 w-4 text-muted-foreground" />
-          Statement of work
-        </h2>
-        <span className={`rounded-full px-2 py-0.5 text-xs ${STATE_PILL[sowState]}`}>
-          {sowState}
-        </span>
-      </div>
-
-      {canEdit && (
-        <div className="flex items-center gap-2">
-          {sowState === "Draft" && (
-            <Button variant="primary" size="sm" onClick={() => void move("Shared")} disabled={moving}>
-              {moving ? "Sharing…" : "Share with partner"}
-            </Button>
-          )}
-          {sowState === "Accepted" && (
-            <Button variant="secondary" size="sm" onClick={() => void move("Draft")} disabled={moving}>
-              {moving ? "Reverting…" : "Revert to draft"}
-            </Button>
-          )}
-          {sowState === "Shared" && (
-            <p className="text-sm text-muted-foreground">Waiting on the partner to accept.</p>
-          )}
+    <div className="flex flex-col gap-1.5">
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-3">
+          <Pill dot={STATE_TONE[sowState]}>{sowState}</Pill>
+          <p className="text-sm text-os-grey">{STATE_HINT[sowState]}</p>
         </div>
-      )}
-
-      {error && <p className="text-xs text-destructive">{error}</p>}
-    </section>
+        {canEdit && sowState === "Draft" && (
+          <Button variant="primary" size="sm" onClick={() => void move("Shared")} disabled={moving}>
+            {moving ? "Sharing…" : "Share with partner"}
+          </Button>
+        )}
+        {canEdit && sowState === "Shared" && (
+          <Button variant="secondary" size="sm" onClick={() => void move("Accepted")} disabled={moving}>
+            {moving ? "Saving…" : "Mark accepted"}
+          </Button>
+        )}
+      </div>
+      {error && <p className="text-sm text-destructive">{error}</p>}
+    </div>
   );
 }

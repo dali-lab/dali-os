@@ -15,7 +15,7 @@
 import { prisma } from "~/lib/db";
 import { notifyPartners } from "~/partners/lib/partner-notify.server";
 import { logPartnerActivity } from "~/partners/lib/partner-activity.server";
-import { OPEN_STAGES } from "~/partners/lib/partner-application";
+import { UNDECIDED_STAGES } from "~/partners/lib/partner-application";
 import type { JobContext, JobResult } from "~/jobs/registry";
 
 const CAP = 200;
@@ -50,7 +50,7 @@ export async function runPartnerRenewalSweep({ now }: JobContext): Promise<JobRe
     if (currentTerm.endDate < now || currentTerm.endDate > horizon) continue;
 
     const existingOpen = await prisma.partnerApplication.findFirst({
-      where: { partnerOrgId: link.partnerOrgId, stage: { in: [...OPEN_STAGES] } },
+      where: { partnerOrgId: link.partnerOrgId, stage: { in: [...UNDECIDED_STAGES] } },
       select: { id: true },
     });
     if (existingOpen) continue;

@@ -16,7 +16,6 @@ import { redirectToLogin } from "~/lib/login-next";
 import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
 import { prisma } from "~/lib/db";
 import { isCore, currentTerm } from "~/lib/roles";
-import { coreHandle } from "~/core/coreNav";
 import { PartnerCrmNav } from "../components/PartnerCrmNav";
 import {
   PartnerBoard,
@@ -49,14 +48,16 @@ import {
   customizeButtonClass,
   filterPanelClass,
 } from "~/components/ui/filter-panel";
-import { Plus, SlidersHorizontal } from "lucide-react";
+import { Plus, Settings, SlidersHorizontal } from "lucide-react";
+import { IconButton } from "~/components/ui/IconButton";
+import { PartnerSettingsModal } from "../components/PartnerSettingsModal";
 
 // areaSubnav: this page mounts PartnerCrmNav (Board/Directory) itself at the
 // top, so the shell must not add its own sub-nav row above it.
-export const handle = { ...coreHandle("partners"), areaSubnav: true };
+export const handle = { hideBreadcrumbs: true, areaSubnav: true };
 
 export const meta: Route.MetaFunction = () => [
-  { title: "Partner CRM · DALI OS" },
+  { title: "Partners · DALI OS" },
 ];
 
 
@@ -277,6 +278,17 @@ export default function PartnersApplications() {
   const [view, setView] = useViewPreference("partners:pipeline-view", "card");
   const [creating, setCreating] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
+  const settingsOpen = searchParams.get("settings") === "1";
+  const setSettingsOpen = (open: boolean) =>
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        if (open) next.set("settings", "1");
+        else next.delete("settings");
+        return next;
+      },
+      { replace: true, preventScrollReset: true },
+    );
 
   // The board's own search + filters (specs/partner-crm.md §18: one nav row
   // above the board, with Customize as the only other control on the page).
@@ -346,9 +358,9 @@ export default function PartnersApplications() {
 
   return (
     <div className="flex flex-col gap-4">
+      <PartnerCrmNav />
       <div className="flex items-center gap-3 flex-wrap">
-        <PartnerCrmNav />
-        <div className="ml-auto flex items-center gap-2 flex-wrap">
+        <div className="flex flex-1 items-center gap-2 flex-wrap">
           {view === "card" && (
             <>
               <SearchInput
@@ -356,7 +368,7 @@ export default function PartnersApplications() {
                 onChange={(e) => setBoardQuery(e.target.value)}
                 placeholder="Search applications…"
                 aria-label="Search the partner board"
-                containerClassName="w-56 sm:w-72"
+                containerClassName="w-full max-w-[420px] sm:w-72"
               />
               <Popover
                 align="right"
@@ -471,6 +483,12 @@ export default function PartnersApplications() {
               </Popover>
             </>
           )}
+          <IconButton
+            label="Partner settings"
+            icon={Settings}
+            onClick={() => setSettingsOpen(true)}
+            className="os-icon-btn ml-auto"
+          />
           <ViewToggle
             value={view}
             onChange={(next) => {
@@ -488,6 +506,8 @@ export default function PartnersApplications() {
           )}
         </div>
       </div>
+
+      {settingsOpen && <PartnerSettingsModal onClose={() => setSettingsOpen(false)} />}
 
       {actionData?.error && (
         <div className="bg-destructive/10 border border-destructive/30 text-destructive text-sm rounded-md px-3 py-2">

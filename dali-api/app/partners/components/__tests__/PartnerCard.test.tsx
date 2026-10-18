@@ -47,51 +47,100 @@ function render(c: PartnerCardModel, staleDays = 14) {
   );
 }
 
+/** The visible text of each labeled row, as "Label: value". */
+function fields(html: string): string[] {
+  return [...html.matchAll(/<dt[^>]*>(.*?)<\/dt><dd[^>]*>(.*?)<\/dd>/g)].map(
+    ([, dt, dd]) => `${dt}: ${dd.replace(/<[^>]+>/g, "")}`,
+  );
+}
+
+const days = (n: number) => new Date(Date.now() + n * 86_400_000).toISOString();
+
 describe("PartnerCard", () => {
-  it("renders title, contact, org, domain and term chips", () => {
+  it("renders title, contact and org", () => {
     const html = render(card());
     expect(html).toContain('data-testid="partner-card"');
     expect(html).toContain("Gallery kiosk");
-    expect(html).toContain("Ada Lovelace");
-    expect(html).toContain("Acme Co");
-    expect(html).toContain("Mobile");
-    expect(html).toContain("26F");
+    expect(html).toContain("Ada Lovelace · Acme Co");
   });
 
-  it("shows a Stale chip once lastActivityAt passes the threshold", () => {
-    const old = new Date(Date.now() - 20 * 86_400_000).toISOString();
-    const html = render(card({ lastActivityAt: old }), 14);
-    expect(html).toContain("Stale 20d");
+  it("labels the source, term and domain instead of chips", () => {
+    expect(fields(render(card()))).toEqual(["Source: Application form", "Term: 26F", "Domain: Mobile"]);
   });
 
-  it("does not show Stale when within the threshold", () => {
-    const recent = new Date(Date.now() - 2 * 86_400_000).toISOString();
-    const html = render(card({ lastActivityAt: recent }), 14);
-    expect(html).not.toContain("Stale");
+  it("names every source in words", () => {
+    expect(fields(render(card({ source: "Email" })))[0]).toBe("Source: Email");
+    expect(fields(render(card({ source: "Referral" })))[0]).toBe("Source: Referral");
+    expect(fields(render(card({ source: "Manual" })))[0]).toBe("Source: Added by Core");
+    expect(fields(render(card({ source: "Renewal" })))[0]).toBe("Source: Renewal");
   });
 
-  it("shows Paused when holdUntil is in the future", () => {
-    const future = new Date(Date.now() + 86_400_000).toISOString();
-    const html = render(card({ holdUntil: future }));
-    expect(html).toContain("Paused");
+  it("renders no icon for the source", () => {
+    expect(render(card())).not.toContain("<svg");
   });
 
-  it("shows a Project chip linking to the project when resultingProjectId is set", () => {
-    const html = render(card({ resultingProjectId: "proj-1" }));
-    expect(html).toContain("Project");
-    expect(html).toContain('href="/projects/proj-1"');
-  });
-
-  it('shows "Meeting requested" when pendingRequestCount > 0', () => {
-    const html = render(card({ pendingRequestCount: 1 }));
-    expect(html).toContain("Meeting requested");
-  });
-
-  it("renders the next step with its due date", () => {
-    const html = render(
-      card({ nextStep: "Send contract", nextStepDueAt: "2026-03-01T00:00:00.000Z" }),
+  it("pluralizes and joins several terms and domains", () => {
+    const f = fields(
+      render(
+        card({
+          targetTerms: [{ id: "t1", code: "26F" }, { id: "t2", code: "27W" }],
+          domains: [{ id: "d1", name: "Design" }, { id: "d2", name: "Engineering" }],
+        }),
+      ),
     );
-    expect(html).toContain("Send contract");
-    expect(html).toContain("Mar 1");
+    expect(f).toContain("Terms: 26F, 27W");
+    expect(f).toContain("Domains: Design, Engineering");
+  });
+
+  it("leaves out term and domain rows when there are none", () => {
+    expect(fields(render(card({ targetTerms: [], domains: [] })))).toEqual(["Source: Application form"]);
+  });
+
+  it("renders the next step with its due date, adding the year only when it differs", () => {
+    const year = new Date().getUTCFullYear();
+    const thisYear = render(card({ nextStep: "Send contract", nextStepDueAt: `${year}-03-01T00:00:00.000Z` }));
+    const nextYear = render(card({ nextStep: "Send contract", nextStepDueAt: `${year + 1}-03-01T00:00:00.000Z` }));
+    expect(fields(thisYear)).toContain("Next step: Send contract, Mar 1");
+    expect(fields(nextYear)).toContain(`Next step: Send contract, Mar 1, ${year + 1}`);
+  });
+
+  it("warns on an overdue next step only", () => {
+    const overdue = render(card({ nextStep: "Send contract", nextStepDueAt: days(-3) }));
+    const upcoming = render(card({ nextStep: "Send contract", nextStepDueAt: days(3) }));
+    expect(overdue).toContain("text-os-amber");
+    expect(upcoming).not.toContain("text-os-amber");
+  });
+
+  it("counts held and requested meetings", () => {
+    expect(fields(render(card({ meetingCount: 2, pendingRequestCount: 1 })))).toContain("Meetings: 2 held, 1 requested");
+    expect(fields(render(card({ pendingRequestCount: 1 })))).toContain("Meetings: 1 requested");
+    expect(fields(render(card({ meetingCount: 1 })))).toContain("Meetings: 1 held");
+    expect(fields(render(card())).some((f) => f.startsWith("Meetings"))).toBe(false);
+  });
+
+  it("shows last activity once it passes the stale threshold", () => {
+    const html = render(card({ lastActivityAt: days(-20) }), 14);
+    expect(fields(html)).toContain("Last activity: 20 days ago");
+    expect(html).toContain("text-os-amber");
+  });
+
+  it("does not show last activity within the threshold", () => {
+    expect(render(card({ lastActivityAt: days(-2) }), 14)).not.toContain("Last activity");
+  });
+
+  it("shows when a paused application resumes", () => {
+    const until = days(5);
+    const label = new Date(until).toLocaleDateString(undefined, { month: "short", day: "numeric", timeZone: "UTC" });
+    expect(fields(render(card({ holdUntil: until })))).toContain(`Paused: Until ${label}`);
+  });
+
+  it("does not show Paused once the hold has lifted", () => {
+    expect(render(card({ holdUntil: days(-1) }))).not.toContain("Paused");
+  });
+
+  it("links the resulting project", () => {
+    const html = render(card({ resultingProjectId: "proj-1" }));
+    expect(fields(html)).toContain("Project: Open");
+    expect(html).toContain('href="/projects/proj-1"');
   });
 });

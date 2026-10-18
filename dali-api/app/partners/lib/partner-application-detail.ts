@@ -91,4 +91,7 @@ export type ApplicationDetailResponse = {
   contractDocuments: { id: string; title: string }[];
   /** Attendee picker for the Meetings tab's manual "log a meeting" form. */
   coreMembers: { userId: string; name: string }[];
+  /** For the Statement of work tab's collab editor; null when no session token could be minted. */
+  collabToken: string | null;
+  userName: string;
 };

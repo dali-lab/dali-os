@@ -43,7 +43,7 @@ beforeEach(() => {
     selectedTermCode: "27F",
   });
   vi.mocked(loadFunnelSection).mockResolvedValue({
-    funnel: { stageCounts: { New: 1, Interview: 0, Accepted: 0, Rejected: 0 }, total: 1, newToInterviewRate: 0, interviewToAcceptedRate: null },
+    funnel: { stageCounts: { Backlog: 0, New: 1, Interview: 0, Accepted: 0, Rejected: 0 }, total: 1, newToInterviewRate: 0, interviewToAcceptedRate: null },
     bySource: [],
   });
   vi.mocked(loadCycleTimeSection).mockResolvedValue({

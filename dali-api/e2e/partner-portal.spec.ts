@@ -510,6 +510,15 @@ test.describe('bound application form', () => {
       // row (formSubmissionId is SetNull).
       // Deleting the page cascades to the Form and its versions.
       await c.query(`DELETE FROM "Page" WHERE id = $1`, [formId]);
+      // bindTestForm replaced the seeded binding; put it back so the apply
+      // tests still find an open form on the next run against this database.
+      await c.query(
+        `INSERT INTO "PartnerApplicationFormBinding" (id, "formId", "updatedById", "updatedAt")
+         SELECT $1, f.id, f."createdById", now() FROM "Form" f
+         WHERE f.id = 'form-partner-application'
+           AND NOT EXISTS (SELECT 1 FROM "PartnerApplicationFormBinding")`,
+        [`e2e-restore-${randomBytes(6).toString('hex')}`],
+      );
     });
   }
 

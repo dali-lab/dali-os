@@ -65,14 +65,14 @@ export function ActivityTab({
       <PartnerActivityFeed flat activities={shown} actorNames={actorNames} canEdit={false} />
 
       {truncated && viewAllHref && (
-        <Link to={viewAllHref} className="self-start text-xs font-medium text-accent-coral hover:underline">
+        <Link to={viewAllHref} className="self-start text-xs font-medium text-os-accent hover:underline">
           View all {activities.length} activity rows →
         </Link>
       )}
 
       {emailThreads.length > 0 && (
-        <section className="rounded-2xl border border-border bg-card">
-          <header className="border-b border-border px-4 py-2.5">
+        <section className="rounded-2xl bg-os-well">
+          <header className="px-4 pt-3 pb-1">
             <h3 className="text-xs font-semibold text-foreground">Email with partners@</h3>
           </header>
           <ul className="divide-y divide-border">
@@ -100,7 +100,7 @@ export function ActivityTab({
             rows={2}
             maxLength={NOTE_MAX}
             placeholder="Add an internal note, @ to mention someone…"
-            className="w-full rounded-md border border-border bg-background px-2.5 py-2 text-sm text-foreground"
+            className="w-full resize-y rounded-xl border px-3 py-2.5 text-sm text-foreground focus:border-os-accent focus:outline-none"
           />
           {error && <p className="text-xs text-destructive">{error}</p>}
           <div className="flex justify-end">

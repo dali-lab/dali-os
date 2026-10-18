@@ -6701,6 +6701,7 @@ model PartnerApplication {
 }
 
 enum PartnerStage {
+  Backlog
   New
   Interview
   Accepted

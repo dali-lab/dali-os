@@ -53,6 +53,7 @@ export function computeFunnel(
 ): FunnelResult {
   const reached = stagesEverReached(apps, statusChanges);
   const stageCounts: Record<PartnerStage, number> = {
+    Backlog: 0,
     New: 0,
     Interview: 0,
     Accepted: 0,

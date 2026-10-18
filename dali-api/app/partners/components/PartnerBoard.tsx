@@ -33,9 +33,11 @@ const META_TEXT = (os: boolean) => (os ? "text-xs" : "text-[11px]");
 const COLLAPSED_KEY = "partnerboard:collapsedCols";
 
 // The os shell's accent reads the same status-token families TaskBoard draws
-// its columns from, so the two boards share a palette. New~todo (not yet
-// worked), Interview~progress, Accepted~done, Rejected~cancelled.
+// its columns from, so the two boards share a palette. Backlog~backlog,
+// New~todo (not yet worked), Interview~progress, Accepted~done,
+// Rejected~cancelled.
 const STAGE_ACCENT_OS: Record<PartnerStage, StatusAccent> = {
+  Backlog: osStatusAccent("backlog"),
   New: osStatusAccent("todo"),
   Interview: osStatusAccent("progress"),
   Accepted: osStatusAccent("done"),
@@ -46,6 +48,11 @@ const STAGE_ACCENT_OS: Record<PartnerStage, StatusAccent> = {
 // fill TaskBoard's classic columns always used — same hues, mapped stage for
 // stage onto the equivalent task-board column.
 const STAGE_ACCENT_CLASSIC: Record<PartnerStage, StatusAccent> = {
+  Backlog: {
+    fill: "color-mix(in srgb, var(--color-muted) 70%, transparent)",
+    ink: "var(--color-foreground)",
+    edge: "var(--color-muted-foreground)",
+  },
   New: {
     fill: "color-mix(in srgb, #7c5ce0 22%, transparent)",
     ink: "#5734b8",

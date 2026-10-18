@@ -23,7 +23,6 @@ import { Select } from "~/components/ui/floating";
 import { SearchInput } from "~/components/ui/SearchInput";
 import { SegmentedTabButtons } from "~/components/AreaPillNav";
 import { Modal, ModalHeader, ModalFooter } from "~/components/Modal";
-import { coreHandle } from "~/core/coreNav";
 import { PartnerCrmNav } from "../components/PartnerCrmNav";
 import { OrgAvatar } from "../components/org/OrgAvatar";
 import { OrgStatusPill, OrgTypePill } from "../components/org/OrgStatusPill";
@@ -42,10 +41,13 @@ import {
   PARTNER_RELATIONSHIP_STATUS_LABELS,
 } from "../lib/partner-org";
 
-// areaSubnav: this page mounts PartnerCrmNav (Board/Directory/Reports/
+const FILTER_TRIGGER =
+  "inline-flex h-10 items-center justify-between gap-1.5 rounded-full border border-os-container bg-os-card px-4 text-sm text-foreground transition-colors hover:bg-os-hover";
+
+// areaSubnav: this page mounts PartnerCrmNav (Applications/Directory/Reports/
 // Settings) itself at the top, so the shell must not add its own sub-nav
 // row above it.
-export const handle = { ...coreHandle("partners"), areaSubnav: true };
+export const handle = { hideBreadcrumbs: true, areaSubnav: true };
 
 export const meta: Route.MetaFunction = () => [{ title: "Partners · DALI OS" }];
 
@@ -390,11 +392,21 @@ export default function PartnersDirectory() {
   return (
     <div className="flex flex-col gap-4">
       <PartnerCrmNav />
-      <header className="flex items-start justify-between gap-3 flex-wrap">
-        <div>
-          <h1 className="font-heading text-foreground text-4xl font-medium">Partners</h1>
-        </div>
-        <div className="flex items-center gap-2">
+      <h1 className="sr-only">Partners</h1>
+
+      <NewOrgModal open={creatingOrg} onClose={() => setCreatingOrg(false)} orgs={orgs} />
+      <NewContactModal open={creatingContact} onClose={() => setCreatingContact(false)} />
+
+      <div className="flex items-center gap-3 flex-wrap">
+        <SegmentedTabButtons
+          label="Directory"
+          items={[
+            { label: "Organizations", active: activeView === "orgs", onClick: () => setActiveView("orgs") },
+            { label: "Contacts", active: activeView === "contacts", onClick: () => setActiveView("contacts") },
+          ]}
+        />
+        <div className="ml-auto flex items-center gap-2">
+          <ViewToggle value={view} onChange={setView} />
           <a
             href={`/api/partner-directory.csv?view=${activeView}`}
             className="os-btn-ghost inline-flex items-center gap-1.5"
@@ -413,71 +425,49 @@ export default function PartnersDirectory() {
             </button>
           )}
         </div>
-      </header>
+      </div>
 
-      <NewOrgModal open={creatingOrg} onClose={() => setCreatingOrg(false)} orgs={orgs} />
-      <NewContactModal open={creatingContact} onClose={() => setCreatingContact(false)} />
-
-      <div className="flex items-center gap-4 flex-wrap">
-        <SegmentedTabButtons
-          label="Directory"
-          items={[
-            { label: "Organizations", active: activeView === "orgs", onClick: () => setActiveView("orgs") },
-            { label: "Contacts", active: activeView === "contacts", onClick: () => setActiveView("contacts") },
-          ]}
-        />
+      <div className="flex items-center gap-3 flex-wrap">
         <SearchInput
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder={activeView === "orgs" ? "Search by organization name" : "Search contacts"}
-          containerClassName="flex-1 min-w-[200px] max-w-[420px]"
+          placeholder={activeView === "orgs" ? "Search organizations" : "Search contacts"}
+          containerClassName="w-full max-w-[420px]"
         />
-        <ViewToggle value={view} onChange={setView} />
+        {activeView === "orgs" && (
+          <>
+            <Select
+              value={typeFilter}
+              onChange={setTypeFilter}
+              ariaLabel="Organization type"
+              options={[
+                { value: "all", label: "All types" },
+                ...PARTNER_ORG_TYPES.map((t) => ({ value: t, label: PARTNER_ORG_TYPE_LABELS[t] })),
+              ]}
+              buttonClassName={FILTER_TRIGGER}
+            />
+            <Select
+              value={statusFilter}
+              onChange={setStatusFilter}
+              ariaLabel="Relationship status"
+              options={[
+                { value: "all", label: "All statuses" },
+                ...PARTNER_RELATIONSHIP_STATUSES.map((st) => ({
+                  value: st,
+                  label: PARTNER_RELATIONSHIP_STATUS_LABELS[st],
+                })),
+              ]}
+              buttonClassName={FILTER_TRIGGER}
+            />
+            <Checkbox
+              checked={includeIndividuals}
+              onChange={(e) => setIncludeIndividuals(e.target.checked)}
+              label="Include individuals"
+              className="text-sm text-foreground"
+            />
+          </>
+        )}
       </div>
-
-      {activeView === "orgs" && (
-        <div className="flex items-center gap-3 flex-wrap">
-          <Select
-            value={typeFilter}
-            onChange={setTypeFilter}
-            options={[
-              { value: "all", label: "All types" },
-              ...PARTNER_ORG_TYPES.map((t) => ({ value: t, label: PARTNER_ORG_TYPE_LABELS[t] })),
-            ]}
-            buttonClassName="px-3 py-1.5 text-sm border border-border rounded-full bg-card text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
-          />
-          <Select
-            value={statusFilter}
-            onChange={setStatusFilter}
-            options={[
-              { value: "all", label: "All statuses" },
-              ...PARTNER_RELATIONSHIP_STATUSES.map((s) => ({
-                value: s,
-                label: PARTNER_RELATIONSHIP_STATUS_LABELS[s],
-              })),
-            ]}
-            buttonClassName="px-3 py-1.5 text-sm border border-border rounded-full bg-card text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
-          />
-          <Checkbox
-            checked={includeIndividuals}
-            onChange={(e) => setIncludeIndividuals(e.target.checked)}
-            label="Include individuals"
-            className="text-sm text-foreground"
-          />
-          <span className="text-xs text-muted-foreground ml-auto">
-            {filteredOrgs.length} {filteredOrgs.length === 1 ? "organization" : "organizations"}
-            {filteredOrgs.length !== orgs.length ? ` of ${orgs.length}` : ""}
-          </span>
-        </div>
-      )}
-      {activeView === "contacts" && (
-        <div className="flex items-center">
-          <span className="text-xs text-muted-foreground ml-auto">
-            {filteredContacts.length} {filteredContacts.length === 1 ? "contact" : "contacts"}
-            {filteredContacts.length !== contacts.length ? ` of ${contacts.length}` : ""}
-          </span>
-        </div>
-      )}
 
       {activeView === "orgs" ? (
         filteredOrgs.length === 0 ? (

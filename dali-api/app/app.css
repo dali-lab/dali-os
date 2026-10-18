@@ -1106,6 +1106,9 @@ html.os-shell {
  * step is what puts the cards back — they carry no border and no shadow by
  * design, so their ground has to do the work. */
 html.light,
+/* The shell's wrapper div re-declares the dark status tokens, so the light
+   ones have to land on it too or every kanban column keeps its dark fill. */
+html.light .os-shell,
 .light {
 
   --color-os-bg:           #e9eef3;  /* page — cool paper, deliberately not white */

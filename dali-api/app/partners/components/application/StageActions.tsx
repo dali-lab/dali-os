@@ -104,7 +104,19 @@ export function StageActions({
 
   return (
     <div className="flex flex-col gap-2">
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        {canReject && (
+          <Button variant="secondary" size="sm" onClick={() => toggle("reject")}>
+            Reject
+          </Button>
+        )}
+
+        {stage === "Interview" && (
+          <Button variant="secondary" size="sm" onClick={() => toggle("learn-more")}>
+            Request more info
+          </Button>
+        )}
+
         {stage === "New" && (
           <Button variant="primary" size="sm" onClick={onOpenSchedule}>
             Schedule interview
@@ -112,34 +124,15 @@ export function StageActions({
         )}
 
         {stage === "Interview" && (
-          <>
-            <Button variant="primary" size="sm" onClick={() => toggle("accept")}>
-              Accept
-            </Button>
-            <button
-              type="button"
-              onClick={() => toggle("learn-more")}
-              className="text-xs font-medium text-foreground hover:underline"
-            >
-              Request more info
-            </button>
-          </>
+          <Button variant="primary" size="sm" onClick={() => toggle("accept")}>
+            Accept
+          </Button>
         )}
 
         {stage === "Accepted" && !application.resultingProjectId && (
           <Button variant="primary" size="sm" onClick={() => void promote()} disabled={promoting}>
             {promoting ? "Creating…" : "Create project"}
           </Button>
-        )}
-
-        {canReject && (
-          <button
-            type="button"
-            onClick={() => toggle("reject")}
-            className="text-xs font-medium text-destructive hover:underline"
-          >
-            Reject
-          </button>
         )}
       </div>
 

@@ -6,6 +6,7 @@ import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { formAnswerRows } from "~/forms/lib/answer-rows.server";
 import type { Question } from "~/types";
+import { getCollabToken } from "~/lib/collab-token.server";
 import { getPartnerContactEmailThreads } from "../lib/partner-email.server";
 import { partnerContractStatus, listPartnerContractDocuments } from "../lib/partner-contract.server";
 
@@ -253,6 +254,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       contract,
       contractDocuments,
       coreMembers,
+      collabToken: await getCollabToken(request),
+      userName: [auth.user.firstName, auth.user.lastName].filter(Boolean).join(" ") || auth.user.email,
     }),
   );
 }

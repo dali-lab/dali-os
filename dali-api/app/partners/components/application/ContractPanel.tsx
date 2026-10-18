@@ -9,8 +9,10 @@ import { useState } from "react";
 import { FileSignature, FileCheck2, Download } from "lucide-react";
 import { Select } from "~/components/ui/floating";
 import { Button } from "~/components/ui/Button";
+import { Pill, type PillTone } from "~/hiring/components/cycle-setup/SetupCard";
 import { postPartnerApplicationIntent } from "../../lib/partner-detail-fetch";
 import type { PartnerContractStatus } from "../../lib/partner-contract.server";
+import { RAIL_CONTROL, RAIL_LINK } from "./rail";
 
 const STATE_LABEL: Record<PartnerContractStatus["state"], string> = {
   NotSent: "Not sent",
@@ -18,10 +20,10 @@ const STATE_LABEL: Record<PartnerContractStatus["state"], string> = {
   Signed: "Signed",
 };
 
-const STATE_PILL: Record<PartnerContractStatus["state"], string> = {
-  NotSent: "bg-muted text-muted-foreground",
-  Sent: "bg-accent-coral/15 text-accent-coral",
-  Signed: "bg-accent-teal/15 text-accent-teal",
+const STATE_TONE: Record<PartnerContractStatus["state"], PillTone> = {
+  NotSent: "neutral",
+  Sent: "accent",
+  Signed: "success",
 };
 
 export function ContractPanel({
@@ -64,41 +66,37 @@ export function ContractPanel({
   if (compact) {
     return (
       <div className="flex flex-col gap-1.5">
-        <div className="flex items-center gap-2">
-          <span className={`rounded-full px-2 py-0.5 text-xs ${STATE_PILL[status.state]}`}>
-            {STATE_LABEL[status.state]}
-          </span>
+        <div className="flex flex-wrap items-center gap-2">
+          <Pill dot={STATE_TONE[status.state]}>{STATE_LABEL[status.state]}</Pill>
           {status.state === "Signed" && status.pdfUrl && (
-            <a
-              href={status.pdfUrl}
-              className="inline-flex items-center gap-1 text-xs text-accent-coral hover:underline"
-            >
-              <Download className="h-3 w-3" aria-hidden /> PDF
+            <a href={status.pdfUrl} className={`inline-flex items-center gap-1 ${RAIL_LINK}`}>
+              <Download className="h-3.5 w-3.5" aria-hidden /> PDF
             </a>
           )}
         </div>
         {status.state === "Signed" && status.signedAt && (
-          <span className="text-xs text-muted-foreground">
+          <span className="text-xs text-os-grey">
             Signed {new Date(status.signedAt).toLocaleDateString()}
           </span>
         )}
         {status.state === "Sent" && (
-          <span className="text-xs text-muted-foreground">Waiting on the partner's signature.</span>
+          <span className="text-xs text-os-grey">Waiting on the partner's signature.</span>
         )}
         {status.state === "NotSent" && canSend && (
           documents.length === 0 ? (
-            <p className="text-xs text-muted-foreground">No contract templates yet.</p>
+            <p className="text-xs text-os-grey">No contract templates yet.</p>
           ) : (
-            <div className="flex flex-col gap-1.5">
+            <div className="flex flex-col gap-2">
               <Select
                 value={documentId}
                 onChange={setDocumentId}
                 options={documents.map((d) => ({ value: d.id, label: d.title }))}
-                placeholder="Choose a template…"
-                buttonClassName="w-full rounded-md border border-border bg-background px-2 py-1 text-xs inline-flex items-center justify-between gap-1"
+                placeholder="Choose a template"
+                ariaLabel="Contract template"
+                buttonClassName={RAIL_CONTROL}
               />
               <Button
-                variant="primary"
+                variant="secondary"
                 size="xs"
                 onClick={() => void send()}
                 disabled={sending}
@@ -119,15 +117,13 @@ export function ContractPanel({
       <div className="flex items-center justify-between gap-3">
         <h2 className="text-sm font-semibold text-foreground flex items-center gap-2">
           {status.state === "Signed" ? (
-            <FileCheck2 className="h-4 w-4 text-accent-teal" />
+            <FileCheck2 className="h-4 w-4 text-os-green" />
           ) : (
             <FileSignature className="h-4 w-4 text-muted-foreground" />
           )}
           Contract
         </h2>
-        <span className={`rounded-full px-2 py-0.5 text-xs ${STATE_PILL[status.state]}`}>
-          {STATE_LABEL[status.state]}
-        </span>
+        <Pill dot={STATE_TONE[status.state]}>{STATE_LABEL[status.state]}</Pill>
       </div>
 
       {status.state === "Signed" && (
@@ -138,7 +134,7 @@ export function ContractPanel({
           {status.pdfUrl && (
             <a
               href={status.pdfUrl}
-              className="inline-flex items-center gap-1 text-accent-coral hover:underline"
+              className={`inline-flex items-center gap-1 ${RAIL_LINK}`}
             >
               <Download className="h-3.5 w-3.5" /> Download PDF
             </a>
