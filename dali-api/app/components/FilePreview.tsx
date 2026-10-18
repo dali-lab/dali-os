@@ -152,7 +152,7 @@ export function FilePreview({
       </p>
       <a
         href={downloadUrl}
-        className="mt-3 inline-flex items-center gap-1 text-accent-coral hover:underline"
+        className="mt-3 inline-flex items-center gap-1 text-os-accent hover:underline"
       >
         <Download className="w-3.5 h-3.5" />
         Download to view
@@ -195,7 +195,7 @@ export function FileAttachment({
         href={url}
         target="_blank"
         rel="noreferrer"
-        className="flex-1 truncate text-sm text-foreground hover:text-accent-coral hover:underline"
+        className="flex-1 truncate text-sm text-foreground hover:text-os-accent hover:underline"
       >
         {fileName}
       </a>

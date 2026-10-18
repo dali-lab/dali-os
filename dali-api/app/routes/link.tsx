@@ -179,7 +179,7 @@ export default function LinkPage({ loaderData }: Route.ComponentProps) {
             name="code"
             autoFocus
             placeholder="WXYZ-1234"
-            className="flex-1 rounded-md border border-border px-3 py-2 font-mono uppercase tracking-widest placeholder:tracking-normal focus:border-accent-coral focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+            className="flex-1 rounded-md border border-border px-3 py-2 font-mono uppercase tracking-widest placeholder:tracking-normal focus:border-os-accent focus:outline-none focus:ring-2 focus:ring-os-accent/30"
           />
           <button
             type="submit"
@@ -272,7 +272,7 @@ export default function LinkPage({ loaderData }: Route.ComponentProps) {
       {/* Security caution gets a coral-tinted callout (the brand's attention
           color) so it stands out in both themes, rather than a fixed light
           amber panel that clashed with the dark card. */}
-      <p className="mt-4 rounded-lg border border-accent-coral/30 bg-accent-coral/10 px-4 py-3 text-xs text-foreground">
+      <p className="mt-4 rounded-lg border border-os-accent/30 bg-os-accent/10 px-4 py-3 text-xs text-foreground">
         ⚠️ Confirm this code matches the one shown in the app. Only approve if{" "}
         <em>you</em> just started sign-in from this app on this computer.
         Approving keeps it signed in to your account until you sign out or

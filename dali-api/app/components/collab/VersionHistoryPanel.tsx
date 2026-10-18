@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { buttonClasses } from "~/components/ui/Button";
 import { X, Tag, Pencil, Check, X as XIcon } from "lucide-react";
 import { Modal } from "~/components/Modal";
 import { useDialog } from "~/components/ui/dialog";
@@ -81,7 +82,7 @@ function InlineLabelEditor({
         onKeyDown={handleKeyDown}
         placeholder="Name this version…"
         maxLength={200}
-        className="flex-1 text-xs border border-border rounded px-1.5 py-0.5 bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-accent-coral/50 min-w-0"
+        className="flex-1 text-xs border border-border rounded px-1.5 py-0.5 bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-os-accent/50 min-w-0"
       />
       <button
         type="button"
@@ -242,7 +243,7 @@ export function VersionHistoryPanel({ documentName, onClose }: VersionHistoryPan
       >
         <div
           className={`w-full text-left px-4 py-3 border-b border-border hover:bg-muted/50 cursor-pointer group ${
-            isSelected ? "bg-accent-coral/5 hover:bg-accent-coral/5" : ""
+            isSelected ? "bg-os-accent/5 hover:bg-os-accent/5" : ""
           }`}
           onClick={() => {
             if (!isEditingLabel) setSelectedId(v.id);
@@ -251,7 +252,7 @@ export function VersionHistoryPanel({ documentName, onClose }: VersionHistoryPan
           <div className="flex items-start justify-between gap-1">
             <div className="flex-1 min-w-0">
               {v.label && (
-                <div className="text-xs font-semibold text-accent-coral flex items-center gap-1 mb-0.5 truncate">
+                <div className="text-xs font-semibold text-os-accent flex items-center gap-1 mb-0.5 truncate">
                   <Tag className="w-3 h-3 shrink-0" aria-hidden />
                   {v.label}
                 </div>
@@ -370,7 +371,7 @@ export function VersionHistoryPanel({ documentName, onClose }: VersionHistoryPan
               <div className="px-6 py-4 border-b border-border flex items-center justify-between gap-4 shrink-0">
                 <div className="min-w-0">
                   {detail.label && (
-                    <div className="text-xs font-semibold text-accent-coral flex items-center gap-1 mb-0.5">
+                    <div className="text-xs font-semibold text-os-accent flex items-center gap-1 mb-0.5">
                       <Tag className="w-3 h-3 shrink-0" aria-hidden />
                       {detail.label}
                     </div>
@@ -391,7 +392,7 @@ export function VersionHistoryPanel({ documentName, onClose }: VersionHistoryPan
                       type="button"
                       onClick={handleRestore}
                       disabled={restoring}
-                      className="px-3 py-1.5 text-xs font-semibold text-white bg-accent-coral rounded hover:bg-accent-coral/90 disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
+                      className={buttonClasses("primary", "xs")}
                     >
                       {restoring ? "Restoring..." : "Restore this version"}
                     </button>
