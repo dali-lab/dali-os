@@ -9,7 +9,7 @@ import {
   type ReactNode,
 } from "react";
 import { AlertTriangle } from "lucide-react";
-import { Modal } from "~/components/Modal";
+import { MODAL_TITLE_CLASS, Modal, ModalFooter } from "~/components/Modal";
 import { buttonClasses } from "~/components/ui/Button";
 
 /**
@@ -233,10 +233,7 @@ function ConfirmDialogView({
       <div className="flex items-start gap-3">
         {icon}
         <div className="min-w-0 flex-1">
-          <h2
-            id={titleId}
-            className="font-heading text-lg font-bold text-foreground"
-          >
+          <h2 id={titleId} className={MODAL_TITLE_CLASS}>
             {opts.title}
           </h2>
           {opts.description && (
@@ -251,15 +248,7 @@ function ConfirmDialogView({
           {error}
         </p>
       )}
-      <div className="mt-6 flex items-center justify-end gap-2">
-        <button
-          type="button"
-          onClick={onCancel}
-          disabled={busy}
-          className={buttonClasses("secondary")}
-        >
-          {opts.cancelLabel ?? "Cancel"}
-        </button>
+      <ModalFooter onCancel={onCancel} cancelLabel={opts.cancelLabel} cancelDisabled={busy}>
         <button
           ref={confirmRef}
           type="button"
@@ -269,7 +258,7 @@ function ConfirmDialogView({
         >
           {opts.confirmLabel ?? "Confirm"}
         </button>
-      </div>
+      </ModalFooter>
     </Modal>
   );
 }
@@ -304,14 +293,11 @@ function PromptDialogView({
 
   return (
     <Modal open onClose={onCancel} labelledBy={titleId} initialFocusRef={inputRef}>
-      <form onSubmit={submit}>
+      <form onSubmit={submit} className="os-form">
         <div className="flex items-start gap-3">
           {destructive && warningIcon()}
           <div className="min-w-0 flex-1">
-            <h2
-              id={titleId}
-              className="font-heading text-lg font-bold text-foreground"
-            >
+            <h2 id={titleId} className={MODAL_TITLE_CLASS}>
               {opts.title}
             </h2>
             {opts.description && (
@@ -336,25 +322,18 @@ function PromptDialogView({
               if (error) setError(null);
             }}
             placeholder={opts.placeholder}
-            className="w-full rounded-md border border-border bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-coral/30 focus-visible:ring-offset-2"
+            className="w-full rounded-[10px] border border-border bg-card px-3.5 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:border-os-accent focus:outline-none"
           />
         </label>
         {error && <p className="mt-1.5 text-xs text-destructive">{error}</p>}
-        <div className="mt-6 flex items-center justify-end gap-2">
-          <button
-            type="button"
-            onClick={onCancel}
-            className={buttonClasses("secondary")}
-          >
-            {opts.cancelLabel ?? "Cancel"}
-          </button>
+        <ModalFooter onCancel={onCancel} cancelLabel={opts.cancelLabel}>
           <button
             type="submit"
             className={buttonClasses(destructive ? "destructive" : "primary")}
           >
             {opts.confirmLabel ?? "Save"}
           </button>
-        </div>
+        </ModalFooter>
       </form>
     </Modal>
   );
@@ -372,7 +351,7 @@ function ChoiceDialogView({
   const titleId = useId();
   return (
     <Modal open onClose={onCancel} labelledBy={titleId}>
-      <h2 id={titleId} className="font-heading text-lg font-bold text-foreground">
+      <h2 id={titleId} className={MODAL_TITLE_CLASS}>
         {opts.title}
       </h2>
       {opts.description && (
@@ -384,7 +363,7 @@ function ChoiceDialogView({
             key={o.value}
             type="button"
             onClick={() => onPick(o.value)}
-            className="w-full rounded-md border border-border bg-card px-3 py-2 text-left text-sm text-foreground transition-colors hover:border-accent-coral/40 hover:bg-accent-coral/5"
+            className="w-full rounded-os-item border border-os-container bg-os-well px-3.5 py-2.5 text-left text-sm text-foreground transition-colors hover:border-os-container-hi focus-visible:border-os-accent focus-visible:outline-none"
           >
             <span className="font-medium">{o.label}</span>
             {o.description && (
@@ -395,11 +374,9 @@ function ChoiceDialogView({
           </button>
         ))}
       </div>
-      <div className="mt-6 flex items-center justify-end">
-        <button type="button" onClick={onCancel} className={buttonClasses("secondary")}>
-          {opts.cancelLabel ?? "Cancel"}
-        </button>
-      </div>
+      <ModalFooter onCancel={onCancel} cancelLabel={opts.cancelLabel}>
+        {null}
+      </ModalFooter>
     </Modal>
   );
 }

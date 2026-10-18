@@ -151,6 +151,8 @@ export function Modal({
   );
 }
 
+export const MODAL_TITLE_CLASS = "font-heading text-xl font-medium text-foreground";
+
 export interface ModalHeaderProps {
   /** Must equal the `labelledBy` id passed to <Modal>. */
   titleId: string;
@@ -181,7 +183,7 @@ export function ModalHeader({
       <div className="min-w-0">
         <h2
           id={titleId}
-          className={cn("font-heading text-foreground", "text-xl font-medium")}
+          className={MODAL_TITLE_CLASS}
         >
           {title}
         </h2>
@@ -211,6 +213,7 @@ export function ModalHeader({
 export interface ModalFooterProps {
   onCancel: () => void;
   cancelLabel?: string;
+  cancelDisabled?: boolean;
   /** Primary action button(s). Rendered right-most. */
   children: ReactNode;
   className?: string;
@@ -219,6 +222,7 @@ export interface ModalFooterProps {
 export function ModalFooter({
   onCancel,
   cancelLabel = "Cancel",
+  cancelDisabled,
   children,
   className = "",
 }: ModalFooterProps) {
@@ -227,7 +231,8 @@ export function ModalFooter({
       <button
         type="button"
         onClick={onCancel}
-        className="os-btn-ghost"
+        disabled={cancelDisabled}
+        className="os-btn-ghost disabled:cursor-not-allowed disabled:opacity-60"
       >
         {cancelLabel}
       </button>
