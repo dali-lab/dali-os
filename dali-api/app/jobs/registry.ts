@@ -510,7 +510,7 @@ export const JOBS: JobDefinition[] = [
   {
     name: "partner-email-index",
     description:
-      "Indexes the partners@ shared inbox (headers only) and links each message to the partner contact it was exchanged with, for the Partner CRM.",
+      "Indexes the partners@ shared inbox (headers only) and links each message to the partner contact it was exchanged with, for Partners.",
     intervalMinutes: 10,
     enabledByDefault: false,
     settings: [

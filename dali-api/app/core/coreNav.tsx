@@ -62,7 +62,7 @@ const STANDALONE_LABELS: Record<string, string> = {
   agreements: "Agreements",
   "drive-folders": "Drive folders",
   rooms: "Rooms",
-  partners: "Partner CRM",
+  partners: "Partners",
 };
 
 export const CORE_ATTENDANCE_ICON = ClipboardCheck;

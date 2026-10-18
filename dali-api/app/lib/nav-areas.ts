@@ -237,7 +237,7 @@ const REGROUPED_AREAS: NavArea[] = [
     subtabs: [
       { label: "Milestones", href: "/core", icon: Flag },
       { label: "Staffing", href: "/core/staffing", icon: Kanban },
-      { label: "Partner CRM", href: "/core/partners", icon: Handshake },
+      { label: "Partners", href: "/core/partners", icon: Handshake },
       { label: "Intent to Work", href: "/core/intent-to-work", icon: ClipboardPen },
       { label: "Project Bids", href: "/core/project-bids", icon: Gavel },
       { label: "Level Up", href: "/core/level-up", icon: ArrowUpCircle },

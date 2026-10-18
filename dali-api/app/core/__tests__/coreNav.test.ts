@@ -29,17 +29,17 @@ describe("coreTrail", () => {
 
   // A record page (Partner CRM's org/application detail) appends a leaf
   // crumb resolved from its own loader data, so the trail reads
-  // "Core › Partner CRM › <record name>" without a per-page breadcrumbTrail.
+  // "Core › Partners › <record name>" without a per-page breadcrumbTrail.
   it("appends an optional leaf crumb resolved from loader data", () => {
     const handle = coreHandle("partners", (data) => (data as { trailLabel?: string })?.trailLabel);
     const withLabel = handle.breadcrumbTrail({ trailLabel: "Acme Co" });
-    expect(withLabel.map((c) => c.label)).toEqual(["Core", "Partner CRM", "Acme Co"]);
+    expect(withLabel.map((c) => c.label)).toEqual(["Core", "Partners", "Acme Co"]);
     // No `to` on the leaf — it's the current page, not a link.
     expect(withLabel[withLabel.length - 1]?.to).toBeUndefined();
 
     // A falsy/missing trailLabel (still loading, or no match) leaves the
     // standalone trail as-is rather than appending an empty crumb.
     const withoutLabel = handle.breadcrumbTrail({});
-    expect(withoutLabel.map((c) => c.label)).toEqual(["Core", "Partner CRM"]);
+    expect(withoutLabel.map((c) => c.label)).toEqual(["Core", "Partners"]);
   });
 });

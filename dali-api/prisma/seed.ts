@@ -12,6 +12,7 @@ import { ensureAllRoots } from "../app/lib/drive-roots.server.js";
 import { parseChartString } from "../app/lib/chart-string.js";
 import { seedEducationDemo } from "./seeds/education-demo.js";
 import { seedResourcesDemo } from "./seeds/resources-demo.js";
+import { seedPartnerCrmDemo } from "./seeds/partner-crm-demo.js";
 import {
   ensureEducationTemplates,
   createOfferingApplicationForm,
@@ -5132,6 +5133,11 @@ async function main() {
 
   // MCP OAuth clients are no longer seeded — clients register themselves
   // via RFC 7591 Dynamic Client Registration at /oauth/register.
+
+  // Fills Partners out: CRM fields, every board column, meetings, invoices,
+  // and report history. See prisma/seeds/partner-crm-demo.ts.
+  const crmDemo = await seedPartnerCrmDemo(prisma, { adminId: admin.id });
+  console.log(`  Partners demo: ${crmDemo.orgs} more orgs, ${crmDemo.contacts} contacts, ${crmDemo.applications} more applications`);
 
   // Default system-managed user groups: one per Term/Project/Domain + Core.
   // Idempotent; safe to re-run.
