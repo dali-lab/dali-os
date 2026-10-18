@@ -106,7 +106,7 @@ function AvatarWithStatus({
       <span
         aria-hidden
         className={cn(
-          "absolute bottom-0 right-0 rounded-full bg-accent-green ring-2 ring-background",
+          "absolute bottom-0 right-0 rounded-full bg-os-green ring-2 ring-background",
           DOT_SIZE[size],
         )}
       />
@@ -115,7 +115,7 @@ function AvatarWithStatus({
       <span
         aria-hidden
         className={cn(
-          "absolute bottom-0 right-0 rounded-full border-2 border-accent-yellow bg-background ring-2 ring-background",
+          "absolute bottom-0 right-0 rounded-full border-2 border-os-amber bg-background ring-2 ring-background",
           DOT_SIZE[size],
         )}
       />
