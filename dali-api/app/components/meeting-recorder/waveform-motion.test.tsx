@@ -54,7 +54,7 @@ describe("theme.css motion", () => {
 
   it("keeps the suggestion edge visible by clearing the content tint that would cover it", () => {
     const row = '.dali-doc .bn-block:has(> .bn-block-content[data-background-color="enhance-added"])';
-    expect(css).toMatch(new RegExp(`${row.replace(/[.()[\]>=*"]/g, "\\$&")} \\{\\s*box-shadow: inset 3px 0 0 var\\(--enhance-edge\\);`));
+    expect(css).toContain(`${row} {\n  box-shadow: inset 3px 0 0 var(--enhance-edge);`);
     expect(css).toContain(`${row} > .bn-block-content[data-background-color="enhance-added"] {\n  background-color: transparent;`);
     expect(css).toContain("--enhance-edge: var(--color-accent-teal);");
   });
