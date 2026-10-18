@@ -1302,7 +1302,7 @@ function TriageBar({
             />
           </label>
           <div className="flex gap-2">
-            <button type="submit" className="px-3 py-1.5 text-xs font-medium rounded-md bg-amber-500 text-white hover:bg-amber-600 transition-colors">
+            <button type="submit" className="px-3 py-1.5 text-xs font-medium rounded-md bg-os-amber text-os-bg hover:bg-os-amber transition-colors">
               Send request
             </button>
             <button type="button" onClick={() => setShowing(null)} className="px-3 py-1.5 text-xs font-medium rounded-md border border-border hover:bg-muted transition-colors">
@@ -1519,7 +1519,7 @@ const OUTCOME_LABELS: Record<string, string> = {
 
 const OUTCOME_PILL: Record<string, string> = {
   Advance: "bg-accent-teal/15 text-accent-teal",
-  Hold: "bg-amber-500/15 text-amber-600",
+  Hold: "bg-os-amber text-os-amber",
   Reject: "bg-destructive/10 text-destructive",
   MoreInfoNeeded: "bg-muted text-muted-foreground",
 };

@@ -74,7 +74,7 @@ export function RecordStartSheet({ rec }: { rec: UseMeetingRecording }) {
             <div className="flex flex-col gap-1.5">
               <span className="text-xs font-medium text-muted-foreground">Microphone</span>
               {rec.micPreviewError ? (
-                <p className="text-xs text-red-700">{rec.micPreviewError}</p>
+                <p className="text-xs text-destructive">{rec.micPreviewError}</p>
               ) : (
                 <div className="flex items-center gap-2">
                   <Select
@@ -118,7 +118,7 @@ export function RecordStartSheet({ rec }: { rec: UseMeetingRecording }) {
           Enhance sends your typed notes and the transcript to the AI provider.
         </p>
 
-        {rec.error && <p className="text-xs text-red-700">{rec.error}</p>}
+        {rec.error && <p className="text-xs text-destructive">{rec.error}</p>}
       </div>
 
       <div className="mt-5 flex items-center justify-end gap-1.5">

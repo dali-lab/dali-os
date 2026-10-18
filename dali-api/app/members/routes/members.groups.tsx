@@ -569,7 +569,7 @@ function CreateGroupForm({
                     aria-pressed={on}
                     className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${
                       on
-                        ? "bg-accent-coral text-white border-accent-coral"
+                        ? "bg-os-accent text-os-bg border-os-accent"
                         : "bg-background text-foreground border-border hover:bg-muted/50"
                     }`}
                   >
@@ -838,7 +838,7 @@ function GroupCard({
                   <button
                     type="submit"
                     aria-label="Delete group"
-                    className="text-muted-foreground hover:text-red-600 p-1"
+                    className="text-muted-foreground hover:text-destructive p-1"
                   >
                     <Trash2 className="w-4 h-4" />
                   </button>
@@ -1006,7 +1006,7 @@ function ExpandedMemberCard({
             <button
               type="submit"
               aria-label={`Remove ${fullName} from group`}
-              className="text-muted-foreground hover:text-red-600 p-0.5"
+              className="text-muted-foreground hover:text-destructive p-0.5"
             >
               <X className="w-3 h-3" />
             </button>

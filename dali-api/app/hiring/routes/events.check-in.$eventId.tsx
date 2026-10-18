@@ -146,7 +146,7 @@ export default function HiringEventCheckIn() {
         {present && data.applyHref && (
           <p className="mt-4 text-sm text-muted-foreground">
             Started your application yet?{" "}
-            <a href={data.applyHref} className="text-accent-coral hover:underline">
+            <a href={data.applyHref} className="text-os-accent hover:underline">
               Apply
             </a>
           </p>

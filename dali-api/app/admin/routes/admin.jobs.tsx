@@ -170,11 +170,11 @@ function JobRow({ job }: { job: JobView }) {
           </div>
         )}
         {saveFetcher.data?.error && (
-          <p className="mt-1 text-xs text-red-600">{saveFetcher.data.error}</p>
+          <p className="mt-1 text-xs text-destructive">{saveFetcher.data.error}</p>
         )}
         {job.lastError && (
           <Tooltip content={job.lastError} variant="rich" placement="bottom">
-            <p className="mt-1 break-all text-xs text-red-600">
+            <p className="mt-1 break-all text-xs text-destructive">
               {job.lastError.length > 200 ? `${job.lastError.slice(0, 200)}…` : job.lastError}
             </p>
           </Tooltip>
@@ -211,7 +211,7 @@ function JobRow({ job }: { job: JobView }) {
           }
           className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${
             enabled
-              ? "bg-green-100 text-green-800 hover:bg-green-200"
+              ? "bg-os-green/15 text-os-green hover:bg-os-green/15"
               : "bg-zinc-200 text-zinc-600 hover:bg-zinc-300"
           } disabled:opacity-50`}
         >
@@ -227,8 +227,8 @@ function JobRow({ job }: { job: JobView }) {
           <span
             className={`mt-1 inline-block rounded-full px-2 py-0.5 text-[11px] font-semibold ${
               job.lastStatus === "Success"
-                ? "bg-green-100 text-green-800"
-                : "bg-red-100 text-red-800"
+                ? "bg-os-green/15 text-os-green"
+                : "bg-destructive/15 text-destructive"
             }`}
           >
             {job.lastStatus}

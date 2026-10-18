@@ -5,7 +5,7 @@
 // renders body as plain text — preserving full backward-compatibility.
 //
 // Mention chips are styled like the doc-editor's coral mention chips:
-//   rounded bg-accent-coral/15 px-1 py-0.5 font-medium text-accent-coral
+//   rounded bg-os-accent/15 px-1 py-0.5 font-medium text-os-accent
 // They are not clickable (no profile page exists to navigate to from here).
 
 import type { BodySegment } from "~/lib/comment-body";
@@ -33,7 +33,7 @@ export function RichCommentBody({ bodyJson, body, className = "" }: RichCommentB
           return (
             <span
               key={i}
-              className="rounded bg-accent-coral/15 px-1 py-0.5 font-medium text-accent-coral"
+              className="rounded bg-os-accent/15 px-1 py-0.5 font-medium text-os-accent"
               aria-label={`Mention: @${segment.label}`}
             >
               @{segment.label}

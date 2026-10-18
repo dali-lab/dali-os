@@ -116,7 +116,7 @@ function AddMeetingWhiteboardModal({
               ? "Starts a shared whiteboard canvas linked to this meeting, filed alongside the meeting note."
               : "Starts a shared whiteboard canvas linked to this meeting."}
           </p>
-          {fetcher.data?.error && <p className="text-sm text-red-600">{fetcher.data.error}</p>}
+          {fetcher.data?.error && <p className="text-sm text-destructive">{fetcher.data.error}</p>}
         </div>
 
         <div className="flex items-center justify-end gap-3 border-t border-border px-5 py-4">
@@ -131,7 +131,7 @@ function AddMeetingWhiteboardModal({
             type="button"
             onClick={submit}
             disabled={submitting}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-os-accent px-4 py-2 text-sm font-semibold text-white hover:bg-os-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 rounded-lg bg-os-accent px-4 py-2 text-sm font-semibold text-os-bg hover:bg-os-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
           >
             {submitting ? "Creating…" : "Create whiteboard"}
           </button>

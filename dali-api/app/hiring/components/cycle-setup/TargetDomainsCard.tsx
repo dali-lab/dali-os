@@ -55,7 +55,7 @@ export function TargetDomainsCard({
           })}
         </div>
       </Tooltip>
-      {fetcher.data?.error && <p className="text-xs text-red-700">{fetcher.data.error}</p>}
+      {fetcher.data?.error && <p className="text-xs text-destructive">{fetcher.data.error}</p>}
       {cycleDomains.length > 0 && (
         <ul className="flex flex-col gap-2">
           {cycleDomains.map((d) => (

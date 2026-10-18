@@ -166,7 +166,7 @@ function EmailRow({
           ) : (
             <span
               className={`inline-flex items-center gap-1 text-xs ${
-                warn ? "text-amber-600 dark:text-amber-500" : "text-muted-foreground"
+                warn ? "text-os-amber" : "text-muted-foreground"
               }`}
             >
               {warn ? <AlertTriangle className="w-3 h-3" /> : null}
@@ -327,13 +327,13 @@ function EmailEditor({
           </p>
 
           {warnings.unknown.length > 0 ? (
-            <p className="text-xs text-amber-600 dark:text-amber-500">
+            <p className="text-xs text-os-amber">
               Not a known variable: {warnings.unknown.map((t) => `{{${t}}}`).join(", ")}. These
               ship as literal text — placeholders are case-sensitive.
             </p>
           ) : null}
           {warnings.unfilled.length > 0 ? (
-            <p className="text-xs text-amber-600 dark:text-amber-500">
+            <p className="text-xs text-os-amber">
               Never filled for this email: {warnings.unfilled.map((t) => `{{${t}}}`).join(", ")}.
             </p>
           ) : null}

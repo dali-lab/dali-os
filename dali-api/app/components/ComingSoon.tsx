@@ -8,7 +8,7 @@ interface ComingSoonProps {
 export function ComingSoon({ title, description }: ComingSoonProps) {
   return (
     <div className="flex flex-col items-center justify-center py-24 text-center">
-      <div className="w-12 h-12 rounded-full bg-accent-coral/10 text-accent-coral flex items-center justify-center mb-4">
+      <div className="w-12 h-12 rounded-full bg-os-accent/10 text-os-accent flex items-center justify-center mb-4">
         <Sparkles className="w-5 h-5" />
       </div>
       <h1 className="text-2xl font-bold text-foreground mb-2">{title}</h1>

@@ -614,7 +614,7 @@ function BookingModal({
               fieldClassName={chrome.formTrigger}
             />
             {repeatNeedsEnd && (
-              <p className="text-xs text-red-600">
+              <p className="text-xs text-destructive">
                 A repeating booking needs an end date or a number of times.
               </p>
             )}

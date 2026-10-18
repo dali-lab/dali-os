@@ -9,16 +9,16 @@ import { cn } from "~/lib/cn";
 export type Tone = "ok" | "warn" | "bad" | "idle";
 
 const DOT: Record<Tone, string> = {
-  ok: "bg-emerald-500",
-  warn: "bg-amber-500",
-  bad: "bg-red-500",
+  ok: "bg-os-green",
+  warn: "bg-os-amber",
+  bad: "bg-destructive",
   idle: "bg-muted-foreground/40",
 };
 
 const FILL: Record<Tone, string> = {
-  ok: "bg-emerald-500",
-  warn: "bg-amber-500",
-  bad: "bg-red-500",
+  ok: "bg-os-green",
+  warn: "bg-os-amber",
+  bad: "bg-destructive",
   idle: "bg-muted-foreground/40",
 };
 
@@ -71,7 +71,7 @@ export function MiniBar({ fraction, className }: { fraction: number; className?:
   return (
     <div className={cn("h-2 w-full overflow-hidden rounded-full bg-muted", className)}>
       <div
-        className="h-full rounded-full bg-accent-coral/70"
+        className="h-full rounded-full bg-os-accent/70"
         style={{ width: `${pct}%` }}
       />
     </div>
@@ -98,7 +98,7 @@ export function Sparkline({
       {values.map((v, i) => (
         <div
           key={i}
-          className="min-w-px flex-1 rounded-sm bg-accent-coral/50"
+          className="min-w-px flex-1 rounded-sm bg-os-accent/50"
           style={{ height: `${Math.max(4, Math.round((v / max) * 100))}%` }}
           title={String(v)}
         />

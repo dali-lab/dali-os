@@ -166,14 +166,14 @@ function ImportSummary({ result }: { result: PayrollUploadResult }) {
           </li>
         )}
         {timesheet.invalidPeriods.length > 0 && (
-          <li className="text-amber-700">
+          <li className="text-os-amber">
             {timesheet.invalidPeriods.length} pay-period label
             {timesheet.invalidPeriods.length === 1 ? "" : "s"} could not be parsed
             and {timesheet.invalidPeriods.length === 1 ? "was" : "were"} skipped.
           </li>
         )}
         {rowErrors > 0 && (
-          <li className="text-amber-700">
+          <li className="text-os-amber">
             {rowErrors} row{rowErrors === 1 ? "" : "s"} had errors and{" "}
             {rowErrors === 1 ? "was" : "were"} skipped.
           </li>

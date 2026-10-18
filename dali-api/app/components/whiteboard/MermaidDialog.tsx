@@ -130,7 +130,7 @@ export function MermaidDialog({
             }}
             rows={12}
             spellCheck={false}
-            className="min-h-[280px] w-full flex-1 resize-none rounded-md border border-border bg-card p-3 font-mono text-sm text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-coral/30"
+            className="min-h-[280px] w-full flex-1 resize-none rounded-md border border-border bg-card p-3 font-mono text-sm text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-os-accent/30"
           />
         </div>
         <div className="flex flex-col">
@@ -141,7 +141,7 @@ export function MermaidDialog({
           />
         </div>
       </div>
-      {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
+      {error && <p className="mt-2 text-sm text-destructive">{error}</p>}
       <ModalFooter onCancel={onClose}>
         <Button variant="primary" onClick={handleInsert} disabled={!ready}>
           Insert

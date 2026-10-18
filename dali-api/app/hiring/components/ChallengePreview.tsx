@@ -47,7 +47,7 @@ export function ChallengePreview({ description, questions }: ChallengePreviewPro
             labelClassName="font-semibold"
             labelSuffix={q =>
               q.data.afterDomains ? (
-                <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-amber-100 text-amber-800 align-middle">
+                <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-os-amber/15 text-os-amber align-middle">
                   Shown after domain questions
                 </span>
               ) : null

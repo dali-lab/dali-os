@@ -33,7 +33,7 @@ export function SlotStatusStrip({ status }: { status: SlotStatus }) {
       </div>
 
       {unsent && (
-        <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+        <div className="rounded-md border border-os-amber/40 bg-os-amber/10 px-3 py-2 text-sm text-os-amber">
           <span className="font-medium">Bound but not yet sent:</span> a form is
           connected but no announcement has gone out, so members can't apply
           yet. Use <em>Send to members</em> in Advanced settings to notify them.

@@ -143,7 +143,7 @@ export function statusLineFor(rec: UseMeetingRecording, state: RailState): React
     const following = Boolean(rec.remote && !rec.remote.ownerIsYou);
     return (
       <span className="inline-flex items-center gap-1.5">
-        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-red-500" />
+        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-destructive" />
         {formatClock(rec.elapsed)}
         {rec.remote && (
           <span className="text-muted-foreground">
@@ -494,7 +494,7 @@ export function RecordingBody({ rec }: { rec: UseMeetingRecording }) {
                       style={{ width: `${Math.round((rec.levels[ch] ?? 0) * 100)}%` }}
                     />
                   </div>
-                  {rec.stalled[ch] && <span className="text-xs text-red-700">Upload stalled</span>}
+                  {rec.stalled[ch] && <span className="text-xs text-destructive">Upload stalled</span>}
                 </li>
               ))}
             </ul>

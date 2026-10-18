@@ -226,7 +226,7 @@ export function MemberFormShell({
               <ChevronLeft className="w-[18px] h-[18px]" />
             </button>
           )}
-          <div className="w-7 h-7 bg-accent-coral rounded-md flex items-center justify-center">
+          <div className="w-7 h-7 bg-os-accent rounded-md flex items-center justify-center">
             <span className="text-white font-bold text-base leading-none font-heading">
               D
             </span>

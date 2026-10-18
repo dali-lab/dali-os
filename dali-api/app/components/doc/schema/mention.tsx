@@ -41,7 +41,7 @@ export type MentionPage = {
 
 // Same chip styling as the legacy MENTION_CLASS.
 const MENTION_CLASS =
-  "rounded bg-accent-coral/15 px-1 py-0.5 font-medium text-accent-coral";
+  "rounded bg-os-accent/15 px-1 py-0.5 font-medium text-os-accent";
 
 // Page mention chip: muted blue tint to visually distinguish from @user coral
 // mentions. Click navigates to the page (window.location so it works inside

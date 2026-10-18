@@ -62,7 +62,7 @@ export function MeetingRecorder({ rec, containerWide }: { rec: UseMeetingRecordi
       data-recording={live || undefined}
       className={cn(
         actionBtnPrimary,
-        live && "border-accent-coral bg-accent-coral text-navy-deep hover:border-accent-coral-light hover:bg-accent-coral-light",
+        live && "border-os-accent bg-os-accent text-navy-deep hover:border-accent-coral-light hover:bg-accent-coral-light",
       )}
     >
       <Mic className={actionIcon} />

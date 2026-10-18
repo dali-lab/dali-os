@@ -626,7 +626,7 @@ export function DocumentEditor({
       {syncState && (
         <span
           className={`shrink-0 inline-flex items-center gap-1 ${
-            syncState === "offline" ? "text-amber-600 dark:text-amber-500" : ""
+            syncState === "offline" ? "text-os-amber" : ""
           }`}
           title={
             syncState === "offline"

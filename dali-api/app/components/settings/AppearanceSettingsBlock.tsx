@@ -95,7 +95,7 @@ export function AppearanceSettingsBlock() {
               className={cn(
                 "flex flex-col items-start gap-2 rounded-lg border px-3 py-3 text-left transition-colors",
                 selected
-                  ? "border-accent-coral bg-accent-coral/10 ring-1 ring-accent-coral/40"
+                  ? "border-os-accent bg-os-accent/10 ring-1 ring-os-accent/40"
                   : "border-border bg-card hover:bg-muted/50",
               )}
             >

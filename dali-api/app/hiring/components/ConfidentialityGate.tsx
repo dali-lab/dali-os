@@ -1,5 +1,6 @@
 import { Link } from "react-router";
 import { ShieldAlert, ShieldOff } from "lucide-react";
+import { buttonClasses } from "~/components/ui/Button";
 
 interface ConfidentialityGateProps {
   cycleId: string;
@@ -27,12 +28,12 @@ export function ConfidentialityGate({
     return (
       <div
         className={
-          "rounded-lg border border-amber-200 bg-amber-50 px-4 py-6 text-center " +
+          "rounded-lg border border-os-amber/40 bg-os-amber/10 px-4 py-6 text-center " +
           (className ?? "")
         }
       >
-        <ShieldOff className="w-6 h-6 text-amber-500 mx-auto mb-2" />
-        <p className="text-sm text-amber-900 font-medium">
+        <ShieldOff className="w-6 h-6 text-os-amber mx-auto mb-2" />
+        <p className="text-sm text-os-amber font-medium">
           {cycleName
             ? `${cycleName} data is hidden until the hiring lead binds a confidentiality agreement.`
             : "Sensitive data is hidden until the hiring lead binds a confidentiality agreement to this cycle."}
@@ -56,7 +57,7 @@ export function ConfidentialityGate({
       </p>
       <Link
         to={href}
-        className="mt-3 inline-block px-3 py-2 text-sm font-medium text-white bg-accent-coral rounded-md hover:bg-accent-coral/90"
+        className={buttonClasses("primary", "md")}
       >
         Sign agreement
       </Link>

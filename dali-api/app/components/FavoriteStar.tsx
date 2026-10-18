@@ -37,7 +37,7 @@ export function FavoriteStar({
         aria-label={favorited ? "Remove from favorites" : "Add to favorites"}
         aria-pressed={favorited}
         className={`flex items-center disabled:opacity-60 transition-colors ${
-          favorited ? "text-accent-coral" : "text-muted-foreground hover:text-foreground"
+          favorited ? "text-os-accent" : "text-muted-foreground hover:text-foreground"
         } ${className}`}
       >
         <Star className={`${iconClassName} ${favorited ? "fill-current" : ""}`} />

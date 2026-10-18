@@ -103,7 +103,7 @@ export function RoleSelectField({
         buttonClassName={cn(
           FIELD_BASE,
           compactField,
-          value ? "border-border" : "border-red-500",
+          value ? "border-border" : "border-destructive",
           "inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40",
         )}
       />

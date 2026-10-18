@@ -57,7 +57,7 @@ export function ConnectedAppsSettingsBlock({ grants }: { grants: GrantRowDTO[] }
                   <Tooltip content={`Revoke ${g.clientName}'s access to your account`}>
                     <button
                       type="submit"
-                      className="rounded border border-red-300 px-3 py-1 text-sm text-red-700 hover:bg-red-50"
+                      className="rounded border border-destructive/40 px-3 py-1 text-sm text-destructive hover:bg-destructive/10"
                     >
                       Revoke
                     </button>

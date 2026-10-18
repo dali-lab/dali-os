@@ -88,7 +88,7 @@ export function PageIconPicker({
                 onChange(v || null);
                 close();
               }}
-              className="w-24 rounded border border-border bg-background px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-accent-coral/40"
+              className="w-24 rounded border border-border bg-background px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-os-accent/40"
             />
             {iconEmoji && (
               <button

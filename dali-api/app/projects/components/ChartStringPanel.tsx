@@ -181,7 +181,7 @@ export function ChartStringPanel({
       )}
 
       {error && (
-        <p className="flex items-start gap-1.5 text-xs text-red-500">
+        <p className="flex items-start gap-1.5 text-xs text-destructive">
           <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
           {error}
         </p>
@@ -189,7 +189,7 @@ export function ChartStringPanel({
       {warnings.length > 0 && (
         <div className="flex flex-col gap-1">
           {warnings.map((w) => (
-            <p key={w} className="flex items-start gap-1.5 text-xs text-amber-500">
+            <p key={w} className="flex items-start gap-1.5 text-xs text-os-amber">
               <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
               {w}
             </p>
@@ -291,7 +291,7 @@ export function ChartStringPanel({
             <button
               type="submit"
               disabled={busy}
-              className="rounded-os-input bg-os-accent px-3 py-2 text-sm text-white disabled:opacity-50"
+              className="rounded-os-input bg-os-accent px-3 py-2 text-sm text-os-bg disabled:opacity-50"
             >
               {busy ? "Saving…" : "Save"}
             </button>
