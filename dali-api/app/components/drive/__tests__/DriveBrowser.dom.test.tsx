@@ -957,8 +957,8 @@ describe("DriveBrowser drag: dropping on a folder", () => {
     place(row("folder", to), 100);
     await carry(row("doc", from), 100);
     expect(row("folder", to).className).toContain("ring-2");
-    expect(row("folder", to).className).toContain("ring-accent-coral");
-    expect(row("folder", to).className).toContain("bg-accent-coral/10");
+    expect(row("folder", to).className).toContain("ring-os-accent");
+    expect(row("folder", to).className).toContain("bg-os-accent/10");
     await release();
     expect(onMove).toHaveBeenCalledWith("lab", [expect.objectContaining({ id: from })], to);
   });
@@ -979,9 +979,9 @@ describe("DriveBrowser drag: dropping on a folder", () => {
     place(row("doc", "d1"), 0);
     place(row("folder", "f1"), 100);
     await carry(row("doc", "d1"), 100);
-    expect(row("folder", "f1").className).toContain("ring-accent-coral");
+    expect(row("folder", "f1").className).toContain("ring-os-accent");
     await mouse(document, "mousemove", 300);
-    expect(row("folder", "f1").className).not.toContain("ring-accent-coral");
+    expect(row("folder", "f1").className).not.toContain("ring-os-accent");
     await release();
     expect(onMove).not.toHaveBeenCalled();
   });
@@ -1003,8 +1003,8 @@ describe("DriveBrowser drag: dropping on a folder", () => {
     await act(async () => {
       document.dispatchEvent(new MouseEvent("mousemove", { bubbles: true, cancelable: true, button: 0, clientX: 150, clientY: 110 }));
     });
-    expect(row("folder", "f3").className).toContain("ring-accent-coral");
-    expect(row("folder", "f1").className).not.toContain("ring-accent-coral");
+    expect(row("folder", "f3").className).toContain("ring-os-accent");
+    expect(row("folder", "f1").className).not.toContain("ring-os-accent");
     await release();
     expect(onMove).toHaveBeenCalledWith("lab", [expect.objectContaining({ id: "d1" })], "f3");
   });
@@ -1039,7 +1039,7 @@ describe("DriveBrowser drag: dropping on a notebook", () => {
       place(row("doc", "nb1"), 100);
       await carry(row("doc", "d1"), 100);
       expect(row("doc", "nb1").className).toContain("ring-2");
-      expect(row("doc", "nb1").className).toContain("ring-accent-coral");
+      expect(row("doc", "nb1").className).toContain("ring-os-accent");
       await release();
     });
 
@@ -1105,7 +1105,7 @@ describe("DriveBrowser drag: dropping on a notebook", () => {
     place(row("doc", "d1"), 0);
     place(row("doc", "d2"), 100);
     await carry(row("doc", "d1"), 100);
-    expect(row("doc", "d2").className).not.toContain("ring-accent-coral");
+    expect(row("doc", "d2").className).not.toContain("ring-os-accent");
     await release();
   });
 });
@@ -1116,7 +1116,7 @@ describe("DriveBrowser drag: dropping on the breadcrumb", () => {
     place(row("doc", "d4"), 0);
     place(byTestId("drive-crumb-scope"), 100);
     await carry(row("doc", "d4"), 100);
-    expect(byTestId("drive-crumb-scope").className).toContain("ring-accent-coral");
+    expect(byTestId("drive-crumb-scope").className).toContain("ring-os-accent");
     await release();
     expect(onMove).toHaveBeenCalledWith("lab", [expect.objectContaining({ id: "d4" })], null);
   });
@@ -1126,7 +1126,7 @@ describe("DriveBrowser drag: dropping on the breadcrumb", () => {
     place(row("doc", "d4"), 0);
     place(crumbRoot()!, 100);
     await carry(row("doc", "d4"), 100);
-    expect(crumbRoot()!.className).not.toContain("ring-accent-coral");
+    expect(crumbRoot()!.className).not.toContain("ring-os-accent");
     await release();
     expect(onMove).not.toHaveBeenCalled();
     expect(onMoveToScope).not.toHaveBeenCalled();
@@ -1140,7 +1140,7 @@ describe("DriveBrowser drag: dropping on a drive", () => {
     place(byTestId("drive-scope-mine"), 100);
     await carry(row("doc", "d1"), 100);
     expect(byTestId("drive-scope-mine").className).toContain("ring-2");
-    expect(byTestId("drive-scope-mine").className).toContain("ring-accent-coral");
+    expect(byTestId("drive-scope-mine").className).toContain("ring-os-accent");
     await release();
     expect(onMoveToScope).toHaveBeenCalledWith("lab", "mine", [expect.objectContaining({ id: "d1" })]);
   });
@@ -1187,7 +1187,7 @@ describe("DriveBrowser drag: dropping on a drive", () => {
       place(byTestId("drive-scope-mine"), 100);
       await carry(byTestId("src"), 100);
       expect(byTestId("drive-scope-mine").className).toContain("ring-2");
-      expect(byTestId("drive-scope-mine").className).toContain("ring-accent-coral");
+      expect(byTestId("drive-scope-mine").className).toContain("ring-os-accent");
       await release();
       expect(dropped).toHaveBeenCalledWith({ destScopeId: "mine" });
     });
@@ -1208,7 +1208,7 @@ describe("DriveBrowser drag: dropping on a drive", () => {
       place(byTestId("src"), 0);
       place(byTestId(`drive-scope-${id}`), 100);
       await carry(byTestId("src"), 100);
-      expect(byTestId(`drive-scope-${id}`).className).not.toContain("ring-accent-coral");
+      expect(byTestId(`drive-scope-${id}`).className).not.toContain("ring-os-accent");
       await release();
       expect(dropped).toHaveBeenCalledWith(undefined);
     });
@@ -1665,7 +1665,7 @@ function fileDrag(
   return ev;
 }
 const overlayText = () => container.textContent?.includes("Drop files to upload") ?? false;
-const lit = (el: Element) => el.className.includes("ring-accent-coral");
+const lit = (el: Element) => el.className.includes("ring-os-accent");
 
 describe.each(["columns", "list"] as const)("DriveBrowser %s: dropping OS files uploads", (view) => {
   it("drops on the pane into the current folder", async () => {
