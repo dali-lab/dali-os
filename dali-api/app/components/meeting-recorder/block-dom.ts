@@ -18,7 +18,7 @@ export type Bounds = { top: number; bottom: number; right: number };
 export function overlayBounds(root: HTMLElement): Bounds {
   let top = 0;
   let bottom = window.innerHeight;
-  let right = window.innerWidth;
+  let right = Math.min(window.innerWidth, root.getBoundingClientRect().right);
   for (let el = root.parentElement; el; el = el.parentElement) {
     const overflow = getComputedStyle(el).overflowY;
     if (overflow === "auto" || overflow === "scroll" || overflow === "overlay") {

@@ -196,11 +196,12 @@ describe("EnhanceBlockActions", () => {
       window.innerWidth = width;
     });
 
-    function mountWithBlockRect(viewportWidth: number) {
+    function mountWithBlockRect(viewportWidth: number, editorRight = viewportWidth) {
       window.innerWidth = viewportWidth;
       Element.prototype.getBoundingClientRect = function (this: Element) {
         const isB2 = this.classList.contains("bn-block-content") && this.closest("[data-id]")?.getAttribute("data-id") === "b2";
-        return (isB2 ? { top: 300, bottom: 340, left: 100, right: 500, width: 400, height: 40, x: 100, y: 300, toJSON() {} } : original.call(this)) as DOMRect;
+        if (isB2) return { top: 300, bottom: 340, left: 100, right: 500, width: 400, height: 40, x: 100, y: 300, toJSON() {} } as DOMRect;
+        return { top: 0, bottom: 0, left: 0, right: editorRight, width: editorRight, height: 0, x: 0, y: 0, toJSON() {} } as DOMRect;
       };
       const ui = mount(recWith());
       hover("b2");
@@ -212,6 +213,13 @@ describe("EnhanceBlockActions", () => {
       expect(style.left).toBe("508px");
       expect(style.top).toBe("298px");
       expect(style.right).toBe("");
+      ui.unmount();
+    });
+
+    it("moves above the block when the editor column ends before the gutter would fit, even on a wide viewport", () => {
+      const { ui, style } = mountWithBlockRect(1440, 600);
+      expect(style.right).toBe(`${1440 - 500}px`);
+      expect(style.left).toBe("");
       ui.unmount();
     });
 
