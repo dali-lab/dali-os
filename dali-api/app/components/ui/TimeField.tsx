@@ -205,7 +205,7 @@ export function TimeField({
     <div ref={wrapRef} className={cn("relative inline-block", className)}>
       <div
         data-time-field
-        className="flex w-full items-center rounded-md border border-border bg-background focus-within:border-accent-coral"
+        className="flex w-full items-center rounded-md border border-border bg-background focus-within:border-os-accent"
       >
         <input
           ref={inputRef}
@@ -299,7 +299,7 @@ export function TimeField({
                   className={cn(
                     "block w-full px-3 py-1.5 text-left text-sm",
                     active ? "bg-muted" : "",
-                    selected ? "font-semibold text-accent-coral" : "text-foreground",
+                    selected ? "font-semibold text-os-accent" : "text-foreground",
                   )}
                 >
                   {o.label}

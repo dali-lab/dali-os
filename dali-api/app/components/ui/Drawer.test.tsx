@@ -3,6 +3,7 @@ import { describe, it, expect, afterEach, vi } from "vitest";
 import { createElement, act, type ReactElement } from "react";
 import { createRoot } from "react-dom/client";
 import { Drawer } from "./Drawer";
+import { MODAL_TITLE_CLASS } from "~/components/Modal";
 
 // Tell React we drive updates through act() (no setupFile in this repo) —
 // same pattern as app/components/__tests__/Modal.test.tsx.
@@ -47,6 +48,16 @@ describe("Drawer", () => {
     expect(dialog).not.toBeNull();
     expect(container.textContent).toContain("Tasks (3)");
     expect(container.textContent).toContain("the body content");
+    unmount();
+  });
+
+  it("titles itself like ModalHeader and the useDialog dialogs", () => {
+    const { container, unmount } = mount(
+      createElement(Drawer, { open: true, onClose: () => {}, title: "Tasks (3)", children: "body" }),
+    );
+    const title = container.querySelector("h2")!;
+    for (const cls of MODAL_TITLE_CLASS.split(" ")) expect(title.classList.contains(cls)).toBe(true);
+    expect(title.className).not.toContain("font-bold");
     unmount();
   });
 

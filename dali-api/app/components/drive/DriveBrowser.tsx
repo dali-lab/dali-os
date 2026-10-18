@@ -477,7 +477,7 @@ function itemMenuItems(
       </Menu.Item>
       {canFavorite && onToggleFavorite && (
         <Menu.Item
-          icon={<Star className={`h-3.5 w-3.5 ${item.favorited ? "fill-current text-accent-coral" : ""}`} />}
+          icon={<Star className={`h-3.5 w-3.5 ${item.favorited ? "fill-current text-os-accent" : ""}`} />}
           onSelect={() => onToggleFavorite(item)}
         >
           {item.favorited ? "Remove from favorites" : "Add to favorites"}
@@ -617,7 +617,9 @@ function useFileDropFolder(item: DriveItem) {
 }
 
 /** What a row, tile, card or crumb looks like while a dragged item hovers it as a drop target; one look in every view. */
-const DROP_RING = "bg-accent-coral/10 ring-2 ring-inset ring-accent-coral";
+export const DROP_RING = "bg-os-accent/10 ring-2 ring-inset ring-os-accent";
+export const DROP_OVERLAY =
+  "pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-os-card border-2 border-dashed border-os-accent bg-os-accent/10";
 
 /** Caption under a grid icon — always smaller than the artwork, even under os. */
 const GRID_LABEL = "max-w-full truncate rounded px-1.5 py-0.5 text-xs font-medium";
@@ -1866,8 +1868,8 @@ export function DriveBrowser({
               data-testid="drive-columns"
             >
               {uploadOver && !fileOverFolder && (
-                <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-os-card border-2 border-dashed border-accent-coral bg-accent-coral/10">
-                  <span className="flex items-center gap-2 text-sm font-medium text-accent-coral">
+                <div className={DROP_OVERLAY}>
+                  <span className="flex items-center gap-2 text-sm font-medium text-os-accent">
                     <Upload className="w-4 h-4" /> Drop files to upload
                   </span>
                 </div>
@@ -1985,8 +1987,8 @@ export function DriveBrowser({
               )}
             >
               {uploadOver && !fileOverFolder && (
-                <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-os-card border-2 border-dashed border-accent-coral bg-accent-coral/10">
-                  <span className="flex items-center gap-2 text-sm font-medium text-accent-coral">
+                <div className={DROP_OVERLAY}>
+                  <span className="flex items-center gap-2 text-sm font-medium text-os-accent">
                     <Upload className="w-4 h-4" /> Drop files to upload
                   </span>
                 </div>
@@ -2483,7 +2485,7 @@ function ColumnScopeRow({
       onClick={(e) => { e.stopPropagation(); onClick(); }}
       className={`group flex items-center rounded-lg ${t.itemRow} ${t.row} cursor-default select-none ${
         drop.isOver
-          ? `${DROP_RING} text-accent-coral`
+          ? `${DROP_RING} text-os-accent`
           : isOpen
             ? "bg-os-container text-foreground"
             : "text-foreground hover:bg-os-hover"
@@ -2790,7 +2792,7 @@ function Breadcrumb({
             currentScope ? "text-muted-foreground hover:text-foreground" : "font-medium text-foreground"
           }`}
         >
-          <HardDrive className="w-4 h-4 text-accent-coral" />
+          <HardDrive className="w-4 h-4 text-os-accent" />
           Drive
         </button>
       )}
@@ -2889,7 +2891,7 @@ function Crumb({
         }}
         className={`inline-flex items-center rounded-md px-1.5 py-0.5 truncate max-w-[12rem] ${
           drop.isOver
-            ? `${DROP_RING} text-accent-coral`
+            ? `${DROP_RING} text-os-accent`
             : current
               ? "font-medium text-foreground hover:bg-os-hover"
               : "text-muted-foreground hover:bg-os-hover hover:text-foreground"

@@ -1,4 +1,5 @@
 import { useMemo, useState, useEffect } from "react";
+import { buttonClasses } from "~/components/ui/Button";
 import { redirect, useLoaderData, useFetcher } from "react-router";
 import type { Route } from "./+types/projects.level-up";
 import { useFilteredList } from "~/hooks/useFilteredList";
@@ -691,7 +692,7 @@ function LevelUpRow({
                     targetLevel: tp.targetLevel,
                   })
                 }
-                className="px-3 py-1 text-xs font-medium rounded bg-accent-coral text-white hover:bg-accent-coral/90 transition-colors"
+                className={buttonClasses("primary", "xs")}
               >
                 Level Up → {levelLabel[tp.targetLevel]}
               </button>
@@ -777,7 +778,7 @@ function LevelUpConfirmDialog({
             <button
               type="submit"
               disabled={pending}
-              className="px-3 py-1.5 text-sm font-medium rounded-md bg-accent-coral text-white hover:bg-accent-coral/90 disabled:opacity-50 transition-colors"
+              className={buttonClasses("primary", "sm")}
             >
               {pending ? "Promoting…" : "Confirm"}
             </button>
