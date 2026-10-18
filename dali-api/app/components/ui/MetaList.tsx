@@ -12,8 +12,8 @@ export type MetaTone = "default" | "muted" | "urgent" | "positive";
 export const META_TONE_CLASS: Record<MetaTone, string> = {
   default: "text-foreground",
   muted: "text-muted-foreground",
-  urgent: "font-semibold text-accent-coral",
-  positive: "font-medium text-accent-teal",
+  urgent: "font-semibold text-os-amber",
+  positive: "font-medium text-os-green",
 };
 
 export type MetaRow = { label: string; value: string; tone?: MetaTone };
