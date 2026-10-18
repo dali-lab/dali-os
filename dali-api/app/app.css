@@ -1845,6 +1845,33 @@ html.os-shell > body::-webkit-scrollbar-track {
   box-shadow: 0 0 0 2px var(--color-os-accent);
 }
 
+/* Checkbox, Radio and Toggle default to brand coral for the surfaces that keep
+   the brand (auth, certificates). Inside the shell every selection is the os
+   accent, so the shell takes the checked state over here, keyed off the role
+   markers the components write. The check sits on the accent, which is pale in
+   dark mode, so it takes the page colour rather than white. */
+.os-shell input:checked + .dali-check {
+  background-color: var(--color-os-accent);
+  border-color: var(--color-os-accent);
+}
+.os-shell input:checked ~ .dali-check-mark {
+  color: var(--color-os-bg);
+}
+.os-shell input:checked + .dali-radio {
+  border-color: var(--color-os-accent);
+}
+.os-shell .dali-radio-dot {
+  background-color: var(--color-os-accent);
+}
+.os-shell input:checked + .dali-switch {
+  background-color: var(--color-os-accent);
+}
+.os-shell input:focus-visible + .dali-check,
+.os-shell input:focus-visible + .dali-radio,
+.os-shell input:focus-visible + .dali-switch {
+  --tw-ring-color: var(--color-os-accent);
+}
+
 /* The design's secondary action (.edit-btn): a quiet outlined pill that fills
    with the accent when it's holding a mode open. Used for the project's
    partner/public view switch and the timeline's edit toggle. */
