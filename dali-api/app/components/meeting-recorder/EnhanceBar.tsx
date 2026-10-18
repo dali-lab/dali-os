@@ -1,17 +1,18 @@
 import type { ReactNode } from "react";
-import { MoreHorizontal, Sparkles, Trash2 } from "lucide-react";
+import { ListChecks, MoreHorizontal, Sparkles, Trash2 } from "lucide-react";
+import { Link } from "react-router";
 import { Avatar } from "~/components/ui/Avatar";
 import { buttonClasses } from "~/components/ui/Button";
 import { IconButton } from "~/components/ui/IconButton";
 import { Menu, MenuItem } from "~/components/ui/floating";
-import { deriveRailState } from "./RecordingRail";
+import { useActionItemDraft } from "./action-item-draft";
+import { deriveRailState, ENHANCE_AGAIN_TIP } from "./RecordingRail";
 import { ProcessingWaveform } from "./ProcessingWaveform";
 import { describeProcessing } from "./processing-progress";
 import { speakerLabelFor } from "./transcript";
 import type { UseMeetingRecording } from "./use-meeting-recording";
 import type { Channel } from "./types";
 
-export const ENHANCE_AGAIN_TIP = "Rebuilds the notes from the current text and the transcript.";
 const MAX_AVATARS = 5;
 
 function plural(n: number, word: string): string {
@@ -65,6 +66,80 @@ function ghost(onClick: () => void, label: string) {
   );
 }
 
+function BarMenu({ rec, enhanceAgain }: { rec: UseMeetingRecording; enhanceAgain: () => void }) {
+  return (
+    <Menu align="right" ariaLabel="More" trigger={<IconButton label="More" icon={MoreHorizontal} />}>
+      <MenuItem onSelect={enhanceAgain} label="Enhance again">
+        <span className="flex flex-col text-left">
+          <span>Enhance again</span>
+          <span className="max-w-56 text-xs text-muted-foreground">{ENHANCE_AGAIN_TIP}</span>
+        </span>
+      </MenuItem>
+      {rec.canDiscard && (
+        <MenuItem destructive onSelect={() => void rec.discard()}>
+          Discard recording
+        </MenuItem>
+      )}
+    </Menu>
+  );
+}
+
+function TasksBar({ rec }: { rec: UseMeetingRecording }) {
+  const draft = useActionItemDraft();
+  if (!draft) return null;
+
+  const board = "the project board";
+
+  if (draft.created !== null) {
+    return (
+      <BarShell
+        icon={<ListChecks className="h-4 w-4" aria-hidden />}
+        title={`Added ${plural(draft.created, "task")} to ${board}`}
+        actions={
+          draft.projectId ? (
+            <Link to={`/projects/${draft.projectId}?tab=progress`} className={buttonClasses("ghost", "sm")}>
+              View board
+            </Link>
+          ) : null
+        }
+      />
+    );
+  }
+
+  if (!draft.stepVisible) return null;
+
+  const unmatched =
+    draft.unmatchedCount > 0
+      ? ` ${draft.unmatchedCount === 1 ? "1 owner needs a pick." : `${draft.unmatchedCount} owners need a pick.`}`
+      : "";
+
+  return (
+    <BarShell
+      icon={<ListChecks className="h-4 w-4" aria-hidden />}
+      title={plural(draft.untaskedCount, "action item")}
+      middle={
+        <p className="min-w-0 flex-1 text-[13px] text-muted-foreground">
+          Check owners and dates, then add them to {board}.{unmatched}
+        </p>
+      }
+      actions={
+        <>
+          {ghost(draft.dismiss, "Not now")}
+          <button
+            type="button"
+            onClick={() => void draft.create()}
+            disabled={draft.busy || draft.checkedCount === 0}
+            className={buttonClasses("primary", "sm")}
+          >
+            {draft.busy ? "Creating…" : `Create ${plural(draft.checkedCount, "task")}`}
+          </button>
+          <BarMenu rec={rec} enhanceAgain={() => void rec.enhanceNow()} />
+        </>
+      }
+    />
+  );
+}
+
 function ReviewNotes({ rec }: { rec: UseMeetingRecording }) {
   const verified = rec.enhanceNotes?.verified;
   const lines: string[] = [];
@@ -92,7 +167,8 @@ function ReviewNotes({ rec }: { rec: UseMeetingRecording }) {
 /**
  * The lifecycle bar under the notebook tabs (specs/enhance-progress-and-
  * review-motion.md section 3): processing, ready, enhancing, and the pending
- * review's Keep all / Revert all. Renders nothing for every other state.
+ * review's Keep all / Revert all, and the tasks step. Renders nothing for
+ * every other state.
  */
 export function EnhanceBar({ rec }: { rec: UseMeetingRecording }) {
   const state = deriveRailState(rec);
@@ -184,23 +260,7 @@ export function EnhanceBar({ rec }: { rec: UseMeetingRecording }) {
                 <button type="button" onClick={() => rec.keepAll()} className={buttonClasses("primary", "sm")}>
                   Keep all
                 </button>
-                <Menu
-                  align="right"
-                  ariaLabel="More"
-                  trigger={<IconButton label="More" icon={MoreHorizontal} />}
-                >
-                  <MenuItem onSelect={() => void rec.revertAllAndEnhanceAgain()} label="Enhance again">
-                    <span className="flex flex-col text-left">
-                      <span>Enhance again</span>
-                      <span className="max-w-56 text-xs text-muted-foreground">{ENHANCE_AGAIN_TIP}</span>
-                    </span>
-                  </MenuItem>
-                  {rec.canDiscard && (
-                    <MenuItem destructive onSelect={() => void rec.discard()}>
-                      Discard recording
-                    </MenuItem>
-                  )}
-                </Menu>
+                <BarMenu rec={rec} enhanceAgain={() => void rec.revertAllAndEnhanceAgain()} />
               </>
             ) : null
           }
@@ -208,6 +268,9 @@ export function EnhanceBar({ rec }: { rec: UseMeetingRecording }) {
         />
       );
     }
+
+    case "enhanced":
+      return <TasksBar rec={rec} />;
 
     case "stalePreview":
       return (

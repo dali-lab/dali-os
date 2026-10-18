@@ -15,7 +15,7 @@
 // Also owns the pure half of inline review (specs/meeting-recording-rail.md
 // Step 2): classifying a mark as Added/Changed/Removed, the change-list row
 // shape, and detecting a local edit on an already-marked block — all plain
-// data in, plain data out, so use-meeting-recording.ts and EnhancePreview.tsx
+// data in, plain data out, so use-meeting-recording.ts and the in-note review
 // can unit-test them without a live BlockNote editor. blockOwnText (below) is
 // itself editor-free (doc/schema/configs.ts), so this module stays safe
 // everywhere enhance-plan.ts already was (client and server).

@@ -2,7 +2,7 @@
 // and open/setOpen — everything MeetingRecorder.tsx did before rendering was
 // split out of it (specs/meeting-recording-rail.md "Component split"). No
 // rendering lives here; RecordingRail / RecordStartSheet / RecordingTranscript
-// / EnhancePreview take this hook's return value as props.
+// / EnhanceBar take this hook's return value as props.
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useBlocker, useSearchParams } from "react-router";

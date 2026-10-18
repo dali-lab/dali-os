@@ -1104,3 +1104,15 @@ a.dali-cmp-piece:hover .dali-cmp-row__title { text-decoration: underline; }
 body[data-modal-open] .bn-side-menu {
   display: none;
 }
+
+@media (min-width: 700px) {
+  .dali-doc [data-action-chips] {
+    padding-right: 20rem;
+  }
+}
+
+@media (max-width: 699px) {
+  .dali-doc [data-action-chips] {
+    padding-bottom: 36px;
+  }
+}

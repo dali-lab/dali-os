@@ -170,7 +170,7 @@ describe("RecordingRail per state (specs/meeting-recording-rail.md state table)"
     expect(html).toContain(">Cancel<");
   });
 
-  it("pendingReview: change-counts status by the enhancer, Keep all primary, Revert all + enhance-again secondaries", () => {
+  it("pendingReview: change-counts status by the enhancer and no review buttons (the bar owns them)", () => {
     const html = render(
       makeRec({
         phase: "done",
@@ -190,9 +190,9 @@ describe("RecordingRail per state (specs/meeting-recording-rail.md state table)"
       }),
     );
     expect(html).toContain("Ada enhanced this note: 1 changed, 1 added, 1 removed.");
-    expect(html).toContain("Keep all");
-    expect(html).toContain("Revert all");
-    expect(html).toContain("Revert all and enhance again");
+    expect(html).not.toContain("Keep all");
+    expect(html).not.toContain("Revert all");
+    expect(html).not.toContain("Revert all and enhance again");
   });
 
   it("pendingReview: the change list lives in the note, not the rail", () => {
@@ -215,24 +215,25 @@ describe("RecordingRail per state (specs/meeting-recording-rail.md state table)"
     expect(html).not.toContain("Nothing left to review.");
   });
 
-  it("pendingReview: still lists the plan's action items", () => {
-    const html = render(
-      makeRec({
-        phase: "done",
-        pendingMarks: [{ id: "b1", mark: "enhance-added", type: "paragraph", text: "x" }],
-        enhanceNotes: {
-          plan: {
-            blocks: [],
-            actionItems: [{ text: "Send the quote", ownerName: null, ownerUserId: null, due: null, dueSource: null }],
-          },
-          verified: { droppedBlocks: 0, droppedCites: 0, unmatchedOwners: 0 },
-          snapshotAt: "x",
-          snapshot: [],
-        } as never,
-      }),
+  it("pendingReview and enhanced: the plan's action items live in the note, not the rail", () => {
+    const notes = {
+      plan: {
+        blocks: [],
+        actionItems: [{ text: "Send the quote", ownerName: null, ownerUserId: null, due: null, dueSource: null }],
+      },
+      verified: { droppedBlocks: 0, droppedCites: 0, unmatchedOwners: 0 },
+      snapshotAt: "x",
+      snapshot: [],
+    } as never;
+    const pending = render(
+      makeRec({ phase: "done", pendingMarks: [{ id: "b1", mark: "enhance-added", type: "paragraph", text: "x" }], enhanceNotes: notes }),
     );
-    expect(html).toContain("Action items");
-    expect(html).toContain("Send the quote");
+    const enhanced = render(makeRec({ phase: "done", enhancedAt: "2026-10-18T12:00:00Z", enhanceNotes: notes }));
+    for (const html of [pending, enhanced]) {
+      expect(html).not.toContain("Action items");
+      expect(html).not.toContain("Send the quote");
+      expect(html).not.toContain("Create tasks");
+    }
   });
 
   it("pendingReview: a viewer without edit sees the status but no Keep/Revert", () => {

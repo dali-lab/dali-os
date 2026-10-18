@@ -35,6 +35,8 @@ import { RecordingPresencePill } from "~/components/RecordingPresencePill";
 import { RecordPromptBanner } from "~/components/RecordPromptBanner";
 import { TranscriptChipHoverLayer } from "~/components/meeting-recorder/TranscriptChipHoverLayer";
 import { RecordingRail } from "~/components/meeting-recorder/RecordingRail";
+import { ActionItemDraftScope } from "~/components/meeting-recorder/action-item-draft";
+import { ActionItemChips } from "~/components/meeting-recorder/ActionItemChips";
 import { EnhanceBar } from "~/components/meeting-recorder/EnhanceBar";
 import { EnhanceBlockActions } from "~/components/meeting-recorder/EnhanceBlockActions";
 import { useMeetingRecording, type UseMeetingRecording, type UseMeetingRecordingProps } from "~/components/meeting-recorder/use-meeting-recording";
@@ -1011,9 +1013,11 @@ function DocumentPage() {
           : null;
 
         return (
+          <ActionItemDraftScope rec={rec}>
           <EnhanceReviewContext.Provider value={enhanceReview}>
             <div className="flex flex-col gap-4">
               {rec && <EnhanceBlockActions rec={rec} getRoot={() => editorRef.current?.domElement ?? null} />}
+              {rec && <ActionItemChips rec={rec} getRoot={() => editorRef.current?.domElement ?? null} />}
               {trashed && <TrashedNoteBanner pageId={pageId} canRestore={canRestore} />}
               {attendance && recordingEnabled && recordingAllowed && (
                 <RecordPromptBanner
@@ -1062,6 +1066,7 @@ function DocumentPage() {
               )}
             </div>
           </EnhanceReviewContext.Provider>
+          </ActionItemDraftScope>
         );
       }}
     </RecordingMount>
