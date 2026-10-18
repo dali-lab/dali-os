@@ -10,6 +10,7 @@ import {
 } from "react";
 import { AlertTriangle, CheckCircle2, Info, X } from "lucide-react";
 import { cn } from "~/lib/cn";
+import { OS_SURFACE_CLASS } from "./floating/styles";
 
 /**
  * App-wide toasts — a lightweight, non-blocking replacement for `window.alert`
@@ -129,7 +130,7 @@ const VARIANTS: Record<
   { Icon: typeof Info; accent: string; bar: string; role: "alert" | "status" }
 > = {
   error: { Icon: AlertTriangle, accent: "text-destructive", bar: "bg-destructive", role: "alert" },
-  success: { Icon: CheckCircle2, accent: "text-accent-teal", bar: "bg-accent-teal", role: "status" },
+  success: { Icon: CheckCircle2, accent: "text-os-green", bar: "bg-os-green", role: "status" },
   info: { Icon: Info, accent: "text-os-accent", bar: "bg-os-accent", role: "status" },
 };
 
@@ -204,7 +205,8 @@ function ToastItem({
         if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setFocused(false);
       }}
       className={cn(
-        "cal-surface pointer-events-auto relative flex w-full max-w-sm items-start gap-3 overflow-hidden rounded-os-card border border-os-container bg-os-card p-3.5",
+        OS_SURFACE_CLASS,
+        "pointer-events-auto relative flex w-full max-w-sm items-start gap-3 overflow-hidden p-3.5",
         "transition duration-200 ease-out motion-reduce:transition-none",
         shown ? "translate-y-0 opacity-100" : "translate-y-2 opacity-0",
       )}
