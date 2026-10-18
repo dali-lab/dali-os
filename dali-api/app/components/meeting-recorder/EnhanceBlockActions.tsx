@@ -1,26 +1,54 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type Ref } from "react";
 import { createPortal } from "react-dom";
 import { Check, Undo2 } from "lucide-react";
 import { buttonClasses } from "~/components/ui/Button";
 import { cn } from "~/lib/cn";
 import { classifyEnhanceMark, firstLineOf, priorBlockFirstLine } from "./enhance-plan";
+import { animate, DUR, enterRef } from "./motion";
+import { deriveRailState } from "./RecordingRail";
+import { useEnhancingWash } from "./use-enhancing-wash";
+import { useMarkTransitions } from "./use-mark-transitions";
+import { contentOf, findBlock } from "./block-dom";
 import type { UseMeetingRecording } from "./use-meeting-recording";
 
 type BlockBox = { top: number; bottom: number; left: number; right: number };
 
 export const WAS_ATTR = "data-enhance-was";
+const PILL_IN = enterRef(
+  [
+    { opacity: 0, transform: "scale(.94)" },
+    { opacity: 1, transform: "scale(1)" },
+  ],
+  DUR.pill,
+);
+const WAS_IN = enterRef([{ opacity: 0 }, { opacity: 1 }], DUR.wasIn, { delay: DUR.wasInDelay });
+
+type WasLine = { box: BlockBox; prior: string };
+
+function GhostWasLine({ id, line, onDone }: { id: string; line: WasLine; onDone: () => void }) {
+  const ref = useRef<HTMLParagraphElement>(null);
+  useEffect(() => {
+    const handle = animate(ref.current, [{ opacity: 1 }, { opacity: 0 }], DUR.wasOut, { fill: "forwards" });
+    void handle.then(onDone);
+    return () => handle.cancel();
+  }, []);
+  return <WasText ref={ref} id={id} line={line} />;
+}
+
+function WasText({ id, line, ref }: { id: string; line: WasLine; ref?: Ref<HTMLParagraphElement> }) {
+  const { box, prior } = line;
+  return (
+    <p
+      ref={ref}
+      data-was-for={id}
+      style={{ position: "fixed", top: box.bottom - 24, left: box.left + 24, maxWidth: Math.max(0, box.right - box.left - 40) }}
+      className="pointer-events-none z-10 truncate text-[13px] leading-5 text-muted-foreground"
+    >
+      You wrote: “{prior}”
+    </p>
+  );
+}
 const ACTIONS_ATTR = "data-enhance-actions";
-
-function findBlock(root: HTMLElement, id: string): HTMLElement | null {
-  for (const el of root.querySelectorAll<HTMLElement>("[data-id]")) {
-    if (el.getAttribute("data-id") === id) return el;
-  }
-  return null;
-}
-
-function contentOf(block: HTMLElement): HTMLElement {
-  return block.querySelector<HTMLElement>(":scope > .bn-block > .bn-block-content") ?? block;
-}
 
 function pendingBlockAt(node: Node | null, root: HTMLElement, ids: ReadonlySet<string>): string | null {
   let el: Element | null = node instanceof Element ? node : (node?.parentElement ?? null);
@@ -62,10 +90,44 @@ export function EnhanceBlockActions({
     [idKey, priorBlocks],
   );
 
+  const [leaving, setLeaving] = useState<Record<string, WasLine>>({});
+  const lastWas = useRef<Record<string, WasLine>>({});
+  const wasLines: Record<string, WasLine> = {};
+  for (const id of changedIds) {
+    const box = boxes[id];
+    const prior = priorBlockFirstLine(priorBlocks?.[id]);
+    if (box && prior) wasLines[id] = { box, prior };
+  }
+  const leavingKey = Object.keys(leaving).join("|");
+
+  useMarkTransitions({ marks, priorBlocks, getRoot });
+  useEnhancingWash({
+    active: deriveRailState(rec) === "generating",
+    getRoot,
+    getBlocks: () => rec.getNoteState?.()?.blocks ?? [],
+  });
+
   useEffect(() => {
     const next = marks.length > 0 ? getRoot() : null;
     if (next !== root) setRoot(next);
   });
+
+  useEffect(() => {
+    const before = lastWas.current;
+    lastWas.current = wasLines;
+    const gone = Object.keys(before).filter((id) => !(id in wasLines));
+    if (gone.length > 0) setLeaving((prev) => ({ ...prev, ...Object.fromEntries(gone.map((id) => [id, before[id]!])) }));
+  });
+
+  useEffect(() => {
+    const host = getRoot();
+    if (!host || leavingKey === "") return;
+    const els = leavingKey.split("|").map((id) => findBlock(host, id)).filter((el): el is HTMLElement => el !== null);
+    for (const el of els) el.setAttribute(WAS_ATTR, "");
+    return () => {
+      for (const el of els) el.removeAttribute(WAS_ATTR);
+    };
+  }, [leavingKey]);
 
   useEffect(() => {
     if (!root) {
@@ -125,7 +187,7 @@ export function EnhanceBlockActions({
     };
   }, [root, ids, changedIds]);
 
-  if (!root || marks.length === 0) return null;
+  if ((!root || marks.length === 0) && leavingKey === "") return null;
 
   const activeId = hoverId ?? caretId;
   const active = activeId ? marks.find((m) => m.id === activeId) : undefined;
@@ -134,23 +196,28 @@ export function EnhanceBlockActions({
 
   return createPortal(
     <>
-      {changedIds.map((id) => {
-        const box = boxes[id];
-        const prior = priorBlockFirstLine(priorBlocks?.[id]);
-        if (!box || !prior) return null;
-        return (
-          <p
+      {Object.entries(wasLines).map(([id, line]) => (
+        <WasText key={id} id={id} line={line} ref={WAS_IN} />
+      ))}
+      {Object.entries(leaving)
+        .filter(([id]) => !(id in wasLines))
+        .map(([id, line]) => (
+          <GhostWasLine
             key={id}
-            data-was-for={id}
-            style={{ position: "fixed", top: box.bottom - 24, left: box.left + 24, maxWidth: Math.max(0, box.right - box.left - 40) }}
-            className="pointer-events-none z-10 truncate text-[13px] leading-5 text-muted-foreground"
-          >
-            You wrote: “{prior}”
-          </p>
-        );
-      })}
+            id={id}
+            line={line}
+            onDone={() =>
+              setLeaving((prev) => {
+                const { [id]: _done, ...rest } = prev;
+                return rest;
+              })
+            }
+          />
+        ))}
       {rec.canEdit && active && activeBox && (
         <div
+          key={active.id}
+          ref={PILL_IN}
           {...{ [ACTIONS_ATTR]: active.id }}
           role="group"
           aria-label="Review this change"

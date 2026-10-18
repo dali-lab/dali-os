@@ -2,7 +2,7 @@
 import { describe, it, expect } from "vitest";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { ProcessingWaveform, WAVEFORM_BARS, WAVEFORM_HEIGHTS, solidBarCount } from "./ProcessingWaveform";
+import { newlySolidRange, ProcessingWaveform, SPEAKER_COLORS, speakerBarColors, WAVEFORM_BARS, WAVEFORM_HEIGHTS, solidBarCount } from "./ProcessingWaveform";
 import type { ProcessingStage } from "./types";
 
 function render(stage: ProcessingStage, fraction: number) {
@@ -56,5 +56,35 @@ describe("ProcessingWaveform", () => {
     for (const stage of ["starting", "fetching", "transcribing"] as const) {
       expect(render(stage, 0.5).querySelector("[data-sweep]")).toBeNull();
     }
+  });
+});
+
+describe("waveform motion", () => {
+  it("newlySolidRange covers only bars that became solid", () => {
+    expect(newlySolidRange(10, 13)).toEqual([10, 11, 12]);
+    expect(newlySolidRange(13, 13)).toEqual([]);
+    expect(newlySolidRange(13, 10)).toEqual([]);
+  });
+
+  it("ready bars take speaker colours from the line timings, accent when no lines", () => {
+    const colors = speakerBarColors(
+      [
+        { at: 0, end: 30, speaker: "mic:1" },
+        { at: 30, end: 60, speaker: "call:1" },
+      ],
+      60,
+    );
+    expect(colors).toHaveLength(WAVEFORM_BARS);
+    expect(colors[0]).toBe(SPEAKER_COLORS[0]);
+    expect(colors[59]).toBe(SPEAKER_COLORS[1]);
+    expect(speakerBarColors([], 60).every((c) => c === "var(--color-os-accent)")).toBe(true);
+  });
+
+  it("renders the speaker colours on ready bars", () => {
+    const host = document.createElement("div");
+    host.innerHTML = renderToStaticMarkup(
+      createElement(ProcessingWaveform, { stage: "ready", fraction: 1, totalSeconds: 60, lines: [{ at: 0, end: 60, speaker: "mic:1" }] }),
+    );
+    expect((host.querySelector('[data-bar="5"]') as HTMLElement).getAttribute("style")).toContain("--os-role-violet-ink");
   });
 });

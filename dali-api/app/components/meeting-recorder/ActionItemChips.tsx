@@ -9,6 +9,9 @@ import { Combobox, type SelectOption } from "~/components/ui/floating";
 import { cn } from "~/lib/cn";
 import { useActionItemDraft } from "./action-item-draft";
 import { actionItemMatchesBlock } from "./enhance-plan";
+import { contentOf, findBlock } from "./block-dom";
+import { DUR, POP_FRAMES, animate } from "./motion";
+import { PopIn } from "./PopIn";
 import { isSearchableQuery, useLabMemberSearch } from "./member-search";
 import { formatIsoDate, type UseMeetingRecording } from "./use-meeting-recording";
 
@@ -20,17 +23,6 @@ const CHIP_CLASS = cn(CHIP_BASE, "border-border bg-card text-foreground");
 const UNMATCHED_CLASS = cn(CHIP_BASE, "border-dashed border-os-amber/60 bg-os-amber/10 text-foreground");
 
 type Placement = { index: number; box: { top: number; bottom: number; left: number; right: number } };
-
-function findBlock(root: HTMLElement, id: string): HTMLElement | null {
-  for (const el of root.querySelectorAll<HTMLElement>("[data-id]")) {
-    if (el.getAttribute("data-id") === id) return el;
-  }
-  return null;
-}
-
-function contentOf(block: HTMLElement): HTMLElement {
-  return block.querySelector<HTMLElement>(":scope > .bn-block > .bn-block-content") ?? block;
-}
 
 function samePlacements(a: Placement[], b: Placement[]): boolean {
   return (
@@ -45,6 +37,13 @@ function samePlacements(a: Placement[], b: Placement[]): boolean {
 function OwnerChip({ index }: { index: number }) {
   const draft = useActionItemDraft()!;
   const row = draft.rowFor(index);
+  const swap = useRef<HTMLDivElement>(null);
+  const lastOwner = useRef(row.ownerUserId);
+  useEffect(() => {
+    if (lastOwner.current === row.ownerUserId) return;
+    lastOwner.current = row.ownerUserId;
+    void animate(swap.current, POP_FRAMES(0.92), DUR.ownerIn);
+  }, [row.ownerUserId]);
   const item = draft.items[index]!;
   const { setQuery, query, results } = useLabMemberSearch();
 
@@ -64,6 +63,7 @@ function OwnerChip({ index }: { index: number }) {
   const selectedName = options.find((o) => o.value === row.ownerUserId)?.label;
 
   return (
+    <div ref={swap}>
     <Combobox
       value={row.ownerUserId}
       options={options}
@@ -75,6 +75,7 @@ function OwnerChip({ index }: { index: number }) {
       icon={selectedName ? <Avatar name={selectedName} size="xs" /> : undefined}
       className={cn("w-48", unmatched ? UNMATCHED_CLASS : CHIP_CLASS)}
     />
+    </div>
   );
 }
 
@@ -107,20 +108,22 @@ function ReadOnlyChips({ index }: { index: number }) {
   );
 }
 
-function ItemChips({ index }: { index: number }) {
+function ItemChips({ index, order }: { index: number; order: number }) {
   const draft = useActionItemDraft()!;
   const item = draft.items[index]!;
   const row = draft.rowFor(index);
 
   if (item.taskId) {
     return draft.projectId ? (
-      <Link
-        to={`/projects/${draft.projectId}?tab=progress&task=${item.taskId}`}
-        className={cn(CHIP_BASE, "inline-flex items-center gap-1 border-os-accent/40 bg-os-accent/10 text-os-accent")}
-      >
-        <ListChecks className="h-3.5 w-3.5" aria-hidden />
-        Task
-      </Link>
+      <PopIn from={0.8} ms={DUR.taskChip} delay={order * DUR.taskChipStagger} enabled={draft.created !== null}>
+        <Link
+          to={`/projects/${draft.projectId}?tab=progress&task=${item.taskId}`}
+          className={cn(CHIP_BASE, "inline-flex items-center gap-1 border-os-accent/40 bg-os-accent/10 text-os-accent")}
+        >
+          <ListChecks className="h-3.5 w-3.5" aria-hidden />
+          Task
+        </Link>
+      </PopIn>
     ) : null;
   }
 
@@ -136,8 +139,12 @@ function ItemChips({ index }: { index: number }) {
       />
       {row.checked ? (
         <>
-          <OwnerChip index={index} />
-          <DueChip index={index} />
+          <PopIn delay={order * DUR.chipStagger}>
+            <OwnerChip index={index} />
+          </PopIn>
+          <PopIn delay={order * DUR.chipStagger + DUR.chipGap}>
+            <DueChip index={index} />
+          </PopIn>
         </>
       ) : (
         <span className="text-xs text-muted-foreground">No task</span>
@@ -213,7 +220,7 @@ export function ActionItemChips({ rec, getRoot }: { rec: UseMeetingRecording; ge
 
   return createPortal(
     <>
-      {placements.map(({ index, box }) => (
+      {placements.map(({ index, box }, order) => (
         <div
           key={index}
           data-action-chips-for={index}
@@ -224,7 +231,7 @@ export function ActionItemChips({ rec, getRoot }: { rec: UseMeetingRecording; ge
           }
           className="z-20 flex flex-wrap items-center gap-1.5"
         >
-          <ItemChips index={index} />
+          <ItemChips index={index} order={order} />
         </div>
       ))}
     </>,

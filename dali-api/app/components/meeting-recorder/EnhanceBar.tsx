@@ -1,17 +1,24 @@
-import type { ReactNode } from "react";
+import { useRef, type ReactNode } from "react";
 import { ListChecks, MoreHorizontal, Sparkles, Trash2 } from "lucide-react";
 import { Link } from "react-router";
 import { Avatar } from "~/components/ui/Avatar";
 import { buttonClasses } from "~/components/ui/Button";
 import { IconButton } from "~/components/ui/IconButton";
 import { Menu, MenuItem } from "~/components/ui/floating";
-import { useActionItemDraft } from "./action-item-draft";
+import { useActionItemDraft, type ActionItemDraft } from "./action-item-draft";
+import { BarTransition, type BarContent } from "./BarTransition";
+import { DUR, enterRef } from "./motion";
+import { PopIn } from "./PopIn";
 import { deriveRailState, ENHANCE_AGAIN_TIP } from "./RecordingRail";
 import { ProcessingWaveform } from "./ProcessingWaveform";
 import { describeProcessing } from "./processing-progress";
 import { speakerLabelFor } from "./transcript";
 import type { UseMeetingRecording } from "./use-meeting-recording";
 import type { Channel } from "./types";
+
+const RISE_IN = enterRef([{ opacity: 0, transform: `translateY(${DUR.swapRisePx}px)` }, { opacity: 1, transform: "none" }], DUR.enhanceButton, {
+  delay: DUR.enhanceButtonDelay,
+});
 
 const MAX_AVATARS = 5;
 
@@ -84,26 +91,28 @@ function BarMenu({ rec, enhanceAgain }: { rec: UseMeetingRecording; enhanceAgain
   );
 }
 
-function TasksBar({ rec }: { rec: UseMeetingRecording }) {
-  const draft = useActionItemDraft();
+function tasksBar(rec: UseMeetingRecording, draft: ActionItemDraft | null): BarContent {
   if (!draft) return null;
 
   const board = "the project board";
 
   if (draft.created !== null) {
-    return (
-      <BarShell
-        icon={<ListChecks className="h-4 w-4" aria-hidden />}
-        title={`Added ${plural(draft.created, "task")} to ${board}`}
-        actions={
-          draft.projectId ? (
-            <Link to={`/projects/${draft.projectId}?tab=progress`} className={buttonClasses("ghost", "sm")}>
-              View board
-            </Link>
-          ) : null
-        }
-      />
-    );
+    return {
+      key: "tasks-created",
+      node: (
+        <BarShell
+          icon={<ListChecks className="h-4 w-4" aria-hidden />}
+          title={`Added ${plural(draft.created, "task")} to ${board}`}
+          actions={
+            draft.projectId ? (
+              <Link to={`/projects/${draft.projectId}?tab=progress`} className={buttonClasses("ghost", "sm")}>
+                View board
+              </Link>
+            ) : null
+          }
+        />
+      ),
+    };
   }
 
   if (!draft.stepVisible) return null;
@@ -113,31 +122,34 @@ function TasksBar({ rec }: { rec: UseMeetingRecording }) {
       ? ` ${draft.unmatchedCount === 1 ? "1 owner needs a pick." : `${draft.unmatchedCount} owners need a pick.`}`
       : "";
 
-  return (
-    <BarShell
-      icon={<ListChecks className="h-4 w-4" aria-hidden />}
-      title={plural(draft.untaskedCount, "action item")}
-      middle={
-        <p className="min-w-0 flex-1 text-[13px] text-muted-foreground">
-          Check owners and dates, then add them to {board}.{unmatched}
-        </p>
-      }
-      actions={
-        <>
-          {ghost(draft.dismiss, "Not now")}
-          <button
-            type="button"
-            onClick={() => void draft.create()}
-            disabled={draft.busy || draft.checkedCount === 0}
-            className={buttonClasses("primary", "sm")}
-          >
-            {draft.busy ? "Creating…" : `Create ${plural(draft.checkedCount, "task")}`}
-          </button>
-          <BarMenu rec={rec} enhanceAgain={() => void rec.enhanceNow()} />
-        </>
-      }
-    />
-  );
+  return {
+    key: "tasks",
+    node: (
+      <BarShell
+        icon={<ListChecks className="h-4 w-4" aria-hidden />}
+        title={plural(draft.untaskedCount, "action item")}
+        middle={
+          <p className="min-w-0 flex-1 text-[13px] text-muted-foreground">
+            Check owners and dates, then add them to {board}.{unmatched}
+          </p>
+        }
+        actions={
+          <>
+            {ghost(draft.dismiss, "Not now")}
+            <button
+              type="button"
+              onClick={() => void draft.create()}
+              disabled={draft.busy || draft.checkedCount === 0}
+              className={buttonClasses("primary", "sm")}
+            >
+              {draft.busy ? "Creating…" : `Create ${plural(draft.checkedCount, "task")}`}
+            </button>
+            <BarMenu rec={rec} enhanceAgain={() => void rec.enhanceNow()} />
+          </>
+        }
+      />
+    ),
+  };
 }
 
 function ReviewNotes({ rec }: { rec: UseMeetingRecording }) {
@@ -172,23 +184,39 @@ function ReviewNotes({ rec }: { rec: UseMeetingRecording }) {
  */
 export function EnhanceBar({ rec }: { rec: UseMeetingRecording }) {
   const state = deriveRailState(rec);
+  const draft = useActionItemDraft();
+  const cameFromProcessing = useRef(false);
+  if (state === "processing") cameFromProcessing.current = true;
+  else if (state !== "ready") cameFromProcessing.current = false;
+  return <BarTransition content={barContent(rec, state, draft, cameFromProcessing.current)} />;
+}
+
+function barContent(
+  rec: UseMeetingRecording,
+  state: ReturnType<typeof deriveRailState>,
+  draft: ActionItemDraft | null,
+  celebrate: boolean,
+): BarContent {
   const owner = rec.remote ? ` · ${rec.remote.ownerIsYou ? "another device" : rec.remote.ownerName}` : "";
 
   switch (state) {
     case "processing": {
       const d = describeProcessing(rec.processingStage ?? "starting", rec.progress);
-      return (
-        <BarShell
-          title={d.title}
-          detail={`${d.detail}${owner}`}
-          middle={<ProcessingWaveform stage={rec.processingStage ?? "starting"} fraction={d.fraction} />}
-          actions={
-            rec.canDiscard ? (
-              <IconButton label="Discard recording" icon={Trash2} tone="destructive" onClick={() => void rec.discard()} />
-            ) : null
-          }
-        />
-      );
+      return {
+        key: "processing",
+        node: (
+          <BarShell
+            title={d.title}
+            detail={`${d.detail}${owner}`}
+            middle={<ProcessingWaveform stage={rec.processingStage ?? "starting"} fraction={d.fraction} />}
+            actions={
+              rec.canDiscard ? (
+                <IconButton label="Discard recording" icon={Trash2} tone="destructive" onClick={() => void rec.discard()} />
+              ) : null
+            }
+          />
+        ),
+      };
     }
 
     case "ready":
@@ -199,93 +227,128 @@ export function EnhanceBar({ rec }: { rec: UseMeetingRecording }) {
       const minutes = Math.max(1, Math.round(rec.recordedSeconds / 60));
       const detail = `${minutes} min${names.length > 0 ? ` · ${plural(names.length, "speaker")}` : ""}${owner}`;
       const label = !rec.aiEnabled ? "Insert transcript" : state === "ready" && rec.currentlyUntouched() ? "Write notes" : "Enhance notes";
-      return (
-        <BarShell
-          title={state === "inserted" ? "Transcript inserted" : "Transcript ready"}
-          detail={detail}
-          middle={
-            names.length > 0 ? (
-              <span className="flex items-center" aria-hidden>
-                {names.slice(0, MAX_AVATARS).map((name, i) => (
-                  <Avatar key={i} name={name} size="xs" className={i === 0 ? "ring-2 ring-card" : "-ml-1.5 ring-2 ring-card"} />
-                ))}
-              </span>
-            ) : null
-          }
-          actions={
-            <>
-              {rec.aiEnabled && state === "ready" && (
-                <button type="button" onClick={() => rec.insert(null)} disabled={rec.busy} className={buttonClasses("ghost", "sm")}>
-                  Insert transcript
+      const showWave = celebrate && state === "ready";
+      return {
+        key: state,
+        node: (
+          <BarShell
+            title={state === "inserted" ? "Transcript inserted" : "Transcript ready"}
+            detail={detail}
+            middle={
+              <>
+                {showWave && (
+                  <ProcessingWaveform stage="ready" fraction={1} lines={rec.sortedLines} totalSeconds={rec.recordedSeconds} />
+                )}
+                {names.length > 0 ? (
+                  <span className="flex items-center" aria-hidden>
+                    {names.slice(0, MAX_AVATARS).map((name, i) => (
+                      <PopIn key={i} from={0.6} ms={DUR.avatar} delay={i * DUR.avatarStagger} enabled={celebrate} className={i === 0 ? "" : "-ml-1.5"}>
+                        <Avatar name={name} size="xs" className="ring-2 ring-card" />
+                      </PopIn>
+                    ))}
+                  </span>
+                ) : null}
+              </>
+            }
+            actions={
+              <>
+                {rec.aiEnabled && state === "ready" && (
+                  <button type="button" onClick={() => rec.insert(null)} disabled={rec.busy} className={buttonClasses("ghost", "sm")}>
+                    Insert transcript
+                  </button>
+                )}
+                <button
+                  ref={celebrate ? RISE_IN : undefined}
+                  type="button"
+                  onClick={!rec.aiEnabled ? () => rec.insert(null) : () => void rec.enhanceNow()}
+                  disabled={!rec.hasTranscript || rec.busy}
+                  className={buttonClasses("primary", "sm")}
+                >
+                  {label}
                 </button>
-              )}
-              <button
-                type="button"
-                onClick={!rec.aiEnabled ? () => rec.insert(null) : () => void rec.enhanceNow()}
-                disabled={!rec.hasTranscript || rec.busy}
-                className={buttonClasses("primary", "sm")}
-              >
-                {label}
-              </button>
-            </>
-          }
-        />
-      );
+              </>
+            }
+          />
+        ),
+      };
     }
 
     case "generating":
-      return (
-        <BarShell
-          title="Enhancing"
-          detail="Reading your notes and the transcript"
-          actions={ghost(rec.cancelEnhanceGenerating, "Cancel")}
-        />
-      );
+      return {
+        key: "generating",
+        node: (
+          <BarShell
+            title={
+              <>
+                Enhancing
+                <span aria-hidden className="ml-1 inline-flex gap-0.5 align-middle">
+                  {[0, 1, 2].map((i) => (
+                    <i
+                      key={i}
+                      data-dot
+                      style={{ animation: "enhance-dot-pulse 1.2s ease-in-out infinite", animationDelay: `${i * 160}ms` }}
+                      className="inline-block h-1 w-1 rounded-full bg-current motion-reduce:[animation:none]"
+                    />
+                  ))}
+                </span>
+              </>
+            }
+            detail="Reading your notes and the transcript"
+            actions={ghost(rec.cancelEnhanceGenerating, "Cancel")}
+          />
+        ),
+      };
 
     case "pendingReview": {
       const n = rec.pendingMarks.length;
-      return (
-        <BarShell
-          icon={<Sparkles className="h-4 w-4" aria-hidden />}
-          title={`${plural(n, "suggestion")} from the transcript`}
-          middle={
-            rec.canEdit ? (
-              <p className="min-w-0 flex-1 text-[13px] text-muted-foreground">Edit any line to keep it. Your own lines stay as typed.</p>
-            ) : null
-          }
-          actions={
-            rec.canEdit ? (
-              <>
-                {ghost(() => rec.revertAll(), "Revert all")}
-                <button type="button" onClick={() => rec.keepAll()} className={buttonClasses("primary", "sm")}>
-                  Keep all
-                </button>
-                <BarMenu rec={rec} enhanceAgain={() => void rec.revertAllAndEnhanceAgain()} />
-              </>
-            ) : null
-          }
-          note={<ReviewNotes rec={rec} />}
-        />
-      );
+      return {
+        key: "review",
+        node: (
+          <BarShell
+            icon={<Sparkles className="h-4 w-4" aria-hidden />}
+            title={`${plural(n, "suggestion")} from the transcript`}
+            middle={
+              rec.canEdit ? (
+                <p className="min-w-0 flex-1 text-[13px] text-muted-foreground">Edit any line to keep it. Your own lines stay as typed.</p>
+              ) : null
+            }
+            actions={
+              rec.canEdit ? (
+                <>
+                  {ghost(() => rec.revertAll(), "Revert all")}
+                  <button type="button" onClick={() => rec.keepAll()} className={buttonClasses("primary", "sm")}>
+                    Keep all
+                  </button>
+                  <BarMenu rec={rec} enhanceAgain={() => void rec.revertAllAndEnhanceAgain()} />
+                </>
+              ) : null
+            }
+            note={<ReviewNotes rec={rec} />}
+          />
+        ),
+      };
     }
 
     case "enhanced":
-      return <TasksBar rec={rec} />;
+      return tasksBar(rec, draft);
 
     case "stalePreview":
-      return (
-        <BarShell
-          title="Someone enhanced this note after your preview."
-          actions={
-            <>
-              {ghost(rec.dismissStalePreview, "Cancel")}
-              <button type="button" onClick={rec.reloadStalePreview} className={buttonClasses("primary", "sm")}>
-                Reload preview
-              </button>
-            </>
-          }
-        />
-      );
+      return {
+        key: "stale",
+        node: (
+          <BarShell
+            title="Someone enhanced this note after your preview."
+            actions={
+              <>
+                {ghost(rec.dismissStalePreview, "Cancel")}
+                <button type="button" onClick={rec.reloadStalePreview} className={buttonClasses("primary", "sm")}>
+                  Reload preview
+                </button>
+              </>
+            }
+          />
+        ),
+      };
 
     default:
       return null;

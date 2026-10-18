@@ -15,7 +15,7 @@ export function ProgressRing({ fraction, className }: { fraction: number; classN
         strokeDasharray={CIRCUMFERENCE}
         strokeDashoffset={CIRCUMFERENCE * (1 - clamped)}
         transform="rotate(-90 10 10)"
-        className="stroke-os-accent"
+        className="stroke-os-accent transition-[stroke-dashoffset] duration-300 ease-[cubic-bezier(.2,.8,.2,1)] motion-reduce:transition-none"
       />
     </svg>
   );

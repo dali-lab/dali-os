@@ -7,6 +7,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { DUR, enterRef } from "./motion";
 import { cn } from "~/lib/cn";
 import { Avatar } from "~/components/ui/Avatar";
 import { OS_SURFACE_CLASS } from "~/components/ui/floating/styles";
@@ -71,6 +72,14 @@ function parseChipHref(href: string): { recordingId: string; at: number } | null
 
 const OPEN_DELAY_MS = 250;
 const CLOSE_DELAY_MS = 120;
+const CARD_IN = enterRef(
+  [
+    { opacity: 0, transform: "translateY(-4px) scale(.97)" },
+    { opacity: 1, transform: "none" },
+  ],
+  DUR.card,
+);
+
 const CARD_WIDTH = 290;
 
 function chipAnchorFrom(target: EventTarget | null): HTMLAnchorElement | null {
@@ -243,6 +252,7 @@ export function TranscriptChipHoverLayer({
       {card &&
         createPortal(
           <div
+            ref={CARD_IN}
             role="group"
             aria-label="Transcript quote"
             onMouseEnter={clearTimer}
