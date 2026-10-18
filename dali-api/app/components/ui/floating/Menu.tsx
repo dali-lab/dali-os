@@ -29,7 +29,7 @@ import {
   FloatingList,
   FloatingPortal,
 } from "@floating-ui/react";
-import { MENU_ITEM_CLASS } from "./styles";
+import { OS_MENU_ITEM_CLASS } from "./styles";
 import { usePanelClass } from "./os-styles";
 
 // Action menu (the ⋯ / profile / breadcrumb menus, split-button popups). Items
@@ -155,7 +155,7 @@ function MenuRoot({
 
 function itemClass(active: boolean, destructive?: boolean, override?: string) {
   if (override) return override;
-  return `${MENU_ITEM_CLASS} ${destructive ? "text-red-600" : ""} ${active ? "bg-muted" : "hover:bg-muted"}`;
+  return `${OS_MENU_ITEM_CLASS} ${destructive ? "text-destructive" : "text-foreground"} ${active ? "bg-muted" : "hover:bg-muted"}`;
 }
 
 export function MenuItem({
@@ -229,7 +229,7 @@ export function MenuLinkItem({
       tabIndex={active ? 0 : -1}
       className={
         className ??
-        `${MENU_ITEM_CLASS} ${muted ? "text-muted-foreground" : "text-foreground"} ${active ? "bg-muted" : "hover:bg-muted"}`
+        `${OS_MENU_ITEM_CLASS} ${muted ? "text-muted-foreground" : "text-foreground"} ${active ? "bg-muted" : "hover:bg-muted"}`
       }
       {...menu.getItemProps({
         onClick: () => {
