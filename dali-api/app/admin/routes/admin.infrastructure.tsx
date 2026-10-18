@@ -126,7 +126,7 @@ export default function AdminInfrastructure() {
       </header>
 
       {infra.error && (
-        <div className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+        <div className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
           <span>{infra.error}</span>
         </div>
@@ -142,7 +142,7 @@ export default function AdminInfrastructure() {
             onClick={() => setTab(t.key)}
             className={`-mb-px border-b-2 px-3 py-2 text-sm font-medium ${
               tab === t.key
-                ? "border-accent-coral text-foreground"
+                ? "border-os-accent text-foreground"
                 : "border-transparent text-zinc-500 hover:text-zinc-800"
             }`}
           >
@@ -168,7 +168,7 @@ function ConfigWarnings({ data }: { data: Data }) {
     warnings.push("No projects have infra configured yet — set a project's Fly/Neon config in its workspace.");
   if (warnings.length === 0) return null;
   return (
-    <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+    <div className="rounded-lg border border-os-amber/40 bg-os-amber/10 px-3 py-2 text-xs text-os-amber">
       <ul className="list-inside list-disc space-y-0.5">
         {warnings.map((w) => (
           <li key={w}>{w}</li>
@@ -231,12 +231,12 @@ function ProjectCard({ project: p, data, infra }: { project: ProjectFleet; data:
           <UsageStrip usage={p.usage} />
           <div className="mt-2 flex flex-wrap gap-3 text-xs">
             {p.flyOrgSlug && (
-              <a href={`https://fly.io/dashboard/${p.flyOrgSlug}/billing`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-accent-coral hover:underline">
+              <a href={`https://fly.io/dashboard/${p.flyOrgSlug}/billing`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-os-accent hover:underline">
                 Fly billing <ExternalLink className="h-3 w-3" />
               </a>
             )}
             {p.neonOrgId && (
-              <a href={`https://console.neon.tech/app/orgs/${p.neonOrgId}/billing`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-accent-coral hover:underline">
+              <a href={`https://console.neon.tech/app/orgs/${p.neonOrgId}/billing`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-os-accent hover:underline">
                 Neon billing <ExternalLink className="h-3 w-3" />
               </a>
             )}
@@ -510,7 +510,7 @@ function NeonProjectCard({ project: p, np, data, infra }: { project: ProjectFlee
               <span key={b.id} className="inline-flex items-center gap-1 rounded bg-zinc-50 px-1.5 py-0.5 text-[11px] text-zinc-600">
                 {b.name}
                 {data.isAdmin && !isProtected && (
-                  <button type="button" disabled={infra.busy} onClick={() => deleteBranch(b.id, b.name)} className="text-red-500 hover:text-red-700 disabled:opacity-50">×</button>
+                  <button type="button" disabled={infra.busy} onClick={() => deleteBranch(b.id, b.name)} className="text-destructive hover:text-destructive disabled:opacity-50">×</button>
                 )}
               </span>
             ))}
@@ -595,7 +595,7 @@ function QuotaEditor({ project: p, np, infra, onClose }: { project: ProjectFleet
   }
 
   return (
-    <div className="border-t border-zinc-100 bg-amber-50/40 px-3 py-2">
+    <div className="border-t border-zinc-100 bg-os-amber/10/40 px-3 py-2">
       <div className="flex flex-wrap items-end gap-3 text-xs">
         <label className="flex flex-col gap-0.5"><span className="text-zinc-500">Compute (h/mo)</span><NumInput value={computeHours} onChange={setComputeHours} width="w-20" /></label>
         <label className="flex flex-col gap-0.5"><span className="text-zinc-500">Egress (GB/mo)</span><NumInput value={transferGb} onChange={setTransferGb} width="w-20" /></label>
@@ -726,7 +726,7 @@ function MiniBtn({ children, onClick, disabled, danger }: { children: ReactNode;
       type="button"
       disabled={disabled}
       onClick={onClick}
-      className={`rounded border px-2 py-0.5 text-[11px] font-medium disabled:opacity-50 ${danger ? "border-red-200 text-red-600 hover:bg-red-50" : "border-zinc-300 text-zinc-700 hover:bg-zinc-50"}`}
+      className={`rounded border px-2 py-0.5 text-[11px] font-medium disabled:opacity-50 ${danger ? "border-destructive/30 text-destructive hover:bg-destructive/10" : "border-zinc-300 text-zinc-700 hover:bg-zinc-50"}`}
     >
       {children}
     </button>

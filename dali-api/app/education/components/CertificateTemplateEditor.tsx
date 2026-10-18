@@ -217,7 +217,7 @@ export function CertificateTemplateEditor({
                   key={key}
                   type="button"
                   onClick={() => addField(key)}
-                  className="text-left text-sm px-2 py-1.5 rounded-md border border-border hover:bg-muted hover:text-accent-coral transition-colors"
+                  className="text-left text-sm px-2 py-1.5 rounded-md border border-border hover:bg-muted hover:text-os-accent transition-colors"
                 >
                   {CERTIFICATE_FIELD_LABELS[key]}
                 </button>
@@ -230,7 +230,7 @@ export function CertificateTemplateEditor({
             <div className="bg-card border border-border rounded-lg p-3 flex flex-col gap-3">
               <p className="text-xs font-semibold text-foreground">
                 Editing:{" "}
-                <span className="text-accent-coral">
+                <span className="text-os-accent">
                   {CERTIFICATE_FIELD_LABELS[sel.key]}
                 </span>
               </p>
