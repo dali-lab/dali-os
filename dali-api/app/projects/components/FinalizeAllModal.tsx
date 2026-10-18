@@ -208,7 +208,7 @@ export function FinalizeAllModal({
                             className={cn(
                               "text-xs",
                               r.status === "ok"
-                                ? "text-accent-teal"
+                                ? "text-os-green"
                                 : r.status === "error"
                                   ? "text-destructive"
                                   : "text-muted-foreground",

@@ -206,7 +206,7 @@ function CalendarLinkBlock({ link }: { link: CalendarLinkDTO }) {
         card,
       )}
     >
-      <div className="flex items-center justify-between bg-accent-teal/10 pr-3">
+      <div className="flex items-center justify-between bg-os-accent/10 pr-3">
         <button
           type="button"
           onClick={() => setOpen((o) => !o)}

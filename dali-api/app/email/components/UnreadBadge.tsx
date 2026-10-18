@@ -7,7 +7,7 @@ export function UnreadBadge({ count, className }: { count: number; className?: s
   return (
     <span
       className={cn(
-        "min-w-[18px] shrink-0 rounded-full bg-accent-yellow px-1.5 text-center text-[11px] font-bold leading-[18px] text-[#1f1f1f]",
+        "min-w-[18px] shrink-0 rounded-full bg-os-accent px-1.5 text-center text-[11px] font-bold leading-[18px] text-os-bg",
         className,
       )}
       aria-label={`${count} unread`}

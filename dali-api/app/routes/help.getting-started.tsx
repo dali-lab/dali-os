@@ -29,7 +29,7 @@ const SECTIONS: Array<{
         Your week with external calendars overlaid. Set working hours and
         meeting buffers here, and use it to find mutual free time with
         other members. Linked accounts come from{" "}
-        <Link to="/settings/calendar" className="text-accent-teal hover:underline">
+        <Link to="/settings/calendar" className="text-os-accent hover:underline">
           Settings → Calendar
         </Link>
         .
@@ -45,7 +45,7 @@ const SECTIONS: Array<{
         docs, and files. The <em>Staffing</em> section under Projects is
         where intent-to-work, project bids, and level-up forms live during
         a staffing cycle —{" "}
-        <Link to="/help/staffing" className="text-accent-teal hover:underline">
+        <Link to="/help/staffing" className="text-os-accent hover:underline">
           read more
         </Link>
         .
@@ -72,7 +72,7 @@ const SECTIONS: Array<{
         The lab directory — current members, alumni (by class year), and
         groups. Click a member to see their profile, projects, and roles.
         Your own profile lives at{" "}
-        <Link to="/profile" className="text-accent-teal hover:underline">
+        <Link to="/profile" className="text-os-accent hover:underline">
           /profile
         </Link>
         .
@@ -128,7 +128,7 @@ export default function GettingStartedPage() {
         <p className="mt-2 text-sm text-foreground">
           Pages open in tabs inside the workspace. Open multiple at once,
           split your view to compare two pages side-by-side, and use{" "}
-          <Link to="/help/shortcuts" className="text-accent-teal hover:underline">
+          <Link to="/help/shortcuts" className="text-os-accent hover:underline">
             keyboard shortcuts
           </Link>{" "}
           to move between them.
@@ -144,7 +144,7 @@ export default function GettingStartedPage() {
               className="rounded border border-border bg-card p-4"
             >
               <h3 className="font-medium">
-                <Link to={s.to} className="text-accent-teal hover:underline">
+                <Link to={s.to} className="text-os-accent hover:underline">
                   {s.title}
                 </Link>
               </h3>
@@ -159,11 +159,11 @@ export default function GettingStartedPage() {
         <p className="mt-2 text-sm text-foreground">
           The gear and question-mark icons in the bottom-left of the
           sidebar open{" "}
-          <Link to="/settings" className="text-accent-teal hover:underline">
+          <Link to="/settings" className="text-os-accent hover:underline">
             Settings
           </Link>{" "}
           and{" "}
-          <Link to="/help" className="text-accent-teal hover:underline">
+          <Link to="/help" className="text-os-accent hover:underline">
             Help
           </Link>
           . Settings is where you manage your calendar links, active

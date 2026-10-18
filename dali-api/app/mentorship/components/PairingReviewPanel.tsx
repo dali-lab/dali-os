@@ -184,7 +184,7 @@ export function PairingReviewPanel({
               {group.domain.displayName} ({group.domain.code})
             </h3>
             {noMentor && (
-              <p className="flex items-center gap-1.5 text-xs text-accent-yellow">
+              <p className="flex items-center gap-1.5 text-xs text-os-amber">
                 <TriangleAlert className="h-3.5 w-3.5" aria-hidden />
                 No mentor in this domain. Flag one on the board or staff a P3.
               </p>

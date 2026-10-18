@@ -326,7 +326,7 @@ export function StaffToggle({ member, disabled }: { member: Member; disabled?: b
           onClick={() => void handleClick()}
           className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
             isStaffMember
-              ? "border border-accent-teal/30 bg-accent-teal/10 text-accent-teal hover:bg-accent-teal/20"
+              ? "border border-os-accent/30 bg-os-accent/10 text-os-accent hover:bg-os-accent/20"
               : "border border-border bg-card text-muted-foreground hover:bg-muted hover:text-foreground"
           } disabled:opacity-60 disabled:cursor-not-allowed`}
         >

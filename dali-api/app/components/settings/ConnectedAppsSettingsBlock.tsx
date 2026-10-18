@@ -12,7 +12,7 @@ export function ConnectedAppsSettingsBlock({ grants }: { grants: GrantRowDTO[] }
     <div className="flex flex-col gap-4">
       <p className="text-sm text-muted-foreground">
         Apps you've authorized to access DALI OS on your behalf.{" "}
-        <Link to="/help/mcp" className="text-accent-teal hover:underline">
+        <Link to="/help/mcp" className="text-os-accent hover:underline">
           How to connect Claude to DALI OS
         </Link>
         .

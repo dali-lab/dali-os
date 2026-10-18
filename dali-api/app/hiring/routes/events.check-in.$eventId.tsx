@@ -125,7 +125,7 @@ export default function HiringEventCheckIn() {
 
         <div className="mt-6">
           {present ? (
-            <div className="flex flex-col items-center gap-2 text-accent-teal">
+            <div className="flex flex-col items-center gap-2 text-os-green">
               <CheckCircle2 className="w-12 h-12" aria-hidden />
               <p className="text-base font-semibold text-foreground">You're checked in.</p>
             </div>

@@ -175,7 +175,7 @@ export default function PartnerApplicationDetail({
       {application.status === "Accepted" && application.resultingProjectId && (
         <Link
           to={`/partner/projects/${application.resultingProjectId}`}
-          className="bg-accent-teal/10 border border-accent-teal/30 rounded-os-card px-5 py-4 text-sm text-accent-teal font-medium hover:bg-accent-teal/15 transition"
+          className="bg-os-accent/10 border border-os-accent/30 rounded-os-card px-5 py-4 text-sm text-os-accent font-medium hover:bg-os-accent/15 transition"
         >
           🎉 This pitch became a project — see what the team is up to →
         </Link>

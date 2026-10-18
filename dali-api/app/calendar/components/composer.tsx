@@ -330,7 +330,7 @@ export function CalendarSearchBar({
           <button
             type="button"
             onClick={() => setScope("all")}
-            className="mt-0.5 w-full rounded-md px-2 py-1.5 text-left text-xs font-medium text-accent-teal hover:bg-muted"
+            className="mt-0.5 w-full rounded-md px-2 py-1.5 text-left text-xs font-medium text-os-accent hover:bg-muted"
           >
             Search all Google calendars →
           </button>
@@ -1562,7 +1562,7 @@ export function ClassesManagerBody({ data }: { data: LoaderData }) {
                           }
                           className={cn(
                             "rounded-full border px-2.5 py-1 text-xs",
-                            on ? "border-transparent bg-accent-teal text-white" : "border-border text-muted-foreground",
+                            on ? "border-transparent bg-os-accent text-os-bg" : "border-border text-muted-foreground",
                           )}
                         >
                           {d.label}

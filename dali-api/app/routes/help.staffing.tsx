@@ -61,7 +61,7 @@ export default function HelpStaffingPage() {
         <h2 className="text-lg font-semibold">After placement</h2>
         <p className="mt-2 text-sm text-foreground">
           Your assignments show up on{" "}
-          <Link to="/profile" className="text-accent-teal hover:underline">
+          <Link to="/profile" className="text-os-accent hover:underline">
             your profile
           </Link>{" "}
           for the current term. If you have a conflict with a placement,

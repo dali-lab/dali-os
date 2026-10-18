@@ -40,7 +40,7 @@ function VisibilityMark({ note }: { note: NoteSummary }) {
         content="Listed on the lab-wide Documents page — visible to all lab members."
         variant="rich"
       >
-        <span role="img" aria-label="Listed lab-wide" className="inline-flex items-center gap-1 text-accent-teal">
+        <span role="img" aria-label="Listed lab-wide" className="inline-flex items-center gap-1 text-os-accent">
           <LabAudienceGlyph />
         </span>
       </Tooltip>

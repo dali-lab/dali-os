@@ -1590,7 +1590,7 @@ export function EpicsTimeline({
                   {sprintBands.map((b) => (
                     <div
                       key={`div-${b.key}`}
-                      className="absolute inset-y-0 border-l-2 border-accent-teal/40"
+                      className="absolute inset-y-0 border-l-2 border-os-container-hi"
                       style={{ left: b.left }}
                     />
                   ))}

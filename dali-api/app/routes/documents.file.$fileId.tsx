@@ -310,7 +310,7 @@ export default function FilePage() {
                   }
                 }}
                 className={`flex items-center justify-between gap-3 px-3 py-2.5 text-sm cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-os-accent/40 ${
-                  v.id === selected?.id ? "bg-accent-teal/10" : "hover:bg-muted/40"
+                  v.id === selected?.id ? "bg-os-accent/10" : "hover:bg-muted/40"
                 }`}
               >
                 <div className="min-w-0">
@@ -319,7 +319,7 @@ export default function FilePage() {
                   </span>
                   <span className="text-foreground truncate">{v.fileName}</span>
                   {v.isCurrent && (
-                    <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-accent-teal/15 text-accent-teal">
+                    <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-os-accent/15 text-os-accent">
                       Current
                     </span>
                   )}

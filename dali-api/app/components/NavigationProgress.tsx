@@ -80,7 +80,7 @@ export function NavigationProgress() {
       className="fixed inset-x-0 top-0 z-[100] h-0.5 pointer-events-none"
     >
       <div
-        className="h-full bg-grad-teal shadow-[0_0_8px_var(--color-accent-teal)] transition-[width,opacity] duration-200 ease-out motion-reduce:transition-none"
+        className="h-full bg-os-accent shadow-[0_0_8px_var(--color-os-accent)] transition-[width,opacity] duration-200 ease-out motion-reduce:transition-none"
         style={{
           width: `${progress}%`,
           opacity: visible ? 1 : 0,

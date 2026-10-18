@@ -425,7 +425,7 @@ function BoardBadge({ onBoard, os }: { onBoard: boolean; os: boolean }) {
         onBoard
           ? os
             ? "bg-os-accent/15 text-os-accent"
-            : "bg-accent-teal/15 text-accent-teal"
+            : "bg-os-accent/15 text-os-accent"
           : "bg-muted text-muted-foreground",
       )}
     >

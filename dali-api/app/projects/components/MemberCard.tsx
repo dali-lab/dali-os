@@ -127,7 +127,7 @@ export function MemberCard({
         accentExternal
           ? os
             ? "bg-os-well border border-os-accent/40"
-            : "bg-accent-teal/[0.06] border border-accent-teal/40"
+            : "bg-os-accent/[0.06] border border-os-accent/40"
           : os
             ? "bg-os-well border border-transparent"
             : "bg-card border border-border",
@@ -183,7 +183,7 @@ function ExternalMentorCard({
         "p-2.5 flex flex-col gap-1.5 select-none border",
         os
           ? "rounded-os-item bg-os-well border-os-accent/40"
-          : "rounded-md bg-accent-teal/[0.06] border-accent-teal/40",
+          : "rounded-md bg-os-accent/[0.06] border-os-accent/40",
       )}
     >
       <div className="flex items-start gap-2">
@@ -196,7 +196,7 @@ function ExternalMentorCard({
             <span
               className={cn(
                 "inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium rounded",
-                os ? "bg-os-accent/15 text-os-accent" : "bg-accent-teal/15 text-accent-teal",
+                "bg-os-accent/15 text-os-accent",
               )}
             >
               <GraduationCap className="w-2.5 h-2.5" aria-hidden />

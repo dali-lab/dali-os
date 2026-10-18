@@ -68,7 +68,7 @@ export function AbsenceNoteButton({
         onClick={edit}
         disabled={busy}
         aria-label={label}
-        className="p-1 rounded-md text-muted-foreground hover:text-accent-teal hover:bg-accent-teal/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-teal/40 disabled:opacity-50"
+        className="p-1 rounded-md text-muted-foreground hover:text-os-accent hover:bg-os-accent/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-os-accent/40 disabled:opacity-50"
       >
         {note ? (
           <Pencil className="w-3.5 h-3.5" aria-hidden />
