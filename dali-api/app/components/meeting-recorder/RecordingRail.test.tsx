@@ -4,113 +4,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { RecordingRail, deriveRailState } from "./RecordingRail";
 import type { UseMeetingRecording } from "./use-meeting-recording";
-
-function makeRec(overrides: Partial<UseMeetingRecording> = {}): UseMeetingRecording {
-  const base: UseMeetingRecording = {
-    canEdit: true,
-    isCore: false,
-    roster: [],
-    projectId: null,
-    canCreateTasks: false,
-    getNoteState: () => null,
-    seededFromPageId: null,
-    seededTemplateHash: null,
-
-    phase: "idle",
-    open: true,
-    setOpen: vi.fn(),
-    recordingId: "rec-1",
-    link: null,
-    aiEnabled: true,
-    captureMode: "browser",
-    appUnreachable: false,
-    desktopVer: null,
-    channelsActive: ["mic"],
-    levels: { mic: 0, call: 0 },
-    stalled: { mic: false, call: false },
-    recordedSeconds: 724,
-    now: 0,
-    lines: [],
-    speakers: {},
-    speakerNames: {},
-    error: null,
-    busy: false,
-    remote: null,
-    lastChunkAt: null,
-    insertedAt: null,
-    finalized: false,
-    stoppingSince: 0,
-    speakersChangedAt: null,
-
-    enhanceNotes: null,
-    enhancedAt: null,
-    enhancedByName: null,
-    enhanceBusy: false,
-    enhanceError: null,
-    stalePreview: false,
-    pendingMarks: [],
-    enhanceSkipped: 0,
-    reviewedAt: null,
-    reviewAnnouncement: null,
-    progress: null,
-    processingStage: null,
-
-    useDesktopApp: false,
-    setUseDesktopApp: vi.fn(),
-    micDeviceId: undefined,
-    setMicDeviceId: vi.fn(),
-    micDevices: [],
-    micOptions: [],
-    micLevel: 0,
-    micPreviewError: null,
-    callAudioWanted: false,
-    setCallAudioWanted: vi.fn(),
-    callAudioUnsupported: false,
-
-    live: false,
-    hasTranscript: false,
-    drives: true,
-    canDiscard: true,
-    canStopOthers: false,
-    stopStuck: false,
-    elapsed: 724,
-    speakerCounts: { mic: 0, call: 0 },
-    speakerKeys: [],
-    sortedLines: [],
-    highlightLineIndex: -1,
-    highlightLineRef: { current: null },
-    canShowRecorder: true,
-    transcriptParam: null,
-    atSeconds: null,
-    highlightAt: null,
-
-    startDesktop: vi.fn(),
-    startBrowser: vi.fn(),
-    stop: vi.fn(),
-    finishAndTranscribe: vi.fn(),
-    retryProcessing: vi.fn(),
-    resume: vi.fn(),
-    discard: vi.fn(),
-    insert: vi.fn(() => true),
-    currentlyUntouched: vi.fn(() => false),
-    enhanceNow: vi.fn(async () => {}),
-    cancelEnhanceGenerating: vi.fn(),
-    reloadStalePreview: vi.fn(),
-    dismissStalePreview: vi.fn(),
-    revertAllAndEnhanceAgain: vi.fn(async () => {}),
-    keepBlock: vi.fn(),
-    revertBlock: vi.fn(),
-    keepAll: vi.fn(() => 0),
-    revertAll: vi.fn(() => 0),
-    scrollToBlock: vi.fn(),
-    createTasksFromItems: vi.fn(async () => true),
-    setSpeaker: vi.fn(async () => {}),
-    jumpToTranscript: vi.fn(),
-    cancelStart: vi.fn(),
-    switchToBrowserAfterUnreachable: vi.fn(),
-  };
-  return { ...base, ...overrides };
-}
+import { makeRec } from "./test-support";
 
 function render(rec: UseMeetingRecording): string {
   return renderToStaticMarkup(createElement(RecordingRail, { rec }));
@@ -299,6 +193,46 @@ describe("RecordingRail per state (specs/meeting-recording-rail.md state table)"
     expect(html).toContain("Keep all");
     expect(html).toContain("Revert all");
     expect(html).toContain("Revert all and enhance again");
+  });
+
+  it("pendingReview: the change list lives in the note, not the rail", () => {
+    const html = render(
+      makeRec({
+        phase: "done",
+        pendingMarks: [{ id: "b1", mark: "enhance-added", type: "paragraph", text: "Interviews are behind" }],
+        enhanceNotes: {
+          plan: { blocks: [], actionItems: [] },
+          verified: { droppedBlocks: 0, droppedCites: 0, unmatchedOwners: 0 },
+          snapshotAt: "x",
+          snapshot: [],
+          priorBlocks: { b1: { id: "b1", type: "paragraph", content: [{ type: "text", text: "rough", styles: {} }] } },
+        },
+      }),
+    );
+    expect(html).not.toContain("Keep change:");
+    expect(html).not.toContain("Revert change:");
+    expect(html).not.toContain("Was:");
+    expect(html).not.toContain("Nothing left to review.");
+  });
+
+  it("pendingReview: still lists the plan's action items", () => {
+    const html = render(
+      makeRec({
+        phase: "done",
+        pendingMarks: [{ id: "b1", mark: "enhance-added", type: "paragraph", text: "x" }],
+        enhanceNotes: {
+          plan: {
+            blocks: [],
+            actionItems: [{ text: "Send the quote", ownerName: null, ownerUserId: null, due: null, dueSource: null }],
+          },
+          verified: { droppedBlocks: 0, droppedCites: 0, unmatchedOwners: 0 },
+          snapshotAt: "x",
+          snapshot: [],
+        } as never,
+      }),
+    );
+    expect(html).toContain("Action items");
+    expect(html).toContain("Send the quote");
   });
 
   it("pendingReview: a viewer without edit sees the status but no Keep/Revert", () => {

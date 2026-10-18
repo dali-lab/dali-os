@@ -308,6 +308,14 @@ describe("processing progress", () => {
     expect(box.current!.processingStage).toBe("starting");
   });
 
+  it("never opens the rail for a recording that is processing", async () => {
+    seedBackup("doc-progress-closed");
+    stubProcessing(() => processingBody({ progress }));
+    await mount("doc-progress-closed");
+    expect(box.current!.phase).toBe("processing");
+    expect(box.current!.open).toBe(false);
+  });
+
   it("has no stage outside processing", async () => {
     await mount("doc-progress-3");
     expect(box.current!.processingStage).toBeNull();

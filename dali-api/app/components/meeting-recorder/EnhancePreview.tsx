@@ -3,76 +3,16 @@ import { Select, type SelectOption } from "~/components/ui/floating";
 import { Checkbox } from "~/components/ui/Checkbox";
 import { DateField } from "~/components/ui/DateField";
 import { buttonClasses } from "~/components/ui/Button";
-import { cn } from "~/lib/cn";
-import { actionItemMatchesBlock, buildEnhanceChangeRows, type EnhanceChangeRow } from "./enhance-plan";
+import { actionItemMatchesBlock } from "./enhance-plan";
 import { formatIsoDate, type UseMeetingRecording } from "./use-meeting-recording";
 
 type ActionItemRowState = { checked: boolean; ownerUserId: string; dueAt: string };
 
-const KIND_BADGE: Record<EnhanceChangeRow["kind"], string> = {
-  Added: "bg-os-accent/15 text-os-accent",
-  Changed: "bg-os-accent/15 text-os-accent",
-  Removed: "bg-os-container text-muted-foreground",
-};
-
-/** One row of the pending-review change list: kind word, the block's own
- *  (clickable, scroll-to) text, the heading above it, "Was: …" for a changed
- *  block, then Keep/Revert — in that order, matching specs/meeting-
- *  recording-rail.md Step 2's "Change list" enumeration. The kind word always
- *  leads so the distinction is never color-only. */
-function EnhanceChangeRowView({ row, rec }: { row: EnhanceChangeRow; rec: UseMeetingRecording }) {
-  const text = row.text || "(empty)";
-  return (
-    <div className="flex flex-col gap-1 rounded-lg border border-os-container bg-background px-3 py-2">
-      <div className="flex items-center gap-2">
-        <span
-          className={cn(
-            "shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
-            KIND_BADGE[row.kind],
-          )}
-        >
-          {row.kind}
-        </span>
-        <button
-          type="button"
-          onClick={() => rec.scrollToBlock(row.id)}
-          className="min-w-0 flex-1 truncate text-left text-sm text-foreground hover:underline"
-        >
-          {text}
-        </button>
-      </div>
-      {row.heading && <p className="text-[11px] text-muted-foreground">{row.heading}</p>}
-      {row.priorText && <p className="text-xs text-muted-foreground">Was: {row.priorText}</p>}
-      <div className="flex items-center gap-1.5">
-        <button
-          type="button"
-          onClick={() => rec.keepBlock(row.id)}
-          aria-label={`Keep change: ${text}`}
-          className={buttonClasses("secondary", "sm")}
-        >
-          Keep
-        </button>
-        <button
-          type="button"
-          onClick={() => rec.revertBlock(row.id)}
-          aria-label={`Revert change: ${text}`}
-          className={buttonClasses("secondary", "sm")}
-        >
-          Revert
-        </button>
-      </div>
-    </div>
-  );
-}
-
 /**
- * The rail's "pendingReview" and "enhanced" body (specs/meeting-recording-
- * rail.md Step 2): the change list (pendingReview only), then the action
- * items as editable rows stacked on two lines to fit 400px, then Create
- * tasks. Keep all/Revert all/Enhance again live in the rail's header, not
- * here.
+ * The rail's action items as editable rows stacked on two lines to fit 400px,
+ * then Create tasks. Reviewing the changes themselves happens in the note.
  */
-export function EnhancePreview({ rec, mode }: { rec: UseMeetingRecording; mode: "pendingReview" | "enhanced" }) {
+export function EnhancePreview({ rec }: { rec: UseMeetingRecording }) {
   const notes = rec.enhanceNotes;
 
   const [itemState, setItemState] = useState<Record<number, ActionItemRowState>>({});
@@ -95,11 +35,7 @@ export function EnhancePreview({ rec, mode }: { rec: UseMeetingRecording; mode: 
 
   if (!notes) return null;
 
-  // The live top-level blocks, read fresh each render — cheap (a plain
-  // getter, not reactive state) and needed both for the change-list rows'
-  // heading lookup and for "Task kept" below.
   const liveBlocks = rec.getNoteState?.()?.blocks ?? [];
-  const rows = mode === "pendingReview" ? buildEnhanceChangeRows(rec.pendingMarks, liveBlocks, notes.priorBlocks) : [];
 
   // The plan's own roster (occurrence attendance + the note's project
   // current-term members, specs/meeting-notes-model.md §6) is more complete
@@ -134,24 +70,6 @@ export function EnhancePreview({ rec, mode }: { rec: UseMeetingRecording; mode: 
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto">
-      {mode === "pendingReview" && (
-        <div className="flex flex-col gap-2">
-          {rows.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Nothing left to review.</p>
-          ) : (
-            rows.map((row) => <EnhanceChangeRowView key={row.id} row={row} rec={rec} />)
-          )}
-          {(notes.verified.droppedBlocks > 0 || notes.verified.droppedCites > 0) && (
-            <p className="text-xs text-muted-foreground">
-              {notes.verified.droppedBlocks > 0 &&
-                `${notes.verified.droppedBlocks} addition${notes.verified.droppedBlocks === 1 ? "" : "s"} couldn't be verified against the transcript and were left out. `}
-              {notes.verified.droppedCites > 0 &&
-                `${notes.verified.droppedCites} citation${notes.verified.droppedCites === 1 ? "" : "s"} didn't match the transcript and were dropped.`}
-            </p>
-          )}
-        </div>
-      )}
-
       {notes.plan.actionItems.length > 0 && (
         <div className="flex flex-col gap-2">
           <div className="flex items-center justify-between">

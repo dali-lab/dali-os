@@ -2,19 +2,31 @@
 // ordinary BlockNote links — there's no custom inline node to attach a React
 // hover card to directly, so this delegates mouseover on the editor's
 // container to any <a> whose href carries `?transcript=`, lazily fetches that
-// recording's lines once (cached per recording, same pattern as
-// MentionHoverCard), and shows the cited line near the chip.
+// recording once (cached per recording, same pattern as MentionHoverCard),
+// and shows who said the cited line, when, and the quote near the chip.
 
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "~/lib/cn";
+import { Avatar } from "~/components/ui/Avatar";
 import { OS_SURFACE_CLASS } from "~/components/ui/floating/styles";
-import type { TranscriptLine } from "./types";
+import { countSpeakersByChannel, formatClock, nearestLine, speakerLabelFor } from "./transcript";
+import type { Speakers, SpeakerKey, TranscriptLine } from "./types";
 
-type CachedLines = TranscriptLine[] | null;
+type LoadedRecording = {
+  lines: TranscriptLine[];
+  speakers: Speakers;
+  speakerNames: Record<SpeakerKey, string>;
+};
+type CachedLines = LoadedRecording | null;
 
 const cache = new Map<string, CachedLines>();
 const inflight = new Map<string, Promise<CachedLines>>();
+
+export function clearChipRecordingCache(): void {
+  cache.clear();
+  inflight.clear();
+}
 
 async function loadLines(recordingId: string): Promise<CachedLines> {
   if (cache.has(recordingId)) return cache.get(recordingId)!;
@@ -27,8 +39,12 @@ async function loadLines(recordingId: string): Promise<CachedLines> {
         credentials: "include",
       });
       if (!res.ok) return null;
-      const data = (await res.json()) as { lines?: TranscriptLine[] };
-      return Array.isArray(data.lines) ? data.lines : [];
+      const data = (await res.json()) as Partial<LoadedRecording>;
+      return {
+        lines: Array.isArray(data.lines) ? data.lines : [],
+        speakers: data.speakers ?? {},
+        speakerNames: data.speakerNames ?? {},
+      };
     } catch {
       return null;
     } finally {
@@ -53,19 +69,25 @@ function parseChipHref(href: string): { recordingId: string; at: number } | null
   }
 }
 
-function closestLine(lines: TranscriptLine[], at: number): TranscriptLine | null {
-  let best: TranscriptLine | null = null;
-  for (const line of lines) {
-    if (!best || Math.abs(line.at - at) < Math.abs(best.at - at)) best = line;
-  }
-  return best;
-}
-
 const OPEN_DELAY_MS = 250;
+const CLOSE_DELAY_MS = 120;
+const CARD_WIDTH = 290;
 
 function chipAnchorFrom(target: EventTarget | null): HTMLAnchorElement | null {
   return (target as HTMLElement | null)?.closest?.('a[href*="?transcript="]') as HTMLAnchorElement | null;
 }
+
+type ChipCard = {
+  top: number;
+  left: number;
+  recordingId: string;
+  at: number;
+  href: string;
+  state: "loading" | "ready" | "unavailable";
+  name: string;
+  clock: string;
+  quote: string;
+};
 
 export function TranscriptChipHoverLayer({
   children,
@@ -86,7 +108,7 @@ export function TranscriptChipHoverLayer({
   const containerRef = useRef<HTMLDivElement>(null);
   const anchorRef = useRef<HTMLAnchorElement | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [card, setCard] = useState<{ top: number; left: number; text: string | null } | null>(null);
+  const [card, setCard] = useState<ChipCard | null>(null);
   const returnFocusRef = useRef<HTMLAnchorElement | null>(null);
   const wasOpenRef = useRef(railOpen);
   // A ref, not an effect dependency: onChipClick is a fresh closure on every
@@ -94,6 +116,26 @@ export function TranscriptChipHoverLayer({
   // render just to read the latest one isn't worth it.
   const onChipClickRef = useRef(onChipClick);
   onChipClickRef.current = onChipClick;
+
+  function clearTimer() {
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = null;
+  }
+
+  function scheduleClose() {
+    clearTimer();
+    timer.current = setTimeout(() => {
+      anchorRef.current = null;
+      setCard(null);
+    }, CLOSE_DELAY_MS);
+  }
+
+  function openInTranscript(c: ChipCard) {
+    if (!onChipClickRef.current?.(c.recordingId, c.at)) window.location.assign(c.href);
+    clearTimer();
+    anchorRef.current = null;
+    setCard(null);
+  }
 
   useEffect(() => {
     if (wasOpenRef.current && !railOpen && returnFocusRef.current) {
@@ -106,11 +148,6 @@ export function TranscriptChipHoverLayer({
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
-
-    function clearTimer() {
-      if (timer.current) clearTimeout(timer.current);
-      timer.current = null;
-    }
 
     // Plain clicks open the rail and scroll to the cited line; a modifier or
     // middle click falls through to the browser (open in new tab, etc.).
@@ -143,18 +180,42 @@ export function TranscriptChipHoverLayer({
 
     function onOver(e: MouseEvent) {
       const target = chipAnchorFrom(e.target);
-      if (!target || target === anchorRef.current) return;
+      if (!target) return;
+      if (target === anchorRef.current) {
+        clearTimer();
+        return;
+      }
       const parsed = parseChipHref(target.getAttribute("href") ?? "");
       if (!parsed) return;
       anchorRef.current = target;
       clearTimer();
       timer.current = setTimeout(() => {
         const rect = target.getBoundingClientRect();
-        setCard({ top: rect.bottom + 6, left: rect.left, text: null });
-        void loadLines(parsed.recordingId).then((lines) => {
+        const base = {
+          top: rect.bottom + 6,
+          left: Math.max(8, Math.min(rect.left, window.innerWidth - CARD_WIDTH - 16)),
+          recordingId: parsed.recordingId,
+          at: parsed.at,
+          href: target.getAttribute("href") ?? "",
+          name: "",
+          clock: formatClock(parsed.at),
+          quote: "",
+        };
+        setCard({ ...base, state: "loading" });
+        void loadLines(parsed.recordingId).then((loaded) => {
           if (anchorRef.current !== target) return;
-          const line = lines ? closestLine(lines, parsed.at) : null;
-          setCard((c) => (c ? { ...c, text: line?.text ?? "Transcript unavailable." } : c));
+          const line = loaded ? nearestLine(loaded.lines, parsed.at) : null;
+          if (!loaded || !line) {
+            setCard({ ...base, state: "unavailable" });
+            return;
+          }
+          setCard({
+            ...base,
+            state: "ready",
+            name: speakerLabelFor(line, countSpeakersByChannel(loaded.lines), loaded.speakers, [], loaded.speakerNames),
+            clock: formatClock(line.at),
+            quote: line.text,
+          });
         });
       }, OPEN_DELAY_MS);
     }
@@ -162,9 +223,7 @@ export function TranscriptChipHoverLayer({
     function onOut(e: MouseEvent) {
       const related = e.relatedTarget as Node | null;
       if (anchorRef.current && related && anchorRef.current.contains(related)) return;
-      clearTimer();
-      anchorRef.current = null;
-      setCard(null);
+      scheduleClose();
     }
 
     container.addEventListener("mouseover", onOver);
@@ -184,11 +243,32 @@ export function TranscriptChipHoverLayer({
       {card &&
         createPortal(
           <div
-            role="tooltip"
-            style={{ position: "fixed", top: card.top, left: card.left, zIndex: 60 }}
-            className={cn("max-w-[320px] p-2.5 text-sm text-foreground", OS_SURFACE_CLASS)}
+            role="group"
+            aria-label="Transcript quote"
+            onMouseEnter={clearTimer}
+            onMouseLeave={scheduleClose}
+            style={{ position: "fixed", top: card.top, left: card.left, width: CARD_WIDTH, zIndex: 60 }}
+            className={cn("p-3 text-[13.5px] leading-5 text-foreground", OS_SURFACE_CLASS)}
           >
-            {card.text ?? "Loading…"}
+            {card.state === "loading" && <p className="text-muted-foreground">Loading…</p>}
+            {card.state === "unavailable" && <p>Transcript unavailable.</p>}
+            {card.state === "ready" && (
+              <>
+                <p className="mb-1.5 flex items-center gap-2 font-bold">
+                  <Avatar name={card.name} size="xs" />
+                  {card.name}
+                  <span className="font-medium text-muted-foreground">{card.clock}</span>
+                </p>
+                <p>“{card.quote}”</p>
+              </>
+            )}
+            <button
+              type="button"
+              onClick={() => openInTranscript(card)}
+              className="mt-2 block text-xs font-bold text-os-accent hover:underline"
+            >
+              Open in transcript
+            </button>
           </div>,
           document.body,
         )}

@@ -464,10 +464,8 @@ function RailBody({ rec, state }: { rec: UseMeetingRecording; state: RailState }
     }
 
     case "pendingReview":
-      return <EnhancePreview rec={rec} mode="pendingReview" />;
-
     case "enhanced":
-      return <EnhancePreview rec={rec} mode="enhanced" />;
+      return <EnhancePreview rec={rec} />;
 
     default:
       return null;

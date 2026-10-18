@@ -24,7 +24,13 @@ import {
   WorkletCapture,
 } from "./capture";
 import { ChunkConflictError, ChunkUploadQueue } from "./upload-queue";
-import { countSpeakersByChannel, formatClock, meetingNotesMarkdown, transcriptParagraphs } from "./transcript";
+import {
+  countSpeakersByChannel,
+  formatClock,
+  meetingNotesMarkdown,
+  speakerFirstNameAt,
+  transcriptParagraphs,
+} from "./transcript";
 import {
   applyEnhancePlan,
   localEditKeepIds,
@@ -195,6 +201,7 @@ export type UseMeetingRecordingProps = {
     recordingId: string,
     transcript: string[],
     actionItems: EnhanceActionItem[],
+    speakerAt: (atSeconds: number) => string | null,
   ) => { ok: boolean; priorBlocks?: Record<string, unknown> };
   /** Subscribes to every document change (local or remote) once the editor is
    *  ready; returns an unsubscribe. The callback receives the reserved-mark
@@ -271,6 +278,9 @@ export function useMeetingRecording({
   useEffect(() => {
     if (autoOpen) setOpen(true);
   }, [autoOpen]);
+  useEffect(() => {
+    if (phase === "processing") setOpen(false);
+  }, [phase]);
   // `?transcript=<id>` opens an existing recording's Done view read-only for
   // anyone who can view the note (the GET route widens for them), even a
   // viewer this component otherwise wouldn't render anything for.
@@ -523,7 +533,6 @@ export function useMeetingRecording({
         if (!following) setOpen(true);
       } else if (data.status === "Processing") {
         setPhase("processing");
-        if (!following) setOpen(true);
       } else if (data.status === "Done") {
         setPhase("done");
         if (transcriptParam) setOpen(true);
@@ -1161,7 +1170,9 @@ export function useMeetingRecording({
 
       const { ops, skipped } = applyEnhancePlan(notes.snapshot, state.blocks, notes.plan, { untouchedTemplate });
       const paragraphs = transcriptParagraphs(lines, speakers, roster);
-      const result = onApplyEnhance(ops, recordingId, paragraphs, notes.plan.actionItems);
+      const result = onApplyEnhance(ops, recordingId, paragraphs, notes.plan.actionItems, (at) =>
+        speakerFirstNameAt(lines, at, speakers, roster, speakerNames),
+      );
       if (!result.ok) {
         setEnhanceError("The note is still loading. Try again in a moment.");
         return;

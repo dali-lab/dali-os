@@ -1076,6 +1076,14 @@ a.dali-cmp-piece:hover .dali-cmp-row__title { text-decoration: underline; }
   border-radius: 4px;
 }
 
+.dali-doc .bn-block:has(> .bn-block-content[data-background-color="enhance-added"]) {
+  box-shadow: inset 3px 0 0 var(--color-accent-teal);
+}
+
+.dali-doc .bn-block-outer[data-enhance-was] > .bn-block > .bn-block-content {
+  padding-bottom: 28px;
+}
+
 .dali-doc [data-background-color="enhance-prior"],
 .dali-doc .bn-block:has(> .bn-block-content[data-background-color="enhance-prior"]) {
   background-color: var(--color-muted);

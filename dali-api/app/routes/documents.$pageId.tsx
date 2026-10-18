@@ -35,6 +35,8 @@ import { RecordingPresencePill } from "~/components/RecordingPresencePill";
 import { RecordPromptBanner } from "~/components/RecordPromptBanner";
 import { TranscriptChipHoverLayer } from "~/components/meeting-recorder/TranscriptChipHoverLayer";
 import { RecordingRail } from "~/components/meeting-recorder/RecordingRail";
+import { EnhanceBar } from "~/components/meeting-recorder/EnhanceBar";
+import { EnhanceBlockActions } from "~/components/meeting-recorder/EnhanceBlockActions";
 import { useMeetingRecording, type UseMeetingRecording, type UseMeetingRecordingProps } from "~/components/meeting-recorder/use-meeting-recording";
 import {
   appendBlocks,
@@ -816,10 +818,11 @@ function DocumentPage() {
       recordingId: string,
       transcript: string[],
       actionItems: EnhanceActionItem[],
+      speakerAt: (atSeconds: number) => string | null,
     ): { ok: boolean; priorBlocks?: Record<string, unknown> } => {
       const editor = editorRef.current;
       if (!editor) return { ok: false };
-      const { priorBlocks } = renderEnhanceOps(editor, ops, { pageId, recordingId, actionItems, projectId: meetingProjectId });
+      const { priorBlocks } = renderEnhanceOps(editor, ops, { pageId, recordingId, actionItems, projectId: meetingProjectId, speakerAt });
       if (transcript.length && !hasTranscriptToggle(editor)) {
         appendBlocks(editor, [transcriptToggleBlock(transcript)]);
       }
@@ -966,6 +969,7 @@ function DocumentPage() {
             aiEnabled
             onEditorReady={onEditorReady}
             onContainerWideChange={setContainerWide}
+            belowTabs={rec ? <EnhanceBar rec={rec} /> : undefined}
             rail={
               rec
                 ? {
@@ -1009,6 +1013,7 @@ function DocumentPage() {
         return (
           <EnhanceReviewContext.Provider value={enhanceReview}>
             <div className="flex flex-col gap-4">
+              {rec && <EnhanceBlockActions rec={rec} getRoot={() => editorRef.current?.domElement ?? null} />}
               {trashed && <TrashedNoteBanner pageId={pageId} canRestore={canRestore} />}
               {attendance && recordingEnabled && recordingAllowed && (
                 <RecordPromptBanner

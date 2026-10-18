@@ -65,11 +65,14 @@ export function hasTranscriptToggle(editor: DocEditorInstance): boolean {
   return findTranscriptToggle(editor.document) !== null;
 }
 
-function formatChipLabel(atSeconds: number): string {
+export function formatChipLabel(atSeconds: number, speakerFirstName?: string | null): string {
   const s = Math.max(0, Math.round(atSeconds));
   const m = Math.floor(s / 60);
-  return `${m}:${String(s % 60).padStart(2, "0")}`;
+  const clock = `${m}:${String(s % 60).padStart(2, "0")}`;
+  return speakerFirstName ? `${speakerFirstName} · ${clock}` : clock;
 }
+
+export type ChipSpeakerAt = (atSeconds: number) => string | null;
 
 /** The block's own text, plus one link chip per cited transcript second.
  *  Exported for the MCP `enhance_meeting_notes` apply path (meeting-notes-
@@ -81,12 +84,13 @@ export function buildInlineContent(
   cites: number[],
   pageId: string,
   recordingId: string,
+  speakerAt?: ChipSpeakerAt,
 ): DocPartialBlock["content"] {
   const content: Array<{ type: "text"; text: string; styles: object } | { type: "link"; href: string; content: string }> =
     [{ type: "text", text, styles: {} }];
   for (const at of cites) {
     content.push({ type: "text", text: " ", styles: {} });
-    content.push({ type: "link", href: citationHref(pageId, recordingId, at), content: formatChipLabel(at) });
+    content.push({ type: "link", href: citationHref(pageId, recordingId, at), content: formatChipLabel(at, speakerAt?.(at)) });
   }
   // DocPartialBlock["content"] is schema-typed per block; the shapes above are
   // exactly BlockNote's PartialInlineContent for a block with styled text and
@@ -134,9 +138,9 @@ export function toPartialBlock(
   block: EnhanceOpBlock,
   pageId: string,
   recordingId: string,
-  ctx: { actionItems?: EnhanceActionItem[]; projectId?: string | null } = {},
+  ctx: { actionItems?: EnhanceActionItem[]; projectId?: string | null; speakerAt?: ChipSpeakerAt } = {},
 ): DocPartialBlock {
-  const content = buildInlineContent(block.text, block.cites, pageId, recordingId);
+  const content = buildInlineContent(block.text, block.cites, pageId, recordingId, ctx.speakerAt);
   if (block.type === "heading") {
     return { type: "heading", props: { level: 2 }, content } as DocPartialBlock;
   }
@@ -176,7 +180,13 @@ function withMark(block: DocPartialBlock, mark: EnhanceMark): DocPartialBlock {
 export function renderEnhanceOps(
   editor: DocEditorInstance,
   ops: EditorOp[],
-  ctx: { pageId: string; recordingId: string; actionItems?: EnhanceActionItem[]; projectId?: string | null },
+  ctx: {
+    pageId: string;
+    recordingId: string;
+    actionItems?: EnhanceActionItem[];
+    projectId?: string | null;
+    speakerAt?: ChipSpeakerAt;
+  },
 ): { priorBlocks: Record<string, unknown> } {
   return editor.transact(() => {
     const priorBlocks: Record<string, unknown> = {};
@@ -184,7 +194,7 @@ export function renderEnhanceOps(
       if (op.kind === "update") {
         const prior = editor.getBlock(op.id);
         if (prior) priorBlocks[op.id] = structuredClone(prior);
-        const content = buildInlineContent(op.text, op.cites, ctx.pageId, ctx.recordingId);
+        const content = buildInlineContent(op.text, op.cites, ctx.pageId, ctx.recordingId, ctx.speakerAt);
         editor.updateBlock(op.id, {
           content,
           props: { backgroundColor: ENHANCE_MARK_ADDED },

@@ -381,7 +381,7 @@ export function headingAbove(blocks: readonly SnapshotBlock[], id: string): stri
   return null;
 }
 
-function priorBlockFirstLine(prior: unknown): string | null {
+export function priorBlockFirstLine(prior: unknown): string | null {
   if (!prior || typeof prior !== "object") return null;
   const text = blockOwnText(prior as Parameters<typeof blockOwnText>[0]);
   return text ? firstLineOf(text) : null;

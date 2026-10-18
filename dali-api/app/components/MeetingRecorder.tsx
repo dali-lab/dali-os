@@ -3,6 +3,8 @@ import { buttonClasses } from "~/components/ui/Button";
 import { Tooltip, Popover } from "~/components/ui/floating";
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
+import { ProgressRing } from "./meeting-recorder/ProgressRing";
+import { describeProcessing } from "./meeting-recorder/processing-progress";
 import { RecordStartSheet } from "./meeting-recorder/RecordStartSheet";
 import { deriveRailState, statusLineFor, RecordingBody } from "./meeting-recorder/RecordingRail";
 import { formatClock } from "./meeting-recorder/transcript";
@@ -36,6 +38,9 @@ export function MeetingRecorder({ rec, containerWide }: { rec: UseMeetingRecordi
           : "Stopping…"
     : null;
 
+  const processing =
+    rec.phase === "processing" ? describeProcessing(rec.processingStage ?? "starting", rec.progress) : null;
+
   const triggerLabel =
     live
       ? "Record"
@@ -43,8 +48,8 @@ export function MeetingRecorder({ rec, containerWide }: { rec: UseMeetingRecordi
         ? rec.canEdit
           ? "Record"
           : "Transcript"
-        : rec.phase === "processing"
-          ? "Transcribing…"
+        : processing
+          ? processing.pillLabel
           : rec.hasTranscript
             ? rec.pendingMarks.length > 0
               ? `Review (${rec.pendingMarks.length})`
@@ -65,7 +70,7 @@ export function MeetingRecorder({ rec, containerWide }: { rec: UseMeetingRecordi
         live && "border-os-accent bg-os-accent text-navy-deep hover:border-accent-coral-light hover:bg-accent-coral-light",
       )}
     >
-      <Mic className={actionIcon} />
+      {processing ? <ProgressRing fraction={processing.fraction} className={actionIcon} /> : <Mic className={actionIcon} />}
       {rec.phase === "recording" && <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-current" />}
       <span className="hidden sm:inline">{triggerLabel}</span>
     </button>
