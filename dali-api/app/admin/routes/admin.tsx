@@ -262,7 +262,7 @@ export default function AdminHub() {
 
       {/* Recent activity + email-sender usage */}
       <div className="grid gap-4 lg:grid-cols-2">
-        <section className="rounded-os-card border border-border bg-card p-4">
+        <section className="rounded-os-card bg-card p-4">
           <div className="mb-2 flex items-center justify-between gap-2">
             <h2 className="font-heading text-sm font-semibold uppercase tracking-wide text-muted-foreground">
               Recent activity
@@ -303,7 +303,7 @@ export default function AdminHub() {
           )}
         </section>
 
-        <section className="rounded-os-card border border-border bg-card p-4">
+        <section className="rounded-os-card bg-card p-4">
           <div className="mb-2 flex items-center justify-between gap-2">
             <h2 className="font-heading text-sm font-semibold uppercase tracking-wide text-muted-foreground">
               Email senders
