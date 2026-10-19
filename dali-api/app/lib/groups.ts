@@ -58,14 +58,14 @@ export async function resolveDynamicQuery(
 }
 
 async function resolveTermMembers(termId: string): Promise<string[]> {
-  // A member is "active in term T" if they have any project assignment, Core
-  // assignment, instructor assignment, or mentorship pair (as mentor or
-  // mentee) in T. DomainEligibility is term-independent and not included.
   const [projects, core, instructors, mentorshipMentee, mentorshipMentor] =
     await Promise.all([
       prisma.projectAssignment.findMany({ where: { termId }, select: { userId: true } }),
       prisma.coreAssignment.findMany({ where: { termId }, select: { userId: true } }),
-      prisma.instructorAssignment.findMany({ where: { termId }, select: { userId: true } }),
+      prisma.instructorAssignment.findMany({
+        where: { termId, user: { daliMember: { isNot: null } } },
+        select: { userId: true },
+      }),
       prisma.mentorshipPair.findMany({ where: { termId }, select: { menteeUserId: true } }),
       prisma.mentorshipPair.findMany({ where: { termId }, select: { mentorUserId: true } }),
     ]);
@@ -78,10 +78,9 @@ async function resolveTermMembers(termId: string): Promise<string[]> {
   return [...set];
 }
 
-// Boolean form of the term group's membership rule (resolveTermMembers above):
-// is this user "active in term T"? A single existence check for the signing
-// gate, which asks it per request. Keep the OR branches in sync with
-// resolveTermMembers.
+// The signing gate's "active in term T" check. Deliberately wider than the term
+// group (resolveTermMembers): external instructors are not in the term group
+// but must still sign the term's agreements.
 export async function isUserActiveInTerm(userId: string, termId: string): Promise<boolean> {
   const hit = await prisma.user.findFirst({
     where: {
