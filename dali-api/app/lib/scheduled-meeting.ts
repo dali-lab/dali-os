@@ -2499,7 +2499,10 @@ export async function trackExternalEventAsMeeting(
       : 60;
 
   const existing = await prisma.scheduledMeeting.findFirst({
-    where: { externalEventId, status: { not: "Cancelled" } },
+    where: {
+      status: { not: "Cancelled" },
+      OR: event.iCalUID ? [{ externalEventId }, { iCalUID: event.iCalUID }] : [{ externalEventId }],
+    },
     select: { id: true, organizerId: true, participantUserIds: true },
   });
   if (existing) {
@@ -2570,6 +2573,7 @@ export async function trackExternalEventAsMeeting(
       selectedAt: startDate,
       status: "Confirmed",
       externalEventId,
+      iCalUID: event.iCalUID,
       recurrenceRule: event.recurrence[0]?.replace(/^RRULE:/, "") ?? null,
       ownerCalendarEmail: link.externalEmail,
       organizerCalendarLinkId: link.id,

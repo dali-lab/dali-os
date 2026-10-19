@@ -2362,6 +2362,50 @@ describe("trackExternalEventAsMeeting", () => {
     });
   });
 
+  it("stores the event's iCalUID, so the grid matches it by the stable key", async () => {
+    const p = arrange();
+
+    await trackExternalEventAsMeeting(input);
+
+    expect(p.scheduledMeeting!.create.mock.calls[0][0].data.iCalUID).toBe("gcal-evt-1@google.com");
+  });
+
+  it("finds an existing meeting by iCalUID as well as by event id", async () => {
+    const p = arrange();
+
+    await trackExternalEventAsMeeting({ ...input, recurringEventId: "gcal-master" });
+
+    expect(p.scheduledMeeting!.findFirst.mock.calls[0][0].where).toEqual({
+      status: { not: "Cancelled" },
+      OR: [{ externalEventId: "gcal-master" }, { iCalUID: "gcal-evt-1@google.com" }],
+    });
+  });
+
+  it("matches by event id alone when Google returns no iCalUID", async () => {
+    const p = arrange({ event: { iCalUID: null as unknown as string } });
+
+    await trackExternalEventAsMeeting(input);
+
+    expect(p.scheduledMeeting!.findFirst.mock.calls[0][0].where).toEqual({
+      status: { not: "Cancelled" },
+      OR: [{ externalEventId: "gcal-evt-1" }],
+    });
+  });
+
+  it("returns a DALI meeting already pushed to Google under a different event id instead of tracking a second", async () => {
+    const p = arrange({ event: { viewerInvited: true } });
+    p.scheduledMeeting!.findFirst.mockResolvedValue({
+      id: "m-dali-series",
+      organizerId: "someone-else",
+      participantUserIds: ["core-1"],
+    });
+
+    const res = await trackExternalEventAsMeeting(input);
+
+    expect(res).toMatchObject({ ok: true, meeting: { id: "m-dali-series" } });
+    expect(p.scheduledMeeting!.create).not.toHaveBeenCalled();
+  });
+
   it("binds a series to its master, so every occurrence finds the one meeting", async () => {
     const p = arrange();
 
