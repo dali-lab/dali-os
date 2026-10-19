@@ -1,5 +1,6 @@
 import type { Crumb } from "~/components/Breadcrumbs";
 import type { ItemLocation } from "~/components/drive/location";
+import { formatDateShort } from "~/lib/display";
 
 /** A note's place for the shell's breadcrumb row: space, folders, notebook, then the tab. */
 export function noteTrail(
@@ -15,4 +16,10 @@ export function noteTrail(
     { label: notebook.title, to: `/documents/${notebook.id}` },
     { label: tabLabel },
   ];
+}
+
+/** A tab's name in the rail and breadcrumb: its own title, or its meeting date until it has one. */
+export function noteTabLabel(tab: { title: string; meetingOccurrenceStart: Date | null }): string {
+  if (tab.title.trim() || !tab.meetingOccurrenceStart) return tab.title;
+  return formatDateShort(tab.meetingOccurrenceStart);
 }
