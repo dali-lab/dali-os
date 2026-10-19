@@ -101,4 +101,119 @@ describe("meetingsForExternalEvents", () => {
 
     expect(result.get("evt-1")).toMatchObject({ isCoreMeeting });
   });
+
+  describe("split series", () => {
+    const base = "6b1uc1q7omn5duodshtuoohpts";
+    const split = `${base}_R20260928T130000`;
+    const splitEvent = (over: Partial<CalendarEvent> = {}) =>
+      baseEvent({
+        eventId: `${base}_20261019T130000Z`,
+        recurringEventId: split,
+        iCalUID: `${split}@google.com`,
+        startIso: "2026-10-19T13:00:00.000Z",
+        endIso: "2026-10-19T14:00:00.000Z",
+        ...over,
+      });
+    const parent = () => ({
+      ...baseMeeting(),
+      externalEventId: base,
+      iCalUID: `${base}@google.com`,
+      selectedAt: new Date("2026-09-14T13:00:00.000Z"),
+      recurrenceRule: "FREQ=WEEKLY",
+      notePages: [],
+    });
+
+    function whereOf() {
+      return mockPrisma.scheduledMeeting.findMany.mock.calls[0][0].where as {
+        AND: [{ OR: unknown[] }, { OR: unknown[] }];
+      };
+    }
+
+    it("queries for the base ids and UIDs of a split event", async () => {
+      mockPrisma.scheduledMeeting.findMany.mockResolvedValue([]);
+      await meetingsForExternalEvents([splitEvent()], "viewer-1", false, false);
+
+      const [identity] = whereOf().AND;
+      expect(identity.OR).toEqual([
+        { externalEventId: { in: expect.arrayContaining([base, split, `${base}_20261019T130000Z`]) } },
+        { iCalUID: { in: expect.arrayContaining([`${split}@google.com`, `${base}@google.com`]) } },
+      ]);
+    });
+
+    it("resolves a split instance to the parent lineage", async () => {
+      mockPrisma.scheduledMeeting.findMany.mockResolvedValue([parent()]);
+      const event = splitEvent({ responseStatus: "accepted" });
+
+      const result = await meetingsForExternalEvents([event], "viewer-1", false, false);
+
+      expect(result.get(event.eventId)).toMatchObject({ meetingId: "m1" });
+    });
+
+    it("prefers an exact meeting for the split over the parent", async () => {
+      const child = { ...baseMeeting(), id: "m2", externalEventId: split, iCalUID: `${split}@google.com` };
+      mockPrisma.scheduledMeeting.findMany.mockResolvedValue([parent(), child]);
+      const event = splitEvent({ responseStatus: "accepted" });
+
+      const result = await meetingsForExternalEvents([event], "viewer-1", false, false);
+
+      expect(result.get(event.eventId)).toMatchObject({ meetingId: "m2" });
+    });
+
+    it("never writes the split's UID onto the parent row", async () => {
+      const row = { ...parent(), iCalUID: null };
+      mockPrisma.scheduledMeeting.findMany.mockResolvedValue([row]);
+
+      await meetingsForExternalEvents([splitEvent({ responseStatus: "accepted" })], "viewer-1", false, false);
+
+      expect(mockPrisma.scheduledMeeting.update).not.toHaveBeenCalled();
+    });
+
+    it("still heals the UID when the event matches the parent exactly", async () => {
+      const row = { ...parent(), iCalUID: null };
+      mockPrisma.scheduledMeeting.findMany.mockResolvedValue([row]);
+      const exact = baseEvent({ eventId: `${base}_20261012T130000Z`, recurringEventId: base, iCalUID: `${base}@google.com` });
+
+      await meetingsForExternalEvents([exact], "viewer-1", false, false);
+
+      expect(mockPrisma.scheduledMeeting.update).toHaveBeenCalledWith({
+        where: { id: "m1" },
+        data: { iCalUID: `${base}@google.com` },
+      });
+    });
+
+    it("admits by iCalUID, with base forms, for events Google puts the viewer on", async () => {
+      mockPrisma.scheduledMeeting.findMany.mockResolvedValue([]);
+      await meetingsForExternalEvents([splitEvent({ responseStatus: "accepted" })], "viewer-1", false, false);
+
+      const access = whereOf().AND[1].OR;
+      expect(access).toEqual(
+        expect.arrayContaining([
+          { externalEventId: { in: expect.arrayContaining([base, split]) } },
+          { iCalUID: { in: expect.arrayContaining([`${split}@google.com`, `${base}@google.com`]) } },
+        ]),
+      );
+    });
+
+    it("admits by iCalUID for lab-wide events", async () => {
+      const { isGeneralCalendarEvent } = await import("~/lib/general-calendar");
+      vi.mocked(isGeneralCalendarEvent).mockReturnValueOnce(true);
+      mockPrisma.scheduledMeeting.findMany.mockResolvedValue([]);
+
+      await meetingsForExternalEvents([splitEvent()], "viewer-1", false, true);
+
+      expect(whereOf().AND[1].OR).toEqual(
+        expect.arrayContaining([{ iCalUID: { in: expect.arrayContaining([`${base}@google.com`]) } }]),
+      );
+    });
+
+    it("adds no iCalUID admission for events the viewer is not on", async () => {
+      mockPrisma.scheduledMeeting.findMany.mockResolvedValue([]);
+      await meetingsForExternalEvents([splitEvent()], "viewer-1", false, false);
+
+      expect(whereOf().AND[1].OR).toEqual([
+        { organizerId: "viewer-1" },
+        { participantUserIds: { has: "viewer-1" } },
+      ]);
+    });
+  });
 });

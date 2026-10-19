@@ -196,6 +196,19 @@ describe("get_meeting", () => {
     expect(out.roster).toEqual([expect.objectContaining({ userId: "u2", present: false })]);
   });
 
+  it("leaves trashed notes out, so a trashed note is not reported as the occurrence's note", async () => {
+    mockPrisma.scheduledMeeting.findUnique.mockResolvedValue(MEETING_BASE);
+    vi.mocked(isCore).mockResolvedValue(false);
+    vi.mocked(isProjectMember).mockResolvedValue(false);
+
+    await runGetMeeting("u-org", { meetingId: "m1" });
+
+    const args = mockPrisma.scheduledMeeting.findUnique.mock.calls[0][0] as {
+      select: { notePages: { where: unknown } };
+    };
+    expect(args.select.notePages.where).toEqual({ archivedAt: null });
+  });
+
   it("reports transcriptAvailable and recordings across every occurrence, newest first", async () => {
     mockPrisma.scheduledMeeting.findUnique.mockResolvedValue(MEETING_BASE);
     mockPrisma.meetingRecording.findMany.mockResolvedValue([

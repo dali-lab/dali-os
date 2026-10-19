@@ -50,6 +50,8 @@ import { normalizeGuestEmails } from "~/calendar/lib/guest-emails";
 import { syncMeetingShares } from "~/lib/meeting-shares.server";
 import {
   expandOccurrences,
+  googleSeriesBase,
+  googleSeriesBaseUID,
   noteForOccurrence,
   resolveOccurrence,
   rruleWithUntil,
@@ -270,6 +272,8 @@ export type CreateScheduledMeetingInput = {
   organizerCalendarLinkId?: string | null;
   /** A calendar inside that link. Omitted = the account's primary calendar. */
   organizerCalendarId?: string | null;
+  /** Save the meeting without pushing a Google event (a continuation of a Google event DALI doesn't own). */
+  skipGoogle?: boolean;
   /** Stored on the meeting and mirrored onto the Google event / ICS invite. */
   location?: string | null;
   description?: string | null;
@@ -768,6 +772,7 @@ export async function createScheduledMeeting(
   let meetingUrl: string | null = null;
   let gcalError: string | null = null;
   if (
+    !input.skipGoogle &&
     organizerLink &&
     organizerLink.enabled &&
     startDate &&
@@ -805,6 +810,7 @@ export async function createScheduledMeeting(
           where: { id: meeting.id },
           data: {
             externalEventId,
+            googleEventOrigin: "Created",
             // Stable RFC 5545 join key — see ScheduledMeeting.iCalUID. Captured
             // at push time so new meetings never depend on the mutable event id.
             iCalUID: result.iCalUID,
@@ -1772,6 +1778,15 @@ export type CancelScheduledMeetingResult =
   | { ok: true; alreadyCancelled: boolean }
   | { ok: false; error: string; status: number };
 
+/** DALI only writes to a Google event it created. Null origin is a legacy row, treated as created. */
+export function ownsGoogleEvent(meeting: {
+  googleEventOrigin?: "Created" | "Tracked" | null;
+  externalEventId: string | null;
+}): boolean {
+  if (meeting.googleEventOrigin === "Tracked") return false;
+  return !(meeting.externalEventId && googleSeriesBase(meeting.externalEventId) !== meeting.externalEventId);
+}
+
 /**
  * Cancel a meeting. The organizer may cancel; Core can also cancel (used by
  * Admin → Attendance to remove a self-check-in event from the list). Supports
@@ -1803,9 +1818,11 @@ export async function cancelScheduledMeeting(
       externalEventId: true,
       organizerCalendarLinkId: true,
       organizerCalendarId: true,
+      googleEventOrigin: true,
     },
   });
   if (!meeting) return { ok: false, error: "Not found", status: 404 };
+  const ownsGoogle = ownsGoogleEvent(meeting);
   if (meeting.organizerId !== actorUserId) {
     if (!opts?.allowCore || !(await isCore(actorUserId))) {
       return { ok: false, error: "Only the organizer can cancel", status: 403 };
@@ -1834,7 +1851,7 @@ export async function cancelScheduledMeeting(
       },
       update: { cancelled: true },
     });
-    if (opts?.occurrenceEventId && meeting.organizerCalendarLinkId) {
+    if (ownsGoogle && opts?.occurrenceEventId && meeting.organizerCalendarLinkId) {
       try {
         const link = await prisma.userCalendarLink.findUnique({
           where: { id: meeting.organizerCalendarLinkId },
@@ -1884,7 +1901,7 @@ export async function cancelScheduledMeeting(
         where: { id: meetingId },
         data: { recurrenceRule: truncatedRule },
       });
-      if (meeting.externalEventId && meeting.organizerCalendarLinkId) {
+      if (ownsGoogle && meeting.externalEventId && meeting.organizerCalendarLinkId) {
         try {
           const link = await prisma.userCalendarLink.findUnique({
             where: { id: meeting.organizerCalendarLinkId },
@@ -1913,6 +1930,9 @@ export async function cancelScheduledMeeting(
     where: { id: meetingId },
     data: { status: "Cancelled" },
   });
+
+  // Google owns the invite and its cancellation notices for a tracked event.
+  if (!ownsGoogle) return { ok: true, alreadyCancelled: false };
 
   // Delete the Google event best-effort.
   if (meeting.externalEventId && meeting.organizerCalendarLinkId) {
@@ -2056,6 +2076,7 @@ export async function updateScheduledMeeting(
       externalEventId: true,
       organizerCalendarLinkId: true,
       organizerCalendarId: true,
+      googleEventOrigin: true,
       meetingType: true,
       notebookId: true,
       attendanceMode: true,
@@ -2080,6 +2101,7 @@ export async function updateScheduledMeeting(
   }
 
   const editScope = input.editScope ?? "all";
+  const ownsGoogle = ownsGoogleEvent(meeting);
 
   // ── "this" occurrence ────────────────────────────────────────────────────
   if (editScope === "this") {
@@ -2112,7 +2134,7 @@ export async function updateScheduledMeeting(
     });
 
     let gcalError: string | null = null;
-    if (input.occurrenceEventId && meeting.organizerCalendarLinkId) {
+    if (ownsGoogle && input.occurrenceEventId && meeting.organizerCalendarLinkId) {
       try {
         const link = await prisma.userCalendarLink.findUnique({
           where: { id: meeting.organizerCalendarLinkId },
@@ -2164,7 +2186,7 @@ export async function updateScheduledMeeting(
         where: { id: meetingId },
         data: { recurrenceRule: truncatedRule },
       });
-      if (meeting.externalEventId && meeting.organizerCalendarLinkId) {
+      if (ownsGoogle && meeting.externalEventId && meeting.organizerCalendarLinkId) {
         try {
           const link = await prisma.userCalendarLink.findUnique({
             where: { id: meeting.organizerCalendarLinkId },
@@ -2205,6 +2227,7 @@ export async function updateScheduledMeeting(
       recurrenceRule: newRule,
       organizerCalendarLinkId: meeting.organizerCalendarLinkId,
       organizerCalendarId: meeting.organizerCalendarId,
+      skipGoogle: !ownsGoogle,
       meetingType: meeting.meetingType,
       meetingTypeLabel: meeting.meetingTypeLabel,
       projectId: meeting.projectId,
@@ -2301,7 +2324,7 @@ export async function updateScheduledMeeting(
   // to the caller, not fatal. sendUpdates:"all" has Google email guests (added,
   // removed, and retained) about the change.
   let gcalError: string | null = null;
-  if (meeting.externalEventId && meeting.organizerCalendarLinkId) {
+  if (ownsGoogle && meeting.externalEventId && meeting.organizerCalendarLinkId) {
     try {
       const link = await prisma.userCalendarLink.findUnique({
         where: { id: meeting.organizerCalendarLinkId },
@@ -2498,10 +2521,26 @@ export async function trackExternalEventAsMeeting(
       ? Math.round((endDate.getTime() - startDate.getTime()) / 60_000)
       : 60;
 
-  const existing = await prisma.scheduledMeeting.findFirst({
-    where: { externalEventId, status: { not: "Cancelled" } },
-    select: { id: true, organizerId: true, participantUserIds: true },
+  const baseEventId = googleSeriesBase(externalEventId);
+  const baseUID = event.iCalUID ? googleSeriesBaseUID(event.iCalUID) : null;
+  const candidates = await prisma.scheduledMeeting.findMany({
+    where: {
+      status: { not: "Cancelled" },
+      OR: [
+        { externalEventId },
+        ...(baseEventId !== externalEventId ? [{ externalEventId: baseEventId }] : []),
+        ...(event.iCalUID ? [{ iCalUID: event.iCalUID }] : []),
+        ...(baseUID && baseUID !== event.iCalUID ? [{ iCalUID: baseUID }] : []),
+      ],
+    },
+    select: { id: true, organizerId: true, participantUserIds: true, externalEventId: true, iCalUID: true },
   });
+  const existing =
+    candidates.find(
+      (m) => m.externalEventId === externalEventId || (event.iCalUID != null && m.iCalUID === event.iCalUID),
+    ) ??
+    candidates[0] ??
+    null;
   if (existing) {
     if (existing.organizerId === input.actorId || existing.participantUserIds.includes(input.actorId)) {
       return { ok: true, meeting: { id: existing.id } };
@@ -2570,9 +2609,12 @@ export async function trackExternalEventAsMeeting(
       selectedAt: startDate,
       status: "Confirmed",
       externalEventId,
+      iCalUID: event.iCalUID,
+      googleEventOrigin: "Tracked",
       recurrenceRule: event.recurrence[0]?.replace(/^RRULE:/, "") ?? null,
       ownerCalendarEmail: link.externalEmail,
       organizerCalendarLinkId: link.id,
+      organizerCalendarId: input.calendarId,
     },
   });
 

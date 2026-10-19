@@ -1110,6 +1110,8 @@ export async function getGoogleEvent(opts: {
   /** The Google organizer's address, falling back to the creator; null when
    *  Google omits both. */
   organizerEmail: string | null;
+  /** Who created the event (the account that inserted it); null when Google omits it. */
+  creatorEmail: string | null;
 }> {
   const token = await getValidAccessTokenForLink(opts.linkId);
   const calendarId = encodeURIComponent(opts.calendarId ?? "primary");
@@ -1155,6 +1157,7 @@ export async function getGoogleEvent(opts: {
     viewerInvited:
       data.organizer?.self === true || (data.attendees ?? []).some((a) => a.self === true),
     organizerEmail: (data.organizer?.email ?? data.creator?.email ?? "").trim() || null,
+    creatorEmail: (data.creator?.email ?? "").trim() || null,
   };
 }
 

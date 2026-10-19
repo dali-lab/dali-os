@@ -40,6 +40,7 @@ import { getZonedYMD } from "~/lib/timezone";
 import { cn } from "~/lib/cn";
 import { localDayTimeToIso } from "~/calendar/lib/event-block";
 import { eventTitleOrDefault } from "~/calendar/lib/event-title";
+import { isTrackedMeeting, STOP_TRACKING_DESCRIPTION, STOP_TRACKING_LABEL } from "~/calendar/lib/stop-tracking";
 import { DARTMOUTH_PERIODS, getPeriod, periodSummary, periodMeetings } from "~/calendar/lib/dartmouth-periods";
 import {
   destinationValue,
@@ -409,6 +410,7 @@ export function EventComposer({
   // patch — see maybeUpdateMeetingFromComposer on the server.
   const meetingId = editing ? ev?.meeting?.meetingId ?? null : null;
   const canManageMeeting = Boolean(meetingId && ev?.meeting?.canInvite);
+  const tracked = isTrackedMeeting(ev?.meeting);
 
   const [title, setTitle] = useState(base?.title ?? "");
   const [allDay, setAllDay] = useState(base?.allDay ?? false);
@@ -486,7 +488,7 @@ export function EventComposer({
   useEffect(() => {
     if (prevDel.current !== "idle" && deleteFetcher.state === "idle") {
       if (!deleteFetcher.data?.error) {
-        toast.success(canManageMeeting ? "Meeting cancelled." : "Event deleted.");
+        toast.success(tracked ? "Stopped tracking." : canManageMeeting ? "Meeting cancelled." : "Event deleted.");
         onClose();
       } else {
         // Come back so the error under the form is readable.
@@ -494,7 +496,7 @@ export function EventComposer({
       }
     }
     prevDel.current = deleteFetcher.state;
-  }, [deleteFetcher.state, deleteFetcher.data, onClose, toast, canManageMeeting]);
+  }, [deleteFetcher.state, deleteFetcher.data, onClose, toast, canManageMeeting, tracked]);
 
   // Load the meeting's guest list + member/group directory once, then seed the
   // picker. A Group-scoped meeting keeps its group selected and treats anyone
@@ -610,8 +612,14 @@ export function EventComposer({
     const effectiveScope = isRecurring ? scope : "this";
     setSteppedAside(true);
     const ok = await dialog.confirm({
-      title: title.trim() ? `Delete "${title.trim()}"?` : "Delete this event?",
-      description: !isRecurring
+      title: title.trim()
+        ? `${tracked ? STOP_TRACKING_LABEL : "Delete"} "${title.trim()}"?`
+        : tracked
+          ? "Stop tracking this meeting?"
+          : "Delete this event?",
+      description: tracked
+        ? STOP_TRACKING_DESCRIPTION
+        : !isRecurring
         ? canManageMeeting
           ? "The meeting is cancelled and guests are told. This can't be undone."
           : "The event is removed from the calendar. This can't be undone."
@@ -620,7 +628,7 @@ export function EventComposer({
           : effectiveScope === "following"
             ? "This occurrence and every one after it are deleted. Earlier ones stay."
             : "Only this occurrence is deleted. The rest of the series stays.",
-      confirmLabel: "Delete",
+      confirmLabel: tracked ? STOP_TRACKING_LABEL : "Delete",
       tone: "destructive",
     });
     if (!ok) {
@@ -932,7 +940,7 @@ export function EventComposer({
                     onClick={() => void confirmDeleteEvent()}
                     className="rounded-lg border border-border px-3 py-1.5 text-sm font-medium text-destructive hover:bg-destructive/10 disabled:opacity-50"
                   >
-                    Delete
+                    {tracked ? STOP_TRACKING_LABEL : "Delete"}
                   </button>
                 </div>
               )}

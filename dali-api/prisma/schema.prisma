@@ -2597,6 +2597,9 @@ model ScheduledMeeting {
   // an edit can events.patch the right calendar instead of defaulting to
   // "primary". Null = primary / no external event.
   organizerCalendarId String?
+  // Whether DALI pushed the Google event (Created) or only tracked someone
+  // else's (Tracked). DALI writes to Google only for Created; null = legacy.
+  googleEventOrigin   GoogleEventOrigin?
 
   // Set when the sender picks a meeting type at invite time. Drives auto-
   // creation of a meeting-note Page under `project`'s shared documents
@@ -2677,6 +2680,11 @@ enum ScopeType {
   UserList
   Series
   None
+}
+
+enum GoogleEventOrigin {
+  Created
+  Tracked
 }
 
 enum MeetingType {
