@@ -5,15 +5,17 @@
 // The client uploads directly to S3 via multipart POST using the returned
 // url + fields. S3 enforces content-length-range and Content-Type via the
 // signed policy, so a malicious client cannot exceed the size cap. The cap
-// depends on the key: 100 MB for the project-file / Drive store, 10 MB for
-// everything else (`uploadCapForKey`) — and the 100 MB tier only for lab
-// members.
+// depends on the key (`uploadCapForKey`): 100 MB for the project-file / Drive
+// store (lab members only), 50 MB for form file-upload answers under
+// `applications/` (anyone signed in, so applicants get it), 10 MB for
+// everything else.
 // After upload, store the key in the DB and use GET /api/upload/url?key=... to read it.
 
 import { requireAuth } from "~/lib/auth";
 import { getUploadPost, isS3Configured } from '~/lib/s3'
 import {
   DEFAULT_UPLOAD_CAP,
+  FILE_STORE_UPLOAD_CAP,
   fileMatchesAccept,
   isBlockedUpload,
   uploadCapForKey,
@@ -66,8 +68,8 @@ export async function action({ request }: { request: Request }) {
     let cap = uploadCapForKey(scopedKey)
     // Portal applicants, partners and other Dartmouth sign-ins reach this route
     // too. None of them upload to the project-file / Drive store, so they keep
-    // the general cap rather than 100 MB of storage per request.
-    if (cap.maxBytes > DEFAULT_UPLOAD_CAP.maxBytes && !(await isLabMember(auth.user.sub, request))) {
+    // the general cap there rather than 100 MB of storage per request.
+    if (cap === FILE_STORE_UPLOAD_CAP && !(await isLabMember(auth.user.sub, request))) {
       cap = DEFAULT_UPLOAD_CAP
     }
 

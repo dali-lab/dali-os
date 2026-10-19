@@ -9,6 +9,16 @@ export const MAX_FILE_STORE_BYTES = 100 * 1024 * 1024;
 
 export const MAX_FILE_STORE_LABEL = "100 MB";
 
+/** File-upload answers on forms (applications, member forms) — resumes and
+ *  image-heavy design portfolios, which routinely run 15-40 MB as PDFs. Video
+ *  should still come in as a link. */
+export const MAX_FORM_UPLOAD_BYTES = 50 * 1024 * 1024;
+
+export const MAX_FORM_UPLOAD_LABEL = "50 MB";
+
+// The prefix QuestionField builds for every form file-upload answer.
+const FORM_UPLOAD_PREFIX = "applications/";
+
 // Key prefixes (under uploads/) that land in the ProjectFile store: the project
 // Files tab and task attachments, a non-project file's new version, and the
 // Drive hub (Lab and My Drive share one prefix). Keyed by prefix rather than by
@@ -25,17 +35,29 @@ export const DEFAULT_UPLOAD_CAP: UploadCap = {
   expiresIn: 300,
 };
 
+// 15 minutes: a 100 MB body on a slow link, or an MCP agent that has to turn
+// the response into a curl call first.
+export const FILE_STORE_UPLOAD_CAP: UploadCap = {
+  maxBytes: MAX_FILE_STORE_BYTES,
+  label: MAX_FILE_STORE_LABEL,
+  expiresIn: 900,
+};
+
+// Applicants upload from home connections; 50 MB needs more than 5 minutes.
+export const FORM_UPLOAD_CAP: UploadCap = {
+  maxBytes: MAX_FORM_UPLOAD_BYTES,
+  label: MAX_FORM_UPLOAD_LABEL,
+  expiresIn: 900,
+};
+
 /** The size cap and presigned-POST lifetime for an upload key. Accepts the key
  *  with or without its `uploads/` scope, since the browser builds the prefix
  *  and the presign route adds the scope. Shared by the client pre-check and
  *  the signed policy so the two can't disagree. */
 export function uploadCapForKey(key: string): UploadCap {
   const unscoped = key.replace(/^\/+/, "").replace(/^uploads\//, "");
-  if (FILE_STORE_PREFIXES.some((p) => unscoped.startsWith(p))) {
-    // 15 minutes: a 100 MB body on a slow link, or an MCP agent that has to
-    // turn the response into a curl call first.
-    return { maxBytes: MAX_FILE_STORE_BYTES, label: MAX_FILE_STORE_LABEL, expiresIn: 900 };
-  }
+  if (FILE_STORE_PREFIXES.some((p) => unscoped.startsWith(p))) return FILE_STORE_UPLOAD_CAP;
+  if (unscoped.startsWith(FORM_UPLOAD_PREFIX)) return FORM_UPLOAD_CAP;
   return DEFAULT_UPLOAD_CAP;
 }
 

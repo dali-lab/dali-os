@@ -6,9 +6,8 @@ import type { Question } from "~/types";
 import type { SubmissionCheckResult } from "~/lib/submission-check";
 import { countWords } from "~/lib/word-count";
 import {
-  MAX_UPLOAD_BYTES,
-  MAX_UPLOAD_LABEL,
   fileMatchesAccept,
+  uploadCapForKey,
 } from "~/lib/file-validation";
 import { SKILLS_RATING_UNRATED, parseSkillsRating } from "~/lib/skills-rating";
 import type { ReferenceOption } from "~/forms/lib/reference-sources.shared";
@@ -353,8 +352,10 @@ function FileUploadField({
   async function handleFile(file: File) {
     setError(null);
 
-    if (file.size > MAX_UPLOAD_BYTES) {
-      setError(`File too large (max ${MAX_UPLOAD_LABEL})`);
+    const uploadKey = `applications/${questionKey}/${crypto.randomUUID()}-${file.name}`;
+    const cap = uploadCapForKey(uploadKey);
+    if (file.size > cap.maxBytes) {
+      setError(`File too large (max ${cap.label})`);
       if (fileRef.current) fileRef.current.value = "";
       return;
     }
@@ -375,7 +376,7 @@ function FileUploadField({
         credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          key: `applications/${questionKey}/${crypto.randomUUID()}-${file.name}`,
+          key: uploadKey,
           contentType: file.type || 'application/octet-stream',
           contentLength: file.size,
           accept,
@@ -398,7 +399,7 @@ function FileUploadField({
       if (!uploadRes.ok) {
         const body = await uploadRes.text().catch(() => "");
         if (uploadRes.status === 403 && /EntityTooLarge/i.test(body)) {
-          throw new Error(`File too large (max ${MAX_UPLOAD_LABEL})`);
+          throw new Error(`File too large (max ${cap.label})`);
         }
         throw new Error("Upload failed");
       }
