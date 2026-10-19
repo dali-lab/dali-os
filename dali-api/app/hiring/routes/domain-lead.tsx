@@ -54,6 +54,8 @@ import { DomainSubRow, SubRowEmpty, SubRowVersion } from "~/hiring/components/cy
 import { ChallengeFormPicker } from "~/hiring/components/cycle-setup/ChallengeLine";
 import { DomainRosterCard, type RosterPerson } from "~/hiring/components/cycle-setup/DomainRosterCard";
 import { addDomainMentors, domainMentorIds } from "~/hiring/lib/cycle-rosters.server";
+import { getEngagementSummaries, type EngagementSummary } from "~/hiring/lib/email-engagement.server";
+import { ApplicantEngagementChip } from "~/hiring/components/ApplicantEmailPanel";
 
 export const meta: Route.MetaFunction = () => [{ title: "Domain lead · DALI OS" }];
 
@@ -432,9 +434,14 @@ export async function loader({ request }: Route.LoaderArgs) {
   );
 
   // All Drive Forms, for the challenge picker.
-  const allForms = await prisma.form.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } });
+  const flat = domainData.flat();
+  const applicantUserIds = flat.flatMap((d: any) => (d.apps ?? []).map((a: any) => a.userId as string));
+  const [allForms, emailSummaries] = await Promise.all([
+    prisma.form.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
+    getEngagementSummaries(applicantUserIds),
+  ]);
 
-  return { domainData: domainData.flat(), pillRoles, allForms };
+  return { domainData: flat, pillRoles, allForms, emailEngagement: Object.fromEntries(emailSummaries) };
 }
 
 export async function action({ request }: Route.ActionArgs) {
@@ -576,12 +583,12 @@ export default function DomainLeadDashboard() {
           }))}
         />
       )}
-      <DomainPanel key={`${current.assignment.id}-${current.cycle?.id ?? "none"}`} entry={current} allForms={data?.allForms ?? []} />
+      <DomainPanel key={`${current.assignment.id}-${current.cycle?.id ?? "none"}`} entry={current} allForms={data?.allForms ?? []} emailEngagement={data?.emailEngagement ?? {}} />
     </div>
   );
 }
 
-function DomainPanel({ entry, allForms }: { entry: any; allForms: { id: string; name: string }[] }) {
+function DomainPanel({ entry, allForms, emailEngagement }: { entry: any; allForms: { id: string; name: string }[]; emailEngagement: Record<string, EngagementSummary> }) {
   const { assignment, cycle, availableCycles, apps, linkedChallengeForms, isChallengeReady, interviews, reviewers: cycleReviewers, delibsSessions, draftDecisions, cycleReviewersForDomain, delibRounds: roundSummaries, rubricVersionOptions, currentRubricVersionId, rubricCriteria, interviewers, hasApplicationReviews, confidentialityRequired } = entry;
   const os = useOsChrome();
   const navigate = useNavigate();
@@ -878,6 +885,7 @@ function DomainPanel({ entry, allForms }: { entry: any; allForms: { id: string; 
                     currentStatus={currentStatus}
                     canAssignReviewers={!!cycle.generalRubricVersionId && (!cycle.hasChallenges || !!currentRubricVersionId)}
                     rubricCriteria={rubricCriteria ?? []}
+                    emailEngagement={emailEngagement}
                   />
                 ) : (
                   <p className={cn(os.bodyText, "py-3 text-center")}>No applicants in review.</p>
@@ -1478,8 +1486,9 @@ function PrePipelinePillBadge({ pill }: { pill: PrePipelinePill }) {
   );
 }
 
-function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycleId, domainId, currentStatus, canAssignReviewers, rubricCriteria }: {
+function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycleId, domainId, currentStatus, canAssignReviewers, rubricCriteria, emailEngagement }: {
   apps: any[];
+  emailEngagement: Record<string, EngagementSummary>;
   draftDecisions: any[];
   cycleReviewersForDomain: any[];
   cycleId: string;
@@ -1782,6 +1791,7 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
             return (
               <tr key={app.id} className={OS_TABLE_ROW}>
                 <td className="px-6 py-4 font-medium">
+                  <span className="inline-flex items-center gap-2">
                   {daId ? (
                     <Link
                       to={`/hiring/domain-lead/application/${daId}`}
@@ -1797,6 +1807,8 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
                   ) : (
                     <span className="text-foreground">{app.user.firstName} {app.user.lastName}</span>
                   )}
+                  <ApplicantEngagementChip summary={emailEngagement[app.userId]} />
+                  </span>
                 </td>
                 <td className="px-6 py-4">
                   <ReviewerAssignmentCell

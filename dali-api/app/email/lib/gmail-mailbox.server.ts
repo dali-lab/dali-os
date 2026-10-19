@@ -266,9 +266,12 @@ export interface MessageMeta {
   to: string;
   cc: string;
   subject: string;
+  autoSubmitted: string;
+  precedence: string;
+  xAutoreply: string;
 }
 
-const METADATA_HEADERS = ["From", "To", "Cc", "Subject"]
+const METADATA_HEADERS = ["From", "To", "Cc", "Subject", "Auto-Submitted", "Precedence", "X-Autoreply", "X-Autorespond"]
   .map((h) => `metadataHeaders=${h}`)
   .join("&");
 
@@ -288,6 +291,9 @@ export async function getMessageMetadata(token: string, id: string): Promise<Mes
     to: header(m.payload, "To"),
     cc: header(m.payload, "Cc"),
     subject: header(m.payload, "Subject"),
+    autoSubmitted: header(m.payload, "Auto-Submitted"),
+    precedence: header(m.payload, "Precedence"),
+    xAutoreply: header(m.payload, "X-Autoreply") || header(m.payload, "X-Autorespond"),
   };
 }
 

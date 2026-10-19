@@ -478,6 +478,7 @@ export async function submitEmailAction(request: Request) {
           from: m.from,
           to: m.to,
           cc: m.cc,
+          autoReply: null,
         }));
         await indexMessages({ accountId: account.id, inboxAddress: account.address, metas });
       } catch (err) {

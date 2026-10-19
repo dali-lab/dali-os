@@ -23,6 +23,8 @@ import { redirectToLogin } from "~/lib/login-next";
 import { getUserRoles } from "~/lib/roles";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { prisma } from "~/lib/db";
+import { getEngagementSummaries, type EngagementSummary } from "~/hiring/lib/email-engagement.server";
+import { ApplicantEngagementChip } from "~/hiring/components/ApplicantEmailPanel";
 import { Popover, Select } from "~/components/ui/floating";
 import { filterPillClass } from "~/components/ui/floating/styles";
 import {
@@ -256,7 +258,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   // Both of these derive only from `domainApps` (not from each other), so the
   // blind-label lookup and the engagement-signal queries run concurrently
   // instead of one after the other.
-  const [blindLabels, [priorRows, emailRows, educationRows, eventRows]] = await Promise.all([
+  const [blindLabels, [priorRows, emailSummaries, educationRows, eventRows]] = await Promise.all([
     (async () => {
       const daIdsByApplication = new Map<string, string[]>();
       if (applicationIds.length > 0) {
@@ -287,11 +289,7 @@ export async function loader({ request }: Route.LoaderArgs) {
             select: { userId: true },
             distinct: ["userId"],
           }),
-          prisma.mailMessageIndex.findMany({
-            where: { linkedUserId: { in: applicantUserIds } },
-            select: { linkedUserId: true },
-            distinct: ["linkedUserId"],
-          }),
+          getEngagementSummaries(applicantUserIds),
           prisma.educationApplication.findMany({
             where: { applicantUserId: { in: applicantUserIds }, status: "Approved" },
             select: { applicantUserId: true },
@@ -304,7 +302,7 @@ export async function loader({ request }: Route.LoaderArgs) {
               })
             : Promise.resolve([]),
         ])
-      : Promise.resolve([[], [], [], []]),
+      : Promise.resolve([[], new Map<string, EngagementSummary>(), [], []] as const),
   ]);
   const eventOptions = applicationEventsEnabled
     ? (
@@ -316,7 +314,6 @@ export async function loader({ request }: Route.LoaderArgs) {
       ).map((e) => ({ id: e.id, title: e.title, startsAt: e.startsAt.toISOString() }))
     : [];
   const returningUserIds = new Set(priorRows.map((r) => r.userId));
-  const emailedUserIds = new Set(emailRows.map((r) => r.linkedUserId));
   const educatedUserIds = new Set(educationRows.map((r) => r.applicantUserId));
   const attendedEventIdsByUser = new Map<string, string[]>();
   for (const r of eventRows) {
@@ -351,7 +348,8 @@ export async function loader({ request }: Route.LoaderArgs) {
             .flatMap((i: any) => (i.assignments ?? []).map((a: any) => a.cycleInterviewer.user)),
         ),
         returning: returningUserIds.has(da.application.user.id),
-        emailed: emailedUserIds.has(da.application.user.id),
+        emailed: emailSummaries.has(da.application.user.id),
+        emailEngagement: emailSummaries.get(da.application.user.id) ?? null,
         educated: educatedUserIds.has(da.application.user.id),
         attendedEvent: attendedEventIdsByUser.has(da.application.user.id),
         attendedEventIds: attendedEventIdsByUser.get(da.application.user.id) ?? [],
@@ -762,7 +760,12 @@ export default function ApplicationsDatabase() {
                     onClick={() => navigate(`/hiring/applications/${r.id}`)}
                     className="border-t border-os-container hover:bg-os-card-hover cursor-pointer transition-colors"
                   >
-                    <td className="px-6 py-3.5 font-medium text-foreground">{r.name}</td>
+                    <td className="px-6 py-3.5 font-medium text-foreground">
+                      <span className="inline-flex items-center gap-2">
+                        {r.name}
+                        <ApplicantEngagementChip summary={r.emailEngagement ?? undefined} />
+                      </span>
+                    </td>
                     <td className="px-6 py-3.5 text-foreground">{r.domain}</td>
                     <td className="px-6 py-3.5">
                       <span

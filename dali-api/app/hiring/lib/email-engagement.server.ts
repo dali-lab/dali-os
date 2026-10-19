@@ -1,23 +1,107 @@
-// "Email with applications@" panel data for the hiring review pages: how much
-// mail this applicant has exchanged with the applications@ inbox, grouped
-// into threads. Reads only the headers-only MailMessageIndex — never the
-// Gmail content itself. When blinded (reviewer still in blind review), the
-// subject and thread pointer are stripped so the payload carries nothing a
-// blinded reviewer couldn't already infer from the counts.
+// Applicant interest, read from the headers-only MailMessageIndex: how often
+// the applicant wrote to the applications@ inbox. Our own mail (mostly
+// automated) and their auto-replies don't count. When blinded, the subject and
+// thread pointer are stripped so the payload carries nothing a blinded
+// reviewer couldn't already infer from the counts.
 
 import { prisma } from "~/lib/db";
 
+export type EngagementSummary = {
+  fromThem: number;
+  threadsStarted: number;
+  lastFromThemAt: string | null;
+};
+
 export type EmailEngagement = {
-  totals: { inbound: number; outbound: number; firstAt: string | null; lastAt: string | null };
+  totals: EngagementSummary;
   threads: {
     indexId: string | null;
     subject: string | null;
     firstAt: string;
     lastAt: string;
-    inbound: number;
-    outbound: number;
+    messages: number;
+    fromThem: number;
+    startedByThem: boolean;
   }[];
 };
+
+type IndexRow = {
+  id: string;
+  accountId: string;
+  threadId: string;
+  direction: "Inbound" | "Outbound";
+  autoReply: boolean | null;
+  subject: string;
+  sentAt: Date;
+};
+
+type ThreadAgg = {
+  indexId: string;
+  subject: string;
+  firstAt: Date;
+  lastAt: Date;
+  messages: number;
+  fromThem: number;
+  lastFromThemAt: Date | null;
+  startedByThem: boolean;
+};
+
+const isFromThem = (row: Pick<IndexRow, "direction" | "autoReply">) =>
+  row.direction === "Inbound" && row.autoReply !== true;
+
+// Rows must arrive oldest-first.
+function threadsWithReplies(rows: IndexRow[]): ThreadAgg[] {
+  const byThread = new Map<string, ThreadAgg>();
+  for (const row of rows) {
+    const key = `${row.accountId}~${row.threadId}`;
+    const fromThem = isFromThem(row);
+    const t = byThread.get(key);
+    if (t) {
+      t.indexId = row.id;
+      t.subject = row.subject || t.subject;
+      t.lastAt = row.sentAt;
+      t.messages++;
+      if (fromThem) {
+        t.fromThem++;
+        t.lastFromThemAt = row.sentAt;
+      }
+    } else {
+      byThread.set(key, {
+        indexId: row.id,
+        subject: row.subject,
+        firstAt: row.sentAt,
+        lastAt: row.sentAt,
+        messages: 1,
+        fromThem: fromThem ? 1 : 0,
+        lastFromThemAt: fromThem ? row.sentAt : null,
+        startedByThem: fromThem,
+      });
+    }
+  }
+  return [...byThread.values()].filter((t) => t.fromThem > 0);
+}
+
+function summarize(threads: ThreadAgg[]): EngagementSummary {
+  let last: Date | null = null;
+  for (const t of threads) {
+    if (t.lastFromThemAt && (!last || t.lastFromThemAt > last)) last = t.lastFromThemAt;
+  }
+  return {
+    fromThem: threads.reduce((n, t) => n + t.fromThem, 0),
+    threadsStarted: threads.filter((t) => t.startedByThem).length,
+    lastFromThemAt: last?.toISOString() ?? null,
+  };
+}
+
+const ROW_SELECT = {
+  id: true,
+  accountId: true,
+  threadId: true,
+  direction: true,
+  autoReply: true,
+  subject: true,
+  sentAt: true,
+} as const;
 
 export async function getApplicantEmailEngagement(
   userId: string,
@@ -26,63 +110,46 @@ export async function getApplicantEmailEngagement(
   const rows = await prisma.mailMessageIndex.findMany({
     where: { linkedUserId: userId },
     orderBy: { sentAt: "asc" },
-    select: { id: true, accountId: true, threadId: true, direction: true, subject: true, sentAt: true },
+    select: ROW_SELECT,
   });
-
-  type ThreadAgg = {
-    indexId: string;
-    subject: string;
-    firstAt: Date;
-    lastAt: Date;
-    inbound: number;
-    outbound: number;
-  };
-  const byThread = new Map<string, ThreadAgg>();
-  let inbound = 0;
-  let outbound = 0;
-
-  for (const row of rows) {
-    if (row.direction === "Inbound") inbound++;
-    else outbound++;
-
-    const key = `${row.accountId}~${row.threadId}`;
-    const existing = byThread.get(key);
-    if (existing) {
-      existing.indexId = row.id; // rows arrive oldest-first, so this ends up newest
-      existing.subject = row.subject || existing.subject;
-      existing.lastAt = row.sentAt;
-      if (row.direction === "Inbound") existing.inbound++;
-      else existing.outbound++;
-    } else {
-      byThread.set(key, {
-        indexId: row.id,
-        subject: row.subject,
-        firstAt: row.sentAt,
-        lastAt: row.sentAt,
-        inbound: row.direction === "Inbound" ? 1 : 0,
-        outbound: row.direction === "Outbound" ? 1 : 0,
-      });
-    }
-  }
-
-  const threads = [...byThread.values()]
-    .sort((a, b) => b.lastAt.getTime() - a.lastAt.getTime())
-    .map((t) => ({
-      indexId: opts.blinded ? null : t.indexId,
-      subject: opts.blinded ? null : t.subject,
-      firstAt: t.firstAt.toISOString(),
-      lastAt: t.lastAt.toISOString(),
-      inbound: t.inbound,
-      outbound: t.outbound,
-    }));
+  const threads = threadsWithReplies(rows);
 
   return {
-    totals: {
-      inbound,
-      outbound,
-      firstAt: rows[0]?.sentAt.toISOString() ?? null,
-      lastAt: rows.at(-1)?.sentAt.toISOString() ?? null,
-    },
-    threads,
+    totals: summarize(threads),
+    threads: threads
+      .sort((a, b) => b.lastAt.getTime() - a.lastAt.getTime())
+      .map((t) => ({
+        indexId: opts.blinded ? null : t.indexId,
+        subject: opts.blinded ? null : t.subject,
+        firstAt: t.firstAt.toISOString(),
+        lastAt: t.lastAt.toISOString(),
+        messages: t.messages,
+        fromThem: t.fromThem,
+        startedByThem: t.startedByThem,
+      })),
   };
+}
+
+// Only users who wrote to us get an entry.
+export async function getEngagementSummaries(userIds: string[]): Promise<Map<string, EngagementSummary>> {
+  const out = new Map<string, EngagementSummary>();
+  if (userIds.length === 0) return out;
+
+  const rows = await prisma.mailMessageIndex.findMany({
+    where: { linkedUserId: { in: [...new Set(userIds)] } },
+    orderBy: { sentAt: "asc" },
+    select: { ...ROW_SELECT, linkedUserId: true },
+  });
+  const byUser = new Map<string, IndexRow[]>();
+  for (const row of rows) {
+    if (!row.linkedUserId) continue;
+    const list = byUser.get(row.linkedUserId);
+    if (list) list.push(row);
+    else byUser.set(row.linkedUserId, [row]);
+  }
+  for (const [userId, userRows] of byUser) {
+    const summary = summarize(threadsWithReplies(userRows));
+    if (summary.fromThem > 0) out.set(userId, summary);
+  }
+  return out;
 }

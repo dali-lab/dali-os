@@ -2510,6 +2510,8 @@ model MailMessageIndex {
   sentAt         DateTime
   fromAddress    String
   toAddresses    String[]       @default([])
+  // Null until the indexer has read the message's auto-reply headers.
+  autoReply      Boolean?
   linkedUserId   String?
   linkSource     MailLinkSource @default(None)
   linkedById     String?

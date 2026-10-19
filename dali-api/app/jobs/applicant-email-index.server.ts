@@ -23,6 +23,7 @@ import {
   getSharedInboxAccount,
   getSharedInboxToken,
   indexMessages,
+  isAutoReply,
   type IndexableMessage,
 } from "~/email/lib/mail-index.server";
 
@@ -110,27 +111,65 @@ export async function runApplicantEmailIndex({ now, settings }: JobContext): Pro
     getMessageMetadata(token, m.id),
   );
 
-  const indexable: IndexableMessage[] = metas.map((meta) => ({
-    id: meta.id,
-    threadId: meta.threadId,
-    direction: classifyDirection(meta, address),
-    subject: meta.subject,
-    date: meta.date,
-    from: meta.from,
-    to: meta.to,
-    cc: meta.cc,
-  }));
+  const indexable: IndexableMessage[] = metas.map((meta) => {
+    const direction = classifyDirection(meta, address);
+    return {
+      id: meta.id,
+      threadId: meta.threadId,
+      direction,
+      subject: meta.subject,
+      date: meta.date,
+      from: meta.from,
+      to: meta.to,
+      cc: meta.cc,
+      autoReply: direction === "Inbound" ? isAutoReply(meta) : false,
+    };
+  });
 
   const created = await indexMessages({ accountId: account.id, inboxAddress: address, metas: indexable });
+
+  const checked = await classifyUncheckedInbound(token, account.id, maxMessagesPerRun - toProcess.length);
 
   const drained = missing.length <= maxMessagesPerRun;
   if (drained && account.indexBackfilledAt == null) {
     await prisma.mailAccount.update({ where: { id: account.id }, data: { indexBackfilledAt: now } });
   }
 
-  const note = drained
-    ? `indexed ${created} via ${source}; backfill complete`
-    : `indexed ${created} via ${source}; backfill remaining ${missing.length - toProcess.length}`;
+  const progress = drained ? "backfill complete" : `backfill remaining ${missing.length - toProcess.length}`;
+  const note = `indexed ${created} via ${source}; ${progress}${checked ? `; checked ${checked} for auto-replies` : ""}`;
 
   return { items: created, note };
+}
+
+// Rows indexed before autoReply existed, or linked by hand from the inbox
+// (which reads full threads, not these headers), start out null.
+async function classifyUncheckedInbound(token: string, accountId: string, budget: number): Promise<number> {
+  if (budget <= 0) return 0;
+  const rows = await prisma.mailMessageIndex.findMany({
+    where: { accountId, direction: "Inbound", autoReply: null },
+    orderBy: { sentAt: "desc" },
+    take: budget,
+    select: { id: true, gmailMessageId: true },
+  });
+  if (rows.length === 0) return 0;
+
+  const flags = await mapWithConcurrency(rows, METADATA_CONCURRENCY, async (row) => {
+    try {
+      return isAutoReply(await getMessageMetadata(token, row.gmailMessageId));
+    } catch (err) {
+      // Deleted from Gmail since it was indexed. Settle it so it isn't retried every run.
+      if (err instanceof MailboxError && err.status === 404) return false;
+      throw err;
+    }
+  });
+
+  const autoIds = rows.filter((_, i) => flags[i]).map((r) => r.id);
+  const humanIds = rows.filter((_, i) => !flags[i]).map((r) => r.id);
+  if (autoIds.length) {
+    await prisma.mailMessageIndex.updateMany({ where: { id: { in: autoIds } }, data: { autoReply: true } });
+  }
+  if (humanIds.length) {
+    await prisma.mailMessageIndex.updateMany({ where: { id: { in: humanIds } }, data: { autoReply: false } });
+  }
+  return rows.length;
 }

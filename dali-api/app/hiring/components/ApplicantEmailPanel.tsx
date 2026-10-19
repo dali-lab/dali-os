@@ -1,13 +1,11 @@
 import { useState } from "react";
-import { ArrowDownLeft, ArrowUpRight } from "lucide-react";
+import { ArrowDownLeft, CornerUpLeft, Mail } from "lucide-react";
 import { formatDateShort } from "~/lib/display";
 import { useUserTimeZone } from "~/hooks/useUserTimeZone";
 import { ApplicantEmailThreadModal } from "~/hiring/components/ApplicantEmailThreadModal";
-import type { EmailEngagement } from "~/hiring/lib/email-engagement.server";
+import type { EmailEngagement, EngagementSummary } from "~/hiring/lib/email-engagement.server";
+import { Tooltip } from "~/components/ui/floating";
 import { ApplicantPanel, PANEL_ROW } from "~/hiring/components/ApplicantPanel";
-
-// Subjects and the thread pointer are already stripped server-side while the
-// viewer is blinded, so this component renders whatever it's handed.
 
 export function ApplicantEmailPanel({
   engagement,
@@ -22,7 +20,7 @@ export function ApplicantEmailPanel({
 }) {
   const tz = useUserTimeZone();
   const [openIndexId, setOpenIndexId] = useState<string | null>(null);
-  if (!engagement || engagement.totals.inbound + engagement.totals.outbound === 0) return null;
+  if (!engagement || engagement.totals.fromThem === 0) return null;
 
   const { totals, threads } = engagement;
 
@@ -30,25 +28,23 @@ export function ApplicantEmailPanel({
     <ApplicantPanel
       title="Email with applications@"
       defaultOpen={defaultOpen}
-      subtitle={`${totals.inbound} received · ${totals.outbound} sent`}
+      subtitle={engagementLine(totals)}
     >
         {threads.map((t, i) => {
-          const dominant = t.inbound >= t.outbound ? "inbound" : "outbound";
-          const count = t.inbound + t.outbound;
           const content = (
             <>
-              {dominant === "inbound" ? (
-                <ArrowDownLeft className="h-4 w-4 shrink-0 text-os-grey" />
+              {t.startedByThem ? (
+                <ArrowDownLeft className="h-4 w-4 shrink-0 text-os-grey" aria-label="They started this thread" />
               ) : (
-                <ArrowUpRight className="h-4 w-4 shrink-0 text-os-grey" />
+                <CornerUpLeft className="h-4 w-4 shrink-0 text-os-grey" aria-label="They replied to us" />
               )}
               <span className="text-sm font-medium text-foreground truncate">
                 {t.subject || (blinded ? "Subject hidden during blind review" : "(no subject)")}
               </span>
               <span className="ml-auto shrink-0 text-xs text-os-grey">
                 {formatDateShort(t.firstAt, tz)}
-                {t.firstAt !== t.lastAt ? ` – ${formatDateShort(t.lastAt, tz)}` : ""} · {count} message
-                {count === 1 ? "" : "s"}
+                {t.firstAt !== t.lastAt ? ` – ${formatDateShort(t.lastAt, tz)}` : ""} · {t.fromThem} of{" "}
+                {t.messages} from them
               </span>
             </>
           );
@@ -77,5 +73,30 @@ export function ApplicantEmailPanel({
         />
       )}
     </ApplicantPanel>
+  );
+}
+
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+
+export function engagementLine(summary: EngagementSummary): string {
+  const sent = `${plural(summary.fromThem, "email")} from them`;
+  return summary.threadsStarted ? `${sent} · started ${plural(summary.threadsStarted, "thread")}` : sent;
+}
+
+// The list-row form of the panel above.
+export function ApplicantEngagementChip({ summary }: { summary: EngagementSummary | undefined }) {
+  const tz = useUserTimeZone();
+  if (!summary) return null;
+  const last = summary.lastFromThemAt ? `. Last on ${formatDateShort(summary.lastFromThemAt, tz)}` : "";
+  return (
+    <Tooltip content={`${engagementLine(summary)}${last}`}>
+      <span
+        tabIndex={0}
+        className="inline-flex shrink-0 items-center gap-1 rounded-full bg-os-container px-2 py-0.5 text-xs font-medium text-foreground"
+      >
+        <Mail className="h-3 w-3" aria-hidden />
+        {summary.fromThem}
+      </span>
+    </Tooltip>
   );
 }

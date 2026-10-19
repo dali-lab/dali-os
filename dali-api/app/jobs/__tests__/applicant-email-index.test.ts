@@ -4,7 +4,7 @@ vi.mock("~/lib/db", () => ({
   prisma: {
     mailAccount: { findFirst: vi.fn(), update: vi.fn() },
     gmailIntegration: { findFirst: vi.fn().mockResolvedValue(null), update: vi.fn() },
-    mailMessageIndex: { findMany: vi.fn(), createMany: vi.fn(), aggregate: vi.fn() },
+    mailMessageIndex: { findMany: vi.fn(), createMany: vi.fn(), aggregate: vi.fn(), updateMany: vi.fn() },
     userEmail: { findMany: vi.fn() },
     user: { findMany: vi.fn() },
   },
@@ -12,7 +12,10 @@ vi.mock("~/lib/db", () => ({
 
 const { MockMailboxError } = vi.hoisted(() => {
   class MockMailboxError extends Error {
-    constructor(message: string) {
+    constructor(
+      message: string,
+      public readonly status?: number,
+    ) {
       super(message);
       this.name = "MailboxError";
     }
@@ -61,8 +64,22 @@ beforeEach(() => {
     to: ADDRESS,
     cc: "",
     subject: "Hi",
+    autoSubmitted: "",
+    precedence: "",
+    xAutoreply: "",
   }));
 });
+
+type FindManyArgs = { where: { autoReply?: null; gmailMessageId?: { in: string[] } } };
+
+// The job reads the index twice: which listed ids already exist, and which
+// inbound rows still need an auto-reply check.
+function indexRows(opts: { existing?: string[]; unchecked?: { id: string; gmailMessageId: string }[] }) {
+  db.mailMessageIndex.findMany.mockImplementation(async (args: FindManyArgs) => {
+    if (args.where.autoReply === null) return opts.unchecked ?? [];
+    return (opts.existing ?? []).map((gmailMessageId) => ({ gmailMessageId }));
+  });
+}
 
 describe("runApplicantEmailIndex", () => {
   it("notes and skips when there is no Shared inbox for the address", async () => {
@@ -174,12 +191,154 @@ describe("runApplicantEmailIndex", () => {
       messages: [{ id: "m1", threadId: "t1" }],
       nextPageToken: null,
     });
-    db.mailMessageIndex.findMany.mockResolvedValue([{ gmailMessageId: "m1" }]);
+    indexRows({ existing: ["m1"] });
 
     const result = await runApplicantEmailIndex({ now: NOW, lastSuccessAt: null, settings: SETTINGS });
 
     expect(getMessageMetadata).not.toHaveBeenCalled();
     expect(db.mailMessageIndex.createMany).not.toHaveBeenCalled();
     expect(result.items).toBe(0);
+  });
+
+  describe("auto-reply classification", () => {
+    function metaFor(id: string, extra: Record<string, unknown> = {}) {
+      return {
+        id,
+        threadId: `t-${id}`,
+        labelIds: [] as string[],
+        date: "2026-01-01T00:00:00.000Z",
+        from: "ada@x.com",
+        to: ADDRESS,
+        cc: "",
+        subject: "Hi",
+        autoSubmitted: "",
+        precedence: "",
+        xAutoreply: "",
+        ...extra,
+      };
+    }
+
+    it("flags new inbound auto-replies and stores false for ordinary mail", async () => {
+      connectedAccount();
+      vi.mocked(listMessageIds).mockResolvedValue({
+        messages: [
+          { id: "ooo", threadId: "t1" },
+          { id: "real", threadId: "t2" },
+        ],
+        nextPageToken: null,
+      });
+      vi.mocked(getMessageMetadata).mockImplementation(async (_t, id) =>
+        metaFor(id, id === "ooo" ? { autoSubmitted: "auto-replied" } : {}),
+      );
+
+      await runApplicantEmailIndex({ now: NOW, lastSuccessAt: null, settings: SETTINGS });
+
+      const data = db.mailMessageIndex.createMany.mock.calls[0][0].data as { gmailMessageId: string; autoReply: boolean }[];
+      expect(Object.fromEntries(data.map((d) => [d.gmailMessageId, d.autoReply]))).toEqual({ ooo: true, real: false });
+    });
+
+    it("stores false for outbound mail even when it carries auto headers", async () => {
+      connectedAccount();
+      vi.mocked(listMessageIds).mockResolvedValue({ messages: [{ id: "sent", threadId: "t1" }], nextPageToken: null });
+      vi.mocked(getMessageMetadata).mockResolvedValue(
+        metaFor("sent", { labelIds: ["SENT"], from: ADDRESS, to: "ada@x.com", autoSubmitted: "auto-generated" }),
+      );
+
+      await runApplicantEmailIndex({ now: NOW, lastSuccessAt: null, settings: SETTINGS });
+
+      const data = db.mailMessageIndex.createMany.mock.calls[0][0].data;
+      expect(data[0]).toMatchObject({ direction: "Outbound", autoReply: false });
+    });
+
+    it("checks unchecked inbound rows with the budget left after new mail", async () => {
+      connectedAccount();
+      vi.mocked(listMessageIds).mockResolvedValue({ messages: [{ id: "new", threadId: "t1" }], nextPageToken: null });
+      indexRows({ unchecked: [] });
+
+      await runApplicantEmailIndex({ now: NOW, lastSuccessAt: null, settings: { ...SETTINGS, maxMessagesPerRun: 10 } });
+
+      const recheck = db.mailMessageIndex.findMany.mock.calls
+        .map((c) => c[0])
+        .find((a: FindManyArgs) => a.where.autoReply === null);
+      expect(recheck).toMatchObject({
+        where: { accountId: "acc1", direction: "Inbound", autoReply: null },
+        take: 9,
+      });
+    });
+
+    it("skips the check when new mail used the whole budget", async () => {
+      connectedAccount();
+      vi.mocked(listMessageIds).mockResolvedValue({
+        messages: [
+          { id: "a", threadId: "t1" },
+          { id: "b", threadId: "t2" },
+        ],
+        nextPageToken: null,
+      });
+
+      await runApplicantEmailIndex({ now: NOW, lastSuccessAt: null, settings: { ...SETTINGS, maxMessagesPerRun: 2 } });
+
+      const recheck = db.mailMessageIndex.findMany.mock.calls.find((c) => c[0].where.autoReply === null);
+      expect(recheck).toBeUndefined();
+      expect(db.mailMessageIndex.updateMany).not.toHaveBeenCalled();
+    });
+
+    it("sets autoReply on unchecked rows from their headers and reports the count", async () => {
+      connectedAccount();
+      indexRows({
+        unchecked: [
+          { id: "r1", gmailMessageId: "g-ooo" },
+          { id: "r2", gmailMessageId: "g-real" },
+          { id: "r3", gmailMessageId: "g-bounce" },
+        ],
+      });
+      vi.mocked(getMessageMetadata).mockImplementation(async (_t, id) => {
+        if (id === "g-ooo") return metaFor(id, { xAutoreply: "yes" });
+        if (id === "g-bounce") return metaFor(id, { from: "MAILER-DAEMON@googlemail.com" });
+        return metaFor(id);
+      });
+
+      const result = await runApplicantEmailIndex({ now: NOW, lastSuccessAt: null, settings: SETTINGS });
+
+      expect(db.mailMessageIndex.updateMany).toHaveBeenCalledWith({
+        where: { id: { in: ["r1", "r3"] } },
+        data: { autoReply: true },
+      });
+      expect(db.mailMessageIndex.updateMany).toHaveBeenCalledWith({
+        where: { id: { in: ["r2"] } },
+        data: { autoReply: false },
+      });
+      expect(result.note).toContain("checked 3 for auto-replies");
+    });
+
+    it("settles a row whose message was deleted from Gmail as not an auto-reply", async () => {
+      connectedAccount();
+      indexRows({ unchecked: [{ id: "r1", gmailMessageId: "gone" }] });
+      vi.mocked(getMessageMetadata).mockRejectedValue(new MockMailboxError("Gmail request failed (404)", 404));
+
+      await runApplicantEmailIndex({ now: NOW, lastSuccessAt: null, settings: SETTINGS });
+
+      expect(db.mailMessageIndex.updateMany).toHaveBeenCalledWith({
+        where: { id: { in: ["r1"] } },
+        data: { autoReply: false },
+      });
+    });
+
+    it("leaves rows unchecked and throws on other Gmail errors, so the next run retries", async () => {
+      connectedAccount();
+      indexRows({ unchecked: [{ id: "r1", gmailMessageId: "g1" }] });
+      vi.mocked(getMessageMetadata).mockRejectedValue(new MockMailboxError("Gmail request failed (500)", 500));
+
+      await expect(
+        runApplicantEmailIndex({ now: NOW, lastSuccessAt: null, settings: SETTINGS }),
+      ).rejects.toThrow("500");
+      expect(db.mailMessageIndex.updateMany).not.toHaveBeenCalled();
+    });
+
+    it("omits the auto-reply part of the note when nothing needed checking", async () => {
+      connectedAccount();
+      const result = await runApplicantEmailIndex({ now: NOW, lastSuccessAt: null, settings: SETTINGS });
+      expect(result.note).not.toContain("auto-replies");
+    });
   });
 });
