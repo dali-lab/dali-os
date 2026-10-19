@@ -13,6 +13,7 @@ import { findUserIdsByAddresses } from "~/lib/user-email.server";
 import { PARTNERS_FROM_EMAIL } from "~/lib/app-env";
 import { parseAddressList } from "~/email/lib/address-list";
 import {
+  isAutoReply,
   classifyDirection,
   counterpartAddresses,
   indexMessages,
@@ -92,11 +93,64 @@ function meta(overrides: Partial<IndexableMessage> = {}): IndexableMessage {
     from: "ada@x.com",
     to: INBOX,
     cc: "",
+    autoReply: false,
     ...overrides,
   };
 }
 
+describe("isAutoReply", () => {
+  const human = { from: "Ada <ada@x.com>", autoSubmitted: "", precedence: "", xAutoreply: "" };
+
+  it("is false for an ordinary message", () => {
+    expect(isAutoReply(human)).toBe(false);
+  });
+
+  it.each(["auto-replied", "auto-generated", "Auto-Notified", " auto-replied; owner-email=a@x.com "])(
+    "is true for Auto-Submitted: %s",
+    (value) => {
+      expect(isAutoReply({ ...human, autoSubmitted: value })).toBe(true);
+    },
+  );
+
+  it("is false for Auto-Submitted: no, in any case", () => {
+    expect(isAutoReply({ ...human, autoSubmitted: "No" })).toBe(false);
+  });
+
+  it("is true when X-Autoreply or X-Autorespond is present", () => {
+    expect(isAutoReply({ ...human, xAutoreply: "yes" })).toBe(true);
+  });
+
+  it.each(["auto_reply", "bulk", "junk", "list", "Bulk"])("is true for Precedence: %s", (value) => {
+    expect(isAutoReply({ ...human, precedence: value })).toBe(true);
+  });
+
+  it("is false for other Precedence values", () => {
+    expect(isAutoReply({ ...human, precedence: "first-class" })).toBe(false);
+  });
+
+  it.each(["MAILER-DAEMON@googlemail.com", "Mail Delivery Subsystem <mailer-daemon@x.com>", "postmaster@x.edu"])(
+    "is true for a bounce from %s",
+    (from) => {
+      expect(isAutoReply({ ...human, from })).toBe(true);
+    },
+  );
+
+  it("doesn't mistake an address that merely contains postmaster for a bounce", () => {
+    expect(isAutoReply({ ...human, from: "jane.postmaster@x.com" })).toBe(false);
+  });
+});
+
 describe("indexMessages", () => {
+  it("stores autoReply as given, including null for unchecked", async () => {
+    await indexMessages({
+      accountId: "acc1",
+      inboxAddress: INBOX,
+      metas: [meta({ id: "a", autoReply: true }), meta({ id: "b", autoReply: false }), meta({ id: "c", autoReply: null })],
+    });
+    const data = db.mailMessageIndex.createMany.mock.calls[0][0].data;
+    expect(data.map((d: { autoReply: boolean | null }) => d.autoReply)).toEqual([true, false, null]);
+  });
+
   it("auto-links to the resolved counterpart when no Manual link exists for the thread", async () => {
     vi.mocked(findUserIdsByAddresses).mockResolvedValue(new Map([["ada@x.com", "u1"]]));
 

@@ -9,6 +9,7 @@ import { ConfidentialityGate } from '~/hiring/components/ConfidentialityGate'
 import { useDialog } from '~/components/ui/dialog'
 import { useToast } from '~/components/ui/toast'
 import { Pill } from '~/hiring/components/cycle-setup/SetupCard'
+import { ApplicantEngagementChip } from '~/hiring/components/ApplicantEmailPanel'
 import { splitInterviewsByTime } from '~/hiring/lib/interview-status'
 
 // My work → Interviews: the interviewer's assigned interviews. Applicants book
@@ -121,6 +122,11 @@ export function InterviewsView({
             >
               {applicant ? `${applicant.firstName} ${applicant.lastName}` : 'Applicant'}
             </h3>
+            {assignment.emailEngagement && (
+              <div className="mt-1">
+                <ApplicantEngagementChip summary={assignment.emailEngagement} />
+              </div>
+            )}
             {domain && <p className="text-sm text-os-grey">{domain}</p>}
           </div>
           <div className={cn('shrink-0 text-right', !isPast && 'rounded-os-item bg-os-well px-3 py-2')}>

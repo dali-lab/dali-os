@@ -109,6 +109,22 @@ export function classifyDirection(
   return senderAddress(meta.from).toLowerCase() === inboxAddress.toLowerCase() ? "Outbound" : "Inbound";
 }
 
+const AUTO_PRECEDENCE = new Set(["auto_reply", "bulk", "junk", "list"]);
+const SYSTEM_SENDER = /^(mailer-daemon|postmaster)@/i;
+
+export function isAutoReply(meta: {
+  from: string;
+  autoSubmitted: string;
+  precedence: string;
+  xAutoreply: string;
+}): boolean {
+  const autoSubmitted = meta.autoSubmitted.trim().toLowerCase();
+  if (autoSubmitted && autoSubmitted !== "no") return true;
+  if (meta.xAutoreply.trim()) return true;
+  if (AUTO_PRECEDENCE.has(meta.precedence.trim().toLowerCase())) return true;
+  return SYSTEM_SENDER.test(senderAddress(meta.from));
+}
+
 // Who's on the other end of this message, lowercase and deduped, minus the
 // inbox's own address.
 export function counterpartAddresses(
@@ -138,6 +154,8 @@ export type IndexableMessage = {
   from: string;
   to: string;
   cc: string;
+  // Null when the caller didn't read the auto-reply headers; the index job fills it in later.
+  autoReply: boolean | null;
 };
 
 /**
@@ -218,6 +236,7 @@ export async function indexMessages(args: {
       sentAt: new Date(m.date),
       fromAddress: senderAddress(m.from).toLowerCase(),
       toAddresses: parseAddressList(m.to ?? ""),
+      autoReply: m.autoReply,
       linkedUserId,
       linkedPartnerContactId,
       linkSource,

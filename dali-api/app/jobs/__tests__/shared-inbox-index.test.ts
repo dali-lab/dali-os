@@ -4,7 +4,7 @@ vi.mock("~/lib/db", () => ({
   prisma: {
     mailAccount: { findFirst: vi.fn(), update: vi.fn() },
     gmailIntegration: { findFirst: vi.fn().mockResolvedValue(null), update: vi.fn() },
-    mailMessageIndex: { findMany: vi.fn(), createMany: vi.fn(), aggregate: vi.fn() },
+    mailMessageIndex: { findMany: vi.fn(), createMany: vi.fn(), aggregate: vi.fn(), updateMany: vi.fn() },
     userEmail: { findMany: vi.fn() },
     user: { findMany: vi.fn() },
     partnerContact: { findMany: vi.fn() },
@@ -77,6 +77,9 @@ beforeEach(() => {
     to: APPLICATIONS_FROM_EMAIL,
     cc: "",
     subject: "Hi",
+    autoSubmitted: "",
+    precedence: "",
+    xAutoreply: "",
   }));
 });
 
@@ -118,6 +121,9 @@ describe("runSharedInboxIndex", () => {
       to: PARTNERS_FROM_EMAIL,
       cc: "",
       subject: "Hello",
+      autoSubmitted: "",
+      precedence: "",
+      xAutoreply: "",
     });
 
     const result = await runSharedInboxIndex(

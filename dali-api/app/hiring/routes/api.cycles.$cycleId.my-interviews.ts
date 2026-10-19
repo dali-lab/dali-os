@@ -3,6 +3,7 @@ import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { requireApiSignedOrForbidden } from "~/hiring/lib/confidentiality";
+import { getEngagementSummaries } from "~/hiring/lib/email-engagement.server";
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const preflight = handlePreflight(request);
@@ -72,5 +73,16 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     orderBy: { interview: { startTime: "asc" } },
   });
 
-  return withCors(request, Response.json(assignments));
+  const engagement = await getEngagementSummaries(
+    assignments.map((a) => a.interview.domainApplication.application.userId),
+  );
+  return withCors(
+    request,
+    Response.json(
+      assignments.map((a) => ({
+        ...a,
+        emailEngagement: engagement.get(a.interview.domainApplication.application.userId) ?? null,
+      })),
+    ),
+  );
 }

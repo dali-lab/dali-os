@@ -2521,6 +2521,8 @@ model MailMessageIndex {
   sentAt         DateTime
   fromAddress    String
   toAddresses    String[]       @default([])
+  // Null until the indexer has read the message's auto-reply headers.
+  autoReply      Boolean?
   linkedUserId   String?
   // Partner-funnel counterpart (a PartnerContact may have no User). Set by the
   // partners@ index job; manual link/unlink works the same as linkedUserId.

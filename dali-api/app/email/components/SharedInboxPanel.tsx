@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { ArrowDownLeft, ArrowUpRight } from "lucide-react";
 import { formatDateShort } from "~/lib/display";
 import { useUserTimeZone } from "~/hooks/useUserTimeZone";
@@ -21,18 +21,27 @@ export type SharedInboxThread = {
   outbound: number;
 };
 
-export function SharedInboxPanel({
+export function SharedInboxPanel<T extends SharedInboxThread>({
   title,
   threads,
   threadUrl,
   emptyLabel,
   defaultOpen,
+  subtitle,
+  rowIcon,
+  rowDetail,
 }: {
   title: string;
-  threads: SharedInboxThread[];
+  threads: T[];
   threadUrl: (indexId: string) => string;
   emptyLabel: string;
   defaultOpen?: boolean;
+  /** Replaces the default "N received · N sent" line. */
+  subtitle?: string;
+  /** Replaces the default arrow, which points the way most of the thread's mail went. */
+  rowIcon?: (thread: T) => ReactNode;
+  /** Replaces the default "N messages" after the date range. */
+  rowDetail?: (thread: T) => string;
 }) {
   const tz = useUserTimeZone();
   const [openIndexId, setOpenIndexId] = useState<string | null>(null);
@@ -47,14 +56,16 @@ export function SharedInboxPanel({
     <ApplicantPanel
       title={title}
       defaultOpen={defaultOpen}
-      subtitle={`${totals.inbound} received · ${totals.outbound} sent`}
+      subtitle={subtitle ?? `${totals.inbound} received · ${totals.outbound} sent`}
     >
       {threads.map((t, i) => {
         const dominant = t.inbound >= t.outbound ? "inbound" : "outbound";
         const count = t.inbound + t.outbound;
         const content = (
           <>
-            {dominant === "inbound" ? (
+            {rowIcon ? (
+              rowIcon(t)
+            ) : dominant === "inbound" ? (
               <ArrowDownLeft className="h-4 w-4 shrink-0 text-os-grey" />
             ) : (
               <ArrowUpRight className="h-4 w-4 shrink-0 text-os-grey" />
@@ -62,8 +73,8 @@ export function SharedInboxPanel({
             <span className="text-sm font-medium text-foreground truncate">{t.subject || emptyLabel}</span>
             <span className="ml-auto shrink-0 text-xs text-os-grey">
               {formatDateShort(t.firstAt, tz)}
-              {t.firstAt !== t.lastAt ? ` – ${formatDateShort(t.lastAt, tz)}` : ""} · {count} message
-              {count === 1 ? "" : "s"}
+              {t.firstAt !== t.lastAt ? ` – ${formatDateShort(t.lastAt, tz)}` : ""} ·{" "}
+              {rowDetail ? rowDetail(t) : `${count} message${count === 1 ? "" : "s"}`}
             </span>
           </>
         );
