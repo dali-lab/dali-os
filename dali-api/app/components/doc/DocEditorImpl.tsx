@@ -56,7 +56,7 @@ import { CommentComposer } from "./comments/CommentComposer";
 import { CommentEditorProvider, commentEditorSchema } from "./comments/CommentEditor";
 import { BlockNoteView } from "@blocknote/shadcn";
 
-import { WebSocketStatus } from "@hocuspocus/provider";
+import { useReportSyncState } from "./use-report-sync-state";
 
 import { countWords, extractHeadings, normalizeInitialContent, trimTrailingEmptyBlocks } from "./blocks-util";
 import { acquireCollabDoc, nameToHexColor, releaseCollabDoc, type CollabDocEntry } from "./collab-doc";
@@ -72,7 +72,7 @@ import { getMentionMenuItems, PageMentionTitleProvider } from "./schema/mention"
 import { getFilteredDocSlashMenuItems } from "./schema/slash-menu";
 import { DEFAULT_SIGNING_CTX, SigningContext } from "./signing-context";
 import { usePresence, useRegisterCollabEditor } from "../collab/PresenceProvider";
-import type { DocCollabConfig, DocCommentsConfig, DocEditorProps, DocSyncState } from "./types";
+import type { DocCollabConfig, DocCommentsConfig, DocEditorProps } from "./types";
 import { uploadEditorImage } from "./upload";
 import { useAiSlashMenuItems } from "./ai/AiSlashMenuItems";
 import { isAiEnvEnabled } from "./ai/env";
@@ -264,64 +264,6 @@ function CollabDocInner(
   useReportSyncState(entry.provider, props.onSyncStateChange);
 
   return <DocView {...props} editor={editor} collabEntry={entry} />;
-}
-
-// Report the Hocuspocus save/sync state to the host chrome. "offline" when the
-// socket is down (edits queue in IndexedDB and sync on reconnect), "saving"
-// while connected with unsynced local changes, "saved" once flushed to the
-// server. The host renders this as a persistent "Saving…/Saved/Offline"
-// indicator so the body has the same save reassurance the title already has.
-function useReportSyncState(
-  provider: CollabDocEntry["provider"],
-  onChange: ((state: DocSyncState) => void) | undefined,
-) {
-  const cbRef = useRef(onChange);
-  cbRef.current = onChange;
-  useEffect(() => {
-    if (!cbRef.current) return;
-    // Connection status lives on the underlying websocket; sync/dirty state are
-    // getters on the provider. We track `connected` via events (seeded from the
-    // websocket's current status) and recompute on every relevant signal.
-    let connected =
-      provider.configuration.websocketProvider.status === WebSocketStatus.Connected;
-    let last: DocSyncState | null = null;
-    const emit = () => {
-      const next: DocSyncState = !connected
-        ? "offline"
-        : provider.hasUnsyncedChanges || !provider.synced
-          ? "saving"
-          : "saved";
-      if (next !== last) {
-        last = next;
-        cbRef.current?.(next);
-      }
-    };
-    const onStatus = (e: { status: WebSocketStatus }) => {
-      connected = e.status === WebSocketStatus.Connected;
-      emit();
-    };
-    const onConnect = () => {
-      connected = true;
-      emit();
-    };
-    const onDisconnect = () => {
-      connected = false;
-      emit();
-    };
-    emit();
-    provider.on("status", onStatus);
-    provider.on("synced", emit);
-    provider.on("unsyncedChanges", emit);
-    provider.on("connect", onConnect);
-    provider.on("disconnect", onDisconnect);
-    return () => {
-      provider.off("status", onStatus);
-      provider.off("synced", emit);
-      provider.off("unsyncedChanges", emit);
-      provider.off("connect", onConnect);
-      provider.off("disconnect", onDisconnect);
-    };
-  }, [provider]);
 }
 
 function findCollabUndoManager(state: EditorState): Y.UndoManager | null {
