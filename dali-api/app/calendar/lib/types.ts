@@ -206,6 +206,9 @@ export type EventMeetingDTO = {
   /** The meeting already records a type (e.g. it has a note): an added
    *  whiteboard reuses it and skips the About/type step. */
   hasType: boolean;
+  /** Whether DALI pushed the Google event or only tracked it. A tracked
+   *  meeting's cancel reads "Stop tracking": the Google event isn't DALI's to delete. */
+  googleEventOrigin: "Created" | "Tracked" | null;
   /** Whether the viewer already has a TimeEntry for this meeting. */
   onTimesheet: boolean;
   isCoreMeeting: boolean;

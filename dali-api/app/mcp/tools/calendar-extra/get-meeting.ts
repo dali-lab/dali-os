@@ -56,7 +56,7 @@ export async function runGetMeeting(callerId: string, input: Input) {
       meetingUrl: true,
       recurrenceRule: true,
       organizer: { select: { firstName: true, lastName: true } },
-      notePages: { select: { id: true, meetingOccurrenceStart: true } },
+      notePages: { where: { archivedAt: null }, select: { id: true, meetingOccurrenceStart: true } },
       attendance: {
         select: {
           occurrenceStart: true,
