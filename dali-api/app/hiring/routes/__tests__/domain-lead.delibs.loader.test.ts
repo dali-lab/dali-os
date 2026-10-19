@@ -10,10 +10,12 @@ vi.mock("~/lib/user-pages.server", () => ({ recordRouteVisit: vi.fn() }));
 vi.mock("~/lib/collab-token.server", () => ({ getCollabToken: () => "tok" }));
 vi.mock("~/hiring/lib/confidentiality", () => ({ requirePageSignedOrRedirect: vi.fn().mockResolvedValue(null) }));
 vi.mock("~/hiring/lib/cycle-stages.server", () => ({ delibsQualifier: vi.fn().mockResolvedValue({}) }));
+vi.mock("~/hiring/lib/email-engagement.server", () => ({ getEngagementSummaries: vi.fn() }));
 
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { delibsQualifier } from "~/hiring/lib/cycle-stages.server";
+import { getEngagementSummaries } from "~/hiring/lib/email-engagement.server";
 import { STANDARD_TIMELINE } from "~/hiring/lib/cycle-timeline";
 import { loader } from "~/hiring/routes/domain-lead.delibs.$id";
 
@@ -38,6 +40,7 @@ const callLoader = () =>
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(getEngagementSummaries).mockResolvedValue(new Map());
   vi.mocked(requireAuth).mockResolvedValue({ ok: true, user: { sub: "u1", email: "u@x" } } as any);
   mockPrisma.user = { findUnique: vi.fn().mockResolvedValue({ firstName: "A", lastName: "B" }) };
   mockPrisma.domainLeadAssignment = { findFirst: vi.fn().mockResolvedValue(null) };
@@ -68,5 +71,23 @@ describe("domain-lead delibs board loader", () => {
     expect(res.round).toBeNull();
     expect(res.columns).toEqual([]);
     expect(mockPrisma.domainApplication.findMany).not.toHaveBeenCalled();
+  });
+
+  it("attaches each applicant's email engagement to their card, null when they never wrote", async () => {
+    board("first");
+    mockPrisma.domainApplication.findMany.mockResolvedValue([
+      { id: "da1", application: { id: "a1", userId: "wrote", user: { firstName: "A", lastName: "B" } }, reviews: [] },
+      { id: "da2", application: { id: "a2", userId: "silent", user: { firstName: "C", lastName: "D" } }, reviews: [] },
+    ]);
+    const summary = { fromThem: 1, threadsStarted: 1, lastFromThemAt: "2026-01-01T00:00:00.000Z" };
+    vi.mocked(getEngagementSummaries).mockResolvedValue(new Map([["wrote", summary]]));
+
+    const res = await callLoader();
+
+    expect(getEngagementSummaries).toHaveBeenCalledWith(["wrote", "silent"]);
+    expect(res.domainApplications.map((d: any) => [d.id, d.emailEngagement])).toEqual([
+      ["da1", summary],
+      ["da2", null],
+    ]);
   });
 });

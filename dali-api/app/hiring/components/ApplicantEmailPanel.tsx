@@ -91,7 +91,7 @@ export function ApplicantEngagementChip({ summary }: { summary: EngagementSummar
   return (
     <Tooltip content={`${engagementLine(summary)}${last}`}>
       <span
-        tabIndex={0}
+        aria-label={`${engagementLine(summary)}${last}`}
         className="inline-flex shrink-0 items-center gap-1 rounded-full bg-os-container px-2 py-0.5 text-xs font-medium text-foreground"
       >
         <Mail className="h-3 w-3" aria-hidden />

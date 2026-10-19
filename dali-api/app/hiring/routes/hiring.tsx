@@ -121,7 +121,11 @@ export default function MyWork() {
             />
           ))}
           {(reviews.myReviews.length > 0 || reviews.blocked.length === 0) && (
-            <ReviewsView reviews={reviews.myReviews} showCycle={reviews.multiCycle} />
+            <ReviewsView
+              reviews={reviews.myReviews}
+              showCycle={reviews.multiCycle}
+              emailEngagement={reviews.emailEngagement}
+            />
           )}
         </>
       )}
@@ -130,6 +134,7 @@ export default function MyWork() {
           delibsSessions={reviews.delibsSessions}
           delibsApplications={reviews.delibsApplications}
           showCycle={reviews.multiCycle}
+          emailEngagement={reviews.emailEngagement}
         />
       )}
       {view === "interviews" && interviews && (

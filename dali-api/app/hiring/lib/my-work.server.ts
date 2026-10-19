@@ -1,4 +1,5 @@
 import { prisma } from "~/lib/db";
+import { getEngagementSummaries } from "~/hiring/lib/email-engagement.server";
 import { getUserRoles } from "~/lib/roles";
 import { getActiveCycles, type ActiveCycle } from "./cycles";
 import { anonLabelMapForCycle, releasedDaIds, blindUser } from "./anonymization.server";
@@ -63,9 +64,15 @@ export async function getMyWorkData(userId: string, request: Request) {
       part: await loadReviews(c.cycle, c.reviewerRows, c.confidentialityRequired),
     })),
   );
+  const reviewedUserIds = reviewParts.flatMap(({ part }) => [
+    ...part.myReviews.map((r) => r.domainApplication.application.userId),
+    ...part.delibsApplications.map((da) => da.application.userId),
+  ]);
+  const emailEngagement = Object.fromEntries(await getEngagementSummaries(reviewedUserIds));
   const reviews =
     reviewing.length > 0
       ? {
+          emailEngagement,
           multiCycle: reviewing.length > 1,
           myReviews: reviewParts.flatMap(({ c, part }) =>
             part.myReviews.map((r) => ({ ...r, cycleName: c.cycle.name })),

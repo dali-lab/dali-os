@@ -6,6 +6,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/db");
 vi.mock("~/hiring/lib/cycles", () => ({ getActiveCycles: vi.fn() }));
+vi.mock("~/hiring/lib/email-engagement.server", () => ({ getEngagementSummaries: vi.fn() }));
 vi.mock("~/hiring/lib/confidentiality", async (importOriginal) => ({
   // Keep the pure access helpers real; only the DB-backed state is stubbed.
   ...(await importOriginal<typeof import("~/hiring/lib/confidentiality")>()),
@@ -16,6 +17,7 @@ import { prisma } from "~/lib/db";
 import { getActiveCycles } from "~/hiring/lib/cycles";
 import { getCycleConfidentialityState } from "~/hiring/lib/confidentiality";
 import { getMyWorkData } from "~/hiring/lib/my-work.server";
+import { getEngagementSummaries } from "~/hiring/lib/email-engagement.server";
 
 const USER = "user-1";
 const stages = { hasInitialDelibs: true, hasInterviews: true, anonymizeReview: false };
@@ -34,6 +36,7 @@ function bothCyclesActive() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(getEngagementSummaries).mockResolvedValue(new Map());
   // "no_agreement" by default: it short-circuits the review
   // queries so picker tests don't need every downstream mock.
   vi.mocked(getCycleConfidentialityState).mockResolvedValue({
@@ -74,7 +77,9 @@ describe("getMyWorkData — which work shows", () => {
       Promise.resolve([{ id: `cr-${where.applicationCycleId}`, domainId: "dom-1" }]),
     );
     mockPrisma.applicationReview.findMany.mockImplementation(({ where }: any) =>
-      Promise.resolve([{ id: `rev-${where.cycleReviewerId.in[0]}`, domainApplication: { id: "da" } }]),
+      Promise.resolve([
+        { id: `rev-${where.cycleReviewerId.in[0]}`, domainApplication: { id: "da", application: { userId: "applicant-1" } } },
+      ]),
     );
 
     const res = await getMyWorkData(USER, req());
@@ -85,6 +90,26 @@ describe("getMyWorkData — which work shows", () => {
       ["rev-cr-cycle-fel", FELLOWSHIP.name],
     ]);
     expect(res.interviews).toBeNull();
+  });
+
+  it("returns email engagement keyed by applicant user id for the reviewed applicants", async () => {
+    vi.mocked(getActiveCycles).mockResolvedValue([STANDARD] as any);
+    vi.mocked(getCycleConfidentialityState).mockResolvedValue({
+      status: "signed",
+      activeVersionId: "v1",
+      exempt: false,
+    });
+    mockPrisma.cycleReviewer.findMany.mockResolvedValue([{ id: "cr-1", domainId: "dom-1" }]);
+    mockPrisma.applicationReview.findMany.mockResolvedValue([
+      { id: "rev-1", domainApplication: { id: "da-1", application: { userId: "applicant-1" } } },
+    ]);
+    const summary = { fromThem: 2, threadsStarted: 1, lastFromThemAt: "2026-01-02T00:00:00.000Z" };
+    vi.mocked(getEngagementSummaries).mockResolvedValue(new Map([["applicant-1", summary]]));
+
+    const res = await getMyWorkData(USER, req());
+
+    expect(getEngagementSummaries).toHaveBeenCalledWith(["applicant-1"]);
+    expect(res.reviews?.emailEngagement).toEqual({ "applicant-1": summary });
   });
 
   it("gates an unsigned cycle by name while still loading the signed one", async () => {

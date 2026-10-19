@@ -22,6 +22,8 @@ import { RECOMMENDATION_TONES } from "~/hiring/lib/labels";
 import { useOsChrome } from "~/components/os-chrome";
 import { useDialog } from "~/components/ui/dialog";
 import { anonLabelMapForCycle, releasedDaIds, blindUser } from "~/hiring/lib/anonymization.server";
+import { getEngagementSummaries } from "~/hiring/lib/email-engagement.server";
+import { ApplicantEngagementChip } from "~/hiring/components/ApplicantEmailPanel";
 
 export const meta: Route.MetaFunction = ({ data }) => {
   const domain = (data as any)?.session?.domain?.name;
@@ -153,9 +155,16 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     }
   }
 
-  const collabToken = await getCollabToken(request);
+  const [collabToken, engagement] = await Promise.all([
+    getCollabToken(request),
+    getEngagementSummaries(domainApplications.map((da) => da.application.userId)),
+  ]);
+  const withEngagement = domainApplications.map((da) => ({
+    ...da,
+    emailEngagement: engagement.get(da.application.userId) ?? null,
+  }));
 
-  return { session, domainApplications, collabToken, userName, round, columns };
+  return { session, domainApplications: withEngagement, collabToken, userName, round, columns };
 }
 
 type DomainApp = any;
@@ -557,6 +566,7 @@ function DelibsCard({
                 avg {avgScore.toFixed(1)}
               </span>
             )}
+            <ApplicantEngagementChip summary={da.emailEngagement ?? undefined} />
           </div>
           {(hasReviewers || hasInterviewers) && (
             <div className="mt-2 space-y-2 border-t border-os-container pt-2">

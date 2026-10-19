@@ -7,6 +7,8 @@ import { RECOMMENDATION_TONES } from '~/hiring/lib/labels'
 import { CheckCircle } from 'lucide-react'
 import { getReviewStatus, type ReviewStatus } from '~/hiring/lib/review-status'
 import { buttonClasses } from '~/components/ui/Button'
+import { ApplicantEngagementChip } from '~/hiring/components/ApplicantEmailPanel'
+import type { EngagementSummary } from '~/hiring/lib/email-engagement.server'
 
 // My work → Reviews: the reviewer's assigned written applications across every
 // cycle they review on, bucketed by the shared status helper so this view and
@@ -14,11 +16,13 @@ import { buttonClasses } from '~/components/ui/Button'
 export function ReviewsView({
   reviews,
   showCycle,
+  emailEngagement,
 }: {
   /** Every review the viewer is assigned, across cycles; each has `cycleName`. */
   reviews: any[]
   /** The viewer reviews on several cycles, so cards say which one. */
   showCycle: boolean
+  emailEngagement: Record<string, EngagementSummary>
 }) {
   const revalidator = useRevalidator()
   const [error, setError] = useState<string | null>(null)
@@ -87,7 +91,13 @@ export function ReviewsView({
         const edge = token(COLUMNS.find((c) => c.status === status)!.token, 'edge')
         return (
           <div {...(status === 'submitted' ? dragHandleProps : {})} className={isDragging ? 'opacity-40' : undefined}>
-            <ReviewCard review={r} status={status} edge={edge} cycleName={showCycle ? r.cycleName : undefined} />
+            <ReviewCard
+              review={r}
+              status={status}
+              edge={edge}
+              cycleName={showCycle ? r.cycleName : undefined}
+              engagement={emailEngagement[r.domainApplication?.application?.userId]}
+            />
           </div>
         )
       }}
@@ -116,11 +126,13 @@ function ReviewCard({
   status,
   edge,
   cycleName,
+  engagement,
 }: {
   review: any
   status: ReviewStatus
   edge: string
   cycleName?: string
+  engagement?: EngagementSummary
 }) {
   const da = review.domainApplication
   const user = da?.application?.user
@@ -144,7 +156,10 @@ function ReviewCard({
             {cycleName && <> · {cycleName}</>}
           </p>
         </div>
-        {status === 'submitted' && <CheckCircle className="h-4 w-4 shrink-0 text-os-grey" aria-hidden />}
+        <div className="flex shrink-0 items-center gap-1.5">
+          <ApplicantEngagementChip summary={engagement} />
+          {status === 'submitted' && <CheckCircle className="h-4 w-4 text-os-grey" aria-hidden />}
+        </div>
       </div>
       {status === 'submitted' && review.overallRecommendation && (
         <span className="self-start">

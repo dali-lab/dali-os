@@ -4,6 +4,8 @@ import { EyeOff, ListOrdered } from 'lucide-react'
 import { Section } from '~/hiring/components/Section'
 import { Pill } from '~/hiring/components/cycle-setup/SetupCard'
 import { ApplicantContextModal } from '~/hiring/components/delibs/ApplicantContextModal'
+import { ApplicantEngagementChip } from '~/hiring/components/ApplicantEmailPanel'
+import type { EngagementSummary } from '~/hiring/lib/email-engagement.server'
 
 // My work → Delibs: a live, read-only mirror of the domain lead's delibs
 // boards for the reviewer's domains. Only offered while a session is live.
@@ -11,9 +13,11 @@ export function DelibsView({
   delibsSessions,
   delibsApplications,
   showCycle,
+  emailEngagement,
 }: {
   delibsSessions: any[]
   delibsApplications: any[]
+  emailEngagement: Record<string, EngagementSummary>
   /** Sessions come from several cycles, so each board names its cycle. */
   showCycle: boolean
 }) {
@@ -66,6 +70,7 @@ export function DelibsView({
                 session={session}
                 showCycle={showCycle}
                 appMap={delibsAppMap}
+                emailEngagement={emailEngagement}
                 onSelect={(daId) => setSelectedDelibsDaId(daId)}
               />
             ))}
@@ -100,11 +105,13 @@ function DelibsSessionView({
   session,
   showCycle,
   appMap,
+  emailEngagement,
   onSelect,
 }: {
   session: any
   showCycle: boolean
   appMap: Map<string, any>
+  emailEngagement: Record<string, EngagementSummary>
   onSelect: (domainApplicationId: string) => void
 }) {
   const columnOrder = (session.columnOrder ?? {}) as Record<string, string[]>
@@ -151,6 +158,9 @@ function DelibsSessionView({
                         <span className="w-4 text-xs font-semibold text-os-grey">{i + 1}.</span>
                       )}
                       <span className="text-sm font-medium text-foreground">{label}</span>
+                      <span className="ml-auto">
+                        <ApplicantEngagementChip summary={emailEngagement[da?.application?.userId]} />
+                      </span>
                     </button>
                   )
                 })}
