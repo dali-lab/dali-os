@@ -2573,6 +2573,7 @@ describe("trackExternalEventAsMeeting", () => {
     viewerInvited: false,
     organizerEmail: null as string | null,
     creatorEmail: null as string | null,
+    status: "confirmed" as string | null,
   };
 
   function arrange(

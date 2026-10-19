@@ -1112,12 +1112,14 @@ export async function getGoogleEvent(opts: {
   organizerEmail: string | null;
   /** Who created the event (the account that inserted it); null when Google omits it. */
   creatorEmail: string | null;
+  /** "cancelled" once the event is deleted (Google keeps it readable for a while). */
+  status: string | null;
 }> {
   const token = await getValidAccessTokenForLink(opts.linkId);
   const calendarId = encodeURIComponent(opts.calendarId ?? "primary");
   const params = new URLSearchParams({
     fields:
-      "id,iCalUID,summary,description,location,recurrence,start(dateTime,date),end(dateTime,date),organizer(email,self),creator(email),attendees(email,self)",
+      "id,iCalUID,status,summary,description,location,recurrence,start(dateTime,date),end(dateTime,date),organizer(email,self),creator(email),attendees(email,self)",
   });
   const res = await fetch(
     `https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events/${encodeURIComponent(opts.eventId)}?${params}`,
@@ -1130,6 +1132,7 @@ export async function getGoogleEvent(opts: {
   const data = (await res.json()) as {
     id?: string;
     iCalUID?: string;
+    status?: string;
     summary?: string;
     description?: string;
     location?: string;
@@ -1158,6 +1161,7 @@ export async function getGoogleEvent(opts: {
       data.organizer?.self === true || (data.attendees ?? []).some((a) => a.self === true),
     organizerEmail: (data.organizer?.email ?? data.creator?.email ?? "").trim() || null,
     creatorEmail: (data.creator?.email ?? "").trim() || null,
+    status: data.status ?? null,
   };
 }
 
