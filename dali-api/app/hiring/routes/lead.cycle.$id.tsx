@@ -71,6 +71,7 @@ import {
 import { pendingForHiringLead } from "~/hiring/lib/decision-pills";
 import { Modal, ModalFooter, ModalHeader } from "~/components/Modal";
 import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
+import { reassignCandidates } from "~/hiring/lib/interviewer-pool";
 import { Checkbox } from "~/components/ui/Checkbox";
 import { Toggle } from "~/components/ui/Toggle";
 import { DateField } from "~/components/ui/DateField";
@@ -163,6 +164,7 @@ interface InterviewRow {
   videoUrl: string | null
   domainApplication: {
     id: string
+    domainId: string
     domain: { name: string }
     application: { user: { firstName: string; lastName: string } }
   }
@@ -171,6 +173,7 @@ interface InterviewRow {
     role: string
     status: string
     cycleInterviewer: {
+      userId: string
       user: {  firstName: string | null; lastName: string | null; daliEmail: string | null  }
       domain: { name: string }
     }
@@ -2907,11 +2910,13 @@ export default function HiringLeadCycleDetails() {
                                     onChange={(value) => reassign(interview, a, value)}
                                     placeholder="Reassign"
                                     ariaLabel={`Reassign ${a.role === 'InDomain' ? 'in-domain' : 'cross-domain'} interviewer`}
-                                    options={interviewers
-                                      .filter((i: any) => a.role === 'InDomain'
-                                        ? i.domain?.name === a.cycleInterviewer.domain.name
-                                        : i.domain?.name !== domainName)
-                                      .filter((i: any) => i.id !== a.cycleInterviewerId)
+                                    options={reassignCandidates(interviewers as any[], {
+                                      role: a.role,
+                                      applicantDomainId: interview.domainApplication.domainId,
+                                      seatedUserIds: interview.assignments
+                                        .filter((s: any) => s.status === 'Active')
+                                        .map((s: any) => s.cycleInterviewer.userId),
+                                    })
                                       .map((i: any): SelectOption => {
                                         const im = i.user
                                         const iName = im?.firstName && im?.lastName ? `${im.firstName} ${im.lastName}` : im?.daliEmail ?? i.id
