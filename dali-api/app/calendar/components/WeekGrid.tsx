@@ -18,6 +18,7 @@ import { getZonedHourFraction, getZonedYMD } from "~/lib/timezone";
 import { isPayPeriodEnd, isPayPeriodStart } from "~/lib/pay-period";
 import { AddMeetingNoteButton, OpenMeetingNoteButton } from "~/calendar/components/AddMeetingNoteModal";
 import { meetingOccurrenceHref } from "~/calendar/lib/meeting-href";
+import { isTrackedMeeting, STOP_TRACKING_DESCRIPTION, STOP_TRACKING_LABEL } from "~/calendar/lib/stop-tracking";
 import { AddMeetingWhiteboardButton } from "~/calendar/components/AddMeetingWhiteboardModal";
 import { TrackEventButton } from "~/calendar/components/TrackEventButton";
 import { IssueIcon } from "~/calendar/components/IssueIcon";
@@ -696,6 +697,7 @@ export function WeekGridEvent({
   const [detailOpen, setDetailOpen] = useState(false);
   const [anchorEl, setAnchorEl] = useState<HTMLDivElement | null>(null);
   const dialog = useDialog();
+  const tracked = isTrackedMeeting(e.meeting);
 
   // A recurring instance hands off to the composer, which asks for the scope
   // and confirms there — asking twice would be the worse experience.
@@ -705,9 +707,13 @@ export function WeekGridEvent({
     setDetailOpen(false);
     if (!e.recurring) {
       const ok = await dialog.confirm({
-        title: e.label ? `Delete "${e.label}"?` : "Delete this event?",
-        description: "The event is removed from the calendar. This can't be undone.",
-        confirmLabel: "Delete",
+        title: e.label
+          ? `${tracked ? STOP_TRACKING_LABEL : "Delete"} "${e.label}"?`
+          : tracked
+            ? "Stop tracking this meeting?"
+            : "Delete this event?",
+        description: tracked ? STOP_TRACKING_DESCRIPTION : "The event is removed from the calendar. This can't be undone.",
+        confirmLabel: tracked ? STOP_TRACKING_LABEL : "Delete",
         tone: "destructive",
       });
       if (!ok) {
@@ -1212,7 +1218,8 @@ export function WeekGridEvent({
                       className={cn(popoverActionBtn, "text-destructive hover:border-destructive/40")}
                     >
                       <Trash2 className="h-3.5 w-3.5" />{" "}
-                      {e.recurring ? "Delete…" : "Delete"}
+                      {tracked ? STOP_TRACKING_LABEL : "Delete"}
+                      {e.recurring ? "…" : ""}
                     </button>
                   </div>
                 )}

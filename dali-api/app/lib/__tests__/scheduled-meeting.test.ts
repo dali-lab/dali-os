@@ -87,6 +87,7 @@ import {
   isWithinCheckInWindow,
   markMeetingAttendance,
   meetingIsUpcoming,
+  ownsGoogleEvent,
   resolveMeetingNoteTemplate,
   setMeetingProject,
   trackExternalEventAsMeeting,
@@ -356,6 +357,121 @@ describe("cancelScheduledMeeting", () => {
     // Must delete the Google INSTANCE
     expect(mockDelete).toHaveBeenCalledWith(
       expect.objectContaining({ eventId: "gcal-instance-123" }),
+    );
+  });
+});
+
+describe("ownsGoogleEvent", () => {
+  it.each([
+    ["Created", "abc", true],
+    [null, "abc", true],
+    [undefined, "abc", true],
+    [null, null, true],
+    ["Tracked", "abc", false],
+    ["Tracked", null, false],
+    [null, "abc_R20260928T130000", false],
+    ["Created", "abc_R20260928T130000Z", false],
+    [null, "abc_20261019T130000Z", true],
+  ] as const)("origin %s, id %s -> %s", (googleEventOrigin, externalEventId, expected) => {
+    expect(ownsGoogleEvent({ googleEventOrigin, externalEventId })).toBe(expected);
+  });
+});
+
+describe("cancelScheduledMeeting — Google ownership", () => {
+  const link = prisma as unknown as { userCalendarLink: { findUnique: ReturnType<typeof vi.fn> } };
+  const exc = prisma as unknown as { meetingException: { upsert: ReturnType<typeof vi.fn> } };
+
+  const row = (over: Record<string, unknown> = {}) => ({
+    id: "m1",
+    organizerId: "org-1",
+    status: "Confirmed",
+    title: "Weekly sync",
+    participantUserIds: ["u2"],
+    selectedAt: new Date("2026-09-10T15:00:00Z"),
+    durationMinutes: 30,
+    recurrenceRule: "FREQ=WEEKLY;BYDAY=WE",
+    ownerCalendarEmail: "org@dali.dartmouth.edu",
+    externalEventId: "gcal-master",
+    organizerCalendarLinkId: "link-1",
+    organizerCalendarId: "cal-1",
+    googleEventOrigin: "Created",
+    ...over,
+  });
+
+  beforeEach(() => {
+    link.userCalendarLink = { findUnique: vi.fn().mockResolvedValue({ id: "link-1", enabled: true }) };
+    exc.meetingException = { upsert: vi.fn().mockResolvedValue({}) };
+    mockPrisma.scheduledMeeting.update.mockResolvedValue({});
+  });
+
+  it.each([
+    ["Created", "gcal-master"],
+    [null, "gcal-master"],
+  ])("scope=all deletes the Google event and notifies for origin %s", async (googleEventOrigin, externalEventId) => {
+    mockPrisma.scheduledMeeting.findUnique.mockResolvedValue(row({ googleEventOrigin, externalEventId }));
+
+    await cancelScheduledMeeting("m1", "org-1");
+
+    expect(deleteGoogleCalendarEvent).toHaveBeenCalledWith(expect.objectContaining({ eventId: "gcal-master" }));
+    expect(mockNotify).toHaveBeenCalledTimes(1);
+  });
+
+  it("scope=all on a tracked meeting cancels in DALI only: no Google delete, no notices", async () => {
+    mockPrisma.scheduledMeeting.findUnique.mockResolvedValue(row({ googleEventOrigin: "Tracked" }));
+
+    const res = await cancelScheduledMeeting("m1", "org-1");
+
+    expect(res).toEqual({ ok: true, alreadyCancelled: false });
+    expect(mockPrisma.scheduledMeeting.update).toHaveBeenCalledWith({
+      where: { id: "m1" },
+      data: { status: "Cancelled" },
+    });
+    expect(deleteGoogleCalendarEvent).not.toHaveBeenCalled();
+    expect(mockNotify).not.toHaveBeenCalled();
+  });
+
+  it("scope=all on a legacy row whose id is a split series is never deleted from Google", async () => {
+    mockPrisma.scheduledMeeting.findUnique.mockResolvedValue(
+      row({ googleEventOrigin: null, externalEventId: "gcal-master_R20260928T130000" }),
+    );
+
+    await cancelScheduledMeeting("m1", "org-1");
+
+    expect(deleteGoogleCalendarEvent).not.toHaveBeenCalled();
+    expect(mockNotify).not.toHaveBeenCalled();
+  });
+
+  it("scope=this on a tracked meeting writes the exception but not to Google", async () => {
+    mockPrisma.scheduledMeeting.findUnique.mockResolvedValue(row({ googleEventOrigin: "Tracked" }));
+
+    await cancelScheduledMeeting("m1", "org-1", {
+      scope: "this",
+      occurrenceStart: "2026-09-17T15:00:00.000Z",
+      occurrenceEventId: "gcal-instance-1",
+    });
+
+    expect(exc.meetingException.upsert).toHaveBeenCalled();
+    expect(deleteGoogleCalendarEvent).not.toHaveBeenCalled();
+  });
+
+  it("scope=following on a tracked meeting truncates the DALI rule but not the Google series", async () => {
+    mockPrisma.scheduledMeeting.findUnique.mockResolvedValue(row({ googleEventOrigin: "Tracked" }));
+
+    await cancelScheduledMeeting("m1", "org-1", { scope: "following", occurrenceStart: "2026-09-24T15:00:00.000Z" });
+
+    expect(mockPrisma.scheduledMeeting.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { recurrenceRule: expect.stringContaining("UNTIL=") } }),
+    );
+    expect(patchGoogleCalendarEvent).not.toHaveBeenCalled();
+  });
+
+  it("scope=following on a created meeting still truncates the Google series", async () => {
+    mockPrisma.scheduledMeeting.findUnique.mockResolvedValue(row());
+
+    await cancelScheduledMeeting("m1", "org-1", { scope: "following", occurrenceStart: "2026-09-24T15:00:00.000Z" });
+
+    expect(patchGoogleCalendarEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ eventId: "gcal-master", recurrenceRule: expect.stringContaining("UNTIL=") }),
     );
   });
 });
@@ -1179,6 +1295,42 @@ describe("createScheduledMeeting — location and description", () => {
     );
   });
 
+  it("marks a meeting it pushed to Google as Created", async () => {
+    p.userCalendarLink.findUnique.mockResolvedValue({
+      id: "link-1",
+      userId: "org-1",
+      externalEmail: "org@dali.dartmouth.edu",
+      enabled: true,
+    });
+    vi.mocked(createGoogleCalendarEvent).mockResolvedValue({
+      eventId: "gcal-1",
+      iCalUID: "gcal-1@google.com",
+      htmlLink: null,
+      meetUrl: null,
+    });
+
+    await createScheduledMeeting({ ...base, organizerCalendarLinkId: "link-1" });
+
+    expect(p.scheduledMeeting.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ externalEventId: "gcal-1", googleEventOrigin: "Created" }),
+      }),
+    );
+  });
+
+  it("pushes nothing to Google when skipGoogle is set", async () => {
+    p.userCalendarLink.findUnique.mockResolvedValue({
+      id: "link-1",
+      userId: "org-1",
+      externalEmail: "org@dali.dartmouth.edu",
+      enabled: true,
+    });
+
+    await createScheduledMeeting({ ...base, organizerCalendarLinkId: "link-1", skipGoogle: true });
+
+    expect(createGoogleCalendarEvent).not.toHaveBeenCalled();
+  });
+
   it("invites email guests through the Google event even with no members invited", async () => {
     p.userCalendarLink.findUnique.mockResolvedValue({
       id: "link-1",
@@ -1658,6 +1810,131 @@ describe("updateScheduledMeeting", () => {
     // The new series keeps the rooms the original occupied.
     expect(mockCreate.scheduledMeeting.create.mock.calls[0]![0].data.rooms).toEqual({
       connect: [{ id: "room-1" }],
+    });
+  });
+
+  describe("Google ownership", () => {
+    const mockP = p as unknown as { meetingException: { upsert: ReturnType<typeof vi.fn> } };
+    const owned = (over: Record<string, unknown> = {}) =>
+      meetingRow({
+        externalEventId: "gcal-master",
+        organizerCalendarLinkId: "link-1",
+        organizerCalendarId: "cal-1",
+        recurrenceRule: "FREQ=WEEKLY;BYDAY=WE",
+        scopeType: "UserList",
+        scopeId: null,
+        isCoreMeeting: false,
+        meetingTypeLabel: null,
+        projectId: null,
+        rooms: [],
+        guestEmails: [],
+        ...over,
+      });
+
+    beforeEach(() => {
+      mockP.meetingException = { upsert: vi.fn().mockResolvedValue({}) };
+      p.userCalendarLink.findUnique.mockResolvedValue({
+        id: "link-1",
+        enabled: true,
+        externalEmail: "org@test.com",
+        userId: "org-1",
+      });
+      p.meetingAttendance.findMany.mockResolvedValue([]);
+      p.user.findMany.mockResolvedValue([]);
+      p.user.findUnique.mockResolvedValue({ timeZone: "America/New_York" });
+    });
+
+    it.each([["Tracked", "gcal-master"], [null, "gcal-master_R20260928T130000"]])(
+      "scope=this writes the exception but not to Google (origin %s, id %s)",
+      async (googleEventOrigin, externalEventId) => {
+        const row = owned({ googleEventOrigin, externalEventId });
+        p.scheduledMeeting.findUnique.mockResolvedValueOnce(row).mockResolvedValueOnce(row);
+
+        await updateScheduledMeeting("m1", "org-1", {
+          title: "Moved",
+          durationMinutes: 30,
+          scope: { type: "UserList", participantUserIds: ["u2"] },
+          startTime: "2026-09-17T16:00:00.000Z",
+          editScope: "this",
+          occurrenceStart: "2026-09-17T15:00:00.000Z",
+          occurrenceEventId: "gcal-instance-1",
+        });
+
+        expect(mockP.meetingException.upsert).toHaveBeenCalled();
+        expect(mockPatch).not.toHaveBeenCalled();
+      },
+    );
+
+    it("scope=this still patches Google for a legacy (null origin) row", async () => {
+      const row = owned({ googleEventOrigin: null });
+      p.scheduledMeeting.findUnique.mockResolvedValueOnce(row).mockResolvedValueOnce(row);
+
+      await updateScheduledMeeting("m1", "org-1", {
+        title: "Moved",
+        durationMinutes: 30,
+        scope: { type: "UserList", participantUserIds: ["u2"] },
+        startTime: "2026-09-17T16:00:00.000Z",
+        editScope: "this",
+        occurrenceStart: "2026-09-17T15:00:00.000Z",
+        occurrenceEventId: "gcal-instance-1",
+      });
+
+      expect(mockPatch).toHaveBeenCalledWith(expect.objectContaining({ eventId: "gcal-instance-1" }));
+    });
+
+    it("scope=all on a tracked meeting saves in DALI without patching Google", async () => {
+      p.scheduledMeeting.findUnique.mockResolvedValue(owned({ googleEventOrigin: "Tracked" }));
+
+      const res = await updateScheduledMeeting("m1", "org-1", {
+        title: "Renamed",
+        durationMinutes: 30,
+        scope: { type: "UserList", participantUserIds: ["u2"] },
+        startTime: "2026-09-10T15:00:00.000Z",
+      });
+
+      expect(res).toMatchObject({ ok: true, gcalError: null });
+      expect(p.scheduledMeeting.update).toHaveBeenCalled();
+      expect(mockPatch).not.toHaveBeenCalled();
+    });
+
+    it("scope=all on a created meeting still patches Google", async () => {
+      p.scheduledMeeting.findUnique.mockResolvedValue(owned({ googleEventOrigin: "Created" }));
+
+      await updateScheduledMeeting("m1", "org-1", {
+        title: "Renamed",
+        durationMinutes: 30,
+        scope: { type: "UserList", participantUserIds: ["u2"] },
+        startTime: "2026-09-10T15:00:00.000Z",
+      });
+
+      expect(mockPatch).toHaveBeenCalledWith(expect.objectContaining({ eventId: "gcal-master" }));
+    });
+
+    it("scope=following on a tracked meeting pushes no Google event and truncates nothing there", async () => {
+      p.scheduledMeeting.findUnique.mockResolvedValue(owned({ googleEventOrigin: "Tracked", participantUserIds: ["org-1", "u2"] }));
+      p.user.findMany.mockResolvedValue([
+        { id: "org-1", firstName: "Org", lastName: "One", daliEmail: "org@test.com", dartmouthEmail: null },
+        { id: "u2", firstName: "U", lastName: "Two", daliEmail: "u2@test.com", dartmouthEmail: null },
+      ]);
+      const mockCreate = p as unknown as { scheduledMeeting: { create: ReturnType<typeof vi.fn> } };
+      mockCreate.scheduledMeeting.create = vi.fn().mockResolvedValue({ id: "m-new", ownerCalendarEmail: "org@test.com" });
+      p.meetingAttendance.createMany.mockResolvedValue({});
+
+      const res = await updateScheduledMeeting("m1", "org-1", {
+        title: "New series",
+        durationMinutes: 60,
+        scope: { type: "UserList", participantUserIds: ["u2"] },
+        startTime: "2026-09-24T14:00:00.000Z",
+        editScope: "following",
+        occurrenceStart: "2026-09-24T14:00:00.000Z",
+      });
+
+      expect(res.ok).toBe(true);
+      expect(p.scheduledMeeting.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: { recurrenceRule: expect.stringContaining("UNTIL=") } }),
+      );
+      expect(mockPatch).not.toHaveBeenCalled();
+      expect(createGoogleCalendarEvent).not.toHaveBeenCalled();
     });
   });
 
@@ -2295,6 +2572,7 @@ describe("trackExternalEventAsMeeting", () => {
     attendeeEmails: ["ally@dali.dartmouth.edu", "outsider@example.com"],
     viewerInvited: false,
     organizerEmail: null as string | null,
+    creatorEmail: null as string | null,
   };
 
   function arrange(
@@ -2309,7 +2587,7 @@ describe("trackExternalEventAsMeeting", () => {
       userId: "core-1",
       externalEmail: "core@dali.dartmouth.edu",
     });
-    p.scheduledMeeting!.findFirst.mockResolvedValue(null);
+    p.scheduledMeeting!.findMany.mockResolvedValue([]);
     p.scheduledMeeting!.create.mockImplementation(async (a: { data: unknown }) => ({
       id: "m-new",
       ...(a.data as object),
@@ -2375,9 +2653,55 @@ describe("trackExternalEventAsMeeting", () => {
 
     await trackExternalEventAsMeeting({ ...input, recurringEventId: "gcal-master" });
 
-    expect(p.scheduledMeeting!.findFirst.mock.calls[0][0].where).toEqual({
+    expect(p.scheduledMeeting!.findMany.mock.calls[0][0].where).toEqual({
       status: { not: "Cancelled" },
       OR: [{ externalEventId: "gcal-master" }, { iCalUID: "gcal-evt-1@google.com" }],
+    });
+  });
+
+  describe("split series lineage", () => {
+    const BASE = "6b1uc1q7omn5duodshtuoohpts";
+    const SPLIT = `${BASE}_R20260928T130000`;
+
+    it("also looks for the base event id and base iCalUID of a split", async () => {
+      const p = arrange({ event: { id: `${BASE}_20261019T130000Z`, iCalUID: `${SPLIT}@google.com` } });
+
+      await trackExternalEventAsMeeting({ ...input, eventId: `${BASE}_20261019T130000Z`, recurringEventId: SPLIT });
+
+      expect(p.scheduledMeeting!.findMany.mock.calls[0][0].where).toEqual({
+        status: { not: "Cancelled" },
+        OR: [
+          { externalEventId: SPLIT },
+          { externalEventId: BASE },
+          { iCalUID: `${SPLIT}@google.com` },
+          { iCalUID: `${BASE}@google.com` },
+        ],
+      });
+    });
+
+    it("returns the parent lineage instead of minting a sibling for a split", async () => {
+      const p = arrange({ event: { iCalUID: `${SPLIT}@google.com`, viewerInvited: true } });
+      p.scheduledMeeting!.findMany.mockResolvedValue([{
+        id: "m-parent",
+        organizerId: "someone-else",
+        participantUserIds: ["core-1"],
+      }]);
+
+      const res = await trackExternalEventAsMeeting({ ...input, recurringEventId: SPLIT });
+
+      expect(res).toMatchObject({ ok: true, meeting: { id: "m-parent" } });
+      expect(p.scheduledMeeting!.create).not.toHaveBeenCalled();
+    });
+  });
+
+  it("marks the meeting Tracked and stores the calendar it lives on", async () => {
+    const p = arrange();
+
+    await trackExternalEventAsMeeting(input);
+
+    expect(p.scheduledMeeting!.create.mock.calls[0][0].data).toMatchObject({
+      googleEventOrigin: "Tracked",
+      organizerCalendarId: "dali@dartmouth.edu",
     });
   });
 
@@ -2386,7 +2710,7 @@ describe("trackExternalEventAsMeeting", () => {
 
     await trackExternalEventAsMeeting(input);
 
-    expect(p.scheduledMeeting!.findFirst.mock.calls[0][0].where).toEqual({
+    expect(p.scheduledMeeting!.findMany.mock.calls[0][0].where).toEqual({
       status: { not: "Cancelled" },
       OR: [{ externalEventId: "gcal-evt-1" }],
     });
@@ -2394,15 +2718,45 @@ describe("trackExternalEventAsMeeting", () => {
 
   it("returns a DALI meeting already pushed to Google under a different event id instead of tracking a second", async () => {
     const p = arrange({ event: { viewerInvited: true } });
-    p.scheduledMeeting!.findFirst.mockResolvedValue({
+    p.scheduledMeeting!.findMany.mockResolvedValue([{
       id: "m-dali-series",
       organizerId: "someone-else",
       participantUserIds: ["core-1"],
-    });
+    }]);
 
     const res = await trackExternalEventAsMeeting(input);
 
     expect(res).toMatchObject({ ok: true, meeting: { id: "m-dali-series" } });
+    expect(p.scheduledMeeting!.create).not.toHaveBeenCalled();
+  });
+
+  it("prefers the meeting bound to the split series itself over its parent lineage", async () => {
+    const p = arrange({ event: { iCalUID: "base_R20260928T130000@google.com" } });
+    p.scheduledMeeting!.findMany.mockResolvedValue([
+      { id: "m-parent", organizerId: "core-1", participantUserIds: [], externalEventId: "base", iCalUID: "base@google.com" },
+      {
+        id: "m-split",
+        organizerId: "core-1",
+        participantUserIds: [],
+        externalEventId: "base_R20260928T130000",
+        iCalUID: "base_R20260928T130000@google.com",
+      },
+    ]);
+
+    const res = await trackExternalEventAsMeeting({ ...input, recurringEventId: "base_R20260928T130000" });
+
+    expect(res).toMatchObject({ ok: true, meeting: { id: "m-split" } });
+  });
+
+  it("falls back to the parent lineage when only it exists", async () => {
+    const p = arrange({ event: { iCalUID: "base_R20260928T130000@google.com" } });
+    p.scheduledMeeting!.findMany.mockResolvedValue([
+      { id: "m-parent", organizerId: "core-1", participantUserIds: [], externalEventId: "base", iCalUID: "base@google.com" },
+    ]);
+
+    const res = await trackExternalEventAsMeeting({ ...input, recurringEventId: "base_R20260928T130000" });
+
+    expect(res).toMatchObject({ ok: true, meeting: { id: "m-parent" } });
     expect(p.scheduledMeeting!.create).not.toHaveBeenCalled();
   });
 
@@ -2481,11 +2835,11 @@ describe("trackExternalEventAsMeeting", () => {
 
   it("returns the existing meeting without re-adding it when the actor is already its organizer", async () => {
     const p = arrange();
-    p.scheduledMeeting!.findFirst.mockResolvedValue({
+    p.scheduledMeeting!.findMany.mockResolvedValue([{
       id: "m-existing",
       organizerId: "core-1",
       participantUserIds: [],
-    });
+    }]);
 
     const res = await trackExternalEventAsMeeting(input);
 
@@ -2496,11 +2850,11 @@ describe("trackExternalEventAsMeeting", () => {
 
   it("returns the existing meeting without re-adding it when the actor is already a participant", async () => {
     const p = arrange();
-    p.scheduledMeeting!.findFirst.mockResolvedValue({
+    p.scheduledMeeting!.findMany.mockResolvedValue([{
       id: "m-existing",
       organizerId: "someone-else",
       participantUserIds: ["core-1"],
-    });
+    }]);
 
     const res = await trackExternalEventAsMeeting(input);
 
@@ -2511,11 +2865,11 @@ describe("trackExternalEventAsMeeting", () => {
 
   it("joins the actor to an already-tracked event's roster when Google says they're on it", async () => {
     const p = arrange({ event: { viewerInvited: true } });
-    p.scheduledMeeting!.findFirst.mockResolvedValue({
+    p.scheduledMeeting!.findMany.mockResolvedValue([{
       id: "m-existing",
       organizerId: "someone-else",
       participantUserIds: [],
-    });
+    }]);
     p.scheduledMeeting!.update.mockResolvedValue({
       id: "m-existing",
       organizerId: "someone-else",
@@ -2548,11 +2902,11 @@ describe("trackExternalEventAsMeeting", () => {
 
   it("joins the actor to the roster without seeding attendance when the meeting has none yet", async () => {
     const p = arrange({ event: { viewerInvited: true } });
-    p.scheduledMeeting!.findFirst.mockResolvedValue({
+    p.scheduledMeeting!.findMany.mockResolvedValue([{
       id: "m-existing",
       organizerId: "someone-else",
       participantUserIds: [],
-    });
+    }]);
     p.scheduledMeeting!.update.mockResolvedValue({
       id: "m-existing",
       organizerId: "someone-else",
@@ -2570,11 +2924,11 @@ describe("trackExternalEventAsMeeting", () => {
 
   it("refuses an event that is already tracked when the actor isn't on it and it isn't lab-wide", async () => {
     const p = arrange({ general: false, event: { viewerInvited: false } });
-    p.scheduledMeeting!.findFirst.mockResolvedValue({
+    p.scheduledMeeting!.findMany.mockResolvedValue([{
       id: "m-existing",
       organizerId: "someone-else",
       participantUserIds: [],
-    });
+    }]);
 
     expect(await trackExternalEventAsMeeting(input)).toEqual({
       ok: false,

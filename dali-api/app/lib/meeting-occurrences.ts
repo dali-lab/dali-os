@@ -182,6 +182,19 @@ export function googleInstanceOriginalStart(eventId: string, recurringEventId?: 
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
+const SERIES_SPLIT_SUFFIX = /_R\d{8}(?:T\d{6}Z?)?$/;
+
+/** Google's "this and following" split ids append `_R<stamp>` to the original series id. */
+export function googleSeriesBase(id: string): string {
+  return id.replace(SERIES_SPLIT_SUFFIX, "");
+}
+
+export function googleSeriesBaseUID(uid: string): string {
+  const at = uid.indexOf("@");
+  if (at < 0) return googleSeriesBase(uid);
+  return googleSeriesBase(uid.slice(0, at)) + uid.slice(at);
+}
+
 /**
  * Resolve which DALI meeting a fetched Google event belongs to.
  *
@@ -210,6 +223,15 @@ export function matchMeetingForEvent<M>(
   if (event.recurringEventId) {
     const byMaster = byExternalId.get(event.recurringEventId);
     if (byMaster) return byMaster;
+  }
+  if (event.iCalUID) {
+    const byBaseUid = byICalUID.get(googleSeriesBaseUID(event.iCalUID));
+    if (byBaseUid) return byBaseUid;
+  }
+  const seriesId = event.recurringEventId ?? event.eventId;
+  if (seriesId) {
+    const byBase = byExternalId.get(googleSeriesBase(seriesId));
+    if (byBase) return byBase;
   }
   return null;
 }

@@ -60,6 +60,7 @@ import {
   attachMeetingNote,
   attachMeetingWhiteboard,
   cancelScheduledMeeting,
+  ownsGoogleEvent,
   parseOccurrenceParam,
   resolveMeetingOccurrence,
   setMeetingProject,
@@ -71,6 +72,8 @@ import {
   rruleWithUntil,
   bareRrule,
   googleInstanceOriginalStart,
+  googleSeriesBase,
+  googleSeriesBaseUID,
   matchMeetingForEvent,
   noteForOccurrence,
   resolveOccurrence,
@@ -189,6 +192,7 @@ export async function meetingsForExternalEvents(
   // Ids where Google itself says the viewer is on the event (organizer or
   // guest), independent of whether the DALI roster agrees.
   const viewerOnEventIds = new Set<string>();
+  const admittedUIDs = new Set<string>();
   for (const e of events) {
     const labWide = viewerIsLabMember && isGeneralCalendarEvent(e.calendarId);
     const onEvent = viewerOnEvent(e);
@@ -202,14 +206,21 @@ export async function meetingsForExternalEvents(
       if (labWide) labWideIds.add(e.recurringEventId);
       if (onEvent) viewerOnEventIds.add(e.recurringEventId);
     }
-    if (e.iCalUID) uidSet.add(e.iCalUID);
+    if (e.iCalUID) {
+      uidSet.add(e.iCalUID);
+      if (labWide || onEvent) admittedUIDs.add(e.iCalUID);
+    }
   }
+  const admittedIds = new Set([...labWideIds, ...viewerOnEventIds]);
+  for (const id of [...seriesIds]) seriesIds.add(googleSeriesBase(id));
+  for (const id of [...admittedIds]) admittedIds.add(googleSeriesBase(id));
+  for (const uid of [...uidSet]) uidSet.add(googleSeriesBaseUID(uid));
+  for (const uid of [...admittedUIDs]) admittedUIDs.add(googleSeriesBaseUID(uid));
   if (seriesIds.size === 0 && uidSet.size === 0) return new Map();
   const invited = [
     { organizerId: userId },
     { participantUserIds: { has: userId } },
   ];
-  const admittedIds = new Set([...labWideIds, ...viewerOnEventIds]);
   const meetings = await prisma.scheduledMeeting.findMany({
     where: {
       status: { not: "Cancelled" },
@@ -227,10 +238,11 @@ export async function meetingsForExternalEvents(
         // event on the general calendar, plus any event Google itself says the
         // viewer is on.
         {
-          OR:
-            admittedIds.size > 0
-              ? [...invited, { externalEventId: { in: [...admittedIds] } }]
-              : invited,
+          OR: [
+            ...invited,
+            ...(admittedIds.size > 0 ? [{ externalEventId: { in: [...admittedIds] } }] : []),
+            ...(admittedUIDs.size > 0 ? [{ iCalUID: { in: [...admittedUIDs] } }] : []),
+          ],
         },
       ],
     },
@@ -239,6 +251,7 @@ export async function meetingsForExternalEvents(
       organizerId: true,
       externalEventId: true,
       iCalUID: true,
+      googleEventOrigin: true,
       isCoreMeeting: true,
       meetingType: true,
       notebookId: true,
@@ -272,6 +285,8 @@ export async function meetingsForExternalEvents(
   const heal = new Map<string, string>();
   for (const e of events) {
     if (!e.iCalUID || byICalUID.has(e.iCalUID)) continue;
+    // Exact id match only: a split series' own `_R` UID must not land on the
+    // parent row it merely falls back to.
     const m =
       (e.eventId ? byExternalId.get(e.eventId) : undefined) ??
       (e.recurringEventId ? byExternalId.get(e.recurringEventId) : undefined);
@@ -304,6 +319,7 @@ export async function meetingsForExternalEvents(
       notePageId: noteForOccurrence(m.notePages, occurrence.originalStart)?.id ?? null,
       whiteboardPageId: m.whiteboardPage?.id ?? null,
       hasType: m.meetingType != null,
+      googleEventOrigin: m.googleEventOrigin,
       onTimesheet: m.timeEntries.some((t) => t.occurrenceStart?.getTime() === key),
       isCoreMeeting: m.isCoreMeeting,
       canMarkCoreMeeting,
@@ -862,6 +878,49 @@ async function maybeUpdateMeetingFromComposer(
   return null;
 }
 
+/**
+ * A drag-move of a meeting's event writes the occurrence's MeetingException
+ * (updateScheduledMeeting scope "this") so DALI's own surfaces move with the
+ * grid. Returns whether Google was already patched by that path; null when the
+ * event isn't a manageable meeting, so the caller moves it with a raw patch.
+ */
+async function moveMeetingOccurrence(
+  userId: string,
+  input: { eventId: string; recurringEventId: string | null; startIso: string; endIso: string },
+): Promise<{ googlePatched: boolean } | { error: string; status: number } | null> {
+  const externalIds = input.recurringEventId ? [input.eventId, input.recurringEventId] : [input.eventId];
+  const meeting = await prisma.scheduledMeeting.findFirst({
+    where: { externalEventId: { in: externalIds }, status: { not: "Cancelled" } },
+    select: { id: true, title: true, selectedAt: true, externalEventId: true, googleEventOrigin: true },
+  });
+  if (!meeting) return null;
+  const occurrenceStart =
+    googleInstanceOriginalStart(input.eventId, input.recurringEventId) ?? meeting.selectedAt;
+  if (!occurrenceStart) return null;
+  const durationMinutes = Math.round(
+    (new Date(input.endIso).getTime() - new Date(input.startIso).getTime()) / 60_000,
+  );
+  const existing = await prisma.meetingException.findUnique({
+    where: {
+      scheduledMeetingId_originalStart: { scheduledMeetingId: meeting.id, originalStart: occurrenceStart },
+    },
+    select: { overrideTitle: true },
+  });
+  const result = await updateScheduledMeeting(meeting.id, userId, {
+    title: existing?.overrideTitle ?? meeting.title,
+    durationMinutes,
+    scope: { type: "None" },
+    startTime: input.startIso,
+    editScope: "this",
+    occurrenceStart: occurrenceStart.toISOString(),
+    occurrenceEventId: input.eventId,
+  });
+  if (!result.ok) {
+    return result.status === 403 ? null : { error: result.error, status: result.status };
+  }
+  return { googlePatched: ownsGoogleEvent(meeting) };
+}
+
 async function maybeCancelMeetingFromComposer(
   userId: string,
   get: (k: string) => string,
@@ -976,7 +1035,13 @@ async function handleEventAction(
         occurrenceStart: googleInstanceOriginalStart(eventId, recurringEventId) ?? undefined,
       });
       if (!moved.ok) return Response.json({ error: moved.error }, { status: moved.status });
-      await patchGoogleCalendarEvent({ linkId, calendarId, eventId, startIso, endIso, allDay, timeZone });
+      const meetingMove = allDay ? null : await moveMeetingOccurrence(userId, { eventId, recurringEventId, startIso, endIso });
+      if (meetingMove && "error" in meetingMove) {
+        return Response.json({ error: meetingMove.error }, { status: meetingMove.status });
+      }
+      if (!meetingMove?.googlePatched) {
+        await patchGoogleCalendarEvent({ linkId, calendarId, eventId, startIso, endIso, allDay, timeZone });
+      }
       await retimeEventWorkLog(userId, eventId, startIso, endIso);
       return null;
     }

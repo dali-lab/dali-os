@@ -2,6 +2,8 @@ import { describe, it, expect } from "vitest";
 import {
   expandOccurrences,
   googleInstanceOriginalStart,
+  googleSeriesBase,
+  googleSeriesBaseUID,
   matchMeetingForEvent,
   nextOpenOccurrence,
   resolveOccurrence,
@@ -264,5 +266,96 @@ describe("nextOpenOccurrence", () => {
     const notes = [{ meetingOccurrenceStart: week2.originalStart }];
     expect(nextOpenOccurrence([week2], notes, new Date("2026-07-20T00:00:00Z"))).toBeNull();
     expect(nextOpenOccurrence([], [], new Date("2026-07-20T00:00:00Z"))).toBeNull();
+  });
+});
+
+describe("googleSeriesBase", () => {
+  const base = "6b1uc1q7omn5duodshtuoohpts";
+  it("strips a split suffix with and without Z", () => {
+    expect(googleSeriesBase(`${base}_R20260928T130000`)).toBe(base);
+    expect(googleSeriesBase(`${base}_R20260928T130000Z`)).toBe(base);
+  });
+  it("strips a date-only split suffix", () => {
+    expect(googleSeriesBase(`${base}_R20260928`)).toBe(base);
+  });
+  it("leaves ids without a suffix alone", () => {
+    expect(googleSeriesBase(base)).toBe(base);
+    expect(googleSeriesBase("")).toBe("");
+  });
+  it("does not strip an instance id", () => {
+    expect(googleSeriesBase(`${base}_20261019T130000Z`)).toBe(`${base}_20261019T130000Z`);
+    expect(googleSeriesBase(`${base}_20261019`)).toBe(`${base}_20261019`);
+  });
+  it("does not strip a malformed or mid-string suffix", () => {
+    expect(googleSeriesBase(`${base}_R2026092`)).toBe(`${base}_R2026092`);
+    expect(googleSeriesBase(`${base}_R20260928T1300`)).toBe(`${base}_R20260928T1300`);
+    expect(googleSeriesBase(`${base}_R20260928T130000_x`)).toBe(`${base}_R20260928T130000_x`);
+  });
+});
+
+describe("googleSeriesBaseUID", () => {
+  const base = "6b1uc1q7omn5duodshtuoohpts";
+  it("strips the suffix before the @", () => {
+    expect(googleSeriesBaseUID(`${base}_R20260928T130000@google.com`)).toBe(`${base}@google.com`);
+    expect(googleSeriesBaseUID(`${base}_R20260928T130000Z@google.com`)).toBe(`${base}@google.com`);
+  });
+  it("leaves a plain UID alone", () => {
+    expect(googleSeriesBaseUID(`${base}@google.com`)).toBe(`${base}@google.com`);
+  });
+  it("handles a UID with no @", () => {
+    expect(googleSeriesBaseUID(`${base}_R20260928T130000`)).toBe(base);
+    expect(googleSeriesBaseUID(base)).toBe(base);
+  });
+  it("does not strip an instance-style UID", () => {
+    expect(googleSeriesBaseUID(`${base}_20261019T130000Z@google.com`)).toBe(`${base}_20261019T130000Z@google.com`);
+  });
+});
+
+describe("matchMeetingForEvent base fallback", () => {
+  const base = "6b1uc1q7omn5duodshtuoohpts";
+  const split = `${base}_R20260928T130000`;
+  const parent = { id: "parent" };
+  const child = { id: "child" };
+
+  it("matches a split series event to the parent lineage by base UID", () => {
+    const m = matchMeetingForEvent(
+      { eventId: split, iCalUID: `${split}@google.com` },
+      new Map([[`${base}@google.com`, parent]]),
+      new Map(),
+    );
+    expect(m).toBe(parent);
+  });
+
+  it("matches a split instance to the parent by base of recurringEventId", () => {
+    const m = matchMeetingForEvent(
+      { eventId: `${base}_20261019T130000Z`, recurringEventId: split },
+      new Map(),
+      new Map([[base, parent]]),
+    );
+    expect(m).toBe(parent);
+  });
+
+  it("matches a split master by base of its own event id", () => {
+    expect(matchMeetingForEvent({ eventId: split }, new Map(), new Map([[base, parent]]))).toBe(parent);
+  });
+
+  it("exact match on the split wins over the base", () => {
+    const byExternalId = new Map([[split, child], [base, parent]]);
+    expect(matchMeetingForEvent({ eventId: split }, new Map(), byExternalId)).toBe(child);
+    const byICalUID = new Map([[`${split}@google.com`, child], [`${base}@google.com`, parent]]);
+    expect(matchMeetingForEvent({ iCalUID: `${split}@google.com` }, byICalUID, new Map())).toBe(child);
+  });
+
+  it("exact id beats base UID", () => {
+    const m = matchMeetingForEvent(
+      { eventId: split, iCalUID: `${split}@google.com` },
+      new Map([[`${base}@google.com`, parent]]),
+      new Map([[split, child]]),
+    );
+    expect(m).toBe(child);
+  });
+
+  it("returns null when neither exact nor base matches", () => {
+    expect(matchMeetingForEvent({ eventId: split, iCalUID: `${split}@google.com` }, new Map(), new Map())).toBeNull();
   });
 });
