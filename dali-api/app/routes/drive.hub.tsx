@@ -1199,7 +1199,7 @@ export default function DriveHub() {
         mutate(p);
         return p;
       },
-      { replace: opts?.replace ?? true },
+      { replace: opts?.replace ?? true, preventScrollReset: true },
     );
   }
 

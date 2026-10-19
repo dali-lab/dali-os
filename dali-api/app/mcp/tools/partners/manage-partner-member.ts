@@ -1,10 +1,13 @@
-// MCP tool: manage_partner_member — invite, revoke, update, move, or remove partner members.
-// Scope: mcp:write. Gated to isCore.
+// MCP tool: manage_partner_member — invite, add, revoke, update, move,
+// set-primary, or remove partner members. Scope: mcp:write. Gated to isCore.
 //
 // Actions:
 //   invite        — send an invite to email for orgId.
+//   add           — add an existing PartnerContact (contactId) to orgId directly
+//                   (no email round trip).
 //   revoke_invite — revoke a pending invite by inviteId within orgId.
 //   set_role      — update the role label for a PartnerMembership.
+//   set_primary   — set a PartnerMembership as orgId's primary contact.
 //   move          — move a member to a different org (targetOrgId).
 //   remove        — end a member's active membership.
 //
@@ -14,6 +17,7 @@
 import { prisma } from "~/lib/db";
 import { isCore } from "~/lib/roles";
 import { logAuditEvent } from "~/lib/audit";
+import { logPartnerActivity } from "~/partners/lib/partner-activity.server";
 import {
   createPartnerInvite,
   revokePartnerInvite,
@@ -28,20 +32,24 @@ import {
 export const MANAGE_PARTNER_MEMBER_TOOL = {
   name: "manage_partner_member",
   description:
-    "Manage partner organization members. Action 'invite' sends an email invite. Action 'revoke_invite' cancels a pending invite. Action 'set_role' updates the display role label. Action 'move' moves a member to a different org. Action 'remove' ends a member's active membership. Requires Core access.",
+    "Manage partner organization members. Action 'invite' sends an email invite. Action 'add' adds an existing contact (contactId) directly, no email. Action 'revoke_invite' cancels a pending invite. Action 'set_role' updates the display role label. Action 'set_primary' makes a membership the org's primary contact. Action 'move' moves a member to a different org. Action 'remove' ends a member's active membership. Requires Core access.",
   inputSchema: {
     type: "object" as const,
     properties: {
       action: {
         type: "string",
-        enum: ["invite", "revoke_invite", "set_role", "move", "remove"],
+        enum: ["invite", "add", "revoke_invite", "set_role", "set_primary", "move", "remove"],
         description: "What to do.",
       },
       orgId: { type: "string", description: "Partner org id." },
+      contactId: {
+        type: "string",
+        description: "Required for add (PartnerContact.id).",
+      },
       membershipId: {
         type: "string",
         description:
-          "Required for set_role, move, and remove (PartnerMembership.id). Alias: partnerUserId (deprecated).",
+          "Required for set_role, set_primary, move, and remove (PartnerMembership.id). Alias: partnerUserId (deprecated).",
       },
       // TODO(partner-crm): remove partnerUserId from schema once all callers migrate to membershipId.
       partnerUserId: {
@@ -77,9 +85,11 @@ export async function runManagePartnerMember(
 
   requireForAction(action, input, {
     invite: ["orgId", "email"],
+    add: ["orgId", "contactId"],
     revoke_invite: ["orgId", "inviteId"],
     // Accept either membershipId or the legacy partnerUserId alias.
     set_role: ["orgId"],
+    set_primary: ["orgId"],
     move: ["orgId", "targetOrgId"],
     remove: ["orgId"],
   });
@@ -102,6 +112,37 @@ export async function runManagePartnerMember(
       invitedByUserId: callerId,
     });
     if ("error" in result) throw new McpInvalidError(result.error);
+    return { ok: true };
+  }
+
+  // ── add ───────────────────────────────────────────────────────────────────
+  if (action === "add") {
+    const contactId = input.contactId as string;
+    const contact = await prisma.partnerContact.findUnique({
+      where: { id: contactId },
+      select: { id: true },
+    });
+    if (!contact) throw new McpNotFoundError(`Partner contact ${contactId} not found`);
+    // Upsert on the (contactId, orgId) unique pair — a contact previously
+    // removed from this org still has a (soft-ended) row a plain create
+    // would collide with.
+    await prisma.partnerMembership.upsert({
+      where: { contactId_orgId: { contactId, orgId } },
+      create: { contactId, orgId },
+      update: { endedAt: null },
+    });
+    await logPartnerActivity(prisma, {
+      orgId,
+      actorUserId: callerId,
+      type: "MemberAdded",
+      metadata: { contactId },
+    });
+    await logAuditEvent({
+      action: "partner.member.update",
+      userId: callerId,
+      targetId: orgId,
+      metadata: { addedContactId: contactId },
+    });
     return { ok: true };
   }
 
@@ -130,6 +171,27 @@ export async function runManagePartnerMember(
       userId: callerId,
       targetId: membershipId,
       metadata: { orgId },
+    });
+    return { ok: true };
+  }
+
+  // ── set_primary ───────────────────────────────────────────────────────────
+  if (action === "set_primary") {
+    const membershipId = resolveMembershipId();
+    const member = await prisma.partnerMembership.findFirst({
+      where: { id: membershipId, orgId, endedAt: null },
+      select: { id: true },
+    });
+    if (!member) throw new McpNotFoundError("Member not found in this organization");
+    await prisma.partnerOrg.update({
+      where: { id: orgId },
+      data: { primaryContactId: membershipId },
+    });
+    await logAuditEvent({
+      action: "partner.org.update",
+      userId: callerId,
+      targetId: orgId,
+      metadata: { primaryContactId: membershipId },
     });
     return { ok: true };
   }

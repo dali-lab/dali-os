@@ -4,6 +4,12 @@ import { resolvePhotoUrl } from "~/lib/photo";
 import { getDownloadUrl } from "~/lib/s3";
 import { fullName } from "~/lib/display";
 import { buildTimelineEpics } from "~/projects/lib/timeline-epics";
+import {
+  listPartnerMeetingsForContact,
+  listPartnerMeetingRequests,
+  type PartnerMeetingSummary,
+  type PartnerMeetingRequestSummary,
+} from "~/partners/lib/partner-meetings.server";
 import type {
   TimelineEpic,
   TimelineTerm,
@@ -85,6 +91,12 @@ export type PartnerProjectViewData = {
   // than the hub's copy: see toEditableEpic.
   editableEpics: EditableEpic[];
   drive: PartnerDrive;
+  // Scheduling (specs/partner-crm.md §6): upcoming real meetings the contact
+  // is invited to, plus this project's pending/declined meeting requests.
+  // Empty when the caller has no contact (the in-app member preview).
+  meetings: PartnerMeetingSummary[];
+  pendingMeetingRequests: PartnerMeetingRequestSummary[];
+  declinedMeetingRequests: PartnerMeetingRequestSummary[];
 };
 
 // The whole partner read-surface for a project: the planning timeline, roster,
@@ -96,6 +108,9 @@ export type PartnerProjectViewData = {
 export async function loadPartnerProjectView(
   projectId: string,
   partnerOrgId: string | null,
+  /** The signed-in partner's contact (for the Meetings section). Null for the
+   *  in-app member preview, which has no contact of its own. */
+  contact: { email: string } | null = null,
 ): Promise<PartnerProjectViewData | null> {
   // Every select below is deliberately minimal — this is the whole partner
   // read-surface for a project. No assignees on tasks, no levels on the
@@ -129,6 +144,8 @@ export async function loadPartnerProjectView(
     storyTaskRows,
     pageRows,
     sharedFileRows,
+    meetings,
+    meetingRequests,
   ] = await Promise.all([
       partnerOrgId
         ? prisma.projectPartner.findFirst({
@@ -221,6 +238,8 @@ export async function loadPartnerProjectView(
           },
         },
       }),
+      contact ? listPartnerMeetingsForContact(contact.email) : Promise.resolve([]),
+      listPartnerMeetingRequests({ projectId: project.id }),
     ]);
 
   // The same span resolution the project hub runs, with the task level left
@@ -370,5 +389,8 @@ export async function loadPartnerProjectView(
     timelineTerms,
     editableEpics,
     drive,
+    meetings,
+    pendingMeetingRequests: meetingRequests.pending,
+    declinedMeetingRequests: meetingRequests.declined,
   };
 }
