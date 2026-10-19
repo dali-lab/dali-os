@@ -1,4 +1,4 @@
-import { Navigate, redirect } from "react-router";
+import { Navigate, redirect, useSearchParams } from "react-router";
 import type { Route } from "./+types/core.partners.settings";
 import { requireAuth, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
@@ -125,5 +125,8 @@ export async function action({ request }: Route.ActionArgs) {
 // Settings live in a modal on the Applications board; this route keeps the
 // loader and action that modal fetches from, and sends a direct visit there.
 export default function PartnerSettingsRedirect() {
-  return <Navigate to="/core/partners?settings=1" replace />;
+  const [searchParams] = useSearchParams();
+  const next = new URLSearchParams(searchParams);
+  next.set("settings", "1");
+  return <Navigate to={`/core/partners?${next}`} replace />;
 }

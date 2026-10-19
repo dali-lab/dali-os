@@ -85,7 +85,7 @@ test.describe('partner CRM settings (Core)', () => {
     await expect(page.getByRole('heading', { name: 'Partner settings' })).toBeVisible();
 
     await page.goto('/core/partners/settings?embed=1');
-    await expect(page).toHaveURL(/\/core\/partners\?settings=1/);
+    await expect(page).toHaveURL(/\/core\/partners\?embed=1&settings=1/);
     await expect(page.getByRole('heading', { name: 'Partner settings' })).toBeVisible();
   });
 });
