@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   fileMatchesAccept,
   MAX_FILE_STORE_BYTES,
+  MAX_FORM_UPLOAD_BYTES,
   MAX_UPLOAD_BYTES,
   uploadCapForKey,
 } from "~/lib/file-validation";
@@ -76,7 +77,19 @@ describe("uploadCapForKey", () => {
   });
 
   it.each([
+    "applications/resume/uuid-Resume.pdf",
+    "uploads/applications/portfolio/uuid-portfolio.pdf",
+  ])("gives form file-upload answers 50 MB: %s", (key) => {
+    const cap = uploadCapForKey(key);
+    expect(cap.maxBytes).toBe(MAX_FORM_UPLOAD_BYTES);
+    expect(cap.maxBytes).toBe(50 * 1024 * 1024);
+    expect(cap.label).toBe("50 MB");
+    expect(cap.expiresIn).toBe(900);
+  });
+
+  it.each([
     "avatars/uuid-me.png",
+    "avatars/applications/uuid.png",
     "uploads/doc-images/uuid-header.jpg",
     "page-docs/uuid-demo.mp4",
     "whiteboard-images/uuid.png",

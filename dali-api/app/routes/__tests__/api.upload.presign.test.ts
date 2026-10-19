@@ -16,7 +16,7 @@ import { requireAuth } from "~/lib/auth";
 import { getUploadPost, isS3Configured } from "~/lib/s3";
 import { isLabMember } from "~/lib/roles";
 import { _resetForTests } from "~/lib/rate-limit";
-import { MAX_FILE_STORE_BYTES, MAX_UPLOAD_BYTES } from "~/lib/file-validation";
+import { MAX_FILE_STORE_BYTES, MAX_FORM_UPLOAD_BYTES, MAX_UPLOAD_BYTES } from "~/lib/file-validation";
 import { action } from "~/routes/api.upload.presign";
 
 const USER_ID = "user-1";
@@ -275,6 +275,37 @@ describe("POST /api/upload/presign response shape", () => {
       maxBytes: MAX_UPLOAD_BYTES,
       expiresIn: 300,
     });
+  });
+
+  it("gives an applicant (not a lab member) the 50 MB form-upload policy", async () => {
+    vi.mocked(isLabMember).mockResolvedValue(false);
+    const res = await action({
+      request: makeRequest({
+        key: "applications/portfolio/uuid-portfolio.pdf",
+        contentType: "application/pdf",
+        contentLength: 40 * 1024 * 1024,
+      }),
+    } as any);
+    expect(res.status).toBe(200);
+    expect(getUploadPost).toHaveBeenCalledWith(
+      "uploads/applications/portfolio/uuid-portfolio.pdf",
+      "application/pdf",
+      { maxBytes: MAX_FORM_UPLOAD_BYTES, expiresIn: 900 },
+    );
+    expect(isLabMember).not.toHaveBeenCalled();
+  });
+
+  it("returns 413 past 50 MB for a form upload", async () => {
+    const res = await action({
+      request: makeRequest({
+        key: "applications/portfolio/uuid-portfolio.pdf",
+        contentType: "application/pdf",
+        contentLength: MAX_FORM_UPLOAD_BYTES + 1,
+      }),
+    } as any);
+    expect(res.status).toBe(413);
+    expect((await res.json()).error).toContain("50 MB");
+    expect(getUploadPost).not.toHaveBeenCalled();
   });
 
   it("doesn't look up membership for an ordinary upload", async () => {

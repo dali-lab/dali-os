@@ -2,11 +2,12 @@
 // day (the mini-month every reference calendar carries). Self-contained: it
 // tracks the month it's showing, pages with the chevrons, and calls onPick with
 // the chosen day at UTC midnight (matching the rest of the calendar's UTC-anchored
-// day math). Today and the currently-viewed day are highlighted.
+// day math). Today and the currently-viewed day (or week) are highlighted.
 
 import { useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "~/lib/cn";
+import type { CalendarView } from "~/calendar/lib/types";
 
 const WEEKDAY_LABELS = ["S", "M", "T", "W", "T", "F", "S"];
 
@@ -18,11 +19,13 @@ function ymdKey(d: Date): string {
 
 export function MiniMonth({
   focusDate,
+  view,
   timezone,
   onPick,
 }: {
   /** The day the calendar is currently centered on (opens on its month). */
   focusDate: Date;
+  view: CalendarView;
   timezone: string;
   onPick: (dateUtc: Date) => void;
 }) {
@@ -38,6 +41,13 @@ export function MiniMonth({
     day: "2-digit",
   }).format(new Date());
   const focusKey = ymdKey(focusDate);
+  // Week view's focusDate is the week's Sunday and month/agenda's is a mid-month
+  // placeholder, so only day view has a single day worth marking.
+  const focusStart = Date.UTC(focusDate.getUTCFullYear(), focusDate.getUTCMonth(), focusDate.getUTCDate());
+  const isFocused = (d: Date, key: string) =>
+    view === "day"
+      ? key === focusKey
+      : view === "week" && d.getTime() >= focusStart && d.getTime() < focusStart + 7 * 86_400_000;
 
   const firstUtc = new Date(Date.UTC(shown.year, shown.month, 1));
   const gridStart = new Date(firstUtc.getTime() - firstUtc.getUTCDay() * 86_400_000);
@@ -88,14 +98,23 @@ export function MiniMonth({
           const key = ymdKey(d);
           const inMonth = d.getUTCMonth() === shown.month;
           const isToday = key === todayKey;
-          const isFocus = key === focusKey;
+          const isFocus = isFocused(d, key);
+          const weekBand = isFocus && view === "week";
           return (
             <button
               key={i}
               type="button"
+              aria-current={isFocus ? "date" : undefined}
               onClick={() => onPick(new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate())))}
               className={cn(
-                "grid h-8 place-items-center rounded-md text-xs",
+                "grid h-8 place-items-center text-xs",
+                weekBand
+                  ? cn(
+                      i % 7 === 0 ? "rounded-l-md" : "",
+                      i % 7 === 6 ? "rounded-r-md" : "",
+                      isToday ? "rounded-md" : "",
+                    )
+                  : "rounded-md",
                 isToday
                   ? "bg-os-accent font-semibold text-os-bg"
                   : isFocus

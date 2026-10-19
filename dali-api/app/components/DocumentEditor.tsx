@@ -654,7 +654,7 @@ export function DocumentEditor({
                 state === "offline" && "text-os-amber",
               )}
             >
-              {icon} <span className="hidden sm:inline">{label}</span>
+              {icon} <span className={state === "saved" ? "sr-only" : "hidden sm:inline"}>{label}</span>
             </span>
           ))}
         </span>

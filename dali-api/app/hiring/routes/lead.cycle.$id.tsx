@@ -71,12 +71,13 @@ import {
 import { pendingForHiringLead } from "~/hiring/lib/decision-pills";
 import { Modal, ModalFooter, ModalHeader } from "~/components/Modal";
 import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
+import { reassignCandidates } from "~/hiring/lib/interviewer-pool";
 import { Checkbox } from "~/components/ui/Checkbox";
 import { Toggle } from "~/components/ui/Toggle";
 import { DateField } from "~/components/ui/DateField";
 import { useToast } from "~/components/ui/toast";
 import { useConfirmSubmit, useDialog } from "~/components/ui/dialog";
-import { AlertTriangle, Trash2, Plus, CheckCircle, ArrowRight, X, Eye, Mail, CheckCircle2, CircleDot, AlertCircle } from 'lucide-react'
+import { AlertTriangle, Trash2, Plus, CheckCircle, ArrowRight, X, Eye, CheckCircle2, CircleDot, AlertCircle } from 'lucide-react'
 import { useOsChrome } from "~/components/os-chrome";
 import { SegmentedTabButtons } from "~/components/AreaPillNav";
 import { buttonClasses } from "~/components/ui/Button";
@@ -163,6 +164,7 @@ interface InterviewRow {
   videoUrl: string | null
   domainApplication: {
     id: string
+    domainId: string
     domain: { name: string }
     application: { user: { firstName: string; lastName: string } }
   }
@@ -171,6 +173,7 @@ interface InterviewRow {
     role: string
     status: string
     cycleInterviewer: {
+      userId: string
       user: {  firstName: string | null; lastName: string | null; daliEmail: string | null  }
       domain: { name: string }
     }
@@ -1168,20 +1171,6 @@ function formatHour(h: number) {
   if (h < 12) return `${h} AM`
   if (h === 12) return '12 PM'
   return `${h - 12} PM`
-}
-
-// Inline marker for any control that sends an email when committed.
-// Hover the icon to see exactly who receives mail.
-function EmailMarker({ recipients, label = 'Sends email' }: { recipients: string; label?: string }) {
-  return (
-    <span
-      title={`${label} — ${recipients}`}
-      aria-label={`${label}: ${recipients}`}
-      className="inline-flex items-center justify-center align-middle text-blue-600/80 ml-1"
-    >
-      <Mail className="w-3.5 h-3.5" />
-    </span>
-  )
 }
 
 // ─── Coverage Heatmap ────────────────────────────────────────────────────────
@@ -2594,6 +2583,7 @@ export default function HiringLeadCycleDetails() {
             <p className="text-xs text-muted-foreground">In-person slots are booked into these rooms.</p>
             <Toggle
               tone="os"
+              className="mt-4"
               label="Hold these rooms for interviews"
               description="Blocks other bookings during interview hours across the interview window."
               checked={config.holdRooms}
@@ -2869,16 +2859,13 @@ export default function HiringLeadCycleDetails() {
                         <span className="inline-flex items-center gap-2">
                           <Pill dot={statusTone(interview.status)}>{interview.status}</Pill>
                           {editable && (
-                            <>
-                              <button
-                                type="button"
-                                onClick={() => cancelInterview(interview)}
-                                className={buttonClasses('ghost', 'sm')}
-                              >
-                                Cancel interview
-                              </button>
-                              <EmailMarker recipients="applicant + both interviewers" label="Cancelling fires cancel emails" />
-                            </>
+                            <button
+                              type="button"
+                              onClick={() => cancelInterview(interview)}
+                              className={buttonClasses('ghost', 'sm')}
+                            >
+                              Cancel interview
+                            </button>
                           )}
                         </span>
                       </div>
@@ -2886,19 +2873,16 @@ export default function HiringLeadCycleDetails() {
                         <span className="inline-flex items-center gap-2">
                           <span className="text-os-grey">Location</span>
                           {editable ? (
-                            <>
-                              <Select
-                                ariaLabel="Location"
-                                value={interview.room?.id ?? ""}
-                                onChange={(value) => changeLocation(interview, value)}
-                                options={[
-                                  ...(config.rooms ?? []).map((r) => ({ value: r.id, label: r.name })),
-                                  { value: "", label: "Online" },
-                                ]}
-                                buttonClassName={smallTrigger}
-                              />
-                              <EmailMarker recipients="applicant + both interviewers" label="Changing fires location-change email" />
-                            </>
+                            <Select
+                              ariaLabel="Location"
+                              value={interview.room?.id ?? ""}
+                              onChange={(value) => changeLocation(interview, value)}
+                              options={[
+                                ...(config.rooms ?? []).map((r) => ({ value: r.id, label: r.name })),
+                                { value: "", label: "Online" },
+                              ]}
+                              buttonClassName={smallTrigger}
+                            />
                           ) : (
                             <span className="text-foreground">{locationLabel(interview.room)}</span>
                           )}
@@ -2921,26 +2905,25 @@ export default function HiringLeadCycleDetails() {
                                 <span className="text-foreground">{name}</span>
                                 <span className="text-os-grey">{roleLabel}</span>
                                 {editable && (
-                                  <>
-                                    <Select
-                                      value=""
-                                      onChange={(value) => reassign(interview, a, value)}
-                                      placeholder="Reassign"
-                                      ariaLabel={`Reassign ${a.role === 'InDomain' ? 'in-domain' : 'cross-domain'} interviewer`}
-                                      options={interviewers
-                                        .filter((i: any) => a.role === 'InDomain'
-                                          ? i.domain?.name === a.cycleInterviewer.domain.name
-                                          : i.domain?.name !== domainName)
-                                        .filter((i: any) => i.id !== a.cycleInterviewerId)
-                                        .map((i: any): SelectOption => {
-                                          const im = i.user
-                                          const iName = im?.firstName && im?.lastName ? `${im.firstName} ${im.lastName}` : im?.daliEmail ?? i.id
-                                          return { value: i.id, label: iName }
-                                        })}
-                                      buttonClassName={smallTrigger}
-                                    />
-                                    <EmailMarker recipients="removed + replacement interviewer" label="Reassigning fires emails" />
-                                  </>
+                                  <Select
+                                    value=""
+                                    onChange={(value) => reassign(interview, a, value)}
+                                    placeholder="Reassign"
+                                    ariaLabel={`Reassign ${a.role === 'InDomain' ? 'in-domain' : 'cross-domain'} interviewer`}
+                                    options={reassignCandidates(interviewers as any[], {
+                                      role: a.role,
+                                      applicantDomainId: interview.domainApplication.domainId,
+                                      seatedUserIds: interview.assignments
+                                        .filter((s: any) => s.status === 'Active')
+                                        .map((s: any) => s.cycleInterviewer.userId),
+                                    })
+                                      .map((i: any): SelectOption => {
+                                        const im = i.user
+                                        const iName = im?.firstName && im?.lastName ? `${im.firstName} ${im.lastName}` : im?.daliEmail ?? i.id
+                                        return { value: i.id, label: iName }
+                                      })}
+                                    buttonClassName={smallTrigger}
+                                  />
                                 )}
                               </span>
                             )
@@ -4130,7 +4113,6 @@ function DomainOverridePanel({
               <input type="hidden" name="intent" value="notify-domain-added" />
               <input type="hidden" name="domainId" value={domain.domainId} />
               <input type="hidden" name="confirm" value="true" />
-              <EmailMarker recipients={`everyone in the cycle (${domainAddedRecipientCount})`} />
               <button type="submit" className={buttonClasses('secondary', 'sm')}>
                 Email applicants
               </button>

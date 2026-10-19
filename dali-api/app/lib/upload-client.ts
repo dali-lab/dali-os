@@ -20,7 +20,7 @@ export async function uploadFileToS3(
   const key = `${keyPrefix.replace(/^\/+|\/+$/g, "")}/${crypto.randomUUID()}-${safeName}`;
 
   // The cap depends on where the file goes: 100 MB for project files and the
-  // Drive, 10 MB for everything else. Read off the built key, not the prefix —
+  // Drive, 50 MB for form uploads, 10 MB for everything else. Read off the built key, not the prefix —
   // callers pass prefixes with and without a trailing slash.
   const cap = uploadCapForKey(key);
   if (file.size > cap.maxBytes) {
