@@ -450,6 +450,8 @@ export default [
 
   // High scores for the tetris game on the week 5 home landing scene.
   route("api/landing/tetris-scores", "routes/api.landing.tetris-scores.ts"),
+  // High scores for the runner game on the error screens.
+  route("api/dino-scores", "routes/api.dino-scores.ts"),
 
   // Activities (specs/activities.md): the time-boxed "mode" layer — the
   // onboarding scavenger hunt is mechanic #1. This endpoint feeds the shell's

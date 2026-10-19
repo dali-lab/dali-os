@@ -1,10 +1,12 @@
 import { useEffect, useRef } from 'react'
 import { useFeatureFlag } from '~/components/FeatureFlags'
+import { useLeaderboard } from '~/hooks/useLeaderboard'
 import Leaderboard from './Leaderboard'
 import TetrisBoard, { NextQueue } from './TetrisBoard'
-import { useLeaderboard } from './useLeaderboard'
 import { useTetris } from './useTetris'
 import './tetris.css'
+
+type TetrisExtra = { lines: number; level: number }
 
 /**
  * The game that lives on the week 5 landing page.
@@ -17,7 +19,7 @@ export default function TetrisGame({ onPhaseChange }: { onPhaseChange?: (playing
   const { game, phase, start, quit, togglePause, act } = useTetris()
   const idle = phase === 'idle'
   const scoresEnabled = useFeatureFlag('landing-leaderboard')
-  const board = useLeaderboard(scoresEnabled)
+  const board = useLeaderboard<TetrisExtra>('/api/landing/tetris-scores', scoresEnabled)
   const { submit, clearPersonalBest } = board
 
   // Report the run once it is over, and only once: `phase` is derived from a

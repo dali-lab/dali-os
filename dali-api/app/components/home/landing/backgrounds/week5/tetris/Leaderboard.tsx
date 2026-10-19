@@ -1,4 +1,4 @@
-import type { LeaderboardState } from './useLeaderboard'
+import { visibleRows, type LeaderboardState } from '~/hooks/useLeaderboard'
 
 /**
  * The high-score board, drawn as a cabinet would draw it: rank, name, score.
@@ -17,10 +17,7 @@ export default function Leaderboard({
   limit?: number
   title?: string
 }) {
-  const shown = limit ? board.entries.slice(0, limit) : board.entries
-  // Somebody who didn't place still gets a line, so the board always answers
-  // "where am I" and not only "who is winning".
-  const trailing = board.you && !shown.some((e) => e.userId === board.you!.userId) ? board.you : null
+  const { shown, trailing } = visibleRows(board, limit)
 
   if (board.loading) {
     return (
