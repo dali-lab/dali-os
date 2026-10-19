@@ -7,6 +7,7 @@ import { zonedWallTimeUtc } from "~/lib/timezone";
 import { interviewerCalendars, type InterviewerCalendar } from "~/hiring/lib/interview-availability.server";
 import { createRoomBooking, cancelRoomBooking, getRoomSchedule, blockedBy } from "~/lib/rooms.server";
 import type { SlotBlocker } from "~/hiring/lib/slot-blockers";
+import { isSingleDomainPool } from "~/hiring/lib/interviewer-pool";
 
 // New-assignee notifications fire outside transactions (best-effort), so
 // scheduling.ts hands callers the cycleInterviewerIds that need notifying
@@ -63,16 +64,6 @@ function buildMemberAggregations(
     );
   }
   return { memberIntervals, memberActiveCount };
-}
-
-// The second seat is cross-domain whenever the cycle has an interviewer from
-// outside the applicant's domains. A cycle whose interviewers all share the
-// applicant's domain (a single-domain program) pairs any two of them instead.
-function isSingleDomainPool(
-  interviewers: Array<{ domainId: string }>,
-  applicantDomainIds: string[],
-): boolean {
-  return interviewers.every((r) => applicantDomainIds.includes(r.domainId));
 }
 
 // ─── computeAvailableSlots ───────────────────────────────────────────────────
