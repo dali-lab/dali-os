@@ -1,12 +1,17 @@
-// MCP tool: manage_partner_org — create, update, or delete a partner organization.
-// Scope: mcp:write. Gated to isCore.
+// MCP tool: manage_partner_org — create, update, merge, or delete a partner
+// organization. Scope: mcp:write. Gated to isCore.
 //
 // Actions:
 //   create — create a new PartnerOrg. Requires name. For an individual partner
 //            (isIndividual:true) also requires email; it sets up the person's
 //            PartnerContact + PartnerMembership + primary contact.
-//   update — update org fields (name, website, logoUrl, isIndividual, primaryContactId).
-//             Requires orgId and name.
+//   update — update org fields (name, website, logoUrl, isIndividual,
+//            primaryContactId, type, address, legalEntityName, tags, notes,
+//            showcaseConsent, referredByContactId). Requires orgId and name.
+//   merge_into — fold orgId into survivorOrgId: memberships, applications,
+//            project links, activities, invites, and invoices repoint (de-
+//            duping memberships/project links already on the survivor), then
+//            orgId is deleted. Requires orgId and survivorOrgId.
 //   delete — delete an empty org. Requires orgId. Blocked if any members, project links,
 //             applications, or pending invites exist.
 
@@ -14,6 +19,8 @@ import { prisma } from "~/lib/db";
 import { isCore } from "~/lib/roles";
 import { logAuditEvent } from "~/lib/audit";
 import { classifyPartnerEmail, normalizeEmail } from "~/partners/lib/magic-link.server";
+import { logPartnerActivity } from "~/partners/lib/partner-activity.server";
+import { isPartnerOrgType, planOrgMerge } from "~/partners/lib/partner-org";
 import {
   McpForbiddenError,
   McpNotFoundError,
@@ -24,16 +31,16 @@ import {
 export const MANAGE_PARTNER_ORG_TOOL = {
   name: "manage_partner_org",
   description:
-    "Create, update, or delete a partner organization. Action 'create' creates a new org (name required; for an individual partner pass isIndividual:true + email, which sets up the person's contact). Action 'update' edits org details (orgId + name required). Action 'delete' removes an empty org (orgId required; blocked if members, projects, applications, or pending invites exist). Requires Core access.",
+    "Create, update, merge, or delete a partner organization. Action 'create' creates a new org (name required; for an individual partner pass isIndividual:true + email, which sets up the person's contact). Action 'update' edits org details including the CRM fields (orgId + name required). Action 'merge_into' folds orgId into survivorOrgId, deduping memberships and project links, then deletes orgId (both ids required). Action 'delete' removes an empty org (orgId required; blocked if members, projects, applications, or pending invites exist). Requires Core access.",
   inputSchema: {
     type: "object" as const,
     properties: {
       action: {
         type: "string",
-        enum: ["create", "update", "delete"],
+        enum: ["create", "update", "merge_into", "delete"],
         description: "What to do.",
       },
-      orgId: { type: "string", description: "Required for update and delete." },
+      orgId: { type: "string", description: "Required for update, merge_into, and delete." },
       name: { type: "string" },
       website: { type: "string" },
       logoUrl: { type: "string" },
@@ -46,6 +53,20 @@ export const MANAGE_PARTNER_ORG_TOOL = {
       primaryContactId: {
         type: "string",
         description: "PartnerMembership.id to set as primary contact.",
+      },
+      type: {
+        type: "string",
+        enum: ["DartmouthDepartment", "FacultyResearch", "Startup", "Nonprofit", "Company", "Alumni", "Other"],
+      },
+      address: { type: "string" },
+      legalEntityName: { type: "string" },
+      tags: { type: "array", items: { type: "string" } },
+      notes: { type: "string" },
+      showcaseConsent: { type: "boolean" },
+      referredByContactId: { type: "string", description: "PartnerContact.id who referred this org." },
+      survivorOrgId: {
+        type: "string",
+        description: "Required for merge_into: the organization that orgId merges into.",
       },
     },
     required: ["action"],
@@ -67,6 +88,7 @@ export async function runManagePartnerOrg(
   requireForAction(action, input, {
     create: ["name"],
     update: ["orgId", "name"],
+    merge_into: ["orgId", "survivorOrgId"],
     delete: ["orgId"],
   });
 
@@ -161,6 +183,20 @@ export async function runManagePartnerOrg(
       }
     }
 
+    const referredByContactId = (input.referredByContactId as string | undefined) || null;
+    if (referredByContactId) {
+      const referrer = await prisma.partnerContact.findUnique({
+        where: { id: referredByContactId },
+        select: { id: true },
+      });
+      if (!referrer) throw new McpInvalidError("referredByContactId does not match a contact");
+    }
+
+    const typeRaw = input.type as string | undefined;
+    if (typeRaw !== undefined && !isPartnerOrgType(typeRaw)) {
+      throw new McpInvalidError("type must be a valid PartnerOrgType");
+    }
+
     await prisma.partnerOrg.update({
       where: { id: orgId },
       data: {
@@ -169,6 +205,13 @@ export async function runManagePartnerOrg(
         logoUrl: (input.logoUrl as string | undefined)?.trim() || null,
         isIndividual: (input.isIndividual as boolean | undefined) ?? false,
         primaryContactId,
+        type: typeRaw ?? null,
+        address: (input.address as string | undefined)?.trim() || null,
+        legalEntityName: (input.legalEntityName as string | undefined)?.trim() || null,
+        tags: (input.tags as string[] | undefined) ?? [],
+        notes: (input.notes as string | undefined)?.trim() || null,
+        showcaseConsent: (input.showcaseConsent as boolean | undefined) ?? false,
+        referredByContactId,
       },
     });
     await logAuditEvent({
@@ -176,7 +219,104 @@ export async function runManagePartnerOrg(
       userId: callerId,
       targetId: orgId,
     });
+    await logPartnerActivity(prisma, {
+      orgId,
+      actorUserId: callerId,
+      type: "OrgUpdated",
+    });
     return { ok: true };
+  }
+
+  // ── merge_into ────────────────────────────────────────────────────────────
+  if (action === "merge_into") {
+    const orgId = input.orgId as string;
+    const survivorOrgId = input.survivorOrgId as string;
+    if (survivorOrgId === orgId) {
+      throw new McpInvalidError("survivorOrgId must be a different organization");
+    }
+    const [org, survivor] = await Promise.all([
+      prisma.partnerOrg.findUnique({ where: { id: orgId }, select: { id: true, name: true } }),
+      prisma.partnerOrg.findUnique({ where: { id: survivorOrgId }, select: { id: true } }),
+    ]);
+    if (!org) throw new McpNotFoundError(`Partner organization ${orgId} not found`);
+    if (!survivor) throw new McpNotFoundError(`Partner organization ${survivorOrgId} not found`);
+
+    const [sourceMemberships, survivorMemberships, sourceProjectLinks, survivorProjectLinks] =
+      await Promise.all([
+        prisma.partnerMembership.findMany({
+          where: { orgId, endedAt: null },
+          select: { id: true, contactId: true },
+        }),
+        prisma.partnerMembership.findMany({
+          where: { orgId: survivorOrgId, endedAt: null },
+          select: { contactId: true },
+        }),
+        prisma.projectPartner.findMany({
+          where: { partnerOrgId: orgId },
+          select: { id: true, projectId: true },
+        }),
+        prisma.projectPartner.findMany({
+          where: { partnerOrgId: survivorOrgId },
+          select: { projectId: true },
+        }),
+      ]);
+
+    const plan = planOrgMerge({
+      sourceMemberships,
+      survivorContactIds: survivorMemberships.map((m) => m.contactId),
+      sourceProjectLinks,
+      survivorProjectIds: survivorProjectLinks.map((p) => p.projectId),
+    });
+
+    await prisma.$transaction(async (tx) => {
+      if (plan.membershipIdsToRepoint.length > 0) {
+        await tx.partnerMembership.updateMany({
+          where: { id: { in: plan.membershipIdsToRepoint } },
+          data: { orgId: survivorOrgId },
+        });
+      }
+      if (plan.projectLinkIdsToRepoint.length > 0) {
+        await tx.projectPartner.updateMany({
+          where: { id: { in: plan.projectLinkIdsToRepoint } },
+          data: { partnerOrgId: survivorOrgId },
+        });
+      }
+      if (plan.projectLinkIdsToRemove.length > 0) {
+        await tx.projectPartner.deleteMany({
+          where: { id: { in: plan.projectLinkIdsToRemove } },
+        });
+      }
+      await tx.partnerApplication.updateMany({
+        where: { partnerOrgId: orgId },
+        data: { partnerOrgId: survivorOrgId },
+      });
+      await tx.partnerActivity.updateMany({
+        where: { orgId },
+        data: { orgId: survivorOrgId },
+      });
+      await tx.partnerInvite.updateMany({
+        where: { partnerOrgId: orgId },
+        data: { partnerOrgId: survivorOrgId },
+      });
+      await tx.partnerInvoice.updateMany({
+        where: { orgId },
+        data: { orgId: survivorOrgId },
+      });
+      await tx.partnerOrg.delete({ where: { id: orgId } });
+      await logPartnerActivity(tx, {
+        orgId: survivorOrgId,
+        actorUserId: callerId,
+        type: "OrgUpdated",
+        metadata: { mergedFromOrgId: orgId, mergedFromName: org.name },
+      });
+    });
+    await logAuditEvent({
+      action: "partner.org.update",
+      userId: callerId,
+      targetId: survivorOrgId,
+      metadata: { merged: true, mergedFromOrgId: orgId },
+    });
+    return { ok: true, survivorOrgId };
   }
 
   // ── delete ────────────────────────────────────────────────────────────────

@@ -1,6 +1,7 @@
 // Tests for the new CRM actions added to manage_partner_application:
-//   update_title, assign_meeter, save_eval, save_acceptance, add_note,
+//   update_title, save_eval, save_acceptance, add_note,
 //   update_domain_scope (extended with expectedChallenges).
+// No assign_meeter — this model has no ownership, so there is no meeter to assign.
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
@@ -31,7 +32,7 @@ vi.mock("~/partners/lib/application-form.server", () => ({
 }));
 
 vi.mock("~/partners/lib/partner-activity.server", () => ({
-  setApplicationStatus: vi.fn().mockResolvedValue("Inquiry"),
+  setApplicationStage: vi.fn().mockResolvedValue("New"),
   logPartnerActivity: vi.fn().mockResolvedValue(undefined),
 }));
 
@@ -144,49 +145,6 @@ describe("update_title", () => {
   });
 });
 
-// ─── assign_meeter ────────────────────────────────────────────────────────────
-
-describe("assign_meeter", () => {
-  it("sets the assigned meeter", async () => {
-    vi.mocked(isCore).mockResolvedValue(true);
-    mockPrisma.partnerApplication.update.mockResolvedValue({ id: "a1" });
-    const out = await runManagePartnerApplication("u1", {
-      action: "assign_meeter",
-      applicationId: "a1",
-      assignedMeeterId: "user-99",
-    });
-    expect(out).toMatchObject({ ok: true });
-    expect(mockPrisma.partnerApplication.update).toHaveBeenCalledWith(
-      expect.objectContaining({ data: { assignedMeeterId: "user-99" } }),
-    );
-  });
-
-  it("clears the meeter when assignedMeeterId is empty string", async () => {
-    vi.mocked(isCore).mockResolvedValue(true);
-    mockPrisma.partnerApplication.update.mockResolvedValue({ id: "a1" });
-    await runManagePartnerApplication("u1", {
-      action: "assign_meeter",
-      applicationId: "a1",
-      assignedMeeterId: "",
-    });
-    expect(mockPrisma.partnerApplication.update).toHaveBeenCalledWith(
-      expect.objectContaining({ data: { assignedMeeterId: null } }),
-    );
-  });
-
-  it("clears the meeter when assignedMeeterId is omitted", async () => {
-    vi.mocked(isCore).mockResolvedValue(true);
-    mockPrisma.partnerApplication.update.mockResolvedValue({ id: "a1" });
-    await runManagePartnerApplication("u1", {
-      action: "assign_meeter",
-      applicationId: "a1",
-    });
-    expect(mockPrisma.partnerApplication.update).toHaveBeenCalledWith(
-      expect.objectContaining({ data: { assignedMeeterId: null } }),
-    );
-  });
-});
-
 // ─── save_eval ────────────────────────────────────────────────────────────────
 
 describe("save_eval", () => {
@@ -258,21 +216,32 @@ describe("save_eval", () => {
 // ─── save_acceptance ──────────────────────────────────────────────────────────
 
 describe("save_acceptance", () => {
-  it("saves ambiguity rating and funding model", async () => {
+  it("saves ambiguity rating and funding type", async () => {
     vi.mocked(isCore).mockResolvedValue(true);
     mockPrisma.partnerApplication.update.mockResolvedValue({ id: "a1" });
     const out = await runManagePartnerApplication("u1", {
       action: "save_acceptance",
       applicationId: "a1",
       ambiguityRating: 3,
-      fundingModel: "Magnuson grant",
+      fundingType: "DALI_GL",
     });
     expect(out).toMatchObject({ ok: true });
     expect(mockPrisma.partnerApplication.update).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({ ambiguityRating: 3, fundingModel: "Magnuson grant" }),
+        data: expect.objectContaining({ ambiguityRating: 3, fundingType: "DALI_GL" }),
       }),
     );
+  });
+
+  it("rejects an invalid fundingType", async () => {
+    vi.mocked(isCore).mockResolvedValue(true);
+    await expect(
+      runManagePartnerApplication("u1", {
+        action: "save_acceptance",
+        applicationId: "a1",
+        fundingType: "NOT_A_TYPE",
+      }),
+    ).rejects.toMatchObject({ name: "McpInvalidError" });
   });
 
   it("requires at least one field", async () => {

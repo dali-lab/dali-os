@@ -17,7 +17,7 @@ import {
   sendLearnMoreRequestEmail,
   sendDecisionAcceptedEmail,
 } from "~/partners/lib/partner-emails.server";
-import { action } from "~/partners/routes/partners.applications.$id";
+import { action } from "~/partners/routes/core.partners.applications.$id";
 
 const db = prisma as unknown as Record<string, any>;
 const APP_ID = "app-1";
@@ -28,7 +28,7 @@ function callAction(fields: Record<string, string | string[]>) {
     if (Array.isArray(v)) v.forEach((x) => form.append(k, x));
     else form.append(k, v);
   }
-  const request = new Request(`http://localhost/partners/applications/${APP_ID}`, {
+  const request = new Request(`http://localhost/core/partners/applications/${APP_ID}`, {
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded" },
     body: form.toString(),
@@ -67,11 +67,13 @@ describe("partner application CRM action — guards", () => {
 });
 
 describe("triage / decision intents", () => {
-  it("offer-meeting sets status Meeting and emails the invite", async () => {
+  it("offer-meeting sets stage Interview and emails the invite", async () => {
     const res = await callAction({ intent: "offer-meeting", when: "Tue 3pm", details: "Zoom" });
     expect(res).toBeInstanceOf(Response);
+    // setApplicationStage also stamps `position` on a move — objectContaining
+    // so this test doesn't pin that detail.
     expect(db.partnerApplication.update).toHaveBeenCalledWith(
-      expect.objectContaining({ data: { status: "Meeting" } }),
+      expect.objectContaining({ data: expect.objectContaining({ stage: "Interview" }) }),
     );
     expect(sendMeetingInviteEmail).toHaveBeenCalledWith("ada@acme.com", "Ada", "Tue 3pm", "Zoom");
   });
@@ -82,48 +84,50 @@ describe("triage / decision intents", () => {
     expect(sendMeetingInviteEmail).not.toHaveBeenCalled();
   });
 
-  it("send-application sets status Triaged and emails next steps", async () => {
+  it("send-application emails next steps without changing stage", async () => {
     await callAction({ intent: "send-application" });
-    expect(db.partnerApplication.update).toHaveBeenCalledWith(
-      expect.objectContaining({ data: { status: "Triaged" } }),
-    );
+    expect(db.partnerApplication.update).not.toHaveBeenCalled();
     expect(sendTriageNextStepsEmail).toHaveBeenCalled();
   });
 
+  it("reject requires a rejection reason", async () => {
+    const res = await callAction({ intent: "reject", reason: "Out of scope" });
+    expect(res).toMatchObject({ error: expect.stringContaining("reason") });
+    expect(sendDecisionRejectedEmail).not.toHaveBeenCalled();
+  });
+
   it("reject records the reason and emails", async () => {
-    await callAction({ intent: "reject", reason: "Out of scope" });
+    await callAction({ intent: "reject", rejectReason: "NotAFit", reason: "Out of scope" });
     expect(db.partnerApplication.update).toHaveBeenCalledWith(
-      expect.objectContaining({ data: { status: "Rejected", decisionReason: "Out of scope" } }),
+      expect.objectContaining({
+        data: expect.objectContaining({
+          stage: "Rejected",
+          decisionReason: "Out of scope",
+          rejectReason: "NotAFit",
+        }),
+      }),
     );
     expect(sendDecisionRejectedEmail).toHaveBeenCalledWith("ada@acme.com", "Ada", "Out of scope");
   });
 
-  it("learn-more requires what-we-need and stores it", async () => {
+  it("learn-more requires what-we-need and stores it without changing stage", async () => {
     const empty = await callAction({ intent: "learn-more", whatWeNeed: "" });
     expect(empty).toMatchObject({ error: expect.any(String) });
     expect(sendLearnMoreRequestEmail).not.toHaveBeenCalled();
 
     await callAction({ intent: "learn-more", whatWeNeed: "Share user research" });
     expect(db.partnerApplication.update).toHaveBeenCalledWith(
-      expect.objectContaining({ data: { status: "LearnMore", decisionReason: "Share user research" } }),
+      expect.objectContaining({ data: { decisionReason: "Share user research" } }),
     );
     expect(sendLearnMoreRequestEmail).toHaveBeenCalledWith("ada@acme.com", "Ada", "Share user research");
   });
 
-  it("accept sets status Accepted and emails with the project title", async () => {
+  it("accept sets stage Accepted and emails with the project title", async () => {
     await callAction({ intent: "accept" });
     expect(db.partnerApplication.update).toHaveBeenCalledWith(
-      expect.objectContaining({ data: { status: "Accepted" } }),
+      expect.objectContaining({ data: expect.objectContaining({ stage: "Accepted" }) }),
     );
     expect(sendDecisionAcceptedEmail).toHaveBeenCalledWith("ada@acme.com", "Ada", "Gallery Kiosk");
-  });
-
-  it("assign-meeter stores the meeter id (no email)", async () => {
-    await callAction({ intent: "assign-meeter", meeterId: "u-9" });
-    expect(db.partnerApplication.update).toHaveBeenCalledWith(
-      expect.objectContaining({ data: { assignedMeeterId: "u-9" } }),
-    );
-    expect(sendMeetingInviteEmail).not.toHaveBeenCalled();
   });
 });
 
@@ -148,11 +152,11 @@ describe("eval + acceptance intents", () => {
     expect(arg.data.interviewRating).toBe(4);
   });
 
-  it("acceptance stores ambiguity rating (clamped) and funding model", async () => {
-    await callAction({ intent: "acceptance", ambiguityRating: "9", fundingModel: "Grant" });
+  it("acceptance stores ambiguity rating (clamped) and funding type", async () => {
+    await callAction({ intent: "acceptance", ambiguityRating: "9", fundingType: "DALI_GL" });
     const arg = db.partnerApplication.update.mock.calls[0][0];
     expect(arg.data.ambiguityRating).toBe(5); // clamped to 5
-    expect(arg.data.fundingModel).toBe("Grant");
+    expect(arg.data.fundingType).toBe("DALI_GL");
   });
 });
 

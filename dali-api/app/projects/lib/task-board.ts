@@ -3,6 +3,11 @@
 // the board the helper builds, and persistence goes through an /api route.
 
 import {
+  buildBoard,
+  moveInBoard,
+  nextPositionInColumn as nextPosition,
+} from "~/components/board/board-order";
+import {
   DAY,
   SPRINT_DAYS,
   utcDayOf,
@@ -408,22 +413,9 @@ export type TaskBoard = Record<TaskStatus, TaskCardModel[]>;
  * pass tasks already ordered by createdAt).
  */
 export function buildTaskBoard(tasks: TaskCardModel[]): TaskBoard {
-  const board = Object.fromEntries(
-    TASK_STATUSES.map((s) => [s, [] as TaskCardModel[]]),
-  ) as TaskBoard;
-
-  for (const task of tasks) {
-    // Defensive: an unknown status (e.g. an enum value added later but not
-    // yet in TASK_STATUSES) falls back to Todo rather than vanishing.
-    const col = board[task.status] ? task.status : "Todo";
-    board[col].push(task);
-  }
-
-  for (const status of TASK_STATUSES) {
-    board[status].sort((a, b) => a.position - b.position);
-  }
-
-  return board;
+  // An unknown status (an enum value added later but not yet in
+  // TASK_STATUSES) falls back to Todo rather than vanishing.
+  return buildBoard(tasks, TASK_STATUSES, "Todo");
 }
 
 /**
@@ -431,13 +423,8 @@ export function buildTaskBoard(tasks: TaskCardModel[]): TaskBoard {
  * sparse-positioned (gaps are fine); we just need a value greater than the
  * current max so the card lands last.
  */
-export function nextPositionInColumn(
-  board: TaskBoard,
-  status: TaskStatus,
-): number {
-  const col = board[status] ?? [];
-  if (col.length === 0) return 0;
-  return Math.max(...col.map((t) => t.position)) + 1;
+export function nextPositionInColumn(board: TaskBoard, status: TaskStatus): number {
+  return nextPosition(board, status);
 }
 
 export function isTaskStatus(x: unknown): x is TaskStatus {
@@ -476,21 +463,6 @@ export function moveTaskInBoard(
   toStatus: TaskStatus,
   targetIndex: number,
 ): { tasks: TaskCardModel[]; orderedIds: string[] } {
-  const moved = tasks.find((t) => t.id === taskId);
-  if (!moved) return { tasks, orderedIds: [] };
-
-  const column = buildTaskBoard(tasks)[toStatus].filter((t) => t.id !== taskId);
-  const index =
-    targetIndex < 0 || targetIndex > column.length ? column.length : targetIndex;
-  column.splice(index, 0, { ...moved, status: toStatus });
-
-  const positionById = new Map(column.map((t, i) => [t.id, i]));
-  return {
-    tasks: tasks.map((t) => {
-      const position = positionById.get(t.id);
-      if (position === undefined) return t;
-      return { ...t, status: toStatus, position };
-    }),
-    orderedIds: column.map((t) => t.id),
-  };
+  const { cards, orderedIds } = moveInBoard(tasks, taskId, toStatus, targetIndex, TASK_STATUSES, "Todo");
+  return { tasks: cards, orderedIds };
 }
