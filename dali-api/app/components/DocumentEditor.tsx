@@ -628,9 +628,8 @@ export function DocumentEditor({
       {savingTitle && <span className="shrink-0 italic">Saving…</span>}
       {syncState && (
         <span
-          className={`shrink-0 inline-flex items-center gap-1 ${
-            syncState === "offline" ? "text-os-amber" : ""
-          }`}
+          data-testid="doc-sync-status"
+          className="shrink-0 inline-grid"
           title={
             syncState === "offline"
               ? "You're offline — changes are saved on this device and will sync when you reconnect."
@@ -639,24 +638,25 @@ export function DocumentEditor({
                 : "All changes saved"
           }
         >
-          {syncState === "saving" && (
-            <>
-              <Loader2 className={cn(actionIcon, "animate-spin")} />{" "}
-              <span className="hidden sm:inline">Saving…</span>
-            </>
-          )}
-          {syncState === "saved" && (
-            <>
-              <Check className={actionIcon} />{" "}
-              <span className="hidden sm:inline">Saved</span>
-            </>
-          )}
-          {syncState === "offline" && (
-            <>
-              <CloudOff className={actionIcon} />{" "}
-              <span className="hidden sm:inline">Offline</span>
-            </>
-          )}
+          {(
+            [
+              ["saving", <Loader2 key="i" className={cn(actionIcon, "animate-spin")} />, "Saving…"],
+              ["saved", <Check key="i" className={actionIcon} />, "Saved"],
+              ["offline", <CloudOff key="i" className={actionIcon} />, "Offline"],
+            ] as const
+          ).map(([state, icon, label]) => (
+            <span
+              key={state}
+              aria-hidden={state !== syncState}
+              className={cn(
+                "[grid-area:1/1] inline-flex items-center gap-1",
+                state !== syncState && "invisible",
+                state === "offline" && "text-os-amber",
+              )}
+            >
+              {icon} <span className="hidden sm:inline">{label}</span>
+            </span>
+          ))}
         </span>
       )}
 
