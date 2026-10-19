@@ -85,6 +85,7 @@ import { AudienceSignal, AudienceDetail } from "~/components/drive/AudienceSigna
 import { TagDots, TagLabels } from "~/components/drive/TagDots";
 import { Button, buttonClasses } from "~/components/ui/Button";
 import { IconButton } from "~/components/ui/IconButton";
+import { Truncated } from "~/components/ui/Truncated";
 import { useOsChrome } from "~/components/os-chrome";
 import { crumbsFor, locationOf, type ItemLocation } from "~/components/drive/location";
 import { LocationLink } from "~/components/drive/LocationLink";
@@ -2580,9 +2581,7 @@ function ColumnItemRow({
       } ${isFocused && !drop.isOver && !fileDrop.over ? "ring-1 ring-inset ring-os-accent/50" : ""}`}
     >
       <ItemGlyphTip item={item} />
-      <span className="min-w-0 flex-1 truncate font-medium">
-        {item.title || "Untitled"}
-      </span>
+      <Truncated text={item.title || "Untitled"} className="flex-1 font-medium" />
       <ModifiedCaption item={item} />
       <RowTags item={item} actions={scopeActions} />
       <RowAudience item={item} actions={scopeActions} />
@@ -3240,7 +3239,7 @@ function ListRow({
     >
       <span className="flex items-center gap-2 min-w-0">
         <ItemGlyphTip item={item} />
-        <span className="truncate font-medium text-foreground">{item.title || "Untitled"}</span>
+        <Truncated text={item.title || "Untitled"} className="font-medium text-foreground" />
         <RowTags item={item} actions={actions} />
         <RowAudience item={item} actions={actions} />
         {/* Signal ②: process linkage pill. */}
@@ -3372,13 +3371,12 @@ function GridTile({
           </Tooltip>
         )}
       <ItemGlyphTip item={item} size="xl" />
-      <span
+      <Truncated
+        text={item.title || "Untitled"}
         className={`${GRID_LABEL} ${
           selected ? "bg-os-accent text-os-bg" : "text-foreground"
         }`}
-      >
-        {item.title || "Untitled"}
-      </span>
+      />
       <ModifiedCaption item={item} />
       <RowTags item={item} actions={actions} />
       <RowAudience item={item} actions={actions} />
@@ -3466,7 +3464,7 @@ function FolderCard({
       </div>
       <ItemGlyphTip item={item} size="lg" />
       <div className="flex min-w-0 flex-col gap-1">
-        <span className={`truncate ${t.row} font-medium text-foreground`}>{item.title || "Untitled"}</span>
+        <Truncated text={item.title || "Untitled"} className={`${t.row} font-medium text-foreground`} />
         <span className="flex items-center gap-2">
           <ModifiedCaption item={item} />
           <RowTags item={item} actions={actions} />
@@ -3548,7 +3546,7 @@ export function SearchResults({
             >
               <span className="flex min-w-0 items-center gap-2">
                 <ItemGlyphTip item={hit.item} />
-                <span className="truncate font-medium text-foreground">{hit.item.title || "Untitled"}</span>
+                <Truncated text={hit.item.title || "Untitled"} className="font-medium text-foreground" />
                 <RowTags item={hit.item} actions={getScopeActions(hit.scope.id)} />
                 {/* Signal ②: process linkage pill in search results. */}
                 {hit.item.linkedProcess && (

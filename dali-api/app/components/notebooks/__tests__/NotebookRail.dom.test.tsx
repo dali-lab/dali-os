@@ -412,7 +412,7 @@ describe("NotebookRail Move to notebook", () => {
   it("is offered to a manager, above Remove from notebook", async () => {
     await rail();
     const items = await openMenu("Options for Oct 6");
-    expect(items).toEqual(["Detach from meeting", "Move to notebook…", "Remove from notebook"]);
+    expect(items).toEqual(["Rename…", "Detach from meeting", "Move to notebook…", "Remove from notebook"]);
   });
 
   it("is not offered to someone who cannot manage", async () => {
@@ -442,6 +442,61 @@ describe("NotebookRail Move to notebook", () => {
     expect(posts).toEqual([{ url: "/api/notebooks/nb2", body: { intent: "add-page", pageId: "p2" } }]);
     expect(document.body.textContent).toContain("Moved to Retro");
     expect(picker()).toBeNull();
+  });
+});
+
+describe("NotebookRail Rename", () => {
+  const promptInput = () => document.body.querySelector('[role="dialog"] input') as HTMLInputElement;
+  const confirmButton = () =>
+    [...document.body.querySelectorAll('[role="dialog"] button')].find((b) => b.textContent?.trim() === "Rename")!;
+
+  beforeEach(() => {
+    vi.mocked(fetch).mockImplementation((async (url: string, init?: RequestInit) => {
+      if (init?.method === "POST") posts.push({ url, body: JSON.parse(init.body as string) });
+      return new Response(JSON.stringify({ ok: true }));
+    }) as never);
+  });
+
+  it("is offered on plain documents too, not just meeting notes", async () => {
+    await rail();
+    await click(byLabel("Options for Agenda")!);
+    const items = [...document.body.querySelectorAll('[role="menuitem"]')].map((el) => el.textContent?.trim());
+    expect(items[0]).toBe("Rename…");
+  });
+
+  it("prefills the current label and saves the trimmed title to that tab", async () => {
+    await rail();
+    await menuItem("Options for Oct 13", "Rename");
+    expect(promptInput().value).toBe("Oct 13");
+
+    await type(promptInput(), "  Kickoff  ");
+    await click(confirmButton());
+
+    expect(posts).toEqual([{ url: "/api/documents/p2", body: { title: "Kickoff" } }]);
+  });
+
+  it("sends nothing when the title is unchanged", async () => {
+    await rail();
+    await menuItem("Options for Oct 13", "Rename");
+    await click(confirmButton());
+    expect(posts).toEqual([]);
+  });
+
+  it("sends nothing when cancelled", async () => {
+    await rail();
+    await menuItem("Options for Oct 13", "Rename");
+    await type(promptInput(), "Kickoff");
+    await click([...document.body.querySelectorAll('[role="dialog"] button')].find((b) => b.textContent?.trim() === "Cancel")!);
+    expect(posts).toEqual([]);
+  });
+
+  it("will not save a blank title", async () => {
+    await rail();
+    await menuItem("Options for Oct 13", "Rename");
+    await type(promptInput(), "   ");
+    await click(confirmButton());
+    expect(posts).toEqual([]);
+    expect(document.body.textContent).toContain("Enter a title.");
   });
 });
 

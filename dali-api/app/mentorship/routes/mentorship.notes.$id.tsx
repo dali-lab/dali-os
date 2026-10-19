@@ -139,16 +139,13 @@ function fmt(d: string) {
   });
 }
 
-// Cancel BlockNote's drag-handle gutter (theme.css: 0.75rem mobile, 54px sm+)
-// so body text lines up with the page header.
-const EDITOR_CLASS =
-  "min-h-[24rem] -ml-3 w-[calc(100%+0.75rem)] sm:-ml-[54px] sm:w-[calc(100%+54px)]";
+const EDITOR_CLASS = "min-h-[24rem]";
 
 const VIBE_ICON = { Good: Smile, Ok: Meh, Bad: Frown } as const;
 
 export default function MentorNoteEditor() {
   const data = useLoaderData() as LoaderData;
-  const { pageTitle, bodyText } = useOsChrome();
+  const { pageTitle, bodyText, panel } = useOsChrome();
   const [vibe, setVibe] = useState<Vibe | null>(data.vibe);
   const [status, setStatus] = useState<"idle" | "saving" | "saved" | "error">(
     "idle",
@@ -192,86 +189,88 @@ export default function MentorNoteEditor() {
         </p>
       </header>
 
-      <div className="flex items-center gap-2 flex-wrap">
-        <span className={cn(bodyText, "inline-flex items-center gap-1")}>
-          Vibe check
-          <span className="os-required-mark" aria-hidden>
-            *
+      <section className={cn(panel, "flex flex-col gap-4 py-6")}>
+        <div className="flex items-center gap-2 flex-wrap px-3 sm:px-[54px]">
+          <span className={cn(bodyText, "inline-flex items-center gap-1")}>
+            Vibe check
+            <span className="os-required-mark" aria-hidden>
+              *
+            </span>
+            <InfoTip content="How this week went. Excellent means things are going well, Room for improvement means something to work on, Concerning means it needs follow-up. Mentors and Core can see this, the mentee can't." />
+            :
           </span>
-          <InfoTip content="How this week went. Excellent means things are going well, Room for improvement means something to work on, Concerning means it needs follow-up. Mentors and Core can see this, the mentee can't." />
-          :
-        </span>
-        <div className="flex items-center gap-1.5">
-          {VIBES.map((v) => {
-            const Icon = VIBE_ICON[v];
-            const active = vibe === v;
-            const vibeButton = (
-              <button
-                key={v}
-                type="button"
-                onClick={() => pickVibe(v)}
-                disabled={!data.canEdit}
-                aria-pressed={active}
-                className={cn(
-                  "inline-flex items-center gap-1 rounded-full border transition",
-                  "px-3.5 py-1.5 text-sm font-medium",
-                  active
-                    ? VIBE_META[v].pill
-                    : "border-os-container text-os-grey hover:border-os-container-hi hover:text-foreground",
-                  data.canEdit ? "" : "cursor-default opacity-70",
-                )}
-              >
-                <Icon className="h-3.5 w-3.5" aria-hidden />
-                {VIBE_META[v].label}
-              </button>
-            );
-            if (!data.canEdit) {
-              return (
-                <Tooltip
+          <div className="flex items-center gap-1.5">
+            {VIBES.map((v) => {
+              const Icon = VIBE_ICON[v];
+              const active = vibe === v;
+              const vibeButton = (
+                <button
                   key={v}
-                  content="Read only — only the mentor or Core can set the vibe."
-                  variant="rich"
+                  type="button"
+                  onClick={() => pickVibe(v)}
+                  disabled={!data.canEdit}
+                  aria-pressed={active}
+                  className={cn(
+                    "inline-flex items-center gap-1 rounded-full border transition",
+                    "px-3.5 py-1.5 text-sm font-medium",
+                    active
+                      ? VIBE_META[v].pill
+                      : "border-os-container text-os-grey hover:border-os-container-hi hover:text-foreground",
+                    data.canEdit ? "" : "cursor-default opacity-70",
+                  )}
                 >
-                  {/* Disabled buttons don't fire hover events; span captures them. */}
-                  <span>{vibeButton}</span>
-                </Tooltip>
+                  <Icon className="h-3.5 w-3.5" aria-hidden />
+                  {VIBE_META[v].label}
+                </button>
               );
-            }
-            return vibeButton;
-          })}
+              if (!data.canEdit) {
+                return (
+                  <Tooltip
+                    key={v}
+                    content="Read only — only the mentor or Core can set the vibe."
+                    variant="rich"
+                  >
+                    {/* Disabled buttons don't fire hover events; span captures them. */}
+                    <span>{vibeButton}</span>
+                  </Tooltip>
+                );
+              }
+              return vibeButton;
+            })}
+          </div>
+          <span className={cn(bodyText, "ml-auto")}>
+            {!data.canEdit
+              ? "Read only"
+              : status === "saving"
+              ? "Saving…"
+              : status === "saved"
+              ? "Saved"
+              : status === "error"
+              ? "Save failed, try again"
+              : null}
+          </span>
         </div>
-        <span className={cn(bodyText, "ml-auto")}>
-          {!data.canEdit
-            ? "Read only"
-            : status === "saving"
-            ? "Saving…"
-            : status === "saved"
-            ? "Saved"
-            : status === "error"
-            ? "Save failed, try again"
-            : null}
-        </span>
-      </div>
 
-      {data.canEdit && data.collabToken ? (
-        <DocEditor
-          features="notes"
-          collab={{
-            documentName: pageDocName(data.pageId),
-            token: data.collabToken,
-            userName: data.userName,
-          }}
-          placeholder="What went well, what's blocked, what to follow up on…"
-          className={EDITOR_CLASS}
-        />
-      ) : (
-        <DocEditor
-          features="notes"
-          editable={false}
-          initialContent={data.contentJson}
-          className={EDITOR_CLASS}
-        />
-      )}
+        {data.canEdit && data.collabToken ? (
+          <DocEditor
+            features="notes"
+            collab={{
+              documentName: pageDocName(data.pageId),
+              token: data.collabToken,
+              userName: data.userName,
+            }}
+            placeholder="What went well, what's blocked, what to follow up on…"
+            className={EDITOR_CLASS}
+          />
+        ) : (
+          <DocEditor
+            features="notes"
+            editable={false}
+            initialContent={data.contentJson}
+            className={EDITOR_CLASS}
+          />
+        )}
+      </section>
     </main>
   );
 }

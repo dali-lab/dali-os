@@ -711,23 +711,6 @@ select:not(:disabled) {
   .prose img[data-align] { float: none; max-width: 100%; margin: 1rem 0; }
 }
 
-/* The halo colour is a variable so the ring matches whatever plate the CTA is
-   sitting on — coral on the brand shells, the os accent inside `.os-shell`,
-   where a pink pulse around a grey-blue button read as an error state. */
-:root { --guide-pulse-rgb: 255 139 129; }
-.os-shell { --guide-pulse-rgb: 168 211 222; }
-
-@keyframes guide-pulse {
-  0%, 100% { box-shadow: 0 0 0 0 rgb(var(--guide-pulse-rgb) / 0); }
-  50%      { box-shadow: 0 0 0 4px rgb(var(--guide-pulse-rgb) / 0.28); }
-}
-.guide-pulse { animation: guide-pulse 2.6s ease-in-out infinite; }
-.guide-pulse:hover, .guide-pulse:focus-visible { animation: none; }
-
-@media (prefers-reduced-motion: reduce) {
-  .guide-pulse { animation: none !important; }
-}
-
 /* ── Signing fields + merge variables ──────────────────────────────────── */
 .signing-field {
   display: inline-flex;

@@ -9,6 +9,7 @@ import { IconButton } from "~/components/ui/IconButton";
 import { useDialog } from "~/components/ui/dialog";
 import { Combobox, InfoTip, Menu, Select, Tooltip } from "~/components/ui/floating";
 import { useToast } from "~/components/ui/toast";
+import { Truncated } from "~/components/ui/Truncated";
 import { NotebookPicker } from "~/components/notebooks/NotebookPicker";
 import { useNoteTemplates } from "~/components/notebooks/use-note-templates";
 import { useRailCollapsed } from "~/components/notebooks/use-rail-collapsed";
@@ -370,6 +371,18 @@ function TabMenu({ notebook, tab, current }: { notebook: NotebookView; tab: Note
   const run = useNotebookRequest();
   const [picking, setPicking] = useState(false);
 
+  async function rename() {
+    const next = await dialog.prompt({
+      title: "Rename note",
+      label: "Title",
+      defaultValue: tab.label,
+      confirmLabel: "Rename",
+      validate: (v) => (v.trim() ? null : "Enter a title."),
+    });
+    if (next == null || next.trim() === tab.label) return;
+    await run(renameRequest(tab.id, next), () => revalidator.revalidate());
+  }
+
   async function detach() {
     const ok = await dialog.confirm({
       title: "Detach from the meeting?",
@@ -411,6 +424,7 @@ function TabMenu({ notebook, tab, current }: { notebook: NotebookView; tab: Note
           </button>
         }
       >
+        <Menu.Item onSelect={() => void rename()}>Rename…</Menu.Item>
         {tab.isNote && <Menu.Item onSelect={() => void detach()}>Detach from meeting</Menu.Item>}
         <Menu.Item onSelect={() => setPicking(true)}>Move to notebook…</Menu.Item>
         <Menu.Item onSelect={() => void remove()}>Remove from notebook</Menu.Item>
@@ -453,8 +467,9 @@ export function NotebookRail({ notebook, currentId }: { notebook: NotebookView; 
         collapsed ? cn(card, "p-3 lg:w-auto lg:items-start lg:border-0 lg:bg-transparent lg:p-0") : cn(card, "p-3 lg:w-60"),
       )}
     >
+      {/* pt-2 matches the doc top bar's py-2 so the pill centers on that row. */}
       {collapsed && (
-        <div data-testid="notebook-rail-strip" className="hidden flex-col items-center lg:flex">
+        <div data-testid="notebook-rail-strip" className="hidden flex-col items-center pt-2 lg:flex">
           <button
             type="button"
             aria-label={`Show ${count} ${count === 1 ? "tab" : "tabs"}`}
@@ -500,7 +515,7 @@ export function NotebookRail({ notebook, currentId }: { notebook: NotebookView; 
                 >
                   <FileText className={cn("h-4 w-4 shrink-0", current ? "text-os-accent" : "text-os-grey")} aria-hidden />
                   <span className="min-w-0">
-                    <span className="block truncate">{tab.label}</span>
+                    <Truncated text={tab.label} />
                     {tab.meeting && <span className="block truncate text-xs text-os-grey">{tab.meeting}</span>}
                   </span>
                 </Link>

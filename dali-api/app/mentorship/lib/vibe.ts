@@ -17,16 +17,16 @@ export const VIBE_META: Record<
   Good: {
     label: "Excellent",
     dot: "bg-os-green",
-    pill: "bg-os-green text-os-green border-os-green",
+    pill: "bg-os-green/15 text-os-green border-os-green/40",
   },
   Ok: {
     label: "Room for improvement",
     dot: "bg-os-amber",
-    pill: "bg-os-amber text-os-amber border-os-amber",
+    pill: "bg-os-amber/15 text-os-amber border-os-amber/40",
   },
   Bad: {
     label: "Concerning",
     dot: "bg-destructive",
-    pill: "bg-destructive text-destructive border-destructive",
+    pill: "bg-destructive/10 text-destructive border-destructive/40",
   },
 };
