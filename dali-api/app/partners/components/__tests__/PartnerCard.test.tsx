@@ -50,10 +50,7 @@ function render(c: PartnerCardModel, staleDays = 14) {
 /** The visible text of each labeled row, as "Label: value". */
 function fields(html: string): string[] {
   return [...html.matchAll(/<dt[^>]*>(.*?)<\/dt><dd[^>]*>(.*?)<\/dd>/g)].map(
-    ([, dt, dd]) =>
-      `${dt}: ${
-        new DOMParser().parseFromString(dd, "text/html").body.textContent ?? ""
-      }`,
+    ([, dt, dd]) => `${dt}: ${dd.split(/<[^>]*>/).join("")}`,
   );
 }
 
