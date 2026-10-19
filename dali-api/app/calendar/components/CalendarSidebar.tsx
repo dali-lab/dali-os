@@ -332,7 +332,7 @@ function CalendarSidebarContent({
           switcher floating well clear of the month it belongs to. */}
       <div className="flex flex-col gap-1">
         <ViewSwitcher view={view} onChangeView={onChangeView} />
-        <MiniMonth focusDate={focusDate} timezone={data.timezone} onPick={onPickDate} />
+        <MiniMonth focusDate={focusDate} view={view} timezone={data.timezone} onPick={onPickDate} />
       </div>
 
       {/* Scheduling someone is a calendar act — in timesheet mode the rail is

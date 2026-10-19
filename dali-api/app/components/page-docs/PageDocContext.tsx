@@ -152,7 +152,7 @@ export function GuideTopbarButton({ onClick }: { onClick: () => void }) {
       <button
         type="button"
         onClick={onClick}
-        className="guide-pulse os-topbar-btn shrink-0 text-base font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-os-accent"
+        className="os-topbar-btn shrink-0 text-base font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-os-accent"
       >
         <BookOpen className="h-5 w-5 shrink-0" aria-hidden />
         Guide
@@ -205,7 +205,7 @@ export function PageDocButton({
     <button
       type="button"
       onClick={() => setOpen(true)}
-      className="guide-pulse ml-auto inline-flex shrink-0 items-center gap-1.5 rounded-full bg-os-accent/10 px-3 py-1.5 text-sm font-semibold font-heading text-os-accent ring-1 ring-inset ring-os-accent/30 transition-colors hover:bg-os-accent/20 hover:ring-os-accent/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-os-accent"
+      className="ml-auto inline-flex shrink-0 items-center gap-1.5 rounded-full bg-os-accent/10 px-3 py-1.5 text-sm font-semibold font-heading text-os-accent ring-1 ring-inset ring-os-accent/30 transition-colors hover:bg-os-accent/20 hover:ring-os-accent/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-os-accent"
     >
       <BookOpen className="h-4 w-4 shrink-0" aria-hidden />
       Guide

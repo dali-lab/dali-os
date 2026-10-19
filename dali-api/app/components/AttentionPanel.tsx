@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 import { useDialog } from "~/components/ui/dialog";
 import { useToast } from "~/components/ui/toast";
-import { Tooltip } from "~/components/ui/floating";
+import { Truncated } from "~/components/ui/Truncated";
 import { Drawer } from "~/components/ui/Drawer";
 import { SegmentedTabButtons } from "~/components/AreaPillNav";
 import { RsvpButtons, notifyTasksChanged } from "~/components/RsvpButtons";
@@ -360,31 +360,6 @@ function FeedCardView({
 /* ------------------------------------------------------------------ */
 /* Card pieces                                                          */
 /* ------------------------------------------------------------------ */
-
-// One line of card text, cut with an ellipsis. The full text shows on hover,
-// but only when it was actually cut (measured on enter, not on every render).
-function Truncated({
-  as = "span",
-  text,
-  className,
-}: {
-  as?: "span" | "p" | "h3";
-  text: string;
-  className?: string;
-}) {
-  const Tag = as as "span";
-  const [cut, setCut] = useState(false);
-  return (
-    <Tooltip content={text} variant="rich" disabled={!cut}>
-      <Tag
-        className={cn("block min-w-0 truncate", className)}
-        onMouseEnter={(e) => setCut(e.currentTarget.scrollWidth > e.currentTarget.clientWidth)}
-      >
-        {text}
-      </Tag>
-    </Tooltip>
-  );
-}
 
 // Every card is the same shape: up to three single-line rows of text in a
 // fixed-height block (leading-5 / 6 / 5 plus two gaps = 76px), then the
