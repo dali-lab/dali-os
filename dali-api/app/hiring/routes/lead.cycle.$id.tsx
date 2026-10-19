@@ -2594,6 +2594,7 @@ export default function HiringLeadCycleDetails() {
             <p className="text-xs text-muted-foreground">In-person slots are booked into these rooms.</p>
             <Toggle
               tone="os"
+              className="mt-4"
               label="Hold these rooms for interviews"
               description="Blocks other bookings during interview hours across the interview window."
               checked={config.holdRooms}
