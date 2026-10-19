@@ -8,7 +8,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { createElement, useState, act, type ReactElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { createRoutesStub } from "react-router";
+import { createRoutesStub, useLocation, useNavigate } from "react-router";
 import { ToastProvider } from "~/components/ui/toast";
 import { DialogProvider } from "~/components/ui/dialog";
 import { useMeetingRecording, type UseMeetingRecording } from "./use-meeting-recording";
@@ -16,6 +16,19 @@ import type { EnhanceBlockChange, EnhanceMarkEntry, SnapshotBlock } from "./enha
 import type { LatestRecording } from "./types";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
+const awarenessWrites = vi.hoisted(() => [] as Array<[string, unknown]>);
+vi.mock("~/components/doc/collab-doc", () => ({
+  acquireCollabDoc: () => ({
+    provider: {
+      awareness: {
+        getLocalState: () => ({ user: { userId: "me" } }),
+        setLocalStateField: (field: string, value: unknown) => void awarenessWrites.push([field, value]),
+      },
+    },
+  }),
+  releaseCollabDoc: () => {},
+}));
 
 function jsonRes(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
@@ -452,6 +465,136 @@ describe("latestRecording pickup (Fix 1B: a finished recording reaches any viewe
     expect(box.current!.phase).toBe("recording");
     expect(box.current!.remote).toEqual({ ownerName: "Priya", ownerIsYou: false });
     expect(box.current!.open).toBe(false);
+  });
+});
+
+describe("leaving mid-recording: only the capturing tab is guarded", () => {
+  let navigateTo: (path: string) => void = () => {};
+  const at: { path: string } = { path: "" };
+
+  function LeaveHarness({ latestRecording }: { latestRecording?: LatestRecording | null }) {
+    box.current = useMeetingRecording({
+      documentName: "doc-leave",
+      canEdit: true,
+      onInsert: () => true,
+      latestRecording,
+      collabToken: "tok",
+    });
+    navigateTo = useNavigate();
+    at.path = useLocation().pathname;
+    return null;
+  }
+
+  function Elsewhere() {
+    at.path = useLocation().pathname;
+    return null;
+  }
+
+  async function mountLeave(latestRecording?: LatestRecording | null) {
+    const Stub = createRoutesStub([
+      { path: "/test", Component: () => createElement(LeaveHarness, { latestRecording }) },
+      { path: "/elsewhere", Component: Elsewhere },
+    ]);
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    await act(async () => {
+      root.render(
+        createElement(
+          ToastProvider,
+          null,
+          createElement(DialogProvider, null, createElement(Stub, { initialEntries: ["/test"] })),
+        ),
+      );
+      await new Promise((r) => setTimeout(r, 0));
+    });
+  }
+
+  async function leave() {
+    await act(async () => {
+      navigateTo("/elsewhere");
+      await new Promise((r) => setTimeout(r, 0));
+    });
+  }
+
+  function beforeUnloadPrevented() {
+    const e = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(e);
+    return e.defaultPrevented;
+  }
+
+  const recordingRow = { status: "Recording", channels: ["mic"], recordedSeconds: 10, lines: [], speakers: {} };
+
+  beforeEach(() => {
+    awarenessWrites.length = 0;
+    vi.stubGlobal("fetch", vi.fn(async () => jsonRes(recordingRow)));
+  });
+
+  afterEach(() => {
+    document.body.innerHTML = "";
+  });
+
+  it("lets a viewer following someone else's recording leave without a prompt", async () => {
+    await mountLeave({
+      id: "rTheirs",
+      ownerName: "Priya",
+      ownerIsYou: false,
+      status: "Recording",
+      since: new Date().toISOString(),
+    });
+    expect(box.current!.phase).toBe("recording");
+
+    expect(beforeUnloadPrevented()).toBe(false);
+    await leave();
+
+    expect(at.path).toBe("/elsewhere");
+    expect(document.body.textContent).not.toContain("Leave while recording?");
+  });
+
+  it("lets the owner following their own recording from another device leave without a prompt", async () => {
+    await mountLeave({
+      id: "rMineElsewhere",
+      ownerName: "You",
+      ownerIsYou: true,
+      status: "Recording",
+      since: new Date().toISOString(),
+    });
+    expect(box.current!.phase).toBe("recording");
+
+    expect(beforeUnloadPrevented()).toBe(false);
+    await leave();
+
+    expect(at.path).toBe("/elsewhere");
+    expect(document.body.textContent).not.toContain("Leave while recording?");
+  });
+
+  it("never announces a follower as the recorder over collab awareness", async () => {
+    await mountLeave({
+      id: "rTheirs",
+      ownerName: "Priya",
+      ownerIsYou: false,
+      status: "Recording",
+      since: new Date().toISOString(),
+    });
+
+    expect(awarenessWrites.filter(([field]) => field === "recording")).toEqual([]);
+  });
+
+  it("still asks before leaving the tab that drives the recording, and announces it", async () => {
+    window.localStorage.setItem(
+      backupKey("doc-leave"),
+      JSON.stringify({ id: "rMine", link: "", aiEnabled: false, captureMode: "desktop" }),
+    );
+    await mountLeave(null);
+    expect(box.current!.phase).toBe("recording");
+    expect(box.current!.remote).toBeNull();
+
+    expect(beforeUnloadPrevented()).toBe(true);
+    await leave();
+
+    expect(at.path).toBe("/test");
+    expect(document.body.textContent).toContain("Leave while recording?");
+    expect(awarenessWrites).toContainEqual(["recording", expect.objectContaining({ userId: "me" })]);
   });
 });
 

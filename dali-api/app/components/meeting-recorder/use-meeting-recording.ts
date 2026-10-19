@@ -388,6 +388,7 @@ export function useMeetingRecording({
   const claimed = useRef(false);
 
   const live = phase === "starting" || phase === "recording" || phase === "stopping";
+  const capturing = live && !remote;
 
   function teardownCapture() {
     for (const ch of Object.keys(captures.current) as Channel[]) {
@@ -552,12 +553,12 @@ export function useMeetingRecording({
 
   // ─── Leaving mid-recording ──────────────────────────────────────────────
   useEffect(() => {
-    if (!live) return;
+    if (!capturing) return;
     const handler = (e: BeforeUnloadEvent) => e.preventDefault();
     window.addEventListener("beforeunload", handler);
     return () => window.removeEventListener("beforeunload", handler);
-  }, [live]);
-  const blocker = useBlocker(live);
+  }, [capturing]);
+  const blocker = useBlocker(capturing);
   useEffect(() => {
     if (blocker.state !== "blocked") return;
     void dialog
@@ -576,7 +577,7 @@ export function useMeetingRecording({
 
   // ─── Recording presence: tell every other viewer via collab awareness ──
   useEffect(() => {
-    if (!collabToken) return;
+    if (!collabToken || remote) return;
     if (phase !== "recording" && phase !== "stopping") return;
     const entry = acquireCollabDoc(documentName, collabToken);
     const awareness = entry.provider.awareness;
@@ -587,7 +588,7 @@ export function useMeetingRecording({
       releaseCollabDoc(documentName);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phase === "recording" || phase === "stopping", documentName, collabToken]);
+  }, [phase === "recording" || phase === "stopping", documentName, collabToken, Boolean(remote)]);
 
   // ─── Elapsed-time tick while live (both capture modes) ─────────────────
   useEffect(() => {
