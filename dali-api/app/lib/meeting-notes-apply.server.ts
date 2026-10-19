@@ -9,7 +9,7 @@
 
 import { randomUUID } from "node:crypto";
 import type { DocBlock, DocInline } from "~/collab/blocknote-server";
-import { buildInlineContent, toPartialBlock } from "~/components/doc/enhance-render";
+import { buildInlineContent, toPartialBlock, type ChipSpeakerAt } from "~/components/doc/enhance-render";
 import { blockOwnText } from "~/components/doc/schema/configs";
 import type { EditorOp, EnhanceActionItem } from "~/components/meeting-recorder/enhance-plan";
 
@@ -19,13 +19,19 @@ import type { EditorOp, EnhanceActionItem } from "~/components/meeting-recorder/
 export function applyEnhanceOpsToDocBlocks(
   ops: EditorOp[],
   blocks: DocBlock[],
-  ctx: { pageId: string; recordingId: string; actionItems?: EnhanceActionItem[]; projectId?: string | null },
+  ctx: {
+    pageId: string;
+    recordingId: string;
+    actionItems?: EnhanceActionItem[];
+    projectId?: string | null;
+    speakerAt?: ChipSpeakerAt;
+  },
 ): DocBlock[] {
   let result = blocks;
 
   for (const op of ops) {
     if (op.kind === "update") {
-      const content = buildInlineContent(op.text, op.cites, ctx.pageId, ctx.recordingId);
+      const content = buildInlineContent(op.text, op.cites, ctx.pageId, ctx.recordingId, ctx.speakerAt);
       result = result.map((b) =>
         b.id === op.id ? { ...b, content: content as unknown as DocInline[] } : b,
       );

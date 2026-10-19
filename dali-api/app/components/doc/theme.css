@@ -1070,10 +1070,24 @@ a.dali-cmp-piece:hover .dali-cmp-row__title { text-decoration: underline; }
  * full block row (bullet/checkbox gutter included). Neither value is ever
  * offered by the Colors sub-menu (DocSideMenu), so these two selectors are
  * the only things that can ever match them. */
+.dali-doc {
+  --enhance-tint: color-mix(in srgb, var(--color-accent-teal) 14%, var(--color-card));
+  --enhance-edge: var(--color-accent-teal);
+}
+
 .dali-doc [data-background-color="enhance-added"],
 .dali-doc .bn-block:has(> .bn-block-content[data-background-color="enhance-added"]) {
-  background-color: color-mix(in srgb, var(--color-accent-teal) 14%, var(--color-card));
+  background-color: var(--enhance-tint);
   border-radius: 4px;
+}
+
+.dali-doc .bn-block:has(> .bn-block-content[data-background-color="enhance-added"]) {
+  box-shadow: inset 3px 0 0 var(--enhance-edge);
+}
+
+/* The block's own tint is opaque and would paint over the row's inset edge. */
+.dali-doc .bn-block:has(> .bn-block-content[data-background-color="enhance-added"]) > .bn-block-content[data-background-color="enhance-added"] {
+  background-color: transparent;
 }
 
 .dali-doc [data-background-color="enhance-prior"],
@@ -1095,4 +1109,48 @@ a.dali-cmp-piece:hover .dali-cmp-row__title { text-decoration: underline; }
  * the cursor. Modal.tsx keeps a body counter while any Modal is open. */
 body[data-modal-open] .bn-side-menu {
   display: none;
+}
+
+/* ── Enhance motion ──────────────────────────────────────────────────────────
+ * Keyframes only. The per-block rules that apply them (and the reserved
+ * space for "You wrote" lines and action-item chips) are generated into a
+ * <style data-enhance-rules> in <head> by meeting-recorder/block-style-rules.ts, because
+ * ProseMirror owns every node in the editor and re-renders any node an
+ * attribute is written onto. Each keyframe exists twice (-a / -b) so a rule
+ * can restart by swapping names. */
+@keyframes enhance-tint-in-a { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+@keyframes enhance-tint-in-b { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+@keyframes enhance-tint-out-a { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+@keyframes enhance-tint-out-b { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+@keyframes enhance-edge-in-a { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+@keyframes enhance-edge-in-b { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+@keyframes enhance-edge-out-a { from { transform: scaleY(1); } to { transform: scaleY(0); } }
+@keyframes enhance-edge-out-b { from { transform: scaleY(1); } to { transform: scaleY(0); } }
+@keyframes enhance-fade-out-a { from { opacity: 1; } to { opacity: 0; } }
+@keyframes enhance-fade-out-b { from { opacity: 1; } to { opacity: 0; } }
+@keyframes enhance-wash-a { from { background-position: -67% 0; } to { background-position: 167% 0; } }
+@keyframes enhance-wash-b { from { background-position: -67% 0; } to { background-position: 167% 0; } }
+@keyframes enhance-wave-breathe {
+  0%, 100% { transform: scaleY(0.55); }
+  50% { transform: scaleY(1); }
+}
+@keyframes enhance-dot-pulse {
+  0%, 80%, 100% { opacity: 0.25; }
+  40% { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dali-doc .bn-block-outer[data-id] > .bn-block::before,
+  .dali-doc .bn-block-outer[data-id] > .bn-block::after {
+    animation-duration: 120ms !important;
+    animation-delay: 0ms !important;
+  }
+  @keyframes enhance-tint-in-a { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes enhance-tint-in-b { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes enhance-edge-in-a { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes enhance-edge-in-b { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes enhance-tint-out-a { from { opacity: 1; } to { opacity: 0; } }
+  @keyframes enhance-tint-out-b { from { opacity: 1; } to { opacity: 0; } }
+  @keyframes enhance-edge-out-a { from { opacity: 1; } to { opacity: 0; } }
+  @keyframes enhance-edge-out-b { from { opacity: 1; } to { opacity: 0; } }
 }

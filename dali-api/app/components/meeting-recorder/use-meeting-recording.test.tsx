@@ -8,7 +8,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { createElement, useState, act, type ReactElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { createRoutesStub } from "react-router";
+import { createRoutesStub, useLocation, useNavigate } from "react-router";
 import { ToastProvider } from "~/components/ui/toast";
 import { DialogProvider } from "~/components/ui/dialog";
 import { useMeetingRecording, type UseMeetingRecording } from "./use-meeting-recording";
@@ -16,6 +16,19 @@ import type { EnhanceBlockChange, EnhanceMarkEntry, SnapshotBlock } from "./enha
 import type { LatestRecording } from "./types";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
+const awarenessWrites = vi.hoisted(() => [] as Array<[string, unknown]>);
+vi.mock("~/components/doc/collab-doc", () => ({
+  acquireCollabDoc: () => ({
+    provider: {
+      awareness: {
+        getLocalState: () => ({ user: { userId: "me" } }),
+        setLocalStateField: (field: string, value: unknown) => void awarenessWrites.push([field, value]),
+      },
+    },
+  }),
+  releaseCollabDoc: () => {},
+}));
 
 function jsonRes(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
@@ -268,6 +281,73 @@ describe("useMeetingRecording phase transitions (mocked fetch, no browser captur
   });
 });
 
+describe("processing progress", () => {
+  const progress = { stage: "transcribing", channel: 1, channels: 2, completed: 3, total: 10, audioSeconds: 90 };
+  const processingBody = (extra: Record<string, unknown> = {}) => ({
+    status: "Processing",
+    channels: [],
+    recordedSeconds: 90,
+    lines: [],
+    speakers: {},
+    ...extra,
+  });
+
+  function stubProcessing(responses: (call: number) => Record<string, unknown>) {
+    const fetchMock = vi.fn(async () => jsonRes(responses(fetchMock.mock.calls.length)));
+    vi.stubGlobal("fetch", fetchMock);
+  }
+
+  function seedBackup(documentName: string) {
+    window.localStorage.setItem(
+      backupKey(documentName),
+      JSON.stringify({ id: "rp", link: "l", aiEnabled: true, captureMode: "desktop" }),
+    );
+  }
+
+  it("stores the polled progress and reports its stage", async () => {
+    seedBackup("doc-progress-1");
+    stubProcessing(() => processingBody({ progress }));
+    await mount("doc-progress-1");
+    expect(box.current!.phase).toBe("processing");
+    expect(box.current!.progress).toEqual(progress);
+    expect(box.current!.processingStage).toBe("transcribing");
+  });
+
+  it("reads as starting before any progress row exists", async () => {
+    seedBackup("doc-progress-2");
+    stubProcessing(() => processingBody({ progress: null }));
+    await mount("doc-progress-2");
+    expect(box.current!.progress).toBeNull();
+    expect(box.current!.processingStage).toBe("starting");
+  });
+
+  it("never opens the rail for a recording that is processing", async () => {
+    seedBackup("doc-progress-closed");
+    stubProcessing(() => processingBody({ progress }));
+    await mount("doc-progress-closed");
+    expect(box.current!.phase).toBe("processing");
+    expect(box.current!.open).toBe(false);
+  });
+
+  it("has no stage outside processing", async () => {
+    await mount("doc-progress-3");
+    expect(box.current!.processingStage).toBeNull();
+  });
+
+  it("clears progress once the recording is Done", async () => {
+    seedBackup("doc-progress-4");
+    stubProcessing((call) =>
+      call === 1
+        ? processingBody({ progress })
+        : { ...processingBody({ progress }), status: "Done", lines: [], speakers: {} },
+    );
+    await mount("doc-progress-4");
+    expect(box.current!.phase).toBe("done");
+    expect(box.current!.progress).toBeNull();
+    expect(box.current!.processingStage).toBeNull();
+  });
+});
+
 describe("notebook tab switch: remounting by key resets state (Fix 1A)", () => {
   it("without a key, a documentName change on the same instance keeps the old tab's state (the bug)", async () => {
     window.localStorage.setItem(
@@ -385,6 +465,136 @@ describe("latestRecording pickup (Fix 1B: a finished recording reaches any viewe
     expect(box.current!.phase).toBe("recording");
     expect(box.current!.remote).toEqual({ ownerName: "Priya", ownerIsYou: false });
     expect(box.current!.open).toBe(false);
+  });
+});
+
+describe("leaving mid-recording: only the capturing tab is guarded", () => {
+  let navigateTo: (path: string) => void = () => {};
+  const at: { path: string } = { path: "" };
+
+  function LeaveHarness({ latestRecording }: { latestRecording?: LatestRecording | null }) {
+    box.current = useMeetingRecording({
+      documentName: "doc-leave",
+      canEdit: true,
+      onInsert: () => true,
+      latestRecording,
+      collabToken: "tok",
+    });
+    navigateTo = useNavigate();
+    at.path = useLocation().pathname;
+    return null;
+  }
+
+  function Elsewhere() {
+    at.path = useLocation().pathname;
+    return null;
+  }
+
+  async function mountLeave(latestRecording?: LatestRecording | null) {
+    const Stub = createRoutesStub([
+      { path: "/test", Component: () => createElement(LeaveHarness, { latestRecording }) },
+      { path: "/elsewhere", Component: Elsewhere },
+    ]);
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    await act(async () => {
+      root.render(
+        createElement(
+          ToastProvider,
+          null,
+          createElement(DialogProvider, null, createElement(Stub, { initialEntries: ["/test"] })),
+        ),
+      );
+      await new Promise((r) => setTimeout(r, 0));
+    });
+  }
+
+  async function leave() {
+    await act(async () => {
+      navigateTo("/elsewhere");
+      await new Promise((r) => setTimeout(r, 0));
+    });
+  }
+
+  function beforeUnloadPrevented() {
+    const e = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(e);
+    return e.defaultPrevented;
+  }
+
+  const recordingRow = { status: "Recording", channels: ["mic"], recordedSeconds: 10, lines: [], speakers: {} };
+
+  beforeEach(() => {
+    awarenessWrites.length = 0;
+    vi.stubGlobal("fetch", vi.fn(async () => jsonRes(recordingRow)));
+  });
+
+  afterEach(() => {
+    document.body.innerHTML = "";
+  });
+
+  it("lets a viewer following someone else's recording leave without a prompt", async () => {
+    await mountLeave({
+      id: "rTheirs",
+      ownerName: "Priya",
+      ownerIsYou: false,
+      status: "Recording",
+      since: new Date().toISOString(),
+    });
+    expect(box.current!.phase).toBe("recording");
+
+    expect(beforeUnloadPrevented()).toBe(false);
+    await leave();
+
+    expect(at.path).toBe("/elsewhere");
+    expect(document.body.textContent).not.toContain("Leave while recording?");
+  });
+
+  it("lets the owner following their own recording from another device leave without a prompt", async () => {
+    await mountLeave({
+      id: "rMineElsewhere",
+      ownerName: "You",
+      ownerIsYou: true,
+      status: "Recording",
+      since: new Date().toISOString(),
+    });
+    expect(box.current!.phase).toBe("recording");
+
+    expect(beforeUnloadPrevented()).toBe(false);
+    await leave();
+
+    expect(at.path).toBe("/elsewhere");
+    expect(document.body.textContent).not.toContain("Leave while recording?");
+  });
+
+  it("never announces a follower as the recorder over collab awareness", async () => {
+    await mountLeave({
+      id: "rTheirs",
+      ownerName: "Priya",
+      ownerIsYou: false,
+      status: "Recording",
+      since: new Date().toISOString(),
+    });
+
+    expect(awarenessWrites.filter(([field]) => field === "recording")).toEqual([]);
+  });
+
+  it("still asks before leaving the tab that drives the recording, and announces it", async () => {
+    window.localStorage.setItem(
+      backupKey("doc-leave"),
+      JSON.stringify({ id: "rMine", link: "", aiEnabled: false, captureMode: "desktop" }),
+    );
+    await mountLeave(null);
+    expect(box.current!.phase).toBe("recording");
+    expect(box.current!.remote).toBeNull();
+
+    expect(beforeUnloadPrevented()).toBe(true);
+    await leave();
+
+    expect(at.path).toBe("/test");
+    expect(document.body.textContent).toContain("Leave while recording?");
+    expect(awarenessWrites).toContainEqual(["recording", expect.objectContaining({ userId: "me" })]);
   });
 });
 
@@ -660,6 +870,64 @@ describe("useMeetingRecording inline review: pendingMarks subscription + Keep/Re
     expect(posted.filter((b) => b.action === "reviewed")).toHaveLength(1);
   });
 
+  it("does not post reviewed when an undo/redo clears the last mark", async () => {
+    window.localStorage.setItem(backupKey("doc-marks-undo"), JSON.stringify({ id: "r7", link: "l", aiEnabled: true }));
+    const posted: Record<string, unknown>[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, init?: RequestInit) => {
+        if ((init?.method ?? "GET") === "GET") return doneRecordingGet();
+        posted.push(init?.body ? JSON.parse(String(init.body)) : {});
+        return jsonRes({ ok: true, reviewedAt: "2026-01-02T00:00:00Z" });
+      }),
+    );
+    await mountEnhanceHarness({ documentName: "doc-marks-undo" });
+
+    const marks: EnhanceMarkEntry[] = [{ id: "b1", mark: "enhance-added", type: "paragraph", text: "x" }];
+    act(() => {
+      docChangeCb.current?.({ marks, changes: [] });
+    });
+    await act(async () => {
+      docChangeCb.current?.({
+        marks: [],
+        changes: [{ type: "update", source: { type: "undo-redo" }, block: { id: "b1", props: {} }, prevBlock: { id: "b1", props: { backgroundColor: "enhance-added" } } }],
+      });
+      await new Promise((r) => setTimeout(r, 0));
+    });
+
+    expect(box.current!.pendingMarks).toEqual([]);
+    expect(posted.filter((b) => b.action === "reviewed")).toHaveLength(0);
+    expect(box.current!.reviewedAt).toBeNull();
+  });
+
+  it("still posts reviewed when a local Keep clears the last mark", async () => {
+    window.localStorage.setItem(backupKey("doc-marks-keep"), JSON.stringify({ id: "r8", link: "l", aiEnabled: true }));
+    const posted: Record<string, unknown>[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, init?: RequestInit) => {
+        if ((init?.method ?? "GET") === "GET") return doneRecordingGet();
+        posted.push(init?.body ? JSON.parse(String(init.body)) : {});
+        return jsonRes({ ok: true, reviewedAt: "2026-01-02T00:00:00Z" });
+      }),
+    );
+    await mountEnhanceHarness({ documentName: "doc-marks-keep", onKeepBlock: vi.fn() });
+
+    const marks: EnhanceMarkEntry[] = [{ id: "b1", mark: "enhance-added", type: "paragraph", text: "x" }];
+    act(() => {
+      docChangeCb.current?.({ marks, changes: [] });
+    });
+    await act(async () => {
+      docChangeCb.current?.({
+        marks,
+        changes: [{ type: "update", source: { type: "local" }, block: { id: "b1", props: { backgroundColor: "enhance-added" } }, prevBlock: { id: "b1", props: { backgroundColor: "enhance-added" } } }],
+      });
+      await new Promise((r) => setTimeout(r, 0));
+    });
+
+    expect(posted.filter((b) => b.action === "reviewed")).toHaveLength(1);
+  });
+
   it("a local edit on an already-marked block clears it via onKeepBlock, without the enhance-apply transaction itself triggering a false Keep", async () => {
     const onKeepBlock = vi.fn();
     await mountEnhanceHarness({ documentName: "doc-marks-6", onKeepBlock });
@@ -717,6 +985,29 @@ describe("useMeetingRecording.enhanceNow (specs/meeting-recording-rail.md Step 2
       return jsonRes({ ok: true, enhancedAt: "2026-01-01T00:05:00Z", enhancedBy: "Ada" });
     });
   }
+
+  it("bumps noteVersion once per frame however many document changes arrive", async () => {
+    vi.useFakeTimers({ toFake: ["requestAnimationFrame", "cancelAnimationFrame"] });
+    try {
+      await mountEnhanceHarness({ documentName: "doc-version", getNoteState: () => null });
+      expect(box.current!.noteVersion).toBe(0);
+      act(() => {
+        for (let i = 0; i < 5; i++) docChangeCb.current!({ marks: [], changes: [] });
+      });
+      expect(box.current!.noteVersion).toBe(0);
+      act(() => {
+        vi.advanceTimersByTime(40);
+      });
+      expect(box.current!.noteVersion).toBe(1);
+      act(() => {
+        docChangeCb.current!({ marks: [], changes: [] });
+        vi.advanceTimersByTime(40);
+      });
+      expect(box.current!.noteVersion).toBe(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 
   it("generates, locks, applies, and persists priorBlocks from onApplyEnhance's result in a follow-up call", async () => {
     window.localStorage.setItem(backupKey("doc-enhance-1"), JSON.stringify({ id: "r1", link: "l", aiEnabled: true }));

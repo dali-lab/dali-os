@@ -15,7 +15,7 @@
 // Also owns the pure half of inline review (specs/meeting-recording-rail.md
 // Step 2): classifying a mark as Added/Changed/Removed, the change-list row
 // shape, and detecting a local edit on an already-marked block — all plain
-// data in, plain data out, so use-meeting-recording.ts and EnhancePreview.tsx
+// data in, plain data out, so use-meeting-recording.ts and the in-note review
 // can unit-test them without a live BlockNote editor. blockOwnText (below) is
 // itself editor-free (doc/schema/configs.ts), so this module stays safe
 // everywhere enhance-plan.ts already was (client and server).
@@ -300,6 +300,15 @@ export type EnhanceBlockChange = {
 
 const LOCAL_CHANGE_SOURCE_TYPES = new Set(["local", "paste", "drop"]);
 
+/** True when the transaction is purely an undo/redo: some change says so and
+ *  none is a local, paste or drop edit. */
+export function isUndoRedoTransaction(changes: readonly EnhanceBlockChange[]): boolean {
+  return (
+    changes.some((c) => c.source.type === "undo-redo") &&
+    !changes.some((c) => LOCAL_CHANGE_SOURCE_TYPES.has(c.source.type))
+  );
+}
+
 /**
  * Block ids a local edit should count as Keep for: an "update" change, from
  * this client (not a remote Yjs update, not undo/redo), where the block
@@ -372,7 +381,7 @@ export function headingAbove(blocks: readonly SnapshotBlock[], id: string): stri
   return null;
 }
 
-function priorBlockFirstLine(prior: unknown): string | null {
+export function priorBlockFirstLine(prior: unknown): string | null {
   if (!prior || typeof prior !== "object") return null;
   const text = blockOwnText(prior as Parameters<typeof blockOwnText>[0]);
   return text ? firstLineOf(text) : null;

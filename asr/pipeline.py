@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import threading
 from array import array
 from dataclasses import dataclass
 from typing import Callable, Optional
@@ -236,12 +237,22 @@ def tokens_to_words(tokens: list, timestamps: list) -> list:
     return words
 
 
-def transcribe_windowed(pcm: bytes, transcribe: Callable[[bytes], list]) -> list:
+def transcribe_windowed(
+    pcm: bytes,
+    transcribe: Callable[[bytes], list],
+    on_window: Optional[Callable[[], None]] = None,
+    windows: Optional[list] = None,
+) -> list:
     """Run `transcribe` per ASR window and return model-shaped words
-    ({start, end, text}) relative to the start of `pcm`."""
+    ({start, end, text}) relative to the start of `pcm`. `on_window` fires
+    after each window; `windows` lets a caller that already split `pcm`
+    skip the second split."""
     words: list = []
-    for window_start, window in split_pcm_windows(pcm):
-        for w in transcribe(window):
+    for window_start, window in windows if windows is not None else split_pcm_windows(pcm):
+        window_words = transcribe(window)
+        if on_window is not None:
+            on_window()
+        for w in window_words:
             words.append(
                 {
                     "start": float(w["start"]) + window_start,
@@ -316,11 +327,143 @@ def channel_audio_seconds(channel: Channel) -> float:
     return sum(len(segment.chunks) for segment in channel.segments) * CHUNK_SECONDS
 
 
+PROGRESS_INTERVAL_SECONDS = 3.0
+PROGRESS_STAGES = ("fetching", "transcribing", "labeling")
+LABELING_SCALE = 100
+# pyannote reports batch counts for these two steps; the rest are fast.
+_LABELING_STEP_RANGES = {"segmentation": (0.0, 0.5), "embeddings": (0.5, 1.0)}
+
+ProgressCallback = Callable[[str, int, int], None]
+
+
+def build_progress_body(
+    recording_id: str,
+    stage: str,
+    channel: int,
+    channels: int,
+    completed: int,
+    total: int,
+    audio_seconds: float,
+) -> dict:
+    return {
+        "recordingId": recording_id,
+        "progress": {
+            "stage": stage,
+            "channel": channel,
+            "channels": channels,
+            "completed": completed,
+            "total": total,
+            "audioSeconds": audio_seconds,
+        },
+    }
+
+
+class ProgressReporter:
+    """Throttled, never-raising progress emitter. `send(body)` does the
+    I/O; the first event of each (stage, channel) always goes out, later
+    ones at most once per `interval` seconds."""
+
+    def __init__(
+        self,
+        recording_id: str,
+        send: Callable[[dict], None],
+        clock: Callable[[], float],
+        interval: float = PROGRESS_INTERVAL_SECONDS,
+    ):
+        self._recording_id = recording_id
+        self._send = send
+        self._clock = clock
+        self._interval = interval
+        self._last_key: Optional[tuple] = None
+        self._last_sent_at: Optional[float] = None
+
+    def for_channel(self, channel: int, channels: int, audio_seconds: float) -> ProgressCallback:
+        def on_progress(stage: str, completed: int, total: int) -> None:
+            self.report(stage, channel, channels, completed, total, audio_seconds)
+
+        return on_progress
+
+    def report(
+        self, stage: str, channel: int, channels: int, completed: int, total: int, audio_seconds: float
+    ) -> None:
+        now = self._clock()
+        key = (stage, channel)
+        boundary = key != self._last_key
+        if not boundary and now - self._last_sent_at < self._interval:
+            return
+        self._last_key = key
+        self._last_sent_at = now
+        body = build_progress_body(self._recording_id, stage, channel, channels, completed, total, audio_seconds)
+        try:
+            self._send(body)
+        except Exception:
+            pass
+
+
+class LatestOnlySender:
+    """Delivers progress bodies on one background thread with a single pending
+    slot: while a post is in flight a newer body replaces the pending one, so
+    a slow endpoint can never build a backlog. `close` drops whatever is
+    pending and waits at most `timeout` seconds for the in-flight post."""
+
+    def __init__(self, post: Callable[[dict], None]):
+        self._post = post
+        self._cond = threading.Condition()
+        self._pending: Optional[dict] = None
+        self._closed = False
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+
+    def submit(self, body: dict) -> None:
+        with self._cond:
+            if self._closed:
+                return
+            self._pending = body
+            self._cond.notify()
+
+    def close(self, timeout: float = 1.0) -> None:
+        with self._cond:
+            self._closed = True
+            self._pending = None
+            self._cond.notify_all()
+        self._thread.join(timeout)
+
+    def _run(self) -> None:
+        while True:
+            with self._cond:
+                while self._pending is None and not self._closed:
+                    self._cond.wait()
+                if self._closed:
+                    return
+                body, self._pending = self._pending, None
+            try:
+                self._post(body)
+            except Exception:
+                pass
+
+
+def labeling_hook(emit: Callable[[int, int], None]) -> Callable:
+    """Adapt pyannote's hook(step_name, artifact, file=, total=, completed=)
+    to emit(completed, LABELING_SCALE): segmentation fills the first half,
+    embeddings the second. Calls without a total are ignored."""
+
+    def hook(step_name, step_artifact, file=None, total=None, completed=None):
+        step_range = _LABELING_STEP_RANGES.get(step_name)
+        if step_range is None or not total or completed is None:
+            return
+        low, high = step_range
+        fraction = low + (high - low) * min(max(completed / total, 0.0), 1.0)
+        emit(round(fraction * LABELING_SCALE), LABELING_SCALE)
+
+    return hook
+
+
 def process_channel(
     channel: Channel,
     fetch_chunk: Callable[[str], bytes],
     transcribe: Callable[[bytes], list],
-    diarize: Callable[[bytes, Optional[int]], list],
+    diarize: Callable[..., list],
+    on_progress: Optional[ProgressCallback] = None,
 ) -> dict:
     """Assemble each segment's PCM, run the injected model callables, and
     shape the combined output for one channel.
@@ -330,13 +473,44 @@ def process_channel(
     """
     words: list = []
     segments: list = []
+    emit = on_progress or (lambda stage, completed, total: None)
 
+    total_chunks = sum(len(segment.chunks) for segment in channel.segments)
+    fetched = 0
+    pcms = []
     for segment in channel.segments:
-        chunk_bytes_by_seq = {chunk.seq: fetch_chunk(chunk.url) for chunk in segment.chunks}
-        pcm = assemble_segment_pcm(chunk_bytes_by_seq)
+        chunk_bytes_by_seq = {}
+        for chunk in segment.chunks:
+            chunk_bytes_by_seq[chunk.seq] = fetch_chunk(chunk.url)
+            fetched += 1
+            emit("fetching", fetched, total_chunks)
+        pcms.append(assemble_segment_pcm(chunk_bytes_by_seq))
 
-        words.extend(shape_words(transcribe_windowed(pcm, transcribe), segment.start_seconds))
-        segments.extend(shape_segments(diarize(pcm, channel.max_speakers), segment.start_seconds))
+    split = [split_pcm_windows(pcm) for pcm in pcms]
+    total_windows = sum(len(windows) for windows in split)
+    done_windows = 0
+
+    def window_done() -> None:
+        nonlocal done_windows
+        done_windows += 1
+        emit("transcribing", done_windows, total_windows)
+
+    for segment, pcm, windows in zip(channel.segments, pcms, split):
+        raw_words = transcribe_windowed(pcm, transcribe, on_window=window_done, windows=windows)
+        words.extend(shape_words(raw_words, segment.start_seconds))
+
+    segment_count = len(channel.segments)
+    for index, (segment, pcm) in enumerate(zip(channel.segments, pcms)):
+        if on_progress is None:
+            raw_segments = diarize(pcm, channel.max_speakers)
+        else:
+            hook = labeling_hook(
+                lambda completed, total, index=index: emit(
+                    "labeling", index * LABELING_SCALE + completed, segment_count * LABELING_SCALE
+                )
+            )
+            raw_segments = diarize(pcm, channel.max_speakers, hook=hook)
+        segments.extend(shape_segments(raw_segments, segment.start_seconds))
 
     words.sort(key=lambda w: w["s"])
     segments.sort(key=lambda s: s["s"])

@@ -20,7 +20,7 @@ import { prisma } from "~/lib/db";
 import { getUserRoles } from "~/lib/roles";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { checkRateLimit } from "~/lib/rate-limit";
-import { canRecordInto, storedLines } from "~/lib/meeting-recording.server";
+import { canRecordInto, resolveSpeakerNames, storedLines } from "~/lib/meeting-recording.server";
 import { getCollabServer } from "~/collab/server";
 import { forceSnapshot } from "~/collab/persistence";
 import { readDocAsBlocks } from "~/collab/read";
@@ -33,7 +33,7 @@ import {
   type SnapshotBlock,
   type StoredEnhanceNotes,
 } from "~/components/meeting-recorder/enhance-plan";
-import { transcriptParagraphs } from "~/components/meeting-recorder/transcript";
+import { speakerFirstNameAt, transcriptParagraphs } from "~/components/meeting-recorder/transcript";
 import type { Channel, RosterUser, Speakers } from "~/components/meeting-recorder/types";
 import { isUntouchedTemplate } from "~/lib/meeting-note-template";
 import { generateAndVerifyEnhancePlan, resolveMeetingEnhanceContext } from "~/lib/meeting-notes-enhance.server";
@@ -153,13 +153,6 @@ export async function runEnhanceMeetingNotes(ctx: McpCtx, input: Input) {
     blocksToPlainText(liveBlocks),
   );
   const { ops } = applyEnhancePlan(stored.snapshot, currentTop, stored.plan, { untouchedTemplate });
-  const merged = applyEnhanceOpsToDocBlocks(ops, liveBlocks, {
-    pageId,
-    recordingId: rec.id,
-    actionItems: stored.plan.actionItems,
-    projectId,
-  });
-
   const { roster } = await resolveMeetingEnhanceContext(rec);
   // All recordings are v2 (ai-meeting-notes was off before this release), so
   // channel/end are always set in practice — normalized defensively, same as
@@ -169,7 +162,17 @@ export async function runEnhanceMeetingNotes(ctx: McpCtx, input: Input) {
     channel: (l.channel ?? "mic") as Channel,
     end: l.end ?? l.at,
   }));
-  const paragraphs = transcriptParagraphs(lines, (rec.speakers as Speakers | null) ?? {}, roster as RosterUser[]);
+  const speakers = (rec.speakers as Speakers | null) ?? {};
+  const speakerNames = await resolveSpeakerNames(speakers);
+  const merged = applyEnhanceOpsToDocBlocks(ops, liveBlocks, {
+    pageId,
+    recordingId: rec.id,
+    actionItems: stored.plan.actionItems,
+    projectId,
+    speakerAt: (at) => speakerFirstNameAt(lines, at, speakers, roster as RosterUser[], speakerNames),
+  });
+
+  const paragraphs = transcriptParagraphs(lines, speakers, roster as RosterUser[]);
   const withTranscript = ensureTranscriptToggle(merged, paragraphs);
 
   // Same staleness check as the web route's {action:"enhanced"} lock: refuse

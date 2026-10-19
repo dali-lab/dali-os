@@ -101,6 +101,7 @@ export function DocumentEditor({
   topBarActions,
   meetingNoteTemplateAction = null,
   rail,
+  belowTabs,
   onContainerWideChange,
   notebookConversion = null,
 }: {
@@ -162,6 +163,8 @@ export function DocumentEditor({
   // the Drawer on a narrow canvas — recording/stopping never render in a
   // blocking surface, since people type notes while they run.
   rail?: { node: ReactNode; open: boolean; onClose: () => void; live?: boolean };
+  // Sticks to the top of the paper card, above the cover and title.
+  belowTabs?: ReactNode;
   // Reports the ≥ 1150px check back to the host — DocumentEditor is the only
   // component that measures it, but the route's top-bar Record button needs
   // to know too (narrow canvases answer a live recording with a Popover
@@ -625,9 +628,8 @@ export function DocumentEditor({
       {savingTitle && <span className="shrink-0 italic">Saving…</span>}
       {syncState && (
         <span
-          className={`shrink-0 inline-flex items-center gap-1 ${
-            syncState === "offline" ? "text-os-amber" : ""
-          }`}
+          data-testid="doc-sync-status"
+          className="shrink-0 inline-grid"
           title={
             syncState === "offline"
               ? "You're offline — changes are saved on this device and will sync when you reconnect."
@@ -636,24 +638,25 @@ export function DocumentEditor({
                 : "All changes saved"
           }
         >
-          {syncState === "saving" && (
-            <>
-              <Loader2 className={cn(actionIcon, "animate-spin")} />{" "}
-              <span className="hidden sm:inline">Saving…</span>
-            </>
-          )}
-          {syncState === "saved" && (
-            <>
-              <Check className={actionIcon} />{" "}
-              <span className="hidden sm:inline">Saved</span>
-            </>
-          )}
-          {syncState === "offline" && (
-            <>
-              <CloudOff className={actionIcon} />{" "}
-              <span className="hidden sm:inline">Offline</span>
-            </>
-          )}
+          {(
+            [
+              ["saving", <Loader2 key="i" className={cn(actionIcon, "animate-spin")} />, "Saving…"],
+              ["saved", <Check key="i" className={actionIcon} />, "Saved"],
+              ["offline", <CloudOff key="i" className={actionIcon} />, "Offline"],
+            ] as const
+          ).map(([state, icon, label]) => (
+            <span
+              key={state}
+              aria-hidden={state !== syncState}
+              className={cn(
+                "[grid-area:1/1] inline-flex items-center gap-1",
+                state !== syncState && "invisible",
+                state === "offline" && "text-os-amber",
+              )}
+            >
+              {icon} <span className="hidden sm:inline">{label}</span>
+            </span>
+          ))}
         </span>
       )}
 
@@ -948,6 +951,12 @@ export function DocumentEditor({
           typo.smallText ? " doc-canvas--small" : ""
         }${typo.nestingGuides ? " doc-canvas--guides" : ""}`}
       >
+        {belowTabs && (
+          <div className="sticky z-10 overflow-hidden rounded-t-xl bg-card" style={{ top: topBarHeight }}>
+            {belowTabs}
+          </div>
+        )}
+
         {/* Cover lives at the top edge of the canvas, full-bleed.
             FIX 6: Only render PageCover here when a cover IS set (so it shows
             the image + change/remove controls). When no cover, the hover-reveal

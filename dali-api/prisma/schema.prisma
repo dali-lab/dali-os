@@ -2044,6 +2044,8 @@ model MeetingRecording {
   // whose timeline is stamped from here, so the transcript reads as one.
   recordedSeconds Float     @default(0)
   error           String?
+  // Latest Modal progress while Processing; cleared by applyResult.
+  progress        Json?
   insertedAt      DateTime? // notes or transcript inserted into the doc
   finalizedAt     DateTime? // audio deleted
   createdAt       DateTime  @default(now())

@@ -3,6 +3,9 @@ import { buttonClasses } from "~/components/ui/Button";
 import { Tooltip, Popover } from "~/components/ui/floating";
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
+import { ProgressRing } from "./meeting-recorder/ProgressRing";
+import { describeProcessing } from "./meeting-recorder/processing-progress";
+import { recorderTriggerLabel } from "./meeting-recorder/trigger-label";
 import { RecordStartSheet } from "./meeting-recorder/RecordStartSheet";
 import { deriveRailState, statusLineFor, RecordingBody } from "./meeting-recorder/RecordingRail";
 import { formatClock } from "./meeting-recorder/transcript";
@@ -36,22 +39,10 @@ export function MeetingRecorder({ rec, containerWide }: { rec: UseMeetingRecordi
           : "Stopping…"
     : null;
 
-  const triggerLabel =
-    live
-      ? "Record"
-      : rec.phase === "idle"
-        ? rec.canEdit
-          ? "Record"
-          : "Transcript"
-        : rec.phase === "processing"
-          ? "Transcribing…"
-          : rec.hasTranscript
-            ? rec.pendingMarks.length > 0
-              ? `Review (${rec.pendingMarks.length})`
-              : rec.enhancedAt
-                ? "Enhanced"
-                : "Transcript"
-            : "Show recording";
+  const processing =
+    rec.phase === "processing" ? describeProcessing(rec.processingStage ?? "starting", rec.progress) : null;
+
+  const triggerLabel = recorderTriggerLabel(rec, live, processing?.pillLabel ?? null);
 
   const button = (
     <button
@@ -65,7 +56,7 @@ export function MeetingRecorder({ rec, containerWide }: { rec: UseMeetingRecordi
         live && "border-os-accent bg-os-accent text-navy-deep hover:border-accent-coral-light hover:bg-accent-coral-light",
       )}
     >
-      <Mic className={actionIcon} />
+      {processing ? <ProgressRing fraction={processing.fraction} className={actionIcon} /> : <Mic className={actionIcon} />}
       {rec.phase === "recording" && <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-current" />}
       <span className="hidden sm:inline">{triggerLabel}</span>
     </button>

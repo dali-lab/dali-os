@@ -1,17 +1,15 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import { Combobox, type SelectOption } from "~/components/ui/floating";
 import { useSelectTriggerClass } from "~/components/ui/floating/os-styles";
 import { SearchInput } from "~/components/ui/SearchInput";
 import { buttonClasses } from "~/components/ui/Button";
 import { cn } from "~/lib/cn";
+import { isSearchableQuery, useLabMemberSearch } from "./member-search";
 import { formatClock, speakerLabelFor } from "./transcript";
 import type { UseMeetingRecording } from "./use-meeting-recording";
 
 const SOMEONE_ELSE = "__other__";
 const SAME_AS_PREFIX = "__same_as__:";
-const SEARCH_MIN_CHARS = 2;
-const SEARCH_DEBOUNCE_MS = 200;
-const SEARCH_LIMIT = 8;
 
 function lineCountFor(lines: UseMeetingRecording["lines"], speakerKey: string): number {
   return lines.filter((l) => l.speaker === speakerKey).length;
@@ -19,19 +17,6 @@ function lineCountFor(lines: UseMeetingRecording["lines"], speakerKey: string): 
 
 function lineCountLabel(count: number): string {
   return `${count} line${count === 1 ? "" : "s"}`;
-}
-
-type SearchMember = { id: string; name: string; handle: string };
-
-async function searchLabMembers(query: string): Promise<SearchMember[]> {
-  try {
-    const res = await fetch(`/api/mentions/search?q=${encodeURIComponent(query)}`, { credentials: "include" });
-    if (!res.ok) return [];
-    const data = (await res.json()) as { members?: SearchMember[] };
-    return (data.members ?? []).slice(0, SEARCH_LIMIT);
-  } catch {
-    return [];
-  }
 }
 
 /**
@@ -108,24 +93,7 @@ function SpeakerChip({ speakerKey, rec }: { speakerKey: string; rec: UseMeetingR
   const lineCount = lineCountFor(rec.lines, speakerKey);
   const [editingOther, setEditingOther] = useState(false);
   const [otherText, setOtherText] = useState("");
-  const [query, setQuery] = useState("");
-  const [results, setResults] = useState<SearchMember[]>([]);
-  const searchSeq = useRef(0);
-
-  useEffect(() => {
-    const q = query.trim();
-    if (q.length < SEARCH_MIN_CHARS) {
-      setResults([]);
-      return;
-    }
-    const seq = ++searchSeq.current;
-    const timer = setTimeout(() => {
-      void searchLabMembers(q).then((members) => {
-        if (seq === searchSeq.current) setResults(members);
-      });
-    }, SEARCH_DEBOUNCE_MS);
-    return () => clearTimeout(timer);
-  }, [query]);
+  const { query, setQuery, results } = useLabMemberSearch();
 
   if (!rec.canEdit) {
     return (
@@ -195,7 +163,7 @@ function SpeakerChip({ speakerKey, rec }: { speakerKey: string; rec: UseMeetingR
           options={options}
           placeholder={label}
           ariaLabel={`Rename ${label}`}
-          emptyLabel={query.trim().length >= SEARCH_MIN_CHARS ? "No matches" : "Type to search lab members"}
+          emptyLabel={isSearchableQuery(query) ? "No matches" : "Type to search lab members"}
           className={triggerClass}
         />
         <span className="text-[11px] text-muted-foreground">{lineCountLabel(lineCount)}</span>

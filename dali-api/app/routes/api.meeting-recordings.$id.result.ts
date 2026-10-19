@@ -9,7 +9,28 @@ import type { Route } from "./+types/api.meeting-recordings.$id.result";
 import { prisma } from "~/lib/db";
 import { verifyHmac } from "~/lib/transcription/hmac";
 import { applyResult } from "~/lib/meeting-recording.server";
-import type { ModalCallbackBody } from "~/lib/transcription/modal";
+import type { ModalCallbackBody, ModalProgress, ModalProgressBody } from "~/lib/transcription/modal";
+
+const PROGRESS_STAGES = ["fetching", "transcribing", "labeling"];
+
+const isCount = (v: unknown): v is number => typeof v === "number" && Number.isInteger(v) && v >= 0;
+
+function parseProgress(raw: unknown): ModalProgress | null {
+  if (!raw || typeof raw !== "object") return null;
+  const p = raw as Record<string, unknown>;
+  if (typeof p.stage !== "string" || !PROGRESS_STAGES.includes(p.stage)) return null;
+  if (!isCount(p.channel) || !isCount(p.channels) || !isCount(p.completed) || !isCount(p.total)) return null;
+  if (p.channel < 1 || p.channels < 1 || p.channel > p.channels || p.completed > p.total) return null;
+  if (typeof p.audioSeconds !== "number" || !Number.isFinite(p.audioSeconds) || p.audioSeconds < 0) return null;
+  return {
+    stage: p.stage as ModalProgress["stage"],
+    channel: p.channel,
+    channels: p.channels,
+    completed: p.completed,
+    total: p.total,
+    audioSeconds: p.audioSeconds,
+  };
+}
 
 export async function action({ request, params }: Route.ActionArgs) {
   if (request.method !== "POST") {
@@ -36,6 +57,16 @@ export async function action({ request, params }: Route.ActionArgs) {
   }
   if (!body || typeof body !== "object" || body.recordingId !== params.id) {
     return Response.json({ error: "recordingId mismatch" }, { status: 400 });
+  }
+
+  if ("progress" in body) {
+    const progress = parseProgress((body as unknown as ModalProgressBody).progress);
+    if (!progress) return Response.json({ error: "Invalid progress" }, { status: 400 });
+    await prisma.meetingRecording.updateMany({
+      where: { id: params.id, status: "Processing" },
+      data: { progress },
+    });
+    return Response.json({ ok: true });
   }
 
   const rec = await prisma.meetingRecording.findUnique({ where: { id: params.id } });

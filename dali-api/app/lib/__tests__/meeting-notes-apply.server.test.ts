@@ -27,6 +27,20 @@ describe("applyEnhanceOpsToDocBlocks", () => {
     expect(JSON.stringify(result[0]!.content)).toContain("at=12"); // citation chip href
   });
 
+  it("labels citation chips with the resolver's speaker, for updates and inserts", () => {
+    const speakerAt = (at: number) => (at === 12 ? "Maya" : null);
+    const blocks = [paragraph("b1", "old")];
+    const ops: EditorOp[] = [
+      { kind: "update", id: "b1", text: "new", cites: [12, 90] },
+      { kind: "insertAfter", afterId: "b1", blocks: [{ type: "bulletListItem", text: "Ship it", cites: [12], added: true }] },
+    ];
+    const result = applyEnhanceOpsToDocBlocks(ops, blocks, { ...CTX, speakerAt });
+    const updated = JSON.stringify(result[0]!.content);
+    expect(updated).toContain("Maya");
+    expect(JSON.stringify(result[1]!.content)).toContain("Maya");
+    expect(updated.match(/Maya/g)).toHaveLength(1);
+  });
+
   it("leaves non-matching blocks alone for an update op", () => {
     const blocks = [paragraph("b1", "a"), paragraph("b2", "b")];
     const ops: EditorOp[] = [{ kind: "update", id: "b1", text: "changed", cites: [] }];

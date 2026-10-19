@@ -8,6 +8,7 @@ import {
   ENHANCE_MARK_PRIOR,
   firstLineOf,
   headingAbove,
+  isUndoRedoTransaction,
   localEditKeepIds,
   markOfProps,
   summarizeEnhanceMarks,
@@ -508,5 +509,29 @@ describe("buildEnhanceChangeRows", () => {
 
   it("returns an empty list for no marks", () => {
     expect(buildEnhanceChangeRows([], blocks, priorBlocks)).toEqual([]);
+  });
+});
+
+describe("isUndoRedoTransaction", () => {
+  const change = (type: string): EnhanceBlockChange => ({
+    type: "update",
+    source: { type },
+    block: { id: "b1" },
+  });
+
+  it("is true when every change is undo-redo", () => {
+    expect(isUndoRedoTransaction([change("undo-redo"), change("undo-redo")])).toBe(true);
+  });
+
+  it("is false for an empty change list", () => {
+    expect(isUndoRedoTransaction([])).toBe(false);
+  });
+
+  it.each(["local", "paste", "drop"])("is false when a %s change is in the transaction", (type) => {
+    expect(isUndoRedoTransaction([change("undo-redo"), change(type)])).toBe(false);
+  });
+
+  it("is false for remote changes alone", () => {
+    expect(isUndoRedoTransaction([change("yjs-remote")])).toBe(false);
   });
 });

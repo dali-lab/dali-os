@@ -110,13 +110,20 @@ beforeEach(() => {
 });
 
 describe("documents.$pageId loader location line", () => {
-  it("hands the notebook's filed location and the occurrence date as the tab label", async () => {
+  it("hands the notebook's filed location and a meeting note's title as the tab label", async () => {
     vi.mocked(getPageAccess).mockResolvedValue(access(true) as any);
 
     const data = await call();
 
-    expect(data.noteLocation).toEqual({ location: LOCATION, tabLabel: "Oct 14, 2026" });
+    expect(data.noteLocation).toEqual({ location: LOCATION, tabLabel: "Agenda" });
     expect(notebookItemLocation).toHaveBeenCalledWith(expect.objectContaining({ id: "nb1" }), "u1", expect.any(Request));
+  });
+
+  it("labels an untitled meeting note's tab with its occurrence date", async () => {
+    db.page.findUnique.mockResolvedValue(page({ title: "" }));
+    vi.mocked(getPageAccess).mockResolvedValue(access(true) as any);
+
+    expect((await call()).noteLocation.tabLabel).toBe("Oct 14, 2026");
   });
 
   it("labels a tab that is not a meeting note with its title", async () => {

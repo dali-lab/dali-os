@@ -14,7 +14,7 @@ import { ACTIVE_RECORDING_STATUSES, latestRecordingFor } from "~/lib/meeting-rec
 import { requireAuth, redirectPartnerToPortal, isNonMember } from "~/lib/auth";
 import { publicDocRedirectForPath } from "~/lib/public-doc.server";
 import { getCollabToken } from "~/lib/collab-token.server";
-import { fullName, formatDateShort } from "~/lib/display";
+import { fullName } from "~/lib/display";
 import { getPresenceUser } from "~/lib/presence-user";
 import { PAGE_ACCESS_SELECT, getPageAccess, getPageAccessBulk } from "~/lib/pageAccess.server";
 import { getUserRoles, isProjectMember } from "~/lib/roles";
@@ -35,6 +35,10 @@ import { RecordingPresencePill } from "~/components/RecordingPresencePill";
 import { RecordPromptBanner } from "~/components/RecordPromptBanner";
 import { TranscriptChipHoverLayer } from "~/components/meeting-recorder/TranscriptChipHoverLayer";
 import { RecordingRail } from "~/components/meeting-recorder/RecordingRail";
+import { ActionItemDraftScope } from "~/components/meeting-recorder/action-item-draft";
+import { ActionItemChips } from "~/components/meeting-recorder/ActionItemChips";
+import { EnhanceBar } from "~/components/meeting-recorder/EnhanceBar";
+import { EnhanceBlockActions } from "~/components/meeting-recorder/EnhanceBlockActions";
 import { useMeetingRecording, type UseMeetingRecording, type UseMeetingRecordingProps } from "~/components/meeting-recorder/use-meeting-recording";
 import {
   appendBlocks,
@@ -66,7 +70,7 @@ import { pageDocName } from "~/collab/roomName";
 import { canManageNotebook } from "~/lib/notebooks.server";
 import { nextNoteTargets } from "~/lib/notebook-series.server";
 import { NotebookRail, NoteLocationLine, type NotebookView } from "~/components/notebooks/NotebookRail";
-import { noteTrail } from "~/components/notebooks/note-trail";
+import { noteTabLabel, noteTrail } from "~/components/notebooks/note-trail";
 import { EmptyNotebook } from "~/components/notebooks/EmptyNotebook";
 import { redirectToLogin } from "~/lib/login-next";
 import { walletTokensConfigured } from "~/lib/wallet-token";
@@ -261,7 +265,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     ]);
     noteLocation = {
       location: notebookPlace,
-      tabLabel: page.meetingOccurrenceStart ? formatDateShort(page.meetingOccurrenceStart) : page.title,
+      tabLabel: noteTabLabel(page),
     };
     const tabAccess = await getPageAccessBulk(auth.user.sub, tabRows, request, {
       includeArchived: trashed,
@@ -274,7 +278,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       ...notebookShell(page.parent, { canEdit: canEditNotebook, manager: notebookManager && !trashed, nextNotes }),
       tabs: visible.map((t) => ({
         id: t.id,
-        label: t.meetingOccurrenceStart ? formatDateShort(t.meetingOccurrenceStart) : t.title,
+        label: noteTabLabel(t),
         meeting: mixed ? (t.meetingNote?.title ?? null) : null,
         isNote: t.meetingNoteId !== null,
       })),
@@ -816,10 +820,11 @@ function DocumentPage() {
       recordingId: string,
       transcript: string[],
       actionItems: EnhanceActionItem[],
+      speakerAt: (atSeconds: number) => string | null,
     ): { ok: boolean; priorBlocks?: Record<string, unknown> } => {
       const editor = editorRef.current;
       if (!editor) return { ok: false };
-      const { priorBlocks } = renderEnhanceOps(editor, ops, { pageId, recordingId, actionItems, projectId: meetingProjectId });
+      const { priorBlocks } = renderEnhanceOps(editor, ops, { pageId, recordingId, actionItems, projectId: meetingProjectId, speakerAt });
       if (transcript.length && !hasTranscriptToggle(editor)) {
         appendBlocks(editor, [transcriptToggleBlock(transcript)]);
       }
@@ -966,6 +971,7 @@ function DocumentPage() {
             aiEnabled
             onEditorReady={onEditorReady}
             onContainerWideChange={setContainerWide}
+            belowTabs={rec ? <EnhanceBar rec={rec} /> : undefined}
             rail={
               rec
                 ? {
@@ -1007,8 +1013,11 @@ function DocumentPage() {
           : null;
 
         return (
+          <ActionItemDraftScope rec={rec}>
           <EnhanceReviewContext.Provider value={enhanceReview}>
             <div className="flex flex-col gap-4">
+              {rec && <EnhanceBlockActions rec={rec} getRoot={() => editorRef.current?.domElement ?? null} />}
+              {rec && <ActionItemChips rec={rec} getRoot={() => editorRef.current?.domElement ?? null} />}
               {trashed && <TrashedNoteBanner pageId={pageId} canRestore={canRestore} />}
               {attendance && recordingEnabled && recordingAllowed && (
                 <RecordPromptBanner
@@ -1057,6 +1066,7 @@ function DocumentPage() {
               )}
             </div>
           </EnhanceReviewContext.Provider>
+          </ActionItemDraftScope>
         );
       }}
     </RecordingMount>

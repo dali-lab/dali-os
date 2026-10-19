@@ -3,6 +3,8 @@ import {
   countSpeakersByChannel,
   formatClock,
   meetingNotesMarkdown,
+  nearestLine,
+  speakerFirstNameAt,
   speakerLabelFor,
   transcriptParagraphs,
 } from "./transcript";
@@ -109,5 +111,40 @@ describe("meetingNotesMarkdown", () => {
   });
   it("appends trimmed notes under the heading", () => {
     expect(meetingNotesMarkdown("  Summary here.  ")).toBe("## AI meeting notes\n\nSummary here.");
+  });
+});
+
+describe("nearestLine", () => {
+  const lines = [{ at: 0 }, { at: 60 }, { at: 120 }];
+  it("picks the closest start time", () => {
+    expect(nearestLine(lines, 50)).toEqual({ at: 60 });
+    expect(nearestLine(lines, 500)).toEqual({ at: 120 });
+  });
+  it("is null for no lines", () => {
+    expect(nearestLine([], 5)).toBeNull();
+  });
+});
+
+describe("speakerFirstNameAt", () => {
+  const lines: TranscriptLine[] = [
+    { at: 0, end: 10, text: "a", channel: "mic", speaker: "mic:1" },
+    { at: 840, end: 850, text: "b", channel: "call", speaker: "call:1" },
+    { at: 900, end: 910, text: "c", channel: "call", speaker: "call:2" },
+  ];
+  const roster: RosterUser[] = [{ userId: "u1", name: "Maya Chen" }];
+
+  it("returns the first name of the assigned speaker nearest the second", () => {
+    expect(speakerFirstNameAt(lines, 842, { "call:1": "u1" }, roster)).toBe("Maya");
+  });
+  it("prefers the server-resolved name", () => {
+    expect(speakerFirstNameAt(lines, 842, { "call:1": "u9" }, roster, { "call:1": "Jordan Lee" })).toBe("Jordan");
+  });
+  it("is null when that speaker has no name yet", () => {
+    expect(speakerFirstNameAt(lines, 905, { "call:1": "u1" }, roster)).toBeNull();
+    expect(speakerFirstNameAt(lines, 3, {}, roster)).toBeNull();
+  });
+  it("is null with no lines or a line without a speaker", () => {
+    expect(speakerFirstNameAt([], 3, {}, roster)).toBeNull();
+    expect(speakerFirstNameAt([{ at: 0, end: 1, text: "x", channel: "mic" }], 0, {}, roster)).toBeNull();
   });
 });
