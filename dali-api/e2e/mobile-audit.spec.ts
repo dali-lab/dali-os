@@ -46,7 +46,7 @@ const ROUTES: Array<{ path: string; label: string }> = [
   { path: '/projects', label: 'projects-list' },
   { path: '/projects/staffing', label: 'projects-staffing' },
   { path: '/members', label: 'members' },
-  { path: '/partners', label: 'partners' },
+  { path: '/core/partners', label: 'partners' },
   // --- expanded routes ---
   { path: '/drive', label: 'drive' },
   { path: '/education', label: 'education' },

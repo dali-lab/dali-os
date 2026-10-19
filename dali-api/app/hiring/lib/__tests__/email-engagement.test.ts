@@ -5,6 +5,7 @@ vi.mock("~/lib/db", () => ({
 }));
 
 import { prisma } from "~/lib/db";
+import { APPLICATIONS_FROM_EMAIL } from "~/lib/app-env";
 import { getApplicantEmailEngagement, getEngagementSummaries } from "~/hiring/lib/email-engagement.server";
 
 const db = prisma as unknown as { mailMessageIndex: { findMany: ReturnType<typeof vi.fn> } };
@@ -50,10 +51,30 @@ describe("getApplicantEmailEngagement", () => {
     });
   });
 
-  it("queries the user's linked rows oldest-first", async () => {
+  it("scopes to another inbox when accountAddress is given", async () => {
+    await getApplicantEmailEngagement("u1", { blinded: false, accountAddress: "partners@x.edu" });
+    expect(db.mailMessageIndex.findMany.mock.calls[0][0].where.account).toEqual({
+      address: { equals: "partners@x.edu", mode: "insensitive" },
+    });
+  });
+
+  it("reports raw inbound and outbound counts per thread alongside what's theirs", async () => {
+    db.mailMessageIndex.findMany.mockResolvedValue([
+      outbound("m1", "t1", "2026-01-01T00:00:00Z"),
+      inbound("m2", "t1", "2026-01-01T00:05:00Z", { autoReply: true }),
+      inbound("m3", "t1", "2026-01-02T00:00:00Z"),
+    ]);
+    const engagement = await getApplicantEmailEngagement("u1", { blinded: false });
+    expect(engagement.threads[0]).toMatchObject({ inbound: 2, outbound: 1, fromThem: 1, messages: 3 });
+  });
+
+  it("queries the user's linked rows on applications@, oldest-first", async () => {
     await getApplicantEmailEngagement("u1", { blinded: false });
     expect(db.mailMessageIndex.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { linkedUserId: "u1" }, orderBy: { sentAt: "asc" } }),
+      expect.objectContaining({
+        where: { linkedUserId: "u1", account: { address: { equals: APPLICATIONS_FROM_EMAIL, mode: "insensitive" } } },
+        orderBy: { sentAt: "asc" },
+      }),
     );
   });
 
@@ -191,7 +212,13 @@ describe("getEngagementSummaries", () => {
   it("queries each user once", async () => {
     await getEngagementSummaries(["u1", "u2", "u1"]);
     expect(db.mailMessageIndex.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { linkedUserId: { in: ["u1", "u2"] } }, orderBy: { sentAt: "asc" } }),
+      expect.objectContaining({
+        where: {
+          linkedUserId: { in: ["u1", "u2"] },
+          account: { address: { equals: APPLICATIONS_FROM_EMAIL, mode: "insensitive" } },
+        },
+        orderBy: { sentAt: "asc" },
+      }),
     );
   });
 

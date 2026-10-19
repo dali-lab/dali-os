@@ -5,6 +5,7 @@
 // reviewer couldn't already infer from the counts.
 
 import { prisma } from "~/lib/db";
+import { APPLICATIONS_FROM_EMAIL } from "~/lib/app-env";
 
 export type EngagementSummary = {
   fromThem: number;
@@ -20,6 +21,8 @@ export type EmailEngagement = {
     firstAt: string;
     lastAt: string;
     messages: number;
+    inbound: number;
+    outbound: number;
     fromThem: number;
     startedByThem: boolean;
   }[];
@@ -41,6 +44,8 @@ type ThreadAgg = {
   firstAt: Date;
   lastAt: Date;
   messages: number;
+  inbound: number;
+  outbound: number;
   fromThem: number;
   lastFromThemAt: Date | null;
   startedByThem: boolean;
@@ -61,6 +66,8 @@ function threadsWithReplies(rows: IndexRow[]): ThreadAgg[] {
       t.subject = row.subject || t.subject;
       t.lastAt = row.sentAt;
       t.messages++;
+      if (row.direction === "Inbound") t.inbound++;
+      else t.outbound++;
       if (fromThem) {
         t.fromThem++;
         t.lastFromThemAt = row.sentAt;
@@ -72,6 +79,8 @@ function threadsWithReplies(rows: IndexRow[]): ThreadAgg[] {
         firstAt: row.sentAt,
         lastAt: row.sentAt,
         messages: 1,
+        inbound: row.direction === "Inbound" ? 1 : 0,
+        outbound: row.direction === "Outbound" ? 1 : 0,
         fromThem: fromThem ? 1 : 0,
         lastFromThemAt: fromThem ? row.sentAt : null,
         startedByThem: fromThem,
@@ -105,10 +114,15 @@ const ROW_SELECT = {
 
 export async function getApplicantEmailEngagement(
   userId: string,
-  opts: { blinded: boolean },
+  opts: { blinded: boolean; accountAddress?: string },
 ): Promise<EmailEngagement> {
+  // Scoped to one shared inbox (applications@ by default) so a user who is
+  // also linked on another inbox's index rows — e.g. a partner contact who
+  // happens to share an address with a hiring applicant — never has that
+  // other inbox's mail folded into this account's engagement.
+  const accountAddress = opts.accountAddress ?? APPLICATIONS_FROM_EMAIL;
   const rows = await prisma.mailMessageIndex.findMany({
-    where: { linkedUserId: userId },
+    where: { linkedUserId: userId, account: { address: { equals: accountAddress, mode: "insensitive" } } },
     orderBy: { sentAt: "asc" },
     select: ROW_SELECT,
   });
@@ -124,6 +138,8 @@ export async function getApplicantEmailEngagement(
         firstAt: t.firstAt.toISOString(),
         lastAt: t.lastAt.toISOString(),
         messages: t.messages,
+        inbound: t.inbound,
+        outbound: t.outbound,
         fromThem: t.fromThem,
         startedByThem: t.startedByThem,
       })),
@@ -136,7 +152,10 @@ export async function getEngagementSummaries(userIds: string[]): Promise<Map<str
   if (userIds.length === 0) return out;
 
   const rows = await prisma.mailMessageIndex.findMany({
-    where: { linkedUserId: { in: [...new Set(userIds)] } },
+    where: {
+      linkedUserId: { in: [...new Set(userIds)] },
+      account: { address: { equals: APPLICATIONS_FROM_EMAIL, mode: "insensitive" } },
+    },
     orderBy: { sentAt: "asc" },
     select: { ...ROW_SELECT, linkedUserId: true },
   });

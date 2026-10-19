@@ -63,8 +63,8 @@ export default function PartnerOnboarding({ actionData }: Route.ComponentProps) 
           You're signed in
         </h1>
         <p className="text-os-grey mb-8">
-          as <span className="font-medium text-foreground">{email}</span> —
-          tell us your name and you're all set.
+          as <span className="font-medium text-foreground">{email}</span>.
+          Tell us your name and you're all set.
         </p>
 
         {error && (

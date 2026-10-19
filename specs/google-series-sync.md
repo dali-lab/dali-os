@@ -109,20 +109,20 @@ Small, because sync should be invisible when it works.
 
 ### 3.6 Fixing existing duplicates
 
-A script, `scripts/merge-split-series.ts`, dry run by default:
+A script, `scripts/merge-split-series.ts`, dry run by default, with the planner in `app/lib/split-series-fold.ts`. One transaction per (parent, split) pair under `--commit`.
 
-1. Find pairs where one row's `externalEventId` base equals another's, or the iCalUID bases match. Report them.
-2. Per pair: the older row is the parent and the `_R` row is the continuation. Truncate the parent's rule to before the split. Set `continuesFromId`. Move every note, attendance row, recording and time entry the parent holds at or after the split onto the continuation, at the same `originalStart`. If both hold a note for one occurrence, keep the non-empty one and detach the other into the notebook folder (never delete).
-3. Put both in the same notebook.
+1. Find live rows whose `externalEventId` carries an `_R` suffix. The parent is the live row whose `externalEventId` equals the base id (or whose iCalUID equals the base UID). A split with no parent is reported and left alone. Several splits can share a parent; the oldest is folded first.
+2. **Fold.** When every key the split holds data at (notes including archived, attendance, recordings, time entries) is an occurrence `originalStart` of the parent's rule, the split is FOLDED into the parent. Its data moves onto the parent at the same key, the participant lists are unioned, and the split row is Cancelled with no Google calls and no notifications. The calendar already resolves those events to the parent through the base-id fallback. A note moves unless the parent already has a live note at that key; that one is detached (never deleted or archived) and reported. Archived notes are detached on both sides, since the unique index on the note key includes archived pages. Attendance keeps the parent's row and takes the split's presence. A clashing time entry stays on the split and is reported. The parent adopts the split's notebook if it has none, and moved notes are refiled into the parent's notebook.
+3. **Continuation.** A split that changed times, so some key is not on the parent's rule, is reported as "times differ, needs continuation" and skipped for now. It needs a continuation row: truncate the parent's rule before the split, set `continuesFromId`, and move the data held at or after the split onto the continuation. The script does not do that yet.
 
-**Domain Leads under this script:** Stephanie's row ends Sep 21. Sophie's row becomes the continuation from Sep 28, with Stephanie set as DALI organizer (Sophie stays on the roster), `googleEventOrigin` Tracked, and the notebook Domain Leads 26F. Today's 8:59 note, check-ins and recording move from Stephanie's row onto it. Oct 5 and Oct 12 are already there.
+**Domain Leads under this script:** the Sep 28 split row holds the Oct 5 and Oct 12 notes, attendance and recording, all on the parent's Monday 9:00 ET rule. It folds into the parent, which keeps Oct 19. The split row is Cancelled and the notebook Domain Leads 26F becomes the parent's.
 
 ## 4. Phases
 
 | PR | Contents | Risk |
 |---|---|---|
 | **A** (extend #2244) | iCalUID dedup (done), `_R` base matching in match and track, `googleEventOrigin` + tracked-cancel = Stop tracking, `organizerCalendarId` on track, `event-move` → exception | Low. Migration adds two nullable columns. Stops new duplicates and the delete hazard |
-| **B** | Merge script + run on prod (dry run reviewed first) | Data move. Run after A deploys |
+| **B** | Merge script: folds a split whose occurrences all land on the parent's rule, reports and skips one that changed times (continuation later). Run on prod after a reviewed dry run | Data move. Run after A deploys |
 | **C** | `reconcileMeetingFromGoogle`, wired into the calendar loader (fire-and-forget) and into `meeting-reminders` / `meeting-record-prompts` before sending. Split adoption on read, continuation UI, occurrence re-key. Behind a feature flag `google-reconcile` so it can be turned off without a deploy | Medium. Flag on for staging first |
 | **D** | Organizer notice, "Updated from Google" line | Low |
 

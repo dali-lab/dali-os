@@ -63,3 +63,24 @@ describe("schedule_meeting notebook input", () => {
     expect(createScheduledMeeting).not.toHaveBeenCalled();
   });
 });
+
+describe("schedule_meeting guestEmails", () => {
+  it("passes guestEmails through to createScheduledMeeting", async () => {
+    await runScheduleMeeting(user, { ...base, scopeType: "UserList", guestEmails: ["partner@acme.com"] });
+    expect(created().guestEmails).toEqual(["partner@acme.com"]);
+  });
+
+  it("omits guestEmails when not given", async () => {
+    await runScheduleMeeting(user, { ...base, scopeType: "UserList" });
+    expect(created().guestEmails).toBeUndefined();
+  });
+
+  it("requires an organizer email on file", async () => {
+    await expect(
+      runScheduleMeeting(
+        { id: "u3", daliEmail: null, dartmouthEmail: null },
+        { title: "x", durationMinutes: 30, scopeType: "None" },
+      ),
+    ).rejects.toBeInstanceOf(ScheduleMeetingError);
+  });
+});

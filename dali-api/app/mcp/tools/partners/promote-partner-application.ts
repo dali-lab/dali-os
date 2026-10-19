@@ -10,7 +10,7 @@
 import { prisma } from "~/lib/db";
 import { isCore } from "~/lib/roles";
 import { githubTeamSlug } from "~/lib/github-slug";
-import { setApplicationStatus } from "~/partners/lib/partner-activity.server";
+import { setApplicationStage } from "~/partners/lib/partner-activity.server";
 import { McpForbiddenError, McpNotFoundError } from "../../registry";
 
 export const PROMOTE_PARTNER_APPLICATION_TOOL = {
@@ -131,12 +131,13 @@ export async function runPromotePartnerApplication(
       },
       select: { id: true, name: true },
     });
-    // Route through setApplicationStatus so promotion logs a StatusChanged
-    // activity (from → "Promoted"), mirroring the web promote action. The
-    // scalar FKs are written in the same update via `data`.
-    await setApplicationStatus(tx, {
+    // Route through setApplicationStage so promotion logs a StatusChanged
+    // activity (from → Accepted, plus resultingProjectId), mirroring the web
+    // promote action. "Promoted" is derived (Accepted + resultingProjectId),
+    // not a stage. The scalar FKs are written in the same update via `data`.
+    await setApplicationStage(tx, {
       applicationId: app.id,
-      to: "Promoted",
+      to: "Accepted",
       actorUserId: callerId,
       data: { resultingProjectId: created.id, partnerOrgId: orgId },
       meta: { projectId: created.id },
