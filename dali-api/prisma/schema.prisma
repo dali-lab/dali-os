@@ -327,8 +327,9 @@ model User {
   // ─── Public showcase ──────────────────────────────────────────────────────
   projectShowcasesUpdated ProjectShowcase[] @relation("ProjectShowcaseUpdatedBy")
 
-  // ─── Home landing ─────────────────────────────────────────────────────────
+  // ─── Easter-egg games ─────────────────────────────────────────────────────
   tetrisScore TetrisScore?
+  dinoScore   DinoScore?
 }
 
 // A DALI lab member. userId is optional because a member may be known (e.g. via daliEmail)
@@ -1996,6 +1997,18 @@ model TetrisScore {
   achievedAt DateTime @default(now())
 
   // The board is read as "top N by score", which is this index read backwards.
+  @@index([score])
+}
+
+// A member's best run at the runner game on the error screens. Same shape and
+// trust as TetrisScore: one personal best per player, browser-reported and
+// bounded but not verified.
+model DinoScore {
+  userId     String   @id
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  score      Int
+  achievedAt DateTime @default(now())
+
   @@index([score])
 }
 

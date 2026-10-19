@@ -1,48 +1,53 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 /**
- * The high-score board, and reporting a finished game to it.
+ * A game's high-score board (see lib/game-scores.server.ts), and reporting a
+ * finished game to it.
  *
- * Fetched rather than loaded with the page: the landing's loader runs on every
- * visit to home and most of those visits never start a game, so the board is
- * asked for once the scene is actually on screen and not before.
+ * Fetched rather than loaded with the page: the pages hosting these games
+ * mostly render without anyone playing, so the board is asked for once the
+ * game is on screen and not before.
  */
 
-const ENDPOINT = '/api/landing/tetris-scores'
-
-export type LeaderboardEntry = {
+export type LeaderboardEntry<Extra = object> = {
   rank: number
   userId: string
   name: string
   score: number
-  lines: number
-  level: number
   achievedAt: string
-}
+} & Extra
 
-export type LeaderboardState = {
-  entries: LeaderboardEntry[]
-  you: LeaderboardEntry | null
+export type LeaderboardState<Extra = object> = {
+  entries: LeaderboardEntry<Extra>[]
+  you: LeaderboardEntry<Extra> | null
   /** True from the first request until an answer, so the panel can hold its shape. */
   loading: boolean
+  /** True once the server has answered with a board. Stays false for anyone it
+   *  turns away (not a member, not signed in), so the panel can stay hidden. */
+  available: boolean
   /** Set when the last game beat the player's own record. Cleared when a new game starts. */
   personalBest: boolean
 }
 
-type Payload = { entries?: LeaderboardEntry[]; you?: LeaderboardEntry | null; personalBest?: boolean }
+type Payload<Extra> = {
+  entries?: LeaderboardEntry<Extra>[]
+  you?: LeaderboardEntry<Extra> | null
+  personalBest?: boolean
+}
 
-export function useLeaderboard(enabled: boolean) {
-  const [state, setState] = useState<LeaderboardState>({
+export function useLeaderboard<Extra = object>(endpoint: string, enabled: boolean) {
+  const [state, setState] = useState<LeaderboardState<Extra>>({
     entries: [],
     you: null,
     loading: enabled,
+    available: false,
     personalBest: false,
   })
 
   // Nothing from a request that is already overtaken should land: a game ending
   // while the opening read is still out would otherwise be replaced by it.
   const request = useRef(0)
-  // Survives unmount — the scene is lazy-loaded and can go away mid-flight.
+  // Survives unmount — the game can go away mid-flight.
   const alive = useRef(true)
   useEffect(() => {
     alive.current = true
@@ -51,12 +56,13 @@ export function useLeaderboard(enabled: boolean) {
     }
   }, [])
 
-  const apply = useCallback((seq: number, payload: Payload, personalBest: boolean) => {
+  const apply = useCallback((seq: number, payload: Payload<Extra>, personalBest: boolean) => {
     if (!alive.current || seq !== request.current) return
     setState({
       entries: payload.entries ?? [],
       you: payload.you ?? null,
       loading: false,
+      available: true,
       personalBest,
     })
   }, [])
@@ -64,7 +70,7 @@ export function useLeaderboard(enabled: boolean) {
   const load = useCallback(async () => {
     const seq = ++request.current
     try {
-      const res = await fetch(ENDPOINT, { headers: { accept: 'application/json' } })
+      const res = await fetch(endpoint, { headers: { accept: 'application/json' } })
       if (!res.ok) throw new Error(String(res.status))
       apply(seq, await res.json(), false)
     } catch {
@@ -74,7 +80,7 @@ export function useLeaderboard(enabled: boolean) {
         setState((s) => ({ ...s, loading: false }))
       }
     }
-  }, [apply])
+  }, [apply, endpoint])
 
   useEffect(() => {
     if (enabled) void load()
@@ -82,16 +88,16 @@ export function useLeaderboard(enabled: boolean) {
 
   /** Report a finished game. The server keeps it only if it beats the player's best. */
   const submit = useCallback(
-    async (run: { score: number; lines: number; level: number }) => {
+    async (run: { score: number } & Extra) => {
       const seq = ++request.current
       try {
-        const res = await fetch(ENDPOINT, {
+        const res = await fetch(endpoint, {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify(run),
         })
         if (!res.ok) throw new Error(String(res.status))
-        const payload: Payload = await res.json()
+        const payload: Payload<Extra> = await res.json()
         apply(seq, payload, payload.personalBest === true)
       } catch {
         if (alive.current && seq === request.current) {
@@ -99,7 +105,7 @@ export function useLeaderboard(enabled: boolean) {
         }
       }
     },
-    [apply],
+    [apply, endpoint],
   )
 
   /** Drop the "new best" banner when the player starts again. */
@@ -108,4 +114,13 @@ export function useLeaderboard(enabled: boolean) {
   }, [])
 
   return { ...state, submit, clearPersonalBest }
+}
+
+/** The top `limit` places, plus the caller's own row when it didn't make the
+ *  cut, so a board always answers "where am I" and not only "who is winning". */
+export function visibleRows<Extra>(board: LeaderboardState<Extra>, limit?: number) {
+  const shown = limit ? board.entries.slice(0, limit) : board.entries
+  const you = board.you
+  const trailing = you && !shown.some((e) => e.userId === you.userId) ? you : null
+  return { shown, trailing }
 }

@@ -8,6 +8,8 @@ import {
   step,
   type GameState,
 } from "~/components/dino/dino-engine";
+import { DinoLeaderboard } from "~/components/dino/DinoLeaderboard";
+import { useLeaderboard } from "~/hooks/useLeaderboard";
 
 const HIGH_SCORE_KEY = "dali:dino-high-score";
 
@@ -75,15 +77,26 @@ export function DinoGame() {
   const [status, setStatus] = useState<GameState["status"]>("ready");
   const [score, setScore] = useState(0);
   const [highScore, setHighScore] = useState(0);
+  const board = useLeaderboard("/api/dino-scores", true);
+  const { available, submit, clearPersonalBest } = board;
+  // A fresh object per run, so two runs ending on the same score both report.
+  const [finished, setFinished] = useState<{ score: number } | null>(null);
 
   useEffect(() => {
     setHighScore(readHighScore());
   }, []);
 
   const input = useCallback(() => {
+    const wasOver = stateRef.current.status === "over";
     stateRef.current = press(stateRef.current);
     setStatus(stateRef.current.status);
-  }, []);
+    if (wasOver) clearPersonalBest();
+  }, [clearPersonalBest]);
+
+  useEffect(() => {
+    if (finished === null || !available) return;
+    void submit({ score: finished.score });
+  }, [finished, available, submit]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -104,6 +117,7 @@ export function DinoGame() {
       if (after.status !== before.status) {
         setStatus(after.status);
         if (after.status === "over") {
+          setFinished({ score: after.score });
           setHighScore((h) => {
             const best = Math.max(h, after.score);
             if (best > h) writeHighScore(best);
@@ -142,18 +156,25 @@ export function DinoGame() {
         <p className="text-sm text-os-grey">{hint}</p>
         <p className="text-sm tabular-nums text-foreground" aria-live="polite">
           {score}
-          {highScore > 0 && <span className="text-os-grey"> · best {highScore}</span>}
+          {board.personalBest ? (
+            <span className="text-os-accent"> · new best</span>
+          ) : (
+            highScore > 0 && <span className="text-os-grey"> · best {highScore}</span>
+          )}
         </p>
       </div>
-      <canvas
-        ref={canvasRef}
-        width={STAGE.width}
-        height={STAGE.height}
-        role="img"
-        aria-label="A runner game. Press space to jump over the blocks."
-        onPointerDown={input}
-        className="w-full max-w-2xl cursor-pointer select-none touch-none rounded-os-item bg-os-well"
-      />
+      <div className="flex flex-col gap-4 md:flex-row md:items-start">
+        <canvas
+          ref={canvasRef}
+          width={STAGE.width}
+          height={STAGE.height}
+          role="img"
+          aria-label="A runner game. Press space to jump over the blocks."
+          onPointerDown={input}
+          className="w-full max-w-2xl min-w-0 cursor-pointer select-none touch-none rounded-os-item bg-os-well"
+        />
+        {available && <DinoLeaderboard board={board} />}
+      </div>
     </div>
   );
 }
