@@ -43,8 +43,8 @@ const s3 = new S3Client({
 // client to S3. Unlike presigned PUT, the policy includes server-bound
 // conditions that S3 enforces — the client cannot exceed the size cap or
 // upload a different content type, even if it ignores its own pre-checks.
-// Callers pass the cap for the key (`uploadCapForKey`); the default is the
-// general 10 MB limit.
+// Callers pass the cap for the key (`uploadCapForKey`: 100 MB file store,
+// 50 MB form uploads); the default is the general 10 MB limit.
 export async function getUploadPost(
   key: string,
   contentType: string,
