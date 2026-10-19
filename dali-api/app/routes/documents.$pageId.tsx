@@ -14,7 +14,7 @@ import { ACTIVE_RECORDING_STATUSES, latestRecordingFor } from "~/lib/meeting-rec
 import { requireAuth, redirectPartnerToPortal, isNonMember } from "~/lib/auth";
 import { publicDocRedirectForPath } from "~/lib/public-doc.server";
 import { getCollabToken } from "~/lib/collab-token.server";
-import { fullName, formatDateShort } from "~/lib/display";
+import { fullName } from "~/lib/display";
 import { getPresenceUser } from "~/lib/presence-user";
 import { PAGE_ACCESS_SELECT, getPageAccess, getPageAccessBulk } from "~/lib/pageAccess.server";
 import { getUserRoles, isProjectMember } from "~/lib/roles";
@@ -70,7 +70,7 @@ import { pageDocName } from "~/collab/roomName";
 import { canManageNotebook } from "~/lib/notebooks.server";
 import { nextNoteTargets } from "~/lib/notebook-series.server";
 import { NotebookRail, NoteLocationLine, type NotebookView } from "~/components/notebooks/NotebookRail";
-import { noteTrail } from "~/components/notebooks/note-trail";
+import { noteTabLabel, noteTrail } from "~/components/notebooks/note-trail";
 import { EmptyNotebook } from "~/components/notebooks/EmptyNotebook";
 import { redirectToLogin } from "~/lib/login-next";
 import { walletTokensConfigured } from "~/lib/wallet-token";
@@ -265,7 +265,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     ]);
     noteLocation = {
       location: notebookPlace,
-      tabLabel: page.meetingOccurrenceStart ? formatDateShort(page.meetingOccurrenceStart) : page.title,
+      tabLabel: noteTabLabel(page),
     };
     const tabAccess = await getPageAccessBulk(auth.user.sub, tabRows, request, {
       includeArchived: trashed,
@@ -278,7 +278,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       ...notebookShell(page.parent, { canEdit: canEditNotebook, manager: notebookManager && !trashed, nextNotes }),
       tabs: visible.map((t) => ({
         id: t.id,
-        label: t.meetingOccurrenceStart ? formatDateShort(t.meetingOccurrenceStart) : t.title,
+        label: noteTabLabel(t),
         meeting: mixed ? (t.meetingNote?.title ?? null) : null,
         isNote: t.meetingNoteId !== null,
       })),

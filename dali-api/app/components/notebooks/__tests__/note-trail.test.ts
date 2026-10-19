@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { noteTrail } from "~/components/notebooks/note-trail";
+import { noteTabLabel, noteTrail } from "~/components/notebooks/note-trail";
 
 const location = {
   scopeId: "projects",
@@ -29,5 +29,26 @@ describe("noteTrail", () => {
       { label: "Notes", to: "/documents/nb1" },
       { label: "Agenda" },
     ]);
+  });
+});
+
+describe("noteTabLabel", () => {
+  const occurrence = new Date("2026-10-19T18:00:00Z");
+
+  it("shows a renamed meeting note by its title, not its date", () => {
+    expect(noteTabLabel({ title: "Project Lighthouse", meetingOccurrenceStart: occurrence })).toBe("Project Lighthouse");
+  });
+
+  it("keeps the date a new note was titled with", () => {
+    expect(noteTabLabel({ title: "Oct 19, 2026", meetingOccurrenceStart: occurrence })).toBe("Oct 19, 2026");
+  });
+
+  it("falls back to the meeting date when the title is cleared", () => {
+    expect(noteTabLabel({ title: "", meetingOccurrenceStart: occurrence })).toBe("Oct 19, 2026");
+    expect(noteTabLabel({ title: "   ", meetingOccurrenceStart: occurrence })).toBe("Oct 19, 2026");
+  });
+
+  it("shows a plain document by its title", () => {
+    expect(noteTabLabel({ title: "Alejandro, Leah <> Kiran", meetingOccurrenceStart: null })).toBe("Alejandro, Leah <> Kiran");
   });
 });
