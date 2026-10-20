@@ -1,6 +1,7 @@
 import rrulePkg from "rrule";
 import { prisma } from "~/lib/db";
 import { buildRule } from "~/lib/meeting-occurrences";
+import { formatDateShort } from "~/lib/display";
 import type { JobResult } from "~/jobs/registry";
 
 const { RRule, rrulestr } = rrulePkg as unknown as {
@@ -67,6 +68,18 @@ export function occurrenceKeyMap(rule: string, dtstart: Date, keys: Date[]): Key
   return { moves, ambiguous };
 }
 
+/**
+ * A meeting note is titled with its occurrence's date when it's made, so a note
+ * on a misplaced key carries the misplaced date too. Swaps only that date text,
+ * leaving whatever else someone typed. Null when there's nothing to change.
+ */
+export function retitledNote(title: string, from: Date, to: Date): string | null {
+  const oldLabel = formatDateShort(from);
+  const newLabel = formatDateShort(to);
+  if (oldLabel === newLabel || !title.includes(oldLabel)) return null;
+  return title.replace(oldLabel, newLabel);
+}
+
 type Table = {
   name: string;
   keys: (ownerId: string) => Promise<Date[]>;
@@ -96,11 +109,22 @@ const meetingTables: Table[] = [
     keys: async (id) =>
       (await prisma.page.findMany({ where: { meetingNoteId: id }, select: { meetingOccurrenceStart: true } }))
         .flatMap((r) => present(r.meetingOccurrenceStart)),
-    move: async (id, from, to) =>
-      ifFree(
-        (await prisma.page.count({ where: { meetingNoteId: id, meetingOccurrenceStart: to } })) > 0,
-        () => prisma.page.updateMany({ where: { meetingNoteId: id, meetingOccurrenceStart: from }, data: { meetingOccurrenceStart: to } }),
-      ),
+    move: async (id, from, to) => {
+      if ((await prisma.page.count({ where: { meetingNoteId: id, meetingOccurrenceStart: to } })) > 0) return "taken";
+      const notes = await prisma.page.findMany({
+        where: { meetingNoteId: id, meetingOccurrenceStart: from },
+        select: { id: true, title: true },
+      });
+      const { count } = await prisma.page.updateMany({
+        where: { meetingNoteId: id, meetingOccurrenceStart: from },
+        data: { meetingOccurrenceStart: to },
+      });
+      for (const note of notes) {
+        const title = retitledNote(note.title, from, to);
+        if (title) await prisma.page.update({ where: { id: note.id }, data: { title } });
+      }
+      return count;
+    },
   },
   {
     name: "TimeEntry",
