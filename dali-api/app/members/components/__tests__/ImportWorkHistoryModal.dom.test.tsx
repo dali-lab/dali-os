@@ -163,6 +163,7 @@ describe("ImportWorkHistoryModal", () => {
 
     it.each([
       ["quota", "You've used today's AI limit. Your resume is saved; add jobs by hand or try again tomorrow."],
+      ["rate", "Too many imports in a row. Your resume is saved; try again in a few minutes."],
       ["failed", "Saved as your resume. We couldn't read the jobs from it."],
     ])("shows the %s message and keeps the resume", async (extractError, copy) => {
       respond({ resume: { fileName: "cv.pdf", uploadedAt: "2026-10-20T00:00:00Z" }, extractError });

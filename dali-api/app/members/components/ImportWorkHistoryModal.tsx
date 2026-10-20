@@ -31,7 +31,7 @@ type Row = { job: ImportedJob; checked: boolean; editing: boolean };
 
 const EXTRACT_ERROR_COPY: Record<ExtractError, string> = {
   quota: "You've used today's AI limit. Your resume is saved; add jobs by hand or try again tomorrow.",
-  rate: "You've used today's AI limit. Your resume is saved; add jobs by hand or try again in a few minutes.",
+  rate: "Too many imports in a row. Your resume is saved; try again in a few minutes.",
   ai_unavailable: "Saved as your resume. We couldn't read the jobs from it.",
   failed: "Saved as your resume. We couldn't read the jobs from it.",
 };

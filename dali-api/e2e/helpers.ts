@@ -136,17 +136,17 @@ export async function confirmDialog(page: Page, confirmLabel: string) {
   await dialog.getByRole('button', { name: confirmLabel, exact: true }).click();
 }
 
-/** Turn a registry feature flag on for everyone. The server caches flag rows
- *  for 15s, so a test that reads the flag right after should retry. */
-export async function enableFeatureFlag(key: string) {
+/** Turn a registry feature flag on or off for everyone. The server caches flag
+ *  rows for 15s, so a test that reads the flag right after should retry. */
+export async function setFeatureFlag(key: string, on: boolean) {
   const client = new pg.Client(DATABASE_URL);
   await client.connect();
   try {
     await client.query(
       `INSERT INTO "FeatureFlag" (key, enabled, everyone, "updatedAt")
-       VALUES ($1, true, true, now())
-       ON CONFLICT (key) DO UPDATE SET enabled = true, everyone = true, "updatedAt" = now()`,
-      [key],
+       VALUES ($1, $2, $2, now())
+       ON CONFLICT (key) DO UPDATE SET enabled = $2, everyone = $2, "updatedAt" = now()`,
+      [key, on],
     );
   } finally {
     await client.end();

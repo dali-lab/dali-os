@@ -253,7 +253,8 @@ and `ModalFooter`.
    - Each `extractError` gets its own message:
      - `quota`: "You've used today's AI limit. Your resume is saved; add jobs by hand
        or try again tomorrow."
-     - `rate`: the same, but "try again in a few minutes".
+     - `rate`: "Too many imports in a row. Your resume is saved; try again in a few
+       minutes."
      - `ai_unavailable` and `failed`: "Saved as your resume. We couldn't read the jobs
        from it."
 
