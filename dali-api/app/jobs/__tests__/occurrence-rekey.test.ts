@@ -7,7 +7,7 @@ vi.mock("~/lib/db", () => {
       scheduledMeeting: { findMany: vi.fn() },
       roomBooking: { findMany: vi.fn() },
       meetingAttendance: delegate(),
-      page: delegate(),
+      page: { ...delegate(), update: vi.fn() },
       timeEntry: delegate(),
       meetingException: delegate(),
       meetingReminderLog: delegate(),
@@ -20,7 +20,7 @@ vi.mock("~/lib/db", () => {
 });
 
 import { prisma } from "~/lib/db";
-import { occurrenceKeyMap, runOccurrenceRekey } from "~/jobs/occurrence-rekey.server";
+import { occurrenceKeyMap, retitledNote, runOccurrenceRekey } from "~/jobs/occurrence-rekey.server";
 import { JOBS } from "~/jobs/registry";
 
 const m = prisma as any;
@@ -106,6 +106,27 @@ describe("occurrenceKeyMap", () => {
   });
 });
 
+describe("retitledNote", () => {
+  it("swaps a bare date title", () => {
+    expect(retitledNote("Oct 19, 2026", MON_OCT_19, TUE_OCT_20)).toBe("Oct 20, 2026");
+  });
+
+  it("swaps the date inside a labelled title and keeps the rest", () => {
+    expect(retitledNote("DALI OS Team meeting note (Oct 19, 2026)", MON_OCT_19, TUE_OCT_20)).toBe(
+      "DALI OS Team meeting note (Oct 20, 2026)",
+    );
+  });
+
+  it("leaves a title with no old date alone", () => {
+    expect(retitledNote("Kickoff with partner", MON_OCT_19, TUE_OCT_20)).toBeNull();
+    expect(retitledNote("Oct 20, 2026", MON_OCT_19, TUE_OCT_20)).toBeNull();
+  });
+
+  it("leaves the title alone when the move stays on the same day", () => {
+    expect(retitledNote("Nov 9, 2026", d("2026-11-09T13:00:00Z"), d("2026-11-09T14:00:00Z"))).toBeNull();
+  });
+});
+
 describe("runOccurrenceRekey", () => {
   beforeEach(() => {
     m.scheduledMeeting.findMany.mockResolvedValue([
@@ -116,7 +137,9 @@ describe("runOccurrenceRekey", () => {
   it("moves a meeting's attendance and note onto the corrected key", async () => {
     m.meetingAttendance.findMany.mockResolvedValue([{ occurrenceStart: MON_OCT_19 }, { occurrenceStart: MON_OCT_19 }]);
     m.meetingAttendance.updateMany.mockResolvedValue({ count: 2 });
-    m.page.findMany.mockResolvedValue([{ meetingOccurrenceStart: MON_OCT_19 }]);
+    m.page.findMany.mockImplementation(async (args: any) =>
+      args.select.title ? [{ id: "n1", title: "Retro" }] : [{ meetingOccurrenceStart: MON_OCT_19 }],
+    );
 
     const res = await runOccurrenceRekey();
 
@@ -130,6 +153,33 @@ describe("runOccurrenceRekey", () => {
     });
     expect(m.timeEntry.updateMany).not.toHaveBeenCalled();
     expect(res).toEqual({ items: 3, note: "moved 3 rows, skipped 0 taken keys, 0 ambiguous keys left alone" });
+  });
+
+  it("retitles a moved note whose title carries the old date, and only that one", async () => {
+    m.page.findMany.mockImplementation(async (args: any) =>
+      args.select.title
+        ? [
+            { id: "n1", title: "Oct 19, 2026" },
+            { id: "n2", title: "Retro" },
+          ]
+        : [{ meetingOccurrenceStart: MON_OCT_19 }],
+    );
+
+    await runOccurrenceRekey();
+
+    expect(m.page.update).toHaveBeenCalledTimes(1);
+    expect(m.page.update).toHaveBeenCalledWith({ where: { id: "n1" }, data: { title: "Oct 20, 2026" } });
+  });
+
+  it("neither moves nor retitles a note whose new key is taken", async () => {
+    m.page.findMany.mockResolvedValue([{ meetingOccurrenceStart: MON_OCT_19 }]);
+    m.page.count.mockResolvedValue(1);
+
+    const res = await runOccurrenceRekey();
+
+    expect(m.page.updateMany).not.toHaveBeenCalled();
+    expect(m.page.update).not.toHaveBeenCalled();
+    expect(res.note).toContain("skipped 1 taken keys");
   });
 
   it("skips a move whose new key already has a row instead of merging", async () => {
