@@ -833,6 +833,7 @@ export default [
 
   // Site analytics (client error beacon)
   route("api/analytics/error", "routes/api.analytics.error.ts"),
+  route("api/analytics/pageview", "routes/api.analytics.pageview.ts"),
 
   // Collaborative editing version history
   route("api/collab/versions", "routes/api.collab.versions.ts"),

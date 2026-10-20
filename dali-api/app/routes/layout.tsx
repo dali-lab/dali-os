@@ -19,8 +19,8 @@ import { getBoundFormGateOutstanding } from '~/forms/lib/gate.server'
 import { getActiveCycles } from '~/hiring/lib/cycles'
 import { prisma } from '~/lib/db'
 import { resolvePhotoUrl } from '~/lib/photo'
-import { recordPageView } from '~/lib/analytics'
 import { isTablessRequest } from '~/lib/tabless'
+import { PageViewReporter } from '~/components/PageViewReporter'
 import { isFocusRequest } from '~/lib/focus-mode'
 import { isValidTimezone, resolveUserTimeZone } from '~/lib/timezone'
 import { readDismissedTimeZone } from '~/lib/tz-prompt'
@@ -254,13 +254,6 @@ export async function loader({ request }: Route.LoaderArgs) {
     }
   }
 
-  // Pageview is fire-and-forget — never blocks the response.
-  recordPageView({
-    request,
-    userId: auth.user.sub,
-    sessionId: auth.sessionId,
-  })
-
   const __loaderTotal = performance.now() - __loaderStart
   if (__loaderTotal >= 400) console.log(`[perf-total] layout loader ${__loaderTotal.toFixed(0)}ms`)
 
@@ -309,6 +302,7 @@ export default function AppLayoutRoute() {
   if (instructorChrome) {
     return (
       <FeatureFlagsProvider flags={flags}>
+        <PageViewReporter enabled />
         <InstructorChrome
           impersonating={impersonating}
           impersonationAllowsWrites={impersonationWrites}
@@ -544,6 +538,7 @@ export default function AppLayoutRoute() {
   if (embedded) {
     return (
       <FeatureFlagsProvider flags={flags}>
+        <PageViewReporter enabled />
         <ActivitiesProvider activities={activeActivities}>
         <PageDocProvider>
           {/* The shell above this iframe carries the Guide CTA in its top bar,
@@ -581,6 +576,7 @@ export default function AppLayoutRoute() {
 
   return (
     <FeatureFlagsProvider flags={flags}>
+      <PageViewReporter enabled={tabless} />
       <ActivitiesProvider activities={activeActivities}>
       {/* Above Layout, not inside pageContent: the tabless desktop nav row
           renders the Guide CTA from the shell, outside the routed page. */}

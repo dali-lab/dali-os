@@ -3,14 +3,13 @@
 //   - Analytics = product usage / health ("is it working, is anyone using it").
 //     Bounded retention; never stores PII beyond a userId.
 //
-// Pageviews are written from the app shell loader (routes/layout.tsx) on every
-// authenticated UI navigation. Errors are written from a beacon endpoint
-// posted by the client error boundary + window listeners.
+// Pageviews and their time on page are written from a beacon endpoint posted
+// by PageViewReporter (client-side navigations never re-run the layout
+// loader). Errors are written from a beacon endpoint posted by the client
+// error boundary + window listeners.
 
-// Normalize raw paths to route patterns so the dashboard can group hits.
-// We don't have a runtime route-manifest lookup, so we collapse the segments
-// most likely to be ids (cuids and uuids). This keeps the cardinality of
-// `path` bounded at ~30 patterns rather than ballooning per-row.
+// No runtime route-manifest lookup exists, so id-like segments are collapsed
+// to keep `path` cardinality bounded.
 const CUID_RE = /^c[a-z0-9]{20,}$/i;
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -29,76 +28,97 @@ export function normalizePath(pathname: string): string {
     .join("/");
 }
 
-const TRACKED_PREFIXES = [
-  "/hiring",
-  "/projects",
-  "/members",
-  "/education",
-  "/forms",
-  "/admin",
-  "/core",
-  "/drive",
-  "/resources",
-  "/internal-processes",
-  "/calendar",
-  "/email",
-  "/profile",
-  "/portal",
+const UNTRACKED_ROOTS = [
+  "/api",
+  "/auth",
+  "/oauth",
+  "/.well-known",
+  "/dev-login",
+  "/login",
+  "/logout",
+  "/mcp",
+  "/public-api",
+  "/assets",
+  "/build",
+  "/internal",
 ];
+const FILE_EXTENSION_RE = /\.[A-Za-z0-9]+$/;
 
-// Decide whether a path is worth a pageview row. Skips API/auth/asset noise.
+export type PageViewClient = "web" | "desktop" | "mobile";
+
+export const MAX_DURATION_MS = 30 * 60 * 1000;
+
 export function shouldTrackPath(pathname: string): boolean {
-  if (pathname === "/") return true;
   if (
-    pathname.startsWith("/api/") ||
-    pathname.startsWith("/auth/") ||
-    pathname.startsWith("/oauth/") ||
-    pathname.startsWith("/.well-known/") ||
-    pathname.startsWith("/dev-login") ||
-    pathname === "/login" ||
-    pathname === "/logout"
+    UNTRACKED_ROOTS.some((r) => pathname === r || pathname.startsWith(`${r}/`))
   ) {
     return false;
   }
-  return TRACKED_PREFIXES.some((p) => pathname.startsWith(p));
+  const last = pathname.split("/").pop() ?? "";
+  return !FILE_EXTENSION_RE.test(last);
+}
+
+export function classifyClient(userAgent: string | null): PageViewClient {
+  if (!userAgent) return "web";
+  if (/DALI OS Desktop/i.test(userAgent)) return "desktop";
+  if (/iPhone|iPad|iPod|Android|Mobi/i.test(userAgent)) return "mobile";
+  return "web";
 }
 
 type RecordPageViewInput = {
-  request: Request;
-  userId: string | null;
-  sessionId: string; // hashed session PK, opaque to clients
+  id: string;
+  userId: string;
+  sessionId: string;
+  path: string;
+  referrer?: string | null;
+  userAgent: string | null;
 };
 
-export function recordPageView({
-  request,
-  userId,
-  sessionId,
-}: RecordPageViewInput): void {
-  const url = new URL(request.url);
-  if (!shouldTrackPath(url.pathname)) return;
+export async function recordPageView(
+  input: RecordPageViewInput,
+): Promise<void> {
+  if (!shouldTrackPath(input.path)) return;
+  try {
+    const { prisma } = await import("~/lib/db");
+    await prisma.pageView.create({
+      data: {
+        id: input.id,
+        userId: input.userId,
+        sessionId: input.sessionId,
+        path: normalizePath(input.path),
+        referrer: input.referrer ?? null,
+        client: classifyClient(input.userAgent),
+      },
+    });
+  } catch (err) {
+    if ((err as { code?: string } | null)?.code === "P2002") return;
+    console.error("pageview write failed", {
+      path: input.path,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
 
-  const path = normalizePath(url.pathname);
-  const referrer = request.headers.get("Referer");
-
-  // Detached so a write failure or DB slowness never blocks the response.
-  void (async () => {
-    try {
-      const { prisma } = await import("~/lib/db");
-      await prisma.pageView.create({
-        data: {
-          userId,
-          sessionId,
-          path,
-          referrer: referrer ?? null,
-        },
-      });
-    } catch (err) {
-      console.error("pageview write failed", {
-        path,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
-  })();
+export async function recordPageDuration(input: {
+  id: string;
+  userId: string;
+  durationMs: number;
+}): Promise<void> {
+  const durationMs = Math.min(
+    MAX_DURATION_MS,
+    Math.max(0, Math.round(input.durationMs)),
+  );
+  try {
+    const { prisma } = await import("~/lib/db");
+    await prisma.pageView.updateMany({
+      where: { id: input.id, userId: input.userId },
+      data: { durationMs },
+    });
+  } catch (err) {
+    console.error("pageview duration write failed", {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
 }
 
 type RecordClientErrorInput = {
@@ -132,4 +152,13 @@ export async function recordClientError(
       error: err instanceof Error ? err.message : String(err),
     });
   }
+}
+
+export function formatDuration(ms: number | null): string {
+  if (ms === null || !Number.isFinite(ms) || ms < 0) return "n/a";
+  const totalSeconds = Math.round(ms / 1000);
+  if (totalSeconds < 60) return `${totalSeconds}s`;
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return seconds === 0 ? `${minutes}m` : `${minutes}m ${seconds}s`;
 }

@@ -6,6 +6,7 @@ import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { isCore, isAdmin } from "~/lib/roles";
+import { formatDuration } from "~/lib/analytics";
 import { BarChart3, AlertTriangle } from "lucide-react";
 
 export const handle = adminHandle("analytics");
@@ -20,6 +21,7 @@ export const meta: Route.MetaFunction = () => [
 //   - What features earn their keep? (top routes)
 //   - What can we delete? (bottom routes — rarely-visited paths)
 //   - Is anything broken? (error rate trend + grouped error list)
+//   - Where is it used? (web / desktop / mobile) and is MCP in use?
 
 const RANGE_OPTIONS = [
   { key: "7d", days: 7, label: "7 days" },
@@ -29,7 +31,19 @@ const RANGE_OPTIONS = [
 type RangeKey = (typeof RANGE_OPTIONS)[number]["key"];
 
 type DayRow = { day: string; count: number };
-type RouteRow = { path: string; views: number; users: number };
+type RouteRow = {
+  path: string;
+  views: number;
+  users: number;
+  medianMs: number | null;
+};
+type ClientRow = { client: string | null; views: number; users: number };
+type McpRow = { name: string; calls: number; users: number };
+const CLIENT_LABELS: Record<string, string> = {
+  web: "Web",
+  desktop: "Desktop app",
+  mobile: "Mobile",
+};
 type ErrorRow = {
   message: string;
   count: number;
@@ -92,7 +106,8 @@ export async function loader({ request }: Route.LoaderArgs) {
   const topRoutes = await prisma.$queryRaw<RouteRow[]>`
     SELECT "path",
            COUNT(*)::int AS views,
-           COUNT(DISTINCT "userId")::int AS users
+           COUNT(DISTINCT "userId")::int AS users,
+           percentile_cont(0.5) WITHIN GROUP (ORDER BY "durationMs")::float AS "medianMs"
     FROM "PageView"
     WHERE "createdAt" >= ${since}
     GROUP BY "path"
@@ -107,12 +122,50 @@ export async function loader({ request }: Route.LoaderArgs) {
   const bottomRoutes = await prisma.$queryRaw<RouteRow[]>`
     SELECT "path",
            COUNT(*)::int AS views,
-           COUNT(DISTINCT "userId")::int AS users
+           COUNT(DISTINCT "userId")::int AS users,
+           NULL::float AS "medianMs"
     FROM "PageView"
     WHERE "createdAt" >= ${since}
     GROUP BY "path"
     HAVING COUNT(*) < 5
     ORDER BY views ASC, "path" ASC
+    LIMIT 10
+  `;
+
+  const clientRows = await prisma.$queryRaw<ClientRow[]>`
+    SELECT "client",
+           COUNT(*)::int AS views,
+           COUNT(DISTINCT "userId")::int AS users
+    FROM "PageView"
+    WHERE "createdAt" >= ${since}
+    GROUP BY "client"
+    ORDER BY views DESC
+  `;
+
+  const [mcpTotals] = await prisma.$queryRaw<{ calls: number; users: number }[]>`
+    SELECT COUNT(*)::int AS calls,
+           COUNT(DISTINCT "userId")::int AS users
+    FROM "AuditLog"
+    WHERE "action" = 'mcp.tool_called' AND "createdAt" >= ${since}
+  `;
+  const mcpTools = await prisma.$queryRaw<McpRow[]>`
+    SELECT COALESCE("metadata"->>'toolName', 'unknown') AS name,
+           COUNT(*)::int AS calls,
+           COUNT(DISTINCT "userId")::int AS users
+    FROM "AuditLog"
+    WHERE "action" = 'mcp.tool_called' AND "createdAt" >= ${since}
+    GROUP BY 1
+    ORDER BY calls DESC, name ASC
+    LIMIT 10
+  `;
+  const mcpClients = await prisma.$queryRaw<McpRow[]>`
+    SELECT COALESCE("metadata"->>'clientName', 'unknown') AS name,
+           COUNT(*)::int AS calls,
+           COUNT(DISTINCT "userId")::int AS users
+    FROM "AuditLog"
+    WHERE "action" = 'mcp.tool_called' AND "createdAt" >= ${since}
+    GROUP BY 1
+    ORDER BY calls DESC, name ASC
     LIMIT 10
   `;
 
@@ -149,6 +202,10 @@ export async function loader({ request }: Route.LoaderArgs) {
     trend,
     topRoutes,
     bottomRoutes,
+    clientRows,
+    mcpTotals: mcpTotals ?? { calls: 0, users: 0 },
+    mcpTools,
+    mcpClients,
     errorTrend,
     totalErrors: errorTrend.reduce((s, d) => s + d.count, 0),
     errors: errorRows.map((e) => ({
@@ -184,9 +241,11 @@ function Sparkline({ series, accent }: { series: DayRow[]; accent: "primary" | "
 function RouteList({
   rows,
   emptyText,
+  showMedian = false,
 }: {
   rows: RouteRow[];
   emptyText: string;
+  showMedian?: boolean;
 }) {
   const maxViews = Math.max(1, ...rows.map((r) => r.views));
   if (rows.length === 0) {
@@ -199,6 +258,11 @@ function RouteList({
           <div className="flex items-center justify-between gap-3">
             <code className="font-mono text-xs text-foreground truncate">{r.path || "/"}</code>
             <div className="flex items-center gap-3 text-xs text-muted-foreground whitespace-nowrap">
+              {showMedian && (
+                <span className="tabular-nums">
+                  Median time {formatDuration(r.medianMs)}
+                </span>
+              )}
               <span>{r.users} users</span>
               <span className="tabular-nums">{r.views} views</span>
             </div>
@@ -215,6 +279,25 @@ function RouteList({
   );
 }
 
+function McpList({ title, rows }: { title: string; rows: McpRow[] }) {
+  return (
+    <div>
+      <h3 className="px-4 pt-3 text-xs font-medium text-muted-foreground">{title}</h3>
+      <ul className="divide-y divide-border">
+        {rows.map((r) => (
+          <li key={r.name} className="px-4 py-2 text-sm flex items-center justify-between gap-3">
+            <code className="font-mono text-xs text-foreground truncate">{r.name}</code>
+            <div className="flex items-center gap-3 text-xs text-muted-foreground whitespace-nowrap">
+              <span>{r.users} users</span>
+              <span className="tabular-nums">{r.calls} calls</span>
+            </div>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 export default function AdminConsoleAnalytics() {
   const {
     rangeKey,
@@ -224,6 +307,10 @@ export default function AdminConsoleAnalytics() {
     trend,
     topRoutes,
     bottomRoutes,
+    clientRows,
+    mcpTotals,
+    mcpTools,
+    mcpClients,
     errorTrend,
     totalErrors,
     errors,
@@ -276,7 +363,7 @@ export default function AdminConsoleAnalytics() {
           <h2 className="text-sm font-medium text-foreground px-4 py-3 border-b border-border">
             Most-used routes
           </h2>
-          <RouteList rows={topRoutes} emptyText="No pageviews in window." />
+          <RouteList rows={topRoutes} emptyText="No pageviews in window." showMedian />
         </section>
 
         <section className="bg-card border border-border rounded-lg overflow-hidden">
@@ -285,8 +372,55 @@ export default function AdminConsoleAnalytics() {
           </h2>
           <RouteList
             rows={bottomRoutes}
-            emptyText="Every visited route saw at least 5 hits — nothing obviously dead."
+            emptyText="Every visited route saw at least 5 hits. Nothing looks unused."
           />
+        </section>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <section className="bg-card border border-border rounded-lg overflow-hidden">
+          <h2 className="text-sm font-medium text-foreground px-4 py-3 border-b border-border">
+            By app
+          </h2>
+          {clientRows.length === 0 ? (
+            <p className="px-4 py-6 text-sm text-muted-foreground/70">No pageviews in window.</p>
+          ) : (
+            <ul className="divide-y divide-border">
+              {clientRows.map((r) => (
+                <li
+                  key={r.client ?? "unknown"}
+                  className="px-4 py-2.5 text-sm flex items-center justify-between gap-3"
+                >
+                  <span className="text-foreground">
+                    {r.client ? (CLIENT_LABELS[r.client] ?? r.client) : "Not recorded"}
+                  </span>
+                  <div className="flex items-center gap-3 text-xs text-muted-foreground whitespace-nowrap">
+                    <span>{r.users} users</span>
+                    <span className="tabular-nums">{r.views} views</span>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+
+        <section className="bg-card border border-border rounded-lg overflow-hidden">
+          <div className="px-4 py-3 border-b border-border flex items-baseline gap-2">
+            <h2 className="text-sm font-medium text-foreground">MCP</h2>
+            <span className="text-xs text-muted-foreground font-normal">
+              ({mcpTotals.calls} calls · {mcpTotals.users} users · {rangeDays}d)
+            </span>
+          </div>
+          {mcpTotals.calls === 0 ? (
+            <p className="px-4 py-6 text-sm text-muted-foreground/70">
+              No MCP tool calls in the last {rangeDays} days.
+            </p>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 divide-y sm:divide-y-0 sm:divide-x divide-border">
+              <McpList title="Top tools" rows={mcpTools} />
+              <McpList title="Top clients" rows={mcpClients} />
+            </div>
+          )}
         </section>
       </div>
 
