@@ -1,42 +1,17 @@
-/**
- * Move occurrence-keyed rows onto the keys buildRule now produces.
- *
- * buildRule used to expand RRULEs in UTC, while BYDAY and times are Eastern
- * wall-clock (RepeatField and Google both read them that way). A series at or
- * after 8pm EDT / 7pm EST therefore expanded a day early, and any series kept
- * its UTC time across DST. Every key written under that expansion — rosters,
- * notes, recordings, hours, cancellations — belongs to the real occurrence
- * that snapped onto it (resolveOccurrence: nearest start, ties to the earlier).
- * This inverts that snap: each real occurrence finds the old key it would have
- * landed on, and an old key claimed by exactly one real occurrence moves there.
- * An old key claimed by two (a series' first week can fold two nights onto one
- * key) or by none is listed, not moved. A row whose new key is already taken
- * is listed, not merged.
- *
- * Idempotent. Dry run by default.
- *
- * Usage:
- *   npx tsx scripts/rekey-local-occurrences.ts            # dry run
- *   npx tsx scripts/rekey-local-occurrences.ts --commit   # write
- *
- * Needs DATABASE_URL.
- */
-
 import rrulePkg from "rrule";
-import { PrismaClient } from "../app/generated/prisma/client.js";
-import { PrismaPg } from "@prisma/adapter-pg";
-import { buildRule } from "../app/lib/meeting-occurrences";
+import { prisma } from "~/lib/db";
+import { buildRule } from "~/lib/meeting-occurrences";
+import type { JobResult } from "~/jobs/registry";
 
 const { RRule, rrulestr } = rrulePkg as unknown as {
   RRule: typeof import("rrule").RRule;
   rrulestr: typeof import("rrule").rrulestr;
 };
 
-const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL! });
-const prisma = new PrismaClient({ adapter });
-
 const BAND_MS = 40 * 24 * 60 * 60_000;
 
+// buildRule's old expansion: the real UTC instant as the anchor, so an evening
+// series landed a day early and every series kept its UTC hour across DST.
 function legacyUtcStarts(rule: string, dtstart: Date, from: Date, to: Date): Date[] {
   try {
     const trimmed = rule.trim();
@@ -52,9 +27,16 @@ function legacyUtcStarts(rule: string, dtstart: Date, from: Date, to: Date): Dat
   }
 }
 
-type KeyMap = { moves: Map<number, Date>; ambiguous: Date[] };
+export type KeyMap = { moves: Map<number, Date>; ambiguous: Date[] };
 
-function keyMap(rule: string, dtstart: Date, keys: Date[]): KeyMap {
+/**
+ * Where each stored key belongs now. Every key written under the old expansion
+ * belongs to the real occurrence that snapped onto it (resolveOccurrence:
+ * nearest start, ties to the earlier), so each real occurrence claims the old
+ * key nearest it. A key claimed by exactly one occurrence moves there; one
+ * claimed by two is ambiguous; one claimed by none stays.
+ */
+export function occurrenceKeyMap(rule: string, dtstart: Date, keys: Date[]): KeyMap {
   const empty: KeyMap = { moves: new Map(), ambiguous: [] };
   if (keys.length === 0) return empty;
   const times = keys.map((k) => k.getTime());
@@ -95,6 +77,8 @@ type Table = {
 const ifFree = async (taken: boolean, write: () => Promise<{ count: number }>) =>
   taken ? ("taken" as const) : (await write()).count;
 
+const present = (d: Date | null) => (d ? [d] : []);
+
 const meetingTables: Table[] = [
   {
     name: "MeetingAttendance",
@@ -111,7 +95,7 @@ const meetingTables: Table[] = [
     name: "Page (meeting note)",
     keys: async (id) =>
       (await prisma.page.findMany({ where: { meetingNoteId: id }, select: { meetingOccurrenceStart: true } }))
-        .flatMap((r) => (r.meetingOccurrenceStart ? [r.meetingOccurrenceStart] : [])),
+        .flatMap((r) => present(r.meetingOccurrenceStart)),
     move: async (id, from, to) =>
       ifFree(
         (await prisma.page.count({ where: { meetingNoteId: id, meetingOccurrenceStart: to } })) > 0,
@@ -122,7 +106,7 @@ const meetingTables: Table[] = [
     name: "TimeEntry",
     keys: async (id) =>
       (await prisma.timeEntry.findMany({ where: { scheduledMeetingId: id }, select: { occurrenceStart: true } }))
-        .flatMap((r) => (r.occurrenceStart ? [r.occurrenceStart] : [])),
+        .flatMap((r) => present(r.occurrenceStart)),
     move: async (id, from, to) =>
       ifFree(
         (await prisma.timeEntry.count({ where: { scheduledMeetingId: id, occurrenceStart: to } })) > 0,
@@ -155,7 +139,7 @@ const meetingTables: Table[] = [
     name: "MeetingRecording",
     keys: async (id) =>
       (await prisma.meetingRecording.findMany({ where: { scheduledMeetingId: id }, select: { occurrenceStart: true } }))
-        .flatMap((r) => (r.occurrenceStart ? [r.occurrenceStart] : [])),
+        .flatMap((r) => present(r.occurrenceStart)),
     move: async (id, from, to) =>
       (await prisma.meetingRecording.updateMany({ where: { scheduledMeetingId: id, occurrenceStart: from }, data: { occurrenceStart: to } })).count,
   },
@@ -163,7 +147,7 @@ const meetingTables: Table[] = [
     name: "Notification",
     keys: async (id) =>
       (await prisma.notification.findMany({ where: { scheduledMeetingId: id }, select: { occurrenceStart: true } }))
-        .flatMap((r) => (r.occurrenceStart ? [r.occurrenceStart] : [])),
+        .flatMap((r) => present(r.occurrenceStart)),
     move: async (id, from, to) =>
       (await prisma.notification.updateMany({ where: { scheduledMeetingId: id, occurrenceStart: from }, data: { occurrenceStart: to } })).count,
   },
@@ -191,52 +175,41 @@ const roomTables: Table[] = [
   },
 ];
 
-async function rekey(
-  label: string,
-  ownerId: string,
-  rule: string,
-  dtstart: Date,
-  tables: Table[],
-  commit: boolean,
-): Promise<number> {
-  const perTable = await Promise.all(tables.map(async (t) => ({ t, keys: await t.keys(ownerId) })));
-  const { moves, ambiguous } = keyMap(rule, dtstart, perTable.flatMap((p) => p.keys));
-  if (moves.size === 0 && ambiguous.length === 0) return 0;
+type Counts = { moved: number; skipped: number; ambiguous: number };
 
-  console.log(`\n${label} (${ownerId}) ${rule}`);
-  for (const a of ambiguous) console.log(`  AMBIGUOUS ${a.toISOString()}: two occurrences fold onto it, left alone`);
-  let changed = 0;
+async function rekey(label: string, ownerId: string, rule: string, dtstart: Date, tables: Table[], counts: Counts) {
+  const perTable = await Promise.all(tables.map(async (t) => ({ t, keys: await t.keys(ownerId) })));
+  const { moves, ambiguous } = occurrenceKeyMap(rule, dtstart, perTable.flatMap((p) => p.keys));
+  for (const a of ambiguous) {
+    counts.ambiguous++;
+    console.log(`occurrence-rekey: ${label} (${ownerId}) ${a.toISOString()} AMBIGUOUS, left alone`);
+  }
   for (const { t, keys } of perTable) {
     const own = new Set(keys.map((k) => k.getTime()));
     for (const [from, to] of moves) {
       if (!own.has(from)) continue;
-      const line = `  ${t.name}: ${new Date(from).toISOString()} -> ${to.toISOString()}`;
-      if (!commit) {
-        console.log(line);
-        changed++;
-        continue;
-      }
+      const line = `occurrence-rekey: ${label} (${ownerId}) ${t.name} ${new Date(from).toISOString()} -> ${to.toISOString()}`;
       const res = await t.move(ownerId, new Date(from), to);
-      if (res === "taken") console.log(`${line}  SKIPPED, new key already has a row`);
-      else {
-        console.log(`${line}  (${res} rows)`);
-        changed += res;
+      if (res === "taken") {
+        counts.skipped++;
+        console.log(`${line} SKIPPED, new key already has a row`);
+      } else {
+        counts.moved += res;
+        console.log(`${line} (${res} rows)`);
       }
     }
   }
-  return changed;
 }
 
-async function main() {
-  const commit = process.argv.includes("--commit");
-  let total = 0;
+export async function runOccurrenceRekey(): Promise<JobResult> {
+  const counts: Counts = { moved: 0, skipped: 0, ambiguous: 0 };
 
   const meetings = await prisma.scheduledMeeting.findMany({
     where: { recurrenceRule: { not: null }, selectedAt: { not: null } },
     select: { id: true, title: true, recurrenceRule: true, selectedAt: true },
   });
   for (const m of meetings) {
-    total += await rekey(m.title, m.id, m.recurrenceRule!, m.selectedAt!, meetingTables, commit);
+    await rekey(m.title, m.id, m.recurrenceRule!, m.selectedAt!, meetingTables, counts);
   }
 
   const bookings = await prisma.roomBooking.findMany({
@@ -244,16 +217,10 @@ async function main() {
     select: { id: true, title: true, recurrenceRule: true, start: true },
   });
   for (const b of bookings) {
-    total += await rekey(`Room: ${b.title}`, b.id, b.recurrenceRule!, b.start, roomTables, commit);
+    await rekey(`Room: ${b.title}`, b.id, b.recurrenceRule!, b.start, roomTables, counts);
   }
 
-  console.log(`\n${commit ? "Moved" : "Would move"} ${total} ${commit ? "rows" : "key groups"}.`);
-  if (!commit) console.log("Dry run. Re-run with --commit to write.");
+  const note = `moved ${counts.moved} rows, skipped ${counts.skipped} taken keys, ${counts.ambiguous} ambiguous keys left alone`;
+  console.log(`occurrence-rekey: ${note}`);
+  return { items: counts.moved, note };
 }
-
-main()
-  .catch((err) => {
-    console.error(err);
-    process.exitCode = 1;
-  })
-  .finally(() => prisma.$disconnect());
