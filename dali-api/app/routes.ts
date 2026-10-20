@@ -468,6 +468,7 @@ export default [
   route("api/domains/:domainId/leads", "admin/routes/api.domains.$domainId.leads.ts"),
   route("api/members", "admin/routes/api.members.ts"),
   route("api/members/:memberId/roles", "admin/routes/api.members.$memberId.roles.ts"),
+  route("api/members/:id/resume", "routes/api.members.$id.resume.ts"),
 
   // Groups (admin) and notifications (per-user + admin send)
   route("api/groups", "admin/routes/api.groups.ts"),

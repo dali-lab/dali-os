@@ -12,7 +12,8 @@ vi.mock("~/lib/meeting-recording.server", () => ({
   storedLines: vi.fn(),
 }));
 vi.mock("~/lib/ai-usage.server", () => ({ recordTokenUsage: vi.fn() }));
-vi.mock("~/lib/ai.server", () => ({
+vi.mock("~/lib/ai.server", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("~/lib/ai.server")>()),
   generateShortText: vi.fn(),
   resolveAiProvider: vi.fn(),
 }));

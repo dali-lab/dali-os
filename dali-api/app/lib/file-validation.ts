@@ -50,6 +50,15 @@ export const FORM_UPLOAD_CAP: UploadCap = {
   expiresIn: 900,
 };
 
+/** Prefixes minted only by the server. A client-supplied key under one is
+ *  refused at presign and never signed for read. */
+export const RESERVED_UPLOAD_PREFIXES = ["uploads/payroll-imports/", "uploads/resumes/"];
+
+export function isReservedUploadKey(key: string): boolean {
+  const scoped = `uploads/${key.replace(/^\/+/, "").replace(/^uploads\//, "")}`;
+  return RESERVED_UPLOAD_PREFIXES.some((p) => scoped.startsWith(p));
+}
+
 /** The size cap and presigned-POST lifetime for an upload key. Accepts the key
  *  with or without its `uploads/` scope, since the browser builds the prefix
  *  and the presign route adds the scope. Shared by the client pre-check and
