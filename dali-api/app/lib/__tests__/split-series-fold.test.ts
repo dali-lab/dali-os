@@ -140,17 +140,17 @@ describe("eligibility", () => {
     expect(p.skipReason).toBeNull();
   });
 
-  it("keeps the rule across the Nov 2 DST change", () => {
-    const keys = [d("2026-10-26T13:00:00Z"), d("2026-11-02T13:00:00Z"), d("2026-11-09T13:00:00Z")];
+  it("keeps the rule across the Nov 1 DST change", () => {
+    const keys = [d("2026-10-26T13:00:00Z"), d("2026-11-02T14:00:00Z"), d("2026-11-09T14:00:00Z")];
     const p = fold(data(), data({ recordings: keys.map((k, i) => ({ id: `r${i}`, key: k })) }));
     expect(p.skipReason).toBeNull();
     expect(p.recordingMoves).toEqual(["r0", "r1", "r2"]);
   });
 
   it("skips when a key is an hour off the rule", () => {
-    const p = fold(data(), data({ notes: [note("n1", OCT5), note("n2", d("2026-11-09T14:00:00Z"))] }));
+    const p = fold(data(), data({ notes: [note("n1", OCT5), note("n2", d("2026-11-09T13:00:00Z"))] }));
     expect(p.skipReason).toMatch(/^times differ, needs continuation/);
-    expect(p.skipReason).toContain("2026-11-09T14:00:00.000Z");
+    expect(p.skipReason).toContain("2026-11-09T13:00:00.000Z");
     expect(p.skipReason).not.toContain("2026-10-05");
     expect(p.noteMoves).toEqual([]);
   });

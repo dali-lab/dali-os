@@ -80,6 +80,7 @@ import { runDailyDigest, runWeeklyDigest } from "~/lib/notification-digest.serve
 import { runRetentionJanitor } from "~/jobs/retention-janitor.server";
 import { runDriveRootsReparent } from "~/jobs/drive-roots-reparent.server";
 import { runMentorNotesToNotebooks } from "~/jobs/mentor-notes-to-notebooks.server";
+import { runOccurrenceRekey } from "~/jobs/occurrence-rekey.server";
 import { runSprintLifecycle } from "~/jobs/sprint-lifecycle.server";
 import { runFormWindows } from "~/jobs/form-windows.server";
 import { runInterviewReminders } from "~/jobs/interview-reminders.server";
@@ -570,6 +571,14 @@ export const JOBS: JobDefinition[] = [
     intervalMinutes: 1,
     enabledByDefault: false,
     handler: runMentorNotesToNotebooks,
+  },
+  {
+    name: "occurrence-rekey",
+    description:
+      "One-time: moves attendance, notes, hours, recordings and cancellations of repeating meetings and room bookings onto the dates repeat rules now produce (rules used to expand in UTC, so evening series landed a day early and every series shifted an hour across DST). Run it once after the fix deploys. Idempotent. Ambiguous or already-taken dates are logged and left alone.",
+    intervalMinutes: 1440,
+    enabledByDefault: false,
+    handler: runOccurrenceRekey,
   },
   {
     name: "recording-finalizer",

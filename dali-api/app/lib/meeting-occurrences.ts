@@ -6,7 +6,7 @@
 // any override.
 
 import rrulePkg from "rrule";
-import type { RRule as RRuleType } from "rrule";
+import { APPLICATION_TZ, getZonedParts, zonedWallTimeUtc } from "~/lib/timezone";
 
 const { RRule, rrulestr } = rrulePkg as unknown as {
   RRule: typeof import("rrule").RRule;
@@ -27,16 +27,60 @@ export type Occurrence = {
   end: Date;
 };
 
-export function buildRule(rule: string, dtstart: Date): RRuleType | null {
+export type MeetingRule = {
+  between(after: Date, before: Date, inc?: boolean): Date[];
+  all(iterator?: (d: Date, i: number) => boolean): Date[];
+  options: { count: number | null; until: Date | null };
+};
+
+// Floating time: the lab wall clock written into a UTC Date, which is the frame
+// rrule expands in. BYDAY and the time of day are Eastern (RepeatField and
+// Google both mean them that way), so expanding the real UTC instant puts an
+// evening series on the wrong day and keeps its UTC hour across DST.
+function toFloating(d: Date): Date {
+  const p = getZonedParts(d, APPLICATION_TZ);
+  return new Date(Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute, d.getUTCSeconds()));
+}
+
+function fromFloating(f: Date): Date {
+  const wall = zonedWallTimeUtc(
+    f.getUTCFullYear(),
+    f.getUTCMonth() + 1,
+    f.getUTCDate(),
+    f.getUTCHours(),
+    f.getUTCMinutes(),
+    APPLICATION_TZ,
+  );
+  return new Date(wall.getTime() + f.getUTCSeconds() * 1000);
+}
+
+// Wider than any zone offset, so a floating window covers the real one.
+const FLOATING_PAD_MS = 24 * 60 * 60_000;
+
+export function buildRule(rule: string, dtstart: Date): MeetingRule | null {
   try {
     const trimmed = rule.trim();
     const rrulePart = trimmed.toUpperCase().startsWith("RRULE:") ? trimmed : `RRULE:${trimmed}`;
-    const pad = (n: number) => String(n).padStart(2, "0");
-    const dt =
-      `${dtstart.getUTCFullYear()}${pad(dtstart.getUTCMonth() + 1)}${pad(dtstart.getUTCDate())}` +
-      `T${pad(dtstart.getUTCHours())}${pad(dtstart.getUTCMinutes())}${pad(dtstart.getUTCSeconds())}Z`;
-    const parsed = rrulestr(`DTSTART:${dt}\n${rrulePart}`);
-    return parsed instanceof RRule ? parsed : null;
+    const parsed = rrulestr(rrulePart);
+    if (!(parsed instanceof RRule)) return null;
+    const until = parsed.options.until;
+    const floating = new RRule({
+      ...parsed.origOptions,
+      dtstart: toFloating(new Date(Math.floor(dtstart.getTime() / 1000) * 1000)),
+      until: until ? toFloating(until) : null,
+    });
+    return {
+      between(after, before, inc = false) {
+        return floating
+          .between(new Date(after.getTime() - FLOATING_PAD_MS), new Date(before.getTime() + FLOATING_PAD_MS), true)
+          .map(fromFloating)
+          .filter((d) => (inc ? d >= after && d <= before : d > after && d < before));
+      },
+      all(iterator) {
+        return floating.all(iterator && ((d, i) => iterator(fromFloating(d), i))).map(fromFloating);
+      },
+      options: { count: parsed.options.count, until },
+    };
   } catch {
     return null;
   }
