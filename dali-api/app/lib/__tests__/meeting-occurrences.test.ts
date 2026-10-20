@@ -106,6 +106,52 @@ describe("expandOccurrences", () => {
     ).toEqual([]);
   });
 
+  it("keeps an evening series on its Eastern weekday", () => {
+    // Tue/Thu 8:30pm EDT is Wed/Fri in UTC.
+    const occs = expandOccurrences(
+      weekly({ selectedAt: new Date("2026-09-18T00:30:00Z"), recurrenceRule: "FREQ=WEEKLY;BYDAY=TU,TH" }),
+      [],
+      new Date("2026-10-19T00:00:00Z"),
+      new Date("2026-10-24T00:00:00Z"),
+    );
+    expect(occs.map((o) => o.originalStart)).toEqual([
+      new Date("2026-10-21T00:30:00Z"),
+      new Date("2026-10-23T00:30:00Z"),
+    ]);
+  });
+
+  it("keeps the Eastern wall-clock time across a DST change", () => {
+    const occs = expandOccurrences(
+      weekly({ selectedAt: new Date("2026-10-27T20:30:00Z"), recurrenceRule: "FREQ=WEEKLY;BYDAY=TU" }),
+      [],
+      new Date("2026-10-27T00:00:00Z"),
+      new Date("2026-11-04T00:00:00Z"),
+    );
+    // 4:30pm EDT, then 4:30pm EST.
+    expect(occs.map((o) => o.originalStart)).toEqual([
+      new Date("2026-10-27T20:30:00Z"),
+      new Date("2026-11-03T21:30:00Z"),
+    ]);
+  });
+
+  it("includes an evening occurrence on the UNTIL day", () => {
+    // UNTIL is 11:59:59pm EST on Tue Nov 17.
+    const occs = expandOccurrences(
+      weekly({
+        selectedAt: new Date("2026-11-04T02:00:00Z"),
+        recurrenceRule: "FREQ=WEEKLY;BYDAY=TU;UNTIL=20261118T045959Z",
+      }),
+      [],
+      new Date("2026-11-01T00:00:00Z"),
+      new Date("2026-12-01T00:00:00Z"),
+    );
+    expect(occs.map((o) => o.originalStart)).toEqual([
+      new Date("2026-11-04T02:00:00Z"),
+      new Date("2026-11-11T02:00:00Z"),
+      new Date("2026-11-18T02:00:00Z"),
+    ]);
+  });
+
   it("returns nothing for an unparseable rule", () => {
     expect(
       expandOccurrences(
@@ -161,6 +207,13 @@ describe("resolveOccurrence", () => {
       expect(occ.originalStart).toEqual(new Date("2026-07-22T15:00:00Z"));
       expect(occ.start).toEqual(new Date("2026-07-24T18:00:00Z"));
     }
+  });
+
+  it("resolves tonight's evening occurrence to tonight, not the night before", () => {
+    const evening = series({ selectedAt: new Date("2026-09-18T00:30:00Z"), recurrenceRule: "FREQ=WEEKLY;BYDAY=TU,TH" });
+    expect(resolveOccurrence(evening, [], new Date("2026-10-21T00:30:00Z")).originalStart).toEqual(
+      new Date("2026-10-21T00:30:00Z"),
+    );
   });
 
   it("keeps a one-off meeting on its one key", () => {

@@ -17,6 +17,7 @@ vi.mock("~/lib/roles", () => ({ currentTerm: vi.fn() }));
 
 import { prisma } from "~/lib/db";
 import { currentTerm } from "~/lib/roles";
+import { APPLICATION_TZ, getZonedParts, zonedWallTimeUtc } from "~/lib/timezone";
 import {
   assertMeetingRoomsFree,
   bookRoomsForEvent,
@@ -56,6 +57,12 @@ const at = (iso: string) => new Date(iso);
 // buildRule's RRULE anchor drops milliseconds, so an occurrence resolved by
 // exact originalStart match needs a whole-second "now" to compare against.
 const nowSec = () => new Date(Math.floor(Date.now() / 1000) * 1000);
+// Series repeat on the lab wall clock, so N weeks on is not always N * 7 * 24h.
+const weeksLater = (d: Date, n: number) => {
+  const p = getZonedParts(d, APPLICATION_TZ);
+  const wall = zonedWallTimeUtc(p.year, p.month, p.day + 7 * n, p.hour, p.minute, APPLICATION_TZ);
+  return new Date(wall.getTime() + d.getUTCSeconds() * 1000);
+};
 
 function meeting(over: Record<string, unknown> = {}) {
   return {
@@ -275,12 +282,11 @@ describe("createRoomBooking", () => {
     const ok = await createRoomBooking(b);
     expect(ok).toMatchObject({ ok: true });
     expect(m.roomBooking.create.mock.calls[0]![0].data.recurrenceRule).toBe("FREQ=WEEKLY;COUNT=4");
-    // buildRule drops milliseconds from the anchor, so compare to the second.
     const seriesEnd = m.roomBooking.create.mock.calls[0]![0].data.seriesEnd as Date;
-    expect(Math.abs(seriesEnd.getTime() - (b.end.getTime() + 21 * DAY))).toBeLessThan(1000);
+    expect(seriesEnd).toEqual(new Date(weeksLater(b.start, 3).getTime() + H));
 
     // A single booking that only overlaps the third week's occurrence.
-    const week3Start = new Date(b.start.getTime() + 14 * DAY);
+    const week3Start = weeksLater(b.start, 2);
     m.roomBooking.findMany.mockResolvedValue([
       {
         id: "conflict",
