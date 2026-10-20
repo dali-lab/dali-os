@@ -313,8 +313,8 @@ describe("POST /api/upload/presign response shape", () => {
     expect(isLabMember).not.toHaveBeenCalled();
   });
 
-  it.each(["payroll-imports/x.csv", "uploads/payroll-imports/uuid-timesheet.csv"])(
-    "refuses the payroll-import prefix (%s): only the admin tool mints those keys",
+  it.each(["payroll-imports/x.csv", "uploads/payroll-imports/uuid-timesheet.csv", "resumes/x", "uploads/resumes/x"])(
+    "refuses the server-minted prefix (%s)",
     async (key) => {
       const res = await action({
         request: makeRequest({ key, contentType: "text/csv", contentLength: 100 }),

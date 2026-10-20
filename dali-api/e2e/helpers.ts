@@ -135,3 +135,35 @@ export async function confirmDialog(page: Page, confirmLabel: string) {
   await expect(dialog).toBeVisible();
   await dialog.getByRole('button', { name: confirmLabel, exact: true }).click();
 }
+
+/** Turn a registry feature flag on for everyone. The server caches flag rows
+ *  for 15s, so a test that reads the flag right after should retry. */
+export async function enableFeatureFlag(key: string) {
+  const client = new pg.Client(DATABASE_URL);
+  await client.connect();
+  try {
+    await client.query(
+      `INSERT INTO "FeatureFlag" (key, enabled, everyone, "updatedAt")
+       VALUES ($1, true, true, now())
+       ON CONFLICT (key) DO UPDATE SET enabled = true, everyone = true, "updatedAt" = now()`,
+      [key],
+    );
+  } finally {
+    await client.end();
+  }
+}
+
+/** Remove work experience rows the import spec added, so reruns start clean. */
+export async function deleteWorkExperiences(userEmail: string, companies: string[]) {
+  const client = new pg.Client(DATABASE_URL);
+  await client.connect();
+  try {
+    await client.query(
+      `DELETE FROM "WorkExperience"
+       WHERE company = ANY($2) AND "userId" IN (SELECT id FROM "User" WHERE "daliEmail" = $1)`,
+      [userEmail, companies],
+    );
+  } finally {
+    await client.end();
+  }
+}

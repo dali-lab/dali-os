@@ -57,6 +57,8 @@ import {
   parseWorkExperience,
   type WorkExperienceItem,
 } from "~/members/lib/work-experience";
+import { isFeatureEnabled } from "~/lib/feature-flags.server";
+import { MAX_IMPORTED_JOBS, type SavePayload } from "~/members/lib/work-history-import";
 import { getEducationProfile } from "~/education/lib/engagement.server";
 import type { AttendanceSummary } from "~/education/lib/session-time";
 import {
@@ -129,6 +131,9 @@ export type ProfilePageData = {
    *  isn't on the reviewer roster this cycle. */
   showReviewsRow: boolean;
   isSelf: boolean;
+  /** The stored resume; the file key never leaves the server. Null unless the
+   *  viewer is the member or an admin. */
+  resume: { fileName: string; uploadedAt: string; sizeBytes: number | null } | null;
   /** The viewer's own anonymous coffee chat invite to this member is out.
    *  Never reflects invites this member sent. */
   coffeeChatSent: boolean;
@@ -315,6 +320,10 @@ export async function loadProfilePage({
         },
       },
       linkedinUrl: true,
+      resumeKey: true,
+      resumeFileName: true,
+      resumeSizeBytes: true,
+      resumeUploadedAt: true,
       githubUsername: true,
       personalSite: true,
       timeZone: true,
@@ -611,6 +620,10 @@ export async function loadProfilePage({
     dartmouthDepartmentClass,
     createdAt: memberCreatedAt,
     daliMember: memberDaliMember,
+    resumeKey,
+    resumeFileName,
+    resumeSizeBytes,
+    resumeUploadedAt,
     ...memberFields
   } = member;
 
@@ -642,6 +655,10 @@ export async function loadProfilePage({
     pendingReviews,
     showReviewsRow: pendingReviews > 0,
     isSelf,
+    resume:
+      resumeKey && resumeFileName && resumeUploadedAt && (isSelf || adminViewer)
+        ? { fileName: resumeFileName, uploadedAt: resumeUploadedAt.toISOString(), sizeBytes: resumeSizeBytes }
+        : null,
     coffeeChatSent: isSelf ? false : await hasOutgoingCoffeeChat(auth.user.sub, targetId),
     canEdit,
     canManageEligibility,
@@ -670,7 +687,41 @@ export async function loadProfilePage({
 
 export type ProfileActionResult =
   | { error: string }
+  | { imported: number }
   | null;
+
+async function importExperiences(
+  request: Request,
+  form: FormData,
+  viewerId: string,
+  targetId: string,
+): Promise<ProfileActionResult> {
+  const roles = await getUserRoles(viewerId, request);
+  if (viewerId !== targetId || !(await isFeatureEnabled("work-history-import", viewerId, roles, request))) {
+    return { error: "You can only import your own work history." };
+  }
+
+  let jobs: unknown;
+  try {
+    jobs = JSON.parse(String(form.get("jobs") ?? ""));
+  } catch {
+    return { error: "Couldn't read the jobs to add." };
+  }
+  if (!Array.isArray(jobs) || jobs.length === 0) return { error: "Pick at least one job to add." };
+  if (jobs.length > MAX_IMPORTED_JOBS) return { error: `Add up to ${MAX_IMPORTED_JOBS} jobs at a time.` };
+
+  const rows = [];
+  for (const [i, job] of (jobs as Partial<SavePayload>[]).entries()) {
+    const get = (field: string) => String((job as Record<string, unknown> | null)?.[field] ?? "");
+    const parsed = parseWorkExperience(get);
+    if (!parsed.ok) {
+      return { error: `Row ${i + 1} (${get("position").trim()} at ${get("company").trim()}): ${parsed.error}` };
+    }
+    rows.push({ ...parsed.value, userId: targetId });
+  }
+  await prisma.workExperience.createMany({ data: rows });
+  return { imported: rows.length };
+}
 
 export async function runProfileAction({
   request,
@@ -744,6 +795,10 @@ export async function runProfileAction({
       data: { photoUrl: photoUrlRaw === "" ? null : photoUrlRaw },
     });
     return redirect(redirectPathFor(request, targetId));
+  }
+
+  if (intent === "import-experiences") {
+    return importExperiences(request, form, auth.user.sub, targetId);
   }
 
   // Default: profile field update. Editable by admins or the member themself.

@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   fileMatchesAccept,
+  isReservedUploadKey,
   MAX_FILE_STORE_BYTES,
   MAX_FORM_UPLOAD_BYTES,
   MAX_UPLOAD_BYTES,
@@ -101,4 +102,24 @@ describe("uploadCapForKey", () => {
     expect(cap.label).toBe("10 MB");
     expect(cap.expiresIn).toBe(300);
   });
+});
+
+describe("isReservedUploadKey", () => {
+  it.each([
+    "payroll-imports/x.csv",
+    "uploads/payroll-imports/x.csv",
+    "/payroll-imports/x.csv",
+    "//uploads/resumes/u1/a.pdf",
+    "resumes/u1/a.pdf",
+    "uploads/resumes/u1/a.pdf",
+  ])("reserves %s", (key) => {
+    expect(isReservedUploadKey(key)).toBe(true);
+  });
+
+  it.each(["avatars/me.png", "uploads/avatars/me.png", "resumes-old/a.pdf", "applications/resumes/a.pdf", "uploads/uploads/resumes/a.pdf"])(
+    "allows %s",
+    (key) => {
+      expect(isReservedUploadKey(key)).toBe(false);
+    },
+  );
 });

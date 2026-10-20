@@ -3,6 +3,7 @@
 
 import { requireAuth } from "~/lib/auth";
 import { getDownloadUrl } from '~/lib/s3'
+import { isReservedUploadKey } from '~/lib/file-validation'
 
 export async function loader({ request }: { request: Request }) {
   const auth = await requireAuth(request)
@@ -10,6 +11,7 @@ export async function loader({ request }: { request: Request }) {
 
   const key = new URL(request.url).searchParams.get('key')
   if (!key) return Response.json({ error: 'key query param is required' }, { status: 400 })
+  if (isReservedUploadKey(key)) return Response.json({ error: 'Not found' }, { status: 404 })
 
   const url = await getDownloadUrl(key)
   return Response.json({ url })

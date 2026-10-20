@@ -126,6 +126,12 @@ model User {
   currentLocationLat Float?
   currentLocationLng Float?
   linkedinUrl        String?
+  // The member's current resume (PDF). Private: the member and admins only,
+  // served through /api/members/:id/resume, never api/upload/url.
+  resumeKey          String? // uploads/resumes/<userId>/<uuid>.pdf
+  resumeFileName     String?
+  resumeSizeBytes    Int?
+  resumeUploadedAt   DateTime?
   // Bare GitHub login (e.g. "octocat"). Used to add the member to their
   // project's GitHub team during staffing finalize, and to derive a profile
   // link in the UI. Editable in member details; nullable — a member with no

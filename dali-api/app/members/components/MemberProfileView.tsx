@@ -5,6 +5,7 @@ import {
   useFetcher,
   useLocation,
   useNavigation,
+  useRevalidator,
   useSearchParams,
   useSubmit,
 } from "react-router";
@@ -15,6 +16,7 @@ import {
   Cake,
   Clock,
   Coffee,
+  FileText,
   Fingerprint,
   Github,
   Globe,
@@ -33,6 +35,7 @@ import {
   Shield,
   Smartphone,
   Trash2,
+  Upload,
   User as UserIcon,
   UsersRound,
   Utensils,
@@ -60,13 +63,15 @@ import { ComplianceBlock } from "./ComplianceBlock";
 import { buttonClasses } from "~/components/ui/Button";
 import { DateField } from "~/components/ui/DateField";
 import { useConfirmSubmit, useDialog } from "~/components/ui/dialog";
+import { useToast } from "~/components/ui/toast";
+import { useFeatureFlag } from "~/components/FeatureFlags";
 import { Button } from "~/components/ui/Button";
-import { Checkbox } from "~/components/ui/Checkbox";
 import { IconButton } from "~/components/ui/IconButton";
 import { Modal, ModalHeader } from "~/components/Modal";
+import { ImportWorkHistoryModal } from "./ImportWorkHistoryModal";
+import { WorkExperienceFields, type WorkExperienceFieldValues } from "./WorkExperienceFields";
 import { modalCardClass } from "~/components/os-chrome";
 import {
-  WORK_MODES,
   formatMonthRange,
   workModeLabel,
   type WorkExperienceItem,
@@ -118,6 +123,7 @@ export function MemberProfileView({
     pendingReviews,
     showReviewsRow,
     isSelf,
+    resume,
     coffeeChatSent,
     canEdit,
     canManageEligibility,
@@ -289,7 +295,13 @@ export function MemberProfileView({
             />
             {canSeeGroups && <GroupsCard groups={groups} />}
             <AccountCard member={member} canEdit={canEdit} />
-            <WorkExperienceCard experiences={member.workExperiences} canEdit={canEdit} />
+            <WorkExperienceCard
+              memberId={member.id}
+              experiences={member.workExperiences}
+              canEdit={canEdit}
+              isSelf={isSelf}
+              resume={resume}
+            />
             {!isSelf && canRevokeWalletPass && (
               <WalletCard
                 wallet={wallet}
@@ -1158,14 +1170,22 @@ function DomainsCard({
 // ─── Work experience card ────────────────────────────────────────────────────
 
 function WorkExperienceCard({
+  memberId,
   experiences,
   canEdit,
+  isSelf,
+  resume,
 }: {
+  memberId: string;
   experiences: WorkExperienceItem[];
   canEdit: boolean;
+  isSelf: boolean;
+  resume: ProfilePageData["resume"];
 }) {
   // null = closed, "new" = adding, an item = editing it.
   const [editing, setEditing] = useState<WorkExperienceItem | "new" | null>(null);
+  const [importing, setImporting] = useState(false);
+  const importEnabled = useFeatureFlag("work-history-import");
   const remove = useFetcher();
   const { confirm } = useDialog();
 
@@ -1188,17 +1208,24 @@ function WorkExperienceCard({
         title="Work experience"
         trailing={
           canEdit && (
-            <button
-              type="button"
-              onClick={() => setEditing("new")}
-              className="inline-flex items-center gap-1 text-[12px] font-semibold text-os-grey hover:text-foreground border border-os-container hover:border-os-container-hi px-2.5 py-1 rounded-full transition-colors"
-            >
-              <Plus className="w-3 h-3" />
-              Add
-            </button>
+            <div className="flex items-center gap-1.5">
+              {importEnabled && isSelf && (
+                <button type="button" onClick={() => setImporting(true)} className={CARD_PILL_CLASS}>
+                  <Upload className="w-3 h-3" />
+                  Import
+                </button>
+              )}
+              <button type="button" onClick={() => setEditing("new")} className={CARD_PILL_CLASS}>
+                <Plus className="w-3 h-3" />
+                Add
+              </button>
+            </div>
           )
         }
       />
+      {importEnabled && resume && (
+        <ResumeLine memberId={memberId} resume={resume} isSelf={isSelf} />
+      )}
       <div className="px-5 pb-5">
         {experiences.length === 0 ? (
           <p className="text-sm text-os-muted italic">No work experience yet.</p>
@@ -1243,60 +1270,105 @@ function WorkExperienceCard({
           onClose={() => setEditing(null)}
         />
       )}
+      {importing && (
+        <ImportWorkHistoryModal
+          memberId={memberId}
+          existing={experiences}
+          onClose={() => setImporting(false)}
+        />
+      )}
     </article>
   );
 }
 
-const MONTH_OPTIONS = [
-  "January", "February", "March", "April", "May", "June",
-  "July", "August", "September", "October", "November", "December",
-].map((label, i) => ({ value: String(i + 1).padStart(2, "0"), label }));
+const CARD_PILL_CLASS =
+  "inline-flex items-center gap-1 text-[12px] font-semibold text-os-grey hover:text-foreground border border-os-container hover:border-os-container-hi px-2.5 py-1 rounded-full transition-colors";
 
-// Month + year pickers that read and write one "YYYY-MM" value ("" until both
-// are picked).
-function MonthYearField({
-  value,
-  onChange,
-  label,
-  disabled,
+const RESUME_ACTION_CLASS = "font-semibold text-os-grey hover:text-foreground transition-colors";
+
+function ResumeLine({
+  memberId,
+  resume,
+  isSelf,
 }: {
-  value: string;
-  onChange: (next: string) => void;
-  label: string;
-  disabled?: boolean;
+  memberId: string;
+  resume: NonNullable<ProfilePageData["resume"]>;
+  isSelf: boolean;
 }) {
-  const [year, month] = value ? value.split("-") : ["", ""];
-  const [draft, setDraft] = useState({ year, month });
-  const thisYear = new Date().getFullYear();
-  const years = Array.from({ length: 60 }, (_, i) => String(thisYear - i)).map((y) => ({
-    value: y,
-    label: y,
-  }));
-  const set = (patch: Partial<typeof draft>) => {
-    const next = { ...draft, ...patch };
-    setDraft(next);
-    onChange(next.year && next.month ? `${next.year}-${next.month}` : "");
-  };
+  const revalidator = useRevalidator();
+  const { confirm } = useDialog();
+  const toast = useToast();
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState(false);
+  const endpoint = `/api/members/${memberId}/resume`;
+
+  async function send(init: RequestInit): Promise<void> {
+    setBusy(true);
+    try {
+      const res = await fetch(endpoint, init);
+      if (!res.ok) {
+        const data = (await res.json().catch(() => null)) as { error?: string } | null;
+        toast.error(data?.error ?? "Something went wrong. Try again.");
+        return;
+      }
+      void revalidator.revalidate();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function replace(file: File | undefined) {
+    if (!file) return;
+    const body = new FormData();
+    body.set("file", file);
+    void send({ method: "POST", body });
+  }
+
+  async function remove() {
+    const ok = await confirm({
+      title: "Remove your resume?",
+      description: resume.fileName,
+      confirmLabel: "Remove",
+      tone: "destructive",
+    });
+    if (ok) void send({ method: "DELETE" });
+  }
+
   return (
-    <div className="grid grid-cols-2 gap-2">
-      <Select
-        value={draft.month}
-        options={MONTH_OPTIONS}
-        ariaLabel={`${label} month`}
-        placeholder="Month"
-        disabled={disabled}
-        onChange={(m) => set({ month: m })}
-      />
-      <Select
-        value={draft.year}
-        options={years}
-        ariaLabel={`${label} year`}
-        placeholder="Year"
-        disabled={disabled}
-        onChange={(y) => set({ year: y })}
-      />
+    <div className="flex items-center gap-2 px-5 pb-3 text-[13px] text-os-grey">
+      <FileText className="h-4 w-4 shrink-0" aria-hidden />
+      <span className="min-w-0 truncate text-foreground">{resume.fileName}</span>
+      <span className="shrink-0">Uploaded {formatUploadedAt(resume.uploadedAt)}</span>
+      <a href={endpoint} target="_blank" rel="noreferrer" className={RESUME_ACTION_CLASS}>
+        View
+      </a>
+      {isSelf && (
+        <>
+          <button type="button" disabled={busy} onClick={() => inputRef.current?.click()} className={RESUME_ACTION_CLASS}>
+            Replace
+          </button>
+          <button type="button" disabled={busy} onClick={() => void remove()} className={RESUME_ACTION_CLASS}>
+            Remove
+          </button>
+          <input
+            ref={inputRef}
+            type="file"
+            accept=".pdf"
+            aria-label="Replace resume"
+            className="sr-only"
+            onChange={(e) => {
+              replace(e.target.files?.[0]);
+              e.target.value = "";
+            }}
+          />
+        </>
+      )}
     </div>
   );
+}
+
+function formatUploadedAt(iso: string): string {
+  return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
 }
 
 function WorkExperienceModal({
@@ -1308,10 +1380,16 @@ function WorkExperienceModal({
 }) {
   const fetcher = useFetcher<{ error?: string } | null>();
   const { formClass } = useOsChrome();
-  const [startMonth, setStartMonth] = useState(experience?.startMonth ?? "");
-  const [endMonth, setEndMonth] = useState(experience?.endMonth ?? "");
-  const [current, setCurrent] = useState(experience ? experience.endMonth === null : false);
-  const [workMode, setWorkMode] = useState<string>(experience?.workMode ?? "");
+  const [values, setValues] = useState<WorkExperienceFieldValues>({
+    company: experience?.company ?? "",
+    position: experience?.position ?? "",
+    description: experience?.description ?? "",
+    location: experience?.location ?? "",
+    workMode: experience?.workMode ?? "",
+    startMonth: experience?.startMonth ?? "",
+    endMonth: experience?.endMonth ?? "",
+    current: experience ? experience.endMonth === null : false,
+  });
   const busy = fetcher.state !== "idle";
 
   // The action answers null on success and { error } otherwise.
@@ -1324,8 +1402,6 @@ function WorkExperienceModal({
       if (!fetcher.data?.error) onClose();
     }
   }, [fetcher.state, fetcher.data, onClose]);
-
-  const fieldLabel = "flex flex-col gap-1.5 text-xs font-semibold text-os-grey";
 
   return (
     <Modal
@@ -1343,69 +1419,16 @@ function WorkExperienceModal({
       <fetcher.Form method="post" className={cn("flex flex-col gap-4", formClass)}>
         <input type="hidden" name="intent" value="save-experience" />
         {experience && <input type="hidden" name="experienceId" value={experience.id} />}
-        <input type="hidden" name="startMonth" value={startMonth} />
-        <input type="hidden" name="endMonth" value={current ? "" : endMonth} />
-        <input type="hidden" name="workMode" value={workMode} />
-
         {fetcher.data?.error && (
           <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
             {fetcher.data.error}
           </p>
         )}
 
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <label className={fieldLabel}>
-            Position
-            <input name="position" type="text" required defaultValue={experience?.position ?? ""} />
-          </label>
-          <label className={fieldLabel}>
-            Company
-            <input name="company" type="text" required defaultValue={experience?.company ?? ""} />
-          </label>
-          <div className={fieldLabel}>
-            Start
-            <MonthYearField label="Start" value={startMonth} onChange={setStartMonth} />
-          </div>
-          <div className={fieldLabel}>
-            End
-            <MonthYearField label="End" value={endMonth} onChange={setEndMonth} disabled={current} />
-          </div>
-        </div>
-        <Checkbox
-          tone="os"
-          label="I work here now"
-          checked={current}
-          onChange={(e) => setCurrent(e.target.checked)}
+        <WorkExperienceFields
+          value={values}
+          onChange={(patch) => setValues((v) => ({ ...v, ...patch }))}
         />
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <label className={fieldLabel}>
-            Location
-            <input
-              name="location"
-              type="text"
-              placeholder="City, country"
-              defaultValue={experience?.location ?? ""}
-            />
-          </label>
-          <div className={fieldLabel}>
-            Work mode
-            <Select
-              value={workMode}
-              options={[{ value: "", label: "Not set" }, ...WORK_MODES]}
-              ariaLabel="Work mode"
-              onChange={setWorkMode}
-            />
-          </div>
-        </div>
-        <label className={fieldLabel}>
-          Description
-          <textarea
-            name="description"
-            rows={4}
-            defaultValue={experience?.description ?? ""}
-            className="resize-y"
-          />
-        </label>
 
         <div className="flex justify-end gap-2">
           <Button type="button" variant="ghost" onClick={onClose} disabled={busy}>

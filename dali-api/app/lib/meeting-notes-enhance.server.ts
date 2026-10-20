@@ -9,7 +9,7 @@
 // NEVER log the transcript, the note's text, or the model's raw response.
 
 import Anthropic from "@anthropic-ai/sdk";
-import { generateShortText, resolveAiProvider } from "~/lib/ai.server";
+import { generateShortText, resolveAiProvider, stripJsonFences } from "~/lib/ai.server";
 import { recordTokenUsage } from "~/lib/ai-usage.server";
 import { formatRecordingTranscript, storedLines } from "~/lib/meeting-recording.server";
 import { verifyEnhancePlan, type VerifyRosterUser } from "~/lib/meeting-notes-verify";
@@ -74,12 +74,6 @@ Rules, all mandatory:
 - Every "expand" or "insert" that draws on the transcript must cite the transcript second(s) (the line's leading [mm:ss], converted to seconds) it drew from in "cites".
 - List action items separately in "actionItems": [{"text","ownerName": the name as spoken in the transcript — a first name alone is fine, and when "You"/the Recorder says "I'll ..." or similar use the Recorder's own name — NEVER substitute a different roster member's name and never invent one (omit ownerName if no owner is stated), "due": an ISO date resolved against the given occurrence date (omit if none), "dueSource": the phrase it came from, e.g. "by Friday" (omit if no due), "cites":[seconds,...]}].
 - Respond with ONLY a single JSON object shaped exactly like: {"blocks":[...],"actionItems":[...]}. No markdown code fences, no commentary, no preamble.`;
-
-function stripJsonFences(text: string): string {
-  const trimmed = text.trim();
-  const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
-  return (fenced ? fenced[1] : trimmed) ?? "";
-}
 
 function blockForPrompt(b: SnapshotBlock): string {
   return `[${b.id}] (${b.type}) ${b.text}`;
