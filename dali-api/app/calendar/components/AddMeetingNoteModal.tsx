@@ -176,11 +176,11 @@ function AddMeetingNoteModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Close only this modal on Escape — capture-phase + stopPropagation keeps the
-  // key from reaching the popover's own Escape handler and closing that too.
+  // Capture phase keeps Escape from reaching the popover's own handler and
+  // closing that too; a Modal stacked on top (the notebook picker) handles its own.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
+      if (e.key === "Escape" && !(e.target as Element | null)?.closest?.(".os-modal-overlay")) {
         e.stopPropagation();
         onClose();
       }
