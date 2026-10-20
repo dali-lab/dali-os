@@ -1940,7 +1940,8 @@ model PageView {
   sessionId  String // signed cookie id, rotated on login/logout
   path       String // normalized route pattern (e.g. /projects/:id), not raw URL
   referrer   String?
-  durationMs Int? // optional, reported by next-nav beacon
+  durationMs Int? // visible time on page, reported by PageViewReporter
+  client     String? // "web" | "desktop" | "mobile"; null on rows recorded before this column
 
   @@index([createdAt])
   @@index([userId, createdAt])
