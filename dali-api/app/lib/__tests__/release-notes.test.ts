@@ -5,6 +5,7 @@ import {
   isReleaseNoteVideoKey,
   parsePrNumbers,
   releaseNoteAreaLabel,
+  slackStatus,
 } from "../release-notes";
 
 const member = { isCore: false, groupIds: ["g1", "g2"] };
@@ -131,5 +132,23 @@ describe("isReleaseNoteVideoKey", () => {
   it("rejects keys elsewhere in the bucket", () => {
     expect(isReleaseNoteVideoKey("uploads/resumes/abc.pdf")).toBe(false);
     expect(isReleaseNoteVideoKey("release-notes/pr-12/demo.mp4")).toBe(false);
+  });
+});
+
+describe("slackStatus", () => {
+  it("is app-only for a group-restricted entry even with an outbox row", () => {
+    expect(slackStatus(false, "Sent")).toBe("app-only");
+  });
+  it("is app-only when nothing was enqueued", () => {
+    expect(slackStatus(true, undefined)).toBe("app-only");
+  });
+  it.each([
+    ["Sent", "posted"],
+    ["Dead", "failed"],
+    ["Canceled", "app-only"],
+    ["Pending", "sending"],
+    ["Sending", "sending"],
+  ])("maps outbox %s to %s", (outbox, expected) => {
+    expect(slackStatus(true, outbox)).toBe(expected);
   });
 });

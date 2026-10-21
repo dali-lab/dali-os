@@ -9,6 +9,7 @@ import {
   createReleaseNoteDraft,
   dismissReleaseNotes,
   listReleaseNotesForCore,
+  releaseNoteSlackStatuses,
   publishReleaseNotes,
   releaseNoteVideoUrl,
   requireReleaseNoteEditor,
@@ -20,6 +21,7 @@ import {
   RELEASE_NOTE_VIDEO_KEY_PREFIX,
   parsePrNumbers,
   releaseNoteAreaLabel,
+  type SlackStatus,
 } from "~/lib/release-notes";
 import { uploadFileToS3 } from "~/lib/upload-client";
 import { DocEditor } from "~/components/doc";
@@ -54,6 +56,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       select: { id: true, name: true },
     }),
   ]);
+  const slack = await releaseNoteSlackStatuses(published);
   const serialize = async (n: (typeof drafts)[number]) => ({
     id: n.id,
     title: n.title,
@@ -68,6 +71,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     videoUrl: await releaseNoteVideoUrl(n.videoKey).catch(() => null),
     publishedAt: n.publishedAt?.toISOString() ?? null,
     draftedAt: n.draftedAt.toISOString(),
+    slack: slack[n.id] ?? null,
   });
   return {
     drafts: await Promise.all(drafts.map(serialize)),
@@ -327,11 +331,19 @@ export default function CoreReleaseNotesPage({ loaderData }: Route.ComponentProp
   );
 }
 
+const SLACK_STATUS_LABEL: Record<SlackStatus, string> = {
+  posted: "Posted to Slack",
+  sending: "Sending to Slack",
+  failed: "Slack post failed",
+  "app-only": "In app only",
+};
+
 function NoteMeta({ note, groups }: { note: Note; groups: GroupOption[] }) {
   const parts = [
     releaseNoteAreaLabel(note.area),
     audienceLabel(note, groups),
     note.highlight ? "Highlight" : null,
+    note.slack ? SLACK_STATUS_LABEL[note.slack] : null,
     note.publishedAt
       ? `Published ${formatDateShort(note.publishedAt)}`
       : `Drafted ${formatDateShort(note.draftedAt)}`,
@@ -385,7 +397,8 @@ function EditModal({
   const [groupIds, setGroupIds] = useState<string[]>(note.groupIds);
   const [body, setBody] = useState<unknown>(note.contentJson);
   const [videoKey, setVideoKey] = useState<string | null>(note.videoKey);
-  const [videoUrl, setVideoUrl] = useState<string | null>(note.videoUrl);
+  const [pendingVideoName, setPendingVideoName] = useState<string | null>(null);
+  const savedVideoUrl = videoKey && videoKey === note.videoKey ? note.videoUrl : null;
   const [uploading, setUploading] = useState(false);
 
   async function pickVideo(file: File) {
@@ -397,7 +410,7 @@ function EditModal({
         RELEASE_NOTE_VIDEO_ACCEPT,
       );
       setVideoKey(uploaded.s3Key);
-      setVideoUrl(URL.createObjectURL(file));
+      setPendingVideoName(file.name);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Upload failed.");
     } finally {
@@ -516,8 +529,8 @@ function EditModal({
       </div>
       <div className="os-field-group">
         <span className="os-field-label">Video</span>
-        {videoUrl && (
-          <video src={videoUrl} controls preload="metadata" className="max-h-64 w-full rounded-md bg-black" />
+        {savedVideoUrl && (
+          <video src={savedVideoUrl} controls preload="metadata" className="max-h-64 w-full rounded-md bg-black" />
         )}
         <div className="flex items-center gap-2">
           <input
@@ -546,13 +559,17 @@ function EditModal({
               size="sm"
               onClick={() => {
                 setVideoKey(null);
-                setVideoUrl(null);
+                setPendingVideoName(null);
               }}
             >
               Remove
             </Button>
           )}
-          <span className="text-xs text-muted-foreground">mp4, webm or mov, up to 50 MB</span>
+          <span className="text-xs text-muted-foreground">
+            {pendingVideoName && videoKey
+              ? `${pendingVideoName} uploaded. Saves with the entry.`
+              : "mp4, webm or mov, up to 50 MB"}
+          </span>
         </div>
       </div>
       <ModalFooter onCancel={onClose}>

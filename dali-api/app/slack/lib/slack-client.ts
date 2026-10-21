@@ -1,4 +1,4 @@
-import { WebClient } from "@slack/web-api";
+import { WebClient, type KnownBlock } from "@slack/web-api";
 import { sanitizeChannelName } from "./channel-name";
 export { sanitizeChannelName };
 
@@ -75,6 +75,33 @@ export async function postMessage(
   const res = await client().chat.postMessage({ channel, text });
   if (!res.ts) throw new Error("chat.postMessage returned no ts");
   return { ts: res.ts };
+}
+
+export async function postBlocks(
+  channel: string,
+  blocks: KnownBlock[],
+  text: string,
+): Promise<{ ts: string }> {
+  const res = await client().chat.postMessage({ channel, blocks, text });
+  if (!res.ts) throw new Error("chat.postMessage returned no ts");
+  return { ts: res.ts };
+}
+
+// Needs the files:write scope.
+export async function uploadFileToThread(
+  channel: string,
+  threadTs: string,
+  buffer: Buffer,
+  filename: string,
+  title: string,
+): Promise<void> {
+  await client().filesUploadV2({
+    channel_id: channel,
+    thread_ts: threadTs,
+    file: buffer,
+    filename,
+    title,
+  });
 }
 
 // Direct message from the bot to a user. chat.postMessage accepts a Slack

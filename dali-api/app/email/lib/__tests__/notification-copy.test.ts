@@ -63,7 +63,7 @@ describe("notification copy integrity", () => {
     // Announcements are the exception: Core and instructors write them, so the
     // template owns the frame and the caller's body passes through.
     const passthrough = NOTIFICATION_COPY_KEYS.filter((k) => notificationCopyDef(k).body === undefined);
-    expect(passthrough.sort()).toEqual(["announcement", "education.announcement"]);
+    expect(passthrough.sort()).toEqual(["announcement", "education.announcement", "release.published"]);
   });
 
   it("ends every description with a full stop, so the admin list reads", () => {

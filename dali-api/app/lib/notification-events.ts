@@ -30,6 +30,7 @@ export type EventDef = {
     | "Education"
     | "Mentorship"
     | "Announcements"
+    | "Release notes"
     | "Forms"
     | "Onboarding"
     | "Partners"
@@ -378,6 +379,13 @@ export const EVENT_TYPES = {
     description: "Announcements and action items sent by Core.",
     lockedInApp: true,
     defaults: { inApp: true, desktop: true, slackDm: false, email: "Instant" },
+  },
+  "release.published": {
+    kind: "General",
+    area: "Release notes",
+    label: "Highlighted release notes",
+    description: "New features that Core marks as highlights.",
+    defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
   },
   "member.onboarding": {
     kind: "SystemAnnouncement",

@@ -16,7 +16,15 @@
 import { prisma, Prisma } from "~/lib/db";
 import { sendEmail, type EmailAttachment } from "~/lib/gmail";
 import { getSender, noteSenderHealth } from "~/lib/gmail-integration";
-import { slackConfigured, sendDm, postMessage } from "~/slack/lib/slack-client";
+import {
+  slackConfigured,
+  sendDm,
+  postMessage,
+  postBlocks,
+  uploadFileToThread,
+} from "~/slack/lib/slack-client";
+import { getObjectBytes } from "~/lib/s3";
+import type { KnownBlock } from "@slack/web-api";
 import { getAppEnv } from "~/lib/app-env";
 import type { EmailSendPurpose } from "~/generated/prisma/client";
 import type { JobContext, JobResult } from "~/jobs/registry";
@@ -43,6 +51,10 @@ export type EnqueueOutboundArgs = {
   slackText?: string | null;
   ics?: string | null;
   attachments?: EmailAttachment[] | null;
+  // slack_channel only: Block Kit (slackText is the fallback), and an S3 key
+  // uploaded into the post's thread.
+  slackBlocks?: KnownBlock[] | null;
+  slackFileKey?: string | null;
   eventType?: string | null;
   createdByUserId?: string | null;
 };
@@ -136,6 +148,10 @@ export async function enqueueOutbound(
         slackText: args.slackText ?? null,
         ics: args.ics ?? null,
         attachments: encodeAttachments(args.attachments) ?? Prisma.DbNull,
+        slackBlocks: args.slackBlocks
+          ? (args.slackBlocks as unknown as Prisma.InputJsonValue)
+          : Prisma.DbNull,
+        slackFileKey: args.slackFileKey ?? null,
         eventType: args.eventType ?? null,
         createdByUserId: args.createdByUserId ?? null,
       },
@@ -222,7 +238,9 @@ async function processOne(id: string, cfg: DrainConfig): Promise<boolean> {
   if (!row) return false;
 
   try {
-    const outcome = await sendOne(row);
+    const outcome = await sendOne(row, (slackTs) =>
+      prisma.outboundMessage.update({ where: { id }, data: { slackTs } }),
+    );
     if (outcome.cancel) {
       await prisma.outboundMessage.update({
         where: { id },
@@ -261,17 +279,23 @@ type SendOutcome = {
   reason?: string;
 };
 
-async function sendOne(row: {
-  channel: string;
-  purpose: string | null;
-  target: string;
-  subject: string | null;
-  bodyHtml: string | null;
-  bodyText: string | null;
-  slackText: string | null;
-  ics: string | null;
-  attachments: Prisma.JsonValue | null;
-}): Promise<SendOutcome> {
+async function sendOne(
+  row: {
+    channel: string;
+    purpose: string | null;
+    target: string;
+    subject: string | null;
+    bodyHtml: string | null;
+    bodyText: string | null;
+    slackText: string | null;
+    ics: string | null;
+    attachments: Prisma.JsonValue | null;
+    slackBlocks: Prisma.JsonValue | null;
+    slackFileKey: string | null;
+    slackTs: string | null;
+  },
+  saveSlackTs: (ts: string) => Promise<unknown>,
+): Promise<SendOutcome> {
   if (row.channel === "email") {
     const purpose = (row.purpose ?? "General") as EmailSendPurpose;
     const sender = await getSender(purpose);
@@ -313,8 +337,24 @@ async function sendOne(row: {
       return { cancel: true, reason: `slack not allowed in ${getAppEnv()}` };
     }
     const text = row.slackText ?? row.bodyText ?? row.subject ?? "";
-    if (row.channel === "slack_dm") await sendDm(row.target, text);
-    else await postMessage(row.target, text);
+    if (row.channel === "slack_dm") {
+      await sendDm(row.target, text);
+      return {};
+    }
+    if (!row.slackBlocks) {
+      await postMessage(row.target, text);
+      return {};
+    }
+    let ts = row.slackTs;
+    if (!ts) {
+      ts = (await postBlocks(row.target, row.slackBlocks as unknown as KnownBlock[], text)).ts;
+      await saveSlackTs(ts);
+    }
+    if (row.slackFileKey) {
+      const { body } = await getObjectBytes(row.slackFileKey);
+      const filename = row.slackFileKey.split("/").pop() ?? "video.mp4";
+      await uploadFileToThread(row.target, ts, body, filename, text);
+    }
     return {};
   }
 

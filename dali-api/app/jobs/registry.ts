@@ -77,6 +77,7 @@ import { runScheduledAnnouncements } from "~/jobs/scheduled-announcements.server
 import { runSessionFeedbackSweep } from "~/jobs/session-feedback-sweep.server";
 import { runSessionReminderSweep } from "~/jobs/session-reminder-sweep.server";
 import { runDailyDigest, runWeeklyDigest } from "~/lib/notification-digest.server";
+import { runReleaseNotesRecap } from "~/jobs/release-notes-recap.server";
 import { runRetentionJanitor } from "~/jobs/retention-janitor.server";
 import { runDriveRootsReparent } from "~/jobs/drive-roots-reparent.server";
 import { runMentorNotesToNotebooks } from "~/jobs/mentor-notes-to-notebooks.server";
@@ -221,6 +222,31 @@ export const JOBS: JobDefinition[] = [
       },
     ],
     handler: runWeeklyDigest,
+  },
+  {
+    name: "release-notes-recap",
+    description:
+      "Posts the weekly release notes recap to Slack, marks the week's entries as recapped, and dismisses drafts left untouched for a week. The channel comes from RELEASE_NOTES_SLACK_CHANNEL_ID.",
+    intervalMinutes: 15,
+    settings: [
+      {
+        key: "weekday",
+        label: "Post day (0=Sun … 6=Sat)",
+        unit: "",
+        min: 0,
+        max: 6,
+        default: 4,
+      },
+      {
+        key: "hour",
+        label: "Post hour (ET, 0–23)",
+        unit: "h",
+        min: 0,
+        max: 23,
+        default: 10,
+      },
+    ],
+    handler: runReleaseNotesRecap,
   },
   {
     name: "interview-reminders",
