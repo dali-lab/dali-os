@@ -33,12 +33,51 @@ function wrapBase64(s: string, width = 76): string {
   return s.match(new RegExp(`.{1,${width}}`, 'g'))?.join('\r\n') ?? s
 }
 
+function base64Body(s: string): string {
+  return wrapBase64(Buffer.from(s, 'utf8').toString('base64'))
+}
+
+const PRINTABLE_ASCII = /^[\x20-\x7e]*$/
+
+// RFC 2047 encoded-words for header values. Raw UTF-8 in a header gets read as
+// Latin-1 by Gmail, which turned "🎉" subjects into "Ã°ÂŸÂŽÂ‰". Chunks are cut
+// on code-point boundaries (45 bytes → 60 base64 chars) so each word stays
+// under the 75-char limit without splitting a multi-byte character.
+export function encodeHeader(value: string): string {
+  const clean = sanitizeHeader(value)
+  if (PRINTABLE_ASCII.test(clean)) return clean
+  const words: string[] = []
+  let chunk = ''
+  for (const ch of clean) {
+    if (Buffer.byteLength(chunk + ch, 'utf8') > 45) {
+      words.push(chunk)
+      chunk = ''
+    }
+    chunk += ch
+  }
+  if (chunk) words.push(chunk)
+  return words
+    .map((w) => `=?UTF-8?B?${Buffer.from(w, 'utf8').toString('base64')}?=`)
+    .join('\r\n ')
+}
+
+function attachmentParams(filename: string): { name: string; disposition: string } {
+  const clean = sanitizeHeader(filename).replace(/["\\]/g, '_')
+  if (PRINTABLE_ASCII.test(clean)) {
+    return { name: `name="${clean}"`, disposition: `filename="${clean}"` }
+  }
+  return {
+    name: `name="${encodeHeader(clean).replace(/\r\n /g, '')}"`,
+    disposition: `filename*=UTF-8''${encodeURIComponent(clean).replace(/['()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`)}`,
+  }
+}
+
 // A generic file attachment (e.g. a signed-agreement PDF). Distinct from the
 // `ics` calendar payload, which has its own inline-alternative + attachment
 // dance below.
 export type EmailAttachment = { filename: string; mimeType: string; content: Buffer }
 
-function makeRawEmail(
+export function makeRawEmail(
   to: string,
   subject: string,
   htmlBody: string,
@@ -48,9 +87,9 @@ function makeRawEmail(
   textBody?: string,
 ): string {
   const headers = [
-    `From: ${APPLICATIONS_FROM_NAME} <${sanitizeHeader(from)}>`,
+    `From: ${encodeHeader(APPLICATIONS_FROM_NAME)} <${sanitizeHeader(from)}>`,
     `To: ${sanitizeHeader(to)}`,
-    `Subject: ${sanitizeHeader(subject)}`,
+    `Subject: ${encodeHeader(subject)}`,
     'MIME-Version: 1.0',
   ]
 
@@ -93,13 +132,15 @@ function makeRawEmail(
     '',
     `--${inner}`,
     'Content-Type: text/plain; charset=utf-8',
+    'Content-Transfer-Encoding: base64',
     '',
-    plainText,
+    base64Body(plainText),
     '',
     `--${inner}`,
     'Content-Type: text/html; charset=utf-8',
+    'Content-Transfer-Encoding: base64',
     '',
-    htmlBody,
+    base64Body(htmlBody),
     '',
   ]
 
@@ -131,11 +172,11 @@ function makeRawEmail(
   }
 
   for (const att of attachments ?? []) {
-    const filename = sanitizeHeader(att.filename)
+    const params = attachmentParams(att.filename)
     lines.push(
       `--${outer}`,
-      `Content-Type: ${sanitizeHeader(att.mimeType)}; name="${filename}"`,
-      `Content-Disposition: attachment; filename="${filename}"`,
+      `Content-Type: ${sanitizeHeader(att.mimeType)}; ${params.name}`,
+      `Content-Disposition: attachment; ${params.disposition}`,
       'Content-Transfer-Encoding: base64',
       '',
       wrapBase64(att.content.toString('base64')),

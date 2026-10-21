@@ -62,6 +62,41 @@ describe("certificateEligibility", () => {
     ).toBe(false);
   });
 
+  describe("minSessions", () => {
+    const base = { type: "Miniseries" as const, totalSessions: 6, threshold: 0.8 };
+
+    it("passes at exactly the required count and fails one below", () => {
+      expect(certificateEligibility({ ...base, present: 3, excused: 0, minSessions: 3 })).toBe(true);
+      expect(certificateEligibility({ ...base, present: 2, excused: 0, minSessions: 3 })).toBe(false);
+    });
+
+    it("counts excused absences toward the count", () => {
+      expect(certificateEligibility({ ...base, present: 2, excused: 1, minSessions: 3 })).toBe(true);
+    });
+
+    it("overrides the percentage threshold in both directions", () => {
+      // 3/6 = 50% fails 80% but meets a 3-session rule.
+      expect(certificateEligibility({ ...base, present: 3, excused: 0, minSessions: 3 })).toBe(true);
+      // 6/6 = 100% passes 80% but misses a 7-session rule.
+      expect(certificateEligibility({ ...base, present: 6, excused: 0, minSessions: 7 })).toBe(false);
+    });
+
+    it("falls back to the percentage when null", () => {
+      expect(certificateEligibility({ ...base, present: 3, excused: 0, minSessions: null })).toBe(false);
+      expect(certificateEligibility({ ...base, present: 5, excused: 0, minSessions: null })).toBe(true);
+    });
+
+    it("does not apply to workshops", () => {
+      expect(
+        certificateEligibility({ type: "Workshop", totalSessions: 1, present: 1, excused: 0, minSessions: 5 }),
+      ).toBe(true);
+    });
+
+    it("still requires at least one session to exist", () => {
+      expect(certificateEligibility({ ...base, totalSessions: 0, present: 0, excused: 0, minSessions: 0 })).toBe(false);
+    });
+  });
+
   it("uses a non-default threshold when provided", () => {
     // 3/6 = 50%, which is below 80% but passes a 50% threshold.
     expect(
