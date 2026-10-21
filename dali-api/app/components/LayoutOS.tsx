@@ -409,7 +409,13 @@ export function LayoutOS({
     ...(releaseNotesEnabled ? [{ url: '/release-notes', label: "What's new", icon: Sparkles }] : []),
     { url: '/help', label: 'Help', icon: HelpCircle },
   ]
-  const showWhatsNewDot = hasUnseenReleaseNotes && !path.startsWith('/release-notes')
+  const onReleaseNotes = path.startsWith('/release-notes')
+  // The layout loader rarely revalidates, so its flag stays stale after a visit.
+  const [visitedReleaseNotes, setVisitedReleaseNotes] = useState(onReleaseNotes)
+  useEffect(() => {
+    if (onReleaseNotes) setVisitedReleaseNotes(true)
+  }, [onReleaseNotes])
+  const showWhatsNewDot = hasUnseenReleaseNotes && !onReleaseNotes && !visitedReleaseNotes
 
   // `collapsed` is passed as a parameter so the mobile drawer can render
   // full labels (force false) while the desktop sidebar keeps its own state.
