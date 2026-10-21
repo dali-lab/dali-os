@@ -59,7 +59,7 @@ beforeEach(() => {
 
 describe("coverage loader", () => {
   it("reports what each cycle domain's applicants can book in person, with the blocker", async () => {
-    vi.mocked(explainAvailableSlots).mockImplementation(async (_cycleId, domainIds) =>
+    vi.mocked(explainAvailableSlots).mockImplementation(async (_cycleId, _roundId, domainIds) =>
       domainIds[0] === "dev"
         ? { slots: [{ startTime: "a", endTime: "b" }], blocker: null, bookingNoticeHours: 12 }
         : { slots: [], blocker: "one-interviewer", bookingNoticeHours: 12 },
@@ -72,8 +72,8 @@ describe("coverage loader", () => {
       { domainId: "design", domainName: "Design", bookableSlotCount: 0, blocker: "one-interviewer", bookingNoticeHours: 12 },
       { domainId: "dev", domainName: "Developer", bookableSlotCount: 1, blocker: null, bookingNoticeHours: 12 },
     ]);
-    expect(explainAvailableSlots).toHaveBeenCalledWith("cycle1", ["design"], "in-person");
-    expect(explainAvailableSlots).toHaveBeenCalledWith("cycle1", ["dev"], "in-person");
+    expect(explainAvailableSlots).toHaveBeenCalledWith("cycle1", "interviews", ["design"], "in-person");
+    expect(explainAvailableSlots).toHaveBeenCalledWith("cycle1", "interviews", ["dev"], "in-person");
   });
 
   it("returns no domains when the cycle has no interview config", async () => {

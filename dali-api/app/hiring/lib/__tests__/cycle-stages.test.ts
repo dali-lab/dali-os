@@ -38,7 +38,7 @@ describe("delibsQualifier", () => {
     expect(where).toEqual({
       id: { in: ["b", "c"] },
       ...NO_OUTCOME,
-      interviews: { some: { status: "Completed" } },
+      interviews: { some: { status: "Completed", interviewRoundId: "interviews" } },
     });
     expect(mockPrisma.delibsSession.findUnique.mock.calls[0][0].where).toEqual({
       domainId_applicationCycleId_roundId: { domainId: "d1", applicationCycleId: "cycle-1", roundId: "first" },

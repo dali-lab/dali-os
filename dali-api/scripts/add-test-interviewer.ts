@@ -23,7 +23,6 @@ async function main() {
     where: { id: cycleId },
     include: {
       domains: { include: { domain: true } },
-      interviewConfig: true,
     },
   });
 
@@ -62,10 +61,11 @@ async function main() {
   // Create CycleInterviewer for the cross-domain
   const ci = await prisma.cycleInterviewer.upsert({
     where: {
-      userId_applicationCycleId_domainId: {
+      userId_applicationCycleId_domainId_interviewRoundId: {
         userId: user.id,
         applicationCycleId: cycleId,
         domainId: domainForInterviewer.domainId,
+        interviewRoundId: "interviews",
       },
     },
     update: {},

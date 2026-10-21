@@ -21,8 +21,15 @@ type DecisionRow = {
   type: DecisionType;
   stage: DecisionStage;
   waitlistRank?: number | null;
+  interviewRoundId?: string | null;
   createdAt: Date | string;
 };
+
+// Each Interviews round's invite is its own decision: a released round-1
+// invite doesn't settle the round-2 one.
+function decisionKey(row: { type: DecisionType; interviewRoundId?: string | null }): string {
+  return row.type === "InvitedToInterview" ? `${row.type}:${row.interviewRoundId ?? ""}` : row.type;
+}
 
 type SummarizeInput = {
   decisions: DecisionRow[];
@@ -83,7 +90,7 @@ export function currentDecisionId(decisions: DecisionRow[]): string | null {
 }
 
 // The Draft waiting to be finalized, if any: a Draft with no Final or Released
-// sibling of the same type. Decision is append-only, so finalizing doesn't edit
+// sibling of the same type (and, for invites, the same Interviews round). Decision is append-only, so finalizing doesn't edit
 // the Draft — it writes a Final row whose parent is the Draft — which is why
 // "already finalized" is a question about siblings rather than about this row.
 //
@@ -99,14 +106,15 @@ export function findFinalizableDraft<T extends DecisionRow>(
         d.stage === "Draft" &&
         !decisions.some(
           (other) =>
-            other.type === d.type &&
+            decisionKey(other) === decisionKey(d) &&
             (other.stage === "Final" || other.stage === "Released"),
         ),
     ) ?? null
   );
 }
 
-// The rows still waiting on the hiring lead: per (domain application, type),
+// The rows still waiting on the hiring lead: per (domain application, type,
+// and Interviews round for invites),
 // the newest row at the highest stage reached, unless that stage is Released.
 // Decision is append-only, so a finalized Draft and a released Final both keep
 // their own stage; what marks them as handled is the later sibling. Reading
@@ -114,11 +122,18 @@ export function findFinalizableDraft<T extends DecisionRow>(
 // re-created after the Final was written, which the finalize route refuses
 // with "already finalized".
 export function pendingForHiringLead<
-  T extends { domainApplicationId: string; type: DecisionType; stage: DecisionStage; createdAt: Date | string },
+  T extends {
+    domainApplicationId: string;
+    type: DecisionType;
+    stage: DecisionStage;
+    interviewRoundId?: string | null;
+    createdAt: Date | string;
+  },
 >(rows: T[]): T[] {
   const best = new Map<string, T>();
+  const keyOf = (row: T) => `${row.domainApplicationId}:${decisionKey(row)}`;
   for (const row of rows) {
-    const key = `${row.domainApplicationId}:${row.type}`;
+    const key = keyOf(row);
     const current = best.get(key);
     if (!current) { best.set(key, row); continue; }
     const rowRank = STAGE_RANK[row.stage];
@@ -127,7 +142,7 @@ export function pendingForHiringLead<
       best.set(key, row);
     }
   }
-  return rows.filter((row) => best.get(`${row.domainApplicationId}:${row.type}`) === row && row.stage !== "Released");
+  return rows.filter((row) => best.get(keyOf(row)) === row && row.stage !== "Released");
 }
 
 export type PrePipelinePill = "Reviewing" | "InterviewScheduled" | "PostInterview";

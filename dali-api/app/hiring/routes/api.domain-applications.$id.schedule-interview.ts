@@ -9,6 +9,7 @@ import { provisionInterviewMeet } from "~/hiring/lib/interview-meet";
 import { parseJson } from "~/lib/validate";
 import { sendInterviewInviteEmails } from "~/hiring/lib/interview-emails";
 import { notifyInterviewAssigned } from "~/hiring/lib/interview-notifications";
+import { invitedRoundId } from "~/hiring/lib/interview-rounds.server";
 
 const ScheduleInterviewSchema = z.object({
   startTime: z.string().datetime({ offset: true }),
@@ -32,9 +33,9 @@ export async function action({ request, params }: Route.ActionArgs) {
     where: { id: params.id },
     include: {
       application: true,
-      // Only the active row (if any) — historical Cancelled/Completed rows
-      // don't block a fresh booking.
-      interviews: { where: { status: "Scheduled" } },
+      // Scheduled rows block any booking; a Completed one only blocks
+      // booking the same round again.
+      interviews: { where: { status: { in: ["Scheduled", "Completed"] } } },
     },
   });
 
@@ -46,15 +47,12 @@ export async function action({ request, params }: Route.ActionArgs) {
     return Response.json({ error: "Not your application" }, { status: 403 });
   }
 
-  const latestDecision = await prisma.decision.findFirst({
-    where: { domainApplicationId: da.id, stage: "Released" },
-    orderBy: { createdAt: "desc" },
-  });
-  if (!latestDecision || latestDecision.type !== "InvitedToInterview") {
+  const roundId = await invitedRoundId(da.id);
+  if (!roundId) {
     return Response.json({ error: "Not invited to interview" }, { status: 403 });
   }
 
-  if (da.interviews.length > 0) {
+  if (da.interviews.some((i) => i.status === "Scheduled" || i.interviewRoundId === roundId)) {
     return Response.json({ error: "Interview already scheduled" }, { status: 409 });
   }
 
@@ -66,10 +64,15 @@ export async function action({ request, params }: Route.ActionArgs) {
   }
 
   const config = await prisma.interviewConfig.findUnique({
-    where: { applicationCycleId: da.application.applicationCycleId },
+    where: {
+      applicationCycleId_interviewRoundId: {
+        applicationCycleId: da.application.applicationCycleId,
+        interviewRoundId: roundId,
+      },
+    },
   });
   if (!config) {
-    return Response.json({ error: "No interview config for this cycle" }, { status: 400 });
+    return Response.json({ error: "No interview config for this round" }, { status: 400 });
   }
 
   const slotStart = new Date(startTime);
@@ -86,6 +89,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   try {
     const interview = await assignInterviewers(
       da.application.applicationCycleId,
+      roundId,
       da.id,
       [da.domainId],
       slotStart,
@@ -109,6 +113,7 @@ export async function action({ request, params }: Route.ActionArgs) {
         domainApplicationId: da.id,
         startTime: slotStart.toISOString(),
         mode: interviewMode,
+        interviewRoundId: roundId,
       },
       request,
     });

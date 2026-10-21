@@ -43,7 +43,12 @@ export async function action({ request }: Route.ActionArgs) {
   }
 
   const config = await prisma.interviewConfig.findUnique({
-    where: { applicationCycleId: interview.applicationCycleId },
+    where: {
+      applicationCycleId_interviewRoundId: {
+        applicationCycleId: interview.applicationCycleId,
+        interviewRoundId: interview.interviewRoundId,
+      },
+    },
   });
   const cancelNoticeHours = config?.cancelNoticeHours ?? 0;
   if (cancelNoticeHours > 0) {

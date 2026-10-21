@@ -29,7 +29,7 @@ import {
 } from "~/hiring/components/ApplicationTimeline";
 import { Pill, type PillTone, SetupCard } from "~/hiring/components/cycle-setup/SetupCard";
 import { buildApplicationTimeline } from "~/hiring/lib/application-timeline";
-import { findRound, parseTimeline } from "~/hiring/lib/cycle-timeline";
+import { findRound, groupByInterviewRound, parseTimeline } from "~/hiring/lib/cycle-timeline";
 import { buildCriteriaLabelMap } from "~/hiring/lib/rubric-criteria";
 import {
   inferDomainApplicationStatus,
@@ -110,7 +110,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       interviews: {
         where: { status: { in: ["Scheduled", "Completed"] } },
         orderBy: { createdAt: "desc" },
-        take: 1,
         include: {
           assignments: {
             where: { status: "Active" },
@@ -346,6 +345,12 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       inferredStatus,
       criteriaByKey,
       timeline,
+      // The newest interview in each Interviews round, each with its own notes.
+      interviewRounds: groupByInterviewRound(cycleTimeline, interviewsWithNotes).map((g) => ({
+        roundId: g.roundId,
+        label: g.label,
+        interview: g.items[0],
+      })),
       canMoveStage,
       priorApplications,
       emailEngagement,
@@ -360,6 +365,7 @@ export default function DomainLeadApplicationView() {
     inferredStatus,
     criteriaByKey,
     timeline,
+    interviewRounds,
     canMoveStage,
     priorApplications,
     emailEngagement,
@@ -369,7 +375,6 @@ export default function DomainLeadApplicationView() {
   const generalQuestions: any[] = application.generalChallengeVersion?.questions ?? [];
   const challengeQuestions: any[] = da.challengeVersion?.questions ?? [];
   const reviews: any[] = da.reviews ?? [];
-  const interview = da.interviews?.[0] ?? null;
   const statusInfo = STATUS_BADGE[inferredStatus] ?? STATUS_BADGE.Pending;
 
   const questionLabels: Record<string, string> = {};
@@ -467,12 +472,16 @@ export default function DomainLeadApplicationView() {
             )}
           </DetailCard>
 
-          {/* Interview */}
-          {interview && (
-            <DetailCard title="Interview" className="overflow-hidden">
-              <InterviewNotesCard interview={toInterviewNotesData(interview)} variant="compact" />
+          {/* One card per Interviews round, each with its own notes. */}
+          {(interviewRounds as { roundId: string; label: string; interview: any }[]).map((round) => (
+            <DetailCard
+              key={round.roundId}
+              title={interviewRounds.length > 1 ? round.label : "Interview"}
+              className="overflow-hidden"
+            >
+              <InterviewNotesCard interview={toInterviewNotesData(round.interview)} variant="compact" />
             </DetailCard>
-          )}
+          ))}
 
           {/* Every stage change in one list: delibs, interviews, decisions.
               The move control sits in the body, not the title row: this column

@@ -1,4 +1,11 @@
-import { delibRounds, hasInterviews, type Timeline, type TimelineBlock } from "./cycle-timeline";
+import {
+  FIRST_INTERVIEW_ROUND_ID,
+  delibRounds,
+  hasInterviews,
+  interviewRoundId,
+  type Timeline,
+  type TimelineBlock,
+} from "./cycle-timeline";
 
 // What each block of a cycle's timeline (see cycle-timeline.ts) asks of the
 // hiring lead, and how its weeks map to dates. The setup page renders a tab
@@ -7,13 +14,21 @@ import { delibRounds, hasInterviews, type Timeline, type TimelineBlock } from ".
 
 export type BlockTask = { key: string; label: string };
 
+/** An Interviews round's task key: the plain key for the first round (as
+ *  before rounds existed), `<key>:<roundId>` for later ones. */
+export function interviewTaskKey(key: string, roundId: string): string {
+  return roundId === FIRST_INTERVIEW_ROUND_ID ? key : `${key}:${roundId}`;
+}
+
 /** The tasks a block carries. Round tasks are keyed `round:<id>`. */
 export function tasksForBlock(t: Timeline, b: TimelineBlock, opts: { hasChallenges: boolean }): BlockTask[] {
   if (b.kind === "delib") {
     const round = delibRounds(t).find((r) => r.id === b.id);
     return [
       { key: `round:${b.id}`, label: `Hold ${b.label}` },
-      ...(round?.leadsToInterviews ? [{ key: "interviewInvites", label: "Send interview invites" }] : []),
+      ...(round?.interviewRoundId
+        ? [{ key: interviewTaskKey("interviewInvites", round.interviewRoundId), label: "Send interview invites" }]
+        : []),
     ];
   }
   switch (b.key) {
@@ -32,11 +47,18 @@ export function tasksForBlock(t: Timeline, b: TimelineBlock, opts: { hasChalleng
         ...(hasInterviews(t) ? [{ key: "interviewers", label: "Finalize the interviewer roster" }] : []),
         { key: "reviews", label: "Finish application review" },
       ];
-    case "interviews":
+    case "interviews": {
+      // The first round's roster is finalized on Review; later rounds bring
+      // their own.
+      const id = interviewRoundId(b);
       return [
-        { key: "interviewSchedule", label: "Finalize the interview schedule" },
-        { key: "conductInterviews", label: "Conduct interviews" },
+        ...(id === FIRST_INTERVIEW_ROUND_ID
+          ? []
+          : [{ key: interviewTaskKey("interviewers", id), label: "Finalize the interviewer roster" }]),
+        { key: interviewTaskKey("interviewSchedule", id), label: "Finalize the interview schedule" },
+        { key: interviewTaskKey("conductInterviews", id), label: "Conduct interviews" },
       ];
+    }
     case "decisions":
       return [{ key: "sendDecisions", label: "Send out decisions" }];
   }

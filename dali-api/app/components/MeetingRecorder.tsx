@@ -6,7 +6,7 @@ import { cn } from "~/lib/cn";
 import { ProgressRing } from "./meeting-recorder/ProgressRing";
 import { describeProcessing } from "./meeting-recorder/processing-progress";
 import { recorderTriggerLabel } from "./meeting-recorder/trigger-label";
-import { RecordStartSheet } from "./meeting-recorder/RecordStartSheet";
+import { RecordStartSheet, type RecordConsent } from "./meeting-recorder/RecordStartSheet";
 import { deriveRailState, statusLineFor, RecordingBody } from "./meeting-recorder/RecordingRail";
 import { formatClock } from "./meeting-recorder/transcript";
 import type { UseMeetingRecording } from "./meeting-recorder/use-meeting-recording";
@@ -19,7 +19,16 @@ import type { UseMeetingRecording } from "./meeting-recorder/use-meeting-recordi
  * trigger and, on a narrow canvas while live, a small Popover with the
  * meters/status/Stop (the rail can't show live states in the Drawer there).
  */
-export function MeetingRecorder({ rec, containerWide }: { rec: UseMeetingRecording; containerWide: boolean }) {
+export function MeetingRecorder({
+  rec,
+  containerWide,
+  consent,
+}: {
+  rec: UseMeetingRecording;
+  containerWide: boolean;
+  /** Ask for someone's permission in the start sheet before recording. */
+  consent?: RecordConsent;
+}) {
   const { actionBtnPrimary, actionIcon } = useOsChrome();
 
   if (!rec.canShowRecorder) return null;
@@ -71,7 +80,7 @@ export function MeetingRecorder({ rec, containerWide }: { rec: UseMeetingRecordi
       ) : (
         <Tooltip content={status ?? triggerLabel}>{button}</Tooltip>
       )}
-      <RecordStartSheet rec={rec} />
+      <RecordStartSheet rec={rec} consent={consent} />
     </>
   );
 }

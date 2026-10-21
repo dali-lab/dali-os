@@ -33,13 +33,23 @@ export type DecisionSlotType = "Rejected" | "InvitedToInterview" | "Accepted" | 
 export type NotificationSlotType = NotificationType;
 
 export const CONTINUED_INTEREST_SLOT = "waitlist:ContinuedInterest";
+// The invite for any Interviews round after the first, so its copy can read
+// as a follow-up rather than a first invite.
+export const LATER_INTERVIEW_INVITE_SLOT = "decision:InvitedToLaterInterview";
 
 export type TemplateSlot =
   | `decision:${DecisionSlotType}`
   | `notification:${NotificationSlotType}`
-  | typeof CONTINUED_INTEREST_SLOT;
+  | typeof CONTINUED_INTEREST_SLOT
+  | typeof LATER_INTERVIEW_INVITE_SLOT;
 
 export const decisionSlot = (t: DecisionSlotType): TemplateSlot => `decision:${t}`;
+
+/** The email a released decision sends: invites to a later Interviews round
+ *  use their own slot. */
+export function releaseSlot(t: DecisionSlotType, laterInterviewRound: boolean): TemplateSlot {
+  return t === "InvitedToInterview" && laterInterviewRound ? LATER_INTERVIEW_INVITE_SLOT : decisionSlot(t);
+}
 export const notificationSlot = (t: NotificationSlotType): TemplateSlot => `notification:${t}`;
 
 // Slot → variables actually passed to renderEmail at the call site. When a slot
@@ -51,6 +61,7 @@ export const TEMPLATE_VARIABLES: Record<TemplateSlot, readonly TemplateVariableN
   // Decision emails — api.decisions.$id.release passes firstName + domain.
   "decision:Rejected": ["firstName", "domain"],
   "decision:InvitedToInterview": ["firstName", "domain"],
+  [LATER_INTERVIEW_INVITE_SLOT]: ["firstName", "domain"],
   "decision:Accepted": ["firstName", "domain"],
   "decision:Waitlisted": ["firstName", "domain"],
 

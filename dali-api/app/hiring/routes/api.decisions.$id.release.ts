@@ -2,7 +2,8 @@ import type { Route } from "./+types/api.decisions.$id.release";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
-import { renderForSlot, decisionSlot } from "~/hiring/lib/email-variables";
+import { renderForSlot, releaseSlot } from "~/hiring/lib/email-variables";
+import { FIRST_INTERVIEW_ROUND_ID, findInterviewRound, parseTimeline } from "~/hiring/lib/cycle-timeline";
 import { logAuditEvent } from "~/lib/audit";
 import { requireApiSignedOrForbidden } from "~/hiring/lib/confidentiality";
 import { onboardingEmailHtml } from "~/members/lib/welcome.server";
@@ -60,7 +61,7 @@ export async function action({ request, params }: Route.ActionArgs) {
               netId: true,
             },
           },
-          applicationCycle: { select: { applicants: true } },
+          applicationCycle: { select: { applicants: true, timeline: true } },
         },
       },
     },
@@ -96,11 +97,16 @@ export async function action({ request, params }: Route.ActionArgs) {
   );
   const decisionChannel = config.decisionChannel;
 
-  const binding = await getHiringEmail(decisionSlot(decision.type));
+  const round = findInterviewRound(
+    parseTimeline(domainApp.application.applicationCycle.timeline),
+    decision.interviewRoundId ?? FIRST_INTERVIEW_ROUND_ID,
+  );
+  const slot = releaseSlot(decision.type, (round?.index ?? 0) > 0);
+  const binding = await getHiringEmail(slot);
   if (!binding && decisionChannel === "email") {
     return Response.json(
           {
-            error: `There's no ${decision.type} email yet. Write one on the Setup tab before releasing.`,
+            error: `There's no ${slot.slice("decision:".length)} email yet. Write one on the Setup tab before releasing.`,
           },
           { status: 409 }
         );
@@ -114,6 +120,7 @@ export async function action({ request, params }: Route.ActionArgs) {
       madeById: auth.user.sub,
       notes: decision.notes,
       waitlistRank: decision.waitlistRank,
+      interviewRoundId: decision.interviewRoundId,
       parentDecisionId: decision.id,
     },
   });
@@ -174,7 +181,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 
     if (binding && to && user) {
       const { subject, html } = renderForSlot(
-        decisionSlot(decision.type),
+        slot,
         binding,
         {
           firstName: user.firstName,

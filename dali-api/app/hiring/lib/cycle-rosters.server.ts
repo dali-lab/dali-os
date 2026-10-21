@@ -1,5 +1,6 @@
 import { prisma } from "~/lib/db";
 import { currentTermMemberWhere } from "~/lib/roles";
+import { FIRST_INTERVIEW_ROUND_ID } from "./cycle-timeline";
 
 // Bulk roster helpers for the cycle page's Review tab.
 
@@ -19,13 +20,15 @@ export async function domainMentorIds(domainId: string, request?: Request): Prom
   return users.map((u) => u.id);
 }
 
-/** Add every mentor of `domainId` to the cycle's reviewer or interviewer
- *  roster for that domain. Returns how many were newly added. */
+/** Add every mentor of `domainId` to the cycle's reviewer roster, or to one
+ *  Interviews round's interviewer roster, for that domain. Returns how many
+ *  were newly added. */
 export async function addDomainMentors(
   cycleId: string,
   domainId: string,
   role: "reviewer" | "interviewer",
   request?: Request,
+  interviewRoundId: string = FIRST_INTERVIEW_ROUND_ID,
 ): Promise<number> {
   const userIds = await domainMentorIds(domainId, request);
   if (userIds.length === 0) return 0;
@@ -33,6 +36,9 @@ export async function addDomainMentors(
   const { count } =
     role === "reviewer"
       ? await prisma.cycleReviewer.createMany({ data, skipDuplicates: true })
-      : await prisma.cycleInterviewer.createMany({ data, skipDuplicates: true });
+      : await prisma.cycleInterviewer.createMany({
+          data: data.map((d) => ({ ...d, interviewRoundId })),
+          skipDuplicates: true,
+        });
   return count;
 }

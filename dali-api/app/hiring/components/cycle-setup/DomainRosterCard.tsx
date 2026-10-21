@@ -32,6 +32,7 @@ export function DomainRosterCard({
   onRemove,
   mentors,
   cycleId,
+  interviewRoundId,
 }: {
   title: string;
   description?: ReactNode;
@@ -46,6 +47,8 @@ export function DomainRosterCard({
   mentors: boolean;
   /** Sent with add-domain-mentors when the route isn't the cycle's own page. */
   cycleId?: string;
+  /** The Interviews round an interviewer roster belongs to. */
+  interviewRoundId?: string;
 }) {
   const { bodyText, formTrigger } = useOsChrome();
   const [domainId, setDomainId] = useState(domains[0]?.id ?? "");
@@ -91,6 +94,7 @@ export function DomainRosterCard({
           <input type="hidden" name="role" value={role} />
           <input type="hidden" name="domainId" value={selected} />
           {cycleId && <input type="hidden" name="cycleId" value={cycleId} />}
+          {interviewRoundId && <input type="hidden" name="interviewRoundId" value={interviewRoundId} />}
           <button type="submit" className={buttonClasses("secondary", "md")}>
             <Users className="h-3.5 w-3.5" aria-hidden /> Add all mentors
           </button>

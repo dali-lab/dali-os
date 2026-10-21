@@ -42,7 +42,7 @@ import {
 } from "~/hiring/lib/labels";
 import { Select, Tooltip, InfoTip } from "~/components/ui/floating";
 import { interviewerCalendars } from "~/hiring/lib/interview-availability.server";
-import { delibRounds, parseTimeline } from "~/hiring/lib/cycle-timeline";
+import { FIRST_INTERVIEW_ROUND_ID, delibRounds, parseTimeline } from "~/hiring/lib/cycle-timeline";
 import { SearchInput } from "~/components/ui/SearchInput";
 import { buttonClasses } from "~/components/ui/Button";
 import { useDialog } from "~/components/ui/dialog";
@@ -363,18 +363,30 @@ export async function loader({ request }: Route.LoaderArgs) {
         pinnedVersionIds: domainReviewVersionIds,
       });
 
-      // Interviewers for this domain in this cycle, with the hours their DALI
-      // OS calendar leaves free inside the interview window.
+      // Interviewers for this domain on the cycle's first Interviews round,
+      // with the hours their DALI OS calendar leaves free inside its window.
+      // Later rounds' rosters live on the cycle's own Interviews tabs.
       const interviewersRaw = cycle
         ? await prisma.cycleInterviewer.findMany({
-            where: { applicationCycleId: cycle.id, domainId: assignment.domainId },
+            where: {
+              applicationCycleId: cycle.id,
+              domainId: assignment.domainId,
+              interviewRoundId: FIRST_INTERVIEW_ROUND_ID,
+            },
             include: {
               user: { select: { id: true, firstName: true, lastName: true, daliEmail: true } },
             },
           })
         : [];
       const interviewConfig = cycle && cycle.hasInterviews
-        ? await prisma.interviewConfig.findUnique({ where: { applicationCycleId: cycle.id } })
+        ? await prisma.interviewConfig.findUnique({
+            where: {
+              applicationCycleId_interviewRoundId: {
+                applicationCycleId: cycle.id,
+                interviewRoundId: FIRST_INTERVIEW_ROUND_ID,
+              },
+            },
+          })
         : null;
       const calendars = interviewConfig
         ? await interviewerCalendars(interviewersRaw.map((i) => i.userId), interviewConfig)

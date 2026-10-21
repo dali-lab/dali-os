@@ -1,7 +1,9 @@
+import { useState } from "react";
 import { Mic, Monitor } from "lucide-react";
 import { buttonClasses } from "~/components/ui/Button";
 import { Select } from "~/components/ui/floating";
 import { Toggle } from "~/components/ui/Toggle";
+import { Checkbox } from "~/components/ui/Checkbox";
 import { Radio } from "~/components/ui/Radio";
 import { Modal, ModalHeader } from "~/components/Modal";
 import { modalCardClass } from "~/components/os-chrome";
@@ -15,8 +17,14 @@ import type { UseMeetingRecording } from "./use-meeting-recording";
  * closes, the rail opens) without this component doing anything special —
  * `rec.open` stays true and `rec.phase` simply stops being "idle".
  */
-export function RecordStartSheet({ rec }: { rec: UseMeetingRecording }) {
+/** Asks the recorder to get someone's permission first; Start waits until
+ *  they confirm it. */
+export type RecordConsent = { title: string; ask: string; confirm: string };
+
+export function RecordStartSheet({ rec, consent }: { rec: UseMeetingRecording; consent?: RecordConsent }) {
   const open = rec.open && rec.phase === "idle" && rec.canEdit;
+  const [agreed, setAgreed] = useState(false);
+  const blocked = Boolean(consent) && !agreed;
 
   return (
     <Modal
@@ -27,12 +35,18 @@ export function RecordStartSheet({ rec }: { rec: UseMeetingRecording }) {
     >
       <ModalHeader
         titleId="record-start-sheet-title"
-        title="Record this meeting"
+        title={consent?.title ?? "Record this meeting"}
         onClose={rec.cancelStart}
         className="mb-4"
       />
 
       <div className="flex flex-col gap-4">
+        {consent && (
+          <div className="flex flex-col gap-2 rounded-xl bg-os-amber/10 px-3 py-2.5">
+            <p className="text-sm text-foreground">{consent.ask}</p>
+            <Checkbox checked={agreed} onChange={(e) => setAgreed(e.target.checked)} label={consent.confirm} />
+          </div>
+        )}
         {rec.desktopVer != null && (
           <div
             className={cn(
@@ -125,6 +139,7 @@ export function RecordStartSheet({ rec }: { rec: UseMeetingRecording }) {
         <button
           type="button"
           onClick={() => void (rec.useDesktopApp ? rec.startDesktop() : rec.startBrowser())}
+          disabled={blocked}
           className={buttonClasses("primary", "sm")}
         >
           <Mic className="h-3.5 w-3.5" /> Start recording

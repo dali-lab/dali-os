@@ -149,7 +149,7 @@ describe("applyRoomHolds", () => {
 
     const result = await applyRoomHolds({
       cycleId: "cycle-1",
-      config: config(),
+      configs: [config()],
       actorUserId: "actor-1",
       override: false,
     });
@@ -181,7 +181,7 @@ describe("applyRoomHolds", () => {
 
     const result = await applyRoomHolds({
       cycleId: "cycle-1",
-      config: config(),
+      configs: [config()],
       actorUserId: "actor-1",
       override: true,
     });
@@ -223,10 +223,29 @@ describe("applyRoomHolds", () => {
     ]);
   });
 
+  it("holds rooms for every round that wants them, in one rebuild", async () => {
+    const round2 = {
+      ...config(),
+      interviewStartDate: zonedDayStartUtc(2026, 5, 11, TZ),
+      interviewEndDate: zonedDayStartUtc(2026, 5, 12, TZ),
+      rooms: [{ id: "room-2", name: "Pod Momo" }],
+    };
+    const result = await applyRoomHolds({
+      cycleId: "cycle-1",
+      configs: [config(), round2, { ...config(), holdRooms: false, rooms: [{ id: "room-3", name: "Pod Sokka" }] }],
+      actorUserId: "actor-1",
+      override: false,
+    });
+
+    expect(result).toEqual({ ok: true });
+    expect(mockRooms.releaseCycleRoomBookings).toHaveBeenCalledTimes(1);
+    expect(mockRooms.createRoomBooking.mock.calls.map((c) => c[0].roomId)).toEqual(["room-1", "room-2"]);
+  });
+
   it("holdRooms false releases existing holds and creates nothing", async () => {
     const result = await applyRoomHolds({
       cycleId: "cycle-1",
-      config: { ...config(), holdRooms: false },
+      configs: [{ ...config(), holdRooms: false }],
       actorUserId: "actor-1",
       override: false,
     });

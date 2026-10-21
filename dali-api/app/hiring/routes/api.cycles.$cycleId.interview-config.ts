@@ -7,6 +7,11 @@ import { withCors, handlePreflight } from "~/lib/cors";
 import { idSchema, parseJson } from "~/lib/validate";
 import { APPLICATION_TZ, isValidTimezone } from "~/lib/timezone";
 import { applyRoomHolds } from "~/hiring/lib/interview-room-holds.server";
+import { FIRST_INTERVIEW_ROUND_ID, findInterviewRound, parseTimeline } from "~/hiring/lib/cycle-timeline";
+
+const ROOMS_INCLUDE = {
+  rooms: { where: { archivedAt: null }, orderBy: { name: "asc" }, select: { id: true, name: true } },
+} as const;
 
 const InterviewConfigSchema = z
   .object({
@@ -23,6 +28,7 @@ const InterviewConfigSchema = z
     roomIds: z.array(idSchema).optional(),
     holdRooms: z.boolean().optional(),
     overrideConflicts: z.boolean().optional(),
+    interviewRoundId: idSchema.optional(),
   })
   .refine(
     (v) =>
@@ -46,10 +52,17 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   if (!(await hasCycleAccess(auth.user.sub, params.cycleId!)))
     return forbidden(request);
 
-  const config = await prisma.interviewConfig.findUnique({
+  const round = new URL(request.url).searchParams.get("round") ?? FIRST_INTERVIEW_ROUND_ID;
+  const configs = await prisma.interviewConfig.findMany({
     where: { applicationCycleId: params.cycleId },
-    include: { rooms: { where: { archivedAt: null }, orderBy: { name: "asc" }, select: { id: true, name: true } } },
+    orderBy: { createdAt: "asc" },
+    include: ROOMS_INCLUDE,
   });
+  const own = configs.find((c) => c.interviewRoundId === round);
+  // A round with no settings yet starts from the latest round's, unsaved
+  // (id null) so the schedule still reads as not set up.
+  const latest = configs.at(-1);
+  const config = own ?? (latest ? { ...latest, id: null, interviewRoundId: round } : null);
 
   return withCors(request, Response.json(config));
 }
@@ -74,10 +87,18 @@ export async function action({ request, params }: Route.ActionArgs) {
   }
 
   const cycleId = params.cycleId!;
-  const existing = await prisma.interviewConfig.findUnique({
-    where: { applicationCycleId: cycleId },
-    include: { rooms: { select: { id: true, name: true } } },
-  });
+  const interviewRoundId = body.interviewRoundId ?? FIRST_INTERVIEW_ROUND_ID;
+  const [cycle, others] = await Promise.all([
+    prisma.applicationCycle.findUnique({ where: { id: cycleId }, select: { timeline: true } }),
+    prisma.interviewConfig.findMany({
+      where: { applicationCycleId: cycleId },
+      include: { rooms: { select: { id: true, name: true } } },
+    }),
+  ]);
+  if (!cycle || !findInterviewRound(parseTimeline(cycle.timeline), interviewRoundId)) {
+    return withCors(request, Response.json({ error: "That interview round isn't on the timeline." }, { status: 400 }));
+  }
+  const existing = others.find((c) => c.interviewRoundId === interviewRoundId);
 
   const effective = {
     interviewStartDate: new Date(body.interviewStartDate),
@@ -98,7 +119,10 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   const applied = await applyRoomHolds({
     cycleId,
-    config: { ...effective, rooms },
+    configs: [
+      ...others.filter((c) => c.interviewRoundId !== interviewRoundId),
+      { ...effective, rooms },
+    ],
     actorUserId: auth.user.sub,
     override: body.overrideConflicts ?? false,
   });
@@ -129,7 +153,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   }
 
   const config = await prisma.interviewConfig.upsert({
-    where: { applicationCycleId: cycleId },
+    where: { applicationCycleId_interviewRoundId: { applicationCycleId: cycleId, interviewRoundId } },
     update: {
       slotDurationMinutes: body.slotDurationMinutes,
       bufferMinutes: body.bufferMinutes,
@@ -146,6 +170,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     },
     create: {
       applicationCycleId: cycleId,
+      interviewRoundId,
       slotDurationMinutes: body.slotDurationMinutes ?? 30,
       bufferMinutes: body.bufferMinutes ?? 15,
       dayStartHour: body.dayStartHour ?? 9,
