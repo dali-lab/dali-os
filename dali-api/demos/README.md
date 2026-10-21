@@ -45,3 +45,16 @@ npx tsx demos/lib/encode.ts   # demo-results/*.webm -> demo-out/<name>.mp4 + <na
 ## In CI
 
 `.github/workflows/demo-capture.yml` runs on PRs that touch `dali-api/demos/`. It records only the `.demo.ts` files the PR changed (all of them if only `lib/` changed), uploads `demo-out/` as the `demo-videos` artifact, and upserts one PR comment. S3 upload happens when the `RELEASE_NOTES_AWS_ACCESS_KEY_ID` and `RELEASE_NOTES_AWS_SECRET_ACCESS_KEY` secrets and a bucket (`RELEASE_NOTES_S3_BUCKET` variable or secret; region from the `AWS_REGION` variable, default `us-east-1`) exist. Otherwise it is skipped and the artifact is the only copy.
+
+`.github/workflows/demo-capture.yml` can also be dispatched by hand with `pr_number` and `demos` (space-separated files) inputs.
+
+## Claude-written demos
+
+`.github/workflows/demo-write.yml` writes a demo for a PR that has a "Release note" line, changes `dali-api/app/`, and has no `.demo.ts` file. It runs when the PR is opened, edited or marked ready (not drafts or forks), once per PR. `demos/lib/write-loop.sh` runs the loop:
+
+1. A writer session (`demos/lib/prompts/writer.md`) reads the PR context in `demo-work/`, writes `demos/<branch-slug>.demo.ts`, and runs it until it passes. Changes outside that file are reverted.
+2. CI records and encodes it, then pulls about 14 frames.
+3. A separate reviewer session (`demos/lib/prompts/reviewer.md`) looks at the frames and returns pass or feedback.
+4. On a fail, the writer gets the feedback and the frames and tries again.
+
+Caps: 3 attempts, `TOKEN_BUDGET` (uncached input + cache writes + output across every call, default 1.5M), and per-call `--max-turns`. A passing script is committed to the PR branch and `demo-capture.yml` is dispatched for it. One `<!-- demo-write -->` comment reports the result; the `demo-write` artifact has the last script, frames and review. To retry, run Demo write from the Actions tab with the PR number. If the change has nothing to show, the writer says so and nothing is committed.

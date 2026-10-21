@@ -82,7 +82,7 @@ Release notes live at `/release-notes` and are authored in Core → Communicatio
 - **When opening a PR**, release notes are opt-in: only a PR with text under the "Release note" heading in its body gets a drafted entry. If the change is user-facing by the rule above, write one plain-language line there (what a member can now do, not how it was built). Otherwise leave it empty.
 - **If it's ambiguous** whether a change is user-facing, which area it belongs to, or whether it should be limited to an audience (e.g. Core only), ask the user instead of guessing. In CI, say so in the PR description.
 - Release-note copy follows the UI copy rules: plain language, no em dashes, no marketing.
-- **Demos**: when opening a user-facing UI PR, add `dali-api/demos/<name>.demo.ts` (see `dali-api/demos/README.md`). `demo-capture.yml` records it and files the mp4 under `release-notes/pr-<N>/`.
+- **Demos**: when opening a user-facing UI PR, add `dali-api/demos/<name>.demo.ts` (see `dali-api/demos/README.md`). `demo-capture.yml` records it and files the mp4 under `release-notes/pr-<N>/`. If a PR has a release-note line but no demo, `demo-write.yml` has Claude write one (write, record, review loop) and commits it to the PR branch.
 
 ## Operating rules when running in CI
 

@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { releaseNoteLine } from "~/lib/release-note-line";
 import { RELEASE_NOTE_AREAS } from "~/lib/release-notes";
 
 export const MAX_COMMITS = 250;
@@ -20,22 +21,6 @@ export type PullForPrompt = PullSummary & {
   additions: number;
   deletions: number;
 };
-
-const RELEASE_NOTE_HEADING = /^#{1,6}\s*release\s+notes?\s*:?\s*$/i;
-const EMPTY_NOTE = /^(none|n\/?a|-+)\.?$/i;
-
-export function releaseNoteLine(body: string | null): string | null {
-  const lines = (body ?? "").replace(/<!--[\s\S]*?-->/g, "").split(/\r?\n/);
-  const start = lines.findIndex((l) => RELEASE_NOTE_HEADING.test(l.trim()));
-  if (start === -1) return null;
-  const section: string[] = [];
-  for (const line of lines.slice(start + 1)) {
-    if (/^#{1,6}\s/.test(line.trim())) break;
-    const text = line.trim().replace(/^[-*]\s+/, "").trim();
-    if (text && !EMPTY_NOTE.test(text)) section.push(text);
-  }
-  return section.length ? section.join(" ") : null;
-}
 
 export function selectPrsToDraft(
   prs: PullSummary[],
