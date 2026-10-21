@@ -1,0 +1,178 @@
+name: Demo capture
+
+# Records the scripted demos in dali-api/demos/ against the CI database, encodes
+# them to mp4, and (when AWS secrets exist) uploads them to the release-notes
+# bucket where the release-notes draft job picks them up. See dali-api/demos/README.md.
+
+on:
+  pull_request:
+    paths: ['dali-api/demos/**']
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: PR number to file the recordings under (leave empty to skip S3 and the PR comment)
+        required: false
+
+concurrency:
+  group: demo-capture-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  capture:
+    name: Record demos
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: dali-api
+    env:
+      DATABASE_URL: postgresql://dali:dali@localhost:5432/dali
+      JWT_SECRET: test-secret-for-ci-at-least-32-chars
+      CAS_BASE_URL: https://login.dartmouth.edu/cas
+      FRONTEND_URL: http://localhost:5173
+      API_BASE_URL: http://localhost:3001
+      PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr_number }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.RELEASE_NOTES_AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.RELEASE_NOTES_AWS_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+      BUCKET: ${{ vars.RELEASE_NOTES_S3_BUCKET || secrets.RELEASE_NOTES_S3_BUCKET }}
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: dali
+          POSTGRES_PASSWORD: dali
+          POSTGRES_DB: dali
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+      - name: Install ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - name: Generate Prisma client
+        run: npx prisma generate
+      - name: Run migrations and seed
+        run: npx prisma migrate reset --force && npx prisma db seed
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+      - name: Build app
+        run: npm run build
+
+      - name: Pick demos
+        id: pick
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          files=""
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            files=$(git diff --name-only --diff-filter=d "origin/${BASE_REF}...HEAD" -- 'dali-api/demos/*.demo.ts' | sed 's#^dali-api/##' | tr '\n' ' ')
+          fi
+          # Only lib/ changed (or a manual run): record everything.
+          echo "files=${files}" >> "$GITHUB_OUTPUT"
+          echo "Demos: ${files:-all}"
+
+      - name: Record demos
+        id: record
+        env:
+          DEMO_FILES: ${{ steps.pick.outputs.files }}
+          PLAYWRIGHT_JSON_OUTPUT_NAME: demo-report.json
+        # shellcheck disable=SC2086
+        run: npx playwright test -c playwright.demos.config.ts --reporter=list,json $DEMO_FILES
+
+      - name: Encode
+        id: encode
+        if: always()
+        run: npx tsx demos/lib/encode.ts
+
+      - name: Upload demo videos
+        id: upload-artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: demo-videos
+          path: dali-api/demo-out/
+          retention-days: 14
+          if-no-files-found: ignore
+
+      - name: Upload to S3
+        id: s3
+        if: always() && steps.encode.outcome == 'success' && env.PR_NUMBER != '' && env.AWS_ACCESS_KEY_ID != '' && env.AWS_SECRET_ACCESS_KEY != '' && env.BUCKET != ''
+        run: |
+          if ! command -v aws >/dev/null; then
+            curl -sSf "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "$RUNNER_TEMP/awscli.zip"
+            unzip -q "$RUNNER_TEMP/awscli.zip" -d "$RUNNER_TEMP"
+            sudo "$RUNNER_TEMP/aws/install"
+          fi
+          aws s3 cp demo-out/ "s3://${BUCKET}/release-notes/pr-${PR_NUMBER}/" --recursive \
+            --exclude '*' --include '*.mp4' --include '*.jpg'
+
+      - name: Write PR comment
+        if: always() && env.PR_NUMBER != ''
+        env:
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          ARTIFACT_URL: ${{ steps.upload-artifact.outputs.artifact-url }}
+          RECORD_OUTCOME: ${{ steps.record.outcome }}
+          S3_OUTCOME: ${{ steps.s3.outcome }}
+        run: |
+          {
+            echo '<!-- demo-capture -->'
+            echo '**Demo capture**'
+            echo
+            if [ "$RECORD_OUTCOME" != "success" ]; then
+              failed=""
+              if [ -f demo-report.json ]; then
+                failed=$(jq -r '[.. | objects | select(has("tests")) | .tests[] | select(.status != "expected") | .location.file] | unique | join(", ")' demo-report.json 2>/dev/null || true)
+              fi
+              echo "Recording failed${failed:+ in: ${failed}}. See the [run log](${RUN_URL})."
+              echo
+            fi
+            if ls demo-out/*.mp4 >/dev/null 2>&1; then
+              echo '| Demo | Size | Download | S3 key |'
+              echo '|---|---|---|---|'
+              for f in demo-out/*.mp4; do
+                name=$(basename "$f" .mp4)
+                size=$(du -k "$f" | cut -f1)
+                key="-"
+                [ "$S3_OUTCOME" = "success" ] && key="\`release-notes/pr-${PR_NUMBER}/${name}.mp4\`"
+                echo "| ${name} | ${size} KB | [demo-videos artifact](${ARTIFACT_URL:-$RUN_URL}) | ${key} |"
+              done
+              echo
+              [ "$S3_OUTCOME" = "success" ] || echo '_Not uploaded to S3 (no credentials, or the upload failed); the mp4s are in the workflow artifact only._'
+            elif [ "$RECORD_OUTCOME" = "success" ]; then
+              echo "No recordings were produced. See the [run log](${RUN_URL})."
+            fi
+          } > "$RUNNER_TEMP/comment.md"
+
+      - name: Find existing demo comment
+        id: find
+        if: always() && env.PR_NUMBER != ''
+        uses: peter-evans/find-comment@v3
+        with:
+          issue-number: ${{ env.PR_NUMBER }}
+          comment-author: github-actions[bot]
+          body-includes: <!-- demo-capture -->
+
+      - name: Upsert demo comment
+        if: always() && env.PR_NUMBER != ''
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          comment-id: ${{ steps.find.outputs.comment-id }}
+          issue-number: ${{ env.PR_NUMBER }}
+          edit-mode: replace
+          body-path: ${{ runner.temp }}/comment.md

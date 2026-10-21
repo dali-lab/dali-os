@@ -1,5 +1,6 @@
 import {
   S3Client,
+  CopyObjectCommand,
   GetObjectCommand,
   HeadObjectCommand,
   PutObjectCommand,
@@ -190,4 +191,17 @@ export async function getObjectBytes(
   const res = await s3.send(new GetObjectCommand({ Bucket: BUCKET, Key: key }))
   const bytes = await res.Body!.transformToByteArray()
   return { body: Buffer.from(bytes), contentType: res.ContentType ?? undefined }
+}
+
+export async function copyObject(sourceKey: string, destKey: string): Promise<void> {
+  if (!isS3Configured()) {
+    throw new Error("AWS S3 is not configured")
+  }
+  await s3.send(
+    new CopyObjectCommand({
+      Bucket: BUCKET,
+      CopySource: `${BUCKET}/${sourceKey.split('/').map(encodeURIComponent).join('/')}`,
+      Key: destKey,
+    }),
+  )
 }

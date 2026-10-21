@@ -23,3 +23,7 @@ prisma/data/
 
 # Vitest coverage
 /coverage/
+
+# Demo capture
+/demo-results/
+/demo-out/

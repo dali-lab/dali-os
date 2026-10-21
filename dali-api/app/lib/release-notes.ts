@@ -3,6 +3,7 @@ import { NAV_AREAS } from "~/lib/nav-areas";
 export const RELEASE_NOTE_VIDEO_ACCEPT = "video/mp4,video/webm,video/quicktime";
 export const RELEASE_NOTE_VIDEO_KEY_PREFIX = "release-notes/uploads";
 export const RELEASE_NOTE_CAPTURE_KEY_PREFIX = "release-notes/pr-";
+export const RELEASE_NOTE_PUBLISHED_KEY_PREFIX = "release-notes/published/";
 
 export const RELEASE_NOTE_AREAS: { key: string; label: string }[] = [
   { key: "calendar", label: "Calendar" },
@@ -52,8 +53,16 @@ export function isReleaseNoteVideoKey(key: string): boolean {
   return (
     key.startsWith(`${RELEASE_NOTE_VIDEO_KEY_PREFIX}/`) ||
     key.startsWith(RELEASE_NOTE_CAPTURE_KEY_PREFIX) ||
+    key.startsWith(RELEASE_NOTE_PUBLISHED_KEY_PREFIX) ||
     key.startsWith("uploads/" + RELEASE_NOTE_VIDEO_KEY_PREFIX + "/")
   );
+}
+
+// PR captures expire under a bucket lifecycle rule; published entries must not.
+export function publishedVideoKey(noteId: string, videoKey: string | null): string | null {
+  if (!videoKey?.startsWith(RELEASE_NOTE_CAPTURE_KEY_PREFIX)) return null;
+  const ext = videoKey.match(/\.([a-z0-9]+)$/i)?.[1]?.toLowerCase() ?? "mp4";
+  return `${RELEASE_NOTE_PUBLISHED_KEY_PREFIX}${noteId}.${ext}`;
 }
 
 export type SlackStatus = "posted" | "sending" | "failed" | "app-only";

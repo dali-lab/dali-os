@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/db", () => ({
   prisma: {
-    releaseNote: { findMany: vi.fn(), updateMany: vi.fn() },
+    releaseNote: { findMany: vi.fn(), updateMany: vi.fn(), update: vi.fn() },
     outboundMessage: { findMany: vi.fn() },
   },
 }));
@@ -10,7 +10,7 @@ vi.mock("~/lib/auth", () => ({}));
 vi.mock("~/lib/login-next", () => ({}));
 vi.mock("~/lib/roles", () => ({}));
 vi.mock("~/lib/feature-flags.server", () => ({}));
-vi.mock("~/lib/s3", () => ({}));
+vi.mock("~/lib/s3", () => ({ copyObject: vi.fn() }));
 vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
 vi.mock("~/lib/outbound.server", () => ({
   enqueueOutbound: vi.fn(async () => ({ id: "ob1", deduped: false })),
@@ -27,6 +27,7 @@ vi.mock("~/lib/groups", () => ({
 import { prisma } from "~/lib/db";
 import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
 import { notify } from "~/lib/notify.server";
+import { copyObject } from "~/lib/s3";
 import { publishReleaseNotes, releaseNoteSlackStatuses } from "../release-notes.server";
 
 const p = prisma as unknown as Record<string, Record<string, ReturnType<typeof vi.fn>>>;
@@ -46,7 +47,7 @@ const note = (o: Record<string, unknown>) => ({
 
 function publish(notes: ReturnType<typeof note>[]) {
   p.releaseNote.findMany
-    .mockResolvedValueOnce(notes.map((n) => ({ id: n.id, summary: n.summary })))
+    .mockResolvedValueOnce(notes.map((n) => ({ id: n.id, summary: n.summary, videoKey: n.videoKey })))
     .mockResolvedValueOnce(notes);
   return publishReleaseNotes(
     notes.map((n) => n.id),
@@ -141,5 +142,39 @@ describe("releaseNoteSlackStatuses", () => {
         { id: "c", allMembers: false },
       ]),
     ).resolves.toEqual({ a: "posted", b: "app-only", c: "app-only" });
+  });
+});
+
+describe("publishReleaseNotes video copy", () => {
+  it("copies a PR capture to the published prefix before publishing", async () => {
+    await publish([note({ videoKey: "release-notes/pr-12/demo.mp4" })]);
+    expect(copyObject).toHaveBeenCalledWith("release-notes/pr-12/demo.mp4", "release-notes/published/n1.mp4");
+    expect(p.releaseNote.update).toHaveBeenCalledWith({
+      where: { id: "n1" },
+      data: { videoKey: "release-notes/published/n1.mp4" },
+    });
+    expect(vi.mocked(copyObject).mock.invocationCallOrder[0]).toBeLessThan(
+      p.releaseNote.updateMany.mock.invocationCallOrder[0],
+    );
+  });
+
+  it("does not copy hand uploads", async () => {
+    await publish([note({ videoKey: "release-notes/uploads/a.mp4" })]);
+    expect(copyObject).not.toHaveBeenCalled();
+    expect(p.releaseNote.update).not.toHaveBeenCalled();
+  });
+
+  it("leaves the entry a draft when the copy fails", async () => {
+    vi.mocked(copyObject).mockRejectedValueOnce(new Error("s3 down"));
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    p.releaseNote.findMany.mockResolvedValueOnce([
+      { id: "n1", summary: "Hold rooms.", videoKey: "release-notes/pr-12/demo.mp4" },
+    ]);
+    await expect(publishReleaseNotes(["n1"], "admin", request)).resolves.toEqual({
+      published: 0,
+      skipped: 1,
+    });
+    expect(p.releaseNote.updateMany).not.toHaveBeenCalled();
+    expect(enqueueOutbound).not.toHaveBeenCalled();
   });
 });
