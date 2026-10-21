@@ -66,7 +66,7 @@ type DomainWindowWithId = DomainWindow & { domainId: string };
  * The applicant's own deadline: the latest close among their selected domains
  * still taking applications, or, when none of theirs is open (or nothing is
  * selected), the latest among every open domain, the ones they could still add.
- * Null once every domain has closed.
+ * Null once every domain has closed. With no ready domains, the cycle's own close.
  */
 export function applicantDeadline(
   domains: DomainWindowWithId[],
@@ -74,6 +74,7 @@ export function applicantDeadline(
   selectedDomainIds?: Iterable<string> | null,
   now: Date = new Date(),
 ): Date | null {
+  if (domains.length === 0) return asDate(cycle.closeDate);
   const open = domains.filter((d) => !isDomainClosed(d, cycle, now));
   const selected = new Set(selectedDomainIds ?? []);
   const mine = open.filter((d) => selected.has(d.domainId));

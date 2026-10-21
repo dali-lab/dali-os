@@ -1,6 +1,7 @@
 import type { Prisma } from "~/generated/prisma/client";
 import { prisma } from "~/lib/db";
 import { getOpenCycles, type ActiveCycle } from "~/hiring/lib/cycles";
+import { applicantDeadline } from "~/hiring/lib/domain-windows";
 import { applicantGroup } from "~/hiring/lib/applicant-groups.server";
 import { ONBOARDING_EVENT_TYPE } from "~/members/lib/welcome.server";
 import { fullName } from "~/lib/display";
@@ -229,6 +230,7 @@ async function getInternalCycleApplyTask(
     select: {
       id: true,
       statusUpdates: { orderBy: { createdAt: "desc" }, take: 1, select: { newStatus: true, createdAt: true } },
+      domainApplications: { where: { selected: true }, select: { domainId: true } },
     },
   });
   const status = app?.statusUpdates[0]?.newStatus ?? null;
@@ -244,7 +246,8 @@ async function getInternalCycleApplyTask(
     createdAt: (app?.statusUpdates[0]?.createdAt ?? new Date()).toISOString(),
     source: "general",
     eventType: null,
-    dueAt: cycle.closeDate ? cycle.closeDate.toISOString() : null,
+    dueAt:
+      applicantDeadline(cycle.domains, cycle, app?.domainApplications.map((da) => da.domainId))?.toISOString() ?? null,
     // Clears by self-action (submit / withdraw in the portal) — no Confirm button.
     hasAction: true,
     formTodo: false,
