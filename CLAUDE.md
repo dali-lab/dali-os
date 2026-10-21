@@ -24,6 +24,7 @@ Project conventions for Claude when running inside `anthropics/claude-code-actio
 | Unit tests | `npm test` (Vitest) |
 | Coverage | `npm run test:coverage` (V8 provider; writes `coverage/`) |
 | E2E tests | `npm run test:e2e` (Playwright — needs seeded Postgres) |
+| Demo videos | `npx playwright test -c playwright.demos.config.ts demos/<name>.demo.ts`, then `npx tsx demos/lib/encode.ts` |
 | Typecheck | `npm run typecheck` (runs `react-router typegen && tsc`) |
 | Build | `npm run build` |
 | Dev server | `npm run dev` |
@@ -81,6 +82,7 @@ Release notes live at `/release-notes` and are authored in Core → Communicatio
 - **When opening a PR**, add the `no-release-note` label if the change is not user-facing by the rule above. If it is user-facing, put a one-line, plain-language summary in the PR body under "Release note" (what a member can now do, not how it was built).
 - **If it's ambiguous** whether a change is user-facing, which area it belongs to, or whether it should be limited to an audience (e.g. Core only), ask the user instead of guessing. In CI, say so in the PR description.
 - Release-note copy follows the UI copy rules: plain language, no em dashes, no marketing.
+- **Demos**: when opening a user-facing UI PR, add `dali-api/demos/<name>.demo.ts` (see `dali-api/demos/README.md`). `demo-capture.yml` records it and files the mp4 under `release-notes/pr-<N>/`.
 
 ## Operating rules when running in CI
 
