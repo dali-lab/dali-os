@@ -156,3 +156,21 @@ describe("slackStatus", () => {
     expect(slackStatus(true, outbox)).toBe(expected);
   });
 });
+
+describe("slackStatus", () => {
+  it("is app-only for a group-restricted entry even with an outbox row", () => {
+    expect(slackStatus(false, "Sent")).toBe("app-only");
+  });
+  it("is app-only when nothing was enqueued", () => {
+    expect(slackStatus(true, undefined)).toBe("app-only");
+  });
+  it.each([
+    ["Sent", "posted"],
+    ["Dead", "failed"],
+    ["Canceled", "app-only"],
+    ["Pending", "sending"],
+    ["Sending", "sending"],
+  ])("maps outbox %s to %s", (outbox, expected) => {
+    expect(slackStatus(true, outbox)).toBe(expected);
+  });
+});
