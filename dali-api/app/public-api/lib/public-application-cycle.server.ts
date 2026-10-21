@@ -1,6 +1,6 @@
 import { prisma } from "~/lib/db";
 import { getOpenCycles } from "~/hiring/lib/cycles";
-import { domainCloseDate, earliestCloseDate } from "~/hiring/lib/domain-windows";
+import { domainCloseDate, earliestCloseDate, isDomainClosed } from "~/hiring/lib/domain-windows";
 
 // The hiring cycles as dali.website's Apply page sees them: every Students
 // cycle currently accepting applications, and by when. The site renders one
@@ -21,13 +21,13 @@ export type PublicApplicationCycle = {
   status: "open" | "closed";
   // Lead-authored label (e.g. "Fall 2026"). Null only in the closed shape.
   name: string | null;
-  // ISO 8601 deadline: the EARLIEST of this cycle's ready domains' effective
+  // ISO 8601 deadline: the EARLIEST of this cycle's still-open domains' effective
   // closes — the conservative single date when domains close on different
   // schedules (app/hiring/lib/domain-windows.ts). Null in the closed shape,
   // or when the cycle has no ready domain with a close date at all.
   // dali.website formats it — the API ships the instant, not a rendering.
   closeDate: string | null;
-  // Every ready domain, soonest close first, for a site that wants to show
+  // Every ready domain still taking applications, soonest close first, for a site that wants to show
   // more than the one-date fallback above.
   domains: { name: string; closeDate: string | null }[];
 };
@@ -55,11 +55,12 @@ export async function getPublicApplicationCycles(): Promise<PublicApplicationCyc
     domainsByCycleId.set(row.applicationCycleId, arr);
   }
 
-  const deadline = (c: (typeof cycles)[number]) => c.closeDate?.getTime() ?? Number.POSITIVE_INFINITY;
+  const now = new Date();
+  const sortKey = (e: { cycle: (typeof cycles)[number]; earliest: Date | null }) =>
+    (e.earliest ?? e.cycle.closeDate)?.getTime() ?? Number.POSITIVE_INFINITY;
   return cycles
-    .sort((a, b) => (deadline(a) === deadline(b) ? 0 : deadline(a) - deadline(b)))
     .map((c) => {
-      const rows = domainsByCycleId.get(c.id) ?? [];
+      const rows = (domainsByCycleId.get(c.id) ?? []).filter((r) => !isDomainClosed(r, c, now));
       const domains = rows
         .map((r) => ({ name: r.domain.name, closeDate: domainCloseDate(r, c) }))
         .sort(
@@ -68,14 +69,15 @@ export async function getPublicApplicationCycles(): Promise<PublicApplicationCyc
             (b.closeDate?.getTime() ?? Number.POSITIVE_INFINITY),
         )
         .map((d) => ({ name: d.name, closeDate: d.closeDate ? d.closeDate.toISOString() : null }));
-      const earliest = earliestCloseDate(rows, c);
-      return {
-        status: "open" as const,
-        name: c.name,
-        closeDate: earliest ? earliest.toISOString() : null,
-        domains,
-      };
-    });
+      return { cycle: c, earliest: earliestCloseDate(rows, c), domains };
+    })
+    .sort((a, b) => sortKey(a) - sortKey(b))
+    .map(({ cycle: c, earliest, domains }) => ({
+      status: "open" as const,
+      name: c.name,
+      closeDate: earliest ? earliest.toISOString() : null,
+      domains,
+    }));
 }
 
 /** The response body: all open cycles, plus the single-cycle `cycle` field the

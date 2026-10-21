@@ -4,6 +4,7 @@ vi.mock("~/lib/db");
 
 import { prisma } from "~/lib/db";
 import {
+  cycleCloseDate,
   cycleDeadlineSummary,
   domainCloseDate,
   earliestCloseDate,
@@ -58,6 +59,30 @@ describe("domainCloseDate / isDomainClosed", () => {
     expect(earliestCloseDate([{ closeDate: null }, { closeDate: NOV_13 }], cycle)).toEqual(OCT_30);
     expect(earliestCloseDate([{ closeDate: NOV_13 }], cycle)).toEqual(NOV_13);
     expect(earliestCloseDate([], cycle)).toBeNull();
+  });
+});
+
+describe("cycleCloseDate", () => {
+  it("is the last ready domain's close when a domain closes after the cycle", () => {
+    expect(cycleCloseDate([{ closeDate: null }, { closeDate: NOV_13 }], cycle)).toEqual(NOV_13);
+  });
+
+  it("is the cycle's own close when every domain inherits it", () => {
+    expect(cycleCloseDate([{ closeDate: null }, { closeDate: null }], cycle)).toEqual(OCT_30);
+  });
+
+  it("is the latest domain close even when every domain closes before the cycle", () => {
+    const oct20 = new Date("2026-10-20T23:59:00-04:00");
+    expect(cycleCloseDate([{ closeDate: oct20 }], cycle)).toEqual(oct20);
+  });
+
+  it("falls back to the cycle's own close with no ready domains", () => {
+    expect(cycleCloseDate([], cycle)).toEqual(OCT_30);
+    expect(cycleCloseDate([], { closeDate: null })).toBeNull();
+  });
+
+  it("is null while any ready domain never closes", () => {
+    expect(cycleCloseDate([{ closeDate: null }, { closeDate: NOV_13 }], { closeDate: null })).toBeNull();
   });
 });
 
