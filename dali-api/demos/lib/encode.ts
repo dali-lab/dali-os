@@ -1,8 +1,8 @@
-// Turns Playwright's demo recordings (demo-results/<file>.demo.ts-<test>-<hash>/video.webm)
-// into demo-out/<file>.mp4 + <file>.jpg. Run from dali-api/: npx tsx demos/lib/encode.ts
+// Turns Playwright's demo recordings (demo-results/<test dir>/video.webm) into
+// demo-out/<file>.mp4 + <file>.jpg. Run from dali-api/: npx tsx demos/lib/encode.ts
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, readdirSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { basename, join } from 'node:path';
 
 const IN_DIR = 'demo-results';
 const OUT_DIR = 'demo-out';
@@ -10,14 +10,19 @@ const MAX_BYTES = 3 * 1024 * 1024;
 
 const ffmpeg = (args: string[]) => execFileSync('ffmpeg', ['-y', '-loglevel', 'error', ...args], { stdio: 'inherit' });
 
-// A test directory is named "<file>.demo.ts-<test title>-<hash>"; a second test
-// in the same file gets a numeric suffix so outputs never overwrite each other.
-export function demoName(dir: string, seen: Map<string, number>): string | null {
-  const match = dir.match(/^(.+?)\.demo\.ts-/);
-  if (!match) return null;
-  const n = (seen.get(match[1]) ?? 0) + 1;
-  seen.set(match[1], n);
-  return n === 1 ? match[1] : `${match[1]}-${n}`;
+// Playwright trims test directory names to 60 characters, which can cut the demo's
+// file name out, so the fixture in demo.ts writes it next to the video instead.
+export const DEMO_NAME_FILE = 'demo-name';
+
+export function demoBaseName(testFile: string): string {
+  return basename(testFile).replace(/\.demo\.ts$/, '');
+}
+
+// A second test in the same file gets a numeric suffix so outputs never overwrite each other.
+export function demoName(base: string, seen: Map<string, number>): string {
+  const n = (seen.get(base) ?? 0) + 1;
+  seen.set(base, n);
+  return n === 1 ? base : `${base}-${n}`;
 }
 
 function main() {
@@ -27,8 +32,9 @@ function main() {
   let count = 0;
   for (const dir of readdirSync(IN_DIR).sort()) {
     const webm = join(IN_DIR, dir, 'video.webm');
-    const name = demoName(dir, seen);
-    if (!name || !existsSync(webm)) continue;
+    const nameFile = join(IN_DIR, dir, DEMO_NAME_FILE);
+    if (!existsSync(webm) || !existsSync(nameFile)) continue;
+    const name = demoName(readFileSync(nameFile, 'utf8').trim(), seen);
     const mp4 = join(OUT_DIR, `${name}.mp4`);
     ffmpeg([
       '-i', webm,
