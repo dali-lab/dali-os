@@ -31,6 +31,13 @@ export function latestCloseDate(domains: DomainWindow[], cycle: CycleWindow): Da
   return latest;
 }
 
+/** When the cycle as a whole stops taking applications: the last of its ready domains' closes, or the cycle's own close when it has none. */
+export function cycleCloseDate(readyDomains: DomainWindow[], cycle: CycleWindow): Date | null {
+  if (readyDomains.length === 0) return asDate(cycle.closeDate);
+  if (readyDomains.some((d) => domainCloseDate(d, cycle) === null)) return null;
+  return latestCloseDate(readyDomains, cycle);
+}
+
 /** The earliest close among the given domains — the conservative choice when
  *  a single date must stand in for several domains with different windows
  *  (the public site's one-`closeDate`-field fallback). Null when none close. */

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
 // Mocked at the getOpenCycles seam rather than at prisma: the status-resolution
 // rules (latest update wins, Open-past-closeDate derives UnderReview, only Open
@@ -37,8 +37,13 @@ function domainRow(applicationCycleId: string, name: string, closeDate: Date | n
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.useFakeTimers({ now: new Date("2026-09-15T12:00:00.000Z"), toFake: ["Date"] });
   mockGetOpenCycles.mockResolvedValue([]);
   mockPrisma.domainApplicationCycle = { findMany: vi.fn().mockResolvedValue([]) };
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 describe("getPublicApplicationCycles", () => {
@@ -109,6 +114,41 @@ describe("getPublicApplicationCycles", () => {
       { name: "Soon", closeDate: soon.toISOString() },
       { name: "Late", closeDate: late.toISOString() },
     ]);
+  });
+
+  it("omits domains that have closed; the deadline is the earliest still-open domain", async () => {
+    const cycleClose = new Date("2026-10-21T03:59:59.000Z");
+    const engsClose = new Date("2026-10-26T03:59:59.000Z");
+    vi.setSystemTime(new Date("2026-10-21T14:00:00.000Z"));
+    mockGetOpenCycles.mockResolvedValue([{ ...openCycle, closeDate: cycleClose }]);
+    mockPrisma.domainApplicationCycle.findMany.mockResolvedValue([
+      domainRow("c1", "Design", null),
+      domainRow("c1", "Engineering", engsClose),
+      domainRow("c1", "Data", null),
+    ]);
+
+    expect(await getPublicApplicationCycles()).toEqual([
+      {
+        status: "open",
+        name: "Fall 2026",
+        closeDate: engsClose.toISOString(),
+        domains: [{ name: "Engineering", closeDate: engsClose.toISOString() }],
+      },
+    ]);
+  });
+
+  it("orders cycles by their earliest still-open domain, not the cycle's own close", async () => {
+    vi.setSystemTime(new Date("2026-10-21T14:00:00.000Z"));
+    mockGetOpenCycles.mockResolvedValue([
+      { ...openCycle, id: "past-own-close", name: "Fall 2026", closeDate: new Date("2026-10-21T03:59:59.000Z") },
+      { ...openCycle, id: "other", name: "Winter 2027", closeDate: new Date("2026-10-24T03:59:59.000Z") },
+    ]);
+    mockPrisma.domainApplicationCycle.findMany.mockResolvedValue([
+      domainRow("past-own-close", "Engineering", new Date("2026-10-26T03:59:59.000Z")),
+      domainRow("other", "AI", null),
+    ]);
+
+    expect((await getPublicApplicationCycles()).map((c) => c.name)).toEqual(["Winter 2027", "Fall 2026"]);
   });
 
   it("a domain with no close date sorts last and shows null", async () => {

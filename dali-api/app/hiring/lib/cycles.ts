@@ -1,6 +1,7 @@
 import { prisma } from "~/lib/db";
 import { cachedForTtl, clearTtlCache } from "~/lib/ttl-cache";
 import type { ApplicationCycleStatus, CycleApplicants } from "~/generated/prisma/enums";
+import { cycleCloseDate } from "./domain-windows";
 
 // A cycle is "active" when its latest status is Open or UnderReview — those are
 // the stages where applicants are submitting and reviewers are reading/interviewing.
@@ -10,16 +11,28 @@ export type ActiveStatus = (typeof ACTIVE_STATUSES)[number];
 
 const withLatestStatus = {
   statusUpdates: { orderBy: { createdAt: "desc" as const }, take: 1 },
+  domains: { where: { isReady: true }, select: { closeDate: true } },
 };
+
+type CycleWithWindows = {
+  closeDate: Date | null;
+  domains: { closeDate: Date | null }[];
+  statusUpdates: { newStatus: string }[];
+};
+
+function isPastClose(cycle: CycleWithWindows): boolean {
+  const close = cycleCloseDate(cycle.domains, cycle);
+  return close !== null && new Date() > close;
+}
 
 // Derive UnderReview when an Open cycle is past its close date. The DB write
 // is materialized lazily by autoCloseIfExpired (called from the status loader).
-function withCurrentStatus<C extends { closeDate: Date | null; statusUpdates: { newStatus: string }[] }>(
+function withCurrentStatus<C extends CycleWithWindows>(
   cycle: C,
 ): (C & { currentStatus: ActiveStatus }) | null {
   const latest = cycle.statusUpdates[0]?.newStatus;
   if (!latest || !(ACTIVE_STATUSES as readonly string[]).includes(latest)) return null;
-  if (latest === "Open" && cycle.closeDate && new Date() > cycle.closeDate) {
+  if (latest === "Open" && isPastClose(cycle)) {
     return { ...cycle, currentStatus: "UnderReview" };
   }
   return { ...cycle, currentStatus: latest as ActiveStatus };
@@ -82,13 +95,13 @@ export async function getActiveCycleById(cycleId: string): Promise<ActiveCycle |
 export async function autoCloseIfExpired(cycleId: string): Promise<void> {
   const cycle = await prisma.applicationCycle.findUnique({
     where: { id: cycleId },
-    include: { statusUpdates: { orderBy: { createdAt: "desc" }, take: 1 } },
+    include: withLatestStatus,
   });
   if (!cycle) return;
 
   const currentStatus = cycle.statusUpdates[0]?.newStatus ?? "Draft";
   if (currentStatus !== "Open") return;
-  if (!cycle.closeDate || new Date() <= cycle.closeDate) return;
+  if (!isPastClose(cycle)) return;
 
   await prisma.$transaction(async (tx) => {
     const alreadyClosed = await tx.applicationCycleStatusUpdate.findFirst({

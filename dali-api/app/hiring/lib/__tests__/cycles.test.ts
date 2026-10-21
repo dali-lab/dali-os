@@ -42,15 +42,20 @@ function cycleRow(opts: {
   latestStatus: "Open" | "UnderReview" | "Completed" | "Draft";
   closeDate?: Date | null;
   applicants?: "Students" | "Interns" | "LabMembers";
+  domainCloses?: (Date | null)[];
 }) {
   return {
     id: opts.id ?? CYCLE_ID,
     name: "Fall 2026",
     applicants: opts.applicants ?? "Students",
     closeDate: opts.closeDate ?? null,
+    domains: (opts.domainCloses ?? []).map((closeDate) => ({ closeDate })),
     statusUpdates: [{ newStatus: opts.latestStatus }],
   };
 }
+
+const PAST = new Date(Date.now() - 24 * 60 * 60 * 1000);
+const FUTURE = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
 describe("getActiveCycles()", () => {
   it("returns [] when no cycle has ever been Open or UnderReview", async () => {
@@ -79,6 +84,29 @@ describe("getActiveCycles()", () => {
     expect(mockPrisma.applicationCycleStatusUpdate.create).not.toHaveBeenCalled();
   });
 
+  it("keeps an Open cycle Open past its own closeDate while a ready domain's later close hasn't passed", async () => {
+    mockPrisma.applicationCycle.findMany.mockResolvedValue([
+      cycleRow({ latestStatus: "Open", closeDate: PAST, domainCloses: [null, FUTURE] }),
+    ]);
+    expect((await getActiveCycles())[0].currentStatus).toBe("Open");
+  });
+
+  it("derives UnderReview once every ready domain's close has passed", async () => {
+    mockPrisma.applicationCycle.findMany.mockResolvedValue([
+      cycleRow({ latestStatus: "Open", closeDate: PAST, domainCloses: [null, new Date(Date.now() - 1000)] }),
+    ]);
+    expect((await getActiveCycles())[0].currentStatus).toBe("UnderReview");
+  });
+
+  it("reads only ready domains' close dates", async () => {
+    mockPrisma.applicationCycle.findMany.mockResolvedValue([]);
+    await getActiveCycles();
+    expect(mockPrisma.applicationCycle.findMany.mock.calls[0][0].include.domains).toEqual({
+      where: { isReady: true },
+      select: { closeDate: true },
+    });
+  });
+
   it("drops a cycle whose latest status moved past active (Completed)", async () => {
     mockPrisma.applicationCycle.findMany.mockResolvedValue([
       cycleRow({ latestStatus: "Completed" }),
@@ -102,11 +130,25 @@ describe("getOpenCycles()", () => {
     ]);
     expect((await getOpenCycles()).map((c) => c.id)).toEqual(["open"]);
   });
+
+  it("keeps a cycle whose only open domain closes after the cycle's own close", async () => {
+    mockPrisma.applicationCycle.findMany.mockResolvedValue([
+      cycleRow({ id: "engs-open", latestStatus: "Open", closeDate: PAST, domainCloses: [null, null, FUTURE] }),
+    ]);
+    expect((await getOpenCycles()).map((c) => c.id)).toEqual(["engs-open"]);
+  });
 });
 
 describe("getActiveCycleById()", () => {
   it("returns the cycle with its derived status when active", async () => {
     mockPrisma.applicationCycle.findUnique.mockResolvedValue(cycleRow({ latestStatus: "Open" }));
+    expect((await getActiveCycleById(CYCLE_ID))?.currentStatus).toBe("Open");
+  });
+
+  it("stays Open past the cycle's closeDate while a domain is still open", async () => {
+    mockPrisma.applicationCycle.findUnique.mockResolvedValue(
+      cycleRow({ latestStatus: "Open", closeDate: PAST, domainCloses: [null, FUTURE] }),
+    );
     expect((await getActiveCycleById(CYCLE_ID))?.currentStatus).toBe("Open");
   });
 
@@ -124,6 +166,7 @@ describe("autoCloseIfExpired()", () => {
     mockPrisma.applicationCycle.findUnique.mockResolvedValue({
       id: CYCLE_ID,
       closeDate: past,
+      domains: [],
       statusUpdates: [{ newStatus: "Open" }],
     });
     mockPrisma.applicationCycleStatusUpdate.findFirst.mockResolvedValue(null);
@@ -145,6 +188,7 @@ describe("autoCloseIfExpired()", () => {
     mockPrisma.applicationCycle.findUnique.mockResolvedValue({
       id: CYCLE_ID,
       closeDate: past,
+      domains: [],
       statusUpdates: [{ newStatus: "Open" }],
     });
     mockPrisma.applicationCycleStatusUpdate.findFirst.mockResolvedValue({
@@ -161,6 +205,7 @@ describe("autoCloseIfExpired()", () => {
     mockPrisma.applicationCycle.findUnique.mockResolvedValue({
       id: CYCLE_ID,
       closeDate: past,
+      domains: [],
       statusUpdates: [{ newStatus: "Draft" }],
     });
 
@@ -174,6 +219,7 @@ describe("autoCloseIfExpired()", () => {
     mockPrisma.applicationCycle.findUnique.mockResolvedValue({
       id: CYCLE_ID,
       closeDate: null,
+      domains: [],
       statusUpdates: [{ newStatus: "Open" }],
     });
 
@@ -187,12 +233,35 @@ describe("autoCloseIfExpired()", () => {
     mockPrisma.applicationCycle.findUnique.mockResolvedValue({
       id: CYCLE_ID,
       closeDate: future,
+      domains: [],
       statusUpdates: [{ newStatus: "Open" }],
     });
 
     await autoCloseIfExpired(CYCLE_ID);
 
     expect(mockPrisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it("does nothing past the cycle's closeDate while a ready domain is still open", async () => {
+    mockPrisma.applicationCycle.findUnique.mockResolvedValue(
+      cycleRow({ latestStatus: "Open", closeDate: PAST, domainCloses: [null, FUTURE] }),
+    );
+
+    await autoCloseIfExpired(CYCLE_ID);
+
+    expect(mockPrisma.$transaction).not.toHaveBeenCalled();
+    expect(mockPrisma.applicationCycleStatusUpdate.create).not.toHaveBeenCalled();
+  });
+
+  it("closes once the last ready domain's close has passed", async () => {
+    mockPrisma.applicationCycle.findUnique.mockResolvedValue(
+      cycleRow({ latestStatus: "Open", closeDate: PAST, domainCloses: [null, new Date(Date.now() - 1000)] }),
+    );
+    mockPrisma.applicationCycleStatusUpdate.findFirst.mockResolvedValue(null);
+
+    await autoCloseIfExpired(CYCLE_ID);
+
+    expect(mockPrisma.applicationCycleStatusUpdate.create).toHaveBeenCalledOnce();
   });
 
   it("does nothing when the cycle does not exist", async () => {
