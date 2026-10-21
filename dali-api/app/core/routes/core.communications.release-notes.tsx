@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useFetcher, useLoaderData } from "react-router";
-import { Film, Plus, Upload } from "lucide-react";
+import { AlertTriangle, Film, Plus, Upload } from "lucide-react";
 import type { Route } from "./+types/core.communications.release-notes";
 import { coreHandle } from "~/core/coreNav";
 import { prisma } from "~/lib/db";
@@ -63,6 +63,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     summary: n.summary,
     area: n.area,
     prNumbers: n.prNumbers,
+    draftNote: n.draftNote,
     highlight: n.highlight,
     allMembers: n.allMembers,
     groupIds: n.groupIds,
@@ -354,6 +355,11 @@ function NoteMeta({ note, groups }: { note: Note; groups: GroupOption[] }) {
       {note.videoKey && (
         <span className="inline-flex items-center gap-1">
           <Film className="h-3 w-3" /> Video
+        </span>
+      )}
+      {!note.publishedAt && note.draftNote && (
+        <span className="inline-flex items-center gap-1 rounded-full bg-os-amber/15 px-2 py-0.5 text-os-amber">
+          <AlertTriangle className="h-3 w-3" /> Check: {note.draftNote}
         </span>
       )}
       {note.prNumbers.map((pr) => (
