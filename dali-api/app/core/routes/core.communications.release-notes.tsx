@@ -9,6 +9,7 @@ import {
   createReleaseNoteDraft,
   dismissReleaseNotes,
   listReleaseNotesForCore,
+  releaseNoteSlackStatuses,
   publishReleaseNotes,
   releaseNoteVideoUrl,
   requireReleaseNoteEditor,
@@ -20,6 +21,7 @@ import {
   RELEASE_NOTE_VIDEO_KEY_PREFIX,
   parsePrNumbers,
   releaseNoteAreaLabel,
+  type SlackStatus,
 } from "~/lib/release-notes";
 import { uploadFileToS3 } from "~/lib/upload-client";
 import { DocEditor } from "~/components/doc";
@@ -54,6 +56,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       select: { id: true, name: true },
     }),
   ]);
+  const slack = await releaseNoteSlackStatuses(published);
   const serialize = async (n: (typeof drafts)[number]) => ({
     id: n.id,
     title: n.title,
@@ -68,6 +71,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     videoUrl: await releaseNoteVideoUrl(n.videoKey).catch(() => null),
     publishedAt: n.publishedAt?.toISOString() ?? null,
     draftedAt: n.draftedAt.toISOString(),
+    slack: slack[n.id] ?? null,
   });
   return {
     drafts: await Promise.all(drafts.map(serialize)),
@@ -327,11 +331,19 @@ export default function CoreReleaseNotesPage({ loaderData }: Route.ComponentProp
   );
 }
 
+const SLACK_STATUS_LABEL: Record<SlackStatus, string> = {
+  posted: "Posted to Slack",
+  sending: "Sending to Slack",
+  failed: "Slack post failed",
+  "app-only": "In app only",
+};
+
 function NoteMeta({ note, groups }: { note: Note; groups: GroupOption[] }) {
   const parts = [
     releaseNoteAreaLabel(note.area),
     audienceLabel(note, groups),
     note.highlight ? "Highlight" : null,
+    note.slack ? SLACK_STATUS_LABEL[note.slack] : null,
     note.publishedAt
       ? `Published ${formatDateShort(note.publishedAt)}`
       : `Drafted ${formatDateShort(note.draftedAt)}`,

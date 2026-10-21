@@ -8,11 +8,18 @@ import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { listVisibleGroupIdsForUser } from "~/lib/groups";
 import { getDownloadUrl, isS3Configured } from "~/lib/s3";
 import { logAuditEvent } from "~/lib/audit";
+import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
+import { notify } from "~/lib/notify.server";
+import { getFrontendUrl } from "~/lib/app-env";
+import { resolveAllLabMembers, resolveGroupMembers } from "~/lib/groups";
+import { releaseNotePost, type RecapNote } from "~/lib/release-notes-recap";
 import {
   canViewReleaseNote,
   hasUnseenReleaseNotes,
   isReleaseNoteVideoKey,
+  slackStatus,
   type ReleaseNoteViewer,
+  type SlackStatus,
 } from "~/lib/release-notes";
 
 export type ReleaseNoteViewerContext = ReleaseNoteViewer & { userId: string };
@@ -149,6 +156,50 @@ export async function updateReleaseNote(id: string, edit: ReleaseNoteEdit) {
   });
 }
 
+export function releaseNotesSlackChannel(): string | null {
+  return process.env.RELEASE_NOTES_SLACK_CHANNEL_ID?.trim() || null;
+}
+
+export const releaseNoteSlackKey = (id: string) => `release-note:${id}`;
+
+type PublishedNote = RecapNote & { videoKey: string | null };
+
+async function postReleaseNoteToSlack(note: PublishedNote, userId: string) {
+  const channel = releaseNotesSlackChannel();
+  if (!channel || !note.allMembers) return;
+  const post = releaseNotePost(note, getFrontendUrl());
+  const { id } = await enqueueOutbound({
+    channel: "slack_channel",
+    target: channel,
+    dedupKey: releaseNoteSlackKey(note.id),
+    slackText: post.text,
+    slackBlocks: post.blocks,
+    slackFileKey: note.videoKey,
+    eventType: "release.published",
+    createdByUserId: userId,
+  });
+  await drainNow([id]);
+}
+
+async function notifyHighlight(note: PublishedNote, userId: string) {
+  const audience = note.allMembers
+    ? await resolveAllLabMembers()
+    : (await Promise.all(note.groupIds.map(resolveGroupMembers))).flat();
+  const recipients = [...new Set(audience)].map((id) => ({ userId: id }));
+  if (recipients.length === 0) return;
+  await notify({
+    eventType: "release.published",
+    createdByUserId: userId,
+    message: {
+      title: note.title,
+      body: note.summary,
+      link: `/release-notes/${note.id}`,
+      dedupKey: `release-note:${note.id}`,
+    },
+    recipients,
+  });
+}
+
 export async function publishReleaseNotes(
   ids: string[],
   userId: string,
@@ -160,15 +211,48 @@ export async function publishReleaseNotes(
   });
   const ready = drafts.filter((d) => d.summary.trim() !== "").map((d) => d.id);
   if (ready.length > 0) {
+    const publishedAt = new Date();
     await prisma.releaseNote.updateMany({
       where: { id: { in: ready }, status: "Draft" },
-      data: { status: "Published", publishedAt: new Date(), publishedById: userId },
+      data: { status: "Published", publishedAt, publishedById: userId },
     });
-    for (const id of ready) {
-      await logAuditEvent({ action: "release_note.publish", userId, targetId: id, request });
+    const notes = await prisma.releaseNote.findMany({
+      where: { id: { in: ready }, status: "Published", publishedById: userId, publishedAt },
+    });
+    for (const note of notes) {
+      await logAuditEvent({ action: "release_note.publish", userId, targetId: note.id, request });
+      await postReleaseNoteToSlack(note, userId).catch((err) =>
+        console.error("[release-notes] slack enqueue failed:", err),
+      );
+      if (note.highlight) {
+        await notifyHighlight(note, userId).catch((err) =>
+          console.error("[release-notes] highlight notify failed:", err),
+        );
+      }
     }
   }
   return { published: ready.length, skipped: drafts.length - ready.length };
+}
+
+export async function releaseNoteSlackStatuses(
+  notes: { id: string; allMembers: boolean }[],
+): Promise<Record<string, SlackStatus>> {
+  const rows = await prisma.outboundMessage.findMany({
+    where: { channel: "slack_channel", dedupKey: { in: notes.map((n) => releaseNoteSlackKey(n.id)) } },
+    select: { dedupKey: true, status: true },
+  });
+  const byKey = new Map(rows.map((r) => [r.dedupKey, r.status]));
+  return Object.fromEntries(
+    notes.map((n) => [n.id, slackStatus(n.allMembers, byKey.get(releaseNoteSlackKey(n.id)))]),
+  );
+}
+
+export async function listRecapNotes() {
+  return prisma.releaseNote.findMany({
+    where: { ...PUBLISHED, recapWeek: { not: null } },
+    orderBy: { publishedAt: "desc" },
+    take: 500,
+  });
 }
 
 export async function dismissReleaseNotes(

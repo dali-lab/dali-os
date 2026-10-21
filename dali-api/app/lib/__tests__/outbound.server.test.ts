@@ -6,14 +6,18 @@ vi.mock("~/lib/gmail-integration", () => ({ getSender: vi.fn(), noteSenderHealth
 vi.mock("~/slack/lib/slack-client", () => ({
   sendDm: vi.fn(),
   postMessage: vi.fn(),
+  postBlocks: vi.fn(),
+  uploadFileToThread: vi.fn(),
   slackConfigured: vi.fn(() => true),
 }));
+vi.mock("~/lib/s3", () => ({ getObjectBytes: vi.fn() }));
 vi.mock("~/lib/app-env", () => ({ getAppEnv: vi.fn(() => "prod") }));
 
 import { prisma } from "~/lib/db";
 import { sendEmail } from "~/lib/gmail";
 import { getSender, noteSenderHealth } from "~/lib/gmail-integration";
-import { sendDm, postMessage } from "~/slack/lib/slack-client";
+import { sendDm, postMessage, postBlocks, uploadFileToThread } from "~/slack/lib/slack-client";
+import { getObjectBytes } from "~/lib/s3";
 import { getAppEnv } from "~/lib/app-env";
 import { enqueueOutbound, runOutboundDrain } from "~/lib/outbound.server";
 
@@ -186,5 +190,92 @@ describe("runOutboundDrain — slack safety", () => {
 
     expect(res.items).toBe(1);
     expect(postMessage).toHaveBeenCalledWith("C123", "standup!");
+  });
+
+  describe("slack_channel with blocks", () => {
+    const blocks = [{ type: "section" }];
+    const blockRow = (o: Record<string, unknown> = {}) =>
+      emailRow({
+        channel: "slack_channel",
+        target: "C123",
+        slackText: "New: Thing",
+        notificationId: null,
+        slackBlocks: blocks,
+        slackFileKey: null,
+        slackTs: null,
+        ...o,
+      });
+
+    beforeEach(() => {
+      anyFn(postBlocks).mockResolvedValue({ ts: "111.222" });
+      anyFn(getObjectBytes).mockResolvedValue({ body: Buffer.from("mp4") });
+    });
+
+    it("posts blocks, saves the ts right away, and skips the upload without a file key", async () => {
+      p.outboundMessage.findUnique.mockResolvedValue(blockRow());
+      await runOutboundDrain(ctx());
+      expect(postBlocks).toHaveBeenCalledWith("C123", blocks, "New: Thing");
+      expect(postMessage).not.toHaveBeenCalled();
+      expect(p.outboundMessage.update).toHaveBeenCalledWith({
+        where: { id: "om1" },
+        data: { slackTs: "111.222" },
+      });
+      expect(uploadFileToThread).not.toHaveBeenCalled();
+    });
+
+    it("uploads the S3 file into the thread of the new post", async () => {
+      p.outboundMessage.findUnique.mockResolvedValue(
+        blockRow({ slackFileKey: "release-notes/uploads/demo.mp4" }),
+      );
+      await runOutboundDrain(ctx());
+      expect(getObjectBytes).toHaveBeenCalledWith("release-notes/uploads/demo.mp4");
+      expect(uploadFileToThread).toHaveBeenCalledWith(
+        "C123",
+        "111.222",
+        Buffer.from("mp4"),
+        "demo.mp4",
+        "New: Thing",
+      );
+    });
+
+    it("on retry with a saved ts, retries only the upload and never reposts", async () => {
+      p.outboundMessage.findUnique.mockResolvedValue(
+        blockRow({ slackTs: "111.222", slackFileKey: "release-notes/uploads/demo.mp4", attempts: 1 }),
+      );
+      const res = await runOutboundDrain(ctx());
+      expect(res.items).toBe(1);
+      expect(postBlocks).not.toHaveBeenCalled();
+      expect(uploadFileToThread).toHaveBeenCalledWith(
+        "C123",
+        "111.222",
+        expect.any(Buffer),
+        "demo.mp4",
+        "New: Thing",
+      );
+    });
+
+    it("keeps the ts and schedules a retry when the upload fails", async () => {
+      p.outboundMessage.findUnique.mockResolvedValue(
+        blockRow({ slackFileKey: "release-notes/uploads/demo.mp4" }),
+      );
+      anyFn(uploadFileToThread).mockRejectedValue(new Error("files:write missing"));
+      await runOutboundDrain(ctx());
+      expect(p.outboundMessage.update).toHaveBeenCalledWith({
+        where: { id: "om1" },
+        data: { slackTs: "111.222" },
+      });
+      expect(p.outboundMessage.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ status: "Pending", lastError: "files:write missing" }),
+        }),
+      );
+    });
+
+    it("cancels outside prod without posting", async () => {
+      anyFn(getAppEnv).mockReturnValue("staging");
+      p.outboundMessage.findUnique.mockResolvedValue(blockRow());
+      await runOutboundDrain(ctx());
+      expect(postBlocks).not.toHaveBeenCalled();
+    });
   });
 });

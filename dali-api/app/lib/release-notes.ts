@@ -53,3 +53,13 @@ export function isReleaseNoteVideoKey(key: string): boolean {
     key.startsWith("uploads/" + RELEASE_NOTE_VIDEO_KEY_PREFIX + "/")
   );
 }
+
+export type SlackStatus = "posted" | "sending" | "failed" | "app-only";
+
+export function slackStatus(allMembers: boolean, outboxStatus: string | undefined): SlackStatus {
+  if (!allMembers || !outboxStatus) return "app-only";
+  if (outboxStatus === "Sent") return "posted";
+  if (outboxStatus === "Dead") return "failed";
+  if (outboxStatus === "Canceled") return "app-only";
+  return "sending";
+}

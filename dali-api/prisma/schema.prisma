@@ -6566,6 +6566,13 @@ model OutboundMessage {
   ics         String? @db.Text
   // [{ filename, mimeType, contentBase64 }] — decoded to Buffers at send.
   attachments Json?
+  // slack_channel only: Block Kit blocks (slackText is the notification
+  // fallback), an S3 key uploaded into the posted message's thread, and the ts
+  // of that post. slackTs is persisted right after the post so a retry that only
+  // failed the upload doesn't post twice.
+  slackBlocks  Json?
+  slackFileKey String?
+  slackTs      String?
 
   // Lifecycle. status: Pending | Sending | Sent | Dead | Canceled.
   // nextAttemptAt doubles as the claim-lock stamp while Sending (a stale

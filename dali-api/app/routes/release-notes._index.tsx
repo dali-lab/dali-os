@@ -1,12 +1,15 @@
 import { Link, useSearchParams } from "react-router";
 import type { Route } from "./+types/release-notes._index";
 import {
+  listRecapNotes,
   listVisibleReleaseNotes,
   markReleaseNotesSeen,
   releaseNoteVideoUrl,
   requireReleaseNoteViewer,
 } from "~/lib/release-notes.server";
 import { RELEASE_NOTE_AREAS, releaseNoteAreaLabel } from "~/lib/release-notes";
+import { groupRecapsByWeek } from "~/lib/release-notes-recap";
+import { Segmented } from "~/components/ui/Segmented";
 import { formatDateShort } from "~/lib/display";
 import { useOsChrome } from "~/components/os-chrome";
 import { Select } from "~/components/ui/floating";
@@ -17,12 +20,21 @@ export const meta: Route.MetaFunction = () => [{ title: "Release notes · DALI O
 
 export async function loader({ request }: Route.LoaderArgs) {
   const viewer = await requireReleaseNoteViewer(request);
-  const area = new URL(request.url).searchParams.get("area");
+  const url = new URL(request.url);
+  if (url.searchParams.get("view") === "recaps") {
+    const [recapNotes] = await Promise.all([
+      listRecapNotes(),
+      markReleaseNotesSeen(viewer.userId),
+    ]);
+    return { view: "recaps" as const, recaps: groupRecapsByWeek(recapNotes, viewer) };
+  }
+  const area = url.searchParams.get("area");
   const [notes] = await Promise.all([
     listVisibleReleaseNotes(viewer, { area }),
     markReleaseNotesSeen(viewer.userId),
   ]);
   return {
+    view: "all" as const,
     notes: await Promise.all(
       notes.map(async (n) => ({
         id: n.id,
@@ -39,56 +51,135 @@ export async function loader({ request }: Route.LoaderArgs) {
 }
 
 export default function ReleaseNotesPage({ loaderData }: Route.ComponentProps) {
-  const { notes } = loaderData;
-  const { pageTitle, card, cardPad } = useOsChrome();
+  const { pageTitle } = useOsChrome();
   const [params, setParams] = useSearchParams();
-  const area = params.get("area") ?? "";
 
   return (
     <div className="flex max-w-3xl flex-col gap-5">
       <header className="flex items-center justify-between gap-3">
         <h1 className={pageTitle}>Release notes</h1>
-        <Select
-          value={area}
-          ariaLabel="Filter by area"
-          onChange={(next) => setParams(next ? { area: next } : {}, { replace: true })}
-          options={[
-            { value: "", label: "All areas" },
-            ...RELEASE_NOTE_AREAS.map((a) => ({ value: a.key, label: a.label })),
-          ]}
-        />
+        <div className="flex items-center gap-3">
+          <Segmented
+            ariaLabel="View"
+            value={loaderData.view}
+            onChange={(next) => setParams(next === "recaps" ? { view: "recaps" } : {}, { replace: true })}
+            options={[
+              { value: "all", label: "All" },
+              { value: "recaps", label: "Weekly recaps" },
+            ]}
+          />
+          {loaderData.view === "all" && (
+            <Select
+              value={params.get("area") ?? ""}
+              ariaLabel="Filter by area"
+              onChange={(next) => setParams(next ? { area: next } : {}, { replace: true })}
+              options={[
+                { value: "", label: "All areas" },
+                ...RELEASE_NOTE_AREAS.map((a) => ({ value: a.key, label: a.label })),
+              ]}
+            />
+          )}
+        </div>
       </header>
-      {notes.length === 0 ? (
-        <p className="text-sm text-muted-foreground">
-          {area ? "Nothing in this area yet." : "Nothing here yet."}
-        </p>
+      {loaderData.view === "recaps" ? (
+        <Recaps recaps={loaderData.recaps} />
       ) : (
-        notes.map((n) => (
-          <article key={n.id} className={cn(card, cardPad, "flex flex-col gap-3")}>
-            <p className="flex items-center gap-2 text-xs text-muted-foreground">
-              {[releaseNoteAreaLabel(n.area), formatDateShort(n.publishedAt)]
-                .filter(Boolean)
-                .join(" · ")}
-              {n.highlight && <span className="font-semibold text-os-accent">Highlight</span>}
-            </p>
-            <h2 className="text-lg font-semibold text-foreground">
-              <Link to={`/release-notes/${n.id}`} className="hover:underline">
-                {n.title}
-              </Link>
-            </h2>
-            <p className="text-sm text-foreground">{n.summary}</p>
-            {n.videoUrl && <ReleaseNoteVideo src={n.videoUrl} title={n.title} />}
-            {n.hasBody && (
-              <Link
-                to={`/release-notes/${n.id}`}
-                className="text-sm font-medium text-os-accent hover:underline"
-              >
-                Read more
-              </Link>
-            )}
-          </article>
-        ))
+        <AllNotes notes={loaderData.notes} area={params.get("area") ?? ""} />
       )}
     </div>
+  );
+}
+
+function Recaps({
+  recaps,
+}: {
+  recaps: Extract<Route.ComponentProps["loaderData"], { view: "recaps" }>["recaps"];
+}) {
+  const { card, cardPad } = useOsChrome();
+  if (recaps.length === 0) {
+    return <p className="text-sm text-muted-foreground">No weekly recaps yet.</p>;
+  }
+  return (
+    <>
+      {recaps.map(({ week, recap }) => (
+        <section key={week} className={cn(card, cardPad, "flex flex-col gap-4")}>
+          <h2 className="text-sm font-semibold text-foreground">{week}</h2>
+          {recap.highlights.map((n) => (
+            <div key={n.id} className="flex flex-col gap-1">
+              <Link
+                to={`/release-notes/${n.id}`}
+                className="text-base font-semibold text-foreground hover:underline"
+              >
+                {n.title}
+              </Link>
+              <p className="text-sm text-foreground">{n.summary}</p>
+            </div>
+          ))}
+          {recap.byArea.map((group) => (
+            <div key={group.label} className="flex flex-col gap-1">
+              <h3 className="text-xs font-semibold text-muted-foreground">{group.label}</h3>
+              <ul className="flex flex-col gap-1">
+                {group.notes.map((n) => (
+                  <li key={n.id}>
+                    <Link
+                      to={`/release-notes/${n.id}`}
+                      className="text-sm text-foreground hover:underline"
+                    >
+                      {n.title}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </section>
+      ))}
+    </>
+  );
+}
+
+function AllNotes({
+  notes,
+  area,
+}: {
+  notes: Extract<Route.ComponentProps["loaderData"], { view: "all" }>["notes"];
+  area: string;
+}) {
+  const { card, cardPad } = useOsChrome();
+  if (notes.length === 0) {
+    return (
+      <p className="text-sm text-muted-foreground">
+        {area ? "Nothing in this area yet." : "Nothing here yet."}
+      </p>
+    );
+  }
+  return (
+    <>
+      {notes.map((n) => (
+        <article key={n.id} className={cn(card, cardPad, "flex flex-col gap-3")}>
+          <p className="flex items-center gap-2 text-xs text-muted-foreground">
+            {[releaseNoteAreaLabel(n.area), formatDateShort(n.publishedAt)]
+              .filter(Boolean)
+              .join(" · ")}
+            {n.highlight && <span className="font-semibold text-os-accent">Highlight</span>}
+          </p>
+          <h2 className="text-lg font-semibold text-foreground">
+            <Link to={`/release-notes/${n.id}`} className="hover:underline">
+              {n.title}
+            </Link>
+          </h2>
+          <p className="text-sm text-foreground">{n.summary}</p>
+          {n.videoUrl && <ReleaseNoteVideo src={n.videoUrl} title={n.title} />}
+          {n.hasBody && (
+            <Link
+              to={`/release-notes/${n.id}`}
+              className="text-sm font-medium text-os-accent hover:underline"
+            >
+              Read more
+            </Link>
+          )}
+        </article>
+      ))}
+    </>
   );
 }
