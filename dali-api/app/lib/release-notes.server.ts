@@ -6,7 +6,7 @@ import { redirectToLogin } from "~/lib/login-next";
 import { getUserRoles } from "~/lib/roles";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { listVisibleGroupIdsForUser } from "~/lib/groups";
-import { getDownloadUrl, isS3Configured } from "~/lib/s3";
+import { copyObject, getDownloadUrl, isS3Configured } from "~/lib/s3";
 import { logAuditEvent } from "~/lib/audit";
 import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
 import { notify } from "~/lib/notify.server";
@@ -17,6 +17,7 @@ import {
   canViewReleaseNote,
   hasUnseenReleaseNotes,
   isReleaseNoteVideoKey,
+  publishedVideoKey,
   slackStatus,
   type ReleaseNoteViewer,
   type SlackStatus,
@@ -200,6 +201,19 @@ async function notifyHighlight(note: PublishedNote, userId: string) {
   });
 }
 
+async function moveCaptureToPublished(id: string, videoKey: string | null): Promise<boolean> {
+  const dest = publishedVideoKey(id, videoKey);
+  if (!dest || !videoKey) return true;
+  try {
+    await copyObject(videoKey, dest);
+  } catch (err) {
+    console.error(`[release-notes] video copy failed for ${id}:`, err);
+    return false;
+  }
+  await prisma.releaseNote.update({ where: { id }, data: { videoKey: dest } });
+  return true;
+}
+
 export async function publishReleaseNotes(
   ids: string[],
   userId: string,
@@ -207,9 +221,13 @@ export async function publishReleaseNotes(
 ): Promise<{ published: number; skipped: number }> {
   const drafts = await prisma.releaseNote.findMany({
     where: { id: { in: ids }, status: "Draft" },
-    select: { id: true, summary: true },
+    select: { id: true, summary: true, videoKey: true },
   });
-  const ready = drafts.filter((d) => d.summary.trim() !== "").map((d) => d.id);
+  const ready: string[] = [];
+  for (const d of drafts) {
+    if (d.summary.trim() === "") continue;
+    if (await moveCaptureToPublished(d.id, d.videoKey)) ready.push(d.id);
+  }
   if (ready.length > 0) {
     const publishedAt = new Date();
     await prisma.releaseNote.updateMany({

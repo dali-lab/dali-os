@@ -4,6 +4,7 @@ import {
   hasUnseenReleaseNotes,
   isReleaseNoteVideoKey,
   parsePrNumbers,
+  publishedVideoKey,
   releaseNoteAreaLabel,
   slackStatus,
 } from "../release-notes";
@@ -131,7 +132,10 @@ describe("isReleaseNoteVideoKey", () => {
 
   it("rejects keys elsewhere in the bucket", () => {
     expect(isReleaseNoteVideoKey("uploads/resumes/abc.pdf")).toBe(false);
-    expect(isReleaseNoteVideoKey("release-notes/published/x.mp4")).toBe(false);
+  });
+
+  it("accepts published copies", () => {
+    expect(isReleaseNoteVideoKey("release-notes/published/x.mp4")).toBe(true);
   });
 
   it("accepts scripted captures under a PR prefix", () => {
@@ -157,20 +161,28 @@ describe("slackStatus", () => {
   });
 });
 
-describe("slackStatus", () => {
-  it("is app-only for a group-restricted entry even with an outbox row", () => {
-    expect(slackStatus(false, "Sent")).toBe("app-only");
+describe("publishedVideoKey", () => {
+  it("moves a PR capture out of the expiring prefix", () => {
+    expect(publishedVideoKey("n1", "release-notes/pr-12/demo.mp4")).toBe("release-notes/published/n1.mp4");
   });
-  it("is app-only when nothing was enqueued", () => {
-    expect(slackStatus(true, undefined)).toBe("app-only");
+
+  it("keeps the source extension, lowercased", () => {
+    expect(publishedVideoKey("n1", "release-notes/pr-12/demo.WEBM")).toBe("release-notes/published/n1.webm");
   });
-  it.each([
-    ["Sent", "posted"],
-    ["Dead", "failed"],
-    ["Canceled", "app-only"],
-    ["Pending", "sending"],
-    ["Sending", "sending"],
-  ])("maps outbox %s to %s", (outbox, expected) => {
-    expect(slackStatus(true, outbox)).toBe(expected);
+
+  it("defaults to mp4 when the capture has no extension", () => {
+    expect(publishedVideoKey("n1", "release-notes/pr-12/demo")).toBe("release-notes/published/n1.mp4");
+  });
+
+  it("leaves hand uploads, already-published keys and empty videos alone", () => {
+    expect(publishedVideoKey("n1", "release-notes/uploads/x-demo.mp4")).toBeNull();
+    expect(publishedVideoKey("n1", "release-notes/published/n1.mp4")).toBeNull();
+    expect(publishedVideoKey("n1", null)).toBeNull();
+  });
+
+  it("never returns a key the lifecycle rule would expire", () => {
+    const out = publishedVideoKey("n1", "release-notes/pr-9/a.mp4")!;
+    expect(out.startsWith("release-notes/pr-")).toBe(false);
+    expect(isReleaseNoteVideoKey(out)).toBe(true);
   });
 });
