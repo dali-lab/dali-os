@@ -29,6 +29,7 @@ import {
   WeekGrid, BlockBlock, useRefreshOnFocus, workingHoursStripeLayer,
 } from "~/calendar/components/WeekGrid";
 import { findOptimalSlots, type RankedSlot } from "~/calendar/lib/optimal-times";
+import { slotStatus } from "~/calendar/lib/slot-availability";
 import {
   type GroupOption, type UserOption, type GroupAvailResponse, type ProjectOption,
   type CalendarLinkDTO, type WhDay, type EventBlock, type LoaderData,
@@ -956,6 +957,7 @@ export function ScheduleWeekGrid({
     duration: number;
     available: UserOption[];
     busy: UserOption[];
+    outsideHours: UserOption[];
     unknown: UserOption[];
   };
   let selectedSlot: SelectedSlot | null = null;
@@ -969,14 +971,13 @@ export function ScheduleWeekGrid({
       const endHour = ed.getHours() + ed.getMinutes() / 60;
       const duration = sameDay ? endHour - startHour : 24 - startHour;
       if (duration > 0) {
-        // A user is "available" if their free intervals cover the entire
-        // [sd, ed] window. We allow the union of multiple free intervals.
         const slotStartMs = sd.getTime();
         const slotEndMs = ed.getTime();
         const usersById = new Map(users.map((u) => [u.id, u]));
         const perUserById = new Map(data.perUser.map((p) => [p.userId, p]));
         const available: UserOption[] = [];
         const busy: UserOption[] = [];
+        const outsideHours: UserOption[] = [];
         const unknown: UserOption[] = [];
         for (const uid of participantIds) {
           const user = usersById.get(uid) ?? {
@@ -990,23 +991,16 @@ export function ScheduleWeekGrid({
             unknown.push(user);
             continue;
           }
-          const free = perUserById.get(uid)?.free ?? [];
-          // Build the contiguous free-coverage over [slotStartMs, slotEndMs].
-          // Sort & merge first, then walk.
-          const sortedFree = free
-            .map((iv) => ({ s: new Date(iv.startIso).getTime(), e: new Date(iv.endIso).getTime() }))
-            .sort((a, b) => a.s - b.s);
-          let cursor = slotStartMs;
-          for (const iv of sortedFree) {
-            if (iv.e <= cursor) continue;
-            if (iv.s > cursor) break;
-            cursor = Math.max(cursor, iv.e);
-            if (cursor >= slotEndMs) break;
-          }
-          if (cursor >= slotEndMs) available.push(user);
+          const status = slotStatus(
+            perUserById.get(uid) ?? { free: [], working: [] },
+            slotStartMs,
+            slotEndMs,
+          );
+          if (status === "available") available.push(user);
+          else if (status === "outsideHours") outsideHours.push(user);
           else busy.push(user);
         }
-        selectedSlot = { dow, startHour, duration, available, busy, unknown };
+        selectedSlot = { dow, startHour, duration, available, busy, outsideHours, unknown };
       }
     }
   }
@@ -1021,7 +1015,13 @@ export function ScheduleWeekGrid({
       ? days.map((d) => data.days.find((b) => b.dayOfWeek === d.dayOfWeek)?.matches ?? [])
       : [];
 
-  type AggregateSelected = { dow: number; startHour: number; duration: number; free: boolean };
+  type AggregateSelected = {
+    dow: number;
+    startHour: number;
+    duration: number;
+    free: boolean;
+    outsideHours: boolean;
+  };
   let aggregateSelected: AggregateSelected | null = null;
   if (isAggregate && data && selectedStartLocal && selectedEndLocal) {
     const sd = new Date(selectedStartLocal);
@@ -1034,10 +1034,13 @@ export function ScheduleWeekGrid({
       const duration = sameDay ? endHour - startHour : 24 - startHour;
       if (duration > 0) {
         const bucket = data.days.find((b) => b.dayOfWeek === dow);
-        const free = !!bucket?.matches.some(
-          (m) => m.startHour <= startHour && m.startHour + m.durationHours >= startHour + duration,
-        );
-        aggregateSelected = { dow, startHour, duration, free };
+        const within = (rows: { startHour: number; durationHours: number }[] | undefined) =>
+          !!rows?.some(
+            (m) => m.startHour <= startHour && m.startHour + m.durationHours >= startHour + duration,
+          );
+        const free = within(bucket?.matches);
+        const outsideHours = !free && !within(bucket?.working);
+        aggregateSelected = { dow, startHour, duration, free, outsideHours };
       }
     }
   }
@@ -1179,7 +1182,7 @@ export function ScheduleWeekGrid({
                 startHour={selectedSlot.startHour}
                 duration={selectedSlot.duration}
                 available={selectedSlot.available}
-                busy={selectedSlot.busy}
+                busy={[...selectedSlot.busy, ...selectedSlot.outsideHours]}
                 unknown={selectedSlot.unknown}
               />
             )}
@@ -1204,7 +1207,11 @@ export function ScheduleWeekGrid({
                       : "bg-os-accent text-os-bg",
                   )}
                 >
-                  {aggregateSelected.free ? "Everyone's free" : "Not everyone's free"}
+                  {aggregateSelected.free
+                    ? "Everyone's free"
+                    : aggregateSelected.outsideHours
+                      ? "Outside working hours"
+                      : "Not everyone's free"}
                 </div>
               </div>
             )}
@@ -1301,6 +1308,7 @@ export function ScheduleWeekGrid({
               availableIds={
                 selectedSlot ? new Set(selectedSlot.available.map((u) => u.id)) : null
               }
+              outsideHoursIds={new Set(selectedSlot?.outsideHours.map((u) => u.id))}
               unknownIds={new Set(unknownParticipantIds)}
               hoveredUserId={hoveredUserId}
               onHover={setHoveredUserId}
@@ -1315,7 +1323,8 @@ export function ScheduleWeekGrid({
 // Per-person availability for the picked slot, listed under the grid. The wide
 // panel has room to state the whole answer, so this replaces both the invitee
 // roster that used to sit above the grid and the hover popover on the selected
-// block. Once a slot is picked the names split into Available / Busy groups;
+// block. Once a slot is picked the names split into Available / Busy /
+// Outside hours groups;
 // before that it's one flat roster. Participants with no linked calendar are
 // always split into a separate "No calendar" group so they're never mistaken
 // for free. Hovering a known name overlays that person's free intervals.
@@ -1323,6 +1332,7 @@ export function ParticipantAvailabilityList({
   participantIds,
   users,
   availableIds,
+  outsideHoursIds,
   unknownIds,
   hoveredUserId,
   onHover,
@@ -1331,6 +1341,7 @@ export function ParticipantAvailabilityList({
   users: UserOption[];
   /** Ids free for the whole selected slot, or null when no slot is picked. */
   availableIds: Set<string> | null;
+  outsideHoursIds: Set<string>;
   /** Ids whose availability is unknown (no linked calendar / failed sync).
    *  Slot-independent — surfaced even before a time is picked. */
   unknownIds: Set<string>;
@@ -1345,7 +1356,10 @@ export function ParticipantAvailabilityList({
   const unknown = entries.filter((u) => unknownIds.has(u.id));
   const known = entries.filter((u) => !unknownIds.has(u.id));
   const available = availableIds ? known.filter((u) => availableIds.has(u.id)) : [];
-  const busy = availableIds ? known.filter((u) => !availableIds.has(u.id)) : [];
+  const outsideHours = availableIds ? known.filter((u) => outsideHoursIds.has(u.id)) : [];
+  const busy = availableIds
+    ? known.filter((u) => !availableIds.has(u.id) && !outsideHoursIds.has(u.id))
+    : [];
 
   const chip = (user: UserOption, free: boolean | null) => {
     const active = hoveredUserId === user.id;
@@ -1430,6 +1444,7 @@ export function ParticipantAvailabilityList({
         <>
           {group("Available", available, true)}
           {group("Busy", busy, false)}
+          {group("Outside working hours", outsideHours, false)}
           {unknownGroup}
         </>
       ) : (

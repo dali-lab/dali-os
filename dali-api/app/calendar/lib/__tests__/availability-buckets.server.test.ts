@@ -11,8 +11,8 @@ describe("buildAvailabilityDays", () => {
     const day = "2026-11-10"; // Tuesday
     const days = buildAvailabilityDays(
       [
-        { free: [{ start: new Date(`${day}T14:00:00Z`), end: new Date(`${day}T17:00:00Z`) }], busy: [] },
-        { free: [{ start: new Date(`${day}T15:00:00Z`), end: new Date(`${day}T16:00:00Z`) }], busy: [] },
+        { free: [{ start: new Date(`${day}T14:00:00Z`), end: new Date(`${day}T17:00:00Z`) }], busy: [], working: [] },
+        { free: [{ start: new Date(`${day}T15:00:00Z`), end: new Date(`${day}T16:00:00Z`) }], busy: [], working: [] },
       ],
       { durationMinutes: 30, timezone: TZ },
     );
@@ -27,7 +27,7 @@ describe("buildAvailabilityDays", () => {
     const day = "2026-11-10";
     const days = buildAvailabilityDays(
       [
-        { free: [{ start: new Date(`${day}T14:00:00Z`), end: new Date(`${day}T14:20:00Z`) }], busy: [] },
+        { free: [{ start: new Date(`${day}T14:00:00Z`), end: new Date(`${day}T14:20:00Z`) }], busy: [], working: [] },
       ],
       { durationMinutes: 30, timezone: TZ },
     );
@@ -41,10 +41,12 @@ describe("buildAvailabilityDays", () => {
         {
           free: [],
           busy: [{ start: new Date(`${day}T14:00:00Z`), end: new Date(`${day}T15:00:00Z`) }],
+          working: [],
         },
         {
           free: [],
           busy: [{ start: new Date(`${day}T14:30:00Z`), end: new Date(`${day}T16:00:00Z`) }],
+          working: [],
         },
       ],
       { durationMinutes: 30, timezone: TZ },
@@ -62,6 +64,7 @@ describe("buildAvailabilityDays", () => {
             { start: new Date("2026-11-10T22:00:00-05:00"), end: new Date("2026-11-11T02:00:00-05:00") },
           ],
           busy: [],
+          working: [],
         },
       ],
       { durationMinutes: 30, timezone: TZ },
@@ -69,6 +72,32 @@ describe("buildAvailabilityDays", () => {
     expect(days.map((d) => d.dayKey)).toEqual(["2026-11-10", "2026-11-11"]);
     expect(days[0].matches).toEqual([{ startHour: 22, durationHours: 2 }]);
     expect(days[1].matches).toEqual([{ startHour: 0, durationHours: 2 }]);
+  });
+
+  it("buckets only the hours when every participant is working", () => {
+    const day = "2026-11-10";
+    const days = buildAvailabilityDays(
+      [
+        { free: [], busy: [], working: [{ start: new Date(`${day}T14:00:00Z`), end: new Date(`${day}T22:00:00Z`) }] },
+        { free: [], busy: [], working: [{ start: new Date(`${day}T17:00:00Z`), end: new Date(`${day}T23:00:00Z`) }] },
+      ],
+      { durationMinutes: 30, timezone: TZ },
+    );
+    expect(days).toHaveLength(1);
+    expect(days[0].working).toEqual([{ startHour: 12, durationHours: 5 }]);
+    expect(days[0].matches).toEqual([]);
+  });
+
+  it("leaves working empty when one participant has no hours that day", () => {
+    const day = "2026-11-10";
+    const days = buildAvailabilityDays(
+      [
+        { free: [], busy: [], working: [{ start: new Date(`${day}T14:00:00Z`), end: new Date(`${day}T22:00:00Z`) }] },
+        { free: [], busy: [], working: [] },
+      ],
+      { durationMinutes: 30, timezone: TZ },
+    );
+    expect(days.flatMap((d) => d.working)).toEqual([]);
   });
 
   it("returns no days when there are no participants", () => {

@@ -52,12 +52,14 @@ export async function action({ request }: Route.ActionArgs) {
 
   // Per-user free intervals so the client can answer "who specifically is
   // available during the user-dragged window?" without a second round-trip.
+  const toIso = (iv: { start: Date; end: Date }) => ({
+    startIso: iv.start.toISOString(),
+    endIso: iv.end.toISOString(),
+  });
   const perUserOut = perUser.map((u) => ({
     userId: u.userId,
-    free: u.free.map((iv) => ({
-      startIso: iv.start.toISOString(),
-      endIso: iv.end.toISOString(),
-    })),
+    free: u.free.map(toIso),
+    working: u.working.map(toIso),
     // Coverage: whether this user's free/busy is real (a linked calendar) or a
     // working-hours default. The client renders no-coverage users as
     // "unknown", never as free — see PerUserFree.

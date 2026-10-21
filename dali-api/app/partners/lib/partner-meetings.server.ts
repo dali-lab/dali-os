@@ -12,7 +12,8 @@
 import { prisma } from "~/lib/db";
 import { currentTerm } from "~/lib/roles";
 import { createScheduledMeeting } from "~/lib/scheduled-meeting";
-import { computeUserFreeBusy, type Interval } from "~/lib/availability";
+import { computeUserFreeBusy } from "~/lib/availability";
+import { slotStatus } from "~/calendar/lib/slot-availability";
 import { logPartnerActivity } from "~/partners/lib/partner-activity.server";
 import { notifyPartners, partnerNotifyRecipients } from "~/partners/lib/partner-notify.server";
 import { sendMeetingRequestDeclinedEmail } from "~/partners/lib/partner-emails.server";
@@ -206,21 +207,14 @@ export async function createMeetingRequest(input: {
 
 // ── Core responds to a request ──────────────────────────────────────────────
 
-function isFreeForWindow(free: Interval[], start: Date, end: Date): boolean {
-  const sorted = [...free].sort((a, b) => a.start.getTime() - b.start.getTime());
-  let cursor = start.getTime();
-  const endMs = end.getTime();
-  for (const iv of sorted) {
-    if (iv.end.getTime() <= cursor) continue;
-    if (iv.start.getTime() > cursor) break;
-    cursor = Math.max(cursor, iv.end.getTime());
-    if (cursor >= endMs) break;
-  }
-  return cursor >= endMs;
-}
-
 export type RespondToMeetingRequestResult =
-  | { ok: true; conflict?: true; busyUserIds?: string[]; scheduledMeetingId?: string }
+  | {
+      ok: true;
+      conflict?: true;
+      busyUserIds?: string[];
+      outsideHoursUserIds?: string[];
+      scheduledMeetingId?: string;
+    }
   | { ok: false; error: string };
 
 export async function respondToMeetingRequest(input: {
@@ -285,10 +279,12 @@ export async function respondToMeetingRequest(input: {
         request.participantUserIds.map((uid) => computeUserFreeBusy(uid, request.startTime, windowEnd)),
       )
     : [];
-  const busyUserIds = perUser
-    .filter((u) => !isFreeForWindow(u.free, request.startTime, windowEnd))
-    .map((u) => u.userId);
-  const conflict = busyUserIds.length > 0;
+  const startMs = request.startTime.getTime();
+  const endMs = windowEnd.getTime();
+  const statuses = perUser.map((u) => ({ userId: u.userId, status: slotStatus(u, startMs, endMs) }));
+  const busyUserIds = statuses.filter((u) => u.status === "busy").map((u) => u.userId);
+  const outsideHoursUserIds = statuses.filter((u) => u.status === "outsideHours").map((u) => u.userId);
+  const conflict = busyUserIds.length > 0 || outsideHoursUserIds.length > 0;
 
   const created = await createScheduledMeeting({
     organizerId: input.actorUserId,
@@ -338,7 +334,7 @@ export async function respondToMeetingRequest(input: {
 
   return {
     ok: true,
-    ...(conflict ? { conflict: true as const, busyUserIds } : {}),
+    ...(conflict ? { conflict: true as const, busyUserIds, outsideHoursUserIds } : {}),
     scheduledMeetingId: created.meeting.id,
   };
 }
