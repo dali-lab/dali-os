@@ -7,6 +7,7 @@ import {
   cycleCloseDate,
   cycleDeadlineSummary,
   domainCloseDate,
+  domainReviewStatus,
   earliestCloseDate,
   isDomainClosed,
   latestCloseDate,
@@ -83,6 +84,26 @@ describe("cycleCloseDate", () => {
 
   it("is null while any ready domain never closes", () => {
     expect(cycleCloseDate([{ closeDate: null }, { closeDate: NOV_13 }], { closeDate: null })).toBeNull();
+  });
+});
+
+describe("domainReviewStatus", () => {
+  const nov1 = new Date("2026-11-01T12:00:00Z");
+
+  it("reads an Open cycle as UnderReview for a domain whose own window has closed", () => {
+    expect(domainReviewStatus("Open", { closeDate: null }, cycle, nov1)).toBe("UnderReview");
+  });
+
+  it("keeps an Open cycle Open for a domain still taking applications", () => {
+    expect(domainReviewStatus("Open", { closeDate: NOV_13 }, cycle, nov1)).toBe("Open");
+  });
+
+  it("keeps Open when neither the domain nor the cycle ever closes", () => {
+    expect(domainReviewStatus("Open", { closeDate: null }, { closeDate: null }, nov1)).toBe("Open");
+  });
+
+  it.each(["Draft", "UnderReview", "Completed", null] as const)("passes %s through unchanged", (status) => {
+    expect(domainReviewStatus(status, { closeDate: null }, cycle, nov1)).toBe(status);
   });
 });
 

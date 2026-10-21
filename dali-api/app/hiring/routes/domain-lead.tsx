@@ -56,6 +56,7 @@ import { DomainRosterCard, type RosterPerson } from "~/hiring/components/cycle-s
 import { addDomainMentors, domainMentorIds } from "~/hiring/lib/cycle-rosters.server";
 import { getEngagementSummaries, type EngagementSummary } from "~/hiring/lib/email-engagement.server";
 import { ApplicantEngagementChip } from "~/hiring/components/ApplicantEmailPanel";
+import { domainReviewStatus } from "~/hiring/lib/domain-windows";
 
 export const meta: Route.MetaFunction = () => [{ title: "Domain lead · DALI OS" }];
 
@@ -669,7 +670,11 @@ function DomainPanel({ entry, allForms, emailEngagement }: { entry: any; allForm
     );
   }
 
-  const currentStatus = cycle.statusUpdates[0]?.newStatus ?? null;
+  const currentStatus = domainReviewStatus(
+    cycle.statusUpdates[0]?.newStatus ?? null,
+    cycle.domains[0] ?? { closeDate: null },
+    cycle,
+  );
   const hasLinkedChallenge = (linkedChallengeForms ?? []).length > 0;
   const fullyReviewed = apps.filter((a: any) => {
     const da = a.domainApplications?.[0];

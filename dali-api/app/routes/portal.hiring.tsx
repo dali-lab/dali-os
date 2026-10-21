@@ -11,6 +11,7 @@ import { ApplicantErrorBoundary } from "~/components/ApplicantErrorBoundary";
 import { Confetti } from "~/components/Confetti";
 import { resolveUserTimeZone } from "~/lib/timezone";
 import { loadApplicationTracker } from "~/hiring/lib/application-tracker.server";
+import { trackerTopLevelStage } from "~/hiring/lib/tracker-stage";
 import {
   ApplicationDraftView,
   ApplicationOpenView,
@@ -173,23 +174,13 @@ export default function Portal() {
 
   const das = domainApplications as DomainAppData[];
 
-  // Determine top-level state when there are no domain applications yet
-  let topLevelStage: "ApplicationOpen" | "ApplicationsClosed" | "Pending" | "Draft" | "Withdrawn" | null = null;
-  if (applicationStatus === "Withdrawn") {
-    // Withdrawal is terminal at the application level — short-circuit per-domain
-    // cards regardless of how many DAs the applicant created.
-    topLevelStage = "Withdrawn";
-  } else if (das.length === 0) {
-    if (applicationStatus === "Submitted") {
-      topLevelStage = "Pending";
-    } else if (!hasApplication && !allDomainsClosed) {
-      topLevelStage = "ApplicationOpen";
-    } else if (!hasApplication) {
-      topLevelStage = "ApplicationsClosed";
-    }
-  } else if (applicationStatus === "Draft") {
-    topLevelStage = "Draft";
-  }
+  const topLevelStage = trackerTopLevelStage({
+    applicationStatus,
+    domainApplicationCount: das.length,
+    hasApplication,
+    allDomainsClosed,
+    cycleStatus,
+  });
 
   return (
     <div>

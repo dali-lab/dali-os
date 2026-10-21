@@ -876,6 +876,72 @@ describe("POST /portal/apply — per-domain application windows", () => {
   });
 });
 
+describe("POST /portal/apply (submit) — every selected domain closed", () => {
+  beforeEach(() => {
+    mockPrisma.domainApplicationCycle.findMany.mockResolvedValue([
+      { domainId: DOMAIN_B, closeDate: new Date("2000-01-01T00:00:00Z") },
+    ]);
+    mockPrisma.application.findUnique.mockResolvedValue({
+      applicationCycleId: CYCLE_ID,
+      applicationFormVersion: { questions: generalQuestions },
+    });
+  });
+
+  it("refuses a draft whose only selected domain has closed, writing nothing and sending no confirmation", async () => {
+    mockPrisma.domainApplication.findMany.mockResolvedValue([
+      { id: "da-closed", domainId: DOMAIN_B, selected: true, challengeFormVersion: { questions: domainQuestions } },
+    ]);
+
+    const res = (await action({
+      request: makeSubmitRequest({ selectedDomainIds: [DOMAIN_B] }),
+      params: {},
+      context: {},
+    } as any)) as any;
+
+    expect(res.error).toBe("Every domain you picked has closed. Add an open domain to submit.");
+    expect(mockPrisma.application.update).not.toHaveBeenCalled();
+    expect(mockPrisma.domainApplication.updateMany).not.toHaveBeenCalled();
+    expect(mockPrisma.applicationStatusUpdate.create).not.toHaveBeenCalled();
+  });
+
+  it("refuses even when the client posts no selection, since the closed pick is merged back in", async () => {
+    mockPrisma.domainApplication.findMany.mockResolvedValue([
+      { id: "da-closed", domainId: DOMAIN_B, selected: true, challengeFormVersion: { questions: domainQuestions } },
+    ]);
+
+    const res = (await action({
+      request: makeSubmitRequest({ selectedDomainIds: [] }),
+      params: {},
+      context: {},
+    } as any)) as any;
+
+    expect(res.error).toMatch(/Every domain you picked has closed/);
+    expect(mockPrisma.applicationStatusUpdate.create).not.toHaveBeenCalled();
+  });
+
+  it("allows the submit once an open domain is added alongside the closed one", async () => {
+    mockPrisma.application.findUnique.mockResolvedValue({
+      applicationCycleId: CYCLE_ID,
+      applicationFormVersion: { questions: [] },
+    });
+    mockPrisma.domainApplication.findMany.mockResolvedValue([
+      { id: DA_ID, domainId: DOMAIN_A, selected: true, challengeFormVersion: { questions: domainQuestions } },
+      { id: "da-closed", domainId: DOMAIN_B, selected: true, challengeFormVersion: { questions: domainQuestions } },
+    ]);
+
+    const res = await action({
+      request: makeSubmitRequest({
+        domainAnswers: [{ domainApplicationId: DA_ID, answers: { domain_essay: "fine" } }],
+        selectedDomainIds: [DOMAIN_A, DOMAIN_B],
+      }),
+      params: {},
+      context: {},
+    } as any);
+
+    expect((res as Response).status).toBe(302);
+  });
+});
+
 describe("POST /portal/apply — open Students cycle guard", () => {
   it("rejects a write to an application that isn't the caller's", async () => {
     mockPrisma.application.findFirst.mockResolvedValue(null);
