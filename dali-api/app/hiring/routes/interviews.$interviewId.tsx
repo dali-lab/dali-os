@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react'
-import { useLoaderData } from 'react-router'
+import { useLoaderData, useSearchParams } from 'react-router'
 import { redirect } from 'react-router'
 import { Check, Video, MapPin, Users } from 'lucide-react'
 import { prisma } from '~/lib/db'
@@ -12,7 +12,18 @@ import { requirePageSignedOrRedirect } from '~/hiring/lib/confidentiality'
 import { presignAnswers } from '~/hiring/lib/presign'
 import { ensureBlocks } from '~/collab/legacy/pm-to-blocknote'
 import { safeParseJsonString } from '~/forms/lib/forms-data'
-import { DocEditor } from '~/components/doc'
+import { DocEditor, EnhanceReviewContext } from '~/components/doc'
+import { interviewNotesRoomName } from '~/collab/roomName'
+import { latestRecordingFor } from '~/lib/meeting-recording.server'
+import { useFeatureFlag } from '~/components/FeatureFlags'
+import { MeetingRecorder } from '~/components/MeetingRecorder'
+import { RecordingPresencePill } from '~/components/RecordingPresencePill'
+import { RecordingMount } from '~/components/meeting-recorder/RecordingMount'
+import { RecordingRail } from '~/components/meeting-recorder/RecordingRail'
+import { EnhanceBar } from '~/components/meeting-recorder/EnhanceBar'
+import { EnhanceBlockActions } from '~/components/meeting-recorder/EnhanceBlockActions'
+import { TranscriptChipHoverLayer } from '~/components/meeting-recorder/TranscriptChipHoverLayer'
+import { useRecordingEditor } from '~/components/meeting-recorder/use-recording-editor'
 import { PresenceProvider } from '~/components/collab/PresenceProvider'
 import { PresenceBar } from '~/components/collab/PresenceBar'
 import { useSharedString } from '~/components/collab/useSharedString'
@@ -216,7 +227,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       anonymizeReview: application.applicationCycle.anonymizeReview,
     })) != null
   const roles = await getUserRoles(auth.user.sub, request)
-  const [educationEngagement, hiringEventEngagement, priorApplications, emailEngagement] =
+  const [educationEngagement, hiringEventEngagement, priorApplications, emailEngagement, latestRecordingRow] =
     await Promise.all([
       getEducationEngagement(application.userId),
       isFeatureEnabled('application-events', auth.user.sub, roles, request).then((on) =>
@@ -228,6 +239,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         hideOutcomes: blinded,
       }),
       getApplicantEmailEngagement(application.userId, { blinded }),
+      // The notes' newest recording, so a live one shows in place of Record
+      // and a finished one is picked up by whoever didn't start it.
+      latestRecordingFor(interviewNotesRoomName(interview.id)),
     ])
 
   return {
@@ -244,7 +258,24 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       currentUserId: auth.user.sub,
       presencePhotoUrl: presenceUser?.photoUrl ?? null,
       presenceSubtitle: presenceUser?.subtitle ?? null,
+      isCore: roles.isCore,
+      latestRecording: latestRecordingRow
+        ? {
+            id: latestRecordingRow.id,
+            ownerName: latestRecordingRow.ownerName,
+            ownerIsYou: latestRecordingRow.userId === auth.user.sub,
+            status: latestRecordingRow.status,
+            since: latestRecordingRow.createdAt.toISOString(),
+          }
+        : null,
     }
+}
+
+// Interviewers ask the applicant before recording; Start waits for a yes.
+const RECORD_CONSENT = {
+  title: 'Record this interview',
+  ask: 'Ask the applicant for permission to record before you start. Only record if they say yes.',
+  confirm: 'The applicant agreed to be recorded',
 }
 
 export default function InterviewDetailPage() {
@@ -262,6 +293,8 @@ export default function InterviewDetailPage() {
     priorApplications,
     emailEngagement,
     blinded,
+    isCore,
+    latestRecording,
   } = useLoaderData<typeof loader>() as any
 
   const applicant = interview.domainApplication?.application?.user
@@ -345,6 +378,13 @@ export default function InterviewDetailPage() {
     interview.status === 'Completed' ? 'completed' : '',
   )
   const isCompleted = completedFlag === 'completed'
+  const notesRoom = interviewNotesRoomName(interview.id)
+  const [searchParams] = useSearchParams()
+  const recordingEnabled = useFeatureFlag('ai-meeting-notes')
+  const hasTranscriptParam = Boolean(searchParams.get('transcript'))
+  const { editorRef, onEditorReady, hookProps: recordingEditorProps } = useRecordingEditor({
+    notePath: `/hiring/interviews/${interview.id}`,
+  })
   const setIsCompleted = (next: boolean) =>
     setCompletedFlag(next ? 'completed' : '')
   const [completing, setCompleting] = useState(false)
@@ -514,49 +554,66 @@ export default function InterviewDetailPage() {
             </div>
           )}
 
-          <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
-            <div>
-              <h3 className={cn(heading, 'mb-2')}>Interview notes</h3>
-              <p className="mb-2 text-xs text-os-grey">Shared with your co-interviewer.</p>
-              {collabToken ? (
-                <DocEditor
-                  features="notes"
-                  density="compact"
-                  editable={!isCompleted}
-                  placeholder="Write your interview notes here..."
-                  className={editorClass}
-                  collab={{
-                    documentName: `interview:${interview.id}:notes`,
-                    token: collabToken,
-                    userName,
-                    userId: currentUserId,
-                  }}
-                />
-              ) : sessionExpired}
-            </div>
-
-            {/* Owner-gated in collabAuth on the rec-notes-{assignmentId} room;
-                domain leads read them in deliberations via InterviewNotesCard. */}
-            <div>
-              <h3 className={cn(heading, 'mb-2')}>Personal notes</h3>
-              <p className="mb-2 text-xs text-os-grey">Only you edit these. Shown to the hiring team in delibs.</p>
-              {collabToken ? (
-                <DocEditor
-                  features="notes"
-                  density="compact"
-                  editable={!isCompleted}
-                  placeholder="Your own notes on this candidate..."
-                  className={editorClass}
-                  collab={{
-                    documentName: `interview:${interview.id}:rec-notes-${myAssignment.id}`,
-                    token: collabToken,
-                    userName,
-                    userId: currentUserId,
-                  }}
-                />
-              ) : sessionExpired}
-            </div>
-          </div>
+          <RecordingMount
+            enabled={recordingEnabled && !!collabToken && (!isCompleted || hasTranscriptParam)}
+            documentName={notesRoom}
+            canEdit={!isCompleted}
+            isCore={isCore}
+            latestRecording={latestRecording}
+            collabToken={collabToken}
+            {...recordingEditorProps}
+          >
+            {(rec) => {
+              const railOpen = Boolean(rec?.open && rec.phase !== 'idle')
+              const getRoot = () => editorRef.current?.domElement ?? null
+              return (
+                <EnhanceReviewContext.Provider
+                  value={rec ? { keepBlock: rec.keepBlock, revertBlock: rec.revertBlock, priorBlocks: rec.enhanceNotes?.priorBlocks } : null}
+                >
+                  <div className="flex flex-col gap-2">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <h3 className={heading}>Interview notes</h3>
+                      <div className="flex items-center gap-2">
+                        <RecordingPresencePill documentName={notesRoom} collabToken={collabToken} />
+                        {rec && <MeetingRecorder rec={rec} containerWide consent={RECORD_CONSENT} />}
+                      </div>
+                    </div>
+                    {rec && <EnhanceBar rec={rec} />}
+                    {rec && <EnhanceBlockActions rec={rec} getRoot={getRoot} />}
+                    <div className={cn('grid grid-cols-1 gap-4', railOpen && 'lg:grid-cols-[minmax(0,1fr)_22rem]')}>
+                      <TranscriptChipHoverLayer
+                        railOpen={railOpen}
+                        onChipClick={(recordingId, at) => {
+                          if (!rec || rec.recordingId !== recordingId) return false
+                          rec.jumpToTranscript(at)
+                          return true
+                        }}
+                      >
+                        {collabToken ? (
+                          <DocEditor
+                            features="notes"
+                            density="compact"
+                            editable={!isCompleted}
+                            aiEnabled
+                            onEditorReady={onEditorReady}
+                            placeholder="Write your interview notes here..."
+                            className={editorClass}
+                            collab={{
+                              documentName: notesRoom,
+                              token: collabToken,
+                              userName,
+                              userId: currentUserId,
+                            }}
+                          />
+                        ) : sessionExpired}
+                      </TranscriptChipHoverLayer>
+                      {rec && railOpen && <RecordingRail rec={rec} />}
+                    </div>
+                  </div>
+                </EnhanceReviewContext.Provider>
+              )
+            }}
+          </RecordingMount>
 
           <div className="border-t border-os-container pt-4">
             <h3 className={cn(heading, 'mb-3')}>

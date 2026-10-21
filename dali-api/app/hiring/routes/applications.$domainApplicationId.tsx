@@ -47,7 +47,7 @@ import { applicationBlindLabel, blindUser } from "~/hiring/lib/anonymization.ser
 import { getApplicantEmailEngagement } from "~/hiring/lib/email-engagement.server";
 import { ApplicantEmailPanel } from "~/hiring/components/ApplicantEmailPanel";
 import type { Question, RubricCriterion } from "~/types";
-import { findRound, parseTimeline } from "~/hiring/lib/cycle-timeline";
+import { findRound, groupByInterviewRound, parseTimeline } from "~/hiring/lib/cycle-timeline";
 
 export const meta: Route.MetaFunction = ({ data }) => {
   const name = (data as { applicantName?: string } | undefined)?.applicantName;
@@ -239,6 +239,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         startTime: true,
         endTime: true,
         status: true,
+        interviewRoundId: true,
         room: { select: { id: true, name: true } },
         zoomJoinUrl: true,
         videoUrl: true,
@@ -358,6 +359,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       startTime: iv.startTime.toISOString(),
       endTime: iv.endTime.toISOString(),
       status: iv.status,
+      interviewRoundId: iv.interviewRoundId,
       room: iv.room,
       zoomJoinUrl: iv.zoomJoinUrl,
       videoUrl: iv.videoUrl,
@@ -547,6 +549,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     criterionLabels,
     reviews,
     interviews,
+    // Each Interviews round gets its own section, with its own notes.
+    interviewRounds: groupByInterviewRound(timeline, interviews).map(({ roundId, label }) => ({ roundId, label })),
     domainApplicationId: da.id,
     hiringNote: da.application.hiringNote,
     canEditHiringNote: canEditHiringNote(roles, isCoreCycle),
@@ -667,6 +671,7 @@ export default function ApplicationReadOnlyDetail() {
 
       <InterviewsSection
         interviews={data.interviews}
+        rounds={data.interviewRounds}
         interviewPrepNote={data.interviewPrepNote}
       />
       <DecisionsSection
@@ -685,11 +690,15 @@ type InterviewRow = LoaderData["interviews"][number];
 
 function InterviewsSection({
   interviews,
+  rounds,
   interviewPrepNote,
 }: {
   interviews: InterviewRow[];
+  rounds: { roundId: string; label: string }[];
   interviewPrepNote: string | null;
 }) {
+  // One round reads as before; several get a heading and interviewer line each.
+  const showRounds = rounds.length > 1;
   const hasPrepNote = interviewPrepNote != null && interviewPrepNote.trim().length > 0;
   return (
     <DetailCard
@@ -709,15 +718,31 @@ function InterviewsSection({
               <p className="mt-1 text-xs text-os-grey">Set by leads during Initial delibs.</p>
             </div>
           )}
-          {interviews.length > 0 && (
-            <ul className="flex flex-col gap-3">
-              {interviews.map((iv) => (
-                <li key={iv.id} className="rounded-os-item bg-os-well">
-                  <InterviewNotesCard interview={toInterviewNotesData(iv)} />
-                </li>
-              ))}
-            </ul>
-          )}
+          {rounds.map((round) => {
+            const inRound = interviews.filter((iv) => iv.interviewRoundId === round.roundId);
+            const interviewers = [
+              ...new Set(inRound.flatMap((iv) => iv.assignments.map((a) => a.interviewerName))),
+            ];
+            return (
+              <section key={round.roundId} className="flex flex-col gap-2">
+                {showRounds && (
+                  <div className="flex flex-wrap items-baseline justify-between gap-2">
+                    <h3 className="text-sm font-semibold text-foreground">{round.label}</h3>
+                    <span className="text-xs text-os-grey">
+                      {interviewers.length > 0 ? interviewers.join(", ") : "No interviewers assigned"}
+                    </span>
+                  </div>
+                )}
+                <ul className="flex flex-col gap-3">
+                  {inRound.map((iv) => (
+                    <li key={iv.id} className="rounded-os-item bg-os-well">
+                      <InterviewNotesCard interview={toInterviewNotesData(iv)} />
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            );
+          })}
         </div>
       )}
     </DetailCard>

@@ -11,7 +11,7 @@ import { hasCycleAccess } from "~/lib/roles";
 import { generateCandidateSlots, isInterviewerFree } from "~/hiring/lib/scheduling";
 import { APPLICATION_TZ } from "~/lib/timezone";
 import { interviewerCalendars } from "~/hiring/lib/interview-availability.server";
-import { blockLabel, delibRounds, parseTimeline } from "~/hiring/lib/cycle-timeline";
+import { FIRST_INTERVIEW_ROUND_ID, blockLabel, delibRounds, parseTimeline } from "~/hiring/lib/cycle-timeline";
 import { domainCloseDate } from "~/hiring/lib/domain-windows";
 import { McpNotFoundError, McpForbiddenError } from "../../registry";
 
@@ -71,15 +71,21 @@ export async function runGetHiringCycle(userId: string, input: Input): Promise<u
 
   const currentStatus = cycle.statusUpdates[0]?.newStatus ?? "Draft";
 
+  // Coverage reads the first Interviews round; the timeline below lists every round.
   const interviewConfig = await prisma.interviewConfig.findUnique({
-    where: { applicationCycleId: input.cycleId },
+    where: {
+      applicationCycleId_interviewRoundId: {
+        applicationCycleId: input.cycleId,
+        interviewRoundId: FIRST_INTERVIEW_ROUND_ID,
+      },
+    },
   });
 
   // Coverage: only compute when interview config exists.
   let coverage: unknown = null;
   if (interviewConfig) {
     const interviewers = await prisma.cycleInterviewer.findMany({
-      where: { applicationCycleId: input.cycleId },
+      where: { applicationCycleId: input.cycleId, interviewRoundId: FIRST_INTERVIEW_ROUND_ID },
       include: {
         interviewAssignments: {
           where: { status: "Active", interview: { status: "Scheduled" } },
@@ -117,7 +123,7 @@ export async function runGetHiringCycle(userId: string, input: Input): Promise<u
     );
 
     const scheduledInterviews = await prisma.interview.findMany({
-      where: { applicationCycleId: input.cycleId, status: "Scheduled" },
+      where: { applicationCycleId: input.cycleId, interviewRoundId: FIRST_INTERVIEW_ROUND_ID, status: "Scheduled" },
       select: { startTime: true, endTime: true },
     });
 

@@ -41,7 +41,8 @@ export async function action({ request, params }: Route.ActionArgs) {
   // against producing duplicates when this draft is finalized more than once
   // (e.g. a double-click before the UI revalidates, or two concurrent requests):
   // if a Final/Released decision of this type already exists for the
-  // domainApplication, there's nothing to finalize. The check + create run in a
+  // domainApplication (for an invite, to the same Interviews round), there's
+  // nothing to finalize. The check + create run in a
   // transaction so two simultaneous requests can't both pass the check.
   let finalized;
   try {
@@ -50,6 +51,7 @@ export async function action({ request, params }: Route.ActionArgs) {
         where: {
           domainApplicationId: decision.domainApplicationId,
           type: decision.type,
+          interviewRoundId: decision.interviewRoundId,
           stage: { in: ["Final", "Released"] },
         },
         select: { id: true },
@@ -65,6 +67,7 @@ export async function action({ request, params }: Route.ActionArgs) {
           madeById: auth.user.sub,
           notes: decision.notes,
           waitlistRank: decision.waitlistRank,
+          interviewRoundId: decision.interviewRoundId,
           parentDecisionId: decision.id,
         },
       });

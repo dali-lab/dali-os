@@ -3,15 +3,15 @@ import { inferDomainApplicationStatus } from "~/hiring/lib/domain-application-st
 
 function makeDa(overrides: {
   statusUpdates?: Array<{ newStatus: string }>;
-  decisions?: Array<{ stage: string; type: string; createdAt: Date }>;
-  interviews?: Array<{ status: string }>;
+  decisions?: Array<{ stage: string; type: string; createdAt: Date; interviewRoundId?: string | null }>;
+  interviews?: Array<{ status: string; interviewRoundId?: string }>;
   closureReason?: "AcceptedElsewhere" | null;
   submittedAt?: Date | null;
 } = {}): any {
   return {
     application: { statusUpdates: overrides.statusUpdates ?? [] },
     decisions: overrides.decisions ?? [],
-    interviews: overrides.interviews ?? [],
+    interviews: (overrides.interviews ?? []).map((i) => ({ interviewRoundId: "interviews", ...i })),
     closureReason: overrides.closureReason ?? null,
     submittedAt: overrides.submittedAt ?? null,
   };
@@ -131,5 +131,51 @@ describe("inferDomainApplicationStatus", () => {
     expect(inferDomainApplicationStatus(makeDa({ ...base, interviews: [] }), "UnderReview")).toBe(
       "InvitedToInterview",
     );
+  });
+
+  describe("a second Interviews round", () => {
+    const submitted = { statusUpdates: [{ newStatus: "Submitted" }], submittedAt: new Date() };
+    const invites = [
+      { type: "InvitedToInterview", stage: "Released", createdAt: new Date("2026-10-10"), interviewRoundId: "iv2" },
+      { type: "InvitedToInterview", stage: "Released", createdAt: new Date("2026-10-01"), interviewRoundId: "interviews" },
+    ];
+
+    it("reads invited again once round 1's interview is done", () => {
+      const da = makeDa({ ...submitted, decisions: invites, interviews: [{ status: "Completed" }] });
+      expect(inferDomainApplicationStatus(da, "UnderReview")).toBe("InvitedToInterview");
+    });
+
+    it("reads scheduled, then done, from round 2's own interview", () => {
+      const scheduled = makeDa({
+        ...submitted,
+        decisions: invites,
+        interviews: [{ status: "Scheduled", interviewRoundId: "iv2" }, { status: "Completed" }],
+      });
+      expect(inferDomainApplicationStatus(scheduled, "UnderReview")).toBe("InterviewScheduled");
+      const done = makeDa({
+        ...submitted,
+        decisions: invites,
+        interviews: [{ status: "Completed", interviewRoundId: "iv2" }, { status: "Completed" }],
+      });
+      expect(inferDomainApplicationStatus(done, "UnderReview")).toBe("PostInterviewPending");
+    });
+
+    it("doesn't read a round 1 applicant cancel as withdrawing from round 2", () => {
+      const da = makeDa({
+        ...submitted,
+        decisions: invites,
+        interviews: [{ status: "CancelledByApplicant" }, { status: "Completed" }],
+      });
+      expect(inferDomainApplicationStatus(da, "UnderReview")).toBe("InvitedToInterview");
+    });
+
+    it("treats an invite with no round as round 1", () => {
+      const da = makeDa({
+        ...submitted,
+        decisions: [{ type: "InvitedToInterview", stage: "Released", createdAt: new Date(), interviewRoundId: null }],
+        interviews: [{ status: "Completed" }],
+      });
+      expect(inferDomainApplicationStatus(da, "UnderReview")).toBe("PostInterviewPending");
+    });
   });
 });

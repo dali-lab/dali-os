@@ -209,7 +209,7 @@ describe("renderEnhanceOps", () => {
       { kind: "update", id: "b1", text: "Hello there", cites: [] },
       { kind: "remove", id: "b2" },
     ];
-    renderEnhanceOps(editor, ops, { pageId: "p1", recordingId: "rec1" });
+    renderEnhanceOps(editor, ops, { notePath: "/documents/p1", recordingId: "rec1" });
     expect(editor.transact).toHaveBeenCalledTimes(1);
   });
 
@@ -217,7 +217,7 @@ describe("renderEnhanceOps", () => {
     const editor = fakeEditor([block("b1", "paragraph", "Hello")]);
     const ops: EditorOp[] = [{ kind: "update", id: "b1", text: "Hello there", cites: [] }];
 
-    const { priorBlocks } = renderEnhanceOps(editor, ops, { pageId: "p1", recordingId: "rec1" });
+    const { priorBlocks } = renderEnhanceOps(editor, ops, { notePath: "/documents/p1", recordingId: "rec1" });
 
     const updated = editor.getBlock("b1")!;
     expect((updated.props as { backgroundColor?: unknown }).backgroundColor).toBe(ENHANCE_MARK_ADDED);
@@ -229,7 +229,7 @@ describe("renderEnhanceOps", () => {
     const editor = fakeEditor([block("b1", "paragraph", "Hello")]);
     const ops: EditorOp[] = [{ kind: "update", id: "b1", text: "Hello there", cites: [] }];
 
-    const { priorBlocks } = renderEnhanceOps(editor, ops, { pageId: "p1", recordingId: "rec1" });
+    const { priorBlocks } = renderEnhanceOps(editor, ops, { notePath: "/documents/p1", recordingId: "rec1" });
     editor.updateBlock("b1", { content: [{ type: "text", text: "Mutated later", styles: {} }] });
 
     expect((priorBlocks.b1 as DocBlock).content).toEqual([{ type: "text", text: "Hello", styles: {} }]);
@@ -241,7 +241,7 @@ describe("renderEnhanceOps", () => {
       { kind: "insertAfter", afterId: "b1", blocks: [{ type: "bulletListItem", text: "Ship v1", cites: [], added: true }] },
     ];
 
-    renderEnhanceOps(editor, ops, { pageId: "p1", recordingId: "rec1" });
+    renderEnhanceOps(editor, ops, { notePath: "/documents/p1", recordingId: "rec1" });
 
     const inserted = editor.document.find((b) => b.type === "bulletListItem")!;
     expect((inserted.props as { backgroundColor?: unknown }).backgroundColor).toBe(ENHANCE_MARK_ADDED);
@@ -251,7 +251,7 @@ describe("renderEnhanceOps", () => {
     const editor = fakeEditor([block("b1", "heading", "Agenda")]);
     const ops: EditorOp[] = [{ kind: "remove", id: "b1" }];
 
-    renderEnhanceOps(editor, ops, { pageId: "p1", recordingId: "rec1" });
+    renderEnhanceOps(editor, ops, { notePath: "/documents/p1", recordingId: "rec1" });
 
     expect(editor.document).toHaveLength(1);
     expect((editor.getBlock("b1")!.props as { backgroundColor?: unknown }).backgroundColor).toBe(ENHANCE_MARK_PRIOR);
@@ -264,7 +264,7 @@ describe("renderEnhanceOps", () => {
       { kind: "insertAfter", afterId: "b2", blocks: [{ type: "paragraph", text: "New", cites: [], added: true }] },
     ];
 
-    const { priorBlocks } = renderEnhanceOps(editor, ops, { pageId: "p1", recordingId: "rec1" });
+    const { priorBlocks } = renderEnhanceOps(editor, ops, { notePath: "/documents/p1", recordingId: "rec1" });
 
     expect(priorBlocks).toEqual({});
   });

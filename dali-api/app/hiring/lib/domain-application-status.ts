@@ -4,6 +4,7 @@ import type {
 } from "~/generated/prisma/models/DomainApplication";
 import type { ApplicationCycleStatus } from "~/generated/prisma/enums";
 import type { DomainApplicationStatus } from "~/types";
+import { FIRST_INTERVIEW_ROUND_ID } from "./cycle-timeline";
 
 // ─── Include fragment ─────────────────────────────────────────────────────────
 
@@ -68,6 +69,7 @@ type DomainApplicationWithStatusRelations = DomainApplicationGetPayload<{
  *  3. This DA's submittedAt is null                           → ApplicationOpen
  *  4. submittedAt set AND no Released decision                → Pending
  *  5. Latest Released decision type == Rejected                → Rejected
+ *  Steps 6-8b only look at interviews in the round the latest invite is for.
  *  6. Latest Released decision type == InvitedToInterview
  *     AND no interview record exists                          → InvitedToInterview
  *  7. Latest Released decision type == InvitedToInterview
@@ -129,9 +131,11 @@ export function inferDomainApplicationStatus(
   if (decisionType === "InvitedToInterview") {
     // interviews[] is pre-filtered to Scheduled|Completed|CancelledByApplicant
     // rows by the include fragment.
-    const scheduled = interviews.find((i) => i.status === "Scheduled");
-    const completed = interviews.find((i) => i.status === "Completed");
-    const cancelledByApplicant = interviews.find((i) => i.status === "CancelledByApplicant");
+    const round = latestReleased.interviewRoundId ?? FIRST_INTERVIEW_ROUND_ID;
+    const inRound = interviews.filter((i) => i.interviewRoundId === round);
+    const scheduled = inRound.find((i) => i.status === "Scheduled");
+    const completed = inRound.find((i) => i.status === "Completed");
+    const cancelledByApplicant = inRound.find((i) => i.status === "CancelledByApplicant");
 
     if (scheduled) {
       // Step 5: a future interview is on the calendar

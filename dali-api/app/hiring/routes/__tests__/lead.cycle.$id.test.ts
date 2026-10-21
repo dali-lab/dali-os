@@ -713,7 +713,7 @@ describe("lead.cycle.$id action — add-domain-mentors", () => {
   it("adds the domain's mentors to the chosen roster", async () => {
     vi.mocked(addDomainMentors).mockResolvedValue(3);
     const res = (await callAction({ intent: "add-domain-mentors", role: "reviewer", domainId: DOMAIN_ID })) as Response;
-    expect(addDomainMentors).toHaveBeenCalledWith(CYCLE_ID, DOMAIN_ID, "reviewer", expect.any(Request));
+    expect(addDomainMentors).toHaveBeenCalledWith(CYCLE_ID, DOMAIN_ID, "reviewer", expect.any(Request), undefined);
     expect(res.headers.get("Location")).toContain("notice=mentors-added");
     expect(res.headers.get("Location")).toContain("added=3");
   });

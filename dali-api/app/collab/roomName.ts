@@ -19,6 +19,11 @@
 
 export const PRESENCE_ROOM_PREFIX = "presence:";
 
+/** An interview's notes, shared by its interviewers (and recorded into). */
+export function interviewNotesRoomName(interviewId: string): string {
+  return `interview:${interviewId}:notes`;
+}
+
 /**
  * A Resources bookmark page (route /resources/b/:bookmarkId). Not a Drive Page:
  * its gate is a role (Core/Admin write, every lab member reads) rather than a

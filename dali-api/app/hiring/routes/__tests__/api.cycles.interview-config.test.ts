@@ -13,11 +13,15 @@ import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
 import { applyRoomHolds } from "~/hiring/lib/interview-room-holds.server";
-import { action } from "~/hiring/routes/api.cycles.$cycleId.interview-config";
+import { action, loader } from "~/hiring/routes/api.cycles.$cycleId.interview-config";
+import { hasCycleAccess } from "~/lib/roles";
 
 const mockPrisma = prisma as unknown as {
   interviewConfig: {
     upsert: ReturnType<typeof vi.fn>;
+    findMany: ReturnType<typeof vi.fn>;
+  };
+  applicationCycle: {
     findUnique: ReturnType<typeof vi.fn>;
   };
   room: {
@@ -28,6 +32,17 @@ const mockApplyRoomHolds = applyRoomHolds as unknown as ReturnType<typeof vi.fn>
 
 const HIRING_LEAD_ID = "hiring-lead-1";
 const CYCLE_ID = "cycle-1";
+
+const TWO_ROUND_TIMELINE = [
+  { kind: "phase", key: "setup", weeks: [1, 5] },
+  { kind: "phase", key: "review", weeks: [6, 6] },
+  { kind: "delib", id: "first", label: "First delib", weeks: [6, 6] },
+  { kind: "phase", key: "interviews", weeks: [7, 7] },
+  { kind: "delib", id: "r3", label: "Delib 3", weeks: [8, 8] },
+  { kind: "phase", key: "interviews", id: "iv2", label: "Interviews 2", weeks: [9, 9] },
+  { kind: "delib", id: "final", label: "Final delib", weeks: [10, 10] },
+  { kind: "phase", key: "decisions", weeks: [11, 11] },
+];
 
 const BASE_BODY = {
   slotDurationMinutes: 30,
@@ -42,8 +57,12 @@ beforeEach(() => {
   vi.clearAllMocks();
   (mockPrisma as any).interviewConfig = {
     upsert: vi.fn().mockResolvedValue({ id: "config-1" }),
-    findUnique: vi.fn().mockResolvedValue(null),
+    findMany: vi.fn().mockResolvedValue([]),
   };
+  (mockPrisma as any).applicationCycle = {
+    findUnique: vi.fn().mockResolvedValue({ timeline: TWO_ROUND_TIMELINE }),
+  };
+  vi.mocked(hasCycleAccess).mockResolvedValue(true);
   (mockPrisma as any).room = { findMany: vi.fn().mockResolvedValue([]) };
   vi.mocked(requireAuth).mockResolvedValue({
     ok: true,
@@ -160,8 +179,9 @@ describe("POST /api/hiring/cycles/:cycleId/interview-config — room holds", () 
     expect(mockApplyRoomHolds).toHaveBeenCalledTimes(1);
     const applyArgs = mockApplyRoomHolds.mock.calls[0][0];
     expect(applyArgs.cycleId).toBe(CYCLE_ID);
-    expect(applyArgs.config.holdRooms).toBe(true);
-    expect(applyArgs.config.rooms).toEqual([{ id: "room-1", name: "Pod Appa" }]);
+    expect(applyArgs.configs).toHaveLength(1);
+    expect(applyArgs.configs[0].holdRooms).toBe(true);
+    expect(applyArgs.configs[0].rooms).toEqual([{ id: "room-1", name: "Pod Appa" }]);
     expect(applyArgs.override).toBe(false);
 
     const call = mockPrisma.interviewConfig.upsert.mock.calls[0][0];
@@ -234,5 +254,88 @@ describe("POST /api/hiring/cycles/:cycleId/interview-config — room holds", () 
 
     const applyArgs = mockApplyRoomHolds.mock.calls[0][0];
     expect(applyArgs.override).toBe(true);
+  });
+});
+
+describe("interview-config per Interviews round", () => {
+  const roundOne = {
+    id: "config-1",
+    interviewRoundId: "interviews",
+    slotDurationMinutes: 45,
+    holdRooms: true,
+    rooms: [{ id: "room-1", name: "Pod Appa" }],
+    interviewStartDate: new Date("2026-05-01T00:00:00.000Z"),
+    interviewEndDate: new Date("2026-05-07T00:00:00.000Z"),
+    dayStartHour: 9,
+    dayEndHour: 18,
+    timezone: "America/New_York",
+  };
+
+  it("saves a later round's settings under that round", async () => {
+    const res = await action({
+      request: makeRequest({ ...BASE_BODY, interviewRoundId: "iv2" }),
+      params: { cycleId: CYCLE_ID },
+      context: {},
+    } as any);
+
+    expect(res.status).toBe(200);
+    const call = mockPrisma.interviewConfig.upsert.mock.calls[0][0];
+    expect(call.where).toEqual({
+      applicationCycleId_interviewRoundId: { applicationCycleId: CYCLE_ID, interviewRoundId: "iv2" },
+    });
+    expect(call.create.interviewRoundId).toBe("iv2");
+  });
+
+  it("saves to the first round when no round is named", async () => {
+    await action({ request: makeRequest(BASE_BODY), params: { cycleId: CYCLE_ID }, context: {} } as any);
+    expect(mockPrisma.interviewConfig.upsert.mock.calls[0][0].create.interviewRoundId).toBe("interviews");
+  });
+
+  it("refuses a round that isn't on the timeline", async () => {
+    const res = await action({
+      request: makeRequest({ ...BASE_BODY, interviewRoundId: "iv9" }),
+      params: { cycleId: CYCLE_ID },
+      context: {},
+    } as any);
+    expect(res.status).toBe(400);
+    expect(mockPrisma.interviewConfig.upsert).not.toHaveBeenCalled();
+  });
+
+  it("keeps the other rounds' room holds when one round is saved", async () => {
+    mockPrisma.interviewConfig.findMany.mockResolvedValue([roundOne]);
+
+    await action({
+      request: makeRequest({ ...BASE_BODY, interviewRoundId: "iv2", holdRooms: false }),
+      params: { cycleId: CYCLE_ID },
+      context: {},
+    } as any);
+
+    const { configs } = mockApplyRoomHolds.mock.calls[0][0];
+    expect(configs).toHaveLength(2);
+    expect(configs[0]).toMatchObject({ interviewRoundId: "interviews", holdRooms: true });
+    expect(configs[1]).toMatchObject({ holdRooms: false });
+  });
+
+  function get(round?: string) {
+    const q = round ? `?round=${round}` : "";
+    return loader({
+      request: new Request(`http://localhost/api/cycles/${CYCLE_ID}/interview-config${q}`),
+      params: { cycleId: CYCLE_ID },
+      context: {},
+    } as any).then((r: Response) => r.json());
+  }
+
+  it("reads a round's own settings", async () => {
+    mockPrisma.interviewConfig.findMany.mockResolvedValue([roundOne]);
+    expect(await get()).toMatchObject({ id: "config-1", slotDurationMinutes: 45 });
+  });
+
+  it("starts a round with no settings from the latest round's, unsaved", async () => {
+    mockPrisma.interviewConfig.findMany.mockResolvedValue([roundOne]);
+    expect(await get("iv2")).toMatchObject({ id: null, interviewRoundId: "iv2", slotDurationMinutes: 45 });
+  });
+
+  it("reads nothing when no round has settings", async () => {
+    expect(await get("iv2")).toBeNull();
   });
 });

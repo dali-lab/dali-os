@@ -45,6 +45,15 @@ describe("addDomainMentors", () => {
     expect(mockPrisma.cycleReviewer.createMany).not.toHaveBeenCalled();
   });
 
+  it("adds interviewers to the first round unless another is named", async () => {
+    await addDomainMentors("c1", "d1", "interviewer");
+    await addDomainMentors("c1", "d1", "interviewer", undefined, "iv2");
+    const rounds = mockPrisma.cycleInterviewer.createMany.mock.calls.map((c: any[]) =>
+      [...new Set(c[0].data.map((d: any) => d.interviewRoundId))],
+    );
+    expect(rounds).toEqual([["interviews"], ["iv2"]]);
+  });
+
   it("does nothing when the domain has no mentors", async () => {
     mockPrisma.user.findMany.mockResolvedValue([]);
     expect(await addDomainMentors("c1", "d1", "reviewer")).toBe(0);

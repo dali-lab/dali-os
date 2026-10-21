@@ -73,10 +73,11 @@ function buildMemberAggregations(
 
 export async function computeAvailableSlots(
   cycleId: string,
+  roundId: string,
   applicantDomainIds: string[],
   mode: "in-person" | "online" = "online",
 ): Promise<AvailableSlot[]> {
-  return (await explainAvailableSlots(cycleId, applicantDomainIds, mode)).slots;
+  return (await explainAvailableSlots(cycleId, roundId, applicantDomainIds, mode)).slots;
 }
 
 export interface SlotAvailability {
@@ -88,11 +89,12 @@ export interface SlotAvailability {
 
 export async function explainAvailableSlots(
   cycleId: string,
+  roundId: string,
   applicantDomainIds: string[],
   mode: "in-person" | "online" = "online",
 ): Promise<SlotAvailability> {
   const config = await prisma.interviewConfig.findUnique({
-    where: { applicationCycleId: cycleId },
+    where: { applicationCycleId_interviewRoundId: { applicationCycleId: cycleId, interviewRoundId: roundId } },
     include: { rooms: { where: { archivedAt: null }, select: { id: true, name: true } } },
   });
   if (!config) return { slots: [], blocker: "no-config", bookingNoticeHours: 0 };
@@ -115,7 +117,7 @@ export async function explainAvailableSlots(
   // The interviewAssignments include filters out assignments whose parent
   // interview has been cancelled or completed, so those no longer block slots.
   const interviewers = await prisma.cycleInterviewer.findMany({
-    where: { applicationCycleId: cycleId },
+    where: { applicationCycleId: cycleId, interviewRoundId: roundId },
     include: {
       interviewAssignments: {
         where: ACTIVE_ASSIGNMENT_WITH_ACTIVE_INTERVIEW,
@@ -229,6 +231,7 @@ export async function explainAvailableSlots(
 
 export async function assignInterviewers(
   cycleId: string,
+  roundId: string,
   domainApplicationId: string,
   applicantDomainIds: string[],
   slotStart: Date,
@@ -238,22 +241,27 @@ export async function assignInterviewers(
 ) {
   // Read calendars before the transaction: they can mean calls to linked
   // calendar providers, which shouldn't run while interviewer rows are locked.
-  const calendars = await cycleInterviewerCalendars(cycleId);
+  const calendars = await cycleInterviewerCalendars(cycleId, roundId);
   if (tx) {
-    return assignInterviewersWithTx(tx, cycleId, domainApplicationId, applicantDomainIds, slotStart, slotEnd, mode, calendars);
+    return assignInterviewersWithTx(tx, cycleId, roundId, domainApplicationId, applicantDomainIds, slotStart, slotEnd, mode, calendars);
   }
   return prisma.$transaction(
     (innerTx) =>
-      assignInterviewersWithTx(innerTx, cycleId, domainApplicationId, applicantDomainIds, slotStart, slotEnd, mode, calendars),
+      assignInterviewersWithTx(innerTx, cycleId, roundId, domainApplicationId, applicantDomainIds, slotStart, slotEnd, mode, calendars),
     { isolationLevel: "Serializable" },
   );
 }
 
-/** Every interviewer on the cycle, read from their DALI OS calendars. */
-async function cycleInterviewerCalendars(cycleId: string): Promise<Map<string, InterviewerCalendar>> {
+/** Every interviewer on a round's roster, read from their DALI OS calendars. */
+async function cycleInterviewerCalendars(cycleId: string, roundId: string): Promise<Map<string, InterviewerCalendar>> {
   const [config, rows] = await Promise.all([
-    prisma.interviewConfig.findUnique({ where: { applicationCycleId: cycleId } }),
-    prisma.cycleInterviewer.findMany({ where: { applicationCycleId: cycleId }, select: { userId: true } }),
+    prisma.interviewConfig.findUnique({
+      where: { applicationCycleId_interviewRoundId: { applicationCycleId: cycleId, interviewRoundId: roundId } },
+    }),
+    prisma.cycleInterviewer.findMany({
+      where: { applicationCycleId: cycleId, interviewRoundId: roundId },
+      select: { userId: true },
+    }),
   ]);
   if (!config) return new Map();
   return interviewerCalendars(rows.map((r) => r.userId), config);
@@ -262,6 +270,7 @@ async function cycleInterviewerCalendars(cycleId: string): Promise<Map<string, I
 async function assignInterviewersWithTx(
   tx: Prisma.TransactionClient,
   cycleId: string,
+  roundId: string,
   domainApplicationId: string,
   applicantDomainIds: string[],
   slotStart: Date,
@@ -270,16 +279,16 @@ async function assignInterviewersWithTx(
   calendars: Map<string, InterviewerCalendar>,
 ) {
   const config = await tx.interviewConfig.findUnique({
-    where: { applicationCycleId: cycleId },
+    where: { applicationCycleId_interviewRoundId: { applicationCycleId: cycleId, interviewRoundId: roundId } },
     include: { rooms: { where: { archivedAt: null }, select: { id: true, name: true } } },
   });
-  if (!config) throw new Error("No interview config for this cycle");
+  if (!config) throw new Error("No interview config for this round");
 
   const { bufferMinutes } = config;
 
   // Lock candidate interviewers to prevent double-booking race
   const cycleInterviewers = await tx.cycleInterviewer.findMany({
-    where: { applicationCycleId: cycleId },
+    where: { applicationCycleId: cycleId, interviewRoundId: roundId },
     select: { id: true },
   });
   if (cycleInterviewers.length === 0) {
@@ -289,7 +298,7 @@ async function assignInterviewersWithTx(
   await tx.$executeRaw`SELECT id FROM "CycleInterviewer" WHERE id = ANY(${ids}::text[]) FOR UPDATE`;
 
   const interviewers = await tx.cycleInterviewer.findMany({
-    where: { applicationCycleId: cycleId },
+    where: { applicationCycleId: cycleId, interviewRoundId: roundId },
     include: {
       interviewAssignments: {
         where: ACTIVE_ASSIGNMENT_WITH_ACTIVE_INTERVIEW,
@@ -386,6 +395,7 @@ async function assignInterviewersWithTx(
     data: {
       domainApplicationId,
       applicationCycleId: cycleId,
+      interviewRoundId: roundId,
       startTime: slotStart,
       endTime: slotEnd,
       status: "Scheduled",
@@ -435,9 +445,9 @@ export async function reassignInterviewer(
   // Calendars are read up front, outside the transaction (see assignInterviewers).
   const cycle = await prisma.interview.findUnique({
     where: { id: interviewId },
-    select: { applicationCycleId: true },
+    select: { applicationCycleId: true, interviewRoundId: true },
   });
-  const calendars = cycle ? await cycleInterviewerCalendars(cycle.applicationCycleId) : new Map();
+  const calendars = cycle ? await cycleInterviewerCalendars(cycle.applicationCycleId, cycle.interviewRoundId) : new Map();
   const result = await prisma.$transaction(async (tx) => {
     const assignment = await tx.interviewAssignment.findUnique({
       where: { id: decliningAssignmentId },
@@ -457,7 +467,12 @@ export async function reassignInterviewer(
 
     const { interview } = assignment;
     const config = await tx.interviewConfig.findUnique({
-      where: { applicationCycleId: interview.applicationCycleId },
+      where: {
+        applicationCycleId_interviewRoundId: {
+          applicationCycleId: interview.applicationCycleId,
+          interviewRoundId: interview.interviewRoundId,
+        },
+      },
     });
     if (!config) throw new Error("No interview config");
 
@@ -484,7 +499,7 @@ export async function reassignInterviewer(
     // Load every CycleInterviewer in the cycle so we can build member-level
     // aggregations (same pattern as assignInterviewers).
     const allInterviewers = await tx.cycleInterviewer.findMany({
-      where: { applicationCycleId: interview.applicationCycleId },
+      where: { applicationCycleId: interview.applicationCycleId, interviewRoundId: interview.interviewRoundId },
       include: {
         interviewAssignments: {
           where: ACTIVE_ASSIGNMENT_WITH_ACTIVE_INTERVIEW,

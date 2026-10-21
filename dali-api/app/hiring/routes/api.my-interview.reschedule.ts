@@ -67,7 +67,12 @@ export async function action({ request }: Route.ActionArgs) {
         }
 
         const config = await tx.interviewConfig.findUnique({
-          where: { applicationCycleId: current.applicationCycleId },
+          where: {
+            applicationCycleId_interviewRoundId: {
+              applicationCycleId: current.applicationCycleId,
+              interviewRoundId: current.interviewRoundId,
+            },
+          },
         });
         const rescheduleNoticeHours = config?.rescheduleNoticeHours ?? 12;
         const cutoff = new Date(current.startTime.getTime() - rescheduleNoticeHours * 60 * 60_000);
@@ -102,6 +107,7 @@ export async function action({ request }: Route.ActionArgs) {
 
         const created = await assignInterviewers(
           current.applicationCycleId,
+          current.interviewRoundId,
           current.domainApplicationId,
           applicantDomainIds,
           new Date(newStart),

@@ -6,6 +6,7 @@ import { logAuditEvent } from "~/lib/audit";
 import { isCycleAdmin, isDomainLeadForCycle, hasCycleAccess } from "~/lib/roles";
 import { parseJson } from "~/lib/validate";
 import { requireApiSignedOrForbidden } from "~/hiring/lib/confidentiality";
+import { nextInterviewRoundId, parseTimeline } from "~/hiring/lib/cycle-timeline";
 
 const DecisionSchema = z.object({
   type: z.enum(["Rejected", "InvitedToInterview", "Accepted", "Waitlisted"]),
@@ -60,7 +61,15 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   const da = await prisma.domainApplication.findUnique({
     where: { id: params.id },
-    select: { domainId: true, application: { select: { applicationCycleId: true } } },
+    select: {
+      domainId: true,
+      application: { select: { applicationCycleId: true, applicationCycle: { select: { timeline: true } } } },
+      interviews: { where: { status: "Completed" }, select: { interviewRoundId: true } },
+      decisions: {
+        where: { type: "InvitedToInterview", stage: "Released" },
+        select: { interviewRoundId: true },
+      },
+    },
   });
   if (!da) return Response.json({ error: "Not found" }, { status: 404 });
   const gate = await requireApiSignedOrForbidden(
@@ -107,6 +116,13 @@ export async function action({ request, params }: Route.ActionArgs) {
       madeById: auth.user.sub,
       notes: notes ?? null,
       waitlistRank: waitlistRank ?? null,
+      interviewRoundId:
+        type === "InvitedToInterview"
+          ? nextInterviewRoundId(
+              parseTimeline(da.application.applicationCycle.timeline),
+              new Set([...da.interviews, ...da.decisions].map((x) => x.interviewRoundId).filter((x) => x != null)),
+            )
+          : null,
     },
   });
 

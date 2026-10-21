@@ -6,10 +6,12 @@ import { hasCycleAccess } from "~/lib/roles";
 import { logAuditEvent } from "~/lib/audit";
 import { interviewerCalendars } from "~/hiring/lib/interview-availability.server";
 import { idSchema, parseJson } from "~/lib/validate";
+import { FIRST_INTERVIEW_ROUND_ID } from "~/hiring/lib/cycle-timeline";
 
 const CreateInterviewerSchema = z.object({
   userId: idSchema,
   domainId: idSchema,
+  interviewRoundId: idSchema.optional(),
 });
 
 const DeleteInterviewerSchema = z.object({
@@ -23,8 +25,10 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   if (!(await hasCycleAccess(auth.user.sub, params.cycleId!)))
     return forbidden(request);
 
+  // Each Interviews round has its own roster and interview window.
+  const roundId = new URL(request.url).searchParams.get("round") ?? FIRST_INTERVIEW_ROUND_ID;
   const interviewers = await prisma.cycleInterviewer.findMany({
-    where: { applicationCycleId: params.cycleId },
+    where: { applicationCycleId: params.cycleId, interviewRoundId: roundId },
     include: {
       user: { select: { firstName: true, lastName: true, daliEmail: true } },
       domain: { select: { id: true, name: true } },
@@ -35,7 +39,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   // Free time comes from each interviewer's DALI OS calendar inside the
   // interview window (none until the window is set).
   const config = await prisma.interviewConfig.findUnique({
-    where: { applicationCycleId: params.cycleId },
+    where: { applicationCycleId_interviewRoundId: { applicationCycleId: params.cycleId, interviewRoundId: roundId } },
   });
   const calendars = config
     ? await interviewerCalendars(interviewers.map((i) => i.userId), config)
@@ -68,12 +72,14 @@ export async function action({ request, params }: Route.ActionArgs) {
     const body = await parseJson(request, CreateInterviewerSchema);
     if (body instanceof Response) return body;
     const { userId, domainId } = body;
+    const interviewRoundId = body.interviewRoundId ?? FIRST_INTERVIEW_ROUND_ID;
 
     const interviewer = await prisma.cycleInterviewer.create({
       data: {
         userId,
         applicationCycleId: params.cycleId,
         domainId,
+        interviewRoundId,
       },
     });
 
@@ -81,7 +87,7 @@ export async function action({ request, params }: Route.ActionArgs) {
       action: "interviewer.add",
       userId: gate.auth.user.sub,
       targetId: interviewer.id,
-      metadata: { cycleId: params.cycleId!, interviewerUserId: userId, domainId },
+      metadata: { cycleId: params.cycleId!, interviewerUserId: userId, domainId, interviewRoundId },
       request,
     });
 

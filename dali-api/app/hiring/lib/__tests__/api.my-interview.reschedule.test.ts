@@ -81,6 +81,7 @@ describe("POST /api/hiring/my-interview/reschedule", () => {
     mockTx.interview.findFirst.mockResolvedValue({
       id: "int-1",
       applicationCycleId: CYCLE_ID,
+      interviewRoundId: "interviews",
       domainApplicationId: DA_ID_A,
       startTime: new Date(Date.now() + 48 * 60 * 60_000),
       domainApplication: {
@@ -119,6 +120,7 @@ describe("POST /api/hiring/my-interview/reschedule", () => {
     mockTx.interview.findFirst.mockResolvedValue({
       id: "int-design",
       applicationCycleId: CYCLE_ID,
+      interviewRoundId: "interviews",
       domainApplicationId: DA_ID_A,
       startTime: new Date(Date.now() + 48 * 60 * 60_000),
       domainApplication: {
@@ -157,8 +159,10 @@ describe("POST /api/hiring/my-interview/reschedule", () => {
     });
 
     // New interview assigned to correct DA
+    // ...in the same Interviews round as the one it replaces.
     expect(assignInterviewers).toHaveBeenCalledWith(
       CYCLE_ID,
+      "interviews",
       DA_ID_A,
       ["domain-design", "domain-eng"],
       expect.any(Date),

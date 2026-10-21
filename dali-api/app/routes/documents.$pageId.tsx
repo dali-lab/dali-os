@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState, type ReactNode } from "react";
+import { useState } from "react";
 import { Link, redirect, useLoaderData, useRevalidator, useSearchParams } from "react-router";
 import QRCode from "qrcode";
 import { Shapes, Trash2, UserCheck } from "lucide-react";
@@ -39,33 +39,9 @@ import { ActionItemDraftScope } from "~/components/meeting-recorder/action-item-
 import { ActionItemChips } from "~/components/meeting-recorder/ActionItemChips";
 import { EnhanceBar } from "~/components/meeting-recorder/EnhanceBar";
 import { EnhanceBlockActions } from "~/components/meeting-recorder/EnhanceBlockActions";
-import { useMeetingRecording, type UseMeetingRecording, type UseMeetingRecordingProps } from "~/components/meeting-recorder/use-meeting-recording";
-import {
-  appendBlocks,
-  appendTaskMentionContent,
-  blockOwnText,
-  blocksToPlainText,
-  enhanceSnapshotBlocks,
-  findEnhanceMarks,
-  findTranscriptToggle,
-  hasTranscriptToggle,
-  keepAllEnhance,
-  keepEnhanceBlock,
-  renderEnhanceOps,
-  revertAllEnhance,
-  revertEnhanceBlock,
-  transcriptToggleBlock,
-  EnhanceReviewContext,
-} from "~/components/doc";
-import type { DocEditorInstance, DocPartialBlock } from "~/components/doc/schema/build";
-import {
-  actionItemMatchesBlock,
-  type EditorOp,
-  type EnhanceActionItem,
-  type EnhanceBlockChange,
-  type EnhanceMarkEntry,
-  type SnapshotBlock,
-} from "~/components/meeting-recorder/enhance-plan";
+import { RecordingMount } from "~/components/meeting-recorder/RecordingMount";
+import { useRecordingEditor } from "~/components/meeting-recorder/use-recording-editor";
+import { EnhanceReviewContext } from "~/components/doc";
 import { pageDocName } from "~/collab/roomName";
 import { canManageNotebook } from "~/lib/notebooks.server";
 import { nextNoteTargets } from "~/lib/notebook-series.server";
@@ -633,38 +609,6 @@ function AttendanceButton({
   );
 }
 
-// Mounts useMeetingRecording() only while `enabled` is true — recordingEnabled
-// (feature flag), recordingAllowed (project policy) or canShowRecorder could
-// each flip false mid-session (e.g. a followed `?transcript=` recording gets
-// discarded, dropping the URL param), so the hook can't be called
-// conditionally inside one stable component; mounting/unmounting this one
-// instead keeps every call to the rules of hooks.
-function RecordingMount({
-  enabled,
-  children,
-  ...hookProps
-}: UseMeetingRecordingProps & { enabled: boolean; children: (rec: UseMeetingRecording | null) => ReactNode }) {
-  if (!enabled) return <>{children(null)}</>;
-  // Keyed by documentName: notebook tabs are sibling pages rendered by this
-  // same route component, so switching tabs changes `documentName` on an
-  // otherwise-still-mounted tree. Without the key, this instance (and the
-  // useMeetingRecording state inside it) would carry over from the old tab
-  // instead of resetting to idle for the new one.
-  return (
-    <RecordingMountInner key={hookProps.documentName} {...hookProps}>
-      {children}
-    </RecordingMountInner>
-  );
-}
-
-function RecordingMountInner({
-  children,
-  ...hookProps
-}: UseMeetingRecordingProps & { children: (rec: UseMeetingRecording) => ReactNode }) {
-  const rec = useMeetingRecording(hookProps);
-  return <>{children(rec)}</>;
-}
-
 export default function DocumentRoute() {
   const { emptyNotebook } = useLoaderData() as { emptyNotebook?: NotebookView };
   if (emptyNotebook) return <EmptyNotebook notebook={emptyNotebook} />;
@@ -743,166 +687,10 @@ function DocumentPage() {
     if (!res?.ok) toast.error("Couldn't turn off the record prompt for this meeting.");
   }
 
-  // Meeting recording writes into the doc through the live editor, so
-  // collaborators see the notes arrive like any other edit.
-  const editorRef = useRef<DocEditorInstance | null>(null);
-  // Document-change listeners registered by useMeetingRecording's
-  // subscribeDocumentChanges prop (specs/meeting-recording-rail.md Step 2) —
-  // a Set so the single editor.onChange subscription below fans out to every
-  // registered hook instance (notebook tabs can mount more than one
-  // RecordingMount in the same render, though only one is ever enabled).
-  // Kept as a ref, not state: registering/unregistering must never itself
-  // trigger a re-render.
-  const docChangeListenersRef = useRef<Set<(ctx: { marks: EnhanceMarkEntry[]; changes: EnhanceBlockChange[] }) => void>>(
-    new Set(),
-  );
-  const onEditorReady = useCallback((ed: DocEditorInstance) => {
-    editorRef.current = ed;
-    const marks = findEnhanceMarks(ed.document);
-    for (const cb of docChangeListenersRef.current) cb({ marks, changes: [] });
-    ed.onChange((editor, { getChanges }) => {
-      const liveMarks = findEnhanceMarks(editor.document);
-      const changes = getChanges() as unknown as EnhanceBlockChange[];
-      for (const cb of docChangeListenersRef.current) cb({ marks: liveMarks, changes });
-    });
-  }, []);
-  // Lets useMeetingRecording subscribe without this route importing anything
-  // BlockNote-specific into the hook: it hands over plain data (a mark scan
-  // + the transaction's change list), computed here where the real editor
-  // and its onChange API live. Called once immediately with the document's
-  // current marks if the editor is already up; otherwise onEditorReady seeds
-  // it once the editor mounts.
-  const subscribeDocumentChanges = useCallback(
-    (cb: (ctx: { marks: EnhanceMarkEntry[]; changes: EnhanceBlockChange[] }) => void) => {
-      docChangeListenersRef.current.add(cb);
-      const editor = editorRef.current;
-      if (editor) cb({ marks: findEnhanceMarks(editor.document), changes: [] });
-      return () => {
-        docChangeListenersRef.current.delete(cb);
-      };
-    },
-    [],
-  );
-  const insertMeetingNotes = useCallback((markdown: string, transcript: string[]) => {
-    const editor = editorRef.current;
-    if (!editor) return false;
-    const blocks: Parameters<DocEditorInstance["replaceBlocks"]>[1] = [
-      ...editor.tryParseMarkdownToBlocks(markdown),
-    ];
-    // The transcript is long and rarely read, so it goes under a collapsed
-    // toggle heading; Markdown has no way to say that, hence blocks.
-    if (transcript.length) blocks.push(transcriptToggleBlock(transcript));
-    appendBlocks(editor, blocks);
-    return true;
-  }, []);
-
-  // Enhance (specs/meeting-notes-model.md §2): a snapshot of the live
-  // editor's top-level blocks (id/type/text), plus the whole-body text
-  // isUntouchedTemplate compares against the seeded template hash.
-  const getNoteState = useCallback((): { blocks: SnapshotBlock[]; bodyText: string } | null => {
-    const editor = editorRef.current;
-    if (!editor) return null;
-    const doc = editor.document;
-    return {
-      blocks: enhanceSnapshotBlocks(doc),
-      bodyText: blocksToPlainText(doc),
-    };
-  }, []);
-
-  // Replays Enhance's merge ops against the live editor (marking every
-  // touched block, Step 2), then inserts the transcript toggle if nothing
-  // did already — same toggle insertMeetingNotes uses, de-duplicated by
-  // heading text. Returns renderEnhanceOps's captured priorBlocks for the
-  // hook to persist as StoredEnhanceNotes.priorBlocks.
-  const onApplyEnhance = useCallback(
-    (
-      ops: EditorOp[],
-      recordingId: string,
-      transcript: string[],
-      actionItems: EnhanceActionItem[],
-      speakerAt: (atSeconds: number) => string | null,
-    ): { ok: boolean; priorBlocks?: Record<string, unknown> } => {
-      const editor = editorRef.current;
-      if (!editor) return { ok: false };
-      const { priorBlocks } = renderEnhanceOps(editor, ops, { pageId, recordingId, actionItems, projectId: meetingProjectId, speakerAt });
-      if (transcript.length && !hasTranscriptToggle(editor)) {
-        appendBlocks(editor, [transcriptToggleBlock(transcript)]);
-      }
-      return { ok: true, priorBlocks };
-    },
-    [pageId, meetingProjectId],
-  );
-
-  // Keep/Revert — one block or every marked block at once (specs/meeting-
-  // recording-rail.md Step 2). Backs the rail's row buttons and header
-  // actions, the side-menu items (via EnhanceReviewContext below), and the
-  // hook's own local-edit-counts-as-Keep detection.
-  const onKeepBlock = useCallback((id: string) => {
-    const editor = editorRef.current;
-    if (!editor) return;
-    keepEnhanceBlock(editor, id);
-  }, []);
-  const onRevertBlock = useCallback((id: string, priorBlocks: Record<string, unknown>) => {
-    const editor = editorRef.current;
-    if (!editor) return;
-    revertEnhanceBlock(editor, id, priorBlocks);
-  }, []);
-  const onKeepAllBlocks = useCallback((): number => {
-    const editor = editorRef.current;
-    return editor ? keepAllEnhance(editor) : 0;
-  }, []);
-  const onRevertAllBlocks = useCallback((priorBlocks: Record<string, unknown>): number => {
-    const editor = editorRef.current;
-    return editor ? revertAllEnhance(editor, priorBlocks) : 0;
-  }, []);
-
-  // A speaker rename after Insert/Enhance leaves the names baked into the
-  // Transcript toggle stale — rewrite its children from the current
-  // paragraphs (names included) via the live editor. No-op (false) when the
-  // note has no Transcript toggle yet, same lookup Insert/Apply use to avoid
-  // a duplicate one.
-  const onSpeakersChanged = useCallback((paragraphs: string[]): boolean => {
-    const editor = editorRef.current;
-    if (!editor) return false;
-    const toggle = findTranscriptToggle(editor.document);
-    if (!toggle || toggle.children.length === 0) return false;
-    const newChildren = paragraphs.map((text) => ({
-      type: "paragraph",
-      content: [{ type: "text", text, styles: {} }],
-    })) as DocPartialBlock[];
-    editor.replaceBlocks(toggle.children, newChildren);
-    return true;
-  }, []);
-
-  // Action items into Tasks (specs/meeting-notes-model.md §4): once a task
-  // exists, link it from the note. The mention spec (app/components/doc/
-  // schema/mention.tsx) has no `kind` prop to grow into without a schema
-  // change — adding one would be a new prop, which y-prosemirror treats like
-  // any other schema change for a stale client. So this appends a plain link
-  // (the same kind of node citation chips already use, §3) to the matching
-  // checklist item instead of a task mention chip; see the PR description.
-  //
-  // The checklist block's rendered text can differ from the action item's
-  // own text (case, punctuation, an owner prefix the editor's rendering
-  // added) — actionItemMatchesBlock finds the best match instead of an exact
-  // trimmed-text comparison (fix for created tasks never linking back).
-  const onTaskCreated = useCallback((itemText: string, taskId: string, taskProjectId: string) => {
-    const editor = editorRef.current;
-    if (!editor) return;
-    const candidates = editor.document
-      .filter((b) => b.type === "checkListItem")
-      .map((b) => ({ block: b, text: blockOwnText(b) }))
-      .filter(({ text }) => actionItemMatchesBlock(itemText, text));
-    if (candidates.length === 0) return;
-    const exact = candidates.find(({ text }) => text.trim().toLowerCase() === itemText.trim().toLowerCase());
-    const match = exact ?? candidates[0]!;
-    const content = appendTaskMentionContent(match.block.content as DocPartialBlock["content"], {
-      taskId,
-      projectId: taskProjectId,
-      label: itemText.trim(),
-    });
-    editor.updateBlock(match.block.id, { content } as unknown as DocPartialBlock);
-  }, []);
+  const { editorRef, onEditorReady, hookProps: recordingEditorProps } = useRecordingEditor({
+    notePath: `/documents/${pageId}`,
+    projectId: meetingProjectId,
+  });
 
   return (
     <RecordingMount
@@ -914,22 +702,13 @@ function DocumentPage() {
       canEdit={canEdit}
       isCore={isCore}
       latestRecording={latestRecording}
-      onInsert={insertMeetingNotes}
       autoOpen={recordAutoOpen}
       collabToken={collabToken}
       seededFromPageId={seededFromPageId}
       seededTemplateHash={seededTemplateHash}
-      getNoteState={getNoteState}
-      onApplyEnhance={onApplyEnhance}
-      subscribeDocumentChanges={subscribeDocumentChanges}
-      onKeepBlock={onKeepBlock}
-      onRevertBlock={onRevertBlock}
-      onKeepAllBlocks={onKeepAllBlocks}
-      onRevertAllBlocks={onRevertAllBlocks}
-      onSpeakersChanged={onSpeakersChanged}
       projectId={meetingProjectId}
       canCreateTasks={canCreateTasks}
-      onTaskCreated={onTaskCreated}
+      {...recordingEditorProps}
     >
       {(rec) => {
         const recordingLive = rec ? rec.phase === "recording" || rec.phase === "starting" || rec.phase === "stopping" : false;

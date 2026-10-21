@@ -1,6 +1,13 @@
 import { describe, it, expect } from "vitest";
-import { blockDates, defaultApplicationWindow, phaseStatus, tasksForBlock, termWeek } from "~/hiring/lib/cycle-phases";
-import { STANDARD_TIMELINE, defaultTimeline, type Timeline } from "~/hiring/lib/cycle-timeline";
+import {
+  blockDates,
+  defaultApplicationWindow,
+  interviewTaskKey,
+  phaseStatus,
+  tasksForBlock,
+  termWeek,
+} from "~/hiring/lib/cycle-phases";
+import { STANDARD_TIMELINE, defaultTimeline, newInterviewRound, type Timeline } from "~/hiring/lib/cycle-timeline";
 
 const termStart = new Date("2026-09-14T00:00:00Z"); // a Monday
 const day = (n: number) => new Date(termStart.getTime() + n * 24 * 60 * 60 * 1000);
@@ -46,6 +53,26 @@ describe("tasksForBlock", () => {
     expect(keysOf(STANDARD_TIMELINE, 0)).toContain("openApplications");
     expect(keysOf(STANDARD_TIMELINE, 0)).not.toContain("reviewers");
     expect(keysOf(STANDARD_TIMELINE, 1)).toEqual(expect.arrayContaining(["reviewers", "interviewers", "reviews"]));
+  });
+
+  it("gives a later Interviews round its own roster, schedule, invite and interview tasks", () => {
+    // Standard plus Delib 3 and Interviews 2 before the final round.
+    const t: Timeline = [
+      ...STANDARD_TIMELINE.slice(0, 4),
+      { kind: "delib", id: "r3", label: "Delib 3", weeks: [8, 8] },
+      newInterviewRound(STANDARD_TIMELINE, [9, 9]),
+      ...STANDARD_TIMELINE.slice(4),
+    ];
+    expect(keysOf(t, 4)).toEqual(["round:r3", "interviewInvites:iv2"]);
+    expect(keysOf(t, 5)).toEqual(["interviewers:iv2", "interviewSchedule:iv2", "conductInterviews:iv2"]);
+    // The first round keeps the keys it had before rounds existed.
+    expect(keysOf(t, 2)).toEqual(["round:first", "interviewInvites"]);
+    expect(keysOf(t, 3)).toEqual(["interviewSchedule", "conductInterviews"]);
+  });
+
+  it("keys first-round tasks plainly and later ones by round", () => {
+    expect(interviewTaskKey("conductInterviews", "interviews")).toBe("conductInterviews");
+    expect(interviewTaskKey("conductInterviews", "iv2")).toBe("conductInterviews:iv2");
   });
 
   it("drops interview and challenge tasks a cycle doesn't have", () => {

@@ -163,5 +163,35 @@ describe("POST /api/hiring/delibs/:id (intent=close)", () => {
       expect(data.stage).toBe("Draft");
       expect(data.waitlistRank).toBeNull();
     }
+    expect(calls.map((d: any) => [d.type, d.interviewRoundId])).toEqual([
+      ["InvitedToInterview", "interviews"],
+      ["InvitedToInterview", "interviews"],
+      ["Rejected", null],
+    ]);
+  });
+
+  it("invites a later round's Interview column to that Interviews round", async () => {
+    mockPrisma.delibsSession.findUnique.mockResolvedValue({
+      id: SESSION_ID,
+      roundId: "r3",
+      applicationCycle: {
+        timeline: [
+          { kind: "phase", key: "setup", weeks: [1, 5] },
+          { kind: "phase", key: "review", weeks: [6, 6] },
+          { kind: "delib", id: "first", label: "First delib", weeks: [6, 6] },
+          { kind: "phase", key: "interviews", weeks: [7, 7] },
+          { kind: "delib", id: "r3", label: "Delib 3", weeks: [8, 8] },
+          { kind: "phase", key: "interviews", id: "iv2", label: "Interviews 2", weeks: [9, 9] },
+          { kind: "delib", id: "final", label: "Final delib", weeks: [10, 10] },
+          { kind: "phase", key: "decisions", weeks: [11, 11] },
+        ],
+      },
+      columnOrder: { Interview: ["da-int-1"], Reject: [] },
+    });
+
+    await action({ request: makeCloseRequest(), params: { id: SESSION_ID }, context: {} } as any);
+
+    const calls = mockTx.decision.create.mock.calls.map((c: any[]) => c[0].data);
+    expect(calls).toEqual([expect.objectContaining({ type: "InvitedToInterview", interviewRoundId: "iv2" })]);
   });
 });

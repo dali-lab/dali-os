@@ -521,7 +521,7 @@ model ApplicationCycle {
   domains              DomainApplicationCycle[]
   domainChallengeForms CycleDomainForm[]
 
-  interviewConfig   InterviewConfig?
+  interviewConfigs  InterviewConfig[]
   cycleReviewers    CycleReviewer[]
   cycleInterviewers CycleInterviewer[]
   interviews        Interview[]
@@ -879,8 +879,11 @@ model InterviewConfig {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  applicationCycleId String           @unique
+  applicationCycleId String
   applicationCycle   ApplicationCycle @relation(fields: [applicationCycleId], references: [id])
+  // The Interviews block on the cycle's timeline these settings book for.
+  // "interviews" is the first round, whose block predates round ids.
+  interviewRoundId   String           @default("interviews")
 
   slotDurationMinutes Int @default(30)
   bufferMinutes       Int @default(15)
@@ -903,6 +906,8 @@ model InterviewConfig {
   // (one recurring RoomBooking per room, source InterviewHold) so members
   // can't book over the cycle. Bookings from this cycle sit inside the hold.
   holdRooms Boolean @default(false)
+
+  @@unique([applicationCycleId, interviewRoundId])
 }
 
 // A DALI member assigned as a written reviewer for a domain in a cycle.
@@ -937,10 +942,11 @@ model CycleInterviewer {
   applicationCycle   ApplicationCycle @relation(fields: [applicationCycleId], references: [id])
   domainId           String
   domain             Domain           @relation(fields: [domainId], references: [id])
+  interviewRoundId   String           @default("interviews")
 
   interviewAssignments InterviewAssignment[]
 
-  @@unique([userId, applicationCycleId, domainId])
+  @@unique([userId, applicationCycleId, domainId, interviewRoundId])
 }
 
 enum InterviewStatus {
@@ -965,6 +971,7 @@ model Interview {
   domainApplication   DomainApplication @relation(fields: [domainApplicationId], references: [id])
   applicationCycleId  String
   applicationCycle    ApplicationCycle  @relation(fields: [applicationCycleId], references: [id])
+  interviewRoundId    String            @default("interviews")
 
   startTime DateTime
   endTime   DateTime
@@ -1114,8 +1121,10 @@ model Decision {
   madeById String
   madeBy   User   @relation("DecisionMadeBy", fields: [madeById], references: [id])
 
-  notes        String?
-  waitlistRank Int? // set when type == Waitlisted; current rank = latest record's value
+  notes            String?
+  waitlistRank     Int? // set when type == Waitlisted; current rank = latest record's value
+  // Set when type == InvitedToInterview: the Interviews round the invite is for.
+  interviewRoundId String?
 
   // Lineage pointer for stage transitions (Draft → Final → Released).
   // Null when the row has no predecessor (e.g. delibs close, direct creation).

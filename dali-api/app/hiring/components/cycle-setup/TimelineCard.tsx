@@ -15,14 +15,16 @@ import { CSS } from "@dnd-kit/utilities";
 import { buttonClasses } from "~/components/ui/Button";
 import { Menu, Tooltip } from "~/components/ui/floating";
 import { useOsChrome } from "~/components/os-chrome";
-import { blockDates } from "~/hiring/lib/cycle-phases";
 import {
   MAX_WEEK,
   blockKey,
   blockLabel,
   canInsertAt,
   canRemove,
+  hasInterviews,
+  newInterviewRound,
   newRoundId,
+  openTimelineChange,
   validateTimeline,
   weekIssues,
   type Timeline,
@@ -31,15 +33,9 @@ import {
 import { cn } from "~/lib/cn";
 import { AlertIcon, SetupCard } from "./SetupCard";
 
-const DAY_MS = 24 * 60 * 60 * 1000;
 // Setup and Review always open the timeline (validateTimeline); only what
 // follows them, up to Decisions, can move.
 const FIXED_HEAD = 2;
-
-// Term dates are UTC-midnight stamps for calendar days, so format in UTC.
-function formatDay(d: Date) {
-  return d.toLocaleDateString(undefined, { month: "short", day: "numeric", timeZone: "UTC" });
-}
 
 /** Why a block's X is disabled, or null when it can go. */
 function removeBlockedReason(
@@ -62,24 +58,22 @@ function removeBlockedReason(
 // The cycle's timeline, edited as a draft: move blocks between weeks, rename
 // delib rounds, add, remove or drag rounds and Interviews into another order.
 // Setup and Review stay on top and Decisions at the bottom. One Save
-// posts the whole timeline. Adding, removing or reordering blocks is only
-// possible in Draft (it changes who gets decided when); weeks and round names
+// posts the whole timeline. Once the cycle opens, saved blocks stay put and
+// only new ones can be added (see openTimelineChange); weeks and round names
 // can change anytime.
 export function TimelineCard({
   timeline,
   roundsWithBoards,
   cycleStatus,
-  termStart,
   isDefault,
 }: {
   timeline: Timeline;
   roundsWithBoards: string[];
   cycleStatus: string;
-  termStart: Date | null;
   /** Whether the saved timeline is the audience's default (hides Reset). */
   isDefault: boolean;
 }) {
-  const { formClass, bodyText } = useOsChrome();
+  const { formClass } = useOsChrome();
   const fetcher = useFetcher<{ error?: string }>();
   const [draft, setDraft] = useState<Timeline>(timeline);
   // Reset the draft whenever the saved timeline changes (save, reset, reload).
@@ -91,9 +85,12 @@ export function TimelineCard({
   }
   const withBoards = new Set(roundsWithBoards);
   const structureLocked = cycleStatus !== "Draft";
+  const savedKeys = new Set(timeline.map(blockKey));
+  const lockedBlock = (b: TimelineBlock) => structureLocked && savedKeys.has(blockKey(b));
   const busy = fetcher.state !== "idle";
   const dirty = JSON.stringify(draft) !== saved;
-  const invalid = validateTimeline(draft);
+  const invalid =
+    validateTimeline(draft) ?? (structureLocked ? openTimelineChange(timeline, draft, withBoards) : null);
   // Rows whose weeks don't line up get a "!" with the reason.
   const issues = weekIssues(draft);
 
@@ -115,25 +112,38 @@ export function TimelineCard({
     for (let i = draft.length - 1; i >= FIXED_HEAD; i--) {
       const w = draft[i - 1].weeks;
       const block = make([w[1], w[1]]);
-      if (canInsertAt(draft, i, block)) return { i, block };
+      if (canInsertAt(draft, i, block)) return { i, blocks: [block] };
     }
     return null;
   };
   const roundCount = draft.filter((b) => b.kind === "delib").length;
-  const addOptions = structureLocked
-    ? []
-    : [
-        {
-          label: "Delib round",
-          slot: lastValidSlot((weeks) => ({
-            kind: "delib",
-            id: newRoundId(draft),
-            label: `Delib ${roundCount + 1}`,
-            weeks,
-          })),
-        },
-        { label: "Interviews", slot: lastValidSlot((weeks) => ({ kind: "phase", key: "interviews", weeks })) },
-      ].filter((o) => o.slot !== null);
+  const newDelib = (weeks: [number, number]): TimelineBlock => ({
+    kind: "delib",
+    id: newRoundId(draft),
+    label: `Delib ${roundCount + 1}`,
+    weeks,
+  });
+  // Another Interviews round goes in with the delib round that picks who's
+  // invited, just before the final round. Open cycles can add this too.
+  const interviewRoundSlot = () => {
+    if (!hasInterviews(draft)) return null;
+    const i = draft.map((b) => b.kind).lastIndexOf("delib");
+    const w = draft[i - 1].weeks;
+    const blocks = [newDelib([w[1], w[1]]), newInterviewRound(draft, [w[1], w[1]])];
+    const next = [...draft.slice(0, i), ...blocks, ...draft.slice(i)];
+    if (validateTimeline(next)) return null;
+    if (structureLocked && openTimelineChange(timeline, next, withBoards)) return null;
+    return { i, blocks };
+  };
+  const addOptions = [
+    ...(structureLocked
+      ? []
+      : [
+          { label: "Delib round", slot: lastValidSlot(newDelib) },
+          { label: "Interviews", slot: lastValidSlot((weeks) => ({ kind: "phase", key: "interviews", weeks })) },
+        ]),
+    { label: "Interview round", slot: interviewRoundSlot() },
+  ].filter((o) => o.slot !== null);
 
   // Only the rounds and Interviews between Review and Decisions move.
   const head = draft.slice(0, FIXED_HEAD);
@@ -167,8 +177,7 @@ export function TimelineCard({
   // One timeline row. `handle` is the drag grip's props for rounds and
   // Interviews; fixed blocks get an empty spacer so everything lines up.
   const row = (b: TimelineBlock, i: number, handle: Record<string, unknown> | null) => {
-    const blocked = removeBlockedReason(draft, b, withBoards, structureLocked);
-    const dates = termStart ? blockDates(termStart, b.weeks) : null;
+    const blocked = removeBlockedReason(draft, b, withBoards, lockedBlock(b));
     return (
       <div
         key={blockKey(b)}
@@ -202,11 +211,6 @@ export function TimelineCard({
         </span>
         <span className="flex flex-wrap items-center gap-2 text-sm text-os-grey">
           Week {weekInput(i, 0, b)} to {weekInput(i, 1, b)}
-          {dates && (
-            <span className="min-w-[8rem] text-right">
-              {formatDay(dates.start)} – {formatDay(new Date(dates.end.getTime() - DAY_MS))}
-            </span>
-          )}
           <Tooltip content={blocked}>
             <span>
               <button
@@ -253,8 +257,8 @@ export function TimelineCard({
             <Menu.Item
               key={o.label}
               onSelect={() => {
-                const { i, block } = o.slot!;
-                setDraft((t) => [...t.slice(0, i), block, ...t.slice(i)]);
+                const { i, blocks } = o.slot!;
+                setDraft((t) => [...t.slice(0, i), ...blocks, ...t.slice(i)]);
               }}
             >
               {o.label}
@@ -291,7 +295,6 @@ export function TimelineCard({
             Reset to default
           </button>
         )}
-        {!termStart && <span className={bodyText}>Pick a term to see dates.</span>}
       </div>
     </SetupCard>
   );

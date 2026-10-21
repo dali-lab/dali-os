@@ -64,7 +64,12 @@ export async function action({ request, params }: Route.ActionArgs) {
   try {
     await prisma.$transaction(async (tx) => {
       const config = await tx.interviewConfig.findUnique({
-        where: { applicationCycleId: interview.applicationCycleId },
+        where: {
+          applicationCycleId_interviewRoundId: {
+            applicationCycleId: interview.applicationCycleId,
+            interviewRoundId: interview.interviewRoundId,
+          },
+        },
       });
       const bufferMs = (config?.bufferMinutes ?? 15) * 60_000;
       const bufferedStart = new Date(interview.startTime.getTime() - bufferMs);

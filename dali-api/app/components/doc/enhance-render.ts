@@ -20,9 +20,10 @@ import { blockOwnText } from "./schema/configs";
 import type { DocBlock, DocEditorInstance, DocPartialBlock } from "./schema/build";
 
 /** Citation chip href: an ordinary link, not a new inline node (spec §3) —
- *  the transcript panel reads `&at=` to scroll to and highlight the line. */
-export function citationHref(pageId: string, recordingId: string, atSeconds: number): string {
-  return `/documents/${pageId}?transcript=${encodeURIComponent(recordingId)}&at=${Math.max(0, Math.round(atSeconds))}`;
+ *  the transcript panel reads `&at=` to scroll to and highlight the line.
+ *  `notePath` is the page hosting the note (a Drive page, an interview). */
+export function citationHref(notePath: string, recordingId: string, atSeconds: number): string {
+  return `${notePath}?transcript=${encodeURIComponent(recordingId)}&at=${Math.max(0, Math.round(atSeconds))}`;
 }
 
 /** The collapsed "### Transcript" toggle both Insert transcript and Enhance
@@ -82,7 +83,7 @@ export type ChipSpeakerAt = (atSeconds: number) => string | null;
 export function buildInlineContent(
   text: string,
   cites: number[],
-  pageId: string,
+  notePath: string,
   recordingId: string,
   speakerAt?: ChipSpeakerAt,
 ): DocPartialBlock["content"] {
@@ -90,7 +91,7 @@ export function buildInlineContent(
     [{ type: "text", text, styles: {} }];
   for (const at of cites) {
     content.push({ type: "text", text: " ", styles: {} });
-    content.push({ type: "link", href: citationHref(pageId, recordingId, at), content: formatChipLabel(at, speakerAt?.(at)) });
+    content.push({ type: "link", href: citationHref(notePath, recordingId, at), content: formatChipLabel(at, speakerAt?.(at)) });
   }
   // DocPartialBlock["content"] is schema-typed per block; the shapes above are
   // exactly BlockNote's PartialInlineContent for a block with styled text and
@@ -136,11 +137,11 @@ function taskForChecklistText(text: string, actionItems: EnhanceActionItem[] | u
 
 export function toPartialBlock(
   block: EnhanceOpBlock,
-  pageId: string,
+  notePath: string,
   recordingId: string,
   ctx: { actionItems?: EnhanceActionItem[]; projectId?: string | null; speakerAt?: ChipSpeakerAt } = {},
 ): DocPartialBlock {
-  const content = buildInlineContent(block.text, block.cites, pageId, recordingId, ctx.speakerAt);
+  const content = buildInlineContent(block.text, block.cites, notePath, recordingId, ctx.speakerAt);
   if (block.type === "heading") {
     return { type: "heading", props: { level: 2 }, content } as DocPartialBlock;
   }
@@ -181,7 +182,7 @@ export function renderEnhanceOps(
   editor: DocEditorInstance,
   ops: EditorOp[],
   ctx: {
-    pageId: string;
+    notePath: string;
     recordingId: string;
     actionItems?: EnhanceActionItem[];
     projectId?: string | null;
@@ -194,7 +195,7 @@ export function renderEnhanceOps(
       if (op.kind === "update") {
         const prior = editor.getBlock(op.id);
         if (prior) priorBlocks[op.id] = structuredClone(prior);
-        const content = buildInlineContent(op.text, op.cites, ctx.pageId, ctx.recordingId, ctx.speakerAt);
+        const content = buildInlineContent(op.text, op.cites, ctx.notePath, ctx.recordingId, ctx.speakerAt);
         editor.updateBlock(op.id, {
           content,
           props: { backgroundColor: ENHANCE_MARK_ADDED },
@@ -208,7 +209,7 @@ export function renderEnhanceOps(
         continue;
       }
       // op.kind === "insertAfter"
-      const blocks = op.blocks.map((b) => withMark(toPartialBlock(b, ctx.pageId, ctx.recordingId, ctx), ENHANCE_MARK_ADDED));
+      const blocks = op.blocks.map((b) => withMark(toPartialBlock(b, ctx.notePath, ctx.recordingId, ctx), ENHANCE_MARK_ADDED));
       if (!blocks.length) continue;
       if (op.afterId === null) {
         const doc = editor.document;
