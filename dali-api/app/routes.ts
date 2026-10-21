@@ -184,6 +184,7 @@ export default [
     // bookmark tabs, just the post and its settings.
     route("resources/write/:postId", "routes/resources.write.$postId.tsx"),
     // DALI OS feedback: the feature request feed the shell's feedback button posts to.
+    route("feedback", "routes/feedback.tsx"),
     route("release-notes", "routes/release-notes._index.tsx"),
     route("release-notes/:id", "routes/release-notes.$id.tsx"),
 
