@@ -88,6 +88,32 @@ describe("computeFreeIntervals — working hours projection", () => {
   });
 });
 
+describe("computeFreeIntervals — working intervals", () => {
+  it("returns working hours without busy subtracted, skipping disabled days", () => {
+    const wh = defaultWorkingHours().map((d) => (d.dayOfWeek === 1 ? { ...d, enabled: false } : d));
+    const externalBusy: Interval[] = [
+      { start: new Date("2026-05-12T18:00:00Z"), end: new Date("2026-05-12T20:00:00Z") },
+    ];
+    const out = computeFreeIntervals(baseInput({ workingHours: wh, externalBusy }));
+    expect(out.working).toHaveLength(4);
+    expect(out.working[0]).toEqual({
+      start: new Date("2026-05-12T13:00:00Z"),
+      end: new Date("2026-05-12T21:00:00Z"),
+    });
+  });
+
+  it("merges overlapping segments on the same day", () => {
+    const wh = [
+      { dayOfWeek: 2, enabled: true, startMinute: 9 * 60, endMinute: 12 * 60 },
+      { dayOfWeek: 2, enabled: true, startMinute: 11 * 60, endMinute: 15 * 60 },
+    ];
+    const out = computeFreeIntervals(baseInput({ workingHours: wh }));
+    expect(out.working).toEqual([
+      { start: new Date("2026-05-12T13:00:00Z"), end: new Date("2026-05-12T19:00:00Z") },
+    ]);
+  });
+});
+
 describe("computeFreeIntervals — external busy", () => {
   it("subtracts external busy intervals from working hours", () => {
     const externalBusy: Interval[] = [

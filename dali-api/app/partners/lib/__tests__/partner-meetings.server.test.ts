@@ -329,6 +329,7 @@ describe("respondToMeetingRequest", () => {
       userId: "core-1",
       free: [{ start: new Date("2026-11-05T00:00:00Z"), end: new Date("2026-11-06T00:00:00Z") }],
       busy: [],
+      working: [],
       hasCalendar: true,
       calendarError: false,
     });
@@ -391,6 +392,7 @@ describe("respondToMeetingRequest", () => {
       userId: "core-1",
       free: [],
       busy: [{ start: new Date("2026-11-05T16:00:00Z"), end: new Date("2026-11-05T16:30:00Z") }],
+      working: [],
       hasCalendar: true,
       calendarError: false,
     });

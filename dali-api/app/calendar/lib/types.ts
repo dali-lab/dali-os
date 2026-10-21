@@ -468,6 +468,7 @@ export type GroupAvailDay = {
 export type PerUserFree = {
   userId: string;
   free: { startIso: string; endIso: string }[];
+  working: { startIso: string; endIso: string }[];
   /** False when the user has no linked calendar (or a failed sync): their
    *  availability is unknown, not free. See computeUserFreeBusy. */
   hasCalendar: boolean;
