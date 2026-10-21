@@ -11,6 +11,7 @@ describe("coreTrail", () => {
     expect(trail[0]?.to).toBe("/core");
     expect(trail[2]?.siblings?.map((s) => s.to)).toEqual([
       "/core/communications/announcements",
+      "/core/communications/release-notes",
       "/core/communications/email",
     ]);
     expect(trail[2]?.siblings?.find((s) => s.current)?.label).toBe("Email");

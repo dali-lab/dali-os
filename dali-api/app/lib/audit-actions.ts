@@ -223,6 +223,8 @@ export const AUDIT_ACTIONS = [
   // BetterAuth admin impersonation.
   "admin.impersonate.start",
   "admin.impersonate.stop",
+  "release_note.publish",
+  "release_note.dismiss",
 ] as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];

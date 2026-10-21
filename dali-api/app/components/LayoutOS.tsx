@@ -16,6 +16,7 @@ import {
   PanelLeftOpen,
   Search,
   Settings,
+  Sparkles,
   Star,
   UserRound,
   X,
@@ -91,6 +92,8 @@ interface LayoutOSProps {
   impersonating?: boolean
   impersonationAllowsWrites?: boolean
   focusMode?: boolean
+  /** A published release note the viewer can see is newer than their last visit. */
+  hasUnseenReleaseNotes?: boolean
   /** The routed page fills the shell's main column instead of growing past it
    *  (see `handle.fitViewport`) — the shell is then bounded to the window and
    *  the page scrolls inside its own panes. */
@@ -130,6 +133,7 @@ export function LayoutOS({
   impersonating = false,
   impersonationAllowsWrites = false,
   focusMode = false,
+  hasUnseenReleaseNotes = false,
   fitViewport = false,
   children,
 }: LayoutOSProps) {
@@ -317,6 +321,7 @@ export function LayoutOS({
   // handed the same map — a pin and an area disagreeing would light both.
   const navFlags = { resources: useFeatureFlag('resources') }
   const feedbackEnabled = useFeatureFlag('os-feedback')
+  const releaseNotesEnabled = useFeatureFlag('release-notes')
   const emailUnread = useEmailUnread(path)
   const areas = visibleAreas(roleFlags, navFlags)
   const routeArea = areaForPath(path, navFlags)
@@ -401,8 +406,10 @@ export function LayoutOS({
   const userMenuItems = [
     { url: '/profile', label: 'Profile', icon: UserRound },
     { url: '/settings', label: 'Settings', icon: Settings },
+    ...(releaseNotesEnabled ? [{ url: '/release-notes', label: "What's new", icon: Sparkles }] : []),
     { url: '/help', label: 'Help', icon: HelpCircle },
   ]
+  const showWhatsNewDot = hasUnseenReleaseNotes && !path.startsWith('/release-notes')
 
   // `collapsed` is passed as a parameter so the mobile drawer can render
   // full labels (force false) while the desktop sidebar keeps its own state.
@@ -693,6 +700,9 @@ export function LayoutOS({
               >
                 <item.icon className="h-4 w-4 flex-shrink-0 text-os-grey" />
                 {item.label}
+                {item.url === '/release-notes' && showWhatsNewDot && (
+                  <span className="h-2 w-2 rounded-full bg-os-accent" role="img" aria-label="New entries" />
+                )}
               </button>
             ))}
             <a
@@ -720,7 +730,12 @@ export function LayoutOS({
               collapsed ? 'justify-center px-0' : 'px-3',
             )}
           >
-            {avatar('h-6 w-6')}
+            <span className="relative flex shrink-0">
+              {avatar('h-6 w-6')}
+              {showWhatsNewDot && (
+                <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-os-accent" aria-hidden />
+              )}
+            </span>
             {!collapsed && (
               <span className="truncate text-base font-medium text-os-grey">
                 {[user.firstName, user.lastName].filter(Boolean).join(' ') || user.email}

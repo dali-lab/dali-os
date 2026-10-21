@@ -1,5 +1,6 @@
 import type { LucideIcon } from "lucide-react";
 import type { Crumb } from "~/components/Breadcrumbs";
+import type { FeatureFlagKey } from "~/lib/feature-flags";
 
 // A nested area is a hub whose tools are grouped into clusters, each cluster
 // carrying its own card grid, and consolidated tools exposing sibling views
@@ -19,6 +20,8 @@ export type NavSection = {
   // Consolidated tools split one section into sibling views reached by an
   // in-page sub-tab strip. `to` points at the first (default) sub-tab.
   subtabs?: NavSubtab[];
+  // The hub card only shows while this flag is on for the viewer.
+  flag?: FeatureFlagKey;
 };
 
 export type NavCluster = {

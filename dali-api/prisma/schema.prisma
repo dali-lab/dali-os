@@ -73,6 +73,8 @@ model User {
   // IANA zone, e.g. "America/New_York". Used by calendar/scheduling.
   timeZone String?
 
+  releaseNotesSeenAt DateTime?
+
   // ─── Profile fields (Phase 1 additions; all nullable) ─────────────────────
   // Dartmouth class year (e.g., 2026). Solves the "took a term off"
   // ambiguity. Input to membership-status recompute + display.
@@ -7480,4 +7482,35 @@ model BlogPost {
 
   @@index([publishedAt])
   @@index([authorId])
+}
+
+enum ReleaseNoteStatus {
+  Draft
+  Published
+  Dismissed
+}
+
+model ReleaseNote {
+  id            String            @id @default(cuid())
+  status        ReleaseNoteStatus @default(Draft)
+  title         String
+  contentJson   Json?
+  summary       String
+  area          String?
+  prNumbers     Int[]             @default([])
+  videoKey      String?
+  videoSource   String?
+  posterKey     String?
+  highlight     Boolean           @default(false)
+  allMembers    Boolean           @default(true)
+  groupIds      String[]          @default([])
+  slackTs       String?
+  draftedAt     DateTime          @default(now())
+  publishedAt   DateTime?
+  publishedById String?
+  recapWeek     String?
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  @@index([status, publishedAt])
 }

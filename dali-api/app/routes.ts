@@ -126,6 +126,7 @@ export default [
     route("rooms", "rooms/routes/rooms.tsx"),
     route("core/communications", "core/routes/core.communications.tsx"),
     route("core/communications/announcements", "core/routes/core.communications.announcements.tsx"),
+    route("core/communications/release-notes", "core/routes/core.communications.release-notes.tsx"),
     route("core/communications/email", "core/routes/core.communications.email.tsx"),
     route("core/communications/email/:id", "admin/routes/admin.email.legacy-redirect.ts", { id: "legacy-email-core-id" }),
     route("core/communications/email-senders", "core/routes/core.communications.email-senders.tsx"),
@@ -184,6 +185,8 @@ export default [
     route("resources/write/:postId", "routes/resources.write.$postId.tsx"),
     // DALI OS feedback: the feature request feed the shell's feedback button posts to.
     route("feedback", "routes/feedback.tsx"),
+    route("release-notes", "routes/release-notes._index.tsx"),
+    route("release-notes/:id", "routes/release-notes.$id.tsx"),
 
     // Drive — the unified documents + files + forms + agreements hub. This is the
     // only browsing surface; the old /documents and /forms hubs have been removed
