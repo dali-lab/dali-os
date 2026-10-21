@@ -21,6 +21,7 @@ import {
   achievementsForMember,
   type Achievement,
 } from "~/members/lib/achievements.server";
+import { groupAssignmentsByTerm, type TermGroup } from "./project-history";
 import { listMemberStaffingForms, type MemberStaffingForm } from "~/projects/lib/member-staffing.server";
 import { listMySignedDocuments } from "~/signing/lib/state.server";
 import {
@@ -103,6 +104,20 @@ export type ProfileMember = {
   }>;
 };
 
+export type ProfileProjectAssignment = {
+  id: string;
+  level: string;
+  project: { id: string; name: string; iconEmoji: string | null };
+  domain: { name: string };
+  /** Guards for the Core-only inline level editor, mirroring
+   *  /api/projects/assignments/:id/level: the eligibility ceiling a level
+   *  can't exceed, and the count of mentees this member still holds on the
+   *  assignment (a demotion is blocked while > 0). Null/0 for viewers who
+   *  can't edit — the read-only badge doesn't need them. */
+  eligibilityLevel: string | null;
+  activeMenteeCount: number;
+};
+
 export type ProfilePageData = {
   member: ProfileMember;
   roleLabels: string[];
@@ -112,19 +127,9 @@ export type ProfilePageData = {
    *  badge — independent of isStaff, so an alum-turned-staff shows both. */
   isAlumni: boolean;
   termCode: string | null;
-  projectAssignments: Array<{
-    id: string;
-    level: string;
-    project: { id: string; name: string; iconEmoji: string | null };
-    domain: { name: string };
-    /** Guards for the Core-only inline level editor, mirroring
-     *  /api/projects/assignments/:id/level: the eligibility ceiling a level
-     *  can't exceed, and the count of mentees this member still holds on the
-     *  assignment (a demotion is blocked while > 0). Null/0 for viewers who
-     *  can't edit — the read-only badge doesn't need them. */
-    eligibilityLevel: string | null;
-    activeMenteeCount: number;
-  }>;
+  /** Every term the member was staffed, newest first. Level editing applies
+   *  only to the current term's group. */
+  projectHistory: TermGroup<ProfileProjectAssignment>[];
   pendingReviews: number;
   /** True only when the subject has unsubmitted reviews — gates the activity
    *  row so we don't show "No reviews in progress" to viewers of someone who
@@ -371,19 +376,19 @@ export async function loadProfilePage({
   ).map((g) => ({ id: g.id, name: g.name, kind: groupKind(g) }));
 
   const [projectAssignmentRows, pendingReviews] = await Promise.all([
-    term
-      ? prisma.projectAssignment.findMany({
-          where: { userId: targetId, termId: term.id },
-          select: {
-            id: true,
-            level: true,
-            domainId: true,
-            projectId: true,
-            project: { select: { id: true, name: true, iconEmoji: true } },
-            domain: { select: { name: true } },
-          },
-        })
-      : Promise.resolve([]),
+    prisma.projectAssignment.findMany({
+      where: { userId: targetId },
+      select: {
+        id: true,
+        level: true,
+        domainId: true,
+        projectId: true,
+        project: { select: { id: true, name: true, iconEmoji: true } },
+        domain: { select: { name: true } },
+        term: { select: { id: true, code: true, sortKey: true } },
+      },
+      orderBy: { project: { name: "asc" } },
+    }),
     prisma.applicationReview.count({
       where: { cycleReviewer: { userId: targetId }, submittedAt: null },
     }),
@@ -409,7 +414,11 @@ export async function loadProfilePage({
     member.domainEligibilities.map((e) => [e.domain.id, e.level as string]),
   );
   const menteeCountByProjectDomain = new Map<string, number>();
-  if (canManageEligibility && term && projectAssignmentRows.length > 0) {
+  if (
+    canManageEligibility &&
+    term &&
+    projectAssignmentRows.some((a) => a.term.id === term.id)
+  ) {
     const grouped = await prisma.mentorshipPair.groupBy({
       by: ["projectId", "domainId"],
       where: { mentorUserId: targetId, termId: term.id },
@@ -419,16 +428,26 @@ export async function loadProfilePage({
       menteeCountByProjectDomain.set(`${g.projectId}:${g.domainId}`, g._count._all);
     }
   }
-  const projectAssignments = projectAssignmentRows.map((a) => ({
-    id: a.id,
-    level: a.level,
-    project: a.project,
-    domain: { name: a.domain.name },
-    eligibilityLevel: canManageEligibility
-      ? eligibilityByDomain.get(a.domainId) ?? null
-      : null,
-    activeMenteeCount:
-      menteeCountByProjectDomain.get(`${a.projectId}:${a.domainId}`) ?? 0,
+  const projectHistory = groupAssignmentsByTerm(
+    projectAssignmentRows,
+    term?.id ?? null,
+  ).map((g) => ({
+    ...g,
+    assignments: g.assignments.map(
+      (a): ProfileProjectAssignment => ({
+        id: a.id,
+        level: a.level,
+        project: a.project,
+        domain: { name: a.domain.name },
+        eligibilityLevel:
+          canManageEligibility && g.isCurrent
+            ? eligibilityByDomain.get(a.domainId) ?? null
+            : null,
+        activeMenteeCount: g.isCurrent
+          ? menteeCountByProjectDomain.get(`${a.projectId}:${a.domainId}`) ?? 0
+          : 0,
+      }),
+    ),
   }));
 
   // Education engagement is for the member themself and Core — not peer
@@ -651,7 +670,7 @@ export async function loadProfilePage({
     isStaff: roles.isStaff,
     isAlumni: roles.isAlumni,
     termCode: term?.code ?? null,
-    projectAssignments,
+    projectHistory,
     pendingReviews,
     showReviewsRow: pendingReviews > 0,
     isSelf,

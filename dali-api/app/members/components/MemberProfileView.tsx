@@ -81,6 +81,7 @@ import { APPLICATION_TZ, formatZoneLabel } from "~/lib/timezone";
 import type {
   ProfileMember,
   ProfilePageData,
+  ProfileProjectAssignment,
 } from "~/members/lib/profile-page.server";
 import { useAvatarStatus } from "~/components/presence/PresenceStatusProvider";
 import { formatLastActive } from "~/lib/presence";
@@ -119,7 +120,7 @@ export function MemberProfileView({
     isStaff,
     isAlumni,
     termCode,
-    projectAssignments,
+    projectHistory,
     pendingReviews,
     showReviewsRow,
     isSelf,
@@ -318,8 +319,7 @@ export function MemberProfileView({
 
             <ActivitySection
               isSelf={isSelf}
-              termCode={termCode}
-              projectAssignments={projectAssignments}
+              projectHistory={projectHistory}
               pendingReviews={pendingReviews}
               showReviewsRow={showReviewsRow}
               canEditLevel={canManageEligibility}
@@ -1661,15 +1661,13 @@ const LIST_ROW =
 
 function ActivitySection({
   isSelf,
-  termCode,
-  projectAssignments,
+  projectHistory,
   pendingReviews,
   showReviewsRow,
   canEditLevel,
 }: {
   isSelf: boolean;
-  termCode: string | null;
-  projectAssignments: ProfilePageData["projectAssignments"];
+  projectHistory: ProfilePageData["projectHistory"];
   pendingReviews: number;
   showReviewsRow: boolean;
   canEditLevel: boolean;
@@ -1697,11 +1695,6 @@ function ActivitySection({
     <section id="project-assignments" ref={cardRef} className={sectionShell}>
       <h2 className={sectionTitle}>
         {isSelf ? "My activity" : "Activity"}
-        {termCode && (
-          <span className="ml-1.5 text-xs font-normal text-os-grey">
-            · {termCode}
-          </span>
-        )}
       </h2>
 
       <div
@@ -1716,48 +1709,56 @@ function ActivitySection({
           Projects
           <InfoTip content="P1 = entry level, P2 = intermediate, P3 = senior. Levels are set by Core and reflect eligibility in each domain. Increasing a level requires the member's eligibility to be promoted first." />
         </SubHeading>
-        {projectAssignments.length === 0 ? (
+        {projectHistory.length === 0 ? (
           <p className="text-sm text-os-muted italic">
-            No project assignments this term.
+            No project assignments yet.
           </p>
         ) : (
-          <ul className="flex flex-col gap-1.5">
-            {projectAssignments.map((a) =>
-              canEditLevel ? (
-                <li key={a.id} className={LIST_ROW}>
-                  <Link
-                    to={`/projects/${a.project.id}`}
-                    className="flex items-center gap-1.5 min-w-0 text-sm font-medium text-foreground hover:underline"
-                  >
-                    <ProjectIcon iconEmoji={a.project.iconEmoji} />
-                    <span className="truncate">{a.project.name}</span>
-                  </Link>
-                  <span className="flex items-center gap-1.5 text-xs text-os-grey whitespace-nowrap">
-                    {a.domain.name}
-                    <ProfileLevelEditor assignment={a} />
-                  </span>
-                </li>
-              ) : (
-                <li key={a.id}>
-                  <Link
-                    to={`/projects/${a.project.id}`}
-                    className={cn(
-                      LIST_ROW,
-                      "hover:bg-os-container transition-colors",
-                    )}
-                  >
-                    <span className="flex items-center gap-1.5 min-w-0 text-sm font-medium text-foreground">
-                      <ProjectIcon iconEmoji={a.project.iconEmoji} />
-                      <span className="truncate">{a.project.name}</span>
-                    </span>
-                    <span className="text-xs text-os-grey whitespace-nowrap">
-                      {a.domain.name} · {a.level}
-                    </span>
-                  </Link>
-                </li>
-              ),
-            )}
-          </ul>
+          projectHistory.map((g) => (
+            <div key={g.termCode} className="flex flex-col gap-1.5">
+              <p className="text-xs font-medium text-os-grey">
+                {g.termCode}
+                {g.isCurrent && " · This term"}
+              </p>
+              <ul className="flex flex-col gap-1.5">
+                {g.assignments.map((a) =>
+                  canEditLevel && g.isCurrent ? (
+                    <li key={a.id} className={LIST_ROW}>
+                      <Link
+                        to={`/projects/${a.project.id}`}
+                        className="flex items-center gap-1.5 min-w-0 text-sm font-medium text-foreground hover:underline"
+                      >
+                        <ProjectIcon iconEmoji={a.project.iconEmoji} />
+                        <span className="truncate">{a.project.name}</span>
+                      </Link>
+                      <span className="flex items-center gap-1.5 text-xs text-os-grey whitespace-nowrap">
+                        {a.domain.name}
+                        <ProfileLevelEditor assignment={a} />
+                      </span>
+                    </li>
+                  ) : (
+                    <li key={a.id}>
+                      <Link
+                        to={`/projects/${a.project.id}`}
+                        className={cn(
+                          LIST_ROW,
+                          "hover:bg-os-container transition-colors",
+                        )}
+                      >
+                        <span className="flex items-center gap-1.5 min-w-0 text-sm font-medium text-foreground">
+                          <ProjectIcon iconEmoji={a.project.iconEmoji} />
+                          <span className="truncate">{a.project.name}</span>
+                        </span>
+                        <span className="text-xs text-os-grey whitespace-nowrap">
+                          {a.domain.name} · {a.level}
+                        </span>
+                      </Link>
+                    </li>
+                  ),
+                )}
+              </ul>
+            </div>
+          ))
         )}
 
         {showReviewsRow && (
@@ -1790,7 +1791,7 @@ const LEVEL_RANK: Record<"P1" | "P2" | "P3", number> = { P1: 1, P2: 2, P3: 3 };
 function ProfileLevelEditor({
   assignment,
 }: {
-  assignment: ProfilePageData["projectAssignments"][number];
+  assignment: ProfileProjectAssignment;
 }) {
   const fetcher = useFetcher<{ ok?: boolean; error?: string }>();
   const ceilingRank = assignment.eligibilityLevel
