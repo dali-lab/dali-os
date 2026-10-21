@@ -7,12 +7,12 @@ import {
   decideCursor,
   parseDraftEntries,
   pickCaptureVideoKey,
-  releaseNoteLine,
   selectPrsToDraft,
   stripEmDashes,
   DRAFT_SYSTEM_PROMPT,
   type PullSummary,
 } from "../release-notes-draft";
+import { releaseNoteLine } from "../release-note-line";
 
 const pr = (n: number, o: Partial<PullSummary> = {}): PullSummary => ({
   number: n,
@@ -44,6 +44,37 @@ describe("releaseNoteLine", () => {
     expect(releaseNoteLine(`${TEMPLATE}You can hold a room from an event.\n`)).toBe(
       "You can hold a room from an event.",
     );
+  });
+
+  const FOOTER = [
+    "",
+    "🤖 Generated with [Claude Code](https://claude.com/claude-code)",
+    "",
+    "<!-- codesmith:footer -->",
+    "---",
+    '<a href="https://app.blacksmith.sh/x"><img alt="View with [code]smith"></a>',
+    "<sup>Need help on this PR? Tag <code>@codesmith-bot</code> with what you need.</sup>",
+    "",
+    "<!-- codesmith:autofix:disabled -->",
+    "<!-- /codesmith:footer -->",
+  ].join("\n");
+
+  it("ignores the Claude attribution and Blacksmith footer under an empty section", () => {
+    expect(releaseNoteLine(`## Release note\n\n<!-- Internal tooling: intentionally empty. -->\n${FOOTER}`)).toBeNull();
+  });
+
+  it("reads a note followed by the bot footers", () => {
+    expect(releaseNoteLine(`## Release note\nLate applications show how late they were.\n${FOOTER}`)).toBe(
+      "Late applications show how late they were.",
+    );
+  });
+
+  it("takes only the first paragraph", () => {
+    expect(releaseNoteLine("## Release note\n\nHold rooms.\n\nSome trailing remark.")).toBe("Hold rooms.");
+  });
+
+  it("stops at a horizontal rule", () => {
+    expect(releaseNoteLine("## Release note\n---\nHold rooms.")).toBeNull();
   });
 
   it("stops at the next heading", () => {

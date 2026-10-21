@@ -129,7 +129,7 @@ Per-user "what's new" state: `User.releaseNotesSeenAt DateTime?`.
 2. Slack per-entry posts + recap job.
 3. Draft job (GitHub + LLM).
 4. Demo capture workflow + helpers + PR template. Ship one demo script for an existing feature as the reference example.
-5. Opt-in Claude demo scripts: a `demo` label on a PR with no `demos/` file triggers the Claude action to write one from the diff, run it against the CI database (retry on failure, max 2), commit it to the PR branch, and let capture post the video. Author reviews the clip.
+5. Claude demo scripts (`demo-write.yml`): a ready PR into staging with a release-note line, app changes and no `demos/` file gets one written by Claude. Loop, capped at 3 attempts and a token budget: the writer writes and runs the script, CI records it, a separate reviewer session looks at frames from the video and passes it or says what to fix. A passing script is committed to the PR branch and Demo capture is dispatched for it. One attempt per PR (a `<!-- demo-write -->` comment marks it); re-run by hand. Author reviews the clip.
 6. Flag to everyone.
 
 Steps 1-4 are MVP; ordering is just for review size.
@@ -145,7 +145,7 @@ Steps 1-4 are MVP; ordering is just for review size.
 
 ## Decided
 
-- Claude demo scripts: opt-in via `demo` label, rollout step 5.
+- Claude demo scripts: triggered by the release-note line (itself opt-in), rollout step 5.
 - GitHub App: assumed to have read access to `dali-os` PRs and commits; grant it if not.
 - Stale drafts: auto-dismissed after 1 week into the recap's "Also shipped".
 - Recording retention: S3 lifecycle rule deletes `release-notes/pr-*` after 60 days unless referenced by a published entry (published videos are copied to `release-notes/published/<id>.mp4` on publish).
