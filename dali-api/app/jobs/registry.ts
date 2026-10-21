@@ -78,6 +78,7 @@ import { runSessionFeedbackSweep } from "~/jobs/session-feedback-sweep.server";
 import { runSessionReminderSweep } from "~/jobs/session-reminder-sweep.server";
 import { runDailyDigest, runWeeklyDigest } from "~/lib/notification-digest.server";
 import { runReleaseNotesRecap } from "~/jobs/release-notes-recap.server";
+import { runReleaseNotesDraft } from "~/jobs/release-notes-draft.server";
 import { runRetentionJanitor } from "~/jobs/retention-janitor.server";
 import { runDriveRootsReparent } from "~/jobs/drive-roots-reparent.server";
 import { runMentorNotesToNotebooks } from "~/jobs/mentor-notes-to-notebooks.server";
@@ -222,6 +223,13 @@ export const JOBS: JobDefinition[] = [
       },
     ],
     handler: runWeeklyDigest,
+  },
+  {
+    name: "release-notes-draft",
+    description:
+      "Prod only. When prod moves, drafts release note entries from the merged PRs with the AI model and queues them for Core review. Needs the release-notes flag on and a GitHub App with read access to contents and pull requests on RELEASE_NOTES_REPO (default dali-lab/dali-os). The first run only records the current prod commit.",
+    intervalMinutes: 10,
+    handler: runReleaseNotesDraft,
   },
   {
     name: "release-notes-recap",

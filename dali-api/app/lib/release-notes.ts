@@ -2,6 +2,7 @@ import { NAV_AREAS } from "~/lib/nav-areas";
 
 export const RELEASE_NOTE_VIDEO_ACCEPT = "video/mp4,video/webm,video/quicktime";
 export const RELEASE_NOTE_VIDEO_KEY_PREFIX = "release-notes/uploads";
+export const RELEASE_NOTE_CAPTURE_KEY_PREFIX = "release-notes/pr-";
 
 export const RELEASE_NOTE_AREAS: { key: string; label: string }[] = [
   { key: "calendar", label: "Calendar" },
@@ -50,6 +51,7 @@ export function parsePrNumbers(raw: string): number[] {
 export function isReleaseNoteVideoKey(key: string): boolean {
   return (
     key.startsWith(`${RELEASE_NOTE_VIDEO_KEY_PREFIX}/`) ||
+    key.startsWith(RELEASE_NOTE_CAPTURE_KEY_PREFIX) ||
     key.startsWith("uploads/" + RELEASE_NOTE_VIDEO_KEY_PREFIX + "/")
   );
 }

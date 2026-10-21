@@ -5873,6 +5873,9 @@ model ScheduledJob {
   // e.g. { "leadMinutes": 30 }. Unknown/out-of-range values are ignored in
   // favor of the declared default at resolution time.
   settings        Json          @default("{}")
+  // Handler-owned cursor for jobs that must remember something between runs
+  // (e.g. release-notes-draft's last processed sha). Never edited from Admin.
+  state           Json?
   nextRunAt       DateTime      @default(now())
   lockedUntil     DateTime?
   lastRunAt       DateTime?
@@ -7516,6 +7519,7 @@ model ReleaseNote {
   publishedAt   DateTime?
   publishedById String?
   recapWeek     String?
+  draftNote     String? // why the drafting job was unsure; shown to Core as "Check: ..."
   createdAt     DateTime          @default(now())
   updatedAt     DateTime          @updatedAt
 

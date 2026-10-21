@@ -131,7 +131,11 @@ describe("isReleaseNoteVideoKey", () => {
 
   it("rejects keys elsewhere in the bucket", () => {
     expect(isReleaseNoteVideoKey("uploads/resumes/abc.pdf")).toBe(false);
-    expect(isReleaseNoteVideoKey("release-notes/pr-12/demo.mp4")).toBe(false);
+    expect(isReleaseNoteVideoKey("release-notes/published/x.mp4")).toBe(false);
+  });
+
+  it("accepts scripted captures under a PR prefix", () => {
+    expect(isReleaseNoteVideoKey("release-notes/pr-12/demo.mp4")).toBe(true);
   });
 });
 
