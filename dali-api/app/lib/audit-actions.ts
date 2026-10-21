@@ -223,6 +223,11 @@ export const AUDIT_ACTIONS = [
   // BetterAuth admin impersonation.
   "admin.impersonate.start",
   "admin.impersonate.stop",
+  // Meeting recordings. targetId is the MeetingRecording id; discard keeps
+  // ownerId in metadata because the row (and its audio) is gone afterwards.
+  "recording.start",
+  "recording.stop",
+  "recording.discard",
   "release_note.publish",
   "release_note.dismiss",
 ] as const;

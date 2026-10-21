@@ -10,6 +10,7 @@ vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn() }));
 vi.mock("~/lib/db");
 vi.mock("~/lib/roles", () => ({ isCore: vi.fn().mockResolvedValue(false) }));
 vi.mock("~/lib/transcription/chunks.server", () => ({ deletePrefix: vi.fn() }));
+vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
 vi.mock("~/lib/meeting-recording.server", () => ({
   canReadRecording: vi.fn(),
   canRecordInto: vi.fn(),
@@ -25,6 +26,9 @@ vi.mock("~/lib/meeting-recording.server", () => ({
 }));
 
 import { requireAuth } from "~/lib/auth";
+import { logAuditEvent } from "~/lib/audit";
+import { isCore } from "~/lib/roles";
+import { deletePrefix } from "~/lib/transcription/chunks.server";
 import { prisma } from "~/lib/db";
 import { canRecordInto, finalizeEmpty, requestStop, startProcessing } from "~/lib/meeting-recording.server";
 import { action } from "~/routes/api.meeting-recordings.$id";
@@ -316,5 +320,116 @@ describe('POST /api/meeting-recordings/:id { action: "stop" }', () => {
     );
     const res = await run({ action: "stop" });
     expect(res.status).toBe(409);
+  });
+
+  it("logs recording.stop with who stopped it and whether it was final", async () => {
+    vi.mocked(canRecordInto).mockResolvedValue(true);
+    vi.mocked(prisma.meetingRecording.findUnique).mockResolvedValue(
+      recording({ lastChunkAt: new Date(Date.now() - 3 * 60_000) }) as never,
+    );
+    await run({ action: "stop", final: true });
+    expect(logAuditEvent).toHaveBeenCalledTimes(1);
+    expect(logAuditEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "recording.stop",
+        userId: "u2",
+        targetId: "rec1",
+        metadata: { final: true, byOwner: false },
+      }),
+    );
+  });
+
+  it("logs the owner's non-final stop as byOwner", async () => {
+    vi.mocked(requireAuth).mockResolvedValue({
+      ok: true,
+      user: { sub: "u1", email: "u1@dali.edu", firstName: "Owner", lastName: "User", type: "member" },
+      sessionId: "s1",
+    } as never);
+    vi.mocked(prisma.meetingRecording.findUnique).mockResolvedValue(recording() as never);
+    await run({ action: "stop" });
+    expect(logAuditEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: "u1", metadata: { final: false, byOwner: true } }),
+    );
+  });
+
+  it("does not log a refused stop", async () => {
+    vi.mocked(canRecordInto).mockResolvedValue(false);
+    vi.mocked(prisma.meetingRecording.findUnique).mockResolvedValue(recording() as never);
+    await run({ action: "stop" });
+    expect(logAuditEvent).not.toHaveBeenCalled();
+  });
+
+  it("does not log an editor's final stop refused as ownerOnly", async () => {
+    vi.mocked(canRecordInto).mockResolvedValue(true);
+    vi.mocked(prisma.meetingRecording.findUnique).mockResolvedValue(
+      recording({ lastChunkAt: new Date(Date.now() - 30_000) }) as never,
+    );
+    await run({ action: "stop", final: true });
+    expect(logAuditEvent).not.toHaveBeenCalled();
+  });
+
+  it("does not log a stop on an already finalized recording", async () => {
+    vi.mocked(prisma.meetingRecording.findUnique).mockResolvedValue(
+      recording({ finalizedAt: new Date() }) as never,
+    );
+    await run({ action: "stop" });
+    expect(logAuditEvent).not.toHaveBeenCalled();
+  });
+});
+
+describe("DELETE /api/meeting-recordings/:id", () => {
+  const del = () =>
+    action({
+      request: new Request("http://localhost/api/meeting-recordings/rec1", { method: "DELETE" }),
+      params: { id: "rec1" },
+      context: {},
+    } as never) as Promise<Response>;
+
+  beforeEach(() => {
+    vi.mocked(prisma.meetingRecording.findUnique).mockResolvedValue({
+      id: "rec1",
+      userId: "u1",
+      documentName: "doc:p1:body",
+      status: "Recording",
+    } as never);
+    vi.mocked(prisma.meetingRecording.delete).mockResolvedValue({} as never);
+  });
+
+  it("lets Core discard someone else's recording and logs the owner", async () => {
+    vi.mocked(isCore).mockResolvedValue(true);
+    const res = await del();
+    expect(res.status).toBe(200);
+    expect(deletePrefix).toHaveBeenCalledWith("rec1");
+    expect(prisma.meetingRecording.delete).toHaveBeenCalledWith({ where: { id: "rec1" } });
+    expect(logAuditEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "recording.discard",
+        userId: "u2",
+        targetId: "rec1",
+        metadata: { ownerId: "u1", documentName: "doc:p1:body", status: "Recording" },
+      }),
+    );
+  });
+
+  it("lets the owner discard their own recording", async () => {
+    vi.mocked(requireAuth).mockResolvedValue({
+      ok: true,
+      user: { sub: "u1", email: "u1@dali.edu", type: "member" },
+      sessionId: "s1",
+    } as never);
+    const res = await del();
+    expect(res.status).toBe(200);
+    expect(isCore).not.toHaveBeenCalled();
+    expect(logAuditEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "recording.discard", userId: "u1" }),
+    );
+  });
+
+  it("refuses a non-owner who isn't Core and logs nothing", async () => {
+    vi.mocked(isCore).mockResolvedValue(false);
+    const res = await del();
+    expect(res.status).toBe(403);
+    expect(prisma.meetingRecording.delete).not.toHaveBeenCalled();
+    expect(logAuditEvent).not.toHaveBeenCalled();
   });
 });
