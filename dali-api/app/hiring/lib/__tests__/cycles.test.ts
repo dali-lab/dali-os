@@ -104,7 +104,7 @@ describe("getActiveCycles()", () => {
     await getActiveCycles();
     expect(mockPrisma.applicationCycle.findMany.mock.calls[0][0].include.domains).toEqual({
       where: { isReady: true },
-      select: { closeDate: true },
+      select: { domainId: true, closeDate: true },
     });
   });
 
