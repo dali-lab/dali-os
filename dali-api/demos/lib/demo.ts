@@ -138,6 +138,14 @@ export class Stage {
 export const test = base.extend<{ stage: Stage }>({
   page: async ({ page, baseURL }, use) => {
     await page.addInitScript(CURSOR_SCRIPT);
+    // Keep in sync with DISMISS_KEY in app/components/DesktopBanner.tsx.
+    await page.addInitScript(() => {
+      try {
+        window.localStorage.setItem('dali:desktop-banner:dismissed', '1');
+      } catch {
+        /* localStorage unavailable */
+      }
+    });
     // e2e fixtures pin the tabbed shell; real users get the plain page.
     if (baseURL) await page.context().addCookies([{ name: 'dali_tabless', value: '1', url: baseURL }]);
     await use(page);
