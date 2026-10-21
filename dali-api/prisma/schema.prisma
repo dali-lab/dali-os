@@ -644,6 +644,10 @@ model Application {
   // informal internal domain transfer.
   applicationType ApplicationType @default(Standard)
 
+  // Free-text note from Core or a domain lead, shown above the application
+  // (e.g. why a late submission was accepted). Null means no note.
+  hiringNote String?
+
   statusUpdates      ApplicationStatusUpdate[]
   domainApplications DomainApplication[]
 

@@ -49,6 +49,9 @@ import {
 } from "~/hiring/lib/pipeline-stage";
 import type { ApplicationCycleStatus } from "~/generated/prisma/enums";
 import { applicationBlindLabelsForCycle, blindUser } from "~/hiring/lib/anonymization.server";
+import { domainCloseDate } from "~/hiring/lib/domain-windows";
+import { lateByLabel } from "~/hiring/lib/late-submission";
+import { Pill } from "~/hiring/components/cycle-setup/SetupCard";
 
 export const meta: Route.MetaFunction = () => [
   { title: "Applications · Hiring · DALI OS" },
@@ -107,6 +110,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       createdAt: true,
       applicants: true,
       anonymizeReview: true,
+      closeDate: true,
       // Status is event-sourced; newest update wins, default Draft.
       statusUpdates: {
         orderBy: { createdAt: "desc" },
@@ -121,6 +125,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     createdAt: c.createdAt,
     applicants: c.applicants,
     anonymizeReview: c.anonymizeReview,
+    closeDate: c.closeDate,
     currentStatus: c.statusUpdates[0]?.newStatus ?? "Draft",
   }));
 
@@ -147,8 +152,9 @@ export async function loader({ request }: Route.LoaderArgs) {
   // cycle.
   const cycleDomainRows = await prisma.domainApplicationCycle.findMany({
     where: { applicationCycleId: selected.id },
-    select: { domainId: true },
+    select: { domainId: true, closeDate: true },
   });
+  const closeByDomain = new Map(cycleDomainRows.map((d) => [d.domainId, domainCloseDate(d, selected)]));
   const allCycleDomainIds = cycleDomainRows.map((d) => d.domainId);
   const reviewerDomainIdsThisCycle = reviewerRows
     .filter((r) => r.applicationCycleId === selected.id)
@@ -339,6 +345,7 @@ export async function loader({ request }: Route.LoaderArgs) {
         domain: da.domain?.displayName ?? "—",
         status: status as string,
         submittedAt: submittedAt ? submittedAt.toISOString() : null,
+        lateBy: lateByLabel(submittedAt, closeByDomain.get(da.domainId) ?? null),
         reviewers: joinNames(
           ((da as any).reviews ?? []).map((r: any) => r.cycleReviewer.user),
         ),
@@ -779,7 +786,10 @@ export default function ApplicationsDatabase() {
                     </td>
                     {columns.some((c) => c.key === "submittedAt") && (
                       <td className="px-6 py-3.5 text-os-grey">
-                        {r.submittedAt ? formatDate(r.submittedAt) : "—"}
+                        <span className="inline-flex items-center gap-2">
+                          {r.submittedAt ? formatDate(r.submittedAt) : "—"}
+                          {r.lateBy && <Pill dot="warning">{r.lateBy}</Pill>}
+                        </span>
                       </td>
                     )}
                     {columns.some((c) => c.key === "reviewers") && (

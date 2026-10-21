@@ -8,7 +8,7 @@ import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { getUserRoles } from "~/lib/roles";
 import { resolvePhotoUrl } from "~/lib/photo";
-import { requirePageSignedOrRedirect } from "~/hiring/lib/confidentiality";
+import { requireApiSignedOrForbidden, requirePageSignedOrRedirect } from "~/hiring/lib/confidentiality";
 import { presignAnswers } from "~/hiring/lib/presign";
 import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
 import { ApplicationViewer } from "~/hiring/components/ApplicationViewer";
@@ -25,7 +25,11 @@ import {
   FinalizeDraftButton,
   StageMoveControl,
 } from "~/hiring/components/ApplicationTimeline";
-import { SetupCard } from "~/hiring/components/cycle-setup/SetupCard";
+import { Pill, SetupCard } from "~/hiring/components/cycle-setup/SetupCard";
+import { HiringNote } from "~/hiring/components/HiringNote";
+import { canEditHiringNote, normalizeHiringNote } from "~/hiring/lib/hiring-note";
+import { domainCloseDate } from "~/hiring/lib/domain-windows";
+import { lateByLabel } from "~/hiring/lib/late-submission";
 import {
   buildApplicationTimeline,
   visibleTimeline,
@@ -85,6 +89,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         select: {
           id: true,
           answers: true,
+          hiringNote: true,
           applicationCycleId: true,
           applicationFormVersion: { select: { questions: true, intro: true } },
           applicationCycle: {
@@ -94,8 +99,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
               timeline: true,
               hasChallenges: true,
               anonymizeReview: true,
+              closeDate: true,
               generalRubricVersion: { select: { criteria: true } },
-              domains: { select: { domainId: true, rubricVersion: { select: { criteria: true } } } },
+              domains: { select: { domainId: true, closeDate: true, rubricVersion: { select: { criteria: true } } } },
             },
           },
           statusUpdates: { select: { newStatus: true, createdAt: true } },
@@ -456,6 +462,15 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     canSeePreReleaseDecisions,
   );
 
+  const cycleDomain = da.application.applicationCycle.domains.find((d) => d.domainId === effectiveDomainId);
+  const lastSubmittedAt = da.application.statusUpdates
+    .filter((u) => u.newStatus === "Submitted")
+    .reduce<Date | null>((latest, u) => (!latest || u.createdAt > latest ? u.createdAt : latest), null);
+  const lateBy = lateByLabel(
+    lastSubmittedAt,
+    cycleDomain ? domainCloseDate(cycleDomain, da.application.applicationCycle) : null,
+  );
+
   // Selected review = ?review= if valid, else the first.
   const url = new URL(request.url);
   const requested = url.searchParams.get("review");
@@ -533,6 +548,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     reviews,
     interviews,
     domainApplicationId: da.id,
+    hiringNote: da.application.hiringNote,
+    canEditHiringNote: canEditHiringNote(roles, isCoreCycle),
+    lateBy,
     timeline: statusTimeline,
     interviewPrepNote: canSeeDelibs ? da.interviewPrepNote : null,
     canSeePreReleaseDecisions,
@@ -543,6 +561,38 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     },
     selectedReviewId,
   };
+}
+
+export async function action({ request, params }: Route.ActionArgs) {
+  const auth = await requireAuth(request);
+  if (!auth.ok) return auth.response;
+  const form = await request.formData();
+  if (form.get("intent") !== "save-hiring-note") {
+    return Response.json({ error: "Unknown action" }, { status: 400 });
+  }
+
+  const da = await prisma.domainApplication.findUnique({
+    where: { id: params.domainApplicationId },
+    select: {
+      application: {
+        select: { id: true, applicationCycleId: true, applicationCycle: { select: { applicants: true } } },
+      },
+    },
+  });
+  if (!da) return Response.json({ error: "Application not found" }, { status: 404 });
+
+  const roles = await getUserRoles(auth.user.sub);
+  if (!canEditHiringNote(roles, isAdminOnlyCycle(da.application.applicationCycle.applicants))) {
+    return Response.json({ error: "You can't edit this note." }, { status: 403 });
+  }
+  const gate = await requireApiSignedOrForbidden(auth.user.sub, da.application.applicationCycleId);
+  if (gate) return gate;
+
+  await prisma.application.update({
+    where: { id: da.application.id },
+    data: { hiringNote: normalizeHiringNote(form.get("note")) },
+  });
+  return { ok: true };
 }
 
 export default function ApplicationReadOnlyDetail() {
@@ -558,12 +608,14 @@ export default function ApplicationReadOnlyDetail() {
         name={data.applicantName}
         domainName={data.domainName}
         cycleName={data.cycleName}
+        statusSlot={data.lateBy ? <Pill dot="warning">{data.lateBy}</Pill> : undefined}
       />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Left: application content (read-only annotations from the selected
             review render inline). */}
         <div className="lg:col-span-2 space-y-6">
+          <HiringNote note={data.hiringNote} canEdit={data.canEditHiringNote} />
           <ApplicationViewer
             application={data.application}
             questionLabels={data.questionLabels}
