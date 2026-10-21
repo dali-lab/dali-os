@@ -13,6 +13,9 @@ on:
       pr_number:
         description: PR number to file the recordings under (leave empty to skip S3 and the PR comment)
         required: false
+      demos:
+        description: Space-separated demo files to record, e.g. demos/foo.demo.ts (leave empty for all)
+        required: false
 
 concurrency:
   group: demo-capture-${{ github.event.pull_request.number || github.run_id }}
@@ -79,12 +82,13 @@ jobs:
         id: pick
         env:
           BASE_REF: ${{ github.base_ref }}
+          INPUT_DEMOS: ${{ inputs.demos }}
         run: |
-          files=""
+          files="${INPUT_DEMOS:-}"
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             files=$(git diff --name-only --diff-filter=d "origin/${BASE_REF}...HEAD" -- 'demos/*.demo.ts' | sed 's#^dali-api/##' | tr '\n' ' ')
           fi
-          # Only lib/ changed (or a manual run): record everything.
+          # Only lib/ changed (or a manual run without demos): record everything.
           echo "files=${files}" >> "$GITHUB_OUTPUT"
           echo "Demos: ${files:-all}"
 

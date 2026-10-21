@@ -27,3 +27,4 @@ prisma/data/
 # Demo capture
 /demo-results/
 /demo-out/
+/demo-work/
