@@ -8,7 +8,7 @@ import { formatInstantWithZoneLabel } from "~/lib/timezone";
 import { Checkbox } from "~/components/ui/Checkbox";
 import { useDialog } from "~/components/ui/dialog";
 import { buttonClasses } from "~/components/ui/Button";
-import type { PortalLoaderData, PortalDomain } from "~/hiring/lib/internal-cycle-portal.server";
+import type { PortalDomain, PortalLoaderData, PortalTargetDomain } from "~/hiring/lib/internal-cycle-portal.server";
 import { DomainApplicationCard } from "~/hiring/components/ApplicationTracker";
 
 // Per-cycle copy for the shared internal-cycle applicant portal.
@@ -53,9 +53,9 @@ export function InternalCyclePortalView({
                 className="flex items-center justify-between gap-4 rounded-os-card border border-border bg-card px-5 py-4 hover:border-os-accent/50 transition"
               >
                 <span className="font-medium text-foreground">{c.name}</span>
-                {c.closeDate && (
+                {c.deadline && (
                   <span className="text-sm text-muted-foreground">
-                    Closes {formatInstantWithZoneLabel(c.closeDate, data.viewerTimeZone)}
+                    Closes {formatInstantWithZoneLabel(c.deadline, data.viewerTimeZone)}
                   </span>
                 )}
               </Link>
@@ -76,7 +76,7 @@ export function InternalCyclePortalView({
         <h1 className="font-heading text-2xl font-bold text-foreground mb-1">{copy.heading}</h1>
         <p className="text-sm text-muted-foreground">
           {cycle.name}
-          {cycle.closeDate && ` · closes ${formatInstantWithZoneLabel(cycle.closeDate, viewerTimeZone)}`}
+          {cycle.deadline && ` · closes ${formatInstantWithZoneLabel(cycle.deadline, viewerTimeZone)}`}
         </p>
         {copy.contextHint && contextDomains.length > 0 && (
           <p className="mt-2 text-xs text-muted-foreground">{copy.contextHint(contextDomains)}</p>
@@ -101,6 +101,7 @@ export function InternalCyclePortalView({
       ) : (
         <FormView
           cycle={cycle}
+          viewerTimeZone={viewerTimeZone}
           portalPath={portalPath}
           showDomainPicker={showDomainPicker}
           domainSectionHint={copy.domainSectionHint}
@@ -162,6 +163,7 @@ function Message({ title, children }: { title: string; children: React.ReactNode
 
 function FormView({
   cycle,
+  viewerTimeZone,
   portalPath,
   showDomainPicker,
   domainSectionHint,
@@ -171,8 +173,9 @@ function FormView({
   cycle: {
     id: string;
     questions: Question[];
-    targetDomains: PortalDomain[];
+    targetDomains: PortalTargetDomain[];
   };
+  viewerTimeZone: string;
   // Posting to the cycle's own URL keeps writes on this cycle even when the
   // page was opened without an id.
   portalPath: string;
@@ -183,7 +186,10 @@ function FormView({
 }) {
   const fetcher = useFetcher();
   const [answers, setAnswers] = useState<Record<string, string>>(initial.answers);
-  const [selectedDomainIds, setSelectedDomainIds] = useState<string[]>(initial.selectedDomainIds);
+  const [selectedDomainIds, setSelectedDomainIds] = useState<string[]>(() => {
+    const closed = new Set(cycle.targetDomains.filter((d) => d.closed).map((d) => d.id));
+    return initial.selectedDomainIds.filter((id) => !closed.has(id));
+  });
   const [error, setError] = useState<string | null>(null);
   const pages = useMemo(() => paginateQuestions(cycle.questions), [cycle.questions]);
   const pager = useFormPager(pages, { excludeFileType: false });
@@ -239,8 +245,14 @@ function FormView({
                 <Checkbox
                   key={d.id}
                   checked={checked}
+                  disabled={d.closed}
                   onChange={() => toggleDomain(d.id)}
                   label={<span className="text-sm font-medium text-foreground">{d.displayName}</span>}
+                  description={
+                    d.closed
+                      ? `Closed${d.closeDate ? ` ${formatInstantWithZoneLabel(d.closeDate, viewerTimeZone)}` : ""}`
+                      : undefined
+                  }
                   className={`px-4 py-3 rounded-lg border transition ${
                     checked
                       ? "border-os-accent bg-os-accent/10"

@@ -143,9 +143,9 @@ describe("cycleDeadlineSummary", () => {
     expect(earlierDomainsExist).toBe(false);
   });
 
-  it("closeDate is null and earlierDomainsExist is false with no ready domains", () => {
+  it("falls back to the cycle's own close, with nothing earlier, when there are no ready domains", () => {
     const { closeDate, earlierDomainsExist } = cycleDeadlineSummary([], cycle, null, SEP_1);
-    expect(closeDate).toBeNull();
+    expect(closeDate).toEqual(OCT_30);
     expect(earlierDomainsExist).toBe(false);
   });
   it("ignores domains that have already closed, both for the date and the earlier-close qualifier", () => {
@@ -182,6 +182,11 @@ describe("applicantDeadline", () => {
 
   it("is null once every domain has closed", () => {
     expect(applicantDeadline(domains, cycle, ["engs"], new Date("2026-12-01T12:00:00Z"))).toBeNull();
+  });
+
+  it("is the cycle's own close with no ready domains", () => {
+    expect(applicantDeadline([], cycle, ["engs"], nov1)).toEqual(OCT_30);
+    expect(applicantDeadline([], { closeDate: null }, null, nov1)).toBeNull();
   });
 });
 

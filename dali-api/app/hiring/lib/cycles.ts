@@ -11,7 +11,7 @@ export type ActiveStatus = (typeof ACTIVE_STATUSES)[number];
 
 const withLatestStatus = {
   statusUpdates: { orderBy: { createdAt: "desc" as const }, take: 1 },
-  domains: { where: { isReady: true }, select: { closeDate: true } },
+  domains: { where: { isReady: true }, select: { domainId: true, closeDate: true } },
 };
 
 type CycleWithWindows = {
