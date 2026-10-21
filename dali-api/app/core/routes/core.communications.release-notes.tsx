@@ -397,7 +397,8 @@ function EditModal({
   const [groupIds, setGroupIds] = useState<string[]>(note.groupIds);
   const [body, setBody] = useState<unknown>(note.contentJson);
   const [videoKey, setVideoKey] = useState<string | null>(note.videoKey);
-  const [videoUrl, setVideoUrl] = useState<string | null>(note.videoUrl);
+  const [pendingVideoName, setPendingVideoName] = useState<string | null>(null);
+  const savedVideoUrl = videoKey && videoKey === note.videoKey ? note.videoUrl : null;
   const [uploading, setUploading] = useState(false);
 
   async function pickVideo(file: File) {
@@ -409,7 +410,7 @@ function EditModal({
         RELEASE_NOTE_VIDEO_ACCEPT,
       );
       setVideoKey(uploaded.s3Key);
-      setVideoUrl(URL.createObjectURL(file));
+      setPendingVideoName(file.name);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Upload failed.");
     } finally {
@@ -528,8 +529,8 @@ function EditModal({
       </div>
       <div className="os-field-group">
         <span className="os-field-label">Video</span>
-        {videoUrl && (
-          <video src={videoUrl} controls preload="metadata" className="max-h-64 w-full rounded-md bg-black" />
+        {savedVideoUrl && (
+          <video src={savedVideoUrl} controls preload="metadata" className="max-h-64 w-full rounded-md bg-black" />
         )}
         <div className="flex items-center gap-2">
           <input
@@ -558,13 +559,17 @@ function EditModal({
               size="sm"
               onClick={() => {
                 setVideoKey(null);
-                setVideoUrl(null);
+                setPendingVideoName(null);
               }}
             >
               Remove
             </Button>
           )}
-          <span className="text-xs text-muted-foreground">mp4, webm or mov, up to 50 MB</span>
+          <span className="text-xs text-muted-foreground">
+            {pendingVideoName && videoKey
+              ? `${pendingVideoName} uploaded. Saves with the entry.`
+              : "mp4, webm or mov, up to 50 MB"}
+          </span>
         </div>
       </div>
       <ModalFooter onCancel={onClose}>
