@@ -73,6 +73,15 @@ These live in `.github/workflows/` — treat their failures as blocking:
 - Manual trigger: `POST /internal/jobs/tick` (`x-jobs-secret` header or an Admin session), or Run-now in Admin → Jobs. Digest jobs self-gate on wall clock — Run-now outside the send window is a no-op by design.
 - **Feature flags**: gate new/in-progress features behind a flag, not an ad-hoc boolean. Add one entry to `app/lib/feature-flags.ts`, then check `useFeatureFlag("key")` (client) or `isFeatureEnabled(...)` (server). Targeting (everyone/role/user) is edited in Admin → Feature Flags; flags default off. `evaluateFlag` stays in the client-safe `feature-flags.ts` (not `.server`) so its test needs no Prisma client.
 
+## Release notes
+
+Release notes live at `/release-notes` and are authored in Core → Communications → Release notes (`ReleaseNote` model, `release-notes` flag). Spec: `specs/release-notes.md`.
+
+- **What counts**: write for a member using the platform. New features, new capabilities, changed workflows, and removals a user relied on get an entry. Small bug fixes, copy and styling tweaks, refactors, perf work nobody perceives, tests, CI, and internal tooling do not. A fix earns an entry only if it was a known, widely felt problem.
+- **When opening a PR**, add the `no-release-note` label if the change is not user-facing by the rule above. If it is user-facing, put a one-line, plain-language summary in the PR body under "Release note" (what a member can now do, not how it was built).
+- **If it's ambiguous** whether a change is user-facing, which area it belongs to, or whether it should be limited to an audience (e.g. Core only), ask the user instead of guessing. In CI, say so in the PR description.
+- Release-note copy follows the UI copy rules: plain language, no em dashes, no marketing.
+
 ## Operating rules when running in CI
 
 - **Never use `--no-verify`, `--no-gpg-sign`, or any git flag that bypasses hooks.**

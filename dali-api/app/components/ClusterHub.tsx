@@ -2,6 +2,7 @@ import { Link } from "react-router";
 import type { NavCluster } from "~/lib/cluster-nav";
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
+import { useFeatureFlags } from "~/components/FeatureFlags";
 
 // Shared cluster-hub body: a heading + a card per section. Used by the Admin
 // and Core cluster landing routes, which are otherwise identical. The cards
@@ -9,6 +10,7 @@ import { cn } from "~/lib/cn";
 // and a sentence under each one restates the label it sits below.
 export function ClusterHub({ cluster }: { cluster: NavCluster | undefined }) {
   const { pageTitle, card, cardPad, heading, headingIcon } = useOsChrome();
+  const flags = useFeatureFlags();
   if (!cluster) return null;
   return (
     <div className={cn("flex flex-col", "gap-6")}>
@@ -16,7 +18,9 @@ export function ClusterHub({ cluster }: { cluster: NavCluster | undefined }) {
         <h1 className={pageTitle}>{cluster.label}</h1>
       </header>
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {cluster.sections.map((s) => (
+        {cluster.sections
+          .filter((s) => !s.flag || flags[s.flag])
+          .map((s) => (
           <Link
             key={s.key}
             to={s.to}
@@ -31,7 +35,7 @@ export function ClusterHub({ cluster }: { cluster: NavCluster | undefined }) {
               <h2 className={heading}>{s.label}</h2>
             </div>
           </Link>
-        ))}
+          ))}
       </div>
     </div>
   );

@@ -19,6 +19,8 @@ export const MAX_FORM_UPLOAD_LABEL = "50 MB";
 // The prefix QuestionField builds for every form file-upload answer.
 const FORM_UPLOAD_PREFIX = "applications/";
 
+const RELEASE_NOTE_PREFIX = "release-notes/";
+
 // Key prefixes (under uploads/) that land in the ProjectFile store: the project
 // Files tab and task attachments, a non-project file's new version, and the
 // Drive hub (Lab and My Drive share one prefix). Keyed by prefix rather than by
@@ -66,7 +68,9 @@ export function isReservedUploadKey(key: string): boolean {
 export function uploadCapForKey(key: string): UploadCap {
   const unscoped = key.replace(/^\/+/, "").replace(/^uploads\//, "");
   if (FILE_STORE_PREFIXES.some((p) => unscoped.startsWith(p))) return FILE_STORE_UPLOAD_CAP;
-  if (unscoped.startsWith(FORM_UPLOAD_PREFIX)) return FORM_UPLOAD_CAP;
+  if (unscoped.startsWith(FORM_UPLOAD_PREFIX) || unscoped.startsWith(RELEASE_NOTE_PREFIX)) {
+    return FORM_UPLOAD_CAP;
+  }
   return DEFAULT_UPLOAD_CAP;
 }
 

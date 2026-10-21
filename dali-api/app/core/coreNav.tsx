@@ -1,4 +1,4 @@
-import { ClipboardCheck, Mail, Megaphone } from "lucide-react";
+import { ClipboardCheck, Mail, Megaphone, Rocket } from "lucide-react";
 import { ClusterHub } from "~/components/ClusterHub";
 import {
   clusterTrail,
@@ -34,6 +34,15 @@ export const CORE_CLUSTERS: NavCluster[] = [
         icon: Megaphone,
         description:
           "Send an announcement to the lab, with an optional due date and attached form.",
+      },
+      {
+        key: "release-notes",
+        label: "Release notes",
+        to: "/core/communications/release-notes",
+        icon: Rocket,
+        description:
+          "Write, review and publish what shipped, with an optional demo video and audience.",
+        flag: "release-notes",
       },
       {
         key: "email",

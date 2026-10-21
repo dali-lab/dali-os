@@ -27,3 +27,7 @@ export function FeatureFlagsProvider({
 export function useFeatureFlag(key: FeatureFlagKey): boolean {
   return useContext(FeatureFlagsContext)[key] ?? false;
 }
+
+export function useFeatureFlags(): Partial<FeatureFlagMap> {
+  return useContext(FeatureFlagsContext);
+}

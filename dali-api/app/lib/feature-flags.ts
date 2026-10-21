@@ -50,6 +50,12 @@ export type FeatureFlagDef = {
 
 export const FEATURE_FLAGS = [
   {
+    key: "release-notes",
+    label: "Release notes",
+    description:
+      "A /release-notes page listing what shipped, with demo videos, and a \"What's new\" item in the account menu that shows a dot when there is something unread. Core also gets Communications > Release notes to write, review and publish entries. Ships off.",
+  },
+  {
     key: "favorites-bar",
     label: "Favorites bar",
     description:

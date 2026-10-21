@@ -80,7 +80,9 @@ describe("uploadCapForKey", () => {
   it.each([
     "applications/resume/uuid-Resume.pdf",
     "uploads/applications/portfolio/uuid-portfolio.pdf",
-  ])("gives form file-upload answers 50 MB: %s", (key) => {
+    "release-notes/uploads/uuid-demo.mp4",
+    "uploads/release-notes/uploads/uuid-demo.mp4",
+  ])("gives form file-upload answers and release note videos 50 MB: %s", (key) => {
     const cap = uploadCapForKey(key);
     expect(cap.maxBytes).toBe(MAX_FORM_UPLOAD_BYTES);
     expect(cap.maxBytes).toBe(50 * 1024 * 1024);
