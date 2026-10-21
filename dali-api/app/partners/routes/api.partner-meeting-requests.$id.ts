@@ -46,7 +46,9 @@ export async function action({ request, params }: Route.ActionArgs) {
     request,
     Response.json({
       ok: true,
-      ...(result.conflict ? { conflict: true, busyUserIds: result.busyUserIds } : {}),
+      ...(result.conflict
+        ? { conflict: true, busyUserIds: result.busyUserIds, outsideHoursUserIds: result.outsideHoursUserIds }
+        : {}),
     }),
   );
 }

@@ -463,6 +463,8 @@ export type GroupAvailDay = {
   dayOfMonth: number;
   matches: { startHour: number; durationHours: number }[];
   busy: { startHour: number; durationHours: number }[];
+  /** Hours when every participant is inside their working hours. */
+  working: { startHour: number; durationHours: number }[];
 };
 
 export type PerUserFree = {

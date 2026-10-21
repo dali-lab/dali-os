@@ -54,11 +54,17 @@ describe("POST /api/partner-meeting-requests/:id", () => {
       ok: true,
       conflict: true,
       busyUserIds: ["u1"],
+      outsideHoursUserIds: ["u2"],
       scheduledMeetingId: "m1",
     });
     const res = await post({ action: "accept" });
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ ok: true, conflict: true, busyUserIds: ["u1"] });
+    expect(await res.json()).toEqual({
+      ok: true,
+      conflict: true,
+      busyUserIds: ["u1"],
+      outsideHoursUserIds: ["u2"],
+    });
   });
 
   it("declines with a note", async () => {

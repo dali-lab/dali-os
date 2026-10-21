@@ -40,3 +40,14 @@ describe("slotStatus", () => {
     expect(slotStatus({ free: split, working: split }, ms("15:30"), ms("17:30"))).toBe("outsideHours");
   });
 });
+
+describe("slotStatus with Date intervals", () => {
+  const d = (t: string) => new Date(`2026-10-26T${t}:00.000Z`);
+  const working = [{ start: d("13:00"), end: d("21:00") }];
+
+  it("classifies server-side intervals the same way", () => {
+    expect(slotStatus({ free: [{ start: d("14:00"), end: d("16:00") }], working }, ms("14:00"), ms("15:00"))).toBe("available");
+    expect(slotStatus({ free: [], working }, ms("14:00"), ms("15:00"))).toBe("busy");
+    expect(slotStatus({ free: [], working }, ms("21:00"), ms("22:00"))).toBe("outsideHours");
+  });
+});

@@ -10,7 +10,7 @@ import { intersectFreeIntervals } from "~/lib/availability";
 import { getZonedYMD, zonedDayStartUtc } from "~/lib/timezone";
 import type { GroupAvailDay } from "~/calendar/lib/types";
 
-export type UserFreeBusy = { free: Interval[]; busy: Interval[] };
+export type UserFreeBusy = { free: Interval[]; busy: Interval[]; working: Interval[] };
 
 export function unionIntervals(sets: Interval[][]): Interval[] {
   const all: Interval[] = sets.flat().sort((x, y) => x.start.getTime() - y.start.getTime());
@@ -68,8 +68,8 @@ function splitByZonedDay(
 }
 
 /**
- * Intersect every user's free intervals (≥ durationMinutes) and union every
- * user's busy intervals, then bucket both by calendar day in `timezone`. The
+ * Intersect every user's free intervals (≥ durationMinutes), union every
+ * user's busy intervals, intersect every user's working hours, then bucket both by calendar day in `timezone`. The
  * caller decides what to do with per-user data — this never sees user ids.
  */
 export function buildAvailabilityDays(
@@ -81,12 +81,13 @@ export function buildAvailabilityDays(
     (iv) => iv.end.getTime() - iv.start.getTime() >= minDurationMs,
   );
   const busyUnion = unionIntervals(perUser.map((u) => u.busy));
+  const sharedWorking = intersectFreeIntervals(perUser.map((u) => u.working));
 
   const dayMap = new Map<string, GroupAvailDay>();
   const ensureDay = (key: string, dayOfWeek: number, dayOfMonth: number): GroupAvailDay => {
     const existing = dayMap.get(key);
     if (existing) return existing;
-    const bucket: GroupAvailDay = { dayKey: key, dayOfWeek, dayOfMonth, matches: [], busy: [] };
+    const bucket: GroupAvailDay = { dayKey: key, dayOfWeek, dayOfMonth, matches: [], busy: [], working: [] };
     dayMap.set(key, bucket);
     return bucket;
   };
@@ -105,6 +106,15 @@ export function buildAvailabilityDays(
       const localDate = new Date(Date.UTC(ymd[0], ymd[1] - 1, ymd[2]));
       const bucket = ensureDay(piece.dayKey, localDate.getUTCDay(), ymd[2]);
       bucket.busy.push({ startHour: piece.startHour, durationHours: piece.durationHours });
+    }
+  }
+
+  for (const w of sharedWorking) {
+    for (const piece of splitByZonedDay(w, opts.timezone)) {
+      const ymd = piece.dayKey.split("-").map(Number);
+      const localDate = new Date(Date.UTC(ymd[0], ymd[1] - 1, ymd[2]));
+      const bucket = ensureDay(piece.dayKey, localDate.getUTCDay(), ymd[2]);
+      bucket.working.push({ startHour: piece.startHour, durationHours: piece.durationHours });
     }
   }
 

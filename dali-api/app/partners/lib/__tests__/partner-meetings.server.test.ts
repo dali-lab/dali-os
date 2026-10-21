@@ -387,11 +387,61 @@ describe("respondToMeetingRequest", () => {
     });
     mockPrisma.user.findUnique.mockResolvedValue({ daliEmail: "core@dali.dartmouth.edu", dartmouthEmail: null });
     mockPrisma.userCalendarLink.findFirst.mockResolvedValue(null);
-    // No free interval covering the request window → busy.
     vi.mocked(computeUserFreeBusy).mockResolvedValue({
       userId: "core-1",
       free: [],
       busy: [{ start: new Date("2026-11-05T16:00:00Z"), end: new Date("2026-11-05T16:30:00Z") }],
+      working: [{ start: new Date("2026-11-05T14:00:00Z"), end: new Date("2026-11-05T22:00:00Z") }],
+      hasCalendar: true,
+      calendarError: false,
+    });
+    vi.mocked(createScheduledMeeting).mockResolvedValue({
+      ok: true,
+      meeting: { id: "meet-2", meetingUrl: null } as never,
+      notifiedCount: 1,
+      gcalError: null,
+      notePageId: null,
+      whiteboardPageId: null,
+      notebookId: null,
+      createdNotebook: false,
+    });
+    mockPrisma.partnerApplication.findUnique.mockResolvedValue({ id: "app-1", applicantContactId: "contact-1" });
+    mockPrisma.scheduledMeeting.findUnique.mockResolvedValue({
+      id: "meet-2",
+      selectedAt: new Date("2026-11-05T16:00:00Z"),
+      participantUserIds: ["core-1"],
+      meetingUrl: null,
+    });
+    mockPrisma.partnerMeeting.create.mockResolvedValue({ id: "pm-2", scheduledAt: new Date() });
+
+    const result = await respondToMeetingRequest({
+      requestId: "req-1",
+      actorUserId: "core-1",
+      action: "accept",
+    });
+
+    expect(result).toMatchObject({ ok: true, conflict: true, busyUserIds: ["core-1"], outsideHoursUserIds: [] });
+    expect(createScheduledMeeting).toHaveBeenCalled();
+  });
+
+  it("flags a participant outside their working hours separately from busy", async () => {
+    mockPrisma.partnerMeetingRequest.findUnique.mockResolvedValue({
+      id: "req-1",
+      status: "Pending",
+      applicationId: "app-1",
+      projectId: null,
+      contactId: "contact-1",
+      startTime: new Date("2026-11-05T16:00:00Z"),
+      durationMinutes: 30,
+      participantUserIds: ["core-1"],
+      contact: { id: "contact-1", name: "Pat", email: "pat@example.com" },
+    });
+    mockPrisma.user.findUnique.mockResolvedValue({ daliEmail: "core@dali.dartmouth.edu", dartmouthEmail: null });
+    mockPrisma.userCalendarLink.findFirst.mockResolvedValue(null);
+    vi.mocked(computeUserFreeBusy).mockResolvedValue({
+      userId: "core-1",
+      free: [],
+      busy: [],
       working: [],
       hasCalendar: true,
       calendarError: false,
@@ -421,7 +471,7 @@ describe("respondToMeetingRequest", () => {
       action: "accept",
     });
 
-    expect(result).toMatchObject({ ok: true, conflict: true, busyUserIds: ["core-1"] });
+    expect(result).toMatchObject({ ok: true, conflict: true, busyUserIds: [], outsideHoursUserIds: ["core-1"] });
     expect(createScheduledMeeting).toHaveBeenCalled();
   });
 

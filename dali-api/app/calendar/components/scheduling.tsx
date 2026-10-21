@@ -1015,7 +1015,13 @@ export function ScheduleWeekGrid({
       ? days.map((d) => data.days.find((b) => b.dayOfWeek === d.dayOfWeek)?.matches ?? [])
       : [];
 
-  type AggregateSelected = { dow: number; startHour: number; duration: number; free: boolean };
+  type AggregateSelected = {
+    dow: number;
+    startHour: number;
+    duration: number;
+    free: boolean;
+    outsideHours: boolean;
+  };
   let aggregateSelected: AggregateSelected | null = null;
   if (isAggregate && data && selectedStartLocal && selectedEndLocal) {
     const sd = new Date(selectedStartLocal);
@@ -1028,10 +1034,13 @@ export function ScheduleWeekGrid({
       const duration = sameDay ? endHour - startHour : 24 - startHour;
       if (duration > 0) {
         const bucket = data.days.find((b) => b.dayOfWeek === dow);
-        const free = !!bucket?.matches.some(
-          (m) => m.startHour <= startHour && m.startHour + m.durationHours >= startHour + duration,
-        );
-        aggregateSelected = { dow, startHour, duration, free };
+        const within = (rows: { startHour: number; durationHours: number }[] | undefined) =>
+          !!rows?.some(
+            (m) => m.startHour <= startHour && m.startHour + m.durationHours >= startHour + duration,
+          );
+        const free = within(bucket?.matches);
+        const outsideHours = !free && !within(bucket?.working);
+        aggregateSelected = { dow, startHour, duration, free, outsideHours };
       }
     }
   }
@@ -1198,7 +1207,11 @@ export function ScheduleWeekGrid({
                       : "bg-os-accent text-os-bg",
                   )}
                 >
-                  {aggregateSelected.free ? "Everyone's free" : "Not everyone's free"}
+                  {aggregateSelected.free
+                    ? "Everyone's free"
+                    : aggregateSelected.outsideHours
+                      ? "Outside working hours"
+                      : "Not everyone's free"}
                 </div>
               </div>
             )}

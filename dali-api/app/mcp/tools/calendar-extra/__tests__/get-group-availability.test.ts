@@ -21,19 +21,16 @@ vi.mock("~/mcp/registry", () => {
   return { McpError, McpNotFoundError, McpForbiddenError, McpInvalidError };
 });
 vi.mock("~/lib/db");
-vi.mock("~/lib/availability", () => ({
-  computeUserFreeBusy: vi.fn(),
-  intersectFreeIntervals: vi.fn(),
-}));
+vi.mock("~/lib/availability", async (orig) => {
+  const real = await orig<typeof import("~/lib/availability")>();
+  return { ...real, computeUserFreeBusy: vi.fn() };
+});
 vi.mock("~/lib/timezone", async (orig) => {
   const real = await orig<typeof import("~/lib/timezone")>();
   return { ...real };
 });
 
-import {
-  computeUserFreeBusy,
-  intersectFreeIntervals,
-} from "~/lib/availability";
+import { computeUserFreeBusy } from "~/lib/availability";
 import {
   runGetGroupAvailability,
   GET_GROUP_AVAILABILITY_DEF,
@@ -81,7 +78,6 @@ describe("get_group_availability", () => {
       hasCalendar: true,
       calendarError: false,
     });
-    vi.mocked(intersectFreeIntervals).mockReturnValue([]);
 
     const out = await runGetGroupAvailability({
       userIds: ["u1"],
@@ -96,5 +92,34 @@ describe("get_group_availability", () => {
     expect(Array.isArray(out.days)).toBe(true);
     expect(Array.isArray(out.perUser)).toBe(true);
     expect(out.perUser[0]).toMatchObject({ userId: "u1", free: [] });
+  });
+
+  it("returns per-user working hours and the shared working hours per day", async () => {
+    const monWork = { start: new Date("2026-08-10T13:00:00Z"), end: new Date("2026-08-10T21:00:00Z") };
+    const monFree = { start: new Date("2026-08-10T13:00:00Z"), end: new Date("2026-08-10T15:00:00Z") };
+    vi.mocked(computeUserFreeBusy).mockResolvedValue({
+      userId: "u1",
+      free: [monFree],
+      busy: [{ start: monFree.end, end: monWork.end }],
+      working: [monWork],
+      hasCalendar: true,
+      calendarError: false,
+    });
+
+    const out = await runGetGroupAvailability({
+      userIds: ["u1"],
+      weekStartIso: "2026-08-10T04:00:00Z",
+      weekEndIso: "2026-08-17T04:00:00Z",
+      durationMinutes: 30,
+      timezone: "America/New_York",
+    });
+
+    expect(out.perUser[0].working).toEqual([
+      { startIso: "2026-08-10T13:00:00.000Z", endIso: "2026-08-10T21:00:00.000Z" },
+    ]);
+    const monday = out.days.find((d) => d.dayKey === "2026-08-10");
+    expect(monday?.working).toEqual([{ startHour: 9, durationHours: 8 }]);
+    expect(monday?.matches).toEqual([{ startHour: 9, durationHours: 2 }]);
+    expect(monday?.busy).toEqual([{ startHour: 11, durationHours: 6 }]);
   });
 });

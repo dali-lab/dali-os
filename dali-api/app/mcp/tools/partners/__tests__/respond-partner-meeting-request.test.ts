@@ -92,6 +92,7 @@ describe("accept", () => {
       ok: true,
       conflict: true,
       busyUserIds: ["u2"],
+      outsideHoursUserIds: ["u3"],
       scheduledMeetingId: "meet-1",
     });
     const out = await runRespondPartnerMeetingRequest("u1", { requestId: "r1", action: "accept" });
@@ -99,6 +100,7 @@ describe("accept", () => {
       ok: true,
       conflict: true,
       busyUserIds: ["u2"],
+      outsideHoursUserIds: ["u3"],
       scheduledMeetingId: "meet-1",
     });
   });

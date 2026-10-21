@@ -11,6 +11,7 @@
 // `schedule_meeting`.
 
 import { computeUserFreeBusy, type Interval } from "~/lib/availability";
+import { slotStatus } from "~/calendar/lib/slot-availability";
 import { resolveGroupMembers } from "~/lib/groups";
 import {
   optimizeMeetingSchedule,
@@ -389,6 +390,13 @@ export async function runOptimizeGroupMeetings(input: Input) {
       doubleBooked: r.conflicts,
       // Members not free at the chosen slot.
       unavailable: r.unavailableIds,
+      // The subset of `unavailable` whose working hours don't cover the slot.
+      outsideHours: r.slot
+        ? r.unavailableIds.filter((uid) => {
+            const fb = fbByUser.get(uid);
+            return !!fb && slotStatus(fb, r.slot!.startMs, r.slot!.endMs) === "outsideHours";
+          })
+        : [],
       // Attendees whose availability is assumed (no linked calendar / sync error),
       // not confirmed — treat with caution.
       assumedAvailability: assumedIds,
