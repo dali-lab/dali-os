@@ -565,6 +565,14 @@ export const NOTIFICATION_COPY = {
     variables: ["itemTitle"],
     subject: "Announcement — {{itemTitle}}",
   },
+  "release.published": {
+    eventType: "release.published",
+    label: "Highlighted release note",
+    description:
+      "Sent when Core publishes a release note marked as a highlight. The title and summary come from the entry.",
+    variables: ["itemTitle"],
+    subject: "New in DALI OS: {{itemTitle}}",
+  },
 
   // ── Education ────────────────────────────────────────────────────────────
   // education.decision is externalEmail, so these govern the in-app row and the
