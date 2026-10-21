@@ -1,13 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { RELEASE_NOTE_AREAS } from "~/lib/release-notes";
 
-export const NO_RELEASE_NOTE_LABEL = "no-release-note";
 export const MAX_COMMITS = 250;
 export const PRS_PER_CALL = 40;
 export const BODY_MAX_CHARS = 3000;
 export const FILES_MAX = 100;
-
-const TICKED_NO_NOTE = /\[\s*x\s*\]\s*no[\s_-]*release[\s_-]*notes?\b/i;
 
 export type PullSummary = {
   number: number;
@@ -24,9 +21,20 @@ export type PullForPrompt = PullSummary & {
   deletions: number;
 };
 
-export function optedOutOfReleaseNote(pr: Pick<PullSummary, "labels" | "body">): boolean {
-  if (pr.labels.some((l) => l.toLowerCase() === NO_RELEASE_NOTE_LABEL)) return true;
-  return TICKED_NO_NOTE.test(pr.body ?? "");
+const RELEASE_NOTE_HEADING = /^#{1,6}\s*release\s+notes?\s*:?\s*$/i;
+const EMPTY_NOTE = /^(none|n\/?a|-+)\.?$/i;
+
+export function releaseNoteLine(body: string | null): string | null {
+  const lines = (body ?? "").replace(/<!--[\s\S]*?-->/g, "").split(/\r?\n/);
+  const start = lines.findIndex((l) => RELEASE_NOTE_HEADING.test(l.trim()));
+  if (start === -1) return null;
+  const section: string[] = [];
+  for (const line of lines.slice(start + 1)) {
+    if (/^#{1,6}\s/.test(line.trim())) break;
+    const text = line.trim().replace(/^[-*]\s+/, "").trim();
+    if (text && !EMPTY_NOTE.test(text)) section.push(text);
+  }
+  return section.length ? section.join(" ") : null;
 }
 
 export function selectPrsToDraft(
@@ -41,7 +49,7 @@ export function selectPrsToDraft(
     if (!pr.mergedAt) continue;
     if (pr.baseRef === opts.promotionBranch) continue;
     if (opts.citedPrNumbers.has(pr.number)) continue;
-    if (optedOutOfReleaseNote(pr)) continue;
+    if (!releaseNoteLine(pr.body)) continue;
     out.push(pr);
   }
   return out.sort((a, b) => a.number - b.number);
