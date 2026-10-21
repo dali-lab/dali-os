@@ -79,7 +79,7 @@ These live in `.github/workflows/` — treat their failures as blocking:
 Release notes live at `/release-notes` and are authored in Core → Communications → Release notes (`ReleaseNote` model, `release-notes` flag). Spec: `specs/release-notes.md`.
 
 - **What counts**: write for a member using the platform. New features, new capabilities, changed workflows, and removals a user relied on get an entry. Small bug fixes, copy and styling tweaks, refactors, perf work nobody perceives, tests, CI, and internal tooling do not. A fix earns an entry only if it was a known, widely felt problem.
-- **When opening a PR**, add the `no-release-note` label if the change is not user-facing by the rule above. If it is user-facing, put a one-line, plain-language summary in the PR body under "Release note" (what a member can now do, not how it was built).
+- **When opening a PR**, release notes are opt-in: only a PR with text under the "Release note" heading in its body gets a drafted entry. If the change is user-facing by the rule above, write one plain-language line there (what a member can now do, not how it was built). Otherwise leave it empty.
 - **If it's ambiguous** whether a change is user-facing, which area it belongs to, or whether it should be limited to an audience (e.g. Core only), ask the user instead of guessing. In CI, say so in the PR description.
 - Release-note copy follows the UI copy rules: plain language, no em dashes, no marketing.
 - **Demos**: when opening a user-facing UI PR, add `dali-api/demos/<name>.demo.ts` (see `dali-api/demos/README.md`). `demo-capture.yml` records it and files the mp4 under `release-notes/pr-<N>/`.

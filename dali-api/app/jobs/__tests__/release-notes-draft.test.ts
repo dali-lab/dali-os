@@ -45,7 +45,7 @@ const gh = {
 const ghPr = (n: number, o: Record<string, unknown> = {}) => ({
   number: n,
   title: `PR ${n}`,
-  body: "",
+  body: "## Release note\nSomething members can use.",
   labels: [],
   merged_at: "2026-10-20T00:00:00Z",
   base: { ref: "staging" },
@@ -129,7 +129,7 @@ describe("runReleaseNotesDraft", () => {
   });
 
   it("drafts from merged PRs, records usage, and advances the cursor last", async () => {
-    setup({ lastSha: "old", prsByCommit: { c1: [ghPr(10), ghPr(11, { labels: [{ name: "no-release-note" }] })] } });
+    setup({ lastSha: "old", prsByCommit: { c1: [ghPr(10), ghPr(11, { body: "## Release note\n<!-- empty -->" })] } });
     aiReturns("```json\n" + JSON.stringify([entry([10])]) + "\n```");
     const res = await runReleaseNotesDraft();
 

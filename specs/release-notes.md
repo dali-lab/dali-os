@@ -72,13 +72,13 @@ Per-user "what's new" state: `User.releaseNotesSeenAt DateTime?`.
 - Uploads to S3 at `release-notes/pr-<N>/<name>.mp4`. Upserts one PR comment (marker `<!-- demo-capture -->`) with the video link.
 - Needs: AWS write creds as GitHub secrets scoped to the `release-notes/` prefix. Workflow change, flag in the PR.
 - Recordings run against the CI database, not preview deploys (preview seed is unreliable on the 512 MB release VM).
-- PR template gets a "Release note" section: one line of user-facing summary (optional), a `no-release-note` checkbox, and a pointer to the demo script docs.
+- PR template gets a "Release note" section (one line of user-facing summary, left empty when not user-facing) and a pointer to the demo script docs.
 
 ### 2. On promotion to prod: drafting
 
 - New job `release-notes-draft` in `app/jobs/registry.ts`, prod only, every 10 min.
 - Reads `prod` HEAD via `githubAppClient()` (`app/lib/github.ts`). Stores last processed sha in the job's settings. On change, lists commits in `lastSha..head`, resolves associated merged PRs.
-- Skips PRs labelled `no-release-note` or with the checkbox ticked.
+- Opt-in: drafts only PRs with text under the "Release note" heading in their body. HTML comments, blank lines and "None"/"N/A" don't count, so an untouched template means no entry.
 - One LLM call per batch through `resolveAiProvider()` (`app/lib/ai.server.ts`) with PR title, body, labels, changed file paths and diff stats. Output (structured): entries `{ title, summary, body, area, prNumbers[] }`. Instructions: group related PRs, skip invisible work (refactors, tests, internal fixes), every entry cites at least one PR, never describe behavior not grounded in the PR text or diff.
 - Creates `Draft` rows. Attaches `videoKey` when `release-notes/pr-<N>/` has a recording for any cited PR (first one wins, others listed in the editor).
 - Usage recorded on `AiUsage` like other AI calls.
