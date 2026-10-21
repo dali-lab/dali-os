@@ -14,6 +14,8 @@ import { APPLICANT_GROUP_CONFIG, applicantGroup, applicantPortalPath } from "./a
 import { getCoreDomain } from "./core-hiring.server";
 import { loadHiringForm } from "./application-form.server";
 import { loadApplicationTracker } from "./application-tracker.server";
+import { closedDomainIdSet } from "./application-lock.server";
+import { applicantDeadline, domainCloseDate, isDomainClosed } from "./domain-windows";
 
 // Shared loader/action for the member-authed applicant portals (Interns at
 // /fellowship, Lab members at /core/apply). The two routes are thin wrappers
@@ -27,7 +29,9 @@ export type MemberApplicants = "Interns" | "LabMembers";
 
 export type PortalDomain = { id: string; code: string; displayName: string };
 
-export type PortalCycleChoice = { id: string; name: string; closeDate: string | null; href: string };
+export type PortalTargetDomain = PortalDomain & { closed: boolean; closeDate: string | null };
+
+export type PortalCycleChoice = { id: string; name: string; deadline: string | null; href: string };
 
 export type PortalLoaderData =
   | { reason: "not-member" }
@@ -43,10 +47,10 @@ export type PortalLoaderData =
         id: string;
         name: string;
         currentStatus: string;
-        closeDate: string | null;
+        deadline: string | null;
         formVersionId: string;
         questions: Question[];
-        targetDomains: PortalDomain[];
+        targetDomains: PortalTargetDomain[];
       };
       contextDomains: PortalDomain[];
       draft: {
@@ -64,9 +68,9 @@ export type PortalLoaderData =
     };
 
 // The single synthetic CORE domain that Core applications hang off of.
-async function coreTargetDomains(): Promise<PortalDomain[]> {
+async function coreTargetDomains(): Promise<PortalTargetDomain[]> {
   const d = await getCoreDomain();
-  return d ? [{ id: d.id, code: d.code, displayName: d.displayName }] : [];
+  return d ? [{ id: d.id, code: d.code, displayName: d.displayName, closed: false, closeDate: null }] : [];
 }
 
 /**
@@ -123,7 +127,7 @@ export async function loadInternalCyclePortal(
       cycles: resolved.choices.map((c) => ({
         id: c.id,
         name: c.name,
-        closeDate: c.closeDate ? c.closeDate.toISOString() : null,
+        deadline: applicantDeadline(c.domains, c)?.toISOString() ?? null,
         href: applicantPortalPath(applicants, c.id),
       })),
     };
@@ -135,7 +139,7 @@ export async function loadInternalCyclePortal(
   const cycle = await prisma.applicationCycle.findUnique({
     where: { id: active.id },
     include: {
-      domains: { include: { domain: true } },
+      domains: { where: { isReady: true }, include: { domain: true } },
     },
   });
   if (!cycle || !cycle.applicationFormId) {
@@ -147,8 +151,14 @@ export async function loadInternalCyclePortal(
 
   // target-domains cycles let the applicant pick from the cycle's real target
   // domains; single-core-domain cycles auto-select the one CORE domain.
-  const targetDomains: PortalDomain[] = showDomainPicker
-    ? cycle.domains.map((d) => ({ id: d.domainId, code: d.domain.code, displayName: d.domain.displayName }))
+  const targetDomains: PortalTargetDomain[] = showDomainPicker
+    ? cycle.domains.map((d) => ({
+        id: d.domainId,
+        code: d.domain.code,
+        displayName: d.domain.displayName,
+        closed: isDomainClosed(d, cycle),
+        closeDate: domainCloseDate(d, cycle)?.toISOString() ?? null,
+      }))
     : await coreTargetDomains();
 
   const draft = await prisma.application.findFirst({
@@ -159,6 +169,10 @@ export async function loadInternalCyclePortal(
     },
   });
   const status = draft?.statusUpdates[0]?.newStatus ?? null;
+  const selectedDomainIds = (draft?.domainApplications ?? [])
+    .filter((da) => da.selected && da.domainId)
+    .map((da) => da.domainId as string);
+  const deadline = applicantDeadline(cycle.domains, cycle, selectedDomainIds);
   const tracker =
     status === "Submitted"
       ? await loadApplicationTracker(auth.user.sub, active.id, active.currentStatus)
@@ -173,7 +187,7 @@ export async function loadInternalCyclePortal(
       id: cycle.id,
       name: cycle.name,
       currentStatus: active.currentStatus,
-      closeDate: cycle.closeDate ? cycle.closeDate.toISOString() : null,
+      deadline: deadline?.toISOString() ?? null,
       formVersionId: form.versionId,
       // Frozen versions may hold legacy ProseMirror info bodies — convert on
       // read so the fill UI only ever sees string | blocks.
@@ -186,9 +200,7 @@ export async function loadInternalCyclePortal(
           id: draft.id,
           status,
           answers: (draft.answers as Record<string, string>) ?? {},
-          selectedDomainIds: draft.domainApplications
-            .filter((da) => da.selected && da.domainId)
-            .map((da) => da.domainId as string),
+          selectedDomainIds,
         }
       : null,
     tracker: tracker
@@ -235,7 +247,7 @@ export async function handleInternalCyclePortalAction(
     const cycle = await prisma.applicationCycle.findUniqueOrThrow({
       where: { id: active.id },
       include: {
-        domains: { select: { domainId: true } },
+        domains: { where: { isReady: true }, select: { domainId: true, closeDate: true } },
       },
     });
     if (!cycle.applicationFormId) {
@@ -253,11 +265,16 @@ export async function handleInternalCyclePortalAction(
     // target-domains cycles read the applicant's picks; single-core-domain
     // cycles ignore any client input and target every linked domain (the one
     // CORE domain).
-    const selectedDomainIds = showDomainPicker
+    const pickedDomainIds = showDomainPicker
       ? (JSON.parse((formData.get("selectedDomainIds") as string) || "[]") as string[]).filter((id) =>
           allowedDomainIds.has(id),
         )
       : [...allowedDomainIds];
+    // A closed domain never joins the selection, and one already in a draft is
+    // dropped: a member's application can't be edited after submitting, so a
+    // draft is never under review and nothing needs to stay frozen.
+    const closedDomainIds = closedDomainIdSet(cycle.domains, cycle);
+    const selectedDomainIds = pickedDomainIds.filter((id) => !closedDomainIds.has(id));
 
     if (intent === "submit") {
       const missing = findMissingRequired(questions, (q) => answers[q.key]).map(
@@ -272,9 +289,12 @@ export async function handleInternalCyclePortalAction(
       if (selectedDomainIds.length === 0) {
         return Response.json(
           {
-            error: showDomainPicker
-              ? "Select at least one target domain before submitting."
-              : "This cycle is not configured — no target to apply to.",
+            error:
+              pickedDomainIds.length > 0
+                ? "Every domain you picked has closed. Pick an open domain to submit."
+                : showDomainPicker
+                  ? "Select at least one target domain before submitting."
+                  : "This cycle is not configured — no target to apply to.",
           },
           { status: 400 },
         );
