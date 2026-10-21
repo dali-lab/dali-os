@@ -18,6 +18,7 @@ import type { Route } from "./+types/api.meeting-recordings.$id";
 import { z } from "zod";
 import type { Prisma } from "~/generated/prisma/client";
 import { requireAuth } from "~/lib/auth";
+import { logAuditEvent } from "~/lib/audit";
 import { prisma } from "~/lib/db";
 import { isCore } from "~/lib/roles";
 import { deletePrefix } from "~/lib/transcription/chunks.server";
@@ -154,6 +155,13 @@ export async function action({ request, params }: Route.ActionArgs) {
     }
     await deletePrefix(rec.id);
     await prisma.meetingRecording.delete({ where: { id: rec.id } });
+    await logAuditEvent({
+      action: "recording.discard",
+      userId: auth.user.sub,
+      targetId: rec.id,
+      metadata: { ownerId: rec.userId, documentName: rec.documentName, status: rec.status },
+      request,
+    });
     return Response.json({ ok: true });
   }
   if (request.method !== "POST") {
@@ -349,6 +357,13 @@ export async function action({ request, params }: Route.ActionArgs) {
         await finalizeEmpty(rec);
       }
     }
+    await logAuditEvent({
+      action: "recording.stop",
+      userId: auth.user.sub,
+      targetId: rec.id,
+      metadata: { final: body.final === true, byOwner: isOwner },
+      request,
+    });
     return Response.json({ ok: true });
   }
 
