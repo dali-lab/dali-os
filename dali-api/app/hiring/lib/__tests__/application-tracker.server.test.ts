@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
 vi.mock("~/lib/db");
 
@@ -30,6 +30,12 @@ beforeEach(() => {
   mockPrisma.application = { findFirst: vi.fn().mockResolvedValue(null) };
 });
 
+afterEach(() => {
+  vi.useRealTimers();
+});
+
+const pinNow = (iso: string) => vi.useFakeTimers({ now: new Date(iso), toFake: ["Date"] });
+
 describe("loadApplicationTracker", () => {
   it("has no deadline and treats having no ready domains as closed (nothing to apply to)", async () => {
     const result = await loadApplicationTracker(USER_ID, CYCLE_ID, "Open");
@@ -39,6 +45,7 @@ describe("loadApplicationTracker", () => {
   });
 
   it("deadline is the latest close across every ready domain when nothing is selected yet", async () => {
+    pinNow("2025-12-15T12:00:00Z");
     mockPrisma.applicationCycle.findUnique.mockResolvedValue({ closeDate: new Date("2026-01-01T04:59:59Z") });
     mockPrisma.domainApplicationCycle.findMany.mockResolvedValue([
       { domainId: "d1", closeDate: null, domain: { name: "AI" } },
@@ -50,6 +57,7 @@ describe("loadApplicationTracker", () => {
   });
 
   it("deadline narrows to only the applicant's selected domains once they've picked", async () => {
+    pinNow("2025-12-15T12:00:00Z");
     mockPrisma.applicationCycle.findUnique.mockResolvedValue({ closeDate: new Date("2026-01-01T04:59:59Z") });
     mockPrisma.domainApplicationCycle.findMany.mockResolvedValue([
       { domainId: "d1", closeDate: null, domain: { name: "AI" } },
@@ -65,6 +73,57 @@ describe("loadApplicationTracker", () => {
     // Only d1 (inherits the cycle's close) is selected, so Web's later close
     // doesn't count even though it's the later date overall.
     expect(result.deadline).toBe(new Date("2026-01-01T04:59:59Z").toISOString());
+  });
+
+  it("deadline skips a selected domain that has closed and falls to the open ones they could still add", async () => {
+    pinNow("2026-10-21T14:00:00Z");
+    mockPrisma.applicationCycle.findUnique.mockResolvedValue({ closeDate: new Date("2026-10-21T03:59:59Z") });
+    mockPrisma.domainApplicationCycle.findMany.mockResolvedValue([
+      { domainId: "uiux", closeDate: null, domain: { name: "UI/UX Design" } },
+      { domainId: "engs", closeDate: new Date("2026-10-26T03:59:59Z"), domain: { name: "Engineering" } },
+    ]);
+    mockPrisma.application.findFirst.mockResolvedValue({
+      id: "app-1",
+      statusUpdates: [{ newStatus: "Submitted", createdAt: new Date("2026-10-15") }],
+      domainApplications: [da({ domainId: "uiux", domainName: "UI/UX Design" })],
+    });
+
+    const result = await loadApplicationTracker(USER_ID, CYCLE_ID, "Open");
+    expect(result.deadline).toBe("2026-10-26T03:59:59.000Z");
+    expect(result.hasOpenSelectedDomain).toBe(false);
+    expect(result.addableDomainNames).toEqual(["Engineering"]);
+  });
+
+  it("deadline stays on the applicant's own open domain when one is open", async () => {
+    pinNow("2026-10-21T14:00:00Z");
+    mockPrisma.applicationCycle.findUnique.mockResolvedValue({ closeDate: new Date("2026-10-21T03:59:59Z") });
+    mockPrisma.domainApplicationCycle.findMany.mockResolvedValue([
+      { domainId: "uiux", closeDate: null, domain: { name: "UI/UX Design" } },
+      { domainId: "engs", closeDate: new Date("2026-10-26T03:59:59Z"), domain: { name: "Engineering" } },
+      { domainId: "pm", closeDate: new Date("2026-10-29T03:59:59Z"), domain: { name: "Product Management" } },
+    ]);
+    mockPrisma.application.findFirst.mockResolvedValue({
+      id: "app-1",
+      statusUpdates: [{ newStatus: "Submitted", createdAt: new Date("2026-10-15") }],
+      domainApplications: [da({ domainId: "uiux" }), da({ id: "da-2", domainId: "engs" })],
+    });
+
+    const result = await loadApplicationTracker(USER_ID, CYCLE_ID, "Open");
+    expect(result.deadline).toBe("2026-10-26T03:59:59.000Z");
+    expect(result.hasOpenSelectedDomain).toBe(true);
+    expect(result.addableDomainNames).toEqual(["Product Management"]);
+  });
+
+  it("deadline is null once every ready domain has closed", async () => {
+    pinNow("2026-10-27T14:00:00Z");
+    mockPrisma.applicationCycle.findUnique.mockResolvedValue({ closeDate: new Date("2026-10-21T03:59:59Z") });
+    mockPrisma.domainApplicationCycle.findMany.mockResolvedValue([
+      { domainId: "engs", closeDate: new Date("2026-10-26T03:59:59Z"), domain: { name: "Engineering" } },
+    ]);
+
+    const result = await loadApplicationTracker(USER_ID, CYCLE_ID, "Open");
+    expect(result.deadline).toBeNull();
+    expect(result.addableDomainNames).toEqual([]);
   });
 
   it("marks a selected DA closed with its own closeDate and leaves submittedAt through", async () => {

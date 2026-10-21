@@ -11,11 +11,11 @@ import {
   domainApplicationStatusInclude,
 } from "~/hiring/lib/domain-application-status";
 import { domainCloseDate, isDomainClosed } from "~/hiring/lib/domain-windows";
+import { derivedCycleStatus } from "~/hiring/lib/cycles";
 import { APPLICATION_TZ, formatInTimeZone } from "~/lib/timezone";
 import { listMyApplications } from "~/education/lib/offerings.server";
 import { MyStatusChip } from "~/education/components/OfferingCard";
 import { ApplicantErrorBoundary } from "~/components/ApplicantErrorBoundary";
-import type { ApplicationCycleStatus } from "~/generated/prisma/enums";
 
 export const meta: Route.MetaFunction = () => [{ title: "My applications · DALI" }];
 
@@ -31,7 +31,10 @@ async function loadHiringSummaries(userId: string) {
     include: {
       statusUpdates: true,
       applicationCycle: {
-        include: { statusUpdates: { orderBy: { createdAt: "desc" }, take: 1 } },
+        include: {
+          statusUpdates: { orderBy: { createdAt: "desc" }, take: 1 },
+          domains: { where: { isReady: true }, select: { closeDate: true } },
+        },
       },
       domainApplications: {
         where: { selected: true },
@@ -56,13 +59,7 @@ async function loadHiringSummaries(userId: string) {
 
   return applications.map((application) => {
     const cycle = application.applicationCycle;
-    const latestCycleStatus = cycle.statusUpdates[0]?.newStatus ?? "Draft";
-    // An Open cycle past its close date is under review, as getActiveCycles derives.
-    const cycleStatus = (
-      latestCycleStatus === "Open" && cycle.closeDate && new Date() > cycle.closeDate
-        ? "UnderReview"
-        : latestCycleStatus
-    ) as ApplicationCycleStatus;
+    const cycleStatus = derivedCycleStatus(cycle);
 
     // Withdrawn (which always follows Submitted) wins over the earlier entries.
     const latest = application.statusUpdates

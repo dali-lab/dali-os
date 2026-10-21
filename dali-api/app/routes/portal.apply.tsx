@@ -24,7 +24,7 @@ import {
 } from "~/hiring/lib/start-terms.server";
 import { safeParseJsonString } from "~/forms/lib/forms-data";
 import { reconcileDomainApplications } from "~/hiring/lib/domain-application";
-import { domainCloseDate, latestCloseDate } from "~/hiring/lib/domain-windows";
+import { applicantDeadline, domainCloseDate } from "~/hiring/lib/domain-windows";
 import {
   applicationLock,
   closedDomainIdSet,
@@ -185,12 +185,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const closedSelectedDomainIds = selectedDas
     .filter(da => closedDomainIds.has(da.domainId))
     .map(da => da.domainId);
-  const selectedDomainIdSet = new Set(selectedDas.map(da => da.domainId));
-  const domainsForDeadline =
-    selectedDomainIdSet.size > 0
-      ? cycle.domains.filter(dac => selectedDomainIdSet.has(dac.domainId))
-      : cycle.domains;
-  const deadline = latestCloseDate(domainsForDeadline, cycle);
+  const deadline = applicantDeadline(cycle.domains, cycle, selectedDas.map(da => da.domainId));
 
   // Build domain info with each domain's challenge Forms (applicant picks one).
   // Each option carries an opaque "form:<formId>" id. A cycle without
@@ -1863,7 +1858,7 @@ function ApplyForm() {
               .filter(d => d.closeDate)
               .map(d => (
                 <li key={d.id}>
-                  {d.name} closes {formatDeadline(d.closeDate!, APPLICATION_TZ)}
+                  {d.name} {d.closed ? "closed" : "closes"} {formatDeadline(d.closeDate!, APPLICATION_TZ)}
                 </li>
               ))}
           </ul>
