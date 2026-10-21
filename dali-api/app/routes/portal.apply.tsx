@@ -684,6 +684,13 @@ export async function action({ request }: Route.ActionArgs) {
     ];
     const domainAnswers = domainAnswersRaw.filter(da => !frozenDaIds.has(da.domainApplicationId));
 
+    // With only closed domains selected, a submit would mark the application
+    // Submitted and send the confirmation while stamping no domain, so no
+    // reviewer ever sees it.
+    if (selectedDomainIds.length > 0 && selectedDomainIds.every(id => closedDomainIds.has(id))) {
+      return { error: "Every domain you picked has closed. Add an open domain to submit." };
+    }
+
     // Reused waitlisted answers were validated when they were first submitted
     // and can't be edited now; what gets checked for those DAs is the continued
     // interest form.

@@ -21,6 +21,16 @@ export function isDomainClosed(domain: DomainWindow, cycle: CycleWindow, now: Da
   return close !== null && now > close;
 }
 
+/** The cycle status as one domain's lead works it: an Open cycle is UnderReview for a domain whose own window has closed. */
+export function domainReviewStatus<S extends string | null>(
+  cycleStatus: S,
+  domain: DomainWindow,
+  cycle: CycleWindow,
+  now: Date = new Date(),
+): S | "UnderReview" {
+  return cycleStatus === "Open" && isDomainClosed(domain, cycle, now) ? "UnderReview" : cycleStatus;
+}
+
 /** The latest close among the given domains: an applicant's own deadline when passed their selected domains. */
 export function latestCloseDate(domains: DomainWindow[], cycle: CycleWindow): Date | null {
   let latest: Date | null = null;
