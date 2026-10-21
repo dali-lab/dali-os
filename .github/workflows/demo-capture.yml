@@ -6,6 +6,7 @@ name: Demo capture
 
 on:
   pull_request:
+    branches: [staging]
     paths: ['dali-api/demos/**']
   workflow_dispatch:
     inputs:
@@ -81,7 +82,7 @@ jobs:
         run: |
           files=""
           if [ "${{ github.event_name }}" = "pull_request" ]; then
-            files=$(git diff --name-only --diff-filter=d "origin/${BASE_REF}...HEAD" -- 'dali-api/demos/*.demo.ts' | sed 's#^dali-api/##' | tr '\n' ' ')
+            files=$(git diff --name-only --diff-filter=d "origin/${BASE_REF}...HEAD" -- 'demos/*.demo.ts' | sed 's#^dali-api/##' | tr '\n' ' ')
           fi
           # Only lib/ changed (or a manual run): record everything.
           echo "files=${files}" >> "$GITHUB_OUTPUT"
