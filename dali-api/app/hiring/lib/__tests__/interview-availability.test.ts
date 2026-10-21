@@ -23,7 +23,7 @@ const config = {
 const at = (day: number, hh: number, mm = 0) => new Date(Date.UTC(2099, 0, day, hh + 5, mm));
 
 function freeBusy(free: { start: Date; end: Date }[], hasCalendar: boolean) {
-  return { userId: "u", free, busy: [], hasCalendar, calendarError: false };
+  return { userId: "u", free, busy: [], working: [], hasCalendar, calendarError: false };
 }
 
 let n = 0;

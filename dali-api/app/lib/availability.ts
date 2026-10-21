@@ -33,6 +33,7 @@ export interface ComputeInput {
 export interface ComputeOutput {
   free: Interval[];
   busy: Interval[];
+  working: Interval[];
 }
 
 /**
@@ -51,7 +52,7 @@ export function computeFreeIntervals(input: ComputeInput): ComputeOutput {
   const { windowStart, windowEnd, workingHours, externalBusy, bufferMin, timezone } = input;
 
   if (windowEnd.getTime() <= windowStart.getTime()) {
-    return { free: [], busy: [] };
+    return { free: [], busy: [], working: [] };
   }
 
   // Multiple segments per day-of-week are allowed (e.g. 07:00–09:00 Remote and
@@ -104,7 +105,7 @@ export function computeFreeIntervals(input: ComputeInput): ComputeOutput {
 
   // (4) Subtract busy from working hours.
   const free = subtractIntervals(mergedWork, mergedBusy);
-  return { free, busy: mergedBusy };
+  return { free, busy: mergedBusy, working: mergedWork };
 }
 
 // ─── helpers ────────────────────────────────────────────────────────────────
@@ -216,6 +217,7 @@ export async function computeUserFreeBusy(
   userId: string;
   free: Interval[];
   busy: Interval[];
+  working: Interval[];
   /**
    * True when the user exposes a real busy source (≥1 enabled Google calendar
    * link). When false, `free` is derived from working hours alone (or a 24/7
@@ -277,7 +279,7 @@ export async function computeUserFreeBusy(
     end: new Date(b.end),
   }));
 
-  const { free, busy } = computeFreeIntervals({
+  const { free, busy, working } = computeFreeIntervals({
     windowStart,
     windowEnd,
     workingHours,
@@ -287,7 +289,7 @@ export async function computeUserFreeBusy(
   });
   const hasCalendar = calLinks.length > 0;
   const calendarError = calLinks.some((l) => l.syncError != null);
-  return { userId, free, busy, hasCalendar, calendarError };
+  return { userId, free, busy, working, hasCalendar, calendarError };
 }
 
 /**

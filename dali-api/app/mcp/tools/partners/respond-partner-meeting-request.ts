@@ -12,7 +12,8 @@ export const RESPOND_PARTNER_MEETING_REQUEST_TOOL = {
   description:
     "Accept or decline a partner's meeting request (Core only). Accept schedules a real meeting " +
     "(Google invite + Meet link to the partner) across the request's resolved team; if a participant " +
-    "has since gone busy, it still schedules and the result flags conflict:true with busyUserIds. " +
+    "has since gone busy or the slot is outside their working hours, it still schedules and the result " +
+    "flags conflict:true with busyUserIds and outsideHoursUserIds. " +
     "Decline takes an optional note and emails the partner.",
   inputSchema: {
     type: "object" as const,
@@ -57,7 +58,9 @@ export async function runRespondPartnerMeetingRequest(
 
   return {
     ok: true,
-    ...(result.conflict ? { conflict: true, busyUserIds: result.busyUserIds } : {}),
+    ...(result.conflict
+      ? { conflict: true, busyUserIds: result.busyUserIds, outsideHoursUserIds: result.outsideHoursUserIds }
+      : {}),
     ...(result.scheduledMeetingId ? { scheduledMeetingId: result.scheduledMeetingId } : {}),
   };
 }

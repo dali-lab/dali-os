@@ -463,11 +463,14 @@ export type GroupAvailDay = {
   dayOfMonth: number;
   matches: { startHour: number; durationHours: number }[];
   busy: { startHour: number; durationHours: number }[];
+  /** Hours when every participant is inside their working hours. */
+  working: { startHour: number; durationHours: number }[];
 };
 
 export type PerUserFree = {
   userId: string;
   free: { startIso: string; endIso: string }[];
+  working: { startIso: string; endIso: string }[];
   /** False when the user has no linked calendar (or a failed sync): their
    *  availability is unknown, not free. See computeUserFreeBusy. */
   hasCalendar: boolean;

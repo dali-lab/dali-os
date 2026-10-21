@@ -10,10 +10,11 @@ vi.mock("~/partners/lib/partner-meetings.server", () => ({
 }));
 vi.mock("~/lib/availability", async (orig) => {
   const real = await orig<typeof import("~/lib/availability")>();
-  return { ...real, computeUserFreeBusy: vi.fn().mockResolvedValue({ free: [], busy: [] }) };
+  return { ...real, computeUserFreeBusy: vi.fn().mockResolvedValue({ free: [], busy: [], working: [] }) };
 });
 
 import { prisma } from "~/lib/db";
+import { computeUserFreeBusy } from "~/lib/availability";
 import { requirePartnerAccount } from "~/partners/lib/partner-auth.server";
 import { partnerHasProjectAccess } from "~/partners/lib/partner-access";
 import { resolveMeetingParticipantIds } from "~/partners/lib/partner-meetings.server";
@@ -78,6 +79,25 @@ describe("POST /api/partner/availability", () => {
     const json = await res.json();
     expect(json).toHaveProperty("days");
     expect(json).not.toHaveProperty("perUser");
+  });
+
+  it("returns the team's shared working hours on each day without naming anyone", async () => {
+    mockPrisma.partnerApplication.findFirst.mockResolvedValue({ id: "app-1" });
+    vi.mocked(resolveMeetingParticipantIds).mockResolvedValue(["core-1"]);
+    vi.mocked(computeUserFreeBusy).mockResolvedValueOnce({
+      userId: "core-1",
+      free: [],
+      busy: [],
+      working: [{ start: new Date("2026-11-03T14:00:00Z"), end: new Date("2026-11-03T22:00:00Z") }],
+      hasCalendar: true,
+      calendarError: false,
+    });
+    const res = await post({ ...BASE_BODY, applicationId: "app-1" });
+    const json = await res.json();
+    expect(json.days).toEqual([
+      expect.objectContaining({ dayKey: "2026-11-03", working: [{ startHour: 9, durationHours: 8 }] }),
+    ]);
+    expect(JSON.stringify(json)).not.toContain("core-1");
   });
 
   it("scopes the ownership check to this contact (one partner can't probe another's application)", async () => {
