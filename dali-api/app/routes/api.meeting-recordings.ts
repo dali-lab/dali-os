@@ -17,6 +17,7 @@ import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { getUserRoles } from "~/lib/roles";
 import { attachMeetingNote } from "~/lib/scheduled-meeting";
 import { pageDocName } from "~/collab/roomName";
+import { logAuditEvent } from "~/lib/audit";
 import {
   canRecordInto,
   createRecording,
@@ -93,6 +94,14 @@ export async function action({ request }: Route.ActionArgs) {
       { status: 409 },
     );
   }
+
+  await logAuditEvent({
+    action: "recording.start",
+    userId: auth.user.sub,
+    targetId: rec.id,
+    metadata: { documentName, scheduledMeetingId: scheduledMeetingId ?? null },
+    request,
+  });
 
   return Response.json(
     {

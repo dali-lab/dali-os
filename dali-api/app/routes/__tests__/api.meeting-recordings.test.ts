@@ -15,8 +15,10 @@ vi.mock("~/lib/meeting-recording.server", () => ({
 }));
 vi.mock("~/lib/transcription/provider", () => ({ isTranscriptionEnabled: vi.fn().mockReturnValue(true) }));
 vi.mock("~/lib/ai.server", () => ({ isAiEnabled: vi.fn().mockReturnValue(true) }));
+vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
 
 import { requireAuth } from "~/lib/auth";
+import { logAuditEvent } from "~/lib/audit";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { attachMeetingNote } from "~/lib/scheduled-meeting";
 import {
@@ -133,5 +135,54 @@ describe("POST /api/meeting-recordings", () => {
   it("requires documentName or a resolvable scheduledMeetingId", async () => {
     const res = await run({});
     expect(res.status).toBe(400);
+  });
+
+  describe("audit log", () => {
+    it("logs recording.start with the note and meeting", async () => {
+      vi.mocked(attachMeetingNote).mockResolvedValue({ ok: true, notePageId: "p1", notebookId: null, createdNotebook: false, seriesNotebookId: null });
+      await run({ scheduledMeetingId: "m1" });
+      expect(logAuditEvent).toHaveBeenCalledTimes(1);
+      expect(logAuditEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: "recording.start",
+          userId: "u1",
+          targetId: "rec1",
+          metadata: { documentName: "doc:p1:body", scheduledMeetingId: "m1" },
+        }),
+      );
+    });
+
+    it("logs a null scheduledMeetingId for a plain document recording", async () => {
+      await run({ documentName: "doc:p1:body" });
+      expect(logAuditEvent).toHaveBeenCalledWith(
+        expect.objectContaining({ metadata: { documentName: "doc:p1:body", scheduledMeetingId: null } }),
+      );
+    });
+
+    it("does not log when access is refused", async () => {
+      vi.mocked(canRecordInto).mockResolvedValue(false);
+      expect((await run({ documentName: "doc:p1:body" })).status).toBe(403);
+      expect(logAuditEvent).not.toHaveBeenCalled();
+    });
+
+    it("does not log when the flag is off", async () => {
+      vi.mocked(isFeatureEnabled).mockResolvedValue(false);
+      await run({ documentName: "doc:p1:body" });
+      expect(logAuditEvent).not.toHaveBeenCalled();
+    });
+
+    it("does not log when someone is already recording", async () => {
+      vi.mocked(createRecording).mockResolvedValue({
+        busy: { id: "live1", userId: "u2", ownerName: "Ada L", status: "Recording", createdAt: new Date() },
+      } as never);
+      expect((await run({ documentName: "doc:p1:body" })).status).toBe(409);
+      expect(logAuditEvent).not.toHaveBeenCalled();
+    });
+
+    it("does not log when the lab-wide cap is hit", async () => {
+      vi.mocked(createRecording).mockResolvedValue(null as never);
+      expect((await run({ documentName: "doc:p1:body" })).status).toBe(503);
+      expect(logAuditEvent).not.toHaveBeenCalled();
+    });
   });
 });
