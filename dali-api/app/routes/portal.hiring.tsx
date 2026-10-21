@@ -11,7 +11,7 @@ import { ApplicantErrorBoundary } from "~/components/ApplicantErrorBoundary";
 import { Confetti } from "~/components/Confetti";
 import { resolveUserTimeZone } from "~/lib/timezone";
 import { loadApplicationTracker } from "~/hiring/lib/application-tracker.server";
-import { trackerTopLevelStage } from "~/hiring/lib/tracker-stage";
+import { submittedEditBanner, trackerTopLevelStage } from "~/hiring/lib/tracker-stage";
 import {
   ApplicationDraftView,
   ApplicationOpenView,
@@ -54,6 +54,8 @@ export async function loader({ request }: Route.LoaderArgs) {
     slotDurationMinutes: 30,
     hasApplication: false,
     applicationStatus: null as string | null,
+    hasOpenSelectedDomain: false,
+    addableDomainNames: [] as string[],
     viewerTimeZone,
   };
 
@@ -140,6 +142,8 @@ export default function Portal() {
     slotDurationMinutes,
     hasApplication,
     applicationStatus,
+    hasOpenSelectedDomain,
+    addableDomainNames,
     viewerTimeZone,
   } = data;
   // The strikethrough "extended from" copy only makes sense when the
@@ -173,6 +177,13 @@ export default function Portal() {
   }
 
   const das = domainApplications as DomainAppData[];
+
+  const editBanner = submittedEditBanner({
+    cycleStatus,
+    applicationStatus,
+    hasOpenSelectedDomain: !!hasOpenSelectedDomain,
+    addableDomainNames: addableDomainNames ?? [],
+  });
 
   const topLevelStage = trackerTopLevelStage({
     applicationStatus,
@@ -239,16 +250,14 @@ export default function Portal() {
         {topLevelStage === "Pending" && (
           <>
             <PendingView cycleName={cycleName} />
-            {cycleStatus === "Open" && (
+            {editBanner && (
               <div className="max-w-2xl mx-auto mt-4 rounded-os-item border border-os-accent/35 bg-os-accent/15 px-5 py-4 flex items-center justify-between gap-4">
-                <p className="text-sm text-os-accent">
-                  The cycle is still open — you can still update your application.
-                </p>
+                <p className="text-sm text-os-accent">{editBanner.message}</p>
                 <Link
                   to={applyHref}
                   className="shrink-0 px-4 py-2 rounded-full bg-os-accent text-os-bg text-sm font-semibold hover:bg-os-accent-hover transition"
                 >
-                  Edit Application
+                  {editBanner.cta}
                 </Link>
               </div>
             )}
@@ -259,16 +268,14 @@ export default function Portal() {
 
         {das.length > 0 && applicationStatus !== "Draft" && applicationStatus !== "Withdrawn" && (
           <div className="space-y-8">
-            {cycleStatus === "Open" && applicationStatus === "Submitted" && (
+            {editBanner && (
               <div className="rounded-os-item border border-os-accent/35 bg-os-accent/15 px-5 py-4 flex items-center justify-between gap-4">
-                <p className="text-sm text-os-accent">
-                  The cycle is still open — you can still update your application.
-                </p>
+                <p className="text-sm text-os-accent">{editBanner.message}</p>
                 <Link
                   to={applyHref}
                   className="shrink-0 px-4 py-2 rounded-full bg-os-accent text-os-bg text-sm font-semibold hover:bg-os-accent-hover transition"
                 >
-                  Edit Application
+                  {editBanner.cta}
                 </Link>
               </div>
             )}

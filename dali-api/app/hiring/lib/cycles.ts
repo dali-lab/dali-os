@@ -25,17 +25,21 @@ function isPastClose(cycle: CycleWithWindows): boolean {
   return close !== null && new Date() > close;
 }
 
-// Derive UnderReview when an Open cycle is past its close date. The DB write
-// is materialized lazily by autoCloseIfExpired (called from the status loader).
+/** The cycle's latest status, with an Open cycle past its close (its last ready domain's) read as UnderReview. */
+export function derivedCycleStatus(cycle: CycleWithWindows): ApplicationCycleStatus {
+  const latest = (cycle.statusUpdates[0]?.newStatus ?? "Draft") as ApplicationCycleStatus;
+  return latest === "Open" && isPastClose(cycle) ? "UnderReview" : latest;
+}
+
+// The DB write for a derived UnderReview is materialized lazily by
+// autoCloseIfExpired (called from the status loader).
 function withCurrentStatus<C extends CycleWithWindows>(
   cycle: C,
 ): (C & { currentStatus: ActiveStatus }) | null {
-  const latest = cycle.statusUpdates[0]?.newStatus;
-  if (!latest || !(ACTIVE_STATUSES as readonly string[]).includes(latest)) return null;
-  if (latest === "Open" && isPastClose(cycle)) {
-    return { ...cycle, currentStatus: "UnderReview" };
-  }
-  return { ...cycle, currentStatus: latest as ActiveStatus };
+  if (cycle.statusUpdates.length === 0) return null;
+  const status = derivedCycleStatus(cycle);
+  if (!(ACTIVE_STATUSES as readonly string[]).includes(status)) return null;
+  return { ...cycle, currentStatus: status as ActiveStatus };
 }
 
 /**

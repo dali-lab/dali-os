@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { trackerTopLevelStage } from "~/hiring/lib/tracker-stage";
+import { joinNames, submittedEditBanner, trackerTopLevelStage } from "~/hiring/lib/tracker-stage";
 
 const base = {
   applicationStatus: null as string | null,
@@ -60,5 +60,56 @@ describe("trackerTopLevelStage", () => {
 
   it("leaves a draft with no domain rows to the page (no top-level view)", () => {
     expect(trackerTopLevelStage({ ...base, applicationStatus: "Draft", hasApplication: true })).toBeNull();
+  });
+});
+
+describe("submittedEditBanner", () => {
+  const submitted = {
+    cycleStatus: "Open" as string | null,
+    applicationStatus: "Submitted" as string | null,
+    hasOpenSelectedDomain: false,
+    addableDomainNames: [] as string[],
+  };
+
+  it("offers Edit Application while one of the applicant's own domains is open", () => {
+    expect(submittedEditBanner({ ...submitted, hasOpenSelectedDomain: true, addableDomainNames: ["Engineering"] })).toEqual({
+      message: "The cycle is still open. You can still update your application.",
+      cta: "Edit Application",
+    });
+  });
+
+  it("names the one open domain they could add when all of theirs have closed", () => {
+    expect(submittedEditBanner({ ...submitted, addableDomainNames: ["Engineering"] })).toEqual({
+      message: "Engineering is still open. You can add it to your application.",
+      cta: "Add Engineering",
+    });
+  });
+
+  it("names several open domains with a plural verb and a generic button", () => {
+    expect(submittedEditBanner({ ...submitted, addableDomainNames: ["Engineering", "Product Management"] })).toEqual({
+      message: "Engineering and Product Management are still open. You can add them to your application.",
+      cta: "Add a domain",
+    });
+  });
+
+  it("is null when nothing they could edit or add is open", () => {
+    expect(submittedEditBanner(submitted)).toBeNull();
+  });
+
+  it.each(["UnderReview", "Completed", null])("is null when the cycle is %s", (cycleStatus) => {
+    expect(submittedEditBanner({ ...submitted, cycleStatus, hasOpenSelectedDomain: true })).toBeNull();
+  });
+
+  it.each(["Draft", "Withdrawn", null])("is null for a %s application", (applicationStatus) => {
+    expect(submittedEditBanner({ ...submitted, applicationStatus, hasOpenSelectedDomain: true })).toBeNull();
+  });
+});
+
+describe("joinNames", () => {
+  it("joins zero, one, two, and three names", () => {
+    expect(joinNames([])).toBe("");
+    expect(joinNames(["A"])).toBe("A");
+    expect(joinNames(["A", "B"])).toBe("A and B");
+    expect(joinNames(["A", "B", "C"])).toBe("A, B, and C");
   });
 });

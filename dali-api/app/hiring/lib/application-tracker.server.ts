@@ -6,7 +6,8 @@ import {
 import type { ApplicationCycleStatus } from "~/generated/prisma/enums";
 import type { DomainAppData } from "~/hiring/components/ApplicationTracker";
 import { ensureInterviewMeetUrl } from "~/hiring/lib/interview-meet";
-import { domainCloseDate, isDomainClosed, latestCloseDate } from "./domain-windows";
+import { applicantDeadline, domainCloseDate, isDomainClosed } from "./domain-windows";
+import { joinNames } from "./tracker-stage";
 import { APPLICATION_TZ, formatInTimeZone } from "~/lib/timezone";
 
 // The applicant's tracker for one cycle: their application's overall status
@@ -69,13 +70,7 @@ export async function loadApplicationTracker(
   const selectedDomainIds = new Set(
     (application?.domainApplications ?? []).map((da: any) => da.domainId),
   );
-  // The applicant's own deadline: the latest close among their selected
-  // domains, or (with no selection yet) the latest among every ready domain.
-  const domainsForDeadline =
-    selectedDomainIds.size > 0
-      ? readyDomainRows.filter((d) => selectedDomainIds.has(d.domainId))
-      : readyDomainRows;
-  const deadline = latestCloseDate(domainsForDeadline, cycleWindow);
+  const deadline = applicantDeadline(readyDomainRows, cycleWindow, selectedDomainIds);
 
   const domainApplications: DomainAppData[] = await Promise.all((application?.domainApplications ?? []).map(async (da: any) => {
     const inferredStatus = inferDomainApplicationStatus(
@@ -127,6 +122,8 @@ export async function loadApplicationTracker(
     deadline: deadline ? deadline.toISOString() : null,
     allDomainsClosed,
     openDomainsNote: describeOpenDomainsNote(readyDomains),
+    hasOpenSelectedDomain: readyDomains.some((d) => !d.closed && selectedDomainIds.has(d.id)),
+    addableDomainNames: readyDomains.filter((d) => !d.closed && !selectedDomainIds.has(d.id)).map((d) => d.name),
   };
 }
 
@@ -154,12 +151,6 @@ export function describeOpenDomainsNote(
   const openNames = joinNames(open.map((d) => d.name));
   const verb = open.length === 1 ? "is" : "are";
   return `${closedSentences.join(". ")}. ${openNames} ${verb} still open.`;
-}
-
-function joinNames(names: string[]): string {
-  if (names.length <= 1) return names.join("");
-  if (names.length === 2) return names.join(" and ");
-  return `${names.slice(0, -1).join(", ")}, and ${names[names.length - 1]}`;
 }
 
 function formatMonD(iso: string): string {

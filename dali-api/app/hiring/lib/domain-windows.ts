@@ -63,26 +63,40 @@ export function earliestCloseDate(domains: DomainWindow[], cycle: CycleWindow): 
 type DomainWindowWithId = DomainWindow & { domainId: string };
 
 /**
- * The single close date worth showing for a cycle: the applicant's own
- * deadline (latest across `selectedDomainIds`, when given and non-empty), or
- * the latest across every ready domain otherwise. `earlierDomainsExist` is
- * true when some ready domain's effective close is earlier than that date —
- * the caller's cue to add a "some domains close earlier" qualifier, since the
- * single date shown is otherwise the latest, not the only, deadline.
+ * The applicant's own deadline: the latest close among their selected domains
+ * still taking applications, or, when none of theirs is open (or nothing is
+ * selected), the latest among every open domain, the ones they could still add.
+ * Null once every domain has closed.
+ */
+export function applicantDeadline(
+  domains: DomainWindowWithId[],
+  cycle: CycleWindow,
+  selectedDomainIds?: Iterable<string> | null,
+  now: Date = new Date(),
+): Date | null {
+  const open = domains.filter((d) => !isDomainClosed(d, cycle, now));
+  const selected = new Set(selectedDomainIds ?? []);
+  const mine = open.filter((d) => selected.has(d.domainId));
+  return latestCloseDate(mine.length > 0 ? mine : open, cycle);
+}
+
+/**
+ * The single close date worth showing for a cycle (`applicantDeadline`), and
+ * whether some other open domain closes earlier than it: the caller's cue to
+ * add a "some domains close earlier" qualifier.
  */
 export function cycleDeadlineSummary(
   domains: DomainWindowWithId[],
   cycle: CycleWindow,
   selectedDomainIds?: Iterable<string> | null,
+  now: Date = new Date(),
 ): { closeDate: Date | null; earlierDomainsExist: boolean } {
-  const selected = selectedDomainIds ? new Set(selectedDomainIds) : null;
-  const relevant = selected && selected.size > 0 ? domains.filter((d) => selected.has(d.domainId)) : domains;
-  const closeDate = latestCloseDate(relevant, cycle);
+  const closeDate = applicantDeadline(domains, cycle, selectedDomainIds, now);
   const earlierDomainsExist =
     closeDate !== null &&
     domains.some((d) => {
       const close = domainCloseDate(d, cycle);
-      return close !== null && close.getTime() < closeDate.getTime();
+      return close !== null && close > now && close.getTime() < closeDate.getTime();
     });
   return { closeDate, earlierDomainsExist };
 }

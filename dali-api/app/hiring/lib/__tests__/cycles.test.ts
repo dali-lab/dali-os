@@ -5,6 +5,7 @@ vi.mock("~/lib/db");
 import { prisma } from "~/lib/db";
 import {
   autoCloseIfExpired,
+  derivedCycleStatus,
   getActiveCycleById,
   getActiveCycles,
   getOpenCycles,
@@ -270,5 +271,20 @@ describe("autoCloseIfExpired()", () => {
     await autoCloseIfExpired(CYCLE_ID);
 
     expect(mockPrisma.$transaction).not.toHaveBeenCalled();
+  });
+});
+
+describe("derivedCycleStatus()", () => {
+  it("reads Open past the last ready domain's close as UnderReview", () => {
+    expect(derivedCycleStatus(cycleRow({ latestStatus: "Open", closeDate: PAST, domainCloses: [null] }))).toBe("UnderReview");
+  });
+
+  it("keeps Open past the cycle's own close while a ready domain is still open", () => {
+    expect(derivedCycleStatus(cycleRow({ latestStatus: "Open", closeDate: PAST, domainCloses: [null, FUTURE] }))).toBe("Open");
+  });
+
+  it("passes non-Open statuses through and treats no status row as Draft", () => {
+    expect(derivedCycleStatus(cycleRow({ latestStatus: "Completed", closeDate: PAST }))).toBe("Completed");
+    expect(derivedCycleStatus({ closeDate: null, domains: [], statusUpdates: [] })).toBe("Draft");
   });
 });
