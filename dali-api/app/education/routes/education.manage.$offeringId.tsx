@@ -377,6 +377,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
             present,
             excused,
             threshold: offering.completionThreshold,
+            minSessions: offering.completionMinSessions,
           }),
         ];
       }),

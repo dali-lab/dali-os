@@ -13,6 +13,12 @@ import {
   isMultiSession,
   type OfferingType,
 } from "~/education/lib/offering-type";
+import type { CompletionMode } from "~/education/lib/completion-rule";
+
+const COMPLETION_MODE_OPTIONS: SelectOption<CompletionMode>[] = [
+  { value: "percent", label: "% of sessions" },
+  { value: "sessions", label: "sessions attended" },
+];
 
 type Values = {
   type?: OfferingType;
@@ -24,6 +30,7 @@ type Values = {
   requiresReview?: boolean;
   calendarEmail?: string | null;
   completionThreshold?: number | null;
+  completionMinSessions?: number | null;
 };
 
 /**
@@ -66,6 +73,9 @@ export function OfferingFields({
   // The catalog-card icon. Held in state and posted as a hidden field, since
   // ProjectIconPicker is a controlled popover (no native input of its own).
   const [iconEmoji, setIconEmoji] = useState<string | null>(values.iconEmoji ?? null);
+  const [completionMode, setCompletionMode] = useState<CompletionMode>(
+    values.completionMinSessions != null ? "sessions" : "percent",
+  );
 
   return (
     <>
@@ -176,25 +186,42 @@ export function OfferingFields({
         </label>
 
         {multiSession && (
-          <label className="block">
+          <div className="block">
             <span className={LABEL}>
               <span className="inline-flex items-center gap-1">
-                Completion threshold (%)
-                {/* The tip is the only place this rule is stated. It used to be
-                    spelled out twice, in the tip and again in a paragraph
-                    under the field. */}
-                <InfoTip content="Share of sessions a student must attend to earn a certificate. Excused absences count as attended." />
+                Certificate requirement
+                <InfoTip content="How much a student must attend to earn a certificate. Excused absences count as attended." />
               </span>
             </span>
-            <input
-              type="number"
-              name="completionThresholdPct"
-              min={1}
-              max={100}
-              defaultValue={Math.round((values.completionThreshold ?? 0.8) * 100)}
-              className={INPUT}
-            />
-          </label>
+            <span className="mt-1.5 flex items-center gap-2">
+              <input
+                key={completionMode}
+                type="number"
+                name="completionAmount"
+                required
+                aria-label={completionMode === "sessions" ? "Sessions required" : "Percent of sessions required"}
+                min={1}
+                max={completionMode === "percent" ? 100 : undefined}
+                step={1}
+                defaultValue={
+                  completionMode === "sessions"
+                    ? (values.completionMinSessions ?? "")
+                    : Math.round((values.completionThreshold ?? 0.8) * 100)
+                }
+                className="w-24"
+              />
+              <span className="flex-1">
+                <Select<CompletionMode>
+                  name="completionMode"
+                  value={completionMode}
+                  onChange={setCompletionMode}
+                  options={COMPLETION_MODE_OPTIONS}
+                  ariaLabel="Requirement type"
+                  buttonClassName="w-full"
+                />
+              </span>
+            </span>
+          </div>
         )}
 
         <div className="sm:col-span-2">

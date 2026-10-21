@@ -4415,6 +4415,9 @@ model EducationOffering {
   // Fraction of sessions a student must attend (Present + Excused) to earn a
   // completion certificate. Miniseries and fellowships; workshops need one Present mark.
   completionThreshold  Float          @default(0.8)
+  // When set, replaces the fraction: a fixed count of sessions attended
+  // (Present + Excused) earns the certificate.
+  completionMinSessions Int?
 
   // Optional per-offering Google Workspace identity. Falls back to a shared
   // education identity if not set.
