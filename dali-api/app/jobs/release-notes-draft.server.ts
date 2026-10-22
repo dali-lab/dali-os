@@ -18,6 +18,7 @@ import {
   decideCursor,
   parseDraftEntries,
   pickCaptureVideoKey,
+  prNumbersFromCommitMessages,
   selectPrsToDraft,
   type PullForPrompt,
   type PullSummary,
@@ -49,44 +50,42 @@ async function writeLastSha(lastSha: string) {
   });
 }
 
-async function commitShas(gh: Octokit, repo: { owner: string; repo: string }, base: string, head: string) {
-  const shas: string[] = [];
-  for (let page = 1; shas.length < MAX_COMMITS; page++) {
+async function commitMessages(gh: Octokit, repo: { owner: string; repo: string }, base: string, head: string) {
+  const messages: string[] = [];
+  for (let page = 1; messages.length < MAX_COMMITS; page++) {
     const { data } = await gh.rest.repos.compareCommitsWithBasehead({
       ...repo,
       basehead: `${base}...${head}`,
       per_page: 100,
       page,
     });
-    shas.push(...data.commits.map((c) => c.sha));
+    messages.push(...data.commits.map((c) => c.commit.message));
     if (data.commits.length < 100) break;
   }
-  return shas.slice(0, MAX_COMMITS);
+  return messages.slice(0, MAX_COMMITS);
 }
 
-async function mergedPrsForCommits(
+// Not listPullRequestsAssociatedWithCommit: it returns a bodiless 500 for the
+// app installation token on commits that resolve fine with a user token.
+async function pullsByNumber(
   gh: Octokit,
   repo: { owner: string; repo: string },
-  shas: string[],
+  numbers: number[],
 ): Promise<PullSummary[]> {
   const prs: PullSummary[] = [];
-  for (const group of chunk(shas, LOOKUP_CONCURRENCY)) {
+  for (const group of chunk(numbers, LOOKUP_CONCURRENCY)) {
     const results = await Promise.all(
-      group.map((sha) =>
-        gh.rest.repos.listPullRequestsAssociatedWithCommit({ ...repo, commit_sha: sha, per_page: 10 }),
-      ),
+      group.map((pull_number) => gh.rest.pulls.get({ ...repo, pull_number })),
     );
-    for (const { data } of results) {
-      for (const pr of data) {
-        prs.push({
-          number: pr.number,
-          title: pr.title,
-          body: pr.body,
-          labels: pr.labels.map((l) => (typeof l === "string" ? l : (l.name ?? ""))),
-          mergedAt: pr.merged_at,
-          baseRef: pr.base.ref,
-        });
-      }
+    for (const { data: pr } of results) {
+      prs.push({
+        number: pr.number,
+        title: pr.title,
+        body: pr.body,
+        labels: pr.labels.map((l) => l.name ?? ""),
+        mergedAt: pr.merged_at,
+        baseRef: pr.base.ref,
+      });
     }
   }
   return prs;
@@ -183,8 +182,8 @@ export async function runReleaseNotesDraft(): Promise<JobResult> {
     return { items: 0, note: "first run, recorded the current prod sha" };
   }
 
-  const shas = await commitShas(gh, repo, decision.base, decision.head);
-  const found = await mergedPrsForCommits(gh, repo, shas);
+  const messages = await commitMessages(gh, repo, decision.base, decision.head);
+  const found = await pullsByNumber(gh, repo, prNumbersFromCommitMessages(messages));
   const cited = new Set(
     (await prisma.releaseNote.findMany({ select: { prNumbers: true } })).flatMap((n) => n.prNumbers),
   );

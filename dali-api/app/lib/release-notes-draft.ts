@@ -40,6 +40,19 @@ export function selectPrsToDraft(
   return out.sort((a, b) => a.number - b.number);
 }
 
+const SQUASH_SUFFIX = /\(#(\d+)\)\s*$/;
+const MERGE_COMMIT = /^Merge pull request #(\d+) /;
+
+export function prNumbersFromCommitMessages(messages: string[]): number[] {
+  const out = new Set<number>();
+  for (const message of messages) {
+    const subject = message.split("\n", 1)[0];
+    const match = SQUASH_SUFFIX.exec(subject) ?? MERGE_COMMIT.exec(subject);
+    if (match) out.add(Number(match[1]));
+  }
+  return [...out];
+}
+
 export function chunk<T>(items: T[], size: number): T[][] {
   const out: T[][] = [];
   for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));

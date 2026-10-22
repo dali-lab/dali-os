@@ -188,7 +188,7 @@ async function executeClaimed(
     return null;
   } catch (err) {
     const lastDurationMs = Date.now() - started;
-    const message = err instanceof Error ? err.message : String(err);
+    const message = errorMessage(err);
     console.error(`[jobs] ${def.name} failed after ${lastDurationMs}ms:`, err);
     await prisma.scheduledJob
       .update({
@@ -207,4 +207,11 @@ async function executeClaimed(
       );
     return message;
   }
+}
+
+function errorMessage(err: unknown): string {
+  if (!(err instanceof Error)) return String(err);
+  if (err.message) return err.message;
+  const { status, request } = err as { status?: number; request?: { method?: string; url?: string } };
+  return [err.name, status, request?.method, request?.url].filter(Boolean).join(" ");
 }

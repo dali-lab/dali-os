@@ -7,6 +7,7 @@ import {
   decideCursor,
   parseDraftEntries,
   pickCaptureVideoKey,
+  prNumbersFromCommitMessages,
   selectPrsToDraft,
   stripEmDashes,
   DRAFT_SYSTEM_PROMPT,
@@ -128,6 +129,31 @@ describe("selectPrsToDraft", () => {
 
   it("returns nothing for no input", () => {
     expect(sel([])).toEqual([]);
+  });
+});
+
+describe("prNumbersFromCommitMessages", () => {
+  it("reads the squash-merge suffix from the subject line", () => {
+    expect(prNumbersFromCommitMessages(["Audit log: sign-in trail (#2306)", "Fix (#7)  "])).toEqual([2306, 7]);
+  });
+
+  it("reads GitHub merge commits", () => {
+    expect(prNumbersFromCommitMessages(["Merge pull request #12 from dali-lab/x"])).toEqual([12]);
+  });
+
+  it("ignores numbers outside the subject or not at its end", () => {
+    expect(
+      prNumbersFromCommitMessages([
+        "Direct push\n\nFollow-up to (#5)",
+        "Reverts (#6) partially",
+        "Merge branch 'staging' into prod",
+        "",
+      ]),
+    ).toEqual([]);
+  });
+
+  it("dedupes in first-seen order", () => {
+    expect(prNumbersFromCommitMessages(["B (#2)", "A (#1)", "Revert B (#2)"])).toEqual([2, 1]);
   });
 });
 
