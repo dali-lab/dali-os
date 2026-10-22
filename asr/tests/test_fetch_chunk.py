@@ -28,7 +28,7 @@ def test_a_server_error_fails_without_the_url():
         with pytest.raises(RuntimeError) as info:
             fetch_chunk(client, SECRET_URL)
     assert str(info.value) == "chunk fetch failed: HTTP 500"
-    assert info.value.__suppress_context__
+    assert info.value.__context__ is None
 
 
 def test_a_transport_error_fails_without_the_url():
