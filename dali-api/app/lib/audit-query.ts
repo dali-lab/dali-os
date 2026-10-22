@@ -1,5 +1,6 @@
 import type { Prisma, PrismaClient } from "~/generated/prisma/client";
-import { AUDIT_ACTIONS, type AuditAction } from "~/lib/audit-actions";
+import { AUDIT_ACTIONS, AUDIT_AREAS, actionsInArea, type AuditAction } from "~/lib/audit-actions";
+import { APPLICATION_TZ, zonedDayEndUtc, zonedDayStartUtc } from "~/lib/timezone";
 
 // Validated filters for the AuditLog viewer + JSON API.
 //
@@ -17,6 +18,10 @@ import { AUDIT_ACTIONS, type AuditAction } from "~/lib/audit-actions";
 
 export type AuditFilters = {
   action: AuditAction | null;
+  area: string | null;
+  mcpReads: boolean;
+  // True only when the caller opted into hiding and no mcpReads=1 override is set.
+  hideMcpReads: boolean;
   userId: string | null;
   targetId: string | null;
   person: string | null;
@@ -27,6 +32,9 @@ export type AuditFilters = {
 type AuditQueryPrisma = Pick<PrismaClient, "user">;
 
 const ACTION_SET: ReadonlySet<string> = new Set(AUDIT_ACTIONS);
+const AREA_SET: ReadonlySet<string> = new Set(AUDIT_AREAS.map((a) => a.value));
+const MCP_READ_ACTION = "mcp.tool_read";
+const DATE_ONLY_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
 
 // Cuids start with `c` and run 20+ chars of lowercase alphanumerics. Loose
 // enough to catch both legacy cuid and cuid2.
@@ -49,10 +57,24 @@ function validDate(value: string | null): string | null {
   return isNaN(new Date(trimmed).getTime()) ? null : trimmed;
 }
 
-export function parseAuditFilters(params: URLSearchParams): AuditFilters {
+export type ParseAuditOptions = {
+  // The HTML viewer hides high-volume MCP reads by default; the JSON API and
+  // MCP tool leave this off and return everything.
+  hideMcpReads?: boolean;
+};
+
+export function parseAuditFilters(
+  params: URLSearchParams,
+  options: ParseAuditOptions = {},
+): AuditFilters {
   const action = clean(params.get("action"));
+  const area = clean(params.get("area"));
+  const mcpReads = params.get("mcpReads") === "1";
   return {
     action: action && ACTION_SET.has(action) ? (action as AuditAction) : null,
+    area: area && AREA_SET.has(area) ? area : null,
+    mcpReads,
+    hideMcpReads: Boolean(options.hideMcpReads) && !mcpReads,
     userId: clean(params.get("userId")),
     targetId: clean(params.get("targetId")),
     person: clean(params.get("person")),
@@ -61,15 +83,33 @@ export function parseAuditFilters(params: URLSearchParams): AuditFilters {
   };
 }
 
+// Date-only values are whole days in the lab zone; full datetimes are exact instants.
+function rangeBound(value: string, edge: "start" | "end"): Date {
+  const m = DATE_ONLY_RE.exec(value);
+  if (!m) return new Date(value);
+  const [y, mo, d] = [Number(m[1]), Number(m[2]), Number(m[3])];
+  if (edge === "start") return zonedDayStartUtc(y, mo, d, APPLICATION_TZ);
+  // zonedDayEndUtc is 23:59:59; extend to the last millisecond of the day.
+  return new Date(zonedDayEndUtc(y, mo, d, APPLICATION_TZ).getTime() + 999);
+}
+
+// An explicit action or area (even "mcp") overrides the read-hiding default.
+function buildActionClause(filters: AuditFilters): Prisma.AuditLogWhereInput["action"] {
+  if (filters.action) return filters.action;
+  if (filters.area) return { in: actionsInArea(filters.area) };
+  return filters.hideMcpReads ? { not: MCP_READ_ACTION } : undefined;
+}
+
 export function buildAuditWhere(filters: AuditFilters): Prisma.AuditLogWhereInput {
   const where: Prisma.AuditLogWhereInput = {};
-  if (filters.action) where.action = filters.action;
+  const action = buildActionClause(filters);
+  if (action) where.action = action;
   if (filters.userId) where.userId = filters.userId;
   if (filters.targetId) where.targetId = filters.targetId;
   if (filters.from || filters.to) {
     where.createdAt = {
-      ...(filters.from ? { gte: new Date(filters.from) } : {}),
-      ...(filters.to ? { lte: new Date(filters.to) } : {}),
+      ...(filters.from ? { gte: rangeBound(filters.from, "start") } : {}),
+      ...(filters.to ? { lte: rangeBound(filters.to, "end") } : {}),
     };
   }
   return where;
@@ -81,6 +121,8 @@ export function buildAuditWhere(filters: AuditFilters): Prisma.AuditLogWhereInpu
 export function activeFilterParams(filters: AuditFilters): URLSearchParams {
   const params = new URLSearchParams();
   if (filters.action) params.set("action", filters.action);
+  if (filters.area) params.set("area", filters.area);
+  if (filters.mcpReads) params.set("mcpReads", "1");
   if (filters.userId) params.set("userId", filters.userId);
   if (filters.targetId) params.set("targetId", filters.targetId);
   if (filters.person) params.set("person", filters.person);
@@ -92,6 +134,8 @@ export function activeFilterParams(filters: AuditFilters): URLSearchParams {
 export function hasAnyFilter(filters: AuditFilters): boolean {
   return Boolean(
     filters.action ||
+      filters.area ||
+      filters.mcpReads ||
       filters.userId ||
       filters.targetId ||
       filters.person ||

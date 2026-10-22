@@ -12,10 +12,6 @@ import {
 const MAX_LIMIT = 200;
 const DEFAULT_LIMIT = 50;
 
-// Filterable on the indexed columns (action, userId, createdAt) plus the
-// non-indexed targetId — shared with the /admin/activity viewer via
-// lib/audit-query.ts so both surfaces interpret the same params identically.
-
 export async function loader({ request }: Route.LoaderArgs) {
   const preflight = handlePreflight(request);
   if (preflight) return preflight;

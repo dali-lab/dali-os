@@ -241,3 +241,57 @@ export const AUDIT_ACTIONS = [
 ] as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
+
+// Several prefixes belong to one product area; everything else is its own
+// area, named by its first dot-segment.
+const AREA_ALIASES: Record<string, string> = {
+  application: "hiring",
+  decision: "hiring",
+  interview: "hiring",
+  interviewer: "hiring",
+  review: "hiring",
+  reviewer: "hiring",
+  delibs: "hiring",
+  waitlist: "hiring",
+  cycle: "hiring",
+  confidentiality: "hiring",
+  login: "auth",
+  logout: "auth",
+  oauth: "auth",
+  session: "auth",
+  pairing: "auth",
+  desktop: "auth",
+  account: "auth",
+  projectFile: "project",
+  note: "page",
+  document: "page",
+  "lab-document": "page",
+};
+
+const AREA_LABELS: Record<string, string> = {
+  auth: "Sign-in and access",
+  mcp: "MCP",
+  "feature-flags": "Feature flags",
+  release_note: "Release notes",
+};
+
+export function auditAreaOf(action: string): string {
+  const prefix = action.split(".")[0];
+  return AREA_ALIASES[prefix] ?? prefix;
+}
+
+function areaLabel(area: string): string {
+  if (AREA_LABELS[area]) return AREA_LABELS[area];
+  const spaced = area.replace(/[-_]/g, " ");
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
+}
+
+export const AUDIT_AREAS: ReadonlyArray<{ value: string; label: string }> = Array.from(
+  new Set(AUDIT_ACTIONS.map(auditAreaOf)),
+)
+  .map((value) => ({ value, label: areaLabel(value) }))
+  .sort((a, b) => a.label.localeCompare(b.label));
+
+export function actionsInArea(area: string): AuditAction[] {
+  return AUDIT_ACTIONS.filter((a) => auditAreaOf(a) === area);
+}
