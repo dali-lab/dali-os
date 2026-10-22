@@ -812,3 +812,19 @@ describe("prefetching notebook lists", () => {
     expect(new URL(listCalls()[0]!, "http://x").searchParams.get("meetingId")).toBe("m9");
   });
 });
+
+describe("MeetingNoteFields when the default notebook cannot be fetched", () => {
+  it("says so and leaves the picker buttons available", async () => {
+    fetchMock.mockImplementation(async () => ({ ok: false, json: async () => ({}) }));
+    await mount({ surface: "note" });
+    await act(async () => controller.setEnabled(true));
+    expect(container.textContent).toContain("Couldn't pick a notebook automatically. Choose one below.");
+    expect(container.textContent).toContain("Search notebooks");
+  });
+
+  it("shows no message when the fetch works", async () => {
+    await mount({ surface: "note" });
+    await act(async () => controller.setEnabled(true));
+    expect(container.textContent).not.toContain("Couldn't pick a notebook automatically");
+  });
+});

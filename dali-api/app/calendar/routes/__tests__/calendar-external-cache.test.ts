@@ -40,6 +40,12 @@ describe("shouldInvalidateExternalCache", () => {
     expect(shouldInvalidateExternalCache("set-event-buffer")).toBe(false);
   });
 
+  it("skips invalidation for intents that never change the Google read", () => {
+    expect(shouldInvalidateExternalCache("toggle-meeting-time-entry")).toBe(false);
+    expect(shouldInvalidateExternalCache("track-event-as-meeting")).toBe(false);
+    expect(shouldInvalidateExternalCache("toggle-sub-calendar")).toBe(false);
+  });
+
   it("invalidates for intents that write to Google or change which calendars are read", () => {
     expect(shouldInvalidateExternalCache("event-rsvp")).toBe(true);
     expect(shouldInvalidateExternalCache("event-create")).toBe(true);
@@ -48,15 +54,12 @@ describe("shouldInvalidateExternalCache", () => {
     expect(shouldInvalidateExternalCache("event-move")).toBe(true);
     expect(shouldInvalidateExternalCache("cal-create")).toBe(true);
     expect(shouldInvalidateExternalCache("class-create")).toBe(true);
-    expect(shouldInvalidateExternalCache("toggle-sub-calendar")).toBe(true);
     expect(shouldInvalidateExternalCache("remove-calendar-link")).toBe(true);
     expect(shouldInvalidateExternalCache("subscribe-general-calendar")).toBe(true);
     expect(shouldInvalidateExternalCache("set-timesheet-sync")).toBe(true);
     expect(shouldInvalidateExternalCache("add-time-entry")).toBe(true);
     expect(shouldInvalidateExternalCache("update-time-entry")).toBe(true);
     expect(shouldInvalidateExternalCache("delete-time-entry")).toBe(true);
-    expect(shouldInvalidateExternalCache("toggle-meeting-time-entry")).toBe(true);
-    expect(shouldInvalidateExternalCache("track-event-as-meeting")).toBe(true);
   });
 
   it("defaults to invalidating an intent it has never seen (safe default)", () => {
@@ -97,5 +100,24 @@ describe("fetchCachedCalendarList", () => {
     await fetchCachedCalendarList("user-1", "link-1", "token-1");
 
     expect(mockListCalendarsForLink).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("fetchCachedCalendarList with the durable change marker", () => {
+  it("treats an entry cached before the marker as a miss", async () => {
+    await fetchCachedCalendarList("user-1", "link-1", "token-1");
+    const marker = new Date(Date.now() + 1000);
+
+    await fetchCachedCalendarList("user-1", "link-1", "token-1", marker);
+
+    expect(mockListCalendarsForLink).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps serving an entry cached after the marker", async () => {
+    const marker = new Date(Date.now() - 1000);
+    await fetchCachedCalendarList("user-1", "link-1", "token-1", marker);
+    await fetchCachedCalendarList("user-1", "link-1", "token-1", marker);
+
+    expect(mockListCalendarsForLink).toHaveBeenCalledTimes(1);
   });
 });

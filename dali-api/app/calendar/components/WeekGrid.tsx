@@ -22,6 +22,7 @@ import { isTrackedMeeting, STOP_TRACKING_DESCRIPTION, STOP_TRACKING_LABEL } from
 import { AddMeetingWhiteboardButton } from "~/calendar/components/AddMeetingWhiteboardModal";
 import { TrackEventButton } from "~/calendar/components/TrackEventButton";
 import { IssueIcon } from "~/calendar/components/IssueIcon";
+import { RSVP_STATUS_FROM_RESPONSE } from "~/calendar/lib/optimistic-layer";
 import type {
   EventBlock, EventAttendeeDTO, EventLinkDTO, EventRsvpTarget, RsvpStatus, WhDay,
 } from "~/calendar/lib/types";
@@ -75,12 +76,6 @@ const RSVP_CHOICES = [
 
 /** The wire vocabulary the RSVP routes take. */
 type RsvpResponse = "accepted" | "declined" | "tentative";
-
-const RSVP_FROM_RESPONSE = {
-  accepted: "Accepted",
-  tentative: "Tentative",
-  declined: "Declined",
-} as const satisfies Record<RsvpResponse, RsvpStatus>;
 
 /** One section of the detail card: an eyebrow label over its content. The
  *  popover is a stack of these, so every block gets the same rhythm. */
@@ -195,8 +190,10 @@ export function EventRsvpControl({
   // Revalidation lands a beat after the write, so show the answer being sent —
   // otherwise the pressed button visibly snaps back before settling.
   const inFlight = sending ?? (fetcher.formData?.get("response") as RsvpResponse | null);
-  const status: RsvpStatus = inFlight ? RSVP_FROM_RESPONSE[inFlight] : rsvp.status;
-  const busy = sending !== null || fetcher.state !== "idle";
+  const status: RsvpStatus = inFlight ? RSVP_STATUS_FROM_RESPONSE[inFlight]! : rsvp.status;
+  // Only the request itself blocks: while the page re-reads, an answer can still
+  // be changed and the latest one wins.
+  const busy = sending !== null || fetcher.state === "submitting";
 
   async function answer(response: RsvpResponse) {
     setError(null);
@@ -255,7 +252,7 @@ export function EventRsvpControl({
         toast.error(json.error ?? "Failed to propose time");
         return;
       }
-      toast.success("Time proposed — the organizer will be notified");
+      toast.success("Time proposed. The organizer will be notified.");
       setProposeOpen(false);
     } catch {
       toast.error("Network error");
@@ -608,7 +605,7 @@ export function MeetingDetailToggles({ meeting }: { meeting: NonNullable<EventBl
     <div className="mt-3 flex flex-col gap-2.5 rounded-os-item bg-os-well px-3 py-2.5 text-[13px]">
       <Toggle
         checked={onTimesheet}
-        disabled={timesheetFetcher.state !== "idle"}
+        disabled={timesheetFetcher.state === "submitting"}
         onChange={(ev) =>
           timesheetFetcher.submit(
             {
@@ -780,7 +777,12 @@ export function WeekGridEvent({
   // dragRef holds the mutable drag state; livePos drives the visual override
   // while the drag is in progress. Both are null when idle.
   const dragRef = useRef<BlockDragState | null>(null);
-  const [livePos, setLivePos] = useState<{ startHour: number; endHour: number } | null>(null);
+  const [livePos, setLivePosState] = useState<{ startHour: number; endHour: number } | null>(null);
+  const livePosRef = useRef(livePos);
+  const setLivePos = useCallback((next: { startHour: number; endHour: number } | null) => {
+    livePosRef.current = next;
+    setLivePosState(next);
+  }, []);
   const [isDragging, setIsDragging] = useState(false);
   // Suppresses the synthetic click that fires after a completed move/resize drag.
   // Set true in mouseup (after a real drag) and consumed in onClick.
@@ -880,17 +882,14 @@ export function WeekGridEvent({
       const dayChanged = move != null && move.targetDay !== move.originDay;
       const didMove = dayChanged || Math.abs(uev.clientY - (move as NonNullable<typeof move>).startClientY) >= 4;
       const targetDay = move?.targetDay;
-      setLivePos((prev) => {
-        if (didMove && prev) {
-          e.onMoveResize?.(prev.startHour, prev.endHour, targetDay);
-        }
-        return null;
-      });
+      const last = livePosRef.current;
+      setLivePos(null);
+      if (didMove && last) e.onMoveResize?.(last.startHour, last.endHour, targetDay);
     };
 
     attachWindowListeners(onMove, onUp);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [e.onMoveResize, e.startHour, e.duration, attachWindowListeners, dayIdx, hitTestDay]);
+  }, [e.onMoveResize, e.startHour, e.duration, attachWindowListeners, dayIdx, hitTestDay, setLivePos]);
 
   // Handle pointerdown: starts a resize drag (top = start edge, bottom = end edge).
   const onHandleMouseDown = useCallback((edge: "top" | "bottom") => (ev: React.PointerEvent<HTMLElement>) => {
@@ -938,17 +937,16 @@ export function WeekGridEvent({
       dragRef.current = null;
       // Suppress the synthetic click that follows mouseup after a resize drag.
       suppressNextClick.current = true;
-      setLivePos((prev) => {
-        if (prev && ds && (ds.kind === "resize-top" || ds.kind === "resize-bottom")) {
-          e.onMoveResize?.(prev.startHour, prev.endHour);
-        }
-        return null;
-      });
+      const last = livePosRef.current;
+      setLivePos(null);
+      if (last && ds && (ds.kind === "resize-top" || ds.kind === "resize-bottom")) {
+        e.onMoveResize?.(last.startHour, last.endHour);
+      }
     };
 
     attachWindowListeners(onMove, onUp);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [e.onMoveResize, e.startHour, e.duration, attachWindowListeners]);
+  }, [e.onMoveResize, e.startHour, e.duration, attachWindowListeners, setLivePos]);
 
   // When dragging, override start/duration for visual positioning.
   const displayStart = livePos?.startHour ?? e.startHour;
@@ -969,7 +967,7 @@ export function WeekGridEvent({
         displayBufferAfter === 0 ? "rounded-b-md" : ""
       } ${border} ${bufferBg} overflow-hidden ${
         movable ? (isDragging ? "cursor-grabbing" : "cursor-grab") : clickable ? "cursor-pointer" : ""
-      }${livePos ? " z-40 opacity-95 shadow-lg" : ""}`}
+      }${livePos ? " z-40 opacity-95 shadow-lg" : ""}${e.pending ? " pointer-events-none opacity-60" : ""}`}
       style={{
         top: (displayStart - displayBufferBefore - HOURS[0]) * HOUR_PX,
         height: displayTotalHours * HOUR_PX,

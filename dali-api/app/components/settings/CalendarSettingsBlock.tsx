@@ -13,6 +13,7 @@ import { CalendarDays, ChevronDown, ChevronRight, ExternalLink, Plus, Trash2 } f
 import type { CalendarLinkDTO } from "~/lib/settings-page.server";
 import { useConfirmSubmit } from "~/components/ui/dialog";
 import { Tooltip } from "~/components/ui/floating";
+import { pendingForm, useFetcherErrorToast } from "~/calendar/lib/fetcher-pending";
 import { SyncErrorNotice } from "~/calendar/components/SyncErrorNotice";
 
 const CALENDAR_ACTION = "/settings/calendar";
@@ -77,10 +78,12 @@ export function CalendarSettingsBlock({
 // Collapsed by default — users don't need per-sub-calendar toggles here any
 // more (those live in CalendarsPanel on the Calendar page).
 function LinkedAccountRow({ link }: { link: CalendarLinkDTO }) {
-  const removeFetcher = useFetcher();
+  const removeFetcher = useFetcher<{ error?: string } | null>();
+  useFetcherErrorToast(removeFetcher);
   const confirmSubmit = useConfirmSubmit();
   const [open, setOpen] = useState(false);
   const Chevron = open ? ChevronDown : ChevronRight;
+  if (pendingForm(removeFetcher)) return null;
 
   return (
     <div className="overflow-hidden rounded-md border border-border border-l-4 border-l-os-accent bg-card">

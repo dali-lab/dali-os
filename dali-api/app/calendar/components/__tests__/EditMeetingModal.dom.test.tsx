@@ -7,6 +7,8 @@ import { createRoot, type Root } from "react-dom/client";
 
 const confirm = vi.fn();
 const apply = vi.fn();
+const toastError = vi.fn();
+vi.mock("~/components/ui/toast", () => ({ useToast: () => ({ error: toastError }) }));
 vi.mock("react-router", () => ({ useRevalidator: () => ({ revalidate: vi.fn() }) }));
 vi.mock("~/components/ui/dialog", () => ({ useDialog: () => ({ confirm }) }));
 vi.mock("~/calendar/lib/useSeriesNotebook", () => ({ useSeriesNotebook: () => ({ apply }) }));
@@ -80,6 +82,7 @@ beforeEach(async () => {
   defaultResult = SERIES;
   confirm.mockReset().mockResolvedValue(true);
   apply.mockReset().mockResolvedValue(true);
+  toastError.mockReset();
   fetchMock.mockReset();
   fetchMock.mockImplementation(async (url: string) => {
     const u = String(url);
@@ -171,5 +174,35 @@ describe("EditMeetingModal notebook", () => {
     await pickNotebook("nb3");
     await click(button("Save changes"));
     expect(apply).toHaveBeenCalledWith("m1", "nb3", "future");
+  });
+});
+
+describe("EditMeetingModal save", () => {
+  it("warns when the Google event could not be updated", async () => {
+    fetchMock.mockImplementation(async (url: string) => {
+      const u = String(url);
+      if (u.endsWith("/edit-context")) return { ok: true, json: async () => editContext };
+      if (u.startsWith("/api/notebooks/default")) return { ok: true, json: async () => defaultResult };
+      return { ok: true, json: async () => ({ ok: true, gcalError: "Calendar is unreachable" }) };
+    });
+    await click(button("Save changes"));
+    expect(toastError).toHaveBeenCalledWith(expect.stringContaining("Calendar is unreachable"));
+  });
+
+  it("stays quiet when Google was updated", async () => {
+    await click(button("Save changes"));
+    expect(toastError).not.toHaveBeenCalled();
+  });
+
+  it("shows a form skeleton, not bare text, while the context loads", async () => {
+    act(() => root.unmount());
+    container.remove();
+    fetchMock.mockImplementation(() => new Promise(() => {}));
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    await act(async () => root.render(createElement(EditMeetingModal, { meetingId: "m1", onClose: vi.fn() })));
+    expect(document.body.querySelector("[role='status'][aria-label='Loading meeting']")).toBeTruthy();
+    expect(document.body.textContent).not.toContain("Loading…");
   });
 });

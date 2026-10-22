@@ -5,6 +5,7 @@
 
 import { prisma } from "~/lib/db";
 import { updateGoogleAttendeeRsvp } from "~/lib/google-calendar";
+import { markCalendarChanged } from "~/calendar/lib/external-cache.server";
 import { primaryEmail } from "~/lib/display";
 
 export const RSVP_TO_NOTIFICATION_TOOL = {
@@ -86,6 +87,8 @@ export async function runRsvpToNotification(
       gcalError = err instanceof Error ? err.message : "Google RSVP push failed";
     }
   }
+
+  if (notif.scheduledMeeting?.externalEventId) await markCalendarChanged(caller.id);
 
   await prisma.notification.update({
     where: { id: input.notificationId },

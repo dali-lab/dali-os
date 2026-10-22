@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Link, useFetcher, useLoaderData } from "react-router";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { Link, useFetcher, useFetchers, useLoaderData } from "react-router";
 import QRCode from "qrcode";
 import {
   ChevronLeft,
@@ -50,6 +50,7 @@ import { AddMeetingWhiteboardButton } from "~/calendar/components/AddMeetingWhit
 import { RecordPromptBanner } from "~/components/RecordPromptBanner";
 import { NotebookPicker } from "~/components/notebooks/NotebookPicker";
 import { useSeriesNotebook } from "~/calendar/lib/useSeriesNotebook";
+import { pendingForm, pendingJson, useFetcherErrorToast } from "~/calendar/lib/fetcher-pending";
 import type { Route } from "./+types/calendar.meeting.$id";
 
 export const meta: Route.MetaFunction = () => [{ title: "Meeting · DALI OS" }];
@@ -427,28 +428,19 @@ async function ipadScanAction(
   return Response.json({ ok: true, displaced: result.displaced });
 }
 
-function ProposedTimesCard({
-  meetingId,
-  proposals,
-}: {
-  meetingId: string;
-  proposals: { id: string; proposedStartIso: string; proposerName: string }[];
-}) {
+const proposalKey = (proposalId: string) => `proposal:${proposalId}`;
+
+type Proposal = { id: string; proposedStartIso: string; proposerName: string };
+
+export function ProposedTimesCard({ meetingId, proposals }: { meetingId: string; proposals: Proposal[] }) {
   const { card, sectionTitle } = useOsChrome();
-  const fetcher = useFetcher<{ ok?: boolean; error?: string; gcalError?: string | null }>();
+  const answered = new Set(
+    useFetchers()
+      .filter((f) => f.key.startsWith("proposal:"))
+      .map((f) => pendingJson<{ proposalId: string }>(f)?.proposalId),
+  );
 
-  if (proposals.length === 0) return null;
-
-  function respond(action: "accept" | "decline", proposalId: string) {
-    fetcher.submit(
-      { action, proposalId },
-      {
-        method: "post",
-        action: `/api/scheduled-meetings/${meetingId}/proposal`,
-        encType: "application/json",
-      },
-    );
-  }
+  if (proposals.every((p) => answered.has(p.id))) return null;
 
   return (
     <section className={cn(card, "flex flex-col gap-5 p-6")}>
@@ -457,47 +449,63 @@ function ProposedTimesCard({
       </h2>
       <ul className="flex flex-col gap-4">
         {proposals.map((p) => (
-          <li key={p.id} className="flex flex-col gap-3">
-            <div>
-              <p className="text-base font-medium text-foreground">{p.proposerName}</p>
-              <p className="text-sm text-os-grey">
-                {new Date(p.proposedStartIso).toLocaleString(undefined, {
-                  weekday: "short",
-                  month: "short",
-                  day: "numeric",
-                  hour: "numeric",
-                  minute: "2-digit",
-                })}
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                disabled={fetcher.state !== "idle"}
-                onClick={() => respond("accept", p.id)}
-                className="os-btn-primary os-btn-primary--sm disabled:opacity-60"
-              >
-                Accept
-              </button>
-              <button
-                type="button"
-                disabled={fetcher.state !== "idle"}
-                onClick={() => respond("decline", p.id)}
-                className="os-btn-ghost py-1.5 disabled:opacity-60"
-              >
-                Decline
-              </button>
-            </div>
-          </li>
+          <ProposalRow key={p.id} meetingId={meetingId} proposal={p} />
         ))}
       </ul>
-      {fetcher.data?.error && <p className="text-sm text-destructive">{fetcher.data.error}</p>}
-      {fetcher.data?.gcalError && (
-        <p className="text-sm text-os-grey">
-          Rescheduled, but Google Calendar sync failed: {fetcher.data.gcalError}
-        </p>
-      )}
     </section>
+  );
+}
+
+/** One fetcher per proposal: answering one must not abort another's in-flight answer. */
+function ProposalRow({ meetingId, proposal: p }: { meetingId: string; proposal: Proposal }) {
+  const fetcher = useFetcher<{ ok?: boolean; error?: string; gcalError?: string | null }>({ key: proposalKey(p.id) });
+  useFetcherErrorToast(fetcher);
+
+  if (pendingJson(fetcher)) return null;
+
+  function respond(action: "accept" | "decline") {
+    fetcher.submit(
+      { action, proposalId: p.id },
+      {
+        method: "post",
+        action: `/api/scheduled-meetings/${meetingId}/proposal`,
+        encType: "application/json",
+      },
+    );
+  }
+
+  const busy = fetcher.state !== "idle";
+  return (
+    <li className="flex flex-col gap-3">
+      <div>
+        <p className="text-base font-medium text-foreground">{p.proposerName}</p>
+        <p className="text-sm text-os-grey">
+          {new Date(p.proposedStartIso).toLocaleString(undefined, {
+            weekday: "short",
+            month: "short",
+            day: "numeric",
+            hour: "numeric",
+            minute: "2-digit",
+          })}
+        </p>
+      </div>
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => respond("accept")}
+          className="os-btn-primary os-btn-primary--sm"
+        >
+          Accept
+        </button>
+        <button type="button" disabled={busy} onClick={() => respond("decline")} className="os-btn-ghost py-1.5">
+          Decline
+        </button>
+      </div>
+      {fetcher.data?.gcalError && (
+        <p className="text-sm text-os-grey">Rescheduled, but Google Calendar sync failed: {fetcher.data.gcalError}</p>
+      )}
+    </li>
   );
 }
 
@@ -657,8 +665,15 @@ export default function CalendarMeetingPage() {
   const d = useLoaderData<typeof loader>();
   const { card, pageTitle, sectionTitle } = useOsChrome();
   const when = d.selectedAtIso ? formatWhen(d.selectedAtIso) : "Time not set";
-  const present = d.rows.filter((r) => r.present).length;
-  const pct = d.rows.length > 0 ? Math.round((present / d.rows.length) * 100) : 0;
+  const [liveRoster, setLiveRoster] = useState<{ occurrenceStart: string; rows: AttendanceRow[] } | null>(null);
+  const rosterRows = liveRoster?.occurrenceStart === d.occurrenceStart ? liveRoster.rows : d.rows;
+  const present = rosterRows.filter((r) => r.present).length;
+  const pct = rosterRows.length > 0 ? Math.round((present / rosterRows.length) * 100) : 0;
+  const occurrenceStart = d.occurrenceStart;
+  const handleRowsChange = useCallback(
+    (rows: AttendanceRow[]) => setLiveRoster({ occurrenceStart, rows }),
+    [occurrenceStart],
+  );
   // Same gate as the Add-to-Wallet buttons and the standalone scan station;
   // the /calendar/scan route re-checks both server-side. The checklist only
   // renders with a roster, since scanning into a meeting with no
@@ -667,6 +682,7 @@ export default function CalendarMeetingPage() {
   const [projectOpen, setProjectOpen] = useState(false);
   const [notebookPickerOpen, setNotebookPickerOpen] = useState(false);
   const seriesNotebook = useSeriesNotebook();
+  const notebook = seriesNotebook.shownNotebook(d.meetingId, d.notebook);
   const selfCheckInFetcher = useFetcher<{ ok?: boolean; error?: string }>();
   const ipadFetcher = useFetcher<{ ok?: boolean; error?: string }>();
   const dialog = useDialog();
@@ -683,9 +699,17 @@ export default function CalendarMeetingPage() {
     if (!res?.ok) toast.error("Couldn't turn off the record prompt for this meeting.");
   }
 
+  const sentIpadIntent = pendingForm(ipadFetcher)?.get("intent");
+  const ipadScan =
+    d.ipadScan && sentIpadIntent
+      ? sentIpadIntent === "stop-ipad-scan"
+        ? { ...d.ipadScan, on: false }
+        : { ...d.ipadScan, on: true, busyWith: null }
+      : d.ipadScan;
+
   async function toggleIpadScan() {
-    if (!d.ipadScan) return;
-    const { on, busyWith } = d.ipadScan;
+    if (!ipadScan) return;
+    const { on, busyWith } = ipadScan;
     let intent: "start-ipad-scan" | "takeover-ipad-scan" | "stop-ipad-scan" = "stop-ipad-scan";
     if (!on && busyWith) {
       // Pulls the iPads out from under another event's live check-in.
@@ -854,11 +878,11 @@ export default function CalendarMeetingPage() {
             )}
           </Fact>
         )}
-        {(d.notebook || d.canAddNote) && (
+        {(notebook || d.canAddNote) && (
           <Fact label="Notebook">
-            {d.notebook ? (
-              <Link to={`/documents/${d.notebook.id}`} className="truncate font-medium hover:underline">
-                {d.notebook.title}
+            {notebook ? (
+              <Link to={`/documents/${notebook.id}`} className="truncate font-medium hover:underline">
+                {notebook.title}
               </Link>
             ) : (
               <span className="text-os-grey">None</span>
@@ -866,7 +890,7 @@ export default function CalendarMeetingPage() {
             {d.canAddNote && (
               <>
                 <IconButton label="Change notebook" icon={Pencil} onClick={() => setNotebookPickerOpen(true)} />
-                {d.notebook && (
+                {notebook && (
                   <IconButton label="Unset notebook" icon={X} onClick={() => void seriesNotebook.unsetNotebook(d.meetingId)} />
                 )}
               </>
@@ -904,18 +928,18 @@ export default function CalendarMeetingPage() {
             <Users className="h-6 w-6 text-os-accent" /> Attendance
           </h2>
           <div className="flex flex-wrap items-center gap-3">
-            {d.ipadScan?.on && <Pill dot="success">Scanning on iPads</Pill>}
-            {d.ipadScan && (d.ipadScan.on || !d.ipadScan.ended) && (
+            {ipadScan?.on && <Pill dot="success">Scanning on iPads</Pill>}
+            {ipadScan && (ipadScan.on || !ipadScan.ended) && (
               <button
                 type="button"
                 onClick={toggleIpadScan}
-                disabled={ipadFetcher.state !== "idle"}
+                disabled={ipadFetcher.state === "submitting"}
                 className={cn(actionBtnClass, "disabled:opacity-50")}
               >
                 <Tablet className="h-4 w-4" />
-                {d.ipadScan.on
+                {ipadScan.on
                   ? "Stop attendance tracking from iPad"
-                  : d.ipadScan.busyWith
+                  : ipadScan.busyWith
                     ? "Switch iPads to this event"
                     : "Enable attendance tracking from iPad"}
               </button>
@@ -935,15 +959,15 @@ export default function CalendarMeetingPage() {
             )}
           </div>
         </div>
-        {d.ipadScan?.busyWith && (
+        {ipadScan?.busyWith && (
           <p className="text-sm text-os-grey">
             iPads are tracking{" "}
-            {d.ipadScan.busyHref ? (
-              <Link to={d.ipadScan.busyHref} className="underline">
-                {d.ipadScan.busyWith}
+            {ipadScan.busyHref ? (
+              <Link to={ipadScan.busyHref} className="underline">
+                {ipadScan.busyWith}
               </Link>
             ) : (
-              d.ipadScan.busyWith
+              ipadScan.busyWith
             )}
             . Switching moves them to this event.
           </p>
@@ -962,7 +986,7 @@ export default function CalendarMeetingPage() {
               />
             </div>
             <span className="text-base font-medium tabular-nums text-foreground">
-              {present} of {d.rows.length} present
+              {present} of {rosterRows.length} present
             </span>
           </div>
         )}
@@ -1000,6 +1024,7 @@ export default function CalendarMeetingPage() {
             defaultScanning
             plain
             attendees={d.rows}
+            onRowsChange={handleRowsChange}
           />
         )}
 

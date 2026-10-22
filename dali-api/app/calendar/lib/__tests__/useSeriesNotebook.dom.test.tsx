@@ -99,3 +99,56 @@ describe("useSeriesNotebook apply", () => {
     expect(revalidate).toHaveBeenCalled();
   });
 });
+
+describe("useSeriesNotebook shownNotebook", () => {
+  const loaded = { id: "nb1", title: "Standups" };
+
+  it("shows a newly picked notebook until the loader has refreshed", async () => {
+    let finish!: () => void;
+    revalidate.mockReturnValue(new Promise<void>((r) => (finish = r)));
+    let pending!: Promise<unknown>;
+    await act(async () => {
+      pending = api.apply("m1", "nb2", "future", { notebook: NOTEBOOK });
+    });
+    expect(api.shownNotebook("m1", loaded)).toEqual(NOTEBOOK);
+    expect(api.shownNotebook("other", loaded)).toEqual(loaded);
+
+    await act(async () => {
+      finish();
+      await pending;
+    });
+    expect(api.shownNotebook("m1", loaded)).toEqual(loaded);
+  });
+
+  it("shows none while an unset is going out", async () => {
+    setSeriesNotebookRequest.mockReturnValue(new Promise(() => {}));
+    await act(async () => {
+      void api.apply("m1", null, "future", { notebook: null });
+    });
+    expect(api.shownNotebook("m1", loaded)).toBeNull();
+  });
+
+  it("goes back to the loader's notebook when the change fails", async () => {
+    setSeriesNotebookRequest.mockResolvedValue({ ok: false, error: "Nope" });
+    await act(async () => api.apply("m1", "nb2", "future", { notebook: NOTEBOOK }));
+    expect(api.shownNotebook("m1", loaded)).toEqual(loaded);
+    expect(toast.error).toHaveBeenCalledWith("Nope");
+  });
+
+  it("goes back to the loader's notebook when the request throws", async () => {
+    setSeriesNotebookRequest.mockRejectedValue(new Error("Network error"));
+    await act(async () => {
+      await api.apply("m1", "nb2", "future", { notebook: NOTEBOOK }).catch(() => {});
+    });
+    expect(api.shownNotebook("m1", loaded)).toEqual(loaded);
+  });
+
+  it("goes back to the loader's notebook when the revalidation throws", async () => {
+    setSeriesNotebookRequest.mockResolvedValue({ ok: true, skipped: 0 });
+    revalidate.mockRejectedValue(new Error("offline"));
+    await act(async () => {
+      await api.apply("m1", "nb2", "future", { notebook: NOTEBOOK }).catch(() => {});
+    });
+    expect(api.shownNotebook("m1", loaded)).toEqual(loaded);
+  });
+});

@@ -75,6 +75,10 @@ model User {
 
   releaseNotesSeenAt DateTime?
 
+  // Stamped by every write that can change what Google returns for this user,
+  // so each machine can tell its in-process calendar cache is stale.
+  calendarDataChangedAt DateTime?
+
   // ─── Profile fields (Phase 1 additions; all nullable) ─────────────────────
   // Dartmouth class year (e.g., 2026). Solves the "took a term off"
   // ambiguity. Input to membership-status recompute + display.

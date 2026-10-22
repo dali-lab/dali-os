@@ -4,6 +4,7 @@
 // participant notification fan-out.
 
 import { prisma } from "~/lib/db";
+import { markCalendarChanged } from "~/calendar/lib/external-cache.server";
 import { notify } from "~/lib/notify.server";
 import { resolveGroupMembers } from "~/lib/groups";
 import {
@@ -656,7 +657,7 @@ function typeForNotebookFiling(
   return meetingTypeForNotebook(projectId, notebookTitle);
 }
 
-export async function createScheduledMeeting(
+async function createScheduledMeetingImpl(
   input: CreateScheduledMeetingInput,
 ): Promise<CreateScheduledMeetingResult> {
   // Hard constraint (defense in depth alongside the route schema): Team/Partner
@@ -1793,7 +1794,7 @@ export function ownsGoogleEvent(meeting: {
  * scoped cancellation: "this" cancels one occurrence via MeetingException,
  * "following" truncates the series, "all" (default) cancels the whole meeting.
  */
-export async function cancelScheduledMeeting(
+async function cancelScheduledMeetingImpl(
   meetingId: string,
   actorUserId: string,
   opts?: {
@@ -2055,7 +2056,7 @@ export type UpdateScheduledMeetingResult =
  * organizer's calendar and its guests stay in sync. Edits apply to the whole
  * series for a recurring meeting.
  */
-export async function updateScheduledMeeting(
+async function updateScheduledMeetingImpl(
   meetingId: string,
   actorUserId: string,
   input: UpdateScheduledMeetingInput,
@@ -2629,4 +2630,49 @@ export async function trackExternalEventAsMeeting(
   });
 
   return { ok: true, meeting };
+}
+
+/**
+ * The public create/update/cancel entry points. Each can change the organizer's
+ * and every internal attendee's Google calendar, so a success stamps them all
+ * and no caller (route, MCP tool, partner flow) has to remember to.
+ */
+export async function createScheduledMeeting(
+  input: CreateScheduledMeetingInput,
+): Promise<CreateScheduledMeetingResult> {
+  const result = await createScheduledMeetingImpl(input);
+  if (result.ok) {
+    await markCalendarChanged(result.meeting.organizerId, result.meeting.participantUserIds ?? []);
+  }
+  return result;
+}
+
+export async function updateScheduledMeeting(
+  meetingId: string,
+  actorUserId: string,
+  input: UpdateScheduledMeetingInput,
+): Promise<UpdateScheduledMeetingResult> {
+  const result = await updateScheduledMeetingImpl(meetingId, actorUserId, input);
+  if (result.ok) {
+    await markCalendarChanged(actorUserId, [result.meeting.organizerId, ...(result.meeting.participantUserIds ?? [])]);
+  }
+  return result;
+}
+
+export async function cancelScheduledMeeting(
+  meetingId: string,
+  actorUserId: string,
+  opts?: Parameters<typeof cancelScheduledMeetingImpl>[2],
+): Promise<CancelScheduledMeetingResult> {
+  const result = await cancelScheduledMeetingImpl(meetingId, actorUserId, opts);
+  if (result.ok && !result.alreadyCancelled) {
+    const meeting = await prisma.scheduledMeeting.findUnique({
+      where: { id: meetingId },
+      select: { organizerId: true, participantUserIds: true },
+    });
+    await markCalendarChanged(actorUserId, [
+      ...(meeting ? [meeting.organizerId, ...meeting.participantUserIds] : []),
+    ]);
+  }
+  return result;
 }

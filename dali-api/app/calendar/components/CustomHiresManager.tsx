@@ -2,7 +2,7 @@ import { useRef, useState } from "react";
 import { useRevalidator } from "react-router";
 import { Plus, X } from "lucide-react";
 import { AnchoredPopover } from "~/calendar/components/AnchoredPopover";
-import { useDialog } from "~/components/ui/dialog";
+import { useToast } from "~/components/ui/toast";
 import { cn } from "~/lib/cn";
 
 // Manage the non-DALI jobs a member logs hours against. Lives next to the
@@ -39,51 +39,40 @@ export async function archiveCustomHire(id: string): Promise<{ error?: string }>
   return post({ intent: "archive", id });
 }
 
-export function CustomHiresManager({ hires }: { hires: Hire[] }) {
+export function CustomHiresManager({
+  hires,
+  onArchive,
+}: {
+  hires: Hire[];
+  onArchive: (hire: Hire) => void;
+}) {
   const revalidator = useRevalidator();
+  const toast = useToast();
   const btnRef = useRef<HTMLButtonElement | null>(null);
   const [open, setOpen] = useState(false);
   const [anchor, setAnchor] = useState<DOMRect | null>(null);
   const [label, setLabel] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const dialog = useDialog();
+  const [pendingLabels, setPendingLabels] = useState<string[]>([]);
 
   function close() {
     setOpen(false);
     setAnchor(null);
   }
 
-  // Confirms before archiving: the job's logged hours stay on the timesheet,
-  // but it drops off the role picker and the sidebar's hour breakdown. The
-  // dialog lives at the app root, so it survives this popover closing behind it.
-  async function confirmArchive(hire: Hire) {
-    const ok = await dialog.confirm({
-      title: `Remove ${hire.label}?`,
-      description:
-        "It stops showing up as a job you can log hours against. Hours you already logged against it stay on your timesheet.",
-      confirmLabel: "Remove",
-      tone: "destructive",
-    });
-    if (!ok) return;
-    await run({ intent: "archive", id: hire.id });
-  }
-
-  async function run(body: Record<string, string>) {
-    setBusy(true);
-    setError(null);
-    try {
-      const res = await post(body);
-      if (res?.error) {
-        setError(res.error);
-        return;
-      }
-      // The role picker is fed by the loader, so a new job only reaches it on
-      // revalidation.
-      revalidator.revalidate();
-    } finally {
-      setBusy(false);
+  async function create(next: string) {
+    const dropPending = () => setPendingLabels((p) => p.filter((l) => l !== next));
+    setPendingLabels((p) => [...p, next]);
+    const res = await post({ intent: "create", label: next });
+    if (res.error) {
+      dropPending();
+      setLabel((cur) => cur || next);
+      toast.error(res.error);
+      return;
     }
+    // The role picker is fed by the loader, so a new job only reaches it on
+    // revalidation.
+    await revalidator.revalidate();
+    dropPending();
   }
 
   return (
@@ -122,19 +111,17 @@ export function CustomHiresManager({ hires }: { hires: Hire[] }) {
         >
           <p className="text-xs text-muted-foreground">Jobs outside DALI you log hours against.</p>
 
-          {error && <p className="text-xs text-destructive">{error}</p>}
-
-          {hires.length > 0 && (
+          {hires.length + pendingLabels.length > 0 && (
             <ul className="flex flex-wrap gap-1.5">
-              {hires.map((h) => (
+              {[...hires, ...pendingLabels.map((l) => ({ id: "", label: l }))].map((h, i) => (
                 <li
-                  key={h.id}
+                  key={h.id || `pending:${i}`}
                   className="inline-flex items-center gap-1.5 rounded-full border border-border bg-muted px-2.5 py-1 text-xs text-foreground"
                 >
                   {h.label}
                   <button
                     type="button"
-                    disabled={busy}
+                    disabled={!h.id}
                     aria-label={`Remove ${h.label}`}
                     onPointerDown={(e) => {
                       // Pointer-down (not click): a document capture listener
@@ -142,8 +129,7 @@ export function CustomHiresManager({ hires }: { hires: Hire[] }) {
                       // before click fires, so the archive never ran.
                       e.preventDefault();
                       e.stopPropagation();
-                      if (busy) return;
-                      void confirmArchive(h);
+                      onArchive(h);
                     }}
                     className="text-muted-foreground hover:text-destructive disabled:opacity-60"
                   >
@@ -160,7 +146,7 @@ export function CustomHiresManager({ hires }: { hires: Hire[] }) {
               const next = label.trim();
               if (!next) return;
               setLabel("");
-              void run({ intent: "create", label: next });
+              void create(next);
             }}
             className="flex items-center gap-2"
           >
@@ -174,7 +160,7 @@ export function CustomHiresManager({ hires }: { hires: Hire[] }) {
             />
             <button
               type="submit"
-              disabled={busy || !label.trim()}
+              disabled={!label.trim()}
               className="inline-flex shrink-0 items-center gap-1 rounded-full bg-os-accent px-4 py-1.5 text-sm font-semibold text-os-bg hover:bg-os-accent-hover disabled:opacity-50"
             >
               <Plus className="h-3.5 w-3.5" /> Add

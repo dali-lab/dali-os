@@ -17,10 +17,12 @@ import { getZonedYMD, zonedDayStartUtc } from "~/lib/timezone";
 import { weekStartIsoForDay, weekWindow } from "~/calendar/lib/view-window";
 import { eventTitleOrDefault } from "~/calendar/lib/event-title";
 import { useDialog } from "~/components/ui/dialog";
+import { useToast } from "~/components/ui/toast";
 import { MeetingNoteFields, useMeetingNote } from "~/calendar/components/MeetingNoteFields";
 import type { DefaultNotebookResult } from "~/calendar/components/meeting-note";
 import { changedSeriesNotebook, SERIES_CHANGE_CONFIRM } from "~/calendar/lib/series-notebook";
 import { useSeriesNotebook } from "~/calendar/lib/useSeriesNotebook";
+import { newPendingId, usePendingSubmissions } from "~/calendar/lib/pending-submissions";
 import type { MentorPairOption, WhDay } from "~/calendar/lib/types";
 
 // Shape of GET /api/scheduled-meetings/:id/edit-context.
@@ -122,7 +124,9 @@ export function EditMeetingModal({
   onClose: () => void;
 }) {
   const revalidator = useRevalidator();
+  const pendingStore = usePendingSubmissions();
   const dialog = useDialog();
+  const toast = useToast();
   const note = useMeetingNote();
   const { apply: applySeriesNotebook } = useSeriesNotebook();
   const seriesNotebookId = useRef<string | null>(null);
@@ -318,6 +322,19 @@ export function EditMeetingModal({
     if (newNotebook && !(await dialog.confirm({ ...SERIES_CHANGE_CONFIRM }))) return;
     setSaving(true);
     setSaveError(null);
+    const originalStart = ctx?.meeting.startTime ? Date.parse(ctx.meeting.startTime) : NaN;
+    const newStart = Date.parse(`${date}T${startTime}`);
+    // The grid shows the new time and title while the save and the re-read run.
+    const clearPending = pendingStore.register({
+      id: newPendingId("meeting-update"),
+      fields: {
+        intent: "meeting-update",
+        meetingId,
+        title: eventTitleOrDefault(title),
+        durationMinutes: String(durationMinutes),
+        shiftMs: String(Number.isNaN(originalStart) || Number.isNaN(newStart) ? 0 : newStart - originalStart),
+      },
+    });
     try {
       // Always sent, blank included: clearing a field has to clear it here and
       // on the linked Google event, which an omitted key would leave untouched.
@@ -351,14 +368,19 @@ export function EditMeetingModal({
       });
       const json = await res.json();
       if (!res.ok) {
+        clearPending();
         setSaveError(json.error ?? "Couldn't save changes.");
         setSaving(false);
         return;
       }
       if (newNotebook) await applySeriesNotebook(meetingId, newNotebook, "future");
-      revalidator.revalidate();
+      if (json.gcalError) {
+        toast.error(`Saved, but Google Calendar wasn't updated: ${json.gcalError}`);
+      }
+      void Promise.resolve(revalidator.revalidate()).finally(clearPending);
       onClose();
     } catch {
+      clearPending();
       setSaveError("Couldn't save changes.");
       setSaving(false);
     }
@@ -381,7 +403,13 @@ export function EditMeetingModal({
       {loadError ? (
         <p className="text-sm text-destructive">{loadError}</p>
       ) : !ctx ? (
-        <p className="text-sm text-muted-foreground">Loading…</p>
+        <div role="status" aria-label="Loading meeting" className="flex animate-pulse flex-col gap-5">
+          <div className="h-10 rounded-[10px] bg-muted/40" />
+          <div className="h-10 rounded-[10px] bg-muted/40" />
+          <div className="h-10 w-2/3 rounded-[10px] bg-muted/40" />
+          <div className="h-10 rounded-[10px] bg-muted/40" />
+          <div className="h-20 rounded-[10px] bg-muted/40" />
+        </div>
       ) : (
         <div className="flex flex-col gap-6 sm:flex-row">
         {hasGuests && (

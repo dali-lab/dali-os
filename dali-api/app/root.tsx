@@ -22,6 +22,7 @@ import { StaleBuildWatcher } from "~/components/StaleBuildWatcher";
 import { buttonClasses } from "~/components/ui/Button";
 import { DialogProvider } from "~/components/ui/dialog";
 import { ToastProvider } from "~/components/ui/toast";
+import { MeetingNoteOpenWatcher } from "~/calendar/components/MeetingNoteOpenWatcher";
 import { PresenceStatusProvider } from "~/components/presence/PresenceStatusProvider";
 import { THEME_BOOT_SRC } from "~/lib/theme";
 import { isBuildStale, isChunkLoadError, reloadForNewBuild } from "~/lib/stale-build";
@@ -96,6 +97,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <NavigationProgress />
         <ToastProvider>
           <DialogProvider>
+            <MeetingNoteOpenWatcher />
             {/* Mounted at the document root so avatar presence dots work inside
                 every workspace iframe too (each iframe is its own document).
                 currentUserId is null here — root has no authed user; own-avatar
