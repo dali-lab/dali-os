@@ -17,6 +17,7 @@ import {
   snapshotTree,
   type SnapshotBlock,
 } from "~/components/meeting-recorder/enhance-plan";
+import { appendBlocks } from "./insert";
 import { blockOwnText } from "./schema/configs";
 import type { DocBlock, DocEditorInstance, DocPartialBlock } from "./schema/build";
 
@@ -217,6 +218,12 @@ export function renderEnhanceOps(
         const lastChild = parent.children.at(-1);
         if (lastChild) editor.insertBlocks(blocks, lastChild, "after");
         else editor.updateBlock(parent.id, { children: blocks } as DocPartialBlock);
+        continue;
+      }
+      if (op.kind === "appendAtEnd") {
+        const toggle = findTranscriptToggle(editor.document);
+        if (toggle) editor.insertBlocks(blocks, toggle, "before");
+        else appendBlocks(editor, blocks);
         continue;
       }
       if (op.afterId === null) {

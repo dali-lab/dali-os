@@ -61,6 +61,14 @@ export function applyEnhanceOpsToDocBlocks(
       result = mapTree(result, (b) => [b.id === op.parentId ? { ...b, children: [...b.children, ...newBlocks] } : b]);
       continue;
     }
+    if (op.kind === "appendAtEnd") {
+      const toggleIndex = result.findIndex(isTranscriptToggle);
+      result =
+        toggleIndex === -1
+          ? [...result, ...newBlocks]
+          : [...result.slice(0, toggleIndex), ...newBlocks, ...result.slice(toggleIndex)];
+      continue;
+    }
     if (op.afterId === null) {
       result = [...newBlocks, ...result];
       continue;

@@ -216,3 +216,20 @@ describe("enhanceSnapshotDocBlocks / hasEnhanceMarkInTree", () => {
     expect(hasEnhanceMarkInTree([{ ...paragraph("p", "Budget"), props: { backgroundColor: "red" } }])).toBe(false);
   });
 });
+
+describe("applyEnhanceOpsToDocBlocks appendAtEnd", () => {
+  const op: EditorOp = { kind: "appendAtEnd", blocks: [{ type: "heading", text: "Action items", cites: [], added: true }] };
+
+  it("goes directly above an existing Transcript toggle", () => {
+    const doc = ensureTranscriptToggle([paragraph("a", "Notes")], ["Ada: hi"]);
+    const result = applyEnhanceOpsToDocBlocks([op], doc, CTX);
+    expect(result.map((b) => b.type)).toEqual(["paragraph", "heading", "heading"]);
+    expect(hasTranscriptToggle([result[2]!])).toBe(true);
+  });
+
+  it("goes at the end when there is no toggle, so ensureTranscriptToggle lands below it", () => {
+    const result = ensureTranscriptToggle(applyEnhanceOpsToDocBlocks([op], [paragraph("a", "Notes")], CTX), ["Ada: hi"]);
+    expect(JSON.stringify(result[1]!.content)).toContain("Action items");
+    expect(hasTranscriptToggle([result[2]!])).toBe(true);
+  });
+});

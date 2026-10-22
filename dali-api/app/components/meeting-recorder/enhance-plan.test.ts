@@ -639,13 +639,12 @@ describe("applyEnhancePlan with nested blocks", () => {
 describe("applyEnhancePlan action items section", () => {
   const item = (text: string, cites: number[] = [7]) => ({ text, cites });
 
-  it("adds an Action items heading and one checklist item per action item after the last top-level block", () => {
+  it("appends an Action items heading and one checklist item per action item at the bottom of the note", () => {
     const blocks = [block("a", "paragraph", "Notes"), { ...block("c", "bulletListItem", "nested"), parentId: "a" }];
     const plan: EnhancePlan = { blocks: [], actionItems: [item("Ada sends the scope"), item("Ben books the room", [9])] };
     expect(applyEnhancePlan(blocks, blocks, plan).ops).toEqual([
       {
-        kind: "insertAfter",
-        afterId: "a",
+        kind: "appendAtEnd",
         blocks: [
           { type: "heading", text: "Action items", cites: [], added: true },
           { type: "checkListItem", text: "Ada sends the scope", cites: [7], added: true },
@@ -655,20 +654,18 @@ describe("applyEnhancePlan action items section", () => {
     ]);
   });
 
-  it("puts the section after the model's own trailing inserts", () => {
+  it("emits the section after every model insert, so it stays at the bottom", () => {
     const blocks = [block("a", "paragraph", "Notes")];
     const plan: EnhancePlan = {
       blocks: [{ op: "insert", after: "a", type: "heading", text: "Decisions", cites: [1] }],
       actionItems: [item("Ada sends the scope")],
     };
-    const [op] = applyEnhancePlan(blocks, blocks, plan).ops;
-    expect(op).toMatchObject({ kind: "insertAfter", afterId: "a" });
-    expect((op as { blocks: { text: string }[] }).blocks.map((b) => b.text)).toEqual(["Decisions", "Action items", "Ada sends the scope"]);
+    expect(applyEnhancePlan(blocks, blocks, plan).ops.map((o) => o.kind)).toEqual(["insertAfter", "appendAtEnd"]);
   });
 
-  it("inserts at the start of an empty note", () => {
+  it("appends the section to an empty note too", () => {
     const plan: EnhancePlan = { blocks: [], actionItems: [item("Ada sends the scope")] };
-    expect(applyEnhancePlan([], [], plan).ops[0]).toMatchObject({ kind: "insertAfter", afterId: null });
+    expect(applyEnhancePlan([], [], plan).ops[0]).toMatchObject({ kind: "appendAtEnd" });
   });
 
   it("fills the author's own Action items heading instead of adding a second one", () => {
@@ -705,6 +702,8 @@ describe("applyEnhancePlan action items section", () => {
       actionItems: [item("Ada sends the scope")],
     };
     const { ops } = applyEnhancePlan(blocks, blocks, plan);
+    expect(ops).toHaveLength(1);
+    expect(ops[0]).toMatchObject({ kind: "appendAtEnd" });
     expect((ops[0] as { blocks: { text: string }[] }).blocks.map((b) => b.text)).toEqual(["Action items", "Ada sends the scope"]);
   });
 

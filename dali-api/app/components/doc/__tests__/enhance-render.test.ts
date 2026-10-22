@@ -186,8 +186,9 @@ function fakeEditor(initial: DocBlock[]) {
           : b,
       );
     },
-    insertBlocks: (toInsert: DocBlock[], afterId: string, placement: "before" | "after" = "before") => {
-      const idx = blocks.findIndex((b) => b.id === afterId);
+    insertBlocks: (toInsert: DocBlock[], ref: string | { id: string }, placement: "before" | "after" = "before") => {
+      const refId = typeof ref === "string" ? ref : ref.id;
+      const idx = blocks.findIndex((b) => b.id === refId);
       const at = placement === "after" ? idx + 1 : idx;
       blocks = [...blocks.slice(0, at), ...toInsert, ...blocks.slice(at)];
     },
@@ -571,5 +572,26 @@ describe("Enhance on nested blocks", () => {
     const reverted = editor.getBlock("p")!;
     expect(reverted.content).toEqual([{ type: "text", text: "Budget", styles: {} }]);
     expect(reverted.children).toEqual([added]);
+  });
+});
+
+describe("renderEnhanceOps appendAtEnd", () => {
+  const items: EnhanceOpBlock[] = [{ type: "heading", text: "Action items", cites: [], added: true }];
+  const ctx = { notePath: "/documents/p1", recordingId: "rec1" };
+
+  it("goes directly above the Transcript toggle, even with notes below the toggle", () => {
+    const toggle = { ...(transcriptToggleBlock(["Ada: hi"]) as unknown as DocBlock), id: "t" } as DocBlock;
+    const editor = fakeEditor([block("a", "paragraph", "Notes"), toggle, block("z", "paragraph", "After")]);
+    renderEnhanceOps(editor, [{ kind: "appendAtEnd", blocks: items }], ctx);
+    const ids = editor.document.map((b) => b.id);
+    expect(ids.indexOf("t")).toBe(ids.length - 2);
+    expect(editor.document[ids.length - 3]!.type).toBe("heading");
+  });
+
+  it("goes at the very end when there is no Transcript toggle yet", () => {
+    const editor = fakeEditor([block("a", "paragraph", "Notes")]);
+    renderEnhanceOps(editor, [{ kind: "appendAtEnd", blocks: items }], ctx);
+    expect(editor.document).toHaveLength(2);
+    expect(editor.document[1]!.type).toBe("heading");
   });
 });

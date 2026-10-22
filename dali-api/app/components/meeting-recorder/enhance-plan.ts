@@ -82,6 +82,8 @@ export type EditorOp =
   | { kind: "update"; id: string; text: string; cites: number[] }
   | { kind: "insertAfter"; afterId: string | null; blocks: EnhanceOpBlock[] }
   | { kind: "appendChildren"; parentId: string; blocks: EnhanceOpBlock[] }
+  // The bottom of the note, above the Transcript toggle when there is one.
+  | { kind: "appendAtEnd"; blocks: EnhanceOpBlock[] }
   // Not in the original sketch, but required to implement "template headings
   // the model left empty are hidden (removed) on apply" (spec §2) — there is
   // no way to express a removal with only update/insertAfter.
@@ -302,7 +304,7 @@ export function applyEnhancePlan(
       addInsert({ afterId: topLevel[sectionEnd(topLevel, headingIndex) - 1]!.id }, items);
     } else {
       const heading: EnhanceOpBlock = { type: "heading", text: ACTION_ITEMS_HEADING, cites: [], added: true };
-      addInsert({ afterId: currentOrder.at(-1) ?? null }, [heading, ...items]);
+      ops.push({ kind: "appendAtEnd", blocks: [heading, ...items] });
     }
   }
 
