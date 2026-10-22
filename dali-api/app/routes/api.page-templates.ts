@@ -1,15 +1,15 @@
 import type { Route } from "./+types/api.page-templates";
 import { z } from "zod";
-import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson } from "~/lib/validate";
-import { isCore, isLabMember, isProjectMember } from "~/lib/roles";
+import { listPageTemplates } from "~/lib/page-templates.server";
 import { duplicatePage } from "~/lib/page-copy.server";
 import type { WorkspaceType } from "~/generated/prisma/client";
 
 // GET  /api/page-templates?workspaceType=Lab&workspaceId=<id>
 //   List template pages the viewer can access in the given workspace scope.
+//   workspaceType=Member lists the viewer's own private templates.
 //   Returns { templates: Array<{ id, title, iconEmoji }> }.
 //
 // POST /api/page-templates
@@ -26,20 +26,6 @@ const PostBodySchema = z.object({
   title: z.string().trim().min(1).max(200).optional(),
 });
 
-async function canViewWorkspace(
-  userSub: string,
-  workspaceType: string,
-  workspaceId: string | null,
-): Promise<boolean> {
-  const core = await isCore(userSub);
-  if (core) return true;
-  if (workspaceType === "Lab") return isLabMember(userSub);
-  if (workspaceType === "Project" && workspaceId) {
-    return isProjectMember(userSub, workspaceId);
-  }
-  return false;
-}
-
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) {
@@ -54,24 +40,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     return withCors(request, Response.json({ error: "workspaceType required" }, { status: 400 }));
   }
 
-  const canAccess = await canViewWorkspace(auth.user.sub, workspaceType, workspaceId);
-  if (!canAccess) {
-    return withCors(request, Response.json({ templates: [] }));
-  }
-
-  // Templates are pages in the same workspace scope with isTemplate=true.
-  const templates = await prisma.page.findMany({
-    where: {
-      workspaceType,
-      workspaceId,
-      isTemplate: true,
-      archivedAt: null,
-      kind: "FreeForm",
-    },
-    orderBy: { title: "asc" },
-    select: { id: true, title: true, iconEmoji: true },
-  });
-
+  const templates = await listPageTemplates(auth.user.sub, workspaceType, workspaceId);
   return withCors(request, Response.json({ templates }));
 }
 

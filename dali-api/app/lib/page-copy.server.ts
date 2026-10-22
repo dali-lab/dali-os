@@ -13,7 +13,7 @@
 // What is NOT copied: DocComment rows (Notion behaviour — copies start clean).
 
 import { prisma } from "~/lib/db";
-import { getPageAccess } from "~/lib/pageAccess.server";
+import { PAGE_ACCESS_SELECT, getPageAccess } from "~/lib/pageAccess.server";
 import { pageDocName } from "~/collab/roomName";
 import type { WorkspaceType, PageKind } from "~/generated/prisma/client";
 
@@ -56,9 +56,8 @@ export interface DuplicatePageResult {
  * titleOverride) and byte-copy the CollabDocument state under the new page's
  * room name. Non-FreeForm pages are rejected — they have no collab body.
  *
- * Permission check: the caller must already have canEdit access to the source
- * page's workspace (the caller is creating a new page there). The access check
- * is done server-side via getPageAccess.
+ * Permission check: the caller must be able to view the source page and edit
+ * the target workspace (the caller is creating a new page there).
  */
 export async function duplicatePage(
   input: DuplicatePageInput,
@@ -66,18 +65,17 @@ export async function duplicatePage(
   const source = await prisma.page.findUnique({
     where: { id: input.sourcePageId },
     select: {
-      id: true,
+      ...PAGE_ACCESS_SELECT,
       title: true,
-      workspaceType: true,
-      workspaceId: true,
-      parentPageId: true,
       kind: true,
       iconEmoji: true,
       coverImageUrl: true,
-      archivedAt: true,
     },
   });
   if (!source || source.archivedAt !== null) {
+    throw new Error("Page not found");
+  }
+  if (!(await getPageAccess(input.createdById, source)).canView) {
     throw new Error("Page not found");
   }
 

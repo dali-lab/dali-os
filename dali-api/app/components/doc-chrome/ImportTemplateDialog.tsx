@@ -6,8 +6,8 @@ import { useToast } from "~/components/ui/toast";
 type TemplateRow = { id: string; title: string; iconEmoji: string | null };
 
 // ⋯ "Import template" — pick a template document and hand its blocks back to
-// the editor, which inserts them into the open doc. Lists the lab-wide
-// templates plus, for a project doc, that project's own.
+// the editor, which inserts them into the open doc. Lists the viewer's private
+// templates, the lab-wide ones, and, for a project doc, that project's own.
 export function ImportTemplateDialog({
   open,
   onClose,
@@ -30,7 +30,10 @@ export function ImportTemplateDialog({
   useEffect(() => {
     if (!open) return;
     setTemplates(null);
-    const scopes = [new URLSearchParams({ workspaceType: "Lab" })];
+    const scopes = [
+      new URLSearchParams({ workspaceType: "Member" }),
+      new URLSearchParams({ workspaceType: "Lab" }),
+    ];
     if (workspaceType === "Project" && workspaceId) {
       scopes.push(new URLSearchParams({ workspaceType, workspaceId }));
     }

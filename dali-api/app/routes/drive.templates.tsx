@@ -5,6 +5,7 @@ import {
   FileText,
   FolderKanban,
   LayoutTemplate,
+  Lock,
 } from "lucide-react";
 import { requireAuth, redirectPartnerToPortal, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
@@ -28,22 +29,26 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (partnerRedirect) return partnerRedirect;
 
   const templates = await loadTemplates(auth.user.sub);
-  return { templates };
+  return { templates, userId: auth.user.sub };
 }
 
 // Display metadata per kind. Order here is the section order in the gallery.
 const KIND_META: { kind: TemplateKind; label: string; icon: React.ReactNode; blurb: string }[] = [
+  { kind: "private", label: "Your templates", icon: <Lock className="w-4 h-4" />, blurb: "Only you can see these. New documents go to your space." },
   { kind: "page", label: "Documents", icon: <FileText className="w-4 h-4" />, blurb: "Start a new document pre-filled with this layout." },
   { kind: "project", label: "Projects", icon: <FolderKanban className="w-4 h-4" />, blurb: "Start a new project with these epics, sprints, and tasks." },
 ];
 
 export default function DriveTemplates() {
-  const { templates } = useLoaderData() as { templates: Awaited<ReturnType<typeof loadTemplates>> };
+  const { templates, userId } = useLoaderData() as {
+    templates: Awaited<ReturnType<typeof loadTemplates>>;
+    userId: string;
+  };
   const navigate = useNavigate();
   const [creating, setCreating] = useState<string | null>(null);
 
   // Both kinds "start" something. Page templates duplicate into the Lab
-  // workspace then open the new doc (mirrors the TemplatePicker create flow);
+  // workspace (private ones into the viewer's own) then open the new doc (mirrors the TemplatePicker create flow);
   // project templates hand off to the projects hub create flow prefilled.
   async function onUse(item: TemplateItem) {
     if (item.action === "startProject") {
@@ -56,7 +61,11 @@ export default function DriveTemplates() {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ templatePageId: item.id, targetWorkspaceType: "Lab" }),
+        body: JSON.stringify(
+          item.kind === "private"
+            ? { templatePageId: item.id, targetWorkspaceType: "Member", targetWorkspaceId: userId }
+            : { templatePageId: item.id, targetWorkspaceType: "Lab" },
+        ),
       });
       if (!res.ok) throw new Error("Failed to create from template");
       const { id } = (await res.json()) as { id: string };
@@ -82,8 +91,8 @@ export default function DriveTemplates() {
 
       {!hasAny && (
         <p className="text-sm text-muted-foreground italic py-8 text-center">
-          No templates yet. Open any Lab document and choose “Mark as template” from its
-          ⋯ menu, or save a project as a template from its settings.
+          No templates yet. Open a document and choose “Mark as template” from its ⋯ menu,
+          or save a project as a template from its settings.
         </p>
       )}
 

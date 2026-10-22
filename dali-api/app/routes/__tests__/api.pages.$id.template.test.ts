@@ -232,6 +232,30 @@ describe("POST /api/pages/:id/template — common guards", () => {
     expect(res.status).toBe(400);
   });
 
+  it("400s setting a Partner default, which notebook filing never uses", async () => {
+    mockPrisma.page.findUnique.mockResolvedValue({ ...FREE_FORM_PAGE, isTemplate: true });
+    vi.mocked(isCore).mockResolvedValue(true);
+
+    const res = await run({ intent: "setLabMeetingNoteDefault", meetingType: "Partner", active: true });
+
+    expect(res.status).toBe(400);
+    expect(mockPrisma.page.update).not.toHaveBeenCalled();
+    expect(mockPrisma.page.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("still clears a Partner default a page already holds", async () => {
+    mockPrisma.page.findUnique.mockResolvedValue({ ...FREE_FORM_PAGE, isTemplate: true });
+    vi.mocked(isCore).mockResolvedValue(true);
+
+    const res = await run({ intent: "setLabMeetingNoteDefault", meetingType: "Partner", active: false });
+
+    expect(res.status).toBe(200);
+    expect(mockPrisma.page.update).toHaveBeenCalledWith({
+      where: { id: "page-1" },
+      data: { defaultMeetingNoteFor: null },
+    });
+  });
+
   it("400s an invalid body", async () => {
     const res = await run({ intent: "setLabMeetingNoteDefault", meetingType: "NotAType", active: true });
 

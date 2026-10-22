@@ -77,6 +77,18 @@ describe("list_page_templates", () => {
     );
   });
 
+  it("lists the caller's own private templates for the Member scope, ignoring any workspaceId", async () => {
+    vi.mocked(isCore).mockResolvedValue(true);
+    mockPrisma.page.findMany.mockResolvedValue([{ id: "t3", title: "My 1:1", iconEmoji: null }]);
+
+    const out = await runListPageTemplates("u1", { workspaceType: "Member", workspaceId: "u2" });
+
+    expect(out.templates).toEqual([{ id: "t3", title: "My 1:1", iconEmoji: null }]);
+    expect(mockPrisma.page.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ workspaceType: "Member", workspaceId: "u1" }) }),
+    );
+  });
+
   it("Core always gets access", async () => {
     vi.mocked(isCore).mockResolvedValue(true);
     mockPrisma.page.findMany.mockResolvedValue([]);
