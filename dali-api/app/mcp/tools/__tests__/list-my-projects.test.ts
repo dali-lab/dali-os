@@ -82,6 +82,7 @@ describe("list_my_projects", () => {
       name: "Alpha",
       currentTermAssignment: { termCode: "26S", domainName: "Fullstack Dev", level: "P3" },
       openTaskCount: 7,
+      terms: ["26S"],
     });
     expect(out.projects[0].activeSprint?.label).toMatch(/^Sprint \d+$/);
     expect(typeof out.projects[0].activeSprint?.endsAt).toBe("string");
@@ -90,6 +91,7 @@ describe("list_my_projects", () => {
       currentTermAssignment: null,
       activeSprint: null,
       openTaskCount: 0,
+      terms: [],
     });
   });
 

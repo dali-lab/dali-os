@@ -15,6 +15,11 @@ export type UpcomingMeeting = {
   location: string | null;
   meetingUrl: string | null;
   attendeeCount: number;
+  attendeeIds: string[];
+  description: string | null;
+  /** Google event id / iCalUID of the mirrored calendar event, for de-duplicating external reads. */
+  externalEventId: string | null;
+  iCalUID: string | null;
   source: "dali" | "interview";
   /** ISO start of this occurrence, same value as startsAt. */
   occurrenceStart: string;
@@ -41,14 +46,16 @@ export async function listUpcomingMeetings(
         { participantUserIds: { has: userId } },
       ],
     },
-    include: { exceptions: true },
+    include: { exceptions: true, rooms: { select: { name: true } } },
     take: 200,
   });
 
   const out: UpcomingMeeting[] = [];
 
   for (const m of meetings) {
-    const attendeeCount = new Set([m.organizerId, ...m.participantUserIds]).size;
+    const attendeeIds = [...new Set([m.organizerId, ...m.participantUserIds])];
+    const attendeeCount = attendeeIds.length;
+    const location = m.location ?? (m.rooms.length ? m.rooms.map((r) => r.name).join(", ") : null);
     if (!m.selectedAt) continue; // still in Searching state with no start time
 
     const candidates = expandOccurrences(m, m.exceptions, now, windowEnd);
@@ -60,9 +67,13 @@ export async function listUpcomingMeetings(
         title: m.title,
         startsAt: c.start.toISOString(),
         endsAt: c.end.toISOString(),
-        location: null,
+        location,
         meetingUrl: m.meetingUrl,
         attendeeCount,
+        attendeeIds,
+        description: m.description ?? null,
+        externalEventId: m.externalEventId ?? null,
+        iCalUID: m.iCalUID ?? null,
         source: "dali",
         occurrenceStart: c.start.toISOString(),
         scheduledMeetingId: m.id,
@@ -86,7 +97,7 @@ export async function listUpcomingMeetings(
       room: { select: { name: true } },
       assignments: {
         where: { status: "Active" },
-        select: { id: true },
+        select: { id: true, cycleInterviewer: { select: { userId: true } } },
       },
     },
     take: 100,
@@ -101,6 +112,10 @@ export async function listUpcomingMeetings(
       location: iv.room?.name ?? null,
       meetingUrl: iv.videoUrl,
       attendeeCount: iv.assignments.length + 1, // interviewers + applicant
+      attendeeIds: iv.assignments.map((a) => a.cycleInterviewer.userId),
+      description: null,
+      externalEventId: null,
+      iCalUID: null,
       source: "interview",
       occurrenceStart: iv.startTime.toISOString(),
       scheduledMeetingId: null,

@@ -171,6 +171,12 @@ export const FEATURE_FLAGS = [
     description:
       "Import jobs from a resume or LinkedIn export, and store a resume on the profile. Ships off.",
   },
+  {
+    key: "mobile-app",
+    label: "Mobile app",
+    description:
+      "Lets the DALI OS mobile app (iOS and Android) sign in and load your profile, projects, calendar, member pass and chat. Off, the app's data endpoints return not found for that member. Ships off.",
+  },
 ] as const satisfies readonly FeatureFlagDef[];
 
 export type FeatureFlagKey = (typeof FEATURE_FLAGS)[number]["key"];
