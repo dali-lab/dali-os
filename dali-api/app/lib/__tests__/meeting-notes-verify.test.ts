@@ -122,6 +122,75 @@ describe("verifyEnhancePlan", () => {
     expect(verified.droppedCites).toBe(1);
   });
 
+  describe("expand against the snapshot", () => {
+    const snapshot = [{ id: "b1", type: "bulletListItem", text: "Admin dashboard" }];
+    const expand = (text: string, cites = [100]): EnhancePlan => ({
+      blocks: [{ id: "b1", op: "expand", text, cites }],
+      actionItems: [],
+    });
+
+    it("turns an expand whose text matches the original into a keep, without counting it as dropped", () => {
+      const { plan: out, verified } = verifyEnhancePlan(expand("Admin dashboard"), lines, [], null, snapshot);
+      expect(out.blocks).toEqual([{ id: "b1", op: "keep" }]);
+      expect(verified.droppedBlocks).toBe(0);
+    });
+
+    it("treats punctuation, case, and filler-only changes as no change", () => {
+      const { plan: out, verified } = verifyEnhancePlan(
+        expand("admin dashboard, which was also that."),
+        lines,
+        [],
+        null,
+        snapshot,
+      );
+      expect(out.blocks).toEqual([{ id: "b1", op: "keep" }]);
+      expect(verified.droppedBlocks).toBe(0);
+    });
+
+    it("keeps an expand that adds a word from its cited line", () => {
+      const text = "Admin dashboard: decided to drop it from v1.";
+      const { plan: out, verified } = verifyEnhancePlan(expand(text), lines, [], null, snapshot);
+      expect(out.blocks).toEqual([{ id: "b1", op: "expand", text, cites: [100] }]);
+      expect(verified.droppedBlocks).toBe(0);
+    });
+
+    it("keeps an expand whose only addition is a number from its cited line", () => {
+      const numLines = [{ at: 100, text: "The dashboard budget is 40 hours." }];
+      const snap = [{ id: "b1", type: "paragraph", text: "Dashboard budget" }];
+      const { plan: out } = verifyEnhancePlan(expand("Dashboard budget: 40"), numLines, [], null, snap);
+      expect(out.blocks[0]).toMatchObject({ op: "expand", text: "Dashboard budget: 40" });
+    });
+
+    it("turns an expand whose additions its cited lines don't support into a keep and counts it", () => {
+      const { plan: out, verified } = verifyEnhancePlan(
+        expand("Admin dashboard ships in March with Stripe billing"),
+        lines,
+        [],
+        null,
+        snapshot,
+      );
+      expect(out.blocks).toEqual([{ id: "b1", op: "keep" }]);
+      expect(verified.droppedBlocks).toBe(1);
+    });
+
+    it("turns an expand with no surviving cite into a keep and counts it", () => {
+      const { plan: out, verified } = verifyEnhancePlan(
+        expand("Admin dashboard: decided to drop it", [9999]),
+        lines,
+        [],
+        null,
+        snapshot,
+      );
+      expect(out.blocks).toEqual([{ id: "b1", op: "keep" }]);
+      expect(verified).toMatchObject({ droppedBlocks: 1, droppedCites: 1 });
+    });
+
+    it("leaves an expand for a block missing from the snapshot to the client merge", () => {
+      const { plan: out } = verifyEnhancePlan(expand("Anything"), lines, [], null, []);
+      expect(out.blocks[0]).toMatchObject({ op: "expand", text: "Anything" });
+    });
+  });
+
   // Owners were getting matched to the wrong roster member (specs/meeting-
   // notes-model.md §6): a roster-name match alone is no longer enough.
   describe("owner evidence (specs/meeting-notes-model.md §6)", () => {

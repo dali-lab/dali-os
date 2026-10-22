@@ -10,6 +10,7 @@ import type {
   EnhanceBlockOp,
   EnhancePlan,
   EnhanceVerified,
+  SnapshotBlock,
 } from "~/components/meeting-recorder/enhance-plan";
 
 export type VerifyTranscriptLine = { at: number; text: string; channel?: "mic" | "call" };
@@ -82,6 +83,19 @@ function contentWords(text: string): Set<string> {
 function hasOverlap(a: Set<string>, b: Set<string>): boolean {
   for (const w of a) if (b.has(w)) return true;
   return false;
+}
+
+const NUMBER_RE = /\d[\d.,:%$]*/g;
+
+// Numbers count alongside content words because the detail an expand adds is
+// often just a figure ("budget" -> "budget $40k"), which CONTENT_WORD_RE misses.
+function addedTerms(text: string, original: string): Set<string> {
+  const before = contentWords(original);
+  for (const n of original.match(NUMBER_RE) ?? []) before.add(n);
+  const added = new Set<string>();
+  for (const w of contentWords(text)) if (!before.has(w)) added.add(w);
+  for (const n of text.match(NUMBER_RE) ?? []) if (!before.has(n)) added.add(n);
+  return added;
 }
 
 /** Drops cites that aren't within CITE_TOLERANCE_SECONDS of any transcript
@@ -199,7 +213,8 @@ function verifyActionItem(
  * Verifies a model-generated EnhancePlan against the real transcript and
  * roster: drops cites that don't land on a real line, drops inserted blocks
  * that end up with no surviving citation or no shared content word with what
- * they cite, and resolves owner names to roster user ids. Returns a new plan
+ * they cite, turns an expand back into a keep when it adds nothing new or
+ * nothing its cited lines support, and resolves owner names to roster user ids. Returns a new plan
  * safe to store and show — nothing past this point is trusted model output.
  */
 export function verifyEnhancePlan(
@@ -207,17 +222,33 @@ export function verifyEnhancePlan(
   lines: VerifyTranscriptLine[],
   roster: VerifyRosterUser[],
   recorderUserId: string | null = null,
+  snapshot: readonly SnapshotBlock[] = [],
 ): { plan: EnhancePlan; verified: EnhanceVerified } {
   let droppedCites = 0;
   let droppedBlocks = 0;
   let unmatchedOwners = 0;
+  const originalText = new Map(snapshot.map((b) => [b.id, b.text]));
 
   const blocks = plan.blocks.flatMap((block): EnhanceBlockOp[] => {
     if (block.op === "keep") return [block];
 
     if (block.op === "expand") {
-      const { cites, dropped } = filterCites(block.cites, lines);
+      const { cites, dropped, matchedLines } = filterCites(block.cites, lines);
       droppedCites += dropped;
+      const original = originalText.get(block.id);
+      if (original === undefined) return [{ ...block, cites }];
+
+      const added = addedTerms(block.text, original);
+      if (added.size === 0) return [{ id: block.id, op: "keep" }];
+      const citedTerms = new Set<string>();
+      for (const line of matchedLines) {
+        for (const w of contentWords(line.text)) citedTerms.add(w);
+        for (const n of line.text.match(NUMBER_RE) ?? []) citedTerms.add(n);
+      }
+      if (!hasOverlap(added, citedTerms)) {
+        droppedBlocks++;
+        return [{ id: block.id, op: "keep" }];
+      }
       return [{ ...block, cites }];
     }
 
