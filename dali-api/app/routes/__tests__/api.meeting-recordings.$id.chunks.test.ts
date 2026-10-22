@@ -23,11 +23,11 @@ function post(opts: {
   contentLength?: number;
   contentType?: string;
   bodyBytes?: number;
+  body?: Uint8Array<ArrayBuffer>;
 } = {}): Request {
   const { query = "channel=mic&segment=0&seq=1", contentType = "audio/pcm;rate=16000;channels=1" } = opts;
-  const bodyBytes = opts.bodyBytes ?? 1000;
-  const contentLength = opts.contentLength ?? bodyBytes;
-  const body = new Uint8Array(bodyBytes);
+  const body = opts.body ?? new Uint8Array(opts.bodyBytes ?? 1000);
+  const contentLength = opts.contentLength ?? body.byteLength;
   return new Request(`http://localhost/api/meeting-recordings/r1/chunks?${query}`, {
     method: "POST",
     headers: { "Content-Type": contentType, "Content-Length": String(contentLength) },
@@ -56,7 +56,14 @@ describe("POST /api/meeting-recordings/:id/chunks", () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ stopRequested: false, behindSeconds: 0, lines: [] });
     expect(putChunk).toHaveBeenCalledWith("r1", "mic", 0, 1, expect.any(Buffer));
-    expect(recordChunk).toHaveBeenCalledWith(REC, "mic", 0, 1);
+    expect(recordChunk).toHaveBeenCalledWith(REC, "mic", 0, 1, false);
+  });
+
+  it("reports a chunk with sound as voiced", async () => {
+    const loud = Buffer.alloc(2000);
+    for (let i = 0; i < 1000; i++) loud.writeInt16LE(i % 2 ? 3000 : -3000, i * 2);
+    await run(post({ body: new Uint8Array(loud.buffer.slice(loud.byteOffset, loud.byteOffset + loud.byteLength)) }));
+    expect(recordChunk).toHaveBeenCalledWith(REC, "mic", 0, 1, true);
   });
 
   it("rejects before reading the body when Content-Length is over the cap", async () => {

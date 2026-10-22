@@ -964,19 +964,26 @@ export function useMeetingRecording({
     if (phase === "stopping" || phase === "processing" || phase === "review") return;
     setStoppingSince(Date.now());
     setPhase("stopping");
+    let sessionSeconds: number | null = null;
     if (captureMode === "browser") {
       const channels = Object.keys(captures.current) as Channel[];
       await Promise.all(channels.map((ch) => captures.current[ch]?.flush() ?? Promise.resolve()));
       await Promise.all(channels.map((ch) => queues.current[ch]?.drain(STOP_DRAIN_MS) ?? Promise.resolve()));
-      setRecordedSeconds((s) => s + (Date.now() - startedAt) / 1000);
+      sessionSeconds = (Date.now() - startedAt) / 1000;
+      setRecordedSeconds((s) => s + sessionSeconds!);
       teardownCapture();
     }
     if (!recordingId) return;
+    // A browser capture is done uploading once drained, so it finishes the
+    // session the way the desktop app does: Stopped (so Continue works) and
+    // its length added (so the next segment starts after this one).
     await fetch(`/api/meeting-recordings/${recordingId}`, {
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "stop" }),
+      body: JSON.stringify(
+        sessionSeconds !== null ? { action: "finish", seconds: sessionSeconds } : { action: "stop" },
+      ),
     }).catch(() => null);
     // A follower has no local capture to drain — stay in "stopping" until
     // the poll sees the owner's device finish (Stopped/Processing) or the

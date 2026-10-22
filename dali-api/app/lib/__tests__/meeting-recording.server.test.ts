@@ -257,19 +257,63 @@ describe("claimRecording", () => {
 });
 
 describe("recordChunk", () => {
-  function lockedRow(row: { channels?: string[]; chunkIndex?: Record<string, number[]>; status?: string }) {
+  function lockedRow(row: {
+    channels?: string[];
+    voicedChannels?: string[] | null;
+    chunkIndex?: Record<string, number[]>;
+    status?: string;
+  }) {
     vi.mocked(prisma.$transaction).mockImplementation(((fn: (tx: typeof prisma) => unknown) =>
       fn(prisma)) as never);
     vi.mocked(prisma.$queryRaw).mockResolvedValue([
-      { channels: row.channels ?? ["mic"], chunkIndex: row.chunkIndex ?? null, status: row.status ?? "Recording" },
+      {
+        channels: row.channels ?? ["mic"],
+        voicedChannels: row.voicedChannels === undefined ? [] : row.voicedChannels,
+        chunkIndex: row.chunkIndex ?? null,
+        status: row.status ?? "Recording",
+      },
     ] as never);
   }
+
+  const voicedWritten = () =>
+    (vi.mocked(prisma.meetingRecording.update).mock.calls[0][0] as unknown as { data: { voicedChannels: string[] } }).data
+      .voicedChannels;
+
+  it("marks a channel voiced on its first chunk with sound", async () => {
+    lockedRow({ channels: ["mic"], voicedChannels: ["mic"] });
+    await recordChunk(rec(), "call", 0, 0, true);
+    expect(voicedWritten()).toEqual(["mic", "call"]);
+  });
+
+  it("does not mark a channel voiced from a silent chunk", async () => {
+    lockedRow({ channels: ["mic"], voicedChannels: ["mic"] });
+    await recordChunk(rec(), "call", 0, 0, false);
+    expect(voicedWritten()).toEqual(["mic"]);
+  });
+
+  it("keeps a voiced channel voiced when a later chunk is silent", async () => {
+    lockedRow({ channels: ["mic", "call"], voicedChannels: ["mic", "call"] });
+    await recordChunk(rec(), "call", 0, 9, false);
+    expect(voicedWritten()).toEqual(["mic", "call"]);
+  });
+
+  it("does not repeat a channel already voiced", async () => {
+    lockedRow({ voicedChannels: ["mic"] });
+    await recordChunk(rec(), "mic", 0, 4, true);
+    expect(voicedWritten()).toEqual(["mic"]);
+  });
+
+  it("treats a null voicedChannels as empty", async () => {
+    lockedRow({ voicedChannels: null });
+    await recordChunk(rec(), "mic", 0, 0, true);
+    expect(voicedWritten()).toEqual(["mic"]);
+  });
 
   it("adds the channel, bumps the high-water seq, and starts a Pending row", async () => {
     lockedRow({ status: "Pending", channels: [], chunkIndex: { mic: [2] } });
     vi.mocked(prisma.meetingRecording.update).mockResolvedValue({ stopRequested: true } as never);
 
-    const result = await recordChunk(rec({ status: "Pending", channels: [] }), "mic", 0, 5);
+    const result = await recordChunk(rec({ status: "Pending", channels: [] }), "mic", 0, 5, true);
 
     expect(result).toEqual({ stopRequested: true });
     expect(prisma.meetingRecording.update).toHaveBeenCalledWith(
@@ -285,7 +329,7 @@ describe("recordChunk", () => {
 
   it("never lowers the high-water seq on an out-of-order retry", async () => {
     lockedRow({ chunkIndex: { mic: [10] } });
-    await recordChunk(rec(), "mic", 0, 3);
+    await recordChunk(rec(), "mic", 0, 3, true);
     expect(prisma.meetingRecording.update).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ chunkIndex: { mic: [10] } }) }),
     );
@@ -295,7 +339,7 @@ describe("recordChunk", () => {
     // The caller read the row before the mic chunk on another machine wrote
     // to it; the locked read sees that write and the call chunk adds to it.
     lockedRow({ channels: ["mic"], chunkIndex: { mic: [1] } });
-    await recordChunk(rec({ channels: [], chunkIndex: {} }), "call", 0, 1);
+    await recordChunk(rec({ channels: [], chunkIndex: {} }), "call", 0, 1, true);
     expect(prisma.$queryRaw).toHaveBeenCalled();
     expect(prisma.meetingRecording.update).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -308,7 +352,7 @@ describe("recordChunk", () => {
     vi.mocked(prisma.$transaction).mockImplementation(((fn: (tx: typeof prisma) => unknown) =>
       fn(prisma)) as never);
     vi.mocked(prisma.$queryRaw).mockResolvedValue([] as never);
-    expect(await recordChunk(rec(), "mic", 0, 0)).toEqual({ stopRequested: true });
+    expect(await recordChunk(rec(), "mic", 0, 0, true)).toEqual({ stopRequested: true });
     expect(prisma.meetingRecording.update).not.toHaveBeenCalled();
   });
 });
@@ -427,6 +471,39 @@ describe("startProcessing / finalizeEmpty", () => {
         channels: [{ channel: "mic", segments: [{ segment: 0, startSeconds: 0, seqCount: 2 }] }],
       }),
     );
+  });
+
+  describe("silent channels", () => {
+    const twoChannels = (voicedChannels: string[] | null) =>
+      rec({
+        channels: ["mic", "call"],
+        voicedChannels,
+        segmentStarts: [0],
+        chunkIndex: { mic: [1], call: [1] },
+      });
+    const dispatched = async (row: unknown) => {
+      const process = vi.fn().mockResolvedValue(undefined);
+      vi.mocked(getTranscriptionProvider).mockReturnValue({ process });
+      vi.mocked(prisma.meetingRecording.findUnique).mockResolvedValue(row as never);
+      await startProcessing(rec());
+      return (process.mock.calls[0][0] as { channels: Array<{ channel: string }> }).channels.map((c) => c.channel);
+    };
+
+    it("leaves out a channel that never had sound", async () => {
+      expect(await dispatched(twoChannels(["mic"]))).toEqual(["mic"]);
+    });
+
+    it("sends every voiced channel", async () => {
+      expect(await dispatched(twoChannels(["call", "mic"]))).toEqual(["mic", "call"]);
+    });
+
+    it("sends every channel when none was marked voiced (rows from before the check)", async () => {
+      expect(await dispatched(twoChannels([]))).toEqual(["mic", "call"]);
+    });
+
+    it("sends every channel when voicedChannels is null", async () => {
+      expect(await dispatched(twoChannels(null))).toEqual(["mic", "call"]);
+    });
   });
 
   it("dispatches nothing when another request already claimed the row", async () => {
