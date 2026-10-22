@@ -7,6 +7,7 @@ export const AUDIT_ACTIONS = [
   "login.success",
   "login.failure",
   "logout",
+  "account.create",
   "auth.passkey.register",
   "auth.passkey.remove",
   "auth.token.invalid",
@@ -14,6 +15,9 @@ export const AUDIT_ACTIONS = [
   // Unattributed: /oauth/register is public, and a rejected registration
   // persists nothing else — this row is where the rejected redirect_uris live.
   "oauth.register.rejected",
+  "oauth.grant.issue",
+  "oauth.grant.revoke",
+  "session.revoke",
   "pairing.start",
   "pairing.approve",
   "pairing.cancel",
@@ -75,6 +79,8 @@ export const AUDIT_ACTIONS = [
   "group.create",
   "group.update",
   "group.delete",
+  "group.member.add",
+  "group.member.remove",
   "mail-category.create",
   "mail-category.update",
   "mail-category.delete",

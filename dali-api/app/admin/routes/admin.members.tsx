@@ -9,6 +9,7 @@ import { redirectToLogin } from "~/lib/login-next";
 import { isAdmin, isCore, isAdminViaEnv, currentTerm } from "~/lib/roles";
 import { LAB_MEMBER_WHERE, MEMBER_LIST_ORDER_BY } from "~/lib/prisma-shapes";
 import { coreCycleTermIds } from "~/lib/core-cycle";
+import { logRoleChange, logDomainLeadChange } from "~/admin/lib/access-audit.server";
 import { notifyAdminsOfPromotion } from "~/lib/promotion-notify.server";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { Avatar } from "~/components/ui/Avatar";
@@ -105,6 +106,9 @@ export async function loader({ request }: Route.LoaderArgs) {
   };
 }
 
+const coreTitleLabel = (leadTitle: string | null) =>
+  leadTitle ? `Core: ${leadTitle}` : "Core";
+
 export async function action({ request }: Route.ActionArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return auth.response;
@@ -114,12 +118,18 @@ export async function action({ request }: Route.ActionArgs) {
   const formData = await request.formData();
   const intent = formData.get("intent") as string;
 
-  // Admin-promotion is the only Admin-gated mutation on this page.
+  const roleLabels = (m: { isStaff: boolean } | null) =>
+    m ? (m.isStaff ? ["Admin", "Staff"] : ["Admin"]) : [];
+
   if (intent === "set-admin") {
     if (!(await isAdmin(auth.user.sub)))
       return forbidden(request);
     const userId = formData.get("userId") as string;
     const value = formData.get("value") === "true";
+    const before = await prisma.adminMembership.findUnique({
+      where: { userId },
+      select: { isStaff: true },
+    });
     if (value) {
       await prisma.adminMembership.upsert({
         where: { userId },
@@ -129,17 +139,28 @@ export async function action({ request }: Route.ActionArgs) {
     } else {
       await prisma.adminMembership.deleteMany({ where: { userId } });
     }
+    if (value !== !!before) {
+      await logRoleChange({
+        actorId: auth.user.sub,
+        targetUserId: userId,
+        before: roleLabels(before),
+        after: value ? ["Admin"] : [],
+        request,
+      });
+    }
     return null;
   }
 
-  // Staff ⊂ Admin: marking Staff upserts the AdminMembership with isStaff=true
-  // (granting Admin in the same action); un-marking clears the flag but keeps
-  // Admin. Admin-gated, like set-admin.
+  // Staff implies Admin: marking Staff also grants Admin; un-marking keeps Admin.
   if (intent === "set-staff") {
     if (!(await isAdmin(auth.user.sub)))
       return forbidden(request);
     const userId = formData.get("userId") as string;
     const value = formData.get("value") === "true";
+    const before = await prisma.adminMembership.findUnique({
+      where: { userId },
+      select: { isStaff: true },
+    });
     if (value) {
       await prisma.adminMembership.upsert({
         where: { userId },
@@ -150,6 +171,15 @@ export async function action({ request }: Route.ActionArgs) {
       await prisma.adminMembership.updateMany({
         where: { userId },
         data: { isStaff: false },
+      });
+    }
+    if (value !== !!before?.isStaff) {
+      await logRoleChange({
+        actorId: auth.user.sub,
+        targetUserId: userId,
+        before: roleLabels(before),
+        after: value ? ["Admin", "Staff"] : before ? ["Admin"] : [],
+        request,
       });
     }
     return null;
@@ -186,6 +216,13 @@ export async function action({ request }: Route.ActionArgs) {
       await prisma.coreAssignment.createMany({
         data: missing.map((termId) => ({ userId, termId, leadTitle })),
       });
+      await logRoleChange({
+        actorId: auth.user.sub,
+        targetUserId: userId,
+        before: [],
+        after: [coreTitleLabel(leadTitle)],
+        request,
+      });
     }
     // A new Core title for the current term is a pay-affecting promotion — tell
     // admins (issue #1001). Skip when they already held this title this term.
@@ -218,6 +255,13 @@ export async function action({ request }: Route.ActionArgs) {
         termId: { in: cycleTermIds },
       },
     });
+    await logRoleChange({
+      actorId: auth.user.sub,
+      targetUserId: target.userId,
+      before: [coreTitleLabel(target.leadTitle)],
+      after: [],
+      request,
+    });
     return null;
   }
 
@@ -231,19 +275,44 @@ export async function action({ request }: Route.ActionArgs) {
         { status: 500 },
       );
     }
-    await prisma.domainLeadAssignment.upsert({
-      where: {
-        userId_domainId_termId: { userId, domainId, termId: term.id },
-      },
+    const key = { userId_domainId_termId: { userId, domainId, termId: term.id } };
+    const existing = await prisma.domainLeadAssignment.findUnique({
+      where: key,
+      select: { id: true },
+    });
+    const assignment = await prisma.domainLeadAssignment.upsert({
+      where: key,
       update: {},
       create: { userId, domainId, termId: term.id },
     });
+    if (!existing) {
+      await logDomainLeadChange({
+        kind: "add",
+        actorId: auth.user.sub,
+        targetUserId: userId,
+        domainId,
+        assignmentId: assignment.id,
+        termId: term.id,
+        request,
+      });
+    }
     return null;
   }
 
   if (intent === "remove-domain-lead") {
     const assignmentId = formData.get("assignmentId") as string;
-    await prisma.domainLeadAssignment.delete({ where: { id: assignmentId } });
+    const removed = await prisma.domainLeadAssignment.delete({
+      where: { id: assignmentId },
+    });
+    await logDomainLeadChange({
+      kind: "remove",
+      actorId: auth.user.sub,
+      targetUserId: removed.userId,
+      domainId: removed.domainId,
+      assignmentId,
+      termId: removed.termId,
+      request,
+    });
     return null;
   }
 

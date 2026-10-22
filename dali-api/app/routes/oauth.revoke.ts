@@ -1,5 +1,7 @@
 import type { Route } from "./+types/oauth.revoke";
-import { revokeSession } from "~/lib/session";
+import { revokeSession, hashSessionId } from "~/lib/session";
+import { prisma } from "~/lib/db";
+import { logAuditEvent } from "~/lib/audit";
 import { clearSessionCookie, parseSessionId } from "~/lib/cookies";
 import { withCors, handlePreflight, preflightLoader } from "~/lib/cors";
 import { safeJson } from "~/lib/safe-json";
@@ -26,7 +28,25 @@ export async function action({ request }: Route.ActionArgs) {
   }
 
   if (token) {
+    const session = await prisma.session.findUnique({
+      where: { id: hashSessionId(token) },
+      select: { userId: true, grantId: true, revokedAt: true },
+    });
     await revokeSession(token);
+    if (session && !session.revokedAt) {
+      await logAuditEvent({
+        action: "session.revoke",
+        userId: session.userId,
+        targetId: session.userId,
+        metadata: {
+          scope: "one",
+          count: 1,
+          via: "oauth.revoke",
+          ...(session.grantId ? { grantId: session.grantId } : {}),
+        },
+        request,
+      });
+    }
   }
 
   const res = Response.json({});

@@ -20,6 +20,11 @@ import {
 } from "~/email/lib/auth-email";
 import { auditPasskeyMutation } from "~/lib/betterauth-passkey-audit.server";
 import {
+  auditAccountCreated,
+  auditSessionCreated,
+  auditSignInFailure,
+} from "~/lib/betterauth-auth-audit.server";
+import {
   canonicalizeEmailBody,
   recordProvenEmail,
 } from "~/lib/betterauth-email-alias.server";
@@ -285,10 +290,16 @@ export const auth = betterAuth({
     after: createAuthMiddleware(async (ctx) => {
       await recordProvenEmail(ctx);
       await auditPasskeyMutation(ctx);
+      await auditSignInFailure(ctx);
     }),
   },
 
   databaseHooks: {
+    session: {
+      create: {
+        after: auditSessionCreated,
+      },
+    },
     user: {
       create: {
         // Populate the app's NOT-NULL firstName/lastName from BetterAuth's
@@ -313,7 +324,8 @@ export const auth = betterAuth({
         // ensure a DALIMember marker row, and assign a handle. This is
         // domain-conditional, NOT the ambiguous student/partner classification
         // the 3-door split exists to avoid — non-@dali signups skip it entirely.
-        after: async (user) => {
+        after: async (user, ctx) => {
+          await auditAccountCreated(user, ctx);
           const email =
             typeof user.email === "string" ? user.email.toLowerCase() : "";
           if (!email.endsWith("@dali.dartmouth.edu")) return;
