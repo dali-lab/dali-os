@@ -220,7 +220,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 function Sparkline({ series, accent }: { series: DayRow[]; accent: "primary" | "amber" }) {
   const max = Math.max(1, ...series.map((d) => d.count));
   const barClass =
-    accent === "primary" ? "bg-primary/70 hover:bg-primary" : "bg-os-amber hover:bg-os-amber";
+    accent === "primary" ? "bg-primary/70 hover:bg-primary" : "bg-os-amber/70 hover:bg-os-amber";
   return (
     <div className="flex items-end gap-0.5 h-16">
       {series.map((d) => {

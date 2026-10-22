@@ -67,8 +67,8 @@ const Chip = forwardRef<
       {...rest}
       className={cn(
         "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium whitespace-nowrap",
-        tone === "attention" && "border-os-amber bg-os-amber text-os-amber",
-        tone === "good" && "border-os-green bg-os-green text-os-green",
+        tone === "attention" && "border-os-amber/30 bg-os-amber/10 text-os-amber",
+        tone === "good" && "border-os-green/30 bg-os-green/10 text-os-green",
         tone === "neutral" && "border-border bg-muted text-muted-foreground",
         className,
       )}
