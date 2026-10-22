@@ -205,26 +205,6 @@ def _run_pyannote(pcm: bytes, max_speakers: Optional[int], hook=None) -> list:
     ]
 
 
-def _fetch_chunk(url: str) -> Optional[bytes]:
-    """A chunk the client dropped (upload queue overflow) was never written,
-    so its presigned URL 404s. That is a gap, not a failure: return None and
-    assemble_segment_pcm fills it with silence so later timestamps stay
-    absolute."""
-    import httpx
-
-    # httpx error messages carry the presigned URL; logger.exception would
-    # write it out.
-    try:
-        response = httpx.get(url, timeout=CHUNK_FETCH_TIMEOUT_SECONDS)
-    except httpx.HTTPError as exc:
-        raise RuntimeError(f"chunk fetch failed: {type(exc).__name__}") from None
-    if response.status_code in (403, 404):
-        return None
-    if response.is_error:
-        raise RuntimeError(f"chunk fetch failed: HTTP {response.status_code}")
-    return response.content
-
-
 def _post_signed(callback_url: str, payload: dict, timeout: float) -> None:
     import json
 
@@ -266,6 +246,7 @@ def _post_progress(callback_url: str, body: dict) -> None:
 
 @app.function(gpu="T4", timeout=900, retries=1, secrets=[modal.Secret.from_name("dali-asr")])
 def run_job(raw_body: dict) -> None:
+    import httpx
     import pipeline
 
     req = pipeline.parse_process_request(raw_body)
@@ -273,6 +254,12 @@ def run_job(raw_body: dict) -> None:
     sender = pipeline.LatestOnlySender(lambda body: _post_progress(req.callback_url, body))
     reporter = pipeline.ProgressReporter(req.recording_id, sender.submit, time.monotonic)
 
+    http = httpx.Client(
+        timeout=CHUNK_FETCH_TIMEOUT_SECONDS,
+        limits=httpx.Limits(
+            max_connections=pipeline.FETCH_WORKERS, max_keepalive_connections=pipeline.FETCH_WORKERS
+        ),
+    )
     try:
         channels_out = {}
         for index, channel in enumerate(req.channels, start=1):
@@ -280,7 +267,7 @@ def run_job(raw_body: dict) -> None:
             timings: dict = {}
             channels_out[channel.channel] = pipeline.process_channel(
                 channel,
-                fetch_chunk=_fetch_chunk,
+                fetch_chunk=lambda url: pipeline.fetch_chunk(http, url),
                 transcribe=_run_parakeet,
                 diarize=_run_pyannote,
                 on_progress=reporter.for_channel(
@@ -308,6 +295,8 @@ def run_job(raw_body: dict) -> None:
             pipeline.redact_request(raw_body),
         )
         payload = pipeline.build_error_callback(req.recording_id, "processing_failed")
+    finally:
+        http.close()
 
     sender.close()
     _deliver_callback(req.callback_url, payload)

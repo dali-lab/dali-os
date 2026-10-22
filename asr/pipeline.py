@@ -463,6 +463,27 @@ def labeling_hook(emit: Callable[[int, int], None]) -> Callable:
 FETCH_WORKERS = 16
 
 
+def fetch_chunk(client, url: str) -> Optional[bytes]:
+    """GET one presigned chunk with a shared httpx-style client (one TLS
+    connection per worker instead of one per chunk).
+
+    A chunk the client dropped (upload queue overflow) was never written,
+    so its presigned URL 403s/404s. That is a gap, not a failure: return
+    None and assemble_segment_pcm fills it with silence so later timestamps
+    stay absolute."""
+    # httpx error messages carry the presigned URL; logger.exception would
+    # write it out.
+    try:
+        response = client.get(url)
+    except Exception as exc:
+        raise RuntimeError(f"chunk fetch failed: {type(exc).__name__}") from None
+    if response.status_code in (403, 404):
+        return None
+    if response.is_error:
+        raise RuntimeError(f"chunk fetch failed: HTTP {response.status_code}")
+    return response.content
+
+
 def process_channel(
     channel: Channel,
     fetch_chunk: Callable[[str], bytes],
