@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/db");
+vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
 vi.mock("~/forms/lib/form-page.server", () => ({ setFormArchived: vi.fn(), deleteForm: vi.fn() }));
 vi.mock("~/forms/lib/form-usages.server", () => ({ formDeletionBlockers: vi.fn() }));
 vi.mock("~/lib/auth", () => ({
@@ -26,6 +27,7 @@ import { requireAuth } from "~/lib/auth";
 import { canViewForms } from "~/lib/roles";
 import { getPageAccess, getPageAccessBulk } from "~/lib/pageAccess.server";
 import { canEditFile } from "~/lib/fileAccess.server";
+import { logAuditEvent } from "~/lib/audit";
 import { loader, action } from "~/routes/api.drive.trash";
 import { deleteForm, setFormArchived } from "~/forms/lib/form-page.server";
 import { formDeletionBlockers } from "~/forms/lib/form-usages.server";
@@ -360,5 +362,90 @@ describe("POST /api/drive/trash (purge)", () => {
 
     expect(res.status).toBe(200);
     expect(mockPrisma.page.delete).toHaveBeenCalledWith({ where: { id: "f1" } });
+  });
+});
+
+describe("POST /api/drive/trash (audit)", () => {
+  const findPage = prisma.page.findUnique as unknown as ReturnType<typeof vi.fn>;
+  const findFile = (prisma.projectFile as unknown as { findUnique: ReturnType<typeof vi.fn> }).findUnique;
+  const purge = (type: string, id: string) => {
+    const body = new FormData();
+    body.set("intent", "purge");
+    body.set("type", type);
+    body.set("id", id);
+    return action({ request: new Request("http://os.test/api/drive/trash", { method: "POST", body }) } as never);
+  };
+
+  it("logs a doc purge with its title and kind", async () => {
+    vi.mocked(getPageAccess).mockResolvedValue(FULL);
+    findPage.mockResolvedValue({ folderType: null, title: "Budget" });
+
+    await purge("doc", "page-1");
+
+    expect(logAuditEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "drive.trash.purge",
+        userId: "user-1",
+        targetId: "page-1",
+        metadata: { type: "doc", title: "Budget" },
+      }),
+    );
+  });
+
+  it("logs a file purge and a file restore with the file title", async () => {
+    vi.mocked(canEditFile).mockResolvedValue(true);
+    findFile.mockResolvedValue({ projectId: "p1", title: "plan.pdf" });
+    (prisma.projectFile as unknown as { delete: ReturnType<typeof vi.fn> }).delete = vi.fn();
+    (prisma.projectFile as unknown as { update: ReturnType<typeof vi.fn> }).update = vi.fn();
+
+    await purge("file", "file-1");
+    await action({ request: restoreRequest("file", "file-1") } as never);
+
+    expect(vi.mocked(logAuditEvent).mock.calls.map(([e]) => [e.action, e.targetId, e.metadata])).toEqual([
+      ["drive.trash.purge", "file-1", { type: "file", title: "plan.pdf" }],
+      ["drive.trash.restore", "file-1", { type: "file", title: "plan.pdf" }],
+    ]);
+  });
+
+  it("logs a doc restore", async () => {
+    vi.mocked(getPageAccess).mockResolvedValue(FULL);
+    findPage.mockResolvedValue({ kind: "FreeForm", archivedAt: ARCHIVED_AT, title: "Notes" });
+
+    await action({ request: restoreRequest("doc", "page-1") } as never);
+
+    expect(logAuditEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "drive.trash.restore",
+        targetId: "page-1",
+        metadata: { type: "doc", title: "Notes" },
+      }),
+    );
+  });
+
+  it("logs a form purge with the title read before the delete", async () => {
+    vi.mocked(canViewForms).mockResolvedValue(true);
+    vi.mocked(formDeletionBlockers).mockResolvedValue([]);
+    findPage.mockResolvedValue({ title: "Intake" });
+
+    await purge("form", "form-1");
+
+    expect(logAuditEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "drive.trash.purge",
+        targetId: "form-1",
+        metadata: { type: "form", title: "Intake" },
+      }),
+    );
+  });
+
+  it("logs nothing when the purge is refused", async () => {
+    vi.mocked(getPageAccess).mockResolvedValue({ ...FULL, canEdit: false });
+    await purge("doc", "page-1");
+
+    mockPrisma.projectFile.count.mockResolvedValue(2);
+    vi.mocked(getPageAccess).mockResolvedValue(FULL);
+    await purge("folder", "f1");
+
+    expect(logAuditEvent).not.toHaveBeenCalled();
   });
 });

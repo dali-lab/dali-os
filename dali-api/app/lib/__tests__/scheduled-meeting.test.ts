@@ -1142,6 +1142,29 @@ describe("createScheduledMeeting — attendance roster", () => {
     });
   });
 
+  it("stamps every member of a Group-scoped meeting's calendar as changed, not only the organizer", async () => {
+    vi.mocked(resolveGroupMembers).mockResolvedValueOnce(["g1", "g2"]);
+    p.scheduledMeeting.create.mockImplementationOnce(async ({ data }: { data: Record<string, unknown> }) => ({
+      id: "m1",
+      ownerCalendarEmail: "org@dali.dartmouth.edu",
+      createdAt: new Date("2026-09-01T12:00:00.000Z"),
+      ...data,
+    }));
+    const updateMany = prisma.user.updateMany as ReturnType<typeof vi.fn>;
+    updateMany.mockClear();
+
+    await createScheduledMeeting({
+      organizerId: "org-1",
+      organizerEmail: "org@dali.dartmouth.edu",
+      title: "Group sync",
+      durationMinutes: 30,
+      scope: { type: "Group", groupId: "grp-1" },
+    });
+
+    const stamped = updateMany.mock.calls.flatMap(([arg]) => arg.where.id.in as string[]);
+    expect(new Set(stamped)).toEqual(new Set(["org-1", "g1", "g2"]));
+  });
+
   it("creates no roster for a solo meeting with no guests", async () => {
     await createScheduledMeeting({
       organizerId: "org-1",

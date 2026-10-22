@@ -75,6 +75,10 @@ model User {
 
   releaseNotesSeenAt DateTime?
 
+  // Stamped by every write that can change what Google returns for this user,
+  // so each machine can tell its in-process calendar cache is stale.
+  calendarDataChangedAt DateTime?
+
   // ─── Profile fields (Phase 1 additions; all nullable) ─────────────────────
   // Dartmouth class year (e.g., 2026). Solves the "took a term off"
   // ambiguity. Input to membership-status recompute + display.
@@ -183,6 +187,7 @@ model User {
   // write path always records.
   lastActiveAt DateTime?
   hideActivity Boolean   @default(false)
+  presenceAway Boolean   @default(false)
 
   // ─── Relations: existing ──────────────────────────────────────────────────
   daliMember                    DALIMember?
@@ -338,6 +343,13 @@ model User {
   // ─── Easter-egg games ─────────────────────────────────────────────────────
   tetrisScore TetrisScore?
   dinoScore   DinoScore?
+
+  // ─── Chat ─────────────────────────────────────────────────────────────────
+  chatConversationsCreated ChatConversation[]
+  chatMemberships          ChatMember[]
+  chatMessages             ChatMessage[]
+  chatReactions            ChatReaction[]
+  mobilePushTokens         MobilePushToken[]
 }
 
 // A DALI lab member. userId is optional because a member may be known (e.g. via daliEmail)
@@ -521,7 +533,7 @@ model ApplicationCycle {
   domains              DomainApplicationCycle[]
   domainChallengeForms CycleDomainForm[]
 
-  interviewConfig   InterviewConfig?
+  interviewConfigs  InterviewConfig[]
   cycleReviewers    CycleReviewer[]
   cycleInterviewers CycleInterviewer[]
   interviews        Interview[]
@@ -643,6 +655,10 @@ model Application {
   // regular hire. Core = current member applying to join Core. Transfer =
   // informal internal domain transfer.
   applicationType ApplicationType @default(Standard)
+
+  // Free-text note from Core or a domain lead, shown above the application
+  // (e.g. why a late submission was accepted). Null means no note.
+  hiringNote String?
 
   statusUpdates      ApplicationStatusUpdate[]
   domainApplications DomainApplication[]
@@ -875,8 +891,11 @@ model InterviewConfig {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  applicationCycleId String           @unique
+  applicationCycleId String
   applicationCycle   ApplicationCycle @relation(fields: [applicationCycleId], references: [id])
+  // The Interviews block on the cycle's timeline these settings book for.
+  // "interviews" is the first round, whose block predates round ids.
+  interviewRoundId   String           @default("interviews")
 
   slotDurationMinutes Int @default(30)
   bufferMinutes       Int @default(15)
@@ -899,6 +918,8 @@ model InterviewConfig {
   // (one recurring RoomBooking per room, source InterviewHold) so members
   // can't book over the cycle. Bookings from this cycle sit inside the hold.
   holdRooms Boolean @default(false)
+
+  @@unique([applicationCycleId, interviewRoundId])
 }
 
 // A DALI member assigned as a written reviewer for a domain in a cycle.
@@ -933,10 +954,11 @@ model CycleInterviewer {
   applicationCycle   ApplicationCycle @relation(fields: [applicationCycleId], references: [id])
   domainId           String
   domain             Domain           @relation(fields: [domainId], references: [id])
+  interviewRoundId   String           @default("interviews")
 
   interviewAssignments InterviewAssignment[]
 
-  @@unique([userId, applicationCycleId, domainId])
+  @@unique([userId, applicationCycleId, domainId, interviewRoundId])
 }
 
 enum InterviewStatus {
@@ -961,6 +983,7 @@ model Interview {
   domainApplication   DomainApplication @relation(fields: [domainApplicationId], references: [id])
   applicationCycleId  String
   applicationCycle    ApplicationCycle  @relation(fields: [applicationCycleId], references: [id])
+  interviewRoundId    String            @default("interviews")
 
   startTime DateTime
   endTime   DateTime
@@ -1110,8 +1133,10 @@ model Decision {
   madeById String
   madeBy   User   @relation("DecisionMadeBy", fields: [madeById], references: [id])
 
-  notes        String?
-  waitlistRank Int? // set when type == Waitlisted; current rank = latest record's value
+  notes            String?
+  waitlistRank     Int? // set when type == Waitlisted; current rank = latest record's value
+  // Set when type == InvitedToInterview: the Interviews round the invite is for.
+  interviewRoundId String?
 
   // Lineage pointer for stage transitions (Draft → Final → Released).
   // Null when the row has no predecessor (e.g. delibs close, direct creation).
@@ -2049,6 +2074,9 @@ model MeetingRecording {
 
   // Channels with at least one stored chunk: "mic" | "call".
   channels      String[]  @default([])
+  // Channels with at least one chunk above the silence floor. Only these are
+  // sent to transcription; empty (rows from before this column) sends all.
+  voicedChannels String[] @default([])
   // Segment start offsets in seconds, index = segment. Continue appends one;
   // segment 0's start is implicitly 0.
   segmentStarts Float[]   @default([])
@@ -4411,6 +4439,9 @@ model EducationOffering {
   // Fraction of sessions a student must attend (Present + Excused) to earn a
   // completion certificate. Miniseries and fellowships; workshops need one Present mark.
   completionThreshold  Float          @default(0.8)
+  // When set, replaces the fraction: a fixed count of sessions attended
+  // (Present + Excused) earns the certificate.
+  completionMinSessions Int?
 
   // Optional per-offering Google Workspace identity. Falls back to a shared
   // education identity if not set.
@@ -7524,4 +7555,98 @@ model ReleaseNote {
   updatedAt     DateTime          @updatedAt
 
   @@index([status, publishedAt])
+}
+
+// ─── Chat (mobile app) ──────────────────────────────────────────────────────
+
+enum ChatConversationKind {
+  channel
+  dm
+}
+
+enum ChatMessageKind {
+  user
+  system
+}
+
+model ChatConversation {
+  id          String               @id @default(cuid())
+  kind        ChatConversationKind
+  // Channel slug without the leading #; null for DMs. Unique among channels.
+  name        String?              @unique
+  isPrivate   Boolean              @default(false)
+  isDefault   Boolean              @default(false)
+  topic       String?
+  createdById String
+  createdAt   DateTime             @default(now())
+
+  createdBy User          @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  members   ChatMember[]
+  messages  ChatMessage[]
+
+  @@index([kind, isPrivate])
+}
+
+model ChatMember {
+  id             String   @id @default(cuid())
+  conversationId String
+  userId         String
+  joinedAt       DateTime @default(now())
+  lastReadAt     DateTime @default(now())
+
+  conversation ChatConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user         User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([conversationId, userId])
+  @@index([userId])
+}
+
+model ChatMessage {
+  id             String          @id @default(cuid())
+  conversationId String
+  authorId       String
+  text           String
+  parentId       String?
+  kind           ChatMessageKind @default(user)
+  createdAt      DateTime        @default(now())
+
+  conversation ChatConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  author       User             @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  parent       ChatMessage?     @relation("ChatThread", fields: [parentId], references: [id], onDelete: Cascade)
+  replies      ChatMessage[]    @relation("ChatThread")
+  reactions    ChatReaction[]
+
+  @@index([conversationId, createdAt])
+  @@index([parentId])
+}
+
+model ChatReaction {
+  id        String   @id @default(cuid())
+  messageId String
+  userId    String
+  emoji     String
+  createdAt DateTime @default(now())
+
+  message ChatMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user    User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, userId, emoji])
+}
+
+enum MobilePushPlatform {
+  ios
+  android
+}
+
+model MobilePushToken {
+  id         String             @id @default(cuid())
+  userId     String
+  token      String             @unique
+  platform   MobilePushPlatform
+  createdAt  DateTime           @default(now())
+  lastSeenAt DateTime           @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }

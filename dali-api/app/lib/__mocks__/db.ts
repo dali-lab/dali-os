@@ -14,6 +14,7 @@ export const prisma = {
     findFirst: vi.fn(),
     findMany: vi.fn(),
     update: vi.fn(),
+    updateMany: vi.fn(),
     upsert: vi.fn(),
     delete: vi.fn(),
   },
@@ -559,6 +560,9 @@ export const prisma = {
   },
   workingHoursDay: {
     findMany: vi.fn().mockResolvedValue([]),
+    deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+    createMany: vi.fn().mockResolvedValue({ count: 0 }),
+    create: vi.fn(),
   },
   projectShowcase: {
     findUnique: vi.fn(),

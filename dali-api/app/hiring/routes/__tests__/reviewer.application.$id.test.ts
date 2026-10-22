@@ -5,6 +5,8 @@ vi.mock("~/lib/auth", () => ({
   requireAuth: vi.fn(),
 }));
 vi.mock("~/lib/roles");
+vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
+vi.mock("~/hiring/lib/application-view-audit.server", () => ({ logApplicationView: vi.fn() }));
 vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabled: vi.fn(async () => false) }));
 vi.mock("~/hiring/lib/email-engagement.server", () => ({
   getApplicantEmailEngagement: vi.fn(async () => null),
@@ -18,7 +20,9 @@ import { requireAuth } from "~/lib/auth";
 import { hasCycleAccess, getUserRoles } from "~/lib/roles";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { getHiringEventEngagement } from "~/hiring/lib/hiring-events.server";
-import { loader } from "~/hiring/routes/reviewer.application.$id";
+import { logAuditEvent } from "~/lib/audit";
+import { logApplicationView } from "~/hiring/lib/application-view-audit.server";
+import { loader, action } from "~/hiring/routes/reviewer.application.$id";
 
 const mockPrisma = prisma as unknown as Record<string, any>;
 
@@ -227,6 +231,7 @@ describe("reviewer.application.$id loader — domain scoping", () => {
     // Domain scoping queries should not run if access is denied.
     expect(mockPrisma.domainApplication.findMany).not.toHaveBeenCalled();
     expect(mockPrisma.cycleReviewer.findMany).not.toHaveBeenCalled();
+    expect(logApplicationView).not.toHaveBeenCalled();
   });
 });
 
@@ -363,6 +368,9 @@ describe("reviewer.application.$id loader — prior applications", () => {
     const result: any = await callLoader();
 
     expect(result.blinded).toBe(true);
+    expect(logApplicationView).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: USER_ID, applicationId: APPLICATION_ID, cycleId: CYCLE_ID, blinded: true }),
+    );
     expect(result.priorApplications).toHaveLength(1);
     for (const prior of result.priorApplications) {
       for (const domain of prior.domains) {
@@ -384,6 +392,9 @@ describe("reviewer.application.$id loader — prior applications", () => {
     const result: any = await callLoader();
 
     expect(result.blinded).toBe(false);
+    expect(logApplicationView).toHaveBeenCalledWith(
+      expect.objectContaining({ applicationId: APPLICATION_ID, blinded: false }),
+    );
     expect(result.priorApplications).toHaveLength(1);
     expect(result.priorApplications[0].domains[0].status).toBe("Accepted");
   });
@@ -424,5 +435,71 @@ describe("reviewer.application.$id loader — application events engagement", ()
 
     expect(getHiringEventEngagement).toHaveBeenCalledWith("u-1");
     expect(result.hiringEventEngagement).toHaveLength(1);
+  });
+});
+
+describe("reviewer.application.$id action — save-review audit", () => {
+  const EXISTING = {
+    id: "review-1",
+    scores: { craft: 4 },
+    feedback: "private feedback",
+    rejectionRationale: "",
+    overallRecommendation: "Lean Hire",
+    annotations: [],
+    rubricVersionId: "rv-1",
+    domainApplication: {
+      domainId: DESIGN_DOMAIN_ID,
+      application: { applicationCycleId: CYCLE_ID, applicationCycle: { hasChallenges: false } },
+    },
+  };
+
+  function save(fields: { scores: unknown; overallRecommendation: string; annotations?: unknown }) {
+    const body = new FormData();
+    body.set("intent", "save-review");
+    body.set("scores", JSON.stringify(fields.scores));
+    body.set("overallRecommendation", fields.overallRecommendation);
+    body.set("annotations", JSON.stringify(fields.annotations ?? []));
+    return action({
+      request: new Request("http://localhost/hiring/reviewer/application/app-1", { method: "POST", body }),
+      params: { id: APPLICATION_ID },
+      context: {},
+    } as any);
+  }
+
+  beforeEach(() => {
+    mockPrisma.applicationReview.findFirst = vi.fn().mockResolvedValue(EXISTING);
+    mockPrisma.applicationReview.update = vi.fn().mockResolvedValue({});
+    mockPrisma.applicationCycle = { findUnique: vi.fn().mockResolvedValue(null) };
+  });
+
+  it("logs the score and recommendation change against the review", async () => {
+    await save({ scores: { craft: 8 }, overallRecommendation: "Hire" });
+
+    expect(logAuditEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "review.update",
+        userId: USER_ID,
+        targetId: "review-1",
+        metadata: {
+          cycleId: CYCLE_ID,
+          applicationId: APPLICATION_ID,
+          fields: ["scores", "overallRecommendation"],
+          scores: { before: { craft: 4 }, after: { craft: 8 } },
+          recommendation: { before: "Lean Hire", after: "Hire" },
+        },
+      }),
+    );
+  });
+
+  it("logs nothing for an autosave that changes nothing", async () => {
+    await save({ scores: { craft: 4 }, overallRecommendation: "Lean Hire" });
+    expect(mockPrisma.applicationReview.update).toHaveBeenCalled();
+    expect(logAuditEvent).not.toHaveBeenCalled();
+  });
+
+  it("logs nothing when the reviewer has no review row to update", async () => {
+    mockPrisma.applicationReview.findFirst = vi.fn().mockResolvedValue(null);
+    await save({ scores: { craft: 8 }, overallRecommendation: "Hire" });
+    expect(logAuditEvent).not.toHaveBeenCalled();
   });
 });

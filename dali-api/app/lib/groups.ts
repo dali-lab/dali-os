@@ -697,6 +697,17 @@ export async function listVisibleGroupsForUser(
   return result;
 }
 
+export async function listActiveGroupNamesForUser(
+  userId: string,
+  request?: Request,
+): Promise<string[]> {
+  const [{ memberOf }, archiveContext] = await Promise.all([
+    deriveUserGroups(userId, request),
+    loadGroupArchiveContext(),
+  ]);
+  return memberOf.filter((g) => !isGroupArchived(g, archiveContext)).map((g) => g.name);
+}
+
 // Returns every group, unfiltered. For the Groups management page, where a
 // Core/Admin user manages groups they may not belong to — so a group created
 // without adding yourself still shows up.

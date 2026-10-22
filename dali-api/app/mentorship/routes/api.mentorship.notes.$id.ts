@@ -3,6 +3,7 @@ import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
+import { logAuditEvent } from "~/lib/audit";
 import { canViewMentorship, canViewMentorNote } from "../lib/visibility";
 import { readMentorNoteBlocks } from "../lib/note-body.server";
 import { archiveMentorNotePage } from "../lib/pair-notebook.server";
@@ -96,7 +97,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   const note = await prisma.mentorNote.findUnique({
     where: { id: params.id! },
-    select: { id: true, mentorId: true, pageId: true },
+    select: { id: true, mentorId: true, menteeId: true, projectId: true, termId: true, pageId: true },
   });
   if (!note) {
     return withCors(request, Response.json({ error: "Not found" }, { status: 404 }));
@@ -109,6 +110,18 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (request.method === "DELETE") {
     await prisma.mentorNote.delete({ where: { id: note.id } });
     await archiveMentorNotePage(note.pageId);
+    await logAuditEvent({
+      action: "mentorship.note.delete",
+      userId: auth.user.sub,
+      targetId: note.id,
+      metadata: {
+        mentorId: note.mentorId,
+        menteeId: note.menteeId,
+        projectId: note.projectId,
+        termId: note.termId,
+      },
+      request,
+    });
     return withCors(request, Response.json({ ok: true }));
   }
 

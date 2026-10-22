@@ -60,12 +60,27 @@ describe("buildInlineContent citation chips", () => {
 
   it("labels each chip with the speaker at that second", () => {
     const speakerAt = (at: number) => (at === 842 ? "Maya" : null);
-    const chips = links(buildInlineContent("Text", [842, 900], "p1", "r1", speakerAt));
+    const chips = links(buildInlineContent("Text", [842, 900], "/documents/p1", "r1", speakerAt));
     expect(chips.map((c) => c.content)).toEqual(["Maya · 14:02", "15:00"]);
     expect(chips[0]!.href).toBe("/documents/p1?transcript=r1&at=842");
   });
 
   it("keeps plain timestamps when no resolver is given", () => {
-    expect(links(buildInlineContent("Text", [842], "p1", "r1")).map((c) => c.content)).toEqual(["14:02"]);
+    expect(links(buildInlineContent("Text", [842], "/documents/p1", "r1")).map((c) => c.content)).toEqual(["14:02"]);
+  });
+
+  it("links each chip back to the page hosting the note", () => {
+    const [chip] = links(buildInlineContent("Text", [60], "/hiring/interviews/i1", "r1"));
+    expect(chip!.href).toBe("/hiring/interviews/i1?transcript=r1&at=60");
+  });
+});
+
+describe("enhanceSnapshotBlocks with nested blocks", () => {
+  it("includes nested blocks with their parent id and skips blank lines", () => {
+    const doc = [{ ...paragraph("p1", "Budget"), children: [paragraph("c1", "40h")] } as DocBlock, paragraph("blank", "")];
+    expect(enhanceSnapshotBlocks(doc)).toEqual([
+      { id: "p1", type: "paragraph", text: "Budget" },
+      { id: "c1", type: "paragraph", text: "40h", parentId: "p1" },
+    ]);
   });
 });

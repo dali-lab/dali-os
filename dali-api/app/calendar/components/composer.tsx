@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useFetcher, useRevalidator } from "react-router";
+import { pendingForm, useFetcherErrorToast } from "~/calendar/lib/fetcher-pending";
 import {
   Calendar as CalendarIcon,
   Clock,
@@ -23,7 +24,6 @@ import { DateField } from "~/components/ui/DateField";
 import { TimeField as TimeComboField } from "~/components/ui/TimeField";
 import { Select, Tooltip } from "~/components/ui/floating";
 import { useDialog } from "~/components/ui/dialog";
-import { useToast } from "~/components/ui/toast";
 import { SearchInput } from "~/components/ui/SearchInput";
 import { Checkbox } from "~/components/ui/Checkbox";
 import { roleOptionKey, parseRoleOptionKey } from "~/calendar/components/role-fields";
@@ -40,6 +40,7 @@ import { getZonedYMD } from "~/lib/timezone";
 import { cn } from "~/lib/cn";
 import { localDayTimeToIso } from "~/calendar/lib/event-block";
 import { eventTitleOrDefault } from "~/calendar/lib/event-title";
+import { useSubmitBackground } from "~/calendar/lib/background-submissions";
 import { isTrackedMeeting, STOP_TRACKING_DESCRIPTION, STOP_TRACKING_LABEL } from "~/calendar/lib/stop-tracking";
 import { DARTMOUTH_PERIODS, getPeriod, periodSummary, periodMeetings } from "~/calendar/lib/dartmouth-periods";
 import {
@@ -55,6 +56,7 @@ import type {
   MemberClassDTO,
   CourseHitDTO,
   CalendarLinkDTO,
+  SubCalendarDTO,
 } from "~/calendar/lib/types";
 
 // ── Helpers ───────────────────────────────────────────────────────────────
@@ -391,10 +393,9 @@ export function EventComposer({
   // meeting the viewer manages.
   onOpenMeetingEditor?: (meetingId: string) => void;
 }) {
-  const fetcher = useFetcher<{ error?: string } | null>();
-  const deleteFetcher = useFetcher<{ error?: string } | null>();
+  const submitBackground = useSubmitBackground();
+  const instanceId = useId();
   const dialog = useDialog();
-  const toast = useToast();
   const [steppedAside, setSteppedAside] = useState(false);
   const editing = state.mode === "edit";
   const ev = editing ? state.event : null;
@@ -425,6 +426,12 @@ export function EventComposer({
   // A recurring instance carries recurringEventId; editing it prompts for scope.
   const isRecurring = Boolean(ev?.recurringEventId);
   const [scope, setScope] = useState<"this" | "following" | "all">("this");
+  // Saving a single event, one occurrence, or a new event changes nothing but
+  // that block, so the form closes on submit and the grid draws the change
+  // while it saves. Editing a whole series or "this & following" splits it into
+  // new events whose ids only exist once the server answers, so those wait.
+  const closeOnSubmit = !editing || !isRecurring || scope === "this";
+  const fetcher = useFetcher<{ error?: string } | null>({ key: `cal:fg:${instanceId}` });
 
   // Guest list, loaded on demand for a meeting edit (mirrors EditMeetingModal).
   const [guestCtx, setGuestCtx] = useState<EditContext | null>(null);
@@ -478,25 +485,12 @@ export function EventComposer({
     base?.allDay ? addDaysToDate(isoToDateInput(base.endIso), -1) : initEnd.date,
   );
 
-  // Close on a successful create/edit/delete.
+  // A save that waits for the server (a series edit) closes once it succeeds.
   const prev = useRef(fetcher.state);
   useEffect(() => {
     if (prev.current !== "idle" && fetcher.state === "idle" && !fetcher.data?.error) onClose();
     prev.current = fetcher.state;
   }, [fetcher.state, fetcher.data, onClose]);
-  const prevDel = useRef(deleteFetcher.state);
-  useEffect(() => {
-    if (prevDel.current !== "idle" && deleteFetcher.state === "idle") {
-      if (!deleteFetcher.data?.error) {
-        toast.success(tracked ? "Stopped tracking." : canManageMeeting ? "Meeting cancelled." : "Event deleted.");
-        onClose();
-      } else {
-        // Come back so the error under the form is readable.
-        setSteppedAside(false);
-      }
-    }
-    prevDel.current = deleteFetcher.state;
-  }, [deleteFetcher.state, deleteFetcher.data, onClose, toast, canManageMeeting, tracked]);
 
   // Load the meeting's guest list + member/group directory once, then seed the
   // picker. A Group-scoped meeting keeps its group selected and treats anyone
@@ -603,7 +597,7 @@ export function EventComposer({
   // A meeting the viewer manages is editable even when its Google copy isn't
   // theirs to write — the save routes through the DALI update path.
   const canEdit = Boolean(ev?.writable) || canManageMeeting;
-  const submitting = fetcher.state !== "idle" || deleteFetcher.state !== "idle";
+  const submitting = fetcher.state !== "idle";
 
   // A recurring event's scope selector decides how much goes, so the confirm
   // restates it rather than leaving the reader to remember which radio is set.
@@ -635,17 +629,15 @@ export function EventComposer({
       setSteppedAside(false);
       return;
     }
-    deleteFetcher.submit(
-      {
-        intent: "event-delete",
-        destination,
-        eventId: ev.eventId ?? "",
-        scope: effectiveScope,
-        recurringEventId: ev.recurringEventId ?? "",
-        originalStartIso: ev.startIso ?? "",
-      },
-      { method: "post" },
-    );
+    submitBackground("event-delete", {
+      intent: "event-delete",
+      destination,
+      eventId: ev.eventId ?? "",
+      scope: effectiveScope,
+      recurringEventId: ev.recurringEventId ?? "",
+      originalStartIso: ev.startIso ?? "",
+    });
+    onClose();
   }
 
   // Report the draft times to the grid so the live preview (a tentative block
@@ -694,7 +686,16 @@ export function EventComposer({
             Connect a Google Calendar you can write to first (Settings → Calendar).
           </p>
         ) : (
-          <fetcher.Form method="post" className="flex flex-col gap-3 px-4 py-4">
+          <fetcher.Form
+            method="post"
+            onSubmit={(e) => {
+              if (!closeOnSubmit) return;
+              e.preventDefault();
+              submitBackground(editing ? "event-update" : "event-create", new FormData(e.currentTarget));
+              onClose();
+            }}
+            className="flex flex-col gap-3 px-4 py-4"
+          >
             <input type="hidden" name="intent" value={editing ? "event-update" : "event-create"} />
             {editing && ev?.eventId && <input type="hidden" name="eventId" value={ev.eventId} />}
             {canManageMeeting && (
@@ -917,9 +918,7 @@ export function EventComposer({
               </p>
             ) : null}
 
-            {(fetcher.data?.error || deleteFetcher.data?.error) && (
-              <p className="text-xs text-destructive">{fetcher.data?.error || deleteFetcher.data?.error}</p>
-            )}
+            {fetcher.data?.error && <p className="text-xs text-destructive">{fetcher.data.error}</p>}
             {editing && !canEdit && (
               <p className="text-xs text-muted-foreground">This event is read-only.</p>
             )}
@@ -954,14 +953,91 @@ export function EventComposer({
 // ── CalendarManagerModal ───────────────────────────────────────────────────
 // Create / rename / delete Google calendars on a linked account.
 
+const managerFieldCls = "rounded-md border border-border bg-background px-2.5 py-1.5 text-sm text-foreground";
+
+function ManagedCalendarRow({ linkId, cal }: { linkId: string; cal: SubCalendarDTO }) {
+  const renameFetcher = useFetcher<{ error?: string } | null>();
+  const deleteFetcher = useFetcher<{ error?: string } | null>();
+  const dialog = useDialog();
+  const [renaming, setRenaming] = useState(false);
+  const [renameVal, setRenameVal] = useState("");
+
+  useEffect(() => {
+    if (renameFetcher.data?.error) setRenaming(true);
+  }, [renameFetcher.data]);
+
+  const error = renameFetcher.data?.error ?? deleteFetcher.data?.error;
+  if (pendingForm(deleteFetcher)) return null;
+  const summary = (pendingForm(renameFetcher)?.get("summary") as string | undefined) ?? cal.summary;
+  return (
+    <div className="flex flex-col gap-1">
+      <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/30 px-3 py-1.5">
+        <span className="h-3 w-3 shrink-0 rounded-[3px]" style={{ backgroundColor: cal.color ?? "#9ca3af" }} />
+        {renaming ? (
+          <renameFetcher.Form method="post" onSubmit={() => setRenaming(false)} className="flex flex-1 items-center gap-1">
+            <input type="hidden" name="intent" value="cal-rename" />
+            <input type="hidden" name="linkId" value={linkId} />
+            <input type="hidden" name="calendarId" value={cal.id} />
+            <input name="summary" value={renameVal} onChange={(e) => setRenameVal(e.target.value)} className={cn(managerFieldCls, "flex-1")} autoFocus />
+            <button type="submit" className="rounded-md border border-border px-2 py-1 text-xs hover:bg-muted">Save</button>
+          </renameFetcher.Form>
+        ) : (
+          <span className="min-w-0 flex-1 truncate text-sm text-foreground">
+            {summary}
+            {cal.primary && <span className="ml-1.5 text-[10px] uppercase text-muted-foreground">Primary</span>}
+            {!cal.writable && <span className="ml-1.5 text-[10px] text-muted-foreground">read-only</span>}
+          </span>
+        )}
+        {cal.writable && !renaming && (
+          <>
+            <button
+              type="button"
+              onClick={() => {
+                setRenaming(true);
+                setRenameVal(cal.summary);
+              }}
+              className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+              aria-label={`Rename ${cal.summary}`}
+            >
+              <Pencil className="h-3.5 w-3.5" />
+            </button>
+            {!cal.primary && (
+              <Tooltip content={`Delete ${cal.summary}`}>
+                <button
+                  type="button"
+                  aria-label={`Delete ${cal.summary}`}
+                  className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-destructive"
+                  onClick={async () => {
+                    const ok = await dialog.confirm({
+                      title: `Delete "${cal.summary}"?`,
+                      description: "Deletes this calendar and every event on it from Google.",
+                      tone: "destructive",
+                      confirmLabel: "Delete calendar",
+                    });
+                    if (ok)
+                      deleteFetcher.submit(
+                        { intent: "cal-delete", linkId, calendarId: cal.id },
+                        { method: "post" },
+                      );
+                  }}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </Tooltip>
+            )}
+          </>
+        )}
+      </div>
+      {error && <p className="px-1 text-xs text-destructive">{error}</p>}
+    </div>
+  );
+}
+
 export function CalendarManagerModal({ data, onClose }: { data: LoaderData; onClose: () => void }) {
   const fetcher = useFetcher<{ error?: string } | null>();
-  const dialog = useDialog();
   const [newName, setNewName] = useState("");
   const googleLinks = data.calendarLinks.filter((l) => l.provider === "Google" && l.subCalendars);
   const [newLink, setNewLink] = useState(googleLinks[0]?.id ?? "");
-  const [renaming, setRenaming] = useState<string | null>(null);
-  const [renameVal, setRenameVal] = useState("");
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -972,12 +1048,11 @@ export function CalendarManagerModal({ data, onClose }: { data: LoaderData; onCl
   useEffect(() => {
     if (prev.current !== "idle" && fetcher.state === "idle" && !fetcher.data?.error) {
       setNewName("");
-      setRenaming(null);
     }
     prev.current = fetcher.state;
   }, [fetcher.state, fetcher.data]);
 
-  const fieldCls = "rounded-md border border-border bg-background px-2.5 py-1.5 text-sm text-foreground";
+  const fieldCls = managerFieldCls;
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/55 backdrop-blur-sm p-4 py-10">
       <button type="button" className="fixed inset-0 cursor-default" aria-label="Close" onClick={onClose} tabIndex={-1} />
@@ -999,64 +1074,7 @@ export function CalendarManagerModal({ data, onClose }: { data: LoaderData; onCl
                   {link.displayName || link.externalEmail}
                 </div>
                 {(link.subCalendars ?? []).map((cal) => (
-                  <div key={cal.id} className="flex items-center gap-2 rounded-lg border border-border bg-muted/30 px-3 py-1.5">
-                    <span className="h-3 w-3 shrink-0 rounded-[3px]" style={{ backgroundColor: cal.color ?? "#9ca3af" }} />
-                    {renaming === cal.id ? (
-                      <fetcher.Form method="post" className="flex flex-1 items-center gap-1">
-                        <input type="hidden" name="intent" value="cal-rename" />
-                        <input type="hidden" name="linkId" value={link.id} />
-                        <input type="hidden" name="calendarId" value={cal.id} />
-                        <input name="summary" value={renameVal} onChange={(e) => setRenameVal(e.target.value)} className={cn(fieldCls, "flex-1")} autoFocus />
-                        <button type="submit" className="rounded-md border border-border px-2 py-1 text-xs hover:bg-muted">Save</button>
-                      </fetcher.Form>
-                    ) : (
-                      <span className="min-w-0 flex-1 truncate text-sm text-foreground">
-                        {cal.summary}
-                        {cal.primary && <span className="ml-1.5 text-[10px] uppercase text-muted-foreground">Primary</span>}
-                        {!cal.writable && <span className="ml-1.5 text-[10px] text-muted-foreground">read-only</span>}
-                      </span>
-                    )}
-                    {cal.writable && renaming !== cal.id && (
-                      <>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setRenaming(cal.id);
-                            setRenameVal(cal.summary);
-                          }}
-                          className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-                          aria-label={`Rename ${cal.summary}`}
-                        >
-                          <Pencil className="h-3.5 w-3.5" />
-                        </button>
-                        {!cal.primary && (
-                          <Tooltip content={`Delete ${cal.summary}`}>
-                            <button
-                              type="button"
-                              aria-label={`Delete ${cal.summary}`}
-                              className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-destructive"
-                              onClick={async () => {
-                                const ok = await dialog.confirm({
-                                  title: `Delete "${cal.summary}"?`,
-                                  description:
-                                    "Deletes this calendar and every event on it from Google.",
-                                  tone: "destructive",
-                                  confirmLabel: "Delete calendar",
-                                });
-                                if (ok)
-                                  fetcher.submit(
-                                    { intent: "cal-delete", linkId: link.id, calendarId: cal.id },
-                                    { method: "post" },
-                                  );
-                              }}
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </button>
-                          </Tooltip>
-                        )}
-                      </>
-                    )}
-                  </div>
+                  <ManagedCalendarRow key={cal.id} linkId={link.id} cal={cal} />
                 ))}
               </div>
             ))}
@@ -1094,12 +1112,124 @@ export function CalendarManagerModal({ data, onClose }: { data: LoaderData; onCl
 // "My classes this term" — add Dartmouth classes (period picker or custom time)
 // to the calendar, synced to a linked Google calendar or kept as a DALI layer.
 
+function ManagedClassRow({
+  c,
+  onEdit,
+  onRemoved,
+}: {
+  c: MemberClassDTO;
+  onEdit: () => void;
+  onRemoved: () => void;
+}) {
+  const refreshFetcher = useFetcher();
+  const removeFetcher = useFetcher<{ error?: string } | null>();
+  useFetcherErrorToast(removeFetcher);
+  const dialog = useDialog();
+  if (pendingForm(removeFetcher)) return null;
+  return (
+    <li
+      className="flex items-center gap-2 rounded-lg border border-border bg-muted/30 px-3 py-2"
+    >
+      <span className="h-3 w-3 shrink-0 rounded-[3px]" style={{ backgroundColor: "#1E5779" }} />
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-sm font-medium text-foreground">
+          {c.title}
+          {c.periodCode && <span className="ml-1.5 text-xs text-muted-foreground">{c.periodCode}</span>}
+        </div>
+        <div className="truncate text-xs text-muted-foreground">
+          {classScheduleSummary(c.meetings)} · {c.destinationLabel}
+        </div>
+      </div>
+      {c.offeringCrn && (
+        <button
+          type="button"
+          onClick={() =>
+            refreshFetcher.submit(
+              { intent: "class-refresh", classId: c.id },
+              { method: "post" },
+            )
+          }
+          disabled={refreshFetcher.state !== "idle"}
+          className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50"
+          aria-label={`Update ${c.title} from the timetable`}
+          title="Update time & location from the timetable"
+        >
+          <RefreshCw className="h-3.5 w-3.5" />
+        </button>
+      )}
+      <button
+        type="button"
+        onClick={onEdit}
+        className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+        aria-label={`Edit ${c.title}`}
+      >
+        <Pencil className="h-3.5 w-3.5" />
+      </button>
+      <Tooltip content={`Remove ${c.title}`}>
+        <button
+          type="button"
+          aria-label={`Remove ${c.title}`}
+          className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-destructive"
+          onClick={async () => {
+            const ok = await dialog.confirm({
+              title: `Remove "${c.title}"?`,
+              description: c.destinationLabel?.startsWith("Google")
+                ? "Removes this class from DALI and deletes the recurring event from your Google calendar."
+                : "Removes this class from your DALI calendar.",
+              tone: "destructive",
+              confirmLabel: "Remove class",
+            });
+            if (ok) {
+              onRemoved();
+              removeFetcher.submit(
+                { intent: "class-remove", classId: c.id },
+                { method: "post" },
+              );
+            }
+          }}
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+        </button>
+      </Tooltip>
+    </li>
+  );
+}
+
+function QuickAddButton({
+  added,
+  disabled,
+  fields,
+}: {
+  added: boolean;
+  disabled: boolean;
+  fields: Record<string, string>;
+}) {
+  const fetcher = useFetcher<{ error?: string } | null>();
+  useFetcherErrorToast(fetcher);
+  if (added || pendingForm(fetcher)) {
+    return (
+      <span className="flex shrink-0 items-center gap-1 px-2.5 text-xs text-muted-foreground">
+        <Check className="h-3.5 w-3.5" /> Added
+      </span>
+    );
+  }
+  return (
+    <button
+      type="button"
+      onClick={() => fetcher.submit(fields, { method: "post" })}
+      disabled={disabled}
+      className="flex shrink-0 items-center gap-1 px-2.5 text-xs font-medium text-os-accent hover:bg-muted disabled:opacity-50"
+      title="Add this class now"
+    >
+      <Plus className="h-3.5 w-3.5" /> Add
+    </button>
+  );
+}
+
 // The classes editor itself. Rendered inline by the Availability tab, and
 // wrapped by ClassesManagerModal for the places that still open it as a dialog.
 export function ClassesManagerBody({ data }: { data: LoaderData }) {
   const fetcher = useFetcher<{ error?: string } | null>();
-  const removeFetcher = useFetcher();
-  const dialog = useDialog();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [title, setTitle] = useState("");
   const [mode, setMode] = useState(""); // "" | period code | "custom"
@@ -1193,8 +1323,6 @@ export function ClassesManagerBody({ data }: { data: LoaderData }) {
 
   const courseHits = courseFetcher.data?.courses ?? [];
   const courseSearching = courseFetcher.state !== "idle";
-  const quickAddFetcher = useFetcher();
-  const refreshFetcher = useFetcher();
   const refreshSearchFetcher = useFetcher<{ refreshed: number }>();
   const refreshingSearch = refreshSearchFetcher.state !== "idle";
   // CRNs already added this term, so results can show "Added" and skip re-adding.
@@ -1250,25 +1378,19 @@ export function ClassesManagerBody({ data }: { data: LoaderData }) {
   // Add a section straight from the results with the current destination — no
   // review step — for quickly stacking a term's classes. Known-period sections
   // only; ARR/labs need manual handling, so those fall back to row-click autofill.
-  function quickAdd(c: CourseHitDTO) {
-    if (!destination || !(c.periodCode && getPeriod(c.periodCode)) || addedCrns.has(c.crn)) return;
-    quickAddFetcher.submit(
-      {
-        intent: "class-add",
-        title: formatCourseTitle({ subject: c.subject, number: c.number, title: c.title }),
-        periodCode: c.periodCode,
-        includeXHour: "",
-        destination,
-        termId: selectedTermId,
-        location: formatCourseLocation({ building: c.building, room: c.room }),
-        offeringCrn: c.crn,
-        courseSubject: c.subject,
-        courseNumber: c.number,
-        courseSection: c.section,
-      },
-      { method: "post" },
-    );
-  }
+  const quickAddFields = (c: CourseHitDTO) => ({
+    intent: "class-add",
+    title: formatCourseTitle({ subject: c.subject, number: c.number, title: c.title }),
+    periodCode: c.periodCode ?? "",
+    includeXHour: "",
+    destination,
+    termId: selectedTermId,
+    location: formatCourseLocation({ building: c.building, room: c.room }),
+    offeringCrn: c.crn,
+    courseSubject: c.subject,
+    courseNumber: c.number,
+    courseSection: c.section,
+  });
 
   const isPeriod = mode !== "" && mode !== "custom";
   const period = isPeriod ? getPeriod(mode) : undefined;
@@ -1317,72 +1439,14 @@ export function ClassesManagerBody({ data }: { data: LoaderData }) {
             {data.memberClasses.filter((c) => c.termId === selectedTermId).length > 0 && (
               <ul className="flex flex-col gap-1.5">
                 {data.memberClasses.filter((c) => c.termId === selectedTermId).map((c) => (
-                  <li
+                  <ManagedClassRow
                     key={c.id}
-                    className="flex items-center gap-2 rounded-lg border border-border bg-muted/30 px-3 py-2"
-                  >
-                    <span className="h-3 w-3 shrink-0 rounded-[3px]" style={{ backgroundColor: "#1E5779" }} />
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate text-sm font-medium text-foreground">
-                        {c.title}
-                        {c.periodCode && <span className="ml-1.5 text-xs text-muted-foreground">{c.periodCode}</span>}
-                      </div>
-                      <div className="truncate text-xs text-muted-foreground">
-                        {classScheduleSummary(c.meetings)} · {c.destinationLabel}
-                      </div>
-                    </div>
-                    {c.offeringCrn && (
-                      <button
-                        type="button"
-                        onClick={() =>
-                          refreshFetcher.submit(
-                            { intent: "class-refresh", classId: c.id },
-                            { method: "post" },
-                          )
-                        }
-                        disabled={refreshFetcher.state !== "idle"}
-                        className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50"
-                        aria-label={`Update ${c.title} from the timetable`}
-                        title="Update time & location from the timetable"
-                      >
-                        <RefreshCw className="h-3.5 w-3.5" />
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => startEdit(c)}
-                      className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-                      aria-label={`Edit ${c.title}`}
-                    >
-                      <Pencil className="h-3.5 w-3.5" />
-                    </button>
-                    <Tooltip content={`Remove ${c.title}`}>
-                      <button
-                        type="button"
-                        aria-label={`Remove ${c.title}`}
-                        className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-destructive"
-                        onClick={async () => {
-                          const ok = await dialog.confirm({
-                            title: `Remove "${c.title}"?`,
-                            description: c.destinationLabel?.startsWith("Google")
-                              ? "Removes this class from DALI and deletes the recurring event from your Google calendar."
-                              : "Removes this class from your DALI calendar.",
-                            tone: "destructive",
-                            confirmLabel: "Remove class",
-                          });
-                          if (ok) {
-                            if (editingId === c.id) resetForm();
-                            removeFetcher.submit(
-                              { intent: "class-remove", classId: c.id },
-                              { method: "post" },
-                            );
-                          }
-                        }}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
-                    </Tooltip>
-                  </li>
+                    c={c}
+                    onEdit={() => startEdit(c)}
+                    onRemoved={() => {
+                      if (editingId === c.id) resetForm();
+                    }}
+                  />
                 ))}
               </ul>
             )}
@@ -1484,22 +1548,12 @@ export function ClassesManagerBody({ data }: { data: LoaderData }) {
                                 </span>
                               </span>
                             </button>
-                            {added ? (
-                              <span className="flex shrink-0 items-center gap-1 px-2.5 text-xs text-muted-foreground">
-                                <Check className="h-3.5 w-3.5" /> Added
-                              </span>
-                            ) : (
-                              known && (
-                                <button
-                                  type="button"
-                                  onClick={() => quickAdd(c)}
-                                  disabled={!destination || quickAddFetcher.state !== "idle"}
-                                  className="flex shrink-0 items-center gap-1 px-2.5 text-xs font-medium text-os-accent hover:bg-muted disabled:opacity-50"
-                                  title="Add this class now"
-                                >
-                                  <Plus className="h-3.5 w-3.5" /> Add
-                                </button>
-                              )
+                            {(added || known) && (
+                              <QuickAddButton
+                                added={added}
+                                disabled={!destination}
+                                fields={quickAddFields(c)}
+                              />
                             )}
                           </div>
                         );

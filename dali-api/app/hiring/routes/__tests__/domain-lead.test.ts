@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/db");
+vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
 vi.mock("~/lib/auth", () => ({
   requireAuth: vi.fn(),
 }));
@@ -21,6 +22,7 @@ vi.mock("~/hiring/lib/cycle-rosters.server", () => ({
 import { prisma } from "~/lib/db";
 import { addDomainMentors, domainMentorIds } from "~/hiring/lib/cycle-rosters.server";
 import { requireAuth } from "~/lib/auth";
+import { logAuditEvent } from "~/lib/audit";
 import { action } from "~/hiring/routes/domain-lead";
 
 const USER_ID = "user-1";
@@ -243,7 +245,7 @@ describe("domain-lead action: add-domain-mentors", () => {
   it("adds the domain's mentors and says how many", async () => {
     vi.mocked(addDomainMentors).mockResolvedValue(3);
     const res = await callAction(form());
-    expect(addDomainMentors).toHaveBeenCalledWith(CYCLE_ID, DOMAIN_ID, "reviewer", expect.any(Request));
+    expect(addDomainMentors).toHaveBeenCalledWith(CYCLE_ID, DOMAIN_ID, "reviewer", expect.any(Request), undefined, USER_ID);
     expect(res).toEqual({ notice: "Added 3 mentors." });
   });
 
@@ -267,5 +269,107 @@ describe("domain-lead action: add-domain-mentors", () => {
     expect(((await callAction(form())) as Response).status).toBe(400);
     expect(((await callAction(form({ role: "lead" }))) as Response).status).toBe(400);
     expect(addDomainMentors).not.toHaveBeenCalled();
+  });
+});
+
+describe("domain-lead action — audit trail", () => {
+  const status = (newStatus: string) =>
+    mockPrisma.applicationCycleStatusUpdate.findFirst.mockResolvedValue({ newStatus });
+  const logged = () => vi.mocked(logAuditEvent).mock.calls.map(([e]) => [e.action, e.userId, e.targetId, e.metadata]);
+
+  it("logs marking and unmarking a domain ready in Draft", async () => {
+    status("Draft");
+
+    await callAction({ intent: "mark-ready", cycleId: CYCLE_ID, domainId: DOMAIN_ID });
+    await callAction({ intent: "unmark-ready", cycleId: CYCLE_ID, domainId: DOMAIN_ID });
+
+    expect(logged()).toEqual([
+      ["domain.ready.set", USER_ID, DOMAIN_ID, { cycleId: CYCLE_ID, ready: true }],
+      ["domain.ready.set", USER_ID, DOMAIN_ID, { cycleId: CYCLE_ID, ready: false }],
+    ]);
+  });
+
+  it("logs nothing when the ready change is refused", async () => {
+    status("Open");
+    await callAction({ intent: "unmark-ready", cycleId: CYCLE_ID, domainId: DOMAIN_ID });
+    expect(logAuditEvent).not.toHaveBeenCalled();
+  });
+
+  it("logs the rubric change with the version before and after", async () => {
+    mockPrisma.applicationReview = { count: vi.fn().mockResolvedValue(0) };
+    mockPrisma.domainApplicationCycle.findUnique.mockResolvedValue({ rubricVersionId: "rv-old" });
+
+    await callAction({ intent: "set-rubric", cycleId: CYCLE_ID, domainId: DOMAIN_ID, rubricVersionId: "rv-new" });
+
+    expect(logged()).toEqual([
+      ["domain.rubric.set", USER_ID, DOMAIN_ID, { cycleId: CYCLE_ID, before: "rv-old", after: "rv-new" }],
+    ]);
+  });
+
+  it("logs nothing when reviews already exist and the rubric is locked", async () => {
+    mockPrisma.applicationReview = { count: vi.fn().mockResolvedValue(2) };
+    await callAction({ intent: "set-rubric", cycleId: CYCLE_ID, domainId: DOMAIN_ID, rubricVersionId: "rv-new" });
+    expect(mockPrisma.domainApplicationCycle.update).not.toHaveBeenCalled();
+    expect(logAuditEvent).not.toHaveBeenCalled();
+  });
+
+  it("logs linking a picked challenge form, and not a refused link", async () => {
+    mockPrisma.form = { findUnique: vi.fn().mockResolvedValue({ id: "form-1" }) };
+    mockPrisma.cycleDomainForm.upsert = vi.fn();
+    status("Draft");
+    await callAction({ intent: "create-challenge-form", cycleId: CYCLE_ID, domainId: DOMAIN_ID, formId: "form-1" });
+    status("Open");
+    await callAction({ intent: "create-challenge-form", cycleId: CYCLE_ID, domainId: DOMAIN_ID, formId: "form-1" });
+
+    expect(logged()).toEqual([
+      ["domain.challenge-form.add", USER_ID, DOMAIN_ID, { cycleId: CYCLE_ID, formId: "form-1", created: false }],
+    ]);
+  });
+
+  it("logs removing a challenge form with its cycle and form", async () => {
+    mockPrisma.cycleDomainForm.findUnique.mockResolvedValue({
+      id: "cdf-1",
+      formId: "form-1",
+      applicationCycleId: CYCLE_ID,
+      domainId: DOMAIN_ID,
+    });
+    status("Draft");
+
+    await callAction({ intent: "remove-challenge-form", cdfId: "cdf-1" });
+
+    expect(logged()).toEqual([
+      ["domain.challenge-form.remove", USER_ID, DOMAIN_ID, { cycleId: CYCLE_ID, formId: "form-1" }],
+    ]);
+  });
+
+  it("logs nothing when a challenge form removal is refused", async () => {
+    mockPrisma.cycleDomainForm.findUnique.mockResolvedValue({
+      id: "cdf-1",
+      formId: "form-1",
+      applicationCycleId: CYCLE_ID,
+      domainId: DOMAIN_ID,
+    });
+    status("Draft");
+    mockPrisma.domainApplication.count.mockResolvedValue(1);
+
+    await callAction({ intent: "remove-challenge-form", cdfId: "cdf-1" });
+
+    expect(logAuditEvent).not.toHaveBeenCalled();
+  });
+
+  it("leaves the mentor-roster row to the shared roster function, so the route never logs it too", async () => {
+    mockPrisma.domainApplicationCycle.findUnique.mockResolvedValue({ domainId: DOMAIN_ID });
+    vi.mocked(addDomainMentors).mockResolvedValue(2);
+
+    await callAction({ intent: "add-domain-mentors", cycleId: CYCLE_ID, domainId: DOMAIN_ID, role: "interviewer" });
+
+    expect(addDomainMentors).toHaveBeenCalledWith(CYCLE_ID, DOMAIN_ID, "interviewer", expect.any(Request), undefined, USER_ID);
+    expect(logAuditEvent).not.toHaveBeenCalled();
+  });
+
+  it("logs nothing for someone who does not lead the domain", async () => {
+    mockPrisma.domainLeadAssignment.findFirst.mockResolvedValue(null);
+    await callAction({ intent: "mark-ready", cycleId: CYCLE_ID, domainId: DOMAIN_ID });
+    expect(logAuditEvent).not.toHaveBeenCalled();
   });
 });

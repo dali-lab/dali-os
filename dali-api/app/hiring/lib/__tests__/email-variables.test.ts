@@ -4,6 +4,7 @@ import {
   TEMPLATE_VARIABLES,
   TEMPLATE_VARIABLE_DESCRIPTIONS,
   decisionSlot,
+  releaseSlot,
   notificationSlot,
   extractPlaceholders,
   lintTemplate,
@@ -85,6 +86,7 @@ describe("TEMPLATE_VARIABLES registry shape", () => {
       [
         "decision:Accepted",
         "decision:InvitedToInterview",
+        "decision:InvitedToLaterInterview",
         "decision:Rejected",
         "decision:Waitlisted",
         "notification:ApplicationEventAnnouncement",
@@ -135,6 +137,7 @@ describe("registry/call-site drift guard", () => {
     // api.decisions.$id.release.ts
     "decision:Rejected": ["firstName", "domain"],
     "decision:InvitedToInterview": ["firstName", "domain"],
+    "decision:InvitedToLaterInterview": ["firstName", "domain"],
     "decision:Accepted": ["firstName", "domain"],
     "decision:Waitlisted": ["firstName", "domain"],
     // api.my-application.ts
@@ -176,5 +179,17 @@ describe("renderForSlot", () => {
     );
     expect(out.subject).toBe("Hi Ada");
     expect(out.html).toBe("<p>Hi Ada,</p>\n<p>Domain Engineering.</p>");
+  });
+});
+
+describe("releaseSlot", () => {
+  it("sends later-round interview invites from their own email", () => {
+    expect(releaseSlot("InvitedToInterview", false)).toBe("decision:InvitedToInterview");
+    expect(releaseSlot("InvitedToInterview", true)).toBe("decision:InvitedToLaterInterview");
+  });
+
+  it("ignores the round for every other decision", () => {
+    expect(releaseSlot("Accepted", true)).toBe("decision:Accepted");
+    expect(releaseSlot("Rejected", true)).toBe("decision:Rejected");
   });
 });

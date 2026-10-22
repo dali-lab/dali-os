@@ -17,6 +17,27 @@ export function ymdUtc(d: Date): string {
   return `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}-${pad2(d.getUTCDate())}`;
 }
 
+type Place = { pathname: string; search: string };
+
+/**
+ * A different window of this page is on its way: a navigation that is loading
+ * and lands on the same route with new search params (prev/next/Today/a
+ * mini-month pick). A revalidation after a write is not one — it keeps the
+ * current location.
+ */
+export function isRangeLoading(
+  navigation: { state: string; location?: Place },
+  current: Place,
+): boolean {
+  const next = navigation.location;
+  return (
+    navigation.state === "loading" &&
+    next !== undefined &&
+    next.pathname === current.pathname &&
+    next.search !== current.search
+  );
+}
+
 export type CalendarViewState = {
   view: CalendarView;
   rangeStart: Date;

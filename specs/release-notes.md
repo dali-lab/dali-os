@@ -72,13 +72,13 @@ Per-user "what's new" state: `User.releaseNotesSeenAt DateTime?`.
 - Uploads to S3 at `release-notes/pr-<N>/<name>.mp4`. Upserts one PR comment (marker `<!-- demo-capture -->`) with the video link.
 - Needs: AWS write creds as GitHub secrets scoped to the `release-notes/` prefix. Workflow change, flag in the PR.
 - Recordings run against the CI database, not preview deploys (preview seed is unreliable on the 512 MB release VM).
-- PR template gets a "Release note" section: one line of user-facing summary (optional), a `no-release-note` checkbox, and a pointer to the demo script docs.
+- PR template gets a "Release note" section (one line of user-facing summary, left empty when not user-facing) and a pointer to the demo script docs.
 
 ### 2. On promotion to prod: drafting
 
 - New job `release-notes-draft` in `app/jobs/registry.ts`, prod only, every 10 min.
 - Reads `prod` HEAD via `githubAppClient()` (`app/lib/github.ts`). Stores last processed sha in the job's settings. On change, lists commits in `lastSha..head`, resolves associated merged PRs.
-- Skips PRs labelled `no-release-note` or with the checkbox ticked.
+- Opt-in: drafts only PRs with text under the "Release note" heading in their body. HTML comments, blank lines and "None"/"N/A" don't count, so an untouched template means no entry.
 - One LLM call per batch through `resolveAiProvider()` (`app/lib/ai.server.ts`) with PR title, body, labels, changed file paths and diff stats. Output (structured): entries `{ title, summary, body, area, prNumbers[] }`. Instructions: group related PRs, skip invisible work (refactors, tests, internal fixes), every entry cites at least one PR, never describe behavior not grounded in the PR text or diff.
 - Creates `Draft` rows. Attaches `videoKey` when `release-notes/pr-<N>/` has a recording for any cited PR (first one wins, others listed in the editor).
 - Usage recorded on `AiUsage` like other AI calls.
@@ -129,7 +129,7 @@ Per-user "what's new" state: `User.releaseNotesSeenAt DateTime?`.
 2. Slack per-entry posts + recap job.
 3. Draft job (GitHub + LLM).
 4. Demo capture workflow + helpers + PR template. Ship one demo script for an existing feature as the reference example.
-5. Opt-in Claude demo scripts: a `demo` label on a PR with no `demos/` file triggers the Claude action to write one from the diff, run it against the CI database (retry on failure, max 2), commit it to the PR branch, and let capture post the video. Author reviews the clip.
+5. Claude demo scripts (`demo-write.yml`): a ready PR into staging with a release-note line, app changes and no `demos/` file gets one written by Claude. Loop, capped at 3 attempts and a token budget: the writer writes and runs the script, CI records it, a separate reviewer session looks at frames from the video and passes it or says what to fix. A passing script is committed to the PR branch and Demo capture is dispatched for it. One attempt per PR (a `<!-- demo-write -->` comment marks it); re-run by hand. Author reviews the clip.
 6. Flag to everyone.
 
 Steps 1-4 are MVP; ordering is just for review size.
@@ -145,7 +145,7 @@ Steps 1-4 are MVP; ordering is just for review size.
 
 ## Decided
 
-- Claude demo scripts: opt-in via `demo` label, rollout step 5.
+- Claude demo scripts: triggered by the release-note line (itself opt-in), rollout step 5.
 - GitHub App: assumed to have read access to `dali-os` PRs and commits; grant it if not.
 - Stale drafts: auto-dismissed after 1 week into the recap's "Also shipped".
 - Recording retention: S3 lifecycle rule deletes `release-notes/pr-*` after 60 days unless referenced by a published entry (published videos are copied to `release-notes/published/<id>.mp4` on publish).

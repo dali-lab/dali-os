@@ -1,6 +1,7 @@
 import type { Route } from "./+types/admin.payroll.upload";
 import { requireAuth, forbidden } from "~/lib/auth";
 import { isAdmin } from "~/lib/roles";
+import { logAuditEvent } from "~/lib/audit";
 import { MAX_UPLOAD_BYTES, fileMatchesAccept } from "~/lib/file-validation";
 import {
   importPayrollCsvs,
@@ -76,6 +77,19 @@ export async function action({ request }: Route.ActionArgs): Promise<Response> {
         ? { text: await (notes as File).text(), fileName: (notes as File).name }
         : null,
       uploadedById: auth.user.sub,
+    });
+    await logAuditEvent({
+      action: "payroll.upload",
+      userId: auth.user.sub,
+      metadata: {
+        timesheetFile: timesheet.name,
+        notesFile: hasNotes ? (notes as File).name : null,
+        periods: result.timesheet.periods.map((p) => p.payPeriodName),
+        rowsCreated: result.timesheet.periods.reduce((n, p) => n + p.rowsCreated, 0),
+        rowsReplaced: result.timesheet.periods.reduce((n, p) => n + p.rowsDeletedPrior, 0),
+        rowErrors: result.timesheet.rowErrors.length,
+      },
+      request,
     });
     return Response.json(result);
   } catch (e) {

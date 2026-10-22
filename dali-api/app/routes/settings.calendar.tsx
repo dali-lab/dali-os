@@ -5,6 +5,8 @@ import { redirect } from "react-router";
 import { requireAuth, forbidden, unauthorized, isPartnerAccount, isNonMember } from "~/lib/auth";
 import { prisma } from "~/lib/db";
 import { CalendarActionSchema } from "~/lib/calendar-schemas";
+import { markCalendarChanged } from "~/calendar/lib/external-cache.server";
+import { setSubCalendarEnabled } from "~/calendar/lib/sub-calendar.server";
 import type { Route } from "./+types/settings.calendar";
 
 export const meta: Route.MetaFunction = () => [{ title: "Settings · DALI OS" }];
@@ -46,6 +48,7 @@ export async function action({ request }: Route.ActionArgs) {
       return Response.json({ error: "Not found" }, { status: 404 });
     }
     await prisma.userCalendarLink.delete({ where: { id: input.linkId } });
+    await markCalendarChanged(userId);
     return null;
   }
 
@@ -54,13 +57,7 @@ export async function action({ request }: Route.ActionArgs) {
     if (!link || link.userId !== userId) {
       return Response.json({ error: "Not found" }, { status: 404 });
     }
-    const current = new Set(link.subCalendarIds);
-    if (input.enabled) current.add(input.calendarId);
-    else current.delete(input.calendarId);
-    await prisma.userCalendarLink.update({
-      where: { id: input.linkId },
-      data: { subCalendarIds: Array.from(current) },
-    });
+    await setSubCalendarEnabled(input.linkId, input.calendarId, input.enabled);
     return null;
   }
 

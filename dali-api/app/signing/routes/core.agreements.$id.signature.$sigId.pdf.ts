@@ -7,6 +7,7 @@ import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { isCore } from "~/lib/roles";
+import { logAuditEvent } from "~/lib/audit";
 import { fullName } from "~/lib/display";
 import { renderDocumentPdf } from "~/lib/pdf/document-pdf.server";
 import type { PMNode } from "~/collab/export-html";
@@ -25,6 +26,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     where: { id: params.sigId },
     select: {
       id: true,
+      signerUserId: true,
       typedName: true,
       frozenBody: true,
       signer: { select: { firstName: true, lastName: true } },
@@ -57,6 +59,13 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       headers: { "Content-Type": "text/plain; charset=utf-8" },
     });
   }
+  await logAuditEvent({
+    action: "signing.signature.download",
+    userId: auth.user.sub,
+    targetId: sig.id,
+    metadata: { documentId: params.id, signerUserId: sig.signerUserId },
+    request,
+  });
   return new Response(new Uint8Array(pdf), {
     headers: {
       "Content-Type": "application/pdf",

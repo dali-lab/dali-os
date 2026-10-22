@@ -1,4 +1,4 @@
-import { Link, useFetcher, useLoaderData, useRevalidator, useSearchParams } from "react-router";
+import { Link, useFetchers, useLoaderData, useLocation, useNavigation, useRevalidator, useSearchParams } from "react-router";
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
@@ -10,6 +10,7 @@ import {
   CalendarDays,
   CalendarPlus,
   Clock3,
+  Loader2,
   Search,
   Settings,
   X,
@@ -26,7 +27,6 @@ import {
   type ComposerState,
 } from "~/calendar/components/composer";
 import { formatDayRange, formatPayPeriod, payPeriodFor } from "~/lib/pay-period";
-import { useActionErrorToast } from "~/lib/useActionErrorToast";
 import { useToast } from "~/components/ui/toast";
 import { useDialog } from "~/components/ui/dialog";
 import { loadCalendarData, submitCalendarAction } from "./calendar.server";
@@ -34,7 +34,6 @@ import { entriesInHoursScope, timesheetWeekBounds } from "~/calendar/lib/timeshe
 import type { Route } from "./+types/calendar";
 import { Tooltip, InfoTip } from "~/components/ui/floating";
 import { buttonClasses } from "~/components/ui/Button";
-import { RsvpButtons } from "~/components/RsvpButtons";
 import { Select } from "~/components/ui/floating";
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
@@ -91,7 +90,11 @@ import {
   DEFAULT_LAYER_VISIBILITY,
   type LayerVisibility,
 } from "~/calendar/lib/layers";
-import { useCalendarView, ymdUtc } from "~/calendar/lib/use-calendar-view";
+import { isRangeLoading, useCalendarView, ymdUtc } from "~/calendar/lib/use-calendar-view";
+import { applyPending, pendingFromFetchers, type PendingSubmission } from "~/calendar/lib/optimistic-layer";
+import { useBackgroundSubmissionToasts, useSubmitBackground } from "~/calendar/lib/background-submissions";
+import { newPendingId, PendingSubmissionsProvider, usePendingSubmissions } from "~/calendar/lib/pending-submissions";
+import { isTrackedMeeting } from "~/calendar/lib/stop-tracking";
 import { MonthGrid } from "~/calendar/components/MonthGrid";
 import { AgendaView } from "~/calendar/components/AgendaView";
 import { CreateEventModal } from "~/calendar/components/CreateEventModal";
@@ -173,7 +176,11 @@ export function shouldRevalidate({
 
 export default function CalendarPage() {
   const data = useLoaderData<typeof loader>() as LoaderData;
-  return <CalendarScreen data={data} />;
+  return (
+    <PendingSubmissionsProvider>
+      <CalendarScreen data={data} />
+    </PendingSubmissionsProvider>
+  );
 }
 
 /* ------------------------------------------------------------------ */
@@ -408,38 +415,23 @@ function CalendarScreen({ data }: { data: LoaderData }) {
     setCreateSel(null);
     setDraftEdit(null);
   };
-  const eventMoveFetcher = useFetcher();
-  // Optimistic move: hold the block at its dropped position until the loader
-  // revalidates, so it doesn't flash back to the old frame during the server
-  // round-trip. Cleared when the move fetcher settles (data is fresh by then).
-  const [dragOverride, setDragOverride] = useState<{ key: string; startIso: string; endIso: string } | null>(null);
-  const prevMoveState = useRef(eventMoveFetcher.state);
-  useEffect(() => {
-    if (prevMoveState.current !== "idle" && eventMoveFetcher.state === "idle") setDragOverride(null);
-    prevMoveState.current = eventMoveFetcher.state;
-  }, [eventMoveFetcher.state]);
-  // A failed drag-move/delete reverts to the old position; without this the
-  // revert is silent (looks like the drag just didn't take).
-  useActionErrorToast(eventMoveFetcher.data as { error?: string } | undefined, {
-    fallback: "Couldn't update the event. Please try again.",
-  });
-  // Detail-popover delete gets its own fetcher so a success can be confirmed
-  // with a toast: the popover has already closed by the time the server answers.
-  const eventDeleteFetcher = useFetcher<{ error?: string } | null>();
-  const prevDeleteState = useRef(eventDeleteFetcher.state);
-  useEffect(() => {
-    if (
-      prevDeleteState.current !== "idle" &&
-      eventDeleteFetcher.state === "idle" &&
-      !eventDeleteFetcher.data?.error
-    ) {
-      toast.success("Event deleted.");
-    }
-    prevDeleteState.current = eventDeleteFetcher.state;
-  }, [eventDeleteFetcher.state, eventDeleteFetcher.data, toast]);
-  useActionErrorToast(eventDeleteFetcher.data ?? undefined, {
-    fallback: "Couldn't delete the event. Please try again.",
-  });
+  // Writes go out as keyed fetchers so the grid can draw them while they are in
+  // flight (see applyPending) and so a form that closed on submit still has its
+  // failure reported (useBackgroundSubmissionToasts).
+  const sendBackground = useSubmitBackground();
+  const pendingStore = usePendingSubmissions();
+  const submitBackground = (intent: string, id: string, fields: Record<string, string>) =>
+    sendBackground(intent, { intent, ...fields }, { id });
+  const describeSuccess = useCallback(
+    (intent: string, fields: Record<string, string>) => {
+      if (intent !== "event-delete") return null;
+      const meeting = data.externalEvents.find((e) => e.eventId === fields.eventId)?.meeting;
+      if (isTrackedMeeting(meeting)) return "Stopped tracking.";
+      return meeting?.canInvite ? "Meeting cancelled." : "Event deleted.";
+    },
+    [data.externalEvents],
+  );
+  useBackgroundSubmissionToasts(describeSuccess);
   // The wall-clock Y/M/D a drag lands on: the target day column when the move
   // crossed to another date, else the item's own start day. dayIdx columns are
   // UTC-midnight anchored, so their calendar date reads off the UTC fields.
@@ -462,7 +454,10 @@ function CalendarScreen({ data }: { data: LoaderData }) {
     };
     const startIso = toIso(startHour);
     const endIso = toIso(endHour);
-    setDragOverride({ key: `g:${e.eventId}`, startIso, endIso });
+    const hold = pendingStore.register({
+      id: newPendingId("move-hold"),
+      fields: { intent: "event-move", eventId: e.eventId, startIso, endIso },
+    });
     const dateLabel = new Date(startIso).toLocaleDateString(undefined, {
       timeZone: data.timezone,
       weekday: "short",
@@ -475,21 +470,18 @@ function CalendarScreen({ data }: { data: LoaderData }) {
       confirmLabel: "Change time",
     });
     if (!ok) {
-      setDragOverride(null);
+      hold();
       return;
     }
-    eventMoveFetcher.submit(
-      {
-        intent: "event-move",
-        destination: `${e.linkId}:${e.calendarId ?? "primary"}`,
-        eventId: e.eventId,
-        recurringEventId: e.recurringEventId ?? "",
-        startIso,
-        endIso,
-        timeZone: data.timezone,
-      },
-      { method: "post" },
-    );
+    submitBackground("event-move", e.eventId, {
+      destination: `${e.linkId}:${e.calendarId ?? "primary"}`,
+      eventId: e.eventId,
+      recurringEventId: e.recurringEventId ?? "",
+      startIso,
+      endIso,
+      timeZone: data.timezone,
+    });
+    hold();
   };
   // Detail-popover Duplicate: open the composer in create mode, prefilled from
   // the event (a fresh event — identity fields are dropped).
@@ -503,17 +495,13 @@ function CalendarScreen({ data }: { data: LoaderData }) {
       setComposer({ mode: "edit", event: e });
       return;
     }
-    eventDeleteFetcher.submit(
-      {
-        intent: "event-delete",
-        destination: `${e.linkId}:${e.calendarId ?? "primary"}`,
-        eventId: e.eventId,
-        scope: "this",
-        recurringEventId: "",
-        originalStartIso: e.startIso ?? "",
-      },
-      { method: "post" },
-    );
+    submitBackground("event-delete", e.eventId, {
+      destination: `${e.linkId}:${e.calendarId ?? "primary"}`,
+      eventId: e.eventId,
+      scope: "this",
+      recurringEventId: "",
+      originalStartIso: e.startIso ?? "",
+    });
   };
   // The grid's timesheet slot. In timesheet mode the grid logs hours directly:
   // clicking a logged block edits it, and dragging out an empty slot creates an
@@ -594,26 +582,40 @@ function CalendarScreen({ data }: { data: LoaderData }) {
     // rangeStartIso); re-bind when the visible range or view changes.
   }, [anyModalOpen, view, rangeStartIso]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Live time overrides so a block draws at its pending position instead of the
-  // stored one: the composer's edit-in-progress (draftEdit) and a just-dropped
-  // drag awaiting revalidation (dragOverride). Both keep the block from flashing
-  // back to the old frame.
-  const overrides = [draftEdit, dragOverride].filter(Boolean) as { key: string; startIso: string; endIso: string }[];
-  const layerData: LoaderData = overrides.length
-    ? {
-        ...data,
-        externalEvents: data.externalEvents.map((e) => {
-          const o = overrides.find((ov) => ov.key === `g:${e.eventId}`);
-          return o ? { ...e, startIso: o.startIso, endIso: o.endIso } : e;
-        }),
-      }
-    : data;
+  // What the grid draws is the loader's data with every write still in flight
+  // laid over it: router fetchers, the meeting writes that go through plain
+  // fetch(), and the composer's edit-in-progress (draftEdit, last so it wins).
+  // Each disappears on its own once fresh data lands or the write fails.
+  const fetchers = useFetchers();
+  const rangeLoading = isRangeLoading(useNavigation(), useLocation());
+  const draftPending: PendingSubmission[] =
+    draftEdit?.key.startsWith("g:")
+      ? [
+          {
+            id: "draft",
+            fields: {
+              intent: "event-move",
+              eventId: draftEdit.key.slice(2),
+              startIso: draftEdit.startIso,
+              endIso: draftEdit.endIso,
+            },
+          },
+        ]
+      : [];
+  const destinationColors: Record<string, string | null> = {};
+  for (const link of data.calendarLinks)
+    for (const sub of link.subCalendars ?? []) destinationColors[`${link.id}:${sub.id}`] = sub.color;
+  const layerData: LoaderData = applyPending(
+    data,
+    [...pendingFromFetchers(fetchers), ...pendingStore.pending, ...draftPending],
+    { destinationColors },
+  );
 
   // Hours logged against something the event layer already draws — a meeting,
   // or an event marked as work. Those annotate their source block with a role
   // accent rather than drawing a second block on top of it, so there's one
   // block, and one click target, per thing.
-  const loggedSources = buildLoggedSourceIndex(data, excludedRoleKeys, roleColors);
+  const loggedSources = buildLoggedSourceIndex(layerData, excludedRoleKeys, roleColors);
 
   // "View timesheet" is a way of *looking* at the grid, not another overlay:
   // it answers "what did I work on", so an ordinary calendar event — a class, a
@@ -660,7 +662,7 @@ function CalendarScreen({ data }: { data: LoaderData }) {
   }
   if (layers.logged)
     layerMaps.push(
-      buildLoggedTimeLayer(data, days, {
+      buildLoggedTimeLayer(layerData, days, {
         excludedRoleKeys,
         // Suppress the duplicate block for entries the event layer is already
         // drawing (meetings, and events marked as work) — otherwise the logged
@@ -678,6 +680,7 @@ function CalendarScreen({ data }: { data: LoaderData }) {
           events: layers.external,
         },
         onEntryClick: (t, startIso, endIso) => {
+          if (t.id.startsWith("pending:")) return;
           const { dayIdx, startHour, endHour } = toGridRange(days, data.timezone, startIso, endIso);
           const day = days[dayIdx];
           if (!day) return;
@@ -743,17 +746,17 @@ function CalendarScreen({ data }: { data: LoaderData }) {
   // the Timesheet grid's period bounds).
   const { startDayUtc, endDayUtc } = timesheetWeekBounds(data.weekStartIso, data.timezone);
   const scopedEntries = entriesInHoursScope(
-    data.timeEntries,
+    layerData.timeEntries,
     hoursScope,
     data.weekStartIso,
     data.timezone,
   );
   const rangeEndMs = rangeEnd.getTime();
-  const drawnEntries = data.timeEntries.filter((t) => {
+  const drawnEntries = layerData.timeEntries.filter((t) => {
     const start = new Date(timeEntryRange(t, data.timezone).startIso).getTime();
     return start >= rangeStart.getTime() && start < rangeEndMs;
   });
-  const roleBuckets = computeRoleBuckets(data, scopedEntries, drawnEntries);
+  const roleBuckets = computeRoleBuckets(layerData, scopedEntries, drawnEntries);
   // Scoped hours per role, for the sidebar's role list.
   const roleHours = Object.fromEntries(roleBuckets.map((b) => [b.key, b.hours]));
   const hoursRangeLabel =
@@ -853,6 +856,13 @@ function CalendarScreen({ data }: { data: LoaderData }) {
           </button>
         </div>
         <h1 className="font-heading text-xl font-semibold text-foreground">{rangeLabel}</h1>
+        {rangeLoading && (
+          <Loader2
+            role="status"
+            aria-label="Loading calendar"
+            className="h-4 w-4 animate-spin text-muted-foreground motion-reduce:animate-none"
+          />
+        )}
 
         <div className="ml-auto flex items-center gap-2">
           <>
@@ -932,7 +942,13 @@ function CalendarScreen({ data }: { data: LoaderData }) {
               only structure it needs, the way Google's week view reads.
               overflow-x-auto lets the min-w-[640px] WeekGrid scroll rather
               than compress on narrow viewports. */}
-          <section className="flex min-w-0 flex-1 flex-col md:min-h-0 overflow-x-auto">
+          <section
+            aria-busy={rangeLoading}
+            className={cn(
+              "flex min-w-0 flex-1 flex-col transition-opacity md:min-h-0 overflow-x-auto",
+              rangeLoading && "opacity-60",
+            )}
+          >
               {view === "agenda" ? (
                 <AgendaView
                   days={days}

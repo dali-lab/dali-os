@@ -14,15 +14,18 @@ import {
   type EnhanceMark,
   type EnhanceMarkEntry,
   type EnhanceOpBlock,
+  snapshotTree,
   type SnapshotBlock,
 } from "~/components/meeting-recorder/enhance-plan";
+import { appendBlocks } from "./insert";
 import { blockOwnText } from "./schema/configs";
 import type { DocBlock, DocEditorInstance, DocPartialBlock } from "./schema/build";
 
 /** Citation chip href: an ordinary link, not a new inline node (spec §3) —
- *  the transcript panel reads `&at=` to scroll to and highlight the line. */
-export function citationHref(pageId: string, recordingId: string, atSeconds: number): string {
-  return `/documents/${pageId}?transcript=${encodeURIComponent(recordingId)}&at=${Math.max(0, Math.round(atSeconds))}`;
+ *  the transcript panel reads `&at=` to scroll to and highlight the line.
+ *  `notePath` is the page hosting the note (a Drive page, an interview). */
+export function citationHref(notePath: string, recordingId: string, atSeconds: number): string {
+  return `${notePath}?transcript=${encodeURIComponent(recordingId)}&at=${Math.max(0, Math.round(atSeconds))}`;
 }
 
 /** The collapsed "### Transcript" toggle both Insert transcript and Enhance
@@ -58,7 +61,7 @@ export function findTranscriptToggle(blocks: readonly DocBlock[]): DocBlock | nu
  *  rewrite its heading. */
 export function enhanceSnapshotBlocks(blocks: readonly DocBlock[]): SnapshotBlock[] {
   const toggle = findTranscriptToggle(blocks);
-  return blocks.filter((b) => b !== toggle).map((b) => ({ id: b.id, type: b.type, text: blockOwnText(b) }));
+  return snapshotTree(blocks.filter((b) => b !== toggle));
 }
 
 export function hasTranscriptToggle(editor: DocEditorInstance): boolean {
@@ -82,7 +85,7 @@ export type ChipSpeakerAt = (atSeconds: number) => string | null;
 export function buildInlineContent(
   text: string,
   cites: number[],
-  pageId: string,
+  notePath: string,
   recordingId: string,
   speakerAt?: ChipSpeakerAt,
 ): DocPartialBlock["content"] {
@@ -90,7 +93,7 @@ export function buildInlineContent(
     [{ type: "text", text, styles: {} }];
   for (const at of cites) {
     content.push({ type: "text", text: " ", styles: {} });
-    content.push({ type: "link", href: citationHref(pageId, recordingId, at), content: formatChipLabel(at, speakerAt?.(at)) });
+    content.push({ type: "link", href: citationHref(notePath, recordingId, at), content: formatChipLabel(at, speakerAt?.(at)) });
   }
   // DocPartialBlock["content"] is schema-typed per block; the shapes above are
   // exactly BlockNote's PartialInlineContent for a block with styled text and
@@ -136,11 +139,11 @@ function taskForChecklistText(text: string, actionItems: EnhanceActionItem[] | u
 
 export function toPartialBlock(
   block: EnhanceOpBlock,
-  pageId: string,
+  notePath: string,
   recordingId: string,
   ctx: { actionItems?: EnhanceActionItem[]; projectId?: string | null; speakerAt?: ChipSpeakerAt } = {},
 ): DocPartialBlock {
-  const content = buildInlineContent(block.text, block.cites, pageId, recordingId, ctx.speakerAt);
+  const content = buildInlineContent(block.text, block.cites, notePath, recordingId, ctx.speakerAt);
   if (block.type === "heading") {
     return { type: "heading", props: { level: 2 }, content } as DocPartialBlock;
   }
@@ -181,7 +184,7 @@ export function renderEnhanceOps(
   editor: DocEditorInstance,
   ops: EditorOp[],
   ctx: {
-    pageId: string;
+    notePath: string;
     recordingId: string;
     actionItems?: EnhanceActionItem[];
     projectId?: string | null;
@@ -194,7 +197,7 @@ export function renderEnhanceOps(
       if (op.kind === "update") {
         const prior = editor.getBlock(op.id);
         if (prior) priorBlocks[op.id] = structuredClone(prior);
-        const content = buildInlineContent(op.text, op.cites, ctx.pageId, ctx.recordingId, ctx.speakerAt);
+        const content = buildInlineContent(op.text, op.cites, ctx.notePath, ctx.recordingId, ctx.speakerAt);
         editor.updateBlock(op.id, {
           content,
           props: { backgroundColor: ENHANCE_MARK_ADDED },
@@ -207,9 +210,22 @@ export function renderEnhanceOps(
         } as unknown as DocPartialBlock);
         continue;
       }
-      // op.kind === "insertAfter"
-      const blocks = op.blocks.map((b) => withMark(toPartialBlock(b, ctx.pageId, ctx.recordingId, ctx), ENHANCE_MARK_ADDED));
+      const blocks = op.blocks.map((b) => withMark(toPartialBlock(b, ctx.notePath, ctx.recordingId, ctx), ENHANCE_MARK_ADDED));
       if (!blocks.length) continue;
+      if (op.kind === "appendChildren") {
+        const parent = editor.getBlock(op.parentId);
+        if (!parent) continue;
+        const lastChild = parent.children.at(-1);
+        if (lastChild) editor.insertBlocks(blocks, lastChild, "after");
+        else editor.updateBlock(parent.id, { children: blocks } as DocPartialBlock);
+        continue;
+      }
+      if (op.kind === "appendAtEnd") {
+        const toggle = findTranscriptToggle(editor.document);
+        if (toggle) editor.insertBlocks(blocks, toggle, "before");
+        else appendBlocks(editor, blocks);
+        continue;
+      }
       if (op.afterId === null) {
         const doc = editor.document;
         if (doc.length > 0) editor.insertBlocks(blocks, doc[0]!, "before");
@@ -226,22 +242,25 @@ function enhanceMarkOf(block: { props: Record<string, unknown> }): EnhanceMark |
   return markOfProps(block.props);
 }
 
-/** Every top-level block carrying a reserved Enhance mark, in document
+/** Every block carrying a reserved Enhance mark, at any depth, in document
  *  order — the data the rail's "pending review" state derives from
  *  (specs/meeting-recording-rail.md Step 2: "Pending is derived from the
- *  document, not from a flag"). Top-level only, matching applyEnhancePlan's
- *  own granularity. */
+ *  document, not from a flag"). */
 export function findEnhanceMarks(blocks: readonly DocBlock[]): EnhanceMarkEntry[] {
   const hits: EnhanceMarkEntry[] = [];
-  for (const block of blocks) {
-    const mark = enhanceMarkOf(block);
-    if (mark) hits.push({ id: block.id, mark, type: block.type, text: blockOwnText(block) });
-  }
+  const walk = (list: readonly DocBlock[]) => {
+    for (const block of list) {
+      const mark = enhanceMarkOf(block);
+      if (mark) hits.push({ id: block.id, mark, type: block.type, text: blockOwnText(block) });
+      walk(block.children);
+    }
+  };
+  walk(blocks);
   return hits;
 }
 
 export function hasEnhanceMarks(blocks: readonly DocBlock[]): boolean {
-  return blocks.some((block) => enhanceMarkOf(block) !== null);
+  return blocks.some((block) => enhanceMarkOf(block) !== null || hasEnhanceMarks(block.children));
 }
 
 /** Clears a block's Enhance tint without otherwise changing it. No-op when
@@ -290,7 +309,9 @@ export function revertEnhanceBlock(
     editor.removeBlocks([id]);
     return;
   }
-  const { id: _priorId, ...update } = prior;
+  // Children are left as they are now: Enhance may have nested its own
+  // (separately reviewed) bullets under this block since prior was captured.
+  const { id: _priorId, children: _priorChildren, ...update } = prior;
   editor.updateBlock(id, update as DocPartialBlock);
 }
 

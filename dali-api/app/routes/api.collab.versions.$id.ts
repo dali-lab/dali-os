@@ -8,6 +8,7 @@ import { restoreVersion } from "~/collab/persistence";
 import { parseJson } from "~/lib/validate";
 import { stateToBlocks } from "~/collab/read";
 import { blocksToHtml } from "~/collab/blocknote-server";
+import { logAuditEvent } from "~/lib/audit";
 
 const RestoreSchema = z.object({
   intent: z.literal("restore"),
@@ -106,5 +107,12 @@ export async function action({ request, params }: Route.ActionArgs) {
   }
 
   await restoreVersion(server, version.name, version.id);
+  await logAuditEvent({
+    action: "collab.version.restore",
+    userId: auth.user.sub,
+    targetId: version.id,
+    metadata: { documentName: version.name },
+    request,
+  });
   return Response.json({ ok: true });
 }

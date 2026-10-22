@@ -3,6 +3,7 @@ import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { isLabMember } from "~/lib/roles";
+import { logAuditEvent } from "~/lib/audit";
 
 // GET/POST /api/custom-hires — a member's own non-DALI paid roles.
 //
@@ -69,6 +70,13 @@ export async function action({ request }: Route.ActionArgs) {
             where: { id: existing.id },
             data: { archivedAt: null },
           });
+          await logAuditEvent({
+            action: "custom-hire.create",
+            userId,
+            targetId: existing.id,
+            metadata: { label, revived: true },
+            request,
+          });
         }
         return withCors(request, Response.json({ ok: true, id: existing.id, label }));
       }
@@ -76,12 +84,20 @@ export async function action({ request }: Route.ActionArgs) {
         data: { userId, label },
         select: { id: true },
       });
+      await logAuditEvent({
+        action: "custom-hire.create",
+        userId,
+        targetId: created.id,
+        metadata: { label, revived: false },
+        request,
+      });
       return withCors(request, Response.json({ ok: true, id: created.id, label }));
     }
     case "rename": {
       if (!id || !label) {
         return withCors(request, Response.json({ error: "Missing name" }, { status: 400 }));
       }
+      const before = await prisma.customHire.findFirst({ where: { id, userId }, select: { label: true } });
       const res = await prisma.customHire.updateMany({
         where: { id, userId },
         data: { label: label.slice(0, MAX_LABEL) },
@@ -89,6 +105,13 @@ export async function action({ request }: Route.ActionArgs) {
       if (res.count === 0) {
         return withCors(request, Response.json({ error: "Not found" }, { status: 404 }));
       }
+      await logAuditEvent({
+        action: "custom-hire.rename",
+        userId,
+        targetId: id,
+        metadata: { before: before?.label ?? null, after: label.slice(0, MAX_LABEL) },
+        request,
+      });
       return withCors(request, Response.json({ ok: true }));
     }
     case "archive": {
@@ -101,6 +124,7 @@ export async function action({ request }: Route.ActionArgs) {
       if (res.count === 0) {
         return withCors(request, Response.json({ error: "Not found" }, { status: 404 }));
       }
+      await logAuditEvent({ action: "custom-hire.archive", userId, targetId: id, request });
       return withCors(request, Response.json({ ok: true }));
     }
     default:

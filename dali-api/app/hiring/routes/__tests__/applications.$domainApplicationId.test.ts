@@ -174,3 +174,53 @@ describe("applications.$domainApplicationId loader — application events engage
     expect(result.hiringEventEngagement).toHaveLength(1);
   });
 });
+
+describe("applications.$domainApplicationId loader — interview rounds", () => {
+  const iv = (id: string, interviewRoundId: string, interviewer: string) => ({
+    id,
+    startTime: new Date("2026-10-10T14:00:00Z"),
+    endTime: new Date("2026-10-10T14:30:00Z"),
+    status: "Completed",
+    interviewRoundId,
+    room: null,
+    zoomJoinUrl: null,
+    videoUrl: null,
+    recommendation: null,
+    recommendationNotes: null,
+    assignments: [
+      {
+        id: `a-${id}`,
+        role: "InDomain",
+        cycleInterviewer: { userId: `u-${interviewer}`, user: { firstName: interviewer, lastName: "" }, domain: { name: "Design" } },
+      },
+    ],
+  });
+
+  it("gives each Interviews round its own section, in timeline order", async () => {
+    const da = baseDa({ anonymizeReview: false });
+    da.application.applicationCycle.timeline = [
+      { kind: "phase", key: "setup", weeks: [1, 5] },
+      { kind: "phase", key: "review", weeks: [6, 6] },
+      { kind: "delib", id: "first", label: "First delib", weeks: [6, 6] },
+      { kind: "phase", key: "interviews", weeks: [7, 7] },
+      { kind: "delib", id: "r3", label: "Delib 3", weeks: [8, 8] },
+      { kind: "phase", key: "interviews", id: "iv2", label: "Interviews 2", weeks: [9, 9] },
+      { kind: "delib", id: "final", label: "Final delib", weeks: [10, 10] },
+      { kind: "phase", key: "decisions", weeks: [11, 11] },
+    ] as any;
+    mockPrisma.domainApplication.findUnique.mockResolvedValue(da);
+    mockPrisma.interview.findMany.mockResolvedValue([iv("i2", "iv2", "Grace"), iv("i1", "interviews", "Alan")]);
+    mockPrisma.collabDocumentVersion = { findMany: vi.fn().mockResolvedValue([]) };
+
+    const result: any = await callLoader();
+
+    expect(result.interviewRounds).toEqual([
+      { roundId: "interviews", label: "Interviews" },
+      { roundId: "iv2", label: "Interviews 2" },
+    ]);
+    expect(result.interviews.map((i: any) => [i.id, i.interviewRoundId])).toEqual([
+      ["i2", "iv2"],
+      ["i1", "interviews"],
+    ]);
+  });
+});

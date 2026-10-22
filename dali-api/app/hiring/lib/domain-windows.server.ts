@@ -1,4 +1,5 @@
 import { prisma } from "~/lib/db";
+import { logAuditEvent } from "~/lib/audit";
 import type { ApplicationCycleStatus } from "~/generated/prisma/enums";
 
 async function latestCycleStatus(cycleId: string): Promise<ApplicationCycleStatus> {
@@ -56,6 +57,7 @@ export async function setDomainReady(
   cycleId: string,
   domainId: string,
   isReady: boolean,
+  audit?: { actorId: string; request: Request; forced?: boolean },
 ): Promise<string | null> {
   const status = await latestCycleStatus(cycleId);
   if (status === "Open") {
@@ -70,5 +72,14 @@ export async function setDomainReady(
     update: { isReady },
     create: { domainId, applicationCycleId: cycleId, isReady },
   });
+  if (audit) {
+    await logAuditEvent({
+      action: "domain.ready.set",
+      userId: audit.actorId,
+      targetId: domainId,
+      metadata: { cycleId, ready: isReady, ...(audit.forced ? { forced: true } : {}) },
+      request: audit.request,
+    });
+  }
   return null;
 }

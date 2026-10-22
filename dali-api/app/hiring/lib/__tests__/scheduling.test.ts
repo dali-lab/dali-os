@@ -260,8 +260,30 @@ describe("computeAvailableSlots", () => {
 
   it("returns empty when no interview config exists", async () => {
     mockPrisma.interviewConfig.findUnique.mockResolvedValue(null);
-    const slots = await computeAvailableSlots("cycle1", ["domain1"]);
+    const slots = await computeAvailableSlots("cycle1", "interviews", ["domain1"]);
     expect(slots).toEqual([]);
+  });
+
+  it("reads the round's own settings and interviewer roster", async () => {
+    mockPrisma.interviewConfig.findUnique.mockResolvedValue({
+      slotDurationMinutes: 30,
+      bufferMinutes: 0,
+      dayStartHour: 9,
+      dayEndHour: 10,
+      interviewStartDate: new Date("2030-04-15T04:00:00Z"),
+      interviewEndDate: new Date("2030-04-16T03:59:59Z"),
+      timezone: "America/New_York",
+      bookingNoticeHours: 0,
+      rooms: [],
+    });
+    await computeAvailableSlots("cycle1", "iv2", ["domain1"]);
+    expect(mockPrisma.interviewConfig.findUnique.mock.calls[0][0].where).toEqual({
+      applicationCycleId_interviewRoundId: { applicationCycleId: "cycle1", interviewRoundId: "iv2" },
+    });
+    expect(mockPrisma.cycleInterviewer.findMany.mock.calls[0][0].where).toEqual({
+      applicationCycleId: "cycle1",
+      interviewRoundId: "iv2",
+    });
   });
 
   it("returns slots where both in-domain and cross-domain reviewers are free", async () => {
@@ -297,7 +319,7 @@ describe("computeAvailableSlots", () => {
       },
     ]);
 
-    const slots = await computeAvailableSlots("cycle1", ["domain1"]);
+    const slots = await computeAvailableSlots("cycle1", "interviews", ["domain1"]);
     expect(slots.length).toBeGreaterThan(0);
 
     // Each slot should be 30 minutes
@@ -331,7 +353,7 @@ describe("computeAvailableSlots", () => {
       },
     ]);
 
-    const slots = await computeAvailableSlots("cycle1", ["domain1"]);
+    const slots = await computeAvailableSlots("cycle1", "interviews", ["domain1"]);
     expect(slots).toEqual([]);
   });
 
@@ -392,7 +414,7 @@ describe("computeAvailableSlots", () => {
     // cross-domain interviewer for domain-other (only Mira-design). At 9:00
     // Mira is busy under her Eng row, and member-level aggregation should
     // propagate that to her Design row — no slot.
-    const slots = await computeAvailableSlots("cycle1", ["domain1"]);
+    const slots = await computeAvailableSlots("cycle1", "interviews", ["domain1"]);
     const at9 = slots.find((s) => s.startTime === new Date("2030-04-15T13:00:00Z").toISOString());
     expect(at9).toBeUndefined();
     // 9:30 should still work — Mira is free by then.
@@ -441,7 +463,7 @@ describe("computeAvailableSlots", () => {
       },
     ]);
 
-    const slots = await computeAvailableSlots("cycle1", ["domain1"]);
+    const slots = await computeAvailableSlots("cycle1", "interviews", ["domain1"]);
     expect(slots).toEqual([]);
   });
 
@@ -489,7 +511,7 @@ describe("computeAvailableSlots", () => {
       },
     ]);
 
-    const slots = await computeAvailableSlots("cycle1", ["domain1"]);
+    const slots = await computeAvailableSlots("cycle1", "interviews", ["domain1"]);
     const at9 = slots.find((s) => s.startTime === new Date("2030-04-15T13:00:00Z").toISOString());
     expect(at9).toBeDefined();
   });
@@ -564,8 +586,7 @@ describe("assignInterviewers", () => {
       return fn(tx);
     });
 
-    const result = await assignInterviewers(
-      "cycle1", "app1", ["domain1"],
+    const result = await assignInterviewers("cycle1", "interviews", "app1", ["domain1"],
       new Date("2026-04-13T14:00:00Z"),
       new Date("2026-04-13T14:30:00Z"),
     );
@@ -583,8 +604,8 @@ describe("assignInterviewers", () => {
     });
 
     await expect(
-      assignInterviewers("cycle1", "app1", ["domain1"], new Date(), new Date()),
-    ).rejects.toThrow("No interview config for this cycle");
+      assignInterviewers("cycle1", "interviews", "app1", ["domain1"], new Date(), new Date()),
+    ).rejects.toThrow("No interview config for this round");
   });
 
   it("throws a clear error when the cycle has no interviewers configured", async () => {
@@ -602,6 +623,7 @@ describe("assignInterviewers", () => {
     await expect(
       assignInterviewers(
         "cycle1",
+        "interviews",
         "app1",
         ["domain1"],
         new Date("2026-04-13T14:00:00Z"),
@@ -636,8 +658,7 @@ describe("assignInterviewers", () => {
     });
 
     await expect(
-      assignInterviewers(
-        "cycle1", "app1", ["domain1"],
+      assignInterviewers("cycle1", "interviews", "app1", ["domain1"],
         new Date("2026-04-13T14:00:00Z"),
         new Date("2026-04-13T14:30:00Z"),
       ),
@@ -687,6 +708,7 @@ describe("assignInterviewers", () => {
     await expect(
       assignInterviewers(
         "cycle1",
+        "interviews",
         "app1",
         ["domain1"],
         new Date("2026-04-13T14:00:00Z"),
@@ -755,8 +777,7 @@ describe("assignInterviewers", () => {
       return fn(tx);
     });
 
-    await assignInterviewers(
-      "cycle1", "app1", ["domain1"],
+    await assignInterviewers("cycle1", "interviews", "app1", ["domain1"],
       new Date("2026-04-13T14:00:00Z"),
       new Date("2026-04-13T14:30:00Z"),
     );
@@ -816,6 +837,7 @@ describe("assignInterviewers", () => {
     await expect(
       assignInterviewers(
         "cycle1",
+        "interviews",
         "app1",
         ["domain1"],
         new Date("2026-04-13T14:00:00Z"),
@@ -877,6 +899,7 @@ describe("assignInterviewers", () => {
     await expect(
       assignInterviewers(
         "cycle1",
+        "interviews",
         "app1",
         ["domain1"],
         new Date("2026-04-13T14:00:00Z"),
@@ -935,8 +958,7 @@ describe("assignInterviewers", () => {
     const tx = inPersonTx([{ id: "roomA", name: "Pod Appa" }], capturedCreate);
     mockPrisma.$transaction.mockImplementation(async (fn: any) => fn(tx));
 
-    await assignInterviewers(
-      "cycle1", "app1", ["domain1"],
+    await assignInterviewers("cycle1", "interviews", "app1", ["domain1"],
       new Date("2026-04-13T14:00:00Z"),
       new Date("2026-04-13T14:30:00Z"),
       undefined,
@@ -967,8 +989,7 @@ describe("assignInterviewers", () => {
     );
     mockPrisma.$transaction.mockImplementation(async (fn: any) => fn(tx));
 
-    await assignInterviewers(
-      "cycle1", "app1", ["domain1"],
+    await assignInterviewers("cycle1", "interviews", "app1", ["domain1"],
       new Date("2026-04-13T14:00:00Z"),
       new Date("2026-04-13T14:30:00Z"),
       undefined,
@@ -994,8 +1015,7 @@ describe("assignInterviewers", () => {
     mockPrisma.$transaction.mockImplementation(async (fn: any) => fn(tx));
 
     await expect(
-      assignInterviewers(
-        "cycle1", "app1", ["domain1"],
+      assignInterviewers("cycle1", "interviews", "app1", ["domain1"],
         new Date("2026-04-13T14:00:00Z"),
         new Date("2026-04-13T14:30:00Z"),
         undefined,
@@ -1011,8 +1031,7 @@ describe("assignInterviewers", () => {
     mockPrisma.$transaction.mockImplementation(async (fn: any) => fn(tx));
 
     await expect(
-      assignInterviewers(
-        "cycle1", "app1", ["domain1"],
+      assignInterviewers("cycle1", "interviews", "app1", ["domain1"],
         new Date("2026-04-13T14:00:00Z"),
         new Date("2026-04-13T14:30:00Z"),
         undefined,
@@ -1032,8 +1051,7 @@ describe("assignInterviewers", () => {
     const tx = inPersonTx([{ id: "roomA", name: "Pod Appa" }], capturedCreate);
     mockPrisma.$transaction.mockImplementation(async (fn: any) => fn(tx));
 
-    await assignInterviewers(
-      "cycle1", "app1", ["domain1"],
+    await assignInterviewers("cycle1", "interviews", "app1", ["domain1"],
       new Date("2026-04-13T14:00:00Z"),
       new Date("2026-04-13T14:30:00Z"),
     );
@@ -1240,22 +1258,22 @@ describe("explainAvailableSlots", () => {
   });
 
   it("reports no blocker alongside the slots when a pair and a room line up", async () => {
-    const result = await explainAvailableSlots("cycle1", ["domain1"], "in-person");
+    const result = await explainAvailableSlots("cycle1", "interviews", ["domain1"], "in-person");
     expect(result.blocker).toBeNull();
     expect(result.slots.length).toBeGreaterThan(0);
     expect(result.bookingNoticeHours).toBe(12);
-    expect(await computeAvailableSlots("cycle1", ["domain1"], "in-person")).toEqual(result.slots);
+    expect(await computeAvailableSlots("cycle1", "interviews", ["domain1"], "in-person")).toEqual(result.slots);
   });
 
   it("reports no-config when the cycle has no interview window", async () => {
     mockPrisma.interviewConfig.findUnique.mockResolvedValue(null);
-    expect(await explainAvailableSlots("cycle1", ["domain1"], "in-person")).toMatchObject({ slots: [], blocker: "no-config" });
+    expect(await explainAvailableSlots("cycle1", "interviews", ["domain1"], "in-person")).toMatchObject({ slots: [], blocker: "no-config" });
   });
 
   it("reports no-rooms for in-person mode only", async () => {
     mockPrisma.interviewConfig.findUnique.mockResolvedValue({ ...oneDayConfig, rooms: [] });
-    expect((await explainAvailableSlots("cycle1", ["domain1"], "in-person")).blocker).toBe("no-rooms");
-    expect((await explainAvailableSlots("cycle1", ["domain1"], "online")).blocker).toBeNull();
+    expect((await explainAvailableSlots("cycle1", "interviews", ["domain1"], "in-person")).blocker).toBe("no-rooms");
+    expect((await explainAvailableSlots("cycle1", "interviews", ["domain1"], "online")).blocker).toBeNull();
   });
 
   it("reports no-candidates when the whole window is in the past", async () => {
@@ -1264,64 +1282,64 @@ describe("explainAvailableSlots", () => {
       interviewStartDate: new Date("2020-04-13T04:00:00Z"),
       interviewEndDate: new Date("2020-04-13T04:00:00Z"),
     });
-    expect((await explainAvailableSlots("cycle1", ["domain1"], "in-person")).blocker).toBe("no-candidates");
+    expect((await explainAvailableSlots("cycle1", "interviews", ["domain1"], "in-person")).blocker).toBe("no-candidates");
   });
 
   it("reports no-interviewers when the cycle has none", async () => {
     mockPrisma.cycleInterviewer.findMany.mockResolvedValue([]);
-    expect((await explainAvailableSlots("cycle1", ["domain1"], "in-person")).blocker).toBe("no-interviewers");
+    expect((await explainAvailableSlots("cycle1", "interviews", ["domain1"], "in-person")).blocker).toBe("no-interviewers");
   });
 
   it("reports no-in-domain-interviewer when nobody interviews for the applicant's domain", async () => {
     mockPrisma.cycleInterviewer.findMany.mockResolvedValue([crossDomain, { ...crossDomain, id: "r3", userId: "m3" }]);
-    expect((await explainAvailableSlots("cycle1", ["domain1"], "in-person")).blocker).toBe("no-in-domain-interviewer");
+    expect((await explainAvailableSlots("cycle1", "interviews", ["domain1"], "in-person")).blocker).toBe("no-in-domain-interviewer");
   });
 
   it("pairs two in-domain interviewers when every interviewer is in the applicant's domain", async () => {
     mockPrisma.cycleInterviewer.findMany.mockResolvedValue([inDomain, { ...inDomain, id: "r3", userId: "m3" }]);
-    const result = await explainAvailableSlots("cycle1", ["domain1"], "in-person");
+    const result = await explainAvailableSlots("cycle1", "interviews", ["domain1"], "in-person");
     expect(result.blocker).toBeNull();
     expect(result.slots.length).toBeGreaterThan(0);
   });
 
   it("reports one-interviewer when the cycle's rows all belong to one person", async () => {
     mockPrisma.cycleInterviewer.findMany.mockResolvedValue([inDomain, { ...crossDomain, userId: "m1" }]);
-    expect((await explainAvailableSlots("cycle1", ["domain1"], "in-person")).blocker).toBe("one-interviewer");
+    expect((await explainAvailableSlots("cycle1", "interviews", ["domain1"], "in-person")).blocker).toBe("one-interviewer");
   });
 
   it("still needs a cross-domain interviewer once the cycle has one", async () => {
     setCalendarFree("m2", []);
     mockPrisma.cycleInterviewer.findMany.mockResolvedValue([inDomain, { ...inDomain, id: "r3", userId: "m3" }, crossDomain]);
-    expect((await explainAvailableSlots("cycle1", ["domain1"], "in-person")).blocker).toBe("cross-domain-never-free");
+    expect((await explainAvailableSlots("cycle1", "interviews", ["domain1"], "in-person")).blocker).toBe("cross-domain-never-free");
   });
 
   it("reports in-domain-never-free when the in-domain interviewer's calendar is full", async () => {
     setCalendarFree("m1", []);
-    expect((await explainAvailableSlots("cycle1", ["domain1"], "in-person")).blocker).toBe("in-domain-never-free");
+    expect((await explainAvailableSlots("cycle1", "interviews", ["domain1"], "in-person")).blocker).toBe("in-domain-never-free");
   });
 
   it("reports cross-domain-never-free when the cross-domain interviewer's calendar is full", async () => {
     setCalendarFree("m2", []);
-    expect((await explainAvailableSlots("cycle1", ["domain1"], "in-person")).blocker).toBe("cross-domain-never-free");
+    expect((await explainAvailableSlots("cycle1", "interviews", ["domain1"], "in-person")).blocker).toBe("cross-domain-never-free");
   });
 
   it("reports no-pair when the two are free at different times", async () => {
     setCalendarFree("m1", [{ startTime: new Date("2030-04-15T13:00:00Z"), endTime: new Date("2030-04-15T13:30:00Z") }]);
     setCalendarFree("m2", [{ startTime: new Date("2030-04-15T13:30:00Z"), endTime: new Date("2030-04-15T14:00:00Z") }]);
-    expect((await explainAvailableSlots("cycle1", ["domain1"], "in-person")).blocker).toBe("no-pair");
+    expect((await explainAvailableSlots("cycle1", "interviews", ["domain1"], "in-person")).blocker).toBe("no-pair");
   });
 
   it("reports no-pair when the only free in-domain and cross-domain rows are the same person", async () => {
     setCalendarFree("m3", []);
     mockPrisma.cycleInterviewer.findMany.mockResolvedValue([inDomain, { ...crossDomain, userId: "m1" }, { ...crossDomain, id: "r3", userId: "m3" }]);
-    expect((await explainAvailableSlots("cycle1", ["domain1"], "in-person")).blocker).toBe("no-pair");
+    expect((await explainAvailableSlots("cycle1", "interviews", ["domain1"], "in-person")).blocker).toBe("no-pair");
   });
 
   it("reports rooms-busy when every room is booked whenever a pair is free", async () => {
     vi.mocked(getRoomSchedule).mockResolvedValue([
       { start: new Date("2030-04-15T00:00:00Z"), end: new Date("2030-04-16T00:00:00Z") },
     ] as any);
-    expect((await explainAvailableSlots("cycle1", ["domain1"], "in-person")).blocker).toBe("rooms-busy");
+    expect((await explainAvailableSlots("cycle1", "interviews", ["domain1"], "in-person")).blocker).toBe("rooms-busy");
   });
 
   it("ignores room items blockedBy says this cycle may book over", async () => {
@@ -1329,7 +1347,7 @@ describe("explainAvailableSlots", () => {
       { start: new Date("2030-04-15T00:00:00Z"), end: new Date("2030-04-16T00:00:00Z") },
     ] as any);
     vi.mocked(blockedBy).mockReturnValue(false);
-    expect((await explainAvailableSlots("cycle1", ["domain1"], "in-person")).blocker).toBeNull();
+    expect((await explainAvailableSlots("cycle1", "interviews", ["domain1"], "in-person")).blocker).toBeNull();
   });
 
   it("reports booking-notice when the only open times are inside the notice", async () => {
@@ -1344,7 +1362,7 @@ describe("explainAvailableSlots", () => {
       interviewStartDate: day,
       interviewEndDate: day,
     });
-    expect(await explainAvailableSlots("cycle1", ["domain1"], "in-person")).toMatchObject({ slots: [], blocker: "booking-notice" });
+    expect(await explainAvailableSlots("cycle1", "interviews", ["domain1"], "in-person")).toMatchObject({ slots: [], blocker: "booking-notice" });
   });
 });
 
@@ -1374,7 +1392,7 @@ describe("single-domain interviewer pools", () => {
       }),
     );
 
-    await assignInterviewers("cycle1", "app1", ["domain1"], monday2, monday230);
+    await assignInterviewers("cycle1", "interviews", "app1", ["domain1"], monday2, monday230);
 
     const created = create.mock.calls[0][0].data.assignments.create;
     expect(created.map((a: any) => a.role)).toEqual(["InDomain", "CrossDomain"]);
@@ -1393,7 +1411,7 @@ describe("single-domain interviewer pools", () => {
         $executeRaw: vi.fn().mockResolvedValue(0),
       }),
     );
-    await expect(assignInterviewers("cycle1", "app1", ["domain1"], monday2, monday230)).rejects.toThrow(
+    await expect(assignInterviewers("cycle1", "interviews", "app1", ["domain1"], monday2, monday230)).rejects.toThrow(
       "No second interviewer available for this slot",
     );
   });

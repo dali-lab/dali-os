@@ -8,6 +8,7 @@ import type { DomainAppData } from "~/hiring/components/ApplicationTracker";
 import { ensureInterviewMeetUrl } from "~/hiring/lib/interview-meet";
 import { applicantDeadline, domainCloseDate, isDomainClosed } from "./domain-windows";
 import { joinNames } from "./tracker-stage";
+import { FIRST_INTERVIEW_ROUND_ID } from "./cycle-timeline";
 import { APPLICATION_TZ, formatInTimeZone } from "~/lib/timezone";
 
 // The applicant's tracker for one cycle: their application's overall status
@@ -18,7 +19,7 @@ export async function loadApplicationTracker(
   cycleId: string,
   cycleStatus: ApplicationCycleStatus,
 ) {
-  const [application, config, cycle, readyDomainRows] = await Promise.all([
+  const [application, configs, cycle, readyDomainRows] = await Promise.all([
     prisma.application.findFirst({
       where: { userId, applicationCycleId: cycleId },
       include: {
@@ -32,7 +33,10 @@ export async function loadApplicationTracker(
         },
       },
     }),
-    prisma.interviewConfig.findUnique({ where: { applicationCycleId: cycleId } }),
+    prisma.interviewConfig.findMany({
+      where: { applicationCycleId: cycleId },
+      select: { interviewRoundId: true, slotDurationMinutes: true },
+    }),
     prisma.applicationCycle.findUnique({ where: { id: cycleId }, select: { closeDate: true } }),
     prisma.domainApplicationCycle.findMany({
       where: { applicationCycleId: cycleId, isReady: true },
@@ -104,6 +108,13 @@ export async function loadApplicationTracker(
         : null,
     };
   }));
+
+  // Slots are as long as the round the applicant is invited to.
+  const invitedRound = (application?.domainApplications ?? [])
+    .map((da: any) => da.decisions.find((d: any) => d.stage === "Released"))
+    .find((d: any) => d?.type === "InvitedToInterview")?.interviewRoundId;
+  const config =
+    configs.find((c) => c.interviewRoundId === (invitedRound ?? FIRST_INTERVIEW_ROUND_ID)) ?? configs[0];
 
   const readyDomains = readyDomainRows.map((d) => ({
     id: d.domainId,

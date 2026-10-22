@@ -5,10 +5,12 @@ vi.mock("~/lib/auth", () => ({
   requireAuth: vi.fn(),
 }));
 vi.mock("~/lib/roles");
+vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
 
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
-import { isCore, isDomainLead } from "~/lib/roles";
+import { isCore, isDomainLead, isDomainLeadForCycle } from "~/lib/roles";
+import { logAuditEvent } from "~/lib/audit";
 import { action, validateReviewPatch } from "~/hiring/routes/api.reviews.$id";
 
 const mockPrisma = prisma as unknown as {
@@ -254,5 +256,97 @@ describe("PATCH /api/hiring/reviews/:id", () => {
     } as any);
     expect(res.status).toBe(409);
     expect(mockPrisma.applicationReview.update).not.toHaveBeenCalled();
+  });
+});
+
+describe("review audit trail", () => {
+  const BEFORE = {
+    id: REVIEW_ID,
+    submittedAt: null,
+    scores: { technical: 5 },
+    feedback: "old words",
+    rejectionRationale: "",
+    overallRecommendation: "Lean Hire",
+    annotations: [],
+    domainApplicationId: "da-1",
+    cycleReviewer: { userId: USER_ID, applicationCycleId: "cycle-1" },
+  };
+
+  const patch = (body: unknown) =>
+    action({ request: makeRequest(body), params: { id: REVIEW_ID }, context: {} } as any);
+
+  it("logs the score and recommendation change but names free text fields only", async () => {
+    mockPrisma.applicationReview.findUnique.mockResolvedValue(BEFORE);
+
+    await patch({ scores: { technical: 9 }, overallRecommendation: "Hire", feedback: "brand new secret words" });
+
+    expect(logAuditEvent).toHaveBeenCalledTimes(1);
+    const event = vi.mocked(logAuditEvent).mock.calls[0][0];
+    expect(event).toMatchObject({
+      action: "review.update",
+      userId: USER_ID,
+      targetId: REVIEW_ID,
+      metadata: {
+        cycleId: "cycle-1",
+        reviewerUserId: USER_ID,
+        fields: ["scores", "feedback", "overallRecommendation"],
+        scores: { before: { technical: 5 }, after: { technical: 9 } },
+        recommendation: { before: "Lean Hire", after: "Hire" },
+      },
+    });
+    expect(JSON.stringify(event.metadata)).not.toContain("secret words");
+    expect(JSON.stringify(event.metadata)).not.toContain("old words");
+  });
+
+  it("logs nothing when the patch changes nothing", async () => {
+    mockPrisma.applicationReview.findUnique.mockResolvedValue(BEFORE);
+    await patch({ scores: { technical: 5 }, feedback: "old words" });
+    expect(logAuditEvent).not.toHaveBeenCalled();
+  });
+
+  it("logs nothing for a refused patch", async () => {
+    mockPrisma.applicationReview.findUnique.mockResolvedValue({ ...BEFORE, submittedAt: new Date() });
+    await patch({ feedback: "x" });
+    expect(logAuditEvent).not.toHaveBeenCalled();
+  });
+
+  it("logs a lead deleting a submitted review", async () => {
+    mockPrisma.applicationReview.findUnique.mockResolvedValue({ ...BEFORE, submittedAt: new Date() });
+    vi.mocked(isDomainLeadForCycle).mockResolvedValue(true);
+
+    const res = await action({
+      request: new Request("http://localhost/api/reviews/review-1", { method: "DELETE" }),
+      params: { id: REVIEW_ID },
+      context: {},
+    } as any);
+
+    expect(res.status).toBe(200);
+    expect(logAuditEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "review.delete",
+        userId: USER_ID,
+        targetId: REVIEW_ID,
+        metadata: {
+          cycleId: "cycle-1",
+          reviewerUserId: USER_ID,
+          domainApplicationId: "da-1",
+          wasSubmitted: true,
+        },
+      }),
+    );
+  });
+
+  it("logs nothing when a non-lead tries to delete", async () => {
+    mockPrisma.applicationReview.findUnique.mockResolvedValue(BEFORE);
+    vi.mocked(isDomainLeadForCycle).mockResolvedValue(false);
+
+    const res = await action({
+      request: new Request("http://localhost/api/reviews/review-1", { method: "DELETE" }),
+      params: { id: REVIEW_ID },
+      context: {},
+    } as any);
+
+    expect(res.status).toBe(403);
+    expect(logAuditEvent).not.toHaveBeenCalled();
   });
 });

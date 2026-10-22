@@ -1,5 +1,11 @@
 import { redirect } from "react-router";
 import { prisma } from "~/lib/db";
+import {
+  cachedExternalRead,
+  invalidateExternalCache,
+  markCalendarChanged,
+} from "~/calendar/lib/external-cache.server";
+import { setSubCalendarEnabled } from "~/calendar/lib/sub-calendar.server";
 import { requireAuth, forbidden, redirectNonMemberToPortal, isImpersonating } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { listAllGroups } from "~/lib/groups";
@@ -361,41 +367,7 @@ async function canActOnMeeting(
   return isLabMember(userId, request);
 }
 
-/**
- * Short-lived cache for the external-event read, keyed by who is asking and
- * which window. Switching month / week / day re-runs the loader, and the fetch
- * underneath costs one Google `events.list` per linked sub-calendar — so
- * without this, every toggle paid a full set of round-trips. The window is the
- * month-grid-wide `fetchWindow`, identical across the three views at one
- * anchor, so a switch is a cache hit.
- *
- * Deliberately tiny and in-process: a stale read is at most TTL old, a
- * write through the calendar action revalidates and re-reads within the same
- * process, and nothing here needs to survive a deploy.
- */
-const EXTERNAL_CACHE_TTL_MS = 30_000;
-const EXTERNAL_CACHE_MAX = 200;
-const externalCache = new Map<string, { at: number; value: unknown }>();
-
-async function cachedExternalRead<T>(key: string, read: () => Promise<T>): Promise<T> {
-  const hit = externalCache.get(key);
-  if (hit && Date.now() - hit.at < EXTERNAL_CACHE_TTL_MS) return hit.value as T;
-  const value = await read();
-  // Bound the map: drop the oldest insertion when it grows past the cap.
-  if (externalCache.size >= EXTERNAL_CACHE_MAX) {
-    const oldest = externalCache.keys().next().value;
-    if (oldest !== undefined) externalCache.delete(oldest);
-  }
-  externalCache.set(key, { at: Date.now(), value });
-  return value;
-}
-
-/** Drop a user's cached reads after they write, so the change shows at once. */
-export function invalidateExternalCache(userId: string): void {
-  for (const key of externalCache.keys()) {
-    if (key.startsWith(`${userId}:`)) externalCache.delete(key);
-  }
-}
+export { invalidateExternalCache };
 
 /**
  * Cached calendarList read for one Google link, keyed by user so
@@ -403,8 +375,13 @@ export function invalidateExternalCache(userId: string): void {
  * events read. Exported for its own unit test — the loader that calls it pulls
  * in too much (auth, every other calendar table) to drive directly.
  */
-export async function fetchCachedCalendarList(userId: string, linkId: string, token: string) {
-  return cachedExternalRead(`${userId}:calendar-list:${linkId}`, () => listCalendarsForLink(linkId, token));
+export async function fetchCachedCalendarList(
+  userId: string,
+  linkId: string,
+  token: string,
+  changedAt?: Date | null,
+) {
+  return cachedExternalRead(`${userId}:calendar-list:${linkId}`, () => listCalendarsForLink(linkId, token), changedAt);
 }
 
 /** Read a single cookie value from the request's Cookie header. */
@@ -1253,12 +1230,7 @@ async function handleCalendarAction(
       const calendarId = await createCalendar(linkId, summary);
       await subscribeCalendarForLink(linkId, calendarId).catch(() => {});
       // Enable it for display + writing.
-      const link = await prisma.userCalendarLink.findUnique({ where: { id: linkId }, select: { subCalendarIds: true } });
-      if (link) {
-        const set = new Set(link.subCalendarIds);
-        set.add(calendarId);
-        await prisma.userCalendarLink.update({ where: { id: linkId }, data: { subCalendarIds: [...set] } });
-      }
+      await setSubCalendarEnabled(linkId, calendarId, true);
       return null;
     }
     if (intent === "cal-rename") {
@@ -1561,7 +1533,7 @@ export async function loadCalendarData(
           timesheetCalendarId: true,
         },
       }),
-      prisma.user.findUnique({ where: { id: userId }, select: { timeZone: true } }),
+      prisma.user.findUnique({ where: { id: userId }, select: { timeZone: true, calendarDataChangedAt: true } }),
       prisma.workingHoursDay.findMany({
         where: { userId },
         select: {
@@ -1694,7 +1666,7 @@ export async function loadCalendarData(
       try {
         const token = await getValidAccessTokenForLink(l.id);
         prefetchedTokens.set(l.id, token);
-        const items = await fetchCachedCalendarList(userId, l.id, token);
+        const items = await fetchCachedCalendarList(userId, l.id, token, userRow?.calendarDataChangedAt);
         return { linkId: l.id, items } as const;
       } catch {
         return { linkId: l.id, items: undefined } as const;
@@ -1719,6 +1691,7 @@ export async function loadCalendarData(
       ? Promise.resolve<CalendarEvent[]>([])
       : cachedExternalRead<CalendarEvent[]>(externalCacheKey, () =>
           fetchCalendarEvents(userId, fetchStart, fetchEnd, prefetchedCalendarLists, prefetchedTokens, "all"),
+          userRow?.calendarDataChangedAt,
         ).catch((err): CalendarEvent[] => {
           ingestionError = err instanceof Error ? err.message : "Failed to fetch external events";
           return [];
@@ -1883,12 +1856,83 @@ const DB_ONLY_CALENDAR_INTENTS = new Set([
   "reset-working-hours",
   "seed-working-hours",
   "set-event-buffer",
+  "track-event-as-meeting",
+  // The loader reads every calendar on a link ("all"), whatever is toggled.
+  "toggle-sub-calendar",
+  // Meeting-sourced entries are never mirrored to Google, so removing one
+  // never calls Google (removeTimeEntryFromGoogle returns without a mirror id).
+  "toggle-meeting-time-entry",
 ]);
 
 /** Exported for tests — the cache itself has no externally observable state. */
 export function shouldInvalidateExternalCache(intent: string): boolean {
   return !DB_ONLY_CALENDAR_INTENTS.has(intent);
 }
+
+/** The row fields a client needs to draw a saved time entry without a reload. */
+export function timeEntryResult(row: {
+  id: string;
+  hours: number;
+  note: string | null;
+  startTime: Date | null;
+  endTime: Date | null;
+  date: Date;
+}) {
+  return {
+    id: row.id,
+    hours: row.hours,
+    note: row.note,
+    date: row.date.toISOString(),
+    startTime: row.startTime?.toISOString() ?? null,
+    endTime: row.endTime?.toISOString() ?? null,
+  };
+}
+
+const mirrorChains = new Map<string, Promise<void>>();
+
+type EntryLockTx = Pick<typeof prisma, "timeEntry" | "$executeRaw">;
+
+/**
+ * Runs `fn` holding a Postgres advisory lock on the entry, so the Google writes
+ * for one entry are serialized across machines, not just within this process.
+ * The lock lasts for the transaction, and a crash releases it with the
+ * connection. Google calls make the transaction long, hence the timeout.
+ */
+async function withEntryMirrorLock<T>(entryId: string, fn: (tx: EntryLockTx) => Promise<T>): Promise<T> {
+  return prisma.$transaction(
+    async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`timesheet-mirror:${entryId}`}))`;
+      return fn(tx);
+    },
+    { timeout: 30_000, maxWait: 10_000 },
+  );
+}
+
+/**
+ * Mirror a timesheet write to Google without holding the response on it. Jobs
+ * for one entry run one after another (in this process by a chain, across
+ * machines by an advisory lock), so a second write can't start before the
+ * first has saved its Google event id (which would insert a duplicate). The
+ * mirror writes to Google, so the change marker is stamped again once it lands:
+ * a read that raced it on another machine would otherwise be trusted.
+ */
+function mirrorInBackground(userId: string, entryId: string, mirror: (tx: EntryLockTx) => Promise<void>) {
+  const job = (mirrorChains.get(entryId) ?? Promise.resolve())
+    .then(() => withEntryMirrorLock(entryId, mirror))
+    .catch((err) => console.error("time entry mirror failed", err))
+    .then(() => markCalendarChanged(userId))
+    .catch((err) => console.error("time entry mirror marker failed", err));
+  mirrorChains.set(entryId, job);
+  void job.then(() => {
+    if (mirrorChains.get(entryId) === job) mirrorChains.delete(entryId);
+  });
+}
+
+/** Mirrors the entry as it is when the job holds the lock, not as it was when queued. */
+const mirrorLatest = (entryId: string) => async (tx: EntryLockTx) => {
+  const latest = await tx.timeEntry.findUnique({ where: { id: entryId } });
+  if (latest) await syncTimeEntryToGoogle(latest);
+};
 
 export async function submitCalendarAction(request: Request) {
   const auth = await requireAuth(request);
@@ -1904,10 +1948,23 @@ export async function submitCalendarAction(request: Request) {
 
   // Any write that can change what the next Google read returns must drop this
   // user's cached external reads rather than letting the TTL hide the change.
-  if (shouldInvalidateExternalCache(rawIntent)) {
-    invalidateExternalCache(userId);
+  // Stamped before the handler so a read racing it is not cached as fresh, and
+  // again after: a read that started mid-write cached the pre-write answer.
+  if (!shouldInvalidateExternalCache(rawIntent)) return dispatchCalendarAction(request, userId, raw, rawIntent);
+  await markCalendarChanged(userId);
+  try {
+    return await dispatchCalendarAction(request, userId, raw, rawIntent);
+  } finally {
+    await markCalendarChanged(userId);
   }
+}
 
+async function dispatchCalendarAction(
+  request: Request,
+  userId: string,
+  raw: Record<string, FormDataEntryValue>,
+  rawIntent: string,
+) {
   if (
     MEMBER_ONLY_CALENDAR_INTENTS.has(rawIntent) &&
     !(await isLabMember(userId, request))
@@ -2009,9 +2066,8 @@ export async function submitCalendarAction(request: Request) {
 
     case "seed-working-hours": {
       // Materialize the supplied full-week segment set in one transaction. Used
-      // when the user first turns Working Hours on (or edits a day) while the
-      // state is still the in-memory default: persisting only the edited day
-      // would leave the other days with no rows, and the loader's
+      // when the user first turns Working Hours on or resets them: persisting
+      // a single day would leave the other days with no rows, and the loader's
       // "hasAnyPersisted ⇒ unlisted day is empty" rule would then silently wipe
       // the default Mon–Fri hours. Seeding all days at once keeps them.
       for (const d of input.days) {
@@ -2073,13 +2129,7 @@ export async function submitCalendarAction(request: Request) {
       if (!link || link.userId !== userId) {
         return Response.json({ error: "Not found" }, { status: 404 });
       }
-      const current = new Set(link.subCalendarIds);
-      if (input.enabled) current.add(input.calendarId);
-      else current.delete(input.calendarId);
-      await prisma.userCalendarLink.update({
-        where: { id: input.linkId },
-        data: { subCalendarIds: Array.from(current) },
-      });
+      await setSubCalendarEnabled(input.linkId, input.calendarId, input.enabled);
       return null;
     }
 
@@ -2141,18 +2191,18 @@ export async function submitCalendarAction(request: Request) {
           occurrenceStart: occurrence.originalStart,
           userId,
         };
-        await prisma.timeEntry.upsert({
+        const logged = await prisma.timeEntry.upsert({
           where: { scheduledMeetingId_occurrenceStart_userId: key },
           create: { ...key, source: "Meeting", ...common },
           update: common,
         });
-        return null;
+        return Response.json({ ok: true, entry: timeEntryResult(logged) });
       }
       const created = await prisma.timeEntry.create({
         data: { userId, source: "Manual", ...common },
       });
-      await syncTimeEntryToGoogle(created).catch(() => {});
-      return null;
+      mirrorInBackground(userId, created.id, mirrorLatest(created.id));
+      return Response.json({ ok: true, entry: timeEntryResult(created) });
     }
 
     case "update-time-entry": {
@@ -2204,18 +2254,25 @@ export async function submitCalendarAction(request: Request) {
           endTime,
         },
       });
-      await syncTimeEntryToGoogle(updated).catch(() => {});
-      return null;
+      mirrorInBackground(userId, updated.id, mirrorLatest(updated.id));
+      return Response.json({ ok: true, entry: timeEntryResult(updated) });
     }
 
     case "delete-time-entry": {
-      const existing = await prisma.timeEntry.findUnique({ where: { id: input.id } });
-      if (!existing || existing.userId !== userId) {
-        return Response.json({ error: "Not found" }, { status: 404 });
-      }
-      await removeTimeEntryFromGoogle(existing).catch(() => {});
-      await prisma.timeEntry.delete({ where: { id: input.id } });
-      return null;
+      // A mirror still creating this entry's Google event hasn't saved its id
+      // yet; wait so the removal below knows which event to take down.
+      await mirrorChains.get(input.id);
+      // Under the lock, a mirror on another machine has finished and saved its
+      // Google event id before the row is read and deleted.
+      const existing = await withEntryMirrorLock(input.id, async (tx) => {
+        const row = await tx.timeEntry.findUnique({ where: { id: input.id } });
+        if (!row || row.userId !== userId) return null;
+        await tx.timeEntry.delete({ where: { id: input.id } });
+        return row;
+      });
+      if (!existing) return Response.json({ error: "Not found" }, { status: 404 });
+      mirrorInBackground(userId, existing.id, () => removeTimeEntryFromGoogle(existing));
+      return Response.json({ ok: true, entry: { id: existing.id } });
     }
 
     case "set-timesheet-sync": {

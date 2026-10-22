@@ -89,6 +89,17 @@ export const EMAIL_TEMPLATES = {
     footer: "transactional",
     whenMissing: "error",
   },
+  "hiring:decision:InvitedToLaterInterview": {
+    area: "Hiring",
+    label: "Decision: invited to a later interview round",
+    description:
+      "Sent when a lead releases an invite to a second or later interview round. Carries the booking link.",
+    purpose: "Hiring",
+    variables: ["firstName", "domain"],
+    sample: APPLICANT_SAMPLE,
+    footer: "transactional",
+    whenMissing: "error",
+  },
   "hiring:decision:Accepted": {
     area: "Hiring",
     label: "Decision: accepted",

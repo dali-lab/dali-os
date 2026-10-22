@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { Prisma } from "~/generated/prisma/client";
 
 export const VALID_RECOMMENDATIONS = [
   "Strong Hire",
@@ -67,4 +68,44 @@ export function validateReviewPatch(
     return { ok: false, error: path ? `${path}: ${msg}` : msg };
   }
   return { ok: true, data: result.data };
+}
+
+type ReviewSnapshot = {
+  scores: unknown;
+  feedback: string;
+  rejectionRationale: string;
+  overallRecommendation: string | null;
+  annotations: unknown;
+};
+
+type Change<T> = { before: T; after: T };
+
+/** Audit-safe summary of a review edit: which fields changed, plus the score
+ *  and recommendation before and after. Free-text fields are named, never copied. */
+export function describeReviewChange(
+  before: ReviewSnapshot,
+  patch: Partial<ReviewSnapshot>,
+): {
+  fields: string[];
+  scores?: Change<Prisma.InputJsonValue>;
+  recommendation?: Change<string | null>;
+} {
+  const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+  const fields = (Object.keys(patch) as (keyof ReviewSnapshot)[]).filter(
+    (key) => patch[key] !== undefined && !same(before[key], patch[key]),
+  );
+  return {
+    fields,
+    ...(fields.includes("scores")
+      ? {
+          scores: {
+            before: before.scores as Prisma.InputJsonValue,
+            after: patch.scores as Prisma.InputJsonValue,
+          },
+        }
+      : {}),
+    ...(fields.includes("overallRecommendation")
+      ? { recommendation: { before: before.overallRecommendation, after: patch.overallRecommendation ?? null } }
+      : {}),
+  };
 }

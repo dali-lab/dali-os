@@ -3,6 +3,7 @@ import { useRevalidator } from "react-router";
 import { Check, HelpCircle, X as XIcon } from "lucide-react";
 import { TASKS_CHANGED_EVENT } from "~/components/NotificationBell";
 import { buttonClasses, type ButtonSize } from "~/components/ui/Button";
+import { useToast } from "~/components/ui/toast";
 import { cn } from "~/lib/cn";
 
 // Tell the shell's sidebar task poller that the task list changed. Inside a
@@ -19,31 +20,41 @@ export function notifyTasksChanged() {
   }
 }
 
+type Answer = "accepted" | "declined" | "tentative";
+
+const ANSWER_LABEL = { accepted: "Accepted", declined: "Declined", tentative: "Tentative" } as const;
+
 /**
- * Going / Maybe / Can't make it for a MeetingInvite notification. POSTs to the
- * RSVP endpoint (records attendance + marks the notification read), then
- * revalidates so the answered invite drops out of open tasks.
+ * Going / Maybe / Can't make it for a MeetingInvite notification. The chosen
+ * answer shows at once; the POST to the RSVP endpoint (records attendance +
+ * marks the notification read) and the revalidation that drops the answered
+ * invite from open tasks follow. A failed POST takes the answer back and says why.
  */
 export function RsvpButtons({
   notificationId,
   onResponded,
+  onFailed,
   size = "xs",
   className = "mt-2 gap-1",
 }: {
   notificationId: string;
   onResponded?: (rsvp: "Accepted" | "Declined" | "Tentative") => void;
+  onFailed?: () => void;
   size?: ButtonSize;
   className?: string;
 }) {
   const revalidator = useRevalidator();
-  const [submitting, setSubmitting] = useState<
-    null | "accepted" | "declined" | "tentative"
-  >(null);
-  const [error, setError] = useState<string | null>(null);
+  const toast = useToast();
+  const [chosen, setChosen] = useState<Answer | null>(null);
 
-  async function sendRsvp(response: "accepted" | "declined" | "tentative") {
-    setSubmitting(response);
-    setError(null);
+  async function sendRsvp(response: Answer) {
+    setChosen(response);
+    onResponded?.(ANSWER_LABEL[response]);
+    const fail = (message: string) => {
+      setChosen(null);
+      onFailed?.();
+      toast.error(message);
+    };
     try {
       const res = await fetch(`/api/notifications/${notificationId}/rsvp`, {
         method: "POST",
@@ -53,63 +64,39 @@ export function RsvpButtons({
       });
       const json = await res.json();
       if (!res.ok) {
-        setError(json.error ?? "Failed to RSVP");
+        fail(json.error ?? "Failed to RSVP");
         return;
       }
-      const enumVal =
-        response === "accepted"
-          ? "Accepted"
-          : response === "declined"
-            ? "Declined"
-            : "Tentative";
-      onResponded?.(enumVal);
-      if (json.gcalError) {
-        setError(`Recorded in-app, but Google sync failed: ${json.gcalError}`);
-      } else {
-        await revalidator.revalidate();
-        notifyTasksChanged();
-      }
+      if (json.gcalError) toast.error(`Recorded in-app, but Google sync failed: ${json.gcalError}`);
+      await revalidator.revalidate();
+      notifyTasksChanged();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Network error");
-    } finally {
-      setSubmitting(null);
+      fail(err instanceof Error ? err.message : "Network error");
     }
   }
 
   const iconCls = size === "xs" ? "w-3 h-3" : "w-4 h-4";
+  const options: { answer: Answer; label: string; Icon: typeof Check }[] = [
+    { answer: "accepted", label: "Going", Icon: Check },
+    { answer: "tentative", label: "Maybe", Icon: HelpCircle },
+    { answer: "declined", label: "Can't make it", Icon: XIcon },
+  ];
 
   return (
-    <>
-      <div className={cn("flex flex-wrap items-center", className)}>
+    <div className={cn("flex flex-wrap items-center", className)}>
+      {options.map(({ answer, label, Icon }) => (
         <button
+          key={answer}
           type="button"
-          onClick={() => sendRsvp("accepted")}
-          disabled={!!submitting}
-          className={buttonClasses("primary", size, "gap-1")}
+          onClick={() => sendRsvp(answer)}
+          disabled={chosen !== null}
+          aria-pressed={chosen === answer}
+          className={buttonClasses((chosen ?? "accepted") === answer ? "primary" : "secondary", size, "gap-1")}
         >
-          <Check className={iconCls} />
-          {submitting === "accepted" ? "…" : "Going"}
+          <Icon className={iconCls} />
+          {label}
         </button>
-        <button
-          type="button"
-          onClick={() => sendRsvp("tentative")}
-          disabled={!!submitting}
-          className={buttonClasses("secondary", size, "gap-1")}
-        >
-          <HelpCircle className={iconCls} />
-          {submitting === "tentative" ? "…" : "Maybe"}
-        </button>
-        <button
-          type="button"
-          onClick={() => sendRsvp("declined")}
-          disabled={!!submitting}
-          className={buttonClasses("secondary", size, "gap-1")}
-        >
-          <XIcon className={iconCls} />
-          {submitting === "declined" ? "…" : "Can't make it"}
-        </button>
-      </div>
-      {error && <p className="text-[10px] text-destructive mt-1">{error}</p>}
-    </>
+      ))}
+    </div>
   );
 }

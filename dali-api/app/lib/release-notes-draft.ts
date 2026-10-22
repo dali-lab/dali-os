@@ -1,13 +1,11 @@
 import { randomUUID } from "node:crypto";
+import { releaseNoteLine } from "~/lib/release-note-line";
 import { RELEASE_NOTE_AREAS } from "~/lib/release-notes";
 
-export const NO_RELEASE_NOTE_LABEL = "no-release-note";
 export const MAX_COMMITS = 250;
 export const PRS_PER_CALL = 40;
 export const BODY_MAX_CHARS = 3000;
 export const FILES_MAX = 100;
-
-const TICKED_NO_NOTE = /\[\s*x\s*\]\s*no[\s_-]*release[\s_-]*notes?\b/i;
 
 export type PullSummary = {
   number: number;
@@ -24,11 +22,6 @@ export type PullForPrompt = PullSummary & {
   deletions: number;
 };
 
-export function optedOutOfReleaseNote(pr: Pick<PullSummary, "labels" | "body">): boolean {
-  if (pr.labels.some((l) => l.toLowerCase() === NO_RELEASE_NOTE_LABEL)) return true;
-  return TICKED_NO_NOTE.test(pr.body ?? "");
-}
-
 export function selectPrsToDraft(
   prs: PullSummary[],
   opts: { citedPrNumbers: ReadonlySet<number>; promotionBranch: string },
@@ -41,10 +34,23 @@ export function selectPrsToDraft(
     if (!pr.mergedAt) continue;
     if (pr.baseRef === opts.promotionBranch) continue;
     if (opts.citedPrNumbers.has(pr.number)) continue;
-    if (optedOutOfReleaseNote(pr)) continue;
+    if (!releaseNoteLine(pr.body)) continue;
     out.push(pr);
   }
   return out.sort((a, b) => a.number - b.number);
+}
+
+const SQUASH_SUFFIX = /\(#(\d+)\)\s*$/;
+const MERGE_COMMIT = /^Merge pull request #(\d+) /;
+
+export function prNumbersFromCommitMessages(messages: string[]): number[] {
+  const out = new Set<number>();
+  for (const message of messages) {
+    const subject = message.split("\n", 1)[0];
+    const match = SQUASH_SUFFIX.exec(subject) ?? MERGE_COMMIT.exec(subject);
+    if (match) out.add(Number(match[1]));
+  }
+  return [...out];
 }
 
 export function chunk<T>(items: T[], size: number): T[][] {

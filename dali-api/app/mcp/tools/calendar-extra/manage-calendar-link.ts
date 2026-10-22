@@ -3,6 +3,8 @@
 // Requires `mcp:write` scope (self only — only the link owner can modify it).
 
 import { prisma } from "~/lib/db";
+import { markCalendarChanged } from "~/calendar/lib/external-cache.server";
+import { setSubCalendarEnabled } from "~/calendar/lib/sub-calendar.server";
 import { McpNotFoundError, McpInvalidError } from "../../registry";
 
 export const MANAGE_CALENDAR_LINK_DEF = {
@@ -51,6 +53,7 @@ export async function runManageCalendarLink(userId: string, input: Input) {
       throw new McpNotFoundError("Calendar link not found");
     }
     await prisma.userCalendarLink.delete({ where: { id: input.linkId } });
+    await markCalendarChanged(userId);
     return { ok: true };
   }
 
@@ -62,13 +65,7 @@ export async function runManageCalendarLink(userId: string, input: Input) {
     if (!link || link.userId !== userId) {
       throw new McpNotFoundError("Calendar link not found");
     }
-    const current = new Set(link.subCalendarIds);
-    if (input.enabled) current.add(input.calendarId);
-    else current.delete(input.calendarId);
-    await prisma.userCalendarLink.update({
-      where: { id: input.linkId },
-      data: { subCalendarIds: Array.from(current) },
-    });
+    await setSubCalendarEnabled(input.linkId, input.calendarId, input.enabled);
     return { ok: true };
   }
 

@@ -650,6 +650,7 @@ function NotificationCard({
         <RsvpButtons
           notificationId={notification.id}
           onResponded={setRsvp}
+          onFailed={() => setRsvp(notification.rsvp)}
           size="md"
           className="gap-2"
         />

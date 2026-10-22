@@ -37,6 +37,8 @@ import modal
 
 logger = logging.getLogger("dali-asr")
 logging.basicConfig(level=logging.INFO)
+# httpx logs every request URL at INFO, and chunk URLs are presigned.
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 APP_NAME = "dali-asr"
 
@@ -203,20 +205,6 @@ def _run_pyannote(pcm: bytes, max_speakers: Optional[int], hook=None) -> list:
     ]
 
 
-def _fetch_chunk(url: str) -> Optional[bytes]:
-    """A chunk the client dropped (upload queue overflow) was never written,
-    so its presigned URL 404s. That is a gap, not a failure: return None and
-    assemble_segment_pcm fills it with silence so later timestamps stay
-    absolute."""
-    import httpx
-
-    response = httpx.get(url, timeout=CHUNK_FETCH_TIMEOUT_SECONDS)
-    if response.status_code in (403, 404):
-        return None
-    response.raise_for_status()
-    return response.content
-
-
 def _post_signed(callback_url: str, payload: dict, timeout: float) -> None:
     import json
 
@@ -258,6 +246,7 @@ def _post_progress(callback_url: str, body: dict) -> None:
 
 @app.function(gpu="T4", timeout=900, retries=1, secrets=[modal.Secret.from_name("dali-asr")])
 def run_job(raw_body: dict) -> None:
+    import httpx
     import pipeline
 
     req = pipeline.parse_process_request(raw_body)
@@ -265,26 +254,38 @@ def run_job(raw_body: dict) -> None:
     sender = pipeline.LatestOnlySender(lambda body: _post_progress(req.callback_url, body))
     reporter = pipeline.ProgressReporter(req.recording_id, sender.submit, time.monotonic)
 
+    http = httpx.Client(
+        timeout=CHUNK_FETCH_TIMEOUT_SECONDS,
+        limits=httpx.Limits(
+            max_connections=pipeline.FETCH_WORKERS, max_keepalive_connections=pipeline.FETCH_WORKERS
+        ),
+    )
     try:
         channels_out = {}
         for index, channel in enumerate(req.channels, start=1):
             stage_start = time.monotonic()
+            timings: dict = {}
             channels_out[channel.channel] = pipeline.process_channel(
                 channel,
-                fetch_chunk=_fetch_chunk,
+                fetch_chunk=lambda url: pipeline.fetch_chunk(http, url),
                 transcribe=_run_parakeet,
                 diarize=_run_pyannote,
                 on_progress=reporter.for_channel(
                     index, len(req.channels), pipeline.channel_audio_seconds(channel)
                 ),
+                timings=timings,
             )
             logger.info(
-                "dali-asr: channel done recording_id=%s channel=%s segments=%d audio_s=%.1f stage_s=%.1f",
+                "dali-asr: channel done recording_id=%s channel=%s segments=%d audio_s=%.1f stage_s=%.1f"
+                " fetch_s=%.1f transcribe_s=%.1f diarize_s=%.1f",
                 req.recording_id,
                 channel.channel,
                 len(channel.segments),
                 pipeline.channel_audio_seconds(channel),
                 time.monotonic() - stage_start,
+                timings["fetch_s"],
+                timings["transcribe_s"],
+                timings["diarize_s"],
             )
         payload = pipeline.build_callback_body(req.recording_id, channels_out, error=None)
     except Exception:
@@ -294,6 +295,8 @@ def run_job(raw_body: dict) -> None:
             pipeline.redact_request(raw_body),
         )
         payload = pipeline.build_error_callback(req.recording_id, "processing_failed")
+    finally:
+        http.close()
 
     sender.close()
     _deliver_callback(req.callback_url, payload)

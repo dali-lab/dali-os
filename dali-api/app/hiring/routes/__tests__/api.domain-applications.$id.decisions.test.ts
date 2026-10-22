@@ -37,6 +37,17 @@ function post(body: unknown) {
   } as any) as Promise<Response>;
 }
 
+const TWO_ROUND_TIMELINE = [
+  { kind: "phase", key: "setup", weeks: [1, 5] },
+  { kind: "phase", key: "review", weeks: [6, 6] },
+  { kind: "delib", id: "first", label: "First delib", weeks: [6, 6] },
+  { kind: "phase", key: "interviews", weeks: [7, 7] },
+  { kind: "delib", id: "r3", label: "Delib 3", weeks: [8, 8] },
+  { kind: "phase", key: "interviews", id: "iv2", label: "Interviews 2", weeks: [9, 9] },
+  { kind: "delib", id: "final", label: "Final delib", weeks: [10, 10] },
+  { kind: "phase", key: "decisions", weeks: [11, 11] },
+];
+
 const draftMove = { type: "InvitedToInterview", stage: "Draft", notes: "Moved without delibs." };
 
 beforeEach(() => {
@@ -50,7 +61,9 @@ beforeEach(() => {
   mockPrisma.domainApplication = {
     findUnique: vi.fn().mockResolvedValue({
       domainId: DOMAIN_ID,
-      application: { applicationCycleId: "c1" },
+      application: { applicationCycleId: "c1", applicationCycle: { timeline: TWO_ROUND_TIMELINE } },
+      interviews: [],
+      decisions: [],
     }),
   };
   mockPrisma.dALIMember = { findUnique: vi.fn().mockResolvedValue({ id: "m1", userId: USER_ID }) };
@@ -80,6 +93,30 @@ describe("POST /api/hiring/domain-applications/:id/decisions", () => {
     expect(mockPrisma.domainLeadAssignment.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({ where: { userId: USER_ID, domainId: DOMAIN_ID } }),
     );
+  });
+
+  it("puts a hand-made invite in the first Interviews round when none is done", async () => {
+    vi.mocked(isCycleAdmin).mockResolvedValue(true);
+    await post(draftMove);
+    expect(mockPrisma.decision.create.mock.calls[0][0].data.interviewRoundId).toBe("interviews");
+  });
+
+  it("puts a hand-made invite in the next round once the applicant interviewed", async () => {
+    vi.mocked(isCycleAdmin).mockResolvedValue(true);
+    mockPrisma.domainApplication.findUnique.mockResolvedValue({
+      domainId: DOMAIN_ID,
+      application: { applicationCycleId: "c1", applicationCycle: { timeline: TWO_ROUND_TIMELINE } },
+      interviews: [{ interviewRoundId: "interviews" }],
+      decisions: [{ interviewRoundId: "interviews" }],
+    });
+    await post(draftMove);
+    expect(mockPrisma.decision.create.mock.calls[0][0].data.interviewRoundId).toBe("iv2");
+  });
+
+  it("leaves the round off decisions that aren't invites", async () => {
+    vi.mocked(isCycleAdmin).mockResolvedValue(true);
+    await post({ type: "Rejected", stage: "Draft" });
+    expect(mockPrisma.decision.create.mock.calls[0][0].data.interviewRoundId).toBeNull();
   });
 
   it("lets the hiring lead record one without a domain assignment", async () => {

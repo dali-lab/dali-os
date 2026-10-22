@@ -4,6 +4,8 @@ import { requireAuth } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { hasCycleAccess } from "~/lib/roles";
 import { computeAvailableSlots } from "~/hiring/lib/scheduling";
+import { invitedRoundId } from "~/hiring/lib/interview-rounds.server";
+import { FIRST_INTERVIEW_ROUND_ID } from "~/hiring/lib/cycle-timeline";
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const preflight = handlePreflight(request);
@@ -12,8 +14,10 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return withCors(request, auth.response);
 
-  // Allow cycle members (leads, reviewers, interviewers) OR applicants
-  // who have been invited to interview for this cycle
+  const url = new URL(request.url);
+  // Cycle members (leads, reviewers, interviewers) name the round; applicants
+  // invited to interview see the round they're invited to.
+  let roundId = url.searchParams.get("round") ?? FIRST_INTERVIEW_ROUND_ID;
   if (!(await hasCycleAccess(auth.user.sub, params.cycleId!))) {
     const invited = await prisma.domainApplication.findFirst({
       where: {
@@ -23,11 +27,12 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       },
       select: { id: true },
     });
-    if (!invited)
+    const round = invited && (await invitedRoundId(invited.id));
+    if (!round)
       return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
+    roundId = round;
   }
 
-  const url = new URL(request.url);
   const domainIds = url.searchParams.getAll("domainId");
 
   if (domainIds.length === 0) {
@@ -35,7 +40,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   }
 
   const mode = url.searchParams.get("mode") === "in-person" ? "in-person" as const : "online" as const;
-  const slots = await computeAvailableSlots(params.cycleId, domainIds, mode);
+  const slots = await computeAvailableSlots(params.cycleId, roundId, domainIds, mode);
 
   return withCors(request, Response.json(slots));
 }

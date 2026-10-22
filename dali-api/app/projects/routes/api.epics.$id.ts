@@ -2,6 +2,7 @@ import type { Route } from "./+types/api.epics.$id";
 import { prisma, Prisma } from "~/lib/db";
 import { requireProjectEditAccess } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
+import { logAuditEvent } from "~/lib/audit";
 
 // POST   /api/epics/:id  — edit. Body: { title?, status?, startsAt?,
 //                          endsAt?, dependsOn? }
@@ -57,7 +58,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   const epicId = params.id!;
   const epic = await prisma.epic.findUnique({
     where: { id: epicId },
-    select: { id: true, startsAt: true, endsAt: true, projectId: true },
+    select: { id: true, title: true, startsAt: true, endsAt: true, projectId: true },
   });
   if (!epic) {
     return withCors(request, Response.json({ error: "Epic not found" }, { status: 404 }));
@@ -66,11 +67,23 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (!gate.ok) return gate.response;
 
   if (request.method === "DELETE") {
-    await prisma.$transaction([
+    const [unlinkedTasks, deletedStories] = await prisma.$transaction([
       prisma.task.updateMany({ where: { epicId }, data: { epicId: null } }),
       prisma.userStory.deleteMany({ where: { epicId } }),
       prisma.epic.delete({ where: { id: epicId } }),
     ]);
+    await logAuditEvent({
+      action: "epic.delete",
+      userId: gate.auth.user.sub,
+      targetId: epicId,
+      metadata: {
+        title: epic.title,
+        projectId: epic.projectId,
+        tasksUnlinked: unlinkedTasks.count,
+        storiesDeleted: deletedStories.count,
+      },
+      request,
+    });
     return withCors(request, Response.json({ ok: true }));
   }
 

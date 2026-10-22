@@ -2,6 +2,7 @@ import { redirect } from "react-router";
 import type { Route } from "./+types/confidentiality-agreements.$id";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
+import { logAuditEvent } from "~/lib/audit";
 import { redirectToLogin } from "~/lib/login-next";
 import { isCore, isDomainLead, isAdmin } from "~/lib/roles";
 import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
@@ -78,7 +79,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     });
     const versionNumber = (lastVersion?.versionNumber ?? 0) + 1;
 
-    await prisma.signingDocumentVersion.create({
+    const created = await prisma.signingDocumentVersion.create({
       data: {
         documentId: params.id!,
         versionNumber,
@@ -91,15 +92,34 @@ export async function action({ request, params }: Route.ActionArgs) {
       },
     });
 
+    await logAuditEvent({
+      action: "confidentiality.version.create",
+      userId: auth.user.sub,
+      targetId: created.id,
+      metadata: { documentId: params.id, versionNumber },
+      request,
+    });
+
     return redirect(`/hiring/confidentiality-agreements/${params.id}`);
   }
 
   if (intent === "rename") {
     const name = (formData.get("name") as string)?.trim();
     if (!name) return { error: "Name is required" };
+    const before = await prisma.signingDocument.findUnique({
+      where: { id: params.id },
+      select: { name: true },
+    });
     await prisma.signingDocument.update({
       where: { id: params.id },
       data: { name },
+    });
+    await logAuditEvent({
+      action: "confidentiality.rename",
+      userId: auth.user.sub,
+      targetId: params.id,
+      metadata: { before: before?.name ?? null, after: name },
+      request,
     });
     return redirect(`/hiring/confidentiality-agreements/${params.id}`);
   }

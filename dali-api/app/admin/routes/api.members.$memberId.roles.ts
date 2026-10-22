@@ -6,7 +6,7 @@ import { isAdmin, currentTerm } from "~/lib/roles";
 import { coreCycleTermIds } from "~/lib/core-cycle";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson } from "~/lib/validate";
-import { logAuditEvent } from "~/lib/audit";
+import { logRoleChange } from "~/admin/lib/access-audit.server";
 import { notifyAdminsOfPromotion } from "~/lib/promotion-notify.server";
 
 // Phase 2: PATCH body is a desired-set of legacy role labels. We translate:
@@ -50,7 +50,6 @@ export async function action({ request, params }: Route.ActionArgs) {
     );
   }
 
-  // Before-snapshot for audit.
   const [adminBefore, coreBefore] = await Promise.all([
     prisma.adminMembership.findUnique({
       where: { userId },
@@ -115,11 +114,11 @@ export async function action({ request, params }: Route.ActionArgs) {
     }
   });
 
-  await logAuditEvent({
-    action: "role.change",
-    userId: auth.user.sub,
-    targetId: userId,
-    metadata: { before, after: roles, targetUserId: userId },
+  await logRoleChange({
+    actorId: auth.user.sub,
+    targetUserId: userId,
+    before,
+    after: roles,
     request,
   });
 

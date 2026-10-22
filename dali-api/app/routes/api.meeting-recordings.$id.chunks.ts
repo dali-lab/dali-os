@@ -10,6 +10,7 @@ import type { Route } from "./+types/api.meeting-recordings.$id.chunks";
 import { requireAuth } from "~/lib/auth";
 import { ownRecording, recordChunk } from "~/lib/meeting-recording.server";
 import { putChunk } from "~/lib/transcription/chunks.server";
+import { isVoiced } from "~/lib/transcription/pcm-level";
 
 // 20s of 16kHz mono s16 PCM is ~640KB; cap with headroom.
 const MAX_CHUNK_BYTES = 700_000;
@@ -61,7 +62,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   }
 
   await putChunk(rec.id, channel, segment, seq, body);
-  const { stopRequested } = await recordChunk(rec, channel, segment, seq);
+  const { stopRequested } = await recordChunk(rec, channel, segment, seq, isVoiced(body));
 
   // lines/behindSeconds are reserved for the live-transcript follow-up so the
   // client contract doesn't change when that ships.

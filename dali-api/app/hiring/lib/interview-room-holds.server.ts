@@ -1,10 +1,11 @@
 // A hiring cycle's standing hold on its interview rooms (InterviewConfig.holdRooms):
-// one recurring RoomBooking per room (source InterviewHold), covering interview
-// hours across the interview window, so members can't book over it. The cycle's
+// one recurring RoomBooking per room per Interviews round (source
+// InterviewHold), covering interview hours across that round's window, so
+// members can't book over it. The cycle's
 // own Interview bookings sit inside the hold (blockedBy in rooms.server.ts).
 //
 // applyRoomHolds is the single write path: it always releases the cycle's
-// existing holds first, then — if the cycle still wants holds — recreates them
+// existing holds first, then recreates every round's that still wants them
 // from scratch rather than diffing, so a changed window, hour range, or room
 // list is picked up for free. Conflicts (another booking or meeting already in
 // the way) are scanned before anything is written; the caller decides whether
@@ -116,10 +117,12 @@ function formatHoldWhen(d: Date, timezone: string): string {
   });
 }
 
+export type RoundHoldConfig = HoldConfig & { holdRooms: boolean; rooms: { id: string; name: string }[] };
+
 /**
- * Bring a cycle's room holds in line with `config`: always releases its
- * existing holds, then — when `config.holdRooms` is on and there's a room and
- * an occurrence to hold — recreates one hold per room.
+ * Bring a cycle's room holds in line with `configs`, one per Interviews round:
+ * always releases its existing holds, then, for each round with `holdRooms`
+ * on and a room and an occurrence to hold, recreates one hold per room.
  *
  * Conflicts are scanned before any write. With `override` false, a conflict
  * rolls the whole call back (nothing released, nothing created) and returns
@@ -130,21 +133,24 @@ function formatHoldWhen(d: Date, timezone: string): string {
  */
 export async function applyRoomHolds(input: {
   cycleId: string;
-  config: HoldConfig & { holdRooms: boolean; rooms: { id: string; name: string }[] };
+  configs: RoundHoldConfig[];
   actorUserId: string;
   override: boolean;
 }): Promise<ApplyRoomHoldsResult> {
-  const { cycleId, config, actorUserId, override } = input;
-  const rooms = config.rooms;
-  const occ = config.holdRooms ? holdOccurrencesFor(config) : null;
-  const wantsHold = config.holdRooms && !!occ && rooms.length > 0;
+  const { cycleId, configs, actorUserId, override } = input;
+  const holds = configs.flatMap((config) => {
+    const occ = config.holdRooms ? holdOccurrencesFor(config) : null;
+    return occ && config.rooms.length > 0 ? [{ config, occ }] : [];
+  });
 
-  let conflicts: RoomConflict[] = [];
-  if (wantsHold) {
-    conflicts = await findHoldConflicts(cycleId, config, rooms);
-    if (conflicts.length > 0 && !override) {
-      return { ok: false, conflicts };
+  const conflicts: (RoomConflict & { timezone: string })[] = [];
+  for (const { config } of holds) {
+    for (const c of await findHoldConflicts(cycleId, config, config.rooms)) {
+      conflicts.push({ ...c, timezone: config.timezone });
     }
+  }
+  if (conflicts.length > 0 && !override) {
+    return { ok: false, conflicts: conflicts.map(({ timezone: _, ...c }) => c) };
   }
 
   type NotifyTarget = { userId: string; itemTitle: string; itemDetail: string; link: string };
@@ -161,7 +167,6 @@ export async function applyRoomHolds(input: {
 
   await prisma.$transaction(async (tx) => {
     await releaseCycleRoomBookings(cycleId, "InterviewHold", actorUserId, tx);
-    if (!wantsHold) return;
 
     if (override && conflicts.length > 0) {
       const name = await cycleName();
@@ -185,7 +190,7 @@ export async function applyRoomHolds(input: {
             notifyTargets.set(dedupeKey, {
               userId: item.organizer.id,
               itemTitle: item.title,
-              itemDetail: `${conflict.roomName} on ${formatHoldWhen(item.start, config.timezone)} is held for ${name} interviews.`,
+              itemDetail: `${conflict.roomName} on ${formatHoldWhen(item.start, conflict.timezone)} is held for ${name} interviews.`,
               link: item.kind === "booking" ? "/rooms" : `/calendar?meeting=${item.id}`,
             });
           }
@@ -193,21 +198,23 @@ export async function applyRoomHolds(input: {
       }
     }
 
-    for (const room of rooms) {
-      const created = await createRoomBooking(
-        {
-          roomId: room.id,
-          userId: actorUserId,
-          start: occ!.start,
-          end: occ!.end,
-          title: "Reserved for interviews",
-          source: "InterviewHold",
-          recurrenceRule: occ!.recurrenceRule,
-          applicationCycleId: cycleId,
-        },
-        tx,
-      );
-      if (!created.ok) throw new Error(created.error);
+    for (const { config, occ } of holds) {
+      for (const room of config.rooms) {
+        const created = await createRoomBooking(
+          {
+            roomId: room.id,
+            userId: actorUserId,
+            start: occ.start,
+            end: occ.end,
+            title: "Reserved for interviews",
+            source: "InterviewHold",
+            recurrenceRule: occ.recurrenceRule,
+            applicationCycleId: cycleId,
+          },
+          tx,
+        );
+        if (!created.ok) throw new Error(created.error);
+      }
     }
   });
 

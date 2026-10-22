@@ -53,7 +53,6 @@ asr/                    Modal app: meeting transcription + diarization (Python, 
 desktop/                Tauri v2 shell (macOS, Linux, Windows)
 ios/                    SwiftUI app (iPad room display, iPhone placeholder)
 jobx-extension/         Chrome extension: fill JobX timesheets from DALI OS
-dali-timesheet/         Older Chrome extension for the same job
 specs/                  design docs; specs/archive/ holds superseded plans
 .github/workflows/      CI/CD
 docker-compose.yml      local Postgres + app + Prisma Studio

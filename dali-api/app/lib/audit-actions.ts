@@ -7,6 +7,7 @@ export const AUDIT_ACTIONS = [
   "login.success",
   "login.failure",
   "logout",
+  "account.create",
   "auth.passkey.register",
   "auth.passkey.remove",
   "auth.token.invalid",
@@ -14,6 +15,9 @@ export const AUDIT_ACTIONS = [
   // Unattributed: /oauth/register is public, and a rejected registration
   // persists nothing else — this row is where the rejected redirect_uris live.
   "oauth.register.rejected",
+  "oauth.grant.issue",
+  "oauth.grant.revoke",
+  "session.revoke",
   "pairing.start",
   "pairing.approve",
   "pairing.cancel",
@@ -58,6 +62,18 @@ export const AUDIT_ACTIONS = [
   "interview.decline",
   "review.submit",
   "review.unsubmit",
+  "review.update",
+  "review.delete",
+  "delibs.open",
+  "delibs.close",
+  "interview.config",
+  "rubric.version.create",
+  "cycle.create",
+  "confidentiality.version.create",
+  "confidentiality.rename",
+  // Reviewer opened an application. Deduped per reviewer and application, so
+  // one row marks a reviewing session; metadata says whether identity was blinded.
+  "application.view",
   // Application events (help hours, socials, info sessions) on a cycle.
   "hiring.event.create",
   "hiring.event.update",
@@ -72,9 +88,16 @@ export const AUDIT_ACTIONS = [
   "domain.delete",
   "domain.lead.add",
   "domain.lead.remove",
+  "domain.ready.set",
+  "domain.rubric.set",
+  "domain.mentors.add",
+  "domain.challenge-form.add",
+  "domain.challenge-form.remove",
   "group.create",
   "group.update",
   "group.delete",
+  "group.member.add",
+  "group.member.remove",
   "mail-category.create",
   "mail-category.update",
   "mail-category.delete",
@@ -103,12 +126,16 @@ export const AUDIT_ACTIONS = [
   "project.assignment.level",
   "project.assignment.backfill",
   "member.create",
+  "member.resume.view",
+  "member.resume.upload",
+  "member.resume.delete",
   "project.chart-string.set",
   "project.delete",
   "slack.connect",
   "slack.disconnect",
   "account.linked",
   "document.delete",
+  "document.export",
   "projectFile.create",
   "projectFile.version",
   "projectFile.delete",
@@ -125,6 +152,14 @@ export const AUDIT_ACTIONS = [
   // to (Email tab "Linked applicant" section). targetId is "<accountId>~<threadId>".
   "email.applicant_link",
   "email.applicant_unlink",
+  "email.template.save",
+  "email.template.rollback",
+  "email.attachment.download",
+  "announcement.send",
+  "announcement.schedule",
+  "announcement.cancel",
+  "outbound.retry",
+  "outbound.cancel",
   "confidentiality.sign",
   "signing.sign",
   "signing.publish",
@@ -135,7 +170,10 @@ export const AUDIT_ACTIONS = [
   "signing.remind",
   "signing.archive",
   "signing.unarchive",
+  "signing.signature.download",
+  // tool_called is write-scoped calls only since mcp.tool_read was split out.
   "mcp.tool_called",
+  "mcp.tool_read",
   "mcp.resource_read",
   "mcp.prompt_rendered",
   "partner.org.create",
@@ -150,6 +188,10 @@ export const AUDIT_ACTIONS = [
   "partner.invite.accepted",
   "partner.invite.revoked",
   "partner.application.submitted",
+  "partner.application.stage",
+  "partner.settings.save",
+  "partner.form-binding.set",
+  "partner.form-binding.clear",
   "partner.magic_link.requested",
   "page.partner-visibility",
   "page.public-visibility",
@@ -201,6 +243,21 @@ export const AUDIT_ACTIONS = [
   "education.form-binding.set",
   // Drive unified tree (Wave 3): placement move for files and forms.
   "drive.item.move",
+  // Trash actions; metadata carries the item kind and title (purge is permanent).
+  "drive.trash.archive-form",
+  "drive.trash.restore",
+  "drive.trash.purge",
+  "collab.version.restore",
+  "task.delete",
+  "epic.delete",
+  "notebook.merge",
+  "notebook.dissolve",
+  "notebook.trash",
+  "comment.delete",
+  "mentorship.note.delete",
+  "mentorship.pair.create",
+  "mentorship.pair.update",
+  "mentorship.pair.delete",
   // Infrastructure dashboard (Fly.io + Neon admin console). Destructive and
   // provisioning actions carry their specifics in metadata (kind, resource ids,
   // before/after) — never tokens or connection secrets.
@@ -220,11 +277,86 @@ export const AUDIT_ACTIONS = [
   // Payroll export: Technigala termly hire roster changes.
   "payroll.technigala.add",
   "payroll.technigala.remove",
+  "payroll.upload",
+  "payroll.budget.revenue",
+  "payroll.budget.entry.delete",
+  "payroll.budget.chartstring",
+  "payroll.budget.note",
+  "payroll.budget.project-type",
+  "custom-hire.create",
+  "custom-hire.rename",
+  "custom-hire.archive",
   // BetterAuth admin impersonation.
   "admin.impersonate.start",
   "admin.impersonate.stop",
+  // Meeting recordings. targetId is the MeetingRecording id; discard keeps
+  // ownerId in metadata because the row (and its audio) is gone afterwards.
+  "recording.start",
+  "recording.stop",
+  "recording.discard",
   "release_note.publish",
   "release_note.dismiss",
 ] as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
+
+// Several prefixes belong to one product area; everything else is its own
+// area, named by its first dot-segment.
+const AREA_ALIASES: Record<string, string> = {
+  application: "hiring",
+  decision: "hiring",
+  interview: "hiring",
+  interviewer: "hiring",
+  review: "hiring",
+  reviewer: "hiring",
+  delibs: "hiring",
+  waitlist: "hiring",
+  cycle: "hiring",
+  rubric: "hiring",
+  confidentiality: "hiring",
+  login: "auth",
+  logout: "auth",
+  oauth: "auth",
+  session: "auth",
+  pairing: "auth",
+  desktop: "auth",
+  account: "auth",
+  projectFile: "project",
+  note: "page",
+  document: "page",
+  "lab-document": "page",
+  collab: "page",
+  notebook: "page",
+  comment: "page",
+  task: "project",
+  epic: "project",
+  "custom-hire": "payroll",
+};
+
+const AREA_LABELS: Record<string, string> = {
+  auth: "Sign-in and access",
+  mcp: "MCP",
+  "feature-flags": "Feature flags",
+  release_note: "Release notes",
+};
+
+export function auditAreaOf(action: string): string {
+  const prefix = action.split(".")[0];
+  return AREA_ALIASES[prefix] ?? prefix;
+}
+
+function areaLabel(area: string): string {
+  if (AREA_LABELS[area]) return AREA_LABELS[area];
+  const spaced = area.replace(/[-_]/g, " ");
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
+}
+
+export const AUDIT_AREAS: ReadonlyArray<{ value: string; label: string }> = Array.from(
+  new Set(AUDIT_ACTIONS.map(auditAreaOf)),
+)
+  .map((value) => ({ value, label: areaLabel(value) }))
+  .sort((a, b) => a.label.localeCompare(b.label));
+
+export function actionsInArea(area: string): AuditAction[] {
+  return AUDIT_ACTIONS.filter((a) => auditAreaOf(a) === area);
+}

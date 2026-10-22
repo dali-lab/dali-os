@@ -8,7 +8,7 @@ import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { getUserRoles } from "~/lib/roles";
 import { resolvePhotoUrl } from "~/lib/photo";
-import { requirePageSignedOrRedirect } from "~/hiring/lib/confidentiality";
+import { requireApiSignedOrForbidden, requirePageSignedOrRedirect } from "~/hiring/lib/confidentiality";
 import { presignAnswers } from "~/hiring/lib/presign";
 import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
 import { ApplicationViewer } from "~/hiring/components/ApplicationViewer";
@@ -25,7 +25,11 @@ import {
   FinalizeDraftButton,
   StageMoveControl,
 } from "~/hiring/components/ApplicationTimeline";
-import { SetupCard } from "~/hiring/components/cycle-setup/SetupCard";
+import { Pill, SetupCard } from "~/hiring/components/cycle-setup/SetupCard";
+import { HiringNote } from "~/hiring/components/HiringNote";
+import { canEditHiringNote, normalizeHiringNote } from "~/hiring/lib/hiring-note";
+import { domainCloseDate } from "~/hiring/lib/domain-windows";
+import { lateByLabel } from "~/hiring/lib/late-submission";
 import {
   buildApplicationTimeline,
   visibleTimeline,
@@ -43,7 +47,7 @@ import { applicationBlindLabel, blindUser } from "~/hiring/lib/anonymization.ser
 import { getApplicantEmailEngagement } from "~/hiring/lib/email-engagement.server";
 import { ApplicantEmailPanel } from "~/hiring/components/ApplicantEmailPanel";
 import type { Question, RubricCriterion } from "~/types";
-import { findRound, parseTimeline } from "~/hiring/lib/cycle-timeline";
+import { findRound, groupByInterviewRound, parseTimeline } from "~/hiring/lib/cycle-timeline";
 
 export const meta: Route.MetaFunction = ({ data }) => {
   const name = (data as { applicantName?: string } | undefined)?.applicantName;
@@ -85,6 +89,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         select: {
           id: true,
           answers: true,
+          hiringNote: true,
           applicationCycleId: true,
           applicationFormVersion: { select: { questions: true, intro: true } },
           applicationCycle: {
@@ -94,8 +99,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
               timeline: true,
               hasChallenges: true,
               anonymizeReview: true,
+              closeDate: true,
               generalRubricVersion: { select: { criteria: true } },
-              domains: { select: { domainId: true, rubricVersion: { select: { criteria: true } } } },
+              domains: { select: { domainId: true, closeDate: true, rubricVersion: { select: { criteria: true } } } },
             },
           },
           statusUpdates: { select: { newStatus: true, createdAt: true } },
@@ -233,6 +239,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         startTime: true,
         endTime: true,
         status: true,
+        interviewRoundId: true,
         room: { select: { id: true, name: true } },
         zoomJoinUrl: true,
         videoUrl: true,
@@ -352,6 +359,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       startTime: iv.startTime.toISOString(),
       endTime: iv.endTime.toISOString(),
       status: iv.status,
+      interviewRoundId: iv.interviewRoundId,
       room: iv.room,
       zoomJoinUrl: iv.zoomJoinUrl,
       videoUrl: iv.videoUrl,
@@ -456,6 +464,15 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     canSeePreReleaseDecisions,
   );
 
+  const cycleDomain = da.application.applicationCycle.domains.find((d) => d.domainId === effectiveDomainId);
+  const lastSubmittedAt = da.application.statusUpdates
+    .filter((u) => u.newStatus === "Submitted")
+    .reduce<Date | null>((latest, u) => (!latest || u.createdAt > latest ? u.createdAt : latest), null);
+  const lateBy = lateByLabel(
+    lastSubmittedAt,
+    cycleDomain ? domainCloseDate(cycleDomain, da.application.applicationCycle) : null,
+  );
+
   // Selected review = ?review= if valid, else the first.
   const url = new URL(request.url);
   const requested = url.searchParams.get("review");
@@ -532,7 +549,12 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     criterionLabels,
     reviews,
     interviews,
+    // Each Interviews round gets its own section, with its own notes.
+    interviewRounds: groupByInterviewRound(timeline, interviews).map(({ roundId, label }) => ({ roundId, label })),
     domainApplicationId: da.id,
+    hiringNote: da.application.hiringNote,
+    canEditHiringNote: canEditHiringNote(roles, isCoreCycle),
+    lateBy,
     timeline: statusTimeline,
     interviewPrepNote: canSeeDelibs ? da.interviewPrepNote : null,
     canSeePreReleaseDecisions,
@@ -543,6 +565,38 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     },
     selectedReviewId,
   };
+}
+
+export async function action({ request, params }: Route.ActionArgs) {
+  const auth = await requireAuth(request);
+  if (!auth.ok) return auth.response;
+  const form = await request.formData();
+  if (form.get("intent") !== "save-hiring-note") {
+    return Response.json({ error: "Unknown action" }, { status: 400 });
+  }
+
+  const da = await prisma.domainApplication.findUnique({
+    where: { id: params.domainApplicationId },
+    select: {
+      application: {
+        select: { id: true, applicationCycleId: true, applicationCycle: { select: { applicants: true } } },
+      },
+    },
+  });
+  if (!da) return Response.json({ error: "Application not found" }, { status: 404 });
+
+  const roles = await getUserRoles(auth.user.sub);
+  if (!canEditHiringNote(roles, isAdminOnlyCycle(da.application.applicationCycle.applicants))) {
+    return Response.json({ error: "You can't edit this note." }, { status: 403 });
+  }
+  const gate = await requireApiSignedOrForbidden(auth.user.sub, da.application.applicationCycleId);
+  if (gate) return gate;
+
+  await prisma.application.update({
+    where: { id: da.application.id },
+    data: { hiringNote: normalizeHiringNote(form.get("note")) },
+  });
+  return { ok: true };
 }
 
 export default function ApplicationReadOnlyDetail() {
@@ -558,12 +612,14 @@ export default function ApplicationReadOnlyDetail() {
         name={data.applicantName}
         domainName={data.domainName}
         cycleName={data.cycleName}
+        statusSlot={data.lateBy ? <Pill dot="warning">{data.lateBy}</Pill> : undefined}
       />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Left: application content (read-only annotations from the selected
             review render inline). */}
         <div className="lg:col-span-2 space-y-6">
+          <HiringNote note={data.hiringNote} canEdit={data.canEditHiringNote} />
           <ApplicationViewer
             application={data.application}
             questionLabels={data.questionLabels}
@@ -615,6 +671,7 @@ export default function ApplicationReadOnlyDetail() {
 
       <InterviewsSection
         interviews={data.interviews}
+        rounds={data.interviewRounds}
         interviewPrepNote={data.interviewPrepNote}
       />
       <DecisionsSection
@@ -633,11 +690,15 @@ type InterviewRow = LoaderData["interviews"][number];
 
 function InterviewsSection({
   interviews,
+  rounds,
   interviewPrepNote,
 }: {
   interviews: InterviewRow[];
+  rounds: { roundId: string; label: string }[];
   interviewPrepNote: string | null;
 }) {
+  // One round reads as before; several get a heading and interviewer line each.
+  const showRounds = rounds.length > 1;
   const hasPrepNote = interviewPrepNote != null && interviewPrepNote.trim().length > 0;
   return (
     <DetailCard
@@ -657,15 +718,31 @@ function InterviewsSection({
               <p className="mt-1 text-xs text-os-grey">Set by leads during Initial delibs.</p>
             </div>
           )}
-          {interviews.length > 0 && (
-            <ul className="flex flex-col gap-3">
-              {interviews.map((iv) => (
-                <li key={iv.id} className="rounded-os-item bg-os-well">
-                  <InterviewNotesCard interview={toInterviewNotesData(iv)} />
-                </li>
-              ))}
-            </ul>
-          )}
+          {rounds.map((round) => {
+            const inRound = interviews.filter((iv) => iv.interviewRoundId === round.roundId);
+            const interviewers = [
+              ...new Set(inRound.flatMap((iv) => iv.assignments.map((a) => a.interviewerName))),
+            ];
+            return (
+              <section key={round.roundId} className="flex flex-col gap-2">
+                {showRounds && (
+                  <div className="flex flex-wrap items-baseline justify-between gap-2">
+                    <h3 className="text-sm font-semibold text-foreground">{round.label}</h3>
+                    <span className="text-xs text-os-grey">
+                      {interviewers.length > 0 ? interviewers.join(", ") : "No interviewers assigned"}
+                    </span>
+                  </div>
+                )}
+                <ul className="flex flex-col gap-3">
+                  {inRound.map((iv) => (
+                    <li key={iv.id} className="rounded-os-item bg-os-well">
+                      <InterviewNotesCard interview={toInterviewNotesData(iv)} />
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            );
+          })}
         </div>
       )}
     </DetailCard>

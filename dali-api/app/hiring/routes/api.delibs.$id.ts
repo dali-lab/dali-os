@@ -6,6 +6,7 @@ import { hasCycleAccess } from "~/lib/roles";
 import { parseJson } from "~/lib/validate";
 import { findRound, parseTimeline } from "~/hiring/lib/cycle-timeline";
 import { requireApiSignedOrForbidden } from "~/hiring/lib/confidentiality";
+import { logAuditEvent } from "~/lib/audit";
 
 const DelibsActionSchema = z.object({
   intent: z.enum(["close"]),
@@ -83,13 +84,19 @@ export async function action({ request, params }: Route.ActionArgs) {
         domainApplicationId: string;
         type: string;
         waitlistRank: number | null;
+        interviewRoundId?: string | null;
       }> = [];
 
       if (!round.isFinal) {
         // "Advance" writes no decision: the closed board itself is what
         // qualifies those applicants for the next round.
         for (const id of columnOrder["Interview"] ?? []) {
-          decisions.push({ domainApplicationId: id, type: "InvitedToInterview", waitlistRank: null });
+          decisions.push({
+            domainApplicationId: id,
+            type: "InvitedToInterview",
+            waitlistRank: null,
+            interviewRoundId: round.interviewRoundId,
+          });
         }
         for (const id of columnOrder["Reject"] ?? []) {
           decisions.push({ domainApplicationId: id, type: "Rejected", waitlistRank: null });
@@ -115,6 +122,7 @@ export async function action({ request, params }: Route.ActionArgs) {
               stage: "Draft",
               madeById: auth.user.sub,
               waitlistRank: d.waitlistRank,
+              interviewRoundId: d.interviewRoundId ?? null,
             },
           });
         }
@@ -123,6 +131,19 @@ export async function action({ request, params }: Route.ActionArgs) {
           where: { id: params.id },
           data: { status: "Closed" },
         });
+      });
+
+      await logAuditEvent({
+        action: "delibs.close",
+        userId: auth.user.sub,
+        targetId: session.id,
+        metadata: {
+          cycleId: session.applicationCycleId,
+          domainId: session.domainId,
+          roundId: session.roundId,
+          decisionsCreated: decisions.length,
+        },
+        request,
       });
 
       return Response.json({ closed: true, decisionsCreated: decisions.length });

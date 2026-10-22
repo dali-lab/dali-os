@@ -24,7 +24,7 @@ function da(overrides: Partial<Record<string, any>> = {}) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mockPrisma.interviewConfig = { findUnique: vi.fn().mockResolvedValue(null) };
+  mockPrisma.interviewConfig = { findMany: vi.fn().mockResolvedValue([]) };
   mockPrisma.applicationCycle = { findUnique: vi.fn().mockResolvedValue({ closeDate: null }) };
   mockPrisma.domainApplicationCycle = { findMany: vi.fn().mockResolvedValue([]) };
   mockPrisma.application = { findFirst: vi.fn().mockResolvedValue(null) };
@@ -144,6 +144,35 @@ describe("loadApplicationTracker", () => {
     expect(tracked.closed).toBe(true);
     expect(tracked.closeDate).toBe(new Date("2020-01-01T04:59:59Z").toISOString());
     expect(tracked.submittedAt).toBe(submittedAt.toISOString());
+  });
+
+  it("books slots as long as the round the applicant is invited to", async () => {
+    mockPrisma.interviewConfig.findMany.mockResolvedValue([
+      { interviewRoundId: "interviews", slotDurationMinutes: 30 },
+      { interviewRoundId: "iv2", slotDurationMinutes: 60 },
+    ]);
+    const invite = (round: string, at: string) => ({
+      type: "InvitedToInterview",
+      stage: "Released",
+      interviewRoundId: round,
+      createdAt: new Date(at),
+    });
+    mockPrisma.application.findFirst.mockResolvedValue({
+      id: "app-1",
+      statusUpdates: [{ newStatus: "Submitted", createdAt: new Date("2026-10-01") }],
+      domainApplications: [
+        da({ submittedAt: new Date("2026-10-01"), decisions: [invite("iv2", "2026-10-10"), invite("interviews", "2026-10-02")] }),
+      ],
+    });
+    expect((await loadApplicationTracker(USER_ID, CYCLE_ID, "UnderReview")).slotDurationMinutes).toBe(60);
+  });
+
+  it("books first-round slot lengths when nobody is invited yet", async () => {
+    mockPrisma.interviewConfig.findMany.mockResolvedValue([
+      { interviewRoundId: "iv2", slotDurationMinutes: 60 },
+      { interviewRoundId: "interviews", slotDurationMinutes: 45 },
+    ]);
+    expect((await loadApplicationTracker(USER_ID, CYCLE_ID, "UnderReview")).slotDurationMinutes).toBe(45);
   });
 
   it("allDomainsClosed is true only once every ready domain has closed", async () => {

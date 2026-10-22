@@ -1,10 +1,11 @@
 """Manual benchmark: run dali-asr's model calls on a local WAV file.
 
-    cd asr && uv run modal run --env staging bench.py --wav-path path/to/meeting.wav
+    cd asr && uv run modal run --env staging bench.py --wav-path path/to/meeting.wav [--gpu L4] [--repeat 2]
 
 Converts the WAV to 16 kHz mono s16 PCM locally, then runs Parakeet and
-pyannote on a T4 using the same image as modal_app.py, and prints stage
-timings. Never touches S3 — --local is the only mode today, kept as an
+pyannote on a GPU (T4 unless --gpu says otherwise) using the same image as
+modal_app.py, and prints stage timings. Pass 1 includes model load; later
+passes (--repeat) are warm. Never touches S3 — --local is the only mode today, kept as an
 explicit flag so a presigned-URL mode against a deployed app can be
 added later without changing the CLI.
 """
@@ -45,24 +46,26 @@ def _read_wav_as_pcm16k_mono(path: Path) -> bytes:
 
 
 @app.function(gpu="T4", timeout=600)
-def bench_transcribe(pcm: bytes, max_speakers: Optional[int]) -> dict:
-    timings = {}
-
+def bench_transcribe(pcm: bytes, max_speakers: Optional[int], repeat: int = 1) -> dict:
     # Peek at the raw token stream on the first 30 s only; the full file goes
     # through _run_parakeet, which windows it the way the deployed job does.
     raw = _get_asr_model().recognize(_pcm_to_float32(pcm[: 30 * 32000]), sample_rate=16000)
     tokens_head = list(zip((raw.tokens or [])[:12], (raw.timestamps or [])[:12]))
 
-    t0 = time.monotonic()
-    words = pipeline.transcribe_windowed(pcm, _run_parakeet)
-    timings["transcribe_s"] = round(time.monotonic() - t0, 2)
+    passes = []
+    for _ in range(repeat):
+        timings = {}
+        t0 = time.monotonic()
+        words = pipeline.transcribe_windowed(pcm, _run_parakeet)
+        timings["transcribe_s"] = round(time.monotonic() - t0, 2)
 
-    t0 = time.monotonic()
-    segments = _run_pyannote(pcm, max_speakers)
-    timings["diarize_s"] = round(time.monotonic() - t0, 2)
+        t0 = time.monotonic()
+        segments = _run_pyannote(pcm, max_speakers)
+        timings["diarize_s"] = round(time.monotonic() - t0, 2)
+        passes.append(timings)
 
     return {
-        "timings": timings,
+        "passes": passes,
         "word_count": len(words),
         "segment_count": len(segments),
         "tokens_head": tokens_head,
@@ -72,7 +75,7 @@ def bench_transcribe(pcm: bytes, max_speakers: Optional[int]) -> dict:
 
 
 @app.local_entrypoint()
-def main(wav_path: str, local: bool = True, max_speakers: int = 0):
+def main(wav_path: str, local: bool = True, max_speakers: int = 0, gpu: str = "T4", repeat: int = 1):
     if not local:
         raise SystemExit("only --local is supported today; see asr/README.md")
 
@@ -80,11 +83,13 @@ def main(wav_path: str, local: bool = True, max_speakers: int = 0):
     print(f"loaded {len(pcm) / 32000:.1f}s of 16kHz mono PCM from {wav_path}")
 
     t0 = time.monotonic()
-    result = bench_transcribe.remote(pcm, max_speakers or None)
+    result = bench_transcribe.with_options(gpu=gpu).remote(pcm, max_speakers or None, max(1, repeat))
     total_s = round(time.monotonic() - t0, 2)
 
+    print(f"gpu: {gpu}")
     print(f"words: {result['word_count']}, speaker segments: {result['segment_count']}")
-    print(f"transcribe: {result['timings']['transcribe_s']}s, diarize: {result['timings']['diarize_s']}s")
+    for number, timings in enumerate(result["passes"], start=1):
+        print(f"pass {number}: transcribe {timings['transcribe_s']}s, diarize {timings['diarize_s']}s")
     print(f"total (incl. cold start + roundtrip): {total_s}s")
     print("first tokens:", result["tokens_head"])
     print("first words:", result["words_head"])

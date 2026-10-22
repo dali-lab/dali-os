@@ -1,0 +1,275 @@
+name: Demo write
+
+# For a user-facing PR (it has a "Release note" line) that changes the app but adds
+# no demo, Claude writes dali-api/demos/<slug>.demo.ts in a capped loop: write the
+# script, record it, have a separate reviewer watch the frames, revise. A script that
+# passes review is committed to the PR branch and Demo capture is dispatched to
+# record and file it. Runs once per PR; re-run by hand from the Actions tab.
+# See dali-api/demos/README.md.
+
+on:
+  pull_request:
+    types: [opened, edited, reopened, ready_for_review]
+    branches: [staging]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: PR to write a demo for (runs even if one was attempted before)
+        required: true
+
+concurrency:
+  group: demo-write-${{ github.event.pull_request.number || inputs.pr_number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    name: Needs a demo?
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      run: ${{ steps.check.outputs.run }}
+      pr: ${{ steps.check.outputs.pr }}
+      head_ref: ${{ steps.check.outputs.head_ref }}
+      slug: ${{ steps.check.outputs.slug }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: dali-api/app/lib/release-note-line.ts
+          sparse-checkout-cone-mode: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Check
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number || inputs.pr_number }}
+          FORCE: ${{ github.event_name == 'workflow_dispatch' }}
+        run: |
+          set -euo pipefail
+          skip() { echo "Skipping: $1"; echo "run=false" >> "$GITHUB_OUTPUT"; exit 0; }
+          pr=$(gh pr view "$PR" --repo "$GITHUB_REPOSITORY" --json state,isDraft,isCrossRepository,headRefName,body,files)
+          [ "$(jq -r .state <<<"$pr")" = "OPEN" ] || skip "PR is not open"
+          [ "$(jq -r .isDraft <<<"$pr")" = "false" ] || skip "draft PR"
+          [ "$(jq -r .isCrossRepository <<<"$pr")" = "false" ] || skip "PR from a fork"
+          files=$(jq -r '.files[].path' <<<"$pr")
+          grep -qE '^dali-api/demos/[^/]+\.demo\.ts$' <<<"$files" && skip "PR already has a demo"
+          grep -q '^dali-api/app/' <<<"$files" || skip "no app changes"
+          note=$(jq -r '.body // ""' <<<"$pr" | node --experimental-strip-types --no-warnings --input-type=module -e "
+            import { readFileSync } from 'node:fs';
+            const { releaseNoteLine } = await import('./dali-api/app/lib/release-note-line.ts');
+            process.stdout.write(releaseNoteLine(readFileSync(0, 'utf8')) ?? '');")
+          [ -n "$note" ] || skip "no release note line"
+          if [ "$FORCE" != "true" ]; then
+            tried=$(gh api "repos/${GITHUB_REPOSITORY}/issues/${PR}/comments" --paginate \
+              --jq '[.[] | select(.body | contains("<!-- demo-write -->"))] | length' | awk '{s+=$1} END {print s+0}')
+            [ "$tried" = "0" ] || skip "already attempted (re-run from the Actions tab)"
+          fi
+          head_ref=$(jq -r .headRefName <<<"$pr")
+          slug=$(basename "$head_ref" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-+|-+$//g' | cut -c1-40 | sed -E 's/-+$//')
+          {
+            echo "run=true"
+            echo "pr=${PR}"
+            echo "head_ref=${head_ref}"
+            echo "slug=${slug:-pr-${PR}}"
+          } >> "$GITHUB_OUTPUT"
+
+  write:
+    name: Write demo
+    needs: gate
+    if: needs.gate.outputs.run == 'true'
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 60
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: write
+    defaults:
+      run:
+        working-directory: dali-api
+    env:
+      DATABASE_URL: postgresql://dali:dali@localhost:5432/dali
+      JWT_SECRET: test-secret-for-ci-at-least-32-chars
+      CAS_BASE_URL: https://login.dartmouth.edu/cas
+      FRONTEND_URL: http://localhost:5173
+      API_BASE_URL: http://localhost:3001
+      PR_NUMBER: ${{ needs.gate.outputs.pr }}
+      HEAD_REF: ${{ needs.gate.outputs.head_ref }}
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: dali
+          POSTGRES_PASSWORD: dali
+          POSTGRES_DB: dali
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.gate.outputs.head_ref }}
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+      - name: Install ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - name: Install Claude Code
+        run: npm install -g @anthropic-ai/claude-code
+      - name: Generate Prisma client
+        run: npx prisma generate
+      - name: Run migrations and seed
+        run: npx prisma migrate reset --force && npx prisma db seed
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+      - name: Build app
+        run: npm run build
+
+      - name: Gather PR context
+        id: context
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SLUG: ${{ needs.gate.outputs.slug }}
+        run: |
+          set -euo pipefail
+          mkdir -p demo-work
+          [ -e "demos/${SLUG}.demo.ts" ] && SLUG="${SLUG}-pr${PR_NUMBER}"
+          echo "slug=${SLUG}" >> "$GITHUB_OUTPUT"
+          pr=$(gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json title,body,files)
+          note=$(jq -r '.body // ""' <<<"$pr" | node --experimental-strip-types --no-warnings --input-type=module -e "
+            import { readFileSync } from 'node:fs';
+            const { releaseNoteLine } = await import('./app/lib/release-note-line.ts');
+            process.stdout.write(releaseNoteLine(readFileSync(0, 'utf8')) ?? '');")
+          {
+            echo "# $(jq -r .title <<<"$pr")"
+            echo
+            echo "Release note: ${note}"
+            echo
+            echo "Changed files:"
+            jq -r '.files[] | "- \(.path) (+\(.additions) -\(.deletions))"' <<<"$pr"
+          } > demo-work/pr.md
+          git diff "origin/staging...HEAD" -- . ':(exclude)package-lock.json' ':(exclude)prisma/migrations' > "$RUNNER_TEMP/pr.diff"
+          head -c 200000 "$RUNNER_TEMP/pr.diff" > demo-work/pr.diff
+
+      - name: Write, record, review
+        id: loop
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          SLUG: ${{ steps.context.outputs.slug }}
+          MODEL: sonnet
+          MAX_ATTEMPTS: 3
+          TOKEN_BUDGET: 1500000
+        run: demos/lib/write-loop.sh
+
+      - name: Commit demo
+        id: commit
+        if: steps.loop.outputs.result == 'pass'
+        env:
+          FILE: ${{ steps.loop.outputs.file }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
+          git add -- "$FILE"
+          git commit -m "Add a demo for #${PR_NUMBER} (written by Claude, passed review)"
+          git push origin "HEAD:${HEAD_REF}"
+
+      # A push made with the workflow token doesn't trigger other workflows; a dispatch does.
+      - name: Dispatch demo capture
+        if: steps.commit.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FILE: ${{ steps.loop.outputs.file }}
+        run: gh workflow run demo-capture.yml --repo "$GITHUB_REPOSITORY" --ref "$HEAD_REF" -f pr_number="$PR_NUMBER" -f demos="$FILE"
+
+      - name: Upload work
+        id: artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: demo-write
+          path: |
+            dali-api/demo-work/
+            dali-api/demo-out/
+            dali-api/demos/*.demo.ts
+          retention-days: 14
+          if-no-files-found: ignore
+
+      - name: Write PR comment
+        if: always()
+        env:
+          RESULT: ${{ steps.loop.outputs.result }}
+          ATTEMPTS: ${{ steps.loop.outputs.attempts }}
+          TOKENS: ${{ steps.loop.outputs.tokens }}
+          FILE: ${{ steps.loop.outputs.file }}
+          COMMIT_OUTCOME: ${{ steps.commit.outcome }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          ARTIFACT_URL: ${{ steps.artifact.outputs.artifact-url }}
+        run: |
+          review=$(cat demo-work/review.md 2>/dev/null || true)
+          {
+            echo '<!-- demo-write -->'
+            echo '**Demo write**'
+            echo
+            case "$RESULT" in
+              pass)
+                if [ "$COMMIT_OUTCOME" = "success" ]; then
+                  echo "Claude wrote \`dali-api/${FILE}\` and it passed review on attempt ${ATTEMPTS} (${TOKENS} tokens). Demo capture is recording it now; its comment will have the video."
+                  echo
+                  echo "Watch the clip before merging. Edit the script if it's off, or delete it to ship without a video."
+                else
+                  echo "A script passed review but couldn't be pushed to this branch. It's in the [artifact](${ARTIFACT_URL:-$RUN_URL})."
+                fi
+                ;;
+              not-demoable)
+                echo "No demo: ${review}"
+                ;;
+              "")
+                echo "The job failed before the loop finished. See the [run log](${RUN_URL}); re-run: Actions, Demo write, Run workflow with PR ${PR_NUMBER}."
+                ;;
+              *)
+                [ "$RESULT" = "budget" ] && why="the token budget ran out" || why="no script passed review"
+                echo "No demo committed: ${why} after ${ATTEMPTS:-0} attempt(s) (${TOKENS:-0} tokens). The last script and recording are in the [artifact](${ARTIFACT_URL:-$RUN_URL})."
+                if [ -n "$review" ]; then
+                  echo
+                  echo '<details><summary>Last review</summary>'
+                  echo
+                  echo "$review"
+                  echo
+                  echo '</details>'
+                fi
+                echo
+                echo "Add a demo by hand (see \`dali-api/demos/README.md\`), or re-run: Actions, Demo write, Run workflow with PR ${PR_NUMBER}."
+                ;;
+            esac
+          } > "$RUNNER_TEMP/comment.md"
+
+      - name: Find existing comment
+        id: find
+        if: always()
+        uses: peter-evans/find-comment@v3
+        with:
+          issue-number: ${{ env.PR_NUMBER }}
+          comment-author: github-actions[bot]
+          body-includes: <!-- demo-write -->
+
+      - name: Upsert comment
+        if: always()
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          comment-id: ${{ steps.find.outputs.comment-id }}
+          issue-number: ${{ env.PR_NUMBER }}
+          edit-mode: replace
+          body-path: ${{ runner.temp }}/comment.md

@@ -79,6 +79,7 @@ import { EDUCATION_TOOLS } from "./tools/education";
 import { PARTNERS_TOOLS } from "./tools/partners";
 import { DOCS_TOOLS } from "./tools/docs";
 import { CALENDAR_TOOLS } from "./tools/calendar-extra";
+import { CHAT_TOOLS } from "./tools/chat";
 import { MENTORSHIP_TOOLS } from "./tools/mentorship";
 import { SIGNING_TOOLS } from "./tools/signing";
 import { FORMS_TOOLS } from "./tools/forms";
@@ -93,6 +94,7 @@ export const REGISTRY_TOOLS: McpTool[] = [
   ...PARTNERS_TOOLS,
   ...DOCS_TOOLS,
   ...CALENDAR_TOOLS,
+  ...CHAT_TOOLS,
   ...MENTORSHIP_TOOLS,
   ...SIGNING_TOOLS,
   ...FORMS_TOOLS,

@@ -14,23 +14,18 @@ import { isMultiSession, type OfferingType } from "~/education/lib/offering-type
 // get fixed first, and idempotent — re-running only issues missing
 // certificates.
 
-/**
- * Completion policy: Miniseries and Fellowship — (Present + Excused) / total sessions ≥ threshold
- * (excused absences are forgiven for completion; they still don't earn CE
- * credit). Workshops — at least one Present mark. No sessions → not eligible.
- *
- * `threshold` defaults to 0.8 (80%) but can be overridden per-offering via
- * EducationOffering.completionThreshold.
- */
+// Excused absences are forgiven for completion; they still don't earn CE credit.
 export function certificateEligibility(args: {
   type: OfferingType;
   totalSessions: number;
   present: number;
   excused: number;
   threshold?: number;
+  minSessions?: number | null;
 }): boolean {
   if (args.totalSessions === 0) return false;
   if (!isMultiSession(args.type)) return args.present >= 1;
+  if (args.minSessions != null) return args.present + args.excused >= args.minSessions;
   const threshold = args.threshold ?? 0.8;
   return (args.present + args.excused) / args.totalSessions >= threshold;
 }
@@ -59,6 +54,7 @@ export async function closeOutOffering(args: {
       endsAt: true,
       closedOutAt: true,
       completionThreshold: true,
+      completionMinSessions: true,
       _count: { select: { sessions: true } },
       applications: {
         where: { status: "Approved" },
@@ -119,7 +115,7 @@ export async function closeOutOffering(args: {
     }
     const present = application.attendances.filter((a) => a.status === "Present").length;
     const excused = application.attendances.filter((a) => a.status === "Excused").length;
-    if (!certificateEligibility({ type: offering.type, totalSessions, present, excused, threshold: offering.completionThreshold })) {
+    if (!certificateEligibility({ type: offering.type, totalSessions, present, excused, threshold: offering.completionThreshold, minSessions: offering.completionMinSessions })) {
       ineligible += 1;
       continue;
     }
@@ -291,6 +287,7 @@ export async function previewCloseOut(offeringId: string): Promise<CloseOutPrevi
     select: {
       type: true,
       completionThreshold: true,
+      completionMinSessions: true,
       _count: { select: { sessions: true } },
       applications: {
         where: { status: "Approved" },
@@ -315,7 +312,7 @@ export async function previewCloseOut(offeringId: string): Promise<CloseOutPrevi
     }
     const present = app.attendances.filter((a) => a.status === "Present").length;
     const excused = app.attendances.filter((a) => a.status === "Excused").length;
-    if (certificateEligibility({ type: offering.type, totalSessions, present, excused, threshold: offering.completionThreshold })) {
+    if (certificateEligibility({ type: offering.type, totalSessions, present, excused, threshold: offering.completionThreshold, minSessions: offering.completionMinSessions })) {
       eligible.push(name);
     } else {
       belowThreshold.push(name);

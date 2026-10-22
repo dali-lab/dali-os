@@ -3,6 +3,7 @@ import { Link, redirect, useLoaderData, useFetcher } from "react-router";
 import { Tooltip } from "~/components/ui/floating";
 import type { Route } from "./+types/members.groups";
 import { prisma } from "~/lib/db";
+import { logAuditEvent } from "~/lib/audit";
 import { listAllGroups } from "~/lib/groups";
 import { requireAuth, forbidden } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
@@ -188,13 +189,20 @@ export async function action({ request }: Route.ActionArgs) {
               select: { id: true },
             })
           ).map((t) => t.id);
-    await prisma.groupDefinition.create({
+    const created = await prisma.groupDefinition.create({
       data: {
         name,
         type: "Static",
         staticMemberIds: memberIds,
         boundTermIds: validTermIds,
       },
+    });
+    await logAuditEvent({
+      action: "group.create",
+      userId: auth.user.sub,
+      targetId: created.id,
+      metadata: { name, memberCount: memberIds.length },
+      request,
     });
     return null;
   }
@@ -204,12 +212,19 @@ export async function action({ request }: Route.ActionArgs) {
     if (!groupId) return Response.json({ error: "groupId is required" }, { status: 400 });
     const group = await prisma.groupDefinition.findUnique({
       where: { id: groupId },
-      select: { systemKey: true },
+      select: { systemKey: true, name: true },
     });
     if (!group) return Response.json({ error: "Group not found" }, { status: 404 });
     if (group.systemKey)
       return Response.json({ error: "System-managed groups cannot be deleted" }, { status: 400 });
     await prisma.groupDefinition.delete({ where: { id: groupId } });
+    await logAuditEvent({
+      action: "group.delete",
+      userId: auth.user.sub,
+      targetId: groupId,
+      metadata: { name: group.name },
+      request,
+    });
     return null;
   }
 
@@ -222,9 +237,17 @@ export async function action({ request }: Route.ActionArgs) {
     if (!group) return Response.json({ error: "Group not found" }, { status: 404 });
     if (group.systemKey)
       return Response.json({ error: "System-managed groups cannot be archived" }, { status: 400 });
+    const archived = intent === "archive-group";
     await prisma.groupDefinition.update({
       where: { id: groupId },
-      data: { archivedAt: intent === "archive-group" ? new Date() : null },
+      data: { archivedAt: archived ? new Date() : null },
+    });
+    await logAuditEvent({
+      action: "group.update",
+      userId: auth.user.sub,
+      targetId: groupId,
+      metadata: { archived },
+      request,
     });
     return null;
   }
@@ -239,7 +262,15 @@ export async function action({ request }: Route.ActionArgs) {
     const next = group.staticMemberIds.filter((id) => id !== userId);
     if (next.length === 0)
       return Response.json({ error: "Cannot remove last member; delete the group instead" }, { status: 400 });
+    if (next.length === group.staticMemberIds.length) return null;
     await prisma.groupDefinition.update({ where: { id: groupId }, data: { staticMemberIds: next } });
+    await logAuditEvent({
+      action: "group.member.remove",
+      userId: auth.user.sub,
+      targetId: groupId,
+      metadata: { memberId: userId, memberCount: next.length },
+      request,
+    });
     return null;
   }
 
@@ -254,6 +285,13 @@ export async function action({ request }: Route.ActionArgs) {
     await prisma.groupDefinition.update({
       where: { id: groupId },
       data: { staticMemberIds: [...group.staticMemberIds, userId] },
+    });
+    await logAuditEvent({
+      action: "group.member.add",
+      userId: auth.user.sub,
+      targetId: groupId,
+      metadata: { memberId: userId, memberCount: group.staticMemberIds.length + 1 },
+      request,
     });
     return null;
   }

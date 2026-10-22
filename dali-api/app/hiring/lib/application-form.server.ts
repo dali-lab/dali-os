@@ -7,6 +7,7 @@
 
 import { randomUUID } from "node:crypto";
 import { prisma } from "~/lib/db";
+import { logAuditEvent } from "~/lib/audit";
 import { createForm } from "~/forms/lib/form-page.server";
 import { canEditDomainSetup } from "~/hiring/lib/domain-windows.server";
 import { ensureProcessFolder, HIRING_PROCESS_ID } from "~/lib/bindings.server";
@@ -289,19 +290,27 @@ export async function addDomainChallenge(
   domainId: string,
   actorId: string,
   formId?: string | null,
+  request?: Request,
 ): Promise<"not-draft" | "not-found" | null> {
   if (!(await canEditDomainSetup(cycleId, domainId))) return "not-draft";
-  if (!formId) {
+  if (formId) {
+    const form = await prisma.form.findUnique({ where: { id: formId }, select: { id: true } });
+    if (!form) return "not-found";
+    const link = { applicationCycleId: cycleId, domainId, formId };
+    await prisma.cycleDomainForm.upsert({
+      where: { applicationCycleId_domainId_formId: link },
+      create: link,
+      update: {},
+    });
+  } else {
     await createDomainChallengeForm(cycleId, domainId, actorId);
-    return null;
   }
-  const form = await prisma.form.findUnique({ where: { id: formId }, select: { id: true } });
-  if (!form) return "not-found";
-  const link = { applicationCycleId: cycleId, domainId, formId };
-  await prisma.cycleDomainForm.upsert({
-    where: { applicationCycleId_domainId_formId: link },
-    create: link,
-    update: {},
+  await logAuditEvent({
+    action: "domain.challenge-form.add",
+    userId: actorId,
+    targetId: domainId,
+    metadata: { cycleId, formId: formId ?? null, created: !formId },
+    request,
   });
   return null;
 }
@@ -314,6 +323,7 @@ export async function addDomainChallenge(
 export async function removeDomainChallenge(
   cdfId: string,
   cycleId?: string,
+  audit?: { actorId: string; request: Request },
 ): Promise<"not-found" | "not-draft" | "in-use" | null> {
   const cdf = await prisma.cycleDomainForm.findUnique({ where: { id: cdfId } });
   if (!cdf || (cycleId && cdf.applicationCycleId !== cycleId)) return "not-found";
@@ -326,6 +336,15 @@ export async function removeDomainChallenge(
   });
   if (inUse > 0) return "in-use";
   await prisma.cycleDomainForm.delete({ where: { id: cdfId } });
+  if (audit) {
+    await logAuditEvent({
+      action: "domain.challenge-form.remove",
+      userId: audit.actorId,
+      targetId: cdf.domainId,
+      metadata: { cycleId: cdf.applicationCycleId, formId: cdf.formId },
+      request: audit.request,
+    });
+  }
   return null;
 }
 

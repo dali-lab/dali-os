@@ -1,6 +1,8 @@
+import { useEffect, useRef } from "react";
 import { useFetcher } from "react-router";
 import { MessageSquarePlus, Pencil } from "lucide-react";
 import { useDialog } from "~/components/ui/dialog";
+import { useToast } from "~/components/ui/toast";
 import { Tooltip } from "~/components/ui/floating";
 
 // An absence note is a short aside ("excused — flu"), not a place for a
@@ -35,8 +37,26 @@ export function AbsenceNoteButton({
   onSaved?: (note: string | null) => void;
 }) {
   const dialog = useDialog();
-  const fetcher = useFetcher();
+  const toast = useToast();
+  const fetcher = useFetcher<{ error?: string }>();
+  const inFlight = useRef<{ previous: string | null; sawBusy: boolean } | null>(null);
   const busy = fetcher.state !== "idle";
+
+  useEffect(() => {
+    const flight = inFlight.current;
+    if (!flight) return;
+    if (fetcher.state !== "idle") {
+      flight.sawBusy = true;
+      return;
+    }
+    if (!flight.sawBusy) return;
+    inFlight.current = null;
+    if (fetcher.data?.error) {
+      onSaved?.(flight.previous);
+      toast.error("Couldn't save the absence note.");
+    }
+  }, [fetcher.state, fetcher.data, onSaved, toast]);
+
   const label = note ? `Edit absence note for ${name}` : `Add an absence note for ${name}`;
 
   async function edit() {
@@ -54,6 +74,7 @@ export function AbsenceNoteButton({
     });
     if (next === null) return;
     const trimmed = next.trim();
+    inFlight.current = { previous: note, sawBusy: false };
     fetcher.submit(
       { intent: "set-absence-note", meetingId, occurrenceStart, userId, note: trimmed },
       { method: "post", action: "/attendance" },

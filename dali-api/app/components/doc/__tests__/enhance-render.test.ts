@@ -186,8 +186,9 @@ function fakeEditor(initial: DocBlock[]) {
           : b,
       );
     },
-    insertBlocks: (toInsert: DocBlock[], afterId: string, placement: "before" | "after" = "before") => {
-      const idx = blocks.findIndex((b) => b.id === afterId);
+    insertBlocks: (toInsert: DocBlock[], ref: string | { id: string }, placement: "before" | "after" = "before") => {
+      const refId = typeof ref === "string" ? ref : ref.id;
+      const idx = blocks.findIndex((b) => b.id === refId);
       const at = placement === "after" ? idx + 1 : idx;
       blocks = [...blocks.slice(0, at), ...toInsert, ...blocks.slice(at)];
     },
@@ -209,7 +210,7 @@ describe("renderEnhanceOps", () => {
       { kind: "update", id: "b1", text: "Hello there", cites: [] },
       { kind: "remove", id: "b2" },
     ];
-    renderEnhanceOps(editor, ops, { pageId: "p1", recordingId: "rec1" });
+    renderEnhanceOps(editor, ops, { notePath: "/documents/p1", recordingId: "rec1" });
     expect(editor.transact).toHaveBeenCalledTimes(1);
   });
 
@@ -217,7 +218,7 @@ describe("renderEnhanceOps", () => {
     const editor = fakeEditor([block("b1", "paragraph", "Hello")]);
     const ops: EditorOp[] = [{ kind: "update", id: "b1", text: "Hello there", cites: [] }];
 
-    const { priorBlocks } = renderEnhanceOps(editor, ops, { pageId: "p1", recordingId: "rec1" });
+    const { priorBlocks } = renderEnhanceOps(editor, ops, { notePath: "/documents/p1", recordingId: "rec1" });
 
     const updated = editor.getBlock("b1")!;
     expect((updated.props as { backgroundColor?: unknown }).backgroundColor).toBe(ENHANCE_MARK_ADDED);
@@ -229,7 +230,7 @@ describe("renderEnhanceOps", () => {
     const editor = fakeEditor([block("b1", "paragraph", "Hello")]);
     const ops: EditorOp[] = [{ kind: "update", id: "b1", text: "Hello there", cites: [] }];
 
-    const { priorBlocks } = renderEnhanceOps(editor, ops, { pageId: "p1", recordingId: "rec1" });
+    const { priorBlocks } = renderEnhanceOps(editor, ops, { notePath: "/documents/p1", recordingId: "rec1" });
     editor.updateBlock("b1", { content: [{ type: "text", text: "Mutated later", styles: {} }] });
 
     expect((priorBlocks.b1 as DocBlock).content).toEqual([{ type: "text", text: "Hello", styles: {} }]);
@@ -241,7 +242,7 @@ describe("renderEnhanceOps", () => {
       { kind: "insertAfter", afterId: "b1", blocks: [{ type: "bulletListItem", text: "Ship v1", cites: [], added: true }] },
     ];
 
-    renderEnhanceOps(editor, ops, { pageId: "p1", recordingId: "rec1" });
+    renderEnhanceOps(editor, ops, { notePath: "/documents/p1", recordingId: "rec1" });
 
     const inserted = editor.document.find((b) => b.type === "bulletListItem")!;
     expect((inserted.props as { backgroundColor?: unknown }).backgroundColor).toBe(ENHANCE_MARK_ADDED);
@@ -251,7 +252,7 @@ describe("renderEnhanceOps", () => {
     const editor = fakeEditor([block("b1", "heading", "Agenda")]);
     const ops: EditorOp[] = [{ kind: "remove", id: "b1" }];
 
-    renderEnhanceOps(editor, ops, { pageId: "p1", recordingId: "rec1" });
+    renderEnhanceOps(editor, ops, { notePath: "/documents/p1", recordingId: "rec1" });
 
     expect(editor.document).toHaveLength(1);
     expect((editor.getBlock("b1")!.props as { backgroundColor?: unknown }).backgroundColor).toBe(ENHANCE_MARK_PRIOR);
@@ -264,7 +265,7 @@ describe("renderEnhanceOps", () => {
       { kind: "insertAfter", afterId: "b2", blocks: [{ type: "paragraph", text: "New", cites: [], added: true }] },
     ];
 
-    const { priorBlocks } = renderEnhanceOps(editor, ops, { pageId: "p1", recordingId: "rec1" });
+    const { priorBlocks } = renderEnhanceOps(editor, ops, { notePath: "/documents/p1", recordingId: "rec1" });
 
     expect(priorBlocks).toEqual({});
   });
@@ -514,5 +515,83 @@ describe("enhancePasteHandler", () => {
     enhancePasteHandler({ event, editor: { pasteHTML }, defaultPasteHandler });
     expect(pasteHTML).not.toHaveBeenCalled();
     expect(defaultPasteHandler).toHaveBeenCalled();
+  });
+});
+
+describe("Enhance on nested blocks", () => {
+  const withChildren = (b: DocBlock, children: DocBlock[]) => ({ ...b, children }) as DocBlock;
+
+  it("findEnhanceMarks finds marks on nested blocks, in document order", () => {
+    const doc = [
+      withChildren(block("p", "bulletListItem", "Budget"), [block("c", "bulletListItem", "40h", { backgroundColor: ENHANCE_MARK_ADDED })]),
+      block("q", "paragraph", "Next", { backgroundColor: ENHANCE_MARK_ADDED }),
+    ];
+    expect(findEnhanceMarks(doc).map((m) => m.id)).toEqual(["c", "q"]);
+  });
+
+  it("hasEnhanceMarks sees a mark that is only on a nested block", () => {
+    const doc = [withChildren(block("p", "bulletListItem", "Budget"), [block("c", "bulletListItem", "40h", { backgroundColor: ENHANCE_MARK_PRIOR })])];
+    expect(hasEnhanceMarks(doc)).toBe(true);
+    expect(hasEnhanceMarks([block("p", "paragraph", "x")])).toBe(false);
+  });
+
+  it("appendChildren sets a childless parent's children, tinted enhance-added", () => {
+    const editor = fakeEditor([block("p", "bulletListItem", "Budget")]);
+    const ops: EditorOp[] = [
+      { kind: "appendChildren", parentId: "p", blocks: [{ type: "bulletListItem", text: "40h", cites: [], added: true }] },
+    ];
+    renderEnhanceOps(editor, ops, { notePath: "/documents/p1", recordingId: "rec1" });
+    const children = editor.getBlock("p")!.children as unknown as { type: string; props: { backgroundColor: string } }[];
+    expect(children).toHaveLength(1);
+    expect(children[0]).toMatchObject({ type: "bulletListItem", props: { backgroundColor: ENHANCE_MARK_ADDED } });
+  });
+
+  it("appendChildren inserts after the parent's last existing child", () => {
+    const last = block("c2", "bulletListItem", "second");
+    const editor = fakeEditor([withChildren(block("p", "bulletListItem", "Budget"), [block("c1", "bulletListItem", "first"), last])]);
+    const insertBlocks = vi.spyOn(editor, "insertBlocks");
+    const ops: EditorOp[] = [
+      { kind: "appendChildren", parentId: "p", blocks: [{ type: "bulletListItem", text: "third", cites: [], added: true }] },
+    ];
+    renderEnhanceOps(editor, ops, { notePath: "/documents/p1", recordingId: "rec1" });
+    expect(insertBlocks).toHaveBeenCalledWith([expect.objectContaining({ type: "bulletListItem" })], last, "after");
+  });
+
+  it("appendChildren is a no-op when the parent is gone", () => {
+    const editor = fakeEditor([block("q", "paragraph", "Other")]);
+    const ops: EditorOp[] = [{ kind: "appendChildren", parentId: "p", blocks: [{ type: "paragraph", text: "x", cites: [], added: true }] }];
+    renderEnhanceOps(editor, ops, { notePath: "/documents/p1", recordingId: "rec1" });
+    expect(editor.document.map((b) => b.id)).toEqual(["q"]);
+  });
+
+  it("revert restores a changed block's content but leaves its current children alone", () => {
+    const prior = withChildren(block("p", "bulletListItem", "Budget"), []);
+    const added = block("c", "bulletListItem", "40h", { backgroundColor: ENHANCE_MARK_ADDED });
+    const editor = fakeEditor([withChildren(block("p", "bulletListItem", "Budget: 40h", { backgroundColor: ENHANCE_MARK_ADDED }), [added])]);
+    revertEnhanceBlock(editor, "p", { p: prior });
+    const reverted = editor.getBlock("p")!;
+    expect(reverted.content).toEqual([{ type: "text", text: "Budget", styles: {} }]);
+    expect(reverted.children).toEqual([added]);
+  });
+});
+
+describe("renderEnhanceOps appendAtEnd", () => {
+  const items: EnhanceOpBlock[] = [{ type: "heading", text: "Action items", cites: [], added: true }];
+  const ctx = { notePath: "/documents/p1", recordingId: "rec1" };
+
+  it("goes directly above the Transcript toggle, even with notes below the toggle", () => {
+    const toggle = { ...(transcriptToggleBlock(["Ada: hi"]) as unknown as DocBlock), id: "t" } as DocBlock;
+    const editor = fakeEditor([block("a", "paragraph", "Notes"), toggle, block("z", "paragraph", "After")]);
+    renderEnhanceOps(editor, [{ kind: "appendAtEnd", blocks: items }], ctx);
+    const ids = editor.document.map((b) => b.id);
+    expect(ids.indexOf("t")).toBe(ids.length - 2);
+    expect(editor.document[ids.length - 3]!.type).toBe("heading");
+  });
+
+  it("goes at the very end when there is no Transcript toggle yet", () => {
+    const editor = fakeEditor([block("a", "paragraph", "Notes")]);
+    renderEnhanceOps(editor, [{ kind: "appendAtEnd", blocks: items }], ctx);
+    expect(editor.document).toHaveLength(2);
+    expect(editor.document[1]!.type).toBe("heading");
   });
 });

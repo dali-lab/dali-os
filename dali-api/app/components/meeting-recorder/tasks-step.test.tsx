@@ -22,8 +22,15 @@ function buildEditor() {
   editorRoot.innerHTML = BLOCKS.map(
     (b) => `<div class="bn-block-outer" data-id="${b.id}"><div class="bn-block"><div class="bn-block-content"><p>${b.text}</p></div></div></div>`,
   ).join("");
-  document.body.appendChild(editorRoot);
+  const doc = document.createElement("div");
+  doc.className = "dali-doc";
+  const host = document.createElement("div");
+  host.className = "dali-doc-overlay-host";
+  doc.append(host, editorRoot);
+  document.body.appendChild(doc);
 }
+
+const overlayHostEl = () => document.querySelector(".dali-doc-overlay-host")!;
 
 const ITEMS: EnhanceActionItem[] = [
   { text: "Add two reviewers to the 26W cycle", ownerName: "Maya Chen", ownerUserId: "u-maya", due: "2026-10-23" },
@@ -66,7 +73,7 @@ function mount(rec: UseMeetingRecording) {
 }
 
 function button(text: string): HTMLButtonElement {
-  const found = [...document.querySelectorAll("button")].find((b) => b.textContent?.trim() === text);
+  const found = [...document.querySelectorAll("button")].find((b) => b.textContent?.trim() === text || b.getAttribute("aria-label") === text);
   if (!found) throw new Error(`no button "${text}"`);
   return found as HTMLButtonElement;
 }
@@ -146,7 +153,7 @@ describe("tasks bar visibility", () => {
 
   it("is hidden when no checked item has a live checklist line", () => {
     const { unmount } = mount(recWith(ITEMS, { getNoteState: () => ({ blocks: [BLOCKS[0]!], bodyText: "" }) }));
-    expect(button("Create 2 tasks")).toBeTruthy();
+    expect(button("Create 1 task")).toBeTruthy();
     click(document.querySelector(`input[aria-label="Make a task: ${ITEMS[0]!.text}"]`)!);
     expect(bar()).toBeNull();
     unmount();
@@ -262,13 +269,17 @@ describe("creating tasks", () => {
     unmount();
   });
 
-  it("shows the success state with a board link, then hides after 4 seconds", async () => {
+  it("shows the success state with a board link once every item has a task, then hides after 4 seconds", async () => {
     vi.useFakeTimers();
     const rec = recWith();
-    const { unmount } = mount(rec);
+    const ui = mount(rec);
     await act(async () => {
       button("Create 2 tasks").dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
+    const tasked = recWith([{ ...ITEMS[0]!, taskId: "t0" }, { ...ITEMS[1]!, taskId: "t1" }]);
+    ui.rerender(
+      createElement(MemoryRouter, null, createElement(ActionItemDraftProvider, { rec: tasked, children: createElement(EnhanceBar, { rec: tasked }) })),
+    );
     expect(bar()?.textContent).toContain("Added 2 tasks to the project board");
     expect(document.querySelector('a[href="/projects/p1?tab=progress"]')?.textContent).toBe("View board");
     act(() => {
@@ -279,6 +290,47 @@ describe("creating tasks", () => {
       vi.advanceTimersByTime(1);
     });
     expect(bar()).toBeNull();
+    ui.unmount();
+  });
+
+  it("keeps the tasks bar, with an Added note, while untasked lines remain", async () => {
+    vi.useFakeTimers();
+    const rec = recWith();
+    const { unmount } = mount(rec);
+    await act(async () => {
+      button("Add task: " + ITEMS[0]!.text).dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(bar()?.textContent).toContain("Added 1 task to the project board");
+    expect(button("Create 2 tasks")).toBeTruthy();
+    act(() => {
+      vi.advanceTimersByTime(SUCCESS_VISIBLE_MS);
+    });
+    expect(bar()?.textContent).not.toContain("Added");
+    expect(button("Create 2 tasks")).toBeTruthy();
+    unmount();
+  });
+
+  it("never sends an item whose line was reverted or deleted from the note", async () => {
+    const rec = recWith(ITEMS, { getNoteState: () => ({ blocks: [BLOCKS[1]!, BLOCKS[2]!], bodyText: "" }) });
+    const { unmount } = mount(rec);
+    expect(bar()?.textContent).toContain("1 action item");
+    await act(async () => {
+      button("Create 1 task").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    const sent = (rec.createTasksFromItems as ReturnType<typeof vi.fn>).mock.calls[0]![0];
+    expect(sent.map((s: { index: number }) => s.index)).toEqual([1]);
+    unmount();
+  });
+
+  it("titles the task with the line as it reads in the note now", async () => {
+    const edited = [{ ...BLOCKS[0]!, text: "Add two reviewers to the 26W cycle by Friday" }, BLOCKS[1]!];
+    const rec = recWith(ITEMS, { getNoteState: () => ({ blocks: edited, bodyText: "" }) });
+    const { unmount } = mount(rec);
+    await act(async () => {
+      button("Create 2 tasks").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    const sent = (rec.createTasksFromItems as ReturnType<typeof vi.fn>).mock.calls[0]![0];
+    expect(sent[0].title).toBe("Add two reviewers to the 26W cycle by Friday");
     unmount();
   });
 
@@ -302,6 +354,41 @@ describe("creating tasks", () => {
     const before = vi.getTimerCount();
     unmount();
     expect(vi.getTimerCount()).toBeLessThan(before);
+  });
+});
+
+describe("adding one task", () => {
+  it("sends only that item, with its owner and due date", async () => {
+    const rec = recWith();
+    const { unmount } = mount(rec);
+    await act(async () => {
+      button("Add task: " + ITEMS[0]!.text).dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(rec.createTasksFromItems).toHaveBeenCalledTimes(1);
+    expect(rec.createTasksFromItems).toHaveBeenCalledWith([
+      { index: 0, title: ITEMS[0]!.text, assigneeId: "u-maya", dueAt: new Date("2026-10-23").toISOString() },
+    ]);
+    unmount();
+  });
+
+  it("disables every Add task and Create while a request is in flight", async () => {
+    let finish: (ok: boolean) => void = () => {};
+    const rec = recWith(ITEMS, { createTasksFromItems: vi.fn(() => new Promise<boolean>((r) => (finish = r))) });
+    const { unmount } = mount(rec);
+    click(button("Add task: " + ITEMS[0]!.text));
+    expect(button("Add task: " + ITEMS[1]!.text).disabled).toBe(true);
+    expect(button("Creating…").disabled).toBe(true);
+    click(button("Add task: " + ITEMS[1]!.text));
+    expect(rec.createTasksFromItems).toHaveBeenCalledTimes(1);
+    await act(async () => finish(true));
+    unmount();
+  });
+
+  it("is not offered on an excluded item", () => {
+    const { unmount } = mount(recWith());
+    click(document.querySelector(`input[aria-label="Make a task: ${ITEMS[1]!.text}"]`)!);
+    expect([...document.querySelectorAll("button")].some((b) => b.getAttribute("aria-label") === `Add task: ${ITEMS[1]!.text}`)).toBe(false);
+    unmount();
   });
 });
 
@@ -349,19 +436,28 @@ describe("action item chips", () => {
     unmount();
   });
 
-  it("hides chips whose line is under the sticky bar", () => {
+  it("renders inside the note's overlay host, right-aligned to the line, with no scroll listener", () => {
     const original = Element.prototype.getBoundingClientRect;
     Element.prototype.getBoundingClientRect = function (this: Element) {
-      if (this.classList.contains("bn-block-content")) {
-        return { top: 10, bottom: 40, left: 0, right: 500, width: 500, height: 30, x: 0, y: 10, toJSON() {} } as DOMRect;
+      if (this.classList.contains("dali-doc-overlay-host")) {
+        return { top: 100, bottom: 100, left: 20, right: 720, width: 700, height: 0, x: 20, y: 100, toJSON() {} } as DOMRect;
       }
-      if (this.hasAttribute("data-enhance-bar")) {
-        return { top: 0, bottom: 90, left: 0, right: 500, width: 500, height: 90, x: 0, y: 0, toJSON() {} } as DOMRect;
+      if (this.classList.contains("bn-block-content")) {
+        return { top: 300, bottom: 330, left: 40, right: 620, width: 580, height: 30, x: 40, y: 300, toJSON() {} } as DOMRect;
       }
       return original.call(this);
     };
+    const raf = vi.spyOn(window, "requestAnimationFrame");
     const { unmount } = mount(recWith());
-    expect((chipsFor(0) as HTMLElement).style.visibility).toBe("hidden");
+    const chips = chipsFor(0) as HTMLElement;
+    expect(chips.parentElement).toBe(overlayHostEl());
+    expect(chips.style.position).toBe("absolute");
+    expect(chips.style.top).toBe(`${300 - 100 + 1}px`);
+    expect(chips.style.right).toBe(`${700 - (620 - 20) + 8}px`);
+    raf.mockClear();
+    window.dispatchEvent(new Event("scroll"));
+    expect(raf).not.toHaveBeenCalled();
+    raf.mockRestore();
     unmount();
     Element.prototype.getBoundingClientRect = original;
   });

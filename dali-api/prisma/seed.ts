@@ -2264,7 +2264,7 @@ async function main() {
   });
 
   await prisma.interviewConfig.upsert({
-    where: { applicationCycleId: cycle.id },
+    where: { applicationCycleId_interviewRoundId: { applicationCycleId: cycle.id, interviewRoundId: "interviews" } },
     update: {
       slotDurationMinutes: 30,
       bufferMinutes: 15,
@@ -2346,10 +2346,11 @@ async function main() {
     // CycleInterviewer (for conducting interviews)
     await prisma.cycleInterviewer.upsert({
       where: {
-        userId_applicationCycleId_domainId: {
+        userId_applicationCycleId_domainId_interviewRoundId: {
           userId: user.id,
           applicationCycleId: cycle.id,
           domainId: r.domainId,
+          interviewRoundId: "interviews",
         },
       },
       update: {},
@@ -2868,10 +2869,11 @@ async function main() {
   async function getCycleInterviewer(userId: string, domainId: string) {
     return prisma.cycleInterviewer.findUniqueOrThrow({
       where: {
-        userId_applicationCycleId_domainId: {
+        userId_applicationCycleId_domainId_interviewRoundId: {
           userId,
           applicationCycleId: cycle.id,
           domainId,
+          interviewRoundId: "interviews",
         },
       },
     });

@@ -23,6 +23,7 @@ import { DRIVE_PAGE_KINDS } from "~/lib/drive.server";
 import { isRoot, ROOT_DELETE_ERROR } from "~/lib/drive-roots";
 import { canManageFormPlacement, formsUsePageAccess } from "~/forms/lib/form-access.server";
 import { withCors, handlePreflight } from "~/lib/cors";
+import { logAuditEvent } from "~/lib/audit";
 
 // How many archived rows of each kind to look at before filtering, and how
 // many of the survivors to return. Trash is a recovery surface — you come here
@@ -30,6 +31,11 @@ import { withCors, handlePreflight } from "~/lib/cors";
 // scanning every archived row in the database and access-checking each one.
 const SCAN_LIMIT = 500;
 const PER_TYPE_LIMIT = 100;
+
+async function pageTitle(id: string): Promise<string | null> {
+  const page = await prisma.page.findUnique({ where: { id }, select: { title: true } });
+  return page?.title ?? null;
+}
 
 // ── GET: list archived items ───────────────────────────────────────────────────
 
@@ -187,29 +193,40 @@ export async function action({ request }: Route.ActionArgs) {
       return withCors(request, Response.json({ ok: true }));
     }
     await setFormArchived(id, new Date());
+    await logAuditEvent({
+      action: "drive.trash.archive-form",
+      userId,
+      targetId: id,
+      metadata: { type: "form", title: await pageTitle(id) },
+      request,
+    });
     return withCors(request, Response.json({ ok: true }));
   }
 
   // ── restore ───────────────────────────────────────────────────────────────
   if (intent === "restore") {
     if (!type) return withCors(request, Response.json({ error: "Missing type" }, { status: 400 }));
+    let title: string | null = null;
 
     if (type === "form") {
       if (!(await canManageFormPlacement(userId, id, request))) return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
       await setFormArchived(id, null);
+      title = await pageTitle(id);
     } else if (type === "file") {
       const file = await prisma.projectFile.findUnique({
         where: { id },
-        select: { projectId: true, workspaceType: true, workspaceId: true, folderPageId: true },
+        select: { projectId: true, workspaceType: true, workspaceId: true, folderPageId: true, title: true },
       });
       if (!file) return withCors(request, Response.json({ error: "Not found" }, { status: 404 }));
       const ok = await canEditFile(userId, file, request);
       if (!ok) return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
       await prisma.projectFile.update({ where: { id }, data: { archivedAt: null } });
+      title = file.title;
     } else if (type === "doc" || type === "folder") {
       const access = await getPageAccess(userId, id, request, { includeArchived: true });
       if (!access.canEdit) return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
-      const trashed = await prisma.page.findUnique({ where: { id }, select: { kind: true, archivedAt: true } });
+      const trashed = await prisma.page.findUnique({ where: { id }, select: { kind: true, archivedAt: true, title: true } });
+      title = trashed?.title ?? null;
       await prisma.page.update({ where: { id }, data: { archivedAt: null } });
       // A notebook was archived together with its tabs at one instant; bring
       // back exactly those, not tabs that were trashed on their own earlier.
@@ -222,12 +239,20 @@ export async function action({ request }: Route.ActionArgs) {
     } else {
       return withCors(request, Response.json({ error: "Unknown type" }, { status: 400 }));
     }
+    await logAuditEvent({
+      action: "drive.trash.restore",
+      userId,
+      targetId: id,
+      metadata: { type, title },
+      request,
+    });
     return withCors(request, Response.json({ ok: true }));
   }
 
   // ── purge: permanent delete ────────────────────────────────────────────────
   if (intent === "purge") {
     if (!type) return withCors(request, Response.json({ error: "Missing type" }, { status: 400 }));
+    let title: string | null = null;
 
     if (type === "form") {
       if (!(await canManageFormPlacement(userId, id, request))) return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
@@ -243,23 +268,26 @@ export async function action({ request }: Route.ActionArgs) {
           ),
         );
       }
+      title = await pageTitle(id);
       await deleteForm(id);
     } else if (type === "file") {
       const file = await prisma.projectFile.findUnique({
         where: { id },
-        select: { projectId: true, workspaceType: true, workspaceId: true, folderPageId: true },
+        select: { projectId: true, workspaceType: true, workspaceId: true, folderPageId: true, title: true },
       });
       if (!file) return withCors(request, Response.json({ error: "Not found" }, { status: 404 }));
       const ok = await canEditFile(userId, file, request);
       if (!ok) return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
       await prisma.projectFile.delete({ where: { id } });
+      title = file.title;
     } else if (type === "doc" || type === "folder") {
       // includeArchived, same as restore: everything in Trash is archived by
       // definition, so without it getPageAccess denies every caller and purge
       // could never succeed for a doc or a folder.
       const access = await getPageAccess(userId, id, request, { includeArchived: true });
       if (!access.canEdit) return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
-      const target = await prisma.page.findUnique({ where: { id }, select: { folderType: true } });
+      const target = await prisma.page.findUnique({ where: { id }, select: { folderType: true, title: true } });
+      title = target?.title ?? null;
       if (target && isRoot(target)) {
         return withCors(request, Response.json({ error: ROOT_DELETE_ERROR }, { status: 400 }));
       }
@@ -284,6 +312,13 @@ export async function action({ request }: Route.ActionArgs) {
     } else {
       return withCors(request, Response.json({ error: "Unknown type" }, { status: 400 }));
     }
+    await logAuditEvent({
+      action: "drive.trash.purge",
+      userId,
+      targetId: id,
+      metadata: { type, title },
+      request,
+    });
     return withCors(request, Response.json({ ok: true }));
   }
 

@@ -4,6 +4,7 @@
 // on edit/remove. The schedule math lives in the client-safe class-schedule.ts;
 // this module owns the prisma writes and the Google CRUD.
 
+import { markCalendarChanged } from "~/calendar/lib/external-cache.server";
 import { prisma } from "~/lib/db";
 import {
   createGoogleCalendarEvent,
@@ -188,6 +189,7 @@ export async function createClass(input: ClassWrite): Promise<void> {
       ...mat,
     },
   });
+  await markCalendarChanged(input.userId);
 }
 
 export async function updateClass(classId: string, input: ClassWrite): Promise<void> {
@@ -210,6 +212,7 @@ export async function updateClass(classId: string, input: ClassWrite): Promise<v
       ...mat,
     },
   });
+  await markCalendarChanged(input.userId);
 }
 
 export async function removeClass(userId: string, classId: string): Promise<void> {
@@ -217,6 +220,7 @@ export async function removeClass(userId: string, classId: string): Promise<void
   if (!row) throw new MemberClassError("Class not found");
   await tearDownGoogle(row);
   await prisma.memberClass.delete({ where: { id: classId } });
+  await markCalendarChanged(userId);
 }
 
 // Re-pull a timetable-sourced class's current period + location from the synced

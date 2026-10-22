@@ -331,6 +331,24 @@ describe("findFinalizableDraft", () => {
       ])?.id,
     ).toBe("d1");
   });
+
+  it("finds a second-round invite Draft beside the released first-round invite", () => {
+    expect(
+      findFinalizableDraft([
+        { ...at("InvitedToInterview", "Released", "r1"), interviewRoundId: "interviews" },
+        { ...draft("InvitedToInterview", "d2"), interviewRoundId: "iv2" },
+      ])?.id,
+    ).toBe("d2");
+  });
+
+  it("ignores an invite Draft whose own round is already finalized", () => {
+    expect(
+      findFinalizableDraft([
+        { ...at("InvitedToInterview", "Final", "f2"), interviewRoundId: "iv2" },
+        { ...draft("InvitedToInterview", "d2"), interviewRoundId: "iv2" },
+      ]),
+    ).toBeNull();
+  });
 });
 
 describe("pendingForHiringLead", () => {
@@ -392,5 +410,14 @@ describe("pendingForHiringLead", () => {
       dec("inv-f", "da1", "InvitedToInterview", "Final", "2026-10-01"),
     ];
     expect(ids(pendingForHiringLead(rows))).toEqual(["rej"]);
+  });
+
+  it("tracks each Interviews round's invite independently", () => {
+    const rows = [
+      { ...dec("inv2", "da1", "InvitedToInterview", "Draft", "2026-10-05"), interviewRoundId: "iv2" },
+      { ...dec("inv1-r", "da1", "InvitedToInterview", "Released", "2026-10-02"), interviewRoundId: "interviews" },
+      { ...dec("inv1-f", "da1", "InvitedToInterview", "Final", "2026-10-01"), interviewRoundId: "interviews" },
+    ];
+    expect(ids(pendingForHiringLead(rows))).toEqual(["inv2"]);
   });
 });

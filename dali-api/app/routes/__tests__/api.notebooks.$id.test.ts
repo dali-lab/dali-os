@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/auth", () => ({ requireMemberSession: vi.fn() }));
+vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
 vi.mock("~/lib/cors", () => ({
   withCors: (_req: unknown, res: unknown) => res,
   handlePreflight: () => null,
@@ -32,6 +33,7 @@ vi.mock("~/lib/notebooks.server", () => {
 
 import { requireMemberSession } from "~/lib/auth";
 import * as lib from "~/lib/notebooks.server";
+import { logAuditEvent } from "~/lib/audit";
 import { action, loader } from "~/routes/api.notebooks.$id";
 
 const NotebookError = lib.NotebookError;
@@ -114,6 +116,29 @@ describe("POST /api/notebooks/:id", () => {
   it("trash", async () => {
     expect((await post({ intent: "trash" })).status).toBe(200);
     expect(lib.trashNotebook).toHaveBeenCalledWith("nb1", "u1");
+  });
+
+  it("logs merge, dissolve and trash against the notebook being changed", async () => {
+    vi.mocked(lib.mergeNotebooks).mockResolvedValue({ moved: 3 });
+    vi.mocked(lib.dissolveNotebook).mockResolvedValue({ moved: 2 });
+    await post({ intent: "merge-into", targetId: "nb2" });
+    await post({ intent: "dissolve" });
+    await post({ intent: "trash" });
+    expect(vi.mocked(logAuditEvent).mock.calls.map(([e]) => [e.action, e.userId, e.targetId, e.metadata])).toEqual([
+      ["notebook.merge", "u1", "nb1", { intoNotebookId: "nb2", moved: 3 }],
+      ["notebook.dissolve", "u1", "nb1", { moved: 2 }],
+      ["notebook.trash", "u1", "nb1", undefined],
+    ]);
+  });
+
+  it("logs nothing when the notebook change fails or is not an audited intent", async () => {
+    vi.mocked(lib.trashNotebook).mockRejectedValue(new NotebookError("Nope", 403));
+    vi.mocked(lib.mergeNotebooks).mockRejectedValue(new NotebookError("Nope", 400));
+    await post({ intent: "trash" });
+    await post({ intent: "merge-into", targetId: "nb2" });
+    await post({ intent: "new-note" });
+    await post({ intent: "set-template", templatePageId: "t1" });
+    expect(logAuditEvent).not.toHaveBeenCalled();
   });
 
   it("returns the session gate's response when not a member", async () => {

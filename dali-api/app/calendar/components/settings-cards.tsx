@@ -1,36 +1,18 @@
 import { useFetcher } from "react-router";
-import { useConfirmSubmit } from "~/components/ui/dialog";
-import { useEffect, useState, useId } from "react";
-import {
-  CalendarDays,
-  Clock,
-  Shield,
-  Plus,
-  Trash2,
-  ChevronDown,
-  ChevronRight,
-  X,
-  RotateCcw,
-  Building2,
-  Wifi,
-} from "lucide-react";
+import { useEffect, useState } from "react";
+import { Clock, Plus, X, RotateCcw, Building2, Wifi } from "lucide-react";
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
 import { Toggle } from "~/components/ui/Toggle";
 import { Tooltip } from "~/components/ui/floating";
-import { SyncErrorNotice } from "~/calendar/components/SyncErrorNotice";
 import {
   defaultWorkingHours,
   DEFAULT_WORK_START_MIN,
   DEFAULT_WORK_END_MIN,
 } from "~/calendar/lib/calendar-defaults";
+import { pendingForm } from "~/calendar/lib/fetcher-pending";
 import { DAY_LABELS } from "~/calendar/lib/event-block";
-import type {
-  WhDay,
-  SubCalendarDTO,
-  CalendarLinkDTO,
-  LoaderData,
-} from "~/calendar/lib/types";
+import type { CalendarLinkDTO, WhDay } from "~/calendar/lib/types";
 
 /* ------------------------------------------------------------------ */
 /* SectionHeader                                                       */
@@ -60,64 +42,6 @@ export function SectionHeader({
       </div>
       {action}
     </div>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/* CalendarIntegrationsCard                                            */
-/* ------------------------------------------------------------------ */
-
-export function CalendarIntegrationsCard({
-  links,
-  ingestionError,
-  generalCalendar,
-}: {
-  links: CalendarLinkDTO[];
-  ingestionError: string | null;
-  generalCalendar: LoaderData["generalCalendar"];
-}) {
-  const { card, cardPad, bodyText, heading, headingIcon, quietBtn } = useOsChrome();
-  return (
-    <section>
-      <div className={cn("flex items-center justify-between", "mb-4")}>
-        <h2 className={heading}>
-          <CalendarDays className={headingIcon} />
-          Calendar Integrations
-        </h2>
-        {/* `<a target="_top">` — Google's auth page sends X-Frame-Options: DENY, so
-            it can't render inside the workspace iframe. Break out to the top window. */}
-        <a
-          href="/oauth/calendar/google/start"
-          target="_top"
-          rel="noopener"
-          className={quietBtn}
-        >
-          <Plus className="w-3.5 h-3.5" />
-          Add Google Account
-        </a>
-      </div>
-      {ingestionError && (
-        <div className="bg-destructive/10 border border-destructive/30 text-destructive text-xs rounded-md px-3 py-2 mb-2">
-          Couldn't refresh external events: {ingestionError}
-        </div>
-      )}
-      {generalCalendar === "missing" && <GeneralCalendarPrompt links={links} />}
-      {links.length > 0 && (
-        <p className={cn(bodyText, "mb-3 text-xs")}>
-          These control which calendars <strong>feed into DALI</strong> — their events and your
-          availability. To just hide a calendar on the grid, use <strong>Calendars ▾</strong> on the
-          calendar.
-        </p>
-      )}
-      <div className="flex flex-col gap-3">
-        {links.length === 0 && (
-          <div className={cn(card, cardPad, bodyText)}>No external calendars connected.</div>
-        )}
-        {links.map((l) => (
-          <CalendarLinkBlock key={l.id} link={l} />
-        ))}
-      </div>
-    </section>
   );
 }
 
@@ -189,82 +113,6 @@ export function GeneralCalendarPrompt({ links }: { links: CalendarLinkDTO[] }) {
 }
 
 /* ------------------------------------------------------------------ */
-/* CalendarLinkBlock                                                   */
-/* ------------------------------------------------------------------ */
-
-function CalendarLinkBlock({ link }: { link: CalendarLinkDTO }) {
-  const { card, bodyText } = useOsChrome();
-  const removeFetcher = useFetcher();
-  const confirmSubmit = useConfirmSubmit();
-  const [open, setOpen] = useState(false);
-  const bodyId = useId();
-  const Chevron = open ? ChevronDown : ChevronRight;
-  return (
-    <div
-      className={cn(
-        "overflow-hidden",
-        card,
-      )}
-    >
-      <div className="flex items-center justify-between bg-os-accent/10 pr-3">
-        <button
-          type="button"
-          onClick={() => setOpen((o) => !o)}
-          aria-expanded={open}
-          aria-controls={bodyId}
-          className="flex min-w-0 flex-1 items-center gap-2 px-3 py-2 text-left"
-        >
-          <Chevron className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
-          <GoogleIcon />
-          <span className="font-semibold text-sm text-foreground truncate">
-            {link.displayName ?? link.externalEmail}
-          </span>
-          {!open && link.syncError && (
-            <span className="flex-shrink-0 text-[11px] text-destructive">Sync error</span>
-          )}
-        </button>
-        <removeFetcher.Form
-          method="post"
-          onSubmit={confirmSubmit({
-            title: `Disconnect ${link.externalEmail}?`,
-            description:
-              "Removes its events, availability, and any calendars you create there.",
-            tone: "destructive",
-            confirmLabel: "Disconnect",
-          })}
-        >
-          <input type="hidden" name="intent" value="remove-calendar-link" />
-          <input type="hidden" name="linkId" value={link.id} />
-          <Tooltip content={`Disconnect ${link.externalEmail}`}>
-            <button
-              type="submit"
-              aria-label={`Disconnect ${link.externalEmail}`}
-              className="p-1 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-md transition-colors"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-            </button>
-          </Tooltip>
-        </removeFetcher.Form>
-      </div>
-      {open && (
-        <div id={bodyId} className="px-3 py-3 flex flex-col gap-2">
-          <SyncErrorNotice syncError={link.syncError} />
-          {link.subCalendars === null ? (
-            <div className={cn(bodyText, "italic")}>Couldn't load this account's calendars.</div>
-          ) : link.subCalendars.length === 0 ? (
-            <div className={cn(bodyText, "italic")}>No calendars found.</div>
-          ) : (
-            link.subCalendars.map((cal) => (
-              <SubCalendarRow key={cal.id} linkId={link.id} cal={cal} />
-            ))
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-/* ------------------------------------------------------------------ */
 /* GoogleIcon                                                          */
 /* ------------------------------------------------------------------ */
 
@@ -280,61 +128,22 @@ function GoogleIcon() {
 }
 
 /* ------------------------------------------------------------------ */
-/* SubCalendarRow                                                      */
-/* ------------------------------------------------------------------ */
-
-function SubCalendarRow({ linkId, cal }: { linkId: string; cal: SubCalendarDTO }) {
-  const fetcher = useFetcher();
-  const pending = fetcher.formData;
-  const enabled = pending ? pending.get("enabled") === "true" : cal.enabled;
-  return (
-    <button
-      type="button"
-      onClick={() =>
-        fetcher.submit(
-          {
-            intent: "toggle-sub-calendar",
-            linkId,
-            calendarId: cal.id,
-            enabled: String(!enabled),
-          },
-          { method: "post" },
-        )
-      }
-      className="flex items-center justify-between text-left hover:bg-muted/50 rounded-md px-1 py-1 transition-colors"
-    >
-      <div className="flex items-center gap-2 min-w-0">
-        <span
-          className="w-2 h-2 rounded-full flex-shrink-0"
-          style={{ backgroundColor: cal.color ?? "var(--os-accent)" }}
-        />
-        <span className="text-sm text-foreground truncate">{cal.summary}</span>
-        {cal.primary && (
-          <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
-            Primary
-          </span>
-        )}
-      </div>
-      <span
-        className={`w-5 h-5 rounded-md border flex items-center justify-center transition-colors flex-shrink-0 ${
-          enabled
-            ? "bg-os-accent border-os-accent text-os-bg"
-            : "border-border bg-background"
-        }`}
-      >
-        {enabled && (
-          <svg viewBox="0 0 16 16" className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="3">
-            <path d="M3 8.5l3.5 3.5L13 5" />
-          </svg>
-        )}
-      </span>
-    </button>
-  );
-}
-
-/* ------------------------------------------------------------------ */
 /* WorkingHoursCard                                                    */
 /* ------------------------------------------------------------------ */
+
+const seedFields = () => ({
+  intent: "seed-working-hours",
+  days: JSON.stringify(
+    defaultWorkingHours().map((d) => ({
+      dayOfWeek: d.dayOfWeek,
+      segments: d.segments.map((s) => ({
+        startMinute: s.startMinute,
+        endMinute: s.endMinute,
+        location: s.location,
+      })),
+    })),
+  ),
+});
 
 export function WorkingHoursCard({
   workingHours,
@@ -381,24 +190,17 @@ export function WorkingHoursCard({
       : pendingToggleIntent === "reset-working-hours"
         ? false
         : hasPersisted);
+  const seeding = [resetFetcher, toggleFetcher].some(
+    (f) => pendingForm(f)?.get("intent") === "seed-working-hours",
+  );
+  const shownHours = seeding ? defaultWorkingHours() : workingHours;
   const toggleBusy = toggleFetcher.state !== "idle" || resetFetcher.state !== "idle";
 
   const turnOn = () => {
     setOptimisticEnabled(true);
     // Persist the full Mon–Fri 9–5 default in one shot so the editor opens with
     // sensible values and every day has a real row.
-    const days = defaultWorkingHours().map((d) => ({
-      dayOfWeek: d.dayOfWeek,
-      segments: d.segments.map((s) => ({
-        startMinute: s.startMinute,
-        endMinute: s.endMinute,
-        location: s.location,
-      })),
-    }));
-    toggleFetcher.submit(
-      { intent: "seed-working-hours", days: JSON.stringify(days) },
-      { method: "post" },
-    );
+    toggleFetcher.submit(seedFields(), { method: "post" });
   };
   const turnOff = () => {
     setOptimisticEnabled(false);
@@ -427,18 +229,7 @@ export function WorkingHoursCard({
                   // Re-seed the default week rather than wiping to "off" — this
                   // button resets hours, it doesn't disable the feature.
                   e.preventDefault();
-                  const days = defaultWorkingHours().map((d) => ({
-                    dayOfWeek: d.dayOfWeek,
-                    segments: d.segments.map((s) => ({
-                      startMinute: s.startMinute,
-                      endMinute: s.endMinute,
-                      location: s.location,
-                    })),
-                  }));
-                  resetFetcher.submit(
-                    { intent: "seed-working-hours", days: JSON.stringify(days) },
-                    { method: "post" },
-                  );
+                  resetFetcher.submit(seedFields(), { method: "post" });
                 }}
               >
                 <Tooltip content="Reset working hours to defaults">
@@ -465,8 +256,8 @@ export function WorkingHoursCard({
       </div>
       {enabled && (
         <div className={cn(card, cardPad, "flex flex-col gap-2")}>
-          {workingHours.map((d) => (
-            <DayRow key={d.dayOfWeek} day={d} allDays={workingHours} />
+          {shownHours.map((d) => (
+            <DayRow key={d.dayOfWeek} day={d} locked={toggleBusy} />
           ))}
         </div>
       )}
@@ -480,7 +271,9 @@ export function WorkingHoursCard({
 
 type LocalSegment = { startMinute: number; endMinute: number; location: "InPerson" | "Remote" };
 
-function DayRow({ day, allDays }: { day: WhDay; allDays: WhDay[] }) {
+/** `locked`: the week is being seeded or reset, and an edit sent now could land before it
+ *  or be wiped by it. */
+function DayRow({ day, locked }: { day: WhDay; locked: boolean }) {
   const fetcher = useFetcher();
   // Stick the last submitted segments until the loader catches up — formData
   // alone clears a frame early and the day checkbox / hours twitch back.
@@ -488,14 +281,11 @@ function DayRow({ day, allDays }: { day: WhDay; allDays: WhDay[] }) {
   const pending = fetcher.formData;
   const pendingSegments: LocalSegment[] | null = (() => {
     if (!pending) return null;
-    const raw = pending.get("days");
+    if (pending.get("intent") !== "set-working-segments") return null;
+    const raw = pending.get("segments");
     if (typeof raw !== "string") return null;
     try {
-      const parsed = JSON.parse(raw) as {
-        dayOfWeek: number;
-        segments: LocalSegment[];
-      }[];
-      return parsed.find((d) => d.dayOfWeek === day.dayOfWeek)?.segments ?? [];
+      return JSON.parse(raw) as LocalSegment[];
     } catch {
       return null;
     }
@@ -527,27 +317,16 @@ function DayRow({ day, allDays }: { day: WhDay; allDays: WhDay[] }) {
     pendingSegments ?? optimisticSegments ?? loaderSegments;
 
   const enabled = segments.length > 0;
-  const busy = fetcher.state !== "idle";
+  const busy = fetcher.state !== "idle" || locked;
 
-  // Persist the whole week every time so a day that currently has no DB row
-  // (e.g. an unsaved default) isn't dropped by the loader's "unlisted ⇒ empty"
-  // rule. `next` replaces this day's segments; other days carry through as-is.
   const submitSegments = (next: LocalSegment[]) => {
     setOptimisticSegments(next);
-    const days = allDays.map((d) =>
-      d.dayOfWeek === day.dayOfWeek
-        ? { dayOfWeek: d.dayOfWeek, segments: next }
-        : {
-            dayOfWeek: d.dayOfWeek,
-            segments: d.segments.map((s) => ({
-              startMinute: s.startMinute,
-              endMinute: s.endMinute,
-              location: s.location,
-            })),
-          },
-    );
     fetcher.submit(
-      { intent: "seed-working-hours", days: JSON.stringify(days) },
+      {
+        intent: "set-working-segments",
+        dayOfWeek: String(day.dayOfWeek),
+        segments: JSON.stringify(next),
+      },
       { method: "post" },
     );
   };
@@ -586,6 +365,7 @@ function DayRow({ day, allDays }: { day: WhDay; allDays: WhDay[] }) {
       <button
         type="button"
         onClick={toggleEnabled}
+        disabled={busy}
         className={`mt-1.5 w-4 h-4 rounded border flex items-center justify-center transition-colors flex-shrink-0 ${
           enabled ? "bg-os-accent border-os-accent text-os-bg" : "border-border bg-background"
         }`}
@@ -741,60 +521,3 @@ function LocButton({ active, onClick, icon }: { active: boolean; onClick: () => 
     </button>
   );
 }
-
-/* ------------------------------------------------------------------ */
-/* EventBuffersCard                                                    */
-/* ------------------------------------------------------------------ */
-
-export function EventBuffersCard({ bufferMin }: { bufferMin: number }) {
-  const { card, cardPad, heading, headingIcon } = useOsChrome();
-  const fetcher = useFetcher();
-  const pending = fetcher.formData;
-  const selectedMin = pending ? Number(pending.get("defaultEventBufferMin")) : bufferMin;
-  const options: { label: string; value: number }[] = [
-    { label: "None", value: 0 },
-    { label: "5m", value: 5 },
-    { label: "10m", value: 10 },
-    { label: "15m", value: 15 },
-    { label: "30m", value: 30 }
-  ];
-  return (
-    <section>
-      <h2 className={cn(heading, "mb-4")}>
-        <Shield className={headingIcon} />
-        Event Buffers
-      </h2>
-      <div className={cn(card, cardPad)}>
-        <div className="flex flex-wrap gap-2">
-          {options.map((o) => (
-            <button
-              key={o.value}
-              type="button"
-              // The fill is the only thing that says which buffer is on now
-              // that the sentence under the row is gone.
-              aria-pressed={selectedMin === o.value}
-              onClick={() =>
-                fetcher.submit(
-                  { intent: "set-event-buffer", defaultEventBufferMin: String(o.value) },
-                  { method: "post" },
-                )
-              }
-              className={cn(
-                "px-3 py-1.5 text-xs font-semibold transition-colors",
-                "rounded-full",
-                selectedMin === o.value
-                  ? // The os design marks a chosen segment with the container
-                    // fill, as the People directory's Active/Alumni switch does.
-                    "bg-os-container text-foreground"
-                  : "bg-os-well text-os-grey hover:text-foreground",
-              )}
-            >
-              {o.label}
-            </button>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
-

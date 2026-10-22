@@ -56,6 +56,8 @@ export async function delibsQualifier(
   return {
     id: { in: movedOn },
     ...NO_OUTCOME,
-    ...(round.afterInterviews && { interviews: { some: { status: "Completed" } } }),
+    ...(round.afterInterviewRoundId && {
+      interviews: { some: { status: "Completed", interviewRoundId: round.afterInterviewRoundId } },
+    }),
   };
 }

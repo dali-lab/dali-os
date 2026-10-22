@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Link } from "react-router";
-import { ListChecks } from "lucide-react";
+import { ListChecks, Plus } from "lucide-react";
 import { Avatar } from "~/components/ui/Avatar";
 import { Checkbox } from "~/components/ui/Checkbox";
 import { DateField } from "~/components/ui/DateField";
@@ -9,7 +9,7 @@ import { Combobox, Tooltip, type SelectOption } from "~/components/ui/floating";
 import { cn } from "~/lib/cn";
 import { useActionItemDraft } from "./action-item-draft";
 import { actionItemMatchesBlock } from "./enhance-plan";
-import { contentOf, findBlock, frameThrottle, inBounds, overlayBounds } from "./block-dom";
+import { contentOf, findBlock, frameThrottle, overlayHost, toHost, type HostBox } from "./block-dom";
 import { useBlockStyleRules } from "./block-style-rules";
 import { chipSpaceCss, NARROW_BREAKPOINT } from "./enhance-rules";
 import { DUR, POP_FRAMES, animate } from "./motion";
@@ -23,7 +23,7 @@ const CHIP_BASE = "h-7 rounded-full border px-2.5 text-xs font-medium";
 const CHIP_CLASS = cn(CHIP_BASE, "border-border bg-card text-foreground");
 const UNMATCHED_CLASS = cn(CHIP_BASE, "border-dashed border-os-amber/60 bg-os-amber/10 text-foreground");
 
-type Placement = { index: number; id: string; visible: boolean; box: { top: number; bottom: number; left: number; right: number } };
+type Placement = { index: number; id: string; box: HostBox; fromRight: number };
 type Size = { width: number; height: number };
 
 function samePlacements(a: Placement[], b: Placement[]): boolean {
@@ -31,7 +31,7 @@ function samePlacements(a: Placement[], b: Placement[]): boolean {
     a.length === b.length &&
     a.every((p, i) => {
       const q = b[i]!;
-      return p.index === q.index && p.id === q.id && p.visible === q.visible && p.box.top === q.box.top && p.box.bottom === q.box.bottom && p.box.left === q.box.left && p.box.right === q.box.right;
+      return p.index === q.index && p.id === q.id && p.fromRight === q.fromRight && p.box.top === q.box.top && p.box.bottom === q.box.bottom && p.box.left === q.box.left && p.box.right === q.box.right;
     })
   );
 }
@@ -157,6 +157,18 @@ function ItemChips({ index, order }: { index: number; order: number }) {
           <PopIn delay={order * DUR.chipStagger + DUR.chipGap}>
             <DueChip index={index} />
           </PopIn>
+          <PopIn delay={order * DUR.chipStagger + 2 * DUR.chipGap}>
+            <button
+              type="button"
+              onClick={() => void draft.createOne(index)}
+              disabled={draft.busy}
+              aria-label={`Add task: ${item.text}`}
+              className={cn(CHIP_BASE, "inline-flex items-center gap-1 border-os-accent/40 bg-os-accent/10 text-os-accent hover:bg-os-accent/20 disabled:opacity-50")}
+            >
+              <Plus className="h-3.5 w-3.5" aria-hidden />
+              Add task
+            </button>
+          </PopIn>
         </>
       ) : (
         <span className="text-xs text-muted-foreground">No task</span>
@@ -242,7 +254,9 @@ export function ActionItemChips({ rec, getRoot }: { rec: UseMeetingRecording; ge
       const blocks = (recRef.current.getNoteState?.()?.blocks ?? []).filter((b) => b.type === "checkListItem");
       const used = new Set<string>();
       const next: Placement[] = [];
-      const bounds = overlayBounds(root!);
+      const host = overlayHost(root!);
+      if (!host) return;
+      const hostRect = host.getBoundingClientRect();
       for (let index = 0; index < items.length; index++) {
         const block = blocks.find((b) => !used.has(b.id) && actionItemMatchesBlock(items[index]!.text, b.text));
         if (!block) continue;
@@ -251,8 +265,8 @@ export function ActionItemChips({ rec, getRoot }: { rec: UseMeetingRecording; ge
         used.add(block.id);
         const content = contentOf(el);
         resize?.observe(content);
-        const r = content.getBoundingClientRect();
-        next.push({ index, id: block.id, visible: inBounds(r, bounds), box: { top: r.top, bottom: r.bottom, left: r.left, right: r.right } });
+        const box = toHost(content.getBoundingClientRect(), hostRect);
+        next.push({ index, id: block.id, box, fromRight: hostRect.width - box.right + 8 });
       }
       setPlacements((prev) => (samePlacements(prev, next) ? prev : next));
       setNarrow(window.innerWidth < NARROW_BREAKPOINT);
@@ -264,37 +278,35 @@ export function ActionItemChips({ rec, getRoot }: { rec: UseMeetingRecording; ge
     measure();
     const mutation = new MutationObserver(frame.run);
     mutation.observe(root, { childList: true, subtree: true, characterData: true });
-    window.addEventListener("scroll", frame.run, true);
     window.addEventListener("resize", frame.run);
     return () => {
       frame.cancel();
       resize?.disconnect();
       mutation.disconnect();
-      window.removeEventListener("scroll", frame.run, true);
       window.removeEventListener("resize", frame.run);
     };
   }, [root, itemsKey, rec.noteVersion]);
 
-  if (!draft || !root || placements.length === 0) return null;
+  const host = root ? overlayHost(root) : null;
+  if (!draft || !host || placements.length === 0) return null;
 
   return createPortal(
     <>
-      {placements.map(({ index, box, visible }, order) => (
+      {placements.map(({ index, box, fromRight }, order) => (
         <ChipGroup
           key={index}
           index={index}
           onSize={reportSize}
-          style={{
-            ...(narrow
-              ? { position: "fixed", top: box.bottom - 32, left: box.left + 28 }
-              : { position: "fixed", top: box.top + 1, right: window.innerWidth - box.right + 8 }),
-            visibility: visible ? undefined : "hidden",
-          }}
+          style={
+            narrow
+              ? { position: "absolute", top: box.bottom - 32, left: box.left + 28 }
+              : { position: "absolute", top: box.top + 1, right: fromRight }
+          }
         >
           <ItemChips index={index} order={order} />
         </ChipGroup>
       ))}
     </>,
-    document.body,
+    host,
   );
 }

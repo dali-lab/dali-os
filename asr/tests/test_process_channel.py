@@ -91,3 +91,88 @@ def test_channel_audio_seconds_sums_chunk_counts():
         max_speakers=None,
     )
     assert channel_audio_seconds(channel) == 3 * 20
+
+
+def _one_segment(urls):
+    return Channel(
+        channel="mic",
+        segments=(Segment(start_seconds=0.0, chunks=tuple(Chunk(seq=i, url=u) for i, u in enumerate(urls))),),
+    )
+
+
+def test_chunks_are_fetched_concurrently():
+    import threading
+
+    barrier = threading.Barrier(3, timeout=5)
+
+    def fetch(url):
+        barrier.wait()
+        return b"\x00\x00"
+
+    process_channel(_one_segment(["a", "b", "c"]), fetch, lambda pcm: [], lambda pcm, n: [])
+
+
+def test_chunks_finishing_out_of_order_assemble_in_seq_order():
+    import threading
+
+    second_done = threading.Event()
+    seen = []
+
+    def fetch(url):
+        if url == "first":
+            second_done.wait(timeout=5)
+            return b"\x01\x00"
+        second_done.set()
+        return b"\x02\x00"
+
+    def fake_transcribe(pcm):
+        seen.append(pcm)
+        return []
+
+    process_channel(_one_segment(["first", "second"]), fetch, fake_transcribe, lambda pcm, n: [])
+
+    assert seen == [b"\x01\x00\x02\x00"]
+
+
+def test_chunks_land_in_their_own_segment():
+    seen = []
+    channel = Channel(
+        channel="mic",
+        segments=(
+            Segment(start_seconds=0.0, chunks=(Chunk(seq=0, url="s0"),)),
+            Segment(start_seconds=50.0, chunks=(Chunk(seq=0, url="s1"),)),
+        ),
+    )
+    process_channel(
+        channel,
+        lambda url: b"\x01\x00" if url == "s0" else b"\x02\x00",
+        lambda pcm: seen.append(pcm[:2]) or [],
+        lambda pcm, n: [],
+    )
+    assert seen == [b"\x01\x00", b"\x02\x00"]
+
+
+def test_a_failed_fetch_fails_the_channel():
+    import pytest
+
+    def fetch(url):
+        if url == "b":
+            raise RuntimeError("chunk fetch failed: HTTP 500")
+        return b"\x00\x00"
+
+    with pytest.raises(RuntimeError, match="HTTP 500"):
+        process_channel(_one_segment(["a", "b", "c"]), fetch, lambda pcm: [], lambda pcm, n: [])
+
+
+def test_timings_report_each_stage():
+    ticks = iter([0.0, 2.0, 2.0, 5.0, 5.0, 11.0])
+    timings = {}
+    process_channel(
+        _one_segment(["a"]),
+        lambda url: b"\x00\x00",
+        lambda pcm: [],
+        lambda pcm, n: [],
+        timings=timings,
+        clock=lambda: next(ticks),
+    )
+    assert timings == {"fetch_s": 2.0, "transcribe_s": 3.0, "diarize_s": 6.0}

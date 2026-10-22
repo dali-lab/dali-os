@@ -6,8 +6,10 @@ import type { TimeEntryDTO } from "~/calendar/lib/types";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
+const submits: { key: string; fields: Record<string, string>; options: unknown }[] = [];
 vi.mock("react-router", () => ({
-  useRevalidator: () => ({ revalidate: vi.fn() }),
+  useSubmit: () => (fields: Record<string, string>, options: { fetcherKey: string }) =>
+    submits.push({ key: options.fetcherKey, fields, options }),
   useLocation: () => ({ pathname: "/calendar" }),
 }));
 vi.mock("~/components/os-chrome", () => ({
@@ -45,20 +47,21 @@ const entry = {
 
 let container: HTMLDivElement;
 let root: Root;
+const onClose = vi.fn();
 
-function mount() {
+function mount(over: Partial<TimeEntryDTO> = {}) {
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
   act(() =>
     root.render(
       createElement(TimesheetEditPopover, {
-        entry,
+        entry: { ...entry, ...over },
         startLocal: "2026-10-12T09:00",
         endLocal: "2026-10-12T10:00",
         myRoles: [],
         timezone: "America/New_York",
-        onClose: vi.fn(),
+        onClose,
       }),
     ),
   );
@@ -71,7 +74,8 @@ const deleteButton = () =>
 afterEach(() => {
   act(() => root.unmount());
   container.remove();
-  vi.stubGlobal("fetch", undefined);
+  submits.length = 0;
+  onClose.mockClear();
 });
 
 describe("TimesheetEditPopover size", () => {
@@ -100,9 +104,7 @@ describe("TimesheetEditPopover delete", () => {
     expect(card().className).not.toContain("invisible");
   });
 
-  it("deletes the entry once the confirm is accepted", async () => {
-    const fetchMock = vi.fn().mockResolvedValue({ ok: true });
-    vi.stubGlobal("fetch", fetchMock);
+  it("sends the delete as a background write and closes once the confirm is accepted", async () => {
     mount();
 
     await act(async () => {
@@ -112,9 +114,55 @@ describe("TimesheetEditPopover delete", () => {
       settleConfirm(true);
     });
 
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    const body = fetchMock.mock.calls[0][1].body as FormData;
-    expect(body.get("intent")).toBe("delete-time-entry");
-    expect(body.get("id")).toBe("t1");
+    expect(submits).toHaveLength(1);
+    expect(submits[0]!.fields).toEqual({ intent: "delete-time-entry", id: "t1" });
+    expect(submits[0]!.options).toMatchObject({ method: "post", action: "/calendar", navigate: false });
+    expect(submits[0]!.key).toMatch(/^cal:bg:delete-time-entry:/);
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("sends nothing and stays open when the confirm is declined", async () => {
+    mount();
+
+    await act(async () => {
+      deleteButton().click();
+    });
+    await act(async () => {
+      settleConfirm(false);
+    });
+
+    expect(submits).toEqual([]);
+    expect(onClose).not.toHaveBeenCalled();
+  });
+});
+
+describe("TimesheetEditPopover save", () => {
+  it("is blocked without a role, so nothing is sent", async () => {
+    mount();
+    const save = Array.from(container.querySelectorAll("button")).find((b) => b.textContent === "Save")!;
+    expect(save.disabled).toBe(true);
+    await act(async () => {
+      container.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    });
+    expect(submits).toEqual([]);
+  });
+
+  it("sends the edit as a background write and closes at once", async () => {
+    mount({ assignmentType: "Project" as TimeEntryDTO["assignmentType"], roleRefId: "r1" });
+    await act(async () => {
+      container.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    });
+
+    expect(submits).toHaveLength(1);
+    expect(submits[0]!.key).toMatch(/^cal:bg:update-time-entry:/);
+    expect(submits[0]!.fields).toMatchObject({
+      intent: "update-time-entry",
+      id: "t1",
+      hours: "1",
+      assignmentType: "Project",
+      roleRefId: "r1",
+      note: "Standup",
+    });
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 });

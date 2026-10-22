@@ -3,6 +3,7 @@ import { Form, Link, redirect, useLoaderData } from "react-router";
 import type { Route } from "./+types/lead";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
+import { logAuditEvent } from "~/lib/audit";
 import { redirectToLogin } from "~/lib/login-next";
 import { isCore, isAdmin, getUserRoles, currentTerm } from "~/lib/roles";
 import { ChevronRight, ChevronDown, Plus } from "lucide-react";
@@ -125,6 +126,14 @@ export async function action({ request }: Route.ActionArgs) {
   if (APPLICANT_GROUP_CONFIG[applicants].domainStrategy === "single-core-domain") {
     await linkCoreDomain(cycle.id, applicants);
   }
+
+  await logAuditEvent({
+    action: "cycle.create",
+    userId: auth.user.sub,
+    targetId: cycle.id,
+    metadata: { name, applicants, termId: term?.id ?? null },
+    request,
+  });
 
   return redirect(`/hiring/lead/cycle/${cycle.id}`);
 }

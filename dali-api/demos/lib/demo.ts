@@ -1,5 +1,7 @@
+import { writeFile } from 'node:fs/promises';
 import type { Locator, Page } from '@playwright/test';
 import { test as base } from '../../e2e/fixtures';
+import { DEMO_NAME_FILE, demoBaseName } from './encode';
 
 export { expect } from '../../e2e/fixtures';
 export { setFeatureFlag } from '../../e2e/helpers';
@@ -136,7 +138,8 @@ export class Stage {
 }
 
 export const test = base.extend<{ stage: Stage }>({
-  page: async ({ page, baseURL }, use) => {
+  page: async ({ page, baseURL }, use, testInfo) => {
+    await writeFile(testInfo.outputPath(DEMO_NAME_FILE), demoBaseName(testInfo.file));
     await page.addInitScript(CURSOR_SCRIPT);
     // Keep in sync with DISMISS_KEY in app/components/DesktopBanner.tsx.
     await page.addInitScript(() => {

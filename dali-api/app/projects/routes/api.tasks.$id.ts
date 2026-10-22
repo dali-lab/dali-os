@@ -2,6 +2,7 @@ import type { Route } from "./+types/api.tasks.$id";
 import { prisma, Prisma } from "~/lib/db";
 import { requireProjectEditAccess } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
+import { logAuditEvent } from "~/lib/audit";
 import { fullName } from "~/lib/display";
 import { syncIssueForTask } from "../lib/github-task-sync";
 import { notifyTaskAssigned } from "../lib/task-notifications.server";
@@ -153,7 +154,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   }
   const task = await prisma.task.findUnique({
     where: { id: params.id },
-    select: { id: true, githubIssueNumber: true, projectId: true, epicId: true, storyId: true },
+    select: { id: true, title: true, githubIssueNumber: true, projectId: true, epicId: true, storyId: true },
   });
   if (!task) {
     return withCors(request, Response.json({ error: "Task not found" }, { status: 404 }));
@@ -170,6 +171,13 @@ export async function action({ request, params }: Route.ActionArgs) {
       prisma.taskComment.deleteMany({ where: { taskId: params.id } }),
       prisma.task.delete({ where: { id: params.id } }),
     ]);
+    await logAuditEvent({
+      action: "task.delete",
+      userId: gate.auth.user.sub,
+      targetId: params.id,
+      metadata: { title: task.title, projectId: task.projectId },
+      request,
+    });
     return withCors(request, Response.json({ ok: true }));
   }
 

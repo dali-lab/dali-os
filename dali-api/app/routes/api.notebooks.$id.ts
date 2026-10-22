@@ -2,6 +2,7 @@ import type { Route } from "./+types/api.notebooks.$id";
 import { z } from "zod";
 import { requireMemberSession } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
+import { logAuditEvent } from "~/lib/audit";
 import { parseJson } from "~/lib/validate";
 import {
   addToNotebook,
@@ -62,12 +63,31 @@ export async function action({ request, params }: Route.ActionArgs) {
       case "add-page":
         await addToNotebook(body.pageId, notebookId, actorId);
         return withCors(request, Response.json({ ok: true }));
-      case "merge-into":
-        return withCors(request, Response.json({ ok: true, ...(await mergeNotebooks(notebookId, body.targetId, actorId)) }));
-      case "dissolve":
-        return withCors(request, Response.json({ ok: true, ...(await dissolveNotebook(notebookId, actorId)) }));
+      case "merge-into": {
+        const result = await mergeNotebooks(notebookId, body.targetId, actorId);
+        await logAuditEvent({
+          action: "notebook.merge",
+          userId: actorId,
+          targetId: notebookId,
+          metadata: { intoNotebookId: body.targetId, moved: result.moved },
+          request,
+        });
+        return withCors(request, Response.json({ ok: true, ...result }));
+      }
+      case "dissolve": {
+        const result = await dissolveNotebook(notebookId, actorId);
+        await logAuditEvent({
+          action: "notebook.dissolve",
+          userId: actorId,
+          targetId: notebookId,
+          metadata: { moved: result.moved },
+          request,
+        });
+        return withCors(request, Response.json({ ok: true, ...result }));
+      }
       case "trash":
         await trashNotebook(notebookId, actorId);
+        await logAuditEvent({ action: "notebook.trash", userId: actorId, targetId: notebookId, request });
         return withCors(request, Response.json({ ok: true }));
     }
   } catch (err) {

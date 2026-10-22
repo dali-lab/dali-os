@@ -1,13 +1,16 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/db");
+vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
 
 import { prisma } from "~/lib/db";
+import { logAuditEvent } from "~/lib/audit";
 import {
   MissingEmailTemplateError,
   getEmailTemplate,
   listEmailTemplates,
   renderEmailTemplate,
+  rollbackEmailTemplate,
   saveEmailTemplate,
 } from "~/email/lib/templates.server";
 
@@ -90,6 +93,68 @@ describe("saveEmailTemplate", () => {
       where: { key: SKIPPING },
     });
     expect(mockPrisma.emailTemplate.upsert).not.toHaveBeenCalled();
+  });
+});
+
+describe("email template audit trail", () => {
+  const request = new Request("http://localhost/admin/email");
+
+  it("logs a save with the key, the new version number and no copy", async () => {
+    mockPrisma.emailTemplateVersion.findFirst.mockResolvedValue({ versionNumber: 4 });
+
+    await saveEmailTemplate(BLOCKING, { subject: "Private subject", body: "Private body" }, "u1", request);
+
+    const event = vi.mocked(logAuditEvent).mock.calls[0][0];
+    expect(event).toMatchObject({
+      action: "email.template.save",
+      userId: "u1",
+      targetId: BLOCKING,
+      metadata: { cleared: false, versionNumber: 5 },
+      request,
+    });
+    expect(JSON.stringify(event.metadata)).not.toContain("Private");
+  });
+
+  it("logs turning an email off", async () => {
+    await saveEmailTemplate(SKIPPING, { subject: "", body: "" }, "u1");
+    expect(logAuditEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "email.template.save",
+        targetId: SKIPPING,
+        metadata: { cleared: true, versionNumber: null },
+      }),
+    );
+  });
+
+  it("logs nothing when a save changes nothing", async () => {
+    mockPrisma.emailTemplate.findUnique.mockResolvedValue({ subject: "s", body: "b" });
+    await saveEmailTemplate(BLOCKING, { subject: "s", body: "b" }, "u1");
+    expect(logAuditEvent).not.toHaveBeenCalled();
+  });
+
+  it("logs a rollback once, as a rollback and not also as a save", async () => {
+    mockPrisma.emailTemplateVersion.findFirst
+      .mockResolvedValueOnce({ subject: "Old", body: "Older", versionNumber: 2 })
+      .mockResolvedValueOnce({ versionNumber: 6 });
+
+    await rollbackEmailTemplate(BLOCKING, "ver-2", "u1", request);
+
+    expect(logAuditEvent).toHaveBeenCalledTimes(1);
+    expect(logAuditEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "email.template.rollback",
+        userId: "u1",
+        targetId: BLOCKING,
+        metadata: { restoredVersion: 2, versionNumber: 7 },
+        request,
+      }),
+    );
+  });
+
+  it("logs nothing for a rollback to a version that is not of that template", async () => {
+    mockPrisma.emailTemplateVersion.findFirst.mockResolvedValue(null);
+    await expect(rollbackEmailTemplate(BLOCKING, "nope", "u1")).rejects.toThrow();
+    expect(logAuditEvent).not.toHaveBeenCalled();
   });
 });
 

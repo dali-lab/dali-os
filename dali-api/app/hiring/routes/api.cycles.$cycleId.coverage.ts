@@ -5,6 +5,7 @@ import { hasCycleAccess } from "~/lib/roles";
 import { generateCandidateSlots, isInterviewerFree, explainAvailableSlots } from "~/hiring/lib/scheduling";
 import { interviewerCalendars } from "~/hiring/lib/interview-availability.server";
 import { APPLICATION_TZ } from "~/lib/timezone";
+import { FIRST_INTERVIEW_ROUND_ID } from "~/hiring/lib/cycle-timeline";
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
@@ -13,8 +14,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   if (!(await hasCycleAccess(auth.user.sub, params.cycleId!)))
     return Response.json({ error: "Forbidden" }, { status: 403 });
 
+  const roundId = new URL(request.url).searchParams.get("round") ?? FIRST_INTERVIEW_ROUND_ID;
   const config = await prisma.interviewConfig.findUnique({
-    where: { applicationCycleId: params.cycleId },
+    where: { applicationCycleId_interviewRoundId: { applicationCycleId: params.cycleId, interviewRoundId: roundId } },
   });
   if (!config) {
     return Response.json({
@@ -27,7 +29,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   }
 
   const interviewers = await prisma.cycleInterviewer.findMany({
-    where: { applicationCycleId: params.cycleId },
+    where: { applicationCycleId: params.cycleId, interviewRoundId: roundId },
     include: {
       user: { select: { id: true, firstName: true, lastName: true } },
       domain: { select: { name: true } },
@@ -132,7 +134,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   });
   const domains = await Promise.all(
     cycleDomains.map(async (d) => {
-      const availability = await explainAvailableSlots(params.cycleId!, [d.domainId], "in-person");
+      const availability = await explainAvailableSlots(params.cycleId!, roundId, [d.domainId], "in-person");
       return {
         domainId: d.domainId,
         domainName: d.domain.name,

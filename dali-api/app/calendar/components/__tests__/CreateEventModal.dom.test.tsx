@@ -7,8 +7,14 @@ import type { GroupOption, LoaderData } from "~/calendar/lib/types";
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 const showFiledNote = vi.fn();
+const toastError = vi.fn();
+let fetcherData: unknown;
+const onClose = vi.fn();
+const submitBackground = vi.fn();
+vi.mock("~/components/ui/toast", () => ({ useToast: () => ({ error: toastError }) }));
 vi.mock("react-router", () => ({
-  useFetcher: () => ({ state: "idle", data: undefined, submit: vi.fn(), Form: "form" }),
+  useFetcher: () => ({ state: "idle", data: fetcherData, submit: vi.fn(), Form: "form" }),
+  useSubmit: () => submitBackground,
   useRevalidator: () => ({ revalidate: vi.fn() }),
   useNavigate: () => vi.fn(),
 }));
@@ -33,12 +39,22 @@ const group = (over: Partial<GroupOption> & { id: string; name: string }): Group
 const atlas = group({ id: "g-atlas", name: "Atlas", projectId: "p1" });
 const core = group({ id: "g-core", name: "Core", systemKey: "core" });
 
-const loaderData = (groups: GroupOption[]) =>
+const writableCalendar = [
+  {
+    id: "l1",
+    provider: "Google",
+    displayName: "Me",
+    externalEmail: "me@dali.test",
+    subCalendars: [{ id: "c1", summary: "Cal", primary: true, writable: true }],
+  },
+];
+
+const loaderData = (groups: GroupOption[], calendarLinks: unknown[] = []) =>
   ({
     groups,
     mentorPairs: [],
     users: [],
-    calendarLinks: [],
+    calendarLinks,
     myRoles: [],
     currentUserId: "me",
     defaultEventDest: null,
@@ -66,19 +82,24 @@ const createBody = () => {
   return call ? JSON.parse(call[1].body as string) : null;
 };
 
-async function mount(props: { groups: GroupOption[]; initialGroupIds?: string[]; initialUserIds?: string[] }) {
+async function mount(props: {
+  groups: GroupOption[];
+  initialGroupIds?: string[];
+  initialUserIds?: string[];
+  calendarLinks?: unknown[];
+}) {
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
   await act(async () =>
     root.render(
       createElement(CreateEventModal, {
-        data: loaderData(props.groups),
+        data: loaderData(props.groups, props.calendarLinks),
         startLocal: "2026-10-20T10:00",
         endLocal: "2026-10-20T11:00",
         initialGroupIds: props.initialGroupIds,
         initialUserIds: props.initialUserIds,
-        onClose: () => {},
+        onClose,
       }),
     ),
   );
@@ -101,6 +122,9 @@ beforeEach(() => {
   defaultResult = NEW_DEFAULT;
   createResponse = { ok: true, meeting: { id: "m1" }, notifiedCount: 3 };
   showFiledNote.mockClear();
+  toastError.mockClear();
+  onClose.mockClear();
+  fetcherData = undefined;
   fetchMock.mockReset();
   fetchMock.mockImplementation(async (url: string) =>
     String(url).startsWith("/api/notebooks/default")
@@ -227,5 +251,81 @@ describe("CreateEventModal status line", () => {
     await mount({ groups: [atlas], initialGroupIds: ["g-atlas"] });
     await click(submitButton());
     expect(container.querySelector("p.text-os-green")!.textContent).toBe("Meeting created. Notified 1 participant.");
+  });
+});
+
+describe("CreateEventModal after the create", () => {
+  const sleep = (ms: number) => act(async () => void (await new Promise((r) => setTimeout(r, ms))));
+
+  it("keeps Create meeting disabled once the meeting exists", async () => {
+    await mount({ groups: [atlas], initialGroupIds: ["g-atlas"] });
+    await click(submitButton());
+    const submit = container.querySelector<HTMLButtonElement>("button[type='submit']")!;
+    expect(submit.textContent).toBe("Creating…");
+    expect(submit.disabled).toBe(true);
+  });
+
+  it("re-enables Create meeting when the create fails", async () => {
+    fetchMock.mockImplementation(async (url: string) =>
+      String(url).startsWith("/api/notebooks/default")
+        ? { ok: true, json: async () => defaultResult }
+        : { ok: false, status: 500, json: async () => ({ error: "Nope" }) },
+    );
+    await mount({ groups: [atlas], initialGroupIds: ["g-atlas"] });
+    await click(submitButton());
+    expect(container.textContent).toContain("Nope");
+    expect(submitButton().disabled).toBe(false);
+  });
+
+  it("closes itself after a clean create", async () => {
+    await mount({ groups: [atlas], initialGroupIds: ["g-atlas"] });
+    await click(submitButton());
+    await sleep(1300);
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it("warns when the Google invite failed and stays open", async () => {
+    createResponse = { ok: true, meeting: { id: "m1" }, notifiedCount: 2, gcalError: "Calendar is unreachable" };
+    await mount({ groups: [atlas], initialGroupIds: ["g-atlas"] });
+    await click(submitButton());
+    const warning = container.querySelector("[role='alert']")!;
+    expect(warning.textContent).toContain("The Google Calendar invite didn't go out: Calendar is unreachable");
+    await sleep(1300);
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("toasts when the organizer's time entry could not be saved", async () => {
+    fetcherData = { error: "Invalid role" };
+    await mount({ groups: [atlas], initialGroupIds: ["g-atlas"] });
+    expect(toastError).toHaveBeenCalledWith(expect.stringContaining("Invalid role"));
+  });
+});
+
+describe("CreateEventModal plain event", () => {
+  const eventForm = () => container.querySelector("form")!;
+  const submitEvent = () =>
+    act(async () => {
+      eventForm().dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    });
+
+  it("closes as soon as the event is submitted, not once the server has answered", async () => {
+    await mount({ groups: [], calendarLinks: writableCalendar });
+    expect(onClose).not.toHaveBeenCalled();
+
+    await submitEvent();
+
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("sends the event as a background write the page reports on", async () => {
+    submitBackground.mockClear();
+    await mount({ groups: [], calendarLinks: writableCalendar });
+
+    await submitEvent();
+
+    expect(submitBackground).toHaveBeenCalledTimes(1);
+    const [body, options] = submitBackground.mock.calls[0]!;
+    expect((body as FormData).get("intent")).toBe("event-create");
+    expect(options).toMatchObject({ method: "post", navigate: false, fetcherKey: expect.stringMatching(/^cal:bg:event-create:/) });
   });
 });

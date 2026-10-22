@@ -9,6 +9,7 @@ import { notifyExternalInstructorInvite } from "./notifications.server";
 import { createOfferingApplicationForm } from "./application-form.server";
 import type { OfferingStatus, OfferingType } from "~/generated/prisma/client";
 import { isMultiSession, isOfferingType } from "./offering-type";
+import { parseCompletionRule } from "./completion-rule";
 import { APPLICATION_TZ, zonedDateTimeLocalToUtc } from "~/lib/timezone";
 
 // ─── Reads ───────────────────────────────────────────────────────────────────
@@ -462,11 +463,7 @@ export async function runOfferingAction(
     );
     if (dateError) return bad(dateError);
 
-    const createThresholdPct = Number(formData.get("completionThresholdPct"));
-    const createCompletionThreshold =
-      isMultiSession(type) && Number.isFinite(createThresholdPct) && createThresholdPct > 0
-        ? Math.min(100, Math.max(1, createThresholdPct)) / 100
-        : undefined;
+    const createCompletionRule = isMultiSession(type) ? parseCompletionRule(formData) : {};
 
     const offering = await prisma.educationOffering.create({
       data: {
@@ -479,9 +476,7 @@ export async function runOfferingAction(
         // Checkbox is authoritative: absent (unchecked) = RSVP auto-approve.
         requiresReview: formData.get("requiresReview") === "true",
         status: "Draft",
-        ...(createCompletionThreshold !== undefined
-          ? { completionThreshold: createCompletionThreshold }
-          : {}),
+        ...createCompletionRule,
       },
       select: { id: true },
     });
@@ -525,6 +520,7 @@ export async function runOfferingAction(
           requiresReview: true,
           calendarEmail: true,
           completionThreshold: true,
+          completionMinSessions: true,
           registrationOpensAt: true,
           registrationClosesAt: true,
           sessions: {
@@ -564,6 +560,7 @@ export async function runOfferingAction(
           requiresReview: src.requiresReview,
           calendarEmail: src.calendarEmail,
           completionThreshold: src.completionThreshold,
+          completionMinSessions: src.completionMinSessions,
           registrationOpensAt: shiftDate(src.registrationOpensAt),
           registrationClosesAt: shiftDate(src.registrationClosesAt),
           status: "Draft",
@@ -620,13 +617,7 @@ export async function runOfferingAction(
       });
       if (dateError) return bad(dateError);
 
-      // Parse completion threshold for multi-session offerings only; Workshops use a fixed
-      // "≥1 Present" rule so the threshold column is irrelevant for them.
-      const thresholdPct = Number(formData.get("completionThresholdPct"));
-      const completionThreshold =
-        isMultiSession(offering.type) && Number.isFinite(thresholdPct)
-          ? Math.min(100, Math.max(1, thresholdPct)) / 100
-          : undefined;
+      const completionRule = isMultiSession(offering.type) ? parseCompletionRule(formData) : {};
 
       await prisma.educationOffering.update({
         where: { id: offeringId },
@@ -638,7 +629,7 @@ export async function runOfferingAction(
           registrationClosesAt,
           requiresReview: formData.get("requiresReview") === "true",
           calendarEmail: String(formData.get("calendarEmail") ?? "").trim() || null,
-          ...(completionThreshold !== undefined ? { completionThreshold } : {}),
+          ...completionRule,
         },
       });
       await logAuditEvent({

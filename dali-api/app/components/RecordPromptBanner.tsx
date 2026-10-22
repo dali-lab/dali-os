@@ -129,7 +129,12 @@ export function RecordPromptBanner({
               </button>
             }
           >
-            <Menu.Item onSelect={() => onDontSuggest?.()}>Don't suggest recording this meeting</Menu.Item>
+            <Menu.Item
+              onSelect={() => {
+                setDismissed(true);
+                onDontSuggest?.();
+              }}
+            >Don't suggest recording this meeting</Menu.Item>
           </Menu>
         )}
       </div>

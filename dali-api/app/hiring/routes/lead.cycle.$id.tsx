@@ -8,6 +8,7 @@ import type { Route } from "./+types/lead.cycle.$id";
 import { prisma } from "~/lib/db";
 import { recordRouteVisit } from "~/lib/user-pages.server";
 import { requireAuth } from "~/lib/auth";
+import { logAuditEvent } from "~/lib/audit";
 import { redirectToLogin } from "~/lib/login-next";
 import { getUserRoles, isAdmin, isCore, isCycleAdmin } from "~/lib/roles";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
@@ -39,9 +40,12 @@ import {
 import { getCycleProgress } from "~/hiring/lib/cycle-phases.server";
 import { defaultApplicationWindow } from "~/hiring/lib/cycle-phases";
 import {
-  blockKey,
+  openTimelineChange,
+  FIRST_INTERVIEW_ROUND_ID,
   delibRounds,
   hasInterviews as timelineHasInterviews,
+  interviewRoundForTab,
+  interviewRounds as timelineInterviewRounds,
   parseTimeline,
   validateTimeline,
   type Timeline,
@@ -60,8 +64,10 @@ import { PresenceBar } from "~/components/collab/PresenceBar";
 import { renderEmail } from "~/lib/email";
 import {
   CONTINUED_INTEREST_SLOT,
+  LATER_INTERVIEW_INVITE_SLOT,
   TEMPLATE_VARIABLES,
   decisionSlot,
+  releaseSlot,
   notificationSlot,
   lintTemplate,
   type TemplateSlot,
@@ -754,22 +760,18 @@ export async function action({ request, params }: Route.ActionArgs) {
     }
     const invalid = validateTimeline(next);
     if (invalid) return Response.json({ error: invalid }, { status: 400 });
-    // Moving weeks or renaming rounds is fine anytime; adding or removing
-    // blocks changes who gets decided when, so only in Draft.
-    const [stored, latest] = await Promise.all([
+    const [stored, latest, withBoards] = await Promise.all([
       prisma.applicationCycle.findUnique({ where: { id: params.id }, select: { timeline: true } }),
       prisma.applicationCycleStatusUpdate.findFirst({
         where: { applicationCycleId: params.id },
         orderBy: { createdAt: "desc" },
         select: { newStatus: true },
       }),
+      roundsWithBoards(params.id!),
     ]);
-    const shape = (t: Timeline) => t.map(blockKey).join(",");
-    if (
-      (latest?.newStatus ?? "Draft") !== "Draft" &&
-      shape(parseTimeline(stored?.timeline)) !== shape(next)
-    ) {
-      return Response.json({ error: "Rounds and Interviews lock once the cycle opens." }, { status: 409 });
+    if ((latest?.newStatus ?? "Draft") !== "Draft") {
+      const refused = openTimelineChange(parseTimeline(stored?.timeline), next, withBoards);
+      if (refused) return Response.json({ error: refused }, { status: 409 });
     }
     const error = await saveCycleTimeline(params.id, next);
     if (error) return Response.json({ error }, { status: 400 });
@@ -784,8 +786,12 @@ export async function action({ request, params }: Route.ActionArgs) {
             formData.get("domainId") as string,
             auth.user.sub,
             (formData.get("formId") as string) || null,
+            request,
           )
-        : await removeDomainChallenge(formData.get("cdfId") as string, params.id);
+        : await removeDomainChallenge(formData.get("cdfId") as string, params.id, {
+            actorId: auth.user.sub,
+            request,
+          });
     if (refused === "not-draft") {
       return Response.json({ error: "Challenges lock once the cycle opens." }, { status: 409 });
     }
@@ -969,7 +975,8 @@ export async function action({ request, params }: Route.ActionArgs) {
       select: { domainId: true },
     });
     if (!inCycle) return Response.json({ error: "That domain isn't in this cycle." }, { status: 400 });
-    const added = await addDomainMentors(params.id, domainId, role, request);
+    const round = (formData.get("interviewRoundId") as string | null) || undefined;
+    const added = await addDomainMentors(params.id, domainId, role, request, round, auth.user.sub);
     // Nothing added means either no mentors, or all of them already on it.
     const notice =
       added > 0 ? "mentors-added" : (await domainMentorIds(domainId, request)).length ? "mentors-already" : "mentors-none";
@@ -1034,10 +1041,22 @@ export async function action({ request, params }: Route.ActionArgs) {
         return cycleRedirect(request, params.id!);
       }
     }
+    const rubricKey = { domainId_applicationCycleId: { domainId, applicationCycleId: params.id } };
+    const previous = await prisma.domainApplicationCycle.findUnique({
+      where: rubricKey,
+      select: { rubricVersionId: true },
+    });
     await prisma.domainApplicationCycle.upsert({
-      where: { domainId_applicationCycleId: { domainId, applicationCycleId: params.id } },
+      where: rubricKey,
       update: { rubricVersionId },
       create: { domainId, applicationCycleId: params.id, rubricVersionId },
+    });
+    await logAuditEvent({
+      action: "domain.rubric.set",
+      userId: auth.user.sub,
+      targetId: domainId,
+      metadata: { cycleId: params.id, before: previous?.rubricVersionId ?? null, after: rubricVersionId },
+      request,
     });
     return cycleRedirect(request, params.id!);
   }
@@ -1048,7 +1067,11 @@ export async function action({ request, params }: Route.ActionArgs) {
     if (!domainId || confirm !== "true") {
       return cycleRedirect(request, params.id!);
     }
-    const refused = await setDomainReady(params.id!, domainId, intent === "hl-force-mark-ready");
+    const refused = await setDomainReady(params.id!, domainId, intent === "hl-force-mark-ready", {
+      actorId: auth.user.sub,
+      request,
+      forced: true,
+    });
     if (refused) {
       return new Response(JSON.stringify({ error: refused }), { status: 409, headers: { "Content-Type": "application/json" } });
     }
@@ -1550,6 +1573,16 @@ export default function HiringLeadCycleDetails() {
   )
   const tab = resolvePhaseTab(searchParams.get('tab'), phaseTabs, timeline)
   const activeRound = rounds.find(r => `delib:${r.id}` === tab) ?? null
+  // The Interviews round on screen: its own tab, else the first round (whose
+  // roster lives on Review).
+  const activeInterviewRound = interviewRoundForTab(timeline, tab)
+  const viewRoundId = activeInterviewRound?.id ?? FIRST_INTERVIEW_ROUND_ID
+  const laterInterviewRoundIds = new Set(
+    timelineInterviewRounds(timeline).filter(r => r.index > 0).map(r => r.id),
+  )
+  // A decision's email: invites to a later round send their own.
+  const slotFor = (d: { type: string; interviewRoundId?: string | null }): TemplateSlot =>
+    releaseSlot(d.type as DecisionSlotType, laterInterviewRoundIds.has(d.interviewRoundId ?? ''))
   const setTab = useCallback((next: string) => {
     setSearchParams(prev => {
       const sp = new URLSearchParams(prev)
@@ -1626,7 +1659,7 @@ export default function HiringLeadCycleDetails() {
   const loadConfig = useCallback(async () => {
     if (!cycleId) return
     try {
-      const r = await fetch(`/api/hiring/cycles/${cycleId}/interview-config`, { credentials: 'include' })
+      const r = await fetch(`/api/hiring/cycles/${cycleId}/interview-config?round=${viewRoundId}`, { credentials: 'include' })
       if (!r.ok) return
       const data = await r.json()
       if (data) {
@@ -1639,7 +1672,7 @@ export default function HiringLeadCycleDetails() {
         })
       }
     } catch {}
-  }, [cycleId])
+  }, [cycleId, viewRoundId])
 
   const loadRooms = useCallback(async () => {
     try {
@@ -1670,15 +1703,15 @@ export default function HiringLeadCycleDetails() {
   const loadInterviewers = useCallback(async () => {
     if (!cycleId) return
     try {
-      const r = await fetch(`/api/hiring/cycles/${cycleId}/interviewers`, { credentials: 'include' })
+      const r = await fetch(`/api/hiring/cycles/${cycleId}/interviewers?round=${viewRoundId}`, { credentials: 'include' })
       setInterviewers(r.ok ? await r.json() : [])
     } catch {}
-  }, [cycleId])
+  }, [cycleId, viewRoundId])
 
   const loadInterviews = useCallback(async () => {
     if (!cycleId) return
     try {
-      const r = await fetch(`/api/hiring/cycles/${cycleId}/interviews`, { credentials: 'include' })
+      const r = await fetch(`/api/hiring/cycles/${cycleId}/interviews?round=${viewRoundId}`, { credentials: 'include' })
       if (!r.ok) {
         setInterviews([])
         setPendingInvites([])
@@ -1690,15 +1723,15 @@ export default function HiringLeadCycleDetails() {
       setInterviews(Array.isArray(body) ? body : (body.interviews ?? []))
       setPendingInvites(Array.isArray(body) ? [] : (body.pending ?? []))
     } catch {}
-  }, [cycleId])
+  }, [cycleId, viewRoundId])
 
   const loadCoverage = useCallback(async () => {
     if (!cycleId) return
     try {
-      const r = await fetch(`/api/hiring/cycles/${cycleId}/coverage`, { credentials: 'include' })
+      const r = await fetch(`/api/hiring/cycles/${cycleId}/coverage?round=${viewRoundId}`, { credentials: 'include' })
       setCoverage(r.ok ? await r.json() : null)
     } catch {}
-  }, [cycleId])
+  }, [cycleId, viewRoundId])
 
   async function advanceStatus(force = false) {
     if (!cycleId) return
@@ -1780,6 +1813,7 @@ export default function HiringLeadCycleDetails() {
           ? toZonedMidnightIso(config.interviewEndDate)
           : config.interviewEndDate,
         overrideConflicts,
+        interviewRoundId: viewRoundId,
       }
       const res = await fetch(`/api/hiring/cycles/${cycleId}/interview-config`, {
         method: 'POST',
@@ -1855,7 +1889,7 @@ export default function HiringLeadCycleDetails() {
       method: 'POST',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId, domainId }),
+      body: JSON.stringify({ userId, domainId, interviewRoundId: viewRoundId }),
     })
     // POST returns the bare cycleInterviewer row without user/domain
     // relations; refetch so the row matches the server shape exactly.
@@ -1902,13 +1936,14 @@ export default function HiringLeadCycleDetails() {
         />
       )
     }
-    const scoped = pendingDecisions.filter(DECISION_SLICES[kind].include)
-    // A decision type can be released once it has an email written.
-    const boundTypes = new Set(
-      Object.keys(loaderData?.hiringEmails ?? {})
-        .filter((slot) => slot.startsWith('decision:'))
-        .map((slot) => slot.slice('decision:'.length))
+    // A round's invites list shows only invites to the Interviews round it feeds.
+    const scoped = pendingDecisions.filter(
+      (d: any) =>
+        DECISION_SLICES[kind].include(d) &&
+        (kind !== 'invites' || (d.interviewRoundId ?? FIRST_INTERVIEW_ROUND_ID) === activeRound?.interviewRoundId),
     )
+    // A decision can be released once its email is written.
+    const isBound = (d: any) => !!loaderData?.hiringEmails?.[slotFor(d)]
     const domainNameOf = (d: any) =>
       d.domainApplication.domain?.name ?? ''
     const availableDomains = Array.from(
@@ -1925,7 +1960,7 @@ export default function HiringLeadCycleDetails() {
     })
     const drafts = filteredDecisions.filter((d: any) => d.stage === 'Draft')
     const finals = filteredDecisions.filter((d: any) => d.stage === 'Final')
-    const releasable = finals.filter((d: any) => boundTypes.has(d.type))
+    const releasable = finals.filter(isBound)
     const skipped = finals.length - releasable.length
     const releaseAll = async () => {
       if (releasingAll) return
@@ -1975,7 +2010,7 @@ export default function HiringLeadCycleDetails() {
           </button>
         )
       }
-      const hasBinding = boundTypes.has(d.type)
+      const hasBinding = isBound(d)
       return (
         <>
           <Tooltip content="Preview email">
@@ -2095,7 +2130,8 @@ export default function HiringLeadCycleDetails() {
         return (
           <DecisionEmailPreviewModal
             decision={d}
-            email={loaderData?.hiringEmails?.[decisionSlot(d.type as DecisionSlotType)] ?? null}
+            email={loaderData?.hiringEmails?.[slotFor(d)] ?? null}
+            slot={slotFor(d)}
             onClose={() => setPreviewDecisionId(null)}
           />
         )
@@ -2307,7 +2343,6 @@ export default function HiringLeadCycleDetails() {
             timeline={timeline}
             roundsWithBoards={loaderData?.roundsWithBoards ?? []}
             cycleStatus={cycleStatus}
-            termStart={termStart}
             isDefault={JSON.stringify(timeline) === JSON.stringify(defaultTimelineFor(cycle.applicants))}
           />
           </NavSection>
@@ -2438,6 +2473,7 @@ export default function HiringLeadCycleDetails() {
               ...DECISION_EMAIL_SLOTS.filter(
                 (slot) => hasInterviews || slot.type !== "InvitedToInterview",
               ).map((slot) => ({ ...slot, templateSlot: decisionSlot(slot.type) })),
+              ...(laterInterviewRoundIds.size > 0 ? [LATER_INTERVIEW_INVITE_EMAIL_SLOT] : []),
               ...(cycle?.applicants === 'Students' ? [CONTINUED_INTEREST_EMAIL_SLOT] : []),
             ]}
           />
@@ -2463,7 +2499,7 @@ export default function HiringLeadCycleDetails() {
 
 
       {/* ── Interviews Tab — config, then schedule, then coverage ── */}
-      {tab === 'interviews' && (
+      {activeInterviewRound && (
         <NavSection id="interview-config" title="Interview schedule">
         <SetupCard title="Interview schedule" description="When applicants can book and how much notice they need.">
           <div className={cn(os.formClass, 'grid grid-cols-1 gap-4 md:grid-cols-2')}>
@@ -2613,15 +2649,15 @@ export default function HiringLeadCycleDetails() {
         </SetupCard>
         </NavSection>
       )}
-      {tab === 'interviews' && (
+      {activeInterviewRound && (
       <NavSection id="schedule" title="Schedule">
-      {tab === 'interviews' && loaderData?.confidentialityRequired ? (
+      {loaderData?.confidentialityRequired ? (
         <ConfidentialityGate
           cycleId={cycleId ?? ''}
           reason={loaderData.confidentialityRequired}
-          next={`/hiring/lead/cycle/${cycleId}?tab=interviews`}
+          next={`/hiring/lead/cycle/${cycleId}?tab=${tab}`}
         />
-      ) : tab === 'interviews' && (() => {
+      ) : (() => {
         // Filter inputs derived from current data so empty options never show.
         const domainFor = (p: PendingInviteRow) => p.domainApplication.domain.name
         const isCancelled = (status: string) =>
@@ -3013,7 +3049,8 @@ export default function HiringLeadCycleDetails() {
           />
         </NavSection>
       )}
-      {tab === 'review' && hasInterviews && (
+      {/* The first round's roster is set on Review; later rounds bring their own. */}
+      {((tab === 'review' && hasInterviews) || (activeInterviewRound && activeInterviewRound.index > 0)) && (
         <NavSection id="interviewers" title="Interviewers">
           <DomainRosterCard
             title="Interviewers"
@@ -3035,6 +3072,7 @@ export default function HiringLeadCycleDetails() {
             }))}
             onAdd={addInterviewer}
             onRemove={(p) => removeInterviewer(p.id)}
+            interviewRoundId={viewRoundId}
           />
         </NavSection>
       )}
@@ -3158,10 +3196,11 @@ function PreviewLintWarning({ unknown, unfilled }: { unknown: string[]; unfilled
   );
 }
 
-function DecisionEmailPreviewModal({ decision, email, onClose }: {
+function DecisionEmailPreviewModal({ decision, email, slot, onClose }: {
   decision: any;
   /** The decision's shared email, or null when none is written. */
   email: { subject: string; body: string } | null;
+  slot: TemplateSlot;
   onClose: () => void;
 }) {
   const firstName = decision.domainApplication.application.user.firstName ?? ''
@@ -3170,7 +3209,6 @@ function DecisionEmailPreviewModal({ decision, email, onClose }: {
     ''
   const tmpl = email
   const rendered = tmpl ? renderEmail(tmpl, { firstName, domain }) : null
-  const slot: TemplateSlot | undefined = decision.type ? decisionSlot(decision.type as DecisionSlotType) : undefined
   const lint = tmpl
     ? (() => {
         const subj = lintTemplate(tmpl.subject, slot)
@@ -4338,6 +4376,12 @@ const DECISION_EMAIL_SLOTS: ReadonlyArray<{ type: DecisionSlotType; label: strin
   { type: "Waitlisted", label: "Waitlisted", description: "Sent when an applicant is waitlisted." },
   { type: "Accepted", label: "Accepted", description: "Sent when an offer is released." },
 ];
+
+const LATER_INTERVIEW_INVITE_EMAIL_SLOT = {
+  label: "Invited to a later interview round",
+  description: "Sent when an invite to a second or later interview round is released.",
+  templateSlot: LATER_INTERVIEW_INVITE_SLOT,
+} as const;
 
 const CONTINUED_INTEREST_EMAIL_SLOT = {
   label: "Removed from waitlist",

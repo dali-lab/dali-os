@@ -202,6 +202,7 @@ export async function recordChunk(
   channel: Channel,
   segment: number,
   seq: number,
+  voiced: boolean,
 ): Promise<{ stopRequested: boolean }> {
   // Mic and call chunks fill at the same rate and land within the same
   // second, often on different machines. Lock the row and build the new
@@ -209,11 +210,18 @@ export async function recordChunk(
   // lost whichever channel wrote first, so the job was dispatched without it.
   return prisma.$transaction(async (tx) => {
     const [fresh] = await tx.$queryRaw<
-      Array<{ channels: string[]; chunkIndex: Record<string, number[]> | null; status: string }>
-    >`SELECT channels, "chunkIndex", status FROM "MeetingRecording" WHERE id = ${rec.id} FOR UPDATE`;
+      Array<{
+        channels: string[];
+        voicedChannels: string[] | null;
+        chunkIndex: Record<string, number[]> | null;
+        status: string;
+      }>
+    >`SELECT channels, "voicedChannels", "chunkIndex", status FROM "MeetingRecording" WHERE id = ${rec.id} FOR UPDATE`;
     if (!fresh) return { stopRequested: true };
 
     const channels = fresh.channels.includes(channel) ? fresh.channels : [...fresh.channels, channel];
+    const priorVoiced = fresh.voicedChannels ?? [];
+    const voicedChannels = voiced && !priorVoiced.includes(channel) ? [...priorVoiced, channel] : priorVoiced;
     const chunkIndex = { ...(fresh.chunkIndex ?? {}) };
     const highWater = [...(chunkIndex[channel] ?? [])];
     highWater[segment] = Math.max(highWater[segment] ?? -1, seq);
@@ -223,6 +231,7 @@ export async function recordChunk(
       where: { id: rec.id },
       data: {
         channels,
+        voicedChannels,
         chunkIndex,
         lastChunkAt: new Date(),
         ...(fresh.status === "Pending" ? { status: "Recording" as const } : {}),
@@ -303,10 +312,12 @@ export async function setSpeakers(
 }
 
 function buildProcessRequest(
-  rec: Pick<MeetingRecording, "id" | "channels" | "segmentStarts" | "chunkIndex">,
+  rec: Pick<MeetingRecording, "id" | "channels" | "voicedChannels" | "segmentStarts" | "chunkIndex">,
 ): ProcessRequest {
   const chunkIndex = (rec.chunkIndex as Record<string, number[]> | null) ?? {};
-  const channels: ProcessRequestChannel[] = rec.channels.map((channel) => {
+  const voiced = rec.voicedChannels ?? [];
+  const sent = voiced.length > 0 ? rec.channels.filter((c) => voiced.includes(c)) : rec.channels;
+  const channels: ProcessRequestChannel[] = sent.map((channel) => {
     const highWater = chunkIndex[channel] ?? [];
     const segments: ProcessRequestSegment[] = [];
     highWater.forEach((hw, segment) => {

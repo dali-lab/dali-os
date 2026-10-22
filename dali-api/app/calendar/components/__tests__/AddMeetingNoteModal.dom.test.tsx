@@ -95,3 +95,18 @@ describe("AddMeetingNoteModal with the notebook picker open", () => {
     expect(heading("Add meeting notes")).toBeUndefined();
   });
 });
+
+describe("AddMeetingNoteModal while the meeting context is still loading", () => {
+  it("shows the notebook fields without waiting for it", async () => {
+    act(() => root.unmount());
+    container.remove();
+    vi.stubGlobal("fetch", vi.fn(() => new Promise(() => {})));
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    act(() => root.render(createElement(AddMeetingNoteButton, { meetingId: "m1" })));
+    await click(button("Add meeting notes"));
+    expect(button("Search notebooks")).toBeTruthy();
+    expect(document.body.textContent).not.toContain("Loading");
+  });
+});

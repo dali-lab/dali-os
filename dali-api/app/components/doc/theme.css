@@ -305,6 +305,17 @@ html.dark .dali-doc .bn-thread-mark[data-orphan="true"] {
   pointer-events: auto;
 }
 
+.dali-doc .dali-doc-overlay-host {
+  position: relative;
+  z-index: 0;
+  height: 0;
+  pointer-events: none;
+}
+
+.dali-doc .dali-doc-overlay-host > * {
+  pointer-events: auto;
+}
+
 /* Comment bodies and the "Add comment…" composer are NESTED BlockNote
  * editors; without this reset they inherit the document's 6rem min-height
  * (section 2), so a one-line comment renders with ~90px of empty space —

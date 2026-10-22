@@ -1,17 +1,19 @@
+import { readFileSync } from "node:fs";
 import { describe, it, expect } from "vitest";
 import {
   bodyToBlocks,
   buildDraftPrompt,
   chunk,
   decideCursor,
-  optedOutOfReleaseNote,
   parseDraftEntries,
   pickCaptureVideoKey,
+  prNumbersFromCommitMessages,
   selectPrsToDraft,
   stripEmDashes,
   DRAFT_SYSTEM_PROMPT,
   type PullSummary,
 } from "../release-notes-draft";
+import { releaseNoteLine } from "../release-note-line";
 
 const pr = (n: number, o: Partial<PullSummary> = {}): PullSummary => ({
   number: n,
@@ -26,47 +28,132 @@ const none = new Set<number>();
 const sel = (prs: PullSummary[], cited = none) =>
   selectPrsToDraft(prs, { citedPrNumbers: cited, promotionBranch: "prod" });
 
-describe("optedOutOfReleaseNote", () => {
-  it("honors the label case-insensitively", () => {
-    expect(optedOutOfReleaseNote(pr(1, { labels: ["No-Release-Note"] }))).toBe(true);
-    expect(optedOutOfReleaseNote(pr(1, { labels: ["bug"] }))).toBe(false);
+const TEMPLATE = [
+  "## Summary",
+  "",
+  "<!-- What changed and why. -->",
+  "Refactor.",
+  "",
+  "## Release note",
+  "",
+  "<!-- Leave empty unless a member would care. -->",
+  "",
+].join("\n");
+
+describe("releaseNoteLine", () => {
+  it("reads the text under the heading", () => {
+    expect(releaseNoteLine(`${TEMPLATE}You can hold a room from an event.\n`)).toBe(
+      "You can hold a room from an event.",
+    );
+  });
+
+  const FOOTER = [
+    "",
+    "🤖 Generated with [Claude Code](https://claude.com/claude-code)",
+    "",
+    "<!-- codesmith:footer -->",
+    "---",
+    '<a href="https://app.blacksmith.sh/x"><img alt="View with [code]smith"></a>',
+    "<sup>Need help on this PR? Tag <code>@codesmith-bot</code> with what you need.</sup>",
+    "",
+    "<!-- codesmith:autofix:disabled -->",
+    "<!-- /codesmith:footer -->",
+  ].join("\n");
+
+  it("ignores the Claude attribution and Blacksmith footer under an empty section", () => {
+    expect(releaseNoteLine(`## Release note\n\n<!-- Internal tooling: intentionally empty. -->\n${FOOTER}`)).toBeNull();
+  });
+
+  it("reads a note followed by the bot footers", () => {
+    expect(releaseNoteLine(`## Release note\nLate applications show how late they were.\n${FOOTER}`)).toBe(
+      "Late applications show how late they were.",
+    );
+  });
+
+  it("takes only the first paragraph", () => {
+    expect(releaseNoteLine("## Release note\n\nHold rooms.\n\nSome trailing remark.")).toBe("Hold rooms.");
+  });
+
+  it("stops at a horizontal rule", () => {
+    expect(releaseNoteLine("## Release note\n---\nHold rooms.")).toBeNull();
+  });
+
+  it("stops at the next heading", () => {
+    expect(releaseNoteLine("## Release note\nHold rooms.\n## Testing\nRan it.")).toBe("Hold rooms.");
+  });
+
+  it("joins lines and strips list markers", () => {
+    expect(releaseNoteLine("### Release notes\n- Hold rooms.\n* Cancel holds.")).toBe("Hold rooms. Cancel holds.");
+  });
+
+  it("accepts a trailing colon and any heading level", () => {
+    expect(releaseNoteLine("# Release Note:\nHold rooms.")).toBe("Hold rooms.");
+  });
+
+  it("is null for the repo's untouched PR template", () => {
+    const template = readFileSync(new URL("../../../../.github/pull_request_template.md", import.meta.url), "utf8");
+    expect(releaseNoteLine(template)).toBeNull();
+    expect(releaseNoteLine(`${template}\nHold rooms.`)).toBe("Hold rooms.");
   });
 
   it.each([
-    "- [x] No release note (not user-facing)",
-    "- [X] no release note",
-    "* [ x ] No release notes",
-    "- [x] no-release-note",
-    "text\n- [x] No_Release_Note\nmore",
-  ])("treats a ticked box as opt-out: %s", (body) => {
-    expect(optedOutOfReleaseNote(pr(1, { body }))).toBe(true);
+    ["a filled-in template's other sections", TEMPLATE],
+    ["a comment-only section", "## Release note\n<!--\nmultiline\n-->\n"],
+    ["no heading", "Hold rooms."],
+    ["an empty body", ""],
+    ["a null body", null],
+    ["None", "## Release note\nNone"],
+    ["N/A", "## Release note\n- N/A."],
+    ["a dash", "## Release note\n-"],
+    ["text only in another section", "## Release note\n\n## Summary\nHold rooms."],
+  ])("is null for %s", (_, body) => {
+    expect(releaseNoteLine(body)).toBeNull();
   });
-
-  it.each(["- [ ] No release note (not user-facing)", "", null, "No release note needed [x] other"])(
-    "ignores an unticked or absent box: %s",
-    (body) => {
-      expect(optedOutOfReleaseNote(pr(1, { body }))).toBe(false);
-    },
-  );
 });
 
 describe("selectPrsToDraft", () => {
-  it("dedupes, sorts, and drops unmerged, promotion, cited and opted-out PRs", () => {
+  it("dedupes, sorts, and drops unmerged, promotion, cited and PRs without a release note", () => {
+    const note = { body: "## Release note\nHold rooms." };
     const prs = [
-      pr(5),
-      pr(3),
-      pr(5),
-      pr(4, { mergedAt: null }),
-      pr(6, { baseRef: "prod" }),
-      pr(7),
-      pr(8, { labels: ["no-release-note"] }),
-      pr(9, { body: "- [x] No release note" }),
+      pr(5, note),
+      pr(3, note),
+      pr(5, note),
+      pr(4, { ...note, mergedAt: null }),
+      pr(6, { ...note, baseRef: "prod" }),
+      pr(7, note),
+      pr(8, { body: TEMPLATE }),
+      pr(9),
     ];
     expect(sel(prs, new Set([7])).map((p) => p.number)).toEqual([3, 5]);
   });
 
   it("returns nothing for no input", () => {
     expect(sel([])).toEqual([]);
+  });
+});
+
+describe("prNumbersFromCommitMessages", () => {
+  it("reads the squash-merge suffix from the subject line", () => {
+    expect(prNumbersFromCommitMessages(["Audit log: sign-in trail (#2306)", "Fix (#7)  "])).toEqual([2306, 7]);
+  });
+
+  it("reads GitHub merge commits", () => {
+    expect(prNumbersFromCommitMessages(["Merge pull request #12 from dali-lab/x"])).toEqual([12]);
+  });
+
+  it("ignores numbers outside the subject or not at its end", () => {
+    expect(
+      prNumbersFromCommitMessages([
+        "Direct push\n\nFollow-up to (#5)",
+        "Reverts (#6) partially",
+        "Merge branch 'staging' into prod",
+        "",
+      ]),
+    ).toEqual([]);
+  });
+
+  it("dedupes in first-seen order", () => {
+    expect(prNumbersFromCommitMessages(["B (#2)", "A (#1)", "Revert B (#2)"])).toEqual([2, 1]);
   });
 });
 

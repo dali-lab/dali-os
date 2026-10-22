@@ -30,6 +30,7 @@ describe("list_my_upcoming_meetings", () => {
       {
         id: "m1",
         organizerId: "user-1",
+        rooms: [],
         title: "Sync",
         durationMinutes: 30,
         selectedAt: new Date("2026-05-15T14:00:00Z"),
@@ -45,7 +46,10 @@ describe("list_my_upcoming_meetings", () => {
         startTime: new Date("2026-05-14T15:00:00Z"),
         endTime: new Date("2026-05-14T15:30:00Z"),
         room: { name: "Pod Appa" },
-        assignments: [{ id: "a1" }, { id: "a2" }],
+        assignments: [
+          { id: "a1", cycleInterviewer: { userId: "user-1" } },
+          { id: "a2", cycleInterviewer: { userId: "user-2" } },
+        ],
       },
     ]);
 
@@ -63,6 +67,7 @@ describe("list_my_upcoming_meetings", () => {
       {
         id: "m-past",
         organizerId: "user-1",
+        rooms: [],
         title: "Old",
         durationMinutes: 30,
         selectedAt: new Date("2026-05-10T12:00:00Z"),
@@ -74,6 +79,7 @@ describe("list_my_upcoming_meetings", () => {
       {
         id: "m-cancelled",
         organizerId: "user-1",
+        rooms: [],
         title: "Cancelled by exception",
         durationMinutes: 30,
         selectedAt: new Date("2026-05-15T14:00:00Z"),

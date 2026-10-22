@@ -30,7 +30,7 @@ import { z } from "zod";
 const MAX_BLOCKS = 500;
 
 export const EnhanceBlocksSchema = z
-  .array(z.object({ id: z.string().min(1), type: z.string().min(1), text: z.string() }))
+  .array(z.object({ id: z.string().min(1), type: z.string().min(1), text: z.string(), parentId: z.string().min(1).optional() }))
   .max(MAX_BLOCKS);
 
 const EnhanceBlockOpSchema = z.union([
@@ -38,7 +38,12 @@ const EnhanceBlockOpSchema = z.union([
   z.object({ id: z.string(), op: z.literal("expand"), text: z.string(), cites: z.array(z.number()).optional() }),
   z.object({
     op: z.literal("insert"),
-    after: z.string().nullable(),
+    after: z
+      .string()
+      .nullable()
+      .optional()
+      .transform((v) => v ?? null),
+    under: z.string().optional(),
     type: z.string(),
     text: z.string(),
     cites: z.array(z.number()).optional(),
@@ -59,24 +64,52 @@ const EnhancePlanSchema = z.object({
   actionItems: z.array(EnhanceActionItemSchema),
 });
 
-// Action-item bullets use "checkListItem" (never "bulletListItem") so Apply
-// renders them with a checkbox and Create tasks (specs/meeting-notes-model.md
-// §4) can find the matching block by text to backlink the created task.
 const SYSTEM_PROMPT = `You enhance meeting notes for a university software lab. You are given the note's current blocks (each with an id), a raw speech-to-text transcript with timestamps, the occurrence's roster, the meeting type, the occurrence date, and who the recorder was. \
 "You" in the transcript is the recorder (their microphone, named below as "Recorder") and "Others" is everyone else on the call; renamed speakers use their roster name.
 
+How to enhance:
+The author's notes are the skeleton and the signal. Each line they typed marks something they cared about, usually in shorthand. Your job is to turn each line into the complete note they would have written with time to spare, using what was actually said in the transcript. Treat every author line as a question: "what did the meeting say about this?" Then answer it in the note.
+
+Nested blocks are listed indented under their parent with "under <parent id>"; they are author lines too, and get the same treatment.
+
+For each existing block, in order, emit exactly one op:
+- {"id","op":"expand","text","cites":[seconds,...]} is the default whenever the transcript discussed the line's topic. "text" starts with the author's own words, unchanged, then continues with what they left out: the specifics (numbers, names, dates, options weighed), the reason or tradeoff behind it, the outcome, and any next step. Fix only obvious typos in the author's words; never reword or drop them.
+- {"id","op":"keep"} only when the transcript never touches the line, or the line already says everything the transcript does. Never emit an expand that repeats the author's text, rewords it without new facts, or only attaches cites; that is a keep.
+
+Examples of expanding an author line (transcript facts in brackets):
+- "100, growing" [we're at about 100 active users, up roughly 20% a month since launch] becomes "100, growing: about 100 active users, up roughly 20% a month since launch."
+- "auth -> phase 2" [we're pushing SSO to phase two because the partner's IT review won't finish before the demo] becomes "auth -> phase 2: SSO moves to phase two since the partner's IT review won't finish before the demo."
+- "Budget" [the partner approved 40 more hours for the spring term] becomes "Budget: partner approved 40 more hours for the spring term."
+Bad expand (do not do this): "Budget" becomes "Budget." or "Discussed the budget."
+
+When a line has more detail than fits in one sentence, keep the expand to one sentence and add the rest as {"op":"insert","under":"<that block's id>","type":"bulletListItem",...} bullets nested under it, one fact per bullet, at most four. Read the line's existing nested blocks first and never repeat what they already say.
+An author heading is a section cue: under it, insert bulletListItem bullets for what the transcript says about that topic, after the last block in that section.
+If the meeting spent real time on a topic the author didn't note at all, add it after the author's notes: one "heading" insert naming the topic plus a few bullets. Skip small talk, logistics, and passing mentions.
+If there are no note blocks at all: write them from the transcript, one heading per main topic in the order discussed, each with a few bullets, starting with "after": null.
+
+Writing style: short, concrete, scannable. Lead with the fact, not "The team discussed" or "It was mentioned that". Use the words people actually said for names, product terms, and numbers. No filler, no hedging, no em dashes, no summary of the summary.
+
 Rules, all mandatory:
-- Keep every existing block, in order, in the author's own wording. For each block, emit either {"id","op":"keep"} (no change) or {"id","op":"expand","text","cites":[seconds,...]} — "expand" only when the transcript supports more than the author wrote, and "text" must still contain the author's original wording, just filled in.
-- Add blocks the author didn't write with {"op":"insert","after":"<id or null>","type":"heading"|"paragraph"|"bulletListItem"|"checkListItem","text","cites":[seconds,...],"added":true}. "after" names the existing block id it follows. Use "checkListItem" (never "bulletListItem") for every bullet under "Action items", and make its "text" IDENTICAL to that item's "text" in "actionItems" below — that's how the two get linked. Every other inserted bullet (e.g. under "Decisions") uses "bulletListItem".
-- If there is no "Decisions" or "Action items" heading among the given blocks, insert one (type "heading") plus whatever bullets the transcript supports under each, even if everything else is a "keep".
-- A heading the transcript doesn't support (most often "Agenda" on an unused template) gets no inserts under it and stays "keep" — never invent content to fill it.
-- Never invent names, dates, numbers, or facts the transcript doesn't support.
-- Every "expand" or "insert" that draws on the transcript must cite the transcript second(s) (the line's leading [mm:ss], converted to seconds) it drew from in "cites".
+- Every existing block appears exactly once, in order, as a keep or expand.
+- Inserts are {"op":"insert","after":"<id or null>" or "under":"<id>","type":"heading"|"paragraph"|"bulletListItem","text","cites":[seconds,...],"added":true}. "after" names the existing block id it follows; "under" nests it as the last child of that block.
+- Never insert an "Action items" heading or checklist items: the action items section is built from "actionItems" below.
+- If there is no "Decisions" heading among the given blocks and the meeting made decisions, insert one (type "heading") with a bullet per decision.
+- A heading the transcript doesn't support (most often "Agenda" on an unused template) gets no inserts under it and stays "keep". Never invent content to fill it.
+- Never invent names, dates, numbers, or facts the transcript doesn't support. Every word you add must come from the transcript.
+- Every "expand" or "insert" must cite the transcript second(s) (the line's leading [mm:ss], converted to seconds) it drew from in "cites".
 - List action items separately in "actionItems": [{"text","ownerName": the name as spoken in the transcript — a first name alone is fine, and when "You"/the Recorder says "I'll ..." or similar use the Recorder's own name — NEVER substitute a different roster member's name and never invent one (omit ownerName if no owner is stated), "due": an ISO date resolved against the given occurrence date (omit if none), "dueSource": the phrase it came from, e.g. "by Friday" (omit if no due), "cites":[seconds,...]}].
 - Respond with ONLY a single JSON object shaped exactly like: {"blocks":[...],"actionItems":[...]}. No markdown code fences, no commentary, no preamble.`;
 
-function blockForPrompt(b: SnapshotBlock): string {
-  return `[${b.id}] (${b.type}) ${b.text}`;
+export function blocksForPrompt(blocks: readonly SnapshotBlock[]): string {
+  const depth = new Map<string, number>();
+  return blocks
+    .map((b) => {
+      const d = b.parentId ? (depth.get(b.parentId) ?? 0) + 1 : 0;
+      depth.set(b.id, d);
+      const under = b.parentId ? `, under ${b.parentId}` : "";
+      return `${"  ".repeat(d)}[${b.id}] (${b.type}${under}) ${b.text}`;
+    })
+    .join("\n");
 }
 
 export type EnhanceGenerationResult =
@@ -211,7 +244,7 @@ export async function generateAndVerifyEnhancePlan(params: {
     `Recorder (speaks as "You"): ${recorderName}`,
     `Note was an untouched template: ${untouchedTemplate ? "yes" : "no"}`,
     roster.length ? `Roster:\n${roster.map((r) => r.name).join("\n")}` : "Roster: (none on record)",
-    `Current note blocks:\n${blocks.map(blockForPrompt).join("\n")}`,
+    blocks.length ? `Current note blocks:\n${blocksForPrompt(blocks)}` : "Current note blocks: (none, the author took no notes)",
     `Transcript:\n${transcript}`,
   ].join("\n\n");
 
@@ -223,7 +256,7 @@ export async function generateAndVerifyEnhancePlan(params: {
     raw = await generateShortText({
       system: SYSTEM_PROMPT,
       prompt,
-      maxTokens: 4000,
+      maxTokens: 8000,
       model: provider.sonnetModel,
     });
   } catch (err) {
@@ -247,7 +280,7 @@ export async function generateAndVerifyEnhancePlan(params: {
   }
   const modelPlan: EnhancePlan = result.data;
 
-  const { plan, verified } = verifyEnhancePlan(modelPlan, lines, roster, rec.userId);
+  const { plan, verified } = verifyEnhancePlan(modelPlan, lines, roster, rec.userId, blocks);
   const actionItems = await carryOverTaskIds(plan.actionItems, rec);
   const snapshotAt = new Date().toISOString();
   const notes: StoredEnhanceNotes = {

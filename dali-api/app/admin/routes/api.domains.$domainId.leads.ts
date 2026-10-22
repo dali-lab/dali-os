@@ -5,7 +5,7 @@ import { requireAuth, forbidden } from "~/lib/auth";
 import { isAdmin, currentTerm } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson } from "~/lib/validate";
-import { logAuditEvent } from "~/lib/audit";
+import { logDomainLeadChange } from "~/admin/lib/access-audit.server";
 
 // Phase 2: domain-lead body uses `userId` (not `memberId`). The User must
 // exist and (per the admin UI convention) be a lab member, though we only
@@ -63,15 +63,13 @@ export async function action({ request, params }: Route.ActionArgs) {
       data: { userId, domainId: params.domainId!, termId: term.id },
       include: { user: true, domain: true, term: true },
     });
-    await logAuditEvent({
-      action: "domain.lead.add",
-      userId: auth.user.sub,
-      targetId: userId,
-      metadata: {
-        domainId: params.domainId,
-        assignmentId: assignment.id,
-        termId: term.id,
-      },
+    await logDomainLeadChange({
+      kind: "add",
+      actorId: auth.user.sub,
+      targetUserId: userId,
+      domainId: params.domainId,
+      assignmentId: assignment.id,
+      termId: term.id,
       request,
     });
     return withCors(request, Response.json(assignment, { status: 201 }));
@@ -84,15 +82,13 @@ export async function action({ request, params }: Route.ActionArgs) {
     const removed = await prisma.domainLeadAssignment.delete({
       where: { id: assignmentId },
     });
-    await logAuditEvent({
-      action: "domain.lead.remove",
-      userId: auth.user.sub,
-      targetId: removed.userId,
-      metadata: {
-        domainId: params.domainId,
-        assignmentId,
-        termId: removed.termId,
-      },
+    await logDomainLeadChange({
+      kind: "remove",
+      actorId: auth.user.sub,
+      targetUserId: removed.userId,
+      domainId: params.domainId,
+      assignmentId,
+      termId: removed.termId,
       request,
     });
     return withCors(request, Response.json({ ok: true }));

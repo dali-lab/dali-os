@@ -3,6 +3,7 @@ import { z } from "zod";
 import { requireAuth, forbidden } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { isAdmin } from "~/lib/roles";
+import { logAuditEvent, type AuditAction } from "~/lib/audit";
 import { resolveTermFilter } from "~/lib/terms";
 import {
   getBudgetData,
@@ -101,6 +102,12 @@ export async function action({ request }: Route.ActionArgs): Promise<Response> {
   if (!auth.ok) return auth.response;
   if (!(await isAdmin(auth.user.sub))) return forbidden(request);
 
+  const audit = (
+    action: AuditAction,
+    targetId: string,
+    metadata: Record<string, string | number | boolean | null>,
+  ) => logAuditEvent({ action, userId: auth.user.sub, targetId, metadata, request });
+
   const form = Object.fromEntries(await request.formData());
   const intent = form.intent;
 
@@ -108,15 +115,22 @@ export async function action({ request }: Route.ActionArgs): Promise<Response> {
     switch (intent) {
       case "upsert-revenue": {
         const p = upsertRevenueSchema.parse(form);
-        await upsertRevenue(
+        const previous = await upsertRevenue(
           { projectId: p.projectId, chartString: p.chartString, termId: p.termId },
           p.revenue,
         );
+        await audit("payroll.budget.revenue", p.chartString, {
+          projectId: p.projectId,
+          termId: p.termId,
+          before: previous ?? null,
+          after: p.revenue,
+        });
         return Response.json({ ok: true });
       }
       case "delete-entry": {
         const p = deleteEntrySchema.parse(form);
         await deleteEntry(p.entryId);
+        await audit("payroll.budget.entry.delete", p.entryId, {});
         return Response.json({ ok: true });
       }
       case "update-chartstring": {
@@ -125,6 +139,12 @@ export async function action({ request }: Route.ActionArgs): Promise<Response> {
           { projectId: p.projectId, chartString: p.chartString, termId: p.termId },
           p.newChartString,
         );
+        await audit("payroll.budget.chartstring", p.newChartString, {
+          projectId: p.projectId,
+          termId: p.termId,
+          before: p.chartString,
+          after: p.newChartString,
+        });
         return Response.json({ ok: true });
       }
       case "upsert-note": {
@@ -133,6 +153,11 @@ export async function action({ request }: Route.ActionArgs): Promise<Response> {
           { projectId: p.projectId, chartString: p.chartString, termId: p.termId },
           p.note,
         );
+        await audit("payroll.budget.note", p.chartString, {
+          projectId: p.projectId,
+          termId: p.termId,
+          cleared: !p.note.trim(),
+        });
         return Response.json({ ok: true });
       }
       case "update-project-type": {
@@ -141,6 +166,11 @@ export async function action({ request }: Route.ActionArgs): Promise<Response> {
           { projectId: p.projectId, chartString: p.chartString, termId: p.termId },
           p.projectType,
         );
+        await audit("payroll.budget.project-type", p.chartString, {
+          projectId: p.projectId,
+          termId: p.termId,
+          projectType: p.projectType,
+        });
         return Response.json({ ok: true });
       }
       default:

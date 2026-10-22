@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/auth", () => ({ requireProjectEditAccess: vi.fn() }));
 vi.mock("~/lib/db");
+vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
 vi.mock("~/lib/cors", () => ({
   withCors: (_req: Request, res: Response) => res,
   handlePreflight: () => null,
@@ -9,6 +10,7 @@ vi.mock("~/lib/cors", () => ({
 
 import { requireProjectEditAccess } from "~/lib/auth";
 import { prisma } from "~/lib/db";
+import { logAuditEvent } from "~/lib/audit";
 import { action } from "~/projects/routes/api.epics.$id";
 
 const EPIC_ID = "epic-1";
@@ -43,11 +45,12 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(requireProjectEditAccess).mockResolvedValue({
     ok: true,
-    userId: "user-1",
+    auth: { user: { sub: "user-1" } },
   } as any);
   mockPrisma.epic = {
     findUnique: vi.fn().mockResolvedValue({
       id: EPIC_ID,
+      title: "Onboarding",
       startsAt: null,
       endsAt: null,
       projectId: PROJECT_ID,
@@ -62,7 +65,7 @@ beforeEach(() => {
     deleteMany: vi.fn().mockReturnValue("dep-clear-op"),
     create: vi.fn((args) => `dep-create-${args.data.dependsOnEpicId}`),
   };
-  mockPrisma.$transaction = vi.fn().mockResolvedValue([]);
+  mockPrisma.$transaction = vi.fn().mockResolvedValue([{ count: 3 }, { count: 2 }, {}]);
 });
 
 describe("DELETE /api/epics/:id", () => {
@@ -87,11 +90,24 @@ describe("DELETE /api/epics/:id", () => {
     ]);
   });
 
+  it("logs the delete with how many tasks were unlinked and stories removed", async () => {
+    await call("DELETE");
+    expect(logAuditEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "epic.delete",
+        userId: "user-1",
+        targetId: EPIC_ID,
+        metadata: { title: "Onboarding", projectId: PROJECT_ID, tasksUnlinked: 3, storiesDeleted: 2 },
+      }),
+    );
+  });
+
   it("404s when the epic does not exist", async () => {
     mockPrisma.epic.findUnique.mockResolvedValue(null);
     const res = await call("DELETE");
     expect(res.status).toBe(404);
     expect(mockPrisma.$transaction).not.toHaveBeenCalled();
+    expect(logAuditEvent).not.toHaveBeenCalled();
   });
 
   it("does not delete when the caller lacks project edit access", async () => {
@@ -102,6 +118,7 @@ describe("DELETE /api/epics/:id", () => {
     const res = await call("DELETE");
     expect(res.status).toBe(403);
     expect(mockPrisma.$transaction).not.toHaveBeenCalled();
+    expect(logAuditEvent).not.toHaveBeenCalled();
   });
 });
 

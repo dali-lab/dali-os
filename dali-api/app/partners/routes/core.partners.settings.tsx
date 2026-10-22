@@ -3,6 +3,7 @@ import type { Route } from "./+types/core.partners.settings";
 import { requireAuth, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { prisma } from "~/lib/db";
+import { logAuditEvent } from "~/lib/audit";
 import { isCore, getActiveCoreCycleTermIds } from "~/lib/roles";
 import { listSelectableForms } from "~/projects/lib/form-slots";
 import {
@@ -89,22 +90,48 @@ export async function action({ request }: Route.ActionArgs) {
       ? Math.round(staleDaysRaw)
       : DEFAULT_STALE_DAYS;
 
+    const before = await prisma.partnerCrmSettings.findUnique({
+      where: { id: "default" },
+      select: { interviewPanelUserIds: true, staleDays: true },
+    });
     await prisma.partnerCrmSettings.upsert({
       where: { id: "default" },
       create: { id: "default", interviewPanelUserIds, staleDays },
       update: { interviewPanelUserIds, staleDays },
     });
+    await logAuditEvent({
+      action: "partner.settings.save",
+      userId: auth.user.sub,
+      targetId: "default",
+      metadata: {
+        staleDays: { before: before?.staleDays ?? null, after: staleDays },
+        interviewPanelUserIds: { before: before?.interviewPanelUserIds ?? null, after: interviewPanelUserIds },
+      },
+      request,
+    });
     return { ok: true };
   }
+
+  const logBinding = (action: "partner.form-binding.set" | "partner.form-binding.clear", slot: string, formId?: string) =>
+    logAuditEvent({
+      action,
+      userId: auth.user.sub,
+      targetId: formId ?? slot,
+      metadata: { slot, formId: formId ?? null },
+      request,
+    });
 
   if (intent === "bind-form") {
     const formId = (form.get("formId") as string | null) ?? "";
     if (!formId) return { error: "Choose a form to bind." };
     const result = await setApplicationFormBinding(formId, auth.user.sub);
-    return result.ok ? { ok: true } : { error: result.error };
+    if (!result.ok) return { error: result.error };
+    await logBinding("partner.form-binding.set", "application", formId);
+    return { ok: true };
   }
   if (intent === "clear-form") {
     await clearApplicationFormBinding();
+    await logBinding("partner.form-binding.clear", "application");
     return { ok: true };
   }
 
@@ -112,10 +139,13 @@ export async function action({ request }: Route.ActionArgs) {
     const formId = (form.get("formId") as string | null) ?? "";
     if (!formId) return { error: "Choose a form to bind." };
     const result = await setSurveyFormBinding(formId, auth.user.sub);
-    return result.ok ? { ok: true } : { error: result.error };
+    if (!result.ok) return { error: result.error };
+    await logBinding("partner.form-binding.set", "survey", formId);
+    return { ok: true };
   }
   if (intent === "clear-survey-form") {
     await clearSurveyFormBinding();
+    await logBinding("partner.form-binding.clear", "survey");
     return { ok: true };
   }
 

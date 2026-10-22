@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/db");
+vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
 vi.mock("~/forms/lib/form-page.server", () => ({ setFormArchived: vi.fn(), deleteForm: vi.fn() }));
 vi.mock("~/forms/lib/form-usages.server", () => ({ formDeletionBlockers: vi.fn() }));
 vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn() }));
@@ -26,12 +27,13 @@ import { getPageAccessBulk } from "~/lib/pageAccess.server";
 import { canManageFormPlacement, formsUsePageAccess } from "~/forms/lib/form-access.server";
 import { deleteForm, setFormArchived } from "~/forms/lib/form-page.server";
 import { formDeletionBlockers } from "~/forms/lib/form-usages.server";
+import { logAuditEvent } from "~/lib/audit";
 import { loader, action } from "~/routes/api.drive.trash";
 
 const mockPrisma = prisma as unknown as {
-  page: { findMany: ReturnType<typeof vi.fn> };
   projectFile: { findMany: ReturnType<typeof vi.fn> };
   form: { findUnique: ReturnType<typeof vi.fn> };
+  page: { findMany: ReturnType<typeof vi.fn>; findUnique: ReturnType<typeof vi.fn> };
 };
 const ARCHIVED_AT = new Date("2026-09-30T07:20:00Z");
 const formPage = { id: "form-1", title: "Intake", archivedAt: ARCHIVED_AT, kind: "Form", parentPageId: "folder-1" };
@@ -99,6 +101,27 @@ describe("POST /api/drive/trash (forms), forms-page-access on", () => {
     expect(canManageFormPlacement).toHaveBeenCalledWith("user-1", "form-1", expect.any(Request));
     expect(setFormArchived).toHaveBeenCalledTimes(2);
     expect(deleteForm).toHaveBeenCalledWith("form-1");
+  });
+
+  it("logs archive-form, restore and purge against the form id", async () => {
+    vi.mocked(canManageFormPlacement).mockResolvedValue(true);
+    mockPrisma.form.findUnique.mockResolvedValue({ id: "form-1", archivedAt: null });
+    mockPrisma.page.findUnique.mockResolvedValue({ title: "Intake" });
+    vi.mocked(formDeletionBlockers).mockResolvedValue([]);
+    await post({ intent: "archive-form", id: "form-1" });
+    await post({ intent: "restore", type: "form", id: "form-1" });
+    await post({ intent: "purge", type: "form", id: "form-1" });
+    expect(vi.mocked(logAuditEvent).mock.calls.map(([e]) => [e.action, e.userId, e.targetId, e.metadata])).toEqual([
+      ["drive.trash.archive-form", "user-1", "form-1", { type: "form", title: "Intake" }],
+      ["drive.trash.restore", "user-1", "form-1", { type: "form", title: "Intake" }],
+      ["drive.trash.purge", "user-1", "form-1", { type: "form", title: "Intake" }],
+    ]);
+  });
+
+  it("logs nothing when the form is not editable", async () => {
+    vi.mocked(canManageFormPlacement).mockResolvedValue(false);
+    await post({ intent: "archive-form", id: "form-1" });
+    expect(logAuditEvent).not.toHaveBeenCalled();
   });
 
   it("refuses all three when the page is not editable", async () => {

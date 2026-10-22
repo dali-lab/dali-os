@@ -268,6 +268,7 @@ export function buildExternalLayer(
         calendarLabel: e.calendarId ? calNames.get(e.calendarId) : undefined,
         recurring: Boolean(e.recurringEventId),
         unanswered: e.rsvp === "Pending",
+        pending: e.pending,
         meeting: e.meeting,
         trackable:
           e.canTrackAsMeeting && e.eventId && e.linkId && e.calendarId

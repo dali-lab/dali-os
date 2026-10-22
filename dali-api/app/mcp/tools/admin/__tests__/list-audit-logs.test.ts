@@ -126,4 +126,14 @@ describe("list_audit_logs", () => {
     const [call] = mockPrisma.auditLog.findMany.mock.calls;
     expect(call[0].orderBy).toEqual({ createdAt: "desc" });
   });
+
+  it("filters by area and does not hide mcp reads by default", async () => {
+    await runListAuditLogs(makeCtx(), { area: "staffing" });
+    const where = mockPrisma.auditLog.findMany.mock.calls[0][0].where;
+    expect(where.action.in).toContain("staffing.assign");
+
+    mockPrisma.auditLog.findMany.mockClear();
+    await runListAuditLogs(makeCtx(), {});
+    expect(mockPrisma.auditLog.findMany.mock.calls[0][0].where.action).toBeUndefined();
+  });
 });

@@ -8,23 +8,23 @@ import { animate, DUR, enterRef } from "./motion";
 import { deriveRailState } from "./RecordingRail";
 import { useEnhancingWash } from "./use-enhancing-wash";
 import { useMarkTransitions } from "./use-mark-transitions";
-import { contentOf, findBlock, frameThrottle, inBounds, overlayBounds } from "./block-dom";
+import { contentOf, findBlock, frameThrottle, overlayHost, scrollEdge, toHost } from "./block-dom";
 import { useBlockStyleRules } from "./block-style-rules";
 import { wasSpaceCss } from "./enhance-rules";
 import type { UseMeetingRecording } from "./use-meeting-recording";
 
-type BlockBox = { top: number; bottom: number; left: number; right: number; visible: boolean; edge: number };
+type BlockBox = { top: number; bottom: number; left: number; right: number; edge: number };
 
 const PILL_WIDTH = 152;
 const PILL_HEIGHT = 28;
 const FIRST_LINE_CENTER = 12;
 const GUTTER = 8;
 
-function pillPosition(box: BlockBox): { top: number; left: number } | { bottom: number; right: number } {
+function pillPosition(box: BlockBox): { top: number; left: number } {
   if (box.edge - box.right >= PILL_WIDTH + 2 * GUTTER) {
     return { top: box.top + FIRST_LINE_CENTER - PILL_HEIGHT / 2, left: box.right + GUTTER };
   }
-  return { bottom: window.innerHeight - box.top + 4, right: window.innerWidth - box.right };
+  return { top: box.top - PILL_HEIGHT - 4, left: Math.max(0, box.right - PILL_WIDTH) };
 }
 
 const PILL_IN = enterRef(
@@ -54,7 +54,7 @@ function WasText({ id, line, ref }: { id: string; line: WasLine; ref?: Ref<HTMLP
     <p
       ref={ref}
       data-was-for={id}
-      style={{ position: "fixed", top: box.bottom - 24, left: box.left + 24, maxWidth: Math.max(0, box.right - box.left - 40) }}
+      style={{ position: "absolute", top: box.bottom - 24, left: box.left + 24, maxWidth: Math.max(0, box.right - box.left - 40) }}
       className="pointer-events-none z-10 truncate text-[13px] leading-5 text-muted-foreground"
     >
       You wrote: “{prior}”
@@ -74,7 +74,7 @@ function pendingBlockAt(node: Node | null, root: HTMLElement, ids: ReadonlySet<s
 }
 
 function sameBox(a: BlockBox | undefined, b: BlockBox): boolean {
-  return Boolean(a) && a!.top === b.top && a!.bottom === b.bottom && a!.left === b.left && a!.right === b.right && a!.visible === b.visible && a!.edge === b.edge;
+  return Boolean(a) && a!.top === b.top && a!.bottom === b.bottom && a!.left === b.left && a!.right === b.right && a!.edge === b.edge;
 }
 
 /**
@@ -106,6 +106,9 @@ export function EnhanceBlockActions({
 
   const [leaving, setLeaving] = useState<Record<string, WasLine>>({});
   const lastWas = useRef<Record<string, WasLine>>({});
+  // Outlives `root`, which clears with the last mark, so the final "You
+  // wrote" lines can still fade out.
+  const hostRef = useRef<HTMLElement | null>(null);
   const wasLines: Record<string, WasLine> = {};
   for (const id of changedIds) {
     const box = boxes[id];
@@ -142,14 +145,16 @@ export function EnhanceBlockActions({
 
     function measure() {
       const next: Record<string, BlockBox> = {};
-      const bounds = overlayBounds(root!);
+      const host = overlayHost(root!);
+      if (!host) return;
+      const hostRect = host.getBoundingClientRect();
+      const edge = scrollEdge(root!, hostRect);
       for (const id of ids) {
         const block = findBlock(root!, id);
         if (!block) continue;
         const content = contentOf(block);
         resize?.observe(content);
-        const r = content.getBoundingClientRect();
-        next[id] = { top: r.top, bottom: r.bottom, left: r.left, right: r.right, visible: inBounds(r, bounds), edge: bounds.right };
+        next[id] = { ...toHost(content.getBoundingClientRect(), hostRect), edge };
       }
       setBoxes((prev) => {
         const keys = Object.keys(next);
@@ -164,7 +169,6 @@ export function EnhanceBlockActions({
     measure();
     const mutation = new MutationObserver(frame.run);
     mutation.observe(root, { childList: true, subtree: true, characterData: true });
-    window.addEventListener("scroll", frame.run, true);
     window.addEventListener("resize", frame.run);
 
     function onOver(e: MouseEvent) {
@@ -187,7 +191,6 @@ export function EnhanceBlockActions({
       frame.cancel();
       resize?.disconnect();
       mutation.disconnect();
-      window.removeEventListener("scroll", frame.run, true);
       window.removeEventListener("resize", frame.run);
       root.removeEventListener("mouseover", onOver);
       root.removeEventListener("mouseout", onOut);
@@ -195,7 +198,9 @@ export function EnhanceBlockActions({
     };
   }, [root, ids]);
 
-  if ((!root || marks.length === 0) && leavingKey === "") return null;
+  if (root) hostRef.current = overlayHost(root);
+  const host = hostRef.current;
+  if (!host || (marks.length === 0 && leavingKey === "")) return null;
 
   const activeId = hoverId ?? caretId;
   const active = activeId ? marks.find((m) => m.id === activeId) : undefined;
@@ -204,7 +209,7 @@ export function EnhanceBlockActions({
 
   return createPortal(
     <>
-      {Object.entries(wasLines).filter(([, line]) => line.box.visible).map(([id, line]) => (
+      {Object.entries(wasLines).map(([id, line]) => (
         <WasText key={id} id={id} line={line} ref={WAS_IN} />
       ))}
       {Object.entries(leaving)
@@ -222,7 +227,7 @@ export function EnhanceBlockActions({
             }
           />
         ))}
-      {rec.canEdit && active && activeBox?.visible && (
+      {rec.canEdit && active && activeBox && (
         <div
           key={active.id}
           ref={PILL_IN}
@@ -231,7 +236,7 @@ export function EnhanceBlockActions({
           aria-label="Review this change"
           onMouseEnter={() => setHoverId(active.id)}
           onMouseLeave={() => setHoverId(null)}
-          style={{ position: "fixed", ...pillPosition(activeBox) }}
+          style={{ position: "absolute", ...pillPosition(activeBox) }}
           className={cn("z-30 flex gap-0.5 rounded-full border border-border bg-card p-0.5 shadow-sm")}
         >
           <button
@@ -255,6 +260,6 @@ export function EnhanceBlockActions({
         </div>
       )}
     </>,
-    document.body,
+    host,
   );
 }
