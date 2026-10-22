@@ -31,6 +31,7 @@ describe("listUpcomingMeetings", () => {
         participantUserIds: ["user-1", "user-2"],
         status: "Confirmed",
         exceptions: [],
+        rooms: [],
       },
     ]);
     mockPrisma.interview.findMany.mockResolvedValue([
@@ -40,7 +41,10 @@ describe("listUpcomingMeetings", () => {
         endTime: new Date("2026-05-14T15:30:00Z"),
         videoUrl: null,
         room: { name: "Pod Appa" },
-        assignments: [{ id: "a1" }, { id: "a2" }],
+        assignments: [
+          { id: "a1", cycleInterviewer: { userId: "user-1" } },
+          { id: "a2", cycleInterviewer: { userId: "user-3" } },
+        ],
       },
     ]);
 
@@ -53,6 +57,7 @@ describe("listUpcomingMeetings", () => {
       occurrenceStart: "2026-05-14T15:00:00.000Z",
       scheduledMeetingId: null,
       location: "Pod Appa",
+      attendeeIds: ["user-1", "user-3"],
     });
     expect(out[1]).toMatchObject({
       id: "m1",
@@ -61,6 +66,8 @@ describe("listUpcomingMeetings", () => {
       scheduledMeetingId: "m1",
       meetingUrl: "https://meet.example/m1",
       attendeeCount: 2,
+      attendeeIds: ["user-1", "user-2"],
+      location: null,
     });
     expect(out[1].startsAt).toBe(out[1].occurrenceStart);
   });
@@ -78,6 +85,7 @@ describe("listUpcomingMeetings", () => {
         participantUserIds: ["user-1"],
         status: "Confirmed",
         exceptions: [],
+        rooms: [],
       },
       {
         id: "m-after-window",
@@ -90,6 +98,7 @@ describe("listUpcomingMeetings", () => {
         participantUserIds: ["user-1"],
         status: "Confirmed",
         exceptions: [],
+        rooms: [],
       },
     ]);
     mockPrisma.interview.findMany.mockResolvedValue([]);
@@ -111,6 +120,7 @@ describe("listUpcomingMeetings", () => {
         participantUserIds: ["user-1"],
         status: "Confirmed",
         exceptions: [],
+        rooms: [],
       },
     ]);
     mockPrisma.interview.findMany.mockResolvedValue([]);
@@ -125,5 +135,52 @@ describe("listUpcomingMeetings", () => {
     mockPrisma.interview.findMany.mockResolvedValue([]);
     const out = await listUpcomingMeetings("user-1", NOW, WINDOW_END);
     expect(out).toEqual([]);
+  });
+
+  it("uses the meeting's own location, falling back to its booked rooms, and carries its calendar ids", async () => {
+    mockPrisma.scheduledMeeting.findMany.mockResolvedValue([
+      {
+        id: "m-room",
+        organizerId: "user-2",
+        title: "Crit",
+        durationMinutes: 60,
+        selectedAt: new Date("2026-05-15T18:00:00Z"),
+        recurrenceRule: null,
+        meetingUrl: null,
+        participantUserIds: ["user-1", "user-2"],
+        status: "Confirmed",
+        exceptions: [],
+        rooms: [{ name: "Pod Appa" }, { name: "Pod Momo" }],
+        location: null,
+        description: "Bring sketches",
+        externalEventId: "g-1",
+        iCalUID: "uid-1",
+      },
+      {
+        id: "m-loc",
+        organizerId: "user-1",
+        title: "Coffee",
+        durationMinutes: 30,
+        selectedAt: new Date("2026-05-16T14:00:00Z"),
+        recurrenceRule: null,
+        meetingUrl: null,
+        participantUserIds: [],
+        status: "Confirmed",
+        exceptions: [],
+        rooms: [{ name: "Pod Appa" }],
+        location: "Dirt Cowboy",
+      },
+    ]);
+    mockPrisma.interview.findMany.mockResolvedValue([]);
+
+    const out = await listUpcomingMeetings("user-1", NOW, WINDOW_END);
+    expect(out[0]).toMatchObject({
+      location: "Pod Appa, Pod Momo",
+      description: "Bring sketches",
+      externalEventId: "g-1",
+      iCalUID: "uid-1",
+      attendeeIds: ["user-2", "user-1"],
+    });
+    expect(out[1]).toMatchObject({ location: "Dirt Cowboy", attendeeIds: ["user-1"] });
   });
 });

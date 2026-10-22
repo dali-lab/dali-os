@@ -414,6 +414,12 @@ export default [
   route("api/desktop/version", "routes/api.desktop.version.ts"),
   route("api/desktop/updated", "routes/api.desktop.updated.ts"),
   route("api/desktop/agenda", "routes/api.desktop.agenda.ts"),
+  route("api/mobile/me", "routes/api.mobile.me.ts"),
+  route("api/mobile/projects", "routes/api.mobile.projects.ts"),
+  route("api/mobile/projects/:id", "routes/api.mobile.projects.$id.ts"),
+  route("api/mobile/calendar", "routes/api.mobile.calendar.ts"),
+  route("api/mobile/pass", "routes/api.mobile.pass.ts"),
+  route("api/mobile/push-token", "routes/api.mobile.push-token.ts"),
 
   // OAuth endpoints (no layout)
   route("oauth/authorize", "routes/oauth.authorize.ts"),
@@ -478,6 +484,14 @@ export default [
   route("api/groups/:groupId", "admin/routes/api.groups.$groupId.ts"),
   route("api/tour/complete", "routes/api.tour.complete.ts"),
   route("api/timezone/update", "routes/api.timezone.update.ts"),
+  // Mobile app chat (gated by the mobile-app flag in requireMobileUser).
+  route("api/chat/bootstrap", "chat/routes/api.chat.bootstrap.ts"),
+  route("api/chat/stream", "chat/routes/api.chat.stream.ts"),
+  route("api/chat/conversations", "chat/routes/api.chat.conversations.ts"),
+  route("api/chat/conversations/:id/messages", "chat/routes/api.chat.conversations.$id.messages.ts"),
+  route("api/chat/conversations/:id/:op", "chat/routes/api.chat.conversations.$id.$op.ts"),
+  route("api/chat/messages/:id/reactions", "chat/routes/api.chat.messages.$id.reactions.ts"),
+  route("api/chat/dms", "chat/routes/api.chat.dms.ts"),
   route("api/notifications", "routes/api.notifications.ts"),
   route("api/notifications/stream", "routes/api.notifications.stream.ts"),
   route("api/presence/statuses", "routes/api.presence.statuses.ts"),

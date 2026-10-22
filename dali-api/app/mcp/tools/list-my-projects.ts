@@ -33,6 +33,7 @@ type MyProjectOut = {
   name: string;
   status: "Active" | "Paused" | "Archived";
   imageUrl: string | null;
+  terms: string[];
   currentTermAssignment: {
     termCode: string;
     domainName: string;
@@ -124,6 +125,7 @@ export async function runListMyProjects(callerId: string, input: Input) {
       name: p.name,
       status: p.status,
       imageUrl: p.imageUrl,
+      terms: termSpans.map((t) => t.code),
       currentTermAssignment: currentTermByProject.get(p.id) ?? null,
       activeSprint: band
         ? { label: band.label, endsAt: new Date(band.end + DAY).toISOString() }

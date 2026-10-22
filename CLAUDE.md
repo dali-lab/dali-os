@@ -14,7 +14,7 @@ Project conventions for Claude when running inside `anthropics/claude-code-actio
 - **Styling**: Tailwind CSS 4.
 - **Deploy**: Fly.io. Branches: `staging` → `prod`. Migrations require `DIRECT_URL` (non-pooled Neon endpoint) in addition to pooled `DATABASE_URL` — see `dali-api/prisma/MIGRATIONS.md`.
 - **Package manager**: npm. Node 22.
-- **Other packages**: `asr/` (Modal transcription service, Python + uv, deployed by `deploy-asr.yml`), `ios/` (SwiftUI iPad room display), `jobx-extension/` (Chrome timesheet extension). Each has its own README.
+- **Other packages**: `asr/` (Modal transcription service, Python + uv, deployed by `deploy-asr.yml`), `ios/` (SwiftUI iPad room display), `mobile/` (Expo React Native member app for iOS and Android, behind the `mobile-app` flag; reads `/api/mobile/*` and `/api/chat/*`), `jobx-extension/` (Chrome timesheet extension). Each has its own README.
 
 ## Commands (run from `dali-api/`)
 
