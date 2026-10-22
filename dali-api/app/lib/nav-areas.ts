@@ -22,12 +22,15 @@ import {
   Heart,
   Kanban,
   LayoutGrid,
-  Library,
+  Images,
+  Lightbulb,
   MapPinned,
+  Newspaper,
   RotateCw,
   Megaphone,
   Settings,
   Shield,
+  Sparkles,
   UserPlus,
   UsersRound,
   type LucideIcon,
@@ -184,11 +187,10 @@ export const NAV_AREAS: NavArea[] = [
 // ---------------------------------------------------------------------------
 // The nav-regroup area set.
 //
-// Five areas grouped by WHO a surface is for, not by what it is: regular
-// members get General + Education (+ Hiring while they're on a live cycle),
+// Areas grouped by WHO a surface is for, not by what it is: regular members
+// get Lab + Community + Education (+ Hiring while they're on a live cycle),
 // Core gets everything. Drive is not an area here at all — it is pinned under
-// Calendar (see pinnedNavItems), until the `resources` flag hands that slot to
-// Resources and moves Drive into General. Every Core process page keeps a
+// Calendar (see pinnedNavItems). Every Core process page keeps a
 // working pre-regroup URL; the /core/* path is canonical only for flag-on
 // viewers, which the source loaders enforce via regroupRedirect.
 // ---------------------------------------------------------------------------
@@ -215,6 +217,18 @@ const REGROUPED_AREAS: NavArea[] = [
       // Lab-wide Attendance: every meeting/event you're invited to, with each
       // event's roster (invited-scoped, see app/routes/attendance.tsx).
       { label: "Attendance", href: "/attendance", icon: ClipboardCheck, gate: (r) => !r.isAlumni },
+    ],
+  },
+  {
+    key: "community",
+    label: "Community",
+    icon: Sparkles,
+    hubPath: "/connect",
+    subtabs: [
+      { label: "Connect", href: "/connect", icon: MapPinned },
+      { label: "Opportunities", href: "/community/opportunities", icon: Lightbulb },
+      { label: "Gallery", href: "/community/gallery", icon: Images },
+      { label: "Blogs", href: "/resources", icon: Newspaper },
     ],
   },
   {
@@ -286,39 +300,23 @@ const REGROUPED_AREAS: NavArea[] = [
   },
 ];
 
-// With the `resources` flag on, Resources takes the pinned slot under Calendar
-// and Drive lands in General — the area every member already lives in — rather
-// than losing its place in the nav entirely.
-function withDriveInGeneral(areas: NavArea[]): NavArea[] {
-  return areas.map((a) =>
-    a.key === "projects"
-      ? { ...a, subtabs: [...a.subtabs, { label: "Drive", href: "/drive", icon: HardDrive }] }
-      : a,
-  );
-}
-
 /**
  * The area set for one viewer. REGROUPED_AREAS is the base nav; NAV_AREAS
  * survives only to keep favourites saved under the old nav resolvable (see
  * ALL_AREAS).
  */
 export function areasFor(flags: Partial<FeatureFlagMap> = {}): NavArea[] {
-  let areas = REGROUPED_AREAS;
-  if (flags.resources) areas = withDriveInGeneral(areas);
-  return areas;
+  if (flags.community) {
+    return REGROUPED_AREAS.map((a) =>
+      a.key === "projects" ? { ...a, subtabs: a.subtabs.filter((t) => t.href !== "/connect") } : a,
+    );
+  }
+  return REGROUPED_AREAS.filter((a) => a.key !== "community");
 }
 
-/**
- * The nav items pinned above the area dropdown. Home / My Tasks / Calendar are
- * rendered inline by Layout; the pinned tail is Drive, or — behind the
- * `resources` flag — Resources, the lab's shared reference document, which
- * everyone reads and nobody should have to go looking for. Drive moves into
- * General in that case (see areasFor), so it is never dropped from the nav.
- */
-export function pinnedNavItems(flags: Partial<FeatureFlagMap> = {}): SubTab[] {
-  return flags.resources
-    ? [{ label: "Resources", href: "/resources", icon: Library }]
-    : [{ label: "Drive", href: "/drive", icon: HardDrive }];
+/** The nav items pinned above the area dropdown, after Home / My Tasks / Calendar. */
+export function pinnedNavItems(): SubTab[] {
+  return [{ label: "Drive", href: "/drive", icon: HardDrive }];
 }
 
 /** Room booking, carried by the calendar header (and the command palette). */
@@ -331,7 +329,7 @@ export const ROOM_BOOKING_NAV_ITEM: SubTab = { label: "Room booking", href: "/ro
 // favorite saved under the old nav still resolves its area and icon.
 const ALL_AREAS: NavArea[] = [
   ...NAV_AREAS,
-  ...areasFor(),
+  ...areasFor({ community: true }),
 ];
 
 // These matchers are handed a live URL, not a bare pathname: in tab mode the

@@ -173,11 +173,9 @@ export default [
       "projects/routes/projects.$id.public-view.tsx",
     ),
 
-    // Resources — a curated front page of member blog posts, plus bookmark
-    // tabs (Core-managed reference pages, each its own collab room).
+    // Resources — a curated front page of member blog posts (Community ▸ Blogs).
     route("resources", "routes/resources.tsx", [
       index("routes/resources._index.tsx"),
-      route("b/:bookmarkId", "routes/resources.b.$bookmarkId.tsx"),
       route("blog/:postId", "routes/resources.blog.$postId.tsx"),
     ]),
     // The writing page sits outside the Resources layout: no masthead or
@@ -220,6 +218,9 @@ export default [
     route("members/:id", "members/routes/members.$id.tsx"),
     // Connect: map of where alumni are based (members + alumni).
     route("connect", "members/routes/connect.tsx"),
+    // Community: Connect lives here in the sidebar, alongside these.
+    route("community/opportunities", "community/routes/community.opportunities.tsx"),
+    route("community/gallery", "community/routes/community.gallery.tsx"),
     // Anonymous coffee chat invite: accept / decline (recipient) or status (sender).
     route("coffee-chats/:id", "members/routes/coffee-chats.$id.tsx"),
 

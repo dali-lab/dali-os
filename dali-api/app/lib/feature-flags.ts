@@ -106,10 +106,10 @@ export const FEATURE_FLAGS = [
       "Route sign-in through the BetterAuth substrate across the member, Dartmouth, and partner doors. Sign-in is passwordless: a 6-digit email code plus passkeys (no password, no Google). requireAuth accepts a BetterAuth session alongside a legacy one, so turning this on does NOT force a re-login; active legacy sessions upgrade to BetterAuth silently as users browse. Read as a GLOBAL toggle (enabled + everyone), so role and user targeting do not apply. Ships off; flipping it on is the cutover.",
   },
   {
-    key: "resources",
-    label: "Resources page",
+    key: "community",
+    label: "Community",
     description:
-      "Resources at /resources: a front page of member blog posts (Internal, or Public to also appear on dali.website) plus bookmark tabs, reference pages that Core/Admin create, edit and delete and every lab member reads. Takes the pinned sidebar slot under Calendar, which moves Drive down into General. Ships off; without it the slot stays Drive and /resources is not reachable.",
+      "The Community sidebar area: Connect, Opportunities, Gallery and Blogs. Blogs opens /resources: a front page of member blog posts (Internal, or Public to also appear on dali.website) plus bookmark tabs, reference pages that Core/Admin create, edit and delete and every lab member reads. Ships off; without it Connect stays under Lab and the other Community pages are not reachable.",
   },
   {
     key: "ai-meeting-notes",

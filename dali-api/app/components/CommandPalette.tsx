@@ -253,9 +253,9 @@ export function CommandPalette({ open, onClose, tabless, focusMode, roles = NO_R
       navItem("My Tasks", "/notifications", ListTodo),
       navItem("Calendar", "/calendar", Calendar),
       ...(roles.isAlumni ? [] : [navItem("Email", "/email", Mail)]),
-      // The pinned tail (Resources) sits outside every area, so it reaches the
+      // The pinned tail (Drive) sits outside every area, so it reaches the
       // palette from the same registry the sidebar rail reads.
-      ...[...pinnedNavItems(flags), ROOM_BOOKING_NAV_ITEM].map((i) => navItem(i.label, i.href, i.icon)),
+      ...[...pinnedNavItems(), ROOM_BOOKING_NAV_ITEM].map((i) => navItem(i.label, i.href, i.icon)),
       ...visibleAreas(roles, flags).flatMap((area) => {
         const hub = navItem(area.label, area.hubPath, area.icon);
         if (area.key === "admin") return [hub];
