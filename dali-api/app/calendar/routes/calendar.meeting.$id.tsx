@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Link, useFetcher, useLoaderData } from "react-router";
 import QRCode from "qrcode";
 import {
@@ -657,8 +657,15 @@ export default function CalendarMeetingPage() {
   const d = useLoaderData<typeof loader>();
   const { card, pageTitle, sectionTitle } = useOsChrome();
   const when = d.selectedAtIso ? formatWhen(d.selectedAtIso) : "Time not set";
-  const present = d.rows.filter((r) => r.present).length;
-  const pct = d.rows.length > 0 ? Math.round((present / d.rows.length) * 100) : 0;
+  const [liveRoster, setLiveRoster] = useState<{ occurrenceStart: string; rows: AttendanceRow[] } | null>(null);
+  const rosterRows = liveRoster?.occurrenceStart === d.occurrenceStart ? liveRoster.rows : d.rows;
+  const present = rosterRows.filter((r) => r.present).length;
+  const pct = rosterRows.length > 0 ? Math.round((present / rosterRows.length) * 100) : 0;
+  const occurrenceStart = d.occurrenceStart;
+  const handleRowsChange = useCallback(
+    (rows: AttendanceRow[]) => setLiveRoster({ occurrenceStart, rows }),
+    [occurrenceStart],
+  );
   // Same gate as the Add-to-Wallet buttons and the standalone scan station;
   // the /calendar/scan route re-checks both server-side. The checklist only
   // renders with a roster, since scanning into a meeting with no
@@ -962,7 +969,7 @@ export default function CalendarMeetingPage() {
               />
             </div>
             <span className="text-base font-medium tabular-nums text-foreground">
-              {present} of {d.rows.length} present
+              {present} of {rosterRows.length} present
             </span>
           </div>
         )}
@@ -1000,6 +1007,7 @@ export default function CalendarMeetingPage() {
             defaultScanning
             plain
             attendees={d.rows}
+            onRowsChange={handleRowsChange}
           />
         )}
 

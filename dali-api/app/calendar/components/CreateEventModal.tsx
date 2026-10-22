@@ -8,6 +8,7 @@ import { TimeField as TimeComboField } from "~/components/ui/TimeField";
 import { Select } from "~/components/ui/floating";
 import { RoomLocationField } from "~/rooms/components/RoomLocationField";
 import { filedNoteFrom, filedWhere } from "~/calendar/lib/filed-note";
+import { useToast } from "~/components/ui/toast";
 import { useFiledNoteToast } from "~/calendar/lib/useFiledNoteToast";
 import {
   ScheduleWeekGrid,
@@ -350,6 +351,12 @@ export function CreateEventModal({
     | { ok: false; error: string }
   >(null);
   const [submitting, setSubmitting] = useState(false);
+  const toast = useToast();
+
+  useEffect(() => {
+    const err = (timeFetcher.data as { error?: string } | undefined)?.error;
+    if (err) toast.error(`Meeting created, but your time entry wasn't saved: ${err}`);
+  }, [timeFetcher.data, toast]);
 
   // Close after a successful event-create (fetcher settles with no error data)
   const prevEventState = useRef(eventFetcher.state);
@@ -435,6 +442,7 @@ export function CreateEventModal({
       const json = await res.json();
       if (!res.ok) {
         setMeetingStatus({ ok: false, error: json.error ?? "Failed to create meeting" });
+        setSubmitting(false);
       } else {
         const filed = filedNoteFrom(json);
         if (filed) showFiledNote(filed, { undo: true });
@@ -479,11 +487,10 @@ export function CreateEventModal({
         // same-URL revalidate through for exactly this case.)
         revalidator.revalidate();
         if (createdMeetingId) onCreated?.(createdMeetingId);
-        setTimeout(() => onClose(), 1200);
+        if (!json.gcalError) setTimeout(() => onClose(), 1200);
       }
     } catch (err) {
       setMeetingStatus({ ok: false, error: err instanceof Error ? err.message : "Network error" });
-    } finally {
       setSubmitting(false);
     }
   }
@@ -1030,6 +1037,11 @@ export function CreateEventModal({
                       </a>
                     </>
                   )}
+                </p>
+              )}
+              {meetingStatus?.ok === true && meetingStatus.gcalError && (
+                <p role="alert" className="text-sm text-os-amber">
+                  The Google Calendar invite didn&apos;t go out: {meetingStatus.gcalError}
                 </p>
               )}
               {meetingStatus?.ok === false && (

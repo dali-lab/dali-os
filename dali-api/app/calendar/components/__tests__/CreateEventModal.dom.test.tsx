@@ -7,8 +7,12 @@ import type { GroupOption, LoaderData } from "~/calendar/lib/types";
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 const showFiledNote = vi.fn();
+const toastError = vi.fn();
+let fetcherData: unknown;
+const onClose = vi.fn();
+vi.mock("~/components/ui/toast", () => ({ useToast: () => ({ error: toastError }) }));
 vi.mock("react-router", () => ({
-  useFetcher: () => ({ state: "idle", data: undefined, submit: vi.fn(), Form: "form" }),
+  useFetcher: () => ({ state: "idle", data: fetcherData, submit: vi.fn(), Form: "form" }),
   useRevalidator: () => ({ revalidate: vi.fn() }),
   useNavigate: () => vi.fn(),
 }));
@@ -78,7 +82,7 @@ async function mount(props: { groups: GroupOption[]; initialGroupIds?: string[];
         endLocal: "2026-10-20T11:00",
         initialGroupIds: props.initialGroupIds,
         initialUserIds: props.initialUserIds,
-        onClose: () => {},
+        onClose,
       }),
     ),
   );
@@ -101,6 +105,9 @@ beforeEach(() => {
   defaultResult = NEW_DEFAULT;
   createResponse = { ok: true, meeting: { id: "m1" }, notifiedCount: 3 };
   showFiledNote.mockClear();
+  toastError.mockClear();
+  onClose.mockClear();
+  fetcherData = undefined;
   fetchMock.mockReset();
   fetchMock.mockImplementation(async (url: string) =>
     String(url).startsWith("/api/notebooks/default")
@@ -227,5 +234,52 @@ describe("CreateEventModal status line", () => {
     await mount({ groups: [atlas], initialGroupIds: ["g-atlas"] });
     await click(submitButton());
     expect(container.querySelector("p.text-os-green")!.textContent).toBe("Meeting created. Notified 1 participant.");
+  });
+});
+
+describe("CreateEventModal after the create", () => {
+  const sleep = (ms: number) => act(async () => void (await new Promise((r) => setTimeout(r, ms))));
+
+  it("keeps Create meeting disabled once the meeting exists", async () => {
+    await mount({ groups: [atlas], initialGroupIds: ["g-atlas"] });
+    await click(submitButton());
+    const submit = container.querySelector<HTMLButtonElement>("button[type='submit']")!;
+    expect(submit.textContent).toBe("Creating…");
+    expect(submit.disabled).toBe(true);
+  });
+
+  it("re-enables Create meeting when the create fails", async () => {
+    fetchMock.mockImplementation(async (url: string) =>
+      String(url).startsWith("/api/notebooks/default")
+        ? { ok: true, json: async () => defaultResult }
+        : { ok: false, status: 500, json: async () => ({ error: "Nope" }) },
+    );
+    await mount({ groups: [atlas], initialGroupIds: ["g-atlas"] });
+    await click(submitButton());
+    expect(container.textContent).toContain("Nope");
+    expect(submitButton().disabled).toBe(false);
+  });
+
+  it("closes itself after a clean create", async () => {
+    await mount({ groups: [atlas], initialGroupIds: ["g-atlas"] });
+    await click(submitButton());
+    await sleep(1300);
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it("warns when the Google invite failed and stays open", async () => {
+    createResponse = { ok: true, meeting: { id: "m1" }, notifiedCount: 2, gcalError: "Calendar is unreachable" };
+    await mount({ groups: [atlas], initialGroupIds: ["g-atlas"] });
+    await click(submitButton());
+    const warning = container.querySelector("[role='alert']")!;
+    expect(warning.textContent).toContain("The Google Calendar invite didn't go out: Calendar is unreachable");
+    await sleep(1300);
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("toasts when the organizer's time entry could not be saved", async () => {
+    fetcherData = { error: "Invalid role" };
+    await mount({ groups: [atlas], initialGroupIds: ["g-atlas"] });
+    expect(toastError).toHaveBeenCalledWith(expect.stringContaining("Invalid role"));
   });
 });

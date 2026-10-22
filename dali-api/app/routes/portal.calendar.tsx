@@ -7,7 +7,7 @@ import { loadCalendarData, submitCalendarAction } from "~/calendar/routes/calend
 // for what that changes). It lives here rather than being a second registration
 // of the member route so each shell keeps its own layout: this one renders
 // inside the portal rail, /calendar inside the member one.
-export { default, handle } from "~/calendar/routes/calendar";
+export { default, handle, shouldRevalidate } from "~/calendar/routes/calendar";
 
 export const meta: Route.MetaFunction = () => [{ title: "Calendar · DALI" }];
 

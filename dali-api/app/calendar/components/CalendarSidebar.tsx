@@ -5,6 +5,7 @@ import { CalendarDays, Check, ChevronDown, ChevronRight, X } from "lucide-react"
 import { cn } from "~/lib/cn";
 import { SearchInput } from "~/components/ui/SearchInput";
 import { useDialog } from "~/components/ui/dialog";
+import { useToast } from "~/components/ui/toast";
 import { MiniMonth } from "~/calendar/components/MiniMonth";
 import { roleColor } from "~/calendar/lib/event-block";
 import { CustomHiresManager, archiveCustomHire } from "~/calendar/components/CustomHiresManager";
@@ -324,6 +325,7 @@ function CalendarSidebarContent({
 }: CalendarSidebarProps) {
   const revalidator = useRevalidator();
   const dialog = useDialog();
+  const toast = useToast();
   const links = data.calendarLinks.filter((l) => l.enabled);
 
   return (
@@ -429,7 +431,11 @@ function CalendarSidebarContent({
                               tone: "destructive",
                             });
                             if (!ok) return;
-                            await archiveCustomHire(r.roleRefId);
+                            const result = await archiveCustomHire(r.roleRefId);
+                            if (result.error) {
+                              toast.error(result.error);
+                              return;
+                            }
                             revalidator.revalidate();
                           }
                         : undefined

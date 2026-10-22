@@ -195,6 +195,7 @@ export function MeetingNoteFields({
   const inviteSpace = inviteSpaceOf(invitedGroups);
   const [picker, setPicker] = useState<PickerRequest | null>(null);
   const [pairError, setPairError] = useState<string | null>(null);
+  const [defaultError, setDefaultError] = useState<string | null>(null);
   const [folderOpen, setFolderOpen] = useState(false);
   const [folderError, setFolderError] = useState<string | null>(null);
   const destinations = useDriveDestinations({
@@ -227,13 +228,16 @@ export function MeetingNoteFields({
   useEffect(() => {
     if (!state.enabled || manual || state.dismissed) return;
     let cancelled = false;
+    setDefaultError(null);
     fetchDefaultNotebook({ meetingId, scopeGroupId, invite, pairMenteeId })
       .then((def) => {
         if (cancelled) return;
         note.applyDefault(def);
         onLoaded.current?.(def);
       })
-      .catch(() => {});
+      .catch(() => {
+        if (!cancelled) setDefaultError("Couldn't pick a notebook automatically. Choose one below.");
+      });
     return () => {
       cancelled = true;
     };
@@ -322,7 +326,7 @@ export function MeetingNoteFields({
     <FilingOptions
       chips={chips}
       pairChip={pairChip}
-      error={pairError}
+      error={pairError ?? defaultError}
       onChip={openPicker}
       onPair={pickPair}
       onSearch={() => openPicker(null)}

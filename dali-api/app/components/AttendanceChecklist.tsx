@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, ScanLine } from "lucide-react";
 import { AttendeeScanner } from "~/components/AttendeeScanner";
 import { Checkbox } from "~/components/ui/Checkbox";
@@ -41,6 +41,7 @@ export function AttendanceChecklist({
   plain = false,
   attendees,
   endpoint,
+  onRowsChange,
 }: {
   meetingId: string;
   /** Which occurrence this roster is (ISO original start) — each occurrence of
@@ -64,8 +65,16 @@ export function AttendanceChecklist({
    *  `{ userId, present, occurrence }` regardless — a caller whose endpoint
    *  isn't occurrence-scoped just ignores that field. */
   endpoint?: string;
+  /** Reports the live rows after every local change, so a surface showing its
+   *  own tally stays in step with check-offs and scans. */
+  onRowsChange?: (rows: AttendanceRow[]) => void;
 }) {
   const [rows, setRows] = useState(attendees);
+  const onRowsChangeRef = useRef(onRowsChange);
+  onRowsChangeRef.current = onRowsChange;
+  useEffect(() => {
+    onRowsChangeRef.current?.(rows);
+  }, [rows]);
   const [pendingIds, setPendingIds] = useState<Set<string>>(new Set());
   const [sort, setSort] = useState<AttendeeSort>("name-asc");
   // A big roster would push the note itself below the fold, so it starts

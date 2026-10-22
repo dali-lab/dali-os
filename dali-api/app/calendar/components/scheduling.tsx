@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from "react";
-import { Link, useRevalidator, useSearchParams } from "react-router";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Link, useSearchParams } from "react-router";
 import { ChevronLeft, ChevronRight, Mail, RefreshCw, Search, UsersRound, X } from "lucide-react";
 import {
   autoUpdate,
@@ -709,11 +709,7 @@ export function ScheduleWeekGrid({
   // Bumped to force the fetch effect to re-run without changing inputs (manual
   // refresh button + tab-focus refresh).
   const [refreshKey, setRefreshKey] = useState(0);
-  const revalidator = useRevalidator();
-  const refresh = () => {
-    setRefreshKey((k) => k + 1);
-    revalidator.revalidate();
-  };
+  const refresh = useCallback(() => setRefreshKey((k) => k + 1), []);
   useRefreshOnFocus(refresh);
 
   // Stable key so the effect only re-fires on a real change. participantIds
@@ -1240,7 +1236,7 @@ export function ScheduleWeekGrid({
         weekStartIso={weekStartIso}
         weekNav={weekNav}
         onRefresh={refresh}
-        refreshing={loading || revalidator.state !== "idle"}
+        refreshing={loading}
         legend={
           hideAvailability
             ? undefined

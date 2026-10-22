@@ -103,3 +103,23 @@ describe("AttendanceChecklist endpoint prop", () => {
     expect(checkbox.checked).toBe(false);
   });
 });
+
+describe("AttendanceChecklist onRowsChange", () => {
+  it("reports the rows again after someone is checked off", async () => {
+    const onRowsChange = vi.fn();
+    mount(
+      createElement(AttendanceChecklist, {
+        meetingId: "m1",
+        occurrenceStart: "2026-10-05T14:00:00.000Z",
+        meetingLabel: "Standup",
+        canEdit: true,
+        plain: true,
+        attendees,
+        onRowsChange,
+      }),
+    );
+    expect(onRowsChange).toHaveBeenLastCalledWith([expect.objectContaining({ userId: "u1", present: false })]);
+    await toggleFirstCheckbox();
+    expect(onRowsChange).toHaveBeenLastCalledWith([expect.objectContaining({ userId: "u1", present: true })]);
+  });
+});

@@ -15,12 +15,6 @@
 // (backdrop, title, close) belongs to the page that opens it, so this drops
 // into the settings dialog as one section beside Classes and Working hours.
 //
-// Timesheet-sync intent wired below:
-//   intent    = "set-timesheet-sync"
-//   enabled   = "true" | "false"
-//
-// The server handler must look for intent === "set-timesheet-sync" and
-// persist the boolean on UserAvailabilitySettings (or a new per-user col).
 
 import { useState } from "react";
 import { createPortal } from "react-dom";

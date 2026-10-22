@@ -79,11 +79,11 @@ const LOADER_DATA = {
   proposals: [],
 };
 
-async function mount() {
+async function mount(overrides: Partial<typeof LOADER_DATA> = {}) {
   const Stub = createRoutesStub([
     {
       path: "/calendar/meeting/:id",
-      loader: () => LOADER_DATA,
+      loader: () => ({ ...LOADER_DATA, ...overrides }),
       action: () => ({ ok: true }),
       Component: CalendarMeetingPage,
     },
@@ -148,5 +148,19 @@ describe("meeting page attendance section", () => {
 
     expect(checkInCards()).toBe(1);
     expect(rosterNames()).toBe(1);
+  });
+
+  it("counts people checked off on the roster in the present tally", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, json: async () => ({ ok: true }) })));
+    await mount({ rows: [{ userId: "u1", name: "Stephanie Xu", present: false, absenceNote: null }] });
+    expect(container.textContent).toContain("0 of 1 present");
+
+    const checkbox = container.querySelector<HTMLInputElement>("input[type='checkbox']")!;
+    await act(async () => {
+      checkbox.click();
+    });
+
+    expect(container.textContent).toContain("1 of 1 present");
+    vi.unstubAllGlobals();
   });
 });

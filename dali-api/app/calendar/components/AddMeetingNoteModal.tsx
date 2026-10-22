@@ -12,6 +12,7 @@ import {
 } from "~/calendar/components/MeetingNoteFields";
 import { filedNoteFrom, type FiledNoteResponse } from "~/calendar/lib/filed-note";
 import { useFiledNoteToast } from "~/calendar/lib/useFiledNoteToast";
+import { OPEN_NOTE_FETCHER_KEY } from "~/calendar/components/MeetingNoteOpenWatcher";
 import { useSeriesNotebook } from "~/calendar/lib/useSeriesNotebook";
 import { suggestInputOfMeeting } from "~/calendar/lib/note-suggest-input";
 import type { EditContext } from "~/calendar/components/EditMeetingModal";
@@ -29,8 +30,10 @@ const labelClass =
   "block text-[11px] font-bold text-muted-foreground uppercase tracking-[0.08em] mb-2";
 
 /** Makes the note for one occurrence of a meeting that already keeps notes
- *  (the meeting's type and filing are known, so there is nothing to ask), says
- *  where it went, and opens it. */
+ *  (the meeting's type and filing are known, so there is nothing to ask). The
+ *  request runs on a keyed fetcher so it outlives the button that started it;
+ *  `MeetingNoteOpenWatcher`, mounted at the app root, says where it went and
+ *  opens it. */
 export function useOpenMeetingNote({
   meetingId,
   occurrenceStart,
@@ -40,24 +43,9 @@ export function useOpenMeetingNote({
   occurrenceStart?: string;
   actionPath?: string;
 }) {
-  const fetcher = useFetcher<FiledNoteResponse>();
-  const navigate = useNavigate();
-  const showFiledNote = useFiledNoteToast();
-  // Guards against stale fetcher.data from an earlier submit navigating a
-  // fresh click away before it has even been made.
-  const submittedRef = useRef(false);
-  useEffect(() => {
-    if (submittedRef.current && fetcher.state !== "submitting" && fetcher.data?.notePageId) {
-      submittedRef.current = false;
-      const filed = filedNoteFrom(fetcher.data);
-      // Already on its way to the note, so the toast only says where it went.
-      if (filed) showFiledNote(filed, { open: false });
-      navigate(`/documents/${fetcher.data.notePageId}`);
-    }
-  }, [fetcher.state, fetcher.data, navigate, showFiledNote]);
+  const fetcher = useFetcher<FiledNoteResponse>({ key: OPEN_NOTE_FETCHER_KEY });
   const openOccurrence = useCallback(
     (target: { meetingId: string; occurrenceStart: string }) => {
-      submittedRef.current = true;
       fetcher.submit(
         { intent: "add-meeting-note", meetingId: target.meetingId, occurrence: target.occurrenceStart },
         { method: "post", ...(actionPath ? { action: actionPath } : {}) },
@@ -153,8 +141,9 @@ function AddMeetingNoteModal({
   const showFiledNote = useFiledNoteToast();
   const { offerFutureFiling } = useSeriesNotebook();
 
-  // The guests decide which notebooks are suggested. A meeting the viewer can't
-  // read the context of just gets no suggestions.
+  // The guests decide which notebooks are suggested; the fields render without
+  // them and pick them up on arrival. A meeting the viewer can't read the
+  // context of just gets no suggestions.
   const [suggest, setSuggest] = useState<FilingSuggestionInput | null | undefined>(undefined);
   useEffect(() => {
     let cancelled = false;
@@ -250,19 +239,15 @@ function AddMeetingNoteModal({
           <p className="text-sm text-muted-foreground">
             Starts a shared note doc linked to this meeting.
           </p>
-          {suggest === undefined ? (
-            <p className="text-sm text-muted-foreground">Loading</p>
-          ) : (
-            <MeetingNoteFields
-              note={note}
-              surface="note"
-              fieldClass={fieldClass}
-              labelClass={labelClass}
-              meetingTitle={meetingTitle}
-              meetingId={meetingId}
-              suggest={suggest ?? undefined}
-            />
-          )}
+          <MeetingNoteFields
+            note={note}
+            surface="note"
+            fieldClass={fieldClass}
+            labelClass={labelClass}
+            meetingTitle={meetingTitle}
+            meetingId={meetingId}
+            suggest={suggest ?? undefined}
+          />
           {fetcher.data?.error && <p className="text-sm text-destructive">{fetcher.data.error}</p>}
         </div>
 

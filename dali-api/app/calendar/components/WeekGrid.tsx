@@ -255,7 +255,7 @@ export function EventRsvpControl({
         toast.error(json.error ?? "Failed to propose time");
         return;
       }
-      toast.success("Time proposed — the organizer will be notified");
+      toast.success("Time proposed. The organizer will be notified.");
       setProposeOpen(false);
     } catch {
       toast.error("Network error");
@@ -780,7 +780,12 @@ export function WeekGridEvent({
   // dragRef holds the mutable drag state; livePos drives the visual override
   // while the drag is in progress. Both are null when idle.
   const dragRef = useRef<BlockDragState | null>(null);
-  const [livePos, setLivePos] = useState<{ startHour: number; endHour: number } | null>(null);
+  const [livePos, setLivePosState] = useState<{ startHour: number; endHour: number } | null>(null);
+  const livePosRef = useRef(livePos);
+  const setLivePos = useCallback((next: { startHour: number; endHour: number } | null) => {
+    livePosRef.current = next;
+    setLivePosState(next);
+  }, []);
   const [isDragging, setIsDragging] = useState(false);
   // Suppresses the synthetic click that fires after a completed move/resize drag.
   // Set true in mouseup (after a real drag) and consumed in onClick.
@@ -880,17 +885,14 @@ export function WeekGridEvent({
       const dayChanged = move != null && move.targetDay !== move.originDay;
       const didMove = dayChanged || Math.abs(uev.clientY - (move as NonNullable<typeof move>).startClientY) >= 4;
       const targetDay = move?.targetDay;
-      setLivePos((prev) => {
-        if (didMove && prev) {
-          e.onMoveResize?.(prev.startHour, prev.endHour, targetDay);
-        }
-        return null;
-      });
+      const last = livePosRef.current;
+      setLivePos(null);
+      if (didMove && last) e.onMoveResize?.(last.startHour, last.endHour, targetDay);
     };
 
     attachWindowListeners(onMove, onUp);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [e.onMoveResize, e.startHour, e.duration, attachWindowListeners, dayIdx, hitTestDay]);
+  }, [e.onMoveResize, e.startHour, e.duration, attachWindowListeners, dayIdx, hitTestDay, setLivePos]);
 
   // Handle pointerdown: starts a resize drag (top = start edge, bottom = end edge).
   const onHandleMouseDown = useCallback((edge: "top" | "bottom") => (ev: React.PointerEvent<HTMLElement>) => {
@@ -938,17 +940,16 @@ export function WeekGridEvent({
       dragRef.current = null;
       // Suppress the synthetic click that follows mouseup after a resize drag.
       suppressNextClick.current = true;
-      setLivePos((prev) => {
-        if (prev && ds && (ds.kind === "resize-top" || ds.kind === "resize-bottom")) {
-          e.onMoveResize?.(prev.startHour, prev.endHour);
-        }
-        return null;
-      });
+      const last = livePosRef.current;
+      setLivePos(null);
+      if (last && ds && (ds.kind === "resize-top" || ds.kind === "resize-bottom")) {
+        e.onMoveResize?.(last.startHour, last.endHour);
+      }
     };
 
     attachWindowListeners(onMove, onUp);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [e.onMoveResize, e.startHour, e.duration, attachWindowListeners]);
+  }, [e.onMoveResize, e.startHour, e.duration, attachWindowListeners, setLivePos]);
 
   // When dragging, override start/duration for visual positioning.
   const displayStart = livePos?.startHour ?? e.startHour;

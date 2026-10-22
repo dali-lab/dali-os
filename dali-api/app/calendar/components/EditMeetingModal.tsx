@@ -17,6 +17,7 @@ import { getZonedYMD, zonedDayStartUtc } from "~/lib/timezone";
 import { weekStartIsoForDay, weekWindow } from "~/calendar/lib/view-window";
 import { eventTitleOrDefault } from "~/calendar/lib/event-title";
 import { useDialog } from "~/components/ui/dialog";
+import { useToast } from "~/components/ui/toast";
 import { MeetingNoteFields, useMeetingNote } from "~/calendar/components/MeetingNoteFields";
 import type { DefaultNotebookResult } from "~/calendar/components/meeting-note";
 import { changedSeriesNotebook, SERIES_CHANGE_CONFIRM } from "~/calendar/lib/series-notebook";
@@ -123,6 +124,7 @@ export function EditMeetingModal({
 }) {
   const revalidator = useRevalidator();
   const dialog = useDialog();
+  const toast = useToast();
   const note = useMeetingNote();
   const { apply: applySeriesNotebook } = useSeriesNotebook();
   const seriesNotebookId = useRef<string | null>(null);
@@ -356,6 +358,9 @@ export function EditMeetingModal({
         return;
       }
       if (newNotebook) await applySeriesNotebook(meetingId, newNotebook, "future");
+      if (json.gcalError) {
+        toast.error(`Saved, but Google Calendar wasn't updated: ${json.gcalError}`);
+      }
       revalidator.revalidate();
       onClose();
     } catch {
@@ -381,7 +386,13 @@ export function EditMeetingModal({
       {loadError ? (
         <p className="text-sm text-destructive">{loadError}</p>
       ) : !ctx ? (
-        <p className="text-sm text-muted-foreground">Loading…</p>
+        <div role="status" aria-label="Loading meeting" className="flex animate-pulse flex-col gap-5">
+          <div className="h-10 rounded-[10px] bg-muted/40" />
+          <div className="h-10 rounded-[10px] bg-muted/40" />
+          <div className="h-10 w-2/3 rounded-[10px] bg-muted/40" />
+          <div className="h-10 rounded-[10px] bg-muted/40" />
+          <div className="h-20 rounded-[10px] bg-muted/40" />
+        </div>
       ) : (
         <div className="flex flex-col gap-6 sm:flex-row">
         {hasGuests && (

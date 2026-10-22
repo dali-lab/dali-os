@@ -55,6 +55,7 @@ import type {
   MemberClassDTO,
   CourseHitDTO,
   CalendarLinkDTO,
+  SubCalendarDTO,
 } from "~/calendar/lib/types";
 
 // ── Helpers ───────────────────────────────────────────────────────────────
@@ -954,14 +955,94 @@ export function EventComposer({
 // ── CalendarManagerModal ───────────────────────────────────────────────────
 // Create / rename / delete Google calendars on a linked account.
 
+const managerFieldCls = "rounded-md border border-border bg-background px-2.5 py-1.5 text-sm text-foreground";
+
+function ManagedCalendarRow({ linkId, cal }: { linkId: string; cal: SubCalendarDTO }) {
+  const renameFetcher = useFetcher<{ error?: string } | null>();
+  const deleteFetcher = useFetcher<{ error?: string } | null>();
+  const dialog = useDialog();
+  const [renaming, setRenaming] = useState(false);
+  const [renameVal, setRenameVal] = useState("");
+
+  const prevRename = useRef(renameFetcher.state);
+  useEffect(() => {
+    if (prevRename.current !== "idle" && renameFetcher.state === "idle" && !renameFetcher.data?.error) {
+      setRenaming(false);
+    }
+    prevRename.current = renameFetcher.state;
+  }, [renameFetcher.state, renameFetcher.data]);
+
+  const error = renameFetcher.data?.error ?? deleteFetcher.data?.error;
+  return (
+    <div className="flex flex-col gap-1">
+      <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/30 px-3 py-1.5">
+        <span className="h-3 w-3 shrink-0 rounded-[3px]" style={{ backgroundColor: cal.color ?? "#9ca3af" }} />
+        {renaming ? (
+          <renameFetcher.Form method="post" className="flex flex-1 items-center gap-1">
+            <input type="hidden" name="intent" value="cal-rename" />
+            <input type="hidden" name="linkId" value={linkId} />
+            <input type="hidden" name="calendarId" value={cal.id} />
+            <input name="summary" value={renameVal} onChange={(e) => setRenameVal(e.target.value)} className={cn(managerFieldCls, "flex-1")} autoFocus />
+            <button type="submit" disabled={renameFetcher.state !== "idle"} className="rounded-md border border-border px-2 py-1 text-xs hover:bg-muted disabled:opacity-50">Save</button>
+          </renameFetcher.Form>
+        ) : (
+          <span className="min-w-0 flex-1 truncate text-sm text-foreground">
+            {cal.summary}
+            {cal.primary && <span className="ml-1.5 text-[10px] uppercase text-muted-foreground">Primary</span>}
+            {!cal.writable && <span className="ml-1.5 text-[10px] text-muted-foreground">read-only</span>}
+          </span>
+        )}
+        {cal.writable && !renaming && (
+          <>
+            <button
+              type="button"
+              onClick={() => {
+                setRenaming(true);
+                setRenameVal(cal.summary);
+              }}
+              className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+              aria-label={`Rename ${cal.summary}`}
+            >
+              <Pencil className="h-3.5 w-3.5" />
+            </button>
+            {!cal.primary && (
+              <Tooltip content={`Delete ${cal.summary}`}>
+                <button
+                  type="button"
+                  aria-label={`Delete ${cal.summary}`}
+                  disabled={deleteFetcher.state !== "idle"}
+                  className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-destructive disabled:opacity-50"
+                  onClick={async () => {
+                    const ok = await dialog.confirm({
+                      title: `Delete "${cal.summary}"?`,
+                      description: "Deletes this calendar and every event on it from Google.",
+                      tone: "destructive",
+                      confirmLabel: "Delete calendar",
+                    });
+                    if (ok)
+                      deleteFetcher.submit(
+                        { intent: "cal-delete", linkId, calendarId: cal.id },
+                        { method: "post" },
+                      );
+                  }}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </Tooltip>
+            )}
+          </>
+        )}
+      </div>
+      {error && <p className="px-1 text-xs text-destructive">{error}</p>}
+    </div>
+  );
+}
+
 export function CalendarManagerModal({ data, onClose }: { data: LoaderData; onClose: () => void }) {
   const fetcher = useFetcher<{ error?: string } | null>();
-  const dialog = useDialog();
   const [newName, setNewName] = useState("");
   const googleLinks = data.calendarLinks.filter((l) => l.provider === "Google" && l.subCalendars);
   const [newLink, setNewLink] = useState(googleLinks[0]?.id ?? "");
-  const [renaming, setRenaming] = useState<string | null>(null);
-  const [renameVal, setRenameVal] = useState("");
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -972,12 +1053,11 @@ export function CalendarManagerModal({ data, onClose }: { data: LoaderData; onCl
   useEffect(() => {
     if (prev.current !== "idle" && fetcher.state === "idle" && !fetcher.data?.error) {
       setNewName("");
-      setRenaming(null);
     }
     prev.current = fetcher.state;
   }, [fetcher.state, fetcher.data]);
 
-  const fieldCls = "rounded-md border border-border bg-background px-2.5 py-1.5 text-sm text-foreground";
+  const fieldCls = managerFieldCls;
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/55 backdrop-blur-sm p-4 py-10">
       <button type="button" className="fixed inset-0 cursor-default" aria-label="Close" onClick={onClose} tabIndex={-1} />
@@ -999,64 +1079,7 @@ export function CalendarManagerModal({ data, onClose }: { data: LoaderData; onCl
                   {link.displayName || link.externalEmail}
                 </div>
                 {(link.subCalendars ?? []).map((cal) => (
-                  <div key={cal.id} className="flex items-center gap-2 rounded-lg border border-border bg-muted/30 px-3 py-1.5">
-                    <span className="h-3 w-3 shrink-0 rounded-[3px]" style={{ backgroundColor: cal.color ?? "#9ca3af" }} />
-                    {renaming === cal.id ? (
-                      <fetcher.Form method="post" className="flex flex-1 items-center gap-1">
-                        <input type="hidden" name="intent" value="cal-rename" />
-                        <input type="hidden" name="linkId" value={link.id} />
-                        <input type="hidden" name="calendarId" value={cal.id} />
-                        <input name="summary" value={renameVal} onChange={(e) => setRenameVal(e.target.value)} className={cn(fieldCls, "flex-1")} autoFocus />
-                        <button type="submit" className="rounded-md border border-border px-2 py-1 text-xs hover:bg-muted">Save</button>
-                      </fetcher.Form>
-                    ) : (
-                      <span className="min-w-0 flex-1 truncate text-sm text-foreground">
-                        {cal.summary}
-                        {cal.primary && <span className="ml-1.5 text-[10px] uppercase text-muted-foreground">Primary</span>}
-                        {!cal.writable && <span className="ml-1.5 text-[10px] text-muted-foreground">read-only</span>}
-                      </span>
-                    )}
-                    {cal.writable && renaming !== cal.id && (
-                      <>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setRenaming(cal.id);
-                            setRenameVal(cal.summary);
-                          }}
-                          className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-                          aria-label={`Rename ${cal.summary}`}
-                        >
-                          <Pencil className="h-3.5 w-3.5" />
-                        </button>
-                        {!cal.primary && (
-                          <Tooltip content={`Delete ${cal.summary}`}>
-                            <button
-                              type="button"
-                              aria-label={`Delete ${cal.summary}`}
-                              className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-destructive"
-                              onClick={async () => {
-                                const ok = await dialog.confirm({
-                                  title: `Delete "${cal.summary}"?`,
-                                  description:
-                                    "Deletes this calendar and every event on it from Google.",
-                                  tone: "destructive",
-                                  confirmLabel: "Delete calendar",
-                                });
-                                if (ok)
-                                  fetcher.submit(
-                                    { intent: "cal-delete", linkId: link.id, calendarId: cal.id },
-                                    { method: "post" },
-                                  );
-                              }}
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </button>
-                          </Tooltip>
-                        )}
-                      </>
-                    )}
-                  </div>
+                  <ManagedCalendarRow key={cal.id} linkId={link.id} cal={cal} />
                 ))}
               </div>
             ))}
@@ -1094,12 +1117,91 @@ export function CalendarManagerModal({ data, onClose }: { data: LoaderData; onCl
 // "My classes this term" — add Dartmouth classes (period picker or custom time)
 // to the calendar, synced to a linked Google calendar or kept as a DALI layer.
 
+function ManagedClassRow({
+  c,
+  onEdit,
+  onRemoved,
+}: {
+  c: MemberClassDTO;
+  onEdit: () => void;
+  onRemoved: () => void;
+}) {
+  const refreshFetcher = useFetcher();
+  const removeFetcher = useFetcher();
+  const dialog = useDialog();
+  return (
+    <li
+      className="flex items-center gap-2 rounded-lg border border-border bg-muted/30 px-3 py-2"
+    >
+      <span className="h-3 w-3 shrink-0 rounded-[3px]" style={{ backgroundColor: "#1E5779" }} />
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-sm font-medium text-foreground">
+          {c.title}
+          {c.periodCode && <span className="ml-1.5 text-xs text-muted-foreground">{c.periodCode}</span>}
+        </div>
+        <div className="truncate text-xs text-muted-foreground">
+          {classScheduleSummary(c.meetings)} · {c.destinationLabel}
+        </div>
+      </div>
+      {c.offeringCrn && (
+        <button
+          type="button"
+          onClick={() =>
+            refreshFetcher.submit(
+              { intent: "class-refresh", classId: c.id },
+              { method: "post" },
+            )
+          }
+          disabled={refreshFetcher.state !== "idle"}
+          className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50"
+          aria-label={`Update ${c.title} from the timetable`}
+          title="Update time & location from the timetable"
+        >
+          <RefreshCw className="h-3.5 w-3.5" />
+        </button>
+      )}
+      <button
+        type="button"
+        onClick={onEdit}
+        className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+        aria-label={`Edit ${c.title}`}
+      >
+        <Pencil className="h-3.5 w-3.5" />
+      </button>
+      <Tooltip content={`Remove ${c.title}`}>
+        <button
+          type="button"
+          aria-label={`Remove ${c.title}`}
+          className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-destructive"
+          onClick={async () => {
+            const ok = await dialog.confirm({
+              title: `Remove "${c.title}"?`,
+              description: c.destinationLabel?.startsWith("Google")
+                ? "Removes this class from DALI and deletes the recurring event from your Google calendar."
+                : "Removes this class from your DALI calendar.",
+              tone: "destructive",
+              confirmLabel: "Remove class",
+            });
+            if (ok) {
+              onRemoved();
+              removeFetcher.submit(
+                { intent: "class-remove", classId: c.id },
+                { method: "post" },
+              );
+            }
+          }}
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+        </button>
+      </Tooltip>
+    </li>
+  );
+}
+
 // The classes editor itself. Rendered inline by the Availability tab, and
 // wrapped by ClassesManagerModal for the places that still open it as a dialog.
 export function ClassesManagerBody({ data }: { data: LoaderData }) {
   const fetcher = useFetcher<{ error?: string } | null>();
-  const removeFetcher = useFetcher();
-  const dialog = useDialog();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [title, setTitle] = useState("");
   const [mode, setMode] = useState(""); // "" | period code | "custom"
@@ -1194,7 +1296,6 @@ export function ClassesManagerBody({ data }: { data: LoaderData }) {
   const courseHits = courseFetcher.data?.courses ?? [];
   const courseSearching = courseFetcher.state !== "idle";
   const quickAddFetcher = useFetcher();
-  const refreshFetcher = useFetcher();
   const refreshSearchFetcher = useFetcher<{ refreshed: number }>();
   const refreshingSearch = refreshSearchFetcher.state !== "idle";
   // CRNs already added this term, so results can show "Added" and skip re-adding.
@@ -1317,72 +1418,14 @@ export function ClassesManagerBody({ data }: { data: LoaderData }) {
             {data.memberClasses.filter((c) => c.termId === selectedTermId).length > 0 && (
               <ul className="flex flex-col gap-1.5">
                 {data.memberClasses.filter((c) => c.termId === selectedTermId).map((c) => (
-                  <li
+                  <ManagedClassRow
                     key={c.id}
-                    className="flex items-center gap-2 rounded-lg border border-border bg-muted/30 px-3 py-2"
-                  >
-                    <span className="h-3 w-3 shrink-0 rounded-[3px]" style={{ backgroundColor: "#1E5779" }} />
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate text-sm font-medium text-foreground">
-                        {c.title}
-                        {c.periodCode && <span className="ml-1.5 text-xs text-muted-foreground">{c.periodCode}</span>}
-                      </div>
-                      <div className="truncate text-xs text-muted-foreground">
-                        {classScheduleSummary(c.meetings)} · {c.destinationLabel}
-                      </div>
-                    </div>
-                    {c.offeringCrn && (
-                      <button
-                        type="button"
-                        onClick={() =>
-                          refreshFetcher.submit(
-                            { intent: "class-refresh", classId: c.id },
-                            { method: "post" },
-                          )
-                        }
-                        disabled={refreshFetcher.state !== "idle"}
-                        className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50"
-                        aria-label={`Update ${c.title} from the timetable`}
-                        title="Update time & location from the timetable"
-                      >
-                        <RefreshCw className="h-3.5 w-3.5" />
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => startEdit(c)}
-                      className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-                      aria-label={`Edit ${c.title}`}
-                    >
-                      <Pencil className="h-3.5 w-3.5" />
-                    </button>
-                    <Tooltip content={`Remove ${c.title}`}>
-                      <button
-                        type="button"
-                        aria-label={`Remove ${c.title}`}
-                        className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-destructive"
-                        onClick={async () => {
-                          const ok = await dialog.confirm({
-                            title: `Remove "${c.title}"?`,
-                            description: c.destinationLabel?.startsWith("Google")
-                              ? "Removes this class from DALI and deletes the recurring event from your Google calendar."
-                              : "Removes this class from your DALI calendar.",
-                            tone: "destructive",
-                            confirmLabel: "Remove class",
-                          });
-                          if (ok) {
-                            if (editingId === c.id) resetForm();
-                            removeFetcher.submit(
-                              { intent: "class-remove", classId: c.id },
-                              { method: "post" },
-                            );
-                          }
-                        }}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
-                    </Tooltip>
-                  </li>
+                    c={c}
+                    onEdit={() => startEdit(c)}
+                    onRemoved={() => {
+                      if (editingId === c.id) resetForm();
+                    }}
+                  />
                 ))}
               </ul>
             )}
