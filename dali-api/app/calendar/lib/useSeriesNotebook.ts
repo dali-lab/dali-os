@@ -21,20 +21,22 @@ export function useSeriesNotebook() {
       shown?: { notebook: Notebook | null },
     ) => {
       if (shown) setOverride({ meetingId, notebook: shown.notebook });
-      const res = await setSeriesNotebookRequest(meetingId, notebookId, scope);
-      if (!res.ok) {
+      try {
+        const res = await setSeriesNotebookRequest(meetingId, notebookId, scope);
+        if (!res.ok) {
+          toast.error(res.error ?? "Couldn't change the notebook");
+          return false;
+        }
+        if (res.skipped > 0) {
+          toast.error(`${res.skipped} ${res.skipped === 1 ? "note" : "notes"} you can't edit stayed where they were`);
+        } else {
+          toast.success(notebookId ? "Notebook updated" : "Notebook cleared");
+        }
+        await revalidator.revalidate();
+        return true;
+      } finally {
         setOverride(null);
-        toast.error(res.error ?? "Couldn't change the notebook");
-        return false;
       }
-      if (res.skipped > 0) {
-        toast.error(`${res.skipped} ${res.skipped === 1 ? "note" : "notes"} you can't edit stayed where they were`);
-      } else {
-        toast.success(notebookId ? "Notebook updated" : "Notebook cleared");
-      }
-      await revalidator.revalidate();
-      setOverride(null);
-      return true;
     },
     [toast, revalidator],
   );

@@ -134,4 +134,21 @@ describe("useSeriesNotebook shownNotebook", () => {
     expect(api.shownNotebook("m1", loaded)).toEqual(loaded);
     expect(toast.error).toHaveBeenCalledWith("Nope");
   });
+
+  it("goes back to the loader's notebook when the request throws", async () => {
+    setSeriesNotebookRequest.mockRejectedValue(new Error("Network error"));
+    await act(async () => {
+      await api.apply("m1", "nb2", "future", { notebook: NOTEBOOK }).catch(() => {});
+    });
+    expect(api.shownNotebook("m1", loaded)).toEqual(loaded);
+  });
+
+  it("goes back to the loader's notebook when the revalidation throws", async () => {
+    setSeriesNotebookRequest.mockResolvedValue({ ok: true, skipped: 0 });
+    revalidate.mockRejectedValue(new Error("offline"));
+    await act(async () => {
+      await api.apply("m1", "nb2", "future", { notebook: NOTEBOOK }).catch(() => {});
+    });
+    expect(api.shownNotebook("m1", loaded)).toEqual(loaded);
+  });
 });

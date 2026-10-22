@@ -29,7 +29,10 @@ import { syncTimeEntryToGoogle, removeTimeEntryFromGoogle } from "~/lib/timeshee
 import { markCalendarChanged } from "~/calendar/lib/external-cache.server";
 import { submitCalendarAction, timeEntryResult } from "~/calendar/routes/calendar.server";
 
-const mockPrisma = prisma as unknown as Record<string, Record<string, ReturnType<typeof vi.fn>>>;
+const mockPrisma = prisma as unknown as Record<string, Record<string, ReturnType<typeof vi.fn>>> & {
+  $transaction: ReturnType<typeof vi.fn>;
+  $executeRaw: ReturnType<typeof vi.fn>;
+};
 const mockSync = syncTimeEntryToGoogle as ReturnType<typeof vi.fn>;
 const mockRemove = removeTimeEntryFromGoogle as ReturnType<typeof vi.fn>;
 const mockMark = markCalendarChanged as ReturnType<typeof vi.fn>;
@@ -75,6 +78,8 @@ beforeEach(() => {
   mockSync.mockResolvedValue(undefined);
   mockRemove.mockResolvedValue(undefined);
   mockMark.mockResolvedValue(undefined);
+  mockPrisma.$transaction.mockImplementation(async (fn: unknown) => (fn as (tx: unknown) => unknown)(prisma));
+  mockPrisma.$executeRaw.mockResolvedValue(0);
 });
 
 describe("timeEntryResult", () => {
@@ -158,12 +163,12 @@ describe("add-time-entry", () => {
     mockSync.mockReturnValue(new Promise<void>((r) => (finishMirror = r)));
 
     await submitCalendarAction(request(addFields));
-    expect(mockMark).toHaveBeenCalledTimes(1);
+    expect(mockMark).toHaveBeenCalledTimes(2);
 
     finishMirror();
     await flush();
 
-    expect(mockMark).toHaveBeenCalledTimes(2);
+    expect(mockMark).toHaveBeenCalledTimes(3);
     expect(mockMark).toHaveBeenLastCalledWith("member-1");
   });
 
@@ -175,7 +180,7 @@ describe("add-time-entry", () => {
     await submitCalendarAction(request(addFields));
     await flush();
 
-    expect(mockMark).toHaveBeenCalledTimes(2);
+    expect(mockMark).toHaveBeenCalledTimes(3);
     log.mockRestore();
   });
 
@@ -230,7 +235,7 @@ describe("update-time-entry", () => {
 
     expect(res!.status).toBe(200);
     expect(mockSync).toHaveBeenCalledWith(row);
-    expect(mockMark).toHaveBeenCalledTimes(2);
+    expect(mockMark).toHaveBeenCalledTimes(3);
     log.mockRestore();
   });
 
@@ -287,7 +292,7 @@ describe("delete-time-entry", () => {
     expect(res!.status).toBe(200);
     finish();
     await flush();
-    expect(mockMark).toHaveBeenCalledTimes(2);
+    expect(mockMark).toHaveBeenCalledTimes(3);
   });
 
   it("still succeeds when the Google removal fails", async () => {
@@ -379,5 +384,97 @@ describe("mirroring one entry from several quick writes", () => {
 
     expect(res!.status).toBe(200);
     await settle();
+  });
+});
+
+describe("the stamp around a write", () => {
+  it("stamps the change marker after the handler as well as before it", async () => {
+    mockPrisma.timeEntry.create.mockImplementation(async () => {
+      order.push("write");
+      return row;
+    });
+    const order: string[] = [];
+    mockMark.mockImplementation(async () => {
+      order.push("stamp");
+    });
+    mockPrisma.timeEntry.findUnique.mockResolvedValue(row);
+
+    await submitCalendarAction(request(addFields));
+
+    expect(order.slice(0, 3)).toEqual(["stamp", "write", "stamp"]);
+  });
+
+  it("stamps again when the handler throws", async () => {
+    mockPrisma.timeEntry.create.mockRejectedValue(new Error("db down"));
+
+    await expect(submitCalendarAction(request(addFields))).rejects.toThrow("db down");
+
+    expect(mockMark).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not stamp for a write that cannot change a Google read", async () => {
+    await submitCalendarAction(request({ intent: "set-event-buffer", minutes: "10" }));
+
+    expect(mockMark).not.toHaveBeenCalled();
+  });
+});
+
+describe("the cross-machine mirror lock", () => {
+  const order: string[] = [];
+
+  beforeEach(() => {
+    order.length = 0;
+    mockPrisma.$executeRaw.mockImplementation(async (strings: TemplateStringsArray, ...values: unknown[]) => {
+      order.push(`lock:${strings.join("?")}:${values.join(",")}`);
+      return 0;
+    });
+    mockPrisma.timeEntry.findUnique.mockImplementation(async () => {
+      order.push("read");
+      return row;
+    });
+  });
+
+  it("takes the entry's advisory lock, re-reads the row, then calls Google, all in one transaction", async () => {
+    mockPrisma.timeEntry.update.mockResolvedValue(row);
+    mockSync.mockImplementation(async () => {
+      order.push("google");
+    });
+
+    await submitCalendarAction(request({ intent: "update-time-entry", id: "t1", note: "Edited" }));
+    await flush();
+
+    expect(order.slice(-3)).toEqual([
+      expect.stringContaining("lock:SELECT pg_advisory_xact_lock(hashtext("),
+      "read",
+      "google",
+    ]);
+    expect(order.find((o) => o.startsWith("lock:"))).toContain("timesheet-mirror:t1");
+    expect(mockPrisma.$transaction).toHaveBeenLastCalledWith(expect.any(Function), expect.objectContaining({ timeout: 30_000 }));
+  });
+
+  it("reads and deletes the row under the lock on delete, so a mirror elsewhere has saved its Google id", async () => {
+    mockPrisma.timeEntry.delete.mockImplementation(async () => {
+      order.push("delete");
+      return row;
+    });
+    mockRemove.mockImplementation(async () => {
+      order.push("google");
+    });
+
+    await submitCalendarAction(request({ intent: "delete-time-entry", id: "t1" }));
+    await flush();
+
+    expect(order.slice(0, 3)).toEqual([expect.stringContaining("timesheet-mirror:t1"), "read", "delete"]);
+    expect(mockRemove).toHaveBeenCalledWith(row);
+  });
+
+  it("does not call Google for a row that was deleted before the job got the lock", async () => {
+    mockPrisma.timeEntry.update.mockResolvedValue(row);
+    mockPrisma.timeEntry.findUnique.mockResolvedValueOnce(row).mockResolvedValue(null);
+
+    await submitCalendarAction(request({ intent: "update-time-entry", id: "t1", note: "Edited" }));
+    await flush();
+
+    expect(mockSync).not.toHaveBeenCalled();
   });
 });

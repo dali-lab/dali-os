@@ -1,4 +1,4 @@
-import { createContext, createElement, useCallback, useContext, useMemo, useState } from "react";
+import { createContext, createElement, useCallback, useContext, useMemo, useState, startTransition } from "react";
 import type { ReactNode } from "react";
 import type { PendingSubmission } from "~/calendar/lib/optimistic-layer";
 
@@ -17,7 +17,9 @@ export function PendingSubmissionsProvider({ children }: { children: ReactNode }
   const [pending, setPending] = useState<PendingSubmission[]>([]);
   const register = useCallback((sub: PendingSubmission) => {
     setPending((prev) => [...prev, sub]);
-    return () => setPending((prev) => prev.filter((p) => p !== sub));
+    // A transition, like the router's own commits: an urgent release would
+    // paint the grid a frame before the fresh loader data or fetcher state.
+    return () => startTransition(() => setPending((prev) => prev.filter((p) => p !== sub)));
   }, []);
   const value = useMemo(() => ({ pending, register }), [pending, register]);
   return createElement(PendingSubmissionsContext.Provider, { value }, children);

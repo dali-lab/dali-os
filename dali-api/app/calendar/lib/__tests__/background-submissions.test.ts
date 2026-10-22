@@ -1,11 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { backgroundKey, failureMessage, isBackgroundKey } from "~/calendar/lib/background-submissions";
+import { backgroundKey, failureMessage, intentOfKey, isBackgroundKey } from "~/calendar/lib/background-submissions";
 
 describe("background submission keys", () => {
   it("recognises its own keys and no others", () => {
     expect(isBackgroundKey(backgroundKey("event-move", "a"))).toBe(true);
     expect(isBackgroundKey("cal:fg:a")).toBe(false);
     expect(isBackgroundKey("fetcher-1")).toBe(false);
+  });
+
+  it("reads the intent back out of the key, whatever the id holds", () => {
+    expect(intentOfKey(backgroundKey("update-time-entry", "a:b"))).toBe("update-time-entry");
   });
 
   it("keeps two events' keys apart", () => {

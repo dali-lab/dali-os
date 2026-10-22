@@ -435,6 +435,13 @@ describe("pendingFromFetchers", () => {
     expect(out).toEqual([]);
   });
 
+  it("draws a retry while it submits, though it still carries the last attempt's error", () => {
+    const out = pendingFromFetchers([
+      fetcher({ key: "k", state: "submitting", formData: formData({ intent: "event-move", eventId: "a" }), data: { error: "Room taken" } }),
+    ]);
+    expect(out.map((p) => p.id)).toEqual(["k"]);
+  });
+
   it("still draws a submission whose action answered without an error", () => {
     const out = pendingFromFetchers([
       fetcher({ key: "k1", formData: formData({ intent: "add-time-entry" }), data: { ok: true } }),

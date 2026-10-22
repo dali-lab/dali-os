@@ -19,7 +19,7 @@ import { Select } from "~/components/ui/floating";
 import { useDialog } from "~/components/ui/dialog";
 import { useToast } from "~/components/ui/toast";
 import { cn } from "~/lib/cn";
-import { withoutCancelled, type CancelScope } from "~/rooms/lib/optimistic-cancel";
+import { requestCancel, withoutCancelled, type CancelScope } from "~/rooms/lib/optimistic-cancel";
 import { NO_REPEAT, RepeatField, repeatSpecToRRule, type RepeatSpec } from "~/calendar/components/RepeatField";
 
 export const meta: Route.MetaFunction = () => [{ title: "Rooms · DALI OS" }];
@@ -176,9 +176,8 @@ export default function RoomsPage() {
         Object.fromEntries(Object.entries(prev).map(([roomId, list]) => [roomId, withoutCancelled(list, item, scope, now)])),
       );
     };
-    const restore = async (res: Response) => {
-      const json = await res.json().catch(() => ({}));
-      toast.error(json.error ?? "Couldn't cancel the booking.");
+    const restore = (error: string) => {
+      toast.error(error);
       void load();
     };
 
@@ -194,14 +193,9 @@ export default function RoomsPage() {
       });
       if (!scope) return;
       hide(scope as CancelScope);
-      const res = await fetch(`/api/room-bookings/${item.id}/cancel`, {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ scope, occurrenceStart: item.occurrenceStart }),
-      });
-      if (!res.ok) {
-        await restore(res);
+      const outcome = await requestCancel(item.id, { scope: scope as CancelScope, occurrenceStart: item.occurrenceStart });
+      if (!outcome.ok) {
+        restore(outcome.error);
         return;
       }
       if (scope === "this") toast.success(underway ? "Booking ended." : "Booking cancelled.");
@@ -220,12 +214,9 @@ export default function RoomsPage() {
     });
     if (!ok) return;
     hide("this");
-    const res = await fetch(`/api/room-bookings/${item.id}/cancel`, {
-      method: "POST",
-      credentials: "include",
-    });
-    if (!res.ok) {
-      await restore(res);
+    const outcome = await requestCancel(item.id);
+    if (!outcome.ok) {
+      restore(outcome.error);
       return;
     }
     toast.success(underway ? "Booking ended." : "Booking cancelled.");

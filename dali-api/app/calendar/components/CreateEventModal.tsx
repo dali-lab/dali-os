@@ -30,7 +30,7 @@ import {
 } from "~/calendar/components/composer";
 import { durationMinutesBetween } from "~/calendar/lib/event-block";
 import { eventTitleOrDefault } from "~/calendar/lib/event-title";
-import { backgroundKey } from "~/calendar/lib/background-submissions";
+import { useSubmitBackground } from "~/calendar/lib/background-submissions";
 import { newPendingId, usePendingSubmissions } from "~/calendar/lib/pending-submissions";
 import { getZonedYMD, zonedDayStartUtc } from "~/lib/timezone";
 import { weekStartIsoForDay, weekWindow } from "~/calendar/lib/view-window";
@@ -341,9 +341,8 @@ export function CreateEventModal({
   // saves. One holding a room waits instead: the server rejects a taken room,
   // and that answer has to land where the user can pick another.
   const closeEventOnSubmit = allDay || roomIds.length === 0;
-  const eventFetcher = useFetcher<{ error?: string }>({
-    key: closeEventOnSubmit ? backgroundKey("event-create", instanceId) : `cal:fg:${instanceId}`,
-  });
+  const submitBackground = useSubmitBackground();
+  const eventFetcher = useFetcher<{ error?: string }>({ key: `cal:fg:${instanceId}` });
   const pendingStore = usePendingSubmissions();
   const timeFetcher = useFetcher();
   const revalidator = useRevalidator();
@@ -657,8 +656,11 @@ export function CreateEventModal({
             /* ── Event form ──────────────────────────────────────────────── */
             <eventFetcher.Form
               method="post"
-              onSubmit={() => {
-                if (closeEventOnSubmit) onClose();
+              onSubmit={(e) => {
+                if (!closeEventOnSubmit) return;
+                e.preventDefault();
+                submitBackground("event-create", new FormData(e.currentTarget));
+                onClose();
               }}
               className="flex flex-col gap-5"
             >

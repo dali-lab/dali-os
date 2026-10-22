@@ -76,10 +76,13 @@ const LOADER_DATA = {
   checkInUrl: "https://os.test/calendar/check-in/meeting-1",
   checkInQrSvg: "<svg></svg>",
   walletConfigured: false,
-  proposals: [],
+  proposals: [] as { id: string; proposedStartIso: string; proposerName: string }[],
 };
 
-async function mount(overrides: Partial<typeof LOADER_DATA> = {}) {
+async function mount(
+  overrides: Partial<typeof LOADER_DATA> = {},
+  proposalAction: (args: { request: Request }) => unknown = () => ({ ok: true }),
+) {
   const Stub = createRoutesStub([
     {
       path: "/calendar/meeting/:id",
@@ -87,6 +90,7 @@ async function mount(overrides: Partial<typeof LOADER_DATA> = {}) {
       action: () => ({ ok: true }),
       Component: CalendarMeetingPage,
     },
+    { path: "/api/scheduled-meetings/:id/proposal", action: proposalAction },
   ]);
   container = document.createElement("div");
   document.body.appendChild(container);
@@ -162,5 +166,43 @@ describe("meeting page attendance section", () => {
 
     expect(container.textContent).toContain("1 of 1 present");
     vi.unstubAllGlobals();
+  });
+});
+
+describe("proposed times", () => {
+  const proposals = [
+    { id: "p1", proposedStartIso: "2026-10-01T14:00:00.000Z", proposerName: "Ada" },
+    { id: "p2", proposedStartIso: "2026-10-02T14:00:00.000Z", proposerName: "Grace" },
+  ];
+  const button = (label: string, index: number) =>
+    [...container.querySelectorAll("button")].filter((b) => b.textContent === label)[index]!;
+
+  it("answering one proposal does not abort another's answer still going out", async () => {
+    const signals: AbortSignal[] = [];
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    await mount({ proposals }, async ({ request }) => {
+      signals.push(request.signal);
+      await gate;
+      return { ok: true };
+    });
+
+    await act(async () => button("Accept", 0).click());
+    await act(async () => button("Accept", 0).click());
+
+    expect(signals).toHaveLength(2);
+    expect(signals.every((s) => !s.aborted)).toBe(true);
+    release();
+    await act(async () => {});
+  });
+
+  it("brings a proposal back and says why when the answer fails", async () => {
+    await mount({ proposals }, () => Response.json({ error: "Already answered" }, { status: 409 }));
+
+    await act(async () => button("Decline", 0).click());
+    await act(async () => new Promise((r) => setTimeout(r, 20)));
+
+    expect(container.textContent).toContain("Already answered");
+    expect(container.textContent).toContain("Ada");
   });
 });

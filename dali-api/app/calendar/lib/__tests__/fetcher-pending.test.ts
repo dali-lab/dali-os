@@ -21,6 +21,10 @@ describe("pendingForm", () => {
     expect(pendingForm({ state: "loading", formData: form, data: { error: "no" } })).toBeUndefined();
   });
 
+  it("is the form for a retry that still carries the last attempt's error", () => {
+    expect(pendingForm({ state: "submitting", formData: form, data: { error: "no" } })).toBe(form);
+  });
+
   it("is nothing without a form", () => {
     expect(pendingForm({ state: "submitting" })).toBeUndefined();
   });
@@ -33,5 +37,6 @@ describe("pendingJson", () => {
     expect(pendingJson({ state: "idle", json })).toBeUndefined();
     expect(pendingJson({ state: "loading", json, data: { error: "no" } })).toBeUndefined();
     expect(pendingJson({ state: "submitting" })).toBeUndefined();
+    expect(pendingJson({ state: "submitting", json, data: { error: "no" } })).toBe(json);
   });
 });

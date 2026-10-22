@@ -1890,16 +1890,35 @@ export function timeEntryResult(row: {
 
 const mirrorChains = new Map<string, Promise<void>>();
 
+type EntryLockTx = Pick<typeof prisma, "timeEntry" | "$executeRaw">;
+
+/**
+ * Runs `fn` holding a Postgres advisory lock on the entry, so the Google writes
+ * for one entry are serialized across machines, not just within this process.
+ * The lock lasts for the transaction, and a crash releases it with the
+ * connection. Google calls make the transaction long, hence the timeout.
+ */
+async function withEntryMirrorLock<T>(entryId: string, fn: (tx: EntryLockTx) => Promise<T>): Promise<T> {
+  return prisma.$transaction(
+    async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`timesheet-mirror:${entryId}`}))`;
+      return fn(tx);
+    },
+    { timeout: 30_000, maxWait: 10_000 },
+  );
+}
+
 /**
  * Mirror a timesheet write to Google without holding the response on it. Jobs
- * for one entry run one after another, so a second write can't start before
- * the first has saved its Google event id (which would insert a duplicate). The
+ * for one entry run one after another (in this process by a chain, across
+ * machines by an advisory lock), so a second write can't start before the
+ * first has saved its Google event id (which would insert a duplicate). The
  * mirror writes to Google, so the change marker is stamped again once it lands:
  * a read that raced it on another machine would otherwise be trusted.
  */
-function mirrorInBackground(userId: string, entryId: string, mirror: () => Promise<void>) {
+function mirrorInBackground(userId: string, entryId: string, mirror: (tx: EntryLockTx) => Promise<void>) {
   const job = (mirrorChains.get(entryId) ?? Promise.resolve())
-    .then(mirror)
+    .then(() => withEntryMirrorLock(entryId, mirror))
     .catch((err) => console.error("time entry mirror failed", err))
     .then(() => markCalendarChanged(userId))
     .catch((err) => console.error("time entry mirror marker failed", err));
@@ -1909,9 +1928,9 @@ function mirrorInBackground(userId: string, entryId: string, mirror: () => Promi
   });
 }
 
-/** Mirrors the entry as it is when the job gets its turn, not as it was when queued. */
-const mirrorLatest = (entryId: string) => async () => {
-  const latest = await prisma.timeEntry.findUnique({ where: { id: entryId } });
+/** Mirrors the entry as it is when the job holds the lock, not as it was when queued. */
+const mirrorLatest = (entryId: string) => async (tx: EntryLockTx) => {
+  const latest = await tx.timeEntry.findUnique({ where: { id: entryId } });
   if (latest) await syncTimeEntryToGoogle(latest);
 };
 
@@ -1929,10 +1948,23 @@ export async function submitCalendarAction(request: Request) {
 
   // Any write that can change what the next Google read returns must drop this
   // user's cached external reads rather than letting the TTL hide the change.
-  if (shouldInvalidateExternalCache(rawIntent)) {
+  // Stamped before the handler so a read racing it is not cached as fresh, and
+  // again after: a read that started mid-write cached the pre-write answer.
+  if (!shouldInvalidateExternalCache(rawIntent)) return dispatchCalendarAction(request, userId, raw, rawIntent);
+  await markCalendarChanged(userId);
+  try {
+    return await dispatchCalendarAction(request, userId, raw, rawIntent);
+  } finally {
     await markCalendarChanged(userId);
   }
+}
 
+async function dispatchCalendarAction(
+  request: Request,
+  userId: string,
+  raw: Record<string, FormDataEntryValue>,
+  rawIntent: string,
+) {
   if (
     MEMBER_ONLY_CALENDAR_INTENTS.has(rawIntent) &&
     !(await isLabMember(userId, request))
@@ -2034,9 +2066,8 @@ export async function submitCalendarAction(request: Request) {
 
     case "seed-working-hours": {
       // Materialize the supplied full-week segment set in one transaction. Used
-      // when the user first turns Working Hours on (or edits a day) while the
-      // state is still the in-memory default: persisting only the edited day
-      // would leave the other days with no rows, and the loader's
+      // when the user first turns Working Hours on or resets them: persisting
+      // a single day would leave the other days with no rows, and the loader's
       // "hasAnyPersisted ⇒ unlisted day is empty" rule would then silently wipe
       // the default Mon–Fri hours. Seeding all days at once keeps them.
       for (const d of input.days) {
@@ -2231,11 +2262,15 @@ export async function submitCalendarAction(request: Request) {
       // A mirror still creating this entry's Google event hasn't saved its id
       // yet; wait so the removal below knows which event to take down.
       await mirrorChains.get(input.id);
-      const existing = await prisma.timeEntry.findUnique({ where: { id: input.id } });
-      if (!existing || existing.userId !== userId) {
-        return Response.json({ error: "Not found" }, { status: 404 });
-      }
-      await prisma.timeEntry.delete({ where: { id: input.id } });
+      // Under the lock, a mirror on another machine has finished and saved its
+      // Google event id before the row is read and deleted.
+      const existing = await withEntryMirrorLock(input.id, async (tx) => {
+        const row = await tx.timeEntry.findUnique({ where: { id: input.id } });
+        if (!row || row.userId !== userId) return null;
+        await tx.timeEntry.delete({ where: { id: input.id } });
+        return row;
+      });
+      if (!existing) return Response.json({ error: "Not found" }, { status: 404 });
       mirrorInBackground(userId, existing.id, () => removeTimeEntryFromGoogle(existing));
       return Response.json({ ok: true, entry: { id: existing.id } });
     }

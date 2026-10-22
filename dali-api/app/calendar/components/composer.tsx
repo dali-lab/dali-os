@@ -40,7 +40,7 @@ import { getZonedYMD } from "~/lib/timezone";
 import { cn } from "~/lib/cn";
 import { localDayTimeToIso } from "~/calendar/lib/event-block";
 import { eventTitleOrDefault } from "~/calendar/lib/event-title";
-import { backgroundKey } from "~/calendar/lib/background-submissions";
+import { useSubmitBackground } from "~/calendar/lib/background-submissions";
 import { isTrackedMeeting, STOP_TRACKING_DESCRIPTION, STOP_TRACKING_LABEL } from "~/calendar/lib/stop-tracking";
 import { DARTMOUTH_PERIODS, getPeriod, periodSummary, periodMeetings } from "~/calendar/lib/dartmouth-periods";
 import {
@@ -393,8 +393,8 @@ export function EventComposer({
   // meeting the viewer manages.
   onOpenMeetingEditor?: (meetingId: string) => void;
 }) {
+  const submitBackground = useSubmitBackground();
   const instanceId = useId();
-  const deleteFetcher = useFetcher<{ error?: string } | null>({ key: backgroundKey("event-delete", instanceId) });
   const dialog = useDialog();
   const [steppedAside, setSteppedAside] = useState(false);
   const editing = state.mode === "edit";
@@ -431,11 +431,7 @@ export function EventComposer({
   // while it saves. Editing a whole series or "this & following" splits it into
   // new events whose ids only exist once the server answers, so those wait.
   const closeOnSubmit = !editing || !isRecurring || scope === "this";
-  const fetcher = useFetcher<{ error?: string } | null>({
-    key: closeOnSubmit
-      ? backgroundKey(editing ? "event-update" : "event-create", instanceId)
-      : `cal:fg:${instanceId}`,
-  });
+  const fetcher = useFetcher<{ error?: string } | null>({ key: `cal:fg:${instanceId}` });
 
   // Guest list, loaded on demand for a meeting edit (mirrors EditMeetingModal).
   const [guestCtx, setGuestCtx] = useState<EditContext | null>(null);
@@ -633,17 +629,14 @@ export function EventComposer({
       setSteppedAside(false);
       return;
     }
-    deleteFetcher.submit(
-      {
-        intent: "event-delete",
-        destination,
-        eventId: ev.eventId ?? "",
-        scope: effectiveScope,
-        recurringEventId: ev.recurringEventId ?? "",
-        originalStartIso: ev.startIso ?? "",
-      },
-      { method: "post" },
-    );
+    submitBackground("event-delete", {
+      intent: "event-delete",
+      destination,
+      eventId: ev.eventId ?? "",
+      scope: effectiveScope,
+      recurringEventId: ev.recurringEventId ?? "",
+      originalStartIso: ev.startIso ?? "",
+    });
     onClose();
   }
 
@@ -695,8 +688,11 @@ export function EventComposer({
         ) : (
           <fetcher.Form
             method="post"
-            onSubmit={() => {
-              if (closeOnSubmit) onClose();
+            onSubmit={(e) => {
+              if (!closeOnSubmit) return;
+              e.preventDefault();
+              submitBackground(editing ? "event-update" : "event-create", new FormData(e.currentTarget));
+              onClose();
             }}
             className="flex flex-col gap-3 px-4 py-4"
           >

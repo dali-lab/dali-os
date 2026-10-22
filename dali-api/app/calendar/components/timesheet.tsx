@@ -1,5 +1,5 @@
-import { useFetcher, useLocation } from "react-router";
-import { useEffect, useId, useState } from "react";
+import { useLocation } from "react-router";
+import { useEffect, useState } from "react";
 import { X } from "lucide-react";
 import type { RoleInstance } from "~/lib/roles";
 import { Modal, ModalHeader } from "~/components/Modal";
@@ -12,7 +12,7 @@ import { formatDateShort, formatTimeOnly } from "~/lib/display";
 import type { ExternalEventDTO, TimeEntryDTO } from "~/calendar/lib/types";
 import { EventDetailBody } from "~/calendar/components/WeekGrid";
 import { roleOptionKey, parseRoleOptionKey } from "~/calendar/components/role-fields";
-import { backgroundKey } from "~/calendar/lib/background-submissions";
+import { useSubmitBackground } from "~/calendar/lib/background-submissions";
 
 // Shown wherever time can be logged but the user holds no paid role. Every
 // entry must attribute to one, so there's nothing valid to submit.
@@ -40,7 +40,7 @@ function TimesheetEntryForm({
   idPrefix: string;
 }) {
   const { formClass, formTrigger } = useOsChrome();
-  const fetcher = useFetcher({ key: backgroundKey("add-time-entry", useId()) });
+  const submitBackground = useSubmitBackground();
   // Post to whichever calendar route is mounted — /calendar for members,
   // /portal/calendar for the non-member copy. A hardcoded "/calendar" would
   // send the portal's writes through the member route, whose loaders bounce a
@@ -68,7 +68,8 @@ function TimesheetEntryForm({
     e.preventDefault();
     if (!canSubmit) return;
     const role = parseRoleOptionKey(roleKey);
-    fetcher.submit(
+    submitBackground(
+      "add-time-entry",
       {
         intent: "add-time-entry",
         startTime: new Date(start).toISOString(),
@@ -78,7 +79,7 @@ function TimesheetEntryForm({
         ...(role ? { assignmentType: role.assignmentType, roleRefId: role.roleRefId } : {}),
         ...(note.trim() ? { note: note.trim() } : {}),
       },
-      { method: "post", action: actionPath },
+      { action: actionPath },
     );
     onClose();
   }
@@ -287,9 +288,7 @@ export function TimesheetEditPopover({
   onClose: () => void;
 }) {
   const { formClass, fieldLabel, formTrigger } = useOsChrome();
-  const instanceId = useId();
-  const saveFetcher = useFetcher({ key: backgroundKey("update-time-entry", instanceId) });
-  const deleteFetcher = useFetcher({ key: backgroundKey("delete-time-entry", instanceId) });
+  const submitBackground = useSubmitBackground();
   const actionPath = useLocation().pathname;
   const [start, setStart] = useState(startLocal);
   const [end, setEnd] = useState(endLocal);
@@ -330,7 +329,8 @@ export function TimesheetEditPopover({
     e.preventDefault();
     if (!canSubmit) return;
     const role = parseRoleOptionKey(roleKey);
-    saveFetcher.submit(
+    submitBackground(
+      "update-time-entry",
       {
         intent: "update-time-entry",
         id: entry.id,
@@ -342,7 +342,7 @@ export function TimesheetEditPopover({
         roleRefId: role?.roleRefId ?? "",
         note: note.trim(),
       },
-      { method: "post", action: actionPath },
+      { action: actionPath },
     );
     onClose();
   }
@@ -362,7 +362,7 @@ export function TimesheetEditPopover({
       setConfirming(false);
     }
     if (!ok) return;
-    deleteFetcher.submit({ intent: "delete-time-entry", id: entry.id }, { method: "post", action: actionPath });
+    submitBackground("delete-time-entry", { intent: "delete-time-entry", id: entry.id }, { action: actionPath });
     onClose();
   }
 

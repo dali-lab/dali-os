@@ -1,5 +1,5 @@
-import { useEffect, useRef } from "react";
-import { useFetchers } from "react-router";
+import { useCallback, useContext, useEffect, useId, useRef } from "react";
+import { UNSAFE_DataRouterContext, useSubmit } from "react-router";
 import { useToast } from "~/components/ui/toast";
 
 /**
@@ -27,32 +27,68 @@ export function failureMessage(intent: string, error: unknown): string {
   return typeof error === "string" && error.trim() ? `${lead} ${error}` : lead;
 }
 
+/** The intent a background key was built for: `cal:bg:<intent>:<id>`. */
+export const intentOfKey = (key: string) => key.slice(BACKGROUND_PREFIX.length).split(":")[0] ?? "";
+
 /**
- * Report each background write's outcome once, as soon as its action answers.
- * The answer is read while the fetcher is still revalidating: a fetcher whose
- * component has unmounted is dropped the moment it goes idle.
+ * Send a write the caller is about to walk away from. It goes through
+ * `useSubmit` with a fetcher key rather than a component-owned `useFetcher`:
+ * a keyed fetcher is dropped the moment its component unmounts and it is idle,
+ * which would swallow the failure before the page could report it.
+ */
+export function useSubmitBackground() {
+  const submit = useSubmit();
+  const instanceId = useId();
+  return useCallback(
+    (intent: string, payload: FormData | Record<string, string>, opts: { action?: string; id?: string } = {}) =>
+      submit(payload, {
+        method: "post",
+        action: opts.action,
+        fetcherKey: backgroundKey(intent, opts.id ?? instanceId),
+        navigate: false,
+      }),
+    [submit, instanceId],
+  );
+}
+
+/**
+ * Report each background write's outcome once, from the router's own state
+ * stream. A failed action answers with a 4xx/5xx, which skips revalidation: the
+ * fetcher goes loading, then idle within microtasks, and React renders only the
+ * idle state. An idle fetcher that nothing has mounted is then removed from the
+ * map `useFetchers` reads, so no render ever sees the answer. Subscribing sees
+ * every state, before that removal.
  */
 export function useBackgroundSubmissionToasts(
   onSuccess?: (intent: string, fields: Record<string, string>) => string | null,
 ) {
   const toast = useToast();
-  const fetchers = useFetchers();
-  const handled = useRef(new WeakSet<FormData>());
+  const router = useContext(UNSAFE_DataRouterContext)?.router;
+  const latest = useRef({ toast, onSuccess });
+  latest.current = { toast, onSuccess };
   useEffect(() => {
-    for (const f of fetchers) {
-      if (!isBackgroundKey(f.key) || !f.formData || f.state === "submitting") continue;
-      if (f.data === undefined || handled.current.has(f.formData)) continue;
-      handled.current.add(f.formData);
-      const intent = String(f.formData.get("intent"));
-      const error = (f.data as { error?: unknown } | null)?.error;
-      if (error) {
-        toast.error(failureMessage(intent, error));
-        continue;
-      }
-      const fields: Record<string, string> = {};
-      for (const [k, v] of f.formData.entries()) if (typeof v === "string") fields[k] = v;
-      const message = onSuccess?.(intent, fields);
-      if (message) toast.success(message);
-    }
-  }, [fetchers, toast, onSuccess]);
+    if (!router) return;
+    const handled = new WeakSet<object>();
+    const forms = new Map<string, FormData>();
+    return router.subscribe((state) => {
+      state.fetchers.forEach((f, key) => {
+        if (!isBackgroundKey(key)) return;
+        if (f.formData) forms.set(key, f.formData);
+        if (f.state === "submitting" || f.data == null || typeof f.data !== "object" || handled.has(f.data)) return;
+        handled.add(f.data);
+        const formData = f.formData ?? forms.get(key);
+        forms.delete(key);
+        const intent = intentOfKey(key);
+        const error = (f.data as { error?: unknown }).error;
+        if (error) {
+          latest.current.toast.error(failureMessage(intent, error));
+          return;
+        }
+        const fields: Record<string, string> = {};
+        if (formData) for (const [k, v] of formData.entries()) if (typeof v === "string") fields[k] = v;
+        const message = latest.current.onSuccess?.(intent, fields);
+        if (message) latest.current.toast.success(message);
+      });
+    });
+  }, [router]);
 }

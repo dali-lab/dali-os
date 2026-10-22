@@ -26,3 +26,27 @@ export function withoutCancelled<T extends Cancellable>(
     return [];
   });
 }
+
+export type CancelOutcome = { ok: true } | { ok: false; error: string };
+
+const CANCEL_FAILED = "Couldn't cancel the booking.";
+
+/** Asks the server to cancel. A network failure comes back as a failed outcome
+ *  like any rejection, so the caller can always put the booking back. */
+export async function requestCancel(
+  bookingId: string,
+  body?: { scope: CancelScope; occurrenceStart: string },
+): Promise<CancelOutcome> {
+  try {
+    const res = await fetch(`/api/room-bookings/${bookingId}/cancel`, {
+      method: "POST",
+      credentials: "include",
+      ...(body ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {}),
+    });
+    if (res.ok) return { ok: true };
+    const json = await res.json().catch(() => ({}));
+    return { ok: false, error: typeof json?.error === "string" && json.error ? json.error : CANCEL_FAILED };
+  } catch {
+    return { ok: false, error: CANCEL_FAILED };
+  }
+}

@@ -8,9 +8,8 @@ import type { TimeEntryDTO } from "~/calendar/lib/types";
 
 const submits: { key: string; fields: Record<string, string>; options: unknown }[] = [];
 vi.mock("react-router", () => ({
-  useFetcher: ({ key }: { key: string }) => ({
-    submit: (fields: Record<string, string>, options: unknown) => submits.push({ key, fields, options }),
-  }),
+  useSubmit: () => (fields: Record<string, string>, options: { fetcherKey: string }) =>
+    submits.push({ key: options.fetcherKey, fields, options }),
   useLocation: () => ({ pathname: "/calendar" }),
 }));
 vi.mock("~/components/os-chrome", () => ({
@@ -117,7 +116,7 @@ describe("TimesheetEditPopover delete", () => {
 
     expect(submits).toHaveLength(1);
     expect(submits[0]!.fields).toEqual({ intent: "delete-time-entry", id: "t1" });
-    expect(submits[0]!.options).toEqual({ method: "post", action: "/calendar" });
+    expect(submits[0]!.options).toMatchObject({ method: "post", action: "/calendar", navigate: false });
     expect(submits[0]!.key).toMatch(/^cal:bg:delete-time-entry:/);
     expect(onClose).toHaveBeenCalledTimes(1);
   });

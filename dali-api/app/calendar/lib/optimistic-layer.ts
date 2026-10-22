@@ -57,13 +57,16 @@ function fieldsOf(formData: FormData): Record<string, string> {
  * A fetcher keeps its formData until the revalidation after its action lands,
  * and loses it the moment it goes idle, so the patch disappears exactly when
  * fresh data replaces it. One whose action answered with an error draws
- * nothing: the block snaps back while the error is reported.
+ * nothing: the block snaps back while the error is reported. A retry still
+ * carries the last attempt's error until its own answer lands, so a
+ * submitting fetcher ignores it.
  */
 export function pendingFromFetchers(fetchers: FetcherLike[]): PendingSubmission[] {
   return fetchers
     .filter((f) => {
       if (f.state === "idle" || !f.formData) return false;
       if (!OPTIMISTIC_INTENTS.has(String(f.formData.get("intent")))) return false;
+      if (f.state === "submitting") return true;
       return !(f.data as { error?: unknown } | null | undefined)?.error;
     })
     .map((f) => ({ order: orderOf(f.formData!), id: f.key, fields: fieldsOf(f.formData!) }))

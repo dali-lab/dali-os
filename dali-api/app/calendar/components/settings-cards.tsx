@@ -257,7 +257,7 @@ export function WorkingHoursCard({
       {enabled && (
         <div className={cn(card, cardPad, "flex flex-col gap-2")}>
           {shownHours.map((d) => (
-            <DayRow key={d.dayOfWeek} day={d} />
+            <DayRow key={d.dayOfWeek} day={d} locked={toggleBusy} />
           ))}
         </div>
       )}
@@ -271,7 +271,9 @@ export function WorkingHoursCard({
 
 type LocalSegment = { startMinute: number; endMinute: number; location: "InPerson" | "Remote" };
 
-function DayRow({ day }: { day: WhDay }) {
+/** `locked`: the week is being seeded or reset, and an edit sent now could land before it
+ *  or be wiped by it. */
+function DayRow({ day, locked }: { day: WhDay; locked: boolean }) {
   const fetcher = useFetcher();
   // Stick the last submitted segments until the loader catches up — formData
   // alone clears a frame early and the day checkbox / hours twitch back.
@@ -315,7 +317,7 @@ function DayRow({ day }: { day: WhDay }) {
     pendingSegments ?? optimisticSegments ?? loaderSegments;
 
   const enabled = segments.length > 0;
-  const busy = fetcher.state !== "idle";
+  const busy = fetcher.state !== "idle" || locked;
 
   const submitSegments = (next: LocalSegment[]) => {
     setOptimisticSegments(next);
@@ -363,6 +365,7 @@ function DayRow({ day }: { day: WhDay }) {
       <button
         type="button"
         onClick={toggleEnabled}
+        disabled={busy}
         className={`mt-1.5 w-4 h-4 rounded border flex items-center justify-center transition-colors flex-shrink-0 ${
           enabled ? "bg-os-accent border-os-accent text-os-bg" : "border-border bg-background"
         }`}

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { Link, useFetcher, useLoaderData } from "react-router";
+import { Link, useFetcher, useFetchers, useLoaderData } from "react-router";
 import QRCode from "qrcode";
 import {
   ChevronLeft,
@@ -428,24 +428,44 @@ async function ipadScanAction(
   return Response.json({ ok: true, displaced: result.displaced });
 }
 
-function ProposedTimesCard({
-  meetingId,
-  proposals,
-}: {
-  meetingId: string;
-  proposals: { id: string; proposedStartIso: string; proposerName: string }[];
-}) {
+const proposalKey = (proposalId: string) => `proposal:${proposalId}`;
+
+type Proposal = { id: string; proposedStartIso: string; proposerName: string };
+
+export function ProposedTimesCard({ meetingId, proposals }: { meetingId: string; proposals: Proposal[] }) {
   const { card, sectionTitle } = useOsChrome();
-  const fetcher = useFetcher<{ ok?: boolean; error?: string; gcalError?: string | null }>();
+  const answered = new Set(
+    useFetchers()
+      .filter((f) => f.key.startsWith("proposal:"))
+      .map((f) => pendingJson<{ proposalId: string }>(f)?.proposalId),
+  );
+
+  if (proposals.every((p) => answered.has(p.id))) return null;
+
+  return (
+    <section className={cn(card, "flex flex-col gap-5 p-6")}>
+      <h2 className={cn(sectionTitle, "flex items-center gap-2")}>
+        <Clock className="h-5 w-5 text-os-grey" /> Proposed times
+      </h2>
+      <ul className="flex flex-col gap-4">
+        {proposals.map((p) => (
+          <ProposalRow key={p.id} meetingId={meetingId} proposal={p} />
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+/** One fetcher per proposal: answering one must not abort another's in-flight answer. */
+function ProposalRow({ meetingId, proposal: p }: { meetingId: string; proposal: Proposal }) {
+  const fetcher = useFetcher<{ ok?: boolean; error?: string; gcalError?: string | null }>({ key: proposalKey(p.id) });
   useFetcherErrorToast(fetcher);
-  const answered = pendingJson<{ proposalId: string }>(fetcher)?.proposalId;
-  const open = proposals.filter((p) => p.id !== answered);
 
-  if (open.length === 0) return null;
+  if (pendingJson(fetcher)) return null;
 
-  function respond(action: "accept" | "decline", proposalId: string) {
+  function respond(action: "accept" | "decline") {
     fetcher.submit(
-      { action, proposalId },
+      { action, proposalId: p.id },
       {
         method: "post",
         action: `/api/scheduled-meetings/${meetingId}/proposal`,
@@ -454,51 +474,38 @@ function ProposedTimesCard({
     );
   }
 
+  const busy = fetcher.state !== "idle";
   return (
-    <section className={cn(card, "flex flex-col gap-5 p-6")}>
-      <h2 className={cn(sectionTitle, "flex items-center gap-2")}>
-        <Clock className="h-5 w-5 text-os-grey" /> Proposed times
-      </h2>
-      <ul className="flex flex-col gap-4">
-        {open.map((p) => (
-          <li key={p.id} className="flex flex-col gap-3">
-            <div>
-              <p className="text-base font-medium text-foreground">{p.proposerName}</p>
-              <p className="text-sm text-os-grey">
-                {new Date(p.proposedStartIso).toLocaleString(undefined, {
-                  weekday: "short",
-                  month: "short",
-                  day: "numeric",
-                  hour: "numeric",
-                  minute: "2-digit",
-                })}
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => respond("accept", p.id)}
-                className="os-btn-primary os-btn-primary--sm"
-              >
-                Accept
-              </button>
-              <button
-                type="button"
-                onClick={() => respond("decline", p.id)}
-                className="os-btn-ghost py-1.5"
-              >
-                Decline
-              </button>
-            </div>
-          </li>
-        ))}
-      </ul>
-      {fetcher.data?.gcalError && (
+    <li className="flex flex-col gap-3">
+      <div>
+        <p className="text-base font-medium text-foreground">{p.proposerName}</p>
         <p className="text-sm text-os-grey">
-          Rescheduled, but Google Calendar sync failed: {fetcher.data.gcalError}
+          {new Date(p.proposedStartIso).toLocaleString(undefined, {
+            weekday: "short",
+            month: "short",
+            day: "numeric",
+            hour: "numeric",
+            minute: "2-digit",
+          })}
         </p>
+      </div>
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => respond("accept")}
+          className="os-btn-primary os-btn-primary--sm"
+        >
+          Accept
+        </button>
+        <button type="button" disabled={busy} onClick={() => respond("decline")} className="os-btn-ghost py-1.5">
+          Decline
+        </button>
+      </div>
+      {fetcher.data?.gcalError && (
+        <p className="text-sm text-os-grey">Rescheduled, but Google Calendar sync failed: {fetcher.data.gcalError}</p>
       )}
-    </section>
+    </li>
   );
 }
 

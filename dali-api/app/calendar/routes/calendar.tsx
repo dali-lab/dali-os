@@ -1,4 +1,4 @@
-import { Link, useFetchers, useLoaderData, useLocation, useNavigation, useRevalidator, useSearchParams, useSubmit } from "react-router";
+import { Link, useFetchers, useLoaderData, useLocation, useNavigation, useRevalidator, useSearchParams } from "react-router";
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
@@ -92,7 +92,7 @@ import {
 } from "~/calendar/lib/layers";
 import { isRangeLoading, useCalendarView, ymdUtc } from "~/calendar/lib/use-calendar-view";
 import { applyPending, pendingFromFetchers, type PendingSubmission } from "~/calendar/lib/optimistic-layer";
-import { backgroundKey, useBackgroundSubmissionToasts } from "~/calendar/lib/background-submissions";
+import { useBackgroundSubmissionToasts, useSubmitBackground } from "~/calendar/lib/background-submissions";
 import { newPendingId, PendingSubmissionsProvider, usePendingSubmissions } from "~/calendar/lib/pending-submissions";
 import { isTrackedMeeting } from "~/calendar/lib/stop-tracking";
 import { MonthGrid } from "~/calendar/components/MonthGrid";
@@ -418,10 +418,10 @@ function CalendarScreen({ data }: { data: LoaderData }) {
   // Writes go out as keyed fetchers so the grid can draw them while they are in
   // flight (see applyPending) and so a form that closed on submit still has its
   // failure reported (useBackgroundSubmissionToasts).
-  const submit = useSubmit();
+  const sendBackground = useSubmitBackground();
   const pendingStore = usePendingSubmissions();
   const submitBackground = (intent: string, id: string, fields: Record<string, string>) =>
-    submit({ intent, ...fields }, { method: "post", fetcherKey: backgroundKey(intent, id), navigate: false });
+    sendBackground(intent, { intent, ...fields }, { id });
   const describeSuccess = useCallback(
     (intent: string, fields: Record<string, string>) => {
       if (intent !== "event-delete") return null;

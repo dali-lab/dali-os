@@ -10,9 +10,11 @@ const showFiledNote = vi.fn();
 const toastError = vi.fn();
 let fetcherData: unknown;
 const onClose = vi.fn();
+const submitBackground = vi.fn();
 vi.mock("~/components/ui/toast", () => ({ useToast: () => ({ error: toastError }) }));
 vi.mock("react-router", () => ({
   useFetcher: () => ({ state: "idle", data: fetcherData, submit: vi.fn(), Form: "form" }),
+  useSubmit: () => submitBackground,
   useRevalidator: () => ({ revalidate: vi.fn() }),
   useNavigate: () => vi.fn(),
 }));
@@ -313,5 +315,17 @@ describe("CreateEventModal plain event", () => {
     await submitEvent();
 
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("sends the event as a background write the page reports on", async () => {
+    submitBackground.mockClear();
+    await mount({ groups: [], calendarLinks: writableCalendar });
+
+    await submitEvent();
+
+    expect(submitBackground).toHaveBeenCalledTimes(1);
+    const [body, options] = submitBackground.mock.calls[0]!;
+    expect((body as FormData).get("intent")).toBe("event-create");
+    expect(options).toMatchObject({ method: "post", navigate: false, fetcherKey: expect.stringMatching(/^cal:bg:event-create:/) });
   });
 });

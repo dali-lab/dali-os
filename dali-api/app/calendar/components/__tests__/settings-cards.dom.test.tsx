@@ -8,9 +8,17 @@ import type { WhDay } from "~/calendar/lib/types";
 
 const submit = vi.fn();
 let fetcherState: { state: string; formData?: FormData } = { state: "idle" };
-vi.mock("react-router", () => ({
-  useFetcher: () => ({ data: undefined, formData: undefined, ...fetcherState, submit, Form: "form" }),
-}));
+// The card's reset and toggle fetchers mount first; the day rows' come after.
+let nextSlot = 0;
+vi.mock("react-router", async () => {
+  const { useState } = await import("react");
+  return {
+    useFetcher: () => {
+      const [slot] = useState(() => nextSlot++);
+      return { data: undefined, formData: undefined, ...(slot < 2 ? fetcherState : { state: "idle" }), submit, Form: "form" };
+    },
+  };
+});
 vi.mock("~/components/os-chrome", () => ({
   useOsChrome: () => ({ card: "", cardPad: "", heading: "", headingIcon: "" }),
 }));
@@ -27,6 +35,7 @@ const week = [0, 1, 2, 3, 4, 5, 6].map((d) => day(d, d >= 1 && d <= 5 ? [seg] : 
 beforeEach(async () => {
   submit.mockReset();
   fetcherState = { state: "idle" };
+  nextSlot = 0;
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
@@ -46,6 +55,26 @@ describe("WorkingHoursCard day edits", () => {
       { intent: "set-working-segments", dayOfWeek: "2", segments: "[]" },
       { method: "post" },
     );
+  });
+});
+
+describe("WorkingHoursCard while the week is being seeded", () => {
+  it("ignores a day edit that would race the seed", async () => {
+    const fd = new FormData();
+    fd.set("intent", "seed-working-hours");
+    fetcherState = { state: "submitting", formData: fd };
+    await act(async () => root.render(createElement(WorkingHoursCard, { workingHours: week, hasPersisted: true })));
+    const tuesday = container.querySelector<HTMLButtonElement>("button[aria-label='Tue enabled']")!;
+    expect(tuesday.disabled).toBe(true);
+    await act(async () => tuesday.click());
+    expect(submit).not.toHaveBeenCalled();
+  });
+
+  it("edits again once the seed has landed", async () => {
+    fetcherState = { state: "idle" };
+    await act(async () => root.render(createElement(WorkingHoursCard, { workingHours: week, hasPersisted: true })));
+    const tuesday = container.querySelector<HTMLButtonElement>("button[aria-label='Tue enabled']")!;
+    expect(tuesday.disabled).toBe(false);
   });
 });
 
