@@ -5,11 +5,15 @@ export const GALLERY_EMOJI = ["❤️", "🔥", "😂", "👏", "😮", "🎉"] 
 
 export const GALLERY_CAPTION_MAX = 500;
 export const GALLERY_COMMENT_MAX = 1000;
-export const GALLERY_MAX_PHOTOS = 20;
+// Each photo is two presigns (original + thumbnail) against the presign
+// route's 20 a minute, so a full batch has to fit in 10.
+export const GALLERY_MAX_PHOTOS = 10;
 export const GALLERY_PAGE_SIZE = 40;
 /** Distinct reports that hide a post until Core restores it. */
 export const GALLERY_REPORTS_TO_HIDE = 2;
 export const GALLERY_ACCEPT = "image/png,image/jpeg,image/webp,image/gif";
+/** Tiles load a thumbnail this wide; originals at or under it are used as-is. */
+export const GALLERY_THUMB_WIDTH = 640;
 
 export function isGalleryEmoji(value: string): boolean {
   return (GALLERY_EMOJI as readonly string[]).includes(value);
@@ -30,6 +34,7 @@ export function isGalleryImageKey(key: string, userId: string): boolean {
 
 export type NewGalleryPost = {
   imageKey: string;
+  thumbKey: string | null;
   width: number;
   height: number;
   color: string;
@@ -52,14 +57,24 @@ export function parseNewPosts(raw: string, userId: string): NewGalleryPost[] | n
   const posts: NewGalleryPost[] = [];
   for (const row of rows) {
     if (!row || typeof row !== "object") return null;
-    const { imageKey, width, height, color, caption } = row as Record<string, unknown>;
+    const { imageKey, thumbKey, width, height, color, caption } = row as Record<string, unknown>;
     if (typeof imageKey !== "string" || !isGalleryImageKey(imageKey, userId)) return null;
+    if (thumbKey != null && (typeof thumbKey !== "string" || !isGalleryImageKey(thumbKey, userId))) {
+      return null;
+    }
     if (!isSide(width) || !isSide(height)) return null;
     if (typeof color !== "string" || !/^#[0-9a-f]{6}$/i.test(color)) return null;
     if (caption != null && typeof caption !== "string") return null;
     const text = typeof caption === "string" ? caption.trim() : "";
     if (text.length > GALLERY_CAPTION_MAX) return null;
-    posts.push({ imageKey, width, height, color: color.toLowerCase(), caption: text || null });
+    posts.push({
+      imageKey,
+      thumbKey: typeof thumbKey === "string" ? thumbKey : null,
+      width,
+      height,
+      color: color.toLowerCase(),
+      caption: text || null,
+    });
   }
   return posts;
 }

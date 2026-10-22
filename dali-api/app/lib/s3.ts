@@ -114,6 +114,13 @@ type DownloadUrlOptions = {
   contentType?: string
   fileName?: string
   inline?: boolean
+  // For objects that never change once written (a new upload gets a new key).
+  // Signs with the time rounded down to a `cacheFor`-second window, so every
+  // request in that window gets the identical URL and the browser serves it
+  // from cache, and has S3 send a matching immutable Cache-Control. The URL
+  // stays valid for two windows so one minted at the end of a window still
+  // loads. Overrides `expiresIn`.
+  cacheFor?: number
 }
 
 export async function getDownloadUrl(
@@ -123,8 +130,9 @@ export async function getDownloadUrl(
   if (!isS3Configured()) {
     throw new Error("AWS S3 is not configured")
   }
-  const { expiresIn = 3600, contentType, fileName, inline } =
-    typeof options === "number" ? { expiresIn: options } : options
+  const opts: DownloadUrlOptions = typeof options === "number" ? { expiresIn: options } : options
+  const { contentType, fileName, inline, cacheFor } = opts
+  const expiresIn = cacheFor ? cacheFor * 2 : (opts.expiresIn ?? 3600)
 
   const disposition = inline
     ? "inline"
@@ -138,8 +146,12 @@ export async function getDownloadUrl(
     Key: key,
     ...(contentType ? { ResponseContentType: contentType } : {}),
     ...(disposition ? { ResponseContentDisposition: disposition } : {}),
+    ...(cacheFor ? { ResponseCacheControl: `private, max-age=${expiresIn}, immutable` } : {}),
   })
-  return getSignedUrl(s3, command, { expiresIn })
+  const signingDate = cacheFor
+    ? new Date(Math.floor(Date.now() / (cacheFor * 1000)) * cacheFor * 1000)
+    : undefined
+  return getSignedUrl(s3, command, { expiresIn, ...(signingDate ? { signingDate } : {}) })
 }
 
 // Best-effort delete of a private object (e.g. removing a mail attachment).

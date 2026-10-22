@@ -3,6 +3,7 @@ import type { Prisma } from "~/generated/prisma/client";
 import { prisma } from "~/lib/db";
 import { fullName } from "~/lib/display";
 import { resolvePhotoUrl } from "~/lib/photo";
+import { getDownloadUrl, isS3Configured } from "~/lib/s3";
 import { checkRateLimit } from "~/lib/rate-limit";
 import { summarizeReactions } from "~/lib/feedback";
 import { notify } from "~/lib/notify.server";
@@ -34,6 +35,7 @@ const AUTHOR_SELECT = {
 const TILE_SELECT = {
   id: true,
   imageKey: true,
+  thumbKey: true,
   width: true,
   height: true,
   color: true,
@@ -48,8 +50,15 @@ const TILE_SELECT = {
 type AuthorRow = Prisma.UserGetPayload<{ select: typeof AUTHOR_SELECT }>;
 type TileRow = Prisma.GalleryPostGetPayload<{ select: typeof TILE_SELECT }>;
 
-export function galleryImageUrl(key: string) {
-  return `/api/upload/raw?key=${encodeURIComponent(key)}`;
+const IMAGE_URL_WINDOW_S = 3600;
+
+// Gallery images never change once uploaded, so each gets a link that stays
+// the same for an hour and that S3 serves with an immutable Cache-Control:
+// the browser loads a photo once rather than on every visit. Without S3 (local
+// dev) the session-authed redirect route still works.
+export async function galleryImageUrl(key: string) {
+  if (!isS3Configured()) return `/api/upload/raw?key=${encodeURIComponent(key)}`;
+  return getDownloadUrl(key, { cacheFor: IMAGE_URL_WINDOW_S });
 }
 
 /** Hidden posts stay visible to Core and to the person who posted them. */
@@ -76,7 +85,7 @@ async function toTiles(rows: TileRow[], viewer: GalleryViewer) {
   return Promise.all(
     rows.map(async (r) => ({
       id: r.id,
-      imageUrl: galleryImageUrl(r.imageKey),
+      imageUrl: await galleryImageUrl(r.thumbKey ?? r.imageKey),
       width: r.width,
       height: r.height,
       color: r.color,
@@ -174,9 +183,13 @@ export async function loadGalleryPost(viewer: GalleryViewer, postId: string) {
   });
   if (!row) return null;
   const person = personResolver();
-  const [tile] = await toTiles([row], viewer);
+  const [[tile], fullImageUrl] = await Promise.all([
+    toTiles([row], viewer),
+    galleryImageUrl(row.imageKey),
+  ]);
   return {
     ...tile,
+    fullImageUrl,
     reportCount: row.reports.length,
     reportedByMe: row.reports.some((r) => r.reporterId === viewer.id),
     comments: await Promise.all(

@@ -126,11 +126,16 @@ function PostCloseup({ post }: { post: GalleryPostDetail }) {
         className="flex items-center justify-center"
         style={{ backgroundColor: post.color }}
       >
+        {/* The tile's thumbnail is already cached from the feed, so it shows at
+            once underneath while the full image loads over it. */}
         <img
-          src={post.imageUrl}
+          src={post.fullImageUrl}
           alt={post.caption ?? `Photo by ${post.author.name}`}
           className={cn("w-full object-contain", portrait ? "max-h-[78vh]" : "max-h-[70vh]")}
-          style={{ aspectRatio: `${post.width} / ${post.height}` }}
+          style={{
+            aspectRatio: `${post.width} / ${post.height}`,
+            background: `url("${post.imageUrl}") center / contain no-repeat`,
+          }}
         />
       </div>
 

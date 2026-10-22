@@ -15,10 +15,15 @@ const db = vi.hoisted(() => ({
   $transaction: vi.fn(),
 }));
 const notify = vi.hoisted(() => vi.fn());
+const s3 = vi.hoisted(() => ({
+  isS3Configured: vi.fn(() => false),
+  getDownloadUrl: vi.fn(async (key: string) => `https://s3.test/${key}`),
+}));
 
 vi.mock("~/lib/db", () => ({ prisma: db }));
 vi.mock("~/lib/notify.server", () => ({ notify }));
 vi.mock("~/lib/photo", () => ({ resolvePhotoUrl: vi.fn(async () => null) }));
+vi.mock("~/lib/s3", () => s3);
 vi.mock("~/lib/rate-limit", () => ({ checkRateLimit: vi.fn(() => null) }));
 vi.mock("~/community/lib/community.server", () => ({ requireCommunityViewer: vi.fn() }));
 
@@ -26,6 +31,7 @@ import {
   countNewerPosts,
   galleryAction,
   loadGalleryPage,
+  loadGalleryPost,
   parseFeedQuery,
   visibleTo,
   type GalleryViewer,
@@ -52,6 +58,7 @@ async function run(fields: Record<string, string>, viewer = member) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  s3.isS3Configured.mockReturnValue(false);
   db.galleryPost.findFirst.mockResolvedValue({ id: "p1", authorId: "author", caption: "Demo day" });
   db.galleryReaction.deleteMany.mockResolvedValue({ count: 0 });
   db.galleryReport.count.mockResolvedValue(1);
@@ -78,21 +85,22 @@ describe("parseFeedQuery", () => {
   });
 });
 
-describe("loadGalleryPage", () => {
-  const rowFor = (id: string) => ({
-    id,
-    imageKey: `uploads/gallery/a/${UUID}-x.jpg`,
-    width: 4,
-    height: 3,
-    color: "#000000",
-    caption: null,
-    hiddenAt: null,
-    createdAt: new Date("2026-10-01T00:00:00Z"),
-    author: { id: "a", firstName: "Ann", lastName: "Lee", photoUrl: null, classYear: 2027 },
-    reactions: [],
-    _count: { comments: 0 },
-  });
+const rowFor = (id: string, thumbKey: string | null = null) => ({
+  id,
+  imageKey: `uploads/gallery/a/${UUID}-x.jpg`,
+  thumbKey,
+  width: 4,
+  height: 3,
+  color: "#000000",
+  caption: null,
+  hiddenAt: null,
+  createdAt: new Date("2026-10-01T00:00:00Z"),
+  author: { id: "a", firstName: "Ann", lastName: "Lee", photoUrl: null, classYear: 2027 },
+  reactions: [],
+  _count: { comments: 0 },
+});
 
+describe("loadGalleryPage", () => {
   it("filters to mine, matches every search word, and pages by cursor", async () => {
     db.galleryPost.findMany.mockResolvedValue([]);
     await loadGalleryPage(member, { mine: true, q: "demo maya", cursor: "c1" });
@@ -130,6 +138,18 @@ describe("loadGalleryPage", () => {
       mine: false,
       canModerate: false,
     });
+  });
+
+  it("signs a cacheable link to the thumbnail when there is one", async () => {
+    s3.isS3Configured.mockReturnValue(true);
+    const thumb = `uploads/gallery/a/${UUID}-thumb.webp`;
+    db.galleryPost.findMany.mockResolvedValue([rowFor("t", thumb), rowFor("o")]);
+    const { posts } = await loadGalleryPage(member, { mine: false, q: "", cursor: null });
+    expect(posts.map((p) => p.imageUrl)).toEqual([
+      `https://s3.test/${thumb}`,
+      `https://s3.test/uploads/gallery/a/${UUID}-x.jpg`,
+    ]);
+    expect(s3.getDownloadUrl).toHaveBeenCalledWith(thumb, { cacheFor: 3600 });
   });
 
   it("leaves out the post a closeup is showing", async () => {
@@ -301,5 +321,18 @@ describe("galleryAction moderation", () => {
 
   it("rejects an unknown intent", async () => {
     expect(await run({ intent: "pin", postId: "p1" })).toMatchObject({ status: 400 });
+  });
+});
+
+describe("loadGalleryPost", () => {
+  it("gives the closeup the original and keeps the thumbnail for its placeholder", async () => {
+    s3.isS3Configured.mockReturnValue(true);
+    const thumb = `uploads/gallery/a/${UUID}-thumb.webp`;
+    db.galleryPost.findFirst.mockResolvedValue({ ...rowFor("p1", thumb), comments: [], reports: [] });
+    const post = await loadGalleryPost(member, "p1");
+    expect(post).toMatchObject({
+      imageUrl: `https://s3.test/${thumb}`,
+      fullImageUrl: `https://s3.test/uploads/gallery/a/${UUID}-x.jpg`,
+    });
   });
 });

@@ -10,10 +10,13 @@ vi.hoisted(() => {
 });
 
 import { S3Client, NotFound, S3ServiceException } from "@aws-sdk/client-s3";
-import { getUploadPost, headObject } from "~/lib/s3";
+import { getDownloadUrl, getUploadPost, headObject } from "~/lib/s3";
 import { MAX_FILE_STORE_BYTES, MAX_UPLOAD_BYTES } from "~/lib/file-validation";
 
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.useRealTimers();
+});
 afterAll(() => vi.unstubAllEnvs());
 
 function decodePolicy(fields: Record<string, string>) {
@@ -83,5 +86,40 @@ describe("headObject", () => {
     });
     vi.spyOn(S3Client.prototype, "send").mockRejectedValueOnce(forbidden);
     await expect(headObject("uploads/x.pdf")).rejects.toBe(forbidden);
+  });
+});
+
+describe("getDownloadUrl cacheFor", () => {
+  const key = "uploads/gallery/u1/photo.jpg";
+  const at = (iso: string) => vi.useFakeTimers({ now: new Date(iso), toFake: ["Date"] });
+
+  it("gives every request in the same window the identical URL", async () => {
+    at("2026-10-22T14:05:00Z");
+    const first = await getDownloadUrl(key, { cacheFor: 3600 });
+    at("2026-10-22T14:55:00Z");
+    expect(await getDownloadUrl(key, { cacheFor: 3600 })).toBe(first);
+  });
+
+  it("moves to a new URL in the next window", async () => {
+    at("2026-10-22T14:59:00Z");
+    const before = await getDownloadUrl(key, { cacheFor: 3600 });
+    at("2026-10-22T15:01:00Z");
+    expect(await getDownloadUrl(key, { cacheFor: 3600 })).not.toBe(before);
+  });
+
+  it("signs from the window start, valid for two windows, with an immutable Cache-Control", async () => {
+    at("2026-10-22T14:40:00Z");
+    const url = new URL(await getDownloadUrl(key, { cacheFor: 3600 }));
+    expect(url.searchParams.get("X-Amz-Date")).toBe("20261022T140000Z");
+    expect(url.searchParams.get("X-Amz-Expires")).toBe("7200");
+    expect(url.searchParams.get("response-cache-control")).toBe("private, max-age=7200, immutable");
+  });
+
+  it("leaves ordinary links signed at the current time with no cache header", async () => {
+    at("2026-10-22T14:40:12Z");
+    const url = new URL(await getDownloadUrl(key));
+    expect(url.searchParams.get("X-Amz-Date")).toBe("20261022T144012Z");
+    expect(url.searchParams.get("X-Amz-Expires")).toBe("3600");
+    expect(url.searchParams.has("response-cache-control")).toBe(false);
   });
 });
