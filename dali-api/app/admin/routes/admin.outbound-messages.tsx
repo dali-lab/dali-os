@@ -14,6 +14,7 @@ import { StatusDot } from "~/admin/components/console-ui";
 import { Tooltip } from "~/components/ui/floating";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
+import { logAuditEvent } from "~/lib/audit";
 import { redirectToLogin } from "~/lib/login-next";
 import { isCore, isAdmin } from "~/lib/roles";
 import { fullName } from "~/lib/display";
@@ -145,18 +146,34 @@ export async function action({ request }: Route.ActionArgs) {
 
   if (intent === "retry") {
     // Reset a Dead row so the drain picks it up again.
-    await prisma.outboundMessage.update({
+    const message = await prisma.outboundMessage.update({
       where: { id, status: "Dead" },
       data: { status: "Pending", nextAttemptAt: new Date(), attempts: 0, lastError: null },
+      select: { channel: true, purpose: true },
+    });
+    await logAuditEvent({
+      action: "outbound.retry",
+      userId: auth.user.sub,
+      targetId: id,
+      metadata: { channel: message.channel, purpose: message.purpose },
+      request,
     });
     return Response.json({ ok: true });
   }
 
   if (intent === "cancel") {
     // Cancel a Pending row — won't send.
-    await prisma.outboundMessage.update({
+    const message = await prisma.outboundMessage.update({
       where: { id, status: "Pending" },
       data: { status: "Canceled" },
+      select: { channel: true, purpose: true },
+    });
+    await logAuditEvent({
+      action: "outbound.cancel",
+      userId: auth.user.sub,
+      targetId: id,
+      metadata: { channel: message.channel, purpose: message.purpose },
+      request,
     });
     return Response.json({ ok: true });
   }

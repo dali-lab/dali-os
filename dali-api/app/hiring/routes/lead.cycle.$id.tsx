@@ -8,6 +8,7 @@ import type { Route } from "./+types/lead.cycle.$id";
 import { prisma } from "~/lib/db";
 import { recordRouteVisit } from "~/lib/user-pages.server";
 import { requireAuth } from "~/lib/auth";
+import { logAuditEvent } from "~/lib/audit";
 import { redirectToLogin } from "~/lib/login-next";
 import { getUserRoles, isAdmin, isCore, isCycleAdmin } from "~/lib/roles";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
@@ -785,8 +786,12 @@ export async function action({ request, params }: Route.ActionArgs) {
             formData.get("domainId") as string,
             auth.user.sub,
             (formData.get("formId") as string) || null,
+            request,
           )
-        : await removeDomainChallenge(formData.get("cdfId") as string, params.id);
+        : await removeDomainChallenge(formData.get("cdfId") as string, params.id, {
+            actorId: auth.user.sub,
+            request,
+          });
     if (refused === "not-draft") {
       return Response.json({ error: "Challenges lock once the cycle opens." }, { status: 409 });
     }
@@ -971,7 +976,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     });
     if (!inCycle) return Response.json({ error: "That domain isn't in this cycle." }, { status: 400 });
     const round = (formData.get("interviewRoundId") as string | null) || undefined;
-    const added = await addDomainMentors(params.id, domainId, role, request, round);
+    const added = await addDomainMentors(params.id, domainId, role, request, round, auth.user.sub);
     // Nothing added means either no mentors, or all of them already on it.
     const notice =
       added > 0 ? "mentors-added" : (await domainMentorIds(domainId, request)).length ? "mentors-already" : "mentors-none";
@@ -1036,10 +1041,22 @@ export async function action({ request, params }: Route.ActionArgs) {
         return cycleRedirect(request, params.id!);
       }
     }
+    const rubricKey = { domainId_applicationCycleId: { domainId, applicationCycleId: params.id } };
+    const previous = await prisma.domainApplicationCycle.findUnique({
+      where: rubricKey,
+      select: { rubricVersionId: true },
+    });
     await prisma.domainApplicationCycle.upsert({
-      where: { domainId_applicationCycleId: { domainId, applicationCycleId: params.id } },
+      where: rubricKey,
       update: { rubricVersionId },
       create: { domainId, applicationCycleId: params.id, rubricVersionId },
+    });
+    await logAuditEvent({
+      action: "domain.rubric.set",
+      userId: auth.user.sub,
+      targetId: domainId,
+      metadata: { cycleId: params.id, before: previous?.rubricVersionId ?? null, after: rubricVersionId },
+      request,
     });
     return cycleRedirect(request, params.id!);
   }
@@ -1050,7 +1067,11 @@ export async function action({ request, params }: Route.ActionArgs) {
     if (!domainId || confirm !== "true") {
       return cycleRedirect(request, params.id!);
     }
-    const refused = await setDomainReady(params.id!, domainId, intent === "hl-force-mark-ready");
+    const refused = await setDomainReady(params.id!, domainId, intent === "hl-force-mark-ready", {
+      actorId: auth.user.sub,
+      request,
+      forced: true,
+    });
     if (refused) {
       return new Response(JSON.stringify({ error: refused }), { status: 409, headers: { "Content-Type": "application/json" } });
     }

@@ -4,7 +4,8 @@ import { requireAuth } from "~/lib/auth";
 import { isCycleAdmin, isDomainLeadForCycle } from "~/lib/roles";
 import { parseJson } from "~/lib/validate";
 import { requireApiSignedOrForbidden } from "~/hiring/lib/confidentiality";
-import { ReviewPatchSchema } from "~/hiring/lib/review";
+import { ReviewPatchSchema, describeReviewChange } from "~/hiring/lib/review";
+import { logAuditEvent } from "~/lib/audit";
 
 // Re-exported so existing tests can import it from this route module.
 export { validateReviewPatch } from "~/hiring/lib/review";
@@ -78,6 +79,21 @@ export async function action({ request, params }: Route.ActionArgs) {
       data: patch,
     });
 
+    const change = describeReviewChange(review, parsed);
+    if (change.fields.length > 0) {
+      await logAuditEvent({
+        action: "review.update",
+        userId: auth.user.sub,
+        targetId: review.id,
+        metadata: {
+          cycleId: review.cycleReviewer.applicationCycleId,
+          reviewerUserId: review.cycleReviewer.userId,
+          ...change,
+        },
+        request,
+      });
+    }
+
     return Response.json(updated);
   }
 
@@ -95,6 +111,18 @@ export async function action({ request, params }: Route.ActionArgs) {
     // the client is expected to confirm with the user first since this
     // destroys the submitted scores/feedback.
     await prisma.applicationReview.delete({ where: { id: params.id } });
+    await logAuditEvent({
+      action: "review.delete",
+      userId: auth.user.sub,
+      targetId: review.id,
+      metadata: {
+        cycleId: review.cycleReviewer.applicationCycleId,
+        reviewerUserId: review.cycleReviewer.userId,
+        domainApplicationId: review.domainApplicationId,
+        wasSubmitted: review.submittedAt !== null,
+      },
+      request,
+    });
     return Response.json({ deleted: true });
   }
 

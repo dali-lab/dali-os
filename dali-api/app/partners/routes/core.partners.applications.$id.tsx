@@ -399,6 +399,7 @@ export async function action({ request, params }: Route.ActionArgs) {
       applicationId: params.id,
       to: stage,
       actorUserId: auth.user.sub,
+      request,
     });
   } else if (intent === "details") {
     const summaryRaw = (form.get("summary") as string | null)?.trim() ?? "";
@@ -553,6 +554,7 @@ export async function action({ request, params }: Route.ActionArgs) {
         applicationId: app.id,
         to: "Accepted",
         actorUserId: auth.user.sub,
+        request,
         data: { resultingProjectId: created.id, partnerOrgId: orgId },
         meta: { projectId: created.id },
       });
@@ -592,6 +594,7 @@ export async function action({ request, params }: Route.ActionArgs) {
         applicationId: params.id,
         to: "Interview",
         actorUserId: auth.user.sub,
+        request,
       });
       if (applicant?.applicantContact?.email) {
         await sendMeetingInviteEmail(
@@ -646,6 +649,7 @@ export async function action({ request, params }: Route.ActionArgs) {
         applicationId: params.id,
         to: "Rejected",
         actorUserId: auth.user.sub,
+        request,
         data: { decisionReason: reason ?? null, rejectReason },
         meta: { rejectReason, ...(reason ? { reason } : {}) },
       });
@@ -701,6 +705,7 @@ export async function action({ request, params }: Route.ActionArgs) {
         applicationId: params.id,
         to: "Accepted",
         actorUserId: auth.user.sub,
+        request,
       });
       if (app?.applicantContact?.email) {
         await sendDecisionAcceptedEmail(

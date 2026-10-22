@@ -15,10 +15,12 @@ vi.mock("~/lib/auth", () => ({
   redirectNonMemberToPortal: vi.fn(async () => null),
 }));
 vi.mock("~/lib/roles");
+vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
 
 import { prisma } from "~/lib/db";
 import { requireAuth, requireCoreOrDomainLead } from "~/lib/auth";
 import { isCore, isDomainLead } from "~/lib/roles";
+import { logAuditEvent } from "~/lib/audit";
 import { action } from "~/hiring/routes/api.delibs.$id";
 
 const USER_ID = "user-hl";
@@ -193,5 +195,37 @@ describe("POST /api/hiring/delibs/:id (intent=close)", () => {
 
     const calls = mockTx.decision.create.mock.calls.map((c: any[]) => c[0].data);
     expect(calls).toEqual([expect.objectContaining({ type: "InvitedToInterview", interviewRoundId: "iv2" })]);
+  });
+
+  it("logs the close with the session, domain, round and decision count", async () => {
+    mockPrisma.delibsSession.findUnique.mockResolvedValue({
+      id: SESSION_ID,
+      applicationCycleId: "cycle-1",
+      domainId: "domain-1",
+      roundId: "final",
+      applicationCycle: { timeline: null },
+      columnOrder: { Accept: ["da-1"], Waitlist: ["da-2"], Reject: ["da-3"] },
+    });
+
+    await action({ request: makeCloseRequest(), params: { id: SESSION_ID }, context: {} } as any);
+
+    expect(logAuditEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "delibs.close",
+        userId: USER_ID,
+        targetId: SESSION_ID,
+        metadata: { cycleId: "cycle-1", domainId: "domain-1", roundId: "final", decisionsCreated: 3 },
+      }),
+    );
+  });
+
+  it("logs nothing when the caller is not a DALI member", async () => {
+    mockPrisma.dALIMember.findUnique.mockResolvedValue(null);
+    mockPrisma.delibsSession.findUnique.mockResolvedValue({ id: SESSION_ID, applicationCycleId: "cycle-1" });
+
+    const res = await action({ request: makeCloseRequest(), params: { id: SESSION_ID }, context: {} } as any);
+
+    expect(res.status).toBe(403);
+    expect(logAuditEvent).not.toHaveBeenCalled();
   });
 });

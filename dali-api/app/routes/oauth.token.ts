@@ -14,6 +14,7 @@ import { withCors, handlePreflight, preflightLoader } from "~/lib/cors";
 import { checkRateLimit } from "~/lib/rate-limit";
 import { safeJson } from "~/lib/safe-json";
 import { prisma } from "~/lib/db";
+import { logAuditEvent } from "~/lib/audit";
 import { isFeatureEnabledForEveryone } from "~/lib/feature-flags.server";
 import { mintBetterAuthSession } from "~/lib/betterauth-session.server";
 
@@ -99,6 +100,18 @@ export async function action({ request }: Route.ActionArgs) {
           scopes: nextScopes,
           lastUsedAt: new Date(),
         },
+      });
+
+      await logAuditEvent({
+        action: "oauth.grant.issue",
+        userId,
+        targetId: grant.id,
+        metadata: {
+          clientId: client.clientId,
+          clientName: client.name,
+          scope: scopes.join(" "),
+        },
+        request,
       });
 
       const userInfo = buildUserInfo(user, authType);

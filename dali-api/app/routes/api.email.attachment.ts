@@ -1,5 +1,6 @@
 import type { Route } from "./+types/api.email.attachment";
 import { requireAuth } from "~/lib/auth";
+import { logAuditEvent } from "~/lib/audit";
 import { findReadableAccount } from "~/email/lib/access.server";
 import { getAttachment, getMailboxToken, getThread, MailboxError } from "~/email/lib/gmail-mailbox.server";
 
@@ -34,6 +35,14 @@ export async function loader({ request }: Route.LoaderArgs) {
 
     const bytes = await getAttachment(token, messageId, att.attachmentId);
     if (bytes.length === 0) return new Response("Attachment was empty", { status: 502 });
+
+    await logAuditEvent({
+      action: "email.attachment.download",
+      userId,
+      targetId: messageId,
+      metadata: { accountId, threadId, index, filename: att.filename, sizeBytes: bytes.length },
+      request,
+    });
 
     // Strip control chars, quotes and backslash so the filename can't break out
     // of the Content-Disposition header; RFC 5987 carries any non-ASCII name.

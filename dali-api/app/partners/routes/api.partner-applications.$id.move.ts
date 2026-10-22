@@ -96,6 +96,7 @@ export async function action({ request, params }: Route.ActionArgs) {
         applicationId: params.id!,
         to: stage,
         actorUserId: auth.user.sub,
+        request,
       });
       await Promise.all(
         orderedIds.map((id, index) =>
@@ -109,6 +110,7 @@ export async function action({ request, params }: Route.ActionArgs) {
         applicationId: params.id!,
         to: stage,
         actorUserId: auth.user.sub,
+        request,
         data: { position: body.position },
       });
     });

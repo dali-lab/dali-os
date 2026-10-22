@@ -3,6 +3,7 @@ import { redirect } from "react-router";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { prisma } from "~/lib/db";
+import { logAuditEvent } from "~/lib/audit";
 import { revokeAllForGrant } from "~/lib/session";
 
 export const meta: Route.MetaFunction = () => [{ title: "Settings · DALI OS" }];
@@ -31,6 +32,13 @@ export async function action({ request }: Route.ActionArgs) {
     data: { revokedAt: new Date() },
   });
   await revokeAllForGrant(grantId);
+  await logAuditEvent({
+    action: "oauth.grant.revoke",
+    userId: auth.user.sub,
+    targetId: grantId,
+    metadata: { clientId: grant.clientId, clientName: grant.name },
+    request,
+  });
 
   return redirect("/settings#connected-apps");
 }

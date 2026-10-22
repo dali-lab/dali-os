@@ -1,4 +1,5 @@
 import { prisma } from "~/lib/db";
+import { logAuditEvent } from "~/lib/audit";
 import { currentTermMemberWhere } from "~/lib/roles";
 import { FIRST_INTERVIEW_ROUND_ID } from "./cycle-timeline";
 
@@ -29,6 +30,7 @@ export async function addDomainMentors(
   role: "reviewer" | "interviewer",
   request?: Request,
   interviewRoundId: string = FIRST_INTERVIEW_ROUND_ID,
+  actorId?: string,
 ): Promise<number> {
   const userIds = await domainMentorIds(domainId, request);
   if (userIds.length === 0) return 0;
@@ -40,5 +42,14 @@ export async function addDomainMentors(
           data: data.map((d) => ({ ...d, interviewRoundId })),
           skipDuplicates: true,
         });
+  if (count > 0) {
+    await logAuditEvent({
+      action: "domain.mentors.add",
+      userId: actorId,
+      targetId: domainId,
+      metadata: { cycleId, role, added: count },
+      request,
+    });
+  }
   return count;
 }

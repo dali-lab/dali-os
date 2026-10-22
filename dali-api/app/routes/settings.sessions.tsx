@@ -2,6 +2,7 @@ import { redirect } from "react-router";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { prisma } from "~/lib/db";
+import { logAuditEvent } from "~/lib/audit";
 import { isFeatureEnabledForEveryone } from "~/lib/feature-flags.server";
 import type { Route } from "./+types/settings.sessions";
 
@@ -9,6 +10,22 @@ export const meta: Route.MetaFunction = () => [{ title: "Settings · DALI OS" }]
 
 export async function loader() {
   return redirect("/settings#devices");
+}
+
+function logSessionRevoke(
+  userId: string,
+  scope: "one" | "others",
+  count: number,
+  request: Request,
+) {
+  if (count === 0) return;
+  return logAuditEvent({
+    action: "session.revoke",
+    userId,
+    targetId: userId,
+    metadata: { scope, count },
+    request,
+  });
 }
 
 export async function action({ request }: Route.ActionArgs) {
@@ -29,34 +46,32 @@ export async function action({ request }: Route.ActionArgs) {
     if (typeof sessionId !== "string") {
       return redirect("/settings#devices");
     }
-    if (betterauthOn) {
-      await prisma.authSession.deleteMany({
-        where: { id: sessionId, userId: auth.user.sub },
-      });
-    } else {
-      await prisma.session.updateMany({
-        where: { id: sessionId, userId: auth.user.sub, revokedAt: null },
-        data: { revokedAt: new Date() },
-      });
-    }
+    const { count } = betterauthOn
+      ? await prisma.authSession.deleteMany({
+          where: { id: sessionId, userId: auth.user.sub },
+        })
+      : await prisma.session.updateMany({
+          where: { id: sessionId, userId: auth.user.sub, revokedAt: null },
+          data: { revokedAt: new Date() },
+        });
+    await logSessionRevoke(auth.user.sub, "one", count, request);
     return redirect("/settings#devices");
   }
 
   if (intent === "revoke-others") {
-    if (betterauthOn) {
-      await prisma.authSession.deleteMany({
-        where: { userId: auth.user.sub, NOT: { id: auth.sessionId } },
-      });
-    } else {
-      await prisma.session.updateMany({
-        where: {
-          userId: auth.user.sub,
-          revokedAt: null,
-          NOT: { id: auth.sessionId },
-        },
-        data: { revokedAt: new Date() },
-      });
-    }
+    const { count } = betterauthOn
+      ? await prisma.authSession.deleteMany({
+          where: { userId: auth.user.sub, NOT: { id: auth.sessionId } },
+        })
+      : await prisma.session.updateMany({
+          where: {
+            userId: auth.user.sub,
+            revokedAt: null,
+            NOT: { id: auth.sessionId },
+          },
+          data: { revokedAt: new Date() },
+        });
+    await logSessionRevoke(auth.user.sub, "others", count, request);
     return redirect("/settings#devices");
   }
 

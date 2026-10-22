@@ -1,8 +1,10 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/db");
+vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
 
 import { prisma } from "~/lib/db";
+import { logAuditEvent } from "~/lib/audit";
 import {
   applicantDeadline,
   cycleCloseDate,
@@ -246,6 +248,28 @@ describe("setDomainReady", () => {
     expect(await setDomainReady("c1", "d1", false)).toBeNull();
     expect(mockPrisma.domainApplicationCycle.upsert).toHaveBeenNthCalledWith(1, upsertWith(true));
     expect(mockPrisma.domainApplicationCycle.upsert).toHaveBeenNthCalledWith(2, upsertWith(false));
+  });
+
+  it("logs the change only when an audit context is passed, flagging a forced one", async () => {
+    const request = new Request("http://localhost/hiring");
+    status("Draft");
+
+    await setDomainReady("c1", "d1", true);
+    expect(logAuditEvent).not.toHaveBeenCalled();
+
+    await setDomainReady("c1", "d1", true, { actorId: "lead-1", request });
+    await setDomainReady("c1", "d1", false, { actorId: "lead-1", request, forced: true });
+
+    expect(vi.mocked(logAuditEvent).mock.calls.map(([e]) => [e.action, e.userId, e.targetId, e.metadata])).toEqual([
+      ["domain.ready.set", "lead-1", "d1", { cycleId: "c1", ready: true }],
+      ["domain.ready.set", "lead-1", "d1", { cycleId: "c1", ready: false, forced: true }],
+    ]);
+  });
+
+  it("logs nothing when the change is refused", async () => {
+    status("Open");
+    await setDomainReady("c1", "d1", false, { actorId: "lead-1", request: new Request("http://localhost/") });
+    expect(logAuditEvent).not.toHaveBeenCalled();
   });
 
   it("in Open, marking ready runs the go-live check first", async () => {

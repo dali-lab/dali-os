@@ -3,6 +3,7 @@ import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
+import { logAuditEvent } from "~/lib/audit";
 import { canViewMentorship, mentorshipPairWhere } from "../lib/visibility";
 
 // GET    /api/mentorship/pairs — list pairs. Every lab mentor (and Core/Admin)
@@ -125,7 +126,8 @@ export async function action({ request }: Route.ActionArgs) {
 
   const auth = await requireAuth(request);
   if (!auth.ok) return withCors(request, auth.response);
-  if (!(await isCore(auth.user.sub))) {
+  const actorId = auth.user.sub;
+  if (!(await isCore(actorId))) {
     return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
   }
 
@@ -136,6 +138,13 @@ export async function action({ request }: Route.ActionArgs) {
       return withCors(request, Response.json({ error: "No ids provided" }, { status: 400 }));
     }
     const result = await prisma.mentorshipPair.deleteMany({ where: { id: { in: ids } } });
+    await logAuditEvent({
+      action: "mentorship.pair.delete",
+      userId: actorId,
+      targetId: ids[0],
+      metadata: { ids, deleted: result.count },
+      request,
+    });
     return withCors(request, Response.json({ deleted: result.count }));
   }
 
@@ -151,7 +160,7 @@ export async function action({ request }: Route.ActionArgs) {
     }
     const pair = await prisma.mentorshipPair.findUnique({
       where: { id: patch.id },
-      select: { menteeUserId: true, projectId: true, termId: true, domainId: true },
+      select: { menteeUserId: true, mentorUserId: true, projectId: true, termId: true, domainId: true },
     });
     if (!pair) {
       return withCors(request, Response.json({ error: "Not found" }, { status: 404 }));
@@ -171,12 +180,35 @@ export async function action({ request }: Route.ActionArgs) {
     });
     if (existing && existing.id !== patch.id) {
       await prisma.mentorshipPair.delete({ where: { id: patch.id } });
+      await logAuditEvent({
+        action: "mentorship.pair.update",
+        userId: actorId,
+        targetId: existing.id,
+        metadata: {
+          menteeUserId: pair.menteeUserId,
+          fromMentorUserId: pair.mentorUserId,
+          toMentorUserId: patch.mentorUserId,
+          mergedFromPairId: patch.id,
+        },
+        request,
+      });
       return withCors(request, Response.json({ id: existing.id, merged: true }));
     }
     const updated = await prisma.mentorshipPair.update({
       where: { id: patch.id },
       data: { mentorUserId: patch.mentorUserId, manual: true },
       select: { id: true },
+    });
+    await logAuditEvent({
+      action: "mentorship.pair.update",
+      userId: actorId,
+      targetId: updated.id,
+      metadata: {
+        menteeUserId: pair.menteeUserId,
+        fromMentorUserId: pair.mentorUserId,
+        toMentorUserId: patch.mentorUserId,
+      },
+      request,
     });
     return withCors(request, Response.json({ id: updated.id, merged: false }));
   }
@@ -205,7 +237,7 @@ export async function action({ request }: Route.ActionArgs) {
       termId: body.termId,
       domainId: body.domainId,
     },
-    select: { id: true },
+    select: { id: true, mentorUserId: true },
   });
   if (existing.length > 0) {
     const [keep, ...extra] = existing;
@@ -219,6 +251,21 @@ export async function action({ request }: Route.ActionArgs) {
       data: { mentorUserId: body.mentorUserId, manual: true },
       select: { id: true },
     });
+    await logAuditEvent({
+      action: "mentorship.pair.update",
+      userId: actorId,
+      targetId: updated.id,
+      metadata: {
+        menteeUserId: body.menteeUserId,
+        fromMentorUserId: keep.mentorUserId,
+        toMentorUserId: body.mentorUserId,
+        projectId: body.projectId,
+        termId: body.termId,
+        domainId: body.domainId,
+        collapsedExtras: extra.length,
+      },
+      request,
+    });
     return withCors(request, Response.json({ id: updated.id, created: false }));
   }
   const created = await prisma.mentorshipPair.create({
@@ -231,6 +278,19 @@ export async function action({ request }: Route.ActionArgs) {
       manual: true,
     },
     select: { id: true },
+  });
+  await logAuditEvent({
+    action: "mentorship.pair.create",
+    userId: actorId,
+    targetId: created.id,
+    metadata: {
+      menteeUserId: body.menteeUserId,
+      mentorUserId: body.mentorUserId,
+      projectId: body.projectId,
+      termId: body.termId,
+      domainId: body.domainId,
+    },
+    request,
   });
   return withCors(request, Response.json({ id: created.id, created: true }));
 }

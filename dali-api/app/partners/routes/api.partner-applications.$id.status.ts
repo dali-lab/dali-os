@@ -52,6 +52,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     applicationId: params.id,
     to: stage,
     actorUserId: auth.user.sub,
+    request,
   });
   if (prev === null) {
     return withCors(

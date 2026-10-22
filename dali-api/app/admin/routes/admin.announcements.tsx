@@ -12,6 +12,7 @@ import { adminHandle } from "~/admin/adminNav";
 import { prisma } from "~/lib/db";
 import { listVisibleGroupsForUser } from "~/lib/groups";
 import { requireAuth } from "~/lib/auth";
+import { logAuditEvent } from "~/lib/audit";
 import { redirectToLogin } from "~/lib/login-next";
 import { isCore, isAdmin } from "~/lib/roles";
 import { MEMBER_LIST_ORDER_BY } from "~/lib/prisma-shapes";
@@ -123,10 +124,23 @@ export async function action({ request }: Route.ActionArgs) {
     return Response.json({ error: "Unknown intent" }, { status: 400 });
   }
   const id = String(form.get("id") ?? "");
+  const pending = await prisma.scheduledAnnouncement.findUnique({
+    where: { id },
+    select: { title: true, sendAt: true },
+  });
   const result = await prisma.scheduledAnnouncement.updateMany({
     where: { id, sentAt: null, canceledAt: null },
     data: { canceledAt: new Date() },
   });
+  if (result.count === 1) {
+    await logAuditEvent({
+      action: "announcement.cancel",
+      userId: auth.user.sub,
+      targetId: id,
+      metadata: { title: pending?.title ?? null, sendAt: pending?.sendAt.toISOString() ?? null },
+      request,
+    });
+  }
   return { ok: true, canceled: result.count === 1 };
 }
 

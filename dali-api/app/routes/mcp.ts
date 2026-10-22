@@ -7,6 +7,7 @@ import type { Route } from "./+types/mcp";
 import { authenticateMcpRequest } from "~/lib/mcp-auth";
 import { checkRateLimit } from "~/lib/rate-limit";
 import { logAuditEvent } from "~/lib/audit";
+import { logMcpToolCall } from "~/mcp/audit.server";
 import { safeJson } from "~/lib/safe-json";
 import { validateInput, type JsonSchema } from "~/lib/mcp-input";
 import {
@@ -357,36 +358,36 @@ function rpcError(id: unknown, code: number, message: string, data?: unknown): R
 // error class only needs to expose `.status`; the dispatcher decides the wire
 // code. Returns null if `err` doesn't match a known error class — caller
 // falls through to the generic -32000.
-function rpcErrorFromTool(id: unknown, err: unknown): Response | null {
+function mapLegacyToolError(err: unknown): { code: number; message: string } | null {
   // -32003 forbidden, -32004 not found, -32602 invalid params, -32000 generic.
-  if (err instanceof MemberNotFoundError) return rpcError(id, -32004, err.message);
-  if (err instanceof ProjectNotFoundError) return rpcError(id, -32004, err.message);
-  if (err instanceof NotificationNotFoundError) return rpcError(id, -32004, err.message);
-  if (err instanceof NotificationForbiddenError) return rpcError(id, -32003, err.message);
+  if (err instanceof MemberNotFoundError) return { code: -32004, message: err.message };
+  if (err instanceof ProjectNotFoundError) return { code: -32004, message: err.message };
+  if (err instanceof NotificationNotFoundError) return { code: -32004, message: err.message };
+  if (err instanceof NotificationForbiddenError) return { code: -32003, message: err.message };
   if (err instanceof RsvpError) {
-    return rpcError(id, err.status === 403 ? -32003 : -32602, err.message);
+    return { code: err.status === 403 ? -32003 : -32602, message: err.message };
   }
   if (err instanceof CancelMeetingError) {
-    return rpcError(id, err.status === 403 ? -32003 : -32004, err.message);
+    return { code: err.status === 403 ? -32003 : -32004, message: err.message };
   }
   if (err instanceof UpdateTaskStatusError) {
     const code = err.status === 403 ? -32003 : err.status === 404 ? -32004 : -32602;
-    return rpcError(id, code, err.message);
+    return { code: code, message: err.message };
   }
-  if (err instanceof ProjectSettingsNotFoundError) return rpcError(id, -32004, err.message);
-  if (err instanceof ShowcaseNotFoundError) return rpcError(id, -32004, err.message);
-  if (err instanceof ShowcaseForbiddenError) return rpcError(id, -32003, err.message);
-  if (err instanceof ShowcaseInvalidError) return rpcError(id, -32602, err.message);
-  if (err instanceof StaffingForbiddenError) return rpcError(id, -32003, err.message);
-  if (err instanceof StaffingNotFoundError) return rpcError(id, -32004, err.message);
-  if (err instanceof StaffingInvalidError) return rpcError(id, -32602, err.message);
-  if (err instanceof CurationNotFoundError) return rpcError(id, -32004, err.message);
-  if (err instanceof CurationForbiddenError) return rpcError(id, -32003, err.message);
-  if (err instanceof CurationInvalidError) return rpcError(id, -32602, err.message);
-  if (err instanceof TimeEntryNotFoundError) return rpcError(id, -32004, err.message);
-  if (err instanceof TimeEntryInvalidError) return rpcError(id, -32602, err.message);
-  if (err instanceof ScheduleMeetingError) return rpcError(id, -32602, err.message);
-  if (err instanceof PreferenceValidationError) return rpcError(id, -32602, err.message);
+  if (err instanceof ProjectSettingsNotFoundError) return { code: -32004, message: err.message };
+  if (err instanceof ShowcaseNotFoundError) return { code: -32004, message: err.message };
+  if (err instanceof ShowcaseForbiddenError) return { code: -32003, message: err.message };
+  if (err instanceof ShowcaseInvalidError) return { code: -32602, message: err.message };
+  if (err instanceof StaffingForbiddenError) return { code: -32003, message: err.message };
+  if (err instanceof StaffingNotFoundError) return { code: -32004, message: err.message };
+  if (err instanceof StaffingInvalidError) return { code: -32602, message: err.message };
+  if (err instanceof CurationNotFoundError) return { code: -32004, message: err.message };
+  if (err instanceof CurationForbiddenError) return { code: -32003, message: err.message };
+  if (err instanceof CurationInvalidError) return { code: -32602, message: err.message };
+  if (err instanceof TimeEntryNotFoundError) return { code: -32004, message: err.message };
+  if (err instanceof TimeEntryInvalidError) return { code: -32602, message: err.message };
+  if (err instanceof ScheduleMeetingError) return { code: -32602, message: err.message };
+  if (err instanceof PreferenceValidationError) return { code: -32602, message: err.message };
 
   // Project-hub error classes share the same `.status` → JSON-RPC code mapping.
   const hubErrors = [
@@ -411,7 +412,7 @@ function rpcErrorFromTool(id: unknown, err: unknown): Response | null {
     if (err instanceof klass) {
       const e = err as { status: number; message: string };
       const code = e.status === 403 ? -32003 : e.status === 404 ? -32004 : -32602;
-      return rpcError(id, code, e.message);
+      return { code, message: e.message };
     }
   }
   return null;
@@ -491,7 +492,14 @@ export async function action({ request }: Route.ActionArgs) {
       // dispatched here; the legacy switch below covers tools not yet migrated.
       const registryTool = toolName ? findRegistryTool(toolName) : undefined;
       if (registryTool) {
+        const registryAudit = {
+          auth,
+          toolName: registryTool.def.name,
+          scope: registryTool.def.requiredScope,
+          request,
+        };
         if (!auth.scopes.includes(registryTool.def.requiredScope)) {
+          await logMcpToolCall({ ...registryAudit, errorCode: -32002 });
           return rpcError(
             body.id,
             -32002,
@@ -503,30 +511,24 @@ export async function action({ request }: Route.ActionArgs) {
           registryTool.def.inputSchema as JsonSchema,
         );
         if (!validated.ok) {
+          await logMcpToolCall({ ...registryAudit, errorCode: -32602 });
           return rpcError(body.id, -32602, `Invalid params: ${validated.error}`);
         }
+        const registryArgs = validated.value as Record<string, unknown>;
         try {
           const payload = await registryTool.run(
             { user: auth.user, scopes: auth.scopes, request },
-            validated.value as Record<string, unknown>,
+            registryArgs,
           );
-          await logAuditEvent({
-            action: "mcp.tool_called",
-            userId: auth.user.id,
-            metadata: {
-              toolName: registryTool.def.name,
-              clientId: auth.clientId,
-              clientName: auth.clientName,
-              grantId: auth.grantId,
-            },
-            request,
-          });
+          await logMcpToolCall({ ...registryAudit, args: registryArgs });
           return rpcResult(body.id, {
             content: [{ type: "text", text: JSON.stringify(payload) }],
             structuredContent: payload,
           });
         } catch (err) {
           const mapped = mapToolError(err);
+          const code = mapped?.code ?? -32000;
+          await logMcpToolCall({ ...registryAudit, args: registryArgs, errorCode: code });
           if (mapped) return rpcError(body.id, mapped.code, mapped.message);
           const message = err instanceof Error ? err.message : "Tool execution failed";
           return rpcError(body.id, -32000, message);
@@ -537,7 +539,14 @@ export async function action({ request }: Route.ActionArgs) {
       if (!tool) {
         return rpcError(body.id, -32601, `Unknown tool: ${toolName}`);
       }
+      const legacyAudit = {
+        auth,
+        toolName: tool.name,
+        scope: tool.requiredScope,
+        request,
+      };
       if (!auth.scopes.includes(tool.requiredScope)) {
+        await logMcpToolCall({ ...legacyAudit, errorCode: -32002 });
         return rpcError(
           body.id,
           -32002,
@@ -547,6 +556,7 @@ export async function action({ request }: Route.ActionArgs) {
 
       const validated = validateInput(params?.arguments, tool.inputSchema as JsonSchema);
       if (!validated.ok) {
+        await logMcpToolCall({ ...legacyAudit, errorCode: -32602 });
         return rpcError(body.id, -32602, `Invalid params: ${validated.error}`);
       }
       const args = validated.value as Record<string, unknown>;
@@ -821,25 +831,16 @@ export async function action({ request }: Route.ActionArgs) {
             return rpcError(body.id, -32601, "Tool not implemented");
         }
 
-        await logAuditEvent({
-          action: "mcp.tool_called",
-          userId: auth.user.id,
-          metadata: {
-            toolName: tool.name,
-            clientId: auth.clientId,
-            clientName: auth.clientName,
-            grantId: auth.grantId,
-          },
-          request,
-        });
+        await logMcpToolCall({ ...legacyAudit, args });
 
         return rpcResult(body.id, {
           content: [{ type: "text", text: JSON.stringify(payload) }],
           structuredContent: payload,
         });
       } catch (err) {
-        const mapped = rpcErrorFromTool(body.id, err);
-        if (mapped) return mapped;
+        const mapped = mapLegacyToolError(err);
+        await logMcpToolCall({ ...legacyAudit, args, errorCode: mapped?.code ?? -32000 });
+        if (mapped) return rpcError(body.id, mapped.code, mapped.message);
         const message = err instanceof Error ? err.message : "Tool execution failed";
         return rpcError(body.id, -32000, message);
       }

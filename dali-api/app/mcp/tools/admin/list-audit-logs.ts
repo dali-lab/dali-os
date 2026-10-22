@@ -1,5 +1,6 @@
 // MCP `list_audit_logs` — paginated audit log viewer for Core leads.
-// Reuses the same filter/query helpers as the admin Audit Logs route.
+// Reuses the same filter/query helpers as the admin Audit Logs route. Unlike
+// the HTML viewer it returns MCP reads unless filtered out.
 // Requires the `mcp:admin` scope; caller must be isCore.
 
 import { prisma } from "~/lib/db";
@@ -20,6 +21,11 @@ export const LIST_AUDIT_LOGS_TOOL = {
     type: "object" as const,
     properties: {
       action: { type: "string", description: "Filter by audit action" },
+      area: {
+        type: "string",
+        description:
+          "Filter by area (the action's first segment, e.g. staffing, mcp, auth, hiring, page). Ignored when action is set.",
+      },
       userId: { type: "string", description: "Filter by actor user ID" },
       targetId: { type: "string", description: "Filter by target ID" },
       person: {
@@ -41,6 +47,7 @@ export const LIST_AUDIT_LOGS_TOOL = {
 
 type Args = {
   action?: string;
+  area?: string;
   userId?: string;
   targetId?: string;
   person?: string;
@@ -58,10 +65,8 @@ export async function runListAuditLogs(ctx: McpCtx, args: Args) {
   const limit = Math.min(Math.max(Number(args.limit ?? 50) || 50, 1), 200);
   const offset = Math.max(Number(args.offset ?? 0) || 0, 0);
 
-  // Reuse parseAuditFilters (which reads URLSearchParams) so filter logic is
-  // never duplicated between the HTTP route and this tool.
   const params = new URLSearchParams();
-  for (const key of ["action", "userId", "targetId", "person", "from", "to"] as const) {
+  for (const key of ["action", "area", "userId", "targetId", "person", "from", "to"] as const) {
     if (args[key] != null) params.set(key, String(args[key]));
   }
   const filters = parseAuditFilters(params);

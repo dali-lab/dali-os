@@ -15,6 +15,7 @@ vi.mock("~/lib/auth", () => ({
   redirectNonMemberToPortal: vi.fn(async () => null),
 }));
 vi.mock("~/lib/roles");
+vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
 vi.mock("~/lib/core-cycle", () => ({
   // Tests treat the cycle as a single term ("term-1"); fan-out behavior is
   // exercised through the count of writes, not the cycle math.
@@ -23,6 +24,7 @@ vi.mock("~/lib/core-cycle", () => ({
 }));
 
 import { prisma } from "~/lib/db";
+import { logAuditEvent } from "~/lib/audit";
 import { requireAuth } from "~/lib/auth";
 import { isAdmin, isCore, currentTerm } from "~/lib/roles";
 import { action } from "~/admin/routes/admin.members";
@@ -34,6 +36,7 @@ const TERM_ID = "term-1";
 
 const mockPrisma = prisma as unknown as {
   adminMembership: {
+    findUnique: ReturnType<typeof vi.fn>;
     upsert: ReturnType<typeof vi.fn>;
     updateMany: ReturnType<typeof vi.fn>;
     deleteMany: ReturnType<typeof vi.fn>;
@@ -47,6 +50,7 @@ const mockPrisma = prisma as unknown as {
     deleteMany: ReturnType<typeof vi.fn>;
   };
   domainLeadAssignment: {
+    findUnique: ReturnType<typeof vi.fn>;
     upsert: ReturnType<typeof vi.fn>;
     delete: ReturnType<typeof vi.fn>;
   };
@@ -55,6 +59,7 @@ const mockPrisma = prisma as unknown as {
 beforeEach(() => {
   vi.clearAllMocks();
   (mockPrisma as any).adminMembership = {
+    findUnique: vi.fn().mockResolvedValue(null),
     upsert: vi.fn(),
     updateMany: vi.fn(),
     deleteMany: vi.fn(),
@@ -68,7 +73,8 @@ beforeEach(() => {
     deleteMany: vi.fn(),
   };
   (mockPrisma as any).domainLeadAssignment = {
-    upsert: vi.fn(),
+    findUnique: vi.fn().mockResolvedValue(null),
+    upsert: vi.fn().mockResolvedValue({ id: "dla-1" }),
     delete: vi.fn(),
   };
   vi.mocked(currentTerm).mockResolvedValue({ id: TERM_ID } as any);
@@ -271,5 +277,151 @@ describe("admin.members action — set-staff (Admin-only)", () => {
       data: { isStaff: false },
     });
     expect(mockPrisma.adminMembership.deleteMany).not.toHaveBeenCalled();
+  });
+});
+
+function run(body: Record<string, string>) {
+  return action({ request: postForm(body), params: {}, context: {} } as any);
+}
+
+describe("admin.members action — audit trail", () => {
+  it("set-admin on logs role.change from none to Admin", async () => {
+    asAdmin();
+    await run({ intent: "set-admin", userId: USER_ID, value: "true" });
+    expect(logAuditEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "role.change",
+        userId: ADMIN_ID,
+        targetId: USER_ID,
+        metadata: { before: [], after: ["Admin"], targetUserId: USER_ID },
+      }),
+    );
+  });
+
+  it("set-admin off logs the removal", async () => {
+    asAdmin();
+    mockPrisma.adminMembership.findUnique.mockResolvedValue({ isStaff: false });
+    await run({ intent: "set-admin", userId: USER_ID, value: "false" });
+    expect(logAuditEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "role.change",
+        metadata: { before: ["Admin"], after: [], targetUserId: USER_ID },
+      }),
+    );
+  });
+
+  it("set-admin does not log when nothing changed", async () => {
+    asAdmin();
+    mockPrisma.adminMembership.findUnique.mockResolvedValue({ isStaff: false });
+    await run({ intent: "set-admin", userId: USER_ID, value: "true" });
+    expect(logAuditEvent).not.toHaveBeenCalled();
+  });
+
+  it("set-staff logs Staff being added on top of Admin", async () => {
+    asAdmin();
+    mockPrisma.adminMembership.findUnique.mockResolvedValue({ isStaff: false });
+    await run({ intent: "set-staff", userId: USER_ID, value: "true" });
+    expect(logAuditEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "role.change",
+        targetId: USER_ID,
+        metadata: {
+          before: ["Admin"],
+          after: ["Admin", "Staff"],
+          targetUserId: USER_ID,
+        },
+      }),
+    );
+  });
+
+  it("set-staff off logs Staff being cleared", async () => {
+    asAdmin();
+    mockPrisma.adminMembership.findUnique.mockResolvedValue({ isStaff: true });
+    await run({ intent: "set-staff", userId: USER_ID, value: "false" });
+    expect(logAuditEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: {
+          before: ["Admin", "Staff"],
+          after: ["Admin"],
+          targetUserId: USER_ID,
+        },
+      }),
+    );
+  });
+
+  it("set-staff does not log when already unset", async () => {
+    asAdmin();
+    await run({ intent: "set-staff", userId: USER_ID, value: "false" });
+    expect(logAuditEvent).not.toHaveBeenCalled();
+  });
+
+  it("add-core-title logs the title, and nothing when already covered", async () => {
+    asCore();
+    await run({ intent: "add-core-title", userId: USER_ID, leadTitle: "PM" });
+    expect(logAuditEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "role.change",
+        userId: CORE_ID,
+        targetId: USER_ID,
+        metadata: { before: [], after: ["Core: PM"], targetUserId: USER_ID },
+      }),
+    );
+    vi.mocked(logAuditEvent).mockClear();
+    mockPrisma.coreAssignment.findMany.mockResolvedValueOnce([{ termId: TERM_ID }]);
+    await run({ intent: "add-core-title", userId: USER_ID, leadTitle: "PM" });
+    expect(logAuditEvent).not.toHaveBeenCalled();
+  });
+
+  it("remove-core-title logs the removed title against the assignee", async () => {
+    asCore();
+    mockPrisma.coreAssignment.findUnique.mockResolvedValueOnce({
+      userId: USER_ID,
+      termId: TERM_ID,
+      leadTitle: "PM",
+    });
+    await run({ intent: "remove-core-title", assignmentId: "ca-1" });
+    expect(logAuditEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "role.change",
+        userId: CORE_ID,
+        targetId: USER_ID,
+        metadata: { before: ["Core: PM"], after: [], targetUserId: USER_ID },
+      }),
+    );
+  });
+
+  it("add-domain-lead logs domain.lead.add only for a new assignment", async () => {
+    asCore();
+    await run({ intent: "add-domain-lead", userId: USER_ID, domainId: "d1" });
+    expect(logAuditEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "domain.lead.add",
+        userId: CORE_ID,
+        targetId: USER_ID,
+        metadata: { domainId: "d1", assignmentId: "dla-1", termId: TERM_ID },
+      }),
+    );
+    vi.mocked(logAuditEvent).mockClear();
+    mockPrisma.domainLeadAssignment.findUnique.mockResolvedValueOnce({ id: "dla-1" });
+    await run({ intent: "add-domain-lead", userId: USER_ID, domainId: "d1" });
+    expect(logAuditEvent).not.toHaveBeenCalled();
+  });
+
+  it("remove-domain-lead logs domain.lead.remove against the lead", async () => {
+    asCore();
+    mockPrisma.domainLeadAssignment.delete.mockResolvedValueOnce({
+      userId: USER_ID,
+      domainId: "d1",
+      termId: TERM_ID,
+    });
+    await run({ intent: "remove-domain-lead", assignmentId: "dla-1" });
+    expect(logAuditEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "domain.lead.remove",
+        userId: CORE_ID,
+        targetId: USER_ID,
+        metadata: { domainId: "d1", assignmentId: "dla-1", termId: TERM_ID },
+      }),
+    );
   });
 });

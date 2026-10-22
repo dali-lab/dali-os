@@ -6,6 +6,7 @@ import { isCore, hasCycleAccess } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { idSchema, parseJson } from "~/lib/validate";
 import { APPLICATION_TZ, isValidTimezone } from "~/lib/timezone";
+import { logAuditEvent } from "~/lib/audit";
 import { applyRoomHolds } from "~/hiring/lib/interview-room-holds.server";
 import { FIRST_INTERVIEW_ROUND_ID, findInterviewRound, parseTimeline } from "~/hiring/lib/cycle-timeline";
 
@@ -184,6 +185,32 @@ export async function action({ request, params }: Route.ActionArgs) {
       holdRooms: effective.holdRooms,
       ...(body.roomIds !== undefined ? { rooms: { connect: rooms.map((r) => ({ id: r.id })) } } : {}),
     },
+  });
+
+  await logAuditEvent({
+    action: "interview.config",
+    userId: auth.user.sub,
+    targetId: config.id,
+    metadata: {
+      cycleId,
+      interviewRoundId,
+      created: !existing,
+      before: existing
+        ? {
+            start: existing.interviewStartDate.toISOString(),
+            end: existing.interviewEndDate.toISOString(),
+            slotDurationMinutes: existing.slotDurationMinutes,
+          }
+        : null,
+      after: {
+        start: effective.interviewStartDate.toISOString(),
+        end: effective.interviewEndDate.toISOString(),
+        slotDurationMinutes: config.slotDurationMinutes,
+      },
+      holdRooms: effective.holdRooms,
+      roomIds: rooms.map((r) => r.id),
+    },
+    request,
   });
 
   return withCors(request, Response.json(config));

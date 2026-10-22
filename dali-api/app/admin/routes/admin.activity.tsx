@@ -1,13 +1,21 @@
 import { Form, Link, redirect, useLoaderData } from "react-router";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import type { Route } from "./+types/admin.activity";
 import { adminHandle } from "~/admin/adminNav";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
-import { isCore, isAdmin } from "~/lib/roles";
+import { isCore } from "~/lib/roles";
 import { fullName } from "~/lib/display";
-import { AUDIT_ACTIONS } from "~/lib/audit-actions";
+import { AUDIT_ACTIONS, AUDIT_AREAS } from "~/lib/audit-actions";
+import { resolveAuditTargets, type ResolvedTarget } from "~/lib/audit-targets";
+import {
+  APPLICATION_TZ,
+  APPLICATION_TZ_LABEL,
+  formatInTimeZone,
+  getZonedYMD,
+  zonedDayLabel,
+} from "~/lib/timezone";
 import {
   parseAuditFilters,
   buildAuditWhere,
@@ -16,19 +24,15 @@ import {
   hasAnyFilter,
 } from "~/lib/audit-query";
 import { ListTodo, ChevronLeft, ChevronRight, X, ChevronDown, ChevronUp } from "lucide-react";
-import { Tooltip, InfoTip } from "~/components/ui/floating";
+import { Tooltip, InfoTip, Select, Combobox } from "~/components/ui/floating";
+import { SearchInput } from "~/components/ui/SearchInput";
+import { Toggle } from "~/components/ui/Toggle";
 import { DateField } from "~/components/ui/DateField";
 import { StatusDot, type Tone } from "~/admin/components/console-ui";
 
 export const handle = adminHandle("activity");
 
 export const meta: Route.MetaFunction = () => [{ title: "Activity · Admin · DALI OS" }];
-
-// Read-only viewer over the AuditLog table. Offset-paginated and filterable
-// on the indexed columns (action, userId, createdAt) plus a cheap equality
-// check on targetId. The Next link uses prefetch="render" so the next page's
-// loader runs the moment the current page renders, making the click feel
-// instant.
 
 const PAGE_SIZE = 50;
 
@@ -40,13 +44,12 @@ export async function loader({ request }: Route.LoaderArgs) {
   const url = new URL(request.url);
   const page = Math.max(1, Number(url.searchParams.get("page") ?? "1") || 1);
   const skip = (page - 1) * PAGE_SIZE;
-  const filters = parseAuditFilters(url.searchParams);
+  const filters = parseAuditFilters(url.searchParams, { hideMcpReads: true });
   const baseWhere = buildAuditWhere(filters);
   const textPatch = await resolveAuditTextFilters(prisma, filters);
   const where = { ...baseWhere, ...textPatch };
 
-  // Take one extra to detect whether a next page exists without a separate
-  // count() query (count() over a large AuditLog is expensive).
+  // One extra row detects a next page; count() over a large AuditLog is expensive.
   const rows = await prisma.auditLog.findMany({
     where,
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
@@ -57,10 +60,6 @@ export async function loader({ request }: Route.LoaderArgs) {
   const hasNext = rows.length > PAGE_SIZE;
   const entries = rows.slice(0, PAGE_SIZE);
 
-  // Resolve actor + target display names in a single round-trip rather than
-  // per-row. Targets are typed loosely (string id with no FK back to a
-  // single table), so we only attempt User resolution and fall back to the
-  // raw id when it doesn't match.
   const ids = new Set<string>();
   for (const e of entries) {
     if (e.userId) ids.add(e.userId);
@@ -75,14 +74,19 @@ export async function loader({ request }: Route.LoaderArgs) {
         });
   const userById = new Map(users.map((u) => [u.id, u]));
 
-  const admin = await isAdmin(auth.user.sub);
+  const resolvedTargets = await resolveAuditTargets(
+    prisma,
+    entries.filter((e) => e.targetId && !userById.has(e.targetId)),
+  );
+
   return {
+    now: new Date().toISOString(),
     page,
     hasNext,
     filters,
     anyFilter: hasAnyFilter(filters),
     actions: AUDIT_ACTIONS,
-    isAdmin: admin,
+    areas: AUDIT_AREAS,
     entries: entries.map((e) => ({
       id: e.id,
       createdAt: e.createdAt.toISOString(),
@@ -90,6 +94,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       actor: e.userId ? (userById.get(e.userId) ?? null) : null,
       actorId: e.userId,
       target: e.targetId ? (userById.get(e.targetId) ?? null) : null,
+      resolvedTarget: e.targetId ? (resolvedTargets.get(e.targetId) ?? null) : null,
       targetId: e.targetId,
       metadata: e.metadata,
       ip: e.ip,
@@ -104,18 +109,15 @@ function displayPerson(u: PersonRow | null, fallbackId: string | null) {
     const name = fullName(u);
     return <span>{name || u.daliEmail || "—"}</span>;
   }
-  // Has an id but couldn't resolve it (User row missing, or targetId points
-  // at a non-User resource like a domain/group/document).
-  if (fallbackId) {
-    return (
-      <span className="font-mono text-xs text-muted-foreground/70">{fallbackId.slice(0, 8)}…</span>
-    );
-  }
-  return null;
+  return fallbackId ? <ShortId id={fallbackId} /> : null;
 }
 
-// Actor column: a missing userId means an unauthenticated request (token
-// validation failure, etc.), and "system" is the meaningful label.
+function ShortId({ id }: { id: string }) {
+  return <span className="font-mono text-xs text-muted-foreground/70">{id.slice(0, 8)}…</span>;
+}
+
+// A missing userId means an unauthenticated request (token validation failure,
+// etc.), and "system" is the meaningful label.
 function displayActor(u: PersonRow | null, fallbackId: string | null) {
   return (
     displayPerson(u, fallbackId) ?? (
@@ -124,17 +126,22 @@ function displayActor(u: PersonRow | null, fallbackId: string | null) {
   );
 }
 
-// Target column: a missing targetId means the action simply has no target
-// (login.success, email.send, confidentiality.sign, …). Don't fabricate a
-// "system" label — render an em-dash like the empty-metadata cell.
-function displayTarget(u: PersonRow | null, fallbackId: string | null) {
-  return (
-    displayPerson(u, fallbackId) ?? <span className="text-muted-foreground/50">—</span>
-  );
+function displayTarget(
+  u: PersonRow | null,
+  resolved: ResolvedTarget | null,
+  targetId: string | null,
+) {
+  if (u) return displayPerson(u, targetId);
+  if (resolved?.href) {
+    return (
+      <Link to={resolved.href} className="hover:underline">
+        {resolved.label}
+      </Link>
+    );
+  }
+  if (resolved) return <span>{resolved.label}</span>;
+  return displayPerson(null, targetId) ?? <span className="text-muted-foreground/50">—</span>;
 }
-
-const inputClass =
-  "bg-page border border-border rounded px-2 py-1.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring";
 
 // Maps an audit action string to a status tone by keyword.
 function toneForAction(action: string): Tone {
@@ -145,29 +152,26 @@ function toneForAction(action: string): Tone {
   return "idle";
 }
 
-// Format a date string as a friendly day heading.
-function dayLabel(isoDate: string): string {
-  const d = new Date(isoDate);
-  const today = new Date();
-  const yesterday = new Date(today);
-  yesterday.setDate(today.getDate() - 1);
-  if (d.toDateString() === today.toDateString()) return "Today";
-  if (d.toDateString() === yesterday.toDateString()) return "Yesterday";
-  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-}
-
-// Group entries by calendar day (day key = YYYY-MM-DD in local time).
 function groupByDay<T extends { createdAt: string }>(
   entries: T[],
+  now: Date,
 ): Array<{ dayKey: string; label: string; items: T[] }> {
   const groups: Array<{ dayKey: string; label: string; items: T[] }> = [];
   const seen = new Map<string, number>();
   for (const e of entries) {
-    const d = new Date(e.createdAt);
-    const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+    const { year, month, day } = getZonedYMD(new Date(e.createdAt), APPLICATION_TZ);
+    const key = `${year}-${month}-${day}`;
     if (!seen.has(key)) {
       seen.set(key, groups.length);
-      groups.push({ dayKey: key, label: dayLabel(e.createdAt), items: [] });
+      groups.push({
+        dayKey: key,
+        label: zonedDayLabel(e.createdAt, now, APPLICATION_TZ, {
+          month: "short",
+          day: "numeric",
+          year: "numeric",
+        }),
+        items: [],
+      });
     }
     groups[seen.get(key)!].items.push(e);
   }
@@ -179,45 +183,31 @@ type EntryRow = ReturnType<typeof useLoaderData<typeof loader>>["entries"][numbe
 function TimelineEntry({ e }: { e: EntryRow }) {
   const [open, setOpen] = useState(false);
   const hasDetail = !!(e.metadata || e.ip);
-  const time = new Date(e.createdAt).toLocaleTimeString("en-US", {
+  const time = formatInTimeZone(e.createdAt, APPLICATION_TZ, {
     hour: "numeric",
     minute: "2-digit",
-    hour12: true,
   });
 
   return (
     <div className="group">
       <div className="flex items-center gap-3 py-2 px-3 rounded-md hover:bg-muted/40 transition-colors">
-        {/* Dot */}
         <StatusDot tone={toneForAction(e.action)} className="shrink-0" />
-
-        {/* Time */}
         <span className="tabular-nums text-xs text-muted-foreground/70 w-[72px] shrink-0">
           {time}
         </span>
-
-        {/* Actor */}
         <span className="text-sm font-medium text-foreground min-w-[120px] shrink-0">
           {displayActor(e.actor, e.actorId)}
         </span>
-
-        {/* Action chip */}
         <span className="bg-muted px-1.5 py-0.5 rounded font-mono text-[11px] text-foreground shrink-0">
           {e.action}
         </span>
-
-        {/* Target (when present) */}
         {(e.target || e.targetId) && (
           <span className="text-sm text-muted-foreground flex items-center gap-1 min-w-0">
             <span className="text-muted-foreground/50">→</span>
-            {displayTarget(e.target, e.targetId)}
+            {displayTarget(e.target, e.resolvedTarget, e.targetId)}
           </span>
         )}
-
-        {/* Spacer */}
         <span className="flex-1" />
-
-        {/* Expand toggle */}
         {hasDetail && (
           <button
             type="button"
@@ -230,8 +220,6 @@ function TimelineEntry({ e }: { e: EntryRow }) {
           </button>
         )}
       </div>
-
-      {/* Expanded detail panel */}
       {open && hasDetail && (
         <div className="ml-[calc(12px+12px+72px+12px)] mb-2 mr-3 rounded-md border border-border bg-muted/30 p-3 space-y-2">
           {e.metadata && (
@@ -251,9 +239,18 @@ function TimelineEntry({ e }: { e: EntryRow }) {
 }
 
 export default function AdminConsoleActivity() {
-  const { page, hasNext, filters, anyFilter, actions, entries } = useLoaderData<typeof loader>();
+  const { page, hasNext, filters, anyFilter, actions, areas, entries, now } =
+    useLoaderData<typeof loader>();
+  const [action, setAction] = useState<string>(filters.action ?? "");
+  const actionOptions = useMemo(
+    () => [{ value: "", label: "All actions" }, ...actions.map((a) => ({ value: a, label: a }))],
+    [actions],
+  );
+  const areaOptions = useMemo(
+    () => [{ value: "", label: "All areas" }, ...areas],
+    [areas],
+  );
 
-  // Pagination links: carry active filters but never the previous page slot.
   function pageHref(nextPage: number): string {
     const params = activeFilterParams(filters);
     if (nextPage > 1) params.set("page", String(nextPage));
@@ -261,7 +258,7 @@ export default function AdminConsoleActivity() {
     return qs ? `?${qs}` : "?";
   }
 
-  const groups = groupByDay(entries);
+  const groups = groupByDay(entries, new Date(now));
 
   return (
     <div className="space-y-4">
@@ -271,40 +268,46 @@ export default function AdminConsoleActivity() {
         <span className="px-2.5 py-0.5 rounded-full text-xs font-medium bg-muted text-muted-foreground">
           page {page}
         </span>
+        <span className="text-xs text-muted-foreground">Times in {APPLICATION_TZ_LABEL}</span>
       </div>
 
       <Form
         method="get"
-        className="bg-card border border-border rounded-lg p-3 grid grid-cols-1 sm:grid-cols-4 gap-2 items-end"
+        className="bg-card border border-border rounded-lg p-3 grid grid-cols-1 sm:grid-cols-5 gap-2 items-end"
       >
-        <label className="text-xs text-muted-foreground flex flex-col gap-1">
+        <div className="text-xs text-muted-foreground flex flex-col gap-1">
+          Area
+          <Select
+            name="area"
+            defaultValue={filters.area ?? ""}
+            options={areaOptions}
+            ariaLabel="Area"
+          />
+        </div>
+        <div className="text-xs text-muted-foreground flex flex-col gap-1">
           Action
-          <select
-            name="action"
-            defaultValue={filters.action ?? ""}
-            className={`${inputClass} font-mono`}
-          >
-            <option value="">All</option>
-            {actions.map((a) => (
-              <option key={a} value={a}>
-                {a}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="text-xs text-muted-foreground flex flex-col gap-1">
+          <Combobox
+            value={action}
+            options={actionOptions}
+            onChange={setAction}
+            ariaLabel="Action"
+            placeholder="All actions"
+          />
+          <input type="hidden" name="action" value={action} />
+        </div>
+        <div className="text-xs text-muted-foreground flex flex-col gap-1">
           <span className="inline-flex items-center gap-1">
             Person
-            <InfoTip content="Matches as actor or target — returns events where this person did something or had something done to them." />
+            <InfoTip content="Matches as actor or target. Returns events where this person did something or had something done to them." />
           </span>
-          <input
-            type="text"
+          <SearchInput
+            size="sm"
             name="person"
             defaultValue={filters.person ?? ""}
             placeholder="name, email, or id"
-            className={inputClass}
+            aria-label="Person"
           />
-        </label>
+        </div>
         <label className="text-xs text-muted-foreground flex flex-col gap-1">
           From
           <DateField
@@ -323,7 +326,13 @@ export default function AdminConsoleActivity() {
             ariaLabel="To date"
           />
         </label>
-        <div className="sm:col-span-4 flex items-center gap-2">
+        <div className="sm:col-span-5 flex items-center gap-3">
+          <Toggle
+            name="mcpReads"
+            value="1"
+            defaultChecked={filters.mcpReads}
+            label="Include MCP reads"
+          />
           <button
             type="submit"
             className="px-3 py-1.5 rounded-md text-sm bg-primary text-primary-foreground hover:opacity-90"
@@ -353,13 +362,11 @@ export default function AdminConsoleActivity() {
           <div className="divide-y divide-border">
             {groups.map(({ dayKey, label, items }) => (
               <div key={dayKey} className="py-2">
-                {/* Day heading */}
                 <div className="px-3 pb-1 pt-0.5">
                   <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/60">
                     {label}
                   </span>
                 </div>
-                {/* Entries for this day */}
                 {items.map((e) => (
                   <TimelineEntry key={e.id} e={e} />
                 ))}

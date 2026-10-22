@@ -7,6 +7,7 @@ import { idSchema, parseJson } from "~/lib/validate";
 import { findRound } from "~/hiring/lib/cycle-timeline";
 import { loadCycleTimeline } from "~/hiring/lib/cycle-timeline.server";
 import { requireApiSignedOrForbidden } from "~/hiring/lib/confidentiality";
+import { logAuditEvent } from "~/lib/audit";
 
 const CreateDelibsSchema = z.object({
   domainId: idSchema,
@@ -78,6 +79,14 @@ export async function action({ request, params }: Route.ActionArgs) {
     update: {
       status: "Active",
     },
+  });
+
+  await logAuditEvent({
+    action: "delibs.open",
+    userId: auth.user.sub,
+    targetId: session.id,
+    metadata: { cycleId: params.cycleId, domainId, roundId },
+    request,
   });
 
   return Response.json(session, { status: 201 });

@@ -6,6 +6,7 @@ import { hasCycleAccess } from "~/lib/roles";
 import { parseJson } from "~/lib/validate";
 import { findRound, parseTimeline } from "~/hiring/lib/cycle-timeline";
 import { requireApiSignedOrForbidden } from "~/hiring/lib/confidentiality";
+import { logAuditEvent } from "~/lib/audit";
 
 const DelibsActionSchema = z.object({
   intent: z.enum(["close"]),
@@ -130,6 +131,19 @@ export async function action({ request, params }: Route.ActionArgs) {
           where: { id: params.id },
           data: { status: "Closed" },
         });
+      });
+
+      await logAuditEvent({
+        action: "delibs.close",
+        userId: auth.user.sub,
+        targetId: session.id,
+        metadata: {
+          cycleId: session.applicationCycleId,
+          domainId: session.domainId,
+          roundId: session.roundId,
+          decisionsCreated: decisions.length,
+        },
+        request,
       });
 
       return Response.json({ closed: true, decisionsCreated: decisions.length });

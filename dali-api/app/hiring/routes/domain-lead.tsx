@@ -10,6 +10,7 @@ import { getUserRoles } from "~/lib/roles";
 import { requireAuth } from "~/lib/auth";
 import { Plus, Trash2, X, ChevronDown, ChevronUp } from "lucide-react";
 import { addDomainChallenge, removeDomainChallenge } from "~/hiring/lib/application-form.server";
+import { logAuditEvent } from "~/lib/audit";
 import { setDomainReady } from "~/hiring/lib/domain-windows.server";
 import { inferDomainApplicationStatus } from "~/hiring/lib/domain-application-status";
 import { inReviewPipelineFilter } from "~/hiring/lib/application-pipeline-filter";
@@ -487,7 +488,7 @@ export async function action({ request }: Route.ActionArgs) {
       select: { domainId: true },
     });
     if (!linked) return Response.json({ error: "That domain isn't in this cycle" }, { status: 400 });
-    const added = await addDomainMentors(cycleId, domainId, role, request);
+    const added = await addDomainMentors(cycleId, domainId, role, request, undefined, auth.user.sub);
     // Nothing added means either no mentors, or all of them already on it.
     const notice =
       added > 0
@@ -514,9 +515,21 @@ export async function action({ request }: Route.ActionArgs) {
       return redirect("/hiring/domain-lead");
     }
 
+    const rubricKey = { domainId_applicationCycleId: { domainId, applicationCycleId: cycleId } };
+    const before = await prisma.domainApplicationCycle.findUnique({
+      where: rubricKey,
+      select: { rubricVersionId: true },
+    });
     await prisma.domainApplicationCycle.update({
-      where: { domainId_applicationCycleId: { domainId, applicationCycleId: cycleId } },
+      where: rubricKey,
       data: { rubricVersionId },
+    });
+    await logAuditEvent({
+      action: "domain.rubric.set",
+      userId: auth.user.sub,
+      targetId: domainId,
+      metadata: { cycleId, before: before?.rubricVersionId ?? null, after: rubricVersionId },
+      request,
     });
     return redirect("/hiring/domain-lead");
   }
@@ -528,19 +541,26 @@ export async function action({ request }: Route.ActionArgs) {
       domainId,
       auth.user.sub,
       (formData.get("formId") as string) || null,
+      request,
     );
     return redirect("/hiring/domain-lead");
   }
 
   if (intent === "remove-challenge-form") {
     // Draft only, and refused once an applicant picked a version of the form.
-    await removeDomainChallenge(formData.get("cdfId") as string);
+    await removeDomainChallenge(formData.get("cdfId") as string, undefined, {
+      actorId: auth.user.sub,
+      request,
+    });
     return redirect("/hiring/domain-lead");
   }
 
   if (intent === "mark-ready" || intent === "unmark-ready") {
     const cycleId = formData.get("cycleId") as string;
-    const refused = await setDomainReady(cycleId, domainId, intent === "mark-ready");
+    const refused = await setDomainReady(cycleId, domainId, intent === "mark-ready", {
+      actorId: auth.user.sub,
+      request,
+    });
     if (refused) return { error: refused };
     return redirect("/hiring/domain-lead");
   }

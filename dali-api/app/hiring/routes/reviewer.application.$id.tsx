@@ -15,6 +15,9 @@ import { getPresenceUser } from '~/lib/presence-user'
 import { requirePageSignedOrRedirect } from '~/hiring/lib/confidentiality'
 import { presignAnswers } from '~/hiring/lib/presign'
 import { blindUser, reviewerBlindLabel } from '~/hiring/lib/anonymization.server'
+import { logApplicationView } from '~/hiring/lib/application-view-audit.server'
+import { logAuditEvent } from '~/lib/audit'
+import { describeReviewChange } from '~/hiring/lib/review'
 import { listPriorApplications } from '~/hiring/lib/prior-applications.server'
 import { getApplicantEmailEngagement } from '~/hiring/lib/email-engagement.server'
 import { ApplicantEmailPanel } from '~/hiring/components/ApplicantEmailPanel'
@@ -128,6 +131,14 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   })
   const blinded = blindLabel != null
   if (blindLabel) applicationBase.user = blindUser(applicationBase.user, blindLabel)
+
+  void logApplicationView({
+    userId: auth.user.sub,
+    applicationId: applicationBase.id,
+    cycleId: applicationBase.applicationCycleId,
+    blinded,
+    request,
+  })
 
   // After the cycle-access + confidentiality gates — the application the reviewer
   // can open lands in their recents, keyed to the applicant's (possibly blinded)
@@ -334,6 +345,21 @@ export async function action({ request, params }: Route.ActionArgs) {
         where: { id: existing.id },
         data: { scores, overallRecommendation, annotations, rubricVersionId },
       })
+
+      const change = describeReviewChange(existing, { scores, overallRecommendation, annotations })
+      if (change.fields.length > 0) {
+        await logAuditEvent({
+          action: 'review.update',
+          userId: auth.user.sub,
+          targetId: existing.id,
+          metadata: {
+            cycleId: da.application.applicationCycleId,
+            applicationId: params.id,
+            ...change,
+          },
+          request,
+        })
+      }
     }
   }
 

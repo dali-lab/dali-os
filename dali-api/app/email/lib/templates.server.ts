@@ -7,6 +7,7 @@
 
 import { prisma } from "~/lib/db";
 import { renderEmail, type EmailTemplateVars } from "~/lib/email";
+import { logAuditEvent } from "~/lib/audit";
 
 import {
   EMAIL_TEMPLATES,
@@ -49,23 +50,25 @@ export async function listEmailTemplates(): Promise<Map<EmailTemplateKey, Stored
   return out;
 }
 
+type TemplateWrite = { cleared: boolean; versionNumber: number | null };
+
 // Blanking both fields deletes the row, carried over from the slot tables: it is
 // how an operator turns an email off, and it keeps "no row" as the single
 // representation of off rather than adding an empty-string second one.
-export async function saveEmailTemplate(
+async function writeEmailTemplate(
   key: EmailTemplateKey,
   copy: EmailTemplateCopy,
   actorId: string,
-): Promise<void> {
+): Promise<TemplateWrite> {
   const subject = copy.subject.trim();
   const body = copy.body.trim();
 
   if (!subject && !body) {
     await prisma.emailTemplate.deleteMany({ where: { key } });
-    return;
+    return { cleared: true, versionNumber: null };
   }
 
-  await prisma.$transaction(async (tx) => {
+  return prisma.$transaction(async (tx) => {
     const existing = await tx.emailTemplate.findUnique({
       where: { key },
       select: { subject: true, body: true },
@@ -80,22 +83,41 @@ export async function saveEmailTemplate(
       update: { subject, body, updatedById: actorId },
     });
 
-    if (!changed) return;
+    if (!changed) return { cleared: false, versionNumber: null };
 
     const last = await tx.emailTemplateVersion.findFirst({
       where: { templateKey: key },
       orderBy: { versionNumber: "desc" },
       select: { versionNumber: true },
     });
+    const versionNumber = (last?.versionNumber ?? 0) + 1;
     await tx.emailTemplateVersion.create({
       data: {
         templateKey: key,
-        versionNumber: (last?.versionNumber ?? 0) + 1,
+        versionNumber,
         subject,
         body,
         createdById: actorId,
       },
     });
+    return { cleared: false, versionNumber };
+  });
+}
+
+export async function saveEmailTemplate(
+  key: EmailTemplateKey,
+  copy: EmailTemplateCopy,
+  actorId: string,
+  request?: Request,
+): Promise<void> {
+  const written = await writeEmailTemplate(key, copy, actorId);
+  if (!written.cleared && written.versionNumber === null) return;
+  await logAuditEvent({
+    action: "email.template.save",
+    userId: actorId,
+    targetId: key,
+    metadata: { cleared: written.cleared, versionNumber: written.versionNumber },
+    request,
   });
 }
 
@@ -120,13 +142,22 @@ export async function rollbackEmailTemplate(
   key: EmailTemplateKey,
   versionId: string,
   actorId: string,
+  request?: Request,
 ): Promise<void> {
   const version = await prisma.emailTemplateVersion.findFirst({
     where: { id: versionId, templateKey: key },
-    select: { subject: true, body: true },
+    select: { subject: true, body: true, versionNumber: true },
   });
   if (!version) throw new Error(`version ${versionId} is not a version of ${key}`);
-  await saveEmailTemplate(key, version, actorId);
+  const written = await writeEmailTemplate(key, version, actorId);
+  if (written.versionNumber === null) return;
+  await logAuditEvent({
+    action: "email.template.rollback",
+    userId: actorId,
+    targetId: key,
+    metadata: { restoredVersion: version.versionNumber, versionNumber: written.versionNumber },
+    request,
+  });
 }
 
 export class MissingEmailTemplateError extends Error {

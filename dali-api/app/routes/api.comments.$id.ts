@@ -4,6 +4,7 @@ import { prisma } from "~/lib/db";
 import { requireAuth, forbidden } from "~/lib/auth";
 import { isCore, isLabMember } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
+import { logAuditEvent } from "~/lib/audit";
 import { getPageAccess } from "~/lib/pageAccess.server";
 import { publishCommentChange } from "~/lib/comment-events.server";
 import { notifyMentions } from "~/lib/mentions";
@@ -64,6 +65,17 @@ export async function action({ request, params }: Route.ActionArgs) {
     if (!canDelete) return forbidden(request);
 
     await prisma.docComment.delete({ where: { id: comment.id } });
+    await logAuditEvent({
+      action: "comment.delete",
+      userId: auth.user.sub,
+      targetId: comment.id,
+      metadata: {
+        authorId: comment.authorId,
+        targetType: comment.targetType,
+        parentTargetId: comment.targetId,
+      },
+      request,
+    });
     if (comment.targetType === "doc") publishCommentChange(comment.targetId);
     return withCors(request, Response.json({ ok: true }));
   }

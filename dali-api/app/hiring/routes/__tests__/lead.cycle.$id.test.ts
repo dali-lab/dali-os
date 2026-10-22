@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/db");
+vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
 vi.mock("~/lib/auth", () => ({
   requireAuth: vi.fn(),
 }));
@@ -24,6 +25,7 @@ vi.mock("~/hiring/lib/domain-added-notice", () => ({
 
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
+import { logAuditEvent } from "~/lib/audit";
 import { isAdmin, isCycleAdmin } from "~/lib/roles";
 import { changeApplicants } from "~/hiring/lib/cycle-applicants.server";
 import { addDomainMentors, domainMentorIds } from "~/hiring/lib/cycle-rosters.server";
@@ -52,7 +54,10 @@ beforeEach(() => {
   mockPrisma.domainApplication = { count: vi.fn().mockResolvedValue(0) };
   mockPrisma.rubricVersion = { findUnique: vi.fn() };
   mockPrisma.applicationReview = { count: vi.fn() };
-  mockPrisma.domainApplicationCycle = { upsert: vi.fn().mockResolvedValue({}) };
+  mockPrisma.domainApplicationCycle = {
+    upsert: vi.fn().mockResolvedValue({}),
+    findUnique: vi.fn().mockResolvedValue(null),
+  };
   // The action reads the cycle's applicant group before dispatching intents.
   mockPrisma.applicationCycle = {
     update: vi.fn().mockResolvedValue({}),
@@ -121,6 +126,29 @@ describe("lead.cycle.$id action — hiring lead overrides", () => {
       });
     });
 
+    it("logs the rubric change with the version before and after", async () => {
+      mockPrisma.applicationReview.count.mockResolvedValue(0);
+      mockPrisma.rubricVersion.findUnique.mockResolvedValue({ id: RV_ID });
+      mockPrisma.domainApplicationCycle.findUnique.mockResolvedValue({ rubricVersionId: "rv-old" });
+
+      await callAction({ intent: "hl-set-domain-rubric", domainId: DOMAIN_ID, rubricVersionId: RV_ID });
+
+      expect(logAuditEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: "domain.rubric.set",
+          userId: HIRING_LEAD_ID,
+          targetId: DOMAIN_ID,
+          metadata: { cycleId: CYCLE_ID, before: "rv-old", after: RV_ID },
+        }),
+      );
+    });
+
+    it("logs nothing when the rubric is locked by existing reviews", async () => {
+      mockPrisma.applicationReview.count.mockResolvedValue(3);
+      await callAction({ intent: "hl-set-domain-rubric", domainId: DOMAIN_ID, rubricVersionId: RV_ID });
+      expect(logAuditEvent).not.toHaveBeenCalled();
+    });
+
     it("is a no-op when reviews already exist for this domain", async () => {
       mockPrisma.applicationReview.count.mockResolvedValue(3);
 
@@ -149,6 +177,26 @@ describe("lead.cycle.$id action — hiring lead overrides", () => {
         update: { isReady: true },
         create: { domainId: DOMAIN_ID, applicationCycleId: CYCLE_ID, isReady: true },
       });
+    });
+
+    it("logs one forced ready change through the shared funnel, and none when refused", async () => {
+      mockPrisma.applicationCycleStatusUpdate.findFirst.mockResolvedValue({ newStatus: "Draft" });
+      await callAction({ intent: "hl-force-mark-ready", domainId: DOMAIN_ID, confirm: "true" });
+
+      expect(logAuditEvent).toHaveBeenCalledTimes(1);
+      expect(logAuditEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: "domain.ready.set",
+          userId: HIRING_LEAD_ID,
+          targetId: DOMAIN_ID,
+          metadata: { cycleId: CYCLE_ID, ready: true, forced: true },
+        }),
+      );
+
+      vi.mocked(logAuditEvent).mockClear();
+      mockPrisma.applicationCycleStatusUpdate.findFirst.mockResolvedValue({ newStatus: "Open" });
+      await callAction({ intent: "hl-force-unmark-ready", domainId: DOMAIN_ID, confirm: "true" });
+      expect(logAuditEvent).not.toHaveBeenCalled();
     });
 
     it("publishes a staged domain in an Open cycle once its challenge is linked", async () => {
@@ -681,14 +729,14 @@ describe("lead.cycle.$id action — domain challenges", () => {
   it("adds a challenge to the domain in Draft", async () => {
     vi.mocked(addDomainChallenge).mockResolvedValue(null);
     const res = (await callAction({ intent: "create-challenge-form", domainId: DOMAIN_ID })) as Response;
-    expect(addDomainChallenge).toHaveBeenCalledWith(CYCLE_ID, DOMAIN_ID, HIRING_LEAD_ID, null);
+    expect(addDomainChallenge).toHaveBeenCalledWith(CYCLE_ID, DOMAIN_ID, HIRING_LEAD_ID, null, expect.any(Request));
     expect(res.status).toBe(302);
   });
 
   it("links the form the lead picked", async () => {
     vi.mocked(addDomainChallenge).mockResolvedValue(null);
     await callAction({ intent: "create-challenge-form", domainId: DOMAIN_ID, formId: "form-1" });
-    expect(addDomainChallenge).toHaveBeenCalledWith(CYCLE_ID, DOMAIN_ID, HIRING_LEAD_ID, "form-1");
+    expect(addDomainChallenge).toHaveBeenCalledWith(CYCLE_ID, DOMAIN_ID, HIRING_LEAD_ID, "form-1", expect.any(Request));
   });
 
   it("refuses once the cycle has opened", async () => {
@@ -700,7 +748,11 @@ describe("lead.cycle.$id action — domain challenges", () => {
   it("removes only links on this cycle, and not once picked", async () => {
     vi.mocked(removeDomainChallenge).mockResolvedValue("in-use");
     const res = (await callAction({ intent: "remove-challenge-form", cdfId: "cdf-1" })) as Response;
-    expect(removeDomainChallenge).toHaveBeenCalledWith("cdf-1", CYCLE_ID);
+    expect(removeDomainChallenge).toHaveBeenCalledWith("cdf-1", CYCLE_ID, {
+      actorId: HIRING_LEAD_ID,
+      request: expect.any(Request),
+    });
+    expect(logAuditEvent).not.toHaveBeenCalled();
     expect(res.status).toBe(409);
   });
 });
@@ -713,7 +765,15 @@ describe("lead.cycle.$id action — add-domain-mentors", () => {
   it("adds the domain's mentors to the chosen roster", async () => {
     vi.mocked(addDomainMentors).mockResolvedValue(3);
     const res = (await callAction({ intent: "add-domain-mentors", role: "reviewer", domainId: DOMAIN_ID })) as Response;
-    expect(addDomainMentors).toHaveBeenCalledWith(CYCLE_ID, DOMAIN_ID, "reviewer", expect.any(Request), undefined);
+    expect(addDomainMentors).toHaveBeenCalledWith(
+      CYCLE_ID,
+      DOMAIN_ID,
+      "reviewer",
+      expect.any(Request),
+      undefined,
+      HIRING_LEAD_ID,
+    );
+    expect(logAuditEvent).not.toHaveBeenCalled();
     expect(res.headers.get("Location")).toContain("notice=mentors-added");
     expect(res.headers.get("Location")).toContain("added=3");
   });

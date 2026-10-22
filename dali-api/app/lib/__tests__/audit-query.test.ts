@@ -14,6 +14,9 @@ function params(init: Record<string, string>): URLSearchParams {
 
 const EMPTY = {
   action: null,
+  area: null,
+  mcpReads: false,
+  hideMcpReads: false,
   userId: null,
   targetId: null,
   person: null,
@@ -109,16 +112,19 @@ describe("buildAuditWhere", () => {
 
   it("collapses from/to into a single createdAt range", () => {
     expect(buildAuditWhere({ ...EMPTY, from: "2026-05-01", to: "2026-05-24" })).toEqual({
-      createdAt: { gte: new Date("2026-05-01"), lte: new Date("2026-05-24") },
+      createdAt: {
+        gte: new Date("2026-05-01T04:00:00.000Z"),
+        lte: new Date("2026-05-25T03:59:59.999Z"),
+      },
     });
   });
 
   it("supports a one-sided range", () => {
     expect(buildAuditWhere({ ...EMPTY, from: "2026-05-01" })).toEqual({
-      createdAt: { gte: new Date("2026-05-01") },
+      createdAt: { gte: new Date("2026-05-01T04:00:00.000Z") },
     });
     expect(buildAuditWhere({ ...EMPTY, to: "2026-05-24" })).toEqual({
-      createdAt: { lte: new Date("2026-05-24") },
+      createdAt: { lte: new Date("2026-05-25T03:59:59.999Z") },
     });
   });
 
@@ -135,8 +141,66 @@ describe("buildAuditWhere", () => {
       action: "role.change",
       userId: "actor-1",
       targetId: "victim-1",
-      createdAt: { gte: new Date("2026-05-01") },
+      createdAt: { gte: new Date("2026-05-01T04:00:00.000Z") },
     });
+  });
+
+  it("includes the whole chosen day in the lab zone for a date-only To", () => {
+    const { createdAt } = buildAuditWhere({ ...EMPTY, to: "2026-10-22" });
+    const lte = (createdAt as { lte: Date }).lte;
+    expect(lte.toISOString()).toBe("2026-10-23T03:59:59.999Z");
+    expect(new Date("2026-10-22T23:30:00-04:00").getTime()).toBeLessThanOrEqual(lte.getTime());
+  });
+
+  it("starts a date-only From at local midnight, not 8pm the evening before", () => {
+    const { createdAt } = buildAuditWhere({ ...EMPTY, from: "2026-10-22" });
+    expect((createdAt as { gte: Date }).gte.toISOString()).toBe("2026-10-22T04:00:00.000Z");
+  });
+
+  it("uses the standard-time offset in winter", () => {
+    const { createdAt } = buildAuditWhere({ ...EMPTY, from: "2026-01-15", to: "2026-01-15" });
+    expect(createdAt).toEqual({
+      gte: new Date("2026-01-15T05:00:00.000Z"),
+      lte: new Date("2026-01-16T04:59:59.999Z"),
+    });
+  });
+
+  it("keeps a full ISO datetime as an exact instant", () => {
+    expect(
+      buildAuditWhere({ ...EMPTY, from: "2026-05-01T12:30:00Z", to: "2026-05-02T08:00:00.000Z" }),
+    ).toEqual({
+      createdAt: {
+        gte: new Date("2026-05-01T12:30:00Z"),
+        lte: new Date("2026-05-02T08:00:00.000Z"),
+      },
+    });
+  });
+
+  it("filters an area to the actions in it", () => {
+    const where = buildAuditWhere({ ...EMPTY, area: "staffing" });
+    const actions = (where.action as { in: string[] }).in;
+    expect(actions).toContain("staffing.assign");
+    expect(actions.every((a) => a.startsWith("staffing."))).toBe(true);
+  });
+
+  it("lets an explicit action win over the area", () => {
+    expect(buildAuditWhere({ ...EMPTY, area: "staffing", action: "login.success" })).toEqual({
+      action: "login.success",
+    });
+  });
+
+  it("excludes mcp.tool_read when hiding is on", () => {
+    expect(buildAuditWhere({ ...EMPTY, hideMcpReads: true })).toEqual({
+      action: { not: "mcp.tool_read" },
+    });
+  });
+
+  it("does not hide mcp reads when an action or the mcp area is chosen", () => {
+    expect(buildAuditWhere({ ...EMPTY, hideMcpReads: true, action: "mcp.tool_read" })).toEqual({
+      action: "mcp.tool_read",
+    });
+    const mcp = buildAuditWhere({ ...EMPTY, hideMcpReads: true, area: "mcp" });
+    expect((mcp.action as { in: string[] }).in).toContain("mcp.tool_read");
   });
 });
 
@@ -151,6 +215,32 @@ describe("activeFilterParams", () => {
     expect(result.get("person")).toBe("kiran");
     expect(result.has("userId")).toBe(false);
     expect(result.has("from")).toBe(false);
+  });
+});
+
+describe("parseAuditFilters area and mcp reads", () => {
+  it("accepts a known area and drops an unknown one", () => {
+    expect(parseAuditFilters(params({ area: "hiring" })).area).toBe("hiring");
+    expect(parseAuditFilters(params({ area: "nope" })).area).toBeNull();
+  });
+
+  it("does not hide mcp reads unless the caller opts in", () => {
+    expect(parseAuditFilters(params({})).hideMcpReads).toBe(false);
+    expect(parseAuditFilters(params({}), { hideMcpReads: true }).hideMcpReads).toBe(true);
+  });
+
+  it("mcpReads=1 overrides the hiding default", () => {
+    const f = parseAuditFilters(params({ mcpReads: "1" }), { hideMcpReads: true });
+    expect(f.mcpReads).toBe(true);
+    expect(f.hideMcpReads).toBe(false);
+  });
+
+  it("round-trips area and mcpReads through activeFilterParams and counts as a filter", () => {
+    const p = activeFilterParams({ ...EMPTY, area: "auth", mcpReads: true });
+    expect(p.get("area")).toBe("auth");
+    expect(p.get("mcpReads")).toBe("1");
+    expect(hasAnyFilter({ ...EMPTY, area: "auth" })).toBe(true);
+    expect(hasAnyFilter({ ...EMPTY, mcpReads: true })).toBe(true);
   });
 });
 

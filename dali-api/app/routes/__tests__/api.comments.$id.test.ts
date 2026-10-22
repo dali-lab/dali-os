@@ -5,6 +5,7 @@ vi.mock("~/lib/auth", () => ({
   forbidden: vi.fn(() => Response.json({ error: "Forbidden" }, { status: 403 })),
 }));
 vi.mock("~/lib/db");
+vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
 vi.mock("~/lib/roles", () => ({
   isCore: vi.fn(),
   isLabMember: vi.fn(),
@@ -19,6 +20,7 @@ vi.mock("~/lib/pageAccess.server", () => ({
 
 import { requireAuth } from "~/lib/auth";
 import { prisma } from "~/lib/db";
+import { logAuditEvent } from "~/lib/audit";
 import { isCore } from "~/lib/roles";
 import { getPageAccess } from "~/lib/pageAccess.server";
 import { action } from "~/routes/api.comments.$id";
@@ -170,6 +172,28 @@ describe("DELETE", () => {
     const res = (await del(AUTHOR_ID)) as Response;
     expect(res.status).toBe(200);
     expect(mockPrisma.docComment.delete).toHaveBeenCalledWith({ where: { id: COMMENT_ID } });
+  });
+
+  it("logs who deleted it and whose comment it was, without the comment text", async () => {
+    vi.mocked(isCore).mockResolvedValue(true);
+    mockPrisma.docComment.findUnique.mockResolvedValue(baseComment({ body: "secret words" }));
+
+    await del("core-user");
+
+    expect(logAuditEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "comment.delete",
+        userId: "core-user",
+        targetId: COMMENT_ID,
+        metadata: { authorId: AUTHOR_ID, targetType: "doc", parentTargetId: PAGE_ID },
+      }),
+    );
+  });
+
+  it("logs nothing for a refused delete or a non-delete intent", async () => {
+    await del(OTHER_ID);
+    await post("react", AUTHOR_ID, { emoji: "x" });
+    expect(logAuditEvent).not.toHaveBeenCalled();
   });
 
   it("allows Core to delete any doc comment", async () => {

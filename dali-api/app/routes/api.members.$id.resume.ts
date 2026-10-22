@@ -8,6 +8,7 @@ import type { Route } from "./+types/api.members.$id.resume";
 import { randomUUID } from "node:crypto";
 import { requireAuth } from "~/lib/auth";
 import { prisma } from "~/lib/db";
+import { logAuditEvent } from "~/lib/audit";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { getUserRoles, isAdmin } from "~/lib/roles";
 import { isAiEnabled } from "~/lib/ai.server";
@@ -63,6 +64,15 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     fileName: member.resumeFileName ?? "resume.pdf",
     expiresIn: 300,
   });
+  if (auth.user.sub !== params.id) {
+    await logAuditEvent({
+      action: "member.resume.view",
+      userId: auth.user.sub,
+      targetId: params.id,
+      metadata: { fileName: member.resumeFileName },
+      request,
+    });
+  }
   return Response.redirect(url, 302);
 }
 
@@ -130,6 +140,13 @@ async function upload(request: Request, userId: string): Promise<Response> {
     },
   });
   if (previous?.resumeKey) await deleteQuietly(previous.resumeKey);
+  await logAuditEvent({
+    action: "member.resume.upload",
+    userId,
+    targetId: userId,
+    metadata: { fileName, sizeBytes: bytes.byteLength, replaced: Boolean(previous?.resumeKey) },
+    request,
+  });
 
   const body: ResumeUploadResult = {
     resume: { fileName, uploadedAt: uploadedAt.toISOString() },
@@ -140,13 +157,14 @@ async function upload(request: Request, userId: string): Promise<Response> {
   return Response.json(body);
 }
 
-async function remove(userId: string): Promise<Response> {
+async function remove(request: Request, userId: string): Promise<Response> {
   const current = await prisma.user.findUnique({ where: { id: userId }, select: { resumeKey: true } });
   await prisma.user.update({
     where: { id: userId },
     data: { resumeKey: null, resumeFileName: null, resumeSizeBytes: null, resumeUploadedAt: null },
   });
   if (current?.resumeKey) await deleteQuietly(current.resumeKey);
+  await logAuditEvent({ action: "member.resume.delete", userId, targetId: userId, request });
   return Response.json({ ok: true });
 }
 
@@ -158,5 +176,5 @@ export async function action({ request, params }: Route.ActionArgs) {
   }
   if (auth.user.sub !== params.id || !(await flagOn(auth.user.sub, request))) return notFound();
 
-  return request.method === "POST" ? upload(request, auth.user.sub) : remove(auth.user.sub);
+  return request.method === "POST" ? upload(request, auth.user.sub) : remove(request, auth.user.sub);
 }

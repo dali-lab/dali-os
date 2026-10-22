@@ -205,23 +205,24 @@ async function findNote(key: BudgetKey) {
 }
 
 /** Create or update the revenue on a budget line. */
-export async function upsertRevenue(key: BudgetKey, revenue: number): Promise<void> {
+export async function upsertRevenue(key: BudgetKey, revenue: number): Promise<number | null> {
   const existing = await findEntry(key);
   if (existing) {
     await prisma.budgetEntry.update({
       where: { id: existing.id },
       data: { revenue },
     });
-  } else {
-    await prisma.budgetEntry.create({
-      data: {
-        projectId: key.projectId,
-        chartString: key.chartString,
-        termId: key.termId,
-        revenue,
-      },
-    });
+    return Number(existing.revenue);
   }
+  await prisma.budgetEntry.create({
+    data: {
+      projectId: key.projectId,
+      chartString: key.chartString,
+      termId: key.termId,
+      revenue,
+    },
+  });
+  return null;
 }
 
 /** Delete a budget entry by id (its note, if any, is left as-is). */
