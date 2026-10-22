@@ -22,8 +22,15 @@ function buildEditor() {
   editorRoot.innerHTML = BLOCKS.map(
     (b) => `<div class="bn-block-outer" data-id="${b.id}"><div class="bn-block"><div class="bn-block-content"><p>${b.text}</p></div></div></div>`,
   ).join("");
-  document.body.appendChild(editorRoot);
+  const doc = document.createElement("div");
+  doc.className = "dali-doc";
+  const host = document.createElement("div");
+  host.className = "dali-doc-overlay-host";
+  doc.append(host, editorRoot);
+  document.body.appendChild(doc);
 }
+
+const overlayHostEl = () => document.querySelector(".dali-doc-overlay-host")!;
 
 const ITEMS: EnhanceActionItem[] = [
   { text: "Add two reviewers to the 26W cycle", ownerName: "Maya Chen", ownerUserId: "u-maya", due: "2026-10-23" },
@@ -429,19 +436,28 @@ describe("action item chips", () => {
     unmount();
   });
 
-  it("hides chips whose line is under the sticky bar", () => {
+  it("renders inside the note's overlay host, right-aligned to the line, with no scroll listener", () => {
     const original = Element.prototype.getBoundingClientRect;
     Element.prototype.getBoundingClientRect = function (this: Element) {
-      if (this.classList.contains("bn-block-content")) {
-        return { top: 10, bottom: 40, left: 0, right: 500, width: 500, height: 30, x: 0, y: 10, toJSON() {} } as DOMRect;
+      if (this.classList.contains("dali-doc-overlay-host")) {
+        return { top: 100, bottom: 100, left: 20, right: 720, width: 700, height: 0, x: 20, y: 100, toJSON() {} } as DOMRect;
       }
-      if (this.hasAttribute("data-enhance-bar")) {
-        return { top: 0, bottom: 90, left: 0, right: 500, width: 500, height: 90, x: 0, y: 0, toJSON() {} } as DOMRect;
+      if (this.classList.contains("bn-block-content")) {
+        return { top: 300, bottom: 330, left: 40, right: 620, width: 580, height: 30, x: 40, y: 300, toJSON() {} } as DOMRect;
       }
       return original.call(this);
     };
+    const raf = vi.spyOn(window, "requestAnimationFrame");
     const { unmount } = mount(recWith());
-    expect((chipsFor(0) as HTMLElement).style.visibility).toBe("hidden");
+    const chips = chipsFor(0) as HTMLElement;
+    expect(chips.parentElement).toBe(overlayHostEl());
+    expect(chips.style.position).toBe("absolute");
+    expect(chips.style.top).toBe(`${300 - 100 + 1}px`);
+    expect(chips.style.right).toBe(`${700 - (620 - 20) + 8}px`);
+    raf.mockClear();
+    window.dispatchEvent(new Event("scroll"));
+    expect(raf).not.toHaveBeenCalled();
+    raf.mockRestore();
     unmount();
     Element.prototype.getBoundingClientRect = original;
   });

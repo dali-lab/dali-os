@@ -13,8 +13,15 @@ function buildEditor() {
     <div class="bn-block-outer" data-id="b1"><div class="bn-block"><div class="bn-block-content"><p>Changed line</p></div></div></div>
     <div class="bn-block-outer" data-id="b2"><div class="bn-block"><div class="bn-block-content"><p>Added line</p></div></div></div>
     <div class="bn-block-outer" data-id="b3"><div class="bn-block"><div class="bn-block-content"><p>Typed line</p></div></div></div>`;
-  document.body.appendChild(editorRoot);
+  const doc = document.createElement("div");
+  doc.className = "dali-doc";
+  const host = document.createElement("div");
+  host.className = "dali-doc-overlay-host";
+  doc.append(host, editorRoot);
+  document.body.appendChild(doc);
 }
+
+const overlayHostEl = () => document.querySelector(".dali-doc-overlay-host")!;
 
 afterEach(() => {
   document.body.innerHTML = "";
@@ -165,27 +172,33 @@ describe("EnhanceBlockActions", () => {
     unmount();
   });
 
-  it("hides overlays whose block is scrolled out of the editor's visible area", () => {
-    const rects: Record<string, DOMRect> = {};
+  it("renders inside the note's overlay host, positioned relative to it", () => {
     const original = Element.prototype.getBoundingClientRect;
+    const rect = (top: number, left: number) => ({ top, bottom: top + 40, left, right: left + 400, width: 400, height: 40, x: left, y: top, toJSON() {} }) as DOMRect;
     Element.prototype.getBoundingClientRect = function (this: Element) {
-      const id = this.closest("[data-id]")?.getAttribute("data-id");
-      return (id && this.classList.contains("bn-block-content") ? rects[id] : undefined) ?? original.call(this);
+      if (this.classList.contains("dali-doc-overlay-host")) return rect(100, 50);
+      if (this.classList.contains("bn-block-content") && this.closest("[data-id]")?.getAttribute("data-id") === "b1") return rect(300, 80);
+      return original.call(this);
     };
-    const box = (top: number) => ({ top, bottom: top + 40, left: 0, right: 500, width: 500, height: 40, x: 0, y: top, toJSON() {} }) as DOMRect;
-    rects.b1 = box(10);
-    const bar = document.createElement("div");
-    bar.setAttribute("data-enhance-bar", "");
-    bar.getBoundingClientRect = () => ({ ...box(0), bottom: 80 }) as DOMRect;
-    document.body.appendChild(bar);
     const { unmount } = mount(recWith());
-    expect(document.querySelector('[data-was-for="b1"]')).toBeNull();
+    const was = document.querySelector<HTMLElement>('[data-was-for="b1"]')!;
+    expect(was.parentElement).toBe(overlayHostEl());
+    expect(was.style.position).toBe("absolute");
+    expect(was.style.top).toBe(`${300 + 40 - 100 - 24}px`);
+    expect(was.style.left).toBe(`${80 - 50 + 24}px`);
     unmount();
-    rects.b1 = box(200);
-    const again = mount(recWith());
-    expect(document.querySelector('[data-was-for="b1"]')).not.toBeNull();
-    again.unmount();
     Element.prototype.getBoundingClientRect = original;
+  });
+
+  it("does not re-measure on scroll: the overlays scroll with the note natively", () => {
+    const raf = vi.spyOn(window, "requestAnimationFrame");
+    const { unmount } = mount(recWith());
+    raf.mockClear();
+    window.dispatchEvent(new Event("scroll"));
+    document.dispatchEvent(new Event("scroll"));
+    expect(raf).not.toHaveBeenCalled();
+    unmount();
+    raf.mockRestore();
   });
 
   describe("pill placement", () => {
@@ -218,16 +231,15 @@ describe("EnhanceBlockActions", () => {
 
     it("moves above the block when the editor column ends before the gutter would fit, even on a wide viewport", () => {
       const { ui, style } = mountWithBlockRect(1440, 600);
-      expect(style.right).toBe(`${1440 - 500}px`);
-      expect(style.left).toBe("");
+      expect(style.top).toBe(`${300 - 28 - 4}px`);
+      expect(style.left).toBe(`${500 - 152}px`);
       ui.unmount();
     });
 
     it("moves above the block's top-right corner when the gutter is too narrow", () => {
       const { ui, style } = mountWithBlockRect(600);
-      expect(style.bottom).toBe(`${window.innerHeight - 300 + 4}px`);
-      expect(style.right).toBe("100px");
-      expect(style.left).toBe("");
+      expect(style.top).toBe(`${300 - 28 - 4}px`);
+      expect(style.left).toBe(`${500 - 152}px`);
       ui.unmount();
     });
   });

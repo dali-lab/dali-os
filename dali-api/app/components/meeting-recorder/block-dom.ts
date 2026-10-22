@@ -11,31 +11,32 @@ export function contentOf(block: HTMLElement): HTMLElement {
 
 export const BAR_ATTR = "data-enhance-bar";
 
-export type Bounds = { top: number; bottom: number; right: number };
+/** The layer DocEditor renders at the top of `.dali-doc` for review overlays.
+ *  It sits in the note's flow, so anything positioned inside it scrolls with
+ *  the blocks and never needs a scroll listener. */
+export function overlayHost(root: HTMLElement): HTMLElement | null {
+  return root.closest(".dali-doc")?.querySelector<HTMLElement>(":scope > .dali-doc-overlay-host") ?? null;
+}
 
-/** The part of the editor's scroll container not covered by the sticky bar.
- *  Read-only: overlays outside it are hidden rather than drawn over the bars. */
-export function overlayBounds(root: HTMLElement): Bounds {
-  let top = 0;
-  let bottom = window.innerHeight;
+export type HostBox = { top: number; bottom: number; left: number; right: number };
+
+/** A viewport rect in the host's coordinates. */
+export function toHost(r: DOMRect, host: DOMRect): HostBox {
+  return { top: r.top - host.top, bottom: r.bottom - host.top, left: r.left - host.left, right: r.right - host.left };
+}
+
+/** The right edge, in host coordinates, of the editor's scroll container:
+ *  how far right an overlay can sit beside a block before it clips. */
+export function scrollEdge(root: HTMLElement, host: DOMRect): number {
   let right = Math.min(window.innerWidth, root.getBoundingClientRect().right);
   for (let el = root.parentElement; el; el = el.parentElement) {
     const overflow = getComputedStyle(el).overflowY;
     if (overflow === "auto" || overflow === "scroll" || overflow === "overlay") {
-      const r = el.getBoundingClientRect();
-      top = Math.max(top, r.top);
-      bottom = Math.min(bottom, r.bottom);
-      right = Math.min(right, r.right);
+      right = Math.min(right, el.getBoundingClientRect().right);
       break;
     }
   }
-  const bar = document.querySelector(`[${BAR_ATTR}]`);
-  if (bar) top = Math.max(top, bar.getBoundingClientRect().bottom);
-  return { top, bottom, right };
-}
-
-export function inBounds(box: { top: number; bottom: number }, bounds: Pick<Bounds, "top" | "bottom">): boolean {
-  return box.bottom >= bounds.top && box.top <= bounds.bottom;
+  return right - host.left;
 }
 
 /** Coalesces bursts (mutation, scroll, resize) into one call per frame. */
