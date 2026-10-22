@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Link } from "react-router";
-import { ListChecks } from "lucide-react";
+import { ListChecks, Plus } from "lucide-react";
 import { Avatar } from "~/components/ui/Avatar";
 import { Checkbox } from "~/components/ui/Checkbox";
 import { DateField } from "~/components/ui/DateField";
@@ -156,6 +156,18 @@ function ItemChips({ index, order }: { index: number; order: number }) {
           </PopIn>
           <PopIn delay={order * DUR.chipStagger + DUR.chipGap}>
             <DueChip index={index} />
+          </PopIn>
+          <PopIn delay={order * DUR.chipStagger + 2 * DUR.chipGap}>
+            <button
+              type="button"
+              onClick={() => void draft.createOne(index)}
+              disabled={draft.busy}
+              aria-label={`Add task: ${item.text}`}
+              className={cn(CHIP_BASE, "inline-flex items-center gap-1 border-os-accent/40 bg-os-accent/10 text-os-accent hover:bg-os-accent/20 disabled:opacity-50")}
+            >
+              <Plus className="h-3.5 w-3.5" aria-hidden />
+              Add task
+            </button>
           </PopIn>
         </>
       ) : (

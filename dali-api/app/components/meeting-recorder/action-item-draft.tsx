@@ -24,6 +24,7 @@ export type ActionItemDraft = {
   busy: boolean;
   created: number | null;
   create: () => Promise<void>;
+  createOne: (index: number) => Promise<void>;
 };
 
 const DraftContext = createContext<ActionItemDraft | null>(null);
@@ -37,8 +38,12 @@ function liveChecklist(rec: Pick<UseMeetingRecording, "getNoteState">): string[]
   return state ? state.blocks.filter((b) => b.type === "checkListItem").map((b) => b.text) : null;
 }
 
+function liveLineFor(item: EnhanceActionItem, lines: string[] | null): string | null {
+  return lines?.find((line) => actionItemMatchesBlock(item.text, line)) ?? null;
+}
+
 function onLiveChecklist(item: EnhanceActionItem, lines: string[] | null): boolean {
-  return lines !== null && lines.some((line) => actionItemMatchesBlock(item.text, line));
+  return liveLineFor(item, lines) !== null;
 }
 
 /** True when ⌘Z took Enhance's writing back out: the note was never reviewed
@@ -115,11 +120,11 @@ export function ActionItemDraftProvider({ rec, children }: { rec: UseMeetingReco
   }, [key]);
 
   const canTasks = Boolean(rec.canCreateTasks && rec.projectId);
-  const untasked = items.map((item, i) => ({ item, i })).filter(({ item }) => !item.taskId);
+  const lines = liveChecklist(rec);
+  const untasked = items.map((item, i) => ({ item, i })).filter(({ item }) => !item.taskId && onLiveChecklist(item, lines));
   const checked = untasked.filter(({ i }) => rowFor(i).checked);
   const unmatchedCount = checked.filter(({ item, i }) => item.ownerName && !rowFor(i).ownerUserId).length;
-  const lines = liveChecklist(rec);
-  const anyOnNote = checked.some(({ item }) => onLiveChecklist(item, lines));
+  const anyOnNote = checked.length > 0;
   const orphanKey = lines === null ? "" : items.filter((item) => item.taskId && !onLiveChecklist(item, lines)).map((item) => item.taskId).join("|");
   const orphanedTasks = useMemo(
     () => (orphanKey === "" ? NO_ITEMS : items.filter((item) => item.taskId && orphanKey.split("|").includes(item.taskId))),
@@ -127,31 +132,44 @@ export function ActionItemDraftProvider({ rec, children }: { rec: UseMeetingReco
   );
   const stepVisible = Boolean(notes) && rec.pendingMarks.length === 0 && canTasks && anyOnNote && !dismissed;
 
-  const itemsRef = useRef({ checked, rowFor });
-  itemsRef.current = { checked, rowFor };
+  const itemsRef = useRef({ untasked, checked, rowFor, lines, busy });
+  itemsRef.current = { untasked, checked, rowFor, lines, busy };
 
-  const create = useCallback(async () => {
-    const payload = itemsRef.current.checked.map(({ item, i }) => {
-      const row = itemsRef.current.rowFor(i);
-      return {
-        index: i,
-        title: item.text,
-        assigneeId: row.ownerUserId || undefined,
-        dueAt: row.dueAt ? new Date(row.dueAt).toISOString() : undefined,
-      };
-    });
-    if (payload.length === 0) return;
-    setBusy(true);
-    try {
-      const ok = await rec.createTasksFromItems(payload);
-      if (ok) {
-        setCreated(payload.length);
-        dismiss();
+  const createItems = useCallback(
+    async (entries: { item: EnhanceActionItem; i: number }[]) => {
+      const { rowFor: row, lines: live, busy: inFlight } = itemsRef.current;
+      if (inFlight) return;
+      const payload = entries.flatMap(({ item, i }) => {
+        const line = liveLineFor(item, live);
+        if (!line) return [];
+        const r = row(i);
+        return [
+          {
+            index: i,
+            title: line.trim() || item.text,
+            assigneeId: r.ownerUserId || undefined,
+            dueAt: r.dueAt ? new Date(r.dueAt).toISOString() : undefined,
+          },
+        ];
+      });
+      if (payload.length === 0) return;
+      itemsRef.current.busy = true;
+      setBusy(true);
+      try {
+        const ok = await rec.createTasksFromItems(payload);
+        if (ok) setCreated(payload.length);
+      } finally {
+        setBusy(false);
       }
-    } finally {
-      setBusy(false);
-    }
-  }, [rec, dismiss]);
+    },
+    [rec],
+  );
+
+  const create = useCallback(() => createItems(itemsRef.current.checked), [createItems]);
+  const createOne = useCallback(
+    (index: number) => createItems(itemsRef.current.untasked.filter(({ i }) => i === index)),
+    [createItems],
+  );
 
   useEffect(() => {
     if (created === null) return;
@@ -178,8 +196,9 @@ export function ActionItemDraftProvider({ rec, children }: { rec: UseMeetingReco
       busy,
       created,
       create,
+      createOne,
     }),
-    [items, rowFor, setRow, roster, canTasks, rec.projectId, orphanedTasks, untasked.length, checked.length, unmatchedCount, stepVisible, dismiss, busy, created, create],
+    [items, rowFor, setRow, roster, canTasks, rec.projectId, orphanedTasks, untasked.length, checked.length, unmatchedCount, stepVisible, dismiss, busy, created, create, createOne],
   );
 
   return <DraftContext.Provider value={value}>{children}</DraftContext.Provider>;
