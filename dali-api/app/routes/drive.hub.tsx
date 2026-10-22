@@ -228,8 +228,8 @@ const TYPE_FILTERS: {
 
 // Page templates only — email/signing/mentor template systems stay in their
 // admin homes. Opens as a modal so it doesn't require a submenu.
-// Where a "From template" create lands. Templates themselves are Lab-wide (the
-// shared set), but the new doc is created into whichever scope you're browsing.
+// Where a "From template" create lands: whichever scope you're browsing,
+// wherever the template itself lives.
 export type TemplateTarget = {
   targetWorkspaceType: "Lab" | "Project";
   targetWorkspaceId?: string;
@@ -248,6 +248,7 @@ function TemplatePicker({
   target: TemplateTarget;
 }) {
   const titleId = useId();
+  const [mineTemplates, setMineTemplates] = useState<TemplateRow[]>([]);
   const [labTemplates, setLabTemplates] = useState<TemplateRow[]>([]);
   const [scopeTemplates, setScopeTemplates] = useState<TemplateRow[]>([]);
   const [loading, setLoading] = useState(false);
@@ -257,8 +258,6 @@ function TemplatePicker({
   // refetches while StrictMode's double-invoke (same key) is deduped.
   const loadedKey = useRef<string | null>(null);
 
-  // In a project drive, offer that project's own templates alongside the Lab
-  // set. Elsewhere (Lab/Core/Education) it's Lab-only.
   const scopeProjectId =
     target.targetWorkspaceType === "Project" ? target.targetWorkspaceId ?? null : null;
 
@@ -275,10 +274,12 @@ function TemplatePicker({
         const data = (await res.json()) as { templates: TemplateRow[] };
         return data.templates;
       };
-      const [lab, scope] = await Promise.all([
+      const [mine, lab, scope] = await Promise.all([
+        load("workspaceType=Member"),
         load("workspaceType=Lab"),
         scopeProjectId ? load(`workspaceType=Project&workspaceId=${scopeProjectId}`) : Promise.resolve([]),
       ]);
+      setMineTemplates(mine);
       setLabTemplates(lab);
       setScopeTemplates(scope);
     } catch (err) {
@@ -292,6 +293,12 @@ function TemplatePicker({
   useEffect(() => {
     if (open) void onModalOpen();
   }, [open, onModalOpen]);
+
+  const groups = [
+    { label: "Your templates", rows: mineTemplates },
+    { label: "This project", rows: scopeTemplates },
+    { label: "Lab", rows: labTemplates },
+  ].filter((g) => g.rows.length > 0);
 
   async function selectTemplate(templateId: string) {
     setCreating(templateId);
@@ -321,31 +328,22 @@ function TemplatePicker({
       {error && (
         <p className="text-sm text-destructive py-2">{error}</p>
       )}
-      {!loading && !error && labTemplates.length === 0 && scopeTemplates.length === 0 && (
+      {!loading && !error && groups.length === 0 && (
         <p className="text-sm text-muted-foreground italic py-4 text-center">
           No page templates are available yet.
         </p>
       )}
-      {!loading && (labTemplates.length > 0 || scopeTemplates.length > 0) && (
+      {!loading && groups.length > 0 && (
         <div className="flex flex-col gap-3 max-h-72 overflow-y-auto -mx-1 px-1">
-          {/* Only label the groups when there are two of them; a single Lab
-              list needs no heading. */}
-          {scopeTemplates.length > 0 && (
+          {groups.map((g) => (
             <TemplateGroup
-              label="This project"
-              rows={scopeTemplates}
+              key={g.label}
+              label={groups.length > 1 ? g.label : null}
+              rows={g.rows}
               creating={creating}
               onSelect={selectTemplate}
             />
-          )}
-          {labTemplates.length > 0 && (
-            <TemplateGroup
-              label={scopeTemplates.length > 0 ? "Lab" : null}
-              rows={labTemplates}
-              creating={creating}
-              onSelect={selectTemplate}
-            />
-          )}
+          ))}
         </div>
       )}
       <div className="mt-4 flex justify-end">

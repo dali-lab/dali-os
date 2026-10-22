@@ -3,13 +3,16 @@
 // are reusable-by-nature objects that live in their own areas (Admin, Core ▸
 // Agreements, Mentorship) — they are libraries, not "start from a template"
 // surfaces, so they are deliberately not aggregated here.
+//   - private : the viewer's own (their space's pages flagged isTemplate)
 //   - page    : any lab member (Lab pages flagged isTemplate)
 //   - project : Core only (a captured project blueprint)
 
 import { prisma } from "~/lib/db";
 import { isCore } from "~/lib/roles";
+import { listPageTemplates } from "~/lib/page-templates.server";
+import { MEETING_NOTE_DEFAULT_LABEL } from "~/components/doc-chrome/template-menu";
 
-export type TemplateKind = "page" | "project";
+export type TemplateKind = "private" | "page" | "project";
 
 // What clicking a template card does. Both kinds "start" a new artifact: a page
 // template duplicates into the current scope; a project template opens the
@@ -40,6 +43,7 @@ export async function loadTemplates(userId: string): Promise<TemplatesData> {
   const core = await isCore(userId);
 
   const fetches: Promise<TemplateItem[]>[] = [
+    loadPrivateTemplates(userId),
     // page — all lab members
     loadPageTemplates(),
   ];
@@ -50,13 +54,17 @@ export async function loadTemplates(userId: string): Promise<TemplatesData> {
   return { items: groups.flat() };
 }
 
-// Display label for a page's defaultMeetingNoteFor badge (meetingType names,
-// not the "General" wording the design doc used — see Prisma's MeetingType).
-const MEETING_NOTE_TYPE_LABEL: Record<string, string> = {
-  Team: "Team",
-  Partner: "Partner",
-  Other: "General",
-};
+async function loadPrivateTemplates(userId: string): Promise<TemplateItem[]> {
+  const rows = await listPageTemplates(userId, "Member", userId);
+  return rows.map((r) => ({
+    id: r.id,
+    kind: "private" as const,
+    name: r.title,
+    iconEmoji: r.iconEmoji ?? undefined,
+    action: "createPage" as const,
+    useHref: `/documents/${r.id}`,
+  }));
+}
 
 async function loadPageTemplates(): Promise<TemplateItem[]> {
   // Lab-wide document templates: real Page rows flagged isTemplate. These are
@@ -82,7 +90,7 @@ async function loadPageTemplates(): Promise<TemplateItem[]> {
     // /api/page-templates to duplicate it into the chosen scope.
     useHref: `/documents/${r.id}`,
     meetingNoteBadge: r.defaultMeetingNoteFor
-      ? `Meeting notes default · ${MEETING_NOTE_TYPE_LABEL[r.defaultMeetingNoteFor]}`
+      ? `Meeting notes default · ${MEETING_NOTE_DEFAULT_LABEL[r.defaultMeetingNoteFor]}`
       : undefined,
   }));
 }

@@ -17,7 +17,8 @@ import { isCore, isProjectMember } from "~/lib/roles";
 //     (Core, or staffed on it) required.
 //   setLabMeetingNoteDefault      Bind/unbind this page (must already be a
 //     template, in the Lab Drive) as the lab-wide default meeting-note
-//     template for one meeting type — Page.defaultMeetingNoteFor. Core only;
+//     template for project notebooks (Team) or all others (Other) —
+//     Page.defaultMeetingNoteFor. Core only;
 //     binding moves the marker off whichever page held it before.
 // See specs/meeting-notes-model.md §1.
 
@@ -29,7 +30,12 @@ const BodySchema = z.discriminatedUnion("intent", [
     meetingType: z.enum(["Team", "Partner", "Other"]),
     active: z.boolean(),
   }),
-]);
+]).refine(
+  // Partner is retired as a default (notebook filing never produces it) but
+  // stays clearable, so a page that still holds it isn't stuck.
+  (b) => !(b.intent === "setLabMeetingNoteDefault" && b.meetingType === "Partner" && b.active),
+  { message: "Partner is no longer a meeting-note default" },
+);
 
 export async function action({ request, params }: Route.ActionArgs) {
   const preflight = handlePreflight(request);

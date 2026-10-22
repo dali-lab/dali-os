@@ -16,6 +16,7 @@ vi.mock("~/lib/db", () => ({
 }));
 
 vi.mock("~/lib/pageAccess.server", () => ({
+  PAGE_ACCESS_SELECT: {},
   getPageAccess: vi.fn(),
 }));
 
@@ -106,6 +107,42 @@ describe("duplicatePage", () => {
     await expect(
       duplicatePage({ sourcePageId: SOURCE_PAGE.id, createdById: "user-no-edit" }),
     ).rejects.toThrow("Permission denied");
+  });
+
+  it("hides a source the caller can't view, even when they can edit the target", async () => {
+    mockGetPageAccess
+      .mockResolvedValueOnce({ canEdit: false, canView: false, canComment: false })
+      .mockResolvedValueOnce({ canEdit: true, canView: true, canComment: true });
+
+    await expect(
+      duplicatePage({
+        sourcePageId: SOURCE_PAGE.id,
+        createdById: "someone-else",
+        workspaceTypeOverride: "Member",
+        workspaceIdOverride: "someone-else",
+      }),
+    ).rejects.toThrow("Page not found");
+    expect(mockPrisma.page.create).not.toHaveBeenCalled();
+  });
+
+  it("checks view access on the source page and edit access on the target workspace", async () => {
+    const source = { ...SOURCE_PAGE, workspaceType: "Member" as const, workspaceId: "owner-1" };
+    mockPrisma.page.findUnique.mockResolvedValue(source);
+
+    await duplicatePage({
+      sourcePageId: source.id,
+      createdById: "owner-1",
+      workspaceTypeOverride: "Project",
+      workspaceIdOverride: "proj-1",
+      parentPageIdOverride: null,
+    });
+
+    expect(mockGetPageAccess).toHaveBeenNthCalledWith(1, "owner-1", source);
+    expect(mockGetPageAccess).toHaveBeenNthCalledWith(
+      2,
+      "owner-1",
+      expect.objectContaining({ workspaceType: "Project", workspaceId: "proj-1", parentPageId: null }),
+    );
   });
 
   it("throws when source page is archived", async () => {

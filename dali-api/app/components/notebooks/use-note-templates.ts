@@ -9,8 +9,8 @@ async function fetchTemplates(qs: string): Promise<NoteTemplate[]> {
   return json.templates ?? [];
 }
 
-/** Template pages the viewer can pick for a notebook: the lab's shared set,
- *  plus the project's own when the notebook belongs to one. */
+/** Template pages the viewer can pick for a notebook: their own private set,
+ *  the project's when the notebook belongs to one, then the lab's shared set. */
 export function useNoteTemplates({ enabled = true, projectId = null }: { enabled?: boolean; projectId?: string | null } = {}) {
   const [templates, setTemplates] = useState<NoteTemplate[]>([]);
   const [status, setStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
@@ -20,13 +20,14 @@ export function useNoteTemplates({ enabled = true, projectId = null }: { enabled
     let cancelled = false;
     setStatus("loading");
     void Promise.all([
+      fetchTemplates("workspaceType=Member"),
       fetchTemplates("workspaceType=Lab"),
       projectId ? fetchTemplates(`workspaceType=Project&workspaceId=${encodeURIComponent(projectId)}`) : [],
     ])
-      .then(([lab, project]) => {
+      .then(([mine, lab, project]) => {
         if (cancelled) return;
         const seen = new Set<string>();
-        setTemplates([...project, ...lab].filter((t) => !seen.has(t.id) && seen.add(t.id)));
+        setTemplates([...mine, ...project, ...lab].filter((t) => !seen.has(t.id) && seen.add(t.id)));
         setStatus("ready");
       })
       .catch(() => {
