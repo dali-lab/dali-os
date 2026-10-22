@@ -1,22 +1,12 @@
 import { useState } from "react";
-import {
-  NavLink,
-  Outlet,
-  redirect,
-  useFetcher,
-  useLoaderData,
-  useRouteLoaderData,
-} from "react-router";
-import { Check, PenLine, Pencil, Plus } from "lucide-react";
+import { Outlet, redirect, useFetcher, useRouteLoaderData } from "react-router";
+import { Check, PenLine, Pencil } from "lucide-react";
 import type { Route } from "./+types/resources";
 import type { loader as frontPageLoader } from "./resources._index";
 import { prisma } from "~/lib/db";
 import { blogPostRoomName } from "~/collab/roomName";
-import { cn } from "~/lib/cn";
 import { requireResourcesViewer } from "~/lib/resources.server";
 import { UNTOUCHED_DRAFT } from "~/lib/blog-post.server";
-import { IconButton } from "~/components/ui/IconButton";
-import { useDialog } from "~/components/ui/dialog";
 
 export const meta: Route.MetaFunction = () => [{ title: "Resources · DALI OS" }];
 
@@ -24,16 +14,12 @@ export const meta: Route.MetaFunction = () => [{ title: "Resources · DALI OS" }
 export const handle = { bleedPane: true };
 
 export async function loader({ request }: Route.LoaderArgs) {
-  const { core } = await requireResourcesViewer(request);
-  const bookmarks = await prisma.resourceBookmark.findMany({
-    orderBy: [{ position: "asc" }, { createdAt: "asc" }],
-    select: { id: true, title: true },
-  });
-  return { bookmarks, canManage: core };
+  await requireResourcesViewer(request);
+  return null;
 }
 
 export async function action({ request }: Route.ActionArgs) {
-  const { user, core } = await requireResourcesViewer(request);
+  const { user } = await requireResourcesViewer(request);
   const form = await request.formData();
   const intent = form.get("intent");
 
@@ -61,55 +47,18 @@ export async function action({ request }: Route.ActionArgs) {
     return redirect(`/resources/write/${post.id}`);
   }
 
-  if (intent === "createBookmark") {
-    if (!core) throw new Response("Forbidden", { status: 403 });
-    const title = String(form.get("title") ?? "").trim();
-    if (!title) return Response.json({ error: "Title is required" }, { status: 400 });
-    const last = await prisma.resourceBookmark.aggregate({ _max: { position: true } });
-    const bookmark = await prisma.resourceBookmark.create({
-      data: { title, position: (last._max.position ?? -1) + 1 },
-      select: { id: true },
-    });
-    return redirect(`/resources/b/${bookmark.id}`);
-  }
-
   throw new Response("Bad request", { status: 400 });
 }
-
-const TAB =
-  "whitespace-nowrap border-b-2 px-1 py-2.5 text-sm font-semibold uppercase tracking-wider transition-colors";
 
 export type ResourcesOutletContext = { editing: boolean };
 
 export default function ResourcesLayout() {
-  const { bookmarks, canManage } = useLoaderData<typeof loader>();
   const fetcher = useFetcher();
-  const dialog = useDialog();
-  // Core arranges the front page from here, beside Write. Only The Scoop has
-  // anything to arrange, and only once something is published.
+  // Core arranges the front page from here, beside Write, once something is published.
   const front = useRouteLoaderData<typeof frontPageLoader>("routes/resources._index");
   const canCurate = !!front?.canCurate && front.published.length > 0;
   const [editingFront, setEditing] = useState(false);
   const editing = editingFront && canCurate;
-
-  const tabClass = ({ isActive }: { isActive: boolean }) =>
-    cn(
-      TAB,
-      isActive
-        ? "border-foreground text-foreground"
-        : "border-transparent text-os-grey hover:text-foreground",
-    );
-
-  async function addBookmark() {
-    const title = await dialog.prompt({
-      title: "New bookmark",
-      label: "Name",
-      confirmLabel: "Create",
-    });
-    if (title?.trim()) {
-      fetcher.submit({ intent: "createBookmark", title }, { method: "post", action: "/resources" });
-    }
-  }
 
   return (
     <div className="min-h-dvh bg-card px-6 pb-16 sm:px-10">
@@ -151,20 +100,6 @@ export default function ResourcesLayout() {
           </button>
         </div>
       </header>
-      <nav
-        aria-label="Bookmarks"
-        className="flex items-center gap-6 overflow-x-auto border-b border-border"
-      >
-        <NavLink to="/resources" end className={tabClass}>
-          The Scoop
-        </NavLink>
-        {bookmarks.map((b) => (
-          <NavLink key={b.id} to={`/resources/b/${b.id}`} className={tabClass}>
-            {b.title}
-          </NavLink>
-        ))}
-        {canManage && <IconButton label="New bookmark" icon={Plus} onClick={addBookmark} />}
-      </nav>
       <Outlet context={{ editing } satisfies ResourcesOutletContext} />
     </div>
   );

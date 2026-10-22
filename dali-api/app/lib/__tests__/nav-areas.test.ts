@@ -123,8 +123,8 @@ const CORE: RoleFlags = { ...NOBODY, isCore: true, canViewForms: true, canViewSt
 // nav-regroup was retired — the role-grouped set is the only nav, and areasFor
 // ignores flags. An empty map documents that at the call sites.
 const REGROUP = {};
-// The `resources` flag: Resources takes the pinned slot, Drive moves to General.
-const RESOURCES = { resources: true };
+// The `community` flag: the Community area appears and Connect moves into it.
+const COMMUNITY = { community: true };
 
 describe("area sets", () => {
   it("collapses to five areas", () => {
@@ -342,15 +342,9 @@ describe("areaForPath", () => {
     expect(areaForPath("/drive/abc123", REGROUP)).toBeUndefined();
   });
 
-  it("hands Drive urls to General once the resources flag moves it there", () => {
-    expect(areaForPath("/drive", RESOURCES)?.key).toBe("projects");
-    expect(areaForPath("/drive?type=file", RESOURCES)?.key).toBe("projects");
-    expect(areaForPath("/drive?type=agreement", RESOURCES)?.key).toBe("projects");
-    expect(areaForPath("/drive/abc123", RESOURCES)?.key).toBe("projects");
-  });
-
-  it("leaves Resources unowned — it is the pin, not an area sub-tab", () => {
-    expect(areaForPath("/resources", RESOURCES)).toBeUndefined();
+  it("leaves Drive urls unowned behind the community flag too", () => {
+    expect(areaForPath("/drive", COMMUNITY)).toBeUndefined();
+    expect(areaForPath("/drive/abc123", COMMUNITY)).toBeUndefined();
   });
 
   it("owns and highlights the Agreements console at its plain /core URL", () => {
@@ -381,31 +375,82 @@ describe("isPinnedActive", () => {
     expect(isPinnedActive("/core/staffing", "/drive", REGROUP)).toBe(false);
   });
 
-  it("lights the Resources pin, and not on Drive, behind the flag", () => {
-    expect(isPinnedActive("/resources", "/resources", RESOURCES)).toBe(true);
-    expect(isPinnedActive("/resources?comment=1", "/resources", RESOURCES)).toBe(true);
-    // Drive is a General sub-tab there, so an area owns it and no pin lights.
-    expect(isPinnedActive("/drive", "/resources", RESOURCES)).toBe(false);
+  it("keeps the Drive pin lit behind the community flag", () => {
+    expect(isPinnedActive("/drive", "/drive", COMMUNITY)).toBe(true);
+    expect(isPinnedActive("/resources", "/drive", COMMUNITY)).toBe(false);
+  });
+});
+
+describe("Community area", () => {
+  const community = () => areasFor(COMMUNITY).find((a) => a.key === "community")!;
+  const lab = (flags = {}) => areasFor(flags).find((a) => a.key === "projects")!;
+
+  it("is hidden without the flag, and Connect stays in Lab", () => {
+    expect(areasFor(REGROUP).map((a) => a.key)).not.toContain("community");
+    expect(lab().subtabs.map((t) => t.href)).toContain("/connect");
+    expect(areaForPath("/connect")?.key).toBe("projects");
+    expect(areaForPath("/community/gallery")).toBeUndefined();
+    expect(areaForPath("/resources")).toBeUndefined();
+  });
+
+  it("sits after Lab for every member and alumnus behind the flag", () => {
+    expect(visibleAreas(NOBODY, COMMUNITY).map((a) => a.key)).toEqual([
+      "projects",
+      "community",
+      "education",
+    ]);
+    expect(visibleAreas({ ...NOBODY, isAlumni: true }, COMMUNITY).map((a) => a.key)).toContain(
+      "community",
+    );
+  });
+
+  it("owns its four pages, with Connect as its hub and Blogs opening Resources", () => {
+    expect(community().hubPath).toBe("/connect");
+    expect(visibleSubtabs(community(), NOBODY).map((t) => t.href)).toEqual([
+      "/connect",
+      "/community/opportunities",
+      "/community/gallery",
+      "/resources",
+    ]);
+    expect(community().subtabs.find((t) => t.href === "/resources")?.label).toBe("Blogs");
+  });
+
+  it("moves Connect out of Lab", () => {
+    expect(lab(COMMUNITY).subtabs.map((t) => t.href)).not.toContain("/connect");
+    expect(areaForPath("/connect", COMMUNITY)?.key).toBe("community");
+  });
+
+  it("owns and highlights its pages, including the blog post pages under Blogs", () => {
+    expect(areaForPath("/community/gallery", COMMUNITY)?.key).toBe("community");
+    expect(areaForPath("/resources", COMMUNITY)?.key).toBe("community");
+    expect(areaForPath("/resources/blog/abc", COMMUNITY)?.key).toBe("community");
+    expect(activeSubtabHref(community(), "/resources/blog/abc")).toBe("/resources");
+  });
+
+  it("points every sub-tab at a path the area claims", () => {
+    for (const area of areasFor(COMMUNITY)) {
+      for (const tab of area.subtabs) {
+        expect(areaForPath(tab.href, COMMUNITY)?.key, `${area.key} ▸ ${tab.label}`).toBe(area.key);
+      }
+    }
+  });
+
+  it("recognises its sub-tabs as pinnable", () => {
+    expect(isAreaSubtabPath("/community/opportunities")).toBe(true);
+    expect(isAreaSubtabPath("/resources")).toBe(true);
   });
 });
 
 describe("pinnedNavItems", () => {
-  it("pins Drive by default", () => {
-    expect(pinnedNavItems(REGROUP).map((i) => i.href)).toEqual(["/drive"]);
+  it("pins Drive, which no area carries", () => {
     expect(pinnedNavItems().map((i) => i.href)).toEqual(["/drive"]);
-  });
-
-  it("swaps the pin for Resources behind the flag, keeping Drive in General", () => {
-    expect(pinnedNavItems(RESOURCES).map((i) => i.href)).toEqual(["/resources"]);
-    const general = areasFor(RESOURCES).find((a) => a.key === "projects")!;
-    expect(general.subtabs.map((t) => t.href)).toContain("/drive");
-    // Flag off, Drive is the pin and General does NOT carry it.
-    expect(areasFor(REGROUP).find((a) => a.key === "projects")!.subtabs.map((t) => t.href))
-      .not.toContain("/drive");
+    for (const flags of [REGROUP, COMMUNITY]) {
+      expect(areasFor(flags).flatMap((a) => a.subtabs.map((t) => t.href))).not.toContain("/drive");
+    }
   });
 
   it("puts Room booking in the calendar header, not the pinned rail", () => {
-    expect(pinnedNavItems(RESOURCES).map((i) => i.href)).toEqual(["/resources"]);
+    expect(pinnedNavItems().map((i) => i.href)).not.toContain("/rooms");
     expect(ROOM_BOOKING_NAV_ITEM.href).toBe("/rooms");
     // Booking is not a General sub-tab; Core keeps room management.
     const areas = areasFor();

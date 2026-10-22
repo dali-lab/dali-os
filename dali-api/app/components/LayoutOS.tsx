@@ -316,16 +316,15 @@ export function LayoutOS({
     isInstructor,
     isAlumni,
   }
-  // The `resources` flag decides the pinned tail (Resources vs Drive) and
-  // whether Drive is a General sub-tab, so every nav matcher below has to be
-  // handed the same map — a pin and an area disagreeing would light both.
-  const navFlags = { resources: useFeatureFlag('resources') }
+  // The `community` flag adds the Community area and moves Connect into it, so
+  // every nav matcher below has to be handed the same map.
+  const navFlags = { community: useFeatureFlag('community') }
   const feedbackEnabled = useFeatureFlag('os-feedback')
   const releaseNotesEnabled = useFeatureFlag('release-notes')
   const emailUnread = useEmailUnread(path)
   const areas = visibleAreas(roleFlags, navFlags)
   const routeArea = areaForPath(path, navFlags)
-  const pinned = pinnedNavItems(navFlags)
+  const pinned = pinnedNavItems()
   const activeArea = routeArea ?? areas.find((a) => a.key === lastAreaKey) ?? areas[0]
   const activeSubtabs = activeArea ? visibleSubtabs(activeArea, roleFlags) : []
   const activeHref = activeArea ? activeSubtabHref(activeArea, path) : undefined
