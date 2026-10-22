@@ -38,7 +38,8 @@ vi.mock("~/lib/meeting-notes-enhance.server", () => ({
   generateAndVerifyEnhancePlan: vi.fn(),
   resolveMeetingEnhanceContext: vi.fn().mockResolvedValue({ roster: [], meetingTypeLabel: "Meeting", occurrenceDate: "2026-10-10" }),
 }));
-vi.mock("~/lib/meeting-notes-apply.server", () => ({
+vi.mock("~/lib/meeting-notes-apply.server", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("~/lib/meeting-notes-apply.server")>()),
   applyEnhanceOpsToDocBlocks: vi.fn((_ops: unknown, blocks: unknown) => blocks),
   ensureTranscriptToggle: vi.fn((blocks: unknown) => blocks),
 }));

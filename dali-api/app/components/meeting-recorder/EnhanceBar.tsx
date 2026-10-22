@@ -124,7 +124,7 @@ function tasksBar(rec: UseMeetingRecording, draft: ActionItemDraft | null): BarC
 
   const board = "the project board";
 
-  if (draft.created !== null) {
+  if (draft.created !== null && !draft.stepVisible) {
     return {
       key: "tasks-created",
       node: (
@@ -184,6 +184,7 @@ function tasksBar(rec: UseMeetingRecording, draft: ActionItemDraft | null): BarC
         }
         note={
           <>
+            {draft.created !== null && <p>Added {plural(draft.created, "task")} to {board}</p>}
             <OrphanedTasksNote draft={draft} />
             <EnhanceErrorNote rec={rec} />
           </>

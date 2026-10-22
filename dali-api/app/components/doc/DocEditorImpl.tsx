@@ -789,6 +789,9 @@ function DocView(
             composer clicks as within-editor. Size/position are irrelevant; the
             floating UI positions itself via Floating UI's own logic. */}
         <div ref={floatingRootRef} className="dali-doc-floating-root" />
+        {/* Enhance review overlays portal here so they scroll with the note
+            natively instead of chasing scroll events from document.body. */}
+        <div className="dali-doc-overlay-host" />
 
         <BlockNoteView
           editor={editor}

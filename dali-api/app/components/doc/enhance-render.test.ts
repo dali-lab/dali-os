@@ -74,3 +74,13 @@ describe("buildInlineContent citation chips", () => {
     expect(chip!.href).toBe("/hiring/interviews/i1?transcript=r1&at=60");
   });
 });
+
+describe("enhanceSnapshotBlocks with nested blocks", () => {
+  it("includes nested blocks with their parent id and skips blank lines", () => {
+    const doc = [{ ...paragraph("p1", "Budget"), children: [paragraph("c1", "40h")] } as DocBlock, paragraph("blank", "")];
+    expect(enhanceSnapshotBlocks(doc)).toEqual([
+      { id: "p1", type: "paragraph", text: "Budget" },
+      { id: "c1", type: "paragraph", text: "40h", parentId: "p1" },
+    ]);
+  });
+});

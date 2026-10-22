@@ -4,7 +4,13 @@
 import { describe, it, expect } from "vitest";
 import type { DocBlock } from "~/collab/blocknote-server";
 import type { EditorOp } from "~/components/meeting-recorder/enhance-plan";
-import { applyEnhanceOpsToDocBlocks, ensureTranscriptToggle, hasTranscriptToggle } from "~/lib/meeting-notes-apply.server";
+import {
+  applyEnhanceOpsToDocBlocks,
+  enhanceSnapshotDocBlocks,
+  ensureTranscriptToggle,
+  hasEnhanceMarkInTree,
+  hasTranscriptToggle,
+} from "~/lib/meeting-notes-apply.server";
 
 const CTX = { pageId: "p1", recordingId: "rec1" };
 
@@ -159,5 +165,71 @@ describe("hasTranscriptToggle / ensureTranscriptToggle", () => {
   it("is a no-op with no transcript to insert", () => {
     const blocks = [paragraph("b1", "a")];
     expect(ensureTranscriptToggle(blocks, [])).toBe(blocks);
+  });
+});
+
+describe("applyEnhanceOpsToDocBlocks on nested blocks", () => {
+  const nested = () => [{ ...paragraph("p", "Budget"), children: [paragraph("c", "40h")] }, paragraph("q", "Next")];
+
+  it("updates a nested block's content", () => {
+    const result = applyEnhanceOpsToDocBlocks([{ kind: "update", id: "c", text: "40h for spring", cites: [] }], nested(), CTX);
+    expect(JSON.stringify(result[0]!.children[0]!.content)).toContain("40h for spring");
+  });
+
+  it("appendChildren adds the new blocks after the parent's existing children", () => {
+    const ops: EditorOp[] = [{ kind: "appendChildren", parentId: "p", blocks: [{ type: "bulletListItem", text: "approved", cites: [], added: true }] }];
+    const result = applyEnhanceOpsToDocBlocks(ops, nested(), CTX);
+    expect(result[0]!.children.map((b) => b.type)).toEqual(["paragraph", "bulletListItem"]);
+    expect(JSON.stringify(result[0]!.children[1]!.content)).toContain("approved");
+  });
+
+  it("insertAfter a nested block inserts a sibling at that depth", () => {
+    const ops: EditorOp[] = [{ kind: "insertAfter", afterId: "c", blocks: [{ type: "paragraph", text: "sibling", cites: [], added: true }] }];
+    const result = applyEnhanceOpsToDocBlocks(ops, nested(), CTX);
+    expect(result).toHaveLength(2);
+    expect(result[0]!.children).toHaveLength(2);
+  });
+
+  it("insertAfter a missing anchor appends at the end", () => {
+    const ops: EditorOp[] = [{ kind: "insertAfter", afterId: "gone", blocks: [{ type: "paragraph", text: "x", cites: [], added: true }] }];
+    expect(applyEnhanceOpsToDocBlocks(ops, nested(), CTX)).toHaveLength(3);
+  });
+
+  it("remove drops a nested block", () => {
+    const result = applyEnhanceOpsToDocBlocks([{ kind: "remove", id: "c" }], nested(), CTX);
+    expect(result[0]!.children).toEqual([]);
+  });
+});
+
+describe("enhanceSnapshotDocBlocks / hasEnhanceMarkInTree", () => {
+  it("flattens the tree and leaves out the Transcript toggle and its lines", () => {
+    const withToggle = ensureTranscriptToggle([{ ...paragraph("p", "Budget"), children: [paragraph("c", "40h")] }], ["Ada: hi"]);
+    expect(enhanceSnapshotDocBlocks(withToggle)).toEqual([
+      { id: "p", type: "paragraph", text: "Budget" },
+      { id: "c", type: "paragraph", text: "40h", parentId: "p" },
+    ]);
+  });
+
+  it("finds a reserved mark at any depth, and ignores other colors", () => {
+    const marked = { ...paragraph("c", "40h"), props: { backgroundColor: "enhance-added" } };
+    expect(hasEnhanceMarkInTree([{ ...paragraph("p", "Budget"), children: [marked] }])).toBe(true);
+    expect(hasEnhanceMarkInTree([{ ...paragraph("p", "Budget"), props: { backgroundColor: "red" } }])).toBe(false);
+  });
+});
+
+describe("applyEnhanceOpsToDocBlocks appendAtEnd", () => {
+  const op: EditorOp = { kind: "appendAtEnd", blocks: [{ type: "heading", text: "Action items", cites: [], added: true }] };
+
+  it("goes directly above an existing Transcript toggle", () => {
+    const doc = ensureTranscriptToggle([paragraph("a", "Notes")], ["Ada: hi"]);
+    const result = applyEnhanceOpsToDocBlocks([op], doc, CTX);
+    expect(result.map((b) => b.type)).toEqual(["paragraph", "heading", "heading"]);
+    expect(hasTranscriptToggle([result[2]!])).toBe(true);
+  });
+
+  it("goes at the end when there is no toggle, so ensureTranscriptToggle lands below it", () => {
+    const result = ensureTranscriptToggle(applyEnhanceOpsToDocBlocks([op], [paragraph("a", "Notes")], CTX), ["Ada: hi"]);
+    expect(JSON.stringify(result[1]!.content)).toContain("Action items");
+    expect(hasTranscriptToggle([result[2]!])).toBe(true);
   });
 });
