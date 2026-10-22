@@ -155,6 +155,31 @@ describe("tick", () => {
     expect(data.lastSuccessAt).toBeUndefined();
   });
 
+  it("names the failure when the error has no message", async () => {
+    const err = Object.assign(new Error(""), {
+      name: "HttpError",
+      status: 500,
+      request: { method: "GET", url: "https://api.github.com/x" },
+    });
+    handler.mockRejectedValue(err);
+    await tick(NOW);
+    expect(mockPrisma.scheduledJob.update.mock.calls[0][0].data.lastError).toBe(
+      "HttpError 500 GET https://api.github.com/x",
+    );
+  });
+
+  it("falls back to the error name alone", async () => {
+    handler.mockRejectedValue(Object.assign(new Error(""), { name: "TimeoutError" }));
+    await tick(NOW);
+    expect(mockPrisma.scheduledJob.update.mock.calls[0][0].data.lastError).toBe("TimeoutError");
+  });
+
+  it("stringifies non-Error throws", async () => {
+    handler.mockRejectedValue("boom");
+    await tick(NOW);
+    expect(mockPrisma.scheduledJob.update.mock.calls[0][0].data.lastError).toBe("boom");
+  });
+
   it("ignores rows for jobs no longer in the registry", async () => {
     mockPrisma.scheduledJob.findMany.mockResolvedValue([jobRow({ name: "ghost" })]);
     const ran = await tick(NOW);
