@@ -1619,6 +1619,9 @@ model GalleryPost {
   authorId   String
   // S3 key (uploads/gallery/<uuid>.<ext>).
   imageKey   String
+  // A ~640px-wide WebP the composer makes for the feed's tiles. Null when the
+  // original is already that small (or for posts from before thumbnails).
+  thumbKey   String?
   width      Int
   height     Int
   // Dominant colour as #rrggbb.

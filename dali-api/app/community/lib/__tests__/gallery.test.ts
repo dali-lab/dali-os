@@ -45,9 +45,14 @@ describe("parseNewPosts", () => {
   it("trims captions, lowercases colours and keeps composer order", () => {
     const posts = parseNewPosts(JSON.stringify([row(), row({ caption: "", width: 10 })]), "u1");
     expect(posts).toEqual([
-      { imageKey: key(), width: 1200, height: 800, color: "#aabbcc", caption: "Demo day" },
-      { imageKey: key(), width: 10, height: 800, color: "#aabbcc", caption: null },
+      { imageKey: key(), thumbKey: null, width: 1200, height: 800, color: "#aabbcc", caption: "Demo day" },
+      { imageKey: key(), thumbKey: null, width: 10, height: 800, color: "#aabbcc", caption: null },
     ]);
+  });
+
+  it("keeps the poster's own thumbnail key", () => {
+    const thumb = key("u1", "thumb.webp");
+    expect(parseNewPosts(JSON.stringify([row({ thumbKey: thumb })]), "u1")?.[0].thumbKey).toBe(thumb);
   });
 
   it("treats a missing caption as none", () => {
@@ -59,6 +64,8 @@ describe("parseNewPosts", () => {
     ["an empty list", "[]"],
     ["an object", JSON.stringify(row())],
     ["a foreign key", JSON.stringify([row({ imageKey: key("u2") })])],
+    ["a foreign thumbnail", JSON.stringify([row({ thumbKey: key("u2", "thumb.webp") })])],
+    ["a numeric thumbnail", JSON.stringify([row({ thumbKey: 7 })])],
     ["a zero width", JSON.stringify([row({ width: 0 })])],
     ["a fractional height", JSON.stringify([row({ height: 1.5 })])],
     ["a huge side", JSON.stringify([row({ width: 20_001 })])],

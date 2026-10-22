@@ -14,6 +14,7 @@ import {
   GALLERY_ACCEPT,
   GALLERY_CAPTION_MAX,
   GALLERY_MAX_PHOTOS,
+  GALLERY_THUMB_WIDTH,
   galleryKeyPrefix,
   type NewGalleryPost,
 } from "~/community/lib/gallery";
@@ -28,20 +29,46 @@ type Row = {
   upload?: Omit<NewGalleryPost, "caption">;
 };
 
-// Size and average colour, read before upload so the feed can reserve the
-// tile's shape and paint it while the image loads.
-async function probeImage(file: File) {
+// Size, average colour and a feed-sized WebP, read before upload so the feed
+// can reserve each tile's shape, paint it while it loads, and load the small copy.
+async function readImage(file: File) {
   const bitmap = await createImageBitmap(file);
   try {
-    const canvas = document.createElement("canvas");
-    canvas.width = canvas.height = 1;
-    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    const pixel = document.createElement("canvas");
+    pixel.width = pixel.height = 1;
+    const ctx = pixel.getContext("2d", { willReadFrequently: true });
     ctx?.drawImage(bitmap, 0, 0, 1, 1);
     const [r, g, b] = ctx?.getImageData(0, 0, 1, 1).data ?? [128, 128, 128];
     const hex = (n: number) => n.toString(16).padStart(2, "0");
-    return { width: bitmap.width, height: bitmap.height, color: `#${hex(r)}${hex(g)}${hex(b)}` };
+
+    let thumb: Blob | null = null;
+    if (bitmap.width > GALLERY_THUMB_WIDTH) {
+      const canvas = document.createElement("canvas");
+      canvas.width = GALLERY_THUMB_WIDTH;
+      canvas.height = Math.round((bitmap.height * GALLERY_THUMB_WIDTH) / bitmap.width);
+      canvas.getContext("2d")?.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+      thumb = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/webp", 0.82));
+    }
+    return {
+      width: bitmap.width,
+      height: bitmap.height,
+      color: `#${hex(r)}${hex(g)}${hex(b)}`,
+      thumb,
+    };
   } finally {
     bitmap.close();
+  }
+}
+
+// A tile falls back to the original when there's no thumbnail: a browser that
+// can't encode WebP, or a thumbnail upload that failed.
+async function uploadThumb(thumb: Blob | null, prefix: string): Promise<string | null> {
+  if (thumb?.type !== "image/webp") return null;
+  try {
+    const file = new File([thumb], "thumb.webp", { type: thumb.type });
+    return (await uploadFileToS3(file, prefix, GALLERY_ACCEPT)).s3Key;
+  } catch {
+    return null;
   }
 }
 
@@ -101,11 +128,16 @@ export function NewGalleryPostsDialog({
     setRows((rs) => [...rs, ...added.map((a) => a.row)]);
     await runPool(added, MAX_CONCURRENT_UPLOADS, async ({ file, row }) => {
       try {
-        const [shape, uploaded] = await Promise.all([
-          probeImage(file),
-          uploadFileToS3(file, galleryKeyPrefix(userId), GALLERY_ACCEPT),
+        const prefix = galleryKeyPrefix(userId);
+        const [{ thumb, ...shape }, uploaded] = await Promise.all([
+          readImage(file),
+          uploadFileToS3(file, prefix, GALLERY_ACCEPT),
         ]);
-        patch(row.id, { status: "ready", upload: { imageKey: uploaded.s3Key, ...shape } });
+        const thumbKey = await uploadThumb(thumb, prefix);
+        patch(row.id, {
+          status: "ready",
+          upload: { imageKey: uploaded.s3Key, thumbKey, ...shape },
+        });
       } catch (err) {
         patch(row.id, {
           status: "failed",
