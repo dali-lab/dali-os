@@ -11,6 +11,7 @@ import {
   isUndoRedoTransaction,
   localEditKeepIds,
   markOfProps,
+  isCitationHref,
   snapshotTree,
   summarizeEnhanceMarks,
   type EnhanceBlockChange,
@@ -571,6 +572,44 @@ describe("snapshotTree", () => {
 
   it("returns nothing for an empty note", () => {
     expect(snapshotTree([node("a", "paragraph", "")])).toEqual([]);
+  });
+
+  const text = (t: string) => ({ type: "text", text: t, styles: {} });
+  const link = (href: string, label: string) => ({ type: "link", href, content: [text(label)] });
+  const withContent = (id: string, type: string, content: unknown[]) => ({ id, type, content, children: [] });
+
+  it("leaves transcript citation chips out of a line's text", () => {
+    const line = withContent("a", "checkListItem", [
+      text("Buy groceries for team social"),
+      text(" "),
+      link("/documents/p1?transcript=r1&at=560", "Theo · 9:20"),
+      text(" "),
+      link("/documents/p1?transcript=r1&at=700", "11:40"),
+    ]);
+    expect(snapshotTree([line])).toEqual([{ id: "a", type: "checkListItem", text: "Buy groceries for team social" }]);
+  });
+
+  it("keeps an ordinary link's text and the author's own spacing", () => {
+    const line = withContent("a", "paragraph", [text("See "), link("https://dali.dartmouth.edu/docs?at=5", "the docs"), text(" ")]);
+    expect(snapshotTree([line])).toEqual([{ id: "a", type: "paragraph", text: "See the docs " }]);
+  });
+
+  it("keeps a time the author typed", () => {
+    expect(snapshotTree([node("a", "paragraph", "Standup moves to 9:30")])[0]!.text).toBe("Standup moves to 9:30");
+  });
+
+  it("drops a line that only held citation chips", () => {
+    expect(snapshotTree([withContent("a", "paragraph", [text(" "), link("/x?transcript=r1&at=3", "0:03")])])).toEqual([]);
+  });
+});
+
+describe("isCitationHref", () => {
+  it("matches a note's transcript link and nothing else", () => {
+    expect(isCitationHref("/documents/p1?transcript=r1&at=842")).toBe(true);
+    expect(isCitationHref("/hiring/interviews/i1?transcript=abc%20d&at=0")).toBe(true);
+    expect(isCitationHref("/documents/p1?transcript=r1")).toBe(false);
+    expect(isCitationHref("https://example.com/?at=5")).toBe(false);
+    expect(isCitationHref(undefined)).toBe(false);
   });
 });
 

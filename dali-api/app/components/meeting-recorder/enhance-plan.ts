@@ -27,13 +27,28 @@ import { blockOwnText } from "~/components/doc/schema/configs";
  *  carry their parent's id. */
 export type SnapshotBlock = { id: string; type: string; text: string; parentId?: string };
 
-type TreeBlock = { id: string; type: string; children?: readonly TreeBlock[] };
+type TreeBlock = { id: string; type: string; content?: unknown; children?: readonly TreeBlock[] };
+
+/** True for the href doc/enhance-render.ts's citationHref builds. */
+export function isCitationHref(href: unknown): boolean {
+  return typeof href === "string" && /[?&]transcript=[^&#]+&at=\d+$/.test(href);
+}
+
+// Citation chips are links Enhance appends, not the author's words: left in,
+// their labels end up in task titles and read as author text to Enhance again.
+export function ownTextWithoutCitations(b: TreeBlock): string {
+  const block = b as Parameters<typeof blockOwnText>[0];
+  if (!Array.isArray(b.content)) return blockOwnText(block);
+  const content = (b.content as { type?: string; href?: unknown }[]).filter((n) => !(n.type === "link" && isCitationHref(n.href)));
+  if (content.length === b.content.length) return blockOwnText(block);
+  return blockOwnText({ ...block, content } as typeof block).trimEnd();
+}
 
 /** The tree flattened in document order, skipping blank leaf blocks (the
  *  trailing empty paragraph every BlockNote doc keeps, spacer lines). */
 export function snapshotTree(blocks: readonly TreeBlock[], parentId?: string): SnapshotBlock[] {
   return blocks.flatMap((b) => {
-    const text = blockOwnText(b as Parameters<typeof blockOwnText>[0]);
+    const text = ownTextWithoutCitations(b);
     const children = snapshotTree(b.children ?? [], b.id);
     if (!text.trim() && children.length === 0) return [];
     return [{ id: b.id, type: b.type, text, ...(parentId ? { parentId } : {}) }, ...children];
