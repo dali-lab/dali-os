@@ -2062,6 +2062,9 @@ model MeetingRecording {
 
   // Channels with at least one stored chunk: "mic" | "call".
   channels      String[]  @default([])
+  // Channels with at least one chunk above the silence floor. Only these are
+  // sent to transcription; empty (rows from before this column) sends all.
+  voicedChannels String[] @default([])
   // Segment start offsets in seconds, index = segment. Continue appends one;
   // segment 0's start is implicitly 0.
   segmentStarts Float[]   @default([])
