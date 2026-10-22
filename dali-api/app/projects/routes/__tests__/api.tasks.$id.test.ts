@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/auth", () => ({ requireProjectEditAccess: vi.fn() }));
 vi.mock("~/lib/db");
+vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
 vi.mock("~/lib/cors", () => ({
   withCors: (_req: Request, res: Response) => res,
   handlePreflight: () => null,
@@ -12,6 +13,7 @@ vi.mock("~/projects/lib/task-notifications.server", () => ({
 }));
 
 import { requireProjectEditAccess } from "~/lib/auth";
+import { logAuditEvent } from "~/lib/audit";
 import { prisma, Prisma } from "~/lib/db";
 import { action, loader } from "~/projects/routes/api.tasks.$id";
 
@@ -63,6 +65,7 @@ beforeEach(() => {
   mockPrisma.task = {
     findUnique: vi.fn().mockResolvedValue({
       id: TASK_ID,
+      title: "Ship it",
       githubIssueNumber: null,
       projectId: PROJECT_ID,
     }),
@@ -254,11 +257,24 @@ describe("DELETE /api/tasks/:id", () => {
     ]);
   });
 
+  it("logs the delete with the task title and project", async () => {
+    await call("DELETE");
+    expect(logAuditEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "task.delete",
+        userId: "user-1",
+        targetId: TASK_ID,
+        metadata: { title: "Ship it", projectId: PROJECT_ID },
+      }),
+    );
+  });
+
   it("404s when the task does not exist", async () => {
     mockPrisma.task.findUnique.mockResolvedValue(null);
     const res = await call("DELETE");
     expect(res.status).toBe(404);
     expect(mockPrisma.$transaction).not.toHaveBeenCalled();
+    expect(logAuditEvent).not.toHaveBeenCalled();
   });
 
   it("stops at the edit-access gate", async () => {
@@ -269,6 +285,7 @@ describe("DELETE /api/tasks/:id", () => {
     const res = await call("DELETE");
     expect(res.status).toBe(403);
     expect(mockPrisma.$transaction).not.toHaveBeenCalled();
+    expect(logAuditEvent).not.toHaveBeenCalled();
   });
 });
 

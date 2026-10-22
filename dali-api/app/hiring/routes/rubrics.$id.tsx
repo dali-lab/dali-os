@@ -2,6 +2,7 @@ import { redirect } from 'react-router'
 import type { Route } from './+types/rubrics.$id'
 import { prisma } from '~/lib/db'
 import { requireCoreOrDomainLead } from "~/lib/auth";
+import { logAuditEvent } from '~/lib/audit'
 import { redirectToLogin } from '~/lib/login-next'
 import { getCollabToken } from "~/lib/collab-token.server";
 import { RubricDetail } from '~/hiring/components/RubricDetail'
@@ -52,13 +53,21 @@ export async function action({ request, params }: Route.ActionArgs) {
     })
     const versionNumber = (lastVersion?.versionNumber ?? 0) + 1
 
-    await prisma.rubricVersion.create({
+    const created = await prisma.rubricVersion.create({
       data: {
         rubricId: params.id,
         versionNumber,
         criteria,
         createdById: user.id,
       },
+    })
+
+    await logAuditEvent({
+      action: 'rubric.version.create',
+      userId: user.id,
+      targetId: created.id,
+      metadata: { rubricId: params.id, versionNumber, criteriaCount: Array.isArray(criteria) ? criteria.length : 0 },
+      request,
     })
 
     return redirect(`/hiring/rubrics/${params.id}`)

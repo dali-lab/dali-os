@@ -12,12 +12,19 @@ describe("auditTargetModel", () => {
     ["page.pin", "page"],
     ["note.delete", "page"],
     ["document.delete", "page"],
+    ["document.export", "page"],
+    ["notebook.trash", "page"],
+    ["notebook.merge", "page"],
     ["project.delete", "project"],
     ["project.showcase-status", "project"],
     ["staffing.finalize", "project"],
     ["projectFile.create", "projectFile"],
     ["group.member.add", "group"],
     ["domain.create", "domain"],
+    ["domain.ready.set", "domain"],
+    ["domain.rubric.set", "domain"],
+    ["domain.mentors.add", "domain"],
+    ["domain.challenge-form.remove", "domain"],
     ["email.domain_added_notice", "domain"],
     ["partner.org.update", "partnerOrg"],
     ["partner.invited", "partnerOrg"],
@@ -33,6 +40,10 @@ describe("auditTargetModel", () => {
   it.each([
     "project.assignment.level",
     "domain.lead.add",
+    "drive.trash.purge",
+    "task.delete",
+    "comment.delete",
+    "member.resume.view",
     "room.display.revoke",
     "login.success",
     "staffing.assign",
@@ -93,9 +104,29 @@ describe("resolveAuditTargets", () => {
 
 describe("audit areas", () => {
   it("folds hiring prefixes into one area", () => {
-    for (const a of ["application.submit", "decision.create", "interview.cancel", "review.submit"]) {
+    for (const a of [
+      "application.submit",
+      "application.view",
+      "decision.create",
+      "interview.cancel",
+      "interview.config",
+      "review.submit",
+      "review.update",
+      "delibs.close",
+      "cycle.create",
+      "rubric.version.create",
+      "confidentiality.rename",
+    ]) {
       expect(auditAreaOf(a)).toBe("hiring");
     }
+  });
+
+  it("folds document-like and work-item prefixes into their product area", () => {
+    for (const a of ["collab.version.restore", "notebook.dissolve", "comment.delete", "document.export"]) {
+      expect(auditAreaOf(a)).toBe("page");
+    }
+    for (const a of ["task.delete", "epic.delete"]) expect(auditAreaOf(a)).toBe("project");
+    expect(auditAreaOf("custom-hire.archive")).toBe("payroll");
   });
 
   it("uses the first segment otherwise", () => {

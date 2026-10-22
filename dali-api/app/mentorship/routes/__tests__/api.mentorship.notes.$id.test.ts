@@ -9,6 +9,7 @@ vi.mock("~/lib/db", () => ({
   },
 }));
 vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn() }));
+vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
 vi.mock("~/lib/roles", () => ({ isCore: vi.fn() }));
 vi.mock("~/lib/cors", () => ({
   withCors: (_req: Request, res: Response) => res,
@@ -20,6 +21,7 @@ vi.mock("../../lib/pair-notebook.server", () => ({ archiveMentorNotePage: vi.fn(
 
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
+import { logAuditEvent } from "~/lib/audit";
 import { isCore } from "~/lib/roles";
 import { canViewMentorship, canViewMentorNote } from "../../lib/visibility";
 import { readMentorNoteBlocks } from "../../lib/note-body.server";
@@ -94,6 +96,28 @@ describe("DELETE /api/mentorship/notes/:id", () => {
     expect(archiveMentorNotePage).toHaveBeenCalledWith("page1");
   });
 
+  it("logs the delete with the people and project but no note content", async () => {
+    m.mentorNote.findUnique.mockResolvedValue({
+      id: "n1",
+      mentorId: "mentor",
+      menteeId: "mentee",
+      projectId: "p1",
+      termId: "t1",
+      pageId: "page1",
+    });
+
+    await del();
+
+    expect(logAuditEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "mentorship.note.delete",
+        userId: "mentor",
+        targetId: "n1",
+        metadata: { mentorId: "mentor", menteeId: "mentee", projectId: "p1", termId: "t1" },
+      }),
+    );
+  });
+
   it("leaves another mentor's note and page alone", async () => {
     m.mentorNote.findUnique.mockResolvedValue({ id: "n1", mentorId: "someone-else", pageId: "page1" });
 
@@ -102,5 +126,6 @@ describe("DELETE /api/mentorship/notes/:id", () => {
     expect(res.status).toBe(403);
     expect(m.mentorNote.delete).not.toHaveBeenCalled();
     expect(archiveMentorNotePage).not.toHaveBeenCalled();
+    expect(logAuditEvent).not.toHaveBeenCalled();
   });
 });

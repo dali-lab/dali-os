@@ -7,6 +7,7 @@ import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson } from "~/lib/validate";
 import { sendAnnouncement } from "~/lib/announcements.server";
 import { renderAnnouncementBody } from "~/collab/blocknote-server";
+import { logAuditEvent } from "~/lib/audit";
 
 const KindEnum = z.enum([
   "General",
@@ -89,6 +90,16 @@ export async function action({ request }: Route.ActionArgs) {
     }
   }
 
+  const summary = {
+    title: body.title,
+    kind: body.kind ?? "General",
+    isTodo: body.isTodo ?? false,
+    formId: body.formId ?? null,
+    allMembers: body.allMembers ?? false,
+    groupCount: groupIds.length,
+    userCount: userIds.length,
+  };
+
   // Schedule instead of send when sendAt is in the future.
   const sendAt = body.sendAt ? new Date(body.sendAt) : null;
   if (sendAt && sendAt.getTime() > Date.now()) {
@@ -129,6 +140,13 @@ export async function action({ request }: Route.ActionArgs) {
       },
       select: { id: true, sendAt: true },
     });
+    await logAuditEvent({
+      action: "announcement.schedule",
+      userId: auth.user.sub,
+      targetId: scheduled.id,
+      metadata: { ...summary, sendAt: scheduled.sendAt.toISOString() },
+      request,
+    });
     return withCors(
       request,
       Response.json({ ok: true, scheduled: true, id: scheduled.id }, { status: 201 }),
@@ -153,5 +171,11 @@ export async function action({ request }: Route.ActionArgs) {
   if (!result.ok) {
     return withCors(request, Response.json({ error: result.error }, { status: result.status }));
   }
+  await logAuditEvent({
+    action: "announcement.send",
+    userId: auth.user.sub,
+    metadata: { ...summary, recipients: result.count },
+    request,
+  });
   return withCors(request, Response.json({ ok: true, count: result.count }, { status: 201 }));
 }

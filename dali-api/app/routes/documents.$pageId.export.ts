@@ -2,6 +2,7 @@ import type { Route } from "./+types/documents.$pageId.export";
 import { prisma } from "~/lib/db";
 import { requireAuth, isPartnerAccount, isNonMember } from "~/lib/auth";
 import { getPageAccess } from "~/lib/pageAccess.server";
+import { logAuditEvent } from "~/lib/audit";
 import { buildExportHtml } from "~/collab/export";
 import { readDocAsBlocks } from "~/collab/read";
 import { blocksToHtml, blocksToMarkdown } from "~/collab/blocknote-server";
@@ -42,10 +43,19 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   const filename = safeFilename(page.title);
   const blocks = await readDocAsBlocks(`doc:${page.id}:body`);
+  const logExport = () =>
+    logAuditEvent({
+      action: "document.export",
+      userId: auth.user.sub,
+      targetId: page.id,
+      metadata: { format },
+      request,
+    });
 
   if (format === "md") {
     const body = blocks.length ? await blocksToMarkdown(blocks) : "";
     const markdown = `# ${page.title}\n\n${body}`;
+    await logExport();
     return new Response(markdown, {
       headers: {
         "Content-Type": "text/markdown; charset=utf-8",
@@ -62,6 +72,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       margins: { top: 720, right: 720, bottom: 720, left: 720 },
     });
     const buffer = out instanceof ArrayBuffer ? Buffer.from(out) : (out as Buffer);
+    await logExport();
     return new Response(new Uint8Array(buffer), {
       headers: {
         "Content-Type":
@@ -72,6 +83,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   }
 
   const pdf = await renderDocumentPdf(page.title, blocks, normalizePageTypography(page.typography));
+  await logExport();
   return new Response(new Uint8Array(pdf), {
     headers: {
       "Content-Type": "application/pdf",

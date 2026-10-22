@@ -7,6 +7,7 @@ vi.mock("~/lib/auth", () => ({
   ),
 }));
 vi.mock("~/lib/roles", () => ({ isAdmin: vi.fn() }));
+vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
 vi.mock("~/lib/terms", () => ({ resolveTermFilter: vi.fn() }));
 // Mutation helpers + the loader's data source are stubbed so this stays a pure
 // gating/validation/dispatch test. Plain factory only — no importActual: the
@@ -24,6 +25,7 @@ vi.mock("~/admin/lib/budget", () => ({
 
 import { requireAuth } from "~/lib/auth";
 import { isAdmin } from "~/lib/roles";
+import { logAuditEvent } from "~/lib/audit";
 import { resolveTermFilter } from "~/lib/terms";
 import {
   getBudgetData,
@@ -339,5 +341,54 @@ describe("budget action — intent dispatch + validation", () => {
       context: {},
     } as any);
     expect(res.status).toBe(400);
+  });
+});
+
+describe("budget action — audit trail", () => {
+  const run = (fields: Record<string, string>) =>
+    action({ request: postReq({ projectId: "p1", chartString: "cs-1", termId: "term-25f", ...fields }), params: {}, context: {} } as any);
+  const logged = () =>
+    vi.mocked(logAuditEvent).mock.calls.map(([e]) => [e.action, e.userId, e.targetId, e.metadata]);
+
+  beforeEach(() => asAdmin());
+
+  it("logs revenue with the value before and after", async () => {
+    vi.mocked(upsertRevenue).mockResolvedValue(100);
+    await run({ intent: "upsert-revenue", revenue: "250" });
+    expect(logged()).toEqual([
+      ["payroll.budget.revenue", ADMIN_ID, "cs-1", { projectId: "p1", termId: "term-25f", before: 100, after: 250 }],
+    ]);
+  });
+
+  it("logs a new revenue line as before null", async () => {
+    vi.mocked(upsertRevenue).mockResolvedValue(null);
+    await run({ intent: "upsert-revenue", revenue: "5" });
+    expect(vi.mocked(logAuditEvent).mock.calls[0][0].metadata).toMatchObject({ before: null, after: 5 });
+  });
+
+  it("logs an entry delete, a chart string move, a note and a project type", async () => {
+    await run({ intent: "delete-entry", entryId: "e1" });
+    await run({ intent: "update-chartstring", newChartString: "cs-2" });
+    await run({ intent: "upsert-note", note: "confidential reasoning" });
+    await run({ intent: "upsert-note", note: "  " });
+    await run({ intent: "update-project-type", projectType: "" });
+
+    expect(logged()).toEqual([
+      ["payroll.budget.entry.delete", ADMIN_ID, "e1", {}],
+      ["payroll.budget.chartstring", ADMIN_ID, "cs-2", { projectId: "p1", termId: "term-25f", before: "cs-1", after: "cs-2" }],
+      ["payroll.budget.note", ADMIN_ID, "cs-1", { projectId: "p1", termId: "term-25f", cleared: false }],
+      ["payroll.budget.note", ADMIN_ID, "cs-1", { projectId: "p1", termId: "term-25f", cleared: true }],
+      ["payroll.budget.project-type", ADMIN_ID, "cs-1", { projectId: "p1", termId: "term-25f", projectType: null }],
+    ]);
+    expect(JSON.stringify(logged())).not.toContain("confidential reasoning");
+  });
+
+  it("logs nothing when the mutation throws, the input is invalid or the caller is not an admin", async () => {
+    vi.mocked(updateChartString).mockRejectedValue(new Error("A budget entry already exists"));
+    await run({ intent: "update-chartstring", newChartString: "cs-2" });
+    await run({ intent: "upsert-revenue", revenue: "not a number" });
+    asNonAdmin();
+    await run({ intent: "delete-entry", entryId: "e1" });
+    expect(logAuditEvent).not.toHaveBeenCalled();
   });
 });

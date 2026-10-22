@@ -7,6 +7,7 @@ vi.mock("~/lib/auth", () => ({
   ),
 }));
 vi.mock("~/lib/roles", () => ({ isAdmin: vi.fn() }));
+vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
 // The ingest server hits Prisma — stub it so the action test stays a pure
 // orchestration/gating test over synthetic CSV strings.
 vi.mock("~/admin/lib/payroll-ingest.server", () => ({
@@ -16,6 +17,7 @@ vi.mock("~/admin/lib/payroll-ingest.server", () => ({
 
 import { requireAuth } from "~/lib/auth";
 import { isAdmin } from "~/lib/roles";
+import { logAuditEvent } from "~/lib/audit";
 import {
   ingestTimesheet,
   ingestNotes,
@@ -185,5 +187,40 @@ describe("payroll upload action — admin", () => {
     expect(body.notes).not.toBeNull();
     expect(ingestTimesheet).toHaveBeenCalledOnce();
     expect(ingestNotes).toHaveBeenCalledOnce();
+  });
+});
+
+describe("payroll upload action — audit trail", () => {
+  it("logs the file names and import counts but none of the CSV contents", async () => {
+    asAdmin();
+    await action({
+      request: uploadRequest({ timesheet: VALID_TIMESHEET_CSV, notes: "Pay_Period,Net_Id,Job_ID,Timesheet_Entry_Note1\n09/14/2025 - 09/27/2025,f00fake1,4834,Analytical engine maintenance" }),
+      params: {},
+      context: {},
+    } as any);
+
+    const event = vi.mocked(logAuditEvent).mock.calls[0][0];
+    expect(event).toMatchObject({
+      action: "payroll.upload",
+      userId: ADMIN_ID,
+      metadata: {
+        timesheetFile: "timesheet.csv",
+        notesFile: "notes.csv",
+        periods: ["09/14/2025 - 09/27/2025"],
+        rowsCreated: 1,
+        rowsReplaced: 0,
+        rowErrors: 0,
+      },
+    });
+    expect(JSON.stringify(event.metadata)).not.toContain("f00fake1");
+    expect(JSON.stringify(event.metadata)).not.toContain("Analytical engine");
+  });
+
+  it("logs nothing for a refused or failed upload", async () => {
+    asNonAdmin();
+    await action({ request: uploadRequest({ timesheet: VALID_TIMESHEET_CSV }), params: {}, context: {} } as any);
+    asAdmin();
+    await action({ request: uploadRequest({ timesheet: BAD_HEADER_CSV }), params: {}, context: {} } as any);
+    expect(logAuditEvent).not.toHaveBeenCalled();
   });
 });

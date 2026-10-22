@@ -5,6 +5,7 @@ vi.mock("~/lib/auth", () => ({
   requireAuth: vi.fn(),
 }));
 vi.mock("~/lib/roles");
+vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
 vi.mock("~/hiring/lib/interview-room-holds.server", () => ({
   applyRoomHolds: vi.fn(),
 }));
@@ -12,6 +13,7 @@ vi.mock("~/hiring/lib/interview-room-holds.server", () => ({
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
+import { logAuditEvent } from "~/lib/audit";
 import { applyRoomHolds } from "~/hiring/lib/interview-room-holds.server";
 import { action, loader } from "~/hiring/routes/api.cycles.$cycleId.interview-config";
 import { hasCycleAccess } from "~/lib/roles";
@@ -337,5 +339,69 @@ describe("interview-config per Interviews round", () => {
 
   it("reads nothing when no round has settings", async () => {
     expect(await get("iv2")).toBeNull();
+  });
+});
+
+describe("interview-config audit trail", () => {
+  const run = (body: unknown) =>
+    action({ request: makeRequest(body), params: { cycleId: CYCLE_ID }, context: {} } as any);
+
+  it("logs a first save as created, with the window and rooms", async () => {
+    mockPrisma.room.findMany.mockResolvedValue([{ id: "room-1", name: "Pod Appa" }]);
+    mockPrisma.interviewConfig.upsert.mockResolvedValue({ id: "config-1", slotDurationMinutes: 30 });
+
+    await run({ ...BASE_BODY, roomIds: ["room-1"], holdRooms: true });
+
+    expect(logAuditEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "interview.config",
+        userId: HIRING_LEAD_ID,
+        targetId: "config-1",
+        metadata: {
+          cycleId: CYCLE_ID,
+          interviewRoundId: "interviews",
+          created: true,
+          before: null,
+          after: {
+            start: "2026-05-01T00:00:00.000Z",
+            end: "2026-05-07T00:00:00.000Z",
+            slotDurationMinutes: 30,
+          },
+          holdRooms: true,
+          roomIds: ["room-1"],
+        },
+      }),
+    );
+  });
+
+  it("logs the previous window when an existing round is edited", async () => {
+    mockPrisma.interviewConfig.findMany.mockResolvedValue([
+      {
+        id: "config-1",
+        interviewRoundId: "interviews",
+        slotDurationMinutes: 45,
+        interviewStartDate: new Date("2026-04-01T00:00:00.000Z"),
+        interviewEndDate: new Date("2026-04-07T00:00:00.000Z"),
+        rooms: [],
+      },
+    ]);
+
+    await run(BASE_BODY);
+
+    const metadata = vi.mocked(logAuditEvent).mock.calls[0][0].metadata as Record<string, unknown>;
+    expect(metadata.created).toBe(false);
+    expect(metadata.before).toEqual({
+      start: "2026-04-01T00:00:00.000Z",
+      end: "2026-04-07T00:00:00.000Z",
+      slotDurationMinutes: 45,
+    });
+  });
+
+  it("logs nothing when the room hold conflicts or the round is not on the timeline", async () => {
+    mockApplyRoomHolds.mockResolvedValue({ ok: false, conflicts: [] });
+    await run(BASE_BODY);
+    mockApplyRoomHolds.mockResolvedValue({ ok: true });
+    await run({ ...BASE_BODY, interviewRoundId: "iv9" });
+    expect(logAuditEvent).not.toHaveBeenCalled();
   });
 });

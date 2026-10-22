@@ -6,10 +6,12 @@ vi.mock("~/lib/auth", () => ({
   forbidden: vi.fn(() => new Response(JSON.stringify({ error: "Forbidden" }), { status: 403 })),
 }));
 vi.mock("~/lib/roles");
+vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
 
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
+import { logAuditEvent } from "~/lib/audit";
 import { action } from "~/partners/routes/api.partner-applications.$id.move";
 
 const db = prisma as unknown as Record<string, any>;
@@ -132,5 +134,41 @@ describe("partner application move — legacy { stage, position }", () => {
         data: expect.objectContaining({ stage: "Accepted", position: 3 }),
       }),
     );
+  });
+});
+
+describe("partner application move — audit trail", () => {
+  it("logs a cross-column move with the stage before and after", async () => {
+    await callAction({ stage: "Interview", position: 0 });
+
+    expect(logAuditEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "partner.application.stage",
+        userId: "core-1",
+        targetId: APP_ID,
+        metadata: { from: "New", to: "Interview" },
+      }),
+    );
+  });
+
+  it("logs a drag with orderedIds the same way", async () => {
+    db.partnerApplication.findMany.mockResolvedValue([{ id: APP_ID }, { id: "other-1" }]);
+
+    await callAction({ stage: "Interview", orderedIds: ["other-1", APP_ID] });
+
+    expect(logAuditEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "partner.application.stage", metadata: { from: "New", to: "Interview" } }),
+    );
+  });
+
+  it("logs nothing when a card is only reordered inside its own column", async () => {
+    await callAction({ stage: "New", position: 3 });
+    expect(logAuditEvent).not.toHaveBeenCalled();
+  });
+
+  it("logs nothing for a refused move", async () => {
+    (isCore as any).mockResolvedValue(false);
+    await callAction({ stage: "Interview", position: 0 });
+    expect(logAuditEvent).not.toHaveBeenCalled();
   });
 });

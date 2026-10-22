@@ -1,6 +1,12 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/db");
+vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
+vi.mock("~/partners/lib/application-form.server", () => ({
+  setApplicationFormBinding: vi.fn(),
+  clearApplicationFormBinding: vi.fn(),
+  getApplicationFormBinding: vi.fn(),
+}));
 vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn() }));
 vi.mock("~/lib/roles", () => ({ isCore: vi.fn(), getActiveCoreCycleTermIds: vi.fn() }));
 vi.mock("~/partners/lib/partner-survey.server", () => ({
@@ -11,6 +17,8 @@ vi.mock("~/partners/lib/partner-survey.server", () => ({
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
+import { logAuditEvent } from "~/lib/audit";
+import { setApplicationFormBinding, clearApplicationFormBinding } from "~/partners/lib/application-form.server";
 import { setSurveyFormBinding, clearSurveyFormBinding } from "~/partners/lib/partner-survey.server";
 import { action } from "~/partners/routes/core.partners.settings";
 
@@ -104,5 +112,54 @@ describe("partner CRM settings action", () => {
     const res = await callAction({ intent: "clear-survey-form" });
     expect(clearSurveyFormBinding).toHaveBeenCalled();
     expect(res).toEqual({ ok: true });
+  });
+});
+
+describe("partner CRM settings audit trail", () => {
+  const logged = () => vi.mocked(logAuditEvent).mock.calls.map(([e]) => [e.action, e.userId, e.targetId, e.metadata]);
+
+  it("logs a settings save with the threshold and panel before and after", async () => {
+    db.partnerCrmSettings.findUnique.mockResolvedValue({ interviewPanelUserIds: ["u1"], staleDays: 14 });
+
+    await callAction({ intent: "settings-save", interviewPanelUserIds: ["u1", "u2"], staleDays: "21" });
+
+    expect(logged()).toEqual([
+      [
+        "partner.settings.save",
+        "core-1",
+        "default",
+        {
+          staleDays: { before: 14, after: 21 },
+          interviewPanelUserIds: { before: ["u1"], after: ["u1", "u2"] },
+        },
+      ],
+    ]);
+  });
+
+  it("logs binding and clearing the application and survey forms", async () => {
+    vi.mocked(setApplicationFormBinding).mockResolvedValue({ ok: true } as never);
+    vi.mocked(setSurveyFormBinding).mockResolvedValue({ ok: true });
+
+    await callAction({ intent: "bind-form", formId: "form-a" });
+    await callAction({ intent: "clear-form" });
+    await callAction({ intent: "bind-survey-form", formId: "form-s" });
+    await callAction({ intent: "clear-survey-form" });
+
+    expect(logged()).toEqual([
+      ["partner.form-binding.set", "core-1", "form-a", { slot: "application", formId: "form-a" }],
+      ["partner.form-binding.clear", "core-1", "application", { slot: "application", formId: null }],
+      ["partner.form-binding.set", "core-1", "form-s", { slot: "survey", formId: "form-s" }],
+      ["partner.form-binding.clear", "core-1", "survey", { slot: "survey", formId: null }],
+    ]);
+    expect(clearApplicationFormBinding).toHaveBeenCalled();
+  });
+
+  it("logs nothing when a binding is refused, missing a form, or the caller is not Core", async () => {
+    vi.mocked(setApplicationFormBinding).mockResolvedValue({ ok: false, error: "gone" } as never);
+    await callAction({ intent: "bind-form", formId: "form-a" });
+    await callAction({ intent: "bind-survey-form", formId: "" });
+    vi.mocked(isCore).mockResolvedValue(false);
+    await callAction({ intent: "clear-survey-form" });
+    expect(logAuditEvent).not.toHaveBeenCalled();
   });
 });

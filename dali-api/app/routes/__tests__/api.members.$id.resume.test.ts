@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn() }));
 vi.mock("~/lib/db");
+vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
 vi.mock("~/lib/roles", () => ({ getUserRoles: vi.fn().mockResolvedValue({}), isAdmin: vi.fn() }));
 vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabled: vi.fn() }));
 vi.mock("~/lib/s3", () => ({
@@ -19,6 +20,7 @@ vi.mock("~/lib/ai.server", async (importOriginal) => ({
 
 import { requireAuth } from "~/lib/auth";
 import { prisma } from "~/lib/db";
+import { logAuditEvent } from "~/lib/audit";
 import { isAdmin } from "~/lib/roles";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { deleteObject, getDownloadUrl, isS3Configured, putObject } from "~/lib/s3";
@@ -306,5 +308,55 @@ describe("access rules", () => {
       context: {},
     } as never)) as Response;
     expect(res.status).toBe(405);
+  });
+});
+
+describe("resume audit trail", () => {
+  const logged = () => vi.mocked(logAuditEvent).mock.calls.map(([e]) => [e.action, e.userId, e.targetId, e.metadata]);
+
+  beforeEach(() => {
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({
+      resumeKey: `uploads/resumes/${ME}/a.pdf`,
+      resumeFileName: "cv.pdf",
+    } as never);
+  });
+
+  it("logs an admin viewing someone else's resume, against the owner", async () => {
+    signInAs("admin-1", true);
+    await get(ME);
+    expect(logged()).toEqual([["member.resume.view", "admin-1", ME, { fileName: "cv.pdf" }]]);
+  });
+
+  it("does not log a member opening their own resume", async () => {
+    await get(ME);
+    expect(logAuditEvent).not.toHaveBeenCalled();
+  });
+
+  it("logs nothing when the viewer is refused or there is no resume", async () => {
+    signInAs(OTHER);
+    await get(ME);
+    signInAs("admin-1", true);
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({ resumeKey: null, resumeFileName: null } as never);
+    await get(ME);
+    expect(logAuditEvent).not.toHaveBeenCalled();
+  });
+
+  it("logs an upload with the file name and size, flagging a replacement", async () => {
+    const file = pdf();
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({ resumeKey: null } as never);
+    await post(ME, file);
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({ resumeKey: "old.pdf" } as never);
+    await post(ME, file);
+
+    expect(logged()).toEqual([
+      ["member.resume.upload", ME, ME, { fileName: "resume.pdf", sizeBytes: file.size, replaced: false }],
+      ["member.resume.upload", ME, ME, { fileName: "resume.pdf", sizeBytes: file.size, replaced: true }],
+    ]);
+  });
+
+  it("logs a delete, and nothing for a rejected upload", async () => {
+    await post(ME, new File(["not a pdf"], "x.pdf"));
+    await del(ME);
+    expect(logged()).toEqual([["member.resume.delete", ME, ME, undefined]]);
   });
 });
