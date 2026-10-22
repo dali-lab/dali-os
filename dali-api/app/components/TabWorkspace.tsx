@@ -139,6 +139,11 @@ const CLOSED_CAP = 10
 const TAB_W = 168
 const PINNED_TAB_W = 128
 const OVERFLOW_BTN_W = 52
+// The strip's `gap-1` and `pr-1.5`, and the +N button's `mr-1.5`. Left out of
+// the fit math, a nearly full strip overflows by a few px and scrolls.
+const TAB_GAP = 4
+const STRIP_PAD_R = 6
+const OVERFLOW_BTN_MR = 6
 
 function newId() {
   return Math.random().toString(36).slice(2, 10)
@@ -260,16 +265,18 @@ function normalize(tabs: Tab[]): Tab[] {
 // recency so the active tab (always most-recently-activated) is never hidden;
 // callers render `visible` in positional order so tabs don't shuffle on click.
 // width === 0 (not measured yet) shows everything — overflow kicks in on measure.
-function splitVisibleOverflow(
+export function splitVisibleOverflow(
   tabs: Tab[],
   width: number,
 ): { pinned: Tab[]; visible: Tab[]; overflow: Tab[] } {
   const pinned = tabs.filter((t) => t.pinned)
   const unpinned = tabs.filter((t) => !t.pinned)
   if (width <= 0 || unpinned.length === 0) return { pinned, visible: unpinned, overflow: [] }
-  const availBase = width - pinned.length * PINNED_TAB_W
-  if (unpinned.length * TAB_W <= availBase) return { pinned, visible: unpinned, overflow: [] }
-  const cap = Math.max(1, Math.floor((availBase - OVERFLOW_BTN_W) / TAB_W))
+  // Each tab costs its width plus one gap; the trailing gap cancels against +TAB_GAP.
+  const availBase = width - STRIP_PAD_R + TAB_GAP - pinned.length * (PINNED_TAB_W + TAB_GAP)
+  const slot = TAB_W + TAB_GAP
+  if (unpinned.length * slot <= availBase) return { pinned, visible: unpinned, overflow: [] }
+  const cap = Math.max(1, Math.floor((availBase - OVERFLOW_BTN_W - OVERFLOW_BTN_MR) / slot))
   if (cap >= unpinned.length) return { pinned, visible: unpinned, overflow: [] }
   const recentIds = new Set(
     [...unpinned]
@@ -2042,7 +2049,7 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange, onGuideCh
                 ref={stripRefCb(pane.id)}
                 className="flex flex-1 min-w-0 items-stretch"
               >
-                <div className="flex-1 min-w-0 flex items-stretch gap-1 overflow-x-auto py-1.5 pr-1.5">
+                <div className="flex-1 min-w-0 flex items-stretch gap-1 overflow-hidden py-1.5 pr-1.5">
                   <SortableContext items={renderedTabIds} strategy={horizontalListSortingStrategy}>
                     {renderedTabs.map(renderTab)}
                   </SortableContext>
