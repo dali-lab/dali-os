@@ -146,14 +146,14 @@ export async function loader({ request }: Route.LoaderArgs) {
     SELECT COUNT(*)::int AS calls,
            COUNT(DISTINCT "userId")::int AS users
     FROM "AuditLog"
-    WHERE "action" = 'mcp.tool_called' AND "createdAt" >= ${since}
+    WHERE "action" IN ('mcp.tool_called', 'mcp.tool_read') AND "createdAt" >= ${since}
   `;
   const mcpTools = await prisma.$queryRaw<McpRow[]>`
     SELECT COALESCE("metadata"->>'toolName', 'unknown') AS name,
            COUNT(*)::int AS calls,
            COUNT(DISTINCT "userId")::int AS users
     FROM "AuditLog"
-    WHERE "action" = 'mcp.tool_called' AND "createdAt" >= ${since}
+    WHERE "action" IN ('mcp.tool_called', 'mcp.tool_read') AND "createdAt" >= ${since}
     GROUP BY 1
     ORDER BY calls DESC, name ASC
     LIMIT 10
@@ -163,7 +163,7 @@ export async function loader({ request }: Route.LoaderArgs) {
            COUNT(*)::int AS calls,
            COUNT(DISTINCT "userId")::int AS users
     FROM "AuditLog"
-    WHERE "action" = 'mcp.tool_called' AND "createdAt" >= ${since}
+    WHERE "action" IN ('mcp.tool_called', 'mcp.tool_read') AND "createdAt" >= ${since}
     GROUP BY 1
     ORDER BY calls DESC, name ASC
     LIMIT 10

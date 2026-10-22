@@ -141,7 +141,9 @@ export const AUDIT_ACTIONS = [
   "signing.remind",
   "signing.archive",
   "signing.unarchive",
+  // tool_called is write-scoped calls only since mcp.tool_read was split out.
   "mcp.tool_called",
+  "mcp.tool_read",
   "mcp.resource_read",
   "mcp.prompt_rendered",
   "partner.org.create",
