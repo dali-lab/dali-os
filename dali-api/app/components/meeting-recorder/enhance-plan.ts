@@ -22,15 +22,31 @@
 
 import { blockOwnText } from "~/components/doc/schema/configs";
 
-/** One top-level block's id, type, and own text (not its children) — what
- *  both the enhance request and the client-side merge key blocks on. */
-export type SnapshotBlock = { id: string; type: string; text: string };
+/** One block's id, type, and own text (not its children) — what both the
+ *  enhance request and the client-side merge key blocks on. Nested blocks
+ *  carry their parent's id. */
+export type SnapshotBlock = { id: string; type: string; text: string; parentId?: string };
+
+type TreeBlock = { id: string; type: string; children?: readonly TreeBlock[] };
+
+/** The tree flattened in document order, skipping blank leaf blocks (the
+ *  trailing empty paragraph every BlockNote doc keeps, spacer lines). */
+export function snapshotTree(blocks: readonly TreeBlock[], parentId?: string): SnapshotBlock[] {
+  return blocks.flatMap((b) => {
+    const text = blockOwnText(b as Parameters<typeof blockOwnText>[0]);
+    const children = snapshotTree(b.children ?? [], b.id);
+    if (!text.trim() && children.length === 0) return [];
+    return [{ id: b.id, type: b.type, text, ...(parentId ? { parentId } : {}) }, ...children];
+  });
+}
 
 export type EnhanceBlockKeepOp = { id: string; op: "keep" };
 export type EnhanceBlockExpandOp = { id: string; op: "expand"; text: string; cites?: number[] };
 export type EnhanceBlockInsertOp = {
   op: "insert";
   after: string | null;
+  /** Insert as the last child of this block instead of after `after`. */
+  under?: string;
   type: string;
   text: string;
   cites?: number[];
@@ -65,6 +81,7 @@ export type EnhanceOpBlock = { type: string; text: string; cites: number[]; adde
 export type EditorOp =
   | { kind: "update"; id: string; text: string; cites: number[] }
   | { kind: "insertAfter"; afterId: string | null; blocks: EnhanceOpBlock[] }
+  | { kind: "appendChildren"; parentId: string; blocks: EnhanceOpBlock[] }
   // Not in the original sketch, but required to implement "template headings
   // the model left empty are hidden (removed) on apply" (spec §2) — there is
   // no way to express a removal with only update/insertAfter.
@@ -139,8 +156,14 @@ export type ApplyEnhancePlanResult = {
   hiddenHeadings: number;
 };
 
+const ACTION_ITEMS_HEADING = "Action items";
+
+function isActionItemsHeading(text: string): boolean {
+  return text.trim().toLowerCase().replace(/[:\s]+$/, "") === "action items";
+}
+
 function isHeading(block: SnapshotBlock): boolean {
-  return block.type === "heading";
+  return block.type === "heading" && !block.parentId;
 }
 
 /** Index of the heading that starts `index`'s section: itself if it's a
@@ -184,8 +207,8 @@ function resolveInsertAnchor(
     const start = sectionStart(snapshot, snapIndex);
     const end = sectionEnd(snapshot, start);
     for (let i = end - 1; i >= start; i--) {
-      const id = snapshot[i]!.id;
-      if (currentIds.has(id)) return id;
+      const { id, parentId } = snapshot[i]!;
+      if (!parentId && currentIds.has(id)) return id;
     }
   }
 
@@ -206,11 +229,30 @@ export function applyEnhancePlan(
   const snapshotById = new Map(snapshot.map((b) => [b.id, b]));
   const currentById = new Map(current.map((b) => [b.id, b]));
   const currentIds = new Set(current.map((b) => b.id));
-  const currentOrder = current.map((b) => b.id);
+  const topLevel = current.filter((b) => !b.parentId);
+  const currentOrder = topLevel.map((b) => b.id);
 
   const ops: EditorOp[] = [];
   let skipped = 0;
   const insertedAfter = new Set<string | null>();
+  // Every insert at one anchor lands in one op, in plan order: two separate
+  // "insert after X" ops would render the later one above the earlier.
+  const insertOps = new Map<string, Extract<EditorOp, { kind: "insertAfter" | "appendChildren" }>>();
+  const addInsert = (where: { afterId: string | null } | { parentId: string }, blocks: EnhanceOpBlock[]) => {
+    const key = "parentId" in where ? `under:${where.parentId}` : `after:${where.afterId ?? ""}`;
+    const existing = insertOps.get(key);
+    if (existing) {
+      existing.blocks.push(...blocks);
+    } else {
+      const op =
+        "parentId" in where
+          ? { kind: "appendChildren" as const, parentId: where.parentId, blocks }
+          : { kind: "insertAfter" as const, afterId: where.afterId, blocks };
+      insertOps.set(key, op);
+      ops.push(op);
+    }
+    insertedAfter.add("parentId" in where ? where.parentId : where.afterId);
+  };
 
   for (const blockOp of plan.blocks) {
     if (blockOp.op === "keep") continue;
@@ -227,21 +269,41 @@ export function applyEnhancePlan(
     }
 
     // op === "insert"
-    const afterId =
-      blockOp.after === null ? null : resolveInsertAnchor(blockOp.after, snapshot, currentIds, currentOrder);
+    if (blockOp.type === "checkListItem" || (blockOp.type === "heading" && isActionItemsHeading(blockOp.text))) {
+      continue;
+    }
     const newBlock: EnhanceOpBlock = {
       type: blockOp.type,
       text: blockOp.text,
       cites: blockOp.cites ?? [],
       added: blockOp.added ?? true,
     };
-    const last = ops[ops.length - 1];
-    if (last && last.kind === "insertAfter" && last.afterId === afterId) {
-      last.blocks.push(newBlock);
-    } else {
-      ops.push({ kind: "insertAfter", afterId, blocks: [newBlock] });
+    if (blockOp.under && currentIds.has(blockOp.under)) {
+      addInsert({ parentId: blockOp.under }, [newBlock]);
+      continue;
     }
-    insertedAfter.add(afterId);
+    const anchor = blockOp.under ?? blockOp.after;
+    const afterId = anchor === null ? null : resolveInsertAnchor(anchor, snapshot, currentIds, currentOrder);
+    addInsert({ afterId }, [newBlock]);
+  }
+
+  const newItems = plan.actionItems.filter(
+    (item) => !current.some((b) => b.type === "checkListItem" && actionItemMatchesBlock(item.text, b.text)),
+  );
+  if (newItems.length > 0) {
+    const items: EnhanceOpBlock[] = newItems.map((item) => ({
+      type: "checkListItem",
+      text: item.text,
+      cites: item.cites ?? [],
+      added: true,
+    }));
+    const headingIndex = topLevel.findIndex((b) => isHeading(b) && isActionItemsHeading(b.text));
+    if (headingIndex >= 0) {
+      addInsert({ afterId: topLevel[sectionEnd(topLevel, headingIndex) - 1]!.id }, items);
+    } else {
+      const heading: EnhanceOpBlock = { type: "heading", text: ACTION_ITEMS_HEADING, cites: [], added: true };
+      addInsert({ afterId: currentOrder.at(-1) ?? null }, [heading, ...items]);
+    }
   }
 
   let hiddenHeadings = 0;

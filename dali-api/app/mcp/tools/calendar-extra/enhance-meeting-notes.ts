@@ -25,19 +25,21 @@ import { getCollabServer } from "~/collab/server";
 import { forceSnapshot } from "~/collab/persistence";
 import { readDocAsBlocks } from "~/collab/read";
 import { replaceCollabDocContent } from "~/collab/write";
-import { blockOwnText, blocksToPlainText } from "~/components/doc/schema/configs";
+import { blocksToPlainText } from "~/components/doc/schema/configs";
 import {
   applyEnhancePlan,
-  ENHANCE_MARK_ADDED,
-  ENHANCE_MARK_PRIOR,
-  type SnapshotBlock,
   type StoredEnhanceNotes,
 } from "~/components/meeting-recorder/enhance-plan";
 import { speakerFirstNameAt, transcriptParagraphs } from "~/components/meeting-recorder/transcript";
 import type { Channel, RosterUser, Speakers } from "~/components/meeting-recorder/types";
 import { isUntouchedTemplate } from "~/lib/meeting-note-template";
 import { generateAndVerifyEnhancePlan, resolveMeetingEnhanceContext } from "~/lib/meeting-notes-enhance.server";
-import { applyEnhanceOpsToDocBlocks, ensureTranscriptToggle } from "~/lib/meeting-notes-apply.server";
+import {
+  applyEnhanceOpsToDocBlocks,
+  enhanceSnapshotDocBlocks,
+  ensureTranscriptToggle,
+  hasEnhanceMarkInTree,
+} from "~/lib/meeting-notes-apply.server";
 import { AI_BURST_MAX, AI_BURST_WINDOW_MS } from "~/routes/api.ai.meeting-notes";
 import type { McpCtx } from "../../registry";
 import { McpError, McpForbiddenError, McpInvalidError, McpNotFoundError } from "../../registry";
@@ -110,7 +112,7 @@ export async function runEnhanceMeetingNotes(ctx: McpCtx, input: Input) {
 
   if (!input.apply) {
     const liveBlocks = await readDocAsBlocks(rec.documentName);
-    const blocks: SnapshotBlock[] = liveBlocks.map((b) => ({ id: b.id, type: b.type, text: blockOwnText(b) }));
+    const blocks = enhanceSnapshotDocBlocks(liveBlocks);
     const untouchedTemplate = isUntouchedTemplate(
       { seededFromPageId, seededTemplateHash },
       blocksToPlainText(liveBlocks),
@@ -141,18 +143,18 @@ export async function runEnhanceMeetingNotes(ctx: McpCtx, input: Input) {
   // rail.md Step 2: "Server write paths refuse while marks exist") — an
   // unreviewed Enhance pass is still sitting in the note.
   const liveBlocks = await readDocAsBlocks(rec.documentName);
-  if (liveBlocks.some((b) => b.props.backgroundColor === ENHANCE_MARK_ADDED || b.props.backgroundColor === ENHANCE_MARK_PRIOR)) {
+  if (hasEnhanceMarkInTree(liveBlocks)) {
     throw new McpError("Keep or revert the current changes first", 409);
   }
 
   await forceSnapshot(server, rec.documentName, "Before enhance", [callerId]);
 
-  const currentTop: SnapshotBlock[] = liveBlocks.map((b) => ({ id: b.id, type: b.type, text: blockOwnText(b) }));
+  const current = enhanceSnapshotDocBlocks(liveBlocks);
   const untouchedTemplate = isUntouchedTemplate(
     { seededFromPageId, seededTemplateHash },
     blocksToPlainText(liveBlocks),
   );
-  const { ops } = applyEnhancePlan(stored.snapshot, currentTop, stored.plan, { untouchedTemplate });
+  const { ops } = applyEnhancePlan(stored.snapshot, current, stored.plan, { untouchedTemplate });
   const { roster } = await resolveMeetingEnhanceContext(rec);
   // All recordings are v2 (ai-meeting-notes was off before this release), so
   // channel/end are always set in practice — normalized defensively, same as

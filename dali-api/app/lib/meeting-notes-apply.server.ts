@@ -2,8 +2,6 @@
 // MCP `enhance_meeting_notes` apply path's counterpart to renderEnhanceOps
 // (app/components/doc/enhance-render.ts), which replays the same ops against
 // a live BlockNote editor instance the browser has and the server doesn't.
-// Top-level only, matching EnhancePlan's own granularity (every op targets or
-// inserts a top-level block); a block's children carry through untouched.
 //
 // NEVER log block/transcript text.
 
@@ -11,11 +9,20 @@ import { randomUUID } from "node:crypto";
 import type { DocBlock, DocInline } from "~/collab/blocknote-server";
 import { buildInlineContent, toPartialBlock, type ChipSpeakerAt } from "~/components/doc/enhance-render";
 import { blockOwnText } from "~/components/doc/schema/configs";
-import type { EditorOp, EnhanceActionItem } from "~/components/meeting-recorder/enhance-plan";
+import {
+  markOfProps,
+  snapshotTree,
+  type EditorOp,
+  type EnhanceActionItem,
+  type SnapshotBlock,
+} from "~/components/meeting-recorder/enhance-plan";
 
-/** Applies applyEnhancePlan's ops to a full DocBlock[] tree (top-level array;
- *  each block's own children carry through untouched), returning the new
- *  tree to hand to replaceCollabDocContent. */
+function mapTree(blocks: DocBlock[], fn: (b: DocBlock) => DocBlock[]): DocBlock[] {
+  return blocks.flatMap((b) => fn({ ...b, children: mapTree(b.children ?? [], fn) }));
+}
+
+/** Applies applyEnhancePlan's ops to a full DocBlock[] tree, returning the
+ *  new tree to hand to replaceCollabDocContent. */
 export function applyEnhanceOpsToDocBlocks(
   ops: EditorOp[],
   blocks: DocBlock[],
@@ -32,16 +39,13 @@ export function applyEnhanceOpsToDocBlocks(
   for (const op of ops) {
     if (op.kind === "update") {
       const content = buildInlineContent(op.text, op.cites, ctx.pageId, ctx.recordingId, ctx.speakerAt);
-      result = result.map((b) =>
-        b.id === op.id ? { ...b, content: content as unknown as DocInline[] } : b,
-      );
+      result = mapTree(result, (b) => [b.id === op.id ? { ...b, content: content as unknown as DocInline[] } : b]);
       continue;
     }
     if (op.kind === "remove") {
-      result = result.filter((b) => b.id !== op.id);
+      result = mapTree(result, (b) => (b.id === op.id ? [] : [b]));
       continue;
     }
-    // op.kind === "insertAfter"
     const newBlocks: DocBlock[] = op.blocks.map((b) => {
       const partial = toPartialBlock(b, ctx.pageId, ctx.recordingId, ctx) as unknown as Partial<DocBlock>;
       return {
@@ -53,15 +57,37 @@ export function applyEnhanceOpsToDocBlocks(
       };
     });
     if (!newBlocks.length) continue;
+    if (op.kind === "appendChildren") {
+      result = mapTree(result, (b) => [b.id === op.parentId ? { ...b, children: [...b.children, ...newBlocks] } : b]);
+      continue;
+    }
     if (op.afterId === null) {
       result = [...newBlocks, ...result];
       continue;
     }
-    const idx = result.findIndex((b) => b.id === op.afterId);
-    result = idx === -1 ? [...result, ...newBlocks] : [...result.slice(0, idx + 1), ...newBlocks, ...result.slice(idx + 1)];
+    const afterId = op.afterId;
+    let placed = false;
+    result = mapTree(result, (b) => {
+      if (b.id !== afterId) return [b];
+      placed = true;
+      return [b, ...newBlocks];
+    });
+    if (!placed) result = [...result, ...newBlocks];
   }
 
   return result;
+}
+
+/** The blocks Enhance reads and merges against — the server's counterpart to
+ *  enhanceSnapshotBlocks: the tree minus its Transcript toggle. */
+export function enhanceSnapshotDocBlocks(blocks: DocBlock[]): SnapshotBlock[] {
+  return snapshotTree(blocks.filter((b) => !isTranscriptToggle(b)));
+}
+
+export function hasEnhanceMarkInTree(blocks: DocBlock[]): boolean {
+  return blocks.some(
+    (b) => markOfProps(b.props as Record<string, unknown> | undefined) !== null || hasEnhanceMarkInTree(b.children ?? []),
+  );
 }
 
 /** The collapsed "### Transcript" toggle both Insert transcript and Enhance
@@ -83,13 +109,16 @@ function transcriptToggleDocBlock(paragraphs: string[]): DocBlock {
   };
 }
 
-export function hasTranscriptToggle(blocks: DocBlock[]): boolean {
-  return blocks.some(
-    (b) =>
-      b.type === "heading" &&
-      Boolean((b.props as { isToggleable?: boolean } | undefined)?.isToggleable) &&
-      blockOwnText(b) === "Transcript",
+function isTranscriptToggle(b: DocBlock): boolean {
+  return (
+    b.type === "heading" &&
+    Boolean((b.props as { isToggleable?: boolean } | undefined)?.isToggleable) &&
+    blockOwnText(b) === "Transcript"
   );
+}
+
+export function hasTranscriptToggle(blocks: DocBlock[]): boolean {
+  return blocks.some(isTranscriptToggle);
 }
 
 /** Appends the transcript toggle if one isn't already there, same

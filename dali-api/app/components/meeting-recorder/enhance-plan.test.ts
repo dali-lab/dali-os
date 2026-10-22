@@ -11,6 +11,7 @@ import {
   isUndoRedoTransaction,
   localEditKeepIds,
   markOfProps,
+  snapshotTree,
   summarizeEnhanceMarks,
   type EnhanceBlockChange,
   type EnhanceMarkEntry,
@@ -533,5 +534,186 @@ describe("isUndoRedoTransaction", () => {
 
   it("is false for remote changes alone", () => {
     expect(isUndoRedoTransaction([change("yjs-remote")])).toBe(false);
+  });
+});
+
+describe("snapshotTree", () => {
+  type Node = { id: string; type: string; content: { type: string; text: string; styles: object }[]; children: Node[] };
+  const node = (id: string, type: string, text: string, children: Node[] = []): Node => ({
+    id,
+    type,
+    content: [{ type: "text", text, styles: {} }],
+    children,
+  });
+
+  it("flattens nested blocks in document order, tagging each child with its parent", () => {
+    const doc = [node("p", "bulletListItem", "Budget", [node("c", "bulletListItem", "40 hours", [node("g", "paragraph", "spring")])]), node("q", "paragraph", "Next")];
+    expect(snapshotTree(doc)).toEqual([
+      { id: "p", type: "bulletListItem", text: "Budget" },
+      { id: "c", type: "bulletListItem", text: "40 hours", parentId: "p" },
+      { id: "g", type: "paragraph", text: "spring", parentId: "c" },
+      { id: "q", type: "paragraph", text: "Next" },
+    ]);
+  });
+
+  it("skips blank leaf blocks like the trailing empty paragraph", () => {
+    expect(snapshotTree([node("a", "paragraph", "Notes"), node("b", "paragraph", "  "), node("c", "paragraph", "")])).toEqual([
+      { id: "a", type: "paragraph", text: "Notes" },
+    ]);
+  });
+
+  it("keeps a blank block that has non-blank children", () => {
+    expect(snapshotTree([node("a", "bulletListItem", "", [node("b", "bulletListItem", "Child")])])).toEqual([
+      { id: "a", type: "bulletListItem", text: "" },
+      { id: "b", type: "bulletListItem", text: "Child", parentId: "a" },
+    ]);
+  });
+
+  it("returns nothing for an empty note", () => {
+    expect(snapshotTree([node("a", "paragraph", "")])).toEqual([]);
+  });
+});
+
+describe("applyEnhancePlan with nested blocks", () => {
+  const child = (id: string, text: string, parentId: string): SnapshotBlock => ({ id, type: "bulletListItem", text, parentId });
+
+  it("expands a nested block like any other", () => {
+    const blocks = [block("p", "bulletListItem", "Budget"), child("c", "40h", "p")];
+    const plan: EnhancePlan = { blocks: [{ id: "p", op: "keep" }, { id: "c", op: "expand", text: "40h for spring", cites: [5] }], actionItems: [] };
+    expect(applyEnhancePlan(blocks, blocks, plan).ops).toEqual([{ kind: "update", id: "c", text: "40h for spring", cites: [5] }]);
+  });
+
+  it("turns an insert under a live block into appendChildren", () => {
+    const blocks = [block("p", "bulletListItem", "Budget")];
+    const plan: EnhancePlan = {
+      blocks: [{ op: "insert", after: null, under: "p", type: "bulletListItem", text: "Partner approved 40h", cites: [5] }],
+      actionItems: [],
+    };
+    expect(applyEnhancePlan(blocks, blocks, plan).ops).toEqual([
+      { kind: "appendChildren", parentId: "p", blocks: [{ type: "bulletListItem", text: "Partner approved 40h", cites: [5], added: true }] },
+    ]);
+  });
+
+  it("falls back to the end of the parent's section when the parent is gone", () => {
+    const snapshot = [block("h", "heading", "Budget"), block("p", "bulletListItem", "Hours"), block("q", "paragraph", "Rates")];
+    const current = [block("h", "heading", "Budget"), block("q", "paragraph", "Rates")];
+    const plan: EnhancePlan = {
+      blocks: [{ op: "insert", after: null, under: "p", type: "bulletListItem", text: "40h", cites: [] }],
+      actionItems: [],
+    };
+    expect(applyEnhancePlan(snapshot, current, plan).ops).toEqual([
+      { kind: "insertAfter", afterId: "q", blocks: [{ type: "bulletListItem", text: "40h", cites: [], added: true }] },
+    ]);
+  });
+
+  it("never falls back to a nested block as an insert anchor", () => {
+    const snapshot = [block("h", "heading", "Budget"), block("p", "bulletListItem", "Hours"), child("c", "40h", "p"), block("x", "paragraph", "gone")];
+    const current = [block("h", "heading", "Budget"), block("p", "bulletListItem", "Hours"), child("c", "40h", "p")];
+    const plan: EnhancePlan = { blocks: [{ op: "insert", after: "x", type: "paragraph", text: "More", cites: [] }], actionItems: [] };
+    expect(applyEnhancePlan(snapshot, current, plan).ops[0]).toMatchObject({ kind: "insertAfter", afterId: "p" });
+  });
+
+  it("does not treat a nested heading as a section boundary", () => {
+    const snapshot = [block("h", "heading", "Budget"), { ...block("n", "heading", "Sub"), parentId: "h" }, block("p", "paragraph", "Hours"), block("x", "paragraph", "gone")];
+    const current = snapshot.filter((b) => b.id !== "x");
+    const plan: EnhancePlan = { blocks: [{ op: "insert", after: "x", type: "paragraph", text: "More", cites: [] }], actionItems: [] };
+    expect(applyEnhancePlan(snapshot, current, plan).ops[0]).toMatchObject({ kind: "insertAfter", afterId: "p" });
+  });
+
+  it("collects non-consecutive inserts at the same anchor into one op, in plan order", () => {
+    const blocks = [block("a", "paragraph", "A"), block("b", "paragraph", "B")];
+    const plan: EnhancePlan = {
+      blocks: [
+        { op: "insert", after: "a", type: "paragraph", text: "first", cites: [] },
+        { id: "b", op: "expand", text: "B more", cites: [] },
+        { op: "insert", after: "a", type: "paragraph", text: "second", cites: [] },
+      ],
+      actionItems: [],
+    };
+    const { ops } = applyEnhancePlan(blocks, blocks, plan);
+    expect(ops).toHaveLength(2);
+    expect(ops[0]).toMatchObject({ kind: "insertAfter", afterId: "a", blocks: [{ text: "first" }, { text: "second" }] });
+  });
+});
+
+describe("applyEnhancePlan action items section", () => {
+  const item = (text: string, cites: number[] = [7]) => ({ text, cites });
+
+  it("adds an Action items heading and one checklist item per action item after the last top-level block", () => {
+    const blocks = [block("a", "paragraph", "Notes"), { ...block("c", "bulletListItem", "nested"), parentId: "a" }];
+    const plan: EnhancePlan = { blocks: [], actionItems: [item("Ada sends the scope"), item("Ben books the room", [9])] };
+    expect(applyEnhancePlan(blocks, blocks, plan).ops).toEqual([
+      {
+        kind: "insertAfter",
+        afterId: "a",
+        blocks: [
+          { type: "heading", text: "Action items", cites: [], added: true },
+          { type: "checkListItem", text: "Ada sends the scope", cites: [7], added: true },
+          { type: "checkListItem", text: "Ben books the room", cites: [9], added: true },
+        ],
+      },
+    ]);
+  });
+
+  it("puts the section after the model's own trailing inserts", () => {
+    const blocks = [block("a", "paragraph", "Notes")];
+    const plan: EnhancePlan = {
+      blocks: [{ op: "insert", after: "a", type: "heading", text: "Decisions", cites: [1] }],
+      actionItems: [item("Ada sends the scope")],
+    };
+    const [op] = applyEnhancePlan(blocks, blocks, plan).ops;
+    expect(op).toMatchObject({ kind: "insertAfter", afterId: "a" });
+    expect((op as { blocks: { text: string }[] }).blocks.map((b) => b.text)).toEqual(["Decisions", "Action items", "Ada sends the scope"]);
+  });
+
+  it("inserts at the start of an empty note", () => {
+    const plan: EnhancePlan = { blocks: [], actionItems: [item("Ada sends the scope")] };
+    expect(applyEnhancePlan([], [], plan).ops[0]).toMatchObject({ kind: "insertAfter", afterId: null });
+  });
+
+  it("fills the author's own Action items heading instead of adding a second one", () => {
+    const blocks = [
+      block("h1", "heading", "Action items:"),
+      block("x", "checkListItem", "Existing"),
+      block("h2", "heading", "Notes"),
+      block("n", "paragraph", "Stuff"),
+    ];
+    const plan: EnhancePlan = { blocks: [], actionItems: [item("Ada sends the scope")] };
+    expect(applyEnhancePlan(blocks, blocks, plan).ops).toEqual([
+      { kind: "insertAfter", afterId: "x", blocks: [{ type: "checkListItem", text: "Ada sends the scope", cites: [7], added: true }] },
+    ]);
+  });
+
+  it("skips an action item already in the note as a checklist item", () => {
+    const blocks = [block("a", "checkListItem", "Ada sends the revised scope")];
+    const plan: EnhancePlan = { blocks: [], actionItems: [item("ada sends the revised scope.")] };
+    expect(applyEnhancePlan(blocks, blocks, plan).ops).toEqual([]);
+  });
+
+  it("adds nothing when there are no action items", () => {
+    const blocks = [block("a", "paragraph", "Notes")];
+    expect(applyEnhancePlan(blocks, blocks, { blocks: [], actionItems: [] }).ops).toEqual([]);
+  });
+
+  it("drops the model's own checklist and Action items heading inserts", () => {
+    const blocks = [block("a", "paragraph", "Notes")];
+    const plan: EnhancePlan = {
+      blocks: [
+        { op: "insert", after: "a", type: "heading", text: "Action Items", cites: [1] },
+        { op: "insert", after: "a", type: "checkListItem", text: "Ada sends the scope", cites: [1] },
+      ],
+      actionItems: [item("Ada sends the scope")],
+    };
+    const { ops } = applyEnhancePlan(blocks, blocks, plan);
+    expect((ops[0] as { blocks: { text: string }[] }).blocks.map((b) => b.text)).toEqual(["Action items", "Ada sends the scope"]);
+  });
+
+  it("keeps an untouched template's Action items heading once it is filled", () => {
+    const blocks = [block("h1", "heading", "Agenda"), block("h2", "heading", "Action items")];
+    const plan: EnhancePlan = { blocks: [{ id: "h1", op: "keep" }, { id: "h2", op: "keep" }], actionItems: [item("Ada sends the scope")] };
+    const result = applyEnhancePlan(blocks, blocks, plan, { untouchedTemplate: true });
+    expect(result.ops).toContainEqual({ kind: "remove", id: "h1" });
+    expect(result.ops).not.toContainEqual({ kind: "remove", id: "h2" });
+    expect(result.hiddenHeadings).toBe(1);
   });
 });

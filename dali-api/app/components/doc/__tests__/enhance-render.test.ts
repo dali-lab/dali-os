@@ -516,3 +516,60 @@ describe("enhancePasteHandler", () => {
     expect(defaultPasteHandler).toHaveBeenCalled();
   });
 });
+
+describe("Enhance on nested blocks", () => {
+  const withChildren = (b: DocBlock, children: DocBlock[]) => ({ ...b, children }) as DocBlock;
+
+  it("findEnhanceMarks finds marks on nested blocks, in document order", () => {
+    const doc = [
+      withChildren(block("p", "bulletListItem", "Budget"), [block("c", "bulletListItem", "40h", { backgroundColor: ENHANCE_MARK_ADDED })]),
+      block("q", "paragraph", "Next", { backgroundColor: ENHANCE_MARK_ADDED }),
+    ];
+    expect(findEnhanceMarks(doc).map((m) => m.id)).toEqual(["c", "q"]);
+  });
+
+  it("hasEnhanceMarks sees a mark that is only on a nested block", () => {
+    const doc = [withChildren(block("p", "bulletListItem", "Budget"), [block("c", "bulletListItem", "40h", { backgroundColor: ENHANCE_MARK_PRIOR })])];
+    expect(hasEnhanceMarks(doc)).toBe(true);
+    expect(hasEnhanceMarks([block("p", "paragraph", "x")])).toBe(false);
+  });
+
+  it("appendChildren sets a childless parent's children, tinted enhance-added", () => {
+    const editor = fakeEditor([block("p", "bulletListItem", "Budget")]);
+    const ops: EditorOp[] = [
+      { kind: "appendChildren", parentId: "p", blocks: [{ type: "bulletListItem", text: "40h", cites: [], added: true }] },
+    ];
+    renderEnhanceOps(editor, ops, { notePath: "/documents/p1", recordingId: "rec1" });
+    const children = editor.getBlock("p")!.children as unknown as { type: string; props: { backgroundColor: string } }[];
+    expect(children).toHaveLength(1);
+    expect(children[0]).toMatchObject({ type: "bulletListItem", props: { backgroundColor: ENHANCE_MARK_ADDED } });
+  });
+
+  it("appendChildren inserts after the parent's last existing child", () => {
+    const last = block("c2", "bulletListItem", "second");
+    const editor = fakeEditor([withChildren(block("p", "bulletListItem", "Budget"), [block("c1", "bulletListItem", "first"), last])]);
+    const insertBlocks = vi.spyOn(editor, "insertBlocks");
+    const ops: EditorOp[] = [
+      { kind: "appendChildren", parentId: "p", blocks: [{ type: "bulletListItem", text: "third", cites: [], added: true }] },
+    ];
+    renderEnhanceOps(editor, ops, { notePath: "/documents/p1", recordingId: "rec1" });
+    expect(insertBlocks).toHaveBeenCalledWith([expect.objectContaining({ type: "bulletListItem" })], last, "after");
+  });
+
+  it("appendChildren is a no-op when the parent is gone", () => {
+    const editor = fakeEditor([block("q", "paragraph", "Other")]);
+    const ops: EditorOp[] = [{ kind: "appendChildren", parentId: "p", blocks: [{ type: "paragraph", text: "x", cites: [], added: true }] }];
+    renderEnhanceOps(editor, ops, { notePath: "/documents/p1", recordingId: "rec1" });
+    expect(editor.document.map((b) => b.id)).toEqual(["q"]);
+  });
+
+  it("revert restores a changed block's content but leaves its current children alone", () => {
+    const prior = withChildren(block("p", "bulletListItem", "Budget"), []);
+    const added = block("c", "bulletListItem", "40h", { backgroundColor: ENHANCE_MARK_ADDED });
+    const editor = fakeEditor([withChildren(block("p", "bulletListItem", "Budget: 40h", { backgroundColor: ENHANCE_MARK_ADDED }), [added])]);
+    revertEnhanceBlock(editor, "p", { p: prior });
+    const reverted = editor.getBlock("p")!;
+    expect(reverted.content).toEqual([{ type: "text", text: "Budget", styles: {} }]);
+    expect(reverted.children).toEqual([added]);
+  });
+});

@@ -14,6 +14,7 @@ import {
   type EnhanceMark,
   type EnhanceMarkEntry,
   type EnhanceOpBlock,
+  snapshotTree,
   type SnapshotBlock,
 } from "~/components/meeting-recorder/enhance-plan";
 import { blockOwnText } from "./schema/configs";
@@ -59,7 +60,7 @@ export function findTranscriptToggle(blocks: readonly DocBlock[]): DocBlock | nu
  *  rewrite its heading. */
 export function enhanceSnapshotBlocks(blocks: readonly DocBlock[]): SnapshotBlock[] {
   const toggle = findTranscriptToggle(blocks);
-  return blocks.filter((b) => b !== toggle).map((b) => ({ id: b.id, type: b.type, text: blockOwnText(b) }));
+  return snapshotTree(blocks.filter((b) => b !== toggle));
 }
 
 export function hasTranscriptToggle(editor: DocEditorInstance): boolean {
@@ -208,9 +209,16 @@ export function renderEnhanceOps(
         } as unknown as DocPartialBlock);
         continue;
       }
-      // op.kind === "insertAfter"
       const blocks = op.blocks.map((b) => withMark(toPartialBlock(b, ctx.notePath, ctx.recordingId, ctx), ENHANCE_MARK_ADDED));
       if (!blocks.length) continue;
+      if (op.kind === "appendChildren") {
+        const parent = editor.getBlock(op.parentId);
+        if (!parent) continue;
+        const lastChild = parent.children.at(-1);
+        if (lastChild) editor.insertBlocks(blocks, lastChild, "after");
+        else editor.updateBlock(parent.id, { children: blocks } as DocPartialBlock);
+        continue;
+      }
       if (op.afterId === null) {
         const doc = editor.document;
         if (doc.length > 0) editor.insertBlocks(blocks, doc[0]!, "before");
@@ -227,22 +235,25 @@ function enhanceMarkOf(block: { props: Record<string, unknown> }): EnhanceMark |
   return markOfProps(block.props);
 }
 
-/** Every top-level block carrying a reserved Enhance mark, in document
+/** Every block carrying a reserved Enhance mark, at any depth, in document
  *  order — the data the rail's "pending review" state derives from
  *  (specs/meeting-recording-rail.md Step 2: "Pending is derived from the
- *  document, not from a flag"). Top-level only, matching applyEnhancePlan's
- *  own granularity. */
+ *  document, not from a flag"). */
 export function findEnhanceMarks(blocks: readonly DocBlock[]): EnhanceMarkEntry[] {
   const hits: EnhanceMarkEntry[] = [];
-  for (const block of blocks) {
-    const mark = enhanceMarkOf(block);
-    if (mark) hits.push({ id: block.id, mark, type: block.type, text: blockOwnText(block) });
-  }
+  const walk = (list: readonly DocBlock[]) => {
+    for (const block of list) {
+      const mark = enhanceMarkOf(block);
+      if (mark) hits.push({ id: block.id, mark, type: block.type, text: blockOwnText(block) });
+      walk(block.children);
+    }
+  };
+  walk(blocks);
   return hits;
 }
 
 export function hasEnhanceMarks(blocks: readonly DocBlock[]): boolean {
-  return blocks.some((block) => enhanceMarkOf(block) !== null);
+  return blocks.some((block) => enhanceMarkOf(block) !== null || hasEnhanceMarks(block.children));
 }
 
 /** Clears a block's Enhance tint without otherwise changing it. No-op when
@@ -291,7 +302,9 @@ export function revertEnhanceBlock(
     editor.removeBlocks([id]);
     return;
   }
-  const { id: _priorId, ...update } = prior;
+  // Children are left as they are now: Enhance may have nested its own
+  // (separately reviewed) bullets under this block since prior was captured.
+  const { id: _priorId, children: _priorChildren, ...update } = prior;
   editor.updateBlock(id, update as DocPartialBlock);
 }
 
