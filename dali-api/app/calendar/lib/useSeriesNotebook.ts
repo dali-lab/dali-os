@@ -1,19 +1,29 @@
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
 import { useRevalidator } from "react-router";
 import { useDialog } from "~/components/ui/dialog";
 import { useToast } from "~/components/ui/toast";
 import { seriesDefaultDiffers, setSeriesNotebookRequest, type SeriesScope } from "~/calendar/lib/series-notebook";
+
+type Notebook = { id: string; title: string };
 
 /** Changing a meeting series' default notebook, with the confirms around it. */
 export function useSeriesNotebook() {
   const dialog = useDialog();
   const toast = useToast();
   const revalidator = useRevalidator();
+  const [override, setOverride] = useState<{ meetingId: string; notebook: Notebook | null } | null>(null);
 
   const apply = useCallback(
-    async (meetingId: string, notebookId: string | null, scope: SeriesScope) => {
+    async (
+      meetingId: string,
+      notebookId: string | null,
+      scope: SeriesScope,
+      shown?: { notebook: Notebook | null },
+    ) => {
+      if (shown) setOverride({ meetingId, notebook: shown.notebook });
       const res = await setSeriesNotebookRequest(meetingId, notebookId, scope);
       if (!res.ok) {
+        setOverride(null);
         toast.error(res.error ?? "Couldn't change the notebook");
         return false;
       }
@@ -22,7 +32,8 @@ export function useSeriesNotebook() {
       } else {
         toast.success(notebookId ? "Notebook updated" : "Notebook cleared");
       }
-      revalidator.revalidate();
+      await revalidator.revalidate();
+      setOverride(null);
       return true;
     },
     [toast, revalidator],
@@ -52,7 +63,7 @@ export function useSeriesNotebook() {
           description: "Its notes move into that notebook.",
           confirmLabel: "Move",
         });
-        if (yes) await apply(meetingId, notebook.id, "all");
+        if (yes) await apply(meetingId, notebook.id, "all", { notebook });
         return;
       }
       const scope = await dialog.choice({
@@ -63,7 +74,7 @@ export function useSeriesNotebook() {
           { value: "all", label: "All meetings", description: "Move the notes already taken into it as well." },
         ],
       });
-      if (scope === "future" || scope === "all") await apply(meetingId, notebook.id, scope);
+      if (scope === "future" || scope === "all") await apply(meetingId, notebook.id, scope, { notebook });
     },
     [dialog, apply],
   );
@@ -75,10 +86,17 @@ export function useSeriesNotebook() {
         description: "Notes already taken stay in it. Later meetings file by their usual rules.",
         confirmLabel: "Unset",
       });
-      if (yes) await apply(meetingId, null, "future");
+      if (yes) await apply(meetingId, null, "future", { notebook: null });
     },
     [dialog, apply],
   );
 
-  return { apply, offerFutureFiling, changeNotebook, unsetNotebook };
+  /** The notebook to draw for a meeting: the one just picked or cleared while
+   *  the change is still going out, else what the loader has. */
+  const shownNotebook = useCallback(
+    (meetingId: string, loaded: Notebook | null) => (override?.meetingId === meetingId ? override.notebook : loaded),
+    [override],
+  );
+
+  return { apply, offerFutureFiling, changeNotebook, unsetNotebook, shownNotebook };
 }

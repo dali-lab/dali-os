@@ -65,8 +65,20 @@ export async function action({ request, params }: Route.ActionArgs) {
   });
   const attendeeEmail = (recipient ? primaryEmail(recipient) : null) ?? auth.user.email;
 
-  // Best-effort: push the RSVP to Google. If the meeting wasn't pushed to GCal
-  // (no externalEventId or no organizer link), we still record the in-app RSVP.
+  await prisma.notification.update({
+    where: { id },
+    data: {
+      rsvp: RSVP_TO_ENUM[body.response],
+      rsvpAt: new Date(),
+      readAt: new Date(),
+    },
+  });
+  publishNotificationChange([auth.user.sub]);
+
+  // Best-effort and after the answer is saved: a slow or failing Google call
+  // can't hold up the in-app RSVP. A meeting that wasn't pushed to GCal (no
+  // externalEventId or organizer link) keeps just the in-app answer. The error
+  // is returned because the buttons report it.
   let gcalError: string | null = null;
   if (
     notif.scheduledMeeting?.externalEventId &&
@@ -86,18 +98,6 @@ export async function action({ request, params }: Route.ActionArgs) {
   }
 
   if (notif.scheduledMeeting?.externalEventId) await markCalendarChanged(auth.user.sub);
-
-  await prisma.notification.update({
-    where: { id },
-    data: {
-      rsvp: RSVP_TO_ENUM[body.response],
-      rsvpAt: new Date(),
-      readAt: new Date(),
-    },
-  });
-  // Converge the desktop badge without waiting for its sync backstop (the
-  // desktop can RSVP straight from a banner action).
-  publishNotificationChange([auth.user.sub]);
 
   return withCors(request, Response.json({ ok: true, gcalError }));
 }

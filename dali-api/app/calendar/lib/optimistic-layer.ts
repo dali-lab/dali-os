@@ -13,6 +13,7 @@ export const OPTIMISTIC_INTENTS = new Set([
   "event-delete",
   "event-rsvp",
   "event-create",
+  "remove-calendar-link",
   "add-time-entry",
   "update-time-entry",
   "delete-time-entry",
@@ -223,6 +224,10 @@ export function applyPending<T extends Patchable>(
         events = events.filter((e) => !hides(e));
         // The hours were the event's hours; the server drops them with it.
         entries = entries.filter((t) => !t.sourceEventId || !hidden.has(t.sourceEventId));
+        break;
+      }
+      case "remove-calendar-link": {
+        events = events.filter((e) => e.linkId !== f.linkId);
         break;
       }
       case "event-create":

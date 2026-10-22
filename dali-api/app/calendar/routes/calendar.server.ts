@@ -1888,18 +1888,32 @@ export function timeEntryResult(row: {
   };
 }
 
+const mirrorChains = new Map<string, Promise<void>>();
+
 /**
- * Mirror a timesheet write to Google without holding the response on it. The
+ * Mirror a timesheet write to Google without holding the response on it. Jobs
+ * for one entry run one after another, so a second write can't start before
+ * the first has saved its Google event id (which would insert a duplicate). The
  * mirror writes to Google, so the change marker is stamped again once it lands:
  * a read that raced it on another machine would otherwise be trusted.
  */
-function mirrorInBackground(userId: string, mirror: () => Promise<void>) {
-  void Promise.resolve()
+function mirrorInBackground(userId: string, entryId: string, mirror: () => Promise<void>) {
+  const job = (mirrorChains.get(entryId) ?? Promise.resolve())
     .then(mirror)
     .catch((err) => console.error("time entry mirror failed", err))
     .then(() => markCalendarChanged(userId))
     .catch((err) => console.error("time entry mirror marker failed", err));
+  mirrorChains.set(entryId, job);
+  void job.then(() => {
+    if (mirrorChains.get(entryId) === job) mirrorChains.delete(entryId);
+  });
 }
+
+/** Mirrors the entry as it is when the job gets its turn, not as it was when queued. */
+const mirrorLatest = (entryId: string) => async () => {
+  const latest = await prisma.timeEntry.findUnique({ where: { id: entryId } });
+  if (latest) await syncTimeEntryToGoogle(latest);
+};
 
 export async function submitCalendarAction(request: Request) {
   const auth = await requireAuth(request);
@@ -2156,7 +2170,7 @@ export async function submitCalendarAction(request: Request) {
       const created = await prisma.timeEntry.create({
         data: { userId, source: "Manual", ...common },
       });
-      mirrorInBackground(userId, () => syncTimeEntryToGoogle(created));
+      mirrorInBackground(userId, created.id, mirrorLatest(created.id));
       return Response.json({ ok: true, entry: timeEntryResult(created) });
     }
 
@@ -2209,17 +2223,20 @@ export async function submitCalendarAction(request: Request) {
           endTime,
         },
       });
-      mirrorInBackground(userId, () => syncTimeEntryToGoogle(updated));
+      mirrorInBackground(userId, updated.id, mirrorLatest(updated.id));
       return Response.json({ ok: true, entry: timeEntryResult(updated) });
     }
 
     case "delete-time-entry": {
+      // A mirror still creating this entry's Google event hasn't saved its id
+      // yet; wait so the removal below knows which event to take down.
+      await mirrorChains.get(input.id);
       const existing = await prisma.timeEntry.findUnique({ where: { id: input.id } });
       if (!existing || existing.userId !== userId) {
         return Response.json({ error: "Not found" }, { status: 404 });
       }
       await prisma.timeEntry.delete({ where: { id: input.id } });
-      mirrorInBackground(userId, () => removeTimeEntryFromGoogle(existing));
+      mirrorInBackground(userId, existing.id, () => removeTimeEntryFromGoogle(existing));
       return Response.json({ ok: true, entry: { id: existing.id } });
     }
 

@@ -240,6 +240,16 @@ describe("applyPending", () => {
     });
   });
 
+  describe("disconnecting an account", () => {
+    it("hides that account's events and keeps the others", () => {
+      const out = applyPending(
+        base([ev({ eventId: "a", linkId: "l1" }), ev({ eventId: "b", linkId: "l2" }), ev({ eventId: "c" })]),
+        [sub("1", { intent: "remove-calendar-link", linkId: "l1" })],
+      );
+      expect(out.externalEvents.map((e) => e.eventId)).toEqual(["b", "c"]);
+    });
+  });
+
   describe("rsvp", () => {
     it("sets the answer so an unanswered invite stops drawing as one", () => {
       const out = applyPending(base([ev({ eventId: "a", rsvp: "Pending" }), ev({ eventId: "b", rsvp: "Pending" })]), [
@@ -395,6 +405,13 @@ describe("pendingFromFetchers", () => {
   const fetcher = (over: Partial<Parameters<typeof pendingFromFetchers>[0][number]> & { key: string }) => ({
     state: "loading",
     ...over,
+  });
+
+  it("draws a pending account disconnect", () => {
+    const out = pendingFromFetchers([
+      fetcher({ key: "k", state: "submitting", formData: formData({ intent: "remove-calendar-link", linkId: "l1" }) }),
+    ]);
+    expect(out).toHaveLength(1);
   });
 
   it("keeps in-flight fetchers with a known intent", () => {

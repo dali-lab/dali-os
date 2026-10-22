@@ -327,6 +327,31 @@ function CalendarSidebarContent({
   const dialog = useDialog();
   const toast = useToast();
   const links = data.calendarLinks.filter((l) => l.enabled);
+  const [archivedIds, setArchivedIds] = useState<ReadonlySet<string>>(new Set());
+  const visibleRoles = myRoles.filter((r) => !archivedIds.has(r.roleRefId));
+
+  async function archiveRole(id: string, label: string) {
+    const ok = await dialog.confirm({
+      title: `Remove ${label}?`,
+      description:
+        "It stops showing up as a job you can log hours against. Hours you already logged against it stay on your timesheet.",
+      confirmLabel: "Remove",
+      tone: "destructive",
+    });
+    if (!ok) return;
+    setArchivedIds((prev) => new Set(prev).add(id));
+    const result = await archiveCustomHire(id);
+    if (result.error) {
+      setArchivedIds((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+      toast.error(result.error);
+      return;
+    }
+    revalidator.revalidate();
+  }
 
   return (
     <>
@@ -409,7 +434,7 @@ function CalendarSidebarContent({
             Roles
           </h2>
           <ul className="flex flex-col gap-0.5">
-            {myRoles.map((r) => {
+            {visibleRoles.map((r) => {
               const key = `${r.assignmentType}:${r.roleRefId}`;
               return (
                 <li key={key}>
@@ -422,22 +447,7 @@ function CalendarSidebarContent({
                     // assignment comes from staffing, not from this list.
                     onDelete={
                       r.assignmentType === "Custom"
-                        ? async () => {
-                            const ok = await dialog.confirm({
-                              title: `Remove ${r.label}?`,
-                              description:
-                                "It stops showing up as a job you can log hours against. Hours you already logged against it stay on your timesheet.",
-                              confirmLabel: "Remove",
-                              tone: "destructive",
-                            });
-                            if (!ok) return;
-                            const result = await archiveCustomHire(r.roleRefId);
-                            if (result.error) {
-                              toast.error(result.error);
-                              return;
-                            }
-                            revalidator.revalidate();
-                          }
+                        ? () => archiveRole(r.roleRefId, r.label)
                         : undefined
                     }
                   />
@@ -448,11 +458,11 @@ function CalendarSidebarContent({
           {/* Sums the rows above it, not every entry in range: a total that
               didn't match the column it closes would read as a bug. Same
               trailing widths as RoleRow so the two numbers share an edge. */}
-          {myRoles.length > 0 && (
+          {visibleRoles.length > 0 && (
             <div className="flex items-center gap-2.5 border-t border-border px-2 pt-2">
               <span className="min-w-0 flex-1 truncate text-xs font-medium text-foreground">Total</span>
               <span className="w-12 shrink-0 text-right text-xs font-semibold tabular-nums text-foreground">
-                {`${myRoles
+                {`${visibleRoles
                   .reduce((sum, r) => sum + (roleHours[`${r.assignmentType}:${r.roleRefId}`] ?? 0), 0)
                   .toFixed(1)}h`}
               </span>
@@ -460,9 +470,10 @@ function CalendarSidebarContent({
             </div>
           )}
           <CustomHiresManager
-            hires={myRoles
+            hires={visibleRoles
               .filter((r) => r.assignmentType === "Custom")
               .map((r) => ({ id: r.roleRefId, label: r.label }))}
+            onArchive={(h) => archiveRole(h.id, h.label)}
           />
         </div>
       )}

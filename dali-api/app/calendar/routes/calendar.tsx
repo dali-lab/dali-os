@@ -34,7 +34,6 @@ import { entriesInHoursScope, timesheetWeekBounds } from "~/calendar/lib/timeshe
 import type { Route } from "./+types/calendar";
 import { Tooltip, InfoTip } from "~/components/ui/floating";
 import { buttonClasses } from "~/components/ui/Button";
-import { RsvpButtons } from "~/components/RsvpButtons";
 import { Select } from "~/components/ui/floating";
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";

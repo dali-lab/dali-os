@@ -1,5 +1,6 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useFetcher, useRevalidator } from "react-router";
+import { pendingForm, useFetcherErrorToast } from "~/calendar/lib/fetcher-pending";
 import {
   Calendar as CalendarIcon,
   Clock,
@@ -965,30 +966,28 @@ function ManagedCalendarRow({ linkId, cal }: { linkId: string; cal: SubCalendarD
   const [renaming, setRenaming] = useState(false);
   const [renameVal, setRenameVal] = useState("");
 
-  const prevRename = useRef(renameFetcher.state);
   useEffect(() => {
-    if (prevRename.current !== "idle" && renameFetcher.state === "idle" && !renameFetcher.data?.error) {
-      setRenaming(false);
-    }
-    prevRename.current = renameFetcher.state;
-  }, [renameFetcher.state, renameFetcher.data]);
+    if (renameFetcher.data?.error) setRenaming(true);
+  }, [renameFetcher.data]);
 
   const error = renameFetcher.data?.error ?? deleteFetcher.data?.error;
+  if (pendingForm(deleteFetcher)) return null;
+  const summary = (pendingForm(renameFetcher)?.get("summary") as string | undefined) ?? cal.summary;
   return (
     <div className="flex flex-col gap-1">
       <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/30 px-3 py-1.5">
         <span className="h-3 w-3 shrink-0 rounded-[3px]" style={{ backgroundColor: cal.color ?? "#9ca3af" }} />
         {renaming ? (
-          <renameFetcher.Form method="post" className="flex flex-1 items-center gap-1">
+          <renameFetcher.Form method="post" onSubmit={() => setRenaming(false)} className="flex flex-1 items-center gap-1">
             <input type="hidden" name="intent" value="cal-rename" />
             <input type="hidden" name="linkId" value={linkId} />
             <input type="hidden" name="calendarId" value={cal.id} />
             <input name="summary" value={renameVal} onChange={(e) => setRenameVal(e.target.value)} className={cn(managerFieldCls, "flex-1")} autoFocus />
-            <button type="submit" disabled={renameFetcher.state !== "idle"} className="rounded-md border border-border px-2 py-1 text-xs hover:bg-muted disabled:opacity-50">Save</button>
+            <button type="submit" className="rounded-md border border-border px-2 py-1 text-xs hover:bg-muted">Save</button>
           </renameFetcher.Form>
         ) : (
           <span className="min-w-0 flex-1 truncate text-sm text-foreground">
-            {cal.summary}
+            {summary}
             {cal.primary && <span className="ml-1.5 text-[10px] uppercase text-muted-foreground">Primary</span>}
             {!cal.writable && <span className="ml-1.5 text-[10px] text-muted-foreground">read-only</span>}
           </span>
@@ -1011,8 +1010,7 @@ function ManagedCalendarRow({ linkId, cal }: { linkId: string; cal: SubCalendarD
                 <button
                   type="button"
                   aria-label={`Delete ${cal.summary}`}
-                  disabled={deleteFetcher.state !== "idle"}
-                  className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-destructive disabled:opacity-50"
+                  className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-destructive"
                   onClick={async () => {
                     const ok = await dialog.confirm({
                       title: `Delete "${cal.summary}"?`,
@@ -1128,8 +1126,10 @@ function ManagedClassRow({
   onRemoved: () => void;
 }) {
   const refreshFetcher = useFetcher();
-  const removeFetcher = useFetcher();
+  const removeFetcher = useFetcher<{ error?: string } | null>();
+  useFetcherErrorToast(removeFetcher);
   const dialog = useDialog();
+  if (pendingForm(removeFetcher)) return null;
   return (
     <li
       className="flex items-center gap-2 rounded-lg border border-border bg-muted/30 px-3 py-2"
@@ -1196,6 +1196,37 @@ function ManagedClassRow({
         </button>
       </Tooltip>
     </li>
+  );
+}
+
+function QuickAddButton({
+  added,
+  disabled,
+  fields,
+}: {
+  added: boolean;
+  disabled: boolean;
+  fields: Record<string, string>;
+}) {
+  const fetcher = useFetcher<{ error?: string } | null>();
+  useFetcherErrorToast(fetcher);
+  if (added || pendingForm(fetcher)) {
+    return (
+      <span className="flex shrink-0 items-center gap-1 px-2.5 text-xs text-muted-foreground">
+        <Check className="h-3.5 w-3.5" /> Added
+      </span>
+    );
+  }
+  return (
+    <button
+      type="button"
+      onClick={() => fetcher.submit(fields, { method: "post" })}
+      disabled={disabled}
+      className="flex shrink-0 items-center gap-1 px-2.5 text-xs font-medium text-os-accent hover:bg-muted disabled:opacity-50"
+      title="Add this class now"
+    >
+      <Plus className="h-3.5 w-3.5" /> Add
+    </button>
   );
 }
 
@@ -1296,7 +1327,6 @@ export function ClassesManagerBody({ data }: { data: LoaderData }) {
 
   const courseHits = courseFetcher.data?.courses ?? [];
   const courseSearching = courseFetcher.state !== "idle";
-  const quickAddFetcher = useFetcher();
   const refreshSearchFetcher = useFetcher<{ refreshed: number }>();
   const refreshingSearch = refreshSearchFetcher.state !== "idle";
   // CRNs already added this term, so results can show "Added" and skip re-adding.
@@ -1352,25 +1382,19 @@ export function ClassesManagerBody({ data }: { data: LoaderData }) {
   // Add a section straight from the results with the current destination — no
   // review step — for quickly stacking a term's classes. Known-period sections
   // only; ARR/labs need manual handling, so those fall back to row-click autofill.
-  function quickAdd(c: CourseHitDTO) {
-    if (!destination || !(c.periodCode && getPeriod(c.periodCode)) || addedCrns.has(c.crn)) return;
-    quickAddFetcher.submit(
-      {
-        intent: "class-add",
-        title: formatCourseTitle({ subject: c.subject, number: c.number, title: c.title }),
-        periodCode: c.periodCode,
-        includeXHour: "",
-        destination,
-        termId: selectedTermId,
-        location: formatCourseLocation({ building: c.building, room: c.room }),
-        offeringCrn: c.crn,
-        courseSubject: c.subject,
-        courseNumber: c.number,
-        courseSection: c.section,
-      },
-      { method: "post" },
-    );
-  }
+  const quickAddFields = (c: CourseHitDTO) => ({
+    intent: "class-add",
+    title: formatCourseTitle({ subject: c.subject, number: c.number, title: c.title }),
+    periodCode: c.periodCode ?? "",
+    includeXHour: "",
+    destination,
+    termId: selectedTermId,
+    location: formatCourseLocation({ building: c.building, room: c.room }),
+    offeringCrn: c.crn,
+    courseSubject: c.subject,
+    courseNumber: c.number,
+    courseSection: c.section,
+  });
 
   const isPeriod = mode !== "" && mode !== "custom";
   const period = isPeriod ? getPeriod(mode) : undefined;
@@ -1528,22 +1552,12 @@ export function ClassesManagerBody({ data }: { data: LoaderData }) {
                                 </span>
                               </span>
                             </button>
-                            {added ? (
-                              <span className="flex shrink-0 items-center gap-1 px-2.5 text-xs text-muted-foreground">
-                                <Check className="h-3.5 w-3.5" /> Added
-                              </span>
-                            ) : (
-                              known && (
-                                <button
-                                  type="button"
-                                  onClick={() => quickAdd(c)}
-                                  disabled={!destination || quickAddFetcher.state !== "idle"}
-                                  className="flex shrink-0 items-center gap-1 px-2.5 text-xs font-medium text-os-accent hover:bg-muted disabled:opacity-50"
-                                  title="Add this class now"
-                                >
-                                  <Plus className="h-3.5 w-3.5" /> Add
-                                </button>
-                              )
+                            {(added || known) && (
+                              <QuickAddButton
+                                added={added}
+                                disabled={!destination}
+                                fields={quickAddFields(c)}
+                              />
                             )}
                           </div>
                         );

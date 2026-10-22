@@ -19,6 +19,7 @@ import { Select } from "~/components/ui/floating";
 import { useDialog } from "~/components/ui/dialog";
 import { useToast } from "~/components/ui/toast";
 import { cn } from "~/lib/cn";
+import { withoutCancelled, type CancelScope } from "~/rooms/lib/optimistic-cancel";
 import { NO_REPEAT, RepeatField, repeatSpecToRRule, type RepeatSpec } from "~/calendar/components/RepeatField";
 
 export const meta: Route.MetaFunction = () => [{ title: "Rooms · DALI OS" }];
@@ -168,6 +169,19 @@ export default function RoomsPage() {
   const cancelBooking = async (item: ScheduleItem) => {
     const underway = new Date(item.start) <= new Date();
 
+    const hide = (scope: CancelScope) => {
+      const now = new Date();
+      setItemsByRoom((prev) =>
+        prev &&
+        Object.fromEntries(Object.entries(prev).map(([roomId, list]) => [roomId, withoutCancelled(list, item, scope, now)])),
+      );
+    };
+    const restore = async (res: Response) => {
+      const json = await res.json().catch(() => ({}));
+      toast.error(json.error ?? "Couldn't cancel the booking.");
+      void load();
+    };
+
     if (item.recurring) {
       const scope = await dialog.choice({
         title: "Cancel repeating booking",
@@ -179,6 +193,7 @@ export default function RoomsPage() {
         cancelLabel: "Keep it",
       });
       if (!scope) return;
+      hide(scope as CancelScope);
       const res = await fetch(`/api/room-bookings/${item.id}/cancel`, {
         method: "POST",
         credentials: "include",
@@ -186,8 +201,7 @@ export default function RoomsPage() {
         body: JSON.stringify({ scope, occurrenceStart: item.occurrenceStart }),
       });
       if (!res.ok) {
-        const json = await res.json().catch(() => ({}));
-        toast.error(json.error ?? "Couldn't cancel the booking.");
+        await restore(res);
         return;
       }
       if (scope === "this") toast.success(underway ? "Booking ended." : "Booking cancelled.");
@@ -205,13 +219,13 @@ export default function RoomsPage() {
       tone: "destructive",
     });
     if (!ok) return;
+    hide("this");
     const res = await fetch(`/api/room-bookings/${item.id}/cancel`, {
       method: "POST",
       credentials: "include",
     });
     if (!res.ok) {
-      const json = await res.json().catch(() => ({}));
-      toast.error(json.error ?? "Couldn't cancel the booking.");
+      await restore(res);
       return;
     }
     toast.success(underway ? "Booking ended." : "Booking cancelled.");

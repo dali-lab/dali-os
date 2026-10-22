@@ -7,8 +7,9 @@ import type { WhDay } from "~/calendar/lib/types";
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 const submit = vi.fn();
+let fetcherState: { state: string; formData?: FormData } = { state: "idle" };
 vi.mock("react-router", () => ({
-  useFetcher: () => ({ state: "idle", data: undefined, formData: undefined, submit, Form: "form" }),
+  useFetcher: () => ({ data: undefined, formData: undefined, ...fetcherState, submit, Form: "form" }),
 }));
 vi.mock("~/components/os-chrome", () => ({
   useOsChrome: () => ({ card: "", cardPad: "", heading: "", headingIcon: "" }),
@@ -25,6 +26,7 @@ const week = [0, 1, 2, 3, 4, 5, 6].map((d) => day(d, d >= 1 && d <= 5 ? [seg] : 
 
 beforeEach(async () => {
   submit.mockReset();
+  fetcherState = { state: "idle" };
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
@@ -44,5 +46,30 @@ describe("WorkingHoursCard day edits", () => {
       { intent: "set-working-segments", dayOfWeek: "2", segments: "[]" },
       { method: "post" },
     );
+  });
+});
+
+describe("WorkingHoursCard reset", () => {
+  const custom = [0, 1, 2, 3, 4, 5, 6].map((d) =>
+    day(d, d >= 1 && d <= 5 ? [{ ...seg, startMinute: 600, endMinute: 660 } as typeof seg] : []),
+  );
+  const times = () =>
+    Array.from(container.querySelectorAll<HTMLInputElement>("input[aria-label='Mon segment 1 start']")).map((i) => i.value);
+
+  async function render() {
+    await act(async () => root.render(createElement(WorkingHoursCard, { workingHours: custom, hasPersisted: true })));
+  }
+
+  it("draws the saved hours while nothing is resetting", async () => {
+    await render();
+    expect(times()).toEqual(["10:00 AM"]);
+  });
+
+  it("draws the default hours as soon as a reset is sent", async () => {
+    const fd = new FormData();
+    fd.set("intent", "seed-working-hours");
+    fetcherState = { state: "submitting", formData: fd };
+    await render();
+    expect(times()).toEqual(["09:00 AM"]);
   });
 });

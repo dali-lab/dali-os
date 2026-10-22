@@ -95,6 +95,10 @@ describe("timeEntryResult", () => {
 });
 
 describe("add-time-entry", () => {
+  beforeEach(() => {
+    mockPrisma.timeEntry.findUnique.mockResolvedValue(row);
+  });
+
   it("answers ok with the saved entry", async () => {
     mockPrisma.timeEntry.create.mockResolvedValue(row);
 
@@ -113,6 +117,7 @@ describe("add-time-entry", () => {
     const res = await submitCalendarAction(request(addFields));
 
     expect(res!.status).toBe(200);
+    await flush();
     expect(mockSync).toHaveBeenCalledWith(row);
     finishMirror();
     await flush();
@@ -306,5 +311,73 @@ describe("delete-time-entry", () => {
     expect(res!.status).toBe(404);
     expect(mockPrisma.timeEntry.delete).not.toHaveBeenCalled();
     expect(mockRemove).not.toHaveBeenCalled();
+  });
+});
+
+describe("mirroring one entry from several quick writes", () => {
+  const settle = () => new Promise((r) => setTimeout(r, 80));
+  let saved: { googleTimesheetEventId: string | null };
+  let calls: string[];
+
+  beforeEach(() => {
+    saved = { googleTimesheetEventId: null };
+    calls = [];
+    const current = () => ({ ...row, ...saved });
+    mockPrisma.timeEntry.create.mockResolvedValue({ ...row, googleTimesheetEventId: null });
+    mockPrisma.timeEntry.findUnique.mockImplementation(async () => current());
+    mockPrisma.timeEntry.update.mockImplementation(async () => current());
+    mockPrisma.timeEntry.delete.mockImplementation(async () => current());
+    mockSync.mockImplementation(async (entry: { googleTimesheetEventId: string | null }) => {
+      if (entry.googleTimesheetEventId) {
+        calls.push("patch");
+        return;
+      }
+      await new Promise((r) => setTimeout(r, 20));
+      saved.googleTimesheetEventId = "g1";
+      calls.push("insert");
+    });
+    mockRemove.mockImplementation(async (entry: { googleTimesheetEventId: string | null }) => {
+      calls.push(`remove:${entry.googleTimesheetEventId}`);
+    });
+  });
+
+  it("patches the event an add just created instead of inserting a second one", async () => {
+    await submitCalendarAction(request(addFields));
+    await submitCalendarAction(request({ intent: "update-time-entry", id: "t1", note: "Edited" }));
+    await settle();
+
+    expect(calls).toEqual(["insert", "patch"]);
+  });
+
+  it("takes down the event an add just created instead of orphaning it", async () => {
+    await submitCalendarAction(request(addFields));
+    await submitCalendarAction(request({ intent: "delete-time-entry", id: "t1" }));
+    await settle();
+
+    expect(calls).toEqual(["insert", "remove:g1"]);
+  });
+
+  it("runs two quick updates in order", async () => {
+    saved.googleTimesheetEventId = "g1";
+    await submitCalendarAction(request({ intent: "update-time-entry", id: "t1", note: "One" }));
+    await submitCalendarAction(request({ intent: "update-time-entry", id: "t1", note: "Two" }));
+    await settle();
+
+    expect(calls).toEqual(["patch", "patch"]);
+    expect(mockSync).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not hold up writes to a different entry", async () => {
+    mockPrisma.timeEntry.create.mockResolvedValueOnce({ ...row, id: "t2", googleTimesheetEventId: null });
+    await submitCalendarAction(request(addFields));
+    mockPrisma.timeEntry.findUnique.mockImplementation(async ({ where }: { where: { id: string } }) => ({
+      ...row,
+      id: where.id,
+      ...saved,
+    }));
+    const res = await submitCalendarAction(request({ intent: "delete-time-entry", id: "t9" }));
+
+    expect(res!.status).toBe(200);
+    await settle();
   });
 });

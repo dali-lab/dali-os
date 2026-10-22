@@ -10,6 +10,7 @@ import {
   DEFAULT_WORK_START_MIN,
   DEFAULT_WORK_END_MIN,
 } from "~/calendar/lib/calendar-defaults";
+import { pendingForm } from "~/calendar/lib/fetcher-pending";
 import { DAY_LABELS } from "~/calendar/lib/event-block";
 import type { CalendarLinkDTO, WhDay } from "~/calendar/lib/types";
 
@@ -130,6 +131,20 @@ function GoogleIcon() {
 /* WorkingHoursCard                                                    */
 /* ------------------------------------------------------------------ */
 
+const seedFields = () => ({
+  intent: "seed-working-hours",
+  days: JSON.stringify(
+    defaultWorkingHours().map((d) => ({
+      dayOfWeek: d.dayOfWeek,
+      segments: d.segments.map((s) => ({
+        startMinute: s.startMinute,
+        endMinute: s.endMinute,
+        location: s.location,
+      })),
+    })),
+  ),
+});
+
 export function WorkingHoursCard({
   workingHours,
   hasPersisted,
@@ -175,24 +190,17 @@ export function WorkingHoursCard({
       : pendingToggleIntent === "reset-working-hours"
         ? false
         : hasPersisted);
+  const seeding = [resetFetcher, toggleFetcher].some(
+    (f) => pendingForm(f)?.get("intent") === "seed-working-hours",
+  );
+  const shownHours = seeding ? defaultWorkingHours() : workingHours;
   const toggleBusy = toggleFetcher.state !== "idle" || resetFetcher.state !== "idle";
 
   const turnOn = () => {
     setOptimisticEnabled(true);
     // Persist the full Mon–Fri 9–5 default in one shot so the editor opens with
     // sensible values and every day has a real row.
-    const days = defaultWorkingHours().map((d) => ({
-      dayOfWeek: d.dayOfWeek,
-      segments: d.segments.map((s) => ({
-        startMinute: s.startMinute,
-        endMinute: s.endMinute,
-        location: s.location,
-      })),
-    }));
-    toggleFetcher.submit(
-      { intent: "seed-working-hours", days: JSON.stringify(days) },
-      { method: "post" },
-    );
+    toggleFetcher.submit(seedFields(), { method: "post" });
   };
   const turnOff = () => {
     setOptimisticEnabled(false);
@@ -221,18 +229,7 @@ export function WorkingHoursCard({
                   // Re-seed the default week rather than wiping to "off" — this
                   // button resets hours, it doesn't disable the feature.
                   e.preventDefault();
-                  const days = defaultWorkingHours().map((d) => ({
-                    dayOfWeek: d.dayOfWeek,
-                    segments: d.segments.map((s) => ({
-                      startMinute: s.startMinute,
-                      endMinute: s.endMinute,
-                      location: s.location,
-                    })),
-                  }));
-                  resetFetcher.submit(
-                    { intent: "seed-working-hours", days: JSON.stringify(days) },
-                    { method: "post" },
-                  );
+                  resetFetcher.submit(seedFields(), { method: "post" });
                 }}
               >
                 <Tooltip content="Reset working hours to defaults">
@@ -259,7 +256,7 @@ export function WorkingHoursCard({
       </div>
       {enabled && (
         <div className={cn(card, cardPad, "flex flex-col gap-2")}>
-          {workingHours.map((d) => (
+          {shownHours.map((d) => (
             <DayRow key={d.dayOfWeek} day={d} />
           ))}
         </div>

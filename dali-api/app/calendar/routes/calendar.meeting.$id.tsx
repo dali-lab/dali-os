@@ -50,6 +50,7 @@ import { AddMeetingWhiteboardButton } from "~/calendar/components/AddMeetingWhit
 import { RecordPromptBanner } from "~/components/RecordPromptBanner";
 import { NotebookPicker } from "~/components/notebooks/NotebookPicker";
 import { useSeriesNotebook } from "~/calendar/lib/useSeriesNotebook";
+import { pendingForm, pendingJson, useFetcherErrorToast } from "~/calendar/lib/fetcher-pending";
 import type { Route } from "./+types/calendar.meeting.$id";
 
 export const meta: Route.MetaFunction = () => [{ title: "Meeting · DALI OS" }];
@@ -436,8 +437,11 @@ function ProposedTimesCard({
 }) {
   const { card, sectionTitle } = useOsChrome();
   const fetcher = useFetcher<{ ok?: boolean; error?: string; gcalError?: string | null }>();
+  useFetcherErrorToast(fetcher);
+  const answered = pendingJson<{ proposalId: string }>(fetcher)?.proposalId;
+  const open = proposals.filter((p) => p.id !== answered);
 
-  if (proposals.length === 0) return null;
+  if (open.length === 0) return null;
 
   function respond(action: "accept" | "decline", proposalId: string) {
     fetcher.submit(
@@ -456,7 +460,7 @@ function ProposedTimesCard({
         <Clock className="h-5 w-5 text-os-grey" /> Proposed times
       </h2>
       <ul className="flex flex-col gap-4">
-        {proposals.map((p) => (
+        {open.map((p) => (
           <li key={p.id} className="flex flex-col gap-3">
             <div>
               <p className="text-base font-medium text-foreground">{p.proposerName}</p>
@@ -473,17 +477,15 @@ function ProposedTimesCard({
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                disabled={fetcher.state !== "idle"}
                 onClick={() => respond("accept", p.id)}
-                className="os-btn-primary os-btn-primary--sm disabled:opacity-60"
+                className="os-btn-primary os-btn-primary--sm"
               >
                 Accept
               </button>
               <button
                 type="button"
-                disabled={fetcher.state !== "idle"}
                 onClick={() => respond("decline", p.id)}
-                className="os-btn-ghost py-1.5 disabled:opacity-60"
+                className="os-btn-ghost py-1.5"
               >
                 Decline
               </button>
@@ -491,7 +493,6 @@ function ProposedTimesCard({
           </li>
         ))}
       </ul>
-      {fetcher.data?.error && <p className="text-sm text-destructive">{fetcher.data.error}</p>}
       {fetcher.data?.gcalError && (
         <p className="text-sm text-os-grey">
           Rescheduled, but Google Calendar sync failed: {fetcher.data.gcalError}
@@ -674,6 +675,7 @@ export default function CalendarMeetingPage() {
   const [projectOpen, setProjectOpen] = useState(false);
   const [notebookPickerOpen, setNotebookPickerOpen] = useState(false);
   const seriesNotebook = useSeriesNotebook();
+  const notebook = seriesNotebook.shownNotebook(d.meetingId, d.notebook);
   const selfCheckInFetcher = useFetcher<{ ok?: boolean; error?: string }>();
   const ipadFetcher = useFetcher<{ ok?: boolean; error?: string }>();
   const dialog = useDialog();
@@ -690,9 +692,17 @@ export default function CalendarMeetingPage() {
     if (!res?.ok) toast.error("Couldn't turn off the record prompt for this meeting.");
   }
 
+  const sentIpadIntent = pendingForm(ipadFetcher)?.get("intent");
+  const ipadScan =
+    d.ipadScan && sentIpadIntent
+      ? sentIpadIntent === "stop-ipad-scan"
+        ? { ...d.ipadScan, on: false }
+        : { ...d.ipadScan, on: true, busyWith: null }
+      : d.ipadScan;
+
   async function toggleIpadScan() {
-    if (!d.ipadScan) return;
-    const { on, busyWith } = d.ipadScan;
+    if (!ipadScan) return;
+    const { on, busyWith } = ipadScan;
     let intent: "start-ipad-scan" | "takeover-ipad-scan" | "stop-ipad-scan" = "stop-ipad-scan";
     if (!on && busyWith) {
       // Pulls the iPads out from under another event's live check-in.
@@ -861,11 +871,11 @@ export default function CalendarMeetingPage() {
             )}
           </Fact>
         )}
-        {(d.notebook || d.canAddNote) && (
+        {(notebook || d.canAddNote) && (
           <Fact label="Notebook">
-            {d.notebook ? (
-              <Link to={`/documents/${d.notebook.id}`} className="truncate font-medium hover:underline">
-                {d.notebook.title}
+            {notebook ? (
+              <Link to={`/documents/${notebook.id}`} className="truncate font-medium hover:underline">
+                {notebook.title}
               </Link>
             ) : (
               <span className="text-os-grey">None</span>
@@ -873,7 +883,7 @@ export default function CalendarMeetingPage() {
             {d.canAddNote && (
               <>
                 <IconButton label="Change notebook" icon={Pencil} onClick={() => setNotebookPickerOpen(true)} />
-                {d.notebook && (
+                {notebook && (
                   <IconButton label="Unset notebook" icon={X} onClick={() => void seriesNotebook.unsetNotebook(d.meetingId)} />
                 )}
               </>
@@ -911,18 +921,18 @@ export default function CalendarMeetingPage() {
             <Users className="h-6 w-6 text-os-accent" /> Attendance
           </h2>
           <div className="flex flex-wrap items-center gap-3">
-            {d.ipadScan?.on && <Pill dot="success">Scanning on iPads</Pill>}
-            {d.ipadScan && (d.ipadScan.on || !d.ipadScan.ended) && (
+            {ipadScan?.on && <Pill dot="success">Scanning on iPads</Pill>}
+            {ipadScan && (ipadScan.on || !ipadScan.ended) && (
               <button
                 type="button"
                 onClick={toggleIpadScan}
-                disabled={ipadFetcher.state !== "idle"}
+                disabled={ipadFetcher.state === "submitting"}
                 className={cn(actionBtnClass, "disabled:opacity-50")}
               >
                 <Tablet className="h-4 w-4" />
-                {d.ipadScan.on
+                {ipadScan.on
                   ? "Stop attendance tracking from iPad"
-                  : d.ipadScan.busyWith
+                  : ipadScan.busyWith
                     ? "Switch iPads to this event"
                     : "Enable attendance tracking from iPad"}
               </button>
@@ -942,15 +952,15 @@ export default function CalendarMeetingPage() {
             )}
           </div>
         </div>
-        {d.ipadScan?.busyWith && (
+        {ipadScan?.busyWith && (
           <p className="text-sm text-os-grey">
             iPads are tracking{" "}
-            {d.ipadScan.busyHref ? (
-              <Link to={d.ipadScan.busyHref} className="underline">
-                {d.ipadScan.busyWith}
+            {ipadScan.busyHref ? (
+              <Link to={ipadScan.busyHref} className="underline">
+                {ipadScan.busyWith}
               </Link>
             ) : (
-              d.ipadScan.busyWith
+              ipadScan.busyWith
             )}
             . Switching moves them to this event.
           </p>

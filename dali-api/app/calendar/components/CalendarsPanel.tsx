@@ -16,11 +16,12 @@
 // into the settings dialog as one section beside Classes and Working hours.
 //
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { useConfirmSubmit } from "~/components/ui/dialog";
 import { Tooltip } from "~/components/ui/floating";
 import { useFetcher, useRevalidator } from "react-router";
+import { pendingForm, useFetcherErrorToast } from "~/calendar/lib/fetcher-pending";
 import { CalendarDays, ChevronDown, ChevronRight, Pencil, Plus, Star, Trash2 } from "lucide-react";
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
@@ -53,10 +54,15 @@ export function CalendarsPanel({
   const [calMgrOpen, setCalMgrOpen] = useState(false);
 
   const revalidator = useRevalidator();
+  const [pendingMain, setPendingMain] = useState<string | null>(null);
+  useEffect(() => {
+    if (pendingMain && data.defaultEventDest === pendingMain) setPendingMain(null);
+  }, [pendingMain, data.defaultEventDest]);
+  const mainDest = pendingMain ?? data.defaultEventDest;
   // The main calendar rides the same `dali_event_dest` cookie the create modal
-  // already reads for its destination — marking one here is the explicit way to
-  // set what that modal defaults to.
+  // reads through the loader, so the revalidate is what keeps that default current.
   const setMain = (dest: string) => {
+    setPendingMain(dest);
     try {
       document.cookie = `dali_event_dest=${encodeURIComponent(dest)}; path=/; max-age=31536000`;
     } catch {
@@ -110,7 +116,7 @@ export function CalendarsPanel({
                 hiddenCals={hiddenCals}
                 toggleHiddenCal={toggleHiddenCal}
                 showAvailabilityToggle={showAvailabilityToggle}
-                defaultEventDest={data.defaultEventDest}
+                defaultEventDest={mainDest}
                 setMain={setMain}
               />
             ))}
@@ -158,12 +164,13 @@ function AccountSection({
   defaultEventDest: string | null;
   setMain: (dest: string) => void;
 }) {
-  const removeFetcher = useFetcher();
+  const removeFetcher = useFetcher<{ error?: string } | null>();
+  useFetcherErrorToast(removeFetcher);
   const confirmSubmit = useConfirmSubmit();
   const [open, setOpen] = useState(true); // expanded by default in the panel
   const Chevron = open ? ChevronDown : ChevronRight;
 
-  const accountGroup = calendars.find((g) => g.account === (link.displayName ?? link.externalEmail));
+  if (pendingForm(removeFetcher)) return null;
   const colHead =
     "w-[4.5rem] text-center text-[11px] font-semibold uppercase tracking-wide text-muted-foreground";
 
