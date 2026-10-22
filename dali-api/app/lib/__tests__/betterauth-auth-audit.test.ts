@@ -86,6 +86,19 @@ describe("auditSessionCreated", () => {
     await auditSessionCreated({ userId: "u1", grantId: "g1" }, null);
     expect(mockAudit).not.toHaveBeenCalled();
   });
+
+  it("skips sessions minted outside a BetterAuth endpoint", async () => {
+    await auditSessionCreated({ userId: "u1" }, null);
+    await auditSessionCreated({ userId: "u1" }, {});
+    expect(mockAudit).not.toHaveBeenCalled();
+  });
+
+  it("logs an unmapped endpoint as method unknown", async () => {
+    await auditSessionCreated({ userId: "u1" }, { path: "/sign-in/anonymous" });
+    expect(mockAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ metadata: { via: "betterauth", method: "unknown" } }),
+    );
+  });
 });
 
 describe("auditSignInFailure", () => {

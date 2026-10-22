@@ -39,6 +39,9 @@ export async function auditSessionCreated(
 ): Promise<void> {
   try {
     if (!session?.userId || session.impersonatedBy || session.grantId) return;
+    // No endpoint path means mintBetterAuthSession (pairing, handoff, legacy
+    // cookie upgrade); those callers write their own pairing.* rows.
+    if (!ctx?.path) return;
     await logAuditEvent({
       action: "login.success",
       userId: session.userId,
