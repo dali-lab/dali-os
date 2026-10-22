@@ -11,6 +11,8 @@ from __future__ import annotations
 import hashlib
 import hmac
 import threading
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from array import array
 from dataclasses import dataclass
 from typing import Callable, Optional
@@ -458,15 +460,42 @@ def labeling_hook(emit: Callable[[int, int], None]) -> Callable:
     return hook
 
 
+FETCH_WORKERS = 16
+
+
+def fetch_chunk(client, url: str) -> Optional[bytes]:
+    """GET one presigned chunk with a shared httpx-style client (one TLS
+    connection per worker instead of one per chunk).
+
+    A chunk the client dropped (upload queue overflow) was never written,
+    so its presigned URL 403s/404s. That is a gap, not a failure: return
+    None and assemble_segment_pcm fills it with silence so later timestamps
+    stay absolute."""
+    # httpx error messages carry the presigned URL; logger.exception would
+    # write it out.
+    try:
+        response = client.get(url)
+    except Exception as exc:
+        raise RuntimeError(f"chunk fetch failed: {type(exc).__name__}") from None
+    if response.status_code in (403, 404):
+        return None
+    if response.is_error:
+        raise RuntimeError(f"chunk fetch failed: HTTP {response.status_code}")
+    return response.content
+
+
 def process_channel(
     channel: Channel,
     fetch_chunk: Callable[[str], bytes],
     transcribe: Callable[[bytes], list],
     diarize: Callable[..., list],
     on_progress: Optional[ProgressCallback] = None,
+    timings: Optional[dict] = None,
+    clock: Callable[[], float] = time.monotonic,
 ) -> dict:
     """Assemble each segment's PCM, run the injected model callables, and
-    shape the combined output for one channel.
+    shape the combined output for one channel. `timings`, when given, gets
+    fetch_s / transcribe_s / diarize_s.
 
     No GPU/Modal import here — transcribe/diarize are plain callables so
     tests can mock the models and exercise the real orchestration.
@@ -474,18 +503,28 @@ def process_channel(
     words: list = []
     segments: list = []
     emit = on_progress or (lambda stage, completed, total: None)
+    stage_times = timings if timings is not None else {}
 
+    started = clock()
     total_chunks = sum(len(segment.chunks) for segment in channel.segments)
     fetched = 0
-    pcms = []
-    for segment in channel.segments:
-        chunk_bytes_by_seq = {}
-        for chunk in segment.chunks:
-            chunk_bytes_by_seq[chunk.seq] = fetch_chunk(chunk.url)
+    by_segment: list = [{} for _ in channel.segments]
+    # Sequential GETs left the GPU idle for about half of each job.
+    with ThreadPoolExecutor(max_workers=FETCH_WORKERS) as pool:
+        futures = {
+            pool.submit(fetch_chunk, chunk.url): (index, chunk.seq)
+            for index, segment in enumerate(channel.segments)
+            for chunk in segment.chunks
+        }
+        for future in as_completed(futures):
+            index, seq = futures[future]
+            by_segment[index][seq] = future.result()
             fetched += 1
             emit("fetching", fetched, total_chunks)
-        pcms.append(assemble_segment_pcm(chunk_bytes_by_seq))
+    pcms = [assemble_segment_pcm(chunk_bytes_by_seq) for chunk_bytes_by_seq in by_segment]
+    stage_times["fetch_s"] = clock() - started
 
+    started = clock()
     split = [split_pcm_windows(pcm) for pcm in pcms]
     total_windows = sum(len(windows) for windows in split)
     done_windows = 0
@@ -498,7 +537,9 @@ def process_channel(
     for segment, pcm, windows in zip(channel.segments, pcms, split):
         raw_words = transcribe_windowed(pcm, transcribe, on_window=window_done, windows=windows)
         words.extend(shape_words(raw_words, segment.start_seconds))
+    stage_times["transcribe_s"] = clock() - started
 
+    started = clock()
     segment_count = len(channel.segments)
     for index, (segment, pcm) in enumerate(zip(channel.segments, pcms)):
         if on_progress is None:
@@ -511,6 +552,7 @@ def process_channel(
             )
             raw_segments = diarize(pcm, channel.max_speakers, hook=hook)
         segments.extend(shape_segments(raw_segments, segment.start_seconds))
+    stage_times["diarize_s"] = clock() - started
 
     words.sort(key=lambda w: w["s"])
     segments.sort(key=lambda s: s["s"])

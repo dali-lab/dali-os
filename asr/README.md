@@ -54,7 +54,9 @@ S3):
 cd asr && uv run modal run --env staging bench.py --wav-path path/to/meeting.wav
 ```
 
-Prints word/segment counts and transcribe/diarize stage timings.
+Prints word/segment counts and transcribe/diarize stage timings. `--gpu L4`
+(any Modal GPU name) runs on a different card; `--repeat 2` adds a warm pass
+after the one that loads the models.
 
 ## Verified model call shapes (2026-10-09, staging T4)
 

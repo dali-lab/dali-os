@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const mockLogAuditEvent = vi.hoisted(() => vi.fn());
 const mockAuthenticate = vi.hoisted(() => vi.fn());
 
+vi.mock("~/lib/db", () => ({ prisma: {} }));
 vi.mock("~/lib/audit", () => ({ logAuditEvent: mockLogAuditEvent }));
 vi.mock("~/lib/mcp-auth", () => ({ authenticateMcpRequest: mockAuthenticate }));
 vi.mock("~/lib/rate-limit", () => ({ checkRateLimit: () => null }));
@@ -11,8 +12,10 @@ class FakeToolError extends Error {
   status = 403;
 }
 
-vi.mock("~/mcp/registry", async (importActual) => {
-  const actual = await importActual<typeof import("~/mcp/registry")>();
+// Fully mocked (no importActual): the real registry loads every tool module,
+// several of which import the generated Prisma client, which CI's unit job
+// doesn't generate.
+vi.mock("~/mcp/registry", () => {
   const def = (name: string, requiredScope: "mcp:read" | "mcp:write") => ({
     name,
     description: name,
@@ -33,7 +36,12 @@ vi.mock("~/mcp/registry", async (importActual) => {
       },
     },
   };
-  return { ...actual, findRegistryTool: (n: string) => tools[n] ?? actual.findRegistryTool(n) };
+  return {
+    findRegistryTool: (n: string) => tools[n],
+    registryToolDefs: () => Object.values(tools).map((t) => t.def),
+    mapToolError: (err: unknown) =>
+      err instanceof FakeToolError ? { code: -32003, message: err.message } : null,
+  };
 });
 
 import { action } from "../mcp";
