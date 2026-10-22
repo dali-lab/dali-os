@@ -350,13 +350,6 @@ model User {
   // ─── Easter-egg games ─────────────────────────────────────────────────────
   tetrisScore TetrisScore?
   dinoScore   DinoScore?
-
-  // ─── Chat ─────────────────────────────────────────────────────────────────
-  chatConversationsCreated ChatConversation[]
-  chatMemberships          ChatMember[]
-  chatMessages             ChatMessage[]
-  chatReactions            ChatReaction[]
-  mobilePushTokens         MobilePushToken[]
 }
 
 // A DALI lab member. userId is optional because a member may be known (e.g. via daliEmail)
@@ -7630,98 +7623,4 @@ model ReleaseNote {
   updatedAt     DateTime          @updatedAt
 
   @@index([status, publishedAt])
-}
-
-// ─── Chat (mobile app) ──────────────────────────────────────────────────────
-
-enum ChatConversationKind {
-  channel
-  dm
-}
-
-enum ChatMessageKind {
-  user
-  system
-}
-
-model ChatConversation {
-  id          String               @id @default(cuid())
-  kind        ChatConversationKind
-  // Channel slug without the leading #; null for DMs. Unique among channels.
-  name        String?              @unique
-  isPrivate   Boolean              @default(false)
-  isDefault   Boolean              @default(false)
-  topic       String?
-  createdById String
-  createdAt   DateTime             @default(now())
-
-  createdBy User          @relation(fields: [createdById], references: [id], onDelete: Cascade)
-  members   ChatMember[]
-  messages  ChatMessage[]
-
-  @@index([kind, isPrivate])
-}
-
-model ChatMember {
-  id             String   @id @default(cuid())
-  conversationId String
-  userId         String
-  joinedAt       DateTime @default(now())
-  lastReadAt     DateTime @default(now())
-
-  conversation ChatConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  user         User             @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@unique([conversationId, userId])
-  @@index([userId])
-}
-
-model ChatMessage {
-  id             String          @id @default(cuid())
-  conversationId String
-  authorId       String
-  text           String
-  parentId       String?
-  kind           ChatMessageKind @default(user)
-  createdAt      DateTime        @default(now())
-
-  conversation ChatConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  author       User             @relation(fields: [authorId], references: [id], onDelete: Cascade)
-  parent       ChatMessage?     @relation("ChatThread", fields: [parentId], references: [id], onDelete: Cascade)
-  replies      ChatMessage[]    @relation("ChatThread")
-  reactions    ChatReaction[]
-
-  @@index([conversationId, createdAt])
-  @@index([parentId])
-}
-
-model ChatReaction {
-  id        String   @id @default(cuid())
-  messageId String
-  userId    String
-  emoji     String
-  createdAt DateTime @default(now())
-
-  message ChatMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
-  user    User        @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@unique([messageId, userId, emoji])
-}
-
-enum MobilePushPlatform {
-  ios
-  android
-}
-
-model MobilePushToken {
-  id         String             @id @default(cuid())
-  userId     String
-  token      String             @unique
-  platform   MobilePushPlatform
-  createdAt  DateTime           @default(now())
-  lastSeenAt DateTime           @default(now())
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([userId])
 }

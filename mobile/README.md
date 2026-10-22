@@ -1,6 +1,6 @@
 # DALI OS Mobile
 
-Expo (React Native) member app for iOS and Android: Chat, Project, Calendar, and Pass tabs. It talks to `dali-api` through `/api/mobile/*` and `/api/chat/*` (contract: `src/api/contract.ts`), all gated by the `mobile-app` feature flag.
+Expo (React Native) member app for iOS and Android: Time, Project, Calendar, Notes, and Pass tabs. It talks to `dali-api` through `/api/mobile/*` and records meeting notes through `/api/meeting-recordings/*` (contract: `src/api/contract.ts`). Everything is gated by the `mobile-app` feature flag; recording also needs the `ai-meeting-notes` flag and transcription configured on the server.
 
 ## Develop
 
@@ -25,13 +25,24 @@ Local points at `http://<metro host>:3001`, or at `EXPO_PUBLIC_LOCAL_API_URL` wh
 
 Device pairing, the same flow as the desktop app: the app calls `/auth/pair/start`, opens the DALI OS link page in the browser, you sign in and approve the code, and the app polls `/auth/pair/poll` for a Bearer token kept in the secure store.
 
+## Time
+
+The timer runs on the device (saved in the secure store, so it survives a restart) and logs one entry when you clock out. Entries, roles, and pay periods come from the same timesheet as the web Calendar; the Google Timesheet mirror runs for them too.
+
+## Meeting notes
+
+Recording uses `useAudioStream` from `expo-audio` to capture microphone PCM, resamples it to 16kHz mono, and uploads 20s chunks the same way the web recorder does. Pause ends a session and Resume starts the next segment. Finishing sends the audio to transcription, then the app asks the server to write the AI notes into the meeting's page. A quick recording (no meeting) gets a new personal note page.
+
+Recording in the background needs a development or store build (the `expo-audio` plugin in `app.json` adds the iOS background audio mode and Android permissions). In Expo Go, keep the app open while recording.
+
 ## Layout
 
 ```
 src/
-  App.tsx        stages (landing, syncing, app) and the four tabs
-  api/           contract types, fetch client, SSE reader, server environments
-  contexts/      Auth, Data (me, projects, calendar, pass), Chat
+  App.tsx        stages (landing, syncing, app) and the five tabs
+  api/           contract types, fetch client, server environments
+  contexts/      Auth, Data (me, projects, calendar, pass), Time (timesheet, timer), Notes (recordings, recorder)
+  notes/         PCM framing and the chunk upload queue for recording
   components/    ui/ primitives, brand/ (tiles, logo loader), one folder per tab
   theme.ts       design tokens and the twrnc `tw` helper (tailwind.config.js)
 ```

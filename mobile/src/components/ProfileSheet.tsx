@@ -4,7 +4,6 @@ import { AtSign, Fingerprint, LogOut, Mail, MapPin, RefreshCw, Server } from 'lu
 import { colors, tw } from '../theme';
 import { ENVIRONMENTS } from '../api/env';
 import { useAuth } from '../contexts/AuthContext';
-import { useChat } from '../contexts/ChatContext';
 import { useData } from '../contexts/DataContext';
 import type { Presence } from '../types/user';
 import { roleTone } from '../utils/roles';
@@ -16,7 +15,7 @@ import { Tag } from './ui/Tag';
 import { Text } from './ui/Text';
 import { PRESENCE_COLOR, PRESENCE_LABEL } from './PresenceDot';
 
-const PRESENCE_OPTIONS: Presence[] = ['active', 'away'];
+const PRESENCE_OPTIONS: Exclude<Presence, 'offline'>[] = ['active', 'away'];
 
 interface ProfileSheetProps {
   open: boolean;
@@ -25,8 +24,7 @@ interface ProfileSheetProps {
 }
 
 export function ProfileSheet({ open, onClose, onSignOut }: ProfileSheetProps) {
-  const { setPresence } = useChat();
-  const { me: meResource } = useData();
+  const { me: meResource, setPresence } = useData();
   const { environmentId, setEnvironment } = useAuth();
   const profile = meResource.data;
   if (!profile) return null;

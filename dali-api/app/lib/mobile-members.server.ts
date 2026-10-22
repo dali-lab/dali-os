@@ -75,7 +75,7 @@ async function toSummary(row: SummaryRow, currentTermCode: string | null, now: D
 }
 
 // Without ids: the active lab directory. With ids: exactly those users, in
-// directory order, including alumni (chat history can outlive membership).
+// directory order, including alumni (a past project's tasks can name them).
 export async function listMemberSummaries(userIds?: string[]): Promise<MemberSummary[]> {
   if (userIds && userIds.length === 0) return [];
   const term = await currentTerm();

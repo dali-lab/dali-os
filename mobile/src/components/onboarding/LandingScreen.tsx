@@ -1,7 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { ActivityIndicator, Animated, Easing, Pressable, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { CalendarDays, ExternalLink, FolderKanban, LogIn, MessageSquare, RefreshCw, Ticket } from 'lucide-react-native';
+import { ExternalLink, FolderKanban, LogIn, Mic, RefreshCw, Ticket, Timer } from 'lucide-react-native';
 import { colors, tw } from '../../theme';
 import { useAuth } from '../../contexts/AuthContext';
 import { TilePattern } from '../brand/TilePattern';
@@ -9,9 +9,9 @@ import { Button } from '../ui/Button';
 import { Text } from '../ui/Text';
 
 const FEATURES = [
-  { icon: MessageSquare, label: 'Chat with your teams' },
+  { icon: Timer, label: 'Clock in and out' },
+  { icon: Mic, label: 'Record meeting notes' },
   { icon: FolderKanban, label: 'Track your sprint' },
-  { icon: CalendarDays, label: 'See what’s next' },
   { icon: Ticket, label: 'Scan into the lab' },
 ];
 

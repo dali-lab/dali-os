@@ -1,7 +1,7 @@
 import React, { createContext, useCallback, useContext, useMemo, useRef, useState } from 'react';
 import { addDays, startOfWeek } from 'date-fns';
 import { api, errorMessage } from '../api/client';
-import type { MeResponse, PassResponse, ProjectBoardResponse, ProjectSummary } from '../api/contract';
+import type { MeResponse, MemberSummary, PassResponse, ProjectBoardResponse, ProjectSummary } from '../api/contract';
 import type { CalendarEvent, Rsvp } from '../types/calendar';
 import type { TaskStatus } from '../types/project';
 
@@ -22,6 +22,8 @@ interface DataContextValue {
   selectedProjectId: string | null;
   pass: Resource<PassResponse>;
   weeks: Record<string, Resource<CalendarEvent[]>>;
+  /** Attendees of every loaded calendar week, by id. */
+  people: Record<string, MemberSummary>;
   loadMe: () => Promise<void>;
   loadProjects: () => Promise<void>;
   selectProject: (id: string) => Promise<void>;
@@ -29,7 +31,7 @@ interface DataContextValue {
   loadWeek: (weekStart: Date) => Promise<void>;
   changeTaskStatus: (taskId: string, status: TaskStatus) => Promise<void>;
   setRsvp: (event: CalendarEvent, rsvp: Rsvp) => Promise<void>;
-  setMyPresence: (presence: 'active' | 'away') => void;
+  setPresence: (presence: 'active' | 'away') => void;
   reset: () => void;
 }
 
@@ -54,6 +56,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [pass, setPass] = useState<Resource<PassResponse>>(idle);
   const [weeks, setWeeks] = useState<Record<string, Resource<CalendarEvent[]>>>({});
+  const [people, setPeople] = useState<Record<string, MemberSummary>>({});
   const selectedRef = useRef<string | null>(null);
 
   const loadMe = useCallback(async () => {
@@ -98,7 +101,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     const from = new Date(key);
     setWeeks((w) => ({ ...w, [key]: { data: w[key]?.data ?? null, loading: true, error: null } }));
     try {
-      const { events } = await api.calendar(from, addDays(from, 7));
+      const { events, people: attendees } = await api.calendar(from, addDays(from, 7));
+      setPeople((p) => ({ ...p, ...Object.fromEntries((attendees ?? []).map((m) => [m.id, m])) }));
       setWeeks((w) => ({ ...w, [key]: { data: events, loading: false, error: null } }));
     } catch (err) {
       setWeeks((w) => ({ ...w, [key]: { data: w[key]?.data ?? null, loading: false, error: errorMessage(err) } }));
@@ -152,8 +156,18 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  const setMyPresence = useCallback((presence: 'active' | 'away') => {
-    setMe((m) => (m.data ? { ...m, data: { ...m.data, user: { ...m.data.user, presence } } } : m));
+  const setPresence = useCallback((presence: 'active' | 'away') => {
+    let previous: MeResponse['user']['presence'] | null = null;
+    const apply = (value: MeResponse['user']['presence']) =>
+      setMe((m) => {
+        if (!m.data) return m;
+        previous = previous ?? m.data.user.presence;
+        return { ...m, data: { ...m.data, user: { ...m.data.user, presence: value } } };
+      });
+    apply(presence);
+    api.setStatus(presence).catch(() => {
+      if (previous) apply(previous);
+    });
   }, []);
 
   const reset = useCallback(() => {
@@ -164,6 +178,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     setSelectedProjectId(null);
     setPass(idle);
     setWeeks({});
+    setPeople({});
   }, []);
 
   const value = useMemo<DataContextValue>(
@@ -174,6 +189,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       selectedProjectId,
       pass,
       weeks,
+      people,
       loadMe,
       loadProjects,
       selectProject,
@@ -181,10 +197,10 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       loadWeek,
       changeTaskStatus,
       setRsvp,
-      setMyPresence,
+      setPresence,
       reset,
     }),
-    [me, projects, board, selectedProjectId, pass, weeks, loadMe, loadProjects, selectProject, loadPass, loadWeek, changeTaskStatus, setRsvp, setMyPresence, reset],
+    [me, projects, board, selectedProjectId, pass, weeks, people, loadMe, loadProjects, selectProject, loadPass, loadWeek, changeTaskStatus, setRsvp, setPresence, reset],
   );
 
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>;
