@@ -1,7 +1,8 @@
 import React from 'react';
 import { View } from 'react-native';
-import { CalendarClock, Eye, Hash } from 'lucide-react-native';
+import { CalendarClock, Eye, Play, Timer } from 'lucide-react-native';
 import { colors, tw } from '../../theme';
+import { useTime } from '../../contexts/TimeContext';
 import { useMembers } from '../../contexts/useMembers';
 import type { Project } from '../../types/project';
 import { TilePattern } from '../brand/TilePattern';
@@ -13,11 +14,12 @@ interface ProjectHeaderProps {
   project: Project;
   inReviewCount: number;
   daysLeft: number | null;
-  onOpenChannel?: () => void;
+  onStartTimer: () => void;
 }
 
-export function ProjectHeader({ project, inReviewCount, daysLeft, onOpenChannel }: ProjectHeaderProps) {
+export function ProjectHeader({ project, inReviewCount, daysLeft, onStartTimer }: ProjectHeaderProps) {
   const { getMember } = useMembers();
+  const { timer } = useTime();
   const { doneCount, totalCount } = project;
   const pct = totalCount ? Math.round((doneCount / totalCount) * 100) : 0;
   const extra = project.memberIds.length - 5;
@@ -83,11 +85,9 @@ export function ProjectHeader({ project, inReviewCount, daysLeft, onOpenChannel 
         <View accessibilityLabel={`${project.memberIds.length} teammates`}>
           <AvatarStack names={project.memberIds.map((id) => getMember(id)?.name ?? '?')} overlap={8} extra={extra > 0 ? extra : undefined} />
         </View>
-        {onOpenChannel ? (
-          <Button size="sm" variant="secondary" color="navy" leftIcon={Hash} onPress={onOpenChannel}>
-            Open team channel
-          </Button>
-        ) : null}
+        <Button size="sm" variant="secondary" color="navy" leftIcon={timer ? Timer : Play} onPress={onStartTimer}>
+          {timer ? 'Timer running' : 'Start timer'}
+        </Button>
       </View>
     </View>
   );

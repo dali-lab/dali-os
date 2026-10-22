@@ -12,6 +12,7 @@ import {
   type MobileRsvp,
 } from "~/lib/mobile-format";
 import { mobileError, mobileJson, requireMobileUser } from "~/lib/mobile-auth.server";
+import { listMemberSummaries } from "~/lib/mobile-members.server";
 
 type EventOut = {
   id: string;
@@ -28,6 +29,8 @@ type EventOut = {
   attendeeIds: string[];
   description: string | null;
   link: string | null;
+  scheduledMeetingId: string | null;
+  occurrenceStart: string | null;
 };
 
 export async function loader({ request }: Route.LoaderArgs) {
@@ -83,6 +86,8 @@ export async function loader({ request }: Route.LoaderArgs) {
         attendeeIds: m.attendeeIds,
         description: null,
         link: `/hiring/interviews/${m.id}`,
+        scheduledMeetingId: null,
+        occurrenceStart: null,
       };
     }
     const invite = inviteForOccurrence(invites, m.id, m.occurrenceStart);
@@ -101,6 +106,8 @@ export async function loader({ request }: Route.LoaderArgs) {
       attendeeIds: m.attendeeIds,
       description: m.description,
       link: `/calendar?meeting=${m.id}`,
+      scheduledMeetingId: m.id,
+      occurrenceStart: m.occurrenceStart,
     };
   });
 
@@ -133,6 +140,8 @@ export async function loader({ request }: Route.LoaderArgs) {
         attendeeIds: [],
         description: null,
         link: null,
+        scheduledMeetingId: null,
+        occurrenceStart: null,
       });
     }
   }
@@ -156,9 +165,12 @@ export async function loader({ request }: Route.LoaderArgs) {
       attendeeIds: [],
       description: e.description ?? null,
       link: e.htmlLink ?? null,
+      scheduledMeetingId: null,
+      occurrenceStart: null,
     });
   }
 
   events.sort((a, b) => a.start.localeCompare(b.start));
-  return mobileJson({ events });
+  const people = await listMemberSummaries([...new Set(events.flatMap((e) => e.attendeeIds))]);
+  return mobileJson({ events, people });
 }

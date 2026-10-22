@@ -1,22 +1,22 @@
 import { useCallback } from 'react';
+import type { MemberSummary } from '../api/contract';
 import type { User } from '../types/user';
-import { toUser, useChat } from './ChatContext';
 import { useData } from './DataContext';
 
+export function toUser(m: MemberSummary): User {
+  return { ...m, handle: m.handle ?? '' };
+}
+
 export function useMembers() {
-  const { getUser } = useChat();
-  const { board, me } = useData();
+  const { board, me, people } = useData();
   const meId = me.data?.user.id ?? '';
   const getMember = useCallback(
     (id: string): User | undefined => {
-      const fromChat = getUser(id);
-      if (fromChat) return fromChat;
-      const fromBoard = board.data?.members.find((m) => m.id === id);
-      if (fromBoard) return toUser(fromBoard);
       if (me.data && me.data.user.id === id) return toUser(me.data.user);
-      return undefined;
+      const known = people[id] ?? board.data?.members.find((m) => m.id === id);
+      return known ? toUser(known) : undefined;
     },
-    [getUser, board.data, me.data],
+    [people, board.data, me.data],
   );
   return { getMember, meId };
 }

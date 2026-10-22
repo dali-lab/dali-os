@@ -4,7 +4,9 @@ import { addWeeks, format, isSameDay, startOfWeek } from 'date-fns';
 import { CalendarCheck } from 'lucide-react-native';
 import { colors, tw } from '../../theme';
 import { useData, weekKey } from '../../contexts/DataContext';
-import { formatClock, formatDayLabel, now as currentTime, toMs } from '../../utils/time';
+import type { MeetingTarget } from '../../contexts/NotesContext';
+import { useNow } from '../../hooks/useNow';
+import { formatClock, formatDayLabel, toMs } from '../../utils/time';
 import { TopBar } from '../TopBar';
 import { Button } from '../ui/Button';
 import { ErrorState, LoadingState } from '../ui/StateViews';
@@ -13,15 +15,6 @@ import { EventDetailSheet } from './EventDetailSheet';
 import { EventRow } from './EventRow';
 import { UpNextCard } from './UpNextCard';
 import { WeekStrip } from './WeekStrip';
-
-function useNow() {
-  const [value, setValue] = useState(currentTime);
-  useEffect(() => {
-    const id = setInterval(() => setValue(currentTime()), 60_000);
-    return () => clearInterval(id);
-  }, []);
-  return value;
-}
 
 function NowLine({ now }: { now: Date }) {
   return (
@@ -33,8 +26,14 @@ function NowLine({ now }: { now: Date }) {
   );
 }
 
-export function CalendarTab({ onOpenProfile }: { onOpenProfile: () => void }) {
-  const today = useNow();
+interface CalendarTabProps {
+  onOpenProfile: () => void;
+  onRecordMeeting: (meeting: MeetingTarget) => Promise<string | null>;
+  onViewNote: (recordingId: string) => void;
+}
+
+export function CalendarTab({ onOpenProfile, onRecordMeeting, onViewNote }: CalendarTabProps) {
+  const today = useNow(60_000);
   const { weeks, loadWeek, setRsvp } = useData();
   const [selectedDate, setSelectedDate] = useState<Date>(today);
   const [weekStart, setWeekStart] = useState<Date>(startOfWeek(today));
@@ -139,7 +138,16 @@ export function CalendarTab({ onOpenProfile }: { onOpenProfile: () => void }) {
         </>
         ) : null}
       </ScrollView>
-      <EventDetailSheet event={events.find((e) => e.id === selectedEventId)} onClose={() => setSelectedEventId(null)} onRsvp={(e, rsvp) => void setRsvp(e, rsvp)} />
+      <EventDetailSheet
+        event={events.find((e) => e.id === selectedEventId)}
+        onClose={() => setSelectedEventId(null)}
+        onRsvp={(e, rsvp) => void setRsvp(e, rsvp)}
+        onRecord={onRecordMeeting}
+        onViewNote={(id) => {
+          setSelectedEventId(null);
+          onViewNote(id);
+        }}
+      />
     </View>
   );
 }

@@ -1,4 +1,5 @@
 import type { PresenceState } from "~/lib/presence";
+import { getZonedYMD } from "~/lib/timezone";
 
 export type MobilePresence = "active" | "away" | "offline";
 
@@ -84,18 +85,6 @@ export function parseStatusBody(body: unknown): "active" | "away" | null {
   return status === "active" || status === "away" ? status : null;
 }
 
-const EXPO_PUSH_TOKEN = /^Expo(nent)?PushToken\[[A-Za-z0-9_-]{8,128}\]$/;
-
-export function parsePushTokenBody(
-  body: unknown,
-): { token: string; platform: "ios" | "android" | null } | null {
-  if (!body || typeof body !== "object") return null;
-  const { token, platform } = body as { token?: unknown; platform?: unknown };
-  if (typeof token !== "string" || !EXPO_PUSH_TOKEN.test(token)) return null;
-  if (platform !== undefined && platform !== "ios" && platform !== "android") return null;
-  return { token, platform: platform ?? null };
-}
-
 export function sprintNumberFromLabel(label: string): number | null {
   const m = /Sprint\s+(\d+)/.exec(label);
   return m ? Number(m[1]) : null;
@@ -173,4 +162,37 @@ export function formatPassDate(d: Date): string {
 
 export function checkInLocation(m: { title: string; location: string | null; rooms: { name: string }[] }): string {
   return m.location || (m.rooms.length ? m.rooms.map((r) => r.name).join(", ") : m.title);
+}
+
+const ASSIGNMENT_TYPE_LABEL: Record<string, string> = {
+  Project: "Project",
+  Core: "Core",
+  Instructor: "Instructor",
+  DomainLead: "Domain lead",
+  Admin: "Admin",
+  Custom: "Outside job",
+};
+
+export function assignmentTypeLabel(type: string): string {
+  return ASSIGNMENT_TYPE_LABEL[type] ?? type;
+}
+
+function ymd(parts: { year: number; month: number; day: number }): string {
+  return `${parts.year}-${String(parts.month).padStart(2, "0")}-${String(parts.day).padStart(2, "0")}`;
+}
+
+/** UTC-midnight calendar day (a pay period boundary, a Manual entry's date) as "yyyy-MM-dd". */
+export function utcDayKey(d: Date): string {
+  return d.toISOString().slice(0, 10);
+}
+
+// A Manual entry's `date` is the UTC midnight of the day the member picked,
+// while a Meeting entry's is the meeting's start instant; the start time read
+// in the member's zone is the one day both agree on.
+export function entryDayKey(entry: { date: Date; startTime: Date | null }, timeZone: string): string {
+  return entry.startTime ? ymd(getZonedYMD(entry.startTime, timeZone)) : utcDayKey(entry.date);
+}
+
+export function todayKey(now: Date, timeZone: string): string {
+  return ymd(getZonedYMD(now, timeZone));
 }
