@@ -19,11 +19,14 @@ export function mobileJson(body: unknown, init?: ResponseInit): Response {
 
 // The mobile app's routes stay invisible (404, not 403) to members the flag
 // hasn't reached, so a pre-rollout build can't probe what exists.
+export async function isMobileAppEnabled(userId: string, request: Request): Promise<boolean> {
+  const roles = await getUserRoles(userId, request);
+  return roles.isLabMember && (await isFeatureEnabled("mobile-app", userId, roles, request));
+}
+
 export async function requireMobileUser(request: Request): Promise<MobileAuthResult> {
   const auth = await requireAuth(request);
   if (!auth.ok) return { ok: false, response: auth.response };
-  const roles = await getUserRoles(auth.user.sub, request);
-  const enabled = roles.isLabMember && (await isFeatureEnabled("mobile-app", auth.user.sub, roles, request));
-  if (!enabled) return { ok: false, response: mobileError("Not found", 404) };
+  if (!(await isMobileAppEnabled(auth.user.sub, request))) return { ok: false, response: mobileError("Not found", 404) };
   return { ok: true, auth, userId: auth.user.sub };
 }
