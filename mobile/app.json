@@ -1,0 +1,43 @@
+{
+  "expo": {
+    "name": "DALI OS",
+    "slug": "dali-os-mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "edu.dartmouth.dali.os.mobile"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#083858",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false,
+      "package": "edu.dartmouth.dali.os.mobile"
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-font",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#083858",
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 200
+        }
+      ],
+      "expo-status-bar",
+      "expo-web-browser",
+      "expo-secure-store",
+      "expo-notifications"
+    ],
+    "scheme": "dalios-mobile"
+  }
+}
