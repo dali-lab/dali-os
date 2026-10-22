@@ -30,7 +30,11 @@ vi.mock("~/lib/db", () => ({
   },
 }));
 
+vi.mock("~/calendar/lib/sub-calendar.server", () => ({ setSubCalendarEnabled: vi.fn() }));
+vi.mock("~/calendar/lib/external-cache.server", () => ({ markCalendarChanged: vi.fn() }));
+
 import { prisma } from "~/lib/db";
+import { setSubCalendarEnabled } from "~/calendar/lib/sub-calendar.server";
 import {
   runManageCalendarLink,
   MANAGE_CALENDAR_LINK_DEF,
@@ -106,10 +110,7 @@ describe("manage_calendar_link", () => {
         enabled: true,
       });
       expect(out).toEqual({ ok: true });
-      expect(mockPrisma.userCalendarLink.update).toHaveBeenCalledWith({
-        where: { id: "lnk1" },
-        data: { subCalendarIds: expect.arrayContaining(["existing-cal", "cal2"]) },
-      });
+      expect(setSubCalendarEnabled).toHaveBeenCalledWith("lnk1", "cal2", true);
     });
 
     it("removes calendarId from subCalendarIds when enabled=false", async () => {
@@ -126,10 +127,7 @@ describe("manage_calendar_link", () => {
         calendarId: "cal1",
         enabled: false,
       });
-      expect(mockPrisma.userCalendarLink.update).toHaveBeenCalledWith({
-        where: { id: "lnk1" },
-        data: { subCalendarIds: ["cal2"] },
-      });
+      expect(setSubCalendarEnabled).toHaveBeenCalledWith("lnk1", "cal1", false);
     });
   });
 });

@@ -1,5 +1,11 @@
 import { redirect } from "react-router";
 import { prisma } from "~/lib/db";
+import {
+  cachedExternalRead,
+  invalidateExternalCache,
+  markCalendarChanged,
+} from "~/calendar/lib/external-cache.server";
+import { setSubCalendarEnabled } from "~/calendar/lib/sub-calendar.server";
 import { requireAuth, forbidden, redirectNonMemberToPortal, isImpersonating } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { listAllGroups } from "~/lib/groups";
@@ -361,41 +367,7 @@ async function canActOnMeeting(
   return isLabMember(userId, request);
 }
 
-/**
- * Short-lived cache for the external-event read, keyed by who is asking and
- * which window. Switching month / week / day re-runs the loader, and the fetch
- * underneath costs one Google `events.list` per linked sub-calendar — so
- * without this, every toggle paid a full set of round-trips. The window is the
- * month-grid-wide `fetchWindow`, identical across the three views at one
- * anchor, so a switch is a cache hit.
- *
- * Deliberately tiny and in-process: a stale read is at most TTL old, a
- * write through the calendar action revalidates and re-reads within the same
- * process, and nothing here needs to survive a deploy.
- */
-const EXTERNAL_CACHE_TTL_MS = 30_000;
-const EXTERNAL_CACHE_MAX = 200;
-const externalCache = new Map<string, { at: number; value: unknown }>();
-
-async function cachedExternalRead<T>(key: string, read: () => Promise<T>): Promise<T> {
-  const hit = externalCache.get(key);
-  if (hit && Date.now() - hit.at < EXTERNAL_CACHE_TTL_MS) return hit.value as T;
-  const value = await read();
-  // Bound the map: drop the oldest insertion when it grows past the cap.
-  if (externalCache.size >= EXTERNAL_CACHE_MAX) {
-    const oldest = externalCache.keys().next().value;
-    if (oldest !== undefined) externalCache.delete(oldest);
-  }
-  externalCache.set(key, { at: Date.now(), value });
-  return value;
-}
-
-/** Drop a user's cached reads after they write, so the change shows at once. */
-export function invalidateExternalCache(userId: string): void {
-  for (const key of externalCache.keys()) {
-    if (key.startsWith(`${userId}:`)) externalCache.delete(key);
-  }
-}
+export { invalidateExternalCache };
 
 /**
  * Cached calendarList read for one Google link, keyed by user so
@@ -403,8 +375,13 @@ export function invalidateExternalCache(userId: string): void {
  * events read. Exported for its own unit test — the loader that calls it pulls
  * in too much (auth, every other calendar table) to drive directly.
  */
-export async function fetchCachedCalendarList(userId: string, linkId: string, token: string) {
-  return cachedExternalRead(`${userId}:calendar-list:${linkId}`, () => listCalendarsForLink(linkId, token));
+export async function fetchCachedCalendarList(
+  userId: string,
+  linkId: string,
+  token: string,
+  changedAt?: Date | null,
+) {
+  return cachedExternalRead(`${userId}:calendar-list:${linkId}`, () => listCalendarsForLink(linkId, token), changedAt);
 }
 
 /** Read a single cookie value from the request's Cookie header. */
@@ -1253,12 +1230,7 @@ async function handleCalendarAction(
       const calendarId = await createCalendar(linkId, summary);
       await subscribeCalendarForLink(linkId, calendarId).catch(() => {});
       // Enable it for display + writing.
-      const link = await prisma.userCalendarLink.findUnique({ where: { id: linkId }, select: { subCalendarIds: true } });
-      if (link) {
-        const set = new Set(link.subCalendarIds);
-        set.add(calendarId);
-        await prisma.userCalendarLink.update({ where: { id: linkId }, data: { subCalendarIds: [...set] } });
-      }
+      await setSubCalendarEnabled(linkId, calendarId, true);
       return null;
     }
     if (intent === "cal-rename") {
@@ -1561,7 +1533,7 @@ export async function loadCalendarData(
           timesheetCalendarId: true,
         },
       }),
-      prisma.user.findUnique({ where: { id: userId }, select: { timeZone: true } }),
+      prisma.user.findUnique({ where: { id: userId }, select: { timeZone: true, calendarDataChangedAt: true } }),
       prisma.workingHoursDay.findMany({
         where: { userId },
         select: {
@@ -1694,7 +1666,7 @@ export async function loadCalendarData(
       try {
         const token = await getValidAccessTokenForLink(l.id);
         prefetchedTokens.set(l.id, token);
-        const items = await fetchCachedCalendarList(userId, l.id, token);
+        const items = await fetchCachedCalendarList(userId, l.id, token, userRow?.calendarDataChangedAt);
         return { linkId: l.id, items } as const;
       } catch {
         return { linkId: l.id, items: undefined } as const;
@@ -1719,6 +1691,7 @@ export async function loadCalendarData(
       ? Promise.resolve<CalendarEvent[]>([])
       : cachedExternalRead<CalendarEvent[]>(externalCacheKey, () =>
           fetchCalendarEvents(userId, fetchStart, fetchEnd, prefetchedCalendarLists, prefetchedTokens, "all"),
+          userRow?.calendarDataChangedAt,
         ).catch((err): CalendarEvent[] => {
           ingestionError = err instanceof Error ? err.message : "Failed to fetch external events";
           return [];
@@ -1883,6 +1856,12 @@ const DB_ONLY_CALENDAR_INTENTS = new Set([
   "reset-working-hours",
   "seed-working-hours",
   "set-event-buffer",
+  "track-event-as-meeting",
+  // The loader reads every calendar on a link ("all"), whatever is toggled.
+  "toggle-sub-calendar",
+  // Meeting-sourced entries are never mirrored to Google, so removing one
+  // never calls Google (removeTimeEntryFromGoogle returns without a mirror id).
+  "toggle-meeting-time-entry",
 ]);
 
 /** Exported for tests — the cache itself has no externally observable state. */
@@ -1905,7 +1884,7 @@ export async function submitCalendarAction(request: Request) {
   // Any write that can change what the next Google read returns must drop this
   // user's cached external reads rather than letting the TTL hide the change.
   if (shouldInvalidateExternalCache(rawIntent)) {
-    invalidateExternalCache(userId);
+    await markCalendarChanged(userId);
   }
 
   if (
@@ -2073,13 +2052,7 @@ export async function submitCalendarAction(request: Request) {
       if (!link || link.userId !== userId) {
         return Response.json({ error: "Not found" }, { status: 404 });
       }
-      const current = new Set(link.subCalendarIds);
-      if (input.enabled) current.add(input.calendarId);
-      else current.delete(input.calendarId);
-      await prisma.userCalendarLink.update({
-        where: { id: input.linkId },
-        data: { subCalendarIds: Array.from(current) },
-      });
+      await setSubCalendarEnabled(input.linkId, input.calendarId, input.enabled);
       return null;
     }
 

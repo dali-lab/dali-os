@@ -6,6 +6,7 @@ import { withCors, handlePreflight } from "~/lib/cors";
 import { publishNotificationChange } from "~/lib/notify-stream.server";
 import { parseJson } from "~/lib/validate";
 import { updateGoogleAttendeeRsvp } from "~/lib/google-calendar";
+import { markCalendarChanged } from "~/calendar/lib/external-cache.server";
 import { primaryEmail } from "~/lib/display";
 
 const Schema = z.object({
@@ -83,6 +84,8 @@ export async function action({ request, params }: Route.ActionArgs) {
       gcalError = err instanceof Error ? err.message : "Google RSVP push failed";
     }
   }
+
+  if (notif.scheduledMeeting?.externalEventId) await markCalendarChanged(auth.user.sub);
 
   await prisma.notification.update({
     where: { id },
