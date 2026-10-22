@@ -2,7 +2,6 @@ import { useCallback, useRef } from "react";
 import {
   appendBlocks,
   appendTaskMentionContent,
-  blockOwnText,
   blocksToPlainText,
   enhanceSnapshotBlocks,
   findEnhanceMarks,
@@ -22,6 +21,7 @@ import {
   type EnhanceActionItem,
   type EnhanceBlockChange,
   type EnhanceMarkEntry,
+  ownTextWithoutCitations,
   type SnapshotBlock,
 } from "./enhance-plan";
 
@@ -154,7 +154,7 @@ export function useRecordingEditor({ notePath, projectId }: { notePath: string; 
     if (!editor) return;
     const candidates = editor.document
       .filter((b) => b.type === "checkListItem")
-      .map((b) => ({ block: b, text: blockOwnText(b) }))
+      .map((b) => ({ block: b, text: ownTextWithoutCitations(b) }))
       .filter(({ text }) => actionItemMatchesBlock(itemText, text));
     if (candidates.length === 0) return;
     const exact = candidates.find(({ text }) => text.trim().toLowerCase() === itemText.trim().toLowerCase());

@@ -7,6 +7,7 @@ import {
   transcriptToggleBlock,
 } from "./enhance-render";
 import type { DocBlock } from "./schema/build";
+import { isCitationHref } from "~/components/meeting-recorder/enhance-plan";
 
 function heading(id: string, text: string, isToggleable = false): DocBlock {
   return {
@@ -72,6 +73,12 @@ describe("buildInlineContent citation chips", () => {
   it("links each chip back to the page hosting the note", () => {
     const [chip] = links(buildInlineContent("Text", [60], "/hiring/interviews/i1", "r1"));
     expect(chip!.href).toBe("/hiring/interviews/i1?transcript=r1&at=60");
+  });
+
+  it("builds hrefs the snapshot recognizes as citations", () => {
+    for (const chip of links(buildInlineContent("Text", [0, 842], "/documents/p1", "rec 1"))) {
+      expect(isCitationHref(chip.href)).toBe(true);
+    }
   });
 });
 
