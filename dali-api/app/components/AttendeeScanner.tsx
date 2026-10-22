@@ -388,7 +388,7 @@ export function AttendeeScanner({
       {result && (
         <div
           className={`absolute inset-0 flex flex-col items-center justify-center gap-3 p-6 text-center text-white ${
-            result.kind === "success" ? "bg-os-green" : "bg-destructive"
+            result.kind === "success" ? "bg-os-green/90" : "bg-destructive/90"
           }`}
           role="status"
           aria-live="polite"

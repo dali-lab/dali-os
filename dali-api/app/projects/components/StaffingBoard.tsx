@@ -709,7 +709,7 @@ export function StaffingBoard({
             <span
               className={cn(
                 "rounded-full px-1.5 py-0.5 text-[10px] font-semibold leading-none",
-                os ? "bg-os-amber/15 text-os-amber" : "bg-os-amber text-os-amber",
+                "bg-os-amber/15 text-os-amber",
               )}
             >
               {pending}
@@ -879,9 +879,7 @@ export function StaffingBoard({
         <div
           className={cn(
             "px-3 py-2 text-sm",
-            os
-              ? "rounded-os-item border border-os-amber/30 bg-os-amber/10 text-os-amber"
-              : "rounded-os-item border border-os-amber bg-os-amber text-os-amber",
+            "rounded-os-item border border-os-amber/30 bg-os-amber/10 text-os-amber",
           )}
         >
           {driftedProjects.length} project{driftedProjects.length === 1 ? "" : "s"}{" "}

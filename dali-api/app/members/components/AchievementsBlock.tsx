@@ -58,7 +58,7 @@ const MEDAL: Record<
   veteran: {
     Icon: Trees,
     ring: "ring-os-amber",
-    fill: "bg-os-amber",
+    fill: "bg-os-amber/15",
     ink: "text-os-amber",
     // Shield.
     shape: "rounded-t-xl [clip-path:polygon(0%_0%,100%_0%,100%_62%,50%_100%,0%_62%)]",

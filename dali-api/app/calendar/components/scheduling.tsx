@@ -541,7 +541,7 @@ const SUGGESTION_COLORS = [
   {
     dot: "bg-os-amber",
     border: "border-os-amber",
-    fill: "bg-os-amber",
+    fill: "bg-os-amber/20",
   },
 ];
 
@@ -603,7 +603,7 @@ export function OptimalTimePills({
                 className={cn(
                   "rounded-full px-1.5 py-0.5 text-[10px] font-semibold",
                   allFree
-                    ? "bg-os-green text-os-green"
+                    ? "bg-os-green/15 text-os-green"
                     : "text-muted-foreground",
                 )}
               >
@@ -1484,7 +1484,7 @@ export function SelectedSlotBlock({
       className={cn(
         "absolute left-0 right-0 z-30 rounded-sm border-2",
         everyoneFree
-          ? "border-os-green bg-os-green"
+          ? "border-os-green bg-os-green/15"
           : "border-os-accent bg-os-accent/10",
       )}
       style={{ top, height }}

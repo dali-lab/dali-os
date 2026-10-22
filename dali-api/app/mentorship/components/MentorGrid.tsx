@@ -308,7 +308,7 @@ function GridCellView({
       ? "border border-dashed border-border text-muted-foreground"
       : "bg-muted text-muted-foreground";
   const hover =
-    missing && highlightMissing ? "hover:bg-destructive" : "hover:bg-muted/60";
+    missing && highlightMissing ? "hover:bg-destructive/10" : "hover:bg-muted/60";
 
   // A non-mentor viewer has nothing to open.
   if (!cell.canCreate) {
