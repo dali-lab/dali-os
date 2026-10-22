@@ -37,6 +37,8 @@ import modal
 
 logger = logging.getLogger("dali-asr")
 logging.basicConfig(level=logging.INFO)
+# httpx logs every request URL at INFO, and chunk URLs are presigned.
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 APP_NAME = "dali-asr"
 
@@ -210,10 +212,16 @@ def _fetch_chunk(url: str) -> Optional[bytes]:
     absolute."""
     import httpx
 
-    response = httpx.get(url, timeout=CHUNK_FETCH_TIMEOUT_SECONDS)
+    # httpx error messages carry the presigned URL; logger.exception would
+    # write it out.
+    try:
+        response = httpx.get(url, timeout=CHUNK_FETCH_TIMEOUT_SECONDS)
+    except httpx.HTTPError as exc:
+        raise RuntimeError(f"chunk fetch failed: {type(exc).__name__}") from None
     if response.status_code in (403, 404):
         return None
-    response.raise_for_status()
+    if response.is_error:
+        raise RuntimeError(f"chunk fetch failed: HTTP {response.status_code}")
     return response.content
 
 
@@ -269,6 +277,7 @@ def run_job(raw_body: dict) -> None:
         channels_out = {}
         for index, channel in enumerate(req.channels, start=1):
             stage_start = time.monotonic()
+            timings: dict = {}
             channels_out[channel.channel] = pipeline.process_channel(
                 channel,
                 fetch_chunk=_fetch_chunk,
@@ -277,14 +286,19 @@ def run_job(raw_body: dict) -> None:
                 on_progress=reporter.for_channel(
                     index, len(req.channels), pipeline.channel_audio_seconds(channel)
                 ),
+                timings=timings,
             )
             logger.info(
-                "dali-asr: channel done recording_id=%s channel=%s segments=%d audio_s=%.1f stage_s=%.1f",
+                "dali-asr: channel done recording_id=%s channel=%s segments=%d audio_s=%.1f stage_s=%.1f"
+                " fetch_s=%.1f transcribe_s=%.1f diarize_s=%.1f",
                 req.recording_id,
                 channel.channel,
                 len(channel.segments),
                 pipeline.channel_audio_seconds(channel),
                 time.monotonic() - stage_start,
+                timings["fetch_s"],
+                timings["transcribe_s"],
+                timings["diarize_s"],
             )
         payload = pipeline.build_callback_body(req.recording_id, channels_out, error=None)
     except Exception:
