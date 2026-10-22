@@ -2,7 +2,6 @@ import type { Route } from "./+types/api.partner-applications.$id.status";
 import { prisma } from "~/lib/db";
 import { requireAuth, forbidden } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
-import { logAuditEvent } from "~/lib/audit";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { isPartnerStage } from "../lib/partner-application";
 import { setApplicationStage } from "../lib/partner-activity.server";
@@ -53,22 +52,13 @@ export async function action({ request, params }: Route.ActionArgs) {
     applicationId: params.id,
     to: stage,
     actorUserId: auth.user.sub,
+    request,
   });
   if (prev === null) {
     return withCors(
       request,
       Response.json({ error: "Application not found" }, { status: 404 }),
     );
-  }
-
-  if (prev !== stage) {
-    await logAuditEvent({
-      action: "partner.application.stage",
-      userId: auth.user.sub,
-      targetId: params.id,
-      metadata: { from: prev, to: stage },
-      request,
-    });
   }
 
   return withCors(request, Response.json({ ok: true }));

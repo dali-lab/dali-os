@@ -39,21 +39,22 @@ beforeEach(() => {
 });
 
 describe("POST /api/partner-applications/:id/status audit", () => {
-  it("logs the stage change with before and after", async () => {
+  it("hands the request to the shared stage funnel, which writes the row, and does not log itself", async () => {
     await post({ stage: "Interview" });
 
-    expect(logAuditEvent).toHaveBeenCalledWith(
+    expect(setApplicationStage).toHaveBeenCalledWith(
+      expect.anything(),
       expect.objectContaining({
-        action: "partner.application.stage",
-        userId: "core-1",
-        targetId: "app-1",
-        metadata: { from: "New", to: "Interview" },
+        applicationId: "app-1",
+        to: "Interview",
+        actorUserId: "core-1",
+        request: expect.any(Request),
       }),
     );
+    expect(logAuditEvent).not.toHaveBeenCalled();
   });
 
-  it("logs nothing when the stage did not change, the application is gone or the stage is invalid", async () => {
-    await post({ stage: "New" });
+  it("logs nothing when the application is gone or the stage is invalid", async () => {
     vi.mocked(setApplicationStage).mockResolvedValue(null);
     expect((await post({ stage: "Interview" })).status).toBe(404);
     expect((await post({ stage: "Nonsense" })).status).toBe(400);

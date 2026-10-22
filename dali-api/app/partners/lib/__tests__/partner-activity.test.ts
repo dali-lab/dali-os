@@ -1,4 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
+
+import { logAuditEvent } from "~/lib/audit";
 import {
   logPartnerActivity,
   setApplicationStage,
@@ -77,6 +80,44 @@ describe("logPartnerActivity", () => {
       contactId: null,
       type: "ProjectLinked",
     });
+  });
+});
+
+describe("setApplicationStage audit", () => {
+  const request = new Request("http://localhost/core/partners");
+
+  function dbWithStage(stage: string) {
+    const db = makeDb();
+    db.partnerApplication.findUnique.mockResolvedValue({ stage, partnerOrgId: null, applicantContactId: null });
+    return db;
+  }
+
+  it("logs one audit row per move, with before and after", async () => {
+    vi.mocked(logAuditEvent).mockClear();
+    await setApplicationStage(dbWithStage("New"), {
+      applicationId: "a1",
+      to: "Interview",
+      actorUserId: "core-1",
+      request,
+    });
+
+    expect(logAuditEvent).toHaveBeenCalledTimes(1);
+    expect(logAuditEvent).toHaveBeenCalledWith({
+      action: "partner.application.stage",
+      userId: "core-1",
+      targetId: "a1",
+      metadata: { from: "New", to: "Interview" },
+      request,
+    });
+  });
+
+  it("logs nothing when the stage is unchanged or the application is gone", async () => {
+    vi.mocked(logAuditEvent).mockClear();
+    await setApplicationStage(dbWithStage("New"), { applicationId: "a1", to: "New", actorUserId: "core-1" });
+    const gone = makeDb();
+    gone.partnerApplication.findUnique.mockResolvedValue(null);
+    await setApplicationStage(gone, { applicationId: "a1", to: "Interview", actorUserId: "core-1" });
+    expect(logAuditEvent).not.toHaveBeenCalled();
   });
 });
 

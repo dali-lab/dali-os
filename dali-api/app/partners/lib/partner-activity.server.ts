@@ -1,4 +1,5 @@
 import type { Prisma } from "~/generated/prisma/client";
+import { logAuditEvent } from "~/lib/audit";
 import type { PartnerActivityType, PartnerStage } from "~/generated/prisma/enums";
 
 /**
@@ -86,6 +87,8 @@ export async function setApplicationStage(
     data?: Prisma.PartnerApplicationUncheckedUpdateInput;
     /** Extra keys merged into the StatusChanged metadata (e.g. projectId). */
     meta?: Record<string, string | number | null>;
+    /** Carries the caller's ip and user agent onto the audit row. */
+    request?: Request;
   },
 ): Promise<PartnerStage | null> {
   const existing = await db.partnerApplication.findUnique({
@@ -119,6 +122,13 @@ export async function setApplicationStage(
       actorUserId: input.actorUserId,
       type: "StatusChanged",
       metadata: { from: existing.stage, to: input.to, ...(input.meta ?? {}) },
+    });
+    await logAuditEvent({
+      action: "partner.application.stage",
+      userId: input.actorUserId,
+      targetId: input.applicationId,
+      metadata: { from: existing.stage, to: input.to },
+      request: input.request,
     });
   }
   return existing.stage;

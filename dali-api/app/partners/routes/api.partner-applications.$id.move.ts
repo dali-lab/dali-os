@@ -2,7 +2,6 @@ import type { Route } from "./+types/api.partner-applications.$id.move";
 import { prisma } from "~/lib/db";
 import { requireAuth, forbidden } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
-import { logAuditEvent } from "~/lib/audit";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { isPartnerStage } from "../lib/partner-application";
 import { setApplicationStage } from "../lib/partner-activity.server";
@@ -69,7 +68,6 @@ export async function action({ request, params }: Route.ActionArgs) {
     return withCors(request, Response.json({ error: "Invalid stage" }, { status: 400 }));
   }
   const stage = body.stage;
-  let previousStage: string | null = null;
 
   if (body.orderedIds !== undefined) {
     if (!body.orderedIds.includes(params.id!)) {
@@ -94,10 +92,11 @@ export async function action({ request, params }: Route.ActionArgs) {
       // activity-logged (a no-op log when the card is just reordered in
       // place); the loop below then renumbers every listed card densely,
       // overwriting whatever placeholder position that call wrote.
-      previousStage = await setApplicationStage(tx, {
+      await setApplicationStage(tx, {
         applicationId: params.id!,
         to: stage,
         actorUserId: auth.user.sub,
+        request,
       });
       await Promise.all(
         orderedIds.map((id, index) =>
@@ -107,22 +106,13 @@ export async function action({ request, params }: Route.ActionArgs) {
     });
   } else {
     await prisma.$transaction(async (tx) => {
-      previousStage = await setApplicationStage(tx, {
+      await setApplicationStage(tx, {
         applicationId: params.id!,
         to: stage,
         actorUserId: auth.user.sub,
+        request,
         data: { position: body.position },
       });
-    });
-  }
-
-  if (previousStage !== stage) {
-    await logAuditEvent({
-      action: "partner.application.stage",
-      userId: auth.user.sub,
-      targetId: params.id,
-      metadata: { from: previousStage, to: stage },
-      request,
     });
   }
 

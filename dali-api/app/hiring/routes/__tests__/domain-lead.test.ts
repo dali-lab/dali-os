@@ -245,7 +245,7 @@ describe("domain-lead action: add-domain-mentors", () => {
   it("adds the domain's mentors and says how many", async () => {
     vi.mocked(addDomainMentors).mockResolvedValue(3);
     const res = await callAction(form());
-    expect(addDomainMentors).toHaveBeenCalledWith(CYCLE_ID, DOMAIN_ID, "reviewer", expect.any(Request));
+    expect(addDomainMentors).toHaveBeenCalledWith(CYCLE_ID, DOMAIN_ID, "reviewer", expect.any(Request), undefined, USER_ID);
     expect(res).toEqual({ notice: "Added 3 mentors." });
   });
 
@@ -357,19 +357,14 @@ describe("domain-lead action — audit trail", () => {
     expect(logAuditEvent).not.toHaveBeenCalled();
   });
 
-  it("logs mentors added to a roster only when some were added", async () => {
+  it("leaves the mentor-roster row to the shared roster function, so the route never logs it too", async () => {
     mockPrisma.domainApplicationCycle.findUnique.mockResolvedValue({ domainId: DOMAIN_ID });
-    const form = { intent: "add-domain-mentors", cycleId: CYCLE_ID, domainId: DOMAIN_ID, role: "interviewer" };
-
-    vi.mocked(addDomainMentors).mockResolvedValue(0);
-    vi.mocked(domainMentorIds).mockResolvedValue([]);
-    await callAction(form);
     vi.mocked(addDomainMentors).mockResolvedValue(2);
-    await callAction(form);
 
-    expect(logged()).toEqual([
-      ["domain.mentors.add", USER_ID, DOMAIN_ID, { cycleId: CYCLE_ID, role: "interviewer", added: 2 }],
-    ]);
+    await callAction({ intent: "add-domain-mentors", cycleId: CYCLE_ID, domainId: DOMAIN_ID, role: "interviewer" });
+
+    expect(addDomainMentors).toHaveBeenCalledWith(CYCLE_ID, DOMAIN_ID, "interviewer", expect.any(Request), undefined, USER_ID);
+    expect(logAuditEvent).not.toHaveBeenCalled();
   });
 
   it("logs nothing for someone who does not lead the domain", async () => {

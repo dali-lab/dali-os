@@ -465,15 +465,13 @@ export async function action({ request }: Route.ActionArgs) {
   const intent = formData.get("intent");
 
   // Every intent acts on one domain, and only that domain's lead may act.
-  const challengeLink =
-    intent === "remove-challenge-form"
-      ? await prisma.cycleDomainForm.findUnique({
-          where: { id: String(formData.get("cdfId") ?? "") },
-          select: { domainId: true, applicationCycleId: true, formId: true },
-        })
-      : null;
   const domainId =
-    intent === "remove-challenge-form" ? challengeLink?.domainId : String(formData.get("domainId") ?? "");
+    intent === "remove-challenge-form"
+      ? (await prisma.cycleDomainForm.findUnique({
+          where: { id: String(formData.get("cdfId") ?? "") },
+          select: { domainId: true },
+        }))?.domainId
+      : String(formData.get("domainId") ?? "");
   const lead =
     domainId &&
     (await prisma.domainLeadAssignment.findFirst({ where: { userId: auth.user.sub, domainId }, select: { id: true } }));
@@ -490,16 +488,7 @@ export async function action({ request }: Route.ActionArgs) {
       select: { domainId: true },
     });
     if (!linked) return Response.json({ error: "That domain isn't in this cycle" }, { status: 400 });
-    const added = await addDomainMentors(cycleId, domainId, role, request);
-    if (added > 0) {
-      await logAuditEvent({
-        action: "domain.mentors.add",
-        userId: auth.user.sub,
-        targetId: domainId,
-        metadata: { cycleId, role, added },
-        request,
-      });
-    }
+    const added = await addDomainMentors(cycleId, domainId, role, request, undefined, auth.user.sub);
     // Nothing added means either no mentors, or all of them already on it.
     const notice =
       added > 0
@@ -547,47 +536,32 @@ export async function action({ request }: Route.ActionArgs) {
 
   if (intent === "create-challenge-form") {
     // Link the picked form, or auto-create a Drive challenge Form (Draft only).
-    const cycleId = formData.get("cycleId") as string;
-    const formId = (formData.get("formId") as string) || null;
-    const refused = await addDomainChallenge(cycleId, domainId, auth.user.sub, formId);
-    if (!refused) {
-      await logAuditEvent({
-        action: "domain.challenge-form.add",
-        userId: auth.user.sub,
-        targetId: domainId,
-        metadata: { cycleId, formId, created: formId === null },
-        request,
-      });
-    }
+    await addDomainChallenge(
+      formData.get("cycleId") as string,
+      domainId,
+      auth.user.sub,
+      (formData.get("formId") as string) || null,
+      request,
+    );
     return redirect("/hiring/domain-lead");
   }
 
   if (intent === "remove-challenge-form") {
     // Draft only, and refused once an applicant picked a version of the form.
-    const refused = await removeDomainChallenge(formData.get("cdfId") as string);
-    if (!refused && challengeLink) {
-      await logAuditEvent({
-        action: "domain.challenge-form.remove",
-        userId: auth.user.sub,
-        targetId: domainId,
-        metadata: { cycleId: challengeLink.applicationCycleId, formId: challengeLink.formId },
-        request,
-      });
-    }
+    await removeDomainChallenge(formData.get("cdfId") as string, undefined, {
+      actorId: auth.user.sub,
+      request,
+    });
     return redirect("/hiring/domain-lead");
   }
 
   if (intent === "mark-ready" || intent === "unmark-ready") {
     const cycleId = formData.get("cycleId") as string;
-    const refused = await setDomainReady(cycleId, domainId, intent === "mark-ready");
-    if (refused) return { error: refused };
-    await logAuditEvent({
-      action: "domain.ready.set",
-      userId: auth.user.sub,
-      targetId: domainId,
-      metadata: { cycleId, ready: intent === "mark-ready" },
+    const refused = await setDomainReady(cycleId, domainId, intent === "mark-ready", {
+      actorId: auth.user.sub,
       request,
     });
+    if (refused) return { error: refused };
     return redirect("/hiring/domain-lead");
   }
 
