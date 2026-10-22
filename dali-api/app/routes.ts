@@ -221,6 +221,8 @@ export default [
     // Community: Connect lives here in the sidebar, alongside these.
     route("community/opportunities", "community/routes/community.opportunities.tsx"),
     route("community/gallery", "community/routes/community.gallery.tsx"),
+    route("community/gallery/new-count", "community/routes/community.gallery.new-count.ts"),
+    route("community/gallery/:postId", "community/routes/community.gallery.$postId.tsx"),
     // Anonymous coffee chat invite: accept / decline (recipient) or status (sender).
     route("coffee-chats/:id", "members/routes/coffee-chats.$id.tsx"),
 

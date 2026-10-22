@@ -425,6 +425,24 @@ export const NOTIFICATION_COPY = {
     body: "You accepted their invite. Reach out to pick a time.",
     linkLabel: "Open invite",
   },
+  "gallery.comment": {
+    eventType: "gallery.comment",
+    label: "Gallery comment",
+    description: "Sent to a gallery poster when someone comments on their photo.",
+    variables: ["personName", "itemDetail"],
+    subject: "{{personName}} commented on your photo",
+    body: "{{itemDetail}}",
+    linkLabel: "Open photo",
+  },
+  "gallery.reaction": {
+    eventType: "gallery.reaction",
+    label: "Gallery reaction",
+    description: "Sent to a gallery poster when someone reacts to their photo.",
+    variables: ["personName", "itemDetail"],
+    subject: "{{personName}} reacted to your photo",
+    body: "{{itemDetail}}",
+    linkLabel: "Open photo",
+  },
 
   // ── Onboarding ───────────────────────────────────────────────────────────
   "member.onboarding": {

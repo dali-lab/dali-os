@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { data, useFetcher, useLoaderData } from "react-router";
-import { MessageCircle, SmilePlus, Trash2 } from "lucide-react";
+import { MessageCircle, Trash2 } from "lucide-react";
 import type { Route } from "./+types/feedback";
 import { prisma } from "~/lib/db";
 import { cn } from "~/lib/cn";
@@ -21,7 +21,7 @@ import { useOsChrome } from "~/components/os-chrome";
 import { Avatar } from "~/components/ui/Avatar";
 import { Button } from "~/components/ui/Button";
 import { IconButton } from "~/components/ui/IconButton";
-import { Popover } from "~/components/ui/floating";
+import { ReactionBar } from "~/components/ReactionBar";
 import { useDialog } from "~/components/ui/dialog";
 
 export const meta: Route.MetaFunction = () => [{ title: "Feedback · DALI OS" }];
@@ -173,54 +173,14 @@ function Byline({ name, at, pagePath }: { name: string; at: string; pagePath?: s
 
 function Reactions({ post }: { post: Post }) {
   const fetcher = useFetcher();
-  const react = (emoji: string) =>
-    fetcher.submit({ intent: "react", postId: post.id, emoji }, { method: "post" });
-  const chip =
-    "inline-flex h-8 items-center gap-1.5 rounded-full border px-2.5 text-sm transition-colors";
   return (
-    <div className="flex flex-wrap items-center gap-1.5">
-      {post.reactions.map((r) => (
-        <button
-          key={r.emoji}
-          type="button"
-          aria-pressed={r.mine}
-          aria-label={`${r.emoji} ${r.count}`}
-          onClick={() => react(r.emoji)}
-          className={cn(
-            chip,
-            r.mine
-              ? "border-os-accent/30 bg-os-accent/15 text-os-accent"
-              : "border-os-container text-os-grey hover:border-os-container-hi hover:text-foreground",
-          )}
-        >
-          <span aria-hidden>{r.emoji}</span>
-          <span className="tabular-nums">{r.count}</span>
-        </button>
-      ))}
-      <Popover
-        ariaLabel="Add reaction"
-        panelClassName="z-[60] w-max p-1.5"
-        trigger={<IconButton label="React" icon={SmilePlus} className="h-8 w-8 rounded-full" />}
-      >
-        {(close) => (
-          <div className="flex gap-0.5">
-            {FEEDBACK_EMOJI.map((emoji) => (
-              <button
-                key={emoji}
-                type="button"
-                onClick={() => {
-                  react(emoji);
-                  close();
-                }}
-                className="flex h-9 w-9 items-center justify-center rounded-os-item text-xl hover:bg-os-container"
-              >
-                {emoji}
-              </button>
-            ))}
-          </div>
-        )}
-      </Popover>
-    </div>
+    <ReactionBar
+      reactions={post.reactions}
+      palette={FEEDBACK_EMOJI}
+      onReact={(emoji) =>
+        fetcher.submit({ intent: "react", postId: post.id, emoji }, { method: "post" })
+      }
+    />
   );
 }
 

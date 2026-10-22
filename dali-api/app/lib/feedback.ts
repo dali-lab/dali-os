@@ -28,8 +28,9 @@ export type ReactionSummary = { emoji: string; count: number; mine: boolean };
 export function summarizeReactions(
   rows: { emoji: string; userId: string }[],
   viewerId: string,
+  palette: readonly string[] = FEEDBACK_EMOJI,
 ): ReactionSummary[] {
-  return FEEDBACK_EMOJI.flatMap((emoji) => {
+  return palette.flatMap((emoji) => {
     const hits = rows.filter((r) => r.emoji === emoji);
     if (hits.length === 0) return [];
     return [{ emoji, count: hits.length, mine: hits.some((r) => r.userId === viewerId) }];
