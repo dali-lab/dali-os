@@ -61,6 +61,11 @@
      than the grid being replaced. */
   --animate-detail-panel: detail-panel 220ms cubic-bezier(0.2, 0.8, 0.3, 1);
 
+  /* Gallery: the "N new posts" pill drops in under the tab strip, and the
+     posts it brings fade in rather than shoving the feed. */
+  --animate-gallery-pill: gallery-pill 220ms cubic-bezier(0.2, 0.8, 0.3, 1);
+  --animate-gallery-tile: gallery-tile 300ms ease-out both;
+
   /* Toast time bar: the duration is set per toast inline; only the curve lives here. */
   --animate-toast-timer: toast-timer linear forwards;
 
@@ -660,6 +665,26 @@ select:not(:disabled) {
   to {
     opacity: 1;
     transform: none;
+  }
+}
+
+@keyframes gallery-pill {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes gallery-tile {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
   }
 }
 

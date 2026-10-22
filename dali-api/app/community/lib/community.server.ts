@@ -13,5 +13,5 @@ export async function requireCommunityViewer(request: Request) {
   if (!(await isFeatureEnabled("community", auth.user.sub, roles, request))) {
     throw new Response("Not found", { status: 404 });
   }
-  return auth.user;
+  return { user: auth.user, core: roles.isCore };
 }

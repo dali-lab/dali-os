@@ -18,6 +18,18 @@ describe("summarizeReactions", () => {
     ]);
   });
 
+  it("orders and filters by the palette it is given", () => {
+    const rows = [
+      { emoji: "🔥", userId: "a" },
+      { emoji: "❤️", userId: "me" },
+      { emoji: "🚀", userId: "b" },
+    ];
+    expect(summarizeReactions(rows, "me", ["❤️", "🔥"])).toEqual([
+      { emoji: "❤️", count: 1, mine: true },
+      { emoji: "🔥", count: 1, mine: false },
+    ]);
+  });
+
   it("returns nothing for a post without reactions", () => {
     expect(summarizeReactions([], "me")).toEqual([]);
   });

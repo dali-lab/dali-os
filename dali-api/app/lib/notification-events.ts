@@ -34,7 +34,8 @@ export type EventDef = {
     | "Forms"
     | "Onboarding"
     | "Partners"
-    | "People";
+    | "People"
+    | "Community";
   label: string;
   description: string;
   // The in-app row IS the workflow surface (RSVP buttons, form todo,
@@ -518,6 +519,24 @@ export const EVENT_TYPES = {
     label: "Coffee chat accepted",
     description: "When a coffee chat invite is accepted, whether you sent it or accepted it.",
     defaults: { inApp: true, desktop: true, slackDm: false, email: "Instant" },
+  },
+  "gallery.comment": {
+    kind: "General",
+    area: "Community",
+    label: "Gallery comments",
+    description: "New comments on photos you posted to the gallery.",
+    coalesceWindowMs: 60 * 60_000,
+    coalesceNoun: "comment",
+    defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
+  },
+  "gallery.reaction": {
+    kind: "General",
+    area: "Community",
+    label: "Gallery reactions",
+    description: "When someone reacts to a photo you posted to the gallery.",
+    coalesceWindowMs: 60 * 60_000,
+    coalesceNoun: "reaction",
+    defaults: { inApp: true, desktop: false, slackDm: false, email: "Off" },
   },
   // Fallback stamped on rows that predate the registry (schema column
   // default). Never emitted by code; hidden from the settings page.

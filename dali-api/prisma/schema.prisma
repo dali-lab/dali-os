@@ -148,7 +148,7 @@ model User {
   // from first-initial + last-name (lowercased), auto-suffixed on collision,
   // and editable in profile. Nullable + unique like the other identity handles;
   // a user with no handle simply can't be @-mentioned until they set one.
-  handle             String? @unique
+  handle             String?   @unique
 
   // Per-member secret mixed into the signed barcode carried by the member's
   // Apple/Google Wallet membership pass (see app/lib/wallet-token.ts). Set
@@ -325,6 +325,13 @@ model User {
   feedbackPosts     FeedbackPost[]
   feedbackReactions FeedbackReaction[]
   feedbackComments  FeedbackComment[]
+
+  // ─── Community gallery ────────────────────────────────────────────────────
+  galleryPosts     GalleryPost[]     @relation("GalleryPostAuthor")
+  galleryHidden    GalleryPost[]     @relation("GalleryPostHider")
+  galleryReactions GalleryReaction[]
+  galleryComments  GalleryComment[]
+  galleryReports   GalleryReport[]
 
   // ─── Page documentation (per-page guides) ─────────────────────────────────
   pageDocsMaintained PageDoc[]  @relation("PageDocMaintainer")
@@ -1604,6 +1611,74 @@ model FeedbackComment {
   @@index([postId, createdAt])
 }
 
+// One photo in the Community gallery. A bulk upload makes one post per photo.
+// width/height/color are read in the browser at upload so the masonry can
+// reserve each tile's space (and paint its placeholder) before the image loads.
+model GalleryPost {
+  id         String    @id @default(cuid())
+  authorId   String
+  // S3 key (uploads/gallery/<uuid>.<ext>).
+  imageKey   String
+  width      Int
+  height     Int
+  // Dominant colour as #rrggbb.
+  color      String    @db.VarChar(7)
+  caption    String?
+  // Set by enough reports or by Core. Hidden posts show only to Core and the author.
+  hiddenAt   DateTime?
+  hiddenById String?
+  createdAt  DateTime  @default(now())
+
+  author    User              @relation("GalleryPostAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+  hiddenBy  User?             @relation("GalleryPostHider", fields: [hiddenById], references: [id], onDelete: SetNull)
+  reactions GalleryReaction[]
+  comments  GalleryComment[]
+  reports   GalleryReport[]
+
+  @@index([createdAt])
+  @@index([authorId, createdAt])
+}
+
+model GalleryReaction {
+  id        String   @id @default(cuid())
+  postId    String
+  userId    String
+  emoji     String   @db.VarChar(64)
+  createdAt DateTime @default(now())
+
+  post GalleryPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, userId, emoji])
+  @@index([postId])
+}
+
+model GalleryComment {
+  id        String   @id @default(cuid())
+  postId    String
+  authorId  String
+  body      String
+  createdAt DateTime @default(now())
+
+  post   GalleryPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  author User        @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@index([postId, createdAt])
+}
+
+model GalleryReport {
+  id         String   @id @default(cuid())
+  postId     String
+  reporterId String
+  reason     String?
+  createdAt  DateTime @default(now())
+
+  post     GalleryPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  reporter User        @relation(fields: [reporterId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, reporterId])
+}
+
 enum DocCommentTarget {
   doc
   file
@@ -2073,16 +2148,16 @@ model MeetingRecording {
   occurrenceStart    DateTime?
 
   // Channels with at least one stored chunk: "mic" | "call".
-  channels      String[]  @default([])
+  channels       String[]  @default([])
   // Channels with at least one chunk above the silence floor. Only these are
   // sent to transcription; empty (rows from before this column) sends all.
-  voicedChannels String[] @default([])
+  voicedChannels String[]  @default([])
   // Segment start offsets in seconds, index = segment. Continue appends one;
   // segment 0's start is implicitly 0.
-  segmentStarts Float[]   @default([])
+  segmentStarts  Float[]   @default([])
   // Highest seq stored per channel per segment, for the job description.
-  chunkIndex    Json      @default("{}") // { mic: [41, 12], call: [41] }
-  lastChunkAt   DateTime?
+  chunkIndex     Json      @default("{}") // { mic: [41, 12], call: [41] }
+  lastChunkAt    DateTime?
 
   // Per-channel word arrays with absolute timestamps; lines derive from these.
   words    Json @default("{}") // { mic: [{ s, e, w, sp }], call: [...] }
@@ -2562,26 +2637,26 @@ enum MailLinkSource {
 // Thin index of one Gmail message in a Shared inbox, linked to the User it was
 // exchanged with. Headers only; mail stays in Gmail. Staff-only surfaces.
 model MailMessageIndex {
-  id             String         @id @default(cuid())
-  accountId      String
-  gmailMessageId String
-  threadId       String
-  direction      MailDirection
-  subject        String         @default("")
-  sentAt         DateTime
-  fromAddress    String
-  toAddresses    String[]       @default([])
+  id                     String         @id @default(cuid())
+  accountId              String
+  gmailMessageId         String
+  threadId               String
+  direction              MailDirection
+  subject                String         @default("")
+  sentAt                 DateTime
+  fromAddress            String
+  toAddresses            String[]       @default([])
   // Null until the indexer has read the message's auto-reply headers.
-  autoReply      Boolean?
-  linkedUserId   String?
+  autoReply              Boolean?
+  linkedUserId           String?
   // Partner-funnel counterpart (a PartnerContact may have no User). Set by the
   // partners@ index job; manual link/unlink works the same as linkedUserId.
   linkedPartnerContactId String?
-  linkSource     MailLinkSource @default(None)
-  linkedById     String?
-  linkedAt       DateTime?
-  createdAt      DateTime       @default(now())
-  updatedAt      DateTime       @updatedAt
+  linkSource             MailLinkSource @default(None)
+  linkedById             String?
+  linkedAt               DateTime?
+  createdAt              DateTime       @default(now())
+  updatedAt              DateTime       @updatedAt
 
   account              MailAccount     @relation(fields: [accountId], references: [id], onDelete: Cascade)
   linkedUser           User?           @relation("MailMessageIndexLinkedUser", fields: [linkedUserId], references: [id], onDelete: SetNull)
@@ -2706,16 +2781,16 @@ model ScheduledMeeting {
   // silences all three surfaces for everyone on this series.
   recordPrompt Boolean @default(true)
 
-  exceptions    MeetingException[]
-  notifications Notification[]
-  reminderLogs  MeetingReminderLog[]
-  attendance    MeetingAttendance[]
+  exceptions            MeetingException[]
+  notifications         Notification[]
+  reminderLogs          MeetingReminderLog[]
+  attendance            MeetingAttendance[]
   partnerMeeting        PartnerMeeting?
   partnerMeetingRequest PartnerMeetingRequest?
-  timeEntries   TimeEntry[]
-  timeProposals MeetingTimeProposal[]
-  recordings    MeetingRecording[]
-  shareGrants   MeetingShareGrant[]
+  timeEntries           TimeEntry[]
+  timeProposals         MeetingTimeProposal[]
+  recordings            MeetingRecording[]
+  shareGrants           MeetingShareGrant[]
 
   createdAt DateTime @default(now())
 
@@ -4419,26 +4494,26 @@ model ProjectTemplate {
 // ─── Education ───────────────────────────────────────────────────────────────
 
 model EducationOffering {
-  id                   String         @id @default(cuid())
-  type                 OfferingType
-  title                String
+  id                    String         @id @default(cuid())
+  type                  OfferingType
+  title                 String
   // Notion-style catalog icon: a single emoji shown on the offering's catalog
   // card cover. Null → a neutral first-letter fallback. Mirrors Project.iconEmoji.
-  iconEmoji            String?
-  descriptionDocId     String?
-  capacity             Int
-  registrationOpensAt  DateTime
-  registrationClosesAt DateTime
-  startsAt             DateTime?
-  endsAt               DateTime?
-  status               OfferingStatus @default(Draft)
+  iconEmoji             String?
+  descriptionDocId      String?
+  capacity              Int
+  registrationOpensAt   DateTime
+  registrationClosesAt  DateTime
+  startsAt              DateTime?
+  endsAt                DateTime?
+  status                OfferingStatus @default(Draft)
   // True for typical miniseries and fellowships (instructor-reviewed), false for typical
   // workshops (auto-approve up to capacity, waitlist after). Configurable
   // per-offering — workshops can opt into review without a schema change.
-  requiresReview       Boolean
+  requiresReview        Boolean
   // Fraction of sessions a student must attend (Present + Excused) to earn a
   // completion certificate. Miniseries and fellowships; workshops need one Present mark.
-  completionThreshold  Float          @default(0.8)
+  completionThreshold   Float          @default(0.8)
   // When set, replaces the fraction: a fixed count of sessions attended
   // (Present + Excused) earns the certificate.
   completionMinSessions Int?
@@ -5507,8 +5582,8 @@ model Page {
   templatePage             Page?   @relation("NotebookTemplate", fields: [templatePageId], references: [id], onDelete: SetNull)
   notebooksUsingAsTemplate Page[]  @relation("NotebookTemplate")
 
-  parent   Page?  @relation("PageTree", fields: [parentPageId], references: [id])
-  children Page[] @relation("PageTree")
+  parent     Page?       @relation("PageTree", fields: [parentPageId], references: [id])
+  children   Page[]      @relation("PageTree")
   mentorNote MentorNote? @relation("MentorNotePage")
 
   // Lab-wide tags applied to this document. Comments (doc-level + inline) live
@@ -6191,13 +6266,13 @@ model PartnerOrg {
 
   // CRM account fields. Relationship status (prospect/active/past/dormant) is
   // derived from ProjectPartner rows + activity recency, not stored.
-  type               PartnerOrgType?
-  address            String?
-  legalEntityName    String?
-  tags               String[]        @default([])
-  notes              String?
+  type                PartnerOrgType?
+  address             String?
+  legalEntityName     String?
+  tags                String[]        @default([])
+  notes               String?
   // The partner agreed to be named on the public showcase.
-  showcaseConsent    Boolean         @default(false)
+  showcaseConsent     Boolean         @default(false)
   // Loose ref to PartnerContact.id: who introduced this org.
   referredByContactId String?
 
@@ -6327,18 +6402,18 @@ model PartnerMembership {
 // Many-to-many: projects can have multiple partners, and partners can fund
 // multiple projects.
 model ProjectPartner {
-  id           String    @id @default(cuid())
-  projectId    String
-  partnerOrgId String
-  startedAt    DateTime?
-  endedAt      DateTime?
+  id                 String          @id @default(cuid())
+  projectId          String
+  partnerOrgId       String
+  startedAt          DateTime?
+  endedAt            DateTime?
   // Post-project survey (specs/partner-crm.md §11). Stamped once by the
   // partner-survey-send job when endedAt is set; surveySubmissionId is filled
   // when the partner actually fills the bound PartnerSurveyFormBinding form.
   // Nullable + SetNull mirrors PartnerApplication.formSubmissionId: deleting
   // the Form cascades its submissions away, but the partnership row survives.
   surveySentAt       DateTime?
-  surveySubmissionId String?       @unique
+  surveySubmissionId String?         @unique
   surveySubmission   FormSubmission? @relation(fields: [surveySubmissionId], references: [id], onDelete: SetNull)
 
   project    Project    @relation(fields: [projectId], references: [id])
@@ -6593,13 +6668,13 @@ model OutboundMessage {
   notificationId  String?
 
   // Rendered payload — the layer carries content; features own rendering.
-  subject     String?
-  bodyHtml    String? @db.Text
-  bodyText    String? @db.Text
-  slackText   String?
-  ics         String? @db.Text
+  subject      String?
+  bodyHtml     String? @db.Text
+  bodyText     String? @db.Text
+  slackText    String?
+  ics          String? @db.Text
   // [{ filename, mimeType, contentBase64 }] — decoded to Buffers at send.
-  attachments Json?
+  attachments  Json?
   // slack_channel only: Block Kit blocks (slackText is the notification
   // fallback), an S3 key uploaded into the posted message's thread, and the ts
   // of that post. slackTs is persisted right after the post so a retry that only
@@ -6884,12 +6959,12 @@ model PartnerSurveyFormBinding {
 
 // Singleton (id "default") of operator knobs for the CRM.
 model PartnerCrmSettings {
-  id                   String   @id @default("default")
+  id                    String   @id @default("default")
   // Core members whose mutual availability partners see when requesting an
   // interview. Empty = every active Core member.
   interviewPanelUserIds String[] @default([])
-  staleDays            Int      @default(14)
-  updatedAt            DateTime @updatedAt
+  staleDays             Int      @default(14)
+  updatedAt             DateTime @updatedAt
 }
 
 // A Core↔partner meeting attached to an opportunity. Supports "meet in pairs":
@@ -6897,24 +6972,24 @@ model PartnerCrmSettings {
 // filled after the pair syncs. Notes/debrief are plain text (single-author
 // internal scratch — unlike the co-authored SOW, no collab machinery).
 model PartnerMeeting {
-  id              String                 @id @default(cuid())
-  applicationId   String
-  scheduledAt     DateTime
+  id                 String                 @id @default(cuid())
+  applicationId      String
+  scheduledAt        DateTime
   // Core attendees. Loose refs to User.id (same convention as
   // PartnerInvite.invitedByUserId) — display-only, no relation.
-  attendeeUserIds String[]
-  notes           String?
-  debrief         String?
-  outcome         PartnerMeetingOutcome?
+  attendeeUserIds    String[]
+  notes              String?
+  debrief            String?
+  outcome            PartnerMeetingOutcome?
   // The real calendar meeting (Google event, Meet link, partner as guest).
   // Null only on legacy rows logged before the CRM used ScheduledMeeting.
-  scheduledMeetingId String? @unique
+  scheduledMeetingId String?                @unique
 
   application      PartnerApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
   scheduledMeeting ScheduledMeeting?  @relation(fields: [scheduledMeetingId], references: [id], onDelete: SetNull)
   // Denormalized contact link so a meeting is reachable from the account.
-  contactId   String?
-  contact     PartnerContact?    @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  contactId        String?
+  contact          PartnerContact?    @relation(fields: [contactId], references: [id], onDelete: SetNull)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -7510,10 +7585,10 @@ model BlogPost {
 
   // Set while a draft waits for an Admin to approve it; cleared once it is
   // published or withdrawn.
-  submittedAt    DateTime?
+  submittedAt   DateTime?
   // Core's front page arrangement: pinned posts lead in rank order (lowest
   // first); null = unpinned, falling in behind them newest first.
-  frontPageRank  Int?
+  frontPageRank Int?
 
   authorId String
   author   User   @relation(fields: [authorId], references: [id], onDelete: Cascade)
