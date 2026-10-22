@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useFetcher, useRevalidator } from "react-router";
 import { AlignLeft, CalendarDays, Clock, MapPin, Repeat, UsersRound, X } from "lucide-react";
 import { cn } from "~/lib/cn";
@@ -30,6 +30,8 @@ import {
 } from "~/calendar/components/composer";
 import { durationMinutesBetween } from "~/calendar/lib/event-block";
 import { eventTitleOrDefault } from "~/calendar/lib/event-title";
+import { backgroundKey } from "~/calendar/lib/background-submissions";
+import { newPendingId, usePendingSubmissions } from "~/calendar/lib/pending-submissions";
 import { getZonedYMD, zonedDayStartUtc } from "~/lib/timezone";
 import { weekStartIsoForDay, weekWindow } from "~/calendar/lib/view-window";
 import {
@@ -334,7 +336,15 @@ export function CreateEventModal({
         new Date(selectedEndLocal).getTime() > new Date(selectedStartLocal).getTime();
 
   // ── Submission state ─────────────────────────────────────────────────────
-  const eventFetcher = useFetcher<{ error?: string }>();
+  const instanceId = useId();
+  // A plain event closes the form on submit and shows as a ghost block while it
+  // saves. One holding a room waits instead: the server rejects a taken room,
+  // and that answer has to land where the user can pick another.
+  const closeEventOnSubmit = allDay || roomIds.length === 0;
+  const eventFetcher = useFetcher<{ error?: string }>({
+    key: closeEventOnSubmit ? backgroundKey("event-create", instanceId) : `cal:fg:${instanceId}`,
+  });
+  const pendingStore = usePendingSubmissions();
   const timeFetcher = useFetcher();
   const revalidator = useRevalidator();
   const showFiledNote = useFiledNoteToast();
@@ -405,6 +415,13 @@ export function CreateEventModal({
     e.preventDefault();
     setSubmitting(true);
     setMeetingStatus(null);
+    const clearGhost =
+      startIso && endIso
+        ? pendingStore.register({
+            id: newPendingId("meeting-create"),
+            fields: { intent: "meeting-create", title: eventTitleOrDefault(title), startIso, endIso },
+          })
+        : () => {};
     try {
       const payload: Record<string, unknown> = {
         title: eventTitleOrDefault(title),
@@ -441,6 +458,7 @@ export function CreateEventModal({
       });
       const json = await res.json();
       if (!res.ok) {
+        clearGhost();
         setMeetingStatus({ ok: false, error: json.error ?? "Failed to create meeting" });
         setSubmitting(false);
       } else {
@@ -485,11 +503,12 @@ export function CreateEventModal({
         // new block is already on screen behind the success message by the time
         // the modal closes. (calendar.tsx's shouldRevalidate deliberately lets a
         // same-URL revalidate through for exactly this case.)
-        revalidator.revalidate();
+        void Promise.resolve(revalidator.revalidate()).finally(clearGhost);
         if (createdMeetingId) onCreated?.(createdMeetingId);
         if (!json.gcalError) setTimeout(() => onClose(), 1200);
       }
     } catch (err) {
+      clearGhost();
       setMeetingStatus({ ok: false, error: err instanceof Error ? err.message : "Network error" });
       setSubmitting(false);
     }
@@ -636,7 +655,13 @@ export function CreateEventModal({
             </div>
           ) : type === "Event" ? (
             /* ── Event form ──────────────────────────────────────────────── */
-            <eventFetcher.Form method="post" className="flex flex-col gap-5">
+            <eventFetcher.Form
+              method="post"
+              onSubmit={() => {
+                if (closeEventOnSubmit) onClose();
+              }}
+              className="flex flex-col gap-5"
+            >
               <input type="hidden" name="intent" value="event-create" />
               <input type="hidden" name="destination" value={destination} />
               <input type="hidden" name="startIso" value={startIso} />

@@ -304,6 +304,8 @@ export type ExternalEventDTO = {
    *  "Track in DALI" action, which is what unlocks a note and attendance for
    *  events authored in Google rather than in DALI. */
   canTrackAsMeeting?: boolean;
+  /** A ghost drawn for a write still in flight; not a real event yet. */
+  pending?: boolean;
 };
 
 export type LoaderData = {
@@ -383,6 +385,8 @@ export type EventBlock = {
    *  which exists to *write* an answer back and so is only set where there's a
    *  control to write it with. */
   unanswered?: boolean;
+  /** Drawn faded and inert: the write that creates it hasn't landed yet. */
+  pending?: boolean;
   /** Background tint for the buffer strip + frame (e.g. "bg-accent-coral/25"). */
   bufferClassName?: string;
   /** Hours of buffer above the event body. */

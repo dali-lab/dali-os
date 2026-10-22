@@ -37,12 +37,22 @@ const group = (over: Partial<GroupOption> & { id: string; name: string }): Group
 const atlas = group({ id: "g-atlas", name: "Atlas", projectId: "p1" });
 const core = group({ id: "g-core", name: "Core", systemKey: "core" });
 
-const loaderData = (groups: GroupOption[]) =>
+const writableCalendar = [
+  {
+    id: "l1",
+    provider: "Google",
+    displayName: "Me",
+    externalEmail: "me@dali.test",
+    subCalendars: [{ id: "c1", summary: "Cal", primary: true, writable: true }],
+  },
+];
+
+const loaderData = (groups: GroupOption[], calendarLinks: unknown[] = []) =>
   ({
     groups,
     mentorPairs: [],
     users: [],
-    calendarLinks: [],
+    calendarLinks,
     myRoles: [],
     currentUserId: "me",
     defaultEventDest: null,
@@ -70,14 +80,19 @@ const createBody = () => {
   return call ? JSON.parse(call[1].body as string) : null;
 };
 
-async function mount(props: { groups: GroupOption[]; initialGroupIds?: string[]; initialUserIds?: string[] }) {
+async function mount(props: {
+  groups: GroupOption[];
+  initialGroupIds?: string[];
+  initialUserIds?: string[];
+  calendarLinks?: unknown[];
+}) {
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
   await act(async () =>
     root.render(
       createElement(CreateEventModal, {
-        data: loaderData(props.groups),
+        data: loaderData(props.groups, props.calendarLinks),
         startLocal: "2026-10-20T10:00",
         endLocal: "2026-10-20T11:00",
         initialGroupIds: props.initialGroupIds,
@@ -281,5 +296,22 @@ describe("CreateEventModal after the create", () => {
     fetcherData = { error: "Invalid role" };
     await mount({ groups: [atlas], initialGroupIds: ["g-atlas"] });
     expect(toastError).toHaveBeenCalledWith(expect.stringContaining("Invalid role"));
+  });
+});
+
+describe("CreateEventModal plain event", () => {
+  const eventForm = () => container.querySelector("form")!;
+  const submitEvent = () =>
+    act(async () => {
+      eventForm().dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    });
+
+  it("closes as soon as the event is submitted, not once the server has answered", async () => {
+    await mount({ groups: [], calendarLinks: writableCalendar });
+    expect(onClose).not.toHaveBeenCalled();
+
+    await submitEvent();
+
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 });

@@ -22,6 +22,7 @@ import { isTrackedMeeting, STOP_TRACKING_DESCRIPTION, STOP_TRACKING_LABEL } from
 import { AddMeetingWhiteboardButton } from "~/calendar/components/AddMeetingWhiteboardModal";
 import { TrackEventButton } from "~/calendar/components/TrackEventButton";
 import { IssueIcon } from "~/calendar/components/IssueIcon";
+import { RSVP_STATUS_FROM_RESPONSE } from "~/calendar/lib/optimistic-layer";
 import type {
   EventBlock, EventAttendeeDTO, EventLinkDTO, EventRsvpTarget, RsvpStatus, WhDay,
 } from "~/calendar/lib/types";
@@ -75,12 +76,6 @@ const RSVP_CHOICES = [
 
 /** The wire vocabulary the RSVP routes take. */
 type RsvpResponse = "accepted" | "declined" | "tentative";
-
-const RSVP_FROM_RESPONSE = {
-  accepted: "Accepted",
-  tentative: "Tentative",
-  declined: "Declined",
-} as const satisfies Record<RsvpResponse, RsvpStatus>;
 
 /** One section of the detail card: an eyebrow label over its content. The
  *  popover is a stack of these, so every block gets the same rhythm. */
@@ -195,8 +190,10 @@ export function EventRsvpControl({
   // Revalidation lands a beat after the write, so show the answer being sent —
   // otherwise the pressed button visibly snaps back before settling.
   const inFlight = sending ?? (fetcher.formData?.get("response") as RsvpResponse | null);
-  const status: RsvpStatus = inFlight ? RSVP_FROM_RESPONSE[inFlight] : rsvp.status;
-  const busy = sending !== null || fetcher.state !== "idle";
+  const status: RsvpStatus = inFlight ? RSVP_STATUS_FROM_RESPONSE[inFlight]! : rsvp.status;
+  // Only the request itself blocks: while the page re-reads, an answer can still
+  // be changed and the latest one wins.
+  const busy = sending !== null || fetcher.state === "submitting";
 
   async function answer(response: RsvpResponse) {
     setError(null);
@@ -608,7 +605,7 @@ export function MeetingDetailToggles({ meeting }: { meeting: NonNullable<EventBl
     <div className="mt-3 flex flex-col gap-2.5 rounded-os-item bg-os-well px-3 py-2.5 text-[13px]">
       <Toggle
         checked={onTimesheet}
-        disabled={timesheetFetcher.state !== "idle"}
+        disabled={timesheetFetcher.state === "submitting"}
         onChange={(ev) =>
           timesheetFetcher.submit(
             {
@@ -970,7 +967,7 @@ export function WeekGridEvent({
         displayBufferAfter === 0 ? "rounded-b-md" : ""
       } ${border} ${bufferBg} overflow-hidden ${
         movable ? (isDragging ? "cursor-grabbing" : "cursor-grab") : clickable ? "cursor-pointer" : ""
-      }${livePos ? " z-40 opacity-95 shadow-lg" : ""}`}
+      }${livePos ? " z-40 opacity-95 shadow-lg" : ""}${e.pending ? " pointer-events-none opacity-60" : ""}`}
       style={{
         top: (displayStart - displayBufferBefore - HOURS[0]) * HOUR_PX,
         height: displayTotalHours * HOUR_PX,

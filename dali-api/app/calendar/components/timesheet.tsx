@@ -1,5 +1,5 @@
-import { useLocation, useRevalidator } from "react-router";
-import { useEffect, useState } from "react";
+import { useFetcher, useLocation } from "react-router";
+import { useEffect, useId, useState } from "react";
 import { X } from "lucide-react";
 import type { RoleInstance } from "~/lib/roles";
 import { Modal, ModalHeader } from "~/components/Modal";
@@ -12,6 +12,7 @@ import { formatDateShort, formatTimeOnly } from "~/lib/display";
 import type { ExternalEventDTO, TimeEntryDTO } from "~/calendar/lib/types";
 import { EventDetailBody } from "~/calendar/components/WeekGrid";
 import { roleOptionKey, parseRoleOptionKey } from "~/calendar/components/role-fields";
+import { backgroundKey } from "~/calendar/lib/background-submissions";
 
 // Shown wherever time can be logged but the user holds no paid role. Every
 // entry must attribute to one, so there's nothing valid to submit.
@@ -39,7 +40,7 @@ function TimesheetEntryForm({
   idPrefix: string;
 }) {
   const { formClass, formTrigger } = useOsChrome();
-  const revalidator = useRevalidator();
+  const fetcher = useFetcher({ key: backgroundKey("add-time-entry", useId()) });
   // Post to whichever calendar route is mounted — /calendar for members,
   // /portal/calendar for the non-member copy. A hardcoded "/calendar" would
   // send the portal's writes through the member route, whose loaders bounce a
@@ -54,46 +55,32 @@ function TimesheetEntryForm({
   }, [startLocal, endLocal]);
   const [roleKey, setRoleKey] = useState(myRoles.length === 1 ? roleOptionKey(myRoles[0]!) : "");
   const [note, setNote] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   const startEndValid = !!start && !!end && new Date(end).getTime() > new Date(start).getTime();
   const hours = startEndValid
     ? Math.round(((new Date(end).getTime() - new Date(start).getTime()) / 3_600_000) * 100) / 100
     : 0;
-  const canSubmit = startEndValid && hours > 0 && !!roleKey && !submitting && note.trim() !== "";
+  const canSubmit = startEndValid && hours > 0 && !!roleKey && note.trim() !== "";
 
-  async function submit(e: React.FormEvent) {
+  // Closes on submit: the grid draws the entry while it saves, and a failure
+  // is reported as a toast.
+  function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!canSubmit) return;
-    setSubmitting(true);
-    setError(null);
-    try {
-      const body = new FormData();
-      body.set("intent", "add-time-entry");
-      body.set("startTime", new Date(start).toISOString());
-      body.set("endTime", new Date(end).toISOString());
-      body.set("date", start.slice(0, 10));
-      body.set("hours", String(hours));
-      const role = parseRoleOptionKey(roleKey);
-      if (role) {
-        body.set("assignmentType", role.assignmentType);
-        body.set("roleRefId", role.roleRefId);
-      }
-      if (note.trim()) body.set("note", note.trim());
-      const res = await fetch(actionPath, { method: "POST", credentials: "include", body });
-      if (!res.ok) {
-        const j = await res.json().catch(() => null);
-        setError(j?.error ?? "Failed to add entry");
-        return;
-      }
-      revalidator.revalidate();
-      onClose();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Network error");
-    } finally {
-      setSubmitting(false);
-    }
+    const role = parseRoleOptionKey(roleKey);
+    fetcher.submit(
+      {
+        intent: "add-time-entry",
+        startTime: new Date(start).toISOString(),
+        endTime: new Date(end).toISOString(),
+        date: start.slice(0, 10),
+        hours: String(hours),
+        ...(role ? { assignmentType: role.assignmentType, roleRefId: role.roleRefId } : {}),
+        ...(note.trim() ? { note: note.trim() } : {}),
+      },
+      { method: "post", action: actionPath },
+    );
+    onClose();
   }
 
   return (
@@ -170,8 +157,6 @@ function TimesheetEntryForm({
         )}
       </div>
 
-      {error && <p className="text-sm text-destructive">{error}</p>}
-
       <div className="flex items-center justify-end gap-2 pt-1">
         <button
           type="button"
@@ -185,7 +170,7 @@ function TimesheetEntryForm({
           disabled={!canSubmit}
           className="rounded-full bg-os-accent px-5 py-2 text-sm font-medium text-os-bg transition-colors hover:bg-os-accent-hover disabled:opacity-50"
         >
-          {submitting ? "Adding…" : "Add entry"}
+          Add entry
         </button>
       </div>
     </form>
@@ -302,7 +287,9 @@ export function TimesheetEditPopover({
   onClose: () => void;
 }) {
   const { formClass, fieldLabel, formTrigger } = useOsChrome();
-  const revalidator = useRevalidator();
+  const instanceId = useId();
+  const saveFetcher = useFetcher({ key: backgroundKey("update-time-entry", instanceId) });
+  const deleteFetcher = useFetcher({ key: backgroundKey("delete-time-entry", instanceId) });
   const actionPath = useLocation().pathname;
   const [start, setStart] = useState(startLocal);
   const [end, setEnd] = useState(endLocal);
@@ -319,21 +306,17 @@ export function TimesheetEditPopover({
       : "",
   );
   const [note, setNote] = useState(entry.note ?? "");
-  const [submitting, setSubmitting] = useState(false);
-  const [deleting, setDeleting] = useState(false);
   // The delete confirm is a Modal in the page tree, while this card is portaled
   // to the end of <body> at the same z-index, so the card would paint over the
   // confirm and cover its buttons. Step aside while the confirm is up.
   const [confirming, setConfirming] = useState(false);
   const dialog = useDialog();
-  const [error, setError] = useState<string | null>(null);
 
   const startEndValid = !!start && !!end && new Date(end).getTime() > new Date(start).getTime();
   const hours = startEndValid
     ? Math.round(((new Date(end).getTime() - new Date(start).getTime()) / 3_600_000) * 100) / 100
     : 0;
-  const busy = submitting || deleting;
-  const canSubmit = startEndValid && hours > 0 && !!roleKey && !busy && note.trim() !== "";
+  const canSubmit = startEndValid && hours > 0 && !!roleKey && note.trim() !== "";
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -343,36 +326,25 @@ export function TimesheetEditPopover({
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  async function submit(e: React.FormEvent) {
+  function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!canSubmit) return;
-    setSubmitting(true);
-    setError(null);
-    try {
-      const body = new FormData();
-      const role = parseRoleOptionKey(roleKey);
-      body.set("intent", "update-time-entry");
-      body.set("id", entry.id);
-      body.set("startTime", new Date(start).toISOString());
-      body.set("endTime", new Date(end).toISOString());
-      body.set("date", start.slice(0, 10));
-      body.set("hours", String(hours));
-      body.set("assignmentType", role?.assignmentType ?? "");
-      body.set("roleRefId", role?.roleRefId ?? "");
-      body.set("note", note.trim());
-      const res = await fetch(actionPath, { method: "POST", credentials: "include", body });
-      if (!res.ok) {
-        const j = await res.json().catch(() => null);
-        setError(j?.error ?? "Failed to save entry");
-        return;
-      }
-      revalidator.revalidate();
-      onClose();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Network error");
-    } finally {
-      setSubmitting(false);
-    }
+    const role = parseRoleOptionKey(roleKey);
+    saveFetcher.submit(
+      {
+        intent: "update-time-entry",
+        id: entry.id,
+        startTime: new Date(start).toISOString(),
+        endTime: new Date(end).toISOString(),
+        date: start.slice(0, 10),
+        hours: String(hours),
+        assignmentType: role?.assignmentType ?? "",
+        roleRefId: role?.roleRefId ?? "",
+        note: note.trim(),
+      },
+      { method: "post", action: actionPath },
+    );
+    onClose();
   }
 
   async function del() {
@@ -390,25 +362,8 @@ export function TimesheetEditPopover({
       setConfirming(false);
     }
     if (!ok) return;
-    setDeleting(true);
-    setError(null);
-    try {
-      const body = new FormData();
-      body.set("intent", "delete-time-entry");
-      body.set("id", entry.id);
-      const res = await fetch(actionPath, { method: "POST", credentials: "include", body });
-      if (!res.ok) {
-        const j = await res.json().catch(() => null);
-        setError(j?.error ?? "Failed to delete entry");
-        return;
-      }
-      revalidator.revalidate();
-      onClose();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Network error");
-    } finally {
-      setDeleting(false);
-    }
+    deleteFetcher.submit({ intent: "delete-time-entry", id: entry.id }, { method: "post", action: actionPath });
+    onClose();
   }
 
   return (
@@ -506,16 +461,13 @@ export function TimesheetEditPopover({
             )}
           </div>
 
-          {error && <p className="text-sm text-destructive">{error}</p>}
-
           <div className="flex items-center justify-between gap-2 pt-1">
             <button
               type="button"
               onClick={del}
-              disabled={busy}
-              className="px-3 py-2 text-sm font-medium rounded-md text-destructive hover:bg-destructive/10 disabled:opacity-50"
+              className="px-3 py-2 text-sm font-medium rounded-md text-destructive hover:bg-destructive/10"
             >
-              {deleting ? "Deleting…" : "Delete"}
+              Delete
             </button>
             <div className="flex items-center gap-2">
               <button
@@ -530,7 +482,7 @@ export function TimesheetEditPopover({
                 disabled={!canSubmit}
                 className="px-4 py-2 rounded-md bg-os-accent text-os-bg text-sm font-medium hover:bg-os-accent/90 transition-colors disabled:opacity-50"
               >
-                {submitting ? "Saving…" : "Save"}
+                Save
               </button>
             </div>
           </div>

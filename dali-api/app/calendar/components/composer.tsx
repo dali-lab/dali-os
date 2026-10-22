@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useFetcher, useRevalidator } from "react-router";
 import {
   Calendar as CalendarIcon,
@@ -23,7 +23,6 @@ import { DateField } from "~/components/ui/DateField";
 import { TimeField as TimeComboField } from "~/components/ui/TimeField";
 import { Select, Tooltip } from "~/components/ui/floating";
 import { useDialog } from "~/components/ui/dialog";
-import { useToast } from "~/components/ui/toast";
 import { SearchInput } from "~/components/ui/SearchInput";
 import { Checkbox } from "~/components/ui/Checkbox";
 import { roleOptionKey, parseRoleOptionKey } from "~/calendar/components/role-fields";
@@ -40,6 +39,7 @@ import { getZonedYMD } from "~/lib/timezone";
 import { cn } from "~/lib/cn";
 import { localDayTimeToIso } from "~/calendar/lib/event-block";
 import { eventTitleOrDefault } from "~/calendar/lib/event-title";
+import { backgroundKey } from "~/calendar/lib/background-submissions";
 import { isTrackedMeeting, STOP_TRACKING_DESCRIPTION, STOP_TRACKING_LABEL } from "~/calendar/lib/stop-tracking";
 import { DARTMOUTH_PERIODS, getPeriod, periodSummary, periodMeetings } from "~/calendar/lib/dartmouth-periods";
 import {
@@ -392,10 +392,9 @@ export function EventComposer({
   // meeting the viewer manages.
   onOpenMeetingEditor?: (meetingId: string) => void;
 }) {
-  const fetcher = useFetcher<{ error?: string } | null>();
-  const deleteFetcher = useFetcher<{ error?: string } | null>();
+  const instanceId = useId();
+  const deleteFetcher = useFetcher<{ error?: string } | null>({ key: backgroundKey("event-delete", instanceId) });
   const dialog = useDialog();
-  const toast = useToast();
   const [steppedAside, setSteppedAside] = useState(false);
   const editing = state.mode === "edit";
   const ev = editing ? state.event : null;
@@ -426,6 +425,16 @@ export function EventComposer({
   // A recurring instance carries recurringEventId; editing it prompts for scope.
   const isRecurring = Boolean(ev?.recurringEventId);
   const [scope, setScope] = useState<"this" | "following" | "all">("this");
+  // Saving a single event, one occurrence, or a new event changes nothing but
+  // that block, so the form closes on submit and the grid draws the change
+  // while it saves. Editing a whole series or "this & following" splits it into
+  // new events whose ids only exist once the server answers, so those wait.
+  const closeOnSubmit = !editing || !isRecurring || scope === "this";
+  const fetcher = useFetcher<{ error?: string } | null>({
+    key: closeOnSubmit
+      ? backgroundKey(editing ? "event-update" : "event-create", instanceId)
+      : `cal:fg:${instanceId}`,
+  });
 
   // Guest list, loaded on demand for a meeting edit (mirrors EditMeetingModal).
   const [guestCtx, setGuestCtx] = useState<EditContext | null>(null);
@@ -479,25 +488,12 @@ export function EventComposer({
     base?.allDay ? addDaysToDate(isoToDateInput(base.endIso), -1) : initEnd.date,
   );
 
-  // Close on a successful create/edit/delete.
+  // A save that waits for the server (a series edit) closes once it succeeds.
   const prev = useRef(fetcher.state);
   useEffect(() => {
     if (prev.current !== "idle" && fetcher.state === "idle" && !fetcher.data?.error) onClose();
     prev.current = fetcher.state;
   }, [fetcher.state, fetcher.data, onClose]);
-  const prevDel = useRef(deleteFetcher.state);
-  useEffect(() => {
-    if (prevDel.current !== "idle" && deleteFetcher.state === "idle") {
-      if (!deleteFetcher.data?.error) {
-        toast.success(tracked ? "Stopped tracking." : canManageMeeting ? "Meeting cancelled." : "Event deleted.");
-        onClose();
-      } else {
-        // Come back so the error under the form is readable.
-        setSteppedAside(false);
-      }
-    }
-    prevDel.current = deleteFetcher.state;
-  }, [deleteFetcher.state, deleteFetcher.data, onClose, toast, canManageMeeting, tracked]);
 
   // Load the meeting's guest list + member/group directory once, then seed the
   // picker. A Group-scoped meeting keeps its group selected and treats anyone
@@ -604,7 +600,7 @@ export function EventComposer({
   // A meeting the viewer manages is editable even when its Google copy isn't
   // theirs to write — the save routes through the DALI update path.
   const canEdit = Boolean(ev?.writable) || canManageMeeting;
-  const submitting = fetcher.state !== "idle" || deleteFetcher.state !== "idle";
+  const submitting = fetcher.state !== "idle";
 
   // A recurring event's scope selector decides how much goes, so the confirm
   // restates it rather than leaving the reader to remember which radio is set.
@@ -647,6 +643,7 @@ export function EventComposer({
       },
       { method: "post" },
     );
+    onClose();
   }
 
   // Report the draft times to the grid so the live preview (a tentative block
@@ -695,7 +692,13 @@ export function EventComposer({
             Connect a Google Calendar you can write to first (Settings → Calendar).
           </p>
         ) : (
-          <fetcher.Form method="post" className="flex flex-col gap-3 px-4 py-4">
+          <fetcher.Form
+            method="post"
+            onSubmit={() => {
+              if (closeOnSubmit) onClose();
+            }}
+            className="flex flex-col gap-3 px-4 py-4"
+          >
             <input type="hidden" name="intent" value={editing ? "event-update" : "event-create"} />
             {editing && ev?.eventId && <input type="hidden" name="eventId" value={ev.eventId} />}
             {canManageMeeting && (
@@ -918,9 +921,7 @@ export function EventComposer({
               </p>
             ) : null}
 
-            {(fetcher.data?.error || deleteFetcher.data?.error) && (
-              <p className="text-xs text-destructive">{fetcher.data?.error || deleteFetcher.data?.error}</p>
-            )}
+            {fetcher.data?.error && <p className="text-xs text-destructive">{fetcher.data.error}</p>}
             {editing && !canEdit && (
               <p className="text-xs text-muted-foreground">This event is read-only.</p>
             )}

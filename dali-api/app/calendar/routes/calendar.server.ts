@@ -1869,6 +1869,38 @@ export function shouldInvalidateExternalCache(intent: string): boolean {
   return !DB_ONLY_CALENDAR_INTENTS.has(intent);
 }
 
+/** The row fields a client needs to draw a saved time entry without a reload. */
+export function timeEntryResult(row: {
+  id: string;
+  hours: number;
+  note: string | null;
+  startTime: Date | null;
+  endTime: Date | null;
+  date: Date;
+}) {
+  return {
+    id: row.id,
+    hours: row.hours,
+    note: row.note,
+    date: row.date.toISOString(),
+    startTime: row.startTime?.toISOString() ?? null,
+    endTime: row.endTime?.toISOString() ?? null,
+  };
+}
+
+/**
+ * Mirror a timesheet write to Google without holding the response on it. The
+ * mirror writes to Google, so the change marker is stamped again once it lands:
+ * a read that raced it on another machine would otherwise be trusted.
+ */
+function mirrorInBackground(userId: string, mirror: () => Promise<void>) {
+  void Promise.resolve()
+    .then(mirror)
+    .catch((err) => console.error("time entry mirror failed", err))
+    .then(() => markCalendarChanged(userId))
+    .catch((err) => console.error("time entry mirror marker failed", err));
+}
+
 export async function submitCalendarAction(request: Request) {
   const auth = await requireAuth(request);
   if (!auth.ok) return auth.response;
@@ -2114,18 +2146,18 @@ export async function submitCalendarAction(request: Request) {
           occurrenceStart: occurrence.originalStart,
           userId,
         };
-        await prisma.timeEntry.upsert({
+        const logged = await prisma.timeEntry.upsert({
           where: { scheduledMeetingId_occurrenceStart_userId: key },
           create: { ...key, source: "Meeting", ...common },
           update: common,
         });
-        return null;
+        return Response.json({ ok: true, entry: timeEntryResult(logged) });
       }
       const created = await prisma.timeEntry.create({
         data: { userId, source: "Manual", ...common },
       });
-      await syncTimeEntryToGoogle(created).catch(() => {});
-      return null;
+      mirrorInBackground(userId, () => syncTimeEntryToGoogle(created));
+      return Response.json({ ok: true, entry: timeEntryResult(created) });
     }
 
     case "update-time-entry": {
@@ -2177,8 +2209,8 @@ export async function submitCalendarAction(request: Request) {
           endTime,
         },
       });
-      await syncTimeEntryToGoogle(updated).catch(() => {});
-      return null;
+      mirrorInBackground(userId, () => syncTimeEntryToGoogle(updated));
+      return Response.json({ ok: true, entry: timeEntryResult(updated) });
     }
 
     case "delete-time-entry": {
@@ -2186,9 +2218,9 @@ export async function submitCalendarAction(request: Request) {
       if (!existing || existing.userId !== userId) {
         return Response.json({ error: "Not found" }, { status: 404 });
       }
-      await removeTimeEntryFromGoogle(existing).catch(() => {});
       await prisma.timeEntry.delete({ where: { id: input.id } });
-      return null;
+      mirrorInBackground(userId, () => removeTimeEntryFromGoogle(existing));
+      return Response.json({ ok: true, entry: { id: existing.id } });
     }
 
     case "set-timesheet-sync": {
