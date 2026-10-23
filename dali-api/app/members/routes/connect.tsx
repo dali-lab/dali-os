@@ -238,7 +238,7 @@ export default function Connect() {
     return (
       <div className="relative min-h-[480px] flex-1">
         <div className="absolute inset-0 isolate">{map("h-full w-full")}</div>
-        <aside className="absolute inset-x-3 bottom-3 z-10 flex max-h-[45%] flex-col gap-3 overflow-y-auto rounded-os-card bg-os-card p-4 shadow-xl lg:inset-x-auto lg:bottom-4 lg:right-4 lg:top-4 lg:max-h-none lg:w-[360px]">
+        <aside className="absolute inset-x-3 bottom-3 z-10 flex max-h-[45%] flex-col gap-3 overflow-y-auto rounded-os-card bg-os-card p-4 shadow-xl lg:inset-x-auto lg:bottom-4 lg:right-4 lg:top-4 lg:max-h-none lg:w-[400px]">
           <Segmented
             value={panel}
             onChange={setPanel}
@@ -246,6 +246,7 @@ export default function Connect() {
             ariaLabel="Panel"
             fullWidth
             size="md"
+            className="shrink-0"
           />
           {panel === "search" && list}
           {panel === "events" && <EventList events={events} />}
