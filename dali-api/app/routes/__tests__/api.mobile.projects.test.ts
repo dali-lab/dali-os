@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
+vi.mock("~/lib/db");
+
 const requireMobileUser = vi.fn();
 const runListMyProjects = vi.fn();
 const termFactsForUser = vi.fn();
