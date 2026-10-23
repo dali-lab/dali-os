@@ -3,6 +3,13 @@ import { createPortal } from 'react-dom'
 
 export type PageBarSlotName = 'actions' | 'presence'
 
+/** A labelled action sitting in the page bar (a page's header action, the doc toolbar). */
+export function pageBarTextButton(active = false): string {
+  return active
+    ? 'inline-flex h-8 items-center justify-center gap-1.5 rounded-lg bg-os-hover-strong px-2 text-[13px] text-foreground transition-colors'
+    : 'inline-flex h-8 items-center justify-center gap-1.5 rounded-lg px-2 text-[13px] text-os-grey transition-colors hover:bg-os-hover hover:text-foreground'
+}
+
 type PageBarContextValue = {
   targets: Record<PageBarSlotName, HTMLElement | null>
   setTarget: (slot: PageBarSlotName, el: HTMLElement | null) => void

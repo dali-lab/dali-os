@@ -25,6 +25,7 @@ import {
   type DesktopTabsState,
   type OpenTabRequest,
 } from "~/lib/desktop-tabs";
+import { writeTabsSnapshotCookie } from "~/lib/desktop-tabs-pref";
 
 export const TABS_STORAGE_KEY = "dali:desktop-tabs:v1";
 export const LEGACY_WORKSPACE_KEY = "dali:tabworkspace:v4";
@@ -55,6 +56,7 @@ function persist() {
   } catch {
     // quota / disabled storage: tabs just won't survive a relaunch
   }
+  writeTabsSnapshotCookie(state);
 }
 
 function set(next: DesktopTabsState) {

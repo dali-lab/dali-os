@@ -17,6 +17,7 @@ import { readTabStripCookie, tabsPreferred, writeTabStripCookie } from '~/lib/de
 import {
   getTabsSnapshot,
   startTabs,
+  tabsActive,
   subscribeTabs,
   tabActions,
 } from '~/lib/desktop-tabs-store'
@@ -199,8 +200,15 @@ function SortableTab({ tab, active }: { tab: DesktopTab; active: boolean }) {
   return tab.pinned ? <Tooltip content={tab.label}>{button}</Tooltip> : button
 }
 
-export function DesktopTabStrip({ leading }: { leading?: ReactNode }) {
-  const { tabs, activeId } = useDesktopTabsState()
+export function DesktopTabStrip({
+  leading,
+  initial = null,
+}: {
+  leading?: ReactNode
+  initial?: DesktopTabsState | null
+}) {
+  const live = useDesktopTabsState()
+  const { tabs, activeId } = tabsActive() || !initial ? live : initial
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }))
 
   const lastPinned = tabs.reduce((last, t, i) => (t.pinned ? i : last), -1)

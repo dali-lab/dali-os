@@ -45,6 +45,7 @@ import {
 import { useShellNav } from '~/components/shell-nav'
 import { DesktopTabStrip, useDesktopTabs } from '~/components/DesktopTabs'
 import { tabActions } from '~/lib/desktop-tabs-store'
+import type { DesktopTabsState } from '~/lib/desktop-tabs'
 import { buildPageLink, cleanTabUrl, COPY_PAGE_LINK_EVENT, stripHash, writePageLink } from '~/lib/page-link'
 import { useToast } from '~/components/ui/toast'
 import { FavoritesBar } from '~/components/FavoritesBar'
@@ -107,6 +108,8 @@ interface LayoutOSProps {
   /** The server's guess that this window shows desktop tabs (strip cookie), so
    *  the strip's row is there on first paint. */
   tabStripHint?: boolean
+  /** The open tabs as the server last saw them, so the strip paints with them. */
+  tabsSnapshot?: DesktopTabsState | null
   children?: React.ReactNode
 }
 
@@ -145,6 +148,7 @@ export function LayoutOS({
   hasUnseenReleaseNotes = false,
   fitViewport = false,
   tabStripHint = false,
+  tabsSnapshot = null,
   children,
 }: LayoutOSProps) {
   const location = useLocation()
@@ -1079,7 +1083,7 @@ export function LayoutOS({
           <div ref={shellHeaderRef} className="sticky top-14 z-20 shrink-0 bg-os-bg md:top-0">
             {showTabs && (
               <div className="hidden md:block">
-                <DesktopTabStrip leading={hideRail ? railToggle : undefined} />
+                <DesktopTabStrip leading={hideRail ? railToggle : undefined} initial={tabsSnapshot} />
               </div>
             )}
             <PageBar
@@ -1095,7 +1099,7 @@ export function LayoutOS({
           <>
             {showTabs && (
               <div className="hidden shrink-0 md:block">
-                <DesktopTabStrip leading={hideRail ? railToggle : undefined} />
+                <DesktopTabStrip leading={hideRail ? railToggle : undefined} initial={tabsSnapshot} />
               </div>
             )}
             {/* `shrink-0` so a bounded shell takes the height out of the page's

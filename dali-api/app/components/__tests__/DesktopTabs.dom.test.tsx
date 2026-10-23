@@ -165,8 +165,8 @@ describe("useDesktopTabs", () => {
 });
 
 describe("DesktopTabStrip", () => {
-  async function mountStrip(opts: { leading?: boolean } = {}) {
-    await mount();
+  async function mountStrip(opts: { leading?: boolean; enabled?: boolean; initial?: unknown } = {}) {
+    await mount({ enabled: opts.enabled });
     const { DesktopTabStrip } = mod.hook;
     await act(async () => {
       root.render(
@@ -177,6 +177,7 @@ describe("DesktopTabStrip", () => {
               Component: () =>
                 createElement(DesktopTabStrip, {
                   leading: opts.leading ? createElement("button", { "data-testid": "leading" }) : undefined,
+                  initial: opts.initial as never,
                 }),
             },
           ]),
@@ -249,5 +250,26 @@ describe("DesktopTabStrip", () => {
     await mountStrip();
     expect(strip().querySelector("button[aria-current='page'] svg")).not.toBeNull();
     expect(strip().querySelector("button[aria-label='New tab']")).not.toBeNull();
+  });
+
+  const snapshot = {
+    tabs: [
+      { id: "s1", url: "/x", origin: "/x", label: "Saved X", pinned: false, ephemeral: false, lastActivatedAt: 0, scrollY: 0, backStack: [], forwardStack: [] },
+      { id: "s2", url: "/y", origin: "/y", label: "Saved Y", pinned: false, ephemeral: false, lastActivatedAt: 0, scrollY: 0, backStack: [], forwardStack: [] },
+    ],
+    activeId: "s2",
+    closed: [],
+  };
+
+  it("paints the server's snapshot of the tabs before the store starts", async () => {
+    await mountStrip({ enabled: false, initial: snapshot });
+    expect(strip().textContent).toContain("Saved X");
+    expect(strip().querySelector("button[aria-current='page']")?.textContent).toContain("Saved Y");
+  });
+
+  it("switches to the live tabs once the store has started", async () => {
+    await mountStrip({ initial: snapshot });
+    expect(strip().textContent).not.toContain("Saved X");
+    expect(strip().querySelector("button[aria-current='page']")?.textContent).toContain("Alpha");
   });
 });

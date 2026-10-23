@@ -19,7 +19,7 @@ import { PresenceBar } from "./collab/PresenceBar";
 import { VersionHistoryPanel } from "./collab/VersionHistoryPanel";
 import { TagPicker, type DocTag } from "./TagPicker";
 import { FavoriteStar } from "./FavoriteStar";
-import { PageBarPortal, SHELL_HEADER_VAR, usePageBarSlot } from "~/components/shell/page-bar-slot";
+import { PageBarPortal, SHELL_HEADER_VAR, pageBarTextButton, usePageBarSlot } from "~/components/shell/page-bar-slot";
 import { useFeatureFlag } from "~/components/FeatureFlags";
 import { PageIconPicker } from "./doc-chrome/PageIconPicker";
 import { PageCover } from "./doc-chrome/PageCover";
@@ -236,13 +236,7 @@ export function DocumentEditor({
   // corners, 14px glyphs and a coral "on" state — beside os pages that had all
   // moved to the design's roomier pills and its accent.
   const { actionBtn: pillBtn, actionIcon, popover, pageTitle, bodyText } = useOsChrome();
-  const actionBtn = (active = false) =>
-    inPageBar
-      ? cn(
-          "inline-flex h-8 items-center justify-center gap-1.5 rounded-lg px-2 text-[13px] transition-colors",
-          active ? "bg-os-hover-strong text-foreground" : "text-os-grey hover:bg-os-hover hover:text-foreground",
-        )
-      : pillBtn(active);
+  const actionBtn = (active = false) => (inPageBar ? pageBarTextButton(active) : pillBtn(active));
   // Page style (the ⋯ menu's last section): per-page font / small-text /
   // full-width, persisted on Page.typography via the API route.
   // Optimistic local state — the revalidator syncs server truth.
