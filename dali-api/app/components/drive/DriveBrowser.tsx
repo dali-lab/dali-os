@@ -87,7 +87,7 @@ import { Button, buttonClasses } from "~/components/ui/Button";
 import { IconButton } from "~/components/ui/IconButton";
 import { Truncated } from "~/components/ui/Truncated";
 import { useOsChrome } from "~/components/os-chrome";
-import { crumbsFor, locationOf, type ItemLocation } from "~/components/drive/location";
+import { crumbsFor, driveScopeLabel, locationOf, type ItemLocation } from "~/components/drive/location";
 import { LocationLink } from "~/components/drive/LocationLink";
 import { DetailFact } from "~/components/drive/DetailFact";
 import { menuEntries, type MenuEntry } from "~/components/drive/item-menu";
@@ -421,7 +421,7 @@ function scopeIcon(scope: DriveTreeScope, size: IconSize = "sm") {
 }
 
 function scopeLabel(scope: DriveTreeScope): string {
-  return scope.id === "mine" ? "My Drive" : scope.id === "lab" ? "Lab" : scope.label;
+  return driveScopeLabel(scope);
 }
 
 /** The synthetic "projects" / "education" headers: dropping on one is ambiguous (which project?), so only the projects inside take drops. */

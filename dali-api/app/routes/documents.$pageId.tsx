@@ -18,11 +18,12 @@ import { fullName } from "~/lib/display";
 import { getPresenceUser } from "~/lib/presence-user";
 import { PAGE_ACCESS_SELECT, getPageAccess, getPageAccessBulk } from "~/lib/pageAccess.server";
 import { getUserRoles, isProjectMember } from "~/lib/roles";
+import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import type { MeetingType } from "~/generated/prisma/client";
 import { isFavorited, recordPageVisit } from "~/lib/user-pages.server";
 import { canManageSharing } from "~/lib/page-share-access.server";
 import { groupIdsForUser } from "~/lib/page-sharing.server";
-import { notebookItemLocation } from "~/lib/note-path.server";
+import { notebookItemLocation, pageItemLocation } from "~/lib/note-path.server";
 import { normalizePageTypography } from "~/lib/page-typography";
 import { driveFolderCrumbs } from "~/lib/drive-crumbs.server";
 import { workspaceDriveScope } from "~/lib/drive-crumbs";
@@ -46,7 +47,7 @@ import { pageDocName } from "~/collab/roomName";
 import { canManageNotebook } from "~/lib/notebooks.server";
 import { nextNoteTargets } from "~/lib/notebook-series.server";
 import { NotebookRail, NoteLocationLine, type NotebookView } from "~/components/notebooks/NotebookRail";
-import { noteTabLabel, noteTrail } from "~/components/notebooks/note-trail";
+import { itemTrail, noteTabLabel, noteTrail } from "~/components/notebooks/note-trail";
 import { EmptyNotebook } from "~/components/notebooks/EmptyNotebook";
 import { redirectToLogin } from "~/lib/login-next";
 import { walletTokensConfigured } from "~/lib/wallet-token";
@@ -66,6 +67,10 @@ export const handle = {
       | { notebook?: { id: string; title: string } | null; noteLocation?: { location: ItemLocation; tabLabel: string } | null }
       | undefined;
     return d?.notebook && d.noteLocation ? noteTrail(d.noteLocation.location, d.notebook, d.noteLocation.tabLabel) : null;
+  },
+  shellTrail: (data: unknown) => {
+    const d = data as { title?: string; docLocation?: ItemLocation | null } | undefined;
+    return d?.docLocation ? itemTrail(d.docLocation, d.title || "Untitled") : null;
   },
 };
 
@@ -328,6 +333,13 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       getUserRoles(auth.user.sub, request),
     ]);
 
+  // The Direction I shell's page bar shows a plain document's place in the
+  // Drive; notes already carry theirs in noteLocation.
+  const docLocation =
+    !noteLocation && (await isFeatureEnabled("desktop-tabs", auth.user.sub, roles, request))
+      ? await pageItemLocation(page, auth.user.sub, request)
+      : null;
+
   let attendance:
     | {
         meetingId: string;
@@ -472,6 +484,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     attendance,
     notebook,
     noteLocation,
+    docLocation,
     editViaMeeting,
     notebookConversion:
       canEdit &&

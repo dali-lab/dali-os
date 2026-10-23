@@ -64,6 +64,9 @@ type Handle = {
   /** DB-backed detail pages (project, person, partner org) — star sits inline
    *  after the trail, not in the layout header. */
   favoriteRoute?: boolean
+  /** The page bar's trail for a page with no trail of its own (a document's
+   *  place in the Drive). The in-page breadcrumb row ignores it. */
+  shellTrail?: (data: unknown, params: URLSearchParams) => Crumb[] | null | undefined
 }
 
 // Shared shape so PageDocButton can read the same handle contract. Exported
@@ -244,7 +247,7 @@ export type ResolvedTrail = {
   favoriteRoute: boolean
 }
 
-type MatchLike = { pathname: string; handle?: unknown; data?: unknown }
+export type MatchLike = { pathname: string; handle?: unknown; data?: unknown }
 
 /** The trail for the current route, or null when the route shows none. */
 export function resolveTrail(
@@ -421,10 +424,27 @@ export function useDocumentTitle(): string {
   return title
 }
 
+/** `resolveTrail`, falling back to the deepest route's `shellTrail` when the route has no trail of its own. */
+export function resolvePageBarTrail(
+  matches: MatchLike[],
+  pathname: string,
+  search: string,
+): ResolvedTrail | null {
+  const trail = resolveTrail(matches, pathname, search)
+  if (trail && trail.crumbs.length > 1) return trail
+  let shell: Crumb[] | null = null
+  const params = new URLSearchParams(search)
+  for (const m of matches as { handle?: Handle; data?: unknown }[]) {
+    if (m.handle?.shellTrail && m.data != null) shell = m.handle.shellTrail(m.data, params) ?? shell
+  }
+  if (!shell || shell.length < 2) return trail
+  return { crumbs: shell, action: trail?.action ?? null, favoriteRoute: trail?.favoriteRoute ?? false }
+}
+
 export function usePageTrail(): ResolvedTrail | null {
   const matches = useMatches()
   const { pathname, search } = useLocation()
-  return resolveTrail(matches as MatchLike[], pathname, search)
+  return resolvePageBarTrail(matches as MatchLike[], pathname, search)
 }
 
 export function PageBarTrail({ crumbs }: { crumbs: Crumb[] }) {

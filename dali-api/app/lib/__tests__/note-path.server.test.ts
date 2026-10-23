@@ -4,10 +4,12 @@ vi.mock("~/lib/db", () => ({
   prisma: { page: { findUnique: vi.fn() }, project: { findUnique: vi.fn() } },
 }));
 vi.mock("~/lib/drive-reveal.server", () => ({ driveLocation: vi.fn() }));
+vi.mock("~/lib/pageAccess.server", () => ({ getPageAccess: vi.fn() }));
 
 import { prisma } from "~/lib/db";
 import { driveLocation } from "~/lib/drive-reveal.server";
-import { formatFiledPath, meetingNotePath, notebookItemLocation } from "~/lib/note-path.server";
+import { formatFiledPath, meetingNotePath, notebookItemLocation, pageItemLocation } from "~/lib/note-path.server";
+import { getPageAccess } from "~/lib/pageAccess.server";
 
 const m = prisma as any;
 const crumb = (title: string) => ({ id: title, title, iconEmoji: null });
@@ -130,5 +132,34 @@ describe("notebookItemLocation", () => {
       folders: [],
       path: "Core",
     });
+  });
+});
+
+describe("pageItemLocation", () => {
+  const doc = { id: "d1", title: "test", parentPageId: "f1", workspaceType: "Lab", workspaceId: null } as any;
+
+  it("places a page in its own space and folders", async () => {
+    vi.mocked(getPageAccess).mockResolvedValue({ canView: true } as any);
+    vi.mocked(driveLocation).mockResolvedValue({ scope: "lab", folders: [crumb("Design")], workspaceFolderId: null } as any);
+
+    const where = await pageItemLocation(doc, "u1");
+
+    expect(getPageAccess).toHaveBeenCalledWith("u1", doc, undefined, { ignoreShares: true });
+    expect(where.scopeId).toBe("lab");
+    expect(where.folders.map((f) => f.title)).toEqual(["Design"]);
+    expect(driveLocation).toHaveBeenCalledWith("f1", doc, "u1", undefined);
+  });
+
+  it("puts a page reached only through a share in Shared with me", async () => {
+    vi.mocked(getPageAccess).mockResolvedValue({ canView: false } as any);
+
+    expect(await pageItemLocation(doc, "u1")).toEqual({
+      scopeId: "shared",
+      scopeLabel: "Shared with me",
+      folderId: null,
+      folders: [],
+      path: "Shared with me",
+    });
+    expect(driveLocation).not.toHaveBeenCalled();
   });
 });

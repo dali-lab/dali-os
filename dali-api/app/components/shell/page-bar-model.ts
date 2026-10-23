@@ -1,6 +1,6 @@
 import type { Crumb } from '~/components/Breadcrumbs'
 import type { FeatureFlagMap } from '~/lib/feature-flags'
-import { areaForPath } from '~/lib/nav-areas'
+import { areaForPath, areasFor } from '~/lib/nav-areas'
 
 type SectionRoot = { label: string; to: string }
 
@@ -30,6 +30,16 @@ export function sectionRoot(url: string, flags: Partial<FeatureFlagMap> = {}): S
   return area ? { label: area.label, to: area.hubPath } : null
 }
 
+/** A section page names itself the way the rail does ("People", not its page title "Directory"). */
+function subtabLabel(url: string, flags: Partial<FeatureFlagMap>): string | undefined {
+  const p = pathnameOf(url)
+  for (const area of areasFor(flags)) {
+    const hit = area.subtabs.find((t) => t.href === p)
+    if (hit) return hit.label
+  }
+  return undefined
+}
+
 /** A tab's name when its page sets no title of its own. */
 export function fallbackPageLabel(url: string): string {
   const p = pathnameOf(url)
@@ -54,7 +64,8 @@ export function pageBarCrumbs({
   flags?: Partial<FeatureFlagMap>
 }): Crumb[] {
   if (pathnameOf(path) === '/') return [{ label: 'Home' }]
-  const base = trail.length > 1 ? trail : title ? [{ label: title }] : trail
+  const leaf = subtabLabel(path, flags) ?? title
+  const base = trail.length > 1 ? trail : leaf ? [{ label: leaf }] : trail
   // A route that declares its own trail (a project file under /documents) names
   // its home in its first crumb, which beats the url's prefix.
   const anchor = trail.length > 1 && trail[0]?.to ? trail[0].to : path
