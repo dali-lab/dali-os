@@ -73,6 +73,7 @@ describe("Segmented", () => {
     expect(group.className).toContain("w-full");
     expect(group.className).not.toContain("inline-flex");
     expect(radios().every((r) => r.className.includes("flex-1"))).toBe(true);
+    expect(radios().every((r) => r.className.includes("px-1.5") && r.className.includes("whitespace-nowrap"))).toBe(true);
   });
 
   it("uses the small size by default and a larger one for md", () => {
