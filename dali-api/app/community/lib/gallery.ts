@@ -15,6 +15,23 @@ export const GALLERY_ACCEPT = "image/png,image/jpeg,image/webp,image/gif";
 /** Tiles load a thumbnail this wide; originals at or under it are used as-is. */
 export const GALLERY_THUMB_WIDTH = 640;
 
+const THUMB_FORMATS = [
+  { type: "image/webp", name: "thumb.webp" },
+  { type: "image/jpeg", name: "thumb.jpg" },
+] as const;
+
+// WebKit (Safari and the macOS desktop app) can't encode WebP and hands back
+// a PNG instead, which would be bigger than the JPEG it can encode.
+export async function encodeGalleryThumb(
+  toBlob: (type: string, quality: number) => Promise<Blob | null>,
+): Promise<File | null> {
+  for (const { type, name } of THUMB_FORMATS) {
+    const blob = await toBlob(type, 0.82);
+    if (blob?.type === type) return new File([blob], name, { type });
+  }
+  return null;
+}
+
 export function isGalleryEmoji(value: string): boolean {
   return (GALLERY_EMOJI as readonly string[]).includes(value);
 }
