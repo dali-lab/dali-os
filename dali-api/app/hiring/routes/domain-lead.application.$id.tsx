@@ -36,6 +36,8 @@ import {
   domainApplicationStatusInclude,
 } from "~/hiring/lib/domain-application-status";
 import { listPriorApplications } from "~/hiring/lib/prior-applications.server";
+import { readDocAsBlocks } from "~/collab/read";
+import { interviewNotesRoomName } from "~/collab/roomName";
 import { PriorApplicationsPanel } from "~/hiring/components/PriorApplicationsPanel";
 import { applicationBlindLabel, blindUser } from "~/hiring/lib/anonymization.server";
 import { getApplicantEmailEngagement } from "~/hiring/lib/email-engagement.server";
@@ -209,10 +211,15 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       latestCollabByName.set(row.name, row.plainText);
     }
   }
+  const jointNoteBlocks = new Map(
+    await Promise.all(
+      interviewRows.map(async (iv: any) => [iv.id, await readDocAsBlocks(interviewNotesRoomName(iv.id))] as const),
+    ),
+  );
   // Attach resolved notes onto the interview object the component reads.
   const interviewsWithNotes = interviewRows.map((iv: any) => ({
     ...iv,
-    jointNotes: latestCollabByName.get(`interview:${iv.id}:notes`)?.trim() || null,
+    jointNotes: { blocks: jointNoteBlocks.get(iv.id) ?? [], updatedAt: null },
     assignments: iv.assignments.map((a: any) => ({
       ...a,
       recNotes:
@@ -496,8 +503,7 @@ export default function DomainLeadApplicationView() {
   );
 }
 
-// Map this route's interview shape (joint notes as a plain string, recNotes
-// per assignment) into the shared InterviewNotesCard prop shape.
+// Map this route's interview shape (recNotes per assignment) into the shared InterviewNotesCard prop shape.
 function toInterviewNotesData(interview: any): InterviewNotesData {
   return {
     id: interview.id,
