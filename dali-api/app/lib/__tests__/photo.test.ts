@@ -34,7 +34,7 @@ describe("resolvePhotoUrl", () => {
   it("presigns S3 keys under uploads/", async () => {
     const key = "uploads/avatars/user-1/abc.webp";
     expect(await resolvePhotoUrl(key)).toBe("https://s3.example/signed");
-    expect(getDownloadUrl).toHaveBeenCalledWith(key);
+    expect(getDownloadUrl).toHaveBeenCalledWith(key, { cacheFor: 3600 });
   });
 
   it("omits S3-backed images when S3 is not configured", async () => {

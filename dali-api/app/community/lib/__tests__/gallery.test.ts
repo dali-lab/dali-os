@@ -12,6 +12,7 @@ import {
   layoutMasonry,
   parseNewPosts,
   toggleReaction,
+  encodeGalleryThumb,
 } from "../gallery";
 
 const UUID = "0b8f4a52-6a51-4c3e-9d5b-2f1a7c9e8d10";
@@ -205,5 +206,45 @@ describe("galleryDownloadName", () => {
 
   it("uses jpg when the key has no extension", () => {
     expect(galleryDownloadName("x", `uploads/gallery/u1.d/${UUID}-noext`)).toBe("gallery-x.jpg");
+  });
+});
+
+describe("encodeGalleryThumb", () => {
+  // A canvas that encodes the listed types and falls back to PNG for anything else, as browsers do.
+  const canvas = (supported: string[]) => {
+    const calls: Array<[string, number]> = [];
+    const toBlob = async (type: string, quality: number) => {
+      calls.push([type, quality]);
+      return new Blob(["x"], { type: supported.includes(type) ? type : "image/png" });
+    };
+    return { calls, toBlob };
+  };
+
+  it("uses WebP where the browser can encode it", async () => {
+    const { calls, toBlob } = canvas(["image/webp", "image/jpeg"]);
+    const file = await encodeGalleryThumb(toBlob);
+    expect(file?.type).toBe("image/webp");
+    expect(file?.name).toBe("thumb.webp");
+    expect(calls).toEqual([["image/webp", 0.82]]);
+  });
+
+  it("falls back to JPEG when WebP comes back as PNG (Safari, the macOS desktop app)", async () => {
+    const { calls, toBlob } = canvas(["image/jpeg"]);
+    const file = await encodeGalleryThumb(toBlob);
+    expect(file?.type).toBe("image/jpeg");
+    expect(file?.name).toBe("thumb.jpg");
+    expect(calls.map(([type]) => type)).toEqual(["image/webp", "image/jpeg"]);
+  });
+
+  it("names the thumbnail so it passes the gallery accept list and key check", async () => {
+    for (const supported of [["image/webp"], ["image/jpeg"]]) {
+      const file = await encodeGalleryThumb(canvas(supported).toBlob);
+      expect(isGalleryImageKey(key("u1", file!.name), "u1")).toBe(true);
+    }
+  });
+
+  it("gives up when neither format encodes, so the tile uses the original", async () => {
+    expect(await encodeGalleryThumb(canvas([]).toBlob)).toBeNull();
+    expect(await encodeGalleryThumb(async () => null)).toBeNull();
   });
 });

@@ -15,6 +15,7 @@ import {
   GALLERY_CAPTION_MAX,
   GALLERY_MAX_PHOTOS,
   GALLERY_THUMB_WIDTH,
+  encodeGalleryThumb,
   galleryKeyPrefix,
   type NewGalleryPost,
 } from "~/community/lib/gallery";
@@ -29,7 +30,7 @@ type Row = {
   upload?: Omit<NewGalleryPost, "caption">;
 };
 
-// Size, average colour and a feed-sized WebP, read before upload so the feed
+// Size, average colour and a feed-sized thumbnail, read before upload so the feed
 // can reserve each tile's shape, paint it while it loads, and load the small copy.
 async function readImage(file: File) {
   const bitmap = await createImageBitmap(file);
@@ -41,13 +42,15 @@ async function readImage(file: File) {
     const [r, g, b] = ctx?.getImageData(0, 0, 1, 1).data ?? [128, 128, 128];
     const hex = (n: number) => n.toString(16).padStart(2, "0");
 
-    let thumb: Blob | null = null;
+    let thumb: File | null = null;
     if (bitmap.width > GALLERY_THUMB_WIDTH) {
       const canvas = document.createElement("canvas");
       canvas.width = GALLERY_THUMB_WIDTH;
       canvas.height = Math.round((bitmap.height * GALLERY_THUMB_WIDTH) / bitmap.width);
       canvas.getContext("2d")?.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-      thumb = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/webp", 0.82));
+      thumb = await encodeGalleryThumb(
+        (type, quality) => new Promise((resolve) => canvas.toBlob(resolve, type, quality)),
+      );
     }
     return {
       width: bitmap.width,
@@ -60,13 +63,11 @@ async function readImage(file: File) {
   }
 }
 
-// A tile falls back to the original when there's no thumbnail: a browser that
-// can't encode WebP, or a thumbnail upload that failed.
-async function uploadThumb(thumb: Blob | null, prefix: string): Promise<string | null> {
-  if (thumb?.type !== "image/webp") return null;
+// A failed thumbnail upload shouldn't fail the post; the tile shows the original.
+async function uploadThumb(thumb: File | null, prefix: string): Promise<string | null> {
+  if (!thumb) return null;
   try {
-    const file = new File([thumb], "thumb.webp", { type: thumb.type });
-    return (await uploadFileToS3(file, prefix, GALLERY_ACCEPT)).s3Key;
+    return (await uploadFileToS3(thumb, prefix, GALLERY_ACCEPT)).s3Key;
   } catch {
     return null;
   }

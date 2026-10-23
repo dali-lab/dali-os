@@ -1,5 +1,7 @@
 import { getDownloadUrl, isS3Configured } from "./s3";
 
+const PHOTO_URL_WINDOW_S = 3600;
+
 // A stored User.photoUrl is one of:
 //   - an S3 object key under `uploads/` (avatars uploaded through this app), or
 //   - a legacy full URL pasted into the old free-text "Photo URL" field, or
@@ -16,7 +18,9 @@ export async function resolvePhotoUrl(
   // the entire route loader while trying to presign it.
   if (value.startsWith("uploads/")) {
     if (!isS3Configured()) return null;
-    return getDownloadUrl(value);
+    // Uploads land under a fresh uuid key, so a photo's bytes never change and
+    // its link can stay the same for the hour.
+    return getDownloadUrl(value, { cacheFor: PHOTO_URL_WINDOW_S });
   }
   return value;
 }

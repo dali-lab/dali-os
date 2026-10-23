@@ -44,8 +44,8 @@ export function GalleryMasonry({
     <div ref={ref} className="flex items-start gap-4">
       {layoutMasonry(posts, columns).map((col, i) => (
         <div key={i} className="flex min-w-0 flex-1 flex-col gap-5">
-          {col.map((post) => (
-            <GalleryTile key={post.id} post={post} hideByline={hideBylines} />
+          {col.map((post, row) => (
+            <GalleryTile key={post.id} post={post} hideByline={hideBylines} firstRow={row === 0} />
           ))}
         </div>
       ))}
@@ -53,7 +53,15 @@ export function GalleryMasonry({
   );
 }
 
-function GalleryTile({ post, hideByline }: { post: GalleryTileData; hideByline: boolean }) {
+function GalleryTile({
+  post,
+  hideByline,
+  firstRow,
+}: {
+  post: GalleryTileData;
+  hideByline: boolean;
+  firstRow: boolean;
+}) {
   const fetcher = useFetcher();
   const href = galleryPostHref(post.id);
   const [reactions, setReactions] = useState(post.reactions);
@@ -77,7 +85,8 @@ function GalleryTile({ post, hideByline }: { post: GalleryTileData; hideByline: 
           <img
             src={post.imageUrl}
             alt={post.caption ?? `Photo by ${post.author.name}`}
-            loading="lazy"
+            loading={firstRow ? "eager" : "lazy"}
+            fetchPriority={firstRow ? "high" : "auto"}
             decoding="async"
             className="h-full w-full object-cover transition-transform duration-300 group-hover/tile:scale-[1.02]"
           />
