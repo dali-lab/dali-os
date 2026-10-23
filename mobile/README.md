@@ -37,6 +37,32 @@ Notes are edited in the real DALI OS editor: the app opens the page (`/documents
 
 Recording in the background needs a development or store build (the `expo-audio` plugin in `app.json` adds the iOS background audio mode and Android permissions). In Expo Go, keep the app open while recording.
 
+## Releasing
+
+Releases ship from `prod` through `.github/workflows/mobile-release.yml` (EAS Build, Submit and Update):
+
+- **Bump `version` in `app.json`** when anything native changes: a new native module, a plugin, permission or other `app.json` change, or an Expo SDK upgrade. Merging the bump to `prod` builds iOS and Android on EAS, submits them (TestFlight and the Play internal track), and tags `mobile-v<version>`.
+- **Anything else in `mobile/`** that reaches `prod` goes out as an over-the-air EAS Update on the `production` channel. `runtimeVersion` follows the app version, so an update only reaches builds it's compatible with.
+- Run the workflow by hand (Actions → Mobile Release → Run workflow) to force a build or an update.
+
+Release builds always use the Production server, so the matching `dali-api` changes must be on prod first, with the `mobile-app` flag on for testers.
+
+### One-time setup
+
+1. Expo: sign in with the shared DALI Expo account, then from `mobile/` run `npx eas-cli init` (links the project and writes `extra.eas.projectId` into `app.json`) and `npx eas-cli update:configure` (writes `updates.url`). Commit the `app.json` changes.
+2. Apple (the DALI developer team): create the app in App Store Connect with bundle id `edu.dartmouth.dali.os.mobile`, then run `npx eas-cli credentials -p ios` to let EAS manage the certificate and profile and to add an App Store Connect API key (used by `--auto-submit`). Add `"ios": { "ascAppId": "<App Store Connect app id>" }` under `submit.production` in `eas.json`.
+3. Google: create the app in the Play Console with package `edu.dartmouth.dali.os.mobile`, upload the first build by hand (Play requires it), then add a service account key with `npx eas-cli credentials -p android`.
+4. GitHub: create an Expo access token (expo.dev → Account settings → Access tokens) and save it as the repo secret `EXPO_TOKEN`. Until it exists the workflow skips with a notice.
+
+### By hand
+
+```bash
+npx eas-cli build --platform ios --profile preview      # internal install (register devices with `eas device:create`)
+npx eas-cli build --platform android --profile preview  # an APK to share
+npx eas-cli build --platform all --profile production --auto-submit
+npx eas-cli update --channel production --message "…"
+```
+
 ## Layout
 
 ```
