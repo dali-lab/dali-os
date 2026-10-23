@@ -10,10 +10,11 @@
 
 import { prisma } from "~/lib/db";
 import { notify } from "~/lib/notify.server";
-import { expandOccurrences, noteForOccurrence } from "~/lib/meeting-occurrences";
+import { expandOccurrences, noteForOccurrence, rruleUntilBasic } from "~/lib/meeting-occurrences";
 import { meetingOccurrenceHref } from "~/calendar/lib/meeting-href";
 import { getUserRoles } from "~/lib/roles";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
+import { isGoogleEventCancelled } from "~/lib/google-calendar";
 import type { JobContext, JobResult } from "~/jobs/registry";
 
 const MINUTE_MS = 60_000;
@@ -25,6 +26,35 @@ const MINUTE_MS = 60_000;
 const BAND_BEFORE_MS = 15 * MINUTE_MS;
 const BAND_AFTER_MS = 60 * MINUTE_MS;
 const CAP = 200;
+
+type GoogleBacked = {
+  id: string;
+  recurrenceRule: string | null;
+  externalEventId: string | null;
+  organizerCalendarLinkId: string | null;
+  organizerCalendarId: string | null;
+};
+
+// A meeting tracked from Google is cancelled on Google, not in DALI, and so is
+// an occurrence someone deletes straight from Google Calendar: the row still
+// reads Confirmed with no exception. A Google error fails open, since a stray
+// prompt beats a missed recording.
+async function cancelledOnGoogle(meeting: GoogleBacked, originalStart: Date): Promise<boolean> {
+  if (!meeting.externalEventId || !meeting.organizerCalendarLinkId) return false;
+  const eventId = meeting.recurrenceRule
+    ? `${meeting.externalEventId}_${rruleUntilBasic(originalStart)}`
+    : meeting.externalEventId;
+  try {
+    return await isGoogleEventCancelled({
+      linkId: meeting.organizerCalendarLinkId,
+      calendarId: meeting.organizerCalendarId ?? undefined,
+      eventId,
+    });
+  } catch (err) {
+    console.error(`[jobs] record prompt ${meeting.id}: Google status check failed`, err);
+    return false;
+  }
+}
 
 export async function runMeetingRecordPrompts({ now, settings }: JobContext): Promise<JobResult> {
   const leadMs = settings.leadMinutes * MINUTE_MS;
@@ -40,6 +70,9 @@ export async function runMeetingRecordPrompts({ now, settings }: JobContext): Pr
       exceptions: true,
       meetingType: true,
       meetingUrl: true,
+      externalEventId: true,
+      organizerCalendarLinkId: true,
+      organizerCalendarId: true,
       notePages: { select: { id: true, meetingOccurrenceStart: true } },
       project: { select: { recordingPolicy: true } },
     },
@@ -92,6 +125,7 @@ export async function runMeetingRecordPrompts({ now, settings }: JobContext): Pr
         select: { id: true },
       });
       if (existingRecording) continue;
+      if (await cancelledOnGoogle(meeting, occ.originalStart)) continue;
 
       // Claim before sending: a unique violation means another machine (or a
       // previous crash) already owns this (meeting, occurrence, user, kind).

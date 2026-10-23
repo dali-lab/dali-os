@@ -317,6 +317,32 @@ describe("delete-time-entry", () => {
     expect(mockPrisma.timeEntry.delete).not.toHaveBeenCalled();
     expect(mockRemove).not.toHaveBeenCalled();
   });
+
+  it("answers ok when the entry is already gone, without touching Google", async () => {
+    mockPrisma.timeEntry.findUnique.mockResolvedValue(null);
+
+    const res = await submitCalendarAction(request(deleteFields));
+    await flush();
+
+    expect(res!.status).toBe(200);
+    expect(await res!.json()).toEqual({ ok: true, entry: { id: "t1" } });
+    expect(mockPrisma.timeEntry.delete).not.toHaveBeenCalled();
+    expect(mockRemove).not.toHaveBeenCalled();
+  });
+
+  it("answers ok to a second delete of the same entry", async () => {
+    mockPrisma.timeEntry.findUnique.mockResolvedValueOnce(row).mockResolvedValueOnce(null);
+    mockPrisma.timeEntry.delete.mockResolvedValue(row);
+
+    const first = await submitCalendarAction(request(deleteFields));
+    const second = await submitCalendarAction(request(deleteFields));
+    await flush();
+
+    expect(first!.status).toBe(200);
+    expect(second!.status).toBe(200);
+    expect(mockPrisma.timeEntry.delete).toHaveBeenCalledTimes(1);
+    expect(mockRemove).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("mirroring one entry from several quick writes", () => {

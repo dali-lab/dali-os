@@ -4,11 +4,13 @@ vi.mock("~/lib/db");
 vi.mock("~/lib/notify.server", () => ({ notify: vi.fn() }));
 vi.mock("~/lib/roles", () => ({ getUserRoles: vi.fn() }));
 vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabled: vi.fn() }));
+vi.mock("~/lib/google-calendar", () => ({ isGoogleEventCancelled: vi.fn() }));
 
 import { prisma } from "~/lib/db";
 import { notify } from "~/lib/notify.server";
 import { getUserRoles } from "~/lib/roles";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
+import { isGoogleEventCancelled } from "~/lib/google-calendar";
 import { meetingOccurrenceHref } from "~/calendar/lib/meeting-href";
 import { runMeetingRecordPrompts } from "~/jobs/meeting-record-prompts.server";
 
@@ -19,6 +21,7 @@ const mockPrisma = prisma as unknown as Record<
 const mockNotify = notify as unknown as ReturnType<typeof vi.fn>;
 const mockGetUserRoles = getUserRoles as unknown as ReturnType<typeof vi.fn>;
 const mockIsFeatureEnabled = isFeatureEnabled as unknown as ReturnType<typeof vi.fn>;
+const mockIsGoogleEventCancelled = isGoogleEventCancelled as unknown as ReturnType<typeof vi.fn>;
 
 const NOW = new Date("2026-07-15T15:00:00Z");
 const IN_30_SEC = new Date(NOW.getTime() + 30_000);
@@ -34,6 +37,9 @@ function meeting(overrides: Record<string, unknown> = {}) {
     exceptions: [],
     meetingType: "Team",
     meetingUrl: null,
+    externalEventId: null,
+    organizerCalendarLinkId: null,
+    organizerCalendarId: null,
     notePages: [{ id: "note1", meetingOccurrenceStart: IN_30_SEC }],
     project: null,
     ...overrides,
@@ -50,6 +56,7 @@ beforeEach(() => {
   mockGetUserRoles.mockResolvedValue({});
   mockIsFeatureEnabled.mockResolvedValue(true);
   mockNotify.mockResolvedValue({ inApp: 1, emailed: 0, slackDmed: 0 });
+  mockIsGoogleEventCancelled.mockResolvedValue(false);
 });
 
 describe("runMeetingRecordPrompts", () => {
@@ -206,5 +213,96 @@ describe("runMeetingRecordPrompts", () => {
     });
     expect(result.items).toBe(0);
     expect(mockNotify).not.toHaveBeenCalled();
+  });
+
+  it("skips an occurrence cancelled in DALI OS", async () => {
+    mockPrisma.scheduledMeeting.findMany.mockResolvedValue([
+      meeting({
+        recurrenceRule: "FREQ=DAILY",
+        exceptions: [{ originalStart: IN_30_SEC, overrideStart: null, overrideDurationMin: null, cancelled: true }],
+      }),
+    ]);
+    const result = await runMeetingRecordPrompts({ now: NOW, lastSuccessAt: null, settings: { leadMinutes: 1 } });
+    expect(result.items).toBe(0);
+    expect(mockNotify).not.toHaveBeenCalled();
+  });
+
+  describe("a meeting backed by a Google event", () => {
+    const googleBacked = (overrides: Record<string, unknown> = {}) =>
+      meeting({
+        externalEventId: "gev1",
+        organizerCalendarLinkId: "link1",
+        organizerCalendarId: "cal1",
+        ...overrides,
+      });
+
+    it("skips the prompt when the event was cancelled on Google", async () => {
+      mockPrisma.scheduledMeeting.findMany.mockResolvedValue([googleBacked()]);
+      mockIsGoogleEventCancelled.mockResolvedValue(true);
+
+      const result = await runMeetingRecordPrompts({ now: NOW, lastSuccessAt: null, settings: { leadMinutes: 1 } });
+
+      expect(mockIsGoogleEventCancelled).toHaveBeenCalledWith({ linkId: "link1", calendarId: "cal1", eventId: "gev1" });
+      expect(result.items).toBe(0);
+      expect(mockNotify).not.toHaveBeenCalled();
+      expect(mockPrisma.meetingReminderLog.create).not.toHaveBeenCalled();
+    });
+
+    it("checks the occurrence's own Google instance for a recurring meeting", async () => {
+      mockPrisma.scheduledMeeting.findMany.mockResolvedValue([googleBacked({ recurrenceRule: "FREQ=DAILY" })]);
+      mockIsGoogleEventCancelled.mockResolvedValue(true);
+
+      await runMeetingRecordPrompts({ now: NOW, lastSuccessAt: null, settings: { leadMinutes: 1 } });
+
+      expect(mockIsGoogleEventCancelled).toHaveBeenCalledWith({
+        linkId: "link1",
+        calendarId: "cal1",
+        eventId: "gev1_20260715T150030Z",
+      });
+      expect(mockNotify).not.toHaveBeenCalled();
+    });
+
+    it("uses the primary calendar when the meeting stores none", async () => {
+      mockPrisma.scheduledMeeting.findMany.mockResolvedValue([googleBacked({ organizerCalendarId: null })]);
+
+      await runMeetingRecordPrompts({ now: NOW, lastSuccessAt: null, settings: { leadMinutes: 1 } });
+
+      expect(mockIsGoogleEventCancelled).toHaveBeenCalledWith({ linkId: "link1", calendarId: undefined, eventId: "gev1" });
+    });
+
+    it("prompts when the event is still on Google", async () => {
+      mockPrisma.scheduledMeeting.findMany.mockResolvedValue([googleBacked()]);
+
+      const result = await runMeetingRecordPrompts({ now: NOW, lastSuccessAt: null, settings: { leadMinutes: 1 } });
+
+      expect(result.items).toBe(1);
+      expect(mockNotify).toHaveBeenCalledTimes(1);
+    });
+
+    it("still prompts when Google can't be reached", async () => {
+      const log = vi.spyOn(console, "error").mockImplementation(() => {});
+      mockPrisma.scheduledMeeting.findMany.mockResolvedValue([googleBacked()]);
+      mockIsGoogleEventCancelled.mockRejectedValue(new Error("Google is down"));
+
+      const result = await runMeetingRecordPrompts({ now: NOW, lastSuccessAt: null, settings: { leadMinutes: 1 } });
+
+      expect(result.items).toBe(1);
+      log.mockRestore();
+    });
+  });
+
+  it("does not ask Google about a meeting with no Google event", async () => {
+    await runMeetingRecordPrompts({ now: NOW, lastSuccessAt: null, settings: { leadMinutes: 1 } });
+    expect(mockIsGoogleEventCancelled).not.toHaveBeenCalled();
+    expect(mockNotify).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not ask Google about an occurrence that already has a recording", async () => {
+    mockPrisma.scheduledMeeting.findMany.mockResolvedValue([
+      meeting({ externalEventId: "gev1", organizerCalendarLinkId: "link1" }),
+    ]);
+    mockPrisma.meetingRecording.findFirst.mockResolvedValue({ id: "rec1" });
+    await runMeetingRecordPrompts({ now: NOW, lastSuccessAt: null, settings: { leadMinutes: 1 } });
+    expect(mockIsGoogleEventCancelled).not.toHaveBeenCalled();
   });
 });
