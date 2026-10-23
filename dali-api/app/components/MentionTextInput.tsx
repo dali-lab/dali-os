@@ -72,6 +72,8 @@ type Props = {
   value: string;
   onChange: (value: string) => void;
   placeholder?: string;
+  /** Accessible name, for a field with no visible label. */
+  ariaLabel?: string;
   disabled?: boolean;
   autoFocus?: boolean;
   multiline?: boolean;
@@ -87,6 +89,9 @@ type Props = {
   /** Multiline only: grow the textarea with its content instead of scrolling
    *  inside a fixed `rows` box. Cap the growth with a max-height class. */
   autoGrow?: boolean;
+  /** Open the suggestions above the field, for a composer pinned to the
+   *  bottom of a clipped panel. */
+  dropUp?: boolean;
   inputRef?: Ref<MentionInputHandle>;
 };
 
@@ -94,6 +99,7 @@ export function MentionTextInput({
   value,
   onChange,
   placeholder,
+  ariaLabel,
   disabled,
   autoFocus,
   multiline = false,
@@ -103,6 +109,7 @@ export function MentionTextInput({
   wrapperClassName = "relative",
   onKeyDown,
   autoGrow = false,
+  dropUp = false,
   inputRef,
 }: Props) {
   const ref = useRef<HTMLTextAreaElement & HTMLInputElement>(null);
@@ -240,6 +247,7 @@ export function MentionTextInput({
     },
     onBlur: () => setTimeout(() => setOpen(false), 120),
     placeholder,
+    "aria-label": ariaLabel,
     disabled,
     autoFocus,
     maxLength,
@@ -248,9 +256,15 @@ export function MentionTextInput({
 
   return (
     <div className={wrapperClassName}>
-      {multiline ? <textarea rows={rows} {...shared} /> : <input {...shared} />}
+      {multiline ? <textarea rows={rows} {...shared} /> : <input type="text" {...shared} />}
       {open && items.length > 0 && (
-        <div className={cn("absolute left-0 top-full z-50 mt-1 w-56 overflow-hidden py-1 text-sm", OS_SURFACE_CLASS)}>
+        <div
+          className={cn(
+            "absolute left-0 z-50 w-56 overflow-hidden py-1 text-sm",
+            dropUp ? "bottom-full mb-1" : "top-full mt-1",
+            OS_SURFACE_CLASS,
+          )}
+        >
           {items.map((u, i) => (
             <button
               key={u.id}

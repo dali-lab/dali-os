@@ -27,6 +27,8 @@ import { cn } from "~/lib/cn";
 import { Avatar } from "~/components/ui/Avatar";
 import { IconButton } from "~/components/ui/IconButton";
 import { ReactionBar } from "~/components/ReactionBar";
+import { MentionText } from "~/components/MentionText";
+import { MentionTextInput } from "~/components/MentionTextInput";
 import { GalleryMasonry } from "~/community/components/GalleryMasonry";
 import { GalleryNavRow } from "~/community/components/GalleryNavRow";
 import { GalleryPostMenu } from "~/community/components/GalleryPostMenu";
@@ -197,14 +199,21 @@ function PostCloseup({ post }: { post: GalleryPostDetail }) {
 function Comments({ post }: { post: GalleryPostDetail }) {
   const fetcher = useFetcher();
   const remove = useFetcher();
-  const formRef = useRef<HTMLFormElement | null>(null);
+  const [draft, setDraft] = useState("");
   const listRef = useRef<HTMLDivElement | null>(null);
   const sent = fetcher.state === "idle" && fetcher.data != null;
   useEffect(() => {
     if (!sent) return;
-    formRef.current?.reset();
+    setDraft("");
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight });
   }, [sent, fetcher.data]);
+
+  const busy = fetcher.state !== "idle";
+  function send() {
+    const body = draft.trim();
+    if (!body || busy) return;
+    fetcher.submit({ intent: "comment", postId: post.id, body }, { method: "post" });
+  }
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3 border-t border-os-container pt-4">
@@ -227,7 +236,9 @@ function Comments({ post }: { post: GalleryPostDetail }) {
                   {relativeTime(c.createdAt)}
                 </span>
               </p>
-              <p className="whitespace-pre-wrap break-words text-sm text-foreground">{c.body}</p>
+              <p className="whitespace-pre-wrap break-words text-sm text-foreground">
+                <MentionText text={c.body} />
+              </p>
             </div>
             {c.canDelete && (
               <IconButton
@@ -243,27 +254,31 @@ function Comments({ post }: { post: GalleryPostDetail }) {
           </div>
         ))}
       </div>
-      <fetcher.Form ref={formRef} method="post" className="os-form flex items-center gap-2">
-        <input type="hidden" name="intent" value="comment" />
-        <input type="hidden" name="postId" value={post.id} />
-        <input
-          type="text"
-          name="body"
-          required
+      <form
+        className="os-form flex items-center gap-2"
+        onSubmit={(e) => {
+          e.preventDefault();
+          send();
+        }}
+      >
+        <MentionTextInput
+          value={draft}
+          onChange={setDraft}
           maxLength={GALLERY_COMMENT_MAX}
-          placeholder="Add a comment"
-          aria-label="Add a comment"
-          autoComplete="off"
-          className="min-w-0 flex-1"
+          placeholder="Add a comment, @ to mention"
+          ariaLabel="Add a comment"
+          dropUp
+          wrapperClassName="relative min-w-0 flex-1"
+          className="w-full"
         />
         <button
           type="submit"
-          disabled={fetcher.state !== "idle"}
+          disabled={busy || !draft.trim()}
           className="os-btn-primary os-btn-primary--sm disabled:opacity-50"
         >
           Send
         </button>
-      </fetcher.Form>
+      </form>
     </div>
   );
 }

@@ -1,8 +1,11 @@
 import { SmilePlus } from "lucide-react";
 import { cn } from "~/lib/cn";
 import type { ReactionSummary } from "~/lib/feedback";
-import { IconButton } from "~/components/ui/IconButton";
 import { Popover } from "~/components/ui/floating";
+import { OS_PANEL_CLASS } from "~/components/ui/floating/styles";
+
+const CHIP =
+  "inline-flex h-8 items-center gap-1.5 rounded-full border px-2.5 text-sm transition-colors";
 
 /** Emoji chips with counts, then a picker for adding one. Shared by Feedback and Gallery. */
 export function ReactionBar({
@@ -16,8 +19,6 @@ export function ReactionBar({
   onReact: (emoji: string) => void;
   className?: string;
 }) {
-  const chip =
-    "inline-flex h-8 items-center gap-1.5 rounded-full border px-2.5 text-sm transition-colors";
   return (
     <div className={cn("flex flex-wrap items-center gap-1.5", className)}>
       {reactions.map((r) => (
@@ -28,7 +29,7 @@ export function ReactionBar({
           aria-label={`${r.emoji} ${r.count}`}
           onClick={() => onReact(r.emoji)}
           className={cn(
-            chip,
+            CHIP,
             r.mine
               ? "border-os-accent/30 bg-os-accent/15 text-os-accent"
               : "border-os-container text-os-grey hover:border-os-container-hi hover:text-foreground",
@@ -53,15 +54,22 @@ export function ReactionPicker({
   triggerClassName?: string;
 }) {
   return (
+    // panelClassName replaces the Popover's surface rather than adding to it,
+    // so it has to carry the panel dress itself.
     <Popover
       ariaLabel="Add reaction"
-      panelClassName="z-[60] w-max p-1.5"
+      panelClassName={cn(OS_PANEL_CLASS, "w-max")}
       trigger={
-        <IconButton
-          label="React"
-          icon={SmilePlus}
-          className={cn("h-8 w-8 rounded-full", triggerClassName)}
-        />
+        <button
+          type="button"
+          aria-label="Add reaction"
+          className={cn(
+            "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-os-grey transition-colors hover:bg-os-container hover:text-foreground aria-expanded:bg-os-container aria-expanded:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-os-accent",
+            triggerClassName,
+          )}
+        >
+          <SmilePlus className="h-4 w-4" aria-hidden />
+        </button>
       }
     >
       {(close) => (

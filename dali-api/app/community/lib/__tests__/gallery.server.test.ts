@@ -15,6 +15,13 @@ const db = vi.hoisted(() => ({
   $transaction: vi.fn(),
 }));
 const notify = vi.hoisted(() => vi.fn());
+const mentions = vi.hoisted(() => ({
+  extractHandlesFromText: vi.fn((text: string) =>
+    [...text.matchAll(/@([a-z0-9_]+)/gi)].map((m) => m[1].toLowerCase()),
+  ),
+  resolveHandles: vi.fn(async (_handles: string[]): Promise<string[]> => []),
+  notifyMentions: vi.fn(),
+}));
 const s3 = vi.hoisted(() => ({
   isS3Configured: vi.fn(() => false),
   getDownloadUrl: vi.fn(async (key: string) => `https://s3.test/${key}`),
@@ -24,6 +31,7 @@ vi.mock("~/lib/db", () => ({ prisma: db }));
 vi.mock("~/lib/notify.server", () => ({ notify }));
 vi.mock("~/lib/photo", () => ({ resolvePhotoUrl: vi.fn(async () => null) }));
 vi.mock("~/lib/s3", () => s3);
+vi.mock("~/lib/mentions", () => mentions);
 vi.mock("~/lib/rate-limit", () => ({ checkRateLimit: vi.fn(() => null) }));
 vi.mock("~/community/lib/community.server", () => ({ requireCommunityViewer: vi.fn() }));
 
@@ -246,6 +254,29 @@ describe("galleryAction comment", () => {
         eventType: "gallery.comment",
         message: { vars: { personName: "Maya Chen", itemDetail: "great shot" }, link: "/community/gallery/p1" },
       }),
+    );
+  });
+
+  it("notifies @mentioned people with the shared mention event", async () => {
+    mentions.resolveHandles.mockResolvedValueOnce(["leo", "me"]);
+    await run({ intent: "comment", postId: "p1", body: "@leo_b look, and @maya" });
+    expect(mentions.resolveHandles).toHaveBeenCalledWith(["leo_b", "maya"]);
+    expect(mentions.notifyMentions).toHaveBeenCalledWith({
+      recipientUserIds: ["leo"],
+      actorId: "me",
+      link: "/community/gallery/p1",
+      copyKey: "mention.comment",
+      preview: "@leo_b look, and @maya",
+    });
+    expect(notify).toHaveBeenCalledWith(expect.objectContaining({ eventType: "gallery.comment" }));
+  });
+
+  it("sends a mentioned poster only the mention", async () => {
+    mentions.resolveHandles.mockResolvedValueOnce(["author"]);
+    await run({ intent: "comment", postId: "p1", body: "@ann nice" });
+    expect(notify).not.toHaveBeenCalled();
+    expect(mentions.notifyMentions).toHaveBeenCalledWith(
+      expect.objectContaining({ recipientUserIds: ["author"] }),
     );
   });
 

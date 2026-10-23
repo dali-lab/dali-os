@@ -7,6 +7,7 @@ import { getDownloadUrl, isS3Configured } from "~/lib/s3";
 import { checkRateLimit } from "~/lib/rate-limit";
 import { summarizeReactions } from "~/lib/feedback";
 import { notify } from "~/lib/notify.server";
+import { extractHandlesFromText, notifyMentions, resolveHandles } from "~/lib/mentions";
 import { requireCommunityViewer } from "~/community/lib/community.server";
 import {
   GALLERY_COMMENT_MAX,
@@ -280,7 +281,10 @@ export async function galleryAction(request: Request, viewer: GalleryViewer) {
       const post = await visiblePost(viewer, postId);
       if (!post) return fail(404);
       await prisma.galleryComment.create({ data: { postId, authorId: viewer.id, body } });
-      if (post.authorId !== viewer.id) {
+      const mentioned = new Set(await resolveHandles(extractHandlesFromText(body)));
+      mentioned.delete(viewer.id);
+      // A mentioned poster gets the mention, not a second "commented" ping.
+      if (post.authorId !== viewer.id && !mentioned.has(post.authorId)) {
         await notify({
           eventType: "gallery.comment",
           createdByUserId: viewer.id,
@@ -288,6 +292,13 @@ export async function galleryAction(request: Request, viewer: GalleryViewer) {
           recipients: [{ userId: post.authorId }],
         });
       }
+      await notifyMentions({
+        recipientUserIds: [...mentioned],
+        actorId: viewer.id,
+        link,
+        copyKey: "mention.comment",
+        preview: body,
+      });
       break;
     }
     case "delete-comment":
