@@ -8,7 +8,10 @@
     "userInterfaceStyle": "light",
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "edu.dartmouth.dali.os.mobile"
+      "bundleIdentifier": "edu.dartmouth.dali.os.mobile",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -36,8 +39,19 @@
       "expo-status-bar",
       "expo-web-browser",
       "expo-secure-store",
-      "expo-notifications"
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "DALI OS uses the microphone to record and transcribe your meeting notes.",
+          "enableBackgroundRecording": true,
+          "enableBackgroundPlayback": false
+        }
+      ],
+      "expo-asset"
     ],
-    "scheme": "dalios-mobile"
+    "scheme": "dalios-mobile",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    }
   }
 }

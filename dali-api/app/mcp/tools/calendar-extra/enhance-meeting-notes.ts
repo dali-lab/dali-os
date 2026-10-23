@@ -42,7 +42,7 @@ import {
 } from "~/lib/meeting-notes-apply.server";
 import { AI_BURST_MAX, AI_BURST_WINDOW_MS } from "~/routes/api.ai.meeting-notes";
 import type { McpCtx } from "../../registry";
-import { McpError, McpForbiddenError, McpInvalidError, McpNotFoundError } from "../../registry";
+import { McpError, McpForbiddenError, McpInvalidError, McpNotFoundError } from "../../errors";
 
 export const ENHANCE_MEETING_NOTES_DEF = {
   name: "enhance_meeting_notes",

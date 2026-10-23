@@ -1,4 +1,4 @@
-// Wire contract between the mobile app and dali-api (/api/mobile/*, /api/chat/*).
+// Wire contract between the mobile app and dali-api (/api/mobile/*, /api/meeting-recordings/*).
 // Every route takes `Authorization: Bearer <token>` (device-pairing token) and returns
 // JSON. Errors are `{ error: string }` with a 4xx/5xx status. Dates are ISO strings.
 // All routes 404 `{ error: "Not found" }` when the `mobile-app` feature flag is off for the user.
@@ -7,7 +7,7 @@ export type Presence = 'active' | 'away' | 'offline';
 export type TaskStatus = 'Backlog' | 'Todo' | 'InProgress' | 'InReview' | 'Done' | 'Cancelled';
 export type Rsvp = 'accepted' | 'tentative' | 'declined' | 'needs_action';
 
-/** A lab member as the app shows them (directory entry, chat author, assignee). */
+/** A lab member as the app shows them (attendee, assignee, teammate). */
 export interface MemberSummary {
   id: string;
   name: string;
@@ -34,12 +34,12 @@ export interface MeResponse {
   groups: string[];
 }
 
-// PUT /api/mobile/me/status  body { status: 'active' | 'away' } -> { ok: true }
+// PUT /api/mobile/me  body { status: 'active' | 'away' } -> { ok: true }
 export interface SetStatusBody {
   status: 'active' | 'away';
 }
 
-// GET /api/mobile/projects -> the viewer's active projects (most recent term first)
+// GET /api/mobile/projects -> the projects the viewer is staffed on this term (not archived)
 export interface ProjectSummary {
   id: string;
   name: string;
@@ -77,7 +77,6 @@ export interface ProjectBoardResponse {
   project: ProjectSummary & {
     roles: string[]; // domains on the project
     memberIds: string[];
-    channelId: string | null; // chat conversation id for the project channel, if one exists
     sprint: { number: number; startDate: string; endDate: string } | null;
     doneCount: number;
     totalCount: number;
@@ -106,10 +105,27 @@ export interface CalendarEvent {
   attendeeIds: string[];
   description: string | null;
   link: string | null; // web path on DALI OS
+  scheduledMeetingId: string | null; // DALI meetings only
+  occurrenceStart: string | null; // the occurrence's original start, DALI meetings only
 }
 export interface CalendarResponse {
   events: CalendarEvent[];
+  people: MemberSummary[]; // every attendee across `events`
 }
+
+// POST /api/mobile/calendar -> { id, addedToGoogle, googleError } : a DALI meeting you organize
+export interface CreateEventBody {
+  title: string;
+  startTime: string;
+  durationMinutes: number; // 5-480
+  participantUserIds: string[]; // others to invite; empty = just you
+  location?: string | null;
+  description?: string | null;
+  addToGoogle: boolean; // put it on your linked Google calendar (with invites)
+  addMeet: boolean; // attach a Google Meet link (needs addToGoogle)
+}
+
+// GET /api/mobile/people?q= -> { people: MemberSummary[] } : current-term members to invite (q >= 2 chars)
 
 // GET /api/mobile/pass
 export interface PassResponse {
@@ -122,55 +138,165 @@ export interface PassResponse {
   checkIns: { id: string; location: string; at: string }[]; // latest 20 present attendances
 }
 
-// ---------------- Chat (/api/chat/*) ----------------
+// ---------------- Time (/api/mobile/time) ----------------
 
-export interface Conversation {
+export type AssignmentType = 'Project' | 'Core' | 'Instructor' | 'DomainLead' | 'Admin' | 'Custom';
+
+/** A paid role hours can bill to. */
+export interface Role {
+  assignmentType: AssignmentType;
+  roleRefId: string;
+  label: string; // e.g. "DALI OS Fullstack Dev", "Delivery Lead"
+  detail: string; // the kind of role, e.g. "Project", "Core"
+  projectId: string | null;
+}
+
+export interface TimeEntry {
   id: string;
-  kind: 'channel' | 'dm';
-  name: string | null; // channels only, no leading #
-  isPrivate: boolean;
-  isDefault: boolean;
-  topic: string | null;
-  memberIds: string[];
-  createdBy: string;
+  source: 'Meeting' | 'Manual';
+  day: string; // yyyy-MM-dd in the member's zone
+  hours: number;
+  note: string | null;
+  startTime: string | null;
+  endTime: string | null;
+  assignmentType: AssignmentType | null;
+  roleRefId: string | null;
+  projectId: string | null;
+  scheduledMeetingId: string | null;
+  occurrenceStart: string | null;
+  meetingTitle: string | null;
+}
+
+// GET /api/mobile/time?date=yyyy-MM-dd (default today) -> the pay period containing that day
+export interface TimeResponse {
+  today: string;
+  period: { start: string; end: string }; // inclusive yyyy-MM-dd
+  roles: Role[];
+  entries: TimeEntry[];
+}
+
+// POST /api/mobile/time -> { id }. `hours` must match the start/end span (<= 24h).
+// With scheduledMeetingId the hours link to that meeting occurrence (one per member).
+export interface AddTimeEntryBody {
+  date: string; // yyyy-MM-dd
+  hours: number;
+  assignmentType: AssignmentType;
+  roleRefId: string;
+  note?: string | null;
+  startTime: string;
+  endTime: string;
+  scheduledMeetingId?: string;
+}
+// PATCH /api/mobile/time/:id { any AddTimeEntryBody field except scheduledMeetingId } -> { ok: true }
+// DELETE /api/mobile/time/:id -> { ok: true }
+
+// ---------------- Meeting notes ----------------
+
+export type RecordingStatus = 'Pending' | 'Recording' | 'Stopped' | 'Processing' | 'Done' | 'Failed';
+
+export interface NoteSummary {
+  id: string; // MeetingRecording id
+  title: string;
+  status: RecordingStatus;
   createdAt: string;
-  lastReadAt: string; // viewer's read marker; createdAt if never read / not a member
+  recordedSeconds: number;
+  scheduledMeetingId: string | null;
+  occurrenceStart: string | null;
+  enhancedAt: string | null;
+  actionItemCount: number;
+  tasksCreated: number;
 }
 
-export interface Reaction {
-  emoji: string;
-  userIds: string[];
+/** A note the member typed (no recording): a personal note or a page in a notebook. */
+export interface TypedNote {
+  id: string; // page id
+  title: string;
+  updatedAt: string;
+  notebook: string | null; // the notebook it's filed in; null for a personal note
 }
 
-export interface Message {
+// GET /api/mobile/notes -> the member's latest 30 recordings and 30 typed notes
+export interface NotesResponse {
+  recordingEnabled: boolean; // AI meeting notes flag on and transcription configured
+  notes: NoteSummary[];
+  pages: TypedNote[];
+}
+// POST /api/mobile/notes { title } | { scheduledMeetingId, occurrenceStart } -> { pageId, documentName }
+//   a new personal note, or a calendar meeting occurrence's notes page
+export interface NotePage {
+  pageId: string;
+  documentName: string; // the collab room a recording writes into
+}
+
+// GET /api/notebooks?q=&meetingId= (existing web route) -> notebooks the member can edit, suggested first
+export interface Notebook {
   id: string;
-  conversationId: string;
-  authorId: string;
+  title: string;
+  path: string;
+  tabCount: number;
+  lastNoteAt: string | null;
+  suggested: boolean;
+}
+// POST /api/notebooks/:id { intent: 'new-note' } -> { ok, id } : a new note (tab) in that notebook
+
+// POST /api/mobile/webview { pageId } -> { url } : a one-time sign-in link that opens the page's editor
+
+export type OutlineItem =
+  | { kind: 'heading'; text: string; level: number }
+  | { kind: 'text'; text: string; depth: number }
+  | { kind: 'bullet'; text: string; depth: number }
+  | { kind: 'check'; text: string; depth: number; checked: boolean };
+
+export interface ActionItem {
+  index: number;
   text: string;
+  ownerUserId: string | null;
+  ownerName: string | null;
+  due: string | null;
+  taskId: string | null;
+}
+
+// GET /api/mobile/notes/:id
+export interface NoteDetail {
+  id: string;
+  title: string;
+  status: RecordingStatus;
+  error: string | null;
   createdAt: string;
-  reactions: Reaction[];
-  parentId: string | null;
-  kind: 'user' | 'system';
+  recordedSeconds: number;
+  isOwner: boolean;
+  canEdit: boolean;
+  enhancedAt: string | null; // set once the AI notes were written into the page
+  pageId: string | null; // the notes page, editable in the app
+  pagePath: string | null; // web path of the notes page
+  project: { id: string; name: string } | null;
+  meeting: {
+    id: string;
+    title: string;
+    start: string;
+    end: string;
+    occurrenceStart: string;
+    timeEntry: { id: string; hours: number; roleRefId: string | null } | null;
+  } | null;
+  outline: OutlineItem[]; // the notes page, flattened
+  actionItems: ActionItem[];
+  speakerNames: Record<string, string>; // "mic:1" -> display name
+  lines: { at: number; end: number; text: string; speaker: string | null }[];
 }
+// POST /api/mobile/notes/:id { action: 'enhance' } -> { ok: true } : writes AI notes into the page
 
-// GET /api/chat/bootstrap
-// conversations: every conversation the viewer is a member of + every public channel.
-// messages: for each conversation, the latest 100 root messages and all their replies.
-export interface ChatBootstrapResponse {
-  meId: string;
-  users: MemberSummary[]; // every active lab member (directory)
-  conversations: Conversation[];
-  messages: Message[];
+// Recording itself uses the same routes as the web recorder (Bearer auth):
+// POST /api/meeting-recordings { scheduledMeetingId, occurrenceStart } | { documentName } -> { id }
+//   409 { error: 'alreadyRecording', ownerIsYou, ... } | 403 { error: 'recordingDisabled' | 'Not available' }
+// POST /api/meeting-recordings/:id/chunks?channel=mic&segment=N&seq=N  body: 20s of 16kHz mono s16le PCM
+//   -> { stopRequested }
+// POST /api/meeting-recordings/:id { action: 'finish', seconds } (end a session: Stopped)
+//                                  { action: 'resume' } (next segment) | { action: 'stop', final: true } (transcribe)
+//                                  { action: 'createTasks', items: [{ index, title, assigneeId?, dueAt? }] }
+// GET /api/meeting-recordings/:id -> { status, error, progress, ... }
+// DELETE /api/meeting-recordings/:id (discard)
+export interface RecordingState {
+  status: RecordingStatus;
+  error: string | null;
+  progress: { stage: 'fetching' | 'transcribing' | 'labeling'; completed: number; total: number } | null;
 }
-
-// GET /api/chat/conversations/:id/messages?before=ISO -> { messages: Message[] } (100 older roots + replies)
-// POST /api/chat/conversations/:id/messages { text, parentId? } -> { message: Message }
-// POST /api/chat/messages/:id/reactions { emoji } -> { message: Message }   (toggles the viewer's reaction)
-// POST /api/chat/conversations { name, topic?, isPrivate, memberIds } -> { conversation: Conversation, messages: Message[] }
-// POST /api/chat/dms { userIds } -> { conversation: Conversation }          (returns the existing DM for that exact member set)
-// POST /api/chat/conversations/:id/join -> { conversation, messages }       (public channels only)
-// POST /api/chat/conversations/:id/leave -> { ok: true }                    (not allowed for isDefault channels or DMs)
-// POST /api/chat/conversations/:id/members { userIds } -> { conversation, messages }
-// POST /api/chat/conversations/:id/read { at } -> { ok: true }              (moves the read marker forward only)
-// GET  /api/chat/stream  SSE: `event: message` data {conversationId}; `event: conversation` data {conversationId};
-//      `event: sync` every 60s; `: keepalive` every 25s. Client refetches /api/chat/bootstrap on any event.

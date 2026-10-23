@@ -1,13 +1,15 @@
 import React, { useEffect, useState } from 'react';
 import { startOfWeek } from 'date-fns';
-import { useChat } from '../../contexts/ChatContext';
 import { useData } from '../../contexts/DataContext';
+import { useNotes } from '../../contexts/NotesContext';
+import { useTime } from '../../contexts/TimeContext';
 import { LoadingScreen } from '../brand/LoadingScreen';
 
-const SYNC_MESSAGES = ['Syncing your channels', 'Pulling your tasks', 'Loading your calendar', 'Preparing your pass'];
+const SYNC_MESSAGES = ['Syncing your timesheet', 'Pulling your tasks', 'Loading meetings and notes', 'Preparing your pass'];
 
 export function SyncingScreen({ onDone }: { onDone: () => void }) {
-  const { refresh } = useChat();
+  const { load: loadTime } = useTime();
+  const { load: loadNotes } = useNotes();
   const { loadMe, loadProjects, loadWeek, loadPass } = useData();
   const [done, setDone] = useState(0);
 
@@ -15,15 +17,15 @@ export function SyncingScreen({ onDone }: { onDone: () => void }) {
     let alive = true;
     const step = (p: Promise<void>) => p.finally(() => alive && setDone((d) => d + 1));
     void Promise.all([
-      step(refresh()),
-      step(Promise.all([loadMe(), loadProjects()]).then(() => {})),
-      step(loadWeek(startOfWeek(new Date()))),
+      step(Promise.all([loadMe(), loadTime()]).then(() => {})),
+      step(loadProjects()),
+      step(Promise.all([loadWeek(startOfWeek(new Date())), loadNotes()]).then(() => {})),
       step(loadPass()),
     ]);
     return () => {
       alive = false;
     };
-  }, [refresh, loadMe, loadProjects, loadWeek, loadPass]);
+  }, [loadTime, loadNotes, loadMe, loadProjects, loadWeek, loadPass]);
 
   const progress = Math.round((done / SYNC_MESSAGES.length) * 100);
 

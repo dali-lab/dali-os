@@ -1,0 +1,120 @@
+# Ships the Expo mobile app (mobile/) from `prod`, separate from the web
+# deploy. Two paths, decided by mobile/app.json's `version`:
+#   - A version not released yet (no `mobile-v<version>` tag): build iOS and
+#     Android on EAS and submit them (TestFlight, Play internal track), then tag.
+#     Bump the version for anything native: a new native module, a plugin or
+#     permission change in app.json, or an Expo SDK upgrade.
+#   - An already-released version: publish an EAS Update (over the air) to the
+#     `production` channel. runtimeVersion follows the app version, so the update
+#     only reaches builds it is compatible with.
+# workflow_dispatch can force either path.
+#
+# REQUIRES (provisioned once by the repo owner, see mobile/README.md "Releasing"):
+#   Repo secret EXPO_TOKEN (an Expo robot/access token for the project's account).
+#   On EAS: the project linked (`eas init`), Apple credentials and an App Store
+#   Connect API key, and a Google Play service account key for submit.
+# Without EXPO_TOKEN the workflow reports that and does nothing.
+
+name: Mobile Release (iOS + Android)
+
+on:
+  push:
+    branches: [prod]
+    paths:
+      - "mobile/**"
+  workflow_dispatch:
+    inputs:
+      kind:
+        description: "What to ship"
+        type: choice
+        options: [auto, build, update]
+        default: auto
+
+permissions:
+  contents: write # push the mobile-v* release tag
+
+concurrency:
+  group: mobile-release
+  cancel-in-progress: false
+
+jobs:
+  decide:
+    runs-on: ubuntu-latest
+    outputs:
+      kind: ${{ steps.k.outputs.kind }}
+      version: ${{ steps.k.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: k
+        env:
+          HAS_TOKEN: ${{ secrets.EXPO_TOKEN != '' }}
+          REQUESTED: ${{ inputs.kind || 'auto' }}
+        run: |
+          set -euo pipefail
+          VERSION="$(jq -r .expo.version mobile/app.json)"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          if [ "${HAS_TOKEN}" != "true" ]; then
+            echo "::notice::EXPO_TOKEN is not set; skipping the mobile release. See mobile/README.md."
+            echo "kind=none" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "${REQUESTED}" != "auto" ]; then
+            echo "kind=${REQUESTED}" >> "$GITHUB_OUTPUT"
+          elif git ls-remote --exit-code --tags origin "refs/tags/mobile-v${VERSION}" >/dev/null 2>&1; then
+            echo "mobile-v${VERSION} already released; shipping an update."
+            echo "kind=update" >> "$GITHUB_OUTPUT"
+          else
+            echo "New version ${VERSION}; building."
+            echo "kind=build" >> "$GITHUB_OUTPUT"
+          fi
+
+  build:
+    needs: decide
+    if: ${{ needs.decide.outputs.kind == 'build' }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+      - run: npm ci
+      - run: npx tsc --noEmit
+      # Builds run on EAS; --no-wait returns once they're queued, and
+      # --auto-submit sends each finished build to its store.
+      - run: eas build --platform all --profile production --non-interactive --no-wait --auto-submit
+      - name: Tag the release
+        working-directory: .
+        run: |
+          git tag "mobile-v${{ needs.decide.outputs.version }}"
+          git push origin "mobile-v${{ needs.decide.outputs.version }}"
+
+  update:
+    needs: decide
+    if: ${{ needs.decide.outputs.kind == 'update' }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - run: eas update --channel production --non-interactive --message "$(git log -1 --pretty=%s)"

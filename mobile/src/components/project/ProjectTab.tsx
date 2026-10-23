@@ -20,11 +20,11 @@ import { TaskRow } from './TaskRow';
 const GROUP_ORDER: TaskStatus[] = ['InProgress', 'InReview', 'Todo', 'Backlog'];
 
 interface ProjectTabProps {
-  onOpenChannel: (conversationId: string) => void;
+  onStartTimer: (note?: string) => void;
   onOpenProfile: () => void;
 }
 
-export function ProjectTab({ onOpenChannel, onOpenProfile }: ProjectTabProps) {
+export function ProjectTab({ onStartTimer, onOpenProfile }: ProjectTabProps) {
   const { projects, board, selectedProjectId, loadProjects, selectProject, changeTaskStatus } = useData();
   const { meId } = useMembers();
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -67,7 +67,7 @@ export function ProjectTab({ onOpenChannel, onOpenProfile }: ProjectTabProps) {
           project={project}
           inReviewCount={inReviewCount}
           daysLeft={daysLeft}
-          onOpenChannel={project.channelId ? () => onOpenChannel(project.channelId as string) : undefined}
+          onStartTimer={() => onStartTimer(focus?.title)}
         />
 
         <FocusTaskCard task={focus} epic={epics.find((e) => e.id === focus?.epicId)} onOpen={setSelectedId} onChangeStatus={changeTaskStatus} />

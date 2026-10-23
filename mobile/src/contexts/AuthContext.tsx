@@ -4,7 +4,6 @@ import * as SecureStore from 'expo-secure-store';
 import * as WebBrowser from 'expo-web-browser';
 import { ApiError, api, configureClient, errorMessage } from '../api/client';
 import { environment, loadEnvironment, saveEnvironment, type EnvironmentId } from '../api/env';
-import { stopPushOnDevice, unregisterPush } from '../notifications/push';
 
 const TOKEN_KEY = 'dali.token';
 const MIN_POLL_SECONDS = 3;
@@ -49,7 +48,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const clearSession = useCallback(async () => {
     pairRun.current += 1;
     configureClient({ token: null });
-    await stopPushOnDevice();
     await SecureStore.deleteItemAsync(tokenKey(envRef.current)).catch(() => {});
     setPairing(null);
     setStatus('signedOut');
@@ -139,7 +137,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [pairing]);
 
   const signOut = useCallback(async () => {
-    await unregisterPush();
     await api.logout();
     await clearSession();
   }, [clearSession]);

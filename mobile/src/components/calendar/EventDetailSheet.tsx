@@ -1,12 +1,17 @@
-import React, { useRef } from 'react';
-import { Linking, Pressable, View } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { Linking, Pressable, Switch, View } from 'react-native';
 import { format } from 'date-fns';
-import { Calendar, Clock, MapPin, NotebookPen, Video, type LucideIcon } from 'lucide-react-native';
+import { Calendar, Clock, MapPin, Mic, NotebookPen, NotebookText, PenLine, Timer, Video, type LucideIcon } from 'lucide-react-native';
 import { colors, tw } from '../../theme';
+import { errorMessage } from '../../api/client';
+import { useNotes, type MeetingTarget } from '../../contexts/NotesContext';
+import { useTime } from '../../contexts/TimeContext';
 import { useMembers } from '../../contexts/useMembers';
 import type { CalendarEvent, Rsvp } from '../../types/calendar';
 import { CATEGORY_META } from '../../utils/eventCategory';
-import { formatTimeRange } from '../../utils/time';
+import { formatHours, hoursBetween, toDateKey } from '../../utils/hours';
+import { meetingTarget } from '../../utils/meeting';
+import { formatTimeRange, toMs } from '../../utils/time';
 import { Avatar } from '../ui/Avatar';
 import { BottomSheet } from '../ui/BottomSheet';
 import { Button } from '../ui/Button';
@@ -23,6 +28,9 @@ interface EventDetailSheetProps {
   event?: CalendarEvent;
   onClose: () => void;
   onRsvp: (event: CalendarEvent, rsvp: Rsvp) => void;
+  onRecord: (meeting: MeetingTarget) => Promise<string | null>;
+  onTakeNotes: (meeting: MeetingTarget) => Promise<string | null>;
+  onViewNote: (recordingId: string) => void;
 }
 
 function Detail({ icon: I, children }: { icon: LucideIcon; children: React.ReactNode }) {
@@ -34,12 +42,59 @@ function Detail({ icon: I, children }: { icon: LucideIcon; children: React.React
   );
 }
 
-export function EventDetailSheet({ event, onClose, onRsvp }: EventDetailSheetProps) {
+export function EventDetailSheet({ event, onClose, onRsvp, onRecord, onTakeNotes, onViewNote }: EventDetailSheetProps) {
   const { getMember, meId } = useMembers();
+  const { active, noteForMeeting } = useNotes();
+  const { roles, getRole, meetingEntry, ensurePeriodFor, logMeeting, deleteEntry } = useTime();
+  const [busy, setBusy] = useState<'record' | 'notes' | 'log' | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const last = useRef<CalendarEvent | undefined>(event);
   if (event) last.current = event;
   const shown = event ?? last.current;
   const hasAttendees = Boolean(shown && shown.attendeeIds.length > 0);
+
+  const meeting = shown && !shown.isAllDay ? meetingTarget(shown) : null;
+  const note = meeting ? noteForMeeting(meeting.id, meeting.occurrenceStart) : undefined;
+  const recordingThis = Boolean(meeting && active?.meeting?.id === meeting.id && active.meeting.occurrenceStart === meeting.occurrenceStart);
+  const logged = meeting ? meetingEntry(meeting.id, meeting.occurrenceStart) : undefined;
+  const started = Boolean(shown && toMs(shown.start) <= Date.now());
+
+  useEffect(() => {
+    setError(null);
+    if (event && meetingTarget(event)) ensurePeriodFor(toDateKey(new Date(event.start)));
+  }, [event, ensurePeriodFor]);
+
+  const record = async () => {
+    if (!meeting) return;
+    setBusy('record');
+    const message = await onRecord(meeting);
+    setBusy(null);
+    if (message) setError(message);
+    else onClose();
+  };
+
+  const takeNotes = async () => {
+    if (!meeting) return;
+    setBusy('notes');
+    const message = await onTakeNotes(meeting);
+    setBusy(null);
+    if (message) setError(message);
+    else onClose();
+  };
+
+  const toggleTimesheet = async () => {
+    if (!meeting) return;
+    setBusy('log');
+    setError(null);
+    try {
+      if (logged) await deleteEntry(logged.id);
+      else await logMeeting(meeting);
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setBusy(null);
+    }
+  };
 
   return (
     <BottomSheet open={Boolean(event)} onClose={onClose} title="Meeting">
@@ -66,6 +121,59 @@ export function EventDetailSheet({ event, onClose, onRsvp }: EventDetailSheetPro
           {shown.description ? (
             <View style={tw`mt-4 rounded-xl bg-cool-white p-3`}>
               <Text style={tw`text-sm text-dark-gray`}>{shown.description}</Text>
+            </View>
+          ) : null}
+
+          {meeting ? (
+            <View style={tw`mt-4 gap-2`}>
+              {note ? (
+                <Button fullWidth variant="secondary" color="navy" leftIcon={NotebookText} onPress={() => onViewNote(note.id)}>
+                  View meeting notes
+                </Button>
+              ) : (
+                <Button
+                  fullWidth
+                  color="coral"
+                  leftIcon={Mic}
+                  loading={busy === 'record'}
+                  disabled={Boolean(active) && !recordingThis}
+                  onPress={() => void record()}>
+                  {recordingThis ? 'Return to the recorder' : active ? 'Another recording is in progress' : 'Record meeting notes'}
+                </Button>
+              )}
+              <Button fullWidth variant="outline" color="navy" leftIcon={PenLine} loading={busy === 'notes'} disabled={busy !== null} onPress={() => void takeNotes()}>
+                {note ? 'Edit meeting notes' : 'Take notes'}
+              </Button>
+
+              <View style={tw`flex-row items-center gap-3 rounded-xl border border-slate-200 px-3 py-2.5`}>
+                <Timer size={18} color={colors.navy} />
+                <View style={tw`flex-1`}>
+                  <Text style={tw`text-sm font-bold text-cool-black`}>Add to timesheet</Text>
+                  <Text style={tw`text-xs text-slate-500`}>
+                    {logged
+                      ? [formatHours(logged.hours), getRole(logged.roleRefId)?.label].filter(Boolean).join(' · ')
+                      : roles.length === 0
+                        ? 'You have no role to log hours to this term'
+                        : started
+                          ? `${formatHours(hoursBetween(new Date(shown.start), new Date(shown.end)))} · ${roles[0].label}`
+                          : 'Available once the meeting starts'}
+                  </Text>
+                </View>
+                <Switch
+                  accessibilityLabel="Add to timesheet"
+                  value={Boolean(logged)}
+                  disabled={busy === 'log' || (!logged && (!started || roles.length === 0))}
+                  onValueChange={() => void toggleTimesheet()}
+                  trackColor={{ true: colors.teal, false: colors.slate300 }}
+                  thumbColor={colors.white}
+                  ios_backgroundColor={colors.slate300}
+                />
+              </View>
+              {error ? (
+                <Text accessibilityLiveRegion="polite" style={tw`text-xs text-dark-coral`}>
+                  {error}
+                </Text>
+              ) : null}
             </View>
           ) : null}
 
@@ -116,7 +224,7 @@ export function EventDetailSheet({ event, onClose, onRsvp }: EventDetailSheetPro
               <NotebookPen size={14} color={colors.slate500} />
             </View>
             <Text style={tw`flex-1 text-xs text-slate-500`}>
-              From <Text style={tw`font-bold text-dark-gray`}>{shown.calendar}</Text>. RSVPs sync with DALI OS.
+              From <Text style={tw`font-bold text-dark-gray`}>{shown.calendar}</Text>. Notes, RSVPs and timesheet hours sync with DALI OS.
             </Text>
           </View>
         </>

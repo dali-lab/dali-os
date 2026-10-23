@@ -175,7 +175,7 @@ export const FEATURE_FLAGS = [
     key: "mobile-app",
     label: "Mobile app",
     description:
-      "Lets the DALI OS mobile app (iOS and Android) sign in and load your profile, projects, calendar, member pass and chat. Off, the app's data endpoints return not found for that member. Ships off.",
+      "Lets the DALI OS mobile app (iOS and Android) sign in and load your profile, timesheet, projects, calendar, meeting notes and member pass. Off, the app's data endpoints return not found for that member. Ships off.",
   },
 ] as const satisfies readonly FeatureFlagDef[];
 

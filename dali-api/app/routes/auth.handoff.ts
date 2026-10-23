@@ -1,6 +1,8 @@
-// GET /auth/handoff?code=<handoffCode> — redeemed inside the desktop webview.
+// GET /auth/handoff?code=<handoffCode>[&next=/path] — redeemed inside the desktop
+// webview (or the mobile app's note editor WebView, which passes `next`).
 // Validates the single-use handoff code and plants a fresh 30-day webview cookie
-// session into the webview's cookie jar, then redirects to /. The 30-day session
+// session into the webview's cookie jar, then redirects to `next` (same-origin
+// paths only) or /. The 30-day session
 // id is born here via Set-Cookie and never travels in a URL; only the single-use,
 // 60-second handoff code does. See TAURI_DESKTOP_PLAN.md.
 
@@ -15,6 +17,7 @@ import { hashCode, desktopWebviewUserAgent } from "~/lib/pairing";
 import { mintBetterAuthSession } from "~/lib/betterauth-session.server";
 import { appendBetterAuthSessionCookie } from "~/lib/betterauth-cookie.server";
 import { isFeatureEnabledForEveryone } from "~/lib/feature-flags.server";
+import { pickSafeLoginNext } from "~/lib/login-next";
 
 export async function loader({ request }: Route.LoaderArgs) {
   const url = new URL(request.url);
@@ -65,5 +68,5 @@ export async function loader({ request }: Route.LoaderArgs) {
   // back/forward arrows in the desktop top bar (TablessHistoryNav), so there's nothing to
   // force here — a fresh pairing plants no preference and takes the default.
   await logAuditEvent({ action: "pairing.handoff", userId: row.userId, request });
-  return redirect("/", { headers });
+  return redirect(pickSafeLoginNext(url.searchParams.get("next")) ?? "/", { headers });
 }

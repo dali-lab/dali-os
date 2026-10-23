@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
 import {
+  assignmentTypeLabel,
   boardCounts,
+  entryDayKey,
   checkInLocation,
   displayName,
   githubRef,
@@ -14,11 +16,12 @@ import {
   mobilePresence,
   orderedEmails,
   parseCalendarRange,
-  parsePushTokenBody,
   parseStatusBody,
   passAccessLevel,
   passDisplayId,
   sprintNumberFromLabel,
+  todayKey,
+  utcDayKey,
   MAX_CALENDAR_RANGE_DAYS,
   type MemberTermFacts,
 } from "../mobile-format";
@@ -242,30 +245,45 @@ describe("pass helpers", () => {
   });
 });
 
-describe("parsePushTokenBody", () => {
-  const token = "ExponentPushToken[abcdEFGH1234]";
-
-  it("accepts Expo tokens with a platform", () => {
-    expect(parsePushTokenBody({ token, platform: "ios" })).toEqual({ token, platform: "ios" });
-    expect(parsePushTokenBody({ token: "ExpoPushToken[abcdEFGH1234]", platform: "android" })).toEqual({
-      token: "ExpoPushToken[abcdEFGH1234]",
-      platform: "android",
-    });
-  });
-
-  it("allows a missing platform for deletes", () => {
-    expect(parsePushTokenBody({ token })).toEqual({ token, platform: null });
-  });
-
+describe("assignmentTypeLabel", () => {
   it.each([
-    null,
-    "token",
-    {},
-    { token: "not-a-token" },
-    { token: "ExponentPushToken[]" },
-    { token: "ExponentPushToken[abc def gh]" },
-    { token, platform: "web" },
-  ])("rejects %j", (body) => {
-    expect(parsePushTokenBody(body)).toBeNull();
+    ["Project", "Project"],
+    ["Core", "Core"],
+    ["Instructor", "Instructor"],
+    ["DomainLead", "Domain lead"],
+    ["Admin", "Admin"],
+    ["Custom", "Outside job"],
+  ])("labels %s as %s", (type, label) => {
+    expect(assignmentTypeLabel(type)).toBe(label);
+  });
+
+  it("passes an unknown type through", () => {
+    expect(assignmentTypeLabel("Mystery")).toBe("Mystery");
+  });
+});
+
+describe("utcDayKey", () => {
+  it("reads a UTC-midnight day as its calendar date", () => {
+    expect(utcDayKey(new Date("2026-10-18T00:00:00.000Z"))).toBe("2026-10-18");
+  });
+});
+
+describe("todayKey", () => {
+  it("is the calendar day in the member's zone, not in UTC", () => {
+    const lateEvening = new Date("2026-10-22T02:30:00.000Z");
+    expect(todayKey(lateEvening, "America/New_York")).toBe("2026-10-21");
+    expect(todayKey(lateEvening, "UTC")).toBe("2026-10-22");
+  });
+});
+
+describe("entryDayKey", () => {
+  it("uses the start time in the member's zone when there is one", () => {
+    const entry = { date: new Date("2026-10-22T01:00:00.000Z"), startTime: new Date("2026-10-22T01:00:00.000Z") };
+    expect(entryDayKey(entry, "America/New_York")).toBe("2026-10-21");
+  });
+
+  it("falls back to the stored UTC date when the entry has no time range", () => {
+    const entry = { date: new Date("2026-10-21T00:00:00.000Z"), startTime: null };
+    expect(entryDayKey(entry, "America/Los_Angeles")).toBe("2026-10-21");
   });
 });

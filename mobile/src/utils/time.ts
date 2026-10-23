@@ -12,14 +12,6 @@ export function formatClock(value: string | Date): string {
   return format(new Date(value), 'h:mm a');
 }
 
-export function formatListTime(value: string): string {
-  const d = new Date(value);
-  if (isSameDay(d, now())) return format(d, 'h:mm a');
-  if (isSameDay(d, subDays(now(), 1))) return 'Yesterday';
-  if (differenceInMinutes(now(), d) < 7 * 24 * 60) return format(d, 'EEE');
-  return format(d, 'MMM d');
-}
-
 export function formatDayLabel(value: string | Date): string {
   const d = new Date(value);
   if (isSameDay(d, now())) return 'Today';

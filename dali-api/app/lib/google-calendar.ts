@@ -1206,6 +1206,27 @@ async function rewriteAttendees(
   }
 }
 
+/** True when Google has the event (or one instance of a series) cancelled or no longer has it. */
+export async function isGoogleEventCancelled(opts: {
+  linkId: string;
+  calendarId?: string;
+  eventId: string;
+}): Promise<boolean> {
+  const token = await getValidAccessTokenForLink(opts.linkId);
+  const calendarId = encodeURIComponent(opts.calendarId ?? "primary");
+  const res = await fetch(
+    `https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events/${encodeURIComponent(opts.eventId)}?fields=status`,
+    { headers: { Authorization: `Bearer ${token}` } },
+  );
+  if (res.status === 404 || res.status === 410) return true;
+  if (!res.ok) {
+    const detail = await extractGoogleErrorDetail(res);
+    throw new Error(`Google events.get failed (${res.status}): ${detail}`);
+  }
+  const data = (await res.json()) as { status?: string };
+  return data.status === "cancelled";
+}
+
 export async function updateGoogleAttendeeRsvp(opts: {
   linkId: string;
   calendarId?: string;

@@ -1,20 +1,27 @@
 import Constants from 'expo-constants';
 import type {
-  ChatBootstrapResponse,
+  AddTimeEntryBody,
   CalendarResponse,
-  Conversation,
+  CreateEventBody,
+  MemberSummary,
   MeResponse,
-  Message,
+  NoteDetail,
+  NotePage,
+  Notebook,
+  NotesResponse,
   PassResponse,
   ProjectBoardResponse,
   ProjectsResponse,
+  RecordingState,
   TaskStatus,
+  TimeResponse,
 } from './contract';
 
 export class ApiError extends Error {
   constructor(
     readonly status: number,
     message: string,
+    readonly body: unknown = null,
   ) {
     super(message);
   }
@@ -44,7 +51,7 @@ export function authHeaders(): Record<string, string> {
   return headers;
 }
 
-async function request<T>(method: 'GET' | 'POST' | 'PUT' | 'DELETE', path: string, body?: unknown): Promise<T> {
+async function request<T>(method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE', path: string, body?: unknown): Promise<T> {
   const headers = authHeaders();
   if (body !== undefined) headers['Content-Type'] = 'application/json';
   let res: Response;
@@ -71,7 +78,7 @@ async function request<T>(method: 'GET' | 'POST' | 'PUT' | 'DELETE', path: strin
   }
   if (!res.ok) {
     const message = (data as { error?: string } | null)?.error ?? `Request failed (${res.status})`;
-    throw new ApiError(res.status, message);
+    throw new ApiError(res.status, message, data);
   }
   return data as T;
 }
@@ -88,7 +95,7 @@ export const api = {
   logout: () => request<unknown>('GET', '/logout').catch(() => null),
 
   me: () => request<MeResponse>('GET', '/api/mobile/me'),
-  setStatus: (status: 'active' | 'away') => request<{ ok: true }>('PUT', '/api/mobile/me/status', { status }),
+  setStatus: (status: 'active' | 'away') => request<{ ok: true }>('PUT', '/api/mobile/me', { status }),
   projects: () => request<ProjectsResponse>('GET', '/api/mobile/projects'),
   projectBoard: (id: string) => request<ProjectBoardResponse>('GET', `/api/mobile/projects/${encodeURIComponent(id)}`),
   moveTask: (id: string, status: TaskStatus) =>
@@ -97,32 +104,57 @@ export const api = {
     request<CalendarResponse>('GET', `/api/mobile/calendar?from=${encodeURIComponent(from.toISOString())}&to=${encodeURIComponent(to.toISOString())}`),
   rsvp: (notificationId: string, response: 'accepted' | 'declined' | 'tentative') =>
     request<{ ok: true }>('POST', `/api/notifications/${encodeURIComponent(notificationId)}/rsvp`, { response }),
+  createEvent: (body: CreateEventBody) =>
+    request<{ id: string; addedToGoogle: boolean; googleError: string | null }>('POST', '/api/mobile/calendar', body),
+  people: (q: string) => request<{ people: MemberSummary[] }>('GET', `/api/mobile/people?q=${encodeURIComponent(q)}`),
   pass: () => request<PassResponse>('GET', '/api/mobile/pass'),
-  registerPushToken: (token: string, platform: 'ios' | 'android') =>
-    request<{ ok: true }>('POST', '/api/mobile/push-token', { token, platform }),
-  unregisterPushToken: (token: string) => request<{ ok: true }>('DELETE', '/api/mobile/push-token', { token }),
   googleWalletUrl: () => request<{ url: string }>('GET', '/api/wallet/google/save-url'),
 
-  chatBootstrap: () => request<ChatBootstrapResponse>('GET', '/api/chat/bootstrap'),
-  olderMessages: (conversationId: string, before: string) =>
-    request<{ messages: Message[] }>(
-      'GET',
-      `/api/chat/conversations/${encodeURIComponent(conversationId)}/messages?before=${encodeURIComponent(before)}`,
-    ),
-  sendMessage: (conversationId: string, text: string, parentId?: string) =>
-    request<{ message: Message }>('POST', `/api/chat/conversations/${encodeURIComponent(conversationId)}/messages`, { text, parentId }),
-  toggleReaction: (messageId: string, emoji: string) =>
-    request<{ message: Message }>('POST', `/api/chat/messages/${encodeURIComponent(messageId)}/reactions`, { emoji }),
-  createChannel: (input: { name: string; topic?: string; isPrivate: boolean; memberIds: string[] }) =>
-    request<{ conversation: Conversation; messages: Message[] }>('POST', '/api/chat/conversations', input),
-  openDm: (userIds: string[]) => request<{ conversation: Conversation }>('POST', '/api/chat/dms', { userIds }),
-  joinChannel: (id: string) =>
-    request<{ conversation: Conversation; messages: Message[] }>('POST', `/api/chat/conversations/${encodeURIComponent(id)}/join`),
-  leaveChannel: (id: string) => request<{ ok: true }>('POST', `/api/chat/conversations/${encodeURIComponent(id)}/leave`),
-  addMembers: (id: string, userIds: string[]) =>
-    request<{ conversation: Conversation; messages: Message[] }>('POST', `/api/chat/conversations/${encodeURIComponent(id)}/members`, { userIds }),
-  markRead: (id: string, at: string) => request<{ ok: true }>('POST', `/api/chat/conversations/${encodeURIComponent(id)}/read`, { at }),
+  time: (date?: string) => request<TimeResponse>('GET', `/api/mobile/time${date ? `?date=${date}` : ''}`),
+  addTimeEntry: (body: AddTimeEntryBody) => request<{ id: string }>('POST', '/api/mobile/time', body),
+  updateTimeEntry: (id: string, body: Partial<Omit<AddTimeEntryBody, 'scheduledMeetingId'>>) =>
+    request<{ ok: true }>('PATCH', `/api/mobile/time/${encodeURIComponent(id)}`, body),
+  deleteTimeEntry: (id: string) => request<{ ok: true }>('DELETE', `/api/mobile/time/${encodeURIComponent(id)}`),
+
+  notes: () => request<NotesResponse>('GET', '/api/mobile/notes'),
+  note: (id: string) => request<NoteDetail>('GET', `/api/mobile/notes/${encodeURIComponent(id)}`),
+  personalNotePage: (title: string) => request<NotePage>('POST', '/api/mobile/notes', { title }),
+  meetingNotePage: (scheduledMeetingId: string, occurrenceStart: string) =>
+    request<NotePage>('POST', '/api/mobile/notes', { scheduledMeetingId, occurrenceStart }),
+  notebooks: (q: string) => request<{ notebooks: Notebook[] }>('GET', `/api/notebooks?q=${encodeURIComponent(q)}`),
+  newNotebookNote: (notebookId: string) =>
+    request<{ id: string }>('POST', `/api/notebooks/${encodeURIComponent(notebookId)}`, { intent: 'new-note' }),
+  editorSignIn: (pageId: string) => request<{ url: string }>('POST', '/api/mobile/webview', { pageId }),
+  enhanceNote: (id: string) => request<{ ok: true }>('POST', `/api/mobile/notes/${encodeURIComponent(id)}`, { action: 'enhance' }),
+
+  startRecording: (target: { scheduledMeetingId: string; occurrenceStart: string } | { documentName: string }) =>
+    request<{ id: string }>('POST', '/api/meeting-recordings', target),
+  recording: (id: string) => request<RecordingState>('GET', `/api/meeting-recordings/${encodeURIComponent(id)}`),
+  recordingAction: (id: string, body: Record<string, unknown>) =>
+    request<Record<string, unknown>>('POST', `/api/meeting-recordings/${encodeURIComponent(id)}`, body),
+  discardRecording: (id: string) => request<{ ok: true }>('DELETE', `/api/meeting-recordings/${encodeURIComponent(id)}`),
+  createTasks: (id: string, items: { index: number; title: string; assigneeId?: string; dueAt?: string }[]) =>
+    request<{ created: { index: number; taskId: string }[] }>('POST', `/api/meeting-recordings/${encodeURIComponent(id)}`, {
+      action: 'createTasks',
+      items,
+    }),
 };
+
+/** One 20s PCM chunk. 409 means the recording already ended on the server. */
+export async function uploadChunk(
+  recordingId: string,
+  chunk: { segment: number; seq: number; pcm: ArrayBuffer },
+): Promise<{ stopRequested: boolean }> {
+  const path = `/api/meeting-recordings/${encodeURIComponent(recordingId)}/chunks?channel=mic&segment=${chunk.segment}&seq=${chunk.seq}`;
+  const res = await fetch(`${config.baseUrl}${path}`, {
+    method: 'POST',
+    headers: { ...authHeaders(), 'Content-Type': 'audio/pcm;rate=16000;channels=1' },
+    body: chunk.pcm,
+    credentials: 'omit',
+  });
+  if (!res.ok) throw new ApiError(res.status, `Chunk upload failed (${res.status})`);
+  return (await res.json()) as { stopRequested: boolean };
+}
 
 export function errorMessage(err: unknown) {
   return err instanceof Error ? err.message : 'Something went wrong.';

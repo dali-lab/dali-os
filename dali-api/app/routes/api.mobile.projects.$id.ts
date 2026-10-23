@@ -6,7 +6,6 @@ import { DAY } from "~/projects/lib/timeline-days";
 import { listMemberSummaries, termFactsForUser } from "~/lib/mobile-members.server";
 import { boardCounts, githubRef, leadLabels, sprintNumberFromLabel } from "~/lib/mobile-format";
 import { mobileError, mobileJson, requireMobileUser } from "~/lib/mobile-auth.server";
-import { projectChannelId } from "~/lib/mobile-chat-links.server";
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const guard = await requireMobileUser(request);
@@ -71,10 +70,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const mine = currentAssignments.find((a) => a.userId === userId);
 
   const taskUserIds = project.tasks.flatMap((t) => t.assignees.map((a) => a.userId));
-  const [members, facts, channelId] = await Promise.all([
+  const [members, facts] = await Promise.all([
     listMemberSummaries([...memberIds, ...taskUserIds]),
     termFactsForUser(userId, term?.code ?? null),
-    projectChannelId(projectId, userId),
   ]);
 
   const roles = project.domains.length
@@ -91,7 +89,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       myLeadRole: facts ? leadLabels(facts)[0] ?? null : null,
       roles,
       memberIds,
-      channelId,
       sprint:
         band && sprintNumber != null
           ? {
