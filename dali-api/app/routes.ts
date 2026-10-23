@@ -656,6 +656,7 @@ export default [
   // Lab-wide documents (collab Pages scoped to the Lab workspace)
   route("api/lab-documents", "routes/api.lab-documents.ts"),
   route("api/documents/:id", "projects/routes/api.documents.$id.ts"),
+  route("api/documents/:pageId/panel", "routes/api.documents.$pageId.panel.ts"),
   route("api/notebooks", "routes/api.notebooks.ts"),
   route("api/notebooks/default", "routes/api.notebooks.default.ts"),
   route("api/notebooks/mentorship-pair", "routes/api.notebooks.mentorship-pair.ts"),

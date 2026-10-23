@@ -465,6 +465,37 @@ pub fn copy_page_link(app: &AppHandle) {
     }
 }
 
+/// File → New Tab / Close Tab / Reopen Closed Tab, handed to the web app's tabs
+/// as a cancelable event. A page that isn't showing tabs (turned off, or an
+/// older web build) leaves it unhandled; Close Tab then falls back to closing
+/// the window by navigating to `CLOSE_WINDOW_URL`, which nav::on_navigation
+/// catches. `command` is one of new/close/reopen.
+pub fn tab_command(app: &AppHandle, command: &str) {
+    if let Some(w) = app.get_webview_window("main") {
+        let _ = w.eval(&tab_command_script(command));
+    }
+}
+
+pub const CLOSE_WINDOW_URL: &str = "dalios://close-window";
+
+fn tab_command_script(command: &str) -> String {
+    let fallback = if command == "close" {
+        format!("location.href = '{CLOSE_WINDOW_URL}';")
+    } else {
+        String::new()
+    };
+    format!(
+        "(() => {{ const e = new CustomEvent('dali:tab-command', {{ detail: {{ command: '{command}' }}, cancelable: true }}); if (window.dispatchEvent(e)) {{ {fallback} }} }})();"
+    )
+}
+
+/// Close = hide, as the red close button does (lib.rs on_window_event).
+pub fn hide_main(app: &AppHandle) {
+    if let Some(w) = app.get_webview_window("main") {
+        let _ = w.hide();
+    }
+}
+
 /// Find-in-page (Edit → Find). The remote page has no IPC access, so the bar
 /// is driven by eval: the script defines `window.__daliFindBar` once (its own
 /// guard makes re-eval a no-op) and each menu action calls into it. `action`
@@ -476,5 +507,24 @@ pub fn find_action(app: &AppHandle, action: &str) {
             include_str!("find.js"),
             action
         ));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn close_tab_falls_back_to_closing_the_window() {
+        let script = tab_command_script("close");
+        assert!(script.contains("detail: { command: 'close' }, cancelable: true"));
+        assert!(script.contains("if (window.dispatchEvent(e)) { location.href = 'dalios://close-window'; }"));
+    }
+
+    #[test]
+    fn other_tab_commands_have_no_fallback() {
+        let script = tab_command_script("new");
+        assert!(script.contains("command: 'new'"));
+        assert!(!script.contains(CLOSE_WINDOW_URL));
     }
 }

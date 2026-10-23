@@ -42,6 +42,8 @@ import {
   useTablessHistoryShortcuts,
 } from '~/components/TablessHistoryNav'
 import { useShellNav } from '~/components/shell-nav'
+import { DesktopTabStrip, useDesktopTabs } from '~/components/DesktopTabs'
+import { tabActions } from '~/lib/desktop-tabs-store'
 import { buildPageLink, cleanTabUrl, COPY_PAGE_LINK_EVENT, stripHash, writePageLink } from '~/lib/page-link'
 import { useToast } from '~/components/ui/toast'
 import { FavoritesBar } from '~/components/FavoritesBar'
@@ -98,6 +100,9 @@ interface LayoutOSProps {
    *  (see `handle.fitViewport`) — the shell is then bounded to the window and
    *  the page scrolls inside its own panes. */
   fitViewport?: boolean
+  /** The server's guess that this window shows desktop tabs (strip cookie), so
+   *  the strip's row is there on first paint. */
+  tabStripHint?: boolean
   children?: React.ReactNode
 }
 
@@ -135,13 +140,16 @@ export function LayoutOS({
   focusMode = false,
   hasUnseenReleaseNotes = false,
   fitViewport = false,
+  tabStripHint = false,
   children,
 }: LayoutOSProps) {
   const location = useLocation()
   const matches = useMatches()
-  useRecordTablessHistory()
-  useTablessHistoryShortcuts(useShowTablessHistoryNav())
   const tabless = children !== undefined
+  const desktopTabsFlag = useFeatureFlag('desktop-tabs')
+  const showTabs = useDesktopTabs(desktopTabsFlag && tabless, tabStripHint)
+  useRecordTablessHistory()
+  useTablessHistoryShortcuts(useShowTablessHistoryNav(tabless), showTabs)
   useOsShellRoot(true)
 
   const {
@@ -152,7 +160,7 @@ export function LayoutOS({
     openInWorkspace,
     openFromPalette,
     tabClickProps,
-  } = useShellNav(tabless)
+  } = useShellNav(tabless, { tabs: showTabs, sidePanel: desktopTabsFlag })
 
   const [focusedTabUrl, setFocusedTabUrl] = useState<string | null>(null)
   const [focusedTabLabel, setFocusedTabLabel] = useState<string | null>(null)
@@ -758,7 +766,7 @@ export function LayoutOS({
     <div className="os-nav-edge-b flex items-center justify-between gap-4 border-l-2 border-os-bg bg-os-nav px-6 py-2.5">
       <div className="flex min-w-0 items-center gap-3">
         {/* Back/forward arrows — tabless desktop shell only; renders nothing elsewhere. */}
-        <TablessHistoryNav />
+        <TablessHistoryNav tabless={tabless} tabs={showTabs} />
         {favorites.length === 0 ? (
           <div className="flex items-center gap-3 text-sm text-os-muted">
             <Star className="h-4 w-4 flex-shrink-0 opacity-70" />
@@ -997,6 +1005,12 @@ export function LayoutOS({
             userName={`${user.firstName ?? ''} ${user.lastName ?? ''}`.trim() || user.email}
           />
         )}
+        {/* Tabs above the favorites row, like a browser's tabs over its bookmarks. */}
+        {showTabs && (
+          <div className="hidden shrink-0 md:block">
+            <DesktopTabStrip />
+          </div>
+        )}
         {/* `shrink-0` so a bounded shell takes the height out of the page's
             own scrollport rather than squashing the favourites bar. */}
         {!focusMode && <div className="hidden shrink-0 md:block">{topBar}</div>}
@@ -1004,7 +1018,13 @@ export function LayoutOS({
         <ActivityLauncher />
         {tabless ? (
           <ShellGuideProvider>
-            <div className="flex min-h-0 flex-1 flex-col">
+            <div
+              className="flex min-h-0 flex-1 flex-col"
+              // A press or keystroke in a preview tab's page is real engagement:
+              // keep the tab, so the next sidebar click can't replace it.
+              onPointerDownCapture={showTabs ? tabActions.promoteActive : undefined}
+              onKeyDownCapture={showTabs ? tabActions.promoteActive : undefined}
+            >
               {children}
             </div>
           </ShellGuideProvider>

@@ -19,7 +19,8 @@
 // Browsers keep their own tabs: none of this installs unless we're in the shell.
 
 import { desktopVersion } from "~/lib/desktop";
-import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
+import { requestOpenTabIfEmbedded, workspacePath } from "~/components/workspace-link";
+import { tabActions, tabsActive } from "~/lib/desktop-tabs-store";
 
 export type DesktopLinkAction =
   /** Not ours to redirect — let the webview do whatever it would have done. */
@@ -39,7 +40,8 @@ const HAND_OFF_SCHEMES = new Set(["mailto:", "tel:", "sms:", "facetime:"]);
 /**
  * What the shell should do with a link that asked for a new tab. Pure, so the
  * decision is testable without a webview: `base` resolves relative hrefs,
- * `origin` is the app's own origin, `embedded` is true inside a workspace tab.
+ * `origin` is the app's own origin, `embedded` is true inside a workspace tab
+ * or while desktop tabs are on (either way a new tab is ours to open).
  */
 export function resolveDesktopLink(
   href: string,
@@ -66,7 +68,7 @@ function currentContext() {
   } catch {
     embedded = true; // cross-origin top — treat as embedded, never navigate it
   }
-  return { origin: window.location.origin, base: window.location.href, embedded };
+  return { origin: window.location.origin, base: window.location.href, embedded: embedded || tabsActive() };
 }
 
 /** Carry out a resolved action. Returns false for `default`, so callers can
@@ -74,6 +76,11 @@ function currentContext() {
 function perform(action: DesktopLinkAction, label: string): boolean {
   switch (action.kind) {
     case "tab":
+      if (tabsActive()) {
+        const url = workspacePath(action.url, window.location.origin);
+        tabActions.open({ url, label: label || url });
+        return true;
+      }
       return requestOpenTabIfEmbedded(action.url, label || action.url);
     case "navigate":
       window.location.assign(action.url);
