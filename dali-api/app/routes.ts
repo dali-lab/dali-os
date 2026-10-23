@@ -223,6 +223,7 @@ export default [
     route("community/gallery", "community/routes/community.gallery.tsx"),
     route("community/gallery/new-count", "community/routes/community.gallery.new-count.ts"),
     route("community/gallery/:postId", "community/routes/community.gallery.$postId.tsx"),
+    route("community/gallery/:postId/download", "community/routes/community.gallery.$postId.download.ts"),
     // Anonymous coffee chat invite: accept / decline (recipient) or status (sender).
     route("coffee-chats/:id", "members/routes/coffee-chats.$id.tsx"),
 

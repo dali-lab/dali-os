@@ -121,3 +121,37 @@ export function toggleReaction(reactions: Reaction[], emoji: string): Reaction[]
   const order = (e: string) => (GALLERY_EMOJI as readonly string[]).indexOf(e);
   return next.sort((a, b) => order(a.emoji) - order(b.emoji));
 }
+
+/** "gallery-demo-day-setup.jpg": the caption's first words, or the post's own name without one. */
+export function galleryDownloadName(caption: string | null, imageKey: string): string {
+  const dot = imageKey.lastIndexOf(".");
+  const ext = dot > imageKey.lastIndexOf("/") ? imageKey.slice(dot + 1).toLowerCase() : "jpg";
+  const slug = (caption ?? "")
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 48)
+    .replace(/-+$/, "");
+  return `gallery-${slug || "photo"}.${ext}`;
+}
+
+export const GALLERY_FEED = "/community/gallery";
+
+/** The feed's URL for a filter. A person filter replaces Mine; search keeps whichever is on. */
+export function galleryFeedHref({
+  mine = false,
+  by = null,
+  q = "",
+}: {
+  mine?: boolean;
+  by?: string | null;
+  q?: string;
+}): string {
+  const params = new URLSearchParams();
+  if (by) params.set("by", by);
+  else if (mine) params.set("show", "mine");
+  if (q.trim()) params.set("q", q.trim());
+  const qs = params.toString();
+  return qs ? `${GALLERY_FEED}?${qs}` : GALLERY_FEED;
+}

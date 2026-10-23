@@ -6,6 +6,8 @@ import {
   firstPostAt,
   galleryAction,
   loadGalleryPage,
+  loadGalleryPerson,
+  searchGalleryPeople,
   parseFeedQuery,
   requireGalleryViewer,
   type GalleryTileData,
@@ -13,6 +15,7 @@ import {
 import { GalleryMasonry } from "~/community/components/GalleryMasonry";
 import { GalleryNavRow } from "~/community/components/GalleryNavRow";
 import { NewGalleryPostsDialog } from "~/community/components/NewGalleryPostsDialog";
+import { galleryByline, galleryFeedHref } from "~/community/lib/gallery";
 
 export const meta: Route.MetaFunction = () => [{ title: "Gallery · DALI OS" }];
 
@@ -23,11 +26,14 @@ export const handle = {
 export async function loader({ request }: Route.LoaderArgs) {
   const viewer = await requireGalleryViewer(request);
   const query = parseFeedQuery(new URL(request.url));
-  const [page, since] = await Promise.all([
+  const firstPage = !query.cursor;
+  const [page, since, people, person] = await Promise.all([
     loadGalleryPage(viewer, query),
-    query.cursor ? null : firstPostAt(viewer),
+    firstPage ? firstPostAt(viewer) : null,
+    firstPage && query.q ? searchGalleryPeople(viewer, query.q) : [],
+    query.by ? loadGalleryPerson(viewer, query.by) : null,
   ]);
-  return { ...page, query, firstPostAt: since, userId: viewer.id };
+  return { ...page, query, firstPostAt: since, people, person, userId: viewer.id };
 }
 
 export async function action({ request }: Route.ActionArgs) {
@@ -46,7 +52,7 @@ export default function CommunityGallery() {
     posts: [],
     nextCursor: data.nextCursor,
   });
-  const queryKey = `${query.mine}|${query.q}`;
+  const queryKey = `${query.mine}|${query.by}|${query.q}`;
   useEffect(() => setMore({ posts: [], nextCursor: data.nextCursor }), [queryKey]);
 
   const pager = useFetcher<typeof loader>();
@@ -71,31 +77,53 @@ export default function CommunityGallery() {
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (!entry.isIntersecting || pager.state !== "idle") return;
-        const params = new URLSearchParams({ cursor: more.nextCursor! });
-        if (query.mine) params.set("show", "mine");
-        if (query.q) params.set("q", query.q);
-        pager.load(`/community/gallery?${params}`);
+        const href = galleryFeedHref({ mine: query.mine, by: query.by, q: query.q });
+        pager.load(`${href}${href.includes("?") ? "&" : "?"}cursor=${encodeURIComponent(more.nextCursor!)}`);
       },
       { rootMargin: "800px" },
     );
     observer.observe(el);
     return () => observer.disconnect();
-  }, [more.nextCursor, pager, query.mine, query.q]);
+  }, [more.nextCursor, pager, query.mine, query.by, query.q]);
 
-  const filtered = query.mine || query.q !== "";
+  const filtered = query.mine || query.by !== null || query.q !== "";
+  const { person } = data;
 
   return (
     <div className="flex flex-col gap-4">
       <h1 className="sr-only">Gallery</h1>
       <NewPostsPill newestAt={data.posts[0]?.createdAt ?? null} enabled={!filtered} />
       <section className="flex flex-col gap-6 rounded-os-card bg-os-card p-5">
-        <GalleryNavRow mine={query.mine} q={query.q} onPost={() => setComposing(true)} />
+        <div className="flex flex-col gap-4">
+          <GalleryNavRow
+            mine={query.mine}
+            person={person}
+            results={{ q: query.q, people: data.people, posts: data.posts }}
+            onPost={() => setComposing(true)}
+          />
+          {person && (
+            <p className="flex items-baseline gap-2">
+              <span className="text-[19px] font-bold text-foreground">
+                {galleryByline(person.name, person.classYear)}
+              </span>
+              <span className="text-sm text-os-muted">
+                {person.postCount === 1 ? "1 post" : `${person.postCount} posts`}
+              </span>
+            </p>
+          )}
+        </div>
 
         {posts.length === 0 ? (
-          <EmptyFeed mine={query.mine} q={query.q} onPost={() => setComposing(true)} />
+          person ? (
+            <p className="py-16 text-center text-sm text-os-grey">
+              {query.q ? `No posts by ${person.name} match "${query.q}".` : `${person.name} hasn't posted yet.`}
+            </p>
+          ) : (
+            <EmptyFeed mine={query.mine} q={query.q} onPost={() => setComposing(true)} />
+          )
         ) : (
           <>
-            <GalleryMasonry posts={posts} />
+            <GalleryMasonry posts={posts} hideBylines={person !== null} />
             <div ref={sentinel} aria-hidden />
             {loading && (
               <div className="flex justify-center py-6 text-os-grey">
