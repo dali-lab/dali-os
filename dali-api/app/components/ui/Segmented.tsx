@@ -8,19 +8,29 @@ export function Segmented<T extends string>({
   onChange,
   options,
   ariaLabel,
+  fullWidth = false,
+  size = "sm",
   className,
 }: {
   value: T;
   onChange: (next: T) => void;
   options: SegmentedOption<T>[];
   ariaLabel: string;
+  /** Stretch across the container, splitting it evenly between options. */
+  fullWidth?: boolean;
+  size?: "sm" | "md";
   className?: string;
 }) {
   return (
     <div
       role="radiogroup"
       aria-label={ariaLabel}
-      className={cn("inline-flex rounded-full border border-border bg-muted/40 p-0.5", className)}
+      className={cn(
+        "rounded-full border border-border bg-muted/40",
+        size === "md" ? "p-1" : "p-0.5",
+        fullWidth ? "flex w-full" : "inline-flex",
+        className,
+      )}
     >
       {options.map((o) => {
         const checked = o.value === value;
@@ -32,7 +42,9 @@ export function Segmented<T extends string>({
             aria-checked={checked}
             onClick={() => onChange(o.value)}
             className={cn(
-              "rounded-full px-3 py-1 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-os-accent/40",
+              "rounded-full font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-os-accent/40",
+              size === "md" ? "px-4 py-2 text-sm" : "px-3 py-1 text-xs",
+              fullWidth && "flex-1",
               checked ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
             )}
           >

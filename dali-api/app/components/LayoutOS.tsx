@@ -58,6 +58,7 @@ import {
 import {
   areaForPath,
   pinnedNavItems,
+  homeNavItem,
   ROOM_BOOKING_NAV_ITEM,
   activeSubtabHref,
   isPinnedActive,
@@ -323,11 +324,14 @@ export function LayoutOS({
   const releaseNotesEnabled = useFeatureFlag('release-notes')
   const emailUnread = useEmailUnread(path)
   const areas = visibleAreas(roleFlags, navFlags)
-  const routeArea = areaForPath(path, navFlags)
-  const pinned = pinnedNavItems()
+  const routeArea = areaForPath(path, navFlags, roleFlags)
+  const pinned = pinnedNavItems(roleFlags)
+  const home = homeNavItem(roleFlags)
   const activeArea = routeArea ?? areas.find((a) => a.key === lastAreaKey) ?? areas[0]
   const activeSubtabs = activeArea ? visibleSubtabs(activeArea, roleFlags) : []
   const activeHref = activeArea ? activeSubtabHref(activeArea, path) : undefined
+  // Nothing to switch to, so the area's sub-tabs join the pinned list.
+  const singleArea = areas.length === 1
 
   const routeAreaKey = routeArea?.key
   useEffect(() => {
@@ -362,7 +366,7 @@ export function LayoutOS({
   // TabWorkspace reads initialTabs in its mount effect, so a later value would
   // be silently dropped anyway.
   const [deepLinkTab] = useState(() =>
-    location.pathname === '/'
+    location.pathname === home.href
       ? null
       : {
           url: location.pathname + location.search,
@@ -439,11 +443,11 @@ export function LayoutOS({
           )}
         >
           {/* The wordmark is the way home; the collapsed rail keeps a mark. */}
-          <Tooltip content={collapsed ? 'Home' : ''} placement="right">
+          <Tooltip content={collapsed ? home.label : ''} placement="right">
             <button
               type="button"
-              {...tabClickProps({ url: '/', label: 'Home' })}
-              aria-label="Home"
+              {...tabClickProps({ url: home.href, label: home.label })}
+              aria-label={home.label}
               className={cn(
                 'font-os-logo font-semibold text-os-accent focus:outline-none',
                 collapsed ? 'text-xl leading-none' : 'text-2xl',
@@ -544,9 +548,22 @@ export function LayoutOS({
               </Tooltip>
             )
           })}
+          {singleArea &&
+            activeSubtabs.map((t) => (
+              <Tooltip key={t.href} content={collapsed ? t.label : ''} placement="right">
+                <button
+                  type="button"
+                  {...tabClickProps({ url: t.href, label: t.label })}
+                  className={railRowClass(t.href === activeHref, collapsed)}
+                >
+                  <t.icon className="h-5 w-5 flex-shrink-0 opacity-85" />
+                  {!collapsed && <span className="truncate">{t.label}</span>}
+                </button>
+              </Tooltip>
+            ))}
         </div>
 
-        {activeArea && (
+        {activeArea && !singleArea && (
           <>
             <div className="h-px w-full shrink-0 bg-os-container" />
 
@@ -861,6 +878,7 @@ export function LayoutOS({
           tasks={openTasks}
           notifications={feedItems}
           projectTasks={projectTasks}
+          singleFeed={isAlumni}
           onOpen={(url, label) => {
             closeBellPanel()
             openInWorkspace({ url, label })
@@ -930,7 +948,7 @@ export function LayoutOS({
           </button>
           <button
             type="button"
-            {...tabClickProps({ url: '/', label: 'Home' })}
+            {...tabClickProps({ url: home.href, label: home.label })}
             className="font-os-logo text-xl font-semibold text-os-accent"
           >
             dali.os
@@ -1013,7 +1031,7 @@ export function LayoutOS({
             apiRef={workspaceRef}
             onOpenPalette={togglePalette}
             initialTabs={[
-              { url: '/', label: 'Home' },
+              { url: home.href, label: home.label },
               ...(deepLinkTab ? [deepLinkTab] : []),
             ]}
             onActiveUrlChange={onActiveTabChange}

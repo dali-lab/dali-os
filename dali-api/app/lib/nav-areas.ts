@@ -20,6 +20,7 @@ import {
   Handshake,
   HardDrive,
   Heart,
+  Home,
   Kanban,
   LayoutGrid,
   Images,
@@ -315,8 +316,49 @@ export function areasFor(flags: Partial<FeatureFlagMap> = {}): NavArea[] {
 }
 
 /** The nav items pinned above the area dropdown, after Home / My Tasks / Calendar. */
-export function pinnedNavItems(): SubTab[] {
+export function pinnedNavItems(r: Pick<RoleFlags, "isAlumni"> = { isAlumni: false }): SubTab[] {
+  if (r.isAlumni) return [];
   return [{ label: "Drive", href: "/drive", icon: HardDrive }];
+}
+
+/** Where the wordmark and the workspace's first tab land. Connect is the alumni Home. */
+export function homeNavItem(r: Pick<RoleFlags, "isAlumni">): SubTab {
+  return r.isAlumni
+    ? { label: "Home", href: "/connect", icon: Home }
+    : { label: "Home", href: "/", icon: Home };
+}
+
+// Alumni get one area, so the sidebar shows no section switcher for them.
+// Connect is left out because it is their home (see homeNavItem).
+const ALUMNI_AREAS: NavArea[] = [
+  {
+    key: "projects",
+    label: "Lab",
+    icon: FolderKanban,
+    hubPath: "/projects",
+    subtabs: [
+      { label: "Projects", href: "/projects", icon: LayoutGrid },
+      { label: "People", href: "/members", icon: UsersRound },
+      { label: "Opportunities", href: "/community/opportunities", icon: Lightbulb },
+      { label: "Gallery", href: "/community/gallery", icon: Images },
+      { label: "Blogs", href: "/resources", icon: Newspaper },
+    ],
+  },
+];
+
+function areasForViewer(
+  r: Pick<RoleFlags, "isAlumni"> | undefined,
+  flags: Partial<FeatureFlagMap>,
+): NavArea[] {
+  if (!r?.isAlumni) return areasFor(flags);
+  if (flags.community) return ALUMNI_AREAS;
+  const communityHrefs = new Set(
+    REGROUPED_AREAS.find((a) => a.key === "community")!.subtabs.map((t) => t.href),
+  );
+  return ALUMNI_AREAS.map((a) => ({
+    ...a,
+    subtabs: a.subtabs.filter((t) => !communityHrefs.has(t.href)),
+  }));
 }
 
 /** Room booking, carried by the calendar header (and the command palette). */
@@ -376,9 +418,10 @@ function queryHrefMatchLen(url: string, href: string): number {
 export function areaForPath(
   path: string,
   flags: Partial<FeatureFlagMap> = {},
+  r?: Pick<RoleFlags, "isAlumni">,
 ): NavArea | undefined {
   const p = pathnameOf(path);
-  const areas = areasFor(flags);
+  const areas = areasForViewer(r, flags);
 
   let best: NavArea | undefined;
   let bestLen = -1;
@@ -498,7 +541,7 @@ export function iconForHref(href: string): LucideIcon | null {
 }
 
 export function visibleAreas(r: RoleFlags, flags: Partial<FeatureFlagMap> = {}): NavArea[] {
-  return areasFor(flags).filter((a) => !a.gate || a.gate(r));
+  return areasForViewer(r, flags).filter((a) => !a.gate || a.gate(r));
 }
 
 export function visibleSubtabs(area: NavArea, r: RoleFlags): SubTab[] {

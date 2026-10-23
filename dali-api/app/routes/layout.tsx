@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { paneFlag } from '~/lib/pane-flags'
 import { Outlet, redirect, useLoaderData, useLocation, useMatches, useNavigate, useNavigationType, useSearchParams, type ShouldRevalidateFunctionArgs } from 'react-router'
 import { cn } from '~/lib/cn'
 import { LayoutOS } from '~/components/LayoutOS'
@@ -352,16 +353,12 @@ export default function AppLayoutRoute() {
   // than growing with its content, so a page short enough to fit can centre
   // itself against the window instead of forcing a scrollbar with a
   // viewport-height box stacked under the shell's own chrome and gutters.
-  const fitViewport = matches.some(
-    (m) => (m as { handle?: { fitViewport?: boolean } }).handle?.fitViewport,
-  )
+  const fitViewport = matches.some((m) => paneFlag(m, 'fitViewport'))
   const flushPane = matches.some(
     (m) => (m as { handle?: { flushPane?: boolean } }).handle?.flushPane,
   )
   // `bleedPane` pages (the home hero) paint edge to edge with no gutter at all.
-  const bleedPane = matches.some(
-    (m) => (m as { handle?: { bleedPane?: boolean } }).handle?.bleedPane,
-  )
+  const bleedPane = matches.some((m) => paneFlag(m, 'bleedPane'))
   const hideBreadcrumbRow =
     !hasAreaSubnav && !hasDoc && isNavbarHubPage(`${location.pathname}${location.search}`)
   // Starring a page is a fetcher write, which shouldRevalidate below keeps out

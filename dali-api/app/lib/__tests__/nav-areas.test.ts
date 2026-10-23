@@ -8,6 +8,7 @@ import {
   isAreaSubtabPath,
   isPinnedActive,
   pinnedNavItems,
+  homeNavItem,
   ROOM_BOOKING_NAV_ITEM,
   visibleAreas,
   visibleSubtabs,
@@ -393,15 +394,12 @@ describe("Community area", () => {
     expect(areaForPath("/resources")).toBeUndefined();
   });
 
-  it("sits after Lab for every member and alumnus behind the flag", () => {
+  it("sits after Lab for every member behind the flag", () => {
     expect(visibleAreas(NOBODY, COMMUNITY).map((a) => a.key)).toEqual([
       "projects",
       "community",
       "education",
     ]);
-    expect(visibleAreas({ ...NOBODY, isAlumni: true }, COMMUNITY).map((a) => a.key)).toContain(
-      "community",
-    );
   });
 
   it("owns its four pages, with Connect as its hub and Blogs opening Resources", () => {
@@ -438,6 +436,58 @@ describe("Community area", () => {
   it("recognises its sub-tabs as pinnable", () => {
     expect(isAreaSubtabPath("/community/opportunities")).toBe(true);
     expect(isAreaSubtabPath("/resources")).toBe(true);
+  });
+});
+
+describe("alumni nav", () => {
+  const ALUM: RoleFlags = { ...NOBODY, isAlumni: true };
+
+  it("gives alumni Lab as their only area, with or without the community flag", () => {
+    for (const flags of [REGROUP, COMMUNITY]) {
+      expect(visibleAreas(ALUM, flags).map((a) => a.key)).toEqual(["projects"]);
+    }
+  });
+
+  it("gives alumni Projects, People and the community pages, but not Connect", () => {
+    const lab = visibleAreas(ALUM, COMMUNITY)[0];
+    expect(visibleSubtabs(lab, ALUM).map((t) => t.href)).toEqual([
+      "/projects",
+      "/members",
+      "/community/opportunities",
+      "/community/gallery",
+      "/resources",
+    ]);
+  });
+
+  it("drops the community pages from the alumni Lab while the community flag is off", () => {
+    const lab = visibleAreas(ALUM, REGROUP)[0];
+    expect(visibleSubtabs(lab, ALUM).map((t) => t.href)).toEqual(["/projects", "/members"]);
+    expect(areaForPath("/community/gallery", REGROUP, ALUM)).toBeUndefined();
+  });
+
+  it("files the community pages under Lab for alumni only", () => {
+    for (const path of ["/community/opportunities", "/community/gallery", "/resources"]) {
+      expect(areaForPath(path, COMMUNITY, ALUM)?.key).toBe("projects");
+      expect(areaForPath(path, COMMUNITY, NOBODY)?.key).toBe("community");
+    }
+    expect(areaForPath("/community/gallery", REGROUP, NOBODY)).toBeUndefined();
+    expect(areaForPath("/connect", COMMUNITY, ALUM)).toBeUndefined();
+  });
+
+  it("hides Education from alumni only", () => {
+    expect(visibleAreas(ALUM).map((a) => a.key)).not.toContain("education");
+    expect(visibleAreas(NOBODY).map((a) => a.key)).toContain("education");
+    expect(visibleAreas({ ...CORE, isAlumni: true }).map((a) => a.key)).toEqual(["projects"]);
+  });
+
+  it("pins nothing for alumni, so they have no Drive", () => {
+    expect(pinnedNavItems(ALUM)).toEqual([]);
+    expect(pinnedNavItems(NOBODY).map((i) => i.href)).toEqual(["/drive"]);
+  });
+
+  it("labels Connect as Home for alumni and keeps Home at / for everyone else", () => {
+    expect(homeNavItem(ALUM)).toMatchObject({ label: "Home", href: "/connect" });
+    expect(homeNavItem(NOBODY)).toMatchObject({ label: "Home", href: "/" });
   });
 });
 

@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { LucideIcon } from "lucide-react";
 import {
   Search,
-  Home,
   ListTodo,
   Calendar,
   ClipboardList,
@@ -45,7 +44,7 @@ import { iconForCategory } from "~/lib/file-icon";
 import { ADMIN_CLUSTERS } from "~/admin/adminNav";
 import { CORE_CLUSTERS } from "~/core/coreNav";
 import type { NavCluster } from "~/lib/cluster-nav";
-import { pinnedNavItems, ROOM_BOOKING_NAV_ITEM, visibleAreas, visibleSubtabs, type RoleFlags } from "~/lib/nav-areas";
+import { homeNavItem, pinnedNavItems, ROOM_BOOKING_NAV_ITEM, visibleAreas, visibleSubtabs, type RoleFlags } from "~/lib/nav-areas";
 import type { PortalNavItem } from "~/lib/portal-nav";
 import type { FeatureFlagMap } from "~/lib/feature-flags";
 
@@ -248,14 +247,15 @@ export function CommandPalette({ open, onClose, tabless, focusMode, roles = NO_R
       };
     }
 
+    const home = homeNavItem(roles);
     const nav: PaletteItem[] = [
-      navItem("Home", "/", Home),
+      navItem(home.label, home.href, home.icon),
       navItem("My Tasks", "/notifications", ListTodo),
       navItem("Calendar", "/calendar", Calendar),
       ...(roles.isAlumni ? [] : [navItem("Email", "/email", Mail)]),
       // The pinned tail (Drive) sits outside every area, so it reaches the
       // palette from the same registry the sidebar rail reads.
-      ...[...pinnedNavItems(), ROOM_BOOKING_NAV_ITEM].map((i) => navItem(i.label, i.href, i.icon)),
+      ...[...pinnedNavItems(roles), ROOM_BOOKING_NAV_ITEM].map((i) => navItem(i.label, i.href, i.icon)),
       ...visibleAreas(roles, flags).flatMap((area) => {
         const hub = navItem(area.label, area.hubPath, area.icon);
         if (area.key === "admin") return [hub];

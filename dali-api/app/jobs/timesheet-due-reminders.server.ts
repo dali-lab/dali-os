@@ -57,6 +57,13 @@ export async function paidRoleUserIds(): Promise<string[]> {
   for (const rows of [...termScoped, customHires]) {
     for (const row of rows) ids.add(row.userId);
   }
+  if (ids.size === 0) return [];
+  // A role row can outlive graduation (a custom hire nobody archived).
+  const alumni = await prisma.user.findMany({
+    where: { id: { in: [...ids] }, membershipStatus: "Alumni" },
+    select: { id: true },
+  });
+  for (const { id } of alumni) ids.delete(id);
   return [...ids];
 }
 

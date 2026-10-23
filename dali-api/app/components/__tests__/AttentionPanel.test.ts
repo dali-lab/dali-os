@@ -3,6 +3,7 @@ import {
   extraNotifications,
   attentionCount,
   hasAttentionContent,
+  mergedFeed,
   splitFeed,
   type AttentionNotification,
 } from "~/components/AttentionPanel";
@@ -154,5 +155,23 @@ describe("attentionCount with project work", () => {
   it("doesn't count a ping folded into its project task", () => {
     const ping = { ...task("t1"), eventType: "task.due_reminder", link: "/projects/p1?task=w1" };
     expect(attentionCount([ping], [], [work("w1")])).toBe(1);
+  });
+});
+
+describe("mergedFeed", () => {
+  it("lists every card from both tabs, project work first", () => {
+    const feed = splitFeed(
+      [task("t1")],
+      [notif({ id: "n1", eventType: "meeting.cancelled" })],
+      [work("w1")],
+    );
+    const all = mergedFeed(feed);
+    expect(all).toHaveLength(feed.work.length + feed.admin.length);
+    expect(all.slice(0, feed.work.length)).toEqual(feed.work);
+    expect(all.slice(feed.work.length)).toEqual(feed.admin);
+  });
+
+  it("is empty when both tabs are", () => {
+    expect(mergedFeed(splitFeed([], [], []))).toEqual([]);
   });
 });

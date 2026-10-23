@@ -126,6 +126,8 @@ export function MemberProfileView({
     isSelf,
     resume,
     coffeeChatSent,
+    resumeReviewSent,
+    openTo,
     canEdit,
     canManageEligibility,
     allDomains,
@@ -255,6 +257,8 @@ export function MemberProfileView({
         canEdit={canEdit}
         isSelf={isSelf}
         coffeeChatSent={coffeeChatSent}
+        resumeReviewSent={resumeReviewSent}
+        openTo={openTo}
         isStaff={isStaff}
         isAlumni={isAlumni}
         termCode={termCode}
@@ -295,7 +299,6 @@ export function MemberProfileView({
               allowedLevels={allowedLevels}
             />
             {canSeeGroups && <GroupsCard groups={groups} />}
-            <AccountCard member={member} canEdit={canEdit} />
             <WorkExperienceCard
               memberId={member.id}
               experiences={member.workExperiences}
@@ -367,6 +370,8 @@ function MemberHeader({
   canEdit,
   isSelf,
   coffeeChatSent,
+  resumeReviewSent,
+  openTo,
   isStaff,
   isAlumni,
   termCode,
@@ -380,6 +385,8 @@ function MemberHeader({
   canEdit: boolean;
   isSelf: boolean;
   coffeeChatSent: boolean;
+  resumeReviewSent: boolean;
+  openTo: ProfilePageData["openTo"];
   isStaff: boolean;
   isAlumni: boolean;
   termCode: string | null;
@@ -414,7 +421,14 @@ function MemberHeader({
               <span className="text-[13px] text-os-muted">{member.pronouns}</span>
             )}
           </div>
-          {!isSelf && <CoffeeChatButton firstName={member.firstName} sent={coffeeChatSent} />}
+          {!isSelf && (openTo.coffeeChats || openTo.resumeReviews) && (
+            <div className="flex shrink-0 flex-wrap justify-end gap-1.5">
+              {openTo.coffeeChats && <RequestButton kind="CoffeeChat" firstName={member.firstName} sent={coffeeChatSent} />}
+              {openTo.resumeReviews && (
+                <RequestButton kind="ResumeReview" firstName={member.firstName} sent={resumeReviewSent} />
+              )}
+            </div>
+          )}
           {isSelf && (
             <a
               href="/logout"
@@ -501,33 +515,66 @@ function MemberHeader({
   );
 }
 
-// Sends an anonymous coffee chat invite. `sent` comes from the loader, so the
-// button stays in its sent state on every later visit.
-function CoffeeChatButton({ firstName, sent }: { firstName: string; sent: boolean }) {
+const REQUEST_BUTTONS = {
+  CoffeeChat: {
+    intent: "coffee-chat",
+    icon: Coffee,
+    label: "Coffee chat",
+    sentLabel: "Coffee chat invite sent",
+    title: (name: string) => `Invite ${name} to a coffee chat?`,
+    description: (name: string) =>
+      `${name} gets an email and a notification that someone wants to grab coffee. They see your name only if they accept.`,
+    confirmLabel: "Send invite",
+  },
+  ResumeReview: {
+    intent: "resume-review",
+    icon: FileText,
+    label: "Resume review",
+    sentLabel: "Resume review requested",
+    title: (name: string) => `Ask ${name} to review your resume?`,
+    description: (name: string) =>
+      `${name} gets an email and a notification that someone wants a resume review. They see your name only if they accept.`,
+    confirmLabel: "Send request",
+  },
+} as const;
+
+// Sends an anonymous request. `sent` comes from the loader, so the button stays
+// in its sent state on every later visit.
+function RequestButton({
+  kind,
+  firstName,
+  sent,
+}: {
+  kind: keyof typeof REQUEST_BUTTONS;
+  firstName: string;
+  sent: boolean;
+}) {
   const fetcher = useFetcher<{ error?: string } | null>();
   const { confirm } = useDialog();
   const busy = fetcher.state !== "idle";
   const done = sent || busy;
+  const copy = REQUEST_BUTTONS[kind];
+  const Icon = copy.icon;
 
-  async function invite() {
+  async function send() {
     const ok = await confirm({
-      title: `Invite ${firstName} to a coffee chat?`,
-      description: `${firstName} gets an email and a notification that someone wants to grab coffee. They see your name only if they accept.`,
-      confirmLabel: "Send invite",
+      title: copy.title(firstName),
+      description: copy.description(firstName),
+      confirmLabel: copy.confirmLabel,
     });
-    if (ok) fetcher.submit({ intent: "coffee-chat" }, { method: "post" });
+    if (ok) fetcher.submit({ intent: copy.intent }, { method: "post" });
   }
 
   return (
     <div className="mt-1 flex shrink-0 flex-col items-end gap-1">
       <button
         type="button"
-        onClick={() => void invite()}
+        onClick={() => void send()}
         disabled={done}
         className="inline-flex items-center gap-1.5 rounded-full border border-os-container px-3 py-1 text-[12px] font-semibold text-os-grey transition-colors hover:border-os-container-hi hover:text-foreground disabled:pointer-events-none disabled:opacity-70"
       >
-        <Coffee className="h-3.5 w-3.5" />
-        {done ? "Coffee chat invite sent" : "Coffee chat"}
+        <Icon className="h-3.5 w-3.5" />
+        {done ? copy.sentLabel : copy.label}
       </button>
       {fetcher.data?.error && <p className="text-xs text-destructive">{fetcher.data.error}</p>}
     </div>
@@ -653,6 +700,9 @@ function PersonalHiddenFields({
 // ─── About card ─────────────────────────────────────────────────────────────
 
 const ABOUT_FIELDS = new Set([
+  "pronouns",
+  "handle",
+  "netId",
   "major",
   "classYear",
   "hometown",
@@ -710,6 +760,34 @@ function AboutCard({
         <div key={resetKey} className={cn("px-5 pb-5", editing && cn(formClass, "grid grid-cols-[max-content_1fr]"))}>
           {editing ? (
             <>
+              <DetailEditRow icon={<UserIcon className={ic} />} label="Pronouns">
+                <input
+                  name="pronouns"
+                  type="text"
+                  defaultValue={member.pronouns ?? ""}
+                  className="w-full"
+                />
+              </DetailEditRow>
+              <DetailEditRow
+                icon={<AtSign className={ic} />}
+                label="Handle"
+                infoTip={<InfoTip content="How people @mention you" />}
+              >
+                <input
+                  name="handle"
+                  type="text"
+                  defaultValue={member.handle ?? ""}
+                  className="w-full"
+                />
+              </DetailEditRow>
+              <DetailEditRow icon={<Fingerprint className={ic} />} label="NetID">
+                <input
+                  name="netId"
+                  type="text"
+                  defaultValue={member.netId ?? ""}
+                  className="w-full"
+                />
+              </DetailEditRow>
               <DetailEditRow icon={<GraduationCap className={ic} />} label="Major">
                 <input
                   name="major"
@@ -769,6 +847,15 @@ function AboutCard({
             </>
           ) : (
             <>
+              <DetailRow icon={<UserIcon className={ic} />} label="Pronouns">
+                {member.pronouns ?? dash}
+              </DetailRow>
+              <DetailRow icon={<AtSign className={ic} />} label="Handle">
+                {member.handle ? `@${member.handle}` : dash}
+              </DetailRow>
+              <DetailRow icon={<Fingerprint className={ic} />} label="NetID">
+                {member.netId ?? dash}
+              </DetailRow>
               <DetailRow icon={<GraduationCap className={ic} />} label="Major">
                 {member.major ?? dash}
               </DetailRow>
@@ -994,107 +1081,6 @@ function ContactCard({
   );
 }
 
-// ─── Account card ────────────────────────────────────────────────────────────
-
-const ACCOUNT_FIELDS = new Set(["pronouns", "handle", "netId"]);
-
-function AccountCard({
-  member,
-  canEdit,
-}: {
-  member: ProfileMember;
-  canEdit: boolean;
-}) {
-  const [editing, setEditing] = useState(false);
-  const [resetKey, setResetKey] = useState(0);
-  const submit = useSubmit();
-  const formRef = useRef<HTMLFormElement | null>(null);
-  const { formClass } = useOsChrome();
-  const ic = OS_DETAIL_ICON;
-  const dash = <span className="text-os-muted">—</span>;
-
-  function cancel() {
-    setResetKey((k) => k + 1);
-    setEditing(false);
-  }
-
-  function save() {
-    if (formRef.current) submit(formRef.current);
-    setEditing(false);
-  }
-
-  return (
-    <Form method="post" ref={formRef} className="h-full">
-      <input type="hidden" name="intent" value="profile" />
-      <PersonalHiddenFields member={member} exclude={ACCOUNT_FIELDS} />
-      <article className="rounded-os-card bg-os-card overflow-hidden h-full">
-        <CardHeader
-          icon={<Fingerprint className="w-[17px] h-[17px]" />}
-          iconBg="rgba(124,212,148,0.13)"
-          iconColor="#7cd494"
-          title="Account"
-          trailing={
-            canEdit && (
-              <CardEditControls
-                editing={editing}
-                onEdit={() => setEditing(true)}
-                onCancel={cancel}
-                onSave={save}
-              />
-            )
-          }
-        />
-        <div key={resetKey} className={cn("px-5 pb-5", editing && cn(formClass, "grid grid-cols-[max-content_1fr]"))}>
-          {editing ? (
-            <>
-              <DetailEditRow icon={<UserIcon className={ic} />} label="Pronouns">
-                <input
-                  name="pronouns"
-                  type="text"
-                  defaultValue={member.pronouns ?? ""}
-                  className="w-full"
-                />
-              </DetailEditRow>
-              <DetailEditRow
-                icon={<AtSign className={ic} />}
-                label="Handle"
-                infoTip={<InfoTip content="How people @mention you" />}
-              >
-                <input
-                  name="handle"
-                  type="text"
-                  defaultValue={member.handle ?? ""}
-                  className="w-full"
-                />
-              </DetailEditRow>
-              <DetailEditRow icon={<Fingerprint className={ic} />} label="NetID">
-                <input
-                  name="netId"
-                  type="text"
-                  defaultValue={member.netId ?? ""}
-                  className="w-full"
-                />
-              </DetailEditRow>
-            </>
-          ) : (
-            <>
-              <DetailRow icon={<UserIcon className={ic} />} label="Pronouns">
-                {member.pronouns ?? dash}
-              </DetailRow>
-              <DetailRow icon={<AtSign className={ic} />} label="Handle">
-                {member.handle ? `@${member.handle}` : dash}
-              </DetailRow>
-              <DetailRow icon={<Fingerprint className={ic} />} label="NetID">
-                {member.netId ?? dash}
-              </DetailRow>
-            </>
-          )}
-        </div>
-      </article>
-    </Form>
-  );
-}
-
 // ─── Domains card ────────────────────────────────────────────────────────────
 
 function DomainsCard({
@@ -1236,10 +1222,8 @@ function WorkExperienceCard({
               className="flex items-start gap-4 border-b border-os-container py-3 last:border-0 last:pb-0"
             >
               <div className="min-w-0 flex-1">
-                <p className="text-sm font-semibold text-foreground">
-                  {w.position}
-                  <span className="font-normal text-os-grey"> at {w.company}</span>
-                </p>
+                <p className="text-sm font-semibold text-foreground">{w.position}</p>
+                <p className="text-sm text-foreground">{w.company}</p>
                 <p className="mt-0.5 text-[13px] text-os-grey">
                   {[formatMonthRange(w.startMonth, w.endMonth), w.location, workModeLabel(w.workMode)]
                     .filter(Boolean)
