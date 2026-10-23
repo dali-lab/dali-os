@@ -1,52 +1,28 @@
 import SwiftUI
 
-/// The paired door display. Normally status + today's timeline; while a DALI
-/// event is in its check-in window it becomes a wallet-pass scanner, while a
-/// hiring event is broadcast it shows that event's check-in QR, and while iPad
-/// scanning is on from a meeting's page the whole screen is the scanner.
+/// The paired door display: the two rooms it hangs between, side by side.
+/// While a hiring event is broadcast it shows that event's check-in QR, and
+/// while iPad scanning is on from a meeting's page the whole screen is the
+/// scanner.
 struct RoomDisplayView: View {
     @Environment(DisplayStore.self) private var store
     @Environment(\.scenePhase) private var scenePhase
-    @State private var draft: BookingDraft?
+    @State private var scanningRoomID: String?
     @State private var showingAdmin = false
 
     var body: some View {
-        TimelineView(.periodic(from: .now, by: 15)) { context in
+        TimelineView(.periodic(from: .now, by: 10)) { context in
             let now = context.date
-            GeometryReader { proxy in
-                let landscape = proxy.size.width > proxy.size.height
-                Group {
-                    if let scan = store.attendanceScan {
-                        AttendanceScanView(scan: scan)
-                    } else if let broadcast = store.applicationEvent {
-                        ApplicationEventQRView(event: broadcast, now: now)
-                    } else if let event = store.currentEvent {
-                        EventCheckInView(event: event, room: store.room, now: now)
-                    } else {
-                        let layout = landscape
-                            ? AnyLayout(HStackLayout(alignment: .top, spacing: 24))
-                            : AnyLayout(VStackLayout(spacing: 24))
-                        layout {
-                            StatusPanel(
-                                room: store.room,
-                                items: store.items,
-                                now: now,
-                                isOffline: store.isOffline
-                            )
-                            // Portrait: only as tall as its content, so the
-                            // timeline below gets the rest of the screen.
-                            .frame(width: landscape ? (proxy.size.width - 72) * 0.46 : nil)
-                            .fixedSize(horizontal: false, vertical: !landscape)
-                            schedule(now: now)
-                        }
-                        .padding(24)
-                        .padding(.top, 12)
-                        .overlay(alignment: .bottomTrailing) { newBookingButton }
-                    }
+            Group {
+                if let scan = store.visibleAttendanceScan {
+                    AttendanceScanView(scan: scan, now: now)
+                } else if let broadcast = store.applicationEvent {
+                    ApplicationEventQRView(event: broadcast, now: now)
+                } else {
+                    rooms(now: now)
                 }
             }
         }
-        .background(OS.bg.ignoresSafeArea())
         .task(id: scenePhase) {
             guard scenePhase == .active else { return }
             while !Task.isCancelled {
@@ -54,63 +30,53 @@ struct RoomDisplayView: View {
                 try? await Task.sleep(for: DisplayStore.refreshInterval)
             }
         }
-        .sheet(item: $draft) { draft in
-            BookingSheet(draft: draft)
-        }
         .confirmationDialog("Room display", isPresented: $showingAdmin) {
             Button("Unpair this display", role: .destructive) { store.unpair() }
         } message: {
-            Text("Unpairing removes this iPad from \(store.room?.name ?? "the room"). Pair it again from Core ▸ Rooms.")
+            Text("Unpairing removes this iPad from \(store.rooms.map(\.room.name).joined(separator: " and ")). Pair it again from Core ▸ Rooms.")
         }
     }
 
-    private var newBookingButton: some View {
-        Button {
-            draft = BookingDraft(interval: suggestedSlot(now: .now))
-        } label: {
-            Image(systemName: "plus")
-                .font(.system(size: 30, weight: .semibold))
-                .foregroundStyle(OS.card)
-                .frame(width: 76, height: 76)
-                .background(OS.accent, in: .circle)
-                .shadow(color: OS.shadow, radius: 16, y: 6)
+    private func rooms(now: Date) -> some View {
+        VStack(spacing: 0) {
+            topBar(now: now)
+            GeometryReader { proxy in
+                let layout = proxy.size.width >= 700
+                    ? AnyLayout(HStackLayout(spacing: 20))
+                    : AnyLayout(VStackLayout(spacing: 20))
+                layout {
+                    ForEach(store.rooms) { schedule in
+                        RoomPanel(schedule: schedule, now: now, scanningRoomID: $scanningRoomID)
+                    }
+                }
+            }
+            .padding(.horizontal, 24)
+            .padding(.bottom, 24)
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel("New booking")
-        .padding(44)
+        .background(Brand.surfaceMuted.ignoresSafeArea())
     }
 
-    /// Where the + button's booking starts: now if the room is free, else
-    /// right after the current booking. 30 minutes, cut short by the next one.
-    private func suggestedSlot(now: Date) -> DateInterval {
-        let picker = SlotPicker(items: store.items, now: now)
-        if let slot = picker.tap(at: now) { return slot.interval }
-        let after = store.items.first { $0.start <= now && $0.end > now }?.end ?? now
-        return picker.tap(at: after)?.interval ?? DateInterval(start: after, duration: SlotPicker.tapLength)
-    }
-
-    private func schedule(now: Date) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .firstTextBaseline) {
-                Text("Today")
-                    .font(OS.font(24, .bold))
-                    .foregroundStyle(OS.fg)
+    private func topBar(now: Date) -> some View {
+        HStack(spacing: 16) {
+            DaliLogo()
+            Rectangle().fill(Brand.borderSubtle).frame(width: 1, height: 24)
+            Text(store.rooms.count == 1 ? "Room availability" : "Room availability · \(store.rooms.count) rooms")
+                .brandEyebrow()
+            if store.isOffline {
+                OSStatusPill(text: "Offline", dot: OS.amber, size: 13)
+            }
+            Spacer()
+            VStack(alignment: .trailing, spacing: 4) {
+                Text(DisplayFormat.time(now))
+                    .font(Brand.heading(32).monospacedDigit())
+                    .foregroundStyle(Brand.textHeading)
                 Text(now, format: .dateTime.weekday(.wide).month(.wide).day())
-                    .font(OS.font(18))
-                    .foregroundStyle(OS.grey)
+                    .brandEyebrow(size: 12, tracking: 1.7)
                     // Hidden admin entry for whoever mounts the iPad.
                     .onLongPressGesture(minimumDuration: 3) { showingAdmin = true }
-                Spacer()
-                Text("Tap or drag open time to book")
-                    .font(OS.font(15))
-                    .foregroundStyle(OS.muted)
             }
-            .padding(.horizontal, 28)
-            .padding(.top, 28)
-            .padding(.bottom, 16)
-            DayTimelineView(items: store.items, now: now) { draft = BookingDraft(interval: $0) }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(OS.card, in: .rect(cornerRadius: OS.cardRadius))
+        .padding(.horizontal, 32)
+        .padding(.vertical, 16)
     }
 }

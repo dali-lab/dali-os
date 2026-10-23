@@ -7405,7 +7405,8 @@ model Room {
   archivedAt  DateTime?
 
   bookings         RoomBooking[]
-  displays         RoomDisplay[]
+  displays         RoomDisplay[] @relation("RoomDisplayRoom")
+  secondDisplays   RoomDisplay[] @relation("RoomDisplaySecondRoom")
   meetings         ScheduledMeeting[]
   interviews       Interview[]
   interviewConfigs InterviewConfig[]
@@ -7498,8 +7499,13 @@ model RoomBookingException {
 model RoomDisplay {
   id     String @id @default(cuid())
   roomId String
-  room   Room   @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  room   Room   @relation("RoomDisplayRoom", fields: [roomId], references: [id], onDelete: Cascade)
   label  String
+
+  // The iPad hangs between two doors and shows this room beside `room`.
+  // Null on displays paired before two-room pairing; they show one room.
+  secondRoomId String?
+  secondRoom   Room?   @relation("RoomDisplaySecondRoom", fields: [secondRoomId], references: [id], onDelete: SetNull)
 
   // sha256(raw setup code), base64url. Short human-typed code, 10 min TTL,
   // single use; the redeem route is IP rate-limited. Null once redeemed.
@@ -7520,6 +7526,7 @@ model RoomDisplay {
   createdAt DateTime @default(now())
 
   @@index([roomId])
+  @@index([secondRoomId])
 }
 
 // "Enable attendance tracking from iPad" on a meeting's page: while a session

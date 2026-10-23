@@ -33,6 +33,7 @@ export const AUDIT_ACTIONS = [
   "room.create",
   "room.update",
   "room.display.create",
+  "room.display.update",
   "room.display.revoke",
   // Core stopped a live iPad attendance scan from Rooms; metadata names the meeting.
   "room.display.scan.stop",
