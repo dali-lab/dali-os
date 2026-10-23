@@ -43,8 +43,11 @@ export function Segmented<T extends string>({
             onClick={() => onChange(o.value)}
             className={cn(
               "rounded-full font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-os-accent/40",
-              size === "md" ? "px-4 py-2 text-sm" : "px-3 py-1 text-xs",
-              fullWidth && "flex-1",
+              size === "md" ? "py-2 text-sm" : "py-1 text-xs",
+              // Full width splits the row evenly, so side padding would only
+              // push a long label past its share.
+              fullWidth ? "min-w-0 flex-1 truncate px-1.5" : size === "md" ? "px-4" : "px-3",
+              "whitespace-nowrap",
               checked ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
             )}
           >
