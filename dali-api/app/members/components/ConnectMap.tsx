@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import type { Map as LeafletMap, LayerGroup, Marker } from "leaflet";
 import "leaflet/dist/leaflet.css";
-import type { ConnectPlace } from "~/members/lib/connect";
+import { MAX_LAT, minZoomToFill, type ConnectPlace } from "~/members/lib/connect";
 
 // OpenStreetMap's own tile server: keyless. It only draws a light map, so the
 // dark theme inverts the tile pane (hue-rotated back so water stays blue).
@@ -132,7 +132,16 @@ export function ConnectMap({
       const L = mod.default ?? mod;
       leaflet.current = L;
       const dark = !document.documentElement.classList.contains("light");
-      map.current = L.map(el.current, { worldCopyJump: true, minZoom: 2 }).setView([25, 0], 2);
+      map.current = L.map(el.current, {
+        worldCopyJump: true,
+        minZoom: minZoomToFill(el.current.clientHeight),
+        // Pan sideways forever, but never past the poles into the grey void.
+        maxBounds: L.latLngBounds([-MAX_LAT, -540], [MAX_LAT, 540]),
+        maxBoundsViscosity: 1,
+      }).setView([25, 0], 2);
+      map.current.on("resize", (e) => {
+        map.current?.setMinZoom(minZoomToFill(e.newSize.y));
+      });
       L.tileLayer(TILES, { attribution: ATTRIBUTION, maxZoom: 19 }).addTo(map.current);
       if (dark) map.current.getPane("tilePane")!.style.filter = DARK_FILTER;
       pins.current = L.layerGroup().addTo(map.current);

@@ -5,6 +5,7 @@ import { withCors, handlePreflight } from "~/lib/cors";
 import { publishNotificationChange } from "~/lib/notify-stream.server";
 import { ONBOARDING_EVENT_TYPE } from "~/members/lib/welcome.server";
 import { isSelfClearingFormTodo } from "~/lib/tasks";
+import { ANSWER_TO_CLEAR_EVENTS } from "~/members/lib/coffee-chat";
 
 export async function action({ request, params }: Route.ActionArgs) {
   const preflight = handlePreflight(request);
@@ -68,10 +69,10 @@ export async function action({ request, params }: Route.ActionArgs) {
   // Form todo: clears when the form is submitted, never by opening its link.
   const isFormTodo = isSelfClearingFormTodo(existing);
 
-  // A coffee chat invite clears only when it's answered (respondToCoffeeChat):
+  // A coffee chat or resume review invite clears only when it's answered (respondToCoffeeChat):
   // opening or dismissing it must not drop it, or the recipient loses the only
   // place they can accept and learn who sent it.
-  if (existing.eventType === "coffee_chat.invite") {
+  if (existing.eventType && ANSWER_TO_CLEAR_EVENTS.includes(existing.eventType)) {
     return withCors(request, Response.json({ ok: true, skipped: "coffee-chat-invite" }));
   }
 

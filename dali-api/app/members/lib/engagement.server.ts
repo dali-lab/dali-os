@@ -27,7 +27,7 @@ export async function loadAlumniLeaderboard(limit = 10): Promise<LeaderboardEntr
       select: { userId: true, term: { select: { endDate: true } } },
     }),
     prisma.coffeeChatInvite.findMany({
-      where: { status: "Accepted", OR: [{ senderId: userId }, { recipientId: userId }] },
+      where: { kind: "CoffeeChat", status: "Accepted", OR: [{ senderId: userId }, { recipientId: userId }] },
       select: { senderId: true, recipientId: true, respondedAt: true, createdAt: true },
     }),
     prisma.educationAttendance.findMany({

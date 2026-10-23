@@ -520,6 +520,21 @@ export const EVENT_TYPES = {
     description: "When a coffee chat invite is accepted, whether you sent it or accepted it.",
     defaults: { inApp: true, desktop: true, slackDm: false, email: "Instant" },
   },
+  "resume_review.invite": {
+    kind: "General",
+    area: "People",
+    label: "Resume review requests",
+    description: "When someone anonymously asks you to review their resume.",
+    lockedInApp: true,
+    defaults: { inApp: true, desktop: true, slackDm: false, email: "Instant" },
+  },
+  "resume_review.accepted": {
+    kind: "General",
+    area: "People",
+    label: "Resume review accepted",
+    description: "When a resume review request is accepted, whether you sent it or accepted it.",
+    defaults: { inApp: true, desktop: true, slackDm: false, email: "Instant" },
+  },
   "gallery.comment": {
     kind: "General",
     area: "Community",

@@ -131,6 +131,10 @@ model User {
   currentLocation    String?
   currentLocationLat Float?
   currentLocationLng Float?
+  // "I'm open to" on the alumni Home. Off hides the matching request button
+  // on this person's profile and refuses new requests.
+  openToCoffeeChats   Boolean @default(true)
+  openToResumeReviews Boolean @default(false)
   linkedinUrl        String?
   // The member's current resume (PDF). Private: the member and admins only,
   // served through /api/members/:id/resume, never api/upload/url.
@@ -413,6 +417,11 @@ enum CoffeeChatStatus {
   Declined
 }
 
+enum CoffeeChatKind {
+  CoffeeChat
+  ResumeReview
+}
+
 // An anonymous coffee chat invite sent from someone's profile. The recipient
 // is never shown the sender unless they accept — every read of senderId must
 // go through app/members/lib/coffee-chat.server.ts, which enforces that.
@@ -426,6 +435,8 @@ model CoffeeChatInvite {
   recipientId String
   recipient   User   @relation("CoffeeChatRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
 
+  // A resume review request rides the same anonymous invite flow.
+  kind        CoffeeChatKind   @default(CoffeeChat)
   status      CoffeeChatStatus @default(Pending)
   respondedAt DateTime?
 

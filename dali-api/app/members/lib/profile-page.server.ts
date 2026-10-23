@@ -142,6 +142,9 @@ export type ProfilePageData = {
   /** The viewer's own anonymous coffee chat invite to this member is out.
    *  Never reflects invites this member sent. */
   coffeeChatSent: boolean;
+  resumeReviewSent: boolean;
+  /** Which request buttons this member takes (their "I'm open to"). */
+  openTo: { coffeeChats: boolean; resumeReviews: boolean };
   canEdit: boolean;
   canManageEligibility: boolean;
   /** Personal notes shown in the profile's right-hand rail. On someone else's
@@ -310,6 +313,8 @@ export async function loadProfilePage({
       major: true,
       hometown: true,
       currentLocation: true,
+      openToCoffeeChats: true,
+      openToResumeReviews: true,
       workExperiences: {
         // Current jobs first, then most recent.
         orderBy: [{ endDate: { sort: "desc", nulls: "first" } }, { startDate: "desc" }],
@@ -643,6 +648,8 @@ export async function loadProfilePage({
     resumeFileName,
     resumeSizeBytes,
     resumeUploadedAt,
+    openToCoffeeChats,
+    openToResumeReviews,
     ...memberFields
   } = member;
 
@@ -679,6 +686,8 @@ export async function loadProfilePage({
         ? { fileName: resumeFileName, uploadedAt: resumeUploadedAt.toISOString(), sizeBytes: resumeSizeBytes }
         : null,
     coffeeChatSent: isSelf ? false : await hasOutgoingCoffeeChat(auth.user.sub, targetId),
+    resumeReviewSent: isSelf ? false : await hasOutgoingCoffeeChat(auth.user.sub, targetId, "ResumeReview"),
+    openTo: { coffeeChats: openToCoffeeChats, resumeReviews: openToResumeReviews },
     canEdit,
     canManageEligibility,
     notes,
@@ -774,6 +783,9 @@ export async function runProfileAction({
 
   if (intent === "coffee-chat") {
     return sendCoffeeChatInvite(auth.user.sub, targetId);
+  }
+  if (intent === "resume-review") {
+    return sendCoffeeChatInvite(auth.user.sub, targetId, "ResumeReview");
   }
 
   if (intent === "add-eligibility" || intent === "set-eligibility-level") {
