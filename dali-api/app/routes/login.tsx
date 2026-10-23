@@ -5,7 +5,7 @@ import type { Route } from "./+types/login";
 import { humanDuration, EMAIL_OTP_TTL_SECONDS } from "~/email/lib/auth-email";
 import { requireAuth } from "~/lib/auth";
 import { prisma } from "~/lib/db";
-import { checkRateLimit, getClientIp } from "~/lib/rate-limit";
+import { checkRateLimit } from "~/lib/rate-limit";
 import { getApiBaseUrl, getAppEnv, getCasBaseUrl } from "~/lib/app-env";
 import { buildGoogleAuthUrl } from "~/lib/google-oauth";
 import {
@@ -97,33 +97,24 @@ export async function action({ request }: Route.ActionArgs) {
       // email; the code is delivered there. `email` stays the typed address for
       // display so we never reveal the mapping; `identifier` is what verify uses.
       const identifier = await resolveLoginIdentifier(email);
-      // Throttle code sends (each dispatches an email). This also bounds
-      // brute-forcing, since every fresh code needs a send. On a hit, keep the
-      // user on the code screen instead of returning a raw 429 — a real person
-      // resending a few times should still be able to enter an earlier code.
-      const sendLimited = checkRateLimit(
-        request,
-        { max: RATE_LIMIT_MAX, windowMs: RATE_LIMIT_WINDOW_MS },
-        `send-code:${getClientIp(request)}`,
-      );
-      if (sendLimited) {
-        return {
-          codeSent: true as const,
-          email,
-          identifier,
-          error:
-            "You've requested several codes. Enter the most recent one below, or wait a minute to request a new one.",
-        };
-      }
       // Anti-enumeration: always advance to the code screen. The emailOTP plugin
       // has disableSignUp, so a non-existent address silently receives nothing.
+      // A throttled send stays on the code screen too, so an earlier code still works.
       try {
         await auth.api.sendVerificationOTP({
           body: { email: identifier, type: "sign-in" },
           headers: request.headers,
         });
-      } catch {
-        // Swallowed — neutral response in all cases.
+      } catch (err) {
+        if ((err as { status?: unknown })?.status === "TOO_MANY_REQUESTS") {
+          return {
+            codeSent: true as const,
+            email,
+            identifier,
+            error:
+              "You've requested several codes. Enter the most recent one below, or wait a few minutes to request a new one.",
+          };
+        }
       }
       return { codeSent: true as const, email, identifier };
     }
