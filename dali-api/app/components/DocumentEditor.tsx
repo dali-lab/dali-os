@@ -511,8 +511,10 @@ export function DocumentEditor({
         });
         // Refresh the tab title elsewhere on the page.
         revalidator.revalidate();
-        // Relay to sibling tabs (e.g. a project hub opened split-screen).
-        if (typeof window !== "undefined" && window.self !== window.top) {
+        // Tell the page around this editor (a project hub with the doc in its
+        // side panel, or in a sibling iframe tab via the shell's relay). At
+        // the top level window.parent is this window.
+        if (typeof window !== "undefined") {
           window.parent.postMessage(
             { type: "dali:documentTitleChanged", pageId, title: trimmed },
             window.location.origin,

@@ -40,6 +40,8 @@ import { timed } from '~/lib/server-timing'
 import { educationPortalTwin } from '~/education/lib/portal-twin'
 import { publicDocRedirectForPath } from '~/lib/public-doc.server'
 import { cleanTabUrl } from '~/lib/page-link'
+import { tabStripHintFromRequest } from '~/lib/desktop-tabs-pref'
+import { SidePanelHost } from '~/components/side-panel/SidePanel'
 import type { Route } from './+types/layout'
 
 export async function loader({ request }: Route.LoaderArgs) {
@@ -238,7 +240,10 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   // Tabless mode: render pages directly in the shell instead of the tabbed
   // workspace. Cookie-backed so this SSR branch is decided per-request.
-  const tabless = isTablessRequest(request)
+  // Desktop tabs sit on the tabless shell, so the flag always takes it.
+  const desktopTabs = flags['desktop-tabs'] === true
+  const tabless = desktopTabs || isTablessRequest(request)
+  const tabStripHint = desktopTabs && tabStripHintFromRequest(request)
 
   // Focus mode: hide the sidebar (navigate via ⌘K + breadcrumbs). Independent
   // of tabless; also cookie-backed so there's no flash of the sidebar.
@@ -270,7 +275,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   const __loaderTotal = performance.now() - __loaderStart
   if (__loaderTotal >= 400) console.log(`[perf-total] layout loader ${__loaderTotal.toFixed(0)}ms`)
 
-  return { user: auth.user, photoUrl, hasCalendarLink, shouldShowTour, isCore: core, isAdmin: admin, isDomainLead: domainLead, canViewForms, canViewStaffing, isInterviewer, hasHiringAccess, hasActiveHiringAccess, isInstructor, isLabMentor: isLabMentorFlag, isAlumni, instructorChrome, favorites: sidebarPages.favorites, recents: sidebarPages.recents, flags, impersonating, impersonationWrites, isEmbedded, tabless, focus, userTimeZone, userTimeZoneIsExplicit, tzDismissedZone, activeActivities, hasUnseenReleaseNotes }
+  return { user: auth.user, photoUrl, hasCalendarLink, shouldShowTour, isCore: core, isAdmin: admin, isDomainLead: domainLead, canViewForms, canViewStaffing, isInterviewer, hasHiringAccess, hasActiveHiringAccess, isInstructor, isLabMentor: isLabMentorFlag, isAlumni, instructorChrome, favorites: sidebarPages.favorites, recents: sidebarPages.recents, flags, impersonating, impersonationWrites, isEmbedded, tabless, tabStripHint, focus, userTimeZone, userTimeZoneIsExplicit, tzDismissedZone, activeActivities, hasUnseenReleaseNotes }
 }
 
 // Layout data (roles, avatar, hiring access) changes rarely, but default
@@ -304,7 +309,7 @@ export function shouldRevalidate({ formAction, currentUrl, nextUrl, defaultShoul
 }
 
 export default function AppLayoutRoute() {
-  const { user, photoUrl, hasCalendarLink, shouldShowTour, isCore, isAdmin, isDomainLead, canViewForms, canViewStaffing, isInterviewer, hasHiringAccess, hasActiveHiringAccess, isInstructor, isLabMentor: isLabMentorFlag, isAlumni, instructorChrome, favorites, recents, flags, impersonating, impersonationWrites, isEmbedded, tabless, focus, userTimeZone, userTimeZoneIsExplicit, tzDismissedZone, activeActivities, hasUnseenReleaseNotes } = useLoaderData<typeof loader>()
+  const { user, photoUrl, hasCalendarLink, shouldShowTour, isCore, isAdmin, isDomainLead, canViewForms, canViewStaffing, isInterviewer, hasHiringAccess, hasActiveHiringAccess, isInstructor, isLabMentor: isLabMentorFlag, isAlumni, instructorChrome, favorites, recents, flags, impersonating, impersonationWrites, isEmbedded, tabless, tabStripHint, focus, userTimeZone, userTimeZoneIsExplicit, tzDismissedZone, activeActivities, hasUnseenReleaseNotes } = useLoaderData<typeof loader>()
 
   // Non-member (external instructor) shell: the lightweight, sidebar-free chrome
   // for the education-management routes they're allowed into. Rendered before the
@@ -584,7 +589,9 @@ export default function AppLayoutRoute() {
   }
 
   const tablessChild = tabless ? (
-    <div className={cn('flex-1 overflow-x-clip', fitViewport && 'flex min-h-0 flex-col')}>{pageContent}</div>
+    <div className={cn('flex-1 overflow-x-clip', fitViewport && 'flex min-h-0 flex-col')}>
+      {flags['desktop-tabs'] ? <SidePanelHost>{pageContent}</SidePanelHost> : pageContent}
+    </div>
   ) : undefined
 
   return (
@@ -594,7 +601,7 @@ export default function AppLayoutRoute() {
       {/* Above Layout, not inside pageContent: the tabless desktop nav row
           renders the Guide CTA from the shell, outside the routed page. */}
       <PageDocProvider>
-        <LayoutOS fitViewport={fitViewport} user={user} photoUrl={photoUrl} isCore={isCore} isAdmin={isAdmin} isDomainLead={isDomainLead} canViewForms={canViewForms} canViewStaffing={canViewStaffing} isInterviewer={isInterviewer} hasHiringAccess={hasHiringAccess} hasActiveHiringAccess={hasActiveHiringAccess} isInstructor={isInstructor} isLabMentor={isLabMentorFlag} isAlumni={isAlumni} favorites={liveFavorites} onFavoritesChange={setLiveFavorites} impersonating={impersonating} impersonationAllowsWrites={impersonationWrites} focusMode={focus} hasUnseenReleaseNotes={hasUnseenReleaseNotes}>
+        <LayoutOS fitViewport={fitViewport} user={user} photoUrl={photoUrl} isCore={isCore} isAdmin={isAdmin} isDomainLead={isDomainLead} canViewForms={canViewForms} canViewStaffing={canViewStaffing} isInterviewer={isInterviewer} hasHiringAccess={hasHiringAccess} hasActiveHiringAccess={hasActiveHiringAccess} isInstructor={isInstructor} isLabMentor={isLabMentorFlag} isAlumni={isAlumni} favorites={liveFavorites} onFavoritesChange={setLiveFavorites} impersonating={impersonating} impersonationAllowsWrites={impersonationWrites} focusMode={focus} hasUnseenReleaseNotes={hasUnseenReleaseNotes} tabStripHint={tabStripHint}>
           {tablessChild}
         </LayoutOS>
       </PageDocProvider>

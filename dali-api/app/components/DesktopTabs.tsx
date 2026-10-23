@@ -1,0 +1,254 @@
+import { useEffect, useRef, useState, useSyncExternalStore, type CSSProperties } from 'react'
+import { useLocation, useNavigate, useNavigationType } from 'react-router'
+import {
+  DndContext,
+  PointerSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core'
+import { SortableContext, horizontalListSortingStrategy, useSortable } from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
+import { Copy, Pin, PinOff, Plus, X, XSquare } from 'lucide-react'
+import { ContextMenu, Menu, Tooltip } from '~/components/ui/floating'
+import { desktopVersion } from '~/lib/desktop'
+import { readTabStripCookie, tabsPreferred, writeTabStripCookie } from '~/lib/desktop-tabs-pref'
+import {
+  getTabsSnapshot,
+  startTabs,
+  subscribeTabs,
+  tabActions,
+} from '~/lib/desktop-tabs-store'
+import type { DesktopTab, DesktopTabsState } from '~/lib/desktop-tabs'
+import { buildPageLink, writePageLink } from '~/lib/page-link'
+import { cn } from '~/lib/cn'
+
+/** Fired by the desktop app's File menu (desktop/src-tauri/src/menu.rs), which
+ *  owns ⌘T / ⌘W / ⌘⇧T so the native Close Window shortcut can't win. */
+export const TAB_COMMAND_EVENT = 'dali:tab-command'
+type TabCommand = 'new' | 'close' | 'reopen'
+
+export function useDesktopTabsState(): DesktopTabsState {
+  return useSyncExternalStore(subscribeTabs, getTabsSnapshot, getTabsSnapshot)
+}
+
+function pageTitle(): string {
+  if (typeof document === 'undefined') return ''
+  const raw = document.title
+  return raw.replace(/\s*·\s*DALI OS\s*$/, '').trim() || raw
+}
+
+/**
+ * Whether this window shows desktop tabs, and while it does, keep the tab store
+ * in step with the router. `hint` is the server's guess (the strip cookie) so
+ * the first paint already has the strip's space; the client corrects it once
+ * it knows whether it is inside the desktop app.
+ */
+export function useDesktopTabs(enabled: boolean, hint: boolean): boolean {
+  const [show, setShow] = useState(enabled && hint)
+  useEffect(() => {
+    if (!enabled || desktopVersion() === null) {
+      setShow(false)
+      return
+    }
+    const cookie = readTabStripCookie()
+    if (cookie === null) writeTabStripCookie('1')
+    setShow(tabsPreferred(cookie))
+  }, [enabled])
+
+  const location = useLocation()
+  const navigationType = useNavigationType()
+  const navigate = useNavigate()
+  const navigateRef = useRef(navigate)
+  navigateRef.current = navigate
+  const url = location.pathname + location.search
+  const arrivalRef = useRef(url)
+  arrivalRef.current = url
+
+  useEffect(() => {
+    if (!show) return
+    return startTabs({ url: arrivalRef.current, label: pageTitle() || 'Home' }, (to) =>
+      navigateRef.current(to, { replace: true }),
+    )
+  }, [show])
+
+  useEffect(() => {
+    if (!show) return
+    const restoreY = tabActions.record(url, navigationType)
+    let raf = 0
+    if (restoreY !== null) raf = window.requestAnimationFrame(() => window.scrollTo(0, restoreY))
+    const labelTimer = window.setTimeout(() => tabActions.label(url, pageTitle()), 50)
+    return () => {
+      window.cancelAnimationFrame(raf)
+      window.clearTimeout(labelTimer)
+    }
+  }, [show, url, navigationType])
+
+  useEffect(() => {
+    if (!show) return
+    // Cancelling tells the shell the page handled it (window::tab_command).
+    const onCommand = (e: Event) => {
+      const command = (e as CustomEvent<{ command?: TabCommand }>).detail?.command
+      if (command === 'new') tabActions.newTab()
+      else if (command === 'close') tabActions.closeActive()
+      else if (command === 'reopen') tabActions.reopenClosed()
+      else return
+      e.preventDefault()
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey)) return
+      if (e.shiftKey && !e.altKey && (e.key === 'k' || e.key === 'K')) {
+        e.preventDefault()
+        tabActions.closeActive()
+        return
+      }
+      if (e.altKey && !e.shiftKey && (e.key === 'ArrowRight' || e.key === 'ArrowLeft')) {
+        e.preventDefault()
+        tabActions.cycle(e.key === 'ArrowRight' ? 1 : -1)
+        return
+      }
+      if (!e.altKey && !e.shiftKey && e.key >= '1' && e.key <= '9') {
+        e.preventDefault()
+        tabActions.activateIndex(e.key === '9' ? -1 : Number(e.key) - 1)
+      }
+    }
+    window.addEventListener(TAB_COMMAND_EVENT, onCommand)
+    window.addEventListener('keydown', onKey)
+    return () => {
+      window.removeEventListener(TAB_COMMAND_EVENT, onCommand)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [show])
+
+  return show
+}
+
+const TAB_W = 168
+const PINNED_TAB_W = 128
+
+function SortableTab({ tab, active }: { tab: DesktopTab; active: boolean }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: tab.id,
+  })
+  const style: CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    flexBasis: tab.pinned ? PINNED_TAB_W : TAB_W,
+    opacity: isDragging ? 0.4 : undefined,
+  }
+  return (
+    <button
+      ref={setNodeRef}
+      style={style}
+      {...attributes}
+      {...listeners}
+      type="button"
+      onClick={() => tabActions.activate(tab.id)}
+      onDoubleClick={() => tabActions.promote(tab.id)}
+      onAuxClick={(e) => {
+        if (e.button !== 1) return
+        e.preventDefault()
+        tabActions.close(tab.id)
+      }}
+      aria-current={active ? 'page' : undefined}
+      className={cn(
+        'group flex h-full min-w-[72px] shrink grow-0 items-center gap-2 border-b-2 text-xs font-medium whitespace-nowrap transition-colors',
+        tab.pinned ? 'px-2.5' : 'px-3',
+        active
+          ? 'border-os-accent text-foreground'
+          : 'border-transparent text-os-grey hover:bg-os-hover hover:text-foreground',
+      )}
+    >
+      {tab.pinned && <Pin className="pointer-events-none h-3 w-3 shrink-0 fill-os-accent text-os-accent" />}
+      <span className={cn('pointer-events-none flex-1 truncate text-left', tab.ephemeral && 'italic')}>
+        {tab.label}
+      </span>
+      {!tab.pinned && (
+        <span
+          role="button"
+          aria-label={`Close ${tab.label}`}
+          // Keep a press on × from starting a tab drag.
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation()
+            tabActions.close(tab.id)
+          }}
+          className="rounded-full p-0.5 text-muted-foreground/60 opacity-60 hover:bg-os-hover-strong hover:text-foreground group-hover:opacity-100"
+        >
+          <X className="h-3 w-3" />
+        </span>
+      )}
+    </button>
+  )
+}
+
+export function DesktopTabStrip() {
+  const { tabs, activeId } = useDesktopTabsState()
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }))
+
+  const onDragEnd = (e: DragEndEvent) => {
+    if (!e.over || e.active.id === e.over.id) return
+    const to = tabs.findIndex((t) => t.id === e.over!.id)
+    if (to >= 0) tabActions.move(String(e.active.id), to)
+  }
+
+  return (
+    <nav
+      aria-label="Open tabs"
+      className="os-nav-edge-b flex h-10 shrink-0 items-stretch gap-1 bg-os-nav pl-6 pr-3"
+    >
+      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
+        <SortableContext items={tabs.map((t) => t.id)} strategy={horizontalListSortingStrategy}>
+          <div className="flex min-w-0 flex-1 items-stretch gap-1 overflow-x-auto">
+            {tabs.map((tab) => (
+              <ContextMenu
+                key={tab.id}
+                ariaLabel="Tab actions"
+                items={
+                  <>
+                    <Menu.Item
+                      icon={tab.pinned ? <PinOff className="h-3.5 w-3.5" /> : <Pin className="h-3.5 w-3.5" />}
+                      onSelect={() => tabActions.togglePin(tab.id)}
+                    >
+                      {tab.pinned ? 'Unpin tab' : 'Pin tab'}
+                    </Menu.Item>
+                    <Menu.Item
+                      icon={<Copy className="h-3.5 w-3.5" />}
+                      onSelect={() => void writePageLink(buildPageLink(tab.url, window.location.origin))}
+                    >
+                      Copy link
+                    </Menu.Item>
+                    <Menu.Separator />
+                    <Menu.Item icon={<X className="h-3.5 w-3.5" />} onSelect={() => tabActions.close(tab.id)}>
+                      Close tab
+                    </Menu.Item>
+                    <Menu.Item
+                      icon={<XSquare className="h-3.5 w-3.5" />}
+                      disabled={tabs.length < 2}
+                      onSelect={() => tabActions.closeOthers(tab.id)}
+                    >
+                      Close other tabs
+                    </Menu.Item>
+                  </>
+                }
+              >
+                <SortableTab tab={tab} active={tab.id === activeId} />
+              </ContextMenu>
+            ))}
+          </div>
+        </SortableContext>
+      </DndContext>
+      <Tooltip content="New tab">
+        <button
+          type="button"
+          onClick={() => tabActions.newTab()}
+          aria-label="New tab"
+          className="my-1.5 flex w-7 shrink-0 items-center justify-center rounded-os-item text-os-grey transition-colors hover:bg-os-hover hover:text-foreground"
+        >
+          <Plus className="h-4 w-4" />
+        </button>
+      </Tooltip>
+    </nav>
+  )
+}

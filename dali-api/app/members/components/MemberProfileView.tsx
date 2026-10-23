@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useOpenDocumentBeside } from "~/components/side-panel/use-side-panel";
+import { SIDE_PARAM } from "~/lib/side-panel";
 import {
   Form,
   Link,
@@ -107,6 +109,15 @@ function isTab(x: string | null): x is Tab {
   return (TABS as readonly string[]).includes(x ?? "");
 }
 
+function openNoteLegacy(pageId: string, label: string) {
+  const url = `/documents/${pageId}`;
+  if (window.self !== window.top) {
+    window.parent.postMessage({ type: "dali:openTabToSide", url, label }, window.location.origin);
+  } else {
+    window.location.assign(url);
+  }
+}
+
 export function MemberProfileView({
   data,
   actionError,
@@ -192,6 +203,7 @@ export function MemberProfileView({
     setSearchParams(
       (prev) => {
         prev.set("tab", next);
+        prev.delete(SIDE_PARAM);
         return prev;
       },
       { replace: true, preventScrollReset: true },
@@ -208,19 +220,11 @@ export function MemberProfileView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.hash]);
 
-  // Notes open in the normal document editor. Inside the TabWorkspace iframe
-  // that means asking the shell for a side-by-side pane, same as the project
-  // page does for its documents; standalone it's a plain navigation.
+  // Notes open in the normal document editor beside the profile: the side
+  // panel, or the iframe workspace's split pane (standalone, a plain visit).
+  const openNoteBeside = useOpenDocumentBeside(openNoteLegacy);
   function openNote(note: { id: string; title: string }) {
-    const url = `/documents/${note.id}`;
-    if (typeof window !== "undefined" && window.self !== window.top) {
-      window.parent.postMessage(
-        { type: "dali:openTabToSide", url, label: note.title },
-        window.location.origin,
-      );
-    } else if (typeof window !== "undefined") {
-      window.location.assign(url);
-    }
+    openNoteBeside(note.id, note.title);
   }
 
   // Live "last active" for this member's header (respects their hide-activity

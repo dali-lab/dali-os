@@ -7,18 +7,20 @@ import {
   stepHistory,
   subscribe,
 } from "~/lib/navigation-history-store";
-import { readTablessPreference } from "~/lib/tabless";
 import { desktopVersion } from "~/lib/desktop";
+import { activeTab } from "~/lib/desktop-tabs";
+import { tabActions } from "~/lib/desktop-tabs-store";
+import { useDesktopTabsState } from "~/components/DesktopTabs";
 
 // The arrows are a stand-in for OS/browser chrome tabless mode doesn't have.
 // The desktop shell has no such chrome (a bare WKWebView), so it needs them;
 // an ordinary browser tab already has its own back/forward buttons. False
 // until the client effect resolves so SSR markup matches first paint.
-export function useShowTablessHistoryNav(): boolean {
+export function useShowTablessHistoryNav(tabless: boolean): boolean {
   const [show, setShow] = useState(false);
   useEffect(() => {
-    setShow(readTablessPreference() && desktopVersion() !== null);
-  }, []);
+    setShow(tabless && desktopVersion() !== null);
+  }, [tabless]);
   return show;
 }
 
@@ -39,20 +41,27 @@ export function useRecordTablessHistory() {
   }, [currentUrl, navigationType]);
 }
 
-function useTablessHistory() {
+// With desktop tabs the arrows walk the active tab's own history instead.
+function useTablessHistory(tabs: boolean) {
   const location = useLocation();
   const navigate = useNavigate();
   const currentUrl = currentUrlFromLocation(location.pathname, location.search);
 
-  const stacks = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+  const shared = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+  const tab = activeTab(useDesktopTabsState());
+  const stacks = tabs ? (tab ?? { backStack: [], forwardStack: [] }) : shared;
 
   const go = useCallback(
     (direction: "back" | "forward", steps = 1) => {
+      if (tabs) {
+        tabActions.step(direction, steps);
+        return;
+      }
       const target = stepHistory(currentUrl, direction, steps);
       if (target === null) return;
       navigate(target);
     },
-    [currentUrl, navigate],
+    [tabs, currentUrl, navigate],
   );
 
   return {
@@ -67,8 +76,8 @@ function useTablessHistory() {
 // Back/forward shortcuts (⌘[ / ⌘], ⌥← / ⌥→, mouse buttons 4/5). Mounted by the
 // always-present shell rather than the arrows, so they keep working in focus
 // mode, where the top bar (and the arrows in it) is unmounted.
-export function useTablessHistoryShortcuts(enabled: boolean) {
-  const { goBack, goForward } = useTablessHistory();
+export function useTablessHistoryShortcuts(enabled: boolean, tabs: boolean) {
+  const { goBack, goForward } = useTablessHistory(tabs);
 
   useEffect(() => {
     if (!enabled) return;
@@ -119,13 +128,13 @@ export function useTablessHistoryShortcuts(enabled: boolean) {
 // Back/forward buttons + right-click history dropdown, sitting at the left of
 // the os top bar ahead of the favorites star. Renders nothing on web (no
 // desktop shell) or in tab mode.
-export function TablessHistoryNav() {
-  if (!useShowTablessHistoryNav()) return null;
-  return <HistoryNavButtons />;
+export function TablessHistoryNav({ tabless, tabs }: { tabless: boolean; tabs: boolean }) {
+  if (!useShowTablessHistoryNav(tabless)) return null;
+  return <HistoryNavButtons tabs={tabs} />;
 }
 
-function HistoryNavButtons() {
-  const { backStack, forwardStack, goBack, goForward, goHistory } = useTablessHistory();
+function HistoryNavButtons({ tabs }: { tabs: boolean }) {
+  const { backStack, forwardStack, goBack, goForward, goHistory } = useTablessHistory(tabs);
   const [historyMenu, setHistoryMenu] = useState<{
     side: "back" | "forward";
     x: number;

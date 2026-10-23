@@ -10,6 +10,9 @@ import {
 } from "~/lib/emoji-suggestions";
 import { InfoTip } from "~/components/ui/floating";
 import { Toggle } from "~/components/ui/Toggle";
+import { useFeatureFlag } from "~/components/FeatureFlags";
+import { useDesktopVersion } from "~/lib/desktop";
+import { readTabStripCookie, tabsPreferred, writeTabStripCookie } from "~/lib/desktop-tabs-pref";
 
 const OPTIONS: {
   value: "tabs" | "tabless";
@@ -50,8 +53,12 @@ export function WorkspaceSettingsBlock({ hideActivity }: { hideActivity: boolean
   const [tabless, setTabless] = useState(true);
   const [focus, setFocus] = useState(false);
   const [emojiSuggestions, setEmojiSuggestions] = useState(false);
+  const desktopTabs = useFeatureFlag("desktop-tabs");
+  const inDesktopApp = useDesktopVersion() !== null;
+  const [showTabs, setShowTabs] = useState(true);
 
   useEffect(() => {
+    setShowTabs(tabsPreferred(readTabStripCookie()));
     setTabless(readTablessPreference());
     setFocus(readFocusPreference());
     setEmojiSuggestions(readEmojiSuggestionsPreference());
@@ -61,6 +68,12 @@ export function WorkspaceSettingsBlock({ hideActivity }: { hideActivity: boolean
     if (next === tabless) return;
     setTablessPreference(next);
     setTabless(next);
+    reloadSettings();
+  }
+
+  function toggleShowTabs(next: boolean) {
+    writeTabStripCookie(next ? "1" : "0");
+    setShowTabs(next);
     reloadSettings();
   }
 
@@ -88,38 +101,55 @@ export function WorkspaceSettingsBlock({ hideActivity }: { hideActivity: boolean
 
   return (
     <div className="flex flex-col gap-5">
-      <div className="flex flex-col gap-3">
-        <p className="text-sm text-muted-foreground">
-          Choose how pages open. Saved on this device.
-        </p>
-        <div className="grid gap-2 sm:grid-cols-2">
-          {OPTIONS.map(({ value, label, description, icon: Icon }) => {
-            const selected = (value === "tabless") === tabless;
-            return (
-              <button
-                key={value}
-                type="button"
-                onClick={() => chooseTabless(value === "tabless")}
-                aria-pressed={selected}
-                className={cn(
-                  "flex flex-col items-start gap-2 rounded-lg border px-3 py-3 text-left transition-colors",
-                  selected
-                    ? "border-os-accent bg-os-accent/10 ring-1 ring-os-accent/40"
-                    : "border-border bg-card hover:bg-muted/50",
-                )}
-              >
-                <span className="inline-flex items-center gap-2 font-heading text-sm font-semibold text-foreground">
-                  <Icon className="h-4 w-4 shrink-0" aria-hidden />
-                  {label}
-                </span>
-                <span className="text-xs text-muted-foreground">{description}</span>
-              </button>
-            );
-          })}
+      {!desktopTabs && (
+        <div className="flex flex-col gap-3">
+          <p className="text-sm text-muted-foreground">
+            Choose how pages open. Saved on this device.
+          </p>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {OPTIONS.map(({ value, label, description, icon: Icon }) => {
+              const selected = (value === "tabless") === tabless;
+              return (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => chooseTabless(value === "tabless")}
+                  aria-pressed={selected}
+                  className={cn(
+                    "flex flex-col items-start gap-2 rounded-lg border px-3 py-3 text-left transition-colors",
+                    selected
+                      ? "border-os-accent bg-os-accent/10 ring-1 ring-os-accent/40"
+                      : "border-border bg-card hover:bg-muted/50",
+                  )}
+                >
+                  <span className="inline-flex items-center gap-2 font-heading text-sm font-semibold text-foreground">
+                    <Icon className="h-4 w-4 shrink-0" aria-hidden />
+                    {label}
+                  </span>
+                  <span className="text-xs text-muted-foreground">{description}</span>
+                </button>
+              );
+            })}
+          </div>
         </div>
-      </div>
+      )}
+      {desktopTabs && inDesktopApp && (
+        <div className="flex items-center justify-between gap-4">
+          <div className="min-w-0">
+            <p className="font-heading text-sm font-semibold text-foreground">Tabs</p>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              Open pages in tabs above the page. Saved on this device.
+            </p>
+          </div>
+          <Toggle
+            aria-label="Tabs"
+            checked={showTabs}
+            onChange={(e) => toggleShowTabs(e.target.checked)}
+          />
+        </div>
+      )}
 
-      <div className="flex items-center justify-between gap-4 border-t border-border pt-4">
+      <div className="flex items-center justify-between gap-4 border-t border-border pt-4 first:border-t-0 first:pt-0">
         <div className="min-w-0">
           <p className="font-heading text-sm font-semibold text-foreground">
             Focus mode{" "}
