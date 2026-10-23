@@ -14,6 +14,7 @@ import {
   GALLERY_EMOJI,
   GALLERY_PAGE_SIZE,
   GALLERY_REPORTS_TO_HIDE,
+  galleryDownloadName,
   isGalleryEmoji,
   parseNewPosts,
 } from "~/community/lib/gallery";
@@ -106,6 +107,8 @@ export type GalleryTileData = Awaited<ReturnType<typeof toTiles>>[number];
 
 export type FeedQuery = {
   mine: boolean;
+  /** One person's posts: the filter a name opens. */
+  by: string | null;
   q: string;
   cursor: string | null;
   excludeId?: string;
@@ -114,16 +117,20 @@ export type FeedQuery = {
 export function parseFeedQuery(url: URL): FeedQuery {
   return {
     mine: url.searchParams.get("show") === "mine",
+    by: url.searchParams.get("by") || null,
     q: (url.searchParams.get("q") ?? "").trim().slice(0, 100),
     cursor: url.searchParams.get("cursor") || null,
   };
 }
 
+const searchWords = (q: string) => q.split(/\s+/).filter(Boolean);
+
 function feedWhere(viewer: GalleryViewer, query: FeedQuery): Prisma.GalleryPostWhereInput {
   const and: Prisma.GalleryPostWhereInput[] = [visibleTo(viewer)];
   if (query.mine) and.push({ authorId: viewer.id });
+  if (query.by) and.push({ authorId: query.by });
   if (query.excludeId) and.push({ id: { not: query.excludeId } });
-  for (const word of query.q.split(/\s+/).filter(Boolean)) {
+  for (const word of searchWords(query.q)) {
     const contains = { contains: word, mode: "insensitive" as const };
     and.push({
       OR: [
@@ -151,6 +158,62 @@ export async function loadGalleryPage(viewer: GalleryViewer, query: FeedQuery) {
     posts: await toTiles(page, viewer),
     nextCursor: more ? page[page.length - 1].id : null,
   };
+}
+
+const PEOPLE_LIMIT = 5;
+
+/** People whose name matches every search word and who have a post the viewer can see. */
+export async function searchGalleryPeople(viewer: GalleryViewer, q: string) {
+  const words = searchWords(q);
+  if (words.length === 0) return [];
+  const visible = visibleTo(viewer);
+  const rows = await prisma.user.findMany({
+    where: {
+      AND: [
+        { galleryPosts: { some: visible } },
+        ...words.map((word) => {
+          const contains = { contains: word, mode: "insensitive" as const };
+          return { OR: [{ firstName: contains }, { lastName: contains }] };
+        }),
+      ],
+    },
+    orderBy: [{ firstName: "asc" }, { lastName: "asc" }],
+    take: PEOPLE_LIMIT,
+    select: { ...AUTHOR_SELECT, _count: { select: { galleryPosts: { where: visible } } } },
+  });
+  const person = personResolver();
+  return Promise.all(
+    rows.map(async (r) => ({ ...(await person(r)), postCount: r._count.galleryPosts })),
+  );
+}
+
+export type GalleryPerson = Awaited<ReturnType<typeof searchGalleryPeople>>[number];
+
+/** The person a `by` filter names, with how many of their posts the viewer can see. */
+export async function loadGalleryPerson(
+  viewer: GalleryViewer,
+  userId: string,
+): Promise<GalleryPerson | null> {
+  const visible = visibleTo(viewer);
+  const row = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { ...AUTHOR_SELECT, _count: { select: { galleryPosts: { where: visible } } } },
+  });
+  if (!row) return null;
+  return { ...(await personResolver()(row)), postCount: row._count.galleryPosts };
+}
+
+/** A link that saves the original instead of opening it: S3 answers with Content-Disposition: attachment. */
+export async function galleryDownloadUrl(viewer: GalleryViewer, postId: string) {
+  const post = await prisma.galleryPost.findFirst({
+    where: { AND: [{ id: postId }, visibleTo(viewer)] },
+    select: { imageKey: true, caption: true },
+  });
+  if (!post) return null;
+  if (!isS3Configured()) return `/api/upload/raw?key=${encodeURIComponent(post.imageKey)}`;
+  return getDownloadUrl(post.imageKey, {
+    fileName: galleryDownloadName(post.caption, post.imageKey),
+  });
 }
 
 /** When the gallery began, for the "That's everything" line at the end of the feed. */

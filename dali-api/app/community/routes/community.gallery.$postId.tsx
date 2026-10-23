@@ -21,6 +21,7 @@ import {
   GALLERY_EMOJI,
   GALLERY_REPORTS_TO_HIDE,
   galleryByline,
+  galleryFeedHref,
 } from "~/community/lib/gallery";
 import { relativeTime } from "~/lib/relative-time";
 import { cn } from "~/lib/cn";
@@ -47,7 +48,13 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const viewer = await requireGalleryViewer(request);
   const [post, more] = await Promise.all([
     loadGalleryPost(viewer, params.postId),
-    loadGalleryPage(viewer, { mine: false, q: "", cursor: null, excludeId: params.postId }),
+    loadGalleryPage(viewer, {
+      mine: false,
+      by: null,
+      q: "",
+      cursor: null,
+      excludeId: params.postId,
+    }),
   ]);
   if (!post) throw new Response("Not found", { status: 404 });
   return { post, more: more.posts, userId: viewer.id };
@@ -101,19 +108,21 @@ export default function GalleryPostPage() {
 function BackButton() {
   const location = useLocation();
   const navigate = useNavigate();
-  const cls =
-    "mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-os-container text-foreground transition-colors hover:bg-os-container-hi lg:absolute lg:left-0 lg:top-0 lg:mb-0";
-  if (location.key === "default") {
-    return (
-      <Link to="/community/gallery" aria-label="Back to Gallery" className={cls}>
-        <ArrowLeft className="h-5 w-5" aria-hidden />
-      </Link>
-    );
-  }
+  // One element on server and client; the history check waits for the click,
+  // since the server can't know whether there's a page to go back to.
   return (
-    <button type="button" onClick={() => navigate(-1)} aria-label="Back to Gallery" className={cls}>
+    <Link
+      to="/community/gallery"
+      aria-label="Back to Gallery"
+      onClick={(e) => {
+        if (location.key === "default") return;
+        e.preventDefault();
+        navigate(-1);
+      }}
+      className="mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-os-container text-foreground transition-colors hover:bg-os-container-hi lg:absolute lg:left-0 lg:top-0 lg:mb-0"
+    >
       <ArrowLeft className="h-5 w-5" aria-hidden />
-    </button>
+    </Link>
   );
 }
 
@@ -145,9 +154,12 @@ function PostCloseup({ post }: { post: GalleryPostDetail }) {
         <header className="flex items-center gap-3">
           <Avatar size="md" name={post.author.name} photoUrl={post.author.photoUrl} />
           <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-semibold text-foreground">
+            <Link
+              to={galleryFeedHref({ by: post.author.id })}
+              className="block truncate text-sm font-semibold text-foreground hover:underline"
+            >
               {galleryByline(post.author.name, post.author.classYear)}
-            </p>
+            </Link>
             <p className="text-xs text-os-grey" suppressHydrationWarning>
               {relativeTime(post.createdAt)}
             </p>
@@ -229,9 +241,12 @@ function Comments({ post }: { post: GalleryPostDetail }) {
             <Avatar size="compact" name={c.author.name} photoUrl={c.author.photoUrl} />
             <div className="min-w-0 flex-1">
               <p className="flex flex-wrap items-baseline gap-x-2 text-sm">
-                <span className="font-semibold text-foreground">
+                <Link
+                  to={galleryFeedHref({ by: c.author.id })}
+                  className="font-semibold text-foreground hover:underline"
+                >
                   {galleryByline(c.author.name, c.author.classYear)}
-                </span>
+                </Link>
                 <span className="text-xs text-os-grey" suppressHydrationWarning>
                   {relativeTime(c.createdAt)}
                 </span>
