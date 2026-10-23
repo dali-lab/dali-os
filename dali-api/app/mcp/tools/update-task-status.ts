@@ -10,6 +10,7 @@
 
 import { prisma } from "~/lib/db";
 import { canEditProject } from "./access";
+import { codeTaskDoneBlocker } from "~/projects/lib/code-tasks.server";
 import {
   BOARD_STATUSES,
   type TaskStatus,
@@ -76,6 +77,11 @@ export async function runUpdateTaskStatus(callerId: string, input: Input) {
     isAssignee || (await canEditProject(callerId, task.projectId));
   if (!allowed) {
     throw new UpdateTaskStatusError("Forbidden", 403);
+  }
+
+  if (newStatus === "Done" && task.status !== "Done") {
+    const blocker = await codeTaskDoneBlocker(task.id);
+    if (blocker) throw new UpdateTaskStatusError(blocker, 409);
   }
 
   // Append to the end of the target column (same project, same status). Mirrors

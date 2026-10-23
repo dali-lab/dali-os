@@ -582,6 +582,7 @@ export default [
   route("api/tasks/:id/comments", "projects/routes/api.tasks.$id.comments.ts"),
   route("api/tasks/:id/github", "projects/routes/api.tasks.$id.github.ts"),
   route("api/tasks/:id/files", "projects/routes/api.tasks.$id.files.ts"),
+  route("api/tasks/:id/pull-requests", "projects/routes/api.tasks.$id.pull-requests.ts"),
   route("api/tasks/:id", "projects/routes/api.tasks.$id.ts"),
   route("api/sprints/:id", "projects/routes/api.sprints.$id.ts"),
   route("api/projects/:id/sprint-anchor", "projects/routes/api.projects.$id.sprint-anchor.ts"),

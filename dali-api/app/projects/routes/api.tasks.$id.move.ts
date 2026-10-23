@@ -6,6 +6,7 @@ import { isTaskStatus } from "../lib/task-board";
 import { closeIssueForTask, syncIssueForTask } from "../lib/github-task-sync";
 import { notifyTaskStatusChanged } from "../lib/task-notifications.server";
 import { checkSprintTarget } from "../lib/sprints.server";
+import { codeTaskDoneBlocker } from "../lib/code-tasks.server";
 
 // POST /api/tasks/:id/move
 //
@@ -81,6 +82,12 @@ export async function action({ request, params }: Route.ActionArgs) {
   const sprintError = await checkSprintTarget(task.projectId, body.sprintId);
   if (sprintError) {
     return withCors(request, Response.json(sprintError, { status: 400 }));
+  }
+  if (body.status === "Done" && task.status !== "Done") {
+    const blocker = await codeTaskDoneBlocker(task.id, request);
+    if (blocker) {
+      return withCors(request, Response.json({ error: blocker }, { status: 409 }));
+    }
   }
   const sprintData =
     body.sprintId !== undefined && body.sprintId !== task.sprintId

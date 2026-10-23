@@ -91,6 +91,7 @@ import {
   type Priority,
 } from "../lib/task-board";
 import { TASK_CARD_SELECT, toTaskCard } from "../lib/task-card.server";
+import { codeTaskRuleActive } from "../lib/code-tasks.server";
 import {
   ensureSprints,
   SPRINT_MODEL_SELECT,
@@ -449,7 +450,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     prisma.domain.findMany({
       where: { active: true },
       orderBy: { displayName: "asc" },
-      select: { id: true, displayName: true },
+      select: { id: true, displayName: true, code: true },
     }),
     // All terms — ascending (chronological) for sprint→term resolvers;
     // display lists re-sort to newest-first where needed. Project-independent.
@@ -904,12 +905,13 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         domainId: domainByUserId.get(id) ?? null,
       }))
       .sort((a, b) => a.name.localeCompare(b.name)),
-    domains: allDomains.map((d) => ({ id: d.id, name: d.displayName })),
+    domains: allDomains.map((d) => ({ id: d.id, name: d.displayName, code: d.code })),
     repoUrls: project.repoUrls,
     epics: project.epics.map((e) => ({ id: e.id, title: e.title })),
     projectFiles: files.map((f) => ({ id: f.id, title: f.title })),
     sprints: sprintModels,
     anchors: sprintAnchors,
+    codeTasksEnabled: await codeTaskRuleActive(request),
   };
 
   // scopeRows fetched in Stage 2. Keyed by domainId+termId so the UI can

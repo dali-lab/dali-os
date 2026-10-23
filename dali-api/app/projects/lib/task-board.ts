@@ -2,6 +2,7 @@
 // component renders the board these build, persistence goes through /api.
 
 import type { SprintModel } from "./sprints";
+import type { PullRequestModel } from "./code-tasks";
 
 export const TASK_STATUSES = [
   "Backlog",
@@ -38,9 +39,12 @@ export type TaskCardModel = {
   sprintId: string | null;
   // Times this task rolled into a following sprint unfinished.
   carryoverCount: number;
+  // Fullstack code task: Done needs a merged PR in `pullRequests`.
+  isCodeTask: boolean;
+  pullRequests: PullRequestModel[];
   checklist: { text: string; done: boolean }[] | null;
   assignees: { id: string; name: string }[];
-  domain: { id: string; name: string } | null;
+  domain: { id: string; name: string; code: string } | null;
   githubIssueUrl: string | null;
   githubIssueNumber: number | null;
   files: { id: string; title: string; versionCount: number }[];
@@ -60,13 +64,15 @@ export type BoardEpic = { id: string; title: string };
 export type TaskBoardOptions = {
   // `domainId` is the member's staffed domain here — the modal autofills it.
   members: { id: string; name: string; photoUrl: string | null; domainId: string | null }[];
-  domains: { id: string; name: string }[];
+  domains: { id: string; name: string; code: string }[];
   // Non-empty shows the modal's "Create GitHub issue" picker.
   repoUrls: string[];
   epics: BoardEpic[];
   projectFiles: { id: string; title: string }[];
   sprints: SprintModel[];
   anchors: SprintAnchor[];
+  // The code-task-prs rule is on (lab-wide).
+  codeTasksEnabled: boolean;
 };
 
 export type SprintAnchor = { termId: string; termCode: string; anchorDay: number };

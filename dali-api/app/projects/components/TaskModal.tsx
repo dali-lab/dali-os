@@ -27,6 +27,8 @@ import type { TaskBoardOptions, TaskCardModel, TaskStatus } from "../lib/task-bo
 import { BOARD_STATUSES, TASK_STATUS_LABELS } from "../lib/task-board";
 import { localTodayUtcDay } from "../lib/timeline-days";
 import { sprintDays, sprintLabel, sprintRangeLabel, sprintStatus } from "../lib/sprints";
+import { Toggle } from "~/components/ui/Toggle";
+import { canBeCodeTask, hasMergedPr, type PullRequestModel } from "../lib/code-tasks";
 import { PeopleFilter } from "./PeopleFilter";
 import { cn } from "~/lib/cn";
 
@@ -58,6 +60,8 @@ export type NewTaskValues = {
   epicId: string | null;
   // Null = the backlog.
   sprintId: string | null;
+  // Fullstack only; applied with the follow-up PATCH.
+  isCodeTask: boolean;
   checklist?: ChecklistItem[] | null;
   // Present = mirror to GitHub on create.
   github: { repo: string } | null;
@@ -223,6 +227,14 @@ export function TaskModal({
   // Artifacts (edit mode): linked project files. Local so link/unlink/upload
   // reflect immediately — the parent's task model catches up on revalidation.
   const [artifacts, setArtifacts] = useState<ArtifactModel[]>(task?.files ?? []);
+  const [isCodeTask, setIsCodeTask] = useState(task?.isCodeTask ?? false);
+  const [pullRequests, setPullRequests] = useState<PullRequestModel[]>(task?.pullRequests ?? []);
+  const [prUrl, setPrUrl] = useState("");
+  const [prBusy, setPrBusy] = useState(false);
+  const [prError, setPrError] = useState<string | null>(null);
+  const domainCode = options.domains.find((d) => d.id === domainId)?.code ?? null;
+  const codeTaskAllowed = options.codeTasksEnabled && canBeCodeTask(domainCode);
+  const effectiveCodeTask = codeTaskAllowed && isCodeTask;
   const [artifactBusy, setArtifactBusy] = useState(false);
   const [artifactError, setArtifactError] = useState<string | null>(null);
   const [attachOpen, setAttachOpen] = useState(false);
@@ -250,6 +262,8 @@ export function TaskModal({
     setChecklist(task.checklist ?? []);
     setGithub({ issueNumber: task.githubIssueNumber, url: task.githubIssueUrl });
     setArtifacts(task.files);
+    setIsCodeTask(task.isCodeTask);
+    setPullRequests(task.pullRequests);
     setSaveError(null);
   }, [task?.id]);
 
@@ -301,6 +315,9 @@ export function TaskModal({
     const nextDomainId = nextDomain?.id ?? null;
     if (nextDomainId !== currentDomainId) patch.domain = nextDomain;
     if (epicId !== "" && epicId !== current.epicId) patch.epicId = epicId;
+    if (effectiveCodeTask !== (current.isCodeTask && canBeCodeTask(current.domain?.code))) {
+      patch.isCodeTask = effectiveCodeTask;
+    }
     const nextChecklist = normalizeChecklist(checklist);
     const currentChecklist = normalizeChecklist(current.checklist ?? []);
     if (JSON.stringify(nextChecklist) !== JSON.stringify(currentChecklist)) {
@@ -436,6 +453,7 @@ export function TaskModal({
         assigneeIds,
         epicId: epicId === "" ? null : epicId,
         sprintId: sprintId === "" ? null : sprintId,
+        isCodeTask: effectiveCodeTask,
         github: githubEnabled && githubRepo ? { repo: githubRepo } : null,
       });
       onClose();
@@ -446,6 +464,51 @@ export function TaskModal({
 
   // Toggling a checkbox saves immediately (highest-frequency action); text
   // add/remove ride along with Save like the other fields.
+  async function addPullRequest() {
+    if (!task || !prUrl.trim()) return;
+    setPrBusy(true);
+    setPrError(null);
+    try {
+      const res = await fetch(`/api/tasks/${task.id}/pull-requests`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: prUrl.trim() }),
+      });
+      const j = (await res.json().catch(() => ({}))) as { pullRequest?: PullRequestModel; error?: string };
+      if (!res.ok || !j.pullRequest) throw new Error(j.error ?? `Request failed: ${res.status}`);
+      const added = j.pullRequest;
+      setPullRequests((cur) => [...cur.filter((p) => p.id !== added.id), added]);
+      setPrUrl("");
+      onArtifactsChanged?.();
+    } catch (e) {
+      setPrError(e instanceof Error ? e.message : "Couldn't attach the pull request");
+    } finally {
+      setPrBusy(false);
+    }
+  }
+
+  async function removePullRequest(id: string) {
+    if (!task) return;
+    setPrBusy(true);
+    setPrError(null);
+    try {
+      const res = await fetch(`/api/tasks/${task.id}/pull-requests`, {
+        method: "DELETE",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pullRequestId: id }),
+      });
+      if (!res.ok) throw new Error(`Request failed: ${res.status}`);
+      setPullRequests((cur) => cur.filter((p) => p.id !== id));
+      onArtifactsChanged?.();
+    } catch (e) {
+      setPrError(e instanceof Error ? e.message : "Couldn't remove the pull request");
+    } finally {
+      setPrBusy(false);
+    }
+  }
+
   async function toggleChecklistItem(index: number) {
     const prev = checklist;
     const next = prev.map((it, i) => (i === index ? { ...it, done: !it.done } : it));
@@ -964,6 +1027,93 @@ export function TaskModal({
           </PropRow>
           </FieldPair>
         </div>
+
+        {codeTaskAllowed && (
+          <ModalSection title="Code" className="gap-2">
+            <Toggle
+              label="Code task"
+              description="Needs a merged pull request before it can move to Done."
+              checked={isCodeTask}
+              disabled={!canManage}
+              onChange={(e) => setIsCodeTask(e.target.checked)}
+            />
+          </ModalSection>
+        )}
+
+        {!isCreate && task && (effectiveCodeTask || pullRequests.length > 0) && (
+          <ModalSection title="Pull requests" className="gap-2">
+            {pullRequests.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No pull requests attached.</p>
+            ) : (
+              <ul className="flex flex-col gap-1">
+                {pullRequests.map((pr) => (
+                  <li key={pr.id} className="flex items-center gap-2 text-sm">
+                    <a
+                      href={pr.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="min-w-0 flex-1 truncate text-foreground hover:underline"
+                    >
+                      {pr.repo}#{pr.number}
+                      {pr.title ? ` — ${pr.title}` : ""}
+                    </a>
+                    <span
+                      className={cn(
+                        "flex-shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold",
+                        pr.state === "merged"
+                          ? "bg-accent-green/20 text-[#166a41]"
+                          : pr.state === "closed"
+                            ? "bg-muted text-muted-foreground"
+                            : "bg-accent-teal/15 text-[#00706f]",
+                      )}
+                    >
+                      {pr.state === "merged" ? "Merged" : pr.state === "closed" ? "Closed" : "Open"}
+                    </span>
+                    {canManage && (
+                      <button
+                        type="button"
+                        aria-label={`Remove ${pr.repo}#${pr.number}`}
+                        disabled={prBusy}
+                        onClick={() => void removePullRequest(pr.id)}
+                        className="flex-shrink-0 text-muted-foreground hover:text-foreground"
+                      >
+                        <X className="h-3.5 w-3.5" aria-hidden />
+                      </button>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+            {effectiveCodeTask && !hasMergedPr(pullRequests) && (
+              <p className="text-xs text-muted-foreground">
+                Attach a merged pull request to move this task to Done. Merged PRs that say
+                &ldquo;Closes #issue&rdquo; for its linked issue, or link this task, attach on their own.
+              </p>
+            )}
+            {canManage && (
+              <form
+                className="flex items-center gap-2"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  void addPullRequest();
+                }}
+              >
+                <input
+                  value={prUrl}
+                  onChange={(e) => setPrUrl(e.target.value)}
+                  placeholder="https://github.com/org/repo/pull/123"
+                  aria-label="Pull request link"
+                  disabled={prBusy}
+                  className="min-w-0 flex-1 rounded-md border border-border bg-background px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+                />
+                <Button type="submit" variant="secondary" size="sm" disabled={prBusy || !prUrl.trim()}>
+                  {prBusy ? "Checking…" : "Attach"}
+                </Button>
+              </form>
+            )}
+            {prError && <p className="text-xs text-red-600">{prError}</p>}
+          </ModalSection>
+        )}
 
         {isCreate && canManage && githubRepos.length > 0 && (
           <ModalSection title="GitHub" className="gap-2">

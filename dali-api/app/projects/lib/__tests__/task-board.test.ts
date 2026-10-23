@@ -24,6 +24,8 @@ function task(
     epicId: null,
     sprintId: null,
     carryoverCount: 0,
+    isCodeTask: false,
+    pullRequests: [],
     checklist: null,
     assignees: [],
     domain: null,
@@ -110,7 +112,7 @@ describe("taskMatchesQuery", () => {
     title: "Fix login redirect",
     description: "Bounces back to the landing page after CAS",
     assignees: [{ id: "u2", name: "Sophie Park" }],
-    domain: { id: "d1", name: "Software" },
+    domain: { id: "d1", name: "Software", code: "Fullstack" },
     ...over,
   });
 

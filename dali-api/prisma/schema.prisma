@@ -4137,6 +4137,9 @@ model Task {
   // Times the sprint-lifecycle job rolled this task into a following sprint —
   // the "slipping" signal that replaced overdue-by-dueAt.
   carryoverCount Int     @default(0)
+  // Fullstack tasks only: a code task can't move to Done without at least one
+  // merged pull request (TaskPullRequest), verified against GitHub.
+  isCodeTask     Boolean @default(false)
 
   title            String
   // Plain-text task description, edited in the task modal.
@@ -4200,6 +4203,7 @@ model Task {
   story           UserStory?           @relation(fields: [storyId], references: [id])
   sprint          Sprint?              @relation(fields: [sprintId], references: [id], onDelete: SetNull)
   sprintSnapshots SprintTaskSnapshot[]
+  pullRequests    TaskPullRequest[]
   domain          Domain?              @relation(fields: [domainId], references: [id])
   sourceRecording MeetingRecording?    @relation(fields: [sourceRecordingId], references: [id], onDelete: SetNull)
   assignees       TaskAssignee[]
@@ -4224,6 +4228,28 @@ model Task {
   @@index([storyId])
   @@index([sprintId])
   @@index([sourceRecordingId])
+}
+
+// A GitHub pull request attached to a task, by hand or by the webhook. state is
+// GitHub's as of checkedAt ("open" | "closed" | "merged"); the Done guard
+// re-checks unmerged ones live before refusing.
+model TaskPullRequest {
+  id        String    @id @default(cuid())
+  taskId    String
+  // "owner/repo"
+  repo      String
+  number    Int
+  url       String
+  title     String?
+  state     String
+  mergedAt  DateTime?
+  checkedAt DateTime
+  createdAt DateTime  @default(now())
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@unique([taskId, repo, number])
+  @@index([repo, number])
 }
 
 // Directed edge: `task` waits on `dependsOnTask`. Both sides belong to the

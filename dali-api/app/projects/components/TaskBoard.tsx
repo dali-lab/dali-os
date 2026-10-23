@@ -19,6 +19,7 @@ import {
   ChevronsLeft,
   ChevronsRight,
   Link2,
+  GitPullRequest,
   MessageSquare,
   RotateCw,
   MoreHorizontal,
@@ -67,6 +68,7 @@ import {
 } from "../lib/sprints";
 import { localTodayUtcDay } from "../lib/timeline-days";
 import { SprintAnchorControl } from "./SprintAnchorControl";
+import { requiresMergedPr } from "../lib/code-tasks";
 import { SearchInput } from "~/components/ui/SearchInput";
 import { PeopleFilter, type PersonOption } from "./PeopleFilter";
 import { TaskModal, type NewTaskValues } from "./TaskModal";
@@ -499,6 +501,7 @@ export function TaskBoard({
           if ("epicId" in patch && patch.epicId) body.epicId = patch.epicId;
           if ("sprintId" in patch) body.sprintId = patch.sprintId ?? null;
           if ("checklist" in patch) body.checklist = patch.checklist ?? null;
+          if ("isCodeTask" in patch) body.isCodeTask = patch.isCodeTask;
           try {
             if (Object.keys(body).length > 0) {
               const res = await fetch(`/api/tasks/${taskId}`, {
@@ -631,6 +634,8 @@ export function TaskBoard({
         epicId: values.epicId,
         sprintId: values.sprintId,
         carryoverCount: 0,
+        isCodeTask: false,
+        pullRequests: [],
         checklist: values.checklist ?? null,
         assignees,
         domain,
@@ -655,6 +660,7 @@ export function TaskBoard({
     const patch: Partial<TaskCardModel> = {};
     if (domain) patch.domain = domain;
     if (assignees.length > 0) patch.assignees = assignees;
+    if (values.isCodeTask) patch.isCodeTask = true;
     if (Object.keys(patch).length > 0) {
       await patchTask(id, patch);
     } else {
@@ -1043,7 +1049,13 @@ export function TaskBoard({
           const t = activeId ? tasks.find((x) => x.id === activeId) : null;
           return t ? (
             <div className="w-60 rotate-1 shadow-xl">
-              <TaskCard card={t} carriedTo={null} isDragging={false} onOpen={() => {}} />
+              <TaskCard
+                card={t}
+                carriedTo={null}
+                codeTasksEnabled={options.codeTasksEnabled}
+                isDragging={false}
+                onOpen={() => {}}
+              />
             </div>
           ) : null;
         }}
@@ -1051,6 +1063,7 @@ export function TaskBoard({
           <TaskCard
             card={card}
             carriedTo={carriedToById.get(card.id) ?? null}
+            codeTasksEnabled={options.codeTasksEnabled}
             dragHandleProps={dragHandleProps}
             isDragging={isDragging}
             onOpen={() => setOpenTaskId(card.id)}
@@ -1459,6 +1472,7 @@ function ArchivedTasksModal({
 function TaskCard({
   card,
   carriedTo,
+  codeTasksEnabled,
   dragHandleProps = {},
   isDragging,
   onOpen,
@@ -1466,12 +1480,19 @@ function TaskCard({
   card: TaskCardModel;
   // Set on a closed sprint's board for work that rolled on ("Sprint 5").
   carriedTo: string | null;
+  codeTasksEnabled: boolean;
   dragHandleProps?: Record<string, unknown>;
   isDragging: boolean;
   onOpen: () => void;
 }) {
   const { os } = useOsChrome();
   const slipping = card.carryoverCount > 0 && !isTaskFinished(card);
+  const mergedCount = card.pullRequests.filter((p) => p.state === "merged").length;
+  const codeTaskNeedsPr =
+    codeTasksEnabled &&
+    card.status !== "Done" &&
+    requiresMergedPr({ isCodeTask: card.isCodeTask, domainCode: card.domain?.code }) &&
+    mergedCount === 0;
   const checklist = Array.isArray(card.checklist) ? card.checklist : null;
   const checklistDone = checklist?.filter((i) => i.done).length ?? 0;
 
@@ -1563,6 +1584,25 @@ function TaskCard({
               title={`Rolled over from ${card.carryoverCount} earlier sprint${card.carryoverCount === 1 ? "" : "s"}`}
             >
               Carried ×{card.carryoverCount}
+            </MetaItem>
+          )}
+          {(card.pullRequests.length > 0 || codeTaskNeedsPr) && (
+            <MetaItem
+              icon={
+                <GitPullRequest
+                  aria-hidden
+                  className={cn("w-3.5 h-3.5", codeTaskNeedsPr && (os ? "text-os-amber" : "text-accent-coral"))}
+                />
+              }
+              title={
+                codeTaskNeedsPr
+                  ? "Code task — needs a merged pull request before Done"
+                  : `${mergedCount} of ${card.pullRequests.length} pull request${card.pullRequests.length === 1 ? "" : "s"} merged`
+              }
+            >
+              {codeTaskNeedsPr && card.pullRequests.length === 0
+                ? "PR needed"
+                : `${mergedCount}/${card.pullRequests.length}`}
             </MetaItem>
           )}
           {checklist && checklist.length > 0 && (

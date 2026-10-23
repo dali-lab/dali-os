@@ -7,6 +7,7 @@ import { syncIssueForTask } from "../lib/github-task-sync";
 import { notifyTaskAssigned } from "../lib/task-notifications.server";
 import { parseChecklistInput, type ChecklistItem } from "../lib/task-checklist";
 import { checkSprintTarget, resolveTaskPlacement } from "../lib/sprints.server";
+import { canBeCodeTask } from "../lib/code-tasks";
 
 // GET    /api/tasks/:id — minimal card for the doc editor's taskMention hover
 //        card: never the description or checklist.
@@ -61,6 +62,8 @@ type Body = {
   epicId?: string;
   // Null = move to the backlog.
   sprintId?: string | null;
+  // Fullstack tasks only.
+  isCodeTask?: boolean;
   checklist?: unknown;
   // Full replacement set.
   assigneeIds?: string[];
@@ -76,6 +79,7 @@ function isBody(x: unknown): x is Body {
   if (o.sprintId !== undefined && o.sprintId !== null && typeof o.sprintId !== "string") {
     return false;
   }
+  if (o.isCodeTask !== undefined && typeof o.isCodeTask !== "boolean") return false;
   if (o.title !== undefined && typeof o.title !== "string") return false;
   if (o.description !== undefined && o.description !== null && typeof o.description !== "string")
     return false;
@@ -116,6 +120,8 @@ export async function action({ request, params }: Route.ActionArgs) {
       epicId: true,
       sprintId: true,
       status: true,
+      isCodeTask: true,
+      domain: { select: { code: true } },
       sprint: { select: { closedAt: true } },
     },
   });
@@ -163,6 +169,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     domainId?: string | null;
     epicId?: string;
     sprintId?: string | null;
+    isCodeTask?: boolean;
     checklist?: ChecklistItem[] | typeof Prisma.JsonNull;
   } = {};
   if ("title" in body) {
@@ -179,8 +186,24 @@ export async function action({ request, params }: Route.ActionArgs) {
   if ("priority" in body && body.priority) {
     data.priority = body.priority;
   }
+  let domainCode = task.domain?.code ?? null;
   if ("domainId" in body) {
     data.domainId = body.domainId ?? null;
+    domainCode = data.domainId
+      ? (await prisma.domain.findUnique({ where: { id: data.domainId }, select: { code: true } }))
+          ?.code ?? null
+      : null;
+  }
+  if (body.isCodeTask === true && !canBeCodeTask(domainCode)) {
+    return withCors(
+      request,
+      Response.json({ error: "Only Fullstack tasks can be code tasks" }, { status: 400 }),
+    );
+  }
+  if (body.isCodeTask !== undefined && body.isCodeTask !== task.isCodeTask) {
+    data.isCodeTask = body.isCodeTask;
+  } else if (task.isCodeTask && !canBeCodeTask(domainCode)) {
+    data.isCodeTask = false;
   }
   if (body.epicId !== undefined && body.epicId !== task.epicId) {
     const placed = await resolveTaskPlacement(task.projectId, { epicId: body.epicId });

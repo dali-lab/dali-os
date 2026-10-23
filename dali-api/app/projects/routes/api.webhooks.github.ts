@@ -2,6 +2,8 @@ import type { Route } from "./+types/api.webhooks.github";
 import { prisma } from "~/lib/db";
 import { verifyGithubSignature } from "~/lib/github-webhook";
 import { wasRecentOutbound } from "../lib/github-task-sync";
+import { codeTaskDoneBlocker, recordPullRequestEvent } from "../lib/code-tasks.server";
+import { extractTaskRefs, pullRequestState } from "../lib/code-tasks";
 import {
   notifyTaskAssigned,
   notifyTaskComment,
@@ -65,6 +67,11 @@ function dispatch(event: string | null, payload: unknown): void {
         console.error("github webhook: handleIssueComment failed", err),
       );
       break;
+    case "pull_request":
+      void handlePullRequest(payload).catch((err) =>
+        console.error("github webhook: handlePullRequest failed", err),
+      );
+      break;
     default:
       // Unsubscribed event — ignore.
       break;
@@ -73,7 +80,7 @@ function dispatch(event: string | null, payload: unknown): void {
 
 // ─── issues handler ─────────────────────────────────────────────────────────
 
-async function handleIssues(payload: Record<string, unknown>): Promise<void> {
+export async function handleIssues(payload: Record<string, unknown>): Promise<void> {
   const action = stringField(payload, "action");
   const issue = recordField(payload, "issue");
   const repo = repoFullName(payload);
@@ -96,7 +103,10 @@ async function handleIssues(payload: Record<string, unknown>): Promise<void> {
     case "closed": {
       const stateReason = stringField(issue, "state_reason");
       const newStatus: TaskStatus = stateReason === "not_planned" ? "Cancelled" : "Done";
-      if (task.status !== "Done" && task.status !== "Cancelled") {
+      // A code task stays put until a merged PR is attached — closing the
+      // issue on GitHub doesn't bypass that.
+      const blocked = newStatus === "Done" && (await codeTaskDoneBlocker(task.id)) !== null;
+      if (!blocked && task.status !== "Done" && task.status !== "Cancelled") {
         await prisma.task.update({
           where: { id: task.id },
           data: { status: newStatus, activityAt: new Date() },
@@ -154,6 +164,36 @@ async function handleIssues(payload: Record<string, unknown>): Promise<void> {
 }
 
 // ─── issue_comment handler ──────────────────────────────────────────────────
+
+// ─── pull_request handler ───────────────────────────────────────────────────
+// Keeps attached PRs' states current and auto-attaches a merged PR to the code
+// tasks it references. Needs the GitHub App subscribed to "Pull request".
+
+export async function handlePullRequest(payload: Record<string, unknown>): Promise<void> {
+  const pr = recordField(payload, "pull_request");
+  const repo = repoFullName(payload);
+  if (!pr || !repo) return;
+  const number = numberField(pr, "number");
+  const url = stringField(pr, "html_url");
+  if (number === null || !url) return;
+  const title = stringField(pr, "title") ?? "";
+  const body = stringField(pr, "body") ?? "";
+  const mergedAt = stringField(pr, "merged_at");
+  await recordPullRequestEvent({
+    repo,
+    number,
+    url,
+    title,
+    body,
+    state: pullRequestState({
+      state: stringField(pr, "state") ?? "open",
+      merged: pr.merged === true,
+      merged_at: mergedAt,
+    }),
+    mergedAt: mergedAt ? new Date(mergedAt) : null,
+    refs: extractTaskRefs(`${title}\n${body}`, repo),
+  });
+}
 
 async function handleIssueComment(payload: Record<string, unknown>): Promise<void> {
   if (stringField(payload, "action") !== "created") return;

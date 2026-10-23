@@ -50,6 +50,12 @@ export type FeatureFlagDef = {
 
 export const FEATURE_FLAGS = [
   {
+    key: "code-task-prs",
+    label: "Code tasks need a merged PR",
+    description:
+      "Fullstack tasks can be marked as code tasks; a code task can't move to Done until a merged pull request is attached (checked against GitHub), and merged PRs that reference a task attach themselves. A lab-wide rule: it only takes effect when enabled for everyone — role or per-user targeting is ignored.",
+  },
+  {
     key: "landing-leaderboard",
     label: "Home landing high scores",
     description:

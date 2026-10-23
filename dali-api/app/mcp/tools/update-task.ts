@@ -6,6 +6,8 @@ import { canEditProject } from "./access";
 import { syncIssueForTask } from "~/projects/lib/github-task-sync";
 import { notifyTaskAssigned } from "~/projects/lib/task-notifications.server";
 import { activeSprintId, checkSprintTarget, resolveTaskPlacement } from "~/projects/lib/sprints.server";
+import { attachPullRequest } from "~/projects/lib/code-tasks.server";
+import { canBeCodeTask } from "~/projects/lib/code-tasks";
 
 const PRIORITIES = ["Low", "Normal", "High", "Urgent"] as const;
 type Priority = (typeof PRIORITIES)[number];
@@ -13,7 +15,7 @@ type Priority = (typeof PRIORITIES)[number];
 export const UPDATE_TASK_TOOL = {
   name: "update_task",
   description:
-    "Edit fields on a project task (title, description, priority, epic, sprint, domain, assignees). Requires Core or project-member access. Status changes go through `update_task_status`. Omit a field to leave it unchanged. `sprintId` moves the task between weekly sprints: a sprint id from list_sprints, \"current\" for the active sprint, or empty string for the backlog. Every task keeps an epic, so `epicId` can be changed but not cleared. Tasks in a closed sprint are read-only unless being moved out.",
+    "Edit fields on a project task (title, description, priority, epic, sprint, domain, assignees). Requires Core or project-member access. Status changes go through `update_task_status`. Omit a field to leave it unchanged. `sprintId` moves the task between weekly sprints: a sprint id from list_sprints, \"current\" for the active sprint, or empty string for the backlog. Every task keeps an epic, so `epicId` can be changed but not cleared. Tasks in a closed sprint are read-only unless being moved out. Fullstack tasks can be marked `isCodeTask`; a code task needs a merged pull request before Done — attach one with `attachPullRequestUrl` (a PR in one of the project's repos, checked against GitHub).",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -35,6 +37,14 @@ export const UPDATE_TASK_TOOL = {
         type: "string",
         description: "Domain chip. Empty string = no domain.",
       },
+      isCodeTask: {
+        type: "boolean",
+        description: "Fullstack tasks only: a code task needs a merged PR before it can move to Done.",
+      },
+      attachPullRequestUrl: {
+        type: "string",
+        description: "A GitHub pull request URL to attach to the task.",
+      },
       assigneeUserIds: {
         type: "array",
         items: { type: "string" },
@@ -55,6 +65,8 @@ type Input = {
   epicId?: string;
   sprintId?: string;
   domainId?: string;
+  isCodeTask?: boolean;
+  attachPullRequestUrl?: string;
   assigneeUserIds?: string[];
 };
 
@@ -75,6 +87,8 @@ export async function runUpdateTask(callerId: string, input: Input) {
       epicId: true,
       sprintId: true,
       status: true,
+      isCodeTask: true,
+      domain: { select: { code: true } },
       sprint: { select: { closedAt: true } },
       assignees: { select: { userId: true } },
     },
@@ -108,6 +122,7 @@ export async function runUpdateTask(callerId: string, input: Input) {
     epicId?: string;
     sprintId?: string | null;
     domainId?: string | null;
+    isCodeTask?: boolean;
   } = {};
 
   if (input.title !== undefined) {
@@ -130,13 +145,31 @@ export async function runUpdateTask(callerId: string, input: Input) {
     if (err) throw new UpdateTaskError(err.error, 400);
     data.sprintId = nextSprintId;
   }
+  let domainCode = task.domain?.code ?? null;
   if (input.domainId !== undefined) {
     data.domainId = input.domainId === "" ? null : input.domainId;
+    domainCode = data.domainId
+      ? (await prisma.domain.findUnique({ where: { id: data.domainId }, select: { code: true } }))
+          ?.code ?? null
+      : null;
+  }
+  if (input.isCodeTask === true && !canBeCodeTask(domainCode)) {
+    throw new UpdateTaskError("Only Fullstack tasks can be code tasks", 400);
+  }
+  if (input.isCodeTask !== undefined && input.isCodeTask !== task.isCodeTask) {
+    data.isCodeTask = input.isCodeTask;
+  } else if (task.isCodeTask && !canBeCodeTask(domainCode)) {
+    data.isCodeTask = false;
+  }
+  if (input.attachPullRequestUrl) {
+    const attached = await attachPullRequest(task.id, input.attachPullRequestUrl);
+    if (!attached.ok) throw new UpdateTaskError(attached.error, attached.status);
   }
 
   const wantsAssignees = Array.isArray(input.assigneeUserIds);
 
   if (Object.keys(data).length === 0 && !wantsAssignees) {
+    if (input.attachPullRequestUrl) return { ok: true, taskId: input.taskId };
     return { ok: true, taskId: input.taskId, noop: true };
   }
 

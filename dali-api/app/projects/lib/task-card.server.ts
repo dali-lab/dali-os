@@ -2,6 +2,7 @@ import type { Prisma } from "~/generated/prisma/client";
 import { USER_NAME_SELECT } from "~/lib/prisma-shapes";
 import { fullName } from "~/lib/display";
 import type { Priority, TaskCardModel, TaskStatus } from "./task-board";
+import { toPullRequestModel } from "./code-tasks.server";
 
 export const TASK_CARD_SELECT = {
   id: true,
@@ -13,13 +14,18 @@ export const TASK_CARD_SELECT = {
   epicId: true,
   sprintId: true,
   carryoverCount: true,
+  isCodeTask: true,
+  pullRequests: {
+    orderBy: { createdAt: "asc" },
+    select: { id: true, repo: true, number: true, url: true, title: true, state: true },
+  },
   checklist: true,
   githubIssueNumber: true,
   githubIssueUrl: true,
   createdAt: true,
   activityAt: true,
   createdBy: { select: USER_NAME_SELECT },
-  domain: { select: { id: true, displayName: true } },
+  domain: { select: { id: true, displayName: true, code: true } },
   assignees: { select: { user: { select: USER_NAME_SELECT } } },
   files: {
     where: { file: { archivedAt: null } },
@@ -43,9 +49,11 @@ export function toTaskCard(t: TaskCardRow, viewedAt?: Date | null): TaskCardMode
     epicId: t.epicId,
     sprintId: t.sprintId,
     carryoverCount: t.carryoverCount,
+    isCodeTask: t.isCodeTask,
+    pullRequests: t.pullRequests.map(toPullRequestModel),
     checklist: (t.checklist as TaskCardModel["checklist"]) ?? null,
     assignees: t.assignees.map((a) => ({ id: a.user.id, name: fullName(a.user) })),
-    domain: t.domain ? { id: t.domain.id, name: t.domain.displayName } : null,
+    domain: t.domain ? { id: t.domain.id, name: t.domain.displayName, code: t.domain.code } : null,
     githubIssueUrl: t.githubIssueUrl,
     githubIssueNumber: t.githubIssueNumber,
     files: t.files.map((l) => ({

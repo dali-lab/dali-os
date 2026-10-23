@@ -12,6 +12,8 @@ const t = (id: string, extra: Partial<TaskCardModel> = {}): TaskCardModel => ({
   epicId: "e1",
   sprintId: null,
   carryoverCount: 0,
+  isCodeTask: false,
+  pullRequests: [],
   checklist: null,
   assignees: [],
   domain: null,

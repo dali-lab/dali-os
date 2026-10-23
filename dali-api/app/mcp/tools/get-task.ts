@@ -44,6 +44,8 @@ export async function runGetTask(_callerId: string, input: Input) {
       status: true,
       priority: true,
       carryoverCount: true,
+      isCodeTask: true,
+      pullRequests: { select: { repo: true, number: true, url: true, title: true, state: true } },
       sprint: { select: { id: true, number: true, startsOn: true, endsOn: true, closedAt: true } },
       archivedAt: true,
       checklist: true,
@@ -89,6 +91,8 @@ export async function runGetTask(_callerId: string, input: Input) {
         }
       : null,
     carriedOver: task.carryoverCount,
+    isCodeTask: task.isCodeTask,
+    pullRequests: task.pullRequests,
     archivedAt: task.archivedAt?.toISOString() ?? null,
     checklist: task.checklist ?? [],
     project: task.project,

@@ -1,12 +1,16 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/db");
+vi.mock("~/projects/lib/code-tasks.server", () => ({
+  codeTaskDoneBlocker: vi.fn().mockResolvedValue(null),
+}));
 vi.mock("~/lib/roles", async (orig) => {
   const real = await orig<typeof import("~/lib/roles")>();
   return { ...real, isCore: vi.fn(), isProjectMember: vi.fn() };
 });
 
 import { prisma } from "~/lib/db";
+import { codeTaskDoneBlocker } from "~/projects/lib/code-tasks.server";
 import { isCore, isProjectMember } from "~/lib/roles";
 import {
   runUpdateTaskStatus,
@@ -74,6 +78,22 @@ describe("update_task_status", () => {
       status: "InProgress",
       sprintId: "s4",
     });
+  });
+
+  it("refuses Done for a code task without a merged PR", async () => {
+    mockPrisma.task.findUnique.mockResolvedValue({
+      id: "t1",
+      status: "InReview",
+      projectId: "p1",
+      sprintId: "s4",
+      sprint: { closedAt: null },
+      assignees: [{ userId: "u1" }],
+    });
+    vi.mocked(codeTaskDoneBlocker).mockResolvedValueOnce("attach a merged PR");
+    await expect(
+      runUpdateTaskStatus("u1", { taskId: "t1", status: "Done" }),
+    ).rejects.toMatchObject({ status: 409, message: "attach a merged PR" });
+    expect(mockPrisma.task.update).not.toHaveBeenCalled();
   });
 
   it("rejects when task is missing", async () => {

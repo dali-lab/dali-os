@@ -64,6 +64,8 @@ beforeEach(() => {
       epicId: "epic-0",
       sprintId: null,
       status: "Todo",
+      isCodeTask: false,
+      domain: { code: "Fullstack" },
       sprint: null,
     }),
     update: vi.fn().mockResolvedValue({}),
@@ -303,5 +305,61 @@ describe("PATCH /api/tasks/:id sprint", () => {
 
   it("rejects clearing the epic (every task keeps one)", async () => {
     expect((await call("PATCH", { epicId: null })).status).toBe(400);
+  });
+});
+
+describe("PATCH /api/tasks/:id isCodeTask", () => {
+  const taskIn = (over: Record<string, unknown>) =>
+    mockPrisma.task.findUnique.mockResolvedValue({
+      id: TASK_ID,
+      githubIssueNumber: null,
+      projectId: PROJECT_ID,
+      epicId: "epic-0",
+      sprintId: null,
+      status: "Todo",
+      isCodeTask: false,
+      domain: { code: "Fullstack" },
+      sprint: null,
+      ...over,
+    });
+  const domainLookup = (code: string | null) => {
+    (mockPrisma as any).domain = {
+      findUnique: vi.fn().mockResolvedValue(code ? { code } : null),
+    };
+  };
+
+  it("marks a Fullstack task as a code task", async () => {
+    taskIn({});
+    expect((await call("PATCH", { isCodeTask: true })).status).toBe(200);
+    expect(mockPrisma.task.update.mock.calls[0]![0].data).toMatchObject({ isCodeTask: true });
+  });
+
+  it("refuses code tasks outside Fullstack, including in the same request", async () => {
+    taskIn({ domain: { code: "UIUX" } });
+    expect((await call("PATCH", { isCodeTask: true })).status).toBe(400);
+    taskIn({});
+    domainLookup("UIUX");
+    expect((await call("PATCH", { domainId: "d-design", isCodeTask: true })).status).toBe(400);
+    expect(mockPrisma.task.update).not.toHaveBeenCalled();
+  });
+
+  it("allows switching to Fullstack and marking code in one request", async () => {
+    taskIn({ domain: { code: "UIUX" } });
+    domainLookup("Fullstack");
+    expect((await call("PATCH", { domainId: "d-eng", isCodeTask: true })).status).toBe(200);
+    expect(mockPrisma.task.update.mock.calls[0]![0].data).toMatchObject({
+      domainId: "d-eng",
+      isCodeTask: true,
+    });
+  });
+
+  it("clears the flag when the task leaves Fullstack", async () => {
+    taskIn({ isCodeTask: true });
+    domainLookup("UIUX");
+    await call("PATCH", { domainId: "d-design" });
+    expect(mockPrisma.task.update.mock.calls[0]![0].data).toMatchObject({ isCodeTask: false });
+    taskIn({ isCodeTask: true });
+    await call("PATCH", { domainId: null });
+    expect(mockPrisma.task.update.mock.calls[1]![0].data).toMatchObject({ isCodeTask: false });
   });
 });
