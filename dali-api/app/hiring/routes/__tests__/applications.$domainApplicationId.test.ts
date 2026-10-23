@@ -9,6 +9,7 @@ vi.mock("~/hiring/lib/prior-applications.server", () => ({ listPriorApplications
 vi.mock("~/hiring/lib/email-engagement.server", () => ({ getApplicantEmailEngagement: vi.fn() }));
 vi.mock("~/hiring/lib/hiring-events.server", () => ({ getHiringEventEngagement: vi.fn() }));
 vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabled: vi.fn() }));
+vi.mock("~/collab/read", () => ({ readDocAsBlocks: vi.fn() }));
 
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
@@ -19,6 +20,7 @@ import { listPriorApplications } from "~/hiring/lib/prior-applications.server";
 import { getApplicantEmailEngagement } from "~/hiring/lib/email-engagement.server";
 import { getHiringEventEngagement } from "~/hiring/lib/hiring-events.server";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
+import { readDocAsBlocks } from "~/collab/read";
 import { loader } from "~/hiring/routes/applications.$domainApplicationId";
 
 const mockPrisma = prisma as unknown as Record<string, any>;
@@ -73,6 +75,7 @@ beforeEach(() => {
   vi.mocked(getApplicantEmailEngagement).mockResolvedValue(null as never);
   vi.mocked(getHiringEventEngagement).mockResolvedValue([] as never);
   vi.mocked(isFeatureEnabled).mockResolvedValue(false);
+  vi.mocked(readDocAsBlocks).mockResolvedValue([]);
 
   mockPrisma.domainApplication = {
     findUnique: vi.fn().mockResolvedValue(baseDa({ anonymizeReview: true })),
@@ -222,5 +225,34 @@ describe("applications.$domainApplicationId loader — interview rounds", () => 
       ["i2", "iv2"],
       ["i1", "interviews"],
     ]);
+  });
+
+  it("hands the joint notes over as the doc's blocks, with the last snapshot's time", async () => {
+    const blocks = [
+      { id: "b1", type: "heading", props: { level: 2, isToggleable: true }, content: [{ type: "text", text: "Technical", styles: {} }], children: [] },
+    ];
+    mockPrisma.domainApplication.findUnique.mockResolvedValue(baseDa({ anonymizeReview: false }));
+    mockPrisma.interview.findMany.mockResolvedValue([iv("i1", "interviews", "Alan")]);
+    mockPrisma.collabDocumentVersion = {
+      findMany: vi.fn().mockResolvedValue([
+        { name: "interview:i1:notes", plainText: "Technical", createdAt: new Date("2026-10-10T15:00:00Z") },
+      ]),
+    };
+    vi.mocked(readDocAsBlocks).mockImplementation(async (name: string) => (name === "interview:i1:notes" ? (blocks as any) : []));
+
+    const result: any = await callLoader();
+
+    expect(readDocAsBlocks).toHaveBeenCalledWith("interview:i1:notes");
+    expect(result.interviews[0].jointNotes).toEqual({ blocks, updatedAt: "2026-10-10T15:00:00.000Z" });
+  });
+
+  it("gives an interview with no notes snapshot empty blocks and no edit time", async () => {
+    mockPrisma.domainApplication.findUnique.mockResolvedValue(baseDa({ anonymizeReview: false }));
+    mockPrisma.interview.findMany.mockResolvedValue([iv("i1", "interviews", "Alan")]);
+    mockPrisma.collabDocumentVersion = { findMany: vi.fn().mockResolvedValue([]) };
+
+    const result: any = await callLoader();
+
+    expect(result.interviews[0].jointNotes).toEqual({ blocks: [], updatedAt: null });
   });
 });
