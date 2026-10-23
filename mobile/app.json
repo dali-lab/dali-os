@@ -8,7 +8,10 @@
     "userInterfaceStyle": "light",
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "edu.dartmouth.dali.os.mobile"
+      "bundleIdentifier": "edu.dartmouth.dali.os.mobile",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -46,6 +49,9 @@
       ],
       "expo-asset"
     ],
-    "scheme": "dalios-mobile"
+    "scheme": "dalios-mobile",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    }
   }
 }
