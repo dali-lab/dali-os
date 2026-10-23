@@ -19,6 +19,7 @@ import { PresenceBar } from "./collab/PresenceBar";
 import { VersionHistoryPanel } from "./collab/VersionHistoryPanel";
 import { TagPicker, type DocTag } from "./TagPicker";
 import { FavoriteStar } from "./FavoriteStar";
+import { PageBarPortal, SHELL_HEADER_VAR, usePageBarSlot } from "~/components/shell/page-bar-slot";
 import { useFeatureFlag } from "~/components/FeatureFlags";
 import { PageIconPicker } from "./doc-chrome/PageIconPicker";
 import { PageCover } from "./doc-chrome/PageCover";
@@ -96,6 +97,7 @@ export function DocumentEditor({
   belowTabs,
   onContainerWideChange,
   notebookConversion = null,
+  toolbarInPageBar = false,
 }: {
   pageId: string;
   initialTitle: string;
@@ -165,8 +167,11 @@ export function DocumentEditor({
   // Set when this plain document can become a notebook's first tab; the ⋯ menu
   // then offers "Convert to notebook", filed in the folder the document is in.
   notebookConversion?: { parentPageId: string | null } | null;
+  toolbarInPageBar?: boolean;
 }) {
   const favoritesBar = useFeatureFlag("favorites-bar");
+  const pageBarSlot = usePageBarSlot();
+  const inPageBar = toolbarInPageBar && pageBarSlot;
   const revalidator = useRevalidator();
   const navigate = useNavigate();
   // Editor instance captured via onEditorReady — used for the Import Markdown action.
@@ -230,7 +235,14 @@ export function DocumentEditor({
   // document was the last surface still wearing the brand shell's dress — 6px
   // corners, 14px glyphs and a coral "on" state — beside os pages that had all
   // moved to the design's roomier pills and its accent.
-  const { actionBtn, actionIcon, popover, pageTitle, bodyText } = useOsChrome();
+  const { actionBtn: pillBtn, actionIcon, popover, pageTitle, bodyText } = useOsChrome();
+  const actionBtn = (active = false) =>
+    inPageBar
+      ? cn(
+          "inline-flex h-8 items-center justify-center gap-1.5 rounded-lg px-2 text-[13px] transition-colors",
+          active ? "bg-os-hover-strong text-foreground" : "text-os-grey hover:bg-os-hover hover:text-foreground",
+        )
+      : pillBtn(active);
   // Page style (the ⋯ menu's last section): per-page font / small-text /
   // full-width, persisted on Page.typography via the API route.
   // Optimistic local state — the revalidator syncs server truth.
@@ -615,7 +627,13 @@ export function DocumentEditor({
 
   // ── Top bar ───────────────────────────────────────────────────────────────
   const topBar = (
-    <div ref={topBarRef} className={cn("doc-topbar flex items-center gap-2 py-2", bodyText)}>
+    <div
+      ref={topBarRef}
+      className={cn(
+        inPageBar ? "flex items-center gap-1 text-[13px] text-os-muted" : "doc-topbar flex items-center gap-2 py-2",
+        !inPageBar && bodyText,
+      )}
+    >
       {editedLabel && (
         <span className="shrink-0 hidden sm:inline">{editedLabel}</span>
       )}
@@ -654,7 +672,7 @@ export function DocumentEditor({
         </span>
       )}
 
-      <div className="flex-1" />
+      {!inPageBar && <div className="flex-1" />}
 
       {/* Presence chips */}
       <PresenceBar />
@@ -946,7 +964,7 @@ export function DocumentEditor({
         }${typo.nestingGuides ? " doc-canvas--guides" : ""}`}
       >
         {belowTabs && (
-          <div className="sticky z-10 overflow-hidden rounded-t-xl bg-card" style={{ top: topBarHeight }}>
+          <div className="sticky z-10 overflow-hidden rounded-t-xl bg-card" style={{ top: inPageBar ? `var(${SHELL_HEADER_VAR}, 0px)` : topBarHeight }}>
             {belowTabs}
           </div>
         )}
@@ -1043,7 +1061,7 @@ export function DocumentEditor({
               {/* Favorite: personal, unlike the ⋯ "Pin" which moves the
                   document for everyone. Anyone who can read the page can
                   bookmark it. Same first-line box as the icon. */}
-              {!favoritesBar && (
+              {!favoritesBar && !pageBarSlot && (
                 <div className="flex h-[50px] shrink-0 items-center print:hidden">
                   <FavoriteStar pageId={pageId} favorited={initialFavorited} iconClassName="h-5 w-5" />
                 </div>
@@ -1185,7 +1203,7 @@ export function DocumentEditor({
               "dali-doc-rail-container",
               showRecordingInColumn && "dali-recording-rail-sticky dali-recording-rail-width",
             )}
-            style={showRecordingInColumn ? { top: topBarHeight, height: `calc(100vh - ${topBarHeight}px)` } : undefined}
+            style={showRecordingInColumn ? (inPageBar ? { top: `var(${SHELL_HEADER_VAR}, 0px)`, height: `calc(100vh - var(${SHELL_HEADER_VAR}, 0px))` } : { top: topBarHeight, height: `calc(100vh - ${topBarHeight}px)` }) : undefined}
           >
             {hasComments && commentsOpen && railOpen && (
               <div className="p-2">
@@ -1248,7 +1266,7 @@ export function DocumentEditor({
 
   const body = (
     <div ref={docSurfaceRef} className="doc-surface flex flex-col min-h-screen">
-      {topBar}
+      {inPageBar ? <PageBarPortal slot="actions">{topBar}</PageBarPortal> : topBar}
       {canvas}
       {inlineComments}
       {recordingDrawer}

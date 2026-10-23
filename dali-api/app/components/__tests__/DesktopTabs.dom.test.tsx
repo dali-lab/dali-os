@@ -163,3 +163,91 @@ describe("useDesktopTabs", () => {
     expect(location).toBe("/b");
   });
 });
+
+describe("DesktopTabStrip", () => {
+  async function mountStrip(opts: { leading?: boolean } = {}) {
+    await mount();
+    const { DesktopTabStrip } = mod.hook;
+    await act(async () => {
+      root.render(
+        createElement(
+          createRoutesStub([
+            {
+              path: "*",
+              Component: () =>
+                createElement(DesktopTabStrip, {
+                  leading: opts.leading ? createElement("button", { "data-testid": "leading" }) : undefined,
+                }),
+            },
+          ]),
+          { initialEntries: ["/a"] },
+        ),
+      );
+    });
+    await flush();
+  }
+
+  const strip = () => container.querySelector("nav[aria-label='Open tabs']") as HTMLElement;
+  const tabButtons = () => Array.from(strip().querySelectorAll("button[aria-current], button[type='button'][style]"));
+
+  it("is a 40px row on the nav surface with a hairline under it", async () => {
+    await mountStrip();
+    expect(strip().className).toContain("h-10");
+    expect(strip().className).toContain("bg-os-nav");
+    expect(strip().className).toContain("border-b");
+  });
+
+  it("renders the leading control before the tabs", async () => {
+    await mountStrip({ leading: true });
+    expect(strip().firstElementChild?.getAttribute("data-testid")).toBe("leading");
+  });
+
+  it("marks the active tab with the card plate and shows its close button", async () => {
+    await mountStrip();
+    const active = strip().querySelector("button[aria-current='page']") as HTMLElement;
+    expect(active.className).toContain("bg-os-card");
+    expect(active.className).toContain("shadow-[0_1px_1px_var(--color-os-hover)]");
+    expect(active.querySelector("[aria-label^='Close']")?.className).toContain("opacity-100");
+  });
+
+  it("hides an inactive tab's close button until hover", async () => {
+    await mountStrip();
+    await act(async () => {
+      mod.store.tabActions.open({ url: "/b", label: "B" });
+    });
+    await flush();
+    const inactive = Array.from(strip().querySelectorAll("button")).find(
+      (b) => b.textContent === "A" || b.getAttribute("aria-current") === null,
+    ) as HTMLElement;
+    const close = inactive.querySelector("[aria-label^='Close']") as HTMLElement;
+    expect(close.className).toContain("opacity-0");
+    expect(close.className).toContain("group-hover:opacity-100");
+  });
+
+  it("shows a pinned tab as an icon only, followed by a divider", async () => {
+    await mountStrip();
+    const id = mod.store.getTabsSnapshot().tabs[0]!.id;
+    await act(async () => {
+      mod.store.tabActions.togglePin(id);
+    });
+    await flush();
+    const pinned = strip().querySelector("button[aria-current='page']") as HTMLElement;
+    expect(pinned.className).toContain("w-[34px]");
+    expect(pinned.textContent).toBe("");
+    expect(pinned.querySelector("[aria-label^='Close']")).toBeNull();
+    expect(pinned.querySelector("svg")).not.toBeNull();
+    expect(strip().querySelector("span.w-px")).not.toBeNull();
+  });
+
+  it("draws no divider without pinned tabs", async () => {
+    await mountStrip();
+    expect(strip().querySelector("span.w-px")).toBeNull();
+    expect(tabButtons().length).toBeGreaterThan(0);
+  });
+
+  it("gives every tab a glyph and keeps the new tab button", async () => {
+    await mountStrip();
+    expect(strip().querySelector("button[aria-current='page'] svg")).not.toBeNull();
+    expect(strip().querySelector("button[aria-label='New tab']")).not.toBeNull();
+  });
+});

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useSyncExternalStore, type CSSProperties } from 'react'
+import { Fragment, useEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from 'react'
 import { useLocation, useNavigate, useNavigationType } from 'react-router'
 import {
   DndContext,
@@ -23,6 +23,8 @@ import {
 import type { DesktopTab, DesktopTabsState } from '~/lib/desktop-tabs'
 import { buildPageLink, writePageLink } from '~/lib/page-link'
 import { cn } from '~/lib/cn'
+import { stripAppTitle } from '~/lib/page-title'
+import { tabIcon } from '~/lib/tab-icon'
 
 /** Fired by the desktop app's File menu (desktop/src-tauri/src/menu.rs), which
  *  owns ⌘T / ⌘W / ⌘⇧T so the native Close Window shortcut can't win. */
@@ -35,8 +37,7 @@ export function useDesktopTabsState(): DesktopTabsState {
 
 function pageTitle(): string {
   if (typeof document === 'undefined') return ''
-  const raw = document.title
-  return raw.replace(/\s*·\s*DALI OS\s*$/, '').trim() || raw
+  return stripAppTitle(document.title)
 }
 
 /**
@@ -125,19 +126,19 @@ export function useDesktopTabs(enabled: boolean, hint: boolean): boolean {
 }
 
 const TAB_W = 168
-const PINNED_TAB_W = 128
 
 function SortableTab({ tab, active }: { tab: DesktopTab; active: boolean }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: tab.id,
   })
+  const Icon = tabIcon(tab.url)
   const style: CSSProperties = {
     transform: CSS.Transform.toString(transform),
     transition,
-    flexBasis: tab.pinned ? PINNED_TAB_W : TAB_W,
+    flexBasis: tab.pinned ? undefined : TAB_W,
     opacity: isDragging ? 0.4 : undefined,
   }
-  return (
+  const button = (
     <button
       ref={setNodeRef}
       style={style}
@@ -152,40 +153,56 @@ function SortableTab({ tab, active }: { tab: DesktopTab; active: boolean }) {
         tabActions.close(tab.id)
       }}
       aria-current={active ? 'page' : undefined}
+      aria-label={tab.pinned ? tab.label : undefined}
       className={cn(
-        'group flex h-full min-w-[72px] shrink grow-0 items-center gap-2 border-b-2 text-xs font-medium whitespace-nowrap transition-colors',
-        tab.pinned ? 'px-2.5' : 'px-3',
+        'group flex h-7 items-center rounded-md border text-[13px] font-medium whitespace-nowrap transition-colors',
+        tab.pinned ? 'w-[34px] shrink-0 justify-center' : 'min-w-[72px] shrink grow-0 gap-2 pl-3',
+        !tab.pinned && (active ? 'pr-2' : 'pr-3'),
         active
-          ? 'border-os-accent text-foreground'
-          : 'border-transparent text-os-grey hover:bg-os-hover hover:text-foreground',
+          ? 'border-os-container bg-os-card text-foreground shadow-[0_1px_1px_var(--color-os-hover)]'
+          : 'border-transparent text-os-grey hover:bg-os-hover',
       )}
     >
-      {tab.pinned && <Pin className="pointer-events-none h-3 w-3 shrink-0 fill-os-accent text-os-accent" />}
-      <span className={cn('pointer-events-none flex-1 truncate text-left', tab.ephemeral && 'italic')}>
-        {tab.label}
-      </span>
+      <Icon className={cn('pointer-events-none h-4 w-4 shrink-0', active ? 'text-foreground' : 'text-os-grey')} />
       {!tab.pinned && (
-        <span
-          role="button"
-          aria-label={`Close ${tab.label}`}
-          // Keep a press on × from starting a tab drag.
-          onPointerDown={(e) => e.stopPropagation()}
-          onClick={(e) => {
-            e.stopPropagation()
-            tabActions.close(tab.id)
-          }}
-          className="rounded-full p-0.5 text-muted-foreground/60 opacity-60 hover:bg-os-hover-strong hover:text-foreground group-hover:opacity-100"
-        >
-          <X className="h-3 w-3" />
-        </span>
+        <>
+          <span
+            className={cn(
+              'pointer-events-none flex-1 truncate text-left',
+              active ? 'font-semibold text-foreground' : 'text-os-grey',
+              tab.ephemeral && 'italic',
+            )}
+          >
+            {tab.label}
+          </span>
+          <span
+            role="button"
+            aria-label={`Close ${tab.label}`}
+            // Keep a press on × from starting a tab drag.
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation()
+              tabActions.close(tab.id)
+            }}
+            className={cn(
+              'rounded p-0.5 text-os-grey hover:bg-os-hover-strong hover:text-foreground',
+              active ? 'opacity-100' : 'opacity-0 group-hover:opacity-100',
+            )}
+          >
+            <X className="h-3 w-3" />
+          </span>
+        </>
       )}
     </button>
   )
+  return tab.pinned ? <Tooltip content={tab.label}>{button}</Tooltip> : button
 }
 
-export function DesktopTabStrip() {
+export function DesktopTabStrip({ leading }: { leading?: ReactNode }) {
   const { tabs, activeId } = useDesktopTabsState()
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }))
+
+  const lastPinned = tabs.reduce((last, t, i) => (t.pinned ? i : last), -1)
 
   const onDragEnd = (e: DragEndEvent) => {
     if (!e.over || e.active.id === e.over.id) return
@@ -196,14 +213,15 @@ export function DesktopTabStrip() {
   return (
     <nav
       aria-label="Open tabs"
-      className="os-nav-edge-b flex h-10 shrink-0 items-stretch gap-1 bg-os-nav pl-6 pr-3"
+      className="flex h-10 shrink-0 items-center gap-1 border-b border-os-container bg-os-nav pl-2 pr-3"
     >
+      {leading}
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
         <SortableContext items={tabs.map((t) => t.id)} strategy={horizontalListSortingStrategy}>
-          <div className="flex min-w-0 flex-1 items-stretch gap-1 overflow-x-auto">
-            {tabs.map((tab) => (
+          <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
+            {tabs.map((tab, index) => (
+              <Fragment key={tab.id}>
               <ContextMenu
-                key={tab.id}
                 ariaLabel="Tab actions"
                 items={
                   <>
@@ -235,6 +253,8 @@ export function DesktopTabStrip() {
               >
                 <SortableTab tab={tab} active={tab.id === activeId} />
               </ContextMenu>
+              {index === lastPinned && <span aria-hidden className="mx-1 h-4 w-px shrink-0 bg-os-container-hi" />}
+              </Fragment>
             ))}
           </div>
         </SortableContext>
@@ -244,7 +264,7 @@ export function DesktopTabStrip() {
           type="button"
           onClick={() => tabActions.newTab()}
           aria-label="New tab"
-          className="my-1.5 flex w-7 shrink-0 items-center justify-center rounded-os-item text-os-grey transition-colors hover:bg-os-hover hover:text-foreground"
+          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-os-grey transition-colors hover:bg-os-hover hover:text-foreground"
         >
           <Plus className="h-4 w-4" />
         </button>

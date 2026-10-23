@@ -149,36 +149,38 @@ export function WorkspaceSettingsBlock({ hideActivity }: { hideActivity: boolean
         </div>
       )}
 
-      <div className="flex items-center justify-between gap-4 border-t border-border pt-4 first:border-t-0 first:pt-0">
-        <div className="min-w-0">
-          <p className="font-heading text-sm font-semibold text-foreground">
-            Focus mode{" "}
-            <InfoTip content="Hides the sidebar so you can concentrate. Navigate with ⌘K and breadcrumbs; a floating button brings the sidebar back." />
-          </p>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            Hide the sidebar and navigate with ⌘K and breadcrumbs. A floating
-            button brings it back anytime.
-          </p>
-        </div>
-        <button
-          type="button"
-          role="switch"
-          aria-checked={focus}
-          aria-label="Focus mode"
-          onClick={toggleFocus}
-          className={cn(
-            "relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors",
-            focus ? "bg-os-accent" : "bg-muted",
-          )}
-        >
-          <span
+      {!desktopTabs && (
+        <div className="flex items-center justify-between gap-4 border-t border-border pt-4 first:border-t-0 first:pt-0">
+          <div className="min-w-0">
+            <p className="font-heading text-sm font-semibold text-foreground">
+              Focus mode{" "}
+              <InfoTip content="Hides the sidebar so you can concentrate. Navigate with ⌘K and breadcrumbs; a floating button brings the sidebar back." />
+            </p>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              Hide the sidebar and navigate with ⌘K and breadcrumbs. A floating
+              button brings it back anytime.
+            </p>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={focus}
+            aria-label="Focus mode"
+            onClick={toggleFocus}
             className={cn(
-              "inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform",
-              focus ? "translate-x-5" : "translate-x-0.5",
+              "relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors",
+              focus ? "bg-os-accent" : "bg-muted",
             )}
-          />
-        </button>
-      </div>
+          >
+            <span
+              className={cn(
+                "inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform",
+                focus ? "translate-x-5" : "translate-x-0.5",
+              )}
+            />
+          </button>
+        </div>
+      )}
 
       <div className="flex items-center justify-between gap-4 border-t border-border pt-4">
         <div className="min-w-0">

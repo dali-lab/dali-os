@@ -748,6 +748,7 @@ function DocumentPage() {
             meetingNoteTemplateAction={meetingNoteTemplateAction}
             notebookConversion={notebookConversion}
             aiEnabled
+            toolbarInPageBar
             onEditorReady={onEditorReady}
             onContainerWideChange={setContainerWide}
             belowTabs={rec ? <EnhanceBar rec={rec} /> : undefined}

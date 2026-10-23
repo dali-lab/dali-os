@@ -507,6 +507,7 @@ export default function AppLayoutRoute() {
   // (tab mode) or directly in the shell's main column (tabless mode). The
   // breadcrumb trail lives here either way: it picks up each detail route's
   // `handle.breadcrumb` for the dynamic leaf crumb.
+  const shellV2 = flags['desktop-tabs'] === true && tabless && !embedded
   const pageContent = (
     <div
       className={cn(
@@ -522,10 +523,12 @@ export default function AppLayoutRoute() {
           ? ''
           : flushPane
             ? 'px-4 pb-3 pt-3 sm:px-5 lg:px-5 lg:pb-3 lg:pt-4'
-            : 'px-5 pb-12 sm:px-10 lg:px-16 pt-8 lg:pt-[60px]',
+            : shellV2
+              ? 'px-5 pb-12 pt-6 sm:px-10 lg:px-16 lg:pt-8'
+              : 'px-5 pb-12 sm:px-10 lg:px-16 pt-8 lg:pt-[60px]',
       )}
     >
-      {!hideBreadcrumbRow && (
+      {!hideBreadcrumbRow && !shellV2 && (
         <div
           className={cn(
             'flex shrink-0 items-start justify-between gap-3',

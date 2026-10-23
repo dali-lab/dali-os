@@ -12,6 +12,7 @@ import {
   LogOut,
   Mail,
   Menu,
+  PanelLeft,
   PanelLeftClose,
   PanelLeftOpen,
   Search,
@@ -71,6 +72,9 @@ import {
 import { useFeatureFlag } from '~/components/FeatureFlags'
 import { UnreadBadge } from '~/email/components/UnreadBadge'
 import { useEmailUnread } from '~/email/lib/use-email-unread'
+import { Rail } from '~/components/shell/Rail'
+import { PageBar } from '~/components/shell/PageBar'
+import { PageBarSlotProvider, useShellHeaderHeight } from '~/components/shell/page-bar-slot'
 
 interface LayoutOSProps {
   user: { email: string; firstName?: string; lastName?: string }
@@ -148,9 +152,17 @@ export function LayoutOS({
   const tabless = children !== undefined
   const desktopTabsFlag = useFeatureFlag('desktop-tabs')
   const showTabs = useDesktopTabs(desktopTabsFlag && tabless, tabStripHint)
+  const shellV2 = desktopTabsFlag && tabless
+  const [railHidden, setRailHidden] = useState(focusMode)
+  const hideRail = shellV2 ? railHidden : focusMode
+  const toggleRail = () => {
+    setFocusPreference(!railHidden)
+    setRailHidden(!railHidden)
+  }
   useRecordTablessHistory()
   useTablessHistoryShortcuts(useShowTablessHistoryNav(tabless), showTabs)
   useOsShellRoot(true)
+  const shellHeaderRef = useShellHeaderHeight()
 
   const {
     workspaceRef,
@@ -189,7 +201,8 @@ export function LayoutOS({
     return () => window.removeEventListener(COPY_PAGE_LINK_EVENT, onCopy)
   }, [copyCurrentPageLink])
   const favoritesBar = useFeatureFlag('favorites-bar')
-  const starUrl = favoritesBar
+  const starEnabled = favoritesBar || shellV2
+  const starUrl = starEnabled
     ? stripHash(cleanTabUrl(!tabless && focusedTabUrl !== null ? focusedTabUrl : location.pathname + location.search))
     : null
   // Titles are "<page> · DALI OS"; keep the page part.
@@ -198,19 +211,19 @@ export function LayoutOS({
     (typeof document !== 'undefined' ? document.title.split(' · ')[0] : '') ||
     starUrl ||
     ''
-  const pageStar = useCurrentPageFavorite(starUrl, starLabel, favoritesBar)
+  const pageStar = useCurrentPageFavorite(starUrl, starLabel, starEnabled)
   const toggleStarRef = useRef(pageStar)
   toggleStarRef.current = pageStar
 
   useEffect(() => {
-    if (!favoritesBar) return
+    if (!starEnabled) return
     const onToggle = (e: Event) => {
       e.preventDefault()
       if (toggleStarRef.current.canToggle) void toggleStarRef.current.toggle()
     }
     window.addEventListener(TOGGLE_FAVORITE_EVENT, onToggle)
     return () => window.removeEventListener(TOGGLE_FAVORITE_EVENT, onToggle)
-  }, [favoritesBar])
+  }, [starEnabled])
 
   // Tab mode: the focused tab's frame reports its page guide over the guide
   // bridge, since only that document knows the route's docKey.
@@ -762,6 +775,38 @@ export function LayoutOS({
 
   /* ---------------- Top bar ---------------- */
 
+  const tasksDrawer = (
+    <TasksDrawer
+      open={bellOpen}
+      onClose={closeBellPanel}
+      tasks={openTasks}
+      notifications={feedItems}
+      projectTasks={projectTasks}
+      onOpen={(url, label) => {
+        closeBellPanel()
+        openInWorkspace({ url, label })
+      }}
+      seeAll={
+        // Close after opening, in the same handler. Closing on capture
+        // flushed the state update before the bubble phase, unmounting
+        // this button so its navigation never ran.
+        <button
+          type="button"
+          {...seeAllProps}
+          onClick={(e) => {
+            seeAllProps.onClick(e)
+            closeBellPanel()
+          }}
+          className="inline-flex items-center gap-1.5 rounded-[10px] px-2.5 py-2 text-[13.5px] font-bold text-os-accent hover:bg-os-container"
+        >
+          See all
+          <ArrowRight className="h-[15px] w-[15px]" aria-hidden />
+        </button>
+      }
+    />
+  )
+
+
   const topBar = (
     <div className="os-nav-edge-b flex items-center justify-between gap-4 border-l-2 border-os-bg bg-os-nav px-6 py-2.5">
       <div className="flex min-w-0 items-center gap-3">
@@ -863,37 +908,53 @@ export function LayoutOS({
             </span>
           </button>
         </Tooltip>
-        <TasksDrawer
-          open={bellOpen}
-          onClose={closeBellPanel}
-          tasks={openTasks}
-          notifications={feedItems}
-          projectTasks={projectTasks}
-          onOpen={(url, label) => {
-            closeBellPanel()
-            openInWorkspace({ url, label })
-          }}
-          seeAll={
-            // Close after opening, in the same handler. Closing on capture
-            // flushed the state update before the bubble phase, unmounting
-            // this button so its navigation never ran.
-            <button
-              type="button"
-              {...seeAllProps}
-              onClick={(e) => {
-                seeAllProps.onClick(e)
-                closeBellPanel()
-              }}
-              className="inline-flex items-center gap-1.5 rounded-[10px] px-2.5 py-2 text-[13.5px] font-bold text-os-accent hover:bg-os-container"
-            >
-              See all
-              <ArrowRight className="h-[15px] w-[15px]" aria-hidden />
-            </button>
-          }
-        />
+        {tasksDrawer}
       </div>
     </div>
   )
+
+  const railToggle = (
+    <Tooltip content="Show sidebar">
+      <button
+        type="button"
+        onClick={toggleRail}
+        aria-label="Show sidebar"
+        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-os-grey transition-colors hover:bg-os-hover hover:text-foreground"
+      >
+        <PanelLeft className="h-[18px] w-[18px]" />
+      </button>
+    </Tooltip>
+  )
+
+  const renderRail = (hideable: boolean) => (
+    <Rail
+      userName={[user.firstName, user.lastName].filter(Boolean).join(' ') || user.email}
+      initials={initials}
+      photoUrl={photoUrl}
+      path={path}
+      navFlags={navFlags}
+      isAlumni={isAlumni}
+      tabClickProps={tabClickProps}
+      emailUnread={emailUnread}
+      taskCount={taskCount}
+      bellOpen={bellOpen}
+      onToggleBell={() => setBellOpen((o) => !o)}
+      onOpenSearch={() => setPaletteOpen(true)}
+      onHideRail={hideable ? toggleRail : undefined}
+      favorites={favorites}
+      onFavoritesChange={onFavoritesChange}
+      favoritesActiveHref={stripHash(cleanTabUrl(location.pathname + location.search))}
+      areas={areas}
+      activeArea={activeArea}
+      activeSubtabs={activeSubtabs}
+      activeHref={activeHref}
+      onSelectArea={selectArea}
+      userMenuItems={userMenuItems}
+      showWhatsNewDot={showWhatsNewDot}
+    />
+  )
+
+  const ShellSlots = shellV2 ? PageBarSlotProvider : React.Fragment
 
   const sidebarWidth = collapsed ? 'w-[76px]' : 'w-[276px]'
   const mainPad = collapsed ? 'md:pl-[76px]' : 'md:pl-[276px]'
@@ -912,16 +973,22 @@ export function LayoutOS({
         fitViewport && 'md:h-dvh md:overflow-hidden',
       )}
     >
-      {!focusMode && (
-        <aside
-          className={cn(
-            'os-nav-edge-r fixed inset-y-0 left-0 z-20 hidden flex-col bg-os-nav transition-[width] duration-200 md:flex',
-            sidebarWidth,
+      {shellV2
+        ? !hideRail && (
+            <aside className="fixed inset-y-0 left-0 z-20 hidden w-[276px] flex-col border-r border-os-container bg-os-nav md:flex">
+              {renderRail(true)}
+            </aside>
+          )
+        : !focusMode && (
+            <aside
+              className={cn(
+                'os-nav-edge-r fixed inset-y-0 left-0 z-20 hidden flex-col bg-os-nav transition-[width] duration-200 md:flex',
+                sidebarWidth,
+              )}
+            >
+              {renderSidebar(collapsed)}
+            </aside>
           )}
-        >
-          {renderSidebar(collapsed)}
-        </aside>
-      )}
 
       {/* Mobile top bar */}
       <div className="os-nav-edge-b fixed inset-x-0 top-0 z-20 flex h-14 items-center justify-between bg-os-nav px-4 md:hidden">
@@ -986,16 +1053,17 @@ export function LayoutOS({
             id="os-mobile-nav"
             className="os-nav-edge-r fixed inset-y-0 left-0 z-40 flex w-[276px] flex-col bg-os-nav shadow-xl md:hidden"
           >
-            {renderSidebar(false)}
+            {shellV2 ? renderRail(false) : renderSidebar(false)}
           </aside>
         </>
       )}
 
+      <ShellSlots>
       <main
         className={cn(
           'flex min-w-0 flex-1 flex-col transition-[padding] duration-200',
           fitViewport && 'min-h-0',
-          !focusMode && mainPad,
+          shellV2 ? !hideRail && 'md:pl-[276px]' : !focusMode && mainPad,
         )}
       >
         {/* Impersonation is a session-mode indicator, so it sits above the top
@@ -1005,15 +1073,37 @@ export function LayoutOS({
             userName={`${user.firstName ?? ''} ${user.lastName ?? ''}`.trim() || user.email}
           />
         )}
-        {/* Tabs above the favorites row, like a browser's tabs over its bookmarks. */}
-        {showTabs && (
-          <div className="hidden shrink-0 md:block">
-            <DesktopTabStrip />
+        {shellV2 ? (
+          // Sticky because the page bar now carries the document toolbar,
+          // which used to stick on its own (.doc-topbar).
+          <div ref={shellHeaderRef} className="sticky top-14 z-20 shrink-0 bg-os-bg md:top-0">
+            {showTabs && (
+              <div className="hidden md:block">
+                <DesktopTabStrip leading={hideRail ? railToggle : undefined} />
+              </div>
+            )}
+            <PageBar
+              tabs={showTabs}
+              leading={
+                hideRail && !showTabs ? <div className="hidden md:block">{railToggle}</div> : undefined
+              }
+              star={pageStar}
+              onCopyLink={() => void copyCurrentPageLink()}
+            />
           </div>
+        ) : (
+          <>
+            {showTabs && (
+              <div className="hidden shrink-0 md:block">
+                <DesktopTabStrip leading={hideRail ? railToggle : undefined} />
+              </div>
+            )}
+            {/* `shrink-0` so a bounded shell takes the height out of the page's
+                own scrollport rather than squashing the favourites bar. */}
+            {!focusMode && <div className="hidden shrink-0 md:block">{topBar}</div>}
+          </>
         )}
-        {/* `shrink-0` so a bounded shell takes the height out of the page's
-            own scrollport rather than squashing the favourites bar. */}
-        {!focusMode && <div className="hidden shrink-0 md:block">{topBar}</div>}
+        {shellV2 && tasksDrawer}
         <DesktopBanner />
         <ActivityLauncher />
         {tabless ? (
@@ -1041,9 +1131,10 @@ export function LayoutOS({
           />
         )}
       </main>
+      </ShellSlots>
 
       {/* Focus mode: with the rail hidden, keep search + a way back. */}
-      {focusMode && (
+      {!shellV2 && focusMode && (
         <div className={cn('fixed bottom-4 left-4 z-30 hidden items-center gap-1 md:flex', osMenuClass)}>
           <button
             type="button"
@@ -1083,7 +1174,7 @@ export function LayoutOS({
         open={paletteOpen}
         onClose={() => setPaletteOpen(false)}
         tabless={tabless}
-        focusMode={focusMode}
+        focusMode={hideRail}
         roles={roleFlags}
         flags={navFlags}
         onOpen={openFromPalette}
