@@ -16,7 +16,8 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   return mobileJson({
     projects: projects
-      .filter((p) => p.status !== "Archived")
+      // Only what the member is staffed on this term; past projects stay on the web.
+      .filter((p) => p.status !== "Archived" && p.currentTermAssignment !== null)
       .map((p) => ({
         id: p.id,
         name: p.name,

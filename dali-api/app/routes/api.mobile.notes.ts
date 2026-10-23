@@ -8,12 +8,16 @@ import { pageDocName } from "~/collab/roomName";
 import { parseJson } from "~/lib/validate";
 import { createNote } from "~/members/lib/personal-notes-actions.server";
 import { PageNameConflictError } from "~/lib/page-names.server";
+import { attachMeetingNote } from "~/lib/scheduled-meeting";
 import { actionItemsOf, notePageId } from "~/lib/mobile-notes";
 import { mobileError, mobileJson, requireMobileUser } from "~/lib/mobile-auth.server";
 
 const MAX_NOTES = 30;
 
-const QuickNoteSchema = z.object({ title: z.string().trim().min(1).max(200) });
+const NewNoteSchema = z.union([
+  z.object({ title: z.string().trim().min(1).max(200) }),
+  z.object({ scheduledMeetingId: z.string().min(1), occurrenceStart: z.string().datetime() }),
+]);
 
 async function canRecord(userId: string, request: Request): Promise<boolean> {
   const roles = await getUserRoles(userId, request);
@@ -25,7 +29,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (!guard.ok) return guard.response;
   const { userId } = guard;
 
-  const [recordingEnabled, rows] = await Promise.all([
+  const [recordingEnabled, rows, typed] = await Promise.all([
     canRecord(userId, request),
     prisma.meetingRecording.findMany({
       where: { userId },
@@ -43,6 +47,18 @@ export async function loader({ request }: Route.LoaderArgs) {
         notes: true,
         scheduledMeeting: { select: { title: true } },
       },
+    }),
+    // Typed notes: pages the member started in their own space or in a notebook.
+    prisma.page.findMany({
+      where: {
+        createdById: userId,
+        kind: "FreeForm",
+        archivedAt: null,
+        OR: [{ workspaceType: "Member", workspaceId: userId }, { parent: { kind: "Notebook" } }],
+      },
+      orderBy: { updatedAt: "desc" },
+      take: MAX_NOTES,
+      select: { id: true, title: true, updatedAt: true, parent: { select: { kind: true, title: true } } },
     }),
   ]);
 
@@ -70,21 +86,41 @@ export async function loader({ request }: Route.LoaderArgs) {
         tasksCreated: items.filter((a) => a.taskId).length,
       };
     }),
+    // A page a recording already covers shows once, as that recording.
+    pages: typed
+      .filter((p) => !pageIds.includes(p.id))
+      .map((p) => ({
+        id: p.id,
+        title: p.title,
+        updatedAt: p.updatedAt.toISOString(),
+        notebook: p.parent?.kind === "Notebook" ? p.parent.title : null,
+      })),
   });
 }
 
-// A recording that isn't for a calendar meeting still needs a page for its
-// notes; it gets a new personal note, the same place a web quick note lands.
+// A page to take notes in (and maybe record into): a new personal note, or the
+// calendar meeting occurrence's notes page (created on first use, filed the way
+// the web calendar files it). Notebook notes go through POST /api/notebooks/:id.
 export async function action({ request }: Route.ActionArgs) {
   if (request.method !== "POST") return mobileError("Method not allowed", 405);
   const guard = await requireMobileUser(request);
   if (!guard.ok) return guard.response;
-  if (!(await canRecord(guard.userId, request))) return mobileError("Not available", 403);
-  const body = await parseJson(request, QuickNoteSchema);
+  const body = await parseJson(request, NewNoteSchema);
   if (body instanceof Response) return body;
+
+  if ("scheduledMeetingId" in body) {
+    const result = await attachMeetingNote({
+      meetingId: body.scheduledMeetingId,
+      actorId: guard.userId,
+      occurrence: new Date(body.occurrenceStart),
+    });
+    if (!result.ok) return mobileError(result.error, result.status);
+    return mobileJson({ pageId: result.notePageId, documentName: pageDocName(result.notePageId) }, { status: 201 });
+  }
+
   try {
     const page = await createNote(guard.userId, { title: body.title });
-    return mobileJson({ documentName: pageDocName(page.id) }, { status: 201 });
+    return mobileJson({ pageId: page.id, documentName: pageDocName(page.id) }, { status: 201 });
   } catch (err) {
     if (err instanceof PageNameConflictError) return mobileError(err.message, 409);
     throw err;

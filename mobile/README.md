@@ -33,6 +33,8 @@ The timer runs on the device (saved in the secure store, so it survives a restar
 
 Recording uses `useAudioStream` from `expo-audio` to capture microphone PCM, resamples it to 16kHz mono, and uploads 20s chunks the same way the web recorder does. Pause ends a session and Resume starts the next segment. Finishing sends the audio to transcription, then the app asks the server to write the AI notes into the meeting's page. A quick recording (no meeting) gets a new personal note page.
 
+Notes are edited in the real DALI OS editor: the app opens the page (`/documents/<id>?embed=1`) in a WebView, signed in once per app session through a one-time `/auth/handoff` link from `POST /api/mobile/webview`. New notes are filed in My notes or a notebook you can edit (the same notebooks as the web picker); a calendar meeting's Take notes opens that occurrence's notes page.
+
 Recording in the background needs a development or store build (the `expo-audio` plugin in `app.json` adds the iOS background audio mode and Android permissions). In Expo Go, keep the app open while recording.
 
 ## Layout

@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Alert, Pressable, ScrollView, TextInput, View } from 'react-native';
 import { addDays, addMinutes, eachDayOfInterval, format, set, subHours } from 'date-fns';
-import { Calendar, Minus, Plus, Trash2 } from 'lucide-react-native';
+import { Calendar, Trash2 } from 'lucide-react-native';
 import { colors, fonts, tw } from '../../theme';
 import { errorMessage } from '../../api/client';
 import type { TimeEntry } from '../../api/contract';
@@ -10,10 +10,8 @@ import { formatHours, fromDateKey, hoursBetween, MAX_NOTE_LENGTH, toDateKey, val
 import { roleColor } from '../../utils/roleColor';
 import { BottomSheet } from '../ui/BottomSheet';
 import { Button } from '../ui/Button';
-import { IconButton } from '../ui/IconButton';
+import { STEP_MINUTES, TimeStepper } from '../ui/TimeStepper';
 import { Text } from '../ui/Text';
-
-const STEP_MINUTES = 15;
 
 interface EntrySheetProps {
   open: boolean;
@@ -21,25 +19,6 @@ interface EntrySheetProps {
   entry: TimeEntry | null;
   onClose: () => void;
   onSaved: (message: string) => void;
-}
-
-function TimeStepper({ label, value, onChange, disabled }: { label: string; value: Date; onChange: (d: Date) => void; disabled?: boolean }) {
-  return (
-    <View style={tw`flex-1`}>
-      <Text style={tw`text-sm font-bold text-cool-black`}>{label}</Text>
-      <View style={[tw`mt-1.5 h-11 flex-row items-center justify-between rounded-xl border border-slate-200 bg-white px-1`, disabled && tw`opacity-50`]}>
-        <IconButton label={`${label} ${STEP_MINUTES} minutes earlier`} size="sm" disabled={disabled} onPress={() => onChange(addMinutes(value, -STEP_MINUTES))}>
-          <Minus size={16} color={colors.navy} />
-        </IconButton>
-        <Text accessibilityLabel={`${label} ${format(value, 'h:mm a')}`} style={[tw`text-sm font-bold text-cool-black`, { fontVariant: ['tabular-nums'] }]}>
-          {format(value, 'h:mm a')}
-        </Text>
-        <IconButton label={`${label} ${STEP_MINUTES} minutes later`} size="sm" disabled={disabled} onPress={() => onChange(addMinutes(value, STEP_MINUTES))}>
-          <Plus size={16} color={colors.navy} />
-        </IconButton>
-      </View>
-    </View>
-  );
 }
 
 const onDay = (day: string, time: Date) => {

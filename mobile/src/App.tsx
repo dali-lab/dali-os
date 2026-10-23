@@ -11,6 +11,7 @@ import { tw } from './theme';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { DataProvider, useData } from './contexts/DataContext';
 import { NotesProvider, useNotes, type MeetingTarget } from './contexts/NotesContext';
+import { api, errorMessage } from './api/client';
 import { TimeProvider, useTime } from './contexts/TimeContext';
 import type { TabId } from './types/navigation';
 import { CalendarTab } from './components/calendar/CalendarTab';
@@ -83,9 +84,19 @@ function Shell() {
     setTab('time');
   };
   const recordMeeting = async (meeting: MeetingTarget) => {
-    const message = await notes.startRecording(meeting);
+    const message = await notes.startRecording({ kind: 'meeting', meeting });
     if (!message) setTab('notes');
     return message;
+  };
+  const takeNotes = async (meeting: MeetingTarget) => {
+    try {
+      const page = await api.meetingNotePage(meeting.id, meeting.occurrenceStart);
+      notes.openEditor({ pageId: page.pageId, title: meeting.title });
+      setTab('notes');
+      return null;
+    } catch (err) {
+      return errorMessage(err);
+    }
   };
   const viewNote = (recordingId: string) => {
     notes.openNote(recordingId);
@@ -111,7 +122,7 @@ function Shell() {
               <ProjectTab onStartTimer={startProjectTimer} onOpenProfile={openProfile} />
             </View>
             <View style={panel('calendar')}>
-              <CalendarTab onOpenProfile={openProfile} onRecordMeeting={recordMeeting} onViewNote={viewNote} />
+              <CalendarTab onOpenProfile={openProfile} onRecordMeeting={recordMeeting} onTakeNotes={takeNotes} onViewNote={viewNote} />
             </View>
             <View style={panel('notes')}>
               <NotesTab onOpenProfile={openProfile} />

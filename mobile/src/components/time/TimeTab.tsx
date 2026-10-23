@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { Pressable, RefreshControl, ScrollView, View } from 'react-native';
+import { Alert, Pressable, RefreshControl, ScrollView, View } from 'react-native';
 import { Plus, RefreshCw } from 'lucide-react-native';
 import { colors, tw } from '../../theme';
+import { errorMessage } from '../../api/client';
 import type { TimeEntry } from '../../api/contract';
 import { useTime } from '../../contexts/TimeContext';
 import { useNow } from '../../hooks/useNow';
@@ -17,7 +18,7 @@ import { PeriodSummary } from './PeriodSummary';
 import { TimerCard } from './TimerCard';
 
 export function TimeTab({ onOpenProfile }: { onOpenProfile: () => void }) {
-  const { data, error, roles, entries, timer, load } = useTime();
+  const { data, error, roles, entries, timer, load, deleteEntry } = useTime();
   const now = useNow(1000, Boolean(timer));
   const [sheet, setSheet] = useState<{ open: boolean; entry: TimeEntry | null }>({ open: false, entry: null });
   const [toast, setToast] = useState<string | null>(null);
@@ -35,6 +36,21 @@ export function TimeTab({ onOpenProfile }: { onOpenProfile: () => void }) {
 
   const runningHours = timer ? Math.max(0, (now.getTime() - new Date(timer.startedAt).getTime()) / 3_600_000) : 0;
   const addTime = () => setSheet({ open: true, entry: null });
+  const confirmDelete = (entry: TimeEntry) => {
+    const meeting = entry.source === 'Meeting';
+    Alert.alert(meeting ? 'Take this meeting off your timesheet?' : 'Delete this entry from your timesheet?', undefined, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: meeting ? 'Remove' : 'Delete',
+        style: 'destructive',
+        onPress: () =>
+          void deleteEntry(entry.id).then(
+            () => setToast(meeting ? 'Meeting removed from your timesheet' : 'Entry deleted'),
+            (err) => setToast(errorMessage(err)),
+          ),
+      },
+    ]);
+  };
 
   return (
     <View style={tw`flex-1 bg-cool-white`}>
@@ -74,7 +90,7 @@ export function TimeTab({ onOpenProfile }: { onOpenProfile: () => void }) {
                   </Pressable>
                 ) : null}
               </View>
-              <EntryList entries={entries} roles={roles} onOpen={(entry) => setSheet({ open: true, entry })} />
+              <EntryList entries={entries} roles={roles} onOpen={(entry) => setSheet({ open: true, entry })} onDelete={confirmDelete} />
             </View>
 
             <View style={tw`mt-5 flex-row items-center justify-center gap-1.5 px-4`}>

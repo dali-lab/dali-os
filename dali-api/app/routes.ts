@@ -426,6 +426,8 @@ export default [
   route("api/mobile/time/:id", "routes/api.mobile.time.$id.ts"),
   route("api/mobile/notes", "routes/api.mobile.notes.ts"),
   route("api/mobile/notes/:id", "routes/api.mobile.notes.$id.ts"),
+  route("api/mobile/webview", "routes/api.mobile.webview.ts"),
+  route("api/mobile/people", "routes/api.mobile.people.ts"),
 
   // OAuth endpoints (no layout)
   route("oauth/authorize", "routes/oauth.authorize.ts"),

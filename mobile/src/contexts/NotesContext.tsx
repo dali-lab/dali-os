@@ -18,6 +18,15 @@ export interface MeetingTarget {
   occurrenceStart: string;
 }
 
+/** Where a recording's notes go: a calendar meeting's notes page, or a page the member picked. */
+export type RecordTarget = { kind: 'meeting'; meeting: MeetingTarget } | { kind: 'page'; title: string; documentName: string };
+
+/** A note page open in the editor. */
+export interface EditingNote {
+  pageId: string;
+  title: string;
+}
+
 export interface ActiveRecording {
   id: string;
   title: string;
@@ -41,9 +50,10 @@ interface NotesContextValue {
   inputLevel: number;
   recorderVisible: boolean;
   viewingId: string | null;
+  editing: EditingNote | null;
   load: () => Promise<void>;
-  /** Starts recording a meeting (or a quick note when `meeting` is null). Resolves to an error message, or null. */
-  startRecording: (meeting: MeetingTarget | null) => Promise<string | null>;
+  /** Starts recording into a meeting's notes or a picked page. Resolves to an error message, or null. */
+  startRecording: (target: RecordTarget) => Promise<string | null>;
   pauseRecording: () => Promise<void>;
   resumeRecording: () => Promise<void>;
   finishRecording: () => Promise<void>;
@@ -52,6 +62,8 @@ interface NotesContextValue {
   hideRecorder: () => void;
   openNote: (id: string) => void;
   closeNote: () => void;
+  openEditor: (note: EditingNote) => void;
+  closeEditor: () => void;
   noteForMeeting: (meetingId: string, occurrenceStart: string) => NoteSummary | undefined;
   reset: () => void;
 }
@@ -84,6 +96,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
   const [inputLevel, setInputLevel] = useState(0);
   const [recorderVisible, setRecorderVisible] = useState(false);
   const [viewingId, setViewingId] = useState<string | null>(null);
+  const [editing, setEditing] = useState<EditingNote | null>(null);
 
   const activeRef = useRef<ActiveRecording | null>(null);
   activeRef.current = active;
@@ -155,7 +168,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const startRecording = useCallback(
-    async (meeting: MeetingTarget | null) => {
+    async (recordTarget: RecordTarget) => {
       if (activeRef.current) {
         setRecorderVisible(true);
         return null;
@@ -165,11 +178,13 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       let createdId: string | null = null;
       try {
         await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true, allowsBackgroundRecording: true, interruptionMode: 'doNotMix' });
-        const title = meeting?.title ?? `Quick note · ${new Date().toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}`;
-        const target = meeting
-          ? { scheduledMeetingId: meeting.id, occurrenceStart: meeting.occurrenceStart }
-          : { documentName: (await api.quickNotePage(title)).documentName };
-        const { id } = await api.startRecording(target);
+        const meeting = recordTarget.kind === 'meeting' ? recordTarget.meeting : null;
+        const title = meeting?.title ?? (recordTarget.kind === 'page' ? recordTarget.title : 'Meeting notes');
+        const { id } = await api.startRecording(
+          recordTarget.kind === 'meeting'
+            ? { scheduledMeetingId: recordTarget.meeting.id, occurrenceStart: recordTarget.meeting.occurrenceStart }
+            : { documentName: recordTarget.documentName },
+        );
         createdId = id;
 
         segment.current = 0;
@@ -314,6 +329,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
     setNotes(null);
     setError(null);
     setViewingId(null);
+    setEditing(null);
   }, [discardRecording]);
 
   const value = useMemo<NotesContextValue>(
@@ -327,6 +343,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       inputLevel,
       recorderVisible,
       viewingId,
+      editing,
       load,
       startRecording,
       pauseRecording,
@@ -337,10 +354,15 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       hideRecorder: () => setRecorderVisible(false),
       openNote: (id: string) => setViewingId(id),
       closeNote: () => setViewingId(null),
+      openEditor: (note: EditingNote) => setEditing(note),
+      closeEditor: () => {
+        setEditing(null);
+        void load();
+      },
       noteForMeeting,
       reset,
     }),
-    [notes, loading, error, notice, active, inputLevel, recorderVisible, viewingId, load, startRecording, pauseRecording, resumeRecording, finishRecording, discardRecording, noteForMeeting, reset],
+    [notes, loading, error, notice, active, inputLevel, recorderVisible, viewingId, editing, load, startRecording, pauseRecording, resumeRecording, finishRecording, discardRecording, noteForMeeting, reset],
   );
 
   return <NotesContext.Provider value={value}>{children}</NotesContext.Provider>;

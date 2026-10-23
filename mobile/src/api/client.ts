@@ -2,8 +2,12 @@ import Constants from 'expo-constants';
 import type {
   AddTimeEntryBody,
   CalendarResponse,
+  CreateEventBody,
+  MemberSummary,
   MeResponse,
   NoteDetail,
+  NotePage,
+  Notebook,
   NotesResponse,
   PassResponse,
   ProjectBoardResponse,
@@ -100,6 +104,9 @@ export const api = {
     request<CalendarResponse>('GET', `/api/mobile/calendar?from=${encodeURIComponent(from.toISOString())}&to=${encodeURIComponent(to.toISOString())}`),
   rsvp: (notificationId: string, response: 'accepted' | 'declined' | 'tentative') =>
     request<{ ok: true }>('POST', `/api/notifications/${encodeURIComponent(notificationId)}/rsvp`, { response }),
+  createEvent: (body: CreateEventBody) =>
+    request<{ id: string; addedToGoogle: boolean; googleError: string | null }>('POST', '/api/mobile/calendar', body),
+  people: (q: string) => request<{ people: MemberSummary[] }>('GET', `/api/mobile/people?q=${encodeURIComponent(q)}`),
   pass: () => request<PassResponse>('GET', '/api/mobile/pass'),
   googleWalletUrl: () => request<{ url: string }>('GET', '/api/wallet/google/save-url'),
 
@@ -111,7 +118,13 @@ export const api = {
 
   notes: () => request<NotesResponse>('GET', '/api/mobile/notes'),
   note: (id: string) => request<NoteDetail>('GET', `/api/mobile/notes/${encodeURIComponent(id)}`),
-  quickNotePage: (title: string) => request<{ documentName: string }>('POST', '/api/mobile/notes', { title }),
+  personalNotePage: (title: string) => request<NotePage>('POST', '/api/mobile/notes', { title }),
+  meetingNotePage: (scheduledMeetingId: string, occurrenceStart: string) =>
+    request<NotePage>('POST', '/api/mobile/notes', { scheduledMeetingId, occurrenceStart }),
+  notebooks: (q: string) => request<{ notebooks: Notebook[] }>('GET', `/api/notebooks?q=${encodeURIComponent(q)}`),
+  newNotebookNote: (notebookId: string) =>
+    request<{ id: string }>('POST', `/api/notebooks/${encodeURIComponent(notebookId)}`, { intent: 'new-note' }),
+  editorSignIn: (pageId: string) => request<{ url: string }>('POST', '/api/mobile/webview', { pageId }),
   enhanceNote: (id: string) => request<{ ok: true }>('POST', `/api/mobile/notes/${encodeURIComponent(id)}`, { action: 'enhance' }),
 
   startRecording: (target: { scheduledMeetingId: string; occurrenceStart: string } | { documentName: string }) =>

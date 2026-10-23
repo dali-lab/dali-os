@@ -39,7 +39,7 @@ export interface SetStatusBody {
   status: 'active' | 'away';
 }
 
-// GET /api/mobile/projects -> the viewer's active projects (most recent term first)
+// GET /api/mobile/projects -> the projects the viewer is staffed on this term (not archived)
 export interface ProjectSummary {
   id: string;
   name: string;
@@ -112,6 +112,20 @@ export interface CalendarResponse {
   events: CalendarEvent[];
   people: MemberSummary[]; // every attendee across `events`
 }
+
+// POST /api/mobile/calendar -> { id, addedToGoogle, googleError } : a DALI meeting you organize
+export interface CreateEventBody {
+  title: string;
+  startTime: string;
+  durationMinutes: number; // 5-480
+  participantUserIds: string[]; // others to invite; empty = just you
+  location?: string | null;
+  description?: string | null;
+  addToGoogle: boolean; // put it on your linked Google calendar (with invites)
+  addMeet: boolean; // attach a Google Meet link (needs addToGoogle)
+}
+
+// GET /api/mobile/people?q= -> { people: MemberSummary[] } : current-term members to invite (q >= 2 chars)
 
 // GET /api/mobile/pass
 export interface PassResponse {
@@ -193,12 +207,39 @@ export interface NoteSummary {
   tasksCreated: number;
 }
 
-// GET /api/mobile/notes -> the member's latest 30 recordings
+/** A note the member typed (no recording): a personal note or a page in a notebook. */
+export interface TypedNote {
+  id: string; // page id
+  title: string;
+  updatedAt: string;
+  notebook: string | null; // the notebook it's filed in; null for a personal note
+}
+
+// GET /api/mobile/notes -> the member's latest 30 recordings and 30 typed notes
 export interface NotesResponse {
   recordingEnabled: boolean; // AI meeting notes flag on and transcription configured
   notes: NoteSummary[];
+  pages: TypedNote[];
 }
-// POST /api/mobile/notes { title } -> { documentName } : a personal note page for a quick recording
+// POST /api/mobile/notes { title } | { scheduledMeetingId, occurrenceStart } -> { pageId, documentName }
+//   a new personal note, or a calendar meeting occurrence's notes page
+export interface NotePage {
+  pageId: string;
+  documentName: string; // the collab room a recording writes into
+}
+
+// GET /api/notebooks?q=&meetingId= (existing web route) -> notebooks the member can edit, suggested first
+export interface Notebook {
+  id: string;
+  title: string;
+  path: string;
+  tabCount: number;
+  lastNoteAt: string | null;
+  suggested: boolean;
+}
+// POST /api/notebooks/:id { intent: 'new-note' } -> { ok, id } : a new note (tab) in that notebook
+
+// POST /api/mobile/webview { pageId } -> { url } : a one-time sign-in link that opens the page's editor
 
 export type OutlineItem =
   | { kind: 'heading'; text: string; level: number }
@@ -226,6 +267,7 @@ export interface NoteDetail {
   isOwner: boolean;
   canEdit: boolean;
   enhancedAt: string | null; // set once the AI notes were written into the page
+  pageId: string | null; // the notes page, editable in the app
   pagePath: string | null; // web path of the notes page
   project: { id: string; name: string } | null;
   meeting: {
