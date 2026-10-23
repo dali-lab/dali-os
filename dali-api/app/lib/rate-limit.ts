@@ -32,9 +32,13 @@ function ensureCleanupTimer() {
 }
 
 export function getClientIp(request: Request): string {
+  return getClientIpFromHeaders(request.headers);
+}
+
+export function getClientIpFromHeaders(headers: Headers): string {
   return (
-    request.headers.get("Fly-Client-IP") ??
-    request.headers.get("X-Forwarded-For")?.split(",")[0]?.trim() ??
+    headers.get("Fly-Client-IP") ??
+    headers.get("X-Forwarded-For")?.split(",")[0]?.trim() ??
     "unknown"
   );
 }
