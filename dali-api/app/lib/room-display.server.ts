@@ -1,7 +1,7 @@
 // Door-display identity. A RoomDisplay authenticates with its own bearer token
 // (not a user Session), minted when the iPad redeems a Core-issued setup code.
 // requireAuth never sees these tokens: they only open /api/room-display/*,
-// scoped to the display's one room.
+// scoped to the display's rooms (its own, plus the second room beside it).
 
 import { prisma } from "~/lib/db";
 import { generateRawCode, generateUserCode, hashCode, normalizeUserCode } from "~/lib/pairing";
@@ -14,19 +14,31 @@ const LAST_SEEN_THROTTLE_MS = 5 * 60 * 1000;
 export const APP_VERSION_HEADER = "X-DaliOS-App-Version";
 const APP_VERSION_MAX_LEN = 40;
 
+export type DisplayRoom = { id: string; name: string; description: string | null; capacity: number | null };
+
 export type AuthedDisplay = {
   id: string;
   label: string;
-  room: { id: string; name: string; description: string | null; capacity: number | null };
+  room: DisplayRoom;
+  // `room` first, then the second room if it has one and it isn't archived.
+  rooms: DisplayRoom[];
 };
 
-/** Mint a fresh single-use setup code for a new display on `roomId`. */
-export async function createDisplaySetupCode(roomId: string, label: string, createdByUserId: string) {
+const ROOM_SELECT = { id: true, name: true, description: true, capacity: true, archivedAt: true } as const;
+
+/** Mint a fresh single-use setup code for a new display on `roomId` (and `secondRoomId`). */
+export async function createDisplaySetupCode(
+  roomId: string,
+  label: string,
+  createdByUserId: string,
+  secondRoomId: string | null = null,
+) {
   const code = generateUserCode();
   const expiresAt = new Date(Date.now() + SETUP_CODE_TTL_MS);
   const display = await prisma.roomDisplay.create({
     data: {
       roomId,
+      secondRoomId,
       label,
       createdByUserId,
       setupCodeHash: hashCode(code),
@@ -75,7 +87,8 @@ export async function requireRoomDisplay(request: Request): Promise<AuthedDispla
       revokedAt: true,
       lastSeenAt: true,
       appVersion: true,
-      room: { select: { id: true, name: true, description: true, capacity: true, archivedAt: true } },
+      room: { select: ROOM_SELECT },
+      secondRoom: { select: ROOM_SELECT },
     },
   });
   if (!display || display.revokedAt || display.room.archivedAt) return null;
@@ -92,8 +105,19 @@ export async function requireRoomDisplay(request: Request): Promise<AuthedDispla
       })
       .catch(() => {});
   }
-  const { archivedAt: _archived, ...room } = display.room;
-  return { id: display.id, label: display.label, room };
+  const room = stripArchived(display.room);
+  const second = display.secondRoom && !display.secondRoom.archivedAt ? stripArchived(display.secondRoom) : null;
+  return { id: display.id, label: display.label, room, rooms: second ? [room, second] : [room] };
+}
+
+function stripArchived({ archivedAt: _archived, ...room }: DisplayRoom & { archivedAt: Date | null }): DisplayRoom {
+  return room;
+}
+
+/** One of the display's rooms by id; no id means its own room. Null if it isn't one of them. */
+export function displayRoom(display: AuthedDisplay, roomId?: string | null): DisplayRoom | null {
+  if (!roomId) return display.room;
+  return display.rooms.find((r) => r.id === roomId) ?? null;
 }
 
 export function displayUnauthorized() {

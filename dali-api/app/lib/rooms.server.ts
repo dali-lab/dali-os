@@ -582,6 +582,54 @@ export async function cancelRoomBooking(
   return cancelBookingOccurrence(booking, actorUserId, opts ?? {}, db);
 }
 
+/**
+ * Push an underway booking's end out by `minutes` (the door display's
+ * Extend), if the room is free that long. One occurrence of a repeating
+ * booking is extended through an exception; the rest of the series keeps
+ * its length.
+ */
+export async function extendRoomBooking(
+  bookingId: string,
+  occurrenceStart: Date,
+  minutes: number,
+): Promise<RoomWriteResult<{ start: Date; end: Date }>> {
+  return prisma.$transaction(async (db) => {
+    const booking = await db.roomBooking.findUnique({
+      where: { id: bookingId },
+      include: { exceptions: exceptionSelect, room: { select: { name: true } } },
+    });
+    if (!booking || booking.cancelledAt) return { ok: false, error: "Booking not found", status: 404 };
+    await lockRoom(db, booking.roomId);
+
+    const occ = booking.recurrenceRule
+      ? resolveBookingOccurrence(booking, occurrenceStart)
+      : { originalStart: booking.start, start: booking.start, end: booking.end };
+    if (!occ) return { ok: false, error: "That time isn't part of this booking", status: 404 };
+
+    const end = new Date(occ.end.getTime() + minutes * 60_000);
+    if (end.getTime() - occ.start.getTime() > MAX_BOOKING_MINUTES * 60_000) {
+      return { ok: false, error: `Bookings can be at most ${MAX_BOOKING_MINUTES / 60} hours`, status: 400 };
+    }
+    const writer: RoomWriter = { source: booking.source, applicationCycleId: booking.applicationCycleId };
+    const conflict = (
+      await getRoomSchedule(booking.roomId, occ.end, end, { excludeBookingId: booking.id }, db)
+    ).find((s) => blockedBy(s, writer));
+    if (conflict) return conflictError(conflict, booking.room.name);
+
+    if (booking.recurrenceRule) {
+      const overrideDurationMin = Math.round((end.getTime() - occ.start.getTime()) / 60_000);
+      await db.roomBookingException.upsert({
+        where: { roomBookingId_originalStart: { roomBookingId: booking.id, originalStart: occ.originalStart } },
+        create: { roomBookingId: booking.id, originalStart: occ.originalStart, overrideStart: occ.start, overrideDurationMin },
+        update: { overrideStart: occ.start, overrideDurationMin },
+      });
+    } else {
+      await db.roomBooking.update({ where: { id: booking.id }, data: { end } });
+    }
+    return { ok: true, value: { start: occ.start, end } };
+  });
+}
+
 /** Cancel every live booking a hiring cycle holds with `source`. */
 export async function releaseCycleRoomBookings(
   applicationCycleId: string,

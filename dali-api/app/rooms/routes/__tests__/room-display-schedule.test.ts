@@ -13,14 +13,19 @@ vi.mock("~/lib/rooms.server", () => ({
 }));
 vi.mock("~/lib/display-scan.server", () => ({ getActiveDisplayScan: vi.fn() }));
 vi.mock("~/hiring/lib/hiring-events.server", () => ({ getBroadcastEvent: vi.fn() }));
+vi.mock("~/lib/display-check-ins.server", () => ({ getDisplayCheckIns: vi.fn() }));
 
 import { requireRoomDisplay } from "~/lib/room-display.server";
 import { currentEvent, getRoomSchedule, parseWindow } from "~/lib/rooms.server";
 import { getActiveDisplayScan } from "~/lib/display-scan.server";
 import { getBroadcastEvent } from "~/hiring/lib/hiring-events.server";
+import { getDisplayCheckIns } from "~/lib/display-check-ins.server";
 import { loader } from "~/rooms/routes/api.room-display.schedule";
 
-const display = { id: "d1", label: "Door", room: { id: "r1", name: "Lab", description: null, capacity: 8 } };
+const lab = { id: "r1", name: "Lab", description: null, capacity: 8 };
+const garage = { id: "r2", name: "Garage", description: null, capacity: 14 };
+const display = { id: "d1", label: "Door", room: lab, rooms: [lab, garage] };
+const checkIns = { count: 2, expected: 10, recent: [] };
 const get = () =>
   ({
     request: new Request("https://os.dali.test/api/room-display/schedule?start=a&end=b"),
@@ -35,6 +40,63 @@ beforeEach(() => {
   vi.mocked(currentEvent).mockReturnValue(null);
   vi.mocked(getActiveDisplayScan).mockResolvedValue(null);
   vi.mocked(getBroadcastEvent).mockResolvedValue(null);
+  vi.mocked(getDisplayCheckIns).mockResolvedValue(checkIns);
+});
+
+describe("room-display schedule — two rooms", () => {
+  const item = (id: string) => ({
+    id,
+    kind: "booking",
+    organizer: { id: "u1", firstName: "A", lastName: "B", photoUrl: null },
+  });
+
+  beforeEach(() => {
+    vi.mocked(getRoomSchedule).mockImplementation(async (roomId: string) => [item(`${roomId}-b`)] as never);
+  });
+
+  it("sends each room's schedule, own room first", async () => {
+    const body = await (await loader(get())).json();
+    expect(body.rooms.map((r: { room: { id: string } }) => r.room.id)).toEqual(["r1", "r2"]);
+    expect(body.rooms[1].items.map((i: { id: string }) => i.id)).toEqual(["r2-b"]);
+  });
+
+  it("keeps the own room at the top level for older iPad builds", async () => {
+    const body = await (await loader(get())).json();
+    expect(body.room).toEqual(lab);
+    expect(body.items.map((i: { id: string }) => i.id)).toEqual(["r1-b"]);
+  });
+
+  it("sends who has checked in to a room's running event", async () => {
+    const occurrenceStart = new Date("2026-10-23T22:00:00Z");
+    vi.mocked(currentEvent).mockImplementation((items) =>
+      (items as unknown as { id: string }[])[0]!.id === "r2-b"
+        ? ({ ...item("m1"), occurrenceStart } as never)
+        : null,
+    );
+    const body = await (await loader(get())).json();
+    expect(body.rooms[0].currentEvent).toBeNull();
+    expect(body.rooms[1].currentEvent).toMatchObject({ id: "m1", checkIns });
+    expect(getDisplayCheckIns).toHaveBeenCalledWith("m1", occurrenceStart, 50);
+  });
+});
+
+describe("room-display schedule — lab-wide attendance scan", () => {
+  it("sends the count, the expected count, and the latest few check-ins", async () => {
+    const occurrenceStart = new Date("2026-10-23T22:00:00Z");
+    vi.mocked(getActiveDisplayScan).mockResolvedValue({
+      meetingId: "m9",
+      occurrenceStart,
+      title: "All-lab meeting",
+      start: occurrenceStart,
+      end: new Date("2026-10-23T23:00:00Z"),
+      isEvent: true,
+      startedBy: null,
+      expiresAt: new Date("2026-10-23T23:15:00Z"),
+    });
+    const body = await (await loader(get())).json();
+    expect(body.attendanceScan).toMatchObject({ meetingId: "m9", title: "All-lab meeting", checkIns });
+    expect(getDisplayCheckIns).toHaveBeenCalledWith("m9", occurrenceStart, 4);
+  });
 });
 
 describe("room-display schedule — application event broadcast", () => {

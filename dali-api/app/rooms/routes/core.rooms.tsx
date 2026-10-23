@@ -1,6 +1,7 @@
-// Core ▸ Rooms. The bookable DALI rooms and the iPad door display paired to
-// each. A display is paired by minting a single-use setup code here and typing
-// it into the iPad, which redeems it for its own token (see
+// Core ▸ Rooms. The bookable DALI rooms and the iPad door displays. Each iPad
+// hangs between two doors and shows both rooms: it's listed under its own room
+// and names the second. A display is paired by minting a single-use setup code
+// here and typing it into the iPad, which redeems it for its own token (see
 // app/lib/room-display.server.ts).
 
 import { useEffect, useState } from "react";
@@ -20,6 +21,7 @@ import { getActiveDisplayScan, stopDisplayScan } from "~/lib/display-scan.server
 import { meetingOccurrenceHref } from "~/calendar/lib/meeting-href";
 import { coreHandle } from "~/core/coreNav";
 import { useOsChrome } from "~/components/os-chrome";
+import { Select } from "~/components/ui/floating";
 import { Modal, ModalFooter, ModalHeader } from "~/components/Modal";
 import { Button } from "~/components/ui/Button";
 import { IconButton } from "~/components/ui/IconButton";
@@ -60,6 +62,7 @@ export async function loader({ request }: Route.LoaderArgs) {
           lastSeenAt: true,
           appVersion: true,
           setupCodeExpiresAt: true,
+          secondRoom: { select: { id: true, name: true } },
         },
       },
     },
@@ -90,6 +93,7 @@ export async function loader({ request }: Route.LoaderArgs) {
         lastSeenAt: d.lastSeenAt?.toISOString() ?? null,
         appVersion: d.appVersion,
         setupExpired: !d.activatedAt && (!d.setupCodeExpiresAt || d.setupCodeExpiresAt < new Date()),
+        secondRoom: d.secondRoom,
       })),
     })),
   };
@@ -118,7 +122,18 @@ const ActionSchema = z.discriminatedUnion("intent", [
   RoomFields.extend({ intent: z.literal("update-room"), id: z.string().min(1) }),
   z.object({ intent: z.literal("archive-room"), id: z.string().min(1) }),
   z.object({ intent: z.literal("unarchive-room"), id: z.string().min(1) }),
-  z.object({ intent: z.literal("add-display"), roomId: z.string().min(1), label: z.string().trim().min(1).max(100) }),
+  z.object({
+    intent: z.literal("add-display"),
+    roomId: z.string().min(1),
+    secondRoomId: z.string().min(1),
+    label: z.string().trim().min(1).max(100),
+  }),
+  z.object({
+    intent: z.literal("update-display"),
+    id: z.string().min(1),
+    secondRoomId: z.string().min(1),
+    label: z.string().trim().min(1).max(100),
+  }),
   z.object({ intent: z.literal("revoke-display"), id: z.string().min(1) }),
   z.object({ intent: z.literal("stop-display-scan") }),
 ]);
@@ -164,14 +179,14 @@ export async function action({ request }: Route.ActionArgs) {
       return { ok: true };
     }
     case "add-display": {
-      const room = await prisma.room.findUnique({ where: { id: body.roomId }, select: { archivedAt: true } });
-      if (!room || room.archivedAt) return Response.json({ error: "Room not found" }, { status: 404 });
-      const setup = await createDisplaySetupCode(body.roomId, body.label, userId);
+      const invalid = await checkDisplayRooms(body.roomId, body.secondRoomId);
+      if (invalid) return invalid;
+      const setup = await createDisplaySetupCode(body.roomId, body.label, userId, body.secondRoomId);
       await logAuditEvent({
         action: "room.display.create",
         userId,
         targetId: setup.displayId,
-        metadata: { roomId: body.roomId },
+        metadata: { roomId: body.roomId, secondRoomId: body.secondRoomId },
         request,
       });
       return {
@@ -182,6 +197,27 @@ export async function action({ request }: Route.ActionArgs) {
           expiresAt: setup.expiresAt.toISOString(),
         },
       };
+    }
+    case "update-display": {
+      const display = await prisma.roomDisplay.findUnique({
+        where: { id: body.id },
+        select: { roomId: true, revokedAt: true },
+      });
+      if (!display || display.revokedAt) return Response.json({ error: "Display not found" }, { status: 404 });
+      const invalid = await checkDisplayRooms(display.roomId, body.secondRoomId);
+      if (invalid) return invalid;
+      await prisma.roomDisplay.update({
+        where: { id: body.id },
+        data: { label: body.label, secondRoomId: body.secondRoomId },
+      });
+      await logAuditEvent({
+        action: "room.display.update",
+        userId,
+        targetId: body.id,
+        metadata: { secondRoomId: body.secondRoomId },
+        request,
+      });
+      return { ok: true };
     }
     case "revoke-display": {
       await prisma.roomDisplay.update({
@@ -207,7 +243,19 @@ export async function action({ request }: Route.ActionArgs) {
   }
 }
 
+/** Both rooms must be live and different; returns the error response if not. */
+async function checkDisplayRooms(roomId: string, secondRoomId: string) {
+  if (roomId === secondRoomId) {
+    return Response.json({ error: "Pick a different room for the other side" }, { status: 400 });
+  }
+  const live = await prisma.room.count({ where: { id: { in: [roomId, secondRoomId] }, archivedAt: null } });
+  if (live !== 2) return Response.json({ error: "Room not found" }, { status: 404 });
+  return null;
+}
+
 type LoaderRoom = Awaited<ReturnType<typeof loader>>["rooms"][number];
+type LoaderDisplay = LoaderRoom["displays"][number];
+type DisplayTarget = { room: LoaderRoom; display: LoaderDisplay | null };
 type SetupResult = { label: string; code: string; expiresAt: string };
 
 export default function CoreRoomsPage() {
@@ -215,6 +263,7 @@ export default function CoreRoomsPage() {
   const chrome = useOsChrome();
   const [editing, setEditing] = useState<LoaderRoom | "new" | null>(null);
   const [setup, setSetup] = useState<SetupResult | null>(null);
+  const [displayTarget, setDisplayTarget] = useState<DisplayTarget | null>(null);
 
   return (
     <div className="flex flex-col gap-6">
@@ -237,11 +286,25 @@ export default function CoreRoomsPage() {
         <p className={chrome.bodyText}>No rooms yet.</p>
       ) : (
         rooms.map((room) => (
-          <RoomCard key={room.id} room={room} onEdit={() => setEditing(room)} onSetup={setSetup} />
+          <RoomCard
+            key={room.id}
+            room={room}
+            onEdit={() => setEditing(room)}
+            onEditDisplay={(display) => setDisplayTarget({ room, display })}
+          />
         ))
       )}
 
       <RoomModal room={editing} onClose={() => setEditing(null)} />
+      <DisplayModal
+        target={displayTarget}
+        rooms={rooms}
+        onClose={() => setDisplayTarget(null)}
+        onSetup={(s) => {
+          setDisplayTarget(null);
+          setSetup(s);
+        }}
+      />
       <SetupCodeModal setup={setup} onClose={() => setSetup(null)} />
     </div>
   );
@@ -295,21 +358,21 @@ function ActiveScanBanner({ scan }: { scan: NonNullable<Awaited<ReturnType<typeo
 function RoomCard({
   room,
   onEdit,
-  onSetup,
+  onEditDisplay,
 }: {
   room: LoaderRoom;
   onEdit: () => void;
-  onSetup: (s: SetupResult) => void;
+  // Null adds a new display to this room.
+  onEditDisplay: (display: LoaderDisplay | null) => void;
 }) {
   const chrome = useOsChrome();
   const dialog = useDialog();
   const toast = useToast();
-  const fetcher = useFetcher<{ ok?: boolean; error?: string; setup?: SetupResult }>();
+  const fetcher = useFetcher<{ ok?: boolean; error?: string }>();
 
   useEffect(() => {
     if (fetcher.state !== "idle" || !fetcher.data) return;
     if (fetcher.data.error) toast.error(fetcher.data.error);
-    if (fetcher.data.setup) onSetup(fetcher.data.setup);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fetcher.state, fetcher.data]);
 
@@ -325,20 +388,7 @@ function RoomCard({
     fetcher.submit({ intent: room.archived ? "unarchive-room" : "archive-room", id: room.id }, { method: "post" });
   };
 
-  const addDisplay = async () => {
-    const label = await dialog.prompt({
-      title: "Add a door display",
-      label: "Display name",
-      placeholder: `${room.name} door`,
-      defaultValue: `${room.name} door`,
-      confirmLabel: "Get setup code",
-      validate: (v) => (v.trim() ? null : "Give the display a name"),
-    });
-    if (label === null) return;
-    fetcher.submit({ intent: "add-display", roomId: room.id, label }, { method: "post" });
-  };
-
-  const revoke = async (display: LoaderRoom["displays"][number]) => {
+  const revoke = async (display: LoaderDisplay) => {
     const ok = await dialog.confirm({
       title: `Remove ${display.label}?`,
       description: "The iPad signs out and has to be set up again with a new code.",
@@ -375,7 +425,7 @@ function RoomCard({
         <div className="flex flex-col gap-2">
           <div className="flex items-center justify-between">
             <span className="os-field-label">Door displays</span>
-            <button type="button" className="os-add-btn os-add-btn--sm" onClick={addDisplay}>
+            <button type="button" className="os-add-btn os-add-btn--sm" onClick={() => onEditDisplay(null)}>
               <Plus className="h-3.5 w-3.5" aria-hidden />
               Add display
             </button>
@@ -386,7 +436,12 @@ function RoomCard({
             <ul className="os-item-list">
               {room.displays.map((d) => (
                 <li key={d.id} className="os-item-row flex items-center justify-between gap-3">
-                  <span className="truncate text-sm text-foreground">{d.label}</span>
+                  <span className="min-w-0 truncate text-sm text-foreground">
+                    {d.label}
+                    <span className="text-muted-foreground">
+                      {d.secondRoom ? ` · also shows ${d.secondRoom.name}` : " · one room only"}
+                    </span>
+                  </span>
                   <span className="flex shrink-0 items-center gap-2">
                     {d.activated ? (
                       <>
@@ -402,6 +457,7 @@ function RoomCard({
                     ) : (
                       <Pill dot="warning">Waiting for setup</Pill>
                     )}
+                    <IconButton label="Edit display" icon={Pencil} onClick={() => onEditDisplay(d)} />
                     <IconButton label="Remove display" icon={Trash2} onClick={() => revoke(d)} />
                   </span>
                 </li>
@@ -455,6 +511,88 @@ function RoomModal({ room, onClose }: { room: LoaderRoom | "new" | null; onClose
         <ModalFooter onCancel={onClose}>
           <button type="submit" className="os-btn-primary" disabled={busy}>
             {existing ? "Save" : "Add room"}
+          </button>
+        </ModalFooter>
+      </fetcher.Form>
+    </Modal>
+  );
+}
+
+function DisplayModal({
+  target,
+  rooms,
+  onClose,
+  onSetup,
+}: {
+  target: DisplayTarget | null;
+  rooms: LoaderRoom[];
+  onClose: () => void;
+  onSetup: (s: SetupResult) => void;
+}) {
+  const chrome = useOsChrome();
+  const toast = useToast();
+  const fetcher = useFetcher<{ ok?: boolean; error?: string; setup?: SetupResult }>();
+  const busy = fetcher.state !== "idle";
+  const room = target?.room;
+  const display = target?.display ?? null;
+  const others = rooms.filter((r) => !r.archived && r.id !== room?.id);
+
+  useEffect(() => {
+    if (fetcher.state !== "idle" || !fetcher.data) return;
+    if (fetcher.data.error) toast.error(fetcher.data.error);
+    else if (fetcher.data.setup) onSetup(fetcher.data.setup);
+    else if (fetcher.data.ok) onClose();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fetcher.state, fetcher.data]);
+
+  return (
+    <Modal open={target !== null} onClose={onClose} labelledBy="display-modal-title">
+      <ModalHeader
+        titleId="display-modal-title"
+        title={display ? "Edit door display" : "Add a door display"}
+        subtitle="The iPad shows this room and the one beside it."
+        onClose={onClose}
+      />
+      <fetcher.Form
+        method="post"
+        className={`${chrome.formClass} flex flex-col gap-5`}
+        key={display?.id ?? room?.id ?? "none"}
+      >
+        <input type="hidden" name="intent" value={display ? "update-display" : "add-display"} />
+        {display ? (
+          <input type="hidden" name="id" value={display.id} />
+        ) : (
+          <input type="hidden" name="roomId" value={room?.id ?? ""} />
+        )}
+        <label className="os-field-group">
+          <span>Display name</span>
+          <input
+            type="text"
+            name="label"
+            required
+            maxLength={100}
+            defaultValue={display?.label ?? (room ? `${room.name} door` : "")}
+          />
+        </label>
+        <div className="os-field-group">
+          <span className="os-field-label">Other room</span>
+          {others.length === 0 ? (
+            <p className={chrome.bodyText}>Add a second room first.</p>
+          ) : (
+            <Select
+              name="secondRoomId"
+              required
+              defaultValue={display?.secondRoom?.id}
+              placeholder="Pick a room"
+              options={others.map((r) => ({ value: r.id, label: r.name }))}
+              ariaLabel="Other room"
+              buttonClassName={chrome.formTrigger}
+            />
+          )}
+        </div>
+        <ModalFooter onCancel={onClose}>
+          <button type="submit" className="os-btn-primary" disabled={busy || others.length === 0}>
+            {display ? "Save" : "Get setup code"}
           </button>
         </ModalFooter>
       </fetcher.Form>

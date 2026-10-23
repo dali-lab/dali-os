@@ -3,19 +3,23 @@ import { z } from "zod";
 import { parseJson } from "~/lib/validate";
 import { walletTokensConfigured } from "~/lib/wallet-token";
 import { resolveScannedMember } from "~/lib/wallet-scan.server";
-import { displayUnauthorized, requireRoomDisplay } from "~/lib/room-display.server";
+import { displayRoom, displayUnauthorized, requireRoomDisplay } from "~/lib/room-display.server";
 import { createRoomBooking } from "~/lib/rooms.server";
 
 // Either "now for N minutes" (the Book now buttons; the server's clock picks
 // the start so a skewed iPad can't shift it) or an explicit slot dragged out on
-// the display's timeline.
+// the display's timeline. `roomId` picks between a two-room display's rooms;
+// builds from before two-room displays leave it out and book their own room.
+const roomId = z.string().min(1).optional();
 const BodySchema = z.union([
   z.object({
     memberToken: z.string().min(1),
+    roomId,
     minutes: z.number().int().min(5).max(240),
   }),
   z.object({
     memberToken: z.string().min(1),
+    roomId,
     start: z.coerce.date(),
     end: z.coerce.date(),
   }),
@@ -35,6 +39,8 @@ export async function action({ request }: Route.ActionArgs) {
 
   const body = await parseJson(request, BodySchema);
   if (body instanceof Response) return body;
+  const room = displayRoom(display, body.roomId);
+  if (!room) return Response.json({ error: "This display doesn't show that room" }, { status: 404 });
 
   const member = await resolveScannedMember(body.memberToken, `room-display-book(display=${display.id})`);
   if (!member) return Response.json({ error: "Invalid or revoked pass" }, { status: 400 });
@@ -43,7 +49,7 @@ export async function action({ request }: Route.ActionArgs) {
   const [start, end] =
     "minutes" in body ? [now, new Date(now.getTime() + body.minutes * 60_000)] : [body.start, body.end];
   const result = await createRoomBooking({
-    roomId: display.room.id,
+    roomId: room.id,
     userId: member.id,
     start,
     end,

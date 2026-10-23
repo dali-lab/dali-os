@@ -25,33 +25,74 @@ struct ScheduleItem: Codable, Hashable {
     let id: String
     let title: String
     let start: Date
-    let end: Date
+    var end: Date
     let organizer: Organizer
     let isEvent: Bool
+    /// "Display", "Web", "Interview", …; nil for a meeting.
+    var source: String? = nil
+    /// Only on a room's `currentEvent`: who has scanned in so far.
+    var checkIns: CheckIns? = nil
 
     /// A recurring meeting repeats its `id` across occurrences.
     var occurrenceID: String { "\(kind.rawValue)-\(id)-\(start.timeIntervalSince1970)" }
     var duration: TimeInterval { end.timeIntervalSince(start) }
+
+    /// A room booking the booker can end early or extend from the door.
+    /// Meetings and hiring holds are changed elsewhere.
+    var isChangeableAtDoor: Bool {
+        kind == .booking && source != "Interview" && source != "InterviewHold"
+    }
+
+    var timeRange: String { DisplayFormat.range(start, end) }
+    var organizerName: String { "\(organizer.firstName) \(organizer.lastName)" }
+}
+
+struct CheckIns: Codable, Hashable {
+    struct Member: Codable, Hashable {
+        let id: String
+        let firstName: String
+        let lastName: String
+        var photoUrl: String?
+        let at: Date
+    }
+
+    let count: Int
+    /// Invited people plus walk-ins; 0 when the event has no roster.
+    let expected: Int
+    /// Latest first.
+    let recent: [Member]
+}
+
+/// One of the display's rooms and its day.
+struct RoomSchedule: Codable, Hashable, Identifiable {
+    var room: DisplayRoom
+    var items: [ScheduleItem]
+    /// The DALI event in its check-in window here, if any. The panel turns
+    /// into a pass scanner for it.
+    var currentEvent: ScheduleItem?
+
+    var id: String { room.id }
 }
 
 /// Scanning switched on from a meeting's page for every door display in the lab,
-/// whatever room it's in. Outranks the room's own event.
+/// whatever room it's in. Outranks the rooms' own events.
 struct AttendanceScan: Codable, Hashable {
     let meetingId: String
     let title: String
     let start: Date?
     let end: Date?
+    var checkIns: CheckIns? = nil
 
     var timeRange: String? {
         guard let start, let end else { return nil }
-        return "\(start.formatted(date: .omitted, time: .shortened)) – \(end.formatted(date: .omitted, time: .shortened))"
+        return DisplayFormat.range(start, end)
     }
 }
 
 /// A hiring event (help hour, social, info session) whose check-in QR Core has
 /// put on every door display. Applicants scan it with their own phone, so the
-/// iPad shows a code rather than reading passes. Outranks the room's own event,
-/// but not a lab-wide attendance scan.
+/// iPad shows a code rather than reading passes. Outranks the rooms, but not a
+/// lab-wide attendance scan.
 struct ApplicationEventBroadcast: Codable, Hashable {
     let id: String
     let title: String
@@ -70,17 +111,22 @@ struct ApplicationEventBroadcast: Codable, Hashable {
         }
     }
 
-    var timeRange: String {
-        "\(start.formatted(date: .omitted, time: .shortened)) – \(end.formatted(date: .omitted, time: .shortened))"
-    }
+    var timeRange: String { DisplayFormat.range(start, end) }
 }
 
 struct ScheduleResponse: Decodable {
     let room: DisplayRoom
     let items: [ScheduleItem]
     let currentEvent: ScheduleItem?
+    /// Both rooms, own room first. Servers from before two-room displays
+    /// leave it out.
+    var rooms: [RoomSchedule]? = nil
     let attendanceScan: AttendanceScan?
     var applicationEvent: ApplicationEventBroadcast? = nil
+
+    var roomSchedules: [RoomSchedule] {
+        rooms ?? [RoomSchedule(room: room, items: items, currentEvent: currentEvent)]
+    }
 }
 
 struct ActivateResponse: Decodable {
@@ -109,77 +155,39 @@ struct BookResponse: Decodable {
 
 struct ScanResponse: Decodable {
     let member: ScannedMember
+    var alreadyCheckedIn: Bool? = nil
 }
 
-/// What the room is doing at `now`, derived from the day's schedule.
-struct RoomSnapshot {
-    let current: ScheduleItem?
-    let next: ScheduleItem?
-    let now: Date
+/// End early / Extend at the door.
+enum BookingChange: String, Encodable, Identifiable {
+    case end
+    case extend
 
-    init(items: [ScheduleItem], now: Date) {
-        self.now = now
-        current = items.first { $0.start <= now && $0.end > now }
-        next = items.first { $0.start > now }
-    }
-}
-
-/// A booking being set up in the booking sheet, prefilled from the + button
-/// or a tap/drag on the timeline.
-struct BookingDraft: Identifiable, Hashable {
-    let id = UUID()
-    var interval: DateInterval
-}
-
-/// What the booking sheet accepts, mirroring the server's own checks so the
-/// door can explain a problem before anyone scans a pass.
-struct BookingRules {
-    /// The server lets a booking start this far in the past, for "starting now".
-    static let pastGrace: TimeInterval = 5 * 60
-    static let minimumLength: TimeInterval = 5 * 60
-    /// The server's cap on "now for N minutes".
-    static let maxNowMinutes = 240
-
-    let items: [ScheduleItem]
-    let now: Date
-
-    /// Why this range can't be booked, or nil if it can.
-    func problem(start: Date, end: Date) -> String? {
-        let length = end.timeIntervalSince(start)
-        if length <= 0 { return "End time must be after the start time" }
-        if end <= now { return "That time has already passed" }
-        if start < now.addingTimeInterval(-Self.pastGrace) { return "Start time can't be in the past" }
-        if length < Self.minimumLength { return "Bookings need to be at least 5 minutes" }
-        if length > SlotPicker.maxLength { return "Bookings can be at most 8 hours" }
-        if let clash = items.first(where: { $0.start < end && $0.end > start }) {
-            return "Overlaps \(clash.title) (\(clash.timeRange))"
-        }
-        return nil
-    }
-
-    /// Starting now → let the server's clock pick the start, so a skewed iPad
-    /// can't shift it. Anything else is an explicit slot.
-    func request(start: Date, end: Date) -> BookingRequest {
-        let minutes = Int((end.timeIntervalSince(start) / 60).rounded())
-        if abs(start.timeIntervalSince(now)) < 60, minutes <= Self.maxNowMinutes {
-            return .now(minutes: minutes)
-        }
-        return .slot(DateInterval(start: start, end: end))
-    }
-}
-
-/// What the person at the door asked to book: "now for N minutes" (starting
-/// now, so the server's clock picks the start) or an explicit slot.
-enum BookingRequest: Identifiable, Hashable {
-    case now(minutes: Int)
-    case slot(DateInterval)
+    /// What Extend adds; the server's own constant.
+    static let extendMinutes = 15
 
     var id: Self { self }
+}
 
-    var interval: DateInterval {
-        switch self {
-        case .now(let minutes): DateInterval(start: .now, duration: TimeInterval(minutes * 60))
-        case .slot(let interval): interval
-        }
+struct BookingChangeResponse: Decodable {
+    struct Booking: Decodable {
+        let start: Date
+        let end: Date
+    }
+
+    let member: ScannedMember
+    let booking: Booking
+}
+
+enum DisplayFormat {
+    static func time(_ date: Date) -> String { date.formatted(date: .omitted, time: .shortened) }
+
+    static func range(_ start: Date, _ end: Date) -> String { "\(time(start)) – \(time(end))" }
+
+    /// "15 min", "1 hr", "1 hr 30 min".
+    static func duration(minutes: Int) -> String {
+        if minutes < 60 { return "\(minutes) min" }
+        let hours = minutes / 60, rest = minutes % 60
+        return rest == 0 ? "\(hours) hr" : "\(hours) hr \(rest) min"
     }
 }

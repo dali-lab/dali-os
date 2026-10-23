@@ -552,6 +552,7 @@ export default [
   route("api/room-display/schedule", "rooms/routes/api.room-display.schedule.ts"),
   route("api/room-display/book", "rooms/routes/api.room-display.book.ts"),
   route("api/room-display/scan", "rooms/routes/api.room-display.scan.ts"),
+  route("api/room-display/bookings/:id", "rooms/routes/api.room-display.bookings.$id.ts"),
   // Organizer/Core PDF of the self-check-in QR (print / project at the event).
   route(
     "api/scheduled-meetings/:id/check-in-qr.pdf",

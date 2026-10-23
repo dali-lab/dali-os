@@ -25,6 +25,7 @@ import {
   claimEventRoomBookings,
   createRoomBooking,
   currentEvent,
+  extendRoomBooking,
   getRoomSchedule,
   releaseEventRoomBookings,
   retimeEventRoomBookings,
@@ -585,6 +586,76 @@ describe("cancelRoomBooking", () => {
       data: { cancelledByUserId: "u1", cancelledAt: expect.any(Date) },
     });
     expect(m.roomBookingException.deleteMany).not.toHaveBeenCalled();
+  });
+});
+
+describe("extendRoomBooking", () => {
+  const live = (over: Record<string, unknown> = {}) => ({
+    id: "b1",
+    roomId: "r1",
+    cancelledAt: null,
+    source: "Display",
+    applicationCycleId: null,
+    recurrenceRule: null,
+    start: at("2026-10-23T14:00:00Z"),
+    end: at("2026-10-23T15:00:00Z"),
+    exceptions: [],
+    room: { name: "Fishbowl" },
+    ...over,
+  });
+
+  it("moves a single booking's end out by the minutes asked", async () => {
+    m.roomBooking.findUnique.mockResolvedValue(live());
+    const result = await extendRoomBooking("b1", at("2026-10-23T14:00:00Z"), 15);
+    expect(result).toEqual({
+      ok: true,
+      value: { start: at("2026-10-23T14:00:00Z"), end: at("2026-10-23T15:15:00Z") },
+    });
+    expect(m.roomBooking.update).toHaveBeenCalledWith({ where: { id: "b1" }, data: { end: at("2026-10-23T15:15:00Z") } });
+  });
+
+  it("checks only the added time, leaving the booking itself out", async () => {
+    m.roomBooking.findUnique.mockResolvedValue(live());
+    await extendRoomBooking("b1", at("2026-10-23T14:00:00Z"), 15);
+    const where = m.roomBooking.findMany.mock.calls[0]![0].where;
+    expect(where.id).toEqual({ not: "b1" });
+    expect(where.OR[0]).toMatchObject({ start: { lt: at("2026-10-23T15:15:00Z") }, end: { gt: at("2026-10-23T15:00:00Z") } });
+  });
+
+  it("refuses when the next booking starts too soon, naming it", async () => {
+    m.roomBooking.findUnique.mockResolvedValue(live());
+    m.roomBooking.findMany.mockResolvedValue([
+      booking({ id: "b2", title: "Sprint planning", start: at("2026-10-23T15:10:00Z"), end: at("2026-10-23T16:00:00Z") }),
+    ]);
+    const result = await extendRoomBooking("b1", at("2026-10-23T14:00:00Z"), 15);
+    expect(result).toMatchObject({ ok: false, status: 409, error: expect.stringContaining("Sprint planning") });
+    expect(m.roomBooking.update).not.toHaveBeenCalled();
+  });
+
+  it("extends one occurrence of a repeating booking through an exception", async () => {
+    const start = nowSec();
+    m.roomBooking.findUnique.mockResolvedValue(
+      live({ recurrenceRule: "FREQ=WEEKLY;COUNT=4", start, end: new Date(start.getTime() + H) }),
+    );
+    const result = await extendRoomBooking("b1", start, 15);
+    expect(result.ok).toBe(true);
+    expect(m.roomBookingException.upsert.mock.calls[0]![0].create).toEqual({
+      roomBookingId: "b1",
+      originalStart: start,
+      overrideStart: start,
+      overrideDurationMin: 75,
+    });
+    expect(m.roomBooking.update).not.toHaveBeenCalled();
+  });
+
+  it("caps the total length", async () => {
+    m.roomBooking.findUnique.mockResolvedValue(live({ end: at("2026-10-23T21:55:00Z") }));
+    expect(await extendRoomBooking("b1", at("2026-10-23T14:00:00Z"), 15)).toMatchObject({ ok: false, status: 400 });
+  });
+
+  it("404s a cancelled booking", async () => {
+    m.roomBooking.findUnique.mockResolvedValue(live({ cancelledAt: new Date() }));
+    expect(await extendRoomBooking("b1", at("2026-10-23T14:00:00Z"), 15)).toMatchObject({ ok: false, status: 404 });
   });
 });
 
