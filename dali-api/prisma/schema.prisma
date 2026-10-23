@@ -4450,6 +4450,23 @@ model TaskComment {
   @@index([taskId, createdAt])
 }
 
+// One row per committed change of Task.status, written by a database trigger
+// (migration task_status_change) rather than app code so no path that moves a
+// card can skip it. The hallway kiosk reads it to tell a real move from any
+// other edit that bumps activityAt. No relation to Task so the history
+// outlives a deleted card.
+model TaskStatusChange {
+  id         String     @id @default(cuid())
+  taskId     String
+  projectId  String
+  fromStatus TaskStatus
+  toStatus   TaskStatus
+  changedAt  DateTime   @default(now())
+
+  @@index([changedAt])
+  @@index([taskId, changedAt])
+}
+
 // Per-user "last opened this task" stamp. Compared against Task.activityAt
 // to render the board's "new updates" indicator — a row only exists once a
 // user has opened the task at least once, so a task nobody on the viewer's
