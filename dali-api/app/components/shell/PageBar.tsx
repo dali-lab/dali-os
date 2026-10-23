@@ -6,6 +6,9 @@ import { PageDocButton } from '~/components/page-docs/PageDocButton'
 import { PageBarTrail, useDocumentTitle, usePageTrail } from '~/components/Breadcrumbs'
 import { TablessHistoryNav } from '~/components/TablessHistoryNav'
 import { usePageBarTargetSetters } from '~/components/shell/page-bar-slot'
+import { pageBarCrumbs } from '~/components/shell/page-bar-model'
+import { useFeatureFlag } from '~/components/FeatureFlags'
+import { useLocation } from 'react-router'
 
 export const PAGE_BAR_BUTTON =
   'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-os-grey transition-colors hover:bg-os-hover hover:text-foreground disabled:opacity-40'
@@ -35,6 +38,14 @@ export function PageBar({
 }) {
   const trail = usePageTrail()
   const title = useDocumentTitle()
+  const { pathname, search } = useLocation()
+  const community = useFeatureFlag('community')
+  const crumbs = pageBarCrumbs({
+    path: pathname + search,
+    trail: trail?.crumbs ?? [],
+    title,
+    flags: { community },
+  })
   const { actionsRef, presenceRef } = usePageBarTargetSetters()
   const labels = starLabels(star)
 
@@ -45,7 +56,7 @@ export function PageBar({
         <div className="hidden md:block">
           <TablessHistoryNav tabless tabs={tabs} />
         </div>
-        <PageBarTrail trail={trail} title={title} />
+        <PageBarTrail crumbs={crumbs} />
       </div>
       <div className="flex shrink-0 items-center gap-0.5">
         <div ref={actionsRef} className="flex items-center gap-1 empty:hidden" />

@@ -24,6 +24,7 @@ import type { DesktopTab, DesktopTabsState } from '~/lib/desktop-tabs'
 import { buildPageLink, writePageLink } from '~/lib/page-link'
 import { cn } from '~/lib/cn'
 import { stripAppTitle } from '~/lib/page-title'
+import { fallbackPageLabel } from '~/components/shell/page-bar-model'
 import { tabIcon } from '~/lib/tab-icon'
 
 /** Fired by the desktop app's File menu (desktop/src-tauri/src/menu.rs), which
@@ -69,7 +70,7 @@ export function useDesktopTabs(enabled: boolean, hint: boolean): boolean {
 
   useEffect(() => {
     if (!show) return
-    return startTabs({ url: arrivalRef.current, label: pageTitle() || 'Home' }, (to) =>
+    return startTabs({ url: arrivalRef.current, label: pageTitle() || fallbackPageLabel(arrivalRef.current) || 'Home' }, (to) =>
       navigateRef.current(to, { replace: true }),
     )
   }, [show])
@@ -79,7 +80,7 @@ export function useDesktopTabs(enabled: boolean, hint: boolean): boolean {
     const restoreY = tabActions.record(url, navigationType)
     let raf = 0
     if (restoreY !== null) raf = window.requestAnimationFrame(() => window.scrollTo(0, restoreY))
-    const labelTimer = window.setTimeout(() => tabActions.label(url, pageTitle()), 50)
+    const labelTimer = window.setTimeout(() => tabActions.label(url, pageTitle() || fallbackPageLabel(url)), 50)
     return () => {
       window.cancelAnimationFrame(raf)
       window.clearTimeout(labelTimer)
@@ -216,7 +217,7 @@ export function DesktopTabStrip({ leading }: { leading?: ReactNode }) {
       className="flex h-10 shrink-0 items-center gap-1 border-b border-os-container bg-os-nav pl-2 pr-3"
     >
       {leading}
-      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
+      <DndContext id="desktop-tabs" sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
         <SortableContext items={tabs.map((t) => t.id)} strategy={horizontalListSortingStrategy}>
           <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
             {tabs.map((tab, index) => (

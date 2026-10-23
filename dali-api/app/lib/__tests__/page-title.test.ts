@@ -10,11 +10,20 @@ describe("stripAppTitle", () => {
     expect(stripAppTitle("Staffing")).toBe("Staffing");
   });
 
-  it("keeps the raw title when nothing is left", () => {
-    expect(stripAppTitle(" · DALI OS")).toBe(" · DALI OS");
+  it("keeps only the page's own name, not its context", () => {
+    expect(stripAppTitle("Geisel wayfinding · Projects · DALI OS")).toBe("Geisel wayfinding");
   });
 
-  it("only strips the trailing suffix", () => {
-    expect(stripAppTitle("A · B · DALI OS")).toBe("A · B");
+  it("is empty for the bare app title a page without its own title gets", () => {
+    expect(stripAppTitle("DALI OS")).toBe("");
+  });
+
+  it("keeps a page that is itself named like the app", () => {
+    expect(stripAppTitle("DALI OS · Projects · DALI OS")).toBe("DALI OS");
+  });
+
+  it("is empty for an empty title", () => {
+    expect(stripAppTitle("")).toBe("");
+    expect(stripAppTitle(" · DALI OS")).toBe("");
   });
 });

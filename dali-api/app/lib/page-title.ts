@@ -1,5 +1,8 @@
-const APP_SUFFIX = /\s*·\s*DALI OS\s*$/
+const APP_NAME = 'DALI OS'
 
+/** The page's own name from a "<page> · <context> · DALI OS" document title; '' for the bare app title. */
 export function stripAppTitle(raw: string): string {
-  return raw.replace(APP_SUFFIX, '').trim() || raw
+  const parts = raw.split('·').map((part) => part.trim()).filter(Boolean)
+  if (parts.length === 1 && parts[0] === APP_NAME) return ''
+  return parts[0] ?? ''
 }

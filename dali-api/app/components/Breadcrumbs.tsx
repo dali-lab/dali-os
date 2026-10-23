@@ -427,13 +427,7 @@ export function usePageTrail(): ResolvedTrail | null {
   return resolveTrail(matches as MatchLike[], pathname, search)
 }
 
-export function trailCrumbsOrTitle(trail: ResolvedTrail | null, title: string): Crumb[] {
-  if (trail && trail.crumbs.length > 1) return trail.crumbs
-  return title ? [{ label: title }] : []
-}
-
-export function PageBarTrail({ trail, title }: { trail: ResolvedTrail | null; title: string }) {
-  const crumbs = trailCrumbsOrTitle(trail, title)
+export function PageBarTrail({ crumbs }: { crumbs: Crumb[] }) {
   if (crumbs.length === 0) return null
   return (
     <nav

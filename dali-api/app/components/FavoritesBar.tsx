@@ -160,7 +160,7 @@ export function FavoritesBar({
     return (
       <div className="flex flex-col gap-0.5">
         <div className="flex h-[26px] items-center pl-2.5 text-xs font-semibold text-os-muted">Favorites</div>
-        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
+        <DndContext id="favorites-rail" sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
           <SortableContext items={visible.map((p) => p.id)} strategy={verticalListSortingStrategy}>
             {visible.map((p) => {
               const i = favorites.findIndex((f) => f.id === p.id)
@@ -212,7 +212,7 @@ export function FavoritesBar({
   }
 
   return (
-    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
+    <DndContext id="favorites-bar" sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
       <SortableContext items={favorites.map((p) => p.id)} strategy={horizontalListSortingStrategy}>
         <div className="flex items-center gap-2">
           {favorites.map((p, i) => (
