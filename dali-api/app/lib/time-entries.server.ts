@@ -190,19 +190,25 @@ export async function updateTimeEntry(userId: string, input: UpdateTimeEntryInpu
   return { ok: true, entry };
 }
 
-export async function deleteTimeEntry(userId: string, id: string): Promise<TimeEntryWriteResult> {
+export type TimeEntryDeleteResult = { ok: true; id: string } | { ok: false; error: string; status: number };
+
+export async function deleteTimeEntry(userId: string, id: string): Promise<TimeEntryDeleteResult> {
   // A mirror still creating this entry's Google event hasn't saved its id
   // yet; wait so the removal below knows which event to take down.
   await mirrorChains.get(id);
   // Under the lock, a mirror on another machine has finished and saved its
   // Google event id before the row is read and deleted.
-  const entry = await withEntryMirrorLock(id, async (tx) => {
+  const outcome = await withEntryMirrorLock(id, async (tx) => {
     const row = await tx.timeEntry.findUnique({ where: { id } });
-    if (!row || row.userId !== userId) return null;
+    if (!row) return "gone" as const;
+    if (row.userId !== userId) return null;
     await tx.timeEntry.delete({ where: { id } });
     return row;
   });
-  if (!entry) return { ok: false, error: "Not found", status: 404 };
-  mirrorInBackground(userId, entry.id, () => removeTimeEntryFromGoogle(entry));
-  return { ok: true, entry };
+  if (!outcome) return { ok: false, error: "Not found", status: 404 };
+  // A repeated delete (a retry, a second tab, a client still drawing the row)
+  // already got what it asked for.
+  if (outcome === "gone") return { ok: true, id };
+  mirrorInBackground(userId, outcome.id, () => removeTimeEntryFromGoogle(outcome));
+  return { ok: true, id };
 }

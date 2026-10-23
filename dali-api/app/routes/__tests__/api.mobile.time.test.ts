@@ -206,7 +206,7 @@ describe("PATCH and DELETE /api/mobile/time/:id", () => {
   });
 
   it("deletes the entry", async () => {
-    deleteTimeEntry.mockResolvedValue({ ok: true, entry: { id: "e1" } });
+    deleteTimeEntry.mockResolvedValue({ ok: true, id: "e1" });
     const req = new Request(`https://os.example${path}`, { method: "DELETE" });
     const res = (await entryAction({ request: req, params: { id: "e1" } } as never)) as Response;
     expect(await res.json()).toEqual({ ok: true });

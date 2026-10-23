@@ -2105,7 +2105,7 @@ async function dispatchCalendarAction(
     case "delete-time-entry": {
       const result = await deleteTimeEntry(userId, input.id);
       if (!result.ok) return Response.json({ error: result.error }, { status: result.status });
-      return Response.json({ ok: true, entry: { id: result.entry.id } });
+      return Response.json({ ok: true, entry: { id: result.id } });
     }
 
     case "set-timesheet-sync": {
