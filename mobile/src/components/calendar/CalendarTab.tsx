@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { RefreshControl, ScrollView, View } from 'react-native';
 import { addWeeks, format, isSameDay, startOfWeek } from 'date-fns';
-import { CalendarCheck } from 'lucide-react-native';
+import { CalendarCheck, Plus } from 'lucide-react-native';
 import { colors, tw } from '../../theme';
 import { useData, weekKey } from '../../contexts/DataContext';
 import type { MeetingTarget } from '../../contexts/NotesContext';
@@ -10,7 +10,10 @@ import { formatClock, formatDayLabel, toMs } from '../../utils/time';
 import { TopBar } from '../TopBar';
 import { Button } from '../ui/Button';
 import { ErrorState, LoadingState } from '../ui/StateViews';
+import { IconButton } from '../ui/IconButton';
 import { Text } from '../ui/Text';
+import { Toast } from '../ui/Toast';
+import { CreateEventSheet } from './CreateEventSheet';
 import { EventDetailSheet } from './EventDetailSheet';
 import { EventRow } from './EventRow';
 import { UpNextCard } from './UpNextCard';
@@ -29,16 +32,19 @@ function NowLine({ now }: { now: Date }) {
 interface CalendarTabProps {
   onOpenProfile: () => void;
   onRecordMeeting: (meeting: MeetingTarget) => Promise<string | null>;
+  onTakeNotes: (meeting: MeetingTarget) => Promise<string | null>;
   onViewNote: (recordingId: string) => void;
 }
 
-export function CalendarTab({ onOpenProfile, onRecordMeeting, onViewNote }: CalendarTabProps) {
+export function CalendarTab({ onOpenProfile, onRecordMeeting, onTakeNotes, onViewNote }: CalendarTabProps) {
   const today = useNow(60_000);
   const { weeks, loadWeek, setRsvp } = useData();
   const [selectedDate, setSelectedDate] = useState<Date>(today);
   const [weekStart, setWeekStart] = useState<Date>(startOfWeek(today));
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
   const week = weeks[weekKey(weekStart)];
   const events = week?.data ?? [];
 
@@ -76,11 +82,16 @@ export function CalendarTab({ onOpenProfile, onRecordMeeting, onViewNote }: Cale
         title={format(weekStart, 'MMMM')}
         onOpenProfile={onOpenProfile}
         actions={
-          !isToday ? (
-            <Button size="sm" variant="ghost" color="navy" onPress={goToday}>
-              Today
-            </Button>
-          ) : undefined
+          <>
+            {!isToday ? (
+              <Button size="sm" variant="ghost" color="navy" onPress={goToday}>
+                Today
+              </Button>
+            ) : null}
+            <IconButton label="New event" onPress={() => setCreating(true)}>
+              <Plus size={20} color={colors.navy} />
+            </IconButton>
+          </>
         }
       />
       <WeekStrip
@@ -143,11 +154,22 @@ export function CalendarTab({ onOpenProfile, onRecordMeeting, onViewNote }: Cale
         onClose={() => setSelectedEventId(null)}
         onRsvp={(e, rsvp) => void setRsvp(e, rsvp)}
         onRecord={onRecordMeeting}
+        onTakeNotes={onTakeNotes}
         onViewNote={(id) => {
           setSelectedEventId(null);
           onViewNote(id);
         }}
       />
+      <CreateEventSheet
+        open={creating}
+        day={selectedDate}
+        onClose={() => setCreating(false)}
+        onCreated={(message) => {
+          setToast(message);
+          void loadWeek(weekStart);
+        }}
+      />
+      <Toast message={toast} onDismiss={() => setToast(null)} />
     </View>
   );
 }

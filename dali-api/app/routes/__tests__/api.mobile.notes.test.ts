@@ -12,6 +12,7 @@ const canRecordInto = vi.fn();
 const resolveSpeakerNames = vi.fn();
 const resolveMeetingOccurrence = vi.fn();
 const runEnhanceMeetingNotes = vi.fn();
+const attachMeetingNote = vi.fn();
 
 vi.mock("~/lib/mobile-auth.server", async (importOriginal) => ({
   ...(await importOriginal<typeof import("~/lib/mobile-auth.server")>()),
@@ -24,6 +25,7 @@ vi.mock("~/members/lib/personal-notes-actions.server", () => ({ createNote: (...
 vi.mock("~/collab/read", () => ({ readDocAsBlocks: (...a: unknown[]) => readDocAsBlocks(...a) }));
 vi.mock("~/lib/scheduled-meeting", () => ({
   resolveMeetingOccurrence: (...a: unknown[]) => resolveMeetingOccurrence(...a),
+  attachMeetingNote: (...a: unknown[]) => attachMeetingNote(...a),
 }));
 vi.mock("~/lib/meeting-recording.server", async (importOriginal) => ({
   ...(await importOriginal<typeof import("~/lib/meeting-recording.server")>()),
@@ -122,6 +124,37 @@ describe("GET /api/mobile/notes", () => {
     );
   });
 
+  it("lists the member's typed notes after their recordings, once each", async () => {
+    mockPrisma.meetingRecording.findMany.mockResolvedValue([recording({ id: "r1", documentName: "doc:pg1:body" })]);
+    mockPrisma.page.findMany.mockImplementation(async (args: { where: { createdById?: string } }) =>
+      args.where.createdById
+        ? [
+            { id: "pg1", title: "Recorded", updatedAt: new Date("2026-10-21T10:00:00.000Z"), parent: null },
+            { id: "pg5", title: "Sprint retro", updatedAt: new Date("2026-10-21T09:00:00.000Z"), parent: { kind: "Notebook", title: "DALI OS team" } },
+            { id: "pg6", title: "Ideas", updatedAt: new Date("2026-10-20T09:00:00.000Z"), parent: { kind: "Folder", title: "Stuff" } },
+          ]
+        : [{ id: "pg1", title: "Recorded" }],
+    );
+
+    const res = (await listLoader({ request: new Request("https://os.example/api/mobile/notes") } as never)) as Response;
+    const body = await res.json();
+
+    expect(body.pages).toEqual([
+      { id: "pg5", title: "Sprint retro", updatedAt: "2026-10-21T09:00:00.000Z", notebook: "DALI OS team" },
+      { id: "pg6", title: "Ideas", updatedAt: "2026-10-20T09:00:00.000Z", notebook: null },
+    ]);
+    expect(mockPrisma.page.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          createdById: "u1",
+          kind: "FreeForm",
+          archivedAt: null,
+          OR: [{ workspaceType: "Member", workspaceId: "u1" }, { parent: { kind: "Notebook" } }],
+        },
+      }),
+    );
+  });
+
   it.each([
     ["the AI notes flag is off", () => isFeatureEnabled.mockResolvedValue(false)],
     ["transcription isn't configured", () => isTranscriptionEnabled.mockReturnValue(false)],
@@ -133,20 +166,50 @@ describe("GET /api/mobile/notes", () => {
   });
 });
 
-describe("POST /api/mobile/notes (quick note page)", () => {
+describe("POST /api/mobile/notes (a page to take notes in)", () => {
   it("creates a personal note and returns its collab room", async () => {
     createNote.mockResolvedValue({ id: "pg9" });
     const res = (await quickNote({ request: post("/api/mobile/notes", { title: "Quick note · Oct 22" }) } as never)) as Response;
     expect(res.status).toBe(201);
-    expect(await res.json()).toEqual({ documentName: "doc:pg9:body" });
+    expect(await res.json()).toEqual({ pageId: "pg9", documentName: "doc:pg9:body" });
     expect(createNote).toHaveBeenCalledWith("u1", { title: "Quick note · Oct 22" });
   });
 
-  it("creates nothing when recording isn't available to the member", async () => {
+  it("creates a typed note even when recording is off for the member", async () => {
     isFeatureEnabled.mockResolvedValue(false);
+    createNote.mockResolvedValue({ id: "pg9" });
     const res = (await quickNote({ request: post("/api/mobile/notes", { title: "x" }) } as never)) as Response;
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(201);
+  });
+
+  it("opens a calendar meeting occurrence's notes page", async () => {
+    attachMeetingNote.mockResolvedValue({ ok: true, notePageId: "pg7" });
+    const res = (await quickNote({
+      request: post("/api/mobile/notes", { scheduledMeetingId: "m1", occurrenceStart: "2026-10-20T18:00:00.000Z" }),
+    } as never)) as Response;
+    expect(res.status).toBe(201);
+    expect(await res.json()).toEqual({ pageId: "pg7", documentName: "doc:pg7:body" });
+    expect(attachMeetingNote).toHaveBeenCalledWith({
+      meetingId: "m1",
+      actorId: "u1",
+      occurrence: new Date("2026-10-20T18:00:00.000Z"),
+    });
     expect(createNote).not.toHaveBeenCalled();
+  });
+
+  it("passes the meeting's refusal on", async () => {
+    attachMeetingNote.mockResolvedValue({ ok: false, error: "Meeting not found", status: 404 });
+    const res = (await quickNote({
+      request: post("/api/mobile/notes", { scheduledMeetingId: "m1", occurrenceStart: "2026-10-20T18:00:00.000Z" }),
+    } as never)) as Response;
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: "Meeting not found" });
+  });
+
+  it("rejects a meeting without a valid occurrence", async () => {
+    const res = (await quickNote({ request: post("/api/mobile/notes", { scheduledMeetingId: "m1", occurrenceStart: "soon" }) } as never)) as Response;
+    expect(res.status).toBe(400);
+    expect(attachMeetingNote).not.toHaveBeenCalled();
   });
 
   it("answers 409 when a note with that title already exists", async () => {
@@ -201,6 +264,7 @@ describe("GET /api/mobile/notes/:id", () => {
       isOwner: true,
       canEdit: true,
       enhancedAt: "2026-10-20T19:02:00.000Z",
+      pageId: "pg1",
       pagePath: "/documents/pg1",
       project: { id: "p1", name: "DALI OS" },
       meeting: null,

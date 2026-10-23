@@ -1,18 +1,26 @@
 import React from 'react';
 import { Pressable, View } from 'react-native';
-import { Calendar, Pencil } from 'lucide-react-native';
+import { Calendar, Pencil, Trash2 } from 'lucide-react-native';
 import { colors, tw } from '../../theme';
 import type { Role, TimeEntry } from '../../api/contract';
 import { formatHours, fromDateKey } from '../../utils/hours';
 import { roleColor } from '../../utils/roleColor';
 import { formatDayLabel, formatTimeRange } from '../../utils/time';
+import { SwipeRow } from '../ui/SwipeRow';
 import { Text } from '../ui/Text';
 
 export function entryTitle(entry: TimeEntry, role: Role | undefined): string {
   return entry.meetingTitle ?? entry.note ?? `${role?.label ?? 'Work'} time`;
 }
 
-export function EntryList({ entries, roles, onOpen }: { entries: TimeEntry[]; roles: Role[]; onOpen: (entry: TimeEntry) => void }) {
+interface EntryListProps {
+  entries: TimeEntry[];
+  roles: Role[];
+  onOpen: (entry: TimeEntry) => void;
+  onDelete: (entry: TimeEntry) => void;
+}
+
+export function EntryList({ entries, roles, onOpen, onDelete }: EntryListProps) {
   const roleIds = roles.map((r) => r.roleRefId);
   const days = Array.from(new Set(entries.map((e) => e.day))).sort((a, b) => b.localeCompare(a));
 
@@ -45,12 +53,17 @@ export function EntryList({ entries, roles, onOpen }: { entries: TimeEntry[]; ro
                 const SourceIcon = e.source === 'Meeting' ? Calendar : Pencil;
                 const range = e.startTime && e.endTime ? formatTimeRange(e.startTime, e.endTime) : null;
                 return (
+                  <View key={e.id} style={i > 0 && tw`border-t border-slate-100`}>
+                  <SwipeRow
+                    actions={[
+                      { label: 'Edit', icon: Pencil, color: colors.navy, onPress: () => onOpen(e) },
+                      { label: e.source === 'Meeting' ? 'Remove' : 'Delete', icon: Trash2, color: colors.coral, onPress: () => onDelete(e) },
+                    ]}>
                   <Pressable
-                    key={e.id}
                     accessibilityRole="button"
                     accessibilityHint={e.source === 'Meeting' ? 'From a meeting' : 'Added by you'}
                     onPress={() => onOpen(e)}
-                    style={({ pressed }) => [tw`flex-row items-center gap-3 px-3 py-2.5`, i > 0 && tw`border-t border-slate-100`, pressed && tw`bg-slate-50`]}>
+                    style={({ pressed }) => [tw`flex-row items-center gap-3 px-3 py-2.5`, pressed && tw`bg-slate-50`]}>
                     <View style={[tw`h-8 w-1 rounded-full`, { backgroundColor: roleColor(roleIds, e.roleRefId) }]} />
                     <View style={tw`flex-1`}>
                       <Text numberOfLines={1} style={tw`text-sm font-bold text-cool-black`}>
@@ -65,6 +78,8 @@ export function EntryList({ entries, roles, onOpen }: { entries: TimeEntry[]; ro
                     </View>
                     <Text style={[tw`text-sm font-bold text-navy`, { fontVariant: ['tabular-nums'] }]}>{formatHours(e.hours)}</Text>
                   </Pressable>
+                  </SwipeRow>
+                  </View>
                 );
               })}
             </View>

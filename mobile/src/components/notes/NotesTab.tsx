@@ -4,6 +4,7 @@ import { tw } from '../../theme';
 import { useNotes } from '../../contexts/NotesContext';
 import { Toast } from '../ui/Toast';
 import { NoteDetailScreen } from './NoteDetailScreen';
+import { NoteEditorScreen } from './NoteEditorScreen';
 import { NotesHome } from './NotesHome';
 import { RecorderScreen } from './RecorderScreen';
 
@@ -29,10 +30,12 @@ function Slide({ shown, from, children }: { shown: boolean; from: 'right' | 'bot
 }
 
 export function NotesTab({ onOpenProfile }: { onOpenProfile: () => void }) {
-  const { notes, error, load, active, recorderVisible, viewingId, closeNote, notice, clearNotice } = useNotes();
+  const { notes, error, load, active, recorderVisible, viewingId, closeNote, editing, closeEditor, notice, clearNotice } = useNotes();
   const [message, setMessage] = useState<string | null>(null);
   const lastViewed = useRef(viewingId);
   if (viewingId) lastViewed.current = viewingId;
+  const lastEditing = useRef(editing);
+  if (editing) lastEditing.current = editing;
 
   useEffect(() => {
     if (!notes && !error) void load();
@@ -43,6 +46,11 @@ export function NotesTab({ onOpenProfile }: { onOpenProfile: () => void }) {
       <NotesHome onOpenProfile={onOpenProfile} onError={setMessage} />
       <Slide shown={Boolean(viewingId)} from="right">
         {lastViewed.current ? <NoteDetailScreen recordingId={lastViewed.current} onBack={closeNote} /> : null}
+      </Slide>
+      <Slide shown={Boolean(editing)} from="right">
+        {lastEditing.current ? (
+          <NoteEditorScreen key={lastEditing.current.pageId} pageId={lastEditing.current.pageId} title={lastEditing.current.title} onBack={closeEditor} />
+        ) : null}
       </Slide>
       <Slide shown={Boolean(active) && recorderVisible} from="bottom">
         <RecorderScreen />

@@ -76,6 +76,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     isOwner: rec.userId === userId,
     canEdit,
     enhancedAt: rec.enhancedAt?.toISOString() ?? null,
+    pageId,
     pagePath: pageId ? `/documents/${pageId}` : null,
     project,
     meeting,

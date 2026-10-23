@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Linking, Pressable, Switch, View } from 'react-native';
 import { format } from 'date-fns';
-import { Calendar, Clock, MapPin, Mic, NotebookPen, NotebookText, Timer, Video, type LucideIcon } from 'lucide-react-native';
+import { Calendar, Clock, MapPin, Mic, NotebookPen, NotebookText, PenLine, Timer, Video, type LucideIcon } from 'lucide-react-native';
 import { colors, tw } from '../../theme';
 import { errorMessage } from '../../api/client';
 import { useNotes, type MeetingTarget } from '../../contexts/NotesContext';
@@ -29,6 +29,7 @@ interface EventDetailSheetProps {
   onClose: () => void;
   onRsvp: (event: CalendarEvent, rsvp: Rsvp) => void;
   onRecord: (meeting: MeetingTarget) => Promise<string | null>;
+  onTakeNotes: (meeting: MeetingTarget) => Promise<string | null>;
   onViewNote: (recordingId: string) => void;
 }
 
@@ -41,11 +42,11 @@ function Detail({ icon: I, children }: { icon: LucideIcon; children: React.React
   );
 }
 
-export function EventDetailSheet({ event, onClose, onRsvp, onRecord, onViewNote }: EventDetailSheetProps) {
+export function EventDetailSheet({ event, onClose, onRsvp, onRecord, onTakeNotes, onViewNote }: EventDetailSheetProps) {
   const { getMember, meId } = useMembers();
   const { active, noteForMeeting } = useNotes();
   const { roles, getRole, meetingEntry, ensurePeriodFor, logMeeting, deleteEntry } = useTime();
-  const [busy, setBusy] = useState<'record' | 'log' | null>(null);
+  const [busy, setBusy] = useState<'record' | 'notes' | 'log' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const last = useRef<CalendarEvent | undefined>(event);
   if (event) last.current = event;
@@ -67,6 +68,15 @@ export function EventDetailSheet({ event, onClose, onRsvp, onRecord, onViewNote 
     if (!meeting) return;
     setBusy('record');
     const message = await onRecord(meeting);
+    setBusy(null);
+    if (message) setError(message);
+    else onClose();
+  };
+
+  const takeNotes = async () => {
+    if (!meeting) return;
+    setBusy('notes');
+    const message = await onTakeNotes(meeting);
     setBusy(null);
     if (message) setError(message);
     else onClose();
@@ -131,6 +141,9 @@ export function EventDetailSheet({ event, onClose, onRsvp, onRecord, onViewNote 
                   {recordingThis ? 'Return to the recorder' : active ? 'Another recording is in progress' : 'Record meeting notes'}
                 </Button>
               )}
+              <Button fullWidth variant="outline" color="navy" leftIcon={PenLine} loading={busy === 'notes'} disabled={busy !== null} onPress={() => void takeNotes()}>
+                {note ? 'Edit meeting notes' : 'Take notes'}
+              </Button>
 
               <View style={tw`flex-row items-center gap-3 rounded-xl border border-slate-200 px-3 py-2.5`}>
                 <Timer size={18} color={colors.navy} />

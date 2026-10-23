@@ -1,10 +1,9 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Pressable, ScrollView, View } from 'react-native';
-import * as WebBrowser from 'expo-web-browser';
 import { format } from 'date-fns';
-import { Check, CheckCircle2, ExternalLink, Flag, RefreshCw, Sparkles, Timer } from 'lucide-react-native';
+import { Check, CheckCircle2, Flag, PenLine, RefreshCw, Sparkles, Timer } from 'lucide-react-native';
 import { colors, tw } from '../../theme';
-import { api, clientConfig, errorMessage } from '../../api/client';
+import { api, errorMessage } from '../../api/client';
 import type { NoteDetail, OutlineItem } from '../../api/contract';
 import { useNotes } from '../../contexts/NotesContext';
 import { useTime } from '../../contexts/TimeContext';
@@ -75,7 +74,7 @@ function Outline({ items }: { items: OutlineItem[] }) {
 }
 
 export function NoteDetailScreen({ recordingId, onBack }: { recordingId: string; onBack: () => void }) {
-  const { load: reloadNotes } = useNotes();
+  const { load: reloadNotes, editing, openEditor } = useNotes();
   const { getRole, logMeeting } = useTime();
   const [note, setNote] = useState<NoteDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -95,6 +94,13 @@ export function NoteDetailScreen({ recordingId, onBack }: { recordingId: string;
       return null;
     }
   }, [recordingId]);
+
+  // Coming back from the editor: the page may have new notes.
+  const wasEditing = React.useRef(false);
+  useEffect(() => {
+    if (wasEditing.current && !editing) void fetchNote();
+    wasEditing.current = Boolean(editing);
+  }, [editing, fetchNote]);
 
   useEffect(() => {
     setNote(null);
@@ -153,9 +159,6 @@ export function NoteDetailScreen({ recordingId, onBack }: { recordingId: string;
       return 'Notes written to the meeting page';
     });
 
-  const openPage = () => {
-    if (note.pagePath) void WebBrowser.openBrowserAsync(`${clientConfig().baseUrl}${note.pagePath}`);
-  };
 
   return (
     <View style={tw`flex-1 bg-white`}>
@@ -164,9 +167,15 @@ export function NoteDetailScreen({ recordingId, onBack }: { recordingId: string;
         title={note.title}
         subtitle={`${format(new Date(note.createdAt), 'EEE, MMM d · h:mm a')} · ${formatRecordedLength(note.recordedSeconds)}`}
         trailing={
-          note.pagePath ? (
-            <Pressable accessibilityRole="link" accessibilityLabel="Open in DALI OS" onPress={openPage} hitSlop={8} style={tw`px-2`}>
-              <ExternalLink size={18} color={colors.navy} />
+          note.pageId && note.canEdit ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Edit notes"
+              onPress={() => openEditor({ pageId: note.pageId as string, title: note.title })}
+              hitSlop={8}
+              style={tw`flex-row items-center gap-1 px-2`}>
+              <PenLine size={16} color={colors.navy} />
+              <Text style={tw`text-sm font-bold text-navy`}>Edit</Text>
             </Pressable>
           ) : undefined
         }
