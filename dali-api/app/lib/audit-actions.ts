@@ -12,6 +12,10 @@ export const AUDIT_ACTIONS = [
   "auth.passkey.remove",
   "auth.token.invalid",
   "auth.token.malformed",
+  // Unattributed: one row per sign-in code request (metadata.email), counted
+  // by the cross-machine send throttle; "throttled" rows are the refused ones.
+  "auth.code.request",
+  "auth.code.throttled",
   // Unattributed: /oauth/register is public, and a rejected registration
   // persists nothing else — this row is where the rejected redirect_uris live.
   "oauth.register.rejected",

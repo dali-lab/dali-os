@@ -398,37 +398,39 @@ describe("POST /login verify-code (flag-ON)", () => {
 });
 
 describe("POST /login rate-limit scoping (flag-ON)", () => {
-  it("throttles code sends but keeps the user on the code screen (no raw 429)", async () => {
+  it("keeps the user on the code screen with a message when BetterAuth throttles the send", async () => {
     mockIsFeatureEnabledForEveryone.mockResolvedValue(true);
-    const send = () =>
-      action({
-        request: makeFlagOnRequest("7.7.7.7", {
-          provider: "email-code",
-          email: "ada@dartmouth.edu",
-        }),
-      } as any);
-    for (let i = 0; i < 5; i++) await send();
-    const result = await send();
+    mockSendVerificationOTP.mockRejectedValue({ status: "TOO_MANY_REQUESTS" });
+    const result = await action({
+      request: makeFlagOnRequest("7.7.7.7", {
+        provider: "email-code",
+        email: "ada@dartmouth.edu",
+      }),
+    } as any);
     expect(result).toMatchObject({
       codeSent: true,
       email: "ada@dartmouth.edu",
       error: expect.stringContaining("several codes"),
     });
-    // The throttled 6th attempt did not dispatch another email.
-    expect(mockSendVerificationOTP).toHaveBeenCalledTimes(5);
   });
 
-  it("does not coarse-limit verify attempts, even after the send bucket is full", async () => {
+  it("does not throttle sends in the route itself; the shared BetterAuth hook owns the limit", async () => {
     mockIsFeatureEnabledForEveryone.mockResolvedValue(true);
-    const ip = "7.7.7.8";
-    for (let i = 0; i < 5; i++) {
-      await action({
-        request: makeFlagOnRequest(ip, {
+    for (let i = 0; i < 8; i++) {
+      const result = await action({
+        request: makeFlagOnRequest("7.7.7.9", {
           provider: "email-code",
           email: "ada@dartmouth.edu",
         }),
       } as any);
+      expect(result).not.toHaveProperty("error");
     }
+    expect(mockSendVerificationOTP).toHaveBeenCalledTimes(8);
+  });
+
+  it("does not coarse-limit verify attempts", async () => {
+    mockIsFeatureEnabledForEveryone.mockResolvedValue(true);
+    const ip = "7.7.7.8";
     // A typo-fixing user posts verify-code several times on the same IP; each
     // still reaches BetterAuth (which caps attempts per code) instead of 429ing.
     for (let i = 0; i < 6; i++) {
