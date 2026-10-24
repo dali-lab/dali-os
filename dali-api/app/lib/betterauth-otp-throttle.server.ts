@@ -14,8 +14,12 @@ import { getClientIpFromHeaders } from "~/lib/rate-limit";
 // they get a higher per-IP cap, no daily cap, and are never auto-blocked. The
 // per-email caps are the same everywhere: they bound what one member can
 // receive however many addresses a sender rotates through.
+//
+// Sign-in codes and magic links share one bucket, so the caps bound every
+// sign-in email a member can be sent, not each kind separately.
 
-const SEND_PATH = "/email-otp/send-verification-otp";
+const OTP_PATH = "/email-otp/send-verification-otp";
+const MAGIC_LINK_PATH = "/sign-in/magic-link";
 const REQUEST_ACTION = "auth.code.request";
 const THROTTLED_ACTION = "auth.code.throttled";
 
@@ -50,15 +54,29 @@ export async function rejectBlockedIp(ctx: any): Promise<void> {
   throw new APIError("FORBIDDEN", { message: "Sign-in is not available from this network." });
 }
 
+// /signup and the partner flow check the address's domain before calling
+// auth.api.signInMagicLink, which carries no request. A direct POST to the
+// endpoint would skip those checks and mail any address.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function rejectDirectMagicLink(ctx: any): void {
+  if (ctx?.path === MAGIC_LINK_PATH && ctx?.request) {
+    throw new APIError("NOT_FOUND");
+  }
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function throttleOtpSend(ctx: any): Promise<void> {
-  if (ctx?.path !== SEND_PATH) return;
+  const isMagicLink = ctx?.path === MAGIC_LINK_PATH;
+  if (ctx?.path !== OTP_PATH && !isMagicLink) return;
   const email = ctx?.body?.email;
   if (typeof email !== "string" || email.trim() === "") return;
 
   const normalized = email.trim().toLowerCase();
   const { ip, userAgent } = clientOf(ctx);
-  const metadata = { email: normalized, type: String(ctx?.body?.type ?? "") };
+  const metadata = {
+    email: normalized,
+    type: isMagicLink ? "magic-link" : String(ctx?.body?.type ?? ""),
+  };
   const knownIp = ip !== "unknown";
   const trusted = knownIp && (await isIpTrusted(ip));
 

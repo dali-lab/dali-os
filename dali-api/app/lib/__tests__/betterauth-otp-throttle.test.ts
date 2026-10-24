@@ -37,6 +37,7 @@ import {
   OTP_SEND_MAX_PER_TRUSTED_IP,
   OTP_SEND_WINDOW_MS,
   rejectBlockedIp,
+  rejectDirectMagicLink,
   throttleOtpSend,
 } from "~/lib/betterauth-otp-throttle.server";
 
@@ -89,7 +90,7 @@ beforeEach(() => {
 describe("throttleOtpSend", () => {
   it("ignores other endpoints", async () => {
     await throttleOtpSend(ctx({ path: "/sign-in/email-otp" }));
-    await throttleOtpSend(ctx({ path: "/sign-in/magic-link" }));
+    await throttleOtpSend(ctx({ path: "/magic-link/verify" }));
     expect(mockCount).not.toHaveBeenCalled();
     expect(mockAudit).not.toHaveBeenCalled();
   });
@@ -213,7 +214,7 @@ describe("throttleOtpSend", () => {
     it("has no daily cap", async () => {
       counts({ day: 10_000 });
       await expect(throttleOtpSend(ctx())).resolves.toBeUndefined();
-      expect(countedWhere((w) => Date.now() - w.createdAt?.gte?.getTime() > OTP_SEND_WINDOW_MS)).toBe(false);
+      expect(countedWhere((w) => Date.now() - w.createdAt?.gte?.getTime() > OTP_SEND_HOUR_MS)).toBe(false);
     });
 
     it("keeps the same per-email cap", async () => {
@@ -316,6 +317,78 @@ describe("per-email limits over longer windows", () => {
     for (const ip of ["198.51.100.1", "198.51.100.2", "203.0.113.9"]) {
       const headers = new Headers({ "Fly-Client-IP": ip });
       await expect(throttleOtpSend(ctx({ headers }))).rejects.toMatchObject({ status: "TOO_MANY_REQUESTS" });
+    }
+  });
+});
+
+describe("magic-link sends", () => {
+  const link = (overrides: Record<string, unknown> = {}) =>
+    ctx({ path: "/sign-in/magic-link", body: { email: "Ada@example.edu" }, ...overrides });
+
+  it("records a request as a magic-link row in the shared bucket", async () => {
+    await expect(throttleOtpSend(link())).resolves.toBeUndefined();
+    expect(mockAudit).toHaveBeenCalledWith({
+      action: "auth.code.request",
+      metadata: { email: "ada@example.edu", type: "magic-link" },
+      ip: "1.2.3.4",
+      userAgent: "UA",
+    });
+    expect(mockFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          action: "auth.code.request",
+          metadata: { path: ["email"], equals: "ada@example.edu" },
+        }),
+      }),
+    );
+  });
+
+  it.each([
+    ["email", { email: OTP_SEND_MAX_PER_EMAIL }],
+    ["email (hour)", { emailAges: Array.from({ length: OTP_SEND_MAX_PER_EMAIL_HOUR }, (_, i) => (i + 1) * 11 * 60_000) }],
+    ["IP (10 min)", { ip: OTP_SEND_MAX_PER_IP }],
+    ["IP (day)", { day: OTP_SEND_MAX_PER_IP_DAY }],
+  ])("refuses at the %s cap", async (_label, c) => {
+    counts(c);
+    await expect(throttleOtpSend(link())).rejects.toMatchObject({ status: "TOO_MANY_REQUESTS" });
+    expect(mockAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "auth.code.throttled",
+        metadata: { email: "ada@example.edu", type: "magic-link" },
+      }),
+    );
+  });
+
+  it("auto-blocks an outside address refused too often", async () => {
+    counts({ ip: OTP_SEND_MAX_PER_IP, throttles: AUTO_BLOCK_AFTER_THROTTLES });
+    await expect(throttleOtpSend(link())).rejects.toThrow();
+    expect(ipRules.autoBlockIp).toHaveBeenCalledWith("1.2.3.4", expect.any(String));
+  });
+
+  it("ignores a missing email", async () => {
+    await throttleOtpSend(link({ body: {} }));
+    expect(mockAudit).not.toHaveBeenCalled();
+  });
+});
+
+describe("rejectDirectMagicLink", () => {
+  const request = new Request("https://x.test/api/auth/sign-in/magic-link", { method: "POST" });
+
+  it("refuses a magic-link request that came in over HTTP", () => {
+    expect(() => rejectDirectMagicLink({ path: "/sign-in/magic-link", request })).toThrow(
+      expect.objectContaining({ status: "NOT_FOUND" }),
+    );
+  });
+
+  it("allows a server-side auth.api call, which carries headers but no request", () => {
+    expect(() =>
+      rejectDirectMagicLink({ path: "/sign-in/magic-link", headers: new Headers() }),
+    ).not.toThrow();
+  });
+
+  it("leaves other endpoints reachable over HTTP, including link verification", () => {
+    for (const path of ["/magic-link/verify", "/email-otp/send-verification-otp", "/get-session"]) {
+      expect(() => rejectDirectMagicLink({ path, request })).not.toThrow();
     }
   });
 });
