@@ -213,7 +213,7 @@ describe("throttleOtpSend", () => {
     it("has no daily cap", async () => {
       counts({ day: 10_000 });
       await expect(throttleOtpSend(ctx())).resolves.toBeUndefined();
-      expect(countedWhere((w) => Date.now() - w.createdAt?.gte?.getTime() > OTP_SEND_WINDOW_MS)).toBe(false);
+      expect(countedWhere((w) => Date.now() - w.createdAt?.gte?.getTime() > OTP_SEND_HOUR_MS)).toBe(false);
     });
 
     it("keeps the same per-email cap", async () => {
