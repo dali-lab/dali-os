@@ -24,16 +24,13 @@ import { buildIcs } from "~/lib/ics";
 import {
   createProjectPage,
   createLabMeetingPage,
-  ensureMeetingNotesFolder,
-  ensureCoreMeetingNotesFolder,
-  ensureLabMeetingNotesFolder,
   ensureMeetingNotebook,
   createNotebookTab,
   moveIntoNotebook,
   trashNotebookIfAbandoned,
   type MeetingNotebookDestination,
 } from "~/lib/pages";
-import { receiversEnabled, resolveFilingFolder, projectSlot, singletonSlot } from "~/lib/drive-receivers.server";
+import { resolveFilingFolder, projectSlot, singletonSlot } from "~/lib/drive-receivers.server";
 import { meetingNotebookIdentity, meetingTypeForNotebook, termForDate } from "~/lib/meeting-notebook";
 import { termWindows } from "~/lib/terms";
 import { isCore, isProjectMember } from "~/lib/roles";
@@ -498,20 +495,8 @@ async function resolveArtifactFiling(
   const beside = isBoard && input.fileAt ? destinationOf(input.fileAt) : null;
   if (beside) return file(beside);
 
-  const receivers = await receiversEnabled();
-
   if (input.projectId) {
-    // Team/Partner assets nest under their default, undeletable folder;
-    // "Other" assets stay top-level (no default folder for a custom label).
-    // With receivers on, every project meeting files to the project's Meetings
-    // receiver, else the project top level.
-    let parentPageId: string | null = receivers
-      ? (await resolveFilingFolder(projectSlot(input.projectId), input.authorId)).folderId
-      : null;
-    if (!receivers && (input.meetingType === "Team" || input.meetingType === "Partner")) {
-      const folder = await ensureMeetingNotesFolder(input.projectId, input.meetingType, input.authorId);
-      parentPageId = folder.id;
-    }
+    const { folderId: parentPageId } = await resolveFilingFolder(projectSlot(input.projectId), input.authorId);
     return file({ workspaceType: "Project", workspaceId: input.projectId, parentPageId });
   }
 
@@ -520,9 +505,7 @@ async function resolveArtifactFiling(
     // to its project: always Core's own meeting-assets folder, never a location
     // the organizer picked. The folder is Core-scoped, so the asset is Core-only
     // without depending on its own link access.
-    const coreFolderId = receivers
-      ? (await resolveFilingFolder(singletonSlot("Core", "Meetings"), input.authorId)).folderId
-      : await ensureCoreMeetingNotesFolder(input.authorId);
+    const { folderId: coreFolderId } = await resolveFilingFolder(singletonSlot("Core", "Meetings"), input.authorId);
     return file({
       workspaceType: "Lab",
       workspaceId: null,
@@ -533,9 +516,7 @@ async function resolveArtifactFiling(
     });
   }
 
-  const parentPageId = receivers
-    ? (await resolveFilingFolder(singletonSlot("Lab", "Meetings"), input.authorId)).folderId
-    : await ensureLabMeetingNotesFolder(input.authorId);
+  const { folderId: parentPageId } = await resolveFilingFolder(singletonSlot("Lab", "Meetings"), input.authorId);
   return file({ workspaceType: "Lab", workspaceId: null, parentPageId });
 }
 
@@ -1406,16 +1387,9 @@ async function refileMeetingArtifactToProject(input: {
 }): Promise<string | null> {
   const dateLabel = formatDateShort(input.startDate ?? new Date());
   const noun = input.isBoard ? "whiteboard" : "meeting note";
-  const receivers = await receiversEnabled();
-  let parentPageId: string | null = receivers
-    ? (await resolveFilingFolder(projectSlot(input.projectId), input.authorId)).folderId
-    : null;
+  const { folderId: parentPageId } = await resolveFilingFolder(projectSlot(input.projectId), input.authorId);
   let title: string;
   if (input.meetingType === "Team" || input.meetingType === "Partner") {
-    if (!receivers) {
-      const folder = await ensureMeetingNotesFolder(input.projectId, input.meetingType, input.authorId);
-      parentPageId = folder.id;
-    }
     title = `${input.projectName} ${input.meetingType} ${noun} (${dateLabel})`;
   } else {
     // "Other": no default folder for a custom label, so it sits at the project

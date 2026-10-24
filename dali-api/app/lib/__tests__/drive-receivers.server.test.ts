@@ -8,7 +8,6 @@ vi.mock("~/lib/db", () => ({
 }));
 vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn().mockResolvedValue(undefined) }));
 vi.mock("~/lib/roles", () => ({ getUserRoles: vi.fn() }));
-vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabledForEveryone: vi.fn() }));
 vi.mock("~/lib/drive-roots.server", () => ({
   ensureRoot: vi.fn(),
   rootKeyFor: (p: { processType?: string | null; processId?: string | null }) => {
@@ -21,7 +20,6 @@ vi.mock("~/lib/drive-roots.server", () => ({
 import { prisma } from "~/lib/db";
 import { logAuditEvent } from "~/lib/audit";
 import { getUserRoles } from "~/lib/roles";
-import { isFeatureEnabledForEveryone } from "~/lib/feature-flags.server";
 import { ensureRoot } from "~/lib/drive-roots.server";
 import {
   RECEIVER_SLOTS,
@@ -30,7 +28,6 @@ import {
   acceptsReceiver,
   clearReceiver,
   clearTypeIfLeavingRoot,
-  filingFolderOr,
   findReceiver,
   isUnderRoot,
   projectSlot,
@@ -438,25 +435,5 @@ describe("resolveFilingFolder", () => {
       await resolveFilingFolder(projectSlot("p1"), "u1");
       expect(tx.$queryRaw).toHaveBeenCalledTimes(1);
     });
-  });
-});
-
-describe("filingFolderOr", () => {
-  const slot = singletonSlot("Core", "Agreements");
-
-  it("runs the legacy path with the flag off and never looks for a receiver", async () => {
-    vi.mocked(isFeatureEnabledForEveryone).mockResolvedValue(false);
-    const legacy = vi.fn().mockResolvedValue("legacy-folder");
-    expect(await filingFolderOr(slot, "u1", legacy)).toBe("legacy-folder");
-    expect(m.page.findFirst).not.toHaveBeenCalled();
-    expect(isFeatureEnabledForEveryone).toHaveBeenCalledWith("drive-receivers", undefined);
-  });
-
-  it("resolves receiver-else-root with the flag on and skips the legacy path", async () => {
-    vi.mocked(isFeatureEnabledForEveryone).mockResolvedValue(true);
-    vi.mocked(ensureRoot).mockResolvedValue("core-root");
-    const legacy = vi.fn();
-    expect(await filingFolderOr(slot, "u1", legacy)).toBe("core-root");
-    expect(legacy).not.toHaveBeenCalled();
   });
 });

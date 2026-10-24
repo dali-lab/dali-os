@@ -6,11 +6,7 @@
 
 import { prisma } from "~/lib/db";
 import { getObjectBytes, getDownloadUrl } from "~/lib/s3";
-import { filingFolderOr, singletonSlot } from "~/lib/drive-receivers.server";
-import {
-  ensureProcessFolder,
-  CERTIFICATE_TEMPLATES_PROCESS_ID,
-} from "~/lib/bindings.server";
+import { resolveFilingFolder, singletonSlot } from "~/lib/drive-receivers.server";
 import { parsePlacedFields, type PlacedField } from "./certificate-fields";
 
 /** The S3 key + content type of a background ProjectFile's current version. */
@@ -98,13 +94,9 @@ export async function createCertificateTemplate(args: {
 
   // Auto-file the background into the CertificateTemplates folder binding
   // (creates a default Core-scoped folder on first upload; Core can repoint it).
-  const folderPageId = await filingFolderOr(singletonSlot("Core", "CertificateBackgrounds"), args.actorId, () =>
-    ensureProcessFolder({
-      processType: "CertificateTemplates",
-      processId: CERTIFICATE_TEMPLATES_PROCESS_ID,
-      purpose: "background",
-      createdById: args.actorId,
-    }),
+  const { folderId: folderPageId } = await resolveFilingFolder(
+    singletonSlot("Core", "CertificateBackgrounds"),
+    args.actorId,
   );
 
   // Create the Drive file + first version, then the template pointing at it.

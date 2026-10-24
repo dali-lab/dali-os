@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/db", () => ({ prisma: { page: { findFirst: vi.fn(), create: vi.fn() } } }));
-vi.mock("~/lib/bindings.server", () => ({ ensureProcessFolder: vi.fn(), CORE_PROCESS_ID: "core", LAB_PROCESS_ID: "lab" }));
 vi.mock("~/lib/page-names.server", () => ({ assertUniqueName: vi.fn() }));
 
 import { prisma } from "~/lib/db";

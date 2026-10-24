@@ -70,8 +70,6 @@ export type DriveItem =
       folderType?: string | null;
       /** A project or offering row the Projects and Education spaces draw; shown as a system folder. */
       system?: boolean;
-      /** A plain folder a process files its meeting notes into (a `ProcessFolderBinding` with a meeting-notes purpose). */
-      meetingNotes?: boolean;
       /** Live items directly inside, counted over the items the viewer can see. */
       itemCount?: number;
       updatedAt: Date;
@@ -431,7 +429,6 @@ async function loadLabPages(
       iconEmoji: true,
       folderType: true,
       updatedAt: true,
-      ...MEETING_NOTES_BINDING_SELECT,
       // Fields getPageAccess needs when passed as PageShape
       workspaceType: true,
       workspaceId: true,
@@ -479,7 +476,6 @@ async function loadLabPages(
             parentFolderId: row.parentPageId,
             iconEmoji: row.iconEmoji,
             folderType: row.folderType,
-            meetingNotes: filesMeetingNotes(row),
             tags: tagsOf(row),
             updatedAt: row.updatedAt,
             href: `/documents/${row.id}`,
@@ -518,19 +514,6 @@ async function loadLabPages(
  *  to the whole team even though the folder itself denies them. A workspace
  *  with no scoped folder (the common case) pays one cheap existence query and
  *  behaves exactly as before. */
-const MEETING_NOTES_BINDING_SELECT = {
-  processFolderBindings: {
-    where: { purpose: { startsWith: "meeting-notes" } },
-    select: { purpose: true },
-  },
-} as const;
-
-type MeetingNotesBindingRow = { purpose: string };
-
-function filesMeetingNotes(row: { processFolderBindings?: MeetingNotesBindingRow[] }): boolean {
-  return (row.processFolderBindings?.length ?? 0) > 0;
-}
-
 /**
  * Select shape for `loadProjectPages`, exported so the project route loader
  * can widen its own Stage 2 `pageRows` query (by spreading this object) and
@@ -545,7 +528,6 @@ export const PROJECT_PAGE_SELECT = {
   iconEmoji: true,
   folderType: true,
   updatedAt: true,
-  ...MEETING_NOTES_BINDING_SELECT,
   partnerVisible: true,
   // Only read by the scoped branch below; cheap to carry either way, and it
   // saves getPageAccessBulk re-fetching every row.
@@ -568,7 +550,7 @@ export type ProjectPageRow = Prisma.PageGetPayload<{ select: typeof PROJECT_PAGE
 export type PageItemRow = Pick<
   ProjectPageRow,
   "id" | "title" | "kind" | "parentPageId" | "iconEmoji" | "folderType" | "updatedAt" | "partnerVisible"
-> & { tags?: Parameters<typeof tagsOf>[0]["tags"]; processFolderBindings?: MeetingNotesBindingRow[] };
+> & { tags?: Parameters<typeof tagsOf>[0]["tags"] };
 
 /** The folder or doc DriveItem for a Page row. */
 export function pageRowToDriveItem(
@@ -583,7 +565,6 @@ export function pageRowToDriveItem(
       parentFolderId: row.parentPageId,
       iconEmoji: row.iconEmoji,
       folderType: row.folderType,
-      meetingNotes: filesMeetingNotes(row),
       tags: tagsOf(row),
       updatedAt: row.updatedAt,
       href: `/documents/${row.id}`,
@@ -701,7 +682,6 @@ async function loadEducationPages(
       iconEmoji: true,
       folderType: true,
       updatedAt: true,
-      ...MEETING_NOTES_BINDING_SELECT,
       // See loadProjectPages: only used when the workspace holds a scoped folder.
       workspaceType: true,
       workspaceId: true,
@@ -743,7 +723,6 @@ async function loadEducationPages(
           parentFolderId: row.parentPageId,
           iconEmoji: row.iconEmoji,
           folderType: row.folderType,
-          meetingNotes: filesMeetingNotes(row),
           tags: tagsOf(row),
           updatedAt: row.updatedAt,
           href: `/documents/${row.id}`,
@@ -990,9 +969,8 @@ async function loadAgreements(
   _linkedProcessMap?: Map<string, { label: string; href: string }>,
 ): Promise<DriveItem[]> {
   const rows = await prisma.signingDocument.findMany({
-    // Placed-only: agreements live in the Core "agreements" bound folder (see
-    // bindings.server.ts). An unplaced row would be one whose folder was cleared
-    // and not yet re-filed — don't float it at the Lab root.
+    // Placed-only: agreements live in the Core Agreements receiver folder. An unplaced
+    // row would be one whose folder was cleared and not yet re-filed — don't float it at the Lab root.
     where: { archivedAt: null, folderPageId: { not: null } },
     orderBy: { createdAt: "desc" },
     select: { id: true, name: true, folderPageId: true, updatedAt: true, gateScope: true },
