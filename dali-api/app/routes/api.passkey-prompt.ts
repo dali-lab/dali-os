@@ -1,7 +1,6 @@
 import type { Route } from "./+types/api.passkey-prompt";
 import { getBetterAuthUser } from "~/lib/betterauth-compat.server";
 import { prisma } from "~/lib/db";
-import { isFeatureEnabledForEveryone } from "~/lib/feature-flags.server";
 import {
   shouldOfferPasskey,
   setPasskeyPromptDismissed,
@@ -20,19 +19,12 @@ import {
 //        /passkey/verify-registration — this route only manages the nag cookie.
 
 export async function loader({ request }: Route.LoaderArgs) {
-  // Require a real BetterAuth session — not just any session. Enrollment
-  // (authClient.passkey.addPasskey) hits a BetterAuth endpoint that only accepts
-  // a BetterAuth session, so right after the flag flip a user is still on a
-  // legacy session (requireAuth would honor it) and offering the prompt then
-  // 401s the ceremony. The legacy→BetterAuth session upgrade converts them
-  // first; only once they hold a BetterAuth session do we offer.
+  // Require a BetterAuth session, not just any session: enrollment hits a
+  // BetterAuth endpoint, so a user still on a legacy session (requireAuth would
+  // honor it) would get a 401 from the ceremony. The legacy-session upgrade
+  // converts them first.
   const user = await getBetterAuthUser(request);
   if (!user) return { offer: false };
-  // Belt-and-suspenders: a BetterAuth session implies the flag is live, but keep
-  // the explicit gate so a stale session can't surface the prompt flag-off.
-  if (!(await isFeatureEnabledForEveryone("betterauth", request))) {
-    return { offer: false };
-  }
   return { offer: await shouldOfferPasskey(request, user.sub) };
 }
 

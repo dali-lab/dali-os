@@ -28,25 +28,19 @@ export async function loader({ request }: Route.LoaderArgs) {
   const headers = new Headers();
   clearSessionCookie(headers);
 
-  // Also end any BetterAuth session. It lives in a SEPARATE cookie (prefix
-  // "dali") that clearSessionCookie above doesn't touch — so without this, a
-  // user who signed in through BetterAuth can never actually log out: /login
-  // sees the still-valid session and redirects them straight back in. That's
-  // the trap behind "logged into the wrong Google account and can't get out".
-  // Lazy-imported + fault-isolated so a BA fault (or the flag being off) can't
-  // block clearing the legacy session.
+  // The BetterAuth session lives in a separate cookie (prefix "dali") that
+  // clearSessionCookie doesn't touch; without this /login would see it and
+  // redirect straight back in. Lazy-imported and fault-isolated so a BetterAuth
+  // fault can't block clearing the legacy session.
   try {
-    const { isFeatureEnabledForEveryone } = await import("~/lib/feature-flags.server");
-    if (await isFeatureEnabledForEveryone("betterauth", request)) {
-      const { auth } = await import("~/lib/betterauth.server");
-      const { headers: baHeaders } = await auth.api.signOut({
-        headers: request.headers,
-        returnHeaders: true,
-      });
-      baHeaders.forEach((value, key) => {
-        if (key.toLowerCase() === "set-cookie") headers.append("Set-Cookie", value);
-      });
-    }
+    const { auth } = await import("~/lib/betterauth.server");
+    const { headers: baHeaders } = await auth.api.signOut({
+      headers: request.headers,
+      returnHeaders: true,
+    });
+    baHeaders.forEach((value, key) => {
+      if (key.toLowerCase() === "set-cookie") headers.append("Set-Cookie", value);
+    });
   } catch {
     // A failed BetterAuth sign-out must not block the legacy logout.
   }

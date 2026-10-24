@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from 'node:crypto';
+import { randomBytes } from 'node:crypto';
 import pg from 'pg';
 import { test, expect } from './fixtures';
 
@@ -25,30 +25,17 @@ function getPageId(title: string): Promise<string> {
   });
 }
 
-// Seed a consumable magic-link token directly (the email path is a no-op in
-// dev), so the full self-signup flow is drivable end-to-end.
-async function insertMagicToken(email: string): Promise<string> {
-  const raw = randomBytes(32).toString('base64url');
-  const hash = createHash('sha256').update(raw).digest('base64url');
+// A first-time partner account as a sign-in link would create it: a User with
+// only a personal email and no name yet.
+async function insertNewPartnerUser(email: string): Promise<void> {
   await withDb(async (c) => {
-    const userId = `e2e-partner-${randomBytes(8).toString('hex')}`;
     await c.query(
-      `INSERT INTO "User" (id, "personalEmail", "firstName", "lastName", "updatedAt")
-       VALUES ($1, $2, '', '', now())
+      `INSERT INTO "User" (id, "personalEmail", email, "firstName", "lastName", "updatedAt")
+       VALUES ($1, $2, $2, '', '', now())
        ON CONFLICT ("personalEmail") DO NOTHING`,
-      [userId, email],
-    );
-    const idRes = await c.query(
-      `SELECT id FROM "User" WHERE "personalEmail" = $1`,
-      [email],
-    );
-    await c.query(
-      `INSERT INTO "OneTimeToken" (id, "userId", "tokenHash", purpose, "expiresAt")
-       VALUES ($1, $2, $3, 'PartnerMagicLink', now() + interval '15 minutes')`,
-      [`e2e-tok-${randomBytes(8).toString('hex')}`, idRes.rows[0].id, hash],
+      [`e2e-partner-${randomBytes(8).toString('hex')}`, email],
     );
   });
-  return raw;
 }
 
 test.describe('internal Organizations pages (Core)', () => {
@@ -376,25 +363,19 @@ test.describe('partner portal request-a-meeting (Hood)', () => {
 });
 
 test.describe('partner self-signup', () => {
-  test('login shows first-timer guidance without gating sign-in', async ({
-    page,
-  }) => {
+  test('the old partner login sends people to the shared sign-in page', async ({ page }) => {
     await page.goto('/partner/login');
-    // Login is pure auth — the one org-adjacent line is the invite hint
-    // (an invite IS a sign-in method); everything else lives after sign-in.
-    await expect(page.getByText(/invite email\? It signs you in/)).toBeVisible();
-    await expect(
-      page.getByRole('button', { name: 'Continue with email' }),
-    ).toBeVisible();
+    await expect(page).toHaveURL(/\/login$/);
+    await expect(page.getByRole('heading', { name: 'Sign in to DALI OS' })).toBeVisible();
   });
 
-  test('magic link → account-first apply (no org) → status', async ({ page }) => {
+  test('new partner account → account-first apply (no org) → status', async ({
+    page,
+    loginAs,
+  }) => {
     const email = `e2e-partner-${Date.now()}@example.com`;
-    const raw = await insertMagicToken(email);
-
-    // GET landing must not consume the token; POST does.
-    await page.goto(`/partner/auth/verify?token=${raw}`);
-    await page.getByRole('button', { name: 'Continue to DALI OS' }).click();
+    await insertNewPartnerUser(email);
+    await loginAs({ personalEmail: email });
     // Account-first: no org gate — the account is provisioned and lands
     // straight on the portal home (org is created later, at promotion).
     await expect(page).toHaveURL(/\/partner$/);

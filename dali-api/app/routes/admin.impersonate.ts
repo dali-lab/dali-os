@@ -14,7 +14,6 @@
 // plugin will re-read the row, so the gate passes. No standing sync.
 
 import { redirect } from "react-router";
-import { isFeatureEnabledForEveryone } from "~/lib/feature-flags.server";
 import { getBetterAuthUser } from "~/lib/betterauth-compat.server";
 import { isAdmin } from "~/lib/roles";
 import { prisma } from "~/lib/db";
@@ -22,13 +21,7 @@ import { auth } from "~/lib/betterauth.server";
 import { logAuditEvent } from "~/lib/audit";
 
 export async function action({ request }: { request: Request }): Promise<Response> {
-  // 1. Flag gate — this endpoint only exists when BetterAuth is active.
-  const flagOn = await isFeatureEnabledForEveryone("betterauth", request);
-  if (!flagOn) {
-    return new Response(null, { status: 404 });
-  }
-
-  // 2. Require a valid BetterAuth session.
+  // 1. Require a valid BetterAuth session.
   const actor = await getBetterAuthUser(request);
   if (!actor) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
@@ -37,7 +30,7 @@ export async function action({ request }: { request: Request }): Promise<Respons
     });
   }
 
-  // 3. Admin gate.
+  // 2. Admin gate.
   const adminOk = await isAdmin(actor.sub);
   if (!adminOk) {
     return new Response(JSON.stringify({ error: "Forbidden" }), {
@@ -46,7 +39,7 @@ export async function action({ request }: { request: Request }): Promise<Respons
     });
   }
 
-  // 4. Read target userId from formData.
+  // 3. Read target userId from formData.
   const formData = await request.formData();
   const userId = String(formData.get("userId") ?? "").trim();
   if (!userId) {
@@ -56,7 +49,7 @@ export async function action({ request }: { request: Request }): Promise<Respons
     });
   }
 
-  // 5. Reject self-impersonation.
+  // 4. Reject self-impersonation.
   if (userId === actor.sub) {
     return new Response(JSON.stringify({ error: "Cannot impersonate self" }), {
       status: 400,
@@ -80,7 +73,7 @@ export async function action({ request }: { request: Request }): Promise<Respons
     );
   }
 
-  // 6. JIT role sync: if the actor's user.role is not already "admin", set it
+  // 5. JIT role sync: if the actor's user.role is not already "admin", set it
   //    so the BetterAuth admin plugin's gate passes. The plugin reads the row
   //    fresh on each call — no cookie cache is enabled, so this takes effect
   //    immediately. This is a targeted escalation for this one actor, not a
@@ -97,7 +90,7 @@ export async function action({ request }: { request: Request }): Promise<Respons
     });
   }
 
-  // 7. Call impersonateUser. returnHeaders: true gives us { headers, response }
+  // 6. Call impersonateUser. returnHeaders: true gives us { headers, response }
   //    where headers carries the new impersonation session Set-Cookie.
   let baHeaders: Headers;
   try {
@@ -117,7 +110,7 @@ export async function action({ request }: { request: Request }): Promise<Respons
     );
   }
 
-  // 8. Audit.
+  // 7. Audit.
   await logAuditEvent({
     action: "admin.impersonate.start",
     userId: actor.sub,
@@ -126,7 +119,7 @@ export async function action({ request }: { request: Request }): Promise<Respons
     request,
   });
 
-  // 9. Forward the Set-Cookie header(s) BetterAuth returned onto the redirect.
+  // 8. Forward the Set-Cookie header(s) BetterAuth returned onto the redirect.
   const responseHeaders = new Headers();
   baHeaders.forEach((value, key) => {
     if (key.toLowerCase() === "set-cookie") {

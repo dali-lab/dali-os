@@ -3,7 +3,6 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 // Hoist mocks before imports.
 const mockGetBetterAuthUser = vi.hoisted(() => vi.fn());
 const mockCaptureDartmouthIdentity = vi.hoisted(() => vi.fn());
-const mockIsFeatureEnabledForEveryone = vi.hoisted(() => vi.fn());
 const mockUserUpdate = vi.hoisted(() => vi.fn());
 const mockPasskeyCount = vi.hoisted(() => vi.fn());
 
@@ -18,9 +17,6 @@ vi.mock("~/lib/betterauth-compat.server", () => ({
   getBetterAuthUser: mockGetBetterAuthUser,
 }));
 
-vi.mock("~/lib/feature-flags.server", () => ({
-  isFeatureEnabledForEveryone: mockIsFeatureEnabledForEveryone,
-}));
 
 vi.mock("~/lib/dartmouth-capture.server", () => ({
   captureDartmouthIdentity: mockCaptureDartmouthIdentity,
@@ -67,7 +63,6 @@ function makePostRequest(body: Record<string, string>) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mockIsFeatureEnabledForEveryone.mockResolvedValue(true);
   mockGetBetterAuthUser.mockResolvedValue(DARTMOUTH_USER);
   mockCaptureDartmouthIdentity.mockResolvedValue({ netIdCaptured: false });
   mockUserUpdate.mockResolvedValue({});
@@ -77,12 +72,6 @@ beforeEach(() => {
 // ── Loader ────────────────────────────────────────────────────────────────────
 
 describe("GET /welcome loader", () => {
-  it("flag-OFF redirects to /login", async () => {
-    mockIsFeatureEnabledForEveryone.mockResolvedValue(false);
-    const res = (await loader({ request: makeRequest() } as any)) as Response;
-    expect(res.status).toBe(302);
-    expect(res.headers.get("Location")).toBe("/login");
-  });
 
   it("no session redirects to /login", async () => {
     mockGetBetterAuthUser.mockResolvedValue(null);
@@ -160,17 +149,9 @@ describe("GET /welcome loader", () => {
   });
 });
 
-// ── Action — flag-OFF / no session ───────────────────────────────────────────
+// ── Action — no session ──────────────────────────────────────────────────────
 
 describe("POST /welcome action — guards", () => {
-  it("flag-OFF redirects to /login", async () => {
-    mockIsFeatureEnabledForEveryone.mockResolvedValue(false);
-    const res = (await action({
-      request: makePostRequest({ door: "dartmouth", intent: "finish" }),
-    } as any)) as Response;
-    expect(res.status).toBe(302);
-    expect(res.headers.get("Location")).toBe("/login");
-  });
 
   it("no session redirects to /login", async () => {
     mockGetBetterAuthUser.mockResolvedValue(null);

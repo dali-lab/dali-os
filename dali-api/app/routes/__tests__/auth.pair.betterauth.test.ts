@@ -1,20 +1,13 @@
-// Phase 2 BetterAuth integration tests for the desktop pairing session-issuance
-// paths. Covers the flag-gated swap in:
+// Session issuance for desktop pairing:
 //   - auth.pair.poll   (poller Bearer token)
 //   - auth.handoff     (webview cookie)
-// and a unit test for appendBetterAuthSessionCookie's Set-Cookie shape.
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 // ── Hoisted mocks (must precede all imports) ─────────────────────────────────
 
-const mockIssueSession = vi.hoisted(() => vi.fn());
-const mockHashSessionId = vi.hoisted(() => vi.fn());
-const mockRevokeSession = vi.hoisted(() => vi.fn());
 const mockMintBetterAuthSession = vi.hoisted(() => vi.fn());
 const mockAppendBetterAuthSessionCookie = vi.hoisted(() => vi.fn());
-const mockSetSessionCookie = vi.hoisted(() => vi.fn());
-const mockIsFeatureEnabledForEveryone = vi.hoisted(() => vi.fn());
 const mockLogAuditEvent = vi.hoisted(() => vi.fn());
 
 const mockUpdateMany = vi.hoisted(() => vi.fn());
@@ -24,26 +17,12 @@ const mockFindFirst = vi.hoisted(() => vi.fn());
 const mockDeleteSession = vi.hoisted(() => vi.fn());
 const mockCreateSession = vi.hoisted(() => vi.fn());
 
-vi.mock("~/lib/session", () => ({
-  issueSession: mockIssueSession,
-  hashSessionId: mockHashSessionId,
-  revokeSession: mockRevokeSession,
-}));
-
 vi.mock("~/lib/betterauth-session.server", () => ({
   mintBetterAuthSession: mockMintBetterAuthSession,
 }));
 
 vi.mock("~/lib/betterauth-cookie.server", () => ({
   appendBetterAuthSessionCookie: mockAppendBetterAuthSessionCookie,
-}));
-
-vi.mock("~/lib/cookies", () => ({
-  setSessionCookie: mockSetSessionCookie,
-}));
-
-vi.mock("~/lib/feature-flags.server", () => ({
-  isFeatureEnabledForEveryone: mockIsFeatureEnabledForEveryone,
 }));
 
 vi.mock("~/lib/audit", () => ({ logAuditEvent: mockLogAuditEvent }));
@@ -126,32 +105,7 @@ describe("auth.pair.poll — poller session issuance", () => {
     mockLogAuditEvent.mockResolvedValue(undefined);
   });
 
-  it("flag OFF → uses issueSession; mintBetterAuthSession NOT called", async () => {
-    mockIsFeatureEnabledForEveryone.mockResolvedValue(false);
-    mockIssueSession.mockResolvedValue({
-      rawId: "legacy-raw-id",
-      expiresAt: new Date(),
-      absoluteExpiresAt: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000),
-    });
-    mockHashSessionId.mockReturnValue("hashed-legacy-id");
-
-    const res = await action({ request: pollRequest(), params: {}, context: {} } as any);
-    const body = await res.json();
-
-    expect(body.status).toBe("approved");
-    expect(body.desktopToken).toBe("legacy-raw-id");
-    expect(mockIssueSession).toHaveBeenCalledTimes(1);
-    expect(mockMintBetterAuthSession).not.toHaveBeenCalled();
-    // The session stored in DevicePairing should be the hashed legacy id
-    expect(mockUpdateMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({ desktopSessionId: "hashed-legacy-id" }),
-      }),
-    );
-  });
-
-  it("flag ON → calls mintBetterAuthSession with ~90d expiresInSec; desktopToken = minted token", async () => {
-    mockIsFeatureEnabledForEveryone.mockResolvedValue(true);
+  it("calls mintBetterAuthSession with ~90d expiresInSec; desktopToken = minted token", async () => {
     mockMintBetterAuthSession.mockResolvedValue({
       token: "ba-token-raw",
       expiresAt: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000),
@@ -163,7 +117,6 @@ describe("auth.pair.poll — poller session issuance", () => {
 
     expect(body.status).toBe("approved");
     expect(body.desktopToken).toBe("ba-token-raw");
-    expect(mockIssueSession).not.toHaveBeenCalled();
     expect(mockMintBetterAuthSession).toHaveBeenCalledTimes(1);
 
     const mintArgs = mockMintBetterAuthSession.mock.calls[0][0];
@@ -174,8 +127,7 @@ describe("auth.pair.poll — poller session issuance", () => {
     expect(mintArgs.userAgent).toMatch(/DALI OS Desktop/);
   });
 
-  it("flag ON → desktopSessionId stored is the BetterAuth session's id, not a hash", async () => {
-    mockIsFeatureEnabledForEveryone.mockResolvedValue(true);
+  it("desktopSessionId stored is the BetterAuth session's id, not a hash", async () => {
     mockMintBetterAuthSession.mockResolvedValue({
       token: "ba-token-raw",
       expiresAt: new Date(),
@@ -189,12 +141,9 @@ describe("auth.pair.poll — poller session issuance", () => {
         data: expect.objectContaining({ desktopSessionId: "ba-session-id-123" }),
       }),
     );
-    // hashSessionId should not have been called for BetterAuth path
-    expect(mockHashSessionId).not.toHaveBeenCalled();
   });
 
-  it("flag ON → concurrent race loss calls BetterAuth session deletion, not revokeSession", async () => {
-    mockIsFeatureEnabledForEveryone.mockResolvedValue(true);
+  it("deletes the minted session when it loses a concurrent race", async () => {
     mockMintBetterAuthSession.mockResolvedValue({
       token: "ba-token-raw",
       expiresAt: new Date(),
@@ -209,25 +158,6 @@ describe("auth.pair.poll — poller session issuance", () => {
 
     expect(body.status).toBe("already_used");
     expect(mockDeleteSession).toHaveBeenCalledWith("ba-token-raw");
-    expect(mockRevokeSession).not.toHaveBeenCalled();
-  });
-
-  it("flag OFF → concurrent race loss calls revokeSession with hashed id", async () => {
-    mockIsFeatureEnabledForEveryone.mockResolvedValue(false);
-    mockIssueSession.mockResolvedValue({
-      rawId: "legacy-raw-race",
-      expiresAt: new Date(),
-      absoluteExpiresAt: new Date(),
-    });
-    mockHashSessionId.mockReturnValue("hashed-legacy-race");
-    mockUpdateMany.mockResolvedValue({ count: 0 });
-
-    const res = await action({ request: pollRequest(), params: {}, context: {} } as any);
-    const body = await res.json();
-
-    expect(body.status).toBe("already_used");
-    expect(mockRevokeSession).toHaveBeenCalledWith("hashed-legacy-race", { hashed: true });
-    expect(mockDeleteSession).not.toHaveBeenCalled();
   });
 });
 
@@ -240,28 +170,9 @@ describe("auth.handoff — webview session cookie issuance", () => {
     mockFindFirst.mockResolvedValue(HANDOFF_ROW);
     mockLogAuditEvent.mockResolvedValue(undefined);
     mockAppendBetterAuthSessionCookie.mockResolvedValue(undefined);
-    mockSetSessionCookie.mockImplementation(() => undefined);
   });
 
-  it("flag OFF → uses issueSession + setSessionCookie; BetterAuth NOT called", async () => {
-    mockIsFeatureEnabledForEveryone.mockResolvedValue(false);
-    mockIssueSession.mockResolvedValue({
-      rawId: "webview-raw-id",
-      expiresAt: new Date(),
-      absoluteExpiresAt: new Date(),
-    });
-
-    const res = await loader({ request: handoffRequest(), params: {}, context: {} } as any);
-
-    expect(res.status).toBe(302);
-    expect(mockIssueSession).toHaveBeenCalledTimes(1);
-    expect(mockSetSessionCookie).toHaveBeenCalledWith(expect.any(Headers), "webview-raw-id");
-    expect(mockMintBetterAuthSession).not.toHaveBeenCalled();
-    expect(mockAppendBetterAuthSessionCookie).not.toHaveBeenCalled();
-  });
-
-  it("flag ON → calls mintBetterAuthSession + appendBetterAuthSessionCookie with minted token", async () => {
-    mockIsFeatureEnabledForEveryone.mockResolvedValue(true);
+  it("calls mintBetterAuthSession + appendBetterAuthSessionCookie with minted token", async () => {
     mockMintBetterAuthSession.mockResolvedValue({
       token: "ba-webview-token",
       expiresAt: new Date(),
@@ -281,25 +192,13 @@ describe("auth.handoff — webview session cookie issuance", () => {
       expect.any(Headers),
       "ba-webview-token",
     );
-    expect(mockIssueSession).not.toHaveBeenCalled();
-    expect(mockSetSessionCookie).not.toHaveBeenCalled();
+    // A leftover legacy cookie would shadow the new session in requireAuth.
+    expect(
+      res.headers.getSetCookie().some((c) => c.startsWith("__dali_sid=;") && c.includes("Max-Age=0")),
+    ).toBe(true);
   });
 
-  it("flag OFF → invalid handoff code returns redirect to /login", async () => {
-    mockIsFeatureEnabledForEveryone.mockResolvedValue(false);
-    mockUpdateMany.mockResolvedValue({ count: 0 });
-
-    const res = await loader({ request: handoffRequest("bad-code"), params: {}, context: {} } as any);
-
-    expect(res.status).toBe(302);
-    const location = res.headers.get("Location");
-    expect(location).toContain("/login");
-    expect(mockIssueSession).not.toHaveBeenCalled();
-    expect(mockMintBetterAuthSession).not.toHaveBeenCalled();
-  });
-
-  it("flag ON → invalid handoff code returns redirect to /login without calling mintBetterAuthSession", async () => {
-    mockIsFeatureEnabledForEveryone.mockResolvedValue(true);
+  it("invalid handoff code returns redirect to /login without calling mintBetterAuthSession", async () => {
     mockUpdateMany.mockResolvedValue({ count: 0 });
 
     const res = await loader({ request: handoffRequest("bad-code"), params: {}, context: {} } as any);

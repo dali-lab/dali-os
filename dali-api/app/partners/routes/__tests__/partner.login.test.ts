@@ -1,45 +1,46 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-const mockIsFeatureEnabledForEveryone = vi.hoisted(() => vi.fn());
 const mockRequireAuth = vi.hoisted(() => vi.fn());
+const mockContactFind = vi.hoisted(() => vi.fn());
 
-vi.mock("~/lib/db", () => ({ prisma: { partnerContact: { findUnique: vi.fn() } } }));
-vi.mock("~/lib/betterauth.server", () => ({ auth: { api: {} } }));
-vi.mock("~/lib/feature-flags.server", () => ({
-  isFeatureEnabledForEveryone: mockIsFeatureEnabledForEveryone,
-}));
+vi.mock("~/lib/db", () => ({ prisma: { partnerContact: { findUnique: mockContactFind } } }));
 vi.mock("~/lib/auth", () => ({ requireAuth: mockRequireAuth }));
-vi.mock("~/partners/lib/magic-link.server", () => ({
-  issuePartnerMagicLink: vi.fn(),
-  normalizeEmail: (e: string) => e.trim().toLowerCase(),
-  classifyPartnerEmail: vi.fn(),
-}));
-vi.mock("~/partners/lib/partner-emails.server", () => ({
-  sendMemberEmailConflictEmail: vi.fn(),
-}));
 
 import { loader } from "~/partners/routes/partner.login";
 
-function req() {
-  return new Request("http://localhost/partner/login");
+async function landing() {
+  const res = (await loader({ request: new Request("http://localhost/partner/login") } as any)) as Response;
+  expect(res.status).toBe(302);
+  return res.headers.get("Location");
+}
+
+function signedInAs(type: string) {
+  mockRequireAuth.mockResolvedValue({ ok: true, user: { sub: "u1", type }, sessionId: "s" });
 }
 
 beforeEach(() => {
   vi.clearAllMocks();
   mockRequireAuth.mockResolvedValue({ ok: false });
+  mockContactFind.mockResolvedValue(null);
 });
 
-describe("GET /partner/login loader (flag-gated)", () => {
-  it("flag ON + unauthenticated → redirects to the unified /login", async () => {
-    mockIsFeatureEnabledForEveryone.mockResolvedValue(true);
-    const res = (await loader({ request: req() } as any)) as Response;
-    expect(res.status).toBe(302);
-    expect(res.headers.get("Location")).toBe("/login");
+describe("GET /partner/login", () => {
+  it("sends a signed-out visitor to /login", async () => {
+    expect(await landing()).toBe("/login");
   });
 
-  it("flag OFF + unauthenticated → renders the legacy partner login (no redirect)", async () => {
-    mockIsFeatureEnabledForEveryone.mockResolvedValue(false);
-    const result = await loader({ request: req() } as any);
-    expect(result).toEqual({ betterAuthOn: false });
+  it("sends a member home and a Dartmouth account to the portal", async () => {
+    signedInAs("member");
+    expect(await landing()).toBe("/");
+    signedInAs("dartmouth");
+    expect(await landing()).toBe("/portal");
+  });
+
+  it("sends a partner with a contact to /partner, and one without to onboarding", async () => {
+    signedInAs("partner");
+    mockContactFind.mockResolvedValue({ id: "pc1" });
+    expect(await landing()).toBe("/partner");
+    mockContactFind.mockResolvedValue(null);
+    expect(await landing()).toBe("/partner/onboarding");
   });
 });

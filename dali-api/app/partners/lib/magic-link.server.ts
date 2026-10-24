@@ -1,19 +1,10 @@
 import { createHash, randomBytes } from "node:crypto";
 import { prisma } from "~/lib/db";
-import { logAuditEvent } from "~/lib/audit";
 import { checkRateLimit } from "~/lib/rate-limit";
-import { isFeatureEnabledForEveryone } from "~/lib/feature-flags.server";
-import { getFrontendUrl, getAppEnv } from "~/lib/app-env";
-import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
-import { renderFramedEmail } from "~/email/lib/layout.server";
-import { humanDuration } from "~/email/lib/auth-email";
-import { MAGIC_LINK_TTL_MS } from "./magic-link";
 import { sendMemberEmailConflictEmail } from "./partner-emails.server";
 
-export { MAGIC_LINK_TTL_MS } from "./magic-link";
-
-// Same digest convention as Session ids and OneTimeToken's schema comment:
-// sha256(raw), base64url. The raw value only ever travels in the email link.
+// sha256(raw), base64url, the same digest Session ids use. Partner invites store
+// tokens this way; the raw value only ever travels in the email link.
 export function hashToken(raw: string): string {
   return createHash("sha256").update(raw).digest("base64url");
 }
@@ -62,10 +53,10 @@ export async function classifyPartnerEmail(
   return { kind: "existing", userId: user.id };
 }
 
-// Issue a sign-in link for `email`. Always resolves to a "check your email"
-// outcome for the caller (unless rate-limited) — member-conflict addresses
-// get a redirect-to-/login email instead of a token, so the UI response
-// never reveals whether an account exists.
+// Send a BetterAuth sign-in link to `email`. Always resolves to a "check your
+// email" outcome for the caller (unless rate-limited): member-conflict
+// addresses get a use-/login email instead, so the response never reveals
+// whether an account exists.
 export async function issuePartnerMagicLink(
   emailRaw: string,
   request: Request,
@@ -87,135 +78,17 @@ export async function issuePartnerMagicLink(
     return { ok: true };
   }
 
-  if (await isFeatureEnabledForEveryone("betterauth", request)) {
-    const { auth } = await import("~/lib/betterauth.server");
-    try {
-      // First-time partners finish setup at /welcome.
-      await auth.api.signInMagicLink({
-        body: { email, callbackURL: "/welcome?door=partner" },
-        headers: request.headers,
-      });
-    } catch {
-      // Neutral outcome either way: the response must not reveal whether the
-      // address has an account.
-    }
-    return { ok: true };
+  // Lazy: many modules import this file only for normalizeEmail.
+  const { auth } = await import("~/lib/betterauth.server");
+  try {
+    // First-time partners finish setup at /welcome.
+    await auth.api.signInMagicLink({
+      body: { email, callbackURL: "/welcome?door=partner" },
+      headers: request.headers,
+    });
+  } catch {
+    // Neutral outcome either way: the response must not reveal whether the
+    // address has an account.
   }
-
-  // OneTimeToken.userId is NOT NULL, so a first-time email eagerly creates
-  // the User row. Names are collected at onboarding. Junk rows are inert —
-  // without a PartnerUser row they grant no access.
-  const userId =
-    identity.kind === "existing"
-      ? identity.userId
-      : (
-          await prisma.user.create({
-            data: { personalEmail: email, firstName: "", lastName: "" },
-            select: { id: true },
-          })
-        ).id;
-
-  // One live link per user: requesting a new one invalidates the old.
-  await prisma.oneTimeToken.updateMany({
-    where: { userId, purpose: "PartnerMagicLink", usedAt: null },
-    data: { usedAt: new Date() },
-  });
-
-  const raw = generateRawToken();
-  const token = await prisma.oneTimeToken.create({
-    data: {
-      userId,
-      tokenHash: hashToken(raw),
-      purpose: "PartnerMagicLink",
-      expiresAt: new Date(Date.now() + MAGIC_LINK_TTL_MS),
-      metadata: { email },
-    },
-    select: { id: true },
-  });
-
-  const url = `${getFrontendUrl()}/partner/auth/verify?token=${raw}`;
-  // Surface the link in dev so the flow stays manually testable without a
-  // mail sender (mirrors the original sendPartnerMagicLinkEmail dev guard).
-  if (getAppEnv() === "dev") {
-    console.info(`[partner-magic-link:dev] ${url}`);
-  }
-  // Expiry copy derived from the TTL constant, never hand-written — the two
-  // emails whose expiry sentence had drifted were the two that hand-wrote it.
-  const expiry = humanDuration(MAGIC_LINK_TTL_MS / 1000);
-  const mail = await renderFramedEmail(
-    {
-      // Subject names the thing, button names the action. The BetterAuth
-      // sign-in-link email had these two the other way round from this one.
-      subject: "Your DALI OS sign-in link",
-      preheader: `Sign in to the partner portal. Expires in ${expiry}.`,
-      cta: { href: url, label: "Sign in to DALI OS" },
-      bodyHtml: [
-        `<p style="margin:0 0 16px;">Use the button below to sign in to the DALI Lab partner portal.</p>`,
-        `<p style="margin:0;color:#52525b;font-size:14px;">The link works once and expires in ${expiry}. If you didn't request this, you can ignore this email.</p>`,
-      ].join("\n"),
-      text: [
-        "Use the link below to sign in to the DALI Lab partner portal.",
-        url,
-        `The link works once and expires in ${expiry}. If you didn't request this, you can ignore this email.`,
-      ].join("\n\n"),
-    },
-    { footer: "transactional" },
-  );
-  const { id: outboundId } = await enqueueOutbound({
-    channel: "email",
-    purpose: "Partners",
-    dedupKey: `partner.magiclink:${token.id}`,
-    target: email,
-    recipientUserId: userId,
-    subject: mail.subject,
-    bodyHtml: mail.html,
-    bodyText: mail.text,
-    eventType: "partner.magiclink",
-  });
-  await drainNow([outboundId]);
-  await logAuditEvent({
-    action: "partner.magic_link.requested",
-    userId,
-    request,
-  });
-
   return { ok: true };
-}
-
-// Read-only validity check for the GET landing page. Never consumes — email
-// security scanners prefetch GET links and would burn single-use tokens.
-export async function peekPartnerMagicLink(raw: string): Promise<boolean> {
-  const token = await prisma.oneTimeToken.findFirst({
-    where: {
-      tokenHash: hashToken(raw),
-      purpose: "PartnerMagicLink",
-      usedAt: null,
-      expiresAt: { gt: new Date() },
-    },
-    select: { id: true },
-  });
-  return token !== null;
-}
-
-// Atomic single-use consumption: the updateMany's where-guard means two
-// concurrent POSTs can't both win (the loser matches 0 rows).
-export async function consumePartnerMagicLink(
-  raw: string,
-): Promise<string | null> {
-  const tokenHash = hashToken(raw);
-  const res = await prisma.oneTimeToken.updateMany({
-    where: {
-      tokenHash,
-      purpose: "PartnerMagicLink",
-      usedAt: null,
-      expiresAt: { gt: new Date() },
-    },
-    data: { usedAt: new Date() },
-  });
-  if (res.count !== 1) return null;
-  const token = await prisma.oneTimeToken.findUnique({
-    where: { tokenHash },
-    select: { userId: true },
-  });
-  return token?.userId ?? null;
 }

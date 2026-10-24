@@ -100,12 +100,6 @@ export const FEATURE_FLAGS = [
       "Project-hub-style education catalog — a grid of cover cards with a per-offering emoji, a search field, and a Miniseries/Workshop type filter — on both /education (members) and /portal/education (applicants). Also switches the applicant portal home to conditional action cards (Apply to DALI, Apply to an offering, My applications, My courses) that link to the combined /portal/applications history. The offering emoji picker and the applications page ship regardless; this flag only gates the redesigned surfaces. Ships off.",
   },
   {
-    key: "betterauth",
-    label: "BetterAuth login",
-    description:
-      "Route sign-in through the BetterAuth substrate across the member, Dartmouth, and partner doors. Sign-in is passwordless: a 6-digit email code plus passkeys (no password, no Google). requireAuth accepts a BetterAuth session alongside a legacy one, so turning this on does NOT force a re-login; active legacy sessions upgrade to BetterAuth silently as users browse. Read as a GLOBAL toggle (enabled + everyone), so role and user targeting do not apply. Ships off; flipping it on is the cutover.",
-  },
-  {
     key: "community",
     label: "Community",
     description:

@@ -9,14 +9,12 @@
 import { redirect } from "react-router";
 import type { Route } from "./+types/auth.handoff";
 import { prisma } from "~/lib/db";
-import { issueSession } from "~/lib/session";
-import { setSessionCookie } from "~/lib/cookies";
 import { getClientIp } from "~/lib/rate-limit";
 import { logAuditEvent } from "~/lib/audit";
 import { hashCode, desktopWebviewUserAgent } from "~/lib/pairing";
 import { mintBetterAuthSession } from "~/lib/betterauth-session.server";
 import { appendBetterAuthSessionCookie } from "~/lib/betterauth-cookie.server";
-import { isFeatureEnabledForEveryone } from "~/lib/feature-flags.server";
+import { clearSessionCookie } from "~/lib/cookies";
 import { pickSafeLoginNext } from "~/lib/login-next";
 
 export async function loader({ request }: Route.LoaderArgs) {
@@ -39,29 +37,14 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const headers = new Headers();
 
-  // Flag-gated: when betterauth is on, mint a BetterAuth session and plant it as
-  // the signed `dali.session_token` cookie so the webview is authenticated via
-  // auth.api.getSession. The handoff contract (code validation, single-use claim,
-  // redirect to /) is unchanged — only the session store backing the cookie changes.
-  //
-  // NOTE: The cookie round-trip (does auth.api.getSession accept the cookie
-  // produced by appendBetterAuthSessionCookie?) MUST be verified in an integration
-  // test against a real BetterAuth instance before enabling the betterauth flag.
-  if (await isFeatureEnabledForEveryone("betterauth", request)) {
-    const s = await mintBetterAuthSession({
-      userId: row.userId,
-      userAgent: desktopWebviewUserAgent({ os: row.deviceLabel }),
-      ipAddress: getClientIp(request),
-    });
-    await appendBetterAuthSessionCookie(headers, s.token);
-  } else {
-    const webview = await issueSession({
-      userId: row.userId,
-      userAgent: desktopWebviewUserAgent({ os: row.deviceLabel }),
-      ip: getClientIp(request),
-    });
-    setSessionCookie(headers, webview.rawId);
-  }
+  const s = await mintBetterAuthSession({
+    userId: row.userId,
+    userAgent: desktopWebviewUserAgent({ os: row.deviceLabel }),
+    ipAddress: getClientIp(request),
+  });
+  await appendBetterAuthSessionCookie(headers, s.token);
+  // requireAuth tries the legacy cookie first; a leftover one would shadow this.
+  clearSessionCookie(headers);
 
   // The desktop shell rides the same tabless-by-default shell as the web app.
   // Its bare WKWebView has no browser chrome, but tabless mode supplies its own

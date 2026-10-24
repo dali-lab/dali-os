@@ -5,7 +5,6 @@ import {
   humanDuration,
   MAGIC_LINK_TTL_SECONDS,
 } from "~/email/lib/auth-email";
-import { isFeatureEnabledForEveryone } from "~/lib/feature-flags.server";
 import { pickSafeLoginNext } from "~/lib/login-next";
 import { requireAuth } from "~/lib/auth";
 import { auth } from "~/lib/betterauth.server";
@@ -46,10 +45,6 @@ const EMAIL_PLACEHOLDERS: Record<Door, string> = {
 };
 
 export async function loader({ request }: Route.LoaderArgs) {
-  const on = await isFeatureEnabledForEveryone("betterauth", request);
-  // Flag-OFF: no signup — redirect to login.
-  if (!on) return redirect("/login");
-
   // Already signed in? Hand off to /login, which routes to the right home
   // (member app / onboarding / partner portal / applicant portal).
   const authed = await requireAuth(request);
@@ -65,8 +60,6 @@ export async function loader({ request }: Route.LoaderArgs) {
 }
 
 export async function action({ request }: Route.ActionArgs) {
-  const on = await isFeatureEnabledForEveryone("betterauth", request);
-  if (!on) return redirect("/login");
 
   const formData = await request.formData();
   const door = String(formData.get("door") ?? "");
