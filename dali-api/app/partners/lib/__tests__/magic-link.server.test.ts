@@ -19,6 +19,12 @@ vi.mock("~/lib/outbound.server", () => ({
   enqueueOutbound: vi.fn(),
   drainNow: vi.fn(),
 }));
+const mockFlagOn = vi.hoisted(() => vi.fn());
+vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabledForEveryone: mockFlagOn }));
+const mockSignInMagicLink = vi.hoisted(() => vi.fn());
+vi.mock("~/lib/betterauth.server", () => ({
+  auth: { api: { signInMagicLink: mockSignInMagicLink } },
+}));
 vi.mock("../partner-emails.server", () => ({
   sendMemberEmailConflictEmail: vi.fn(),
 }));
@@ -41,6 +47,7 @@ const req = () => new Request("http://localhost/partner/login", { method: "POST"
 beforeEach(() => {
   vi.resetAllMocks();
   (checkRateLimit as any).mockReturnValue(null);
+  mockFlagOn.mockResolvedValue(false);
   mockEnqueue.mockResolvedValue({ id: "om-x", deduped: false });
   mockPrisma.user.findFirst.mockResolvedValue(null);
   mockPrisma.dALIMember.findUnique.mockResolvedValue(null);
@@ -104,6 +111,46 @@ describe("classifyPartnerEmail", () => {
 
   it("returns new when no user matches", async () => {
     expect(await classifyPartnerEmail("pat@example.com")).toEqual({ kind: "new" });
+  });
+});
+
+describe("issuePartnerMagicLink with BetterAuth on", () => {
+  beforeEach(() => {
+    mockFlagOn.mockResolvedValue(true);
+    mockSignInMagicLink.mockResolvedValue({ status: true });
+  });
+
+  it("sends a BetterAuth magic link to the normalized email and writes no legacy token", async () => {
+    const request = req();
+    const result = await issuePartnerMagicLink(" Pat@Example.com ", request);
+    expect(result).toEqual({ ok: true });
+    expect(mockSignInMagicLink).toHaveBeenCalledWith({
+      body: { email: "pat@example.com", callbackURL: "/welcome?door=partner" },
+      headers: request.headers,
+    });
+    expect(mockPrisma.user.create).not.toHaveBeenCalled();
+    expect(mockPrisma.oneTimeToken.create).not.toHaveBeenCalled();
+    expect(mockEnqueue).not.toHaveBeenCalled();
+  });
+
+  it("still sends the conflict email instead of a link for member addresses", async () => {
+    const result = await issuePartnerMagicLink("ada@dali.dartmouth.edu", req());
+    expect(result).toEqual({ ok: true });
+    expect(sendMemberEmailConflictEmail).toHaveBeenCalledWith("ada@dali.dartmouth.edu");
+    expect(mockSignInMagicLink).not.toHaveBeenCalled();
+  });
+
+  it("returns the same neutral result when BetterAuth refuses the send", async () => {
+    mockSignInMagicLink.mockRejectedValue(new Error("FORBIDDEN"));
+    expect(await issuePartnerMagicLink("pat@example.com", req())).toEqual({ ok: true });
+  });
+
+  it("keeps the rate limits in front of BetterAuth", async () => {
+    const limited = new Response(null, { status: 429 });
+    (checkRateLimit as any).mockReturnValue(limited);
+    const result = await issuePartnerMagicLink("pat@example.com", req());
+    expect("rateLimited" in result && result.rateLimited).toBe(limited);
+    expect(mockSignInMagicLink).not.toHaveBeenCalled();
   });
 });
 

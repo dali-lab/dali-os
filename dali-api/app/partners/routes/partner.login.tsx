@@ -4,13 +4,7 @@ import type { Route } from "./+types/partner.login";
 import { requireAuth } from "~/lib/auth";
 import { prisma } from "~/lib/db";
 import { checkRateLimit } from "~/lib/rate-limit";
-import {
-  issuePartnerMagicLink,
-  normalizeEmail,
-  classifyPartnerEmail,
-} from "~/partners/lib/magic-link.server";
-import { sendMemberEmailConflictEmail } from "~/partners/lib/partner-emails.server";
-import { auth } from "~/lib/betterauth.server";
+import { issuePartnerMagicLink, normalizeEmail } from "~/partners/lib/magic-link.server";
 import { isFeatureEnabledForEveryone } from "~/lib/feature-flags.server";
 import { PARTNER_LINK_EXPIRY } from "~/partners/lib/magic-link";
 import { useOsShellRoot } from "~/lib/os-shell";
@@ -47,7 +41,6 @@ export async function loader({ request }: Route.LoaderArgs) {
 }
 
 export async function action({ request }: Route.ActionArgs) {
-  const betterAuthOn = await isFeatureEnabledForEveryone("betterauth", request);
   const formData = await request.formData();
 
   // Rate-limit every submit (the removed Google branch used to own this). The
@@ -58,28 +51,6 @@ export async function action({ request }: Route.ActionArgs) {
   const email = String(formData.get("email") ?? "");
   if (!email.includes("@")) {
     return { error: "Enter a valid email address" };
-  }
-
-  if (betterAuthOn) {
-    // Member-conflict guard: a @dali/member email must NOT get a partner magic
-    // link — it gets the redirect-to-/login conflict email + neutral response.
-    const identity = await classifyPartnerEmail(normalizeEmail(email));
-    if (identity.kind === "member-conflict") {
-      await sendMemberEmailConflictEmail(normalizeEmail(email));
-      return { sent: true, email: normalizeEmail(email) };
-    }
-    // BetterAuth magic-link: callbackURL points to /welcome?door=partner so
-    // first-time partners finish setup at the unified welcome page.
-    try {
-      await auth.api.signInMagicLink({
-        body: { email: normalizeEmail(email), callbackURL: "/welcome?door=partner" },
-        headers: request.headers,
-      });
-    } catch {
-      // Treat send errors as a neutral outcome — never reveal whether the address
-      // is in the system. The member-conflict branch above already handled that case.
-    }
-    return { sent: true, email: normalizeEmail(email) };
   }
 
   const result = await issuePartnerMagicLink(email, request);

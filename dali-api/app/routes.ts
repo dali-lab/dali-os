@@ -406,8 +406,6 @@ export default [
   route("dev-login", "routes/dev-login.ts"),
   route("dev-login-as", "routes/dev-login-as.ts"),
   route("logout", "routes/logout.ts"),
-  route("auth/callback/google", "routes/auth.callback.google.ts"),
-  route("auth/callback/cas", "routes/auth.callback.cas.ts"),
 
   // Desktop device pairing (GitHub-CLI style). Additive — OAuth + login
   // untouched. /link is the only new web UI surface. See TAURI_DESKTOP_PLAN.md.

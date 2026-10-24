@@ -10,26 +10,15 @@ vi.mock("~/lib/db");
 // standing up a full session.
 vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn() }));
 
-// BetterAuth server mock — used by the flag-ON action branches.
-const mockSignInMagicLink = vi.hoisted(() => vi.fn());
-const mockSignInSocial = vi.hoisted(() => vi.fn());
 const mockSendVerificationOTP = vi.hoisted(() => vi.fn());
 const mockSignInEmailOTP = vi.hoisted(() => vi.fn());
 vi.mock("~/lib/betterauth.server", () => ({
   auth: {
     api: {
-      signInMagicLink: mockSignInMagicLink,
-      signInSocial: mockSignInSocial,
       sendVerificationOTP: mockSendVerificationOTP,
       signInEmailOTP: mockSignInEmailOTP,
     },
   },
-}));
-
-// Feature flag mock — controls betterauth flag state per test.
-const mockIsFeatureEnabledForEveryone = vi.hoisted(() => vi.fn());
-vi.mock("~/lib/feature-flags.server", () => ({
-  isFeatureEnabledForEveryone: mockIsFeatureEnabledForEveryone,
 }));
 
 import { _resetForTests } from "~/lib/rate-limit";
@@ -53,11 +42,8 @@ function authedAs(sub: string) {
   } as any);
 }
 
-function makeRequest(ip = "1.2.3.4", next?: string) {
-  const form = new URLSearchParams({
-    provider: "google",
-  });
-  if (next) form.set("next", next);
+function makeFlagOnRequest(ip: string, body: Record<string, string>) {
+  const form = new URLSearchParams(body);
   return new Request("http://localhost/login", {
     method: "POST",
     headers: {
@@ -71,45 +57,20 @@ function makeRequest(ip = "1.2.3.4", next?: string) {
 beforeEach(() => {
   _resetForTests();
   vi.clearAllMocks();
-  process.env.GOOGLE_CLIENT_ID = "test-client-id";
-  // Default: betterauth flag is OFF for existing legacy tests.
-  mockIsFeatureEnabledForEveryone.mockResolvedValue(false);
-  mockSignInMagicLink.mockResolvedValue(undefined);
   mockSendVerificationOTP.mockResolvedValue({ success: true });
   mockSignInEmailOTP.mockResolvedValue({ headers: new Headers() });
-  mockSignInSocial.mockResolvedValue({ url: "https://accounts.google.com/oauth" });
 });
 
-describe("POST /login rate limiting", () => {
-  it("allows requests under the limit", async () => {
-    for (let i = 0; i < 5; i++) {
-      const res = (await action({ request: makeRequest() } as any)) as Response;
-      expect(res.status).toBe(302);
-    }
-  });
-
-  it("returns 429 with Retry-After once the limit is exceeded", async () => {
-    for (let i = 0; i < 5; i++) {
-      await action({ request: makeRequest() } as any);
-    }
-    const res = (await action({ request: makeRequest() } as any)) as Response;
-    expect(res.status).toBe(429);
-    expect(res.headers.get("Retry-After")).toBeTruthy();
-  });
-
-  it("scopes the rate limit per IP", async () => {
-    for (let i = 0; i < 5; i++) {
-      await action({ request: makeRequest("1.2.3.4") } as any);
-    }
-    const limited = (await action({
-      request: makeRequest("1.2.3.4"),
+describe("POST /login legacy providers", () => {
+  it.each(["google", "cas", ""])("provider=%j starts no external sign-in and returns to /login", async (provider) => {
+    const res = (await action({
+      request: makeFlagOnRequest("1.2.3.4", { provider }),
     } as any)) as Response;
-    expect(limited.status).toBe(429);
-
-    const ok = (await action({
-      request: makeRequest("5.6.7.8"),
-    } as any)) as Response;
-    expect(ok.status).toBe(302);
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe("/login");
+    expect(res.headers.get("Set-Cookie")).toBeNull();
+    expect(mockSendVerificationOTP).not.toHaveBeenCalled();
+    expect(mockSignInEmailOTP).not.toHaveBeenCalled();
   });
 });
 
@@ -117,9 +78,7 @@ describe("GET /login loader routing", () => {
   it("renders the login page for an unauthenticated visitor", async () => {
     mockRequireAuth.mockResolvedValue({ ok: false } as any);
     const result = await loader({ request: loaderRequest() } as any);
-    // No redirect — the loader returns plain data so the page renders. The
-    // loader now also surfaces the betterauth flag state (off by default here).
-    expect(result).toEqual({ betterAuthOn: false });
+    expect(result).toBeNull();
     expect(mockMemberFind).not.toHaveBeenCalled();
   });
 
@@ -226,57 +185,37 @@ describe("GET /login loader routing", () => {
 });
 
 describe("POST /login next cookie", () => {
-  it("stores a safe next in __dali_login_next", async () => {
-    const res = (await action({
-      request: makeRequest("9.9.9.9", "/calendar/check-in/m1"),
-    } as any)) as Response;
+  function verifyWithNext(next: string) {
+    return makeFlagOnRequest("9.9.9.9", {
+      provider: "verify-code",
+      identifier: "ada@example.edu",
+      otp: "123456",
+      next,
+    });
+  }
+
+  it("stores a safe next in __dali_login_next after a verified code", async () => {
+    const res = (await action({ request: verifyWithNext("/calendar/check-in/m1") } as any)) as Response;
     expect(res.status).toBe(302);
-    const cookies = res.headers.getSetCookie?.() ?? [
-      res.headers.get("Set-Cookie")!,
-    ];
     expect(
-      cookies.some((c: string) =>
-        c.includes(
-          `__dali_login_next=${encodeURIComponent("/calendar/check-in/m1")}`,
-        ),
-      ),
+      res.headers
+        .getSetCookie()
+        .some((c) => c.includes(`__dali_login_next=${encodeURIComponent("/calendar/check-in/m1")}`)),
     ).toBe(true);
   });
 
   it("does not store an unsafe next", async () => {
-    const res = (await action({
-      request: makeRequest("8.8.8.8", "//evil.com"),
-    } as any)) as Response;
+    const res = (await action({ request: verifyWithNext("//evil.com") } as any)) as Response;
     expect(res.status).toBe(302);
-    const cookies = res.headers.getSetCookie?.() ?? [
-      res.headers.get("Set-Cookie")!,
-    ];
-    expect(cookies.some((c: string) => c.includes("__dali_login_next="))).toBe(
-      false,
-    );
+    expect(res.headers.getSetCookie().some((c) => c.includes("__dali_login_next="))).toBe(false);
   });
 });
-
-// ── Flag-ON action branches ────────────────────────────────────────────────────
-
-function makeFlagOnRequest(ip: string, body: Record<string, string>) {
-  const form = new URLSearchParams(body);
-  return new Request("http://localhost/login", {
-    method: "POST",
-    headers: {
-      "X-Forwarded-For": ip,
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
-    body: form.toString(),
-  });
-}
 
 // /login is passwordless: enter your email, we send a 6-digit sign-in code;
 // passkeys are the fast repeat-login method. No password, no Google.
 
-describe("POST /login email-code (flag-ON)", () => {
+describe("POST /login email-code", () => {
   it("sends a sign-in OTP and advances to the code screen", async () => {
-    mockIsFeatureEnabledForEveryone.mockResolvedValue(true);
     const result = await action({
       request: makeFlagOnRequest("1.2.3.4", {
         provider: "email-code",
@@ -292,7 +231,6 @@ describe("POST /login email-code (flag-ON)", () => {
   });
 
   it("resolves an alias to the canonical login email and delivers the code there", async () => {
-    mockIsFeatureEnabledForEveryone.mockResolvedValue(true);
     // A member types their @dartmouth; it's recorded as an alias whose canonical
     // login email is their @dali. The code must go to the canonical, but the
     // screen keeps showing what they typed (no mapping leak).
@@ -316,7 +254,6 @@ describe("POST /login email-code (flag-ON)", () => {
   });
 
   it("still advances to the code screen when the send throws (anti-enumeration)", async () => {
-    mockIsFeatureEnabledForEveryone.mockResolvedValue(true);
     mockSendVerificationOTP.mockRejectedValue(new Error("boom"));
     const result = await action({
       request: makeFlagOnRequest("1.2.3.4", {
@@ -328,7 +265,6 @@ describe("POST /login email-code (flag-ON)", () => {
   });
 
   it("rejects an email with no @", async () => {
-    mockIsFeatureEnabledForEveryone.mockResolvedValue(true);
     const result = await action({
       request: makeFlagOnRequest("1.2.3.4", { provider: "email-code", email: "notanemail" }),
     } as any);
@@ -337,9 +273,8 @@ describe("POST /login email-code (flag-ON)", () => {
   });
 });
 
-describe("POST /login verify-code (flag-ON)", () => {
+describe("POST /login verify-code", () => {
   it("verifies the OTP, forwards the session cookie, and routes through the passkey offer", async () => {
-    mockIsFeatureEnabledForEveryone.mockResolvedValue(true);
     const baHeaders = new Headers({ "Set-Cookie": "dali.session_token=abc; Path=/" });
     mockSignInEmailOTP.mockResolvedValue({ headers: baHeaders });
     const res = (await action({
@@ -362,7 +297,6 @@ describe("POST /login verify-code (flag-ON)", () => {
   });
 
   it("stays on the code screen with an error when the code is wrong", async () => {
-    mockIsFeatureEnabledForEveryone.mockResolvedValue(true);
     mockSignInEmailOTP.mockRejectedValue(new Error("invalid otp"));
     const result = await action({
       request: makeFlagOnRequest("1.2.3.4", {
@@ -379,7 +313,6 @@ describe("POST /login verify-code (flag-ON)", () => {
   });
 
   it("steers to a fresh code when attempts on the code are exhausted (FORBIDDEN)", async () => {
-    mockIsFeatureEnabledForEveryone.mockResolvedValue(true);
     // BetterAuth throws a FORBIDDEN APIError once the per-code attempt cap is hit.
     mockSignInEmailOTP.mockRejectedValue({ status: "FORBIDDEN" });
     const result = await action({
@@ -397,9 +330,8 @@ describe("POST /login verify-code (flag-ON)", () => {
   });
 });
 
-describe("POST /login rate-limit scoping (flag-ON)", () => {
+describe("POST /login rate-limit scoping", () => {
   it("keeps the user on the code screen with a message when BetterAuth throttles the send", async () => {
-    mockIsFeatureEnabledForEveryone.mockResolvedValue(true);
     mockSendVerificationOTP.mockRejectedValue({ status: "TOO_MANY_REQUESTS" });
     const result = await action({
       request: makeFlagOnRequest("7.7.7.7", {
@@ -415,7 +347,6 @@ describe("POST /login rate-limit scoping (flag-ON)", () => {
   });
 
   it("does not throttle sends in the route itself; the shared BetterAuth hook owns the limit", async () => {
-    mockIsFeatureEnabledForEveryone.mockResolvedValue(true);
     for (let i = 0; i < 8; i++) {
       const result = await action({
         request: makeFlagOnRequest("7.7.7.9", {
@@ -429,7 +360,6 @@ describe("POST /login rate-limit scoping (flag-ON)", () => {
   });
 
   it("does not coarse-limit verify attempts", async () => {
-    mockIsFeatureEnabledForEveryone.mockResolvedValue(true);
     const ip = "7.7.7.8";
     // A typo-fixing user posts verify-code several times on the same IP; each
     // still reaches BetterAuth (which caps attempts per code) instead of 429ing.

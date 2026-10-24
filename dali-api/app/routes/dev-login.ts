@@ -4,8 +4,7 @@
 
 import type { Route } from "./+types/dev-login";
 import { isDevLoginEnabled } from "~/lib/dev-login";
-import { issueSession } from "~/lib/session";
-import { setSessionCookie } from "~/lib/cookies";
+import { startLoginSession } from "~/lib/login-session.server";
 import { prisma } from "~/lib/db";
 
 export async function loader({ request }: Route.LoaderArgs) {
@@ -22,7 +21,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       include: { partnerContact: { select: { id: true } } },
     });
     if (!user) return new Response("User not found", { status: 404 });
-    return loginAsUser(user);
+    return loginAsUser(request, user);
   }
 
   const users = await prisma.user.findMany({
@@ -118,7 +117,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   });
 }
 
-async function loginAsUser(user: {
+async function loginAsUser(request: Request, user: {
   id: string;
   daliEmail: string | null;
   dartmouthEmail: string | null;
@@ -126,10 +125,8 @@ async function loginAsUser(user: {
   lastName: string;
   partnerContact: { id: string } | null;
 }) {
-  const session = await issueSession({ userId: user.id });
-
   const headers = new Headers();
-  setSessionCookie(headers, session.rawId);
+  await startLoginSession(headers, request, user.id);
 
   const redirect = user.daliEmail ? "/" : user.partnerContact ? "/partner" : "/portal";
   headers.set("Location", redirect);

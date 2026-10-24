@@ -2,6 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { prisma } from "~/lib/db";
 import { logAuditEvent } from "~/lib/audit";
 import { checkRateLimit } from "~/lib/rate-limit";
+import { isFeatureEnabledForEveryone } from "~/lib/feature-flags.server";
 import { getFrontendUrl, getAppEnv } from "~/lib/app-env";
 import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
 import { renderFramedEmail } from "~/email/lib/layout.server";
@@ -83,6 +84,21 @@ export async function issuePartnerMagicLink(
   const identity = await classifyPartnerEmail(email);
   if (identity.kind === "member-conflict") {
     await sendMemberEmailConflictEmail(email);
+    return { ok: true };
+  }
+
+  if (await isFeatureEnabledForEveryone("betterauth", request)) {
+    const { auth } = await import("~/lib/betterauth.server");
+    try {
+      // First-time partners finish setup at /welcome.
+      await auth.api.signInMagicLink({
+        body: { email, callbackURL: "/welcome?door=partner" },
+        headers: request.headers,
+      });
+    } catch {
+      // Neutral outcome either way: the response must not reveal whether the
+      // address has an account.
+    }
     return { ok: true };
   }
 
