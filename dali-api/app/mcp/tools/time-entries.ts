@@ -1,27 +1,17 @@
-// MCP timesheet tools — list the caller's paid roles and their logged time,
-// and add / update / delete Manual entries.
+// MCP timesheet tools. Writes go to TimeEntry (what the Timesheet tab renders),
+// never TimesheetEntry, which mirrors Dartmouth payroll exports.
 //
-// Writes go to TimeEntry (the app's own tracking, what the Timesheet tab
-// renders), never TimesheetEntry — that one is a mirror of Dartmouth payroll
-// exports keyed on shift/chart-string fields, and hand-written rows have no
-// business sitting next to imported payroll data.
+// Writes go through ~/lib/time-entries.server, the same functions the Calendar
+// route and the mobile app use, so the Google Timesheet mirror and the
+// cross-machine calendar marker stay in step with every surface.
 //
-// Business rules are the ones the Calendar route's action already enforces:
-// validateTimeEntryRange (hours must match the start/end span, ≤24h) and
-// resolveRoleRef (the role must actually belong to the caller). Both are
-// imported rather than restated so the two surfaces can't drift.
-//
-// CONFIRMATION: `add` and `update` refuse to write unless `confirmed: true`.
-// The intended flow is that the agent derives hours and note from the session
-// it's in, shows the user what it's about to log, and only then re-calls with
-// confirmed. A dry call returns `{ preview }` describing the write. This is a
-// server-side gate, not just guidance in the description — an agent that logs
-// hours against someone's timesheet without them seeing it first would be
-// writing payroll-adjacent data unsupervised.
+// `add` and `update` are gated on `confirmed: true` server-side: an agent
+// logging payroll-adjacent hours must show the user the preview first.
 
 import { prisma } from "~/lib/db";
 import { resolveRoleRef, currentTerm, coreRoleLabel } from "~/lib/roles";
 import { validateTimeEntryRange, ASSIGNMENT_TYPES } from "~/lib/calendar-schemas";
+import { addTimeEntry, updateTimeEntry, deleteTimeEntry } from "~/lib/time-entries.server";
 import type { AssignmentType } from "~/generated/prisma/client";
 
 const CONFIRM_PROPERTY = {
@@ -201,7 +191,6 @@ export type TimeEntryOut = {
   projectId: string | null;
   startTime: string | null;
   endTime: string | null;
-  /** Block- and Meeting-sourced rows are owned by the thing that created them. */
   editable: boolean;
 };
 
@@ -255,11 +244,15 @@ export async function runListMyTimeEntries(
       projectId: r.projectId,
       startTime: r.startTime?.toISOString() ?? null,
       endTime: r.endTime?.toISOString() ?? null,
-      // A Meeting row follows attendance and a Block row follows its calendar
-      // block; editing either here would be undone by its owner on next sync.
-      editable: r.source === "Manual",
+      editable: true,
     })),
   };
+}
+
+
+function throwWriteError(id: string | undefined, result: { error: string; status: number }): never {
+  if (result.status === 404) throw new TimeEntryNotFoundError(id ?? "");
+  throw new TimeEntryInvalidError(result.error);
 }
 
 // ─── add_time_entry ──────────────────────────────────────────────────────────
@@ -274,8 +267,7 @@ export const ADD_TIME_ENTRY_TOOL = {
       date: { type: "string", description: "Date of the work (YYYY-MM-DD)." },
       hours: {
         type: "number",
-        description:
-          "Hours worked, > 0 and ≤ 24. If startTime/endTime are given this must match that span.",
+        description: "Hours worked, > 0 and ≤ 24. Must match the startTime/endTime span.",
       },
       assignmentType: {
         type: "string",
@@ -291,12 +283,12 @@ export const ADD_TIME_ENTRY_TOOL = {
       startTime: {
         type: "string",
         description:
-          "Optional ISO start. Supply both start and end to place the entry on the week grid; `hours` must match the span.",
+          "ISO start with an explicit offset (e.g. 2026-10-14T13:00:00-04:00). Payroll reads clock times, so every entry needs one.",
       },
-      endTime: { type: "string", description: "Optional ISO end." },
+      endTime: { type: "string", description: "ISO end with an explicit offset." },
       ...CONFIRM_PROPERTY,
     },
-    required: ["date", "hours", "assignmentType", "roleRefId"],
+    required: ["date", "hours", "assignmentType", "roleRefId", "startTime", "endTime"],
     additionalProperties: false,
   },
   requiredScope: "mcp:write" as const,
@@ -308,8 +300,8 @@ type AddInput = {
   assignmentType: AssignmentType;
   roleRefId: string;
   note?: string;
-  startTime?: string;
-  endTime?: string;
+  startTime: string;
+  endTime: string;
   confirmed?: boolean;
 };
 
@@ -324,7 +316,10 @@ export async function runAddTimeEntry(
   if (!(input.hours > 0)) {
     throw new TimeEntryInvalidError("hours must be greater than 0");
   }
-  const date = parseDay(input.date, "date")!;
+  parseDay(input.date, "date");
+  if (!input.startTime || !input.endTime) {
+    throw new TimeEntryInvalidError("startTime and endTime are required");
+  }
   const rangeError = validateTimeEntryRange({
     startTime: input.startTime,
     endTime: input.endTime,
@@ -337,8 +332,6 @@ export async function runAddTimeEntry(
     throw new TimeEntryInvalidError("roleRefId is not one of this member's roles");
   }
 
-  // Validate first, then gate — so the preview the user approves is one that
-  // would actually have been accepted.
   if (!input.confirmed) {
     return {
       ok: false,
@@ -351,28 +344,23 @@ export async function runAddTimeEntry(
         roleRefId: input.roleRefId,
         projectId: resolved.projectId,
         note: input.note ?? null,
-        startTime: input.startTime ?? null,
-        endTime: input.endTime ?? null,
+        startTime: input.startTime,
+        endTime: input.endTime,
       },
     };
   }
 
-  const created = await prisma.timeEntry.create({
-    data: {
-      userId: callerId,
-      source: "Manual",
-      date,
-      hours: input.hours,
-      assignmentType: input.assignmentType,
-      roleRefId: input.roleRefId,
-      projectId: resolved.projectId,
-      note: input.note ?? null,
-      startTime: input.startTime ? new Date(input.startTime) : null,
-      endTime: input.endTime ? new Date(input.endTime) : null,
-    },
-    select: { id: true },
+  const result = await addTimeEntry(callerId, {
+    date: input.date,
+    hours: input.hours,
+    assignmentType: input.assignmentType,
+    roleRefId: input.roleRefId,
+    note: input.note ?? null,
+    startTime: input.startTime,
+    endTime: input.endTime,
   });
-  return { ok: true, id: created.id };
+  if (!result.ok) throwWriteError(undefined, result);
+  return { ok: true, id: result.entry.id };
 }
 
 // ─── update_time_entry ───────────────────────────────────────────────────────
@@ -380,7 +368,7 @@ export async function runAddTimeEntry(
 export const UPDATE_TIME_ENTRY_TOOL = {
   name: "update_time_entry",
   description:
-    "Change a manual time entry's date, hours, role, note, or time range. Only Manual entries are editable — Meeting entries follow attendance and Block entries follow their calendar block. Same two-step confirmation as `add_time_entry`.",
+    "Change one of the member's time entries: date, hours, role, note, or time range. Works on Manual and Meeting entries alike (a Meeting entry is how attendance lands on the timesheet; give it a role and note here). Same two-step confirmation as `add_time_entry`.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -438,13 +426,6 @@ export async function runUpdateTimeEntry(
   if (!existing || existing.userId !== callerId) {
     throw new TimeEntryNotFoundError(input.id);
   }
-  if (existing.source !== "Manual") {
-    throw new TimeEntryInvalidError(
-      `Only Manual entries can be edited; this one is ${existing.source}-sourced and follows its ${
-        existing.source === "Meeting" ? "meeting attendance" : "calendar block"
-      }.`,
-    );
-  }
 
   const hours = input.hours ?? existing.hours;
   if (!(hours > 0)) throw new TimeEntryInvalidError("hours must be greater than 0");
@@ -459,8 +440,6 @@ export async function runUpdateTimeEntry(
   });
   if (rangeError) throw new TimeEntryInvalidError(rangeError);
 
-  // Mirrors the calendar action: a patch touching either half of the role must
-  // land on a complete, real role rather than clearing back to unassigned.
   let assignmentType = existing.assignmentType;
   let roleRefId = existing.roleRefId;
   let projectId = existing.projectId;
@@ -487,10 +466,15 @@ export async function runUpdateTimeEntry(
       preview: {
         action: "update",
         id: input.id,
+        source: existing.source,
         before: {
           date: existing.date.toISOString().slice(0, 10),
           hours: existing.hours,
           note: existing.note,
+          assignmentType: existing.assignmentType,
+          roleRefId: existing.roleRefId,
+          startTime: existing.startTime?.toISOString() ?? null,
+          endTime: existing.endTime?.toISOString() ?? null,
         },
         after: {
           date: date.toISOString().slice(0, 10),
@@ -506,22 +490,28 @@ export async function runUpdateTimeEntry(
     };
   }
 
-  await prisma.timeEntry.update({
-    where: { id: input.id },
-    data: { date, hours, note, assignmentType, roleRefId, projectId, startTime, endTime },
+  const result = await updateTimeEntry(callerId, {
+    id: input.id,
+    date: input.date,
+    hours: input.hours,
+    assignmentType: input.assignmentType,
+    roleRefId: input.roleRefId,
+    note: input.note === undefined ? undefined : note,
+    startTime: input.startTime,
+    endTime: input.endTime,
   });
+  if (!result.ok) throwWriteError(input.id, result);
   return { ok: true };
 }
 
 // ─── delete_time_entry ───────────────────────────────────────────────────────
-// No confirmation gate: unlike add/update it can't invent hours, the id has to
-// come from a list call the user can see, and the failure mode is recoverable
-// by logging the entry again.
+// No confirmation gate: it can't invent hours, the id has to come from a list
+// call the user can see, and the entry can be logged again.
 
 export const DELETE_TIME_ENTRY_TOOL = {
   name: "delete_time_entry",
   description:
-    "Delete one of the member's manual time entries. Meeting- and Block-sourced entries can't be deleted here — remove the underlying meeting attendance or calendar block instead.",
+    "Delete one of the member's time entries, Manual or Meeting. Deleting a Meeting entry takes the meeting's hours off the timesheet; it does not change attendance.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -537,18 +527,7 @@ export async function runDeleteTimeEntry(
   callerId: string,
   input: { id: string },
 ): Promise<{ ok: true }> {
-  const existing = await prisma.timeEntry.findUnique({
-    where: { id: input.id },
-    select: { userId: true, source: true },
-  });
-  if (!existing || existing.userId !== callerId) {
-    throw new TimeEntryNotFoundError(input.id);
-  }
-  if (existing.source !== "Manual") {
-    throw new TimeEntryInvalidError(
-      `Only Manual entries can be deleted; this one is ${existing.source}-sourced.`,
-    );
-  }
-  await prisma.timeEntry.delete({ where: { id: input.id } });
+  const result = await deleteTimeEntry(callerId, input.id);
+  if (!result.ok) throwWriteError(input.id, result);
   return { ok: true };
 }

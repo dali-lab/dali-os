@@ -8,9 +8,15 @@ vi.mock("~/lib/roles", () => ({
   // asserts stay tied to the one definition in ~/lib/roles.
   coreRoleLabel: (leadTitle: string | null) => leadTitle || "Core",
 }));
+vi.mock("~/lib/time-entries.server", () => ({
+  addTimeEntry: vi.fn(),
+  updateTimeEntry: vi.fn(),
+  deleteTimeEntry: vi.fn(),
+}));
 
 import { prisma } from "~/lib/db";
 import { resolveRoleRef, currentTerm } from "~/lib/roles";
+import { addTimeEntry, updateTimeEntry, deleteTimeEntry } from "~/lib/time-entries.server";
 import {
   runAddTimeEntry,
   runUpdateTimeEntry,
@@ -27,15 +33,20 @@ const mockPrisma = prisma as unknown as Record<string, Record<string, ReturnType
 const ME = "user-1";
 const VALID = {
   date: "2026-07-29",
-  hours: 2,
+  hours: 1,
   assignmentType: "Project" as const,
   roleRefId: "pa-1",
+  startTime: "2026-07-29T09:00:00-04:00",
+  endTime: "2026-07-29T10:00:00-04:00",
 };
 
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(resolveRoleRef).mockResolvedValue({ projectId: "proj-1" });
   vi.mocked(currentTerm).mockResolvedValue({ id: "term-1", code: "26X" } as never);
+  vi.mocked(addTimeEntry).mockResolvedValue({ ok: true, entry: { id: "te-1" } } as never);
+  vi.mocked(updateTimeEntry).mockResolvedValue({ ok: true, entry: { id: "te-1" } } as never);
+  vi.mocked(deleteTimeEntry).mockResolvedValue({ ok: true, id: "te-1" });
 });
 
 describe("add_time_entry confirmation gate", () => {
@@ -45,68 +56,82 @@ describe("add_time_entry confirmation gate", () => {
     expect((res as any).needsConfirmation).toBe(true);
     expect((res as any).preview).toMatchObject({
       action: "add",
-      hours: 2,
+      hours: 1,
       note: "Fixed the importer",
       projectId: "proj-1",
+      startTime: VALID.startTime,
+      endTime: VALID.endTime,
     });
-    // The whole point of the gate.
+    expect(addTimeEntry).not.toHaveBeenCalled();
+  });
+
+  it("writes through the shared timesheet write once confirmed", async () => {
+    const res = await runAddTimeEntry(ME, { ...VALID, note: "n", confirmed: true });
+    expect(res).toEqual({ ok: true, id: "te-1" });
+    expect(addTimeEntry).toHaveBeenCalledWith(ME, {
+      date: "2026-07-29",
+      hours: 1,
+      assignmentType: "Project",
+      roleRefId: "pa-1",
+      note: "n",
+      startTime: VALID.startTime,
+      endTime: VALID.endTime,
+    });
     expect(mockPrisma.timeEntry.create).not.toHaveBeenCalled();
   });
 
-  it("writes once confirmed", async () => {
-    mockPrisma.timeEntry.create.mockResolvedValue({ id: "te-1" });
-    const res = await runAddTimeEntry(ME, { ...VALID, note: "n", confirmed: true });
-    expect(res).toEqual({ ok: true, id: "te-1" });
-    expect(mockPrisma.timeEntry.create).toHaveBeenCalledTimes(1);
-    expect(mockPrisma.timeEntry.create.mock.calls[0][0].data).toMatchObject({
-      userId: ME,
-      source: "Manual",
-      hours: 2,
-      projectId: "proj-1",
-    });
+  it("passes a missing note as null", async () => {
+    await runAddTimeEntry(ME, { ...VALID, confirmed: true });
+    expect(vi.mocked(addTimeEntry).mock.calls[0][1].note).toBeNull();
+  });
+
+  it("surfaces a rejection from the shared write as invalid input", async () => {
+    vi.mocked(addTimeEntry).mockResolvedValue({ ok: false, error: "Invalid role", status: 400 });
+    await expect(runAddTimeEntry(ME, { ...VALID, confirmed: true })).rejects.toThrow(
+      new TimeEntryInvalidError("Invalid role"),
+    );
   });
 
   it("validates before previewing, so an approved preview is one that would succeed", async () => {
     vi.mocked(resolveRoleRef).mockResolvedValue(null);
     await expect(runAddTimeEntry(ME, VALID)).rejects.toThrow(TimeEntryInvalidError);
-    expect(mockPrisma.timeEntry.create).not.toHaveBeenCalled();
+    expect(addTimeEntry).not.toHaveBeenCalled();
   });
 });
 
 describe("add_time_entry validation", () => {
   it("rejects a role that isn't the caller's", async () => {
     vi.mocked(resolveRoleRef).mockResolvedValue(null);
-    await expect(
-      runAddTimeEntry(ME, { ...VALID, confirmed: true }),
-    ).rejects.toThrow(/not one of this member's roles/);
+    await expect(runAddTimeEntry(ME, { ...VALID, confirmed: true })).rejects.toThrow(
+      /not one of this member's roles/,
+    );
+    expect(addTimeEntry).not.toHaveBeenCalled();
   });
 
   it("rejects non-positive hours", async () => {
-    await expect(runAddTimeEntry(ME, { ...VALID, hours: 0 })).rejects.toThrow(
-      /greater than 0/,
-    );
+    await expect(runAddTimeEntry(ME, { ...VALID, hours: 0 })).rejects.toThrow(/greater than 0/);
   });
 
   it("rejects hours that disagree with the start/end span", async () => {
-    // Reuses validateTimeEntryRange — an 8h claim on a 1h window.
-    await expect(
-      runAddTimeEntry(ME, {
-        ...VALID,
-        hours: 8,
-        startTime: "2026-07-29T09:00:00.000Z",
-        endTime: "2026-07-29T10:00:00.000Z",
-      }),
-    ).rejects.toThrow(/match the start\/end range/);
+    await expect(runAddTimeEntry(ME, { ...VALID, hours: 8 })).rejects.toThrow(
+      /match the start\/end range/,
+    );
   });
 
-  it("accepts hours matching the span", async () => {
-    const res = await runAddTimeEntry(ME, {
-      ...VALID,
-      hours: 1,
-      startTime: "2026-07-29T09:00:00.000Z",
-      endTime: "2026-07-29T10:00:00.000Z",
-    });
-    expect((res as any).preview.hours).toBe(1);
+  it.each([
+    ["startTime", { startTime: undefined }],
+    ["endTime", { endTime: undefined }],
+    ["both times", { startTime: undefined, endTime: undefined }],
+  ])("rejects an entry missing %s, since payroll needs clock times", async (_label, patch) => {
+    await expect(runAddTimeEntry(ME, { ...VALID, ...patch } as never)).rejects.toThrow(
+      /startTime and endTime are required/,
+    );
+  });
+
+  it("rejects an end before the start", async () => {
+    await expect(
+      runAddTimeEntry(ME, { ...VALID, startTime: VALID.endTime, endTime: VALID.startTime }),
+    ).rejects.toThrow(/after start/);
   });
 
   it("rejects a malformed date", async () => {
@@ -115,7 +140,10 @@ describe("add_time_entry validation", () => {
     );
   });
 
-  it("declares confirmed in its schema but does not require it", () => {
+  it("requires start and end in its schema, and declares confirmed without requiring it", () => {
+    expect(ADD_TIME_ENTRY_TOOL.inputSchema.required).toEqual(
+      expect.arrayContaining(["startTime", "endTime"]),
+    );
     expect(ADD_TIME_ENTRY_TOOL.inputSchema.properties).toHaveProperty("confirmed");
     expect(ADD_TIME_ENTRY_TOOL.inputSchema.required).not.toContain("confirmed");
     expect(ADD_TIME_ENTRY_TOOL.requiredScope).toBe("mcp:write");
@@ -135,44 +163,126 @@ describe("update_time_entry", () => {
     startTime: null,
     endTime: null,
   };
+  const meetingEntry = {
+    ...existing,
+    source: "Meeting",
+    hours: 1,
+    note: null,
+    assignmentType: null,
+    roleRefId: null,
+    projectId: null,
+    startTime: new Date("2026-10-15T16:30:00.000Z"),
+    endTime: new Date("2026-10-15T17:30:00.000Z"),
+  };
 
   it("refuses an entry belonging to someone else", async () => {
     mockPrisma.timeEntry.findUnique.mockResolvedValue({ ...existing, userId: "someone-else" });
     await expect(runUpdateTimeEntry(ME, { id: "te-1" })).rejects.toThrow(TimeEntryNotFoundError);
+    expect(updateTimeEntry).not.toHaveBeenCalled();
   });
 
-  it("refuses Meeting-sourced entries, which are owned elsewhere", async () => {
-    mockPrisma.timeEntry.findUnique.mockResolvedValue({ ...existing, source: "Meeting" });
-    await expect(runUpdateTimeEntry(ME, { id: "te-1", hours: 3 })).rejects.toThrow(
-      /meeting attendance/,
-    );
-    expect(mockPrisma.timeEntry.update).not.toHaveBeenCalled();
+  it("refuses an entry that doesn't exist", async () => {
+    mockPrisma.timeEntry.findUnique.mockResolvedValue(null);
+    await expect(runUpdateTimeEntry(ME, { id: "te-1" })).rejects.toThrow(TimeEntryNotFoundError);
   });
 
-  it("previews a before/after diff before writing", async () => {
+  it("previews a before/after diff with the entry's source before writing", async () => {
     mockPrisma.timeEntry.findUnique.mockResolvedValue(existing);
     const res = await runUpdateTimeEntry(ME, { id: "te-1", hours: 3, note: "new" });
     expect(res.ok).toBe(false);
+    expect((res as any).preview.source).toBe("Manual");
     expect((res as any).preview.before).toMatchObject({ hours: 2, note: "old" });
     expect((res as any).preview.after).toMatchObject({ hours: 3, note: "new" });
-    expect(mockPrisma.timeEntry.update).not.toHaveBeenCalled();
+    expect(updateTimeEntry).not.toHaveBeenCalled();
   });
 
-  it("writes once confirmed", async () => {
+  it("writes only the patched fields through the shared timesheet write once confirmed", async () => {
     mockPrisma.timeEntry.findUnique.mockResolvedValue(existing);
     const res = await runUpdateTimeEntry(ME, { id: "te-1", hours: 3, confirmed: true });
     expect(res).toEqual({ ok: true });
-    expect(mockPrisma.timeEntry.update.mock.calls[0][0].data).toMatchObject({ hours: 3 });
+    expect(updateTimeEntry).toHaveBeenCalledWith(ME, {
+      id: "te-1",
+      date: undefined,
+      hours: 3,
+      assignmentType: undefined,
+      roleRefId: undefined,
+      note: undefined,
+      startTime: undefined,
+      endTime: undefined,
+    });
+    expect(mockPrisma.timeEntry.update).not.toHaveBeenCalled();
   });
 
   it("clears the note on an empty string", async () => {
     mockPrisma.timeEntry.findUnique.mockResolvedValue(existing);
     await runUpdateTimeEntry(ME, { id: "te-1", note: "", confirmed: true });
-    expect(mockPrisma.timeEntry.update.mock.calls[0][0].data.note).toBeNull();
+    expect(vi.mocked(updateTimeEntry).mock.calls[0][1].note).toBeNull();
+  });
+
+  it("gives a Meeting entry a role and note", async () => {
+    mockPrisma.timeEntry.findUnique.mockResolvedValue(meetingEntry);
+    vi.mocked(resolveRoleRef).mockResolvedValue({ projectId: null });
+    const preview = await runUpdateTimeEntry(ME, {
+      id: "te-m",
+      assignmentType: "Core",
+      roleRefId: "ca-1",
+      note: "Core meeting, planned hiring.",
+    });
+    expect((preview as any).preview).toMatchObject({
+      source: "Meeting",
+      after: { assignmentType: "Core", roleRefId: "ca-1", note: "Core meeting, planned hiring." },
+    });
+
+    await runUpdateTimeEntry(ME, {
+      id: "te-m",
+      assignmentType: "Core",
+      roleRefId: "ca-1",
+      note: "Core meeting, planned hiring.",
+      confirmed: true,
+    });
+    expect(updateTimeEntry).toHaveBeenCalledWith(
+      ME,
+      expect.objectContaining({
+        id: "te-m",
+        assignmentType: "Core",
+        roleRefId: "ca-1",
+        note: "Core meeting, planned hiring.",
+      }),
+    );
+  });
+
+  it("moves a Meeting entry's time range", async () => {
+    mockPrisma.timeEntry.findUnique.mockResolvedValue(meetingEntry);
+    await runUpdateTimeEntry(ME, {
+      id: "te-m",
+      startTime: "2026-10-15T13:05:00-04:00",
+      endTime: "2026-10-15T13:30:00-04:00",
+      hours: 0.42,
+      confirmed: true,
+    });
+    expect(updateTimeEntry).toHaveBeenCalledWith(
+      ME,
+      expect.objectContaining({
+        startTime: "2026-10-15T13:05:00-04:00",
+        endTime: "2026-10-15T13:30:00-04:00",
+        hours: 0.42,
+      }),
+    );
+  });
+
+  it("rejects a time change whose stored hours no longer match", async () => {
+    mockPrisma.timeEntry.findUnique.mockResolvedValue(meetingEntry);
+    await expect(
+      runUpdateTimeEntry(ME, {
+        id: "te-m",
+        startTime: "2026-10-15T13:05:00-04:00",
+        confirmed: true,
+      }),
+    ).rejects.toThrow(/match the start\/end range/);
+    expect(updateTimeEntry).not.toHaveBeenCalled();
   });
 
   it("won't let a half-specified role clear the attribution", async () => {
-    // Mirrors the calendar action: patching either half must land on a real role.
     mockPrisma.timeEntry.findUnique.mockResolvedValue({
       ...existing,
       assignmentType: null,
@@ -181,33 +291,34 @@ describe("update_time_entry", () => {
     await expect(
       runUpdateTimeEntry(ME, { id: "te-1", assignmentType: "Core", confirmed: true }),
     ).rejects.toThrow(/complete role/);
+    expect(updateTimeEntry).not.toHaveBeenCalled();
+  });
+
+  it("maps a not-found from the shared write to TimeEntryNotFoundError", async () => {
+    mockPrisma.timeEntry.findUnique.mockResolvedValue(existing);
+    vi.mocked(updateTimeEntry).mockResolvedValue({ ok: false, error: "Not found", status: 404 });
+    await expect(runUpdateTimeEntry(ME, { id: "te-1", hours: 3, confirmed: true })).rejects.toThrow(
+      TimeEntryNotFoundError,
+    );
   });
 });
 
 describe("delete_time_entry", () => {
-  it("deletes a manual entry without a confirmation gate", async () => {
-    // Recoverable and can't invent hours, so it isn't gated — but the id still
-    // has to come from a list the user saw.
-    mockPrisma.timeEntry.findUnique.mockResolvedValue({ userId: ME, source: "Manual" });
+  it("deletes through the shared timesheet delete without a confirmation gate", async () => {
     expect(await runDeleteTimeEntry(ME, { id: "te-1" })).toEqual({ ok: true });
-    expect(mockPrisma.timeEntry.delete).toHaveBeenCalledWith({ where: { id: "te-1" } });
+    expect(deleteTimeEntry).toHaveBeenCalledWith(ME, "te-1");
+    expect(mockPrisma.timeEntry.delete).not.toHaveBeenCalled();
     expect(DELETE_TIME_ENTRY_TOOL.inputSchema.properties).not.toHaveProperty("confirmed");
   });
 
   it("refuses another member's entry", async () => {
-    mockPrisma.timeEntry.findUnique.mockResolvedValue({ userId: "other", source: "Manual" });
+    vi.mocked(deleteTimeEntry).mockResolvedValue({ ok: false, error: "Not found", status: 404 });
     await expect(runDeleteTimeEntry(ME, { id: "te-1" })).rejects.toThrow(TimeEntryNotFoundError);
-    expect(mockPrisma.timeEntry.delete).not.toHaveBeenCalled();
-  });
-
-  it("refuses a non-Manual entry", async () => {
-    mockPrisma.timeEntry.findUnique.mockResolvedValue({ userId: ME, source: "Meeting" });
-    await expect(runDeleteTimeEntry(ME, { id: "te-1" })).rejects.toThrow(/Manual/);
   });
 });
 
 describe("list_my_time_entries", () => {
-  it("scopes to the caller and flags which rows are editable", async () => {
+  it("scopes to the caller and marks Manual and Meeting rows editable", async () => {
     mockPrisma.timeEntry.findMany.mockResolvedValue([
       {
         id: "a",
@@ -236,8 +347,8 @@ describe("list_my_time_entries", () => {
     ]);
     const { entries } = await runListMyTimeEntries(ME, {});
     expect(mockPrisma.timeEntry.findMany.mock.calls[0][0].where.userId).toBe(ME);
-    expect(entries[0]).toMatchObject({ id: "a", date: "2026-07-29", editable: true });
-    expect(entries[1]).toMatchObject({ id: "b", editable: false });
+    expect(entries[0]).toMatchObject({ id: "a", date: "2026-07-29", source: "Manual", editable: true });
+    expect(entries[1]).toMatchObject({ id: "b", source: "Meeting", editable: true });
   });
 
   it("caps the limit", async () => {
