@@ -313,7 +313,7 @@ export default function AdminSecurity() {
       />
       <RuleSection
         title="Trusted networks"
-        description="Shared networks like campus Wi-Fi, where many members sign in from one address. They are never blocked automatically and allow 50 code requests per address every 10 minutes instead of 10. Each person is still limited to 3 codes every 10 minutes."
+        description="Shared networks like campus Wi-Fi, where many members sign in from one address. They are never blocked automatically and allow 50 code requests per address every 10 minutes instead of 10. Each person is still limited to 3 codes every 10 minutes, 5 an hour and 10 a day."
         empty="No trusted networks."
         rules={trusted}
         kind="trust"
