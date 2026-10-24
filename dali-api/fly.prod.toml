@@ -26,6 +26,14 @@ primary_region = "iad"
   # masking any breakage in the cross-machine layer.
   min_machines_running = 2
 
+  # Fly's default is 20 connections per machine. Every open tab holds an SSE
+  # stream here (and a WebSocket on 3002) for its whole life, so the default
+  # read as "full" at ~20 tabs and autostarted machines that never drained.
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 200
+    hard_limit = 400
+
 # Hocuspocus collab server runs in the same Node process on a second port.
 # Without this services block, port 3002 isn't exposed at Fly's edge and
 # every collaborative editor falls back to "connect, immediately disconnect."
@@ -35,6 +43,14 @@ primary_region = "iad"
 [[services]]
   internal_port = 3002
   protocol = "tcp"
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 2
+
+  [services.concurrency]
+    type = "connections"
+    soft_limit = 300
+    hard_limit = 500
 
   [[services.ports]]
     port = 3002
