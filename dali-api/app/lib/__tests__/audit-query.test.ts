@@ -6,6 +6,7 @@ import {
   hasAnyFilter,
   resolveAuditTextFilters,
   looksLikeCuid,
+  ipFilter,
 } from "~/lib/audit-query";
 
 function params(init: Record<string, string>): URLSearchParams {
@@ -312,5 +313,40 @@ describe("resolveAuditTextFilters", () => {
     expect(patch).toEqual({
       OR: [{ userId: "__no_match__" }, { targetId: "__no_match__" }],
     });
+  });
+});
+
+describe("ipFilter", () => {
+  it.each([
+    ["165.245.246.69", { ip: "165.245.246.69" }],
+    [" 165.245.246.69 ", { ip: "165.245.246.69" }],
+    ["129.170", { ip: { startsWith: "129.170" } }],
+    ["129.170.", { ip: { startsWith: "129.170." } }],
+    ["129.170.41", { ip: { startsWith: "129.170.41" } }],
+    ["2607:FB90:3c95", { ip: { startsWith: "2607:fb90:3c95" } }],
+    ["::1", { ip: { startsWith: "::1" } }],
+  ])("treats %s as an IP search", (text, expected) => {
+    expect(ipFilter(text)).toEqual(expected);
+  });
+
+  it.each(["ada", "ada@example.edu", "clx7y2k0m0000abcdefghij01", "129", "10:30 am", "Lovelace, Ada"])(
+    "leaves %s to the name search",
+    (text) => {
+      expect(ipFilter(text)).toBeNull();
+    },
+  );
+
+  it("matches a full address exactly so it can't also match a longer one", () => {
+    expect(ipFilter("1.2.3.4")).toEqual({ ip: "1.2.3.4" });
+  });
+});
+
+describe("resolveAuditTextFilters with an IP", () => {
+  it("filters on the request IP without a User lookup", async () => {
+    const findMany = vi.fn();
+    const prisma = { user: { findMany } } as unknown as Parameters<typeof resolveAuditTextFilters>[0];
+    const patch = await resolveAuditTextFilters(prisma, { ...EMPTY, person: "165.245.246.69" });
+    expect(patch).toEqual({ ip: "165.245.246.69" });
+    expect(findMany).not.toHaveBeenCalled();
   });
 });

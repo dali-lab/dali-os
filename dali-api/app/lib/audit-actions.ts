@@ -16,6 +16,13 @@ export const AUDIT_ACTIONS = [
   // by the cross-machine send throttle; "throttled" rows are the refused ones.
   "auth.code.request",
   "auth.code.throttled",
+  // Admin → Security IP rules. metadata.cidr names the address or range;
+  // "blocked" is a refused request from a blocked address (sampled per minute).
+  "security.ip.block",
+  "security.ip.trust",
+  "security.ip.remove",
+  "security.ip.autoblock",
+  "security.ip.blocked",
   // Unattributed: /oauth/register is public, and a rejected registration
   // persists nothing else — this row is where the rejected redirect_uris live.
   "oauth.register.rejected",

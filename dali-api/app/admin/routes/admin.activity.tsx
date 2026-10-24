@@ -298,14 +298,14 @@ export default function AdminConsoleActivity() {
         <div className="text-xs text-muted-foreground flex flex-col gap-1">
           <span className="inline-flex items-center gap-1">
             Person
-            <InfoTip content="Matches as actor or target. Returns events where this person did something or had something done to them." />
+            <InfoTip content="Matches as actor or target. Returns events where this person did something or had something done to them. An IP address matches requests from it; a partial one like 129.170 matches the range." />
           </span>
           <SearchInput
             size="sm"
             name="person"
             defaultValue={filters.person ?? ""}
-            placeholder="name, email, or id"
-            aria-label="Person"
+            placeholder="name, email, id, or IP"
+            aria-label="Person or IP"
           />
         </div>
         <label className="text-xs text-muted-foreground flex flex-col gap-1">

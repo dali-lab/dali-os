@@ -166,6 +166,21 @@ async function resolveUserIdsByText(
   return rows.map((r) => r.id);
 }
 
+// Regexes rather than node:net — this module reaches the client bundle.
+const FULL_IPV4 = /^\d{1,3}(\.\d{1,3}){3}$/;
+const PARTIAL_IPV4 = /^\d{1,3}(\.\d{1,3}){0,2}\.$|^\d{1,3}(\.\d{1,3}){1,2}$/;
+const IPV6ISH = /^[0-9a-f]*:[0-9a-f:]*$/i;
+
+// An address matches exactly; a partial one ("129.170." or "129.170") is a
+// prefix, so "1.2.3.4" can't also match "1.2.3.45".
+export function ipFilter(text: string): Prisma.AuditLogWhereInput | null {
+  const q = text.trim().toLowerCase();
+  if (FULL_IPV4.test(q)) return { ip: q };
+  if (PARTIAL_IPV4.test(q)) return { ip: { startsWith: q } };
+  if (IPV6ISH.test(q) && q.length >= 2) return { ip: { startsWith: q } };
+  return null;
+}
+
 // Convert the textual `person` filter into a where-clause patch that ORs
 // userId / targetId match. Cuid-shaped input short-circuits to an exact id
 // match on both columns; anything else goes through a User table lookup.
@@ -176,6 +191,9 @@ export async function resolveAuditTextFilters(
   filters: AuditFilters,
 ): Promise<Prisma.AuditLogWhereInput> {
   if (!filters.person) return {};
+
+  const ipPatch = ipFilter(filters.person);
+  if (ipPatch) return ipPatch;
 
   if (looksLikeCuid(filters.person)) {
     return {

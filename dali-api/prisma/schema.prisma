@@ -2041,6 +2041,23 @@ model AuditLog {
   @@index([userId])
   @@index([action])
   @@index([createdAt])
+  @@index([ip, createdAt])
+}
+
+// Admin → Security. "block" rules refuse sign-in from an address or range;
+// "trust" rules mark shared networks (campus NAT/eduroam) that are never
+// auto-blocked and get a higher per-IP code cap. Auto blocks expire.
+model IpRule {
+  id              String    @id @default(cuid())
+  kind            String // "block" | "trust"
+  cidr            String // "165.245.246.69/32", "129.170.0.0/16", IPv6 too
+  reason          String?
+  source          String    @default("manual") // "manual" | "auto"
+  expiresAt       DateTime?
+  createdByUserId String?
+  createdAt       DateTime  @default(now())
+
+  @@unique([kind, cidr])
 }
 
 // ─── Site Analytics ──────────────────────────────────────────────────────────
