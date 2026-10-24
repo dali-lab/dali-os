@@ -422,21 +422,21 @@ export async function action({ request, params }: Route.ActionArgs) {
         return { error: "One of those terms no longer exists." };
       }
     }
-    // Replace the whole target-term set in one transaction: scalar fields,
-    // then drop and recreate the join rows.
+    // Keep retained join rows: they now own term-specific planning metadata.
     await prisma.$transaction([
       prisma.partnerApplication.update({
         where: { id: params.id },
         data: { summary: summaryRaw === "" ? null : summaryRaw },
       }),
       prisma.partnerApplicationTargetTerm.deleteMany({
-        where: { applicationId: params.id },
+        where: { applicationId: params.id, termId: { notIn: termIds } },
       }),
       prisma.partnerApplicationTargetTerm.createMany({
         data: termIds.map((termId) => ({
           applicationId: params.id,
           termId,
         })),
+        skipDuplicates: true,
       }),
     ]);
   } else if (intent === "promote") {

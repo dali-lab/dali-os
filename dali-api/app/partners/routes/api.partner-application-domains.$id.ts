@@ -7,7 +7,7 @@ import { withCors, handlePreflight } from "~/lib/cors";
 import { isEmptyBlocks } from "~/lib/blocks";
 
 // POST   /api/partner-application-domains/:id — update expected scope.
-//          Body: { expectedMembers: number, expectedChallenges: Block[]|null }
+//          Body: { expectedMembers: number, expectedChallenges?: Block[]|null }
 //          (BlockNote block array; the column stores block JSON going forward)
 // DELETE /api/partner-application-domains/:id — detach the domain from the
 //          application (hard delete; the row is pure join+scope data, nothing
@@ -18,14 +18,24 @@ import { isEmptyBlocks } from "~/lib/blocks";
 
 type Body = {
   expectedMembers: number;
-  expectedChallenges: unknown;
+  // Optional so the planner can update expectedMembers alone without having
+  // to round-trip the whole BlockNote scope doc. Omit to leave untouched.
+  expectedChallenges?: unknown;
 };
 
 function isBody(x: unknown): x is Body {
   if (!x || typeof x !== "object") return false;
   const r = x as Record<string, unknown>;
-  if (typeof r.expectedMembers !== "number") return false;
-  if (r.expectedChallenges !== null && !Array.isArray(r.expectedChallenges))
+  if (
+    typeof r.expectedMembers !== "number" ||
+    !Number.isFinite(r.expectedMembers) ||
+    r.expectedMembers > 2_147_483_647
+  ) return false;
+  if (
+    "expectedChallenges" in r &&
+    r.expectedChallenges !== null &&
+    !Array.isArray(r.expectedChallenges)
+  )
     return false;
   return true;
 }
@@ -89,14 +99,20 @@ export async function action({ request, params }: Route.ActionArgs) {
   }
 
   const expectedMembers = Math.max(0, Math.floor(body.expectedMembers));
-  const expectedChallenges = isEmptyBlocks(body.expectedChallenges)
-    ? Prisma.JsonNull
-    : (body.expectedChallenges as Prisma.InputJsonValue);
+  const data: {
+    expectedMembers: number;
+    expectedChallenges?: Prisma.InputJsonValue | typeof Prisma.JsonNull;
+  } = { expectedMembers };
+  if ("expectedChallenges" in body) {
+    data.expectedChallenges = isEmptyBlocks(body.expectedChallenges)
+      ? Prisma.JsonNull
+      : (body.expectedChallenges as Prisma.InputJsonValue);
+  }
 
   try {
     await prisma.partnerApplicationDomain.update({
       where: { id },
-      data: { expectedMembers, expectedChallenges },
+      data,
     });
   } catch (e) {
     const res = notFound(e);

@@ -6879,6 +6879,16 @@ enum PartnerSowState {
   Accepted
 }
 
+// Term-planning intent for a (PartnerApplication, Term) pair. Drives the
+// color-coded row in the Partner Relations term planner (/core/partners/plan):
+// green = Continuing, red = Later, yellow = Maybe, blue = New.
+enum PartnerPlanningStatus {
+  Continuing
+  Later
+  Maybe
+  New
+}
+
 // A partner's ask for a meeting, made from the portal on the real scheduler
 // (team mutual free/busy, aggregate only). Core accepts (→ ScheduledMeeting
 // with the partner as a guest email) or declines.
@@ -7096,6 +7106,15 @@ model PartnerApplicationTargetTerm {
   id            String @id @default(cuid())
   applicationId String
   termId        String
+
+  // Partner Relations term plan: color-coded intent for this application in
+  // this term. Null = not yet set by the lead. See /core/partners/plan.
+  planningStatus PartnerPlanningStatus?
+  // Short free-text notes/description scoped to this specific term plan (not
+  // the application's long-form summary). Mirrors Alejandro's Notion planner.
+  plannerNotes   String?
+  // Short free-text to-do for this term plan ("confirm budget", "ping Chris").
+  plannerTodo    String?
 
   application PartnerApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
   term        Term               @relation(fields: [termId], references: [id])
