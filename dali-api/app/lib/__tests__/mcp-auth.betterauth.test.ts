@@ -13,6 +13,8 @@ const mockCreateSession = vi.hoisted(() => vi.fn());
 const mockOAuthGrantFindUnique = vi.hoisted(() => vi.fn());
 const mockDALIMemberFindUnique = vi.hoisted(() => vi.fn());
 const mockOAuthGrantUpdate = vi.hoisted(() => vi.fn());
+const mockAuthSessionFindUnique = vi.hoisted(() => vi.fn());
+const mockSessionDeleteMany = vi.hoisted(() => vi.fn());
 
 vi.mock("~/lib/feature-flags.server", () => ({
   isFeatureEnabledForEveryone: mockIsFeatureEnabledForEveryone,
@@ -39,8 +41,12 @@ vi.mock("~/lib/db", () => ({
       update: mockOAuthGrantUpdate,
     },
     dALIMember: { findUnique: mockDALIMemberFindUnique },
+    authSession: { findUnique: mockAuthSessionFindUnique },
+    session: { deleteMany: mockSessionDeleteMany },
   },
 }));
+
+vi.mock("~/lib/rate-limit", () => ({ getClientIp: () => "203.0.113.9" }));
 
 vi.mock("~/lib/cookies", () => ({
   parseSessionId: (req: Request) => req.headers.get("Authorization")?.replace("Bearer ", "") ?? null,
@@ -298,6 +304,145 @@ describe("authenticateMcpRequest — flag on, BetterAuth path", () => {
   });
 });
 
+// ── Legacy token bridge ───────────────────────────────────────────────────────
+
+describe("authenticateMcpRequest — legacy token bridge", () => {
+  const LEGACY_TOKEN = "legacy-raw-token";
+  const legacySession = () => ({
+    id: "hashed-legacy",
+    userId: USER_ID,
+    grantId: GRANT_ID,
+    revokedAt: null as Date | null,
+    expiresAt: new Date(Date.now() + 1_000_000),
+    absoluteExpiresAt: new Date(Date.now() + 1_000_000),
+    lastUsedAt: new Date(),
+    user: MOCK_USER,
+  });
+  const bridgeRequest = () =>
+    new Request("https://example.com/mcp", {
+      headers: { Authorization: `Bearer ${LEGACY_TOKEN}`, "User-Agent": "claude-code/test" },
+    });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    setupBetterAuthOn();
+    setupValidGrant();
+    mockLookupSession.mockResolvedValue(legacySession());
+    mockRollSession.mockResolvedValue(undefined);
+    mockAuthSessionFindUnique.mockResolvedValue(null);
+    mockCreateSession.mockResolvedValue({ id: "ba-1", token: LEGACY_TOKEN, expiresAt: new Date() });
+    mockSessionDeleteMany.mockResolvedValue({ count: 1 });
+  });
+
+  it("moves the session to BetterAuth under the same token and deletes the legacy row", async () => {
+    const res = await authenticateMcpRequest(bridgeRequest());
+
+    expect(res.ok).toBe(true);
+    expect(mockCreateSession).toHaveBeenCalledTimes(1);
+    const [userId, , override, overrideAll] = mockCreateSession.mock.calls[0];
+    expect(userId).toBe(USER_ID);
+    expect(override).toMatchObject({
+      token: LEGACY_TOKEN,
+      grantId: GRANT_ID,
+      ipAddress: "203.0.113.9",
+      userAgent: "claude-code/test",
+    });
+    expect(overrideAll).toBe(true);
+    expect(mockSessionDeleteMany).toHaveBeenCalledWith({ where: { id: "hashed-legacy" } });
+    expect(mockRollSession).not.toHaveBeenCalled();
+  });
+
+  it("skips the mint but still deletes the legacy row when the token was already bridged", async () => {
+    mockAuthSessionFindUnique.mockResolvedValue({ id: "ba-1" });
+
+    const res = await authenticateMcpRequest(bridgeRequest());
+
+    expect(res.ok).toBe(true);
+    expect(mockAuthSessionFindUnique).toHaveBeenCalledWith({
+      where: { token: LEGACY_TOKEN },
+      select: { id: true },
+    });
+    expect(mockCreateSession).not.toHaveBeenCalled();
+    expect(mockSessionDeleteMany).toHaveBeenCalledWith({ where: { id: "hashed-legacy" } });
+  });
+
+  it("keeps the legacy session when the mint fails and still serves the request", async () => {
+    mockCreateSession.mockRejectedValue(new Error("db hiccup"));
+    vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const res = await authenticateMcpRequest(bridgeRequest());
+
+    expect(res.ok).toBe(true);
+    expect(mockSessionDeleteMany).not.toHaveBeenCalled();
+    expect(mockRollSession).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not bridge while the betterauth flag is off", async () => {
+    setupBetterAuthOff();
+
+    const res = await authenticateMcpRequest(bridgeRequest());
+
+    expect(res.ok).toBe(true);
+    expect(mockCreateSession).not.toHaveBeenCalled();
+    expect(mockSessionDeleteMany).not.toHaveBeenCalled();
+    expect(mockRollSession).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not bridge a session whose grant was revoked", async () => {
+    mockOAuthGrantFindUnique.mockResolvedValue({ ...MOCK_GRANT, revokedAt: new Date() });
+
+    const res = await authenticateMcpRequest(bridgeRequest());
+
+    expect(res.ok).toBe(false);
+    expect(mockCreateSession).not.toHaveBeenCalled();
+    expect(mockSessionDeleteMany).not.toHaveBeenCalled();
+  });
+
+  it("does not bridge a session for a removed member", async () => {
+    mockOAuthGrantFindUnique.mockResolvedValue({
+      ...MOCK_GRANT,
+      client: { name: CLIENT_NAME, requireMembership: true },
+    });
+    mockDALIMemberFindUnique.mockResolvedValue(null);
+
+    const res = await authenticateMcpRequest(bridgeRequest());
+
+    expect(res.ok).toBe(false);
+    expect(mockCreateSession).not.toHaveBeenCalled();
+  });
+
+  it("does not bridge a revoked legacy session", async () => {
+    mockLookupSession.mockResolvedValue({ ...legacySession(), revokedAt: new Date() });
+
+    const res = await authenticateMcpRequest(bridgeRequest());
+
+    expect(res.ok).toBe(false);
+    expect(mockCreateSession).not.toHaveBeenCalled();
+    expect(mockSessionDeleteMany).not.toHaveBeenCalled();
+  });
+
+  it("does not bridge a non-MCP legacy session", async () => {
+    mockLookupSession.mockResolvedValue({ ...legacySession(), grantId: null });
+
+    const res = await authenticateMcpRequest(bridgeRequest());
+
+    expect(res.ok).toBe(false);
+    expect(mockCreateSession).not.toHaveBeenCalled();
+  });
+
+  it("resolves the bridged token through BetterAuth on the next request", async () => {
+    await authenticateMcpRequest(bridgeRequest());
+    mockLookupSession.mockResolvedValue(null);
+    mockGetSession.mockResolvedValue(MOCK_BA_SESSION);
+
+    const res = await authenticateMcpRequest(bridgeRequest());
+
+    expect(res.ok).toBe(true);
+    expect(mockGetSession).toHaveBeenCalledTimes(1);
+    expect(mockCreateSession).toHaveBeenCalledTimes(1);
+  });
+});
+
 // ── mintBetterAuthSession tests ───────────────────────────────────────────────
 
 describe("mintBetterAuthSession", () => {
@@ -370,6 +515,17 @@ describe("mintBetterAuthSession", () => {
 
     const [, , , overrideAll] = mockCreateSession.mock.calls[0];
     expect(overrideAll).toBe(false);
+  });
+
+  it("reuses a given token and sets overrideAll so it wins over the generated one", async () => {
+    mockCreateSession.mockResolvedValue({ token: "given", expiresAt: new Date() });
+
+    await mintBetterAuthSession({ userId: USER_ID, token: "given" });
+
+    const [, , override, overrideAll] = mockCreateSession.mock.calls[0];
+    expect(override).toMatchObject({ token: "given" });
+    expect(override.expiresAt).toBeUndefined();
+    expect(overrideAll).toBe(true);
   });
 
   it("throws when createSession returns null", async () => {
