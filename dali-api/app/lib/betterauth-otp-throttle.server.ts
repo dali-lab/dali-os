@@ -12,7 +12,8 @@ import { getClientIpFromHeaders } from "~/lib/rate-limit";
 //
 // Trusted networks (campus NAT/eduroam) put many members behind one address, so
 // they get a higher per-IP cap, no daily cap, and are never auto-blocked. The
-// per-email cap is the same everywhere.
+// per-email caps are the same everywhere: they bound what one member can
+// receive however many addresses a sender rotates through.
 
 const SEND_PATH = "/email-otp/send-verification-otp";
 const REQUEST_ACTION = "auth.code.request";
@@ -20,6 +21,9 @@ const THROTTLED_ACTION = "auth.code.throttled";
 
 export const OTP_SEND_WINDOW_MS = 10 * 60_000;
 export const OTP_SEND_MAX_PER_EMAIL = 3;
+export const OTP_SEND_HOUR_MS = 60 * 60_000;
+export const OTP_SEND_MAX_PER_EMAIL_HOUR = 5;
+export const OTP_SEND_MAX_PER_EMAIL_DAY = 10;
 export const OTP_SEND_MAX_PER_IP = 10;
 export const OTP_SEND_MAX_PER_TRUSTED_IP = 50;
 export const OTP_SEND_DAY_MS = 24 * 60 * 60_000;
@@ -63,9 +67,14 @@ export async function throttleOtpSend(ctx: any): Promise<void> {
     const { prisma } = await import("~/lib/db");
     const now = Date.now();
     const recent = { action: REQUEST_ACTION, createdAt: { gte: new Date(now - OTP_SEND_WINDOW_MS) } };
-    const [byEmail, byIp, byIpDay] = await Promise.all([
-      prisma.auditLog.count({
-        where: { ...recent, metadata: { path: ["email"], equals: normalized } },
+    const [emailRequests, byIp, byIpDay] = await Promise.all([
+      prisma.auditLog.findMany({
+        where: {
+          action: REQUEST_ACTION,
+          createdAt: { gte: new Date(now - OTP_SEND_DAY_MS) },
+          metadata: { path: ["email"], equals: normalized },
+        },
+        select: { createdAt: true },
       }),
       knownIp ? prisma.auditLog.count({ where: { ...recent, ip } }) : 0,
       knownIp && !trusted
@@ -74,9 +83,13 @@ export async function throttleOtpSend(ctx: any): Promise<void> {
           })
         : 0,
     ]);
+    const emailSince = (ms: number) =>
+      emailRequests.filter((r) => r.createdAt.getTime() >= now - ms).length;
     const ipCap = trusted ? OTP_SEND_MAX_PER_TRUSTED_IP : OTP_SEND_MAX_PER_IP;
     limited =
-      byEmail >= OTP_SEND_MAX_PER_EMAIL ||
+      emailSince(OTP_SEND_WINDOW_MS) >= OTP_SEND_MAX_PER_EMAIL ||
+      emailSince(OTP_SEND_HOUR_MS) >= OTP_SEND_MAX_PER_EMAIL_HOUR ||
+      emailRequests.length >= OTP_SEND_MAX_PER_EMAIL_DAY ||
       byIp >= ipCap ||
       (!trusted && byIpDay >= OTP_SEND_MAX_PER_IP_DAY);
   } catch (err) {
