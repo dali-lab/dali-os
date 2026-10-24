@@ -28,12 +28,18 @@ export async function action({ request }: Route.ActionArgs) {
   }
 
   if (token) {
-    const session = await prisma.session.findUnique({
+    const legacy = await prisma.session.findUnique({
       where: { id: hashSessionId(token) },
       select: { userId: true, grantId: true, revokedAt: true },
     });
     await revokeSession(token);
-    if (session && !session.revokedAt) {
+    const current = await prisma.authSession.findUnique({
+      where: { token },
+      select: { id: true, userId: true, grantId: true },
+    });
+    if (current) await prisma.authSession.deleteMany({ where: { id: current.id } });
+    const session = current ?? (legacy && !legacy.revokedAt ? legacy : null);
+    if (session) {
       await logAuditEvent({
         action: "session.revoke",
         userId: session.userId,

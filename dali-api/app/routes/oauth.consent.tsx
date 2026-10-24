@@ -7,8 +7,7 @@ import {
   generateAuthorizationCode,
 } from "~/lib/oauth";
 import { getOAuthIssuer } from "~/lib/app-env";
-import { parseSessionId } from "~/lib/cookies";
-import { lookupSession } from "~/lib/session";
+import { isImpersonating, requireAuth } from "~/lib/auth";
 import { displayEmail } from "~/lib/display";
 import { isCore, isAdmin } from "~/lib/roles";
 import { buttonClasses } from "~/components/ui/Button";
@@ -59,19 +58,16 @@ export async function loader({ request }: Route.LoaderArgs): Promise<LoaderData>
     return { ok: false, error: "Authorization request not yet authenticated" };
   }
 
-  // The consent screen is rendered to the user who completed IDP login.
-  // Cross-check via the cookie session so a leaked session_id can't grant
-  // someone else's authorization.
-  const rawSid = parseSessionId(request);
-  if (!rawSid) {
+  // Cross-check the browser's signed-in user so a leaked session_id can't
+  // grant someone else's authorization.
+  const auth = await requireAuth(request);
+  if (!auth.ok) {
     return { ok: false, error: "You must be signed in to authorize this app" };
   }
-  const browserSession = await lookupSession(rawSid);
-  if (
-    !browserSession ||
-    browserSession.revokedAt ||
-    browserSession.userId !== oauthSession.userId
-  ) {
+  if (isImpersonating(auth)) {
+    return { ok: false, error: "Apps can't be authorized while impersonating" };
+  }
+  if (auth.user.sub !== oauthSession.userId) {
     return { ok: false, error: "Session mismatch" };
   }
 
@@ -116,14 +112,9 @@ export async function action({ request }: Route.ActionArgs) {
     return redirect("/login?error=consent_invalid");
   }
 
-  const rawSid = parseSessionId(request);
-  if (!rawSid) return redirect("/login?error=consent_unauthenticated");
-  const browserSession = await lookupSession(rawSid);
-  if (
-    !browserSession ||
-    browserSession.revokedAt ||
-    browserSession.userId !== oauthSession.userId
-  ) {
+  const auth = await requireAuth(request);
+  if (!auth.ok) return redirect("/login?error=consent_unauthenticated");
+  if (isImpersonating(auth) || auth.user.sub !== oauthSession.userId) {
     return redirect("/login?error=consent_mismatch");
   }
 

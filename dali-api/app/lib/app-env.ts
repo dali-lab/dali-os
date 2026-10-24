@@ -73,6 +73,3 @@ export function getFrontendUrl(): string {
   )
 }
 
-export function getCasBaseUrl(): string {
-  return process.env.CAS_BASE_URL ?? 'https://login.dartmouth.edu/cas'
-}

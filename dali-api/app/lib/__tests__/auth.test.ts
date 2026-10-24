@@ -15,7 +15,7 @@ vi.mock("~/lib/betterauth-compat.server", () => ({
 }));
 
 import { prisma } from "~/lib/db";
-import { requireAuth, validateCasTicket } from "~/lib/auth";
+import { requireAuth } from "~/lib/auth";
 import { logAuditEvent } from "~/lib/audit";
 import { isFeatureEnabledForEveryone } from "~/lib/feature-flags.server";
 import { resolveBetterAuthAuth } from "~/lib/betterauth-compat.server";
@@ -431,60 +431,5 @@ describe("requireAuth — credential-miss audit logging", () => {
       action: "auth.token.malformed",
       request: req,
     });
-  });
-});
-
-describe("validateCasTicket", () => {
-  beforeEach(() => {
-    vi.restoreAllMocks();
-  });
-
-  it("returns netId, firstName, lastName from CAS XML", async () => {
-    const xml = `<?xml version="1.0"?>
-<cas:serviceResponse xmlns:cas="http://www.yale.edu/tp/cas">
-  <cas:authenticationSuccess>
-    <cas:user>abc123</cas:user>
-    <cas:netid>abc123</cas:netid>
-    <cas:name>Test User</cas:name>
-  </cas:authenticationSuccess>
-</cas:serviceResponse>`;
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(
-      new Response(xml, { status: 200 }),
-    ));
-    const out = await validateCasTicket("ticket-x", "https://example.com/cb");
-    expect(out.netId).toBe("abc123");
-    expect(out.firstName).toBe("Test");
-    expect(out.lastName).toBe("User");
-    vi.unstubAllGlobals();
-  });
-
-  it("decodes HTML entities in the CAS name (e.g. O'Neill)", async () => {
-    const xml = `<?xml version="1.0"?>
-<cas:serviceResponse xmlns:cas="http://www.yale.edu/tp/cas">
-  <cas:authenticationSuccess>
-    <cas:user>f007g87</cas:user>
-    <cas:netid>f007g87</cas:netid>
-    <cas:name>Liam O&#39;Neill</cas:name>
-  </cas:authenticationSuccess>
-</cas:serviceResponse>`;
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(
-      new Response(xml, { status: 200 }),
-    ));
-    const out = await validateCasTicket("ticket-x", "https://example.com/cb");
-    expect(out.firstName).toBe("Liam");
-    expect(out.lastName).toBe("O'Neill");
-    vi.unstubAllGlobals();
-  });
-
-  it("throws when CAS returns a failure document", async () => {
-    const xml = `<?xml version="1.0"?>
-<cas:serviceResponse xmlns:cas="http://www.yale.edu/tp/cas">
-  <cas:authenticationFailure code="INVALID_TICKET">no such ticket</cas:authenticationFailure>
-</cas:serviceResponse>`;
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(
-      new Response(xml, { status: 200 }),
-    ));
-    await expect(validateCasTicket("bad", "https://x")).rejects.toThrow();
-    vi.unstubAllGlobals();
   });
 });

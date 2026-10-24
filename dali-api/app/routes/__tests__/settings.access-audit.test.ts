@@ -40,7 +40,10 @@ beforeEach(() => {
     sessionId: "current",
   } as any);
   vi.mocked(isFeatureEnabledForEveryone).mockResolvedValue(true);
-  mockPrisma.authSession = { deleteMany: vi.fn().mockResolvedValue({ count: 1 }) };
+  mockPrisma.authSession = {
+    deleteMany: vi.fn().mockResolvedValue({ count: 1 }),
+    findUnique: vi.fn().mockResolvedValue(null),
+  };
   mockPrisma.session = {
     updateMany: vi.fn().mockResolvedValue({ count: 1 }),
     findUnique: vi.fn(),
