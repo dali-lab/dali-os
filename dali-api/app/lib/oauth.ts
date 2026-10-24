@@ -38,8 +38,7 @@ const SESSION_TTL_MS = 10 * 60 * 1000; // 10 min for the authorize→callback→
 const AUTH_CODE_TTL_MS = 60 * 1000; // 1 min for code→token exchange
 
 // OAuth client registry lookup. Replaces the legacy `VALID_CLIENT_IDS` array
-// once the OAuthClient table is seeded (MCP foundation track). First-party
-// login flows use /auth/callback/* directly and don't traverse this registry.
+// once the OAuthClient table is seeded (MCP foundation track).
 export async function getOAuthClient(clientId: string): Promise<OAuthClient | null> {
   return prisma.oAuthClient.findUnique({ where: { clientId } });
 }

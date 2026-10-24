@@ -1,26 +1,16 @@
-import { randomBytes } from "node:crypto";
 import { useEffect, useState } from "react";
-import { Form, Link, redirect, useActionData, useLoaderData, useNavigation, useSearchParams } from "react-router";
+import { Form, Link, redirect, useActionData, useNavigation, useSearchParams } from "react-router";
 import type { Route } from "./+types/login";
 import { humanDuration, EMAIL_OTP_TTL_SECONDS } from "~/email/lib/auth-email";
 import { requireAuth } from "~/lib/auth";
 import { prisma } from "~/lib/db";
-import { checkRateLimit } from "~/lib/rate-limit";
-import { getApiBaseUrl, getAppEnv, getCasBaseUrl } from "~/lib/app-env";
-import { buildGoogleAuthUrl } from "~/lib/google-oauth";
 import {
   pickSafeLoginNext,
   setLoginNextCookie,
 } from "~/lib/login-next";
-import { isFeatureEnabledForEveryone } from "~/lib/feature-flags.server";
 import { resolveLoginIdentifier } from "~/lib/user-email.server";
 import { auth } from "~/lib/betterauth.server";
 import AuthShell from "~/components/auth/AuthShell";
-
-const OAUTH_STATE_COOKIE = "__dali_oauth_state";
-
-const RATE_LIMIT_MAX = 5;
-const RATE_LIMIT_WINDOW_MS = 60_000;
 
 export const meta: Route.MetaFunction = () => [{ title: "DALI OS · Sign in" }];
 
@@ -62,8 +52,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     return redirect("/portal");
   }
 
-  const betterAuthOn = await isFeatureEnabledForEveryone("betterauth", request);
-  return { betterAuthOn };
+  return null;
 }
 
 export async function action({ request }: Route.ActionArgs) {
@@ -75,166 +64,89 @@ export async function action({ request }: Route.ActionArgs) {
       : null,
   );
 
-  // --- BetterAuth-gated branches ---
-  // These only handle requests that explicitly target the BetterAuth paths.
-  // The flag is checked here so that even if a crafted form posts these values
-  // while the flag is off, the action falls through to the legacy handlers.
-  //
-  // Rate limiting is scoped per action, not blanket per request: only code
-  // sends and the legacy OAuth redirects are throttled. Verifying a code is
-  // deliberately not coarse-limited here — BetterAuth caps attempts per code —
-  // so a user fixing a typo never trips a limit and gets bounced off the code
-  // screen.
+  // Only code sends are throttled (in BetterAuth's before hook). Verifying a
+  // code is not: BetterAuth caps attempts per code, so a user fixing a typo
+  // never trips a limit and gets bounced off the code screen.
 
   if (provider === "email-code") {
-    const betterAuthOn = await isFeatureEnabledForEveryone("betterauth", request);
-    if (betterAuthOn) {
-      const email = String(formData.get("email") ?? "").trim().toLowerCase();
-      if (!email.includes("@")) {
-        return { error: "Enter a valid email address." };
-      }
-      // Resolve an alias (e.g. a member's @dartmouth) to their canonical login
-      // email; the code is delivered there. `email` stays the typed address for
-      // display so we never reveal the mapping; `identifier` is what verify uses.
-      const identifier = await resolveLoginIdentifier(email);
-      // Anti-enumeration: always advance to the code screen. The emailOTP plugin
-      // has disableSignUp, so a non-existent address silently receives nothing.
-      // A throttled send stays on the code screen too, so an earlier code still works.
-      try {
-        await auth.api.sendVerificationOTP({
-          body: { email: identifier, type: "sign-in" },
-          headers: request.headers,
-        });
-      } catch (err) {
-        if ((err as { status?: unknown })?.status === "TOO_MANY_REQUESTS") {
-          return {
-            codeSent: true as const,
-            email,
-            identifier,
-            error:
-              "You've requested several codes. Enter the most recent one below, or wait a few minutes to request a new one.",
-          };
-        }
-      }
-      return { codeSent: true as const, email, identifier };
+    const email = String(formData.get("email") ?? "").trim().toLowerCase();
+    if (!email.includes("@")) {
+      return { error: "Enter a valid email address." };
     }
-    // Flag off — no code sign-in on the legacy login.
-    return redirect("/login");
-  }
-
-  if (provider === "verify-code") {
-    const betterAuthOn = await isFeatureEnabledForEveryone("betterauth", request);
-    if (betterAuthOn) {
-      // `identifier` is the canonical email the code was sent against;
-      // `displayEmail` is the address the user typed, kept only for redisplay so
-      // an alias never surfaces the mapping on a wrong-code retry.
-      const identifier = String(formData.get("identifier") ?? "").trim().toLowerCase();
-      const displayEmail =
-        String(formData.get("displayEmail") ?? "").trim().toLowerCase() || identifier;
-      const otp = String(formData.get("otp") ?? "").trim();
-      try {
-        const { headers: baHeaders } = await auth.api.signInEmailOTP({
-          body: { email: identifier, otp },
-          headers: request.headers,
-          returnHeaders: true,
-        });
-        const responseHeaders = new Headers();
-        if (next) setLoginNextCookie(responseHeaders, next);
-        baHeaders.forEach((value, key) => {
-          if (key.toLowerCase() === "set-cookie") {
-            responseHeaders.append("Set-Cookie", value);
-          }
-        });
-        // First-time passkey nudge: route a successful code sign-in through the
-        // passkey offer, then on to where they were headed. /welcome gates it —
-        // no prompt if they already have a passkey or dismissed the offer.
-        const dest = next ?? "/";
-        return redirect(
-          `/welcome?step=passkey&next=${encodeURIComponent(dest)}`,
-          { headers: responseHeaders },
-        );
-      } catch (err) {
-        // Stay on the code screen with an inline message. BetterAuth caps
-        // attempts per code (default 3), then deletes the code and throws
-        // FORBIDDEN — a dead code can't be retried, so steer them to a new one.
-        const exhausted =
-          (err as { status?: string } | null)?.status === "FORBIDDEN";
+    // Resolve an alias (e.g. a member's @dartmouth) to their canonical login
+    // email; the code is delivered there. `email` stays the typed address for
+    // display so we never reveal the mapping; `identifier` is what verify uses.
+    const identifier = await resolveLoginIdentifier(email);
+    // Anti-enumeration: always advance to the code screen. The emailOTP plugin
+    // has disableSignUp, so a non-existent address silently receives nothing.
+    // A throttled send stays on the code screen too, so an earlier code still works.
+    try {
+      await auth.api.sendVerificationOTP({
+        body: { email: identifier, type: "sign-in" },
+        headers: request.headers,
+      });
+    } catch (err) {
+      if ((err as { status?: unknown })?.status === "TOO_MANY_REQUESTS") {
         return {
           codeSent: true as const,
-          email: displayEmail,
+          email,
           identifier,
-          error: exhausted
-            ? "Too many tries on that code. Request a new one below, then enter it."
-            : "That code didn't match. Check it and try again, or request a new one.",
+          error:
+            "You've requested several codes. Enter the most recent one below, or wait a few minutes to request a new one.",
         };
       }
     }
-    return redirect("/login");
+    return { codeSent: true as const, email, identifier };
   }
 
-  // --- Legacy (flag-off) branches ---
-  // Coarse per-IP throttle on the OAuth/CAS redirect kickoff.
-  const limited = checkRateLimit(request, {
-    max: RATE_LIMIT_MAX,
-    windowMs: RATE_LIMIT_WINDOW_MS,
-  });
-  if (limited) return limited;
-
-  const state = randomBytes(32).toString("base64url");
-  const apiBase = getApiBaseUrl();
-  const casBase = getCasBaseUrl();
-  const secure = getAppEnv() !== "dev";
-
-  const headers = new Headers();
-  if (next) setLoginNextCookie(headers, next);
-
-  if (provider === "cas") {
-    // Dartmouth CAS login — redirect to CAS with service URL pointing to our callback
-    const serviceUrl = `${apiBase}/auth/callback/cas`;
-    const stateCookie = [
-      `${OAUTH_STATE_COOKIE}=${state}`,
-      "Path=/auth/callback/cas",
-      "Max-Age=600",
-      "HttpOnly",
-      "SameSite=Lax",
-      ...(secure ? ["Secure"] : []),
-    ].join("; ");
-    headers.append("Set-Cookie", stateCookie);
-    headers.set(
-      "Location",
-      `${casBase}/login?service=${encodeURIComponent(serviceUrl)}`,
-    );
-    return new Response(null, { status: 302, headers });
+  if (provider === "verify-code") {
+    // `identifier` is the canonical email the code was sent against;
+    // `displayEmail` is the address the user typed, kept only for redisplay so
+    // an alias never surfaces the mapping on a wrong-code retry.
+    const identifier = String(formData.get("identifier") ?? "").trim().toLowerCase();
+    const displayEmail =
+      String(formData.get("displayEmail") ?? "").trim().toLowerCase() || identifier;
+    const otp = String(formData.get("otp") ?? "").trim();
+    try {
+      const { headers: baHeaders } = await auth.api.signInEmailOTP({
+        body: { email: identifier, otp },
+        headers: request.headers,
+        returnHeaders: true,
+      });
+      const responseHeaders = new Headers();
+      if (next) setLoginNextCookie(responseHeaders, next);
+      baHeaders.forEach((value, key) => {
+        if (key.toLowerCase() === "set-cookie") {
+          responseHeaders.append("Set-Cookie", value);
+        }
+      });
+      // First-time passkey nudge: route a successful code sign-in through the
+      // passkey offer, then on to where they were headed. /welcome gates it —
+      // no prompt if they already have a passkey or dismissed the offer.
+      const dest = next ?? "/";
+      return redirect(
+        `/welcome?step=passkey&next=${encodeURIComponent(dest)}`,
+        { headers: responseHeaders },
+      );
+    } catch (err) {
+      // Stay on the code screen with an inline message. BetterAuth caps
+      // attempts per code (default 3), then deletes the code and throws
+      // FORBIDDEN — a dead code can't be retried, so steer them to a new one.
+      const exhausted =
+        (err as { status?: string } | null)?.status === "FORBIDDEN";
+      return {
+        codeSent: true as const,
+        email: displayEmail,
+        identifier,
+        error: exhausted
+          ? "Too many tries on that code. Request a new one below, then enter it."
+          : "That code didn't match. Check it and try again, or request a new one.",
+      };
+    }
   }
 
-  // Google OAuth — redirect to Google with @dali.dartmouth.edu hd hint
-  const stateCookie = [
-    `${OAUTH_STATE_COOKIE}=${state}`,
-    "Path=/auth/callback/google",
-    "Max-Age=600",
-    "HttpOnly",
-    "SameSite=Lax",
-    ...(secure ? ["Secure"] : []),
-  ].join("; ");
-  headers.append("Set-Cookie", stateCookie);
-
-  // The Member button is the only button that posts provider=google, so we
-  // always want the @dali.dartmouth.edu hd nudge on Google's account picker.
-  // Enforcement of the domain still happens server-side in
-  // /auth/callback/google; `hd` is purely a UX hint and not a security
-  // boundary.
-  const googleAuthUrl = buildGoogleAuthUrl({
-    clientId: process.env.GOOGLE_CLIENT_ID!,
-    redirectUri: `${apiBase}/auth/callback/google`,
-    scopes: ["openid", "email", "profile"],
-    state,
-  });
-
-  headers.set("Location", `${googleAuthUrl}&hd=dali.dartmouth.edu`);
-  return new Response(null, { status: 302, headers });
+  return redirect("/login");
 }
-
-// ── Flag-ON: unified single-column sign-in ────────────────────────────────────
 
 function LoginBetterAuth({ next, actionData }: {
   next: string | null;
@@ -431,158 +343,7 @@ function LoginBetterAuth({ next, actionData }: {
 
 // ── Flag-OFF: legacy 3-door UI ────────────────────────────────────────────────
 
-function LoginLegacy({ next }: { next: string | null }) {
-  return (
-    <div className="flex flex-col gap-4">
-      {/* DALI Member — legacy Google OAuth */}
-      <Form method="post">
-        <input type="hidden" name="provider" value="google" />
-        {next && <input type="hidden" name="next" value={next} />}
-        <button
-          type="submit"
-          className="w-full flex items-center gap-4 p-5 rounded-2xl border-2 border-transparent bg-brand-tint hover:border-accent-coral transition group text-left"
-        >
-          <div className="w-10 h-10 rounded-full bg-accent-coral/10 flex items-center justify-center flex-shrink-0">
-            <svg
-              className="w-5 h-5 text-accent-coral"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z"
-              />
-            </svg>
-          </div>
-          <div className="flex-1 min-w-0">
-            <span className="font-heading font-semibold text-dark-blue group-hover:text-accent-coral transition block">
-              DALI Member
-            </span>
-            <span className="text-xs text-muted-foreground mt-0.5 block">
-              Current lab members
-            </span>
-          </div>
-          <svg
-            className="w-4 h-4 text-muted-foreground group-hover:text-accent-coral transition flex-shrink-0"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M9 5l7 7-7 7"
-            />
-          </svg>
-        </button>
-      </Form>
-
-      {/* Dartmouth Student — CAS */}
-      <Form method="post">
-        <input type="hidden" name="provider" value="cas" />
-        {next && <input type="hidden" name="next" value={next} />}
-        <button
-          type="submit"
-          className="w-full flex items-center gap-4 p-5 rounded-2xl border-2 border-transparent bg-brand-tint hover:border-accent-coral transition group text-left"
-        >
-          <div className="w-10 h-10 rounded-full bg-card flex items-center justify-center flex-shrink-0 shadow-sm">
-            <svg
-              className="w-5 h-5 text-dark-blue"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M12 14l9-5-9-5-9 5 9 5z"
-              />
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M12 14l6.16-3.422a12.083 12.083 0 01.665 6.479A11.952 11.952 0 0012 20.055a11.952 11.952 0 00-6.824-2.998 12.078 12.078 0 01.665-6.479L12 14z"
-              />
-            </svg>
-          </div>
-          <div className="flex-1 min-w-0">
-            <span className="font-heading font-semibold text-dark-blue group-hover:text-accent-coral transition block">
-              Dartmouth Student
-            </span>
-            <span className="text-xs text-muted-foreground mt-0.5 block">
-              Lab applications, workshops, and more
-            </span>
-          </div>
-          <svg
-            className="w-4 h-4 text-muted-foreground group-hover:text-accent-coral transition flex-shrink-0"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M9 5l7 7-7 7"
-            />
-          </svg>
-        </button>
-      </Form>
-
-      {/* Partner — magic-link auth on its own page, no OAuth */}
-      <a
-        href="/partner/login"
-        className="w-full flex items-center gap-4 p-5 rounded-2xl border-2 border-transparent bg-brand-tint hover:border-accent-coral transition group text-left"
-      >
-        <div className="w-10 h-10 rounded-full bg-card flex items-center justify-center flex-shrink-0 shadow-sm">
-          <svg
-            className="w-5 h-5 text-dark-blue"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
-            />
-          </svg>
-        </div>
-        <div className="flex-1 min-w-0">
-          <span className="font-heading font-semibold text-dark-blue group-hover:text-accent-coral transition block">
-            Partner
-          </span>
-          <span className="text-xs text-muted-foreground mt-0.5 block">
-            Working with the lab on a project
-          </span>
-        </div>
-        <svg
-          className="w-4 h-4 text-muted-foreground group-hover:text-accent-coral transition flex-shrink-0"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={2}
-            d="M9 5l7 7-7 7"
-          />
-        </svg>
-      </a>
-    </div>
-  );
-}
-
 export default function Login() {
-  const loaderData = useLoaderData<typeof loader>();
-  const betterAuthOn = loaderData && "betterAuthOn" in loaderData ? loaderData.betterAuthOn : false;
   const actionData = useActionData<typeof action>();
   const [searchParams] = useSearchParams();
   const error = searchParams.get("error");
@@ -599,19 +360,9 @@ export default function Login() {
 
   const urlError = error ? (errorMessages[error] ?? "Sign-in failed. Please try again.") : null;
 
-  if (betterAuthOn) {
-    return (
-      <AuthShell heading="Sign in to DALI OS" error={urlError}>
-        <LoginBetterAuth next={next} actionData={actionData} />
-      </AuthShell>
-    );
-  }
-
-  // Flag-OFF: legacy 3-door layout (kept exactly as before, now uses AuthShell
-  // for the chrome so new/old share identical split-panel markup).
   return (
-    <AuthShell heading="Continue to DALI OS" error={urlError}>
-      <LoginLegacy next={next} />
+    <AuthShell heading="Sign in to DALI OS" error={urlError}>
+      <LoginBetterAuth next={next} actionData={actionData} />
     </AuthShell>
   );
 }

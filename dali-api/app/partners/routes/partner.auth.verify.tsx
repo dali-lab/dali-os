@@ -1,9 +1,7 @@
 import { Form, redirect, useLoaderData, useNavigation } from "react-router";
 import type { Route } from "./+types/partner.auth.verify";
 import { prisma } from "~/lib/db";
-import { issueSession } from "~/lib/session";
-import { setSessionCookie } from "~/lib/cookies";
-import { getClientIp } from "~/lib/request-meta";
+import { startLoginSession } from "~/lib/login-session.server";
 import { logAuditEvent } from "~/lib/audit";
 import {
   consumePartnerMagicLink,
@@ -35,11 +33,6 @@ export async function action({ request }: Route.ActionArgs) {
     return { error: "This link is invalid or has expired. Request a new one." };
   }
 
-  const session = await issueSession({
-    userId,
-    userAgent: request.headers.get("user-agent") ?? undefined,
-    ip: getClientIp(request),
-  });
   await logAuditEvent({
     action: "login.success",
     userId,
@@ -65,7 +58,7 @@ export async function action({ request }: Route.ActionArgs) {
   // without one), the contact will be created lazily by requirePartnerAccount.
 
   const headers = new Headers();
-  setSessionCookie(headers, session.rawId);
+  await startLoginSession(headers, request, userId);
   // The requirePartnerAccount guard JIT-provisions contacts, so onboarding
   // is optional — send authenticated partners straight to /partner.
   const returnTo = new URL(request.url).searchParams.get("returnTo");

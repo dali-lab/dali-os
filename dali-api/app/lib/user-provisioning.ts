@@ -5,8 +5,7 @@ import { recordUserEmail } from "~/lib/user-email.server";
 import { isFeatureEnabledForEveryone } from "~/lib/feature-flags.server";
 import { assignHandleIfMissing } from "~/lib/handle";
 
-// Shared user-provisioning helpers used by /auth/callback/{google,cas} and
-// /oauth/callback/{google,cas}.
+// User-provisioning helpers used by /oauth/callback/{google,cas}.
 //
 // Phase 2: collapsed to `member` only for Google. The dartmouth (@dartmouth
 // .edu Google) and partner (external Google) branches were dead — the

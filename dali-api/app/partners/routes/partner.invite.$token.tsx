@@ -1,9 +1,7 @@
 import { Form, redirect, useLoaderData, useNavigation } from "react-router";
 import type { Route } from "./+types/partner.invite.$token";
 import { prisma } from "~/lib/db";
-import { issueSession } from "~/lib/session";
-import { setSessionCookie } from "~/lib/cookies";
-import { getClientIp } from "~/lib/request-meta";
+import { startLoginSession } from "~/lib/login-session.server";
 import { logAuditEvent } from "~/lib/audit";
 import {
   acceptPartnerInvite,
@@ -29,11 +27,6 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   // Accepting signs the invitee in as the invite's user, replacing any
   // existing session cookie — the invite token itself is the credential.
-  const session = await issueSession({
-    userId: result.userId,
-    userAgent: request.headers.get("user-agent") ?? undefined,
-    ip: getClientIp(request),
-  });
   await logAuditEvent({
     action: "login.success",
     userId: result.userId,
@@ -47,7 +40,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   });
 
   const headers = new Headers();
-  setSessionCookie(headers, session.rawId);
+  await startLoginSession(headers, request, result.userId);
   // Fresh accounts still need a name; onboarding handles profile completion
   // for PartnerContact-based accounts without a firstName set.
   return redirect(user?.firstName ? "/partner" : "/partner/onboarding", {
