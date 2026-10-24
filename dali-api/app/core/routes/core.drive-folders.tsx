@@ -1,14 +1,6 @@
-// Core ▸ Drive folders — the management surface for the lab-wide "Core
-// governance" receiver folders. Each Core
-// process slot — Meeting notes, Agreements, Email templates, Education templates
-// — points at a NORMAL Drive folder that receives that artifact type's auto-filed
-// items. (Hiring artifacts have their own peer surface at /hiring/drive-folders.)
-// This is the Core equivalent of the per-project / per-offering "Drive folders"
-// settings sections; it's the only place to repoint, create, or clear the Core
-// bindings (they used to be invisible systemKey scaffolding with no UI at all).
-//
-// Access/sharing of a bound folder is a separate control — open the folder in
-// Drive and use Share. These folders default to a Core-group scope when created.
+// Core ▸ Drive folders: where Core's auto-filed items (meeting notes,
+// agreements, email and education templates) land. Hiring has its own page at
+// /hiring/drive-folders.
 
 import { redirect, useLoaderData } from "react-router";
 import type { Route } from "./+types/core.drive-folders";

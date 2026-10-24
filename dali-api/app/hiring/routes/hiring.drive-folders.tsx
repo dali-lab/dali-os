@@ -1,13 +1,5 @@
-// Hiring ▸ Drive folders — the management surface for the lab-wide Hiring folder
-// set (the HiringCycle / HIRING_PROCESS_ID singleton).
-// Each slot — Hiring forms, Application templates, Rubrics — points at a NORMAL
-// Drive folder that receives that artifact type's auto-filed items. This is the
-// Hiring equivalent of Core ▸ Drive folders; it's the only place to repoint,
-// create, or clear the Hiring bindings. Point several slots at one folder to keep
-// everything in a single "Hiring" folder, or spread them out.
-//
-// Access/sharing of a bound folder is a separate control — open the folder in
-// Drive and use Share. These folders default to a Core-group scope when created.
+// Hiring ▸ Drive folders: where hiring forms, application templates and
+// rubrics land. The Hiring counterpart of Core ▸ Drive folders.
 
 import { redirect, useLoaderData } from "react-router";
 import type { Route } from "./+types/hiring.drive-folders";
