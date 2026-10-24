@@ -8,6 +8,7 @@ import {
   Receipt,
   SendHorizonal,
   Server,
+  ShieldBan,
   Sparkles,
   UserCog,
 } from "lucide-react";
@@ -113,6 +114,13 @@ export const ADMIN_CLUSTERS: AdminCluster[] = [
         to: "/admin/activity",
         icon: Activity,
         description: "Audit log of admin actions across the site.",
+      },
+      {
+        key: "security",
+        label: "Security",
+        to: "/admin/security",
+        icon: ShieldBan,
+        description: "Blocked IP addresses and trusted networks for sign-in.",
       },
       {
         key: "jobs",

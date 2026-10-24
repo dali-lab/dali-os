@@ -88,6 +88,7 @@ export default [
     route("admin/ai-usage", "admin/routes/admin.ai-usage.tsx"),
     route("admin/jobs", "admin/routes/admin.jobs.tsx"),
     route("admin/feature-flags", "admin/routes/admin.feature-flags.tsx"),
+    route("admin/security", "admin/routes/admin.security.tsx"),
     route("admin/activities", "admin/routes/admin.activities.tsx"),
     route("admin/activities/:id", "admin/routes/admin.activities.$id.tsx"),
     route("admin/email-senders", "admin/routes/admin.email-senders.tsx"),

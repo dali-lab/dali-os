@@ -16,7 +16,7 @@ import type { McpCtx } from "../../registry";
 export const LIST_AUDIT_LOGS_TOOL = {
   name: "list_audit_logs",
   description:
-    "Return paginated audit log entries. Filterable by action, actor userId, target id, person name/email, and date range. Core leads only.",
+    "Return paginated audit log entries. Filterable by action, actor userId, target id, person name/email or IP, and date range. Core leads only.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -30,7 +30,7 @@ export const LIST_AUDIT_LOGS_TOOL = {
       targetId: { type: "string", description: "Filter by target ID" },
       person: {
         type: "string",
-        description: "Search by name/email (searches both actor and target)",
+        description: "Search by name/email (searches both actor and target), or by request IP: a full address matches exactly, a partial one like 129.170 matches the range",
       },
       from: { type: "string", description: "Start date (ISO)" },
       to: { type: "string", description: "End date (ISO)" },
