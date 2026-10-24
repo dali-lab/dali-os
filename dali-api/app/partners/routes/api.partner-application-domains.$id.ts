@@ -1,6 +1,5 @@
 import type { Route } from "./+types/api.partner-application-domains.$id";
-import { Prisma } from "~/generated/prisma/client";
-import { prisma } from "~/lib/db";
+import { prisma, Prisma } from "~/lib/db";
 import { requireAuth, forbidden } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";

@@ -10,7 +10,6 @@ vi.mock("~/lib/db", () => ({
   },
   Prisma: { JsonNull },
 }));
-vi.mock("~/generated/prisma/client", () => ({ Prisma: { JsonNull } }));
 vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn(), forbidden: () => new Response(null, { status: 403 }) }));
 vi.mock("~/lib/roles", () => ({ isCore: vi.fn() }));
 vi.mock("~/lib/cors", () => ({ withCors: (_: Request, res: Response) => res, handlePreflight: () => null }));
