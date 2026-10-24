@@ -1,7 +1,6 @@
 import { prisma } from "~/lib/db";
 import type { PageKind } from "~/generated/prisma/client";
 import { assertUniqueName } from "~/lib/page-names.server";
-import { ensureProcessFolder, CORE_PROCESS_ID, LAB_PROCESS_ID } from "~/lib/bindings.server";
 import { syncMeetingShares } from "~/lib/meeting-shares.server";
 
 // Creates a Page in a project's workspace (the same Page model the project
@@ -440,63 +439,6 @@ export async function ensureOfferingFormsFolder(
 }
 
 const OFFERING_FORMS_FOLDER_TITLE = "Forms";
-
-export type MeetingNotesFolderKind = "Team" | "Partner";
-
-// Idempotently ensures a project's default "Team meeting notes" / "Partner
-// meeting notes" folder exists, returning it. Backed by a ProcessFolderBinding
-// (Project / <projectId> / "meeting-notes-{team,partner}") — an ordinary,
-// editable folder swappable from the project settings, not a systemKey root.
-// Safe to call repeatedly (idempotent via the binding's unique key); cheap
-// enough to call from the Documents block loader so existing projects backfill
-// on first view.
-export async function ensureMeetingNotesFolder(
-  projectId: string,
-  kind: MeetingNotesFolderKind,
-  createdById: string,
-): Promise<{ id: string }> {
-  const purpose = kind === "Team" ? "meeting-notes-team" : "meeting-notes-partner";
-  const id = await ensureProcessFolder({
-    processType: "Project",
-    processId: projectId,
-    purpose,
-    createdById,
-  });
-  return { id };
-}
-
-/** Idempotently ensure Core's "Meeting notes" folder — the Core drive's own
- *  equivalent of a project's Team/Partner meeting-notes folders, so a Core
- *  meeting's note lands somewhere Core-only instead of loose in the Lab drive.
- *  Backed by a ProcessFolderBinding (Core / "meeting-notes"): an ordinary Lab
- *  folder shared with the Core group (scopeKind=Group, applied by
- *  ensureProcessFolder), which the Core drive space surfaces. Core can rename,
- *  move, or repoint it from settings. Nullable return kept for the caller's
- *  Lab-root fallback, though the binding path always yields a folder now. */
-export async function ensureCoreMeetingNotesFolder(createdById: string): Promise<string | null> {
-  return ensureProcessFolder({
-    processType: "Core",
-    processId: CORE_PROCESS_ID,
-    purpose: "meeting-notes",
-    createdById,
-  });
-}
-
-/** Idempotently ensure the Lab drive's own "Meeting notes" folder — the open
- *  counterpart of Core's, and the home for every meeting note that belongs to
- *  no project and isn't Core's. Those used to land loose at the Lab root, where
- *  a note titled just its date is effectively unfindable a week later.
- *  Backed by a ProcessFolderBinding (Lab / "meeting-notes"): an ordinary Lab
- *  folder on the communal shelf (no group scope — everyone in the lab can see
- *  and edit it), so it can be renamed, moved, or repointed like any other. */
-export async function ensureLabMeetingNotesFolder(createdById: string): Promise<string | null> {
-  return ensureProcessFolder({
-    processType: "Lab",
-    processId: LAB_PROCESS_ID,
-    purpose: "meeting-notes",
-    createdById,
-  });
-}
 
 // The page behind a project's public write-up — the body dali.website renders
 // under the showcase card. Created on demand from the Public view (not on

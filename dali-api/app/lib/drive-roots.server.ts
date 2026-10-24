@@ -3,7 +3,7 @@ import {
   CORE_PROCESS_ID,
   HIRING_PROCESS_ID,
   MENTORSHIP_PROCESS_ID,
-} from "~/lib/bindings.server";
+} from "~/lib/process-ids";
 import type { ProcessType, SharePermission } from "~/generated/prisma/client";
 import { ensureMentorsGroup } from "~/lib/groups";
 

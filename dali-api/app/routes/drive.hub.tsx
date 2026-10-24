@@ -27,7 +27,6 @@ import { requireAuth, redirectPartnerToPortal, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { getUserRoles } from "~/lib/roles";
 import { formsUsePageAccess } from "~/forms/lib/form-access.server";
-import { receiversEnabled } from "~/lib/drive-receivers.server";
 import { resolveTermFilter } from "~/lib/terms";
 import { setPageFavorite } from "~/components/favorites-live";
 import { TermFilter } from "~/components/TermFilter";
@@ -159,7 +158,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   // Only the item tags wait on the scopes (they're keyed by the ids the scopes
   // resolved to). Everything else starts now and is awaited together.
-  const [{ driveScopes, itemTagIds }, allTags, receivers, { homeEnabled, home }] = await Promise.all([
+  const [{ driveScopes, itemTagIds }, allTags, { homeEnabled, home }] = await Promise.all([
     (async () => {
       const [projectWorkspaces, educationWorkspaces] = await Promise.all([
         loadProjectWorkspaces(viewer),
@@ -177,7 +176,6 @@ export async function loader({ request }: Route.LoaderArgs) {
       return { driveScopes, itemTagIds: await loadItemTagIds(driveScopes) };
     })(),
     loadAllDocTags(),
-    receiversEnabled(request),
     (async () => {
       const homeEnabled = await isFeatureEnabled("drive-home", userId, roles, request);
       return { homeEnabled, home: homeEnabled ? await loadDriveHome(userId, request) : null };
@@ -193,7 +191,6 @@ export async function loader({ request }: Route.LoaderArgs) {
     canViewForms: userCanViewForms,
     formsPageAccess,
     canManageAgreements: userCanManageAgreements,
-    receiversEnabled: receivers,
     homeEnabled,
     home,
     // My Drive is the Member workspace keyed by the viewer's own id — the
@@ -1090,7 +1087,6 @@ export default function DriveHub() {
     canViewForms,
     formsPageAccess,
     canManageAgreements,
-    receiversEnabled: receiversOn,
     homeEnabled,
     home,
     viewerId,
@@ -1951,7 +1947,7 @@ export default function DriveHub() {
         }
         tagFilter={tagFilter}
         onTagClick={applyTag}
-        receiverViewer={receiversOn ? { isCore: canManageAgreements, isProjectMember: true } : undefined}
+        receiverViewer={{ isCore: canManageAgreements, isProjectMember: true }}
       />
 
       {/* Hidden upload input (driven by the New menu) + template picker modal */}

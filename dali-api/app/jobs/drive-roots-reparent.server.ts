@@ -1,9 +1,18 @@
 import { prisma } from "~/lib/db";
 import { resolveCoreActor } from "~/jobs/core-actor.server";
 import { ensureAllRoots } from "~/lib/drive-roots.server";
-import { HIRING_PROCESS_ID } from "~/lib/bindings.server";
 import { collectSubtree, MAX_PAGE_DEPTH } from "~/lib/pages";
 import type { JobResult } from "~/jobs/registry";
+
+export const LEGACY_HIRING_FOLDER_TITLES = ["Hiring Forms", "Application Templates", "Rubrics"] as const;
+
+const HIRING_CYCLE_FORM = {
+  OR: [
+    { hiringCyclesAsApplicationForm: { some: {} } },
+    { hiringCyclesAsContinuedInterestForm: { some: {} } },
+    { hiringDomainChallenges: { some: {} } },
+  ],
+};
 
 export type ReparentCounts = { moved: number; skipped: number; alreadyPlaced: number };
 
@@ -19,11 +28,7 @@ export async function runDriveRootsReparent(): Promise<JobResult> {
 
   const roots = await ensureAllRoots(actor);
 
-  const [bindings, tops, alreadyPlaced] = await Promise.all([
-    prisma.processFolderBinding.findMany({
-      where: { processType: "HiringCycle", processId: HIRING_PROCESS_ID, folderPageId: { not: null } },
-      select: { folderPageId: true },
-    }),
+  const [tops, alreadyPlaced] = await Promise.all([
     prisma.page.findMany({
       where: {
         workspaceType: "Lab",
@@ -42,7 +47,13 @@ export async function runDriveRootsReparent(): Promise<JobResult> {
       where: { parentPageId: { in: [roots.core, roots.hiring] }, kind: "Folder", archivedAt: null },
     }),
   ]);
-  const hiringFolderIds = new Set(bindings.map((b) => b.folderPageId));
+  const holdingCycleForms = await prisma.form.findMany({
+    where: { folderPageId: { in: tops.map((t) => t.id) }, ...HIRING_CYCLE_FORM },
+    select: { folderPageId: true },
+  });
+  const hiringFolderIds = new Set(holdingCycleForms.map((f) => f.folderPageId));
+  const isHiringFolder = (top: { id: string; title: string }) =>
+    (LEGACY_HIRING_FOLDER_TITLES as readonly string[]).includes(top.title) || hiringFolderIds.has(top.id);
 
   const counts: ReparentCounts = { moved: 0, skipped: 0, alreadyPlaced };
   const skippedTitles: string[] = [];
@@ -53,7 +64,7 @@ export async function runDriveRootsReparent(): Promise<JobResult> {
       skippedTitles.push(top.title);
       continue;
     }
-    const parentPageId = hiringFolderIds.has(top.id) ? roots.hiring : roots.core;
+    const parentPageId = isHiringFolder(top) ? roots.hiring : roots.core;
     await prisma.page.update({ where: { id: top.id }, data: { parentPageId } });
     counts.moved++;
   }

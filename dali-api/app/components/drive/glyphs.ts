@@ -25,8 +25,6 @@ export type GlyphSource = {
   folderType?: string | null;
   /** A row the app draws rather than a user's folder (a project or offering): pink like a typed folder. */
   system?: boolean;
-  /** A plain folder a process files its meeting notes into. */
-  meetingNotes?: boolean;
   audience?: { kind: AudienceKind } | null;
   isWhiteboard?: boolean;
   isNotebook?: boolean;
@@ -56,7 +54,7 @@ export function pickGlyph(item: GlyphSource): ItemGlyph {
       return {
         kind: "folder",
         tint: folderTintClass(item.audience),
-        mark: item.meetingNotes ? "calendar" : null,
+        mark: null,
         system: false,
         folderType: null,
       };

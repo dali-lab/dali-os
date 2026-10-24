@@ -225,7 +225,7 @@ export type DriveBrowserProps = {
   /** Whether the project has an active partner relationship. Controls whether
    *  the partner-visibility toggle is shown in item menus. */
   hasActivePartner?: boolean;
-  /** Turns on "Folder settings…" (where the space's new meeting notebooks file). Omitted while the `drive-receivers` flag is off. */
+  /** Turns on "Folder settings…" (where the space's new meeting notebooks file). */
   receiverViewer?: { isCore: boolean; isProjectMember: boolean };
 };
 

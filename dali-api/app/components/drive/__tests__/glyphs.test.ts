@@ -72,14 +72,6 @@ describe("pickGlyph", () => {
     }
   });
 
-  it("marks a plain folder that files meeting notes with a calendar, keeping its own tint", () => {
-    const bound = pickGlyph(folder({ meetingNotes: true, audience: { kind: "private" } }));
-    expect(bound).toMatchObject({ kind: "folder", mark: "calendar", system: false, folderType: null, tint: "text-muted-foreground" });
-    expect(glyphLabel(bound)).toBe("Meeting notes folder");
-    expect(pickGlyph(folder({ meetingNotes: false }))).toMatchObject({ mark: null });
-    expect(pickGlyph(folder({ meetingNotes: true, iconEmoji: "📝" }))).toEqual({ kind: "emoji", emoji: "📝" });
-  });
-
   it("leaves a plain folder a non-system folder with no mark", () => {
     expect(pickGlyph(folder())).toMatchObject({ kind: "folder", mark: null, system: false, folderType: null });
     expect(pickGlyph(folder({ folderType: null }))).toMatchObject({ mark: null, system: false });

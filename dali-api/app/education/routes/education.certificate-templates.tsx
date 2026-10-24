@@ -11,10 +11,7 @@ import {
   renameCertificateTemplate,
   archiveCertificateTemplate,
 } from "~/education/lib/certificate-templates.server";
-import { CERTIFICATE_TEMPLATES_PROCESS_ID } from "~/lib/bindings.server";
-import { DriveFolderBindings } from "~/components/drive/DriveFolderBindings";
 import { DriveReceivers } from "~/components/drive/DriveReceivers";
-import { receiversEnabled } from "~/lib/drive-receivers.server";
 import { Button, buttonClasses } from "~/components/ui/Button";
 import { useDialog } from "~/components/ui/dialog";
 import { uploadFileToS3 } from "~/lib/upload-client";
@@ -32,8 +29,6 @@ export async function loader({ request }: { request: Request }) {
   if (!(await isCore(auth.user.sub))) return redirect("/education");
   return {
     templates: await listCertificateTemplates(),
-    driveProcessId: CERTIFICATE_TEMPLATES_PROCESS_ID,
-    receiversEnabled: await receiversEnabled(request),
   };
 }
 
@@ -102,7 +97,7 @@ export async function action({ request }: { request: Request }) {
 type LoaderData = Extract<Awaited<ReturnType<typeof loader>>, { templates: unknown }>;
 
 export default function CertificateTemplatesPage() {
-  const { templates, driveProcessId, receiversEnabled: receiversOn } = useLoaderData() as LoaderData;
+  const { templates } = useLoaderData() as LoaderData;
   const dialog = useDialog();
   const mutateFetcher = useFetcher<{ ok?: boolean; error?: string }>();
   const createFetcher = useFetcher<{ ok?: boolean; error?: string }>();
@@ -320,11 +315,7 @@ export default function CertificateTemplatesPage() {
 
       {/* Where uploaded background images auto-file in Drive (Core-managed). */}
       <div className="rounded-lg border border-border bg-card p-4">
-        {receiversOn ? (
-          <DriveReceivers processType="Core" only={["CertificateBackgrounds"]} />
-        ) : (
-          <DriveFolderBindings processType="CertificateTemplates" processId={driveProcessId} />
-        )}
+        <DriveReceivers processType="Core" only={["CertificateBackgrounds"]} />
       </div>
     </div>
   );
