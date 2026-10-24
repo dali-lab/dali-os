@@ -1,15 +1,22 @@
 import { beforeEach, expect, it, vi } from "vitest";
-vi.mock("~/lib/db", () => ({ prisma: {
-  partnerApplicationTargetTerm: { update: vi.fn() },
-  partnerApplicationDomain: { update: vi.fn() },
-} }));
+// Prisma.JsonNull is a sentinel; the test matches on identity, so re-exposing
+// the same symbol through the mocks is enough. vi.hoisted() keeps the sentinel
+// available even though vi.mock() factories run before top-level code.
+const { JsonNull } = vi.hoisted(() => ({ JsonNull: Symbol("Prisma.JsonNull") }));
+vi.mock("~/lib/db", () => ({
+  prisma: {
+    partnerApplicationTargetTerm: { update: vi.fn() },
+    partnerApplicationDomain: { update: vi.fn() },
+  },
+  Prisma: { JsonNull },
+}));
+vi.mock("~/generated/prisma/client", () => ({ Prisma: { JsonNull } }));
 vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn(), forbidden: () => new Response(null, { status: 403 }) }));
 vi.mock("~/lib/roles", () => ({ isCore: vi.fn() }));
 vi.mock("~/lib/cors", () => ({ withCors: (_: Request, res: Response) => res, handlePreflight: () => null }));
-import { prisma } from "~/lib/db";
+import { prisma, Prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
-import { Prisma } from "~/generated/prisma/client";
 import { action as plan } from "../api.partner-application-target-terms.$id";
 import { action as domain } from "../api.partner-application-domains.$id";
 
