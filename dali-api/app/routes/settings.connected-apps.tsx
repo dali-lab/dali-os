@@ -32,6 +32,7 @@ export async function action({ request }: Route.ActionArgs) {
     data: { revokedAt: new Date() },
   });
   await revokeAllForGrant(grantId);
+  await prisma.authSession.deleteMany({ where: { grantId } });
   await logAuditEvent({
     action: "oauth.grant.revoke",
     userId: auth.user.sub,

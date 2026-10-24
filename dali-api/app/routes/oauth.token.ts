@@ -7,7 +7,6 @@ import {
 } from "~/lib/oauth";
 import type { UserInfo } from "~/lib/oauth";
 
-import { setSessionCookie } from "~/lib/cookies";
 import { issueSession, ROLLING_TTL_MS } from "~/lib/session";
 import { getClientIp } from "~/lib/request-meta";
 import { withCors, handlePreflight, preflightLoader } from "~/lib/cors";
@@ -163,7 +162,7 @@ export async function action({ request }: Route.ActionArgs) {
 
 function tokenResponse(rawSessionId: string, expiresAt: Date, userInfo: UserInfo, scopes: string[]) {
   const expiresIn = Math.max(0, Math.floor((expiresAt.getTime() - Date.now()) / 1000));
-  const res = Response.json(
+  return Response.json(
     {
       access_token: rawSessionId,
       token_type: "Bearer",
@@ -178,7 +177,4 @@ function tokenResponse(rawSessionId: string, expiresAt: Date, userInfo: UserInfo
       },
     },
   );
-
-  setSessionCookie(res.headers, rawSessionId);
-  return res;
 }

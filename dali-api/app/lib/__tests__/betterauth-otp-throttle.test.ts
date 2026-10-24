@@ -66,8 +66,10 @@ function counts({
   );
   mockCount.mockImplementation(async ({ where }: any) => {
     if (where.action === "auth.code.throttled") return throttles;
+    // Split well between the 10-minute and daily windows: elapsed test time
+    // makes the 10-minute window read a few ms over 10 minutes.
     const windowMs = Date.now() - where.createdAt.gte.getTime();
-    return windowMs > OTP_SEND_WINDOW_MS ? day : ip;
+    return windowMs > OTP_SEND_HOUR_MS ? day : ip;
   });
 }
 

@@ -431,8 +431,6 @@ export default [
 
   // OAuth endpoints (no layout)
   route("oauth/authorize", "routes/oauth.authorize.ts"),
-  route("oauth/callback/google", "routes/oauth.callback.google.ts"),
-  route("oauth/callback/cas", "routes/oauth.callback.cas.ts"),
   route("oauth/token", "routes/oauth.token.ts"),
   route("oauth/revoke", "routes/oauth.revoke.ts"),
   route("oauth/register", "routes/oauth.register.ts"),
