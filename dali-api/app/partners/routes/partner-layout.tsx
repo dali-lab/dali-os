@@ -4,9 +4,7 @@ import type { Route } from "./+types/partner-layout";
 import { prisma } from "~/lib/db";
 import { requirePartnerAccount } from "~/partners/lib/partner-auth.server";
 import { maybeUpgradeLegacyToBetterAuth } from "~/lib/betterauth-upgrade.server";
-import { isFeatureEnabledForEveryone } from "~/lib/feature-flags.server";
-import { getImpersonationState } from "~/lib/betterauth-compat.server";
-import { impersonationAllowsWrites } from "~/lib/auth";
+import { impersonationAllowsWrites, isImpersonating } from "~/lib/auth";
 import { partnerProjectsWhereForOrgs } from "~/partners/lib/partner-access";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { ApplicantErrorBoundary } from "~/components/ApplicantErrorBoundary";
@@ -82,18 +80,14 @@ export async function loader({ request }: Route.LoaderArgs) {
   const orgName =
     ctx.memberships.length === 1 ? ctx.memberships[0].org.name : null;
 
-  // Surface the "Stop impersonating" banner when an admin is logged in as this
-  // partner account, so they are never stranded in the partner shell.
-  let impersonating = false;
-  if (await isFeatureEnabledForEveryone("betterauth", request)) {
-    try {
-      impersonating = (await getImpersonationState(request)) !== null;
-    } catch {
-      // never let the impersonation probe fault the partner shell
-    }
-  }
-
-  return { user: ctx.auth.user, orgName, orgGroups, avatarUrl, impersonating, impersonationWrites: impersonationAllowsWrites() };
+  return {
+    user: ctx.auth.user,
+    orgName,
+    orgGroups,
+    avatarUrl,
+    impersonating: isImpersonating(ctx.auth),
+    impersonationWrites: impersonationAllowsWrites(),
+  };
 }
 
 type OrgGroup = {

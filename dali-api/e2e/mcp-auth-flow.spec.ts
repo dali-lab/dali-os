@@ -3,7 +3,7 @@ import { test, expect } from './fixtures';
 
 // End-to-end MCP auth: discovery → authorize (existing-session shortcut) →
 // consent → token → /mcp whoami. Sidesteps the Google IDP stub by relying on
-// the dev-login cookie + the /oauth/authorize existing-session branch.
+// the dev-login session cookie + the /oauth/authorize signed-in branch.
 
 function base64UrlSha256(input: string): string {
   return createHash('sha256').update(input).digest('base64url');
@@ -32,7 +32,7 @@ test('MCP OAuth foundation: discovery, authorize, consent, token, whoami', async
     expect.arrayContaining(['mcp:read', 'mcp:write']),
   );
 
-  // 2) Log in as a seeded member (dev-login → __dali_sid cookie).
+  // 2) Log in as a seeded member (dev-login → session cookie).
   await loginAs({ daliEmail: 'admin@dali.dartmouth.edu' });
 
   // 3) Register an MCP client via RFC 7591 DCR. There are no seeded MCP
@@ -141,7 +141,7 @@ test('MCP requires a grant-backed session (cookie session is rejected)', async (
   // First-party cookie session is NOT an MCP session.
   await loginAs({ daliEmail: 'admin@dali.dartmouth.edu' });
   const cookies = await page.context().cookies();
-  const sid = cookies.find((c) => c.name === '__dali_sid')?.value;
+  const sid = cookies.find((c) => c.name === 'dali.session_token')?.value;
   expect(sid).toBeTruthy();
 
   const res = await request.post('/mcp', {

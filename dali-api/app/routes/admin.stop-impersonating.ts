@@ -6,19 +6,12 @@
 // be able to exit it. The plugin itself validates the session state.
 
 import { redirect } from "react-router";
-import { isFeatureEnabledForEveryone } from "~/lib/feature-flags.server";
 import { getBetterAuthUser } from "~/lib/betterauth-compat.server";
 import { auth } from "~/lib/betterauth.server";
 import { logAuditEvent } from "~/lib/audit";
 
 export async function action({ request }: { request: Request }): Promise<Response> {
-  // 1. Flag gate.
-  const flagOn = await isFeatureEnabledForEveryone("betterauth", request);
-  if (!flagOn) {
-    return new Response(null, { status: 404 });
-  }
-
-  // 2. Require a valid BetterAuth session.
+  // 1. Require a valid BetterAuth session.
   const actor = await getBetterAuthUser(request);
   if (!actor) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
@@ -27,7 +20,7 @@ export async function action({ request }: { request: Request }): Promise<Respons
     });
   }
 
-  // 3. Stop impersonating. returnHeaders: true gives us { headers, response }
+  // 2. Stop impersonating. returnHeaders: true gives us { headers, response }
   //    where headers carries the restored session Set-Cookie.
   const result = await auth.api.stopImpersonating({
     headers: request.headers,
@@ -35,14 +28,14 @@ export async function action({ request }: { request: Request }): Promise<Respons
   });
   const baHeaders = result.headers;
 
-  // 4. Audit.
+  // 3. Audit.
   await logAuditEvent({
     action: "admin.impersonate.stop",
     userId: actor.sub,
     request,
   });
 
-  // 5. Forward the Set-Cookie header(s) onto the redirect.
+  // 4. Forward the Set-Cookie header(s) onto the redirect.
   const responseHeaders = new Headers();
   baHeaders.forEach((value, key) => {
     if (key.toLowerCase() === "set-cookie") {

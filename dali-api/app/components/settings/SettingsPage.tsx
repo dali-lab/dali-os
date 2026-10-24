@@ -163,14 +163,12 @@ export function SettingsPage({
               sessions={data.sessions}
               currentSessionId={data.currentSessionId}
             />
-            {data.passkeysEnabled && (
-              <div className="mt-8 border-t border-border pt-6">
-                <h3 className="mb-1 font-heading text-sm font-semibold text-foreground">
-                  Passkeys
-                </h3>
-                <PasskeysSettingsBlock />
-              </div>
-            )}
+            <div className="mt-8 border-t border-border pt-6">
+              <h3 className="mb-1 font-heading text-sm font-semibold text-foreground">
+                Passkeys
+              </h3>
+              <PasskeysSettingsBlock />
+            </div>
           </SettingsBlock>
         )}
 

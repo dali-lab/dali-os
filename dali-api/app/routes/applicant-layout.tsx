@@ -1,13 +1,12 @@
 import { Outlet, useLoaderData, Link, useMatches, redirect } from "react-router";
 import type { Route } from "./+types/applicant-layout";
-import { requireAuth, redirectPartnerToPortal, impersonationAllowsWrites } from "~/lib/auth";
+import { requireAuth, redirectPartnerToPortal, impersonationAllowsWrites, isImpersonating } from "~/lib/auth";
 import { maybeUpgradeLegacyToBetterAuth } from "~/lib/betterauth-upgrade.server";
 import { redirectToLogin } from "~/lib/login-next";
 import { prisma } from "~/lib/db";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { getUserRoles } from "~/lib/roles";
-import { resolveFeatureFlags, isFeatureEnabledForEveryone } from "~/lib/feature-flags.server";
-import { getImpersonationState } from "~/lib/betterauth-compat.server";
+import { resolveFeatureFlags } from "~/lib/feature-flags.server";
 import type { FeatureFlagMap } from "~/lib/feature-flags";
 import { FeatureFlagsProvider } from "~/components/FeatureFlags";
 import { ApplicantErrorBoundary } from "~/components/ApplicantErrorBoundary";
@@ -43,19 +42,13 @@ export async function loader({ request }: Route.LoaderArgs) {
     resolveFeatureFlags(auth.user.sub, roles),
   ]);
 
-  // Surface the "Stop impersonating" banner when an admin is logged in as this
-  // portal account. Gated on the flag so the extra session read never runs in
-  // the default path, and wrapped so the probe can't fault the shell.
-  let impersonating = false;
-  if (await isFeatureEnabledForEveryone("betterauth", request)) {
-    try {
-      impersonating = (await getImpersonationState(request)) !== null;
-    } catch {
-      // never let the impersonation probe fault the portal shell
-    }
-  }
-
-  return { user: auth.user, avatarUrl, flags, impersonating, impersonationWrites: impersonationAllowsWrites() };
+  return {
+    user: auth.user,
+    avatarUrl,
+    flags,
+    impersonating: isImpersonating(auth),
+    impersonationWrites: impersonationAllowsWrites(),
+  };
 }
 
 export default function ApplicantLayout() {

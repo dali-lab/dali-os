@@ -17,7 +17,6 @@
 import type { AuthResult } from "~/lib/auth";
 import { COOKIE_SID, clearSessionCookie } from "~/lib/cookies";
 import { getClientIp } from "~/lib/rate-limit";
-import { isFeatureEnabledForEveryone } from "~/lib/feature-flags.server";
 import { getBetterAuthUser } from "~/lib/betterauth-compat.server";
 import { mintBetterAuthSession } from "~/lib/betterauth-session.server";
 import { appendBetterAuthSessionCookie } from "~/lib/betterauth-cookie.server";
@@ -34,8 +33,6 @@ export async function maybeUpgradeLegacyToBetterAuth(
   // since we clear it), so the steady state costs one string check.
   const cookie = request.headers.get("cookie") ?? "";
   if (!cookie.includes(`${COOKIE_SID}=`)) return null;
-
-  if (!(await isFeatureEnabledForEveryone("betterauth", request))) return null;
 
   const headers = new Headers();
 

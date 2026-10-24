@@ -5,9 +5,6 @@ vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn() }));
 vi.mock("~/lib/login-next", () => ({
   redirectToLogin: vi.fn(() => new Response(null, { status: 302 })),
 }));
-vi.mock("~/lib/feature-flags.server", () => ({
-  isFeatureEnabledForEveryone: vi.fn(),
-}));
 vi.mock("~/lib/session", () => ({
   revokeAllForGrant: vi.fn(),
   revokeSession: vi.fn(),
@@ -17,7 +14,6 @@ vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
 
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
-import { isFeatureEnabledForEveryone } from "~/lib/feature-flags.server";
 import { revokeAllForGrant, revokeSession } from "~/lib/session";
 import { logAuditEvent } from "~/lib/audit";
 import { action as sessionsAction } from "~/routes/settings.sessions";
@@ -39,7 +35,6 @@ beforeEach(() => {
     user: { sub: "u1" },
     sessionId: "current",
   } as any);
-  vi.mocked(isFeatureEnabledForEveryone).mockResolvedValue(true);
   mockPrisma.authSession = {
     deleteMany: vi.fn().mockResolvedValue({ count: 1 }),
     findUnique: vi.fn().mockResolvedValue(null),
@@ -66,20 +61,28 @@ describe("settings.sessions audit", () => {
     expect(JSON.stringify(vi.mocked(logAuditEvent).mock.calls)).not.toContain("secret-sid");
   });
 
-  it("revoke-others logs how many sessions were ended (legacy store too)", async () => {
-    vi.mocked(isFeatureEnabledForEveryone).mockResolvedValue(false);
+  it("revoke-others ends sessions in both stores and logs the total", async () => {
+    mockPrisma.authSession.deleteMany.mockResolvedValue({ count: 2 });
     mockPrisma.session.updateMany.mockResolvedValue({ count: 3 });
     await sessionsAction(post("http://x/settings/sessions", { intent: "revoke-others" }));
+    expect(mockPrisma.authSession.deleteMany).toHaveBeenCalledWith({
+      where: { userId: "u1", NOT: { id: "current" } },
+    });
+    expect(mockPrisma.session.updateMany).toHaveBeenCalledWith({
+      where: { userId: "u1", revokedAt: null, NOT: { id: "current" } },
+      data: { revokedAt: expect.any(Date) },
+    });
     expect(logAuditEvent).toHaveBeenCalledWith(
       expect.objectContaining({
         action: "session.revoke",
-        metadata: { scope: "others", count: 3 },
+        metadata: { scope: "others", count: 5 },
       }),
     );
   });
 
   it("does not log when nothing was revoked", async () => {
     mockPrisma.authSession.deleteMany.mockResolvedValue({ count: 0 });
+    mockPrisma.session.updateMany.mockResolvedValue({ count: 0 });
     await sessionsAction(post("http://x/settings/sessions", { intent: "revoke-others" }));
     expect(logAuditEvent).not.toHaveBeenCalled();
   });

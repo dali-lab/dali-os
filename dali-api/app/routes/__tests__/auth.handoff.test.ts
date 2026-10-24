@@ -2,22 +2,16 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 
 const mockUpdateMany = vi.hoisted(() => vi.fn());
 const mockFindFirst = vi.hoisted(() => vi.fn());
-const mockIssueSession = vi.hoisted(() => vi.fn());
 const mockLogAuditEvent = vi.hoisted(() => vi.fn());
-const mockIsFeatureEnabledForEveryone = vi.hoisted(() => vi.fn().mockResolvedValue(false));
 
 vi.mock("~/lib/db", () => ({
   prisma: {
     devicePairing: { updateMany: mockUpdateMany, findFirst: mockFindFirst },
   },
 }));
-vi.mock("~/lib/session", () => ({ issueSession: mockIssueSession }));
 vi.mock("~/lib/audit", () => ({ logAuditEvent: mockLogAuditEvent }));
-vi.mock("~/lib/feature-flags.server", () => ({
-  isFeatureEnabledForEveryone: mockIsFeatureEnabledForEveryone,
-}));
 vi.mock("~/lib/betterauth-session.server", () => ({
-  mintBetterAuthSession: vi.fn(),
+  mintBetterAuthSession: vi.fn().mockResolvedValue({ token: "ba-token", sessionId: "s1", expiresAt: new Date() }),
 }));
 vi.mock("~/lib/betterauth-cookie.server", () => ({
   appendBetterAuthSessionCookie: vi.fn(),
@@ -37,7 +31,6 @@ beforeEach(() => {
   vi.clearAllMocks();
   mockUpdateMany.mockResolvedValue({ count: 1 });
   mockFindFirst.mockResolvedValue({ userId: "user-1", deviceLabel: "macOS" });
-  mockIssueSession.mockResolvedValue({ rawId: "raw-session-id" });
 });
 
 describe("GET /auth/handoff", () => {

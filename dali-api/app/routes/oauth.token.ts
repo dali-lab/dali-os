@@ -7,14 +7,12 @@ import {
 } from "~/lib/oauth";
 import type { UserInfo } from "~/lib/oauth";
 
-import { issueSession, ROLLING_TTL_MS } from "~/lib/session";
 import { getClientIp } from "~/lib/request-meta";
 import { withCors, handlePreflight, preflightLoader } from "~/lib/cors";
 import { checkRateLimit } from "~/lib/rate-limit";
 import { safeJson } from "~/lib/safe-json";
 import { prisma } from "~/lib/db";
 import { logAuditEvent } from "~/lib/audit";
-import { isFeatureEnabledForEveryone } from "~/lib/feature-flags.server";
 import { mintBetterAuthSession } from "~/lib/betterauth-session.server";
 
 const RATE_LIMIT_MAX = 200;
@@ -115,33 +113,13 @@ export async function action({ request }: Route.ActionArgs) {
 
       const userInfo = buildUserInfo(user, authType);
 
-      // Phase 4 (betterauth flag): mint a BetterAuth session so the token can
-      // be verified by auth.api.getSession() in authenticateMcpRequest. When
-      // the flag is off, fall through to the bespoke Session path unchanged.
-      if (await isFeatureEnabledForEveryone("betterauth", request)) {
-        const s = await mintBetterAuthSession({
-          userId,
-          grantId: grant.id,
-          userAgent: request.headers.get("user-agent") ?? undefined,
-          ipAddress: getClientIp(request),
-        });
-        return withCors(
-          request,
-          tokenResponse(s.token, s.expiresAt, userInfo, scopes),
-        );
-      }
-
-      const session = await issueSession({
+      const s = await mintBetterAuthSession({
         userId,
         grantId: grant.id,
         userAgent: request.headers.get("user-agent") ?? undefined,
-        ip: getClientIp(request),
+        ipAddress: getClientIp(request),
       });
-
-      return withCors(
-        request,
-        tokenResponse(session.rawId, new Date(Date.now() + ROLLING_TTL_MS), userInfo, scopes),
-      );
+      return withCors(request, tokenResponse(s.token, s.expiresAt, userInfo, scopes));
     }
 
     // refresh_token grant intentionally removed. Sessions auto-extend on
@@ -160,11 +138,11 @@ export async function action({ request }: Route.ActionArgs) {
   }
 }
 
-function tokenResponse(rawSessionId: string, expiresAt: Date, userInfo: UserInfo, scopes: string[]) {
+function tokenResponse(accessToken: string, expiresAt: Date, userInfo: UserInfo, scopes: string[]) {
   const expiresIn = Math.max(0, Math.floor((expiresAt.getTime() - Date.now()) / 1000));
   return Response.json(
     {
-      access_token: rawSessionId,
+      access_token: accessToken,
       token_type: "Bearer",
       expires_in: expiresIn,
       scope: scopes.join(" "),

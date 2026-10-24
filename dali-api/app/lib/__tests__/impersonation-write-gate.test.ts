@@ -5,14 +5,10 @@
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-const mockFlagForEveryone = vi.hoisted(() => vi.fn());
 const mockResolveBetterAuthAuth = vi.hoisted(() => vi.fn());
 const mockGetBetterAuthUser = vi.hoisted(() => vi.fn());
 const mockStopImpersonating = vi.hoisted(() => vi.fn());
 
-vi.mock("~/lib/feature-flags.server", () => ({
-  isFeatureEnabledForEveryone: mockFlagForEveryone,
-}));
 vi.mock("~/lib/betterauth-compat.server", () => ({
   resolveBetterAuthAuth: mockResolveBetterAuthAuth,
   getBetterAuthUser: mockGetBetterAuthUser,
@@ -46,7 +42,6 @@ function req(method: string) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mockFlagForEveryone.mockResolvedValue(true);
   delete process.env.DALI_APP_ENV;
 });
 

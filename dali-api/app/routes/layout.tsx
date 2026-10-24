@@ -11,7 +11,7 @@ import { LaunchWelcome } from '~/components/LaunchWelcome'
 import { workspacePath } from '~/components/workspace-link'
 import { NavPreloader } from '~/components/NavPreloader'
 import { TimeZonePrompt } from '~/components/TimeZonePrompt'
-import { requireAuth, redirectPartnerToPortal, impersonationAllowsWrites, isNonMember } from "~/lib/auth"
+import { requireAuth, redirectPartnerToPortal, impersonationAllowsWrites, isImpersonating, isNonMember } from "~/lib/auth"
 import { maybeUpgradeLegacyToBetterAuth } from "~/lib/betterauth-upgrade.server"
 import { redirectToLogin } from '~/lib/login-next';
 import { getUserRoles, isLabMentor } from '~/lib/roles'
@@ -253,20 +253,8 @@ export async function loader({ request }: Route.LoaderArgs) {
   const userTimeZoneIsExplicit = isValidTimezone(me?.timeZone)
   const tzDismissedZone = readDismissedTimeZone(request)
 
-  // BetterAuth impersonation: when the `betterauth` flag is live for this user
-  // and their session was started by an admin's "log in as", surface the exit
-  // banner. Gated on the flag so the extra session read never runs in the
-  // default (flag-off) path, and wrapped so the probe can't break the shell.
-  let impersonating = false
+  const impersonating = isImpersonating(auth)
   const impersonationWrites = impersonationAllowsWrites()
-  if (flags['betterauth']) {
-    try {
-      const { getImpersonationState } = await import('~/lib/betterauth-compat.server')
-      impersonating = (await getImpersonationState(request)) !== null
-    } catch {
-      // never let the impersonation probe fault the layout
-    }
-  }
 
   const __loaderTotal = performance.now() - __loaderStart
   if (__loaderTotal >= 400) console.log(`[perf-total] layout loader ${__loaderTotal.toFixed(0)}ms`)

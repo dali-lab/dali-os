@@ -1,34 +1,13 @@
-import { useEffect, useState } from "react";
-import { Form, redirect, useActionData, useNavigation } from "react-router";
+import { redirect } from "react-router";
 import type { Route } from "./+types/partner.login";
 import { requireAuth } from "~/lib/auth";
 import { prisma } from "~/lib/db";
-import { checkRateLimit } from "~/lib/rate-limit";
-import { issuePartnerMagicLink, normalizeEmail } from "~/partners/lib/magic-link.server";
-import { isFeatureEnabledForEveryone } from "~/lib/feature-flags.server";
-import { PARTNER_LINK_EXPIRY } from "~/partners/lib/magic-link";
-import { useOsShellRoot } from "~/lib/os-shell";
-import { buttonClasses } from "~/components/ui/Button";
 
-// UI resend cooldown. The server independently rate-limits (3 sends per
-// email per 15 minutes) — this just keeps the button from being mashed.
-const RESEND_COOLDOWN_S = 30;
-
-export const meta: Route.MetaFunction = () => [
-  { title: "DALI OS · Partner sign in" },
-];
-
+// Partners sign in on /login like everyone else. This path stays for old links
+// and bookmarks.
 export async function loader({ request }: Route.LoaderArgs) {
-  const betterAuthOn = await isFeatureEnabledForEveryone("betterauth", request);
   const existingAuth = await requireAuth(request);
-  if (!existingAuth.ok) {
-    // Flag ON: partners sign in on the unified /login screen (email code +
-    // passkey), same as members and Dartmouth students. Flag OFF: fall through
-    // to the legacy partner magic-link login below. This route stays as a thin
-    // flag-gated redirect until cutover cleanup, when it's deleted outright.
-    if (betterAuthOn) return redirect("/login");
-    return { betterAuthOn };
-  }
+  if (!existingAuth.ok) return redirect("/login");
   if (existingAuth.user.type === "member") return redirect("/");
   if (existingAuth.user.type === "dartmouth") return redirect("/portal");
   const partnerContact = await prisma.partnerContact.findUnique({
@@ -38,137 +17,4 @@ export async function loader({ request }: Route.LoaderArgs) {
   // A contact row means they've been through at least one auth flow previously;
   // the requirePartnerAccount guard will JIT-provision if anything is missing.
   return redirect(partnerContact ? "/partner" : "/partner/onboarding");
-}
-
-export async function action({ request }: Route.ActionArgs) {
-  const formData = await request.formData();
-
-  // Rate-limit every submit (the removed Google branch used to own this). The
-  // server also independently throttles magic-link sends per email.
-  const limited = checkRateLimit(request, { max: 5, windowMs: 60_000 });
-  if (limited) return limited;
-
-  const email = String(formData.get("email") ?? "");
-  if (!email.includes("@")) {
-    return { error: "Enter a valid email address" };
-  }
-
-  const result = await issuePartnerMagicLink(email, request);
-  if ("rateLimited" in result) return result.rateLimited;
-  // Identical response whether or not the address maps to an account. Every
-  // address does receive an email (a sign-in link, or a use-the-member-login
-  // note), so the UI can say "we emailed you" truthfully in all cases.
-  return { sent: true, email: normalizeEmail(email) };
-}
-
-export default function PartnerLogin() {
-  useOsShellRoot(true);
-  const actionData = useActionData<typeof action>();
-  const navigation = useNavigation();
-  const submitting = navigation.state === "submitting";
-  const sent = actionData && "sent" in actionData ? actionData : null;
-
-  // Restart the cooldown on every successful send (each action response is a
-  // fresh object), then tick it down once a second.
-  const [cooldown, setCooldown] = useState(0);
-  useEffect(() => {
-    if (sent) setCooldown(RESEND_COOLDOWN_S);
-  }, [sent]);
-  useEffect(() => {
-    if (cooldown <= 0) return;
-    const t = setTimeout(() => setCooldown((c) => c - 1), 1000);
-    return () => clearTimeout(t);
-  }, [cooldown]);
-
-  return (
-    <div className="os-shell flex min-h-screen items-center justify-center bg-os-bg px-6 text-foreground">
-      <div className="w-full max-w-sm rounded-os-card bg-os-card p-8">
-        <span className="font-os-logo text-2xl font-semibold text-os-accent">
-          dali.os
-        </span>
-        <h1 className="font-heading text-3xl font-bold text-foreground mt-6 mb-2">
-          Partner sign in
-        </h1>
-
-        {sent ? (
-          <div className="mt-6 rounded-os-item bg-os-well p-6">
-            <p className="font-heading font-semibold text-foreground mb-1">
-              Check your email
-            </p>
-            <p className="text-sm text-os-grey">
-              We sent an email to{" "}
-              <span className="font-medium text-foreground">{sent.email}</span>.
-              Open it and follow the link to continue. Sign-in links expire in{" "}
-              {PARTNER_LINK_EXPIRY}.
-            </p>
-            <div className="mt-4 flex items-center gap-4 flex-wrap">
-              <Form method="post">
-                <input type="hidden" name="email" value={sent.email} />
-                <button
-                  type="submit"
-                  disabled={submitting || cooldown > 0}
-                  className="text-sm font-medium text-foreground hover:underline underline-offset-2 disabled:opacity-50 disabled:no-underline"
-                >
-                  {cooldown > 0
-                    ? `Resend email (${cooldown}s)`
-                    : submitting
-                      ? "Sending…"
-                      : "Resend email"}
-                </button>
-              </Form>
-              <a
-                href="/partner/login"
-                className="text-sm text-os-grey hover:text-foreground"
-              >
-                Use a different email
-              </a>
-            </div>
-          </div>
-        ) : (
-          <>
-            <p className="text-os-grey mb-6">
-              Sign in or create your account. No password needed.
-            </p>
-
-            {actionData && "error" in actionData && (
-              <p className="mb-4 text-sm text-destructive bg-destructive/10 rounded-lg px-4 py-3">
-                {actionData.error}
-              </p>
-            )}
-            <Form method="post" className="os-form flex flex-col gap-4">
-              <input
-                type="email"
-                name="email"
-                required
-                placeholder="you@company.com"
-                className="w-full"
-              />
-              <button
-                type="submit"
-                disabled={submitting}
-                className={buttonClasses("primary", "md", "w-full")}
-              >
-                {submitting ? "Sending…" : "Continue with email"}
-              </button>
-            </Form>
-
-            {/* The only org-adjacent line that belongs on an auth screen —
-                an invite genuinely IS a sign-in method. Everything else about
-                organizations lives after sign-in (partner.onboarding). */}
-            <p className="mt-6 text-xs text-os-muted">
-              Have an invite email? It signs you in directly. Nothing needed
-              here.
-            </p>
-          </>
-        )}
-
-        <p className="mt-10 text-xs text-os-muted">
-          DALI member or Dartmouth student?{" "}
-          <a href="/login" className="underline hover:text-foreground">
-            Sign in here
-          </a>
-        </p>
-      </div>
-    </div>
-  );
 }

@@ -158,36 +158,31 @@ export async function requireAuth(
   };
 }
 
-// Resolve auth for a request. Tries the legacy DB-backed session first; if that
-// fails AND the global `betterauth` switch is on (Phase 1 coexistence / cutover),
-// accepts a BetterAuth session instead. Flag off (the default) → byte-for-byte
-// the legacy behavior. The BetterAuth path is lazy-imported so its module graph
-// (and the auth instance) stays out of requests — and unit tests — while the
-// flag is off, and wrapped so a fault there can't break the already-failed
-// legacy path.
+// Resolve auth for a request: a legacy session first (until the last one expires,
+// see specs/betterauth-legacy-auth-cleanup.md Phase 4), then BetterAuth. The
+// BetterAuth path is lazy-imported to keep its module graph out of unit tests
+// that only exercise the legacy leg, and wrapped so a fault there can't turn a
+// clean legacy failure into a 500.
 async function computeAuth(request: Request): Promise<AuthResult> {
   const legacy = await computeLegacyAuth(request);
   if (legacy.ok) return legacy;
   try {
-    const { isFeatureEnabledForEveryone } = await import("~/lib/feature-flags.server");
-    if (await isFeatureEnabledForEveryone("betterauth", request)) {
-      const { resolveBetterAuthAuth } = await import("~/lib/betterauth-compat.server");
-      const ba = await resolveBetterAuthAuth(request);
-      if (ba) {
-        // Presence heartbeat, same as the legacy leg. Without it the whole
-        // feature goes dark at cutover: a BetterAuth session never touched
-        // lastActiveAt, so every status dot read "away" and Admin's "Live now"
-        // tile read 0 on site. Skipped while impersonating — the acting admin
-        // is on the site, the impersonated member is not, and lastActiveAt is
-        // peer-visible (status dots, profile "last active").
-        if (!ba.impersonatedBy) bumpLastActive(ba.user.sub).catch(() => {});
-        return {
-          ok: true,
-          user: ba.user,
-          sessionId: ba.sessionId,
-          ...(ba.impersonatedBy ? { impersonatedBy: ba.impersonatedBy } : {}),
-        };
-      }
+    const { resolveBetterAuthAuth } = await import("~/lib/betterauth-compat.server");
+    const ba = await resolveBetterAuthAuth(request);
+    if (ba) {
+      // Presence heartbeat, same as the legacy leg. Without it the whole
+      // feature goes dark at cutover: a BetterAuth session never touched
+      // lastActiveAt, so every status dot read "away" and Admin's "Live now"
+      // tile read 0 on site. Skipped while impersonating — the acting admin
+      // is on the site, the impersonated member is not, and lastActiveAt is
+      // peer-visible (status dots, profile "last active").
+      if (!ba.impersonatedBy) bumpLastActive(ba.user.sub).catch(() => {});
+      return {
+        ok: true,
+        user: ba.user,
+        sessionId: ba.sessionId,
+        ...(ba.impersonatedBy ? { impersonatedBy: ba.impersonatedBy } : {}),
+      };
     }
   } catch {
     // The BetterAuth fallback must never turn a clean legacy failure into a 500.

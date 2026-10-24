@@ -14,11 +14,6 @@ vi.mock("~/lib/oauth", () => ({
     }
   },
 }));
-vi.mock("~/lib/session", () => ({
-  issueSession: vi.fn(),
-  ROLLING_TTL_MS: 1000,
-}));
-vi.mock("~/lib/cookies", () => ({ setSessionCookie: vi.fn() }));
 vi.mock("~/lib/request-meta", () => ({ getClientIp: vi.fn(() => "1.1.1.1") }));
 vi.mock("~/lib/cors", () => ({
   handlePreflight: () => null,
@@ -26,15 +21,12 @@ vi.mock("~/lib/cors", () => ({
   withCors: (_req: Request, res: Response) => res,
 }));
 vi.mock("~/lib/rate-limit", () => ({ checkRateLimit: () => null }));
-vi.mock("~/lib/feature-flags.server", () => ({
-  isFeatureEnabledForEveryone: vi.fn().mockResolvedValue(false),
-}));
 vi.mock("~/lib/betterauth-session.server", () => ({ mintBetterAuthSession: vi.fn() }));
 vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
 
 import { prisma } from "~/lib/db";
 import { exchangeAuthorizationCode, getOAuthClient } from "~/lib/oauth";
-import { issueSession } from "~/lib/session";
+import { mintBetterAuthSession } from "~/lib/betterauth-session.server";
 import { logAuditEvent } from "~/lib/audit";
 import { action } from "~/routes/oauth.token";
 
@@ -62,7 +54,11 @@ beforeEach(() => {
     clientId: "c1",
   } as any);
   vi.mocked(getOAuthClient).mockResolvedValue({ clientId: "c1", name: "Claude" } as any);
-  vi.mocked(issueSession).mockResolvedValue({ rawId: "raw" } as any);
+  vi.mocked(mintBetterAuthSession).mockResolvedValue({
+    token: "raw",
+    sessionId: "s1",
+    expiresAt: new Date(Date.now() + 60_000),
+  });
   mockPrisma.user = { findUnique: vi.fn().mockResolvedValue({ id: "u1" }) };
   mockPrisma.oAuthGrant = {
     findUnique: vi.fn().mockResolvedValue(null),

@@ -75,7 +75,10 @@ test.describe('Drive hub', () => {
     const reviewerCtx = await page.context().browser()!.newContext();
     const reviewerPage = await reviewerCtx.newPage();
     const baseURL = page.url().replace(/\/drive.*/, '');
-    await reviewerCtx.addCookies([{ name: 'dali_tabless', value: '0', url: baseURL }]);
+    await reviewerCtx.addCookies([
+      { name: 'dali_tabless', value: '0', url: baseURL },
+      { name: 'dali_pk_prompt', value: '1', url: baseURL },
+    ]);
 
     await reviewerPage.goto(`${baseURL}/dev-login-as?daliEmail=reviewer1@dali.dartmouth.edu`);
     await reviewerPage.waitForLoadState('networkidle');

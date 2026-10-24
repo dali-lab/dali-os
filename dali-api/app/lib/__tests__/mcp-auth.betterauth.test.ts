@@ -5,7 +5,6 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 
 // ── Hoisted mocks (must come before any imports that trigger module execution) ─
 
-const mockIsFeatureEnabledForEveryone = vi.hoisted(() => vi.fn());
 const mockLookupSession = vi.hoisted(() => vi.fn());
 const mockRollSession = vi.hoisted(() => vi.fn());
 const mockGetSession = vi.hoisted(() => vi.fn());
@@ -16,9 +15,6 @@ const mockOAuthGrantUpdate = vi.hoisted(() => vi.fn());
 const mockAuthSessionFindUnique = vi.hoisted(() => vi.fn());
 const mockSessionDeleteMany = vi.hoisted(() => vi.fn());
 
-vi.mock("~/lib/feature-flags.server", () => ({
-  isFeatureEnabledForEveryone: mockIsFeatureEnabledForEveryone,
-}));
 
 vi.mock("~/lib/session", () => ({
   lookupSession: mockLookupSession,
@@ -107,14 +103,6 @@ function setupLegacyMiss() {
   mockLookupSession.mockResolvedValue(null);
 }
 
-function setupBetterAuthOn() {
-  mockIsFeatureEnabledForEveryone.mockResolvedValue(true);
-}
-
-function setupBetterAuthOff() {
-  mockIsFeatureEnabledForEveryone.mockResolvedValue(false);
-}
-
 function setupValidGrant() {
   mockOAuthGrantFindUnique.mockResolvedValue(MOCK_GRANT);
   mockOAuthGrantUpdate.mockResolvedValue({});
@@ -123,56 +111,10 @@ function setupValidGrant() {
 
 // ── authenticateMcpRequest tests ──────────────────────────────────────────────
 
-describe("authenticateMcpRequest — flag off", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    setupBetterAuthOff();
-  });
-
-  it("falls through to invalid_token when legacy lookup misses and flag is off", async () => {
-    setupLegacyMiss();
-    const res = await authenticateMcpRequest(makeRequest());
-    expect(res.ok).toBe(false);
-    expect(mockGetSession).not.toHaveBeenCalled();
-    const body = await (res as { ok: false; response: Response }).response.json();
-    expect(body.error.message).toContain("invalid_token");
-  });
-
-  it("succeeds via legacy path even when flag is off (grantId present)", async () => {
-    const legacySession = {
-      id: "hashed-1",
-      userId: USER_ID,
-      grantId: GRANT_ID,
-      revokedAt: null,
-      expiresAt: new Date(Date.now() + 1_000_000),
-      absoluteExpiresAt: new Date(Date.now() + 1_000_000),
-      lastUsedAt: new Date(),
-      user: MOCK_USER,
-    };
-    mockLookupSession.mockResolvedValue(legacySession);
-    mockRollSession.mockResolvedValue(undefined);
-    setupValidGrant();
-
-    const res = await authenticateMcpRequest(makeRequest());
-    expect(res.ok).toBe(true);
-    if (!res.ok) throw new Error("unreachable");
-    expect(res.grantId).toBe(GRANT_ID);
-    expect(res.clientId).toBe(CLIENT_ID);
-    expect(mockGetSession).not.toHaveBeenCalled();
-  });
-
-  it("does NOT consult BetterAuth when legacy path finds no session", async () => {
-    setupLegacyMiss();
-    await authenticateMcpRequest(makeRequest());
-    expect(mockGetSession).not.toHaveBeenCalled();
-  });
-});
-
-describe("authenticateMcpRequest — flag on, BetterAuth path", () => {
+describe("authenticateMcpRequest — BetterAuth path", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     setupLegacyMiss();
-    setupBetterAuthOn();
     mockOAuthGrantUpdate.mockResolvedValue({});
   });
 
@@ -281,7 +223,7 @@ describe("authenticateMcpRequest — flag on, BetterAuth path", () => {
     expect(body.error.message).toContain("invalid_token");
   });
 
-  it("legacy path wins when bespoke session exists even with betterauth flag on", async () => {
+  it("legacy path wins when a bespoke session exists", async () => {
     // Override: legacy session IS found this time
     const legacySession = {
       id: "hashed-legacy",
@@ -325,7 +267,6 @@ describe("authenticateMcpRequest — legacy token bridge", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    setupBetterAuthOn();
     setupValidGrant();
     mockLookupSession.mockResolvedValue(legacySession());
     mockRollSession.mockResolvedValue(undefined);
@@ -373,17 +314,6 @@ describe("authenticateMcpRequest — legacy token bridge", () => {
     const res = await authenticateMcpRequest(bridgeRequest());
 
     expect(res.ok).toBe(true);
-    expect(mockSessionDeleteMany).not.toHaveBeenCalled();
-    expect(mockRollSession).toHaveBeenCalledTimes(1);
-  });
-
-  it("does not bridge while the betterauth flag is off", async () => {
-    setupBetterAuthOff();
-
-    const res = await authenticateMcpRequest(bridgeRequest());
-
-    expect(res.ok).toBe(true);
-    expect(mockCreateSession).not.toHaveBeenCalled();
     expect(mockSessionDeleteMany).not.toHaveBeenCalled();
     expect(mockRollSession).toHaveBeenCalledTimes(1);
   });

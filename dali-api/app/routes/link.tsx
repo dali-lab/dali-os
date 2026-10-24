@@ -10,7 +10,6 @@ import { Form, Link, redirect } from "react-router";
 import type { Route } from "./+types/link";
 import { requireAuth } from "~/lib/auth";
 import { prisma } from "~/lib/db";
-import { isFeatureEnabledForEveryone } from "~/lib/feature-flags.server";
 import { formatUserCode, normalizeUserCode } from "~/lib/pairing";
 import { buttonClasses } from "~/components/ui/Button";
 import { useOsShellRoot } from "~/lib/os-shell";
@@ -49,7 +48,6 @@ export async function loader({ request }: Route.LoaderArgs) {
     return {
       view: "pending_unauthenticated" as const,
       userCode: formatUserCode(normalized),
-      betterAuthOn: await isFeatureEnabledForEveryone("betterauth", request),
     };
   }
   return {
@@ -208,44 +206,17 @@ export default function LinkPage({ loaderData }: Route.ComponentProps) {
           Pairing code <CodeChip code={data.userCode} /> — after signing in,
           return to this page to approve.
         </p>
-        {"betterAuthOn" in data && data.betterAuthOn ? (
-          // One door now. The legacy buttons below it posted provider=google
-          // and provider=cas; the CAS one created accounts whose only address
-          // was synthesized from the NetID, which is what this whole change
-          // exists to stop. /login threads `next` so they land back here.
-          <div className="mt-5">
-            <a
-              href={`/login?next=${encodeURIComponent(`/link?code=${data.userCode}`)}`}
-              className={SSO_BUTTON}
-            >
-              Sign in to DALI OS
-              <span className="block text-xs font-normal text-muted-foreground">
-                Continue with a sign-in code or a passkey
-              </span>
-            </a>
-          </div>
-        ) : (
-        <div className="mt-5 flex flex-col gap-3">
-          <Form method="post" action="/login">
-            <input type="hidden" name="provider" value="google" />
-            <button type="submit" className={SSO_BUTTON}>
-              Current Member
-              <span className="block text-xs font-normal text-muted-foreground">
-                @dali.dartmouth.edu Google account
-              </span>
-            </button>
-          </Form>
-          <Form method="post" action="/login">
-            <input type="hidden" name="provider" value="cas" />
-            <button type="submit" className={SSO_BUTTON}>
-              Applicant
-              <span className="block text-xs font-normal text-muted-foreground">
-                Dartmouth single sign-on
-              </span>
-            </button>
-          </Form>
+        <div className="mt-5">
+          <a
+            href={`/login?next=${encodeURIComponent(`/link?code=${data.userCode}`)}`}
+            className={SSO_BUTTON}
+          >
+            Sign in to DALI OS
+            <span className="block text-xs font-normal text-muted-foreground">
+              Continue with a sign-in code or a passkey
+            </span>
+          </a>
         </div>
-        )}
       </Shell>
     );
   }

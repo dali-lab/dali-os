@@ -2,11 +2,9 @@
 // OAuthGrant + OAuthClient, re-runs the requireMembership gate, and bumps
 // rolling expiry + lastUsedAt. Failure paths surface a 401 Response.
 //
-// Coexistence (Phase 4 / betterauth flag):
-//   1. Legacy path (bespoke Session): always tried first. Unchanged.
-//   2. BetterAuth path: tried only when (a) the legacy lookup finds no session
-//      AND (b) the `betterauth` flag is enabled for everyone. A fault in the
-//      BetterAuth path cannot break the legacy path — it is wrapped in try/catch.
+// Legacy sessions are tried first (and bridged to BetterAuth, see
+// bridgeLegacyToken), then BetterAuth. A fault in the BetterAuth path cannot
+// break the legacy path — it is wrapped in try/catch.
 //
 // Both paths share the same downstream grant/membership validation via
 // `verifyGrantAndMembership()` to avoid duplication.
@@ -14,7 +12,6 @@
 import { parseSessionId } from "~/lib/cookies";
 import { lookupSession, rollSession } from "~/lib/session";
 import { prisma } from "~/lib/db";
-import { isFeatureEnabledForEveryone } from "~/lib/feature-flags.server";
 import { auth } from "~/lib/betterauth.server";
 import { mintBetterAuthSession } from "~/lib/betterauth-session.server";
 import { getClientIp } from "~/lib/rate-limit";
@@ -123,7 +120,6 @@ async function bridgeLegacyToken(
 ): Promise<boolean> {
   try {
     if (!session.grantId) return false;
-    if (!(await isFeatureEnabledForEveryone("betterauth", request))) return false;
     const existing = await prisma.authSession.findUnique({
       where: { token: raw },
       select: { id: true },
@@ -181,13 +177,6 @@ export async function authenticateMcpRequest(
   }
 
   // ── BetterAuth path ───────────────────────────────────────────────────────
-  // Only consulted when: (a) legacy lookup found no session AND (b) the flag
-  // is enabled. Faults here cannot affect the already-resolved legacy result.
-  if (!(await isFeatureEnabledForEveryone("betterauth", request))) {
-    // Flag off — treat as unknown token (same as legacy "no session" before).
-    return { ok: false, response: unauthorized("invalid_token") };
-  }
-
   try {
     const baSession = await auth.api.getSession({ headers: request.headers });
     if (!baSession) {

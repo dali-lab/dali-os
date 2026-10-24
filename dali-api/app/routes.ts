@@ -358,7 +358,6 @@ export default [
   // Partner auth (no layout).
   route("partner/login", "partners/routes/partner.login.tsx"),
   route("partner/set-password", "partners/routes/partner.set-password.tsx"),
-  route("partner/auth/verify", "partners/routes/partner.auth.verify.tsx"),
   route("partner/invite/:token", "partners/routes/partner.invite.$token.tsx"),
   route("partner/onboarding", "partners/routes/partner.onboarding.tsx"),
 

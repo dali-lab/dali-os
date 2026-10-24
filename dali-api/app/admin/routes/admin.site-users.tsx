@@ -5,7 +5,6 @@ import { adminHandle } from "~/admin/adminNav";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
-import { isFeatureEnabledForEveryone } from "~/lib/feature-flags.server";
 import { isAdmin, isAdminViaEnv } from "~/lib/roles";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { Avatar } from "~/components/ui/Avatar";
@@ -33,10 +32,6 @@ export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
   if (!(await isAdmin(auth.user.sub))) return redirect("/");
-
-  // "Log in as" only works with BetterAuth sessions and 404s otherwise, so the
-  // buttons render disabled until the flag is on for everyone.
-  const impersonationEnabled = await isFeatureEnabledForEveryone("betterauth", request);
 
   const url = new URL(request.url);
   const q = (url.searchParams.get("q") ?? "").trim();
@@ -111,11 +106,11 @@ export async function loader({ request }: Route.LoaderArgs) {
     };
   });
 
-  return { users, total, q, impersonationEnabled, viewerUserId: auth.user.sub };
+  return { users, total, q, viewerUserId: auth.user.sub };
 }
 
 export default function AdminSiteUsers() {
-  const { users, total, q, impersonationEnabled, viewerUserId } =
+  const { users, total, q, viewerUserId } =
     useLoaderData<typeof loader>();
   const { pageTitle, panel } = useOsChrome();
   const submit = useSubmit();
@@ -143,13 +138,6 @@ export default function AdminSiteUsers() {
             users. Log in as anyone to see the app exactly as they do.
           </p>
         </div>
-
-        {!impersonationEnabled && (
-          <p className="rounded-md border border-os-amber/40 bg-os-amber/10 px-3 py-2 text-sm text-os-amber">
-            Turn on the <span className="font-semibold">betterauth</span> flag for
-            everyone (Admin → Feature Flags) to enable “Log in as”.
-          </p>
-        )}
 
         <Form method="get" ref={formRef} role="search">
           <label htmlFor="site-user-search" className="sr-only">
@@ -222,7 +210,7 @@ export default function AdminSiteUsers() {
                         lastName: u.lastName,
                         email: u.email,
                       }}
-                      disabled={!impersonationEnabled || u.id === viewerUserId}
+                      disabled={u.id === viewerUserId}
                     />
                   </div>
                 </li>
