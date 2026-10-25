@@ -44,7 +44,7 @@ const CORE_ROLES = {
 const FLEET_RESULT = {
   unlinked: [],
   unlinkedVaultGroups: [],
-  knownOrgs: { fly: [], neon: [], vaultGroups: null },
+  knownOrgs: { fly: [], neon: [], vaultGroups: null, vaultCollections: [] },
   lastSweep: "2026-09-10T00:00:00.000Z",
   protectedFly: ["dali-prod"],
   protectedNeon: ["proj-main"],

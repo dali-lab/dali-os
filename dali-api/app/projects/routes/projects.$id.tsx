@@ -1177,7 +1177,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       },
     }),
     canEdit ? listProjectInfraRequests(params.id) : Promise.resolve([]),
-    canEdit ? listKnownOrgs() : Promise.resolve({ fly: [], neon: [], vaultGroups: null }),
+    canEdit ? listKnownOrgs() : Promise.resolve({ fly: [], neon: [], vaultGroups: null, vaultCollections: [] }),
     // Progress tab's AI-line flag — independent of the status facts below.
     (async () =>
       isAiEnabled() &&

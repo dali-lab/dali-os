@@ -30,7 +30,7 @@ import { AdminSectionHeader, adminHandle } from "~/admin/adminNav";
 import { EmptyState, Figure, Pill, adminTable, type Tone } from "~/admin/components/console-ui";
 import { useOsChrome } from "~/components/os-chrome";
 import { Segmented } from "~/components/ui/Segmented";
-import { Tooltip } from "~/components/ui/floating";
+import { MultiSelect, Tooltip } from "~/components/ui/floating";
 import { cn } from "~/lib/cn";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
@@ -387,7 +387,7 @@ function ProjectCard({
           </div>
           <FlySection project={p} data={data} infra={infra} />
           <NeonSection project={p} data={data} infra={infra} />
-          {p.vault && <VaultAdmin project={p} infra={infra} />}
+          {p.vault && <VaultAdmin project={p} infra={infra} collections={data.knownOrgs.vaultCollections} />}
         </div>
       )}
     </li>
@@ -458,40 +458,76 @@ function ConfigEditor({ project: p, data, startOpen = false }: { project: Projec
 
 // ── Vaultwarden ───────────────────────────────────────────────────────────────
 
-function VaultAdmin({ project: p, infra }: { project: ProjectFleet; infra: InfraApi }) {
+function VaultAdmin({
+  project: p,
+  infra,
+  collections,
+}: {
+  project: ProjectFleet;
+  infra: InfraApi;
+  collections: { id: string; name: string }[];
+}) {
   const dialog = useDialog();
+  const [granted, setGranted] = useState(() => p.vault?.collections.map((c) => c.id) ?? []);
   if (!p.vault) return null;
   const post = (body: Record<string, unknown>) => infra.post({ projectId: p.projectId, ...body });
+  const current = p.vault.collections.map((c) => c.id);
+  const dirty = granted.length !== current.length || granted.some((id) => !current.includes(id));
   return (
-    <VaultSection
-      vault={p.vault}
-      membersUrl={p.vaultMembersUrl}
-      actions={{
-        busy: infra.busy,
-        sync: () => post({ intent: "vault.sync" }),
-        remove: async (email) => {
-          const ok = await dialog.confirm({
-            title: `Remove ${email} from ${p.vault!.group.name}?`,
-            description: "They lose access to this group's collections. Their Vaultwarden account and other groups stay.",
-            confirmLabel: "Remove",
-            tone: "destructive",
-          });
-          if (ok) post({ intent: "vault.sync", remove: [email] });
-        },
-        member: async (memberId, action) => {
-          if (action === "revoke") {
+    <div className="flex flex-col gap-3">
+      <VaultSection
+        vault={p.vault}
+        membersUrl={p.vaultMembersUrl}
+        actions={{
+          busy: infra.busy,
+          sync: () => post({ intent: "vault.sync" }),
+          remove: async (email) => {
             const ok = await dialog.confirm({
-              title: "Revoke this member?",
-              description: "Revoking removes their access to the whole org until restored.",
-              confirmLabel: "Revoke",
+              title: `Remove ${email} from ${p.vault!.group.name}?`,
+              description: "They lose access to this group's collections. Their Vaultwarden account and other groups stay.",
+              confirmLabel: "Remove",
               tone: "destructive",
             });
-            if (!ok) return;
-          }
-          post({ intent: "vault.member", memberId, action });
-        },
-      }}
-    />
+            if (ok) post({ intent: "vault.sync", remove: [email] });
+          },
+          member: async (memberId, action) => {
+            if (action === "revoke") {
+              const ok = await dialog.confirm({
+                title: "Revoke this member?",
+                description: "Revoking removes their access to the whole org until restored.",
+                confirmLabel: "Revoke",
+                tone: "destructive",
+              });
+              if (!ok) return;
+            }
+            post({ intent: "vault.member", memberId, action });
+          },
+        }}
+      />
+      <div className="flex flex-wrap items-end gap-2">
+        <div className="flex min-w-[16rem] flex-1 flex-col gap-1 text-xs text-os-muted">
+          <span>Collections this group can open</span>
+          <MultiSelect
+            ariaLabel="Collections this group can open"
+            values={granted}
+            options={collections.map((c) => ({ value: c.id, label: c.name }))}
+            onChange={setGranted}
+            placeholder="None"
+            emptyLabel="No collections in the org yet. Create one in Vaultwarden."
+          />
+        </div>
+        {dirty && (
+          <button
+            type="button"
+            disabled={infra.busy}
+            onClick={() => post({ intent: "vault.collections", collectionIds: granted })}
+            className="os-btn-primary"
+          >
+            Save collections
+          </button>
+        )}
+      </div>
+    </div>
   );
 }
 

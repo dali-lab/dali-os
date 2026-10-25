@@ -36,6 +36,7 @@ import {
 } from "./infra-scope";
 import type { FlyInventory, NeonInventory, VaultInventory } from "./types";
 import {
+  collectionLabel,
   projectVault,
   vaultGroupOptions,
   VAULT_ORG_SNAPSHOT,
@@ -178,6 +179,8 @@ export type KnownOrgs = {
   neon: KnownOrg[];
   /** Groups in the Vaultwarden org; null when Vaultwarden isn't configured. */
   vaultGroups: { id: string; name: string }[] | null;
+  /** Collections in the Vaultwarden org, labeled by external id or short id. */
+  vaultCollections: { id: string; name: string }[];
 };
 
 function knownOrgsFrom(
@@ -201,6 +204,7 @@ function knownOrgsFrom(
       (inv) => neonProjectOptions(inv),
     ),
     vaultGroups: vaultwardenConfigured() ? vaultGroupOptions(vault ?? null) : null,
+    vaultCollections: (vault?.collections ?? []).map((c) => ({ id: c.id, name: collectionLabel(c) })),
   };
 }
 

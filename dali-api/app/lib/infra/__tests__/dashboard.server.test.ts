@@ -145,6 +145,7 @@ describe("buildUnlinkedFleet", () => {
     fly: [{ orgId: "dali-os", resources: flyOrg.apps.map((a) => ({ id: a.name, name: a.name })) }],
     neon: [{ orgId: "org-dali-1", resources: org.projects.map((p) => ({ id: p.id, name: p.name })) }],
     vaultGroups: null,
+    vaultCollections: [],
   };
 
   it("lists apps and databases no project has linked, one row per org", () => {
