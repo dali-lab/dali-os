@@ -1,8 +1,9 @@
-// The lab's Neon org is shared by every project, so the sweep caches the whole
-// org and each project's view keeps only the Neon projects linked to it.
+// Fly and Neon orgs are shared by several projects, so the sweep caches the
+// whole org and each project's view keeps only the apps and databases linked
+// to it.
 
 import { bucketHours, estimateNeonProjectMonth, monthStart } from "./neon-cost";
-import type { NeonInventory } from "./types";
+import type { FlyInventory, NeonInventory } from "./types";
 
 // Sample scopes the sweep writes. Daily and Fly rows draw the sparklines; the
 // monthly rows hold month-to-date totals for the headline and cost estimates.
@@ -20,6 +21,16 @@ export function scopeNeonInventory(
   if (!inv) return null;
   const ids = new Set(neonProjectIds);
   return { ...inv, projects: inv.projects.filter((p) => ids.has(p.id)) };
+}
+
+export function scopeFlyInventory(inv: FlyInventory | null, flyAppNames: string[]): FlyInventory | null {
+  if (!inv) return null;
+  const names = new Set(flyAppNames);
+  return { ...inv, apps: inv.apps.filter((a) => names.has(a.name)) };
+}
+
+export function flyAppOptions(inv: FlyInventory | null): { id: string; name: string }[] {
+  return (inv?.apps ?? []).map((a) => ({ id: a.name, name: a.name }));
 }
 
 export function neonProjectOptions(inv: NeonInventory | null): { id: string; name: string }[] {
@@ -43,8 +54,12 @@ function neonProjectOf(s: ScopedSample): string {
   return s.scopeType === SCOPE.neonBranchMonth ? s.scopeId.split(":")[0] : s.scopeId;
 }
 
-export function isSampleInScope(s: ScopedSample, neonProjectIds: string[]): boolean {
-  return s.provider !== "neon" || neonProjectIds.includes(neonProjectOf(s));
+export type ResourceScope = { neonProjectIds: string[]; flyAppNames: string[] };
+
+export function isSampleInScope(s: ScopedSample, scope: ResourceScope): boolean {
+  if (s.provider === "neon") return scope.neonProjectIds.includes(neonProjectOf(s));
+  if (s.provider === "fly") return scope.flyAppNames.includes(s.scopeId);
+  return false;
 }
 
 // One point per (metric, time): a project with several Fly apps or Neon
@@ -179,15 +194,17 @@ export function neonCostSummary(
 }
 
 /**
- * Database choices for the config editor's org. A linked id missing from the
- * org's latest sweep still shows (by id) so it can be removed.
+ * App or database choices for the config editor's org. A linked id missing
+ * from the org's latest sweep still shows (by id) so it can be removed.
  */
-export function neonDatabaseOptions(
+export type KnownOrg = { orgId: string; resources: { id: string; name: string }[] };
+
+export function orgResourceOptions(
   orgId: string,
-  knownOrgs: { orgId: string; projects: { id: string; name: string }[] }[],
+  knownOrgs: KnownOrg[],
   linkedIds: string[],
 ): { value: string; label: string }[] {
-  const projects = knownOrgs.find((o) => o.orgId === orgId)?.projects ?? [];
+  const projects = knownOrgs.find((o) => o.orgId === orgId)?.resources ?? [];
   return [
     ...projects.map((p) => ({ value: p.id, label: p.name })),
     ...linkedIds.filter((id) => !projects.some((p) => p.id === id)).map((id) => ({ value: id, label: id })),
@@ -195,11 +212,39 @@ export function neonDatabaseOptions(
 }
 
 /** Linked ids that still belong to the org after switching it. */
-export function keepLinkedInOrg(
-  orgId: string,
-  knownOrgs: { orgId: string; projects: { id: string; name: string }[] }[],
-  linkedIds: string[],
-): string[] {
-  const ids = new Set(knownOrgs.find((o) => o.orgId === orgId)?.projects.map((p) => p.id) ?? []);
+export function keepLinkedInOrg(orgId: string, knownOrgs: KnownOrg[], linkedIds: string[]): string[] {
+  const ids = new Set(knownOrgs.find((o) => o.orgId === orgId)?.resources.map((p) => p.id) ?? []);
   return linkedIds.filter((id) => ids.has(id));
+}
+
+/**
+ * Orgs configured on some project, each with the resources from its newest
+ * sweep. `orgOf` / `resourcesOf` read the provider's snapshot payload.
+ */
+export function knownOrgs<T>(
+  orgIds: string[],
+  newestFirst: (T | null)[],
+  orgOf: (inv: T) => string | undefined,
+  resourcesOf: (inv: T) => { id: string; name: string }[],
+): KnownOrg[] {
+  const latest = new Map<string, T>();
+  for (const inv of newestFirst) {
+    const org = inv ? orgOf(inv) : undefined;
+    if (inv && org && !latest.has(org)) latest.set(org, inv);
+  }
+  return [...new Set(orgIds)].sort().map((orgId) => {
+    const inv = latest.get(orgId);
+    return { orgId, resources: inv ? resourcesOf(inv) : [] };
+  });
+}
+
+/** Resources in each known org that no project has linked. */
+export function unlinkedResources(
+  orgs: KnownOrg[],
+  linked: string[],
+): { orgId: string; resources: { id: string; name: string }[] }[] {
+  const taken = new Set(linked);
+  return orgs
+    .map((o) => ({ orgId: o.orgId, resources: o.resources.filter((r) => !taken.has(r.id)) }))
+    .filter((o) => o.resources.length > 0);
 }

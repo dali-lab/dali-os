@@ -23,6 +23,14 @@ import { resolvePhotoUrl } from "~/lib/photo";
 import { timed } from "~/lib/server-timing";
 import { githubTeamSlug } from "~/lib/github-slug";
 import { ensureProjectGroup } from "~/lib/groups";
+import { isFeatureEnabled } from "~/lib/feature-flags.server";
+import {
+  listProvisionTargets,
+  provisionProjectInfra,
+  provisionRequestFromForm,
+  type ProvisionTargets,
+} from "~/lib/infra/provision.server";
+import { NewProjectInfraFields } from "~/projects/components/NewProjectInfraFields";
 import { ViewToggle, useViewPreference } from "~/components/ViewToggle";
 import { buttonClasses } from "~/components/ui/Button";
 import { TermFilter } from "~/components/TermFilter";
@@ -179,6 +187,12 @@ export async function loader({ request }: Route.LoaderArgs) {
       })
     : [];
 
+  // Admin only: optional starting infra on the create form.
+  const provisionTargets: ProvisionTargets | null =
+    roles.isAdmin && (await isFeatureEnabled("infra-dashboard", auth.user.sub, roles, request))
+      ? await listProvisionTargets()
+      : null;
+
   return {
     rows,
     terms,
@@ -188,6 +202,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     canStaff,
     hiddenByTermFilter: filteringByTerm && rows.length === 0 && totalProjects > 0,
     projectTemplates,
+    provisionTargets,
   };
 }
 
@@ -226,6 +241,17 @@ export async function action({ request }: Route.ActionArgs) {
 
   const name = (form.get("name") as string | null)?.trim() ?? "";
   const description = (form.get("description") as string | null)?.trim() ?? "";
+
+  // Optional starting infra runs after the project exists; a failed step lands
+  // on the new project's Infrastructure section instead of blocking the create.
+  const canProvision =
+    actionRoles.isAdmin && (await isFeatureEnabled("infra-dashboard", auth.user.sub, actionRoles, request));
+  const openCreated = async (projectId: string) => {
+    const want = canProvision ? provisionRequestFromForm(form, name, githubTeamSlug(name)) : {};
+    const { errors } = await provisionProjectInfra({ userId: auth.user.sub, projectId, request, want });
+    const qs = errors.length ? `?infraErrors=${encodeURIComponent(errors.join("\n"))}` : "";
+    return redirect(`/projects/${projectId}${qs}`);
+  };
   const iconEmoji = (form.get("iconEmoji") as string | null)?.trim() ?? "";
   const status = (form.get("status") as string | null) ?? "Active";
 
@@ -244,7 +270,7 @@ export async function action({ request }: Route.ActionArgs) {
         initialTermId,
         partnerOrgId,
       });
-      return redirect(`/projects/${created.id}`);
+      return openCreated(created.id);
     } catch (err) {
       return { error: err instanceof Error ? err.message : "Could not create from template." };
     }
@@ -297,7 +323,7 @@ export async function action({ request }: Route.ActionArgs) {
     select: { id: true, name: true },
   });
   await ensureProjectGroup(created.id, created.name);
-  return redirect(`/projects/${created.id}`);
+  return openCreated(created.id);
 }
 
 export default function ProjectsListPage() {
@@ -310,6 +336,7 @@ export default function ProjectsListPage() {
     canStaff,
     hiddenByTermFilter,
     projectTemplates,
+    provisionTargets,
   } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -470,6 +497,7 @@ export default function ProjectsListPage() {
               />
             </label>
           </div>
+          {provisionTargets && <NewProjectInfraFields targets={provisionTargets} />}
           <div className="flex justify-end gap-2">
             <button
               type="button"

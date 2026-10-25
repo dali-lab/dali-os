@@ -42,6 +42,8 @@ const CORE_ROLES = {
 };
 
 const FLEET_RESULT = {
+  unlinked: [],
+  knownOrgs: { fly: [], neon: [] },
   lastSweep: "2026-09-10T00:00:00.000Z",
   protectedFly: ["dali-prod"],
   protectedNeon: ["proj-main"],
@@ -52,6 +54,9 @@ const FLEET_RESULT = {
       infraEnabled: true,
       flyOrgSlug: "dali-org",
       neonOrgId: "neon-org-1",
+      configured: true,
+      flyAppNames: [],
+      flyOrgApps: [],
       neonProjectIds: ["proj-main"],
       neonOrgProjects: [{ id: "proj-main", name: "main" }],
       neonPlan: "launch",

@@ -5,14 +5,18 @@ import {
   isSampleInScope,
   keepLinkedInOrg,
   neonCostSummary,
-  neonDatabaseOptions,
+  orgResourceOptions,
+  flyAppOptions,
+  knownOrgs,
+  scopeFlyInventory,
+  unlinkedResources,
   neonProjectOptions,
   projectUsage,
   SCOPE,
   scopeNeonInventory,
   usageSeries,
   type ScopedSample,
-} from "../neon-scope";
+} from "../infra-scope";
 import type { NeonInventory, NeonProject } from "../types";
 
 function project(id: string, name = id): NeonProject {
@@ -90,14 +94,14 @@ describe("neonProjectOptions", () => {
 
 describe("isSampleInScope", () => {
   it("keeps Neon samples for linked databases only", () => {
-    expect(isSampleInScope(sample({ scopeId: "np-a" }), ["np-a"])).toBe(true);
-    expect(isSampleInScope(sample({ scopeId: "np-b" }), ["np-a"])).toBe(false);
-    expect(isSampleInScope(sample({ scopeId: "np-a" }), [])).toBe(false);
+    expect(isSampleInScope(sample({ scopeId: "np-a" }), { neonProjectIds: ["np-a"], flyAppNames: [] })).toBe(true);
+    expect(isSampleInScope(sample({ scopeId: "np-b" }), { neonProjectIds: ["np-a"], flyAppNames: [] })).toBe(false);
+    expect(isSampleInScope(sample({ scopeId: "np-a" }), { neonProjectIds: [], flyAppNames: [] })).toBe(false);
   });
 
-  it("always keeps Fly samples", () => {
+  it("drops Fly samples when no app is linked", () => {
     const fly = sample({ provider: "fly", scopeType: "fly-app", scopeId: "web", metric: "egress_bytes" });
-    expect(isSampleInScope(fly, [])).toBe(true);
+    expect(isSampleInScope(fly, { neonProjectIds: [], flyAppNames: [] })).toBe(false);
   });
 });
 
@@ -143,8 +147,8 @@ describe("usageSeries", () => {
 describe("isSampleInScope for branch rows", () => {
   it("scopes branch rows by their database", () => {
     const branch = sample({ scopeType: SCOPE.neonBranchMonth, scopeId: branchScopeId("np-a", "br-1") });
-    expect(isSampleInScope(branch, ["np-a"])).toBe(true);
-    expect(isSampleInScope(branch, ["np-b"])).toBe(false);
+    expect(isSampleInScope(branch, { neonProjectIds: ["np-a"], flyAppNames: [] })).toBe(true);
+    expect(isSampleInScope(branch, { neonProjectIds: ["np-b"], flyAppNames: [] })).toBe(false);
   });
 });
 
@@ -318,31 +322,31 @@ describe("neonCostSummary", () => {
 
 describe("neonDatabaseOptions", () => {
   const known = [
-    { orgId: "org-dali-1", projects: [{ id: "np-a", name: "Alpha" }, { id: "np-b", name: "Beta" }] },
-    { orgId: "org-other-2", projects: [{ id: "np-z", name: "Zeta" }] },
+    { orgId: "org-dali-1", resources: [{ id: "np-a", name: "Alpha" }, { id: "np-b", name: "Beta" }] },
+    { orgId: "org-other-2", resources: [{ id: "np-z", name: "Zeta" }] },
   ];
 
   it("lists the chosen org's databases", () => {
-    expect(neonDatabaseOptions("org-dali-1", known, [])).toEqual([
+    expect(orgResourceOptions("org-dali-1", known, [])).toEqual([
       { value: "np-a", label: "Alpha" },
       { value: "np-b", label: "Beta" },
     ]);
   });
 
   it("keeps a linked id the sweep no longer returns so it can be removed", () => {
-    expect(neonDatabaseOptions("org-other-2", known, ["np-gone"])).toEqual([
+    expect(orgResourceOptions("org-other-2", known, ["np-gone"])).toEqual([
       { value: "np-z", label: "Zeta" },
       { value: "np-gone", label: "np-gone" },
     ]);
   });
 
   it("is empty for an org nobody has swept", () => {
-    expect(neonDatabaseOptions("org-new-3", known, [])).toEqual([]);
+    expect(orgResourceOptions("org-new-3", known, [])).toEqual([]);
   });
 });
 
 describe("keepLinkedInOrg", () => {
-  const known = [{ orgId: "org-dali-1", projects: [{ id: "np-a", name: "Alpha" }] }];
+  const known = [{ orgId: "org-dali-1", resources: [{ id: "np-a", name: "Alpha" }] }];
 
   it("keeps linked databases that belong to the new org", () => {
     expect(keepLinkedInOrg("org-dali-1", known, ["np-a", "np-x"])).toEqual(["np-a"]);
@@ -350,5 +354,76 @@ describe("keepLinkedInOrg", () => {
 
   it("drops everything for an unknown org", () => {
     expect(keepLinkedInOrg("org-new-3", known, ["np-a"])).toEqual([]);
+  });
+});
+
+describe("Fly scoping", () => {
+  const app = (name: string) => ({ id: name, name, status: "deployed", machineCount: 0, machines: [], volumes: [] });
+  const flyOrg = { orgSlug: "dali-os", apps: [app("dali-api-prod"), app("ultrasound"), app("dali-kiosk")] };
+
+  it("keeps only the linked apps", () => {
+    expect(scopeFlyInventory(flyOrg, ["ultrasound"])?.apps.map((a) => a.name)).toEqual(["ultrasound"]);
+  });
+
+  it("keeps none when nothing is linked", () => {
+    expect(scopeFlyInventory(flyOrg, [])?.apps).toEqual([]);
+  });
+
+  it("passes a missing snapshot through as null", () => {
+    expect(scopeFlyInventory(null, ["x"])).toBeNull();
+  });
+
+  it("offers every app in the org", () => {
+    expect(flyAppOptions(flyOrg).map((o) => o.id)).toEqual(["dali-api-prod", "ultrasound", "dali-kiosk"]);
+    expect(flyAppOptions(null)).toEqual([]);
+  });
+
+  it("keeps Fly samples for linked apps only", () => {
+    const fly = sample({ provider: "fly", scopeType: SCOPE.flyApp, scopeId: "ultrasound", metric: "egress_bytes" });
+    expect(isSampleInScope(fly, { neonProjectIds: [], flyAppNames: ["ultrasound"] })).toBe(true);
+    expect(isSampleInScope(fly, { neonProjectIds: [], flyAppNames: ["dali-api-prod"] })).toBe(false);
+  });
+
+  it("drops samples from an unknown provider", () => {
+    expect(isSampleInScope(sample({ provider: "aws" }), { neonProjectIds: ["np-a"], flyAppNames: [] })).toBe(false);
+  });
+});
+
+describe("knownOrgs", () => {
+  type Inv = { org: string; items: string[] };
+  const inv = (org: string, items: string[]): Inv => ({ org, items });
+  const build = (orgIds: string[], snaps: (Inv | null)[]) =>
+    knownOrgs(orgIds, snaps, (i) => i.org, (i) => i.items.map((id) => ({ id, name: id })));
+
+  it("lists each configured org once, sorted, with its newest sweep", () => {
+    expect(build(["org-b", "org-a", "org-b"], [inv("org-a", ["new"]), inv("org-a", ["old"]), inv("org-b", ["x"])])).toEqual([
+      { orgId: "org-a", resources: [{ id: "new", name: "new" }] },
+      { orgId: "org-b", resources: [{ id: "x", name: "x" }] },
+    ]);
+  });
+
+  it("lists a configured org with no sweep yet as empty", () => {
+    expect(build(["org-a"], [null])).toEqual([{ orgId: "org-a", resources: [] }]);
+  });
+
+  it("leaves out swept orgs no project uses", () => {
+    expect(build([], [inv("org-a", ["x"])])).toEqual([]);
+  });
+});
+
+describe("unlinkedResources", () => {
+  const orgs = [
+    { orgId: "dali-os", resources: [{ id: "web", name: "web" }, { id: "dali-api-pr-9", name: "dali-api-pr-9" }] },
+    { orgId: "other", resources: [{ id: "taken", name: "taken" }] },
+  ];
+
+  it("lists what no project has linked, per org", () => {
+    expect(unlinkedResources(orgs, ["web", "taken"])).toEqual([
+      { orgId: "dali-os", resources: [{ id: "dali-api-pr-9", name: "dali-api-pr-9" }] },
+    ]);
+  });
+
+  it("is empty when everything is linked", () => {
+    expect(unlinkedResources(orgs, ["web", "dali-api-pr-9", "taken"])).toEqual([]);
   });
 });

@@ -19,7 +19,7 @@ vi.mock("~/lib/infra/project-infra.server", () => ({
 vi.mock("~/lib/infra/fly.server", () => flyMock);
 vi.mock("~/lib/infra/neon.server", () => neonMock);
 
-import { adoptNeonOrgSnapshot, refreshProjectInfra, runInfraSnapshot } from "../infra-snapshot.server";
+import { adoptOrgSnapshot, refreshProjectInfra, runInfraSnapshot } from "../infra-snapshot.server";
 
 const now = new Date("2026-10-25T12:00:00Z");
 const ctx = { now, lastSuccessAt: new Date("2026-10-25T11:00:00Z"), settings: {} };
@@ -28,6 +28,7 @@ const creds = (projectId: string, neonProjectIds: string[], neonOrgId: string | 
   projectId,
   name: projectId,
   flyOrgSlug: null as string | null,
+  flyAppNames: [] as string[],
   neonOrgId,
   neonProjectIds,
   flyReadToken: null as string | null,
@@ -158,43 +159,77 @@ describe("runInfraSnapshot Neon", () => {
 });
 
 describe("runInfraSnapshot Fly", () => {
-  const flyCreds = () => ({ ...creds("p1", [], null), flyOrgSlug: "dali", flyReadToken: "tok" });
-
-  beforeEach(() => {
-    flyMock.getFlyInventory.mockResolvedValue({ orgSlug: "dali", apps: [] });
-    flyMock.getFlyEgressByApp.mockResolvedValue([]);
+  const flyCreds = (projectId: string, flyAppNames: string[]) => ({
+    ...creds(projectId, [], null),
+    flyOrgSlug: "dali-os",
+    flyReadToken: "tok",
+    flyAppNames,
   });
 
-  it("records machine hours per app", async () => {
-    listCreds.mockResolvedValue([flyCreds()]);
+  beforeEach(() => {
+    flyMock.getFlyInventory.mockResolvedValue({ orgSlug: "dali-os", apps: [] });
+    flyMock.getFlyEgressByApp.mockResolvedValue([
+      { appName: "web", egressBytes: 10 },
+      { appName: "ultrasound", egressBytes: 20 },
+    ]);
     flyMock.getFlyMachineHoursByApp.mockResolvedValue([{ appName: "web", machineHours: 48 }]);
+  });
+
+  it("reads a shared org once per run", async () => {
+    listCreds.mockResolvedValue([flyCreds("p1", ["web"]), flyCreds("p2", ["ultrasound"])]);
     await runInfraSnapshot(ctx);
-    expect(upserts()[0].create).toMatchObject({
-      projectId: "p1",
+    expect(flyMock.getFlyInventory).toHaveBeenCalledTimes(1);
+    expect(flyMock.getFlyEgressByApp).toHaveBeenCalledTimes(1);
+    expect(flyMock.getFlyMachineHoursByApp).toHaveBeenCalledTimes(1);
+  });
+
+  it("stores the whole org on each project's snapshot", async () => {
+    listCreds.mockResolvedValue([flyCreds("p1", ["web"]), flyCreds("p2", [])]);
+    await runInfraSnapshot(ctx);
+    expect(prismaMock.infraSnapshot.create.mock.calls.map((c) => c[0].data.projectId)).toEqual(["p1", "p2"]);
+  });
+
+  it("writes usage only for each project's linked apps", async () => {
+    listCreds.mockResolvedValue([flyCreds("p1", ["web"]), flyCreds("p2", ["ultrasound"]), flyCreds("p3", [])]);
+    await runInfraSnapshot(ctx);
+    expect(upserts().map((u) => [u.create.projectId, u.create.scopeId, u.create.metric])).toEqual([
+      ["p1", "web", "egress_bytes"],
+      ["p1", "web", "machine_hours_24h"],
+      ["p2", "ultrasound", "egress_bytes"],
+    ]);
+  });
+
+  it("records machine hours per app at the sweep time", async () => {
+    listCreds.mockResolvedValue([flyCreds("p1", ["web"])]);
+    await runInfraSnapshot(ctx);
+    expect(upserts().find((u) => u.create.metric === "machine_hours_24h").create).toMatchObject({
       provider: "fly",
       scopeType: "fly-app",
-      scopeId: "web",
-      metric: "machine_hours_24h",
       value: 48,
       at: now,
     });
   });
 
   it("still records egress when machine hours fail", async () => {
-    listCreds.mockResolvedValue([flyCreds()]);
-    flyMock.getFlyEgressByApp.mockResolvedValue([{ appName: "web", egressBytes: 10 }]);
+    listCreds.mockResolvedValue([flyCreds("p1", ["web"])]);
     flyMock.getFlyMachineHoursByApp.mockRejectedValue(new Error("403"));
     await runInfraSnapshot(ctx);
     expect(upserts().map((u) => u.create.metric)).toEqual(["egress_bytes"]);
   });
+
+  it("skips a project without a read token", async () => {
+    listCreds.mockResolvedValue([{ ...flyCreds("p1", ["web"]), flyReadToken: null }]);
+    await runInfraSnapshot(ctx);
+    expect(flyMock.getFlyInventory).not.toHaveBeenCalled();
+  });
 });
 
-describe("adoptNeonOrgSnapshot", () => {
+describe("adoptOrgSnapshot", () => {
   const snap = (projectId: string, orgId: string, tag = orgId) => ({ projectId, payload: { orgId, tag } });
 
   it("copies the newest other project's sweep of the same org", async () => {
     prismaMock.infraSnapshot.findMany.mockResolvedValue([snap("p2", "org-dali-1", "newest"), snap("p3", "org-dali-1", "older")]);
-    expect(await adoptNeonOrgSnapshot("p1", "org-dali-1")).toBe(true);
+    expect(await adoptOrgSnapshot("p1", "neon", "org-dali-1")).toBe(true);
     expect(prismaMock.infraSnapshot.create.mock.calls[0][0].data).toEqual({
       projectId: "p1",
       provider: "neon",
@@ -204,18 +239,18 @@ describe("adoptNeonOrgSnapshot", () => {
 
   it("keeps the project's own sweep when it is already for that org", async () => {
     prismaMock.infraSnapshot.findMany.mockResolvedValue([snap("p2", "org-dali-1"), snap("p1", "org-dali-1")]);
-    expect(await adoptNeonOrgSnapshot("p1", "org-dali-1")).toBe(false);
+    expect(await adoptOrgSnapshot("p1", "neon", "org-dali-1")).toBe(false);
     expect(prismaMock.infraSnapshot.create).not.toHaveBeenCalled();
   });
 
   it("replaces the project's sweep of a different org", async () => {
     prismaMock.infraSnapshot.findMany.mockResolvedValue([snap("p1", "org-old"), snap("p2", "org-dali-1")]);
-    expect(await adoptNeonOrgSnapshot("p1", "org-dali-1")).toBe(true);
+    expect(await adoptOrgSnapshot("p1", "neon", "org-dali-1")).toBe(true);
   });
 
   it("does nothing for an org nobody has swept", async () => {
     prismaMock.infraSnapshot.findMany.mockResolvedValue([snap("p2", "org-other")]);
-    expect(await adoptNeonOrgSnapshot("p1", "org-new")).toBe(false);
+    expect(await adoptOrgSnapshot("p1", "neon", "org-new")).toBe(false);
     expect(prismaMock.infraSnapshot.create).not.toHaveBeenCalled();
   });
 });
@@ -252,5 +287,34 @@ describe("refreshProjectInfra", () => {
     prismaMock.infraSnapshot.findMany.mockResolvedValue([]);
     neonMock.getNeonInventory.mockRejectedValue(new Error("Neon down"));
     await expect(refreshProjectInfra("p1")).resolves.toBeUndefined();
+  });
+});
+
+describe("adoptOrgSnapshot Fly", () => {
+  it("copies another project's sweep of the same Fly org", async () => {
+    prismaMock.infraSnapshot.findMany.mockResolvedValue([
+      { projectId: "p2", payload: { orgSlug: "other", apps: [] } },
+      { projectId: "p3", payload: { orgSlug: "dali-os", apps: [{ name: "web" }] } },
+    ]);
+    expect(await adoptOrgSnapshot("p1", "fly", "dali-os")).toBe(true);
+    expect(prismaMock.infraSnapshot.create.mock.calls[0][0].data).toEqual({
+      projectId: "p1",
+      provider: "fly",
+      payload: { orgSlug: "dali-os", apps: [{ name: "web" }] },
+    });
+    expect(prismaMock.infraSnapshot.findMany.mock.calls[0][0].where).toEqual({ provider: "fly" });
+  });
+});
+
+describe("refreshProjectInfra Fly", () => {
+  it("adopts the Fly org's sweep too", async () => {
+    getCreds.mockResolvedValue({ ...creds("p1", [], null), flyOrgSlug: "dali-os", flyReadToken: "tok", flyAppNames: ["web"] });
+    prismaMock.infraSnapshot.findMany.mockResolvedValue([{ projectId: "p2", payload: { orgSlug: "dali-os", apps: [] } }]);
+    flyMock.getFlyInventory.mockResolvedValue({ orgSlug: "dali-os", apps: [] });
+    flyMock.getFlyEgressByApp.mockResolvedValue([]);
+    flyMock.getFlyMachineHoursByApp.mockResolvedValue([]);
+    await refreshProjectInfra("p1");
+    expect(prismaMock.infraSnapshot.create.mock.calls[0][0].data).toMatchObject({ projectId: "p1", provider: "fly" });
+    await vi.waitFor(() => expect(flyMock.getFlyInventory).toHaveBeenCalledWith("tok", "dali-os"));
   });
 });

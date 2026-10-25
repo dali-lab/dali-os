@@ -284,6 +284,7 @@ export const AUDIT_ACTIONS = [
   "infra.neon.endpoint",
   "infra.neon.quota",
   "infra.neon.project.create",
+  "infra.fly.app.create",
   "infra.neon.destroy",
   "infra.reap",
   "infra.config",

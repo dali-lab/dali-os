@@ -359,15 +359,26 @@ export async function setProjectQuota(projectId: string, quota: NeonQuotaPatch):
   });
 }
 
+// Default compute range for databases made from DALI OS: student projects
+// rarely need more, and it bounds the worst-case compute bill. Raise per
+// database from the console.
+export const NEW_PROJECT_COMPUTE = { minCu: 0.25, maxCu: 2 };
+
+// The response carries connection URIs and role passwords; only the project
+// id is read from it, and it is never logged.
 export async function createProject(
   orgId: string,
   name: string,
 ): Promise<{ projectId: string | null; operations: NeonOp[] }> {
-  // org_id lives on the project body for create; with a personal key spanning
-  // orgs this attributes the new project to the right org. Verify against live
-  // API on first staging run (see spec §5).
   const { raw, operations } = await neonWrite(`/projects`, "POST", {
-    project: { name, org_id: orgId },
+    project: {
+      name,
+      org_id: orgId,
+      default_endpoint_settings: {
+        autoscaling_limit_min_cu: NEW_PROJECT_COMPUTE.minCu,
+        autoscaling_limit_max_cu: NEW_PROJECT_COMPUTE.maxCu,
+      },
+    },
   });
   const projectId = (raw as { project?: { id?: string } } | null)?.project?.id ?? null;
   return { projectId, operations };

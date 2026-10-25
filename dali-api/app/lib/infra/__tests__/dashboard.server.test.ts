@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("~/lib/db", () => ({ prisma: {} }));
 
-import { buildProjectFleet, knownNeonOrgs } from "../dashboard.server";
+import { buildProjectFleet, buildUnlinkedFleet } from "../dashboard.server";
 import type { InfraProjectInfo } from "../project-infra.server";
 import type { NeonInventory } from "../types";
 
@@ -10,6 +10,7 @@ const info = (over: Partial<InfraProjectInfo> = {}): InfraProjectInfo => ({
   projectId: "p1",
   name: "Work Health",
   flyOrgSlug: null,
+  flyAppNames: [],
   neonOrgId: "org-dali-1",
   neonProjectIds: ["np-a"],
   infraEnabled: true,
@@ -86,8 +87,8 @@ describe("buildProjectFleet", () => {
     expect(fleet.usage).toEqual([]);
   });
 
-  it("keeps Fly usage regardless of linked databases", () => {
-    const fleet = buildProjectFleet(info({ neonProjectIds: [] }), latest, [
+  it("keeps Fly usage for linked apps regardless of linked databases", () => {
+    const fleet = buildProjectFleet(info({ neonProjectIds: [], flyAppNames: ["web"] }), latest, [
       { projectId: "p1", provider: "fly", scopeType: "fly-app", scopeId: "web", metric: "egress_bytes", value: 10, at },
     ]);
     expect(fleet.usage.map((u) => u.metric)).toEqual(["egress_bytes"]);
@@ -101,30 +102,64 @@ describe("buildProjectFleet", () => {
   });
 });
 
-describe("knownNeonOrgs", () => {
-  const inv = (orgId: string, ids: string[]): NeonInventory => ({
-    orgId,
-    projects: ids.map((id) => ({ ...org.projects[0], id, name: id })),
+
+const flyApp = (name: string) => ({ id: name, name, status: "deployed", machineCount: 0, machines: [], volumes: [] });
+const flyOrg = { orgSlug: "dali-os", apps: [flyApp("dali-api-prod"), flyApp("ultrasound"), flyApp("dali-api-pr-9")] };
+
+describe("buildProjectFleet Fly", () => {
+  const withFly = new Map([...latest, ["p1:fly", { payload: flyOrg as unknown, fetchedAt }]]);
+
+  it("shows only the project's linked apps and offers the whole org", () => {
+    const fleet = buildProjectFleet(info({ flyOrgSlug: "dali-os", flyAppNames: ["ultrasound"] }), withFly, []);
+    expect(fleet.fly?.apps.map((a) => a.name)).toEqual(["ultrasound"]);
+    expect(fleet.flyOrgApps.map((a) => a.id)).toEqual(["dali-api-prod", "ultrasound", "dali-api-pr-9"]);
   });
 
-  it("lists each configured org once, sorted, with its newest sweep's databases", () => {
-    expect(
-      knownNeonOrgs(["org-b", "org-a", "org-b"], [inv("org-a", ["new"]), inv("org-a", ["old"]), inv("org-b", ["x"])]),
-    ).toEqual([
-      { orgId: "org-a", projects: [{ id: "new", name: "new" }] },
-      { orgId: "org-b", projects: [{ id: "x", name: "x" }] },
-    ]);
+  it("marks a project with no Fly or Neon org as not configured", () => {
+    expect(buildProjectFleet(info({ neonOrgId: null, flyOrgSlug: null }), new Map(), []).configured).toBe(false);
+    expect(buildProjectFleet(info(), latest, []).configured).toBe(true);
+  });
+});
+
+describe("buildUnlinkedFleet", () => {
+  const dali = info({
+    projectId: "p1",
+    name: "DALI OS",
+    flyOrgSlug: "dali-os",
+    flyAppNames: ["dali-api-prod"],
+    hasFlyReadToken: true,
+    neonProjectIds: ["np-a"],
+  });
+  const ultrasound = info({ projectId: "p2", name: "Ultrasound", flyOrgSlug: "dali-os", flyAppNames: ["ultrasound"], neonProjectIds: [] });
+  const snaps = new Map<string, { payload: unknown; fetchedAt: Date }>([
+    ["p1:fly", { payload: flyOrg, fetchedAt }],
+    ["p1:neon", { payload: { ...org, plan: "launch" }, fetchedAt }],
+  ]);
+  const orgs = {
+    fly: [{ orgId: "dali-os", resources: flyOrg.apps.map((a) => ({ id: a.name, name: a.name })) }],
+    neon: [{ orgId: "org-dali-1", resources: org.projects.map((p) => ({ id: p.id, name: p.name })) }],
+  };
+
+  it("lists apps and databases no project has linked, one row per org", () => {
+    const rows = buildUnlinkedFleet([dali, ultrasound], snaps, orgs);
+    expect(rows.map((r) => r.name)).toEqual(["Not linked · Fly dali-os", "Not linked · Neon org-dali-1"]);
+    expect(rows[0].fly?.apps.map((a) => a.name)).toEqual(["dali-api-pr-9"]);
+    expect(rows[1].neon?.projects.map((p) => p.id)).toEqual(["np-b"]);
+    expect(rows.every((r) => r.unlinked)).toBe(true);
   });
 
-  it("lists a configured org with no sweep yet as empty", () => {
-    expect(knownNeonOrgs(["org-a"], [])).toEqual([{ orgId: "org-a", projects: [] }]);
+  it("acts through a project already in the org", () => {
+    const [fly] = buildUnlinkedFleet([dali, ultrasound], snaps, orgs);
+    expect(fly.projectId).toBe("p1");
+    expect(fly.neon).toBeNull();
   });
 
-  it("leaves out swept orgs no project uses anymore", () => {
-    expect(knownNeonOrgs([], [inv("org-a", ["x"])])).toEqual([]);
+  it("is empty when everything is linked", () => {
+    const all = info({ ...dali, flyAppNames: flyOrg.apps.map((a) => a.name), neonProjectIds: ["np-a", "np-b"] });
+    expect(buildUnlinkedFleet([all], snaps, orgs)).toEqual([]);
   });
 
-  it("skips empty snapshot payloads", () => {
-    expect(knownNeonOrgs(["org-a"], [null])).toEqual([{ orgId: "org-a", projects: [] }]);
+  it("skips an org with no swept inventory", () => {
+    expect(buildUnlinkedFleet([dali], new Map(), orgs)).toEqual([]);
   });
 });

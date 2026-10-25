@@ -24,8 +24,8 @@ import {
   type NeonConsumptionSample,
 } from "~/lib/infra/neon.server";
 import { monthStart } from "~/lib/infra/neon-cost";
-import { branchScopeId, SCOPE } from "~/lib/infra/neon-scope";
-import type { NeonInventory } from "~/lib/infra/types";
+import { branchScopeId, SCOPE } from "~/lib/infra/infra-scope";
+import type { FlyInventory, NeonInventory } from "~/lib/infra/types";
 
 type UsageRow = {
   provider: "fly" | "neon";
@@ -51,6 +51,36 @@ function neonDailyFrom(ctx: JobContext): Date {
   if (!fullRefresh) return new Date(today.getTime() - DAY_MS);
   const lastMonth = monthStart(ctx.now, -1);
   return lastMonth > earliest ? lastMonth : earliest;
+}
+
+type FlyOrgUsage = {
+  egress: { appName: string; egressBytes: number }[];
+  machineHours: { appName: string; machineHours: number }[];
+};
+
+// Prometheus is optional (token scope, outages); inventory still renders.
+async function loadFlyOrgUsage(token: string, org: string): Promise<FlyOrgUsage> {
+  const [egress, machineHours] = await Promise.all([
+    getFlyEgressByApp(token, org).catch(() => []),
+    getFlyMachineHoursByApp(token, org).catch(() => []),
+  ]);
+  return { egress, machineHours };
+}
+
+function flyUsageRows(usage: FlyOrgUsage, at: Date): UsageRow[] {
+  const row = (appName: string, metric: string, value: number): UsageRow => ({
+    provider: "fly",
+    scopeType: SCOPE.flyApp,
+    scopeId: appName,
+    scopeName: appName,
+    metric,
+    value,
+    at,
+  });
+  return [
+    ...usage.egress.map((e) => row(e.appName, "egress_bytes", e.egressBytes)),
+    ...usage.machineHours.map((m) => row(m.appName, "machine_hours_24h", m.machineHours)),
+  ];
 }
 
 type NeonOrgUsage = {
@@ -162,29 +192,41 @@ export async function runInfraSnapshot(ctx: JobContext): Promise<JobResult> {
 export async function refreshProjectInfra(projectId: string): Promise<void> {
   const creds = await getProjectInfraCreds(projectId);
   if (!creds?.infraEnabled) return;
-  if (creds.neonOrgId) await adoptNeonOrgSnapshot(projectId, creds.neonOrgId).catch(() => {});
+  if (creds.flyOrgSlug) await adoptOrgSnapshot(projectId, "fly", creds.flyOrgSlug).catch(() => {});
+  if (creds.neonOrgId) await adoptOrgSnapshot(projectId, "neon", creds.neonOrgId).catch(() => {});
   void sweepProjects([creds], { now: new Date(), lastSuccessAt: null, settings: {} }).catch((err) =>
     console.error("infra refresh failed", projectId, err instanceof Error ? err.message : err),
   );
 }
 
-export async function adoptNeonOrgSnapshot(projectId: string, orgId: string): Promise<boolean> {
+function snapshotOrg(provider: "fly" | "neon", payload: unknown): string | undefined {
+  if (!payload) return undefined;
+  return provider === "fly" ? (payload as FlyInventory).orgSlug : (payload as NeonInventory).orgId;
+}
+
+export async function adoptOrgSnapshot(
+  projectId: string,
+  provider: "fly" | "neon",
+  org: string,
+): Promise<boolean> {
   const snaps = await prisma.infraSnapshot.findMany({
-    where: { provider: "neon" },
+    where: { provider },
     orderBy: { fetchedAt: "desc" },
     select: { projectId: true, payload: true },
   });
   const own = snaps.find((s) => s.projectId === projectId);
-  if ((own?.payload as NeonInventory | null)?.orgId === orgId) return false;
-  const donor = snaps.find((s) => s.projectId !== projectId && (s.payload as NeonInventory | null)?.orgId === orgId);
+  if (snapshotOrg(provider, own?.payload) === org) return false;
+  const donor = snaps.find((s) => s.projectId !== projectId && snapshotOrg(provider, s.payload) === org);
   if (!donor) return false;
-  await writeSnapshot(projectId, "neon", donor.payload);
+  await writeSnapshot(projectId, provider, donor.payload);
   return true;
 }
 
 async function sweepProjects(projects: InfraProjectCreds[], ctx: JobContext): Promise<JobResult> {
   let providersSwept = 0;
   let usageCount = 0;
+  const flyInventories = new Map<string, Promise<FlyInventory>>();
+  const flyUsage = new Map<string, Promise<FlyOrgUsage>>();
   const neonInventories = new Map<string, Promise<NeonInventory>>();
   const neonUsage = new Map<string, Promise<NeonOrgUsage>>();
   const once = <T,>(cache: Map<string, Promise<T>>, key: string, load: () => Promise<T>) => {
@@ -195,42 +237,17 @@ async function sweepProjects(projects: InfraProjectCreds[], ctx: JobContext): Pr
   for (const p of projects) {
     // ── Fly ──
     if (p.flyOrgSlug && p.flyReadToken) {
+      const token = p.flyReadToken;
+      const org = p.flyOrgSlug;
       try {
-        const inv = await getFlyInventory(p.flyReadToken, p.flyOrgSlug);
+        const inv = await once(flyInventories, org, () => getFlyInventory(token, org));
         await writeSnapshot(p.projectId, "fly", inv);
         providersSwept++;
-        try {
-          const egress = await getFlyEgressByApp(p.flyReadToken, p.flyOrgSlug);
-          for (const e of egress) {
-            await upsertUsage(p.projectId, {
-              provider: "fly",
-              scopeType: SCOPE.flyApp,
-              scopeId: e.appName,
-              scopeName: e.appName,
-              metric: "egress_bytes",
-              value: e.egressBytes,
-              at: ctx.now,
-            });
-            usageCount++;
-          }
-        } catch {
-          // Prometheus is optional; inventory still rendered.
-        }
-        try {
-          for (const m of await getFlyMachineHoursByApp(p.flyReadToken, p.flyOrgSlug)) {
-            await upsertUsage(p.projectId, {
-              provider: "fly",
-              scopeType: SCOPE.flyApp,
-              scopeId: m.appName,
-              scopeName: m.appName,
-              metric: "machine_hours_24h",
-              value: m.machineHours,
-              at: ctx.now,
-            });
-            usageCount++;
-          }
-        } catch {
-          // Same as egress.
+        const usage = await once(flyUsage, org, () => loadFlyOrgUsage(token, org));
+        const linked = new Set(p.flyAppNames);
+        for (const r of flyUsageRows(usage, ctx.now).filter((r) => linked.has(r.scopeId))) {
+          await upsertUsage(p.projectId, r);
+          usageCount++;
         }
       } catch (err) {
         console.error(
