@@ -18,8 +18,10 @@ vi.mock("~/lib/infra/project-infra.server", () => ({
 }));
 vi.mock("~/lib/infra/fly.server", () => flyMock);
 vi.mock("~/lib/infra/neon.server", () => neonMock);
+const { vwMock } = vi.hoisted(() => ({ vwMock: { getVaultInventory: vi.fn(), vaultwardenConfigured: vi.fn() } }));
+vi.mock("~/lib/infra/vaultwarden.server", () => vwMock);
 
-import { adoptOrgSnapshot, refreshProjectInfra, runInfraSnapshot } from "../infra-snapshot.server";
+import { adoptOrgSnapshot, refreshProjectInfra, refreshVaultSnapshot, runInfraSnapshot } from "../infra-snapshot.server";
 
 const now = new Date("2026-10-25T12:00:00Z");
 const ctx = { now, lastSuccessAt: new Date("2026-10-25T11:00:00Z"), settings: {} };
@@ -316,5 +318,35 @@ describe("refreshProjectInfra Fly", () => {
     await refreshProjectInfra("p1");
     expect(prismaMock.infraSnapshot.create.mock.calls[0][0].data).toMatchObject({ projectId: "p1", provider: "fly" });
     await vi.waitFor(() => expect(flyMock.getFlyInventory).toHaveBeenCalledWith("tok", "dali-os"));
+  });
+});
+
+describe("Vaultwarden sweep", () => {
+  beforeEach(() => {
+    vwMock.vaultwardenConfigured.mockReturnValue(true);
+    vwMock.getVaultInventory.mockResolvedValue({ orgId: "org", groups: [], members: [], collections: [] });
+  });
+
+  it("caches the org once under a fixed id, even with no projects registered", async () => {
+    listCreds.mockResolvedValue([]);
+    expect(await runInfraSnapshot(ctx)).toEqual({ items: 1, note: "no registered projects" });
+    expect(prismaMock.infraSnapshot.create.mock.calls[0][0].data).toEqual({
+      projectId: "vaultwarden-org",
+      provider: "vaultwarden",
+      payload: { orgId: "org", groups: [], members: [], collections: [] },
+    });
+  });
+
+  it("skips Vaultwarden when it isn't configured", async () => {
+    vwMock.vaultwardenConfigured.mockReturnValue(false);
+    expect(await refreshVaultSnapshot()).toBe(false);
+    expect(vwMock.getVaultInventory).not.toHaveBeenCalled();
+  });
+
+  it("keeps sweeping Fly and Neon when Vaultwarden fails", async () => {
+    vwMock.getVaultInventory.mockRejectedValue(new Error("down"));
+    listCreds.mockResolvedValue([creds("p1", ["np-a"])]);
+    await runInfraSnapshot(ctx);
+    expect(neonMock.getNeonInventory).toHaveBeenCalled();
   });
 });

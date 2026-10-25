@@ -22,6 +22,9 @@ import {
 } from "~/lib/infra/guard.server";
 import * as fly from "~/lib/infra/fly.server";
 import * as neon from "~/lib/infra/neon.server";
+import * as vw from "~/lib/infra/vaultwarden.server";
+import { syncProjectVault } from "~/lib/infra/vault-sync.server";
+import { refreshVaultSnapshot } from "~/jobs/infra-snapshot.server";
 
 const Body = z.discriminatedUnion("intent", [
   z.object({
@@ -93,6 +96,22 @@ const Body = z.discriminatedUnion("intent", [
     projectId: z.string(),
     neonProjectId: z.string(),
     branchId: z.string(),
+  }),
+  z.object({
+    intent: z.literal("vault.sync"),
+    projectId: z.string(),
+    remove: z.array(z.string().email()).max(200).optional(),
+  }),
+  z.object({
+    intent: z.literal("vault.member"),
+    projectId: z.string(),
+    memberId: z.string(),
+    action: z.enum(["revoke", "restore", "reinvite"]),
+  }),
+  z.object({
+    intent: z.literal("vault.collections"),
+    projectId: z.string(),
+    collectionIds: z.array(z.string()).max(200),
   }),
   z.object({
     intent: z.literal("reap"),
@@ -269,6 +288,40 @@ export async function action({ request }: Route.ActionArgs) {
           kind: "branch",
           neonProjectId: parsed.neonProjectId,
         });
+        return Response.json({ ok: true });
+      }
+      case "vault.sync": {
+        const result = await syncProjectVault(parsed.projectId, { remove: parsed.remove });
+        await audit(auth.user.sub, "infra.vault.sync", creds.vaultwardenGroupId, request, {
+          projectId: parsed.projectId,
+          removedEmails: parsed.remove ?? [],
+          ...result,
+        });
+        return Response.json({ ok: true, ...result });
+      }
+      case "vault.member":
+      case "vault.collections": {
+        const inv = await vw.getVaultInventory();
+        const group = inv.groups.find((g) => g.id === creds.vaultwardenGroupId);
+        if (!group) return badReq("No Vaultwarden group is linked to this project");
+        if (parsed.intent === "vault.member") {
+          // Only members of this project's group, so a project row can't act org-wide.
+          if (!group.memberIds.includes(parsed.memberId)) return badReq("Not a member of this project's group");
+          await vw.memberAction(parsed.memberId, parsed.action);
+          await audit(auth.user.sub, "infra.vault.member", parsed.memberId, request, {
+            projectId: parsed.projectId,
+            action: parsed.action,
+          });
+        } else {
+          const known = new Set(inv.collections.map((c) => c.id));
+          if (parsed.collectionIds.some((id) => !known.has(id))) return badReq("Unknown collection");
+          await vw.setGroupCollections(group, parsed.collectionIds);
+          await audit(auth.user.sub, "infra.vault.collections", group.id, request, {
+            projectId: parsed.projectId,
+            collectionIds: parsed.collectionIds,
+          });
+        }
+        await refreshVaultSnapshot().catch(() => {});
         return Response.json({ ok: true });
       }
       case "reap": {

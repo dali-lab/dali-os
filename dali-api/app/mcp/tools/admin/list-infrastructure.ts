@@ -12,7 +12,8 @@ export const LIST_INFRASTRUCTURE_TOOL = {
   name: "list_infrastructure",
   description:
     "Read-only view of the Fly.io + Neon fleet for all projects. " +
-    "Returns per-project app/machine counts, Neon project/endpoint states, and the Neon plan with " +
+    "Returns per-project app/machine counts, Neon project/endpoint states, a Vaultwarden group summary " +
+    "(members, not staffed, awaiting confirm, without 2FA), and the Neon plan with " +
     "estimated month-to-date and last-month dollars (from published rates; the invoice is authoritative). " +
     "Requires the infra-dashboard feature flag and Core access.",
   inputSchema: {
@@ -56,6 +57,17 @@ export async function runListInfrastructure(ctx: McpCtx) {
       neonPlan: p.neonPlan,
       neonCostEstimate: p.neonCost
         ? { thisMonthUsd: round2(p.neonCost.thisMonth), lastMonthUsd: p.neonCost.lastMonth == null ? null : round2(p.neonCost.lastMonth) }
+        : null,
+      vaultwarden: p.vault
+        ? {
+            group: p.vault.group.name,
+            members: p.vault.members.length,
+            notStaffed: p.vault.members.filter((m) => !m.staffed).length,
+            staffedMissing: p.vault.missing.length,
+            awaitingConfirm: p.vault.awaitingConfirm,
+            without2fa: p.vault.members.filter((m) => !m.twoFactorEnabled).length,
+            collections: p.vault.collections.length,
+          }
         : null,
       flyApps: (p.fly?.apps ?? []).map((app) => ({
         name: app.name,

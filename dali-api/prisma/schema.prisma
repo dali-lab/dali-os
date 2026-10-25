@@ -3936,6 +3936,8 @@ model Project {
   flyAppNames      String[] @default([])
   neonOrgId        String? // Neon org id (org-<name>-<digits>), passed as ?org_id=
   neonProjectIds   String[] @default([])
+  // The project's group in the lab's Vaultwarden org (one shared org, env).
+  vaultwardenGroupId String?
   flyReadTokenEnc  String? // read-only Fly token (drives the sweep), encrypted
   flyWriteTokenEnc String? // write Fly token (gates console actions), encrypted
   infraEnabled     Boolean @default(true) // off keeps config but skips the sweep

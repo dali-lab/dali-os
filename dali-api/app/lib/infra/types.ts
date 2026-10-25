@@ -91,6 +91,45 @@ export type NeonInventory = {
   projects: NeonProject[];
 };
 
+// ── Vaultwarden ──────────────────────────────────────────────────────────────
+
+/** -1 revoked, 0 invited, 1 accepted (waiting to be confirmed), 2 confirmed. */
+export type VaultMemberStatus = -1 | 0 | 1 | 2;
+
+export type VaultMember = {
+  id: string;
+  email: string;
+  name: string | null;
+  status: VaultMemberStatus;
+  /** 0 owner, 1 admin, 2 user, 3 manager. */
+  type: number;
+  twoFactorEnabled: boolean;
+};
+
+export type VaultGroup = {
+  id: string;
+  name: string;
+  externalId: string | null;
+  memberIds: string[];
+  collectionIds: string[];
+};
+
+export type VaultCollection = {
+  id: string;
+  /** Collection names are encrypted with the org key; externalId is the only plaintext label. */
+  externalId: string | null;
+  itemCount: number;
+  /** Item views and copies in the last 30 days; null when org events are off. */
+  recentUses: number | null;
+};
+
+export type VaultInventory = {
+  orgId: string;
+  groups: VaultGroup[];
+  members: VaultMember[];
+  collections: VaultCollection[];
+};
+
 // ── Snapshot payloads (stored in InfraSnapshot.payload) ──────────────────────
 
 export type FlySnapshotPayload = FlyInventory;

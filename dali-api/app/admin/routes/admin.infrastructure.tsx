@@ -47,6 +47,8 @@ import { useDialog } from "~/components/ui/dialog";
 import { TermFilter } from "~/components/TermFilter";
 import { resolveTermFilter } from "~/lib/terms";
 import { InfraConfigFields, withOwnOrg } from "~/components/infra/InfraConfigFields";
+import { VaultSection } from "~/components/infra/VaultSection";
+import { vaultwardenConfigured, vaultwardenSyncConfigured } from "~/lib/infra/vaultwarden.server";
 import {
   ColWidths,
   consoleUrl,
@@ -77,7 +79,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   }
 
   const { terms, selected, termId, isAll } = await resolveTermFilter(request);
-  const { projects, unlinked, knownOrgs, lastSweep, protectedFly, protectedNeon } = await loadFleet({
+  const { projects, unlinked, unlinkedVaultGroups, knownOrgs, lastSweep, protectedFly, protectedNeon } = await loadFleet({
     all: true,
     termId: isAll ? null : termId,
   });
@@ -93,6 +95,9 @@ export async function loader({ request }: Route.LoaderArgs) {
     protectedNeon,
     projects,
     unlinked,
+    unlinkedVaultGroups,
+    vaultConfigured: vaultwardenConfigured(),
+    vaultSyncConfigured: vaultwardenSyncConfigured(),
     knownOrgs,
     terms,
     selectedTerm: selected,
@@ -237,6 +242,8 @@ function ConfigWarnings({ data }: { data: Data }) {
     warnings.push("INFRA_SECRET_KEY is not set, so Fly tokens can't be stored and Fly actions are unavailable.");
   if (!data.neonConfigured)
     warnings.push("INFRA_NEON_API_KEY is not set, so Neon inventory, usage, and actions are unavailable.");
+  if (data.vaultConfigured && !data.vaultSyncConfigured)
+    warnings.push("VAULTWARDEN_ORG_CLIENT_ID/SECRET are not set, so Vaultwarden groups can be viewed but not synced.");
   if (data.projects.length > 0 && data.projects.every((p) => !p.configured))
     warnings.push("None of these projects has infra configured yet. Open one to set it up.");
   if (warnings.length === 0) return null;
@@ -256,7 +263,7 @@ function ConfigWarnings({ data }: { data: Data }) {
 
 function Overview({ data, infra }: { data: Data; infra: InfraApi }) {
   const { panel } = useOsChrome();
-  if (data.projects.length === 0 && data.unlinked.length === 0) {
+  if (data.projects.length === 0 && data.unlinked.length === 0 && data.unlinkedVaultGroups.length === 0) {
     return (
       <div className={panel}>
         <EmptyState>No projects in this term.</EmptyState>
@@ -272,17 +279,20 @@ function Overview({ data, infra }: { data: Data; infra: InfraApi }) {
           ))}
         </ul>
       )}
-      {data.unlinked.length > 0 && (
+      {(data.unlinked.length > 0 || data.unlinkedVaultGroups.length > 0) && (
         <div className="flex flex-col gap-2">
           <h3 className="text-xs font-semibold text-os-muted">Not linked to a project</h3>
           <p className="text-xs text-os-grey">
             Apps and databases in a shared org that no project has claimed. Link them from a project's config.
           </p>
-          <ul className={panel}>
-            {data.unlinked.map((p, i) => (
-              <ProjectCard key={p.name} project={p} data={data} infra={infra} first={i === 0} />
-            ))}
-          </ul>
+          {data.unlinked.length > 0 && (
+            <ul className={panel}>
+              {data.unlinked.map((p, i) => (
+                <ProjectCard key={p.name} project={p} data={data} infra={infra} first={i === 0} />
+              ))}
+            </ul>
+          )}
+          <UnlinkedVaultGroups groups={data.unlinkedVaultGroups} />
         </div>
       )}
     </div>
@@ -377,6 +387,7 @@ function ProjectCard({
           </div>
           <FlySection project={p} data={data} infra={infra} />
           <NeonSection project={p} data={data} infra={infra} />
+          {p.vault && <VaultAdmin project={p} infra={infra} />}
         </div>
       )}
     </li>
@@ -420,6 +431,7 @@ function ConfigEditor({ project: p, data, startOpen = false }: { project: Projec
         knownOrgs={{
           fly: withOwnOrg(data.knownOrgs.fly, p.flyOrgSlug, p.flyOrgApps),
           neon: withOwnOrg(data.knownOrgs.neon, p.neonOrgId, p.neonOrgProjects),
+          vaultGroups: data.knownOrgs.vaultGroups,
         }}
       />
       {fetcher.data?.error && <p className="text-xs text-destructive">{fetcher.data.error}</p>}
@@ -441,6 +453,62 @@ function ConfigEditor({ project: p, data, startOpen = false }: { project: Projec
         )}
       </div>
     </fetcher.Form>
+  );
+}
+
+// ── Vaultwarden ───────────────────────────────────────────────────────────────
+
+function VaultAdmin({ project: p, infra }: { project: ProjectFleet; infra: InfraApi }) {
+  const dialog = useDialog();
+  if (!p.vault) return null;
+  const post = (body: Record<string, unknown>) => infra.post({ projectId: p.projectId, ...body });
+  return (
+    <VaultSection
+      vault={p.vault}
+      membersUrl={p.vaultMembersUrl}
+      actions={{
+        busy: infra.busy,
+        sync: () => post({ intent: "vault.sync" }),
+        remove: async (email) => {
+          const ok = await dialog.confirm({
+            title: `Remove ${email} from ${p.vault!.group.name}?`,
+            description: "They lose access to this group's collections. Their Vaultwarden account and other groups stay.",
+            confirmLabel: "Remove",
+            tone: "destructive",
+          });
+          if (ok) post({ intent: "vault.sync", remove: [email] });
+        },
+        member: async (memberId, action) => {
+          if (action === "revoke") {
+            const ok = await dialog.confirm({
+              title: "Revoke this member?",
+              description: "Revoking removes their access to the whole org until restored.",
+              confirmLabel: "Revoke",
+              tone: "destructive",
+            });
+            if (!ok) return;
+          }
+          post({ intent: "vault.member", memberId, action });
+        },
+      }}
+    />
+  );
+}
+
+function UnlinkedVaultGroups({ groups }: { groups: { id: string; name: string; memberCount: number }[] }) {
+  const { panel } = useOsChrome();
+  if (groups.length === 0) return null;
+  return (
+    <div className={cn(panel, "px-6 py-4")}>
+      <p className="mb-2 text-sm font-semibold text-foreground">Vaultwarden groups</p>
+      <ul className="flex flex-col gap-1 text-sm text-os-grey">
+        {groups.map((g) => (
+          <li key={g.id}>
+            {g.name} · {plural(g.memberCount, "member")}
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 

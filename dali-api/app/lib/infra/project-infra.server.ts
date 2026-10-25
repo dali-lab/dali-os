@@ -14,6 +14,7 @@ const CONFIG_SELECT = {
   flyAppNames: true,
   neonOrgId: true,
   neonProjectIds: true,
+  vaultwardenGroupId: true,
   flyReadTokenEnc: true,
   flyWriteTokenEnc: true,
   infraEnabled: true,
@@ -26,6 +27,7 @@ type ConfigRow = {
   flyAppNames: string[];
   neonOrgId: string | null;
   neonProjectIds: string[];
+  vaultwardenGroupId: string | null;
   flyReadTokenEnc: string | null;
   flyWriteTokenEnc: string | null;
   infraEnabled: boolean;
@@ -40,6 +42,7 @@ export type InfraProjectCreds = {
   flyAppNames: string[];
   neonOrgId: string | null;
   neonProjectIds: string[];
+  vaultwardenGroupId: string | null;
   flyReadToken: string | null;
   flyWriteToken: string | null;
   infraEnabled: boolean;
@@ -53,6 +56,7 @@ function toCreds(r: ConfigRow): InfraProjectCreds {
     flyAppNames: r.flyAppNames,
     neonOrgId: r.neonOrgId,
     neonProjectIds: r.neonProjectIds,
+    vaultwardenGroupId: r.vaultwardenGroupId,
     flyReadToken: r.flyReadTokenEnc ? decryptSecret(r.flyReadTokenEnc) : null,
     flyWriteToken: r.flyWriteTokenEnc ? decryptSecret(r.flyWriteTokenEnc) : null,
     infraEnabled: r.infraEnabled,
@@ -84,13 +88,19 @@ export type InfraProjectInfo = {
   flyAppNames: string[];
   neonOrgId: string | null;
   neonProjectIds: string[];
+  vaultwardenGroupId: string | null;
   infraEnabled: boolean;
   hasFlyReadToken: boolean;
   hasFlyWriteToken: boolean;
 };
 
 const CONFIGURED = {
-  OR: [{ flyOrgSlug: { not: null } }, { neonOrgId: { not: null } }, { flyReadTokenEnc: { not: null } }],
+  OR: [
+    { flyOrgSlug: { not: null } },
+    { neonOrgId: { not: null } },
+    { flyReadTokenEnc: { not: null } },
+    { vaultwardenGroupId: { not: null } },
+  ],
 };
 
 /**
@@ -126,6 +136,7 @@ function toInfo(r: ConfigRow): InfraProjectInfo {
     flyAppNames: r.flyAppNames,
     neonOrgId: r.neonOrgId,
     neonProjectIds: r.neonProjectIds,
+    vaultwardenGroupId: r.vaultwardenGroupId,
     infraEnabled: r.infraEnabled,
     hasFlyReadToken: !!r.flyReadTokenEnc,
     hasFlyWriteToken: !!r.flyWriteTokenEnc,
@@ -136,8 +147,9 @@ function toInfo(r: ConfigRow): InfraProjectInfo {
 export function hasInfraConfig(p: {
   flyOrgSlug: string | null;
   neonOrgId: string | null;
+  vaultwardenGroupId?: string | null;
 }): boolean {
-  return Boolean(p.flyOrgSlug || p.neonOrgId);
+  return Boolean(p.flyOrgSlug || p.neonOrgId || p.vaultwardenGroupId);
 }
 
 type InfraConfigData = {
@@ -145,6 +157,7 @@ type InfraConfigData = {
   flyAppNames?: string[];
   neonOrgId?: string | null;
   neonProjectIds?: string[];
+  vaultwardenGroupId?: string | null;
   infraEnabled?: boolean;
   flyReadTokenEnc?: string;
   flyWriteTokenEnc?: string;
@@ -162,6 +175,7 @@ export function buildInfraConfigUpdate(input: {
   flyAppNames?: string[];
   neonOrgId?: string | null;
   neonProjectIds?: string[];
+  vaultwardenGroupId?: string | null;
   infraEnabled?: boolean;
   flyReadToken?: string;
   flyWriteToken?: string;
@@ -171,6 +185,7 @@ export function buildInfraConfigUpdate(input: {
   if (input.flyAppNames !== undefined) data.flyAppNames = cleanIds(input.flyAppNames);
   if (input.neonOrgId !== undefined) data.neonOrgId = input.neonOrgId || null;
   if (input.neonProjectIds !== undefined) data.neonProjectIds = cleanIds(input.neonProjectIds);
+  if (input.vaultwardenGroupId !== undefined) data.vaultwardenGroupId = input.vaultwardenGroupId || null;
   if (input.infraEnabled !== undefined) data.infraEnabled = input.infraEnabled;
   if (input.flyReadToken) data.flyReadTokenEnc = encryptSecret(input.flyReadToken);
   if (input.flyWriteToken) data.flyWriteTokenEnc = encryptSecret(input.flyWriteToken);
@@ -184,6 +199,7 @@ export function infraConfigFromForm(form: FormData): Parameters<typeof buildInfr
     flyAppNames: form.getAll("flyAppNames").map(String),
     neonOrgId: str("neonOrgId"),
     neonProjectIds: form.getAll("neonProjectIds").map(String),
+    ...(form.has("vaultwardenGroupId") ? { vaultwardenGroupId: str("vaultwardenGroupId") } : {}),
     infraEnabled: form.get("infraEnabled") != null,
     flyReadToken: str("flyReadToken") || undefined,
     flyWriteToken: str("flyWriteToken") || undefined,
