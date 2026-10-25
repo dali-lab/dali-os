@@ -6,14 +6,14 @@ import { redirectToLogin } from "~/lib/login-next";
 import { isAdmin, isCore } from "~/lib/roles";
 import { prisma } from "~/lib/db";
 import { cn } from "~/lib/cn";
-import { fullName } from "~/lib/display";
 import { listSenderIntegrations } from "~/lib/gmail-integration";
 import { EMAIL_PURPOSE_KEYS, EMAIL_PURPOSES } from "~/lib/email-identities";
 import { ADMIN_OVERVIEW } from "~/admin/adminNav";
 import { loadAdminAttention } from "~/admin/lib/attention.server";
 import { StatusDot, UsageGauge, type Tone } from "~/admin/components/console-ui";
 import { useOsChrome } from "~/components/os-chrome";
-import { Avatar } from "~/components/ui/Avatar";
+import { AuditActorAvatar, AuditActorName } from "~/admin/components/AuditActor";
+import { loadPeopleById } from "~/admin/lib/people.server";
 
 export const meta: Route.MetaFunction = () => [{ title: "Admin · DALI OS" }];
 
@@ -89,22 +89,16 @@ export async function loader({ request }: Route.LoaderArgs) {
   }
 
   // Second hop: today's per-sender usage + activity-feed display names.
-  const [usageRows, auditUsers] = await Promise.all([
+  const [usageRows, auditById] = await Promise.all([
     connectedIds.length
       ? prisma.senderDailyUsage.findMany({
           where: { senderId: { in: connectedIds }, day: dayUtc },
           select: { senderId: true, count: true },
         })
       : Promise.resolve([]),
-    auditUserIds.size
-      ? prisma.user.findMany({
-          where: { id: { in: [...auditUserIds] } },
-          select: { id: true, firstName: true, lastName: true, daliEmail: true },
-        })
-      : Promise.resolve([]),
+    loadPeopleById(prisma, auditUserIds),
   ]);
   const usageById = new Map(usageRows.map((u) => [u.senderId, u.count]));
-  const auditById = new Map(auditUsers.map((u) => [u.id, u]));
 
   const senders = EMAIL_PURPOSE_KEYS.map((purpose) => {
     const row = byPurpose.get(purpose);
@@ -117,16 +111,12 @@ export async function loader({ request }: Route.LoaderArgs) {
     };
   });
 
-  const nameOf = (id: string | null) => {
-    if (!id) return null;
-    const u = auditById.get(id);
-    return u ? fullName(u) || u.daliEmail || null : null;
-  };
   const recent = auditRows.map((e) => ({
     id: e.id,
     action: e.action,
-    actor: nameOf(e.userId),
-    target: nameOf(e.targetId),
+    actor: e.userId ? (auditById.get(e.userId) ?? null) : null,
+    actorId: e.userId,
+    target: e.targetId ? (auditById.get(e.targetId)?.name ?? null) : null,
     createdAt: e.createdAt.toISOString(),
   }));
 
@@ -324,10 +314,10 @@ export default function AdminOverview() {
             <ol className={cn(panel, "flex flex-col p-3")}>
               {recent.map((e) => (
                 <li key={e.id} className="flex items-start gap-3 rounded-os-item px-3 py-3">
-                  <Avatar name={e.actor ?? "System"} size="sm" />
+                  <AuditActorAvatar actor={e.actor} actorId={e.actorId} />
                   <div className="min-w-0 flex-1 text-sm leading-snug">
                     <p className="text-os-grey">
-                      <span className="font-semibold text-foreground">{e.actor ?? "System"}</span>{" "}
+                      <AuditActorName actor={e.actor} actorId={e.actorId} />{" "}
                       <span className="font-mono text-xs">{e.action}</span>
                       {e.target && (
                         <>
