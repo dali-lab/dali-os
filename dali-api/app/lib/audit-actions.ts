@@ -173,6 +173,8 @@ export const AUDIT_ACTIONS = [
   "announcement.cancel",
   "outbound.retry",
   "outbound.cancel",
+  // One row per "Retry all failed": metadata.count re-queued, metadata.search the Outbox search it matched.
+  "outbound.retry_all",
   "confidentiality.sign",
   "signing.sign",
   "signing.publish",

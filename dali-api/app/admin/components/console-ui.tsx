@@ -4,6 +4,7 @@
 // green/amber/red dot means the same thing everywhere. Pure client components
 // (no server imports); everything is DALI theme tokens, so light + dark both
 // work.
+import type { ReactNode } from "react";
 import { cn } from "~/lib/cn";
 
 export type Tone = "ok" | "warn" | "bad" | "idle";
@@ -103,6 +104,69 @@ export function Sparkline({
           title={String(v)}
         />
       ))}
+    </div>
+  );
+}
+
+/** The status pill: one neutral shape, with the state carried by its dot. */
+export function Pill({ tone, children, className }: { tone?: Tone; children: ReactNode; className?: string }) {
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1.5 whitespace-nowrap rounded-full bg-os-container/70 px-2.5 py-0.5 text-xs font-medium text-foreground",
+        className,
+      )}
+    >
+      {tone && <StatusDot tone={tone} />}
+      {children}
+    </span>
+  );
+}
+
+/** A headline number with its label above it. */
+export function Figure({
+  label,
+  value,
+  detail,
+  size = "md",
+  className,
+}: {
+  label: ReactNode;
+  value: ReactNode;
+  detail?: ReactNode;
+  size?: "lg" | "md";
+  className?: string;
+}) {
+  return (
+    <div className={className}>
+      <p className="text-xs font-semibold text-os-muted">{label}</p>
+      <p
+        className={cn(
+          "mt-1.5 font-heading font-semibold tabular-nums text-foreground",
+          size === "lg" ? "text-4xl" : "text-2xl",
+        )}
+      >
+        {value}
+      </p>
+      {detail && <p className="mt-1 text-xs text-os-grey">{detail}</p>}
+    </div>
+  );
+}
+
+/** Table dress for the admin pages' full-width tables. */
+export const adminTable = {
+  wrap: "rounded-os-card bg-os-card overflow-x-auto",
+  th: "whitespace-nowrap px-4 py-3 text-left text-xs font-semibold text-os-muted first:pl-6 last:pr-6",
+  td: "px-4 py-3.5 text-sm first:pl-6 last:pr-6",
+  row: "border-t border-os-container/70",
+};
+
+/** An empty list or table, said plainly. */
+export function EmptyState({ title, children }: { title?: ReactNode; children?: ReactNode }) {
+  return (
+    <div className="px-6 py-12 text-center">
+      {title && <p className="font-semibold text-foreground">{title}</p>}
+      {children && <p className={cn("text-sm text-os-muted", title ? "mt-1" : undefined)}>{children}</p>}
     </div>
   );
 }

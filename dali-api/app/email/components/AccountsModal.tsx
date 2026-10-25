@@ -131,7 +131,7 @@ export function AccountsModal({
             <p className={heading}>Shared inboxes</p>
             {data.isAdmin && (
               <Link
-                to="/admin/email-senders#inbox-categories"
+                to="/admin/messaging/senders#inbox-categories"
                 className="ml-auto inline-flex items-center gap-1 text-xs text-os-muted hover:text-foreground"
               >
                 <Settings2 className="h-3.5 w-3.5" />

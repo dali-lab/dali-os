@@ -37,7 +37,7 @@ import {
   UsersRound,
   type LucideIcon,
 } from "lucide-react";
-import { ADMIN_CLUSTERS } from "~/admin/adminNav";
+import { ADMIN_OVERVIEW, ADMIN_SECTIONS, type AdminAlertKey } from "~/admin/adminNav";
 import { CORE_CLUSTERS } from "~/core/coreNav";
 import { clusterEntryPath } from "~/lib/cluster-nav";
 import type { FeatureFlagMap } from "~/lib/feature-flags";
@@ -46,7 +46,7 @@ import type { FeatureFlagMap } from "~/lib/feature-flags";
 // vertical sub-tab children. Consolidates what used to be per-area *Pills.tsx
 // factories and the inline pill arrays. The pinned trio (Home, My Tasks,
 // Calendar) is rendered separately in Layout and is intentionally NOT an area
-// here. Admin's children derive from ADMIN_CLUSTERS so its structure has one
+// here. Admin's children derive from ADMIN_SECTIONS so its structure has one
 // owner (app/admin/adminNav.tsx), not two.
 
 // The role flags the layout already resolves and hands to <Layout>. Gates are
@@ -78,6 +78,8 @@ export type SubTab = {
   icon: LucideIcon;
   // Omitted => always visible to anyone who can see the area.
   gate?: (r: RoleFlags) => boolean;
+  // Shows the matching count from useAdminAttention() beside the label.
+  alert?: AdminAlertKey;
 };
 
 export type NavArea = {
@@ -90,15 +92,16 @@ export type NavArea = {
   subtabs: SubTab[];
 };
 
-// Admin's system-level clusters as sub-tabs, derived (not duplicated) from
-// ADMIN_CLUSTERS. Finance carries adminOnly; System & Insights is Core-visible.
+// Admin's sections as sub-tabs, derived (not duplicated) from ADMIN_SECTIONS.
+// Payroll is Admin-only; every other section is Core-visible.
 const adminSubtabs: SubTab[] = [
-  { label: "Hub", href: "/admin", icon: LayoutGrid },
-  ...ADMIN_CLUSTERS.map((c) => ({
-    label: c.label,
-    href: c.hubPath ?? c.sections[0].to,
-    icon: c.icon,
-    gate: c.adminOnly ? (r: RoleFlags) => r.isAdmin : undefined,
+  { label: ADMIN_OVERVIEW.label, href: ADMIN_OVERVIEW.path, icon: ADMIN_OVERVIEW.icon },
+  ...ADMIN_SECTIONS.map((s) => ({
+    label: s.label,
+    href: s.path,
+    icon: s.icon,
+    alert: s.alert,
+    gate: s.adminOnly ? (r: RoleFlags) => r.isAdmin : undefined,
   })),
 ];
 
@@ -200,7 +203,7 @@ export const NAV_AREAS: NavArea[] = [
 // ---------------------------------------------------------------------------
 
 // Core's clustered tools as sub-tabs, derived (not duplicated) from
-// CORE_CLUSTERS, exactly as Admin derives its own from ADMIN_CLUSTERS.
+// CORE_CLUSTERS, exactly as Admin derives its own from ADMIN_SECTIONS.
 const coreClusterSubtabs: SubTab[] = CORE_CLUSTERS.map((c) => ({
   label: c.label,
   href: clusterEntryPath(c),

@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { useFetcher, useRevalidator } from "react-router";
-import { Upload, FileText, AlertTriangle, CheckCircle2 } from "lucide-react";
+import { FileSpreadsheet, FileText, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { Modal, ModalHeader, ModalFooter } from "~/components/Modal";
-import { buttonClasses } from "~/components/ui/Button";
+import { cn } from "~/lib/cn";
+import { useOsChrome } from "~/components/os-chrome";
 import { fileMatchesAccept, MAX_UPLOAD_LABEL } from "~/lib/file-validation";
 import type {
   PayrollUploadResult,
@@ -20,6 +21,7 @@ export function PayrollUploadModal({
   open: boolean;
   onClose: () => void;
 }) {
+  const { actionBtnPrimary } = useOsChrome();
   const fetcher = useFetcher<Action>();
   const revalidator = useRevalidator();
   const formRef = useRef<HTMLFormElement>(null);
@@ -71,8 +73,8 @@ export function PayrollUploadModal({
     <Modal open={open} onClose={onClose} labelledBy={TITLE_ID} disableEscape={submitting}>
       <ModalHeader
         titleId={TITLE_ID}
-        title="Upload timesheet CSV"
-        subtitle="TimesheetX export — pay periods are detected from the file."
+        title="Import TimesheetX export"
+        subtitle="Pay periods are detected from the file."
         onClose={onClose}
       />
 
@@ -83,40 +85,35 @@ export function PayrollUploadModal({
         encType="multipart/form-data"
         onSubmit={handleSubmit}
       >
-        <label className="flex flex-col gap-1.5">
-          <span className="text-xs font-semibold text-foreground flex items-center gap-1.5">
-            <Upload className="w-3.5 h-3.5" aria-hidden /> Timesheet CSV (required)
-          </span>
-          <input
-            type="file"
-            name="timesheet"
-            accept=".csv"
-            required
-            className="text-sm text-muted-foreground file:mr-3 file:rounded-md file:border-0 file:bg-muted file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-foreground hover:file:bg-border"
-          />
-        </label>
+        <p className="text-sm text-os-grey">
+          Entries are matched to staffing by NetID and job.
+        </p>
+        <DropZone
+          name="timesheet"
+          required
+          label="Timesheet CSV"
+          hint="Required"
+          icon={<FileSpreadsheet className="h-6 w-6 text-os-accent" aria-hidden />}
+          className="mt-4"
+        />
+        <DropZone
+          name="notes"
+          label="Notes CSV"
+          hint="Optional"
+          icon={<FileText className="h-5 w-5 text-os-grey" aria-hidden />}
+          className="mt-3"
+          compact
+        />
 
-        <label className="mt-4 flex flex-col gap-1.5">
-          <span className="text-xs font-semibold text-foreground flex items-center gap-1.5">
-            <FileText className="w-3.5 h-3.5" aria-hidden /> Notes CSV (optional)
-          </span>
-          <input
-            type="file"
-            name="notes"
-            accept=".csv"
-            className="text-sm text-muted-foreground file:mr-3 file:rounded-md file:border-0 file:bg-muted file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-foreground hover:file:bg-border"
-          />
-        </label>
-
-        <p className="mt-2 text-[11px] text-muted-foreground">
-          {MAX_UPLOAD_LABEL} max. Ingest replaces each pay period — re-uploading
-          the same file is safe.
+        <p className="mt-3 text-xs text-os-muted">
+          {MAX_UPLOAD_LABEL} max. Ingest replaces each pay period, so uploading
+          the same file again is safe.
         </p>
 
         {(clientError || serverError) && (
           <div
             role="alert"
-            className="mt-4 flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-xs text-destructive"
+            className="mt-4 flex items-start gap-2 rounded-os-item bg-destructive/10 px-3 py-2 text-xs text-destructive"
           >
             <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" aria-hidden />
             <span>{clientError ?? serverError}</span>
@@ -129,7 +126,7 @@ export function PayrollUploadModal({
           <button
             type="submit"
             disabled={submitting}
-            className={buttonClasses("primary", "sm")}
+            className={cn(actionBtnPrimary, "disabled:opacity-50")}
           >
             {submitting ? "Uploading…" : "Upload"}
           </button>
@@ -147,15 +144,15 @@ function ImportSummary({ result }: { result: PayrollUploadResult }) {
   const rowErrors = timesheet.rowErrors.length + (notes?.rowErrors.length ?? 0);
 
   return (
-    <div className="mt-4 rounded-md bg-muted px-3 py-2.5 text-xs text-foreground">
+    <div className="mt-4 rounded-os-item bg-os-well px-3.5 py-3 text-xs text-foreground">
       <div className="flex items-center gap-1.5 font-semibold text-os-green">
         <CheckCircle2 className="w-4 h-4" aria-hidden /> Import complete
       </div>
-      <ul className="mt-1.5 space-y-0.5 text-muted-foreground">
+      <ul className="mt-1.5 space-y-0.5 text-os-grey">
         <li>
           {timesheet.periods.length} pay period
           {timesheet.periods.length === 1 ? "" : "s"} · {created} created ·{" "}
-          {skipped} duplicate-skipped · {deleted} deleted-prior
+          {skipped} duplicates skipped · {deleted} prior rows replaced
         </li>
         {notes && (
           <li>
@@ -179,6 +176,57 @@ function ImportSummary({ result }: { result: PayrollUploadResult }) {
           </li>
         )}
       </ul>
+    </div>
+  );
+}
+
+// The file input covers the whole zone (transparent), so both clicking and
+// dropping a file land on the native input.
+function DropZone({
+  name,
+  label,
+  hint,
+  icon,
+  required,
+  compact,
+  className,
+}: {
+  name: string;
+  label: string;
+  hint: string;
+  icon: React.ReactNode;
+  required?: boolean;
+  compact?: boolean;
+  className?: string;
+}) {
+  const [fileName, setFileName] = useState<string | null>(null);
+  const [over, setOver] = useState(false);
+  return (
+    <div
+      className={cn(
+        "relative flex flex-col items-center gap-1.5 rounded-os-item border border-dashed bg-os-well px-4 text-center text-sm transition-colors focus-within:border-os-accent",
+        compact ? "py-4" : "py-8",
+        over ? "border-os-accent text-foreground" : "border-os-container-hi text-os-grey hover:border-os-accent hover:text-foreground",
+        className,
+      )}
+    >
+      {icon}
+      <span className="font-semibold text-foreground">
+        {label} <span className="font-normal text-os-muted">({hint.toLowerCase()})</span>
+      </span>
+      <span className="text-xs">{fileName ?? "Choose a CSV or drop it here"}</span>
+      <input
+        type="file"
+        name={name}
+        accept=".csv"
+        required={required}
+        aria-label={`${label} (${hint.toLowerCase()})`}
+        onChange={(e) => setFileName(e.target.files?.[0]?.name ?? null)}
+        onDragEnter={() => setOver(true)}
+        onDragLeave={() => setOver(false)}
+        onDrop={() => setOver(false)}
+        className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+      />
     </div>
   );
 }

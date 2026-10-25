@@ -136,7 +136,7 @@ const MODELS: Record<
       (await db.activity.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } })).map(
         (r) => ({ id: r.id, label: r.name }),
       ),
-    href: (id) => `/admin/activities/${id}`,
+    href: (id) => `/admin/onboarding/${id}`,
   },
   room: {
     load: async (db, ids) =>

@@ -69,6 +69,7 @@ import {
 } from '~/lib/nav-areas'
 import { useFeatureFlag } from '~/components/FeatureFlags'
 import { UnreadBadge } from '~/email/components/UnreadBadge'
+import { useAdminAttention } from '~/admin/useAdminAttention'
 import { useEmailUnread } from '~/email/lib/use-email-unread'
 
 interface LayoutOSProps {
@@ -334,6 +335,7 @@ export function LayoutOS({
   const pinned = pinnedNavItems(roleFlags, navFlags)
   const home = homeNavItem(roleFlags)
   const activeArea = routeArea ?? areas.find((a) => a.key === lastAreaKey) ?? areas[0]
+  const adminAttention = useAdminAttention(activeArea?.key === 'admin', path)
   const activeSubtabs = activeArea ? visibleSubtabs(activeArea, roleFlags) : []
   const activeHref = activeArea ? activeSubtabHref(activeArea, path) : undefined
   // Nothing to switch to, so the area's sub-tabs join the pinned list.
@@ -697,6 +699,14 @@ export function LayoutOS({
                         >
                           <t.icon className="h-5 w-5 flex-shrink-0 opacity-85" />
                           <span className="truncate">{t.label}</span>
+                          {t.alert && (adminAttention[t.alert] ?? 0) > 0 && (
+                            <span
+                              className="ml-auto mr-2 min-w-[20px] rounded-full bg-destructive/15 px-1.5 text-center text-xs font-semibold tabular-nums text-destructive"
+                              aria-label={`${adminAttention[t.alert]} need attention`}
+                            >
+                              {adminAttention[t.alert]}
+                            </span>
+                          )}
                         </button>
                       )
                     })}
