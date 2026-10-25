@@ -88,8 +88,12 @@ export function EmailTemplatesAdmin({
 
   return (
     <div className="grid gap-6 lg:grid-cols-[280px_minmax(0,1fr)]">
-      <nav aria-label="Email templates" className="flex flex-col gap-5">
+      <nav
+        aria-label="Email templates"
+        className="flex max-h-[60vh] flex-col gap-3 lg:sticky lg:top-6 lg:max-h-[calc(100dvh-8rem)] lg:self-start"
+      >
         <SearchInput value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search emails" />
+        <div className="-mr-2 flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto pr-2">
         {areas.length === 0 && <p className="px-3 text-sm text-os-muted">No emails match that search.</p>}
         {areas.map(({ area, keys }) => (
           <div key={area} className="flex flex-col gap-1">
@@ -119,6 +123,7 @@ export function EmailTemplatesAdmin({
             })}
           </div>
         ))}
+        </div>
       </nav>
 
       <TemplatePanel
