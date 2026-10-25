@@ -11,7 +11,7 @@ import { isCycleAdmin } from "~/lib/roles";
 import { requirePageSignedOrRedirect } from "~/hiring/lib/confidentiality";
 import { GripVertical } from "lucide-react";
 import { KanbanBoard, type KanbanColumn } from "~/components/board/KanbanBoard";
-import { buildColumnOrder } from "~/hiring/lib/delibs";
+import { buildColumnOrder, dropCard } from "~/hiring/lib/delibs";
 import { findRound, parseTimeline } from "~/hiring/lib/cycle-timeline";
 import { delibsQualifier } from "~/hiring/lib/cycle-stages.server";
 import { inReviewPipelineFilter } from "~/hiring/lib/application-pipeline-filter";
@@ -235,17 +235,6 @@ export default function DelibsKanban() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [JSON.stringify(initialOrder)]);
 
-  // cardId → its current column, so each draggable card can carry its origin
-  // column in `data.fromColumn` (the drag handler reads it to skip same-column
-  // drops).
-  const columnIdOf = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const [col, ids] of Object.entries(columnOrder)) {
-      for (const id of ids) map.set(id, col);
-    }
-    return map;
-  }, [columnOrder]);
-
   // Poll the loader every 5s while the session is active so other leads' moves
   // and newly qualifying applications surface without a manual refresh.
   const revalidator = useRevalidator();
@@ -259,13 +248,13 @@ export default function DelibsKanban() {
   }, [session.status, revalidator]);
 
   const sendMove = useCallback(
-    async (cardId: string, toColumn: string) => {
+    async (cardId: string, toColumn: string, order: string[]) => {
       setSaving(true);
       const res = await fetch(`/api/hiring/delibs/${session.id}/moves`, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ cardId, toColumn }),
+        body: JSON.stringify({ cardId, toColumn, order }),
       });
       if (res.ok) {
         const updated = await res.json();
@@ -286,28 +275,12 @@ export default function DelibsKanban() {
 
   function handleDragEnd(event: DragEndEvent) {
     setDragItem(null);
-    if (isClosed) return;
-    const overId = event.over?.id;
-    if (!overId || typeof overId !== "string") return;
-    const data = event.active.data.current as
-      | { cardId?: string; fromColumn?: string }
-      | undefined;
-    const cardId = data?.cardId;
-    const fromColumn = data?.fromColumn;
-    if (!cardId) return;
-    const targetCol = overId;
-    if (targetCol === fromColumn) return;
-
-    const newOrder = { ...columnOrder };
-    // Optimistic local update: drop the card from every column, append to the
-    // target. (Cross-column only — no within-column reorder.)
-    for (const col of columns) {
-      newOrder[col] = (newOrder[col] ?? []).filter((id: string) => id !== cardId);
-    }
-    newOrder[targetCol] = [...(newOrder[targetCol] ?? []), cardId];
-
-    setColumnOrder(newOrder);
-    sendMove(cardId, targetCol);
+    if (isClosed || !event.over) return;
+    const cardId = String(event.active.id);
+    const drop = dropCard(columnOrder, cardId, String(event.over.id), columns);
+    if (!drop) return;
+    setColumnOrder(drop.order);
+    sendMove(cardId, drop.toColumn, drop.order[drop.toColumn]);
   }
 
   async function handleClose() {
@@ -387,7 +360,7 @@ export default function DelibsKanban() {
           <h1 className={os.pageTitle}>
             {round.label} · {session.domain.name}
           </h1>
-          <p className={os.bodyText}>Drag applications between columns. Changes save as you go.</p>
+          <p className={os.bodyText}>Drag applications between columns or reorder them. Changes save as you go.</p>
         </div>
         <div className="flex items-center gap-3">
           {saving && <span className="text-sm text-os-grey">Saving…</span>}
@@ -421,8 +394,9 @@ export default function DelibsKanban() {
         layout="grid"
         columns={kanbanColumns}
         getCardId={(da) => da.id}
-        getCardData={(da) => ({ cardId: da.id, fromColumn: columnIdOf.get(da.id) ?? defaultColumn })}
+        getCardData={(da) => ({ cardId: da.id })}
         draggable={!isClosed}
+        sortable
         onDragStart={(event) => setDragItem(String(event.active.id))}
         onDragEnd={handleDragEnd}
         onDragCancel={() => setDragItem(null)}
