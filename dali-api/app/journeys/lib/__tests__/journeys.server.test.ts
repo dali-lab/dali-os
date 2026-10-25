@@ -14,6 +14,9 @@ const db = vi.hoisted(() => ({
   onboardingJourneyProgress: { upsert: vi.fn(), deleteMany: vi.fn() },
   onboardingJourneyCollaborator: { findMany: vi.fn(), create: vi.fn(), updateMany: vi.fn(), deleteMany: vi.fn() },
   domainLeadAssignment: { findMany: vi.fn() },
+  domain: { findMany: vi.fn() },
+  projectAssignment: { findMany: vi.fn() },
+  domainEligibility: { findMany: vi.fn() },
   user: { findFirst: vi.fn(), findMany: vi.fn() },
 }));
 const roles = vi.hoisted(() => ({ getUserRoles: vi.fn() }));
@@ -36,6 +39,7 @@ import {
   discardDraft,
   editDraft,
   isLastOwner,
+  loadJourneyTabs,
   publishJourney,
   removeCollaborator,
   resolveJourneyViewer,
@@ -271,5 +275,38 @@ describe("access", () => {
     expect(await removeCollaborator(member, "j1", "me")).toMatchObject({ ok: false, status: 400 });
     db.onboardingJourneyCollaborator.findMany.mockResolvedValue(owners("me", "u2"));
     expect(await removeCollaborator(member, "j1", "me")).toEqual({ ok: true });
+  });
+});
+
+describe("loadJourneyTabs", () => {
+  beforeEach(() => {
+    db.projectAssignment.findMany.mockResolvedValue([]);
+    db.domainEligibility.findMany.mockResolvedValue([]);
+  });
+
+  it("includes intern program domains", async () => {
+    const early = { id: "dom-eb", code: "EarlyBuilders", displayName: "Early builders" };
+    db.domain.findMany.mockResolvedValue([early]);
+    db.onboardingJourney.findMany.mockResolvedValue([{ domainId: "dom-eb" }]);
+    expect(await loadJourneyTabs(member)).toEqual({ tabs: [early], defaultDomain: early });
+    expect(db.domain.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { active: true, isSystem: false } }));
+  });
+
+  it("shows a member only domains with journeys they can see or that they belong to", async () => {
+    const a = { id: "dom-a", code: "a", displayName: "A" };
+    const b = { id: "dom-b", code: "b", displayName: "B" };
+    const c = { id: "dom-c", code: "c", displayName: "C" };
+    db.domain.findMany.mockResolvedValue([a, b, c]);
+    db.onboardingJourney.findMany.mockResolvedValue([{ domainId: "dom-a" }]);
+    db.domainEligibility.findMany.mockResolvedValue([{ domainId: "dom-b" }]);
+    expect(await loadJourneyTabs(member)).toEqual({ tabs: [a, b], defaultDomain: b });
+  });
+
+  it("shows Core every domain", async () => {
+    const a = { id: "dom-a", code: "a", displayName: "A" };
+    const b = { id: "dom-b", code: "b", displayName: "B" };
+    db.domain.findMany.mockResolvedValue([a, b]);
+    db.onboardingJourney.findMany.mockResolvedValue([]);
+    expect(await loadJourneyTabs(core)).toEqual({ tabs: [a, b], defaultDomain: a });
   });
 });

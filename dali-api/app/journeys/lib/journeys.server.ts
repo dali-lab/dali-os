@@ -79,7 +79,7 @@ const DOMAIN_SELECT = { id: true, code: true, displayName: true } as const;
 
 async function journeyDomains() {
   return prisma.domain.findMany({
-    where: { active: true, isSystem: false, isInternProgram: false },
+    where: { active: true, isSystem: false },
     select: DOMAIN_SELECT,
     orderBy: { displayName: "asc" },
   });
