@@ -61,6 +61,7 @@ export function RolesDomainsPage({ data }: { data: Data }) {
   const [domainId, setDomainId] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [manageOpen, setManageOpen] = useState(false);
+  const [domainsOpen, setDomainsOpen] = useState(false);
 
   const domainName = (id: string) => data.domains.find((d) => d.id === id)?.name ?? "Domain";
   const cards = data.domains.filter((d) => d.active && !d.isSystem);
@@ -89,7 +90,16 @@ export function RolesDomainsPage({ data }: { data: Data }) {
       <section aria-labelledby="domains-heading" className="flex flex-col gap-3">
         <div className="flex items-center justify-between gap-3 px-1">
           <h2 id="domains-heading" className="text-sm font-semibold text-os-grey">
-            Domains <span className="font-normal text-os-muted">· pick one to see who's in it</span>
+            <button
+              type="button"
+              aria-expanded={domainsOpen}
+              aria-controls="domain-cards"
+              onClick={() => setDomainsOpen((o) => !o)}
+              className="flex items-center gap-1.5"
+            >
+              <ChevronRight className={cn("h-4 w-4 text-os-muted transition-transform", domainsOpen && "rotate-90")} aria-hidden />
+              Domains <span className="font-normal text-os-muted">· pick one to see who's in it</span>
+            </button>
           </h2>
           {data.viewerIsAdmin && (
             <button type="button" className={os.actionBtn()} onClick={() => setManageOpen(true)}>
@@ -97,7 +107,7 @@ export function RolesDomainsPage({ data }: { data: Data }) {
             </button>
           )}
         </div>
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <div id="domain-cards" hidden={!domainsOpen} className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           {cards.map((d) => {
             const { people, leads, byLevel } = domainRoster(data.members, d.id);
             const on = domainId === d.id;
