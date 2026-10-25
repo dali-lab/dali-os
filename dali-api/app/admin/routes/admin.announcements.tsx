@@ -1,12 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
-import {
-  redirect,
-  useFetcher,
-  useLoaderData,
-  useRevalidator,
-  useSearchParams,
-} from "react-router";
-import { useConfirmSubmit, useDialog } from "~/components/ui/dialog";
+import { redirect, useLoaderData } from "react-router";
 import type { Route } from "./+types/admin.announcements";
 import { adminHandle } from "~/admin/adminNav";
 import { prisma } from "~/lib/db";
@@ -17,26 +9,13 @@ import { redirectToLogin } from "~/lib/login-next";
 import { isCore, isAdmin } from "~/lib/roles";
 import { MEMBER_LIST_ORDER_BY } from "~/lib/prisma-shapes";
 import { fullName } from "~/lib/display";
-import {
-  Users,
-  UserRound,
-  Globe,
-  Paperclip,
-  CheckCircle2,
-} from "lucide-react";
-import { SearchInput } from "~/components/ui/SearchInput";
-import { Checkbox } from "~/components/ui/Checkbox";
-import { DateField } from "~/components/ui/DateField";
-import { useOsChrome } from "~/components/os-chrome";
-import { cn } from "~/lib/cn";
-import { DocEditor } from "~/components/doc";
+import { AnnouncementsPage } from "~/core/components/AnnouncementsPage";
 import { regroupRedirect } from "~/core/lib/regroup-redirect.server";
-import { orderGroupsForPicker } from "~/lib/group-kind";
 
 export const handle = adminHandle("announcements");
 
 export const meta: Route.MetaFunction = () => [
-  { title: "Announcements · Admin · DALI OS" },
+  { title: "Announcements · Core · DALI OS" },
 ];
 
 // Admin composer: write an announcement or a todo and send it to the whole
@@ -85,6 +64,45 @@ export async function loader({ request }: Route.LoaderArgs) {
     }),
   ]);
 
+  const sentRows = await prisma.scheduledAnnouncement.findMany({
+    where: { canceledAt: null, sentAt: { not: null }, lastError: null },
+    orderBy: { sentAt: "desc" },
+    take: SENT_LIMIT,
+  });
+  const sentIds = sentRows.map((r) => r.id);
+  const [totals, cleared, authors] = await Promise.all([
+    prisma.notification.groupBy({
+      by: ["announcementId"],
+      where: { announcementId: { in: sentIds } },
+      _count: { _all: true },
+    }),
+    prisma.notification.groupBy({
+      by: ["announcementId"],
+      where: { announcementId: { in: sentIds }, readAt: { not: null } },
+      _count: { _all: true },
+    }),
+    prisma.user.findMany({
+      where: { id: { in: [...new Set([...scheduledRows, ...sentRows].map((r) => r.createdByUserId))] } },
+      select: { id: true, firstName: true, lastName: true },
+    }),
+  ]);
+  const totalById = new Map(totals.map((t) => [t.announcementId, t._count._all]));
+  const clearedById = new Map(cleared.map((t) => [t.announcementId, t._count._all]));
+  const authorById = new Map(authors.map((a) => [a.id, fullName(a) || "Core"]));
+  const groupById = new Map(visibleGroups.map((g) => [g.id, g]));
+  const memberIds = users.map((u) => u.id);
+
+  const describe = (r: (typeof sentRows)[number]) => ({
+    id: r.id,
+    title: r.title,
+    body: r.body,
+    author: authorById.get(r.createdByUserId) ?? "Core",
+    audience: audienceLabel(r, groupById),
+    sendAt: r.sendAt.toISOString(),
+    dueAt: r.dueAt?.toISOString() ?? null,
+    ccDartmouth: r.ccDartmouth,
+  });
+
   return {
     members: users.map((u) => ({
       id: u.id,
@@ -99,17 +117,46 @@ export async function loader({ request }: Route.LoaderArgs) {
     })),
     publishedForms: forms,
     scheduled: scheduledRows.map((s) => ({
-      id: s.id,
-      title: s.title,
-      sendAt: s.sendAt.toISOString(),
-      sentAt: s.sentAt?.toISOString() ?? null,
+      ...describe(s),
       lastError: s.lastError,
-      allMembers: s.allMembers,
-      groupCount: s.groupIds.length,
-      userCount: s.userIds.length,
+      recipients: estimateRecipients(s, memberIds, groupById),
+    })),
+    sent: sentRows.map((s) => ({
+      ...describe(s),
+      // Pre-tracking sends have no linked rows; fall back to the stored count.
+      recipients: totalById.get(s.id) ?? s.sentCount ?? 0,
+      completed: clearedById.get(s.id) ?? 0,
     })),
     viewerIsAdmin: await isAdmin(auth.user.sub),
   };
+}
+
+const SENT_LIMIT = 30;
+
+type AudienceRow = { allMembers: boolean; groupIds: string[]; userIds: string[] };
+
+export function audienceLabel(
+  r: AudienceRow,
+  groupById: Map<string, { name: string }>,
+): string {
+  if (r.allMembers) return "Whole lab";
+  const parts = r.groupIds.map((id) => groupById.get(id)?.name ?? "A group");
+  if (r.userIds.length > 0) {
+    parts.push(`${r.userIds.length} ${r.userIds.length === 1 ? "person" : "people"}`);
+  }
+  return parts.join(", ") || "No one";
+}
+
+/** Who a scheduled send would reach if it went out now. Groups can change before it fires. */
+export function estimateRecipients(
+  r: AudienceRow,
+  memberIds: string[],
+  groupById: Map<string, { memberIds: string[] }>,
+): number {
+  const ids = new Set(r.userIds);
+  if (r.allMembers) memberIds.forEach((id) => ids.add(id));
+  for (const gid of r.groupIds) groupById.get(gid)?.memberIds.forEach((id) => ids.add(id));
+  return ids.size;
 }
 
 // Cancel a pending scheduled announcement. The updateMany's sentAt guard
@@ -144,583 +191,7 @@ export async function action({ request }: Route.ActionArgs) {
   return { ok: true, canceled: result.count === 1 };
 }
 
-export default function AnnouncementsPage() {
-  const { members, groups, publishedForms, scheduled, viewerIsAdmin } =
-    useLoaderData<typeof loader>();
-  const { pageTitle, card, cardPad } = useOsChrome();
 
-  // Optional deep-link pre-seed (e.g. the staffing boards' "Send to members"
-  // affordance opens this composer with the bound form + whole-lab audience
-  // already selected). Only honored for forms that exist in the published list.
-  const [searchParams] = useSearchParams();
-  const seedFormId = searchParams.get("formId") ?? "";
-  const seededForm = publishedForms.some((f) => f.id === seedFormId)
-    ? seedFormId
-    : "";
-  const seedAllMembers = searchParams.get("audience") === "all";
-
-  // Composable audience: any mix of whole-lab + groups + individuals.
-  const [allMembers, setAllMembers] = useState(seedAllMembers);
-  const [pickedGroups, setPickedGroups] = useState<Set<string>>(new Set());
-  const [pickedUsers, setPickedUsers] = useState<Set<string>>(new Set());
-  const [search, setSearch] = useState("");
-  const [groupSearch, setGroupSearch] = useState("");
-
-  const [title, setTitle] = useState("");
-  // Rich body authored in the DocEditor (BlockNote block JSON). `null` until the
-  // editor is touched. composerKey remounts the editor empty after a send.
-  const [bodyBlocks, setBodyBlocks] = useState<unknown>(null);
-  const [composerKey, setComposerKey] = useState(0);
-  const [dueAt, setDueAt] = useState("");
-  const [sendAt, setSendAt] = useState("");
-  const [formId, setFormId] = useState(seededForm);
-  const [formSearch, setFormSearch] = useState("");
-  const [ccDartmouth, setCcDartmouth] = useState(false);
-
-  const [sending, setSending] = useState(false);
-  const [result, setResult] = useState<
-    | { ok: true; count: number; scheduled?: boolean }
-    | { ok: false; error: string }
-    | null
-  >(null);
-  const revalidator = useRevalidator();
-  const dialog = useDialog();
-
-  // Auto-dismiss the success confirmation after a few seconds; errors stay
-  // until the next send attempt.
-  useEffect(() => {
-    if (result?.ok) {
-      const t = setTimeout(() => setResult(null), 6000);
-      return () => clearTimeout(t);
-    }
-  }, [result]);
-
-  const filteredMembers = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return members;
-    return members.filter(
-      (m) =>
-        m.name.toLowerCase().includes(q) ||
-        (m.email ?? "").toLowerCase().includes(q),
-    );
-  }, [members, search]);
-
-  const filteredForms = useMemo(() => {
-    const q = formSearch.trim().toLowerCase();
-    if (!q) return publishedForms;
-    return publishedForms.filter((f) => f.name.toLowerCase().includes(q));
-  }, [publishedForms, formSearch]);
-
-  const filteredGroups = useMemo(() => {
-    const ordered = orderGroupsForPicker(groups, pickedGroups);
-    const q = groupSearch.trim().toLowerCase();
-    if (!q) return ordered;
-    return ordered.filter((g) => g.name.toLowerCase().includes(q));
-  }, [groups, pickedGroups, groupSearch]);
-
-  const selectedForm = publishedForms.find((f) => f.id === formId) ?? null;
-
-  function toggleIn(
-    setter: React.Dispatch<React.SetStateAction<Set<string>>>,
-    id: string,
-  ) {
-    setter((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }
-
-  const hasAudience =
-    allMembers || pickedGroups.size > 0 || pickedUsers.size > 0;
-  const scheduling = sendAt !== "";
-  const canSend = title.trim().length > 0 && !sending && hasAudience;
-
-  async function send() {
-    // Build a summary of who will receive this and which channels fire.
-    const recipientDesc = allMembers
-      ? `${members.length} lab member${members.length === 1 ? "" : "s"} (whole lab)`
-      : [
-          pickedGroups.size > 0 && `${pickedGroups.size} group${pickedGroups.size === 1 ? "" : "s"}`,
-          pickedUsers.size > 0 && `${pickedUsers.size} ${pickedUsers.size === 1 ? "person" : "people"}`,
-        ]
-          .filter(Boolean)
-          .join(" + ");
-    const channels = ["in-app", "email", ccDartmouth && "Dartmouth email", "Slack DM"]
-      .filter(Boolean)
-      .join(", ");
-    const action = scheduling ? "Schedule" : "Send";
-    const confirmed = await dialog.confirm({
-      title: `${action} announcement to ${recipientDesc}?`,
-      description: `Channels: ${channels}. This is irreversible — recipients will be notified immediately${scheduling ? " at the scheduled time" : ""}.`,
-      confirmLabel: action,
-    });
-    if (!confirmed) return;
-
-    setResult(null);
-    setSending(true);
-    try {
-      const payload: Record<string, unknown> = {
-        title: title.trim(),
-        kind: "SystemAnnouncement",
-        // Every send is actionable: it appears in recipients' Tasks.
-        isTodo: true,
-        allMembers,
-        groupIds: Array.from(pickedGroups),
-        userIds: Array.from(pickedUsers),
-      };
-      if (Array.isArray(bodyBlocks) && bodyBlocks.length > 0) {
-        payload.bodyBlocks = bodyBlocks;
-      }
-      if (dueAt) payload.dueAt = new Date(dueAt).toISOString();
-      if (formId) payload.formId = formId;
-      if (sendAt) payload.sendAt = new Date(sendAt).toISOString();
-      if (ccDartmouth) payload.ccDartmouth = true;
-
-      const res = await fetch("/api/notifications/send", {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      const out = (await res.json().catch(() => ({}))) as {
-        error?: string;
-        count?: number;
-        scheduled?: boolean;
-      };
-      if (!res.ok) {
-        setResult({ ok: false, error: out.error ?? `Failed (${res.status}).` });
-        return;
-      }
-      setResult({ ok: true, count: out.count ?? 0, scheduled: out.scheduled });
-      if (out.scheduled) revalidator.revalidate();
-      // Full reset after a successful send — clear the message, the attached
-      // form, and the audience so the next one starts blank.
-      setTitle("");
-      setBodyBlocks(null);
-      setComposerKey((k) => k + 1);
-      setDueAt("");
-      setSendAt("");
-      setFormId("");
-      setFormSearch("");
-      setCcDartmouth(false);
-      setAllMembers(false);
-      setPickedGroups(new Set());
-      setPickedUsers(new Set());
-      setSearch("");
-      setGroupSearch("");
-    } catch {
-      setResult({ ok: false, error: "Network error — please try again." });
-    } finally {
-      setSending(false);
-    }
-  }
-
-  return (
-    <div className="flex flex-col gap-5">
-      <div className="flex flex-col gap-5 max-w-3xl">
-      <header className="flex items-start gap-3">
-        <h1 className={pageTitle}>Announcements</h1>
-      </header>
-
-      {result && (
-        <div
-          className={`text-sm rounded-md px-3 py-2 border ${
-            result.ok
-              ? "bg-os-accent/10 border-os-accent/30 text-foreground"
-              : "bg-destructive/10 border-destructive/30 text-destructive"
-          }`}
-        >
-          {result.ok
-            ? result.scheduled
-              ? "Scheduled — it'll go out at the chosen time."
-              : `Sent to ${result.count} recipient${result.count === 1 ? "" : "s"}.`
-            : result.error}
-        </div>
-      )}
-
-      {/* Due date + send time */}
-      <section className={cn(card, cardPad, "flex flex-col gap-3")}>
-        <h2 className="text-sm font-semibold text-foreground">Timing</h2>
-        <div className="flex flex-wrap gap-6">
-          <label className="flex flex-col gap-1 text-xs">
-            <span className="text-muted-foreground">
-              Due date (optional) — shown as the deadline in recipients' Tasks.
-            </span>
-            <DateField
-              mode="datetime-local"
-              value={dueAt}
-              onChange={setDueAt}
-              className="w-64"
-              ariaLabel="Due date"
-            />
-          </label>
-          <label className="flex flex-col gap-1 text-xs">
-            <span className="text-muted-foreground">
-              Send later (optional) — schedule instead of sending now.
-            </span>
-            <DateField
-              mode="datetime-local"
-              value={sendAt}
-              onChange={setSendAt}
-              className="w-64"
-              ariaLabel="Send later"
-            />
-          </label>
-        </div>
-      </section>
-
-      {/* Message */}
-      <section className={cn(card, cardPad, "flex flex-col gap-3")}>
-        <h2 className="text-sm font-semibold text-foreground">Message</h2>
-        <input
-          type="text"
-          placeholder="Title"
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          maxLength={200}
-          className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground"
-        />
-        <DocEditor
-          key={composerKey}
-          features="field"
-          density="compact"
-          editable
-          onChange={setBodyBlocks}
-          placeholder="Body (optional) — select text to format or add a link"
-          className="min-h-[8rem] px-1 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus-within:border-os-accent/50"
-        />
-        <p className="text-xs text-muted-foreground">
-          Links (to DALI OS pages or external URLs) and formatting carry through
-          to the email. In-app and Slack show a plain-text version.
-        </p>
-        <Checkbox
-          checked={ccDartmouth}
-          onChange={(e) => setCcDartmouth(e.target.checked)}
-          label={
-            <span className="text-xs text-foreground">
-              Also send to Dartmouth email
-              <span className="text-muted-foreground">
-                {" "}
-                — the recipient's email reaches both their DALI and Dartmouth
-                inboxes. In-app and Slack are unaffected.
-              </span>
-            </span>
-          }
-        />
-      </section>
-
-      {/* Attach a form — its own card so it doesn't disappear under the body */}
-      <section className={cn(card, cardPad, "flex flex-col gap-3")}>
-        <div className="flex items-center gap-2">
-          <Paperclip className="w-4 h-4 text-muted-foreground" />
-          <h2 className="text-sm font-semibold text-foreground">
-            Attach a form
-          </h2>
-          <span className="text-xs text-muted-foreground">
-            optional · published forms only
-          </span>
-        </div>
-
-        {publishedForms.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No published forms yet.</p>
-        ) : selectedForm ? (
-          <div className="flex items-center gap-2">
-            <span className="inline-flex items-center gap-2 px-3 py-1.5 text-sm rounded-md border border-os-accent/40 bg-os-accent/10 text-foreground">
-              <Paperclip className="w-3.5 h-3.5 text-os-accent" />
-              {selectedForm.name}
-            </span>
-            <button
-              type="button"
-              onClick={() => {
-                setFormId("");
-                setFormSearch("");
-              }}
-              className="text-xs text-muted-foreground hover:text-foreground"
-            >
-              Change
-            </button>
-          </div>
-        ) : (
-          <div className="flex flex-col gap-1.5">
-            <SearchInput
-              size="sm"
-              placeholder="Search published forms…"
-              value={formSearch}
-              onChange={(e) => setFormSearch(e.target.value)}
-              containerClassName="w-72"
-            />
-            {formSearch.trim() && (
-              <div className="max-h-48 w-72 overflow-y-auto border border-border rounded-md divide-y divide-border">
-                {filteredForms.map((f) => (
-                  <button
-                    key={f.id}
-                    type="button"
-                    onClick={() => {
-                      setFormId(f.id);
-                      setFormSearch("");
-                    }}
-                    className="block w-full text-left px-3 py-2 text-sm text-foreground hover:bg-muted/40"
-                  >
-                    {f.name}
-                  </button>
-                ))}
-                {filteredForms.length === 0 && (
-                  <div className="px-3 py-2 text-sm text-muted-foreground">
-                    No matching forms.
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        )}
-      </section>
-
-      {/* Audience — compose freely; recipients are the union of all of these */}
-      <section className={cn(card, cardPad, "flex flex-col gap-4")}>
-        <div>
-          <h2 className="text-sm font-semibold text-foreground">Audience</h2>
-
-        </div>
-
-        {/* Whole lab — when on, it supersedes the other selectors */}
-        <Checkbox
-          className={`flex items-center gap-2.5 rounded-lg border p-3 transition-colors ${
-            allMembers
-              ? "border-os-accent bg-os-accent/10"
-              : "border-border hover:bg-muted/40"
-          }`}
-          checked={allMembers}
-          onChange={(e) => setAllMembers(e.target.checked)}
-          label={
-            <>
-              <Globe
-                className={`w-4 h-4 ${allMembers ? "text-os-accent" : "text-muted-foreground"}`}
-              />
-              <span className="text-sm text-foreground font-medium">Whole lab</span>
-              <span className="text-xs text-muted-foreground">
-                every current lab member ({members.length})
-              </span>
-            </>
-          }
-        />
-
-        {!allMembers && (
-          <>
-            {/* Groups — chip multi-select */}
-            <div className="rounded-lg border border-border bg-muted/20 p-3 flex flex-col gap-2">
-              <div className="flex items-center gap-2">
-                <Users className="w-4 h-4 text-muted-foreground" />
-                <span className="text-sm font-medium text-foreground">
-                  User groups
-                </span>
-                {pickedGroups.size > 0 && (
-                  <span className="text-xs text-os-accent font-medium">
-                    {pickedGroups.size} selected
-                  </span>
-                )}
-              </div>
-              {groups.length === 0 ? (
-                <span className="text-xs text-muted-foreground">
-                  No groups defined.
-                </span>
-              ) : (
-                <>
-                  <SearchInput
-                    value={groupSearch}
-                    onChange={(e) => setGroupSearch(e.target.value)}
-                    placeholder="Search groups…"
-                  />
-                  {filteredGroups.length === 0 ? (
-                    <span className="text-xs text-muted-foreground">
-                      No matching groups.
-                    </span>
-                  ) : (
-                    <div className="flex flex-wrap gap-2">
-                      {filteredGroups.map((g) => {
-                        const on = pickedGroups.has(g.id);
-                        return (
-                          <button
-                            key={g.id}
-                            type="button"
-                            onClick={() => toggleIn(setPickedGroups, g.id)}
-                            className={`px-3 py-1.5 text-sm rounded-full border transition-colors ${
-                              on
-                                ? "bg-os-accent text-os-bg border-os-accent"
-                                : "border-border bg-card text-foreground hover:bg-muted/50"
-                            }`}
-                          >
-                            {g.name}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
-
-            {/* Specific people — searchable checklist */}
-            <div className="rounded-lg border border-border bg-background p-3 flex flex-col gap-2">
-              <div className="flex items-center gap-2">
-                <UserRound className="w-4 h-4 text-muted-foreground" />
-                <span className="text-sm font-medium text-foreground">
-                  Specific people
-                </span>
-                {pickedUsers.size > 0 && (
-                  <span className="text-xs text-os-accent font-medium">
-                    {pickedUsers.size} selected
-                  </span>
-                )}
-              </div>
-              <SearchInput
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search people…"
-              />
-              <div className="max-h-64 overflow-y-auto border border-border rounded-md divide-y divide-border bg-card">
-                {filteredMembers.map((m) => (
-                  <Checkbox
-                    key={m.id}
-                    className="flex items-center gap-2 px-3 py-2 text-sm hover:bg-muted/40 w-full"
-                    checked={pickedUsers.has(m.id)}
-                    onChange={() => toggleIn(setPickedUsers, m.id)}
-                    label={
-                      <>
-                        <span className="text-foreground">{m.name}</span>
-                        {m.email && (
-                          <span className="text-xs text-muted-foreground truncate">
-                            {m.email}
-                          </span>
-                        )}
-                      </>
-                    }
-                  />
-                ))}
-                {filteredMembers.length === 0 && (
-                  <div className="px-3 py-2 text-sm text-muted-foreground">
-                    No matches.
-                  </div>
-                )}
-              </div>
-            </div>
-          </>
-        )}
-
-        {!hasAudience && (
-          <p className="text-xs text-muted-foreground">
-            Pick at least one audience above.
-          </p>
-        )}
-      </section>
-
-      <div className="flex items-center gap-3">
-        <button
-          type="button"
-          onClick={send}
-          disabled={!canSend}
-          className={cn(
-            "disabled:opacity-60 disabled:cursor-not-allowed",
-            "os-btn-primary",
-          )}
-        >
-          {sending ? (scheduling ? "Scheduling…" : "Sending…") : scheduling ? "Schedule" : "Send"}
-        </button>
-        {/* Inline confirmation next to the action, where the user is looking. */}
-        {result?.ok && (
-          <span
-            role="status"
-            className="inline-flex items-center gap-1.5 text-sm font-medium text-green-700"
-          >
-            <CheckCircle2 className="w-4 h-4" />
-            {result.scheduled
-              ? "Scheduled."
-              : `Sent to ${result.count} recipient${result.count === 1 ? "" : "s"}.`}
-          </span>
-        )}
-      </div>
-
-      {scheduled.length > 0 && <ScheduledList scheduled={scheduled} />}
-      </div>
-    </div>
-  );
-}
-
-function ScheduledList({
-  scheduled,
-}: {
-  scheduled: {
-    id: string;
-    title: string;
-    sendAt: string;
-    sentAt: string | null;
-    lastError: string | null;
-    allMembers: boolean;
-    groupCount: number;
-    userCount: number;
-  }[];
-}) {
-  const fetcher = useFetcher();
-  const confirmSubmit = useConfirmSubmit();
-
-  const audienceSummary = (s: (typeof scheduled)[number]) => {
-    if (s.allMembers) return "whole lab";
-    const parts: string[] = [];
-    if (s.groupCount > 0) parts.push(`${s.groupCount} group${s.groupCount === 1 ? "" : "s"}`);
-    if (s.userCount > 0) parts.push(`${s.userCount} ${s.userCount === 1 ? "person" : "people"}`);
-    return parts.join(" + ") || "—";
-  };
-
-  return (
-    <section className="bg-card border border-border rounded-lg p-4 flex flex-col gap-3">
-      <h2 className="text-sm font-semibold text-foreground">Scheduled</h2>
-      <ul className="divide-y divide-border">
-        {scheduled.map((s) => (
-          <li key={s.id} className="flex items-start justify-between gap-3 py-2">
-            <div className="min-w-0">
-              <p className="text-sm font-medium text-foreground truncate">{s.title}</p>
-              <p className="text-xs text-muted-foreground">
-                {new Date(s.sendAt).toLocaleString("en-US", {
-                  month: "short",
-                  day: "numeric",
-                  hour: "numeric",
-                  minute: "2-digit",
-                })}{" "}
-                · {audienceSummary(s)}
-              </p>
-              {s.lastError && (
-                <p className="text-xs text-destructive mt-0.5">
-                  Failed to send: {s.lastError}
-                </p>
-              )}
-            </div>
-            {!s.sentAt && (
-              <fetcher.Form
-                method="post"
-                onSubmit={confirmSubmit({
-                  title: "Cancel this scheduled announcement?",
-                  description:
-                    "It won't send, and the draft is dropped. You'd need to write and schedule it again.",
-                  confirmLabel: "Cancel announcement",
-                  cancelLabel: "Keep it scheduled",
-                  tone: "destructive",
-                })}
-              >
-                <input type="hidden" name="intent" value="cancel-scheduled" />
-                <input type="hidden" name="id" value={s.id} />
-                <button
-                  type="submit"
-                  disabled={fetcher.state !== "idle"}
-                  className="text-xs text-muted-foreground hover:text-destructive disabled:opacity-50"
-                >
-                  Cancel
-                </button>
-              </fetcher.Form>
-            )}
-          </li>
-        ))}
-      </ul>
-    </section>
-  );
+export default function AnnouncementsRoute() {
+  return <AnnouncementsPage data={useLoaderData<typeof loader>()} />;
 }

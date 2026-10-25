@@ -1,4 +1,4 @@
-import { ClipboardCheck, Mail, Megaphone, Rocket } from "lucide-react";
+import { ClipboardCheck, GalleryHorizontal, Mail, Mails, Megaphone, Rocket } from "lucide-react";
 import { ClusterHub } from "~/components/ClusterHub";
 import {
   clusterTrail,
@@ -23,7 +23,8 @@ export const CORE_CLUSTERS: NavCluster[] = [
   {
     key: "communications",
     label: "Communications",
-    description: "Reach the lab and manage outbound email.",
+    description:
+      "Reach the lab and campus: announcements, the campus listserv, in-app banners, and the copy behind every email.",
     icon: Megaphone,
     hubPath: "/core/communications",
     sections: [
@@ -36,6 +37,22 @@ export const CORE_CLUSTERS: NavCluster[] = [
           "Send an announcement to the lab, with an optional due date and attached form.",
       },
       {
+        key: "listserv",
+        label: "Listserv",
+        to: "/core/communications/listserv",
+        icon: Mails,
+        description: "Submit emails for the campus listserv. The outreach lead reviews and sends them.",
+        flag: "listserv",
+      },
+      {
+        key: "banners",
+        label: "Banners",
+        to: "/core/communications/banners",
+        icon: GalleryHorizontal,
+        description: "Full-screen banners shown when members open DALI OS or visit a page.",
+        flag: "banners",
+      },
+      {
         key: "release-notes",
         label: "Release notes",
         to: "/core/communications/release-notes",
@@ -46,11 +63,11 @@ export const CORE_CLUSTERS: NavCluster[] = [
       },
       {
         key: "email",
-        label: "Email",
+        label: "Email templates",
         to: "/core/communications/email",
         icon: Mail,
         description:
-          "The words in every email the app sends — hiring decisions, interview notices, course decisions — edited in place and shared by every cycle and course. (The Gmail accounts each area sends from live in Admin ▸ System & Insights.)",
+          "The words in every email the app sends, from hiring decisions to course notices. Edited in place and shared by every cycle and course.",
       },
     ],
   },
@@ -58,16 +75,15 @@ export const CORE_CLUSTERS: NavCluster[] = [
 
 // Core's flat sub-tabs — every page that is reached straight from the sidebar
 // rather than through a cluster hub, so its trail is just "Core > <page>".
-// Roles and Domains sit here rather than in an Access cluster: a two-page
-// cluster only bought an extra hop between the sidebar and the page.
+// Roles & domains sits here rather than in an Access cluster: a cluster only
+// bought an extra hop between the sidebar and the page.
 const STANDALONE_LABELS: Record<string, string> = {
   attendance: "Attendance",
   staffing: "Staffing",
   "intent-to-work": "Intent to Work",
   "project-bids": "Project Bids",
   "level-up": "Level Up",
-  roles: "Roles & Permissions",
-  domains: "Domains",
+  access: "Roles & domains",
   agreements: "Agreements",
   "drive-folders": "Drive folders",
   rooms: "Rooms",

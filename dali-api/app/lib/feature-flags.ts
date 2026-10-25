@@ -56,6 +56,18 @@ export const FEATURE_FLAGS = [
       "A /release-notes page listing what shipped, with demo videos, and a \"What's new\" item in the account menu that shows a dot when there is something unread. Core also gets Communications > Release notes to write, review and publish entries. Ships off.",
   },
   {
+    key: "listserv",
+    label: "Listserv",
+    description:
+      "Communications > Listserv: Core members submit emails for the campus listserv, the outreach lead reviews them, sends approved ones from Gmail, and records which went out. Ships off.",
+  },
+  {
+    key: "banners",
+    label: "Banners",
+    description:
+      "Communications > Banners: Core schedules full-screen banners shown when members open DALI OS or visit a page, with audience, frequency and a hide-for-today option. Turning this off also stops banners from showing. Ships off.",
+  },
+  {
     key: "favorites-bar",
     label: "Favorites bar",
     description:

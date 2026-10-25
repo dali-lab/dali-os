@@ -8,7 +8,7 @@ import type { Route } from "./+types/settings.sessions";
 export const meta: Route.MetaFunction = () => [{ title: "Settings · DALI OS" }];
 
 export async function loader() {
-  return redirect("/settings#devices");
+  return redirect("/settings/security");
 }
 
 function logSessionRevoke(
@@ -38,13 +38,13 @@ export async function action({ request }: Route.ActionArgs) {
   if (intent === "revoke-one") {
     const sessionId = form.get("sessionId");
     if (typeof sessionId !== "string") {
-      return redirect("/settings#devices");
+      return redirect("/settings/security");
     }
     const { count } = await prisma.authSession.deleteMany({
       where: { id: sessionId, userId: auth.user.sub },
     });
     await logSessionRevoke(auth.user.sub, "one", count, request);
-    return redirect("/settings#devices");
+    return redirect("/settings/security");
   }
 
   if (intent === "revoke-others") {
@@ -61,10 +61,10 @@ export async function action({ request }: Route.ActionArgs) {
     ]);
     const count = current.count + legacy.count;
     await logSessionRevoke(auth.user.sub, "others", count, request);
-    return redirect("/settings#devices");
+    return redirect("/settings/security");
   }
 
-  return redirect("/settings#devices");
+  return redirect("/settings/security");
 }
 
 export default function SettingsSessionsRedirect() {

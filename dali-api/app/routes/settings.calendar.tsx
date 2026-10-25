@@ -12,7 +12,7 @@ import type { Route } from "./+types/settings.calendar";
 export const meta: Route.MetaFunction = () => [{ title: "Settings · DALI OS" }];
 
 export async function loader() {
-  return redirect("/settings#calendar");
+  return redirect("/settings/connections");
 }
 
 export async function action({ request }: Route.ActionArgs) {

@@ -43,7 +43,7 @@ import {
 } from "~/admin/components/EmailTemplatesAdmin";
 import { regroupRedirect } from "~/core/lib/regroup-redirect.server";
 
-export const meta: Route.MetaFunction = () => [{ title: "Email · Core · DALI OS" }];
+export const meta: Route.MetaFunction = () => [{ title: "Email templates · Core · DALI OS" }];
 
 // No `handle` here: the Core alias owns the trail (coreHandle("email")), and
 // this path always redirects there before anything renders.
@@ -67,7 +67,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const url = new URL(request.url);
   const rawKey = url.searchParams.get("key");
-  const openKey: EmailTemplateKey | null = isEmailTemplateKey(rawKey) ? rawKey : null;
+  const openKey: EmailTemplateKey = isEmailTemplateKey(rawKey) ? rawKey : EMAIL_TEMPLATE_KEYS[0]!;
 
   const stored = await listEmailTemplates();
 
@@ -110,16 +110,14 @@ export async function loader({ request }: Route.LoaderArgs) {
     };
   });
 
-  const versions: AdminEmailVersion[] = openKey
-    ? (await listEmailTemplateVersions(openKey)).map((v) => ({
-        id: v.id,
-        versionNumber: v.versionNumber,
-        subject: v.subject,
-        body: v.body,
-        createdAt: v.createdAt.toISOString(),
-        author: fullName(v.createdBy),
-      }))
-    : [];
+  const versions: AdminEmailVersion[] = (await listEmailTemplateVersions(openKey)).map((v) => ({
+    id: v.id,
+    versionNumber: v.versionNumber,
+    subject: v.subject,
+    body: v.body,
+    createdAt: v.createdAt.toISOString(),
+    author: fullName(v.createdBy),
+  }));
 
   return { rows, versions, openKey };
 }

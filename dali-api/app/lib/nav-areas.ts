@@ -267,8 +267,7 @@ const REGROUPED_AREAS: NavArea[] = [
       { label: "Intent to Work", href: "/core/intent-to-work", icon: ClipboardPen },
       { label: "Project Bids", href: "/core/project-bids", icon: Gavel },
       { label: "Level Up", href: "/core/level-up", icon: ArrowUpCircle },
-      { label: "Roles & Permissions", href: "/core/access/roles", icon: Shield },
-      { label: "Domains", href: "/core/access/domains", icon: Globe },
+      { label: "Roles & domains", href: "/core/access", icon: Shield },
       ...coreClusterSubtabs,
       // Agreements left Admin's Documents cluster; it is lab process, not
       // system administration. It renders its own Core compliance console.

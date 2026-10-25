@@ -130,15 +130,21 @@ export default [
     route("core/project-bids/:userId", "core/routes/core.project-bids.$userId.tsx"),
     route("core/level-up", "core/routes/core.level-up.tsx"),
     route("core/level-up/:userId", "core/routes/core.level-up.$userId.tsx"),
+    route("core/access", "core/routes/core.access.tsx"),
     route("core/access/roles", "core/routes/core.access.roles.tsx"),
     route("core/access/domains", "core/routes/core.access.domains.tsx"),
     route("core/drive-folders", "core/routes/core.drive-folders.tsx"),
     route("core/rooms", "rooms/routes/core.rooms.tsx"),
     route("rooms", "rooms/routes/rooms.tsx"),
-    route("core/communications", "core/routes/core.communications.tsx"),
-    route("core/communications/announcements", "core/routes/core.communications.announcements.tsx"),
-    route("core/communications/release-notes", "core/routes/core.communications.release-notes.tsx"),
-    route("core/communications/email", "core/routes/core.communications.email.tsx"),
+    route("core/communications", "core/routes/core.communications.tsx", [
+      index("core/routes/core.communications._index.tsx"),
+      route("announcements", "core/routes/core.communications.announcements.tsx"),
+      route("listserv", "core/routes/core.communications.listserv.tsx"),
+      route("banners", "core/routes/core.communications.banners.tsx"),
+      route("banners/:bannerId", "core/routes/core.communications.banners.$bannerId.tsx"),
+      route("release-notes", "core/routes/core.communications.release-notes.tsx"),
+      route("email", "core/routes/core.communications.email.tsx"),
+    ]),
     route("core/communications/email/:id", "admin/routes/admin.email.legacy-redirect.ts", { id: "legacy-email-core-id" }),
     route("core/communications/email-senders", "core/routes/core.communications.email-senders.tsx"),
 
@@ -316,9 +322,15 @@ export default [
     // so in-iframe navigation posts `dali:tabNavigated` and the workspace's
     // tab URL tracks it (a stale URL made re-clicking Settings focus the
     // drifted tab instead of reopening the hub).
-    route("settings", "routes/settings._index.tsx"),
+    route("settings", "routes/settings.tsx", [
+      index("routes/settings._index.tsx"),
+      route("general", "routes/settings.general.tsx"),
+      route("notifications", "routes/settings.notifications.tsx"),
+      route("connections", "routes/settings.connections.tsx"),
+      route("security", "routes/settings.security.tsx"),
+    ]),
+    // POST targets for the tabs' forms; a GET redirects to the owning tab.
     route("settings/calendar", "routes/settings.calendar.tsx"),
-    route("settings/notifications", "routes/settings.notifications.tsx"),
     route("settings/sessions", "routes/settings.sessions.tsx"),
     route("settings/slack", "routes/settings.slack.tsx"),
     route("settings/connected-apps", "routes/settings.connected-apps.tsx"),
@@ -846,6 +858,8 @@ export default [
 
   // S3 file upload
   route("api/upload/presign", "routes/api.upload.presign.ts"),
+  route("api/banners/active", "core/routes/api.banners.active.ts"),
+  route("api/banners/:bannerId/event", "core/routes/api.banners.$bannerId.event.ts"),
   route("api/upload/url", "routes/api.upload.url.ts"),
   route("api/upload/raw", "routes/api.upload.raw.ts"),
   route("api/whiteboard/image", "routes/api.whiteboard.image.ts"),

@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { useFetcher } from "react-router";
-import { PanelTop, Square } from "lucide-react";
 import { cn } from "~/lib/cn";
 import { readTablessPreference, setTablessPreference } from "~/lib/tabless";
 import { readFocusPreference, setFocusPreference } from "~/lib/focus-mode";
@@ -8,53 +7,40 @@ import {
   readEmojiSuggestionsPreference,
   setEmojiSuggestionsPreference,
 } from "~/lib/emoji-suggestions";
-import { InfoTip } from "~/components/ui/floating";
 import { Toggle } from "~/components/ui/Toggle";
+import { useToast } from "~/components/ui/toast";
+import { SettingRow } from "~/components/settings/SettingsSection";
 
-const OPTIONS: {
-  value: "tabs" | "tabless";
-  label: string;
-  description: string;
-  icon: typeof PanelTop;
-}[] = [
-  {
-    value: "tabless",
-    label: "Single page",
-    description: "One page at a time, using your browser's own tabs and history (default)",
-    icon: Square,
-  },
-  {
-    value: "tabs",
-    label: "Tabbed workspace",
-    description: "Open sections as tabs, with split view and pinning",
-    icon: PanelTop,
-  },
-];
+const OPEN_MODES = [
+  { tabless: true, label: "Single page", help: "Each link replaces the current page." },
+  { tabless: false, label: "Tabbed workspace", help: "Pages open as tabs you can switch between." },
+] as const;
 
-// Both cookie-backed prefs change the server-rendered shell, so applying
-// one reloads the top window. In tab mode this block renders inside a workspace
-// iframe, so reload the parent, not the frame.
+// Both cookie-backed prefs change the server-rendered shell, so applying one
+// reloads the top window. In tab mode this renders inside a workspace iframe,
+// so reload the parent, not the frame.
 function reloadSettings() {
   let top: Window = window;
   try {
     top = window.top ?? window;
   } catch {
-    // Cross-origin ancestor — fall back to this window.
+    // Cross-origin ancestor: fall back to this window.
   }
-  top.location.replace("/settings");
+  top.location.replace("/settings/general");
 }
 
-export function WorkspaceSettingsBlock({ hideActivity }: { hideActivity: boolean }) {
-  // Matches AppearanceSettingsBlock: render defaults on the server, then correct
-  // to the cookie-backed values on mount to avoid a hydration mismatch.
+export function WorkspaceSettingsBlock() {
+  // Render defaults on the server, then correct to the cookie-backed values on
+  // mount to avoid a hydration mismatch.
   const [tabless, setTabless] = useState(true);
   const [focus, setFocus] = useState(false);
-  const [emojiSuggestions, setEmojiSuggestions] = useState(false);
+  const [emoji, setEmoji] = useState(false);
+  const toast = useToast();
 
   useEffect(() => {
     setTabless(readTablessPreference());
     setFocus(readFocusPreference());
-    setEmojiSuggestions(readEmojiSuggestionsPreference());
+    setEmoji(readEmojiSuggestionsPreference());
   }, []);
 
   function chooseTabless(next: boolean) {
@@ -64,139 +50,108 @@ export function WorkspaceSettingsBlock({ hideActivity }: { hideActivity: boolean
     reloadSettings();
   }
 
-  function toggleFocus() {
-    const next = !focus;
-    setFocusPreference(next);
-    setFocus(next);
-    reloadSettings();
-  }
-
-  // Appear away is a server-persisted pref — use fetcher for optimistic toggle.
-  const hideActivityFetcher = useFetcher();
-  // Optimistic: if a submission is in flight, use the submitted value.
-  const appearAway =
-    hideActivityFetcher.formData
-      ? hideActivityFetcher.formData.get("hideActivity") === "true"
-      : hideActivity;
-
-  function toggleAppearAway() {
-    hideActivityFetcher.submit(
-      { hideActivity: String(!appearAway) },
-      { method: "post", action: "/api/presence/hide-activity" },
-    );
-  }
-
   return (
-    <div className="flex flex-col gap-5">
-      <div className="flex flex-col gap-3">
-        <p className="text-sm text-muted-foreground">
-          Choose how pages open. Saved on this device.
-        </p>
-        <div className="grid gap-2 sm:grid-cols-2">
-          {OPTIONS.map(({ value, label, description, icon: Icon }) => {
-            const selected = (value === "tabless") === tabless;
+    <div className="rounded-os-card bg-os-card divide-y divide-os-container/70">
+      <div className="flex flex-col gap-3 px-6 py-5">
+        <div>
+          <p className="text-[15px] text-foreground">Opening pages</p>
+          <p className="mt-0.5 text-sm text-os-grey">Changing this reloads DALI OS.</p>
+        </div>
+        <div role="radiogroup" aria-label="Opening pages" className="grid gap-3 sm:grid-cols-2">
+          {OPEN_MODES.map((o) => {
+            const active = o.tabless === tabless;
             return (
               <button
-                key={value}
+                key={o.label}
                 type="button"
-                onClick={() => chooseTabless(value === "tabless")}
-                aria-pressed={selected}
+                role="radio"
+                aria-checked={active}
+                onClick={() => chooseTabless(o.tabless)}
                 className={cn(
-                  "flex flex-col items-start gap-2 rounded-lg border px-3 py-3 text-left transition-colors",
-                  selected
-                    ? "border-os-accent bg-os-accent/10 ring-1 ring-os-accent/40"
-                    : "border-border bg-card hover:bg-muted/50",
+                  "flex items-start gap-3 rounded-os-item border bg-os-well p-4 text-left transition-colors",
+                  active ? "border-os-accent" : "border-os-container hover:border-os-container-hi",
                 )}
               >
-                <span className="inline-flex items-center gap-2 font-heading text-sm font-semibold text-foreground">
-                  <Icon className="h-4 w-4 shrink-0" aria-hidden />
-                  {label}
+                <span
+                  className={cn(
+                    "mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2",
+                    active ? "border-os-accent" : "border-os-container-hi",
+                  )}
+                  aria-hidden
+                >
+                  {active && <span className="h-1.5 w-1.5 rounded-full bg-os-accent" />}
                 </span>
-                <span className="text-xs text-muted-foreground">{description}</span>
+                <span>
+                  <span className="block text-sm font-semibold text-foreground">{o.label}</span>
+                  <span className="mt-0.5 block text-sm text-os-grey">{o.help}</span>
+                </span>
               </button>
             );
           })}
         </div>
       </div>
-
-      <div className="flex items-center justify-between gap-4 border-t border-border pt-4">
-        <div className="min-w-0">
-          <p className="font-heading text-sm font-semibold text-foreground">
-            Focus mode{" "}
-            <InfoTip content="Hides the sidebar so you can concentrate. Navigate with ⌘K and breadcrumbs; a floating button brings the sidebar back." />
-          </p>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            Hide the sidebar and navigate with ⌘K and breadcrumbs. A floating
-            button brings it back anytime.
-          </p>
-        </div>
-        <button
-          type="button"
-          role="switch"
-          aria-checked={focus}
-          aria-label="Focus mode"
-          onClick={toggleFocus}
-          className={cn(
-            "relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors",
-            focus ? "bg-os-accent" : "bg-muted",
-          )}
-        >
-          <span
-            className={cn(
-              "inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform",
-              focus ? "translate-x-5" : "translate-x-0.5",
-            )}
+      <SettingRow
+        label="Focus mode"
+        help="Hide the sidebar. Use ⌘K to get around, or the floating button to bring it back. Reloads DALI OS."
+        control={
+          <Toggle
+            tone="os"
+            aria-label="Focus mode"
+            checked={focus}
+            onChange={(e) => {
+              setFocusPreference(e.target.checked);
+              setFocus(e.target.checked);
+              reloadSettings();
+            }}
           />
-        </button>
-      </div>
-
-      <div className="flex items-center justify-between gap-4 border-t border-border pt-4">
-        <div className="min-w-0">
-          <p className="font-heading text-sm font-semibold text-foreground">
-            Appear away{" "}
-            <InfoTip content="Hides your online status dot from other members. Your activity is still recorded for internal purposes; only the visible indicator is hidden." />
-          </p>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            Hide your online status from other members. Your activity is still recorded;
-            only the visible dot is hidden.
-          </p>
-        </div>
-        <button
-          type="button"
-          role="switch"
-          aria-checked={appearAway}
-          aria-label="Appear away"
-          onClick={toggleAppearAway}
-          className={cn(
-            "relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors",
-            appearAway ? "bg-os-accent" : "bg-muted",
-          )}
-        >
-          <span
-            className={cn(
-              "inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform",
-              appearAway ? "translate-x-5" : "translate-x-0.5",
-            )}
+        }
+      />
+      <SettingRow
+        label="Emoji suggestions"
+        help="Type : in a doc to pick an emoji. Saved on this device."
+        control={
+          <Toggle
+            tone="os"
+            aria-label="Emoji suggestions"
+            checked={emoji}
+            onChange={(e) => {
+              setEmoji(e.target.checked);
+              setEmojiSuggestionsPreference(e.target.checked);
+              toast.success(`Emoji suggestions ${e.target.checked ? "on" : "off"}`);
+            }}
           />
-        </button>
-      </div>
+        }
+      />
+    </div>
+  );
+}
 
-      <div className="flex items-center justify-between gap-4 border-t border-border pt-4">
-        <div className="min-w-0">
-          <p className="font-heading text-sm font-semibold text-foreground">Emoji suggestions</p>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            Typing : in a doc opens the emoji picker. Saved on this device.
-          </p>
-        </div>
-        <Toggle
-          aria-label="Emoji suggestions"
-          checked={emojiSuggestions}
-          onChange={(e) => {
-            setEmojiSuggestions(e.target.checked);
-            setEmojiSuggestionsPreference(e.target.checked);
-          }}
-        />
-      </div>
+export function PresenceSettingsBlock({ hideActivity }: { hideActivity: boolean }) {
+  const fetcher = useFetcher();
+  // Optimistic while the save is in flight.
+  const appearAway = fetcher.formData
+    ? fetcher.formData.get("hideActivity") === "true"
+    : hideActivity;
+
+  return (
+    <div className="rounded-os-card bg-os-card">
+      <SettingRow
+        label="Appear away"
+        help="Hide your online dot from other members. You still get notifications."
+        control={
+          <Toggle
+            tone="os"
+            aria-label="Appear away"
+            checked={appearAway}
+            onChange={(e) =>
+              fetcher.submit(
+                { hideActivity: String(e.target.checked) },
+                { method: "post", action: "/api/presence/hide-activity" },
+              )
+            }
+          />
+        }
+      />
     </div>
   );
 }

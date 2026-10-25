@@ -381,6 +381,14 @@ export const EVENT_TYPES = {
     lockedInApp: true,
     defaults: { inApp: true, desktop: true, slackDm: false, email: "Instant" },
   },
+  listserv: {
+    kind: "General",
+    area: "Announcements",
+    label: "Listserv emails",
+    description: "New listserv submissions to review, and updates on the ones you submitted.",
+    coreOnly: true,
+    defaults: { inApp: true, desktop: false, slackDm: false, email: "Off" },
+  },
   "release.published": {
     kind: "General",
     area: "Release notes",

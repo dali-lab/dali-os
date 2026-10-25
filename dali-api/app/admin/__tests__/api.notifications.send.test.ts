@@ -1,7 +1,10 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/db", () => ({
-  prisma: { form: { findUnique: vi.fn() }, scheduledAnnouncement: { create: vi.fn() } },
+  prisma: {
+    form: { findUnique: vi.fn() },
+    scheduledAnnouncement: { create: vi.fn(), update: vi.fn(), delete: vi.fn() },
+  },
 }));
 vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
 vi.mock("~/lib/auth", () => ({
@@ -40,6 +43,7 @@ beforeEach(() => {
   vi.mocked(requireAuth).mockResolvedValue({ ok: true, user: { sub: "u1" } } as never);
   vi.mocked(isCore).mockResolvedValue(true);
   vi.mocked(sendAnnouncement).mockResolvedValue({ ok: true, count: 42 });
+  vi.mocked(prisma.scheduledAnnouncement.create).mockResolvedValue({ id: "sa-now" } as never);
 });
 
 describe("POST /api/notifications/send audit", () => {
@@ -97,5 +101,35 @@ describe("POST /api/notifications/send audit", () => {
     vi.mocked(isCore).mockResolvedValue(false);
     await post({ title: "Nope", allMembers: true });
     expect(logAuditEvent).not.toHaveBeenCalled();
+  });
+});
+
+describe("POST /api/notifications/send records instant sends", () => {
+  it("writes the record as already sent, links the fan-out to it, then stores the count", async () => {
+    const res = await post({ title: "Now", allMembers: true, ccDartmouth: true });
+
+    expect(res.status).toBe(201);
+    const created = vi.mocked(prisma.scheduledAnnouncement.create).mock.calls[0][0].data;
+    expect(created).toMatchObject({ title: "Now", allMembers: true, ccDartmouth: true });
+    expect(created.sentAt).toBeInstanceOf(Date);
+    expect(created.sendAt).toEqual(created.sentAt);
+    expect(sendAnnouncement).toHaveBeenCalledWith(expect.objectContaining({ announcementId: "sa-now" }));
+    expect(prisma.scheduledAnnouncement.update).toHaveBeenCalledWith({
+      where: { id: "sa-now" },
+      data: { sentCount: 42 },
+    });
+    expect(logAuditEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "announcement.send", targetId: "sa-now" }),
+    );
+  });
+
+  it("removes the record when the send is refused, so it never shows as sent", async () => {
+    vi.mocked(sendAnnouncement).mockResolvedValue({ ok: false, error: "No recipients resolved", status: 400 });
+
+    const res = await post({ title: "Empty group", groupIds: ["g-empty"] });
+
+    expect(res.status).toBe(400);
+    expect(prisma.scheduledAnnouncement.delete).toHaveBeenCalledWith({ where: { id: "sa-now" } });
+    expect(prisma.scheduledAnnouncement.update).not.toHaveBeenCalled();
   });
 });

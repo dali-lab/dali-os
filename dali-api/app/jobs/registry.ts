@@ -181,8 +181,8 @@ export const JOBS: JobDefinition[] = [
     ],
     handler: runSessionReminderSweep,
   },
-  // The digest jobs tick often but self-gate on wall clock, using the
-  // runner's lastSuccessAt as the sent-today cursor.
+  // The digest jobs tick often and send to each member once their hour has
+  // passed. sendHourEt is the default for members who haven't picked one.
   {
     name: "notification-digest-daily",
     description: "Emails each Daily-digest subscriber their unread notifications each morning.",
@@ -190,7 +190,7 @@ export const JOBS: JobDefinition[] = [
     settings: [
       {
         key: "sendHourEt",
-        label: "Send hour (ET, 0–23)",
+        label: "Default send hour (ET, 0–23)",
         unit: "h",
         min: 0,
         max: 23,
@@ -207,7 +207,7 @@ export const JOBS: JobDefinition[] = [
     settings: [
       {
         key: "sendHourEt",
-        label: "Send hour (ET, 0–23)",
+        label: "Default send hour (ET, 0–23)",
         unit: "h",
         min: 0,
         max: 23,

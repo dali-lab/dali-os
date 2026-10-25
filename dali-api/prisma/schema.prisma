@@ -193,6 +193,11 @@ model User {
   hideActivity Boolean   @default(false)
   presenceAway Boolean   @default(false)
 
+  // ─── Notification digests ────────────────────────────────────────────────
+  // The ET hour this member's daily and weekly digests go out. Null = the
+  // digest job's configured hour (Admin → Jobs).
+  digestHourEt Int?
+
   // ─── Relations: existing ──────────────────────────────────────────────────
   daliMember                    DALIMember?
   workExperiences               WorkExperience[]
@@ -3078,10 +3083,16 @@ model Notification {
   interviewAssignmentId String?
   interviewAssignment   InterviewAssignment? @relation(fields: [interviewAssignmentId], references: [id], onDelete: SetNull)
 
+  // The ScheduledAnnouncement this row was fanned out from, so Communications
+  // can count how many recipients have cleared it. Not an FK: deleting the
+  // record must not touch anyone's inbox.
+  announcementId String?
+
   @@unique([recipientUserId, dedupKey])
   @@index([recipientUserId, readAt])
   @@index([recipientUserId, createdAt])
   @@index([interviewAssignmentId])
+  @@index([announcementId])
 }
 
 enum NotificationKind {
@@ -6232,6 +6243,9 @@ model InfraRequest {
 // sentAt doubles as the CAS claim column — set BEFORE fan-out so a failure
 // can never double-send a lab-wide blast (drops beat dupes here); errors land
 // in lastError for the composer's scheduled list.
+// Every announcement Core sends, scheduled or not. A send-now announcement is
+// written with sendAt = sentAt = now, so the Sent list and its completion
+// counts read from one table.
 model ScheduledAnnouncement {
   id              String @id @default(cuid())
   createdByUserId String
@@ -7762,4 +7776,125 @@ model OnboardingLabSubmission {
 
   @@unique([journeyId, moduleId, userId])
   @@index([journeyId, status])
+}
+
+// ─── Communications: listserv and banners ────────────────────────────────────
+
+enum ListservStatus {
+  Submitted
+  ChangesRequested
+  Approved
+  Sent
+}
+
+// An email a Core member wants sent to the campus listserv. DALI OS only
+// collects and reviews them: the outreach lead sends approved ones from Gmail,
+// then records here which went out and on what day.
+model ListservSubmission {
+  id            String         @id @default(cuid())
+  status        ListservStatus @default(Submitted)
+  subject       String
+  // ListservBlock[] (app/core/lib/listserv.ts): text and image blocks in inbox order.
+  content       Json
+  // ListservAttachment[]: uploaded file keys with name and size.
+  attachments   Json           @default("[]")
+  // Calendar day it has to go out by, if the submitter has a deadline.
+  sendBy        DateTime?      @db.Date
+  note          String?
+  feedback      String?
+  submittedById String
+  submittedAt   DateTime       @default(now())
+  reviewedById  String?
+  sentOn        DateTime?      @db.Date
+  sentById      String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  @@index([status, sendBy])
+  @@index([submittedById])
+}
+
+// Singleton (id "default"): who reviews listserv submissions and the address
+// they send from.
+model ListservConfig {
+  id          String   @id @default("default")
+  leadUserId  String?
+  fromAddress String   @default("dali@dartmouth.edu")
+  updatedAt   DateTime @updatedAt
+}
+
+enum BannerKind {
+  Image
+  Poster
+  Video
+  Text
+}
+
+enum BannerTone {
+  Accent
+  Amber
+  Card
+}
+
+enum BannerTrigger {
+  AppOpen
+  Page
+}
+
+enum BannerFrequency {
+  EveryOpen
+  Daily
+  Once
+}
+
+// A full-screen announcement shown over DALI OS when a member opens it or
+// visits a page, to an audience of roles and groups, inside a time window.
+model Banner {
+  id          String          @id @default(cuid())
+  name        String
+  kind        BannerKind      @default(Image)
+  mediaUrl    String?
+  videoUrl    String?
+  headline    String          @default("")
+  body        String          @default("")
+  ctaLabel    String          @default("")
+  ctaUrl      String          @default("")
+  tone        BannerTone      @default(Accent)
+  everyone    Boolean         @default(false)
+  // UserRoles keys (isLabMember, isCore, ...).
+  roles       String[]        @default([])
+  groupIds    String[]        @default([])
+  trigger     BannerTrigger   @default(AppOpen)
+  // Path prefix the Page trigger matches, e.g. "/calendar".
+  triggerPath String?
+  frequency   BannerFrequency @default(EveryOpen)
+  allowSnooze Boolean         @default(true)
+  startsAt    DateTime
+  endsAt      DateTime
+  published   Boolean         @default(false)
+  createdById String
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  impressions BannerImpression[]
+
+  @@index([published, startsAt, endsAt])
+}
+
+// One row per (banner, viewer): what frequency and snooze rules read, and what
+// the Banners list totals into views, clicks and snoozes.
+model BannerImpression {
+  id         String    @id @default(cuid())
+  bannerId   String
+  banner     Banner    @relation(fields: [bannerId], references: [id], onDelete: Cascade)
+  userId     String
+  views      Int       @default(0)
+  clicks     Int       @default(0)
+  snoozes    Int       @default(0)
+  lastSeenAt DateTime?
+  // Lab-calendar day (America/New_York) the viewer hid it for.
+  snoozedDay String?
+  createdAt  DateTime  @default(now())
+
+  @@unique([bannerId, userId])
 }

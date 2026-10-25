@@ -40,8 +40,12 @@ test.describe("admin jobs panel", () => {
     await page.goto("/admin/platform/jobs");
     const frame = adminFrame(page);
 
+    // The switch's <input> is visually hidden (sr-only), so a forced click at its
+    // centre can land beside the drawn track and toggle nothing. Click the track
+    // (the input's parent), the way a person does.
+    const track = (sw: import("@playwright/test").Locator) => sw.locator("..");
     const row = frame.locator("li", { hasText: "session-feedback-sweep" });
-    await row.getByRole("switch", { name: "Pause session-feedback-sweep" }).click({ force: true });
+    await track(row.getByRole("switch", { name: "Pause session-feedback-sweep" })).click();
     await expect(row.getByText("Paused", { exact: true }).first()).toBeVisible();
 
     await page.reload();
@@ -50,7 +54,7 @@ test.describe("admin jobs panel", () => {
     await expect(resume).not.toBeChecked();
 
     // Restore for other tests.
-    await resume.click({ force: true });
+    await track(resume).click();
     await expect(
       rowAfter.getByRole("switch", { name: "Pause session-feedback-sweep" }),
     ).toBeChecked();

@@ -311,6 +311,10 @@ export const AUDIT_ACTIONS = [
   "recording.discard",
   "release_note.publish",
   "release_note.dismiss",
+  // Communications. listserv.config targets the singleton "default" row.
+  "listserv.config",
+  "banner.save",
+  "banner.delete",
 ] as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];

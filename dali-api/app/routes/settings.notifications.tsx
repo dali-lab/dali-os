@@ -1,9 +1,3 @@
-// Settings → Notifications moved inline: the matrix renders as a section of
-// /settings (NotificationsSettingsBlock). This route keeps the save action —
-// the block's fetcher POSTs here — and redirects GETs (old links, the
-// notification-email footer) to the section.
-
-import { redirect } from "react-router";
 import { requireAuth, unauthorized, forbidden, isPartnerAccount, isNonMember } from "~/lib/auth";
 import { prisma } from "~/lib/db";
 import { isAdmin, isCore } from "~/lib/roles";
@@ -16,13 +10,15 @@ import {
 import {
   VISIBLE_EVENTS,
   DIGEST_VALUES,
+  NotificationsSettingsBlock,
   type DigestValue,
 } from "~/components/settings/NotificationsSettingsBlock";
+import { digestHourOptions, digestHourToStore } from "~/components/settings/digest-hours";
+import { loadDigestSchedule } from "~/lib/settings-page.server";
+import { useSettingsData } from "./settings";
 import type { Route } from "./+types/settings.notifications";
 
-export async function loader() {
-  return redirect("/settings#notifications");
-}
+export const meta: Route.MetaFunction = () => [{ title: "Settings · DALI OS" }];
 
 export async function action({ request }: Route.ActionArgs) {
   const auth = await requireAuth(request);
@@ -33,6 +29,20 @@ export async function action({ request }: Route.ActionArgs) {
   const viewerIsCore = await isCore(auth.user.sub);
 
   const form = await request.formData();
+
+  if (form.get("intent") === "digest-hour") {
+    const { dailyHour } = await loadDigestSchedule();
+    const hour = Number(form.get("hour"));
+    if (!digestHourOptions(dailyHour).includes(hour)) {
+      return { ok: false as const, error: "Pick one of the listed times." };
+    }
+    await prisma.user.update({
+      where: { id: auth.user.sub },
+      data: { digestHourEt: digestHourToStore(hour, dailyHour) },
+    });
+    return { ok: true as const, error: null };
+  }
+
   const rows: {
     eventType: EventType;
     inApp: boolean;
@@ -95,4 +105,9 @@ export async function action({ request }: Route.ActionArgs) {
   );
 
   return { ok: true as const, error: null };
+}
+
+export default function SettingsNotifications() {
+  const data = useSettingsData();
+  return <NotificationsSettingsBlock {...data.notifications} />;
 }

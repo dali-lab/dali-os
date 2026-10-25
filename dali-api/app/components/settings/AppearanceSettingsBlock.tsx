@@ -10,30 +10,10 @@ import {
   type ThemePreference,
 } from "~/lib/theme";
 
-const OPTIONS: {
-  value: ThemePreference;
-  label: string;
-  description: string;
-  icon: typeof Sun;
-}[] = [
-  {
-    value: "light",
-    label: "Light",
-    description: "Always use light mode",
-    icon: Sun,
-  },
-  {
-    value: "dark",
-    label: "Dark",
-    description: "Always use dark mode",
-    icon: Moon,
-  },
-  {
-    value: "system",
-    label: "System",
-    description: "Match your device setting",
-    icon: Monitor,
-  },
+const OPTIONS: { value: ThemePreference; label: string; icon: typeof Sun }[] = [
+  { value: "light", label: "Light", icon: Sun },
+  { value: "dark", label: "Dark", icon: Moon },
+  { value: "system", label: "Match system", icon: Monitor },
 ];
 
 export function AppearanceSettingsBlock() {
@@ -76,38 +56,52 @@ export function AppearanceSettingsBlock() {
   }, []);
 
   return (
-    <div className="flex flex-col gap-3">
-      <p className="text-sm text-muted-foreground">
-        Choose how DALI OS looks. Saved on this device.
-      </p>
-      <div className="grid gap-2 sm:grid-cols-3">
-        {OPTIONS.map(({ value, label, description, icon: Icon }) => {
-          const selected = preference === value;
-          return (
-            <button
-              key={value}
-              type="button"
-              onClick={() => {
-                setPreference(value);
-                setThemePreference(value);
-              }}
-              aria-pressed={selected}
-              className={cn(
-                "flex flex-col items-start gap-2 rounded-lg border px-3 py-3 text-left transition-colors",
-                selected
-                  ? "border-os-accent bg-os-accent/10 ring-1 ring-os-accent/40"
-                  : "border-border bg-card hover:bg-muted/50",
-              )}
-            >
-              <span className="inline-flex items-center gap-2 font-heading text-sm font-semibold text-foreground">
-                <Icon className="h-4 w-4 shrink-0" aria-hidden />
-                {label}
-              </span>
-              <span className="text-xs text-muted-foreground">{description}</span>
-            </button>
-          );
-        })}
+    <div role="radiogroup" aria-label="Theme" className="grid gap-3 sm:grid-cols-3">
+      {OPTIONS.map(({ value, label, icon: Icon }) => {
+        const selected = preference === value;
+        return (
+          <button
+            key={value}
+            type="button"
+            role="radio"
+            aria-checked={selected}
+            onClick={() => {
+              setPreference(value);
+              setThemePreference(value);
+            }}
+            className={cn(
+              "flex flex-col gap-3 rounded-os-item border-2 bg-os-card p-3 text-left transition-colors",
+              selected ? "border-os-accent" : "border-transparent hover:border-os-container-hi",
+            )}
+          >
+            <ThemePreview theme={value} />
+            <span className="flex items-center gap-2 text-sm text-foreground">
+              <Icon className={cn("h-4 w-4", selected ? "text-os-accent" : "text-os-grey")} aria-hidden />
+              {label}
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// Fixed swatches, not theme tokens: each card shows its own theme whatever the
+// current one is.
+function ThemePreview({ theme }: { theme: ThemePreference }) {
+  const half = (dark: boolean) => (
+    <div className={cn("flex h-full flex-1 gap-1.5 p-2", dark ? "bg-[#282830]" : "bg-[#f4f8fa]")}>
+      <div className={cn("w-1/4 rounded", dark ? "bg-[#24242a]" : "bg-[#dfe7ec]")} />
+      <div className="flex flex-1 flex-col gap-1.5">
+        <div className={cn("h-2 w-2/3 rounded-full", dark ? "bg-[#54545f]" : "bg-[#c6cacc]")} />
+        <div className={cn("flex-1 rounded", dark ? "bg-[#2b2b36]" : "bg-white")} />
       </div>
+    </div>
+  );
+  return (
+    <div className="flex h-20 overflow-hidden rounded-lg border border-os-container" aria-hidden>
+      {theme !== "dark" && half(false)}
+      {theme !== "light" && half(true)}
     </div>
   );
 }
