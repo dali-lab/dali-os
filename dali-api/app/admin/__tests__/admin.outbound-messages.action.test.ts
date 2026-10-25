@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db", () => ({ prisma: { outboundMessage: { update: vi.fn() } } }));
+vi.mock("~/lib/db", () => ({ prisma: { outboundMessage: { update: vi.fn(), updateMany: vi.fn() } } }));
 vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
 vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn() }));
 vi.mock("~/lib/roles", () => ({ isCore: vi.fn(), isAdmin: vi.fn() }));
@@ -59,5 +59,72 @@ describe("admin.outbound-messages action", () => {
     vi.mocked(isCore).mockResolvedValue(false);
     expect((await submit({ intent: "retry", id: "om-1" })).status).toBe(403);
     expect(logAuditEvent).not.toHaveBeenCalled();
+  });
+
+  it("re-queues a Dead row with a fresh attempt budget", async () => {
+    await submit({ intent: "retry", id: "om-1" });
+    const call = vi.mocked(prisma.outboundMessage.update).mock.calls[0][0];
+    expect(call.where).toEqual({ id: "om-1", status: "Dead" });
+    expect(call.data).toMatchObject({ status: "Pending", attempts: 0, lastError: null });
+    expect(call.data.nextAttemptAt).toBeInstanceOf(Date);
+  });
+
+  it("cancels only Pending or Dead rows", async () => {
+    await submit({ intent: "cancel", id: "om-4" });
+    const call = vi.mocked(prisma.outboundMessage.update).mock.calls[0][0];
+    expect(call.where).toEqual({ id: "om-4", status: { in: ["Pending", "Dead"] } });
+    expect(call.data).toEqual({ status: "Canceled" });
+  });
+
+  it("rejects a retry or cancel with no id", async () => {
+    expect((await submit({ intent: "retry" })).status).toBe(400);
+    expect((await submit({ intent: "cancel" })).status).toBe(400);
+    expect(prisma.outboundMessage.update).not.toHaveBeenCalled();
+  });
+
+  it("rejects an unknown intent", async () => {
+    expect((await submit({ intent: "nope", id: "om-1" })).status).toBe(400);
+  });
+});
+
+describe("admin.outbound-messages retry-all", () => {
+  it("re-queues every Dead row matching the search and logs one entry with the count", async () => {
+    vi.mocked(prisma.outboundMessage.updateMany).mockResolvedValue({ count: 3 } as never);
+    const res = await submit({ intent: "retry-all", q: "  digest " });
+    expect(await res.json()).toEqual({ ok: true, count: 3 });
+
+    const call = vi.mocked(prisma.outboundMessage.updateMany).mock.calls[0][0]!;
+    const contains = { contains: "digest", mode: "insensitive" };
+    expect(call.where).toEqual({
+      status: "Dead",
+      OR: [{ target: contains }, { recipientUserId: contains }, { eventType: contains }, { subject: contains }],
+    });
+    expect(call.data).toMatchObject({ status: "Pending", attempts: 0, lastError: null });
+
+    expect(logAuditEvent).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(logAuditEvent).mock.calls[0][0]).toMatchObject({
+      action: "outbound.retry_all",
+      userId: "u1",
+      metadata: { count: 3, search: "digest" },
+    });
+  });
+
+  it("matches every Dead row when there is no search, without needing an id", async () => {
+    vi.mocked(prisma.outboundMessage.updateMany).mockResolvedValue({ count: 1 } as never);
+    await submit({ intent: "retry-all" });
+    expect(vi.mocked(prisma.outboundMessage.updateMany).mock.calls[0][0]!.where).toEqual({ status: "Dead" });
+    expect(vi.mocked(logAuditEvent).mock.calls[0][0].metadata).toEqual({ count: 1, search: null });
+  });
+
+  it("logs nothing when no row was re-queued", async () => {
+    vi.mocked(prisma.outboundMessage.updateMany).mockResolvedValue({ count: 0 } as never);
+    expect(await (await submit({ intent: "retry-all", q: "x" })).json()).toEqual({ ok: true, count: 0 });
+    expect(logAuditEvent).not.toHaveBeenCalled();
+  });
+
+  it("is Core-only", async () => {
+    vi.mocked(isCore).mockResolvedValue(false);
+    expect((await submit({ intent: "retry-all" })).status).toBe(403);
+    expect(prisma.outboundMessage.updateMany).not.toHaveBeenCalled();
   });
 });

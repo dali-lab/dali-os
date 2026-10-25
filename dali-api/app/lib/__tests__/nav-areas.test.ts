@@ -14,7 +14,7 @@ import {
   visibleSubtabs,
   type RoleFlags,
 } from "~/lib/nav-areas";
-import { ADMIN_CLUSTERS } from "~/admin/adminNav";
+import { ADMIN_SECTIONS } from "~/admin/adminNav";
 
 const projects = NAV_AREAS.find((a) => a.key === "projects")!;
 
@@ -217,41 +217,51 @@ describe("Core area", () => {
 });
 
 describe("Admin area", () => {
-  it("keeps only system clusters", () => {
+  it("lists the Overview and one sub-tab per admin section, in order", () => {
     const admin = areasFor(REGROUP).find((a) => a.key === "admin")!;
-    const labels = admin.subtabs.map((t) => t.label);
-    expect(labels).not.toContain("People & Access");
-    expect(labels).not.toContain("Communications");
-    // Documents is gone entirely — Agreements, its only page, is a Core sub-tab.
-    expect(labels).not.toContain("Documents");
-    expect(labels).toEqual(
-      expect.arrayContaining(["Hub", "Finance", "System & Insights"]),
-    );
+    expect(admin.subtabs.map((t) => t.label)).toEqual([
+      "Overview",
+      "Payroll",
+      "Accounts",
+      "Messaging",
+      "Insights",
+      "Platform",
+      "Onboarding",
+    ]);
+  });
+
+  it("hides Payroll from Core members who aren't admins", () => {
+    const admin = areasFor(REGROUP).find((a) => a.key === "admin")!;
+    expect(visibleSubtabs(admin, CORE).map((t) => t.label)).not.toContain("Payroll");
+    expect(visibleSubtabs(admin, { ...CORE, isAdmin: true }).map((t) => t.label)).toContain("Payroll");
+  });
+
+  it("carries the attention counts on Messaging and Platform only", () => {
+    const admin = areasFor(REGROUP).find((a) => a.key === "admin")!;
+    const alerts = Object.fromEntries(admin.subtabs.map((t) => [t.label, t.alert]));
+    expect(alerts).toMatchObject({ Messaging: "messaging", Platform: "platform" });
+    expect(admin.subtabs.filter((t) => t.alert).map((t) => t.label)).toEqual(["Messaging", "Platform"]);
+  });
+
+  it("lights the section's sub-tab on every tab page inside it", () => {
+    const admin = areasFor(REGROUP).find((a) => a.key === "admin")!;
+    expect(activeSubtabHref(admin, "/admin")).toBe("/admin");
+    expect(activeSubtabHref(admin, "/admin/messaging/outbox")).toBe("/admin/messaging");
+    expect(activeSubtabHref(admin, "/admin/payroll/reconcile")).toBe("/admin/payroll");
+    expect(activeSubtabHref(admin, "/admin/onboarding/abc")).toBe("/admin/onboarding");
   });
 });
 
-describe("admin cluster allocation", () => {
-  it("is strictly system-level — no People & Access or Communications clusters", () => {
-    const keys = ADMIN_CLUSTERS.map((c) => c.key);
+describe("admin section allocation", () => {
+  it("is strictly system-level: no People & Access or Communications sections", () => {
+    const keys = ADMIN_SECTIONS.map((c) => c.key);
     expect(keys).not.toContain("people");
     expect(keys).not.toContain("communications");
-    expect(keys).toEqual(expect.arrayContaining(["finance", "system"]));
   });
 
-  it("files Email Senders and Outbound Messages under System & Insights", () => {
-    const system = ADMIN_CLUSTERS.find((c) => c.key === "system")!;
-    const sectionKeys = system.sections.map((s) => s.key);
-    expect(sectionKeys).toEqual(
-      expect.arrayContaining([
-        "analytics",
-        "ai-usage",
-        "activity",
-        "jobs",
-        "feature-flags",
-        "email-senders",
-        "outbound-messages",
-      ]),
-    );
+  it("files the email transport (outbox, senders) under Messaging", () => {
+    const messaging = ADMIN_SECTIONS.find((c) => c.key === "messaging")!;
+    expect(messaging.sections.map((s) => s.key)).toEqual(["outbox", "senders"]);
   });
 });
 
@@ -262,7 +272,7 @@ describe("areaForPath", () => {
     // Agreements now lives at its own /core URL (its permanent console hub).
     expect(areaForPath("/core/agreements", REGROUP)?.key).toBe("core");
     expect(areaForPath("/core/agreements/abc123", REGROUP)?.key).toBe("core");
-    expect(areaForPath("/admin/email-senders", REGROUP)?.key).toBe("admin");
+    expect(areaForPath("/admin/messaging/senders", REGROUP)?.key).toBe("admin");
     expect(areaForPath("/projects/42", REGROUP)?.key).toBe("projects");
   });
 
@@ -278,8 +288,8 @@ describe("areaForPath", () => {
     );
     expect(areaForPath("/core/communications/email?key=hiring:decision:Rejected", REGROUP)?.key)
       .toBe("core");
-    expect(areaForPath("/admin/email-senders", REGROUP)?.key).toBe("admin");
-    expect(areaForPath("/admin/outbound-messages", REGROUP)?.key).toBe("admin");
+    expect(areaForPath("/admin/messaging/senders", REGROUP)?.key).toBe("admin");
+    expect(areaForPath("/admin/messaging/outbox", REGROUP)?.key).toBe("admin");
   });
 
   // Every sidebar entry must point at a path its own area owns — the invariant

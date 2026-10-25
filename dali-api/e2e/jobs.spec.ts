@@ -5,7 +5,7 @@ import { test, expect } from "./fixtures";
 
 const ADMIN = { daliEmail: "admin@dali.dartmouth.edu" };
 
-// /admin/jobs renders inside the workspace iframe (same convention
+// /admin/platform/jobs renders inside the workspace iframe (same convention
 // as the other admin specs).
 const adminFrame = (page: import("@playwright/test").Page) =>
   page.frameLocator('iframe[title="Admin"]');
@@ -16,7 +16,7 @@ test.describe("admin jobs panel", () => {
   });
 
   test("lists registered jobs with controls", async ({ page }) => {
-    await page.goto("/admin/jobs");
+    await page.goto("/admin/platform/jobs");
     const frame = adminFrame(page);
 
     for (const name of [
@@ -37,31 +37,33 @@ test.describe("admin jobs panel", () => {
   });
 
   test("toggle persists across reload", async ({ page }) => {
-    await page.goto("/admin/jobs");
+    await page.goto("/admin/platform/jobs");
     const frame = adminFrame(page);
 
-    const row = frame.locator("tr", { hasText: "session-feedback-sweep" });
-    await row.getByRole("button", { name: /Enabled|Disabled/ }).click();
-    await expect(row.getByRole("button", { name: "Disabled" })).toBeVisible();
+    const row = frame.locator("li", { hasText: "session-feedback-sweep" });
+    await row.getByRole("switch", { name: "Pause session-feedback-sweep" }).click({ force: true });
+    await expect(row.getByText("Paused", { exact: true }).first()).toBeVisible();
 
     await page.reload();
-    const rowAfter = adminFrame(page).locator("tr", {
-      hasText: "session-feedback-sweep",
-    });
-    await expect(rowAfter.getByRole("button", { name: "Disabled" })).toBeVisible();
+    const rowAfter = adminFrame(page).locator("li", { hasText: "session-feedback-sweep" });
+    const resume = rowAfter.getByRole("switch", { name: "Resume session-feedback-sweep" });
+    await expect(resume).not.toBeChecked();
 
     // Restore for other tests.
-    await rowAfter.getByRole("button", { name: "Disabled" }).click();
-    await expect(rowAfter.getByRole("button", { name: "Enabled" })).toBeVisible();
+    await resume.click({ force: true });
+    await expect(
+      rowAfter.getByRole("switch", { name: "Pause session-feedback-sweep" }),
+    ).toBeChecked();
   });
 
   test("Run now executes a job and records the run", async ({ page }) => {
-    await page.goto("/admin/jobs");
+    await page.goto("/admin/platform/jobs");
     const frame = adminFrame(page);
 
-    const row = frame.locator("tr", { hasText: "scheduled-announcements" });
+    const row = frame.locator("li", { hasText: "scheduled-announcements" });
     await row.getByRole("button", { name: "Run now" }).click();
-    await expect(row.getByText(/Success|Error/)).toBeVisible({ timeout: 15_000 });
+    await frame.getByRole("dialog").getByRole("button", { name: "Run now" }).click();
+    await expect(row.getByText(/Healthy|Failing/)).toBeVisible({ timeout: 15_000 });
   });
 });
 

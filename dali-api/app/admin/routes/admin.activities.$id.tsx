@@ -1,22 +1,25 @@
-// Admin → Activities → editor (specs/activities.md §7.8). Edits an activity's
-// window, audience (everyone / roles / group), scoring (individuals or teams,
-// plus the teams themselves), and mechanic config, plus the status transitions
-// (Draft ⇄ Published, Archive), Clone (for term reuse), and Delete
-// (Draft/eventless only — archive otherwise). The mechanic's own config editor
-// comes from the client registry; the teams panel is ActivityTeamsEditor.
+// Admin → Onboarding → <activity> (specs/activities.md §7.8). The mechanic's
+// own config editor comes from the client registry; the teams panel is
+// ActivityTeamsEditor.
 
 import { useEffect, useState } from "react";
 import { Form, redirect, useActionData, useLoaderData } from "react-router";
+import { Archive, Copy, Trash2 } from "lucide-react";
 import type { Route } from "./+types/admin.activities.$id";
-import { adminTrail } from "~/admin/adminNav";
+import { AdminSectionHeader, adminTrail } from "~/admin/adminNav";
+import { Pill, type Tone } from "~/admin/components/console-ui";
+import { useOsChrome } from "~/components/os-chrome";
+import { Checkbox } from "~/components/ui/Checkbox";
+import { DateField } from "~/components/ui/DateField";
+import { Select, Tooltip } from "~/components/ui/floating";
+import { cn } from "~/lib/cn";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
-import { isCore } from "~/lib/roles";
+import { isAdmin, isCore } from "~/lib/roles";
 import { prisma } from "~/lib/db";
 import { listAllGroups } from "~/lib/groups";
 import { orderGroupsForPicker } from "~/lib/group-kind";
 import { logAuditEvent } from "~/lib/audit";
-import { buttonClasses } from "~/components/ui/Button";
 import { useConfirmSubmit } from "~/components/ui/dialog";
 import { Toggle } from "~/components/ui/Toggle";
 import { ROLE_TARGETS, type RoleTarget } from "~/lib/feature-flags";
@@ -39,16 +42,13 @@ import {
 } from "~/lib/activities.server";
 import { fullName } from "~/lib/display";
 
-// Append the activity's name as the breadcrumb leaf so the shell trail reads
-// Admin → System & Insights → Activities → <name>, instead of the page rolling
-// its own duplicate path row.
 export const handle = {
   roomyBreadcrumb: true,
   breadcrumbTrail: (data: unknown) => {
     const d = data as
       | { activity?: { name: string }; viewerIsAdmin?: boolean; isAdmin?: boolean }
       | undefined;
-    const base = adminTrail("activities", !!d?.isAdmin || !!d?.viewerIsAdmin);
+    const base = adminTrail("onboarding", !!d?.isAdmin || !!d?.viewerIsAdmin);
     return d?.activity?.name ? [...base, { label: d.activity.name }] : base;
   },
 };
@@ -75,12 +75,13 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const activity = await prisma.activity.findUnique({ where: { id: params.id } });
   if (!activity) throw new Response("Not found", { status: 404 });
 
-  const [terms, allGroups, eventCount, roster, teams] = await Promise.all([
+  const [terms, allGroups, eventCount, roster, teams, viewerIsAdmin] = await Promise.all([
     prisma.term.findMany({ orderBy: { sortKey: "desc" }, select: { id: true, code: true } }),
     listAllGroups(),
     prisma.activityEvent.count({ where: { activityId: params.id } }),
     resolveActivityRoster(activity),
     listActivityTeams(params.id),
+    isAdmin(auth.user.sub),
   ]);
   const groups = allGroups
     .filter((g) => !g.archived)
@@ -109,7 +110,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     for (const u of rows) nameByUserId[u.id] = fullName(u);
   }
 
-  return { activity, terms, groups, eventCount, roster, teams, nameByUserId, viewerIsAdmin: false };
+  return { activity, terms, groups, eventCount, roster, teams, nameByUserId, viewerIsAdmin };
 }
 
 export async function action({ request, params }: Route.ActionArgs) {
@@ -124,27 +125,27 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (intent === "clone") {
     const clone = await cloneActivity(id, auth.user.sub);
     await logAuditEvent({ action: "activities.clone", userId: auth.user.sub, targetId: clone.id, metadata: { from: id }, request });
-    return redirect(`/admin/activities/${clone.id}`);
+    return redirect(`/admin/onboarding/${clone.id}`);
   }
 
   if (intent === "delete") {
     const count = await prisma.activityEvent.count({ where: { activityId: id } });
     if (count > 0) {
       return Response.json(
-        { error: "This activity has participation events — archive it instead of deleting." },
+        { error: "This activity has participation events. Archive it instead of deleting." },
         { status: 400 },
       );
     }
     await deleteActivity(id);
     await logAuditEvent({ action: "activities.delete", userId: auth.user.sub, targetId: id, request });
-    return redirect("/admin/activities");
+    return redirect("/admin/onboarding");
   }
 
   if (intent === "publish" || intent === "unpublish" || intent === "archive") {
     const status = intent === "publish" ? "Published" : intent === "archive" ? "Archived" : "Draft";
     await setActivityStatus(id, status);
     await logAuditEvent({ action: "activities.status", userId: auth.user.sub, targetId: id, metadata: { status }, request });
-    return redirect(`/admin/activities/${id}`);
+    return redirect(`/admin/onboarding/${id}`);
   }
 
   // save
@@ -220,8 +221,14 @@ export async function action({ request, params }: Route.ActionArgs) {
     );
   }
   await logAuditEvent({ action: "activities.update", userId: auth.user.sub, targetId: id, request });
-  return redirect(`/admin/activities/${id}`);
+  return redirect(`/admin/onboarding/${id}`);
 }
+
+const STATUS_TONE: Record<string, Tone> = {
+  Draft: "warn",
+  Published: "ok",
+  Archived: "idle",
+};
 
 function toLocalInputValue(iso: string): string {
   const d = new Date(iso);
@@ -229,11 +236,25 @@ function toLocalInputValue(iso: string): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+const FORM_ID = "activity-form";
+
 export default function AdminActivityEditor() {
   const { activity, terms, groups, eventCount, roster, teams: savedTeams, nameByUserId } =
     useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>() as { error?: string } | undefined;
   const error = actionData?.error ?? null;
+  const {
+    panel,
+    sectionShell,
+    sectionTitle,
+    bodyText,
+    formClass,
+    formTrigger,
+    fieldLabel,
+    actionBtn,
+    actionBtnPrimary,
+    iconBtn,
+  } = useOsChrome();
 
   const mech = mechanicClient(activity.kind);
   const confirmSubmit = useConfirmSubmit();
@@ -260,27 +281,80 @@ export default function AdminActivityEditor() {
     setRoles((prev) => (prev.includes(r) ? prev.filter((x) => x !== r) : [...prev, r]));
 
   const canDelete = activity.status === "Draft" && eventCount === 0;
+  const kindLabel = activityKindLabel(activity.kind);
+
+  const saveButton = (
+    <button type="submit" form={FORM_ID} name="intent" value="save" className={actionBtnPrimary}>
+      Save changes
+    </button>
+  );
 
   return (
-    <div className="flex max-w-3xl flex-col gap-6">
-      <div>
-        <h1 className="text-xl font-semibold text-foreground">{activity.name}</h1>
-        <p className="mt-1 text-xs text-muted-foreground">
-          {activityKindLabel(activity.kind)} · {activity.status}
-        </p>
-      </div>
+    <div className="flex flex-col gap-8">
+      <AdminSectionHeader
+        section="onboarding"
+        title={activity.name}
+        description={
+          <span className="inline-flex flex-wrap items-center gap-2">
+            {kindLabel}
+            <Pill tone={STATUS_TONE[activity.status] ?? "idle"}>{activity.status}</Pill>
+          </span>
+        }
+        actions={
+          <>
+            <Tooltip content="Clone">
+              <button type="submit" form={FORM_ID} name="intent" value="clone" aria-label="Clone" className={iconBtn}>
+                <Copy className="h-4 w-4" />
+              </button>
+            </Tooltip>
+            {activity.status !== "Archived" && (
+              <Tooltip content="Archive">
+                <button type="submit" form={FORM_ID} name="intent" value="archive" aria-label="Archive" className={iconBtn}>
+                  <Archive className="h-4 w-4" />
+                </button>
+              </Tooltip>
+            )}
+            <Tooltip
+              content={canDelete ? "Delete" : "Only a draft with no events can be deleted. Archive it instead."}
+            >
+              <span tabIndex={canDelete ? -1 : 0} className="inline-flex">
+                <button
+                  type="submit"
+                  form={FORM_ID}
+                  name="intent"
+                  value="delete"
+                  disabled={!canDelete}
+                  aria-label="Delete"
+                  className={cn(iconBtn, "hover:text-destructive disabled:pointer-events-none disabled:opacity-40")}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              </span>
+            </Tooltip>
+            {activity.status !== "Published" ? (
+              <button type="submit" form={FORM_ID} name="intent" value="publish" className={actionBtn()}>
+                Publish
+              </button>
+            ) : (
+              <button type="submit" form={FORM_ID} name="intent" value="unpublish" className={actionBtn()}>
+                Unpublish
+              </button>
+            )}
+            {saveButton}
+          </>
+        }
+      />
 
       {error && (
-        <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-          {error}
-        </p>
+        <p className="rounded-os-item bg-destructive/10 px-4 py-3 text-sm text-destructive">{error}</p>
       )}
 
       {/* Save / Publish / Clone submit straight through; the three that take an
           activity away from its participants confirm first. */}
       <Form
+        id={FORM_ID}
         method="post"
-        className="flex flex-col gap-6"
+        className={cn("grid gap-8 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)] lg:items-start")}
         onSubmit={confirmSubmit((submitter) => {
           switch (submitter?.value) {
             case "unpublish":
@@ -312,170 +386,137 @@ export default function AdminActivityEditor() {
           }
         })}
       >
-        {/* Serialized complex fields */}
         <input type="hidden" name="audienceRoles" value={JSON.stringify(roles)} />
         <input type="hidden" name="config" value={JSON.stringify(config ?? {})} />
         <input type="hidden" name="scoring" value={scoring} />
         <input type="hidden" name="teamSize" value={teamSize} />
         <input type="hidden" name="teams" value={JSON.stringify(teams)} />
+        <input type="hidden" name="termId" value={termId} />
+        <input type="hidden" name="assignedGroupId" value={groupId} />
         <input type="hidden" name="startsAt" value={startsAt ? new Date(startsAt).toISOString() : ""} />
         <input type="hidden" name="endsAt" value={endsAt ? new Date(endsAt).toISOString() : ""} />
 
-        <section className="grid gap-4 rounded-xl border border-border bg-card p-5 sm:grid-cols-2">
-          <label className="flex flex-col gap-1 text-sm sm:col-span-2">
-            <span className="font-medium text-foreground">Name</span>
-            <input
-              name="name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="rounded-md border border-border bg-background px-3 py-2 text-sm"
-            />
-          </label>
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="font-medium text-foreground">Term</span>
-            <select
-              name="termId"
-              value={termId}
-              onChange={(e) => setTermId(e.target.value)}
-              className="rounded-md border border-border bg-background px-3 py-2 text-sm"
-            >
-              <option value="">— None —</option>
-              {terms.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.code}
-                </option>
-              ))}
-            </select>
-          </label>
-          <div />
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="font-medium text-foreground">Starts</span>
-            <input
-              type="datetime-local"
-              value={startsAt}
-              onChange={(e) => setStartsAt(e.target.value)}
-              suppressHydrationWarning
-              className="rounded-md border border-border bg-background px-3 py-2 text-sm"
-            />
-          </label>
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="font-medium text-foreground">Ends</span>
-            <input
-              type="datetime-local"
-              value={endsAt}
-              onChange={(e) => setEndsAt(e.target.value)}
-              suppressHydrationWarning
-              className="rounded-md border border-border bg-background px-3 py-2 text-sm"
-            />
-          </label>
-        </section>
-
-        {/* Audience */}
-        <section className="flex flex-col gap-4 rounded-xl border border-border bg-card p-5">
-          <h2 className="text-sm font-semibold text-foreground">Audience</h2>
-          <Toggle
-            name="audienceEveryone"
-            checked={everyone}
-            onChange={(e) => setEveryone(e.target.checked)}
-            label="Everyone in the lab"
-            description="On for all members while the activity is live."
-          />
-          <div className={everyone ? "pointer-events-none opacity-40" : ""}>
-            <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              Or target by role
-            </p>
-            <div className="flex flex-wrap gap-3">
-              {ROLE_TARGETS.map((r) => (
-                <label key={r} className="flex items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={roles.includes(r)}
-                    onChange={() => toggleRole(r)}
-                  />
-                  {ROLE_LABELS[r]}
-                </label>
-              ))}
+        <div className="flex flex-col gap-8">
+          <section className={sectionShell} aria-labelledby="details-title">
+            <h2 id="details-title" className={sectionTitle}>
+              Details
+            </h2>
+            <div className={cn(panel, formClass, "grid gap-4 p-6 sm:grid-cols-2")}>
+              <label className={cn(fieldLabel, "sm:col-span-2")}>
+                Name
+                <input type="text" name="name" value={name} onChange={(e) => setName(e.target.value)} />
+              </label>
+              <label className={fieldLabel}>
+                Term
+                <Select
+                  value={termId}
+                  onChange={setTermId}
+                  ariaLabel="Term"
+                  options={[{ value: "", label: "None" }, ...terms.map((t) => ({ value: t.id, label: t.code }))]}
+                  buttonClassName={formTrigger}
+                />
+              </label>
+              <div className="hidden sm:block" />
+              <div className={fieldLabel}>
+                Starts
+                <DateField
+                  mode="datetime-local"
+                  value={startsAt}
+                  onChange={setStartsAt}
+                  ariaLabel="Starts"
+                  buttonClassName={formTrigger}
+                />
+              </div>
+              <div className={fieldLabel}>
+                Ends
+                <DateField
+                  mode="datetime-local"
+                  value={endsAt}
+                  onChange={setEndsAt}
+                  ariaLabel="Ends"
+                  buttonClassName={formTrigger}
+                />
+              </div>
             </div>
-            <label className="mt-4 flex max-w-sm flex-col gap-1 text-sm">
-              <span className="font-medium text-foreground">And/or a group</span>
-              <select
-                name="assignedGroupId"
-                value={groupId}
-                onChange={(e) => setGroupId(e.target.value)}
-                className="rounded-md border border-border bg-background px-3 py-2 text-sm"
-              >
-                <option value="">— None —</option>
-                {orderGroupsForPicker(groups, groupId ? [groupId] : []).map((g) => (
-                  <option key={g.id} value={g.id}>
-                    {g.name} ({g.type})
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-        </section>
+          </section>
 
-        {/* Scoring & teams */}
-        <ActivityTeamsEditor
-          scoring={scoring}
-          onScoringChange={setScoring}
-          teamSize={teamSize}
-          onTeamSizeChange={setTeamSize}
-          teams={teams}
-          onTeamsChange={setTeams}
-          roster={roster}
-          nameByUserId={nameByUserId}
-        />
+          <section className={sectionShell} aria-labelledby="settings-title">
+            <h2 id="settings-title" className={sectionTitle}>
+              {kindLabel} settings
+            </h2>
+            <div className={cn(panel, "p-6")}>
+              {mech ? (
+                <mech.AdminEditor value={config} onChange={setConfig} />
+              ) : (
+                <p className={bodyText}>This activity type has no editor.</p>
+              )}
+            </div>
+          </section>
+        </div>
 
-        {/* Mechanic config */}
-        <section className="flex flex-col gap-3 rounded-xl border border-border bg-card p-5">
-          <h2 className="text-sm font-semibold text-foreground">
-            {activityKindLabel(activity.kind)} settings
-          </h2>
-          {mech ? (
-            <mech.AdminEditor value={config} onChange={setConfig} />
-          ) : (
-            <p className="text-sm text-muted-foreground">
-              This activity type has no editor.
-            </p>
-          )}
-        </section>
+        <div className="flex flex-col gap-8">
+          <section className={sectionShell} aria-labelledby="audience-title">
+            <h2 id="audience-title" className={sectionTitle}>
+              Audience
+            </h2>
+            <div className={cn(panel, formClass, "flex flex-col gap-5 p-6")}>
+              <Toggle
+                tone="os"
+                name="audienceEveryone"
+                checked={everyone}
+                onChange={(e) => setEveryone(e.target.checked)}
+                label="Everyone in the lab"
+                description="On for all members while the activity is live."
+              />
+              <div className={cn("flex flex-col gap-5", everyone && "pointer-events-none opacity-40")}>
+                <div className="flex flex-col gap-2.5">
+                  <p className="text-xs font-semibold text-os-muted">Or target by role</p>
+                  <div className="grid grid-cols-2 gap-2.5">
+                    {ROLE_TARGETS.map((r) => (
+                      <Checkbox
+                        key={r}
+                        tone="os"
+                        checked={roles.includes(r)}
+                        onChange={() => toggleRole(r)}
+                        label={ROLE_LABELS[r]}
+                      />
+                    ))}
+                  </div>
+                </div>
+                <label className={fieldLabel}>
+                  And/or a group
+                  <Select
+                    value={groupId}
+                    onChange={setGroupId}
+                    ariaLabel="Group"
+                    options={[
+                      { value: "", label: "None" },
+                      ...orderGroupsForPicker(groups, groupId ? [groupId] : []).map((g) => ({
+                        value: g.id,
+                        label: `${g.name} (${g.type})`,
+                      })),
+                    ]}
+                    buttonClassName={formTrigger}
+                  />
+                </label>
+              </div>
+            </div>
+          </section>
 
-        {/* Actions */}
-        <div className="flex flex-wrap items-center gap-2">
-          <button type="submit" name="intent" value="save" className={buttonClasses("primary", "md")}>
-            Save changes
-          </button>
-          {activity.status !== "Published" ? (
-            <button type="submit" name="intent" value="publish" className={buttonClasses("secondary", "md")}>
-              Publish
-            </button>
-          ) : (
-            <button type="submit" name="intent" value="unpublish" className={buttonClasses("secondary", "md")}>
-              Unpublish
-            </button>
-          )}
-          {activity.status !== "Archived" && (
-            <button type="submit" name="intent" value="archive" className={buttonClasses("ghost", "md")}>
-              Archive
-            </button>
-          )}
-          <button type="submit" name="intent" value="clone" className={buttonClasses("ghost", "md")}>
-            Clone
-          </button>
-          <span className="flex-1" />
-          <button
-            type="submit"
-            name="intent"
-            value="delete"
-            disabled={!canDelete}
-            title={canDelete ? undefined : "Archive instead — this activity has events or is published."}
-            className={buttonClasses("destructive", "md")}
-          >
-            Delete
-          </button>
+          <ActivityTeamsEditor
+            scoring={scoring}
+            onScoringChange={setScoring}
+            teamSize={teamSize}
+            onTeamSizeChange={setTeamSize}
+            teams={teams}
+            onTeamsChange={setTeams}
+            roster={roster}
+            nameByUserId={nameByUserId}
+          />
         </div>
       </Form>
+
+      <div className="flex justify-end">{saveButton}</div>
     </div>
   );
 }

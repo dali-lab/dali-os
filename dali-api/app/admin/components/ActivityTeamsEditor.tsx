@@ -1,6 +1,6 @@
-// Admin → Activities → editor: the Scoring & teams panel (specs/activities.md
-// §4). Picks whether an activity scores per member or per team, and — for a team
-// activity — builds the teams: auto-assign the audience into teams of N, or pair
+// Admin → Onboarding → editor: the Scoring & teams panel (specs/activities.md
+// §4). Picks whether an activity scores per member or per team, and for a team
+// activity builds the teams: auto-assign the audience into teams of N, or pair
 // people up by hand with the member search.
 //
 // All of it is client state, serialized into the editor's one <Form> (the same
@@ -10,8 +10,9 @@
 
 import { useMemo } from "react";
 import { Shuffle, Trash2, UserPlus, Users, X } from "lucide-react";
-import { Select, Combobox } from "~/components/ui/floating";
-import { buttonClasses } from "~/components/ui/Button";
+import { Select, Combobox, Tooltip } from "~/components/ui/floating";
+import { useOsChrome } from "~/components/os-chrome";
+import { cn } from "~/lib/cn";
 import { useDialog } from "~/components/ui/dialog";
 import {
   autoAssignTeams,
@@ -53,6 +54,8 @@ export function ActivityTeamsEditor({
   nameByUserId: Record<string, string>;
 }) {
   const dialog = useDialog();
+  const { panel, sectionShell, sectionTitle, bodyText, fieldLabel, formTrigger, formClass, actionBtn, iconBtn, compactField } =
+    useOsChrome();
 
   const assigned = useMemo(
     () => new Set(teams.flatMap((t) => t.memberIds)),
@@ -90,7 +93,7 @@ export function ActivityTeamsEditor({
     const ok = await dialog.confirm({
       title: "Clear every team?",
       description:
-        "All pairings are removed. Codes members already found are kept — they just stop counting toward a team until you pair people up again.",
+        "All pairings are removed. Codes members already found are kept. They stop counting toward a team until you pair people up again.",
       confirmLabel: "Clear teams",
       tone: "destructive",
     });
@@ -98,18 +101,22 @@ export function ActivityTeamsEditor({
   };
 
   return (
-    <section className="flex flex-col gap-4 rounded-xl border border-border bg-card p-5">
+    <section className={sectionShell} aria-labelledby="scoring-title">
       <div>
-        <h2 className="text-sm font-semibold text-foreground">Scoring</h2>
-        <p className="mt-1 text-xs text-muted-foreground">
+        <h2 id="scoring-title" className={sectionTitle}>
+          Scoring
+        </h2>
+        <p className={cn(bodyText, "mt-1")}>
           Who competes: each member on their own, or teams sharing one score.
         </p>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2">
-        <label className="flex flex-col gap-1 text-sm">
-          <span className="font-medium text-foreground">Competitors</span>
+      <div className={cn(panel, "flex flex-col gap-5 p-6")}>
+      <div className={cn(formClass, "grid gap-4 sm:grid-cols-2")}>
+        <label className={fieldLabel}>
+          Competitors
           <Select<ActivityScoring>
+            buttonClassName={formTrigger}
             value={scoring}
             onChange={onScoringChange}
             ariaLabel="Scoring"
@@ -128,17 +135,16 @@ export function ActivityTeamsEditor({
           />
         </label>
         {scoring === "Team" && (
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="font-medium text-foreground">People per team</span>
+          <label className={fieldLabel}>
+            People per team
             <input
               type="number"
               min={MIN_TEAM_SIZE}
               max={MAX_TEAM_SIZE}
               value={teamSize}
               onChange={(e) => onTeamSizeChange(clampTeamSize(Number(e.target.value)))}
-              className="rounded-md border border-border bg-background px-3 py-2 text-sm"
             />
-            <span className="text-xs text-muted-foreground">
+            <span className="text-xs text-os-muted">
               Used when auto-assigning. {MIN_TEAM_SIZE} pairs people up.
             </span>
           </label>
@@ -146,24 +152,27 @@ export function ActivityTeamsEditor({
       </div>
 
       {scoring === "Team" && (
-        <div className="flex flex-col gap-3 border-t border-border pt-4">
+        <div className="flex flex-col gap-3 border-t border-os-container/70 pt-5">
           <div className="flex flex-wrap items-center gap-2">
             <h3 className="mr-auto text-sm font-semibold text-foreground">
-              Teams ({teams.length})
+              Teams <span className="font-normal text-os-muted">{teams.length}</span>
             </h3>
-            <button
-              type="button"
-              onClick={autoAssign}
-              disabled={unassigned.length === 0}
-              title={
-                unassigned.length === 0
-                  ? "Everyone in the audience is already on a team."
-                  : undefined
+            <Tooltip
+              content={
+                unassigned.length === 0 ? "Everyone in the audience is already on a team." : null
               }
-              className={buttonClasses("secondary", "sm")}
             >
-              <Shuffle className="h-3.5 w-3.5" /> Auto-assign ({unassigned.length})
-            </button>
+              <span tabIndex={unassigned.length === 0 ? 0 : -1} className="inline-flex">
+                <button
+                  type="button"
+                  onClick={autoAssign}
+                  disabled={unassigned.length === 0}
+                  className={cn(actionBtn(), "disabled:pointer-events-none disabled:opacity-50")}
+                >
+                  <Shuffle className="h-4 w-4" /> Auto-assign ({unassigned.length})
+                </button>
+              </span>
+            </Tooltip>
             <button
               type="button"
               onClick={() =>
@@ -172,32 +181,27 @@ export function ActivityTeamsEditor({
                   { id: newTeamId(), name: defaultTeamName(teams.length), memberIds: [] },
                 ])
               }
-              className={buttonClasses("secondary", "sm")}
+              className={actionBtn()}
             >
-              <UserPlus className="h-3.5 w-3.5" /> New team
+              <UserPlus className="h-4 w-4" /> New team
             </button>
             {teams.length > 0 && (
-              <button
-                type="button"
-                onClick={clearTeams}
-                className={buttonClasses("ghost", "sm")}
-              >
-                Clear
+              <button type="button" onClick={clearTeams} className={actionBtn()}>
+                Clear all
               </button>
             )}
           </div>
 
           {roster.length === 0 && (
-            <p className="rounded-md border border-dashed border-border px-3 py-4 text-center text-xs text-muted-foreground">
-              No one is in this activity's audience yet. Set the audience above —
-              a group, a role, or everyone — and the people in it show up here to
-              pair up.
+            <p className="rounded-os-item border border-dashed border-os-container px-4 py-5 text-center text-sm text-os-muted">
+              No one is in this activity's audience yet. Set the audience (a group,
+              a role, or everyone) and the people in it show up here to pair up.
             </p>
           )}
 
           {teams.length === 0 ? (
             roster.length > 0 && (
-              <p className="rounded-md border border-dashed border-border px-3 py-4 text-center text-xs text-muted-foreground">
+              <p className="rounded-os-item border border-dashed border-os-container px-4 py-5 text-center text-sm text-os-muted">
                 No teams yet. Auto-assign pairs up all {roster.length} of them, or
                 add a team and pick people by hand.
               </p>
@@ -207,10 +211,10 @@ export function ActivityTeamsEditor({
               {teams.map((team, i) => (
                 <div
                   key={team.id}
-                  className="flex flex-col gap-2 rounded-md border border-border bg-background p-3"
+                  className="flex flex-col gap-2.5 rounded-os-item border border-os-container p-3"
                 >
                   <div className="flex items-center gap-2">
-                    <Users className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    <Users className="h-4 w-4 shrink-0 text-os-muted" />
                     <input
                       value={team.name}
                       onChange={(e) =>
@@ -221,40 +225,41 @@ export function ActivityTeamsEditor({
                         )
                       }
                       aria-label={`Team ${i + 1} name`}
-                      className="min-w-0 flex-1 rounded border border-border bg-card px-2 py-1.5 text-sm font-medium"
+                      className={cn(compactField, "min-w-0 flex-1 border border-os-container px-3 py-1.5 text-sm font-medium")}
                     />
                     <span
-                      className={
-                        team.memberIds.length > teamSize
-                          ? "shrink-0 text-xs text-os-amber"
-                          : "shrink-0 text-xs text-muted-foreground"
-                      }
+                      className={cn(
+                        "shrink-0 text-xs tabular-nums",
+                        team.memberIds.length > teamSize ? "text-os-amber" : "text-os-muted",
+                      )}
                     >
                       {team.memberIds.length}/{teamSize}
                     </span>
-                    <button
-                      type="button"
-                      onClick={() => onTeamsChange(teams.filter((_, idx) => idx !== i))}
-                      aria-label={`Remove ${team.name || `team ${i + 1}`}`}
-                      className={buttonClasses("ghost", "sm")}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
+                    <Tooltip content="Remove team">
+                      <button
+                        type="button"
+                        onClick={() => onTeamsChange(teams.filter((_, idx) => idx !== i))}
+                        aria-label={`Remove ${team.name || `team ${i + 1}`}`}
+                        className={cn(iconBtn, "hover:text-destructive")}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </Tooltip>
                   </div>
                   <div className="flex flex-wrap items-center gap-1.5">
                     {team.memberIds.map((id) => (
                       <span
                         key={id}
-                        className="inline-flex items-center gap-1 rounded-full border border-border bg-card py-1 pl-2.5 pr-1 text-xs text-foreground"
+                        className="inline-flex items-center gap-1 rounded-full border border-os-container py-1 pl-3 pr-1 text-sm text-foreground"
                       >
                         {nameByUserId[id] ?? "Former member"}
                         <button
                           type="button"
                           onClick={() => onTeamsChange(removeFromTeams(teams, id))}
                           aria-label={`Remove ${nameByUserId[id] ?? "member"} from ${team.name}`}
-                          className="rounded-full p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                          className="rounded-full p-0.5 text-os-muted transition-colors hover:bg-os-container hover:text-foreground"
                         >
-                          <X className="h-3 w-3" />
+                          <X className="h-3.5 w-3.5" />
                         </button>
                       </span>
                     ))}
@@ -267,7 +272,7 @@ export function ActivityTeamsEditor({
                       emptyLabel={
                         addOptions.length === 0 ? "Everyone is assigned" : "No matches"
                       }
-                      className="rounded-full border border-dashed border-border px-3 py-1 text-xs"
+                      className="rounded-full border border-dashed border-os-container px-3 py-1 text-sm"
                     />
                   </div>
                 </div>
@@ -276,16 +281,17 @@ export function ActivityTeamsEditor({
           )}
 
           {unassigned.length > 0 && teams.length > 0 && (
-            <p className="text-xs text-muted-foreground">
+            <p className="text-sm text-os-grey">
               <span className="font-medium text-foreground">
                 Not on a team ({unassigned.length}):
               </span>{" "}
               {unassigned.map((m) => m.name).join(", ")}. They can still enter
-              codes — their finds start counting the moment they join a team.
+              codes, and their finds start counting the moment they join a team.
             </p>
           )}
         </div>
       )}
+      </div>
     </section>
   );
 }

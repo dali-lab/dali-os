@@ -1,4 +1,4 @@
-// Admin → Jobs. Status + controls for the background job runner
+// Admin → Platform → Jobs. Status + controls for the background job runner
 // (app/jobs/runner.server.ts): per-job enable toggle, "Run now" (force, but
 // never overlapping an in-flight run), and the operator-editable knobs —
 // interval and any settings the job's registry entry declares. The row is
@@ -7,15 +7,18 @@
 import { redirect, useFetcher, useLoaderData, useRevalidator } from "react-router";
 import { useEffect, useState } from "react";
 import { useDialog } from "~/components/ui/dialog";
-import { Play } from "lucide-react";
+import { Loader2, Play } from "lucide-react";
 import type { Route } from "./+types/admin.jobs";
-import { adminHandle } from "~/admin/adminNav";
+import { AdminSectionHeader, adminHandle } from "~/admin/adminNav";
+import { EmptyState, Pill, type Tone } from "~/admin/components/console-ui";
+import { useOsChrome } from "~/components/os-chrome";
+import { Toggle } from "~/components/ui/Toggle";
+import { cn } from "~/lib/cn";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { isCore, isAdmin } from "~/lib/roles";
 import { JOBS, resolveJobSettings } from "~/jobs/registry";
-import { buttonClasses } from "~/components/ui/Button";
 import { Tooltip, InfoTip } from "~/components/ui/floating";
 
 export const handle = adminHandle("jobs");
@@ -95,7 +98,30 @@ function formatTime(iso: string | null): string {
   });
 }
 
+function formatDuration(ms: number | null): string | null {
+  if (ms == null) return null;
+  return ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(ms < 10_000 ? 1 : 0)}s`;
+}
+
+type JobState = "ok" | "failing" | "running" | "paused" | "never";
+
+const STATE: Record<JobState, { tone: Tone; label: string }> = {
+  ok: { tone: "ok", label: "Healthy" },
+  failing: { tone: "bad", label: "Failing" },
+  running: { tone: "warn", label: "Running" },
+  paused: { tone: "idle", label: "Paused" },
+  never: { tone: "idle", label: "Not run yet" },
+};
+
+function jobState(job: Pick<JobView, "lastStatus">, enabled: boolean, running: boolean): JobState {
+  if (running) return "running";
+  if (!enabled) return "paused";
+  if (job.lastStatus === "Error") return "failing";
+  return job.lastStatus === "Success" ? "ok" : "never";
+}
+
 function JobRow({ job }: { job: JobView }) {
+  const { actionBtn, actionBtnPrimary, compactField } = useOsChrome();
   const toggleFetcher = useFetcher();
   const runFetcher = useFetcher();
   const saveFetcher = useFetcher<{ ok?: boolean; error?: string }>();
@@ -116,8 +142,8 @@ function JobRow({ job }: { job: JobView }) {
     Number(interval) !== job.intervalMinutes ||
     job.settingDefs.some((s) => Number(settings[s.key]) !== job.settings[s.key]);
 
-  // Refresh the table once a Run-now or Save round-trip finishes so
-  // lastRunAt/status and stored values reflect the change without a reload.
+  // Refresh once a Run-now or Save round-trip finishes so lastRunAt/status and
+  // stored values reflect the change without a reload.
   useEffect(() => {
     if (runFetcher.state === "idle" && runFetcher.data) revalidator.revalidate();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -129,6 +155,11 @@ function JobRow({ job }: { job: JobView }) {
 
   const optimistic = toggleFetcher.json as { enabled?: boolean } | undefined;
   const enabled = optimistic?.enabled ?? job.enabled;
+  const running = runFetcher.state !== "idle";
+  const state = STATE[jobState(job, enabled, running)];
+  const failing = job.lastStatus === "Error" && enabled;
+  const duration = formatDuration(job.lastDurationMs);
+  const field = cn(compactField, "w-16 border border-os-container px-2 py-1 text-xs tabular-nums");
 
   function save() {
     saveFetcher.submit(
@@ -142,46 +173,44 @@ function JobRow({ job }: { job: JobView }) {
     );
   }
 
+  async function runNow() {
+    const ok = await dialog.confirm({
+      title: `Run ${job.name} now?`,
+      description:
+        "This runs the job immediately. Some jobs (digests, reminders, scheduled announcements) may email or Slack members right away.",
+      confirmLabel: "Run now",
+    });
+    if (!ok) return;
+    runFetcher.submit(
+      { action: "run" },
+      { method: "POST", action: `/api/jobs/${job.name}`, encType: "application/json" },
+    );
+  }
+
   return (
-    <tr className="border-b border-zinc-100 last:border-b-0">
-      <td className="px-3 py-3 align-top">
-        <p className="font-mono text-sm font-medium text-zinc-900">{job.name}</p>
-        <p className="mt-0.5 text-xs text-zinc-500">{job.description}</p>
-        {job.settingDefs.length > 0 && (
-          <div className="mt-2 flex flex-wrap gap-3">
-            {job.settingDefs.map((s) => (
-              <label key={s.key} className="flex items-center gap-1.5 text-xs text-zinc-600">
-                {s.label}
-                <Tooltip content={`${s.min}–${s.max}${s.unit ? ` ${s.unit}` : ""} · default ${s.default}`}>
-                  <input
-                    type="number"
-                    min={s.min}
-                    max={s.max}
-                    value={settings[s.key] ?? ""}
-                    onChange={(e) =>
-                      setSettings((prev) => ({ ...prev, [s.key]: e.target.value }))
-                    }
-                    className="w-16 rounded-md border border-zinc-300 px-1.5 py-0.5 text-xs"
-                  />
-                </Tooltip>
-                {s.unit}
-              </label>
-            ))}
-          </div>
-        )}
-        {saveFetcher.data?.error && (
-          <p className="mt-1 text-xs text-destructive">{saveFetcher.data.error}</p>
-        )}
+    <li className="grid gap-4 px-6 py-5 md:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,1fr)_auto] md:items-start">
+      <div className="min-w-0">
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="font-mono text-sm font-semibold text-foreground">{job.name}</p>
+          <Pill tone={state.tone}>{state.label}</Pill>
+        </div>
+        <p className="mt-0.5 text-sm text-os-grey">{job.description}</p>
         {job.lastError && (
           <Tooltip content={job.lastError} variant="rich" placement="bottom">
-            <p className="mt-1 break-all text-xs text-destructive">
+            <p className="mt-2 break-all rounded-lg bg-destructive/10 px-3 py-2 font-mono text-xs text-destructive">
               {job.lastError.length > 200 ? `${job.lastError.slice(0, 200)}…` : job.lastError}
             </p>
           </Tooltip>
         )}
-      </td>
-      <td className="px-3 py-3 text-center align-top">
-        <label className="inline-flex items-center gap-1 text-xs text-zinc-600">
+        {saveFetcher.data?.error && (
+          <p className="mt-2 text-xs text-destructive">{saveFetcher.data.error}</p>
+        )}
+      </div>
+
+      <div className="flex flex-col gap-2 text-sm">
+        <p className="text-xs text-os-muted">Schedule</p>
+        <label className="flex items-center gap-1.5 text-os-grey">
+          Every
           <Tooltip content={`Minutes between runs · 1–10080 · default ${job.defaultIntervalMinutes}`}>
             <input
               type="number"
@@ -189,139 +218,100 @@ function JobRow({ job }: { job: JobView }) {
               max={10080}
               value={interval}
               onChange={(e) => setInterval(e.target.value)}
-              className="w-16 rounded-md border border-zinc-300 px-1.5 py-0.5 text-xs"
+              aria-label={`${job.name} interval in minutes`}
+              className={field}
             />
           </Tooltip>
-          m
+          min
         </label>
-      </td>
-      <td className="px-3 py-3 text-center align-top">
+        {job.settingDefs.map((s) => (
+          <label key={s.key} className="flex flex-col gap-1 text-xs text-os-grey">
+            {s.label}
+            <span className="flex items-center gap-1.5">
+              <Tooltip content={`${s.min}–${s.max}${s.unit ? ` ${s.unit}` : ""} · default ${s.default}`}>
+                <input
+                  type="number"
+                  min={s.min}
+                  max={s.max}
+                  value={settings[s.key] ?? ""}
+                  onChange={(e) => setSettings((prev) => ({ ...prev, [s.key]: e.target.value }))}
+                  className={field}
+                />
+              </Tooltip>
+              {s.unit}
+            </span>
+          </label>
+        ))}
+      </div>
+
+      <div className="text-sm">
+        <p className="text-xs text-os-muted">Last run · next</p>
+        <p className="text-foreground">
+          {formatTime(job.lastRunAt)}
+          {duration && <span className="text-os-muted"> ({duration})</span>}
+        </p>
+        <p className="text-os-grey">{enabled ? formatTime(job.nextRunAt) : "Paused"}</p>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-3 md:justify-end">
+        {dirty && (
+          <button type="button" disabled={busy} onClick={save} className={actionBtnPrimary}>
+            {saveFetcher.state !== "idle" ? "Saving…" : "Save"}
+          </button>
+        )}
         <button
           type="button"
           disabled={busy}
-          onClick={() =>
+          onClick={runNow}
+          className={cn(failing && !dirty ? actionBtnPrimary : actionBtn(), "disabled:opacity-50")}
+        >
+          {running ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
+          {running ? "Running…" : failing ? "Retry now" : "Run now"}
+        </button>
+        <Toggle
+          tone="os"
+          checked={enabled}
+          disabled={busy}
+          aria-label={`${enabled ? "Pause" : "Resume"} ${job.name}`}
+          onChange={() =>
             toggleFetcher.submit(
               { enabled: !enabled },
-              {
-                method: "PATCH",
-                action: `/api/jobs/${job.name}`,
-                encType: "application/json",
-              },
+              { method: "PATCH", action: `/api/jobs/${job.name}`, encType: "application/json" },
             )
           }
-          className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${
-            enabled
-              ? "bg-os-green/15 text-os-green hover:bg-os-green/15"
-              : "bg-zinc-200 text-zinc-600 hover:bg-zinc-300"
-          } disabled:opacity-50`}
-        >
-          {enabled ? "Enabled" : "Disabled"}
-        </button>
-      </td>
-      <td className="px-3 py-3 text-center align-top text-xs text-zinc-600">
-        {formatTime(job.nextRunAt)}
-      </td>
-      <td className="px-3 py-3 text-center align-top text-xs text-zinc-600">
-        <div>{formatTime(job.lastRunAt)}</div>
-        {job.lastStatus && (
-          <span
-            className={`mt-1 inline-block rounded-full px-2 py-0.5 text-[11px] font-semibold ${
-              job.lastStatus === "Success"
-                ? "bg-os-green/15 text-os-green"
-                : "bg-destructive/15 text-destructive"
-            }`}
-          >
-            {job.lastStatus}
-            {job.lastDurationMs != null && ` · ${job.lastDurationMs}ms`}
-          </span>
-        )}
-      </td>
-      <td className="px-3 py-3 text-center align-top">
-        <div className="flex flex-col items-center gap-1.5">
-          <button
-            type="button"
-            disabled={busy}
-            onClick={async () => {
-              const ok = await dialog.confirm({
-                title: `Run ${job.name} now?`,
-                description: "This executes the job immediately. Some jobs (digests, reminders, scheduled announcements) may email or Slack members right away.",
-                confirmLabel: "Run now",
-              });
-              if (!ok) return;
-              runFetcher.submit(
-                { action: "run" },
-                {
-                  method: "POST",
-                  action: `/api/jobs/${job.name}`,
-                  encType: "application/json",
-                },
-              );
-            }}
-            className="inline-flex items-center gap-1 rounded-md border border-zinc-300 px-2 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
-          >
-            <Play className="h-3 w-3" />
-            {runFetcher.state !== "idle" ? "Running…" : "Run now"}
-          </button>
-          {dirty && (
-            <button
-              type="button"
-              disabled={busy}
-              onClick={save}
-              className={buttonClasses("primary", "sm")}
-            >
-              {saveFetcher.state !== "idle" ? "Saving…" : "Save"}
-            </button>
-          )}
-        </div>
-      </td>
-    </tr>
+        />
+      </div>
+    </li>
   );
 }
 
 export default function AdminJobs() {
   const { jobs } = useLoaderData<typeof loader>();
+  const { panel } = useOsChrome();
+  // Failing jobs first; otherwise the registry's order.
+  const ordered = [...jobs].sort(
+    (a, b) =>
+      Number(b.enabled && b.lastStatus === "Error") - Number(a.enabled && a.lastStatus === "Error"),
+  );
   return (
-    <div className="flex flex-col gap-4">
-      <header>
-        <h1 className="font-heading text-2xl font-bold text-foreground">Jobs</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Background jobs run on a one-minute tick. Disable a job to pause it;
-          "Run now" executes it immediately (it won't overlap an in-flight run).
-          Intervals and per-job settings are editable — changes apply from the
-          next run.
-        </p>
-      </header>
-      <div className="overflow-x-auto rounded-lg border border-zinc-200 bg-white">
-        <table className="w-full min-w-[720px] text-left">
-          <thead>
-            <tr className="border-b border-zinc-200 bg-zinc-50 text-xs font-medium text-zinc-500">
-              <th className="px-3 py-2">Job</th>
-              <th className="px-3 py-2 text-center">
-                <span className="inline-flex items-center gap-1">
-                  Interval
-                  <InfoTip content="How often this job runs. The DB row is authoritative — registry values are defaults. Range: 1–10080 minutes. A lease prevents concurrent runs across machines." />
-                </span>
-              </th>
-              <th className="px-3 py-2 text-center">Status</th>
-              <th className="px-3 py-2 text-center">Next run</th>
-              <th className="px-3 py-2 text-center">Last run</th>
-              <th className="px-3 py-2 text-center" />
-            </tr>
-          </thead>
-          <tbody>
-            {jobs.map((job) => (
-              <JobRow key={job.name} job={job} />
-            ))}
-            {jobs.length === 0 && (
-              <tr>
-                <td colSpan={6} className="px-3 py-8 text-center text-sm text-zinc-500">
-                  No jobs registered.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+    <div className="flex flex-col gap-8">
+      <AdminSectionHeader section="platform" />
+      <p className="-mt-2 flex items-center gap-1.5 text-sm text-os-grey">
+        Jobs run on a one-minute tick. Pause a job to stop it; Run now never overlaps a run in progress.
+        Interval and setting changes apply from the next run.
+        <InfoTip content="The database row is authoritative; the values in code are only defaults. A lease prevents concurrent runs across machines." />
+      </p>
+      {jobs.length === 0 ? (
+        <div className={panel}>
+          <EmptyState>No jobs registered.</EmptyState>
+        </div>
+      ) : (
+        <ul className={cn(panel, "divide-y divide-os-container/70")}>
+          {ordered.map((job) => (
+            <JobRow key={job.name} job={job} />
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

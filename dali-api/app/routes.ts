@@ -72,31 +72,43 @@ export default [
     route("hiring/interviews/:interviewId", "hiring/routes/interviews.$interviewId.tsx"),
     route("hiring/analytics", "hiring/routes/analytics.tsx"),
 
-    // Operations (top-level, not hiring). /admin is the nested hub; the three
-    // multi-section clusters have their own landing hubs (Documents & Finance
-    // are single-section and link straight to their tool from the hub).
+    // Admin: an Overview plus one section per tool family, each with its tools
+    // as tabs (app/admin/adminNav.tsx). A section's own URL opens its first tab.
     route("admin", "admin/routes/admin.tsx"),
+    route("admin/payroll", "admin/routes/admin.section.ts", { id: "admin-section-payroll" }),
+    route("admin/payroll/hire-setup", "admin/routes/admin.payroll-export.tsx"),
+    route("admin/payroll/reconcile", "admin/routes/admin.payroll.tsx"),
+    route("admin/accounts", "admin/routes/admin.section.ts", { id: "admin-section-accounts" }),
+    route("admin/accounts/users", "admin/routes/admin.site-users.tsx"),
+    route("admin/accounts/security", "admin/routes/admin.security.tsx"),
+    route("admin/messaging", "admin/routes/admin.section.ts", { id: "admin-section-messaging" }),
+    route("admin/messaging/outbox", "admin/routes/admin.outbound-messages.tsx"),
+    route("admin/messaging/senders", "admin/routes/admin.email-senders.tsx"),
+    route("admin/insights", "admin/routes/admin.section.ts", { id: "admin-section-insights" }),
+    route("admin/insights/analytics", "admin/routes/admin.analytics.tsx"),
+    route("admin/insights/ai-usage", "admin/routes/admin.ai-usage.tsx"),
+    route("admin/insights/audit-log", "admin/routes/admin.activity.tsx"),
+    route("admin/platform", "admin/routes/admin.section.ts", { id: "admin-section-platform" }),
+    route("admin/platform/jobs", "admin/routes/admin.jobs.tsx"),
+    route("admin/platform/infrastructure", "admin/routes/admin.infrastructure.tsx"),
+    route("admin/platform/flags", "admin/routes/admin.feature-flags.tsx"),
+    route("admin/onboarding", "admin/routes/admin.activities.tsx"),
+    route("admin/onboarding/:id", "admin/routes/admin.activities.$id.tsx"),
+    ...[
+      "system", "payroll-export", "site-users", "security", "outbound-messages", "email-senders",
+      "analytics", "ai-usage", "activity", "jobs", "infrastructure", "feature-flags", "activities",
+      "activities/:id",
+    ].map((p) => route(`admin/${p}`, "admin/routes/admin.legacy-redirect.ts", { id: `legacy-admin-${p}` })),
+    // Core-area pages that still live under admin/ (members, domains,
+    // announcements, email templates) and the pre-regroup redirects.
     route("admin/people", "admin/routes/admin.people.tsx"),
     route("admin/communications", "admin/routes/admin.communications.tsx"),
-    route("admin/system", "admin/routes/admin.system.tsx"),
     route("admin/members", "admin/routes/admin.members.tsx"),
-    route("admin/site-users", "admin/routes/admin.site-users.tsx"),
     route("admin/domains", "admin/routes/admin.domains.tsx"),
     route("admin/announcements", "admin/routes/admin.announcements.tsx"),
-    route("admin/activity", "admin/routes/admin.activity.tsx"),
-    route("admin/analytics", "admin/routes/admin.analytics.tsx"),
-    route("admin/ai-usage", "admin/routes/admin.ai-usage.tsx"),
-    route("admin/jobs", "admin/routes/admin.jobs.tsx"),
-    route("admin/feature-flags", "admin/routes/admin.feature-flags.tsx"),
-    route("admin/security", "admin/routes/admin.security.tsx"),
-    route("admin/activities", "admin/routes/admin.activities.tsx"),
-    route("admin/activities/:id", "admin/routes/admin.activities.$id.tsx"),
-    route("admin/email-senders", "admin/routes/admin.email-senders.tsx"),
-    route("admin/outbound-messages", "admin/routes/admin.outbound-messages.tsx"),
     route("admin/email", "admin/routes/admin.email.tsx"),
     route("admin/email-templates", "admin/routes/admin.email.legacy-redirect.ts", { id: "legacy-email-admin" }),
     route("admin/email-templates/:id", "admin/routes/admin.email.legacy-redirect.ts", { id: "legacy-email-admin-id" }),
-    route("admin/infrastructure", "admin/routes/admin.infrastructure.tsx"),
     // Document signing: author agreements, place fields, put versions in force,
     // track signatories.
     route("core/agreements", "signing/routes/core.agreements.tsx"),
@@ -105,8 +117,6 @@ export default [
     route("core/agreements/:id/signature/:sigId/pdf", "signing/routes/core.agreements.$id.signature.$sigId.pdf.ts"),
     route("api/agreements/people", "signing/routes/api.agreements.people.ts"),
     route("api/agreements/issue", "signing/routes/api.agreements.issue.ts"),
-    route("admin/payroll-export", "admin/routes/admin.payroll-export.tsx"),
-    route("admin/payroll", "admin/routes/admin.payroll.tsx"),
 
     // Core — the lab-process area introduced by the nav-regroup flag. Every
     // page here except the hub is a pure re-export of its pre-regroup route
@@ -509,6 +519,7 @@ export default [
   // Background jobs: admin controls + the manual tick trigger (secret header
   // or admin session; the in-process 60s interval is the primary driver).
   route("api/jobs/:name", "admin/routes/api.jobs.$name.ts"),
+  route("api/admin/attention", "admin/routes/api.admin.attention.ts"),
   route("api/feature-flags/:key", "admin/routes/api.feature-flags.$key.ts"),
   route("api/infra/action", "admin/routes/api.infra.action.ts"),
   route("api/infra/registry", "admin/routes/api.infra.registry.ts"),

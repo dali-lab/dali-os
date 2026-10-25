@@ -90,11 +90,11 @@ test.describe('payroll: reconcile', () => {
     const payPeriod = activePayPeriodName();
 
     await loginAs({ daliEmail: ADMIN_EMAIL });
-    await page.goto('/admin/payroll?embed=1');
+    await page.goto('/admin/payroll/reconcile?embed=1');
 
     // Header + empty state before any upload for this term.
     await expect(
-      page.getByRole('heading', { name: 'Payroll: Reconcile' }),
+      page.getByRole('heading', { name: 'Payroll' }),
     ).toBeVisible();
     await expect(
       page.getByText('No timesheet data for this term yet'),
@@ -153,7 +153,7 @@ test.describe('payroll: reconcile', () => {
     // so the admin-only payroll page bounces them there — /admin/members,
     // which nav-regroup then sends on to its Core home.
     await loginAs({ daliEmail: 'jordan.taylor@dali.dartmouth.edu' });
-    await page.goto('/admin/payroll');
+    await page.goto('/admin/payroll/reconcile');
     await expect(page).toHaveURL(/\/core\/access\/roles/);
     await expect(page).not.toHaveURL(/\/admin\/payroll/);
   });
