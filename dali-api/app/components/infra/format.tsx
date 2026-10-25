@@ -6,7 +6,7 @@
 import type { ReactNode } from "react";
 import { ExternalLink } from "lucide-react";
 import { Tooltip } from "~/components/ui/floating";
-import type { NeonBranchUsage, NeonCostSummary, UsageSeries } from "~/lib/infra/neon-scope";
+import type { NeonBranchUsage, NeonCostSummary, UsageSeries } from "~/lib/infra/infra-scope";
 
 export const consoleUrl = {
   flyApp: (app: string) => `https://fly.io/apps/${encodeURIComponent(app)}`,

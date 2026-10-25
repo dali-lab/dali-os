@@ -224,6 +224,15 @@ export async function destroyVolume(
   );
 }
 
+// An empty app (no machines): the team deploys into it with flyctl or CI.
+// Names are global across Fly, so a taken name comes back as an API error.
+export async function createApp(token: string, orgSlug: string, appName: string): Promise<void> {
+  await flyFetch(token, `/apps`, {
+    method: "POST",
+    body: JSON.stringify({ app_name: appName, org_slug: orgSlug }),
+  });
+}
+
 export async function destroyApp(token: string, appName: string): Promise<void> {
   await flyFetch(token, `/apps/${encodeURIComponent(appName)}?force=true`, { method: "DELETE" });
 }

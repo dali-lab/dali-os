@@ -4,7 +4,12 @@
 // cleanup review list (idle/orphan candidates, protected resources excluded).
 
 import { prisma } from "~/lib/db";
-import { listInfraProjects, type InfraProjectInfo } from "./project-infra.server";
+import {
+  getInfraProjectInfo,
+  hasInfraConfig,
+  listInfraProjects,
+  type InfraProjectInfo,
+} from "./project-infra.server";
 import {
   isFlyAppProtected,
   isNeonProjectProtected,
@@ -14,16 +19,21 @@ import {
 import { monthStart } from "./neon-cost";
 import {
   branchUsage,
+  flyAppOptions,
   isSampleInScope,
+  knownOrgs,
   neonCostSummary,
   neonProjectOptions,
   projectUsage,
+  scopeFlyInventory,
   scopeNeonInventory,
+  unlinkedResources,
+  type KnownOrg,
   type NeonBranchUsage,
   type NeonCostSummary,
   type ScopedSample,
   type UsageSeries,
-} from "./neon-scope";
+} from "./infra-scope";
 import type { FlyInventory, NeonInventory } from "./types";
 
 export type { UsageSeries };
@@ -32,13 +42,20 @@ export type ProjectFleet = {
   projectId: string;
   name: string;
   infraEnabled: boolean;
+  /** False when no Fly or Neon config is set; the console shows it as not configured. */
+  configured: boolean;
+  /** Set on the console's "not linked" rows: org resources no project has claimed. */
+  unlinked?: boolean;
   flyOrgSlug: string | null;
+  flyAppNames: string[];
   neonOrgId: string | null;
   neonProjectIds: string[];
   hasFlyReadToken: boolean;
   hasFlyWriteToken: boolean;
   fly: FlyInventory | null;
   neon: NeonInventory | null;
+  /** Every app in the swept Fly org, for picking which belong here. */
+  flyOrgApps: { id: string; name: string }[];
   /** Every database in the swept Neon org, for picking which belong here. */
   neonOrgProjects: { id: string; name: string }[];
   neonPlan: string | null;
@@ -82,23 +99,25 @@ export function buildProjectFleet(
 ): ProjectFleet {
   const fly = latest.get(`${info.projectId}:fly`);
   const neon = latest.get(`${info.projectId}:neon`);
+  const flyOrg = (fly?.payload as FlyInventory | undefined) ?? null;
   const orgInventory = (neon?.payload as NeonInventory | undefined) ?? null;
   const scoped = scopeNeonInventory(orgInventory, info.neonProjectIds);
-  const mine = samples.filter(
-    (s) => s.projectId === info.projectId && isSampleInScope(s, info.neonProjectIds),
-  );
+  const mine = samples.filter((s) => s.projectId === info.projectId && isSampleInScope(s, info));
   const neonPlan = orgInventory?.plan ?? null;
   return {
     projectId: info.projectId,
     name: info.name,
     infraEnabled: info.infraEnabled,
+    configured: hasInfraConfig(info),
     flyOrgSlug: info.flyOrgSlug,
+    flyAppNames: info.flyAppNames,
     neonOrgId: info.neonOrgId,
     neonProjectIds: info.neonProjectIds,
     hasFlyReadToken: info.hasFlyReadToken,
     hasFlyWriteToken: info.hasFlyWriteToken,
-    fly: (fly?.payload as FlyInventory | undefined) ?? null,
+    fly: scopeFlyInventory(flyOrg, info.flyAppNames),
     neon: scoped,
+    flyOrgApps: flyAppOptions(flyOrg),
     neonOrgProjects: neonProjectOptions(orgInventory),
     neonPlan,
     neonCost: neonCostSummary(mine, neonPlan, now),
@@ -136,23 +155,99 @@ function latestByProviderKey(snapshots: Snapshot[]): {
   return { latest, lastSweep };
 }
 
-export async function loadFleet(): Promise<{
+export type KnownOrgs = { fly: KnownOrg[]; neon: KnownOrg[] };
+
+function knownOrgsFrom(
+  projects: { flyOrgSlug: string | null; neonOrgId: string | null }[],
+  snapshotsNewestFirst: Snapshot[],
+): KnownOrgs {
+  const payloads = (provider: string) =>
+    snapshotsNewestFirst.filter((s) => s.provider === provider).map((s) => s.payload);
+  return {
+    fly: knownOrgs(
+      projects.flatMap((p) => (p.flyOrgSlug ? [p.flyOrgSlug] : [])),
+      payloads("fly") as (FlyInventory | null)[],
+      (inv) => inv.orgSlug,
+      (inv) => flyAppOptions(inv),
+    ),
+    neon: knownOrgs(
+      projects.flatMap((p) => (p.neonOrgId ? [p.neonOrgId] : [])),
+      payloads("neon") as (NeonInventory | null)[],
+      (inv) => inv.orgId,
+      (inv) => neonProjectOptions(inv),
+    ),
+  };
+}
+
+/** Orgs in use on any project, with their apps / databases from the newest sweep. */
+export async function listKnownOrgs(): Promise<KnownOrgs> {
+  const [configured, snapshots] = await Promise.all([
+    listInfraProjects(),
+    prisma.infraSnapshot.findMany({ orderBy: { fetchedAt: "desc" } }),
+  ]);
+  return knownOrgsFrom(configured, snapshots);
+}
+
+/**
+ * Console rows for org resources no project has linked, one per org, so they
+ * still show (and stay in cleanup) after projects scope to their own. Actions
+ * on them run with the credentials of a project already in that org.
+ */
+export function buildUnlinkedFleet(
+  configured: InfraProjectInfo[],
+  latest: Map<string, { payload: unknown; fetchedAt: Date }>,
+  orgs: KnownOrgs,
+): ProjectFleet[] {
+  const out: ProjectFleet[] = [];
+  const blank = (donor: InfraProjectInfo, name: string): ProjectFleet => ({
+    ...buildProjectFleet({ ...donor, flyAppNames: [], neonProjectIds: [] }, new Map(), []),
+    name,
+    unlinked: true,
+  });
+  for (const { orgId, resources } of unlinkedResources(orgs.fly, configured.flatMap((p) => p.flyAppNames))) {
+    const donor = configured.find((p) => p.flyOrgSlug === orgId && p.hasFlyReadToken);
+    const inv = donor ? (latest.get(`${donor.projectId}:fly`)?.payload as FlyInventory | undefined) : undefined;
+    if (!donor || !inv) continue;
+    out.push({
+      ...blank({ ...donor, neonOrgId: null }, `Not linked · Fly ${orgId}`),
+      fly: scopeFlyInventory(inv, resources.map((r) => r.id)),
+    });
+  }
+  for (const { orgId, resources } of unlinkedResources(orgs.neon, configured.flatMap((p) => p.neonProjectIds))) {
+    const donor = configured.find((p) => p.neonOrgId === orgId);
+    const inv = donor ? (latest.get(`${donor.projectId}:neon`)?.payload as NeonInventory | undefined) : undefined;
+    if (!donor || !inv) continue;
+    out.push({
+      ...blank({ ...donor, flyOrgSlug: null }, `Not linked · Neon ${orgId}`),
+      neon: scopeNeonInventory(inv, resources.map((r) => r.id)),
+      neonPlan: inv.plan ?? null,
+    });
+  }
+  return out;
+}
+
+export async function loadFleet(opts: { termId?: string | null; all?: boolean } = {}): Promise<{
   projects: ProjectFleet[];
+  unlinked: ProjectFleet[];
+  knownOrgs: KnownOrgs;
   lastSweep: string | null;
   protectedFly: string[];
   protectedNeon: string[];
 }> {
-  const [registry, snapshots, samples] = await Promise.all([
+  const [registry, configured, snapshots, samples] = await Promise.all([
+    listInfraProjects({ all: opts.all, termId: opts.termId }),
     listInfraProjects(),
     prisma.infraSnapshot.findMany({ orderBy: { fetchedAt: "desc" } }),
     prisma.infraUsageSample.findMany({ where: recentSamplesWhere(new Date()), orderBy: { at: "asc" } }),
   ]);
 
   const { latest, lastSweep } = latestByProviderKey(snapshots);
-  const projects = registry.map((info) => buildProjectFleet(info, latest, samples));
+  const orgs = knownOrgsFrom(configured, snapshots);
 
   return {
-    projects,
+    projects: registry.map((info) => buildProjectFleet(info, latest, samples)),
+    unlinked: buildUnlinkedFleet(configured, latest, orgs),
+    knownOrgs: orgs,
     lastSweep: lastSweep?.toISOString() ?? null,
     protectedFly: protectedFlyApps(),
     protectedNeon: protectedNeonProjectIds(),
@@ -162,8 +257,8 @@ export async function loadFleet(): Promise<{
 // Single-project read model for the per-project Infrastructure section. Returns
 // null when the project has no infra configured.
 export async function loadProjectInfra(projectId: string): Promise<ProjectFleet | null> {
-  const info = (await listInfraProjects()).find((p) => p.projectId === projectId);
-  if (!info) return null;
+  const info = await getInfraProjectInfo(projectId);
+  if (!info || !hasInfraConfig(info)) return null;
   const [snapshots, samples] = await Promise.all([
     prisma.infraSnapshot.findMany({ where: { projectId }, orderBy: { fetchedAt: "desc" } }),
     prisma.infraUsageSample.findMany({
@@ -243,37 +338,4 @@ export function buildCleanup(projects: ProjectFleet[], now = Date.now()): Cleanu
     if (a.protected !== b.protected) return a.protected ? 1 : -1;
     return (b.idleDays ?? b.ageDays ?? 0) - (a.idleDays ?? a.ageDays ?? 0);
   });
-}
-
-export type KnownNeonOrg = { orgId: string; projects: { id: string; name: string }[] };
-
-// Neon orgs already configured on some project, each with the databases from
-// its latest sweep, so the config editor can reuse an org without retyping it
-// and list its databases before this project's first sweep.
-export async function listKnownNeonOrgs(): Promise<KnownNeonOrg[]> {
-  const [configured, snapshots] = await Promise.all([
-    prisma.project.findMany({
-      where: { neonOrgId: { not: null } },
-      select: { neonOrgId: true },
-      distinct: ["neonOrgId"],
-    }),
-    prisma.infraSnapshot.findMany({
-      where: { provider: "neon" },
-      orderBy: { fetchedAt: "desc" },
-      select: { payload: true },
-    }),
-  ]);
-  return knownNeonOrgs(
-    configured.map((c) => c.neonOrgId!),
-    snapshots.map((s) => s.payload as NeonInventory | null),
-  );
-}
-
-export function knownNeonOrgs(orgIds: string[], newestFirst: (NeonInventory | null)[]): KnownNeonOrg[] {
-  const latest = new Map<string, NeonInventory>();
-  for (const inv of newestFirst) if (inv?.orgId && !latest.has(inv.orgId)) latest.set(inv.orgId, inv);
-  return [...new Set(orgIds)].sort().map((orgId) => ({
-    orgId,
-    projects: neonProjectOptions(latest.get(orgId) ?? null),
-  }));
 }

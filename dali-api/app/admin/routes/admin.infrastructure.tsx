@@ -44,6 +44,9 @@ import { neonConfigured } from "~/lib/infra/neon.server";
 import { listPendingInfraRequests } from "~/lib/infra/requests.server";
 import { infraRequestKindLabel } from "~/lib/infra/request-kinds";
 import { useDialog } from "~/components/ui/dialog";
+import { TermFilter } from "~/components/TermFilter";
+import { resolveTermFilter } from "~/lib/terms";
+import { InfraConfigFields, withOwnOrg } from "~/components/infra/InfraConfigFields";
 import {
   ColWidths,
   consoleUrl,
@@ -73,8 +76,12 @@ export async function loader({ request }: Route.LoaderArgs) {
     return redirect("/admin");
   }
 
-  const { projects, lastSweep, protectedFly, protectedNeon } = await loadFleet();
-  const cleanup = buildCleanup(projects);
+  const { terms, selected, termId, isAll } = await resolveTermFilter(request);
+  const { projects, unlinked, knownOrgs, lastSweep, protectedFly, protectedNeon } = await loadFleet({
+    all: true,
+    termId: isAll ? null : termId,
+  });
+  const cleanup = buildCleanup([...projects, ...unlinked]);
   const requests = await listPendingInfraRequests();
 
   return {
@@ -85,6 +92,10 @@ export async function loader({ request }: Route.LoaderArgs) {
     protectedFly,
     protectedNeon,
     projects,
+    unlinked,
+    knownOrgs,
+    terms,
+    selectedTerm: selected,
     cleanup,
     requests,
   };
@@ -158,6 +169,7 @@ export default function AdminInfrastructure() {
         section="platform"
         actions={
           <>
+            <TermFilter terms={data.terms} selected={data.selectedTerm} />
             <span className="text-xs text-os-muted">Last sweep {timeAgo(data.lastSweep)}</span>
             <button
               type="button"
@@ -173,7 +185,7 @@ export default function AdminInfrastructure() {
       />
 
       <p className="-mt-2 text-sm text-os-grey">
-        Fly.io and Neon across every lab project. Per-project config lives in each project's workspace.
+        Fly.io and Neon for every project in the term. Set up a project's infra here or in its workspace.
         Data is cached; Refresh sweeps again.
       </p>
 
@@ -188,6 +200,7 @@ export default function AdminInfrastructure() {
 
       <div className="flex flex-wrap items-end gap-x-12 gap-y-4">
         <Figure size="lg" label="Projects" value={data.projects.length} />
+        <Figure label="Not configured" value={data.projects.filter((p) => !p.configured).length} />
         <Figure label="Fly apps" value={totals.apps} />
         <Figure label="Machines running" value={`${totals.running}/${totals.machines}`} />
         <Figure label="Neon computes active" value={`${totals.activeComputes}/${totals.computes}`} />
@@ -224,8 +237,8 @@ function ConfigWarnings({ data }: { data: Data }) {
     warnings.push("INFRA_SECRET_KEY is not set, so Fly tokens can't be stored and Fly actions are unavailable.");
   if (!data.neonConfigured)
     warnings.push("INFRA_NEON_API_KEY is not set, so Neon inventory, usage, and actions are unavailable.");
-  if (data.projects.length === 0)
-    warnings.push("No projects have infra configured yet. Set a project's Fly or Neon config in its workspace.");
+  if (data.projects.length > 0 && data.projects.every((p) => !p.configured))
+    warnings.push("None of these projects has infra configured yet. Open one to set it up.");
   if (warnings.length === 0) return null;
   return (
     <div className="flex items-start gap-2 rounded-os-item bg-os-amber/10 px-4 py-3 text-sm text-os-amber">
@@ -243,19 +256,36 @@ function ConfigWarnings({ data }: { data: Data }) {
 
 function Overview({ data, infra }: { data: Data; infra: InfraApi }) {
   const { panel } = useOsChrome();
-  if (data.projects.length === 0) {
+  if (data.projects.length === 0 && data.unlinked.length === 0) {
     return (
       <div className={panel}>
-        <EmptyState>No projects configured.</EmptyState>
+        <EmptyState>No projects in this term.</EmptyState>
       </div>
     );
   }
   return (
-    <ul className={panel}>
-      {data.projects.map((p, i) => (
-        <ProjectCard key={p.projectId} project={p} data={data} infra={infra} first={i === 0} />
-      ))}
-    </ul>
+    <div className="flex flex-col gap-6">
+      {data.projects.length > 0 && (
+        <ul className={panel}>
+          {data.projects.map((p, i) => (
+            <ProjectCard key={p.projectId} project={p} data={data} infra={infra} first={i === 0} />
+          ))}
+        </ul>
+      )}
+      {data.unlinked.length > 0 && (
+        <div className="flex flex-col gap-2">
+          <h3 className="text-xs font-semibold text-os-muted">Not linked to a project</h3>
+          <p className="text-xs text-os-grey">
+            Apps and databases in a shared org that no project has claimed. Link them from a project's config.
+          </p>
+          <ul className={panel}>
+            {data.unlinked.map((p, i) => (
+              <ProjectCard key={p.name} project={p} data={data} infra={infra} first={i === 0} />
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -292,7 +322,12 @@ function ProjectCard({
             aria-hidden
           />
           <span className="font-semibold text-foreground">{p.name}</span>
-          {!p.infraEnabled && <Pill tone="idle">Sweep off</Pill>}
+          {!p.unlinked && !p.configured && (
+            <Pill tone="warn">
+              <AlertTriangle className="h-3 w-3" /> Not configured
+            </Pill>
+          )}
+          {p.configured && !p.infraEnabled && <Pill tone="idle">Sweep off</Pill>}
         </span>
         <span className="flex items-center gap-5 text-sm text-os-grey">
           <span className="inline-flex items-center gap-1.5">
@@ -306,8 +341,14 @@ function ProjectCard({
         </span>
       </button>
 
-      {open && (
+      {open && !p.configured && !p.unlinked && (
+        <div className="border-t border-os-container/70 px-6 py-5">
+          <ConfigEditor project={p} data={data} startOpen />
+        </div>
+      )}
+      {open && (p.configured || p.unlinked) && (
         <div className="flex flex-col gap-6 border-t border-os-container/70 px-6 py-5">
+          {!p.unlinked && <ConfigEditor project={p} data={data} />}
           <div className="flex flex-col gap-3">
             <UsageStrip usage={p.usage} />
             <div className="flex flex-wrap gap-4 text-sm">
@@ -339,6 +380,67 @@ function ProjectCard({
         </div>
       )}
     </li>
+  );
+}
+
+// ── Config ────────────────────────────────────────────────────────────────────
+
+function ConfigEditor({ project: p, data, startOpen = false }: { project: ProjectFleet; data: Data; startOpen?: boolean }) {
+  const fetcher = useFetcher<{ ok?: boolean; error?: string }>();
+  const revalidator = useRevalidator();
+  const { actionBtn } = useOsChrome();
+  const [editing, setEditing] = useState(startOpen);
+  const [resetKey, setResetKey] = useState(0);
+  useEffect(() => {
+    if (fetcher.state === "idle" && fetcher.data?.ok) {
+      setEditing(false);
+      revalidator.revalidate();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fetcher.state]);
+
+  if (!editing) {
+    return (
+      <div className="flex flex-wrap items-center gap-3 text-xs text-os-grey">
+        <span>
+          Fly {p.flyOrgSlug ?? "not set"} · {plural(p.flyAppNames.length, "app")} · Neon {p.neonOrgId ?? "not set"} ·{" "}
+          {plural(p.neonProjectIds.length, "database")}
+        </span>
+        <button type="button" onClick={() => setEditing(true)} className={actionBtn()}>
+          <SlidersHorizontal className="h-4 w-4" /> Edit config
+        </button>
+      </div>
+    );
+  }
+  return (
+    <fetcher.Form method="post" action="/api/infra/config" key={resetKey} className="os-form flex flex-col gap-4">
+      <input type="hidden" name="projectId" value={p.projectId} />
+      <InfraConfigFields
+        config={p}
+        knownOrgs={{
+          fly: withOwnOrg(data.knownOrgs.fly, p.flyOrgSlug, p.flyOrgApps),
+          neon: withOwnOrg(data.knownOrgs.neon, p.neonOrgId, p.neonOrgProjects),
+        }}
+      />
+      {fetcher.data?.error && <p className="text-xs text-destructive">{fetcher.data.error}</p>}
+      <div className="flex items-center gap-2">
+        <button type="submit" disabled={fetcher.state !== "idle"} className="os-btn-primary">
+          {fetcher.state !== "idle" ? "Saving…" : "Save"}
+        </button>
+        {!startOpen && (
+          <button
+            type="button"
+            className="os-btn-ghost"
+            onClick={() => {
+              setEditing(false);
+              setResetKey((k) => k + 1);
+            }}
+          >
+            Cancel
+          </button>
+        )}
+      </div>
+    </fetcher.Form>
   );
 }
 
