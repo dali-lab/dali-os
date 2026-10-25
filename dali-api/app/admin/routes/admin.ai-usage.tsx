@@ -5,7 +5,7 @@ import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { isCore, isAdmin } from "~/lib/roles";
-import { fullName } from "~/lib/display";
+import { loadPeopleById } from "~/admin/lib/people.server";
 import { cn } from "~/lib/cn";
 import { EmptyState, Figure, MiniBar, Sparkline, adminTable } from "~/admin/components/console-ui";
 import { RangeSegmented } from "~/admin/components/RangeSegmented";
@@ -51,14 +51,10 @@ export async function loader({ request }: Route.LoaderArgs) {
     orderBy: { _sum: { count: "desc" } },
   });
 
-  const users =
-    perUser.length === 0
-      ? []
-      : await prisma.user.findMany({
-          where: { id: { in: perUser.map((r) => r.userId) } },
-          select: { id: true, firstName: true, lastName: true, daliEmail: true, photoUrl: true },
-        });
-  const userById = new Map(users.map((u) => [u.id, u]));
+  const userById = await loadPeopleById(
+    prisma,
+    perUser.map((r) => r.userId),
+  );
 
   const totals = { requests: 0, inputTokens: 0, outputTokens: 0 };
   const rows = perUser.map((r) => {
@@ -71,8 +67,8 @@ export async function loader({ request }: Route.LoaderArgs) {
     totals.outputTokens += outputTokens;
     return {
       userId: r.userId,
-      name: (u && (fullName(u) || u.daliEmail)) ?? r.userId,
-      email: u?.daliEmail ?? null,
+      name: u?.name ?? r.userId,
+      email: u?.email ?? null,
       photoUrl: u?.photoUrl ?? null,
       requests,
       inputTokens,
