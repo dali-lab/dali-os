@@ -6,7 +6,16 @@
 import { ExternalLink } from "lucide-react";
 import type { ProjectFleet } from "~/lib/infra/dashboard.server";
 import type { NeonQuota } from "~/lib/infra/types";
-import { fmtBytes, fmtHours, StateBadge, UsageStrip } from "./format";
+import {
+  fmtBytes,
+  fmtHours,
+  fmtUsd,
+  NeonBranchUsageTable,
+  NeonCostLine,
+  StateBadge,
+  UsageStrip,
+  volumeSummary,
+} from "./format";
 
 export function ProjectInfraView({ project: p }: { project: ProjectFleet }) {
   const flyApps = p.fly?.apps ?? [];
@@ -16,7 +25,7 @@ export function ProjectInfraView({ project: p }: { project: ProjectFleet }) {
     <div className="flex flex-col gap-4">
       <UsageStrip usage={p.usage} />
 
-      <div className="flex flex-wrap gap-3 text-xs">
+      <div className="flex flex-wrap items-center gap-3 text-xs">
         {p.flyOrgSlug && (
           <a
             href={`https://fly.io/dashboard/${p.flyOrgSlug}/billing`}
@@ -29,7 +38,7 @@ export function ProjectInfraView({ project: p }: { project: ProjectFleet }) {
         )}
         {p.neonOrgId && (
           <a
-            href={`https://console.neon.tech/app/org/${p.neonOrgId}/billing`}
+            href={`https://console.neon.tech/app/${p.neonOrgId}`}
             target="_blank"
             rel="noreferrer"
             className="inline-flex items-center gap-1 text-os-accent hover:underline"
@@ -37,6 +46,7 @@ export function ProjectInfraView({ project: p }: { project: ProjectFleet }) {
             Neon billing <ExternalLink className="h-3 w-3" />
           </a>
         )}
+        <NeonCostLine plan={p.neonPlan} cost={p.neonCost} />
       </div>
 
       {/* Fly */}
@@ -52,7 +62,7 @@ export function ProjectInfraView({ project: p }: { project: ProjectFleet }) {
                   <div className="flex items-center justify-between gap-2 border-b border-border bg-muted px-3 py-1.5">
                     <span className="font-mono text-xs font-medium text-foreground">{app.name}</span>
                     <span className="text-[11px] text-muted-foreground">
-                      {app.status ?? ""} · {app.machines.length} machines · {app.volumes.length} volumes
+                      {app.status ?? ""} · {app.machines.length} machines · {volumeSummary(app.volumes)}
                     </span>
                   </div>
                   {app.machines.length > 0 && (
@@ -106,6 +116,7 @@ export function ProjectInfraView({ project: p }: { project: ProjectFleet }) {
                     <span className="font-mono text-xs font-medium text-foreground">{np.name}</span>
                     <span className="text-[11px] text-muted-foreground">
                       {np.regionId} · pg{np.pgVersion ?? "?"} · {np.branches.length} branches
+                      {p.neonCost?.byProject[np.id] != null && ` · est. ${fmtUsd(p.neonCost.byProject[np.id])} this month`}
                     </span>
                   </div>
                   <table className="w-full text-left text-xs">
@@ -137,6 +148,11 @@ export function ProjectInfraView({ project: p }: { project: ProjectFleet }) {
                       ))}
                     </tbody>
                   </table>
+                  {(p.neonBranchUsage[np.id]?.length ?? 0) > 0 && (
+                    <div className="border-t border-border">
+                      <NeonBranchUsageTable rows={p.neonBranchUsage[np.id]} />
+                    </div>
+                  )}
                   <div className="border-t border-border px-3 py-1.5">
                     <QuotaSummary quota={np.quota} />
                   </div>

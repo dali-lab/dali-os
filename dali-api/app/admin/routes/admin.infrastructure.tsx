@@ -44,7 +44,16 @@ import { neonConfigured } from "~/lib/infra/neon.server";
 import { listPendingInfraRequests } from "~/lib/infra/requests.server";
 import { infraRequestKindLabel } from "~/lib/infra/request-kinds";
 import { useDialog } from "~/components/ui/dialog";
-import { fmtBytes, fmtHours, timeAgo, UsageStrip } from "~/components/infra/format";
+import {
+  fmtBytes,
+  fmtHours,
+  fmtUsd,
+  NeonBranchUsageTable,
+  NeonCostLine,
+  timeAgo,
+  UsageStrip,
+  volumeSummary,
+} from "~/components/infra/format";
 
 export const handle = adminHandle("infrastructure");
 
@@ -309,7 +318,7 @@ function ProjectCard({
               )}
               {p.neonOrgId && (
                 <a
-                  href={`https://console.neon.tech/app/org/${p.neonOrgId}/billing`}
+                  href={`https://console.neon.tech/app/${p.neonOrgId}`}
                   target="_blank"
                   rel="noreferrer"
                   className="inline-flex items-center gap-1 text-os-accent hover:text-os-accent-hover"
@@ -317,6 +326,7 @@ function ProjectCard({
                   Neon billing <ExternalLink className="h-3.5 w-3.5" />
                 </a>
               )}
+              <NeonCostLine plan={p.neonPlan} cost={p.neonCost} />
             </div>
           </div>
           <FlySection project={p} data={data} infra={infra} />
@@ -409,7 +419,7 @@ function FlySection({ project: p, data, infra }: { project: ProjectFleet; data: 
               </span>
               <span className="flex items-center gap-2 text-xs text-os-grey">
                 {app.status && <Pill tone={app.status === "deployed" ? "ok" : "idle"}>{app.status}</Pill>}
-                {app.machines.length} machines · {app.volumes.length} volumes
+                {app.machines.length} machines · {volumeSummary(app.volumes)}
                 {data.isAdmin && canWrite && !isProtected && (
                   <IconAction label="Destroy app" danger disabled={infra.busy} onClick={() => destroy(app, "app")}>
                     <Trash2 className="h-4 w-4" />
@@ -577,6 +587,7 @@ function NeonProjectCard({ project: p, np, data, infra }: { project: ProjectFlee
         </span>
         <span className="flex items-center gap-2 text-xs text-os-grey">
           {np.regionId} · pg{np.pgVersion ?? "?"} · {np.branches.length} branches
+          {p.neonCost?.byProject[np.id] != null && ` · est. ${fmtUsd(p.neonCost.byProject[np.id])} this month`}
           {canManage && (
             <IconAction
               label={showQuota ? "Hide limits" : "Set limits"}
@@ -611,6 +622,12 @@ function NeonProjectCard({ project: p, np, data, infra }: { project: ProjectFlee
           ))}
         </tbody>
       </table>
+
+      {(p.neonBranchUsage[np.id]?.length ?? 0) > 0 && (
+        <div className={subTable.row}>
+          <NeonBranchUsageTable rows={p.neonBranchUsage[np.id]} />
+        </div>
+      )}
 
       <div className={cn(subTable.row, "px-4 py-2.5")}>
         <QuotaSummary np={np} />

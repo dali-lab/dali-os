@@ -7,13 +7,14 @@
 
 import { useEffect, useRef, useState, type FormEvent, type RefObject } from "react";
 import { Form, useFetcher, useSubmit } from "react-router";
-import type { ProjectFleet } from "~/lib/infra/dashboard.server";
+import type { KnownNeonOrg, ProjectFleet } from "~/lib/infra/dashboard.server";
+import { keepLinkedInOrg, neonDatabaseOptions } from "~/lib/infra/neon-scope";
 import type { ProjectInfraRequest } from "~/lib/infra/requests.server";
 import { ProjectInfraView } from "~/components/infra/ProjectInfraView";
 import { EditableSection } from "~/components/EditableSection";
 import { buttonClasses } from "~/components/ui/Button";
 import { Checkbox } from "~/components/ui/Checkbox";
-import { MultiSelect, Select } from "~/components/ui/floating";
+import { Combobox, MultiSelect, Select } from "~/components/ui/floating";
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
 import { timeAgo } from "~/components/infra/format";
@@ -34,12 +35,14 @@ export function ProjectInfraSection({
   config,
   view,
   requests,
+  knownNeonOrgs,
 }: {
   projectId: string;
   canEdit: boolean;
   config: Config;
   view: ProjectFleet | null;
   requests: ProjectInfraRequest[];
+  knownNeonOrgs: KnownNeonOrg[];
 }) {
   const submit = useSubmit();
   const formRef = useRef<HTMLFormElement | null>(null);
@@ -60,7 +63,7 @@ export function ProjectInfraSection({
             formRef={formRef}
             resetKey={resetKey}
             config={config}
-            neonOrgProjects={view?.neonOrgProjects ?? []}
+            knownNeonOrgs={withOwnOrg(knownNeonOrgs, config.neonOrgId, view?.neonOrgProjects ?? [])}
           />
         ) : (
           <div className="flex flex-col gap-3">
@@ -85,26 +88,40 @@ export function ProjectInfraSection({
   );
 }
 
+function withOwnOrg(
+  known: KnownNeonOrg[],
+  orgId: string | null,
+  projects: { id: string; name: string }[],
+): KnownNeonOrg[] {
+  if (!orgId || known.some((o) => o.orgId === orgId)) return known;
+  return [...known, { orgId, projects }];
+}
+
 function ConfigForm({
   formRef,
   resetKey,
   config,
-  neonOrgProjects,
+  knownNeonOrgs,
 }: {
   formRef: RefObject<HTMLFormElement | null>;
   resetKey: number;
   config: Config;
-  neonOrgProjects: { id: string; name: string }[];
+  knownNeonOrgs: KnownNeonOrg[];
 }) {
   const { panel, fieldLabel } = useOsChrome();
+  const [neonOrgId, setNeonOrgId] = useState(config.neonOrgId ?? "");
   const [neonProjectIds, setNeonProjectIds] = useState(config.neonProjectIds);
-  // A linked id the latest sweep didn't return still shows, so it can be removed.
-  const neonOptions = [
-    ...neonOrgProjects.map((p) => ({ value: p.id, label: p.name })),
-    ...neonProjectIds
-      .filter((id) => !neonOrgProjects.some((p) => p.id === id))
-      .map((id) => ({ value: id, label: id })),
-  ];
+  const [orgOptions, setOrgOptions] = useState(() =>
+    knownNeonOrgs.map((o) => ({ value: o.orgId, label: o.orgId })),
+  );
+  const neonOptions = neonDatabaseOptions(neonOrgId, knownNeonOrgs, neonProjectIds);
+  const isNewOrg = neonOrgId !== "" && !knownNeonOrgs.some((o) => o.orgId === neonOrgId);
+
+  function chooseOrg(orgId: string) {
+    if (!orgOptions.some((o) => o.value === orgId)) setOrgOptions((opts) => [...opts, { value: orgId, label: orgId }]);
+    setNeonOrgId(orgId);
+    setNeonProjectIds((ids) => keepLinkedInOrg(orgId, knownNeonOrgs, ids));
+  }
   return (
     <Form
       method="post"
@@ -118,10 +135,19 @@ function ConfigForm({
           <span>Fly org slug</span>
           <input name="flyOrgSlug" defaultValue={config.flyOrgSlug ?? ""} placeholder="acme-org" className="w-full" />
         </label>
-        <label className={cn(fieldLabel, "w-44")}>
+        <div className={cn(fieldLabel, "w-56")}>
           <span>Neon org id</span>
-          <input name="neonOrgId" defaultValue={config.neonOrgId ?? ""} placeholder="org-acme-1234" className="w-full" />
-        </label>
+          <Combobox
+            ariaLabel="Neon org id"
+            value={neonOrgId}
+            options={[{ value: "", label: "None" }, ...orgOptions]}
+            onChange={chooseOrg}
+            placeholder="org-acme-1234"
+            allowCustom={(q) => (/^[a-z0-9-]{1,60}$/.test(q) ? { value: q, label: `Add ${q}` } : null)}
+            emptyLabel="Type an org id to add it"
+          />
+          <input type="hidden" name="neonOrgId" value={neonOrgId} />
+        </div>
         <Checkbox name="infraEnabled" defaultChecked={config.infraEnabled} label="Sweep enabled" className="self-end pb-1.5" />
       </div>
       <div className={cn(fieldLabel, "w-full")}>
@@ -132,7 +158,12 @@ function ConfigForm({
           options={neonOptions}
           onChange={setNeonProjectIds}
           placeholder="None linked"
-          emptyLabel="Save the Neon org id, then pick databases after the next sweep."
+          disabled={neonOrgId === ""}
+          emptyLabel={
+            isNewOrg
+              ? "Save to load this org's databases, then edit again to pick them."
+              : "No databases in this org yet."
+          }
         />
         {neonProjectIds.map((id) => (
           <input key={id} type="hidden" name="neonProjectIds" value={id} />

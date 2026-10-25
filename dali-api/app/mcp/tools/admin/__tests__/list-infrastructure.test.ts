@@ -54,6 +54,9 @@ const FLEET_RESULT = {
       neonOrgId: "neon-org-1",
       neonProjectIds: ["proj-main"],
       neonOrgProjects: [{ id: "proj-main", name: "main" }],
+      neonPlan: "launch",
+      neonCost: null,
+      neonBranchUsage: {},
       hasFlyReadToken: true,
       hasFlyWriteToken: false,
       fly: {
