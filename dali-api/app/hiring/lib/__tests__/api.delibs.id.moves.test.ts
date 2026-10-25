@@ -114,7 +114,7 @@ describe("POST /api/hiring/delibs/:id/moves", () => {
     });
   });
 
-  it("inserts at the requested position when provided", async () => {
+  it("saves the target column in the order the mover sees it", async () => {
     mockTx.delibsSession.findUnique.mockResolvedValue({
       id: SESSION_ID,
       roundId: "final",
@@ -132,7 +132,7 @@ describe("POST /api/hiring/delibs/:id/moves", () => {
     }));
 
     const res = await action({
-      request: makeRequest({ cardId: "c", toColumn: "Accept", position: 0 }),
+      request: makeRequest({ cardId: "c", toColumn: "Accept", order: ["c", "a", "b"] }),
       params: { id: SESSION_ID },
       context: {},
     } as any);
