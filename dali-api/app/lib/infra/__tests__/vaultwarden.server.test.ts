@@ -7,7 +7,7 @@ import {
   memberAction,
   setGroupCollections,
   syncGroup,
-  vaultMembersUrl,
+  vaultOrgUrl,
   vaultwardenConfigured,
   vaultwardenSyncConfigured,
 } from "../vaultwarden.server";
@@ -62,8 +62,8 @@ describe("config", () => {
     expect(vaultwardenConfigured()).toBe(false);
   });
 
-  it("links the org's member page", () => {
-    expect(vaultMembersUrl()).toBe("https://vault.example.edu/#/organizations/org-1/members");
+  it("links the org in the web vault", () => {
+    expect(vaultOrgUrl()).toBe("https://vault.example.edu/#/organizations/org-1");
   });
 });
 

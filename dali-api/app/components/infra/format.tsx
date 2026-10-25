@@ -14,6 +14,10 @@ export const consoleUrl = {
     `https://fly.io/apps/${encodeURIComponent(app)}/machines/${encodeURIComponent(machineId)}`,
   neonOrg: (orgId: string) => `https://console.neon.tech/app/${encodeURIComponent(orgId)}`,
   neonProject: (projectId: string) => `https://console.neon.tech/app/projects/${encodeURIComponent(projectId)}`,
+  vaultMembers: (orgUrl: string) => `${orgUrl}/members`,
+  vaultGroups: (orgUrl: string) => `${orgUrl}/groups`,
+  vaultCollection: (orgUrl: string, collectionId: string) =>
+    `${orgUrl}/vault?collectionId=${encodeURIComponent(collectionId)}`,
 };
 
 export function ExternalIconLink({ href, label, className }: { href: string; label: string; className?: string }) {

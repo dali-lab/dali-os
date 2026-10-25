@@ -181,7 +181,7 @@ export function ProjectInfraView({ project: p }: { project: ProjectFleet }) {
           )}
         </div>
       )}
-      {p.vault && <VaultSection vault={p.vault} membersUrl={p.vaultMembersUrl} />}
+      {p.vault && <VaultSection vault={p.vault} orgUrl={p.vaultOrgUrl} />}
       {p.vaultwardenGroupId && !p.vault && (
         <p className="text-xs text-muted-foreground">Vaultwarden group linked. Check back after the next sweep.</p>
       )}

@@ -61,7 +61,7 @@ const FLEET_RESULT = {
       neonProjectIds: ["proj-main"],
       vaultwardenGroupId: null,
       vault: null,
-      vaultMembersUrl: null,
+      vaultOrgUrl: null,
       neonOrgProjects: [{ id: "proj-main", name: "main" }],
       neonPlan: "launch",
       neonCost: null,

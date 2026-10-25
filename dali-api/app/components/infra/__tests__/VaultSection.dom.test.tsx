@@ -29,7 +29,7 @@ function render(actions?: VaultActions, v: ProjectVault = vault) {
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
-  act(() => root!.render(createElement(VaultSection, { vault: v, membersUrl: "https://vault.example.edu/#/m", actions })));
+  act(() => root!.render(createElement(VaultSection, { vault: v, orgUrl: "https://vault.example.edu/#/organizations/org", actions })));
 }
 afterEach(() => {
   act(() => root?.unmount());
@@ -54,9 +54,25 @@ describe("VaultSection", () => {
     expect(text()).toContain("1 person is waiting to be confirmed");
   });
 
-  it("links confirmation to the web vault", () => {
+  it("links the group, each collection, and confirmation to the web vault", () => {
     render();
-    expect(container.querySelector('a[href="https://vault.example.edu/#/m"]')).not.toBeNull();
+    const hrefs = Array.from(container.querySelectorAll("a")).map((a) => a.getAttribute("href"));
+    expect(hrefs).toEqual(
+      expect.arrayContaining([
+        "https://vault.example.edu/#/organizations/org/groups",
+        "https://vault.example.edu/#/organizations/org/vault?collectionId=c1",
+        "https://vault.example.edu/#/organizations/org/vault?collectionId=c2abcdefgh",
+        "https://vault.example.edu/#/organizations/org/members",
+      ]),
+    );
+  });
+
+  it("shows no web vault links when Vaultwarden isn't configured", () => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    act(() => root!.render(createElement(VaultSection, { vault, orgUrl: null })));
+    expect(container.querySelectorAll("a")).toHaveLength(0);
   });
 
   it("shows each member's status, 2FA, and whether they're staffed", () => {

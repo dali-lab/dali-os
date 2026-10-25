@@ -11,7 +11,7 @@ import {
   type ProjectVault,
   type VaultMemberRow,
 } from "~/lib/infra/vault-scope";
-import { ColWidths, plural } from "./format";
+import { ColWidths, consoleUrl, ExternalIconLink, plural } from "./format";
 
 export type VaultActions = {
   busy: boolean;
@@ -31,20 +31,23 @@ const COLS = [null, "8rem", "5rem", "11rem"];
 
 export function VaultSection({
   vault,
-  membersUrl,
+  orgUrl,
   actions,
 }: {
   vault: ProjectVault;
-  membersUrl: string | null;
+  orgUrl: string | null;
   actions?: VaultActions;
 }) {
   const notStaffed = vault.members.filter((m) => !m.staffed);
   return (
     <div className="flex flex-col gap-2">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          Vaultwarden · {vault.group.name}
-        </h4>
+        <span className="flex items-center gap-1.5">
+          <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Vaultwarden · {vault.group.name}
+          </h4>
+          {orgUrl && <ExternalIconLink href={consoleUrl.vaultGroups(orgUrl)} label="Open groups in Vaultwarden" />}
+        </span>
         {actions && (
           <button
             type="button"
@@ -57,7 +60,7 @@ export function VaultSection({
         )}
       </div>
 
-      <VaultNotes vault={vault} notStaffed={notStaffed.length} membersUrl={membersUrl} />
+      <VaultNotes vault={vault} notStaffed={notStaffed.length} orgUrl={orgUrl} />
 
       {vault.members.length === 0 ? (
         <p className="text-xs text-muted-foreground">Nobody is in this group yet.</p>
@@ -96,7 +99,14 @@ export function VaultSection({
             <tbody>
               {vault.collections.map((c) => (
                 <tr key={c.id} className="border-t border-border">
-                  <td className="truncate px-3 py-1.5 text-foreground">{collectionLabel(c)}</td>
+                  <td className="px-3 py-1.5 text-foreground">
+                    <span className="flex min-w-0 items-center gap-1.5">
+                      <span className="truncate">{collectionLabel(c)}</span>
+                      {orgUrl && (
+                        <ExternalIconLink href={consoleUrl.vaultCollection(orgUrl, c.id)} label="Open collection in Vaultwarden" />
+                      )}
+                    </span>
+                  </td>
                   <td className="px-3 py-1.5 text-muted-foreground">{c.itemCount}</td>
                   <td className="px-3 py-1.5 text-muted-foreground">{c.recentUses ?? "Events off"}</td>
                 </tr>
@@ -109,7 +119,7 @@ export function VaultSection({
   );
 }
 
-function VaultNotes({ vault, notStaffed, membersUrl }: { vault: ProjectVault; notStaffed: number; membersUrl: string | null }) {
+function VaultNotes({ vault, notStaffed, orgUrl }: { vault: ProjectVault; notStaffed: number; orgUrl: string | null }) {
   const notes: ReactNode[] = [];
   if (vault.missing.length > 0) {
     notes.push(`Staffed but not in the group: ${vault.missing.map((p) => p.name).join(", ")}.`);
@@ -122,10 +132,10 @@ function VaultNotes({ vault, notStaffed, membersUrl }: { vault: ProjectVault; no
     notes.push(
       <span key="confirm">
         {plural(vault.awaitingConfirm, "person is", "people are")} waiting to be confirmed
-        {membersUrl && (
+        {orgUrl && (
           <>
             {" "}
-            <a href={membersUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-0.5 text-os-accent hover:underline">
+            <a href={consoleUrl.vaultMembers(orgUrl)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-0.5 text-os-accent hover:underline">
               in Vaultwarden <ExternalLink className="h-3 w-3" />
             </a>
           </>

@@ -45,9 +45,9 @@ export function vaultwardenOrgId(): string {
   return id;
 }
 
-/** The org's member page in the web vault, where a human confirms members. */
-export function vaultMembersUrl(): string {
-  return `${vaultwardenUrl()}/#/organizations/${vaultwardenOrgId()}/members`;
+/** The org in the web vault; pages hang off it (see consoleUrl.vault*). */
+export function vaultOrgUrl(): string {
+  return `${vaultwardenUrl()}/#/organizations/${encodeURIComponent(vaultwardenOrgId())}`;
 }
 
 // ── Tokens ───────────────────────────────────────────────────────────────────

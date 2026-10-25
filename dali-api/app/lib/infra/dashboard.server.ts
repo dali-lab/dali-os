@@ -44,7 +44,7 @@ import {
   type RosterPerson,
 } from "./vault-scope";
 import { latestVaultInventory, loadVaultRosters } from "./vault-read.server";
-import { vaultMembersUrl, vaultwardenConfigured } from "./vaultwarden.server";
+import { vaultOrgUrl, vaultwardenConfigured } from "./vaultwarden.server";
 
 export type { UsageSeries };
 
@@ -63,8 +63,8 @@ export type ProjectFleet = {
   vaultwardenGroupId: string | null;
   /** The project's Vaultwarden group against its staffing; null when none is linked or swept. */
   vault: ProjectVault | null;
-  /** Web vault page where a human confirms members; null when not configured. */
-  vaultMembersUrl: string | null;
+  /** The org in the web vault, for console links; null when not configured. */
+  vaultOrgUrl: string | null;
   hasFlyReadToken: boolean;
   hasFlyWriteToken: boolean;
   fly: FlyInventory | null;
@@ -131,7 +131,7 @@ export function buildProjectFleet(
     neonProjectIds: info.neonProjectIds,
     vaultwardenGroupId: info.vaultwardenGroupId,
     vault: projectVault(opts.vaultInventory ?? null, info.vaultwardenGroupId, opts.roster ?? []),
-    vaultMembersUrl: vaultwardenConfigured() ? vaultMembersUrl() : null,
+    vaultOrgUrl: vaultwardenConfigured() ? vaultOrgUrl() : null,
     hasFlyReadToken: info.hasFlyReadToken,
     hasFlyWriteToken: info.hasFlyWriteToken,
     fly: scopeFlyInventory(flyOrg, info.flyAppNames),

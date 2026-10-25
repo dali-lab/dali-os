@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("~/lib/db", () => ({ prisma: {} }));
 vi.mock("../vaultwarden.server", () => ({
   vaultwardenConfigured: () => process.env.TEST_VW === "1",
-  vaultMembersUrl: () => "https://vault.example.edu/#/organizations/org/members",
+  vaultOrgUrl: () => "https://vault.example.edu/#/organizations/org",
 }));
 
 import { buildProjectFleet, buildUnlinkedFleet, unlinkedVaultGroups } from "../dashboard.server";
@@ -206,9 +206,9 @@ describe("buildProjectFleet Vaultwarden", () => {
 
   it("links the web vault's member page only when Vaultwarden is configured", () => {
     delete process.env.TEST_VW;
-    expect(buildProjectFleet(info(), latest, []).vaultMembersUrl).toBeNull();
+    expect(buildProjectFleet(info(), latest, []).vaultOrgUrl).toBeNull();
     process.env.TEST_VW = "1";
-    expect(buildProjectFleet(info(), latest, []).vaultMembersUrl).toBe("https://vault.example.edu/#/organizations/org/members");
+    expect(buildProjectFleet(info(), latest, []).vaultOrgUrl).toBe("https://vault.example.edu/#/organizations/org");
     delete process.env.TEST_VW;
   });
 });

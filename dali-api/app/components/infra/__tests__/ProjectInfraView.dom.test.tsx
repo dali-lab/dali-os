@@ -22,7 +22,7 @@ function fleet(): ProjectFleet {
     neonProjectIds: ["np-a"],
     vaultwardenGroupId: null,
     vault: null,
-    vaultMembersUrl: null,
+    vaultOrgUrl: null,
     hasFlyReadToken: true,
     hasFlyWriteToken: false,
     fly: {

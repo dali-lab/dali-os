@@ -477,7 +477,7 @@ function VaultAdmin({
     <div className="flex flex-col gap-3">
       <VaultSection
         vault={p.vault}
-        membersUrl={p.vaultMembersUrl}
+        orgUrl={p.vaultOrgUrl}
         actions={{
           busy: infra.busy,
           sync: () => post({ intent: "vault.sync" }),

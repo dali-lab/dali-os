@@ -12,6 +12,13 @@ describe("consoleUrl", () => {
     expect(consoleUrl.neonProject("silent-pine-123")).toBe("https://console.neon.tech/app/projects/silent-pine-123");
   });
 
+  it("links Vaultwarden pages off the org", () => {
+    const org = "https://vault.example.edu/#/organizations/org-1";
+    expect(consoleUrl.vaultMembers(org)).toBe(`${org}/members`);
+    expect(consoleUrl.vaultGroups(org)).toBe(`${org}/groups`);
+    expect(consoleUrl.vaultCollection(org, "c 1")).toBe(`${org}/vault?collectionId=c%201`);
+  });
+
   it("escapes path segments", () => {
     expect(consoleUrl.flyApp("a/b")).toBe("https://fly.io/apps/a%2Fb");
   });
