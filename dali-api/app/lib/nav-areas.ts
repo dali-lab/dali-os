@@ -24,6 +24,7 @@ import {
   Kanban,
   LayoutGrid,
   Images,
+  Map as MapIcon,
   Lightbulb,
   MapPinned,
   Newspaper,
@@ -67,6 +68,8 @@ export type RoleFlags = {
   isLabMentor: boolean;
   isInstructor: boolean;
   isAlumni: boolean;
+  /** In the incoming hire cohort (their first term). Optional: only the shell resolves it. */
+  isNewMember?: boolean;
 };
 
 export type SubTab = {
@@ -204,6 +207,10 @@ const coreClusterSubtabs: SubTab[] = CORE_CLUSTERS.map((c) => ({
   icon: c.icon,
 }));
 
+// Onboarding journeys. A first-term member gets it pinned under Drive, where
+// they'll see it every day; everyone else finds it in the Lab area.
+const ONBOARDING_NAV_ITEM: SubTab = { label: "Onboarding", href: "/journeys", icon: MapIcon };
+
 const REGROUPED_AREAS: NavArea[] = [
   {
     key: "projects",
@@ -218,6 +225,7 @@ const REGROUPED_AREAS: NavArea[] = [
       // Lab-wide Attendance: every meeting/event you're invited to, with each
       // event's roster (invited-scoped, see app/routes/attendance.tsx).
       { label: "Attendance", href: "/attendance", icon: ClipboardCheck, gate: (r) => !r.isAlumni },
+      ONBOARDING_NAV_ITEM,
     ],
   },
   {
@@ -307,18 +315,22 @@ const REGROUPED_AREAS: NavArea[] = [
  * ALL_AREAS).
  */
 export function areasFor(flags: Partial<FeatureFlagMap> = {}): NavArea[] {
-  if (flags.community) {
-    return REGROUPED_AREAS.map((a) =>
-      a.key === "projects" ? { ...a, subtabs: a.subtabs.filter((t) => t.href !== "/connect") } : a,
-    );
-  }
-  return REGROUPED_AREAS.filter((a) => a.key !== "community");
+  const hidden = new Set<string>();
+  if (flags.community) hidden.add("/connect");
+  if (!flags["onboarding-journeys"]) hidden.add(ONBOARDING_NAV_ITEM.href);
+  return REGROUPED_AREAS.filter((a) => flags.community || a.key !== "community").map((a) =>
+    a.key === "projects" ? { ...a, subtabs: a.subtabs.filter((t) => !hidden.has(t.href)) } : a,
+  );
 }
 
 /** The nav items pinned above the area dropdown, after Home / My Tasks / Calendar. */
-export function pinnedNavItems(r: Pick<RoleFlags, "isAlumni"> = { isAlumni: false }): SubTab[] {
+export function pinnedNavItems(
+  r: Pick<RoleFlags, "isAlumni" | "isNewMember"> = { isAlumni: false },
+  flags: Partial<FeatureFlagMap> = {},
+): SubTab[] {
   if (r.isAlumni) return [];
-  return [{ label: "Drive", href: "/drive", icon: HardDrive }];
+  const drive: SubTab = { label: "Drive", href: "/drive", icon: HardDrive };
+  return r.isNewMember && flags["onboarding-journeys"] ? [drive, ONBOARDING_NAV_ITEM] : [drive];
 }
 
 /** Where the wordmark and the workspace's first tab land. Connect is the alumni Home. */
@@ -347,9 +359,16 @@ const ALUMNI_AREAS: NavArea[] = [
 ];
 
 function areasForViewer(
-  r: Pick<RoleFlags, "isAlumni"> | undefined,
+  r: Pick<RoleFlags, "isAlumni" | "isNewMember"> | undefined,
   flags: Partial<FeatureFlagMap>,
 ): NavArea[] {
+  // Pinned for them instead (pinnedNavItems), so no area may claim the path.
+  if (r?.isNewMember) {
+    return areasFor(flags).map((a) => ({
+      ...a,
+      subtabs: a.subtabs.filter((t) => t.href !== ONBOARDING_NAV_ITEM.href),
+    }));
+  }
   if (!r?.isAlumni) return areasFor(flags);
   if (flags.community) return ALUMNI_AREAS;
   const communityHrefs = new Set(
@@ -371,7 +390,7 @@ export const ROOM_BOOKING_NAV_ITEM: SubTab = { label: "Room booking", href: "/ro
 // favorite saved under the old nav still resolves its area and icon.
 const ALL_AREAS: NavArea[] = [
   ...NAV_AREAS,
-  ...areasFor({ community: true }),
+  ...areasFor({ community: true, "onboarding-journeys": true }),
 ];
 
 // These matchers are handed a live URL, not a bare pathname: in tab mode the
@@ -418,7 +437,7 @@ function queryHrefMatchLen(url: string, href: string): number {
 export function areaForPath(
   path: string,
   flags: Partial<FeatureFlagMap> = {},
-  r?: Pick<RoleFlags, "isAlumni">,
+  r?: Pick<RoleFlags, "isAlumni" | "isNewMember">,
 ): NavArea | undefined {
   const p = pathnameOf(path);
   const areas = areasForViewer(r, flags);
@@ -486,12 +505,13 @@ export function isPinnedActive(
   path: string,
   href: string,
   flags: Partial<FeatureFlagMap> = {},
+  r?: Pick<RoleFlags, "isAlumni" | "isNewMember">,
 ): boolean {
   const p = pathnameOf(path);
   if (p !== href && !p.startsWith(href + "/")) return false;
   // areaForPath returns an area only when a (query-scoped) sub-tab claims this
   // url; on a plain Drive url it's undefined, so the pin stays lit.
-  return !areaForPath(path, flags);
+  return !areaForPath(path, flags, r);
 }
 
 /**

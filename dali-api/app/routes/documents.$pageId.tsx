@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link, redirect, useLoaderData, useRevalidator, useSearchParams } from "react-router";
 import QRCode from "qrcode";
+import { pageOpenHref } from "~/lib/page-href";
 import { Shapes, Trash2, UserCheck } from "lucide-react";
 import { useFeatureFlag } from "~/components/FeatureFlags";
 import { Button } from "~/components/ui/Button";
@@ -190,8 +191,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   // Whiteboards are Excalidraw canvases, not text documents — send any stale
   // /documents/:id entry point (bookmark, recents, search hit) to the canvas.
-  if (page.kind === "Whiteboard") {
-    return redirect(`/whiteboard/${page.id}`);
+  if (page.kind === "Whiteboard" || page.kind === "Slides") {
+    return redirect(pageOpenHref(page.kind, page.id));
   }
   if (page.kind === "Form") {
     return redirect(`/forms/edit/${page.id}`);

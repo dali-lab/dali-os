@@ -211,6 +211,7 @@ export default [
       "signing/routes/documents.agreement.$id.signature.$sigId.tsx",
     ),
     route("whiteboard/:pageId", "routes/whiteboard.$pageId.tsx"),
+    route("slides/:pageId", "routes/slides.$pageId.tsx"),
     route("documents/:pageId", "routes/documents.$pageId.tsx"),
 
     // Members directory (separate from admin/members)
@@ -225,6 +226,15 @@ export default [
     route("community/gallery/new-count", "community/routes/community.gallery.new-count.ts"),
     route("community/gallery/:postId", "community/routes/community.gallery.$postId.tsx"),
     route("community/gallery/:postId/download", "community/routes/community.gallery.$postId.download.ts"),
+    // Onboarding journeys (`onboarding-journeys` flag). /onboarding is the
+    // first-login profile form, so the journeys live under their own prefix.
+    route("journeys", "journeys/routes/journeys.tsx"),
+    route("journeys/access", "journeys/routes/journeys.access.tsx"),
+    route("journeys/reviews", "journeys/routes/journeys.reviews.tsx"),
+    route("journeys/:domain", "journeys/routes/journeys.$domain.tsx"),
+    route("journeys/:domain/:journeyId", "journeys/routes/journeys.$domain.$journeyId.tsx"),
+    route("journeys/:domain/:journeyId/edit", "journeys/routes/journeys.$domain.$journeyId.edit.tsx"),
+    route("journeys/:domain/:journeyId/:moduleId", "journeys/routes/journeys.$domain.$journeyId.$moduleId.tsx"),
     // Anonymous coffee chat invite: accept / decline (recipient) or status (sender).
     route("coffee-chats/:id", "members/routes/coffee-chats.$id.tsx"),
 

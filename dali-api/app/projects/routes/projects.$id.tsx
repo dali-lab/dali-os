@@ -12,7 +12,7 @@ import {
   type ShouldRevalidateFunctionArgs,
 } from "react-router";
 import { Select, Menu, Popover, InfoTip } from "~/components/ui/floating";
-import { CalendarDays, CalendarPlus, CalendarX, Check, Globe, Handshake, History, Pencil, Pin, X, Settings, Folder, FolderInput, FolderPlus, ChevronRight, ChevronDown, FileText, Info, Users, Paperclip, Plus, Trash2, Upload, Unlink, MoreHorizontal, ExternalLink, Star, Mail, Github, Slack, Layers, Figma, NotebookPen, Shapes } from "lucide-react";
+import { CalendarDays, CalendarPlus, CalendarX, Check, Globe, Handshake, History, Pencil, Pin, X, Settings, Folder, FolderInput, FolderPlus, ChevronRight, ChevronDown, FileText, Info, Users, Paperclip, Plus, Trash2, Upload, Unlink, MoreHorizontal, ExternalLink, Star, Mail, Github, Slack, Layers, Figma, NotebookPen, Presentation, Shapes } from "lucide-react";
 import type { DriveTypeFilter } from "~/components/drive/type-filter";
 import { useOsChrome } from "~/components/os-chrome";
 import { setPageFavorite } from "~/components/favorites-live";
@@ -4502,12 +4502,13 @@ function DocRow({
 
 // Project drives hold docs, folders and files. Folders are always shown (the
 // browser never filters them out), so the filter only needs the leaf kinds.
-type ProjectDriveTypeFilter = Extract<DriveTypeFilter, "all" | "doc" | "notebook" | "whiteboard" | "file">;
+type ProjectDriveTypeFilter = Extract<DriveTypeFilter, "all" | "doc" | "notebook" | "whiteboard" | "slides" | "file">;
 const PROJECT_TYPE_FILTERS: { value: ProjectDriveTypeFilter; label: string; icon?: ReactNode }[] = [
   { value: "all", label: "All types" },
   { value: "doc", label: "Documents", icon: <FileText className="w-3.5 h-3.5" /> },
   { value: "notebook", label: "Notebooks", icon: <NotebookPen className="w-3.5 h-3.5" /> },
   { value: "whiteboard", label: "Whiteboards", icon: <Shapes className="w-3.5 h-3.5" /> },
+  { value: "slides", label: "Slide decks", icon: <Presentation className="w-3.5 h-3.5" /> },
   { value: "file", label: "Files", icon: <Paperclip className="w-3.5 h-3.5" /> },
 ];
 

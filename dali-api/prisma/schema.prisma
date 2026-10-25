@@ -119,40 +119,40 @@ model User {
   dartmouthDepartmentClass String?
   dartmouthPeopleSyncedAt  DateTime?
 
-  pronouns           String?
-  photoUrl           String?
+  pronouns            String?
+  photoUrl            String?
   // Bio stored as a collab doc reference for rich formatting + @mentions.
-  bioDocId           String?
-  major              String?
-  hometown           String?
+  bioDocId            String?
+  major               String?
+  hometown            String?
   // Where the person lives now ("Based in" on the profile). Free text; the
   // coordinates are geocoded from it on save (app/lib/geocode.server.ts) and
   // place the person on the Connect map. Null coordinates = no pin.
-  currentLocation    String?
-  currentLocationLat Float?
-  currentLocationLng Float?
+  currentLocation     String?
+  currentLocationLat  Float?
+  currentLocationLng  Float?
   // "I'm open to" on the alumni Home. Off hides the matching request button
   // on this person's profile and refuses new requests.
-  openToCoffeeChats   Boolean @default(true)
-  openToResumeReviews Boolean @default(false)
-  linkedinUrl        String?
+  openToCoffeeChats   Boolean   @default(true)
+  openToResumeReviews Boolean   @default(false)
+  linkedinUrl         String?
   // The member's current resume (PDF). Private: the member and admins only,
   // served through /api/members/:id/resume, never api/upload/url.
-  resumeKey          String? // uploads/resumes/<userId>/<uuid>.pdf
-  resumeFileName     String?
-  resumeSizeBytes    Int?
-  resumeUploadedAt   DateTime?
+  resumeKey           String? // uploads/resumes/<userId>/<uuid>.pdf
+  resumeFileName      String?
+  resumeSizeBytes     Int?
+  resumeUploadedAt    DateTime?
   // Bare GitHub login (e.g. "octocat"). Used to add the member to their
   // project's GitHub team during staffing finalize, and to derive a profile
   // link in the UI. Editable in member details; nullable — a member with no
   // username is silently skipped (and reported) by that automation.
-  githubUsername     String?
-  personalSite       String?
+  githubUsername      String?
+  personalSite        String?
   // Short public handle for @-mentions (e.g. "spark" for Sophie Park). Seeded
   // from first-initial + last-name (lowercased), auto-suffixed on collision,
   // and editable in profile. Nullable + unique like the other identity handles;
   // a user with no handle simply can't be @-mentioned until they set one.
-  handle             String?   @unique
+  handle              String?   @unique
 
   // Per-member secret mixed into the signed barcode carried by the member's
   // Apple/Google Wallet membership pass (see app/lib/wallet-token.ts). Set
@@ -354,6 +354,13 @@ model User {
   // ─── Easter-egg games ─────────────────────────────────────────────────────
   tetrisScore TetrisScore?
   dinoScore   DinoScore?
+
+  // ─── Onboarding journeys ──────────────────────────────────────────────────
+  journeysCreated       OnboardingJourney[]
+  journeyCollaborations OnboardingJourneyCollaborator[]
+  journeyProgress       OnboardingJourneyProgress[]
+  labSubmissions        OnboardingLabSubmission[]       @relation("LabSubmissionLearner")
+  labReviews            OnboardingLabSubmission[]       @relation("LabSubmissionReviewer")
 }
 
 // A DALI lab member. userId is optional because a member may be known (e.g. via daliEmail)
@@ -840,6 +847,7 @@ model Domain {
   projects                  ProjectDomain[]
   projectScopes             ProjectDomainScope[]
   coreMilestones            CoreMilestoneDomain[]
+  onboardingJourneys        OnboardingJourney[]
 }
 
 // Lifecycle of an application cycle from the DALI side:
@@ -927,7 +935,7 @@ model InterviewConfig {
   rooms     Room[]
   // Hold every interview room for interview hours across the interview window
   // (one recurring RoomBooking per room, source InterviewHold) so members
-  // can't book over the cycle. Bookings from this cycle sit inside the hold.
+  // can't book over the cycle. Concurrent cycles share the hold.
   holdRooms Boolean @default(false)
 
   @@unique([applicationCycleId, interviewRoundId])
@@ -5550,7 +5558,9 @@ model Page {
   favorites UserFavorite[]
 
   // Set only when kind == Form: the form body sharing this page's id.
-  form Form? @relation("FormPage")
+  form      Form?      @relation("FormPage")
+  // Set only when kind == Slides: the deck body sharing this page's id.
+  slideDeck SlideDeck?
 
   // Pinned to the top of the project's Documents block. Timestamp so pins can
   // be ordered most-recent-first. Null = not pinned. (Distinct from the
@@ -5854,6 +5864,9 @@ enum PageKind {
   // versions, submissions, and publish state live on the 1:1 Form row that
   // shares this page's id (specs/forms-vs-drive-items-review.md, section 9).
   Form
+  // A slide deck. The slides live on the 1:1 SlideDeck row sharing this
+  // page's id; the page carries placement, title, and access.
+  Slides
 }
 
 // What a folder is or receives. Root = a Drive space root; the rest mark a
@@ -7415,8 +7428,8 @@ model Room {
   archivedAt  DateTime?
 
   bookings         RoomBooking[]
-  displays         RoomDisplay[] @relation("RoomDisplayRoom")
-  secondDisplays   RoomDisplay[] @relation("RoomDisplaySecondRoom")
+  displays         RoomDisplay[]      @relation("RoomDisplayRoom")
+  secondDisplays   RoomDisplay[]      @relation("RoomDisplaySecondRoom")
   meetings         ScheduledMeeting[]
   interviews       Interview[]
   interviewConfigs InterviewConfig[]
@@ -7471,9 +7484,9 @@ model RoomBooking {
   // booking.
   seriesEnd DateTime?
 
-  // The hiring cycle an Interview / InterviewHold booking belongs to. Bookings
-  // of the same cycle never conflict with each other (interviews sit inside
-  // the cycle's hold); every other writer is blocked by both.
+  // The hiring cycle an Interview / InterviewHold booking belongs to. Holds
+  // are shared across cycles: any cycle's interviews sit inside any hold, and
+  // holds overlap each other; every other writer is blocked by both.
   applicationCycleId String?
   applicationCycle   ApplicationCycle? @relation(fields: [applicationCycleId], references: [id], onDelete: Cascade)
   interview          Interview?
@@ -7643,4 +7656,110 @@ model ReleaseNote {
   updatedAt     DateTime          @updatedAt
 
   @@index([status, publishedAt])
+}
+
+// ─── Onboarding journeys ─────────────────────────────────────────────────────
+// Self-paced learning paths per domain: modules in a prerequisite graph, each
+// with lesson pages, slides, a lab and a quiz.
+
+enum OnboardingJourneyRole {
+  Owner
+  Editor
+}
+
+model OnboardingJourney {
+  id          String    @id @default(cuid())
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  domainId    String
+  // JourneyContent (app/journeys/lib/types.ts). Editors write `draft`; learners
+  // only ever read `published`, which stays null until the first publish.
+  draft       Json
+  published   Json?
+  publishedAt DateTime?
+  createdById String?
+
+  domain        Domain                          @relation(fields: [domainId], references: [id])
+  createdBy     User?                           @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  collaborators OnboardingJourneyCollaborator[]
+  progress      OnboardingJourneyProgress[]
+  submissions   OnboardingLabSubmission[]
+
+  @@index([domainId])
+}
+
+model OnboardingJourneyCollaborator {
+  id        String                @id @default(cuid())
+  createdAt DateTime              @default(now())
+  journeyId String
+  userId    String
+  role      OnboardingJourneyRole
+
+  journey OnboardingJourney @relation(fields: [journeyId], references: [id], onDelete: Cascade)
+  user    User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([journeyId, userId])
+  @@index([userId])
+}
+
+model OnboardingJourneyProgress {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  journeyId String
+  userId    String
+  // Finished module ids, plus "<moduleId>#lab" / "<moduleId>#quiz" for a
+  // module's finished activities. The row existing at all means "started".
+  completed String[] @default([])
+
+  journey OnboardingJourney @relation(fields: [journeyId], references: [id], onDelete: Cascade)
+  user    User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([journeyId, userId])
+  @@index([userId])
+}
+
+// The body of a Drive slide deck (Page.kind = Slides). Saved whole, guarded by
+// updatedAt so two editors can't overwrite each other silently.
+model SlideDeck {
+  pageId         String   @id
+  page           Page     @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  // Slide[] (app/components/slides/types.ts).
+  slides         Json     @default("[]")
+  updatedAt      DateTime @updatedAt
+  lastEditedById String?
+}
+
+enum OnboardingLabSubmissionStatus {
+  InProgress
+  Submitted
+  Approved
+  ChangesRequested
+}
+
+// A learner's work on a whiteboard or document lab, and its mentor review.
+// One row per learner per module; it exists from the first edit.
+model OnboardingLabSubmission {
+  id           String                        @id @default(cuid())
+  createdAt    DateTime                      @default(now())
+  updatedAt    DateTime                      @updatedAt
+  journeyId    String
+  moduleId     String
+  userId       String
+  // StudioWork (app/journeys/lib/studio-types.ts): board items or a document.
+  work         Json
+  selfChecks   Json                          @default("{}")
+  mentorChecks Json                          @default("{}")
+  status       OnboardingLabSubmissionStatus @default(InProgress)
+  mentorNote   String?
+  reviewerId   String?
+  submittedAt  DateTime?
+  reviewedAt   DateTime?
+
+  journey  OnboardingJourney @relation(fields: [journeyId], references: [id], onDelete: Cascade)
+  user     User              @relation("LabSubmissionLearner", fields: [userId], references: [id], onDelete: Cascade)
+  reviewer User?             @relation("LabSubmissionReviewer", fields: [reviewerId], references: [id], onDelete: SetNull)
+
+  @@unique([journeyId, moduleId, userId])
+  @@index([journeyId, status])
 }

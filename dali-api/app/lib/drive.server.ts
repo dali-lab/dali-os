@@ -20,6 +20,7 @@
 //     ORGANISATION only — it does not change who can see or fill a form.
 
 import { prisma } from "~/lib/db";
+import { pageOpenHref } from "~/lib/page-href";
 import { getPageAccess, getPageAccessBulk, governingScopeMap, PAGE_ACCESS_SELECT } from "~/lib/pageAccess.server";
 import { canViewFile } from "~/lib/fileAccess.server";
 import { isCore, isProjectMember } from "~/lib/roles";
@@ -29,7 +30,7 @@ import type { DriveItemTag } from "~/lib/drive-tags";
 import type { PageKind, Prisma } from "~/generated/prisma/client";
 
 /** Every page kind a Drive listing (and the Trash) surfaces. */
-export const DRIVE_PAGE_KINDS: PageKind[] = ["Folder", "FreeForm", "Structured", "Whiteboard", "Notebook", "Form"];
+export const DRIVE_PAGE_KINDS: PageKind[] = ["Folder", "FreeForm", "Structured", "Whiteboard", "Notebook", "Form", "Slides"];
 
 /** The kinds My Drive holds until forms follow page access: a Form is a Lab or workspace artifact, never a personal note. */
 const MEMBER_PAGE_KINDS = DRIVE_PAGE_KINDS.filter((k) => k !== "Form");
@@ -98,6 +99,8 @@ export type DriveItem =
       /** True when the underlying Page.kind is Whiteboard — drives the Drive
        *  icon and the /whiteboard/:id open href (vs the /documents/:id editor). */
       isWhiteboard?: boolean;
+      /** True when the underlying Page.kind is Slides: the deck icon and the /slides/:id open href. */
+      isSlides?: boolean;
       /** True when the underlying Page.kind is Notebook (a run of meeting notes shown as tabs). */
       isNotebook?: boolean;
       /** Live tabs (child pages) of a Notebook. */
@@ -484,6 +487,7 @@ async function loadLabPages(
         : {
             type: "doc",
             isWhiteboard: row.kind === "Whiteboard",
+    isSlides: row.kind === "Slides",
             isNotebook: row.kind === "Notebook",
             tags: tagsOf(row),
             id: row.id,
@@ -491,10 +495,7 @@ async function loadLabPages(
             parentFolderId: row.parentPageId,
             iconEmoji: row.iconEmoji,
             updatedAt: row.updatedAt,
-            href:
-              row.kind === "Whiteboard"
-                ? `/whiteboard/${row.id}`
-                : `/documents/${row.id}`,
+            href: pageOpenHref(row.kind, row.id),
             audience: audiences.get(row.id),
           },
     );
@@ -575,6 +576,7 @@ export function pageRowToDriveItem(
   return {
     type: "doc",
     isWhiteboard: row.kind === "Whiteboard",
+    isSlides: row.kind === "Slides",
     isNotebook: row.kind === "Notebook",
     tags: tagsOf(row),
     id: row.id,
@@ -582,7 +584,7 @@ export function pageRowToDriveItem(
     parentFolderId: row.parentPageId,
     iconEmoji: row.iconEmoji,
     updatedAt: row.updatedAt,
-    href: row.kind === "Whiteboard" ? `/whiteboard/${row.id}` : `/documents/${row.id}`,
+    href: pageOpenHref(row.kind, row.id),
     partnerVisible: row.partnerVisible,
     audience,
   };
@@ -731,6 +733,7 @@ async function loadEducationPages(
       : {
           type: "doc",
           isWhiteboard: row.kind === "Whiteboard",
+    isSlides: row.kind === "Slides",
           isNotebook: row.kind === "Notebook",
           tags: tagsOf(row),
           id: row.id,
@@ -738,10 +741,7 @@ async function loadEducationPages(
           parentFolderId: row.parentPageId,
           iconEmoji: row.iconEmoji,
           updatedAt: row.updatedAt,
-          href:
-            row.kind === "Whiteboard"
-              ? `/whiteboard/${row.id}`
-              : `/documents/${row.id}`,
+          href: pageOpenHref(row.kind, row.id),
           audience: audiences.get(row.id),
         },
     );
@@ -790,6 +790,7 @@ async function loadMemberPages(userSub: string, request: Request | undefined, fo
       : {
           type: "doc",
           isWhiteboard: row.kind === "Whiteboard",
+    isSlides: row.kind === "Slides",
           isNotebook: row.kind === "Notebook",
           tags: tagsOf(row),
           id: row.id,
@@ -797,10 +798,7 @@ async function loadMemberPages(userSub: string, request: Request | undefined, fo
           parentFolderId: row.parentPageId,
           iconEmoji: row.iconEmoji,
           updatedAt: row.updatedAt,
-          href:
-            row.kind === "Whiteboard"
-              ? `/whiteboard/${row.id}`
-              : `/documents/${row.id}`,
+          href: pageOpenHref(row.kind, row.id),
         },
     );
   return pageItems;

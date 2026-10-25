@@ -165,6 +165,18 @@ export const FEATURE_FLAGS = [
     description:
       "Lets the DALI OS mobile app (iOS and Android) sign in and load your profile, timesheet, projects, calendar, meeting notes and member pass. Off, the app's data endpoints return not found for that member. Ships off.",
   },
+  {
+    key: "drive-slides",
+    label: "Drive slide decks",
+    description:
+      "Adds Slides to the Drive New menus: a deck of title, text, text and image, and image slides, edited in the app and presented full screen. Decks already made keep opening when this is off. Ships off.",
+  },
+  {
+    key: "onboarding-journeys",
+    label: "Onboarding journeys",
+    description:
+      "Self-paced onboarding at /journeys: per-domain journeys of modules on a prerequisite map, each with lesson pages, slides, an in-browser coding lab and a quiz, with progress saved per member. First-term members find Onboarding pinned under Drive; everyone else finds it in the Lab area. Core and domain leads create journeys and share edit access per journey. Ships off.",
+  },
 ] as const satisfies readonly FeatureFlagDef[];
 
 export type FeatureFlagKey = (typeof FEATURE_FLAGS)[number]["key"];

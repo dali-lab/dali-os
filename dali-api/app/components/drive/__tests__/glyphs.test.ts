@@ -106,6 +106,7 @@ describe("pickGlyph", () => {
   it("keeps the existing doc, whiteboard and managed glyphs", () => {
     expect(pickGlyph(doc())).toEqual({ kind: "doc" });
     expect(pickGlyph(doc({ isWhiteboard: true }))).toEqual({ kind: "whiteboard" });
+    expect(pickGlyph(doc({ isSlides: true }))).toEqual({ kind: "slides" });
     for (const type of ["file", "form", "agreement", "rubric"] as const) {
       expect(pickGlyph({ type })).toEqual({ kind: type });
     }
@@ -185,6 +186,7 @@ describe("glyphLabel", () => {
   it("names the plain kinds", () => {
     expect(label({ type: "doc" })).toBe("Document");
     expect(label({ type: "doc", isWhiteboard: true })).toBe("Whiteboard");
+    expect(label({ type: "doc", isSlides: true })).toBe("Slide deck");
     expect(label({ type: "file" })).toBe("File");
     expect(label({ type: "form" })).toBe("Form");
     expect(label({ type: "agreement" })).toBe("Agreement");

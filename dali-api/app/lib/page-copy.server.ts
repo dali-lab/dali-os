@@ -12,7 +12,7 @@
 //
 // What is NOT copied: DocComment rows (Notion behaviour — copies start clean).
 
-import { prisma } from "~/lib/db";
+import { prisma, Prisma } from "~/lib/db";
 import { PAGE_ACCESS_SELECT, getPageAccess } from "~/lib/pageAccess.server";
 import { pageDocName } from "~/collab/roomName";
 import type { WorkspaceType, PageKind } from "~/generated/prisma/client";
@@ -136,7 +136,16 @@ export async function duplicatePage(
     select: { id: true },
   });
 
-  await copyPageBody(source.id, newPage.id);
+  if (source.kind === "Slides") {
+    const deck = await prisma.slideDeck.findUnique({ where: { pageId: source.id }, select: { slides: true } });
+    if (deck) {
+      await prisma.slideDeck.create({
+        data: { pageId: newPage.id, slides: deck.slides as Prisma.InputJsonValue, lastEditedById: input.createdById },
+      });
+    }
+  } else {
+    await copyPageBody(source.id, newPage.id);
+  }
 
   return { id: newPage.id };
 }

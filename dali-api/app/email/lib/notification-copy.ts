@@ -473,6 +473,33 @@ export const NOTIFICATION_COPY = {
   },
 
   // ── Onboarding ───────────────────────────────────────────────────────────
+  "journey.lab_submitted": {
+    eventType: "journey.lab_submitted",
+    label: "Lab work to review",
+    description: "Sent to a journey's owners and editors when a learner submits lab work for review.",
+    variables: ["personName", "itemDetail"],
+    subject: "{{personName}} sent lab work for review",
+    body: "{{itemDetail}}",
+    linkLabel: "Review it",
+  },
+  "journey.lab_approved": {
+    eventType: "journey.lab_reviewed",
+    label: "Lab work approved",
+    description: "Sent to a learner when a mentor approves their lab work.",
+    variables: ["personName", "itemDetail"],
+    subject: "{{personName}} approved your lab work",
+    body: "{{itemDetail}}",
+    linkLabel: "Open the lab",
+  },
+  "journey.lab_changes": {
+    eventType: "journey.lab_reviewed",
+    label: "Lab changes requested",
+    description: "Sent to a learner when a mentor asks for changes to their lab work.",
+    variables: ["personName", "itemDetail"],
+    subject: "{{personName}} asked for changes to your lab work",
+    body: "{{itemDetail}}",
+    linkLabel: "Open the lab",
+  },
   "member.onboarding": {
     eventType: "member.onboarding",
     label: "Welcome and onboarding",

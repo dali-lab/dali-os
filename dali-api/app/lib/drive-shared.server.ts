@@ -2,6 +2,7 @@
 // pages the viewer reaches by a named share, not through workspace membership.
 
 import { prisma } from "~/lib/db";
+import { pageOpenHref } from "~/lib/page-href";
 import { DRIVE_PAGE_KINDS } from "~/lib/drive.server";
 import type { DriveItem } from "~/lib/drive.server";
 import { getPageAccessBulk, PAGE_ACCESS_SELECT } from "~/lib/pageAccess.server";
@@ -35,12 +36,13 @@ function docItem(page: SharedPage, extra: Partial<DocItem>): DriveItem {
   return {
     type: "doc",
     isWhiteboard: page.kind === "Whiteboard",
+    isSlides: page.kind === "Slides",
     id: page.id,
     title: page.title,
     parentFolderId: null,
     iconEmoji: page.iconEmoji,
     updatedAt: page.updatedAt,
-    href: page.kind === "Whiteboard" ? `/whiteboard/${page.id}` : `/documents/${page.id}`,
+    href: pageOpenHref(page.kind, page.id),
     ...extra,
   };
 }
