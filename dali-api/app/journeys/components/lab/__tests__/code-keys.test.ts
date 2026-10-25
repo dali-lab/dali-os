@@ -3,13 +3,17 @@ import { applyEditorKey, type TextEdit } from "../code-keys";
 
 /** Builds state from text where "|" marks the caret or "[" "]" the selection. */
 function at(text: string): TextEdit {
-  if (text.includes("|")) {
-    const i = text.indexOf("|");
-    return { value: text.replace("|", ""), selectionStart: i, selectionEnd: i };
+  const i = text.indexOf("|");
+  if (i >= 0) {
+    return { value: text.slice(0, i) + text.slice(i + 1), selectionStart: i, selectionEnd: i };
   }
   const s = text.indexOf("[");
-  const e = text.indexOf("]") - 1;
-  return { value: text.replace("[", "").replace("]", ""), selectionStart: s, selectionEnd: e };
+  const e = text.indexOf("]");
+  return {
+    value: text.slice(0, s) + text.slice(s + 1, e) + text.slice(e + 1),
+    selectionStart: s,
+    selectionEnd: e - 1,
+  };
 }
 const show = (t: TextEdit | null) =>
   t && t.selectionStart === t.selectionEnd
