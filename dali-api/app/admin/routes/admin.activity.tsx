@@ -7,7 +7,6 @@ import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { isCore, isAdmin } from "~/lib/roles";
 import { cn } from "~/lib/cn";
-import { fullName } from "~/lib/display";
 import { AUDIT_ACTIONS, AUDIT_AREAS, auditAreaOf } from "~/lib/audit-actions";
 import { resolveAuditTargets, type ResolvedTarget } from "~/lib/audit-targets";
 import {
@@ -30,9 +29,16 @@ import { OS_SELECT_TRIGGER_CLASS } from "~/components/ui/floating/styles";
 import { SearchInput } from "~/components/ui/SearchInput";
 import { Toggle } from "~/components/ui/Toggle";
 import { DateField } from "~/components/ui/DateField";
-import { Avatar } from "~/components/ui/Avatar";
 import { useOsChrome } from "~/components/os-chrome";
 import { EmptyState, Pill, type Tone } from "~/admin/components/console-ui";
+import {
+  AuditActorAvatar,
+  AuditActorName,
+  ShortId,
+  auditPersonName,
+  type AuditPerson,
+} from "~/admin/components/AuditActor";
+import { loadPeopleById } from "~/admin/lib/people.server";
 
 export const handle = adminHandle("audit-log");
 
@@ -69,14 +75,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     if (e.userId) ids.add(e.userId);
     if (e.targetId) ids.add(e.targetId);
   }
-  const users =
-    ids.size === 0
-      ? []
-      : await prisma.user.findMany({
-          where: { id: { in: Array.from(ids) } },
-          select: { id: true, firstName: true, lastName: true, daliEmail: true, photoUrl: true },
-        });
-  const userById = new Map(users.map((u) => [u.id, u]));
+  const userById = await loadPeopleById(prisma, ids);
 
   const resolvedTargets = await resolveAuditTargets(
     prisma,
@@ -108,30 +107,15 @@ export async function loader({ request }: Route.LoaderArgs) {
   };
 }
 
-type PersonRow = { firstName: string; lastName: string; daliEmail: string | null; photoUrl?: string | null };
-
-function personName(u: PersonRow): string {
-  return fullName(u) || u.daliEmail || "—";
-}
-
-function ShortId({ id }: { id: string }) {
-  return <span className="font-mono text-xs text-os-muted">{id.slice(0, 8)}…</span>;
-}
 
 // A missing userId means an unauthenticated request (token validation failure,
 // etc.), and "system" is the meaningful label.
-function displayActor(u: PersonRow | null, fallbackId: string | null) {
-  if (u) return <span className="font-semibold text-foreground">{personName(u)}</span>;
-  if (fallbackId) return <ShortId id={fallbackId} />;
-  return <span className="italic text-os-muted">system</span>;
-}
-
 function displayTarget(
-  u: PersonRow | null,
+  u: AuditPerson | null,
   resolved: ResolvedTarget | null,
   targetId: string | null,
 ) {
-  if (u) return <span className="text-foreground">{personName(u)}</span>;
+  if (u) return <span className="text-foreground">{auditPersonName(u)}</span>;
   if (resolved?.href) {
     return (
       <Link to={resolved.href} className="text-foreground hover:text-os-accent hover:underline">
@@ -188,14 +172,13 @@ function TimelineEntry({ e, areaLabel }: { e: EntryRow; areaLabel: string }) {
     hour: "numeric",
     minute: "2-digit",
   });
-  const avatarName = e.actor ? personName(e.actor) : e.actorId ? "?" : "System";
 
   return (
     <li>
       <div className="flex items-center gap-3 rounded-os-item px-4 py-3 transition-colors hover:bg-os-card-hover">
-        <Avatar name={avatarName} photoUrl={e.actor?.photoUrl ?? null} size="sm" />
+        <AuditActorAvatar actor={e.actor} actorId={e.actorId} />
         <p className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1 text-sm text-os-grey">
-          {displayActor(e.actor, e.actorId)}
+          <AuditActorName actor={e.actor} actorId={e.actorId} />
           <span className="rounded bg-os-container/70 px-1.5 py-0.5 font-mono text-[11px] text-foreground">
             {e.action}
           </span>

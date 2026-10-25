@@ -5,27 +5,19 @@
 // request that Core fulfills. Config editing uses the shared EditableSection
 // primitive, so it reads like the other hub sections.
 
-import { useEffect, useRef, useState, type FormEvent, type RefObject } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Form, useFetcher, useSubmit } from "react-router";
-import type { ProjectFleet } from "~/lib/infra/dashboard.server";
+import type { KnownOrgs, ProjectFleet } from "~/lib/infra/dashboard.server";
+import { InfraConfigFields, withOwnOrg, type InfraConfigValues } from "~/components/infra/InfraConfigFields";
 import type { ProjectInfraRequest } from "~/lib/infra/requests.server";
 import { ProjectInfraView } from "~/components/infra/ProjectInfraView";
 import { EditableSection } from "~/components/EditableSection";
 import { buttonClasses } from "~/components/ui/Button";
-import { Checkbox } from "~/components/ui/Checkbox";
 import { Select } from "~/components/ui/floating";
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
 import { timeAgo } from "~/components/infra/format";
 import { INFRA_REQUEST_KINDS, infraRequestKindLabel } from "~/lib/infra/request-kinds";
-
-type Config = {
-  flyOrgSlug: string | null;
-  neonOrgId: string | null;
-  infraEnabled: boolean;
-  hasFlyReadToken: boolean;
-  hasFlyWriteToken: boolean;
-};
 
 export function ProjectInfraSection({
   projectId,
@@ -33,14 +25,20 @@ export function ProjectInfraSection({
   config,
   view,
   requests,
+  knownOrgs,
+  setupErrors = [],
 }: {
   projectId: string;
   canEdit: boolean;
-  config: Config;
+  config: InfraConfigValues;
   view: ProjectFleet | null;
   requests: ProjectInfraRequest[];
+  knownOrgs: KnownOrgs;
+  /** Starting-infra steps that failed at project creation. */
+  setupErrors?: string[];
 }) {
   const submit = useSubmit();
+  const { panel } = useOsChrome();
   const formRef = useRef<HTMLFormElement | null>(null);
   const configured = Boolean(config.flyOrgSlug || config.neonOrgId);
 
@@ -54,14 +52,24 @@ export function ProjectInfraSection({
     >
       {({ editing, resetKey }) =>
         editing ? (
-          <ConfigForm formRef={formRef} resetKey={resetKey} config={config} />
+          <Form method="post" ref={formRef} key={resetKey} className={cn(panel, "os-form p-5")}>
+            <input type="hidden" name="intent" value="infra-config" />
+            <InfraConfigFields
+              config={config}
+              knownOrgs={{
+                fly: withOwnOrg(knownOrgs.fly, config.flyOrgSlug, view?.flyOrgApps ?? []),
+                neon: withOwnOrg(knownOrgs.neon, config.neonOrgId, view?.neonOrgProjects ?? []),
+              }}
+            />
+          </Form>
         ) : (
           <div className="flex flex-col gap-3">
+            {setupErrors.length > 0 && <SetupErrors errors={setupErrors} />}
             {view ? (
               <ProjectInfraView project={view} />
             ) : configured ? (
               <p className="text-sm text-muted-foreground">
-                Configured — check back after the next infrastructure sweep.
+                Configured. Check back after the next infrastructure sweep.
               </p>
             ) : (
               <p className="text-sm text-muted-foreground">
@@ -78,46 +86,16 @@ export function ProjectInfraSection({
   );
 }
 
-function ConfigForm({
-  formRef,
-  resetKey,
-  config,
-}: {
-  formRef: RefObject<HTMLFormElement | null>;
-  resetKey: number;
-  config: Config;
-}) {
-  const { panel, fieldLabel } = useOsChrome();
+function SetupErrors({ errors }: { errors: string[] }) {
   return (
-    <Form
-      method="post"
-      ref={formRef}
-      key={resetKey}
-      className={cn(panel, "os-form p-5 flex flex-col gap-3")}
-    >
-      <input type="hidden" name="intent" value="infra-config" />
-      <div className="flex flex-wrap gap-3">
-        <label className={cn(fieldLabel, "w-44")}>
-          <span>Fly org slug</span>
-          <input name="flyOrgSlug" defaultValue={config.flyOrgSlug ?? ""} placeholder="acme-org" className="w-full" />
-        </label>
-        <label className={cn(fieldLabel, "w-44")}>
-          <span>Neon org id</span>
-          <input name="neonOrgId" defaultValue={config.neonOrgId ?? ""} placeholder="org-acme-1234" className="w-full" />
-        </label>
-        <Checkbox name="infraEnabled" defaultChecked={config.infraEnabled} label="Sweep enabled" className="self-end pb-1.5" />
-      </div>
-      <div className="flex flex-wrap gap-3">
-        <label className={cn(fieldLabel, "w-56")}>
-          <span>Fly read token</span>
-          <input name="flyReadToken" type="password" placeholder={config.hasFlyReadToken ? "•••• set — blank keeps" : "FlyV1 …"} className="w-full" />
-        </label>
-        <label className={cn(fieldLabel, "w-56")}>
-          <span>Fly write token</span>
-          <input name="flyWriteToken" type="password" placeholder={config.hasFlyWriteToken ? "•••• set — blank keeps" : "FlyV1 …"} className="w-full" />
-        </label>
-      </div>
-    </Form>
+    <div className="rounded-md bg-os-amber/10 px-3 py-2 text-xs text-os-amber">
+      <p className="font-medium">Some starting infrastructure wasn't created:</p>
+      <ul className="mt-1 list-disc pl-4">
+        {errors.map((e) => (
+          <li key={e}>{e}</li>
+        ))}
+      </ul>
+    </div>
   );
 }
 

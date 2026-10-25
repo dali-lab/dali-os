@@ -1,6 +1,6 @@
 // Normalized shapes for the infrastructure dashboard. Pure types (no runtime),
 // shared by the server adapters, the cached InfraSnapshot payload, and the UI.
-// No dollar amounts anywhere — usage metrics only (see spec §1).
+// Usage metrics only; Neon dollar estimates are derived in neon-cost.ts.
 
 export type InfraProvider = "fly" | "neon";
 
@@ -86,6 +86,8 @@ export type NeonProject = {
 
 export type NeonInventory = {
   orgId: string;
+  /** Org plan (free | launch | scale | ...); absent on snapshots swept before it was read. */
+  plan?: string | null;
   projects: NeonProject[];
 };
 

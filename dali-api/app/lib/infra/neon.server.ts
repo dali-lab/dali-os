@@ -131,9 +131,12 @@ export async function listEndpoints(projectId: string): Promise<NeonEndpoint[]> 
   }));
 }
 
-// Full read sweep for one org: projects + their branches + endpoints.
+// Full read sweep for one org: plan + projects + their branches + endpoints.
 export async function getNeonInventory(orgId: string): Promise<NeonInventory> {
-  const projects = await listProjects(orgId);
+  const [projects, plan] = await Promise.all([
+    listProjects(orgId),
+    getOrganizationPlan(orgId).catch(() => null),
+  ]);
   const detailed: NeonProject[] = [];
   for (const p of projects) {
     const id = p.id ?? "";
@@ -153,65 +156,118 @@ export async function getNeonInventory(orgId: string): Promise<NeonInventory> {
       endpoints,
     });
   }
-  return { orgId, projects: detailed };
+  return { orgId, plan, projects: detailed };
 }
 
-// ── Consumption (usage; no dollars) ──────────────────────────────────────────
+// ── Consumption ──────────────────────────────────────────────────────────────
+
+export const NEON_PROJECT_METRICS = [
+  "compute_unit_seconds",
+  "root_branch_bytes_month",
+  "child_branch_bytes_month",
+  "instant_restore_bytes_month",
+  "snapshot_storage_bytes_month",
+  "public_network_transfer_bytes",
+  "private_network_transfer_bytes",
+  "extra_branches_month",
+] as const;
+
+// The branch endpoint rejects the two project-only metrics.
+export const NEON_BRANCH_METRICS = [
+  "compute_unit_seconds",
+  "root_branch_bytes_month",
+  "child_branch_bytes_month",
+  "instant_restore_bytes_month",
+  "public_network_transfer_bytes",
+  "private_network_transfer_bytes",
+] as const;
 
 export type NeonConsumptionSample = {
   projectId: string;
+  branchId: string | null;
   metric: string;
   value: number;
-  periodStart: string;
+  /** Start of the granularity bucket (day or month). */
+  at: string;
+  plan: string | null;
 };
 
-// Per-project consumption for a window, monthly granularity. Metrics are raw
-// (compute_unit_seconds, storage bytes-month, transfer bytes) — never priced.
-// Paid-plan gated on Neon's side; callers swallow a 4xx as "no usage".
-export async function getConsumption(
-  orgId: string,
-  from: string,
-  to: string,
-): Promise<NeonConsumptionSample[]> {
-  const metrics = [
-    "compute_unit_seconds",
-    "root_branch_bytes_month",
-    "child_branch_bytes_month",
-    "public_network_transfer_bytes",
-  ];
-  const qs =
-    `?org_id=${encodeURIComponent(orgId)}` +
-    `&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}` +
-    `&granularity=monthly&limit=100` +
-    metrics.map((m) => `&metrics=${m}`).join("");
-  const res = (await neonFetch(`/consumption_history/v2/projects${qs}`)) as {
-    projects?: {
-      project_id?: string;
-      periods?: {
-        period_start?: string;
-        consumption?: { metrics?: { metric_name?: string; value?: number }[] }[];
-      }[];
+type RawConsumption = {
+  project_id?: string;
+  branch_id?: string;
+  periods?: {
+    period_plan?: string;
+    period_start?: string;
+    consumption?: {
+      timeframe_start?: string;
+      metrics?: { metric_name?: string; value?: number }[];
     }[];
-  } | null;
+  }[];
+};
+
+const MAX_CONSUMPTION_PAGES = 10;
+
+export function flattenConsumption(rows: RawConsumption[]): NeonConsumptionSample[] {
   const out: NeonConsumptionSample[] = [];
-  for (const p of res?.projects ?? []) {
-    const pid = p.project_id ?? "";
-    for (const period of p.periods ?? []) {
-      const start = period.period_start ?? "";
+  for (const r of rows) {
+    for (const period of r.periods ?? []) {
       for (const c of period.consumption ?? []) {
+        const at = c.timeframe_start ?? period.period_start ?? "";
         for (const m of c.metrics ?? []) {
-          if (!m.metric_name) continue;
+          if (!m.metric_name || !at) continue;
           out.push({
-            projectId: pid,
+            projectId: r.project_id ?? "",
+            branchId: r.branch_id ?? null,
             metric: m.metric_name,
             value: Number(m.value ?? 0),
-            periodStart: start,
+            at,
+            plan: period.period_plan ?? null,
           });
         }
       }
     }
   }
   return out;
+}
+
+// Raw usage (CU-seconds, byte-months, bytes, branch-hours). Paid-plan gated on
+// Neon's side (403 otherwise); callers swallow failures as "no usage". Shares a
+// ~50 req/min account limiter, so pages are bounded.
+export async function getConsumption(opts: {
+  orgId: string;
+  scope: "projects" | "branches";
+  granularity: "daily" | "monthly";
+  from: string;
+  to: string;
+  projectIds?: string[];
+}): Promise<NeonConsumptionSample[]> {
+  const metrics = opts.scope === "projects" ? NEON_PROJECT_METRICS : NEON_BRANCH_METRICS;
+  const base =
+    `?org_id=${encodeURIComponent(opts.orgId)}` +
+    `&from=${encodeURIComponent(opts.from)}&to=${encodeURIComponent(opts.to)}` +
+    `&granularity=${opts.granularity}&limit=100` +
+    `&metrics=${metrics.join(",")}` +
+    (opts.projectIds?.length ? `&project_ids=${opts.projectIds.map(encodeURIComponent).join(",")}` : "");
+  const rows: RawConsumption[] = [];
+  let cursor: string | undefined;
+  for (let page = 0; page < MAX_CONSUMPTION_PAGES; page++) {
+    const res = (await neonFetch(
+      `/consumption_history/v2/${opts.scope}${base}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`,
+    )) as { projects?: RawConsumption[]; branches?: RawConsumption[]; pagination?: { cursor?: string } } | null;
+    const pageRows = (opts.scope === "projects" ? res?.projects : res?.branches) ?? [];
+    rows.push(...pageRows);
+    const next = res?.pagination?.cursor;
+    if (!next || next === cursor || pageRows.length === 0) break;
+    cursor = next;
+  }
+  return flattenConsumption(rows);
+}
+
+export async function getOrganizationPlan(orgId: string): Promise<string | null> {
+  const res = (await neonFetch(`/organizations/${encodeURIComponent(orgId)}`)) as {
+    plan?: string;
+  } | null;
+  return res?.plan ?? null;
 }
 
 // ── Writes ───────────────────────────────────────────────────────────────────
@@ -303,15 +359,26 @@ export async function setProjectQuota(projectId: string, quota: NeonQuotaPatch):
   });
 }
 
+// Default compute range for databases made from DALI OS: student projects
+// rarely need more, and it bounds the worst-case compute bill. Raise per
+// database from the console.
+export const NEW_PROJECT_COMPUTE = { minCu: 0.25, maxCu: 2 };
+
+// The response carries connection URIs and role passwords; only the project
+// id is read from it, and it is never logged.
 export async function createProject(
   orgId: string,
   name: string,
 ): Promise<{ projectId: string | null; operations: NeonOp[] }> {
-  // org_id lives on the project body for create; with a personal key spanning
-  // orgs this attributes the new project to the right org. Verify against live
-  // API on first staging run (see spec §5).
   const { raw, operations } = await neonWrite(`/projects`, "POST", {
-    project: { name, org_id: orgId },
+    project: {
+      name,
+      org_id: orgId,
+      default_endpoint_settings: {
+        autoscaling_limit_min_cu: NEW_PROJECT_COMPUTE.minCu,
+        autoscaling_limit_max_cu: NEW_PROJECT_COMPUTE.maxCu,
+      },
+    },
   });
   const projectId = (raw as { project?: { id?: string } } | null)?.project?.id ?? null;
   return { projectId, operations };

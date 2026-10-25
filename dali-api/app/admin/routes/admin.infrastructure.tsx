@@ -44,7 +44,24 @@ import { neonConfigured } from "~/lib/infra/neon.server";
 import { listPendingInfraRequests } from "~/lib/infra/requests.server";
 import { infraRequestKindLabel } from "~/lib/infra/request-kinds";
 import { useDialog } from "~/components/ui/dialog";
-import { fmtBytes, fmtHours, timeAgo, UsageStrip } from "~/components/infra/format";
+import { TermFilter } from "~/components/TermFilter";
+import { resolveTermFilter } from "~/lib/terms";
+import { InfraConfigFields, withOwnOrg } from "~/components/infra/InfraConfigFields";
+import {
+  ColWidths,
+  consoleUrl,
+  ExternalIconLink,
+  fmtBytes,
+  fmtHours,
+  fmtUsd,
+  INFRA_COLS,
+  NeonBranchUsageTable,
+  NeonCostLine,
+  plural,
+  timeAgo,
+  UsageStrip,
+  volumeSummary,
+} from "~/components/infra/format";
 
 export const handle = adminHandle("infrastructure");
 
@@ -59,8 +76,12 @@ export async function loader({ request }: Route.LoaderArgs) {
     return redirect("/admin");
   }
 
-  const { projects, lastSweep, protectedFly, protectedNeon } = await loadFleet();
-  const cleanup = buildCleanup(projects);
+  const { terms, selected, termId, isAll } = await resolveTermFilter(request);
+  const { projects, unlinked, knownOrgs, lastSweep, protectedFly, protectedNeon } = await loadFleet({
+    all: true,
+    termId: isAll ? null : termId,
+  });
+  const cleanup = buildCleanup([...projects, ...unlinked]);
   const requests = await listPendingInfraRequests();
 
   return {
@@ -71,6 +92,10 @@ export async function loader({ request }: Route.LoaderArgs) {
     protectedFly,
     protectedNeon,
     projects,
+    unlinked,
+    knownOrgs,
+    terms,
+    selectedTerm: selected,
     cleanup,
     requests,
   };
@@ -144,6 +169,7 @@ export default function AdminInfrastructure() {
         section="platform"
         actions={
           <>
+            <TermFilter terms={data.terms} selected={data.selectedTerm} />
             <span className="text-xs text-os-muted">Last sweep {timeAgo(data.lastSweep)}</span>
             <button
               type="button"
@@ -159,7 +185,7 @@ export default function AdminInfrastructure() {
       />
 
       <p className="-mt-2 text-sm text-os-grey">
-        Fly.io and Neon across every lab project. Per-project config lives in each project's workspace.
+        Fly.io and Neon for every project in the term. Set up a project's infra here or in its workspace.
         Data is cached; Refresh sweeps again.
       </p>
 
@@ -174,6 +200,7 @@ export default function AdminInfrastructure() {
 
       <div className="flex flex-wrap items-end gap-x-12 gap-y-4">
         <Figure size="lg" label="Projects" value={data.projects.length} />
+        <Figure label="Not configured" value={data.projects.filter((p) => !p.configured).length} />
         <Figure label="Fly apps" value={totals.apps} />
         <Figure label="Machines running" value={`${totals.running}/${totals.machines}`} />
         <Figure label="Neon computes active" value={`${totals.activeComputes}/${totals.computes}`} />
@@ -210,8 +237,8 @@ function ConfigWarnings({ data }: { data: Data }) {
     warnings.push("INFRA_SECRET_KEY is not set, so Fly tokens can't be stored and Fly actions are unavailable.");
   if (!data.neonConfigured)
     warnings.push("INFRA_NEON_API_KEY is not set, so Neon inventory, usage, and actions are unavailable.");
-  if (data.projects.length === 0)
-    warnings.push("No projects have infra configured yet. Set a project's Fly or Neon config in its workspace.");
+  if (data.projects.length > 0 && data.projects.every((p) => !p.configured))
+    warnings.push("None of these projects has infra configured yet. Open one to set it up.");
   if (warnings.length === 0) return null;
   return (
     <div className="flex items-start gap-2 rounded-os-item bg-os-amber/10 px-4 py-3 text-sm text-os-amber">
@@ -229,19 +256,36 @@ function ConfigWarnings({ data }: { data: Data }) {
 
 function Overview({ data, infra }: { data: Data; infra: InfraApi }) {
   const { panel } = useOsChrome();
-  if (data.projects.length === 0) {
+  if (data.projects.length === 0 && data.unlinked.length === 0) {
     return (
       <div className={panel}>
-        <EmptyState>No projects configured.</EmptyState>
+        <EmptyState>No projects in this term.</EmptyState>
       </div>
     );
   }
   return (
-    <ul className={panel}>
-      {data.projects.map((p, i) => (
-        <ProjectCard key={p.projectId} project={p} data={data} infra={infra} first={i === 0} />
-      ))}
-    </ul>
+    <div className="flex flex-col gap-6">
+      {data.projects.length > 0 && (
+        <ul className={panel}>
+          {data.projects.map((p, i) => (
+            <ProjectCard key={p.projectId} project={p} data={data} infra={infra} first={i === 0} />
+          ))}
+        </ul>
+      )}
+      {data.unlinked.length > 0 && (
+        <div className="flex flex-col gap-2">
+          <h3 className="text-xs font-semibold text-os-muted">Not linked to a project</h3>
+          <p className="text-xs text-os-grey">
+            Apps and databases in a shared org that no project has claimed. Link them from a project's config.
+          </p>
+          <ul className={panel}>
+            {data.unlinked.map((p, i) => (
+              <ProjectCard key={p.name} project={p} data={data} infra={infra} first={i === 0} />
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -278,7 +322,12 @@ function ProjectCard({
             aria-hidden
           />
           <span className="font-semibold text-foreground">{p.name}</span>
-          {!p.infraEnabled && <Pill tone="idle">Sweep off</Pill>}
+          {!p.unlinked && !p.configured && (
+            <Pill tone="warn">
+              <AlertTriangle className="h-3 w-3" /> Not configured
+            </Pill>
+          )}
+          {p.configured && !p.infraEnabled && <Pill tone="idle">Sweep off</Pill>}
         </span>
         <span className="flex items-center gap-5 text-sm text-os-grey">
           <span className="inline-flex items-center gap-1.5">
@@ -292,8 +341,14 @@ function ProjectCard({
         </span>
       </button>
 
-      {open && (
+      {open && !p.configured && !p.unlinked && (
+        <div className="border-t border-os-container/70 px-6 py-5">
+          <ConfigEditor project={p} data={data} startOpen />
+        </div>
+      )}
+      {open && (p.configured || p.unlinked) && (
         <div className="flex flex-col gap-6 border-t border-os-container/70 px-6 py-5">
+          {!p.unlinked && <ConfigEditor project={p} data={data} />}
           <div className="flex flex-col gap-3">
             <UsageStrip usage={p.usage} />
             <div className="flex flex-wrap gap-4 text-sm">
@@ -309,7 +364,7 @@ function ProjectCard({
               )}
               {p.neonOrgId && (
                 <a
-                  href={`https://console.neon.tech/app/orgs/${p.neonOrgId}/billing`}
+                  href={consoleUrl.neonOrg(p.neonOrgId)}
                   target="_blank"
                   rel="noreferrer"
                   className="inline-flex items-center gap-1 text-os-accent hover:text-os-accent-hover"
@@ -317,6 +372,7 @@ function ProjectCard({
                   Neon billing <ExternalLink className="h-3.5 w-3.5" />
                 </a>
               )}
+              <NeonCostLine plan={p.neonPlan} cost={p.neonCost} />
             </div>
           </div>
           <FlySection project={p} data={data} infra={infra} />
@@ -324,6 +380,67 @@ function ProjectCard({
         </div>
       )}
     </li>
+  );
+}
+
+// ── Config ────────────────────────────────────────────────────────────────────
+
+function ConfigEditor({ project: p, data, startOpen = false }: { project: ProjectFleet; data: Data; startOpen?: boolean }) {
+  const fetcher = useFetcher<{ ok?: boolean; error?: string }>();
+  const revalidator = useRevalidator();
+  const { actionBtn } = useOsChrome();
+  const [editing, setEditing] = useState(startOpen);
+  const [resetKey, setResetKey] = useState(0);
+  useEffect(() => {
+    if (fetcher.state === "idle" && fetcher.data?.ok) {
+      setEditing(false);
+      revalidator.revalidate();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fetcher.state]);
+
+  if (!editing) {
+    return (
+      <div className="flex flex-wrap items-center gap-3 text-xs text-os-grey">
+        <span>
+          Fly {p.flyOrgSlug ?? "not set"} · {plural(p.flyAppNames.length, "app")} · Neon {p.neonOrgId ?? "not set"} ·{" "}
+          {plural(p.neonProjectIds.length, "database")}
+        </span>
+        <button type="button" onClick={() => setEditing(true)} className={actionBtn()}>
+          <SlidersHorizontal className="h-4 w-4" /> Edit config
+        </button>
+      </div>
+    );
+  }
+  return (
+    <fetcher.Form method="post" action="/api/infra/config" key={resetKey} className="os-form flex flex-col gap-4">
+      <input type="hidden" name="projectId" value={p.projectId} />
+      <InfraConfigFields
+        config={p}
+        knownOrgs={{
+          fly: withOwnOrg(data.knownOrgs.fly, p.flyOrgSlug, p.flyOrgApps),
+          neon: withOwnOrg(data.knownOrgs.neon, p.neonOrgId, p.neonOrgProjects),
+        }}
+      />
+      {fetcher.data?.error && <p className="text-xs text-destructive">{fetcher.data.error}</p>}
+      <div className="flex items-center gap-2">
+        <button type="submit" disabled={fetcher.state !== "idle"} className="os-btn-primary">
+          {fetcher.state !== "idle" ? "Saving…" : "Save"}
+        </button>
+        {!startOpen && (
+          <button
+            type="button"
+            className="os-btn-ghost"
+            onClick={() => {
+              setEditing(false);
+              setResetKey((k) => k + 1);
+            }}
+          >
+            Cancel
+          </button>
+        )}
+      </div>
+    </fetcher.Form>
   );
 }
 
@@ -371,10 +488,19 @@ function FlySection({ project: p, data, infra }: { project: ProjectFleet; data: 
   }
 
   async function scale(app: FlyApp, m: FlyMachine) {
+    const current = `${m.cpuKind}|${m.cpus}|${m.memoryMb}`;
+    const currentLabel = FLY_PRESETS.find((x) => x.value === current)?.label ?? `${m.cpuKind} ${m.cpus}x · ${fmtBytes(m.memoryMb * 1024 * 1024)}`;
     const choice = await dialog.choice({
-      title: `Resize ${m.name || m.id}`,
-      description: "The machine reboots into the new size (brief downtime).",
+      title: `Resize machine ${m.name || m.id}`,
+      description: (
+        <>
+          App <span className="font-mono text-foreground">{app.name}</span> · now{" "}
+          <span className="font-medium text-foreground">{currentLabel}</span>. The machine reboots into the new size
+          (brief downtime).
+        </>
+      ),
       options: FLY_PRESETS.map((x) => ({ value: x.value, label: x.label })),
+      selected: current,
     });
     if (!choice) return;
     const [cpuKind, cpus, memoryMb] = choice.split("|");
@@ -405,11 +531,12 @@ function FlySection({ project: p, data, infra }: { project: ProjectFleet; data: 
             <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5">
               <span className="flex items-center gap-2">
                 <span className="font-mono text-[13px] font-medium text-foreground">{app.name}</span>
+                <ExternalIconLink href={consoleUrl.flyApp(app.name)} label="Open in Fly" />
                 {isProtected && <Pill>Protected</Pill>}
               </span>
               <span className="flex items-center gap-2 text-xs text-os-grey">
                 {app.status && <Pill tone={app.status === "deployed" ? "ok" : "idle"}>{app.status}</Pill>}
-                {app.machines.length} machines · {app.volumes.length} volumes
+                {plural(app.machines.length, "machine")} · {volumeSummary(app.volumes)}
                 {data.isAdmin && canWrite && !isProtected && (
                   <IconAction label="Destroy app" danger disabled={infra.busy} onClick={() => destroy(app, "app")}>
                     <Trash2 className="h-4 w-4" />
@@ -418,7 +545,8 @@ function FlySection({ project: p, data, infra }: { project: ProjectFleet; data: 
               </span>
             </div>
             {app.machines.length > 0 && (
-              <table className="w-full min-w-[640px]">
+              <table className="w-full min-w-[640px] table-fixed">
+                <ColWidths widths={INFRA_COLS.flyConsole} />
                 <thead>
                   <tr className={subTable.row}>
                     <th className={subTable.th}>Machine</th>
@@ -431,7 +559,12 @@ function FlySection({ project: p, data, infra }: { project: ProjectFleet; data: 
                 <tbody>
                   {app.machines.map((m) => (
                     <tr key={m.id} className={subTable.row}>
-                      <td className={cn(subTable.td, "font-mono text-[13px] text-foreground")}>{m.name || m.id}</td>
+                      <td className={cn(subTable.td, "font-mono text-[13px] text-foreground")}>
+                        <span className="flex min-w-0 items-center gap-1.5">
+                          <span className="truncate">{m.name || m.id}</span>
+                          <ExternalIconLink href={consoleUrl.flyMachine(app.name, m.id)} label="Open machine in Fly" />
+                        </span>
+                      </td>
                       <td className={cn(subTable.td, "text-os-grey")}>
                         {m.cpuKind} {m.cpus}x · {fmtBytes(m.memoryMb * 1024 * 1024)}
                       </td>
@@ -509,7 +642,11 @@ function NeonSection({ project: p, data, infra }: { project: ProjectFleet; data:
         )}
       </div>
       {projects.length === 0 ? (
-        <p className="text-sm text-os-muted">No projects (or not swept yet).</p>
+        <p className="text-sm text-os-muted">
+          {p.neonProjectIds.length === 0
+            ? "No Neon databases linked. Pick them in the project's Infrastructure section."
+            : "No projects (or not swept yet)."}
+        </p>
       ) : (
         projects.map((np) => <NeonProjectCard key={np.id} project={p} np={np} data={data} infra={infra} />)
       )}
@@ -569,10 +706,12 @@ function NeonProjectCard({ project: p, np, data, infra }: { project: ProjectFlee
       <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5">
         <span className="flex items-center gap-2">
           <span className="font-mono text-[13px] font-medium text-foreground">{np.name}</span>
+          <ExternalIconLink href={consoleUrl.neonProject(np.id)} label="Open in Neon" />
           {isProtected && <Pill>Protected</Pill>}
         </span>
         <span className="flex items-center gap-2 text-xs text-os-grey">
-          {np.regionId} · pg{np.pgVersion ?? "?"} · {np.branches.length} branches
+          {np.regionId} · pg{np.pgVersion ?? "?"} · {plural(np.branches.length, "branch", "branches")}
+          {p.neonCost?.byProject[np.id] != null && ` · est. ${fmtUsd(p.neonCost.byProject[np.id])} this month`}
           {canManage && (
             <IconAction
               label={showQuota ? "Hide limits" : "Set limits"}
@@ -591,7 +730,8 @@ function NeonProjectCard({ project: p, np, data, infra }: { project: ProjectFlee
         </span>
       </div>
 
-      <table className="w-full min-w-[640px]">
+      <table className="w-full min-w-[640px] table-fixed">
+        <ColWidths widths={INFRA_COLS.neonConsole} />
         <thead>
           <tr className={subTable.row}>
             <th className={subTable.th}>Compute</th>
@@ -607,6 +747,12 @@ function NeonProjectCard({ project: p, np, data, infra }: { project: ProjectFlee
           ))}
         </tbody>
       </table>
+
+      {(p.neonBranchUsage[np.id]?.length ?? 0) > 0 && (
+        <div className={subTable.row}>
+          <NeonBranchUsageTable rows={p.neonBranchUsage[np.id]} />
+        </div>
+      )}
 
       <div className={cn(subTable.row, "px-4 py-2.5")}>
         <QuotaSummary np={np} />
@@ -674,7 +820,7 @@ function EndpointRow({ project: p, np, e, infra, endpointAction }: { project: Pr
 
   return (
     <tr className={subTable.row}>
-      <td className={cn(subTable.td, "font-mono text-[13px] text-foreground")}>
+      <td className={cn(subTable.td, "truncate font-mono text-[13px] text-foreground")}>
         {e.id}
         <span className="ml-1.5 font-sans text-xs text-os-muted">{e.type}</span>
       </td>

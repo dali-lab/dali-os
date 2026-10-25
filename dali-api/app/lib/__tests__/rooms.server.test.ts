@@ -622,7 +622,7 @@ describe("cancelRoomBooking", () => {
 
   it("scope this cancels a future occurrence via an exception, leaving the row alone", async () => {
     const seriesStart = new Date(nowSec().getTime() + H);
-    const occurrenceStart = new Date(seriesStart.getTime() + 7 * DAY);
+    const occurrenceStart = weeksLater(seriesStart, 1);
     m.roomBooking.findUnique.mockResolvedValue({
       id: "b1",
       cancelledAt: null,
@@ -912,7 +912,7 @@ describe("event room holds", () => {
   it("scope all 409s naming the room when a later occurrence of the retimed series collides", async () => {
     const newStart = new Date(Date.now() + H);
     const newEnd = new Date(newStart.getTime() + H);
-    const week2Start = new Date(newStart.getTime() + 7 * DAY);
+    const week2Start = weeksLater(newStart, 1);
     const seriesHold = { id: "b1", roomId: "r1", recurrenceRule: "FREQ=WEEKLY;COUNT=3", room: { name: "Studio" } };
     m.roomBooking.findMany
       .mockResolvedValueOnce([seriesHold])

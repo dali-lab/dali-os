@@ -536,6 +536,7 @@ export default [
   route("api/admin/attention", "admin/routes/api.admin.attention.ts"),
   route("api/feature-flags/:key", "admin/routes/api.feature-flags.$key.ts"),
   route("api/infra/action", "admin/routes/api.infra.action.ts"),
+  route("api/infra/config", "admin/routes/api.infra.config.ts"),
   route("api/infra/registry", "admin/routes/api.infra.registry.ts"),
   route("api/infra/request", "admin/routes/api.infra.request.ts"),
   route("internal/jobs/tick", "jobs/routes/internal.jobs.tick.ts"),

@@ -12,7 +12,8 @@ export const LIST_INFRASTRUCTURE_TOOL = {
   name: "list_infrastructure",
   description:
     "Read-only view of the Fly.io + Neon fleet for all projects. " +
-    "Returns per-project app/machine counts and Neon project/endpoint states. " +
+    "Returns per-project app/machine counts, Neon project/endpoint states, and the Neon plan with " +
+    "estimated month-to-date and last-month dollars (from published rates; the invoice is authoritative). " +
     "Requires the infra-dashboard feature flag and Core access.",
   inputSchema: {
     type: "object" as const,
@@ -22,6 +23,8 @@ export const LIST_INFRASTRUCTURE_TOOL = {
   },
   requiredScope: "mcp:admin" as const,
 };
+
+const round2 = (n: number) => Math.round(n * 100) / 100;
 
 export async function runListInfrastructure(ctx: McpCtx) {
   const roles = await getUserRoles(ctx.user.id, ctx.request);
@@ -50,6 +53,10 @@ export async function runListInfrastructure(ctx: McpCtx) {
       infraEnabled: p.infraEnabled,
       flyOrgSlug: p.flyOrgSlug ?? null,
       neonOrgId: p.neonOrgId ?? null,
+      neonPlan: p.neonPlan,
+      neonCostEstimate: p.neonCost
+        ? { thisMonthUsd: round2(p.neonCost.thisMonth), lastMonthUsd: p.neonCost.lastMonth == null ? null : round2(p.neonCost.lastMonth) }
+        : null,
       flyApps: (p.fly?.apps ?? []).map((app) => ({
         name: app.name,
         status: app.status ?? null,

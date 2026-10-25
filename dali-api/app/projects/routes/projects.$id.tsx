@@ -54,8 +54,8 @@ import { buildProjectCalendar } from "~/projects/lib/project-calendar.server";
 import { MonthCalendarPanel } from "~/components/MonthCalendarPanel";
 import { prisma } from "~/lib/db";
 import { logAuditEvent } from "~/lib/audit";
-import { loadProjectInfra } from "~/lib/infra/dashboard.server";
-import { buildInfraConfigUpdate } from "~/lib/infra/project-infra.server";
+import { listKnownOrgs, loadProjectInfra } from "~/lib/infra/dashboard.server";
+import { saveInfraConfig } from "~/lib/infra/config-save.server";
 import { listProjectInfraRequests } from "~/lib/infra/requests.server";
 import { ProjectInfraSection } from "~/projects/components/ProjectInfraSection";
 import { ensureProjectGroup } from "~/lib/groups";
@@ -1135,6 +1135,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     projectInfra,
     infraConfigRow,
     infraRequests,
+    knownOrgs,
     aiLineEnabled,
     chartStrings,
   ] = await Promise.all([
@@ -1168,13 +1169,16 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       where: { id: params.id },
       select: {
         flyOrgSlug: true,
+        flyAppNames: true,
         neonOrgId: true,
+        neonProjectIds: true,
         infraEnabled: true,
         flyReadTokenEnc: true,
         flyWriteTokenEnc: true,
       },
     }),
     canEdit ? listProjectInfraRequests(params.id) : Promise.resolve([]),
+    canEdit ? listKnownOrgs() : Promise.resolve({ fly: [], neon: [] }),
     // Progress tab's AI-line flag — independent of the status facts below.
     (async () =>
       isAiEnabled() &&
@@ -1187,13 +1191,19 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const infra = {
     config: {
       flyOrgSlug: infraConfigRow?.flyOrgSlug ?? null,
+      flyAppNames: infraConfigRow?.flyAppNames ?? [],
       neonOrgId: infraConfigRow?.neonOrgId ?? null,
+      neonProjectIds: infraConfigRow?.neonProjectIds ?? [],
       infraEnabled: infraConfigRow?.infraEnabled ?? true,
       hasFlyReadToken: !!infraConfigRow?.flyReadTokenEnc,
       hasFlyWriteToken: !!infraConfigRow?.flyWriteTokenEnc,
     },
     view: projectInfra,
     requests: infraRequests,
+    knownOrgs,
+    setupErrors: canEdit
+      ? (new URL(request.url).searchParams.get("infraErrors") ?? "").split("\n").filter(Boolean)
+      : [],
   };
   // ── Progress-tab status bar: deterministic work-status facts + the cached
   // AI summary's freshness. Facts come from the same task rows the board
@@ -1453,28 +1463,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   // sweep toggle). Same core||staffed gate as the top of this action; tokens are
   // write-only (blank leaves them unchanged).
   if (intent === "infra-config") {
-    const data = buildInfraConfigUpdate({
-      flyOrgSlug: (form.get("flyOrgSlug") as string | null) ?? "",
-      neonOrgId: (form.get("neonOrgId") as string | null) ?? "",
-      infraEnabled: form.get("infraEnabled") != null,
-      flyReadToken: ((form.get("flyReadToken") as string | null) ?? "") || undefined,
-      flyWriteToken: ((form.get("flyWriteToken") as string | null) ?? "") || undefined,
-    });
-    await prisma.project.update({ where: { id: params.id }, data });
-    await logAuditEvent({
-      action: "infra.config",
-      userId: auth.user.sub,
-      targetId: params.id,
-      metadata: {
-        flyOrgSlug: data.flyOrgSlug ?? null,
-        neonOrgId: data.neonOrgId ?? null,
-        infraEnabled: data.infraEnabled ?? null,
-        setFlyReadToken: !!data.flyReadTokenEnc,
-        setFlyWriteToken: !!data.flyWriteTokenEnc,
-      },
-      request,
-    });
-    return { ok: true };
+    return saveInfraConfig({ userId: auth.user.sub, projectId: params.id, form, request });
   }
 
   // Partner links — Core/Admin only, via the shared helpers so validation
@@ -3799,6 +3788,8 @@ function OverviewTab({
         config={infra.config}
         view={infra.view}
         requests={infra.requests}
+        knownOrgs={infra.knownOrgs}
+        setupErrors={infra.setupErrors}
       />
 
       {/* Team — read-only summary, separate from the editable details. */}
