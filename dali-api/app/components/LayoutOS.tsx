@@ -85,6 +85,7 @@ interface LayoutOSProps {
   isLabMentor?: boolean
   isInstructor?: boolean
   isAlumni?: boolean
+  isNewMember?: boolean
   /** Starred pages/routes, most-recently pinned first — carried by the top bar. */
   favorites?: FavoritePage[]
   /** Receives local reorders of `favorites` (drag, Move left/right, Remove). */
@@ -129,6 +130,7 @@ export function LayoutOS({
   isLabMentor = false,
   isInstructor = false,
   isAlumni = false,
+  isNewMember = false,
   favorites = [],
   onFavoritesChange,
   impersonating = false,
@@ -316,16 +318,20 @@ export function LayoutOS({
     isLabMentor,
     isInstructor,
     isAlumni,
+    isNewMember,
   }
   // The `community` flag adds the Community area and moves Connect into it, so
   // every nav matcher below has to be handed the same map.
-  const navFlags = { community: useFeatureFlag('community') }
+  const navFlags = {
+    community: useFeatureFlag('community'),
+    'onboarding-journeys': useFeatureFlag('onboarding-journeys'),
+  }
   const feedbackEnabled = useFeatureFlag('os-feedback')
   const releaseNotesEnabled = useFeatureFlag('release-notes')
   const emailUnread = useEmailUnread(path)
   const areas = visibleAreas(roleFlags, navFlags)
   const routeArea = areaForPath(path, navFlags, roleFlags)
-  const pinned = pinnedNavItems(roleFlags)
+  const pinned = pinnedNavItems(roleFlags, navFlags)
   const home = homeNavItem(roleFlags)
   const activeArea = routeArea ?? areas.find((a) => a.key === lastAreaKey) ?? areas[0]
   const activeSubtabs = activeArea ? visibleSubtabs(activeArea, roleFlags) : []
@@ -347,7 +353,7 @@ export function LayoutOS({
     tabClickProps({ url: area.hubPath, label: area.label }).onClick(e)
   }
 
-  const pinnedLabel = [...pinned, ROOM_BOOKING_NAV_ITEM].find((i) => isPinnedActive(path, i.href, navFlags))?.label
+  const pinnedLabel = [...pinned, ROOM_BOOKING_NAV_ITEM].find((i) => isPinnedActive(path, i.href, navFlags, roleFlags))?.label
   const initialTabLabel = path.startsWith('/notifications')
     ? 'My Tasks'
     : path.startsWith('/calendar')
@@ -534,7 +540,7 @@ export function LayoutOS({
           )}
           {pinned.map((item) => {
             const Icon = item.icon
-            const active = isPinnedActive(path, item.href, navFlags)
+            const active = isPinnedActive(path, item.href, navFlags, roleFlags)
             return (
               <Tooltip key={item.href} content={collapsed ? item.label : ''} placement="right">
                 <button

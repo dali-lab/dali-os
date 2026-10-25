@@ -82,15 +82,15 @@ export async function runListLabDocuments(callerId: string, input: ListInput) {
 export const CREATE_LAB_DOCUMENT_TOOL = {
   name: "create_lab_document",
   description:
-    "Create a new lab-wide document or folder. Any lab member may create. Folders can't be nested inside another folder (2-level cap).",
+    "Create a new lab-wide document, folder, or slide deck. Any lab member may create. Folders can't be nested inside another folder (2-level cap). Fill a new slide deck with manage_slide_deck.",
   inputSchema: {
     type: "object" as const,
     properties: {
       title: { type: "string", minLength: 1, maxLength: 200 },
       kind: {
         type: "string",
-        enum: ["FreeForm", "Folder"],
-        description: "Defaults to 'FreeForm'.",
+        enum: ["FreeForm", "Folder", "Slides"],
+        description: "Defaults to 'FreeForm'. 'Slides' creates an empty slide deck.",
       },
       parentPageId: {
         type: "string",
@@ -111,7 +111,7 @@ export const CREATE_LAB_DOCUMENT_TOOL = {
 
 type CreateInput = {
   title: string;
-  kind?: "FreeForm" | "Folder";
+  kind?: "FreeForm" | "Folder" | "Slides";
   parentPageId?: string;
   fromTemplatePageId?: string;
 };

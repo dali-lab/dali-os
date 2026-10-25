@@ -404,6 +404,20 @@ export const EVENT_TYPES = {
       "In-app nudges from Core when an onboarding step is still incomplete. Email reminders are sent separately and never paired with an in-app ping.",
     defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
   },
+  "journey.lab_submitted": {
+    kind: "General",
+    area: "Onboarding",
+    label: "Lab work to review",
+    description: "When someone submits whiteboard or document lab work on an onboarding journey you can edit.",
+    defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
+  },
+  "journey.lab_reviewed": {
+    kind: "General",
+    area: "Onboarding",
+    label: "Lab reviews",
+    description: "When a mentor approves your onboarding lab work or asks for changes.",
+    defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
+  },
   "form.submission": {
     kind: "General",
     area: "Forms",

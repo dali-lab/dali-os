@@ -12,6 +12,7 @@ import { ensureAllRoots } from "../app/lib/drive-roots.server.js";
 import { parseChartString } from "../app/lib/chart-string.js";
 import { seedEducationDemo } from "./seeds/education-demo.js";
 import { seedResourcesDemo } from "./seeds/resources-demo.js";
+import { seedJourneysDemo } from "./seeds/journeys-demo.js";
 import { seedPartnerCrmDemo } from "./seeds/partner-crm-demo.js";
 import {
   ensureEducationTemplates,
@@ -5001,6 +5002,9 @@ async function main() {
       // Blog posts on The Scoop and two bookmark pages. See
       // prisma/seeds/resources-demo.ts.
       await seedResourcesDemo(prisma, { adminId: admin.id });
+
+      // Sample onboarding journeys. See prisma/seeds/journeys-demo.ts.
+      await seedJourneysDemo(prisma, { ownerId: admin.id });
 
       // Lab-workspace Page + a NotificationPreference row for the admin.
       await prisma.page.deleteMany({

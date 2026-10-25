@@ -508,3 +508,47 @@ describe("pinnedNavItems", () => {
     expect(areas.find((a) => a.key === "core")!.subtabs.map((t) => t.href)).toContain("/core/rooms");
   });
 });
+
+/* ------------------------------------------------------------------ */
+/* Onboarding journeys: pinned for first-term members, Lab otherwise   */
+/* ------------------------------------------------------------------ */
+
+describe("onboarding placement", () => {
+  const ON = { "onboarding-journeys": true };
+  const NEW: RoleFlags = { ...NOBODY, isNewMember: true };
+  const labHrefs = (r: RoleFlags, flags: object) =>
+    visibleSubtabs(visibleAreas(r, flags).find((a) => a.key === "projects")!, r).map((t) => t.href);
+
+  it("is hidden everywhere while the flag is off", () => {
+    expect(pinnedNavItems(NEW, {}).map((i) => i.href)).toEqual(["/drive"]);
+    expect(labHrefs(NOBODY, {})).not.toContain("/journeys");
+    expect(areaForPath("/journeys/fullstack", {}, NOBODY)).toBeUndefined();
+  });
+
+  it("pins Onboarding under Drive for a first-term member", () => {
+    expect(pinnedNavItems(NEW, ON).map((i) => i.label)).toEqual(["Drive", "Onboarding"]);
+    expect(labHrefs(NEW, ON)).not.toContain("/journeys");
+  });
+
+  it("lights the pin, not the Lab area, on a first-term member's journey pages", () => {
+    expect(areaForPath("/journeys/fullstack/j1", ON, NEW)).toBeUndefined();
+    expect(isPinnedActive("/journeys/fullstack/j1", "/journeys", ON, NEW)).toBe(true);
+  });
+
+  it("puts Onboarding in the Lab area for everyone else", () => {
+    expect(pinnedNavItems(NOBODY, ON).map((i) => i.href)).toEqual(["/drive"]);
+    expect(labHrefs(NOBODY, ON)).toContain("/journeys");
+    expect(areaForPath("/journeys/fullstack/j1", ON, NOBODY)?.key).toBe("projects");
+  });
+
+  it("works with the Community flag too", () => {
+    expect(labHrefs(NOBODY, { ...ON, ...COMMUNITY })).toContain("/journeys");
+    expect(labHrefs(NOBODY, { ...ON, ...COMMUNITY })).not.toContain("/connect");
+  });
+
+  it("leaves alumni without it", () => {
+    const ALUM: RoleFlags = { ...NOBODY, isAlumni: true };
+    expect(pinnedNavItems(ALUM, ON)).toEqual([]);
+    expect(visibleAreas(ALUM, ON).flatMap((a) => a.subtabs.map((t) => t.href))).not.toContain("/journeys");
+  });
+});

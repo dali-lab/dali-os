@@ -23,6 +23,7 @@ import {
   FileSignature,
   Shapes,
   NotebookPen,
+  Presentation,
   CalendarRange,
   PanelLeftClose,
   PanelLeftOpen,
@@ -111,7 +112,7 @@ export const TYPE_META: Record<SearchResultType, { icon: LucideIcon; section: st
   helpArticle: { icon: HelpCircle, section: "Help" },
 };
 
-const PAGE_KIND_ICON = { Folder, Whiteboard: Shapes, Notebook: NotebookPen } as const;
+const PAGE_KIND_ICON = { Folder, Whiteboard: Shapes, Notebook: NotebookPen, Slides: Presentation } as const;
 
 export function resultIcon(r: Pick<SearchResult, "type" | "pageKind" | "fileCategory">): LucideIcon {
   if (r.pageKind) return PAGE_KIND_ICON[r.pageKind];
@@ -255,7 +256,7 @@ export function CommandPalette({ open, onClose, tabless, focusMode, roles = NO_R
       ...(roles.isAlumni ? [] : [navItem("Email", "/email", Mail)]),
       // The pinned tail (Drive) sits outside every area, so it reaches the
       // palette from the same registry the sidebar rail reads.
-      ...[...pinnedNavItems(roles), ROOM_BOOKING_NAV_ITEM].map((i) => navItem(i.label, i.href, i.icon)),
+      ...[...pinnedNavItems(roles, flags), ROOM_BOOKING_NAV_ITEM].map((i) => navItem(i.label, i.href, i.icon)),
       ...visibleAreas(roles, flags).flatMap((area) => {
         const hub = navItem(area.label, area.hubPath, area.icon);
         if (area.key === "admin") return [hub];

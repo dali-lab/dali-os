@@ -7,19 +7,21 @@ const base = { parentFolderId: null, iconEmoji: null, updatedAt: at, href: "/x" 
 const doc = { type: "doc", id: "d", title: "Doc", ...base } as DriveItem;
 const notebook = { type: "doc", id: "n", title: "Notebook", isNotebook: true, ...base } as DriveItem;
 const whiteboard = { type: "doc", id: "w", title: "Board", isWhiteboard: true, ...base } as DriveItem;
+const slides = { type: "doc", id: "s", title: "Deck", isSlides: true, ...base } as DriveItem;
 const file = { type: "file", id: "f", title: "File", ...base } as DriveItem;
 const folder = { type: "folder", id: "fo", title: "Folder", ...base } as DriveItem;
 const form = { type: "form", id: "fm", title: "Form", ...base } as DriveItem;
 
 describe("matchesTypeFilter", () => {
   it("matches everything under all", () => {
-    for (const item of [doc, notebook, whiteboard, file, folder, form]) expect(matchesTypeFilter(item, "all")).toBe(true);
+    for (const item of [doc, notebook, whiteboard, slides, file, folder, form]) expect(matchesTypeFilter(item, "all")).toBe(true);
   });
 
   it("keeps Documents to plain docs", () => {
     expect(matchesTypeFilter(doc, "doc")).toBe(true);
     expect(matchesTypeFilter(notebook, "doc")).toBe(false);
     expect(matchesTypeFilter(whiteboard, "doc")).toBe(false);
+    expect(matchesTypeFilter(slides, "doc")).toBe(false);
     expect(matchesTypeFilter(file, "doc")).toBe(false);
   });
 
@@ -30,6 +32,13 @@ describe("matchesTypeFilter", () => {
     expect(matchesTypeFilter(whiteboard, "whiteboard")).toBe(true);
     expect(matchesTypeFilter(doc, "whiteboard")).toBe(false);
     expect(matchesTypeFilter(notebook, "whiteboard")).toBe(false);
+  });
+
+  it("gives slide decks their own filter", () => {
+    expect(matchesTypeFilter(slides, "slides")).toBe(true);
+    expect(matchesTypeFilter(slides, "whiteboard")).toBe(false);
+    expect(matchesTypeFilter(whiteboard, "slides")).toBe(false);
+    expect(matchesTypeFilter(doc, "slides")).toBe(false);
   });
 
   it("matches other types by their type", () => {

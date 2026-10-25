@@ -6,6 +6,7 @@ const KIND_LABELS: Partial<Record<PageKind | "File", string>> = {
   FreeForm: "document",
   Notebook: "notebook",
   Whiteboard: "whiteboard",
+  Slides: "slide deck",
   Form: "form",
   File: "file",
 };

@@ -51,7 +51,7 @@ export async function createNote(
     title?: string;
     parentPageId?: string | null;
     isFolder?: boolean;
-    kind?: "FreeForm" | "Folder" | "Whiteboard";
+    kind?: "FreeForm" | "Folder" | "Whiteboard" | "Slides";
   },
 ): Promise<{ id: string }> {
   const parentPageId = input.parentPageId ?? null;
