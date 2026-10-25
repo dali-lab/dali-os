@@ -7,6 +7,7 @@ import { prisma } from "~/lib/db";
 import { logAuditEvent } from "~/lib/audit";
 import {
   applicantDeadline,
+  canAssignReviewersIn,
   cycleCloseDate,
   cycleDeadlineSummary,
   domainCloseDate,
@@ -107,6 +108,16 @@ describe("domainReviewStatus", () => {
 
   it.each(["Draft", "UnderReview", "Completed", null] as const)("passes %s through unchanged", (status) => {
     expect(domainReviewStatus(status, { closeDate: null }, cycle, nov1)).toBe(status);
+  });
+});
+
+describe("canAssignReviewersIn", () => {
+  it.each(["Open", "UnderReview"])("allows assigning while %s", (status) => {
+    expect(canAssignReviewersIn(status)).toBe(true);
+  });
+
+  it.each(["Draft", "Completed", null])("refuses assigning while %s", (status) => {
+    expect(canAssignReviewersIn(status)).toBe(false);
   });
 });
 
