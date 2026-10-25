@@ -8,7 +8,7 @@ import type { Route } from "./+types/settings.slack";
 export const meta: Route.MetaFunction = () => [{ title: "Settings · DALI OS" }];
 
 export async function loader() {
-  return redirect("/settings#slack");
+  return redirect("/settings/connections");
 }
 
 export async function action({ request }: Route.ActionArgs) {

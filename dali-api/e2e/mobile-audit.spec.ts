@@ -54,8 +54,8 @@ const ROUTES: Array<{ path: string; label: string }> = [
   { path: '/notifications', label: 'my-tasks' },
   // /members is already in the list above; /people does not exist as a route —
   // the canonical directory URL is /members.
-  { path: '/admin/jobs', label: 'admin-jobs' },
-  { path: '/admin/feature-flags', label: 'admin-feature-flags' },
+  { path: '/admin/platform/jobs', label: 'admin-jobs' },
+  { path: '/admin/platform/flags', label: 'admin-feature-flags' },
   { path: '/core', label: 'core' },
 ];
 

@@ -1,13 +1,13 @@
 import { Form, Link, redirect, useLoaderData } from "react-router";
 import { useMemo, useState } from "react";
 import type { Route } from "./+types/admin.activity";
-import { adminHandle } from "~/admin/adminNav";
+import { AdminSectionHeader, adminHandle } from "~/admin/adminNav";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
-import { isCore } from "~/lib/roles";
-import { fullName } from "~/lib/display";
-import { AUDIT_ACTIONS, AUDIT_AREAS } from "~/lib/audit-actions";
+import { isCore, isAdmin } from "~/lib/roles";
+import { cn } from "~/lib/cn";
+import { AUDIT_ACTIONS, AUDIT_AREAS, auditAreaOf } from "~/lib/audit-actions";
 import { resolveAuditTargets, type ResolvedTarget } from "~/lib/audit-targets";
 import {
   APPLICATION_TZ,
@@ -23,16 +23,26 @@ import {
   activeFilterParams,
   hasAnyFilter,
 } from "~/lib/audit-query";
-import { ListTodo, ChevronLeft, ChevronRight, X, ChevronDown, ChevronUp } from "lucide-react";
+import { ChevronLeft, ChevronRight, X, ChevronDown, ChevronUp } from "lucide-react";
 import { Tooltip, InfoTip, Select, Combobox } from "~/components/ui/floating";
+import { OS_SELECT_TRIGGER_CLASS } from "~/components/ui/floating/styles";
 import { SearchInput } from "~/components/ui/SearchInput";
 import { Toggle } from "~/components/ui/Toggle";
 import { DateField } from "~/components/ui/DateField";
-import { StatusDot, type Tone } from "~/admin/components/console-ui";
+import { useOsChrome } from "~/components/os-chrome";
+import { EmptyState, Pill, type Tone } from "~/admin/components/console-ui";
+import {
+  AuditActorAvatar,
+  AuditActorName,
+  ShortId,
+  auditPersonName,
+  type AuditPerson,
+} from "~/admin/components/AuditActor";
+import { loadPeopleById } from "~/admin/lib/people.server";
 
-export const handle = adminHandle("activity");
+export const handle = adminHandle("audit-log");
 
-export const meta: Route.MetaFunction = () => [{ title: "Activity · Admin · DALI OS" }];
+export const meta: Route.MetaFunction = () => [{ title: "Audit log · Admin · DALI OS" }];
 
 const PAGE_SIZE = 50;
 
@@ -65,20 +75,14 @@ export async function loader({ request }: Route.LoaderArgs) {
     if (e.userId) ids.add(e.userId);
     if (e.targetId) ids.add(e.targetId);
   }
-  const users =
-    ids.size === 0
-      ? []
-      : await prisma.user.findMany({
-          where: { id: { in: Array.from(ids) } },
-          select: { id: true, firstName: true, lastName: true, daliEmail: true },
-        });
-  const userById = new Map(users.map((u) => [u.id, u]));
+  const userById = await loadPeopleById(prisma, ids);
 
   const resolvedTargets = await resolveAuditTargets(
     prisma,
     entries.filter((e) => e.targetId && !userById.has(e.targetId)),
   );
 
+  const admin = await isAdmin(auth.user.sub);
   return {
     now: new Date().toISOString(),
     page,
@@ -87,6 +91,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     anyFilter: hasAnyFilter(filters),
     actions: AUDIT_ACTIONS,
     areas: AUDIT_AREAS,
+    isAdmin: admin,
     entries: entries.map((e) => ({
       id: e.id,
       createdAt: e.createdAt.toISOString(),
@@ -102,45 +107,24 @@ export async function loader({ request }: Route.LoaderArgs) {
   };
 }
 
-type PersonRow = { firstName: string; lastName: string; daliEmail: string | null };
-
-function displayPerson(u: PersonRow | null, fallbackId: string | null) {
-  if (u) {
-    const name = fullName(u);
-    return <span>{name || u.daliEmail || "—"}</span>;
-  }
-  return fallbackId ? <ShortId id={fallbackId} /> : null;
-}
-
-function ShortId({ id }: { id: string }) {
-  return <span className="font-mono text-xs text-muted-foreground/70">{id.slice(0, 8)}…</span>;
-}
 
 // A missing userId means an unauthenticated request (token validation failure,
 // etc.), and "system" is the meaningful label.
-function displayActor(u: PersonRow | null, fallbackId: string | null) {
-  return (
-    displayPerson(u, fallbackId) ?? (
-      <span className="text-muted-foreground/60 italic">system</span>
-    )
-  );
-}
-
 function displayTarget(
-  u: PersonRow | null,
+  u: AuditPerson | null,
   resolved: ResolvedTarget | null,
   targetId: string | null,
 ) {
-  if (u) return displayPerson(u, targetId);
+  if (u) return <span className="text-foreground">{auditPersonName(u)}</span>;
   if (resolved?.href) {
     return (
-      <Link to={resolved.href} className="hover:underline">
+      <Link to={resolved.href} className="text-foreground hover:text-os-accent hover:underline">
         {resolved.label}
       </Link>
     );
   }
-  if (resolved) return <span>{resolved.label}</span>;
-  return displayPerson(null, targetId) ?? <span className="text-muted-foreground/50">—</span>;
+  if (resolved) return <span className="text-foreground">{resolved.label}</span>;
+  return targetId ? <ShortId id={targetId} /> : <span className="text-os-muted">—</span>;
 }
 
 // Maps an audit action string to a status tone by keyword.
@@ -180,7 +164,8 @@ function groupByDay<T extends { createdAt: string }>(
 
 type EntryRow = ReturnType<typeof useLoaderData<typeof loader>>["entries"][number];
 
-function TimelineEntry({ e }: { e: EntryRow }) {
+function TimelineEntry({ e, areaLabel }: { e: EntryRow; areaLabel: string }) {
+  const { iconBtn } = useOsChrome();
   const [open, setOpen] = useState(false);
   const hasDetail = !!(e.metadata || e.ip);
   const time = formatInTimeZone(e.createdAt, APPLICATION_TZ, {
@@ -189,67 +174,71 @@ function TimelineEntry({ e }: { e: EntryRow }) {
   });
 
   return (
-    <div className="group">
-      <div className="flex items-center gap-3 py-2 px-3 rounded-md hover:bg-muted/40 transition-colors">
-        <StatusDot tone={toneForAction(e.action)} className="shrink-0" />
-        <span className="tabular-nums text-xs text-muted-foreground/70 w-[72px] shrink-0">
-          {time}
-        </span>
-        <span className="text-sm font-medium text-foreground min-w-[120px] shrink-0">
-          {displayActor(e.actor, e.actorId)}
-        </span>
-        <span className="bg-muted px-1.5 py-0.5 rounded font-mono text-[11px] text-foreground shrink-0">
-          {e.action}
-        </span>
-        {(e.target || e.targetId) && (
-          <span className="text-sm text-muted-foreground flex items-center gap-1 min-w-0">
-            <span className="text-muted-foreground/50">→</span>
-            {displayTarget(e.target, e.resolvedTarget, e.targetId)}
+    <li>
+      <div className="flex items-center gap-3 rounded-os-item px-4 py-3 transition-colors hover:bg-os-card-hover">
+        <AuditActorAvatar actor={e.actor} actorId={e.actorId} />
+        <p className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1 text-sm text-os-grey">
+          <AuditActorName actor={e.actor} actorId={e.actorId} />
+          <span className="rounded bg-os-container/70 px-1.5 py-0.5 font-mono text-[11px] text-foreground">
+            {e.action}
           </span>
-        )}
-        <span className="flex-1" />
-        {hasDetail && (
-          <button
-            type="button"
-            aria-label={open ? "Collapse details" : "Expand details"}
-            aria-expanded={open}
-            onClick={() => setOpen((v) => !v)}
-            className="shrink-0 p-1 rounded text-muted-foreground/50 hover:text-foreground hover:bg-muted transition-colors"
-          >
-            {open ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-          </button>
+          {(e.target || e.targetId) && (
+            <span className="flex min-w-0 items-center gap-1">
+              <span className="text-os-muted">→</span>
+              {displayTarget(e.target, e.resolvedTarget, e.targetId)}
+            </span>
+          )}
+        </p>
+        <span className="hidden sm:block">
+          <Pill tone={toneForAction(e.action)}>{areaLabel}</Pill>
+        </span>
+        <time
+          dateTime={e.createdAt}
+          className="w-16 shrink-0 text-right text-xs tabular-nums text-os-muted"
+        >
+          {time}
+        </time>
+        {hasDetail ? (
+          <Tooltip content={open ? "Hide details" : "Show details"}>
+            <button
+              type="button"
+              aria-label={open ? "Collapse details" : "Expand details"}
+              aria-expanded={open}
+              onClick={() => setOpen((v) => !v)}
+              className={cn(iconBtn, "shrink-0")}
+            >
+              {open ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+            </button>
+          </Tooltip>
+        ) : (
+          <span className="w-7 shrink-0" aria-hidden />
         )}
       </div>
       {open && hasDetail && (
-        <div className="ml-[calc(12px+12px+72px+12px)] mb-2 mr-3 rounded-md border border-border bg-muted/30 p-3 space-y-2">
+        <div className="mb-2 ml-[60px] mr-4 space-y-2 rounded-os-item bg-os-well p-3">
           {e.metadata && (
-            <pre className="text-[11px] font-mono text-muted-foreground whitespace-pre-wrap break-all leading-relaxed">
+            <pre className="whitespace-pre-wrap break-all font-mono text-[11px] leading-relaxed text-os-grey">
               {JSON.stringify(e.metadata, null, 2)}
             </pre>
           )}
-          {e.ip && (
-            <p className="text-[11px] font-mono text-muted-foreground/60">
-              IP: {e.ip}
-            </p>
-          )}
+          {e.ip && <p className="font-mono text-[11px] text-os-muted">IP: {e.ip}</p>}
         </div>
       )}
-    </div>
+    </li>
   );
 }
 
 export default function AdminConsoleActivity() {
   const { page, hasNext, filters, anyFilter, actions, areas, entries, now } =
     useLoaderData<typeof loader>();
+  const { panel, actionBtn, actionBtnPrimary, iconBtn } = useOsChrome();
   const [action, setAction] = useState<string>(filters.action ?? "");
   const actionOptions = useMemo(
     () => [{ value: "", label: "All actions" }, ...actions.map((a) => ({ value: a, label: a }))],
     [actions],
   );
-  const areaOptions = useMemo(
-    () => [{ value: "", label: "All areas" }, ...areas],
-    [areas],
-  );
+  const areaOptions = useMemo(() => [{ value: "", label: "All areas" }, ...areas], [areas]);
+  const areaLabelOf = useMemo(() => new Map(areas.map((a) => [a.value, a.label])), [areas]);
 
   function pageHref(nextPage: number): string {
     const params = activeFilterParams(filters);
@@ -259,133 +248,112 @@ export default function AdminConsoleActivity() {
   }
 
   const groups = groupByDay(entries, new Date(now));
+  const label = "flex flex-col gap-1.5 text-xs font-semibold text-os-muted";
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center gap-3">
-        <ListTodo className="w-6 h-6 text-foreground/80" />
-        <h1 className="text-2xl font-bold text-foreground">Activity log</h1>
-        <span className="px-2.5 py-0.5 rounded-full text-xs font-medium bg-muted text-muted-foreground">
-          page {page}
-        </span>
-        <span className="text-xs text-muted-foreground">Times in {APPLICATION_TZ_LABEL}</span>
-      </div>
+    <div className="flex flex-col gap-6">
+      <AdminSectionHeader section="insights" />
 
-      <Form
-        method="get"
-        className="bg-card border border-border rounded-lg p-3 grid grid-cols-1 sm:grid-cols-5 gap-2 items-end"
-      >
-        <div className="text-xs text-muted-foreground flex flex-col gap-1">
-          Area
-          <Select
-            name="area"
-            defaultValue={filters.area ?? ""}
-            options={areaOptions}
-            ariaLabel="Area"
-          />
+      <Form method="get" className={cn(panel, "flex flex-col gap-4 p-5")}>
+        <div className="grid gap-3 md:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,1fr)]">
+          <div className={label}>
+            <span className="inline-flex items-center gap-1">
+              Person
+              <InfoTip content="Matches as actor or target. Returns events where this person did something or had something done to them. An IP address matches requests from it; a partial one like 129.170 matches the range." />
+            </span>
+            <SearchInput
+              size="sm"
+              name="person"
+              defaultValue={filters.person ?? ""}
+              placeholder="Name, email, id, or IP"
+              aria-label="Person or IP"
+            />
+          </div>
+          <div className={label}>
+            Area
+            <Select name="area" defaultValue={filters.area ?? ""} options={areaOptions} ariaLabel="Area" />
+          </div>
+          <div className={label}>
+            Action
+            <Combobox
+              value={action}
+              options={actionOptions}
+              onChange={setAction}
+              ariaLabel="Action"
+              placeholder="All actions"
+              className={cn(OS_SELECT_TRIGGER_CLASS, "w-full")}
+            />
+            <input type="hidden" name="action" value={action} />
+          </div>
         </div>
-        <div className="text-xs text-muted-foreground flex flex-col gap-1">
-          Action
-          <Combobox
-            value={action}
-            options={actionOptions}
-            onChange={setAction}
-            ariaLabel="Action"
-            placeholder="All actions"
-          />
-          <input type="hidden" name="action" value={action} />
-        </div>
-        <div className="text-xs text-muted-foreground flex flex-col gap-1">
-          <span className="inline-flex items-center gap-1">
-            Person
-            <InfoTip content="Matches as actor or target. Returns events where this person did something or had something done to them. An IP address matches requests from it; a partial one like 129.170 matches the range." />
-          </span>
-          <SearchInput
-            size="sm"
-            name="person"
-            defaultValue={filters.person ?? ""}
-            placeholder="name, email, id, or IP"
-            aria-label="Person or IP"
-          />
-        </div>
-        <label className="text-xs text-muted-foreground flex flex-col gap-1">
-          From
-          <DateField
-            mode="date"
-            name="from"
-            defaultValue={filters.from ?? ""}
-            ariaLabel="From date"
-          />
-        </label>
-        <label className="text-xs text-muted-foreground flex flex-col gap-1">
-          To
-          <DateField
-            mode="date"
-            name="to"
-            defaultValue={filters.to ?? ""}
-            ariaLabel="To date"
-          />
-        </label>
-        <div className="sm:col-span-5 flex items-center gap-3">
-          <Toggle
-            name="mcpReads"
-            value="1"
-            defaultChecked={filters.mcpReads}
-            label="Include MCP reads"
-          />
-          <button
-            type="submit"
-            className="px-3 py-1.5 rounded-md text-sm bg-primary text-primary-foreground hover:opacity-90"
-          >
+        <div className="flex flex-wrap items-end gap-3">
+          <label className={label}>
+            From
+            <DateField mode="date" name="from" defaultValue={filters.from ?? ""} ariaLabel="From date" />
+          </label>
+          <label className={label}>
+            To
+            <DateField mode="date" name="to" defaultValue={filters.to ?? ""} ariaLabel="To date" />
+          </label>
+          <div className="pb-1.5">
+            <Toggle
+              tone="os"
+              name="mcpReads"
+              value="1"
+              defaultChecked={filters.mcpReads}
+              label="Include MCP reads"
+            />
+          </div>
+          <span className="flex-1" />
+          {anyFilter && (
+            <Link to="?" className={actionBtn()}>
+              <X className="h-4 w-4" />
+              Clear filters
+            </Link>
+          )}
+          <button type="submit" className={actionBtnPrimary}>
             Apply
           </button>
-          {anyFilter && (
-            <Tooltip content="Clear filters">
-              <Link
-                to="?"
-                aria-label="Clear filters"
-                className="inline-flex items-center justify-center p-1.5 rounded-md text-sm bg-card border border-border text-muted-foreground hover:text-foreground"
-              >
-                <X className="w-3.5 h-3.5" />
-              </Link>
-            </Tooltip>
-          )}
         </div>
       </Form>
 
-      <div className="bg-card border border-border rounded-lg py-2">
-        {entries.length === 0 ? (
-          <p className="px-4 py-8 text-center text-muted-foreground/70">
-            {anyFilter ? "No activity matches these filters." : "No activity on this page."}
-          </p>
-        ) : (
-          <div className="divide-y divide-border">
-            {groups.map(({ dayKey, label, items }) => (
-              <div key={dayKey} className="py-2">
-                <div className="px-3 pb-1 pt-0.5">
-                  <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/60">
-                    {label}
-                  </span>
-                </div>
-                {items.map((e) => (
-                  <TimelineEntry key={e.id} e={e} />
-                ))}
-              </div>
-            ))}
-          </div>
-        )}
+      <div className="flex items-center gap-3 px-1 text-xs text-os-muted">
+        <Pill>Page {page}</Pill>
+        <span>Times in {APPLICATION_TZ_LABEL}</span>
       </div>
 
-      <nav className="flex items-center justify-between" aria-label="Activity pagination">
+      {entries.length === 0 ? (
+        <div className={panel}>
+          <EmptyState>
+            {anyFilter ? "No activity matches these filters." : "No activity on this page."}
+          </EmptyState>
+        </div>
+      ) : (
+        <div className="flex flex-col gap-6">
+          {groups.map(({ dayKey, label: dayLabel, items }) => (
+            <section key={dayKey} className="flex flex-col gap-2" aria-label={dayLabel}>
+              <h2 className="px-1 text-sm font-semibold text-os-grey">{dayLabel}</h2>
+              <ol className={cn(panel, "p-2")}>
+                {items.map((e) => {
+                  const area = auditAreaOf(e.action);
+                  return <TimelineEntry key={e.id} e={e} areaLabel={areaLabelOf.get(area) ?? area} />;
+                })}
+              </ol>
+            </section>
+          ))}
+        </div>
+      )}
+
+      <nav className="flex items-center justify-between" aria-label="Audit log pagination">
         {page > 1 ? (
           <Tooltip content="Previous">
             <Link
               to={pageHref(page - 1)}
               prefetch="render"
               aria-label="Previous"
-              className="inline-flex items-center justify-center p-1.5 rounded-md text-sm bg-card border border-border text-foreground hover:bg-muted/50"
+              className={cn(iconBtn, "border border-os-container")}
             >
-              <ChevronLeft className="w-4 h-4" />
+              <ChevronLeft className="h-4 w-4" />
             </Link>
           </Tooltip>
         ) : (
@@ -397,13 +365,13 @@ export default function AdminConsoleActivity() {
               to={pageHref(page + 1)}
               prefetch="render"
               aria-label="Next"
-              className="inline-flex items-center justify-center p-1.5 rounded-md text-sm bg-card border border-border text-foreground hover:bg-muted/50"
+              className={cn(iconBtn, "border border-os-container")}
             >
-              <ChevronRight className="w-4 h-4" />
+              <ChevronRight className="h-4 w-4" />
             </Link>
           </Tooltip>
         ) : (
-          <span className="text-xs text-muted-foreground/60">End of log</span>
+          <span className="text-xs text-os-muted">End of log</span>
         )}
       </nav>
     </div>

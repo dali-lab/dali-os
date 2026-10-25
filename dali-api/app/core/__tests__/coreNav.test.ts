@@ -2,24 +2,29 @@ import { describe, it, expect } from "vitest";
 import { coreHandle, coreTrail } from "~/core/coreNav";
 
 describe("coreTrail", () => {
-  // The email editor used to hand-roll `breadcrumbTrail: () => [{ label: "Email" }]`
-  // because its page lived at an /admin url with no section key in either nav
-  // model. That lost the way back to Communications and the switcher with it.
-  it("gives the email editor a full Core trail with a section switcher", () => {
+  it("gives a Communications tool a full Core trail with a section switcher", () => {
     const trail = coreTrail("email", false);
-    expect(trail.map((c) => c.label)).toEqual(["Core", "Communications", "Email"]);
+    expect(trail.map((c) => c.label)).toEqual(["Core", "Communications", "Email templates"]);
     expect(trail[0]?.to).toBe("/core");
     expect(trail[2]?.siblings?.map((s) => s.to)).toEqual([
       "/core/communications/announcements",
+      "/core/communications/listserv",
+      "/core/communications/banners",
       "/core/communications/release-notes",
       "/core/communications/email",
     ]);
-    expect(trail[2]?.siblings?.find((s) => s.current)?.label).toBe("Email");
+    expect(trail[2]?.siblings?.find((s) => s.current)?.label).toBe("Email templates");
   });
 
-  it("builds that trail from the route handle too", () => {
-    const trail = coreHandle("email").breadcrumbTrail({ isAdmin: false });
-    expect(trail.map((c) => c.label)).toEqual(["Core", "Communications", "Email"]);
+  // The Communications pages share one tab strip, so their trail stops at the
+  // cluster rather than repeating the tab's name.
+  it("stops the Communications pages' trail at the cluster", () => {
+    const trail = coreHandle("communications").breadcrumbTrail({ isAdmin: false });
+    expect(trail.map((c) => c.label)).toEqual(["Core", "Communications"]);
+  });
+
+  it("gives Roles & domains a flat Core trail", () => {
+    expect(coreTrail("access", false)).toEqual([{ label: "Core", to: "/core" }, { label: "Roles & domains" }]);
   });
 
   // An unknown key yields a lone root crumb, which Breadcrumbs hides — so a

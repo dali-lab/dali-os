@@ -6,11 +6,12 @@
 // viewers (regroupRedirect, called in the source loader).
 //
 // `handle` is overridden rather than re-exported so the breadcrumb reads
-// "Core › …" instead of the source page's own trail. That override is the
-// reason these aliases are files rather than a second route id.
+// "Core › Communications" (the tab strip names the tool) instead of the source
+// page's own trail. That override is the reason these aliases are files rather
+// than a second route id.
 
 import { coreHandle } from "~/core/coreNav";
 
 export { meta, loader, action, default } from "~/admin/routes/admin.announcements";
 
-export const handle = coreHandle("announcements");
+export const handle = coreHandle("communications");

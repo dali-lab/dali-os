@@ -37,7 +37,10 @@ function AgendaRow({ block, onDrill }: { block: EventBlock; onDrill: () => void 
         else onDrill();
       }}
       title={block.issue || undefined}
-      className="flex w-full items-baseline gap-3 rounded-md px-2 py-1.5 text-left hover:bg-muted"
+      className={cn(
+        "flex w-full items-baseline gap-3 rounded-md px-2 py-1.5 text-left transition-opacity hover:bg-muted",
+        block.dimmed && "opacity-30",
+      )}
     >
       <span className="w-24 shrink-0 text-xs tabular-nums text-muted-foreground">
         {block.allDay ? "All day" : fmtHour(block.startHour)}

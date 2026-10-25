@@ -1,8 +1,8 @@
 // A hiring cycle's standing hold on its interview rooms (InterviewConfig.holdRooms):
 // one recurring RoomBooking per room per Interviews round (source
 // InterviewHold), covering interview hours across that round's window, so
-// members can't book over it. The cycle's
-// own Interview bookings sit inside the hold (blockedBy in rooms.server.ts).
+// members can't book over it. Holds are shared across cycles: every cycle's
+// Interview bookings sit inside any hold (blockedBy in rooms.server.ts).
 //
 // applyRoomHolds is the single write path: it always releases the cycle's
 // existing holds first, then recreates every round's that still wants them

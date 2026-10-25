@@ -103,6 +103,13 @@ describe("sendAnnouncement", () => {
     );
   });
 
+  it("stamps every recipient row with the announcement it came from", async () => {
+    await sendAnnouncement(input({ userIds: ["u1"] }));
+    expect(mockNotify.mock.calls[0][0].message.announcementId).toBeNull();
+    await sendAnnouncement(input({ userIds: ["u1"], announcementId: "sa-1" }));
+    expect(mockNotify.mock.calls[1][0].message.announcementId).toBe("sa-1");
+  });
+
   it("forwards ccDartmouth to notify(), defaulting to false", async () => {
     await sendAnnouncement(input({ userIds: ["u1"] }));
     expect(mockNotify.mock.calls[0][0].message.ccDartmouth).toBe(false);

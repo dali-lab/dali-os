@@ -78,6 +78,28 @@ function describeUserAgent(ua: string | null): string {
   return "Unknown device";
 }
 
+/** The digest schedule as configured in Admin → Jobs: every member's default. */
+export async function loadDigestSchedule() {
+  const rows = await prisma.scheduledJob.findMany({
+    where: { name: { in: ["notification-digest-daily", "notification-digest-weekly"] } },
+    select: { name: true, settings: true },
+  });
+  const byName = new Map(rows.map((r) => [r.name, r]));
+  const dailyDef = jobByName("notification-digest-daily");
+  const weeklyDef = jobByName("notification-digest-weekly");
+  const daily = dailyDef
+    ? resolveJobSettings(dailyDef, byName.get("notification-digest-daily")?.settings)
+    : { sendHourEt: 9 };
+  const weekly = weeklyDef
+    ? resolveJobSettings(weeklyDef, byName.get("notification-digest-weekly")?.settings)
+    : { sendHourEt: 9, sendWeekday: 1 };
+  return {
+    dailyHour: daily.sendHourEt,
+    weeklyHour: weekly.sendHourEt,
+    weeklyWeekday: weekly.sendWeekday ?? 1,
+  };
+}
+
 export async function loadSettingsPageData(request: Request) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
@@ -92,7 +114,7 @@ export async function loadSettingsPageData(request: Request) {
     user,
     grants,
     notificationPrefs,
-    digestRows,
+    digestSchedule,
     viewerIsAdmin,
     viewerIsCore,
     authSessionRows,
@@ -109,6 +131,7 @@ export async function loadSettingsPageData(request: Request) {
         dartmouthEmail: true,
         personalEmail: true,
         hideActivity: true,
+        digestHourEt: true,
       },
     }),
     prisma.oAuthGrant.findMany({
@@ -120,10 +143,7 @@ export async function loadSettingsPageData(request: Request) {
       where: { userId },
       select: { eventType: true, inApp: true, desktop: true, slackDm: true, digestFrequency: true },
     }),
-    prisma.scheduledJob.findMany({
-      where: { name: { in: ["notification-digest-daily", "notification-digest-weekly"] } },
-      select: { name: true, settings: true },
-    }),
+    loadDigestSchedule(),
     isAdmin(userId),
     isCore(userId),
     prisma.authSession.findMany({
@@ -140,18 +160,6 @@ export async function loadSettingsPageData(request: Request) {
       orderBy: { updatedAt: "desc" },
     }),
   ]);
-
-  // Render the digest schedule as actually configured (Admin → Jobs), not a
-  // hardcoded time.
-  const digestRowByName = new Map(digestRows.map((r) => [r.name, r]));
-  const dailyDef = jobByName("notification-digest-daily");
-  const weeklyDef = jobByName("notification-digest-weekly");
-  const daily = dailyDef
-    ? resolveJobSettings(dailyDef, digestRowByName.get("notification-digest-daily")?.settings)
-    : { sendHourEt: 9 };
-  const weekly = weeklyDef
-    ? resolveJobSettings(weeklyDef, digestRowByName.get("notification-digest-weekly")?.settings)
-    : { sendHourEt: 9, sendWeekday: 1 };
 
   const calendarLinks: CalendarLinkDTO[] = await Promise.all(
     links.map(async (l) => {
@@ -226,11 +234,8 @@ export async function loadSettingsPageData(request: Request) {
     notifications: {
       prefs: notificationPrefs,
       slackConnected: !!user?.slackUserId,
-      digestSchedule: {
-        dailyHour: daily.sendHourEt,
-        weeklyHour: weekly.sendHourEt,
-        weeklyWeekday: weekly.sendWeekday ?? 1,
-      },
+      digestSchedule,
+      digestHourEt: user?.digestHourEt ?? null,
       isAdmin: viewerIsAdmin,
       isCore: viewerIsCore,
     },

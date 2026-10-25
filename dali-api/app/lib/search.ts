@@ -41,12 +41,13 @@ export interface SearchResult {
   fileCategory?: FileCategory;
 }
 
-export type SearchPageKind = "Folder" | "Whiteboard" | "Notebook";
+export type SearchPageKind = "Folder" | "Whiteboard" | "Notebook" | "Slides";
 
 const PAGE_KIND_LABEL: Record<SearchPageKind, string> = {
   Folder: "Folder",
   Whiteboard: "Whiteboard",
   Notebook: "Notebook",
+  Slides: "Slide deck",
 };
 
 export function searchPageKind(kind: string | null | undefined): SearchPageKind | undefined {

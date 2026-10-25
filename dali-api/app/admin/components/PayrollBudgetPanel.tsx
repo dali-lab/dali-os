@@ -1,52 +1,53 @@
 import { useEffect, useRef, useState } from "react";
 import { useFetcher } from "react-router";
 import { Trash2, StickyNote } from "lucide-react";
-import { Card } from "~/components/ui/Card";
+import { EmptyState, adminTable } from "~/admin/components/console-ui";
+import { useOsChrome } from "~/components/os-chrome";
 import { useConfirmSubmit } from "~/components/ui/dialog";
 import { formatUsd } from "~/lib/money";
 import { cn } from "~/lib/cn";
 import { PROJECT_TYPES } from "~/admin/lib/budget.shared";
-import { Select } from "~/components/ui/floating";
+import { Select, Tooltip } from "~/components/ui/floating";
 import type {
   BudgetData,
   BudgetGroup,
   BudgetRow,
 } from "~/admin/lib/budget.shared";
 import type { BudgetLoaderData } from "~/admin/routes/admin.payroll.budget";
-import { Button } from "~/components/ui/Button";
 
-// Budget tab. Data is fetched lazily on first activation via a GET fetcher to
-// /admin/payroll/budget; mutations post back to the same route through
-// per-row hidden-`intent` fetcher Forms (the repo's inline-edit pattern).
+const TH = adminTable.th;
+const TH_NUM = cn(adminTable.th, "text-right");
+const TD = cn(adminTable.td, "text-os-grey");
+const TD_NUM = cn(adminTable.td, "text-right tabular-nums text-foreground");
 
-const TABLE_WRAP = "bg-card border border-border rounded-lg overflow-x-auto";
-const TH = "text-left px-3 py-2 font-medium text-muted-foreground whitespace-nowrap";
-const TH_NUM = "text-right px-3 py-2 font-medium text-muted-foreground whitespace-nowrap";
-const TD = "px-3 py-2 text-muted-foreground";
-const TD_NUM = "px-3 py-2 text-right text-muted-foreground tabular-nums";
+function PanelMessage({ children }: { children: React.ReactNode }) {
+  const { panel } = useOsChrome();
+  return (
+    <div className={panel}>
+      <EmptyState>{children}</EmptyState>
+    </div>
+  );
+}
 
 const BUDGET_ROUTE = "/admin/payroll/budget";
 
 export function PayrollBudgetPanel({ term }: { term: string }) {
   const fetcher = useFetcher<BudgetLoaderData>();
 
-  // Lazy-load on first mount / when the term changes.
   useEffect(() => {
     fetcher.load(`${BUDGET_ROUTE}?term=${encodeURIComponent(term)}`);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [term]);
 
   if (fetcher.state === "loading" && !fetcher.data) {
-    return <Card className="p-8 text-center text-sm text-muted-foreground">Loading budget…</Card>;
+    return <PanelMessage>Loading budget…</PanelMessage>;
   }
   if (!fetcher.data) {
-    return <Card className="p-8 text-center text-sm text-muted-foreground">Loading budget…</Card>;
+    return <PanelMessage>Loading budget…</PanelMessage>;
   }
   if (!fetcher.data.ok) {
     return (
-      <Card className="p-8 text-center text-sm text-muted-foreground">
-        {fetcher.data.error}
-      </Card>
+      <PanelMessage>{fetcher.data.error}</PanelMessage>
     );
   }
 
@@ -59,48 +60,50 @@ function BudgetTable({ budget, termId }: { budget: BudgetData; termId: string })
 
   if (budget.groups.length === 0) {
     return (
-      <Card className="p-8 text-center text-sm text-muted-foreground">
+      <PanelMessage>
         No budget lines for this term yet. Revenue and expense appear here once
         timesheets are uploaded or revenue is entered.
-      </Card>
+      </PanelMessage>
     );
   }
 
   return (
-    <div className="space-y-4">
-      <div className={TABLE_WRAP}>
-        <table className="w-full text-sm min-w-[900px]">
+    <div className="flex flex-col gap-3">
+      <div className={adminTable.wrap}>
+        <table className="w-full min-w-[960px]">
           <thead>
-            <tr className="border-b border-border bg-muted/50">
+            <tr>
               <th className={TH}>Project</th>
-              <th className={TH}>Chart String</th>
+              <th className={TH}>Chart string</th>
               <th className={TH}>Type</th>
               <th className={TH_NUM}>Revenue</th>
-              <th className={TH_NUM}>Adj. Revenue</th>
+              <th className={TH_NUM}>Adj. revenue</th>
               <th className={TH_NUM}>Expense</th>
               <th className={TH_NUM}>Net</th>
               <th className={TH}>Notes</th>
-              <th className="px-3 py-2"></th>
+              <th className={TH}>
+                <span className="sr-only">Actions</span>
+              </th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-border">
+          <tbody>
             {budget.groups.map((g) => (
               <GroupRows key={g.projectId ?? "__none__"} group={g} termId={termId} />
             ))}
-            <tr className="border-t-2 border-foreground font-bold text-foreground">
-              <td className="px-3 py-2" colSpan={3}>
+            <tr className="border-t border-os-container font-semibold text-foreground">
+              <td className={adminTable.td} colSpan={3}>
                 Grand total
               </td>
-              <td className={cn(TD_NUM, "text-foreground font-bold")}>
+              <td className={cn(TD_NUM, "font-semibold")}>
                 {formatUsd(budget.grandTotalRevenue)}
               </td>
-              <td className={cn(TD_NUM, "text-foreground font-bold")}>
+              <td className={cn(TD_NUM, "font-semibold")}>
                 {formatUsd(budget.grandTotalAdjustedRevenue)}
               </td>
-              <td className={cn(TD_NUM, "text-foreground font-bold")}>
+              <td className={cn(TD_NUM, "font-semibold")}>
                 {formatUsd(budget.grandTotalExpense)}
               </td>
-              <td className={cn(TD_NUM, netClass(budget.grandTotalNet), "font-bold")}>
+              <td className={cn(TD_NUM, netClass(budget.grandTotalNet), "font-semibold")}>
                 {formatNet(budget.grandTotalNet)}
               </td>
               <td colSpan={2}></td>
@@ -109,7 +112,7 @@ function BudgetTable({ budget, termId }: { budget: BudgetData; termId: string })
         </table>
       </div>
       {anyPateo && (
-        <p className="text-xs text-muted-foreground">
+        <p className="text-xs text-os-muted">
           * DALI PATEO revenue adjusted at 90.29% (Dartmouth F&amp;A 63.5%, 75%
           recovery). The adjustment applies to DALI PATEO rows only; all other
           types carry revenue through unchanged.
@@ -123,8 +126,8 @@ function GroupRows({ group, termId }: { group: BudgetGroup; termId: string }) {
   const isBucket = group.projectId === null;
   return (
     <>
-      <tr className="bg-muted/30">
-        <td className="px-3 py-1.5 text-xs font-semibold text-foreground" colSpan={9}>
+      <tr className={cn(adminTable.row, "bg-os-well/60")}>
+        <td className="px-6 py-2 text-xs font-semibold text-foreground" colSpan={9}>
           {group.projectName}
         </td>
       </tr>
@@ -136,8 +139,8 @@ function GroupRows({ group, termId }: { group: BudgetGroup; termId: string }) {
           isBucket={isBucket}
         />
       ))}
-      <tr className="bg-muted/20 text-foreground">
-        <td className="px-3 py-1.5 text-xs italic" colSpan={3}>
+      <tr className={cn(adminTable.row, "text-foreground")}>
+        <td className={cn(adminTable.td, "text-xs text-os-grey")} colSpan={3}>
           {group.projectName} subtotal
         </td>
         <td className={cn(TD_NUM, "text-xs font-semibold")}>
@@ -167,6 +170,7 @@ function BudgetRowView({
   termId: string;
   isBucket: boolean;
 }) {
+  const { iconBtn } = useOsChrome();
   const [notesOpen, setNotesOpen] = useState(false);
   const keyInputs = (
     <>
@@ -178,16 +182,15 @@ function BudgetRowView({
 
   return (
     <>
-      <tr className="hover:bg-muted/50">
-        {/* Project name lives in the group header; the per-row cell stays blank. */}
+      <tr className={adminTable.row}>
         <td className={cn(TD, isBucket && "text-xs italic")}></td>
-        <td className="px-3 py-2 font-mono text-xs text-foreground">
+        <td className={cn(adminTable.td, "font-mono text-xs text-foreground")}>
           {row.chartString}
         </td>
-        <td className="px-3 py-2">
+        <td className={adminTable.td}>
           <ProjectTypeSelect row={row} termId={termId} keyInputs={keyInputs} />
         </td>
-        <td className="px-3 py-1.5 text-right">
+        <td className={cn(adminTable.td, "text-right")}>
           <RevenueEdit row={row} termId={termId} keyInputs={keyInputs} />
         </td>
         <td className={TD_NUM}>
@@ -204,26 +207,26 @@ function BudgetRowView({
         <td className={cn(TD_NUM, netClass(row.net), "font-semibold")}>
           {formatNet(row.net)}
         </td>
-        <td className="px-3 py-2">
-          <button
-            type="button"
-            onClick={() => setNotesOpen((o) => !o)}
-            aria-label={`${row.note ? "Edit" : "Add"} note for ${row.chartString}`}
-            className={cn(
-              "text-muted-foreground hover:text-foreground",
-              row.note && "text-os-accent",
-            )}
-          >
-            <StickyNote className="w-4 h-4" />
-          </button>
+        <td className={adminTable.td}>
+          <Tooltip content={row.note ? row.note : "Add note"}>
+            <button
+              type="button"
+              onClick={() => setNotesOpen((o) => !o)}
+              aria-label={`${row.note ? "Edit" : "Add"} note for ${row.chartString}`}
+              aria-expanded={notesOpen}
+              className={cn(iconBtn, row.note && "text-os-accent")}
+            >
+              <StickyNote className="h-4 w-4" />
+            </button>
+          </Tooltip>
         </td>
-        <td className="px-3 py-2 text-right">
+        <td className={cn(adminTable.td, "text-right")}>
           {row.entryId && <DeleteButton entryId={row.entryId} />}
         </td>
       </tr>
       {notesOpen && (
-        <tr className="bg-muted/20">
-          <td colSpan={9} className="px-3 py-2">
+        <tr className="bg-os-well/60">
+          <td colSpan={9} className="px-6 py-3">
             <NoteEditor
               row={row}
               termId={termId}
@@ -248,6 +251,7 @@ function RevenueEdit({
   termId: string;
   keyInputs: React.ReactNode;
 }) {
+  const { compactField } = useOsChrome();
   const fetcher = useFetcher();
   const [value, setValue] = useState(row.revenue.toFixed(2));
   const submitting = fetcher.state !== "idle";
@@ -278,7 +282,7 @@ function RevenueEdit({
           }
         }}
         aria-label={`Revenue for ${row.chartString}`}
-        className="w-24 rounded border border-border bg-card px-2 py-1 text-right text-xs tabular-nums text-foreground focus:border-os-accent focus:outline-none"
+        className={cn(compactField, "w-28 border border-os-container px-2.5 py-1.5 text-right text-xs tabular-nums focus:outline-none")}
       />
     </fetcher.Form>
   );
@@ -293,6 +297,7 @@ function ProjectTypeSelect({
   termId: string;
   keyInputs: React.ReactNode;
 }) {
+  const { compactField } = useOsChrome();
   const fetcher = useFetcher();
   const formRef = useRef<HTMLFormElement>(null);
   return (
@@ -314,7 +319,7 @@ function ProjectTypeSelect({
           { value: "", label: "—" },
           ...PROJECT_TYPES.map((t) => ({ value: t, label: t })),
         ]}
-        buttonClassName="rounded border border-border bg-card px-2 py-1 text-xs text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+        buttonClassName={cn(compactField, "inline-flex min-w-[8rem] items-center justify-between gap-1 border border-os-container px-2.5 py-1.5 text-xs transition-colors hover:border-os-container-hi")}
       />
     </fetcher.Form>
   );
@@ -331,6 +336,7 @@ function NoteEditor({
   keyInputs: React.ReactNode;
   onDone: () => void;
 }) {
+  const { compactField, actionBtnPrimary } = useOsChrome();
   const fetcher = useFetcher();
   const submitting = fetcher.state !== "idle";
   const wasSubmitting = useRef(false);
@@ -355,19 +361,20 @@ function NoteEditor({
         type="text"
         name="note"
         defaultValue={row.note ?? ""}
-        placeholder="Add a note…"
+        placeholder="Add a note"
         autoFocus
         aria-label={`Note for ${row.chartString}`}
-        className="flex-1 rounded border border-border bg-card px-2 py-1 text-xs text-foreground focus:border-os-accent focus:outline-none"
+        className={cn(compactField, "flex-1 border border-os-container px-3 py-1.5 text-sm focus:outline-none")}
       />
-      <Button type="submit" size="xs">
-        Save
-      </Button>
+      <button type="submit" disabled={submitting} className={cn(actionBtnPrimary, "disabled:opacity-50")}>
+        {submitting ? "Saving…" : "Save"}
+      </button>
     </fetcher.Form>
   );
 }
 
 function DeleteButton({ entryId }: { entryId: string }) {
+  const { iconBtn } = useOsChrome();
   const fetcher = useFetcher();
   const confirmSubmit = useConfirmSubmit();
   return (
@@ -384,13 +391,15 @@ function DeleteButton({ entryId }: { entryId: string }) {
     >
       <input type="hidden" name="intent" value="delete-entry" />
       <input type="hidden" name="entryId" value={entryId} />
-      <button
-        type="submit"
-        aria-label="Delete budget line"
-        className="text-muted-foreground hover:text-destructive"
-      >
-        <Trash2 className="w-4 h-4" />
-      </button>
+      <Tooltip content="Delete budget line">
+        <button
+          type="submit"
+          aria-label="Delete budget line"
+          className={cn(iconBtn, "hover:text-destructive")}
+        >
+          <Trash2 className="h-4 w-4" />
+        </button>
+      </Tooltip>
     </fetcher.Form>
   );
 }
@@ -400,7 +409,7 @@ function DeleteButton({ entryId }: { entryId: string }) {
 function netClass(net: number): string {
   if (net > 0) return "text-os-green";
   if (net < 0) return "text-destructive";
-  return "text-muted-foreground";
+  return "text-os-muted";
 }
 
 function formatNet(net: number): string {

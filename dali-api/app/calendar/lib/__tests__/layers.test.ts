@@ -8,6 +8,7 @@ import {
   buildLoggedTimeLayer,
   buildLoggedSourceIndex,
   mergeLayers,
+  highlightRole,
   externalCalendarLegend,
   perCalendarLegend,
   visibleExternalEvents,
@@ -680,5 +681,74 @@ describe("linkedEventFor", () => {
     expect(
       linkedEventFor(entry({ scheduledMeetingId: "m1", occurrenceStart: "2026-08-25T10:00:00.000Z" }), events),
     ).toBeNull();
+  });
+});
+
+describe("role highlight", () => {
+  const entry = (id: string, roleRefId: string | null, hour: number, extra: Partial<TimeEntryDTO> = {}) =>
+    ({
+      id, source: "Manual", scheduledMeetingId: null, manualBlockId: null, meetingNotePageId: null,
+      assignmentType: roleRefId ? "Project" : null, roleRefId, projectId: null,
+      date: "2026-08-18", hours: 1, note: id,
+      startTime: `2026-08-18T${String(hour).padStart(2, "0")}:00:00.000Z`,
+      endTime: `2026-08-18T${String(hour + 1).padStart(2, "0")}:00:00.000Z`,
+      ...extra,
+    }) as TimeEntryDTO;
+
+  it("tags each logged block with its role", () => {
+    const data = fixture({ timeEntries: [entry("a", "p1", 9), entry("u", null, 11)] });
+    const blocks = buildLoggedTimeLayer(data, buildGridDays(WEEK, 7))[2]!;
+    expect(blocks.map((b) => b.roleKeys)).toEqual([["Project:p1"], ["unassigned"]]);
+  });
+
+  it("collects every role logged against an event, once each", () => {
+    const data = fixture({
+      timeEntries: [
+        entry("a", "p1", 9, { sourceEventId: "e1" }),
+        entry("b", "p2", 10, { sourceEventId: "e1" }),
+        entry("c", "p1", 11, { sourceEventId: "e1" }),
+      ],
+    });
+    expect(buildLoggedSourceIndex(data).byEvent.get("e1")?.roleKeys).toEqual(["Project:p1", "Project:p2"]);
+  });
+
+  it("carries the roles onto the event block that stands in for the entries", () => {
+    const data = fixture({
+      externalEvents: [
+        { startIso: "2026-08-18T09:00:00.000Z", endIso: "2026-08-18T10:00:00.000Z", title: "Studio", eventId: "e1" },
+      ] as LoaderData["externalEvents"],
+      timeEntries: [entry("a", "p1", 9, { sourceEventId: "e1" })],
+    });
+    const { byEvent } = buildLoggedSourceIndex(data);
+    const layer = buildExternalLayer(data, buildGridDays(WEEK, 7), undefined, undefined, undefined, undefined, undefined, byEvent);
+    expect(layer[2]![0]!.roleKeys).toEqual(["Project:p1"]);
+  });
+
+  it("merges the roles when converged copies of one event are logged separately", () => {
+    const accent = (roleKey: string) => ({ color: "#000", hours: 1, roleKeys: [roleKey] });
+    const data = fixture({
+      externalEvents: [
+        { startIso: "2026-08-18T09:00:00.000Z", endIso: "2026-08-18T10:00:00.000Z", title: "Studio", eventId: "e1" },
+        { startIso: "2026-08-18T09:00:00.000Z", endIso: "2026-08-18T10:00:00.000Z", title: "Studio", eventId: "e2" },
+      ] as LoaderData["externalEvents"],
+    });
+    const { accents } = workEventsOnly(data, new Map([["e1", accent("Project:p1")], ["e2", accent("Project:p2")]]));
+    expect([...accents.values()].map((a) => a.roleKeys)).toEqual([["Project:p1", "Project:p2"]]);
+  });
+
+  it("fades every block that isn't the hovered role's, including untagged ones", () => {
+    const byDay = {
+      1: [{ label: "a", roleKeys: ["Project:p1"] }, { label: "b", roleKeys: ["Project:p2"] }],
+      2: [{ label: "class" }, { label: "both", roleKeys: ["Project:p2", "Project:p1"] }],
+    } as unknown as Parameters<typeof highlightRole>[0];
+    const out = highlightRole(byDay, "Project:p1");
+    expect(out[1]!.map((b) => [b.label, Boolean(b.dimmed)])).toEqual([["a", false], ["b", true]]);
+    expect(out[2]!.map((b) => [b.label, Boolean(b.dimmed)])).toEqual([["class", true], ["both", false]]);
+    expect(byDay[1]![1]!.dimmed).toBeUndefined();
+  });
+
+  it("leaves the grid alone with no role hovered", () => {
+    const byDay = { 1: [{ label: "a", roleKeys: ["Project:p1"] }] } as unknown as Parameters<typeof highlightRole>[0];
+    expect(highlightRole(byDay, null)).toBe(byDay);
   });
 });

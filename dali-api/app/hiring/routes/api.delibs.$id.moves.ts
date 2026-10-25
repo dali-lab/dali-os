@@ -5,13 +5,14 @@ import { requireCoreOrDomainLead, forbidden } from "~/lib/auth";
 import { hasCycleAccess } from "~/lib/roles";
 import { logAuditEvent } from "~/lib/audit";
 import { findRound, parseTimeline } from "~/hiring/lib/cycle-timeline";
+import { applyMove } from "~/hiring/lib/delibs";
 import { idSchema, parseJson } from "~/lib/validate";
 import { requireApiSignedOrForbidden } from "~/hiring/lib/confidentiality";
 
 const MoveSchema = z.object({
   cardId: idSchema,
   toColumn: idSchema,
-  position: z.number().int().min(0).max(10_000).optional(),
+  order: z.array(idSchema).max(10_000).optional(),
 });
 
 export async function action({ request, params }: Route.ActionArgs) {
@@ -43,7 +44,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   const body = await parseJson(request, MoveSchema);
   if (body instanceof Response) return body;
-  const { cardId, toColumn, position } = body;
+  const { cardId, toColumn, order } = body;
 
   if (!cardId || typeof cardId !== "string") {
     return Response.json({ error: "cardId is required" }, { status: 400 });
@@ -73,21 +74,7 @@ export async function action({ request, params }: Route.ActionArgs) {
         }
 
         const current = (session.columnOrder ?? {}) as Record<string, string[]>;
-        const next: Record<string, string[]> = {};
-        for (const col of validColumns) {
-          next[col] = (current[col] ?? []).filter((id) => id !== cardId);
-        }
-
-        const target = next[toColumn];
-        if (
-          typeof position === "number" &&
-          position >= 0 &&
-          position <= target.length
-        ) {
-          target.splice(position, 0, cardId);
-        } else {
-          target.push(cardId);
-        }
+        const next = applyMove(current, validColumns, cardId, toColumn, order);
 
         const result = await tx.delibsSession.update({
           where: { id: params.id },
@@ -106,7 +93,6 @@ export async function action({ request, params }: Route.ActionArgs) {
         cycleId: sessionForAuth.applicationCycleId,
         cardId,
         toColumn,
-        ...(typeof position === "number" ? { position } : {}),
       },
       request,
     });

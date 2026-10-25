@@ -32,6 +32,8 @@ import {
   truncateEventRoomBookings,
   listRoomConflicts,
   serializeScheduleItem,
+  blockedBy,
+  withoutCoveredHolds,
   type RoomScheduleItem,
 } from "~/lib/rooms.server";
 
@@ -346,7 +348,7 @@ describe("hiring bookings (Interview / InterviewHold)", () => {
     expect((res as { error: string }).error).toContain("Reserved for interviews");
   });
 
-  it("lets the same cycle's interview sit inside its hold but not another cycle's", async () => {
+  it("lets any cycle's interview sit inside a hold", async () => {
     m.roomBooking.findMany.mockResolvedValue([hold()]);
     const slot = {
       roomId: "r1",
@@ -356,7 +358,42 @@ describe("hiring bookings (Interview / InterviewHold)", () => {
       source: "Interview" as const,
     };
     expect((await createRoomBooking({ ...slot, applicationCycleId: cycle })).ok).toBe(true);
-    expect(await createRoomBooking({ ...slot, applicationCycleId: "other" })).toMatchObject({ ok: false, status: 409 });
+    expect((await createRoomBooking({ ...slot, applicationCycleId: "other" })).ok).toBe(true);
+  });
+
+  it("lets a second cycle place its hold over the first cycle's", async () => {
+    m.roomBooking.findMany.mockResolvedValue([hold()]);
+    const res = await createRoomBooking({
+      roomId: "r1",
+      userId: "u1",
+      start: at("2026-11-02T13:00:00Z"),
+      end: at("2026-11-02T22:00:00Z"),
+      source: "InterviewHold",
+      applicationCycleId: "other",
+    });
+    expect(res.ok).toBe(true);
+  });
+
+  it("collides two interviews from different cycles in one room", async () => {
+    m.roomBooking.findMany.mockResolvedValue([
+      booking({
+        id: "iv1",
+        title: "Interview",
+        start: at("2026-11-02T15:00:00Z"),
+        end: at("2026-11-02T15:30:00Z"),
+        source: "Interview",
+        applicationCycleId: cycle,
+      }),
+    ]);
+    const res = await createRoomBooking({
+      roomId: "r1",
+      userId: "u1",
+      start: at("2026-11-02T15:00:00Z"),
+      end: at("2026-11-02T15:30:00Z"),
+      source: "Interview",
+      applicationCycleId: "other",
+    });
+    expect(res).toMatchObject({ ok: false, status: 409 });
   });
 
   it("still collides two interviews of the same cycle in one room", async () => {
@@ -437,6 +474,85 @@ describe("hiring bookings (Interview / InterviewHold)", () => {
   });
 });
 
+describe("blockedBy", () => {
+  const item = (source: RoomScheduleItem["source"], cycleId: string | null): RoomScheduleItem => ({
+    kind: source ? "booking" : "meeting",
+    id: "x",
+    title: "x",
+    start: at("2026-11-02T15:00:00Z"),
+    end: at("2026-11-02T16:00:00Z"),
+    occurrenceStart: at("2026-11-02T15:00:00Z"),
+    recurring: false,
+    organizer: ada,
+    isEvent: false,
+    source,
+    cycleId,
+  });
+
+  it.each([
+    ["a hold", "InterviewHold", "a", "an interview", "Interview", "a", false],
+    ["a hold", "InterviewHold", "a", "another cycle's interview", "Interview", "b", false],
+    ["a hold", "InterviewHold", "a", "another cycle's hold", "InterviewHold", "b", false],
+    ["an interview", "Interview", "a", "another cycle's hold", "InterviewHold", "b", false],
+    ["an interview", "Interview", "a", "an interview", "Interview", "a", true],
+    ["an interview", "Interview", "a", "another cycle's interview", "Interview", "b", true],
+    ["a hold", "InterviewHold", "a", "a member booking", "Web", null, true],
+    ["a hold", "InterviewHold", "a", "a display booking", "Display", null, true],
+    ["a hold", "InterviewHold", "a", "an app booking", "App", null, true],
+    ["a member booking", "Web", null, "a hold", "InterviewHold", "a", true],
+    ["a meeting", null, null, "a hold", "InterviewHold", "a", true],
+  ] as const)("%s blocks %s: %s", (_a, itemSource, itemCycle, _b, writerSource, writerCycle, blocked) => {
+    expect(blockedBy(item(itemSource, itemCycle), { source: writerSource, applicationCycleId: writerCycle })).toBe(blocked);
+  });
+});
+
+describe("withoutCoveredHolds", () => {
+  const item = (id: string, source: RoomScheduleItem["source"], start: string, end: string): RoomScheduleItem => ({
+    kind: "booking",
+    id,
+    title: id,
+    start: at(start),
+    end: at(end),
+    occurrenceStart: at(start),
+    recurring: true,
+    organizer: ada,
+    isEvent: false,
+    source,
+    cycleId: id,
+  });
+
+  it("shows two cycles' identical holds once", () => {
+    const a = item("a", "InterviewHold", "2026-11-02T14:00:00Z", "2026-11-02T23:00:00Z");
+    const b = item("b", "InterviewHold", "2026-11-02T14:00:00Z", "2026-11-02T23:00:00Z");
+    expect(withoutCoveredHolds([a, b])).toEqual([a]);
+  });
+
+  it("drops a hold that another hold fully covers", () => {
+    const wide = item("wide", "InterviewHold", "2026-11-02T13:00:00Z", "2026-11-02T23:00:00Z");
+    const narrow = item("narrow", "InterviewHold", "2026-11-02T15:00:00Z", "2026-11-02T20:00:00Z");
+    expect(withoutCoveredHolds([narrow, wide])).toEqual([wide]);
+  });
+
+  it("keeps partially overlapping holds", () => {
+    const morning = item("am", "InterviewHold", "2026-11-02T13:00:00Z", "2026-11-02T18:00:00Z");
+    const evening = item("pm", "InterviewHold", "2026-11-02T16:00:00Z", "2026-11-02T23:00:00Z");
+    expect(withoutCoveredHolds([morning, evening])).toEqual([morning, evening]);
+  });
+
+  it("keeps interviews and other bookings inside a hold", () => {
+    const hold = item("hold", "InterviewHold", "2026-11-02T13:00:00Z", "2026-11-02T23:00:00Z");
+    const interview = item("iv", "Interview", "2026-11-02T15:00:00Z", "2026-11-02T15:30:00Z");
+    const web = item("web", "Web", "2026-11-02T15:00:00Z", "2026-11-02T16:00:00Z");
+    expect(withoutCoveredHolds([hold, interview, web])).toEqual([hold, interview, web]);
+  });
+
+  it("only compares holds on the same day", () => {
+    const mon = item("mon", "InterviewHold", "2026-11-02T14:00:00Z", "2026-11-02T23:00:00Z");
+    const tue = item("tue", "InterviewHold", "2026-11-03T14:00:00Z", "2026-11-03T23:00:00Z");
+    expect(withoutCoveredHolds([mon, tue])).toEqual([mon, tue]);
+  });
+});
+
 describe("cancelRoomBooking", () => {
   it("ends an underway booking now instead of cancelling it", async () => {
     m.roomBooking.findUnique.mockResolvedValue({
@@ -506,7 +622,7 @@ describe("cancelRoomBooking", () => {
 
   it("scope this cancels a future occurrence via an exception, leaving the row alone", async () => {
     const seriesStart = new Date(nowSec().getTime() + H);
-    const occurrenceStart = new Date(seriesStart.getTime() + 7 * DAY);
+    const occurrenceStart = weeksLater(seriesStart, 1);
     m.roomBooking.findUnique.mockResolvedValue({
       id: "b1",
       cancelledAt: null,
@@ -796,7 +912,7 @@ describe("event room holds", () => {
   it("scope all 409s naming the room when a later occurrence of the retimed series collides", async () => {
     const newStart = new Date(Date.now() + H);
     const newEnd = new Date(newStart.getTime() + H);
-    const week2Start = new Date(newStart.getTime() + 7 * DAY);
+    const week2Start = weeksLater(newStart, 1);
     const seriesHold = { id: "b1", roomId: "r1", recurrenceRule: "FREQ=WEEKLY;COUNT=3", room: { name: "Studio" } };
     m.roomBooking.findMany
       .mockResolvedValueOnce([seriesHold])

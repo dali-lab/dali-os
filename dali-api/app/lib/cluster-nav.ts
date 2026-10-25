@@ -22,6 +22,8 @@ export type NavSection = {
   subtabs?: NavSubtab[];
   // The hub card only shows while this flag is on for the viewer.
   flag?: FeatureFlagKey;
+  // Hidden from non-admins even inside a cluster they can see.
+  adminOnly?: boolean;
 };
 
 export type NavCluster = {
@@ -104,7 +106,7 @@ export function clusterTrail(opts: {
   if (section) {
     crumbs.push({
       label: section.label,
-      siblings: cluster.sections.map((s) => ({
+      siblings: cluster.sections.filter((s) => isAdmin || !s.adminOnly).map((s) => ({
         label: s.label,
         to: s.to,
         current: s.key === section.key,

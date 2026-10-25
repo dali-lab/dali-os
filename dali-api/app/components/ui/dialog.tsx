@@ -76,6 +76,8 @@ export interface ChoiceOptions {
   description?: ReactNode;
   /** Rendered as a vertical list of buttons; picking one resolves its value. */
   options: ChoiceOption[];
+  /** The option in effect now: marked "Current" and not pickable. */
+  selected?: string;
   cancelLabel?: string;
 }
 
@@ -358,21 +360,31 @@ function ChoiceDialogView({
         <div className="mt-1 text-sm text-muted-foreground">{opts.description}</div>
       )}
       <div className="mt-4 flex flex-col gap-2">
-        {opts.options.map((o) => (
+        {opts.options.map((o) => {
+          const current = o.value === opts.selected;
+          return (
           <button
             key={o.value}
             type="button"
+            disabled={current}
+            aria-current={current ? "true" : undefined}
             onClick={() => onPick(o.value)}
-            className="w-full rounded-os-item border border-os-container bg-os-well px-3.5 py-2.5 text-left text-sm text-foreground transition-colors hover:border-os-container-hi focus-visible:border-os-accent focus-visible:outline-none"
+            className={`w-full rounded-os-item border bg-os-well px-3.5 py-2.5 text-left text-sm text-foreground transition-colors focus-visible:border-os-accent focus-visible:outline-none ${
+              current ? "cursor-default border-os-accent" : "border-os-container hover:border-os-container-hi"
+            }`}
           >
-            <span className="font-medium">{o.label}</span>
+            <span className="flex items-center justify-between gap-2">
+              <span className="font-medium">{o.label}</span>
+              {current && <span className="text-xs font-semibold text-os-accent">Current</span>}
+            </span>
             {o.description && (
               <span className="mt-0.5 block text-xs text-muted-foreground">
                 {o.description}
               </span>
             )}
           </button>
-        ))}
+          );
+        })}
       </div>
       <ModalFooter onCancel={onCancel} cancelLabel={opts.cancelLabel}>
         {null}

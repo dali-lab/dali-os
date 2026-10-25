@@ -12,7 +12,7 @@ import {
   type ShouldRevalidateFunctionArgs,
 } from "react-router";
 import { Select, Menu, Popover, InfoTip } from "~/components/ui/floating";
-import { CalendarDays, CalendarPlus, CalendarX, Check, Globe, Handshake, History, Pencil, Pin, X, Settings, Folder, FolderInput, FolderPlus, ChevronRight, ChevronDown, FileText, Info, Users, Paperclip, Plus, Trash2, Upload, Unlink, MoreHorizontal, ExternalLink, Star, Mail, Github, Slack, Layers, Figma, NotebookPen, Shapes } from "lucide-react";
+import { CalendarDays, CalendarPlus, CalendarX, Check, Globe, Handshake, History, Pencil, Pin, X, Settings, Folder, FolderInput, FolderPlus, ChevronRight, ChevronDown, FileText, Info, Users, Paperclip, Plus, Trash2, Upload, Unlink, MoreHorizontal, ExternalLink, Star, Mail, Github, Slack, Layers, Figma, NotebookPen, Presentation, Shapes } from "lucide-react";
 import type { DriveTypeFilter } from "~/components/drive/type-filter";
 import { useOsChrome } from "~/components/os-chrome";
 import { setPageFavorite } from "~/components/favorites-live";
@@ -52,8 +52,8 @@ import { buildProjectCalendar } from "~/projects/lib/project-calendar.server";
 import { MonthCalendarPanel } from "~/components/MonthCalendarPanel";
 import { prisma } from "~/lib/db";
 import { logAuditEvent } from "~/lib/audit";
-import { loadProjectInfra } from "~/lib/infra/dashboard.server";
-import { buildInfraConfigUpdate } from "~/lib/infra/project-infra.server";
+import { listKnownOrgs, loadProjectInfra } from "~/lib/infra/dashboard.server";
+import { saveInfraConfig } from "~/lib/infra/config-save.server";
 import { listProjectInfraRequests } from "~/lib/infra/requests.server";
 import { ProjectInfraSection } from "~/projects/components/ProjectInfraSection";
 import { ensureProjectGroup } from "~/lib/groups";
@@ -1133,6 +1133,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     projectInfra,
     infraConfigRow,
     infraRequests,
+    knownOrgs,
     aiLineEnabled,
     chartStrings,
   ] = await Promise.all([
@@ -1166,13 +1167,16 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       where: { id: params.id },
       select: {
         flyOrgSlug: true,
+        flyAppNames: true,
         neonOrgId: true,
+        neonProjectIds: true,
         infraEnabled: true,
         flyReadTokenEnc: true,
         flyWriteTokenEnc: true,
       },
     }),
     canEdit ? listProjectInfraRequests(params.id) : Promise.resolve([]),
+    canEdit ? listKnownOrgs() : Promise.resolve({ fly: [], neon: [] }),
     // Progress tab's AI-line flag — independent of the status facts below.
     (async () =>
       isAiEnabled() &&
@@ -1185,13 +1189,19 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const infra = {
     config: {
       flyOrgSlug: infraConfigRow?.flyOrgSlug ?? null,
+      flyAppNames: infraConfigRow?.flyAppNames ?? [],
       neonOrgId: infraConfigRow?.neonOrgId ?? null,
+      neonProjectIds: infraConfigRow?.neonProjectIds ?? [],
       infraEnabled: infraConfigRow?.infraEnabled ?? true,
       hasFlyReadToken: !!infraConfigRow?.flyReadTokenEnc,
       hasFlyWriteToken: !!infraConfigRow?.flyWriteTokenEnc,
     },
     view: projectInfra,
     requests: infraRequests,
+    knownOrgs,
+    setupErrors: canEdit
+      ? (new URL(request.url).searchParams.get("infraErrors") ?? "").split("\n").filter(Boolean)
+      : [],
   };
   // ── Progress-tab status bar: deterministic work-status facts + the cached
   // AI summary's freshness. Facts come from the same task rows the board
@@ -1451,28 +1461,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   // sweep toggle). Same core||staffed gate as the top of this action; tokens are
   // write-only (blank leaves them unchanged).
   if (intent === "infra-config") {
-    const data = buildInfraConfigUpdate({
-      flyOrgSlug: (form.get("flyOrgSlug") as string | null) ?? "",
-      neonOrgId: (form.get("neonOrgId") as string | null) ?? "",
-      infraEnabled: form.get("infraEnabled") != null,
-      flyReadToken: ((form.get("flyReadToken") as string | null) ?? "") || undefined,
-      flyWriteToken: ((form.get("flyWriteToken") as string | null) ?? "") || undefined,
-    });
-    await prisma.project.update({ where: { id: params.id }, data });
-    await logAuditEvent({
-      action: "infra.config",
-      userId: auth.user.sub,
-      targetId: params.id,
-      metadata: {
-        flyOrgSlug: data.flyOrgSlug ?? null,
-        neonOrgId: data.neonOrgId ?? null,
-        infraEnabled: data.infraEnabled ?? null,
-        setFlyReadToken: !!data.flyReadTokenEnc,
-        setFlyWriteToken: !!data.flyWriteTokenEnc,
-      },
-      request,
-    });
-    return { ok: true };
+    return saveInfraConfig({ userId: auth.user.sub, projectId: params.id, form, request });
   }
 
   // Partner links — Core/Admin only, via the shared helpers so validation
@@ -3795,6 +3784,8 @@ function OverviewTab({
         config={infra.config}
         view={infra.view}
         requests={infra.requests}
+        knownOrgs={infra.knownOrgs}
+        setupErrors={infra.setupErrors}
       />
 
       {/* Team — read-only summary, separate from the editable details. */}
@@ -4502,12 +4493,13 @@ function DocRow({
 
 // Project drives hold docs, folders and files. Folders are always shown (the
 // browser never filters them out), so the filter only needs the leaf kinds.
-type ProjectDriveTypeFilter = Extract<DriveTypeFilter, "all" | "doc" | "notebook" | "whiteboard" | "file">;
+type ProjectDriveTypeFilter = Extract<DriveTypeFilter, "all" | "doc" | "notebook" | "whiteboard" | "slides" | "file">;
 const PROJECT_TYPE_FILTERS: { value: ProjectDriveTypeFilter; label: string; icon?: ReactNode }[] = [
   { value: "all", label: "All types" },
   { value: "doc", label: "Documents", icon: <FileText className="w-3.5 h-3.5" /> },
   { value: "notebook", label: "Notebooks", icon: <NotebookPen className="w-3.5 h-3.5" /> },
   { value: "whiteboard", label: "Whiteboards", icon: <Shapes className="w-3.5 h-3.5" /> },
+  { value: "slides", label: "Slide decks", icon: <Presentation className="w-3.5 h-3.5" /> },
   { value: "file", label: "Files", icon: <Paperclip className="w-3.5 h-3.5" /> },
 ];
 

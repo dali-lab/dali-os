@@ -152,4 +152,41 @@ describe("GET /api/timesheets/export", () => {
     expect(body.periodKey).toBeNull();
     expect(body.entries).toEqual([]);
   });
+  it("starts a role's entry a minute late when another role's entry ends as it begins", async () => {
+    // Sep 1, 1-2pm on one role then 2-3pm on another: JobX rejects the shared 2:00.
+    findEntries.mockResolvedValue([
+      entry("2026-09-01T17:00:00Z", 1, "pa1", "Dev"),
+      entry("2026-09-01T18:00:00Z", 1, "core1", "Core"),
+    ]);
+
+    const first = await get("?hire=pa1");
+    const second = await get("?hire=core1");
+
+    expect(first.body.entries).toEqual([expect.objectContaining({ start: "13:00", end: "14:00" })]);
+    expect(second.body.entries).toEqual([expect.objectContaining({ start: "14:01", end: "15:01", hours: 1 })]);
+  });
+
+  it("splits an entry past midnight into one entry per day with the same description", async () => {
+    // Mon Aug 31, 11pm to Tue Sep 1, 1am ET.
+    findEntries.mockResolvedValue([entry("2026-09-01T03:00:00Z", 2, "pa1", "Deploy")]);
+
+    const { body } = await get();
+
+    expect(body.entries).toEqual([
+      { date: "2026-08-31", start: "23:00", end: "23:59", hours: 1, description: "Deploy" },
+      { date: "2026-09-01", start: "00:00", end: "01:00", hours: 1, description: "Deploy" },
+    ]);
+    expect(body.periods[0]).toMatchObject({ hours: 2, entryCount: 2 });
+  });
+
+  it("files each half of an overnight entry under its own day's pay period", async () => {
+    // Sat Aug 29, 11pm to Sun Aug 30, 1am ET crosses the Aug 16 / Aug 30 boundary.
+    findEntries.mockResolvedValue([entry("2026-08-30T03:00:00Z", 2)]);
+
+    const earlier = await get("?period=2026-08-29");
+    const later = await get("?period=2026-08-30");
+
+    expect(earlier.body.entries).toEqual([expect.objectContaining({ date: "2026-08-29", start: "23:00", end: "23:59" })]);
+    expect(later.body.entries).toEqual([expect.objectContaining({ date: "2026-08-30", start: "00:00", end: "01:00" })]);
+  });
 });

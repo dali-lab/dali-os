@@ -41,6 +41,7 @@ export async function runScheduledAnnouncements({ now }: JobContext): Promise<Jo
         allMembers: row.allMembers,
         groupIds: row.groupIds,
         userIds: row.userIds,
+        announcementId: row.id,
       });
       if (result.ok) {
         await prisma.scheduledAnnouncement.update({

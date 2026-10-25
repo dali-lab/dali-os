@@ -553,4 +553,40 @@ describe("useDialog dress matches Modal", () => {
     expect(cancelButton(container).classList.contains("os-btn-ghost")).toBe(true);
     cleanup();
   });
+
+  it("marks the selected choice as current and keeps it from being picked", async () => {
+    const { container, api, cleanup } = setup();
+    let result: Promise<string | null> = Promise.resolve(null);
+    await act(async () => {
+      result = api.choice({
+        title: "Pick",
+        selected: "b",
+        options: [
+          { value: "a", label: "Alpha" },
+          { value: "b", label: "Beta" },
+        ],
+      });
+    });
+    const rows = Array.from(container.querySelectorAll("button"));
+    const alpha = rows.find((b) => b.textContent?.includes("Alpha"))!;
+    const beta = rows.find((b) => b.textContent?.includes("Beta"))!;
+    expect(beta.disabled).toBe(true);
+    expect(beta.getAttribute("aria-current")).toBe("true");
+    expect(beta.textContent).toContain("Current");
+    expect(alpha.disabled).toBe(false);
+    expect(alpha.getAttribute("aria-current")).toBeNull();
+    expect(alpha.textContent).not.toContain("Current");
+    await act(async () => alpha.click());
+    await expect(result).resolves.toBe("a");
+    cleanup();
+  });
+
+  it("marks nothing current without a selection", async () => {
+    const { container, api, cleanup } = setup();
+    await act(async () => {
+      void api.choice({ title: "Pick", options: [{ value: "a", label: "Alpha" }] });
+    });
+    expect(container.querySelector("[aria-current]")).toBeNull();
+    cleanup();
+  });
 });

@@ -27,6 +27,7 @@ export type GlyphSource = {
   system?: boolean;
   audience?: { kind: AudienceKind } | null;
   isWhiteboard?: boolean;
+  isSlides?: boolean;
   isNotebook?: boolean;
   tabCount?: number;
 };
@@ -36,6 +37,7 @@ export type ItemGlyph =
   | { kind: "folder"; tint: string; mark: "calendar" | null; system: boolean; folderType: string | null }
   | { kind: "notebook"; tabs: string | null }
   | { kind: "whiteboard" }
+  | { kind: "slides" }
   | { kind: "doc" }
   | { kind: "file" }
   | { kind: "form" }
@@ -60,7 +62,8 @@ export function pickGlyph(item: GlyphSource): ItemGlyph {
       };
     }
     case "doc":
-      return item.isWhiteboard ? { kind: "whiteboard" } : { kind: "doc" };
+      if (item.isWhiteboard) return { kind: "whiteboard" };
+      return item.isSlides ? { kind: "slides" } : { kind: "doc" };
     default:
       return { kind: item.type };
   }
@@ -105,6 +108,8 @@ export function glyphLabel(
     }
     case "whiteboard":
       return "Whiteboard";
+    case "slides":
+      return "Slide deck";
     case "doc":
       return "Document";
     case "file":

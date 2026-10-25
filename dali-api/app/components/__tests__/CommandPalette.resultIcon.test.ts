@@ -11,15 +11,17 @@ import {
   ListTodo,
   NotebookPen,
   Paperclip,
+  Presentation,
   Shapes,
 } from "lucide-react";
 import { resultIcon, TYPE_META } from "~/components/CommandPalette";
 
 describe("resultIcon", () => {
-  it("gives Drive folders, whiteboards and notebooks their Drive glyph, not the document one", () => {
+  it("gives Drive folders, whiteboards, notebooks and decks their Drive glyph, not the document one", () => {
     expect(resultIcon({ type: "document", pageKind: "Folder" })).toBe(Folder);
     expect(resultIcon({ type: "document", pageKind: "Whiteboard" })).toBe(Shapes);
     expect(resultIcon({ type: "document", pageKind: "Notebook" })).toBe(NotebookPen);
+    expect(resultIcon({ type: "document", pageKind: "Slides" })).toBe(Presentation);
   });
 
   it("gives an uploaded file the glyph for its file type", () => {

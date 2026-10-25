@@ -1,13 +1,29 @@
-import { Link, redirect, useLoaderData } from "react-router";
-import { Tooltip } from "~/components/ui/floating";
+import { redirect, useLoaderData } from "react-router";
+import {
+  CartesianGrid,
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip as ChartTooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
+import type { ReactNode } from "react";
+import { AlertTriangle } from "lucide-react";
 import type { Route } from "./+types/admin.analytics";
-import { adminHandle } from "~/admin/adminNav";
+import { AdminSectionHeader, adminHandle } from "~/admin/adminNav";
+import { EmptyState, Figure, MiniBar, adminTable } from "~/admin/components/console-ui";
+import { RangeSegmented } from "~/admin/components/RangeSegmented";
+import { resolveRange } from "~/admin/lib/insights-range";
+import { useOsChrome } from "~/components/os-chrome";
+import { Tooltip } from "~/components/ui/floating";
+import { cn } from "~/lib/cn";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { isCore, isAdmin } from "~/lib/roles";
 import { formatDuration } from "~/lib/analytics";
-import { BarChart3, AlertTriangle } from "lucide-react";
+import { percentChange, priorViewsByPath } from "~/lib/analytics-compare.server";
 
 export const handle = adminHandle("analytics");
 
@@ -15,22 +31,13 @@ export const meta: Route.MetaFunction = () => [
   { title: "Analytics · Admin · DALI OS" },
 ];
 
-// Slim usage + crash dashboard for a mandated internal tool. We don't track
-// growth (usage is captive) or retention (mandated → ~100%); what's useful is:
-//   - Is the deploy alive? (one headline, 7d sanity check)
-//   - What features earn their keep? (top routes)
-//   - What can we delete? (bottom routes — rarely-visited paths)
-//   - Is anything broken? (error rate trend + grouped error list)
-//   - Where is it used? (web / desktop / mobile) and is MCP in use?
+// Slim usage + crash dashboard for a mandated internal tool. Growth and
+// retention mean little when usage is captive; what's useful is whether the
+// deploy is alive, which features earn their keep (top routes), what could be
+// deleted (rarely visited routes), whether anything is broken (errors), and
+// where it's used (web / desktop / mobile, MCP).
 
-const RANGE_OPTIONS = [
-  { key: "7d", days: 7, label: "7 days" },
-  { key: "30d", days: 30, label: "30 days" },
-  { key: "90d", days: 90, label: "90 days" },
-] as const;
-type RangeKey = (typeof RANGE_OPTIONS)[number]["key"];
-
-type DayRow = { day: string; count: number };
+type DayRow = { day: string; count: number; users: number };
 type RouteRow = {
   path: string;
   views: number;
@@ -51,24 +58,17 @@ type ErrorRow = {
   firstSeen: Date;
   lastSeen: Date;
 };
-type ErrorDayRow = { day: string; count: number };
-
-function resolveRange(raw: string | null) {
-  const match = RANGE_OPTIONS.find((r) => r.key === raw);
-  return match ?? RANGE_OPTIONS[1]; // default 30d
-}
 
 function sinceDate(days: number): Date {
   return new Date(Date.now() - days * 24 * 60 * 60 * 1000);
 }
 
-function backfillDays(days: number, rows: { day: string; count: number }[]) {
+function backfillDays<T extends { day: string }>(days: number, rows: T[], empty: Omit<T, "day">): T[] {
   const map = new Map(rows.map((r) => [r.day, r]));
-  const out: { day: string; count: number }[] = [];
+  const out: T[] = [];
   for (let i = days - 1; i >= 0; i--) {
-    const d = new Date(Date.now() - i * 24 * 60 * 60 * 1000);
-    const key = d.toISOString().slice(0, 10);
-    out.push(map.get(key) ?? { day: key, count: 0 });
+    const key = new Date(Date.now() - i * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    out.push(map.get(key) ?? ({ ...empty, day: key } as T));
   }
   return out;
 }
@@ -83,26 +83,25 @@ export async function loader({ request }: Route.LoaderArgs) {
   const since = sinceDate(range.days);
   const sevenDaysAgo = sinceDate(7);
 
-  // The "is the deploy alive?" sanity number — always 7d, ignores the range
-  // selector so it stays a stable health check.
+  // Always 7d regardless of the range selector, so it stays a stable
+  // "is the deploy alive?" health check.
   const [wauRow] = await prisma.$queryRaw<{ wau: number }[]>`
     SELECT COUNT(DISTINCT "userId")::int AS wau
     FROM "PageView"
     WHERE "createdAt" >= ${sevenDaysAgo} AND "userId" IS NOT NULL
   `;
 
-  // Pageviews per day in the selected window — drives the small trend chart.
   const dayRows = await prisma.$queryRaw<DayRow[]>`
     SELECT to_char(date_trunc('day', "createdAt"), 'YYYY-MM-DD') AS day,
-           COUNT(*)::int AS count
+           COUNT(*)::int AS count,
+           COUNT(DISTINCT "userId")::int AS users
     FROM "PageView"
     WHERE "createdAt" >= ${since}
     GROUP BY 1 ORDER BY 1 ASC
   `;
-  const trend = backfillDays(range.days, dayRows);
+  const trend = backfillDays(range.days, dayRows, { count: 0, users: 0 });
 
-  // Top + bottom routes share the same shape; both are normalized paths so a
-  // route like /projects/:id collapses across all projects.
+  // Paths are normalized, so /projects/:id collapses across all projects.
   const topRoutes = await prisma.$queryRaw<RouteRow[]>`
     SELECT "path",
            COUNT(*)::int AS views,
@@ -114,11 +113,16 @@ export async function loader({ request }: Route.LoaderArgs) {
     ORDER BY views DESC
     LIMIT 10
   `;
+  const prior = await priorViewsByPath(
+    prisma,
+    topRoutes.map((r) => r.path),
+    since,
+    range.days,
+  );
 
-  // "Rarely-visited" rather than "never-visited" — a route with zero
-  // PageView rows ever isn't measurable from this table anyway. ASC catches
-  // the long-tail features that exist but nobody uses, which is the
-  // actionable "consider deleting this" signal.
+  // "Rarely visited" rather than "never visited": a route with zero PageView
+  // rows isn't measurable from this table. The long tail is the actionable
+  // "consider deleting this" signal.
   const bottomRoutes = await prisma.$queryRaw<RouteRow[]>`
     SELECT "path",
            COUNT(*)::int AS views,
@@ -169,16 +173,14 @@ export async function loader({ request }: Route.LoaderArgs) {
     LIMIT 10
   `;
 
-  // Errors over time + grouped list. The sparkline tells you "did errors
-  // spike at some point in the window"; the list tells you what they were.
-  const errorDayRows = await prisma.$queryRaw<ErrorDayRow[]>`
+  const errorDayRows = await prisma.$queryRaw<{ day: string; count: number }[]>`
     SELECT to_char(date_trunc('day', "createdAt"), 'YYYY-MM-DD') AS day,
            COUNT(*)::int AS count
     FROM "ClientError"
     WHERE "createdAt" >= ${since}
     GROUP BY 1 ORDER BY 1 ASC
   `;
-  const errorTrend = backfillDays(range.days, errorDayRows);
+  const errorTrend = backfillDays(range.days, errorDayRows, { count: 0 });
 
   const errorRows = await prisma.$queryRaw<ErrorRow[]>`
     SELECT "message",
@@ -200,7 +202,10 @@ export async function loader({ request }: Route.LoaderArgs) {
     rangeDays: range.days,
     wau: wauRow?.wau ?? 0,
     trend,
-    topRoutes,
+    topRoutes: topRoutes.map((r) => ({
+      ...r,
+      change: percentChange(r.views, prior.get(r.path) ?? 0),
+    })),
     bottomRoutes,
     clientRows,
     mcpTotals: mcpTotals ?? { calls: 0, users: 0 },
@@ -217,91 +222,134 @@ export async function loader({ request }: Route.LoaderArgs) {
   };
 }
 
-function Sparkline({ series, accent }: { series: DayRow[]; accent: "primary" | "amber" }) {
+function shortDay(day: string): string {
+  return new Date(`${day}T12:00:00Z`).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    timeZone: "UTC",
+  });
+}
+
+function ErrorBars({ series }: { series: { day: string; count: number }[] }) {
   const max = Math.max(1, ...series.map((d) => d.count));
-  const barClass =
-    accent === "primary" ? "bg-primary/70 hover:bg-primary" : "bg-os-amber/70 hover:bg-os-amber";
   return (
-    <div className="flex items-end gap-0.5 h-16">
-      {series.map((d) => {
-        const h = Math.max(2, Math.round((d.count / max) * 60));
-        return (
-          <div
-            key={d.day}
-            className={`flex-1 rounded-sm ${barClass}`}
-            style={{ height: `${h}px` }}
-            title={`${d.day}: ${d.count}`}
-          />
-        );
-      })}
-    </div>
-  );
-}
-
-function RouteList({
-  rows,
-  emptyText,
-  showMedian = false,
-}: {
-  rows: RouteRow[];
-  emptyText: string;
-  showMedian?: boolean;
-}) {
-  const maxViews = Math.max(1, ...rows.map((r) => r.views));
-  if (rows.length === 0) {
-    return <p className="px-4 py-6 text-sm text-muted-foreground/70">{emptyText}</p>;
-  }
-  return (
-    <ul className="divide-y divide-border">
-      {rows.map((r) => (
-        <li key={r.path} className="px-4 py-2.5 text-sm">
-          <div className="flex items-center justify-between gap-3">
-            <code className="font-mono text-xs text-foreground truncate">{r.path || "/"}</code>
-            <div className="flex items-center gap-3 text-xs text-muted-foreground whitespace-nowrap">
-              {showMedian && (
-                <span className="tabular-nums">
-                  Median time {formatDuration(r.medianMs)}
-                </span>
-              )}
-              <span>{r.users} users</span>
-              <span className="tabular-nums">{r.views} views</span>
-            </div>
-          </div>
-          <div className="mt-1 h-1 bg-muted rounded-full overflow-hidden">
-            <div
-              className="h-full bg-primary/60"
-              style={{ width: `${(r.views / maxViews) * 100}%` }}
-            />
-          </div>
-        </li>
+    <div className="flex h-12 items-end gap-px" aria-hidden>
+      {series.map((d) => (
+        <div
+          key={d.day}
+          className="min-w-px flex-1 rounded-sm bg-os-amber/60 hover:bg-os-amber"
+          style={{ height: `${Math.max(4, Math.round((d.count / max) * 100))}%` }}
+          title={`${shortDay(d.day)}: ${d.count}`}
+        />
       ))}
-    </ul>
+    </div>
   );
 }
 
-function McpList({ title, rows }: { title: string; rows: McpRow[] }) {
+function TrafficChart({ data }: { data: DayRow[] }) {
+  const rows = data.map((d) => ({ day: shortDay(d.day), views: d.count, visitors: d.users }));
   return (
-    <div>
-      <h3 className="px-4 pt-3 text-xs font-medium text-muted-foreground">{title}</h3>
-      <ul className="divide-y divide-border">
-        {rows.map((r) => (
-          <li key={r.name} className="px-4 py-2 text-sm flex items-center justify-between gap-3">
-            <code className="font-mono text-xs text-foreground truncate">{r.name}</code>
-            <div className="flex items-center gap-3 text-xs text-muted-foreground whitespace-nowrap">
-              <span>{r.users} users</span>
-              <span className="tabular-nums">{r.calls} calls</span>
-            </div>
-          </li>
-        ))}
-      </ul>
+    <div className="h-72">
+      <ResponsiveContainer width="100%" height="100%">
+        <LineChart data={rows} margin={{ top: 8, right: 8, left: -12, bottom: 0 }}>
+          <CartesianGrid stroke="var(--color-os-container)" strokeDasharray="3 3" vertical={false} />
+          <XAxis
+            dataKey="day"
+            tick={{ fontSize: 12, fill: "var(--color-os-muted)" }}
+            tickLine={false}
+            axisLine={false}
+            minTickGap={24}
+          />
+          <YAxis
+            tick={{ fontSize: 12, fill: "var(--color-os-muted)" }}
+            tickLine={false}
+            axisLine={false}
+            width={48}
+            allowDecimals={false}
+          />
+          <ChartTooltip
+            contentStyle={{
+              background: "var(--color-os-card)",
+              border: "1px solid var(--color-os-container)",
+              borderRadius: 12,
+              fontSize: 13,
+              color: "var(--color-foreground)",
+            }}
+            labelStyle={{ color: "var(--color-os-grey)" }}
+            itemStyle={{ color: "var(--color-foreground)" }}
+            cursor={{ stroke: "var(--color-os-container-hi)" }}
+          />
+          <Line
+            type="monotone"
+            dataKey="views"
+            name="Pageviews"
+            stroke="var(--color-os-accent)"
+            strokeWidth={2}
+            dot={false}
+            activeDot={{ r: 4 }}
+            isAnimationActive={false}
+          />
+          <Line
+            type="monotone"
+            dataKey="visitors"
+            name="Visitors"
+            stroke="var(--color-os-grey)"
+            strokeWidth={2}
+            strokeDasharray="5 4"
+            dot={false}
+            activeDot={{ r: 4 }}
+            isAnimationActive={false}
+          />
+        </LineChart>
+      </ResponsiveContainer>
     </div>
+  );
+}
+
+function Change({ value }: { value: number | null }) {
+  if (value == null) return <span className="text-os-muted">New</span>;
+  return (
+    <span className={value >= 0 ? "text-os-green" : "text-destructive"}>
+      {value > 0 ? "+" : ""}
+      {value}%
+    </span>
+  );
+}
+
+function CountTable({
+  rows,
+  nameHeader,
+  countHeader,
+}: {
+  rows: { key: string; name: ReactNode; users: number; count: number }[];
+  nameHeader: string;
+  countHeader: string;
+}) {
+  return (
+    <table className="w-full">
+      <thead>
+        <tr>
+          <th className={cn(adminTable.th, "w-[65%]")}>{nameHeader}</th>
+          <th className={cn(adminTable.th, "text-right")}>Users</th>
+          <th className={cn(adminTable.th, "text-right")}>{countHeader}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((r) => (
+          <tr key={r.key} className={adminTable.row}>
+            <td className={cn(adminTable.td, "max-w-0 truncate")}>{r.name}</td>
+            <td className={cn(adminTable.td, "text-right tabular-nums text-os-grey")}>{r.users}</td>
+            <td className={cn(adminTable.td, "text-right tabular-nums text-foreground")}>{r.count}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
   );
 }
 
 export default function AdminConsoleAnalytics() {
   const {
     rangeKey,
-    rangeLabel,
     rangeDays,
     wau,
     trend,
@@ -315,166 +363,231 @@ export default function AdminConsoleAnalytics() {
     totalErrors,
     errors,
   } = useLoaderData<typeof loader>();
+  const { panel, sectionTitle } = useOsChrome();
+
+  const views = trend.reduce((s, d) => s + d.count, 0);
+  const avgVisitors = Math.round(trend.reduce((s, d) => s + d.users, 0) / Math.max(1, trend.length));
+  const peak = trend.reduce((best, d) => (d.count > best.count ? d : best), trend[0] ?? { day: "", count: 0, users: 0 });
+  const maxTopViews = Math.max(1, ...topRoutes.map((r) => r.views));
+  const pathCell = (path: string) => (
+    <code className="font-mono text-xs text-foreground">{path || "/"}</code>
+  );
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center gap-3">
-        <BarChart3 className="w-6 h-6 text-foreground/80" />
-        <h1 className="text-2xl font-bold text-foreground">Site analytics</h1>
-        <span className="px-2.5 py-0.5 rounded-full text-xs font-medium bg-muted text-muted-foreground">
-          {rangeLabel}
-        </span>
-        <div className="ml-auto flex items-center gap-1 text-xs">
-          {RANGE_OPTIONS.map((r) => (
-            <Link
-              key={r.key}
-              to={r.key === "30d" ? "?" : `?range=${r.key}`}
-              prefetch="render"
-              className={`px-2 py-1 rounded-md ${
-                r.key === rangeKey
-                  ? "bg-foreground text-background"
-                  : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
-              }`}
-            >
-              {r.label}
-            </Link>
-          ))}
+    <div className="flex flex-col gap-8">
+      <AdminSectionHeader section="insights" />
+
+      <section className={cn(panel, "p-6")} aria-labelledby="traffic-title">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="flex flex-wrap items-end gap-x-10 gap-y-4">
+            <Figure
+              size="lg"
+              label={<span id="traffic-title">Pageviews · last {rangeDays} days</span>}
+              value={views.toLocaleString()}
+            />
+            <Figure label="Active users" value={wau.toLocaleString()} detail="Distinct logins, last 7 days" />
+            <Figure label="Avg. daily visitors" value={avgVisitors.toLocaleString()} />
+            <Figure
+              label="Peak day"
+              value={peak.count.toLocaleString()}
+              detail={peak.count > 0 ? shortDay(peak.day) : "No views yet"}
+            />
+            <Figure
+              label="Client errors"
+              value={<span className={totalErrors > 0 ? "text-os-amber" : "text-os-green"}>{totalErrors.toLocaleString()}</span>}
+              detail={`${errors.length} distinct`}
+            />
+          </div>
+          <RangeSegmented value={rangeKey} />
         </div>
-      </div>
-
-      <section className="bg-card border border-border rounded-lg p-4">
-        <div className="flex items-baseline justify-between gap-4 mb-2">
-          <div>
-            <div className="text-xs font-medium text-muted-foreground">Active users</div>
-            <div className="text-3xl font-bold text-foreground tabular-nums">{wau}</div>
-            <div className="text-[11px] text-muted-foreground/70">
-              distinct logins, last 7 days
-            </div>
-          </div>
-          <div className="text-[11px] text-muted-foreground/70 whitespace-nowrap">
-            pageviews · last {rangeDays}d
-          </div>
+        <div className="mt-6">
+          <TrafficChart data={trend} />
         </div>
-        <Sparkline series={trend} accent="primary" />
-      </section>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <section className="bg-card border border-border rounded-lg overflow-hidden">
-          <h2 className="text-sm font-medium text-foreground px-4 py-3 border-b border-border">
-            Most-used routes
-          </h2>
-          <RouteList rows={topRoutes} emptyText="No pageviews in window." showMedian />
-        </section>
-
-        <section className="bg-card border border-border rounded-lg overflow-hidden">
-          <h2 className="text-sm font-medium text-foreground px-4 py-3 border-b border-border">
-            Rarely-used routes
-          </h2>
-          <RouteList
-            rows={bottomRoutes}
-            emptyText="Every visited route saw at least 5 hits. Nothing looks unused."
-          />
-        </section>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <section className="bg-card border border-border rounded-lg overflow-hidden">
-          <h2 className="text-sm font-medium text-foreground px-4 py-3 border-b border-border">
-            By app
-          </h2>
-          {clientRows.length === 0 ? (
-            <p className="px-4 py-6 text-sm text-muted-foreground/70">No pageviews in window.</p>
-          ) : (
-            <ul className="divide-y divide-border">
-              {clientRows.map((r) => (
-                <li
-                  key={r.client ?? "unknown"}
-                  className="px-4 py-2.5 text-sm flex items-center justify-between gap-3"
-                >
-                  <span className="text-foreground">
-                    {r.client ? (CLIENT_LABELS[r.client] ?? r.client) : "Not recorded"}
-                  </span>
-                  <div className="flex items-center gap-3 text-xs text-muted-foreground whitespace-nowrap">
-                    <span>{r.users} users</span>
-                    <span className="tabular-nums">{r.views} views</span>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-
-        <section className="bg-card border border-border rounded-lg overflow-hidden">
-          <div className="px-4 py-3 border-b border-border flex items-baseline gap-2">
-            <h2 className="text-sm font-medium text-foreground">MCP</h2>
-            <span className="text-xs text-muted-foreground font-normal">
-              ({mcpTotals.calls} calls · {mcpTotals.users} users · {rangeDays}d)
-            </span>
-          </div>
-          {mcpTotals.calls === 0 ? (
-            <p className="px-4 py-6 text-sm text-muted-foreground/70">
-              No MCP tool calls in the last {rangeDays} days.
-            </p>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 divide-y sm:divide-y-0 sm:divide-x divide-border">
-              <McpList title="Top tools" rows={mcpTools} />
-              <McpList title="Top clients" rows={mcpClients} />
-            </div>
-          )}
-        </section>
-      </div>
-
-      <section className="bg-card border border-border rounded-lg overflow-hidden">
-        <div className="px-4 py-3 border-b border-border flex items-center gap-2">
-          <AlertTriangle className="w-4 h-4 text-os-amber" />
-          <h2 className="text-sm font-medium text-foreground">Client errors</h2>
-          <span className="text-xs text-muted-foreground font-normal ml-1">
-            ({totalErrors} in {rangeDays}d · {errors.length} distinct)
+        <div className="mt-3 flex gap-5 text-xs text-os-grey">
+          <span className="flex items-center gap-2">
+            <span className="h-0.5 w-4 rounded bg-os-accent" /> Pageviews
+          </span>
+          <span className="flex items-center gap-2">
+            <span className="w-4 border-t-2 border-dashed border-os-grey" /> Visitors (distinct users per day)
           </span>
         </div>
-        <div className="px-4 py-3 border-b border-border">
-          <Sparkline series={errorTrend} accent="amber" />
-        </div>
-        {errors.length === 0 ? (
-          <p className="px-4 py-6 text-sm text-muted-foreground/70">
-            No client errors in the last {rangeDays} days.
-          </p>
-        ) : (
-          <div className="overflow-x-auto">
-          <table className="w-full text-sm min-w-[500px]">
-            <thead>
-              <tr className="border-b border-border bg-muted/40">
-                <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">
-                  Message
-                </th>
-                <th className="text-right px-4 py-2.5 font-medium text-muted-foreground">Count</th>
-                <th className="text-right px-4 py-2.5 font-medium text-muted-foreground">Users</th>
-                <th className="text-right px-4 py-2.5 font-medium text-muted-foreground">
-                  Last seen
-                </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {errors.map((e) => (
-                <tr key={e.message} className="hover:bg-muted/30">
-                  <td className="px-4 py-2.5 max-w-md">
-                    <Tooltip content={e.message} variant="rich" placement="bottom">
-                      <code className="block text-xs text-foreground truncate">
-                        {e.message}
-                      </code>
-                    </Tooltip>
-                  </td>
-                  <td className="px-4 py-2.5 text-right tabular-nums">{e.count}</td>
-                  <td className="px-4 py-2.5 text-right tabular-nums">{e.users}</td>
-                  <td className="px-4 py-2.5 text-right text-muted-foreground whitespace-nowrap">
-                    {new Date(e.lastSeen).toLocaleString()}
-                  </td>
+      </section>
+
+      <section className="flex flex-col gap-3" aria-labelledby="pages-title">
+        <h2 id="pages-title" className={sectionTitle}>
+          Top pages · last {rangeDays} days
+        </h2>
+        <div className={cn(adminTable.wrap, "os-scroll")}>
+          {topRoutes.length === 0 ? (
+            <EmptyState>No pageviews in window.</EmptyState>
+          ) : (
+            <table className="w-full min-w-[720px]">
+              <thead>
+                <tr>
+                  <th className={adminTable.th}>Page</th>
+                  <th className={cn(adminTable.th, "text-right")}>Users</th>
+                  <th className={cn(adminTable.th, "text-right")}>Median time</th>
+                  <th className={cn(adminTable.th, "w-[28%]")}>Views</th>
+                  <th className={cn(adminTable.th, "text-right")}>vs. prior {rangeDays} days</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {topRoutes.map((r) => (
+                  <tr key={r.path} className={adminTable.row}>
+                    <td className={adminTable.td}>{pathCell(r.path)}</td>
+                    <td className={cn(adminTable.td, "text-right tabular-nums text-os-grey")}>{r.users}</td>
+                    <td className={cn(adminTable.td, "text-right tabular-nums text-os-grey")}>
+                      {formatDuration(r.medianMs)}
+                    </td>
+                    <td className={adminTable.td}>
+                      <div className="flex items-center gap-3">
+                        <MiniBar fraction={r.views / maxTopViews} className="h-1.5 flex-1" />
+                        <span className="w-14 text-right tabular-nums text-foreground">
+                          {r.views.toLocaleString()}
+                        </span>
+                      </div>
+                    </td>
+                    <td className={cn(adminTable.td, "text-right tabular-nums")}>
+                      <Change value={r.change} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </section>
+
+      <div className="grid gap-8 lg:grid-cols-2">
+        <section className="flex flex-col gap-3" aria-labelledby="rare-title">
+          <h2 id="rare-title" className={sectionTitle}>
+            Rarely used pages
+          </h2>
+          <div className={adminTable.wrap}>
+            {bottomRoutes.length === 0 ? (
+              <EmptyState>Every visited route saw at least 5 hits. Nothing looks unused.</EmptyState>
+            ) : (
+              <CountTable
+                nameHeader="Page"
+                countHeader="Views"
+                rows={bottomRoutes.map((r) => ({
+                  key: r.path,
+                  name: pathCell(r.path),
+                  users: r.users,
+                  count: r.views,
+                }))}
+              />
+            )}
           </div>
-        )}
+        </section>
+
+        <section className="flex flex-col gap-3" aria-labelledby="apps-title">
+          <h2 id="apps-title" className={sectionTitle}>
+            By app
+          </h2>
+          <div className={adminTable.wrap}>
+            {clientRows.length === 0 ? (
+              <EmptyState>No pageviews in window.</EmptyState>
+            ) : (
+              <CountTable
+                nameHeader="App"
+                countHeader="Views"
+                rows={clientRows.map((r) => ({
+                  key: r.client ?? "unknown",
+                  name: (
+                    <span className="text-foreground">
+                      {r.client ? (CLIENT_LABELS[r.client] ?? r.client) : "Not recorded"}
+                    </span>
+                  ),
+                  users: r.users,
+                  count: r.views,
+                }))}
+              />
+            )}
+          </div>
+        </section>
+      </div>
+
+      <section className="flex flex-col gap-3" aria-labelledby="mcp-title">
+        <div className="flex items-baseline justify-between gap-4">
+          <h2 id="mcp-title" className={sectionTitle}>
+            MCP
+          </h2>
+          <span className="text-sm tabular-nums text-os-muted">
+            {mcpTotals.calls.toLocaleString()} calls · {mcpTotals.users} users
+          </span>
+        </div>
+        <div className={adminTable.wrap}>
+          {mcpTotals.calls === 0 ? (
+            <EmptyState>No MCP tool calls in the last {rangeDays} days.</EmptyState>
+          ) : (
+            <div className="grid divide-y divide-os-container/70 md:grid-cols-2 md:divide-x md:divide-y-0">
+              {[
+                { title: "Tool", rows: mcpTools },
+                { title: "Client", rows: mcpClients },
+              ].map((list) => (
+                <CountTable
+                  key={list.title}
+                  nameHeader={list.title}
+                  countHeader="Calls"
+                  rows={list.rows.map((r) => ({
+                    key: r.name,
+                    name: <code className="font-mono text-xs text-foreground">{r.name}</code>,
+                    users: r.users,
+                    count: r.calls,
+                  }))}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      </section>
+
+      <section className="flex flex-col gap-3" aria-labelledby="errors-title">
+        <div className="flex items-baseline justify-between gap-4">
+          <h2 id="errors-title" className={cn(sectionTitle, "inline-flex items-center gap-2")}>
+            <AlertTriangle className="h-4 w-4 text-os-amber" />
+            Client errors
+          </h2>
+          <span className="text-sm tabular-nums text-os-muted">
+            {totalErrors} in {rangeDays} days · {errors.length} distinct
+          </span>
+        </div>
+        <div className={cn(adminTable.wrap, "os-scroll")}>
+          <div className="px-6 pb-4 pt-5">
+            <ErrorBars series={errorTrend} />
+          </div>
+          {errors.length === 0 ? (
+            <EmptyState>No client errors in the last {rangeDays} days.</EmptyState>
+          ) : (
+            <table className="w-full min-w-[560px]">
+              <thead>
+                <tr>
+                  <th className={adminTable.th}>Message</th>
+                  <th className={cn(adminTable.th, "text-right")}>Count</th>
+                  <th className={cn(adminTable.th, "text-right")}>Users</th>
+                  <th className={cn(adminTable.th, "text-right")}>Last seen</th>
+                </tr>
+              </thead>
+              <tbody>
+                {errors.map((e) => (
+                  <tr key={e.message} className={adminTable.row}>
+                    <td className={cn(adminTable.td, "max-w-md")}>
+                      <Tooltip content={e.message} variant="rich" placement="bottom">
+                        <code className="block truncate font-mono text-xs text-foreground">{e.message}</code>
+                      </Tooltip>
+                    </td>
+                    <td className={cn(adminTable.td, "text-right tabular-nums text-foreground")}>{e.count}</td>
+                    <td className={cn(adminTable.td, "text-right tabular-nums text-os-grey")}>{e.users}</td>
+                    <td className={cn(adminTable.td, "whitespace-nowrap text-right text-os-grey")}>
+                      {new Date(e.lastSeen).toLocaleString()}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
       </section>
     </div>
   );
