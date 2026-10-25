@@ -2,14 +2,22 @@
 // so the Infrastructure dashboard renders from Postgres (instant, rate-limit
 // safe). Writes one latest-wins InfraSnapshot per (project, provider) plus usage
 // samples (Neon consumption + best-effort Fly egress). Idempotent and bounded;
-// a no-op when no projects are registered.
+// a no-op when no projects are registered. Projects share one Neon org, so each
+// org is fetched once per run; each project's snapshot keeps the whole org (its
+// database picker needs it) and its usage rows cover only its linked databases.
 
 import type { JobContext, JobResult } from "~/jobs/registry";
 import type { Prisma } from "~/generated/prisma/client";
 import { prisma } from "~/lib/db";
 import { listEnabledInfraProjectCreds } from "~/lib/infra/project-infra.server";
 import { getFlyEgressByApp, getFlyInventory } from "~/lib/infra/fly.server";
-import { getConsumption, getNeonInventory, neonConfigured } from "~/lib/infra/neon.server";
+import {
+  getConsumption,
+  getNeonInventory,
+  neonConfigured,
+  type NeonConsumptionSample,
+} from "~/lib/infra/neon.server";
+import type { NeonInventory } from "~/lib/infra/types";
 
 type UsageRow = {
   provider: "fly" | "neon";
@@ -57,7 +65,7 @@ async function upsertUsage(projectId: string, r: UsageRow): Promise<void> {
       },
     },
     create: { projectId, ...r },
-    update: { value: r.value, scopeName: r.scopeName },
+    update: { projectId, value: r.value, scopeName: r.scopeName },
   });
 }
 
@@ -68,6 +76,12 @@ export async function runInfraSnapshot(ctx: JobContext): Promise<JobResult> {
   const { from, to } = monthWindow(ctx.now);
   let providersSwept = 0;
   let usageCount = 0;
+  const neonInventories = new Map<string, Promise<NeonInventory>>();
+  const neonConsumption = new Map<string, Promise<NeonConsumptionSample[]>>();
+  const once = <T,>(cache: Map<string, Promise<T>>, key: string, load: () => Promise<T>) => {
+    if (!cache.has(key)) cache.set(key, load());
+    return cache.get(key)!;
+  };
 
   for (const p of projects) {
     // ── Fly ──
@@ -105,13 +119,15 @@ export async function runInfraSnapshot(ctx: JobContext): Promise<JobResult> {
     // ── Neon ──
     if (p.neonOrgId && neonConfigured()) {
       try {
-        const inv = await getNeonInventory(p.neonOrgId);
+        const orgId = p.neonOrgId;
+        const inv = await once(neonInventories, orgId, () => getNeonInventory(orgId));
         await writeSnapshot(p.projectId, "neon", inv);
         providersSwept++;
         try {
-          const consumption = await getConsumption(p.neonOrgId, from, to);
+          const consumption = await once(neonConsumption, orgId, () => getConsumption(orgId, from, to));
           const nameById = new Map(inv.projects.map((pr) => [pr.id, pr.name]));
-          for (const c of consumption) {
+          const linked = new Set(p.neonProjectIds);
+          for (const c of consumption.filter((c) => linked.has(c.projectId))) {
             await upsertUsage(p.projectId, {
               provider: "neon",
               scopeType: "neon-project",

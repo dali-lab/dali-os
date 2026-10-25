@@ -13,7 +13,7 @@ import { ProjectInfraView } from "~/components/infra/ProjectInfraView";
 import { EditableSection } from "~/components/EditableSection";
 import { buttonClasses } from "~/components/ui/Button";
 import { Checkbox } from "~/components/ui/Checkbox";
-import { Select } from "~/components/ui/floating";
+import { MultiSelect, Select } from "~/components/ui/floating";
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
 import { timeAgo } from "~/components/infra/format";
@@ -22,6 +22,7 @@ import { INFRA_REQUEST_KINDS, infraRequestKindLabel } from "~/lib/infra/request-
 type Config = {
   flyOrgSlug: string | null;
   neonOrgId: string | null;
+  neonProjectIds: string[];
   infraEnabled: boolean;
   hasFlyReadToken: boolean;
   hasFlyWriteToken: boolean;
@@ -54,7 +55,13 @@ export function ProjectInfraSection({
     >
       {({ editing, resetKey }) =>
         editing ? (
-          <ConfigForm formRef={formRef} resetKey={resetKey} config={config} />
+          <ConfigForm
+            key={resetKey}
+            formRef={formRef}
+            resetKey={resetKey}
+            config={config}
+            neonOrgProjects={view?.neonOrgProjects ?? []}
+          />
         ) : (
           <div className="flex flex-col gap-3">
             {view ? (
@@ -82,12 +89,22 @@ function ConfigForm({
   formRef,
   resetKey,
   config,
+  neonOrgProjects,
 }: {
   formRef: RefObject<HTMLFormElement | null>;
   resetKey: number;
   config: Config;
+  neonOrgProjects: { id: string; name: string }[];
 }) {
   const { panel, fieldLabel } = useOsChrome();
+  const [neonProjectIds, setNeonProjectIds] = useState(config.neonProjectIds);
+  // A linked id the latest sweep didn't return still shows, so it can be removed.
+  const neonOptions = [
+    ...neonOrgProjects.map((p) => ({ value: p.id, label: p.name })),
+    ...neonProjectIds
+      .filter((id) => !neonOrgProjects.some((p) => p.id === id))
+      .map((id) => ({ value: id, label: id })),
+  ];
   return (
     <Form
       method="post"
@@ -106,6 +123,20 @@ function ConfigForm({
           <input name="neonOrgId" defaultValue={config.neonOrgId ?? ""} placeholder="org-acme-1234" className="w-full" />
         </label>
         <Checkbox name="infraEnabled" defaultChecked={config.infraEnabled} label="Sweep enabled" className="self-end pb-1.5" />
+      </div>
+      <div className={cn(fieldLabel, "w-full")}>
+        <span>Neon databases</span>
+        <MultiSelect
+          ariaLabel="Neon databases"
+          values={neonProjectIds}
+          options={neonOptions}
+          onChange={setNeonProjectIds}
+          placeholder="None linked"
+          emptyLabel="Save the Neon org id, then pick databases after the next sweep."
+        />
+        {neonProjectIds.map((id) => (
+          <input key={id} type="hidden" name="neonProjectIds" value={id} />
+        ))}
       </div>
       <div className="flex flex-wrap gap-3">
         <label className={cn(fieldLabel, "w-56")}>

@@ -29,7 +29,7 @@ export function ProjectInfraView({ project: p }: { project: ProjectFleet }) {
         )}
         {p.neonOrgId && (
           <a
-            href={`https://console.neon.tech/app/orgs/${p.neonOrgId}/billing`}
+            href={`https://console.neon.tech/app/org/${p.neonOrgId}/billing`}
             target="_blank"
             rel="noreferrer"
             className="inline-flex items-center gap-1 text-os-accent hover:underline"
@@ -93,7 +93,11 @@ export function ProjectInfraView({ project: p }: { project: ProjectFleet }) {
         <div>
           <h4 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Neon</h4>
           {neonProjects.length === 0 ? (
-            <p className="text-xs text-muted-foreground">No databases (or not swept yet).</p>
+            <p className="text-xs text-muted-foreground">
+              {p.neonProjectIds.length === 0
+                ? "No Neon databases linked to this project yet."
+                : "No databases (or not swept yet)."}
+            </p>
           ) : (
             <div className="space-y-2">
               {neonProjects.map((np) => (

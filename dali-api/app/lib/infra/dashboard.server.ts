@@ -11,6 +11,13 @@ import {
   protectedFlyApps,
   protectedNeonProjectIds,
 } from "./guard.server";
+import {
+  isSampleInScope,
+  neonProjectOptions,
+  scopeNeonInventory,
+  usageSeries,
+  type ScopedSample,
+} from "./neon-scope";
 import type { FlyInventory, NeonInventory } from "./types";
 
 export type UsageSeries = { metric: string; points: { at: string; value: number }[] };
@@ -21,10 +28,13 @@ export type ProjectFleet = {
   infraEnabled: boolean;
   flyOrgSlug: string | null;
   neonOrgId: string | null;
+  neonProjectIds: string[];
   hasFlyReadToken: boolean;
   hasFlyWriteToken: boolean;
   fly: FlyInventory | null;
   neon: NeonInventory | null;
+  /** Every database in the swept Neon org, for picking which belong here. */
+  neonOrgProjects: { id: string; name: string }[];
   flyFetchedAt: string | null;
   neonFetchedAt: string | null;
   usage: UsageSeries[];
@@ -51,17 +61,18 @@ function daysSince(iso: string | null | undefined, now: number): number | null {
 }
 
 type Snapshot = { projectId: string; provider: string; payload: unknown; fetchedAt: Date };
-type Sample = { projectId: string; metric: string; value: number; at: Date };
+type Sample = ScopedSample & { projectId: string };
 
-function buildProjectFleet(
+export function buildProjectFleet(
   info: InfraProjectInfo,
   latest: Map<string, { payload: unknown; fetchedAt: Date }>,
-  usageByProject: Map<string, Map<string, { at: string; value: number }[]>>,
+  samples: Sample[],
 ): ProjectFleet {
   const fly = latest.get(`${info.projectId}:fly`);
   const neon = latest.get(`${info.projectId}:neon`);
-  const usage: UsageSeries[] = [...(usageByProject.get(info.projectId)?.entries() ?? [])].map(
-    ([metric, points]) => ({ metric, points: points.slice(-40) }),
+  const orgInventory = (neon?.payload as NeonInventory | undefined) ?? null;
+  const usage = usageSeries(
+    samples.filter((s) => s.projectId === info.projectId && isSampleInScope(s, info.neonProjectIds)),
   );
   return {
     projectId: info.projectId,
@@ -69,10 +80,12 @@ function buildProjectFleet(
     infraEnabled: info.infraEnabled,
     flyOrgSlug: info.flyOrgSlug,
     neonOrgId: info.neonOrgId,
+    neonProjectIds: info.neonProjectIds,
     hasFlyReadToken: info.hasFlyReadToken,
     hasFlyWriteToken: info.hasFlyWriteToken,
     fly: (fly?.payload as FlyInventory | undefined) ?? null,
-    neon: (neon?.payload as NeonInventory | undefined) ?? null,
+    neon: scopeNeonInventory(orgInventory, info.neonProjectIds),
+    neonOrgProjects: neonProjectOptions(orgInventory),
     flyFetchedAt: fly?.fetchedAt.toISOString() ?? null,
     neonFetchedAt: neon?.fetchedAt.toISOString() ?? null,
     usage,
@@ -93,21 +106,6 @@ function latestByProviderKey(snapshots: Snapshot[]): {
   return { latest, lastSweep };
 }
 
-function groupUsage(samples: Sample[]): Map<string, Map<string, { at: string; value: number }[]>> {
-  const byProject = new Map<string, Map<string, { at: string; value: number }[]>>();
-  for (const s of samples) {
-    let byMetric = byProject.get(s.projectId);
-    if (!byMetric) {
-      byMetric = new Map();
-      byProject.set(s.projectId, byMetric);
-    }
-    const arr = byMetric.get(s.metric) ?? [];
-    arr.push({ at: s.at.toISOString(), value: s.value });
-    byMetric.set(s.metric, arr);
-  }
-  return byProject;
-}
-
 export async function loadFleet(): Promise<{
   projects: ProjectFleet[];
   lastSweep: string | null;
@@ -121,8 +119,7 @@ export async function loadFleet(): Promise<{
   ]);
 
   const { latest, lastSweep } = latestByProviderKey(snapshots);
-  const usageByProject = groupUsage(samples);
-  const projects = registry.map((info) => buildProjectFleet(info, latest, usageByProject));
+  const projects = registry.map((info) => buildProjectFleet(info, latest, samples));
 
   return {
     projects,
@@ -142,8 +139,7 @@ export async function loadProjectInfra(projectId: string): Promise<ProjectFleet 
     prisma.infraUsageSample.findMany({ where: { projectId }, orderBy: { at: "asc" }, take: 2000 }),
   ]);
   const { latest } = latestByProviderKey(snapshots);
-  const usageByProject = groupUsage(samples);
-  return buildProjectFleet(info, latest, usageByProject);
+  return buildProjectFleet(info, latest, samples);
 }
 
 // Cross-project idle/orphan review list. Surfaces everything not on the

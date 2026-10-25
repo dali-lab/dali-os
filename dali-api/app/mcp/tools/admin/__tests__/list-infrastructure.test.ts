@@ -52,6 +52,8 @@ const FLEET_RESULT = {
       infraEnabled: true,
       flyOrgSlug: "dali-org",
       neonOrgId: "neon-org-1",
+      neonProjectIds: ["proj-main"],
+      neonOrgProjects: [{ id: "proj-main", name: "main" }],
       hasFlyReadToken: true,
       hasFlyWriteToken: false,
       fly: {
