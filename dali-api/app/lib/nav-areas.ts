@@ -212,7 +212,7 @@ const coreClusterSubtabs: SubTab[] = CORE_CLUSTERS.map((c) => ({
 
 // Onboarding journeys. A first-term member gets it pinned under Drive, where
 // they'll see it every day; everyone else finds it in the Lab area.
-const ONBOARDING_NAV_ITEM: SubTab = { label: "Onboarding", href: "/journeys", icon: MapIcon };
+const ONBOARDING_NAV_ITEM: SubTab = { label: "Journeys", href: "/journeys", icon: MapIcon };
 
 const REGROUPED_AREAS: NavArea[] = [
   {

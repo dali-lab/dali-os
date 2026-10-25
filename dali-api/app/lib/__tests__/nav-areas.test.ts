@@ -535,8 +535,8 @@ describe("onboarding placement", () => {
     expect(areaForPath("/journeys/fullstack", {}, NOBODY)).toBeUndefined();
   });
 
-  it("pins Onboarding under Drive for a first-term member", () => {
-    expect(pinnedNavItems(NEW, ON).map((i) => i.label)).toEqual(["Drive", "Onboarding"]);
+  it("pins Journeys under Drive for a first-term member", () => {
+    expect(pinnedNavItems(NEW, ON).map((i) => i.label)).toEqual(["Drive", "Journeys"]);
     expect(labHrefs(NEW, ON)).not.toContain("/journeys");
   });
 
@@ -545,7 +545,7 @@ describe("onboarding placement", () => {
     expect(isPinnedActive("/journeys/fullstack/j1", "/journeys", ON, NEW)).toBe(true);
   });
 
-  it("puts Onboarding in the Lab area for everyone else", () => {
+  it("puts Journeys in the Lab area for everyone else", () => {
     expect(pinnedNavItems(NOBODY, ON).map((i) => i.href)).toEqual(["/drive"]);
     expect(labHrefs(NOBODY, ON)).toContain("/journeys");
     expect(areaForPath("/journeys/fullstack/j1", ON, NOBODY)?.key).toBe("projects");

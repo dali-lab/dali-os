@@ -6,7 +6,7 @@ import { cn } from "~/lib/cn";
 import { loadJourneyTabs, requireJourneyViewer, toDomain } from "~/journeys/lib/journeys.server";
 import { domainPath } from "~/journeys/lib/paths";
 
-export const meta: Route.MetaFunction = () => [{ title: "Onboarding · DALI OS" }];
+export const meta: Route.MetaFunction = () => [{ title: "Journeys · DALI OS" }];
 
 export const handle = { hideBreadcrumbs: true };
 
@@ -21,7 +21,7 @@ export default function JourneysIndex() {
   const { pageTitle, panel } = useOsChrome();
   return (
     <div className="flex flex-col gap-6">
-      <h1 className={pageTitle}>Onboarding</h1>
+      <h1 className={pageTitle}>Journeys</h1>
       <div className={cn(panel, "p-10 text-center")}>
         <MapIcon className="mx-auto h-8 w-8 text-os-muted" aria-hidden />
         <p className="mt-3 text-os-grey">No onboarding journeys have been published yet.</p>

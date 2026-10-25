@@ -31,7 +31,7 @@ export function ReviewsPage() {
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-6">
       <header className="shrink-0">
-        <BackLink to={JOURNEYS_HOME}>Onboarding</BackLink>
+        <BackLink to={JOURNEYS_HOME}>Journeys</BackLink>
         <h1 className={cn(pageTitle, "mt-2")}>Reviews</h1>
         <p className={cn(bodyText, "mt-1")}>Lab work waiting for a mentor on journeys you can edit.</p>
       </header>

@@ -93,7 +93,7 @@ export default function DomainJourneys({ loaderData }: Route.ComponentProps) {
     <div className="flex flex-col gap-8">
       <header className="flex flex-col gap-6">
         <div>
-          <p className="text-sm text-os-grey">Onboarding</p>
+          <p className="text-sm text-os-grey">Journeys</p>
           <h1 className={cn(pageTitle, "mt-1")}>{domain.name} journeys</h1>
         </div>
         <OsTabBar

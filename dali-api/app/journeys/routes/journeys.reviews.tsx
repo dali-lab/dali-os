@@ -5,7 +5,7 @@ import { requireJourneyViewer } from "~/journeys/lib/journeys.server";
 import { safeJsonParse } from "~/journeys/lib/safe-json-field";
 import { listReviews, reviewSubmission } from "~/journeys/lib/studio.server";
 
-export const meta: Route.MetaFunction = () => [{ title: "Reviews · Onboarding · DALI OS" }];
+export const meta: Route.MetaFunction = () => [{ title: "Reviews · Journeys · DALI OS" }];
 
 export const handle = { fitViewport: true, hideBreadcrumbs: true };
 
