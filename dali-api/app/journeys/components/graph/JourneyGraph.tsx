@@ -21,11 +21,13 @@ function usePrefersReducedMotion(): boolean {
 export function JourneyGraph({
   journey,
   completed,
+  openAll = false,
   selectedId,
   onSelect,
 }: {
   journey: Journey;
   completed: ReadonlySet<string>;
+  openAll?: boolean;
   selectedId: string | null;
   onSelect: (moduleId: string | null) => void;
 }) {
@@ -65,7 +67,7 @@ export function JourneyGraph({
         <ModuleNode
           key={m.id}
           module={m}
-          status={getModuleStatus(m, completed)}
+          status={getModuleStatus(m, completed, openAll)}
           selected={m.id === selectedId}
           onSelect={() => onSelect(m.id)}
           measureRef={measure(m.id)}

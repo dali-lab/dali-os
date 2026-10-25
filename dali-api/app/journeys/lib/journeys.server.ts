@@ -226,6 +226,26 @@ export async function loadLearnerJourney(viewer: JourneyViewer, domainId: string
     role: roleOn(viewer, row.collaborators),
     started: row.progress.length > 0,
     completed: row.progress[0]?.completed ?? [],
+    preview: false,
+  };
+}
+
+/** The saved draft as a learner would see it, for its editors only. Progress starts empty and is never stored. */
+export async function loadPreviewJourney(viewer: JourneyViewer, domainId: string, journeyId: string) {
+  const row = await prisma.onboardingJourney.findFirst({
+    where: { id: journeyId, domainId },
+    select: { id: true, draft: true, collaborators: { select: { userId: true, role: true } }, ...CREATOR_SELECT },
+  });
+  if (!row) return null;
+  const role = roleOn(viewer, row.collaborators);
+  if (!role) return null;
+  return {
+    journey: { id: row.id, ...content(row.draft) } as Journey,
+    creator: creatorName(row),
+    role,
+    started: true,
+    completed: [] as string[],
+    preview: true,
   };
 }
 

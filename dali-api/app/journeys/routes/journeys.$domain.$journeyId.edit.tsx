@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { data, Link, redirect, useFetcher, useRevalidator } from "react-router";
-import { Check, Eye, Plus, Unlink2 } from "lucide-react";
+import { data, Link, redirect, useFetcher, useNavigate, useRevalidator } from "react-router";
+import { Check, Eye, MonitorPlay, Plus, Unlink2 } from "lucide-react";
 import { z } from "zod";
 import type { Route } from "./+types/journeys.$domain.$journeyId.edit";
 import { buttonClasses } from "~/components/ui/Button";
@@ -26,7 +26,7 @@ import {
 import { journeyTitle, sameContent } from "~/journeys/lib/journey";
 import { addDependency, createModule, removeDependency, updateModule } from "~/journeys/lib/journey-edit";
 import { validateJourney } from "~/journeys/lib/journey-validation";
-import { domainPath, journeyPath, JOURNEYS_HOME } from "~/journeys/lib/paths";
+import { domainPath, journeyPath, JOURNEYS_HOME, previewPath } from "~/journeys/lib/paths";
 import { AccessButton } from "~/journeys/components/AccessDialog";
 import { BackLink } from "~/journeys/components/BackLink";
 import type { Journey } from "~/journeys/lib/types";
@@ -155,6 +155,7 @@ function JourneyEditor({
   onDiscarded: () => void;
 }) {
   const dialog = useDialog();
+  const navigate = useNavigate();
   const { revalidate } = useRevalidator();
   const { draft, edit, state, error, publish, retry, publishing, published: publishCount } = useDraftAutosave(initialDraft, version);
   const lifecycle = useFetcher<{ ok: boolean; intent?: string; error?: string }>();
@@ -249,6 +250,16 @@ function JourneyEditor({
               {isLive ? "Discard" : "Discard journey"}
             </button>
           )}
+          <button
+            type="button"
+            onClick={() => navigate(previewPath(domain.slug, draft.id))}
+            disabled={state !== "saved"}
+            title={state === "saved" ? "See the draft as a learner, with every module open" : "Wait for your changes to save"}
+            className={buttonClasses("secondary", "md")}
+          >
+            <MonitorPlay className="h-4 w-4" aria-hidden />
+            Preview
+          </button>
           {isLive && (
             <Link to={journeyPath(domain.slug, draft.id)} className={buttonClasses("secondary", "md")}>
               <Eye className="h-4 w-4" aria-hidden />

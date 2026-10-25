@@ -34,15 +34,17 @@ export function ModulePreviewPanel({
   journey,
   module: mod,
   completed,
+  openAll = false,
   onSelect,
 }: {
   basePath: string;
   journey: Journey;
   module: JourneyModule;
   completed: ReadonlySet<string>;
+  openAll?: boolean;
   onSelect: (moduleId: string | null) => void;
 }) {
-  const status = getModuleStatus(mod, completed);
+  const status = getModuleStatus(mod, completed, openAll);
   const lab = getLabInfo(mod);
   const locked = status === "locked";
   const moduleHref = `${basePath}/${mod.id}`;

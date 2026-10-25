@@ -250,6 +250,8 @@ export default [
     route("journeys/:domain", "journeys/routes/journeys.$domain.tsx"),
     route("journeys/:domain/:journeyId", "journeys/routes/journeys.$domain.$journeyId.tsx"),
     route("journeys/:domain/:journeyId/edit", "journeys/routes/journeys.$domain.$journeyId.edit.tsx"),
+    route("journeys/:domain/:journeyId/preview", "journeys/routes/journeys.$domain.$journeyId.preview.tsx"),
+    route("journeys/:domain/:journeyId/preview/:moduleId", "journeys/routes/journeys.$domain.$journeyId.preview.$moduleId.tsx"),
     route("journeys/:domain/:journeyId/:moduleId", "journeys/routes/journeys.$domain.$journeyId.$moduleId.tsx"),
     // Anonymous coffee chat invite: accept / decline (recipient) or status (sender).
     route("coffee-chats/:id", "members/routes/coffee-chats.$id.tsx"),

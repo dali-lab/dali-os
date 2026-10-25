@@ -10,6 +10,7 @@ import { LessonView } from "~/journeys/components/LessonView";
 import { ModuleOutline, type ModuleView } from "~/journeys/components/ModuleOutline";
 import { StatusChip } from "~/journeys/components/StatusChip";
 import { BackLink } from "~/journeys/components/BackLink";
+import { PreviewBanner } from "~/journeys/components/PreviewBanner";
 import { LabIDE } from "~/journeys/components/lab/LabIDE";
 import { LearnerStudioLab } from "~/journeys/components/studio/LearnerStudioLab";
 import { QuizView } from "~/journeys/components/quiz/QuizView";
@@ -27,7 +28,7 @@ import {
   moduleTitle,
   type ActivityKind,
 } from "~/journeys/lib/journey";
-import { domainPath, journeyPath, JOURNEYS_HOME } from "~/journeys/lib/paths";
+import { domainPath, editPath, journeyPath, JOURNEYS_HOME, previewPath } from "~/journeys/lib/paths";
 import type { JourneyModule } from "~/journeys/lib/types";
 
 export const meta: Route.MetaFunction = ({ data }) => [
@@ -54,7 +55,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   return progressAction(request, viewer, params.journeyId);
 }
 
-function useProgressWriter(serverKeys: string[]) {
+function useProgressWriter(serverKeys: string[], preview: boolean) {
   const fetcher = useFetcher<{ ok: boolean; error?: string }>();
   const toast = useToast();
   // Keys sent but not yet reflected by the loader, so the page moves on at once.
@@ -71,27 +72,28 @@ function useProgressWriter(serverKeys: string[]) {
   const record = useCallback(
     (keys: string[]) => {
       setPending((p) => [...p, ...keys]);
+      if (preview) return;
       const form = new FormData();
       form.set("intent", "complete");
       for (const k of keys) form.append("key", k);
       fetcher.submit(form, { method: "post" });
     },
-    [fetcher],
+    [fetcher, preview],
   );
   return { completed, record, saving: fetcher.state !== "idle" };
 }
 
 export default function ModuleDetail({ loaderData }: Route.ComponentProps) {
-  const { domain, journey, module: mod, started, completed: serverKeys, submission } = loaderData;
+  const { domain, journey, module: mod, started, completed: serverKeys, submission, preview } = loaderData;
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
-  const { completed, record, saving } = useProgressWriter(serverKeys);
+  const { completed, record, saving } = useProgressWriter(serverKeys, preview);
   const [unlocked, setUnlocked] = useState<JourneyModule[] | null>(null);
   useEffect(() => setUnlocked(null), [mod.id]);
   const closeDialog = useCallback(() => setUnlocked(null), []);
 
-  const status = getModuleStatus(mod, completed);
-  const basePath = journeyPath(domain.slug, journey.id);
+  const status = getModuleStatus(mod, completed, preview);
+  const basePath = preview ? previewPath(domain.slug, journey.id) : journeyPath(domain.slug, journey.id);
 
   // Opening any unlocked module counts as starting the journey.
   const starter = useFetcher();
@@ -195,6 +197,7 @@ export default function ModuleDetail({ loaderData }: Route.ComponentProps) {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-6">
+      {preview && <PreviewBanner editHref={editPath(domain.slug, journey.id)} />}
       <header className="flex shrink-0 flex-wrap items-end justify-between gap-x-6 gap-y-3">
         <div className="min-w-0">
           <BackLink to={basePath}>{journeyTitle(journey)}</BackLink>
@@ -278,6 +281,7 @@ export default function ModuleDetail({ loaderData }: Route.ComponentProps) {
                 studio={mod.studio}
                 moduleId={mod.id}
                 submission={submission}
+                preview={preview}
                 title={moduleTitle(mod)}
                 subtitle={`${journeyTitle(journey)} · Lab`}
                 isCompleted={labDone}

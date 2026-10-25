@@ -12,9 +12,10 @@ import { ModulePreviewPanel } from "~/journeys/components/ModulePreviewPanel";
 import { findDomain, loadLearnerJourney, requireJourneyViewer, toDomain } from "~/journeys/lib/journeys.server";
 import { progressAction } from "~/journeys/lib/progress-action.server";
 import { getJourneyProgress, journeyTitle, nextAvailableModule } from "~/journeys/lib/journey";
-import { domainPath, editPath, journeyPath, JOURNEYS_HOME } from "~/journeys/lib/paths";
+import { domainPath, editPath, journeyPath, JOURNEYS_HOME, previewPath } from "~/journeys/lib/paths";
 import { AccessButton } from "~/journeys/components/AccessDialog";
 import { BackLink } from "~/journeys/components/BackLink";
+import { PreviewBanner } from "~/journeys/components/PreviewBanner";
 
 export const meta: Route.MetaFunction = ({ data }) => [
   { title: `${data ? journeyTitle(data.journey) : "Journey"} · DALI OS` },
@@ -44,7 +45,7 @@ const LEGEND = [
 ];
 
 export default function JourneyMap({ loaderData }: Route.ComponentProps) {
-  const { domain, journey, role, creator, completed: completedKeys } = loaderData;
+  const { domain, journey, role, creator, completed: completedKeys, preview } = loaderData;
   const { pageTitle, bodyText } = useOsChrome();
   const dialog = useDialog();
   const reset = useFetcher();
@@ -52,9 +53,9 @@ export default function JourneyMap({ loaderData }: Route.ComponentProps) {
   useEffect(() => setSelectedId(null), [journey.id]);
 
   const completed = useMemo(() => new Set(completedKeys), [completedKeys]);
-  const basePath = journeyPath(domain.slug, journey.id);
+  const basePath = preview ? previewPath(domain.slug, journey.id) : journeyPath(domain.slug, journey.id);
   const { done, total } = getJourneyProgress(journey, completed);
-  const next = nextAvailableModule(journey, completed);
+  const next = nextAvailableModule(journey, completed, preview);
   const selected = journey.modules.find((m) => m.id === selectedId) ?? null;
 
   const handleReset = async () => {
@@ -69,6 +70,7 @@ export default function JourneyMap({ loaderData }: Route.ComponentProps) {
 
   return (
     <div className="flex min-h-[720px] flex-1 flex-col gap-6 md:min-h-0">
+      {preview && <PreviewBanner editHref={editPath(domain.slug, journey.id)} />}
       <header className="flex shrink-0 flex-col gap-5">
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0 max-w-2xl">
@@ -77,7 +79,7 @@ export default function JourneyMap({ loaderData }: Route.ComponentProps) {
             {journey.description && <p className={cn(bodyText, "mt-2")}>{journey.description}</p>}
             {creator && <p className="mt-2 text-sm text-os-muted">Created by {creator}</p>}
           </div>
-          {role && (
+          {role && !preview && (
             <div className="flex shrink-0 items-center gap-2">
               <Link to={editPath(domain.slug, journey.id)} className={buttonClasses("secondary", "sm")}>
                 <Pencil className="h-3.5 w-3.5" aria-hidden />
@@ -94,7 +96,7 @@ export default function JourneyMap({ loaderData }: Route.ComponentProps) {
               <span className="text-os-grey">
                 <span className="font-semibold tabular-nums text-foreground">{done}</span> of {total} complete
               </span>
-              {done > 0 && (
+              {done > 0 && !preview && (
                 <button
                   type="button"
                   onClick={handleReset}
@@ -124,7 +126,7 @@ export default function JourneyMap({ loaderData }: Route.ComponentProps) {
 
       <div className="relative flex min-h-0 flex-1 gap-4">
         <div className="relative min-h-[460px] flex-1 overflow-hidden rounded-os-card bg-os-well">
-          <JourneyGraph journey={journey} completed={completed} selectedId={selectedId} onSelect={setSelectedId} />
+          <JourneyGraph journey={journey} completed={completed} openAll={preview} selectedId={selectedId} onSelect={setSelectedId} />
           <div className="pointer-events-none absolute left-4 top-4 flex flex-wrap items-center gap-4 rounded-full bg-os-bg/90 px-4 py-2 text-xs text-os-grey">
             {LEGEND.map((l) => (
               <span key={l.label} className="flex items-center gap-1.5">
@@ -141,6 +143,7 @@ export default function JourneyMap({ loaderData }: Route.ComponentProps) {
             journey={journey}
             module={selected}
             completed={completed}
+            openAll={preview}
             onSelect={setSelectedId}
           />
         )}
