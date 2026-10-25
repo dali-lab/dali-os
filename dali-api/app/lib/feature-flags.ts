@@ -175,7 +175,7 @@ export const FEATURE_FLAGS = [
     key: "onboarding-journeys",
     label: "Onboarding journeys",
     description:
-      "Self-paced onboarding at /journeys: per-domain journeys of modules on a prerequisite map, each with lesson pages, slides, an in-browser coding lab and a quiz, with progress saved per member. First-term members find Onboarding pinned under Drive; everyone else finds it in the Lab area. Core and domain leads create journeys and share edit access per journey. Ships off.",
+      "Self-paced onboarding at /journeys: per-domain journeys of modules on a prerequisite map, each with lesson pages, slides, an in-browser coding lab and a quiz, with progress saved per member. First-term members find Journeys pinned under Drive; everyone else finds it in the Lab area. Core and domain leads create journeys and share edit access per journey. Ships off.",
   },
 ] as const satisfies readonly FeatureFlagDef[];
 
