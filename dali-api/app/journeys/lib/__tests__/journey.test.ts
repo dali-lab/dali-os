@@ -61,6 +61,12 @@ describe("module status", () => {
   it("ignores activity keys when deciding prerequisites", () => {
     expect(getModuleStatus(b, new Set(["a#lab"]))).toBe("locked");
   });
+
+  it("opens every unfinished module when openAll is set", () => {
+    expect(getModuleStatus(b, new Set(), true)).toBe("available");
+    expect(getModuleStatus(d, new Set(), true)).toBe("available");
+    expect(getModuleStatus(d, new Set(["d"]), true)).toBe("completed");
+  });
 });
 
 describe("unlocking", () => {
@@ -87,6 +93,14 @@ describe("progress and navigation", () => {
     expect(nextAvailableModule(diamond(), new Set())?.id).toBe("a");
     expect(nextAvailableModule(diamond(), new Set(["a"]))?.id).toBe("b");
     expect(nextAvailableModule(diamond(), new Set(["a", "b", "c", "d"]))).toBeUndefined();
+  });
+
+  it("with openAll, picks the first unfinished module even if it is locked", () => {
+    const j = { modules: [mod("x", ["y"]), mod("y")] };
+    expect(nextAvailableModule(j, new Set())?.id).toBe("y");
+    expect(nextAvailableModule(j, new Set(), true)?.id).toBe("x");
+    expect(nextAvailableModule(j, new Set(["x"]), true)?.id).toBe("y");
+    expect(nextAvailableModule(diamond(), new Set(["a", "b", "c", "d"]), true)).toBeUndefined();
   });
 
   it("finds the start module and looks modules up by id", () => {

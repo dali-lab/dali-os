@@ -45,8 +45,9 @@ export function getModule(journey: Pick<Journey, "modules">, moduleId: string | 
   return journey.modules.find((m) => m.id === moduleId);
 }
 
-export function getModuleStatus(mod: JourneyModule, completed: ReadonlySet<string>): ModuleStatus {
+export function getModuleStatus(mod: JourneyModule, completed: ReadonlySet<string>, openAll = false): ModuleStatus {
   if (completed.has(mod.id)) return "completed";
+  if (openAll) return "available";
   return mod.dependsOn.every((dep) => completed.has(dep)) ? "available" : "locked";
 }
 
@@ -76,8 +77,9 @@ export function getJourneyProgress(
 export function nextAvailableModule(
   journey: Pick<Journey, "modules">,
   completed: ReadonlySet<string>,
+  openAll = false,
 ): JourneyModule | undefined {
-  return journey.modules.find((m) => getModuleStatus(m, completed) === "available");
+  return journey.modules.find((m) => getModuleStatus(m, completed, openAll) === "available");
 }
 
 export function startModule(journey: Pick<Journey, "modules">): JourneyModule | undefined {

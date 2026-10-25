@@ -14,12 +14,14 @@ type ActionResult = { ok: boolean; error?: string };
 /**
  * The learner's own whiteboard or document lab. Work autosaves to the module
  * route; submitting sends it to the journey's mentors, and the server re-runs
- * the checks before accepting it.
+ * the checks before accepting it. In a preview nothing is sent, and
+ * submitting approves at once since no mentor will review it.
  */
 export function LearnerStudioLab({
   studio,
   moduleId,
   submission,
+  preview = false,
   title,
   subtitle,
   isCompleted,
@@ -30,6 +32,7 @@ export function LearnerStudioLab({
   studio: StudioLab;
   moduleId: string;
   submission: LabSubmission | null;
+  preview?: boolean;
   title: string;
   subtitle: string;
   isCompleted: boolean;
@@ -71,10 +74,11 @@ export function LearnerStudioLab({
         form.set("work", JSON.stringify(fields.work));
         savedWork.current = fields.work;
       }
+      if (preview) return;
       if (fields.selfChecks) form.set("selfChecks", JSON.stringify(fields.selfChecks));
       return saver.submit(form, { method: "post" });
     },
-    [saver, moduleId],
+    [saver, moduleId, preview],
   );
 
   useEffect(() => {
@@ -92,6 +96,7 @@ export function LearnerStudioLab({
   const submit = async () => {
     window.clearTimeout(timer.current);
     await save({ work, selfChecks });
+    if (preview) return setStatus("approved");
     setStatus("submitted");
     await actor.submit({ intent: "lab-submit", moduleId }, { method: "post" });
   };
@@ -104,6 +109,7 @@ export function LearnerStudioLab({
     setSelfChecks({});
     setStatus("in-progress");
     setWorkKey((k) => k + 1);
+    if (preview) return;
     await actor.submit({ intent: "lab-reset", moduleId }, { method: "post" });
   };
 

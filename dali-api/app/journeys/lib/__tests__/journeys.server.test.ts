@@ -40,6 +40,8 @@ import {
   editDraft,
   isLastOwner,
   loadJourneyTabs,
+  loadLearnerJourney,
+  loadPreviewJourney,
   publishJourney,
   removeCollaborator,
   resolveJourneyViewer,
@@ -248,6 +250,57 @@ describe("completeSteps", () => {
   it("only works on published journeys", async () => {
     db.onboardingJourney.findUnique.mockResolvedValue({ published: null, progress: [] });
     expect(await completeSteps(member, "j1", ["a"])).toMatchObject({ ok: false, status: 404 });
+  });
+});
+
+describe("loadPreviewJourney", () => {
+  const live = { title: "Live", description: "", modules: [mod("a")] };
+  const previewRow = (collaborators: { userId: string; role: "Owner" | "Editor" }[]) => ({
+    ...row(collaborators, { published: live }),
+    createdBy: { firstName: "Ada", lastName: "Lovelace" },
+  });
+
+  it("shows editors the saved draft, not the live version, with empty progress", async () => {
+    db.onboardingJourney.findFirst.mockResolvedValue(previewRow([{ userId: "me", role: "Editor" }]));
+    const found = await loadPreviewJourney(member, "dom-1", "j1");
+    expect(found).toMatchObject({ role: "editor", started: true, completed: [], preview: true, creator: "Ada Lovelace" });
+    expect(found?.journey.id).toBe("j1");
+    expect(found?.journey.modules.map((m) => m.id)).toEqual(["a", "b", "c", "d"]);
+    expect(db.onboardingJourney.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: "j1", domainId: "dom-1" } }),
+    );
+  });
+
+  it("works for drafts that were never published", async () => {
+    db.onboardingJourney.findFirst.mockResolvedValue({ ...previewRow([{ userId: "me", role: "Owner" }]), published: null });
+    expect(await loadPreviewJourney(member, "dom-1", "j1")).toMatchObject({ role: "owner", preview: true });
+  });
+
+  it("lets Core preview any journey", async () => {
+    db.onboardingJourney.findFirst.mockResolvedValue(previewRow([]));
+    expect(await loadPreviewJourney(core, "dom-1", "j1")).toMatchObject({ role: "owner", preview: true });
+  });
+
+  it("refuses people who can't edit the journey", async () => {
+    db.onboardingJourney.findFirst.mockResolvedValue(previewRow([{ userId: "someone", role: "Owner" }]));
+    expect(await loadPreviewJourney(member, "dom-1", "j1")).toBeNull();
+  });
+
+  it("returns null for a journey outside the domain", async () => {
+    db.onboardingJourney.findFirst.mockResolvedValue(null);
+    expect(await loadPreviewJourney(core, "dom-2", "j1")).toBeNull();
+  });
+
+  it("never reads or writes the previewer's progress", async () => {
+    db.onboardingJourney.findFirst.mockResolvedValue(previewRow([{ userId: "me", role: "Editor" }]));
+    await loadPreviewJourney(member, "dom-1", "j1");
+    expect(db.onboardingJourney.findFirst.mock.calls[0][0].select).not.toHaveProperty("progress");
+    expect(db.onboardingJourneyProgress.upsert).not.toHaveBeenCalled();
+  });
+
+  it("is distinguishable from the learner view", async () => {
+    db.onboardingJourney.findFirst.mockResolvedValue({ ...previewRow([]), progress: [] });
+    expect(await loadLearnerJourney(member, "dom-1", "j1")).toMatchObject({ preview: false, role: null });
   });
 });
 

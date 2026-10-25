@@ -28,21 +28,23 @@ function OutlineItem({ href, icon, children }: { href: string | null; icon: Reac
   );
 }
 
-/** The selected module's details beside the map: what's inside and what it builds on. */
+/** The selected module's details below the map: what's inside and what it builds on. */
 export function ModulePreviewPanel({
   basePath,
   journey,
   module: mod,
   completed,
+  openAll = false,
   onSelect,
 }: {
   basePath: string;
   journey: Journey;
   module: JourneyModule;
   completed: ReadonlySet<string>;
+  openAll?: boolean;
   onSelect: (moduleId: string | null) => void;
 }) {
-  const status = getModuleStatus(mod, completed);
+  const status = getModuleStatus(mod, completed, openAll);
   const lab = getLabInfo(mod);
   const locked = status === "locked";
   const moduleHref = `${basePath}/${mod.id}`;
@@ -53,25 +55,37 @@ export function ModulePreviewPanel({
   const missing = prerequisites.filter((p) => !completed.has(p.id));
   const iconClass = (accent: boolean) => cn("h-4 w-4 shrink-0", accent && !locked ? "text-os-accent" : "text-os-muted");
 
+  const action = locked ? (
+    <p className="text-sm text-os-grey">Finish {missing.map(moduleTitle).join(" and ")} to unlock.</p>
+  ) : (
+    <Link to={moduleHref} className={buttonClasses(status === "completed" ? "secondary" : "primary", "md")}>
+      {status === "completed" ? "Review module" : "Start module"}
+    </Link>
+  );
+
   return (
     <aside
       aria-label={`${moduleTitle(mod)} details`}
-      className="absolute inset-x-3 bottom-3 z-10 flex max-h-[75%] flex-col overflow-hidden rounded-os-card bg-os-card shadow-2xl lg:static lg:inset-auto lg:max-h-none lg:w-[360px] lg:shrink-0 lg:shadow-none"
+      className="min-h-0 flex-1 overflow-y-auto rounded-os-card bg-os-card"
     >
-      <div className="flex shrink-0 items-center justify-between gap-3 px-6 pb-2 pt-5">
-        <StatusChip status={status} />
-        <IconButton label="Close details" icon={X} onClick={() => onSelect(null)} />
+      <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3 px-6 pt-5">
+        <div className="min-w-0 max-w-2xl">
+          <StatusChip status={status} />
+          <h2 className="mt-3 font-heading text-xl font-semibold">{moduleTitle(mod)}</h2>
+          {mod.summary && <p className="mt-2 text-sm leading-6 text-os-grey">{mod.summary}</p>}
+          <p className="mt-3 flex items-center gap-1.5 text-sm text-os-muted">
+            <Clock className="h-4 w-4" aria-hidden />
+            {mod.duration}
+          </p>
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          {action}
+          <IconButton label="Close details" icon={X} onClick={() => onSelect(null)} />
+        </div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-6">
-        <h2 className="mt-2 font-heading text-xl font-semibold">{moduleTitle(mod)}</h2>
-        {mod.summary && <p className="mt-2 text-sm leading-6 text-os-grey">{mod.summary}</p>}
-        <p className="mt-4 flex items-center gap-1.5 text-sm text-os-muted">
-          <Clock className="h-4 w-4" aria-hidden />
-          {mod.duration}
-        </p>
-
-        <section className="mt-6">
+      <div className="grid gap-x-10 gap-y-6 px-6 pb-6 pt-6 md:grid-cols-2">
+        <section>
           <h3 className="text-xs font-medium text-os-muted">Inside this module</h3>
           <ol className="-mx-2 mt-2 space-y-0.5">
             {mod.pages.map((page, i) => (
@@ -117,7 +131,7 @@ export function ModulePreviewPanel({
         </section>
 
         {prerequisites.length > 0 && (
-          <section className="mt-6">
+          <section>
             <h3 className="text-xs font-medium text-os-muted">Builds on</h3>
             <ul className="-mx-2 mt-2 space-y-0.5">
               {prerequisites.map((p) => (
@@ -138,16 +152,6 @@ export function ModulePreviewPanel({
               ))}
             </ul>
           </section>
-        )}
-      </div>
-
-      <div className="shrink-0 border-t border-os-container p-4">
-        {locked ? (
-          <p className="px-2 text-sm text-os-grey">Finish {missing.map(moduleTitle).join(" and ")} to unlock.</p>
-        ) : (
-          <Link to={moduleHref} className={buttonClasses(status === "completed" ? "secondary" : "primary", "md", "w-full")}>
-            {status === "completed" ? "Review module" : "Start module"}
-          </Link>
         )}
       </div>
     </aside>
