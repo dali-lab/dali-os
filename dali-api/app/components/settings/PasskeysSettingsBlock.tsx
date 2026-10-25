@@ -1,13 +1,20 @@
 import { useCallback, useEffect, useState } from "react";
-import { Check, KeyRound, Pencil, Plus, Trash2, X } from "lucide-react";
-import { buttonClasses } from "~/components/ui/Button";
+import { KeyRound, Pencil, Plus } from "lucide-react";
 import { useDialog } from "~/components/ui/dialog";
+import { IconButton } from "~/components/ui/IconButton";
+import { useOsChrome } from "~/components/os-chrome";
 import { getAuthenticatorLabel } from "~/lib/passkey-authenticators";
+import {
+  SettingsEmptyRow,
+  SettingsIconTile,
+  settingsDangerBtn,
+  settingsList,
+} from "~/components/settings/SettingsSection";
 
 // Passkey management, entirely client-side: the WebAuthn ceremonies and the
-// list/add/rename/delete calls all go through the browser BetterAuth client
+// list/add/rename/delete calls go through the browser BetterAuth client
 // (~/lib/auth-client), dynamically imported so the WebAuthn bundle never loads
-// on the server. No loader wiring needed — the block fetches its own data.
+// on the server.
 type PasskeyRow = {
   id: string;
   name?: string | null;
@@ -26,10 +33,12 @@ function labelFor(pk: PasskeyRow): string {
 function formatAdded(value: string | Date | null | undefined): string | null {
   if (!value) return null;
   const d = value instanceof Date ? value : new Date(value);
-  return Number.isNaN(d.getTime()) ? null : d.toLocaleDateString();
+  return Number.isNaN(d.getTime())
+    ? null
+    : d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
 }
 
-export function PasskeysSettingsBlock() {
+export function usePasskeys() {
   const [passkeys, setPasskeys] = useState<PasskeyRow[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -129,7 +138,7 @@ export function PasskeysSettingsBlock() {
     const ok = await dialog.confirm({
       title: `Remove ${label}?`,
       description:
-        "That device can no longer sign you in. You'll need to add a new passkey on it, or sign in another way.",
+        "You won't be able to sign in with this passkey anymore.",
       confirmLabel: "Remove",
       tone: "destructive",
     });
@@ -149,103 +158,127 @@ export function PasskeysSettingsBlock() {
     }
   }
 
+  return {
+    passkeys,
+    busy,
+    error,
+    editingId,
+    editValue,
+    setEditValue,
+    savingRename,
+    addPasskey,
+    startRename,
+    cancelRename,
+    saveRename,
+    removePasskey,
+  };
+}
+
+export type PasskeysState = ReturnType<typeof usePasskeys>;
+
+export function AddPasskeyButton({ state }: { state: PasskeysState }) {
+  return (
+    <button
+      type="button"
+      className="os-add-btn"
+      onClick={() => void state.addPasskey()}
+      disabled={state.busy}
+    >
+      <Plus className="h-4 w-4" strokeWidth={3} aria-hidden />
+      {state.busy ? "Waiting for device…" : "Passkey"}
+    </button>
+  );
+}
+
+export function PasskeysList({ state }: { state: PasskeysState }) {
+  const { actionBtn, actionBtnPrimary, compactField } = useOsChrome();
+  const { passkeys, error, editingId, editValue, setEditValue, savingRename } = state;
+
   return (
     <div className="flex flex-col gap-3">
-      <p className="text-sm text-muted-foreground">
-        Passkeys let you sign in with Face ID, Touch ID, or a security key — no
-        password or emailed link. Add one on each device you use, and give it a
-        name so you can tell them apart.
-      </p>
-
       {error && (
-        <p className="text-sm text-destructive bg-destructive/10 rounded-lg px-4 py-3">{error}</p>
+        <p className="rounded-os-item bg-destructive/10 px-4 py-3 text-sm text-destructive">{error}</p>
       )}
-
-      {passkeys === null ? (
-        <p className="text-sm text-muted-foreground">Loading…</p>
-      ) : passkeys.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No passkeys yet.</p>
-      ) : (
-        <ul className="divide-y divide-border rounded-xl border border-border">
-          {passkeys.map((pk) => {
-            const added = formatAdded(pk.createdAt);
-            return (
-              <li key={pk.id} className="flex items-center gap-3 px-4 py-3">
-                <KeyRound className="h-4 w-4 shrink-0 text-muted-foreground" />
-                {editingId === pk.id ? (
-                  <>
+      <ul className={settingsList}>
+        {passkeys === null && <SettingsEmptyRow>Loading…</SettingsEmptyRow>}
+        {passkeys?.length === 0 && (
+          <SettingsEmptyRow>No passkeys yet. You sign in with Dartmouth SSO or an email link.</SettingsEmptyRow>
+        )}
+        {passkeys?.map((pk) => {
+          const added = formatAdded(pk.createdAt);
+          const editing = editingId === pk.id;
+          return (
+            <li key={pk.id} className="flex items-center gap-4 px-6 py-4">
+              <SettingsIconTile>
+                <KeyRound className="h-4 w-4" />
+              </SettingsIconTile>
+              <div className="min-w-0 flex-1">
+                {editing ? (
+                  <form
+                    className="flex flex-wrap items-center gap-2"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      void state.saveRename(pk.id);
+                    }}
+                  >
                     <input
                       autoFocus
                       value={editValue}
                       onChange={(e) => setEditValue(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") void saveRename(pk.id);
-                        if (e.key === "Escape") cancelRename();
-                      }}
+                      onKeyDown={(e) => e.key === "Escape" && state.cancelRename()}
                       placeholder={autoLabel(pk)}
                       maxLength={64}
-                      className="min-w-0 flex-1 rounded-lg border border-border bg-background px-2 py-1 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-os-accent"
+                      aria-label="Passkey name"
+                      className={`${compactField} min-w-0 border border-os-container px-3 py-1.5 text-sm outline-none`}
                     />
-                    <button
-                      type="button"
-                      onClick={() => void saveRename(pk.id)}
-                      disabled={savingRename}
-                      className="p-1 text-muted-foreground transition hover:text-foreground disabled:opacity-50"
-                      aria-label="Save name"
-                    >
-                      <Check className="h-4 w-4" />
+                    <button type="submit" className={actionBtnPrimary} disabled={savingRename}>
+                      Save
                     </button>
-                    <button
-                      type="button"
-                      onClick={cancelRename}
-                      className="p-1 text-muted-foreground transition hover:text-foreground"
-                      aria-label="Cancel"
-                    >
-                      <X className="h-4 w-4" />
+                    <button type="button" className={actionBtn()} onClick={state.cancelRename}>
+                      Cancel
                     </button>
-                  </>
+                  </form>
                 ) : (
                   <>
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate text-sm text-foreground">{labelFor(pk)}</div>
-                      {added && (
-                        <div className="text-xs text-muted-foreground">Added {added}</div>
-                      )}
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => startRename(pk)}
-                      className="p-1 text-muted-foreground transition hover:text-foreground"
-                      aria-label="Rename passkey"
-                    >
-                      <Pencil className="h-3.5 w-3.5" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => void removePasskey(pk.id, labelFor(pk))}
-                      className="p-1 text-muted-foreground transition hover:text-destructive"
-                      aria-label={`Remove ${labelFor(pk)}`}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
+                    <p className="flex items-center gap-1.5 font-semibold text-foreground">
+                      <span className="truncate">{labelFor(pk)}</span>
+                      <IconButton
+                        icon={Pencil}
+                        label={`Rename ${labelFor(pk)}`}
+                        iconClassName="h-3.5 w-3.5"
+                        onClick={() => state.startRename(pk)}
+                      />
+                    </p>
+                    {added && <p className="text-xs text-os-muted">Added {added}</p>}
                   </>
                 )}
-              </li>
-            );
-          })}
-        </ul>
-      )}
+              </div>
+              {!editing && (
+                <button
+                  type="button"
+                  className={settingsDangerBtn}
+                  onClick={() => void state.removePasskey(pk.id, labelFor(pk))}
+                >
+                  Remove
+                </button>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
 
+/** The list with its add button underneath, for pages without a section action
+ *  slot (the applicant portal and partner settings). */
+export function PasskeysSettingsBlock() {
+  const state = usePasskeys();
+  return (
+    <div className="flex flex-col gap-3">
+      <PasskeysList state={state} />
       <div>
-        <button
-          type="button"
-          onClick={() => void addPasskey()}
-          disabled={busy}
-          className={buttonClasses("secondary", "sm")}
-        >
-          <Plus className="h-3.5 w-3.5" />
-          {busy ? "Waiting for passkey…" : "Add a passkey"}
-        </button>
+        <AddPasskeyButton state={state} />
       </div>
     </div>
   );

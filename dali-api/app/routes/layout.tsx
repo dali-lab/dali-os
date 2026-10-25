@@ -8,6 +8,7 @@ import { Breadcrumbs } from '~/components/Breadcrumbs'
 import { PageDocProvider, PageDocButton, PageDocOutlet, ShellGuideProvider } from '~/components/page-docs/PageDocButton'
 import { useLiveFavorites } from '~/components/favorites-live'
 import { LaunchWelcome } from '~/components/LaunchWelcome'
+import { BannerHost } from '~/components/banners/BannerHost'
 import { workspacePath } from '~/components/workspace-link'
 import { NavPreloader } from '~/components/NavPreloader'
 import { TimeZonePrompt } from '~/components/TimeZonePrompt'
@@ -567,6 +568,8 @@ export default function AppLayoutRoute() {
           >
             {pageContent}
           </div>
+          {/* The shell above shows app-open banners; a tab shows its own page's. */}
+          <BannerHost scope="page" />
           </ShellGuideProvider>
         </PageDocProvider>
         </ActivitiesProvider>
@@ -594,6 +597,7 @@ export default function AppLayoutRoute() {
           exactly once per document — the embedded branch returns above, so a
           workspace iframe never starts a second round of prefetches. */}
       <NavPreloader favorites={favorites} recents={recents} />
+      <BannerHost scope={tabless ? "all" : "open"} />
       <LaunchWelcome firstName={user.firstName || user.email.split('@')[0]} hasCalendarLink={hasCalendarLink} shouldShowTour={shouldShowTour} tabless={tabless} />
       <TimeZonePrompt userTimeZone={userTimeZone} userTimeZoneIsExplicit={userTimeZoneIsExplicit} dismissedZone={tzDismissedZone} />
       </ActivitiesProvider>

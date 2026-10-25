@@ -1,7 +1,10 @@
+import { useEffect } from "react";
 import { useFetcher } from "react-router";
-import { CheckCircle2, Slack, Trash2 } from "lucide-react";
+import { Hash } from "lucide-react";
 import { useConfirmSubmit } from "~/components/ui/dialog";
-import { Tooltip } from "~/components/ui/floating";
+import { useToast } from "~/components/ui/toast";
+import { useOsChrome } from "~/components/os-chrome";
+import { SettingsIconTile, settingsDangerBtn } from "~/components/settings/SettingsSection";
 
 const SLACK_ACTION = "/settings/slack";
 
@@ -14,90 +17,69 @@ export function SlackSettingsBlock({
   configured: boolean;
   emails: string[];
 }) {
-  const fetcher = useFetcher<{ slackUserId?: string | null; error?: string | null }>();
+  const { actionBtnPrimary } = useOsChrome();
+  const fetcher = useFetcher<{ ok?: boolean; slackUserId?: string | null; error?: string | null }>();
+  const toast = useToast();
+  const confirmSubmit = useConfirmSubmit();
+  const busy = fetcher.state !== "idle";
   const connectedId =
     fetcher.data && "slackUserId" in fetcher.data ? fetcher.data.slackUserId : slackUserId;
-  const error = fetcher.data && "error" in fetcher.data ? fetcher.data.error : null;
-  const busy = fetcher.state !== "idle";
-  const confirmSubmit = useConfirmSubmit();
+
+  useEffect(() => {
+    if (fetcher.state !== "idle" || !fetcher.data) return;
+    if (fetcher.data.error) toast.error(fetcher.data.error);
+    else if (fetcher.data.ok) toast.success(fetcher.data.slackUserId ? "Slack connected" : "Slack disconnected");
+  }, [fetcher.state, fetcher.data, toast]);
 
   return (
-    <div className="flex flex-col gap-3">
-      {!configured && (
-        <div className="rounded-md border border-os-amber/40 bg-os-amber/10 p-3 text-sm text-os-amber">
-          Slack isn't configured on the server, so connecting is unavailable right now.
-        </div>
-      )}
-
+    <div className="flex flex-wrap items-center gap-4 rounded-os-card bg-os-card px-6 py-5">
+      <SettingsIconTile>
+        <Hash className="h-4 w-4" />
+      </SettingsIconTile>
+      <div className="min-w-0 flex-1">
+        {connectedId ? (
+          <>
+            <p className="font-semibold text-foreground">Connected</p>
+            <p className="font-mono text-xs text-os-muted">Member ID {connectedId}</p>
+          </>
+        ) : (
+          <>
+            <p className="font-semibold text-foreground">Not connected</p>
+            <p className="text-sm text-os-grey">
+              {configured
+                ? "Slack DMs are paused until you connect."
+                : "Slack isn't set up on this server yet."}
+            </p>
+            {configured && emails.length > 0 && (
+              <p className="mt-0.5 text-xs text-os-muted">We look you up by {emails.join(", ")}.</p>
+            )}
+          </>
+        )}
+      </div>
       {connectedId ? (
-        <div className="overflow-hidden rounded-md border border-border border-l-4 border-l-[#4A154B] bg-card">
-          <div className="flex items-center justify-between bg-[#4A154B]/5 px-3 py-2">
-            <div className="flex min-w-0 items-center gap-2">
-              <Slack className="h-4 w-4 flex-shrink-0 text-[#4A154B]" />
-              <span className="truncate text-sm font-semibold text-foreground">
-                Slack connected
-              </span>
-              <CheckCircle2 className="h-4 w-4 flex-shrink-0 text-os-green" />
-            </div>
-            <fetcher.Form
-              method="post"
-              action={SLACK_ACTION}
-              onSubmit={confirmSubmit({
-                title: "Disconnect Slack?",
-                description:
-                  "You'll stop receiving Slack DM notifications from DALI OS and won't be auto-joined to new channels.",
-                confirmLabel: "Disconnect",
-                tone: "destructive",
-              })}
-            >
-              <input type="hidden" name="intent" value="disconnect" />
-              <Tooltip content="Disconnect Slack">
-                <button
-                  type="submit"
-                  disabled={busy}
-                  aria-label="Disconnect Slack"
-                  className="rounded-md p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </button>
-              </Tooltip>
-            </fetcher.Form>
-          </div>
-          <div className="px-3 py-3">
-            <p className="text-xs text-muted-foreground">
-              Slack member ID:{" "}
-              <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-foreground">
-                {connectedId}
-              </code>
-            </p>
-          </div>
-        </div>
+        <fetcher.Form
+          method="post"
+          action={SLACK_ACTION}
+          onSubmit={confirmSubmit({
+            title: "Disconnect Slack?",
+            description:
+              "You'll stop getting Slack DMs from DALI OS and won't be added to new project channels. Your notification choices are kept.",
+            confirmLabel: "Disconnect",
+            tone: "destructive",
+          })}
+        >
+          <input type="hidden" name="intent" value="disconnect" />
+          <button type="submit" disabled={busy} className={settingsDangerBtn}>
+            Disconnect
+          </button>
+        </fetcher.Form>
       ) : (
-        <div className="rounded-md border border-border bg-card p-4">
-          <p className="text-sm text-muted-foreground">Your Slack account isn't connected yet.</p>
-          {emails.length > 0 && (
-            <p className="mt-1 text-xs text-muted-foreground">
-              We'll look you up by: {emails.join(", ")}.
-            </p>
-          )}
-          <fetcher.Form method="post" action={SLACK_ACTION} className="mt-3">
-            <input type="hidden" name="intent" value="connect" />
-            <button
-              type="submit"
-              disabled={busy || !configured}
-              className="inline-flex items-center gap-2 rounded-md bg-[#4A154B] px-3 py-1.5 text-sm font-semibold text-white hover:bg-[#611f69] disabled:opacity-50"
-            >
-              <Slack className="h-4 w-4" />
-              {busy ? "Connecting…" : "Connect Slack"}
-            </button>
-          </fetcher.Form>
-        </div>
-      )}
-
-      {error && (
-        <div className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
-          {error}
-        </div>
+        <fetcher.Form method="post" action={SLACK_ACTION}>
+          <input type="hidden" name="intent" value="connect" />
+          <button type="submit" disabled={busy || !configured} className={actionBtnPrimary}>
+            {busy ? "Connecting…" : "Connect Slack"}
+          </button>
+        </fetcher.Form>
       )}
     </div>
   );

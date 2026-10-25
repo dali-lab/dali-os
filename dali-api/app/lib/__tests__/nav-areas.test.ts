@@ -185,8 +185,7 @@ describe("Core area", () => {
         "/core/intent-to-work",
         "/core/project-bids",
         "/core/level-up",
-        "/core/access/roles",
-        "/core/access/domains",
+        "/core/access",
         "/core/communications",
       ]),
     );
@@ -268,7 +267,7 @@ describe("admin section allocation", () => {
 describe("areaForPath", () => {
   it("routes /core paths to Core and /projects paths to Projects", () => {
     expect(areaForPath("/core/staffing", REGROUP)?.key).toBe("core");
-    expect(areaForPath("/core/access/roles", REGROUP)?.key).toBe("core");
+    expect(areaForPath("/core/access", REGROUP)?.key).toBe("core");
     // Agreements now lives at its own /core URL (its permanent console hub).
     expect(areaForPath("/core/agreements", REGROUP)?.key).toBe("core");
     expect(areaForPath("/core/agreements/abc123", REGROUP)?.key).toBe("core");

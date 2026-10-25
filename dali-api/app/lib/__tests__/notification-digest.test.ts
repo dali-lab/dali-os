@@ -13,6 +13,9 @@ import { prisma } from "~/lib/db";
 import { enqueueOutbound } from "~/lib/outbound.server";
 import {
   shouldRunDigest,
+  digestDue,
+  inDigestWindow,
+  etDay,
   runDigest,
   renderDigestEmailDocument,
 } from "~/lib/notification-digest.server";
@@ -66,7 +69,57 @@ describe("shouldRunDigest", () => {
   });
 });
 
+describe("digestDue", () => {
+  it("waits for the given ET hour", () => {
+    expect(digestDue("Daily", WED_0859_ET, 9)).toBe(false);
+    expect(digestDue("Daily", WED_0901_ET, 9)).toBe(true);
+    // 2pm ET is 18:00 UTC in July: 9:01 is not due yet.
+    expect(digestDue("Daily", WED_0901_ET, 14)).toBe(false);
+    expect(digestDue("Daily", new Date("2026-07-15T18:01:00Z"), 14)).toBe(true);
+  });
+
+  it("weekly fires only on the given ET weekday", () => {
+    expect(digestDue("Weekly", WED_0901_ET, 9, 1)).toBe(false);
+    expect(digestDue("Weekly", MON_0901_ET, 9, 1)).toBe(true);
+    expect(digestDue("Weekly", MON_0901_ET, 9, 3)).toBe(false);
+    expect(digestDue("Weekly", WED_0901_ET, 9, 3)).toBe(true);
+  });
+});
+
+describe("inDigestWindow", () => {
+  it("sends in the two hours after the member's hour, not later that day", () => {
+    // 9am ET is 13:00 UTC in July.
+    expect(inDigestWindow("Daily", new Date("2026-07-15T12:59:00Z"), 9)).toBe(false);
+    expect(inDigestWindow("Daily", new Date("2026-07-15T13:00:00Z"), 9)).toBe(true);
+    expect(inDigestWindow("Daily", new Date("2026-07-15T14:59:00Z"), 9)).toBe(true);
+    expect(inDigestWindow("Daily", new Date("2026-07-15T15:00:00Z"), 9)).toBe(false);
+    expect(inDigestWindow("Daily", new Date("2026-07-16T02:00:00Z"), 9)).toBe(false);
+  });
+
+  it("still respects the weekly weekday", () => {
+    expect(inDigestWindow("Weekly", WED_0901_ET, 9, 1)).toBe(false);
+    expect(inDigestWindow("Weekly", MON_0901_ET, 9, 1)).toBe(true);
+  });
+});
+
+describe("etDay", () => {
+  it("uses the ET calendar day, not the UTC one", () => {
+    // 11pm ET on Jul 15 is already Jul 16 in UTC.
+    expect(etDay(new Date("2026-07-16T03:00:00Z"))).toBe("2026-07-15");
+    expect(etDay(WED_0901_ET)).toBe("2026-07-15");
+  });
+});
+
 describe("runDigest", () => {
+  const AT_9 = { sendHourEt: 9 };
+  const ada = {
+    id: "u1",
+    firstName: "Ada",
+    daliEmail: "ada@dali.dartmouth.edu",
+    dartmouthEmail: null,
+    personalEmail: null,
+    digestHourEt: null,
+  };
   function notif(overrides: Record<string, unknown> = {}) {
     return {
       id: "n1",
@@ -87,15 +140,8 @@ describe("runDigest", () => {
     ]);
     mockPrisma.notification.findMany.mockResolvedValue([notif()]);
     mockPrisma.notification.updateMany.mockResolvedValue({ count: 1 });
-    mockPrisma.user.findMany.mockResolvedValue([
-      {
-        id: "u1",
-        firstName: "Ada",
-        daliEmail: "ada@dali.dartmouth.edu",
-        dartmouthEmail: null,
-        personalEmail: null,
-      },
-    ]);
+    mockPrisma.user.findMany.mockResolvedValue([ada]);
+    mockPrisma.outboundMessage.findMany.mockResolvedValue([]);
     // Claim-in-transaction: run the callback against the same mock client.
     // ($transaction is a Mock, but the loose mockPrisma type reads it as a
     // nested record — cast so .mockImplementation resolves to the Mock method.)
@@ -106,7 +152,7 @@ describe("runDigest", () => {
   });
 
   it("enqueues matched unread rows and marks exactly those emailedAt in one tx", async () => {
-    const result = await runDigest("Daily", WED_0901_ET);
+    const result = await runDigest("Daily", WED_0901_ET, AT_9);
     expect(result.items).toBe(1);
     expect(mockEnqueue).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -124,7 +170,7 @@ describe("runDigest", () => {
   });
 
   it("selects only unread, un-emailed rows inside the cadence window", async () => {
-    await runDigest("Daily", WED_0901_ET);
+    await runDigest("Daily", WED_0901_ET, AT_9);
     const where = mockPrisma.notification.findMany.mock.calls[0][0].where;
     expect(where.emailedAt).toBeNull();
     expect(where.readAt).toBeNull();
@@ -139,16 +185,56 @@ describe("runDigest", () => {
     mockPrisma.notification.findMany.mockResolvedValue([
       notif({ eventType: "education.certificate" }),
     ]);
-    const result = await runDigest("Daily", WED_0901_ET);
+    const result = await runDigest("Daily", WED_0901_ET, AT_9);
     expect(result).toEqual({ items: 0, note: "nothing unread" });
     expect(mockEnqueue).not.toHaveBeenCalled();
   });
 
   it("no subscribers → no queries beyond prefs", async () => {
     mockPrisma.notificationPreference.findMany.mockResolvedValue([]);
-    const result = await runDigest("Daily", WED_0901_ET);
+    const result = await runDigest("Daily", WED_0901_ET, AT_9);
     expect(result).toEqual({ items: 0, note: "no subscribers" });
     expect(mockPrisma.notification.findMany).not.toHaveBeenCalled();
+  });
+
+  it("uses a member's own hour over the job default", async () => {
+    // Ada picked 6pm: at 9:01 ET nothing goes out, at 6:01pm it does.
+    mockPrisma.user.findMany.mockResolvedValue([{ ...ada, digestHourEt: 18 }]);
+    expect(await runDigest("Daily", WED_0901_ET, AT_9)).toEqual({ items: 0, note: "not due" });
+    expect(mockPrisma.notification.findMany).not.toHaveBeenCalled();
+
+    const sixPm = new Date("2026-07-15T22:01:00Z");
+    mockPrisma.notification.findMany.mockResolvedValue([notif({ createdAt: WED_0901_ET })]);
+    expect((await runDigest("Daily", sixPm, AT_9)).items).toBe(1);
+  });
+
+  it("an earlier hour than the default sends before the default", async () => {
+    mockPrisma.user.findMany.mockResolvedValue([{ ...ada, digestHourEt: 8 }]);
+    const eightOhOne = new Date("2026-07-15T12:01:00Z");
+    expect((await runDigest("Daily", eightOhOne, AT_9)).items).toBe(1);
+  });
+
+  it("skips a member already sent today without claiming their rows", async () => {
+    mockPrisma.outboundMessage.findMany.mockResolvedValue([
+      { dedupKey: "digest:Daily:u1:2026-07-15" },
+    ]);
+    const result = await runDigest("Daily", WED_0901_ET, AT_9);
+    expect(result).toEqual({ items: 0, note: "already sent" });
+    expect(mockPrisma.notification.updateMany).not.toHaveBeenCalled();
+    expect(mockEnqueue).not.toHaveBeenCalled();
+  });
+
+  it("weekly uses the member's hour on the job's weekday", async () => {
+    mockPrisma.user.findMany.mockResolvedValue([{ ...ada, digestHourEt: 12 }]);
+    const monNoon = new Date("2026-07-13T16:01:00Z");
+    mockPrisma.notification.findMany.mockResolvedValue([notif({ createdAt: MON_0901_ET })]);
+    const schedule = { sendHourEt: 9, sendWeekday: 1 };
+    expect(await runDigest("Weekly", MON_0901_ET, schedule)).toEqual({ items: 0, note: "not due" });
+    expect((await runDigest("Weekly", monNoon, schedule)).items).toBe(1);
+    expect(mockEnqueue).toHaveBeenCalledWith(
+      expect.objectContaining({ dedupKey: "digest:Weekly:u1:2026-07-13" }),
+      mockPrisma,
+    );
   });
 
   it("a failed enqueue for one user's tx doesn't stop the others", async () => {
@@ -161,15 +247,15 @@ describe("runDigest", () => {
       notif({ id: "n2", recipientUserId: "u2" }),
     ]);
     mockPrisma.user.findMany.mockResolvedValue([
-      { id: "u1", firstName: "Ada", daliEmail: "ada@d", dartmouthEmail: null, personalEmail: null },
-      { id: "u2", firstName: "Bo", daliEmail: "bo@d", dartmouthEmail: null, personalEmail: null },
+      { ...ada, daliEmail: "ada@d" },
+      { ...ada, id: "u2", firstName: "Bo", daliEmail: "bo@d" },
     ]);
     // u1's enqueue throws inside its tx (rolled back, uncounted); u2 still sends.
     mockEnqueue
       .mockRejectedValueOnce(new Error("db blip"))
       .mockResolvedValueOnce({ id: "om-2", deduped: false });
 
-    const result = await runDigest("Daily", WED_0901_ET);
+    const result = await runDigest("Daily", WED_0901_ET, AT_9);
     expect(result.items).toBe(1);
     expect(mockEnqueue).toHaveBeenCalledTimes(2);
   });

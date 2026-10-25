@@ -1,18 +1,17 @@
-// Admin → Email. One surface for every operator-editable email, replacing three:
-// the versioned-library detail page, the hiring cycle Setup-tab modal, and the
-// education manage-page modal.
-//
-// Grouped by registry area. Each row shows whether an email exists for that key
-// and what happens when it doesn't, because "no row" is meaningful and differs
-// per key (send nothing / refuse the release / fall back to built-in copy).
+// Core → Communications → Email templates. One surface for every
+// operator-editable email: the templates grouped by registry area on the left,
+// the open one's editor, preview and history on the right.
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Form, useFetcher, useNavigation, useSearchParams } from "react-router";
-import { AlertTriangle, Check, Mail, RotateCcw } from "lucide-react";
+import { AlertTriangle, History, RotateCcw, Send } from "lucide-react";
 
 import { Modal, ModalHeader } from "~/components/Modal";
-import { modalCardClass } from "~/components/os-chrome";
+import { modalCardClass, useOsChrome } from "~/components/os-chrome";
 import { SearchInput } from "~/components/ui/SearchInput";
+import { useToast } from "~/components/ui/toast";
+import { Pill } from "~/hiring/components/cycle-setup/SetupCard";
+import { cn } from "~/lib/cn";
 import {
   EMAIL_TEMPLATE_KEYS,
   emailTemplateDef,
@@ -54,7 +53,7 @@ function uneditedLabel(when: WhenMissing): string {
     case "skip":
       return "Nothing sends for this yet";
     case "error":
-      return "Not written — releasing is blocked until it is";
+      return "Not written yet. Releasing is blocked until it is";
     case "default":
       return "Using the built-in wording";
   }
@@ -79,121 +78,244 @@ export function EmailTemplatesAdmin({
 }: {
   rows: AdminEmailRow[];
   versions: AdminEmailVersion[];
-  openKey: EmailTemplateKey | null;
+  openKey: EmailTemplateKey;
 }) {
   const [query, setQuery] = useState("");
+  const [, setSearchParams] = useSearchParams();
   const byKey = useMemo(() => new Map(rows.map((r) => [r.key, r])), [rows]);
-
-  const areas = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    const out: { area: string; keys: EmailTemplateKey[] }[] = [];
-    for (const key of EMAIL_TEMPLATE_KEYS) {
-      const def = emailTemplateDef(key);
-      if (
-        q &&
-        !def.label.toLowerCase().includes(q) &&
-        !def.area.toLowerCase().includes(q) &&
-        !(byKey.get(key)?.subject ?? "").toLowerCase().includes(q)
-      ) {
-        continue;
-      }
-      const bucket = out.find((b) => b.area === def.area);
-      if (bucket) bucket.keys.push(key);
-      else out.push({ area: def.area, keys: [key] });
-    }
-    return out;
-  }, [query, byKey]);
+  const areas = useMemo(() => groupByArea(query, byKey), [query, byKey]);
+  const row = byKey.get(openKey) ?? null;
 
   return (
-    <div className="space-y-6">
-      <div className="max-w-sm">
-        <SearchInput
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search emails"
-        />
-      </div>
-
-      {areas.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No emails match that search.</p>
-      ) : null}
-
-      {areas.map(({ area, keys }) => (
-        <section key={area} className="space-y-2">
-          <h2 className="text-sm font-semibold">{area}</h2>
-          <div className="border rounded-lg divide-y">
-            {keys.map((key) => (
-              <EmailRow key={key} templateKey={key} row={byKey.get(key) ?? null} />
-            ))}
+    <div className="grid gap-6 lg:grid-cols-[280px_minmax(0,1fr)]">
+      <nav aria-label="Email templates" className="flex flex-col gap-5">
+        <SearchInput value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search emails" />
+        {areas.length === 0 && <p className="px-3 text-sm text-os-muted">No emails match that search.</p>}
+        {areas.map(({ area, keys }) => (
+          <div key={area} className="flex flex-col gap-1">
+            <p className="px-3 text-xs font-semibold text-os-muted">{area}</p>
+            {keys.map((key) => {
+              const active = key === openKey;
+              const r = byKey.get(key);
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  aria-current={active ? "true" : undefined}
+                  onClick={() => setSearchParams({ key }, { replace: true, preventScrollReset: true })}
+                  className={cn(
+                    "flex items-center justify-between gap-2 rounded-os-item px-3 py-2 text-left text-sm transition-colors",
+                    active ? "bg-os-container text-foreground" : "text-os-grey hover:bg-os-hover hover:text-foreground",
+                  )}
+                >
+                  <span className="min-w-0 truncate">{emailTemplateDef(key).label}</span>
+                  {r?.edited ? (
+                    <span className="shrink-0 text-[11px] text-os-muted">Edited</span>
+                  ) : emailTemplateDef(key).whenMissing !== "default" ? (
+                    <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-os-amber" aria-label="Not written yet" />
+                  ) : null}
+                </button>
+              );
+            })}
           </div>
-        </section>
-      ))}
+        ))}
+      </nav>
 
-      {openKey ? (
-        <EmailEditor
-          templateKey={openKey}
-          row={byKey.get(openKey) ?? null}
-          versions={versions}
-        />
-      ) : null}
+      <TemplatePanel
+        // Reseeds the fields when another template opens or a restore swaps the copy.
+        key={`${openKey}:${row?.updatedAt ?? "unedited"}`}
+        templateKey={openKey}
+        row={row}
+        versions={versions}
+      />
     </div>
   );
 }
 
-function EmailRow({
+function groupByArea(query: string, byKey: Map<EmailTemplateKey, AdminEmailRow>) {
+  const q = query.trim().toLowerCase();
+  const out: { area: string; keys: EmailTemplateKey[] }[] = [];
+  for (const key of EMAIL_TEMPLATE_KEYS) {
+    const def = emailTemplateDef(key);
+    if (
+      q &&
+      !def.label.toLowerCase().includes(q) &&
+      !def.area.toLowerCase().includes(q) &&
+      !(byKey.get(key)?.subject ?? "").toLowerCase().includes(q)
+    ) {
+      continue;
+    }
+    const bucket = out.find((b) => b.area === def.area);
+    if (bucket) bucket.keys.push(key);
+    else out.push({ area: def.area, keys: [key] });
+  }
+  return out;
+}
+
+function TemplatePanel({
   templateKey,
   row,
+  versions,
 }: {
   templateKey: EmailTemplateKey;
   row: AdminEmailRow | null;
+  versions: AdminEmailVersion[];
 }) {
+  const os = useOsChrome();
+  const toast = useToast();
   const def = emailTemplateDef(templateKey);
-  const edited = !!row?.edited;
-  // An unedited key that falls back to registry wording still sends, so it is not
-  // a warning — only a key whose absence means nothing sends (or blocks a
-  // release) deserves one.
-  const warn = !edited && def.whenMissing !== "default";
+  const fetcher = useFetcher<{ saved?: true; rolledBack?: true; testSent?: true; error?: string }>();
+  const bodyRef = useRef<HTMLTextAreaElement>(null);
+  const [subject, setSubject] = useState(row?.subject ?? "");
+  const [body, setBody] = useState(row?.body ?? "");
+  const dirty = subject !== (row?.subject ?? "") || body !== (row?.body ?? "");
+  const busy = fetcher.state !== "idle";
+
+  const warnings = useMemo(() => lint(`${subject}\n${body}`, def.variables), [subject, body, def.variables]);
+  const preview = useMemo(() => renderEmail({ subject, body }, def.sample as never), [subject, body, def.sample]);
+
+  const handled = useRef<unknown>(null);
+  useEffect(() => {
+    const d = fetcher.data;
+    if (fetcher.state !== "idle" || !d || handled.current === d) return;
+    handled.current = d;
+    if (d.error) toast.error(d.error);
+    else if (d.testSent) toast.success("Test sent to your DALI email");
+    else if (d.saved) toast.success("Saved. Every send uses it from now on");
+    else if (d.rolledBack) toast.success("Version restored");
+  }, [fetcher.state, fetcher.data, toast]);
+
+  const submit = (intent: "save" | "send-test") =>
+    fetcher.submit({ intent, key: templateKey, subject, body, stay: "1" }, { method: "post", action: EDITOR_ROUTE });
+
+  const insert = (v: string) => {
+    const token = `{{${v}}}`;
+    const el = bodyRef.current;
+    if (!el) return setBody((b) => b + token);
+    const { selectionStart: a, selectionEnd: z } = el;
+    setBody((b) => b.slice(0, a) + token + b.slice(z));
+    requestAnimationFrame(() => {
+      el.focus();
+      el.setSelectionRange(a + token.length, a + token.length);
+    });
+  };
+
+  const unwritten = !row?.edited && def.whenMissing !== "default";
+
   return (
-    <div className="flex items-start gap-3 p-3">
-      <Mail className="w-4 h-4 mt-0.5 text-muted-foreground shrink-0" />
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
-          <span className="text-sm font-medium">{def.label}</span>
-          {edited ? (
-            <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-              <Check className="w-3 h-3" /> Edited
-            </span>
-          ) : (
-            <span
-              className={`inline-flex items-center gap-1 text-xs ${
-                warn ? "text-os-amber" : "text-muted-foreground"
-              }`}
+    <div className="flex min-w-0 flex-col gap-6">
+      <section className={cn(os.panel, os.panelPad, os.formClass, "flex flex-col gap-5")} aria-label={`${def.label} template`}>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className={os.sectionTitle}>{def.label}</h2>
+              <Pill>{def.area}</Pill>
+            </div>
+            <p className="mt-1 text-sm text-os-grey">{def.description}</p>
+          </div>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              className={os.actionBtn()}
+              disabled={busy || (!subject.trim() && !body.trim())}
+              onClick={() => submit("send-test")}
             >
-              {warn ? <AlertTriangle className="w-3 h-3" /> : null}
-              {uneditedLabel(def.whenMissing)}
-            </span>
-          )}
+              <Send className={os.actionIcon} /> Send test
+            </button>
+            <button type="button" className={os.actionBtnPrimary} disabled={busy || !dirty} onClick={() => submit("save")}>
+              Save
+            </button>
+          </div>
         </div>
-        <p className="text-xs text-muted-foreground mt-0.5">{def.description}</p>
-        {row?.subject ? (
-          <p className="text-xs text-muted-foreground mt-1 truncate">
-            Subject: {row.subject}
+
+        {(unwritten || !row?.edited) && (
+          <p className={cn("flex items-center gap-2 text-sm", unwritten ? "text-os-amber" : "text-os-muted")}>
+            {unwritten && <AlertTriangle className="h-4 w-4 shrink-0" />}
+            {uneditedLabel(def.whenMissing)}
           </p>
-        ) : null}
-        <p className="text-[11px] text-muted-foreground mt-1">
-          Sends as {def.purpose}
-          {row?.updatedAt
-            ? ` · edited ${new Date(row.updatedAt).toLocaleDateString()}${row.updatedBy ? ` by ${row.updatedBy}` : ""}`
-            : ""}
-          {row && row.versionCount > 0 ? ` · ${row.versionCount} version${row.versionCount === 1 ? "" : "s"}` : ""}
-        </p>
-      </div>
-      <Form method="get" className="shrink-0">
-        <input type="hidden" name="key" value={templateKey} />
-        <button type="submit" className="text-sm underline">
-          {row?.subject || row?.body ? "Edit" : "Write"}
-        </button>
-      </Form>
+        )}
+
+        <label className={os.fieldLabel}>
+          Subject
+          <input value={subject} onChange={(e) => setSubject(e.target.value)} />
+        </label>
+        <label className={os.fieldLabel}>
+          Body
+          <textarea
+            ref={bodyRef}
+            rows={12}
+            value={body}
+            onChange={(e) => setBody(e.target.value)}
+            className="resize-y font-mono text-[13px] leading-relaxed"
+          />
+        </label>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs text-os-muted">Insert</span>
+          {def.variables.map((v) => (
+            <button
+              key={v}
+              type="button"
+              onClick={() => insert(v)}
+              className="rounded-full bg-os-well px-2.5 py-1 font-mono text-xs text-os-accent transition-colors hover:bg-os-container"
+            >
+              {`{{${v}}}`}
+            </button>
+          ))}
+        </div>
+        <p className="text-xs text-os-muted">Leave both fields empty to turn this email off. Sends as {def.purpose}.</p>
+        {warnings.unknown.length > 0 && (
+          <p className="text-xs text-os-amber">
+            Not a known variable: {warnings.unknown.map((t) => `{{${t}}}`).join(", ")}. These go out as plain text, and
+            names are case-sensitive.
+          </p>
+        )}
+        {warnings.unfilled.length > 0 && (
+          <p className="text-xs text-os-amber">
+            Never filled for this email: {warnings.unfilled.map((t) => `{{${t}}}`).join(", ")}.
+          </p>
+        )}
+      </section>
+
+      <section className="flex flex-col gap-3" aria-label="Preview">
+        <h2 className="text-sm font-semibold text-os-grey">Preview with sample values</h2>
+        <div className={cn(os.panel, os.panelPad, "text-sm")}>
+          <p className="mb-3 font-semibold text-foreground">{preview.subject}</p>
+          {/* Safe: renderEmail runs the body through DOMPurify. */}
+          <div className="text-os-grey" dangerouslySetInnerHTML={{ __html: preview.html }} />
+        </div>
+      </section>
+
+      <section className="flex flex-col gap-3" aria-label="Version history">
+        <h2 className="flex items-center gap-2 text-sm font-semibold text-os-grey">
+          <History className="h-4 w-4" /> Version history
+        </h2>
+        <ol className={os.panel}>
+          {versions.map((v, i) => (
+            <li key={v.id} className={cn("flex items-center gap-4 px-6 py-3", i > 0 && "border-t border-os-container/70")}>
+              <span className="w-8 text-sm tabular-nums text-os-muted">v{v.versionNumber}</span>
+              <span className="min-w-0 flex-1 truncate text-sm text-foreground">
+                {v.author} <span className="text-os-muted">· {new Date(v.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</span>
+              </span>
+              {i === 0 ? (
+                <span className="text-xs text-os-muted">Current</span>
+              ) : (
+                <fetcher.Form method="post" action={EDITOR_ROUTE}>
+                  <input type="hidden" name="intent" value="rollback" />
+                  <input type="hidden" name="key" value={templateKey} />
+                  <input type="hidden" name="versionId" value={v.id} />
+                  <input type="hidden" name="stay" value="1" />
+                  <button type="submit" className={os.actionBtn()} disabled={busy}>
+                    Restore
+                  </button>
+                </fetcher.Form>
+              )}
+            </li>
+          ))}
+          {versions.length === 0 && (
+            <li className="px-6 py-10 text-center text-sm text-os-muted">No saved versions yet.</li>
+          )}
+        </ol>
+      </section>
     </div>
   );
 }

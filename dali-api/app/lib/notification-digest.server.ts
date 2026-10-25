@@ -1,17 +1,15 @@
-// Digest emails: one batched email per user summarizing what they haven't
+// Digest emails: one batched email per member summarizing what they haven't
 // read, for (user, eventType) pairs whose NotificationPreference is Daily or
-// Weekly. Runs as two registered jobs (notification-digest-daily/-weekly) on
-// a 15-minute tick that self-gates on wall clock: sends open at the job's
-// configured ET hour (default 9am; weekly also gates on its configured
-// weekday, default Monday), and the runner's lastSuccessAt is the whole
-// cursor — a success before today's send moment means we haven't sent today.
+// Weekly. Runs as two registered jobs (notification-digest-daily/-weekly) on a
+// 15-minute tick. Each member's digest goes out in the window after their ET
+// hour (their own choice in Settings, else the job's configured hour; weekly
+// also gates on the job's weekday). The outbox row keyed
+// `digest:{freq}:{user}:{ET day}` is the per-member sent-today cursor.
 //
-// No per-user lastDigestAt exists anywhere: `emailedAt IS NULL` inside the
-// cadence window is the selection. Claim-before-send: the rows are marked
-// emailed AND the digest is enqueued to the outbox in one transaction, so a
-// crash can't leave rows unmarked (and re-sent); the outbox then owns delivery
-// (retry + dead-letter) and its `digest:{freq}:{user}:{day}` key is a second
-// guard against a same-day re-run.
+// `emailedAt IS NULL` inside the cadence window is the row selection.
+// Claim-before-send: the rows are marked emailed AND the digest is enqueued to
+// the outbox in one transaction, so a crash can't leave rows unmarked (and
+// re-sent); the outbox then owns delivery (retry + dead-letter).
 
 import { prisma } from "~/lib/db";
 import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
@@ -57,27 +55,58 @@ export type DigestSchedule = {
   sendWeekday?: number;
 };
 
-/** Pure gate: has today's (ET) send moment arrived without a send since? */
+/** Pure gate for jobs with one lab-wide send time (standup prompts, timesheet
+ *  reminders): has today's (ET) send moment arrived without a send since? */
 export function shouldRunDigest(
   freq: DigestFrequency,
   lastSuccessAt: Date | null,
   now: Date,
   schedule: DigestSchedule,
 ): boolean {
-  if (freq === "Weekly" && weekdayInZone(now) !== (schedule.sendWeekday ?? 1)) {
-    return false;
-  }
+  if (!digestDue(freq, now, schedule.sendHourEt, schedule.sendWeekday)) return false;
   const { year, month, day } = getZonedParts(now, APPLICATION_TZ);
-  const sendMoment = zonedWallTimeUtc(
-    year,
-    month,
-    day,
-    schedule.sendHourEt,
-    0,
-    APPLICATION_TZ,
-  );
-  if (now < sendMoment) return false;
+  const sendMoment = zonedWallTimeUtc(year, month, day, schedule.sendHourEt, 0, APPLICATION_TZ);
   return lastSuccessAt === null || lastSuccessAt < sendMoment;
+}
+
+/** Pure gate: has today's (ET) send moment at `hourEt` arrived? */
+export function digestDue(
+  freq: DigestFrequency,
+  now: Date,
+  hourEt: number,
+  sendWeekday = 1,
+): boolean {
+  if (freq === "Weekly" && weekdayInZone(now) !== sendWeekday) return false;
+  const { year, month, day } = getZonedParts(now, APPLICATION_TZ);
+  return now >= zonedWallTimeUtc(year, month, day, hourEt, 0, APPLICATION_TZ);
+}
+
+// How long after a member's hour their digest may still go out. Long enough to
+// ride out a few missed ticks; short enough that a notification arriving in the
+// evening waits for tomorrow's digest instead of sending one at night.
+export const DIGEST_SEND_WINDOW_MS = 2 * 3_600_000;
+
+/** Due at `hourEt` today and still inside the send window. */
+export function inDigestWindow(
+  freq: DigestFrequency,
+  now: Date,
+  hourEt: number,
+  sendWeekday = 1,
+): boolean {
+  if (!digestDue(freq, now, hourEt, sendWeekday)) return false;
+  const { year, month, day } = getZonedParts(now, APPLICATION_TZ);
+  const opens = zonedWallTimeUtc(year, month, day, hourEt, 0, APPLICATION_TZ);
+  return now.getTime() < opens.getTime() + DIGEST_SEND_WINDOW_MS;
+}
+
+/** The ET calendar day, "yyyy-mm-dd": one digest per member per day. */
+export function etDay(now: Date): string {
+  const { year, month, day } = getZonedParts(now, APPLICATION_TZ);
+  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
+export function digestDedupKey(freq: DigestFrequency, userId: string, now: Date): string {
+  return `digest:${freq}:${userId}:${etDay(now)}`;
 }
 
 function relativeTime(from: Date, to: Date): string {
@@ -182,7 +211,11 @@ export function renderDigestEmailDocument(args: DigestArgs): {
   };
 }
 
-export async function runDigest(freq: DigestFrequency, now: Date): Promise<JobResult> {
+export async function runDigest(
+  freq: DigestFrequency,
+  now: Date,
+  schedule: DigestSchedule,
+): Promise<JobResult> {
   const prefs = await prisma.notificationPreference.findMany({
     where: { digestFrequency: freq },
     select: { userId: true, eventType: true },
@@ -195,11 +228,41 @@ export async function runDigest(freq: DigestFrequency, now: Date): Promise<JobRe
     set.add(p.eventType);
     wantedByUser.set(p.userId, set);
   }
-  const userIds = [...wantedByUser.keys()];
+
+  const users = await prisma.user.findMany({
+    where: { id: { in: [...wantedByUser.keys()] } },
+    select: {
+      id: true,
+      firstName: true,
+      daliEmail: true,
+      dartmouthEmail: true,
+      personalEmail: true,
+      digestHourEt: true,
+    },
+  });
+  const due = users.filter((u) =>
+    inDigestWindow(freq, now, u.digestHourEt ?? schedule.sendHourEt, schedule.sendWeekday),
+  );
+  if (due.length === 0) return { items: 0, note: "not due" };
+
+  // The outbox row is the per-member "sent today" cursor. Checking it before
+  // claiming rows matters: claiming and then hitting the dedup key would mark
+  // rows emailed that never went out.
+  const keyByUser = new Map(due.map((u) => [u.id, digestDedupKey(freq, u.id, now)]));
+  const alreadySent = new Set(
+    (
+      await prisma.outboundMessage.findMany({
+        where: { channel: "email", dedupKey: { in: [...keyByUser.values()] } },
+        select: { dedupKey: true },
+      })
+    ).map((m) => m.dedupKey),
+  );
+  const pending = due.filter((u) => !alreadySent.has(keyByUser.get(u.id)!));
+  if (pending.length === 0) return { items: 0, note: "already sent" };
 
   const rows = await prisma.notification.findMany({
     where: {
-      recipientUserId: { in: userIds },
+      recipientUserId: { in: pending.map((u) => u.id) },
       emailedAt: null,
       readAt: null,
       createdAt: { gte: new Date(now.getTime() - WINDOW_MS[freq]) },
@@ -219,29 +282,13 @@ export async function runDigest(freq: DigestFrequency, now: Date): Promise<JobRe
   const matched = rows.filter((r) => wantedByUser.get(r.recipientUserId)?.has(r.eventType));
   if (matched.length === 0) return { items: 0, note: "nothing unread" };
 
-  const users = await prisma.user.findMany({
-    where: { id: { in: [...new Set(matched.map((r) => r.recipientUserId))] } },
-    select: {
-      id: true,
-      firstName: true,
-      daliEmail: true,
-      dartmouthEmail: true,
-      personalEmail: true,
-    },
-  });
-  const userById = new Map(users.map((u) => [u.id, u]));
-
-  const day = now.toISOString().slice(0, 10);
   const enqueuedIds: Array<string | null> = [];
   let sent = 0;
-  for (const [userId, wanted] of wantedByUser) {
-    const user = userById.get(userId);
-    if (!user) continue;
+  for (const user of pending) {
+    const userId = user.id;
     const to = user.daliEmail ?? user.dartmouthEmail ?? user.personalEmail;
     if (!to) continue;
-    const userRows = matched.filter(
-      (r) => r.recipientUserId === userId && wanted.has(r.eventType),
-    );
+    const userRows = matched.filter((r) => r.recipientUserId === userId);
     if (userRows.length === 0) continue; // no empty digests
 
     const digestArgs = { firstName: user.firstName, now, rows: userRows };
@@ -258,7 +305,7 @@ export async function runDigest(freq: DigestFrequency, now: Date): Promise<JobRe
           {
             channel: "email",
             purpose: "General",
-            dedupKey: `digest:${freq}:${userId}:${day}`,
+            dedupKey: keyByUser.get(userId)!,
             target: to,
             recipientUserId: userId,
             subject,
@@ -284,25 +331,13 @@ export async function runDigest(freq: DigestFrequency, now: Date): Promise<JobRe
   return { items: sent };
 }
 
-export async function runDailyDigest({
-  now,
-  lastSuccessAt,
-  settings,
-}: JobContext): Promise<JobResult> {
-  if (!shouldRunDigest("Daily", lastSuccessAt, now, { sendHourEt: settings.sendHourEt })) {
-    return { items: 0, note: "not due" };
-  }
-  return runDigest("Daily", now);
+export async function runDailyDigest({ now, settings }: JobContext): Promise<JobResult> {
+  return runDigest("Daily", now, { sendHourEt: settings.sendHourEt });
 }
 
-export async function runWeeklyDigest({
-  now,
-  lastSuccessAt,
-  settings,
-}: JobContext): Promise<JobResult> {
-  const schedule = { sendHourEt: settings.sendHourEt, sendWeekday: settings.sendWeekday };
-  if (!shouldRunDigest("Weekly", lastSuccessAt, now, schedule)) {
-    return { items: 0, note: "not due" };
-  }
-  return runDigest("Weekly", now);
+export async function runWeeklyDigest({ now, settings }: JobContext): Promise<JobResult> {
+  return runDigest("Weekly", now, {
+    sendHourEt: settings.sendHourEt,
+    sendWeekday: settings.sendWeekday,
+  });
 }
