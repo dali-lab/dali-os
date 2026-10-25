@@ -57,7 +57,7 @@ import { DomainRosterCard, type RosterPerson } from "~/hiring/components/cycle-s
 import { addDomainMentors, domainMentorIds } from "~/hiring/lib/cycle-rosters.server";
 import { getEngagementSummaries, type EngagementSummary } from "~/hiring/lib/email-engagement.server";
 import { ApplicantEngagementChip } from "~/hiring/components/ApplicantEmailPanel";
-import { domainReviewStatus } from "~/hiring/lib/domain-windows";
+import { canAssignReviewersIn, domainReviewStatus } from "~/hiring/lib/domain-windows";
 
 export const meta: Route.MetaFunction = () => [{ title: "Domain lead · DALI OS" }];
 
@@ -1536,6 +1536,7 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
 }) {
   const toast = useToast();
   const isUnderReview = currentStatus === "UnderReview";
+  const reviewersEditable = canAssignReviewersIn(currentStatus) && canAssignReviewers;
   // Assigning reviewers belongs to a live cycle; finalizing a decision that
   // already exists does not. Keeping the two apart is what lets a closed
   // cycle's leftover Drafts still be finalized. See canFinalize above.
@@ -1729,14 +1730,16 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
               Finalize all ({finalizableApps.length})
             </button>
           )}
-          {currentStatus === "UnderReview" && (
+          {canAssignReviewersIn(currentStatus) && (
             <Tooltip
               content={
                 !canAssignReviewers
                   ? "A rubric must be set before reviewers can be auto-assigned to applications."
                   : cycleReviewersForDomain.length === 0
                     ? "Add reviewers to this domain first."
-                    : null
+                    : !isUnderReview
+                      ? "Applications are still coming in. Run this again after the close to cover new ones."
+                      : null
               }
               variant="rich"
             >
@@ -1852,7 +1855,7 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
                     domainApplicationId={da?.id}
                     reviews={reviews}
                     cycleReviewers={cycleReviewersForDomain}
-                    editable={isUnderReview && canAssignReviewers}
+                    editable={reviewersEditable}
                     rubricCriteria={rubricCriteria}
                   />
                 </td>
@@ -1945,7 +1948,7 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
                   domainApplicationId={da?.id}
                   reviews={reviews}
                   cycleReviewers={cycleReviewersForDomain}
-                  editable={isUnderReview && canAssignReviewers}
+                  editable={reviewersEditable}
                   rubricCriteria={rubricCriteria}
                 />
               </div>
