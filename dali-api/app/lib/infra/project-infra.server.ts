@@ -1,5 +1,5 @@
 // Per-project cloud infra config lives on the Project row (schema.prisma:
-// flyOrgSlug / neonOrgId / flyReadTokenEnc / flyWriteTokenEnc / infraEnabled).
+// flyOrgSlug / neonOrgId / neonProjectIds / flyReadTokenEnc / flyWriteTokenEnc / infraEnabled).
 // This module reads/decrypts that config for the sweep + console actions, and
 // builds the Project update for the config editor. Fly tokens are decrypted only
 // here and never returned to the client.
@@ -12,6 +12,7 @@ const CONFIG_SELECT = {
   name: true,
   flyOrgSlug: true,
   neonOrgId: true,
+  neonProjectIds: true,
   flyReadTokenEnc: true,
   flyWriteTokenEnc: true,
   infraEnabled: true,
@@ -22,6 +23,7 @@ type ConfigRow = {
   name: string;
   flyOrgSlug: string | null;
   neonOrgId: string | null;
+  neonProjectIds: string[];
   flyReadTokenEnc: string | null;
   flyWriteTokenEnc: string | null;
   infraEnabled: boolean;
@@ -34,6 +36,7 @@ export type InfraProjectCreds = {
   name: string;
   flyOrgSlug: string | null;
   neonOrgId: string | null;
+  neonProjectIds: string[];
   flyReadToken: string | null;
   flyWriteToken: string | null;
   infraEnabled: boolean;
@@ -45,6 +48,7 @@ function toCreds(r: ConfigRow): InfraProjectCreds {
     name: r.name,
     flyOrgSlug: r.flyOrgSlug,
     neonOrgId: r.neonOrgId,
+    neonProjectIds: r.neonProjectIds,
     flyReadToken: r.flyReadTokenEnc ? decryptSecret(r.flyReadTokenEnc) : null,
     flyWriteToken: r.flyWriteTokenEnc ? decryptSecret(r.flyWriteTokenEnc) : null,
     infraEnabled: r.infraEnabled,
@@ -74,6 +78,7 @@ export type InfraProjectInfo = {
   name: string;
   flyOrgSlug: string | null;
   neonOrgId: string | null;
+  neonProjectIds: string[];
   infraEnabled: boolean;
   hasFlyReadToken: boolean;
   hasFlyWriteToken: boolean;
@@ -96,6 +101,7 @@ export async function listInfraProjects(): Promise<InfraProjectInfo[]> {
     name: r.name,
     flyOrgSlug: r.flyOrgSlug,
     neonOrgId: r.neonOrgId,
+    neonProjectIds: r.neonProjectIds,
     infraEnabled: r.infraEnabled,
     hasFlyReadToken: !!r.flyReadTokenEnc,
     hasFlyWriteToken: !!r.flyWriteTokenEnc,
@@ -116,12 +122,14 @@ export function hasInfraConfig(p: {
 export function buildInfraConfigUpdate(input: {
   flyOrgSlug?: string | null;
   neonOrgId?: string | null;
+  neonProjectIds?: string[];
   infraEnabled?: boolean;
   flyReadToken?: string;
   flyWriteToken?: string;
 }): {
   flyOrgSlug?: string | null;
   neonOrgId?: string | null;
+  neonProjectIds?: string[];
   infraEnabled?: boolean;
   flyReadTokenEnc?: string;
   flyWriteTokenEnc?: string;
@@ -129,12 +137,16 @@ export function buildInfraConfigUpdate(input: {
   const data: {
     flyOrgSlug?: string | null;
     neonOrgId?: string | null;
+    neonProjectIds?: string[];
     infraEnabled?: boolean;
     flyReadTokenEnc?: string;
     flyWriteTokenEnc?: string;
   } = {};
   if (input.flyOrgSlug !== undefined) data.flyOrgSlug = input.flyOrgSlug || null;
   if (input.neonOrgId !== undefined) data.neonOrgId = input.neonOrgId || null;
+  if (input.neonProjectIds !== undefined) {
+    data.neonProjectIds = [...new Set(input.neonProjectIds.map((id) => id.trim()).filter(Boolean))];
+  }
   if (input.infraEnabled !== undefined) data.infraEnabled = input.infraEnabled;
   if (input.flyReadToken) data.flyReadTokenEnc = encryptSecret(input.flyReadToken);
   if (input.flyWriteToken) data.flyWriteTokenEnc = encryptSecret(input.flyWriteToken);

@@ -3927,12 +3927,14 @@ model Project {
   slackChannelName String?
 
   // ─── Cloud infrastructure (Fly.io + Neon) ───
-  // The lab runs one Fly org + one Neon org per project. These power the
+  // The lab runs one Fly org per project; Neon is one shared org, so
+  // neonProjectIds picks which of its databases belong here. These power the
   // per-project Infrastructure section (view for any member) and the lab-wide
   // Infrastructure console (Core/Admin actions). Fly tokens are AES-256-GCM
   // encrypted at rest (app/lib/infra/crypto.server.ts). Null = not configured.
   flyOrgSlug       String?
   neonOrgId        String? // Neon org id (org-<name>-<digits>), passed as ?org_id=
+  neonProjectIds   String[] @default([])
   flyReadTokenEnc  String? // read-only Fly token (drives the sweep), encrypted
   flyWriteTokenEnc String? // write Fly token (gates console actions), encrypted
   infraEnabled     Boolean @default(true) // off keeps config but skips the sweep
@@ -6168,9 +6170,9 @@ enum ActivityScoring {
 
 // ─── Infrastructure Dashboard ────────────────────────────────────────────────
 
-// Cloud infra config lives on Project (flyOrgSlug / neonOrgId / flyReadTokenEnc
-// / flyWriteTokenEnc / infraEnabled) — the lab runs one Fly org + one Neon org
-// per project. Fly tokens are AES-256-GCM encrypted at rest (app/lib/infra/
+// Cloud infra config lives on Project (flyOrgSlug / neonOrgId / neonProjectIds /
+// flyReadTokenEnc / flyWriteTokenEnc / infraEnabled) — one Fly org per project,
+// one shared Neon org with neonProjectIds picking each project's databases. Fly tokens are AES-256-GCM encrypted at rest (app/lib/infra/
 // crypto.server.ts, keyed by INFRA_SECRET_KEY); the shared Neon personal key is
 // an env secret (INFRA_NEON_API_KEY). The tables below cache swept inventory /
 // usage and hold members' change requests, keyed by Project id (plain string,

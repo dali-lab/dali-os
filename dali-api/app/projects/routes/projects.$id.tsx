@@ -1167,6 +1167,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       select: {
         flyOrgSlug: true,
         neonOrgId: true,
+        neonProjectIds: true,
         infraEnabled: true,
         flyReadTokenEnc: true,
         flyWriteTokenEnc: true,
@@ -1186,6 +1187,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     config: {
       flyOrgSlug: infraConfigRow?.flyOrgSlug ?? null,
       neonOrgId: infraConfigRow?.neonOrgId ?? null,
+      neonProjectIds: infraConfigRow?.neonProjectIds ?? [],
       infraEnabled: infraConfigRow?.infraEnabled ?? true,
       hasFlyReadToken: !!infraConfigRow?.flyReadTokenEnc,
       hasFlyWriteToken: !!infraConfigRow?.flyWriteTokenEnc,
@@ -1454,6 +1456,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     const data = buildInfraConfigUpdate({
       flyOrgSlug: (form.get("flyOrgSlug") as string | null) ?? "",
       neonOrgId: (form.get("neonOrgId") as string | null) ?? "",
+      neonProjectIds: form.getAll("neonProjectIds").map(String),
       infraEnabled: form.get("infraEnabled") != null,
       flyReadToken: ((form.get("flyReadToken") as string | null) ?? "") || undefined,
       flyWriteToken: ((form.get("flyWriteToken") as string | null) ?? "") || undefined,
@@ -1466,6 +1469,7 @@ export async function action({ request, params }: Route.ActionArgs) {
       metadata: {
         flyOrgSlug: data.flyOrgSlug ?? null,
         neonOrgId: data.neonOrgId ?? null,
+        neonProjectIds: data.neonProjectIds ?? null,
         infraEnabled: data.infraEnabled ?? null,
         setFlyReadToken: !!data.flyReadTokenEnc,
         setFlyWriteToken: !!data.flyWriteTokenEnc,

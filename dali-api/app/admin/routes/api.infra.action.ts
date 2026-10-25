@@ -13,6 +13,7 @@ import { requireAuth, forbidden } from "~/lib/auth";
 import { isCore, isAdmin } from "~/lib/roles";
 import { parseJson } from "~/lib/validate";
 import { logAuditEvent } from "~/lib/audit";
+import { prisma } from "~/lib/db";
 import { getProjectInfraCreds } from "~/lib/infra/project-infra.server";
 import {
   assertFlyAppMutable,
@@ -237,7 +238,13 @@ export async function action({ request }: Route.ActionArgs) {
       case "neon.project.create": {
         if (!creds.neonOrgId) return badReq("No Neon org id configured for this project");
         const { projectId, operations } = await neon.createProject(creds.neonOrgId, parsed.name);
-        if (projectId) await neon.pollOperations(projectId, operations).catch(() => {});
+        if (projectId) {
+          await neon.pollOperations(projectId, operations).catch(() => {});
+          await prisma.project.update({
+            where: { id: parsed.projectId },
+            data: { neonProjectIds: { push: projectId } },
+          });
+        }
         await audit(auth.user.sub, "infra.neon.project.create", projectId, request, {
           projectId: parsed.projectId,
           name: parsed.name,

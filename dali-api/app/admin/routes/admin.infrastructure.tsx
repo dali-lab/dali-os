@@ -309,7 +309,7 @@ function ProjectCard({
               )}
               {p.neonOrgId && (
                 <a
-                  href={`https://console.neon.tech/app/orgs/${p.neonOrgId}/billing`}
+                  href={`https://console.neon.tech/app/org/${p.neonOrgId}/billing`}
                   target="_blank"
                   rel="noreferrer"
                   className="inline-flex items-center gap-1 text-os-accent hover:text-os-accent-hover"
@@ -509,7 +509,11 @@ function NeonSection({ project: p, data, infra }: { project: ProjectFleet; data:
         )}
       </div>
       {projects.length === 0 ? (
-        <p className="text-sm text-os-muted">No projects (or not swept yet).</p>
+        <p className="text-sm text-os-muted">
+          {p.neonProjectIds.length === 0
+            ? "No Neon databases linked. Pick them in the project's Infrastructure section."
+            : "No projects (or not swept yet)."}
+        </p>
       ) : (
         projects.map((np) => <NeonProjectCard key={np.id} project={p} np={np} data={data} infra={infra} />)
       )}
