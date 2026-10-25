@@ -16,10 +16,10 @@ import {
 
 const MANAGE_TIME_ENTRY_DEF = {
   name: "manage_time_entry",
-  description: `Manage the authenticated member's manual time entries. Pass \`action\` to select the operation:
-- \`add\`: log a manual time entry. Requires: date, hours, assignmentType, roleRefId. Two-step: call without \`confirmed\` first to see a preview, then re-call with \`confirmed: true\`.
-- \`update\`: change an entry's date, hours, role, note, or time range. Requires: id. Same two-step confirmation as add.
-- \`delete\`: delete a Manual time entry. Requires: id. No confirmation gate.`,
+  description: `Manage the authenticated member's time entries (Manual and Meeting). Pass \`action\` to select the operation:
+- \`add\`: log a manual time entry. Requires: date, hours, assignmentType, roleRefId, startTime, endTime (ISO with offset). Two-step: call without \`confirmed\` first to see a preview, then re-call with \`confirmed: true\`.
+- \`update\`: change an entry's date, hours, role, note, or time range, including a Meeting entry's role and note. Requires: id. Same two-step confirmation as add.
+- \`delete\`: delete a time entry. Requires: id. No confirmation gate.`,
   inputSchema: {
     type: "object" as const,
     properties: {
