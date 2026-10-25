@@ -31,6 +31,11 @@ export function domainReviewStatus<S extends string | null>(
   return cycleStatus === "Open" && isDomainClosed(domain, cycle, now) ? "UnderReview" : cycleStatus;
 }
 
+/** Whether a domain lead can assign reviewers in this status. */
+export function canAssignReviewersIn(status: string | null): boolean {
+  return status === "Open" || status === "UnderReview";
+}
+
 /** The latest close among the given domains: an applicant's own deadline when passed their selected domains. */
 export function latestCloseDate(domains: DomainWindow[], cycle: CycleWindow): Date | null {
   let latest: Date | null = null;
