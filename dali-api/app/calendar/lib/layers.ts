@@ -293,6 +293,7 @@ export function buildExternalLayer(
               }
             : undefined,
         loggedAccent: e.eventId ? loggedAccents?.get(e.eventId) : undefined,
+        roleKeys: e.eventId ? loggedAccents?.get(e.eventId)?.roleKeys : undefined,
         issue:
           e.eventId && loggedAccents?.get(e.eventId)?.incomplete
             ? "Logged time is missing a role or a note"
@@ -383,7 +384,7 @@ export function buildAllDayLayer(
 /** A role accent for an event that's also logged as work — the colour + total
  *  logged hours, keyed by the source event so the block can show it in place of
  *  a duplicate logged-time block. */
-export type LoggedAccent = { color: string; hours: number; incomplete?: boolean };
+export type LoggedAccent = { color: string; hours: number; incomplete?: boolean; roleKeys: string[] };
 
 /** Logged work grouped by the on-grid thing it came from — a meeting, or the
  *  calendar event it was logged against — so something that is *also* logged
@@ -411,6 +412,7 @@ export function buildLoggedSourceIndex(
     into.set(id, {
       color,
       hours: (prev?.hours ?? 0) + t.hours,
+      roleKeys: prev?.roleKeys.includes(roleKey) ? prev.roleKeys : [...(prev?.roleKeys ?? []), roleKey],
       // The source block draws no entry block of its own, so it has to carry
       // the warning for the hours it stands in for.
       incomplete: Boolean(prev?.incomplete) || timeEntryIssue(t) !== null,
@@ -451,6 +453,7 @@ export function workEventsOnly(
             color: merged.color,
             hours: merged.hours + accent.hours,
             incomplete: Boolean(merged.incomplete || accent.incomplete),
+            roleKeys: [...new Set([...merged.roleKeys, ...accent.roleKeys])],
           }
         : accent;
     }
@@ -510,12 +513,26 @@ export function buildLoggedTimeLayer(
         bgColor: custom,
         borderClassName: custom ? undefined : color.borderClassName,
         issue: timeEntryIssue(t) ?? undefined,
+        roleKeys: [roleKey],
         onClick: opts.onEntryClick ? () => opts.onEntryClick!(t, startIso, endIso) : undefined,
       },
       into,
     );
   }
   return into;
+}
+
+/** Fade every block that isn't showing `roleKey`'s hours. A null key leaves the map as is. */
+export function highlightRole(
+  byDay: Record<number, EventBlock[]>,
+  roleKey: string | null,
+): Record<number, EventBlock[]> {
+  if (!roleKey) return byDay;
+  const out: Record<number, EventBlock[]> = {};
+  for (const [dayIdx, blocks] of Object.entries(byDay)) {
+    out[Number(dayIdx)] = blocks.map((b) => (b.roleKeys?.includes(roleKey) ? b : { ...b, dimmed: true }));
+  }
+  return out;
 }
 
 /** Merge several layers' day-bucketed blocks into one map for a single grid. */

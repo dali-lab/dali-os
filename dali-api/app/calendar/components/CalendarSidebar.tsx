@@ -187,16 +187,26 @@ function RoleRow({
   hours,
   onPick,
   onDelete,
+  onHover,
 }: {
   label: string;
   color: string;
   hours: number;
   onPick: (hex: string) => void;
   onDelete?: () => void;
+  onHover: (hovering: boolean) => void;
 }) {
   const [open, setOpen] = useState(false);
   return (
-    <div className="group relative flex items-center gap-2.5 rounded-md px-2 py-1.5 hover:bg-muted/50">
+    <div
+      className="group relative flex items-center gap-2.5 rounded-md px-2 py-1.5 hover:bg-muted/50"
+      onPointerEnter={() => onHover(true)}
+      onPointerLeave={() => onHover(false)}
+      onFocus={() => onHover(true)}
+      onBlur={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget)) onHover(false);
+      }}
+    >
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
@@ -299,6 +309,8 @@ type CalendarSidebarProps = {
   /** "Sep 27 – Oct 3" — the days `roleHours` covers, so the totals say which. */
   hoursRangeLabel: string;
   setRoleColor: (roleKey: string, hex: string) => void;
+  /** The role the pointer is over in the rail, or null, so the grid can pick out its hours. */
+  onHoverRole: (roleKey: string | null) => void;
   /** Opens the create modal with this person already invited, on the current
    *  week, so their availability is on screen immediately. */
   onMeetWith: (userId: string) => void;
@@ -321,6 +333,7 @@ function CalendarSidebarContent({
   onChangeHoursScope,
   hoursRangeLabel,
   setRoleColor,
+  onHoverRole,
   onMeetWith,
 }: CalendarSidebarProps) {
   const revalidator = useRevalidator();
@@ -443,6 +456,7 @@ function CalendarSidebarContent({
                     color={roleColors[key] ?? roleColor(key).dot}
                     hours={roleHours[key] ?? 0}
                     onPick={(hex) => setRoleColor(key, hex)}
+                    onHover={(hovering) => onHoverRole(hovering ? key : null)}
                     // Only a job you added yourself can be removed — a DALI
                     // assignment comes from staffing, not from this list.
                     onDelete={

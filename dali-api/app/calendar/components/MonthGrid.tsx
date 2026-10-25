@@ -32,6 +32,8 @@ function MonthChip({ block, onOpen }: { block: EventBlock; onOpen: () => void })
         // A hairline at chip scale — the grid block's 2px would eat the row.
         skin.outlined && "border",
         skin.className,
+        "transition-opacity",
+        block.dimmed && "opacity-30",
       )}
     >
       {block.issue && <IssueIcon />}
