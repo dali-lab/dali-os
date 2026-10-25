@@ -124,8 +124,8 @@ export default function JourneyMap({ loaderData }: Route.ComponentProps) {
         </div>
       </header>
 
-      <div className="relative flex min-h-0 flex-1 gap-4">
-        <div className="relative min-h-[460px] flex-1 overflow-hidden rounded-os-card bg-os-well">
+      <div className="flex min-h-0 flex-1 flex-col gap-4">
+        <div className="relative h-[300px] shrink-0 overflow-hidden rounded-os-card bg-os-well">
           <JourneyGraph journey={journey} completed={completed} openAll={preview} selectedId={selectedId} onSelect={setSelectedId} />
           <div className="pointer-events-none absolute left-4 top-4 flex flex-wrap items-center gap-4 rounded-full bg-os-bg/90 px-4 py-2 text-xs text-os-grey">
             {LEGEND.map((l) => (
@@ -136,7 +136,7 @@ export default function JourneyMap({ loaderData }: Route.ComponentProps) {
             ))}
           </div>
         </div>
-        {selected && (
+        {selected ? (
           <ModulePreviewPanel
             key={selected.id}
             basePath={basePath}
@@ -146,6 +146,8 @@ export default function JourneyMap({ loaderData }: Route.ComponentProps) {
             openAll={preview}
             onSelect={setSelectedId}
           />
+        ) : (
+          <p className="px-1 text-sm text-os-muted">Select a module on the map to see what's inside.</p>
         )}
       </div>
     </div>
