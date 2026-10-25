@@ -9,7 +9,7 @@ import { Segmented } from "./Segmented";
 let container: HTMLDivElement;
 let root: Root;
 
-function mount(value: "a" | "b", onChange = vi.fn()) {
+function mount(value: "a" | "b", onChange = vi.fn(), fullWidth?: boolean, size?: "sm" | "md") {
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
@@ -19,6 +19,8 @@ function mount(value: "a" | "b", onChange = vi.fn()) {
         value,
         onChange,
         ariaLabel: "Pick one",
+        fullWidth,
+        size,
         options: [
           { value: "a", label: "Alpha" },
           { value: "b", label: "Beta" },
@@ -57,5 +59,29 @@ describe("Segmented", () => {
   it("does not submit a surrounding form", () => {
     mount("a");
     expect(radios().every((r) => r.type === "button")).toBe(true);
+  });
+
+  it("sizes to its content by default", () => {
+    mount("a");
+    expect(container.querySelector("[role='radiogroup']")!.className).toContain("inline-flex");
+    expect(radios().some((r) => r.className.includes("flex-1"))).toBe(false);
+  });
+
+  it("splits the full width evenly when fullWidth is set", () => {
+    mount("a", vi.fn(), true);
+    const group = container.querySelector("[role='radiogroup']")!;
+    expect(group.className).toContain("w-full");
+    expect(group.className).not.toContain("inline-flex");
+    expect(radios().every((r) => r.className.includes("flex-1"))).toBe(true);
+    expect(radios().every((r) => r.className.includes("px-1.5") && r.className.includes("whitespace-nowrap"))).toBe(true);
+  });
+
+  it("uses the small size by default and a larger one for md", () => {
+    mount("a");
+    expect(radios()[0]!.className).toContain("text-xs");
+    act(() => root.unmount());
+    container.remove();
+    mount("a", vi.fn(), false, "md");
+    expect(radios().every((r) => r.className.includes("text-sm") && r.className.includes("py-2"))).toBe(true);
   });
 });

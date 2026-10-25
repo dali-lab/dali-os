@@ -1,4 +1,4 @@
-import { isPinnedActive, pinnedNavItems } from '~/lib/nav-areas'
+import { isPinnedActive, type RoleFlags, type SubTab } from '~/lib/nav-areas'
 import type { FeatureFlagMap } from '~/lib/feature-flags'
 
 export const FAVORITES_COLLAPSED_COUNT = 3
@@ -9,12 +9,25 @@ function pathnameOf(path: string): string {
 }
 
 /** 'home' | 'calendar' | 'email' | a pinned item's href, or null off the quick row. */
-export function activeQuickItem(path: string, flags: Partial<FeatureFlagMap> = {}): string | null {
+export function activeQuickItem(
+  path: string,
+  {
+    home = '/',
+    pinned = [],
+    flags = {},
+    roles,
+  }: {
+    home?: string
+    pinned?: readonly SubTab[]
+    flags?: Partial<FeatureFlagMap>
+    roles?: Pick<RoleFlags, 'isAlumni' | 'isNewMember'>
+  } = {},
+): string | null {
   const p = pathnameOf(path)
-  if (p === '/') return 'home'
+  if (p === home) return 'home'
   if (p.startsWith('/calendar')) return 'calendar'
   if (p.startsWith('/email')) return 'email'
-  return pinnedNavItems().find((i) => isPinnedActive(path, i.href, flags))?.href ?? null
+  return pinned.find((i) => isPinnedActive(path, i.href, flags, roles))?.href ?? null
 }
 
 export function splitFavorites<T>(

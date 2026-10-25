@@ -41,6 +41,7 @@ import {
   ClipboardList,
   FileSignature,
   FileText,
+  Presentation,
   Shapes,
   Handshake,
   MoreHorizontal,
@@ -225,7 +226,7 @@ export type DriveBrowserProps = {
   /** Whether the project has an active partner relationship. Controls whether
    *  the partner-visibility toggle is shown in item menus. */
   hasActivePartner?: boolean;
-  /** Turns on "Folder settings…" (where the space's new meeting notebooks file). Omitted while the `drive-receivers` flag is off. */
+  /** Turns on "Folder settings…" (where the space's new meeting notebooks file). */
   receiverViewer?: { isCore: boolean; isProjectMember: boolean };
 };
 
@@ -394,6 +395,8 @@ function glyphIcon(glyph: ItemGlyph, item: DriveItem, size: IconSize): ReactNode
       return <ClipboardCheck className={`${cls} text-muted-foreground shrink-0`} />;
     case "whiteboard":
       return <Shapes className={`${cls} text-muted-foreground shrink-0`} />;
+    case "slides":
+      return <Presentation className={`${cls} text-muted-foreground shrink-0`} />;
     case "doc":
       return <FileText className={`${cls} text-muted-foreground shrink-0`} />;
   }
@@ -582,7 +585,7 @@ function isNotebookItem(item: DriveItem): boolean {
 }
 
 function isPlainDocument(item: DriveItem): boolean {
-  return item.type === "doc" && !item.isNotebook && !item.isWhiteboard;
+  return item.type === "doc" && !item.isNotebook && !item.isWhiteboard && !item.isSlides;
 }
 
 function acceptsDrops(item: DriveItem): boolean {

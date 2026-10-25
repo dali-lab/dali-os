@@ -1,16 +1,37 @@
-// Admin → System → Infrastructure. The lab-wide Fly.io + Neon fleet console
+// Admin → Platform → Infrastructure. The lab-wide Fly.io + Neon fleet console
 // (Core/Admin): per-project inventory + usage, plus scale / limit / provision /
 // cleanup actions and the member change-request queue. Renders from cached
-// snapshots (the infra-snapshot
-// job sweeps); "Refresh" re-runs the sweep. Per-project config lives on the
-// Project row and is edited in each project's hub. Behind the `infra-dashboard`
-// flag.
+// snapshots (the infra-snapshot job sweeps); "Refresh" re-runs the sweep.
+// Per-project config lives on the Project row and is edited in each project's
+// hub. Behind the `infra-dashboard` flag.
 
 import { redirect, useFetcher, useLoaderData, useRevalidator } from "react-router";
 import { useEffect, useState, type ReactNode } from "react";
-import { RefreshCw, Server, Database, AlertTriangle, ExternalLink, ChevronRight, ChevronDown } from "lucide-react";
+import {
+  AlertTriangle,
+  Check,
+  ChevronDown,
+  Database,
+  ExternalLink,
+  Gauge,
+  Play,
+  Plus,
+  RefreshCw,
+  RotateCw,
+  Save,
+  Server,
+  SlidersHorizontal,
+  Square,
+  Trash2,
+  X,
+} from "lucide-react";
 import type { Route } from "./+types/admin.infrastructure";
-import { adminHandle } from "~/admin/adminNav";
+import { AdminSectionHeader, adminHandle } from "~/admin/adminNav";
+import { EmptyState, Figure, Pill, adminTable, type Tone } from "~/admin/components/console-ui";
+import { useOsChrome } from "~/components/os-chrome";
+import { Segmented } from "~/components/ui/Segmented";
+import { Tooltip } from "~/components/ui/floating";
+import { cn } from "~/lib/cn";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { getUserRoles } from "~/lib/roles";
@@ -23,8 +44,7 @@ import { neonConfigured } from "~/lib/infra/neon.server";
 import { listPendingInfraRequests } from "~/lib/infra/requests.server";
 import { infraRequestKindLabel } from "~/lib/infra/request-kinds";
 import { useDialog } from "~/components/ui/dialog";
-import { buttonClasses } from "~/components/ui/Button";
-import { fmtBytes, fmtHours, timeAgo, StateBadge, UsageStrip } from "~/components/infra/format";
+import { fmtBytes, fmtHours, timeAgo, UsageStrip } from "~/components/infra/format";
 
 export const handle = adminHandle("infrastructure");
 
@@ -90,43 +110,61 @@ function useInfra(): InfraApi {
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
+export function stateTone(state: string): Tone {
+  if (state === "started" || state === "active") return "ok";
+  if (state === "idle" || state === "stopped" || state === "suspended") return "idle";
+  return "warn";
+}
+
+export function fleetTotals(projects: Pick<ProjectFleet, "fly" | "neon">[]) {
+  const apps = projects.flatMap((p) => p.fly?.apps ?? []);
+  const machines = apps.flatMap((a) => a.machines);
+  const computes = projects.flatMap((p) => (p.neon?.projects ?? []).flatMap((np) => np.endpoints));
+  return {
+    apps: apps.length,
+    machines: machines.length,
+    running: machines.filter((m) => m.state === "started").length,
+    computes: computes.length,
+    activeComputes: computes.filter((e) => e.currentState === "active").length,
+  };
+}
+
+type Tab = "overview" | "cleanup" | "requests";
+
 export default function AdminInfrastructure() {
   const data = useLoaderData<typeof loader>();
   const infra = useInfra();
-  const [tab, setTab] = useState<"overview" | "cleanup" | "requests">("overview");
-
-  const tabs: { key: typeof tab; label: string }[] = [
-    { key: "overview", label: "Overview" },
-    { key: "cleanup", label: `Cleanup${data.cleanup.length ? ` (${data.cleanup.length})` : ""}` },
-    { key: "requests", label: `Requests${data.requests.length ? ` (${data.requests.length})` : ""}` },
-  ];
+  const { actionBtn } = useOsChrome();
+  const [tab, setTab] = useState<Tab>("overview");
+  const totals = fleetTotals(data.projects);
 
   return (
-    <div className="flex flex-col gap-4">
-      <header className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="font-heading text-2xl font-bold text-foreground">Infrastructure</h1>
-          <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-            Fly.io + Neon across every lab project. Per-project config lives in each project's
-            workspace; data is cached — Refresh re-sweeps.
-          </p>
-        </div>
-        <div className="flex items-center gap-3 text-xs text-zinc-500">
-          <span>Last sweep: {timeAgo(data.lastSweep)}</span>
-          <button
-            type="button"
-            disabled={infra.busy}
-            onClick={() => infra.post({ intent: "refresh" }, "/api/infra/registry")}
-            className={buttonClasses("secondary", "sm")}
-          >
-            <RefreshCw className={`h-3.5 w-3.5 ${infra.busy ? "animate-spin" : ""}`} />
-            Refresh
-          </button>
-        </div>
-      </header>
+    <div className="flex flex-col gap-8">
+      <AdminSectionHeader
+        section="platform"
+        actions={
+          <>
+            <span className="text-xs text-os-muted">Last sweep {timeAgo(data.lastSweep)}</span>
+            <button
+              type="button"
+              disabled={infra.busy}
+              onClick={() => infra.post({ intent: "refresh" }, "/api/infra/registry")}
+              className={cn(actionBtn(), "disabled:opacity-50")}
+            >
+              <RefreshCw className={cn("h-4 w-4", infra.busy && "animate-spin")} />
+              Refresh
+            </button>
+          </>
+        }
+      />
+
+      <p className="-mt-2 text-sm text-os-grey">
+        Fly.io and Neon across every lab project. Per-project config lives in each project's workspace.
+        Data is cached; Refresh sweeps again.
+      </p>
 
       {infra.error && (
-        <div className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+        <div className="flex items-start gap-2 rounded-os-item bg-destructive/10 px-4 py-3 text-sm text-destructive">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
           <span>{infra.error}</span>
         </div>
@@ -134,22 +172,30 @@ export default function AdminInfrastructure() {
 
       <ConfigWarnings data={data} />
 
-      <div className="flex gap-1 border-b border-zinc-200">
-        {tabs.map((t) => (
-          <button
-            key={t.key}
-            type="button"
-            onClick={() => setTab(t.key)}
-            className={`-mb-px border-b-2 px-3 py-2 text-sm font-medium ${
-              tab === t.key
-                ? "border-os-accent text-foreground"
-                : "border-transparent text-zinc-500 hover:text-zinc-800"
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
+      <div className="flex flex-wrap items-end gap-x-12 gap-y-4">
+        <Figure size="lg" label="Projects" value={data.projects.length} />
+        <Figure label="Fly apps" value={totals.apps} />
+        <Figure label="Machines running" value={`${totals.running}/${totals.machines}`} />
+        <Figure label="Neon computes active" value={`${totals.activeComputes}/${totals.computes}`} />
+        {data.cleanup.length > 0 && (
+          <p className="text-sm text-os-grey md:ml-auto">
+            {data.cleanup.length} idle {data.cleanup.length === 1 ? "resource is" : "resources are"} up for
+            cleanup.
+          </p>
+        )}
       </div>
+
+      <Segmented<Tab>
+        value={tab}
+        onChange={setTab}
+        ariaLabel="Infrastructure view"
+        className="self-start"
+        options={[
+          { value: "overview", label: "Overview" },
+          { value: "cleanup", label: "Cleanup", count: data.cleanup.length || undefined },
+          { value: "requests", label: "Requests", count: data.requests.length || undefined },
+        ]}
+      />
 
       {tab === "overview" && <Overview data={data} infra={infra} />}
       {tab === "cleanup" && <Cleanup data={data} infra={infra} />}
@@ -161,15 +207,16 @@ export default function AdminInfrastructure() {
 function ConfigWarnings({ data }: { data: Data }) {
   const warnings: string[] = [];
   if (!data.cryptoConfigured)
-    warnings.push("INFRA_SECRET_KEY is not set — Fly tokens can't be stored, so Fly actions are unavailable.");
+    warnings.push("INFRA_SECRET_KEY is not set, so Fly tokens can't be stored and Fly actions are unavailable.");
   if (!data.neonConfigured)
-    warnings.push("INFRA_NEON_API_KEY is not set — Neon inventory, usage, and actions are unavailable.");
+    warnings.push("INFRA_NEON_API_KEY is not set, so Neon inventory, usage, and actions are unavailable.");
   if (data.projects.length === 0)
-    warnings.push("No projects have infra configured yet — set a project's Fly/Neon config in its workspace.");
+    warnings.push("No projects have infra configured yet. Set a project's Fly or Neon config in its workspace.");
   if (warnings.length === 0) return null;
   return (
-    <div className="rounded-lg border border-os-amber/40 bg-os-amber/10 px-3 py-2 text-xs text-os-amber">
-      <ul className="list-inside list-disc space-y-0.5">
+    <div className="flex items-start gap-2 rounded-os-item bg-os-amber/10 px-4 py-3 text-sm text-os-amber">
+      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+      <ul className="flex flex-col gap-0.5">
         {warnings.map((w) => (
           <li key={w}>{w}</li>
         ))}
@@ -181,19 +228,34 @@ function ConfigWarnings({ data }: { data: Data }) {
 // ── Overview ──────────────────────────────────────────────────────────────────
 
 function Overview({ data, infra }: { data: Data; infra: InfraApi }) {
+  const { panel } = useOsChrome();
   if (data.projects.length === 0) {
-    return <p className="py-8 text-center text-sm text-zinc-500">No projects configured.</p>;
+    return (
+      <div className={panel}>
+        <EmptyState>No projects configured.</EmptyState>
+      </div>
+    );
   }
   return (
-    <div className="flex flex-col gap-3">
-      {data.projects.map((p) => (
-        <ProjectCard key={p.projectId} project={p} data={data} infra={infra} />
+    <ul className={panel}>
+      {data.projects.map((p, i) => (
+        <ProjectCard key={p.projectId} project={p} data={data} infra={infra} first={i === 0} />
       ))}
-    </div>
+    </ul>
   );
 }
 
-function ProjectCard({ project: p, data, infra }: { project: ProjectFleet; data: Data; infra: InfraApi }) {
+function ProjectCard({
+  project: p,
+  data,
+  infra,
+  first,
+}: {
+  project: ProjectFleet;
+  data: Data;
+  infra: InfraApi;
+  first: boolean;
+}) {
   const [open, setOpen] = useState(false);
   const flyApps = p.fly?.apps ?? [];
   const flyMachines = flyApps.flatMap((a) => a.machines);
@@ -203,49 +265,65 @@ function ProjectCard({ project: p, data, infra }: { project: ProjectFleet; data:
   const neonActive = neonComputes.filter((e) => e.currentState === "active").length;
 
   return (
-    <div className={`rounded-lg border bg-white ${p.infraEnabled ? "border-zinc-200" : "border-zinc-200 opacity-60"}`}>
+    <li className={cn(!first && "border-t border-os-container/70")}>
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left"
+        aria-expanded={open}
+        className="flex w-full flex-wrap items-center justify-between gap-3 px-6 py-4 text-left"
       >
-        <div className="flex items-center gap-2">
-          {open ? <ChevronDown className="h-4 w-4 text-zinc-400" /> : <ChevronRight className="h-4 w-4 text-zinc-400" />}
-          <span className="font-medium text-zinc-900">{p.name}</span>
-          {!p.infraEnabled && <span className="rounded bg-zinc-100 px-1.5 py-0.5 text-[11px] text-zinc-500">sweep off</span>}
-        </div>
-        <div className="flex items-center gap-4 text-xs text-zinc-600">
-          <span className="inline-flex items-center gap-1">
-            <Server className="h-3.5 w-3.5 text-zinc-400" />
+        <span className={cn("flex items-center gap-2.5", !p.infraEnabled && "opacity-60")}>
+          <ChevronDown
+            className={cn("h-4 w-4 shrink-0 text-os-muted transition-transform", !open && "-rotate-90")}
+            aria-hidden
+          />
+          <span className="font-semibold text-foreground">{p.name}</span>
+          {!p.infraEnabled && <Pill tone="idle">Sweep off</Pill>}
+        </span>
+        <span className="flex items-center gap-5 text-sm text-os-grey">
+          <span className="inline-flex items-center gap-1.5">
+            <Server className="h-4 w-4 text-os-muted" />
             {flyApps.length} app{flyApps.length === 1 ? "" : "s"} · {running}/{flyMachines.length} running
           </span>
-          <span className="inline-flex items-center gap-1">
-            <Database className="h-3.5 w-3.5 text-zinc-400" />
+          <span className="inline-flex items-center gap-1.5">
+            <Database className="h-4 w-4 text-os-muted" />
             {neonProjects.length} DB{neonProjects.length === 1 ? "" : "s"} · {neonActive} active
           </span>
-        </div>
+        </span>
       </button>
 
       {open && (
-        <div className="border-t border-zinc-100 px-4 py-3">
-          <UsageStrip usage={p.usage} />
-          <div className="mt-2 flex flex-wrap gap-3 text-xs">
-            {p.flyOrgSlug && (
-              <a href={`https://fly.io/dashboard/${p.flyOrgSlug}/billing`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-os-accent hover:underline">
-                Fly billing <ExternalLink className="h-3 w-3" />
-              </a>
-            )}
-            {p.neonOrgId && (
-              <a href={`https://console.neon.tech/app/orgs/${p.neonOrgId}/billing`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-os-accent hover:underline">
-                Neon billing <ExternalLink className="h-3 w-3" />
-              </a>
-            )}
+        <div className="flex flex-col gap-6 border-t border-os-container/70 px-6 py-5">
+          <div className="flex flex-col gap-3">
+            <UsageStrip usage={p.usage} />
+            <div className="flex flex-wrap gap-4 text-sm">
+              {p.flyOrgSlug && (
+                <a
+                  href={`https://fly.io/dashboard/${p.flyOrgSlug}/billing`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1 text-os-accent hover:text-os-accent-hover"
+                >
+                  Fly billing <ExternalLink className="h-3.5 w-3.5" />
+                </a>
+              )}
+              {p.neonOrgId && (
+                <a
+                  href={`https://console.neon.tech/app/orgs/${p.neonOrgId}/billing`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1 text-os-accent hover:text-os-accent-hover"
+                >
+                  Neon billing <ExternalLink className="h-3.5 w-3.5" />
+                </a>
+              )}
+            </div>
           </div>
           <FlySection project={p} data={data} infra={infra} />
           <NeonSection project={p} data={data} infra={infra} />
         </div>
       )}
-    </div>
+    </li>
   );
 }
 
@@ -262,12 +340,19 @@ const FLY_PRESETS: { label: string; value: string }[] = [
   { label: "performance 4x · 8 GB", value: "performance|4|8192" },
 ];
 
+const subTable = {
+  wrap: "overflow-x-auto rounded-os-item border border-os-container/70",
+  th: "whitespace-nowrap px-4 py-2.5 text-left text-xs font-semibold text-os-muted",
+  td: "px-4 py-2.5 text-sm",
+  row: "border-t border-os-container/70",
+};
+
 function FlySection({ project: p, data, infra }: { project: ProjectFleet; data: Data; infra: InfraApi }) {
   const dialog = useDialog();
   const apps = p.fly?.apps ?? [];
   if (!p.flyOrgSlug) return null;
   if (apps.length === 0) {
-    return <p className="mt-3 text-xs text-zinc-400">Fly: no apps (or no read token / not swept yet).</p>;
+    return <p className="text-sm text-os-muted">Fly: no apps (or no read token, or not swept yet).</p>;
   }
   const canWrite = p.hasFlyWriteToken;
 
@@ -311,68 +396,85 @@ function FlySection({ project: p, data, infra }: { project: ProjectFleet; data: 
   }
 
   return (
-    <div className="mt-4">
-      <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-500">Fly</h3>
-      <div className="space-y-3">
-        {apps.map((app) => {
-          const isProtected = data.protectedFly.includes(app.name);
-          return (
-            <div key={app.name} className="rounded-md border border-zinc-200">
-              <div className="flex items-center justify-between gap-2 border-b border-zinc-100 bg-zinc-50 px-3 py-1.5">
-                <span className="font-mono text-xs font-medium text-zinc-800">{app.name}</span>
-                <span className="text-[11px] text-zinc-500">
-                  {isProtected && <span className="mr-2 rounded bg-blue-100 px-1.5 py-0.5 text-blue-700">protected</span>}
-                  {app.status ?? ""} · {app.machines.length} machines · {app.volumes.length} volumes
-                </span>
-              </div>
-              {app.machines.length > 0 && (
-                <table className="w-full text-left text-xs">
-                  <thead className="text-zinc-400">
-                    <tr>
-                      <th className="px-3 py-1 font-medium">Machine</th>
-                      <th className="px-3 py-1 font-medium">Size</th>
-                      <th className="px-3 py-1 font-medium">Region</th>
-                      <th className="px-3 py-1 font-medium">State</th>
-                      <th className="px-3 py-1" />
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {app.machines.map((m) => (
-                      <tr key={m.id} className="border-t border-zinc-50">
-                        <td className="px-3 py-1.5 font-mono text-zinc-700">{m.name || m.id}</td>
-                        <td className="px-3 py-1.5 text-zinc-600">{m.cpuKind} {m.cpus}x · {fmtBytes(m.memoryMb * 1024 * 1024)}</td>
-                        <td className="px-3 py-1.5 text-zinc-600">{m.region}</td>
-                        <td className="px-3 py-1.5"><StateBadge state={m.state} /></td>
-                        <td className="px-3 py-1.5 text-right">
-                          {canWrite ? (
-                            <div className="inline-flex flex-wrap justify-end gap-1">
-                              <MiniBtn disabled={infra.busy} onClick={() => machine(app, m, m.state === "started" ? "stop" : "start")}>
-                                {m.state === "started" ? "Stop" : "Start"}
-                              </MiniBtn>
-                              <MiniBtn disabled={infra.busy} onClick={() => machine(app, m, "restart")}>Restart</MiniBtn>
-                              <MiniBtn disabled={infra.busy} onClick={() => scale(app, m)}>Resize</MiniBtn>
-                              {data.isAdmin && !isProtected && (
-                                <MiniBtn danger disabled={infra.busy} onClick={() => destroy(app, "machine", m)}>Destroy</MiniBtn>
-                              )}
-                            </div>
-                          ) : (
-                            <span className="text-[11px] text-zinc-400">read-only</span>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-              {data.isAdmin && canWrite && !isProtected && (
-                <div className="border-t border-zinc-100 px-3 py-1.5 text-right">
-                  <MiniBtn danger disabled={infra.busy} onClick={() => destroy(app, "app")}>Destroy app</MiniBtn>
-                </div>
-              )}
+    <div className="flex flex-col gap-3">
+      <h3 className="text-xs font-semibold text-os-muted">Fly</h3>
+      {apps.map((app) => {
+        const isProtected = data.protectedFly.includes(app.name);
+        return (
+          <div key={app.name} className={subTable.wrap}>
+            <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5">
+              <span className="flex items-center gap-2">
+                <span className="font-mono text-[13px] font-medium text-foreground">{app.name}</span>
+                {isProtected && <Pill>Protected</Pill>}
+              </span>
+              <span className="flex items-center gap-2 text-xs text-os-grey">
+                {app.status && <Pill tone={app.status === "deployed" ? "ok" : "idle"}>{app.status}</Pill>}
+                {app.machines.length} machines · {app.volumes.length} volumes
+                {data.isAdmin && canWrite && !isProtected && (
+                  <IconAction label="Destroy app" danger disabled={infra.busy} onClick={() => destroy(app, "app")}>
+                    <Trash2 className="h-4 w-4" />
+                  </IconAction>
+                )}
+              </span>
             </div>
-          );
-        })}
-      </div>
+            {app.machines.length > 0 && (
+              <table className="w-full min-w-[640px]">
+                <thead>
+                  <tr className={subTable.row}>
+                    <th className={subTable.th}>Machine</th>
+                    <th className={subTable.th}>Size</th>
+                    <th className={subTable.th}>Region</th>
+                    <th className={subTable.th}>State</th>
+                    <th className={subTable.th} />
+                  </tr>
+                </thead>
+                <tbody>
+                  {app.machines.map((m) => (
+                    <tr key={m.id} className={subTable.row}>
+                      <td className={cn(subTable.td, "font-mono text-[13px] text-foreground")}>{m.name || m.id}</td>
+                      <td className={cn(subTable.td, "text-os-grey")}>
+                        {m.cpuKind} {m.cpus}x · {fmtBytes(m.memoryMb * 1024 * 1024)}
+                      </td>
+                      <td className={cn(subTable.td, "font-mono text-xs uppercase text-os-grey")}>{m.region}</td>
+                      <td className={subTable.td}>
+                        <Pill tone={stateTone(m.state)}>{m.state}</Pill>
+                      </td>
+                      <td className={cn(subTable.td, "text-right")}>
+                        {canWrite ? (
+                          <div className="inline-flex justify-end gap-0.5">
+                            {m.state === "started" ? (
+                              <IconAction label="Stop" disabled={infra.busy} onClick={() => machine(app, m, "stop")}>
+                                <Square className="h-4 w-4" />
+                              </IconAction>
+                            ) : (
+                              <IconAction label="Start" disabled={infra.busy} onClick={() => machine(app, m, "start")}>
+                                <Play className="h-4 w-4" />
+                              </IconAction>
+                            )}
+                            <IconAction label="Restart" disabled={infra.busy} onClick={() => machine(app, m, "restart")}>
+                              <RotateCw className="h-4 w-4" />
+                            </IconAction>
+                            <IconAction label="Resize" disabled={infra.busy} onClick={() => scale(app, m)}>
+                              <Gauge className="h-4 w-4" />
+                            </IconAction>
+                            {data.isAdmin && !isProtected && (
+                              <IconAction label="Destroy machine" danger disabled={infra.busy} onClick={() => destroy(app, "machine", m)}>
+                                <Trash2 className="h-4 w-4" />
+                              </IconAction>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-xs text-os-muted">Read only</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -381,6 +483,7 @@ function FlySection({ project: p, data, infra }: { project: ProjectFleet; data: 
 
 function NeonSection({ project: p, data, infra }: { project: ProjectFleet; data: Data; infra: InfraApi }) {
   const dialog = useDialog();
+  const { actionBtn } = useOsChrome();
   if (!p.neonOrgId) return null;
   const projects = p.neon?.projects ?? [];
 
@@ -396,19 +499,19 @@ function NeonSection({ project: p, data, infra }: { project: ProjectFleet; data:
   }
 
   return (
-    <div className="mt-4">
-      <div className="mb-1.5 flex items-center justify-between">
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Neon</h3>
-        {data.isAdmin && <MiniBtn disabled={infra.busy} onClick={createProject}>+ New project</MiniBtn>}
+    <div className="flex flex-col gap-3">
+      <div className="flex items-center justify-between">
+        <h3 className="text-xs font-semibold text-os-muted">Neon</h3>
+        {data.isAdmin && (
+          <button type="button" disabled={infra.busy} onClick={createProject} className={cn(actionBtn(), "disabled:opacity-50")}>
+            <Plus className="h-4 w-4" /> New project
+          </button>
+        )}
       </div>
       {projects.length === 0 ? (
-        <p className="text-xs text-zinc-400">No projects (or not swept yet).</p>
+        <p className="text-sm text-os-muted">No projects (or not swept yet).</p>
       ) : (
-        <div className="space-y-3">
-          {projects.map((np) => (
-            <NeonProjectCard key={np.id} project={p} np={np} data={data} infra={infra} />
-          ))}
-        </div>
+        projects.map((np) => <NeonProjectCard key={np.id} project={p} np={np} data={data} infra={infra} />)
       )}
     </div>
   );
@@ -418,6 +521,8 @@ function NeonProjectCard({ project: p, np, data, infra }: { project: ProjectFlee
   const dialog = useDialog();
   const [showQuota, setShowQuota] = useState(false);
   const isProtected = data.protectedNeon.includes(np.id);
+  const canManage = data.isAdmin && !isProtected;
+  const branches = np.branches.filter((b) => !b.default);
 
   async function endpoint(e: NeonEndpoint, kind: "suspend" | "restart" | "start") {
     const halts = kind === "suspend";
@@ -460,23 +565,40 @@ function NeonProjectCard({ project: p, np, data, infra }: { project: ProjectFlee
   }
 
   return (
-    <div className="rounded-md border border-zinc-200">
-      <div className="flex items-center justify-between gap-2 border-b border-zinc-100 bg-zinc-50 px-3 py-1.5">
-        <span className="font-mono text-xs font-medium text-zinc-800">{np.name}</span>
-        <span className="text-[11px] text-zinc-500">
-          {isProtected && <span className="mr-2 rounded bg-blue-100 px-1.5 py-0.5 text-blue-700">protected</span>}
+    <div className={subTable.wrap}>
+      <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5">
+        <span className="flex items-center gap-2">
+          <span className="font-mono text-[13px] font-medium text-foreground">{np.name}</span>
+          {isProtected && <Pill>Protected</Pill>}
+        </span>
+        <span className="flex items-center gap-2 text-xs text-os-grey">
           {np.regionId} · pg{np.pgVersion ?? "?"} · {np.branches.length} branches
+          {canManage && (
+            <IconAction
+              label={showQuota ? "Hide limits" : "Set limits"}
+              active={showQuota}
+              disabled={infra.busy}
+              onClick={() => setShowQuota((v) => !v)}
+            >
+              <SlidersHorizontal className="h-4 w-4" />
+            </IconAction>
+          )}
+          {canManage && (
+            <IconAction label="Delete project" danger disabled={infra.busy} onClick={deleteProject}>
+              <Trash2 className="h-4 w-4" />
+            </IconAction>
+          )}
         </span>
       </div>
 
-      <table className="w-full text-left text-xs">
-        <thead className="text-zinc-400">
-          <tr>
-            <th className="px-3 py-1 font-medium">Compute</th>
-            <th className="px-3 py-1 font-medium">Autoscale</th>
-            <th className="px-3 py-1 font-medium">Scale-to-zero</th>
-            <th className="px-3 py-1 font-medium">State</th>
-            <th className="px-3 py-1" />
+      <table className="w-full min-w-[640px]">
+        <thead>
+          <tr className={subTable.row}>
+            <th className={subTable.th}>Compute</th>
+            <th className={subTable.th}>Autoscale</th>
+            <th className={subTable.th}>Scale to zero</th>
+            <th className={subTable.th}>State</th>
+            <th className={subTable.th} />
           </tr>
         </thead>
         <tbody>
@@ -486,31 +608,39 @@ function NeonProjectCard({ project: p, np, data, infra }: { project: ProjectFlee
         </tbody>
       </table>
 
-      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-zinc-100 px-3 py-1.5">
+      <div className={cn(subTable.row, "px-4 py-2.5")}>
         <QuotaSummary np={np} />
-        <div className="flex gap-1">
-          {data.isAdmin && !isProtected && (
-            <MiniBtn disabled={infra.busy} onClick={() => setShowQuota((v) => !v)}>{showQuota ? "Hide limits" : "Set limits"}</MiniBtn>
-          )}
-          {data.isAdmin && !isProtected && (
-            <MiniBtn danger disabled={infra.busy} onClick={deleteProject}>Delete project</MiniBtn>
-          )}
-        </div>
       </div>
 
-      {showQuota && data.isAdmin && !isProtected && (
+      {showQuota && canManage && (
         <QuotaEditor project={p} np={np} infra={infra} onClose={() => setShowQuota(false)} />
       )}
 
-      {np.branches.filter((b) => !b.default).length > 0 && (
-        <div className="border-t border-zinc-100 px-3 py-1.5">
-          <p className="mb-1 text-[11px] uppercase tracking-wide text-zinc-400">Branches</p>
+      {branches.length > 0 && (
+        <div className={cn(subTable.row, "flex flex-col gap-2 px-4 py-2.5")}>
+          <p className="text-xs font-semibold text-os-muted">Branches</p>
           <div className="flex flex-wrap gap-1.5">
-            {np.branches.filter((b) => !b.default).map((b) => (
-              <span key={b.id} className="inline-flex items-center gap-1 rounded bg-zinc-50 px-1.5 py-0.5 text-[11px] text-zinc-600">
+            {branches.map((b) => (
+              <span
+                key={b.id}
+                className={cn(
+                  "inline-flex items-center gap-1 rounded-full border border-os-container py-0.5 text-xs text-foreground",
+                  canManage ? "pl-2.5 pr-1" : "px-2.5",
+                )}
+              >
                 {b.name}
-                {data.isAdmin && !isProtected && (
-                  <button type="button" disabled={infra.busy} onClick={() => deleteBranch(b.id, b.name)} className="text-destructive hover:text-destructive disabled:opacity-50">×</button>
+                {canManage && (
+                  <Tooltip content="Delete branch">
+                    <button
+                      type="button"
+                      disabled={infra.busy}
+                      onClick={() => deleteBranch(b.id, b.name)}
+                      aria-label={`Delete branch ${b.name}`}
+                      className="rounded-full p-0.5 text-os-muted transition-colors hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </Tooltip>
                 )}
               </span>
             ))}
@@ -543,16 +673,45 @@ function EndpointRow({ project: p, np, e, infra, endpointAction }: { project: Pr
   }
 
   return (
-    <tr className="border-t border-zinc-50">
-      <td className="px-3 py-1.5 font-mono text-zinc-700">{e.id}<span className="ml-1 text-[10px] text-zinc-400">{e.type}</span></td>
-      <td className="px-3 py-1.5"><span className="inline-flex items-center gap-1 text-zinc-600"><NumInput value={minCu} onChange={setMinCu} />–<NumInput value={maxCu} onChange={setMaxCu} /> CU</span></td>
-      <td className="px-3 py-1.5"><span className="inline-flex items-center gap-1 text-zinc-600"><NumInput value={timeout} onChange={setTimeoutS} width="w-16" /> s</span></td>
-      <td className="px-3 py-1.5"><StateBadge state={e.currentState} /></td>
-      <td className="px-3 py-1.5 text-right">
-        <div className="inline-flex flex-wrap justify-end gap-1">
-          {dirty && <MiniBtn disabled={infra.busy} onClick={saveAutoscale}>Save</MiniBtn>}
-          <MiniBtn disabled={infra.busy} onClick={() => endpointAction(e, e.currentState === "idle" ? "start" : "suspend")}>{e.currentState === "idle" ? "Start" : "Suspend"}</MiniBtn>
-          <MiniBtn disabled={infra.busy} onClick={() => endpointAction(e, "restart")}>Restart</MiniBtn>
+    <tr className={subTable.row}>
+      <td className={cn(subTable.td, "font-mono text-[13px] text-foreground")}>
+        {e.id}
+        <span className="ml-1.5 font-sans text-xs text-os-muted">{e.type}</span>
+      </td>
+      <td className={subTable.td}>
+        <span className="inline-flex items-center gap-1 text-os-grey">
+          <NumInput value={minCu} onChange={setMinCu} label={`${e.id} minimum CU`} />
+          to
+          <NumInput value={maxCu} onChange={setMaxCu} label={`${e.id} maximum CU`} /> CU
+        </span>
+      </td>
+      <td className={subTable.td}>
+        <span className="inline-flex items-center gap-1 text-os-grey">
+          <NumInput value={timeout} onChange={setTimeoutS} width="w-16" label={`${e.id} suspend timeout in seconds`} /> s
+        </span>
+      </td>
+      <td className={subTable.td}>
+        <Pill tone={stateTone(e.currentState)}>{e.currentState}</Pill>
+      </td>
+      <td className={cn(subTable.td, "text-right")}>
+        <div className="inline-flex justify-end gap-0.5">
+          {dirty && (
+            <IconAction label="Save autoscale" active disabled={infra.busy} onClick={saveAutoscale}>
+              <Save className="h-4 w-4" />
+            </IconAction>
+          )}
+          {e.currentState === "idle" ? (
+            <IconAction label="Start" disabled={infra.busy} onClick={() => endpointAction(e, "start")}>
+              <Play className="h-4 w-4" />
+            </IconAction>
+          ) : (
+            <IconAction label="Suspend" disabled={infra.busy} onClick={() => endpointAction(e, "suspend")}>
+              <Square className="h-4 w-4" />
+            </IconAction>
+          )}
+          <IconAction label="Restart" disabled={infra.busy} onClick={() => endpointAction(e, "restart")}>
+            <RotateCw className="h-4 w-4" />
+          </IconAction>
         </div>
       </td>
     </tr>
@@ -567,11 +726,12 @@ function QuotaSummary({ np }: { np: NeonProject }) {
   if (q.writtenDataBytes) parts.push(`written ${fmtBytes(q.writtenDataBytes)}`);
   if (q.dataTransferBytes) parts.push(`egress ${fmtBytes(q.dataTransferBytes)}`);
   if (q.logicalSizeBytes) parts.push(`size ${fmtBytes(q.logicalSizeBytes)}`);
-  return <span className="text-[11px] text-zinc-500">Limits: {parts.length ? parts.join(" · ") : "none (unlimited)"}</span>;
+  return <span className="text-xs text-os-grey">Limits: {parts.length ? parts.join(" · ") : "none (unlimited)"}</span>;
 }
 
 function QuotaEditor({ project: p, np, infra, onClose }: { project: ProjectFleet; np: NeonProject; infra: InfraApi; onClose: () => void }) {
   const dialog = useDialog();
+  const { actionBtnPrimary } = useOsChrome();
   const [computeHours, setComputeHours] = useState(np.quota.computeTimeSeconds ? String(np.quota.computeTimeSeconds / 3600) : "");
   const [transferGb, setTransferGb] = useState(np.quota.dataTransferBytes ? String(np.quota.dataTransferBytes / 1e9) : "");
   const [sizeGb, setSizeGb] = useState(np.quota.logicalSizeBytes ? String(np.quota.logicalSizeBytes / 1e9) : "");
@@ -582,7 +742,7 @@ function QuotaEditor({ project: p, np, infra, onClose }: { project: ProjectFleet
       tone: "destructive",
       confirmLabel: "Set limits",
       description:
-        "Warning: when a usage limit is hit, Neon suspends this project's compute until the quota period resets — a normal connection will NOT wake it. Set 0 to leave unlimited.",
+        "When a usage limit is hit, Neon suspends this project's compute until the quota period resets. A normal connection will NOT wake it. Set 0 to leave unlimited.",
     });
     if (!ok) return;
     const quota: Record<string, number> = {};
@@ -594,15 +754,25 @@ function QuotaEditor({ project: p, np, infra, onClose }: { project: ProjectFleet
     onClose();
   }
 
+  const field = "flex flex-col gap-1 text-xs text-os-grey";
   return (
-    <div className="border-t border-zinc-100 bg-os-amber/10/40 px-3 py-2">
-      <div className="flex flex-wrap items-end gap-3 text-xs">
-        <label className="flex flex-col gap-0.5"><span className="text-zinc-500">Compute (h/mo)</span><NumInput value={computeHours} onChange={setComputeHours} width="w-20" /></label>
-        <label className="flex flex-col gap-0.5"><span className="text-zinc-500">Egress (GB/mo)</span><NumInput value={transferGb} onChange={setTransferGb} width="w-20" /></label>
-        <label className="flex flex-col gap-0.5"><span className="text-zinc-500">Branch size (GB)</span><NumInput value={sizeGb} onChange={setSizeGb} width="w-20" /></label>
-        <MiniBtn disabled={infra.busy} onClick={save}>Save limits</MiniBtn>
-        <span className="text-[11px] text-zinc-400">0 or blank = unlimited</span>
-      </div>
+    <div className={cn(subTable.row, "flex flex-wrap items-end gap-4 bg-os-amber/5 px-4 py-3")}>
+      <label className={field}>
+        Compute (h/mo)
+        <NumInput value={computeHours} onChange={setComputeHours} width="w-20" />
+      </label>
+      <label className={field}>
+        Egress (GB/mo)
+        <NumInput value={transferGb} onChange={setTransferGb} width="w-20" />
+      </label>
+      <label className={field}>
+        Branch size (GB)
+        <NumInput value={sizeGb} onChange={setSizeGb} width="w-20" />
+      </label>
+      <button type="button" disabled={infra.busy} onClick={save} className={cn(actionBtnPrimary, "disabled:opacity-50")}>
+        Save limits
+      </button>
+      <span className="text-xs text-os-muted">0 or blank means unlimited</span>
     </div>
   );
 }
@@ -611,9 +781,14 @@ function QuotaEditor({ project: p, np, infra, onClose }: { project: ProjectFleet
 
 function Cleanup({ data, infra }: { data: Data; infra: InfraApi }) {
   const dialog = useDialog();
+  const { panel } = useOsChrome();
   const items = data.cleanup;
   if (items.length === 0) {
-    return <p className="py-8 text-center text-sm text-zinc-500">Nothing idle to review.</p>;
+    return (
+      <div className={panel}>
+        <EmptyState>Nothing idle to review.</EmptyState>
+      </div>
+    );
   }
 
   async function reap(c: CleanupCandidate) {
@@ -635,35 +810,43 @@ function Cleanup({ data, infra }: { data: Data; infra: InfraApi }) {
   }
 
   return (
-    <div className="overflow-x-auto rounded-lg border border-zinc-200 bg-white">
-      <table className="w-full min-w-[720px] text-left text-sm">
-        <thead className="border-b border-zinc-200 bg-zinc-50 text-xs font-medium text-zinc-500">
+    <div className={adminTable.wrap}>
+      <table className="w-full min-w-[760px]">
+        <thead>
           <tr>
-            <th className="px-3 py-2">Project</th>
-            <th className="px-3 py-2">Resource</th>
-            <th className="px-3 py-2">Detail</th>
-            <th className="px-3 py-2 text-center">Idle</th>
-            <th className="px-3 py-2 text-center">Age</th>
-            <th className="px-3 py-2" />
+            <th className={adminTable.th}>Project</th>
+            <th className={adminTable.th}>Resource</th>
+            <th className={adminTable.th}>Detail</th>
+            <th className={cn(adminTable.th, "text-right")}>Idle</th>
+            <th className={cn(adminTable.th, "text-right")}>Age</th>
+            <th className={adminTable.th} />
           </tr>
         </thead>
         <tbody>
           {items.map((c) => (
-            <tr key={`${c.projectId}:${c.kind}:${c.resourceId}`} className="border-b border-zinc-100 last:border-0">
-              <td className="px-3 py-2 text-zinc-600">{c.projectName}</td>
-              <td className="px-3 py-2">
-                <span className="font-mono text-xs text-zinc-800">{c.name}</span>
-                <span className="ml-1 text-[11px] text-zinc-400">{c.kind}</span>
-                {c.protected && <span className="ml-2 rounded bg-blue-100 px-1.5 py-0.5 text-[11px] text-blue-700">protected</span>}
+            <tr key={`${c.projectId}:${c.kind}:${c.resourceId}`} className={adminTable.row}>
+              <td className={cn(adminTable.td, "text-os-grey")}>{c.projectName}</td>
+              <td className={adminTable.td}>
+                <span className="flex flex-wrap items-center gap-2">
+                  <span className="font-mono text-[13px] text-foreground">{c.name}</span>
+                  <span className="text-xs text-os-muted">{c.kind}</span>
+                  {c.protected && <Pill>Protected</Pill>}
+                </span>
               </td>
-              <td className="px-3 py-2 text-xs text-zinc-500">{c.detail}</td>
-              <td className="px-3 py-2 text-center text-xs text-zinc-600">{c.idleDays != null ? `${c.idleDays}d` : "—"}</td>
-              <td className="px-3 py-2 text-center text-xs text-zinc-600">{c.ageDays != null ? `${c.ageDays}d` : "—"}</td>
-              <td className="px-3 py-2 text-right">
+              <td className={cn(adminTable.td, "text-os-grey")}>{c.detail}</td>
+              <td className={cn(adminTable.td, "text-right tabular-nums text-foreground")}>
+                {c.idleDays != null ? `${c.idleDays}d` : "—"}
+              </td>
+              <td className={cn(adminTable.td, "text-right tabular-nums text-foreground")}>
+                {c.ageDays != null ? `${c.ageDays}d` : "—"}
+              </td>
+              <td className={cn(adminTable.td, "text-right")}>
                 {data.isAdmin && !c.protected ? (
-                  <MiniBtn danger disabled={infra.busy} onClick={() => reap(c)}>Reap</MiniBtn>
+                  <IconAction label="Reap" danger disabled={infra.busy} onClick={() => reap(c)}>
+                    <Trash2 className="h-4 w-4" />
+                  </IconAction>
                 ) : (
-                  <span className="text-[11px] text-zinc-400">{c.protected ? "protected" : "admin only"}</span>
+                  <span className="text-xs text-os-muted">{c.protected ? "Protected" : "Admin only"}</span>
                 )}
               </td>
             </tr>
@@ -678,9 +861,14 @@ function Cleanup({ data, infra }: { data: Data; infra: InfraApi }) {
 
 function Requests({ data, infra }: { data: Data; infra: InfraApi }) {
   const dialog = useDialog();
+  const { panel } = useOsChrome();
   const items = data.requests;
   if (items.length === 0) {
-    return <p className="py-8 text-center text-sm text-zinc-500">No pending requests.</p>;
+    return (
+      <div className={panel}>
+        <EmptyState>No pending requests.</EmptyState>
+      </div>
+    );
   }
 
   async function resolve(id: string, status: "Fulfilled" | "Rejected") {
@@ -694,47 +882,91 @@ function Requests({ data, infra }: { data: Data; infra: InfraApi }) {
   }
 
   return (
-    <div className="flex flex-col gap-2">
-      {items.map((r) => (
-        <div key={r.id} className="rounded-lg border border-zinc-200 bg-white px-4 py-3">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <div className="flex items-center gap-2 text-sm">
-                <span className="font-medium text-zinc-900">{r.projectName}</span>
-                <span className="rounded bg-zinc-100 px-1.5 py-0.5 text-[11px] text-zinc-600">{infraRequestKindLabel(r.kind)}</span>
-              </div>
-              <p className="mt-1 text-sm text-zinc-700">{r.details}</p>
-              {r.targetHint && <p className="mt-0.5 text-xs text-zinc-500">Target: {r.targetHint}</p>}
-              <p className="mt-1 text-[11px] text-zinc-400">by {r.requestedByName} · {timeAgo(r.createdAt)}</p>
+    <ul className={panel}>
+      {items.map((r, i) => (
+        <li key={r.id} className={cn("flex items-start justify-between gap-4 px-6 py-4", i > 0 && "border-t border-os-container/70")}>
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="font-semibold text-foreground">{r.projectName}</span>
+              <Pill>{infraRequestKindLabel(r.kind)}</Pill>
             </div>
-            <div className="flex shrink-0 gap-1">
-              <MiniBtn disabled={infra.busy} onClick={() => resolve(r.id, "Fulfilled")}>Fulfilled</MiniBtn>
-              <MiniBtn danger disabled={infra.busy} onClick={() => resolve(r.id, "Rejected")}>Reject</MiniBtn>
-            </div>
+            <p className="mt-1 text-sm text-foreground">{r.details}</p>
+            {r.targetHint && <p className="mt-0.5 text-sm text-os-grey">Target: {r.targetHint}</p>}
+            <p className="mt-1 text-xs text-os-muted">
+              by {r.requestedByName} · {timeAgo(r.createdAt)}
+            </p>
           </div>
-        </div>
+          <div className="flex shrink-0 gap-0.5">
+            <IconAction label="Mark fulfilled" disabled={infra.busy} onClick={() => resolve(r.id, "Fulfilled")}>
+              <Check className="h-4 w-4" />
+            </IconAction>
+            <IconAction label="Reject" danger disabled={infra.busy} onClick={() => resolve(r.id, "Rejected")}>
+              <X className="h-4 w-4" />
+            </IconAction>
+          </div>
+        </li>
       ))}
-    </div>
+    </ul>
   );
 }
 
 // ── Small shared bits ─────────────────────────────────────────────────────────
 
-function MiniBtn({ children, onClick, disabled, danger }: { children: ReactNode; onClick: () => void; disabled?: boolean; danger?: boolean }) {
+function IconAction({
+  label,
+  children,
+  onClick,
+  disabled,
+  danger,
+  active,
+}: {
+  label: string;
+  children: ReactNode;
+  onClick: () => void;
+  disabled?: boolean;
+  danger?: boolean;
+  active?: boolean;
+}) {
+  const { iconBtn } = useOsChrome();
   return (
-    <button
-      type="button"
-      disabled={disabled}
-      onClick={onClick}
-      className={`rounded border px-2 py-0.5 text-[11px] font-medium disabled:opacity-50 ${danger ? "border-destructive/30 text-destructive hover:bg-destructive/10" : "border-zinc-300 text-zinc-700 hover:bg-zinc-50"}`}
-    >
-      {children}
-    </button>
+    <Tooltip content={label}>
+      <button
+        type="button"
+        aria-label={label}
+        disabled={disabled}
+        onClick={onClick}
+        className={cn(
+          iconBtn,
+          "disabled:opacity-50",
+          danger && "hover:bg-destructive/10 hover:text-destructive",
+          active && "bg-os-accent/15 text-os-accent",
+        )}
+      >
+        {children}
+      </button>
+    </Tooltip>
   );
 }
 
-function NumInput({ value, onChange, width = "w-12" }: { value: string; onChange: (v: string) => void; width?: string }) {
+function NumInput({
+  value,
+  onChange,
+  width = "w-14",
+  label,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  width?: string;
+  label?: string;
+}) {
+  const { compactField } = useOsChrome();
   return (
-    <input type="number" value={value} onChange={(e) => onChange(e.target.value)} className={`${width} rounded border border-zinc-300 px-1 py-0.5 text-xs`} />
+    <input
+      type="number"
+      value={value}
+      aria-label={label}
+      onChange={(e) => onChange(e.target.value)}
+      className={cn(compactField, width, "border border-os-container px-2 py-1 text-xs tabular-nums")}
+    />
   );
 }

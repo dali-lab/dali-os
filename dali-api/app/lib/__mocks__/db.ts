@@ -31,6 +31,10 @@ export const prisma = {
     update: vi.fn(),
     updateMany: vi.fn(),
   },
+  authSession: {
+    findUnique: vi.fn().mockResolvedValue(null),
+    deleteMany: vi.fn(),
+  },
   oAuthSession: {
     create: vi.fn(),
     findUnique: vi.fn(),

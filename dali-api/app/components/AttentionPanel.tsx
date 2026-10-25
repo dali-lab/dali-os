@@ -27,6 +27,7 @@ import { EVENT_TYPES, isEventType } from "~/lib/notification-events";
 // The client mirror of ~/lib/tasks' `Task`, so the shell's panel pulls in no
 // server code (see NotificationBell).
 import type { OpenTask } from "~/components/NotificationBell";
+import { ANSWER_TO_CLEAR_EVENTS } from "~/members/lib/coffee-chat";
 
 /* ------------------------------------------------------------------ */
 /* The attention stack: open tasks, notifications (incl. meeting-invite */
@@ -227,6 +228,11 @@ export function splitFeed(
   return { work, admin };
 }
 
+/** Both tabs as one list, for viewers who get a single feed (alumni). */
+export function mergedFeed(feed: Record<FeedTab, FeedCard[]>): FeedCard[] {
+  return [...feed.work, ...feed.admin];
+}
+
 function cardKey(card: FeedCard): string {
   if (card.type === "task") return `t:${card.task.id}`;
   if (card.type === "notification") return `n:${card.notification.id}`;
@@ -245,6 +251,7 @@ export function TasksDrawer({
   projectTasks,
   onOpen,
   seeAll,
+  singleFeed = false,
 }: {
   open: boolean;
   onClose: () => void;
@@ -253,6 +260,7 @@ export function TasksDrawer({
   projectTasks: ProjectWorkItem[];
   onOpen?: OpenLink;
   seeAll?: ReactNode;
+  singleFeed?: boolean;
 }) {
   const [tab, setTab] = useState<FeedTab>("work");
   const feed = splitFeed(tasks, notifications, projectTasks);
@@ -260,13 +268,15 @@ export function TasksDrawer({
 
   return (
     <Drawer open={open} onClose={onClose} title={`Tasks (${count})`} headerActions={seeAll} width={480}>
-      <div className="px-5 pb-3.5">
-        <FeedTabs tab={tab} onChange={setTab} feed={feed} stretch />
-      </div>
+      {!singleFeed && (
+        <div className="px-5 pb-3.5">
+          <FeedTabs tab={tab} onChange={setTab} feed={feed} stretch />
+        </div>
+      )}
       <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-5 pb-6">
         <TaskFeed
-          cards={feed[tab]}
-          tab={tab}
+          cards={singleFeed ? mergedFeed(feed) : feed[tab]}
+          tab={singleFeed ? undefined : tab}
           onOpen={onOpen}
         />
       </div>
@@ -654,7 +664,7 @@ function NotificationCard({
           size="md"
           className="gap-2"
         />
-      ) : notification.eventType === "coffee_chat.invite" && notification.link ? (
+      ) : notification.eventType && ANSWER_TO_CLEAR_EVENTS.includes(notification.eventType) && notification.link ? (
         <CoffeeChatAnswer action={notification.link} />
       ) : (
         <>

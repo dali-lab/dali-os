@@ -3,7 +3,6 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 // Hoist mocks before imports.
 const mockSignInSocial = vi.hoisted(() => vi.fn());
 const mockSignInMagicLink = vi.hoisted(() => vi.fn());
-const mockIsFeatureEnabledForEveryone = vi.hoisted(() => vi.fn());
 const mockClassifyPartnerEmail = vi.hoisted(() => vi.fn());
 const mockSendMemberEmailConflictEmail = vi.hoisted(() => vi.fn());
 
@@ -18,9 +17,6 @@ vi.mock("~/lib/betterauth.server", () => ({
   },
 }));
 
-vi.mock("~/lib/feature-flags.server", () => ({
-  isFeatureEnabledForEveryone: mockIsFeatureEnabledForEveryone,
-}));
 
 vi.mock("~/partners/lib/magic-link.server", () => ({
   classifyPartnerEmail: mockClassifyPartnerEmail,
@@ -52,7 +48,6 @@ function makePostRequest(body: Record<string, string>) {
 beforeEach(() => {
   vi.clearAllMocks();
   // Default: flag is ON.
-  mockIsFeatureEnabledForEveryone.mockResolvedValue(true);
   mockSignInSocial.mockResolvedValue({ url: "https://accounts.google.com/oauth" });
   mockSignInMagicLink.mockResolvedValue(undefined);
   mockSendMemberEmailConflictEmail.mockResolvedValue(undefined);
@@ -64,12 +59,6 @@ beforeEach(() => {
 // ── Loader ────────────────────────────────────────────────────────────────────
 
 describe("GET /signup loader", () => {
-  it("flag-OFF redirects to /login", async () => {
-    mockIsFeatureEnabledForEveryone.mockResolvedValue(false);
-    const res = (await loader({ request: makeUrl() } as any)) as Response;
-    expect(res.status).toBe(302);
-    expect(res.headers.get("Location")).toBe("/login");
-  });
 
   it("flag-ON with no door returns null door", async () => {
     const result = await loader({ request: makeUrl("/signup") } as any);
@@ -84,19 +73,6 @@ describe("GET /signup loader", () => {
   it("flag-ON with invalid door returns null", async () => {
     const result = await loader({ request: makeUrl("/signup?door=hacker") } as any);
     expect(result).toEqual({ door: null, next: null });
-  });
-});
-
-// ── Action — flag-OFF ─────────────────────────────────────────────────────────
-
-describe("POST /signup action flag-OFF", () => {
-  it("redirects to /login", async () => {
-    mockIsFeatureEnabledForEveryone.mockResolvedValue(false);
-    const res = (await action({
-      request: makePostRequest({ door: "member", provider: "google" }),
-    } as any)) as Response;
-    expect(res.status).toBe(302);
-    expect(res.headers.get("Location")).toBe("/login");
   });
 });
 

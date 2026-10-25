@@ -387,6 +387,11 @@ export type EventBlock = {
   unanswered?: boolean;
   /** Drawn faded and inert: the write that creates it hasn't landed yet. */
   pending?: boolean;
+  /** The timesheet roles whose hours this block shows ("Type:id"), so hovering
+   *  a role in the rail can pick out its blocks. */
+  roleKeys?: string[];
+  /** Faded back while another role is highlighted. */
+  dimmed?: boolean;
   /** Background tint for the buffer strip + frame (e.g. "bg-accent-coral/25"). */
   bufferClassName?: string;
   /** Hours of buffer above the event body. */

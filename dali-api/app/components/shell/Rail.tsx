@@ -17,7 +17,7 @@ import { cn } from '~/lib/cn'
 import { FavoritesBar } from '~/components/FavoritesBar'
 import { osMenuClass, osMenuItemClass, useAccountMenuStyle } from '~/components/os-shell-chrome'
 import { activeQuickItem, badgeLabel } from '~/components/shell/rail-model'
-import { pinnedNavItems, type NavArea, type SubTab } from '~/lib/nav-areas'
+import type { NavArea, SubTab } from '~/lib/nav-areas'
 import type { FeatureFlagMap } from '~/lib/feature-flags'
 import type { FavoritePage } from '~/lib/user-pages.server'
 import type { OpenTabRequest } from '~/components/TabWorkspace'
@@ -33,6 +33,9 @@ export type RailProps = {
   path: string
   navFlags: Partial<FeatureFlagMap>
   isAlumni: boolean
+  isNewMember?: boolean
+  home: SubTab
+  pinned: SubTab[]
   tabClickProps: TabClickProps
   emailUnread: number
   taskCount: number
@@ -100,6 +103,9 @@ export function Rail({
   path,
   navFlags,
   isAlumni,
+  isNewMember = false,
+  home,
+  pinned,
   tabClickProps,
   emailUnread,
   taskCount,
@@ -118,8 +124,13 @@ export function Rail({
   userMenuItems,
   showWhatsNewDot,
 }: RailProps) {
-  const activeQuick = activeQuickItem(path, navFlags)
-  const pinned = pinnedNavItems()
+  const activeQuick = activeQuickItem(path, {
+    home: home.href,
+    pinned,
+    flags: navFlags,
+    roles: { isAlumni, isNewMember },
+  })
+  const singleArea = areas.length === 1
 
   const [areaMenuOpen, setAreaMenuOpen] = useState(false)
   const [userMenuOpen, setUserMenuOpen] = useState(false)
@@ -225,7 +236,7 @@ export function Rail({
         </button>
 
         <div className="flex shrink-0 gap-1">
-          <QuickItem label="Home" icon={Home} active={activeQuick === 'home'} tabProps={tabClickProps({ url: '/', label: 'Home' })} />
+          <QuickItem label="Home" icon={Home} active={activeQuick === 'home'} tabProps={tabClickProps({ url: home.href, label: home.label })} />
           <QuickItem
             label="Calendar"
             icon={Calendar}
@@ -268,18 +279,22 @@ export function Rail({
         {activeArea && (
           <div className="flex min-h-0 flex-col gap-0.5">
             <div ref={areaMenuRef} className="shrink-0">
-              <button
-                type="button"
-                onClick={toggleAreaMenu}
-                aria-haspopup="listbox"
-                aria-expanded={areaMenuOpen}
-                aria-label={`Section: ${activeArea.label}. Switch section`}
-                ref={areaTriggerRef}
-                className="flex h-[26px] items-center gap-1 rounded-md pl-2.5 pr-1.5 text-xs font-semibold text-os-muted transition-colors hover:bg-os-hover"
-              >
-                {activeArea.label}
-                <ChevronDown className="h-2.5 w-2.5" aria-hidden />
-              </button>
+              {singleArea ? (
+                <p className="flex h-[26px] items-center pl-2.5 text-xs font-semibold text-os-muted">{activeArea.label}</p>
+              ) : (
+                <button
+                  type="button"
+                  onClick={toggleAreaMenu}
+                  aria-haspopup="listbox"
+                  aria-expanded={areaMenuOpen}
+                  aria-label={`Section: ${activeArea.label}. Switch section`}
+                  ref={areaTriggerRef}
+                  className="flex h-[26px] items-center gap-1 rounded-md pl-2.5 pr-1.5 text-xs font-semibold text-os-muted transition-colors hover:bg-os-hover"
+                >
+                  {activeArea.label}
+                  <ChevronDown className="h-2.5 w-2.5" aria-hidden />
+                </button>
+              )}
               {areaMenuOpen && areaMenuRect && (
                 <div
                   role="listbox"

@@ -4,7 +4,6 @@ import { redirectToLogin } from "~/lib/login-next";
 import { prisma } from "~/lib/db";
 import { listCalendarsForLink } from "~/lib/google-calendar";
 import { isAdmin, isCore } from "~/lib/roles";
-import { isFeatureEnabledForEveryone } from "~/lib/feature-flags.server";
 import { jobByName, resolveJobSettings } from "~/jobs/registry";
 import { walletAppleConfigured } from "~/lib/wallet-apple.server";
 import { walletGoogleConfigured } from "~/lib/wallet-google.server";
@@ -79,6 +78,28 @@ function describeUserAgent(ua: string | null): string {
   return "Unknown device";
 }
 
+/** The digest schedule as configured in Admin → Jobs: every member's default. */
+export async function loadDigestSchedule() {
+  const rows = await prisma.scheduledJob.findMany({
+    where: { name: { in: ["notification-digest-daily", "notification-digest-weekly"] } },
+    select: { name: true, settings: true },
+  });
+  const byName = new Map(rows.map((r) => [r.name, r]));
+  const dailyDef = jobByName("notification-digest-daily");
+  const weeklyDef = jobByName("notification-digest-weekly");
+  const daily = dailyDef
+    ? resolveJobSettings(dailyDef, byName.get("notification-digest-daily")?.settings)
+    : { sendHourEt: 9 };
+  const weekly = weeklyDef
+    ? resolveJobSettings(weeklyDef, byName.get("notification-digest-weekly")?.settings)
+    : { sendHourEt: 9, sendWeekday: 1 };
+  return {
+    dailyHour: daily.sendHourEt,
+    weeklyHour: weekly.sendHourEt,
+    weeklyWeekday: weekly.sendWeekday ?? 1,
+  };
+}
+
 export async function loadSettingsPageData(request: Request) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
@@ -91,13 +112,11 @@ export async function loadSettingsPageData(request: Request) {
   const [
     links,
     user,
-    sessionRows,
     grants,
     notificationPrefs,
-    digestRows,
+    digestSchedule,
     viewerIsAdmin,
     viewerIsCore,
-    passkeysEnabled,
     authSessionRows,
   ] = await Promise.all([
     prisma.userCalendarLink.findMany({
@@ -112,25 +131,8 @@ export async function loadSettingsPageData(request: Request) {
         dartmouthEmail: true,
         personalEmail: true,
         hideActivity: true,
+        digestHourEt: true,
       },
-    }),
-    prisma.session.findMany({
-      where: {
-        userId,
-        revokedAt: null,
-        expiresAt: { gt: new Date() },
-      },
-      select: {
-        id: true,
-        createdAt: true,
-        lastUsedAt: true,
-        expiresAt: true,
-        userAgent: true,
-        ip: true,
-        grantId: true,
-        grant: { select: { client: { select: { name: true } } } },
-      },
-      orderBy: { lastUsedAt: "desc" },
     }),
     prisma.oAuthGrant.findMany({
       where: { userId, revokedAt: null },
@@ -141,18 +143,9 @@ export async function loadSettingsPageData(request: Request) {
       where: { userId },
       select: { eventType: true, inApp: true, desktop: true, slackDm: true, digestFrequency: true },
     }),
-    prisma.scheduledJob.findMany({
-      where: { name: { in: ["notification-digest-daily", "notification-digest-weekly"] } },
-      select: { name: true, settings: true },
-    }),
+    loadDigestSchedule(),
     isAdmin(userId),
     isCore(userId),
-    // Passkey management only makes sense once auth runs on BetterAuth — gate
-    // the Settings section on the same global switch that flips the login flow.
-    isFeatureEnabledForEveryone("betterauth", request),
-    // The active-session list is sourced from AuthSession when BetterAuth is on
-    // (that's where the live sessions are); the legacy Session query above only
-    // matters pre-cutover. Both are fetched; the flag picks which to render.
     prisma.authSession.findMany({
       where: { userId, expiresAt: { gt: new Date() } },
       select: {
@@ -167,18 +160,6 @@ export async function loadSettingsPageData(request: Request) {
       orderBy: { updatedAt: "desc" },
     }),
   ]);
-
-  // Render the digest schedule as actually configured (Admin → Jobs), not a
-  // hardcoded time.
-  const digestRowByName = new Map(digestRows.map((r) => [r.name, r]));
-  const dailyDef = jobByName("notification-digest-daily");
-  const weeklyDef = jobByName("notification-digest-weekly");
-  const daily = dailyDef
-    ? resolveJobSettings(dailyDef, digestRowByName.get("notification-digest-daily")?.settings)
-    : { sendHourEt: 9 };
-  const weekly = weeklyDef
-    ? resolveJobSettings(weeklyDef, digestRowByName.get("notification-digest-weekly")?.settings)
-    : { sendHourEt: 9, sendWeekday: 1 };
 
   const calendarLinks: CalendarLinkDTO[] = await Promise.all(
     links.map(async (l) => {
@@ -215,33 +196,19 @@ export async function loadSettingsPageData(request: Request) {
   // AuthSession rows carry grantId but no grant relation (looked up manually),
   // so resolve the OAuth client name from the grants we already fetched.
   const grantNameById = new Map(grants.map((g) => [g.id, g.client.name]));
-  const sessions: SessionRowDTO[] = passkeysEnabled
-    ? authSessionRows.map((s) => ({
-        id: s.id,
-        createdAt: s.createdAt.toISOString(),
-        lastUsedAt: s.updatedAt.toISOString(),
-        expiresAt: s.expiresAt.toISOString(),
-        device: describeUserAgent(s.userAgent),
-        userAgent: s.userAgent,
-        isDesktop: /DALI OS Desktop/i.test(s.userAgent ?? ""),
-        ip: s.ipAddress,
-        kind: s.grantId
-          ? { type: "oauth" as const, clientName: grantNameById.get(s.grantId) ?? "App" }
-          : { type: "browser" as const },
-      }))
-    : sessionRows.map((s) => ({
-        id: s.id,
-        createdAt: s.createdAt.toISOString(),
-        lastUsedAt: s.lastUsedAt.toISOString(),
-        expiresAt: s.expiresAt.toISOString(),
-        device: describeUserAgent(s.userAgent),
-        userAgent: s.userAgent,
-        isDesktop: /DALI OS Desktop/i.test(s.userAgent ?? ""),
-        ip: s.ip,
-        kind: s.grantId
-          ? { type: "oauth" as const, clientName: s.grant?.client.name ?? "App" }
-          : { type: "browser" as const },
-      }));
+  const sessions: SessionRowDTO[] = authSessionRows.map((s) => ({
+    id: s.id,
+    createdAt: s.createdAt.toISOString(),
+    lastUsedAt: s.updatedAt.toISOString(),
+    expiresAt: s.expiresAt.toISOString(),
+    device: describeUserAgent(s.userAgent),
+    userAgent: s.userAgent,
+    isDesktop: /DALI OS Desktop/i.test(s.userAgent ?? ""),
+    ip: s.ipAddress,
+    kind: s.grantId
+      ? { type: "oauth" as const, clientName: grantNameById.get(s.grantId) ?? "App" }
+      : { type: "browser" as const },
+  }));
 
   const grantRows: GrantRowDTO[] = grants.map((g) => ({
     id: g.id,
@@ -267,11 +234,8 @@ export async function loadSettingsPageData(request: Request) {
     notifications: {
       prefs: notificationPrefs,
       slackConnected: !!user?.slackUserId,
-      digestSchedule: {
-        dailyHour: daily.sendHourEt,
-        weeklyHour: weekly.sendHourEt,
-        weeklyWeekday: weekly.sendWeekday ?? 1,
-      },
+      digestSchedule,
+      digestHourEt: user?.digestHourEt ?? null,
       isAdmin: viewerIsAdmin,
       isCore: viewerIsCore,
     },
@@ -279,6 +243,5 @@ export async function loadSettingsPageData(request: Request) {
       apple: walletAppleConfigured(),
       google: walletGoogleConfigured(),
     },
-    passkeysEnabled,
   };
 }

@@ -11,6 +11,8 @@ import { resolvePhotoUrl } from "~/lib/photo";
 import { requireApiSignedOrForbidden, requirePageSignedOrRedirect } from "~/hiring/lib/confidentiality";
 import { presignAnswers } from "~/hiring/lib/presign";
 import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
+import { readDocAsBlocks } from "~/collab/read";
+import { interviewNotesRoomName } from "~/collab/roomName";
 import { ApplicationViewer } from "~/hiring/components/ApplicationViewer";
 import { loadContinuedInterestView } from "~/hiring/lib/continued-interest.server";
 import { DetailCard } from "~/hiring/components/DetailCard";
@@ -352,6 +354,14 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     }
   }
 
+  // The joint notes render as the doc itself (toggles, headings, lists), so
+  // they're read live rather than from a version's plain text.
+  const jointNoteBlocks = new Map(
+    await Promise.all(
+      interviewRows.map(async (iv) => [iv.id, await readDocAsBlocks(interviewNotesRoomName(iv.id))] as const),
+    ),
+  );
+
   const interviews = interviewRows.map((iv) => {
     const jointNotes = latestCollabByName.get(`interview:${iv.id}:notes`) ?? null;
     return {
@@ -365,12 +375,10 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       videoUrl: iv.videoUrl,
       recommendation: iv.recommendation,
       recommendationNotes: iv.recommendationNotes,
-      jointNotes: jointNotes
-        ? {
-            plainText: jointNotes.plainText,
-            updatedAt: jointNotes.createdAt.toISOString(),
-          }
-        : null,
+      jointNotes: {
+        blocks: jointNoteBlocks.get(iv.id) ?? [],
+        updatedAt: jointNotes?.createdAt.toISOString() ?? null,
+      },
       assignments: iv.assignments.map((a) => {
         const isViewerThisInterviewer = a.cycleInterviewer.userId === auth.user.sub;
         const privateNotes = canSeePreReleaseDecisions

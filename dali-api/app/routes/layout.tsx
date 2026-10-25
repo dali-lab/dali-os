@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { paneFlag } from '~/lib/pane-flags'
 import { Outlet, redirect, useLoaderData, useLocation, useMatches, useNavigate, useNavigationType, useSearchParams, type ShouldRevalidateFunctionArgs } from 'react-router'
 import { cn } from '~/lib/cn'
 import { LayoutOS } from '~/components/LayoutOS'
@@ -7,13 +8,15 @@ import { Breadcrumbs } from '~/components/Breadcrumbs'
 import { PageDocProvider, PageDocButton, PageDocOutlet, ShellGuideProvider } from '~/components/page-docs/PageDocButton'
 import { useLiveFavorites } from '~/components/favorites-live'
 import { LaunchWelcome } from '~/components/LaunchWelcome'
+import { BannerHost } from '~/components/banners/BannerHost'
 import { workspacePath } from '~/components/workspace-link'
 import { NavPreloader } from '~/components/NavPreloader'
 import { TimeZonePrompt } from '~/components/TimeZonePrompt'
-import { requireAuth, redirectPartnerToPortal, impersonationAllowsWrites, isNonMember } from "~/lib/auth"
+import { requireAuth, redirectPartnerToPortal, impersonationAllowsWrites, isImpersonating, isNonMember } from "~/lib/auth"
 import { maybeUpgradeLegacyToBetterAuth } from "~/lib/betterauth-upgrade.server"
 import { redirectToLogin } from '~/lib/login-next';
 import { getUserRoles, isLabMentor } from '~/lib/roles'
+import { isNewMemberCohort } from '~/hiring/lib/new-member-cohort.server'
 import { getAppGateOutstanding } from '~/signing/lib/state.server'
 import { getBoundFormGateOutstanding } from '~/forms/lib/gate.server'
 import { getActiveCycles } from '~/hiring/lib/cycles'
@@ -207,16 +210,21 @@ export async function loader({ request }: Route.LoaderArgs) {
     ),
   ])
 
-  const hasUnseenReleaseNotes =
+  const [hasUnseenReleaseNotes, isNewMember] = await Promise.all([
     flags['release-notes'] && isLabMember
-      ? await timed(request, 'releaseNotes', async () =>
+      ? timed(request, 'releaseNotes', async () =>
           viewerHasUnseenReleaseNotes({
             userId: auth.user.sub,
             isCore: core,
             groupIds: (await listVisibleGroupIdsForUser(auth.user.sub, request)).map((g) => g.id),
           }),
         )
-      : false
+      : false,
+    // Where Onboarding sits in the sidebar: pinned for the incoming cohort.
+    flags['onboarding-journeys'] && isLabMember && !core
+      ? timed(request, 'newMember', () => isNewMemberCohort(auth.user.sub))
+      : false,
+  ])
 
   const isInterviewer = !!activeInterviewer
   if (!hasHiringAccess && isLabMember) hasHiringAccess = anyCycleReviewer !== null
@@ -258,25 +266,13 @@ export async function loader({ request }: Route.LoaderArgs) {
   const userTimeZoneIsExplicit = isValidTimezone(me?.timeZone)
   const tzDismissedZone = readDismissedTimeZone(request)
 
-  // BetterAuth impersonation: when the `betterauth` flag is live for this user
-  // and their session was started by an admin's "log in as", surface the exit
-  // banner. Gated on the flag so the extra session read never runs in the
-  // default (flag-off) path, and wrapped so the probe can't break the shell.
-  let impersonating = false
+  const impersonating = isImpersonating(auth)
   const impersonationWrites = impersonationAllowsWrites()
-  if (flags['betterauth']) {
-    try {
-      const { getImpersonationState } = await import('~/lib/betterauth-compat.server')
-      impersonating = (await getImpersonationState(request)) !== null
-    } catch {
-      // never let the impersonation probe fault the layout
-    }
-  }
 
   const __loaderTotal = performance.now() - __loaderStart
   if (__loaderTotal >= 400) console.log(`[perf-total] layout loader ${__loaderTotal.toFixed(0)}ms`)
 
-  return { user: auth.user, photoUrl, hasCalendarLink, shouldShowTour, isCore: core, isAdmin: admin, isDomainLead: domainLead, canViewForms, canViewStaffing, isInterviewer, hasHiringAccess, hasActiveHiringAccess, isInstructor, isLabMentor: isLabMentorFlag, isAlumni, instructorChrome, favorites: sidebarPages.favorites, recents: sidebarPages.recents, flags, impersonating, impersonationWrites, isEmbedded, tabless, tabStripHint, tabsSnapshot, focus, userTimeZone, userTimeZoneIsExplicit, tzDismissedZone, activeActivities, hasUnseenReleaseNotes }
+  return { user: auth.user, photoUrl, hasCalendarLink, shouldShowTour, isCore: core, isAdmin: admin, isDomainLead: domainLead, canViewForms, canViewStaffing, isInterviewer, hasHiringAccess, hasActiveHiringAccess, isInstructor, isLabMentor: isLabMentorFlag, isAlumni, isNewMember, instructorChrome, favorites: sidebarPages.favorites, recents: sidebarPages.recents, flags, impersonating, impersonationWrites, isEmbedded, tabless, tabStripHint, tabsSnapshot, focus, userTimeZone, userTimeZoneIsExplicit, tzDismissedZone, activeActivities, hasUnseenReleaseNotes }
 }
 
 // Layout data (roles, avatar, hiring access) changes rarely, but default
@@ -310,7 +306,7 @@ export function shouldRevalidate({ formAction, currentUrl, nextUrl, defaultShoul
 }
 
 export default function AppLayoutRoute() {
-  const { user, photoUrl, hasCalendarLink, shouldShowTour, isCore, isAdmin, isDomainLead, canViewForms, canViewStaffing, isInterviewer, hasHiringAccess, hasActiveHiringAccess, isInstructor, isLabMentor: isLabMentorFlag, isAlumni, instructorChrome, favorites, recents, flags, impersonating, impersonationWrites, isEmbedded, tabless, tabStripHint, tabsSnapshot, focus, userTimeZone, userTimeZoneIsExplicit, tzDismissedZone, activeActivities, hasUnseenReleaseNotes } = useLoaderData<typeof loader>()
+  const { user, photoUrl, hasCalendarLink, shouldShowTour, isCore, isAdmin, isDomainLead, canViewForms, canViewStaffing, isInterviewer, hasHiringAccess, hasActiveHiringAccess, isInstructor, isLabMentor: isLabMentorFlag, isAlumni, isNewMember, instructorChrome, favorites, recents, flags, impersonating, impersonationWrites, isEmbedded, tabless, tabStripHint, tabsSnapshot, focus, userTimeZone, userTimeZoneIsExplicit, tzDismissedZone, activeActivities, hasUnseenReleaseNotes } = useLoaderData<typeof loader>()
 
   // Non-member (external instructor) shell: the lightweight, sidebar-free chrome
   // for the education-management routes they're allowed into. Rendered before the
@@ -358,16 +354,12 @@ export default function AppLayoutRoute() {
   // than growing with its content, so a page short enough to fit can centre
   // itself against the window instead of forcing a scrollbar with a
   // viewport-height box stacked under the shell's own chrome and gutters.
-  const fitViewport = matches.some(
-    (m) => (m as { handle?: { fitViewport?: boolean } }).handle?.fitViewport,
-  )
+  const fitViewport = matches.some((m) => paneFlag(m, 'fitViewport'))
   const flushPane = matches.some(
     (m) => (m as { handle?: { flushPane?: boolean } }).handle?.flushPane,
   )
   // `bleedPane` pages (the home hero) paint edge to edge with no gutter at all.
-  const bleedPane = matches.some(
-    (m) => (m as { handle?: { bleedPane?: boolean } }).handle?.bleedPane,
-  )
+  const bleedPane = matches.some((m) => paneFlag(m, 'bleedPane'))
   const hideBreadcrumbRow =
     !hasAreaSubnav && !hasDoc && isNavbarHubPage(`${location.pathname}${location.search}`)
   // Starring a page is a fetcher write, which shouldRevalidate below keeps out
@@ -585,6 +577,8 @@ export default function AppLayoutRoute() {
           >
             {pageContent}
           </div>
+          {/* The shell above shows app-open banners; a tab shows its own page's. */}
+          <BannerHost scope="page" />
           </ShellGuideProvider>
         </PageDocProvider>
         </ActivitiesProvider>
@@ -605,7 +599,7 @@ export default function AppLayoutRoute() {
       {/* Above Layout, not inside pageContent: the tabless desktop nav row
           renders the Guide CTA from the shell, outside the routed page. */}
       <PageDocProvider>
-        <LayoutOS fitViewport={fitViewport} user={user} photoUrl={photoUrl} isCore={isCore} isAdmin={isAdmin} isDomainLead={isDomainLead} canViewForms={canViewForms} canViewStaffing={canViewStaffing} isInterviewer={isInterviewer} hasHiringAccess={hasHiringAccess} hasActiveHiringAccess={hasActiveHiringAccess} isInstructor={isInstructor} isLabMentor={isLabMentorFlag} isAlumni={isAlumni} favorites={liveFavorites} onFavoritesChange={setLiveFavorites} impersonating={impersonating} impersonationAllowsWrites={impersonationWrites} focusMode={focus} hasUnseenReleaseNotes={hasUnseenReleaseNotes} tabStripHint={tabStripHint} tabsSnapshot={tabsSnapshot}>
+        <LayoutOS fitViewport={fitViewport} user={user} photoUrl={photoUrl} isCore={isCore} isAdmin={isAdmin} isDomainLead={isDomainLead} canViewForms={canViewForms} canViewStaffing={canViewStaffing} isInterviewer={isInterviewer} hasHiringAccess={hasHiringAccess} hasActiveHiringAccess={hasActiveHiringAccess} isInstructor={isInstructor} isLabMentor={isLabMentorFlag} isAlumni={isAlumni} isNewMember={isNewMember} favorites={liveFavorites} onFavoritesChange={setLiveFavorites} impersonating={impersonating} impersonationAllowsWrites={impersonationWrites} focusMode={focus} hasUnseenReleaseNotes={hasUnseenReleaseNotes} tabStripHint={tabStripHint} tabsSnapshot={tabsSnapshot}>
           {tablessChild}
         </LayoutOS>
       </PageDocProvider>
@@ -614,6 +608,7 @@ export default function AppLayoutRoute() {
           exactly once per document — the embedded branch returns above, so a
           workspace iframe never starts a second round of prefetches. */}
       <NavPreloader favorites={favorites} recents={recents} />
+      <BannerHost scope={tabless ? "all" : "open"} />
       <LaunchWelcome firstName={user.firstName || user.email.split('@')[0]} hasCalendarLink={hasCalendarLink} shouldShowTour={shouldShowTour} tabless={tabless} />
       <TimeZonePrompt userTimeZone={userTimeZone} userTimeZoneIsExplicit={userTimeZoneIsExplicit} dismissedZone={tzDismissedZone} />
       </ActivitiesProvider>

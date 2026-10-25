@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// First run: pair this iPad to a room with the code from Core ▸ Rooms.
+/// First run: pair this iPad to its two rooms with the code from Core ▸ Rooms.
 struct DisplaySetupView: View {
     @Environment(DisplayStore.self) private var store
     @Environment(AppSettings.self) private var settings
@@ -15,7 +15,7 @@ struct DisplaySetupView: View {
             Text("Set up room display")
                 .font(OS.font(36, .medium))
                 .foregroundStyle(OS.fg)
-            Text("In DALI OS, open Core ▸ Rooms, pick the room this iPad is mounted outside, and choose Add display. Enter the code it shows.")
+            Text("In DALI OS, open Core ▸ Rooms, pick one of the two rooms this iPad hangs between, and choose Add display. Pick the other room there too, then enter the code it shows.")
                 .font(OS.font(17))
                 .foregroundStyle(OS.grey)
 

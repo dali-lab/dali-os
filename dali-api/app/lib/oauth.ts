@@ -1,11 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
-import { OAuth2Client } from "google-auth-library";
 import { prisma } from "~/lib/db";
 import { displayEmail } from "~/lib/display";
-import {
-  exchangeGoogleCode as exchangeGoogleCodeImpl,
-  GoogleOAuthError,
-} from "~/lib/google-oauth";
 import type { OAuthProvider, OAuthAccountType } from "~/generated/prisma/enums";
 import type { OAuthClient } from "~/generated/prisma/client";
 
@@ -38,8 +33,7 @@ const SESSION_TTL_MS = 10 * 60 * 1000; // 10 min for the authorize→callback→
 const AUTH_CODE_TTL_MS = 60 * 1000; // 1 min for code→token exchange
 
 // OAuth client registry lookup. Replaces the legacy `VALID_CLIENT_IDS` array
-// once the OAuthClient table is seeded (MCP foundation track). First-party
-// login flows use /auth/callback/* directly and don't traverse this registry.
+// once the OAuthClient table is seeded (MCP foundation track).
 export async function getOAuthClient(clientId: string): Promise<OAuthClient | null> {
   return prisma.oAuthClient.findUnique({ where: { clientId } });
 }
@@ -178,10 +172,6 @@ export async function createOAuthSession(params: {
   });
 }
 
-export async function getOAuthSession(id: string) {
-  return prisma.oAuthSession.findUnique({ where: { id } });
-}
-
 // authorization codes
 
 export async function generateAuthorizationCode(
@@ -255,57 +245,5 @@ export async function exchangeAuthorizationCode(params: {
     accountType: session.accountType,
     scopes: session.scopes ?? [],
     clientId: session.clientId ?? params.clientId,
-  };
-}
-
-// Token issuing now lives in `lib/session.ts` (`issueSession`). The OAuth
-// provider's `/oauth/token` endpoint calls `issueSession` after
-// `exchangeAuthorizationCode` succeeds. Refresh-token grant has been removed
-// from `/oauth/token` — sessions auto-extend on use. See SESSION_AUTH_PLAN.md.
-
-// google OAuth
-
-export async function exchangeGoogleCode(code: string, callbackUrl: string) {
-  let data;
-  try {
-    data = await exchangeGoogleCodeImpl({
-      code,
-      redirectUri: callbackUrl,
-      clientId: process.env.GOOGLE_CLIENT_ID!,
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
-    });
-  } catch (err) {
-    if (err instanceof GoogleOAuthError) {
-      throw new OAuthError(
-        "server_error",
-        `Google token exchange failed: ${err.upstreamBody ?? err.message}`,
-      );
-    }
-    throw err;
-  }
-
-  const idToken = data.id_token as string;
-
-  const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
-  const ticket = await client.verifyIdToken({
-    idToken,
-    audience: process.env.GOOGLE_CLIENT_ID!,
-  });
-  const payload = ticket.getPayload();
-  if (!payload) {
-    throw new OAuthError("server_error", "Failed to verify Google ID token");
-  }
-  if (!payload.email || !payload.email_verified) {
-    throw new OAuthError("server_error", "Email not verified by Google");
-  }
-
-  return {
-    email: payload.email,
-    firstName: (payload.given_name ?? "") as string,
-    lastName: (payload.family_name ?? "") as string,
-    photoUrl: (payload.picture ?? null) as string | null,
-    accessToken: data.access_token as string | undefined,
-    refreshToken: data.refresh_token as string | undefined,
-    expiresIn: data.expires_in as number | undefined,
   };
 }

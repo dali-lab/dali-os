@@ -3,6 +3,8 @@ import { Link } from "react-router";
 import { Calendar, MapPin, Users } from "lucide-react";
 import { INTERVIEW_STATUS_TONES, INTERVIEW_STATUS_LABELS, RECOMMENDATION_TONES } from "~/hiring/lib/labels";
 import { Pill } from "~/hiring/components/cycle-setup/SetupCard";
+import { DocEditor } from "~/components/doc";
+import { isEmptyBlocks } from "~/lib/blocks";
 
 export interface InterviewNotesInterviewer {
   id: string;
@@ -23,22 +25,15 @@ export interface InterviewNotesData {
   videoUrl?: string | null;
   recommendation?: string | null;
   recommendationNotes?: string | null;
-  // Either the rich shape (full route) or a plain string (sidebar route).
-  jointNotes?: { plainText: string; updatedAt: string | Date } | string | null;
+  jointNotes?: { blocks: unknown[]; updatedAt: string | Date | null } | null;
   interviewers?: InterviewNotesInterviewer[];
   openInInterviewerHref?: string; // omit to hide the link
 }
 
-function jointNotesText(
-  jointNotes: InterviewNotesData["jointNotes"],
-): { text: string; updatedAt: string | Date | null } | null {
-  if (jointNotes == null) return null;
-  if (typeof jointNotes === "string") {
-    const trimmed = jointNotes.trim();
-    return trimmed.length > 0 ? { text: trimmed, updatedAt: null } : null;
-  }
-  const trimmed = jointNotes.plainText.trim();
-  return trimmed.length > 0 ? { text: trimmed, updatedAt: jointNotes.updatedAt } : null;
+function JointNotesBody({ interviewId, blocks }: { interviewId: string; blocks: unknown[] }) {
+  return (
+    <DocEditor key={interviewId} features="notes" density="compact" editable={false} initialContent={blocks} />
+  );
 }
 
 // Meta-row label: in-domain shows the domain name, cross shows just "Cross".
@@ -71,7 +66,8 @@ export function InterviewNotesCard({
   const end = interview.endTime != null ? new Date(interview.endTime) : null;
   const statusLabel = INTERVIEW_STATUS_LABELS[interview.status] ?? interview.status;
   const statusTone = INTERVIEW_STATUS_TONES[interview.status] ?? "neutral";
-  const joint = jointNotesText(interview.jointNotes);
+  const joint =
+    interview.jointNotes && !isEmptyBlocks(interview.jointNotes.blocks) ? interview.jointNotes : null;
   const interviewers = interview.interviewers ?? [];
   const interviewersWithNotes = interviewers.filter(
     (a) => a.notes != null && a.notes.trim().length > 0,
@@ -110,7 +106,9 @@ export function InterviewNotesCard({
             Interview notes
           </div>
           {joint ? (
-            <p className="mt-1 text-sm text-foreground whitespace-pre-wrap">{joint.text}</p>
+            <div className="mt-1">
+              <JointNotesBody interviewId={interview.id} blocks={joint.blocks} />
+            </div>
           ) : (
             <p className="mt-1 text-xs text-os-grey/70 italic">No interview notes.</p>
           )}
@@ -186,7 +184,9 @@ export function InterviewNotesCard({
         </div>
         {joint ? (
           <>
-            <p className="mt-2 text-sm text-foreground whitespace-pre-wrap">{joint.text}</p>
+            <div className="mt-2">
+              <JointNotesBody interviewId={interview.id} blocks={joint.blocks} />
+            </div>
             {joint.updatedAt != null && (
               <p className="mt-1 text-[11px] text-os-grey/80">
                 Last edit{" "}

@@ -4,6 +4,7 @@ import { ExternalLink, RotateCcw } from "lucide-react";
 import { SearchInput } from "~/components/ui/SearchInput";
 import { buttonClasses } from "~/components/ui/Button";
 import { SegmentedTabButtons } from "~/components/AreaPillNav";
+import { getUserRoles } from "~/lib/roles";
 import { requireAuth, redirectPartnerToPortal, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import {
@@ -29,6 +30,7 @@ import {
   ctaClass,
   ctaIcon,
   attentionCount,
+  mergedFeed,
   splitFeed,
   type AttentionNotification,
   type FeedTab,
@@ -59,10 +61,11 @@ export async function loader({ request }: Route.LoaderArgs) {
   const userId = auth.user.sub;
   const url = new URL(request.url);
 
-  const [tasks, { items }, projectTasks] = await Promise.all([
+  const [tasks, { items }, projectTasks, roles] = await Promise.all([
     listOpenTasks(userId),
     listMyNotifications(userId),
     listMyProjectTasks(userId),
+    getUserRoles(userId, request),
   ]);
   const notifications: AttentionNotification[] = items.map((n) => ({
     id: n.id,
@@ -85,7 +88,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     });
   }
 
-  return { tasks, notifications, projectTasks, history };
+  return { tasks, notifications, projectTasks, history, singleFeed: roles.isAlumni };
 }
 
 // History state as the status line's leading dot (quiet, like other status
@@ -375,18 +378,22 @@ export default function NotificationsRoute() {
     <div className="w-full flex flex-col gap-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <h1 className={pageTitle}>My Tasks ({count})</h1>
-        <SegmentedTabButtons
-          label="Task type"
-          items={tabs.map((t) => ({
-            label: t.label,
-            count: t.count,
-            active: tab === t.key,
-            onClick: () => switchTab(t.key),
-          }))}
-        />
+        {!data.singleFeed && (
+          <SegmentedTabButtons
+            label="Task type"
+            items={tabs.map((t) => ({
+              label: t.label,
+              count: t.count,
+              active: tab === t.key,
+              onClick: () => switchTab(t.key),
+            }))}
+          />
+        )}
       </div>
 
-      {tab === "history" && data.history ? (
+      {data.singleFeed ? (
+        <TaskFeed grid cards={mergedFeed(feed)} />
+      ) : tab === "history" && data.history ? (
         <HistoryTab initial={data.history} initialStatus={initialStatus} />
       ) : (
         <TaskFeed

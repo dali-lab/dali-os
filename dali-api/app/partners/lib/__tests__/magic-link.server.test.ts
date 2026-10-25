@@ -4,20 +4,13 @@ vi.mock("~/lib/db", () => ({
   prisma: {
     user: { findFirst: vi.fn(), create: vi.fn() },
     dALIMember: { findUnique: vi.fn() },
-    oneTimeToken: {
-      create: vi.fn(),
-      updateMany: vi.fn(),
-      findFirst: vi.fn(),
-      findUnique: vi.fn(),
-    },
   },
 }));
 
-vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
 vi.mock("~/lib/rate-limit", () => ({ checkRateLimit: vi.fn(() => null) }));
-vi.mock("~/lib/outbound.server", () => ({
-  enqueueOutbound: vi.fn(),
-  drainNow: vi.fn(),
+const mockSignInMagicLink = vi.hoisted(() => vi.fn());
+vi.mock("~/lib/betterauth.server", () => ({
+  auth: { api: { signInMagicLink: mockSignInMagicLink } },
 }));
 vi.mock("../partner-emails.server", () => ({
   sendMemberEmailConflictEmail: vi.fn(),
@@ -25,33 +18,26 @@ vi.mock("../partner-emails.server", () => ({
 
 import { prisma } from "~/lib/db";
 import { checkRateLimit } from "~/lib/rate-limit";
-import { enqueueOutbound } from "~/lib/outbound.server";
 import { sendMemberEmailConflictEmail } from "../partner-emails.server";
 import {
   classifyPartnerEmail,
-  consumePartnerMagicLink,
-  hashToken,
   issuePartnerMagicLink,
 } from "../magic-link.server";
 
 const mockPrisma = prisma as any;
-const mockEnqueue = enqueueOutbound as unknown as ReturnType<typeof vi.fn>;
 const req = () => new Request("http://localhost/partner/login", { method: "POST" });
 
 beforeEach(() => {
   vi.resetAllMocks();
   (checkRateLimit as any).mockReturnValue(null);
-  mockEnqueue.mockResolvedValue({ id: "om-x", deduped: false });
   mockPrisma.user.findFirst.mockResolvedValue(null);
   mockPrisma.dALIMember.findUnique.mockResolvedValue(null);
   mockPrisma.user.create.mockResolvedValue({ id: "new-user" });
-  mockPrisma.oneTimeToken.updateMany.mockResolvedValue({ count: 0 });
-  mockPrisma.oneTimeToken.create.mockResolvedValue({ id: "tok1" });
 });
 
 describe("classifyPartnerEmail", () => {
   it("flags @dali.dartmouth.edu addresses without a DB lookup", async () => {
-    expect(await classifyPartnerEmail("kiran@dali.dartmouth.edu")).toEqual({
+    expect(await classifyPartnerEmail("ada@dali.dartmouth.edu")).toEqual({
       kind: "member-conflict",
     });
     expect(mockPrisma.user.findFirst).not.toHaveBeenCalled();
@@ -108,71 +94,38 @@ describe("classifyPartnerEmail", () => {
 });
 
 describe("issuePartnerMagicLink", () => {
-  it("returns the rate-limit response when limited", async () => {
+  beforeEach(() => {
+    mockSignInMagicLink.mockResolvedValue({ status: true });
+  });
+
+  it("sends a BetterAuth magic link to the normalized email", async () => {
+    const request = req();
+    const result = await issuePartnerMagicLink(" Pat@Example.com ", request);
+    expect(result).toEqual({ ok: true });
+    expect(mockSignInMagicLink).toHaveBeenCalledWith({
+      body: { email: "pat@example.com", callbackURL: "/welcome?door=partner" },
+      headers: request.headers,
+    });
+    expect(mockPrisma.user.create).not.toHaveBeenCalled();
+  });
+
+  it("still sends the conflict email instead of a link for member addresses", async () => {
+    const result = await issuePartnerMagicLink("ada@dali.dartmouth.edu", req());
+    expect(result).toEqual({ ok: true });
+    expect(sendMemberEmailConflictEmail).toHaveBeenCalledWith("ada@dali.dartmouth.edu");
+    expect(mockSignInMagicLink).not.toHaveBeenCalled();
+  });
+
+  it("returns the same neutral result when BetterAuth refuses the send", async () => {
+    mockSignInMagicLink.mockRejectedValue(new Error("FORBIDDEN"));
+    expect(await issuePartnerMagicLink("pat@example.com", req())).toEqual({ ok: true });
+  });
+
+  it("keeps the rate limits in front of BetterAuth", async () => {
     const limited = new Response(null, { status: 429 });
     (checkRateLimit as any).mockReturnValue(limited);
     const result = await issuePartnerMagicLink("pat@example.com", req());
     expect("rateLimited" in result && result.rateLimited).toBe(limited);
-    expect(mockPrisma.oneTimeToken.create).not.toHaveBeenCalled();
-  });
-
-  it("sends a conflict email and no token for member addresses", async () => {
-    const result = await issuePartnerMagicLink("Kiran@dali.dartmouth.edu", req());
-    expect(result).toEqual({ ok: true });
-    expect(sendMemberEmailConflictEmail).toHaveBeenCalledWith(
-      "kiran@dali.dartmouth.edu",
-    );
-    expect(mockPrisma.oneTimeToken.create).not.toHaveBeenCalled();
-    expect(mockPrisma.user.create).not.toHaveBeenCalled();
-  });
-
-  it("creates a user for a new email, invalidates prior tokens, stores only the hash", async () => {
-    const result = await issuePartnerMagicLink("  Pat@Example.com ", req());
-    expect(result).toEqual({ ok: true });
-    expect(mockPrisma.user.create).toHaveBeenCalledWith({
-      data: { personalEmail: "pat@example.com", firstName: "", lastName: "" },
-      select: { id: true },
-    });
-    expect(mockPrisma.oneTimeToken.updateMany).toHaveBeenCalledWith({
-      where: { userId: "new-user", purpose: "PartnerMagicLink", usedAt: null },
-      data: { usedAt: expect.any(Date) },
-    });
-    const createArg = mockPrisma.oneTimeToken.create.mock.calls[0][0];
-    expect(createArg.data.purpose).toBe("PartnerMagicLink");
-    // Hash at rest: the stored value must not be the raw token in the link. The
-    // magic link is enqueued to the outbox; the raw token lives in its bodyHtml.
-    const bodyHtml: string = mockEnqueue.mock.calls[0][0].bodyHtml;
-    const raw = bodyHtml.match(/token=([^"&\s]+)/)![1];
-    expect(createArg.data.tokenHash).toBe(hashToken(raw));
-    expect(createArg.data.tokenHash).not.toBe(raw);
-  });
-
-  it("reuses the existing user for a returning partner email", async () => {
-    mockPrisma.user.findFirst.mockResolvedValue({
-      id: "u9",
-      daliEmail: null,
-      dartmouthEmail: null,
-      netId: null,
-    });
-    await issuePartnerMagicLink("pat@example.com", req());
-    expect(mockPrisma.user.create).not.toHaveBeenCalled();
-    expect(mockPrisma.oneTimeToken.create.mock.calls[0][0].data.userId).toBe("u9");
-  });
-});
-
-describe("consumePartnerMagicLink", () => {
-  it("returns the userId when the atomic consume wins", async () => {
-    mockPrisma.oneTimeToken.updateMany.mockResolvedValue({ count: 1 });
-    mockPrisma.oneTimeToken.findUnique.mockResolvedValue({ userId: "u1" });
-    expect(await consumePartnerMagicLink("raw-token")).toBe("u1");
-    const where = mockPrisma.oneTimeToken.updateMany.mock.calls[0][0].where;
-    expect(where.usedAt).toBe(null);
-    expect(where.expiresAt).toEqual({ gt: expect.any(Date) });
-  });
-
-  it("returns null when the token was already used or expired", async () => {
-    mockPrisma.oneTimeToken.updateMany.mockResolvedValue({ count: 0 });
-    expect(await consumePartnerMagicLink("raw-token")).toBe(null);
-    expect(mockPrisma.oneTimeToken.findUnique).not.toHaveBeenCalled();
+    expect(mockSignInMagicLink).not.toHaveBeenCalled();
   });
 });

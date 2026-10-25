@@ -46,6 +46,7 @@ beforeEach(() => {
   mockPrisma.instructorAssignment.findMany.mockResolvedValue(users("u4"));
   mockPrisma.domainLeadAssignment.findMany.mockResolvedValue(users("u1"));
   mockPrisma.customHire.findMany.mockResolvedValue(users("u5"));
+  mockPrisma.user.findMany.mockResolvedValue([]);
   mockNotify.mockResolvedValue({ inApp: 5, emailed: 0, slackDmed: 0 });
 });
 
@@ -66,6 +67,24 @@ describe("paidRoleUserIds", () => {
     expect(mockPrisma.customHire.findMany).toHaveBeenCalledWith(
       expect.objectContaining({ where: { archivedAt: null } }),
     );
+  });
+
+  it("leaves out alumni who still hold a paid role row", async () => {
+    mockPrisma.user.findMany.mockResolvedValue([{ id: "u3" }, { id: "u5" }]);
+    const ids = await paidRoleUserIds();
+    expect(ids.sort()).toEqual(["u1", "u2", "u4"]);
+    expect(mockPrisma.user.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: { in: expect.arrayContaining(["u1", "u2", "u3", "u4", "u5"]) }, membershipStatus: "Alumni" },
+      }),
+    );
+  });
+
+  it("skips the alumni lookup when nobody holds a paid role", async () => {
+    mockCurrentTerm.mockResolvedValue(null);
+    mockPrisma.customHire.findMany.mockResolvedValue([]);
+    expect(await paidRoleUserIds()).toEqual([]);
+    expect(mockPrisma.user.findMany).not.toHaveBeenCalled();
   });
 
   it("still includes custom hires when there is no current term", async () => {

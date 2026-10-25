@@ -15,6 +15,23 @@ export const GALLERY_ACCEPT = "image/png,image/jpeg,image/webp,image/gif";
 /** Tiles load a thumbnail this wide; originals at or under it are used as-is. */
 export const GALLERY_THUMB_WIDTH = 640;
 
+const THUMB_FORMATS = [
+  { type: "image/webp", name: "thumb.webp" },
+  { type: "image/jpeg", name: "thumb.jpg" },
+] as const;
+
+// WebKit (Safari and the macOS desktop app) can't encode WebP and hands back
+// a PNG instead, which would be bigger than the JPEG it can encode.
+export async function encodeGalleryThumb(
+  toBlob: (type: string, quality: number) => Promise<Blob | null>,
+): Promise<File | null> {
+  for (const { type, name } of THUMB_FORMATS) {
+    const blob = await toBlob(type, 0.82);
+    if (blob?.type === type) return new File([blob], name, { type });
+  }
+  return null;
+}
+
 export function isGalleryEmoji(value: string): boolean {
   return (GALLERY_EMOJI as readonly string[]).includes(value);
 }
@@ -120,4 +137,38 @@ export function toggleReaction(reactions: Reaction[], emoji: string): Reaction[]
     : [...reactions, { emoji, count: 1, mine: true }];
   const order = (e: string) => (GALLERY_EMOJI as readonly string[]).indexOf(e);
   return next.sort((a, b) => order(a.emoji) - order(b.emoji));
+}
+
+/** "gallery-demo-day-setup.jpg": the caption's first words, or the post's own name without one. */
+export function galleryDownloadName(caption: string | null, imageKey: string): string {
+  const dot = imageKey.lastIndexOf(".");
+  const ext = dot > imageKey.lastIndexOf("/") ? imageKey.slice(dot + 1).toLowerCase() : "jpg";
+  const slug = (caption ?? "")
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 48)
+    .replace(/-+$/, "");
+  return `gallery-${slug || "photo"}.${ext}`;
+}
+
+export const GALLERY_FEED = "/community/gallery";
+
+/** The feed's URL for a filter. A person filter replaces Mine; search keeps whichever is on. */
+export function galleryFeedHref({
+  mine = false,
+  by = null,
+  q = "",
+}: {
+  mine?: boolean;
+  by?: string | null;
+  q?: string;
+}): string {
+  const params = new URLSearchParams();
+  if (by) params.set("by", by);
+  else if (mine) params.set("show", "mine");
+  if (q.trim()) params.set("q", q.trim());
+  const qs = params.toString();
+  return qs ? `${GALLERY_FEED}?${qs}` : GALLERY_FEED;
 }

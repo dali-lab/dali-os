@@ -75,14 +75,10 @@ function overlaps(a: { start: Date; end: Date }, start: Date, end: Date) {
   return a.start < end && a.end > start;
 }
 
-/**
- * A schedule item blocks a writer unless one side is a hiring cycle's hold
- * and the other belongs to the same cycle: interviews sit inside their
- * cycle's hold, and a hold may be placed over interviews already booked. Two
- * interviews still collide, as does anything from another cycle.
- */
+// Interview holds are shared by every hiring cycle, so concurrent cycles
+// interview inside one hold instead of the first cycle's hold locking out the rest.
 export function blockedBy(item: RoomScheduleItem, writer: RoomWriter) {
-  if (!writer.applicationCycleId || item.cycleId !== writer.applicationCycleId) return true;
+  if (!item.source || !SYSTEM_SOURCES.has(item.source) || !SYSTEM_SOURCES.has(writer.source)) return true;
   return !(item.source === "InterviewHold" || writer.source === "InterviewHold");
 }
 
@@ -201,7 +197,22 @@ export async function getRoomSchedule(
     }
   }
 
-  return items.sort((a, b) => a.start.getTime() - b.start.getTime());
+  return withoutCoveredHolds(items).sort((a, b) => a.start.getTime() - b.start.getTime());
+}
+
+// Concurrent cycles each store their own hold row (so each releases its own),
+// but the room is held once.
+export function withoutCoveredHolds(items: RoomScheduleItem[]): RoomScheduleItem[] {
+  const holds = items.filter((i) => i.source === "InterviewHold");
+  return items.filter((item, idx) => {
+    if (item.source !== "InterviewHold") return true;
+    return !holds.some((other) => {
+      if (other === item) return false;
+      if (other.start > item.start || other.end < item.end) return false;
+      const identical = other.start.getTime() === item.start.getTime() && other.end.getTime() === item.end.getTime();
+      return !identical || items.indexOf(other) < idx;
+    });
+  });
 }
 
 /** The event (SelfCheckIn meeting) in its check-in window right now, if any. */
@@ -580,6 +591,54 @@ export async function cancelRoomBooking(
   });
   if (!booking || booking.cancelledAt) return { ok: true, value: null };
   return cancelBookingOccurrence(booking, actorUserId, opts ?? {}, db);
+}
+
+/**
+ * Push an underway booking's end out by `minutes` (the door display's
+ * Extend), if the room is free that long. One occurrence of a repeating
+ * booking is extended through an exception; the rest of the series keeps
+ * its length.
+ */
+export async function extendRoomBooking(
+  bookingId: string,
+  occurrenceStart: Date,
+  minutes: number,
+): Promise<RoomWriteResult<{ start: Date; end: Date }>> {
+  return prisma.$transaction(async (db) => {
+    const booking = await db.roomBooking.findUnique({
+      where: { id: bookingId },
+      include: { exceptions: exceptionSelect, room: { select: { name: true } } },
+    });
+    if (!booking || booking.cancelledAt) return { ok: false, error: "Booking not found", status: 404 };
+    await lockRoom(db, booking.roomId);
+
+    const occ = booking.recurrenceRule
+      ? resolveBookingOccurrence(booking, occurrenceStart)
+      : { originalStart: booking.start, start: booking.start, end: booking.end };
+    if (!occ) return { ok: false, error: "That time isn't part of this booking", status: 404 };
+
+    const end = new Date(occ.end.getTime() + minutes * 60_000);
+    if (end.getTime() - occ.start.getTime() > MAX_BOOKING_MINUTES * 60_000) {
+      return { ok: false, error: `Bookings can be at most ${MAX_BOOKING_MINUTES / 60} hours`, status: 400 };
+    }
+    const writer: RoomWriter = { source: booking.source, applicationCycleId: booking.applicationCycleId };
+    const conflict = (
+      await getRoomSchedule(booking.roomId, occ.end, end, { excludeBookingId: booking.id }, db)
+    ).find((s) => blockedBy(s, writer));
+    if (conflict) return conflictError(conflict, booking.room.name);
+
+    if (booking.recurrenceRule) {
+      const overrideDurationMin = Math.round((end.getTime() - occ.start.getTime()) / 60_000);
+      await db.roomBookingException.upsert({
+        where: { roomBookingId_originalStart: { roomBookingId: booking.id, originalStart: occ.originalStart } },
+        create: { roomBookingId: booking.id, originalStart: occ.originalStart, overrideStart: occ.start, overrideDurationMin },
+        update: { overrideStart: occ.start, overrideDurationMin },
+      });
+    } else {
+      await db.roomBooking.update({ where: { id: booking.id }, data: { end } });
+    }
+    return { ok: true, value: { start: occ.start, end } };
+  });
 }
 
 /** Cancel every live booking a hiring cycle holds with `source`. */

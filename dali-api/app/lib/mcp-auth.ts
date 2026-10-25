@@ -2,11 +2,9 @@
 // OAuthGrant + OAuthClient, re-runs the requireMembership gate, and bumps
 // rolling expiry + lastUsedAt. Failure paths surface a 401 Response.
 //
-// Coexistence (Phase 4 / betterauth flag):
-//   1. Legacy path (bespoke Session): always tried first. Unchanged.
-//   2. BetterAuth path: tried only when (a) the legacy lookup finds no session
-//      AND (b) the `betterauth` flag is enabled for everyone. A fault in the
-//      BetterAuth path cannot break the legacy path — it is wrapped in try/catch.
+// Legacy sessions are tried first (and bridged to BetterAuth, see
+// bridgeLegacyToken), then BetterAuth. A fault in the BetterAuth path cannot
+// break the legacy path — it is wrapped in try/catch.
 //
 // Both paths share the same downstream grant/membership validation via
 // `verifyGrantAndMembership()` to avoid duplication.
@@ -14,8 +12,9 @@
 import { parseSessionId } from "~/lib/cookies";
 import { lookupSession, rollSession } from "~/lib/session";
 import { prisma } from "~/lib/db";
-import { isFeatureEnabledForEveryone } from "~/lib/feature-flags.server";
 import { auth } from "~/lib/betterauth.server";
+import { mintBetterAuthSession } from "~/lib/betterauth-session.server";
+import { getClientIp } from "~/lib/rate-limit";
 
 export type McpAuthSuccess = {
   ok: true;
@@ -107,6 +106,46 @@ async function verifyGrantAndMembership(
   };
 }
 
+// TEMPORARY — delete with the legacy branch above once no legacy MCP session is
+// left (see specs/betterauth-legacy-auth-cleanup.md, Phase 4).
+//
+// MCP clients have no refresh grant, so they can't be handed a new token. The
+// session moves to BetterAuth under the SAME token string instead: the client
+// keeps working without reconnecting, and the legacy row is deleted so the next
+// request resolves through BetterAuth.
+async function bridgeLegacyToken(
+  raw: string,
+  session: { id: string; userId: string; grantId: string | null },
+  request: Request,
+): Promise<boolean> {
+  try {
+    if (!session.grantId) return false;
+    const existing = await prisma.authSession.findUnique({
+      where: { token: raw },
+      select: { id: true },
+    });
+    if (!existing) {
+      await mintBetterAuthSession({
+        userId: session.userId,
+        grantId: session.grantId,
+        token: raw,
+        ipAddress: getClientIp(request),
+        userAgent: request.headers.get("user-agent") ?? undefined,
+      });
+    }
+    await prisma.session.deleteMany({ where: { id: session.id } });
+    return true;
+  } catch (err) {
+    // The request is already authorized by the legacy session; a failed bridge
+    // just leaves that session in place for the next request to retry.
+    console.error(
+      "[mcp-auth] legacy token bridge failed:",
+      err instanceof Error ? err.message : String(err),
+    );
+    return false;
+  }
+}
+
 export async function authenticateMcpRequest(
   request: Request,
 ): Promise<McpAuthResult> {
@@ -130,20 +169,14 @@ export async function authenticateMcpRequest(
       return { ok: false, response: unauthorized("not_an_mcp_session") };
     }
 
-    // Fire-and-forget rolling expiry update.
-    rollSession(session).catch(() => {});
-
-    return verifyGrantAndMembership(session.grantId, session.user);
+    const result = await verifyGrantAndMembership(session.grantId, session.user);
+    if (result.ok && !(await bridgeLegacyToken(raw, session, request))) {
+      rollSession(session).catch(() => {});
+    }
+    return result;
   }
 
   // ── BetterAuth path ───────────────────────────────────────────────────────
-  // Only consulted when: (a) legacy lookup found no session AND (b) the flag
-  // is enabled. Faults here cannot affect the already-resolved legacy result.
-  if (!(await isFeatureEnabledForEveryone("betterauth", request))) {
-    // Flag off — treat as unknown token (same as legacy "no session" before).
-    return { ok: false, response: unauthorized("invalid_token") };
-  }
-
   try {
     const baSession = await auth.api.getSession({ headers: request.headers });
     if (!baSession) {

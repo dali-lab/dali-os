@@ -65,6 +65,18 @@ Pay periods are the computed biweekly Sun–Sat fortnights from
 covering the last year. Entry times are wall-clock in your DALI timesheet
 zone, which is what JobX's hour/minute/AM-PM selects take.
 
+Entries are shaped for JobX's rules, not copied as logged
+(`dali-api/app/calendar/lib/jobx-rows.ts`):
+
+- **One day per entry.** An entry that runs past midnight comes back as one
+  entry per day with the same description, the first ending at 23:59 and the
+  next starting at 00:00. Each piece is filed under its own day's pay period.
+- **No shared minute between roles.** JobX counts an entry's end minute as
+  worked, so Role A 1–2pm and Role B 2–3pm overlap at 2:00 across the two
+  timesheets and JobX refuses the second. The later entry comes back a minute
+  later (2:01–3:01). If the same role picks up at its end, only its start
+  moves (2:01–3:00).
+
 ## Install (developer / sideload)
 
 1. Chrome → `chrome://extensions`

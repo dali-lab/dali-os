@@ -1,14 +1,19 @@
-import { Link, redirect, useLoaderData } from "react-router";
+import { redirect, useLoaderData } from "react-router";
 import type { Route } from "./+types/admin.ai-usage";
-import { adminHandle } from "~/admin/adminNav";
+import { AdminSectionHeader, adminHandle } from "~/admin/adminNav";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { isCore, isAdmin } from "~/lib/roles";
 import { fullName } from "~/lib/display";
-import { Sparkles } from "lucide-react";
-import { Sparkline, MiniBar } from "~/admin/components/console-ui";
-import { InfoTip } from "~/components/ui/floating";
+import { cn } from "~/lib/cn";
+import { EmptyState, Figure, MiniBar, Sparkline, adminTable } from "~/admin/components/console-ui";
+import { RangeSegmented } from "~/admin/components/RangeSegmented";
+import { resolveRange } from "~/admin/lib/insights-range";
+import { AI_COST_PER_MILLION_TOKENS, estimateAiCost, formatUsd } from "~/admin/lib/ai-cost";
+import { useOsChrome } from "~/components/os-chrome";
+import { Avatar } from "~/components/ui/Avatar";
+import { InfoTip, Tooltip } from "~/components/ui/floating";
 
 export const handle = adminHandle("ai-usage");
 
@@ -16,17 +21,7 @@ export const meta: Route.MetaFunction = () => [
   { title: "AI Usage · Admin · DALI OS" },
 ];
 
-const RANGE_OPTIONS = [
-  { key: "7d", days: 7, label: "7 days" },
-  { key: "30d", days: 30, label: "30 days" },
-  { key: "90d", days: 90, label: "90 days" },
-] as const;
-
-function resolveRange(raw: string | null) {
-  return RANGE_OPTIONS.find((r) => r.key === raw) ?? RANGE_OPTIONS[1];
-}
-
-// AiUsage.day is a "YYYY-MM-DD" string — ISO dates compare correctly as
+// AiUsage.day is a "YYYY-MM-DD" string, so ISO dates compare correctly as
 // strings. Inclusive of today: 7 days = today plus the six before it.
 function sinceDay(days: number): string {
   return new Date(Date.now() - (days - 1) * 24 * 60 * 60 * 1000)
@@ -61,7 +56,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       ? []
       : await prisma.user.findMany({
           where: { id: { in: perUser.map((r) => r.userId) } },
-          select: { id: true, firstName: true, lastName: true, daliEmail: true },
+          select: { id: true, firstName: true, lastName: true, daliEmail: true, photoUrl: true },
         });
   const userById = new Map(users.map((u) => [u.id, u]));
 
@@ -78,6 +73,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       userId: r.userId,
       name: (u && (fullName(u) || u.daliEmail)) ?? r.userId,
       email: u?.daliEmail ?? null,
+      photoUrl: u?.photoUrl ?? null,
       requests,
       inputTokens,
       outputTokens,
@@ -108,137 +104,130 @@ export async function loader({ request }: Route.LoaderArgs) {
   };
 }
 
-function StatCard({
-  label,
-  value,
-  caption,
-}: {
-  label: string;
-  value: string;
-  caption: string;
-}) {
-  return (
-    <section className="bg-card border border-border rounded-lg p-4">
-      <div className="text-xs font-medium text-muted-foreground">{label}</div>
-      <div className="text-3xl font-bold text-foreground tabular-nums">
-        {value}
-      </div>
-      <div className="text-[11px] text-muted-foreground/70">{caption}</div>
-    </section>
-  );
+function formatDay(day: string | null): string {
+  if (!day) return "—";
+  return new Date(`${day}T12:00:00Z`).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    timeZone: "UTC",
+  });
 }
 
-export default function AdminConsoleAiUsage() {
-  const { rangeKey, rangeLabel, rows, totals, series } =
-    useLoaderData<typeof loader>();
+const COST_NOTE = `Estimate at $${AI_COST_PER_MILLION_TOKENS.input} per 1M input tokens and $${AI_COST_PER_MILLION_TOKENS.output} per 1M output tokens. Not a bill.`;
 
-  const maxRequests = rows[0]?.requests || 1;
+export default function AdminConsoleAiUsage() {
+  const { rangeKey, rangeLabel, rows, totals, series } = useLoaderData<typeof loader>();
+  const { panel } = useOsChrome();
+  const maxTokens = Math.max(1, ...rows.map((r) => r.inputTokens + r.outputTokens));
+  const totalTokens = totals.inputTokens + totals.outputTokens;
+  const totalCost = estimateAiCost(totals.inputTokens, totals.outputTokens);
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center gap-3">
-        <Sparkles className="w-6 h-6 text-foreground/80" />
-        <h1 className="text-2xl font-bold text-foreground inline-flex items-center gap-1.5">
-          AI usage
-          <InfoTip content="Each member is limited to 200 AI doc-writing requests per day and 10 per minute (burst). Token counts are best-effort — a request can appear without tokens if the call was cancelled or failed." />
-        </h1>
-        <span className="px-2.5 py-0.5 rounded-full text-xs font-medium bg-muted text-muted-foreground">
-          {rangeLabel}
-        </span>
-        <div className="ml-auto flex items-center gap-1 text-xs">
-          {RANGE_OPTIONS.map((r) => (
-            <Link
-              key={r.key}
-              to={r.key === "30d" ? "?" : `?range=${r.key}`}
-              prefetch="render"
-              className={`px-2 py-1 rounded-md ${
-                r.key === rangeKey
-                  ? "bg-foreground text-background"
-                  : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
-              }`}
-            >
-              {r.label}
-            </Link>
-          ))}
-        </div>
-      </div>
+    <div className="flex flex-col gap-8">
+      <AdminSectionHeader section="insights" />
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard
-          label="Requests"
-          value={totals.requests.toLocaleString()}
-          caption={`last ${rangeLabel}`}
-        />
-        <StatCard
-          label="Members"
-          value={rows.length.toLocaleString()}
-          caption="used AI in window"
-        />
-        <StatCard
-          label="Input tokens"
-          value={compact.format(totals.inputTokens)}
-          caption={`last ${rangeLabel}`}
-        />
-        <StatCard
-          label="Output tokens"
-          value={compact.format(totals.outputTokens)}
-          caption={`last ${rangeLabel}`}
-        />
-      </div>
-
-      <section className="bg-card border border-border rounded-lg px-4 py-3">
-        <p className="text-xs text-muted-foreground mb-2">
-          Requests / day · last {rangeLabel}
-        </p>
-        <Sparkline values={series} />
-      </section>
-
-      <section className="bg-card border border-border rounded-lg divide-y divide-border">
-        {rows.length === 0 ? (
-          <div className="px-4 py-8 text-center text-sm text-muted-foreground/70">
-            No AI usage in this window.
+      <section className={cn(panel, "p-6")} aria-label="AI usage totals">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="flex flex-wrap items-end gap-x-12 gap-y-4">
+            <Figure
+              size="lg"
+              label={`Tokens · last ${rangeLabel}`}
+              value={compact.format(totalTokens)}
+              detail={`${compact.format(totals.inputTokens)} input · ${compact.format(totals.outputTokens)} output`}
+            />
+            <Figure label="Requests" value={totals.requests.toLocaleString()} detail={`Last ${rangeLabel}`} />
+            <Figure label="Members" value={rows.length.toLocaleString()} detail="Used AI in window" />
+            <Figure
+              label={
+                <span className="inline-flex items-center gap-1">
+                  Est. cost
+                  <InfoTip content={COST_NOTE} />
+                </span>
+              }
+              value={formatUsd(totalCost)}
+              detail="Estimate"
+            />
           </div>
-        ) : (
-          rows.map((r) => {
-            const share =
-              totals.requests > 0
-                ? Math.round((r.requests / totals.requests) * 100)
-                : 0;
-            return (
-              <div key={r.userId} className="flex items-center gap-3 px-4 py-3">
-                <div className="flex-1 min-w-0">
-                  <div className="text-sm text-foreground truncate">{r.name}</div>
-                  {r.email && r.email !== r.name && (
-                    <div className="text-xs text-muted-foreground truncate">
-                      {r.email}
-                    </div>
-                  )}
-                  <div className="mt-1.5">
-                    <MiniBar fraction={r.requests / maxRequests} />
-                  </div>
-                </div>
-                <div className="text-right shrink-0 space-y-0.5">
-                  <div className="text-sm font-semibold text-foreground tabular-nums">
-                    {r.requests.toLocaleString()}{" "}
-                    <span className="text-xs font-normal text-os-accent tabular-nums">
-                      {share}%
-                    </span>
-                  </div>
-                  <div className="text-xs text-muted-foreground tabular-nums">
-                    {compact.format(r.inputTokens + r.outputTokens)} tok
-                  </div>
-                </div>
-              </div>
-            );
-          })
-        )}
+          <div className="flex items-center gap-2">
+            <InfoTip
+              label="About quotas"
+              content="Each member is limited to 200 AI doc-writing requests per day and 10 per minute (burst). Token counts are best-effort. A request can appear without tokens if the call was cancelled or failed."
+            />
+            <RangeSegmented value={rangeKey} />
+          </div>
+        </div>
+        <div className="mt-6">
+          <p className="mb-2 text-xs text-os-muted">Requests per day</p>
+          <Sparkline values={series} height={48} />
+        </div>
       </section>
 
-      <p className="text-[11px] text-muted-foreground/70">
-        Requests are counted at the daily-quota gate (200/day, 10/min burst per
-        member); token counts are best-effort telemetry recorded after each
-        model call, so a row can show requests with fewer tokens if a call
-        failed or was cancelled early.
+      <div className={cn(adminTable.wrap, "os-scroll")}>
+        {rows.length === 0 ? (
+          <EmptyState>No AI usage in this window.</EmptyState>
+        ) : (
+          <table className="w-full min-w-[860px]">
+            <thead>
+              <tr>
+                <th className={adminTable.th}>Member</th>
+                <th className={cn(adminTable.th, "text-right")}>Requests</th>
+                <th className={cn(adminTable.th, "w-[30%]")}>Tokens</th>
+                <th className={cn(adminTable.th, "text-right")}>Est. cost</th>
+                <th className={cn(adminTable.th, "text-right")}>Last used</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => {
+                const tokens = r.inputTokens + r.outputTokens;
+                const share =
+                  totals.requests > 0 ? Math.round((r.requests / totals.requests) * 100) : 0;
+                return (
+                  <tr key={r.userId} className={adminTable.row}>
+                    <td className={adminTable.td}>
+                      <div className="flex items-center gap-3">
+                        <Avatar name={r.name} photoUrl={r.photoUrl} size="sm" />
+                        <div className="min-w-0">
+                          <p className="truncate font-semibold text-foreground">{r.name}</p>
+                          {r.email && r.email !== r.name && (
+                            <p className="truncate text-xs text-os-muted">{r.email}</p>
+                          )}
+                        </div>
+                      </div>
+                    </td>
+                    <td className={cn(adminTable.td, "whitespace-nowrap text-right tabular-nums text-foreground")}>
+                      {r.requests.toLocaleString()}
+                      <span className="ml-1.5 text-xs text-os-accent">{share}%</span>
+                    </td>
+                    <td className={adminTable.td}>
+                      <Tooltip
+                        content={`${r.inputTokens.toLocaleString()} input · ${r.outputTokens.toLocaleString()} output`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <MiniBar fraction={tokens / maxTokens} className="h-1.5 flex-1" />
+                          <span className="w-14 text-right tabular-nums text-foreground">
+                            {compact.format(tokens)}
+                          </span>
+                        </div>
+                      </Tooltip>
+                    </td>
+                    <td className={cn(adminTable.td, "text-right tabular-nums text-foreground")}>
+                      {formatUsd(estimateAiCost(r.inputTokens, r.outputTokens))}
+                    </td>
+                    <td className={cn(adminTable.td, "whitespace-nowrap text-right text-os-grey")}>
+                      {formatDay(r.lastUsed)}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      <p className="text-xs text-os-muted">
+        Requests are counted at the daily quota gate (200 per day, 10 per minute per member). Token
+        counts are recorded after each model call, so a row can show requests with fewer tokens if a
+        call failed or was cancelled early. {COST_NOTE}
       </p>
     </div>
   );

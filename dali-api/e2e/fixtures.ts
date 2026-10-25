@@ -26,8 +26,14 @@ export const test = base.extend<{ loginAs: (opts: LoginOptions) => Promise<void>
     // locate content via frameLocator on workspace iframes). Tabless is the
     // app default now, so pin the tabbed opt-in cookie per context. Keep the
     // name/value in sync with TABLESS_COOKIE in app/lib/tabless.ts.
+    // dali_pk_prompt=1 is "passkey offer dismissed" (PASSKEY_PROMPT_COOKIE in
+    // app/lib/passkey-prompt.server.ts); otherwise the offer's modal covers the
+    // page for every signed-in user, none of whom has a passkey.
     if (baseURL) {
-      await page.context().addCookies([{ name: 'dali_tabless', value: '0', url: baseURL }]);
+      await page.context().addCookies([
+        { name: 'dali_tabless', value: '0', url: baseURL },
+        { name: 'dali_pk_prompt', value: '1', url: baseURL },
+      ]);
     }
     await use(page);
   },

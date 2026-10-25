@@ -12,6 +12,18 @@ export const AUDIT_ACTIONS = [
   "auth.passkey.remove",
   "auth.token.invalid",
   "auth.token.malformed",
+  // Unattributed: one row per sign-in code or magic-link request
+  // (metadata.email, metadata.type "magic-link" for links), counted
+  // by the cross-machine send throttle; "throttled" rows are the refused ones.
+  "auth.code.request",
+  "auth.code.throttled",
+  // Admin → Security IP rules. metadata.cidr names the address or range;
+  // "blocked" is a refused request from a blocked address (sampled per minute).
+  "security.ip.block",
+  "security.ip.trust",
+  "security.ip.remove",
+  "security.ip.autoblock",
+  "security.ip.blocked",
   // Unattributed: /oauth/register is public, and a rejected registration
   // persists nothing else — this row is where the rejected redirect_uris live.
   "oauth.register.rejected",
@@ -29,6 +41,7 @@ export const AUDIT_ACTIONS = [
   "room.create",
   "room.update",
   "room.display.create",
+  "room.display.update",
   "room.display.revoke",
   // Core stopped a live iPad attendance scan from Rooms; metadata names the meeting.
   "room.display.scan.stop",
@@ -160,6 +173,8 @@ export const AUDIT_ACTIONS = [
   "announcement.cancel",
   "outbound.retry",
   "outbound.cancel",
+  // One row per "Retry all failed": metadata.count re-queued, metadata.search the Outbox search it matched.
+  "outbound.retry_all",
   "confidentiality.sign",
   "signing.sign",
   "signing.publish",
@@ -296,6 +311,10 @@ export const AUDIT_ACTIONS = [
   "recording.discard",
   "release_note.publish",
   "release_note.dismiss",
+  // Communications. listserv.config targets the singleton "default" row.
+  "listserv.config",
+  "banner.save",
+  "banner.delete",
 ] as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];

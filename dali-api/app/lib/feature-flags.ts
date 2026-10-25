@@ -56,6 +56,18 @@ export const FEATURE_FLAGS = [
       "A /release-notes page listing what shipped, with demo videos, and a \"What's new\" item in the account menu that shows a dot when there is something unread. Core also gets Communications > Release notes to write, review and publish entries. Ships off.",
   },
   {
+    key: "listserv",
+    label: "Listserv",
+    description:
+      "Communications > Listserv: Core members submit emails for the campus listserv, the outreach lead reviews them, sends approved ones from Gmail, and records which went out. Ships off.",
+  },
+  {
+    key: "banners",
+    label: "Banners",
+    description:
+      "Communications > Banners: Core schedules full-screen banners shown when members open DALI OS or visit a page, with audience, frequency and a hide-for-today option. Turning this off also stops banners from showing. Ships off.",
+  },
+  {
     key: "favorites-bar",
     label: "Favorites bar",
     description:
@@ -100,12 +112,6 @@ export const FEATURE_FLAGS = [
       "Project-hub-style education catalog — a grid of cover cards with a per-offering emoji, a search field, and a Miniseries/Workshop type filter — on both /education (members) and /portal/education (applicants). Also switches the applicant portal home to conditional action cards (Apply to DALI, Apply to an offering, My applications, My courses) that link to the combined /portal/applications history. The offering emoji picker and the applications page ship regardless; this flag only gates the redesigned surfaces. Ships off.",
   },
   {
-    key: "betterauth",
-    label: "BetterAuth login",
-    description:
-      "Route sign-in through the BetterAuth substrate across the member, Dartmouth, and partner doors. Sign-in is passwordless: a 6-digit email code plus passkeys (no password, no Google). requireAuth accepts a BetterAuth session alongside a legacy one, so turning this on does NOT force a re-login; active legacy sessions upgrade to BetterAuth silently as users browse. Read as a GLOBAL toggle (enabled + everyone), so role and user targeting do not apply. Ships off; flipping it on is the cutover.",
-  },
-  {
     key: "community",
     label: "Community",
     description:
@@ -148,12 +154,6 @@ export const FEATURE_FLAGS = [
       "Help hours, socials and info sessions on a hiring cycle. Core creates events on the cycle page, emails everyone who started an application, and takes attendance by QR self check-in or by hand. Attendance shows on application reviews as an engagement signal. Ships off.",
   },
   {
-    key: "drive-receivers",
-    label: "Drive receiver folders",
-    description:
-      "Files everything the app creates on its own (hiring forms, application templates, agreements, education templates, certificate backgrounds, meeting notes) into a folder Core has marked to receive it, or at the top of the matching Drive space when none is marked, instead of into the auto-made subfolders used today. Turns off the automatic meeting folders on projects. Ships off.",
-  },
-  {
     key: "drive-home",
     label: "Drive Home",
     description:
@@ -182,6 +182,18 @@ export const FEATURE_FLAGS = [
     label: "Desktop tabs",
     description:
       "Tabs become a desktop app feature built on the single-page shell instead of one iframe per tab. The desktop app shows a tab strip (on by default, switchable in Settings); browsers never do, and the tabbed workspace setting leaves browser Settings. Project documents and member notes open in a side panel beside the page, in the browser and the app. Ships off.",
+  },
+  {
+    key: "drive-slides",
+    label: "Drive slide decks",
+    description:
+      "Adds Slides to the Drive New menus: a deck of title, text, text and image, and image slides, edited in the app and presented full screen. Decks already made keep opening when this is off. Ships off.",
+  },
+  {
+    key: "onboarding-journeys",
+    label: "Onboarding journeys",
+    description:
+      "Self-paced onboarding at /journeys: per-domain journeys of modules on a prerequisite map, each with lesson pages, slides, an in-browser coding lab and a quiz, with progress saved per member. First-term members find Journeys pinned under Drive; everyone else finds it in the Lab area. Core and domain leads create journeys and share edit access per journey. Ships off.",
   },
 ] as const satisfies readonly FeatureFlagDef[];
 

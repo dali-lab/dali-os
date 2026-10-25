@@ -1,62 +1,106 @@
 import { useRef } from "react";
-import { Form, redirect, useLoaderData, useSubmit } from "react-router";
+import { Form, redirect, useLoaderData, useSearchParams, useSubmit } from "react-router";
 import type { Route } from "./+types/admin.site-users";
-import { adminHandle } from "~/admin/adminNav";
+import type { Prisma } from "~/generated/prisma/client";
+import { AdminSectionHeader, adminHandle } from "~/admin/adminNav";
+import { EmptyState, Pill, adminTable } from "~/admin/components/console-ui";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
-import { isFeatureEnabledForEveryone } from "~/lib/feature-flags.server";
 import { isAdmin, isAdminViaEnv } from "~/lib/roles";
 import { resolvePhotoUrl } from "~/lib/photo";
+import { derivePresenceState } from "~/lib/presence";
+import { relativeTime } from "~/lib/relative-time";
 import { Avatar } from "~/components/ui/Avatar";
 import { SearchInput } from "~/components/ui/SearchInput";
+import { Segmented } from "~/components/ui/Segmented";
+import { Tooltip } from "~/components/ui/floating";
 import { ImpersonateButton } from "~/admin/components/admin-shared";
 import { useOsChrome } from "~/components/os-chrome";
-import { Shield, Ban } from "lucide-react";
 import { cn } from "~/lib/cn";
 
 export const meta: Route.MetaFunction = () => [{ title: "Site users · Admin · DALI OS" }];
 
-export const handle = adminHandle("site-users");
+export const handle = adminHandle("users");
 
-// Site users — every account on the site, not just lab members: applicants,
-// partners, and Dartmouth users all have User rows. Admin-only, because its one
-// action is impersonation ("Log in as"). Roles & permissions in Core stays a
-// member-roster tool; impersonation lives here so it can reach everyone.
-//
-// Server-side search (name/email) with a bounded result set — the User table
-// grows with every applicant, so this never loads it whole.
+// Every account on the site, not just lab members. Admin-only, because its one
+// action is impersonation. The User table grows with every applicant, so the
+// search is server-side and bounded instead of loading it whole.
 
 const RESULT_LIMIT = 100;
+
+export const SITE_USER_KINDS = ["Member", "Alumni", "Partner", "Dartmouth", "External"] as const;
+export type SiteUserKind = (typeof SITE_USER_KINDS)[number];
+
+// Membership wins over the other kinds because a lab member may also carry
+// stray partner/Dartmouth signals. `kindWhere` must stay the exact inverse of
+// `kindOf` so the filter and the per-kind counts agree with the label.
+export function kindOf(u: {
+  daliMember: unknown;
+  membershipStatus: string;
+  partnerContact: unknown;
+  netId: string | null;
+  dartmouthEmail: string | null;
+}): SiteUserKind {
+  if (u.daliMember) return u.membershipStatus === "Alumni" ? "Alumni" : "Member";
+  if (u.partnerContact) return "Partner";
+  if (u.netId || u.dartmouthEmail) return "Dartmouth";
+  return "External";
+}
+
+export function kindWhere(kind: SiteUserKind): Prisma.UserWhereInput {
+  const notMember = { daliMember: { is: null } };
+  const notPartner = { partnerContact: { is: null } };
+  switch (kind) {
+    case "Member":
+      return { daliMember: { isNot: null }, membershipStatus: { not: "Alumni" } };
+    case "Alumni":
+      return { daliMember: { isNot: null }, membershipStatus: "Alumni" };
+    case "Partner":
+      return { ...notMember, partnerContact: { isNot: null } };
+    case "Dartmouth":
+      return {
+        AND: [notMember, notPartner, { OR: [{ netId: { not: null } }, { dartmouthEmail: { not: null } }] }],
+      };
+    case "External":
+      return { AND: [notMember, notPartner, { netId: null }, { dartmouthEmail: null }] };
+  }
+}
+
+function searchWhere(q: string): Prisma.UserWhereInput {
+  if (!q) return {};
+  const contains = { contains: q, mode: "insensitive" as const };
+  return {
+    OR: [
+      { firstName: contains },
+      { lastName: contains },
+      { name: contains },
+      { daliEmail: contains },
+      { dartmouthEmail: contains },
+      { personalEmail: contains },
+      { email: contains },
+      { netId: contains },
+    ],
+  };
+}
+
+function parseKind(raw: string | null): SiteUserKind | null {
+  return (SITE_USER_KINDS as readonly string[]).includes(raw ?? "") ? (raw as SiteUserKind) : null;
+}
 
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
   if (!(await isAdmin(auth.user.sub))) return redirect("/");
 
-  // "Log in as" only works with BetterAuth sessions and 404s otherwise, so the
-  // buttons render disabled until the flag is on for everyone.
-  const impersonationEnabled = await isFeatureEnabledForEveryone("betterauth", request);
-
   const url = new URL(request.url);
   const q = (url.searchParams.get("q") ?? "").trim();
+  const kind = parseKind(url.searchParams.get("kind"));
 
-  const where = q
-    ? {
-        OR: [
-          { firstName: { contains: q, mode: "insensitive" as const } },
-          { lastName: { contains: q, mode: "insensitive" as const } },
-          { name: { contains: q, mode: "insensitive" as const } },
-          { daliEmail: { contains: q, mode: "insensitive" as const } },
-          { dartmouthEmail: { contains: q, mode: "insensitive" as const } },
-          { personalEmail: { contains: q, mode: "insensitive" as const } },
-          { email: { contains: q, mode: "insensitive" as const } },
-          { netId: { contains: q, mode: "insensitive" as const } },
-        ],
-      }
-    : {};
+  const search = searchWhere(q);
+  const where: Prisma.UserWhereInput = kind ? { AND: [search, kindWhere(kind)] } : search;
 
-  const [rows, total] = await Promise.all([
+  const [rows, kindTotals] = await Promise.all([
     prisma.user.findMany({
       where,
       select: {
@@ -71,6 +115,8 @@ export async function loader({ request }: Route.LoaderArgs) {
         photoUrl: true,
         banned: true,
         membershipStatus: true,
+        lastActiveAt: true,
+        hideActivity: true,
         daliMember: { select: { id: true } },
         adminMembership: { select: { id: true } },
         partnerContact: { select: { id: true } },
@@ -78,52 +124,72 @@ export async function loader({ request }: Route.LoaderArgs) {
       orderBy: [{ lastActiveAt: { sort: "desc", nulls: "last" } }, { createdAt: "desc" }],
       take: RESULT_LIMIT,
     }),
-    prisma.user.count({ where }),
+    Promise.all(SITE_USER_KINDS.map((k) => prisma.user.count({ where: { AND: [search, kindWhere(k)] } }))),
   ]);
 
+  const counts = Object.fromEntries(SITE_USER_KINDS.map((k, i) => [k, kindTotals[i] ?? 0])) as Record<
+    SiteUserKind,
+    number
+  >;
+  const all = kindTotals.reduce((a, b) => a + b, 0);
+  const total = kind ? counts[kind] : all;
+
   const photoUrls = new Map(
-    await Promise.all(
-      rows.map(async (u) => [u.id, await resolvePhotoUrl(u.photoUrl)] as const),
-    ),
+    await Promise.all(rows.map(async (u) => [u.id, await resolvePhotoUrl(u.photoUrl)] as const)),
   );
 
-  const users = rows.map((u) => {
-    // Primary account kind. Membership wins over the others because a lab member
-    // may also carry stray applicant/Dartmouth signals.
-    const kind = u.daliMember
-      ? u.membershipStatus === "Alumni"
-        ? "Alumni"
-        : "Member"
-      : u.partnerContact
-        ? "Partner"
-        : u.netId || u.dartmouthEmail
-          ? "Dartmouth"
-          : "External";
-    return {
-      id: u.id,
-      firstName: u.firstName,
-      lastName: u.lastName,
-      email: u.daliEmail ?? u.dartmouthEmail ?? u.personalEmail ?? u.email ?? u.netId ?? null,
-      photoUrl: photoUrls.get(u.id) ?? null,
-      kind,
-      isAdmin: u.adminMembership !== null || isAdminViaEnv(u.id),
-      banned: u.banned === true,
-    };
-  });
+  const now = new Date();
+  const users = rows.map((u) => ({
+    id: u.id,
+    firstName: u.firstName,
+    lastName: u.lastName,
+    email: u.daliEmail ?? u.dartmouthEmail ?? u.personalEmail ?? u.email ?? u.netId ?? null,
+    photoUrl: photoUrls.get(u.id) ?? null,
+    kind: kindOf(u),
+    isAdmin: u.adminMembership !== null || isAdminViaEnv(u.id),
+    banned: u.banned === true,
+    lastSeen: u.hideActivity
+      ? { hidden: true as const, at: null, online: false }
+      : {
+          hidden: false as const,
+          at: u.lastActiveAt?.toISOString() ?? null,
+          online: derivePresenceState(u.lastActiveAt, now) === "active",
+        },
+  }));
 
-  return { users, total, q, impersonationEnabled, viewerUserId: auth.user.sub };
+  return { users, total, all, counts, kind, q, viewerUserId: auth.user.sub, isAdmin: true };
 }
 
+type SiteUser = ReturnType<typeof useLoaderData<typeof loader>>["users"][number];
+
+function LastSeen({ lastSeen }: { lastSeen: SiteUser["lastSeen"] }) {
+  if (lastSeen.hidden) {
+    return (
+      <Tooltip content="This person hides their activity.">
+        <span className="text-os-muted">Hidden</span>
+      </Tooltip>
+    );
+  }
+  if (!lastSeen.at) return <span className="text-os-muted">Never</span>;
+  if (lastSeen.online) return <span className="text-os-green">Online</span>;
+  return (
+    <Tooltip content={new Date(lastSeen.at).toLocaleString()}>
+      <span className="text-os-grey">{relativeTime(lastSeen.at)}</span>
+    </Tooltip>
+  );
+}
+
+type KindFilter = "all" | SiteUserKind;
+
 export default function AdminSiteUsers() {
-  const { users, total, q, impersonationEnabled, viewerUserId } =
-    useLoaderData<typeof loader>();
-  const { pageTitle, panel } = useOsChrome();
+  const { users, total, all, counts, kind, q, viewerUserId } = useLoaderData<typeof loader>();
+  const { panel } = useOsChrome();
   const submit = useSubmit();
+  const [, setSearchParams] = useSearchParams();
   const formRef = useRef<HTMLFormElement>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Debounced auto-submit: each keystroke re-runs the loader's server search
-  // (replace so the back button isn't buried under every character).
+  // Replace so the back button isn't buried under every keystroke.
   function onSearchChange() {
     if (timer.current) clearTimeout(timer.current);
     timer.current = setTimeout(() => {
@@ -131,27 +197,23 @@ export default function AdminSiteUsers() {
     }, 250);
   }
 
+  function onKindChange(next: KindFilter) {
+    setSearchParams((prev) => {
+      const params = new URLSearchParams(prev);
+      if (next === "all") params.delete("kind");
+      else params.set("kind", next);
+      return params;
+    });
+  }
+
   const truncated = total > users.length;
 
   return (
-    <div className="flex flex-col gap-5">
-      <header className="flex flex-col gap-4">
-        <div>
-          <h1 className={pageTitle}>Site users</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Every account on the site — members, applicants, partners, and Dartmouth
-            users. Log in as anyone to see the app exactly as they do.
-          </p>
-        </div>
+    <div className="flex flex-col gap-6">
+      <AdminSectionHeader section="accounts" />
 
-        {!impersonationEnabled && (
-          <p className="rounded-md border border-os-amber/40 bg-os-amber/10 px-3 py-2 text-sm text-os-amber">
-            Turn on the <span className="font-semibold">betterauth</span> flag for
-            everyone (Admin → Feature Flags) to enable “Log in as”.
-          </p>
-        )}
-
-        <Form method="get" ref={formRef} role="search">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <Form method="get" ref={formRef} role="search" className="lg:w-80">
           <label htmlFor="site-user-search" className="sr-only">
             Search users by name or email
           </label>
@@ -160,76 +222,82 @@ export default function AdminSiteUsers() {
             name="q"
             defaultValue={q}
             onChange={onSearchChange}
-            placeholder="Search all users by name or email…"
-            containerClassName="w-full sm:max-w-md"
+            placeholder="Search by name or email"
           />
+          {kind && <input type="hidden" name="kind" value={kind} />}
         </Form>
+        <div className="max-w-full overflow-x-auto">
+          <Segmented<KindFilter>
+            ariaLabel="Account type"
+            value={kind ?? "all"}
+            onChange={onKindChange}
+            options={[
+              { value: "all", label: "All", count: all },
+              ...SITE_USER_KINDS.map((k) => ({ value: k, label: k, count: counts[k] })),
+            ]}
+          />
+        </div>
+      </div>
 
-        <p className="text-xs text-muted-foreground">
+      <div className="flex flex-col gap-2">
+        <p className="text-xs text-os-muted">
           {total === 0
             ? "No users match that search."
             : truncated
-              ? `Showing ${users.length} of ${total} — narrow your search to see the rest.`
+              ? `Showing ${users.length} of ${total}. Narrow your search to see the rest.`
               : `${total} ${total === 1 ? "user" : "users"}`}
         </p>
-      </header>
 
-      <div className={cn("overflow-hidden", panel)}>
-        {users.length === 0 ? (
-          <p className="px-4 py-12 text-center text-sm text-muted-foreground">
-            {q ? "No users match that search." : "No users yet."}
-          </p>
-        ) : (
-          <ul className="divide-y divide-border">
-            {users.map((u) => {
-              const name = `${u.firstName} ${u.lastName}`.trim();
-              return (
-                <li
-                  key={u.id}
-                  className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-muted/40"
-                >
-                  <Avatar photoUrl={u.photoUrl} name={name} size="sm" userId={u.id} />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <p className="truncate text-sm font-medium text-foreground">
-                        {name || "Unnamed user"}
-                      </p>
-                      <span className="shrink-0 rounded-md border border-border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                        {u.kind}
-                      </span>
-                      {u.isAdmin && (
-                        <span className="inline-flex shrink-0 items-center gap-1 rounded-md border border-os-accent/30 bg-os-accent/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-os-accent">
-                          <Shield className="h-3 w-3" />
-                          Admin
-                        </span>
-                      )}
-                      {u.banned && (
-                        <span className="inline-flex shrink-0 items-center gap-1 rounded-md border border-destructive/30 bg-destructive/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-destructive">
-                          <Ban className="h-3 w-3" />
-                          Banned
-                        </span>
-                      )}
-                    </div>
-                    <p className="truncate text-xs text-muted-foreground">
-                      {u.email ?? "No email on file"}
-                    </p>
-                  </div>
-                  <div className="shrink-0">
-                    <ImpersonateButton
-                      user={{
-                        id: u.id,
-                        firstName: u.firstName,
-                        lastName: u.lastName,
-                        email: u.email,
-                      }}
-                      disabled={!impersonationEnabled || u.id === viewerUserId}
-                    />
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-        )}
+        <div className={cn(panel, "overflow-x-auto")}>
+          {users.length === 0 ? (
+            <EmptyState>{q || kind ? "No users match that search." : "No users yet."}</EmptyState>
+          ) : (
+            <table className="w-full min-w-[720px]">
+              <thead>
+                <tr>
+                  <th className={adminTable.th}>Account</th>
+                  <th className={adminTable.th}>Type</th>
+                  <th className={adminTable.th}>Last seen</th>
+                  <th className={adminTable.th}>
+                    <span className="sr-only">Actions</span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {users.map((u) => {
+                  const name = `${u.firstName} ${u.lastName}`.trim();
+                  return (
+                    <tr key={u.id} className={adminTable.row}>
+                      <td className={adminTable.td}>
+                        <div className="flex items-center gap-3">
+                          <Avatar photoUrl={u.photoUrl} name={name} size="sm" userId={u.id} />
+                          <div className="min-w-0">
+                            <p className="flex flex-wrap items-center gap-2 font-semibold text-foreground">
+                              {name || "Unnamed user"}
+                              {u.isAdmin && <Pill>Admin</Pill>}
+                              {u.banned && <Pill tone="bad">Banned</Pill>}
+                            </p>
+                            <p className="truncate text-xs text-os-muted">{u.email ?? "No email on file"}</p>
+                          </div>
+                        </div>
+                      </td>
+                      <td className={cn(adminTable.td, "text-os-grey")}>{u.kind}</td>
+                      <td className={cn(adminTable.td, "whitespace-nowrap")}>
+                        <LastSeen lastSeen={u.lastSeen} />
+                      </td>
+                      <td className={cn(adminTable.td, "text-right")}>
+                        <ImpersonateButton
+                          user={{ id: u.id, firstName: u.firstName, lastName: u.lastName, email: u.email }}
+                          disabled={u.id === viewerUserId}
+                        />
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
+        </div>
       </div>
     </div>
   );

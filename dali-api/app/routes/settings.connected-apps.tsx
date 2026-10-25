@@ -9,7 +9,7 @@ import { revokeAllForGrant } from "~/lib/session";
 export const meta: Route.MetaFunction = () => [{ title: "Settings · DALI OS" }];
 
 export async function loader() {
-  return redirect("/settings#connected-apps");
+  return redirect("/settings/connections");
 }
 
 export async function action({ request }: Route.ActionArgs) {
@@ -19,12 +19,12 @@ export async function action({ request }: Route.ActionArgs) {
   const form = await request.formData();
   const grantId = form.get("grantId");
   if (typeof grantId !== "string") {
-    return redirect("/settings#connected-apps");
+    return redirect("/settings/connections");
   }
 
   const grant = await prisma.oAuthGrant.findUnique({ where: { id: grantId } });
   if (!grant || grant.userId !== auth.user.sub) {
-    return redirect("/settings#connected-apps");
+    return redirect("/settings/connections");
   }
 
   await prisma.oAuthGrant.update({
@@ -32,6 +32,7 @@ export async function action({ request }: Route.ActionArgs) {
     data: { revokedAt: new Date() },
   });
   await revokeAllForGrant(grantId);
+  await prisma.authSession.deleteMany({ where: { grantId } });
   await logAuditEvent({
     action: "oauth.grant.revoke",
     userId: auth.user.sub,
@@ -40,7 +41,7 @@ export async function action({ request }: Route.ActionArgs) {
     request,
   });
 
-  return redirect("/settings#connected-apps");
+  return redirect("/settings/connections");
 }
 
 export default function ConnectedAppsRedirect() {

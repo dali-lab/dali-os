@@ -66,7 +66,7 @@ export async function action({ request }: Route.ActionArgs) {
           title: str("title"),
           parentPageId: str("parentPageId") || null,
           isFolder: str("isFolder") === "true",
-          kind: str("kind") === "Whiteboard" ? "Whiteboard" : undefined,
+          kind: str("kind") === "Whiteboard" || str("kind") === "Slides" ? (str("kind") as "Whiteboard" | "Slides") : undefined,
         });
         return withCors(request, Response.json({ ok: true, id: created.id }));
       }

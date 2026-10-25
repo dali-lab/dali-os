@@ -7,12 +7,11 @@ import {
   isAllowedRedirectUri,
 } from "~/lib/oauth";
 import { checkRateLimit } from "~/lib/rate-limit";
-import { parseSessionId } from "~/lib/cookies";
-import { lookupSession } from "~/lib/session";
+import { isImpersonating, requireAuth } from "~/lib/auth";
+import { redirectToLogin } from "~/lib/login-next";
 import { prisma } from "~/lib/db";
 import type { OAuthAccountType, OAuthProvider } from "~/generated/prisma/enums";
-import { getApiBaseUrl, getCasBaseUrl, getOAuthIssuer } from "~/lib/app-env";
-import { buildGoogleAuthUrl } from "~/lib/google-oauth";
+import { getOAuthIssuer } from "~/lib/app-env";
 
 const RATE_LIMIT_MAX = 10;
 const RATE_LIMIT_WINDOW_MS = 60_000;
@@ -98,8 +97,8 @@ export async function loader({ request }: Route.LoaderArgs) {
     );
   }
 
-  // Provider must be one of the client's allowedProviders. For MCP clients
-  // this filters CAS out at the gate; only "google" survives.
+  // Provider must be one of the client's allowedProviders. It no longer picks
+  // how the user signs in (that's /login); it is only recorded on the session.
   const provider = providerParam ?? client.allowedProviders[0];
   if (!provider || !client.allowedProviders.includes(provider)) {
     return clientError(
@@ -141,6 +140,25 @@ export async function loader({ request }: Route.LoaderArgs) {
     }
   }
 
+  // Sign-in happens on /login (BetterAuth), which returns here afterwards. An
+  // admin impersonating a member must not authorize a client as that member.
+  const auth = await requireAuth(request);
+  if (!auth.ok) return redirectToLogin(request);
+  if (isImpersonating(auth)) {
+    return clientError(redirectUri, state, "access_denied", "impersonating");
+  }
+  const userId = auth.user.sub;
+
+  if (client.requireMembership) {
+    const member = await prisma.dALIMember.findUnique({
+      where: { userId },
+      select: { id: true },
+    });
+    if (!member) {
+      return clientError(redirectUri, state, "access_denied", "not_a_member");
+    }
+  }
+
   const oauthSession = await createOAuthSession({
     codeChallenge,
     codeChallengeMethod,
@@ -152,113 +170,37 @@ export async function loader({ request }: Route.LoaderArgs) {
     scopes: requestedScopes,
   });
 
-  const apiBase = getApiBaseUrl();
-
-  // ── Existing-session shortcut ────────────────────────────────────────────
-  // If the browser already has a valid first-party cookie session, skip
-  // the IDP redirect entirely. The OAuthClient policy is re-applied here:
-  // we re-check membership when client.requireMembership is true.
-  const rawSid = parseSessionId(request);
-  if (rawSid) {
-    const existing = await lookupSession(rawSid);
-    const now = new Date();
-    if (
-      existing &&
-      !existing.revokedAt &&
-      existing.expiresAt > now &&
-      existing.absoluteExpiresAt > now
-    ) {
-      if (client.requireMembership) {
-        const member = await prisma.dALIMember.findUnique({
-          where: { userId: existing.userId },
-          select: { id: true },
-        });
-        if (!member) {
-          return clientError(
-            redirectUri,
-            state,
-            "access_denied",
-            "not_a_member",
-          );
-        }
-      }
-      // For a member with daliEmail set, only `member` accountType is valid.
-      // We trust the cookie session and skip the IDP. Branch to consent
-      // (or straight to code-issue if a matching grant already exists).
-      const existingGrant = client.isFirstParty
-        ? null
-        : await prisma.oAuthGrant.findUnique({
-            where: {
-              userId_clientId: { userId: existing.userId, clientId: client.clientId },
-            },
-          });
-      const matchingGrant =
-        existingGrant &&
-        !existingGrant.revokedAt &&
-        requestedScopes.every((s) => existingGrant.scopes.includes(s));
-
-      if (client.isFirstParty || matchingGrant) {
-        const code = await generateAuthorizationCode(
-          oauthSession.id,
-          existing.userId,
-        );
-        return new Response(null, {
-          status: 302,
-          headers: {
-            Location: authorizationResponseUrl({
-              issuer,
-              redirectUri,
-              query: { code, state },
-            }),
-          },
-        });
-      }
-
-      // No matching grant — pre-set userId so the consent screen can show it.
-      await prisma.oAuthSession.update({
-        where: { id: oauthSession.id },
-        data: { userId: existing.userId },
+  const existingGrant = client.isFirstParty
+    ? null
+    : await prisma.oAuthGrant.findUnique({
+        where: { userId_clientId: { userId, clientId: client.clientId } },
       });
-      // Consent route lives on the same origin as /oauth/authorize (the
-      // dali-api full-stack app); use a same-origin path so it works both
-      // locally (no separate frontend bind) and in production.
-      return new Response(null, {
-        status: 302,
-        headers: {
-          Location: `/oauth/consent?session_id=${oauthSession.id}`,
-        },
-      });
-    }
-  }
+  const matchingGrant =
+    existingGrant &&
+    !existingGrant.revokedAt &&
+    requestedScopes.every((s) => existingGrant.scopes.includes(s));
 
-  // ── CAS flow ─────────────────────────────────────────────────────────────
-  if (provider === "cas") {
-    const casBase = getCasBaseUrl();
-    const serviceUrl = `${apiBase}/oauth/callback/cas?session_id=${oauthSession.id}`;
+  if (client.isFirstParty || matchingGrant) {
+    const code = await generateAuthorizationCode(oauthSession.id, userId);
     return new Response(null, {
       status: 302,
       headers: {
-        Location: `${casBase}/login?service=${encodeURIComponent(serviceUrl)}`,
+        Location: authorizationResponseUrl({
+          issuer,
+          redirectUri,
+          query: { code, state },
+        }),
       },
     });
   }
 
-  // ── Google flow ──────────────────────────────────────────────────────────
-  let googleAuthUrl = buildGoogleAuthUrl({
-    clientId: process.env.GOOGLE_CLIENT_ID!,
-    redirectUri: `${apiBase}/oauth/callback/google`,
-    scopes: ["openid", "email", "profile"],
-    state: oauthSession.id,
-    prompt: "select_account",
+  // No matching grant: pre-set userId so the consent screen can show it.
+  await prisma.oAuthSession.update({
+    where: { id: oauthSession.id },
+    data: { userId },
   });
-  if (accountType === "member") {
-    googleAuthUrl += "&hd=dali.dartmouth.edu";
-  }
-
   return new Response(null, {
     status: 302,
-    headers: {
-      Location: googleAuthUrl,
-    },
+    headers: { Location: `/oauth/consent?session_id=${oauthSession.id}` },
   });
 }

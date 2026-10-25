@@ -1,15 +1,19 @@
 import { Form, Link, useActionData, useLoaderData, useNavigation } from "react-router";
-import { Coffee } from "lucide-react";
+import { Coffee, FileText } from "lucide-react";
 import type { Route } from "./+types/coffee-chats.$id";
 import { requireAuth, redirectNonMemberToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { Button, buttonClasses } from "~/components/ui/Button";
 import { loadCoffeeChat, respondToCoffeeChat } from "~/members/lib/coffee-chat.server";
+import { inviteCopy, KIND_HEADINGS } from "~/members/lib/coffee-chat";
 
-export const meta: Route.MetaFunction = () => [{ title: "Coffee chat · DALI OS" }];
+const heading = (data: unknown) =>
+  KIND_HEADINGS[(data as { chat?: { kind?: keyof typeof KIND_HEADINGS } } | undefined)?.chat?.kind ?? "CoffeeChat"];
+
+export const meta: Route.MetaFunction = ({ data }) => [{ title: `${heading(data)} · DALI OS` }];
 
 export const handle = {
-  breadcrumb: () => "Coffee chat",
+  breadcrumb: heading,
 };
 
 export async function loader({ request, params }: Route.LoaderArgs) {
@@ -41,35 +45,16 @@ export default function CoffeeChat() {
   const actionData = useActionData<typeof action>();
   const busy = useNavigation().state !== "idle";
 
-  let title: string;
-  let detail: string;
-  if (chat.role === "sender") {
-    title =
-      chat.status === "Accepted"
-        ? `${chat.other?.name ?? "They"} accepted your coffee chat`
-        : `Waiting on ${chat.other?.name ?? "them"}`;
-    detail =
-      chat.status === "Accepted"
-        ? "They can see your name now. Reach out to pick a time."
-        : "Your invite is anonymous. They'll see your name only if they accept.";
-  } else if (chat.status === "Pending") {
-    title = "Someone wants to grab coffee with you";
-    detail = "You'll see who it is only if you accept. If you decline, they won't be told.";
-  } else if (chat.status === "Accepted") {
-    title = `Coffee chat with ${chat.other?.name ?? "a DALI member"}`;
-    detail = "They've been told you accepted. Reach out to pick a time.";
-  } else {
-    title = "You declined this coffee chat";
-    detail = "They weren't told.";
-  }
+  const { title, detail } = inviteCopy(chat, chat.other?.name ?? null);
+  const Icon = chat.kind === "ResumeReview" ? FileText : Coffee;
 
   return (
     <div className="flex flex-col gap-4">
-      <h1 className="font-heading text-4xl font-medium text-foreground">Coffee chat</h1>
+      <h1 className="font-heading text-4xl font-medium text-foreground">{KIND_HEADINGS[chat.kind]}</h1>
       <article className="flex flex-col gap-4 rounded-os-card bg-os-card p-6">
         <div className="flex items-start gap-3">
           <span className="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-[10px] bg-os-accent/15 text-os-accent">
-            <Coffee className="h-[17px] w-[17px]" />
+            <Icon className="h-[17px] w-[17px]" />
           </span>
           <div className="min-w-0">
             <h2 className="text-lg font-semibold text-foreground">{title}</h2>

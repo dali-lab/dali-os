@@ -2,7 +2,7 @@
 
 Native SwiftUI app for DALI OS. It is a single universal target for iPhone and iPad (iOS 18+). It talks to the same `dali-api` backend as the web and desktop apps.
 
-- **iPad: room door display.** The iPad is mounted outside a room. It shows the room as free or busy, the current and next booking, and today's schedule as a day timeline. People can walk up and "Book now" by scanning their DALI wallet pass. While a DALI event (a SelfCheckIn meeting) is running in the room, the display becomes a wallet-pass check-in scanner.
+- **iPad: room door display.** The iPad hangs between two rooms and shows both side by side: each as available, starting soon, or in use, with what's on now and today's list. People can walk up and **Book now** for 15 to 90 minutes, or **End early** / **Extend 15 min** a booking, by scanning their DALI wallet pass (ending or extending takes the booker's pass, or Core's). While a DALI event (a SelfCheckIn meeting) is running in a room, that room's panel becomes a check-in station, and while iPad scanning is on from a meeting's page the whole screen is the scanner with a live check-in count.
 - **iPhone: member app.** This is a placeholder for now.
 
 ## Develop
@@ -40,11 +40,11 @@ Debug builds default to **staging**. You can switch between Production, Staging,
 
 ## Room display
 
-**Pairing.** In DALI OS, go to Core ▸ Rooms, pick the room, and choose **Add display**. Enter the 8-character code on the iPad; it expires after 10 minutes.
+**Pairing.** In DALI OS, go to Core ▸ Rooms, pick one of the two rooms, and choose **Add display**. Pick the other room, then enter the 8-character code on the iPad; it expires after 10 minutes. A display paired before two-room pairing shows one room until you give it a second one with its edit button.
 
-The iPad then gets its own token, which is stored in the Keychain. The token only works on `/api/room-display/*`, for that one room. Revoke it from the same page. To unpair from the iPad, press and hold the date above the timeline for 3 seconds.
+The iPad then gets its own token, which is stored in the Keychain. The token only works on `/api/room-display/*`, for its two rooms. Revoke it from the same page. To unpair from the iPad, press and hold the date in the top right for 3 seconds.
 
-**Demo mode (debug builds only).** Enter `DEMO-ROOM` or `DEMO-EVENT` as the setup code to see the display with sample data and no server. To open the display already in use, launch with the argument `-demoDisplay busy`. The simulator has no camera, so the scanner offers **Simulate a scan**.
+**Demo mode (debug builds only).** Enter `DEMO-ROOM`, `DEMO-EVENT`, `DEMO-SCAN`, or `DEMO-APPLICANTS` as the setup code to see the display with sample data and no server, or launch with `-demoDisplay rooms|event|scan|applicants`. The scanner offers **Simulate a scan** and **Invalid pass** in demo mode and whenever there's no camera (the simulator).
 
 **Kiosk setup.** On the iPad:
 - Settings → Accessibility → **Guided Access** on, then triple-click the side button in the app to lock it.

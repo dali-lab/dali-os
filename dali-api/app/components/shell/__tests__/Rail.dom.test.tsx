@@ -6,6 +6,7 @@ import { createRoutesStub } from "react-router";
 import { Rail, type RailProps } from "~/components/shell/Rail";
 import { ToastProvider } from "~/components/ui/toast";
 import { Settings } from "lucide-react";
+import { homeNavItem, pinnedNavItems } from "~/lib/nav-areas";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -19,6 +20,8 @@ const base: RailProps = {
   path: "/",
   navFlags: {},
   isAlumni: false,
+  home: homeNavItem({ isAlumni: false }),
+  pinned: pinnedNavItems(),
   tabClickProps: () => ({ onClick: vi.fn() }),
   emailUnread: 0,
   taskCount: 0,
@@ -75,10 +78,40 @@ describe("Rail", () => {
     expect(q("button[aria-label='Home']")!.getAttribute("aria-current")).toBeNull();
   });
 
-  it("hides Email for alumni", async () => {
-    await mount({ isAlumni: true });
+  it("hides Email and Drive for alumni and sends Home to Connect", async () => {
+    const tabClickProps = vi.fn(() => ({ onClick: vi.fn() }));
+    await mount({
+      isAlumni: true,
+      home: homeNavItem({ isAlumni: true }),
+      pinned: pinnedNavItems({ isAlumni: true }),
+      path: "/connect",
+      tabClickProps,
+    });
     expect(q("button[aria-label='Email']")).toBeNull();
+    expect(q("button[aria-label='Drive']")).toBeNull();
+    expect(q("button[aria-label='Home']")!.getAttribute("aria-current")).toBe("page");
+    expect(tabClickProps).toHaveBeenCalledWith({ url: "/connect", label: "Home" });
+  });
+
+  it("shows the pinned items it is given", async () => {
+    await mount({ pinned: [...pinnedNavItems(), { label: "Journeys", href: "/journeys", icon: Settings }] });
     expect(q("button[aria-label='Drive']")).not.toBeNull();
+    expect(q("button[aria-label='Journeys']")).not.toBeNull();
+  });
+
+  const area = (key: string) => ({ key, label: key.toUpperCase(), icon: Settings, hubPath: `/${key}`, subtabs: [] });
+
+  it("names a lone area without offering a switch", async () => {
+    const only = area("connect");
+    await mount({ areas: [only], activeArea: only });
+    expect(container.textContent).toContain("CONNECT");
+    expect(q("button[aria-haspopup='listbox']")).toBeNull();
+  });
+
+  it("offers the area switch when there is more than one area", async () => {
+    const lab = area("lab");
+    await mount({ areas: [lab, area("core")], activeArea: lab });
+    expect(q("button[aria-haspopup='listbox']")!.getAttribute("aria-label")).toBe("Section: LAB. Switch section");
   });
 
   it("dots Email when there is unread mail", async () => {

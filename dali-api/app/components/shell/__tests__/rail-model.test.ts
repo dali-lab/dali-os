@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { activeQuickItem, badgeLabel, splitFavorites } from "~/components/shell/rail-model";
+import { homeNavItem, pinnedNavItems } from "~/lib/nav-areas";
+
+const member = { isAlumni: false, isNewMember: false };
+const pinned = pinnedNavItems(member);
 
 describe("activeQuickItem", () => {
   it("lights Home only on exactly /", () => {
@@ -15,8 +19,23 @@ describe("activeQuickItem", () => {
   });
 
   it("lights Drive on its subtree", () => {
-    expect(activeQuickItem("/drive")).toBe("/drive");
-    expect(activeQuickItem("/drive/folder/abc")).toBe("/drive");
+    expect(activeQuickItem("/drive", { pinned })).toBe("/drive");
+    expect(activeQuickItem("/drive/folder/abc", { pinned })).toBe("/drive");
+  });
+
+  it("lights Journeys for a new member when onboarding journeys are on", () => {
+    const roles = { isAlumni: false, isNewMember: true };
+    const flags = { "onboarding-journeys": true };
+    const newMemberPinned = pinnedNavItems(roles, flags);
+    expect(activeQuickItem("/journeys", { pinned: newMemberPinned, flags, roles })).toBe("/journeys");
+  });
+
+  it("treats Connect as Home for alumni and pins nothing", () => {
+    const roles = { isAlumni: true, isNewMember: false };
+    const home = homeNavItem(roles).href;
+    expect(activeQuickItem("/connect", { home, pinned: pinnedNavItems(roles), roles })).toBe("home");
+    expect(activeQuickItem("/", { home, pinned: pinnedNavItems(roles), roles })).toBeNull();
+    expect(activeQuickItem("/drive", { home, pinned: pinnedNavItems(roles), roles })).toBeNull();
   });
 
   it("matches nothing on a plain area page", () => {

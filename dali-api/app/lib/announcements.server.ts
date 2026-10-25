@@ -25,6 +25,7 @@ export type AnnouncementInput = {
   allMembers: boolean;
   groupIds: string[];
   userIds: string[];
+  announcementId?: string | null;
 };
 
 export type AnnouncementResult =
@@ -93,6 +94,7 @@ export async function sendAnnouncement(input: AnnouncementInput): Promise<Announ
       dueAt: input.dueAt ?? null,
       formId: input.formId ?? null,
       ccDartmouth: input.ccDartmouth ?? false,
+      announcementId: input.announcementId ?? null,
     },
     recipients: recipientIds.map((userId) => ({ userId })),
   });

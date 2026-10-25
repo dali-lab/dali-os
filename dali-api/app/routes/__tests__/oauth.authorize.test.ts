@@ -12,15 +12,14 @@ vi.mock("~/lib/oauth", async () => ({
   getOAuthClient: mockGetOAuthClient,
   isAllowedRedirectUri: (_client: any, uri: string) =>
     uri === "http://localhost:5173/login",
-  generateAuthorizationCode: vi.fn(),
+  generateAuthorizationCode: vi.fn().mockResolvedValue("code-1"),
   OAuthError: class OAuthError extends Error {},
 }));
 
-vi.mock("~/lib/cookies", () => ({
-  parseSessionId: vi.fn().mockReturnValue(null),
-}));
-vi.mock("~/lib/session", () => ({
-  lookupSession: vi.fn().mockResolvedValue(null),
+const mockRequireAuth = vi.hoisted(() => vi.fn());
+vi.mock("~/lib/auth", () => ({
+  requireAuth: mockRequireAuth,
+  isImpersonating: (auth: { impersonatedBy?: string }) => auth.impersonatedBy != null,
 }));
 vi.mock("~/lib/db", () => ({
   prisma: {
@@ -31,7 +30,8 @@ vi.mock("~/lib/db", () => ({
 }));
 
 import { _resetForTests } from "~/lib/rate-limit";
-import { createOAuthSession } from "~/lib/oauth";
+import { createOAuthSession, generateAuthorizationCode } from "~/lib/oauth";
+import { prisma } from "~/lib/db";
 import { loader } from "~/routes/oauth.authorize";
 
 function makeRequest(ip = "1.2.3.4", scope?: string) {
@@ -51,8 +51,22 @@ function makeRequest(ip = "1.2.3.4", scope?: string) {
   });
 }
 
+function signedIn(extra: Record<string, unknown> = {}) {
+  mockRequireAuth.mockResolvedValue({
+    ok: true,
+    user: { sub: "user-1", email: "ada@dali.dartmouth.edu", type: "member" },
+    sessionId: "s1",
+    ...extra,
+  });
+}
+
 beforeEach(() => {
   _resetForTests();
+  vi.clearAllMocks();
+  vi.mocked(createOAuthSession).mockResolvedValue({ id: "session-1" } as any);
+  vi.mocked(generateAuthorizationCode).mockResolvedValue("code-1");
+  vi.mocked(prisma.oAuthGrant.findUnique).mockResolvedValue(null);
+  signedIn();
   process.env.GOOGLE_CLIENT_ID = "test-client-id";
   process.env.API_BASE_URL = "http://localhost:3001";
   process.env.FRONTEND_URL = "http://localhost:5173";
@@ -123,6 +137,86 @@ describe("GET /oauth/authorize scopes", () => {
   it("still rejects any other scope the client isn't allowed", async () => {
     const res = await loader({ request: makeRequest("9.9.9.3", "mcp:read mcp:bogus") } as any);
     expect(res.headers.get("location") ?? "").toContain("invalid_scope");
+  });
+});
+
+describe("GET /oauth/authorize sign-in", () => {
+  it("sends a signed-out browser to /login and back to this exact authorize URL", async () => {
+    mockRequireAuth.mockResolvedValue({ ok: false });
+    const request = makeRequest("9.9.7.1", "mcp:read");
+    const res = await loader({ request } as any);
+    expect(res.status).toBe(302);
+    const url = new URL(request.url);
+    expect(res.headers.get("location")).toBe(
+      `/login?next=${encodeURIComponent(url.pathname + url.search)}`,
+    );
+    expect(createOAuthSession).not.toHaveBeenCalled();
+  });
+
+  it("never redirects to Google or CAS", async () => {
+    mockRequireAuth.mockResolvedValue({ ok: false });
+    for (const provider of ["google", "cas"]) {
+      const params = new URLSearchParams(new URL(makeRequest().url).search);
+      params.set("provider", provider);
+      const res = await loader({
+        request: new Request(`http://localhost/oauth/authorize?${params}`, {
+          headers: { "X-Forwarded-For": `9.9.7.${provider.length}` },
+        }),
+      } as any);
+      expect(res.headers.get("location")).toMatch(/^\/login\?next=/);
+    }
+  });
+
+  it("refuses an impersonated session with access_denied back to the client", async () => {
+    signedIn({ impersonatedBy: "admin-1" });
+    const res = await loader({ request: makeRequest("9.9.7.3", "mcp:read") } as any);
+    const out = new URL(res.headers.get("location")!).searchParams;
+    expect(out.get("error")).toBe("access_denied");
+    expect(out.get("error_description")).toBe("impersonating");
+    expect(createOAuthSession).not.toHaveBeenCalled();
+  });
+
+  it("refuses a non-member when the client requires membership", async () => {
+    mockGetOAuthClient.mockResolvedValueOnce({
+      ...(await mockGetOAuthClient()),
+      requireMembership: true,
+    });
+    vi.mocked(prisma.dALIMember.findUnique).mockResolvedValue(null);
+    const res = await loader({ request: makeRequest("9.9.7.4", "mcp:read") } as any);
+    const out = new URL(res.headers.get("location")!).searchParams;
+    expect(out.get("error")).toBe("access_denied");
+    expect(out.get("error_description")).toBe("not_a_member");
+  });
+
+  it("sends a signed-in user with no grant to consent, bound to their user id", async () => {
+    const res = await loader({ request: makeRequest("9.9.7.5", "mcp:read") } as any);
+    expect(res.headers.get("location")).toBe("/oauth/consent?session_id=session-1");
+    expect(prisma.oAuthSession.update).toHaveBeenCalledWith({
+      where: { id: "session-1" },
+      data: { userId: "user-1" },
+    });
+  });
+
+  it("issues a code straight away when an existing grant covers the scopes", async () => {
+    vi.mocked(prisma.oAuthGrant.findUnique).mockResolvedValue({
+      revokedAt: null,
+      scopes: ["mcp:read", "mcp:write"],
+    } as any);
+    const res = await loader({ request: makeRequest("9.9.7.6", "mcp:read") } as any);
+    const out = new URL(res.headers.get("location")!);
+    expect(out.origin + out.pathname).toBe("http://localhost:5173/login");
+    expect(out.searchParams.get("code")).toBe("code-1");
+    expect(out.searchParams.get("state")).toBe("xyz");
+    expect(generateAuthorizationCode).toHaveBeenCalledWith("session-1", "user-1");
+  });
+
+  it("goes to consent when the existing grant was revoked", async () => {
+    vi.mocked(prisma.oAuthGrant.findUnique).mockResolvedValue({
+      revokedAt: new Date(),
+      scopes: ["mcp:read"],
+    } as any);
+    const res = await loader({ request: makeRequest("9.9.7.7", "mcp:read") } as any);
+    expect(res.headers.get("location")).toBe("/oauth/consent?session_id=session-1");
   });
 });
 

@@ -3,18 +3,13 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 const mockCount = vi.hoisted(() => vi.fn());
 vi.mock("~/lib/db", () => ({ prisma: { passkey: { count: mockCount } } }));
 vi.mock("~/lib/betterauth-compat.server", () => ({ getBetterAuthUser: vi.fn() }));
-vi.mock("~/lib/feature-flags.server", () => ({
-  isFeatureEnabledForEveryone: vi.fn(),
-}));
 vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
 
 import { getBetterAuthUser } from "~/lib/betterauth-compat.server";
-import { isFeatureEnabledForEveryone } from "~/lib/feature-flags.server";
 import { logAuditEvent } from "~/lib/audit";
 import { loader, action } from "~/routes/api.passkey-prompt";
 
 const mockGetBAUser = vi.mocked(getBetterAuthUser);
-const mockFlag = vi.mocked(isFeatureEnabledForEveryone);
 const mockAudit = vi.mocked(logAuditEvent);
 
 function get(cookie?: string) {
@@ -36,13 +31,12 @@ function cookiesOf(res: Response): string[] {
 beforeEach(() => {
   vi.clearAllMocks();
   mockGetBAUser.mockResolvedValue({ sub: "u1", email: "u1@x.edu", type: "member" } as any);
-  mockFlag.mockResolvedValue(true);
   mockCount.mockResolvedValue(0 as any);
   mockAudit.mockResolvedValue(undefined as any);
 });
 
 describe("GET /api/passkey-prompt (eligibility)", () => {
-  it("offers when authed, flag on, no passkey, not dismissed", async () => {
+  it("offers when authed, no passkey, not dismissed", async () => {
     expect(await loader({ request: get() } as any)).toEqual({ offer: true });
   });
 
@@ -50,11 +44,6 @@ describe("GET /api/passkey-prompt (eligibility)", () => {
     // The bug this guards: right after the flag flip a user is still on a legacy
     // session; offering enrollment then 401s addPasskey (a BetterAuth endpoint).
     mockGetBAUser.mockResolvedValue(null);
-    expect(await loader({ request: get() } as any)).toEqual({ offer: false });
-  });
-
-  it("does not offer when the betterauth flag is off", async () => {
-    mockFlag.mockResolvedValue(false);
     expect(await loader({ request: get() } as any)).toEqual({ offer: false });
   });
 

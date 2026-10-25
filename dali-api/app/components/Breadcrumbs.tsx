@@ -119,7 +119,7 @@ const SEGMENT_LABELS: Record<string, string> = {
 
   'internal-processes': 'Lab Processes',
   core: 'Core',
-  access: 'Access & Permissions',
+  access: 'Roles & domains',
   roles: 'Roles & Permissions',
   onboarding: 'Onboarding',
   jobx: 'JobX',

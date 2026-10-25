@@ -9,6 +9,7 @@ import {
   GALLERY_EMOJI,
   galleryByline,
   galleryColumnCount,
+  galleryFeedHref,
   layoutMasonry,
   toggleReaction,
 } from "~/community/lib/gallery";
@@ -19,7 +20,14 @@ export function galleryPostHref(id: string) {
 }
 
 /** Pinterest-style columns: each tile drops into the shortest column so far. */
-export function GalleryMasonry({ posts }: { posts: GalleryTileData[] }) {
+export function GalleryMasonry({
+  posts,
+  hideBylines = false,
+}: {
+  posts: GalleryTileData[];
+  /** On one person's posts, every byline would be the same name. */
+  hideBylines?: boolean;
+}) {
   const ref = useRef<HTMLDivElement | null>(null);
   const [columns, setColumns] = useState(4);
   useEffect(() => {
@@ -36,8 +44,8 @@ export function GalleryMasonry({ posts }: { posts: GalleryTileData[] }) {
     <div ref={ref} className="flex items-start gap-4">
       {layoutMasonry(posts, columns).map((col, i) => (
         <div key={i} className="flex min-w-0 flex-1 flex-col gap-5">
-          {col.map((post) => (
-            <GalleryTile key={post.id} post={post} />
+          {col.map((post, row) => (
+            <GalleryTile key={post.id} post={post} hideByline={hideBylines} firstRow={row === 0} />
           ))}
         </div>
       ))}
@@ -45,7 +53,15 @@ export function GalleryMasonry({ posts }: { posts: GalleryTileData[] }) {
   );
 }
 
-function GalleryTile({ post }: { post: GalleryTileData }) {
+function GalleryTile({
+  post,
+  hideByline,
+  firstRow,
+}: {
+  post: GalleryTileData;
+  hideByline: boolean;
+  firstRow: boolean;
+}) {
   const fetcher = useFetcher();
   const href = galleryPostHref(post.id);
   const [reactions, setReactions] = useState(post.reactions);
@@ -69,7 +85,8 @@ function GalleryTile({ post }: { post: GalleryTileData }) {
           <img
             src={post.imageUrl}
             alt={post.caption ?? `Photo by ${post.author.name}`}
-            loading="lazy"
+            loading={firstRow ? "eager" : "lazy"}
+            fetchPriority={firstRow ? "high" : "auto"}
             decoding="async"
             className="h-full w-full object-cover transition-transform duration-300 group-hover/tile:scale-[1.02]"
           />
@@ -111,23 +128,34 @@ function GalleryTile({ post }: { post: GalleryTileData }) {
           {post.caption}
         </Link>
       )}
-      <div className="flex items-center gap-2 px-0.5 text-xs text-os-grey">
-        <Avatar size="xs" name={post.author.name} photoUrl={post.author.photoUrl} />
-        <span className="min-w-0 flex-1 truncate">
-          {galleryByline(post.author.name, post.author.classYear)}
-        </span>
-        {top && (
-          <span className={cn("shrink-0 tabular-nums", top.mine && "text-os-accent")}>
-            {top.emoji} {top.count}
-          </span>
-        )}
-        {post.commentCount > 0 && (
-          <span className="inline-flex shrink-0 items-center gap-0.5 tabular-nums">
-            <MessageCircle className="h-3.5 w-3.5" aria-hidden />
-            {post.commentCount}
-          </span>
-        )}
-      </div>
+      {(!hideByline || top || post.commentCount > 0) && (
+        <div className="flex items-center gap-2 px-0.5 text-xs text-os-grey">
+          {hideByline ? (
+            <span className="flex-1" />
+          ) : (
+            <Link
+              to={galleryFeedHref({ by: post.author.id })}
+              className="flex min-w-0 flex-1 items-center gap-2 hover:text-foreground"
+            >
+              <Avatar size="xs" name={post.author.name} photoUrl={post.author.photoUrl} />
+              <span className="truncate">
+                {galleryByline(post.author.name, post.author.classYear)}
+              </span>
+            </Link>
+          )}
+          {top && (
+            <span className={cn("shrink-0 tabular-nums", top.mine && "text-os-accent")}>
+              {top.emoji} {top.count}
+            </span>
+          )}
+          {post.commentCount > 0 && (
+            <span className="inline-flex shrink-0 items-center gap-0.5 tabular-nums">
+              <MessageCircle className="h-3.5 w-3.5" aria-hidden />
+              {post.commentCount}
+            </span>
+          )}
+        </div>
+      )}
     </article>
   );
 }

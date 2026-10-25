@@ -36,6 +36,8 @@ export interface MintBetterAuthSessionArgs {
   grantId?: string;
   /** Custom TTL in seconds. Defaults to the configured session.expiresIn (30d). */
   expiresInSec?: number;
+  /** Reuse an existing bearer string instead of generating one (legacy MCP token bridge). */
+  token?: string;
   ipAddress?: string;
   userAgent?: string;
 }
@@ -59,6 +61,7 @@ export async function mintBetterAuthSession(
   // explicitly. grantId is an additionalField declared in betterauth.server.ts.
   const override: Record<string, unknown> = {
     ...(args.grantId !== undefined ? { grantId: args.grantId } : {}),
+    ...(args.token !== undefined ? { token: args.token } : {}),
     ...(args.ipAddress !== undefined ? { ipAddress: args.ipAddress } : {}),
     ...(args.userAgent !== undefined ? { userAgent: args.userAgent } : {}),
     ...(args.expiresInSec !== undefined
@@ -66,9 +69,9 @@ export async function mintBetterAuthSession(
       : {}),
   };
 
-  // overrideAll = true only when a custom expiresAt is present (must win over
-  // the auto-computed value). False otherwise — token/userId stay auto-generated.
-  const overrideAll = args.expiresInSec !== undefined;
+  // overrideAll = true only when a custom expiresAt or token is present (both
+  // must win over the auto-generated values). False otherwise.
+  const overrideAll = args.expiresInSec !== undefined || args.token !== undefined;
 
   const session = await ctx.internalAdapter.createSession(
     args.userId,

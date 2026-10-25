@@ -146,7 +146,7 @@ export async function explainAvailableSlots(
 
   // For in-person mode, load each room's schedule once over the whole
   // interview window and keep only the items that would actually block a new
-  // interview booking for this cycle (blockedBy: same-cycle holds don't).
+  // interview booking (blockedBy: interview holds don't).
   const roomSchedules = new Map<string, { start: Date; end: Date }[]>();
   if (mode === "in-person") {
     const windowStart = interviewStartDate;

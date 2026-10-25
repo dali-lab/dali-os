@@ -3,13 +3,12 @@ import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { prisma } from "~/lib/db";
 import { logAuditEvent } from "~/lib/audit";
-import { isFeatureEnabledForEveryone } from "~/lib/feature-flags.server";
 import type { Route } from "./+types/settings.sessions";
 
 export const meta: Route.MetaFunction = () => [{ title: "Settings · DALI OS" }];
 
 export async function loader() {
-  return redirect("/settings#devices");
+  return redirect("/settings/security");
 }
 
 function logSessionRevoke(
@@ -35,47 +34,37 @@ export async function action({ request }: Route.ActionArgs) {
   const form = await request.formData();
   const intent = form.get("intent");
 
-  // Under BetterAuth the live sessions are AuthSession rows; deleting a row
-  // revokes it immediately (no cookie cache, so the next request fails). The
-  // legacy Session table is only revocable pre-cutover. Mirrors the source split
-  // in settings-page.server.ts so the list and the revoke act on the same store.
-  const betterauthOn = await isFeatureEnabledForEveryone("betterauth", request);
-
+  // Deleting an AuthSession row revokes it on the next request (no cookie cache).
   if (intent === "revoke-one") {
     const sessionId = form.get("sessionId");
     if (typeof sessionId !== "string") {
-      return redirect("/settings#devices");
+      return redirect("/settings/security");
     }
-    const { count } = betterauthOn
-      ? await prisma.authSession.deleteMany({
-          where: { id: sessionId, userId: auth.user.sub },
-        })
-      : await prisma.session.updateMany({
-          where: { id: sessionId, userId: auth.user.sub, revokedAt: null },
-          data: { revokedAt: new Date() },
-        });
+    const { count } = await prisma.authSession.deleteMany({
+      where: { id: sessionId, userId: auth.user.sub },
+    });
     await logSessionRevoke(auth.user.sub, "one", count, request);
-    return redirect("/settings#devices");
+    return redirect("/settings/security");
   }
 
   if (intent === "revoke-others") {
-    const { count } = betterauthOn
-      ? await prisma.authSession.deleteMany({
-          where: { userId: auth.user.sub, NOT: { id: auth.sessionId } },
-        })
-      : await prisma.session.updateMany({
-          where: {
-            userId: auth.user.sub,
-            revokedAt: null,
-            NOT: { id: auth.sessionId },
-          },
-          data: { revokedAt: new Date() },
-        });
+    // Legacy sessions aren't listed any more, but one on another device would
+    // otherwise survive "sign out everywhere else".
+    const [current, legacy] = await Promise.all([
+      prisma.authSession.deleteMany({
+        where: { userId: auth.user.sub, NOT: { id: auth.sessionId } },
+      }),
+      prisma.session.updateMany({
+        where: { userId: auth.user.sub, revokedAt: null, NOT: { id: auth.sessionId } },
+        data: { revokedAt: new Date() },
+      }),
+    ]);
+    const count = current.count + legacy.count;
     await logSessionRevoke(auth.user.sub, "others", count, request);
-    return redirect("/settings#devices");
+    return redirect("/settings/security");
   }
 
-  return redirect("/settings#devices");
+  return redirect("/settings/security");
 }
 
 export default function SettingsSessionsRedirect() {

@@ -20,6 +20,7 @@
 //     ORGANISATION only — it does not change who can see or fill a form.
 
 import { prisma } from "~/lib/db";
+import { pageOpenHref } from "~/lib/page-href";
 import { getPageAccess, getPageAccessBulk, governingScopeMap, PAGE_ACCESS_SELECT } from "~/lib/pageAccess.server";
 import { canViewFile } from "~/lib/fileAccess.server";
 import { isCore, isProjectMember } from "~/lib/roles";
@@ -29,7 +30,7 @@ import type { DriveItemTag } from "~/lib/drive-tags";
 import type { PageKind, Prisma } from "~/generated/prisma/client";
 
 /** Every page kind a Drive listing (and the Trash) surfaces. */
-export const DRIVE_PAGE_KINDS: PageKind[] = ["Folder", "FreeForm", "Structured", "Whiteboard", "Notebook", "Form"];
+export const DRIVE_PAGE_KINDS: PageKind[] = ["Folder", "FreeForm", "Structured", "Whiteboard", "Notebook", "Form", "Slides"];
 
 /** The kinds My Drive holds until forms follow page access: a Form is a Lab or workspace artifact, never a personal note. */
 const MEMBER_PAGE_KINDS = DRIVE_PAGE_KINDS.filter((k) => k !== "Form");
@@ -70,8 +71,6 @@ export type DriveItem =
       folderType?: string | null;
       /** A project or offering row the Projects and Education spaces draw; shown as a system folder. */
       system?: boolean;
-      /** A plain folder a process files its meeting notes into (a `ProcessFolderBinding` with a meeting-notes purpose). */
-      meetingNotes?: boolean;
       /** Live items directly inside, counted over the items the viewer can see. */
       itemCount?: number;
       updatedAt: Date;
@@ -100,6 +99,8 @@ export type DriveItem =
       /** True when the underlying Page.kind is Whiteboard — drives the Drive
        *  icon and the /whiteboard/:id open href (vs the /documents/:id editor). */
       isWhiteboard?: boolean;
+      /** True when the underlying Page.kind is Slides: the deck icon and the /slides/:id open href. */
+      isSlides?: boolean;
       /** True when the underlying Page.kind is Notebook (a run of meeting notes shown as tabs). */
       isNotebook?: boolean;
       /** Live tabs (child pages) of a Notebook. */
@@ -431,7 +432,6 @@ async function loadLabPages(
       iconEmoji: true,
       folderType: true,
       updatedAt: true,
-      ...MEETING_NOTES_BINDING_SELECT,
       // Fields getPageAccess needs when passed as PageShape
       workspaceType: true,
       workspaceId: true,
@@ -479,7 +479,6 @@ async function loadLabPages(
             parentFolderId: row.parentPageId,
             iconEmoji: row.iconEmoji,
             folderType: row.folderType,
-            meetingNotes: filesMeetingNotes(row),
             tags: tagsOf(row),
             updatedAt: row.updatedAt,
             href: `/documents/${row.id}`,
@@ -488,6 +487,7 @@ async function loadLabPages(
         : {
             type: "doc",
             isWhiteboard: row.kind === "Whiteboard",
+    isSlides: row.kind === "Slides",
             isNotebook: row.kind === "Notebook",
             tags: tagsOf(row),
             id: row.id,
@@ -495,10 +495,7 @@ async function loadLabPages(
             parentFolderId: row.parentPageId,
             iconEmoji: row.iconEmoji,
             updatedAt: row.updatedAt,
-            href:
-              row.kind === "Whiteboard"
-                ? `/whiteboard/${row.id}`
-                : `/documents/${row.id}`,
+            href: pageOpenHref(row.kind, row.id),
             audience: audiences.get(row.id),
           },
     );
@@ -518,19 +515,6 @@ async function loadLabPages(
  *  to the whole team even though the folder itself denies them. A workspace
  *  with no scoped folder (the common case) pays one cheap existence query and
  *  behaves exactly as before. */
-const MEETING_NOTES_BINDING_SELECT = {
-  processFolderBindings: {
-    where: { purpose: { startsWith: "meeting-notes" } },
-    select: { purpose: true },
-  },
-} as const;
-
-type MeetingNotesBindingRow = { purpose: string };
-
-function filesMeetingNotes(row: { processFolderBindings?: MeetingNotesBindingRow[] }): boolean {
-  return (row.processFolderBindings?.length ?? 0) > 0;
-}
-
 /**
  * Select shape for `loadProjectPages`, exported so the project route loader
  * can widen its own Stage 2 `pageRows` query (by spreading this object) and
@@ -545,7 +529,6 @@ export const PROJECT_PAGE_SELECT = {
   iconEmoji: true,
   folderType: true,
   updatedAt: true,
-  ...MEETING_NOTES_BINDING_SELECT,
   partnerVisible: true,
   // Only read by the scoped branch below; cheap to carry either way, and it
   // saves getPageAccessBulk re-fetching every row.
@@ -568,7 +551,7 @@ export type ProjectPageRow = Prisma.PageGetPayload<{ select: typeof PROJECT_PAGE
 export type PageItemRow = Pick<
   ProjectPageRow,
   "id" | "title" | "kind" | "parentPageId" | "iconEmoji" | "folderType" | "updatedAt" | "partnerVisible"
-> & { tags?: Parameters<typeof tagsOf>[0]["tags"]; processFolderBindings?: MeetingNotesBindingRow[] };
+> & { tags?: Parameters<typeof tagsOf>[0]["tags"] };
 
 /** The folder or doc DriveItem for a Page row. */
 export function pageRowToDriveItem(
@@ -583,7 +566,6 @@ export function pageRowToDriveItem(
       parentFolderId: row.parentPageId,
       iconEmoji: row.iconEmoji,
       folderType: row.folderType,
-      meetingNotes: filesMeetingNotes(row),
       tags: tagsOf(row),
       updatedAt: row.updatedAt,
       href: `/documents/${row.id}`,
@@ -594,6 +576,7 @@ export function pageRowToDriveItem(
   return {
     type: "doc",
     isWhiteboard: row.kind === "Whiteboard",
+    isSlides: row.kind === "Slides",
     isNotebook: row.kind === "Notebook",
     tags: tagsOf(row),
     id: row.id,
@@ -601,7 +584,7 @@ export function pageRowToDriveItem(
     parentFolderId: row.parentPageId,
     iconEmoji: row.iconEmoji,
     updatedAt: row.updatedAt,
-    href: row.kind === "Whiteboard" ? `/whiteboard/${row.id}` : `/documents/${row.id}`,
+    href: pageOpenHref(row.kind, row.id),
     partnerVisible: row.partnerVisible,
     audience,
   };
@@ -701,7 +684,6 @@ async function loadEducationPages(
       iconEmoji: true,
       folderType: true,
       updatedAt: true,
-      ...MEETING_NOTES_BINDING_SELECT,
       // See loadProjectPages: only used when the workspace holds a scoped folder.
       workspaceType: true,
       workspaceId: true,
@@ -743,7 +725,6 @@ async function loadEducationPages(
           parentFolderId: row.parentPageId,
           iconEmoji: row.iconEmoji,
           folderType: row.folderType,
-          meetingNotes: filesMeetingNotes(row),
           tags: tagsOf(row),
           updatedAt: row.updatedAt,
           href: `/documents/${row.id}`,
@@ -752,6 +733,7 @@ async function loadEducationPages(
       : {
           type: "doc",
           isWhiteboard: row.kind === "Whiteboard",
+    isSlides: row.kind === "Slides",
           isNotebook: row.kind === "Notebook",
           tags: tagsOf(row),
           id: row.id,
@@ -759,10 +741,7 @@ async function loadEducationPages(
           parentFolderId: row.parentPageId,
           iconEmoji: row.iconEmoji,
           updatedAt: row.updatedAt,
-          href:
-            row.kind === "Whiteboard"
-              ? `/whiteboard/${row.id}`
-              : `/documents/${row.id}`,
+          href: pageOpenHref(row.kind, row.id),
           audience: audiences.get(row.id),
         },
     );
@@ -811,6 +790,7 @@ async function loadMemberPages(userSub: string, request: Request | undefined, fo
       : {
           type: "doc",
           isWhiteboard: row.kind === "Whiteboard",
+    isSlides: row.kind === "Slides",
           isNotebook: row.kind === "Notebook",
           tags: tagsOf(row),
           id: row.id,
@@ -818,10 +798,7 @@ async function loadMemberPages(userSub: string, request: Request | undefined, fo
           parentFolderId: row.parentPageId,
           iconEmoji: row.iconEmoji,
           updatedAt: row.updatedAt,
-          href:
-            row.kind === "Whiteboard"
-              ? `/whiteboard/${row.id}`
-              : `/documents/${row.id}`,
+          href: pageOpenHref(row.kind, row.id),
         },
     );
   return pageItems;
@@ -990,9 +967,8 @@ async function loadAgreements(
   _linkedProcessMap?: Map<string, { label: string; href: string }>,
 ): Promise<DriveItem[]> {
   const rows = await prisma.signingDocument.findMany({
-    // Placed-only: agreements live in the Core "agreements" bound folder (see
-    // bindings.server.ts). An unplaced row would be one whose folder was cleared
-    // and not yet re-filed — don't float it at the Lab root.
+    // Placed-only: agreements live in the Core Agreements receiver folder. An unplaced
+    // row would be one whose folder was cleared and not yet re-filed — don't float it at the Lab root.
     where: { archivedAt: null, folderPageId: { not: null } },
     orderBy: { createdAt: "desc" },
     select: { id: true, name: true, folderPageId: true, updatedAt: true, gateScope: true },

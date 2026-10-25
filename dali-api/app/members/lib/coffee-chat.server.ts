@@ -2,44 +2,62 @@ import { prisma } from "~/lib/db";
 import { notify } from "~/lib/notify.server";
 import { publishNotificationChange } from "~/lib/notify-stream.server";
 import { fullName } from "~/lib/display";
-import { blocksNewInvite, coffeeChatViewFor, type CoffeeChatView } from "./coffee-chat";
+import {
+  ANSWER_TO_CLEAR_EVENTS,
+  KIND_EVENTS,
+  blocksNewInvite,
+  coffeeChatViewFor,
+  type CoffeeChatKind,
+  type CoffeeChatView,
+} from "./coffee-chat";
 
 const linkFor = (inviteId: string) => `/coffee-chats/${inviteId}`;
 
-async function latestInvite(senderId: string, recipientId: string) {
+const KIND_NOUN: Record<CoffeeChatKind, string> = {
+  CoffeeChat: "coffee chat invites",
+  ResumeReview: "resume review requests",
+};
+
+async function latestInvite(senderId: string, recipientId: string, kind: CoffeeChatKind) {
   return prisma.coffeeChatInvite.findFirst({
-    where: { senderId, recipientId },
+    where: { senderId, recipientId, kind },
     orderBy: { createdAt: "desc" },
     select: { status: true, respondedAt: true },
   });
 }
 
 /** Whether the viewer already has an invite out to this person. */
-export async function hasOutgoingCoffeeChat(senderId: string, recipientId: string): Promise<boolean> {
-  return blocksNewInvite(await latestInvite(senderId, recipientId), new Date());
+export async function hasOutgoingCoffeeChat(
+  senderId: string,
+  recipientId: string,
+  kind: CoffeeChatKind = "CoffeeChat",
+): Promise<boolean> {
+  return blocksNewInvite(await latestInvite(senderId, recipientId, kind), new Date());
 }
 
 export async function sendCoffeeChatInvite(
   senderId: string,
   recipientId: string,
+  kind: CoffeeChatKind = "CoffeeChat",
 ): Promise<{ error: string } | null> {
   if (senderId === recipientId) return { error: "You can't invite yourself." };
   const recipient = await prisma.user.findUnique({
     where: { id: recipientId },
-    select: { daliMember: { select: { id: true } } },
+    select: { daliMember: { select: { id: true } }, openToCoffeeChats: true, openToResumeReviews: true },
   });
-  if (!recipient?.daliMember) return { error: "This person can't receive coffee chat invites." };
+  const open = kind === "CoffeeChat" ? recipient?.openToCoffeeChats : recipient?.openToResumeReviews;
+  if (!recipient?.daliMember || !open) return { error: `This person isn't taking ${KIND_NOUN[kind]}.` };
   // Already out (or recently declined): succeed quietly, send nothing.
-  if (await hasOutgoingCoffeeChat(senderId, recipientId)) return null;
+  if (await hasOutgoingCoffeeChat(senderId, recipientId, kind)) return null;
 
   const invite = await prisma.coffeeChatInvite.create({
-    data: { senderId, recipientId },
+    data: { senderId, recipientId, kind },
     select: { id: true },
   });
   // No createdByUserId: the notification row and the email must not carry the
   // sender.
   await notify({
-    eventType: "coffee_chat.invite",
+    eventType: KIND_EVENTS[kind].invite,
     message: { vars: {}, link: linkFor(invite.id), dedupKey: `coffee-chat:${invite.id}` },
     recipients: [{ userId: recipientId }],
   });
@@ -60,7 +78,7 @@ export async function respondToCoffeeChat(
 
   // Answering is what clears the invite from the recipient's tasks.
   await prisma.notification.updateMany({
-    where: { recipientUserId: viewerId, eventType: "coffee_chat.invite", link: linkFor(inviteId), readAt: null },
+    where: { recipientUserId: viewerId, eventType: { in: [...ANSWER_TO_CLEAR_EVENTS] }, link: linkFor(inviteId), readAt: null },
     data: { readAt: new Date() },
   });
   publishNotificationChange([viewerId]);
@@ -70,18 +88,20 @@ export async function respondToCoffeeChat(
     where: { id: inviteId },
     select: {
       senderId: true,
+      kind: true,
       sender: { select: { firstName: true, lastName: true } },
       recipient: { select: { firstName: true, lastName: true } },
     },
   });
   if (invite) {
+    const events = KIND_EVENTS[invite.kind];
     // The recipient's record of who it was: the invite card is gone now, so
     // this row (and its email) is where the name lives.
     await notify({
-      eventType: "coffee_chat.accepted",
+      eventType: events.accepted,
       createdByUserId: invite.senderId,
       message: {
-        copyKey: "coffee_chat.revealed",
+        copyKey: events.revealedCopy,
         vars: { personName: fullName(invite.sender) || "A DALI member" },
         link: linkFor(inviteId),
         dedupKey: `coffee-chat-revealed:${inviteId}`,
@@ -89,7 +109,7 @@ export async function respondToCoffeeChat(
       recipients: [{ userId: viewerId }],
     });
     await notify({
-      eventType: "coffee_chat.accepted",
+      eventType: events.accepted,
       createdByUserId: viewerId,
       message: {
         vars: { personName: fullName(invite.recipient) || "Someone" },
@@ -110,7 +130,7 @@ export type CoffeeChatPage = CoffeeChatView & {
 export async function loadCoffeeChat(inviteId: string, viewerId: string): Promise<CoffeeChatPage | null> {
   const invite = await prisma.coffeeChatInvite.findUnique({
     where: { id: inviteId },
-    select: { id: true, senderId: true, recipientId: true, status: true, respondedAt: true },
+    select: { id: true, kind: true, senderId: true, recipientId: true, status: true, respondedAt: true },
   });
   const view = invite && coffeeChatViewFor(invite, viewerId);
   if (!view) return null;

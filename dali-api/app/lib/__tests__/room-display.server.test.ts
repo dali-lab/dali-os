@@ -8,7 +8,7 @@ vi.mock("~/lib/db", () => ({
 
 import { prisma } from "~/lib/db";
 import { hashCode } from "~/lib/pairing";
-import { redeemDisplaySetupCode, requireRoomDisplay } from "~/lib/room-display.server";
+import { displayRoom, redeemDisplaySetupCode, requireRoomDisplay } from "~/lib/room-display.server";
 
 const rd = prisma.roomDisplay as unknown as {
   findUnique: ReturnType<typeof vi.fn>;
@@ -70,17 +70,32 @@ describe("requireRoomDisplay", () => {
     revokedAt: null,
     lastSeenAt: new Date(),
     room: { id: "r1", name: "Lab", description: null, capacity: 8, archivedAt: null },
+    secondRoom: null,
   };
 
   it("accepts a RoomDisplay token and looks it up by hash", async () => {
     rd.findUnique.mockResolvedValue(row);
     const display = await requireRoomDisplay(req("RoomDisplay tok123"));
-    expect(display).toEqual({
-      id: "d1",
-      label: "Door",
-      room: { id: "r1", name: "Lab", description: null, capacity: 8 },
-    });
+    const lab = { id: "r1", name: "Lab", description: null, capacity: 8 };
+    expect(display).toEqual({ id: "d1", label: "Door", room: lab, rooms: [lab] });
     expect(rd.findUnique.mock.calls[0]![0].where.tokenHash).toBe(hashCode("tok123"));
+  });
+
+  it("lists the second room after its own", async () => {
+    const garage = { id: "r2", name: "Garage", description: "Level 1", capacity: 14 };
+    rd.findUnique.mockResolvedValue({ ...row, secondRoom: { ...garage, archivedAt: null } });
+    const display = await requireRoomDisplay(req("RoomDisplay tok123"));
+    expect(display?.rooms.map((r) => r.id)).toEqual(["r1", "r2"]);
+    expect(display?.rooms[1]).toEqual(garage);
+  });
+
+  it("drops an archived second room but keeps the display working", async () => {
+    rd.findUnique.mockResolvedValue({
+      ...row,
+      secondRoom: { id: "r2", name: "Garage", description: null, capacity: null, archivedAt: new Date() },
+    });
+    const display = await requireRoomDisplay(req("RoomDisplay tok123"));
+    expect(display?.rooms.map((r) => r.id)).toEqual(["r1"]);
   });
 
   it("ignores Bearer (user session) and missing headers", async () => {
@@ -133,5 +148,24 @@ describe("requireRoomDisplay", () => {
     rd.findUnique.mockResolvedValue({ ...row, appVersion: null });
     await requireRoomDisplay(versioned("x".repeat(100)));
     expect(rd.update.mock.calls[0]![0].data.appVersion).toHaveLength(40);
+  });
+});
+
+describe("displayRoom", () => {
+  const lab = { id: "r1", name: "Lab", description: null, capacity: 8 };
+  const garage = { id: "r2", name: "Garage", description: null, capacity: 14 };
+  const display = { id: "d1", label: "Door", room: lab, rooms: [lab, garage] };
+
+  it("defaults to the display's own room", () => {
+    expect(displayRoom(display)).toBe(lab);
+    expect(displayRoom(display, null)).toBe(lab);
+  });
+
+  it("finds the second room by id", () => {
+    expect(displayRoom(display, "r2")).toBe(garage);
+  });
+
+  it("refuses a room the display isn't paired to", () => {
+    expect(displayRoom(display, "r9")).toBeNull();
   });
 });

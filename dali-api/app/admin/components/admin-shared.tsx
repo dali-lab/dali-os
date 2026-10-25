@@ -5,6 +5,8 @@ import { Shield, ChevronDown, X, Check, Plus, Briefcase, LogIn } from "lucide-re
 import { fullName } from "~/lib/display";
 import { Tooltip } from "~/components/ui/floating";
 import { useConfirmSubmit, useDialog } from "~/components/ui/dialog";
+import { useOsChrome } from "~/components/os-chrome";
+import { cn } from "~/lib/cn";
 
 // Phase 2 reshape: Member is rooted at User. Role flags derive from typed
 // assignment tables (AdminMembership, CoreAssignment, DomainLeadAssignment)
@@ -355,6 +357,7 @@ export function ImpersonateButton({
   disabled?: boolean;
 }) {
   const dialog = useDialog();
+  const { actionBtn, actionIcon } = useOsChrome();
   const formRef = useRef<HTMLFormElement | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const name = fullName(user) || user.email || "this user";
@@ -385,9 +388,9 @@ export function ImpersonateButton({
             type="button"
             disabled={disabled || submitting}
             onClick={() => void handleClick()}
-            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors border border-border bg-card text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-60 disabled:cursor-not-allowed"
+            className={cn(actionBtn(), "disabled:cursor-not-allowed disabled:opacity-50")}
           >
-            <LogIn className="w-3 h-3" />
+            <LogIn className={actionIcon} />
             Log in as
           </button>
         </form>

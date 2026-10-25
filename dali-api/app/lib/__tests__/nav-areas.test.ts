@@ -8,12 +8,13 @@ import {
   isAreaSubtabPath,
   isPinnedActive,
   pinnedNavItems,
+  homeNavItem,
   ROOM_BOOKING_NAV_ITEM,
   visibleAreas,
   visibleSubtabs,
   type RoleFlags,
 } from "~/lib/nav-areas";
-import { ADMIN_CLUSTERS } from "~/admin/adminNav";
+import { ADMIN_SECTIONS } from "~/admin/adminNav";
 
 const projects = NAV_AREAS.find((a) => a.key === "projects")!;
 
@@ -184,8 +185,7 @@ describe("Core area", () => {
         "/core/intent-to-work",
         "/core/project-bids",
         "/core/level-up",
-        "/core/access/roles",
-        "/core/access/domains",
+        "/core/access",
         "/core/communications",
       ]),
     );
@@ -216,52 +216,62 @@ describe("Core area", () => {
 });
 
 describe("Admin area", () => {
-  it("keeps only system clusters", () => {
+  it("lists the Overview and one sub-tab per admin section, in order", () => {
     const admin = areasFor(REGROUP).find((a) => a.key === "admin")!;
-    const labels = admin.subtabs.map((t) => t.label);
-    expect(labels).not.toContain("People & Access");
-    expect(labels).not.toContain("Communications");
-    // Documents is gone entirely — Agreements, its only page, is a Core sub-tab.
-    expect(labels).not.toContain("Documents");
-    expect(labels).toEqual(
-      expect.arrayContaining(["Hub", "Finance", "System & Insights"]),
-    );
+    expect(admin.subtabs.map((t) => t.label)).toEqual([
+      "Overview",
+      "Payroll",
+      "Accounts",
+      "Messaging",
+      "Insights",
+      "Platform",
+      "Onboarding",
+    ]);
+  });
+
+  it("hides Payroll from Core members who aren't admins", () => {
+    const admin = areasFor(REGROUP).find((a) => a.key === "admin")!;
+    expect(visibleSubtabs(admin, CORE).map((t) => t.label)).not.toContain("Payroll");
+    expect(visibleSubtabs(admin, { ...CORE, isAdmin: true }).map((t) => t.label)).toContain("Payroll");
+  });
+
+  it("carries the attention counts on Messaging and Platform only", () => {
+    const admin = areasFor(REGROUP).find((a) => a.key === "admin")!;
+    const alerts = Object.fromEntries(admin.subtabs.map((t) => [t.label, t.alert]));
+    expect(alerts).toMatchObject({ Messaging: "messaging", Platform: "platform" });
+    expect(admin.subtabs.filter((t) => t.alert).map((t) => t.label)).toEqual(["Messaging", "Platform"]);
+  });
+
+  it("lights the section's sub-tab on every tab page inside it", () => {
+    const admin = areasFor(REGROUP).find((a) => a.key === "admin")!;
+    expect(activeSubtabHref(admin, "/admin")).toBe("/admin");
+    expect(activeSubtabHref(admin, "/admin/messaging/outbox")).toBe("/admin/messaging");
+    expect(activeSubtabHref(admin, "/admin/payroll/reconcile")).toBe("/admin/payroll");
+    expect(activeSubtabHref(admin, "/admin/onboarding/abc")).toBe("/admin/onboarding");
   });
 });
 
-describe("admin cluster allocation", () => {
-  it("is strictly system-level — no People & Access or Communications clusters", () => {
-    const keys = ADMIN_CLUSTERS.map((c) => c.key);
+describe("admin section allocation", () => {
+  it("is strictly system-level: no People & Access or Communications sections", () => {
+    const keys = ADMIN_SECTIONS.map((c) => c.key);
     expect(keys).not.toContain("people");
     expect(keys).not.toContain("communications");
-    expect(keys).toEqual(expect.arrayContaining(["finance", "system"]));
   });
 
-  it("files Email Senders and Outbound Messages under System & Insights", () => {
-    const system = ADMIN_CLUSTERS.find((c) => c.key === "system")!;
-    const sectionKeys = system.sections.map((s) => s.key);
-    expect(sectionKeys).toEqual(
-      expect.arrayContaining([
-        "analytics",
-        "ai-usage",
-        "activity",
-        "jobs",
-        "feature-flags",
-        "email-senders",
-        "outbound-messages",
-      ]),
-    );
+  it("files the email transport (outbox, senders) under Messaging", () => {
+    const messaging = ADMIN_SECTIONS.find((c) => c.key === "messaging")!;
+    expect(messaging.sections.map((s) => s.key)).toEqual(["outbox", "senders"]);
   });
 });
 
 describe("areaForPath", () => {
   it("routes /core paths to Core and /projects paths to Projects", () => {
     expect(areaForPath("/core/staffing", REGROUP)?.key).toBe("core");
-    expect(areaForPath("/core/access/roles", REGROUP)?.key).toBe("core");
+    expect(areaForPath("/core/access", REGROUP)?.key).toBe("core");
     // Agreements now lives at its own /core URL (its permanent console hub).
     expect(areaForPath("/core/agreements", REGROUP)?.key).toBe("core");
     expect(areaForPath("/core/agreements/abc123", REGROUP)?.key).toBe("core");
-    expect(areaForPath("/admin/email-senders", REGROUP)?.key).toBe("admin");
+    expect(areaForPath("/admin/messaging/senders", REGROUP)?.key).toBe("admin");
     expect(areaForPath("/projects/42", REGROUP)?.key).toBe("projects");
   });
 
@@ -277,8 +287,8 @@ describe("areaForPath", () => {
     );
     expect(areaForPath("/core/communications/email?key=hiring:decision:Rejected", REGROUP)?.key)
       .toBe("core");
-    expect(areaForPath("/admin/email-senders", REGROUP)?.key).toBe("admin");
-    expect(areaForPath("/admin/outbound-messages", REGROUP)?.key).toBe("admin");
+    expect(areaForPath("/admin/messaging/senders", REGROUP)?.key).toBe("admin");
+    expect(areaForPath("/admin/messaging/outbox", REGROUP)?.key).toBe("admin");
   });
 
   // Every sidebar entry must point at a path its own area owns — the invariant
@@ -393,15 +403,12 @@ describe("Community area", () => {
     expect(areaForPath("/resources")).toBeUndefined();
   });
 
-  it("sits after Lab for every member and alumnus behind the flag", () => {
+  it("sits after Lab for every member behind the flag", () => {
     expect(visibleAreas(NOBODY, COMMUNITY).map((a) => a.key)).toEqual([
       "projects",
       "community",
       "education",
     ]);
-    expect(visibleAreas({ ...NOBODY, isAlumni: true }, COMMUNITY).map((a) => a.key)).toContain(
-      "community",
-    );
   });
 
   it("owns its four pages, with Connect as its hub and Blogs opening Resources", () => {
@@ -441,6 +448,58 @@ describe("Community area", () => {
   });
 });
 
+describe("alumni nav", () => {
+  const ALUM: RoleFlags = { ...NOBODY, isAlumni: true };
+
+  it("gives alumni Lab as their only area, with or without the community flag", () => {
+    for (const flags of [REGROUP, COMMUNITY]) {
+      expect(visibleAreas(ALUM, flags).map((a) => a.key)).toEqual(["projects"]);
+    }
+  });
+
+  it("gives alumni Projects, People and the community pages, but not Connect", () => {
+    const lab = visibleAreas(ALUM, COMMUNITY)[0];
+    expect(visibleSubtabs(lab, ALUM).map((t) => t.href)).toEqual([
+      "/projects",
+      "/members",
+      "/community/opportunities",
+      "/community/gallery",
+      "/resources",
+    ]);
+  });
+
+  it("drops the community pages from the alumni Lab while the community flag is off", () => {
+    const lab = visibleAreas(ALUM, REGROUP)[0];
+    expect(visibleSubtabs(lab, ALUM).map((t) => t.href)).toEqual(["/projects", "/members"]);
+    expect(areaForPath("/community/gallery", REGROUP, ALUM)).toBeUndefined();
+  });
+
+  it("files the community pages under Lab for alumni only", () => {
+    for (const path of ["/community/opportunities", "/community/gallery", "/resources"]) {
+      expect(areaForPath(path, COMMUNITY, ALUM)?.key).toBe("projects");
+      expect(areaForPath(path, COMMUNITY, NOBODY)?.key).toBe("community");
+    }
+    expect(areaForPath("/community/gallery", REGROUP, NOBODY)).toBeUndefined();
+    expect(areaForPath("/connect", COMMUNITY, ALUM)).toBeUndefined();
+  });
+
+  it("hides Education from alumni only", () => {
+    expect(visibleAreas(ALUM).map((a) => a.key)).not.toContain("education");
+    expect(visibleAreas(NOBODY).map((a) => a.key)).toContain("education");
+    expect(visibleAreas({ ...CORE, isAlumni: true }).map((a) => a.key)).toEqual(["projects"]);
+  });
+
+  it("pins nothing for alumni, so they have no Drive", () => {
+    expect(pinnedNavItems(ALUM)).toEqual([]);
+    expect(pinnedNavItems(NOBODY).map((i) => i.href)).toEqual(["/drive"]);
+  });
+
+  it("labels Connect as Home for alumni and keeps Home at / for everyone else", () => {
+    expect(homeNavItem(ALUM)).toMatchObject({ label: "Home", href: "/connect" });
+    expect(homeNavItem(NOBODY)).toMatchObject({ label: "Home", href: "/" });
+  });
+});
+
 describe("pinnedNavItems", () => {
   it("pins Drive, which no area carries", () => {
     expect(pinnedNavItems().map((i) => i.href)).toEqual(["/drive"]);
@@ -456,5 +515,49 @@ describe("pinnedNavItems", () => {
     const areas = areasFor();
     expect(areas.find((a) => a.key === "projects")!.subtabs.map((t) => t.href)).not.toContain("/rooms");
     expect(areas.find((a) => a.key === "core")!.subtabs.map((t) => t.href)).toContain("/core/rooms");
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* Onboarding journeys: pinned for first-term members, Lab otherwise   */
+/* ------------------------------------------------------------------ */
+
+describe("onboarding placement", () => {
+  const ON = { "onboarding-journeys": true };
+  const NEW: RoleFlags = { ...NOBODY, isNewMember: true };
+  const labHrefs = (r: RoleFlags, flags: object) =>
+    visibleSubtabs(visibleAreas(r, flags).find((a) => a.key === "projects")!, r).map((t) => t.href);
+
+  it("is hidden everywhere while the flag is off", () => {
+    expect(pinnedNavItems(NEW, {}).map((i) => i.href)).toEqual(["/drive"]);
+    expect(labHrefs(NOBODY, {})).not.toContain("/journeys");
+    expect(areaForPath("/journeys/fullstack", {}, NOBODY)).toBeUndefined();
+  });
+
+  it("pins Journeys under Drive for a first-term member", () => {
+    expect(pinnedNavItems(NEW, ON).map((i) => i.label)).toEqual(["Drive", "Journeys"]);
+    expect(labHrefs(NEW, ON)).not.toContain("/journeys");
+  });
+
+  it("lights the pin, not the Lab area, on a first-term member's journey pages", () => {
+    expect(areaForPath("/journeys/fullstack/j1", ON, NEW)).toBeUndefined();
+    expect(isPinnedActive("/journeys/fullstack/j1", "/journeys", ON, NEW)).toBe(true);
+  });
+
+  it("puts Journeys in the Lab area for everyone else", () => {
+    expect(pinnedNavItems(NOBODY, ON).map((i) => i.href)).toEqual(["/drive"]);
+    expect(labHrefs(NOBODY, ON)).toContain("/journeys");
+    expect(areaForPath("/journeys/fullstack/j1", ON, NOBODY)?.key).toBe("projects");
+  });
+
+  it("works with the Community flag too", () => {
+    expect(labHrefs(NOBODY, { ...ON, ...COMMUNITY })).toContain("/journeys");
+    expect(labHrefs(NOBODY, { ...ON, ...COMMUNITY })).not.toContain("/connect");
+  });
+
+  it("leaves alumni without it", () => {
+    const ALUM: RoleFlags = { ...NOBODY, isAlumni: true };
+    expect(pinnedNavItems(ALUM, ON)).toEqual([]);
+    expect(visibleAreas(ALUM, ON).flatMap((a) => a.subtabs.map((t) => t.href))).not.toContain("/journeys");
   });
 });

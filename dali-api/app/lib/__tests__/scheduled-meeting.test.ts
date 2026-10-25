@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/db");
 vi.mock("~/lib/notify.server", () => ({ notify: vi.fn() }));
@@ -6,16 +6,12 @@ vi.mock("~/lib/meeting-shares.server", () => ({ syncMeetingShares: vi.fn() }));
 vi.mock("~/lib/pages", () => ({
   createProjectPage: vi.fn(async () => ({ id: "page-project" })),
   createLabMeetingPage: vi.fn(async () => ({ id: "page-lab" })),
-  ensureMeetingNotesFolder: vi.fn(async () => ({ id: "folder-project" })),
-  ensureCoreMeetingNotesFolder: vi.fn(async () => "folder-core"),
-  ensureLabMeetingNotesFolder: vi.fn(async () => "folder-lab-notes"),
   ensureMeetingNotebook: vi.fn(async () => ({ id: "notebook-1" })),
   createNotebookTab: vi.fn(async () => ({ id: "page-tab" })),
   moveIntoNotebook: vi.fn(),
   trashNotebookIfAbandoned: vi.fn(),
 }));
 vi.mock("~/lib/drive-receivers.server", () => ({
-  receiversEnabled: vi.fn(async () => false),
   resolveFilingFolder: vi.fn(),
   projectSlot: (projectId: string) => ({ processType: "Project", processId: projectId, folderType: "Meetings" }),
   singletonSlot: (processType: string, folderType: string) => ({ processType, processId: processType.toLowerCase(), folderType }),
@@ -53,14 +49,11 @@ import { getPageAccess } from "~/lib/pageAccess.server";
 import { driveFolderCrumbs } from "~/lib/drive-crumbs.server";
 import { notify } from "~/lib/notify.server";
 import { isCore } from "~/lib/roles";
-import { receiversEnabled, resolveFilingFolder } from "~/lib/drive-receivers.server";
+import { resolveFilingFolder } from "~/lib/drive-receivers.server";
 import { resolveGroupMembers } from "~/lib/groups";
 import {
   createProjectPage,
   createLabMeetingPage,
-  ensureMeetingNotesFolder,
-  ensureCoreMeetingNotesFolder,
-  ensureLabMeetingNotesFolder,
   ensureMeetingNotebook,
   createNotebookTab,
   moveIntoNotebook,
@@ -109,6 +102,11 @@ beforeEach(() => {
   // clearAllMocks keeps implementations, so a prior test's mockResolvedValue on
   // isCore would leak. Reset to the factory default; tests opt into Core.
   vi.mocked(isCore).mockResolvedValue(false);
+  vi.mocked(resolveFilingFolder).mockImplementation(async (slot) => ({
+    folderId:
+      slot.processType === "Project" ? "folder-project" : slot.processType === "Core" ? "folder-core" : "folder-lab-notes",
+    viaReceiver: true,
+  }));
   // What a note's notebook is keyed on (see meeting-notebook.ts).
   vi.mocked(prisma.scheduledMeeting.findUniqueOrThrow).mockResolvedValue({
     title: "Sync",
@@ -485,9 +483,7 @@ describe("createScheduledMeeting — where a note is filed", () => {
   const projectPage = createProjectPage as unknown as ReturnType<typeof vi.fn>;
   // A note is a tab of its notebook; these assert where a new notebook goes.
   const notebook = ensureMeetingNotebook as unknown as ReturnType<typeof vi.fn>;
-  const projectFolder = ensureMeetingNotesFolder as unknown as ReturnType<typeof vi.fn>;
-  const coreFolder = ensureCoreMeetingNotesFolder as unknown as ReturnType<typeof vi.fn>;
-  const labFolder = ensureLabMeetingNotesFolder as unknown as ReturnType<typeof vi.fn>;
+  const filing = resolveFilingFolder as unknown as ReturnType<typeof vi.fn>;
 
   const base = {
     organizerId: "org-1",
@@ -538,7 +534,7 @@ describe("createScheduledMeeting — where a note is filed", () => {
       projectId: "proj-7",
     });
 
-    expect(projectFolder).toHaveBeenCalledWith("proj-7", "Team", "org-1");
+    expect(filing).toHaveBeenCalledWith({ processType: "Project", processId: "proj-7", folderType: "Meetings" }, "org-1");
     expect(notebook).toHaveBeenCalledWith(
       expect.objectContaining({
         key: "project:proj-7:Team:none",
@@ -550,7 +546,7 @@ describe("createScheduledMeeting — where a note is filed", () => {
     expect(createNotebookTab).toHaveBeenCalledWith(
       expect.objectContaining({ notebookId: "notebook-1", meetingNoteId: "m1" }),
     );
-    expect(coreFolder).not.toHaveBeenCalled();
+    expect(filing).not.toHaveBeenCalledWith(expect.objectContaining({ processType: "Core" }), expect.anything());
     // The note itself is never a loose page any more.
     expect(projectPage).not.toHaveBeenCalled();
     expect(labPage).not.toHaveBeenCalled();
@@ -562,14 +558,14 @@ describe("createScheduledMeeting — where a note is filed", () => {
       isCoreMeeting: true,
     });
 
-    expect(coreFolder).toHaveBeenCalledWith("org-1");
+    expect(filing).toHaveBeenCalledWith({ processType: "Core", processId: "core", folderType: "Meetings" }, "org-1");
     expect(notebook).toHaveBeenCalledWith(
       expect.objectContaining({ workspaceType: "Lab", parentPageId: "folder-core", restricted: true }),
     );
   });
 
   it("falls back to the Lab root when Core has no drive yet", async () => {
-    coreFolder.mockResolvedValueOnce(null);
+    filing.mockResolvedValueOnce({ folderId: null, viaReceiver: false });
 
     await createScheduledMeeting({ ...base, isCoreMeeting: true });
 
@@ -578,21 +574,21 @@ describe("createScheduledMeeting — where a note is filed", () => {
     expect(notebook).toHaveBeenCalledWith(
       expect.objectContaining({ parentPageId: null, restricted: false }),
     );
-    expect(labFolder).not.toHaveBeenCalled();
+    expect(filing).toHaveBeenCalledTimes(1);
   });
 
   it("files a non-Core General note in the Lab's Meeting notes folder", async () => {
     await createScheduledMeeting({ ...base, isCoreMeeting: false });
 
-    expect(coreFolder).not.toHaveBeenCalled();
-    expect(labFolder).toHaveBeenCalledWith("org-1");
+    expect(filing).toHaveBeenCalledTimes(1);
+    expect(filing).toHaveBeenCalledWith({ processType: "Lab", processId: "lab", folderType: "Meetings" }, "org-1");
     expect(notebook).toHaveBeenCalledWith(
       expect.objectContaining({ workspaceType: "Lab", parentPageId: "folder-lab-notes" }),
     );
   });
 });
 
-describe("createScheduledMeeting — where a note is filed with receiver folders on", () => {
+describe("createScheduledMeeting — where a note is filed through receiver folders", () => {
   const mockPage = prisma as unknown as {
     scheduledMeeting: { create: ReturnType<typeof vi.fn> };
     meetingAttendance: { createMany: ReturnType<typeof vi.fn> };
@@ -614,12 +610,7 @@ describe("createScheduledMeeting — where a note is filed with receiver folders
   beforeEach(() => {
     mockPage.scheduledMeeting.create.mockResolvedValue({ id: "m1", ownerCalendarEmail: base.organizerEmail });
     mockPage.meetingAttendance.createMany.mockResolvedValue({});
-    vi.mocked(receiversEnabled).mockResolvedValue(true);
     resolve.mockResolvedValue({ folderId: null, viaReceiver: false });
-  });
-
-  afterEach(() => {
-    vi.mocked(receiversEnabled).mockResolvedValue(false);
   });
 
   it("files a new notebook at the project's Meetings receiver, with the project from the caller", async () => {
@@ -666,7 +657,6 @@ describe("createScheduledMeeting — where a note is filed with receiver folders
       { processType: "Project", processId: "proj-7", folderType: "Meetings" },
       "org-1",
     );
-    expect(ensureMeetingNotesFolder).not.toHaveBeenCalled();
     expect(notebook).toHaveBeenCalledWith(
       expect.objectContaining({ workspaceType: "Project", workspaceId: "proj-7", parentPageId: "recv-1" }),
     );
@@ -680,7 +670,6 @@ describe("createScheduledMeeting — where a note is filed with receiver folders
       projectId: "proj-7",
     });
 
-    expect(ensureMeetingNotesFolder).not.toHaveBeenCalled();
     expect(notebook).toHaveBeenCalledWith(
       expect.objectContaining({ workspaceType: "Project", workspaceId: "proj-7", parentPageId: null }),
     );
@@ -692,7 +681,6 @@ describe("createScheduledMeeting — where a note is filed with receiver folders
     await createScheduledMeeting({ ...base, isCoreMeeting: true });
 
     expect(resolve).toHaveBeenCalledWith({ processType: "Core", processId: "core", folderType: "Meetings" }, "org-1");
-    expect(ensureCoreMeetingNotesFolder).not.toHaveBeenCalled();
     expect(notebook).toHaveBeenCalledWith(
       expect.objectContaining({ workspaceType: "Lab", parentPageId: "core-root", restricted: true }),
     );
@@ -704,7 +692,6 @@ describe("createScheduledMeeting — where a note is filed with receiver folders
     await createScheduledMeeting({ ...base, isCoreMeeting: false });
 
     expect(resolve).toHaveBeenCalledWith({ processType: "Lab", processId: "lab", folderType: "Meetings" }, "org-1");
-    expect(ensureLabMeetingNotesFolder).not.toHaveBeenCalled();
     expect(notebook).toHaveBeenCalledWith(expect.objectContaining({ workspaceType: "Lab", parentPageId: "lab-recv" }));
   });
 
@@ -734,16 +721,11 @@ describe("createScheduledMeeting — a new notebook files by the space it was st
   beforeEach(() => {
     mockPage.scheduledMeeting.create.mockResolvedValue({ id: "m1", ownerCalendarEmail: base.organizerEmail });
     mockPage.meetingAttendance.createMany.mockResolvedValue({});
-    vi.mocked(receiversEnabled).mockResolvedValue(true);
     vi.mocked(createNotebook).mockResolvedValue({ id: "nb-new" });
     resolve.mockImplementation(async (slot: { processType: string; processId: string }) => ({
       folderId: `${slot.processType}-${slot.processId}-recv`,
       viaReceiver: true,
     }));
-  });
-
-  afterEach(() => {
-    vi.mocked(receiversEnabled).mockResolvedValue(false);
   });
 
   it("files a core space in Core's Meetings receiver, with no Core group on the invite", async () => {
@@ -904,8 +886,6 @@ describe("setMeetingProject", () => {
     page: { update: ReturnType<typeof vi.fn> };
     meetingAttendance: { createMany: ReturnType<typeof vi.fn> };
   };
-  const projectFolder = ensureMeetingNotesFolder as unknown as ReturnType<typeof vi.fn>;
-
   const baseMeeting = {
     id: "m1",
     organizerId: "org-1",
@@ -923,8 +903,7 @@ describe("setMeetingProject", () => {
     p.scheduledMeeting.update.mockResolvedValue({});
   });
 
-  it("re-files into the project's Meetings receiver with receivers on, creating no Team folder", async () => {
-    vi.mocked(receiversEnabled).mockResolvedValue(true);
+  it("re-files into the project's Meetings receiver", async () => {
     vi.mocked(resolveFilingFolder).mockResolvedValue({ folderId: "recv-1", viaReceiver: true });
     p.scheduledMeeting.findUnique.mockResolvedValue({
       ...baseMeeting,
@@ -932,19 +911,14 @@ describe("setMeetingProject", () => {
       notePages: [{ id: "note-1", kind: "FreeForm", meetingOccurrenceStart: new Date("2026-09-10T15:00:00.000Z") }],
     });
 
-    try {
-      await setMeetingProject({
-        meetingId: "m1",
-        actorId: "org-1",
-        projectId: "proj-7",
-        meetingType: "Team",
-        meetingTypeLabel: null,
-      });
-    } finally {
-      vi.mocked(receiversEnabled).mockResolvedValue(false);
-    }
+    await setMeetingProject({
+      meetingId: "m1",
+      actorId: "org-1",
+      projectId: "proj-7",
+      meetingType: "Team",
+      meetingTypeLabel: null,
+    });
 
-    expect(projectFolder).not.toHaveBeenCalled();
     expect(ensureMeetingNotebook).toHaveBeenCalledWith(
       expect.objectContaining({ workspaceType: "Project", workspaceId: "proj-7", parentPageId: "recv-1" }),
     );
@@ -969,7 +943,10 @@ describe("setMeetingProject", () => {
     });
 
     expect(res.ok).toBe(true);
-    expect(projectFolder).toHaveBeenCalledWith("proj-7", "Team", "org-1");
+    expect(resolveFilingFolder).toHaveBeenCalledWith(
+      { processType: "Project", processId: "proj-7", folderType: "Meetings" },
+      "org-1",
+    );
     // The note moves to the project's Team notebook, which lives in that folder.
     expect(ensureMeetingNotebook).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -3501,7 +3478,6 @@ describe("where a whiteboard is filed", () => {
   beforeEach(() => {
     p.scheduledMeeting.create.mockResolvedValue({ id: "m1", ownerCalendarEmail: base.organizerEmail });
     p.meetingAttendance.createMany.mockResolvedValue({});
-    vi.mocked(receiversEnabled).mockResolvedValue(false);
     vi.mocked(createNotebook).mockResolvedValue({ id: "nb-new" });
   });
 

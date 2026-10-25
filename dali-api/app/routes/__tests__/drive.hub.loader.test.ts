@@ -8,7 +8,6 @@ vi.mock("~/lib/auth", () => ({
 vi.mock("~/lib/login-next", () => ({ redirectToLogin: vi.fn(() => new Response(null, { status: 302 })) }));
 vi.mock("~/lib/roles", () => ({ getUserRoles: vi.fn() }));
 vi.mock("~/lib/terms", () => ({ resolveTermFilter: vi.fn() }));
-vi.mock("~/lib/drive-receivers.server", () => ({ receiversEnabled: vi.fn() }));
 vi.mock("~/lib/drive-scopes.server", () => ({ loadDriveScopes: vi.fn() }));
 vi.mock("~/lib/drive-home.server", () => ({ loadDriveHome: vi.fn() }));
 vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabled: vi.fn() }));
@@ -23,7 +22,6 @@ vi.mock("~/lib/drive-hub.server", () => ({
 import { requireAuth, isNonMember, redirectPartnerToPortal } from "~/lib/auth";
 import { getUserRoles } from "~/lib/roles";
 import { resolveTermFilter } from "~/lib/terms";
-import { receiversEnabled } from "~/lib/drive-receivers.server";
 import { loadDriveScopes } from "~/lib/drive-scopes.server";
 import { loadDriveHome } from "~/lib/drive-home.server";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
@@ -53,7 +51,6 @@ beforeEach(() => {
   vi.mocked(loadDriveScopes).mockResolvedValue([{ id: "lab", items: [] }] as never);
   vi.mocked(loadItemTagIds).mockResolvedValue({ d1: ["t1"] });
   vi.mocked(loadAllDocTags).mockResolvedValue([{ id: "t1" }] as never);
-  vi.mocked(receiversEnabled).mockResolvedValue(true);
   vi.mocked(isFeatureEnabled).mockResolvedValue(true);
   vi.mocked(loadDriveHome).mockResolvedValue({ recent: [] } as never);
   vi.mocked(formsUsePageAccess).mockResolvedValue(false);
@@ -75,7 +72,6 @@ describe("drive hub loader", () => {
       itemTagIds: { d1: ["t1"] },
       canViewForms: true,
       canManageAgreements: false,
-      receiversEnabled: true,
       homeEnabled: true,
       home: { recent: [] },
       viewerId: "u1",
@@ -139,7 +135,6 @@ describe("drive hub loader", () => {
     await vi.waitFor(() => {
       expect(loadDriveScopes).toHaveBeenCalled();
       expect(loadAllDocTags).toHaveBeenCalled();
-      expect(receiversEnabled).toHaveBeenCalled();
       expect(loadDriveHome).toHaveBeenCalled();
     });
     expect(loadItemTagIds).not.toHaveBeenCalled();

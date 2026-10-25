@@ -55,6 +55,8 @@ export type NotifyMessage = {
   occurrenceStart?: Date | null;
   interviewAssignmentId?: string | null;
   sourceGroupId?: string | null;
+  // The ScheduledAnnouncement record this fan-out belongs to.
+  announcementId?: string | null;
   kind?: NotificationKind; // rare override of the registry kind
   // Opt-in idempotency key. When set, the in-app row claims (recipientUserId,
   // dedupKey) — a re-fired notify() with the same key no-ops instead of
@@ -198,6 +200,7 @@ export async function notify(args: {
     occurrenceStart: r.occurrenceStart ?? args.message.occurrenceStart ?? null,
     interviewAssignmentId: r.interviewAssignmentId ?? args.message.interviewAssignmentId ?? null,
     sourceGroupId: r.sourceGroupId ?? args.message.sourceGroupId ?? null,
+    announcementId: r.announcementId ?? args.message.announcementId ?? null,
     kind: r.kind ?? args.message.kind ?? def.kind,
     };
   };

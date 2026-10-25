@@ -7,8 +7,7 @@
 
 import type { Route } from "./+types/dev-login-as";
 import { isDevLoginEnabled } from "~/lib/dev-login";
-import { issueSession } from "~/lib/session";
-import { setSessionCookie } from "~/lib/cookies";
+import { startLoginSession } from "~/lib/login-session.server";
 import { prisma } from "~/lib/db";
 
 export async function loader({ request }: Route.LoaderArgs) {
@@ -43,8 +42,6 @@ export async function loader({ request }: Route.LoaderArgs) {
   const email = user.daliEmail ?? user.dartmouthEmail ?? user.personalEmail ?? "";
   const type = user.daliEmail ? "member" : personalEmail ? "partner" : "dartmouth";
 
-  const session = await issueSession({ userId: user.id });
-
   const userPayload = JSON.stringify({
     id: user.id,
     email,
@@ -60,7 +57,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     redirect ??
     (type === "member" ? "/" : type === "partner" ? "/partner" : "/portal");
   const headers = new Headers({ Location: finalRedirect });
-  setSessionCookie(headers, session.rawId);
+  await startLoginSession(headers, request, user.id);
   // __dali_user: web display (NOT HttpOnly so client JS can read it)
   headers.append(
     "Set-Cookie",

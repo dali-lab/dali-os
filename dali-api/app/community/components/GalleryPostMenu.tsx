@@ -76,6 +76,9 @@ export function GalleryPostMenu({
       trigger={<IconButton label="More" icon={MoreHorizontal} className="h-8 w-8 rounded-full" />}
     >
       <Menu.Item onSelect={copyLink}>Copy link</Menu.Item>
+      {/* A document navigation, not a client one: the route redirects to a
+          link S3 serves as an attachment, so the browser saves the file. */}
+      <Menu.Item onSelect={() => window.location.assign(`${href}/download`)}>Download</Menu.Item>
       {!post.mine && <Menu.Item onSelect={report}>Report</Menu.Item>}
       {post.canModerate &&
         (post.hidden ? (

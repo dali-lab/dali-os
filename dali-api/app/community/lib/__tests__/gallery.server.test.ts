@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const db = vi.hoisted(() => ({
+  user: { findMany: vi.fn(), findUnique: vi.fn() },
   galleryPost: {
     findFirst: vi.fn(),
     findMany: vi.fn(),
@@ -38,6 +39,9 @@ vi.mock("~/community/lib/community.server", () => ({ requireCommunityViewer: vi.
 import {
   countNewerPosts,
   galleryAction,
+  galleryDownloadUrl,
+  loadGalleryPerson,
+  searchGalleryPeople,
   loadGalleryPage,
   loadGalleryPost,
   parseFeedQuery,
@@ -86,10 +90,16 @@ describe("parseFeedQuery", () => {
   it("reads show, q and cursor", () => {
     expect(parseFeedQuery(new URL("http://x/g?show=mine&q=%20demo%20&cursor=c1"))).toEqual({
       mine: true,
+      by: null,
       q: "demo",
       cursor: "c1",
     });
-    expect(parseFeedQuery(new URL("http://x/g"))).toEqual({ mine: false, q: "", cursor: null });
+    expect(parseFeedQuery(new URL("http://x/g?by=u7"))).toEqual({
+      mine: false,
+      by: "u7",
+      q: "",
+      cursor: null,
+    });
   });
 });
 
@@ -111,7 +121,7 @@ const rowFor = (id: string, thumbKey: string | null = null) => ({
 describe("loadGalleryPage", () => {
   it("filters to mine, matches every search word, and pages by cursor", async () => {
     db.galleryPost.findMany.mockResolvedValue([]);
-    await loadGalleryPage(member, { mine: true, q: "demo maya", cursor: "c1" });
+    await loadGalleryPage(member, { by: null, mine: true, q: "demo maya", cursor: "c1" });
     const args = db.galleryPost.findMany.mock.calls[0][0];
     expect(args.where.AND).toEqual([
       visibleTo(member),
@@ -131,12 +141,12 @@ describe("loadGalleryPage", () => {
     db.galleryPost.findMany.mockResolvedValue(
       Array.from({ length: GALLERY_PAGE_SIZE + 1 }, (_, i) => rowFor(`p${i}`)),
     );
-    const full = await loadGalleryPage(member, { mine: false, q: "", cursor: null });
+    const full = await loadGalleryPage(member, { by: null, mine: false, q: "", cursor: null });
     expect(full.posts).toHaveLength(GALLERY_PAGE_SIZE);
     expect(full.nextCursor).toBe(`p${GALLERY_PAGE_SIZE - 1}`);
 
     db.galleryPost.findMany.mockResolvedValue([rowFor("only")]);
-    const last = await loadGalleryPage(member, { mine: false, q: "", cursor: null });
+    const last = await loadGalleryPage(member, { by: null, mine: false, q: "", cursor: null });
     expect(last.nextCursor).toBeNull();
     expect(last.posts[0]).toMatchObject({
       id: "only",
@@ -152,7 +162,7 @@ describe("loadGalleryPage", () => {
     s3.isS3Configured.mockReturnValue(true);
     const thumb = `uploads/gallery/a/${UUID}-thumb.webp`;
     db.galleryPost.findMany.mockResolvedValue([rowFor("t", thumb), rowFor("o")]);
-    const { posts } = await loadGalleryPage(member, { mine: false, q: "", cursor: null });
+    const { posts } = await loadGalleryPage(member, { by: null, mine: false, q: "", cursor: null });
     expect(posts.map((p) => p.imageUrl)).toEqual([
       `https://s3.test/${thumb}`,
       `https://s3.test/uploads/gallery/a/${UUID}-x.jpg`,
@@ -162,7 +172,7 @@ describe("loadGalleryPage", () => {
 
   it("leaves out the post a closeup is showing", async () => {
     db.galleryPost.findMany.mockResolvedValue([]);
-    await loadGalleryPage(member, { mine: false, q: "", cursor: null, excludeId: "p9" });
+    await loadGalleryPage(member, { by: null, mine: false, q: "", cursor: null, excludeId: "p9" });
     expect(db.galleryPost.findMany.mock.calls[0][0].where.AND).toContainEqual({ id: { not: "p9" } });
   });
 });
@@ -365,5 +375,84 @@ describe("loadGalleryPost", () => {
       imageUrl: `https://s3.test/${thumb}`,
       fullImageUrl: `https://s3.test/uploads/gallery/a/${UUID}-x.jpg`,
     });
+  });
+});
+
+describe("person filter", () => {
+  it("narrows the feed to one author", async () => {
+    db.galleryPost.findMany.mockResolvedValue([]);
+    await loadGalleryPage(member, { mine: false, by: "u7", q: "", cursor: null });
+    expect(db.galleryPost.findMany.mock.calls[0][0].where.AND).toEqual([
+      visibleTo(member),
+      { authorId: "u7" },
+    ]);
+  });
+});
+
+const ann = { id: "a", firstName: "Ann", lastName: "Lee", photoUrl: null, classYear: 2027 };
+
+describe("searchGalleryPeople", () => {
+  it("finds people matching every word who have a post the viewer can see", async () => {
+    db.user.findMany.mockResolvedValue([{ ...ann, _count: { galleryPosts: 3 } }]);
+    const people = await searchGalleryPeople(member, " ann  le ");
+    const args = db.user.findMany.mock.calls[0][0];
+    expect(args.where.AND).toEqual([
+      { galleryPosts: { some: visibleTo(member) } },
+      ...["ann", "le"].map((word) => ({
+        OR: [
+          { firstName: { contains: word, mode: "insensitive" } },
+          { lastName: { contains: word, mode: "insensitive" } },
+        ],
+      })),
+    ]);
+    expect(args.take).toBe(5);
+    expect(args.select._count).toEqual({ select: { galleryPosts: { where: visibleTo(member) } } });
+    expect(people).toEqual([{ id: "a", name: "Ann Lee", classYear: 2027, photoUrl: null, postCount: 3 }]);
+  });
+
+  it("skips the query for a blank search", async () => {
+    expect(await searchGalleryPeople(member, "   ")).toEqual([]);
+    expect(db.user.findMany).not.toHaveBeenCalled();
+  });
+});
+
+describe("loadGalleryPerson", () => {
+  it("returns the person with their visible post count", async () => {
+    db.user.findUnique.mockResolvedValue({ ...ann, _count: { galleryPosts: 18 } });
+    expect(await loadGalleryPerson(core, "a")).toMatchObject({ id: "a", name: "Ann Lee", postCount: 18 });
+    expect(db.user.findUnique.mock.calls[0][0].select._count).toEqual({
+      select: { galleryPosts: { where: visibleTo(core) } },
+    });
+  });
+
+  it("is null for an unknown id", async () => {
+    db.user.findUnique.mockResolvedValue(null);
+    expect(await loadGalleryPerson(member, "nope")).toBeNull();
+  });
+});
+
+describe("galleryDownloadUrl", () => {
+  const key = `uploads/gallery/a/${UUID}-IMG_1.jpg`;
+
+  it("signs the original as an attachment named after the caption", async () => {
+    s3.isS3Configured.mockReturnValue(true);
+    db.galleryPost.findFirst.mockResolvedValue({ imageKey: key, caption: "Demo day" });
+    expect(await galleryDownloadUrl(member, "p1")).toBe(`https://s3.test/${key}`);
+    expect(s3.getDownloadUrl).toHaveBeenCalledWith(key, { fileName: "gallery-demo-day.jpg" });
+    expect(db.galleryPost.findFirst.mock.calls[0][0].where).toEqual({
+      AND: [{ id: "p1" }, visibleTo(member)],
+    });
+  });
+
+  it("is null for a post the viewer can't see", async () => {
+    db.galleryPost.findFirst.mockResolvedValue(null);
+    expect(await galleryDownloadUrl(member, "p1")).toBeNull();
+  });
+
+  it("falls back to the redirect route without S3", async () => {
+    db.galleryPost.findFirst.mockResolvedValue({ imageKey: key, caption: null });
+    expect(await galleryDownloadUrl(member, "p1")).toBe(
+      `/api/upload/raw?key=${encodeURIComponent(key)}`,
+    );
   });
 });

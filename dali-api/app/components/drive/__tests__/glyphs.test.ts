@@ -72,14 +72,6 @@ describe("pickGlyph", () => {
     }
   });
 
-  it("marks a plain folder that files meeting notes with a calendar, keeping its own tint", () => {
-    const bound = pickGlyph(folder({ meetingNotes: true, audience: { kind: "private" } }));
-    expect(bound).toMatchObject({ kind: "folder", mark: "calendar", system: false, folderType: null, tint: "text-muted-foreground" });
-    expect(glyphLabel(bound)).toBe("Meeting notes folder");
-    expect(pickGlyph(folder({ meetingNotes: false }))).toMatchObject({ mark: null });
-    expect(pickGlyph(folder({ meetingNotes: true, iconEmoji: "📝" }))).toEqual({ kind: "emoji", emoji: "📝" });
-  });
-
   it("leaves a plain folder a non-system folder with no mark", () => {
     expect(pickGlyph(folder())).toMatchObject({ kind: "folder", mark: null, system: false, folderType: null });
     expect(pickGlyph(folder({ folderType: null }))).toMatchObject({ mark: null, system: false });
@@ -114,6 +106,7 @@ describe("pickGlyph", () => {
   it("keeps the existing doc, whiteboard and managed glyphs", () => {
     expect(pickGlyph(doc())).toEqual({ kind: "doc" });
     expect(pickGlyph(doc({ isWhiteboard: true }))).toEqual({ kind: "whiteboard" });
+    expect(pickGlyph(doc({ isSlides: true }))).toEqual({ kind: "slides" });
     for (const type of ["file", "form", "agreement", "rubric"] as const) {
       expect(pickGlyph({ type })).toEqual({ kind: type });
     }
@@ -193,6 +186,7 @@ describe("glyphLabel", () => {
   it("names the plain kinds", () => {
     expect(label({ type: "doc" })).toBe("Document");
     expect(label({ type: "doc", isWhiteboard: true })).toBe("Whiteboard");
+    expect(label({ type: "doc", isSlides: true })).toBe("Slide deck");
     expect(label({ type: "file" })).toBe("File");
     expect(label({ type: "form" })).toBe("Form");
     expect(label({ type: "agreement" })).toBe("Agreement");

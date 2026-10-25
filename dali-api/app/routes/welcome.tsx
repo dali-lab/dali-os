@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { Form, redirect, useActionData, useLoaderData, useNavigation } from "react-router";
 import type { Route } from "./+types/welcome";
-import { isFeatureEnabledForEveryone } from "~/lib/feature-flags.server";
 import { getBetterAuthUser } from "~/lib/betterauth-compat.server";
 import { captureDartmouthIdentity } from "~/lib/dartmouth-capture.server";
 import { pickSafeLoginNext } from "~/lib/login-next";
@@ -25,9 +24,6 @@ const DOOR_DESTINATIONS: Record<Door, string> = {
 };
 
 export async function loader({ request }: Route.LoaderArgs) {
-  const on = await isFeatureEnabledForEveryone("betterauth", request);
-  if (!on) return redirect("/login");
-
   const user = await getBetterAuthUser(request);
   if (!user) return redirect("/login");
 
@@ -71,8 +67,6 @@ export async function loader({ request }: Route.LoaderArgs) {
 }
 
 export async function action({ request }: Route.ActionArgs) {
-  const on = await isFeatureEnabledForEveryone("betterauth", request);
-  if (!on) return redirect("/login");
 
   const user = await getBetterAuthUser(request);
   if (!user) return redirect("/login");

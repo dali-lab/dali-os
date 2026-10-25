@@ -1,17 +1,22 @@
-// Admin → System & Insights → Activities (specs/activities.md §7.8). Lists all
-// activities and creates a new one (name + mechanic + term; the window defaults
-// and is refined on the detail page). Distinct from "Activity" (the audit log).
-// Core-visible, same tier as Feature Flags.
+// Admin → Onboarding (specs/activities.md §7.8). Lists all activities and
+// creates a new one (name + mechanic + term; the window defaults and is refined
+// on the detail page). Distinct from the audit log.
 
-import { Form, Link, redirect, useLoaderData } from "react-router";
+import { useEffect, useState } from "react";
+import { Form, Link, redirect, useActionData, useLoaderData, useNavigation } from "react-router";
+import { Copy, Pencil, Plus } from "lucide-react";
 import type { Route } from "./+types/admin.activities";
-import { adminHandle } from "~/admin/adminNav";
+import { AdminSectionHeader, adminHandle } from "~/admin/adminNav";
+import { EmptyState, Pill, type Tone } from "~/admin/components/console-ui";
+import { useOsChrome } from "~/components/os-chrome";
+import { Modal } from "~/components/Modal";
+import { Select, Tooltip } from "~/components/ui/floating";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
-import { isCore } from "~/lib/roles";
+import { isAdmin, isCore } from "~/lib/roles";
 import { prisma } from "~/lib/db";
 import { logAuditEvent } from "~/lib/audit";
-import { buttonClasses } from "~/components/ui/Button";
+import { cn } from "~/lib/cn";
 import {
   ACTIVITY_KINDS,
   activityKindLabel,
@@ -23,10 +28,10 @@ import {
   listActivitiesForAdmin,
 } from "~/lib/activities.server";
 
-export const handle = adminHandle("activities");
+export const handle = adminHandle("onboarding");
 
 export const meta: Route.MetaFunction = () => [
-  { title: "Activities · Admin · DALI OS" },
+  { title: "Onboarding · Admin · DALI OS" },
 ];
 
 export async function loader({ request }: Route.LoaderArgs) {
@@ -34,11 +39,12 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (!auth.ok) return redirectToLogin(request);
   if (!(await isCore(auth.user.sub))) return redirect("/");
 
-  const [activities, terms] = await Promise.all([
+  const [activities, terms, viewerIsAdmin] = await Promise.all([
     listActivitiesForAdmin(),
     prisma.term.findMany({ orderBy: { sortKey: "desc" }, select: { id: true, code: true } }),
+    isAdmin(auth.user.sub),
   ]);
-  return { activities, terms, viewerIsAdmin: false };
+  return { activities, terms, viewerIsAdmin };
 }
 
 export async function action({ request }: Route.ActionArgs) {
@@ -59,7 +65,7 @@ export async function action({ request }: Route.ActionArgs) {
       metadata: { from: id },
       request,
     });
-    return redirect(`/admin/activities/${clone.id}`);
+    return redirect(`/admin/onboarding/${clone.id}`);
   }
 
   // create
@@ -87,108 +93,157 @@ export async function action({ request }: Route.ActionArgs) {
     metadata: { kind, name },
     request,
   });
-  return redirect(`/admin/activities/${created.id}`);
+  return redirect(`/admin/onboarding/${created.id}`);
 }
 
-const STATUS_BADGE: Record<string, string> = {
-  Draft: "bg-muted text-muted-foreground",
-  Published: "bg-os-accent/10 text-os-accent",
-  Archived: "bg-muted text-muted-foreground line-through",
+const STATUS_TONE: Record<string, Tone> = {
+  Draft: "warn",
+  Published: "ok",
+  Archived: "idle",
 };
+
+function formatDate(d: string | Date | null): string {
+  return d ? new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "—";
+}
+
+function NewActivityModal({
+  open,
+  onClose,
+  terms,
+}: {
+  open: boolean;
+  onClose: () => void;
+  terms: { id: string; code: string }[];
+}) {
+  const { formClass, formTrigger, fieldLabel, actionBtn, actionBtnPrimary, sectionTitle } = useOsChrome();
+  const actionData = useActionData<typeof action>() as { error?: string } | undefined;
+  const navigation = useNavigation();
+  const submitting = navigation.state === "submitting" && navigation.formData?.get("intent") === "create";
+  return (
+    <Modal open={open} onClose={onClose} labelledBy="new-activity-title">
+      <Form method="post" className={cn(formClass, "flex flex-col gap-4")}>
+        <input type="hidden" name="intent" value="create" />
+        <h2 id="new-activity-title" className={sectionTitle}>
+          New activity
+        </h2>
+        <label className={fieldLabel}>
+          Name
+          <input type="text" name="name" required placeholder="Fall onboarding hunt" />
+        </label>
+        <label className={fieldLabel}>
+          Type
+          <Select
+            name="kind"
+            ariaLabel="Type"
+            defaultValue={ACTIVITY_KINDS[0]?.kind}
+            options={ACTIVITY_KINDS.map((k) => ({ value: k.kind, label: k.label }))}
+            buttonClassName={formTrigger}
+          />
+        </label>
+        <label className={fieldLabel}>
+          Term
+          <Select
+            name="termId"
+            ariaLabel="Term"
+            defaultValue=""
+            options={[{ value: "", label: "None" }, ...terms.map((t) => ({ value: t.id, label: t.code }))]}
+            buttonClassName={formTrigger}
+          />
+        </label>
+        <p className="text-xs text-os-muted">It starts now and runs for a week. Change the window after.</p>
+        {actionData?.error && <p className="text-sm text-destructive">{actionData.error}</p>}
+        <div className="flex justify-end gap-2">
+          <button type="button" onClick={onClose} className={actionBtn()}>
+            Cancel
+          </button>
+          <button type="submit" disabled={submitting} className={cn(actionBtnPrimary, "disabled:opacity-50")}>
+            {submitting ? "Creating…" : "Create"}
+          </button>
+        </div>
+      </Form>
+    </Modal>
+  );
+}
 
 export default function AdminActivities() {
   const { activities, terms } = useLoaderData<typeof loader>();
+  const actionData = useActionData<typeof action>() as { error?: string } | undefined;
+  const { panel, sectionTitle, iconBtn } = useOsChrome();
+  const [creating, setCreating] = useState(false);
+  useEffect(() => {
+    if (actionData?.error) setCreating(true);
+  }, [actionData]);
+
   return (
-    <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-xl font-semibold text-foreground">Activities</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Time-boxed onboarding activities and site modes (e.g. the onboarding
-          scavenger hunt). Publish an activity to run it.
-        </p>
-      </div>
+    <div className="flex flex-col gap-8">
+      <AdminSectionHeader section="onboarding" />
 
-      {/* Create */}
-      <Form
-        method="post"
-        className="flex flex-wrap items-end gap-3 rounded-xl border border-border bg-card p-4"
-      >
-        <label className="flex min-w-48 flex-1 flex-col gap-1 text-sm">
-          <span className="font-medium text-foreground">Name</span>
-          <input
-            name="name"
-            required
-            placeholder="Fall onboarding hunt"
-            className="rounded-md border border-border bg-background px-3 py-2 text-sm"
-          />
-        </label>
-        <label className="flex flex-col gap-1 text-sm">
-          <span className="font-medium text-foreground">Type</span>
-          <select name="kind" className="rounded-md border border-border bg-background px-3 py-2 text-sm">
-            {ACTIVITY_KINDS.map((k) => (
-              <option key={k.kind} value={k.kind}>
-                {k.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="flex flex-col gap-1 text-sm">
-          <span className="font-medium text-foreground">Term</span>
-          <select name="termId" className="rounded-md border border-border bg-background px-3 py-2 text-sm">
-            <option value="">— None —</option>
-            {terms.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.code}
-              </option>
-            ))}
-          </select>
-        </label>
-        <button type="submit" className={buttonClasses("primary", "md")}>
-          Create
-        </button>
-      </Form>
+      <section className="flex flex-col gap-3" aria-labelledby="activities-title">
+        <div className="flex items-end justify-between gap-4">
+          <h2 id="activities-title" className={sectionTitle}>
+            Activities
+          </h2>
+          <button type="button" className="os-add-btn" onClick={() => setCreating(true)}>
+            <Plus className="h-4 w-4" strokeWidth={3} /> New activity
+          </button>
+        </div>
 
-      {/* List */}
-      {activities.length === 0 ? (
-        <p className="rounded-xl border border-dashed border-border px-4 py-10 text-center text-sm text-muted-foreground">
-          No activities yet.
-        </p>
-      ) : (
-        <ul className="flex flex-col divide-y divide-border overflow-hidden rounded-xl border border-border bg-card">
-          {activities.map((a) => (
-            <li key={a.id} className="flex items-center justify-between gap-3 p-4">
-              <Link to={`/admin/activities/${a.id}`} className="flex min-w-0 flex-col">
-                <span className="flex items-center gap-2">
-                  <span className="font-medium text-foreground">{a.name}</span>
-                  <span
-                    className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${STATUS_BADGE[a.status] ?? ""}`}
-                  >
-                    {a.status}
+        {activities.length === 0 ? (
+          <div className={panel}>
+            <EmptyState title="No activities yet">
+              Create one, then publish it to run it.
+            </EmptyState>
+          </div>
+        ) : (
+          <ul className={panel}>
+            {activities.map((a, i) => (
+              <li
+                key={a.id}
+                className={cn(
+                  "grid gap-4 px-6 py-5 md:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)_minmax(0,1fr)_auto] md:items-center",
+                  i > 0 && "border-t border-os-container/70",
+                )}
+              >
+                <Link to={`/admin/onboarding/${a.id}`} className="group min-w-0">
+                  <span className="flex flex-wrap items-center gap-2">
+                    <span className="font-semibold text-foreground group-hover:text-os-accent">{a.name}</span>
+                    <Pill tone={STATUS_TONE[a.status] ?? "idle"}>{a.status}</Pill>
                   </span>
-                </span>
-                <span className="truncate text-xs text-muted-foreground">
-                  {activityKindLabel(a.kind)} · {a.startsAt ? new Date(a.startsAt).toLocaleDateString() : "—"}
-                  {" – "}
-                  {a.endsAt ? new Date(a.endsAt).toLocaleDateString() : "—"} ·{" "}
-                  {a.participantCount} participants · {a.eventCount} events
-                </span>
-              </Link>
-              <div className="flex shrink-0 items-center gap-2">
-                <Form method="post">
-                  <input type="hidden" name="intent" value="clone" />
-                  <input type="hidden" name="id" value={a.id} />
-                  <button type="submit" className={buttonClasses("ghost", "sm")}>
-                    Clone
-                  </button>
-                </Form>
-                <Link to={`/admin/activities/${a.id}`} className={buttonClasses("secondary", "sm")}>
-                  Edit
+                  <span className="mt-0.5 block text-sm text-os-grey">
+                    {activityKindLabel(a.kind)} · {formatDate(a.startsAt)} to {formatDate(a.endsAt)}
+                  </span>
                 </Link>
-              </div>
-            </li>
-          ))}
-        </ul>
-      )}
+                <div className="text-sm">
+                  <p className="text-xs text-os-muted">Participants</p>
+                  <p className="tabular-nums text-foreground">{a.participantCount}</p>
+                </div>
+                <div className="text-sm">
+                  <p className="text-xs text-os-muted">Events</p>
+                  <p className="tabular-nums text-foreground">{a.eventCount}</p>
+                </div>
+                <div className="flex items-center gap-1 md:justify-end">
+                  <Form method="post">
+                    <input type="hidden" name="intent" value="clone" />
+                    <input type="hidden" name="id" value={a.id} />
+                    <Tooltip content="Clone">
+                      <button type="submit" aria-label={`Clone ${a.name}`} className={iconBtn}>
+                        <Copy className="h-4 w-4" />
+                      </button>
+                    </Tooltip>
+                  </Form>
+                  <Tooltip content="Edit">
+                    <Link to={`/admin/onboarding/${a.id}`} aria-label={`Edit ${a.name}`} className={iconBtn}>
+                      <Pencil className="h-4 w-4" />
+                    </Link>
+                  </Tooltip>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <NewActivityModal open={creating} onClose={() => setCreating(false)} terms={terms} />
     </div>
   );
 }

@@ -28,6 +28,7 @@ import {
   canonicalizeEmailBody,
   recordProvenEmail,
 } from "~/lib/betterauth-email-alias.server";
+import { rejectBlockedIp, rejectDirectMagicLink, throttleOtpSend } from "~/lib/betterauth-otp-throttle.server";
 
 // Deduplicate the trusted origins list — in single-server deployments
 // (Fly staging/prod) getApiBaseUrl() === getFrontendUrl(), so a Set avoids a
@@ -285,7 +286,11 @@ export const auth = betterAuth({
   // ours to hang them off. Each no-ops for every other path.
   hooks: {
     before: createAuthMiddleware(async (ctx) => {
+      await rejectBlockedIp(ctx);
+      rejectDirectMagicLink(ctx);
       await canonicalizeEmailBody(ctx);
+      // After canonicalizing, so an alias and its canonical share one bucket.
+      await throttleOtpSend(ctx);
     }),
     after: createAuthMiddleware(async (ctx) => {
       await recordProvenEmail(ctx);

@@ -12,7 +12,12 @@ vi.mock("~/lib/db", () => ({
       findUnique: vi.fn(),
       create: vi.fn(),
     },
+    slideDeck: {
+      findUnique: vi.fn(),
+      create: vi.fn(),
+    },
   },
+  Prisma: {},
 }));
 
 vi.mock("~/lib/pageAccess.server", () => ({
@@ -51,6 +56,23 @@ beforeEach(() => {
 });
 
 describe("duplicatePage", () => {
+  it("copies a slide deck's slides instead of a collab body", async () => {
+    mockPrisma.page.findUnique.mockResolvedValue({ ...SOURCE_PAGE, kind: "Slides" });
+    mockPrisma.slideDeck.findUnique.mockResolvedValue({ slides: [{ id: "s1", layout: "title", title: "Hi" }] });
+    await duplicatePage({ sourcePageId: SOURCE_PAGE.id, createdById: "user-1" });
+    expect(mockPrisma.slideDeck.create).toHaveBeenCalledWith({
+      data: { pageId: NEW_PAGE_ID, slides: [{ id: "s1", layout: "title", title: "Hi" }], lastEditedById: "user-1" },
+    });
+    expect(mockPrisma.collabDocument.findUnique).not.toHaveBeenCalled();
+  });
+
+  it("leaves a never-opened deck's copy to start empty", async () => {
+    mockPrisma.page.findUnique.mockResolvedValue({ ...SOURCE_PAGE, kind: "Slides" });
+    mockPrisma.slideDeck.findUnique.mockResolvedValue(null);
+    await duplicatePage({ sourcePageId: SOURCE_PAGE.id, createdById: "user-1" });
+    expect(mockPrisma.slideDeck.create).not.toHaveBeenCalled();
+  });
+
   it("creates a new page with '(copy)' suffix", async () => {
     const result = await duplicatePage({
       sourcePageId: SOURCE_PAGE.id,

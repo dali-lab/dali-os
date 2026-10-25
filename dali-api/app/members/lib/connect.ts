@@ -44,3 +44,44 @@ export function groupByPlace(alumni: readonly ConnectAlum[]): ConnectPlace[] {
     (x, y) => y.alumni.length - x.alumni.length || x.label.localeCompare(y.label),
   );
 }
+
+// The Web Mercator latitude where the tile world ends.
+export const MAX_LAT = 85.0511;
+const TILE_SIZE = 256;
+
+/** Smallest zoom whose world is at least as tall as the map, so no grey shows above or below it. */
+export function minZoomToFill(heightPx: number): number {
+  return Math.max(2, Math.ceil(Math.log2(Math.max(heightPx, 1) / TILE_SIZE)));
+}
+
+export type ProfileFields = {
+  photo: boolean;
+  job: boolean;
+  location: boolean;
+  bio: boolean;
+  classYear: boolean;
+};
+
+const FIELD_ASKS: Record<keyof ProfileFields, string> = {
+  photo: "a photo",
+  job: "your employer",
+  location: "where you're based",
+  bio: "a short bio",
+  classYear: "your class year",
+};
+
+function joinAsks(asks: string[]): string {
+  if (asks.length <= 1) return asks.join("");
+  return `${asks.slice(0, -1).join(", ")} and ${asks[asks.length - 1]}`;
+}
+
+/** The alumni "Your profile" bar: each field is an equal share, and the hint asks for what's missing. */
+export function profileCompleteness(fields: ProfileFields): { percent: number; hint: string | null } {
+  const keys = Object.keys(FIELD_ASKS) as (keyof ProfileFields)[];
+  const missing = keys.filter((k) => !fields[k]);
+  const percent = Math.round(((keys.length - missing.length) / keys.length) * 100);
+  const hint = missing.length
+    ? `Add ${joinAsks(missing.map((k) => FIELD_ASKS[k]))} so students can find you.`
+    : null;
+  return { percent, hint };
+}

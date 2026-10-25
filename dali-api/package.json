@@ -18,7 +18,8 @@
     "db:fetch:members": "tsx --env-file .env prisma/fetch-members.ts",
     "db:seed:members": "tsx prisma/seed-members.ts",
     "db:seed:v0-reference": "tsx --env-file .env prisma/seeds/v0-reference.ts",
-    "db:seed:resources-demo": "tsx --env-file .env prisma/seeds/resources-demo.ts"
+    "db:seed:resources-demo": "tsx --env-file .env prisma/seeds/resources-demo.ts",
+    "db:seed:journeys-demo": "tsx --env-file .env prisma/seeds/journeys-demo.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.115.0",

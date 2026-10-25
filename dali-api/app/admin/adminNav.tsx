@@ -1,192 +1,166 @@
 import {
-  Activity,
   BarChart3,
   Clock,
   Compass,
   Flag,
+  Inbox,
+  LayoutDashboard,
   Mail,
   Receipt,
+  ScrollText,
   SendHorizonal,
   Server,
+  ShieldBan,
   Sparkles,
   UserCog,
+  Users,
 } from "lucide-react";
-import { ClusterHub } from "~/components/ClusterHub";
-import {
-  clusterTrail,
-  findCluster,
-  type NavCluster,
-  type NavSection,
-  type NavSubtab,
-} from "~/lib/cluster-nav";
+import { NavLink, useRouteLoaderData } from "react-router";
+import type { ReactNode } from "react";
+import { cn } from "~/lib/cn";
+import { useFeatureFlags } from "~/components/FeatureFlags";
+import { useOsChrome } from "~/components/os-chrome";
+import { clusterTrail, type NavCluster, type NavSection } from "~/lib/cluster-nav";
 
-// The Admin area is a nested hub: /admin groups its tools into clusters, each
-// cluster carries its own short pill row, and consolidated tools (Payroll)
-// expose their views through an in-page sub-tab strip. This module is the
-// single source of truth for that structure — the hub cards, the cluster hubs,
-// the pill rows, and the sub-tabs all derive from ADMIN_CLUSTERS. The
-// cluster/section/trail types and the card grid itself are shared with Core
-// (app/lib/cluster-nav.ts, app/components/ClusterHub.tsx).
-//
-// Admin is strictly system-level: the lab *process* clusters (People & Access,
-// Communications) live in the Core area (app/core/coreNav.tsx), and the email
-// transport plumbing (Senders, the outbound outbox) sits under System &
-// Insights here — process vs. system, one home per tool.
-//
-// Every cluster is Core-visible except Finance and Access (both Admin-only), so
-// pill rows never need per-item role filtering — only the hub hides those groups
-// from non-admins.
+// Admin is one sidebar entry per tool family ("section"), each with its tools as
+// in-page tabs. A section is a NavCluster and its tabs are NavSections, so the
+// breadcrumb trail, the command palette and the sidebar all read this one list.
 
-export type AdminSubtab = NavSubtab;
-export type AdminSection = NavSection;
-export type AdminCluster = NavCluster;
+export type AdminAlertKey = "messaging" | "platform";
 
-export type AdminClusterKey = "finance" | "access" | "system";
+export type AdminSection = Omit<NavCluster, "hubPath"> & {
+  /** The section's own URL. It redirects to the first tab the viewer can open. */
+  path: string;
+  hubPath: string;
+  alert?: AdminAlertKey;
+};
 
-export const ADMIN_CLUSTERS: AdminCluster[] = [
-  {
-    key: "finance",
-    label: "Finance",
-    description: "Payroll setup and TimesheetX reconciliation.",
+const section = (s: Omit<AdminSection, "hubPath">): AdminSection => ({ ...s, hubPath: s.path });
+
+export const ADMIN_OVERVIEW = {
+  label: "Overview",
+  path: "/admin",
+  icon: LayoutDashboard,
+  description: "What needs attention across DALI OS right now.",
+};
+
+export const ADMIN_SECTIONS: AdminSection[] = [
+  section({
+    key: "payroll",
+    label: "Payroll",
+    path: "/admin/payroll",
+    description: "Set up the term's hires, then reconcile TimesheetX actuals against staffing.",
     icon: Receipt,
-    hubPath: null,
     adminOnly: true,
     sections: [
-      {
-        key: "payroll",
-        label: "Payroll",
-        to: "/admin/payroll-export",
-        icon: Receipt,
-        description:
-          "Generate the per-term payroll export and reconcile TimesheetX actuals against DALI OS staffing.",
-        subtabs: [
-          { key: "payroll", label: "Hire Setup", to: "/admin/payroll-export" },
-          { key: "payroll-reconcile", label: "Reconcile", to: "/admin/payroll" },
-        ],
-      },
+      { key: "hire-setup", label: "Hire setup", to: "/admin/payroll/hire-setup", icon: Receipt, description: "The per-term payroll export: project, Core, Instructor and Technigala hires." },
+      { key: "reconcile", label: "Reconcile", to: "/admin/payroll/reconcile", icon: Receipt, description: "TimesheetX actuals against DALI OS staffing, by project and student." },
     ],
-  },
-  {
-    key: "access",
-    label: "Access",
-    description: "Every account on the site, and support-mode impersonation.",
+  }),
+  section({
+    key: "accounts",
+    label: "Accounts",
+    path: "/admin/accounts",
+    description: "Every account on the site, support-mode sign-in, and who can reach it.",
     icon: UserCog,
-    // Single section — the hub card links straight to it (no cluster hub page).
-    hubPath: null,
-    adminOnly: true,
     sections: [
-      {
-        key: "site-users",
-        label: "Site users",
-        to: "/admin/site-users",
-        icon: UserCog,
-        description:
-          "Every account on the site — members, applicants, partners, and Dartmouth users. Log in as anyone for support and testing.",
-      },
+      { key: "users", label: "Site users", to: "/admin/accounts/users", icon: Users, adminOnly: true, description: "Every account on the site. Log in as anyone for support and testing." },
+      { key: "security", label: "Security", to: "/admin/accounts/security", icon: ShieldBan, description: "Blocked addresses and trusted networks for sign-in." },
     ],
-  },
-  {
-    key: "system",
-    label: "System & Insights",
-    description:
-      "Site usage, AI consumption, the audit log, background jobs, and the email transport.",
-    icon: Activity,
-    hubPath: "/admin/system",
+  }),
+  section({
+    key: "messaging",
+    label: "Messaging",
+    path: "/admin/messaging",
+    description: "The outbound email and Slack pipeline, and the accounts that send it.",
+    icon: Mail,
+    alert: "messaging",
     sections: [
-      {
-        key: "analytics",
-        label: "Analytics",
-        to: "/admin/analytics",
-        icon: BarChart3,
-        description: "Site usage, pageview trends, and error rates.",
-      },
-      {
-        key: "ai-usage",
-        label: "AI Usage",
-        to: "/admin/ai-usage",
-        icon: Sparkles,
-        description: "Per-member AI request and token usage.",
-      },
-      {
-        key: "activity",
-        label: "Activity",
-        to: "/admin/activity",
-        icon: Activity,
-        description: "Audit log of admin actions across the site.",
-      },
-      {
-        key: "jobs",
-        label: "Jobs",
-        to: "/admin/jobs",
-        icon: Clock,
-        description: "Background job status and controls — digests, reminders, scheduled sends.",
-      },
-      {
-        key: "infrastructure",
-        label: "Infrastructure",
-        to: "/admin/infrastructure",
-        icon: Server,
-        description:
-          "Fly.io + Neon fleet across all lab projects — inventory, usage, scaling, limits, provisioning, and cleanup.",
-      },
-      {
-        key: "feature-flags",
-        label: "Feature Flags",
-        to: "/admin/feature-flags",
-        icon: Flag,
-        description: "Roll features out gradually — target everyone, specific roles, or named users.",
-      },
-      {
-        key: "activities",
-        label: "Activities",
-        to: "/admin/activities",
-        icon: Compass,
-        description:
-          "Time-boxed onboarding activities and site modes — author and run the onboarding scavenger hunt (distinct from the Activity audit log).",
-      },
-      {
-        key: "email-senders",
-        label: "Email Senders",
-        to: "/admin/email-senders",
-        icon: Mail,
-        description:
-          "The Gmail send-as account and daily cap backing each email purpose, and the shared-inbox categories people subscribe to in Email.",
-      },
-      {
-        key: "outbound-messages",
-        label: "Outbound Messages",
-        to: "/admin/outbound-messages",
-        icon: SendHorizonal,
-        description:
-          "Transactional outbox — inspect, retry, and cancel outbound email and Slack messages.",
-      },
+      { key: "outbox", label: "Outbox", to: "/admin/messaging/outbox", icon: SendHorizonal, description: "Inspect, retry and cancel outbound email and Slack messages." },
+      { key: "senders", label: "Senders & inboxes", to: "/admin/messaging/senders", icon: Inbox, description: "The Gmail account and daily cap behind each email purpose, and shared-inbox categories." },
     ],
-  },
+  }),
+  section({
+    key: "insights",
+    label: "Insights",
+    path: "/admin/insights",
+    description: "How the site is used, what AI costs, and who changed what.",
+    icon: BarChart3,
+    sections: [
+      { key: "analytics", label: "Analytics", to: "/admin/insights/analytics", icon: BarChart3, description: "Site usage, pageview trends and errors." },
+      { key: "ai-usage", label: "AI usage", to: "/admin/insights/ai-usage", icon: Sparkles, description: "AI requests, tokens and estimated cost per member." },
+      { key: "audit-log", label: "Audit log", to: "/admin/insights/audit-log", icon: ScrollText, description: "Every admin action across the site." },
+    ],
+  }),
+  section({
+    key: "platform",
+    label: "Platform",
+    path: "/admin/platform",
+    description: "Background jobs, the Fly.io and Neon fleet, and feature rollouts.",
+    icon: Server,
+    alert: "platform",
+    sections: [
+      { key: "jobs", label: "Jobs", to: "/admin/platform/jobs", icon: Clock, description: "Background job status and controls." },
+      { key: "infrastructure", label: "Infrastructure", to: "/admin/platform/infrastructure", icon: Server, flag: "infra-dashboard", description: "The Fly.io and Neon fleet across lab projects." },
+      { key: "flags", label: "Feature flags", to: "/admin/platform/flags", icon: Flag, description: "Roll features out to everyone, roles, or named people." },
+    ],
+  }),
+  section({
+    key: "onboarding",
+    label: "Onboarding",
+    path: "/admin/onboarding",
+    description: "Time-boxed onboarding activities for new members.",
+    icon: Compass,
+    sections: [
+      { key: "onboarding", label: "Onboarding", to: "/admin/onboarding", icon: Compass, description: "Author and run onboarding activities like the scavenger hunt." },
+    ],
+  }),
 ];
 
-export function clusterByKey(key: string): AdminCluster | undefined {
-  return findCluster(ADMIN_CLUSTERS, key);
+export function sectionByKey(key: string): AdminSection | undefined {
+  return ADMIN_SECTIONS.find((s) => s.key === key);
+}
+
+export function canSeeSection(section: AdminSection, isAdmin: boolean): boolean {
+  return isAdmin || !section.adminOnly;
+}
+
+export function visibleTabs(
+  section: AdminSection,
+  isAdmin: boolean,
+  flags: Partial<Record<string, boolean>> = {},
+): NavSection[] {
+  if (!canSeeSection(section, isAdmin)) return [];
+  return section.sections.filter((t) => (isAdmin || !t.adminOnly) && (!t.flag || flags[t.flag]));
+}
+
+/** Where a section's own URL lands this viewer: the first tab they can open. */
+export function sectionLanding(
+  section: AdminSection,
+  isAdmin: boolean,
+  flags: Partial<Record<string, boolean>> = {},
+): string | null {
+  return visibleTabs(section, isAdmin, flags)[0]?.to ?? null;
 }
 
 export function adminTrail(active: string, isAdmin: boolean) {
+  // A single-tab section stops the trail at the section, so it never reads
+  // "Onboarding › Onboarding".
+  const single = ADMIN_SECTIONS.find((s) => s.sections.length === 1 && s.sections[0]!.key === active);
   return clusterTrail({
     rootLabel: "Admin",
     rootPath: "/admin",
-    clusters: ADMIN_CLUSTERS,
-    active,
+    clusters: ADMIN_SECTIONS,
+    active: single?.key ?? active,
     isAdmin,
   });
 }
 
 // A route's `handle` opts into the admin trail: `export const handle =
-// adminHandle("members")`. Reads the viewer's admin status from the route's
-// loader data (`isAdmin`, or `viewerIsAdmin` on the pages that name it that way)
-// to filter the Finance cluster out of the switcher for non-admins.
+// adminHandle("jobs")`. Reads the viewer's admin status from the route's loader
+// data (`isAdmin`, or `viewerIsAdmin` on the pages that name it that way).
 export function adminHandle(active: string) {
   return {
-    // Admin pages open straight onto a title with no area subnav between it and
-    // the trail, so the shell's default 8px gap left the two crowding each
-    // other. The shell reads this flag rather than each page padding itself.
     roomyBreadcrumb: true,
     breadcrumbTrail: (data: unknown) => {
       const d = data as { isAdmin?: boolean; viewerIsAdmin?: boolean } | null;
@@ -195,6 +169,63 @@ export function adminHandle(active: string) {
   };
 }
 
-export function AdminClusterHub({ clusterKey }: { clusterKey: AdminClusterKey }) {
-  return <ClusterHub cluster={clusterByKey(clusterKey)} />;
+/** The viewer's admin status from the app shell, for client-side tab gating. */
+export function useViewerIsAdmin(): boolean {
+  return !!useRouteLoaderData<{ isAdmin?: boolean }>("routes/layout")?.isAdmin;
+}
+
+/**
+ * A section page's head: title, description, an actions slot, and the
+ * section's tabs. Every admin page but the Overview opens with one.
+ */
+export function AdminSectionHeader({
+  section: sectionKey,
+  actions,
+  title,
+  description,
+}: {
+  section: string;
+  actions?: ReactNode;
+  /** Overrides the section label, for a detail page inside a section. */
+  title?: ReactNode;
+  description?: ReactNode;
+}) {
+  const { pageTitle, bodyText } = useOsChrome();
+  const isAdmin = useViewerIsAdmin();
+  const flags = useFeatureFlags();
+  const section = sectionByKey(sectionKey);
+  if (!section) return null;
+  const tabs = visibleTabs(section, isAdmin, flags);
+  return (
+    <div className="flex flex-col gap-6">
+      <header className="flex flex-wrap items-end justify-between gap-4">
+        <div className="min-w-0">
+          <h1 className={pageTitle}>{title ?? section.label}</h1>
+          <p className={cn(bodyText, "mt-1.5 max-w-2xl")}>{description ?? section.description}</p>
+        </div>
+        {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
+      </header>
+      {tabs.length > 1 && (
+        <nav aria-label={`${section.label} tools`} className="flex gap-7 overflow-x-auto border-b border-os-container">
+          {tabs.map((t) => (
+            <NavLink
+              key={t.key}
+              to={t.to}
+              prefetch="intent"
+              className={({ isActive }) =>
+                cn(
+                  "-mb-px whitespace-nowrap border-b-2 pb-3 text-[15px] transition-colors",
+                  isActive
+                    ? "border-os-accent font-semibold text-foreground"
+                    : "border-transparent text-os-grey hover:text-foreground",
+                )
+              }
+            >
+              {t.label}
+            </NavLink>
+          ))}
+        </nav>
+      )}
+    </div>
+  );
 }

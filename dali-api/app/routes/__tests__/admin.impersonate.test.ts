@@ -1,13 +1,10 @@
 // Tests for POST /admin/impersonate
 // Mocks: ~/lib/db, ~/lib/roles (isAdmin), ~/lib/betterauth-compat.server
 // (getBetterAuthUser), ~/lib/betterauth.server (auth.api.impersonateUser),
-// ~/lib/feature-flags.server (isFeatureEnabledForEveryone), ~/lib/audit.
+// ~/lib/audit.
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/feature-flags.server", () => ({
-  isFeatureEnabledForEveryone: vi.fn(),
-}));
 vi.mock("~/lib/betterauth-compat.server", () => ({
   getBetterAuthUser: vi.fn(),
 }));
@@ -26,7 +23,6 @@ vi.mock("~/lib/audit", () => ({
   logAuditEvent: vi.fn(),
 }));
 
-import { isFeatureEnabledForEveryone } from "~/lib/feature-flags.server";
 import { getBetterAuthUser } from "~/lib/betterauth-compat.server";
 import { isAdmin } from "~/lib/roles";
 import { prisma } from "~/lib/db";
@@ -34,7 +30,6 @@ import { auth } from "~/lib/betterauth.server";
 import { logAuditEvent } from "~/lib/audit";
 import { action } from "~/routes/admin.impersonate";
 
-const mockFlagOn = isFeatureEnabledForEveryone as unknown as ReturnType<typeof vi.fn>;
 const mockGetUser = getBetterAuthUser as unknown as ReturnType<typeof vi.fn>;
 const mockIsAdmin = isAdmin as unknown as ReturnType<typeof vi.fn>;
 const mockImpersonate = (auth.api.impersonateUser as unknown) as ReturnType<typeof vi.fn>;
@@ -71,9 +66,6 @@ function makeImpersonateHeaders(cookie = "dali.session=impersonate-token; Path=/
 beforeEach(() => {
   vi.clearAllMocks();
 
-  // Default: flag on.
-  mockFlagOn.mockResolvedValue(true);
-
   // Default: valid admin session.
   mockGetUser.mockResolvedValue({ sub: ACTOR_ID, email: "admin@dali.edu", type: "member" });
 
@@ -94,15 +86,6 @@ beforeEach(() => {
 
   // Default: audit log is a no-op.
   mockLogAudit.mockResolvedValue(undefined);
-});
-
-describe("POST /admin/impersonate — flag gate", () => {
-  it("returns 404 when betterauth flag is off", async () => {
-    mockFlagOn.mockResolvedValue(false);
-    const res = await action({ request: makeRequest() } as any);
-    expect(res.status).toBe(404);
-    expect(mockImpersonate).not.toHaveBeenCalled();
-  });
 });
 
 describe("POST /admin/impersonate — session gate", () => {

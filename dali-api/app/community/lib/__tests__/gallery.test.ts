@@ -4,12 +4,15 @@ import {
   GALLERY_MAX_PHOTOS,
   galleryByline,
   galleryColumnCount,
+  galleryDownloadName,
+  galleryFeedHref,
   galleryKeyPrefix,
   isGalleryEmoji,
   isGalleryImageKey,
   layoutMasonry,
   parseNewPosts,
   toggleReaction,
+  encodeGalleryThumb,
 } from "../gallery";
 
 const UUID = "0b8f4a52-6a51-4c3e-9d5b-2f1a7c9e8d10";
@@ -153,5 +156,95 @@ describe("toggleReaction", () => {
       { emoji: "🔥", count: 2, mine: false },
     ]);
     expect(toggleReaction([{ emoji: "🔥", count: 1, mine: true }], "🔥")).toEqual([]);
+  });
+});
+
+describe("galleryFeedHref", () => {
+  it("is the bare feed with no filter", () => {
+    expect(galleryFeedHref({})).toBe("/community/gallery");
+  });
+
+  it("filters to a person, which replaces Mine", () => {
+    expect(galleryFeedHref({ by: "u7" })).toBe("/community/gallery?by=u7");
+    expect(galleryFeedHref({ by: "u7", mine: true })).toBe("/community/gallery?by=u7");
+  });
+
+  it("keeps Mine alongside a trimmed search", () => {
+    expect(galleryFeedHref({ mine: true, q: "  demo day " })).toBe(
+      "/community/gallery?show=mine&q=demo+day",
+    );
+  });
+
+  it("drops a blank search", () => {
+    expect(galleryFeedHref({ q: "   " })).toBe("/community/gallery");
+  });
+});
+
+describe("galleryDownloadName", () => {
+  const key = `uploads/gallery/u1/${UUID}-IMG_0042.JPG`;
+
+  it("names the file after the caption's first words, keeping the extension", () => {
+    expect(galleryDownloadName("Demo Day setup in the atrium!", key)).toBe(
+      "gallery-demo-day-setup-in-the-atrium.jpg",
+    );
+  });
+
+  it("folds accents and drops emoji", () => {
+    expect(galleryDownloadName("Café night 🎉", key)).toBe("gallery-cafe-night.jpg");
+  });
+
+  it("caps the name without leaving a trailing dash", () => {
+    const name = galleryDownloadName("word ".repeat(30), key);
+    expect(name.length).toBeLessThanOrEqual("gallery-.jpg".length + 48);
+    expect(name).not.toMatch(/-\.jpg$/);
+  });
+
+  it("falls back to photo without a usable caption", () => {
+    expect(galleryDownloadName(null, key)).toBe("gallery-photo.jpg");
+    expect(galleryDownloadName("🎉🎉", key)).toBe("gallery-photo.jpg");
+  });
+
+  it("uses jpg when the key has no extension", () => {
+    expect(galleryDownloadName("x", `uploads/gallery/u1.d/${UUID}-noext`)).toBe("gallery-x.jpg");
+  });
+});
+
+describe("encodeGalleryThumb", () => {
+  // A canvas that encodes the listed types and falls back to PNG for anything else, as browsers do.
+  const canvas = (supported: string[]) => {
+    const calls: Array<[string, number]> = [];
+    const toBlob = async (type: string, quality: number) => {
+      calls.push([type, quality]);
+      return new Blob(["x"], { type: supported.includes(type) ? type : "image/png" });
+    };
+    return { calls, toBlob };
+  };
+
+  it("uses WebP where the browser can encode it", async () => {
+    const { calls, toBlob } = canvas(["image/webp", "image/jpeg"]);
+    const file = await encodeGalleryThumb(toBlob);
+    expect(file?.type).toBe("image/webp");
+    expect(file?.name).toBe("thumb.webp");
+    expect(calls).toEqual([["image/webp", 0.82]]);
+  });
+
+  it("falls back to JPEG when WebP comes back as PNG (Safari, the macOS desktop app)", async () => {
+    const { calls, toBlob } = canvas(["image/jpeg"]);
+    const file = await encodeGalleryThumb(toBlob);
+    expect(file?.type).toBe("image/jpeg");
+    expect(file?.name).toBe("thumb.jpg");
+    expect(calls.map(([type]) => type)).toEqual(["image/webp", "image/jpeg"]);
+  });
+
+  it("names the thumbnail so it passes the gallery accept list and key check", async () => {
+    for (const supported of [["image/webp"], ["image/jpeg"]]) {
+      const file = await encodeGalleryThumb(canvas(supported).toBlob);
+      expect(isGalleryImageKey(key("u1", file!.name), "u1")).toBe(true);
+    }
+  });
+
+  it("gives up when neither format encodes, so the tile uses the original", async () => {
+    expect(await encodeGalleryThumb(canvas([]).toBlob)).toBeNull();
+    expect(await encodeGalleryThumb(async () => null)).toBeNull();
   });
 });

@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { LucideIcon } from "lucide-react";
 import {
   Search,
-  Home,
   ListTodo,
   Calendar,
   ClipboardList,
@@ -24,6 +23,7 @@ import {
   FileSignature,
   Shapes,
   NotebookPen,
+  Presentation,
   CalendarRange,
   PanelLeftClose,
   PanelLeftOpen,
@@ -42,10 +42,10 @@ import { setFocusPreference } from "~/lib/focus-mode";
 import { COPY_PAGE_LINK_EVENT } from "~/lib/page-link";
 import type { SearchResult, SearchResultType } from "~/lib/search";
 import { iconForCategory } from "~/lib/file-icon";
-import { ADMIN_CLUSTERS } from "~/admin/adminNav";
+import { ADMIN_SECTIONS } from "~/admin/adminNav";
 import { CORE_CLUSTERS } from "~/core/coreNav";
 import type { NavCluster } from "~/lib/cluster-nav";
-import { pinnedNavItems, ROOM_BOOKING_NAV_ITEM, visibleAreas, visibleSubtabs, type RoleFlags } from "~/lib/nav-areas";
+import { homeNavItem, pinnedNavItems, ROOM_BOOKING_NAV_ITEM, visibleAreas, visibleSubtabs, type RoleFlags } from "~/lib/nav-areas";
 import type { PortalNavItem } from "~/lib/portal-nav";
 import type { FeatureFlagMap } from "~/lib/feature-flags";
 
@@ -112,7 +112,7 @@ export const TYPE_META: Record<SearchResultType, { icon: LucideIcon; section: st
   helpArticle: { icon: HelpCircle, section: "Help" },
 };
 
-const PAGE_KIND_ICON = { Folder, Whiteboard: Shapes, Notebook: NotebookPen } as const;
+const PAGE_KIND_ICON = { Folder, Whiteboard: Shapes, Notebook: NotebookPen, Slides: Presentation } as const;
 
 export function resultIcon(r: Pick<SearchResult, "type" | "pageKind" | "fileCategory">): LucideIcon {
   if (r.pageKind) return PAGE_KIND_ICON[r.pageKind];
@@ -248,14 +248,15 @@ export function CommandPalette({ open, onClose, tabless, focusMode, roles = NO_R
       };
     }
 
+    const home = homeNavItem(roles);
     const nav: PaletteItem[] = [
-      navItem("Home", "/", Home),
+      navItem(home.label, home.href, home.icon),
       navItem("My Tasks", "/notifications", ListTodo),
       navItem("Calendar", "/calendar", Calendar),
       ...(roles.isAlumni ? [] : [navItem("Email", "/email", Mail)]),
       // The pinned tail (Drive) sits outside every area, so it reaches the
       // palette from the same registry the sidebar rail reads.
-      ...[...pinnedNavItems(), ROOM_BOOKING_NAV_ITEM].map((i) => navItem(i.label, i.href, i.icon)),
+      ...[...pinnedNavItems(roles, flags), ROOM_BOOKING_NAV_ITEM].map((i) => navItem(i.label, i.href, i.icon)),
       ...visibleAreas(roles, flags).flatMap((area) => {
         const hub = navItem(area.label, area.hubPath, area.icon);
         if (area.key === "admin") return [hub];
@@ -323,13 +324,13 @@ export function CommandPalette({ open, onClose, tabless, focusMode, roles = NO_R
     // and pill rows use. Gated exactly like the pages: any Core member sees
     // every cluster except Finance, which is Admin-only. The "documents" cluster
     // is hidden from the palette (agreements are authored in the Drive). Admin is
-    // strictly system-level (ADMIN_CLUSTERS) and Core owns the process tools
+    // strictly system-level (ADMIN_SECTIONS) and Core owns the process tools
     // (CORE_CLUSTERS), so the two lists never overlap.
     const sectionItems = (prefix: string, clusters: readonly NavCluster[]) =>
       clusters
         .filter((c) => (roles.isAdmin || !c.adminOnly) && c.key !== "documents")
         .flatMap((c) =>
-          c.sections.map((s) => ({
+          c.sections.filter((s) => roles.isAdmin || !s.adminOnly).map((s) => ({
             id: `${prefix}-${s.key}`,
             title: s.label,
             subtitle: c.label,
@@ -339,7 +340,7 @@ export function CommandPalette({ open, onClose, tabless, focusMode, roles = NO_R
         );
 
     const admin: PaletteItem[] = roles.isCore
-      ? sectionItems("admin", ADMIN_CLUSTERS)
+      ? sectionItems("admin", ADMIN_SECTIONS)
       : [];
     const core: PaletteItem[] = roles.isCore
       ? sectionItems("core", CORE_CLUSTERS)

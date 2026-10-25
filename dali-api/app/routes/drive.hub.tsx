@@ -19,6 +19,7 @@ import {
   MoreHorizontal,
   X,
   Shapes,
+  Presentation,
   NotebookPen,
 } from "lucide-react";
 import { useState, useCallback, useEffect, useRef, useId, useMemo } from "react";
@@ -27,7 +28,6 @@ import { requireAuth, redirectPartnerToPortal, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { getUserRoles } from "~/lib/roles";
 import { formsUsePageAccess } from "~/forms/lib/form-access.server";
-import { receiversEnabled } from "~/lib/drive-receivers.server";
 import { resolveTermFilter } from "~/lib/terms";
 import { setPageFavorite } from "~/components/favorites-live";
 import { TermFilter } from "~/components/TermFilter";
@@ -62,6 +62,7 @@ import { useDriveFileUpload } from "~/components/drive/useDriveFileUpload";
 import { DriveUploadInput } from "~/components/drive/DriveUploadInput";
 import type { UploadDestination, UploadTarget } from "~/components/drive/useDriveFileUpload";
 import { useDialog } from "~/components/ui/dialog";
+import { useFeatureFlag } from "~/components/FeatureFlags";
 import { useToast } from "~/components/ui/toast";
 import { driveNoticeMessage } from "~/lib/drive-notices";
 import { Menu, Select } from "~/components/ui/floating";
@@ -170,7 +171,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   // Only the item tags wait on the scopes (they're keyed by the ids the scopes
   // resolved to). Everything else starts now and is awaited together.
-  const [{ driveScopes, itemTagIds }, allTags, receivers, { homeEnabled, home }] = await Promise.all([
+  const [{ driveScopes, itemTagIds }, allTags, { homeEnabled, home }] = await Promise.all([
     (async () => {
       const [projectWorkspaces, educationWorkspaces] = await Promise.all([
         loadProjectWorkspaces(viewer),
@@ -188,7 +189,6 @@ export async function loader({ request }: Route.LoaderArgs) {
       return { driveScopes, itemTagIds: await loadItemTagIds(driveScopes) };
     })(),
     loadAllDocTags(),
-    receiversEnabled(request),
     (async () => {
       const homeEnabled = await isFeatureEnabled("drive-home", userId, roles, request);
       return { homeEnabled, home: homeEnabled ? await loadDriveHome(userId, request) : null };
@@ -204,7 +204,6 @@ export async function loader({ request }: Route.LoaderArgs) {
     canViewForms: userCanViewForms,
     formsPageAccess,
     canManageAgreements: userCanManageAgreements,
-    receiversEnabled: receivers,
     homeEnabled,
     home,
     // My Drive is the Member workspace keyed by the viewer's own id — the
@@ -229,6 +228,7 @@ const TYPE_FILTERS: {
   { value: "doc", label: "Documents", icon: <FileText className="w-3.5 h-3.5" /> },
   { value: "notebook", label: "Notebooks", icon: <NotebookPen className="w-3.5 h-3.5" /> },
   { value: "whiteboard", label: "Whiteboards", icon: <Shapes className="w-3.5 h-3.5" /> },
+  { value: "slides", label: "Slide decks", icon: <Presentation className="w-3.5 h-3.5" /> },
   { value: "file", label: "Files", icon: <Paperclip className="w-3.5 h-3.5" /> },
   { value: "form", label: "Forms", icon: <ClipboardList className="w-3.5 h-3.5" />, requiresCap: "canViewForms" },
   { value: "agreement", label: "Agreements", icon: <FileSignature className="w-3.5 h-3.5" />, requiresCap: "canManageAgreements" },
@@ -510,6 +510,7 @@ type ScopeActions = {
   createDoc: () => Promise<void>;
   createFolder: () => Promise<void>;
   createWhiteboard: () => Promise<void>;
+  createSlides: () => Promise<void>;
   rename: (item: DriveItem) => Promise<void>;
   remove: (item: DriveItem) => Promise<void>;
   /** Delete request without the confirm/toast — used by bulk delete. */
@@ -594,7 +595,7 @@ export function makeScopeActions({
   const createParent = currentFolderId ?? rootParent;
 
   async function createPage(
-    pageKind: "FreeForm" | "Folder" | "Whiteboard",
+    pageKind: "FreeForm" | "Folder" | "Whiteboard" | "Slides",
     title: string,
     parentPageId: string | null,
   ): Promise<CreatedPage> {
@@ -696,6 +697,20 @@ export function makeScopeActions({
     const created = await createPage("Whiteboard", name.trim(), createParent);
     if ("id" in created) onCreated(created.id);
     else toast.error(created.error ?? "Couldn't create the whiteboard");
+  }
+
+  async function createSlides() {
+    const name = await dialog.prompt({
+      title: "New slide deck",
+      label: "Name",
+      defaultValue: "Untitled deck",
+      confirmLabel: "Create",
+      validate: (v) => (v.trim() ? null : "Enter a name"),
+    });
+    if (name === null) return;
+    const created = await createPage("Slides", name.trim(), createParent);
+    if ("id" in created) onCreated(created.id);
+    else toast.error(created.error ?? "Couldn't create the slide deck");
   }
 
   async function rename(item: DriveItem) {
@@ -852,7 +867,7 @@ export function makeScopeActions({
     return res.ok;
   }
 
-  return { createDoc, createFolder, createWhiteboard, rename, remove, deleteItem, performMove };
+  return { createDoc, createFolder, createWhiteboard, createSlides, rename, remove, deleteItem, performMove };
 }
 
 // ── New menu (contextual to the current location) ────────────────────────────
@@ -932,6 +947,7 @@ export function NewMenu({
   const docBlock = isEducation ? educationCreateBlock(scope.items, currentFolderId, "FreeForm") : null;
   const folderBlock = isEducation ? educationCreateBlock(scope.items, currentFolderId, "Folder") : null;
   const notebook = notebookPlacement(scope, currentFolderId);
+  const slidesEnabled = useFeatureFlag("drive-slides");
 
   async function createNotebook() {
     if (notebook.kind !== "ready") return;
@@ -1049,6 +1065,17 @@ export function NewMenu({
           New whiteboard
         </CreateLabel>
       </Menu.Item>
+      {slidesEnabled && (
+        <Menu.Item
+          icon={<Presentation className="w-3.5 h-3.5" />}
+          disabled={docBlock !== null}
+          onSelect={() => void actions.createSlides()}
+        >
+          <CreateLabel testId={`drive-new-slides-${scope.id}`} blockedReason={docBlock}>
+            New slide deck
+          </CreateLabel>
+        </Menu.Item>
+      )}
       {notebook.kind !== "unavailable" && (
         <Menu.Item
           icon={<NotebookPen className="w-3.5 h-3.5" />}
@@ -1101,7 +1128,6 @@ export default function DriveHub() {
     canViewForms,
     formsPageAccess,
     canManageAgreements,
-    receiversEnabled: receiversOn,
     homeEnabled,
     home,
     viewerId,
@@ -1962,7 +1988,7 @@ export default function DriveHub() {
         }
         tagFilter={tagFilter}
         onTagClick={applyTag}
-        receiverViewer={receiversOn ? { isCore: canManageAgreements, isProjectMember: true } : undefined}
+        receiverViewer={{ isCore: canManageAgreements, isProjectMember: true }}
       />
 
       {/* Hidden upload input (driven by the New menu) + template picker modal */}

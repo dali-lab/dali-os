@@ -14,4 +14,4 @@ import { coreHandle } from "~/core/coreNav";
 
 export { meta, loader, action, default } from "~/admin/routes/admin.email";
 
-export const handle = coreHandle("email");
+export const handle = coreHandle("communications");

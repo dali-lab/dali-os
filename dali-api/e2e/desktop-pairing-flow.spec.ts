@@ -78,7 +78,7 @@ test('desktop pairing: full happy path + handoff single-use', async ({
 
   // 5) Poll again → approved, with the keychain desktop token + handoff code.
   const approved = await pollUntil(request, start.deviceCode, 'approved');
-  expect(approved.desktopToken).toMatch(/^[A-Za-z0-9_-]{43}$/);
+  expect(approved.desktopToken).toMatch(/^[A-Za-z0-9]{32}$/);
   expect(approved.handoffCode).toMatch(/^[A-Za-z0-9_-]{43}$/);
   expect(approved.handoffUrl).toContain('/auth/handoff?code=');
   expect(typeof approved.absoluteExpiresAt).toBe('string');
@@ -92,14 +92,14 @@ test('desktop pairing: full happy path + handoff single-use', async ({
   const notif = await notifRes.json();
   expect(typeof notif.unreadCount).toBe('number');
 
-  // 7) Redeem the handoff in the "webview" → 302 to / with a fresh __dali_sid.
+  // 7) Redeem the handoff in the "webview" → 302 to / with a fresh session cookie.
   const handoffRes = await request.get(
     `/auth/handoff?code=${encodeURIComponent(approved.handoffCode)}`,
     { maxRedirects: 0, failOnStatusCode: false },
   );
   expect(handoffRes.status()).toBe(302);
   expect(handoffRes.headers()['location']).toBe('/');
-  expect(handoffRes.headers()['set-cookie']).toContain('__dali_sid');
+  expect(handoffRes.headers()['set-cookie']).toContain('dali.session_token=');
 
   // 8) Handoff is single-use → second redeem fails to /login.
   const reuseRes = await request.get(
