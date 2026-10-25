@@ -278,8 +278,8 @@ function JourneyEditor({
         </div>
       </header>
 
-      <div className="flex min-h-0 flex-1 flex-col gap-4 lg:flex-row">
-        <div className="relative min-h-[480px] flex-1 overflow-hidden rounded-os-card bg-os-well">
+      <div className="flex min-h-0 flex-1 flex-col gap-4">
+        <div className="relative h-[300px] shrink-0 overflow-hidden rounded-os-card bg-os-well">
           <EditorGraph
             journey={draft}
             selectedId={selectedId}
@@ -310,7 +310,7 @@ function JourneyEditor({
 
         <aside
           aria-label={selected ? "Module editor" : "Journey settings"}
-          className="flex min-h-[520px] flex-col overflow-hidden rounded-os-card bg-os-card lg:min-h-0 lg:w-[440px] lg:shrink-0"
+          className="flex min-h-[520px] flex-1 flex-col overflow-hidden rounded-os-card bg-os-card md:min-h-0"
         >
           {selected ? (
             <ModuleEditorPanel
