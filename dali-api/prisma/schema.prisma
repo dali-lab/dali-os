@@ -927,7 +927,7 @@ model InterviewConfig {
   rooms     Room[]
   // Hold every interview room for interview hours across the interview window
   // (one recurring RoomBooking per room, source InterviewHold) so members
-  // can't book over the cycle. Bookings from this cycle sit inside the hold.
+  // can't book over the cycle. Concurrent cycles share the hold.
   holdRooms Boolean @default(false)
 
   @@unique([applicationCycleId, interviewRoundId])
@@ -7471,9 +7471,9 @@ model RoomBooking {
   // booking.
   seriesEnd DateTime?
 
-  // The hiring cycle an Interview / InterviewHold booking belongs to. Bookings
-  // of the same cycle never conflict with each other (interviews sit inside
-  // the cycle's hold); every other writer is blocked by both.
+  // The hiring cycle an Interview / InterviewHold booking belongs to. Holds
+  // are shared across cycles: any cycle's interviews sit inside any hold, and
+  // holds overlap each other; every other writer is blocked by both.
   applicationCycleId String?
   applicationCycle   ApplicationCycle? @relation(fields: [applicationCycleId], references: [id], onDelete: Cascade)
   interview          Interview?
