@@ -2063,10 +2063,12 @@ export function SelectionPopoverPortal({
     // handles clickable. Outside-click dismissal is handled by the document
     // listener above. The card still stops propagation so a click inside the
     // form can't bubble out to anything behind it.
+    // An `invisible` card still sizes this wrapper, which would otherwise sit
+    // over its delete confirm and eat the clicks.
     <div
       ref={cardRef}
       data-calendar-popover
-      className="fixed z-50"
+      className="pointer-events-none fixed z-50 [&>*]:pointer-events-auto"
       style={{ left, top }}
       onPointerDown={(e) => e.stopPropagation()}
     >
