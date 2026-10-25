@@ -6980,6 +6980,9 @@ model PartnerCrmSettings {
   // interview. Empty = every active Core member.
   interviewPanelUserIds String[] @default([])
   staleDays             Int      @default(14)
+  // Domains left out of the term planner's headcount columns (inactive or
+  // never staffed on partner work, but still active elsewhere).
+  plannerHiddenDomainIds String[] @default([])
   updatedAt             DateTime @updatedAt
 }
 

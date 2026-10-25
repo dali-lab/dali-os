@@ -1,9 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useRevalidator } from "react-router";
-import { ChevronDown } from "lucide-react";
+import { useFetcher, useNavigate, useRevalidator } from "react-router";
+import { ChevronDown, Columns3 } from "lucide-react";
 import { TermFilter } from "~/components/TermFilter";
 import { SearchInput } from "~/components/ui/SearchInput";
+import { Checkbox } from "~/components/ui/Checkbox";
+import { IconButton } from "~/components/ui/IconButton";
 import { MultiSelect, Popover } from "~/components/ui/floating";
+import { filterPillClass } from "~/components/ui/floating/styles";
 import type { SelectOption } from "~/components/ui/floating";
 import { useToast } from "~/components/ui/toast";
 import { formatUsd } from "~/lib/money";
@@ -20,7 +23,7 @@ import {
   type PartnerPlanningStatus,
 } from "../lib/partner-planning";
 
-type DomainOption = { id: string; name: string };
+type DomainOption = { id: string; name: string; hidden: boolean };
 
 type Props = {
   rows: PlannerRow[];
@@ -39,12 +42,31 @@ export function PartnerTermPlanner({ rows, domains, terms, selectedTermId }: Pro
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilterValue[]>([]);
   const [domainFilter, setDomainFilter] = useState<string[]>([]);
+  const columnsFetcher = useFetcher();
+  const pendingHidden = columnsFetcher.formData?.getAll("hiddenDomainIds") as
+    | string[]
+    | undefined;
+  const hiddenIds = new Set(
+    pendingHidden ?? domains.filter((d) => d.hidden).map((d) => d.id),
+  );
+  const visibleDomains = domains.filter((d) => !hiddenIds.has(d.id));
+
+  function toggleColumn(domainId: string) {
+    const next = new Set(hiddenIds);
+    if (next.has(domainId)) next.delete(domainId);
+    else next.add(domainId);
+    const form = new FormData();
+    form.set("intent", "set-hidden-domains");
+    for (const id of next) form.append("hiddenDomainIds", id);
+    columnsFetcher.submit(form, { method: "post" });
+    setDomainFilter((f) => f.filter((id) => !next.has(id)));
+  }
 
   const statusOptions: SelectOption<StatusFilterValue>[] = STATUS_FILTER_VALUES.map((s) => ({
     value: s,
     label: s === "Unset" ? "Unset" : PARTNER_PLANNING_LABELS[s],
   }));
-  const domainOptions: SelectOption<string>[] = domains.map((d) => ({
+  const domainOptions: SelectOption<string>[] = visibleDomains.map((d) => ({
     value: d.id,
     label: d.name,
   }));
@@ -111,7 +133,7 @@ export function PartnerTermPlanner({ rows, domains, terms, selectedTermId }: Pro
 
   return (
     <div className="w-full">
-      <div className="mb-4 flex flex-wrap items-center gap-2">
+      <div className="mb-4 flex flex-wrap items-start gap-2">
         <TermFilter
           terms={terms}
           selected={selectedTermId ?? ""}
@@ -122,8 +144,7 @@ export function PartnerTermPlanner({ rows, domains, terms, selectedTermId }: Pro
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search projects"
-          size="sm"
-          containerClassName="w-64"
+          containerClassName="w-full sm:w-64"
         />
         <MultiSelect
           values={statusFilter}
@@ -131,6 +152,7 @@ export function PartnerTermPlanner({ rows, domains, terms, selectedTermId }: Pro
           onChange={setStatusFilter}
           placeholder="All statuses"
           ariaLabel="Filter by planning status"
+          buttonClassName={cn(filterPillClass(), "w-full sm:w-40")}
         />
         <MultiSelect
           values={domainFilter}
@@ -138,8 +160,27 @@ export function PartnerTermPlanner({ rows, domains, terms, selectedTermId }: Pro
           onChange={setDomainFilter}
           placeholder="All domains"
           ariaLabel="Filter by domain"
+          buttonClassName={cn(filterPillClass(), "w-full sm:w-40")}
         />
-        <div className="ml-auto text-xs text-muted-foreground">
+        <Popover
+          align="right"
+          ariaLabel="Domain columns"
+          trigger={<IconButton label="Choose domain columns" icon={Columns3} className="size-[42px]" />}
+        >
+          <div className="flex flex-col gap-2 p-1">
+            <div className="text-xs font-medium text-muted-foreground">Domain columns</div>
+            {domains.map((d) => (
+              <Checkbox
+                key={d.id}
+                tone="os"
+                label={d.name}
+                checked={!hiddenIds.has(d.id)}
+                onChange={() => toggleColumn(d.id)}
+              />
+            ))}
+          </div>
+        </Popover>
+        <div className="ml-auto self-center text-xs text-muted-foreground">
           {filtered.length} project{filtered.length === 1 ? "" : "s"}
         </div>
       </div>
@@ -147,7 +188,7 @@ export function PartnerTermPlanner({ rows, domains, terms, selectedTermId }: Pro
       <PlannerTable
         activeRows={activeRows}
         laterRows={laterRows}
-        domains={domains}
+        domains={visibleDomains}
         sumMembers={sumMembers}
         sumFee={sumFee}
       />
@@ -209,7 +250,7 @@ function PlannerTable({
                   colSpan={5 + domains.length}
                   className="border-t border-os-container bg-muted/40 px-3 py-2 text-xs font-medium uppercase tracking-wide text-muted-foreground"
                 >
-                  Later — deferred to a future term
+                  Later: deferred to a future term
                 </td>
               </tr>
               {laterRows.map((r) => (

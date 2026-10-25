@@ -3,6 +3,7 @@ import type { Route } from "./+types/core.partners.plan";
 import { requireAuth, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { prisma } from "~/lib/db";
+import { logAuditEvent } from "~/lib/audit";
 import { isCore, currentTerm } from "~/lib/roles";
 import { PartnerCrmNav } from "../components/PartnerCrmNav";
 import { PartnerTermPlanner } from "../components/PartnerTermPlanner";
@@ -12,7 +13,7 @@ export const handle = { hideBreadcrumbs: true, areaSubnav: true };
 
 export const meta: Route.MetaFunction = () => [{ title: "Term plan · DALI OS" }];
 
-type DomainOption = { id: string; name: string };
+type DomainOption = { id: string; name: string; hidden: boolean };
 
 type DomainCell = {
   id: string;
@@ -66,7 +67,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     };
   }
 
-  const [targetTerms, allDomains] = await Promise.all([
+  const [targetTerms, allDomains, settings] = await Promise.all([
     prisma.partnerApplicationTargetTerm.findMany({
       where: { termId: selectedTermId },
       select: {
@@ -99,7 +100,12 @@ export async function loader({ request }: Route.LoaderArgs) {
       orderBy: { displayName: "asc" },
       select: { id: true, displayName: true },
     }),
+    prisma.partnerCrmSettings.findUnique({
+      where: { id: "default" },
+      select: { plannerHiddenDomainIds: true },
+    }),
   ]);
+  const hidden = new Set(settings?.plannerHiddenDomainIds ?? []);
 
   const rows: PlannerRow[] = targetTerms.map((t) => ({
     applicationId: t.application.id,
@@ -119,7 +125,11 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   return {
     rows,
-    domains: allDomains.map((d) => ({ id: d.id, name: d.displayName })),
+    domains: allDomains.map((d) => ({
+      id: d.id,
+      name: d.displayName,
+      hidden: hidden.has(d.id),
+    })),
     terms: allTerms.map((t) => ({
       id: t.id,
       code: t.code,
@@ -127,6 +137,35 @@ export async function loader({ request }: Route.LoaderArgs) {
     })),
     selectedTermId,
   };
+}
+
+export async function action({ request }: Route.ActionArgs) {
+  const auth = await requireAuth(request);
+  if (!auth.ok) return redirectToLogin(request);
+  if (!(await isCore(auth.user.sub))) {
+    return { error: "You don't have permission to edit the term plan." };
+  }
+
+  const form = await request.formData();
+  if (form.get("intent") !== "set-hidden-domains") {
+    return { error: "Unknown action." };
+  }
+  const plannerHiddenDomainIds = [
+    ...new Set((form.getAll("hiddenDomainIds") as string[]).filter(Boolean)),
+  ];
+  await prisma.partnerCrmSettings.upsert({
+    where: { id: "default" },
+    create: { id: "default", plannerHiddenDomainIds },
+    update: { plannerHiddenDomainIds },
+  });
+  await logAuditEvent({
+    action: "partner.settings.save",
+    userId: auth.user.sub,
+    targetId: "default",
+    metadata: { plannerHiddenDomainIds },
+    request,
+  });
+  return { ok: true };
 }
 
 export default function PartnersPlanRoute({ loaderData }: Route.ComponentProps) {
