@@ -3,7 +3,61 @@
 // Dollar figures are Neon estimates only (lib/infra/neon-cost.ts); Fly has no
 // billing API, so Fly stays usage only.
 
+import type { ReactNode } from "react";
+import { ExternalLink } from "lucide-react";
+import { Tooltip } from "~/components/ui/floating";
 import type { NeonBranchUsage, NeonCostSummary, UsageSeries } from "~/lib/infra/neon-scope";
+
+export const consoleUrl = {
+  flyApp: (app: string) => `https://fly.io/apps/${encodeURIComponent(app)}`,
+  flyMachine: (app: string, machineId: string) =>
+    `https://fly.io/apps/${encodeURIComponent(app)}/machines/${encodeURIComponent(machineId)}`,
+  neonOrg: (orgId: string) => `https://console.neon.tech/app/${encodeURIComponent(orgId)}`,
+  neonProject: (projectId: string) => `https://console.neon.tech/app/projects/${encodeURIComponent(projectId)}`,
+};
+
+export function ExternalIconLink({ href, label, className }: { href: string; label: string; className?: string }) {
+  return (
+    <Tooltip content={label}>
+      <a
+        href={href}
+        target="_blank"
+        rel="noreferrer"
+        aria-label={label}
+        className={className ?? "inline-flex items-center text-muted-foreground hover:text-os-accent"}
+      >
+        <ExternalLink className="h-3.5 w-3.5" />
+      </a>
+    </Tooltip>
+  );
+}
+
+export function plural(n: number, one: string, many = `${one}s`): string {
+  return `${n} ${n === 1 ? one : many}`;
+}
+
+// Fixed widths so stacked per-app / per-database tables line up column for
+// column instead of each sizing to its own content.
+export function ColWidths({ widths }: { widths: (string | null)[] }): ReactNode {
+  return (
+    <colgroup>
+      {widths.map((w, i) => (
+        <col key={i} style={w ? { width: w } : undefined} />
+      ))}
+    </colgroup>
+  );
+}
+
+// The name column (null) takes whatever is left.
+export const INFRA_COLS = {
+  /** Admin Fly machines: name, size, region, state, actions. */
+  flyConsole: [null, "11rem", "6rem", "8rem", "10rem"],
+  /** Admin Neon computes: name, autoscale, scale to zero, state, actions. */
+  neonConsole: [null, "13rem", "8rem", "8rem", "10rem"],
+  /** Read-only project view: name, size/autoscale, region/scale to zero, state. */
+  view: [null, "10rem", "7rem", "7rem"],
+  branches: [null, "8rem", "8rem"],
+};
 
 export function fmtBytes(n: number): string {
   if (!Number.isFinite(n) || n <= 0) return "0";
@@ -70,7 +124,7 @@ export function metricValue(metric: string, value: number): string {
 
 export function volumeSummary(volumes: { sizeGb: number }[]): string {
   const gb = volumes.reduce((a, v) => a + v.sizeGb, 0);
-  return `${volumes.length} volumes${volumes.length ? ` (${gb} GB)` : ""}`;
+  return `${plural(volumes.length, "volume")}${volumes.length ? ` (${gb} GB)` : ""}`;
 }
 
 export function fmtUsd(n: number): string {
@@ -102,7 +156,8 @@ export function NeonCostLine({ plan, cost }: { plan: string | null; cost: NeonCo
 export function NeonBranchUsageTable({ rows }: { rows: NeonBranchUsage[] }) {
   if (rows.length === 0) return null;
   return (
-    <table className="w-full text-left text-xs">
+    <table className="w-full table-fixed text-left text-xs">
+      <ColWidths widths={INFRA_COLS.branches} />
       <thead className="text-muted-foreground">
         <tr>
           <th className="px-3 py-1 font-medium">Branch (this month)</th>
@@ -113,7 +168,7 @@ export function NeonBranchUsageTable({ rows }: { rows: NeonBranchUsage[] }) {
       <tbody>
         {rows.map((b) => (
           <tr key={b.branchId} className="border-t border-border">
-            <td className="px-3 py-1.5 font-mono text-foreground">
+            <td className="truncate px-3 py-1.5 font-mono text-foreground">
               {b.name}
               {b.preview && (
                 <span className="ml-1.5 rounded-full bg-os-amber/15 px-1.5 py-0.5 font-sans text-[10px] font-semibold text-os-amber">

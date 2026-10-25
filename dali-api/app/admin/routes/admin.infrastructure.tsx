@@ -45,11 +45,16 @@ import { listPendingInfraRequests } from "~/lib/infra/requests.server";
 import { infraRequestKindLabel } from "~/lib/infra/request-kinds";
 import { useDialog } from "~/components/ui/dialog";
 import {
+  ColWidths,
+  consoleUrl,
+  ExternalIconLink,
   fmtBytes,
   fmtHours,
   fmtUsd,
+  INFRA_COLS,
   NeonBranchUsageTable,
   NeonCostLine,
+  plural,
   timeAgo,
   UsageStrip,
   volumeSummary,
@@ -318,7 +323,7 @@ function ProjectCard({
               )}
               {p.neonOrgId && (
                 <a
-                  href={`https://console.neon.tech/app/${p.neonOrgId}`}
+                  href={consoleUrl.neonOrg(p.neonOrgId)}
                   target="_blank"
                   rel="noreferrer"
                   className="inline-flex items-center gap-1 text-os-accent hover:text-os-accent-hover"
@@ -381,10 +386,19 @@ function FlySection({ project: p, data, infra }: { project: ProjectFleet; data: 
   }
 
   async function scale(app: FlyApp, m: FlyMachine) {
+    const current = `${m.cpuKind}|${m.cpus}|${m.memoryMb}`;
+    const currentLabel = FLY_PRESETS.find((x) => x.value === current)?.label ?? `${m.cpuKind} ${m.cpus}x · ${fmtBytes(m.memoryMb * 1024 * 1024)}`;
     const choice = await dialog.choice({
-      title: `Resize ${m.name || m.id}`,
-      description: "The machine reboots into the new size (brief downtime).",
+      title: `Resize machine ${m.name || m.id}`,
+      description: (
+        <>
+          App <span className="font-mono text-foreground">{app.name}</span> · now{" "}
+          <span className="font-medium text-foreground">{currentLabel}</span>. The machine reboots into the new size
+          (brief downtime).
+        </>
+      ),
       options: FLY_PRESETS.map((x) => ({ value: x.value, label: x.label })),
+      selected: current,
     });
     if (!choice) return;
     const [cpuKind, cpus, memoryMb] = choice.split("|");
@@ -415,11 +429,12 @@ function FlySection({ project: p, data, infra }: { project: ProjectFleet; data: 
             <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5">
               <span className="flex items-center gap-2">
                 <span className="font-mono text-[13px] font-medium text-foreground">{app.name}</span>
+                <ExternalIconLink href={consoleUrl.flyApp(app.name)} label="Open in Fly" />
                 {isProtected && <Pill>Protected</Pill>}
               </span>
               <span className="flex items-center gap-2 text-xs text-os-grey">
                 {app.status && <Pill tone={app.status === "deployed" ? "ok" : "idle"}>{app.status}</Pill>}
-                {app.machines.length} machines · {volumeSummary(app.volumes)}
+                {plural(app.machines.length, "machine")} · {volumeSummary(app.volumes)}
                 {data.isAdmin && canWrite && !isProtected && (
                   <IconAction label="Destroy app" danger disabled={infra.busy} onClick={() => destroy(app, "app")}>
                     <Trash2 className="h-4 w-4" />
@@ -428,7 +443,8 @@ function FlySection({ project: p, data, infra }: { project: ProjectFleet; data: 
               </span>
             </div>
             {app.machines.length > 0 && (
-              <table className="w-full min-w-[640px]">
+              <table className="w-full min-w-[640px] table-fixed">
+                <ColWidths widths={INFRA_COLS.flyConsole} />
                 <thead>
                   <tr className={subTable.row}>
                     <th className={subTable.th}>Machine</th>
@@ -441,7 +457,12 @@ function FlySection({ project: p, data, infra }: { project: ProjectFleet; data: 
                 <tbody>
                   {app.machines.map((m) => (
                     <tr key={m.id} className={subTable.row}>
-                      <td className={cn(subTable.td, "font-mono text-[13px] text-foreground")}>{m.name || m.id}</td>
+                      <td className={cn(subTable.td, "font-mono text-[13px] text-foreground")}>
+                        <span className="flex min-w-0 items-center gap-1.5">
+                          <span className="truncate">{m.name || m.id}</span>
+                          <ExternalIconLink href={consoleUrl.flyMachine(app.name, m.id)} label="Open machine in Fly" />
+                        </span>
+                      </td>
                       <td className={cn(subTable.td, "text-os-grey")}>
                         {m.cpuKind} {m.cpus}x · {fmtBytes(m.memoryMb * 1024 * 1024)}
                       </td>
@@ -583,10 +604,11 @@ function NeonProjectCard({ project: p, np, data, infra }: { project: ProjectFlee
       <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5">
         <span className="flex items-center gap-2">
           <span className="font-mono text-[13px] font-medium text-foreground">{np.name}</span>
+          <ExternalIconLink href={consoleUrl.neonProject(np.id)} label="Open in Neon" />
           {isProtected && <Pill>Protected</Pill>}
         </span>
         <span className="flex items-center gap-2 text-xs text-os-grey">
-          {np.regionId} · pg{np.pgVersion ?? "?"} · {np.branches.length} branches
+          {np.regionId} · pg{np.pgVersion ?? "?"} · {plural(np.branches.length, "branch", "branches")}
           {p.neonCost?.byProject[np.id] != null && ` · est. ${fmtUsd(p.neonCost.byProject[np.id])} this month`}
           {canManage && (
             <IconAction
@@ -606,7 +628,8 @@ function NeonProjectCard({ project: p, np, data, infra }: { project: ProjectFlee
         </span>
       </div>
 
-      <table className="w-full min-w-[640px]">
+      <table className="w-full min-w-[640px] table-fixed">
+        <ColWidths widths={INFRA_COLS.neonConsole} />
         <thead>
           <tr className={subTable.row}>
             <th className={subTable.th}>Compute</th>
@@ -695,7 +718,7 @@ function EndpointRow({ project: p, np, e, infra, endpointAction }: { project: Pr
 
   return (
     <tr className={subTable.row}>
-      <td className={cn(subTable.td, "font-mono text-[13px] text-foreground")}>
+      <td className={cn(subTable.td, "truncate font-mono text-[13px] text-foreground")}>
         {e.id}
         <span className="ml-1.5 font-sans text-xs text-os-muted">{e.type}</span>
       </td>
