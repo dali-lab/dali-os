@@ -11,7 +11,7 @@ import { isCycleAdmin } from "~/lib/roles";
 import { requirePageSignedOrRedirect } from "~/hiring/lib/confidentiality";
 import { GripVertical } from "lucide-react";
 import { KanbanBoard, type KanbanColumn } from "~/components/board/KanbanBoard";
-import { buildColumnOrder, dropCard } from "~/hiring/lib/delibs";
+import { buildColumnOrder, dropCard, missingReviewsLabel } from "~/hiring/lib/delibs";
 import { findRound, parseTimeline } from "~/hiring/lib/cycle-timeline";
 import { delibsQualifier } from "~/hiring/lib/cycle-stages.server";
 import { inReviewPipelineFilter } from "~/hiring/lib/application-pipeline-filter";
@@ -450,10 +450,12 @@ function DelibsCard({
   overlay?: boolean;
 }) {
   const reviewCount = da.reviews.length;
-  const submittedCount = da.reviews.filter((r: any) => r.submittedAt).length;
+  const submitted = da.reviews.filter((r: any) => r.submittedAt);
+  const submittedCount = submitted.length;
+  const missingReviews = missingReviewsLabel(submittedCount, reviewCount);
   const avgScore =
-    da.reviews.length > 0
-      ? da.reviews.reduce((sum: number, r: any) => {
+    submitted.length > 0
+      ? submitted.reduce((sum: number, r: any) => {
           const scores = r.scores as Record<string, number>;
           const vals = Object.values(scores);
           return (
@@ -462,7 +464,7 @@ function DelibsCard({
               ? vals.reduce((a: number, b: number) => a + b, 0) / vals.length
               : 0)
           );
-        }, 0) / da.reviews.length
+        }, 0) / submitted.length
       : null;
 
   const fmt = (u: any) =>
@@ -480,7 +482,7 @@ function DelibsCard({
         .filter(Boolean),
     ),
   );
-  const reviewerRecs = (da.reviews ?? [])
+  const reviewerRecs = submitted
     .filter((r: any) => r.overallRecommendation)
     .map((r: any) => ({ id: r.id, rec: r.overallRecommendation as string }));
   // Interviewer recommendation: the joint interview rec.
@@ -532,9 +534,15 @@ function DelibsCard({
             {da.application.user.firstName} {da.application.user.lastName}
           </h4>
           <div className="flex items-center gap-2 mt-1">
-            <span className="text-xs text-os-grey">
-              {submittedCount}/{reviewCount} reviews
-            </span>
+            {missingReviews ? (
+              <span className="rounded-full bg-os-amber/15 px-2 py-0.5 text-xs font-medium text-os-amber">
+                {missingReviews}
+              </span>
+            ) : (
+              <span className="text-xs text-os-grey">
+                {submittedCount}/{reviewCount} reviews
+              </span>
+            )}
             {avgScore !== null && (
               <span className="rounded-full bg-os-container px-2 py-0.5 text-xs font-medium text-foreground">
                 avg {avgScore.toFixed(1)}
