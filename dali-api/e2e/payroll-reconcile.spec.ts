@@ -149,12 +149,12 @@ test.describe('payroll: reconcile', () => {
     page,
     loginAs,
   }) => {
-    // jordan.taylor is Core (can reach the member roles page) but not Admin,
-    // so the admin-only payroll page bounces them there — /admin/members,
-    // which nav-regroup then sends on to its Core home.
+    // jordan.taylor is Core (can reach Roles & domains) but not Admin, so the
+    // admin-only payroll page bounces them to /admin/members, which redirects
+    // on to /core/access.
     await loginAs({ daliEmail: 'jordan.taylor@dali.dartmouth.edu' });
     await page.goto('/admin/payroll/reconcile');
-    await expect(page).toHaveURL(/\/core\/access\/roles/);
+    await expect(page).toHaveURL(/\/core\/access(\?|$)/);
     await expect(page).not.toHaveURL(/\/admin\/payroll/);
   });
 });

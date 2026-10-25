@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
+// CI's unit job has no generated Prisma client; keep the real db module out.
+vi.mock("~/lib/db", () => ({ prisma: {} }));
 vi.mock("~/lib/auth", async (importOriginal) => ({
   ...(await importOriginal<typeof import("~/lib/auth")>()),
   requireAuth: vi.fn(),
