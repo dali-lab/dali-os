@@ -967,7 +967,9 @@ export function WeekGridEvent({
         displayBufferAfter === 0 ? "rounded-b-md" : ""
       } ${border} ${bufferBg} overflow-hidden ${
         movable ? (isDragging ? "cursor-grabbing" : "cursor-grab") : clickable ? "cursor-pointer" : ""
-      }${livePos ? " z-40 opacity-95 shadow-lg" : ""}${e.pending ? " pointer-events-none opacity-60" : ""}`}
+      }${livePos ? " z-40 opacity-95 shadow-lg" : ""}${e.pending ? " pointer-events-none opacity-60" : ""}${
+        e.dimmed ? " opacity-30" : ""
+      } transition-opacity`}
       style={{
         top: (displayStart - displayBufferBefore - HOURS[0]) * HOUR_PX,
         height: displayTotalHours * HOUR_PX,
