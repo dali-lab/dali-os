@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
+  branchScopeId,
+  branchUsage,
   isSampleInScope,
+  keepLinkedInOrg,
+  neonCostSummary,
+  neonDatabaseOptions,
   neonProjectOptions,
+  projectUsage,
+  SCOPE,
   scopeNeonInventory,
   usageSeries,
   type ScopedSample,
@@ -101,7 +108,7 @@ describe("usageSeries", () => {
       sample({ scopeId: "np-c", value: 1800 }),
     ]);
     expect(series).toEqual([
-      { metric: "compute_unit_seconds", points: [{ at: "2026-10-01T00:00:00.000Z", value: 5400 }] },
+      { metric: "compute_unit_seconds", points: [{ at: "2026-10-01T00:00:00.000Z", value: 5400 }], current: 5400 },
     ]);
   });
 
@@ -130,5 +137,218 @@ describe("usageSeries", () => {
 
   it("is empty with no samples", () => {
     expect(usageSeries([])).toEqual([]);
+  });
+});
+
+describe("isSampleInScope for branch rows", () => {
+  it("scopes branch rows by their database", () => {
+    const branch = sample({ scopeType: SCOPE.neonBranchMonth, scopeId: branchScopeId("np-a", "br-1") });
+    expect(isSampleInScope(branch, ["np-a"])).toBe(true);
+    expect(isSampleInScope(branch, ["np-b"])).toBe(false);
+  });
+});
+
+const NOW = new Date("2026-10-25T12:00:00Z");
+const OCT = new Date("2026-10-01T00:00:00Z");
+const SEP = new Date("2026-09-01T00:00:00Z");
+
+describe("projectUsage", () => {
+  it("draws daily points but heads each Neon metric with month to date", () => {
+    const usage = projectUsage(
+      [
+        sample({ scopeType: SCOPE.neonDaily, at: new Date("2026-10-24T00:00:00Z"), value: 10 }),
+        sample({ scopeType: SCOPE.neonDaily, at: new Date("2026-10-25T00:00:00Z"), value: 20 }),
+        sample({ scopeType: SCOPE.neonMonth, at: OCT, value: 500 }),
+      ],
+      NOW,
+    );
+    expect(usage).toEqual([
+      {
+        metric: "compute_unit_seconds",
+        points: [
+          { at: "2026-10-24T00:00:00.000Z", value: 10 },
+          { at: "2026-10-25T00:00:00.000Z", value: 20 },
+        ],
+        current: 500,
+      },
+    ]);
+  });
+
+  it("sums month to date across databases", () => {
+    const usage = projectUsage(
+      [
+        sample({ scopeType: SCOPE.neonDaily, value: 1 }),
+        sample({ scopeType: SCOPE.neonMonth, scopeId: "np-a", at: OCT, value: 100 }),
+        sample({ scopeType: SCOPE.neonMonth, scopeId: "np-c", at: OCT, value: 50 }),
+      ],
+      NOW,
+    );
+    expect(usage[0].current).toBe(150);
+  });
+
+  it("ignores last month's total for the headline", () => {
+    const usage = projectUsage(
+      [sample({ scopeType: SCOPE.neonDaily, value: 1 }), sample({ scopeType: SCOPE.neonMonth, at: SEP, value: 999 })],
+      NOW,
+    );
+    expect(usage[0].current).toBe(1);
+  });
+
+  it("heads Fly metrics with the latest reading", () => {
+    const fly = (at: string, value: number) =>
+      sample({ provider: "fly", scopeType: SCOPE.flyApp, scopeId: "web", metric: "machine_hours_24h", at: new Date(at), value });
+    const usage = projectUsage([fly("2026-10-25T10:00:00Z", 24), fly("2026-10-25T11:00:00Z", 23)], NOW);
+    expect(usage[0].current).toBe(23);
+  });
+
+  it("drops metrics that are zero throughout", () => {
+    const usage = projectUsage(
+      [
+        sample({ scopeType: SCOPE.neonDaily, metric: "snapshot_storage_bytes_month", value: 0 }),
+        sample({ scopeType: SCOPE.neonMonth, metric: "snapshot_storage_bytes_month", at: OCT, value: 0 }),
+        sample({ scopeType: SCOPE.neonDaily, metric: "compute_unit_seconds", value: 5 }),
+      ],
+      NOW,
+    );
+    expect(usage.map((u) => u.metric)).toEqual(["compute_unit_seconds"]);
+  });
+
+  it("leaves branch rows out of the strip", () => {
+    expect(projectUsage([sample({ scopeType: SCOPE.neonBranchMonth, scopeId: "np-a:br", at: OCT, value: 5 })], NOW)).toEqual([]);
+  });
+});
+
+describe("branchUsage", () => {
+  const inv: NeonInventory = {
+    orgId: "org-dali-1",
+    projects: [
+      {
+        ...project("np-a", "Alpha"),
+        branches: [
+          { id: "br-main", name: "main", parentId: null, createdAt: null, default: true },
+          { id: "br-pr", name: "preview-pr-42", parentId: "br-main", createdAt: null, default: false },
+        ],
+      },
+    ],
+  };
+  const branch = (branchId: string, metric: string, value: number, at = OCT) =>
+    sample({ scopeType: SCOPE.neonBranchMonth, scopeId: branchScopeId("np-a", branchId), metric, value, at });
+
+  it("totals compute and storage per branch, heaviest compute first", () => {
+    const rows = branchUsage(
+      [
+        branch("br-main", "compute_unit_seconds", 100),
+        branch("br-pr", "compute_unit_seconds", 900),
+        branch("br-pr", "root_branch_bytes_month", 10),
+        branch("br-pr", "child_branch_bytes_month", 5),
+      ],
+      inv,
+      NOW,
+    );
+    expect(rows).toEqual({
+      "np-a": [
+        { branchId: "br-pr", name: "preview-pr-42", computeSeconds: 900, storageByteMonths: 15, preview: true },
+        { branchId: "br-main", name: "main", computeSeconds: 100, storageByteMonths: 0, preview: false },
+      ],
+    });
+  });
+
+  it("falls back to the branch id for a branch no longer in the inventory", () => {
+    const rows = branchUsage([branch("br-gone", "compute_unit_seconds", 1)], inv, NOW);
+    expect(rows["np-a"][0]).toMatchObject({ name: "br-gone", preview: false });
+  });
+
+  it("only counts this month", () => {
+    expect(branchUsage([branch("br-pr", "compute_unit_seconds", 1, SEP)], inv, NOW)).toEqual({});
+  });
+});
+
+describe("neonCostSummary", () => {
+  const month = (scopeId: string, metric: string, value: number, at = OCT) =>
+    sample({ scopeType: SCOPE.neonMonth, scopeId, metric, value, at });
+
+  it("estimates this month per database and in total", () => {
+    const cost = neonCostSummary(
+      [month("np-a", "compute_unit_seconds", 10 * 3600), month("np-c", "compute_unit_seconds", 20 * 3600)],
+      "launch",
+      NOW,
+    )!;
+    expect(cost.plan).toBe("launch");
+    expect(cost.thisMonth).toBeCloseTo(3.18);
+    expect(cost.byProject["np-a"]).toBeCloseTo(1.06);
+    expect(cost.byProject["np-c"]).toBeCloseTo(2.12);
+  });
+
+  it("estimates last month separately", () => {
+    const cost = neonCostSummary([month("np-a", "compute_unit_seconds", 100 * 3600, SEP)], "launch", NOW)!;
+    expect(cost.thisMonth).toBe(0);
+    expect(cost.lastMonth).toBeCloseTo(10.6);
+  });
+
+  it("has no last month when nothing was recorded for it", () => {
+    expect(neonCostSummary([month("np-a", "compute_unit_seconds", 3600)], "launch", NOW)!.lastMonth).toBeNull();
+  });
+
+  it("ignores daily and branch rows so usage isn't counted twice", () => {
+    const cost = neonCostSummary(
+      [
+        sample({ scopeType: SCOPE.neonDaily, value: 1e9 }),
+        sample({ scopeType: SCOPE.neonBranchMonth, scopeId: "np-a:br", at: OCT, value: 1e9 }),
+      ],
+      "launch",
+      NOW,
+    )!;
+    expect(cost.thisMonth).toBe(0);
+  });
+
+  it("ignores months older than last month", () => {
+    const cost = neonCostSummary(
+      [month("np-a", "compute_unit_seconds", 1e9, new Date("2026-08-01T00:00:00Z"))],
+      "launch",
+      NOW,
+    )!;
+    expect(cost.lastMonth).toBeNull();
+  });
+
+  it("is null without a plan or with unknown rates", () => {
+    expect(neonCostSummary([], null, NOW)).toBeNull();
+    expect(neonCostSummary([], "enterprise", NOW)).toBeNull();
+  });
+});
+
+describe("neonDatabaseOptions", () => {
+  const known = [
+    { orgId: "org-dali-1", projects: [{ id: "np-a", name: "Alpha" }, { id: "np-b", name: "Beta" }] },
+    { orgId: "org-other-2", projects: [{ id: "np-z", name: "Zeta" }] },
+  ];
+
+  it("lists the chosen org's databases", () => {
+    expect(neonDatabaseOptions("org-dali-1", known, [])).toEqual([
+      { value: "np-a", label: "Alpha" },
+      { value: "np-b", label: "Beta" },
+    ]);
+  });
+
+  it("keeps a linked id the sweep no longer returns so it can be removed", () => {
+    expect(neonDatabaseOptions("org-other-2", known, ["np-gone"])).toEqual([
+      { value: "np-z", label: "Zeta" },
+      { value: "np-gone", label: "np-gone" },
+    ]);
+  });
+
+  it("is empty for an org nobody has swept", () => {
+    expect(neonDatabaseOptions("org-new-3", known, [])).toEqual([]);
+  });
+});
+
+describe("keepLinkedInOrg", () => {
+  const known = [{ orgId: "org-dali-1", projects: [{ id: "np-a", name: "Alpha" }] }];
+
+  it("keeps linked databases that belong to the new org", () => {
+    expect(keepLinkedInOrg("org-dali-1", known, ["np-a", "np-x"])).toEqual(["np-a"]);
+  });
+
+  it("drops everything for an unknown org", () => {
+    expect(keepLinkedInOrg("org-new-3", known, ["np-a"])).toEqual([]);
   });
 });

@@ -6,7 +6,21 @@
 import { ExternalLink } from "lucide-react";
 import type { ProjectFleet } from "~/lib/infra/dashboard.server";
 import type { NeonQuota } from "~/lib/infra/types";
-import { fmtBytes, fmtHours, StateBadge, UsageStrip } from "./format";
+import {
+  ColWidths,
+  consoleUrl,
+  ExternalIconLink,
+  fmtBytes,
+  fmtHours,
+  fmtUsd,
+  INFRA_COLS,
+  NeonBranchUsageTable,
+  NeonCostLine,
+  plural,
+  StateBadge,
+  UsageStrip,
+  volumeSummary,
+} from "./format";
 
 export function ProjectInfraView({ project: p }: { project: ProjectFleet }) {
   const flyApps = p.fly?.apps ?? [];
@@ -16,7 +30,7 @@ export function ProjectInfraView({ project: p }: { project: ProjectFleet }) {
     <div className="flex flex-col gap-4">
       <UsageStrip usage={p.usage} />
 
-      <div className="flex flex-wrap gap-3 text-xs">
+      <div className="flex flex-wrap items-center gap-3 text-xs">
         {p.flyOrgSlug && (
           <a
             href={`https://fly.io/dashboard/${p.flyOrgSlug}/billing`}
@@ -29,7 +43,7 @@ export function ProjectInfraView({ project: p }: { project: ProjectFleet }) {
         )}
         {p.neonOrgId && (
           <a
-            href={`https://console.neon.tech/app/org/${p.neonOrgId}/billing`}
+            href={consoleUrl.neonOrg(p.neonOrgId)}
             target="_blank"
             rel="noreferrer"
             className="inline-flex items-center gap-1 text-os-accent hover:underline"
@@ -37,6 +51,7 @@ export function ProjectInfraView({ project: p }: { project: ProjectFleet }) {
             Neon billing <ExternalLink className="h-3 w-3" />
           </a>
         )}
+        <NeonCostLine plan={p.neonPlan} cost={p.neonCost} />
       </div>
 
       {/* Fly */}
@@ -50,13 +65,17 @@ export function ProjectInfraView({ project: p }: { project: ProjectFleet }) {
               {flyApps.map((app) => (
                 <div key={app.name} className="rounded-md border border-border">
                   <div className="flex items-center justify-between gap-2 border-b border-border bg-muted px-3 py-1.5">
-                    <span className="font-mono text-xs font-medium text-foreground">{app.name}</span>
+                    <span className="flex items-center gap-1.5">
+                      <span className="font-mono text-xs font-medium text-foreground">{app.name}</span>
+                      <ExternalIconLink href={consoleUrl.flyApp(app.name)} label="Open in Fly" />
+                    </span>
                     <span className="text-[11px] text-muted-foreground">
-                      {app.status ?? ""} · {app.machines.length} machines · {app.volumes.length} volumes
+                      {app.status ?? ""} · {plural(app.machines.length, "machine")} · {volumeSummary(app.volumes)}
                     </span>
                   </div>
                   {app.machines.length > 0 && (
-                    <table className="w-full text-left text-xs">
+                    <table className="w-full table-fixed text-left text-xs">
+                      <ColWidths widths={INFRA_COLS.view} />
                       <thead className="text-muted-foreground">
                         <tr>
                           <th className="px-3 py-1 font-medium">Machine</th>
@@ -68,7 +87,12 @@ export function ProjectInfraView({ project: p }: { project: ProjectFleet }) {
                       <tbody>
                         {app.machines.map((m) => (
                           <tr key={m.id} className="border-t border-border">
-                            <td className="px-3 py-1.5 font-mono text-foreground">{m.name || m.id}</td>
+                            <td className="px-3 py-1.5 font-mono text-foreground">
+                              <span className="flex min-w-0 items-center gap-1.5">
+                                <span className="truncate">{m.name || m.id}</span>
+                                <ExternalIconLink href={consoleUrl.flyMachine(app.name, m.id)} label="Open machine in Fly" />
+                              </span>
+                            </td>
                             <td className="px-3 py-1.5 text-muted-foreground">
                               {m.cpuKind} {m.cpus}x · {fmtBytes(m.memoryMb * 1024 * 1024)}
                             </td>
@@ -103,12 +127,17 @@ export function ProjectInfraView({ project: p }: { project: ProjectFleet }) {
               {neonProjects.map((np) => (
                 <div key={np.id} className="rounded-md border border-border">
                   <div className="flex items-center justify-between gap-2 border-b border-border bg-muted px-3 py-1.5">
-                    <span className="font-mono text-xs font-medium text-foreground">{np.name}</span>
+                    <span className="flex items-center gap-1.5">
+                      <span className="font-mono text-xs font-medium text-foreground">{np.name}</span>
+                      <ExternalIconLink href={consoleUrl.neonProject(np.id)} label="Open in Neon" />
+                    </span>
                     <span className="text-[11px] text-muted-foreground">
-                      {np.regionId} · pg{np.pgVersion ?? "?"} · {np.branches.length} branches
+                      {np.regionId} · pg{np.pgVersion ?? "?"} · {plural(np.branches.length, "branch", "branches")}
+                      {p.neonCost?.byProject[np.id] != null && ` · est. ${fmtUsd(p.neonCost.byProject[np.id])} this month`}
                     </span>
                   </div>
-                  <table className="w-full text-left text-xs">
+                  <table className="w-full table-fixed text-left text-xs">
+                    <ColWidths widths={INFRA_COLS.view} />
                     <thead className="text-muted-foreground">
                       <tr>
                         <th className="px-3 py-1 font-medium">Compute</th>
@@ -120,7 +149,7 @@ export function ProjectInfraView({ project: p }: { project: ProjectFleet }) {
                     <tbody>
                       {np.endpoints.map((e) => (
                         <tr key={e.id} className="border-t border-border">
-                          <td className="px-3 py-1.5 font-mono text-foreground">
+                          <td className="truncate px-3 py-1.5 font-mono text-foreground">
                             {e.id}
                             <span className="ml-1 text-[10px] text-muted-foreground">{e.type}</span>
                           </td>
@@ -137,6 +166,11 @@ export function ProjectInfraView({ project: p }: { project: ProjectFleet }) {
                       ))}
                     </tbody>
                   </table>
+                  {(p.neonBranchUsage[np.id]?.length ?? 0) > 0 && (
+                    <div className="border-t border-border">
+                      <NeonBranchUsageTable rows={p.neonBranchUsage[np.id]} />
+                    </div>
+                  )}
                   <div className="border-t border-border px-3 py-1.5">
                     <QuotaSummary quota={np.quota} />
                   </div>

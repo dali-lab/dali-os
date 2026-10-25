@@ -1,8 +1,63 @@
 // Shared, presentational infra formatters + tiny display bits. Client-safe (no
 // server imports) so both the fleet console and the per-project view reuse them.
-// No dollar figures anywhere — usage only.
+// Dollar figures are Neon estimates only (lib/infra/neon-cost.ts); Fly has no
+// billing API, so Fly stays usage only.
 
-import type { UsageSeries } from "~/lib/infra/dashboard.server";
+import type { ReactNode } from "react";
+import { ExternalLink } from "lucide-react";
+import { Tooltip } from "~/components/ui/floating";
+import type { NeonBranchUsage, NeonCostSummary, UsageSeries } from "~/lib/infra/neon-scope";
+
+export const consoleUrl = {
+  flyApp: (app: string) => `https://fly.io/apps/${encodeURIComponent(app)}`,
+  flyMachine: (app: string, machineId: string) =>
+    `https://fly.io/apps/${encodeURIComponent(app)}/machines/${encodeURIComponent(machineId)}`,
+  neonOrg: (orgId: string) => `https://console.neon.tech/app/${encodeURIComponent(orgId)}`,
+  neonProject: (projectId: string) => `https://console.neon.tech/app/projects/${encodeURIComponent(projectId)}`,
+};
+
+export function ExternalIconLink({ href, label, className }: { href: string; label: string; className?: string }) {
+  return (
+    <Tooltip content={label}>
+      <a
+        href={href}
+        target="_blank"
+        rel="noreferrer"
+        aria-label={label}
+        className={className ?? "inline-flex items-center text-muted-foreground hover:text-os-accent"}
+      >
+        <ExternalLink className="h-3.5 w-3.5" />
+      </a>
+    </Tooltip>
+  );
+}
+
+export function plural(n: number, one: string, many = `${one}s`): string {
+  return `${n} ${n === 1 ? one : many}`;
+}
+
+// Fixed widths so stacked per-app / per-database tables line up column for
+// column instead of each sizing to its own content.
+export function ColWidths({ widths }: { widths: (string | null)[] }): ReactNode {
+  return (
+    <colgroup>
+      {widths.map((w, i) => (
+        <col key={i} style={w ? { width: w } : undefined} />
+      ))}
+    </colgroup>
+  );
+}
+
+// The name column (null) takes whatever is left.
+export const INFRA_COLS = {
+  /** Admin Fly machines: name, size, region, state, actions. */
+  flyConsole: [null, "11rem", "6rem", "8rem", "10rem"],
+  /** Admin Neon computes: name, autoscale, scale to zero, state, actions. */
+  neonConsole: [null, "13rem", "8rem", "8rem", "10rem"],
+  /** Read-only project view: name, size/autoscale, region/scale to zero, state. */
+  view: [null, "10rem", "7rem", "7rem"],
+  branches: [null, "8rem", "8rem"],
+};
 
 export function fmtBytes(n: number): string {
   if (!Number.isFinite(n) || n <= 0) return "0";
@@ -42,10 +97,20 @@ export function metricLabel(metric: string): string {
       return "Root storage";
     case "child_branch_bytes_month":
       return "Branch storage";
+    case "instant_restore_bytes_month":
+      return "Restore history";
+    case "snapshot_storage_bytes_month":
+      return "Snapshots";
     case "public_network_transfer_bytes":
       return "Egress";
+    case "private_network_transfer_bytes":
+      return "Private egress";
+    case "extra_branches_month":
+      return "Branch hours";
     case "egress_bytes":
       return "Fly egress (24h)";
+    case "machine_hours_24h":
+      return "Fly machine hours (24h)";
     default:
       return metric;
   }
@@ -53,7 +118,71 @@ export function metricLabel(metric: string): string {
 
 export function metricValue(metric: string, value: number): string {
   if (metric === "compute_unit_seconds") return `${(value / 3600).toFixed(1)} CU·h`;
+  if (metric === "extra_branches_month" || metric === "machine_hours_24h") return `${value.toFixed(0)} h`;
   return fmtBytes(value);
+}
+
+export function volumeSummary(volumes: { sizeGb: number }[]): string {
+  const gb = volumes.reduce((a, v) => a + v.sizeGb, 0);
+  return `${plural(volumes.length, "volume")}${volumes.length ? ` (${gb} GB)` : ""}`;
+}
+
+export function fmtUsd(n: number): string {
+  return `$${n.toFixed(2)}`;
+}
+
+const PLAN_LABEL: Record<string, string> = { free: "Free", launch: "Launch", scale: "Scale" };
+
+export function planLabel(plan: string): string {
+  return PLAN_LABEL[plan] ?? plan;
+}
+
+export function NeonCostLine({ plan, cost }: { plan: string | null; cost: NeonCostSummary | null }) {
+  if (!plan) return null;
+  return (
+    <span className="text-xs text-muted-foreground" title="Estimated from Neon usage and published rates. The invoice is authoritative.">
+      Neon {planLabel(plan)} plan
+      {cost && (
+        <>
+          {" · "}
+          <span className="font-medium text-foreground">Est. {fmtUsd(cost.thisMonth)} this month</span>
+          {cost.lastMonth != null && ` · last month est. ${fmtUsd(cost.lastMonth)}`}
+        </>
+      )}
+    </span>
+  );
+}
+
+export function NeonBranchUsageTable({ rows }: { rows: NeonBranchUsage[] }) {
+  if (rows.length === 0) return null;
+  return (
+    <table className="w-full table-fixed text-left text-xs">
+      <ColWidths widths={INFRA_COLS.branches} />
+      <thead className="text-muted-foreground">
+        <tr>
+          <th className="px-3 py-1 font-medium">Branch (this month)</th>
+          <th className="px-3 py-1 font-medium">Compute</th>
+          <th className="px-3 py-1 font-medium">Storage</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((b) => (
+          <tr key={b.branchId} className="border-t border-border">
+            <td className="truncate px-3 py-1.5 font-mono text-foreground">
+              {b.name}
+              {b.preview && (
+                <span className="ml-1.5 rounded-full bg-os-amber/15 px-1.5 py-0.5 font-sans text-[10px] font-semibold text-os-amber">
+                  preview
+                </span>
+              )}
+            </td>
+            <td className="px-3 py-1.5 text-muted-foreground">{metricValue("compute_unit_seconds", b.computeSeconds)}</td>
+            <td className="px-3 py-1.5 text-muted-foreground">{fmtBytes(b.storageByteMonths)}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
 }
 
 export function Sparkline({ points }: { points: { at: string; value: number }[] }) {
@@ -105,7 +234,6 @@ export function UsageStrip({ usage }: { usage: UsageSeries[] }) {
   return (
     <div className="flex flex-wrap gap-4">
       {usage.map((u) => {
-        const latest = u.points[u.points.length - 1];
         return (
           <div key={u.metric} className="flex flex-col gap-0.5">
             <span className="text-[11px] uppercase tracking-wide text-muted-foreground">
@@ -114,7 +242,7 @@ export function UsageStrip({ usage }: { usage: UsageSeries[] }) {
             <div className="flex items-center gap-2">
               <Sparkline points={u.points} />
               <span className="text-xs font-medium text-foreground">
-                {latest ? metricValue(u.metric, latest.value) : "—"}
+                {u.current != null ? metricValue(u.metric, u.current) : "—"}
               </span>
             </div>
           </div>

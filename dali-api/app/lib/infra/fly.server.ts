@@ -135,16 +135,31 @@ export async function getFlyEgressByApp(
   token: string,
   orgSlug: string,
 ): Promise<{ appName: string; egressBytes: number }[]> {
-  const query = `sum by (app) (increase(fly_edge_data_out[24h]))`;
+  const rows = await flyPromByApp(token, orgSlug, `sum by (app) (increase(fly_edge_data_out[24h]))`);
+  return rows.map((r) => ({ appName: r.appName, egressBytes: r.value }));
+}
+
+type PromVector = { data?: { result?: { metric?: { app?: string }; value?: [number, string] }[] } };
+
+async function flyPromByApp(token: string, orgSlug: string, query: string): Promise<{ appName: string; value: number }[]> {
   const url = `${FLY_PROM}/${encodeURIComponent(orgSlug)}/api/v1/query?query=${encodeURIComponent(query)}`;
   const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
   if (!res.ok) throw new FlyApiError(res.status, `Fly Prometheus ${res.status}`);
-  const json = (await res.json()) as {
-    data?: { result?: { metric?: { app?: string }; value?: [number, string] }[] };
-  };
+  const json = (await res.json()) as PromVector;
   return (json.data?.result ?? [])
-    .map((r) => ({ appName: r.metric?.app ?? "", egressBytes: Number(r.value?.[1] ?? 0) }))
+    .map((r) => ({ appName: r.metric?.app ?? "", value: Number(r.value?.[1] ?? 0) }))
     .filter((r) => r.appName);
+}
+
+// Started-machine hours per app over the last 24h, which is what Fly bills by
+// the second. fly_instance_up only exists while a machine runs, so counting
+// one-minute steps where it reads 1 gives minutes running.
+export async function getFlyMachineHoursByApp(
+  token: string,
+  orgSlug: string,
+): Promise<{ appName: string; machineHours: number }[]> {
+  const rows = await flyPromByApp(token, orgSlug, `sum by (app) (sum_over_time((fly_instance_up == bool 1)[24h:1m])) / 60`);
+  return rows.map((r) => ({ appName: r.appName, machineHours: r.value }));
 }
 
 // ── Writes ───────────────────────────────────────────────────────────────────

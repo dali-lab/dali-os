@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("~/lib/db", () => ({ prisma: {} }));
 
-import { buildProjectFleet } from "../dashboard.server";
+import { buildProjectFleet, knownNeonOrgs } from "../dashboard.server";
 import type { InfraProjectInfo } from "../project-infra.server";
 import type { NeonInventory } from "../types";
 
@@ -76,7 +76,9 @@ describe("buildProjectFleet", () => {
       neonSample("p1", "np-a", 3600),
       neonSample("p1", "np-b", 7200),
     ]);
-    expect(fleet.usage).toEqual([{ metric: "compute_unit_seconds", points: [{ at: at.toISOString(), value: 3600 }] }]);
+    expect(fleet.usage).toEqual([
+      { metric: "compute_unit_seconds", points: [{ at: at.toISOString(), value: 3600 }], current: 3600 },
+    ]);
   });
 
   it("ignores another project's usage rows", () => {
@@ -96,5 +98,33 @@ describe("buildProjectFleet", () => {
     expect(fleet.neon).toBeNull();
     expect(fleet.neonOrgProjects).toEqual([]);
     expect(fleet.neonFetchedAt).toBeNull();
+  });
+});
+
+describe("knownNeonOrgs", () => {
+  const inv = (orgId: string, ids: string[]): NeonInventory => ({
+    orgId,
+    projects: ids.map((id) => ({ ...org.projects[0], id, name: id })),
+  });
+
+  it("lists each configured org once, sorted, with its newest sweep's databases", () => {
+    expect(
+      knownNeonOrgs(["org-b", "org-a", "org-b"], [inv("org-a", ["new"]), inv("org-a", ["old"]), inv("org-b", ["x"])]),
+    ).toEqual([
+      { orgId: "org-a", projects: [{ id: "new", name: "new" }] },
+      { orgId: "org-b", projects: [{ id: "x", name: "x" }] },
+    ]);
+  });
+
+  it("lists a configured org with no sweep yet as empty", () => {
+    expect(knownNeonOrgs(["org-a"], [])).toEqual([{ orgId: "org-a", projects: [] }]);
+  });
+
+  it("leaves out swept orgs no project uses anymore", () => {
+    expect(knownNeonOrgs([], [inv("org-a", ["x"])])).toEqual([]);
+  });
+
+  it("skips empty snapshot payloads", () => {
+    expect(knownNeonOrgs(["org-a"], [null])).toEqual([{ orgId: "org-a", projects: [] }]);
   });
 });

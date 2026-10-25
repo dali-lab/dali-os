@@ -11,16 +11,22 @@ import {
   protectedFlyApps,
   protectedNeonProjectIds,
 } from "./guard.server";
+import { monthStart } from "./neon-cost";
 import {
+  branchUsage,
   isSampleInScope,
+  neonCostSummary,
   neonProjectOptions,
+  projectUsage,
   scopeNeonInventory,
-  usageSeries,
+  type NeonBranchUsage,
+  type NeonCostSummary,
   type ScopedSample,
+  type UsageSeries,
 } from "./neon-scope";
 import type { FlyInventory, NeonInventory } from "./types";
 
-export type UsageSeries = { metric: string; points: { at: string; value: number }[] };
+export type { UsageSeries };
 
 export type ProjectFleet = {
   projectId: string;
@@ -35,6 +41,11 @@ export type ProjectFleet = {
   neon: NeonInventory | null;
   /** Every database in the swept Neon org, for picking which belong here. */
   neonOrgProjects: { id: string; name: string }[];
+  neonPlan: string | null;
+  /** Estimated dollars; null when the plan's rates are unknown. */
+  neonCost: NeonCostSummary | null;
+  /** This month's per-branch usage, keyed by Neon project id. */
+  neonBranchUsage: Record<string, NeonBranchUsage[]>;
   flyFetchedAt: string | null;
   neonFetchedAt: string | null;
   usage: UsageSeries[];
@@ -67,13 +78,16 @@ export function buildProjectFleet(
   info: InfraProjectInfo,
   latest: Map<string, { payload: unknown; fetchedAt: Date }>,
   samples: Sample[],
+  now = new Date(),
 ): ProjectFleet {
   const fly = latest.get(`${info.projectId}:fly`);
   const neon = latest.get(`${info.projectId}:neon`);
   const orgInventory = (neon?.payload as NeonInventory | undefined) ?? null;
-  const usage = usageSeries(
-    samples.filter((s) => s.projectId === info.projectId && isSampleInScope(s, info.neonProjectIds)),
+  const scoped = scopeNeonInventory(orgInventory, info.neonProjectIds);
+  const mine = samples.filter(
+    (s) => s.projectId === info.projectId && isSampleInScope(s, info.neonProjectIds),
   );
+  const neonPlan = orgInventory?.plan ?? null;
   return {
     projectId: info.projectId,
     name: info.name,
@@ -84,11 +98,27 @@ export function buildProjectFleet(
     hasFlyReadToken: info.hasFlyReadToken,
     hasFlyWriteToken: info.hasFlyWriteToken,
     fly: (fly?.payload as FlyInventory | undefined) ?? null,
-    neon: scopeNeonInventory(orgInventory, info.neonProjectIds),
+    neon: scoped,
     neonOrgProjects: neonProjectOptions(orgInventory),
+    neonPlan,
+    neonCost: neonCostSummary(mine, neonPlan, now),
+    neonBranchUsage: branchUsage(mine, scoped, now),
     flyFetchedAt: fly?.fetchedAt.toISOString() ?? null,
     neonFetchedAt: neon?.fetchedAt.toISOString() ?? null,
-    usage,
+    usage: projectUsage(mine, now),
+  };
+}
+
+const FLY_SAMPLE_DAYS = 3;
+
+// Neon rows back to last month's start (estimates + daily sparklines); Fly rows
+// are hourly per app, so a few days covers the 40-point sparkline.
+function recentSamplesWhere(now: Date) {
+  return {
+    OR: [
+      { provider: "neon", at: { gte: monthStart(now, -1) } },
+      { provider: "fly", at: { gte: new Date(now.getTime() - FLY_SAMPLE_DAYS * 86_400_000) } },
+    ],
   };
 }
 
@@ -115,7 +145,7 @@ export async function loadFleet(): Promise<{
   const [registry, snapshots, samples] = await Promise.all([
     listInfraProjects(),
     prisma.infraSnapshot.findMany({ orderBy: { fetchedAt: "desc" } }),
-    prisma.infraUsageSample.findMany({ orderBy: { at: "asc" }, take: 5000 }),
+    prisma.infraUsageSample.findMany({ where: recentSamplesWhere(new Date()), orderBy: { at: "asc" } }),
   ]);
 
   const { latest, lastSweep } = latestByProviderKey(snapshots);
@@ -136,7 +166,10 @@ export async function loadProjectInfra(projectId: string): Promise<ProjectFleet 
   if (!info) return null;
   const [snapshots, samples] = await Promise.all([
     prisma.infraSnapshot.findMany({ where: { projectId }, orderBy: { fetchedAt: "desc" } }),
-    prisma.infraUsageSample.findMany({ where: { projectId }, orderBy: { at: "asc" }, take: 2000 }),
+    prisma.infraUsageSample.findMany({
+      where: { projectId, ...recentSamplesWhere(new Date()) },
+      orderBy: { at: "asc" },
+    }),
   ]);
   const { latest } = latestByProviderKey(snapshots);
   return buildProjectFleet(info, latest, samples);
@@ -210,4 +243,37 @@ export function buildCleanup(projects: ProjectFleet[], now = Date.now()): Cleanu
     if (a.protected !== b.protected) return a.protected ? 1 : -1;
     return (b.idleDays ?? b.ageDays ?? 0) - (a.idleDays ?? a.ageDays ?? 0);
   });
+}
+
+export type KnownNeonOrg = { orgId: string; projects: { id: string; name: string }[] };
+
+// Neon orgs already configured on some project, each with the databases from
+// its latest sweep, so the config editor can reuse an org without retyping it
+// and list its databases before this project's first sweep.
+export async function listKnownNeonOrgs(): Promise<KnownNeonOrg[]> {
+  const [configured, snapshots] = await Promise.all([
+    prisma.project.findMany({
+      where: { neonOrgId: { not: null } },
+      select: { neonOrgId: true },
+      distinct: ["neonOrgId"],
+    }),
+    prisma.infraSnapshot.findMany({
+      where: { provider: "neon" },
+      orderBy: { fetchedAt: "desc" },
+      select: { payload: true },
+    }),
+  ]);
+  return knownNeonOrgs(
+    configured.map((c) => c.neonOrgId!),
+    snapshots.map((s) => s.payload as NeonInventory | null),
+  );
+}
+
+export function knownNeonOrgs(orgIds: string[], newestFirst: (NeonInventory | null)[]): KnownNeonOrg[] {
+  const latest = new Map<string, NeonInventory>();
+  for (const inv of newestFirst) if (inv?.orgId && !latest.has(inv.orgId)) latest.set(inv.orgId, inv);
+  return [...new Set(orgIds)].sort().map((orgId) => ({
+    orgId,
+    projects: neonProjectOptions(latest.get(orgId) ?? null),
+  }));
 }

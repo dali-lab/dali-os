@@ -52,7 +52,8 @@ import { buildProjectCalendar } from "~/projects/lib/project-calendar.server";
 import { MonthCalendarPanel } from "~/components/MonthCalendarPanel";
 import { prisma } from "~/lib/db";
 import { logAuditEvent } from "~/lib/audit";
-import { loadProjectInfra } from "~/lib/infra/dashboard.server";
+import { listKnownNeonOrgs, loadProjectInfra } from "~/lib/infra/dashboard.server";
+import { refreshProjectInfra } from "~/jobs/infra-snapshot.server";
 import { buildInfraConfigUpdate } from "~/lib/infra/project-infra.server";
 import { listProjectInfraRequests } from "~/lib/infra/requests.server";
 import { ProjectInfraSection } from "~/projects/components/ProjectInfraSection";
@@ -1133,6 +1134,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     projectInfra,
     infraConfigRow,
     infraRequests,
+    knownNeonOrgs,
     aiLineEnabled,
     chartStrings,
   ] = await Promise.all([
@@ -1174,6 +1176,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       },
     }),
     canEdit ? listProjectInfraRequests(params.id) : Promise.resolve([]),
+    canEdit ? listKnownNeonOrgs() : Promise.resolve([]),
     // Progress tab's AI-line flag — independent of the status facts below.
     (async () =>
       isAiEnabled() &&
@@ -1194,6 +1197,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     },
     view: projectInfra,
     requests: infraRequests,
+    knownNeonOrgs,
   };
   // ── Progress-tab status bar: deterministic work-status facts + the cached
   // AI summary's freshness. Facts come from the same task rows the board
@@ -1462,6 +1466,7 @@ export async function action({ request, params }: Route.ActionArgs) {
       flyWriteToken: ((form.get("flyWriteToken") as string | null) ?? "") || undefined,
     });
     await prisma.project.update({ where: { id: params.id }, data });
+    await refreshProjectInfra(params.id);
     await logAuditEvent({
       action: "infra.config",
       userId: auth.user.sub,
@@ -3799,6 +3804,7 @@ function OverviewTab({
         config={infra.config}
         view={infra.view}
         requests={infra.requests}
+        knownNeonOrgs={infra.knownNeonOrgs}
       />
 
       {/* Team — read-only summary, separate from the editable details. */}

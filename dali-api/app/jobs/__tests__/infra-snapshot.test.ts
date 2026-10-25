@@ -1,63 +1,86 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { prismaMock, listCreds, neonMock } = vi.hoisted(() => ({
+const { prismaMock, listCreds, getCreds, neonMock, flyMock } = vi.hoisted(() => ({
   prismaMock: {
-    infraSnapshot: { create: vi.fn(), deleteMany: vi.fn() },
+    infraSnapshot: { create: vi.fn(), deleteMany: vi.fn(), findMany: vi.fn() },
     infraUsageSample: { upsert: vi.fn() },
   },
   listCreds: vi.fn(),
+  getCreds: vi.fn(),
   neonMock: { getNeonInventory: vi.fn(), getConsumption: vi.fn(), neonConfigured: vi.fn() },
+  flyMock: { getFlyInventory: vi.fn(), getFlyEgressByApp: vi.fn(), getFlyMachineHoursByApp: vi.fn() },
 }));
 
 vi.mock("~/lib/db", () => ({ prisma: prismaMock }));
-vi.mock("~/lib/infra/project-infra.server", () => ({ listEnabledInfraProjectCreds: listCreds }));
-vi.mock("~/lib/infra/fly.server", () => ({ getFlyInventory: vi.fn(), getFlyEgressByApp: vi.fn() }));
+vi.mock("~/lib/infra/project-infra.server", () => ({
+  listEnabledInfraProjectCreds: listCreds,
+  getProjectInfraCreds: getCreds,
+}));
+vi.mock("~/lib/infra/fly.server", () => flyMock);
 vi.mock("~/lib/infra/neon.server", () => neonMock);
 
-import { runInfraSnapshot } from "../infra-snapshot.server";
+import { adoptNeonOrgSnapshot, refreshProjectInfra, runInfraSnapshot } from "../infra-snapshot.server";
 
-const ctx = { now: new Date("2026-10-25T12:00:00Z"), lastSuccessAt: null, settings: {} };
+const now = new Date("2026-10-25T12:00:00Z");
+const ctx = { now, lastSuccessAt: new Date("2026-10-25T11:00:00Z"), settings: {} };
 
-const creds = (projectId: string, neonProjectIds: string[], neonOrgId = "org-dali-1") => ({
+const creds = (projectId: string, neonProjectIds: string[], neonOrgId: string | null = "org-dali-1") => ({
   projectId,
   name: projectId,
-  flyOrgSlug: null,
+  flyOrgSlug: null as string | null,
   neonOrgId,
   neonProjectIds,
-  flyReadToken: null,
+  flyReadToken: null as string | null,
   flyWriteToken: null,
   infraEnabled: true,
 });
 
 const inventory = (orgId: string) => ({
   orgId,
+  plan: "launch",
   projects: [
-    { id: "np-a", name: "Alpha" },
-    { id: "np-b", name: "Beta" },
+    { id: "np-a", name: "Alpha", branches: [{ id: "br-main", name: "main" }, { id: "br-pr", name: "preview-pr-7" }] },
+    { id: "np-b", name: "Beta", branches: [] },
   ],
 });
 
-const usage = (projectId: string) => ({
+type Opts = { scope: string; granularity: string; from: string; projectIds?: string[] };
+const sample = (projectId: string, at: string, branchId: string | null = null) => ({
   projectId,
+  branchId,
   metric: "compute_unit_seconds",
   value: 3600,
-  periodStart: "2026-10-01T00:00:00Z",
+  at,
+  plan: "launch",
 });
+
+function consumption(opts: Opts) {
+  if (opts.scope === "branches") return [sample("np-a", "2026-10-01T00:00:00Z", "br-pr")];
+  if (opts.granularity === "monthly") return [sample("np-a", "2026-10-01T00:00:00Z"), sample("np-b", "2026-10-01T00:00:00Z")];
+  return [sample("np-a", "2026-10-24T00:00:00Z"), sample("np-b", "2026-10-24T00:00:00Z")];
+}
+
+const upserts = () => prismaMock.infraUsageSample.upsert.mock.calls.map((c) => c[0]);
+const calls = (): Opts[] => neonMock.getConsumption.mock.calls.map((c) => c[0]);
 
 beforeEach(() => {
   vi.clearAllMocks();
   prismaMock.infraSnapshot.create.mockImplementation(async () => ({ id: "snap" }));
   neonMock.neonConfigured.mockReturnValue(true);
   neonMock.getNeonInventory.mockImplementation(async (orgId: string) => inventory(orgId));
-  neonMock.getConsumption.mockResolvedValue([usage("np-a"), usage("np-b")]);
+  neonMock.getConsumption.mockImplementation(async (opts: Opts) => consumption(opts));
 });
 
 describe("runInfraSnapshot Neon", () => {
-  it("fetches a shared org once per run", async () => {
+  it("reads each shared org once per run: daily, monthly, and branch usage", async () => {
     listCreds.mockResolvedValue([creds("p1", ["np-a"]), creds("p2", ["np-b"])]);
     await runInfraSnapshot(ctx);
     expect(neonMock.getNeonInventory).toHaveBeenCalledTimes(1);
-    expect(neonMock.getConsumption).toHaveBeenCalledTimes(1);
+    expect(calls().map((c) => `${c.scope}/${c.granularity}`)).toEqual([
+      "projects/daily",
+      "projects/monthly",
+      "branches/monthly",
+    ]);
   });
 
   it("fetches each distinct org", async () => {
@@ -69,32 +92,165 @@ describe("runInfraSnapshot Neon", () => {
   it("stores the whole org inventory on each project's snapshot", async () => {
     listCreds.mockResolvedValue([creds("p1", ["np-a"]), creds("p2", [])]);
     await runInfraSnapshot(ctx);
-    const payloads = prismaMock.infraSnapshot.create.mock.calls.map((c) => c[0].data);
-    expect(payloads).toEqual([
+    expect(prismaMock.infraSnapshot.create.mock.calls.map((c) => c[0].data)).toEqual([
       { projectId: "p1", provider: "neon", payload: inventory("org-dali-1") },
       { projectId: "p2", provider: "neon", payload: inventory("org-dali-1") },
     ]);
   });
 
-  it("writes usage only for each project's linked databases", async () => {
-    listCreds.mockResolvedValue([creds("p1", ["np-a"]), creds("p2", ["np-b"]), creds("p3", [])]);
+  it("writes daily, monthly, and branch rows for linked databases only", async () => {
+    listCreds.mockResolvedValue([creds("p1", ["np-a"]), creds("p3", [])]);
     await runInfraSnapshot(ctx);
-    const rows = prismaMock.infraUsageSample.upsert.mock.calls.map((c) => [c[0].create.projectId, c[0].create.scopeId]);
-    expect(rows).toEqual([
-      ["p1", "np-a"],
-      ["p2", "np-b"],
+    expect(upserts().map((u) => [u.create.projectId, u.create.scopeType, u.create.scopeId, u.create.at.toISOString()])).toEqual([
+      ["p1", "neon-project", "np-a", "2026-10-24T00:00:00.000Z"],
+      ["p1", "neon-project-month", "np-a", "2026-10-01T00:00:00.000Z"],
+      ["p1", "neon-branch-month", "np-a:br-pr", "2026-10-01T00:00:00.000Z"],
     ]);
+  });
+
+  it("names branch rows after the database and branch", async () => {
+    listCreds.mockResolvedValue([creds("p1", ["np-a"])]);
+    await runInfraSnapshot(ctx);
+    expect(upserts().find((u) => u.create.scopeType === "neon-branch-month").create.scopeName).toBe("Alpha / preview-pr-7");
   });
 
   it("moves an existing usage row to the project now linked to it", async () => {
     listCreds.mockResolvedValue([creds("p2", ["np-a"])]);
     await runInfraSnapshot(ctx);
-    expect(prismaMock.infraUsageSample.upsert.mock.calls[0][0].update).toMatchObject({ projectId: "p2", value: 3600 });
+    expect(upserts()[0].update).toMatchObject({ projectId: "p2", value: 3600 });
   });
 
-  it("names usage rows from the org inventory", async () => {
-    listCreds.mockResolvedValue([creds("p1", ["np-b"])]);
+  it("reads branch usage for the org's databases from the start of this month", async () => {
+    listCreds.mockResolvedValue([creds("p1", ["np-a"])]);
     await runInfraSnapshot(ctx);
-    expect(prismaMock.infraUsageSample.upsert.mock.calls[0][0].create.scopeName).toBe("Beta");
+    const branches = calls().find((c) => c.scope === "branches")!;
+    expect(branches.projectIds).toEqual(["np-a", "np-b"]);
+    expect(branches.from).toBe("2026-10-01T00:00:00.000Z");
+  });
+
+  it("re-reads only the last two days on later runs the same day", async () => {
+    listCreds.mockResolvedValue([creds("p1", ["np-a"])]);
+    await runInfraSnapshot(ctx);
+    expect(calls().find((c) => c.granularity === "daily")!.from).toBe("2026-10-24T00:00:00.000Z");
+  });
+
+  it("re-reads from last month's start on the first run of a day", async () => {
+    listCreds.mockResolvedValue([creds("p1", ["np-a"])]);
+    await runInfraSnapshot({ ...ctx, lastSuccessAt: new Date("2026-10-24T23:00:00Z") });
+    expect(calls().find((c) => c.granularity === "daily")!.from).toBe("2026-09-01T00:00:00.000Z");
+  });
+
+  it("caps the daily window at Neon's 60 days", async () => {
+    listCreds.mockResolvedValue([creds("p1", ["np-a"])]);
+    await runInfraSnapshot({ now: new Date("2027-01-31T12:00:00Z"), lastSuccessAt: null, settings: {} });
+    expect(calls().find((c) => c.granularity === "daily")!.from).toBe("2026-12-03T00:00:00.000Z");
+  });
+
+  it("keeps the other series when one consumption read fails", async () => {
+    listCreds.mockResolvedValue([creds("p1", ["np-a"])]);
+    neonMock.getConsumption.mockImplementation(async (opts: Opts) => {
+      if (opts.granularity === "daily") throw new Error("429");
+      return consumption(opts);
+    });
+    await runInfraSnapshot(ctx);
+    expect(upserts().map((u) => u.create.scopeType)).toEqual(["neon-project-month", "neon-branch-month"]);
+  });
+});
+
+describe("runInfraSnapshot Fly", () => {
+  const flyCreds = () => ({ ...creds("p1", [], null), flyOrgSlug: "dali", flyReadToken: "tok" });
+
+  beforeEach(() => {
+    flyMock.getFlyInventory.mockResolvedValue({ orgSlug: "dali", apps: [] });
+    flyMock.getFlyEgressByApp.mockResolvedValue([]);
+  });
+
+  it("records machine hours per app", async () => {
+    listCreds.mockResolvedValue([flyCreds()]);
+    flyMock.getFlyMachineHoursByApp.mockResolvedValue([{ appName: "web", machineHours: 48 }]);
+    await runInfraSnapshot(ctx);
+    expect(upserts()[0].create).toMatchObject({
+      projectId: "p1",
+      provider: "fly",
+      scopeType: "fly-app",
+      scopeId: "web",
+      metric: "machine_hours_24h",
+      value: 48,
+      at: now,
+    });
+  });
+
+  it("still records egress when machine hours fail", async () => {
+    listCreds.mockResolvedValue([flyCreds()]);
+    flyMock.getFlyEgressByApp.mockResolvedValue([{ appName: "web", egressBytes: 10 }]);
+    flyMock.getFlyMachineHoursByApp.mockRejectedValue(new Error("403"));
+    await runInfraSnapshot(ctx);
+    expect(upserts().map((u) => u.create.metric)).toEqual(["egress_bytes"]);
+  });
+});
+
+describe("adoptNeonOrgSnapshot", () => {
+  const snap = (projectId: string, orgId: string, tag = orgId) => ({ projectId, payload: { orgId, tag } });
+
+  it("copies the newest other project's sweep of the same org", async () => {
+    prismaMock.infraSnapshot.findMany.mockResolvedValue([snap("p2", "org-dali-1", "newest"), snap("p3", "org-dali-1", "older")]);
+    expect(await adoptNeonOrgSnapshot("p1", "org-dali-1")).toBe(true);
+    expect(prismaMock.infraSnapshot.create.mock.calls[0][0].data).toEqual({
+      projectId: "p1",
+      provider: "neon",
+      payload: { orgId: "org-dali-1", tag: "newest" },
+    });
+  });
+
+  it("keeps the project's own sweep when it is already for that org", async () => {
+    prismaMock.infraSnapshot.findMany.mockResolvedValue([snap("p2", "org-dali-1"), snap("p1", "org-dali-1")]);
+    expect(await adoptNeonOrgSnapshot("p1", "org-dali-1")).toBe(false);
+    expect(prismaMock.infraSnapshot.create).not.toHaveBeenCalled();
+  });
+
+  it("replaces the project's sweep of a different org", async () => {
+    prismaMock.infraSnapshot.findMany.mockResolvedValue([snap("p1", "org-old"), snap("p2", "org-dali-1")]);
+    expect(await adoptNeonOrgSnapshot("p1", "org-dali-1")).toBe(true);
+  });
+
+  it("does nothing for an org nobody has swept", async () => {
+    prismaMock.infraSnapshot.findMany.mockResolvedValue([snap("p2", "org-other")]);
+    expect(await adoptNeonOrgSnapshot("p1", "org-new")).toBe(false);
+    expect(prismaMock.infraSnapshot.create).not.toHaveBeenCalled();
+  });
+});
+
+describe("refreshProjectInfra", () => {
+  it("adopts the org's sweep, then sweeps the project with a full daily window", async () => {
+    getCreds.mockResolvedValue(creds("p1", ["np-a"]));
+    prismaMock.infraSnapshot.findMany.mockResolvedValue([
+      { projectId: "p2", payload: inventory("org-dali-1") },
+    ]);
+    await refreshProjectInfra("p1");
+    expect(prismaMock.infraSnapshot.create.mock.calls[0][0].data.projectId).toBe("p1");
+    await vi.waitFor(() => expect(neonMock.getNeonInventory).toHaveBeenCalledWith("org-dali-1"));
+    await vi.waitFor(() => expect(calls().some((c) => c.granularity === "daily")).toBe(true));
+    const daily = calls().find((c) => c.granularity === "daily")!;
+    expect(new Date(daily.from).getUTCDate()).toBe(1);
+  });
+
+  it("does nothing when the sweep is off", async () => {
+    getCreds.mockResolvedValue({ ...creds("p1", ["np-a"]), infraEnabled: false });
+    await refreshProjectInfra("p1");
+    expect(prismaMock.infraSnapshot.findMany).not.toHaveBeenCalled();
+    expect(neonMock.getNeonInventory).not.toHaveBeenCalled();
+  });
+
+  it("does nothing for an unknown project", async () => {
+    getCreds.mockResolvedValue(null);
+    await refreshProjectInfra("p404");
+    expect(neonMock.getNeonInventory).not.toHaveBeenCalled();
+  });
+
+  it("does not throw when the background sweep fails", async () => {
+    getCreds.mockResolvedValue(creds("p1", ["np-a"]));
+    prismaMock.infraSnapshot.findMany.mockResolvedValue([]);
+    neonMock.getNeonInventory.mockRejectedValue(new Error("Neon down"));
+    await expect(refreshProjectInfra("p1")).resolves.toBeUndefined();
   });
 });
