@@ -1,6 +1,6 @@
 import { cn } from "~/lib/cn";
 
-export type SegmentedOption<T extends string> = { value: T; label: string };
+export type SegmentedOption<T extends string> = { value: T; label: string; count?: number };
 
 /** A short either/or choice drawn as one pill with a thumb on the picked side. */
 export function Segmented<T extends string>({
@@ -52,6 +52,7 @@ export function Segmented<T extends string>({
             )}
           >
             {o.label}
+            {o.count != null && <span className="ml-1.5 tabular-nums opacity-60">{o.count}</span>}
           </button>
         );
       })}

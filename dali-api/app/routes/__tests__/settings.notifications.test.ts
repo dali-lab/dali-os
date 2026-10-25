@@ -6,6 +6,9 @@ vi.mock("~/lib/auth", async (importOriginal) => ({
   requireAuth: vi.fn(),
   isPartnerAccount: vi.fn(),
 }));
+vi.mock("~/lib/settings-page.server", () => ({
+  loadDigestSchedule: vi.fn(async () => ({ dailyHour: 9, weeklyHour: 9, weeklyWeekday: 1 })),
+}));
 
 import { prisma } from "~/lib/db";
 import { requireAuth, isPartnerAccount } from "~/lib/auth";
@@ -129,5 +132,31 @@ describe("settings.notifications action", () => {
     res = (await post({ "education.discussion:present": "1" })) as Response;
     expect(res.status).toBe(403);
     expect(mockPrisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  describe("digest-hour intent", () => {
+    it("stores a picked hour", async () => {
+      const res = await post({ intent: "digest-hour", hour: "18" });
+      expect(res).toEqual({ ok: true, error: null });
+      expect(mockPrisma.user.update).toHaveBeenCalledWith({
+        where: { id: "u1" },
+        data: { digestHourEt: 18 },
+      });
+      expect(mockPrisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it("stores null when the pick is the lab default, so admin changes follow", async () => {
+      await post({ intent: "digest-hour", hour: "9" });
+      expect(mockPrisma.user.update).toHaveBeenCalledWith({
+        where: { id: "u1" },
+        data: { digestHourEt: null },
+      });
+    });
+
+    it("rejects an hour that isn't offered", async () => {
+      const res = await post({ intent: "digest-hour", hour: "3" });
+      expect(res).toEqual({ ok: false, error: "Pick one of the listed times." });
+      expect(mockPrisma.user.update).not.toHaveBeenCalled();
+    });
   });
 });

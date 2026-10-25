@@ -37,7 +37,7 @@ import { useDialog } from "~/components/ui/dialog";
 import { useToast } from "~/components/ui/toast";
 import { cn } from "~/lib/cn";
 
-export const handle = coreHandle("release-notes");
+export const handle = coreHandle("communications");
 
 export const meta: Route.MetaFunction = () => [
   { title: "Release notes · Core · DALI OS" },

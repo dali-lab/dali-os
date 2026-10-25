@@ -1,73 +1,62 @@
 import { Form } from "react-router";
-import { Link } from "react-router";
+import { Sparkles } from "lucide-react";
 import { useConfirmSubmit } from "~/components/ui/dialog";
-import { Tooltip } from "~/components/ui/floating";
+import { Pill } from "~/hiring/components/cycle-setup/SetupCard";
 import type { GrantRowDTO } from "~/lib/settings-page.server";
+import {
+  SettingsEmptyRow,
+  SettingsIconTile,
+  settingsDangerBtn,
+  settingsList,
+} from "~/components/settings/SettingsSection";
 
 const CONNECTED_APPS_ACTION = "/settings/connected-apps";
+
+function day(iso: string) {
+  return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
 
 export function ConnectedAppsSettingsBlock({ grants }: { grants: GrantRowDTO[] }) {
   const confirmSubmit = useConfirmSubmit();
   return (
-    <div className="flex flex-col gap-4">
-      <p className="text-sm text-muted-foreground">
-        Apps you've authorized to access DALI OS on your behalf.{" "}
-        <Link to="/help/mcp" className="text-os-accent hover:underline">
-          How to connect Claude to DALI OS
-        </Link>
-        .
-      </p>
-      {grants.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No connected apps.</p>
-      ) : (
-        <ul className="space-y-3">
-          {grants.map((g) => (
-            <li key={g.id} className="rounded border border-border bg-card p-4">
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <h4 className="font-medium">{g.clientName}</h4>
-                  <div className="mt-1 flex flex-wrap gap-1">
-                    {g.scopes.map((s) => (
-                      <span
-                        key={s}
-                        className="rounded bg-muted px-2 py-0.5 font-mono text-xs text-foreground"
-                      >
-                        {s}
-                      </span>
-                    ))}
-                  </div>
-                  <p className="mt-2 text-xs text-muted-foreground">
-                    Authorized {new Date(g.createdAt).toLocaleDateString()}
-                    {g.lastUsedAt ? (
-                      <> · Last used {new Date(g.lastUsedAt).toLocaleDateString()}</>
-                    ) : null}
-                  </p>
-                </div>
-                <Form
-                  method="post"
-                  action={CONNECTED_APPS_ACTION}
-                  onSubmit={confirmSubmit({
-                    title: `Revoke access for ${g.clientName}?`,
-                    description: `${g.clientName} will immediately lose access to your DALI OS account. You can re-authorize it at any time.`,
-                    confirmLabel: "Revoke",
-                    tone: "destructive",
-                  })}
-                >
-                  <input type="hidden" name="grantId" value={g.id} />
-                  <Tooltip content={`Revoke ${g.clientName}'s access to your account`}>
-                    <button
-                      type="submit"
-                      className="rounded border border-destructive/40 px-3 py-1 text-sm text-destructive hover:bg-destructive/10"
-                    >
-                      Revoke
-                    </button>
-                  </Tooltip>
-                </Form>
+    <ul className={settingsList}>
+      {grants.map((g) => (
+        <li key={g.id} className="flex items-start gap-4 px-6 py-4">
+          <SettingsIconTile accent>
+            <Sparkles className="h-4 w-4" />
+          </SettingsIconTile>
+          <div className="min-w-0 flex-1">
+            <p className="font-semibold text-foreground">{g.clientName}</p>
+            {g.scopes.length > 0 && (
+              <div className="mt-1.5 flex flex-wrap gap-1.5">
+                {g.scopes.map((s) => (
+                  <Pill key={s}>{s}</Pill>
+                ))}
               </div>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
+            )}
+            <p className="mt-2 text-xs text-os-muted">
+              Authorized {day(g.createdAt)}
+              {g.lastUsedAt && <> · Last used {day(g.lastUsedAt)}</>}
+            </p>
+          </div>
+          <Form
+            method="post"
+            action={CONNECTED_APPS_ACTION}
+            onSubmit={confirmSubmit({
+              title: `Revoke ${g.clientName}?`,
+              description: `${g.clientName} loses access to DALI OS right away and is signed out. You can authorize it again any time.`,
+              confirmLabel: "Revoke access",
+              tone: "destructive",
+            })}
+          >
+            <input type="hidden" name="grantId" value={g.id} />
+            <button type="submit" className={settingsDangerBtn}>
+              Revoke
+            </button>
+          </Form>
+        </li>
+      ))}
+      {grants.length === 0 && <SettingsEmptyRow>No apps have access.</SettingsEmptyRow>}
+    </ul>
   );
 }

@@ -1,172 +1,140 @@
-// Settings → Calendar — thin pointer.
-//
-// Full calendar management (per-calendar visibility, availability toggles,
-// working hours, classes, timesheet mirror) now lives on the Calendar page
-// via the consolidated CalendarsPanel.  This settings block is kept so the
-// Settings tab keeps a reachable entry point and the Google-account connect
-// flow is never stranded (the OAuth redirect loop requires a top-level page
-// load, not an iframe, so we keep the "Add Google account" button here too).
-
 import { useState } from "react";
-import { Link, useFetcher } from "react-router";
-import { CalendarDays, ChevronDown, ChevronRight, ExternalLink, Plus, Trash2 } from "lucide-react";
+import { useFetcher } from "react-router";
+import { AlertTriangle, ChevronDown, Plus } from "lucide-react";
 import type { CalendarLinkDTO } from "~/lib/settings-page.server";
+import { cn } from "~/lib/cn";
 import { useConfirmSubmit } from "~/components/ui/dialog";
-import { Tooltip } from "~/components/ui/floating";
+import { useOsChrome } from "~/components/os-chrome";
+import { Pill } from "~/hiring/components/cycle-setup/SetupCard";
 import { pendingForm, useFetcherErrorToast } from "~/calendar/lib/fetcher-pending";
-import { SyncErrorNotice } from "~/calendar/components/SyncErrorNotice";
+import { CALENDAR_CONNECT_URL, describeCalendarSyncError } from "~/calendar/lib/sync-error";
+import {
+  SettingsEmptyRow,
+  settingsDangerBtn,
+  settingsList,
+} from "~/components/settings/SettingsSection";
 
 const CALENDAR_ACTION = "/settings/calendar";
 
-export function CalendarSettingsBlock({
-  calendarLinks,
-}: {
-  calendarLinks: CalendarLinkDTO[];
-}) {
+/** The section's "+ Google account" control. Google's sign-in can't render in
+ *  the workspace iframe, so it opens in the top window. */
+export function AddGoogleAccountButton() {
   return (
-    <div className="flex flex-col gap-4">
-      {/* ── Pointer notice ──────────────────────────────────────────── */}
-      <div className="rounded-md border border-border bg-muted/30 px-4 py-3 text-sm text-foreground">
-        <p className="mb-2 font-medium">Calendar management moved</p>
-        <p className="mb-3 text-muted-foreground text-sm">
-          Working hours, per-calendar visibility, availability settings, classes, and the Google
-          Timesheet mirror are now on the{" "}
-          <Link
-            to="/calendar"
-            className="inline-flex items-center gap-1 font-medium text-os-accent hover:underline"
-          >
-            Calendar page
-            <ExternalLink className="h-3 w-3" />
-          </Link>{" "}
-          — open the{" "}
-          <span className="font-semibold">Calendars</span> panel from the toolbar there.
-        </p>
-        <a
-          href="/oauth/calendar/google/start"
-          target="_top"
-          rel="noopener"
-          className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-3 py-1.5 text-xs font-semibold hover:bg-muted"
-        >
-          <Plus className="h-3.5 w-3.5" /> Add Google account
-        </a>
-      </div>
-
-      {/* ── Linked accounts (read-only list + disconnect) ──────────── */}
-      {calendarLinks.length > 0 && (
-        <div className="flex flex-col gap-3">
-          <h3 className="inline-flex items-center gap-2 text-sm font-semibold text-foreground">
-            <CalendarDays className="h-4 w-4" /> Linked accounts
-          </h3>
-          <p className="text-xs text-muted-foreground">
-            Disconnect an account here; connect new ones with the button above.
-          </p>
-          {calendarLinks.map((l) => (
-            <LinkedAccountRow key={l.id} link={l} />
-          ))}
-        </div>
-      )}
-
-      {calendarLinks.length === 0 && (
-        <div className="rounded-md border border-border bg-card p-4 text-sm text-muted-foreground">
-          No external calendars connected. Click <em>Add Google account</em> above to link one.
-        </div>
-      )}
-    </div>
+    <a href={CALENDAR_CONNECT_URL} target="_top" rel="noopener" className="os-add-btn">
+      <Plus className="h-4 w-4" strokeWidth={3} aria-hidden /> Google account
+    </a>
   );
 }
 
-// Collapsed by default — users don't need per-sub-calendar toggles here any
-// more (those live in CalendarsPanel on the Calendar page).
+export function CalendarSettingsBlock({ calendarLinks }: { calendarLinks: CalendarLinkDTO[] }) {
+  return (
+    <ul className={settingsList}>
+      {calendarLinks.map((l) => (
+        <LinkedAccountRow key={l.id} link={l} />
+      ))}
+      {calendarLinks.length === 0 && <SettingsEmptyRow>No calendar accounts connected.</SettingsEmptyRow>}
+    </ul>
+  );
+}
+
 function LinkedAccountRow({ link }: { link: CalendarLinkDTO }) {
+  const { actionBtn, actionBtnPrimary } = useOsChrome();
   const removeFetcher = useFetcher<{ error?: string } | null>();
   useFetcherErrorToast(removeFetcher);
   const confirmSubmit = useConfirmSubmit();
   const [open, setOpen] = useState(false);
-  const Chevron = open ? ChevronDown : ChevronRight;
   if (pendingForm(removeFetcher)) return null;
 
+  const syncError = describeCalendarSyncError(link.syncError);
+  const calendars = link.subCalendars ?? [];
+
   return (
-    <div className="overflow-hidden rounded-md border border-border border-l-4 border-l-os-accent bg-card">
-      <div className="flex items-center justify-between bg-os-accent/10 pr-3">
-        <button
-          type="button"
-          onClick={() => setOpen((o) => !o)}
-          aria-expanded={open}
-          className="flex min-w-0 flex-1 items-center gap-2 px-3 py-2 text-left"
-        >
-          <Chevron className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-          <GoogleIcon />
-          <span className="truncate text-sm font-semibold text-foreground">
+    <li>
+      <div className="flex flex-wrap items-center gap-4 px-6 py-4">
+        <ProviderMark provider={link.provider} />
+        <div className="min-w-0 flex-1">
+          <p className="flex flex-wrap items-center gap-2 font-semibold text-foreground">
             {link.displayName ?? link.externalEmail}
-          </span>
-          {link.syncError && (
-            <span className="shrink-0 text-[11px] text-destructive">Sync error</span>
-          )}
-        </button>
+            {syncError ? <Pill dot="warning">Not syncing</Pill> : <Pill dot="success">Syncing</Pill>}
+          </p>
+          <p className="truncate text-sm text-os-grey">{link.externalEmail}</p>
+        </div>
+        {syncError?.needsReconnect ? (
+          <a href={CALENDAR_CONNECT_URL} target="_top" rel="noopener" className={actionBtnPrimary}>
+            Reconnect
+          </a>
+        ) : (
+          calendars.length > 0 && (
+            <button
+              type="button"
+              className={actionBtn()}
+              aria-expanded={open}
+              onClick={() => setOpen((o) => !o)}
+            >
+              {calendars.length} {calendars.length === 1 ? "calendar" : "calendars"}
+              <ChevronDown
+                className={cn("h-4 w-4 transition-transform duration-200 ease-out", open && "rotate-180")}
+                aria-hidden
+              />
+            </button>
+          )
+        )}
         <removeFetcher.Form
           method="post"
           action={CALENDAR_ACTION}
           onSubmit={confirmSubmit({
             title: `Disconnect ${link.externalEmail}?`,
-            description:
-              "Removes its events, availability, and any calendars you create there.",
+            description: "Its calendars stop syncing and leave Calendar. You can reconnect any time.",
             tone: "destructive",
             confirmLabel: "Disconnect",
           })}
         >
           <input type="hidden" name="intent" value="remove-calendar-link" />
           <input type="hidden" name="linkId" value={link.id} />
-          <Tooltip content={`Disconnect ${link.externalEmail}`}>
-            <button
-              type="submit"
-              aria-label={`Disconnect ${link.externalEmail}`}
-              className="rounded-md p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-            </button>
-          </Tooltip>
+          <button type="submit" className={settingsDangerBtn}>
+            Disconnect
+          </button>
         </removeFetcher.Form>
       </div>
-
-      {open && (
-        <div className="flex flex-col gap-2 px-3 py-3">
-          <SyncErrorNotice syncError={link.syncError} />
-          <p className="text-xs text-muted-foreground">
-            Per-calendar visibility and availability settings are now on the{" "}
-            <Link to="/calendar" className="font-medium text-os-accent hover:underline">
-              Calendar page
-            </Link>
-            .
-          </p>
-          {link.subCalendars !== null && link.subCalendars.length > 0 && (
-            <ul className="mt-1 flex flex-col gap-1">
-              {link.subCalendars.map((cal) => (
-                <li key={cal.id} className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <span
-                    className="h-2 w-2 shrink-0 rounded-full"
-                    style={{ backgroundColor: cal.color ?? "#9ca3af" }}
-                  />
-                  {cal.summary}
-                  {cal.primary && (
-                    <span className="text-[10px] uppercase tracking-wide">Primary</span>
-                  )}
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
+      {syncError && (
+        <p
+          className="mx-6 mb-4 flex items-center gap-2 rounded-lg bg-os-amber/10 px-3 py-2 text-sm text-os-amber"
+          title={syncError.raw}
+        >
+          <AlertTriangle className="h-4 w-4 shrink-0" aria-hidden /> {syncError.message}
+        </p>
       )}
-    </div>
+      {open && (
+        <ul className="mx-6 mb-4 flex flex-wrap gap-2">
+          {calendars.map((c) => (
+            <li
+              key={c.id}
+              className="flex items-center gap-2 rounded-full bg-os-well px-3 py-1 text-sm text-os-grey"
+            >
+              <span
+                className="h-2 w-2 rounded-full"
+                style={{ background: c.color ?? "var(--color-os-grey)" }}
+                aria-hidden
+              />
+              {c.summary}
+            </li>
+          ))}
+        </ul>
+      )}
+    </li>
   );
 }
 
-function GoogleIcon() {
+function ProviderMark({ provider }: { provider: CalendarLinkDTO["provider"] }) {
   return (
-    <svg className="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none">
-      <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4" />
-      <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853" />
-      <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18A10.96 10.96 0 001 12c0 1.77.42 3.45 1.18 4.93l3.66-2.84z" fill="#FBBC05" />
-      <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335" />
-    </svg>
+    <span
+      className={cn(
+        "flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white font-bold",
+        provider === "Google" ? "text-[#4285F4]" : "text-[#0078D4]",
+      )}
+      aria-hidden
+    >
+      {provider === "Google" ? "G" : "O"}
+    </span>
   );
 }

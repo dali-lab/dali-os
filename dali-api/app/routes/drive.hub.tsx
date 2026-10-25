@@ -19,6 +19,7 @@ import {
   MoreHorizontal,
   X,
   Shapes,
+  Presentation,
   NotebookPen,
 } from "lucide-react";
 import { useState, useCallback, useEffect, useRef, useId, useMemo } from "react";
@@ -60,6 +61,7 @@ import { useDriveFileUpload } from "~/components/drive/useDriveFileUpload";
 import { DriveUploadInput } from "~/components/drive/DriveUploadInput";
 import type { UploadDestination, UploadTarget } from "~/components/drive/useDriveFileUpload";
 import { useDialog } from "~/components/ui/dialog";
+import { useFeatureFlag } from "~/components/FeatureFlags";
 import { useToast } from "~/components/ui/toast";
 import { driveNoticeMessage } from "~/lib/drive-notices";
 import { Menu, Select } from "~/components/ui/floating";
@@ -215,6 +217,7 @@ const TYPE_FILTERS: {
   { value: "doc", label: "Documents", icon: <FileText className="w-3.5 h-3.5" /> },
   { value: "notebook", label: "Notebooks", icon: <NotebookPen className="w-3.5 h-3.5" /> },
   { value: "whiteboard", label: "Whiteboards", icon: <Shapes className="w-3.5 h-3.5" /> },
+  { value: "slides", label: "Slide decks", icon: <Presentation className="w-3.5 h-3.5" /> },
   { value: "file", label: "Files", icon: <Paperclip className="w-3.5 h-3.5" /> },
   { value: "form", label: "Forms", icon: <ClipboardList className="w-3.5 h-3.5" />, requiresCap: "canViewForms" },
   { value: "agreement", label: "Agreements", icon: <FileSignature className="w-3.5 h-3.5" />, requiresCap: "canManageAgreements" },
@@ -496,6 +499,7 @@ type ScopeActions = {
   createDoc: () => Promise<void>;
   createFolder: () => Promise<void>;
   createWhiteboard: () => Promise<void>;
+  createSlides: () => Promise<void>;
   rename: (item: DriveItem) => Promise<void>;
   remove: (item: DriveItem) => Promise<void>;
   /** Delete request without the confirm/toast — used by bulk delete. */
@@ -580,7 +584,7 @@ export function makeScopeActions({
   const createParent = currentFolderId ?? rootParent;
 
   async function createPage(
-    pageKind: "FreeForm" | "Folder" | "Whiteboard",
+    pageKind: "FreeForm" | "Folder" | "Whiteboard" | "Slides",
     title: string,
     parentPageId: string | null,
   ): Promise<CreatedPage> {
@@ -682,6 +686,20 @@ export function makeScopeActions({
     const created = await createPage("Whiteboard", name.trim(), createParent);
     if ("id" in created) onCreated(created.id);
     else toast.error(created.error ?? "Couldn't create the whiteboard");
+  }
+
+  async function createSlides() {
+    const name = await dialog.prompt({
+      title: "New slide deck",
+      label: "Name",
+      defaultValue: "Untitled deck",
+      confirmLabel: "Create",
+      validate: (v) => (v.trim() ? null : "Enter a name"),
+    });
+    if (name === null) return;
+    const created = await createPage("Slides", name.trim(), createParent);
+    if ("id" in created) onCreated(created.id);
+    else toast.error(created.error ?? "Couldn't create the slide deck");
   }
 
   async function rename(item: DriveItem) {
@@ -838,7 +856,7 @@ export function makeScopeActions({
     return res.ok;
   }
 
-  return { createDoc, createFolder, createWhiteboard, rename, remove, deleteItem, performMove };
+  return { createDoc, createFolder, createWhiteboard, createSlides, rename, remove, deleteItem, performMove };
 }
 
 // ── New menu (contextual to the current location) ────────────────────────────
@@ -918,6 +936,7 @@ export function NewMenu({
   const docBlock = isEducation ? educationCreateBlock(scope.items, currentFolderId, "FreeForm") : null;
   const folderBlock = isEducation ? educationCreateBlock(scope.items, currentFolderId, "Folder") : null;
   const notebook = notebookPlacement(scope, currentFolderId);
+  const slidesEnabled = useFeatureFlag("drive-slides");
 
   async function createNotebook() {
     if (notebook.kind !== "ready") return;
@@ -1035,6 +1054,17 @@ export function NewMenu({
           New whiteboard
         </CreateLabel>
       </Menu.Item>
+      {slidesEnabled && (
+        <Menu.Item
+          icon={<Presentation className="w-3.5 h-3.5" />}
+          disabled={docBlock !== null}
+          onSelect={() => void actions.createSlides()}
+        >
+          <CreateLabel testId={`drive-new-slides-${scope.id}`} blockedReason={docBlock}>
+            New slide deck
+          </CreateLabel>
+        </Menu.Item>
+      )}
       {notebook.kind !== "unavailable" && (
         <Menu.Item
           icon={<NotebookPen className="w-3.5 h-3.5" />}

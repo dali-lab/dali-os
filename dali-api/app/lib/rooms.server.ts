@@ -75,14 +75,10 @@ function overlaps(a: { start: Date; end: Date }, start: Date, end: Date) {
   return a.start < end && a.end > start;
 }
 
-/**
- * A schedule item blocks a writer unless one side is a hiring cycle's hold
- * and the other belongs to the same cycle: interviews sit inside their
- * cycle's hold, and a hold may be placed over interviews already booked. Two
- * interviews still collide, as does anything from another cycle.
- */
+// Interview holds are shared by every hiring cycle, so concurrent cycles
+// interview inside one hold instead of the first cycle's hold locking out the rest.
 export function blockedBy(item: RoomScheduleItem, writer: RoomWriter) {
-  if (!writer.applicationCycleId || item.cycleId !== writer.applicationCycleId) return true;
+  if (!item.source || !SYSTEM_SOURCES.has(item.source) || !SYSTEM_SOURCES.has(writer.source)) return true;
   return !(item.source === "InterviewHold" || writer.source === "InterviewHold");
 }
 
@@ -201,7 +197,22 @@ export async function getRoomSchedule(
     }
   }
 
-  return items.sort((a, b) => a.start.getTime() - b.start.getTime());
+  return withoutCoveredHolds(items).sort((a, b) => a.start.getTime() - b.start.getTime());
+}
+
+// Concurrent cycles each store their own hold row (so each releases its own),
+// but the room is held once.
+export function withoutCoveredHolds(items: RoomScheduleItem[]): RoomScheduleItem[] {
+  const holds = items.filter((i) => i.source === "InterviewHold");
+  return items.filter((item, idx) => {
+    if (item.source !== "InterviewHold") return true;
+    return !holds.some((other) => {
+      if (other === item) return false;
+      if (other.start > item.start || other.end < item.end) return false;
+      const identical = other.start.getTime() === item.start.getTime() && other.end.getTime() === item.end.getTime();
+      return !identical || items.indexOf(other) < idx;
+    });
+  });
 }
 
 /** The event (SelfCheckIn meeting) in its check-in window right now, if any. */

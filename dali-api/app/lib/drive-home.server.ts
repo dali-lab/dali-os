@@ -12,7 +12,7 @@ export const UPCOMING_WINDOW_DAYS = 7;
 const READ_MULTIPLIER = 3;
 // An exception can move an occurrence across the window edge, so scan wider than what is kept.
 const GUARD_MS = 24 * 60 * 60_000;
-const HOME_PAGE_KINDS: PageKind[] = ["Folder", "FreeForm", "Structured", "Whiteboard", "Notebook"];
+const HOME_PAGE_KINDS: PageKind[] = ["Folder", "FreeForm", "Structured", "Whiteboard", "Notebook", "Slides"];
 
 export type HomePageItem = Extract<DriveItem, { type: "folder" | "doc" | "form" }> & { visitedAt: Date | null };
 

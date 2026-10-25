@@ -6,6 +6,7 @@
 // out of your list silently rather than becoming a way back in.
 
 import { prisma } from "~/lib/db";
+import { pageOpenHref } from "~/lib/page-href";
 import { PAGE_ACCESS_SELECT, getPageAccessBulk, type PageShape } from "~/lib/pageAccess.server";
 import { isNavbarRoute } from "~/lib/navbar-routes";
 import { isAreaSubtabPath } from "~/lib/nav-areas";
@@ -66,8 +67,7 @@ function byFavoriteOrder(a: Ordered, b: Ordered): number {
 
 function pageHref(id: string, kind: string | undefined): string {
   if (kind === "Form") return `/forms/edit/${id}`;
-  if (kind === "Whiteboard") return `/whiteboard/${id}`;
-  return `/documents/${id}`;
+  return pageOpenHref(kind, id);
 }
 
 const PAGE_SELECT = {
@@ -635,7 +635,7 @@ export type StarTarget =
   | { kind: "page"; pageId: string }
   | { kind: "route"; href: string };
 
-/** Classify an in-app URL: documents, forms and whiteboards are Pages; the rest are routes. */
+/** Classify an in-app URL: documents, forms, whiteboards and slide decks are Pages; the rest are routes. */
 export function starTargetForUrl(url: string): StarTarget {
   let path: string;
   try {
@@ -643,6 +643,6 @@ export function starTargetForUrl(url: string): StarTarget {
   } catch {
     return { kind: "route", href: url };
   }
-  const m = /^\/(?:documents|forms\/edit|whiteboard)\/([^/]+)\/?$/.exec(path);
+  const m = /^\/(?:documents|forms\/edit|whiteboard|slides)\/([^/]+)\/?$/.exec(path);
   return m ? { kind: "page", pageId: decodeURIComponent(m[1]) } : { kind: "route", href: url };
 }

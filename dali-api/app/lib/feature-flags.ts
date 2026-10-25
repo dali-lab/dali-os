@@ -56,6 +56,18 @@ export const FEATURE_FLAGS = [
       "A /release-notes page listing what shipped, with demo videos, and a \"What's new\" item in the account menu that shows a dot when there is something unread. Core also gets Communications > Release notes to write, review and publish entries. Ships off.",
   },
   {
+    key: "listserv",
+    label: "Listserv",
+    description:
+      "Communications > Listserv: Core members submit emails for the campus listserv, the outreach lead reviews them, sends approved ones from Gmail, and records which went out. Ships off.",
+  },
+  {
+    key: "banners",
+    label: "Banners",
+    description:
+      "Communications > Banners: Core schedules full-screen banners shown when members open DALI OS or visit a page, with audience, frequency and a hide-for-today option. Turning this off also stops banners from showing. Ships off.",
+  },
+  {
     key: "favorites-bar",
     label: "Favorites bar",
     description:
@@ -164,6 +176,18 @@ export const FEATURE_FLAGS = [
     label: "Mobile app",
     description:
       "Lets the DALI OS mobile app (iOS and Android) sign in and load your profile, timesheet, projects, calendar, meeting notes and member pass. Off, the app's data endpoints return not found for that member. Ships off.",
+  },
+  {
+    key: "drive-slides",
+    label: "Drive slide decks",
+    description:
+      "Adds Slides to the Drive New menus: a deck of title, text, text and image, and image slides, edited in the app and presented full screen. Decks already made keep opening when this is off. Ships off.",
+  },
+  {
+    key: "onboarding-journeys",
+    label: "Onboarding journeys",
+    description:
+      "Self-paced onboarding at /journeys: per-domain journeys of modules on a prerequisite map, each with lesson pages, slides, an in-browser coding lab and a quiz, with progress saved per member. First-term members find Journeys pinned under Drive; everyone else finds it in the Lab area. Core and domain leads create journeys and share edit access per journey. Ships off.",
   },
 ] as const satisfies readonly FeatureFlagDef[];
 

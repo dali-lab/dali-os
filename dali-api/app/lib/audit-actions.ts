@@ -173,6 +173,8 @@ export const AUDIT_ACTIONS = [
   "announcement.cancel",
   "outbound.retry",
   "outbound.cancel",
+  // One row per "Retry all failed": metadata.count re-queued, metadata.search the Outbox search it matched.
+  "outbound.retry_all",
   "confidentiality.sign",
   "signing.sign",
   "signing.publish",
@@ -309,6 +311,10 @@ export const AUDIT_ACTIONS = [
   "recording.discard",
   "release_note.publish",
   "release_note.dismiss",
+  // Communications. listserv.config targets the singleton "default" row.
+  "listserv.config",
+  "banner.save",
+  "banner.delete",
 ] as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];

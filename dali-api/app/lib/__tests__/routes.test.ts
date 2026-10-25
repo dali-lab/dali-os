@@ -12,10 +12,12 @@ function findByFile(entries: Entry[], file: string): Entry | null {
   return null;
 }
 
-function findByPath(entries: Entry[], path: string): Entry | null {
+/** Matches the full URL path, joining a nested route's path onto its parents'. */
+function findByPath(entries: Entry[], path: string, prefix = ""): Entry | null {
   for (const entry of entries) {
-    if (entry.path === path) return entry;
-    const hit = entry.children ? findByPath(entry.children, path) : null;
+    const full = entry.path ? (prefix ? `${prefix}/${entry.path}` : entry.path) : prefix;
+    if (entry.path && full === path) return entry;
+    const hit = entry.children ? findByPath(entry.children, path, full) : null;
     if (hit) return hit;
   }
   return null;
@@ -39,7 +41,7 @@ describe("routes config", () => {
     expect(findByFile(memberLayout?.children ?? [], file)).toBeNull();
   });
 
-  // Core ▸ Communications ▸ Email is the only nav entry the email editor has,
+  // Core ▸ Communications ▸ Email templates is the only nav entry the email editor has,
   // so that URL has to render the editor. It was served by the redirect stub,
   // which bounced the click into /admin/email — swapping the sidebar to Admin
   // and leaving no tab highlighted.
@@ -57,5 +59,13 @@ describe("routes config", () => {
         "admin/routes/admin.email.legacy-redirect.ts",
       );
     }
+  });
+
+  it("nests every Communications tool under the one layout that draws its tab strip", () => {
+    for (const tool of ["announcements", "listserv", "banners", "banners/:bannerId", "release-notes", "email"]) {
+      expect(findByPath(routes as Entry[], `core/communications/${tool}`), tool).not.toBeNull();
+    }
+    const layout = findByFile(routes as Entry[], "core/routes/core.communications.tsx");
+    expect(layout?.children?.map((c) => c.file)).toContain("core/routes/core.communications.listserv.tsx");
   });
 });

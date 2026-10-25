@@ -69,6 +69,7 @@ import {
 } from '~/lib/nav-areas'
 import { useFeatureFlag } from '~/components/FeatureFlags'
 import { UnreadBadge } from '~/email/components/UnreadBadge'
+import { useAdminAttention } from '~/admin/useAdminAttention'
 import { useEmailUnread } from '~/email/lib/use-email-unread'
 
 interface LayoutOSProps {
@@ -85,6 +86,7 @@ interface LayoutOSProps {
   isLabMentor?: boolean
   isInstructor?: boolean
   isAlumni?: boolean
+  isNewMember?: boolean
   /** Starred pages/routes, most-recently pinned first — carried by the top bar. */
   favorites?: FavoritePage[]
   /** Receives local reorders of `favorites` (drag, Move left/right, Remove). */
@@ -129,6 +131,7 @@ export function LayoutOS({
   isLabMentor = false,
   isInstructor = false,
   isAlumni = false,
+  isNewMember = false,
   favorites = [],
   onFavoritesChange,
   impersonating = false,
@@ -316,18 +319,23 @@ export function LayoutOS({
     isLabMentor,
     isInstructor,
     isAlumni,
+    isNewMember,
   }
   // The `community` flag adds the Community area and moves Connect into it, so
   // every nav matcher below has to be handed the same map.
-  const navFlags = { community: useFeatureFlag('community') }
+  const navFlags = {
+    community: useFeatureFlag('community'),
+    'onboarding-journeys': useFeatureFlag('onboarding-journeys'),
+  }
   const feedbackEnabled = useFeatureFlag('os-feedback')
   const releaseNotesEnabled = useFeatureFlag('release-notes')
   const emailUnread = useEmailUnread(path)
   const areas = visibleAreas(roleFlags, navFlags)
   const routeArea = areaForPath(path, navFlags, roleFlags)
-  const pinned = pinnedNavItems(roleFlags)
+  const pinned = pinnedNavItems(roleFlags, navFlags)
   const home = homeNavItem(roleFlags)
   const activeArea = routeArea ?? areas.find((a) => a.key === lastAreaKey) ?? areas[0]
+  const adminAttention = useAdminAttention(activeArea?.key === 'admin', path)
   const activeSubtabs = activeArea ? visibleSubtabs(activeArea, roleFlags) : []
   const activeHref = activeArea ? activeSubtabHref(activeArea, path) : undefined
   // Nothing to switch to, so the area's sub-tabs join the pinned list.
@@ -347,7 +355,7 @@ export function LayoutOS({
     tabClickProps({ url: area.hubPath, label: area.label }).onClick(e)
   }
 
-  const pinnedLabel = [...pinned, ROOM_BOOKING_NAV_ITEM].find((i) => isPinnedActive(path, i.href, navFlags))?.label
+  const pinnedLabel = [...pinned, ROOM_BOOKING_NAV_ITEM].find((i) => isPinnedActive(path, i.href, navFlags, roleFlags))?.label
   const initialTabLabel = path.startsWith('/notifications')
     ? 'My Tasks'
     : path.startsWith('/calendar')
@@ -534,7 +542,7 @@ export function LayoutOS({
           )}
           {pinned.map((item) => {
             const Icon = item.icon
-            const active = isPinnedActive(path, item.href, navFlags)
+            const active = isPinnedActive(path, item.href, navFlags, roleFlags)
             return (
               <Tooltip key={item.href} content={collapsed ? item.label : ''} placement="right">
                 <button
@@ -691,6 +699,14 @@ export function LayoutOS({
                         >
                           <t.icon className="h-5 w-5 flex-shrink-0 opacity-85" />
                           <span className="truncate">{t.label}</span>
+                          {t.alert && (adminAttention[t.alert] ?? 0) > 0 && (
+                            <span
+                              className="ml-auto mr-2 min-w-[20px] rounded-full bg-destructive/15 px-1.5 text-center text-xs font-semibold tabular-nums text-destructive"
+                              aria-label={`${adminAttention[t.alert]} need attention`}
+                            >
+                              {adminAttention[t.alert]}
+                            </span>
+                          )}
                         </button>
                       )
                     })}

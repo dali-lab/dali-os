@@ -82,6 +82,7 @@ import {
   linkedEventFor,
   calendarLabels,
   mergeLayers,
+  highlightRole,
   perCalendarLegend,
   type CalendarLegendGroup,
   computeRoleBuckets,
@@ -263,6 +264,7 @@ function CalendarScreen({ data }: { data: LoaderData }) {
     }
     return {};
   });
+  const [hoveredRoleKey, setHoveredRoleKey] = useState<string | null>(null);
   const setRoleColor = (roleKey: string, hex: string) =>
     setRoleColors((prev) => {
       const next = { ...prev, [roleKey]: hex };
@@ -705,7 +707,7 @@ function CalendarScreen({ data }: { data: LoaderData }) {
         setComposer({ mode: "edit", event: e, anchor }),
       ),
     );
-  const eventsByDay = mergeLayers(...layerMaps);
+  const eventsByDay = highlightRole(mergeLayers(...layerMaps), layers.logged ? hoveredRoleKey : null);
 
   // Keep the grid in step with the composer's time edits. Creating → a tentative
   // block (createSel); editing → override the real event's time (draftEdit) so
@@ -936,6 +938,7 @@ function CalendarScreen({ data }: { data: LoaderData }) {
             onChangeHoursScope={changeHoursScope}
             hoursRangeLabel={hoursRangeLabel}
             setRoleColor={setRoleColor}
+            onHoverRole={setHoveredRoleKey}
             onMeetWith={(userId) => openCreateModal(undefined, undefined, [userId])}
           />
           {/* No card around the grid — the hour rules and day rules are the

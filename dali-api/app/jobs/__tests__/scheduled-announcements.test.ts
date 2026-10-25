@@ -91,6 +91,11 @@ describe("runScheduledAnnouncements", () => {
     expect(mockSend).toHaveBeenCalledWith(expect.objectContaining({ ccDartmouth: true }));
   });
 
+  it("links the fan-out to the row it fires, so its completion can be counted", async () => {
+    await runScheduledAnnouncements({ now: NOW, lastSuccessAt: null, settings: {} });
+    expect(mockSend).toHaveBeenCalledWith(expect.objectContaining({ announcementId: row().id }));
+  });
+
   it("skips rows lost to a concurrent claim or cancel (no double fan-out)", async () => {
     mockPrisma.scheduledAnnouncement.updateMany.mockResolvedValue({ count: 0 });
     const result = await runScheduledAnnouncements({ now: NOW, lastSuccessAt: null, settings: {} });

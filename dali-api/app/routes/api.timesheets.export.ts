@@ -2,10 +2,11 @@ import type { Route } from "./+types/api.timesheets.export";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
-import { getZonedParts, resolveUserTimeZone, zonedDayStartUtc } from "~/lib/timezone";
+import { resolveUserTimeZone, zonedDayStartUtc } from "~/lib/timezone";
 import { getRoleLabel, getUserRoleInstances } from "~/lib/roles";
 import { formatPayPeriod, payPeriodFor, PAY_PERIOD_DAYS } from "~/lib/pay-period";
 import { timeEntryDayUtc } from "~/calendar/lib/timesheet-day";
+import { clockTime, offsetHireHandoffs, splitAtMidnight, type JobxRow } from "~/calendar/lib/jobx-rows";
 
 // Export the caller's Timesheet-tab entries for the JobX browser extension
 // (jobx-extension/), one hire and one pay period at a time — JobX timesheets
@@ -29,7 +30,6 @@ const LOOKBACK_PERIODS = 26;
 const DAY_MS = 86_400_000;
 
 const ymd = (d: Date) => d.toISOString().slice(0, 10);
-const pad2 = (n: number) => String(n).padStart(2, "0");
 
 function parsePeriodParam(raw: string | null) {
   const m = raw?.match(/^(\d{4})-(\d{2})-(\d{2})$/);
@@ -112,9 +112,35 @@ export async function loader({ request }: Route.LoaderArgs) {
       : (firstWithEntries?.key ?? availableHires[0]?.key ?? null);
   const hire = hireKey ? byKey.get(hireKey)! : null;
 
+  // Every hire's rows are built together: a handoff between two hires is
+  // only visible with both on hand, and the shift has to come out the same
+  // whichever of the two the extension asks for.
+  const rows = offsetHireHandoffs(
+    entries.flatMap((e) => {
+      // Entries added via the plain date+hours quick-add always get a real
+      // startTime/endTime now (see nominalDayRange in calendar.tsx), but
+      // older/legacy rows or attendance on a still-unscheduled meeting may
+      // not; fall back to a nominal 9am slot so every entry still exports.
+      const start = e.startTime ?? (() => {
+        const dayStart = zonedDayStartUtc(
+          e.date.getUTCFullYear(),
+          e.date.getUTCMonth() + 1,
+          e.date.getUTCDate(),
+          timezone,
+        );
+        return new Date(dayStart.getTime() + 9 * 3_600_000);
+      })();
+      const end = e.endTime ?? new Date(start.getTime() + Math.max(e.hours, 0.25) * 3_600_000);
+      return splitAtMidnight(
+        { hireKey: e.roleRefId ?? UNASSIGNED_KEY, start, end, hours: e.hours, description: e.note ?? "" },
+        timezone,
+      );
+    }),
+  );
+
   const periods = new Map<
     number,
-    { period: ReturnType<typeof payPeriodFor>; entries: typeof entries; hours: number }
+    { period: ReturnType<typeof payPeriodFor>; entries: JobxRow[]; hours: number }
   >();
   const periodOf = (period: ReturnType<typeof payPeriodFor>) => {
     let p = periods.get(period.index);
@@ -124,14 +150,12 @@ export async function loader({ request }: Route.LoaderArgs) {
     }
     return p;
   };
-  for (const e of hire?.entries ?? []) {
-    const day = timeEntryDayUtc(
-      { date: e.date.toISOString(), startTime: e.startTime?.toISOString() },
-      timezone,
-    );
-    const p = periodOf(payPeriodFor(day));
-    p.entries.push(e);
-    p.hours += e.hours;
+  for (const r of rows) {
+    if (r.hireKey !== hireKey) continue;
+    const [y, m, d] = r.date.split("-").map(Number);
+    const p = periodOf(payPeriodFor(new Date(Date.UTC(y!, m! - 1, d!))));
+    p.entries.push(r);
+    p.hours += r.hours;
   }
   // A period the extension asked for by date stays listed even with no hours,
   // so the picker can show the JobX page's own period as empty rather than
@@ -142,11 +166,6 @@ export async function loader({ request }: Route.LoaderArgs) {
   const selected = requestedPeriod
     ? periods.get(requestedPeriod.index)!
     : sorted.find((p) => p.entries.length > 0);
-
-  const wallClock = (d: Date) => {
-    const z = getZonedParts(d, timezone);
-    return { date: `${z.year}-${pad2(z.month)}-${pad2(z.day)}`, time: `${pad2(z.hour)}:${pad2(z.minute)}` };
-  };
 
   const payload = {
     timezone,
@@ -163,30 +182,13 @@ export async function loader({ request }: Route.LoaderArgs) {
       entryCount: p.entries.length,
       current: p.period.index === currentPeriod.index,
     })),
-    entries: (selected?.entries ?? []).map((e) => {
-      // Entries added via the plain date+hours quick-add always get a real
-      // startTime/endTime now (see nominalDayRange in calendar.tsx), but
-      // older/legacy rows or attendance on a still-unscheduled meeting may
-      // not — fall back to a nominal 9am slot so every entry still exports.
-      const start = e.startTime ?? (() => {
-        const dayStart = zonedDayStartUtc(
-          e.date.getUTCFullYear(),
-          e.date.getUTCMonth() + 1,
-          e.date.getUTCDate(),
-          timezone,
-        );
-        return new Date(dayStart.getTime() + 9 * 3_600_000);
-      })();
-      const end = e.endTime ?? new Date(start.getTime() + Math.max(e.hours, 0.25) * 3_600_000);
-      const s = wallClock(start);
-      return {
-        date: s.date,
-        start: s.time,
-        end: wallClock(end).time,
-        hours: e.hours,
-        description: e.note ?? "",
-      };
-    }),
+    entries: (selected?.entries ?? []).map((r) => ({
+      date: r.date,
+      start: clockTime(r.startMin),
+      end: clockTime(r.endMin),
+      hours: r.hours,
+      description: r.description,
+    })),
   };
 
   return withCors(request, Response.json(payload));

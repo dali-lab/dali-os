@@ -72,31 +72,43 @@ export default [
     route("hiring/interviews/:interviewId", "hiring/routes/interviews.$interviewId.tsx"),
     route("hiring/analytics", "hiring/routes/analytics.tsx"),
 
-    // Operations (top-level, not hiring). /admin is the nested hub; the three
-    // multi-section clusters have their own landing hubs (Documents & Finance
-    // are single-section and link straight to their tool from the hub).
+    // Admin: an Overview plus one section per tool family, each with its tools
+    // as tabs (app/admin/adminNav.tsx). A section's own URL opens its first tab.
     route("admin", "admin/routes/admin.tsx"),
+    route("admin/payroll", "admin/routes/admin.section.ts", { id: "admin-section-payroll" }),
+    route("admin/payroll/hire-setup", "admin/routes/admin.payroll-export.tsx"),
+    route("admin/payroll/reconcile", "admin/routes/admin.payroll.tsx"),
+    route("admin/accounts", "admin/routes/admin.section.ts", { id: "admin-section-accounts" }),
+    route("admin/accounts/users", "admin/routes/admin.site-users.tsx"),
+    route("admin/accounts/security", "admin/routes/admin.security.tsx"),
+    route("admin/messaging", "admin/routes/admin.section.ts", { id: "admin-section-messaging" }),
+    route("admin/messaging/outbox", "admin/routes/admin.outbound-messages.tsx"),
+    route("admin/messaging/senders", "admin/routes/admin.email-senders.tsx"),
+    route("admin/insights", "admin/routes/admin.section.ts", { id: "admin-section-insights" }),
+    route("admin/insights/analytics", "admin/routes/admin.analytics.tsx"),
+    route("admin/insights/ai-usage", "admin/routes/admin.ai-usage.tsx"),
+    route("admin/insights/audit-log", "admin/routes/admin.activity.tsx"),
+    route("admin/platform", "admin/routes/admin.section.ts", { id: "admin-section-platform" }),
+    route("admin/platform/jobs", "admin/routes/admin.jobs.tsx"),
+    route("admin/platform/infrastructure", "admin/routes/admin.infrastructure.tsx"),
+    route("admin/platform/flags", "admin/routes/admin.feature-flags.tsx"),
+    route("admin/onboarding", "admin/routes/admin.activities.tsx"),
+    route("admin/onboarding/:id", "admin/routes/admin.activities.$id.tsx"),
+    ...[
+      "system", "payroll-export", "site-users", "security", "outbound-messages", "email-senders",
+      "analytics", "ai-usage", "activity", "jobs", "infrastructure", "feature-flags", "activities",
+      "activities/:id",
+    ].map((p) => route(`admin/${p}`, "admin/routes/admin.legacy-redirect.ts", { id: `legacy-admin-${p}` })),
+    // Core-area pages that still live under admin/ (members, domains,
+    // announcements, email templates) and the pre-regroup redirects.
     route("admin/people", "admin/routes/admin.people.tsx"),
     route("admin/communications", "admin/routes/admin.communications.tsx"),
-    route("admin/system", "admin/routes/admin.system.tsx"),
     route("admin/members", "admin/routes/admin.members.tsx"),
-    route("admin/site-users", "admin/routes/admin.site-users.tsx"),
     route("admin/domains", "admin/routes/admin.domains.tsx"),
     route("admin/announcements", "admin/routes/admin.announcements.tsx"),
-    route("admin/activity", "admin/routes/admin.activity.tsx"),
-    route("admin/analytics", "admin/routes/admin.analytics.tsx"),
-    route("admin/ai-usage", "admin/routes/admin.ai-usage.tsx"),
-    route("admin/jobs", "admin/routes/admin.jobs.tsx"),
-    route("admin/feature-flags", "admin/routes/admin.feature-flags.tsx"),
-    route("admin/security", "admin/routes/admin.security.tsx"),
-    route("admin/activities", "admin/routes/admin.activities.tsx"),
-    route("admin/activities/:id", "admin/routes/admin.activities.$id.tsx"),
-    route("admin/email-senders", "admin/routes/admin.email-senders.tsx"),
-    route("admin/outbound-messages", "admin/routes/admin.outbound-messages.tsx"),
     route("admin/email", "admin/routes/admin.email.tsx"),
     route("admin/email-templates", "admin/routes/admin.email.legacy-redirect.ts", { id: "legacy-email-admin" }),
     route("admin/email-templates/:id", "admin/routes/admin.email.legacy-redirect.ts", { id: "legacy-email-admin-id" }),
-    route("admin/infrastructure", "admin/routes/admin.infrastructure.tsx"),
     // Document signing: author agreements, place fields, put versions in force,
     // track signatories.
     route("core/agreements", "signing/routes/core.agreements.tsx"),
@@ -105,8 +117,6 @@ export default [
     route("core/agreements/:id/signature/:sigId/pdf", "signing/routes/core.agreements.$id.signature.$sigId.pdf.ts"),
     route("api/agreements/people", "signing/routes/api.agreements.people.ts"),
     route("api/agreements/issue", "signing/routes/api.agreements.issue.ts"),
-    route("admin/payroll-export", "admin/routes/admin.payroll-export.tsx"),
-    route("admin/payroll", "admin/routes/admin.payroll.tsx"),
 
     // Core — the lab-process area introduced by the nav-regroup flag. Every
     // page here except the hub is a pure re-export of its pre-regroup route
@@ -120,15 +130,21 @@ export default [
     route("core/project-bids/:userId", "core/routes/core.project-bids.$userId.tsx"),
     route("core/level-up", "core/routes/core.level-up.tsx"),
     route("core/level-up/:userId", "core/routes/core.level-up.$userId.tsx"),
+    route("core/access", "core/routes/core.access.tsx"),
     route("core/access/roles", "core/routes/core.access.roles.tsx"),
     route("core/access/domains", "core/routes/core.access.domains.tsx"),
     route("core/drive-folders", "core/routes/core.drive-folders.tsx"),
     route("core/rooms", "rooms/routes/core.rooms.tsx"),
     route("rooms", "rooms/routes/rooms.tsx"),
-    route("core/communications", "core/routes/core.communications.tsx"),
-    route("core/communications/announcements", "core/routes/core.communications.announcements.tsx"),
-    route("core/communications/release-notes", "core/routes/core.communications.release-notes.tsx"),
-    route("core/communications/email", "core/routes/core.communications.email.tsx"),
+    route("core/communications", "core/routes/core.communications.tsx", [
+      index("core/routes/core.communications._index.tsx"),
+      route("announcements", "core/routes/core.communications.announcements.tsx"),
+      route("listserv", "core/routes/core.communications.listserv.tsx"),
+      route("banners", "core/routes/core.communications.banners.tsx"),
+      route("banners/:bannerId", "core/routes/core.communications.banners.$bannerId.tsx"),
+      route("release-notes", "core/routes/core.communications.release-notes.tsx"),
+      route("email", "core/routes/core.communications.email.tsx"),
+    ]),
     route("core/communications/email/:id", "admin/routes/admin.email.legacy-redirect.ts", { id: "legacy-email-core-id" }),
     route("core/communications/email-senders", "core/routes/core.communications.email-senders.tsx"),
 
@@ -211,6 +227,7 @@ export default [
       "signing/routes/documents.agreement.$id.signature.$sigId.tsx",
     ),
     route("whiteboard/:pageId", "routes/whiteboard.$pageId.tsx"),
+    route("slides/:pageId", "routes/slides.$pageId.tsx"),
     route("documents/:pageId", "routes/documents.$pageId.tsx"),
 
     // Members directory (separate from admin/members)
@@ -225,6 +242,17 @@ export default [
     route("community/gallery/new-count", "community/routes/community.gallery.new-count.ts"),
     route("community/gallery/:postId", "community/routes/community.gallery.$postId.tsx"),
     route("community/gallery/:postId/download", "community/routes/community.gallery.$postId.download.ts"),
+    // Onboarding journeys (`onboarding-journeys` flag). /onboarding is the
+    // first-login profile form, so the journeys live under their own prefix.
+    route("journeys", "journeys/routes/journeys.tsx"),
+    route("journeys/access", "journeys/routes/journeys.access.tsx"),
+    route("journeys/reviews", "journeys/routes/journeys.reviews.tsx"),
+    route("journeys/:domain", "journeys/routes/journeys.$domain.tsx"),
+    route("journeys/:domain/:journeyId", "journeys/routes/journeys.$domain.$journeyId.tsx"),
+    route("journeys/:domain/:journeyId/edit", "journeys/routes/journeys.$domain.$journeyId.edit.tsx"),
+    route("journeys/:domain/:journeyId/preview", "journeys/routes/journeys.$domain.$journeyId.preview.tsx"),
+    route("journeys/:domain/:journeyId/preview/:moduleId", "journeys/routes/journeys.$domain.$journeyId.preview.$moduleId.tsx"),
+    route("journeys/:domain/:journeyId/:moduleId", "journeys/routes/journeys.$domain.$journeyId.$moduleId.tsx"),
     // Anonymous coffee chat invite: accept / decline (recipient) or status (sender).
     route("coffee-chats/:id", "members/routes/coffee-chats.$id.tsx"),
 
@@ -296,9 +324,15 @@ export default [
     // so in-iframe navigation posts `dali:tabNavigated` and the workspace's
     // tab URL tracks it (a stale URL made re-clicking Settings focus the
     // drifted tab instead of reopening the hub).
-    route("settings", "routes/settings._index.tsx"),
+    route("settings", "routes/settings.tsx", [
+      index("routes/settings._index.tsx"),
+      route("general", "routes/settings.general.tsx"),
+      route("notifications", "routes/settings.notifications.tsx"),
+      route("connections", "routes/settings.connections.tsx"),
+      route("security", "routes/settings.security.tsx"),
+    ]),
+    // POST targets for the tabs' forms; a GET redirects to the owning tab.
     route("settings/calendar", "routes/settings.calendar.tsx"),
-    route("settings/notifications", "routes/settings.notifications.tsx"),
     route("settings/sessions", "routes/settings.sessions.tsx"),
     route("settings/slack", "routes/settings.slack.tsx"),
     route("settings/connected-apps", "routes/settings.connected-apps.tsx"),
@@ -499,6 +533,7 @@ export default [
   // Background jobs: admin controls + the manual tick trigger (secret header
   // or admin session; the in-process 60s interval is the primary driver).
   route("api/jobs/:name", "admin/routes/api.jobs.$name.ts"),
+  route("api/admin/attention", "admin/routes/api.admin.attention.ts"),
   route("api/feature-flags/:key", "admin/routes/api.feature-flags.$key.ts"),
   route("api/infra/action", "admin/routes/api.infra.action.ts"),
   route("api/infra/registry", "admin/routes/api.infra.registry.ts"),
@@ -825,6 +860,8 @@ export default [
 
   // S3 file upload
   route("api/upload/presign", "routes/api.upload.presign.ts"),
+  route("api/banners/active", "core/routes/api.banners.active.ts"),
+  route("api/banners/:bannerId/event", "core/routes/api.banners.$bannerId.event.ts"),
   route("api/upload/url", "routes/api.upload.url.ts"),
   route("api/upload/raw", "routes/api.upload.raw.ts"),
   route("api/whiteboard/image", "routes/api.whiteboard.image.ts"),

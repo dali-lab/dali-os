@@ -1,34 +1,36 @@
-// Admin → System & Insights → Feature Flags. Per-flag targeting: a master
-// Enabled switch, an Everyone toggle, role checkboxes, and a named-user
-// allowlist. The registry (app/lib/feature-flags.ts) declares which flags
-// exist; the FeatureFlag row is authoritative for targeting once saved.
-// Core-visible (Admin + current-cycle Core) — same tier as the rest of the
-// System & Insights cluster.
+// Admin → Platform → Feature flags. The registry (app/lib/feature-flags.ts)
+// declares which flags exist; the FeatureFlag row is authoritative for
+// targeting once saved.
 
 import { redirect, useFetcher, useLoaderData, useRevalidator } from "react-router";
 import { useEffect, useMemo, useState } from "react";
+import { ChevronDown, X } from "lucide-react";
 import { useDialog } from "~/components/ui/dialog";
 import type { Route } from "./+types/admin.feature-flags";
-import { adminHandle } from "~/admin/adminNav";
+import { AdminSectionHeader, adminHandle } from "~/admin/adminNav";
+import { EmptyState, Pill } from "~/admin/components/console-ui";
+import { useOsChrome } from "~/components/os-chrome";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { isCore, isAdmin, currentTermMemberWhere } from "~/lib/roles";
 import { MEMBER_LIST_ORDER_BY } from "~/lib/prisma-shapes";
 import { fullName } from "~/lib/display";
+import { cn } from "~/lib/cn";
 import { ROLE_TARGETS, type RoleTarget } from "~/lib/feature-flags";
 import { listFlagsForAdmin, type AdminFlagView } from "~/lib/feature-flags.server";
-import { buttonClasses } from "~/components/ui/Button";
 import { SearchInput } from "~/components/ui/SearchInput";
-import { InfoTip } from "~/components/ui/floating";
+import { Toggle } from "~/components/ui/Toggle";
+import { Checkbox } from "~/components/ui/Checkbox";
+import { Radio } from "~/components/ui/Radio";
+import { Combobox, InfoTip, Tooltip } from "~/components/ui/floating";
 
-export const handle = adminHandle("feature-flags");
+export const handle = adminHandle("flags");
 
 export const meta: Route.MetaFunction = () => [
-  { title: "Feature Flags · Admin · DALI OS" },
+  { title: "Feature flags · Admin · DALI OS" },
 ];
 
-// Human labels for the targetable role keys.
 const ROLE_LABELS: Record<RoleTarget, string> = {
   isCore: "Core",
   isAdmin: "Admin",
@@ -45,8 +47,9 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (!(await isCore(auth.user.sub))) return redirect("/");
 
   const memberWhere = await currentTermMemberWhere();
-  const [flags, users, viewerIsAdmin] = await Promise.all([
+  const [flags, rows, users, viewerIsAdmin] = await Promise.all([
     listFlagsForAdmin(),
+    prisma.featureFlag.findMany({ select: { key: true, updatedAt: true } }),
     prisma.user.findMany({
       where: memberWhere,
       orderBy: MEMBER_LIST_ORDER_BY,
@@ -54,65 +57,71 @@ export async function loader({ request }: Route.LoaderArgs) {
     }),
     isAdmin(auth.user.sub),
   ]);
+  const updatedAt: Record<string, string> = Object.fromEntries(
+    rows.map((r) => [r.key, r.updatedAt.toISOString()]),
+  );
 
   return {
     flags,
+    updatedAt,
     members: users.map((u) => ({ id: u.id, name: fullName(u), email: u.daliEmail })),
     viewerIsAdmin,
   };
 }
 
 type Member = { id: string; name: string; email: string | null };
+type Targeting = Pick<AdminFlagView, "enabled" | "everyone" | "roles" | "userIds" | "variant">;
 
-function FlagCard({ flag, members }: { flag: AdminFlagView; members: Member[] }) {
-  const saveFetcher = useFetcher<{ ok?: boolean; error?: string }>();
+/** Who a flag is on for, in a few words, for the row's pill. */
+export function flagTargetSummary(
+  t: Pick<Targeting, "enabled" | "everyone" | "roles" | "userIds">,
+): string {
+  if (!t.enabled) return "Off";
+  if (t.everyone) return "Everyone";
+  const parts: string[] = [];
+  if (t.roles.length > 0) parts.push(t.roles.map((r) => ROLE_LABELS[r]).join(", "));
+  if (t.userIds.length > 0) {
+    parts.push(`${t.userIds.length} ${t.userIds.length === 1 ? "person" : "people"}`);
+  }
+  return parts.length > 0 ? parts.join(" + ") : "No one";
+}
+
+/** A save that newly turns Everyone on reaches every user, so it confirms first. */
+export function needsEveryoneConfirm(
+  next: Pick<Targeting, "everyone">,
+  saved: Pick<Targeting, "everyone">,
+): boolean {
+  return next.everyone && !saved.everyone;
+}
+
+export function matchesFlagQuery(
+  flag: { key: string; label: string; description: string },
+  query: string,
+): boolean {
+  const q = query.trim().toLowerCase();
+  return !q || `${flag.key} ${flag.label} ${flag.description}`.toLowerCase().includes(q);
+}
+
+function formatUpdated(iso: string | undefined): string {
+  if (!iso) return "Default";
+  return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
+
+const sameSet = (a: readonly string[], b: readonly string[]) =>
+  a.slice().sort().join() === b.slice().sort().join();
+
+function usePersistFlag(flag: AdminFlagView, memberCount: number) {
+  const fetcher = useFetcher<{ ok?: boolean; error?: string }>();
   const revalidator = useRevalidator();
   const dialog = useDialog();
-  const busy = saveFetcher.state !== "idle";
 
-  const [enabled, setEnabled] = useState(flag.enabled);
-  const [everyone, setEveryone] = useState(flag.everyone);
-  const [roles, setRoles] = useState<RoleTarget[]>(flag.roles);
-  const [userIds, setUserIds] = useState<string[]>(flag.userIds);
-  const [variant, setVariant] = useState<string | null>(flag.variant);
-  const [search, setSearch] = useState("");
+  useEffect(() => {
+    if (fetcher.state === "idle" && fetcher.data?.ok) revalidator.revalidate();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fetcher.state]);
 
-  const memberById = useMemo(
-    () => new Map(members.map((m) => [m.id, m])),
-    [members],
-  );
-  const matches = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return [];
-    return members
-      .filter(
-        (m) =>
-          !userIds.includes(m.id) &&
-          (m.name.toLowerCase().includes(q) ||
-            (m.email ?? "").toLowerCase().includes(q)),
-      )
-      .slice(0, 8);
-  }, [search, members, userIds]);
-
-  const dirty =
-    enabled !== flag.enabled ||
-    everyone !== flag.everyone ||
-    variant !== flag.variant ||
-    roles.slice().sort().join() !== flag.roles.slice().sort().join() ||
-    userIds.slice().sort().join() !== flag.userIds.slice().sort().join();
-
-  function toggleRole(r: RoleTarget) {
-    setRoles((prev) =>
-      prev.includes(r) ? prev.filter((x) => x !== r) : [...prev, r],
-    );
-  }
-
-  async function save() {
-    // Confirm when the save would newly turn "everyone" on — this makes the
-    // flag active for every user, which can be a large-scale change.
-    const everyoneNewlyOn = everyone && !flag.everyone;
-    if (everyoneNewlyOn) {
-      const memberCount = members.length;
+  async function persist(next: Targeting) {
+    if (needsEveryoneConfirm(next, flag)) {
       const countLabel = memberCount > 0 ? ` (${memberCount} users)` : "";
       const ok = await dialog.confirm({
         title: `Enable ${flag.label} for everyone${countLabel}?`,
@@ -121,222 +130,297 @@ function FlagCard({ flag, members }: { flag: AdminFlagView; members: Member[] })
       });
       if (!ok) return;
     }
-    saveFetcher.submit(
-      { enabled, everyone, roles, userIds, note: flag.note, variant },
-      {
-        method: "PATCH",
-        action: `/api/feature-flags/${flag.key}`,
-        encType: "application/json",
-      },
+    fetcher.submit(
+      { ...next, note: flag.note },
+      { method: "PATCH", action: `/api/feature-flags/${flag.key}`, encType: "application/json" },
     );
   }
 
-  // Refresh the loader once a save lands so the baseline (which drives the
-  // "dirty" comparison and the Saved indicator) reflects what was persisted.
-  useEffect(() => {
-    if (saveFetcher.state === "idle" && saveFetcher.data?.ok) revalidator.revalidate();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [saveFetcher.state]);
-  const justSaved = saveFetcher.state === "idle" && saveFetcher.data?.ok === true;
+  return { fetcher, persist };
+}
+
+function FlagRow({
+  flag,
+  members,
+  updatedAt,
+  first,
+}: {
+  flag: AdminFlagView;
+  members: Member[];
+  updatedAt: string | undefined;
+  first: boolean;
+}) {
+  const { actionBtnPrimary, bodyText } = useOsChrome();
+  const toggle = usePersistFlag(flag, members.length);
+  const save = usePersistFlag(flag, members.length);
+  const busy = toggle.fetcher.state !== "idle" || save.fetcher.state !== "idle";
+
+  const [open, setOpen] = useState(false);
+  const [everyone, setEveryone] = useState(flag.everyone);
+  const [roles, setRoles] = useState<RoleTarget[]>(flag.roles);
+  const [userIds, setUserIds] = useState<string[]>(flag.userIds);
+  const [variant, setVariant] = useState<string | null>(flag.variant);
+
+  const pending = toggle.fetcher.json as { enabled?: boolean } | undefined;
+  const enabled =
+    toggle.fetcher.state !== "idle" && pending?.enabled != null ? pending.enabled : flag.enabled;
+
+  const memberById = useMemo(() => new Map(members.map((m) => [m.id, m])), [members]);
+  const addOptions = useMemo(
+    () =>
+      members
+        .filter((m) => !userIds.includes(m.id))
+        .map((m) => ({ value: m.id, label: m.email ? `${m.name} · ${m.email}` : m.name })),
+    [members, userIds],
+  );
+
+  const dirty =
+    everyone !== flag.everyone ||
+    variant !== flag.variant ||
+    !sameSet(roles, flag.roles) ||
+    !sameSet(userIds, flag.userIds);
+
+  const error =
+    (toggle.fetcher.state === "idle" && toggle.fetcher.data?.error) ||
+    (save.fetcher.state === "idle" && save.fetcher.data?.error) ||
+    null;
+  const justSaved = save.fetcher.state === "idle" && save.fetcher.data?.ok === true && !dirty;
+
+  // The list switch flips only the master switch on the saved targeting, so an
+  // unsaved edit in the open editor never goes live by accident.
+  const flip = () =>
+    void toggle.persist({
+      enabled: !flag.enabled,
+      everyone: flag.everyone,
+      roles: flag.roles,
+      userIds: flag.userIds,
+      variant: flag.variant,
+    });
+  const saveDraft = () =>
+    void save.persist({ enabled: flag.enabled, everyone, roles, userIds, variant });
+
+  const variantLabel = flag.variants.find((v) => v.value === flag.variant)?.label;
+  const panelId = `flag-${flag.key}-editor`;
 
   return (
-    <div className="rounded-lg border border-zinc-200 bg-white p-4">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="font-mono text-sm font-medium text-zinc-900">{flag.key}</p>
-          <p className="mt-0.5 text-sm font-semibold text-foreground">{flag.label}</p>
-          <p className="mt-0.5 text-xs text-zinc-500">{flag.description}</p>
-        </div>
+    <li className={cn(!first && "border-t border-os-container/70")}>
+      <div className="flex items-center gap-4 px-6 py-4">
         <button
           type="button"
-          disabled={busy}
-          onClick={() => setEnabled((v) => !v)}
-          className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs font-semibold ${
-            enabled
-              ? "bg-os-green/15 text-os-green hover:bg-os-green/15"
-              : "bg-zinc-200 text-zinc-600 hover:bg-zinc-300"
-          } disabled:opacity-50`}
+          onClick={() => setOpen((v) => !v)}
+          aria-expanded={open}
+          aria-controls={panelId}
+          className="flex min-w-0 flex-1 items-start gap-3 text-left"
         >
-          {enabled ? "Enabled" : "Disabled"}
-        </button>
-      </div>
-
-      <div className={`mt-4 flex flex-col gap-4 ${enabled ? "" : "opacity-50"}`}>
-        {flag.variants.length > 0 && (
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
-              Which one
-            </p>
-            <div className="mt-1.5 flex flex-col gap-1.5">
-              {flag.variants.map((v) => (
-                <label
-                  key={v.value}
-                  className={`flex items-start gap-2 rounded-md border px-2.5 py-2 text-sm ${
-                    variant === v.value
-                      ? "border-os-accent bg-os-accent/5"
-                      : "border-zinc-200"
-                  } ${enabled ? "cursor-pointer" : "opacity-50"}`}
-                >
-                  <input
-                    type="radio"
-                    name={`${flag.key}-variant`}
-                    className="mt-1"
-                    checked={variant === v.value}
-                    disabled={!enabled}
-                    onChange={() => setVariant(v.value)}
-                  />
-                  <span>
-                    <span className="font-medium text-zinc-900">{v.label}</span>
-                    <span className="block text-xs text-zinc-500">{v.description}</span>
-                  </span>
-                </label>
-              ))}
-            </div>
-          </div>
-        )}
-
-        <label className="flex items-center gap-2 text-sm text-zinc-700">
-          <input
-            type="checkbox"
-            checked={everyone}
-            disabled={!enabled}
-            onChange={(e) => setEveryone(e.target.checked)}
+          <ChevronDown
+            className={cn(
+              "mt-0.5 h-4 w-4 shrink-0 text-os-muted transition-transform",
+              !open && "-rotate-90",
+            )}
+            aria-hidden
           />
-          Everyone
-          <span className="text-xs text-zinc-400">(on for all users)</span>
-          <InfoTip content="When checked, this flag is on for every user regardless of role or person targeting. Disable the master switch above to turn it off for all." />
-        </label>
+          <span className="min-w-0 flex-1">
+            <span className="flex flex-wrap items-center gap-2">
+              <code className="font-mono text-sm text-foreground">{flag.key}</code>
+              <Pill tone={enabled ? "ok" : "idle"}>{flagTargetSummary({ ...flag, enabled })}</Pill>
+              {variantLabel && <Pill>{variantLabel}</Pill>}
+            </span>
+            <span className="mt-0.5 block text-sm text-os-grey">
+              <span className="font-medium text-foreground">{flag.label}</span>
+              {flag.description && <> · {flag.description}</>}
+            </span>
+          </span>
+        </button>
+        <span className="hidden w-24 text-right text-xs text-os-muted sm:block">
+          {formatUpdated(updatedAt)}
+        </span>
+        <Toggle
+          tone="os"
+          checked={enabled}
+          disabled={busy}
+          aria-label={`Turn ${flag.key} ${enabled ? "off" : "on"}`}
+          onChange={flip}
+        />
+      </div>
+      {error && !open && <p className="-mt-2 px-6 pb-3 text-xs text-destructive">{error}</p>}
 
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500 inline-flex items-center gap-1">
-            Roles
-            <InfoTip content="The flag is on for any user who holds at least one of these roles. Ignored when Everyone is checked." />
-          </p>
-          <div className="mt-1.5 flex flex-wrap gap-2">
-            {ROLE_TARGETS.map((r) => (
-              <label
-                key={r}
-                className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs ${
-                  roles.includes(r)
-                    ? "border-os-accent bg-os-accent/10 text-os-accent"
-                    : "border-zinc-300 text-zinc-600"
-                } ${everyone || !enabled ? "opacity-50" : "cursor-pointer"}`}
-              >
-                <input
-                  type="checkbox"
-                  className="sr-only"
-                  checked={roles.includes(r)}
-                  disabled={everyone || !enabled}
-                  onChange={() => toggleRole(r)}
-                />
-                {ROLE_LABELS[r]}
-              </label>
-            ))}
+      {open && (
+        <div
+          id={panelId}
+          className="flex flex-col gap-5 border-t border-os-container/70 px-6 py-5 sm:pl-13"
+        >
+          {!enabled && (
+            <p className={bodyText}>
+              This flag is off for everyone. Targeting saved here applies once it is on.
+            </p>
+          )}
+
+          {flag.variants.length > 0 && (
+            <div className="flex flex-col gap-2">
+              <p className="text-xs font-semibold text-os-muted">Which one</p>
+              <div className="grid gap-2 sm:grid-cols-2">
+                {flag.variants.map((v) => (
+                  <Radio
+                    key={v.value}
+                    name={`${flag.key}-variant`}
+                    checked={variant === v.value}
+                    onChange={() => setVariant(v.value)}
+                    label={v.label}
+                    description={v.description}
+                    className={cn(
+                      "rounded-os-item border px-3 py-2.5",
+                      variant === v.value ? "border-os-accent bg-os-accent/5" : "border-os-container",
+                    )}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="flex items-center gap-1.5">
+            <Checkbox
+              tone="os"
+              checked={everyone}
+              onChange={(e) => setEveryone(e.target.checked)}
+              label="Everyone"
+              description="On for all users"
+            />
+            <InfoTip content="When checked, this flag is on for every user regardless of role or person targeting. Turn the switch off to turn it off for all." />
           </div>
-        </div>
 
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500 inline-flex items-center gap-1">
-            Specific people
-            <InfoTip content="Individual users who always get this flag regardless of role. Useful for staged rollouts or testing with named members." />
-          </p>
-          {userIds.length > 0 && (
-            <div className="mt-1.5 flex flex-wrap gap-1.5">
-              {userIds.map((id) => {
-                const m = memberById.get(id);
+          <div className="flex flex-col gap-2">
+            <p className="inline-flex items-center gap-1 text-xs font-semibold text-os-muted">
+              Roles
+              <InfoTip content="The flag is on for any user who holds at least one of these roles. Ignored when Everyone is checked." />
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {ROLE_TARGETS.map((r) => {
+                const on = roles.includes(r);
                 return (
-                  <span
-                    key={id}
-                    className="inline-flex items-center gap-1 rounded-full bg-zinc-100 px-2 py-0.5 text-xs text-zinc-700"
+                  <label
+                    key={r}
+                    className={cn(
+                      "inline-flex items-center rounded-full border px-3 py-1 text-sm transition-colors has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-os-accent/40",
+                      on
+                        ? "border-os-accent/30 bg-os-accent/15 text-os-accent"
+                        : "border-os-container text-os-grey hover:border-os-container-hi hover:text-foreground",
+                      everyone ? "cursor-not-allowed opacity-50" : "cursor-pointer",
+                    )}
                   >
-                    {m ? m.name : id}
-                    <button
-                      type="button"
-                      disabled={!enabled}
-                      onClick={() => setUserIds((prev) => prev.filter((x) => x !== id))}
-                      className="text-zinc-400 hover:text-zinc-700 disabled:opacity-50"
-                      aria-label="Remove"
-                    >
-                      ×
-                    </button>
-                  </span>
+                    <input
+                      type="checkbox"
+                      className="sr-only"
+                      checked={on}
+                      disabled={everyone}
+                      onChange={() =>
+                        setRoles((prev) => (prev.includes(r) ? prev.filter((x) => x !== r) : [...prev, r]))
+                      }
+                    />
+                    {ROLE_LABELS[r]}
+                  </label>
                 );
               })}
             </div>
-          )}
-          <div className="relative mt-1.5 max-w-sm">
-            <SearchInput
-              size="sm"
-              value={search}
-              disabled={!enabled}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Add a person by name or email…"
-              containerClassName="w-full"
-            />
-            {matches.length > 0 && (
-              <ul className="absolute z-10 mt-1 w-full overflow-hidden rounded-md border border-zinc-200 bg-white shadow-lg">
-                {matches.map((m) => (
-                  <li key={m.id}>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setUserIds((prev) => [...prev, m.id]);
-                        setSearch("");
-                      }}
-                      className="block w-full px-3 py-1.5 text-left text-sm hover:bg-zinc-50"
-                    >
-                      {m.name}
-                      {m.email && (
-                        <span className="ml-1 text-xs text-zinc-400">{m.email}</span>
-                      )}
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <p className="inline-flex items-center gap-1 text-xs font-semibold text-os-muted">
+              Specific people
+              <InfoTip content="Individual users who always get this flag regardless of role. Useful for staged rollouts or testing with named members." />
+            </p>
+            <div className="flex flex-wrap items-center gap-1.5">
+              {userIds.map((id) => {
+                const name = memberById.get(id)?.name ?? id;
+                return (
+                  <span
+                    key={id}
+                    className="inline-flex items-center gap-1 rounded-full border border-os-container py-1 pl-3 pr-1 text-sm text-foreground"
+                  >
+                    {name}
+                    <Tooltip content="Remove">
+                      <button
+                        type="button"
+                        onClick={() => setUserIds((prev) => prev.filter((x) => x !== id))}
+                        aria-label={`Remove ${name}`}
+                        className="rounded-full p-0.5 text-os-muted transition-colors hover:bg-os-container hover:text-foreground"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </Tooltip>
+                  </span>
+                );
+              })}
+              <Combobox
+                value=""
+                options={addOptions}
+                onChange={(id) => setUserIds((prev) => (prev.includes(id) ? prev : [...prev, id]))}
+                ariaLabel={`Add a person to ${flag.key}`}
+                placeholder="Add a person by name or email"
+                emptyLabel={addOptions.length === 0 ? "Everyone is added" : "No matches"}
+                className="min-w-64 rounded-full border border-dashed border-os-container px-3 py-1 text-sm"
+              />
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              disabled={busy || !dirty}
+              onClick={saveDraft}
+              className={cn(actionBtnPrimary, "disabled:cursor-not-allowed disabled:opacity-50")}
+            >
+              {save.fetcher.state !== "idle" ? "Saving…" : "Save"}
+            </button>
+            {error && <span className="text-xs text-destructive">{error}</span>}
+            {justSaved && <span className="text-xs text-os-green">Saved</span>}
           </div>
         </div>
-      </div>
-
-      <div className="mt-4 flex items-center gap-3">
-        <button
-          type="button"
-          disabled={busy || !dirty}
-          onClick={() => void save()}
-          className={buttonClasses("primary", "sm")}
-        >
-          {busy ? "Saving…" : "Save"}
-        </button>
-        {saveFetcher.data?.error && (
-          <span className="text-xs text-destructive">{saveFetcher.data.error}</span>
-        )}
-        {justSaved && !dirty && (
-          <span className="text-xs text-os-green">Saved</span>
-        )}
-      </div>
-    </div>
+      )}
+    </li>
   );
 }
 
 export default function AdminFeatureFlags() {
-  const { flags, members } = useLoaderData<typeof loader>();
+  const { flags, members, updatedAt } = useLoaderData<typeof loader>();
+  const { panel, bodyText } = useOsChrome();
+  const [query, setQuery] = useState("");
+  const visible = flags.filter((f) => matchesFlagQuery(f, query));
+
   return (
-    <div className="flex flex-col gap-4">
-      <header>
-        <h1 className="font-heading text-2xl font-bold text-foreground">Feature Flags</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Roll a feature out gradually. A flag is on for a user when it's enabled
-          and any target matches — everyone, a listed role, or a named person.
-          Disable the master switch to turn it off for everyone at once. Some
-          flags offer a choice rather than on/off: pick which one the people
-          they target get.
+    <div className="flex flex-col gap-8">
+      <AdminSectionHeader section="platform" />
+      <div className="-mt-2 flex flex-col gap-4">
+        <p className={cn(bodyText, "max-w-3xl")}>
+          A flag is on for a user when its switch is on and any target matches: everyone, a listed role,
+          or a named person. Turn the switch off to turn it off for everyone at once. Open a flag to
+          choose who gets it.
         </p>
-      </header>
-      <div className="flex flex-col gap-3">
-        {flags.map((flag) => (
-          <FlagCard key={flag.key} flag={flag} members={members} />
-        ))}
+        <SearchInput
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search flags"
+          aria-label="Search flags"
+          containerClassName="md:w-80"
+        />
       </div>
+      <ul className={panel}>
+        {visible.map((flag, i) => (
+          <FlagRow
+            key={flag.key}
+            flag={flag}
+            members={members}
+            updatedAt={updatedAt[flag.key]}
+            first={i === 0}
+          />
+        ))}
+        {visible.length === 0 && (
+          <li>
+            <EmptyState>
+              {flags.length === 0 ? "No flags registered." : `No flags match "${query}".`}
+            </EmptyState>
+          </li>
+        )}
+      </ul>
     </div>
   );
 }

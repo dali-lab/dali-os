@@ -173,6 +173,17 @@ describe("notify", () => {
     expect(res.inApp).toBe(1);
   });
 
+  it("writes the announcement id onto every recipient's row", async () => {
+    mockPrisma.user.findMany.mockResolvedValue([user("u1"), user("u2")]);
+    await notify({
+      eventType: "announcement",
+      message: { title: "Sign the agreement", announcementId: "sa-9" },
+      recipients: [{ userId: "u1" }, { userId: "u2" }],
+    });
+    const { data } = mockPrisma.notification.createManyAndReturn.mock.calls[0][0];
+    expect(data.map((d: { announcementId: string | null }) => d.announcementId)).toEqual(["sa-9", "sa-9"]);
+  });
+
   it("stamps eventType and registry kind, honoring per-recipient overrides", async () => {
     mockPrisma.user.findMany.mockResolvedValue([user("u1"), user("u2")]);
     await notify({

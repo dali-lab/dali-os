@@ -153,7 +153,30 @@ export async function action({ request }: Route.ActionArgs) {
     );
   }
 
+  const now = new Date();
+  const record = await prisma.scheduledAnnouncement.create({
+    data: {
+      createdByUserId: auth.user.sub,
+      title: body.title,
+      body: bodyText,
+      bodyHtml,
+      link: body.link ?? null,
+      kind: body.kind ?? "General",
+      isTodo: body.isTodo ?? false,
+      dueAt,
+      formId: body.formId ?? null,
+      ccDartmouth: body.ccDartmouth ?? false,
+      allMembers: body.allMembers ?? false,
+      groupIds,
+      userIds,
+      sendAt: now,
+      sentAt: now,
+    },
+    select: { id: true },
+  });
+
   const result = await sendAnnouncement({
+    announcementId: record.id,
     createdByUserId: auth.user.sub,
     title: body.title,
     body: bodyText,
@@ -169,11 +192,17 @@ export async function action({ request }: Route.ActionArgs) {
     userIds,
   });
   if (!result.ok) {
+    await prisma.scheduledAnnouncement.delete({ where: { id: record.id } });
     return withCors(request, Response.json({ error: result.error }, { status: result.status }));
   }
+  await prisma.scheduledAnnouncement.update({
+    where: { id: record.id },
+    data: { sentCount: result.count },
+  });
   await logAuditEvent({
     action: "announcement.send",
     userId: auth.user.sub,
+    targetId: record.id,
     metadata: { ...summary, recipients: result.count },
     request,
   });

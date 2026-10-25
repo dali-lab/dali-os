@@ -1,36 +1,45 @@
-// Admin → Communications → Outbound Messages. Transactional outbox viewer:
-// recent OutboundMessage rows with status filter + text search. Operator
-// actions: Retry a Dead row (reset to Pending) and Cancel a Pending row.
-//
-// Heavy/stripped columns (bodyHtml, attachments) are excluded — they're
-// zeroed after send by the retention janitor and are not useful for triage.
+// Transactional outbox viewer: recent OutboundMessage rows with status filter
+// and text search. Heavy columns (bodyHtml, attachments) are left out: the
+// retention janitor zeroes them after send and they don't help triage.
 
-import { redirect, useFetcher, useLoaderData, useSearchParams } from "react-router";
-import { SendHorizonal, Mail, MessageSquare } from "lucide-react";
-import { SearchInput } from "~/components/ui/SearchInput";
+import { useEffect, useState } from "react";
+import { Form, redirect, useFetcher, useLoaderData, useSearchParams } from "react-router";
+import { ChevronDown, Hash, Mail, RotateCw, X } from "lucide-react";
 import type { Route } from "./+types/admin.outbound-messages";
-import { adminHandle } from "~/admin/adminNav";
-import { StatusDot } from "~/admin/components/console-ui";
+import type { Prisma } from "~/generated/prisma/client";
+import { AdminSectionHeader, adminHandle } from "~/admin/adminNav";
+import { EmptyState, Pill, type Tone } from "~/admin/components/console-ui";
+import { SearchInput } from "~/components/ui/SearchInput";
+import { Segmented } from "~/components/ui/Segmented";
 import { Tooltip } from "~/components/ui/floating";
+import { useDialog } from "~/components/ui/dialog";
+import { useToast } from "~/components/ui/toast";
+import { useOsChrome } from "~/components/os-chrome";
+import { cn } from "~/lib/cn";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { logAuditEvent } from "~/lib/audit";
 import { redirectToLogin } from "~/lib/login-next";
 import { isCore, isAdmin } from "~/lib/roles";
 import { fullName } from "~/lib/display";
-import { buttonClasses } from "~/components/ui/Button";
-import { useConfirmSubmit } from "~/components/ui/dialog";
 
-export const handle = adminHandle("outbound-messages");
+export const handle = adminHandle("outbox");
 
-export const meta: Route.MetaFunction = () => [
-  { title: "Outbound Messages · Admin · DALI OS" },
-];
+export const meta: Route.MetaFunction = () => [{ title: "Outbox · Admin · DALI OS" }];
 
-const STATUS_OPTIONS = ["", "Pending", "Sending", "Sent", "Dead", "Canceled"] as const;
+const STATUSES = ["Pending", "Sending", "Sent", "Dead", "Canceled"] as const;
+const ROW_LIMIT = 100;
 
-function todayUtc(): string {
-  return new Date().toISOString().slice(0, 10);
+export function outboxSearchWhere(q: string): Prisma.OutboundMessageWhereInput {
+  if (!q) return {};
+  const contains = { contains: q, mode: "insensitive" as const };
+  return {
+    OR: [{ target: contains }, { recipientUserId: contains }, { eventType: contains }, { subject: contains }],
+  };
+}
+
+function retryData() {
+  return { status: "Pending", nextAttemptAt: new Date(), attempts: 0, lastError: null };
 }
 
 export async function loader({ request }: Route.LoaderArgs) {
@@ -41,50 +50,23 @@ export async function loader({ request }: Route.LoaderArgs) {
   const url = new URL(request.url);
   const statusFilter = url.searchParams.get("status") ?? "";
   const q = url.searchParams.get("q")?.trim() ?? "";
+  const search = outboxSearchWhere(q);
 
-  // Per-status counts — honor text search but ignore the status filter so every
-  // segment shows its true size.
-  const grouped = await prisma.outboundMessage.groupBy({
-    by: ["status"],
-    where: {
-      ...(q
-        ? {
-            OR: [
-              { target: { contains: q, mode: "insensitive" } },
-              { recipientUserId: { contains: q, mode: "insensitive" } },
-              { eventType: { contains: q, mode: "insensitive" } },
-              { subject: { contains: q, mode: "insensitive" } },
-            ],
-          }
-        : {}),
-    },
-    _count: true,
-  });
+  // Counts honor the search but not the status filter, so every segment shows its true size.
+  const grouped = await prisma.outboundMessage.groupBy({ by: ["status"], where: search, _count: true });
   const counts: Record<string, number> = {};
   for (const g of grouped) counts[g.status] = g._count;
   const total = Object.values(counts).reduce((a, b) => a + b, 0);
 
-  // Lightweight columns only — bodyHtml/attachments are heavy and stripped post-send.
   const rows = await prisma.outboundMessage.findMany({
-    where: {
-      ...(statusFilter ? { status: statusFilter } : {}),
-      ...(q
-        ? {
-            OR: [
-              { target: { contains: q, mode: "insensitive" } },
-              { recipientUserId: { contains: q, mode: "insensitive" } },
-              { eventType: { contains: q, mode: "insensitive" } },
-              { subject: { contains: q, mode: "insensitive" } },
-            ],
-          }
-        : {}),
-    },
+    where: { ...(statusFilter ? { status: statusFilter } : {}), ...search },
     orderBy: { createdAt: "desc" },
-    take: 100,
+    take: ROW_LIMIT,
     select: {
       id: true,
       channel: true,
       status: true,
+      purpose: true,
       target: true,
       recipientUserId: true,
       subject: true,
@@ -96,7 +78,6 @@ export async function loader({ request }: Route.LoaderArgs) {
     },
   });
 
-  // Batch-fetch recipient names for rows that have a recipientUserId.
   const recipientIds = [...new Set(rows.flatMap((r) => (r.recipientUserId ? [r.recipientUserId] : [])))];
   const users =
     recipientIds.length === 0
@@ -109,13 +90,13 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const messages = rows.map((r) => {
     const u = r.recipientUserId ? userById.get(r.recipientUserId) : undefined;
-    const recipientName = u ? fullName(u) || u.daliEmail : null;
     return {
       id: r.id,
       channel: r.channel,
       status: r.status,
+      purpose: r.purpose,
       target: r.target,
-      recipientName,
+      recipientName: u ? fullName(u) || u.daliEmail : null,
       subject: r.subject,
       eventType: r.eventType,
       attempts: r.attempts,
@@ -138,17 +119,33 @@ export async function action({ request }: Route.ActionArgs) {
 
   const form = await request.formData();
   const intent = form.get("intent");
-  const id = form.get("id");
 
+  if (intent === "retry-all") {
+    const q = String(form.get("q") ?? "").trim();
+    const { count } = await prisma.outboundMessage.updateMany({
+      where: { status: "Dead", ...outboxSearchWhere(q) },
+      data: retryData(),
+    });
+    if (count > 0) {
+      await logAuditEvent({
+        action: "outbound.retry_all",
+        userId: auth.user.sub,
+        metadata: { count, search: q || null },
+        request,
+      });
+    }
+    return Response.json({ ok: true, count });
+  }
+
+  const id = form.get("id");
   if (typeof id !== "string" || !id) {
     return Response.json({ error: "Missing id" }, { status: 400 });
   }
 
   if (intent === "retry") {
-    // Reset a Dead row so the drain picks it up again.
     const message = await prisma.outboundMessage.update({
       where: { id, status: "Dead" },
-      data: { status: "Pending", nextAttemptAt: new Date(), attempts: 0, lastError: null },
+      data: retryData(),
       select: { channel: true, purpose: true },
     });
     await logAuditEvent({
@@ -162,9 +159,8 @@ export async function action({ request }: Route.ActionArgs) {
   }
 
   if (intent === "cancel") {
-    // Cancel a Pending row — won't send.
     const message = await prisma.outboundMessage.update({
-      where: { id, status: "Pending" },
+      where: { id, status: { in: ["Pending", "Dead"] } },
       data: { status: "Canceled" },
       select: { channel: true, purpose: true },
     });
@@ -181,7 +177,7 @@ export async function action({ request }: Route.ActionArgs) {
   return Response.json({ error: "Invalid intent" }, { status: 400 });
 }
 
-// ─── UI helpers ────────────────────────────────────────────────────────────
+// ─── UI ────────────────────────────────────────────────────────────────────
 
 function formatTime(iso: string | null): string {
   if (!iso) return "—";
@@ -193,252 +189,276 @@ function formatTime(iso: string | null): string {
   });
 }
 
-const STATUS_BADGE: Record<string, string> = {
-  Pending: "bg-os-amber/15 text-os-amber",
-  Sending: "bg-blue-100 text-blue-800",
-  Sent: "bg-os-green/15 text-os-green",
-  Dead: "bg-destructive/15 text-destructive",
-  Canceled: "bg-zinc-100 text-zinc-600",
+const STATUS_VIEW: Record<string, { tone: Tone; label: string }> = {
+  Pending: { tone: "warn", label: "Pending" },
+  Sending: { tone: "warn", label: "Sending" },
+  Sent: { tone: "ok", label: "Sent" },
+  Dead: { tone: "bad", label: "Failed" },
+  Canceled: { tone: "idle", label: "Canceled" },
 };
 
-const STATUS_DOT_TONE: Record<string, "ok" | "warn" | "bad" | "idle"> = {
-  Sent: "ok",
-  Pending: "warn",
-  Sending: "warn",
-  Dead: "bad",
-  Canceled: "idle",
+const statusView = (s: string) => STATUS_VIEW[s] ?? { tone: "idle" as const, label: s };
+
+const CHANNEL_LABEL: Record<string, string> = {
+  email: "Email",
+  slack_dm: "Slack DM",
+  slack_channel: "Slack channel",
 };
 
-type MessageRow = {
-  id: string;
-  channel: string;
-  status: string;
-  target: string;
-  recipientName: string | null;
-  subject: string | null;
-  eventType: string | null;
-  attempts: number;
-  lastError: string | null;
-  sentAt: string | null;
-  createdAt: string;
-};
+type MessageRow = ReturnType<typeof useLoaderData<typeof loader>>["messages"][number];
 
-function ChannelIcon({ channel }: { channel: string }) {
-  if (channel === "email") {
-    return <Mail className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />;
-  }
-  return <MessageSquare className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />;
-}
-
-function Row({ msg }: { msg: MessageRow }) {
-  const fetcher = useFetcher<{ ok?: boolean; error?: string }>();
-  const confirmSubmit = useConfirmSubmit();
-  const busy = fetcher.state !== "idle";
-
+function Detail({ term, value, mono }: { term: string; value: string; mono?: boolean }) {
   return (
-    <tr className="border-b border-border last:border-b-0 align-top">
-      <td className="px-3 py-3">
-        <div className="flex items-center gap-1.5">
-          <StatusDot tone={STATUS_DOT_TONE[msg.status] ?? "idle"} />
-          <span
-            className={`inline-block rounded-full px-2 py-0.5 text-xs font-semibold ${STATUS_BADGE[msg.status] ?? "bg-zinc-100 text-zinc-600"}`}
-          >
-            {msg.status}
-          </span>
-        </div>
-      </td>
-      <td className="px-3 py-3 text-xs text-muted-foreground whitespace-nowrap">
-        <div className="flex items-center gap-1">
-          <ChannelIcon channel={msg.channel} />
-          {msg.channel}
-        </div>
-      </td>
-      <td className="px-3 py-3">
-        {msg.recipientName ? (
-          <>
-            <div className="text-sm text-foreground">{msg.recipientName}</div>
-            <div className="text-xs text-muted-foreground/70">{msg.target}</div>
-          </>
-        ) : (
-          <div className="text-sm text-foreground">{msg.target}</div>
-        )}
-      </td>
-      <td className="px-3 py-3">
-        {msg.subject && (
-          <Tooltip content={msg.subject}>
-            <div className="text-sm text-foreground truncate max-w-[200px]">
-              {msg.subject}
-            </div>
-          </Tooltip>
-        )}
-        {msg.eventType && (
-          <div className="font-mono text-xs text-muted-foreground">{msg.eventType}</div>
-        )}
-      </td>
-      <td className="px-3 py-3 text-center text-xs text-muted-foreground">
-        {msg.attempts}
-      </td>
-      <td className="px-3 py-3 max-w-[220px]">
-        {msg.lastError && (
-          <Tooltip content={msg.lastError} variant="rich" placement="bottom">
-            <p className="break-all text-xs text-destructive">
-              {msg.lastError.length > 120
-                ? `${msg.lastError.slice(0, 120)}…`
-                : msg.lastError}
-            </p>
-          </Tooltip>
-        )}
-      </td>
-      <td className="px-3 py-3 text-xs text-muted-foreground whitespace-nowrap">
-        <div>{formatTime(msg.createdAt)}</div>
-        {msg.sentAt && (
-          <div className="text-muted-foreground/70">sent {formatTime(msg.sentAt)}</div>
-        )}
-      </td>
-      <td className="px-3 py-3 whitespace-nowrap">
-        {msg.status === "Dead" && (
-          <fetcher.Form method="post">
-            <input type="hidden" name="intent" value="retry" />
-            <input type="hidden" name="id" value={msg.id} />
-            <button
-              type="submit"
-              disabled={busy}
-              className={buttonClasses("primary", "sm")}
-            >
-              {busy ? "Retrying…" : "Retry"}
-            </button>
-          </fetcher.Form>
-        )}
-        {msg.status === "Pending" && (
-          <fetcher.Form
-            method="post"
-            onSubmit={confirmSubmit({
-              title: "Cancel this queued message?",
-              description:
-                "It won't be delivered, and the queue won't retry it. Whatever triggered it would have to run again.",
-              confirmLabel: "Cancel message",
-              cancelLabel: "Leave it queued",
-              tone: "destructive",
-            })}
-          >
-            <input type="hidden" name="intent" value="cancel" />
-            <input type="hidden" name="id" value={msg.id} />
-            <button
-              type="submit"
-              disabled={busy}
-              className={buttonClasses("ghost", "sm")}
-            >
-              {busy ? "Canceling…" : "Cancel"}
-            </button>
-          </fetcher.Form>
-        )}
-      </td>
-    </tr>
+    <div className="min-w-0">
+      <dt className="text-xs text-os-muted">{term}</dt>
+      <dd className={cn("break-all text-foreground", mono && "font-mono text-xs leading-5")}>{value}</dd>
+    </div>
   );
 }
 
-export default function AdminOutboundMessages() {
-  const { messages, statusFilter, q, counts, total } = useLoaderData<typeof loader>();
-  const [params] = useSearchParams();
+function MessageItem({ msg, open, onToggle }: { msg: MessageRow; open: boolean; onToggle: () => void }) {
+  const fetcher = useFetcher<{ ok?: boolean; error?: string }>();
+  const dialog = useDialog();
+  const { actionBtn, actionBtnPrimary } = useOsChrome();
+  const busy = fetcher.state !== "idle";
+  const pendingIntent = fetcher.formData?.get("intent");
+  const view = statusView(msg.status);
+  const ChannelIcon = msg.channel === "email" ? Mail : Hash;
+  const title = msg.subject ?? msg.eventType ?? "No subject";
+  const recipient = msg.recipientName ?? msg.target;
 
-  function buildUrl(overrides: Record<string, string>) {
-    const next = new URLSearchParams(params);
-    for (const [k, v] of Object.entries(overrides)) {
-      if (v) next.set(k, v);
-      else next.delete(k);
-    }
-    return `?${next.toString()}`;
+  async function cancel() {
+    const failed = msg.status === "Dead";
+    const ok = await dialog.confirm({
+      title: failed ? "Cancel this failed message?" : "Cancel this queued message?",
+      description: failed
+        ? "It stays in the outbox as canceled and can't be retried. Whatever triggered it would have to run again."
+        : "It won't be delivered, and the queue won't retry it. Whatever triggered it would have to run again.",
+      confirmLabel: "Cancel message",
+      cancelLabel: failed ? "Keep it" : "Leave it queued",
+      tone: "destructive",
+    });
+    if (ok) fetcher.submit({ intent: "cancel", id: msg.id }, { method: "post" });
   }
 
-  const pillLabel = (s: string) =>
-    s === "" ? `All ${total}` : `${s} ${counts[s] ?? 0}`;
+  return (
+    <li className="border-t border-os-container/70 first:border-t-0">
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={open}
+        className="flex w-full min-w-0 items-center gap-4 px-5 py-4 text-left sm:px-6"
+      >
+        <Tooltip content={CHANNEL_LABEL[msg.channel] ?? msg.channel}>
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-os-item bg-os-well text-os-grey">
+            <ChannelIcon className="h-4 w-4" aria-label={CHANNEL_LABEL[msg.channel] ?? msg.channel} />
+          </span>
+        </Tooltip>
+        <span className="min-w-0 flex-1">
+          <Tooltip content={title}>
+            <span className="block truncate font-semibold text-foreground">{title}</span>
+          </Tooltip>
+          <span className="block truncate text-sm text-os-grey">
+            {recipient}
+            <span className="text-os-muted">
+              {msg.subject && msg.eventType ? ` · ${msg.eventType}` : ""} · {formatTime(msg.createdAt)}
+              {msg.sentAt ? ` · sent ${formatTime(msg.sentAt)}` : ""}
+            </span>
+          </span>
+          {msg.lastError && !open && (
+            <Tooltip content={msg.lastError} variant="rich" placement="bottom">
+              <span className="mt-1 block truncate font-mono text-xs text-destructive">
+                {msg.lastError.length > 120 ? `${msg.lastError.slice(0, 120)}…` : msg.lastError}
+              </span>
+            </Tooltip>
+          )}
+        </span>
+        <span className="hidden text-xs tabular-nums text-os-muted md:block">
+          {msg.attempts} {msg.attempts === 1 ? "attempt" : "attempts"}
+        </span>
+        <Pill tone={view.tone} className="hidden sm:inline-flex">
+          {view.label}
+        </Pill>
+        <ChevronDown
+          className={cn("h-4 w-4 shrink-0 text-os-muted transition-transform duration-200", open && "rotate-180")}
+          aria-hidden
+        />
+      </button>
+      <div
+        className={cn(
+          "grid transition-[grid-template-rows] duration-200 ease-out",
+          open ? "grid-rows-[1fr]" : "grid-rows-[0fr]",
+        )}
+      >
+        <div className="overflow-hidden">
+          <div className="mx-5 mb-5 flex flex-col gap-4 rounded-os-item bg-os-well p-4 sm:mx-6 sm:ml-[76px]">
+            <dl className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm sm:grid-cols-4">
+              <Detail term="Channel" value={CHANNEL_LABEL[msg.channel] ?? msg.channel} />
+              <Detail term="Attempts" value={String(msg.attempts)} />
+              <Detail term="Purpose" value={msg.purpose ?? "—"} />
+              <Detail term="Status" value={view.label} />
+              <Detail term="Target" value={msg.target} mono />
+              <Detail term="Event" value={msg.eventType ?? "—"} mono />
+              <Detail term="Created" value={formatTime(msg.createdAt)} />
+              <Detail term="Sent" value={formatTime(msg.sentAt)} />
+            </dl>
+            {msg.lastError && (
+              <p className="break-all rounded-lg bg-destructive/10 px-3 py-2 font-mono text-xs text-destructive">
+                {msg.lastError}
+              </p>
+            )}
+            {fetcher.data?.error && <p className="text-xs text-destructive">{fetcher.data.error}</p>}
+            {(msg.status === "Dead" || msg.status === "Pending") && (
+              <div className="flex flex-wrap gap-2">
+                {msg.status === "Dead" && (
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => fetcher.submit({ intent: "retry", id: msg.id }, { method: "post" })}
+                    className={cn(actionBtnPrimary, "disabled:opacity-50")}
+                  >
+                    <RotateCw className="h-4 w-4" />
+                    {pendingIntent === "retry" ? "Retrying…" : "Retry"}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void cancel()}
+                  className={cn(actionBtn(), "disabled:opacity-50")}
+                >
+                  <X className="h-4 w-4" />
+                  {pendingIntent === "cancel" ? "Canceling…" : "Cancel send"}
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </li>
+  );
+}
+
+function RetryAllButton({ count, q }: { count: number; q: string }) {
+  const fetcher = useFetcher<{ ok?: boolean; count?: number; error?: string }>();
+  const dialog = useDialog();
+  const toast = useToast();
+  const { actionBtnPrimary } = useOsChrome();
+
+  useEffect(() => {
+    if (fetcher.state !== "idle" || !fetcher.data) return;
+    if (fetcher.data.error) toast.error(fetcher.data.error);
+    else if (fetcher.data.ok) {
+      const n = fetcher.data.count ?? 0;
+      toast.success(n === 1 ? "1 message re-queued." : `${n} messages re-queued.`);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fetcher.state, fetcher.data]);
+
+  async function retryAll() {
+    const ok = await dialog.confirm({
+      title: `Retry ${count} failed ${count === 1 ? "message" : "messages"}?`,
+      description: q
+        ? `Every failed message matching "${q}" goes back in the queue and sends on the next drain.`
+        : "Every failed message goes back in the queue and sends on the next drain.",
+      confirmLabel: "Retry all",
+    });
+    if (ok) fetcher.submit({ intent: "retry-all", q }, { method: "post" });
+  }
 
   return (
-    <div className="flex flex-col gap-4">
-      <header>
-        <div className="flex items-center gap-2">
-          <SendHorizonal className="h-6 w-6 text-foreground/80" aria-hidden />
-          <h1 className="font-heading text-2xl font-bold text-foreground">
-            Outbound Messages
-          </h1>
+    <button
+      type="button"
+      disabled={fetcher.state !== "idle"}
+      onClick={() => void retryAll()}
+      className={cn(actionBtnPrimary, "disabled:opacity-50")}
+    >
+      <RotateCw className="h-4 w-4" />
+      {fetcher.state !== "idle" ? "Retrying…" : "Retry all failed"}
+    </button>
+  );
+}
+
+type StatusFilter = "" | (typeof STATUSES)[number];
+
+export default function AdminOutboundMessages() {
+  const { messages, statusFilter, q, counts, total } = useLoaderData<typeof loader>();
+  const { panel, actionBtn } = useOsChrome();
+  const [, setSearchParams] = useSearchParams();
+  const [open, setOpen] = useState<string | null>(null);
+  const failed = counts.Dead ?? 0;
+
+  function onStatusChange(next: StatusFilter) {
+    setSearchParams((prev) => {
+      const params = new URLSearchParams(prev);
+      if (next) params.set("status", next);
+      else params.delete("status");
+      return params;
+    });
+  }
+
+  const filterLabel = statusFilter ? statusView(statusFilter).label.toLowerCase() : "";
+
+  return (
+    <div className="flex flex-col gap-6">
+      <AdminSectionHeader section="messaging" />
+
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="max-w-full overflow-x-auto">
+          <Segmented<StatusFilter>
+            ariaLabel="Message status"
+            value={(statusFilter as StatusFilter) || ""}
+            onChange={onStatusChange}
+            options={[
+              { value: "", label: "All", count: total },
+              ...STATUSES.map((s) => ({ value: s, label: statusView(s).label, count: counts[s] ?? 0 })),
+            ]}
+          />
         </div>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Transactional outbox — the last 100 rows newest-first.{" "}
-          <strong>Retry</strong> resets a Dead row; <strong>Cancel</strong> stops
-          a Pending row from sending.
-        </p>
-      </header>
-
-      {/* Filters */}
-      <form method="get" className="flex flex-wrap items-center gap-3">
-        {/* Status pill filter */}
-        <div className="flex items-center gap-1 text-sm">
-          {STATUS_OPTIONS.map((s) => (
-            <a
-              key={s || "all"}
-              href={buildUrl({ status: s, q })}
-              className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
-                s === statusFilter
-                  ? "bg-foreground text-background"
-                  : "bg-muted text-muted-foreground hover:bg-muted/70"
-              }`}
-            >
-              {pillLabel(s)}
-            </a>
-          ))}
+        <div className="flex flex-wrap items-center gap-2">
+          <Form method="get" role="search" className="flex items-center gap-2">
+            <SearchInput
+              size="sm"
+              name="q"
+              defaultValue={q}
+              aria-label="Search messages"
+              placeholder="Search target, recipient, event, subject"
+              containerClassName="min-w-[240px] sm:w-72"
+            />
+            {statusFilter && <input type="hidden" name="status" value={statusFilter} />}
+            <button type="submit" className={actionBtn()}>
+              Search
+            </button>
+          </Form>
+          {failed > 0 && (statusFilter === "" || statusFilter === "Dead") && (
+            <RetryAllButton count={failed} q={q} />
+          )}
         </div>
-
-        {/* Text search */}
-        <SearchInput
-          size="sm"
-          name="q"
-          defaultValue={q}
-          placeholder="Search target / recipient / event / subject…"
-          containerClassName="ml-auto min-w-[240px]"
-        />
-        {statusFilter && <input type="hidden" name="status" value={statusFilter} />}
-        <button type="submit" className={buttonClasses("ghost", "sm")}>
-          Search
-        </button>
-      </form>
-
-      {/* Table */}
-      <div className="overflow-x-auto rounded-lg border border-border bg-card">
-        <table className="w-full min-w-[900px] text-left">
-          <thead>
-            <tr className="border-b border-border bg-muted/50 text-xs font-medium text-muted-foreground">
-              <th className="px-3 py-2">Status</th>
-              <th className="px-3 py-2">Channel</th>
-              <th className="px-3 py-2">Recipient / Target</th>
-              <th className="px-3 py-2">Subject / Event</th>
-              <th className="px-3 py-2 text-center">Attempts</th>
-              <th className="px-3 py-2">Last error</th>
-              <th className="px-3 py-2">Created / Sent</th>
-              <th className="px-3 py-2" />
-            </tr>
-          </thead>
-          <tbody>
-            {messages.length === 0 && (
-              <tr>
-                <td
-                  colSpan={8}
-                  className="px-3 py-8 text-center text-sm text-muted-foreground"
-                >
-                  No messages match this filter.
-                </td>
-              </tr>
-            )}
-            {messages.map((msg) => (
-              <Row key={msg.id} msg={msg} />
-            ))}
-          </tbody>
-        </table>
       </div>
 
-      <p className="text-[11px] text-muted-foreground/70">
-        Heavy columns (bodyHtml, attachments) are omitted — they are stripped from
-        Sent rows after delivery by the retention janitor. Up to 100 rows shown;
-        narrow the filter to see older entries.
+      <ul className={panel}>
+        {messages.map((m) => (
+          <MessageItem
+            key={m.id}
+            msg={m}
+            open={open === m.id}
+            onToggle={() => setOpen((cur) => (cur === m.id ? null : m.id))}
+          />
+        ))}
+        {messages.length === 0 && (
+          <li>
+            <EmptyState title="Nothing here">
+              {q
+                ? "No messages match this filter."
+                : `No ${filterLabel ? `${filterLabel} ` : ""}messages.`}
+            </EmptyState>
+          </li>
+        )}
+      </ul>
+
+      <p className="text-xs text-os-muted">
+        Newest first, up to {ROW_LIMIT} rows. Narrow the filter to see older ones. Message bodies and attachments
+        aren&apos;t shown; they are cleared from sent messages after delivery.
       </p>
     </div>
   );
