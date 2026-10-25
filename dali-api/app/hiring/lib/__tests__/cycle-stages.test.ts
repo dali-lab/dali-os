@@ -8,8 +8,7 @@ import { STANDARD_TIMELINE, defaultTimeline, type Timeline } from "~/hiring/lib/
 
 const mockPrisma = prisma as unknown as Record<string, any>;
 const cycle = (timeline: Timeline) => ({ id: "cycle-1", timeline });
-const REVIEWED_UNDECIDED = {
-  reviews: { every: { submittedAt: { not: null } }, some: {} },
+const UNDECIDED = {
   decisions: { none: { stage: { in: ["Final", "Released"] } } },
 };
 const NO_OUTCOME = {
@@ -24,9 +23,14 @@ beforeEach(() => {
 });
 
 describe("delibsQualifier", () => {
-  it("first round: every review in, no final decision", async () => {
-    expect(await delibsQualifier(cycle(STANDARD_TIMELINE), "first", "d1")).toEqual(REVIEWED_UNDECIDED);
+  it("first round: no final decision, reviews not required", async () => {
+    expect(await delibsQualifier(cycle(STANDARD_TIMELINE), "first", "d1")).toEqual(UNDECIDED);
     expect(mockPrisma.delibsSession.findUnique).not.toHaveBeenCalled();
+  });
+
+  it("first round does not filter on reviews, so partly or un-reviewed applicants still land on the board", async () => {
+    const where = await delibsQualifier(cycle(STANDARD_TIMELINE), "first", "d1");
+    expect(where).not.toHaveProperty("reviews");
   });
 
   it("a round after Interviews: invited on the previous board and interviewed", async () => {
@@ -62,7 +66,7 @@ describe("delibsQualifier", () => {
 
   it("the only round is the first round", async () => {
     const t = defaultTimeline({ firstDelib: false, interviews: false });
-    expect(await delibsQualifier(cycle(t), "final", "d1")).toEqual(REVIEWED_UNDECIDED);
+    expect(await delibsQualifier(cycle(t), "final", "d1")).toEqual(UNDECIDED);
   });
 
   it("an unknown round qualifies no one", async () => {
