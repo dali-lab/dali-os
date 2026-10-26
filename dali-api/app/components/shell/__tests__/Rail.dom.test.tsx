@@ -163,9 +163,9 @@ describe("Rail", () => {
     expect(options.map((o) => o.querySelector("[data-area-tile]")!.getAttribute("data-area-tile"))).toEqual([
       "projects",
       "community",
+      "core",
       "education",
       "hiring",
-      "core",
       "admin",
     ]);
     expect(options[0].textContent).toContain("About projects");
