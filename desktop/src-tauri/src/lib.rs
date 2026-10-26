@@ -144,9 +144,9 @@ pub fn run() {
             }
             "copy-page-link" => window::copy_page_link(app),
             "new-tab" => window::tab_command(app, "new"),
-            "close-tab" => window::tab_command(app, "close"),
+            "close-tab" => window::close_tab(app),
             "reopen-tab" => window::tab_command(app, "reopen"),
-            "close-window" => window::hide_main(app),
+            "close-window" => window::close_window(app),
             "find" => window::find_action(app, "open"),
             "find-next" => window::find_action(app, "next"),
             "find-previous" => window::find_action(app, "prev"),
