@@ -531,6 +531,7 @@ describe("leaving mid-recording: only the capturing tab is guarded", () => {
   });
 
   afterEach(() => {
+    act(() => root?.unmount());
     document.body.innerHTML = "";
   });
 

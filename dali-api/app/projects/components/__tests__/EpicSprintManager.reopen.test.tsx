@@ -93,7 +93,7 @@ function mount() {
   act(() => root!.render(createElement(Stub, { initialEntries: ["/"] })));
 }
 
-const epicModalOpen = () => container!.querySelector("#epic-detail-title") != null;
+const epicModalOpen = () => document.body.querySelector("#epic-detail-title") != null;
 
 afterEach(() => {
   if (root) {
@@ -135,7 +135,7 @@ describe("EpicSprintManager epic reopen", () => {
     mount();
 
     act(() => setReopen!({ epicId: "epic-1" }));
-    const plus = container!.querySelector(
+    const plus = document.body.querySelector(
       '[aria-label="Add task to Onboarding"]',
     ) as HTMLElement;
     expect(plus).toBeTruthy();
@@ -158,7 +158,7 @@ describe("EpicSprintManager epic reopen", () => {
     for (const _pass of [1, 2]) {
       act(() => setReopen!({ epicId: "epic-1" }));
       expect(epicModalOpen()).toBe(true);
-      const plus = container!.querySelector(
+      const plus = document.body.querySelector(
         '[aria-label="Add task to Onboarding"]',
       ) as HTMLElement;
       act(() => plus.click());

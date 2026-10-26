@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
+import { TOGGLE_SIDEBAR_SHORTCUT } from '~/lib/shortcuts'
 import {
   Bell,
   Calendar,
@@ -228,7 +229,7 @@ export function Rail({
               </button>
             </Tooltip>
             {onHideRail && (
-              <Tooltip content="Hide sidebar">
+              <Tooltip content={`Hide sidebar · ${TOGGLE_SIDEBAR_SHORTCUT}`}>
                 <button type="button" onClick={onHideRail} aria-label="Hide sidebar" className={cn(ICON_BUTTON, 'h-7 w-7')}>
                   <PanelLeft className="h-[18px] w-[18px]" />
                 </button>

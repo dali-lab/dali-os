@@ -26,14 +26,14 @@ function Contribution() {
   );
 }
 
-function mount(location: string | null = null, contribute = false) {
+function mount(icon: string | null = null, contribute = false) {
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
   act(() =>
     root.render(
       <MemoryRouter>
-        <PanelFrame panel={{ type: "doc", id: "p1" }} title="Notes" location={location} onClose={onClose}>
+        <PanelFrame panel={{ type: "doc", id: "p1" }} title="Notes" icon={icon} onClose={onClose}>
           {contribute && <Contribution />}
           <Menu trigger={<button type="button">Menu</button>} ariaLabel="Actions">
             <Menu.Item>Rename</Menu.Item>
@@ -67,9 +67,23 @@ describe("PanelFrame header", () => {
     expect(link?.getAttribute("href")).toBe("/documents/p1");
   });
 
-  it("shows where the document lives when known", () => {
-    mount("My Drive");
-    expect(container.textContent).toContain("My Drive");
+  it("shows the document title, with its icon when it has one", () => {
+    mount();
+    const aside = container.querySelector("aside")!;
+    expect(aside.querySelector("span.truncate")?.textContent).toBe("Notes");
+    expect(aside.textContent).not.toContain("📓");
+    act(() => root.unmount());
+    root = createRoot(container);
+    mount("📓");
+    expect(container.querySelector("aside")!.textContent).toContain("📓");
+  });
+
+  it("is a raised white layer over the page", () => {
+    mount();
+    const cls = container.querySelector("aside")!.className;
+    expect(cls).toContain("bg-os-card");
+    expect(cls).toContain("md:shadow-[-8px_0_24px_var(--color-os-hover)]");
+    expect(cls).toContain("md:border-l");
   });
 
   it("closes from the close button", () => {

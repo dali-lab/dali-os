@@ -16,6 +16,7 @@ import { DocCommentsPanel, useDocThreadCount } from "~/components/doc/comments";
 import { pageDocName } from "~/collab/roomName";
 import { PresenceProvider } from "./collab/PresenceProvider";
 import { PresenceBar } from "./collab/PresenceBar";
+import { isVersionHistoryShortcut, VERSION_HISTORY_SHORTCUT } from "~/lib/shortcuts";
 import { VersionHistoryPanel } from "./collab/VersionHistoryPanel";
 import { TagPicker, type DocTag } from "./TagPicker";
 import { FavoriteStar } from "./FavoriteStar";
@@ -73,6 +74,20 @@ const DOWNLOAD_FORMATS = [
 ] as const;
 
 export const FIND_SHORTCUT = "⌘F";
+
+type HistoryEditor = { surface: { current: HTMLElement | null }; panel: boolean };
+const historyEditors = new Set<HistoryEditor>();
+
+export function pickHistoryEditor(active: Element | null): HistoryEditor | undefined {
+  const all = [...historyEditors];
+  return (
+    all.find((entry) => active && entry.surface.current?.contains(active)) ??
+    all.find((entry) => !entry.panel) ??
+    all[0]
+  );
+}
+
+const SYNC_LABELS = { saving: "Saving…", saved: "Saved", offline: "Offline" } as const;
 
 export function DocumentEditor({
   pageId,
@@ -303,6 +318,23 @@ export function DocumentEditor({
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
   }, []);
+
+  const hasHistory = !!collabToken;
+  useEffect(() => {
+    if (!hasHistory) return;
+    const entry = { surface: docSurfaceRef, panel: chrome === "panel" };
+    historyEditors.add(entry);
+    const onKeyDown = (e: globalThis.KeyboardEvent) => {
+      if (!isVersionHistoryShortcut(e) || pickHistoryEditor(document.activeElement) !== entry) return;
+      e.preventDefault();
+      setHistoryOpen(true);
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      historyEditors.delete(entry);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [hasHistory, chrome]);
 
   const threadCount = useDocThreadCount(pageId);
 
@@ -670,7 +702,7 @@ export function DocumentEditor({
         () => setCommentsOpen((o) => !o),
       )}
       {row("find", <Search className={smallIcon} />, <>Find &amp; replace</>, () => { setFindInitialQuery(""); setFindOpen(true); }, docked ? FIND_SHORTCUT : undefined)}
-      {collabToken && row("history", <History className={smallIcon} />, "Version history", () => setHistoryOpen(true))}
+      {collabToken && row("history", <History className={smallIcon} />, "Version history", () => setHistoryOpen(true), docked ? VERSION_HISTORY_SHORTCUT : undefined)}
       {row("duplicate", <Copy className={smallIcon} />, "Duplicate", () => void duplicateDoc())}
       {row("reveal", <FolderSearch className={smallIcon} />, "Reveal in Drive", () => window.location.assign(revealInDriveHref(pageId)))}
       {canManageAccess && row("move", <FolderInput className={smallIcon} />, "Move to…", () => setMoveOpen(true))}
@@ -772,13 +804,31 @@ export function DocumentEditor({
     </>
   );
 
+  const SYNC_ICONS = {
+    saving: <Loader2 className={cn(actionIcon, "animate-spin")} />,
+    saved: <Check className={actionIcon} />,
+    offline: <CloudOff className={actionIcon} />,
+  } as const;
+
   const statusNodes = (
     <>
       {editedLabel && (
         <span className="shrink-0 hidden sm:inline">{editedLabel}</span>
       )}
       {savingTitle && <span className="shrink-0 italic">Saving…</span>}
-      {syncState && (
+      {syncState && docked && (
+        <Tooltip content={SYNC_LABELS[syncState]}>
+          <span
+            data-testid="doc-sync-status"
+            tabIndex={0}
+            className={cn("shrink-0 inline-flex items-center", syncState === "offline" && "text-os-amber")}
+          >
+            {SYNC_ICONS[syncState]}
+            <span className="sr-only">{SYNC_LABELS[syncState]}</span>
+          </span>
+        </Tooltip>
+      )}
+      {syncState && !docked && (
         <span
           data-testid="doc-sync-status"
           className="shrink-0 inline-grid"
@@ -790,13 +840,7 @@ export function DocumentEditor({
                 : "All changes saved"
           }
         >
-          {(
-            [
-              ["saving", <Loader2 key="i" className={cn(actionIcon, "animate-spin")} />, "Saving…"],
-              ["saved", <Check key="i" className={actionIcon} />, "Saved"],
-              ["offline", <CloudOff key="i" className={actionIcon} />, "Offline"],
-            ] as const
-          ).map(([state, icon, label]) => (
+          {(["saving", "saved", "offline"] as const).map((state) => (
             <span
               key={state}
               aria-hidden={state !== syncState}
@@ -806,7 +850,7 @@ export function DocumentEditor({
                 state === "offline" && "text-os-amber",
               )}
             >
-              {icon} <span className={state === "saved" ? "sr-only" : "hidden sm:inline"}>{label}</span>
+              {SYNC_ICONS[state]} <span className={state === "saved" ? "sr-only" : "hidden sm:inline"}>{SYNC_LABELS[state]}</span>
             </span>
           ))}
         </span>

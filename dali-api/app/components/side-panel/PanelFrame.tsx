@@ -37,7 +37,7 @@ const HEADER_BUTTON =
 export function PanelFrame(props: {
   panel: SidePanel;
   title: string;
-  location?: string | null;
+  icon?: string | null;
   onClose: () => void;
   children: ReactNode;
 }) {
@@ -51,13 +51,13 @@ export function PanelFrame(props: {
 function PanelFrameInner({
   panel,
   title,
-  location = null,
+  icon = null,
   onClose,
   children,
 }: {
   panel: SidePanel;
   title: string;
-  location?: string | null;
+  icon?: string | null;
   onClose: () => void;
   children: ReactNode;
 }) {
@@ -115,8 +115,8 @@ function PanelFrameInner({
       aria-label={title || "Side panel"}
       style={{ "--side-panel-w": `${width}px` } as React.CSSProperties}
       className={cn(
-        "fixed inset-0 z-40 flex flex-col bg-os-bg",
-        "md:sticky md:inset-auto md:top-0 md:z-auto md:h-dvh md:w-[var(--side-panel-w)] md:shrink-0 md:border-l md:border-border",
+        "fixed inset-0 z-40 flex flex-col bg-os-card",
+        "md:sticky md:inset-auto md:top-0 md:z-auto md:h-dvh md:w-[var(--side-panel-w)] md:shrink-0 md:border-l md:border-border md:shadow-[-8px_0_24px_var(--color-os-hover)]",
       )}
     >
       <div
@@ -145,7 +145,12 @@ function PanelFrameInner({
             <Maximize2 className="h-4 w-4" aria-hidden />
           </Link>
         </Tooltip>
-        {location && <span className="ml-1 min-w-0 truncate text-[13px] text-os-muted">{location}</span>}
+        {(icon || title) && (
+          <span className="ml-1 flex min-w-0 items-center gap-1.5 text-[13px] text-os-muted">
+            {icon && <span aria-hidden className="shrink-0">{icon}</span>}
+            <span className="truncate">{title}</span>
+          </span>
+        )}
         <div className="flex-1" />
         <div ref={actionsRef} className="flex items-center gap-1 empty:hidden" />
         <OverflowMenu />

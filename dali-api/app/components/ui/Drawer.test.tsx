@@ -17,7 +17,7 @@ function mount(ui: ReactElement) {
     root.render(ui);
   });
   return {
-    container,
+    container: document.body,
     rerender: (next: ReactElement) => act(() => root.render(next)),
     unmount: () => {
       act(() => root.unmount());

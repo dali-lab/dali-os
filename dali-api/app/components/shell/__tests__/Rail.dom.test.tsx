@@ -204,6 +204,16 @@ describe("Rail", () => {
     expect(q("button[aria-label='Hide sidebar']")).toBeNull();
   });
 
+  it("shows the toggle shortcut in the hide tooltip", async () => {
+    await mount({ onHideRail: vi.fn() });
+    const hide = q("button[aria-label='Hide sidebar']")!;
+    await act(async () => {
+      hide.dispatchEvent(new FocusEvent("focus"));
+      hide.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+    });
+    expect(document.body.querySelector("[role='tooltip']")?.textContent).toContain("⌘\\");
+  });
+
   it("hides the rail from its toggle", async () => {
     const onHideRail = vi.fn();
     await mount({ onHideRail });

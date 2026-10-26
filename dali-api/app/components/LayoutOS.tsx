@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
+import { TOGGLE_SIDEBAR_SHORTCUT } from '~/lib/shortcuts'
+import { useToggleSidebarShortcut } from '~/components/shell/useToggleSidebarShortcut'
 import { Link, useLocation, useMatches } from 'react-router'
 import { Tooltip } from "~/components/ui/floating";
 import {
@@ -170,6 +172,7 @@ export function LayoutOS({
     setFocusPreference(!railHidden)
     setRailHidden(!railHidden)
   }
+  useToggleSidebarShortcut(shellV2, toggleRail)
   useRecordTablessHistory()
   useTablessHistoryShortcuts(useShowTablessHistoryNav(tabless), showTabs)
   useOsShellRoot(true)
@@ -956,7 +959,7 @@ export function LayoutOS({
   )
 
   const railToggle = (
-    <Tooltip content="Show sidebar">
+    <Tooltip content={`Show sidebar · ${TOGGLE_SIDEBAR_SHORTCUT}`}>
       <button
         type="button"
         onClick={toggleRail}

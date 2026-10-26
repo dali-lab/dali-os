@@ -3,7 +3,7 @@ import { Link, useFetcher } from "react-router";
 import { Loader2 } from "lucide-react";
 import { DocumentEditor } from "~/components/DocumentEditor";
 import { PanelFrame } from "~/components/side-panel/PanelFrame";
-import { panelLocation, type PanelLoad, type SidePanel } from "~/lib/side-panel";
+import { type PanelLoad, type SidePanel } from "~/lib/side-panel";
 import type { loader as documentLoader } from "~/routes/documents.$pageId";
 
 type DocumentData = Extract<Awaited<ReturnType<typeof documentLoader>>, { pageId: string }>;
@@ -74,7 +74,7 @@ export default function DocumentPanel({ panel, onClose }: { panel: SidePanel; on
   }
 
   return (
-    <PanelFrame panel={panel} title={doc?.title ?? ""} location={panelLocation(doc?.workspaceType)} onClose={onClose}>
+    <PanelFrame panel={panel} title={doc?.title ?? ""} icon={doc?.iconEmoji} onClose={onClose}>
       {body}
     </PanelFrame>
   );

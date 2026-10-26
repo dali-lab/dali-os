@@ -13,8 +13,9 @@ vi.mock("~/components/drive/use-drive-destinations", () => ({
 vi.mock("~/components/drive/use-move-page", () => ({ useMovePage: () => ({}) }));
 vi.mock("~/components/drive/FolderPicker", () => ({ FolderPicker: () => null }));
 vi.mock("~/components/sharing/ShareDialog", () => ({ ShareDialog: () => null }));
-vi.mock("~/components/collab/VersionHistoryPanel", () => ({ VersionHistoryPanel: () => null }));
+vi.mock("~/components/collab/VersionHistoryPanel", () => ({ VersionHistoryPanel: () => createElement("div", { "data-testid": "history" }) }));
 
+const { VERSION_HISTORY_SHORTCUT } = await import("~/lib/shortcuts");
 const { DocumentEditor, FIND_SHORTCUT } = await import("~/components/DocumentEditor");
 const { PageBarSlotProvider, usePageBarTargetSetters } = await import("~/components/shell/page-bar-slot");
 const { OverflowMenu } = await import("~/components/shell/OverflowMenu");
@@ -131,5 +132,66 @@ describe("DocumentEditor inline", () => {
     expect(container.querySelector(".doc-topbar")).not.toBeNull();
     expect(container.querySelector("[aria-label='Download']")).not.toBeNull();
     expect(container.querySelector("[aria-label='More options']")).not.toBeNull();
+  });
+});
+
+describe("DocumentEditor save status", () => {
+  const status = () => container.querySelector("[data-testid=doc-sync-status]");
+
+  it.each(["pageBar", "panel"] as const)("is icon-only in the %s with the words in a tooltip", async (chrome) => {
+    await mount(chrome, { collabToken: "t" });
+    const el = status();
+    if (!el) return;
+    expect(el.className).not.toContain("inline-grid");
+    expect(el.querySelector("[class*='grid-area']")).toBeNull();
+    expect(el.querySelector(":scope > span.sr-only")).not.toBeNull();
+    await act(async () => {
+      el.dispatchEvent(new FocusEvent("focus"));
+      el.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+    });
+    expect(document.body.querySelector("[role='tooltip']")?.textContent).toMatch(/Saving…|Saved|Offline/);
+  });
+
+  it("keeps the stacked labels inline", async () => {
+    await mount("inline", { collabToken: "t" });
+    const el = status();
+    if (!el) return;
+    expect(el.className).toContain("inline-grid");
+  });
+});
+
+describe.each(["pageBar", "panel"] as const)("Version history shortcut in the %s", (chrome) => {
+  const press = (init: KeyboardEventInit) => {
+    const event = new KeyboardEvent("keydown", { bubbles: true, cancelable: true, ...init });
+    act(() => {
+      document.body.dispatchEvent(event);
+    });
+    return event;
+  };
+  const combo = { key: "˙", code: "KeyH", metaKey: true, altKey: true, shiftKey: true };
+
+  it("opens on the combo only", async () => {
+    await mount(chrome, { collabToken: "t" });
+    press({ ...combo, shiftKey: false });
+    press({ ...combo, altKey: false });
+    press({ ...combo, metaKey: false });
+    expect(document.querySelector("[data-testid=history]")).toBeNull();
+    expect(press(combo).defaultPrevented).toBe(true);
+    expect(document.querySelector("[data-testid=history]")).not.toBeNull();
+  });
+
+  it("skips an event another handler already claimed", async () => {
+    await mount(chrome, { collabToken: "t" });
+    const claim = (e: Event) => e.preventDefault();
+    window.addEventListener("keydown", claim, true);
+    press(combo);
+    window.removeEventListener("keydown", claim, true);
+    expect(document.querySelector("[data-testid=history]")).toBeNull();
+  });
+
+  it("hints the shortcut on the menu item", async () => {
+    await mount(chrome, { collabToken: "t" });
+    await openMenu();
+    expect(items().find((l) => l?.startsWith("Version history"))).toContain(VERSION_HISTORY_SHORTCUT);
   });
 });
