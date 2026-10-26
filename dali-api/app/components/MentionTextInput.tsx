@@ -9,26 +9,10 @@ import {
 } from "react";
 import { cn } from "~/lib/cn";
 import { OS_SURFACE_CLASS } from "~/components/ui/floating/styles";
+import { mentionUserCache, type MentionUser } from "~/lib/mention-search";
+import { searchWithCache } from "~/lib/search-cache";
 
-export type MentionUser = {
-  id: string;
-  name: string;
-  handle: string;
-  photoUrl?: string | null;
-};
-
-async function searchMentionableUsers(q: string): Promise<MentionUser[]> {
-  try {
-    const res = await fetch(`/api/mentions/search?q=${encodeURIComponent(q)}`, {
-      credentials: "include",
-    });
-    if (!res.ok) return [];
-    const data = (await res.json()) as { members?: MentionUser[] };
-    return data.members ?? [];
-  } catch {
-    return [];
-  }
-}
+export type { MentionUser } from "~/lib/mention-search";
 
 // A plain <textarea>/<input> with an @-mention autocomplete dropdown, for
 // composers that aren't rich-text editors (comment + reply boxes). The stored
@@ -134,7 +118,11 @@ export function MentionTextInput({
     setMentionStart(m.start);
     setOpen(true);
     const id = ++reqId.current;
-    void searchMentionableUsers(m.query).then((r) => {
+    const { query } = m;
+    const showFresh = () => {
+      if (id === reqId.current) setItems(mentionUserCache.peek(query)?.items ?? []);
+    };
+    void searchWithCache(mentionUserCache, query, showFresh).then((r) => {
       if (id === reqId.current) {
         setItems(r);
         setSel(0);
