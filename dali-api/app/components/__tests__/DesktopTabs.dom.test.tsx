@@ -212,6 +212,29 @@ describe("DesktopTabStrip", () => {
   const strip = () => container.querySelector("nav[aria-label='Open tabs']") as HTMLElement;
   const tabButtons = () => Array.from(strip().querySelectorAll("button[aria-current], button[type='button'][style]"));
 
+  it("opens the tab menu on right-click instead of the system menu", async () => {
+    await mountStrip();
+    const tab = tabButtons()[0] as HTMLElement;
+    let unhandled = true;
+    await act(async () => {
+      unhandled = tab.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 10, clientY: 10 }));
+    });
+    expect(unhandled).toBe(false);
+    const items = [...document.body.querySelectorAll("[role='menuitem']")].map((el) => el.textContent);
+    expect(items).toEqual(["Pin tab", "Copy link", "Close tab", "Close other tabs"]);
+  });
+
+  it("pins a tab from its menu", async () => {
+    await mountStrip();
+    await act(async () => {
+      tabButtons()[0].dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
+    });
+    const pin = [...document.body.querySelectorAll<HTMLElement>("[role='menuitem']")].find((el) => el.textContent === "Pin tab")!;
+    await act(async () => pin.click());
+    await flush();
+    expect(mod.store.getTabsSnapshot().tabs[0].pinned).toBe(true);
+  });
+
   it("is a 40px row on the nav surface with a hairline under it", async () => {
     await mountStrip();
     expect(strip().className).toContain("h-10");
