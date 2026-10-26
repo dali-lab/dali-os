@@ -23,7 +23,7 @@ import {
 } from "@blocknote/react";
 import { BlockNoteView } from "@blocknote/shadcn";
 import { forwardRef, useMemo, type ReactNode } from "react";
-import { MentionSpec, getMentionMenuItems } from "../schema/mention";
+import { MentionSpec, useMentionMenuItems } from "../schema/mention";
 
 // Same trims as BlockNote's default comment schema (one paragraph block, no
 // text or background colors), plus the member mention. Page mentions stay a
@@ -52,6 +52,7 @@ function CommentFormattingToolbar() {
 const CommentEditor = forwardRef<HTMLDivElement, ComponentProps["Comments"]["Editor"]>(
   ({ className, onFocus, onBlur, autoFocus, editor, editable }, ref) => {
     const blockNoteContext = useBlockNoteContext();
+    const getMentionItems = useMentionMenuItems(editor as never, noPages);
     return (
       <BlockNoteView
         autoFocus={autoFocus}
@@ -72,7 +73,7 @@ const CommentEditor = forwardRef<HTMLDivElement, ComponentProps["Comments"]["Edi
         {editable && (
           <SuggestionMenuController
             triggerCharacter="@"
-            getItems={(query) => getMentionMenuItems(editor as never, query, undefined, noPages)}
+            getItems={getMentionItems}
           />
         )}
       </BlockNoteView>
