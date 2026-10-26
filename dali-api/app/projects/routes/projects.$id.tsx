@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useOpenDocumentBeside } from "~/components/side-panel/use-side-panel";
+import { SIDE_PARAM } from "~/lib/side-panel";
 import {
   Form,
   Link,
@@ -1869,6 +1871,7 @@ export default function ProjectDetail() {
       (prev) => {
         prev.set("tab", "progress");
         prev.set("task", taskId);
+        prev.delete(SIDE_PARAM);
         return prev;
       },
       { replace: true, preventScrollReset: true },
@@ -1886,6 +1889,7 @@ export default function ProjectDetail() {
     setSearchParams(
       (prev) => {
         prev.set("tab", next);
+        prev.delete(SIDE_PARAM);
         return prev;
       },
       { replace: true, preventScrollReset: true },
@@ -4336,6 +4340,7 @@ type DocRowCtx = {
   togglePin: (id: string, next: boolean) => void;
   setMoveDoc: (d: { id: string; title: string } | null) => void;
   deleteDocument: (id: string, title: string) => void;
+  openDocument: (id: string, title: string) => void;
 };
 
 // Row "⋯" menu (Drive redesign) — every per-row action (favorite, partner
@@ -4404,7 +4409,7 @@ function DocRowInner({ doc, indent, ctx }: { doc: DocRowItem; indent: boolean; c
     <div className={`group py-2.5 flex items-center justify-between gap-3 text-sm ${indent ? "pl-6" : ""}`}>
       <button
         type="button"
-        onClick={() => openDocumentTab(doc.id, doc.title)}
+        onClick={() => ctx.openDocument(doc.id, doc.title)}
         className="flex items-center gap-2 min-w-0 text-left font-medium text-foreground hover:text-os-accent"
       >
         <PageIcon iconEmoji={doc.iconEmoji} />
@@ -5020,6 +5025,7 @@ function DocumentsBlock({
   const dialog = useDialog();
   const toast = useToast();
   const revalidator = useRevalidator();
+  const openDocument = useOpenDocumentBeside(openDocumentTab);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -5170,7 +5176,7 @@ function DocumentsBlock({
       });
       const b = (await res.json().catch(() => ({}))) as { id?: string; error?: string };
       if (!res.ok || !b.id) throw new Error(b.error ?? "Failed to create document");
-      openDocumentTab(b.id, title);
+      openDocument(b.id, title);
       revalidator.revalidate();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Something went wrong");
@@ -5495,6 +5501,7 @@ function DocumentsBlock({
     togglePin,
     setMoveDoc,
     deleteDocument,
+    openDocument,
   };
 
   const isEmpty = documents.length === 0 && files.length === 0;

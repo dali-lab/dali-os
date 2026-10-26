@@ -1,5 +1,6 @@
 import { Link } from "react-router";
 import { Building2, Globe, Handshake } from "lucide-react";
+import { pageBarTextButton, usePageBarSlot } from "~/components/shell/page-bar-slot";
 
 // A project has three read surfaces — the internal hub, the partner preview,
 // and the public showcase preview — and each one's header offers the other
@@ -33,19 +34,20 @@ export function ProjectViewSwitch({
   current: ProjectViewKey;
 }) {
   const others = (Object.keys(VIEWS) as ProjectViewKey[]).filter((k) => k !== current);
+  const inPageBar = usePageBarSlot();
   // Under the dali.os design these are the page's top-right actions, so they
   // take the design's secondary pill rather than the default bordered button.
   return (
-    <div className="flex items-center gap-2.5">
+    <div className={inPageBar ? "flex items-center gap-1" : "flex items-center gap-2.5"}>
       {others.map((key) => {
         const { label, icon: Icon, href } = VIEWS[key];
         return (
           <Link
             key={key}
             to={href(projectId)}
-            className="os-edit-btn"
+            className={inPageBar ? pageBarTextButton() : "os-edit-btn"}
           >
-            <Icon className="w-4 h-4" />
+            <Icon className={inPageBar ? "h-4 w-4 shrink-0" : "w-4 h-4"} />
             {label}
           </Link>
         );

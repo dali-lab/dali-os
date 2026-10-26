@@ -31,14 +31,14 @@ export function FavoriteIcon({
   glyphClassName?: string;
   // "lg" is the dali.os recents card, where the icon is the card's 24px
   // subject rather than a 20px marker in front of a row of text.
-  size?: "sm" | "lg";
+  size?: "sm" | "lg" | "rail";
 }) {
   const lg = size === "lg";
-  const glyph = `${lg ? "h-6 w-6" : "h-4 w-4"} ${glyphClassName}`;
+  const glyph = `${lg ? "h-6 w-6" : size === "rail" ? "h-[18px] w-[18px]" : "h-4 w-4"} ${glyphClassName}`;
   const slot = `flex flex-shrink-0 items-center justify-center leading-none ${
     lg ? "h-7 w-7" : "h-5 w-5"
   }`;
-  const emoji = lg ? "text-2xl" : "text-sm";
+  const emoji = lg ? "text-2xl" : size === "rail" ? "text-[15px]" : "text-sm";
 
   switch (page.iconKind) {
     case "person":

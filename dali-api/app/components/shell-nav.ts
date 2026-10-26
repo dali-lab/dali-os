@@ -5,6 +5,8 @@ import type { TabWorkspaceHandle, OpenTabRequest } from '~/components/TabWorkspa
 import { TASKS_CHANGED_EVENT } from '~/components/NotificationBell'
 import { FAVORITES_CHANGED_EVENT, TOGGLE_FAVORITE_EVENT } from '~/components/favorites-live'
 import { COPY_PAGE_LINK_EVENT, isCopyPageLinkShortcut } from '~/lib/page-link'
+import { tabActions } from '~/lib/desktop-tabs-store'
+import { SIDE_PARAM, formatSidePanel, sidePanelForUrl } from '~/lib/side-panel'
 
 /**
  * The navigation behaviour every app shell shares: how a sidebar row opens a
@@ -19,8 +21,12 @@ import { COPY_PAGE_LINK_EVENT, isCopyPageLinkShortcut } from '~/lib/page-link'
  * @param tabless true when the routed page renders directly in the main column
  *   rather than inside the tabbed workspace; there is no workspace to open
  *   tabs in, so everything navigates the top window instead.
+ * @param opts.tabs desktop tabs are showing: surfaces open as tabs on the
+ *   tabless shell. opts.sidePanel: ⌘Enter on a document opens it beside the page.
  */
-export function useShellNav(tabless: boolean) {
+export function useShellNav(tabless: boolean, opts: { tabs?: boolean; sidePanel?: boolean } = {}) {
+  const tabs = tabless && opts.tabs === true
+  const sidePanel = tabless && opts.sidePanel === true
   const navigate = useNavigate()
   const { revalidate } = useRevalidator()
   const workspaceRef = useRef<TabWorkspaceHandle | null>(null)
@@ -62,13 +68,17 @@ export function useShellNav(tabless: boolean) {
 
   const openInWorkspace = useCallback(
     (req: OpenTabRequest) => {
+      if (tabs) {
+        tabActions.open(req)
+        return
+      }
       if (tabless) {
         navigate(req.url)
         return
       }
       workspaceRef.current?.openTab(req)
     },
-    [tabless, navigate],
+    [tabs, tabless, navigate],
   )
 
   // Open a palette result. Mirrors sidebar navigation: tabless → navigate the
@@ -76,6 +86,17 @@ export function useShellNav(tabless: boolean) {
   // (⌘Enter → split-pane). The user picked this explicitly, so no ephemeral tab.
   const openFromPalette = useCallback(
     (url: string, label: string, toSide: boolean) => {
+      const panel = toSide && sidePanel ? sidePanelForUrl(url) : null
+      if (panel) {
+        const params = new URLSearchParams(window.location.search)
+        params.set(SIDE_PARAM, formatSidePanel(panel))
+        navigate(`${window.location.pathname}?${params}`, { preventScrollReset: true })
+        return
+      }
+      if (tabs) {
+        tabActions.open({ url, label }, { background: toSide })
+        return
+      }
       if (tabless) {
         if (toSide) window.open(url, '_blank', 'noopener')
         else navigate(url)
@@ -84,7 +105,7 @@ export function useShellNav(tabless: boolean) {
       if (toSide) workspaceRef.current?.openTabToSide({ url, label })
       else workspaceRef.current?.openTab({ url, label })
     },
-    [tabless, navigate],
+    [sidePanel, tabs, tabless, navigate],
   )
 
   // Props bundle for any sidebar button that opens a surface. In tab mode it
@@ -98,6 +119,20 @@ export function useShellNav(tabless: boolean) {
   // and preventDefault so the browser doesn't autoscroll.
   const tabClickProps = useCallback(
     (req: OpenTabRequest) => {
+      if (tabs) {
+        // Desktop tabs follow browser tabs: ⌘-click and middle-click open in
+        // the background; a plain click previews in the reusable preview tab.
+        return {
+          onClick: (e: React.MouseEvent) => {
+            tabActions.open(req, e.metaKey || e.ctrlKey ? { background: true } : { ephemeral: true })
+          },
+          onAuxClick: (e: React.MouseEvent) => {
+            if (e.button !== 1) return
+            e.preventDefault()
+            tabActions.open(req, { background: true })
+          },
+        }
+      }
       if (tabless) {
         return {
           onClick: (e: React.MouseEvent) => {
@@ -134,7 +169,7 @@ export function useShellNav(tabless: boolean) {
         },
       }
     },
-    [tabless, navigate],
+    [tabs, tabless, navigate],
   )
 
   // Listen for "open in new tab" requests from embedded iframes (e.g. a

@@ -31,6 +31,24 @@ pub fn build(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
         true,
         Some("Shift+CmdOrCtrl+G"),
     )?;
+    // Tab items own ⌘T / ⌘W / ⇧⌘T so the web app's tabs get them; Close Window
+    // moves to ⇧⌘W. See window::tab_command for what happens with tabs off.
+    let new_tab = MenuItem::with_id(app, "new-tab", "New Tab", true, Some("CmdOrCtrl+T"))?;
+    let close_tab = MenuItem::with_id(app, "close-tab", "Close Tab", true, Some("CmdOrCtrl+W"))?;
+    let reopen_tab = MenuItem::with_id(
+        app,
+        "reopen-tab",
+        "Reopen Closed Tab",
+        true,
+        Some("Shift+CmdOrCtrl+T"),
+    )?;
+    let close_window = MenuItem::with_id(
+        app,
+        "close-window",
+        "Close Window",
+        true,
+        Some("Shift+CmdOrCtrl+W"),
+    )?;
     let zoom_in = MenuItem::with_id(app, "zoom-in", "Zoom In", true, Some("CmdOrCtrl+="))?;
     let zoom_out = MenuItem::with_id(app, "zoom-out", "Zoom Out", true, Some("CmdOrCtrl+-"))?;
     let zoom_reset = MenuItem::with_id(app, "zoom-reset", "Actual Size", true, Some("CmdOrCtrl+0"))?;
@@ -86,6 +104,19 @@ pub fn build(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
         ],
     )?;
 
+    let file_menu = Submenu::with_items(
+        app,
+        "File",
+        true,
+        &[
+            &new_tab,
+            &reopen_tab,
+            &PredefinedMenuItem::separator(app)?,
+            &close_tab,
+            &close_window,
+        ],
+    )?;
+
     let edit_menu = Submenu::with_items(
         app,
         "Edit",
@@ -127,8 +158,6 @@ pub fn build(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
         &[
             &PredefinedMenuItem::minimize(app, None)?,
             &PredefinedMenuItem::maximize(app, None)?,
-            &PredefinedMenuItem::separator(app)?,
-            &PredefinedMenuItem::close_window(app, None)?,
         ],
     )?;
 
@@ -136,6 +165,6 @@ pub fn build(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
 
     Menu::with_items(
         app,
-        &[&app_menu, &edit_menu, &view_menu, &window_menu, &help_menu],
+        &[&app_menu, &file_menu, &edit_menu, &view_menu, &window_menu, &help_menu],
     )
 }

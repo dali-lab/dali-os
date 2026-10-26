@@ -45,7 +45,8 @@ import { FolderPicker } from "~/components/drive/FolderPicker";
 import type { PickerDrive, PickerFolder, Destination } from "~/components/drive/FolderPicker";
 import { buildPickerRows } from "~/components/drive/picker-rows";
 import { LocationLink } from "~/components/drive/LocationLink";
-import { locateFolder, type LocatableScope } from "~/components/drive/location";
+import { locateFolder, locationOf, type LocatableScope } from "~/components/drive/location";
+import { itemTrail } from "~/components/notebooks/note-trail";
 import { moveDriveItem, driveErrorFrom, isPageItem } from "~/components/drive/move-item";
 import { destinationLabel, restoredToast } from "~/components/drive/action-toast";
 import { reportMoveBatch, runHiddenMoveBatch, itemCount, type Landed } from "~/components/drive/move-batch";
@@ -80,6 +81,16 @@ export const meta: Route.MetaFunction = () => [{ title: "Drive · DALI OS" }];
 // per route. Every project scope collapses to one `drive.project` guide (the
 // default branch) to avoid a near-identical guide per project.
 export const handle = {
+  /** The open space and folder, for the page bar's trail. */
+  shellTrail: (data: unknown, params: URLSearchParams) => {
+    const scopes = (data as { driveScopes?: LocatableScope[] } | undefined)?.driveScopes;
+    const scopeId = params.get("scope");
+    if (!scopes || !scopeId) return null;
+    const folderId = params.get("folder");
+    const scope = scopes.find((s) => s.id === scopeId);
+    const location = (folderId ? locateFolder(scopes, folderId) : null) ?? (scope ? locationOf(scope, null) : null);
+    return location ? [{ label: "Drive", to: "/drive" }, ...itemTrail(location, "").slice(0, -1)] : null;
+  },
   docKey: "drive.root",
   docTitle: "Drive",
   resolveDocKey: (params: URLSearchParams) => {

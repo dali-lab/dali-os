@@ -146,7 +146,21 @@ export function ShellGuideProvider({ children }: { children: ReactNode }) {
  * straight through the context, while in tab mode the page is an iframe and
  * the shell posts to it over the guide bridge.
  */
-export function GuideTopbarButton({ onClick }: { onClick: () => void }) {
+export function GuideTopbarButton({ onClick, compact = false }: { onClick: () => void; compact?: boolean }) {
+  if (compact) {
+    return (
+      <Tooltip content="Open this page's guide">
+        <button
+          type="button"
+          onClick={onClick}
+          aria-label="Open this page's guide"
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-os-grey transition-colors hover:bg-os-hover hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-os-accent"
+        >
+          <BookOpen className="h-[18px] w-[18px]" aria-hidden />
+        </button>
+      </Tooltip>
+    );
+  }
   return (
     <Tooltip content="Open this page's guide">
       <button
@@ -175,7 +189,7 @@ export function PageDocButton({
   variant = "default",
 }: {
   suppressWhenPills?: boolean;
-  variant?: "default" | "topbar";
+  variant?: "default" | "topbar" | "pagebar";
 }) {
   const matches = useMatches();
   const { docKey, open, setOpen } = usePageDoc();
@@ -196,6 +210,9 @@ export function PageDocButton({
 
   if (variant === "topbar") {
     return <GuideTopbarButton onClick={() => setOpen(true)} />;
+  }
+  if (variant === "pagebar") {
+    return <GuideTopbarButton compact onClick={() => setOpen(true)} />;
   }
 
   if (shellOwnsGuide) return null;
