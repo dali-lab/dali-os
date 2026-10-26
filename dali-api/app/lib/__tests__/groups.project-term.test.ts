@@ -19,9 +19,10 @@ const CURRENT = "term-26S";
 const PREVIOUS = "term-26W";
 
 const assignments = [
-  { userId: "still-on", termId: CURRENT },
-  { userId: "also-still-on", termId: CURRENT },
-  { userId: "rotated-off", termId: PREVIOUS },
+  { userId: "still-on", projectId: "p1", termId: CURRENT },
+  { userId: "also-still-on", projectId: "p1", termId: CURRENT },
+  { userId: "rotated-off", projectId: "p1", termId: PREVIOUS },
+  { userId: "other-project", projectId: "p2", termId: CURRENT },
 ];
 
 beforeEach(() => {
@@ -30,10 +31,10 @@ beforeEach(() => {
   // Stand in for the DB's own filtering so the test asserts the query, not a
   // hand-rolled copy of Prisma.
   mockPrisma.projectAssignment!.findMany.mockImplementation(
-    async (args: { where?: { termId?: string } }) =>
+    async (args: { where: { termId: string; projectId: { in: string[] } } }) =>
       assignments
-        .filter((a) => !args?.where?.termId || a.termId === args.where.termId)
-        .map((a) => ({ userId: a.userId })),
+        .filter((a) => a.termId === args.where.termId && args.where.projectId.in.includes(a.projectId))
+        .map((a) => ({ projectId: a.projectId, userId: a.userId })),
   );
 });
 
@@ -51,7 +52,7 @@ describe("project group membership", () => {
     await resolveDynamicQuery("project:p1");
     expect(mockPrisma.projectAssignment!.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { projectId: "p1", termId: CURRENT },
+        where: { projectId: { in: ["p1"] }, termId: CURRENT },
       }),
     );
   });
