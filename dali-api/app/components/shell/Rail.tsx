@@ -196,29 +196,57 @@ export function Rail({
   const bellLabel = `Notifications, ${taskCount} need${taskCount === 1 ? 's' : ''} your attention`
 
   return (
-    <div data-sidebar-scroll className="flex h-full flex-col justify-between gap-4 overflow-y-auto px-3 pb-3">
-      <div className="flex min-h-0 flex-col gap-4">
-        <div className="flex h-10 shrink-0 items-center gap-1.5">
+    <div data-sidebar-scroll className="flex h-full flex-col justify-between gap-3 overflow-y-auto px-3 pb-3">
+      <div className="flex min-h-0 flex-col gap-3">
+        <div className="flex h-10 shrink-0 items-center justify-between pl-1.5">
           <button
             type="button"
-            onClick={onOpenSearch}
-            aria-label="Search"
-            className="flex h-[34px] min-w-0 flex-1 items-center gap-2 rounded-lg border border-os-container bg-os-card/70 pl-2.5 pr-1.5 text-sm text-os-muted transition-colors hover:text-foreground"
+            {...tabClickProps({ url: home.href, label: home.label })}
+            aria-label="DALI OS home"
+            className="font-os-logo text-xl font-semibold text-os-accent focus:outline-none"
           >
-            <Search className="h-4 w-4 shrink-0" aria-hidden />
-            <span>Search</span>
-            <kbd className="ml-auto rounded-[5px] bg-os-hover-strong px-1.5 py-0.5 font-sans text-xs font-bold text-os-grey">⌘K</kbd>
+            dali.os
           </button>
-          {onHideRail && (
-            <Tooltip content="Hide sidebar">
-              <button type="button" onClick={onHideRail} aria-label="Hide sidebar" className={cn(ICON_BUTTON, 'h-7 w-7 shrink-0')}>
-                <PanelLeft className="h-[18px] w-[18px]" />
+          <div className="flex items-center gap-0.5">
+            <Tooltip content={bellLabel}>
+              <button
+                type="button"
+                onClick={onToggleBell}
+                aria-haspopup="dialog"
+                aria-expanded={bellOpen}
+                aria-label={bellLabel}
+                className={cn(ICON_BUTTON, 'h-[30px] w-[30px]')}
+              >
+                <Bell className="h-[18px] w-[18px]" />
+                {taskCount > 0 && (
+                  <span className="absolute right-px top-0.5 flex h-[15px] min-w-[15px] items-center justify-center rounded-full border-2 border-os-nav bg-[var(--os-danger-ink)] px-[3px] text-[9px] font-extrabold leading-none text-white">
+                    {badgeLabel(taskCount)}
+                  </span>
+                )}
               </button>
             </Tooltip>
-          )}
+            {onHideRail && (
+              <Tooltip content="Hide sidebar">
+                <button type="button" onClick={onHideRail} aria-label="Hide sidebar" className={cn(ICON_BUTTON, 'h-7 w-7')}>
+                  <PanelLeft className="h-[18px] w-[18px]" />
+                </button>
+              </Tooltip>
+            )}
+          </div>
         </div>
 
-        <div className="flex shrink-0 items-center gap-1">
+        <button
+          type="button"
+          onClick={onOpenSearch}
+          aria-label="Search"
+          className="flex h-[34px] w-full shrink-0 items-center gap-2 rounded-lg border border-os-container bg-os-card/70 pl-2.5 pr-1.5 text-sm text-os-muted transition-colors hover:text-foreground"
+        >
+          <Search className="h-4 w-4 shrink-0" aria-hidden />
+          <span>Search</span>
+          <kbd className="ml-auto rounded-[5px] bg-os-hover-strong px-1.5 py-0.5 font-sans text-xs font-bold text-os-grey">⌘K</kbd>
+        </button>
+
+        <div className="flex shrink-0 gap-1">
           <QuickItem label="Home" icon={Home} active={activeQuick === 'home'} tabProps={tabClickProps({ url: home.href, label: home.label })} />
           <QuickItem
             label="Calendar"
@@ -245,24 +273,6 @@ export function Rail({
               tabProps={tabClickProps({ url: item.href, label: item.label })}
             />
           ))}
-          <span className="flex-1" />
-          <Tooltip content={bellLabel}>
-            <button
-              type="button"
-              onClick={onToggleBell}
-              aria-haspopup="dialog"
-              aria-expanded={bellOpen}
-              aria-label={bellLabel}
-              className={cn(ICON_BUTTON, 'h-[30px] w-[30px]')}
-            >
-              <Bell className="h-[18px] w-[18px]" />
-              {taskCount > 0 && (
-                <span className="absolute right-px top-0.5 flex h-[15px] min-w-[15px] items-center justify-center rounded-full border-2 border-os-nav bg-[var(--os-danger-ink)] px-[3px] text-[9px] font-extrabold leading-none text-white">
-                  {badgeLabel(taskCount)}
-                </span>
-              )}
-            </button>
-          </Tooltip>
         </div>
 
         {favorites.length > 0 && onFavoritesChange && (

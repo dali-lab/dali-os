@@ -62,6 +62,18 @@ afterEach(() => {
 const q = (sel: string) => container.querySelector(sel) as HTMLElement | null;
 
 describe("Rail", () => {
+  it("puts the wordmark, bell and sidebar toggle in the top row, above search", async () => {
+    const tabClickProps = vi.fn(() => ({ onClick: vi.fn() }));
+    await mount({ tabClickProps });
+    const wordmark = q("button[aria-label='DALI OS home']")!;
+    expect(wordmark.textContent).toBe("dali.os");
+    const topRow = wordmark.parentElement!;
+    expect(topRow.querySelector("button[aria-label^='Notifications']")).not.toBeNull();
+    expect(topRow.querySelector("button[aria-label='Hide sidebar']")).not.toBeNull();
+    expect(topRow.querySelector("button[aria-label='Search']")).toBeNull();
+    expect(tabClickProps).toHaveBeenCalledWith({ url: "/", label: "Home" });
+  });
+
   it("labels the search box Search with the shortcut", async () => {
     await mount();
     const search = q("button[aria-label='Search']")!;
