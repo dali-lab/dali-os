@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { Link as LinkIcon, Star } from 'lucide-react'
+import { AppWindow, Link as LinkIcon, Star } from 'lucide-react'
 import { Tooltip } from '~/components/ui/floating'
 import { cn } from '~/lib/cn'
 import { PageDocButton } from '~/components/page-docs/PageDocButton'
@@ -9,6 +9,8 @@ import { usePageBarTargetSetters } from '~/components/shell/page-bar-slot'
 import { pageBarCrumbs } from '~/components/shell/page-bar-model'
 import { useFeatureFlag } from '~/components/FeatureFlags'
 import { useLocation } from 'react-router'
+import { useIsBrowserDesktopCandidate } from '~/lib/desktop-candidate'
+import { useOpenCurrentPageInDesktop } from '~/components/shell/useOpenCurrentPageInDesktop'
 
 export const PAGE_BAR_BUTTON =
   'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-os-grey transition-colors hover:bg-os-hover hover:text-foreground disabled:opacity-40'
@@ -48,6 +50,10 @@ export function PageBar({
   })
   const { actionsRef, presenceRef } = usePageBarTargetSetters()
   const labels = starLabels(star)
+  const desktopTabs = useFeatureFlag('desktop-tabs')
+  const browserDesktop = useIsBrowserDesktopCandidate()
+  const showOpenInApp = desktopTabs && browserDesktop
+  const openInApp = useOpenCurrentPageInDesktop()
 
   return (
     <div className="flex h-11 shrink-0 items-center justify-between gap-3 bg-os-bg pl-5 pr-3">
@@ -63,6 +69,13 @@ export function PageBar({
         <div ref={presenceRef} className="flex items-center empty:hidden" />
         {trail?.action}
         <PageDocButton variant="pagebar" />
+        {showOpenInApp && (
+          <Tooltip content="Open in desktop app">
+            <button type="button" onClick={openInApp} aria-label="Open in desktop app" className={PAGE_BAR_BUTTON}>
+              <AppWindow className="h-[18px] w-[18px]" />
+            </button>
+          </Tooltip>
+        )}
         <Tooltip content="Copy link to this page">
           <button type="button" onClick={onCopyLink} aria-label="Copy link to this page" className={PAGE_BAR_BUTTON}>
             <LinkIcon className="h-[18px] w-[18px]" />

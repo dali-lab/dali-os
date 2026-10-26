@@ -3,6 +3,7 @@ import { Download, X } from "lucide-react";
 import { buttonClasses } from "~/components/ui/Button";
 import { isBrowserDesktopCandidate } from "~/lib/desktop-candidate";
 import { useFeatureFlag } from "~/components/FeatureFlags";
+import { currentPagePath, openInDesktopApp } from "~/lib/open-in-desktop";
 
 const DISMISS_KEY = "dali:desktop-banner:dismissed";
 
@@ -11,7 +12,7 @@ type State = "hidden" | "visible" | "trying" | "fallback";
 export function DesktopBanner() {
   const [state, setState] = useState<State>("hidden");
   const explain = useFeatureFlag("desktop-tabs");
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cancelRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     if (!isBrowserDesktopCandidate()) return;
@@ -22,23 +23,20 @@ export function DesktopBanner() {
     }
     setState("visible");
     return () => {
-      if (timerRef.current) clearTimeout(timerRef.current);
+      cancelRef.current?.();
     };
   }, []);
 
   function openInApp() {
     setState("trying");
-    // Carry the current route so the app lands on this page, not its home
-    // screen. The Rust handler prepends the prod origin to a relative path
-    // (see desktop/src-tauri/src/deeplink.rs).
-    const target =
-      window.location.pathname + window.location.search + window.location.hash;
-    window.location.href = `dalios://open?link=${encodeURIComponent(target)}`;
-    timerRef.current = setTimeout(() => setState("fallback"), 1500);
+    cancelRef.current?.();
+    cancelRef.current = openInDesktopApp(currentPagePath(), {
+      onFallback: () => setState("fallback"),
+    });
   }
 
   function dismiss() {
-    if (timerRef.current) clearTimeout(timerRef.current);
+    cancelRef.current?.();
     try {
       window.localStorage.setItem(DISMISS_KEY, "1");
     } catch {

@@ -26,6 +26,8 @@ import { deepLinkTabLabel } from '~/lib/deep-link-tab'
 import { useAttentionFeed } from '~/components/NotificationBell'
 import { TasksDrawer, attentionCount } from '~/components/AttentionPanel'
 import { DesktopBanner } from '~/components/DesktopBanner'
+import { OpenInDesktopRedirect } from '~/components/shell/OpenInDesktopRedirect'
+import { useOpenCurrentPageInDesktop } from '~/components/shell/useOpenCurrentPageInDesktop'
 import { useIsBrowserDesktopCandidate } from '~/lib/desktop-candidate'
 import { useDesktopHint } from '~/components/shell/useDesktopHint'
 import { ImpersonationBanner } from '~/components/ImpersonationBanner'
@@ -441,6 +443,7 @@ export function LayoutOS({
     )
 
   const browserDesktop = useIsBrowserDesktopCandidate()
+  const openCurrentPageInDesktop = useOpenCurrentPageInDesktop()
   useDesktopHint({ enabled: desktopTabsFlag && browserDesktop, dismissed: desktopHintDismissed })
   const userMenuItems = userMenuEntries({
     releaseNotes: releaseNotesEnabled,
@@ -1220,7 +1223,9 @@ export function LayoutOS({
         roles={roleFlags}
         flags={navFlags}
         onOpen={openFromPalette}
+        onOpenInDesktop={desktopTabsFlag && browserDesktop ? openCurrentPageInDesktop : undefined}
       />
+      <OpenInDesktopRedirect />
     </div>
   )
 }

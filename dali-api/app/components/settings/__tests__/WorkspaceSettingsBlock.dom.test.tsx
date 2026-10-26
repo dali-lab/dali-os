@@ -70,3 +70,53 @@ describe("WorkspaceSettingsBlock Tabs row", () => {
     expect(container.textContent).not.toContain("Tabs are in the desktop app.");
   });
 });
+
+describe("WorkspaceSettingsBlock open links row", () => {
+  const toggle = () => container.querySelector<HTMLInputElement>('input[aria-label="Open links in the desktop app"]');
+
+  afterEach(() => {
+    document.cookie = "dali_open_in_app=; Max-Age=0; Path=/";
+  });
+
+  it("browser with desktop-tabs: renders the toggle with its help text", async () => {
+    await mount({ "desktop-tabs": true });
+    expect(toggle()).not.toBeNull();
+    expect(container.textContent).toContain("Links you open in this browser go to the app. Saved on this browser.");
+  });
+
+  it("writes the cookie when toggled", async () => {
+    await mount({ "desktop-tabs": true });
+    await act(async () => {
+      toggle()!.click();
+    });
+    expect(document.cookie).toContain("dali_open_in_app=1");
+    expect(toggle()!.checked).toBe(true);
+    await act(async () => {
+      toggle()!.click();
+    });
+    expect(document.cookie).toContain("dali_open_in_app=0");
+  });
+
+  it("reflects an existing cookie", async () => {
+    document.cookie = "dali_open_in_app=1; Path=/";
+    await mount({ "desktop-tabs": true });
+    expect(toggle()!.checked).toBe(true);
+  });
+
+  it("is absent with the flag off", async () => {
+    await mount({});
+    expect(toggle()).toBeNull();
+  });
+
+  it("is absent inside the desktop app", async () => {
+    (window as { __DALI_DESKTOP?: unknown }).__DALI_DESKTOP = { version: "1.0.0" };
+    await mount({ "desktop-tabs": true });
+    expect(toggle()).toBeNull();
+  });
+
+  it("is absent on mobile", async () => {
+    vi.spyOn(window.navigator, "userAgent", "get").mockReturnValue("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0) Mobile");
+    await mount({ "desktop-tabs": true });
+    expect(toggle()).toBeNull();
+  });
+});

@@ -14,6 +14,7 @@ import { useFeatureFlag } from "~/components/FeatureFlags";
 import { useDesktopVersion } from "~/lib/desktop";
 import { useIsBrowserDesktopCandidate } from "~/lib/desktop-candidate";
 import { buttonClasses } from "~/components/ui/Button";
+import { readOpenInAppCookie, writeOpenInAppCookie } from "~/lib/open-in-app-pref";
 import { readTabStripCookie, tabsPreferred, writeTabStripCookie } from "~/lib/desktop-tabs-pref";
 
 const OPEN_MODES = [
@@ -45,9 +46,11 @@ export function WorkspaceSettingsBlock() {
   const inDesktopApp = useDesktopVersion() !== null;
   const inBrowser = useIsBrowserDesktopCandidate();
   const [showTabs, setShowTabs] = useState(true);
+  const [openInApp, setOpenInApp] = useState(false);
 
   useEffect(() => {
     setShowTabs(tabsPreferred(readTabStripCookie()));
+    setOpenInApp(readOpenInAppCookie());
     setTabless(readTablessPreference());
     setFocus(readFocusPreference());
     setEmoji(readEmojiSuggestionsPreference());
@@ -88,6 +91,23 @@ export function WorkspaceSettingsBlock() {
             <a href="/download" className={buttonClasses("secondary", "sm")}>
               Download
             </a>
+          }
+        />
+      )}
+      {desktopTabs && inBrowser && (
+        <SettingRow
+          label="Open links in the desktop app"
+          help="Links you open in this browser go to the app. Saved on this browser."
+          control={
+            <Toggle
+              tone="os"
+              aria-label="Open links in the desktop app"
+              checked={openInApp}
+              onChange={(e) => {
+                writeOpenInAppCookie(e.target.checked);
+                setOpenInApp(e.target.checked);
+              }}
+            />
           }
         />
       )}
