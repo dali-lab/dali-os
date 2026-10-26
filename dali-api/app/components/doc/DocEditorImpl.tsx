@@ -68,7 +68,7 @@ import { createFindReplacePlugin } from "./find";
 import { enhancePasteHandler } from "./enhance-render";
 import { buildSchema, type DocEditorInstance, type DocPartialBlock } from "./schema/build";
 import { BLOCKNOTE_FRAGMENT } from "./schema/configs";
-import { getMentionMenuItems, PageMentionTitleProvider } from "./schema/mention";
+import { PageMentionTitleProvider, useMentionMenuItems } from "./schema/mention";
 import { getFilteredDocSlashMenuItems } from "./schema/slash-menu";
 import { DEFAULT_SIGNING_CTX, SigningContext } from "./signing-context";
 import { usePresence, useRegisterCollabEditor } from "../collab/PresenceProvider";
@@ -676,6 +676,7 @@ function DocView(
   }, [railVisible, railTargetId]);
 
   const [emojiSuggestions] = useState(readEmojiSuggestionsPreference);
+  const getMentionItems = useMentionMenuItems(editor);
 
   const menus: ReactNode = (
     <>
@@ -689,7 +690,7 @@ function DocView(
       {features.mentions && (
         <SuggestionMenuController
           triggerCharacter="@"
-          getItems={(query) => getMentionMenuItems(editor, query)}
+          getItems={getMentionItems}
         />
       )}
       {/* Custom drag-handle side menu (Notion-ordered: Duplicate / Colors /

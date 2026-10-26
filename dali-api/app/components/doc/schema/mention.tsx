@@ -312,3 +312,15 @@ export async function getMentionMenuItems(
 
   return [...userItems, ...pageItems];
 }
+
+// SuggestionMenuController refetches whenever getItems changes identity, so an
+// inline arrow refetches on every host render while the menu is open.
+export function useMentionMenuItems(
+  editor: DocEditorInstance,
+  searchPages: (q: string) => Promise<MentionPage[]> = searchMentionablePages,
+): (query: string) => Promise<DefaultReactSuggestionItem[]> {
+  return useCallback(
+    (query: string) => getMentionMenuItems(editor, query, searchMentionableUsers, searchPages),
+    [editor, searchPages],
+  );
+}
