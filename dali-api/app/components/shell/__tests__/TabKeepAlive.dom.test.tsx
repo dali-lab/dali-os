@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, createElement, useState, type ReactNode } from "react";
+import { MAX_TABS } from "~/lib/desktop-tabs";
 import { createRoot, type Root } from "react-dom/client";
 import { Outlet, createRoutesStub, redirect, useLoaderData, useLocation } from "react-router";
 
@@ -74,7 +75,7 @@ async function mount(opts: { enabled?: boolean } = {}) {
     );
   }
 
-  const paths = ["/a", "/b", ...Array.from({ length: 12 }, (_, i) => `/t${i + 1}`)];
+  const paths = ["/a", "/b", ...Array.from({ length: 20 }, (_, i) => `/t${i + 1}`)];
   const Stub = createRoutesStub([
     {
       path: "/",
@@ -200,12 +201,15 @@ describe("TabKeepAlive", () => {
     expect(text("count", "/a")).toBe("1");
   });
 
-  it("evicts the least recently used page past the cap and drops closed tabs", async () => {
+  it("keeps every open tab's page, and drops a page when its tab closes or ages out", async () => {
     await mount();
-    for (let i = 1; i <= m.keep.KEEP_ALIVE_TABS; i++) await open(`/t${i}`);
+    for (let i = 1; i < MAX_TABS; i++) await open(`/t${i}`);
+    expect(m.store.getTabsSnapshot().tabs).toHaveLength(MAX_TABS);
+    expect(container.querySelectorAll("[data-page]").length).toBe(MAX_TABS);
+    await open(`/t${MAX_TABS}`);
+    expect(m.store.getTabsSnapshot().tabs.some((t) => t.url === "/a")).toBe(false);
     expect(page("/a")).toBeNull();
-    expect(page("/t1")).not.toBeNull();
-    expect(container.querySelectorAll("[data-page]").length).toBe(m.keep.KEEP_ALIVE_TABS);
+    expect(container.querySelectorAll("[data-page]").length).toBe(MAX_TABS);
     const t2 = m.store.getTabsSnapshot().tabs.find((t) => t.url === "/t2")!;
     await act(async () => m.store.tabActions.close(t2.id));
     await flush();
