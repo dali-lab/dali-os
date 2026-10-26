@@ -489,6 +489,37 @@ fn tab_command_script(command: &str) -> String {
     )
 }
 
+/// File → Close Tab (⌘W). The menu is app-wide, so a focused pairing, tray or
+/// record-prompt window is closed itself, as the system Close Window item did.
+pub fn close_tab(app: &AppHandle) {
+    match focused_window(app) {
+        Some(w) if !targets_main(Some(w.label())) => {
+            let _ = w.close();
+        }
+        _ => tab_command(app, "close"),
+    }
+}
+
+/// File → Close Window (⇧⌘W), routed the same way as `close_tab`.
+pub fn close_window(app: &AppHandle) {
+    match focused_window(app) {
+        Some(w) if !targets_main(Some(w.label())) => {
+            let _ = w.close();
+        }
+        _ => hide_main(app),
+    }
+}
+
+fn focused_window(app: &AppHandle) -> Option<WebviewWindow> {
+    app.webview_windows()
+        .into_values()
+        .find(|w| w.is_focused().unwrap_or(false))
+}
+
+fn targets_main(focused: Option<&str>) -> bool {
+    focused.map_or(true, |label| label == "main")
+}
+
 /// Close = hide, as the red close button does (lib.rs on_window_event).
 pub fn hide_main(app: &AppHandle) {
     if let Some(w) = app.get_webview_window("main") {
@@ -519,6 +550,19 @@ mod tests {
         let script = tab_command_script("close");
         assert!(script.contains("detail: { command: 'close' }, cancelable: true"));
         assert!(script.contains("if (window.dispatchEvent(e)) { location.href = 'dalios://close-window'; }"));
+    }
+
+    #[test]
+    fn closing_goes_to_the_main_window_when_it_or_nothing_is_focused() {
+        assert!(targets_main(Some("main")));
+        assert!(targets_main(None));
+    }
+
+    #[test]
+    fn closing_goes_to_any_other_focused_window() {
+        for label in ["pairing", "tray", "record-prompt", "splash"] {
+            assert!(!targets_main(Some(label)), "{label}");
+        }
     }
 
     #[test]
