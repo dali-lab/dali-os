@@ -523,7 +523,9 @@ export function Rail({
                   ref={subtabListRef}
                   className={cn(
                     'relative flex min-h-[5rem] flex-col gap-1.5 overflow-y-auto overflow-x-hidden',
-                    compact && 'items-center',
+                    // Breathing room between the rows (and the pill below) and
+                    // the list's own scrollbar.
+                    compact ? 'items-center' : 'pr-1.5',
                   )}
                 >
                   {pill && (
@@ -532,7 +534,7 @@ export function Rail({
                       style={pill}
                       className={cn(
                         'absolute rounded-lg bg-[color-mix(in_srgb,var(--area)_16%,transparent)]',
-                        compact ? 'left-1/2 w-9 -translate-x-1/2' : 'inset-x-0',
+                        compact ? 'left-1/2 w-9 -translate-x-1/2' : 'left-0 right-1.5',
                         animated &&
                           'transition-[top,height] duration-[220ms] ease-[cubic-bezier(0.23,1,0.32,1)] motion-reduce:transition-none',
                       )}

@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Form, Link, redirect, useActionData, useLoaderData, useNavigation, useSearchParams } from "react-router";
-import { ArrowLeft, Mail } from "lucide-react";
+import { ArrowLeft, Briefcase, ChevronRight, GraduationCap, Mail, UsersRound, type LucideIcon } from "lucide-react";
 import type { Route } from "./+types/signup";
 import {
   humanDuration,
@@ -15,8 +15,11 @@ import {
   normalizeEmail,
 } from "~/partners/lib/magic-link.server";
 import { sendMemberEmailConflictEmail } from "~/partners/lib/partner-emails.server";
+import { isFeatureEnabledForEveryone } from "~/lib/feature-flags.server";
 import AuthShell from "~/components/auth/AuthShell";
 import { AuthButton } from "~/components/auth/AuthButton";
+import { AuthInput, AuthNotice } from "~/components/auth/v2";
+import { cn } from "~/lib/cn";
 
 export const meta: Route.MetaFunction = () => [{ title: "DALI OS · Create account" }];
 
@@ -31,6 +34,13 @@ const DOOR_LABELS: Record<Door, string> = {
   member: "DALI Lab member",
   dartmouth: "Dartmouth student",
   partner: "Partner",
+};
+
+// The door-card subline on the picker.
+const DOOR_DESCRIPTIONS: Record<Door, string> = {
+  member: "Current lab members",
+  dartmouth: "Lab applications, workshops, and more",
+  partner: "Working with the lab on a project",
 };
 
 // One short line shown on each door's own sign-up page.
@@ -58,7 +68,12 @@ export async function loader({ request }: Route.LoaderArgs) {
   // usually. Without this a scan that leads to account creation ends on the
   // welcome screen and the destination is lost.
   const next = pickSafeLoginNext(url.searchParams.get("next"));
-  return { door: isValidDoor(door) ? door : null, next };
+  return {
+    door: isValidDoor(door) ? door : null,
+    next,
+    // Signed-out visitors: the dali.os dress follows the flag's everyone switch.
+    authV2: await isFeatureEnabledForEveryone("desktop-tabs", request),
+  };
 }
 
 export async function action({ request }: Route.ActionArgs) {
@@ -150,7 +165,53 @@ export async function action({ request }: Route.ActionArgs) {
 
 // ── Door picker ───────────────────────────────────────────────────────────────
 
-function DoorPicker({ next }: { next: string | null }) {
+// dali.os door badges (v2): tinted icon squares, matching the prototype's pairs.
+const V2_DOOR_ICONS: Record<Door, { icon: LucideIcon; className: string }> = {
+  member: { icon: UsersRound, className: "bg-[#2f6f7a] text-[#d3f3f7]" },
+  dartmouth: { icon: GraduationCap, className: "bg-[#5d4a7d] text-[#ece0ff]" },
+  partner: { icon: Briefcase, className: "bg-[#7a5a2f] text-[#fbe6c5]" },
+};
+
+const V2_LINK = "font-semibold text-os-accent transition-colors duration-150 hover:text-os-accent-hover";
+
+function DoorPicker({ next, v2 = false }: { next: string | null; v2?: boolean }) {
+  if (v2) {
+    return (
+      <>
+        <div className="flex flex-col gap-2">
+          {VALID_DOORS.map((door, i) => {
+            const { icon: Icon, className } = V2_DOOR_ICONS[door];
+            return (
+              <Link
+                key={door}
+                to={`/signup?door=${door}${next ? `&next=${encodeURIComponent(next)}` : ""}`}
+                style={{ animationDelay: `${60 * i}ms` }}
+                className="group flex w-full items-center gap-3 rounded-xl border border-os-container bg-os-card p-3.5 text-left transition-colors duration-150 hover:border-os-container-hi hover:bg-os-card-hover active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-os-accent/40 motion-safe:animate-auth-rise"
+              >
+                <span className={cn("flex h-9 w-9 shrink-0 items-center justify-center rounded-lg", className)}>
+                  <Icon className="h-[18px] w-[18px]" aria-hidden />
+                </span>
+                <span className="flex min-w-0 flex-1 flex-col">
+                  <span className="text-sm font-semibold text-foreground">{DOOR_LABELS[door]}</span>
+                  <span className="truncate text-xs text-os-grey">{DOOR_DESCRIPTIONS[door]}</span>
+                </span>
+                <ChevronRight
+                  className="h-4 w-4 shrink-0 text-os-muted transition-transform duration-200 group-hover:translate-x-0.5 group-hover:text-foreground"
+                  aria-hidden
+                />
+              </Link>
+            );
+          })}
+        </div>
+        <p className="mt-6 text-sm text-os-grey">
+          Already have an account?{" "}
+          <Link to="/login" className={V2_LINK}>
+            Sign in
+          </Link>
+        </p>
+      </>
+    );
+  }
   // Door icon badges — matched to the login door cards so "create account" and
   // "sign in" present the same three doors identically.
   const doors: { door: Door; label: string; description: string; icon: ReactNode }[] = [
@@ -241,10 +302,11 @@ function DoorPicker({ next }: { next: string | null }) {
 
 // ── Per-door signup form ──────────────────────────────────────────────────────
 
-function DoorSignup({ door, next, actionData }: {
+function DoorSignup({ door, next, actionData, v2 = false }: {
   door: Door;
   next: string | null;
   actionData: Awaited<ReturnType<typeof action>> | undefined;
+  v2?: boolean;
 }) {
   const navigation = useNavigation();
   const submitting = navigation.state === "submitting";
@@ -262,25 +324,34 @@ function DoorSignup({ door, next, actionData }: {
 
   return (
     <>
-      <p className="text-muted-foreground mb-6 -mt-2">
+      <p className={cn("mb-6 -mt-2", v2 ? "text-sm text-os-grey" : "text-muted-foreground")}>
         {DOOR_BLURBS[door]}
       </p>
 
       {sent ? (
-        <div key="step-sent" className="rounded-2xl bg-brand-tint p-6 motion-safe:animate-auth-step">
-          <p className="font-heading font-semibold text-dark-blue mb-1">
+        <div
+          key="step-sent"
+          className={cn(
+            "motion-safe:animate-auth-step",
+            v2 ? "rounded-xl border border-os-container bg-os-card p-5" : "rounded-2xl bg-brand-tint p-6",
+          )}
+        >
+          <p className={cn("mb-1 font-semibold", v2 ? "text-foreground" : "font-heading text-dark-blue")}>
             Check your email
           </p>
-          <p className="text-sm text-muted-foreground">
+          <p className={cn("text-sm", v2 ? "leading-relaxed text-os-grey" : "text-muted-foreground")}>
             We sent an email to{" "}
-            <span className="font-medium text-dark-blue">{sent.email}</span>.
+            <span className={cn("font-medium", v2 ? "text-foreground" : "text-dark-blue")}>{sent.email}</span>.
             Open it and follow the link to continue. Sign-in links expire in{" "}
             {humanDuration(MAGIC_LINK_TTL_SECONDS)}.
           </p>
           <div className="mt-4">
             <Link
               to={`/signup?door=${door}${next ? `&next=${encodeURIComponent(next)}` : ""}`}
-              className="group inline-flex items-center gap-1.5 text-sm font-semibold text-dark-blue transition-colors duration-150 hover:text-foreground"
+              className={cn(
+                "group inline-flex items-center gap-1.5 text-sm",
+                v2 ? V2_LINK : "font-semibold text-dark-blue transition-colors duration-150 hover:text-foreground",
+              )}
             >
               <ArrowLeft className="h-4 w-4 transition-transform duration-150 ease-out group-hover:-translate-x-0.5" aria-hidden />
               Use a different email
@@ -289,11 +360,14 @@ function DoorSignup({ door, next, actionData }: {
         </div>
       ) : (
         <div key="step-email" className="motion-safe:animate-auth-step">
-          {formError && (
-            <p role="alert" className="mb-4 text-sm text-red-600 bg-red-50 rounded-lg px-4 py-3 motion-safe:animate-auth-rise">
-              {formError}
-            </p>
-          )}
+          {formError &&
+            (v2 ? (
+              <AuthNotice message={formError} />
+            ) : (
+              <p role="alert" className="mb-4 text-sm text-red-600 bg-red-50 rounded-lg px-4 py-3 motion-safe:animate-auth-rise">
+                {formError}
+              </p>
+            ))}
 
           {/* Magic-link signup — one method for every door. We email a sign-in
               link to the verified address; the click lands on /welcome to
@@ -304,21 +378,35 @@ function DoorSignup({ door, next, actionData }: {
             <input type="hidden" name="provider" value="email-link" />
             {next && <input type="hidden" name="next" value={next} />}
             <div key={`email-${shakeCount}`} className={shakeCount > 0 ? "motion-safe:animate-auth-shake" : undefined}>
-              <input
-                type="email"
-                name="email"
-                required
-                placeholder={EMAIL_PLACEHOLDERS[door]}
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                aria-invalid={Boolean(formError)}
-                className={`w-full rounded-xl border bg-card px-4 py-3 text-sm transition-[border-color] duration-150 focus:outline-none focus:ring-2 focus:ring-accent-coral ${
-                  formError ? "border-red-400" : "border-border hover:border-dark-blue/40"
-                }`}
-              />
+              {v2 ? (
+                <AuthInput
+                  label="Email"
+                  type="email"
+                  name="email"
+                  required
+                  placeholder={EMAIL_PLACEHOLDERS[door]}
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  aria-invalid={Boolean(formError)}
+                />
+              ) : (
+                <input
+                  type="email"
+                  name="email"
+                  required
+                  placeholder={EMAIL_PLACEHOLDERS[door]}
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  aria-invalid={Boolean(formError)}
+                  className={`w-full rounded-xl border bg-card px-4 py-3 text-sm transition-[border-color] duration-150 focus:outline-none focus:ring-2 focus:ring-accent-coral ${
+                    formError ? "border-red-400" : "border-border hover:border-dark-blue/40"
+                  }`}
+                />
+              )}
             </div>
             <AuthButton
               type="submit"
+              v2={v2}
               icon={Mail}
               loading={submitting}
               loadingLabel="Sending…"
@@ -329,15 +417,15 @@ function DoorSignup({ door, next, actionData }: {
         </div>
       )}
 
-      <div className="mt-6 text-center text-sm text-muted-foreground space-y-1.5">
+      <div className={cn("mt-6 text-sm space-y-1.5", v2 ? "text-os-grey" : "text-center text-muted-foreground")}>
         <p>
-          <Link to="/signup" className="underline hover:text-foreground">
+          <Link to="/signup" className={v2 ? V2_LINK : "underline hover:text-foreground"}>
             Choose a different account type
           </Link>
         </p>
         <p>
           Already have an account?{" "}
-          <Link to="/login" className="underline hover:text-foreground">
+          <Link to="/login" className={v2 ? V2_LINK : "underline hover:text-foreground"}>
             Sign in
           </Link>
         </p>
@@ -347,7 +435,7 @@ function DoorSignup({ door, next, actionData }: {
 }
 
 export default function Signup() {
-  const { door, next } = useLoaderData<typeof loader>();
+  const { door, next, authV2 } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const [searchParams] = useSearchParams();
   const activeDoor = door ?? (isValidDoor(searchParams.get("door")) ? (searchParams.get("door") as Door) : null);
@@ -355,11 +443,13 @@ export default function Signup() {
   return (
     <AuthShell
       heading={activeDoor ? DOOR_LABELS[activeDoor] : "Create your account"}
+      v2={authV2}
+      stepKey={activeDoor ?? "doors"}
     >
       {activeDoor ? (
-        <DoorSignup door={activeDoor} next={next} actionData={actionData} />
+        <DoorSignup door={activeDoor} next={next} actionData={actionData} v2={authV2} />
       ) : (
-        <DoorPicker next={next} />
+        <DoorPicker next={next} v2={authV2} />
       )}
     </AuthShell>
   );
