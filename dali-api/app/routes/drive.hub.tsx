@@ -63,6 +63,7 @@ import { DriveUploadInput } from "~/components/drive/DriveUploadInput";
 import type { UploadDestination, UploadTarget } from "~/components/drive/useDriveFileUpload";
 import { useDialog } from "~/components/ui/dialog";
 import { useFeatureFlag } from "~/components/FeatureFlags";
+import { useOpenBeside } from "~/components/side-panel/use-side-panel";
 import { useToast } from "~/components/ui/toast";
 import { driveNoticeMessage } from "~/lib/drive-notices";
 import { Menu, Select } from "~/components/ui/floating";
@@ -1620,6 +1621,8 @@ export default function DriveHub() {
     [navigate, driveScopes, onNavigate, effectiveScopeId],
   );
 
+  const onOpenBeside = useOpenBeside();
+
   const onToggleFavorite = useCallback(
     async (item: DriveItem) => {
       if (item.type !== "doc" && item.type !== "folder" && item.type !== "form") return;
@@ -1970,6 +1973,7 @@ export default function DriveHub() {
         initialSelectedId={initialSelectedId}
         revealId={revealId}
         onOpenItem={onOpenItem}
+        onOpenBeside={onOpenBeside}
         onMove={onMove}
         getScopeActions={getScopeActions}
         onToggleFavorite={onToggleFavorite}

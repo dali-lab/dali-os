@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { useOpenDocumentBeside } from "~/components/side-panel/use-side-panel";
 import { SIDE_PARAM } from "~/lib/side-panel";
 import {
   Form,
@@ -222,11 +221,8 @@ export function MemberProfileView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.hash]);
 
-  // Notes open in the normal document editor beside the profile: the side
-  // panel, or the iframe workspace's split pane (standalone, a plain visit).
-  const openNoteBeside = useOpenDocumentBeside(openNoteLegacy);
   function openNote(note: { id: string; title: string }) {
-    openNoteBeside(note.id, note.title);
+    openNoteLegacy(note.id, note.title);
   }
 
   // Live "last active" for this member's header (respects their hide-activity
