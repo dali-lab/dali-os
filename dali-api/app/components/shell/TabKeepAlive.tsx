@@ -14,8 +14,6 @@ import { sameUrl } from '~/lib/desktop-tabs'
 import { getTabsSnapshot } from '~/lib/desktop-tabs-store'
 import { useDesktopTabsState } from '~/components/DesktopTabs'
 
-export const KEEP_ALIVE_TABS = 10
-
 const BOOT_SLOT = 'boot'
 
 const TabsShowingContext = createContext(false)
@@ -29,7 +27,7 @@ type Snapshot = {
 }
 
 /**
- * Keeps the last KEEP_ALIVE_TABS tabs' pages mounted but hidden, so switching
+ * Keeps every open tab's page mounted but hidden, so switching
  * back skips the loader wait and the remount. A page stays frozen on the router
  * state it last rendered with until the router is back on its url.
  */
@@ -88,16 +86,9 @@ function KeepAliveHost({ children }: { children: ReactNode }) {
   snapshots.current.set(live, { data, location: locationContext, route, page: children })
 
   const open = new Set(tabs.map((t) => t.id))
-  const kept = new Set(
-    tabs
-      .filter((t) => snapshots.current.has(t.id))
-      .sort((a, b) => b.lastActivatedAt - a.lastActivatedAt)
-      .slice(0, KEEP_ALIVE_TABS)
-      .map((t) => t.id),
-  )
   for (const id of [...snapshots.current.keys()]) {
     if (id === live) continue
-    if (!open.has(id) || !kept.has(id)) {
+    if (!open.has(id)) {
       snapshots.current.delete(id)
       reactKeys.current.delete(id)
     }
