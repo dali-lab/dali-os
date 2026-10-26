@@ -350,17 +350,10 @@ export default function AdminConsoleGroups() {
           own, so the decorative Users glyph goes with the smaller heading. */}
       <header className="flex items-start justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-3">
-          <h1
-            className={cn(
-              "font-heading text-foreground",
-              "text-3xl font-medium",
-            )}
-          >
-            Groups
-          </h1>
+          <h1 className="text-2xl font-bold text-foreground">Groups</h1>
           <span
             className={cn(
-              "rounded-full font-medium",
+              "rounded-[6px] font-medium",
               "bg-os-container px-3 py-1 text-xs text-foreground",
             )}
           >
@@ -372,11 +365,7 @@ export default function AdminConsoleGroups() {
           onClick={() => setCreating(true)}
           className="os-add-btn"
         >
-          <Plus
-            className="h-[17px] w-[17px]"
-            strokeWidth={3}
-            aria-hidden
-          />
+          <Plus className="h-4 w-4" strokeWidth={3} aria-hidden />
           New group
         </button>
       </header>
@@ -431,7 +420,7 @@ export default function AdminConsoleGroups() {
           if (kindGroups.length === 0) return null;
           return (
             <div key={kind} className="space-y-3">
-              <h2 className="text-xs font-semibold uppercase tracking-widest text-os-grey">
+              <h2 className="font-heading text-base font-semibold text-foreground">
                 {GROUP_KIND_LABELS[kind]}
               </h2>
               {kindGroups.map((g) => (
@@ -474,7 +463,7 @@ function StatusTabs({
     <div
       className={cn(
         "inline-flex border border-border",
-        "rounded-full bg-os-card p-1",
+        "rounded-lg bg-os-card p-1",
       )}
     >
       {tabs.map((t) => (
@@ -484,9 +473,9 @@ function StatusTabs({
           onClick={() => onChange(t.value)}
           className={cn(
             "text-sm transition-colors",
-            "rounded-full px-4 py-1.5",
+            "rounded-md px-4 py-1.5",
             status === t.value
-              ? "bg-os-container font-medium text-foreground"
+              ? "bg-os-hover-strong font-medium text-foreground"
               : "text-muted-foreground hover:text-foreground",
           )}
           aria-pressed={status === t.value}
@@ -605,7 +594,7 @@ function CreateGroupForm({
                       )
                     }
                     aria-pressed={on}
-                    className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${
+                    className={`px-2.5 py-1 rounded-lg text-xs font-medium border transition-colors ${
                       on
                         ? "bg-os-accent text-os-bg border-os-accent"
                         : "bg-background text-foreground border-border hover:bg-muted/50"
@@ -632,7 +621,7 @@ function CreateGroupForm({
                   <span
                     key={id}
                     className={cn(
-                      "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium",
+                      "inline-flex items-center gap-1 rounded-[6px] px-2 py-0.5 text-xs font-medium",
                       "bg-os-accent/15 text-os-accent",
                     )}
                   >
@@ -791,7 +780,7 @@ function GroupCard({
               <span
                 className={cn(
                   "font-medium uppercase tracking-wide",
-                  "rounded-full border border-os-accent/35 px-2.5 py-0.5 text-xs text-os-accent",
+                  "rounded-[6px] border border-os-accent/35 px-2.5 py-0.5 text-xs text-os-accent",
                 )}
               >
                 Auto
@@ -802,7 +791,7 @@ function GroupCard({
             <span
               className={cn(
                 "font-medium uppercase tracking-wide",
-                "rounded-full border border-os-amber/35 px-2.5 py-0.5 text-xs text-os-amber",
+                "rounded-[6px] border border-os-amber/35 px-2.5 py-0.5 text-xs text-os-amber",
               )}
             >
               Archived
@@ -812,7 +801,7 @@ function GroupCard({
             <span
               className={cn(
                 "font-medium",
-                "rounded-full bg-os-container px-3 py-1 text-xs text-foreground",
+                "rounded-[6px] bg-os-container px-3 py-1 text-xs text-foreground",
               )}
             >
               {group.boundTermCodes.join(", ")}
@@ -925,7 +914,7 @@ function GroupCard({
               onClick={() => setAddingMember(true)}
               className={cn(
                 "inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium bg-muted text-muted-foreground hover:bg-muted/80",
-                "rounded-full",
+                "rounded-lg",
               )}
             >
               <Plus className="w-3 h-3" /> Add member
