@@ -5,16 +5,18 @@
 
 import { useState } from "react";
 import { Checkbox } from "~/components/ui/Checkbox";
-import { Combobox, MultiSelect } from "~/components/ui/floating";
+import { Combobox, MultiSelect, Select } from "~/components/ui/floating";
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
 import { keepLinkedInOrg, orgResourceOptions, type KnownOrg } from "~/lib/infra/infra-scope";
+import { NEW_VAULT_GROUP } from "~/lib/infra/vault-scope";
 
 export type InfraConfigValues = {
   flyOrgSlug: string | null;
   flyAppNames: string[];
   neonOrgId: string | null;
   neonProjectIds: string[];
+  vaultwardenGroupId: string | null;
   infraEnabled: boolean;
   hasFlyReadToken: boolean;
   hasFlyWriteToken: boolean;
@@ -37,7 +39,7 @@ export function InfraConfigFields({
   knownOrgs,
 }: {
   config: InfraConfigValues;
-  knownOrgs: { fly: KnownOrg[]; neon: KnownOrg[] };
+  knownOrgs: { fly: KnownOrg[]; neon: KnownOrg[]; vaultGroups?: { id: string; name: string }[] | null };
 }) {
   const { fieldLabel } = useOsChrome();
   const [flyOrg, setFlyOrg] = useState(config.flyOrgSlug ?? "");
@@ -82,6 +84,20 @@ export function InfraConfigFields({
         initialOrg={config.neonOrgId ?? ""}
         initialLinked={config.neonProjectIds}
       />
+      {knownOrgs.vaultGroups && (
+        <label className={cn(fieldLabel, "w-72")}>
+          <span>Vaultwarden group</span>
+          <Select
+            name="vaultwardenGroupId"
+            defaultValue={config.vaultwardenGroupId ?? ""}
+            options={[
+              { value: "", label: "None" },
+              ...(config.vaultwardenGroupId ? [] : [{ value: NEW_VAULT_GROUP, label: "Create a group for this project" }]),
+              ...knownOrgs.vaultGroups.map((g) => ({ value: g.id, label: g.name })),
+            ]}
+          />
+        </label>
+      )}
       <Checkbox name="infraEnabled" defaultChecked={config.infraEnabled} label="Sweep enabled" />
     </div>
   );

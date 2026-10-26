@@ -4,6 +4,7 @@
 // only, with links out to each provider's billing.
 
 import { ExternalLink } from "lucide-react";
+import { VaultSection } from "./VaultSection";
 import type { ProjectFleet } from "~/lib/infra/dashboard.server";
 import type { NeonQuota } from "~/lib/infra/types";
 import {
@@ -179,6 +180,10 @@ export function ProjectInfraView({ project: p }: { project: ProjectFleet }) {
             </div>
           )}
         </div>
+      )}
+      {p.vault && <VaultSection vault={p.vault} orgUrl={p.vaultOrgUrl} />}
+      {p.vaultwardenGroupId && !p.vault && (
+        <p className="text-xs text-muted-foreground">Vaultwarden group linked. Check back after the next sweep.</p>
       )}
     </div>
   );

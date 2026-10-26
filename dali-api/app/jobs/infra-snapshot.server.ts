@@ -26,6 +26,8 @@ import {
 import { monthStart } from "~/lib/infra/neon-cost";
 import { branchScopeId, SCOPE } from "~/lib/infra/infra-scope";
 import type { FlyInventory, NeonInventory } from "~/lib/infra/types";
+import { getVaultInventory, vaultwardenConfigured } from "~/lib/infra/vaultwarden.server";
+import { VAULT_ORG_SNAPSHOT } from "~/lib/infra/vault-scope";
 
 type UsageRow = {
   provider: "fly" | "neon";
@@ -150,7 +152,7 @@ function neonUsageRows(usage: NeonOrgUsage, inv: NeonInventory, linked: Set<stri
 // (project, provider) so the render always reads exactly one current row.
 async function writeSnapshot(
   projectId: string,
-  provider: "fly" | "neon",
+  provider: "fly" | "neon" | "vaultwarden",
   payload: unknown,
 ): Promise<void> {
   const snap = await prisma.infraSnapshot.create({
@@ -181,9 +183,25 @@ async function upsertUsage(projectId: string, r: UsageRow): Promise<void> {
 }
 
 export async function runInfraSnapshot(ctx: JobContext): Promise<JobResult> {
+  const vault = await refreshVaultSnapshot().then(
+    (ok) => (ok ? 1 : 0),
+    (err) => {
+      console.error("infra-snapshot vaultwarden sweep failed", err instanceof Error ? err.message : err);
+      return 0;
+    },
+  );
   const projects = await listEnabledInfraProjectCreds();
-  if (projects.length === 0) return { items: 0, note: "no registered projects" };
-  return sweepProjects(projects, ctx);
+  if (projects.length === 0) return { items: vault, note: "no registered projects" };
+  const result = await sweepProjects(projects, ctx);
+  return { ...result, items: (result.items ?? 0) + vault };
+}
+
+// The Vaultwarden org is one shared org from env, so it's cached once under a
+// fixed id rather than per project; each project reads its group out of it.
+export async function refreshVaultSnapshot(): Promise<boolean> {
+  if (!vaultwardenConfigured()) return false;
+  await writeSnapshot(VAULT_ORG_SNAPSHOT, "vaultwarden", await getVaultInventory());
+  return true;
 }
 
 // After a project's infra config is saved: copy another project's latest sweep

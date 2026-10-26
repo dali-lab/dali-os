@@ -1,8 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("~/lib/db", () => ({ prisma: {} }));
+vi.mock("../vaultwarden.server", () => ({
+  vaultwardenConfigured: () => process.env.TEST_VW === "1",
+  vaultOrgUrl: () => "https://vault.example.edu/#/organizations/org",
+}));
 
-import { buildProjectFleet, buildUnlinkedFleet } from "../dashboard.server";
+import { buildProjectFleet, buildUnlinkedFleet, unlinkedVaultGroups } from "../dashboard.server";
+import type { VaultInventory } from "../types";
 import type { InfraProjectInfo } from "../project-infra.server";
 import type { NeonInventory } from "../types";
 
@@ -13,6 +18,7 @@ const info = (over: Partial<InfraProjectInfo> = {}): InfraProjectInfo => ({
   flyAppNames: [],
   neonOrgId: "org-dali-1",
   neonProjectIds: ["np-a"],
+  vaultwardenGroupId: null,
   infraEnabled: true,
   hasFlyReadToken: false,
   hasFlyWriteToken: false,
@@ -138,6 +144,8 @@ describe("buildUnlinkedFleet", () => {
   const orgs = {
     fly: [{ orgId: "dali-os", resources: flyOrg.apps.map((a) => ({ id: a.name, name: a.name })) }],
     neon: [{ orgId: "org-dali-1", resources: org.projects.map((p) => ({ id: p.id, name: p.name })) }],
+    vaultGroups: null,
+    vaultCollections: [],
   };
 
   it("lists apps and databases no project has linked, one row per org", () => {
@@ -161,5 +169,58 @@ describe("buildUnlinkedFleet", () => {
 
   it("skips an org with no swept inventory", () => {
     expect(buildUnlinkedFleet([dali], new Map(), orgs)).toEqual([]);
+  });
+});
+
+const vaultInv: VaultInventory = {
+  orgId: "org",
+  members: [{ id: "m1", email: "ada@example.edu", name: "Ada", status: 2, type: 2, twoFactorEnabled: true }],
+  groups: [
+    { id: "g1", name: "Work Health", externalId: null, memberIds: ["m1"], collectionIds: [] },
+    { id: "g2", name: "Lonely", externalId: null, memberIds: [], collectionIds: [] },
+  ],
+  collections: [],
+};
+
+describe("buildProjectFleet Vaultwarden", () => {
+  it("compares the linked group with the project's roster", () => {
+    const fleet = buildProjectFleet(info({ vaultwardenGroupId: "g1" }), latest, [], {
+      vaultInventory: vaultInv,
+      roster: [
+        { userId: "u1", name: "Ada", email: "ada@example.edu" },
+        { userId: "u2", name: "Grace", email: "grace@example.edu" },
+      ],
+    });
+    expect(fleet.vault?.group.name).toBe("Work Health");
+    expect(fleet.vault?.members[0].staffed).toBe(true);
+    expect(fleet.vault?.missing.map((p) => p.name)).toEqual(["Grace"]);
+  });
+
+  it("has no vault without a linked group", () => {
+    expect(buildProjectFleet(info(), latest, [], { vaultInventory: vaultInv }).vault).toBeNull();
+  });
+
+  it("counts a linked group alone as configured", () => {
+    expect(buildProjectFleet(info({ neonOrgId: null, vaultwardenGroupId: "g1" }), new Map(), []).configured).toBe(true);
+  });
+
+  it("links the web vault's member page only when Vaultwarden is configured", () => {
+    delete process.env.TEST_VW;
+    expect(buildProjectFleet(info(), latest, []).vaultOrgUrl).toBeNull();
+    process.env.TEST_VW = "1";
+    expect(buildProjectFleet(info(), latest, []).vaultOrgUrl).toBe("https://vault.example.edu/#/organizations/org");
+    delete process.env.TEST_VW;
+  });
+});
+
+describe("unlinkedVaultGroups", () => {
+  it("lists groups no project links, with member counts", () => {
+    expect(unlinkedVaultGroups(vaultInv, [{ vaultwardenGroupId: "g1" }, { vaultwardenGroupId: null }])).toEqual([
+      { id: "g2", name: "Lonely", memberCount: 0 },
+    ]);
+  });
+
+  it("is empty before the first sweep", () => {
+    expect(unlinkedVaultGroups(null, [])).toEqual([]);
   });
 });

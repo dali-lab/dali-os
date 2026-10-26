@@ -15,6 +15,7 @@ const blank: InfraConfigValues = {
   flyAppNames: [],
   neonOrgId: null,
   neonProjectIds: [],
+  vaultwardenGroupId: null,
   infraEnabled: true,
   hasFlyReadToken: false,
   hasFlyWriteToken: false,
@@ -22,11 +23,11 @@ const blank: InfraConfigValues = {
 
 let root: Root | null = null;
 let container: HTMLFormElement;
-function render(config: InfraConfigValues) {
+function render(config: InfraConfigValues, vaultGroups: { id: string; name: string }[] | null = null) {
   container = document.createElement("form");
   document.body.appendChild(container);
   root = createRoot(container);
-  act(() => root!.render(createElement(InfraConfigFields, { config, knownOrgs })));
+  act(() => root!.render(createElement(InfraConfigFields, { config, knownOrgs: { ...knownOrgs, vaultGroups } })));
 }
 afterEach(() => {
   act(() => root?.unmount());
@@ -67,6 +68,23 @@ describe("InfraConfigFields", () => {
   it("never renders a token value", () => {
     render({ ...blank, flyOrgSlug: "dali-os", hasFlyReadToken: true, hasFlyWriteToken: true });
     for (const input of container.querySelectorAll<HTMLInputElement>('input[type="password"]')) expect(input.value).toBe("");
+  });
+});
+
+describe("InfraConfigFields Vaultwarden", () => {
+  it("hides the group picker when Vaultwarden isn't configured", () => {
+    render(blank);
+    expect(values("vaultwardenGroupId")).toEqual([]);
+  });
+
+  it("posts the linked group", () => {
+    render({ ...blank, vaultwardenGroupId: "g1" }, [{ id: "g1", name: "Ultrasound" }]);
+    expect(values("vaultwardenGroupId")).toEqual(["g1"]);
+  });
+
+  it("defaults an unlinked project to None", () => {
+    render(blank, [{ id: "g1", name: "Ultrasound" }]);
+    expect(new Set(values("vaultwardenGroupId"))).toEqual(new Set([""]));
   });
 });
 

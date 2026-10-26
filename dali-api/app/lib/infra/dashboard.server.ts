@@ -34,7 +34,17 @@ import {
   type ScopedSample,
   type UsageSeries,
 } from "./infra-scope";
-import type { FlyInventory, NeonInventory } from "./types";
+import type { FlyInventory, NeonInventory, VaultInventory } from "./types";
+import {
+  collectionLabel,
+  projectVault,
+  vaultGroupOptions,
+  VAULT_ORG_SNAPSHOT,
+  type ProjectVault,
+  type RosterPerson,
+} from "./vault-scope";
+import { latestVaultInventory, loadVaultRosters } from "./vault-read.server";
+import { vaultOrgUrl, vaultwardenConfigured } from "./vaultwarden.server";
 
 export type { UsageSeries };
 
@@ -50,6 +60,11 @@ export type ProjectFleet = {
   flyAppNames: string[];
   neonOrgId: string | null;
   neonProjectIds: string[];
+  vaultwardenGroupId: string | null;
+  /** The project's Vaultwarden group against its staffing; null when none is linked or swept. */
+  vault: ProjectVault | null;
+  /** The org in the web vault, for console links; null when not configured. */
+  vaultOrgUrl: string | null;
   hasFlyReadToken: boolean;
   hasFlyWriteToken: boolean;
   fly: FlyInventory | null;
@@ -95,8 +110,9 @@ export function buildProjectFleet(
   info: InfraProjectInfo,
   latest: Map<string, { payload: unknown; fetchedAt: Date }>,
   samples: Sample[],
-  now = new Date(),
+  opts: { now?: Date; vaultInventory?: VaultInventory | null; roster?: RosterPerson[] } = {},
 ): ProjectFleet {
+  const now = opts.now ?? new Date();
   const fly = latest.get(`${info.projectId}:fly`);
   const neon = latest.get(`${info.projectId}:neon`);
   const flyOrg = (fly?.payload as FlyInventory | undefined) ?? null;
@@ -113,6 +129,9 @@ export function buildProjectFleet(
     flyAppNames: info.flyAppNames,
     neonOrgId: info.neonOrgId,
     neonProjectIds: info.neonProjectIds,
+    vaultwardenGroupId: info.vaultwardenGroupId,
+    vault: projectVault(opts.vaultInventory ?? null, info.vaultwardenGroupId, opts.roster ?? []),
+    vaultOrgUrl: vaultwardenConfigured() ? vaultOrgUrl() : null,
     hasFlyReadToken: info.hasFlyReadToken,
     hasFlyWriteToken: info.hasFlyWriteToken,
     fly: scopeFlyInventory(flyOrg, info.flyAppNames),
@@ -155,12 +174,20 @@ function latestByProviderKey(snapshots: Snapshot[]): {
   return { latest, lastSweep };
 }
 
-export type KnownOrgs = { fly: KnownOrg[]; neon: KnownOrg[] };
+export type KnownOrgs = {
+  fly: KnownOrg[];
+  neon: KnownOrg[];
+  /** Groups in the Vaultwarden org; null when Vaultwarden isn't configured. */
+  vaultGroups: { id: string; name: string }[] | null;
+  /** Collections in the Vaultwarden org, labeled by external id or short id. */
+  vaultCollections: { id: string; name: string }[];
+};
 
 function knownOrgsFrom(
   projects: { flyOrgSlug: string | null; neonOrgId: string | null }[],
   snapshotsNewestFirst: Snapshot[],
 ): KnownOrgs {
+  const vault = snapshotsNewestFirst.find((s) => s.provider === "vaultwarden")?.payload as VaultInventory | undefined;
   const payloads = (provider: string) =>
     snapshotsNewestFirst.filter((s) => s.provider === provider).map((s) => s.payload);
   return {
@@ -176,6 +203,8 @@ function knownOrgsFrom(
       (inv) => inv.orgId,
       (inv) => neonProjectOptions(inv),
     ),
+    vaultGroups: vaultwardenConfigured() ? vaultGroupOptions(vault ?? null) : null,
+    vaultCollections: (vault?.collections ?? []).map((c) => ({ id: c.id, name: collectionLabel(c) })),
   };
 }
 
@@ -200,7 +229,7 @@ export function buildUnlinkedFleet(
 ): ProjectFleet[] {
   const out: ProjectFleet[] = [];
   const blank = (donor: InfraProjectInfo, name: string): ProjectFleet => ({
-    ...buildProjectFleet({ ...donor, flyAppNames: [], neonProjectIds: [] }, new Map(), []),
+    ...buildProjectFleet({ ...donor, flyAppNames: [], neonProjectIds: [], vaultwardenGroupId: null }, new Map(), []),
     name,
     unlinked: true,
   });
@@ -229,6 +258,8 @@ export function buildUnlinkedFleet(
 export async function loadFleet(opts: { termId?: string | null; all?: boolean } = {}): Promise<{
   projects: ProjectFleet[];
   unlinked: ProjectFleet[];
+  /** Vaultwarden groups no project has linked. */
+  unlinkedVaultGroups: { id: string; name: string; memberCount: number }[];
   knownOrgs: KnownOrgs;
   lastSweep: string | null;
   protectedFly: string[];
@@ -243,10 +274,15 @@ export async function loadFleet(opts: { termId?: string | null; all?: boolean } 
 
   const { latest, lastSweep } = latestByProviderKey(snapshots);
   const orgs = knownOrgsFrom(configured, snapshots);
+  const vaultInventory = vaultFrom(snapshots);
+  const rosters = await loadVaultRosters(registry.filter((p) => p.vaultwardenGroupId).map((p) => p.projectId));
 
   return {
-    projects: registry.map((info) => buildProjectFleet(info, latest, samples)),
+    projects: registry.map((info) =>
+      buildProjectFleet(info, latest, samples, { vaultInventory, roster: rosters.get(info.projectId) }),
+    ),
     unlinked: buildUnlinkedFleet(configured, latest, orgs),
+    unlinkedVaultGroups: unlinkedVaultGroups(vaultInventory, configured),
     knownOrgs: orgs,
     lastSweep: lastSweep?.toISOString() ?? null,
     protectedFly: protectedFlyApps(),
@@ -259,15 +295,32 @@ export async function loadFleet(opts: { termId?: string | null; all?: boolean } 
 export async function loadProjectInfra(projectId: string): Promise<ProjectFleet | null> {
   const info = await getInfraProjectInfo(projectId);
   if (!info || !hasInfraConfig(info)) return null;
-  const [snapshots, samples] = await Promise.all([
+  const [snapshots, samples, vaultInventory, rosters] = await Promise.all([
     prisma.infraSnapshot.findMany({ where: { projectId }, orderBy: { fetchedAt: "desc" } }),
     prisma.infraUsageSample.findMany({
       where: { projectId, ...recentSamplesWhere(new Date()) },
       orderBy: { at: "asc" },
     }),
+    info.vaultwardenGroupId ? latestVaultInventory() : Promise.resolve(null),
+    info.vaultwardenGroupId ? loadVaultRosters([projectId]) : Promise.resolve(new Map<string, RosterPerson[]>()),
   ]);
   const { latest } = latestByProviderKey(snapshots);
-  return buildProjectFleet(info, latest, samples);
+  return buildProjectFleet(info, latest, samples, { vaultInventory, roster: rosters.get(projectId) });
+}
+
+function vaultFrom(snapshotsNewestFirst: Snapshot[]): VaultInventory | null {
+  const s = snapshotsNewestFirst.find((x) => x.provider === "vaultwarden" && x.projectId === VAULT_ORG_SNAPSHOT);
+  return (s?.payload as VaultInventory | undefined) ?? null;
+}
+
+export function unlinkedVaultGroups(
+  inv: VaultInventory | null,
+  configured: { vaultwardenGroupId: string | null }[],
+): { id: string; name: string; memberCount: number }[] {
+  const linked = new Set(configured.map((p) => p.vaultwardenGroupId).filter(Boolean));
+  return (inv?.groups ?? [])
+    .filter((g) => !linked.has(g.id))
+    .map((g) => ({ id: g.id, name: g.name, memberCount: g.memberIds.length }));
 }
 
 // Cross-project idle/orphan review list. Surfaces everything not on the

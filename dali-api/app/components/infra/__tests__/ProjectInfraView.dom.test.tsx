@@ -20,6 +20,9 @@ function fleet(): ProjectFleet {
     flyOrgApps: [{ id: "web", name: "web" }, { id: "worker", name: "worker" }],
     neonOrgId: "org-dali-1",
     neonProjectIds: ["np-a"],
+    vaultwardenGroupId: null,
+    vault: null,
+    vaultOrgUrl: null,
     hasFlyReadToken: true,
     hasFlyWriteToken: false,
     fly: {

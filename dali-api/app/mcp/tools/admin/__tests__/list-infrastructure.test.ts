@@ -43,7 +43,8 @@ const CORE_ROLES = {
 
 const FLEET_RESULT = {
   unlinked: [],
-  knownOrgs: { fly: [], neon: [] },
+  unlinkedVaultGroups: [],
+  knownOrgs: { fly: [], neon: [], vaultGroups: null, vaultCollections: [] },
   lastSweep: "2026-09-10T00:00:00.000Z",
   protectedFly: ["dali-prod"],
   protectedNeon: ["proj-main"],
@@ -58,6 +59,9 @@ const FLEET_RESULT = {
       flyAppNames: [],
       flyOrgApps: [],
       neonProjectIds: ["proj-main"],
+      vaultwardenGroupId: null,
+      vault: null,
+      vaultOrgUrl: null,
       neonOrgProjects: [{ id: "proj-main", name: "main" }],
       neonPlan: "launch",
       neonCost: null,

@@ -1172,13 +1172,14 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         flyAppNames: true,
         neonOrgId: true,
         neonProjectIds: true,
+        vaultwardenGroupId: true,
         infraEnabled: true,
         flyReadTokenEnc: true,
         flyWriteTokenEnc: true,
       },
     }),
     canEdit ? listProjectInfraRequests(params.id) : Promise.resolve([]),
-    canEdit ? listKnownOrgs() : Promise.resolve({ fly: [], neon: [] }),
+    canEdit ? listKnownOrgs() : Promise.resolve({ fly: [], neon: [], vaultGroups: null, vaultCollections: [] }),
     // Progress tab's AI-line flag — independent of the status facts below.
     (async () =>
       isAiEnabled() &&
@@ -1192,6 +1193,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     config: {
       flyOrgSlug: infraConfigRow?.flyOrgSlug ?? null,
       flyAppNames: infraConfigRow?.flyAppNames ?? [],
+      vaultwardenGroupId: infraConfigRow?.vaultwardenGroupId ?? null,
       neonOrgId: infraConfigRow?.neonOrgId ?? null,
       neonProjectIds: infraConfigRow?.neonProjectIds ?? [],
       infraEnabled: infraConfigRow?.infraEnabled ?? true,

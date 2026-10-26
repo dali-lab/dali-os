@@ -40,7 +40,7 @@ export function ProjectInfraSection({
   const submit = useSubmit();
   const { panel } = useOsChrome();
   const formRef = useRef<HTMLFormElement | null>(null);
-  const configured = Boolean(config.flyOrgSlug || config.neonOrgId);
+  const configured = Boolean(config.flyOrgSlug || config.neonOrgId || config.vaultwardenGroupId);
 
   return (
     <EditableSection
@@ -59,6 +59,7 @@ export function ProjectInfraSection({
               knownOrgs={{
                 fly: withOwnOrg(knownOrgs.fly, config.flyOrgSlug, view?.flyOrgApps ?? []),
                 neon: withOwnOrg(knownOrgs.neon, config.neonOrgId, view?.neonOrgProjects ?? []),
+                vaultGroups: knownOrgs.vaultGroups,
               }}
             />
           </Form>
