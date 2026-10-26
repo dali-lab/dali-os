@@ -15,8 +15,6 @@ import {
   LogOut,
   Mail,
   PanelLeft,
-  PanelLeftClose,
-  PanelLeftOpen,
   Search,
   type LucideIcon,
 } from 'lucide-react'
@@ -52,10 +50,8 @@ export type RailProps = {
   onToggleBell: () => void
   onOpenSearch: () => void
   onHideRail?: () => void
-  /** Scalable rail: 'compact' narrows the rail to an icon column. */
+  /** 'compact' narrows the rail to an icon column (auto on narrow windows). */
   size?: SidebarSize
-  /** Scalable rail: the header toggle scales the rail instead of hiding it. */
-  onToggleSize?: () => void
   /** Entrance animations (section-change stagger, label fades). */
   animated?: boolean
   /** The CSS zoom applied around this rail (see `.os-rail-zoom`); the rail's
@@ -153,7 +149,6 @@ export function Rail({
   onOpenSearch,
   onHideRail,
   size = 'expanded',
-  onToggleSize,
   animated = false,
   zoom = 1,
   favorites,
@@ -308,27 +303,14 @@ export function Rail({
     </Tooltip>
   )
 
-  const toggleButton = onToggleSize ? (
-    <Tooltip
-      content={`${compact ? 'Expand' : 'Collapse'} sidebar · ${TOGGLE_SIDEBAR_SHORTCUT}`}
-      placement={compact ? 'right' : 'top'}
-    >
+  const toggleButton = onHideRail ? (
+    <Tooltip content={`Hide sidebar · ${TOGGLE_SIDEBAR_SHORTCUT}`} placement={compact ? 'right' : 'top'}>
       <button
         type="button"
-        onClick={onToggleSize}
-        aria-label={compact ? 'Expand sidebar' : 'Collapse sidebar'}
+        onClick={onHideRail}
+        aria-label="Hide sidebar"
         className={cn(ICON_BUTTON, compact ? 'h-9 w-9' : 'h-7 w-7')}
       >
-        {compact ? (
-          <PanelLeftOpen className={cn('h-[18px] w-[18px]', ICON_MOTION, 'group-hover:translate-x-0.5')} />
-        ) : (
-          <PanelLeftClose className={cn('h-[18px] w-[18px]', ICON_MOTION, 'group-hover:-translate-x-0.5')} />
-        )}
-      </button>
-    </Tooltip>
-  ) : onHideRail ? (
-    <Tooltip content={`Hide sidebar · ${TOGGLE_SIDEBAR_SHORTCUT}`}>
-      <button type="button" onClick={onHideRail} aria-label="Hide sidebar" className={cn(ICON_BUTTON, 'h-7 w-7')}>
         <PanelLeft className="h-[18px] w-[18px]" />
       </button>
     </Tooltip>

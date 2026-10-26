@@ -171,18 +171,18 @@ export function LayoutOS({
   const desktopTabsFlag = useFeatureFlag('desktop-tabs')
   const showTabs = useDesktopTabs(desktopTabsFlag && tabless, tabStripHint)
   const shellV2 = desktopTabsFlag && tabless
-  // Under the v2 shell the rail scales between full width and an icon column
-  // instead of hiding, and ⌘\ toggles the size.
-  const sidebarScalable = shellV2
-  const { size: railSize, toggle: toggleRailSize, instant: railInstant } = useSidebarSize(sidebarScalable)
-  const compactRail = sidebarScalable && railSize === 'compact'
+  // Under the v2 shell the rail auto-compacts to an icon column on narrow
+  // windows; collapsing it (button, edge, ⌘\) hides it entirely, leaving only
+  // the expand button in the tab strip / page bar.
+  const { size: railSize, instant: railInstant } = useSidebarSize(shellV2)
+  const compactRail = shellV2 && railSize === 'compact'
   const [railHidden, setRailHidden] = useState(focusMode)
-  const hideRail = shellV2 ? !sidebarScalable && railHidden : focusMode
+  const hideRail = shellV2 ? railHidden : focusMode
   const toggleRail = () => {
     setFocusPreference(!railHidden)
     setRailHidden(!railHidden)
   }
-  useToggleSidebarShortcut(shellV2, sidebarScalable ? () => toggleRailSize('keyboard') : toggleRail)
+  useToggleSidebarShortcut(shellV2, toggleRail)
   useRecordTablessHistory()
   useTablessHistoryShortcuts(useShowTablessHistoryNav(tabless), showTabs)
   useOsShellRoot(true)
@@ -1006,9 +1006,8 @@ export function LayoutOS({
       bellOpen={bellOpen}
       onToggleBell={() => setBellOpen((o) => !o)}
       onOpenSearch={() => setPaletteOpen(true)}
-      onHideRail={hideable && !sidebarScalable ? toggleRail : undefined}
-      size={hideable && sidebarScalable ? railSize : 'expanded'}
-      onToggleSize={hideable && sidebarScalable ? () => toggleRailSize('pointer') : undefined}
+      onHideRail={hideable ? toggleRail : undefined}
+      size={hideable ? railSize : 'expanded'}
       animated={hideable}
       favorites={favorites}
       onFavoritesChange={onFavoritesChange}
@@ -1066,17 +1065,16 @@ export function LayoutOS({
       {shellV2
         ? !hideRail && (
             <aside
-              data-size={sidebarScalable ? railSize : undefined}
+              data-size={railSize}
               className={cn(
                 'fixed inset-y-0 left-0 z-20 hidden flex-col border-r border-os-container bg-os-nav md:flex',
-                sidebarScalable ? (compactRail ? 'w-[68px]' : 'w-[264px]') : 'w-[276px]',
-                sidebarScalable &&
-                  !railInstant &&
+                compactRail ? 'w-[68px]' : 'w-[264px]',
+                !railInstant &&
                   'transition-[width] duration-[220ms] ease-[cubic-bezier(0.23,1,0.32,1)] motion-reduce:transition-none',
               )}
             >
               <div className="os-rail-zoom h-full">{renderRail(true)}</div>
-              {sidebarScalable && <RailEdgeHandle compact={compactRail} onToggle={() => toggleRailSize('pointer')} />}
+              <RailEdgeHandle onToggle={toggleRail} />
             </aside>
           )
         : !focusMode && (
@@ -1162,13 +1160,13 @@ export function LayoutOS({
       <main
         className={cn(
           'flex min-w-0 flex-1 flex-col',
-          sidebarScalable
+          shellV2
             ? !railInstant &&
                 'transition-[padding] duration-[220ms] ease-[cubic-bezier(0.23,1,0.32,1)] motion-reduce:transition-none'
             : 'transition-[padding] duration-200',
           fitViewport && 'min-h-0',
           shellV2
-            ? !hideRail && (sidebarScalable ? (compactRail ? 'md:pl-[68px]' : 'md:pl-[264px]') : 'md:pl-[276px]')
+            ? !hideRail && (compactRail ? 'md:pl-[68px]' : 'md:pl-[264px]')
             : !focusMode && mainPad,
         )}
       >
