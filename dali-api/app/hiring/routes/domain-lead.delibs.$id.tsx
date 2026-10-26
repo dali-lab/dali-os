@@ -10,6 +10,7 @@ import { getCollabToken } from "~/lib/collab-token.server";
 import { isCycleAdmin } from "~/lib/roles";
 import { requirePageSignedOrRedirect } from "~/hiring/lib/confidentiality";
 import { GripVertical } from "lucide-react";
+import { useEventStream } from "~/hooks/useEventStream";
 import { KanbanBoard, type KanbanColumn } from "~/components/board/KanbanBoard";
 import { buildColumnOrder, dropCard, missingReviewsLabel } from "~/hiring/lib/delibs";
 import { findRound, parseTimeline } from "~/hiring/lib/cycle-timeline";
@@ -235,17 +236,24 @@ export default function DelibsKanban() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [JSON.stringify(initialOrder)]);
 
-  // Poll the loader every 5s while the session is active so other leads' moves
-  // and newly qualifying applications surface without a manual refresh.
+  // A push that lands mid-drag or mid-save is held until both settle, so the
+  // optimistic order isn't overwritten under the user's hand.
   const revalidator = useRevalidator();
+  const pendingPush = useRef(false);
+  useEventStream(
+    session.status === "Active"
+      ? [`/api/hiring/cycles/${session.applicationCycleId}/delibs/events`]
+      : [],
+    () => {
+      if (dragItemRef.current || savingRef.current) pendingPush.current = true;
+      else revalidator.revalidate();
+    },
+  );
   useEffect(() => {
-    if (session.status !== "Active") return;
-    const t = setInterval(() => {
-      if (dragItemRef.current || savingRef.current) return;
-      if (revalidator.state === "idle") revalidator.revalidate();
-    }, 5000);
-    return () => clearInterval(t);
-  }, [session.status, revalidator]);
+    if (dragItem || saving || !pendingPush.current) return;
+    pendingPush.current = false;
+    revalidator.revalidate();
+  }, [dragItem, saving, revalidator]);
 
   const sendMove = useCallback(
     async (cardId: string, toColumn: string, order: string[]) => {

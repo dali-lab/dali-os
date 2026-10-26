@@ -4,6 +4,7 @@ import { prisma } from "~/lib/db";
 import { requireCoreOrDomainLead, forbidden } from "~/lib/auth";
 import { hasCycleAccess } from "~/lib/roles";
 import { logAuditEvent } from "~/lib/audit";
+import { publishDelibsChange } from "~/hiring/lib/delibs-events.server";
 import { findRound, parseTimeline } from "~/hiring/lib/cycle-timeline";
 import { applyMove } from "~/hiring/lib/delibs";
 import { idSchema, parseJson } from "~/lib/validate";
@@ -97,6 +98,7 @@ export async function action({ request, params }: Route.ActionArgs) {
       request,
     });
 
+    publishDelibsChange(sessionForAuth.applicationCycleId);
     return Response.json(updated);
   } catch (err: any) {
     if (err?.message === "__NOT_FOUND__") {
