@@ -616,6 +616,7 @@ export default [
   route("api/calendar/group-availability", "calendar/routes/api.calendar.group-availability.ts"),
   route("api/calendar/search", "calendar/routes/api.calendar.search.ts"),
   route("api/scheduling-data", "calendar/routes/api.scheduling-data.ts"),
+  route("api/calendar/participants", "calendar/routes/api.calendar.participants.ts"),
   route("api/timetable/courses", "calendar/routes/api.timetable.courses.ts"),
   // JobX browser extension export — see jobx-extension/README.md.
   route("api/timesheets/export", "routes/api.timesheets.export.ts"),
