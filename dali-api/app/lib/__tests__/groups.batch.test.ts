@@ -9,7 +9,13 @@ vi.mock("~/lib/roles", () => ({
 
 import { prisma } from "~/lib/db";
 import { currentTerm, getActiveCoreCycleTermIds } from "~/lib/roles";
-import { listAllGroups, listVisibleGroupsForUser, resolveDynamicQueries } from "../groups";
+import {
+  listActiveGroupNamesForUser,
+  listActiveGroupsForUser,
+  listAllGroups,
+  listVisibleGroupsForUser,
+  resolveDynamicQueries,
+} from "../groups";
 
 const mockPrisma = prisma as unknown as Record<string, Record<string, ReturnType<typeof vi.fn>>>;
 
@@ -233,5 +239,35 @@ describe("listVisibleGroupsForUser", () => {
     ]);
     // One read for the user's own rows, one for both groups' members.
     expect(mockPrisma.projectAssignment!.findMany).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("listActiveGroupsForUser", () => {
+  beforeEach(() => {
+    mockPrisma.term!.findMany.mockResolvedValue([{ id: "t-old", endDate: new Date("2020-01-01") }]);
+    mockPrisma.groupDefinition!.findMany.mockResolvedValue([
+      groupRow("mine", { type: "Static", staticMemberIds: ["ada"] }),
+      groupRow("mine-archived", { type: "Static", staticMemberIds: ["ada"], archivedAt: new Date("2025-01-01") }),
+      groupRow("not-mine", { type: "Static", staticMemberIds: ["grace"] }),
+      groupRow("old-term", { dynamicQuery: "term:t-old", systemKey: "term:t-old" }),
+      groupRow("alumni", { dynamicQuery: "alumni", systemKey: "alumni" }),
+    ]);
+    mockPrisma.projectAssignment!.findMany.mockResolvedValue([{ termId: "t-old", projectId: "p" }]);
+    mockPrisma.user!.findUnique.mockResolvedValue({ membershipStatus: "Alumni", daliMember: { userId: "ada" } });
+  });
+
+  it("lists the user's live groups without resolving anyone's member list", async () => {
+    mockPrisma.user!.findMany.mockResolvedValue([{ id: "ada" }]);
+
+    expect(await listActiveGroupsForUser("ada")).toEqual([
+      { id: "mine", name: "mine", systemKey: null },
+      { id: "alumni", name: "alumni", systemKey: "alumni" },
+    ]);
+    // The alumni roster (hundreds of people) is never read.
+    expect(mockPrisma.user!.findMany).not.toHaveBeenCalled();
+  });
+
+  it("backs the names-only list", async () => {
+    expect(await listActiveGroupNamesForUser("ada")).toEqual(["mine", "alumni"]);
   });
 });
