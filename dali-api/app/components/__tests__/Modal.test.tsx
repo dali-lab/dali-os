@@ -220,3 +220,25 @@ describe("ModalFooter", () => {
     expect(html).not.toContain(">Cancel<");
   });
 });
+
+describe("Modal portal", () => {
+  it("renders into document.body even when opened inside a sticky container", () => {
+    const { container } = mount(
+      createElement(
+        "div",
+        { style: { position: "sticky" }, "data-testid": "sticky" },
+        createElement(Modal, { open: true, onClose: () => {}, labelledBy: "t", children: createElement("h2", { id: "t" }, "Hi") }),
+      ),
+    );
+    const dialog = document.body.querySelector("[role=dialog]")!;
+    expect(dialog.parentElement).toBe(document.body);
+    expect(container.querySelector("[data-testid=sticky]")!.contains(dialog)).toBe(false);
+  });
+
+  it("focuses the dialog after moving it to the body", () => {
+    mount(
+      createElement(Modal, { open: true, onClose: () => {}, labelledBy: "t", children: createElement("button", { id: "b" }, "Go") }),
+    );
+    expect(document.activeElement?.id).toBe("b");
+  });
+});

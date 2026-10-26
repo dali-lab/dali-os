@@ -1,4 +1,5 @@
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import { cn } from "~/lib/cn";
 import { modalCardClass } from "~/components/os-chrome";
@@ -80,9 +81,11 @@ export function Modal({
   const container = containerClassName ?? modalCardClass("max-w-md");
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const triggerRef = useRef<HTMLElement | null>(null);
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open || !mounted) return;
     triggerRef.current = (document.activeElement as HTMLElement) ?? null;
 
     const dialog = dialogRef.current;
@@ -106,7 +109,7 @@ export function Modal({
         trigger.focus();
       }
     };
-  }, [open, initialFocusRef]);
+  }, [open, mounted, initialFocusRef]);
 
   useEffect(() => {
     if (!open) return;
@@ -134,7 +137,7 @@ export function Modal({
 
   if (!open) return null;
 
-  return (
+  const overlay = (
     <div
       className={cn(className, "os-modal-overlay")}
       role="dialog"
@@ -149,6 +152,8 @@ export function Modal({
       </div>
     </div>
   );
+
+  return mounted ? createPortal(overlay, document.body) : overlay;
 }
 
 export const MODAL_TITLE_CLASS = "font-heading text-xl font-medium text-foreground";

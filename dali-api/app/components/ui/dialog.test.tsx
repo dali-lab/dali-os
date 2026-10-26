@@ -11,8 +11,7 @@ import { MODAL_TITLE_CLASS } from "~/components/Modal";
 
 // Minimal render harness (no @testing-library in this repo — mirrors the
 // createRoot/act pattern used by useOptimisticBoardMove.test.tsx). The dialog
-// renders inline (not via a portal) inside the provider, so it lands in the
-// same container we can query.
+// portals to document.body, so the harness queries the body.
 function mount(ui: ReactNode) {
   const container = document.createElement("div");
   document.body.appendChild(container);
@@ -21,7 +20,7 @@ function mount(ui: ReactNode) {
     root.render(ui);
   });
   return {
-    container,
+    container: document.body,
     cleanup: () => {
       act(() => root.unmount());
       container.remove();

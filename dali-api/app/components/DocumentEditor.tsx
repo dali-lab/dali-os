@@ -9,17 +9,18 @@ import {
   type RefObject,
 } from "react";
 import { useNavigate, useRevalidator } from "react-router";
-import { BookOpen, Check, CloudOff, Copy, Download, FileDown, FolderInput, FolderSearch, History, LayoutTemplate, Link, Loader2, MessageSquare, MoreHorizontal, Printer, Search, Upload, Users } from "lucide-react";
+import { BookOpen, Check, CloudOff, Copy, Download, FileDown, FolderInput, FolderSearch, History, LayoutTemplate, Link, Loader2, List, MessageSquare, MoreHorizontal, Printer, Search, Upload, Users } from "lucide-react";
 import { DocEditor, appendBlocks, stripBlockIds, type DocSyncState, type TocHeading } from "~/components/doc";
 import type { DocEditorInstance } from "~/components/doc/schema/build";
 import { DocCommentsPanel, useDocThreadCount } from "~/components/doc/comments";
 import { pageDocName } from "~/collab/roomName";
 import { PresenceProvider } from "./collab/PresenceProvider";
 import { PresenceBar } from "./collab/PresenceBar";
+import { isVersionHistoryShortcut, VERSION_HISTORY_SHORTCUT } from "~/lib/shortcuts";
 import { VersionHistoryPanel } from "./collab/VersionHistoryPanel";
 import { TagPicker, type DocTag } from "./TagPicker";
 import { FavoriteStar } from "./FavoriteStar";
-import { PageBarPortal, SHELL_HEADER_VAR, pageBarTextButton, usePageBarSlot } from "~/components/shell/page-bar-slot";
+import { PageBarMenuItems, PageBarPortal, SHELL_HEADER_VAR, pageBarTextButton, usePageBarSlot } from "~/components/shell/page-bar-slot";
 import { useFeatureFlag } from "~/components/FeatureFlags";
 import { PageIconPicker } from "./doc-chrome/PageIconPicker";
 import { PageCover } from "./doc-chrome/PageCover";
@@ -43,6 +44,7 @@ import {
   type PageTypography,
 } from "~/lib/page-typography";
 import { OS_SURFACE_CLASS } from "~/components/ui/floating/styles";
+import { Modal, ModalHeader } from "~/components/Modal";
 import { Drawer } from "~/components/ui/Drawer";
 import { RECORDING_RAIL_TITLE_ID } from "~/components/meeting-recorder/RecordingRail";
 import { SegmentedTabButtons } from "~/components/AreaPillNav";
@@ -64,6 +66,28 @@ export type BacklinkPage = {
   title: string;
   iconEmoji?: string | null;
 };
+
+const DOWNLOAD_FORMATS = [
+  { format: "pdf", label: "PDF" },
+  { format: "docx", label: "Word" },
+  { format: "md", label: "Markdown" },
+] as const;
+
+export const FIND_SHORTCUT = "⌘F";
+
+type HistoryEditor = { surface: { current: HTMLElement | null }; panel: boolean };
+const historyEditors = new Set<HistoryEditor>();
+
+export function pickHistoryEditor(active: Element | null): HistoryEditor | undefined {
+  const all = [...historyEditors];
+  return (
+    all.find((entry) => active && entry.surface.current?.contains(active)) ??
+    all.find((entry) => !entry.panel) ??
+    all[0]
+  );
+}
+
+const SYNC_LABELS = { saving: "Saving…", saved: "Saved", offline: "Offline" } as const;
 
 export function DocumentEditor({
   pageId,
@@ -97,7 +121,7 @@ export function DocumentEditor({
   belowTabs,
   onContainerWideChange,
   notebookConversion = null,
-  toolbarInPageBar = false,
+  chrome = "inline",
 }: {
   pageId: string;
   initialTitle: string;
@@ -167,11 +191,15 @@ export function DocumentEditor({
   // Set when this plain document can become a notebook's first tab; the ⋯ menu
   // then offers "Convert to notebook", filed in the folder the document is in.
   notebookConversion?: { parentPageId: string | null } | null;
-  toolbarInPageBar?: boolean;
+  // inline: own sticky toolbar. pageBar / panel: status, Share and the menu
+  // entries go to the surrounding header instead (page-bar-slot).
+  chrome?: "inline" | "pageBar" | "panel";
 }) {
   const favoritesBar = useFeatureFlag("favorites-bar");
   const pageBarSlot = usePageBarSlot();
-  const inPageBar = toolbarInPageBar && pageBarSlot;
+  const inPageBar = chrome === "pageBar" && pageBarSlot;
+  const inPanel = chrome === "panel" && pageBarSlot;
+  const docked = inPageBar || inPanel;
   const revalidator = useRevalidator();
   const navigate = useNavigate();
   // Editor instance captured via onEditorReady — used for the Import Markdown action.
@@ -190,6 +218,7 @@ export function DocumentEditor({
   const [historyOpen, setHistoryOpen] = useState(false);
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
   const [accessOpen, setAccessOpen] = useState(false);
+  const [tocOpen, setTocOpen] = useState(false);
   const [moveOpen, setMoveOpen] = useState(false);
   const toast = useToast();
   const moveDestinations = useDriveDestinations({
@@ -236,7 +265,7 @@ export function DocumentEditor({
   // corners, 14px glyphs and a coral "on" state — beside os pages that had all
   // moved to the design's roomier pills and its accent.
   const { actionBtn: pillBtn, actionIcon, popover, pageTitle, bodyText } = useOsChrome();
-  const actionBtn = (active = false) => (inPageBar ? pageBarTextButton(active) : pillBtn(active));
+  const actionBtn = (active = false) => (docked ? pageBarTextButton(active) : pillBtn(active));
   // Page style (the ⋯ menu's last section): per-page font / small-text /
   // full-width, persisted on Page.typography via the API route.
   // Optimistic local state — the revalidator syncs server truth.
@@ -289,6 +318,23 @@ export function DocumentEditor({
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
   }, []);
+
+  const hasHistory = !!collabToken;
+  useEffect(() => {
+    if (!hasHistory) return;
+    const entry = { surface: docSurfaceRef, panel: chrome === "panel" };
+    historyEditors.add(entry);
+    const onKeyDown = (e: globalThis.KeyboardEvent) => {
+      if (!isVersionHistoryShortcut(e) || pickHistoryEditor(document.activeElement) !== entry) return;
+      e.preventDefault();
+      setHistoryOpen(true);
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      historyEditors.delete(entry);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [hasHistory, chrome]);
 
   const threadCount = useDocThreadCount(pageId);
 
@@ -360,6 +406,8 @@ export function DocumentEditor({
     setTopBarHeight(el.offsetHeight);
     return () => ro.disconnect();
   }, []);
+
+  const stickyTop = inPageBar ? `var(${SHELL_HEADER_VAR}, 0px)` : inPanel ? "0px" : `${topBarHeight}px`;
 
   const RAIL_TARGET_ID = "doc-comments-rail";
 
@@ -620,212 +668,54 @@ export function DocumentEditor({
       : null;
 
   // ── Top bar ───────────────────────────────────────────────────────────────
-  const topBar = (
-    <div
-      ref={topBarRef}
-      className={cn(
-        inPageBar ? "flex items-center gap-1 text-[13px] text-os-muted" : "doc-topbar flex items-center gap-2 py-2",
-        !inPageBar && bodyText,
-      )}
-    >
-      {editedLabel && (
-        <span className="shrink-0 hidden sm:inline">{editedLabel}</span>
-      )}
-      {savingTitle && <span className="shrink-0 italic">Saving…</span>}
-      {syncState && (
-        <span
-          data-testid="doc-sync-status"
-          className="shrink-0 inline-grid"
-          title={
-            syncState === "offline"
-              ? "You're offline — changes are saved on this device and will sync when you reconnect."
-              : syncState === "saving"
-                ? "Syncing your changes…"
-                : "All changes saved"
-          }
-        >
-          {(
-            [
-              ["saving", <Loader2 key="i" className={cn(actionIcon, "animate-spin")} />, "Saving…"],
-              ["saved", <Check key="i" className={actionIcon} />, "Saved"],
-              ["offline", <CloudOff key="i" className={actionIcon} />, "Offline"],
-            ] as const
-          ).map(([state, icon, label]) => (
-            <span
-              key={state}
-              aria-hidden={state !== syncState}
-              className={cn(
-                "[grid-area:1/1] inline-flex items-center gap-1",
-                state !== syncState && "invisible",
-                state === "offline" && "text-os-amber",
-              )}
-            >
-              {icon} <span className={state === "saved" ? "sr-only" : "hidden sm:inline"}>{label}</span>
-            </span>
-          ))}
-        </span>
-      )}
-
-      {!inPageBar && <div className="flex-1" />}
-
-      {/* Presence chips */}
-      <PresenceBar />
-
-      {/* ToC control */}
-      <DocToc headings={headings} onJump={jumpToHeading} />
-
-      {hasComments && (
-        <Tooltip content={commentsOpen ? "Hide comments" : "Show comments"}>
-          <button
-            type="button"
-            onClick={() => setCommentsOpen((o) => !o)}
-            aria-pressed={commentsOpen}
-            aria-label={commentsOpen ? "Hide comments" : "Show comments"}
-            className={actionBtn(commentsOpen)}
-          >
-            <MessageSquare className={actionIcon} />
-          </button>
-        </Tooltip>
-      )}
-
-      {topBarActions}
-
-      {/* Share — its own control rather than a ⋯ entry: who can open a document
-          is a property of the document, not a rarely-reached utility. */}
-      {canManageAccess && (
-        <Tooltip content="Share">
-          <button
-            type="button"
-            onClick={() => setAccessOpen(true)}
-            aria-label="Share"
-            className={actionBtn()}
-          >
-            <Users className={actionIcon} />
-            <span className="hidden sm:inline">Share</span>
-          </button>
-        </Tooltip>
-      )}
-
-      <Menu
-        align="right"
-        ariaLabel="Download"
-        trigger={
-          <button type="button" aria-label="Download" className={actionBtn()}>
-            <Download className={actionIcon} />
-            <span className="hidden sm:inline">Download</span>
-          </button>
-        }
+  const row = (
+    key: string,
+    icon: ReactNode,
+    label: ReactNode,
+    onSelect: () => void,
+    shortcut?: string,
+  ) =>
+    docked ? (
+      <Menu.Item key={key} icon={icon} shortcut={shortcut} onSelect={onSelect}>
+        {label}
+      </Menu.Item>
+    ) : (
+      <button
+        key={key}
+        type="button"
+        onClick={() => { onSelect(); setMoreMenuOpen(false); }}
+        className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-foreground hover:bg-muted"
       >
-        {(
-          [
-            { format: "pdf", label: "PDF" },
-            { format: "docx", label: "Word" },
-            { format: "md", label: "Markdown" },
-          ] as const
-        ).map((f) => (
-          <Menu.Item
-            key={f.format}
-            icon={<FileDown className="h-3.5 w-3.5" />}
-            onSelect={() => window.location.assign(`/documents/${pageId}/export?format=${f.format}`)}
-          >
-            {f.label}
-          </Menu.Item>
-        ))}
-      </Menu>
+        <span className="shrink-0 text-muted-foreground">{icon}</span>
+        {label}
+      </button>
+    );
+  const smallIcon = "h-3.5 w-3.5";
 
-      {/* ⋯ More menu */}
-      <div ref={moreMenuRef} className="relative">
-        <button
-          type="button"
-          onClick={() => setMoreMenuOpen((o) => !o)}
-          aria-haspopup="true"
-          aria-expanded={moreMenuOpen}
-          aria-label="More options"
-          className={actionBtn(moreMenuOpen)}
-        >
-          <MoreHorizontal className={actionIcon} />
-        </button>
-        {moreMenuOpen && (
-          <div className={cn("absolute right-0 z-30 mt-1 w-56 max-w-[calc(100vw-1rem)] p-1 text-sm", popover)}>
-            <button
-              type="button"
-              onClick={() => { setFindInitialQuery(""); setFindOpen(true); setMoreMenuOpen(false); }}
-              className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-foreground hover:bg-muted"
-            >
-              <Search className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-              Find &amp; replace
-            </button>
-            {collabToken && (
-              <button
-                type="button"
-                onClick={() => { setHistoryOpen(true); setMoreMenuOpen(false); }}
-                className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-foreground hover:bg-muted"
-              >
-                <History className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                Version history
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={() => void duplicateDoc()}
-              className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-foreground hover:bg-muted"
-            >
-              <Copy className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-              Duplicate
-            </button>
-            <button
-              type="button"
-              onClick={() => window.location.assign(revealInDriveHref(pageId))}
-              className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-foreground hover:bg-muted"
-            >
-              <FolderSearch className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-              Reveal in Drive
-            </button>
-            {canManageAccess && (
-              <button
-                type="button"
-                onClick={() => {
-                  setMoveOpen(true);
-                  setMoreMenuOpen(false);
-                }}
-                className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-foreground hover:bg-muted"
-              >
-                <FolderInput className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                Move to…
-              </button>
-            )}
-            {notebookConversion && (
-              <button
-                type="button"
-                onClick={() => void convertToNotebook()}
-                className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-foreground hover:bg-muted"
-              >
-                <BookOpen className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                Convert to notebook
-              </button>
-            )}
-            {canEdit && (
-              <button
-                type="button"
-                onClick={() => void toggleTemplate()}
-                className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-foreground hover:bg-muted"
-              >
-                <LayoutTemplate className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                {templateToggleLabel(templateMarked, workspaceType)}
-              </button>
-            )}
-            {templateMarked && meetingNoteTemplateAction?.scope === "project" && (
-              <button
-                type="button"
-                onClick={() => void toggleProjectMeetingNoteTemplate()}
-                className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-foreground hover:bg-muted"
-              >
-                <LayoutTemplate className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                {projectMeetingNoteActive
-                  ? `In use for ${meetingNoteTemplateAction.projectName}'s meeting notes`
-                  : `Use for ${meetingNoteTemplateAction.projectName}'s meeting notes`}
-              </button>
-            )}
+  const overflowRows = (
+    <>
+      {docked && headings.length > 0 && row("contents", <List className={smallIcon} />, "Contents", () => setTocOpen(true))}
+      {docked && hasComments && row(
+        "comments",
+        <MessageSquare className={smallIcon} />,
+        commentsOpen ? "Hide comments" : "Show comments",
+        () => setCommentsOpen((o) => !o),
+      )}
+      {row("find", <Search className={smallIcon} />, <>Find &amp; replace</>, () => { setFindInitialQuery(""); setFindOpen(true); }, docked ? FIND_SHORTCUT : undefined)}
+      {collabToken && row("history", <History className={smallIcon} />, "Version history", () => setHistoryOpen(true), docked ? VERSION_HISTORY_SHORTCUT : undefined)}
+      {row("duplicate", <Copy className={smallIcon} />, "Duplicate", () => void duplicateDoc())}
+      {row("reveal", <FolderSearch className={smallIcon} />, "Reveal in Drive", () => window.location.assign(revealInDriveHref(pageId)))}
+      {canManageAccess && row("move", <FolderInput className={smallIcon} />, "Move to…", () => setMoveOpen(true))}
+      {notebookConversion && row("notebook", <BookOpen className={smallIcon} />, "Convert to notebook", () => void convertToNotebook())}
+      {canEdit && row("template", <LayoutTemplate className={smallIcon} />, templateToggleLabel(templateMarked, workspaceType), () => void toggleTemplate())}
+      {templateMarked && meetingNoteTemplateAction?.scope === "project" && row(
+        "project-template",
+        <LayoutTemplate className={smallIcon} />,
+        projectMeetingNoteActive
+          ? `In use for ${meetingNoteTemplateAction.projectName}'s meeting notes`
+          : `Use for ${meetingNoteTemplateAction.projectName}'s meeting notes`,
+        () => void toggleProjectMeetingNoteTemplate(),
+      )}
             {templateMarked && meetingNoteTemplateAction?.scope === "lab" && (
               <div className="flex flex-col gap-1 px-2 py-1.5">
                 <span className="text-xs text-muted-foreground">Lab default for meeting notes</span>
@@ -839,34 +729,14 @@ export function DocumentEditor({
                 />
               </div>
             )}
-            <button
-              type="button"
-              onClick={() => { window.print(); setMoreMenuOpen(false); }}
-              className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-foreground hover:bg-muted"
-            >
-              <Printer className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-              Print / Save as PDF
-            </button>
-            {canEdit && (
-              <button
-                type="button"
-                onClick={() => { mdImportInputRef.current?.click(); setMoreMenuOpen(false); }}
-                className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-foreground hover:bg-muted"
-              >
-                <Upload className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                Import Markdown
-              </button>
-            )}
-            {canEdit && (
-              <button
-                type="button"
-                onClick={() => { setTemplateImportOpen(true); setMoreMenuOpen(false); }}
-                className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-foreground hover:bg-muted"
-              >
-                <LayoutTemplate className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                Import template
-              </button>
-            )}
+      {docked && DOWNLOAD_FORMATS.map((f) =>
+        row(`download-${f.format}`, <FileDown className={smallIcon} />, `Download ${f.label}`, () =>
+          window.location.assign(`/documents/${pageId}/export?format=${f.format}`),
+        ),
+      )}
+      {row("print", <Printer className={smallIcon} />, "Print / Save as PDF", () => window.print())}
+      {canEdit && row("import-md", <Upload className={smallIcon} />, "Import Markdown", () => mdImportInputRef.current?.click())}
+      {canEdit && row("import-template", <LayoutTemplate className={smallIcon} />, "Import template", () => setTemplateImportOpen(true))}
             {canEdit && (
               <>
                 <div className="my-1 border-t border-border" />
@@ -931,10 +801,177 @@ export function DocumentEditor({
             <div className="px-2 py-1.5 text-muted-foreground text-xs tabular-nums">
               {wordCount} {wordCount === 1 ? "word" : "words"}
             </div>
+    </>
+  );
+
+  const SYNC_ICONS = {
+    saving: <Loader2 className={cn(actionIcon, "animate-spin")} />,
+    saved: <Check className={actionIcon} />,
+    offline: <CloudOff className={actionIcon} />,
+  } as const;
+
+  const statusNodes = (
+    <>
+      {editedLabel && (
+        <span className="shrink-0 hidden sm:inline">{editedLabel}</span>
+      )}
+      {savingTitle && <span className="shrink-0 italic">Saving…</span>}
+      {syncState && docked && (
+        <Tooltip content={SYNC_LABELS[syncState]}>
+          <span
+            data-testid="doc-sync-status"
+            tabIndex={0}
+            className={cn("shrink-0 inline-flex items-center", syncState === "offline" && "text-os-amber")}
+          >
+            {SYNC_ICONS[syncState]}
+            <span className="sr-only">{SYNC_LABELS[syncState]}</span>
+          </span>
+        </Tooltip>
+      )}
+      {syncState && !docked && (
+        <span
+          data-testid="doc-sync-status"
+          className="shrink-0 inline-grid"
+          title={
+            syncState === "offline"
+              ? "You're offline — changes are saved on this device and will sync when you reconnect."
+              : syncState === "saving"
+                ? "Syncing your changes…"
+                : "All changes saved"
+          }
+        >
+          {(["saving", "saved", "offline"] as const).map((state) => (
+            <span
+              key={state}
+              aria-hidden={state !== syncState}
+              className={cn(
+                "[grid-area:1/1] inline-flex items-center gap-1",
+                state !== syncState && "invisible",
+                state === "offline" && "text-os-amber",
+              )}
+            >
+              {SYNC_ICONS[state]} <span className={state === "saved" ? "sr-only" : "hidden sm:inline"}>{SYNC_LABELS[state]}</span>
+            </span>
+          ))}
+        </span>
+      )}
+
+    </>
+  );
+
+  const shareButton = canManageAccess && (
+    <Tooltip content="Share">
+      <button
+        type="button"
+        onClick={() => setAccessOpen(true)}
+        aria-label="Share"
+        className={actionBtn()}
+      >
+        <Users className={actionIcon} />
+        <span className="hidden sm:inline">Share</span>
+      </button>
+    </Tooltip>
+  );
+
+  const topBar = docked ? (
+    <div
+      ref={topBarRef}
+      className={cn(
+        "flex items-center gap-1 text-[13px] text-os-muted",
+        inPanel && "justify-end",
+      )}
+    >
+      {statusNodes}
+      <PresenceBar />
+      {topBarActions}
+      {shareButton}
+    </div>
+  ) : (
+    <div ref={topBarRef} className={cn("doc-topbar flex items-center gap-2 py-2", bodyText)}>
+      {statusNodes}
+      <div className="flex-1" />
+      <PresenceBar />
+      <DocToc headings={headings} onJump={jumpToHeading} />
+
+      {hasComments && (
+        <Tooltip content={commentsOpen ? "Hide comments" : "Show comments"}>
+          <button
+            type="button"
+            onClick={() => setCommentsOpen((o) => !o)}
+            aria-pressed={commentsOpen}
+            aria-label={commentsOpen ? "Hide comments" : "Show comments"}
+            className={actionBtn(commentsOpen)}
+          >
+            <MessageSquare className={actionIcon} />
+          </button>
+        </Tooltip>
+      )}
+
+      {topBarActions}
+
+      {shareButton}
+
+      <Menu
+        align="right"
+        ariaLabel="Download"
+        trigger={
+          <button type="button" aria-label="Download" className={actionBtn()}>
+            <Download className={actionIcon} />
+            <span className="hidden sm:inline">Download</span>
+          </button>
+        }
+      >
+        {DOWNLOAD_FORMATS.map((f) => (
+          <Menu.Item
+            key={f.format}
+            icon={<FileDown className="h-3.5 w-3.5" />}
+            onSelect={() => window.location.assign(`/documents/${pageId}/export?format=${f.format}`)}
+          >
+            {f.label}
+          </Menu.Item>
+        ))}
+      </Menu>
+
+      <div ref={moreMenuRef} className="relative">
+        <button
+          type="button"
+          onClick={() => setMoreMenuOpen((o) => !o)}
+          aria-haspopup="true"
+          aria-expanded={moreMenuOpen}
+          aria-label="More options"
+          className={actionBtn(moreMenuOpen)}
+        >
+          <MoreHorizontal className={actionIcon} />
+        </button>
+        {moreMenuOpen && (
+          <div className={cn("absolute right-0 z-30 mt-1 w-56 max-w-[calc(100vw-1rem)] p-1 text-sm", popover)}>
+            {overflowRows}
           </div>
         )}
       </div>
     </div>
+  );
+
+  const tocDialog = (
+    <Modal open={tocOpen} onClose={() => setTocOpen(false)} labelledBy="doc-toc-title">
+      <ModalHeader titleId="doc-toc-title" title="Contents" onClose={() => setTocOpen(false)} className="mb-1" />
+      <div className="max-h-80 overflow-y-auto">
+        {headings.map((h) => (
+          <button
+            key={h.ordinal}
+            type="button"
+            onClick={() => {
+              jumpToHeading(h.ordinal);
+              setTocOpen(false);
+            }}
+            style={{ paddingLeft: `${(h.level - 1) * 12 + 8}px` }}
+            className="block w-full truncate rounded py-1 pr-2 text-left text-sm text-foreground hover:bg-muted"
+          >
+            {h.text || "Untitled heading"}
+          </button>
+        ))}
+      </div>
+    </Modal>
   );
 
   // ── Paper canvas ──────────────────────────────────────────────────────────
@@ -942,12 +979,12 @@ export function DocumentEditor({
   const canvas = (
     <div
       ref={canvasContainerRef}
-      className="doc-canvas-outer flex justify-center gap-6 pb-12 pt-4 bg-page"
+      className={cn("doc-canvas-outer flex justify-center gap-6 pb-12 pt-4", !inPanel && "bg-page")}
     >
       {/* Paper card — shrinks to make room for the rail when wide */}
       <div
         ref={paperCardRef}
-        className={`doc-canvas rounded-xl border border-border bg-card ${
+        className={`doc-canvas ${inPanel ? "" : "rounded-xl border border-border bg-card"} ${
           showColumn
             ? "flex-1 min-w-0"
             : typo.fullWidth
@@ -958,7 +995,7 @@ export function DocumentEditor({
         }${typo.nestingGuides ? " doc-canvas--guides" : ""}`}
       >
         {belowTabs && (
-          <div className="sticky z-10 overflow-hidden rounded-t-xl bg-card" style={{ top: inPageBar ? `var(${SHELL_HEADER_VAR}, 0px)` : topBarHeight }}>
+          <div className="sticky z-10 overflow-hidden rounded-t-xl bg-card" style={{ top: stickyTop }}>
             {belowTabs}
           </div>
         )}
@@ -976,7 +1013,7 @@ export function DocumentEditor({
           />
         )}
 
-        <div className="px-4 sm:px-[54px] pt-12 pb-6">
+        <div className={inPanel ? "px-1 pt-6 pb-6" : "px-4 sm:px-[54px] pt-12 pb-6"}>
           {/* Hover-reveal row: icon · Add icon · Add cover · Add tag
               The header/title block adds an extra pl-[54px] to match the body
               text, which sits at the 54px outer padding PLUS BlockNote's own
@@ -1197,7 +1234,7 @@ export function DocumentEditor({
               "dali-doc-rail-container",
               showRecordingInColumn && "dali-recording-rail-sticky dali-recording-rail-width",
             )}
-            style={showRecordingInColumn ? (inPageBar ? { top: `var(${SHELL_HEADER_VAR}, 0px)`, height: `calc(100vh - var(${SHELL_HEADER_VAR}, 0px))` } : { top: topBarHeight, height: `calc(100vh - ${topBarHeight}px)` }) : undefined}
+            style={showRecordingInColumn ? { top: stickyTop, height: `calc(100vh - ${stickyTop})` } : undefined}
           >
             {hasComments && commentsOpen && railOpen && (
               <div className="p-2">
@@ -1260,7 +1297,9 @@ export function DocumentEditor({
 
   const body = (
     <div ref={docSurfaceRef} className="doc-surface flex flex-col min-h-screen">
-      {inPageBar ? <PageBarPortal slot="actions">{topBar}</PageBarPortal> : topBar}
+      {docked ? <PageBarPortal slot="actions">{topBar}</PageBarPortal> : topBar}
+      {docked && <PageBarMenuItems>{overflowRows}</PageBarMenuItems>}
+      {tocDialog}
       {canvas}
       {inlineComments}
       {recordingDrawer}

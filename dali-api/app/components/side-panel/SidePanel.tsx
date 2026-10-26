@@ -3,7 +3,6 @@ import { Loader2 } from "lucide-react";
 import { PanelFrame } from "~/components/side-panel/PanelFrame";
 import { useAltClickOpensBeside, useSidePanel } from "~/components/side-panel/use-side-panel";
 import { formatSidePanel } from "~/lib/side-panel";
-import { NoPageBar } from "~/components/shell/page-bar-slot";
 
 // The editor is heavy and most pages never open a panel, so it loads on demand.
 const DocumentPanel = lazy(() => import("~/components/side-panel/DocumentPanel"));
@@ -16,8 +15,7 @@ export function SidePanelHost({ children }: { children: ReactNode }) {
     <div className="flex min-h-0 min-w-0 flex-1 items-start">
       <div className="flex min-h-0 min-w-0 flex-1 flex-col self-stretch">{children}</div>
       {panel && (
-        <NoPageBar>
-        <Suspense
+                <Suspense
           fallback={
             <PanelFrame panel={panel} title="" onClose={close}>
               <div className="flex justify-center py-12">
@@ -28,8 +26,7 @@ export function SidePanelHost({ children }: { children: ReactNode }) {
         >
           <DocumentPanel key={formatSidePanel(panel)} panel={panel} onClose={close} />
         </Suspense>
-        </NoPageBar>
-      )}
+              )}
     </div>
   );
 }

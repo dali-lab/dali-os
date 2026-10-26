@@ -61,6 +61,18 @@ afterEach(() => {
 
 const q = (sel: string) => container.querySelector(sel) as HTMLElement | null;
 
+describe("Rail top inset", () => {
+  it("adds 10px of top padding to the wordmark row when the tab strip is hidden", async () => {
+    await mount({ topInset: true });
+    expect(q("button[aria-label='DALI OS home']")!.parentElement!.className).toContain("pt-2.5");
+  });
+
+  it("adds none by default", async () => {
+    await mount();
+    expect(q("button[aria-label='DALI OS home']")!.parentElement!.className).not.toContain("pt-2.5");
+  });
+});
+
 describe("Rail", () => {
   it("puts the wordmark, bell and sidebar toggle in the top row, above search", async () => {
     const tabClickProps = vi.fn(() => ({ onClick: vi.fn() }));
@@ -190,6 +202,16 @@ describe("Rail", () => {
   it("omits the hide control when the rail is not hideable", async () => {
     await mount({ onHideRail: undefined });
     expect(q("button[aria-label='Hide sidebar']")).toBeNull();
+  });
+
+  it("shows the toggle shortcut in the hide tooltip", async () => {
+    await mount({ onHideRail: vi.fn() });
+    const hide = q("button[aria-label='Hide sidebar']")!;
+    await act(async () => {
+      hide.dispatchEvent(new FocusEvent("focus"));
+      hide.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+    });
+    expect(document.body.querySelector("[role='tooltip']")?.textContent).toContain("⌘\\");
   });
 
   it("hides the rail from its toggle", async () => {
