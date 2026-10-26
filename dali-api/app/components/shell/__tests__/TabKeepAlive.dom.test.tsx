@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, createElement, useState, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { Outlet, createRoutesStub, useLoaderData, useLocation } from "react-router";
+import { Outlet, createRoutesStub, redirect, useLoaderData, useLocation } from "react-router";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -79,15 +79,18 @@ async function mount(opts: { enabled?: boolean } = {}) {
     {
       path: "/",
       Component: Shell,
-      children: paths.map((path) => ({
-        path,
-        Component: () => createElement(Page),
-        loader: async () => {
-          loads[path] = (loads[path] ?? 0) + 1;
-          await gates[path];
-          return { path, n: loads[path] };
-        },
-      })),
+      children: [
+        ...paths.map((path) => ({
+          path,
+          Component: () => createElement(Page),
+          loader: async () => {
+            loads[path] = (loads[path] ?? 0) + 1;
+            await gates[path];
+            return { path, n: loads[path] };
+          },
+        })),
+        { path: "/moved", loader: () => redirect("/b") },
+      ],
     },
   ]);
   container = document.createElement("div");
@@ -151,6 +154,26 @@ describe("TabKeepAlive", () => {
     await flush();
     expect(visible("/a")).toBe(true);
     expect(text("count", "/a")).toBe("2");
+  });
+
+  it("leaves the previous tab's page alone when the new tab's url redirects", async () => {
+    await mount();
+    await click("/a");
+    await click("/a");
+    await open("/moved");
+    expect(visible("/b")).toBe(true);
+    expect(text("count", "/a")).toBe("2");
+    expect(text("loc", "/a")).toBe("/a");
+    const [a, b] = m.store.getTabsSnapshot().tabs;
+    await act(async () => m.store.tabActions.activate(a.id));
+    await flush();
+    expect(visible("/a")).toBe(true);
+    expect(text("count", "/a")).toBe("2");
+    await click("/b");
+    await act(async () => m.store.tabActions.activate(b.id));
+    await flush();
+    expect(visible("/b")).toBe(true);
+    expect(text("count", "/b")).toBe("1");
   });
 
   it("gives each hidden page its own location, not the active page's", async () => {

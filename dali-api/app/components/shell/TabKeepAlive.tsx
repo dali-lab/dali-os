@@ -69,11 +69,16 @@ function KeepAliveHost({ children }: { children: ReactNode }) {
   const snapshots = useRef(new Map<string, Snapshot>())
   const reactKeys = useRef(new Map<string, string>())
   const liveId = useRef<string | null>(null)
+  const liveKey = useRef<string | null>(null)
 
+  // A new router location always belongs to the active tab, even when it
+  // redirected away from the url the tab asked for.
   const displayed = tabs.find((t) => t.id === activeId) ?? null
-  if (displayed && sameUrl(displayed.url, routerUrl)) liveId.current = displayed.id
-  else if (liveId.current === null) liveId.current = displayed?.id ?? BOOT_SLOT
-  const live = liveId.current
+  if (location.key !== liveKey.current || (displayed && sameUrl(displayed.url, routerUrl))) {
+    liveKey.current = location.key
+    liveId.current = displayed?.id ?? liveId.current ?? BOOT_SLOT
+  }
+  const live = liveId.current ?? BOOT_SLOT
 
   const booted = snapshots.current.get(BOOT_SLOT)
   if (booted && live !== BOOT_SLOT) {
