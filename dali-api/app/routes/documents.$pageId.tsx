@@ -8,6 +8,8 @@ import { Button } from "~/components/ui/Button";
 import { useToast } from "~/components/ui/toast";
 import { Modal, ModalHeader } from "~/components/Modal";
 import { modalCardClass, useOsChrome } from "~/components/os-chrome";
+import { PageBarMenuItems, pageBarTextButton, usePageBarSlot } from "~/components/shell/page-bar-slot";
+import { Menu, Tooltip } from "~/components/ui/floating";
 import type { Route } from "./+types/documents.$pageId";
 import { prisma } from "~/lib/db";
 import { ensureOccurrenceRoster } from "~/lib/scheduled-meeting";
@@ -584,6 +586,7 @@ function AttendanceButton({
   };
 }) {
   const { actionBtnPrimary, actionIcon } = useOsChrome();
+  const inPageBar = usePageBarSlot();
   const revalidator = useRevalidator();
   const [open, setOpen] = useState(false);
   const close = () => {
@@ -592,10 +595,12 @@ function AttendanceButton({
   };
   return (
     <>
-      <button type="button" onClick={() => setOpen(true)} aria-label="Attendance" className={actionBtnPrimary}>
-        <UserCheck className={actionIcon} />
-        <span className="hidden sm:inline">Attendance</span>
-      </button>
+      <Tooltip content="Attendance">
+        <button type="button" onClick={() => setOpen(true)} aria-label="Attendance" className={inPageBar ? pageBarTextButton() : actionBtnPrimary}>
+          <UserCheck className={actionIcon} />
+          <span className="hidden sm:inline">Attendance</span>
+        </button>
+      </Tooltip>
       <Modal
         open={open}
         onClose={close}
@@ -620,6 +625,26 @@ function AttendanceButton({
         />
       </Modal>
     </>
+  );
+}
+
+function WhiteboardLink({ pageId }: { pageId: string }) {
+  const { actionBtnPrimary, actionIcon } = useOsChrome();
+  const to = `/whiteboard/${pageId}`;
+  if (usePageBarSlot()) {
+    return (
+      <PageBarMenuItems>
+        <Menu.LinkItem to={to} icon={<Shapes className="h-3.5 w-3.5" />}>
+          Whiteboard
+        </Menu.LinkItem>
+      </PageBarMenuItems>
+    );
+  }
+  return (
+    <Link to={to} aria-label="Whiteboard" className={actionBtnPrimary}>
+      <Shapes className={actionIcon} />
+      <span className="hidden sm:inline">Whiteboard</span>
+    </Link>
   );
 }
 
@@ -687,7 +712,6 @@ function DocumentPage() {
   // (specs/meeting-recording-rail.md "Wiring").
   const [containerWide, setContainerWide] = useState(false);
   const toast = useToast();
-  const { actionBtnPrimary, actionIcon } = useOsChrome();
 
   async function dontSuggestRecording() {
     if (!attendance) return;
@@ -762,7 +786,7 @@ function DocumentPage() {
             meetingNoteTemplateAction={meetingNoteTemplateAction}
             notebookConversion={notebookConversion}
             aiEnabled
-            toolbarInPageBar
+            chrome="pageBar"
             onEditorReady={onEditorReady}
             onContainerWideChange={setContainerWide}
             belowTabs={rec ? <EnhanceBar rec={rec} /> : undefined}
@@ -782,16 +806,7 @@ function DocumentPage() {
                 <RecordingPresencePill documentName={pageDocName(pageId)} collabToken={collabToken} />
                 {rec && <MeetingRecorder rec={rec} containerWide={containerWide} />}
                 {attendance?.whiteboardPageId && (
-                  // This meeting also has a whiteboard — link across to it (the
-                  // board carries the matching link back).
-                  <Link
-                    to={`/whiteboard/${attendance.whiteboardPageId}`}
-                    aria-label="Whiteboard"
-                    className={actionBtnPrimary}
-                  >
-                    <Shapes className={actionIcon} />
-                    <span className="hidden sm:inline">Whiteboard</span>
-                  </Link>
+                  <WhiteboardLink pageId={attendance.whiteboardPageId} />
                 )}
               </>
             }

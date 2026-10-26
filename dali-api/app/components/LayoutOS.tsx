@@ -996,6 +996,7 @@ export function LayoutOS({
       onSelectArea={selectArea}
       userMenuItems={userMenuItems}
       showWhatsNewDot={showWhatsNewDot}
+      topInset={shellV2 && !showTabs}
     />
   )
 

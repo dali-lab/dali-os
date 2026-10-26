@@ -43,7 +43,16 @@ async function mount(flags: Record<string, boolean>) {
   });
 }
 
-const button = () => container.querySelector('button[aria-label="Open in desktop app"]');
+async function openMenu() {
+  await act(async () => {
+    container.querySelector<HTMLElement>('button[aria-label="More actions"]')!.click();
+  });
+}
+
+const button = () =>
+  [...document.body.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((el) =>
+    el.textContent?.includes("Open in desktop app"),
+  ) ?? null;
 
 beforeEach(() => {
   vi.spyOn(window.navigator, "userAgent", "get").mockReturnValue("Mozilla/5.0 (Macintosh) Chrome/120");
@@ -57,27 +66,33 @@ afterEach(() => {
 });
 
 describe("PageBar open in desktop app", () => {
-  it("is present with the flag in a desktop browser, before Copy link", async () => {
+  it("is a menu item with the flag in a desktop browser, before Copy link", async () => {
     await mount({ "desktop-tabs": true });
-    const labels = [...container.querySelectorAll("button")].map((b) => b.getAttribute("aria-label"));
-    expect(labels.indexOf("Open in desktop app")).toBeGreaterThan(-1);
-    expect(labels.indexOf("Open in desktop app")).toBe(labels.indexOf("Copy link to this page") - 1);
+    await openMenu();
+    const labels = [...document.body.querySelectorAll('[role="menuitem"]')].map((el) => el.textContent);
+    expect(labels.findIndex((l) => l?.includes("Open in desktop app"))).toBe(
+      labels.findIndex((l) => l?.includes("Copy link")) - 1,
+    );
+    expect(container.querySelector('button[aria-label="Open in desktop app"]')).toBeNull();
   });
 
   it("is absent with the flag off", async () => {
     await mount({});
+    await openMenu();
     expect(button()).toBeNull();
   });
 
   it("is absent inside the desktop app", async () => {
     (window as { __DALI_DESKTOP?: unknown }).__DALI_DESKTOP = { version: "1.0.0" };
     await mount({ "desktop-tabs": true });
+    await openMenu();
     expect(button()).toBeNull();
   });
 
   it("is absent on mobile", async () => {
     vi.spyOn(window.navigator, "userAgent", "get").mockReturnValue("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0) Mobile");
     await mount({ "desktop-tabs": true });
+    await openMenu();
     expect(button()).toBeNull();
   });
 
@@ -85,6 +100,7 @@ describe("PageBar open in desktop app", () => {
     const open = vi.spyOn(openInDesktop, "openInDesktopApp").mockReturnValue(() => {});
     vi.spyOn(openInDesktop, "currentPagePath").mockReturnValue("/projects/a?x=1#h");
     await mount({ "desktop-tabs": true });
+    await openMenu();
     act(() => {
       (button() as HTMLElement).click();
     });
@@ -97,6 +113,7 @@ describe("PageBar open in desktop app", () => {
       return () => {};
     });
     await mount({ "desktop-tabs": true });
+    await openMenu();
     await act(async () => {
       (button() as HTMLElement).click();
     });

@@ -55,6 +55,7 @@ export type RailProps = {
   onSelectArea: (area: NavArea, e: ReactMouseEvent) => void
   userMenuItems: RailUserMenuItem[]
   showWhatsNewDot: boolean
+  topInset?: boolean
 }
 
 const ROW = 'flex h-8 w-full items-center gap-2.5 rounded-lg pl-2.5 pr-2 text-left text-sm transition-colors'
@@ -125,6 +126,7 @@ export function Rail({
   onSelectArea,
   userMenuItems,
   showWhatsNewDot,
+  topInset = false,
 }: RailProps) {
   const activeQuick = activeQuickItem(path, {
     home: home.href,
@@ -198,7 +200,7 @@ export function Rail({
   return (
     <div data-sidebar-scroll className="flex h-full flex-col justify-between gap-3 overflow-y-auto px-3 pb-3">
       <div className="flex min-h-0 flex-col gap-3">
-        <div className="flex h-10 shrink-0 items-center justify-between pl-1.5">
+        <div className={cn('flex shrink-0 items-center justify-between pl-1.5', topInset ? 'h-[50px] pt-2.5' : 'h-10')}>
           <button
             type="button"
             {...tabClickProps({ url: home.href, label: home.label })}

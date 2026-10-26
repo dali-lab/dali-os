@@ -61,6 +61,18 @@ afterEach(() => {
 
 const q = (sel: string) => container.querySelector(sel) as HTMLElement | null;
 
+describe("Rail top inset", () => {
+  it("adds 10px of top padding to the wordmark row when the tab strip is hidden", async () => {
+    await mount({ topInset: true });
+    expect(q("button[aria-label='DALI OS home']")!.parentElement!.className).toContain("pt-2.5");
+  });
+
+  it("adds none by default", async () => {
+    await mount();
+    expect(q("button[aria-label='DALI OS home']")!.parentElement!.className).not.toContain("pt-2.5");
+  });
+});
+
 describe("Rail", () => {
   it("puts the wordmark, bell and sidebar toggle in the top row, above search", async () => {
     const tabClickProps = vi.fn(() => ({ onClick: vi.fn() }));

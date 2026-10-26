@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { AppWindow, Link as LinkIcon, Star } from 'lucide-react'
-import { Tooltip } from '~/components/ui/floating'
+import { Menu, Tooltip } from '~/components/ui/floating'
+import { OverflowMenu } from '~/components/shell/OverflowMenu'
 import { cn } from '~/lib/cn'
 import { PageDocButton } from '~/components/page-docs/PageDocButton'
 import { PageBarTrail, useDocumentTitle, usePageTrail } from '~/components/Breadcrumbs'
@@ -14,6 +15,9 @@ import { useOpenCurrentPageInDesktop } from '~/components/shell/useOpenCurrentPa
 
 export const PAGE_BAR_BUTTON =
   'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-os-grey transition-colors hover:bg-os-hover hover:text-foreground disabled:opacity-40'
+
+export const COPY_LINK_SHORTCUT = '⌘⇧C'
+export const FAVORITE_SHORTCUT = '⌘D'
 
 export type PageStar = {
   favorited: boolean
@@ -56,7 +60,12 @@ export function PageBar({
   const openInApp = useOpenCurrentPageInDesktop()
 
   return (
-    <div className="flex h-11 shrink-0 items-center justify-between gap-3 bg-os-bg pl-5 pr-3">
+    <div
+      className={cn(
+        'flex shrink-0 items-center justify-between gap-3 bg-os-bg pl-5 pr-3',
+        tabs ? 'h-11' : 'h-[54px] pt-2.5',
+      )}
+    >
       <div className="flex min-w-0 items-center gap-2">
         {leading}
         <div className="hidden md:block">
@@ -69,19 +78,7 @@ export function PageBar({
         <div ref={presenceRef} className="flex items-center empty:hidden" />
         {trail?.action}
         <PageDocButton variant="pagebar" />
-        {showOpenInApp && (
-          <Tooltip content="Open in desktop app">
-            <button type="button" onClick={openInApp} aria-label="Open in desktop app" className={PAGE_BAR_BUTTON}>
-              <AppWindow className="h-[18px] w-[18px]" />
-            </button>
-          </Tooltip>
-        )}
-        <Tooltip content="Copy link to this page">
-          <button type="button" onClick={onCopyLink} aria-label="Copy link to this page" className={PAGE_BAR_BUTTON}>
-            <LinkIcon className="h-[18px] w-[18px]" />
-          </button>
-        </Tooltip>
-        <Tooltip content={labels.tooltip}>
+        <Tooltip content={`${labels.tooltip} · ${FAVORITE_SHORTCUT}`}>
           <button
             type="button"
             disabled={!star.canToggle}
@@ -93,6 +90,24 @@ export function PageBar({
             <Star className={cn('h-[18px] w-[18px]', star.favorited && 'fill-current')} />
           </button>
         </Tooltip>
+        <OverflowMenu
+          shellItems={
+            <>
+              {showOpenInApp && (
+                <Menu.Item icon={<AppWindow className="h-3.5 w-3.5" />} onSelect={openInApp}>
+                  Open in desktop app
+                </Menu.Item>
+              )}
+              <Menu.Item
+                icon={<LinkIcon className="h-3.5 w-3.5" />}
+                shortcut={COPY_LINK_SHORTCUT}
+                onSelect={onCopyLink}
+              >
+                Copy link
+              </Menu.Item>
+            </>
+          }
+        />
       </div>
     </div>
   )

@@ -4,9 +4,11 @@ import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import {
   NoPageBar,
+  PageBarMenuItems,
   PageBarPortal,
   PageBarSlotProvider,
   SHELL_HEADER_VAR,
+  usePageBarMenuItems,
   usePageBarSlot,
   usePageBarTargetSetters,
   useShellHeaderHeight,
@@ -174,5 +176,35 @@ describe("useShellHeaderHeight", () => {
     expect(root.style.getPropertyValue(SHELL_HEADER_VAR)).toBe("");
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
+  });
+});
+
+function ItemsProbe() {
+  return <span data-items>{usePageBarMenuItems().length}</span>;
+}
+
+describe("page bar menu items", () => {
+  it("collects entries from pages and drops them when the page unmounts", async () => {
+    const tree = (show: boolean) => (
+      <PageBarSlotProvider>
+        <ItemsProbe />
+        {show && <PageBarMenuItems>a</PageBarMenuItems>}
+        {show && <PageBarMenuItems>b</PageBarMenuItems>}
+      </PageBarSlotProvider>
+    );
+    await render(tree(true));
+    expect(container.querySelector("[data-items]")!.textContent).toBe("2");
+    await act(async () => root.render(tree(false)));
+    expect(container.querySelector("[data-items]")!.textContent).toBe("0");
+  });
+
+  it("is a no-op outside a page bar", async () => {
+    await render(
+      <NoPageBar>
+        <PageBarMenuItems>a</PageBarMenuItems>
+        <ItemsProbe />
+      </NoPageBar>,
+    );
+    expect(container.querySelector("[data-items]")!.textContent).toBe("0");
   });
 });

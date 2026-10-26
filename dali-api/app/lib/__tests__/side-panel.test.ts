@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   formatSidePanel,
+  panelLocation,
   parseSidePanel,
   resolvePanelLoad,
   sidePanelForUrl,
@@ -71,5 +72,13 @@ describe("resolvePanelLoad", () => {
   it("treats anything else as missing", () => {
     expect(resolvePanelLoad(null, "x")).toEqual({ kind: "missing" });
     expect(resolvePanelLoad({ title: "?" }, "x")).toEqual({ kind: "missing" });
+  });
+});
+
+describe("panelLocation", () => {
+  it("names a member's own space and omits anything it cannot name", () => {
+    expect(panelLocation("Member")).toBe("My Drive");
+    expect(panelLocation("Lab")).toBeNull();
+    expect(panelLocation(undefined)).toBeNull();
   });
 });

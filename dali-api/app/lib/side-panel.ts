@@ -61,3 +61,8 @@ export function resolvePanelLoad(result: unknown, pageId: string): PanelLoad {
   if (result && typeof result === "object" && "pageId" in result) return { kind: "doc", data: result };
   return { kind: "missing" };
 }
+
+/** Where a panel item lives, when that is known without another lookup. */
+export function panelLocation(workspaceType: string | null | undefined): string | null {
+  return workspaceType === "Member" ? "My Drive" : null;
+}

@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useId, useMemo, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 
 export type PageBarSlotName = 'actions' | 'presence'
@@ -17,6 +17,14 @@ type PageBarContextValue = {
 
 const PageBarContext = createContext<PageBarContextValue | null>(null)
 
+type MenuItemsRegistry = {
+  register: (id: string, items: ReactNode) => void
+  unregister: (id: string) => void
+}
+
+const MenuItemsRegistryContext = createContext<MenuItemsRegistry | null>(null)
+const MenuItemsContext = createContext<ReactNode[]>([])
+
 export function PageBarSlotProvider({ children }: { children: ReactNode }) {
   const [actions, setActions] = useState<HTMLElement | null>(null)
   const [presence, setPresence] = useState<HTMLElement | null>(null)
@@ -24,15 +32,60 @@ export function PageBarSlotProvider({ children }: { children: ReactNode }) {
     (slot: PageBarSlotName, el: HTMLElement | null) => (slot === 'actions' ? setActions(el) : setPresence(el)),
     [],
   )
+  const [menuItems, setMenuItems] = useState<ReadonlyMap<string, ReactNode>>(() => new Map())
+  const registry = useMemo<MenuItemsRegistry>(
+    () => ({
+      register: (id, items) => setMenuItems((prev) => new Map(prev).set(id, items)),
+      unregister: (id) =>
+        setMenuItems((prev) => {
+          if (!prev.has(id)) return prev
+          const next = new Map(prev)
+          next.delete(id)
+          return next
+        }),
+    }),
+    [],
+  )
+  const ordered = useMemo(() => [...menuItems.values()], [menuItems])
   const value = useMemo<PageBarContextValue>(
     () => ({ targets: { actions, presence }, setTarget }),
     [actions, presence, setTarget],
   )
-  return <PageBarContext.Provider value={value}>{children}</PageBarContext.Provider>
+  return (
+    <PageBarContext.Provider value={value}>
+      <MenuItemsRegistryContext.Provider value={registry}>
+        <MenuItemsContext.Provider value={ordered}>{children}</MenuItemsContext.Provider>
+      </MenuItemsRegistryContext.Provider>
+    </PageBarContext.Provider>
+  )
 }
 
 export function NoPageBar({ children }: { children: ReactNode }) {
-  return <PageBarContext.Provider value={null}>{children}</PageBarContext.Provider>
+  return (
+    <PageBarContext.Provider value={null}>
+      <MenuItemsRegistryContext.Provider value={null}>{children}</MenuItemsRegistryContext.Provider>
+    </PageBarContext.Provider>
+  )
+}
+
+/**
+ * Entries a page adds to the page bar's single overflow menu. They render
+ * inside the bar's own Menu, so they must be Menu.Item / Menu.LinkItem; state
+ * a chosen item opens (a dialog) belongs in the page, not in the item.
+ */
+export function PageBarMenuItems({ children }: { children: ReactNode }) {
+  const registry = useContext(MenuItemsRegistryContext)
+  const id = useId()
+  useEffect(() => {
+    registry?.register(id, children)
+  })
+  useEffect(() => () => registry?.unregister(id), [registry, id])
+  return null
+}
+
+/** The page's registered overflow-menu entries, in registration order. */
+export function usePageBarMenuItems(): ReactNode[] {
+  return useContext(MenuItemsContext)
 }
 
 export function usePageBarSlot(): boolean {

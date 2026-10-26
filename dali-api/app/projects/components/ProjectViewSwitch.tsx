@@ -1,6 +1,7 @@
 import { Link } from "react-router";
 import { Building2, Globe, Handshake } from "lucide-react";
-import { pageBarTextButton, usePageBarSlot } from "~/components/shell/page-bar-slot";
+import { PageBarMenuItems, usePageBarSlot } from "~/components/shell/page-bar-slot";
+import { Menu } from "~/components/ui/floating";
 
 // A project has three read surfaces — the internal hub, the partner preview,
 // and the public showcase preview — and each one's header offers the other
@@ -35,19 +36,27 @@ export function ProjectViewSwitch({
 }) {
   const others = (Object.keys(VIEWS) as ProjectViewKey[]).filter((k) => k !== current);
   const inPageBar = usePageBarSlot();
-  // Under the dali.os design these are the page's top-right actions, so they
-  // take the design's secondary pill rather than the default bordered button.
+  if (inPageBar) {
+    return (
+      <PageBarMenuItems>
+        {others.map((key) => {
+          const { label, icon: Icon, href } = VIEWS[key];
+          return (
+            <Menu.LinkItem key={key} to={href(projectId)} icon={<Icon className="h-3.5 w-3.5" />}>
+              {label}
+            </Menu.LinkItem>
+          );
+        })}
+      </PageBarMenuItems>
+    );
+  }
   return (
-    <div className={inPageBar ? "flex items-center gap-1" : "flex items-center gap-2.5"}>
+    <div className="flex items-center gap-2.5">
       {others.map((key) => {
         const { label, icon: Icon, href } = VIEWS[key];
         return (
-          <Link
-            key={key}
-            to={href(projectId)}
-            className={inPageBar ? pageBarTextButton() : "os-edit-btn"}
-          >
-            <Icon className={inPageBar ? "h-4 w-4 shrink-0" : "w-4 h-4"} />
+          <Link key={key} to={href(projectId)} className="os-edit-btn">
+            <Icon className="w-4 h-4" />
             {label}
           </Link>
         );
