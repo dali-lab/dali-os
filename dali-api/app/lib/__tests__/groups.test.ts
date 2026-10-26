@@ -146,7 +146,7 @@ describe("isUserInAnyGroup", () => {
       { type: "Dynamic", dynamicQuery: "domain:d1", staticMemberIds: [] },
     ]);
     mockPrisma.domainEligibility.findMany.mockResolvedValue([
-      { userId: "user-1" },
+      { domainId: "d1", userId: "user-1" },
     ]);
 
     expect(await isUserInAnyGroup("user-1", ["g1"])).toBe(true);
