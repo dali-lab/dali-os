@@ -368,7 +368,7 @@ function MemberAccessDrawer({
 
   return (
     <Drawer open onClose={onClose} title={m.name}>
-      <div className="flex flex-col gap-8">
+      <div className="flex min-h-0 flex-col gap-8 overflow-y-auto px-6 pb-6">
         <p className="-mt-2 text-sm text-os-muted">{m.email ?? "No DALI email"} · changes save as you make them</p>
 
         <section className="flex flex-col gap-3" aria-labelledby="lab-access-title">

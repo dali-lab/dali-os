@@ -317,7 +317,7 @@ function Composer({
         </div>
       }
     >
-      <div className={cn(os.formClass, "flex flex-col gap-6")}>
+      <div className={cn(os.formClass, "flex min-h-0 flex-col gap-6 overflow-y-auto px-6 pb-6")}>
         <label className={os.fieldLabel}>
           Title
           <input
