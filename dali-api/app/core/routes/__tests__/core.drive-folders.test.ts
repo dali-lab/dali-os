@@ -3,7 +3,10 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn() }));
 vi.mock("~/lib/roles", () => ({ isCore: vi.fn(), isAdmin: vi.fn() }));
 vi.mock("~/lib/login-next", () => ({ redirectToLogin: vi.fn(() => new Response(null, { status: 302 })) }));
-vi.mock("~/core/coreNav", () => ({ coreHandle: vi.fn(() => ({})) }));
+vi.mock("~/core/coreNav", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("~/core/coreNav")>()),
+  coreHandle: vi.fn(() => ({})),
+}));
 
 import { requireAuth } from "~/lib/auth";
 import { isCore, isAdmin } from "~/lib/roles";
