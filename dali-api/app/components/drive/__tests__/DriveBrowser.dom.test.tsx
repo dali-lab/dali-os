@@ -36,6 +36,7 @@ const actions = { onRename: vi.fn(), onRequestMove: vi.fn(), onDelete: vi.fn() }
 let container: HTMLDivElement;
 let root: Root;
 const onOpenItem = vi.fn();
+const onOpenBeside = vi.fn();
 const onToggleFavorite = vi.fn();
 const onBulkMove = vi.fn();
 const onBulkDelete = vi.fn();
@@ -59,6 +60,8 @@ type MountOptions = {
   scopes?: DriveTreeScope[];
   canUpload?: boolean;
   receiverViewer?: { isCore: boolean; isProjectMember: boolean };
+  beside?: boolean;
+  entry?: string;
 };
 
 /** The browser at a location, with `onNavigate` moving it the way the hub's URL does. */
@@ -85,6 +88,7 @@ async function mount(opts: MountOptions = {}) {
       onMove,
       onMoveToScope,
       onOpenItem,
+      onOpenBeside: opts.beside ? onOpenBeside : undefined,
       onToggleFavorite,
       getScopeActions: () => actions,
       onBulkMove,
@@ -98,7 +102,7 @@ async function mount(opts: MountOptions = {}) {
   document.body.appendChild(container);
   root = createRoot(container);
   await act(async () => {
-    root.render(createElement(Stub, { initialEntries: ["/"] }));
+    root.render(createElement(Stub, { initialEntries: [opts.entry ?? "/"] }));
   });
   await act(async () => {
     await new Promise((r) => setTimeout(r, 0));
@@ -1810,5 +1814,78 @@ describe("DriveBrowser: Folder settings", () => {
 
   it("is not offered while the receivers flag is off", async () => {
     expect(await menuFor([lab], "lab", "f1")).not.toContain("Folder settings…");
+  });
+});
+
+describe("DriveBrowser open to the side", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+    onOpenItem.mockClear();
+    onOpenBeside.mockClear();
+  });
+  afterEach(() => {
+    act(() => root.unmount());
+    container.remove();
+    window.localStorage.clear();
+  });
+
+  const hoverButton = (id: string) => container.querySelector(`[data-testid="drive-item-beside-${id}"]`);
+
+  it("offers the hover button on document rows only when the host can open beside", async () => {
+    await mount({ view: "list" });
+    expect(hoverButton("d1")).toBeNull();
+    act(() => root.unmount());
+    container.remove();
+    await mount({ view: "list", beside: true });
+    expect(hoverButton("d1")?.getAttribute("aria-label")).toBe("Open to the side");
+    expect(hoverButton("f1")).toBeNull();
+  });
+
+  it("opens the document beside from the hover button without opening it as a page", async () => {
+    await mount({ view: "list", beside: true });
+    await click(hoverButton("d2")!);
+    expect(onOpenBeside).toHaveBeenCalledWith(expect.objectContaining({ id: "d2" }));
+    expect(onOpenItem).not.toHaveBeenCalled();
+  });
+
+  it("adds Open to the side to the right-click menu of a document, not a folder", async () => {
+    await mount({ view: "list", beside: true });
+    await contextMenu(row("doc", "d1"));
+    const item = [...document.body.querySelectorAll<HTMLElement>("[role='menuitem']")].find((el) =>
+      el.textContent?.includes("Open to the side"),
+    );
+    expect(item?.textContent).toContain("⌥ click");
+    await click(item!);
+    expect(onOpenBeside).toHaveBeenCalledWith(expect.objectContaining({ id: "d1" }));
+  });
+
+  it("leaves the menu without it for a folder and when the host cannot open beside", async () => {
+    await mount({ view: "list", beside: true });
+    await contextMenu(row("folder", "f1"));
+    expect(document.body.textContent).not.toContain("Open to the side");
+  });
+
+  it("opens beside on an option click and selects on a plain click", async () => {
+    await mount({ view: "list", beside: true });
+    await click(row("doc", "d1"), { altKey: true });
+    expect(onOpenBeside).toHaveBeenCalledWith(expect.objectContaining({ id: "d1" }));
+    expect(onOpenItem).not.toHaveBeenCalled();
+    onOpenBeside.mockClear();
+    await click(row("doc", "d2"));
+    await dblClick(row("doc", "d2"));
+    expect(onOpenBeside).not.toHaveBeenCalled();
+    expect(onOpenItem).toHaveBeenCalledWith(expect.objectContaining({ id: "d2" }));
+  });
+
+  it("ignores an option click when the host cannot open beside", async () => {
+    await mount({ view: "list" });
+    await click(row("doc", "d1"), { altKey: true });
+    expect(onOpenBeside).not.toHaveBeenCalled();
+  });
+
+  it("marks the row whose document is open in the side panel", async () => {
+    await mount({ view: "list", beside: true, entry: "/?side=doc:d2" });
+    expect(row("doc", "d2").textContent).toContain("Open beside");
+    expect(row("doc", "d1").textContent).not.toContain("Open beside");
   });
 });

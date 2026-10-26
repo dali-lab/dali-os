@@ -1,7 +1,7 @@
-import { useCallback } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { useSearchParams } from "react-router";
 import { useFeatureFlag } from "~/components/FeatureFlags";
-import { SIDE_PARAM, formatSidePanel, parseSidePanel, type SidePanel } from "~/lib/side-panel";
+import { SIDE_PARAM, formatSidePanel, parseSidePanel, sidePanelForUrl, type SidePanel } from "~/lib/side-panel";
 
 export function useSidePanel() {
   const [params, setParams] = useSearchParams();
@@ -31,20 +31,40 @@ export function useSidePanel() {
   return { panel, open, close };
 }
 
-/**
- * Open a document beside the current page: the side panel behind
- * `desktop-tabs`, otherwise the caller's own fallback.
- */
-export function useOpenDocumentBeside(
-  fallback: (pageId: string, label: string) => void,
-): (pageId: string, label: string) => void {
+/** Opens a document item in the side panel behind `desktop-tabs`; undefined when the flag is off. */
+export function useOpenBeside(): ((item: { href: string }) => void) | undefined {
   const enabled = useFeatureFlag("desktop-tabs");
   const { open } = useSidePanel();
-  return useCallback(
-    (pageId: string, label: string) => {
-      if (enabled) open({ type: "doc", id: pageId });
-      else fallback(pageId, label);
-    },
-    [enabled, open, fallback],
-  );
+  return useMemo(() => {
+    if (!enabled) return undefined;
+    return (item: { href: string }) => {
+      const target = sidePanelForUrl(item.href);
+      if (target) open(target);
+    };
+  }, [enabled, open]);
+}
+
+/** Option-clicking any link to a document opens it beside instead of navigating. */
+export function useAltClickOpensBeside() {
+  const enabled = useFeatureFlag("desktop-tabs");
+  const { open } = useSidePanel();
+  const openRef = useRef(open);
+  openRef.current = open;
+  useEffect(() => {
+    if (!enabled) return;
+    const onClick = (e: MouseEvent) => {
+      if (!e.altKey || e.metaKey || e.ctrlKey || e.button !== 0) return;
+      const link = e.target instanceof Element ? e.target.closest<HTMLAnchorElement>("a[href]") : null;
+      if (!link) return;
+      const url = new URL(link.href, window.location.href);
+      if (url.origin !== window.location.origin) return;
+      const target = sidePanelForUrl(url.pathname);
+      if (!target) return;
+      e.preventDefault();
+      e.stopPropagation();
+      openRef.current(target);
+    };
+    document.addEventListener("click", onClick, true);
+    return () => document.removeEventListener("click", onClick, true);
+  }, [enabled]);
 }

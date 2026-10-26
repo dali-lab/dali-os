@@ -45,6 +45,7 @@ import {
   Shapes,
   Handshake,
   MoreHorizontal,
+  PanelRight,
   Pencil,
   Trash2,
   FolderInput,
@@ -73,6 +74,8 @@ import { categorize } from "~/lib/file-type";
 import { iconForCategory } from "~/lib/file-icon";
 import type { DriveTreeScope } from "~/lib/drive-scopes.server";
 import { Menu, ContextMenu, Tooltip, isInFloatingLayer } from "~/components/ui/floating";
+import { useSidePanel } from "~/components/side-panel/use-side-panel";
+import { sidePanelForUrl } from "~/lib/side-panel";
 import { ShareDialog } from "~/components/sharing/ShareDialog";
 import { relativeTime } from "~/lib/relative-time";
 import { useRevalidator } from "react-router";
@@ -172,6 +175,8 @@ export type DriveBrowserProps = {
   /** A row to select and scroll to whenever this changes, once it appears in the listing (a freshly created item). */
   revealId?: string;
   onOpenItem: (item: DriveItem) => void;
+  /** Open a document in the side panel. Omitted, the browser offers no way to open beside. */
+  onOpenBeside?: (item: DriveItem) => void;
   /** Re-file every item into `destFolderId` within the scope it already sits
    *  in. Takes a list because dragging one row of a multi-selection drags the
    *  whole selection, the way Finder and Drive do. */
@@ -442,6 +447,58 @@ function useScopeDrop(scopeId: string, dragging: boolean) {
   });
 }
 
+type BesideState = { open: ((item: DriveItem) => void) | null; activeId: string | null };
+const BesideContext = createContext<BesideState>({ open: null, activeId: null });
+
+function besideTarget(item: DriveItem) {
+  return item.type === "doc" ? sidePanelForUrl(item.href) : null;
+}
+
+/** How a row opens beside: an opener when it can, and whether it is the document showing in the panel now. */
+function useBeside(item: DriveItem) {
+  const { open, activeId } = useContext(BesideContext);
+  const target = open ? besideTarget(item) : null;
+  return { openBeside: target && open ? () => open(item) : null, active: !!target && activeId === target.id };
+}
+
+function BesideMark({ item }: { item: DriveItem }) {
+  const { active } = useBeside(item);
+  if (!active) return null;
+  return <span className="shrink-0 rounded-full bg-os-container px-2 py-0.5 text-xs font-medium text-os-accent">Open beside</span>;
+}
+
+function OpenBesideButton({ item }: { item: DriveItem }) {
+  const { openBeside } = useBeside(item);
+  if (!openBeside) return null;
+  return (
+    <Tooltip content="Open to the side · ⌥ click">
+      <button
+        type="button"
+        aria-label="Open to the side"
+        data-testid={`drive-item-beside-${item.id}`}
+        onClick={(e) => {
+          e.stopPropagation();
+          openBeside();
+        }}
+        onPointerDown={(e) => e.stopPropagation()}
+        className="shrink-0 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-muted/60 hover:text-foreground group-hover:opacity-100 focus-visible:opacity-100"
+      >
+        <PanelRight className="h-4 w-4" />
+      </button>
+    </Tooltip>
+  );
+}
+
+function OpenBesideMenuItem({ item }: { item: DriveItem }) {
+  const { openBeside } = useBeside(item);
+  if (!openBeside) return null;
+  return (
+    <Menu.Item icon={<PanelRight className="h-3.5 w-3.5" />} shortcut="⌥ click" onSelect={openBeside}>
+      Open to the side
+    </Menu.Item>
+  );
+}
+
 // Menu.Item nodes shared by the row "⋯" dropdown and the right-click menu.
 function itemMenuItems(
   item: DriveItem,
@@ -480,6 +537,7 @@ function itemMenuItems(
       <Menu.Item icon={<FolderOpen className="h-3.5 w-3.5" />} onSelect={onOpen}>
         Open
       </Menu.Item>
+      <OpenBesideMenuItem item={item} />
       {canFavorite && onToggleFavorite && (
         <Menu.Item
           icon={<Star className={`h-3.5 w-3.5 ${item.favorited ? "fill-current text-os-accent" : ""}`} />}
@@ -543,6 +601,8 @@ function RowActionsMenu({
   onTogglePartnerVisible?: (item: DriveItem, next: boolean) => void;
 }) {
   return (
+    <>
+    <OpenBesideButton item={item} />
     <Menu
       align="right"
       ariaLabel="Item actions"
@@ -560,6 +620,7 @@ function RowActionsMenu({
     >
       {itemMenuItems(item, actions, onOpen, onToggleFavorite, onTogglePartnerVisible)}
     </Menu>
+    </>
   );
 }
 
@@ -682,6 +743,7 @@ export function DriveBrowser({
   initialSelectedId,
   revealId,
   onOpenItem,
+  onOpenBeside,
   onMove,
   getScopeActions,
   onToggleFavorite,
@@ -1095,6 +1157,13 @@ export function DriveBrowser({
   function handleRowClick(id: string, e: ReactMouseEvent<HTMLElement>) {
     // A row's own menu renders in a portal but its clicks still bubble here.
     if (isInFloatingLayer(e.target)) return;
+    const altItem = e.altKey && onOpenBeside ? itemIndex.get(id)?.item : undefined;
+    if (altItem && besideTarget(altItem)) {
+      e.stopPropagation();
+      e.preventDefault();
+      onOpenBeside!(altItem);
+      return;
+    }
     const poolIds = poolIdsFor(id);
     const intent = clickIntent({
       metaKey: e.metaKey,
@@ -1778,6 +1847,12 @@ export function DriveBrowser({
 
   const draggedCount = activeDrag ? draggedItemsFor(activeDrag).length : 0;
 
+  const sidePanel = useSidePanel().panel;
+  const besideState = useMemo<BesideState>(
+    () => ({ open: onOpenBeside ?? null, activeId: sidePanel?.id ?? null }),
+    [onOpenBeside, sidePanel?.id],
+  );
+
   const rowHandlers: RowHandlers = {
     onClick: handleRowClick,
     onDoubleClick: handleRowDoubleClick,
@@ -1787,6 +1862,7 @@ export function DriveBrowser({
 
   return (
     <>
+    <BesideContext.Provider value={besideState}>
     <FileDropContext.Provider value={fileOverFolder}>
     <DndContext sensors={sensors} collisionDetection={pointerWithin} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
       <div ref={rootRef} className="flex flex-col gap-3" data-testid="drive-browser" onClick={handleBackgroundClick}>
@@ -2100,6 +2176,7 @@ export function DriveBrowser({
       </DragOverlay>
     </DndContext>
     </FileDropContext.Provider>
+    </BesideContext.Provider>
 
     {/* In-place Share dialog — mounted outside DndContext so DnD events don't
         bleed through; keyed by item id so state resets on a different target. */}
@@ -2551,6 +2628,7 @@ function ColumnItemRow({
     disabled: !acceptsDrops(item) || !scopeId,
   });
   const fileDrop = useFileDropFolder(item);
+  const besideActive = useBeside(item).active;
   function setRefs(node: HTMLDivElement | null) {
     drag.setNodeRef(node);
     if (acceptsDrops(item)) drop.setNodeRef(node);
@@ -2582,13 +2660,16 @@ function ColumnItemRow({
           ? "bg-os-container text-os-accent"
           : isOpen
             ? "bg-os-container text-foreground"
-            : "text-foreground hover:bg-os-hover"
+            : besideActive
+              ? "bg-os-accent/10 text-foreground"
+              : "text-foreground hover:bg-os-hover"
       } ${isFocused && !drop.isOver && !fileDrop.over ? "ring-1 ring-inset ring-os-accent/50" : ""}`}
     >
       <ItemGlyphTip item={item} />
       <Truncated text={item.title || "Untitled"} className="flex-1 font-medium" />
       <ModifiedCaption item={item} />
-      <RowTags item={item} actions={scopeActions} />
+      <BesideMark item={item} />
+<RowTags item={item} actions={scopeActions} />
       <RowAudience item={item} actions={scopeActions} />
       {/* Signal ②: process linkage pill. */}
       {item.linkedProcess && (
@@ -3214,6 +3295,7 @@ function ListRow({
     disabled: !acceptsDrops(item),
   });
   const fileDrop = useFileDropFolder(item);
+  const besideActive = useBeside(item).active;
   function setRefs(node: HTMLDivElement | null) {
     drag.setNodeRef(node);
     if (acceptsDrops(item)) drop.setNodeRef(node);
@@ -3239,15 +3321,18 @@ function ListRow({
           ? DROP_RING
           : selected
             ? "bg-os-container"
-            : focused
-              ? "bg-os-hover"
-              : "hover:bg-os-hover"
+            : besideActive
+              ? "bg-os-accent/10"
+              : focused
+                ? "bg-os-hover"
+                : "hover:bg-os-hover"
       }`}
     >
       <span className="flex items-center gap-2 min-w-0">
         <ItemGlyphTip item={item} />
         <Truncated text={item.title || "Untitled"} className="font-medium text-foreground" />
-        <RowTags item={item} actions={actions} />
+        <BesideMark item={item} />
+<RowTags item={item} actions={actions} />
         <RowAudience item={item} actions={actions} />
         {/* Signal ②: process linkage pill. */}
         {item.linkedProcess && (
@@ -3385,7 +3470,8 @@ function GridTile({
         }`}
       />
       <ModifiedCaption item={item} />
-      <RowTags item={item} actions={actions} />
+      <BesideMark item={item} />
+<RowTags item={item} actions={actions} />
       <RowAudience item={item} actions={actions} />
       {/* Signal ②: process linkage pill. Centered below the title. */}
       {item.linkedProcess && (
@@ -3474,7 +3560,8 @@ function FolderCard({
         <Truncated text={item.title || "Untitled"} className={`${t.row} font-medium text-foreground`} />
         <span className="flex items-center gap-2">
           <ModifiedCaption item={item} />
-          <RowTags item={item} actions={actions} />
+          <BesideMark item={item} />
+<RowTags item={item} actions={actions} />
           <RowAudience item={item} actions={actions} />
         </span>
       </div>
@@ -3554,7 +3641,8 @@ export function SearchResults({
               <span className="flex min-w-0 items-center gap-2">
                 <ItemGlyphTip item={hit.item} />
                 <Truncated text={hit.item.title || "Untitled"} className="font-medium text-foreground" />
-                <RowTags item={hit.item} actions={getScopeActions(hit.scope.id)} />
+                <BesideMark item={hit.item} />
+<RowTags item={hit.item} actions={getScopeActions(hit.scope.id)} />
                 {/* Signal ②: process linkage pill in search results. */}
                 {hit.item.linkedProcess && (
                   <ProcessLinkPill label={hit.item.linkedProcess.label} href={hit.item.linkedProcess.href} />
