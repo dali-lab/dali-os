@@ -708,15 +708,25 @@ export async function listVisibleGroupsForUser(
   return toVisibleGroups(memberOf, archiveContext, request);
 }
 
-export async function listActiveGroupNamesForUser(
+/** The non-archived groups a user belongs to, without resolving anyone's member list. */
+export async function listActiveGroupsForUser(
   userId: string,
   request?: Request,
-): Promise<string[]> {
+): Promise<{ id: string; name: string; systemKey: string | null }[]> {
   const [{ memberOf }, archiveContext] = await Promise.all([
     deriveUserGroups(userId, request),
     loadGroupArchiveContext(),
   ]);
-  return memberOf.filter((g) => !isGroupArchived(g, archiveContext)).map((g) => g.name);
+  return memberOf
+    .filter((g) => !isGroupArchived(g, archiveContext))
+    .map((g) => ({ id: g.id, name: g.name, systemKey: g.systemKey }));
+}
+
+export async function listActiveGroupNamesForUser(
+  userId: string,
+  request?: Request,
+): Promise<string[]> {
+  return (await listActiveGroupsForUser(userId, request)).map((g) => g.name);
 }
 
 // Returns every group, unfiltered. For the Groups management page, where a

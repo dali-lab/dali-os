@@ -308,6 +308,13 @@ export type ExternalEventDTO = {
   pending?: boolean;
 };
 
+/** The lab directory for participant pickers (GET /api/calendar/participants). */
+export type ParticipantOptions = {
+  groups: GroupOption[];
+  users: UserOption[];
+  mentorPairs: MentorPairOption[];
+};
+
 export type LoaderData = {
   timezone: string;
   defaultEventBufferMin: number;
@@ -338,9 +345,8 @@ export type LoaderData = {
    *  against their account), so the grid says so rather than implying an empty
    *  calendar. Lab-native layers are unaffected. */
   googleHidden: boolean;
-  groups: GroupOption[];
-  mentorPairs: MentorPairOption[];
-  users: UserOption[];
+  /** False on the portal calendar, which withholds the lab's member directory. */
+  hasDirectory: boolean;
   currentUserId: string;
   myRoles: RoleInstance[];
   timeEntries: TimeEntryDTO[];
@@ -494,13 +500,10 @@ export type GroupAvailResponse = { days: GroupAvailDay[]; perUser?: PerUserFree[
 
 // The subset of LoaderData that CreateEventModal needs to run in
 // `mode="meeting-only"` outside the calendar route (e.g. the partner CRM's
-// interview scheduler, mounted from /api/scheduling-data). LoaderData is a
-// structural superset, so the calendar route's existing loader output
-// satisfies this type unchanged — see loadSchedulingData.
-export type SchedulingData = Pick<
+// interview scheduler, mounted from /api/scheduling-data). The calendar route
+// adds the participant lists it fetches after load.
+export type SchedulingData = ParticipantOptions & Pick<
   LoaderData,
-  | "users"
-  | "groups"
   | "workingHours"
   | "hasPersistedWorkingHours"
   | "calendarLinks"
@@ -509,7 +512,6 @@ export type SchedulingData = Pick<
   | "defaultEventBufferMin"
   | "canSetSelfCheckIn"
   | "canMarkCoreMeeting"
-  | "mentorPairs"
   | "myRoles"
   | "weekStartIso"
   | "defaultEventDest"
