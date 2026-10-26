@@ -36,9 +36,9 @@ const SCOPE_GLYPHS = {
 
 export function scopeIconFor(scope: ScopeLike, size: ScopeIconSize = "sm", tiles = false) {
   const areaKey = DRIVE_SPACE_AREA[scope.id];
-  if (tiles && areaKey) return <AreaTile areaKey={areaKey} size={TILE_SIZE[size]} />;
-  const cls = `${size === "xl" ? "w-10 h-10" : size === "lg" ? "w-8 h-8" : "w-4 h-4"} shrink-0`;
   const glyph = (SCOPE_GLYPHS as Record<string, readonly [typeof Folder, string]>)[scope.id];
+  if (tiles && areaKey) return <AreaTile areaKey={areaKey} size={TILE_SIZE[size]} icon={glyph?.[0]} />;
+  const cls = `${size === "xl" ? "w-10 h-10" : size === "lg" ? "w-8 h-8" : "w-4 h-4"} shrink-0`;
   if (glyph) {
     const [Icon, tone] = glyph;
     return <Icon className={`${cls} ${tone}`} aria-hidden />;

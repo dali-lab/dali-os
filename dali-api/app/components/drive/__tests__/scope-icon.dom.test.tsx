@@ -37,6 +37,19 @@ describe("scopeIconFor tiles", () => {
     expect(c.querySelector(`[data-area-tile='${area}']`)).not.toBeNull();
   });
 
+  it("keeps each space's own glyph inside its area's tile", async () => {
+    const mentorship = (await render("mentorship", true)).innerHTML;
+    act(() => root.unmount());
+    container.remove();
+    const projects = (await render("projects", true)).innerHTML;
+    act(() => root.unmount());
+    container.remove();
+    const lab = (await render("lab", true)).innerHTML;
+    expect(mentorship).toContain("lucide-heart");
+    expect(projects).toContain("lucide-folder-kanban");
+    expect(lab).toContain("lucide-users");
+  });
+
   it.each(["mine", "favorites", "shared"])("keeps %s a plain glyph", async (id) => {
     const c = await render(id, true);
     expect(c.querySelector("[data-area-tile]")).toBeNull();
