@@ -73,6 +73,29 @@ describe("PanelFrame header", () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 
+  it.each([
+    [
+      "the document editor",
+      () => {
+        const editor = document.createElement("div");
+        editor.setAttribute("contenteditable", "true");
+        editor.tabIndex = 0;
+        return editor;
+      },
+    ],
+    ["a text field", () => document.createElement("textarea")],
+  ])("first Escape in %s leaves it, the next one closes", (_, make) => {
+    mount();
+    const field = make() as HTMLElement;
+    container.querySelector("[aria-label]")!.appendChild(field);
+    act(() => field.focus());
+    escape(field);
+    expect(onClose).not.toHaveBeenCalled();
+    expect(document.activeElement).not.toBe(field);
+    escape();
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
   it("does not close when Escape is pressed inside an open menu", () => {
     mount();
     act(() => container.querySelector<HTMLButtonElement>("button:not([aria-label])")!.click());

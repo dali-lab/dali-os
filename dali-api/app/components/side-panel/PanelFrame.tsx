@@ -22,6 +22,12 @@ function readWidth(): number {
   }
 }
 
+function editingElement(el: Element | null): HTMLElement | null {
+  if (!(el instanceof HTMLElement)) return null;
+  if (/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) return el;
+  return el.closest<HTMLElement>('[contenteditable=""], [contenteditable="true"]');
+}
+
 export function PanelFrame({
   panel,
   title,
@@ -39,6 +45,11 @@ export function PanelFrame({
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key !== "Escape" || e.defaultPrevented || isInFloatingLayer(document.activeElement)) return;
+      const editing = editingElement(document.activeElement);
+      if (editing) {
+        editing.blur();
+        return;
+      }
       onClose();
     };
     document.addEventListener("keydown", onKeyDown);
