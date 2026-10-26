@@ -241,8 +241,21 @@ describe("claimRecording", () => {
     const result = await claimRecording(rec({ status: "Pending", segmentStarts: [0] }));
     expect(result).toEqual({ ok: true, offset: 0, segment: 0 });
     expect(prisma.meetingRecording.update).toHaveBeenCalledWith(
-      expect.objectContaining({ data: { status: "Recording" } }),
+      expect.objectContaining({ data: { status: "Recording", sessionStartedAt: expect.any(Date) } }),
     );
+  });
+
+  it("stamps the session start at the moment of the claim", async () => {
+    vi.useFakeTimers({ now: new Date("2026-10-26T15:00:00Z") });
+    try {
+      await claimRecording(rec({ status: "Pending" }));
+    } finally {
+      vi.useRealTimers();
+    }
+    const { data } = vi.mocked(prisma.meetingRecording.update).mock.calls[0][0] as unknown as {
+      data: { sessionStartedAt: Date };
+    };
+    expect(data.sessionStartedAt).toEqual(new Date("2026-10-26T15:00:00Z"));
   });
 
   it("re-claims a Recording session without changing status", async () => {
@@ -322,9 +335,20 @@ describe("recordChunk", () => {
           channels: ["mic"],
           chunkIndex: { mic: [5] },
           status: "Recording",
+          sessionStartedAt: expect.any(Date),
         }),
       }),
     );
+  });
+
+  it("leaves the session start alone on a chunk into a session already Recording", async () => {
+    lockedRow({ status: "Recording" });
+    await recordChunk(rec(), "mic", 0, 6, true);
+    const { data } = vi.mocked(prisma.meetingRecording.update).mock.calls[0][0] as unknown as {
+      data: Record<string, unknown>;
+    };
+    expect(data).not.toHaveProperty("sessionStartedAt");
+    expect(data).not.toHaveProperty("status");
   });
 
   it("never lowers the high-water seq on an out-of-order retry", async () => {
