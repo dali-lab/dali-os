@@ -1,6 +1,17 @@
 import type { Crumb } from "~/components/Breadcrumbs";
-import type { ItemLocation } from "~/components/drive/location";
+import { driveScopeLabel, type ItemLocation } from "~/components/drive/location";
 import { formatDateShort } from "~/lib/display";
+
+/** An item's place in the Drive for a breadcrumb row: its space, the folders above it, then the item. */
+export function itemTrail(location: ItemLocation, title: string): Crumb[] {
+  const driveHref = (folderId: string | null) =>
+    `/drive?scope=${location.scopeId}${folderId ? `&folder=${folderId}` : ""}`;
+  return [
+    { label: driveScopeLabel({ id: location.scopeId, label: location.scopeLabel }), to: driveHref(null) },
+    ...location.folders.map((f) => ({ label: f.title, to: driveHref(f.id) })),
+    { label: title },
+  ];
+}
 
 /** A note's place for the shell's breadcrumb row: space, folders, notebook, then the tab. */
 export function noteTrail(
@@ -8,11 +19,8 @@ export function noteTrail(
   notebook: { id: string; title: string },
   tabLabel: string,
 ): Crumb[] {
-  const driveHref = (folderId: string | null) =>
-    `/drive?scope=${location.scopeId}${folderId ? `&folder=${folderId}` : ""}`;
   return [
-    { label: location.scopeLabel, to: driveHref(null) },
-    ...location.folders.map((f) => ({ label: f.title, to: driveHref(f.id) })),
+    ...itemTrail(location, notebook.title).slice(0, -1),
     { label: notebook.title, to: `/documents/${notebook.id}` },
     { label: tabLabel },
   ];

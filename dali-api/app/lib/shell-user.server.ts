@@ -14,6 +14,7 @@ const SHELL_USER_SELECT = {
   photoUrl: true,
   timeZone: true,
   birthday: true,
+  desktopHintDismissedAt: true,
   calendarLinks: {
     where: { provider: "Google", enabled: true },
     select: { id: true },
@@ -26,6 +27,7 @@ export type ShellUser = {
   photoUrl: string | null;
   timeZone: string | null;
   birthday: Date | null;
+  desktopHintDismissedAt: Date | null;
   calendarLinks: { id: string }[];
   daliMember: { onboardedAt: Date | null; tourCompletedAt: Date | null } | null;
 };

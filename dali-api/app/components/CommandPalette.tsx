@@ -34,6 +34,8 @@ import {
   CornerDownLeft,
   Loader2,
   Link as LinkIcon,
+  AppWindow,
+  Download,
 } from "lucide-react";
 import { Modal } from "~/components/Modal";
 import { Avatar } from "~/components/ui/Avatar";
@@ -67,6 +69,8 @@ interface CommandPaletteProps {
    *  the member registry (areas, Core/Admin tools, workspace and tour commands)
    *  describes surfaces a student can't reach, so none of it is offered. */
   portalNav?: PortalNavItem[];
+  /** Set only in a desktop browser with the app available; adds the open and download commands. */
+  onOpenInDesktop?: () => void;
   /** Open a result. `toSide` = ⌘/Ctrl+Enter (split pane in tab mode, new browser tab in tabless). */
   onOpen: (url: string, label: string, toSide: boolean) => void;
 }
@@ -151,7 +155,7 @@ const NO_ROLES: CommandPaletteRoles = {
   isAlumni: false,
 };
 
-export function CommandPalette({ open, onClose, tabless, focusMode, roles = NO_ROLES, flags = {}, portalNav, onOpen }: CommandPaletteProps) {
+export function CommandPalette({ open, onClose, tabless, focusMode, roles = NO_ROLES, flags = {}, portalNav, onOpen, onOpenInDesktop }: CommandPaletteProps) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
   // The query `results` belong to. Compared against the live query during
@@ -311,6 +315,24 @@ export function CommandPalette({ open, onClose, tabless, focusMode, roles = NO_R
         icon: LinkIcon,
         action: { kind: "run", run: () => window.dispatchEvent(new CustomEvent(COPY_PAGE_LINK_EVENT)) },
       },
+      ...(onOpenInDesktop
+        ? [
+            {
+              id: "cmd-open-desktop",
+              title: "Open this page in the desktop app",
+              subtitle: "Command",
+              icon: AppWindow,
+              action: { kind: "run", run: onOpenInDesktop },
+            } satisfies PaletteItem,
+            {
+              id: "cmd-download-desktop",
+              title: "Download the desktop app",
+              subtitle: "Command",
+              icon: Download,
+              action: { kind: "navigate", url: "/download", label: "Download" },
+            } satisfies PaletteItem,
+          ]
+        : []),
       {
         id: "cmd-logout",
         title: "Log out",
@@ -354,7 +376,7 @@ export function CommandPalette({ open, onClose, tabless, focusMode, roles = NO_R
       admin: admin.filter(match),
       commands: commands.filter(match),
     };
-  }, [roles, flags, portalNav, tabless, focusMode, query]);
+  }, [roles, flags, portalNav, tabless, focusMode, query, onOpenInDesktop]);
 
   const sections = useMemo(() => {
     const out: { key: string; label: string; items: PaletteItem[] }[] = [];

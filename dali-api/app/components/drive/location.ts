@@ -41,6 +41,11 @@ export function crumbsFor(
   return chain;
 }
 
+/** A space's name as the Drive shows it. */
+export function driveScopeLabel(scope: { id: string; label: string }): string {
+  return scope.id === "mine" ? "My Drive" : scope.id === "lab" ? "Lab" : scope.label;
+}
+
 export type ItemLocation = {
   scopeId: string;
   scopeLabel: string;

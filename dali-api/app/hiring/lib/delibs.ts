@@ -97,3 +97,11 @@ export function applyMove(
   next[toColumn] = [...merged, ...serverTarget.filter((id) => !seen.has(id))];
   return next;
 }
+
+// The card's review flag: null when every assigned review is in.
+export function missingReviewsLabel(submitted: number, assigned: number): string | null {
+  if (assigned === 0) return "No reviewers assigned";
+  const missing = assigned - submitted;
+  if (missing <= 0) return null;
+  return `${missing} of ${assigned} ${assigned === 1 ? "review" : "reviews"} missing`;
+}

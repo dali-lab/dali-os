@@ -193,6 +193,8 @@ model User {
   hideActivity Boolean   @default(false)
   presenceAway Boolean   @default(false)
 
+  desktopHintDismissedAt DateTime?
+
   // ─── Notification digests ────────────────────────────────────────────────
   // The ET hour this member's daily and weekly digests go out. Null = the
   // digest job's configured hour (Admin → Jobs).
