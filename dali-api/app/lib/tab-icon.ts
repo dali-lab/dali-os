@@ -16,5 +16,10 @@ export function tabIcon(url: string): LucideIcon {
   const area = areaForPath(url, { community: true })
   if (!area) return FileText
   const href = activeSubtabHref(area, url)
-  return area.subtabs.find((t) => t.href === href)?.icon ?? area.icon
+  const exact = area.subtabs.find((t) => t.href === href)
+  if (exact) return exact.icon
+  const within = area.subtabs
+    .filter((t) => p.startsWith(t.href + '/'))
+    .sort((a, b) => b.href.length - a.href.length)[0]
+  return within?.icon ?? area.icon
 }

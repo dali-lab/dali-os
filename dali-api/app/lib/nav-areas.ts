@@ -224,7 +224,7 @@ const REGROUPED_AREAS: NavArea[] = [
     hubPath: "/projects",
     description: "Projects, people, mentorship",
     subtabs: [
-      { label: "Projects", href: "/projects", icon: LayoutGrid },
+      { label: "Projects", href: "/projects", icon: FolderKanban },
       { label: "People", href: "/members", icon: UsersRound },
       { label: "Connect", href: "/connect", icon: MapPinned },
       { label: "Mentorship", href: "/mentorship", icon: Heart, gate: (r) => !r.isAlumni && (r.isLabMentor || r.isCore) },
@@ -376,7 +376,7 @@ const ALUMNI_AREAS: NavArea[] = [
     icon: FolderKanban,
     hubPath: "/projects",
     subtabs: [
-      { label: "Projects", href: "/projects", icon: LayoutGrid },
+      { label: "Projects", href: "/projects", icon: FolderKanban },
       { label: "People", href: "/members", icon: UsersRound },
       { label: "Opportunities", href: "/community/opportunities", icon: Lightbulb },
       { label: "Gallery", href: "/community/gallery", icon: Images },

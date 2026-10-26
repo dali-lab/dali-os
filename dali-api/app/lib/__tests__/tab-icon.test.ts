@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { Calendar, FileText, FolderKanban, HardDrive, Home, Kanban, Mail } from "lucide-react";
+import { Calendar, FileText, FolderKanban, HardDrive, Home, Kanban, Mail, UsersRound } from "lucide-react";
 import { tabIcon } from "~/lib/tab-icon";
 
 describe("tabIcon", () => {
@@ -23,6 +23,10 @@ describe("tabIcon", () => {
 
   it("falls back to the area icon for a page inside an area", () => {
     expect(tabIcon("/projects/some-project-id")).toBe(FolderKanban);
+  });
+
+  it("uses the sub-tab's icon for a page inside it, not the area's", () => {
+    expect(tabIcon("/members/abc")).toBe(UsersRound);
   });
 
   it("falls back to the document glyph for unknown urls", () => {
