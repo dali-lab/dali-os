@@ -5,11 +5,11 @@
 // the CRUD helpers. `kind` is validated against the registry, never a DB enum.
 
 import { prisma } from "~/lib/db";
-import {
+import type {
   Prisma,
-  type Activity,
-  type ActivityScoring,
-  type ActivityStatus,
+  Activity,
+  ActivityScoring,
+  ActivityStatus,
 } from "~/generated/prisma/client";
 import { getActiveCoreCycleTermIds, getAdminUserIdsFromEnv, type UserRoles } from "~/lib/roles";
 import { resolveGroupMembers } from "~/lib/groups";
@@ -27,6 +27,7 @@ import {
   type RosterMember,
 } from "~/lib/activities";
 import { mechanicServer } from "~/activities/mechanics/registry.server";
+import { cachedForLayout, LAB_SCOPE } from "~/lib/layout-cache.server";
 
 // ─── Audience ────────────────────────────────────────────────────────────────
 // everyone ∪ role ∪ assigned group ∪ explicit participant. The role half is the
@@ -265,10 +266,15 @@ export async function resolveActiveActivitiesForUser(
   now: Date,
   pathname: string,
 ): Promise<ActiveActivity[]> {
-  const rows = await prisma.activity.findMany({
-    where: { status: "Published", startsAt: { lte: now }, endsAt: { gte: now } },
-    orderBy: { startsAt: "asc" },
-  });
+  // Not-yet-ended rows are cached lab-wide and narrowed to the live window per
+  // call, so a cached read still starts and ends an activity on time.
+  const upcoming = await cachedForLayout(LAB_SCOPE, "activities", () =>
+    prisma.activity.findMany({
+      where: { status: "Published", endsAt: { gte: now } },
+      orderBy: { startsAt: "asc" },
+    }),
+  );
+  const rows = upcoming.filter((a) => a.startsAt <= now && a.endsAt >= now);
 
   const out: ActiveActivity[] = [];
   for (const a of rows) {

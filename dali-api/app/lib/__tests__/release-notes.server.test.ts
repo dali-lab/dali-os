@@ -4,8 +4,10 @@ vi.mock("~/lib/db", () => ({
   prisma: {
     releaseNote: { findMany: vi.fn(), updateMany: vi.fn(), update: vi.fn() },
     outboundMessage: { findMany: vi.fn() },
+    user: { update: vi.fn() },
   },
 }));
+vi.mock("~/lib/layout-cache.server", () => ({ invalidateLayoutCache: vi.fn() }));
 vi.mock("~/lib/auth", () => ({}));
 vi.mock("~/lib/login-next", () => ({}));
 vi.mock("~/lib/roles", () => ({}));
@@ -28,7 +30,12 @@ import { prisma } from "~/lib/db";
 import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
 import { notify } from "~/lib/notify.server";
 import { copyObject } from "~/lib/s3";
-import { publishReleaseNotes, releaseNoteSlackStatuses } from "../release-notes.server";
+import { invalidateLayoutCache } from "~/lib/layout-cache.server";
+import {
+  markReleaseNotesSeen,
+  publishReleaseNotes,
+  releaseNoteSlackStatuses,
+} from "../release-notes.server";
 
 const p = prisma as unknown as Record<string, Record<string, ReturnType<typeof vi.fn>>>;
 const request = new Request("https://os.example");
@@ -176,5 +183,22 @@ describe("publishReleaseNotes video copy", () => {
     });
     expect(p.releaseNote.updateMany).not.toHaveBeenCalled();
     expect(enqueueOutbound).not.toHaveBeenCalled();
+  });
+});
+
+describe("markReleaseNotesSeen", () => {
+  it("stamps the user and clears their cached unseen dot", async () => {
+    await markReleaseNotesSeen("ada");
+    expect(p.user.update).toHaveBeenCalledWith({
+      where: { id: "ada" },
+      data: { releaseNotesSeenAt: expect.any(Date) },
+    });
+    expect(invalidateLayoutCache).toHaveBeenCalledExactlyOnceWith("releaseNotes", ["ada"]);
+  });
+
+  it("clears nothing when the write fails", async () => {
+    p.user.update.mockRejectedValueOnce(new Error("db down"));
+    await expect(markReleaseNotesSeen("ada")).rejects.toThrow("db down");
+    expect(invalidateLayoutCache).not.toHaveBeenCalled();
   });
 });

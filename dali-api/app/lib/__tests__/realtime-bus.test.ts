@@ -59,8 +59,15 @@ describe("in-process (no REDIS_URL)", () => {
     subscribe("t:1", a);
     subscribe("t:1", b);
     publish("t:1");
-    expect(a).toHaveBeenCalledWith("change");
-    expect(b).toHaveBeenCalledWith("change");
+    expect(a).toHaveBeenCalledWith("change", undefined);
+    expect(b).toHaveBeenCalledWith("change", undefined);
+  });
+
+  it("passes a publish's payload to subscribers", () => {
+    const fn = vi.fn();
+    subscribe("t:1", fn);
+    publish("t:1", "payload");
+    expect(fn).toHaveBeenCalledWith("change", "payload");
   });
 
   it("does not deliver to other topics", () => {
@@ -141,7 +148,23 @@ describe("with REDIS_URL", () => {
     const fn = vi.fn();
     subscribe("t:1", fn);
     subConn().emit("message", "dali:realtime", JSON.stringify({ topic: "t:1", origin: "other" }));
-    expect(fn).toHaveBeenCalledWith("change");
+    expect(fn).toHaveBeenCalledWith("change", undefined);
+  });
+
+  it("carries the payload across machines", () => {
+    publish("t:2", "p1");
+    expect(JSON.parse(pubConn().published[0][1]).data).toBe("p1");
+    const fn = vi.fn();
+    subscribe("t:1", fn);
+    subConn().emit("message", "dali:realtime", JSON.stringify({ topic: "t:1", origin: "other", data: "p2" }));
+    expect(fn).toHaveBeenCalledWith("change", "p2");
+  });
+
+  it("drops a non-string payload from another machine", () => {
+    const fn = vi.fn();
+    subscribe("t:1", fn);
+    subConn().emit("message", "dali:realtime", JSON.stringify({ topic: "t:1", origin: "other", data: 7 }));
+    expect(fn).toHaveBeenCalledWith("change", undefined);
   });
 
   it("drops its own echo so local subscribers hear a publish once", () => {
@@ -171,8 +194,8 @@ describe("with REDIS_URL", () => {
     subConn().emit("ready");
     expect(a).not.toHaveBeenCalled();
     subConn().emit("ready");
-    expect(a).toHaveBeenCalledWith("sync");
-    expect(b).toHaveBeenCalledWith("sync");
+    expect(a).toHaveBeenCalledWith("sync", undefined);
+    expect(b).toHaveBeenCalledWith("sync", undefined);
   });
 
   it("logs a failed publish instead of throwing", async () => {

@@ -8,7 +8,8 @@ import IORedis from "ioredis";
 // bus is in-process only, which is complete when there is one process.
 
 export type BusEvent = "change" | "sync";
-type Subscriber = (event: BusEvent) => void;
+// `data` is the publisher's optional payload; a `sync` never carries one.
+type Subscriber = (event: BusEvent, data?: string) => void;
 
 const CHANNEL = "dali:realtime";
 
@@ -29,12 +30,12 @@ const state: BusState = (g.__realtimeBus ??= {
   redisUrl: undefined,
 });
 
-function deliver(topic: string, event: BusEvent): void {
+function deliver(topic: string, event: BusEvent, data?: string): void {
   const set = state.registry.get(topic);
   if (!set) return;
   for (const fn of set) {
     try {
-      fn(event);
+      fn(event, data);
     } catch {
       // A closed stream must not block the rest; its route unsubscribes itself.
     }
@@ -65,14 +66,14 @@ function connectRedis(): BusState["redis"] {
   });
   sub.on("message", (channel: string, raw: string) => {
     if (channel !== CHANNEL) return;
-    let msg: { topic?: unknown; origin?: unknown };
+    let msg: { topic?: unknown; origin?: unknown; data?: unknown };
     try {
       msg = JSON.parse(raw);
     } catch {
       return;
     }
     if (typeof msg.topic !== "string" || msg.origin === state.origin) return;
-    deliver(msg.topic, "change");
+    deliver(msg.topic, "change", typeof msg.data === "string" ? msg.data : undefined);
   });
   const logError = (err: Error) => console.error("[realtime-bus] redis error", err.message);
   pub.on("error", logError);
@@ -99,14 +100,14 @@ export function subscribe(topic: string, fn: Subscriber): () => void {
   };
 }
 
-export function publish(topic: string): void {
+export function publish(topic: string, data?: string): void {
   // Local subscribers hear it immediately and still do if Redis is down; the
   // origin tag drops this process's own echo off the channel.
-  deliver(topic, "change");
+  deliver(topic, "change", data);
   const redis = connectRedis();
   if (!redis) return;
   redis.pub
-    .publish(CHANNEL, JSON.stringify({ topic, origin: state.origin }))
+    .publish(CHANNEL, JSON.stringify({ topic, origin: state.origin, data }))
     .catch((err: Error) => console.error("[realtime-bus] publish failed", err.message));
 }
 
