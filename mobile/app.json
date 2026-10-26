@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "DALI OS",
-    "slug": "dali-os-mobile",
+    "slug": "dali-os",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -21,7 +21,14 @@
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
-      "package": "edu.dartmouth.dali.os.mobile"
+      "package": "edu.dartmouth.dali.os.mobile",
+      "permissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.POST_NOTIFICATIONS",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_MICROPHONE"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -52,6 +59,12 @@
     "scheme": "dalios-mobile",
     "runtimeVersion": {
       "policy": "appVersion"
-    }
+    },
+    "extra": {
+      "eas": {
+        "projectId": "42b0ee91-3940-483b-8d10-4f47df16bd41"
+      }
+    },
+    "owner": "dali-os"
   }
 }
