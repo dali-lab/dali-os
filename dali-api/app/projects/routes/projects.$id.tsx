@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { useOpenDocumentBeside } from "~/components/side-panel/use-side-panel";
+import { useOpenBeside } from "~/components/side-panel/use-side-panel";
 import { SIDE_PARAM } from "~/lib/side-panel";
 import {
   Form,
@@ -4652,6 +4652,7 @@ function ProjectDriveTab({
     },
     [navigate],
   );
+  const onOpenBeside = useOpenBeside();
 
   // One item's move, with no reporting: the batch below speaks for the
   // selection. `onError` gets the reason a move was refused.
@@ -4965,6 +4966,7 @@ function ProjectDriveTab({
         onSearchChange={setSearch}
         onNavigate={onNavigate}
         onOpenItem={onOpenItem}
+        onOpenBeside={onOpenBeside}
         onMove={onMove}
         getScopeActions={getScopeActions}
         onToggleFavorite={onToggleFavorite}
@@ -5025,7 +5027,6 @@ function DocumentsBlock({
   const dialog = useDialog();
   const toast = useToast();
   const revalidator = useRevalidator();
-  const openDocument = useOpenDocumentBeside(openDocumentTab);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -5176,7 +5177,7 @@ function DocumentsBlock({
       });
       const b = (await res.json().catch(() => ({}))) as { id?: string; error?: string };
       if (!res.ok || !b.id) throw new Error(b.error ?? "Failed to create document");
-      openDocument(b.id, title);
+      openDocumentTab(b.id, title);
       revalidator.revalidate();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Something went wrong");
@@ -5501,7 +5502,7 @@ function DocumentsBlock({
     togglePin,
     setMoveDoc,
     deleteDocument,
-    openDocument,
+    openDocument: openDocumentTab,
   };
 
   const isEmpty = documents.length === 0 && files.length === 0;

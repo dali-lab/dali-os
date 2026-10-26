@@ -162,6 +162,7 @@ export function MenuItem({
   children,
   label,
   icon,
+  shortcut,
   onSelect,
   disabled,
   destructive,
@@ -171,6 +172,8 @@ export function MenuItem({
   /** Type-ahead text; defaults to `children` when it's a string. */
   label?: string;
   icon?: ReactNode;
+  /** A muted hint at the row's trailing edge, e.g. the key that does the same thing. */
+  shortcut?: string;
   onSelect?: () => void;
   disabled?: boolean;
   destructive?: boolean;
@@ -196,7 +199,8 @@ export function MenuItem({
       })}
     >
       {icon && <span className="shrink-0 text-muted-foreground">{icon}</span>}
-      {children}
+      {shortcut ? <span className="min-w-0 flex-1">{children}</span> : children}
+      {shortcut && <span className="ml-4 shrink-0 text-xs text-muted-foreground">{shortcut}</span>}
     </button>
   );
 }
