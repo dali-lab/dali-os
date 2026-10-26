@@ -1,11 +1,9 @@
 import { useEffect, useState } from 'react'
-import { paneFlag } from '~/lib/pane-flags'
-import { Outlet, redirect, useLoaderData, useLocation, useMatches, useNavigate, useNavigationType, useSearchParams, type ShouldRevalidateFunctionArgs } from 'react-router'
+import { redirect, useLoaderData, useLocation, useMatches, useNavigate, useNavigationType, useSearchParams, type ShouldRevalidateFunctionArgs } from 'react-router'
 import { cn } from '~/lib/cn'
 import { LayoutOS } from '~/components/LayoutOS'
 import { useOsShellRoot } from '~/lib/os-shell'
-import { Breadcrumbs } from '~/components/Breadcrumbs'
-import { PageDocProvider, PageDocButton, PageDocOutlet, ShellGuideProvider } from '~/components/page-docs/PageDocButton'
+import { PageDocProvider, ShellGuideProvider } from '~/components/page-docs/PageDocButton'
 import { useLiveFavorites } from '~/components/favorites-live'
 import { LaunchWelcome } from '~/components/LaunchWelcome'
 import { BannerHost } from '~/components/banners/BannerHost'
@@ -22,8 +20,8 @@ import { PageViewReporter } from '~/components/PageViewReporter'
 import { isFocusRequest } from '~/lib/focus-mode'
 import { isValidTimezone, resolveUserTimeZone } from '~/lib/timezone'
 import { readDismissedTimeZone } from '~/lib/tz-prompt'
-import { isNavbarHubPage } from '~/lib/navbar-routes'
-import { hasSubnavRow } from '~/lib/nav-areas'
+import { RoutedPage, paneFlags } from '~/components/shell/RoutedPage'
+import { TabKeepAlive } from '~/components/shell/TabKeepAlive'
 import { loadShellUser } from '~/lib/shell-user.server'
 import {
   layoutAppGate,
@@ -41,7 +39,6 @@ import { resolveFeatureFlags } from '~/lib/feature-flags.server'
 import { FeatureFlagsProvider } from '~/components/FeatureFlags'
 import { resolveActiveActivitiesForUser } from '~/lib/activities.server'
 import { ActivitiesProvider } from '~/components/activities/ActivitiesProvider'
-import { ActivityOverlay } from '~/components/activities/ActivityChrome'
 import { InstructorChrome } from '~/components/InstructorChrome'
 import { timed } from '~/lib/server-timing'
 import { educationPortalTwin } from '~/education/lib/portal-twin'
@@ -321,30 +318,7 @@ export default function AppLayoutRoute() {
   // Mirror the os-shell class to <html> so portals that escape the shell div
   // keep the palette. In the tab-mode iframe this is the only place that runs it.
   useOsShellRoot(true)
-  const hasAreaSubnav = hasSubnavRow(matches)
-  // Pages that land directly on their own title, with no subnav in between,
-  // ask for a wider gap under the trail (see adminHandle).
-  const roomyBreadcrumb = matches.some(
-    (m) => (m as { handle?: { roomyBreadcrumb?: boolean } }).handle?.roomyBreadcrumb,
-  )
-  // A page's Guide CTA lives on this row when its pill row is gone (redesign on).
-  // Keep the row on hub pages that declare a docKey so the button has somewhere
-  // to render — otherwise the redesign hides it entirely.
-  const hasDoc = matches.some(
-    (m) => (m as { handle?: { docKey?: string } }).handle?.docKey,
-  )
-  // A page that declares `fitViewport` fills the shell's main column rather
-  // than growing with its content, so a page short enough to fit can centre
-  // itself against the window instead of forcing a scrollbar with a
-  // viewport-height box stacked under the shell's own chrome and gutters.
-  const fitViewport = matches.some((m) => paneFlag(m, 'fitViewport'))
-  const flushPane = matches.some(
-    (m) => (m as { handle?: { flushPane?: boolean } }).handle?.flushPane,
-  )
-  // `bleedPane` pages (the home hero) paint edge to edge with no gutter at all.
-  const bleedPane = matches.some((m) => paneFlag(m, 'bleedPane'))
-  const hideBreadcrumbRow =
-    !hasAreaSubnav && !hasDoc && isNavbarHubPage(`${location.pathname}${location.search}`)
+  const { fitViewport } = paneFlags(matches, location)
   // Starring a page is a fetcher write, which shouldRevalidate below keeps out
   // of this loader — so the shells read the list through this instead, and a
   // new favorite reaches the header without a reload.
@@ -485,49 +459,9 @@ export default function AppLayoutRoute() {
   // `handle.breadcrumb` for the dynamic leaf crumb.
   const shellV2 = flags['desktop-tabs'] === true && tabless && !embedded
   const pageContent = (
-    <div
-      className={cn(
-        'w-full',
-        fitViewport && 'flex min-h-0 flex-1 flex-col',
-        // The dali.os view gutter: 64px sides, 60px top on a page that starts
-        // with its own title. A page's own sub-nav is a segmented pill sized to
-        // its content, not a bar bleeding to the window edges, so it wants the
-        // same gutter every other page gets. `flushPane` pages (calendar) fill
-        // the pane instead — large side/bottom gutters left a floating box and
-        // a page scrollbar.
-        bleedPane
-          ? ''
-          : flushPane
-            ? 'px-4 pb-3 pt-3 sm:px-5 lg:px-5 lg:pb-3 lg:pt-4'
-            : shellV2
-              ? 'px-5 pb-12 pt-6 sm:px-10 lg:px-16 lg:pt-8'
-              : 'px-5 pb-12 sm:px-10 lg:px-16 pt-8 lg:pt-[60px]',
-      )}
-    >
-      {!hideBreadcrumbRow && !shellV2 && (
-        <div
-          className={cn(
-            'flex shrink-0 items-start justify-between gap-3',
-            roomyBreadcrumb ? 'mb-5 sm:mb-6 empty:mb-0' : 'mb-2 empty:mb-0',
-          )}
-        >
-          <Breadcrumbs />
-          {/* Under the dali.os shell the top bar carries the Guide — in tab
-              mode too, over the guide bridge — and ShellGuideProvider stands
-              this copy down for it. */}
-          <PageDocButton suppressWhenPills />
-        </div>
-      )}
-      <div className={cn(fitViewport && 'flex min-h-0 min-w-0 flex-1 flex-col')}>
-        <PageDocOutlet>
-          <Outlet />
-        </PageDocOutlet>
-      </div>
-      {/* On-page activity codes for the current route. Inside pageContent so in
-          tab mode they render within the page's iframe (where the page lives),
-          not in the outer shell. */}
-      <ActivityOverlay />
-    </div>
+    <TabKeepAlive>
+      <RoutedPage shellV2={shellV2} />
+    </TabKeepAlive>
   )
 
   // Skip the sidebar shell when rendered inside a TabWorkspace iframe. Each
