@@ -102,6 +102,12 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   const lines = storedLines(rec);
   const speakerNames = await resolveSpeakerNames((rec.speakers as Record<string, string> | null) ?? {});
+  // Measured on the server's clock so a client whose clock is off still
+  // counts the live session correctly from its own Date.now().
+  const sessionSeconds =
+    rec.status === "Recording" && rec.sessionStartedAt
+      ? Math.max(0, (Date.now() - rec.sessionStartedAt.getTime()) / 1000)
+      : null;
   if (access === "owner") {
     const since = Math.max(0, Number(new URL(request.url).searchParams.get("since")) || 0);
     return Response.json({
@@ -110,6 +116,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       channels: rec.channels,
       segmentStarts: rec.segmentStarts,
       recordedSeconds: rec.recordedSeconds,
+      sessionSeconds,
       error: rec.error,
       progress: rec.progress ?? null,
       speakers: rec.speakers,
@@ -133,6 +140,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     speakerNames,
     channels: rec.channels,
     recordedSeconds: rec.recordedSeconds,
+    sessionSeconds,
     progress: rec.progress ?? null,
     insertedAt: rec.insertedAt?.toISOString() ?? null,
     notes: rec.notes ?? null,

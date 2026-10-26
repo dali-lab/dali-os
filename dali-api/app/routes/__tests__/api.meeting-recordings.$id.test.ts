@@ -19,6 +19,7 @@ vi.mock("~/lib/meeting-recording.server", () => ({
   finishRecording: vi.fn(),
   parseSpeakerMap: vi.fn(),
   requestStop: vi.fn(),
+  resolveSpeakerNames: vi.fn().mockResolvedValue({}),
   resumeRecording: vi.fn(),
   setSpeakers: vi.fn(),
   startProcessing: vi.fn(),
@@ -30,8 +31,14 @@ import { logAuditEvent } from "~/lib/audit";
 import { isCore } from "~/lib/roles";
 import { deletePrefix } from "~/lib/transcription/chunks.server";
 import { prisma } from "~/lib/db";
-import { canRecordInto, finalizeEmpty, requestStop, startProcessing } from "~/lib/meeting-recording.server";
-import { action } from "~/routes/api.meeting-recordings.$id";
+import {
+  canReadRecording,
+  canRecordInto,
+  finalizeEmpty,
+  requestStop,
+  startProcessing,
+} from "~/lib/meeting-recording.server";
+import { action, loader } from "~/routes/api.meeting-recordings.$id";
 
 function post(body: unknown): Request {
   return new Request("http://localhost/api/meeting-recordings/rec1", {
@@ -431,5 +438,54 @@ describe("DELETE /api/meeting-recordings/:id", () => {
     expect(res.status).toBe(403);
     expect(prisma.meetingRecording.delete).not.toHaveBeenCalled();
     expect(logAuditEvent).not.toHaveBeenCalled();
+  });
+});
+
+describe("GET /api/meeting-recordings/:id sessionSeconds", () => {
+  const NOW = new Date("2026-10-26T15:10:00Z");
+
+  async function get(row: Record<string, unknown>, access: "owner" | "viewer") {
+    vi.mocked(canReadRecording).mockResolvedValue(access as never);
+    vi.mocked(prisma.meetingRecording.findUnique).mockResolvedValue({
+      id: "rec1",
+      userId: "u1",
+      documentName: "doc:p1:body",
+      notes: null,
+      speakers: {},
+      recordedSeconds: 300,
+      ...row,
+    } as never);
+    vi.useFakeTimers({ now: NOW });
+    try {
+      const res = (await loader({
+        request: new Request("http://localhost/api/meeting-recordings/rec1"),
+        params: { id: "rec1" },
+        context: {},
+      } as never)) as Response;
+      return (await res.json()) as { sessionSeconds: number | null; recordedSeconds: number };
+    } finally {
+      vi.useRealTimers();
+    }
+  }
+
+  it.each(["owner", "viewer"] as const)("gives the %s how long the live session has run", async (access) => {
+    const json = await get({ status: "Recording", sessionStartedAt: new Date("2026-10-26T15:00:00Z") }, access);
+    expect(json.sessionSeconds).toBe(600);
+    expect(json.recordedSeconds).toBe(300);
+  });
+
+  it.each(["Pending", "Stopped", "Processing", "Done"])("is null once the row is %s, even with a stale start", async (status) => {
+    const json = await get({ status, sessionStartedAt: new Date("2026-10-26T15:00:00Z") }, "owner");
+    expect(json.sessionSeconds).toBeNull();
+  });
+
+  it("is null for a Recording row from before session starts were stored", async () => {
+    const json = await get({ status: "Recording", sessionStartedAt: null }, "owner");
+    expect(json.sessionSeconds).toBeNull();
+  });
+
+  it("never goes negative when the start is ahead of the server clock", async () => {
+    const json = await get({ status: "Recording", sessionStartedAt: new Date("2026-10-26T15:10:05Z") }, "owner");
+    expect(json.sessionSeconds).toBe(0);
   });
 });

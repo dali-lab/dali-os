@@ -1152,3 +1152,83 @@ describe("useMeetingRecording.enhanceNow (specs/meeting-recording-rail.md Step 2
     expect(box.current!.enhanceBusy).toBe(false);
   });
 });
+
+describe("useMeetingRecording live clock after a remount", () => {
+  async function settle() {
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0));
+    });
+  }
+
+  function serveRows(...rows: Array<Record<string, unknown>>) {
+    let call = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        const row = rows[Math.min(call++, rows.length - 1)];
+        return jsonRes({ status: "Recording", channels: ["mic"], lines: [], speakers: {}, ...row });
+      }),
+    );
+  }
+
+  function ownDesktopBackup(documentName: string) {
+    window.localStorage.setItem(
+      backupKey(documentName),
+      JSON.stringify({ id: "r1", link: "l", aiEnabled: true, captureMode: "desktop" }),
+    );
+  }
+
+  it("keeps counting the first session when the owner comes back to the note", async () => {
+    ownDesktopBackup("doc-clock-first");
+    serveRows({ recordedSeconds: 0, sessionSeconds: 600 });
+    await mount("doc-clock-first");
+    await settle();
+    expect(box.current!.phase).toBe("recording");
+    expect(box.current!.elapsed).toBeCloseTo(600, 0);
+  });
+
+  it("adds the live session to earlier sessions once, after a Continue", async () => {
+    ownDesktopBackup("doc-clock-continue");
+    serveRows({ recordedSeconds: 300, sessionSeconds: 120 });
+    await mount("doc-clock-continue");
+    await settle();
+    expect(box.current!.elapsed).toBeCloseTo(420, 0);
+  });
+
+  it("shows the earlier sessions without doubling them when the server has no session start", async () => {
+    ownDesktopBackup("doc-clock-legacy");
+    serveRows({ recordedSeconds: 300 });
+    await mount("doc-clock-legacy");
+    await settle();
+    expect(box.current!.elapsed).toBeCloseTo(300, 0);
+  });
+
+  it("counts a follower's clock from the live session, not from when the row was created", async () => {
+    serveRows({ recordedSeconds: 300, sessionSeconds: 60 });
+    await mountWithLatest("doc-clock-follow", {
+      id: "rTheirs",
+      ownerName: "Ada",
+      ownerIsYou: false,
+      status: "Recording",
+      since: new Date(Date.now() - 2 * 60 * 60_000).toISOString(),
+    });
+    await settle();
+    expect(box.current!.elapsed).toBeCloseTo(360, 0);
+  });
+
+  it("resyncs from a poll that disagrees by more than the jitter allowance", async () => {
+    ownDesktopBackup("doc-clock-resync");
+    serveRows({ recordedSeconds: 0, sessionSeconds: 60 }, { recordedSeconds: 0, sessionSeconds: 90 });
+    await mount("doc-clock-resync");
+    await settle();
+    expect(box.current!.elapsed).toBeCloseTo(90, 0);
+  });
+
+  it("ignores poll jitter under the allowance", async () => {
+    ownDesktopBackup("doc-clock-jitter");
+    serveRows({ recordedSeconds: 0, sessionSeconds: 60 }, { recordedSeconds: 0, sessionSeconds: 61 });
+    await mount("doc-clock-jitter");
+    await settle();
+    expect(box.current!.elapsed).toBeCloseTo(60, 0);
+  });
+});

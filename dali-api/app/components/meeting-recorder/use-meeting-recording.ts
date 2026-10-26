@@ -119,6 +119,15 @@ const APP_WAIT_MS = 30_000;
 const STOP_DRAIN_MS = 60_000;
 // Desktop stop: how long to wait for the app's finish before offering a way out.
 const STOP_WAIT_MS = 60_000;
+// Poll latency varies by a few hundred ms; resyncing on every poll would
+// nudge the displayed second back and forth.
+const CLOCK_RESYNC_MS = 2000;
+
+/** The live session's start on this device's clock, from the server's own
+ *  measure of how long it has been running. */
+function liveSessionStart(data: PollRecordingResponse): number | null {
+  return typeof data.sessionSeconds === "number" ? Date.now() - data.sessionSeconds * 1000 : null;
+}
 
 type Backup = { id: string; link: string; aiEnabled: boolean; captureMode?: CaptureMode };
 const backupKey = (documentName: string) => `dali:meeting-recording:${documentName}`;
@@ -507,9 +516,10 @@ export function useMeetingRecording({
       setReviewedAt(data.reviewedAt ?? null);
       segmentRef.current = Math.max(0, (data.segmentStarts?.length ?? 1) - 1);
       if (data.error) setError(data.error);
+      const liveStart = liveSessionStart(data);
       if (following) {
         setRemote({ ownerName: following.ownerName, ownerIsYou: following.ownerIsYou });
-        setStartedAt(new Date(following.since).getTime());
+        setStartedAt(liveStart ?? new Date(following.since).getTime());
       }
       if ((data.status === "Pending" || data.status === "Recording") && own?.captureMode === "browser") {
         // The tab that was capturing reloaded, so its mic is gone. Stop the
@@ -526,7 +536,7 @@ export function useMeetingRecording({
         setOpen(true);
       } else if (data.status === "Pending" || data.status === "Recording") {
         setCaptureMode("desktop"); // no local capture to drive: follow the row by polling
-        if (!following) setStartedAt(Date.now() - data.recordedSeconds * 1000);
+        if (!following) setStartedAt(liveStart ?? Date.now());
         setPhase(data.status === "Pending" ? "starting" : "recording");
         if (!following) setOpen(true);
       } else if (data.status === "Stopped") {
@@ -628,12 +638,14 @@ export function useMeetingRecording({
       setProgress(data.status === "Processing" ? (data.progress ?? null) : null);
       if (data.status === "Recording") {
         setAppUnreachable(false);
+        const liveStart = liveSessionStart(data);
         setPhase((p) => {
           // The app has claimed the recording: the clock starts here, not
           // when the deep link was opened.
-          if (p === "starting") setStartedAt(Date.now());
+          if (p === "starting") setStartedAt(liveStart ?? Date.now());
           return p === "starting" ? "recording" : p;
         });
+        if (liveStart !== null) setStartedAt((s) => (Math.abs(s - liveStart) > CLOCK_RESYNC_MS ? liveStart : s));
       } else if (data.status === "Stopped") {
         setPhase("review");
       } else if (data.status === "Processing") {

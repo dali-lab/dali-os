@@ -2207,6 +2207,9 @@ model MeetingRecording {
   // Seconds recorded across finished sessions. Continue starts a new session
   // whose timeline is stamped from here, so the transcript reads as one.
   recordedSeconds Float     @default(0)
+  // When the latest session went Pending → Recording. The live clock is
+  // recordedSeconds + (now - this); only meaningful while status is Recording.
+  sessionStartedAt DateTime?
   error           String?
   // Latest Modal progress while Processing; cleared by applyResult.
   progress        Json?
