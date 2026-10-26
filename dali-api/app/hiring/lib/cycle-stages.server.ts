@@ -9,8 +9,7 @@ import { delibRounds, parseTimeline } from "./cycle-timeline";
 
 export type CycleForRounds = { id: string; timeline: unknown };
 
-const REVIEWED_UNDECIDED = {
-  reviews: { every: { submittedAt: { not: null } }, some: {} },
+const UNDECIDED = {
   decisions: { none: { stage: { in: ["Final", "Released"] } } },
 } satisfies Prisma.DomainApplicationWhereInput;
 
@@ -25,7 +24,8 @@ const NO_OUTCOME = {
 /**
  * Where-fragment for the domain applications in `domainId` that qualify for
  * round `roundId`:
- *   the first round: every review submitted, no final decision yet;
+ *   the first round: no final decision yet, whether or not its reviews are
+ *     all in (the card flags missing reviews);
  *   a later round: moved on (Advance / Interview) on the previous round's
  *     closed board, plus a completed interview when Interviews sits between
  *     the two rounds. The board is the record of who moved on; Advance writes
@@ -40,7 +40,7 @@ export async function delibsQualifier(
   const rounds = delibRounds(parseTimeline(cycle.timeline));
   const round = rounds.find((r) => r.id === roundId);
   if (!round) return { id: { in: [] } };
-  if (round.index === 0) return REVIEWED_UNDECIDED;
+  if (round.index === 0) return UNDECIDED;
 
   const prev = rounds[round.index - 1];
   const prevBoard = await prisma.delibsSession.findUnique({
