@@ -1,4 +1,4 @@
-import { useEffect, useId, useState } from "react";
+import { Fragment, useEffect, useId, useState } from "react";
 import { createPortal } from "react-dom";
 import { Link, useNavigate, useRevalidator } from "react-router";
 import { EllipsisVertical, FilePlus, FileText, List, MoreHorizontal, PanelLeftClose, Plus } from "lucide-react";
@@ -25,7 +25,7 @@ import { useOpenMeetingNote } from "~/calendar/components/AddMeetingNoteModal";
 import { cn } from "~/lib/cn";
 import { formatDateShort } from "~/lib/display";
 
-export type NotebookTab = { id: string; label: string; meeting: string | null; isNote: boolean };
+export type NotebookTab = { id: string; label: string; meeting: string | null; isNote: boolean; week: string | null };
 
 export type NotebookView = {
   id: string;
@@ -464,7 +464,10 @@ export function NotebookRail({ notebook, currentId }: { notebook: NotebookView; 
         "flex min-w-0 shrink-0 flex-col gap-3 lg:sticky lg:top-4",
         // Collapsed, the pill stands on the page by itself: a card around it
         // made a third nested surface.
-        collapsed ? cn(card, "p-3 lg:w-auto lg:items-start lg:border-0 lg:bg-transparent lg:p-0") : cn(card, "p-3 lg:w-60"),
+        // Expanded, mt-4 matches the pt-4 DocumentEditor puts above the doc card so the two tops line up.
+        collapsed
+          ? cn(card, "p-3 lg:w-auto lg:items-start lg:border-0 lg:bg-transparent lg:p-0")
+          : cn(card, "p-3 lg:mt-4 lg:w-60"),
       )}
     >
       {/* pt-2 matches the doc top bar's py-2 so the pill centers on that row. */}
@@ -495,32 +498,46 @@ export function NotebookRail({ notebook, currentId }: { notebook: NotebookView; 
           />
         </div>
         <ul className="flex gap-1 overflow-x-auto lg:max-h-[70vh] lg:flex-col lg:gap-0.5 lg:overflow-y-auto">
-          {notebook.tabs.map((tab) => {
+          {notebook.tabs.map((tab, i) => {
             const current = tab.id === currentId;
+            const newWeek = tab.week !== null && tab.week !== notebook.tabs[i - 1]?.week;
             return (
-              <li
-                key={tab.id}
-                className={cn(
-                  "group relative flex shrink-0 items-center rounded-full pr-1 transition-colors",
-                  current ? "bg-os-accent/15" : "hover:bg-os-container",
+              <Fragment key={tab.id}>
+                {newWeek && (
+                  <li
+                    role="presentation"
+                    data-testid="notebook-rail-week"
+                    className={cn("hidden items-center gap-2 px-3 pb-1 lg:flex", i > 0 && "pt-3")}
+                  >
+                    <span className="whitespace-nowrap text-xs font-bold uppercase tracking-wider text-os-muted">
+                      {tab.week}
+                    </span>
+                    <span aria-hidden className="h-px flex-1 bg-os-container" />
+                  </li>
                 )}
-              >
-                <Link
-                  to={`/documents/${tab.id}`}
-                  aria-current={current ? "page" : undefined}
+                <li
                   className={cn(
-                    "flex min-w-0 flex-1 items-center gap-3 rounded-full py-2 pl-3 pr-2 text-sm",
-                    current ? "font-medium text-os-accent" : "text-foreground",
+                    "group relative flex shrink-0 items-center rounded-full pr-1 transition-colors",
+                    current ? "bg-os-accent/15" : "hover:bg-os-container",
                   )}
                 >
-                  <FileText className={cn("h-4 w-4 shrink-0", current ? "text-os-accent" : "text-os-grey")} aria-hidden />
-                  <span className="min-w-0">
-                    <Truncated text={tab.label} />
-                    {tab.meeting && <span className="block truncate text-xs text-os-grey">{tab.meeting}</span>}
-                  </span>
-                </Link>
-                {notebook.canManage && <TabMenu notebook={notebook} tab={tab} current={current} />}
-              </li>
+                  <Link
+                    to={`/documents/${tab.id}`}
+                    aria-current={current ? "page" : undefined}
+                    className={cn(
+                      "flex min-w-0 flex-1 items-center gap-3 rounded-full py-2 pl-3 pr-2 text-sm",
+                      current ? "font-medium text-os-accent" : "text-foreground",
+                    )}
+                  >
+                    <FileText className={cn("h-4 w-4 shrink-0", current ? "text-os-accent" : "text-os-grey")} aria-hidden />
+                    <span className="min-w-0">
+                      <Truncated text={tab.label} />
+                      {tab.meeting && <span className="block truncate text-xs text-os-grey">{tab.meeting}</span>}
+                    </span>
+                  </Link>
+                  {notebook.canManage && <TabMenu notebook={notebook} tab={tab} current={current} />}
+                </li>
+              </Fragment>
             );
           })}
         </ul>
