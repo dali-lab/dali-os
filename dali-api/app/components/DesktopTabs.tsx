@@ -23,7 +23,6 @@ import {
 } from '~/lib/desktop-tabs-store'
 import type { DesktopTab, DesktopTabsState } from '~/lib/desktop-tabs'
 import { buildPageLink, writePageLink } from '~/lib/page-link'
-import { NavigationProgressBar } from '~/components/NavigationProgress'
 import { cn } from '~/lib/cn'
 import { stripAppTitle } from '~/lib/page-title'
 import { fallbackPageLabel } from '~/components/shell/page-bar-model'
@@ -245,9 +244,8 @@ export function DesktopTabStrip({
   return (
     <nav
       aria-label="Open tabs"
-      className="relative flex h-10 shrink-0 items-center gap-1 border-b border-os-container bg-os-nav pl-2 pr-3"
+      className="flex h-10 shrink-0 items-center gap-1 border-b border-os-container bg-os-nav pl-2 pr-3"
     >
-      <NavigationProgressBar className="absolute inset-x-0 -bottom-px z-10" />
       {leading}
       <DndContext id="desktop-tabs" sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
         <SortableContext items={tabs.map((t) => t.id)} strategy={horizontalListSortingStrategy}>

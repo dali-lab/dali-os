@@ -1,9 +1,7 @@
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigation } from "react-router";
-import { subscribeTabs, tabsActive } from "~/lib/desktop-tabs-store";
 import { useDisplayedTab } from "~/components/shell/displayed-tab";
 import { areaForPath, areaTint } from "~/lib/nav-areas";
-import { cn } from "~/lib/cn";
 
 // A slim progress bar shown during client-side route transitions. Mounted once
 // at the document root (root.tsx), so it covers every page — the applicant
@@ -14,16 +12,7 @@ import { cn } from "~/lib/cn";
 // completion time is unknown), then snaps to full and fades out once the
 // navigation settles. A short entry delay avoids flashing the bar for
 // instant transitions.
-//
-// In the desktop app the tab strip hosts its own copy along its bottom edge
-// (loading belongs to the tab, like a browser), and this root bar stands down.
 export function NavigationProgress() {
-  const inTabStrip = useSyncExternalStore(subscribeTabs, tabsActive, () => false);
-  if (inTabStrip) return null;
-  return <NavigationProgressBar className="fixed inset-x-0 top-0 z-[100]" />;
-}
-
-export function NavigationProgressBar({ className }: { className?: string }) {
   const navigation = useNavigation();
   const location = useLocation();
   // A switch to a kept tab shows that page instantly, so no loading bar.
@@ -104,7 +93,10 @@ export function NavigationProgressBar({ className }: { className?: string }) {
   if (!visible && progress === 0) return null;
 
   return (
-    <div aria-hidden className={cn("pointer-events-none h-0.5", className)}>
+    <div
+      aria-hidden
+      className="fixed inset-x-0 top-0 z-[100] h-0.5 pointer-events-none"
+    >
       <div
         className="h-full transition-[width,opacity] duration-200 ease-out motion-reduce:transition-none"
         style={{
