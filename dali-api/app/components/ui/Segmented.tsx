@@ -26,7 +26,8 @@ export function Segmented<T extends string>({
       role="radiogroup"
       aria-label={ariaLabel}
       className={cn(
-        "rounded-full border border-border bg-muted/40",
+        // Square-cornered switcher, matching the sidebar's active row.
+        "rounded-lg border border-border bg-muted/40",
         size === "md" ? "p-1" : "p-0.5",
         fullWidth ? "flex w-full" : "inline-flex",
         className,
@@ -42,8 +43,9 @@ export function Segmented<T extends string>({
             aria-checked={checked}
             onClick={() => onChange(o.value)}
             className={cn(
-              "rounded-full font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-os-accent/40",
-              size === "md" ? "py-2 text-sm" : "py-1 text-xs",
+              // 36px total at md (28px thumb inside the 4px-padded frame).
+              "inline-flex items-center justify-center rounded-md font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-os-accent/40",
+              size === "md" ? "h-7 text-sm" : "h-6 text-xs",
               // Full width splits the row evenly, so side padding would only
               // push a long label past its share.
               fullWidth ? "min-w-0 flex-1 truncate px-1.5" : size === "md" ? "px-4" : "px-3",

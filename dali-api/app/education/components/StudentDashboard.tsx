@@ -59,8 +59,8 @@ export function StudentDashboard({
   return (
     <div className="flex flex-col gap-8">
       {hasNext && (
-        <section className="rounded-os-card bg-os-card p-6">
-          <h2 className="mb-3 font-heading text-[19px] font-semibold text-foreground">
+        <section className="rounded-os-card bg-os-card p-5">
+          <h2 className="mb-3 font-heading text-[17px] font-semibold text-foreground">
             What&apos;s next
           </h2>
           <ul className="flex flex-col divide-y divide-border">
@@ -115,7 +115,7 @@ export function StudentDashboard({
 
       {active.length > 0 && (
         <section className="flex flex-col gap-3">
-          <h2 className="font-heading text-[19px] font-semibold text-foreground">
+          <h2 className="font-heading text-[17px] font-semibold text-foreground">
             My courses
           </h2>
           <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">

@@ -353,7 +353,7 @@ export default function AdminConsoleGroups() {
           <h1
             className={cn(
               "font-heading text-foreground",
-              "text-4xl font-medium",
+              "text-3xl font-medium",
             )}
           >
             Groups

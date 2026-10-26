@@ -71,7 +71,7 @@ export function PageDocumentWorkspace({
               value={page.title}
               placeholder="Page title"
               onChange={(e) => updatePage(page.id, { title: e.target.value })}
-              className="mb-6 w-full bg-transparent font-heading text-4xl font-semibold text-foreground outline-none placeholder:text-os-muted"
+              className="mb-6 w-full bg-transparent font-heading text-3xl font-semibold text-foreground outline-none placeholder:text-os-muted"
             />
             <DocEditor
               key={page.id}

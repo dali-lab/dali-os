@@ -319,16 +319,33 @@ const REGROUPED_AREAS: NavArea[] = [
   },
 ];
 
-export type AreaTone = { tile: string; glyph: string; ring?: boolean; outline?: boolean };
+// One accent per area. It is the single section color: the tile ("mode logo")
+// is a wash of it with the glyph in it, and `--area` on the shell root tints
+// the rail's active row, icons and the section switcher from the same value.
+// Plain hex (no var()/gradients): the tile derives its wash as `${tint}2e`,
+// and every tint must read as ink on the dark nav.
+// `ink` is the same accent restated for light pages — each tint is nav ink and
+// far too pale on white, so the pair is hand-picked, not derived.
+export type AreaTone = { tint: string; ink: string };
 
 export const AREA_TONES: Record<string, AreaTone> = {
-  projects: { tile: "#1E5779", glyph: "#FFFFFF", ring: true },
-  community: { tile: "#00ADAB", glyph: "#FFFFFF" },
-  education: { tile: "#FFD461", glyph: "#153A52" },
-  hiring: { tile: "linear-gradient(135deg, #FFD461, #FF8B81)", glyph: "#153A52" },
-  core: { tile: "#FF8B81", glyph: "#153A52" },
-  admin: { tile: "transparent", glyph: "var(--color-os-grey)", outline: true },
+  projects: { tint: "#8FB6F2", ink: "#2F5FB5" },
+  community: { tint: "#80D5CD", ink: "#0f6e7d" },
+  education: { tint: "#FFD461", ink: "#8F6500" },
+  hiring: { tint: "#C9B2F5", ink: "#6B4AC2" },
+  core: { tint: "#FF8B81", ink: "#C13D33" },
+  admin: { tint: "#bababa", ink: "#4d5c69" },
 };
+
+export const DEFAULT_AREA_TINT = "#bababa";
+
+export function areaTint(key: string | undefined): string {
+  return (key && AREA_TONES[key]?.tint) || DEFAULT_AREA_TINT;
+}
+
+export function areaInk(key: string | undefined): string | undefined {
+  return key ? AREA_TONES[key]?.ink : undefined;
+}
 
 export const RAIL_AREA_ORDER = ["projects", "community", "education", "hiring", "core", "admin"];
 

@@ -308,7 +308,7 @@ export function PartnerProjectHubView({
             placeholderClassName="w-full h-40"
           />
           <div className="min-w-0 p-5">
-            <h1 className="flex items-center gap-2 font-heading text-4xl font-medium text-foreground">
+            <h1 className="flex items-center gap-2 font-heading text-3xl font-medium text-foreground">
               <ProjectIcon iconEmoji={project.iconEmoji} size="lg" />
               <span className="min-w-0 truncate">{project.name}</span>
             </h1>
@@ -350,11 +350,11 @@ export function PartnerProjectHubView({
           same resolver, with the task level hidden. Partners want the shape of
           the work and when it lands, not the card-by-card breakdown. */}
       <section id="roadmap" className="scroll-mt-24">
-        <h2 className="mb-3 font-heading text-[19px] font-semibold text-foreground">
+        <h2 className="mb-3 font-heading text-[17px] font-semibold text-foreground">
           Roadmap
         </h2>
         {timelineEpics.length === 0 ? (
-          <div className="rounded-os-card bg-os-card p-6 text-sm text-os-grey">
+          <div className="rounded-os-card bg-os-card p-5 text-sm text-os-grey">
             Nothing on the roadmap yet. Work will appear here once the team
             plans it.
           </div>
@@ -377,11 +377,11 @@ export function PartnerProjectHubView({
           project hub's own Drive block reads. Folders hold whatever inside
           them was shared; everything else sits at the root. */}
       <section id="drive" className="scroll-mt-24">
-        <h2 className="mb-3 flex items-center gap-2 font-heading text-[19px] font-semibold text-foreground">
+        <h2 className="mb-3 flex items-center gap-2 font-heading text-[17px] font-semibold text-foreground">
           <Folder className="h-4 w-4" /> Drive
         </h2>
         {isDriveEmpty ? (
-          <div className="rounded-os-card bg-os-card p-6 text-sm text-os-grey">
+          <div className="rounded-os-card bg-os-card p-5 text-sm text-os-grey">
             The team hasn't shared any documents or files yet.
           </div>
         ) : (
@@ -407,10 +407,10 @@ export function PartnerProjectHubView({
       {/* Team */}
       {team.length > 0 && (
         <section id="team" className="scroll-mt-24">
-          <h2 className="font-heading text-[19px] font-semibold text-foreground mb-3">
+          <h2 className="font-heading text-[17px] font-semibold text-foreground mb-3">
             Your DALI team{currentTermCode ? ` · ${termCodeLabel(currentTermCode)}` : ""}
           </h2>
-          <div className="rounded-os-card bg-os-card p-6 grid gap-x-6 gap-y-4 sm:grid-cols-2">
+          <div className="rounded-os-card bg-os-card p-5 grid gap-x-6 gap-y-4 sm:grid-cols-2">
             {team.map((m) => (
               <div key={m.name} className="flex items-center gap-3 min-w-0">
                 <Avatar photoUrl={m.photoUrl} name={m.name} size="md" />

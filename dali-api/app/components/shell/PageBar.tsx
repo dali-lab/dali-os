@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { AppWindow, Link as LinkIcon, Star } from 'lucide-react'
 import { Menu, Tooltip } from '~/components/ui/floating'
+import { AreaTile } from '~/components/shell/AreaTile'
 import { OverflowMenu } from '~/components/shell/OverflowMenu'
 import { cn } from '~/lib/cn'
 import { PageDocButton } from '~/components/page-docs/PageDocButton'
@@ -34,11 +35,14 @@ export function starLabels(star: Pick<PageStar, 'favorited' | 'inSidebar'>) {
 export function PageBar({
   tabs,
   leading,
+  areaKey,
   star,
   onCopyLink,
 }: {
   tabs: boolean
   leading?: ReactNode
+  /** The page's section, shown as its tile beside the breadcrumb. */
+  areaKey?: string
   star: PageStar
   onCopyLink: () => void
 }) {
@@ -62,15 +66,21 @@ export function PageBar({
   return (
     <div
       className={cn(
-        'flex shrink-0 items-center justify-between gap-3 bg-os-bg pl-5 pr-3',
-        tabs ? 'h-11' : 'h-[54px] pt-2.5',
+        // Without the tab strip the bar is taller for air at the window edge;
+        // content stays centered so the divider gap matches the top gap.
+        'flex shrink-0 items-center justify-between gap-3 border-b border-os-container bg-os-bg pl-5 pr-3',
+        tabs ? 'h-11' : 'h-[54px]',
       )}
     >
-      <div className="flex min-w-0 items-center gap-2">
+      <div className="flex min-w-0 items-center gap-2.5">
         {leading}
-        <div className="hidden md:block">
+        {/* Pull the ‹ › group toward the edge so its slack (the icons sit
+            inset inside 32px hit areas) doesn't read as extra left padding;
+            empty:ml-0 keeps the trail in place when the nav doesn't render. */}
+        <div className="-ml-2 hidden empty:ml-0 md:block">
           <TablessHistoryNav tabless tabs={tabs} />
         </div>
+        {areaKey && <AreaTile areaKey={areaKey} size={22} />}
         <PageBarTrail crumbs={crumbs} />
       </div>
       <div className="flex shrink-0 items-center gap-0.5">

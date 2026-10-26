@@ -718,7 +718,7 @@ export default function ApplicationsDatabase() {
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm min-w-[640px]">
-              <thead className="text-os-grey text-xs uppercase tracking-wide">
+              <thead className="text-os-grey text-xs">
                 <tr>
                   {columns.map((col) => (
                     <th

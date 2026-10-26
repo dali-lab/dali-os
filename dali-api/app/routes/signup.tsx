@@ -1,5 +1,6 @@
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Form, Link, redirect, useActionData, useLoaderData, useNavigation, useSearchParams } from "react-router";
+import { ArrowLeft, Mail } from "lucide-react";
 import type { Route } from "./+types/signup";
 import {
   humanDuration,
@@ -15,6 +16,7 @@ import {
 } from "~/partners/lib/magic-link.server";
 import { sendMemberEmailConflictEmail } from "~/partners/lib/partner-emails.server";
 import AuthShell from "~/components/auth/AuthShell";
+import { AuthButton } from "~/components/auth/AuthButton";
 
 export const meta: Route.MetaFunction = () => [{ title: "DALI OS · Create account" }];
 
@@ -194,11 +196,12 @@ function DoorPicker({ next }: { next: string | null }) {
   return (
     <>
       <div className="flex flex-col gap-4">
-        {doors.map(({ door, label, description, icon }) => (
+        {doors.map(({ door, label, description, icon }, i) => (
           <Link
             key={door}
             to={`/signup?door=${door}${next ? `&next=${encodeURIComponent(next)}` : ""}`}
-            className="w-full flex items-center gap-4 p-5 rounded-2xl border-2 border-transparent bg-brand-tint hover:border-accent-coral transition group text-left"
+            style={{ animationDelay: `${80 + i * 60}ms` }}
+            className="w-full flex items-center gap-4 p-5 rounded-2xl border-2 border-transparent bg-brand-tint hover:border-accent-coral transition group text-left motion-safe:animate-auth-rise active:scale-[0.99] duration-150"
           >
             {icon}
             <div className="flex-1 min-w-0">
@@ -249,6 +252,14 @@ function DoorSignup({ door, next, actionData }: {
   const sent = actionData && "sent" in actionData && actionData.sent ? actionData : null;
   const formError = actionData && "error" in actionData ? actionData.error : null;
 
+  const [email, setEmail] = useState("");
+
+  // Each rejected submit re-keys the field, re-running the shake animation.
+  const [shakeCount, setShakeCount] = useState(0);
+  useEffect(() => {
+    if (actionData && "error" in actionData && actionData.error) setShakeCount((n) => n + 1);
+  }, [actionData]);
+
   return (
     <>
       <p className="text-muted-foreground mb-6 -mt-2">
@@ -256,7 +267,7 @@ function DoorSignup({ door, next, actionData }: {
       </p>
 
       {sent ? (
-        <div className="rounded-2xl bg-brand-tint p-6">
+        <div key="step-sent" className="rounded-2xl bg-brand-tint p-6 motion-safe:animate-auth-step">
           <p className="font-heading font-semibold text-dark-blue mb-1">
             Check your email
           </p>
@@ -269,43 +280,53 @@ function DoorSignup({ door, next, actionData }: {
           <div className="mt-4">
             <Link
               to={`/signup?door=${door}${next ? `&next=${encodeURIComponent(next)}` : ""}`}
-              className="text-sm text-muted-foreground hover:text-foreground"
+              className="group inline-flex items-center gap-1.5 text-sm font-semibold text-dark-blue transition-colors duration-150 hover:text-foreground"
             >
+              <ArrowLeft className="h-4 w-4 transition-transform duration-150 ease-out group-hover:-translate-x-0.5" aria-hidden />
               Use a different email
             </Link>
           </div>
         </div>
       ) : (
-        <>
+        <div key="step-email" className="motion-safe:animate-auth-step">
           {formError && (
-            <p className="mb-4 text-sm text-red-600 bg-red-50 rounded-lg px-4 py-3">
+            <p role="alert" className="mb-4 text-sm text-red-600 bg-red-50 rounded-lg px-4 py-3 motion-safe:animate-auth-rise">
               {formError}
             </p>
           )}
 
           {/* Magic-link signup — one method for every door. We email a sign-in
               link to the verified address; the click lands on /welcome to
-              finish setup. */}
+              finish setup. The field is controlled so the shake remount can't
+              clear what was typed. */}
           <Form method="post" className="flex flex-col gap-3">
             <input type="hidden" name="door" value={door} />
             <input type="hidden" name="provider" value="email-link" />
             {next && <input type="hidden" name="next" value={next} />}
-            <input
-              type="email"
-              name="email"
-              required
-              placeholder={EMAIL_PLACEHOLDERS[door]}
-              className="w-full rounded-xl border border-border bg-card px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-accent-coral"
-            />
-            <button
+            <div key={`email-${shakeCount}`} className={shakeCount > 0 ? "motion-safe:animate-auth-shake" : undefined}>
+              <input
+                type="email"
+                name="email"
+                required
+                placeholder={EMAIL_PLACEHOLDERS[door]}
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                aria-invalid={Boolean(formError)}
+                className={`w-full rounded-xl border bg-card px-4 py-3 text-sm transition-[border-color] duration-150 focus:outline-none focus:ring-2 focus:ring-accent-coral ${
+                  formError ? "border-red-400" : "border-border hover:border-dark-blue/40"
+                }`}
+              />
+            </div>
+            <AuthButton
               type="submit"
-              disabled={submitting}
-              className="w-full rounded-xl bg-dark-blue text-white font-heading font-semibold py-3 hover:opacity-90 transition disabled:opacity-50"
+              icon={Mail}
+              loading={submitting}
+              loadingLabel="Sending…"
             >
-              {submitting ? "Sending…" : "Continue with email"}
-            </button>
+              Continue with email
+            </AuthButton>
           </Form>
-        </>
+        </div>
       )}
 
       <div className="mt-6 text-center text-sm text-muted-foreground space-y-1.5">

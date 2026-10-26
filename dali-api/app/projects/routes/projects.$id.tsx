@@ -2040,7 +2040,7 @@ export default function ProjectDetail() {
           open={scopeSettingsOpen}
           onClose={() => setScopeSettingsOpen(false)}
           labelledBy="scope-settings-title"
-          containerClassName="bg-card rounded-os-card shadow-xl w-full max-w-4xl p-5 sm:p-6 my-auto max-h-[85vh] overflow-y-auto"
+          containerClassName="bg-card rounded-os-card shadow-xl w-full max-w-4xl p-5 sm:p-5 my-auto max-h-[85vh] overflow-y-auto"
         >
           <ModalHeader
             titleId="scope-settings-title"

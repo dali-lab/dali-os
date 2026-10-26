@@ -79,9 +79,10 @@ describe("Segmented", () => {
   it("uses the small size by default and a larger one for md", () => {
     mount("a");
     expect(radios()[0]!.className).toContain("text-xs");
+    expect(radios()[0]!.className).toContain("h-6");
     act(() => root.unmount());
     container.remove();
     mount("a", vi.fn(), false, "md");
-    expect(radios().every((r) => r.className.includes("text-sm") && r.className.includes("py-2"))).toBe(true);
+    expect(radios().every((r) => r.className.includes("text-sm") && r.className.includes("h-7"))).toBe(true);
   });
 });

@@ -1215,7 +1215,7 @@ function DomainPanel({ entry, allForms, emailEngagement }: { entry: any; allForm
   );
 }
 
-const OS_TABLE_HEAD = "text-os-grey text-xs uppercase tracking-wide";
+const OS_TABLE_HEAD = "text-os-grey text-xs";
 const OS_TABLE_ROW = "border-t border-os-container hover:bg-os-card-hover transition-colors";
 
 function personName(u: any): string | undefined {
@@ -1774,7 +1774,7 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
               <button
                 type="button"
                 onClick={() => toggleSort("name")}
-                className="inline-flex items-center gap-1 uppercase tracking-wide hover:text-foreground"
+                className="inline-flex items-center gap-1 hover:text-foreground"
                 aria-label={`Sort by applicant name (${sortKey === "name" ? (sortDir === "asc" ? "ascending" : "descending") : "not sorted"})`}
               >
                 Applicant
@@ -1787,7 +1787,7 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
               <button
                 type="button"
                 onClick={() => toggleSort("reviewers")}
-                className="inline-flex items-center gap-1 uppercase tracking-wide hover:text-foreground"
+                className="inline-flex items-center gap-1 hover:text-foreground"
                 aria-label={`Sort by reviewer progress (${sortKey === "reviewers" ? (sortDir === "asc" ? "ascending" : "descending") : "not sorted"})`}
               >
                 Reviewers

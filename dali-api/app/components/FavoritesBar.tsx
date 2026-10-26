@@ -94,8 +94,8 @@ function SortableRailRow({
         {...tabClickProps({ url: page.href, label: page.title || 'Untitled' })}
         aria-current={active ? 'page' : undefined}
         className={cn(
-          'flex h-8 w-full items-center gap-2.5 rounded-lg pl-2.5 pr-2 text-left text-sm text-foreground transition-colors',
-          active ? 'bg-os-hover-strong font-semibold' : 'hover:bg-os-hover',
+          'flex h-8 w-full items-center gap-2.5 rounded-lg pl-2.5 pr-2 text-left text-sm transition-colors',
+          active ? 'bg-os-hover-strong font-semibold text-foreground' : 'text-os-grey hover:bg-os-hover hover:text-foreground',
         )}
       >
         <FavoriteIcon page={page} size="rail" glyphClassName="text-os-grey" />

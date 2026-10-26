@@ -4,7 +4,7 @@ import { cn } from "~/lib/cn";
 
 export const PANEL_CARD = "rounded-os-card bg-os-card overflow-hidden";
 export const PANEL_HEADER = "px-6 pt-5";
-export const PANEL_TITLE = "font-heading text-[19px] font-semibold text-foreground";
+export const PANEL_TITLE = "font-heading text-[17px] font-semibold text-foreground";
 export const PANEL_ROW = "rounded-os-item bg-os-well px-4 py-3";
 
 // The card every block on an applicant page wears (the application itself,

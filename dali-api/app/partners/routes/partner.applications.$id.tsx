@@ -211,7 +211,7 @@ export default function PartnerApplicationDetail({
       <div>
         <PartnerBackLink to="/partner" label="Back to portal" />
         <div className="flex items-start justify-between gap-4 mt-2 flex-wrap">
-          <h1 className="font-heading text-4xl font-medium text-foreground">
+          <h1 className="font-heading text-3xl font-medium text-foreground">
             {application.title}
           </h1>
           <StageTimeline stage={application.stage} resultingProjectId={application.resultingProjectId} />
@@ -243,8 +243,8 @@ export default function PartnerApplicationDetail({
         <p className="text-sm text-destructive bg-destructive/10 rounded-lg px-4 py-3">{error}</p>
       )}
 
-      <section className="rounded-os-card bg-os-card p-6">
-        <h2 className="font-heading text-[19px] font-semibold text-foreground mb-3">Pitch</h2>
+      <section className="rounded-os-card bg-os-card p-5">
+        <h2 className="font-heading text-[17px] font-semibold text-foreground mb-3">Pitch</h2>
         {canEditDetails && (
           <Form method="post" className="os-form flex flex-col gap-4">
             <div>
@@ -295,8 +295,8 @@ export default function PartnerApplicationDetail({
       </section>
 
       {formAnswers.length > 0 && (
-        <section className="rounded-os-card bg-os-card p-6">
-          <h2 className="font-heading text-[19px] font-semibold text-foreground mb-3">
+        <section className="rounded-os-card bg-os-card p-5">
+          <h2 className="font-heading text-[17px] font-semibold text-foreground mb-3">
             Application answers
           </h2>
           <dl className="flex flex-col gap-4">
@@ -314,8 +314,8 @@ export default function PartnerApplicationDetail({
         </section>
       )}
 
-      <section className="rounded-os-card bg-os-card p-6">
-        <h2 className="font-heading text-[19px] font-semibold text-foreground">
+      <section className="rounded-os-card bg-os-card p-5">
+        <h2 className="font-heading text-[17px] font-semibold text-foreground">
           Statement of Work
         </h2>
         <div className="mt-3" />

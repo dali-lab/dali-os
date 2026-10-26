@@ -198,8 +198,8 @@ export function CourseHub({
           {/* About the course: what it is, who teaches it, who else is in it.
               None of this was reachable from inside the hub before — a student
               had to go back out to the listing page to read the description. */}
-          <section className="rounded-os-card bg-os-card p-6">
-            <h2 className="font-heading text-[19px] font-semibold text-foreground">
+          <section className="rounded-os-card bg-os-card p-5">
+            <h2 className="font-heading text-[17px] font-semibold text-foreground">
               About this course
             </h2>
             {data.offering.descriptionHtml ? (
@@ -221,7 +221,7 @@ export function CourseHub({
         <div className="flex flex-col gap-5">
           {data.announcements.length > 0 && (
             <section>
-              <h2 className="mb-3 font-heading text-[19px] font-semibold text-foreground">
+              <h2 className="mb-3 font-heading text-[17px] font-semibold text-foreground">
                 Announcements
               </h2>
               {/* Read-only here: announcements are a broadcast from the
@@ -348,7 +348,7 @@ function PeopleTab({
     people: { id: string; name: string; photoUrl: string | null; isMe?: boolean; role?: string }[];
   }) => (
     <section>
-      <h2 className="mb-3 font-heading text-[19px] font-semibold text-foreground">
+      <h2 className="mb-3 font-heading text-[17px] font-semibold text-foreground">
         {label} · {people.length}
       </h2>
       <ul className="divide-y divide-os-container rounded-os-card bg-os-card">

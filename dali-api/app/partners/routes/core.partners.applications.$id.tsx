@@ -1131,7 +1131,7 @@ export default function PartnerApplicationDetail() {
           </p>
         ))}
       {tab === "details" && (
-        <div className="rounded-os-card bg-os-card p-6">
+        <div className="rounded-os-card bg-os-card p-5">
           <DetailsLayout>
             {propertyRail}
             {details}
@@ -1201,7 +1201,7 @@ function Header({
           </Form>
         ) : (
           <>
-            <h1 className="font-heading text-4xl text-foreground">{application.title}</h1>
+            <h1 className="font-heading text-3xl text-foreground">{application.title}</h1>
             {canEdit && (
               <IconButton label="Edit title" icon={Pencil} onClick={() => setEditing(true)} />
             )}

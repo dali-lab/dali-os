@@ -18,7 +18,7 @@ export function OsPageHeader({
   return (
     <header className="flex flex-wrap items-end justify-between gap-4">
       <div className="min-w-0">
-        <h1 className="font-heading text-4xl font-medium text-foreground">{title}</h1>
+        <h1 className="font-heading text-3xl font-medium text-foreground">{title}</h1>
         {description && <p className="mt-1.5 max-w-2xl text-sm text-os-grey">{description}</p>}
       </div>
       {actions}

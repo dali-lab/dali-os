@@ -190,6 +190,12 @@ export const FEATURE_FLAGS = [
       "Adds Slides to the Drive New menus: a deck of title, text, text and image, and image slides, edited in the app and presented full screen. Decks already made keep opening when this is off. Ships off.",
   },
   {
+    key: "sidebar-compact",
+    label: "Compact sidebar",
+    description:
+      "The sidebar scales between full width and a 68px icon rail instead of hiding: the panel button, the rail's right edge and ⌘\\ toggle the size, the choice is remembered per browser, and narrow desktop windows go compact on their own. Ships off.",
+  },
+  {
     key: "onboarding-journeys",
     label: "Onboarding journeys",
     description:

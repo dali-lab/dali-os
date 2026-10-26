@@ -260,7 +260,7 @@ export default function Connect() {
   return (
     <div className="flex flex-col gap-4">
       <header className="flex items-start justify-between gap-3 flex-wrap">
-        <h1 className="font-heading text-4xl font-medium text-foreground">{title}</h1>
+        <h1 className="font-heading text-3xl font-medium text-foreground">{title}</h1>
         {addLocation}
       </header>
 

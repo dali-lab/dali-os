@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { TOGGLE_SIDEBAR_SHORTCUT } from '~/lib/shortcuts'
 import { useToggleSidebarShortcut } from '~/components/shell/useToggleSidebarShortcut'
-import { Link, useLocation, useMatches } from 'react-router'
+import { Link, useLocation, useMatches, useNavigation } from 'react-router'
 import { Tooltip } from "~/components/ui/floating";
 import {
   ArrowRight,
@@ -64,6 +64,8 @@ import {
 } from '~/components/os-shell-chrome'
 import {
   areaForPath,
+  areaInk,
+  areaTint,
   pinnedNavItems,
   homeNavItem,
   ROOM_BOOKING_NAV_ITEM,
@@ -79,7 +81,9 @@ import { UnreadBadge } from '~/email/components/UnreadBadge'
 import { useAdminAttention } from '~/admin/useAdminAttention'
 import { useEmailUnread } from '~/email/lib/use-email-unread'
 import { Rail } from '~/components/shell/Rail'
-import { userMenuEntries } from '~/components/shell/rail-model'
+import { RailEdgeHandle } from '~/components/shell/RailEdgeHandle'
+import { useSidebarSize } from '~/components/shell/useSidebarSize'
+import { RAIL_ZOOM, userMenuEntries } from '~/components/shell/rail-model'
 import { PageBar } from '~/components/shell/PageBar'
 import { PageBarSlotProvider, useShellHeaderHeight } from '~/components/shell/page-bar-slot'
 
@@ -167,13 +171,18 @@ export function LayoutOS({
   const desktopTabsFlag = useFeatureFlag('desktop-tabs')
   const showTabs = useDesktopTabs(desktopTabsFlag && tabless, tabStripHint)
   const shellV2 = desktopTabsFlag && tabless
+  // With the compact-sidebar flag on, the rail scales between full width and an
+  // icon column instead of hiding, and ⌘\ toggles the size.
+  const sidebarScalable = useFeatureFlag('sidebar-compact') && shellV2
+  const { size: railSize, toggle: toggleRailSize, instant: railInstant } = useSidebarSize(sidebarScalable)
+  const compactRail = sidebarScalable && railSize === 'compact'
   const [railHidden, setRailHidden] = useState(focusMode)
-  const hideRail = shellV2 ? railHidden : focusMode
+  const hideRail = shellV2 ? !sidebarScalable && railHidden : focusMode
   const toggleRail = () => {
     setFocusPreference(!railHidden)
     setRailHidden(!railHidden)
   }
-  useToggleSidebarShortcut(shellV2, toggleRail)
+  useToggleSidebarShortcut(shellV2, sidebarScalable ? () => toggleRailSize('keyboard') : toggleRail)
   useRecordTablessHistory()
   useTablessHistoryShortcuts(useShowTablessHistoryNav(tabless), showTabs)
   useOsShellRoot(true)
@@ -247,7 +256,15 @@ export function LayoutOS({
   // need the query to tell a Core deep-link into the Drive (/drive?type=agreement)
   // from the plain Drive pin. In tab mode the focused-tab url already carries it;
   // in tabless mode location.pathname would drop it, so append the search.
-  const path = focusedTabUrl ?? location.pathname + location.search
+  // While a navigation is loading, the destination wins: the sidebar highlights
+  // where you're headed at click time, so its morph and slide animations run
+  // during the fetch instead of competing with the new page's render.
+  const navigation = useNavigation()
+  const pendingPath =
+    navigation.state === 'loading' && navigation.location
+      ? navigation.location.pathname + navigation.location.search
+      : null
+  const path = pendingPath ?? focusedTabUrl ?? location.pathname + location.search
   const [collapsed, setCollapsed] = useState(false)
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const [lastAreaKey, setLastAreaKey] = useState('projects')
@@ -989,7 +1006,10 @@ export function LayoutOS({
       bellOpen={bellOpen}
       onToggleBell={() => setBellOpen((o) => !o)}
       onOpenSearch={() => setPaletteOpen(true)}
-      onHideRail={hideable ? toggleRail : undefined}
+      onHideRail={hideable && !sidebarScalable ? toggleRail : undefined}
+      size={hideable && sidebarScalable ? railSize : 'expanded'}
+      onToggleSize={hideable && sidebarScalable ? () => toggleRailSize('pointer') : undefined}
+      animated={hideable}
       favorites={favorites}
       onFavoritesChange={onFavoritesChange}
       favoritesActiveHref={stripHash(cleanTabUrl(location.pathname + location.search))}
@@ -1001,6 +1021,7 @@ export function LayoutOS({
       userMenuItems={userMenuItems}
       showWhatsNewDot={showWhatsNewDot}
       topInset={shellV2 && !showTabs}
+      zoom={hideable ? RAIL_ZOOM : 1}
     />
   )
 
@@ -1011,6 +1032,19 @@ export function LayoutOS({
 
   return (
     <div
+      // `--area` carries the active section's accent: the rail's active row,
+      // its icons and the section switcher all tint from it.
+      style={
+        {
+          '--area': areaTint(activeArea?.key),
+          // The page accent (--color-os-accent resolves from these) follows the
+          // page's own mode. Keyed on routeArea, not activeArea: a modeless
+          // page (home, calendar) keeps the default accent even while the rail
+          // still shows the last section.
+          '--mode-accent': routeArea ? areaTint(routeArea.key) : undefined,
+          '--mode-accent-ink': routeArea ? areaInk(routeArea.key) : undefined,
+        } as React.CSSProperties
+      }
       className={cn(
         'os-shell flex min-h-screen min-h-dvh flex-col bg-os-bg pt-14 text-foreground md:flex-row md:pt-0',
         // `min-h-dvh` alone is a floor, so a page taller than the window still
@@ -1025,8 +1059,18 @@ export function LayoutOS({
     >
       {shellV2
         ? !hideRail && (
-            <aside className="fixed inset-y-0 left-0 z-20 hidden w-[276px] flex-col border-r border-os-container bg-os-nav md:flex">
-              {renderRail(true)}
+            <aside
+              data-size={sidebarScalable ? railSize : undefined}
+              className={cn(
+                'fixed inset-y-0 left-0 z-20 hidden flex-col border-r border-os-container bg-os-nav md:flex',
+                sidebarScalable ? (compactRail ? 'w-[68px]' : 'w-[264px]') : 'w-[276px]',
+                sidebarScalable &&
+                  !railInstant &&
+                  'transition-[width] duration-[220ms] ease-[cubic-bezier(0.23,1,0.32,1)] motion-reduce:transition-none',
+              )}
+            >
+              <div className="os-rail-zoom h-full">{renderRail(true)}</div>
+              {sidebarScalable && <RailEdgeHandle compact={compactRail} onToggle={() => toggleRailSize('pointer')} />}
             </aside>
           )
         : !focusMode && (
@@ -1111,9 +1155,15 @@ export function LayoutOS({
       <ShellSlots>
       <main
         className={cn(
-          'flex min-w-0 flex-1 flex-col transition-[padding] duration-200',
+          'flex min-w-0 flex-1 flex-col',
+          sidebarScalable
+            ? !railInstant &&
+                'transition-[padding] duration-[220ms] ease-[cubic-bezier(0.23,1,0.32,1)] motion-reduce:transition-none'
+            : 'transition-[padding] duration-200',
           fitViewport && 'min-h-0',
-          shellV2 ? !hideRail && 'md:pl-[276px]' : !focusMode && mainPad,
+          shellV2
+            ? !hideRail && (sidebarScalable ? (compactRail ? 'md:pl-[68px]' : 'md:pl-[264px]') : 'md:pl-[276px]')
+            : !focusMode && mainPad,
         )}
       >
         {/* Impersonation is a session-mode indicator, so it sits above the top
@@ -1137,6 +1187,7 @@ export function LayoutOS({
               leading={
                 hideRail && !showTabs ? <div className="hidden md:block">{railToggle}</div> : undefined
               }
+              areaKey={routeArea?.key}
               star={pageStar}
               onCopyLink={() => void copyCurrentPageLink()}
             />

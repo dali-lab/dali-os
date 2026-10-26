@@ -263,7 +263,7 @@ export function PageDocPage({
               input's value carries into the accessible name. */}
           <h1
             id={TITLE_ID}
-            className="font-heading text-foreground text-4xl font-medium"
+            className="font-heading text-foreground text-3xl font-medium"
           >
             {editing ? (
               <input
@@ -271,7 +271,7 @@ export function PageDocPage({
                 onChange={(e) => setDraftTitle(e.target.value)}
                 placeholder={fallbackTitle}
                 aria-label="Guide title"
-                className="w-full border border-transparent bg-transparent px-1.5 py-0.5 -ml-1.5 font-heading text-foreground hover:border-border focus:border-border focus:bg-background focus:outline-none focus:ring-2 rounded-os-item text-4xl font-medium focus:ring-os-accent/40"
+                className="w-full border border-transparent bg-transparent px-1.5 py-0.5 -ml-1.5 font-heading text-foreground hover:border-border focus:border-border focus:bg-background focus:outline-none focus:ring-2 rounded-os-item text-3xl font-medium focus:ring-os-accent/40"
               />
             ) : (
               (data?.doc.title ?? fallbackTitle)

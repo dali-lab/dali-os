@@ -33,7 +33,7 @@ export function useColumnFilters(columns: { key: string }[], initial: ColumnFilt
 }
 
 const CONTROL_CLASS =
-  "inline-flex w-full items-center justify-between gap-1.5 rounded-full border border-border bg-card px-3 py-1.5 text-sm text-foreground transition-colors hover:bg-muted/40";
+  "inline-flex h-8 w-full items-center justify-between gap-1.5 rounded-lg border border-border bg-card px-3 text-sm text-foreground transition-colors hover:bg-muted/40";
 
 export function ColumnFilters({
   columns,
@@ -130,7 +130,7 @@ export function ColumnFilters({
       <div className="flex items-center gap-2">
         {columns.length > 0 && (
           <Button variant="secondary" size="sm" onClick={add}>
-            <Plus className="h-3.5 w-3.5" />
+            <Plus className="h-4 w-4" />
             Add filter
           </Button>
         )}

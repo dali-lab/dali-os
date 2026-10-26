@@ -56,6 +56,19 @@
   --animate-nav-rail: nav-rail 160ms ease-out;
   --animate-area-menu: area-menu 140ms cubic-bezier(0.2, 0.8, 0.3, 1);
 
+  /* Scalable rail: rows stagger in on a section change (delay set inline per
+     row) and labels fade in as the rail expands. */
+  --animate-rail-stagger: rail-stagger 180ms cubic-bezier(0.23, 1, 0.32, 1) both;
+  --animate-rail-label: rail-label 160ms ease-out both;
+
+  /* Auth pages: the form column rises in on load, each step slides in from
+     the right as the flow advances, fields shake on a rejected submit, and
+     the code boxes pop in with a stagger (delay set inline per digit). */
+  --animate-auth-rise: auth-rise 280ms cubic-bezier(0.23, 1, 0.32, 1) both;
+  --animate-auth-step: auth-step 240ms cubic-bezier(0.23, 1, 0.32, 1) both;
+  --animate-auth-shake: auth-shake 300ms ease-in-out;
+  --animate-auth-digit: auth-digit 200ms cubic-bezier(0.23, 1, 0.32, 1) both;
+
   /* The education catalog's detail pane slides in from the right edge as a
      card is selected, so the pane reads as opening beside the grid rather
      than the grid being replaced. */
@@ -153,8 +166,11 @@
   --color-os-well:         #26262f;  /* inputs, nested rows */
   --color-os-container:    #3f3f48;  /* borders, chips, active fill */
   --color-os-container-hi: #54545f;  /* hover border */
-  --color-os-accent:       #a8d3de;
-  --color-os-accent-hover: #bfe1e9;
+  /* The page accent follows the mode: the shell sets --mode-accent (the active
+     area's tint) and --mode-accent-ink (its on-white restatement) from
+     AREA_TONES; outside any mode these fall back to the shell's own cyan. */
+  --color-os-accent:       var(--mode-accent, #a8d3de);
+  --color-os-accent-hover: color-mix(in srgb, var(--mode-accent, #a8d3de) 78%, white);
   --color-os-grey:         #bababa;  /* secondary text */
   --color-os-muted:        #6a6a73;  /* tertiary text / placeholders */
   --color-os-green:        #9fe0a8;  /* "Active" status */
@@ -185,8 +201,10 @@
   /* The scrim behind a dialog or the mobile nav. */
   --color-os-overlay:      rgba(10, 13, 10, 0.6);
 
-  --radius-os-card: 24px;
-  --radius-os-item: 12px;
+  /* The sidebar-era radius scale: cards and tables at 12px, every control
+     (buttons, inputs, filters) at 8px. */
+  --radius-os-card: 12px;
+  --radius-os-item: 8px;
 
   --font-os: "Mulish", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   --font-os-logo: "Plus Jakarta Sans", "Mulish", ui-sans-serif, system-ui, sans-serif;
@@ -559,6 +577,12 @@ input[type="range"] {
 html {
   background-color: var(--color-background);
   color-scheme: light dark;
+  /* The app's scale. The compact sidebar redesign set the shell's type and
+     control metrics lower than the default 16px rem grid, so the whole app
+     follows: every rem-based utility (text, padding, gaps, heights) renders
+     at 15/16 of its nominal size. px rules don't follow — the design-system
+     controls below state their sizes one notch down to match. */
+  font-size: 15px;
   /* Reserve the scrollbar's width even when the page doesn't scroll, so the
      layout doesn't jump sideways when content height crosses the viewport or
      a modal locks body scroll. */
@@ -636,6 +660,77 @@ select:not(:disabled) {
    a hair below where it started, which reads as the marker twitching down once
    the page settles. */
 @keyframes nav-rail {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes auth-rise {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes auth-step {
+  from {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes auth-shake {
+  0%, 100% {
+    transform: translateX(0);
+  }
+  15% {
+    transform: translateX(-6px);
+  }
+  35% {
+    transform: translateX(6px);
+  }
+  55% {
+    transform: translateX(-4px);
+  }
+  75% {
+    transform: translateX(4px);
+  }
+}
+
+@keyframes auth-digit {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes rail-stagger {
+  from {
+    opacity: 0;
+    transform: translateX(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes rail-label {
   from {
     opacity: 0;
   }
@@ -998,9 +1093,27 @@ select:not(:disabled) {
   --os-role-sand-fill:    #3a3128;  --os-role-sand-ink:    #ddc3a3;
 }
 
+/* The sidebar's scale: one notch above the app's 15px grid, back on the 16px
+   grid the sidebar design was drawn on. Keep in sync with RAIL_ZOOM
+   (rail-model.ts), which un-scales the rail's fixed-position menus. */
+.os-rail-zoom {
+  zoom: calc(16 / 15);
+}
+
+/* The dali.os type system alone (Plus Jakarta Sans headings over Mulish),
+   for pages outside the shell — auth screens — that should not pick up the
+   shell's full token remap. */
+.os-type {
+  font-family: var(--font-os);
+  --font-heading: var(--font-os-logo);
+}
+
 .os-shell,
 html.os-shell {
   font-family: var(--font-os);
+  /* dali.os type system: Plus Jakarta Sans headings over Mulish body — the
+     base-layer h1–h6 rule picks this remap up inside the shell. */
+  --font-heading: var(--font-os-logo);
   color-scheme: dark;
 
   /* The dali.os palette is applied by *remapping the semantic tokens* inside
@@ -1126,8 +1239,9 @@ html.light .os-shell,
   --color-os-well:         #eaeff5;  /* inputs, nested rows */
   --color-os-container:    #ccd7e2;  /* borders, chips, active fill */
   --color-os-container-hi: #a9b9c9;  /* hover border */
-  --color-os-accent:       #0f6e7d;  /* the pale cyan, darkened onto white */
-  --color-os-accent-hover: #0b5964;
+  /* The mode accent again, in each area's on-white ink (see AREA_TONES). */
+  --color-os-accent:       var(--mode-accent-ink, #0f6e7d);
+  --color-os-accent-hover: color-mix(in srgb, var(--mode-accent-ink, #0f6e7d) 82%, black);
   --color-os-grey:         #4d5c69;  /* secondary text */
   --color-os-muted:        #78899a;  /* tertiary text / placeholders */
   --color-os-green:        #0f7a4d;  /* "Active" status */
@@ -1287,12 +1401,12 @@ html.os-shell > body::-webkit-scrollbar-track {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 10px 18px;
-  border-radius: 100px;
+  padding: 8px 16px;
+  border-radius: 8px;
   background: var(--color-os-add-bg);
   border: 1px solid var(--color-os-container);
   color: var(--color-os-fg);
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 900;
   transition: background-color 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
 }
@@ -1312,7 +1426,7 @@ html.os-shell > body::-webkit-scrollbar-track {
   border-radius: var(--radius-os-card);
   border: 1px solid var(--color-os-container);
   background: var(--color-os-card);
-  padding: 24px;
+  padding: 20px;
   box-shadow: 0 24px 64px var(--color-os-shadow);
 }
 
@@ -1356,7 +1470,7 @@ html.os-shell > body::-webkit-scrollbar-track {
   align-items: center;
   gap: 6px;
   padding: 6px 12px;
-  border-radius: 100px;
+  border-radius: 6px;
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.24px;
@@ -1408,9 +1522,9 @@ html.os-shell > body::-webkit-scrollbar-track {
 .os-shell .os-form textarea {
   background: var(--color-os-well);
   border: 1px solid var(--color-os-container);
-  border-radius: 10px;
-  padding: 10px 14px;
-  font-size: 14px;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 13px;
   color: var(--color-os-fg);
   transition: border-color 0.15s ease;
 }
@@ -1432,9 +1546,9 @@ html.os-shell > body::-webkit-scrollbar-track {
 .os-shell .os-form button[aria-haspopup="dialog"] {
   background: var(--color-os-well);
   border: 1px solid var(--color-os-container);
-  border-radius: 10px;
-  padding: 10px 14px;
-  font-size: 14px;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 13px;
   color: var(--color-os-fg);
   transition: border-color 0.15s ease;
 }
@@ -1448,7 +1562,7 @@ html.os-shell > body::-webkit-scrollbar-track {
 .os-shell .os-form [data-time-field] {
   background: var(--color-os-well);
   border: 1px solid var(--color-os-container);
-  border-radius: 10px;
+  border-radius: 8px;
   transition: border-color 0.15s ease;
 }
 .os-shell .os-form [data-time-field]:hover {
@@ -1461,10 +1575,10 @@ html.os-shell > body::-webkit-scrollbar-track {
   background: transparent;
   border: 0;
   border-radius: 0;
-  padding: 10px 4px 10px 14px;
+  padding: 8px 4px 8px 12px;
 }
 .os-shell .os-form [data-time-field] button {
-  padding-right: 14px;
+  padding-right: 12px;
 }
 
 /* Some of these forms state their fields as a <dl> two-column grid (label
@@ -1479,10 +1593,9 @@ html.os-shell > body::-webkit-scrollbar-track {
   align-items: start;
 }
 .os-shell .os-form dt {
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 1px;
-  text-transform: uppercase;
+  /* Labels in the sidebar design: 14px semibold, sentence case. */
+  font-size: 14px;
+  font-weight: 600;
   color: var(--color-os-grey);
 }
 .os-shell .os-form dt ~ dt {
@@ -1493,10 +1606,8 @@ html.os-shell > body::-webkit-scrollbar-track {
    first <span> is the caption, so the design's field label lands on all of
    them at once rather than being retyped onto every field. */
 .os-shell .os-form label > span:first-child {
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 1px;
-  text-transform: uppercase;
+  font-size: 14px;
+  font-weight: 600;
   color: var(--color-os-grey);
 }
 
@@ -1543,11 +1654,9 @@ html.os-shell > body::-webkit-scrollbar-track {
   margin-bottom: 20px;
 }
 .os-field-label {
-  font-size: 11px;
-  font-weight: 700;
+  font-size: 14px;
+  font-weight: 600;
   color: var(--color-os-grey);
-  letter-spacing: 1px;
-  text-transform: uppercase;
 }
 .os-shell .os-field-hint {
   font-size: 12px;
@@ -1595,7 +1704,7 @@ html.os-shell > body::-webkit-scrollbar-track {
   background: var(--color-os-overlay);
 }
 .os-shell .os-modal-title {
-  font-size: 22px;
+  font-size: 20px;
   font-weight: 500;
 }
 .os-shell .os-modal-footer {
@@ -1617,7 +1726,7 @@ html.os-shell > body::-webkit-scrollbar-track {
   gap: 8px;
   background: var(--color-os-well);
   border: 1px solid var(--color-os-container);
-  border-radius: 10px;
+  border-radius: 8px;
   padding: 8px 12px;
   font-size: 13px;
   color: var(--color-os-fg);
@@ -1743,7 +1852,7 @@ html.os-shell > body::-webkit-scrollbar-track {
 }
 .os-sprint-chip {
   padding: 6px 14px;
-  border-radius: 100px;
+  border-radius: 8px;
   font-size: 12px;
   font-weight: 700;
   background: var(--color-os-well);
@@ -1765,7 +1874,7 @@ html.os-shell > body::-webkit-scrollbar-track {
   font-size: 12px;
   font-weight: 600;
   padding: 5px 12px;
-  border-radius: 100px;
+  border-radius: 6px;
 }
 
 /* Read-only mode. The controls stay in the DOM (so switching to edit is a
@@ -1823,8 +1932,8 @@ html.os-shell > body::-webkit-scrollbar-track {
 .os-shell .os-form-readonly .os-live textarea {
   background: var(--color-os-well) !important;
   border: 1px solid var(--color-os-container) !important;
-  border-radius: 10px;
-  padding: 10px 14px !important;
+  border-radius: 8px;
+  padding: 8px 12px !important;
 }
 .os-shell .os-form-readonly .os-live input:focus,
 .os-shell .os-form-readonly .os-live textarea:focus {
@@ -1840,13 +1949,19 @@ html.os-shell > body::-webkit-scrollbar-track {
    pill radius and the palette are the design's; padding stays with the size
    class so dense toolbars don't balloon. */
 .os-shell .dali-btn {
-  border-radius: 100px;
+  border-radius: 8px;
   font-weight: 600;
-  /* The design sets its controls in 14px. The `sm` size compiles to text-xs,
+  /* The design sets its controls in 13px. The `sm` size compiles to text-xs,
      which reads as a different family of button next to an os search pill or
      filter chip — so the shell pulls every button back onto its own scale and
      lets the size class keep owning the padding. */
-  font-size: 14px;
+  font-size: 13px;
+  /* Fixed control heights (sidebar scale): md buttons 36px, the smaller sizes
+     32px, instead of padding-derived heights. */
+  height: 32px;
+}
+.os-shell .dali-btn--size-md {
+  height: 36px;
 }
 .os-shell .dali-btn--primary {
   background: var(--color-os-accent);
@@ -1862,7 +1977,8 @@ html.os-shell > body::-webkit-scrollbar-track {
 }
 .os-shell .dali-btn--secondary:hover {
   border-color: var(--color-os-container-hi);
-  background: transparent;
+  /* The sidebar rows' soft white highlight, shared by every hover state. */
+  background: var(--color-os-hover);
   color: var(--color-os-fg);
 }
 .os-shell .dali-btn--ghost {
@@ -1870,7 +1986,7 @@ html.os-shell > body::-webkit-scrollbar-track {
   font-weight: 500;
 }
 .os-shell .dali-btn--ghost:hover {
-  background: var(--color-os-container);
+  background: var(--color-os-hover);
   color: var(--color-os-fg);
 }
 .os-shell .dali-btn:focus-visible {
@@ -1911,12 +2027,12 @@ html.os-shell > body::-webkit-scrollbar-track {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 10px 18px;
-  border-radius: 100px;
+  padding: 8px 16px;
+  border-radius: 8px;
   background: transparent;
   border: 1px solid var(--color-os-container);
   color: var(--color-os-grey);
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
   transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
 }
@@ -1942,11 +2058,11 @@ html.os-shell > body::-webkit-scrollbar-track {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 10px 22px;
-  border-radius: 100px;
+  padding: 8px 18px;
+  border-radius: 8px;
   background: var(--color-os-accent);
   color: var(--color-os-bg);
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
   transition: background-color 0.15s ease;
 }
@@ -1958,7 +2074,7 @@ html.os-shell > body::-webkit-scrollbar-track {
    shape and colour, one size down — mirrors .os-add-btn--sm. */
 .os-btn-primary--sm {
   padding: 6px 14px;
-  font-size: 13px;
+  font-size: 12px;
   gap: 6px;
 }
 
@@ -1966,10 +2082,10 @@ html.os-shell > body::-webkit-scrollbar-track {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 10px 20px;
-  border-radius: 100px;
+  padding: 8px 16px;
+  border-radius: 8px;
   color: var(--color-os-grey);
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 500;
   transition: background-color 0.15s ease, color 0.15s ease;
 }

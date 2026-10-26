@@ -48,25 +48,38 @@ export function railRowClass(active: boolean, collapsed: boolean) {
 
 const ACCOUNT_MENU_MIN_WIDTH = 180
 
-// The account menu opens upward from the foot of the rail. It is pinned to the
+// The account menu opens upward from the foot of the rail — or, when the rail
+// is a compact icon column, out of its right edge. It is pinned to the
 // viewport rather than positioned inside the rail: the rail is a scroll
 // container, so anything wider than it is clipped, and collapsed the rail is
 // far narrower than the menu. Null while closed or not yet measured.
 export function useAccountMenuStyle(
   anchorRef: RefObject<HTMLElement | null>,
   open: boolean,
+  side: 'up' | 'right' = 'up',
+  // The ancestor's CSS zoom: a fixed element inside a zoomed subtree has its
+  // coordinates multiplied by it, so the measured (visual) values divide out.
+  zoom = 1,
 ): CSSProperties | null {
   const [style, setStyle] = useState<CSSProperties | null>(null)
 
   const measure = useCallback(() => {
     const rect = anchorRef.current?.getBoundingClientRect()
     if (!rect) return
-    setStyle({
-      left: rect.left,
-      bottom: window.innerHeight - rect.top + 8,
-      width: Math.max(rect.width, ACCOUNT_MENU_MIN_WIDTH),
-    })
-  }, [anchorRef])
+    setStyle(
+      side === 'right'
+        ? {
+            left: (rect.right + 8) / zoom,
+            bottom: (window.innerHeight - rect.bottom) / zoom,
+            width: (ACCOUNT_MENU_MIN_WIDTH + 40) / zoom,
+          }
+        : {
+            left: rect.left / zoom,
+            bottom: (window.innerHeight - rect.top + 8) / zoom,
+            width: Math.max(rect.width, ACCOUNT_MENU_MIN_WIDTH) / zoom,
+          },
+    )
+  }, [anchorRef, side, zoom])
 
   useLayoutEffect(() => {
     if (open) measure()

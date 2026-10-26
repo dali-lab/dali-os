@@ -85,14 +85,14 @@ export default function PortalSettings({ actionData }: Route.ComponentProps) {
 
   return (
     <main className="max-w-3xl px-6 py-10 flex flex-col gap-8">
-      <h1 className="font-heading text-4xl font-medium text-foreground">Settings</h1>
+      <h1 className="font-heading text-3xl font-medium text-foreground">Settings</h1>
 
       {error && (
         <p className="text-sm text-destructive bg-destructive/10 rounded-lg px-4 py-3">{error}</p>
       )}
 
-      <section className="rounded-os-card bg-os-card p-6">
-        <h2 className="font-heading text-[19px] font-semibold text-foreground mb-4">Profile</h2>
+      <section className="rounded-os-card bg-os-card p-5">
+        <h2 className="font-heading text-[17px] font-semibold text-foreground mb-4">Profile</h2>
         <Form method="post" className="os-form flex flex-col gap-4">
           <PhotoUploadField
             userId={userId}
@@ -211,13 +211,13 @@ export default function PortalSettings({ actionData }: Route.ComponentProps) {
         </Form>
       </section>
 
-      <section className="rounded-os-card bg-os-card p-6">
-        <h2 className="font-heading text-[19px] font-semibold text-foreground mb-4">Appearance</h2>
+      <section className="rounded-os-card bg-os-card p-5">
+        <h2 className="font-heading text-[17px] font-semibold text-foreground mb-4">Appearance</h2>
         <AppearanceSettingsBlock />
       </section>
 
-      <section className="rounded-os-card bg-os-card p-6">
-        <h2 className="font-heading text-[19px] font-semibold text-foreground mb-4">Passkeys</h2>
+      <section className="rounded-os-card bg-os-card p-5">
+        <h2 className="font-heading text-[17px] font-semibold text-foreground mb-4">Passkeys</h2>
         <PasskeysSettingsBlock />
       </section>
     </main>

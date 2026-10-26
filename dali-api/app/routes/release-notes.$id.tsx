@@ -44,7 +44,7 @@ export default function ReleaseNotePage({ loaderData }: Route.ComponentProps) {
         Release notes
       </Link>
       <div className="border-b border-border pb-4">
-        <h1 className="font-heading text-4xl font-semibold leading-tight text-foreground">
+        <h1 className="font-heading text-3xl font-semibold leading-tight text-foreground">
           {note.title}
         </h1>
         <p className="mt-3 text-lg text-os-grey">{note.summary}</p>

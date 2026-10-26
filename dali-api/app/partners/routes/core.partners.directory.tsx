@@ -502,7 +502,7 @@ function OrgsTable({
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm min-w-[720px]">
-        <thead className="bg-muted/30 text-muted-foreground text-xs uppercase tracking-wide">
+        <thead className="bg-muted/30 text-muted-foreground text-xs">
           <tr>
             <th className="text-left font-medium px-4 py-2">Organization</th>
             <th className="text-left font-medium px-4 py-2">Status</th>
@@ -603,7 +603,7 @@ function ContactsTable({
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm min-w-[720px]">
-        <thead className="bg-muted/30 text-muted-foreground text-xs uppercase tracking-wide">
+        <thead className="bg-muted/30 text-muted-foreground text-xs">
           <tr>
             <th className="text-left font-medium px-4 py-2">Contact</th>
             <th className="text-left font-medium px-4 py-2">Organization</th>
