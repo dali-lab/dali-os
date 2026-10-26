@@ -46,6 +46,7 @@ import {
 } from '~/components/TablessHistoryNav'
 import { useShellNav } from '~/components/shell-nav'
 import { DesktopTabStrip, useDesktopTabs } from '~/components/DesktopTabs'
+import { TabsShowingProvider } from '~/components/shell/TabKeepAlive'
 import { tabActions } from '~/lib/desktop-tabs-store'
 import type { DesktopTabsState } from '~/lib/desktop-tabs'
 import { buildPageLink, cleanTabUrl, COPY_PAGE_LINK_EVENT, stripHash, writePageLink } from '~/lib/page-link'
@@ -1164,7 +1165,7 @@ export function LayoutOS({
               onPointerDownCapture={showTabs ? tabActions.promoteActive : undefined}
               onKeyDownCapture={showTabs ? tabActions.promoteActive : undefined}
             >
-              {children}
+              <TabsShowingProvider value={showTabs && shellV2}>{children}</TabsShowingProvider>
             </div>
           </ShellGuideProvider>
         ) : (
