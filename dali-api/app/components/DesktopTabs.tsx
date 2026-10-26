@@ -16,6 +16,7 @@ import { desktopVersion } from '~/lib/desktop'
 import { readTabStripCookie, tabsPreferred, writeTabStripCookie } from '~/lib/desktop-tabs-pref'
 import {
   getTabsSnapshot,
+  markTabStripMounted,
   startTabs,
   tabsActive,
   subscribeTabs,
@@ -172,12 +173,13 @@ function SortableTab({
       aria-current={active ? 'page' : undefined}
       aria-label={tab.pinned ? tab.label : undefined}
       className={cn(
-        'group flex h-7 items-center rounded-md border text-[13px] font-medium whitespace-nowrap transition-colors',
+        // Bottom-anchored and square along the bottom edge: the active tab
+        // shares the page bar's ground and runs into it with no seam, so the
+        // tab reads as part of the page rather than a floating block.
+        'group flex h-8 items-center rounded-t-lg text-[13px] font-medium whitespace-nowrap transition-colors',
         tab.pinned ? 'w-[34px] shrink-0 justify-center' : 'min-w-[72px] shrink grow-0 gap-2 pl-3',
         !tab.pinned && (active ? 'pr-2' : 'pr-3'),
-        active
-          ? 'border-os-container bg-os-card text-foreground shadow-[0_1px_1px_var(--color-os-hover)]'
-          : 'border-transparent text-os-grey hover:bg-os-hover',
+        active ? 'bg-os-bg text-foreground' : 'text-os-grey hover:bg-os-hover',
       )}
     >
       {tab.emoji ? (
@@ -241,15 +243,22 @@ export function DesktopTabStrip({
     if (to >= 0) tabActions.move(String(e.active.id), to)
   }
 
+  // The loading bar docks under the strip while it is on screen (see
+  // NavigationProgress), so navigation reads as the strip loading the page.
+  useEffect(() => markTabStripMounted(), [])
+
   return (
+    // No hairline under the strip: the active tab shares the page bar's
+    // ground and connects straight into it; the nav/bg color edge is the
+    // separation everywhere else.
     <nav
       aria-label="Open tabs"
-      className="flex h-10 shrink-0 items-center gap-1 border-b border-os-container bg-os-nav pl-2 pr-3"
+      className="flex h-10 shrink-0 items-center gap-1 bg-os-nav pl-2 pr-3"
     >
       {leading}
       <DndContext id="desktop-tabs" sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
         <SortableContext items={tabs.map((t) => t.id)} strategy={horizontalListSortingStrategy}>
-          <div className="flex min-w-0 flex-1 items-center overflow-x-auto">
+          <div className="flex min-w-0 flex-1 items-end self-stretch overflow-x-auto">
             {tabs.map((tab, index) => (
               <Fragment key={tab.id}>
               {/* Tabs sit flush as one connected strip; a hairline separates
@@ -259,7 +268,7 @@ export function DesktopTabStrip({
                 <span
                   aria-hidden
                   className={cn(
-                    'h-4 w-px shrink-0 bg-os-container transition-opacity',
+                    'h-4 w-px shrink-0 self-center bg-os-container transition-opacity',
                     (index === activeIndex || index - 1 === activeIndex) && 'opacity-0',
                   )}
                 />
@@ -296,7 +305,7 @@ export function DesktopTabStrip({
               >
                 <SortableTab tab={tab} active={tab.id === activeId} />
               </ContextMenu>
-              {index === lastPinned && <span aria-hidden className="mx-1 h-4 w-px shrink-0 bg-os-container-hi" />}
+              {index === lastPinned && <span aria-hidden className="mx-1 h-4 w-px shrink-0 self-center bg-os-container-hi" />}
               </Fragment>
             ))}
           </div>
