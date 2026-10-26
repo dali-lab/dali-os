@@ -104,6 +104,32 @@ export function tabsActive(): boolean {
   return navigator !== null;
 }
 
+// Whether the tab strip itself is on screen — distinct from tabsActive(),
+// which only says the store took the navigator. The loading bar docks under
+// the strip while one is mounted.
+let stripCount = 0;
+const stripListeners = new Set<() => void>();
+
+export function markTabStripMounted(): () => void {
+  stripCount++;
+  stripListeners.forEach((l) => l());
+  return () => {
+    stripCount--;
+    stripListeners.forEach((l) => l());
+  };
+}
+
+export function subscribeTabStrip(listener: () => void): () => void {
+  stripListeners.add(listener);
+  return () => {
+    stripListeners.delete(listener);
+  };
+}
+
+export function tabStripShowing(): boolean {
+  return stripCount > 0;
+}
+
 /**
  * Start tabs for this window: restore the saved set (or the iframe workspace's,
  * the first time), reconcile it with the url the window loaded on, and take the

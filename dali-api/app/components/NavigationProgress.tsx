@@ -1,7 +1,9 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useLocation, useNavigation } from "react-router";
 import { useDisplayedTab } from "~/components/shell/displayed-tab";
+import { subscribeTabStrip, tabStripShowing } from "~/lib/desktop-tabs-store";
 import { areaForPath, areaTint } from "~/lib/nav-areas";
+import { cn } from "~/lib/cn";
 
 // A slim progress bar shown during client-side route transitions. Mounted once
 // at the document root (root.tsx), so it covers every page — the applicant
@@ -19,6 +21,11 @@ export function NavigationProgress() {
   const showingKeptTab = useDisplayedTab() !== null;
   const isTabSwitch = (navigation.location?.state as { tabSwitch?: boolean } | null)?.tabSwitch === true;
   const isLoading = navigation.state !== "idle" && !(isTabSwitch && showingKeptTab);
+
+  // While the desktop tab strip is on screen the bar docks under it (the
+  // strip is 40px), so loading reads as the strip loading its page — like a
+  // browser — instead of a line over the tabs.
+  const underTabStrip = useSyncExternalStore(subscribeTabStrip, tabStripShowing, () => false);
 
   // Under the v2 design (the data-v2 marker root.tsx sets from the
   // desktop-tabs flag) the bar wears the color of the mode being loaded — the
@@ -95,7 +102,10 @@ export function NavigationProgress() {
   return (
     <div
       aria-hidden
-      className="fixed inset-x-0 top-0 z-[100] h-0.5 pointer-events-none"
+      className={cn(
+        "fixed inset-x-0 z-[100] h-0.5 pointer-events-none",
+        underTabStrip ? "top-10" : "top-0",
+      )}
     >
       <div
         className="h-full transition-[width,opacity] duration-200 ease-out motion-reduce:transition-none"

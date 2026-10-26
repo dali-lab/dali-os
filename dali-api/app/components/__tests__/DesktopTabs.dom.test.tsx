@@ -235,11 +235,13 @@ describe("DesktopTabStrip", () => {
     expect(mod.store.getTabsSnapshot().tabs[0].pinned).toBe(true);
   });
 
-  it("is a 40px row on the nav surface with a hairline under it", async () => {
+  it("is a 40px row on the nav surface with no hairline under it", async () => {
     await mountStrip();
     expect(strip().className).toContain("h-10");
     expect(strip().className).toContain("bg-os-nav");
-    expect(strip().className).toContain("border-b");
+    // The active tab connects straight into the page bar below, so the strip
+    // draws no bottom border of its own.
+    expect(strip().className).not.toContain("border-b");
   });
 
   it("renders the leading control before the tabs", async () => {
@@ -247,12 +249,24 @@ describe("DesktopTabStrip", () => {
     expect(strip().firstElementChild?.getAttribute("data-testid")).toBe("leading");
   });
 
-  it("marks the active tab with the card plate and shows its close button", async () => {
+  it("connects the active tab to the page bar and shows its close button", async () => {
     await mountStrip();
     const active = strip().querySelector("button[aria-current='page']") as HTMLElement;
-    expect(active.className).toContain("bg-os-card");
-    expect(active.className).toContain("shadow-[0_1px_1px_var(--color-os-hover)]");
+    // The page bar's ground, square along the bottom edge: the tab runs into
+    // the bar below with no seam.
+    expect(active.className).toContain("bg-os-bg");
+    expect(active.className).toContain("rounded-t-lg");
+    expect(active.className).not.toContain("rounded-md");
+    expect(active.className).not.toContain("border-os-container");
     expect(active.querySelector("[aria-label^='Close']")?.className).toContain("opacity-100");
+  });
+
+  it("tells the loading bar the strip is on screen, and stands it down on unmount", async () => {
+    expect(mod.store.tabStripShowing()).toBe(false);
+    await mountStrip();
+    expect(mod.store.tabStripShowing()).toBe(true);
+    await act(async () => root.render(null));
+    expect(mod.store.tabStripShowing()).toBe(false);
   });
 
   it("hides an inactive tab's close button until hover", async () => {
