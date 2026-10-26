@@ -1509,13 +1509,6 @@ export async function loadCalendarData(
   if (opts.portal && labMember) return redirect("/calendar");
   const termId = term?.id;
 
-  // Members + groups for the participant picker (shared with the meeting
-  // edit-context endpoint). Kicked off here so it runs alongside the fan-out
-  // below; awaited once the rest resolves.
-  const participantOptionsP = labMember
-    ? loadParticipantOptions(request, userId)
-    : Promise.resolve({ groups: [] as GroupOption[], users: [] as UserOption[], mentorPairs: [] as MentorPairOption[] });
-
   const [
     settings,
     userRow,
@@ -1554,8 +1547,6 @@ export async function loadCalendarData(
       canViewForms(userId, request),
       isCore(userId, request),
     ]);
-
-  const { groups, users: allUsers, mentorPairs } = await participantOptionsP;
 
   // The whole calendar renders in the user's display zone (User.timeZone) —
   // the single source of truth shared with the rest of the app. Working hours
@@ -1791,9 +1782,7 @@ export async function loadCalendarData(
     externalEvents,
     ingestionError,
     googleHidden: hideGoogle,
-    groups,
-    mentorPairs,
-    users: allUsers,
+    hasDirectory: labMember,
     currentUserId: userId,
     myRoles,
     canSetSelfCheckIn,

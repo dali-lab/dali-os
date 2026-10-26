@@ -103,6 +103,7 @@ import { EditMeetingModal } from "~/calendar/components/EditMeetingModal";
 import { TimesheetEditPopover, TimesheetDragPopover, LogHoursDialog } from "~/calendar/components/timesheet";
 import { CalendarSettingsModal } from "~/calendar/components/CalendarSettingsModal";
 import { CalendarSidebar } from "~/calendar/components/CalendarSidebar";
+import { fetchParticipantOptions, useParticipantOptions } from "~/calendar/lib/participant-options";
 import { useIsMobile } from "~/hooks/useIsMobile";
 
 // Underline subnav sits flush under the workspace tab bar (see layout embed padding).
@@ -358,6 +359,7 @@ function CalendarScreen({ data }: { data: LoaderData }) {
   // a project's "Schedule meeting" seeds its whole group.
   const [createModalUsers, setCreateModalUsers] = useState<string[]>([]);
   const [createModalGroups, setCreateModalGroups] = useState<string[]>([]);
+  const participants = useParticipantOptions(data.hasDirectory, createModalOpen);
   // Every create path (grid drag, New button, project deep link) lands here.
   // Passing no slot opens the modal on its own defaults.
   const openCreateModal = (
@@ -379,10 +381,14 @@ function CalendarScreen({ data }: { data: LoaderData }) {
   useEffect(() => {
     if (searchParams.get("compose") !== "meeting") return;
     const projectId = searchParams.get("project");
-    const groupIds = projectId
-      ? data.groups.filter((g) => g.projectId === projectId).map((g) => g.id)
-      : [];
-    openCreateModal(undefined, undefined, [], groupIds);
+    if (projectId && data.hasDirectory) {
+      void fetchParticipantOptions()
+        .then((options) => options.groups.filter((g) => g.projectId === projectId).map((g) => g.id))
+        .catch(() => [])
+        .then((groupIds) => openCreateModal(undefined, undefined, [], groupIds));
+    } else {
+      openCreateModal();
+    }
     const next = new URLSearchParams(searchParams);
     next.delete("compose");
     next.delete("project");
@@ -939,6 +945,7 @@ function CalendarScreen({ data }: { data: LoaderData }) {
             hoursRangeLabel={hoursRangeLabel}
             setRoleColor={setRoleColor}
             onHoverRole={setHoveredRoleKey}
+            users={participants.users}
             onMeetWith={(userId) => openCreateModal(undefined, undefined, [userId])}
           />
           {/* No card around the grid — the hour rules and day rules are the
@@ -1113,7 +1120,7 @@ function CalendarScreen({ data }: { data: LoaderData }) {
       )}
       {createModalOpen && (
         <CreateEventModal
-          data={data}
+          data={{ ...data, ...participants }}
           startLocal={createModalSlot?.startLocal}
           endLocal={createModalSlot?.endLocal}
           initialUserIds={createModalUsers}
