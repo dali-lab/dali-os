@@ -114,6 +114,53 @@ describe("Rail", () => {
     expect(q("button[aria-haspopup='listbox']")!.getAttribute("aria-label")).toBe("Section: LAB. Switch section");
   });
 
+  it("shows the active area tile and label on the switcher row", async () => {
+    const core = { ...area("core"), label: "Core" };
+    await mount({ areas: [area("projects"), core], activeArea: core });
+    const trigger = q("button[aria-haspopup='listbox']")!;
+    expect(trigger.textContent).toContain("Core");
+    expect(trigger.querySelector("[data-area-tile='core']")).not.toBeNull();
+  });
+
+  it("shows the tile on a lone area too", async () => {
+    const only = area("core");
+    await mount({ areas: [only], activeArea: only });
+    expect(q("[data-area-tile='core']")).not.toBeNull();
+  });
+
+  it("lists areas in rail order with descriptions", async () => {
+    const keys = ["admin", "core", "hiring", "education", "community", "projects"];
+    const list = keys.map((k) => ({ ...area(k), label: k, description: `About ${k}` }));
+    await mount({ areas: list, activeArea: list[0] });
+    await act(async () => {
+      q("button[aria-haspopup='listbox']")!.click();
+    });
+    const options = Array.from(container.querySelectorAll("[role='option']"));
+    expect(options.map((o) => o.querySelector("[data-area-tile]")!.getAttribute("data-area-tile"))).toEqual([
+      "projects",
+      "community",
+      "education",
+      "hiring",
+      "core",
+      "admin",
+    ]);
+    expect(options[0].textContent).toContain("About projects");
+    expect(options.filter((o) => o.getAttribute("aria-selected") === "true")).toHaveLength(1);
+  });
+
+  it("closes the area menu on Escape", async () => {
+    const list = [area("projects"), area("core")];
+    await mount({ areas: list, activeArea: list[0] });
+    await act(async () => {
+      q("button[aria-haspopup='listbox']")!.click();
+    });
+    expect(q("[role='listbox']")).not.toBeNull();
+    await act(async () => {
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    });
+    expect(q("[role='listbox']")).toBeNull();
+  });
+
   it("dots Email when there is unread mail", async () => {
     await mount({ emailUnread: 3 });
     expect(q("button[aria-label='Email'] span.rounded-full")).not.toBeNull();

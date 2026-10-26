@@ -77,6 +77,7 @@ import { ShareDialog } from "~/components/sharing/ShareDialog";
 import { relativeTime } from "~/lib/relative-time";
 import { useRevalidator } from "react-router";
 import { useToast } from "~/components/ui/toast";
+import { useFeatureFlag } from "~/components/FeatureFlags";
 import { notebookRequest, sendJson } from "~/components/notebooks/notebook-requests";
 import { cn } from "~/lib/cn";
 import { FAVORITES_SPACE_KEY, isProcessRootSpace, SHARED_SPACE_KEY } from "~/lib/drive-spaces";
@@ -419,8 +420,8 @@ function ItemGlyphTip({ item, size }: { item: DriveItem; size?: IconSize }) {
   );
 }
 
-function scopeIcon(scope: DriveTreeScope, size: IconSize = "sm") {
-  return scopeIconFor(scope, size);
+function scopeIcon(scope: DriveTreeScope, size: IconSize = "sm", tiles = false) {
+  return scopeIconFor(scope, size, tiles);
 }
 
 function scopeLabel(scope: DriveTreeScope): string {
@@ -2468,6 +2469,7 @@ function ColumnScopeRow({
   isDragging: boolean;
   onClick: () => void;
 }) {
+  const tiles = useFeatureFlag("desktop-tabs");
   const t = useDriveText();
   const drop = useScopeDrop(scope.id, isDragging);
 
@@ -2495,7 +2497,7 @@ function ColumnScopeRow({
             : "text-foreground hover:bg-os-hover"
       } ${isFocused && !drop.isOver ? "ring-1 ring-inset ring-os-accent/50" : ""}`}
     >
-      {scopeIcon(scope)}
+      {scopeIcon(scope, "sm", tiles)}
       <span className="min-w-0 flex-1 truncate font-medium">{scopeLabel(scope)}</span>
       {audienceChip}
     </div>
@@ -2953,6 +2955,7 @@ type ScopeEntryProps = {
 };
 
 function ScopeTile({ scope, focused, dragging, onOpen }: ScopeEntryProps) {
+  const tiles = useFeatureFlag("desktop-tabs");
   const drop = useScopeDrop(scope.id, dragging);
   return (
     <div
@@ -2966,7 +2969,7 @@ function ScopeTile({ scope, focused, dragging, onOpen }: ScopeEntryProps) {
       }}
       className={`${GRID_TILE} ${drop.isOver ? DROP_RING : focused ? "bg-os-container/40" : "hover:bg-os-hover"}`}
     >
-      {scopeIcon(scope, "xl")}
+      {scopeIcon(scope, "xl", tiles)}
       <span className={`${GRID_LABEL} ${focused ? "bg-os-accent text-os-bg" : "text-foreground"}`}>
         {scopeLabel(scope)}
       </span>
@@ -2975,6 +2978,7 @@ function ScopeTile({ scope, focused, dragging, onOpen }: ScopeEntryProps) {
 }
 
 function ScopeRow({ scope, focused, dragging, onOpen }: ScopeEntryProps) {
+  const tiles = useFeatureFlag("desktop-tabs");
   const t = useDriveText();
   const drop = useScopeDrop(scope.id, dragging);
   return (
@@ -2991,7 +2995,7 @@ function ScopeRow({ scope, focused, dragging, onOpen }: ScopeEntryProps) {
         drop.isOver ? DROP_RING : focused ? "bg-os-container text-os-accent" : "hover:bg-os-hover"
       }`}
     >
-      {scopeIcon(scope)}
+      {scopeIcon(scope, "sm", tiles)}
       <span className="min-w-0 flex-1 truncate font-medium text-foreground">{scopeLabel(scope)}</span>
       {/* Signal ③: scope audience chip — hover-reveal via group-hover. */}
       {scope.scopeAudience ? (

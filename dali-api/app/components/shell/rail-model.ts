@@ -1,4 +1,4 @@
-import { isPinnedActive, type RoleFlags, type SubTab } from '~/lib/nav-areas'
+import { isPinnedActive, RAIL_AREA_ORDER, type NavArea, type RoleFlags, type SubTab } from '~/lib/nav-areas'
 import type { FeatureFlagMap } from '~/lib/feature-flags'
 import { Download, HelpCircle, Settings, Sparkles, UserRound, type LucideIcon } from 'lucide-react'
 
@@ -64,4 +64,12 @@ export function splitFavorites<T>(
 
 export function badgeLabel(count: number): string {
   return count > 99 ? '99+' : String(count)
+}
+
+export function orderRailAreas(areas: NavArea[]): NavArea[] {
+  const rank = (key: string) => {
+    const i = RAIL_AREA_ORDER.indexOf(key)
+    return i === -1 ? RAIL_AREA_ORDER.length : i
+  }
+  return [...areas].sort((a, b) => rank(a.key) - rank(b.key))
 }

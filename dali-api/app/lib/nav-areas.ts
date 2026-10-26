@@ -34,6 +34,7 @@ import {
   Shield,
   Sparkles,
   UserPlus,
+  Users,
   UsersRound,
   type LucideIcon,
 } from "lucide-react";
@@ -87,6 +88,7 @@ export type NavArea = {
   label: string;
   icon: LucideIcon;
   hubPath: string;
+  description?: string;
   // Whether the area appears in the dropdown at all. Omitted => always.
   gate?: (r: RoleFlags) => boolean;
   subtabs: SubTab[];
@@ -218,8 +220,9 @@ const REGROUPED_AREAS: NavArea[] = [
   {
     key: "projects",
     label: "Lab",
-    icon: FolderKanban,
+    icon: Users,
     hubPath: "/projects",
+    description: "Projects, people, mentorship",
     subtabs: [
       { label: "Projects", href: "/projects", icon: LayoutGrid },
       { label: "People", href: "/members", icon: UsersRound },
@@ -236,6 +239,7 @@ const REGROUPED_AREAS: NavArea[] = [
     label: "Community",
     icon: Sparkles,
     hubPath: "/connect",
+    description: "Connect, gallery, events",
     subtabs: [
       { label: "Connect", href: "/connect", icon: MapPinned },
       { label: "Opportunities", href: "/community/opportunities", icon: Lightbulb },
@@ -248,6 +252,7 @@ const REGROUPED_AREAS: NavArea[] = [
     label: "Education",
     icon: GraduationCap,
     hubPath: "/education",
+    description: "Courses and sessions",
     subtabs: [
       { label: "Hub", href: "/education", icon: LayoutGrid },
       { label: "Offerings", href: "/education/offerings", icon: BookOpen },
@@ -259,6 +264,7 @@ const REGROUPED_AREAS: NavArea[] = [
     label: "Core",
     icon: Shield,
     hubPath: "/core",
+    description: "Staffing, payroll, processes",
     gate: (r) => r.isCore,
     subtabs: [
       { label: "Milestones", href: "/core", icon: Flag },
@@ -283,6 +289,7 @@ const REGROUPED_AREAS: NavArea[] = [
     label: "Hiring",
     icon: Briefcase,
     hubPath: "/hiring",
+    description: "Applications and reviews",
     // Regular members see Hiring only while they are on a LIVE cycle, unlike
     // the flag-off gate which admits any-cycle reviewers forever.
     gate: (r) => r.hasActiveHiringAccess,
@@ -304,12 +311,30 @@ const REGROUPED_AREAS: NavArea[] = [
     label: "Admin",
     icon: Settings,
     hubPath: "/admin",
+    description: "Members, roles, settings",
     gate: (r) => r.isCore,
     // Same system-level clusters as the flag-off nav — Admin's structure no
     // longer depends on the (retired) nav-regroup flag.
     subtabs: adminSubtabs,
   },
 ];
+
+export type AreaTone = { tile: string; glyph: string; ring?: boolean; outline?: boolean };
+
+export const AREA_TONES: Record<string, AreaTone> = {
+  projects: { tile: "#1E5779", glyph: "#FFFFFF", ring: true },
+  community: { tile: "#00ADAB", glyph: "#FFFFFF" },
+  education: { tile: "#FFD461", glyph: "#153A52" },
+  hiring: { tile: "linear-gradient(135deg, #FFD461, #FF8B81)", glyph: "#153A52" },
+  core: { tile: "#FF8B81", glyph: "#153A52" },
+  admin: { tile: "transparent", glyph: "var(--color-os-grey)", outline: true },
+};
+
+export const RAIL_AREA_ORDER = ["projects", "community", "education", "hiring", "core", "admin"];
+
+export function areaIconFor(key: string): LucideIcon | undefined {
+  return REGROUPED_AREAS.find((a) => a.key === key)?.icon;
+}
 
 /**
  * The area set for one viewer. REGROUPED_AREAS is the base nav; NAV_AREAS

@@ -4,6 +4,7 @@ import {
   Calendar,
   Check,
   ChevronDown,
+  ChevronsUpDown,
   HelpCircle,
   Home,
   LogOut,
@@ -16,7 +17,8 @@ import { Tooltip } from '~/components/ui/floating'
 import { cn } from '~/lib/cn'
 import { FavoritesBar } from '~/components/FavoritesBar'
 import { osMenuClass, osMenuItemClass, useAccountMenuStyle } from '~/components/os-shell-chrome'
-import { activeQuickItem, badgeLabel } from '~/components/shell/rail-model'
+import { AreaTile } from '~/components/shell/AreaTile'
+import { activeQuickItem, badgeLabel, orderRailAreas } from '~/components/shell/rail-model'
 import type { NavArea, SubTab } from '~/lib/nav-areas'
 import type { FeatureFlagMap } from '~/lib/feature-flags'
 import type { FavoritePage } from '~/lib/user-pages.server'
@@ -131,6 +133,7 @@ export function Rail({
     roles: { isAlumni, isNewMember },
   })
   const singleArea = areas.length === 1
+  const orderedAreas = orderRailAreas(areas)
 
   const [areaMenuOpen, setAreaMenuOpen] = useState(false)
   const [userMenuOpen, setUserMenuOpen] = useState(false)
@@ -170,7 +173,7 @@ export function Rail({
   const measureAreaMenu = useCallback(() => {
     const rect = areaTriggerRef.current?.getBoundingClientRect()
     if (!rect) return
-    setAreaMenuRect({ top: rect.bottom + 8, left: rect.left, width: Math.max(rect.width, 220) })
+    setAreaMenuRect({ top: rect.bottom + 6, left: rect.left, width: rect.width })
   }, [])
 
   const toggleAreaMenu = useCallback(() => {
@@ -280,7 +283,10 @@ export function Rail({
           <div className="flex min-h-0 flex-col gap-0.5">
             <div ref={areaMenuRef} className="shrink-0">
               {singleArea ? (
-                <p className="flex h-[26px] items-center pl-2.5 text-xs font-semibold text-os-muted">{activeArea.label}</p>
+                <p className="flex h-9 items-center gap-2.5 pl-2 text-sm font-semibold text-foreground">
+                  <AreaTile areaKey={activeArea.key} size={22} icon={activeArea.icon} />
+                  {activeArea.label}
+                </p>
               ) : (
                 <button
                   type="button"
@@ -289,10 +295,11 @@ export function Rail({
                   aria-expanded={areaMenuOpen}
                   aria-label={`Section: ${activeArea.label}. Switch section`}
                   ref={areaTriggerRef}
-                  className="flex h-[26px] items-center gap-1 rounded-md pl-2.5 pr-1.5 text-xs font-semibold text-os-muted transition-colors hover:bg-os-hover"
+                  className="flex h-9 w-full items-center gap-2.5 rounded-lg border border-os-container bg-os-card/70 pl-2 pr-2 text-left text-sm font-semibold text-foreground transition-colors hover:bg-os-hover"
                 >
-                  {activeArea.label}
-                  <ChevronDown className="h-2.5 w-2.5" aria-hidden />
+                  <AreaTile areaKey={activeArea.key} size={22} icon={activeArea.icon} />
+                  <span className="truncate">{activeArea.label}</span>
+                  <ChevronsUpDown className="ml-auto h-3.5 w-3.5 shrink-0 text-os-muted" aria-hidden />
                 </button>
               )}
               {areaMenuOpen && areaMenuRect && (
@@ -306,7 +313,7 @@ export function Rail({
                   }}
                   className={cn('fixed z-40 overflow-y-auto motion-safe:animate-area-menu', osMenuClass)}
                 >
-                  {areas.map((a) => {
+                  {orderedAreas.map((a) => {
                     const selected = a.key === activeArea.key
                     return (
                       <button
@@ -320,8 +327,11 @@ export function Rail({
                         }}
                         className={cn(osMenuItemClass, selected && 'font-semibold')}
                       >
-                        <a.icon className={cn('h-4 w-4 flex-shrink-0', selected ? 'text-os-accent' : 'text-os-grey')} />
-                        <span className="truncate">{a.label}</span>
+                        <AreaTile areaKey={a.key} size={26} icon={a.icon} />
+                        <span className="flex min-w-0 flex-col">
+                          <span className="truncate">{a.label}</span>
+                          {a.description && <span className="truncate text-xs font-normal text-os-muted">{a.description}</span>}
+                        </span>
                         {selected && <Check className="ml-auto h-3.5 w-3.5 flex-shrink-0 text-os-accent" />}
                       </button>
                     )

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { activeQuickItem, badgeLabel, splitFavorites, userMenuEntries } from "~/components/shell/rail-model";
+import { Settings } from "lucide-react";
+import { activeQuickItem, badgeLabel, orderRailAreas, splitFavorites, userMenuEntries } from "~/components/shell/rail-model";
 import { homeNavItem, pinnedNavItems } from "~/lib/nav-areas";
 
 const member = { isAlumni: false, isNewMember: false };
@@ -88,5 +89,26 @@ describe("userMenuEntries", () => {
     expect(urls({ releaseNotes: false, desktopDownload: false })).not.toContain("/download");
     const items = userMenuEntries({ releaseNotes: false, desktopDownload: true });
     expect(items.at(-1)).toMatchObject({ url: "/download", label: "Get the desktop app" });
+  });
+});
+
+describe("orderRailAreas", () => {
+  const mk = (key: string) => ({ key, label: key, icon: Settings, hubPath: `/${key}`, subtabs: [] });
+
+  it("orders Lab, Community, Education, Hiring, Core, Admin without mutating the input", () => {
+    const input = ["admin", "core", "hiring", "education", "community", "projects"].map(mk);
+    expect(orderRailAreas(input).map((a) => a.key)).toEqual([
+      "projects",
+      "community",
+      "education",
+      "hiring",
+      "core",
+      "admin",
+    ]);
+    expect(input[0].key).toBe("admin");
+  });
+
+  it("puts unknown areas last", () => {
+    expect(orderRailAreas([mk("zzz"), mk("core")]).map((a) => a.key)).toEqual(["core", "zzz"]);
   });
 });
