@@ -151,7 +151,7 @@ export function FeedbackButton({
 
   return (
     <>
-      <div className="fixed bottom-4 right-4 z-30 print:hidden">
+      <div className="fixed bottom-4 right-4 z-30 md:right-[calc(1rem+var(--side-panel-w,0px))] print:hidden">
         <Menu
           align="right"
           ariaLabel="Feedback"
