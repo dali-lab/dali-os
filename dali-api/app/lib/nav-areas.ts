@@ -347,7 +347,7 @@ export function areaInk(key: string | undefined): string {
   return (key && AREA_TONES[key]?.ink) || "#0f6e7d";
 }
 
-export const RAIL_AREA_ORDER = ["projects", "community", "education", "hiring", "core", "admin"];
+export const RAIL_AREA_ORDER = ["projects", "community", "core", "education", "hiring", "admin"];
 
 export function areaIconFor(key: string): LucideIcon | undefined {
   return REGROUPED_AREAS.find((a) => a.key === key)?.icon;

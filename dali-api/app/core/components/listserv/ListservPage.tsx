@@ -435,7 +435,7 @@ function SubmissionDetail({
   return (
     <Drawer open={s !== null} onClose={onClose} title="Submission" footer={footer}>
       {s && (
-        <div className="flex flex-col gap-6">
+        <div className="flex min-h-0 flex-col gap-6 overflow-y-auto px-6 pb-6">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex flex-wrap items-center gap-3">
               <Pill dot={STATUS_DOT[s.status]}>{statusLabel(s.status, isLead)}</Pill>
@@ -577,7 +577,7 @@ function SubmissionComposer({
       }
     >
       <form
-        className={cn(os.formClass, "flex flex-col gap-6")}
+        className={cn(os.formClass, "flex min-h-0 flex-col gap-6 overflow-y-auto px-6 pb-6")}
         onSubmit={(e) => {
           e.preventDefault();
           submit();

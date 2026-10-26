@@ -95,14 +95,14 @@ describe("userMenuEntries", () => {
 describe("orderRailAreas", () => {
   const mk = (key: string) => ({ key, label: key, icon: Settings, hubPath: `/${key}`, subtabs: [] });
 
-  it("orders Lab, Community, Education, Hiring, Core, Admin without mutating the input", () => {
-    const input = ["admin", "core", "hiring", "education", "community", "projects"].map(mk);
+  it("orders Lab, Community, Core, Education, Hiring, Admin without mutating the input", () => {
+    const input = ["admin", "hiring", "education", "core", "community", "projects"].map(mk);
     expect(orderRailAreas(input).map((a) => a.key)).toEqual([
       "projects",
       "community",
+      "core",
       "education",
       "hiring",
-      "core",
       "admin",
     ]);
     expect(input[0].key).toBe("admin");
