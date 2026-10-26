@@ -206,7 +206,7 @@ export default function PartnerApply({ actionData }: Route.ComponentProps) {
   if (!applicationForm) {
     return (
       <div className="max-w-2xl mx-auto">
-        <h1 className="font-heading text-3xl font-medium text-foreground mb-2">
+        <h1 className="font-heading text-4xl font-medium text-foreground mb-2">
           Apply to partner with DALI
         </h1>
         <p className="text-os-grey">
@@ -218,7 +218,7 @@ export default function PartnerApply({ actionData }: Route.ComponentProps) {
 
   return (
     <div className="max-w-2xl mx-auto">
-      <h1 className="font-heading text-3xl font-medium text-foreground mb-2">
+      <h1 className="font-heading text-4xl font-medium text-foreground mb-2">
         Apply to partner with DALI
       </h1>
       <p className="text-os-grey mb-8">

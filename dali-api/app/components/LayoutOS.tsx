@@ -171,9 +171,9 @@ export function LayoutOS({
   const desktopTabsFlag = useFeatureFlag('desktop-tabs')
   const showTabs = useDesktopTabs(desktopTabsFlag && tabless, tabStripHint)
   const shellV2 = desktopTabsFlag && tabless
-  // With the compact-sidebar flag on, the rail scales between full width and an
-  // icon column instead of hiding, and ⌘\ toggles the size.
-  const sidebarScalable = useFeatureFlag('sidebar-compact') && shellV2
+  // Under the v2 shell the rail scales between full width and an icon column
+  // instead of hiding, and ⌘\ toggles the size.
+  const sidebarScalable = shellV2
   const { size: railSize, toggle: toggleRailSize, instant: railInstant } = useSidebarSize(sidebarScalable)
   const compactRail = sidebarScalable && railSize === 'compact'
   const [railHidden, setRailHidden] = useState(focusMode)
@@ -1038,11 +1038,17 @@ export function LayoutOS({
         {
           '--area': areaTint(activeArea?.key),
           // The page accent (--color-os-accent resolves from these) follows the
-          // page's own mode. Keyed on routeArea, not activeArea: a modeless
-          // page (home, calendar) keeps the default accent even while the rail
-          // still shows the last section.
-          '--mode-accent': routeArea ? areaTint(routeArea.key) : undefined,
-          '--mode-accent-ink': routeArea ? areaInk(routeArea.key) : undefined,
+          // page's own mode — v2 design only. Keyed on routeArea, not
+          // activeArea: a modeless page (home, calendar) keeps the default
+          // accent even while the rail still shows the last section.
+          ...(desktopTabsFlag && routeArea
+            ? {
+                '--mode-accent': areaTint(routeArea.key),
+                '--mode-accent-hover': `color-mix(in srgb, ${areaTint(routeArea.key)} 78%, white)`,
+                '--mode-accent-ink': areaInk(routeArea.key),
+                '--mode-accent-ink-hover': `color-mix(in srgb, ${areaInk(routeArea.key)} 82%, black)`,
+              }
+            : {}),
         } as React.CSSProperties
       }
       className={cn(

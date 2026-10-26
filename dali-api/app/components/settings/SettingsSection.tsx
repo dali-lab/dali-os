@@ -23,7 +23,7 @@ export function SettingsSection({
       className="grid scroll-mt-6 gap-4 border-t border-os-container/70 pt-8 first:border-t-0 first:pt-0 lg:grid-cols-[260px_minmax(0,1fr)] lg:gap-10"
     >
       <div className="flex flex-col gap-1">
-        <h2 id={`${id}-title`} className="font-heading text-[17px] font-semibold text-foreground">
+        <h2 id={`${id}-title`} className="font-heading text-[19px] font-semibold text-foreground">
           {title}
         </h2>
         <p className="text-sm text-os-grey">{description}</p>

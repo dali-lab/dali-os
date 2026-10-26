@@ -215,7 +215,7 @@ export function PortalProfileCard({
   return (
     <section className="flex flex-col gap-3">
       <div className="flex items-center justify-between gap-3">
-        <h2 className="font-heading text-[17px] font-semibold text-foreground">
+        <h2 className="font-heading text-[19px] font-semibold text-foreground">
           Profile
         </h2>
         <div className="flex items-center gap-3">

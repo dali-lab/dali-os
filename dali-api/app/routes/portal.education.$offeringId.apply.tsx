@@ -99,7 +99,7 @@ export default function PortalApplyToOffering() {
           <TypeBadge type={offering.type} />
           <MyStatusChip status={myStatus} />
         </div>
-        <h1 className="mt-1 font-heading text-3xl font-medium text-foreground">
+        <h1 className="mt-1 font-heading text-4xl font-medium text-foreground">
           {offering.requiresReview ? "Apply to" : "RSVP for"} {offering.title}
         </h1>
       </header>

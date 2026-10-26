@@ -91,7 +91,7 @@ export default function GalleryPostPage() {
 
         {more.length > 0 && (
           <div className="flex flex-col gap-4 pt-4">
-            <h2 className="text-center font-heading text-[17px] font-semibold text-foreground">
+            <h2 className="text-center font-heading text-[19px] font-semibold text-foreground">
               More to explore
             </h2>
             <GalleryMasonry posts={more} />

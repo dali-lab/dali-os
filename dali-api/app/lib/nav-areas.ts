@@ -343,8 +343,8 @@ export function areaTint(key: string | undefined): string {
   return (key && AREA_TONES[key]?.tint) || DEFAULT_AREA_TINT;
 }
 
-export function areaInk(key: string | undefined): string | undefined {
-  return key ? AREA_TONES[key]?.ink : undefined;
+export function areaInk(key: string | undefined): string {
+  return (key && AREA_TONES[key]?.ink) || "#0f6e7d";
 }
 
 export const RAIL_AREA_ORDER = ["projects", "community", "education", "hiring", "core", "admin"];

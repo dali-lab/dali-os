@@ -469,9 +469,10 @@ export default function AppLayoutRoute() {
   // iframe runs this loader, so the flag map is present in every document.
   // The iframe document has no LayoutOS to set the mode-accent vars, so this
   // shell div states them itself from the page's own mode.
-  const embeddedArea = embedded
-    ? areaForPath(`${location.pathname}${location.search}`, flags)
-    : undefined
+  const embeddedArea =
+    embedded && flags['desktop-tabs'] === true
+      ? areaForPath(`${location.pathname}${location.search}`, flags)
+      : undefined
   if (embedded) {
     return (
       <FeatureFlagsProvider flags={flags}>
@@ -499,8 +500,14 @@ export default function AppLayoutRoute() {
             )}
             style={
               {
-                '--mode-accent': embeddedArea ? areaTint(embeddedArea.key) : undefined,
-                '--mode-accent-ink': embeddedArea ? areaInk(embeddedArea.key) : undefined,
+                ...(embeddedArea
+                  ? {
+                      '--mode-accent': areaTint(embeddedArea.key),
+                      '--mode-accent-hover': `color-mix(in srgb, ${areaTint(embeddedArea.key)} 78%, white)`,
+                      '--mode-accent-ink': areaInk(embeddedArea.key),
+                      '--mode-accent-ink-hover': `color-mix(in srgb, ${areaInk(embeddedArea.key)} 82%, black)`,
+                    }
+                  : {}),
               } as CSSProperties
             }
           >

@@ -239,14 +239,14 @@ export default function PartnerSettings({ actionData }: Route.ComponentProps) {
 
   return (
     <div className="flex flex-col gap-8 max-w-2xl mx-auto">
-      <h1 className="font-heading text-3xl font-medium text-foreground">Settings</h1>
+      <h1 className="font-heading text-4xl font-medium text-foreground">Settings</h1>
 
       {error && (
         <p className="text-sm text-destructive bg-destructive/10 rounded-lg px-4 py-3">{error}</p>
       )}
 
       <section className="rounded-os-card bg-os-card p-5">
-        <h2 className="font-heading text-[17px] font-semibold text-foreground mb-4">Profile</h2>
+        <h2 className="font-heading text-[19px] font-semibold text-foreground mb-4">Profile</h2>
         <Form method="post" className="os-form flex flex-col gap-4">
           <input type="hidden" name="intent" value="profile" />
           <PhotoUploadField
@@ -305,19 +305,19 @@ export default function PartnerSettings({ actionData }: Route.ComponentProps) {
       </section>
 
       <section className="rounded-os-card bg-os-card p-5">
-        <h2 className="font-heading text-[17px] font-semibold text-foreground mb-4">Appearance</h2>
+        <h2 className="font-heading text-[19px] font-semibold text-foreground mb-4">Appearance</h2>
         <AppearanceSettingsBlock />
       </section>
 
       <section className="rounded-os-card bg-os-card p-5">
-        <h2 className="font-heading text-[17px] font-semibold text-foreground mb-4">Passkeys</h2>
+        <h2 className="font-heading text-[19px] font-semibold text-foreground mb-4">Passkeys</h2>
         <PasskeysSettingsBlock />
       </section>
 
       {hasOrg && org && (
         <>
           <section className="rounded-os-card bg-os-card p-5">
-            <h2 className="font-heading text-[17px] font-semibold text-foreground mb-4">
+            <h2 className="font-heading text-[19px] font-semibold text-foreground mb-4">
               Organization
             </h2>
             <Form method="post" className="os-form flex flex-col gap-4">
@@ -348,7 +348,7 @@ export default function PartnerSettings({ actionData }: Route.ComponentProps) {
 
           <section className="rounded-os-card bg-os-card p-5">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="font-heading text-[17px] font-semibold text-foreground">Team</h2>
+              <h2 className="font-heading text-[19px] font-semibold text-foreground">Team</h2>
               <button
                 type="button"
                 onClick={() => setInviting((v) => !v)}

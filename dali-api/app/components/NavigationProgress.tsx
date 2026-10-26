@@ -27,13 +27,17 @@ export function NavigationProgressBar({ className }: { className?: string }) {
   const location = useLocation();
   const isLoading = navigation.state !== "idle";
 
-  // The bar wears the color of the mode being loaded — the destination's area
-  // tint (the same `--area` accent the rail uses), not a fixed accent. Pages
-  // outside any area (portal, auth, home) keep the default accent. Resolved
-  // from the path alone: this mounts at the document root, above the shell
-  // div that carries `--area`.
+  // Under the v2 design (the data-v2 marker root.tsx sets from the
+  // desktop-tabs flag) the bar wears the color of the mode being loaded — the
+  // destination's area tint. Otherwise, and on pages outside any area
+  // (portal, auth, home), it keeps the default accent. Resolved from the path
+  // alone: this mounts at the document root, above the shell div that carries
+  // `--area`, and outside the flag provider.
+  const v2 =
+    typeof document !== "undefined" &&
+    document.documentElement.hasAttribute("data-v2");
   const target = navigation.location ?? location;
-  const area = areaForPath(`${target.pathname}${target.search}`);
+  const area = v2 ? areaForPath(`${target.pathname}${target.search}`) : undefined;
   const color = area ? areaTint(area.key) : "var(--color-os-accent)";
 
   // visible drives mount + fade; progress is the width %.

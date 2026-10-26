@@ -5,6 +5,7 @@ import {
   Outlet,
   Scripts,
   ScrollRestoration,
+  useMatches,
 } from "react-router";
 import { useEffect, useState } from "react";
 
@@ -57,6 +58,20 @@ export const meta: Route.MetaFunction = () => [
 ];
 
 export function Layout({ children }: { children: React.ReactNode }) {
+  // The v2 design (the sidebar redesign's scale and dress) rides the
+  // desktop-tabs flag. The gate is a data attribute on <html> — app.css keys
+  // its html[data-v2] layer on it — rendered server-side from the layout
+  // loader's flag map so there is no flash of the other scale. A data
+  // attribute, not a class: the theme boot script owns html's classList, and
+  // React re-rendering a className here would wipe what it set.
+  const matches = useMatches();
+  const v2 = matches.some(
+    (m) =>
+      (m.data as { flags?: Record<string, boolean> } | undefined)?.flags?.[
+        "desktop-tabs"
+      ] === true,
+  );
+
   // Published as a <meta> tag rather than an inline <script> so that
   // `script-src 'self'` in the CSP can stay strict. Only computed server-side;
   // on the client the DOM already carries it.
@@ -77,7 +92,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
       : document.querySelector('meta[name="dali-ai-enabled"]')?.getAttribute("content") === "1";
 
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="en" suppressHydrationWarning data-v2={v2 ? "" : undefined}>
       <head>
         <meta charSet="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />

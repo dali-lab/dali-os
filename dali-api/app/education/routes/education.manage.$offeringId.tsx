@@ -971,7 +971,7 @@ export default function ManageOffering() {
         <div>
           {/* Title first: the badges qualify the offering, so they read better
               under its name than as an eyebrow above it. */}
-          <h1 className="font-heading text-3xl font-medium text-foreground">
+          <h1 className="font-heading text-4xl font-medium text-foreground">
             {offering.title}
           </h1>
           <div className="mt-3 flex flex-wrap items-center gap-2.5">
@@ -1447,7 +1447,7 @@ export default function ManageOffering() {
                 >
                   <div className="mb-5 flex items-start justify-between gap-4">
                     <div className="min-w-0">
-                      <h3 className="font-heading text-[17px] font-semibold text-foreground">
+                      <h3 className="font-heading text-[19px] font-semibold text-foreground">
                         {s.title ? `${s.sequence}. ${s.title}` : `Session ${s.sequence}`}
                       </h3>
                       <p className="mt-0.5 text-sm text-os-grey">
@@ -1950,7 +1950,7 @@ function FeedbackResults({
   return (
     <section className="flex flex-col gap-3">
       <div>
-        <h2 className="font-heading text-[17px] font-semibold text-foreground">
+        <h2 className="font-heading text-[19px] font-semibold text-foreground">
           {title}
         </h2>
         {rate !== null && (

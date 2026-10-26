@@ -56,7 +56,7 @@ export default function PortalEducation() {
   return (
     <div className="px-6 py-10 flex flex-col gap-8">
       <header>
-        <h1 className="font-heading text-3xl font-medium text-foreground">
+        <h1 className="font-heading text-4xl font-medium text-foreground">
           Education at DALI
         </h1>
       </header>

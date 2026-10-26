@@ -314,7 +314,7 @@ export default function MembersList() {
           <h1
             className={cn(
               "font-heading text-foreground",
-              "text-3xl font-medium",
+              "text-4xl font-medium",
             )}
           >
             People

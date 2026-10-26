@@ -50,7 +50,7 @@ export default function CoffeeChat() {
 
   return (
     <div className="flex flex-col gap-4">
-      <h1 className="font-heading text-3xl font-medium text-foreground">{KIND_HEADINGS[chat.kind]}</h1>
+      <h1 className="font-heading text-4xl font-medium text-foreground">{KIND_HEADINGS[chat.kind]}</h1>
       <article className="flex flex-col gap-4 rounded-os-card bg-os-card p-5">
         <div className="flex items-start gap-3">
           <span className="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-[10px] bg-os-accent/15 text-os-accent">

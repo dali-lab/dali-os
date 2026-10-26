@@ -204,7 +204,7 @@ export default function PortalHome() {
   return (
     <div className="px-6 py-10 flex flex-col gap-8">
       <header>
-        <h1 className="font-heading text-3xl font-medium text-foreground">
+        <h1 className="font-heading text-4xl font-medium text-foreground">
           {firstName ? `What are you here to do today, ${firstName}? 👋` : "Welcome to DALI"}
         </h1>
       </header>

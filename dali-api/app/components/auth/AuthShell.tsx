@@ -1,17 +1,30 @@
 // Shared split-panel chrome for all auth/onboarding screens.
-// Extracted verbatim from login.tsx — pixel-identical markup and classes.
 // Props:
 //   heading  – page heading shown in the right form panel
 //   error    – optional inline error string (shown as a red banner)
 //   children – form content placed inside the right panel
+//   v2       – the dali.os redesign (behind the desktop-tabs flag); stepKey
+//              and notice only apply there.
+
+import { AuthShellV2 } from "~/components/auth/v2";
 
 interface AuthShellProps {
   heading: string;
   error?: string | null;
   children: React.ReactNode;
+  v2?: boolean;
+  stepKey?: string;
+  notice?: string | null;
 }
 
-export default function AuthShell({ heading, error, children }: AuthShellProps) {
+export default function AuthShell({ heading, error, children, v2 = false, stepKey, notice }: AuthShellProps) {
+  if (v2) {
+    return (
+      <AuthShellV2 title={heading} stepKey={stepKey} error={error} notice={notice}>
+        {children}
+      </AuthShellV2>
+    );
+  }
   return (
     <div className="os-type min-h-screen bg-page flex relative overflow-hidden">
       {/* Decorative blocks along right edge — rotated so original width spans viewport height */}

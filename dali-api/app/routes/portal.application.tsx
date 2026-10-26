@@ -288,7 +288,7 @@ export default function PortalApplication() {
             </svg>
             Back to portal
           </Link>
-          <h1 className="font-heading text-3xl font-medium text-foreground">Your Application</h1>
+          <h1 className="font-heading text-4xl font-medium text-foreground">Your Application</h1>
           <p className="text-sm text-muted-foreground mt-1">
             Submitted {submittedDate} — this view reflects your most recently saved answers.
           </p>

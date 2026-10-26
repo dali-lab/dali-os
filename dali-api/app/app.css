@@ -65,6 +65,15 @@
      the right as the flow advances, fields shake on a rejected submit, and
      the code boxes pop in with a stagger (delay set inline per digit). */
   --animate-auth-rise: auth-rise 280ms cubic-bezier(0.23, 1, 0.32, 1) both;
+
+  /* Auth brand panel tile cluster (AnimatedTileCluster): entrance pop, then
+     per-tile idle loops. Delays are set inline per tile. */
+  --animate-auth-tile-pop: auth-tile-pop 600ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  --animate-auth-tile-slide: auth-tile-slide 8s cubic-bezier(0.65, 0, 0.35, 1) infinite both;
+  --animate-auth-tile-flip: auth-tile-flip 9s cubic-bezier(0.65, 0, 0.35, 1) infinite both;
+  --animate-auth-tile-breathe: auth-tile-breathe 3.2s cubic-bezier(0.65, 0, 0.35, 1) infinite both;
+  --animate-auth-tile-orbit: auth-tile-orbit 6s linear infinite both;
+  --animate-auth-tile-spin: auth-tile-spin 5s cubic-bezier(0.65, 0, 0.35, 1) infinite both;
   --animate-auth-step: auth-step 240ms cubic-bezier(0.23, 1, 0.32, 1) both;
   --animate-auth-shake: auth-shake 300ms ease-in-out;
   --animate-auth-digit: auth-digit 200ms cubic-bezier(0.23, 1, 0.32, 1) both;
@@ -170,7 +179,7 @@
      area's tint) and --mode-accent-ink (its on-white restatement) from
      AREA_TONES; outside any mode these fall back to the shell's own cyan. */
   --color-os-accent:       var(--mode-accent, #a8d3de);
-  --color-os-accent-hover: color-mix(in srgb, var(--mode-accent, #a8d3de) 78%, white);
+  --color-os-accent-hover: var(--mode-accent-hover, #bfe1e9);
   --color-os-grey:         #bababa;  /* secondary text */
   --color-os-muted:        #6a6a73;  /* tertiary text / placeholders */
   --color-os-green:        #9fe0a8;  /* "Active" status */
@@ -201,10 +210,8 @@
   /* The scrim behind a dialog or the mobile nav. */
   --color-os-overlay:      rgba(10, 13, 10, 0.6);
 
-  /* The sidebar-era radius scale: cards and tables at 12px, every control
-     (buttons, inputs, filters) at 8px. */
-  --radius-os-card: 12px;
-  --radius-os-item: 8px;
+  --radius-os-card: 24px;
+  --radius-os-item: 12px;
 
   --font-os: "Mulish", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   --font-os-logo: "Plus Jakarta Sans", "Mulish", ui-sans-serif, system-ui, sans-serif;
@@ -577,12 +584,6 @@ input[type="range"] {
 html {
   background-color: var(--color-background);
   color-scheme: light dark;
-  /* The app's scale. The compact sidebar redesign set the shell's type and
-     control metrics lower than the default 16px rem grid, so the whole app
-     follows: every rem-based utility (text, padding, gaps, heights) renders
-     at 15/16 of its nominal size. px rules don't follow — the design-system
-     controls below state their sizes one notch down to match. */
-  font-size: 15px;
   /* Reserve the scrollbar's width even when the page doesn't scroll, so the
      layout doesn't jump sideways when content height crosses the viewport or
      a modal locks body scroll. */
@@ -665,6 +666,96 @@ select:not(:disabled) {
   }
   to {
     opacity: 1;
+  }
+}
+
+/* Auth tiles: pop in diagonally… */
+@keyframes auth-tile-pop {
+  from {
+    opacity: 0;
+    transform: scale(0);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* …slide to an empty cell and back (cells set inline as --tile-l/t vars)… */
+@keyframes auth-tile-slide {
+  0%, 62%, 100% {
+    left: var(--tile-l0);
+    top: var(--tile-t0);
+  }
+  12%, 50% {
+    left: var(--tile-l1);
+    top: var(--tile-t1);
+  }
+}
+
+/* …squash to a line and reopen in the alternate colour pair… */
+@keyframes auth-tile-flip {
+  0%, 100% {
+    transform: none;
+    background-color: var(--tile-bg);
+    color: var(--tile-fg);
+  }
+  5% {
+    transform: scaleY(0);
+    background-color: var(--tile-bg);
+    color: var(--tile-fg);
+  }
+  10%, 50% {
+    transform: none;
+    background-color: var(--tile-alt-bg);
+    color: var(--tile-alt-fg);
+  }
+  55% {
+    transform: scaleY(0);
+    background-color: var(--tile-alt-bg);
+    color: var(--tile-alt-fg);
+  }
+  60% {
+    transform: none;
+    background-color: var(--tile-bg);
+    color: var(--tile-fg);
+  }
+}
+
+/* …breathe, orbit the tile's centre, or spin a quarter turn at a time. */
+@keyframes auth-tile-breathe {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(0.62);
+  }
+}
+
+@keyframes auth-tile-orbit {
+  0%, 100% {
+    transform: translate(0, -55%);
+  }
+  25% {
+    transform: translate(55%, 0);
+  }
+  50% {
+    transform: translate(0, 55%);
+  }
+  75% {
+    transform: translate(-55%, 0);
+  }
+}
+
+@keyframes auth-tile-spin {
+  0% {
+    transform: rotate(0deg);
+  }
+  20%, 50% {
+    transform: rotate(90deg);
+  }
+  70%, 100% {
+    transform: rotate(180deg);
   }
 }
 
@@ -1111,9 +1202,6 @@ select:not(:disabled) {
 .os-shell,
 html.os-shell {
   font-family: var(--font-os);
-  /* dali.os type system: Plus Jakarta Sans headings over Mulish body — the
-     base-layer h1–h6 rule picks this remap up inside the shell. */
-  --font-heading: var(--font-os-logo);
   color-scheme: dark;
 
   /* The dali.os palette is applied by *remapping the semantic tokens* inside
@@ -1241,7 +1329,7 @@ html.light .os-shell,
   --color-os-container-hi: #a9b9c9;  /* hover border */
   /* The mode accent again, in each area's on-white ink (see AREA_TONES). */
   --color-os-accent:       var(--mode-accent-ink, #0f6e7d);
-  --color-os-accent-hover: color-mix(in srgb, var(--mode-accent-ink, #0f6e7d) 82%, black);
+  --color-os-accent-hover: var(--mode-accent-ink-hover, #0b5964);
   --color-os-grey:         #4d5c69;  /* secondary text */
   --color-os-muted:        #78899a;  /* tertiary text / placeholders */
   --color-os-green:        #0f7a4d;  /* "Active" status */
@@ -1401,12 +1489,12 @@ html.os-shell > body::-webkit-scrollbar-track {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 16px;
-  border-radius: 8px;
+  padding: 10px 18px;
+  border-radius: 100px;
   background: var(--color-os-add-bg);
   border: 1px solid var(--color-os-container);
   color: var(--color-os-fg);
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 900;
   transition: background-color 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
 }
@@ -1426,7 +1514,7 @@ html.os-shell > body::-webkit-scrollbar-track {
   border-radius: var(--radius-os-card);
   border: 1px solid var(--color-os-container);
   background: var(--color-os-card);
-  padding: 20px;
+  padding: 24px;
   box-shadow: 0 24px 64px var(--color-os-shadow);
 }
 
@@ -1470,7 +1558,7 @@ html.os-shell > body::-webkit-scrollbar-track {
   align-items: center;
   gap: 6px;
   padding: 6px 12px;
-  border-radius: 6px;
+  border-radius: 100px;
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.24px;
@@ -1522,9 +1610,9 @@ html.os-shell > body::-webkit-scrollbar-track {
 .os-shell .os-form textarea {
   background: var(--color-os-well);
   border: 1px solid var(--color-os-container);
-  border-radius: 8px;
-  padding: 8px 12px;
-  font-size: 13px;
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 14px;
   color: var(--color-os-fg);
   transition: border-color 0.15s ease;
 }
@@ -1546,9 +1634,9 @@ html.os-shell > body::-webkit-scrollbar-track {
 .os-shell .os-form button[aria-haspopup="dialog"] {
   background: var(--color-os-well);
   border: 1px solid var(--color-os-container);
-  border-radius: 8px;
-  padding: 8px 12px;
-  font-size: 13px;
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 14px;
   color: var(--color-os-fg);
   transition: border-color 0.15s ease;
 }
@@ -1562,7 +1650,7 @@ html.os-shell > body::-webkit-scrollbar-track {
 .os-shell .os-form [data-time-field] {
   background: var(--color-os-well);
   border: 1px solid var(--color-os-container);
-  border-radius: 8px;
+  border-radius: 10px;
   transition: border-color 0.15s ease;
 }
 .os-shell .os-form [data-time-field]:hover {
@@ -1575,10 +1663,10 @@ html.os-shell > body::-webkit-scrollbar-track {
   background: transparent;
   border: 0;
   border-radius: 0;
-  padding: 8px 4px 8px 12px;
+  padding: 10px 4px 10px 14px;
 }
 .os-shell .os-form [data-time-field] button {
-  padding-right: 12px;
+  padding-right: 14px;
 }
 
 /* Some of these forms state their fields as a <dl> two-column grid (label
@@ -1593,9 +1681,10 @@ html.os-shell > body::-webkit-scrollbar-track {
   align-items: start;
 }
 .os-shell .os-form dt {
-  /* Labels in the sidebar design: 14px semibold, sentence case. */
-  font-size: 14px;
-  font-weight: 600;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
   color: var(--color-os-grey);
 }
 .os-shell .os-form dt ~ dt {
@@ -1606,8 +1695,10 @@ html.os-shell > body::-webkit-scrollbar-track {
    first <span> is the caption, so the design's field label lands on all of
    them at once rather than being retyped onto every field. */
 .os-shell .os-form label > span:first-child {
-  font-size: 14px;
-  font-weight: 600;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
   color: var(--color-os-grey);
 }
 
@@ -1654,9 +1745,11 @@ html.os-shell > body::-webkit-scrollbar-track {
   margin-bottom: 20px;
 }
 .os-field-label {
-  font-size: 14px;
-  font-weight: 600;
+  font-size: 11px;
+  font-weight: 700;
   color: var(--color-os-grey);
+  letter-spacing: 1px;
+  text-transform: uppercase;
 }
 .os-shell .os-field-hint {
   font-size: 12px;
@@ -1704,7 +1797,7 @@ html.os-shell > body::-webkit-scrollbar-track {
   background: var(--color-os-overlay);
 }
 .os-shell .os-modal-title {
-  font-size: 20px;
+  font-size: 22px;
   font-weight: 500;
 }
 .os-shell .os-modal-footer {
@@ -1726,7 +1819,7 @@ html.os-shell > body::-webkit-scrollbar-track {
   gap: 8px;
   background: var(--color-os-well);
   border: 1px solid var(--color-os-container);
-  border-radius: 8px;
+  border-radius: 10px;
   padding: 8px 12px;
   font-size: 13px;
   color: var(--color-os-fg);
@@ -1852,7 +1945,7 @@ html.os-shell > body::-webkit-scrollbar-track {
 }
 .os-sprint-chip {
   padding: 6px 14px;
-  border-radius: 8px;
+  border-radius: 100px;
   font-size: 12px;
   font-weight: 700;
   background: var(--color-os-well);
@@ -1874,7 +1967,7 @@ html.os-shell > body::-webkit-scrollbar-track {
   font-size: 12px;
   font-weight: 600;
   padding: 5px 12px;
-  border-radius: 6px;
+  border-radius: 100px;
 }
 
 /* Read-only mode. The controls stay in the DOM (so switching to edit is a
@@ -1932,8 +2025,8 @@ html.os-shell > body::-webkit-scrollbar-track {
 .os-shell .os-form-readonly .os-live textarea {
   background: var(--color-os-well) !important;
   border: 1px solid var(--color-os-container) !important;
-  border-radius: 8px;
-  padding: 8px 12px !important;
+  border-radius: 10px;
+  padding: 10px 14px !important;
 }
 .os-shell .os-form-readonly .os-live input:focus,
 .os-shell .os-form-readonly .os-live textarea:focus {
@@ -1949,19 +2042,13 @@ html.os-shell > body::-webkit-scrollbar-track {
    pill radius and the palette are the design's; padding stays with the size
    class so dense toolbars don't balloon. */
 .os-shell .dali-btn {
-  border-radius: 8px;
+  border-radius: 100px;
   font-weight: 600;
-  /* The design sets its controls in 13px. The `sm` size compiles to text-xs,
+  /* The design sets its controls in 14px. The `sm` size compiles to text-xs,
      which reads as a different family of button next to an os search pill or
      filter chip — so the shell pulls every button back onto its own scale and
      lets the size class keep owning the padding. */
-  font-size: 13px;
-  /* Fixed control heights (sidebar scale): md buttons 36px, the smaller sizes
-     32px, instead of padding-derived heights. */
-  height: 32px;
-}
-.os-shell .dali-btn--size-md {
-  height: 36px;
+  font-size: 14px;
 }
 .os-shell .dali-btn--primary {
   background: var(--color-os-accent);
@@ -1977,8 +2064,7 @@ html.os-shell > body::-webkit-scrollbar-track {
 }
 .os-shell .dali-btn--secondary:hover {
   border-color: var(--color-os-container-hi);
-  /* The sidebar rows' soft white highlight, shared by every hover state. */
-  background: var(--color-os-hover);
+  background: transparent;
   color: var(--color-os-fg);
 }
 .os-shell .dali-btn--ghost {
@@ -1986,7 +2072,7 @@ html.os-shell > body::-webkit-scrollbar-track {
   font-weight: 500;
 }
 .os-shell .dali-btn--ghost:hover {
-  background: var(--color-os-hover);
+  background: var(--color-os-container);
   color: var(--color-os-fg);
 }
 .os-shell .dali-btn:focus-visible {
@@ -2027,12 +2113,12 @@ html.os-shell > body::-webkit-scrollbar-track {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 16px;
-  border-radius: 8px;
+  padding: 10px 18px;
+  border-radius: 100px;
   background: transparent;
   border: 1px solid var(--color-os-container);
   color: var(--color-os-grey);
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
   transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
 }
@@ -2058,11 +2144,11 @@ html.os-shell > body::-webkit-scrollbar-track {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 18px;
-  border-radius: 8px;
+  padding: 10px 22px;
+  border-radius: 100px;
   background: var(--color-os-accent);
   color: var(--color-os-bg);
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
   transition: background-color 0.15s ease;
 }
@@ -2074,7 +2160,7 @@ html.os-shell > body::-webkit-scrollbar-track {
    shape and colour, one size down — mirrors .os-add-btn--sm. */
 .os-btn-primary--sm {
   padding: 6px 14px;
-  font-size: 12px;
+  font-size: 13px;
   gap: 6px;
 }
 
@@ -2082,10 +2168,10 @@ html.os-shell > body::-webkit-scrollbar-track {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 16px;
-  border-radius: 8px;
+  padding: 10px 20px;
+  border-radius: 100px;
   color: var(--color-os-grey);
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 500;
   transition: background-color 0.15s ease, color 0.15s ease;
 }
@@ -2159,4 +2245,143 @@ html.os-shell > body::-webkit-scrollbar-track {
 html.light .area-tile-ring,
 .light .area-tile-ring {
   box-shadow: none;
+}
+
+/* ── v2 design (desktop-tabs flag) ───────────────────────────────────────────
+ * The sidebar redesign's scale and dress, applied only when the layout marks
+ * the document with data-v2 on <html> (set server-side from the desktop-tabs
+ * flag; see root.tsx). Everything above states the pre-redesign design; this
+ * block restates each knob at the v2 values, so a flag-off document renders
+ * exactly as before. */
+html[data-v2] {
+  /* 15/16 scale: every rem-based utility (text, padding, gaps, heights)
+     renders at 15/16 of its nominal size. */
+  font-size: 15px;
+  /* Cards and tables at 12px corners, every control at 8px. */
+  --radius-os-card: 12px;
+  --radius-os-item: 8px;
+}
+
+/* dali.os type system under v2: Plus Jakarta Sans headings over Mulish body —
+   the base-layer h1–h6 rule picks this remap up inside the shell. */
+html[data-v2] .os-shell,
+html[data-v2].os-shell {
+  --font-heading: var(--font-os-logo);
+}
+
+/* Page/section titles written as literal classes (the useOsChrome hook gates
+   its own strings): the old 36px heading dress renders as the v2 title — the
+   text-2xl size, bold, in the shell body face. Spared: responsive display
+   headings (banners) and the brand-dressed heroes (certificates). */
+html[data-v2] .font-heading.text-4xl:not(.md\:text-5xl):not(.text-dark-blue) {
+  font-family: var(--font-os);
+  font-size: var(--text-2xl);
+  line-height: var(--tw-leading, var(--text-2xl--line-height));
+  font-weight: 700;
+}
+html[data-v2] .font-heading.text-\[19px\] {
+  font-size: var(--text-base);
+  line-height: var(--tw-leading, var(--text-base--line-height));
+}
+
+/* Controls, one notch down and squared to the 8px corner. */
+html[data-v2] .os-add-btn {
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 13px;
+}
+html[data-v2] .os-edit-btn {
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 13px;
+}
+html[data-v2] .os-btn-primary {
+  padding: 8px 18px;
+  border-radius: 8px;
+  font-size: 13px;
+}
+html[data-v2] .os-btn-primary--sm {
+  font-size: 12px;
+}
+html[data-v2] .os-btn-ghost {
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 13px;
+}
+html[data-v2] .os-type-badge {
+  border-radius: 6px;
+}
+html[data-v2] .os-sprint-chip {
+  border-radius: 8px;
+}
+html[data-v2] .os-shell .os-label-chip {
+  border-radius: 6px;
+}
+html[data-v2] .os-item-row {
+  border-radius: 8px;
+}
+html[data-v2] .os-modal-card {
+  padding: 20px;
+}
+html[data-v2] .os-shell .os-modal-title {
+  font-size: 20px;
+}
+html[data-v2] .os-shell .dali-btn {
+  border-radius: 8px;
+  font-size: 13px;
+  /* Fixed control heights (sidebar scale): md buttons 36px, the smaller sizes
+     32px, instead of padding-derived heights. */
+  height: 32px;
+}
+html[data-v2] .os-shell .dali-btn--size-md {
+  height: 36px;
+}
+/* The sidebar rows' soft white highlight, shared by every hover state. */
+html[data-v2] .os-shell .dali-btn--secondary:hover {
+  background: var(--color-os-hover);
+}
+html[data-v2] .os-shell .dali-btn--ghost:hover {
+  background: var(--color-os-hover);
+}
+
+/* Fields: 8px corner, tighter metrics, 13px type. */
+html[data-v2] .os-shell .os-form input[type="text"],
+html[data-v2] .os-shell .os-form input[type="date"],
+html[data-v2] .os-shell .os-form input[type="email"],
+html[data-v2] .os-shell .os-form input[type="url"],
+html[data-v2] .os-shell .os-form input[type="number"],
+html[data-v2] .os-shell .os-form input[type="tel"],
+html[data-v2] .os-shell .os-form select,
+html[data-v2] .os-shell .os-form textarea,
+html[data-v2] .os-shell .os-form button[aria-haspopup="listbox"],
+html[data-v2] .os-shell .os-form button[aria-haspopup="menu"],
+html[data-v2] .os-shell .os-form button[aria-haspopup="dialog"] {
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 13px;
+}
+html[data-v2] .os-shell .os-form [data-time-field] {
+  border-radius: 8px;
+}
+html[data-v2] .os-shell .os-form [data-time-field] input[type="text"] {
+  border-radius: 0;
+  padding: 8px 4px 8px 12px;
+}
+html[data-v2] .os-shell .os-form [data-time-field] button {
+  padding-right: 12px;
+}
+html[data-v2] .os-shell .os-form-readonly .os-live input[type="text"],
+html[data-v2] .os-shell .os-form-readonly .os-live textarea {
+  border-radius: 8px;
+  padding: 8px 12px !important;
+}
+
+/* Labels in the sidebar design: 14px semibold, sentence case. */
+html[data-v2] .os-shell .os-form dt,
+html[data-v2] .os-shell .os-form label > span:first-child,
+html[data-v2] .os-field-label {
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: normal;
+  text-transform: none;
 }

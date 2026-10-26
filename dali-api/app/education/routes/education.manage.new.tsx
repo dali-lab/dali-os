@@ -46,7 +46,7 @@ export default function NewOffering() {
   return (
     <div className="flex flex-col gap-6 max-w-2xl">
       <header>
-        <h1 className="font-heading text-3xl font-medium text-foreground">
+        <h1 className="font-heading text-4xl font-medium text-foreground">
           New offering
         </h1>
         <p className="mt-2 text-sm text-os-grey">

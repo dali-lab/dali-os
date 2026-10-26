@@ -196,7 +196,7 @@ const STEPS = [
 function HowItWorks() {
   return (
     <section>
-      <h2 className="font-heading text-[17px] font-semibold text-foreground mb-4">
+      <h2 className="font-heading text-[19px] font-semibold text-foreground mb-4">
         How it works
       </h2>
       <ol className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -243,7 +243,7 @@ export default function PartnerHome() {
   return (
     <div className="flex flex-col gap-8 max-w-5xl">
       <div>
-        <h1 className="font-heading text-3xl font-medium text-foreground">
+        <h1 className="font-heading text-4xl font-medium text-foreground">
           Welcome{firstName ? `, ${firstName}` : ""}
         </h1>
         <p className="text-os-grey mt-1">
@@ -271,7 +271,7 @@ export default function PartnerHome() {
 
       {hasProjects && (
         <section>
-          <h2 className="font-heading text-[17px] font-semibold text-foreground mb-3">
+          <h2 className="font-heading text-[19px] font-semibold text-foreground mb-3">
             Your projects
           </h2>
           <div className="grid gap-4 sm:grid-cols-2">
@@ -306,7 +306,7 @@ export default function PartnerHome() {
       {hasApplications && (
         <section>
           <div className="flex items-center justify-between mb-3">
-            <h2 className="font-heading text-[17px] font-semibold text-foreground">
+            <h2 className="font-heading text-[19px] font-semibold text-foreground">
               Applications
             </h2>
             <Link

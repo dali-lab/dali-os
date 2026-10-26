@@ -431,20 +431,27 @@ html.dark .dali-doc .bn-thread-mark[data-orphan="true"] {
   font-family: var(--doc-font);
 }
 
-/* BlockNote sizes headings and spacing in em, so one base font-size scales
- * the whole body. The library default is 16px; the app's 15px root doesn't
- * reach it, so the doc body states the app scale itself. */
-.dali-doc .bn-editor {
-  font-size: 15px;
-}
-
-/* Small text: the body drops a step, and the title drops from the shared os
- * page-title size (text-3xl, 28px effective) by the same proportion. */
+/* Small text: BlockNote sizes headings and spacing in em, so one base
+ * font-size scales the whole body (default is 16px). The title drops from the
+ * shared os page-title size (36px) by the same proportion. */
 .doc-canvas--small .dali-doc .bn-editor {
-  font-size: 13px;
+  font-size: 14px;
 }
 .doc-canvas--small .doc-title {
-  font-size: 24px;
+  font-size: 30px;
+}
+
+/* v2 design (html[data-v2], the desktop-tabs flag): the doc body states the
+ * app's 15px scale itself — the library default is a px value the root rem
+ * change can't reach — and small text drops a step from there. */
+html[data-v2] .dali-doc .bn-editor {
+  font-size: 15px;
+}
+html[data-v2] .doc-canvas--small .dali-doc .bn-editor {
+  font-size: 13px;
+}
+html[data-v2] .doc-canvas--small .doc-title {
+  font-size: 20px;
 }
 
 /* Nesting guides: the shadcn theme draws a 1px vertical rule per nesting

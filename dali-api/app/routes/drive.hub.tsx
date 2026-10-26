@@ -1940,7 +1940,7 @@ export default function DriveHub() {
             chooser — the Finder move of clicking the window's own title to step
             out of the volume. The breadcrumb starts at the drive itself, so
             without this a top-level folder listing had no click path back. */}
-        <h1 className="font-heading text-3xl font-medium text-foreground">
+        <h1 className="font-heading text-4xl font-medium text-foreground">
           {effectiveScopeId && !isHiringLibrary ? (
             <button
               type="button"

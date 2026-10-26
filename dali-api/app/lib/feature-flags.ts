@@ -181,19 +181,13 @@ export const FEATURE_FLAGS = [
     key: "desktop-tabs",
     label: "Desktop tabs",
     description:
-      "Tabs become a desktop app feature built on the single-page shell instead of one iframe per tab. The desktop app shows a tab strip (on by default, switchable in Settings); browsers never do, and the tabbed workspace setting leaves browser Settings. Project documents and member notes open in a side panel beside the page, in the browser and the app. Ships off.",
+      "Tabs become a desktop app feature built on the single-page shell instead of one iframe per tab. The desktop app shows a tab strip (on by default, switchable in Settings); browsers never do, and the tabbed workspace setting leaves browser Settings. Project documents and member notes open in a side panel beside the page, in the browser and the app. Also carries the v2 design: the scalable sidebar (full width to a 68px icon rail, remembered per browser, auto-compact on narrow windows), the smaller app-wide scale, the squarer control dress, and mode-colored page accents and loading bar. Ships off.",
   },
   {
     key: "drive-slides",
     label: "Drive slide decks",
     description:
       "Adds Slides to the Drive New menus: a deck of title, text, text and image, and image slides, edited in the app and presented full screen. Decks already made keep opening when this is off. Ships off.",
-  },
-  {
-    key: "sidebar-compact",
-    label: "Compact sidebar",
-    description:
-      "The sidebar scales between full width and a 68px icon rail instead of hiding: the panel button, the rail's right edge and ⌘\\ toggle the size, the choice is remembered per browser, and narrow desktop windows go compact on their own. Ships off.",
   },
   {
     key: "onboarding-journeys",

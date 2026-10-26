@@ -1201,7 +1201,7 @@ function Header({
           </Form>
         ) : (
           <>
-            <h1 className="font-heading text-3xl text-foreground">{application.title}</h1>
+            <h1 className="font-heading text-4xl text-foreground">{application.title}</h1>
             {canEdit && (
               <IconButton label="Edit title" icon={Pencil} onClick={() => setEditing(true)} />
             )}
