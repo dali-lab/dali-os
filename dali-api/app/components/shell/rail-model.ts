@@ -1,5 +1,24 @@
 import { isPinnedActive, type RoleFlags, type SubTab } from '~/lib/nav-areas'
 import type { FeatureFlagMap } from '~/lib/feature-flags'
+import { Download, HelpCircle, Settings, Sparkles, UserRound, type LucideIcon } from 'lucide-react'
+
+export type UserMenuEntry = { url: string; label: string; icon: LucideIcon }
+
+export function userMenuEntries({
+  releaseNotes,
+  desktopDownload,
+}: {
+  releaseNotes: boolean
+  desktopDownload: boolean
+}): UserMenuEntry[] {
+  return [
+    { url: '/profile', label: 'Profile', icon: UserRound },
+    { url: '/settings', label: 'Settings', icon: Settings },
+    ...(releaseNotes ? [{ url: '/release-notes', label: "What's new", icon: Sparkles }] : []),
+    { url: '/help', label: 'Help', icon: HelpCircle },
+    ...(desktopDownload ? [{ url: '/download', label: 'Get the desktop app', icon: Download }] : []),
+  ]
+}
 
 export const FAVORITES_COLLAPSED_COUNT = 3
 

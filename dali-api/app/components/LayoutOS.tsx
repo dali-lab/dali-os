@@ -7,7 +7,6 @@ import {
   Calendar,
   Check,
   ChevronsUpDown,
-  HelpCircle,
   Link as LinkIcon,
   LogOut,
   Mail,
@@ -16,10 +15,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Search,
-  Settings,
-  Sparkles,
   Star,
-  UserRound,
   X,
 } from 'lucide-react'
 import type { FavoritePage } from '~/lib/user-pages.server'
@@ -30,6 +26,8 @@ import { deepLinkTabLabel } from '~/lib/deep-link-tab'
 import { useAttentionFeed } from '~/components/NotificationBell'
 import { TasksDrawer, attentionCount } from '~/components/AttentionPanel'
 import { DesktopBanner } from '~/components/DesktopBanner'
+import { useIsBrowserDesktopCandidate } from '~/lib/desktop-candidate'
+import { useDesktopHint } from '~/components/shell/useDesktopHint'
 import { ImpersonationBanner } from '~/components/ImpersonationBanner'
 import { ActivityLauncher } from '~/components/activities/ActivityLauncher'
 import { CommandPalette } from '~/components/CommandPalette'
@@ -76,6 +74,7 @@ import { UnreadBadge } from '~/email/components/UnreadBadge'
 import { useAdminAttention } from '~/admin/useAdminAttention'
 import { useEmailUnread } from '~/email/lib/use-email-unread'
 import { Rail } from '~/components/shell/Rail'
+import { userMenuEntries } from '~/components/shell/rail-model'
 import { PageBar } from '~/components/shell/PageBar'
 import { PageBarSlotProvider, useShellHeaderHeight } from '~/components/shell/page-bar-slot'
 
@@ -104,6 +103,7 @@ interface LayoutOSProps {
   focusMode?: boolean
   /** A published release note the viewer can see is newer than their last visit. */
   hasUnseenReleaseNotes?: boolean
+  desktopHintDismissed?: boolean
   /** The routed page fills the shell's main column instead of growing past it
    *  (see `handle.fitViewport`) — the shell is then bounded to the window and
    *  the page scrolls inside its own panes. */
@@ -150,6 +150,7 @@ export function LayoutOS({
   impersonationAllowsWrites = false,
   focusMode = false,
   hasUnseenReleaseNotes = false,
+  desktopHintDismissed = false,
   fitViewport = false,
   tabStripHint = false,
   tabsSnapshot = null,
@@ -439,12 +440,12 @@ export function LayoutOS({
       </span>
     )
 
-  const userMenuItems = [
-    { url: '/profile', label: 'Profile', icon: UserRound },
-    { url: '/settings', label: 'Settings', icon: Settings },
-    ...(releaseNotesEnabled ? [{ url: '/release-notes', label: "What's new", icon: Sparkles }] : []),
-    { url: '/help', label: 'Help', icon: HelpCircle },
-  ]
+  const browserDesktop = useIsBrowserDesktopCandidate()
+  useDesktopHint({ enabled: desktopTabsFlag && browserDesktop, dismissed: desktopHintDismissed })
+  const userMenuItems = userMenuEntries({
+    releaseNotes: releaseNotesEnabled,
+    desktopDownload: desktopTabsFlag && browserDesktop,
+  })
   const onReleaseNotes = path.startsWith('/release-notes')
   // The layout loader rarely revalidates, so its flag stays stale after a visit.
   const [visitedReleaseNotes, setVisitedReleaseNotes] = useState(onReleaseNotes)

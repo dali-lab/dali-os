@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { activeQuickItem, badgeLabel, splitFavorites } from "~/components/shell/rail-model";
+import { activeQuickItem, badgeLabel, splitFavorites, userMenuEntries } from "~/components/shell/rail-model";
 import { homeNavItem, pinnedNavItems } from "~/lib/nav-areas";
 
 const member = { isAlumni: false, isNewMember: false };
@@ -69,5 +69,24 @@ describe("badgeLabel", () => {
     expect(badgeLabel(7)).toBe("7");
     expect(badgeLabel(99)).toBe("99");
     expect(badgeLabel(100)).toBe("99+");
+  });
+});
+
+describe("userMenuEntries", () => {
+  const urls = (o: { releaseNotes: boolean; desktopDownload: boolean }) =>
+    userMenuEntries(o).map((i) => i.url);
+
+  it("lists the base items", () => {
+    expect(urls({ releaseNotes: false, desktopDownload: false })).toEqual(["/profile", "/settings", "/help"]);
+  });
+
+  it("adds What's new only with release notes", () => {
+    expect(urls({ releaseNotes: true, desktopDownload: false })).toContain("/release-notes");
+  });
+
+  it("adds Get the desktop app only when asked", () => {
+    expect(urls({ releaseNotes: false, desktopDownload: false })).not.toContain("/download");
+    const items = userMenuEntries({ releaseNotes: false, desktopDownload: true });
+    expect(items.at(-1)).toMatchObject({ url: "/download", label: "Get the desktop app" });
   });
 });

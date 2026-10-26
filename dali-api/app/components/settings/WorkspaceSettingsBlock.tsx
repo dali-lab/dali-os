@@ -12,6 +12,8 @@ import { useToast } from "~/components/ui/toast";
 import { SettingRow } from "~/components/settings/SettingsSection";
 import { useFeatureFlag } from "~/components/FeatureFlags";
 import { useDesktopVersion } from "~/lib/desktop";
+import { useIsBrowserDesktopCandidate } from "~/lib/desktop-candidate";
+import { buttonClasses } from "~/components/ui/Button";
 import { readTabStripCookie, tabsPreferred, writeTabStripCookie } from "~/lib/desktop-tabs-pref";
 
 const OPEN_MODES = [
@@ -41,6 +43,7 @@ export function WorkspaceSettingsBlock() {
   const toast = useToast();
   const desktopTabs = useFeatureFlag("desktop-tabs");
   const inDesktopApp = useDesktopVersion() !== null;
+  const inBrowser = useIsBrowserDesktopCandidate();
   const [showTabs, setShowTabs] = useState(true);
 
   useEffect(() => {
@@ -74,6 +77,17 @@ export function WorkspaceSettingsBlock() {
                 reloadSettings();
               }}
             />
+          }
+        />
+      )}
+      {desktopTabs && inBrowser && (
+        <SettingRow
+          label="Tabs"
+          help="Tabs are in the desktop app."
+          control={
+            <a href="/download" className={buttonClasses("secondary", "sm")}>
+              Download
+            </a>
           }
         />
       )}

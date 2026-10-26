@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from "react";
 import { Download, X } from "lucide-react";
 import { buttonClasses } from "~/components/ui/Button";
-import { isMobileDevice } from "~/lib/device";
+import { isBrowserDesktopCandidate } from "~/lib/desktop-candidate";
+import { useFeatureFlag } from "~/components/FeatureFlags";
 
 const DISMISS_KEY = "dali:desktop-banner:dismissed";
 
@@ -9,11 +10,11 @@ type State = "hidden" | "visible" | "trying" | "fallback";
 
 export function DesktopBanner() {
   const [state, setState] = useState<State>("hidden");
+  const explain = useFeatureFlag("desktop-tabs");
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    if ("__TAURI__" in window) return;
-    if (isMobileDevice()) return;
+    if (!isBrowserDesktopCandidate()) return;
     try {
       if (window.localStorage.getItem(DISMISS_KEY)) return;
     } catch {
@@ -51,13 +52,25 @@ export function DesktopBanner() {
   return (
     <div className="flex-none bg-card border-b border-border px-4 py-2 flex items-center gap-2">
       <span className="text-sm text-muted-foreground flex-1 min-w-0">
-        {state === "trying" ? "Opening…" : state === "fallback" ? "App not installed?" : null}
+        {state === "trying"
+          ? "Opening…"
+          : state === "fallback"
+            ? "App not installed?"
+            : explain
+              ? "Get the DALI OS desktop app for tabs and native notifications."
+              : null}
       </span>
+      {state === "visible" && explain && (
+        <a href="/download" className={buttonClasses("primary", "sm")}>
+          <Download className="w-3.5 h-3.5" />
+          Download
+        </a>
+      )}
       {state === "visible" && (
         <button
           type="button"
           onClick={openInApp}
-          className={buttonClasses("primary", "sm")}
+          className={buttonClasses(explain ? "secondary" : "primary", "sm")}
         >
           Open in app
         </button>
