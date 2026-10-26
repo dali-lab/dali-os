@@ -27,6 +27,7 @@ const bus = vi.hoisted(() => {
 vi.mock("~/lib/realtime-bus.server", () => ({ publish: bus.publish, subscribe: bus.subscribe }));
 
 import { clearTtlCache, setTtlCacheEnabledForTests } from "~/lib/ttl-cache";
+import { runDbOperationHooks } from "~/lib/db-write-hooks";
 import {
   cachedForLayout,
   invalidateLayoutCache,
@@ -248,6 +249,13 @@ describe("invalidateLayoutCacheForWrite", () => {
     expect(await cachedForLayout("ada", "favorites", compute)).toBe(1);
     await nextTick();
     expect(bus.published).toEqual([]);
+  });
+
+  it("is registered with db.ts, so a real write reaches it", async () => {
+    const compute = counter();
+    await cachedForLayout("ada", "roles", compute);
+    runDbOperationHooks("CoreAssignment", "createMany");
+    expect(await cachedForLayout("ada", "roles", compute)).toBe(2);
   });
 
   it("names only models that exist in the Prisma schema", () => {

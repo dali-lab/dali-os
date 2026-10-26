@@ -1,5 +1,6 @@
 import { cachedForTtl, clearTtlCache } from "~/lib/ttl-cache";
 import { publish, subscribe } from "~/lib/realtime-bus.server";
+import { onDbOperation } from "~/lib/db-write-hooks";
 
 // Per-user cache for the shell (layout) loader's reads, which ran on every
 // navigation. Only the layout reads through here: actions and page loaders keep
@@ -80,8 +81,9 @@ export function cachedForLayout<T>(
   );
 }
 
-// Tables whose writes change a cached piece for anyone. db.ts clears these
-// pieces lab-wide after every write to them, so no write site can forget to.
+// Tables whose writes change a cached piece for anyone. Every write to one
+// clears its pieces lab-wide (via the db.ts hook registered below), so no
+// write site can forget to.
 // UserFavorite is left out on purpose: page visits write it on every load,
 // so user-pages.server.ts clears favorites for the starring user only.
 export const LAYOUT_PIECES_BY_MODEL = {
@@ -139,3 +141,7 @@ function flushLabWide(): void {
   pendingLabWide.clear();
   for (const piece of pieces) publish(TOPIC, JSON.stringify({ piece }));
 }
+
+// The server build loads every route at startup, and the layout route imports
+// this module, so the hook is in place before any request writes.
+onDbOperation("layout-cache", invalidateLayoutCacheForWrite);

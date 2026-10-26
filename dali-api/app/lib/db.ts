@@ -1,7 +1,7 @@
 import { Pool } from "pg";
 import { PrismaClient } from "../generated/prisma/client.js";
 import { PrismaPg } from "@prisma/adapter-pg";
-import { invalidateLayoutCacheForWrite } from "~/lib/layout-cache.server";
+import { runDbOperationHooks } from "~/lib/db-write-hooks";
 
 // Re-export the Prisma namespace through this module so callers can reach
 // runtime values like `Prisma.DbNull` without a direct value-import of the
@@ -56,7 +56,7 @@ function createPrismaClient(): PrismaClient {
       $allModels: {
         async $allOperations({ model, operation, args, query }) {
           const result = await query(args);
-          invalidateLayoutCacheForWrite(model, operation);
+          runDbOperationHooks(model, operation);
           return result;
         },
       },
