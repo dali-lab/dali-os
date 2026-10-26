@@ -250,31 +250,16 @@ describe("Rail", () => {
   });
 });
 
-describe("Rail scalable sizing", () => {
+describe("Rail compact sizing", () => {
   const lab = { key: "lab", label: "Lab", icon: Settings, hubPath: "/lab", subtabs: [] };
   const subtabs = [
     { label: "Overview", href: "/lab", icon: Settings },
     { label: "Courses", href: "/lab/courses", icon: Settings },
   ];
 
-  it("swaps the hide control for a size toggle when the rail is scalable", async () => {
-    await mount({ onHideRail: undefined, onToggleSize: vi.fn() });
-    expect(q("button[aria-label='Hide sidebar']")).toBeNull();
-    expect(q("button[aria-label='Collapse sidebar']")).not.toBeNull();
-  });
-
-  it("collapses from the toggle", async () => {
-    const onToggleSize = vi.fn();
-    await mount({ onToggleSize });
-    await act(async () => {
-      q("button[aria-label='Collapse sidebar']")!.click();
-    });
-    expect(onToggleSize).toHaveBeenCalledOnce();
-  });
-
-  it("compact: shows an Expand toggle, an icon-only search and the short wordmark", async () => {
-    await mount({ size: "compact", onToggleSize: vi.fn() });
-    expect(q("button[aria-label='Expand sidebar']")).not.toBeNull();
+  it("compact: keeps the hide control, an icon-only search and the short wordmark", async () => {
+    await mount({ size: "compact" });
+    expect(q("button[aria-label='Hide sidebar']")).not.toBeNull();
     expect(q("button[aria-label='Search']")!.textContent).toBe("");
     expect(q("button[aria-label='DALI OS home']")!.textContent).toBe("d.");
   });

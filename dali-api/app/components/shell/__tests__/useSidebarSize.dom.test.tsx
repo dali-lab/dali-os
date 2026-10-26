@@ -10,23 +10,10 @@ type MediaListener = (e: { matches: boolean }) => void;
 
 let narrow = false;
 let mediaListeners: MediaListener[];
-let stored: Map<string, string>;
 
 beforeEach(() => {
   narrow = false;
   mediaListeners = [];
-  stored = new Map();
-  // Node 22 ships an unavailable experimental localStorage that can shadow
-  // jsdom's, so the test provides its own.
-  Object.defineProperty(window, "localStorage", {
-    configurable: true,
-    value: {
-      getItem: (k: string) => stored.get(k) ?? null,
-      setItem: (k: string, v: string) => void stored.set(k, v),
-      removeItem: (k: string) => void stored.delete(k),
-      clear: () => stored.clear(),
-    },
-  });
   window.matchMedia = vi.fn().mockImplementation((query: string) => ({
     get matches() {
       return narrow;
@@ -76,57 +63,29 @@ describe("useSidebarSize", () => {
     expect(latest.instant).toBe(true);
   });
 
-  it("toggles to compact and remembers the choice", async () => {
-    await mount();
-    await act(async () => latest.toggle("pointer"));
-    expect(latest.size).toBe("compact");
-    expect(latest.instant).toBe(false);
-    expect(window.localStorage.getItem("dali:rail:size")).toBe("compact");
-  });
-
-  it("restores the stored size on mount", async () => {
-    window.localStorage.setItem("dali:rail:size", "compact");
+  it("corrects to compact on a narrow desktop without animating", async () => {
+    narrow = true;
     await mount();
     expect(latest.size).toBe("compact");
     expect(latest.instant).toBe(true);
   });
 
-  it("skips the animation on a keyboard toggle", async () => {
-    await mount();
-    await act(async () => latest.toggle("keyboard"));
-    expect(latest.size).toBe("compact");
-    expect(latest.instant).toBe(true);
-  });
-
-  it("goes compact on a narrow desktop without saving it", async () => {
+  it("goes compact when the window narrows, animated", async () => {
     await mount();
     await setNarrow(true);
     expect(latest.size).toBe("compact");
-    expect(window.localStorage.getItem("dali:rail:size")).toBeNull();
+    expect(latest.instant).toBe(false);
   });
 
-  it("returns to the preferred size when the window widens", async () => {
-    window.localStorage.setItem("dali:rail:size", "expanded");
+  it("returns to expanded when the window widens", async () => {
     narrow = true;
     await mount();
-    expect(latest.size).toBe("compact");
-    await setNarrow(false);
-    expect(latest.size).toBe("expanded");
-  });
-
-  it("does not persist a toggle made while narrow", async () => {
-    narrow = true;
-    await mount();
-    await act(async () => latest.toggle("pointer"));
-    expect(latest.size).toBe("expanded");
-    expect(window.localStorage.getItem("dali:rail:size")).toBeNull();
     await setNarrow(false);
     expect(latest.size).toBe("expanded");
   });
 
   it("stays expanded while disabled", async () => {
     narrow = true;
-    window.localStorage.setItem("dali:rail:size", "compact");
     await mount(false);
     expect(latest.size).toBe("expanded");
   });
