@@ -68,6 +68,17 @@ export function NoPageBar({ children }: { children: ReactNode }) {
   )
 }
 
+/** Keeps a hidden (kept-alive) page's buttons and menu entries out of the shared page bar. */
+export function PageBarVisibility({ hidden, children }: { hidden: boolean; children: ReactNode }) {
+  const bar = useContext(PageBarContext)
+  const registry = useContext(MenuItemsRegistryContext)
+  return (
+    <PageBarContext.Provider value={hidden ? null : bar}>
+      <MenuItemsRegistryContext.Provider value={hidden ? null : registry}>{children}</MenuItemsRegistryContext.Provider>
+    </PageBarContext.Provider>
+  )
+}
+
 /**
  * Entries a page adds to the page bar's single overflow menu. They render
  * inside the bar's own Menu, so they must be Menu.Item / Menu.LinkItem; state
