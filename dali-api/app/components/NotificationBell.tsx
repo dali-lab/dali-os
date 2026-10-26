@@ -86,9 +86,8 @@ function usePolledCounts(): Polled {
     refresh();
     window.addEventListener(TASKS_CHANGED_EVENT, refresh);
 
-    // SSE stream for sub-second delivery on the same machine; `sync` every
-    // 60s is the cross-instance backstop when prod runs multiple servers and
-    // doubles as the poll cadence (no separate client interval). Only a real
+    // `sync` (every 60s) doubles as the poll cadence; there is no separate
+    // client interval. Only a real
     // `change` revalidates the page's loaders: a `sync` carries no signal, and
     // re-running every open page's loader once a minute per client was most
     // of the server's steady-state load.

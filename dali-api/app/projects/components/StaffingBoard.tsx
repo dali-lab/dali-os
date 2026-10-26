@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useDialog } from "~/components/ui/dialog";
 import { Link, useSearchParams, useRevalidator } from "react-router";
+import { useEventStream } from "~/hooks/useEventStream";
 import { TermFilter } from "~/components/TermFilter";
 import type { TermOption } from "~/lib/terms.shared";
 import type { DragEndEvent } from "@dnd-kit/core";
@@ -316,28 +317,13 @@ export function StaffingBoard({
     setOrder(cardOrder);
   }, [initialAssignments, cardOrder]);
 
-  // Live updates: subscribe to this cycle's SSE stream and revalidate on any
-  // pushed change (assign / finalize / board-member by anyone) or periodic sync.
-  // EventSource auto-reconnects, so a dropped connection self-heals. The bus is
-  // per-instance (see staffing-events.server.ts); the `sync` heartbeat is the
-  // cross-instance backstop.
-  const revalidate = revalidator.revalidate;
-  const revalidateRef = useRef(revalidate);
-  revalidateRef.current = revalidate;
-  useEffect(() => {
-    const es = new EventSource(
-      `/api/staffing/events?cycleId=${encodeURIComponent(cycleId)}`,
-      { withCredentials: true },
-    );
-    const onPush = () => {
-      revalidateRef.current();
-      loadMentorRolesRef.current();
-      loadExternalMentorsRef.current();
-    };
-    es.addEventListener("change", onPush);
-    es.addEventListener("sync", onPush);
-    return () => es.close();
-  }, [cycleId]);
+  // Live updates: revalidate on any assign / finalize / board-member by anyone
+  // (on any machine) and on the periodic `sync`.
+  useEventStream([`/api/staffing/events?cycleId=${encodeURIComponent(cycleId)}`], () => {
+    revalidator.revalidate();
+    loadMentorRolesRef.current();
+    loadExternalMentorsRef.current();
+  });
 
   const projectIds = useMemo(() => projects.map((p) => p.id), [projects]);
 

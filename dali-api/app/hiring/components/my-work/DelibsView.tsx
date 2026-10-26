@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useRevalidator } from 'react-router'
 import { EyeOff, ListOrdered } from 'lucide-react'
 import { Section } from '~/hiring/components/Section'
@@ -6,6 +6,7 @@ import { Pill } from '~/hiring/components/cycle-setup/SetupCard'
 import { ApplicantContextModal } from '~/hiring/components/delibs/ApplicantContextModal'
 import { ApplicantEngagementChip } from '~/hiring/components/ApplicantEmailPanel'
 import type { EngagementSummary } from '~/hiring/lib/email-engagement.server'
+import { useEventStream } from '~/hooks/useEventStream'
 
 // My work → Delibs: a live, read-only mirror of the domain lead's delibs
 // boards for the reviewer's domains. Only offered while a session is live.
@@ -21,15 +22,11 @@ export function DelibsView({
   /** Sessions come from several cycles, so each board names its cycle. */
   showCycle: boolean
 }) {
-  // Poll the loader every 5s so column moves made by the domain lead surface
-  // in this mirror without a manual refresh.
   const revalidator = useRevalidator()
-  useEffect(() => {
-    const t = setInterval(() => {
-      if (revalidator.state === 'idle') revalidator.revalidate()
-    }, 5000)
-    return () => clearInterval(t)
-  }, [revalidator])
+  useEventStream(
+    delibsSessions.map((s) => `/api/hiring/cycles/${s.applicationCycleId}/delibs/events`),
+    () => revalidator.revalidate(),
+  )
 
   // Selected delibs card → opens the same applicant-context modal the domain
   // lead uses. /full-context permits any reviewer with cycle access, so this

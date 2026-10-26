@@ -7,6 +7,7 @@ import { parseJson } from "~/lib/validate";
 import { findRound, parseTimeline } from "~/hiring/lib/cycle-timeline";
 import { requireApiSignedOrForbidden } from "~/hiring/lib/confidentiality";
 import { logAuditEvent } from "~/lib/audit";
+import { publishDelibsChange } from "~/hiring/lib/delibs-events.server";
 
 const DelibsActionSchema = z.object({
   intent: z.enum(["close"]),
@@ -146,6 +147,7 @@ export async function action({ request, params }: Route.ActionArgs) {
         request,
       });
 
+      publishDelibsChange(session.applicationCycleId);
       return Response.json({ closed: true, decisionsCreated: decisions.length });
     }
   }

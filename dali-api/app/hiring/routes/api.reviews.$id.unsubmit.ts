@@ -4,6 +4,7 @@ import { requireAuth } from "~/lib/auth";
 import { isCycleAdmin, isDomainLeadForCycle } from "~/lib/roles";
 import { requireApiSignedOrForbidden } from "~/hiring/lib/confidentiality";
 import { logAuditEvent } from "~/lib/audit";
+import { publishDelibsChange } from "~/hiring/lib/delibs-events.server";
 
 export async function action({ request, params }: Route.ActionArgs) {
   const auth = await requireAuth(request);
@@ -59,5 +60,6 @@ export async function action({ request, params }: Route.ActionArgs) {
     request,
   });
 
+  publishDelibsChange(review.cycleReviewer.applicationCycleId);
   return Response.json(updated);
 }
