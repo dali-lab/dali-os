@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigation } from "react-router";
+import { useDisplayedTab } from "~/components/shell/displayed-tab";
 
 // A slim top-of-viewport progress bar shown during client-side route
 // transitions. Mounted once at the document root (root.tsx), so it covers
@@ -13,7 +14,9 @@ import { useNavigation } from "react-router";
 // instant transitions.
 export function NavigationProgress() {
   const navigation = useNavigation();
-  const isLoading = navigation.state !== "idle";
+  const showingKeptTab = useDisplayedTab() !== null;
+  const isTabSwitch = (navigation.location?.state as { tabSwitch?: boolean } | null)?.tabSwitch === true;
+  const isLoading = navigation.state !== "idle" && !(isTabSwitch && showingKeptTab);
 
   // visible drives mount + fade; progress is the width %.
   const [visible, setVisible] = useState(false);

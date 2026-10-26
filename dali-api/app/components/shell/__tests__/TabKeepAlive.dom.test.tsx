@@ -3,7 +3,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, createElement, useState, type ReactNode } from "react";
 import { MAX_TABS } from "~/lib/desktop-tabs";
 import { createRoot, type Root } from "react-dom/client";
-import { Outlet, createRoutesStub, redirect, useLoaderData, useLocation } from "react-router";
+import { Outlet, createRoutesStub, redirect, useLoaderData, useLocation, useNavigate } from "react-router";
+
+vi.mock("~/components/page-docs/PageDocButton", () => ({
+  PageDocButton: () => null,
+}));
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -12,6 +16,10 @@ type Mods = {
   store: typeof import("~/lib/desktop-tabs-store");
   keep: typeof import("~/components/shell/TabKeepAlive");
   bar: typeof import("~/components/shell/page-bar-slot");
+  pageBar: typeof import("~/components/shell/PageBar");
+  progress: typeof import("~/components/NavigationProgress");
+  flags: typeof import("~/components/FeatureFlags");
+  toast: typeof import("~/components/ui/toast");
 };
 
 let container: HTMLDivElement;
@@ -33,6 +41,10 @@ async function mount(opts: { enabled?: boolean } = {}) {
     store: await import("~/lib/desktop-tabs-store"),
     keep: await import("~/components/shell/TabKeepAlive"),
     bar: await import("~/components/shell/page-bar-slot"),
+    pageBar: await import("~/components/shell/PageBar"),
+    progress: await import("~/components/NavigationProgress"),
+    flags: await import("~/components/FeatureFlags"),
+    toast: await import("~/components/ui/toast"),
   };
   (window as { __DALI_DESKTOP?: unknown }).__DALI_DESKTOP = { version: "1.0.0" };
 
@@ -63,9 +75,24 @@ async function mount(opts: { enabled?: boolean } = {}) {
 
   function Shell() {
     const show = m.tabs.useDesktopTabs(opts.enabled !== false, false);
+    const navigate = useNavigate();
+    (globalThis as { __nav?: typeof navigate }).__nav = navigate;
     return createElement(
       m.bar.PageBarSlotProvider,
       null,
+      createElement(m.progress.NavigationProgress),
+      createElement(
+        m.toast.ToastProvider,
+        null,
+        createElement(m.flags.FeatureFlagsProvider, {
+          flags: {},
+          children: createElement(m.pageBar.PageBar, {
+            tabs: true,
+            star: { favorited: false, inSidebar: false, canToggle: true, toggle: async () => {} },
+            onCopyLink: () => {},
+          }),
+        }),
+      ),
       createElement(Bar),
       createElement(
         m.keep.TabsShowingProvider,
@@ -84,6 +111,12 @@ async function mount(opts: { enabled?: boolean } = {}) {
         ...paths.map((path) => ({
           path,
           Component: () => createElement(Page),
+          handle: {
+            breadcrumbTrail: (d: { path: string; n: number }) => [
+              { label: "Area", to: "/area" },
+              { label: `Trail ${d.path} #${d.n}` },
+            ],
+          },
           loader: async () => {
             loads[path] = (loads[path] ?? 0) + 1;
             await gates[path];
@@ -234,5 +267,70 @@ describe("TabKeepAlive", () => {
     });
     await flush();
     expect(container.querySelectorAll("[data-page]").length).toBe(1);
+  });
+});
+
+const progressBar = () => container.querySelector(".fixed.inset-x-0.top-0");
+const crumbs = () => container.querySelector('nav[aria-label="Breadcrumb"]')?.textContent ?? "";
+const wait = (ms: number) => act(async () => void (await new Promise((r) => setTimeout(r, ms))));
+
+describe("tab switch chrome", () => {
+  async function switchBackToGated() {
+    await mount();
+    await open("/b");
+    const [a] = m.store.getTabsSnapshot().tabs;
+    let release!: () => void;
+    gates["/a"] = new Promise<void>((r) => (release = r));
+    await act(async () => m.store.tabActions.activate(a.id));
+    return release;
+  }
+
+  it("shows no loading bar when switching to a kept tab with a slow loader", async () => {
+    const release = await switchBackToGated();
+    await wait(300);
+    expect(visible("/a")).toBe(true);
+    expect(progressBar()).toBeNull();
+    await act(async () => release());
+    await flush();
+    expect(text("load", "/a")).toBe("2");
+  });
+
+  it("shows the loading bar when opening a tab that has no kept page", async () => {
+    await mount();
+    gates["/b"] = new Promise<void>(() => {});
+    await act(async () => {
+      m.store.tabActions.open({ url: "/b", label: "b" });
+    });
+    await wait(300);
+    expect(progressBar()).not.toBeNull();
+  });
+
+  it("shows the loading bar for a normal navigation with a slow loader", async () => {
+    await mount();
+    await open("/b");
+    gates["/t1"] = new Promise<void>(() => {});
+    await act(async () => {
+      void (globalThis as { __nav?: (to: string) => void }).__nav!("/t1");
+    });
+    await wait(300);
+    expect(progressBar()).not.toBeNull();
+  });
+
+  it("shows the target tab's trail at once, then the live one once the router commits", async () => {
+    const release = await switchBackToGated();
+    expect(crumbs()).toContain("Trail /a #1");
+    expect(crumbs()).not.toContain("Trail /b");
+    await act(async () => release());
+    await flush();
+    expect(crumbs()).toContain("Trail /a #2");
+  });
+
+  it("labels the leaf with the target tab while the document title is still the old page's", async () => {
+    await mount();
+    await open("/b");
+    const [a] = m.store.getTabsSnapshot().tabs;
+    gates["/a"] = new Promise<void>(() => {});
+    await act(async () => m.store.tabActions.activate(a.id));
+    expect(crumbs()).toContain("Trail /a");
   });
 });
