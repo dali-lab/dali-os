@@ -12,6 +12,7 @@ import {
   closeTab,
   emptyTabsState,
   labelTab,
+  setTabEmoji,
   migrateWorkspaceState,
   moveTab,
   openTab,
@@ -186,5 +187,8 @@ export const tabActions = {
   },
   label(url: string, title: string) {
     set(labelTab(state, url, title));
+  },
+  emoji(url: string, emoji: string | null) {
+    set(setTabEmoji(state, url, emoji));
   },
 };

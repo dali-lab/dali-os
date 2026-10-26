@@ -150,7 +150,7 @@ export const handle = {
     if (!p) return null;
     // Return a one-crumb sub-trail so the project's name carries its icon
     // (emoji, or the neutral fallback glyph) — matching the hub, search, etc.
-    return [{ label: p.name, to: `/projects/${p.id}`, icon: <ProjectIcon iconEmoji={p.iconEmoji} /> }];
+    return [{ label: p.name, to: `/projects/${p.id}`, icon: <ProjectIcon iconEmoji={p.iconEmoji} />, emoji: p.iconEmoji }];
   },
   headerAction: (data: unknown) => {
     const d = data as { project?: { id: string } } | undefined;

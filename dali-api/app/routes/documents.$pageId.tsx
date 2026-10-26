@@ -50,7 +50,7 @@ import { pageDocName } from "~/collab/roomName";
 import { canManageNotebook } from "~/lib/notebooks.server";
 import { nextNoteTargets } from "~/lib/notebook-series.server";
 import { NotebookRail, NoteLocationLine, type NotebookView } from "~/components/notebooks/NotebookRail";
-import { itemTrail, noteTabLabel, noteTrail } from "~/components/notebooks/note-trail";
+import { itemTrail, noteTabLabel, noteTrail, withLeafEmoji } from "~/components/notebooks/note-trail";
 import { EmptyNotebook } from "~/components/notebooks/EmptyNotebook";
 import { redirectToLogin } from "~/lib/login-next";
 import { walletTokensConfigured } from "~/lib/wallet-token";
@@ -67,13 +67,19 @@ export const handle = {
   /** A note in a notebook names its place in the shell's trail: space, folders, notebook, tab. */
   breadcrumbTrail: (data: unknown) => {
     const d = data as
-      | { notebook?: { id: string; title: string } | null; noteLocation?: { location: ItemLocation; tabLabel: string } | null }
+      | {
+          notebook?: { id: string; title: string } | null;
+          noteLocation?: { location: ItemLocation; tabLabel: string } | null;
+          iconEmoji?: string | null;
+        }
       | undefined;
-    return d?.notebook && d.noteLocation ? noteTrail(d.noteLocation.location, d.notebook, d.noteLocation.tabLabel) : null;
+    return d?.notebook && d.noteLocation
+      ? withLeafEmoji(noteTrail(d.noteLocation.location, d.notebook, d.noteLocation.tabLabel), d.iconEmoji)
+      : null;
   },
   shellTrail: (data: unknown) => {
-    const d = data as { title?: string; docLocation?: ItemLocation | null } | undefined;
-    return d?.docLocation ? itemTrail(d.docLocation, d.title || "Untitled") : null;
+    const d = data as { title?: string; docLocation?: ItemLocation | null; iconEmoji?: string | null } | undefined;
+    return d?.docLocation ? withLeafEmoji(itemTrail(d.docLocation, d.title || "Untitled"), d.iconEmoji) : null;
   },
 };
 

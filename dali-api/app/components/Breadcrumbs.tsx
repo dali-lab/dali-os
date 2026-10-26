@@ -14,6 +14,7 @@ export type Crumb = {
   label: string
   to?: string
   icon?: ReactNode
+  emoji?: string | null
   // When set, the crumb renders as a dropdown "switcher" listing sibling
   // destinations (nested areas like Admin use this for lateral navigation).
   // `current` marks the active sibling. Purely additive — crumbs without
@@ -305,7 +306,7 @@ export function resolveTrail(
   if (fullTrail) {
     fullTrail.forEach((c, i) => {
       const leaf = i === fullTrail!.length - 1
-      crumbs.push({ label: c.label, to: leaf ? undefined : c.to, icon: c.icon, siblings: c.siblings })
+      crumbs.push({ label: c.label, to: leaf ? undefined : c.to, icon: c.icon, emoji: c.emoji, siblings: c.siblings })
     })
   }
   let afterDroppedId = false
@@ -326,7 +327,7 @@ export function resolveTrail(
         // must never end on a link.
         dynamicLabel.forEach((c, j) => {
           const leaf = isLast && j === dynamicLabel.length - 1
-          crumbs.push({ label: c.label, to: leaf ? undefined : c.to, icon: c.icon, siblings: c.siblings })
+          crumbs.push({ label: c.label, to: leaf ? undefined : c.to, icon: c.icon, emoji: c.emoji, siblings: c.siblings })
         })
       } else {
         crumbs.push({ label: dynamicLabel, to: linkable ? to : undefined })

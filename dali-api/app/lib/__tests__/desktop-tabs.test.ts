@@ -15,6 +15,7 @@ import {
   promoteTab,
   recordLocation,
   reopenClosedTab,
+  setTabEmoji,
   stepTabHistory,
   togglePin,
   type DesktopTabsState,
@@ -253,6 +254,25 @@ describe("pins, promotion, order, labels", () => {
     s = labelTab(s, "/hiring/42", "Fall 2026");
     expect(activeTab(s)?.label).toBe("Fall 2026");
     expect(labelTab(s, "/elsewhere", "Other")).toBe(s);
+  });
+});
+
+describe("setTabEmoji", () => {
+  it("gives the active tab its page's emoji and clears it on a page without one", () => {
+    let s = openTab(emptyTabsState(), { url: "/projects/p1", label: "Evergreen" }, { id: "x", now: 1 });
+    s = setTabEmoji(s, "/projects/p1", "🌲");
+    expect(activeTab(s)?.emoji).toBe("🌲");
+    s = recordLocation(s, "/calendar", "PUSH");
+    s = setTabEmoji(s, "/calendar", null);
+    expect(activeTab(s)).not.toHaveProperty("emoji");
+  });
+
+  it("ignores a url the active tab isn't on, and an unchanged emoji", () => {
+    let s = openTab(emptyTabsState(), { url: "/projects/p1", label: "Evergreen" }, { id: "x", now: 1 });
+    expect(setTabEmoji(s, "/elsewhere", "🌲")).toBe(s);
+    s = setTabEmoji(s, "/projects/p1", "🌲");
+    expect(setTabEmoji(s, "/projects/p1", "🌲")).toBe(s);
+    expect(setTabEmoji(emptyTabsState(), "/", null)).toEqual(emptyTabsState());
   });
 });
 
