@@ -49,86 +49,117 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request)
   if (!auth.ok) return redirectToLogin(request)
 
-  const applicationBase = await prisma.application.findUniqueOrThrow({
-    where: { id: params.id },
-    include: {
-      user: true,
-      applicationFormVersion: true,
-      applicationCycle: {
-        include: {
-          statusUpdates: { orderBy: { createdAt: 'desc' }, take: 1 },
-          generalRubricVersion: { include: { rubric: true } },
-          domains: {
-            include: {
-              rubricVersion: { include: { rubric: true } },
-              domain: true,
+  const [applicationBase, reviewer, collabToken, roles] = await Promise.all([
+    prisma.application.findUniqueOrThrow({
+      where: { id: params.id },
+      include: {
+        user: true,
+        applicationFormVersion: true,
+        applicationCycle: {
+          include: {
+            statusUpdates: { orderBy: { createdAt: 'desc' }, take: 1 },
+            generalRubricVersion: { include: { rubric: true } },
+            domains: {
+              include: {
+                rubricVersion: { include: { rubric: true } },
+                domain: true,
+              },
             },
           },
         },
       },
-    },
-  })
+    }),
+    prisma.user.findUniqueOrThrow({ where: { id: auth.user.sub } }),
+    getCollabToken(request),
+    getUserRoles(auth.user.sub, request),
+  ])
+  const cycleId = applicationBase.applicationCycleId
 
-  if (!(await hasCycleAccess(auth.user.sub, applicationBase.applicationCycleId)))
-    throw redirectToLogin(request)
-
-  const confRedirect = await requirePageSignedOrRedirect(
-    auth.user.sub,
-    applicationBase.applicationCycleId,
-    request,
-  )
+  const [hasAccess, confRedirect] = await Promise.all([
+    hasCycleAccess(auth.user.sub, cycleId),
+    requirePageSignedOrRedirect(auth.user.sub, cycleId, request),
+  ])
+  if (!hasAccess) throw redirectToLogin(request)
   if (confRedirect) return confRedirect
 
-  // recents visit is recorded after the blind-review pass below, so anonymized
-  // applicants land in recents under their "Applicant N" pseudonym, not a name.
+  // Capture the real applicant id before blinding: engagement lookups key off
+  // it server-side.
+  const applicantUserId = applicationBase.user.id
+  const fallbackName =
+    [reviewer.firstName, reviewer.lastName].filter(Boolean).join(' ') || auth.user.email
 
-  // Scope domainApplications to only the domains this reviewer is assigned to
-  // for this cycle. Reviewers assigned to one domain should not see that the
-  // applicant also applied to other domains.
-  const cycleReviewers = await prisma.cycleReviewer.findMany({
-    where: {
-      applicationCycleId: applicationBase.applicationCycleId,
-      userId: auth.user.sub,
-    },
+  const cycleReviewersP = prisma.cycleReviewer.findMany({
+    where: { applicationCycleId: cycleId, userId: auth.user.sub },
     select: { id: true, domainId: true },
   })
-  const reviewerDomainIds = cycleReviewers.map((cr) => cr.domainId)
-
-  const [reviewer, domainApplications, existingReview] = await Promise.all([
-    prisma.user.findUniqueOrThrow({ where: { id: auth.user.sub } }),
+  // Reviewers assigned to one domain must not see that the applicant also
+  // applied to other domains.
+  const domainApplicationsP = cycleReviewersP.then((crs) =>
     prisma.domainApplication.findMany({
       where: {
         applicationId: params.id,
         selected: true,
-        domainId: { in: reviewerDomainIds },
+        domainId: { in: crs.map((cr) => cr.domainId) },
       },
       include: {
         challengeFormVersion: { select: { questions: true, intro: true, form: { select: { name: true } } } },
         domain: true,
       },
     }),
+  )
+  const blindLabelP = reviewerBlindLabel({
+    reviewerId: auth.user.sub,
+    cycleId,
+    applicationId: applicationBase.id,
+    anonymizeReview: applicationBase.applicationCycle.anonymizeReview,
+  })
+
+  const [
+    cycleReviewers,
+    domainApplications,
+    existingReview,
+    blindLabel,
+    presignedGeneralAnswers,
+    presenceUser,
+    educationEngagement,
+    hiringEventEngagement,
+    priorApplications,
+    emailEngagement,
+  ] = await Promise.all([
+    cycleReviewersP,
+    domainApplicationsP,
     prisma.applicationReview.findFirst({
       where: {
         domainApplication: { applicationId: params.id },
         cycleReviewer: { userId: auth.user.sub },
       },
     }),
+    blindLabelP,
+    presignAnswers(
+      (applicationBase.applicationFormVersion?.questions as unknown as Question[]) ?? [],
+      applicationBase.answers as Record<string, string>,
+    ),
+    getPresenceUser(auth.user.sub, fallbackName),
+    // Includes internal instructor notes; this page is behind cycle access +
+    // confidentiality.
+    getEducationEngagement(applicantUserId),
+    isFeatureEnabled('application-events', auth.user.sub, roles, request).then((on) =>
+      on ? getHiringEventEngagement(applicantUserId) : [],
+    ),
+    blindLabelP.then((label) =>
+      listPriorApplications({
+        userId: applicantUserId,
+        currentApplicationId: applicationBase.id,
+        hideOutcomes: label != null,
+      }),
+    ),
+    blindLabelP.then((label) =>
+      getApplicantEmailEngagement(applicantUserId, { blinded: label != null }),
+    ),
   ])
 
-  // Blind review: hide applicant identity behind a stable pseudonym while this
-  // applicant is still under review (anonymizeReview on, and no
-  // released decision on the reviewer's assigned domain application). The
-  // pseudonym flows through the H1, page <title>, and recents because
-  // they all render `${firstName} ${lastName}`. Capture the real user id first —
-  // education engagement below still keys off it, server-side.
-  const applicantUserId = applicationBase.user.id
-  const cycle = applicationBase.applicationCycle
-  const blindLabel = await reviewerBlindLabel({
-    reviewerId: auth.user.sub,
-    cycleId: applicationBase.applicationCycleId,
-    applicationId: applicationBase.id,
-    anonymizeReview: cycle.anonymizeReview,
-  })
+  // The pseudonym flows through the H1, page <title>, and recents because they
+  // all render `${firstName} ${lastName}`.
   const blinded = blindLabel != null
   if (blindLabel) applicationBase.user = blindUser(applicationBase.user, blindLabel)
 
@@ -158,16 +189,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     return da.domainId ?? null
   }
 
-  // Presign file-type answers so the viewer can render real download links
-  // instead of raw S3 keys. The application's "general" questions live on
-  // applicationFormVersion; per-domain entries carry challenge content only
-  // on cycles with challenges.
-  const generalQuestionsForPresign =
-    (applicationBase.applicationFormVersion?.questions as unknown as Question[]) ?? []
-  const presignedGeneralAnswers = await presignAnswers(
-    generalQuestionsForPresign,
-    applicationBase.answers as Record<string, string>,
-  )
   const presignedDomainApplications = await Promise.all(
     domainApplications.map(async (da: any) => {
       // Per-domain challenge: synthesize the viewer shape {questions, description}
@@ -181,12 +202,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
           }
         : null
       const questions = (da.challengeFormVersion?.questions ?? []) as Question[]
-      return {
-        ...da,
-        challengeVersion,
-        answers: await presignAnswers(questions, da.answers as Record<string, string>),
-        continuedInterest: await loadContinuedInterestView(da),
-      }
+      const [answers, continuedInterest] = await Promise.all([
+        presignAnswers(questions, da.answers as Record<string, string>),
+        loadContinuedInterestView(da),
+      ])
+      return { ...da, challengeVersion, answers, continuedInterest }
     }),
   )
 
@@ -237,37 +257,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     }
   }
 
-  // Pass JWT for WebSocket auth
-  const collabToken = await getCollabToken(request)
-  const fallbackName =
-    [reviewer.firstName, reviewer.lastName].filter(Boolean).join(' ') || auth.user.email
-  const presenceUser = await getPresenceUser(auth.user.sub, fallbackName)
   const userName = presenceUser?.name ?? fallbackName
-
-  // Education engagement ("demonstrated interest") — includes internal
-  // instructor notes; this page is behind cycle access + confidentiality.
-  const educationEngagement = await getEducationEngagement(applicantUserId)
-
-  const roles = await getUserRoles(auth.user.sub, request)
-  const applicationEventsEnabled = await isFeatureEnabled(
-    'application-events',
-    auth.user.sub,
-    roles,
-    request,
-  )
-  const hiringEventEngagement = applicationEventsEnabled
-    ? await getHiringEventEngagement(applicantUserId)
-    : []
-
-  // This applicant's other submitted cycles. Outcomes are nulled server-side
-  // while this reviewer is still blinded to them.
-  const priorApplications = await listPriorApplications({
-    userId: applicantUserId,
-    currentApplicationId: applicationBase.id,
-    hideOutcomes: blinded,
-  })
-
-  const emailEngagement = await getApplicantEmailEngagement(applicantUserId, { blinded })
 
   return {
     application,
