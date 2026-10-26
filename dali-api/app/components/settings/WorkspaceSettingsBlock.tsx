@@ -10,12 +10,18 @@ import {
 import { Toggle } from "~/components/ui/Toggle";
 import { useToast } from "~/components/ui/toast";
 import { SettingRow } from "~/components/settings/SettingsSection";
+import { TabsPreview } from "~/components/settings/TabsPreview";
 import { useFeatureFlag } from "~/components/FeatureFlags";
 import { useDesktopVersion } from "~/lib/desktop";
 import { useIsBrowserDesktopCandidate } from "~/lib/desktop-candidate";
 import { buttonClasses } from "~/components/ui/Button";
 import { readOpenInAppCookie, writeOpenInAppCookie } from "~/lib/open-in-app-pref";
 import { readTabStripCookie, tabsPreferred, writeTabStripCookie } from "~/lib/desktop-tabs-pref";
+
+const TAB_MODES = [
+  { tabs: true, label: "Tabs" },
+  { tabs: false, label: "No tabs" },
+] as const;
 
 const OPEN_MODES = [
   { tabless: true, label: "Single page", help: "Each link replaces the current page." },
@@ -66,33 +72,50 @@ export function WorkspaceSettingsBlock() {
   return (
     <div className="rounded-os-card bg-os-card divide-y divide-os-container/70">
       {desktopTabs && inDesktopApp && (
-        <SettingRow
-          label="Tabs"
-          help="Open pages in tabs above the page. Saved on this device. Reloads DALI OS."
-          control={
-            <Toggle
-              tone="os"
-              aria-label="Tabs"
-              checked={showTabs}
-              onChange={(e) => {
-                writeTabStripCookie(e.target.checked ? "1" : "0");
-                setShowTabs(e.target.checked);
-                reloadSettings();
-              }}
-            />
-          }
-        />
+        <div className="flex flex-col gap-3 px-6 py-5">
+          <div>
+            <p className="text-[15px] text-foreground">Tabs</p>
+            <p className="mt-0.5 text-sm text-os-grey">Open pages in tabs above the page. Saved on this device. Reloads DALI OS.</p>
+          </div>
+          <div role="radiogroup" aria-label="Tabs" className="grid gap-3 sm:grid-cols-2">
+            {TAB_MODES.map((m) => {
+              const active = m.tabs === showTabs;
+              return (
+                <button
+                  key={m.label}
+                  type="button"
+                  role="radio"
+                  aria-checked={active}
+                  onClick={() => {
+                    if (active) return;
+                    writeTabStripCookie(m.tabs ? "1" : "0");
+                    setShowTabs(m.tabs);
+                    reloadSettings();
+                  }}
+                  className={cn(
+                    "flex flex-col gap-3 rounded-os-item border-2 bg-os-well p-3 text-left transition-colors",
+                    active ? "border-os-accent" : "border-transparent hover:border-os-container-hi",
+                  )}
+                >
+                  <TabsPreview tabs={m.tabs} />
+                  <span className="text-sm text-foreground">{m.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
       )}
       {desktopTabs && inBrowser && (
-        <SettingRow
-          label="Tabs"
-          help="Tabs are in the desktop app."
-          control={
-            <a href="/download" className={buttonClasses("secondary", "sm")}>
-              Download
-            </a>
-          }
-        />
+        <div className="flex items-center gap-5 px-6 py-4">
+          <TabsPreview tabs className="hidden w-40 shrink-0 sm:flex" />
+          <div className="min-w-0 flex-1">
+            <p className="text-[15px] text-foreground">Tabs</p>
+            <p className="mt-0.5 text-sm text-os-grey">Tabs are in the desktop app.</p>
+          </div>
+          <a href="/download" className={cn(buttonClasses("secondary", "sm"), "shrink-0")}>
+            Download
+          </a>
+        </div>
       )}
       {desktopTabs && inBrowser && (
         <SettingRow

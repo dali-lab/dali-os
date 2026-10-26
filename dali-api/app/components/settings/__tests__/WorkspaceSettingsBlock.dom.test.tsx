@@ -44,18 +44,38 @@ afterEach(() => {
 });
 
 describe("WorkspaceSettingsBlock Tabs row", () => {
-  it("browser with desktop-tabs: links to the download page", async () => {
+  const radios = () => Array.from(container.querySelectorAll<HTMLButtonElement>('[role="radiogroup"][aria-label="Tabs"] [role="radio"]'));
+
+  afterEach(() => {
+    document.cookie = "dali_tabstrip=; Max-Age=0; Path=/";
+  });
+
+  it("browser with desktop-tabs: shows what tabs look like beside the download link", async () => {
     await mount({ "desktop-tabs": true });
     expect(container.textContent).toContain("Tabs are in the desktop app.");
     expect(container.querySelector('a[href="/download"]')?.textContent).toBe("Download");
-    expect(container.querySelector('input[aria-label="Tabs"]')).toBeNull();
+    expect(container.querySelector('[data-tabs-preview="on"] [data-preview-tabs]')).not.toBeNull();
+    expect(radios()).toHaveLength(0);
   });
 
-  it("desktop app with desktop-tabs: shows the toggle instead", async () => {
+  it("desktop app with desktop-tabs: picks between previewed Tabs and No tabs cards", async () => {
     (window as { __DALI_DESKTOP?: unknown }).__DALI_DESKTOP = { version: "1.0.0" };
     await mount({ "desktop-tabs": true });
     expect(container.textContent).not.toContain("Tabs are in the desktop app.");
-    expect(container.querySelector('[aria-label="Tabs"]')).not.toBeNull();
+    expect(radios().map((r) => r.textContent)).toEqual(["Tabs", "No tabs"]);
+    expect(radios()[0]!.getAttribute("aria-checked")).toBe("true");
+    expect(radios()[0]!.querySelector('[data-tabs-preview="on"] [data-preview-tabs]')).not.toBeNull();
+    expect(radios()[1]!.querySelector('[data-tabs-preview="off"] [data-preview-tabs]')).toBeNull();
+  });
+
+  it("desktop app: choosing No tabs saves it for this device", async () => {
+    (window as { __DALI_DESKTOP?: unknown }).__DALI_DESKTOP = { version: "1.0.0" };
+    await mount({ "desktop-tabs": true });
+    await act(async () => {
+      radios()[1]!.click();
+    });
+    expect(document.cookie).toContain("dali_tabstrip=0");
+    expect(radios()[1]!.getAttribute("aria-checked")).toBe("true");
   });
 
   it("flag off: no Tabs row in a browser", async () => {
