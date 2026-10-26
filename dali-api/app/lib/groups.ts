@@ -18,11 +18,9 @@ export async function resolveGroupMembers(groupId: string): Promise<string[]> {
   return resolveDynamicQuery(group.dynamicQuery);
 }
 
-// Context threaded through a batch of resolveDynamicQuery calls (e.g. one per
-// group in resolveAllGroups): `request` enables per-request memoization in
-// currentTerm/getActiveCoreCycleTermIds, and `coreMembers` — when supplied —
-// lets "core", "hiring" and "mentors" (which all resolve Core's current members) share
-// one computed promise instead of each hitting the DB separately.
+// `request` enables per-request memoization in currentTerm/getActiveCoreCycleTermIds.
+// `coreMembers` is set by resolveDynamicQueries so "core", "hiring" and
+// "mentors" share one read of Core's current members.
 type DynamicQueryContext = {
   request?: Request;
   coreMembers?: Promise<string[]>;
@@ -32,50 +30,86 @@ type DynamicQueryContext = {
 // have the query in hand (e.g. visibility filters that batch-resolve groups).
 export async function resolveDynamicQuery(
   query: string,
-  ctx?: DynamicQueryContext,
+  ctx?: Pick<DynamicQueryContext, "request">,
 ): Promise<string[]> {
-  const [kind, id] = query.split(":", 2);
-  switch (kind) {
-    case "term":
-      return id ? resolveTermMembers(id) : [];
-    case "project":
-      return id ? resolveProjectMembers(id, ctx?.request) : [];
-    case "domain":
-      return id ? resolveDomainMembers(id) : [];
-    case "offering":
-      return id ? resolveOfferingMembers(id) : [];
-    case "core":
-      return ctx?.coreMembers ?? resolveCoreMembers(ctx?.request);
-    case "hiring":
-      return resolveHiringMembers(ctx);
-    case "mentors":
-      return resolveMentorMembers(ctx);
-    case "alumni":
-      return resolveAlumni();
-    default:
-      return [];
-  }
+  return (await resolveDynamicQueries([query], ctx)).get(query) ?? [];
 }
 
-async function resolveTermMembers(termId: string): Promise<string[]> {
-  const [projects, core, instructors, mentorshipMentee, mentorshipMentor] =
-    await Promise.all([
-      prisma.projectAssignment.findMany({ where: { termId }, select: { userId: true } }),
-      prisma.coreAssignment.findMany({ where: { termId }, select: { userId: true } }),
-      prisma.instructorAssignment.findMany({
-        where: { termId, user: { daliMember: { isNot: null } } },
-        select: { userId: true },
-      }),
-      prisma.mentorshipPair.findMany({ where: { termId }, select: { menteeUserId: true } }),
-      prisma.mentorshipPair.findMany({ where: { termId }, select: { mentorUserId: true } }),
-    ]);
-  const set = new Set<string>();
-  for (const r of projects) set.add(r.userId);
-  for (const r of core) set.add(r.userId);
-  for (const r of instructors) set.add(r.userId);
-  for (const r of mentorshipMentee) set.add(r.menteeUserId);
-  for (const r of mentorshipMentor) set.add(r.mentorUserId);
-  return [...set];
+const EMPTY_MEMBERS = Promise.resolve(new Map<string, string[]>());
+
+/**
+ * Resolve many dynamicQuery strings at once, keyed by query. Each kind costs a
+ * fixed number of reads however many groups use it: a page that resolved every
+ * group one by one fired ~110 queries at once and queued the pool behind them.
+ */
+export async function resolveDynamicQueries(
+  queries: string[],
+  ctx?: Pick<DynamicQueryContext, "request">,
+): Promise<Map<string, string[]>> {
+  const idsByKind = new Map<string, string[]>();
+  for (const query of new Set(queries)) {
+    const [kind, id = ""] = query.split(":", 2);
+    idsByKind.set(kind, [...(idsByKind.get(kind) ?? []), id]);
+  }
+  const ids = (kind: string) => (idsByKind.get(kind) ?? []).filter(Boolean);
+  const has = (kind: string) => idsByKind.has(kind);
+  const request = ctx?.request;
+  const coreMembers =
+    has("core") || has("hiring") || has("mentors") ? resolveCoreMembers(request) : undefined;
+  const shared = { request, coreMembers };
+
+  const [term, project, domain, offering, core, hiring, mentors, alumni] = await Promise.all([
+    ids("term").length ? resolveTermMembers(ids("term")) : EMPTY_MEMBERS,
+    ids("project").length ? resolveProjectMembers(ids("project"), request) : EMPTY_MEMBERS,
+    ids("domain").length ? resolveDomainMembers(ids("domain")) : EMPTY_MEMBERS,
+    ids("offering").length ? resolveOfferingMembers(ids("offering")) : EMPTY_MEMBERS,
+    coreMembers ?? [],
+    has("hiring") ? resolveHiringMembers(shared) : [],
+    has("mentors") ? resolveMentorMembers(shared) : [],
+    has("alumni") ? resolveAlumni() : [],
+  ]);
+  const byId = new Map(Object.entries({ term, project, domain, offering }));
+  const whole = new Map(Object.entries({ core, hiring, mentors, alumni }));
+
+  const result = new Map<string, string[]>();
+  for (const query of queries) {
+    const [kind, id = ""] = query.split(":", 2);
+    result.set(query, byId.get(kind)?.get(id) ?? whole.get(kind) ?? []);
+  }
+  return result;
+}
+
+function membersByKey(pairs: Iterable<readonly [string, string]>): Map<string, string[]> {
+  const sets = new Map<string, Set<string>>();
+  for (const [key, userId] of pairs) {
+    let set = sets.get(key);
+    if (!set) sets.set(key, (set = new Set()));
+    set.add(userId);
+  }
+  return new Map([...sets].map(([key, set]) => [key, [...set]]));
+}
+
+async function resolveTermMembers(termIds: string[]): Promise<Map<string, string[]>> {
+  const termId = { in: termIds };
+  const [projects, core, instructors, mentorships] = await Promise.all([
+    prisma.projectAssignment.findMany({ where: { termId }, select: { termId: true, userId: true } }),
+    prisma.coreAssignment.findMany({ where: { termId }, select: { termId: true, userId: true } }),
+    prisma.instructorAssignment.findMany({
+      where: { termId, user: { daliMember: { isNot: null } } },
+      select: { termId: true, userId: true },
+    }),
+    prisma.mentorshipPair.findMany({
+      where: { termId },
+      select: { termId: true, menteeUserId: true, mentorUserId: true },
+    }),
+  ]);
+  return membersByKey([
+    ...[...projects, ...core, ...instructors].map((r) => [r.termId, r.userId] as const),
+    ...mentorships.flatMap((r) => [
+      [r.termId, r.menteeUserId] as const,
+      [r.termId, r.mentorUserId] as const,
+    ]),
+  ]);
 }
 
 // The signing gate's "active in term T" check. Deliberately wider than the term
@@ -111,27 +145,28 @@ export async function isUserActiveInTerm(userId: string, termId: string): Promis
  * answer term-scoped role resolution gives, and a safer default than
  * broadcasting to everyone who ever touched the project.
  */
-async function resolveProjectMembers(projectId: string, request?: Request): Promise<string[]> {
+async function resolveProjectMembers(
+  projectIds: string[],
+  request?: Request,
+): Promise<Map<string, string[]>> {
   const term = await currentTerm(request);
-  if (!term) return [];
+  if (!term) return new Map();
   const rows = await prisma.projectAssignment.findMany({
-    where: { projectId, termId: term.id },
-    select: { userId: true },
-    distinct: ["userId"],
+    where: { projectId: { in: projectIds }, termId: term.id },
+    select: { projectId: true, userId: true },
   });
-  return rows.map((r) => r.userId);
+  return membersByKey(rows.map((r) => [r.projectId, r.userId] as const));
 }
 
 // Members of an EducationOffering: users with an Approved application to that
 // offering. "Approved" = the Education team accepted the application; it is the
 // enrollment gate for both member-portal and Dartmouth-portal applicants.
-async function resolveOfferingMembers(offeringId: string): Promise<string[]> {
+async function resolveOfferingMembers(offeringIds: string[]): Promise<Map<string, string[]>> {
   const rows = await prisma.educationApplication.findMany({
-    where: { offeringId, status: "Approved" },
-    select: { applicantUserId: true },
-    distinct: ["applicantUserId"],
+    where: { offeringId: { in: offeringIds }, status: "Approved" },
+    select: { offeringId: true, applicantUserId: true },
   });
-  return rows.map((r) => r.applicantUserId);
+  return membersByKey(rows.map((r) => [r.offeringId, r.applicantUserId] as const));
 }
 
 /**
@@ -149,12 +184,12 @@ async function resolveOfferingMembers(offeringId: string): Promise<string[]> {
  * current member with no assignments yet — a fresh hire, someone between
  * projects — inside their domain's group.
  */
-async function resolveDomainMembers(domainId: string): Promise<string[]> {
+async function resolveDomainMembers(domainIds: string[]): Promise<Map<string, string[]>> {
   const rows = await prisma.domainEligibility.findMany({
-    where: { domainId, user: ACTIVE_LAB_MEMBER_WHERE },
-    select: { userId: true },
+    where: { domainId: { in: domainIds }, user: ACTIVE_LAB_MEMBER_WHERE },
+    select: { domainId: true, userId: true },
   });
-  return rows.map((r) => r.userId);
+  return membersByKey(rows.map((r) => [r.domainId, r.userId] as const));
 }
 
 // Lab alumni — a DALIMember whose stored membershipStatus is Alumni. The
@@ -384,41 +419,41 @@ async function resolveAllGroups(request?: Request): Promise<VisibleGroup[]> {
     }),
     loadGroupArchiveContext(),
   ]);
+  return toVisibleGroups(groups, archiveContext, request);
+}
 
-  // "core", "hiring" and "mentors" all resolve Core's current members — the
-  // default groups include all three (see syncDefaultGroups), so every call here
-  // would otherwise run resolveCoreMembers' two round trips once per group.
-  // Computing the promise once up front and sharing it via ctx collapses that
-  // to one.
-  const needsCoreMembers = groups.some(
-    (g) =>
-      g.dynamicQuery === "core" ||
-      g.dynamicQuery === "hiring" ||
-      g.dynamicQuery === "mentors",
-  );
-  const coreMembers = needsCoreMembers ? resolveCoreMembers(request) : undefined;
+type GroupRow = {
+  id: string;
+  name: string;
+  type: "Static" | "Dynamic";
+  dynamicQuery: string | null;
+  staticMemberIds: string[];
+  systemKey: string | null;
+  archivedAt: Date | null;
+  boundTermIds: string[];
+};
 
-  return Promise.all(
-    groups.map(async (g) => {
-      const memberIds =
-        g.type === "Static"
-          ? g.staticMemberIds
-          : g.dynamicQuery
-            ? await resolveDynamicQuery(g.dynamicQuery, { request, coreMembers })
-            : [];
-      return {
-        id: g.id,
-        name: g.name,
-        type: g.type,
-        dynamicQuery: g.dynamicQuery,
-        systemKey: g.systemKey,
-        memberIds,
-        archived: isGroupArchived(g, archiveContext),
-        archivedAt: g.archivedAt ? g.archivedAt.toISOString() : null,
-        boundTermIds: g.boundTermIds,
-      };
-    }),
+async function toVisibleGroups(
+  groups: GroupRow[],
+  archiveContext: GroupArchiveContext,
+  request?: Request,
+): Promise<VisibleGroup[]> {
+  const dynamicQueries = groups.flatMap((g) =>
+    g.type === "Dynamic" && g.dynamicQuery ? [g.dynamicQuery] : [],
   );
+  const members = await resolveDynamicQueries(dynamicQueries, { request });
+  return groups.map((g) => ({
+    id: g.id,
+    name: g.name,
+    type: g.type,
+    dynamicQuery: g.dynamicQuery,
+    systemKey: g.systemKey,
+    memberIds:
+      g.type === "Static" ? g.staticMemberIds : g.dynamicQuery ? (members.get(g.dynamicQuery) ?? []) : [],
+    archived: isGroupArchived(g, archiveContext),
+    archivedAt: g.archivedAt ? g.archivedAt.toISOString() : null,
+    boundTermIds: g.boundTermIds,
+  }));
 }
 
 // Derives which group definitions a user belongs to, WITHOUT resolving each
@@ -647,9 +682,8 @@ async function deriveUserGroups(userId: string, request?: Request) {
 // The groups a user belongs to as {id, archivedAt} only — no memberIds
 // resolved. This is the hot path: getPageAccess/groupIdsForUser call it once
 // per navigation and need only the ids (to match PageShare rows). Resolving the
-// full member list of every group the user is in — a resolveDynamicQuery per
-// membership, up to 5 queries for a term group, 4 for hiring — would be pure
-// waste here, since the caller immediately discards memberIds.
+// full member list of every group the user is in would be pure waste here,
+// since the caller immediately discards memberIds.
 export async function listVisibleGroupIdsForUser(
   userId: string,
   request?: Request,
@@ -659,9 +693,8 @@ export async function listVisibleGroupIdsForUser(
 }
 
 // The full VisibleGroup shape (members + derived archive state) for every group
-// the user belongs to. Resolves memberIds per membership, so it costs one
-// resolveDynamicQuery per group the user is in — use it only where the member
-// list is actually consumed (e.g. the group picker showing who's in each
+// the user belongs to. Resolving memberIds costs several reads per kind of
+// group the user is in — use it only where the member list is actually consumed (e.g. the group picker showing who's in each
 // group). Permission checks that only need the ids must use
 // listVisibleGroupIdsForUser instead.
 export async function listVisibleGroupsForUser(
@@ -672,29 +705,7 @@ export async function listVisibleGroupsForUser(
     deriveUserGroups(userId, request),
     loadGroupArchiveContext(),
   ]);
-  const result: VisibleGroup[] = [];
-  for (const g of memberOf) {
-    let memberIds: string[];
-    if (g.type === "Static") {
-      memberIds = g.staticMemberIds;
-    } else if (g.dynamicQuery) {
-      memberIds = await resolveDynamicQuery(g.dynamicQuery);
-    } else {
-      memberIds = [];
-    }
-    result.push({
-      id: g.id,
-      name: g.name,
-      type: g.type,
-      dynamicQuery: g.dynamicQuery,
-      systemKey: g.systemKey,
-      memberIds,
-      archived: isGroupArchived(g, archiveContext),
-      archivedAt: g.archivedAt ? g.archivedAt.toISOString() : null,
-      boundTermIds: g.boundTermIds,
-    });
-  }
-  return result;
+  return toVisibleGroups(memberOf, archiveContext, request);
 }
 
 export async function listActiveGroupNamesForUser(

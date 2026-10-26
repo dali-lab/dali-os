@@ -40,10 +40,10 @@ function matchesGate(userId: string, gate: UserGate | undefined): boolean {
 beforeEach(() => {
   vi.clearAllMocks();
   mockPrisma.domainEligibility!.findMany.mockImplementation(
-    async (args: { where?: { domainId?: string; userId?: string; user?: UserGate } }) =>
+    async (args: { where?: { domainId?: { in: string[] }; userId?: string; user?: UserGate } }) =>
       ELIGIBILITIES.filter(
         (e) =>
-          (!args?.where?.domainId || e.domainId === args.where.domainId) &&
+          (!args?.where?.domainId || args.where.domainId.in.includes(e.domainId)) &&
           (!args?.where?.userId || e.userId === args.where.userId) &&
           matchesGate(e.userId, args?.where?.user),
       ).map((e) => ({ userId: e.userId, domainId: e.domainId })),
@@ -65,7 +65,7 @@ describe("domain group membership", () => {
     expect(mockPrisma.domainEligibility!.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
-          domainId: "d1",
+          domainId: { in: ["d1"] },
           user: expect.objectContaining({ membershipStatus: "Active" }),
         }),
       }),
