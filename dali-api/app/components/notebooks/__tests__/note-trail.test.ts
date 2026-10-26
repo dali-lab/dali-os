@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { noteTabLabel, noteTrail } from "~/components/notebooks/note-trail";
+import { noteTabLabel, noteTrail, tabWeekLabels } from "~/components/notebooks/note-trail";
 
 const location = {
   scopeId: "projects",
@@ -50,5 +50,53 @@ describe("noteTabLabel", () => {
 
   it("shows a plain document by its title", () => {
     expect(noteTabLabel({ title: "Alejandro, Leah <> Kiran", meetingOccurrenceStart: null })).toBe("Alejandro, Leah <> Kiran");
+  });
+});
+
+describe("tabWeekLabels", () => {
+  const ET = "America/New_York";
+  const fall = { code: "26F", startDate: new Date("2026-09-14T00:00:00Z"), endDate: new Date("2026-11-24T00:00:00Z") };
+  const winter = { code: "27W", startDate: new Date("2027-01-04T00:00:00Z"), endDate: new Date("2027-03-13T00:00:00Z") };
+  const terms = [winter, fall];
+  const at = (iso: string) => new Date(iso);
+
+  it("counts weeks from the term's first day, which is in Week 1", () => {
+    expect(tabWeekLabels([at("2026-09-14T14:00:00Z")], terms, ET)).toEqual(["Week 1"]);
+  });
+
+  it("runs each week for seven days from the start date, not Monday to Sunday", () => {
+    const starts = [at("2026-09-20T14:00:00Z"), at("2026-09-21T14:00:00Z"), at("2026-10-23T14:00:00Z")];
+    expect(tabWeekLabels(starts, terms, ET)).toEqual(["Week 1", "Week 2", "Week 6"]);
+  });
+
+  it("places a meeting by its day in the lab's zone, not in UTC", () => {
+    // 9pm ET on Sunday Sep 20 is already Monday in UTC.
+    expect(tabWeekLabels([at("2026-09-21T01:00:00Z")], terms, ET)).toEqual(["Week 1"]);
+  });
+
+  it("includes the term's last day", () => {
+    expect(tabWeekLabels([at("2026-11-24T22:00:00Z")], terms, ET)).toEqual(["Week 11"]);
+  });
+
+  it("calls a meeting between terms Break", () => {
+    expect(tabWeekLabels([at("2026-12-10T15:00:00Z"), at("2026-11-20T15:00:00Z")], terms, ET)).toEqual([
+      "Break",
+      "Week 10",
+    ]);
+  });
+
+  it("leads with the term code once the notes cross terms", () => {
+    expect(tabWeekLabels([at("2027-01-05T15:00:00Z"), at("2026-11-20T15:00:00Z")], terms, ET)).toEqual([
+      "27W Week 1",
+      "26F Week 10",
+    ]);
+  });
+
+  it("gives undated tabs no week", () => {
+    expect(tabWeekLabels([null, at("2026-09-14T14:00:00Z")], terms, ET)).toEqual([null, "Week 1"]);
+  });
+
+  it("calls everything Break when no term is known", () => {
+    expect(tabWeekLabels([at("2026-09-14T14:00:00Z")], [], ET)).toEqual(["Break"]);
   });
 });
