@@ -83,9 +83,13 @@ describe("PageBar overflow", () => {
         null,
         createElement(
           PageBarPortal,
-          { slot: "actions" },
-          createElement("button", { type: "button" }, "Record"),
-          createElement("button", { type: "button" }, "Share"),
+          {
+            slot: "actions",
+            children: [
+              createElement("button", { key: "record", type: "button" }, "Record"),
+              createElement("button", { key: "share", type: "button" }, "Share"),
+            ],
+          },
         ),
         createElement(
           PageBarMenuItems,
@@ -124,7 +128,7 @@ describe("PageBar overflow", () => {
     await openMenu();
     const item = menuItems().find((el) => el.textContent?.includes("Copy link"))!;
     expect(item.textContent).toContain("⌘⇧C");
-    await act(async () => item.click());
+    await act(async () => (item as HTMLElement).click());
     expect(onCopyLink).toHaveBeenCalledTimes(1);
   });
 
