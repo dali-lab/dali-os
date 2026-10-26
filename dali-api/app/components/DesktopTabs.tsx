@@ -195,10 +195,12 @@ function SortableTab({
             className={cn(
               'pointer-events-none flex-1 truncate text-left',
               active ? 'font-semibold text-foreground' : 'text-os-grey',
-              tab.ephemeral && 'italic',
+              (tab.ephemeral || !tab.label) && 'italic',
             )}
           >
-            {tab.label}
+            {/* A tab labels itself once its route's meta resolves; until then
+                an empty span left the icon floating in a bare block. */}
+            {tab.label || 'Untitled'}
           </span>
           <span
             role="button"
@@ -258,7 +260,7 @@ export function DesktopTabStrip({
       {leading}
       <DndContext id="desktop-tabs" sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
         <SortableContext items={tabs.map((t) => t.id)} strategy={horizontalListSortingStrategy}>
-          <div className="flex min-w-0 flex-1 items-end self-stretch overflow-x-auto">
+          <div className="flex min-w-0 flex-1 items-end gap-0.5 self-stretch overflow-x-auto">
             {tabs.map((tab, index) => (
               <Fragment key={tab.id}>
               {/* Tabs sit flush as one connected strip; a hairline separates
