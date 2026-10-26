@@ -6,7 +6,7 @@ import { captureDartmouthIdentity } from "~/lib/dartmouth-capture.server";
 import { pickSafeLoginNext } from "~/lib/login-next";
 import { shouldOfferPasskey, setPasskeyPromptDismissed } from "~/lib/passkey-prompt.server";
 import { prisma } from "~/lib/db";
-import { isFeatureEnabledForEveryone } from "~/lib/feature-flags.server";
+import { isFeatureSwitchedOn } from "~/lib/feature-flags.server";
 import AuthShell from "~/components/auth/AuthShell";
 import { AuthButton } from "~/components/auth/AuthButton";
 import { AuthInput } from "~/components/auth/v2";
@@ -53,9 +53,9 @@ export async function loader({ request }: Route.LoaderArgs) {
     if (!(await shouldOfferPasskey(request, user.sub))) {
       return redirect(destination);
     }
-    // Same everyone-switch as login/signup, so one sign-in flow never mixes
-    // the two designs.
-    const authV2 = await isFeatureEnabledForEveryone("desktop-tabs", request);
+    // Same master-switch rule as login/signup, so one sign-in flow never
+    // mixes the two designs.
+    const authV2 = await isFeatureSwitchedOn("desktop-tabs", request);
     return { step: "passkey" as const, destination, authV2 };
   }
 
@@ -70,7 +70,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     // Magic-link signups arrive without a name (no Google to supply one), so
     // ask for it when the session user has no firstName yet.
     needsName: !user.firstName,
-    authV2: await isFeatureEnabledForEveryone("desktop-tabs", request),
+    authV2: await isFeatureSwitchedOn("desktop-tabs", request),
   };
 }
 

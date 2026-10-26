@@ -9,7 +9,7 @@ import {
   pickSafeLoginNext,
   setLoginNextCookie,
 } from "~/lib/login-next";
-import { isFeatureEnabledForEveryone } from "~/lib/feature-flags.server";
+import { isFeatureSwitchedOn } from "~/lib/feature-flags.server";
 import { resolveLoginIdentifier } from "~/lib/user-email.server";
 import { auth } from "~/lib/betterauth.server";
 import AuthShell from "~/components/auth/AuthShell";
@@ -58,9 +58,9 @@ export async function loader({ request }: Route.LoaderArgs) {
     return redirect("/portal");
   }
 
-  // Visitors here are signed out, so the dali.os auth dress can only follow
-  // the flag's everyone switch — per-user targeting has no user to match.
-  return { authV2: await isFeatureEnabledForEveryone("desktop-tabs", request) };
+  // Visitors here are signed out, so per-user targeting has no user to
+  // match: the dali.os auth dress follows the flag's master switch alone.
+  return { authV2: await isFeatureSwitchedOn("desktop-tabs", request) };
 }
 
 export async function action({ request }: Route.ActionArgs) {

@@ -15,7 +15,7 @@ import {
   normalizeEmail,
 } from "~/partners/lib/magic-link.server";
 import { sendMemberEmailConflictEmail } from "~/partners/lib/partner-emails.server";
-import { isFeatureEnabledForEveryone } from "~/lib/feature-flags.server";
+import { isFeatureSwitchedOn } from "~/lib/feature-flags.server";
 import AuthShell from "~/components/auth/AuthShell";
 import { AuthButton } from "~/components/auth/AuthButton";
 import { AuthInput, AuthNotice } from "~/components/auth/v2";
@@ -71,8 +71,8 @@ export async function loader({ request }: Route.LoaderArgs) {
   return {
     door: isValidDoor(door) ? door : null,
     next,
-    // Signed-out visitors: the dali.os dress follows the flag's everyone switch.
-    authV2: await isFeatureEnabledForEveryone("desktop-tabs", request),
+    // Signed-out visitors: the dali.os dress follows the flag's master switch.
+    authV2: await isFeatureSwitchedOn("desktop-tabs", request),
   };
 }
 
