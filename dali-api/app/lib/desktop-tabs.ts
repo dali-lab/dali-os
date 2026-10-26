@@ -10,6 +10,7 @@ export interface DesktopTab {
   url: string;
   origin: string;
   label: string;
+  emoji?: string;
   pinned: boolean;
   ephemeral: boolean;
   lastActivatedAt: number;
@@ -248,6 +249,12 @@ export function labelTab(state: DesktopTabsState, url: string, title: string): D
   const tab = activeTab(state);
   if (!tab || !title || !sameUrl(tab.url, url) || sameUrl(tab.origin, url)) return state;
   return updateTab(state, tab.id, (t) => (t.label === title ? t : { ...t, label: title }));
+}
+
+export function setTabEmoji(state: DesktopTabsState, url: string, emoji: string | null): DesktopTabsState {
+  const tab = activeTab(state);
+  if (!tab || !sameUrl(tab.url, url) || (tab.emoji ?? null) === emoji) return state;
+  return updateTab(state, tab.id, ({ emoji: _, ...rest }) => (emoji ? { ...rest, emoji } : rest));
 }
 
 /** Move a tab to `toIndex`, keeping pinned tabs clustered on the left. */

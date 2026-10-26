@@ -71,6 +71,15 @@ describe("tabs snapshot cookie", () => {
     expect(parsed.tabs[0]!.backStack).toEqual([]);
   });
 
+  it("keeps a tab's emoji, and reads rows written before tabs had one", () => {
+    const state = { tabs: [tab("a", { emoji: "🌲" }), tab("b")], activeId: "a", closed: [] };
+    const parsed = parseTabsSnapshot(cookieFor(state))!;
+    expect(parsed.tabs[0]!.emoji).toBe("🌲");
+    expect(parsed.tabs[1]).not.toHaveProperty("emoji");
+    const old = encodeURIComponent(JSON.stringify({ a: "a", t: [["a", "/p/a", "Tab a", 0]] }));
+    expect(parseTabsSnapshot(`dali_tabs=${old}`)!.tabs[0]).not.toHaveProperty("emoji");
+  });
+
   it("stays under the cookie budget by dropping tabs from the end", () => {
     const tabs = Array.from({ length: 20 }, (_, i) => tab(`t${i}`, { url: `/documents/${"x".repeat(250)}${i}`, label: "L".repeat(80) }));
     const encoded = encodeTabsSnapshot({ tabs, activeId: "t0", closed: [] });

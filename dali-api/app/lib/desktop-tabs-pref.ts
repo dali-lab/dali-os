@@ -58,7 +58,7 @@ const SNAPSHOT_MAX_LABEL = 40;
 const SNAPSHOT_MAX_URL = 300;
 const SNAPSHOT_MAX_BYTES = 3000;
 
-type SnapshotRow = [id: string, url: string, label: string, flags: number];
+type SnapshotRow = [id: string, url: string, label: string, flags: number, emoji?: string];
 type Snapshot = { a: string | null; t: SnapshotRow[] };
 
 const PINNED = 1;
@@ -73,7 +73,8 @@ export function encodeTabsSnapshot(state: DesktopTabsState): string {
       t.url,
       t.label.slice(0, SNAPSHOT_MAX_LABEL),
       (t.pinned ? PINNED : 0) | (t.ephemeral ? PREVIEW : 0),
-    ]);
+      ...(t.emoji ? [t.emoji] : []),
+    ] as SnapshotRow);
   let encoded = "";
   do {
     encoded = encodeURIComponent(JSON.stringify({ a: state.activeId, t: rows } satisfies Snapshot));
@@ -97,11 +98,12 @@ export function parseTabsSnapshot(cookieString: string): DesktopTabsState | null
             typeof r[2] === "string" &&
             typeof r[3] === "number",
         )
-        .map(([id, url, label, flags]) => ({
+        .map(([id, url, label, flags, emoji]) => ({
           id,
           url,
           origin: url,
           label,
+          ...(typeof emoji === "string" && emoji ? { emoji } : {}),
           pinned: (flags & PINNED) !== 0,
           ephemeral: (flags & PREVIEW) !== 0,
           lastActivatedAt: 0,

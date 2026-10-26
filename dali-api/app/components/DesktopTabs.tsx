@@ -26,6 +26,7 @@ import { buildPageLink, writePageLink } from '~/lib/page-link'
 import { cn } from '~/lib/cn'
 import { stripAppTitle } from '~/lib/page-title'
 import { fallbackPageLabel } from '~/components/shell/page-bar-model'
+import { usePageTrail } from '~/components/Breadcrumbs'
 import { tabIcon } from '~/lib/tab-icon'
 
 /** Fired by the desktop app's File menu (desktop/src-tauri/src/menu.rs), which
@@ -87,6 +88,11 @@ export function useDesktopTabs(enabled: boolean, hint: boolean): boolean {
       window.clearTimeout(labelTimer)
     }
   }, [show, url, navigationType])
+
+  const emoji = usePageTrail()?.crumbs.at(-1)?.emoji ?? null
+  useEffect(() => {
+    if (show) tabActions.emoji(url, emoji)
+  }, [show, url, emoji])
 
   useEffect(() => {
     if (!show) return
@@ -174,7 +180,13 @@ function SortableTab({
           : 'border-transparent text-os-grey hover:bg-os-hover',
       )}
     >
-      <Icon className={cn('pointer-events-none h-4 w-4 shrink-0', active ? 'text-foreground' : 'text-os-grey')} />
+      {tab.emoji ? (
+        <span aria-hidden className="pointer-events-none w-4 shrink-0 text-center text-[14px] leading-none">
+          {tab.emoji}
+        </span>
+      ) : (
+        <Icon className={cn('pointer-events-none h-4 w-4 shrink-0', active ? 'text-foreground' : 'text-os-grey')} />
+      )}
       {!tab.pinned && (
         <>
           <span

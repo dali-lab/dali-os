@@ -31,3 +31,8 @@ export function noteTabLabel(tab: { title: string; meetingOccurrenceStart: Date 
   if (tab.title.trim() || !tab.meetingOccurrenceStart) return tab.title;
   return formatDateShort(tab.meetingOccurrenceStart);
 }
+
+export function withLeafEmoji(crumbs: Crumb[], emoji: string | null | undefined): Crumb[] {
+  if (!emoji || crumbs.length === 0) return crumbs;
+  return [...crumbs.slice(0, -1), { ...crumbs[crumbs.length - 1]!, emoji }];
+}

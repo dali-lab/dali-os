@@ -22,7 +22,7 @@ async function flush() {
   });
 }
 
-async function mount(opts: { enabled?: boolean; desktop?: boolean; at?: string } = {}) {
+async function mount(opts: { enabled?: boolean; desktop?: boolean; at?: string; emojiAt?: Record<string, string> } = {}) {
   vi.resetModules();
   mod = {
     hook: await import("~/components/DesktopTabs"),
@@ -41,7 +41,16 @@ async function mount(opts: { enabled?: boolean; desktop?: boolean; at?: string }
       createElement(Link, { to: "/a/deeper", id: "deeper" }, "deeper"),
     );
   }
-  const Stub = createRoutesStub([{ path: "*", Component: Shell }]);
+  const Stub = createRoutesStub([
+    {
+      path: "*",
+      Component: Shell,
+      loader: ({ request }: { request: Request }) => ({ emoji: opts.emojiAt?.[new URL(request.url).pathname] ?? null }),
+      handle: {
+        breadcrumb: (data: { emoji: string | null }) => (data.emoji ? [{ label: "Page", emoji: data.emoji }] : null),
+      },
+    },
+  ]);
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
@@ -140,6 +149,18 @@ describe("useDesktopTabs", () => {
     });
     expect(tabs()).toEqual(["/a", "/"]);
     expect(send("bogus")).toBe(true);
+  });
+
+  it("gives the tab the page's emoji and drops it on a page without one", async () => {
+    await mount({ emojiAt: { "/a": "🌲" } });
+    const active = () => mod.store.getTabsSnapshot().tabs.find((t) => t.id === mod.store.getTabsSnapshot().activeId);
+    expect(active()?.emoji).toBe("🌲");
+    await act(async () => {
+      container.querySelector<HTMLAnchorElement>("#deeper")!.click();
+    });
+    await flush();
+    expect(location).toBe("/a/deeper");
+    expect(active()?.emoji).toBeUndefined();
   });
 
   it("switches tabs by number and closes with ⌘⇧K", async () => {
@@ -273,6 +294,19 @@ describe("DesktopTabStrip", () => {
     await mountStrip();
     expect(strip().querySelector("button[aria-current='page'] svg")).not.toBeNull();
     expect(strip().querySelector("button[aria-label='New tab']")).not.toBeNull();
+  });
+
+  it("shows a tab's emoji in place of the section glyph", async () => {
+    const withEmoji = {
+      tabs: [{ ...snapshot.tabs[0], emoji: "🌲" }, snapshot.tabs[1]],
+      activeId: "s1",
+      closed: [],
+    };
+    await mountStrip({ enabled: false, initial: withEmoji });
+    const [first, second] = tabButtons();
+    expect(first.textContent).toContain("🌲");
+    expect(first.querySelector("svg.h-4")).toBeNull();
+    expect(second.querySelector("svg.h-4")).not.toBeNull();
   });
 
   const snapshot = {
