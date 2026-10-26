@@ -59,7 +59,7 @@ export function StudentDashboard({
   return (
     <div className="flex flex-col gap-8">
       {hasNext && (
-        <section className="rounded-os-card bg-os-card p-6">
+        <section className="rounded-os-card bg-os-card p-5">
           <h2 className="mb-3 font-heading text-[19px] font-semibold text-foreground">
             What&apos;s next
           </h2>

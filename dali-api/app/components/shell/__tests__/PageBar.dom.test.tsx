@@ -153,13 +153,15 @@ describe("PageBar overflow", () => {
 });
 
 describe("PageBar top spacing", () => {
-  it("adds 10px of top padding when the tab strip is hidden", async () => {
+  it("grows taller, with centered content, when the tab strip is hidden", async () => {
     await mount({ tabs: false });
-    expect(bar().className).toContain("pt-2.5");
+    expect(bar().className).toContain("h-[54px]");
+    expect(bar().className).not.toContain("pt-2.5");
   });
 
-  it("adds none when the tab strip shows", async () => {
+  it("stays compact when the tab strip shows", async () => {
     await mount({ tabs: true });
+    expect(bar().className).toContain("h-11");
     expect(bar().className).not.toContain("pt-2.5");
   });
 });

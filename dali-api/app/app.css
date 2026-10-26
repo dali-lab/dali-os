@@ -56,6 +56,28 @@
   --animate-nav-rail: nav-rail 160ms ease-out;
   --animate-area-menu: area-menu 140ms cubic-bezier(0.2, 0.8, 0.3, 1);
 
+  /* Scalable rail: rows stagger in on a section change (delay set inline per
+     row) and labels fade in as the rail expands. */
+  --animate-rail-stagger: rail-stagger 180ms cubic-bezier(0.23, 1, 0.32, 1) both;
+  --animate-rail-label: rail-label 160ms ease-out both;
+
+  /* Auth pages: the form column rises in on load, each step slides in from
+     the right as the flow advances, fields shake on a rejected submit, and
+     the code boxes pop in with a stagger (delay set inline per digit). */
+  --animate-auth-rise: auth-rise 280ms cubic-bezier(0.23, 1, 0.32, 1) both;
+
+  /* Auth brand panel tile cluster (AnimatedTileCluster): entrance pop, then
+     per-tile idle loops. Delays are set inline per tile. */
+  --animate-auth-tile-pop: auth-tile-pop 600ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  --animate-auth-tile-slide: auth-tile-slide 8s cubic-bezier(0.65, 0, 0.35, 1) infinite both;
+  --animate-auth-tile-flip: auth-tile-flip 9s cubic-bezier(0.65, 0, 0.35, 1) infinite both;
+  --animate-auth-tile-breathe: auth-tile-breathe 3.2s cubic-bezier(0.65, 0, 0.35, 1) infinite both;
+  --animate-auth-tile-orbit: auth-tile-orbit 6s linear infinite both;
+  --animate-auth-tile-spin: auth-tile-spin 5s cubic-bezier(0.65, 0, 0.35, 1) infinite both;
+  --animate-auth-step: auth-step 240ms cubic-bezier(0.23, 1, 0.32, 1) both;
+  --animate-auth-shake: auth-shake 300ms ease-in-out;
+  --animate-auth-digit: auth-digit 200ms cubic-bezier(0.23, 1, 0.32, 1) both;
+
   /* The education catalog's detail pane slides in from the right edge as a
      card is selected, so the pane reads as opening beside the grid rather
      than the grid being replaced. */
@@ -153,8 +175,11 @@
   --color-os-well:         #26262f;  /* inputs, nested rows */
   --color-os-container:    #3f3f48;  /* borders, chips, active fill */
   --color-os-container-hi: #54545f;  /* hover border */
-  --color-os-accent:       #a8d3de;
-  --color-os-accent-hover: #bfe1e9;
+  /* The page accent follows the mode: the shell sets --mode-accent (the active
+     area's tint) and --mode-accent-ink (its on-white restatement) from
+     AREA_TONES; outside any mode these fall back to the shell's own cyan. */
+  --color-os-accent:       var(--mode-accent, #a8d3de);
+  --color-os-accent-hover: var(--mode-accent-hover, #bfe1e9);
   --color-os-grey:         #bababa;  /* secondary text */
   --color-os-muted:        #6a6a73;  /* tertiary text / placeholders */
   --color-os-green:        #9fe0a8;  /* "Active" status */
@@ -644,6 +669,167 @@ select:not(:disabled) {
   }
 }
 
+/* Auth tiles: pop in diagonally… */
+@keyframes auth-tile-pop {
+  from {
+    opacity: 0;
+    transform: scale(0);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* …slide to an empty cell and back (cells set inline as --tile-l/t vars)… */
+@keyframes auth-tile-slide {
+  0%, 62%, 100% {
+    left: var(--tile-l0);
+    top: var(--tile-t0);
+  }
+  12%, 50% {
+    left: var(--tile-l1);
+    top: var(--tile-t1);
+  }
+}
+
+/* …squash to a line and reopen in the alternate colour pair… */
+@keyframes auth-tile-flip {
+  0%, 100% {
+    transform: none;
+    background-color: var(--tile-bg);
+    color: var(--tile-fg);
+  }
+  5% {
+    transform: scaleY(0);
+    background-color: var(--tile-bg);
+    color: var(--tile-fg);
+  }
+  10%, 50% {
+    transform: none;
+    background-color: var(--tile-alt-bg);
+    color: var(--tile-alt-fg);
+  }
+  55% {
+    transform: scaleY(0);
+    background-color: var(--tile-alt-bg);
+    color: var(--tile-alt-fg);
+  }
+  60% {
+    transform: none;
+    background-color: var(--tile-bg);
+    color: var(--tile-fg);
+  }
+}
+
+/* …breathe, orbit the tile's centre, or spin a quarter turn at a time. */
+@keyframes auth-tile-breathe {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(0.62);
+  }
+}
+
+@keyframes auth-tile-orbit {
+  0%, 100% {
+    transform: translate(0, -55%);
+  }
+  25% {
+    transform: translate(55%, 0);
+  }
+  50% {
+    transform: translate(0, 55%);
+  }
+  75% {
+    transform: translate(-55%, 0);
+  }
+}
+
+@keyframes auth-tile-spin {
+  0% {
+    transform: rotate(0deg);
+  }
+  20%, 50% {
+    transform: rotate(90deg);
+  }
+  70%, 100% {
+    transform: rotate(180deg);
+  }
+}
+
+@keyframes auth-rise {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes auth-step {
+  from {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes auth-shake {
+  0%, 100% {
+    transform: translateX(0);
+  }
+  15% {
+    transform: translateX(-6px);
+  }
+  35% {
+    transform: translateX(6px);
+  }
+  55% {
+    transform: translateX(-4px);
+  }
+  75% {
+    transform: translateX(4px);
+  }
+}
+
+@keyframes auth-digit {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes rail-stagger {
+  from {
+    opacity: 0;
+    transform: translateX(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes rail-label {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
 /* Sidebar: the active-area menu fades down as it opens. */
 @keyframes area-menu {
   from {
@@ -998,6 +1184,21 @@ select:not(:disabled) {
   --os-role-sand-fill:    #3a3128;  --os-role-sand-ink:    #ddc3a3;
 }
 
+/* The sidebar's scale: one notch above the app's 15px grid, back on the 16px
+   grid the sidebar design was drawn on. Keep in sync with RAIL_ZOOM
+   (rail-model.ts), which un-scales the rail's fixed-position menus. */
+.os-rail-zoom {
+  zoom: calc(16 / 15);
+}
+
+/* The dali.os type system alone (Plus Jakarta Sans headings over Mulish),
+   for pages outside the shell — auth screens — that should not pick up the
+   shell's full token remap. */
+.os-type {
+  font-family: var(--font-os);
+  --font-heading: var(--font-os-logo);
+}
+
 .os-shell,
 html.os-shell {
   font-family: var(--font-os);
@@ -1126,8 +1327,9 @@ html.light .os-shell,
   --color-os-well:         #eaeff5;  /* inputs, nested rows */
   --color-os-container:    #ccd7e2;  /* borders, chips, active fill */
   --color-os-container-hi: #a9b9c9;  /* hover border */
-  --color-os-accent:       #0f6e7d;  /* the pale cyan, darkened onto white */
-  --color-os-accent-hover: #0b5964;
+  /* The mode accent again, in each area's on-white ink (see AREA_TONES). */
+  --color-os-accent:       var(--mode-accent-ink, #0f6e7d);
+  --color-os-accent-hover: var(--mode-accent-ink-hover, #0b5964);
   --color-os-grey:         #4d5c69;  /* secondary text */
   --color-os-muted:        #78899a;  /* tertiary text / placeholders */
   --color-os-green:        #0f7a4d;  /* "Active" status */
@@ -2043,4 +2245,143 @@ html.os-shell > body::-webkit-scrollbar-track {
 html.light .area-tile-ring,
 .light .area-tile-ring {
   box-shadow: none;
+}
+
+/* ── v2 design (desktop-tabs flag) ───────────────────────────────────────────
+ * The sidebar redesign's scale and dress, applied only when the layout marks
+ * the document with data-v2 on <html> (set server-side from the desktop-tabs
+ * flag; see root.tsx). Everything above states the pre-redesign design; this
+ * block restates each knob at the v2 values, so a flag-off document renders
+ * exactly as before. */
+html[data-v2] {
+  /* 15/16 scale: every rem-based utility (text, padding, gaps, heights)
+     renders at 15/16 of its nominal size. */
+  font-size: 15px;
+  /* Cards and tables at 12px corners, every control at 8px. */
+  --radius-os-card: 12px;
+  --radius-os-item: 8px;
+}
+
+/* dali.os type system under v2: Plus Jakarta Sans headings over Mulish body —
+   the base-layer h1–h6 rule picks this remap up inside the shell. */
+html[data-v2] .os-shell,
+html[data-v2].os-shell {
+  --font-heading: var(--font-os-logo);
+}
+
+/* Page/section titles written as literal classes (the useOsChrome hook gates
+   its own strings): the old 36px heading dress renders as the v2 title — the
+   text-2xl size, bold, in the shell body face. Spared: responsive display
+   headings (banners) and the brand-dressed heroes (certificates). */
+html[data-v2] .font-heading.text-4xl:not(.md\:text-5xl):not(.text-dark-blue) {
+  font-family: var(--font-os);
+  font-size: var(--text-2xl);
+  line-height: var(--tw-leading, var(--text-2xl--line-height));
+  font-weight: 700;
+}
+html[data-v2] .font-heading.text-\[19px\] {
+  font-size: var(--text-base);
+  line-height: var(--tw-leading, var(--text-base--line-height));
+}
+
+/* Controls, one notch down and squared to the 8px corner. */
+html[data-v2] .os-add-btn {
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 13px;
+}
+html[data-v2] .os-edit-btn {
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 13px;
+}
+html[data-v2] .os-btn-primary {
+  padding: 8px 18px;
+  border-radius: 8px;
+  font-size: 13px;
+}
+html[data-v2] .os-btn-primary--sm {
+  font-size: 12px;
+}
+html[data-v2] .os-btn-ghost {
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 13px;
+}
+html[data-v2] .os-type-badge {
+  border-radius: 6px;
+}
+html[data-v2] .os-sprint-chip {
+  border-radius: 8px;
+}
+html[data-v2] .os-shell .os-label-chip {
+  border-radius: 6px;
+}
+html[data-v2] .os-item-row {
+  border-radius: 8px;
+}
+html[data-v2] .os-modal-card {
+  padding: 20px;
+}
+html[data-v2] .os-shell .os-modal-title {
+  font-size: 20px;
+}
+html[data-v2] .os-shell .dali-btn {
+  border-radius: 8px;
+  font-size: 13px;
+  /* Fixed control heights (sidebar scale): md buttons 36px, the smaller sizes
+     32px, instead of padding-derived heights. */
+  height: 32px;
+}
+html[data-v2] .os-shell .dali-btn--size-md {
+  height: 36px;
+}
+/* The sidebar rows' soft white highlight, shared by every hover state. */
+html[data-v2] .os-shell .dali-btn--secondary:hover {
+  background: var(--color-os-hover);
+}
+html[data-v2] .os-shell .dali-btn--ghost:hover {
+  background: var(--color-os-hover);
+}
+
+/* Fields: 8px corner, tighter metrics, 13px type. */
+html[data-v2] .os-shell .os-form input[type="text"],
+html[data-v2] .os-shell .os-form input[type="date"],
+html[data-v2] .os-shell .os-form input[type="email"],
+html[data-v2] .os-shell .os-form input[type="url"],
+html[data-v2] .os-shell .os-form input[type="number"],
+html[data-v2] .os-shell .os-form input[type="tel"],
+html[data-v2] .os-shell .os-form select,
+html[data-v2] .os-shell .os-form textarea,
+html[data-v2] .os-shell .os-form button[aria-haspopup="listbox"],
+html[data-v2] .os-shell .os-form button[aria-haspopup="menu"],
+html[data-v2] .os-shell .os-form button[aria-haspopup="dialog"] {
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 13px;
+}
+html[data-v2] .os-shell .os-form [data-time-field] {
+  border-radius: 8px;
+}
+html[data-v2] .os-shell .os-form [data-time-field] input[type="text"] {
+  border-radius: 0;
+  padding: 8px 4px 8px 12px;
+}
+html[data-v2] .os-shell .os-form [data-time-field] button {
+  padding-right: 12px;
+}
+html[data-v2] .os-shell .os-form-readonly .os-live input[type="text"],
+html[data-v2] .os-shell .os-form-readonly .os-live textarea {
+  border-radius: 8px;
+  padding: 8px 12px !important;
+}
+
+/* Labels in the sidebar design: 14px semibold, sentence case. */
+html[data-v2] .os-shell .os-form dt,
+html[data-v2] .os-shell .os-form label > span:first-child,
+html[data-v2] .os-field-label {
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: normal;
+  text-transform: none;
 }

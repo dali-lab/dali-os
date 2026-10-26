@@ -10,6 +10,8 @@ vi.mock("~/lib/db", () => ({
   prisma: {
     user: { update: mockUserUpdate },
     passkey: { count: mockPasskeyCount },
+    // The loader resolves the auth-dress flag; no rows means defaults (off).
+    featureFlag: { findMany: async () => [] },
   },
 }));
 
@@ -103,6 +105,7 @@ describe("GET /welcome loader", () => {
       email: "ada@dartmouth.edu",
       door: "dartmouth",
       needsName: true,
+      authV2: false,
     });
   });
 
@@ -118,14 +121,14 @@ describe("GET /welcome loader", () => {
     const result = await loader({
       request: makeRequest("http://localhost/welcome?door=partner&step=passkey"),
     } as any);
-    expect(result).toEqual({ step: "passkey", destination: "/partner" });
+    expect(result).toEqual({ step: "passkey", destination: "/partner", authV2: false });
   });
 
   it("step=passkey (post-login, next) offers it with the safe next as destination", async () => {
     const result = await loader({
       request: makeRequest("http://localhost/welcome?step=passkey&next=%2Fcalendar"),
     } as any);
-    expect(result).toEqual({ step: "passkey", destination: "/calendar" });
+    expect(result).toEqual({ step: "passkey", destination: "/calendar", authV2: false });
   });
 
   it("step=passkey skips (redirects) when the user already has a passkey", async () => {

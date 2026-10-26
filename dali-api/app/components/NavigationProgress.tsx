@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import { useNavigation } from "react-router";
+import { useLocation, useNavigation } from "react-router";
 import { useDisplayedTab } from "~/components/shell/displayed-tab";
+import { areaForPath, areaTint } from "~/lib/nav-areas";
 
-// A slim top-of-viewport progress bar shown during client-side route
-// transitions. Mounted once at the document root (root.tsx), so it covers
-// every page — the applicant portal, the main shell, and the pages loaded
-// inside each workspace iframe (each iframe is its own document and runs its
-// own copy of this bar).
+// A slim progress bar shown during client-side route transitions. Mounted once
+// at the document root (root.tsx), so it covers every page — the applicant
+// portal, the main shell, and the pages loaded inside each workspace iframe
+// (each iframe is its own document and runs its own copy of this bar).
 //
 // The bar eases toward — but never reaches — 100% while loading (real
 // completion time is unknown), then snaps to full and fades out once the
@@ -14,9 +14,24 @@ import { useDisplayedTab } from "~/components/shell/displayed-tab";
 // instant transitions.
 export function NavigationProgress() {
   const navigation = useNavigation();
+  const location = useLocation();
+  // A switch to a kept tab shows that page instantly, so no loading bar.
   const showingKeptTab = useDisplayedTab() !== null;
   const isTabSwitch = (navigation.location?.state as { tabSwitch?: boolean } | null)?.tabSwitch === true;
   const isLoading = navigation.state !== "idle" && !(isTabSwitch && showingKeptTab);
+
+  // Under the v2 design (the data-v2 marker root.tsx sets from the
+  // desktop-tabs flag) the bar wears the color of the mode being loaded — the
+  // destination's area tint. Otherwise, and on pages outside any area
+  // (portal, auth, home), it keeps the default accent. Resolved from the path
+  // alone: this mounts at the document root, above the shell div that carries
+  // `--area`, and outside the flag provider.
+  const v2 =
+    typeof document !== "undefined" &&
+    document.documentElement.hasAttribute("data-v2");
+  const target = navigation.location ?? location;
+  const area = v2 ? areaForPath(`${target.pathname}${target.search}`) : undefined;
+  const color = area ? areaTint(area.key) : "var(--color-os-accent)";
 
   // visible drives mount + fade; progress is the width %.
   const [visible, setVisible] = useState(false);
@@ -83,10 +98,12 @@ export function NavigationProgress() {
       className="fixed inset-x-0 top-0 z-[100] h-0.5 pointer-events-none"
     >
       <div
-        className="h-full bg-os-accent shadow-[0_0_8px_var(--color-os-accent)] transition-[width,opacity] duration-200 ease-out motion-reduce:transition-none"
+        className="h-full transition-[width,opacity] duration-200 ease-out motion-reduce:transition-none"
         style={{
           width: `${progress}%`,
           opacity: visible ? 1 : 0,
+          backgroundColor: color,
+          boxShadow: `0 0 8px ${color}`,
         }}
       />
     </div>

@@ -95,7 +95,7 @@ export function ReviewsPage() {
           {selected ? (
             <ReviewDetail key={`${selected.submission.id}:${selected.submission.status}`} entry={selected} />
           ) : (
-            <div className="grid h-full min-h-[320px] place-items-center rounded-os-card bg-os-card p-6 text-center">
+            <div className="grid h-full min-h-[320px] place-items-center rounded-os-card bg-os-card p-5 text-center">
               <div>
                 <Inbox className="mx-auto h-8 w-8 text-os-muted" aria-hidden />
                 <p className="mt-3 text-os-grey">Pick a submission to review it.</p>

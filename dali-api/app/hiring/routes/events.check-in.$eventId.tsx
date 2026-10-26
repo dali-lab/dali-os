@@ -115,7 +115,7 @@ export default function HiringEventCheckIn() {
 
   return (
     <div className="os-shell min-h-screen flex items-center justify-center bg-os-bg text-foreground p-4">
-      <div className="w-full max-w-sm rounded-os-card bg-os-card p-6 text-center">
+      <div className="w-full max-w-sm rounded-os-card bg-os-card p-5 text-center">
         <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{data.cycleName}</p>
         <h1 className="mt-1 font-heading text-xl font-bold text-foreground">{data.title}</h1>
         <p className="mt-1 text-sm text-muted-foreground">

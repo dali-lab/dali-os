@@ -1443,7 +1443,7 @@ export default function ManageOffering() {
                   key={s.id}
                   id={`session-${s.id}`}
                   // Clear the sticky nav's own top offset when scrolled to.
-                  className="scroll-mt-4 rounded-os-card bg-os-card p-6"
+                  className="scroll-mt-4 rounded-os-card bg-os-card p-5"
                 >
                   <div className="mb-5 flex items-start justify-between gap-4">
                     <div className="min-w-0">
@@ -1964,7 +1964,7 @@ function FeedbackResults({
           </p>
         )}
       </div>
-      <div className="flex flex-col gap-5 rounded-os-card bg-os-card p-6">
+      <div className="flex flex-col gap-5 rounded-os-card bg-os-card p-5">
       {results.submissions.length === 0 ? (
         <p className="text-sm italic text-os-grey">No responses yet.</p>
       ) : anonymizedNote && results.responded < 3 ? (

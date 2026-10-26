@@ -4,6 +4,20 @@ import { Download, HelpCircle, Settings, Sparkles, UserRound, type LucideIcon } 
 
 export type UserMenuEntry = { url: string; label: string; icon: LucideIcon }
 
+export type SidebarSize = 'expanded' | 'compact'
+
+export const RAIL_WIDTH = { expanded: 264, compact: 68, legacy: 276 } as const
+
+// The app's rem grid runs at 15px (see app.css), but the sidebar renders one
+// notch up, back on the 16px grid — applied as CSS zoom via `.os-rail-zoom`.
+// Fixed-position elements inside the zoomed subtree have their coordinates
+// multiplied by this, so measured positions must divide by it.
+export const RAIL_ZOOM = 16 / 15
+
+export function railWidth(size: SidebarSize, scalable: boolean): number {
+  return scalable ? RAIL_WIDTH[size] : RAIL_WIDTH.legacy
+}
+
 export function userMenuEntries({
   releaseNotes,
   desktopDownload,

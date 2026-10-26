@@ -37,7 +37,7 @@ export function FilterCountBadge({ os, count }: { os: boolean; count: number }) 
   return (
     <span
       className={cn(
-        "rounded-full px-1.5 py-0.5 text-[10px] font-semibold leading-none",
+        "rounded-[6px] px-1.5 py-0.5 text-[10px] font-semibold leading-none",
         os ? "bg-os-accent text-os-bg" : "bg-accent-coral text-navy-deep",
       )}
     >
@@ -77,7 +77,7 @@ export function FilterSectionLabel({
   return (
     <span
       className={cn(
-        "text-[11px] font-semibold uppercase tracking-wide",
+        "text-sm font-semibold",
         os ? "text-os-muted" : "text-muted-foreground",
       )}
     >
@@ -100,7 +100,7 @@ function FilterLabel({
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1 text-xs",
+        "inline-flex items-center gap-1 text-sm font-semibold",
         os ? "text-os-grey" : "text-muted-foreground",
       )}
     >
@@ -177,12 +177,12 @@ export function FilterToggleRow({
   );
 }
 
-// "sm" is the dense in-panel pill (filter panels, dropdowns, table toolbars);
-// "md" matches <SearchInput size="md"> line for line, for the pills that sit
-// beside one as a single filter bar.
+// "sm" is the dense in-panel chip (filter panels, dropdowns, table toolbars);
+// "md" matches <SearchInput size="md"> line for line (36px), for the chips
+// that sit beside one as a single filter bar.
 const PILL_SIZES = {
   sm: "px-2.5 py-1 text-xs",
-  md: "px-4 py-2.5 text-sm",
+  md: "h-9 px-4 text-sm",
 } as const;
 
 export function FilterPill({
@@ -210,7 +210,8 @@ export function FilterPill({
       onClick={onClick}
       aria-pressed={selected}
       className={cn(
-        "max-w-full truncate rounded-full border transition-colors",
+        "max-w-full truncate rounded-lg border transition-colors",
+        size === "md" && "inline-flex items-center",
         PILL_SIZES[size],
         // At md the unselected pill sits on the card surface so the row reads
         // as one control set with the search field next to it.

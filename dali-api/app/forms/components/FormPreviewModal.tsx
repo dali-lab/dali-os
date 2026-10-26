@@ -66,7 +66,7 @@ export function FormPreviewModal({
       </div>
 
       <div className="p-4 sm:p-8">
-        <div className="mx-auto max-w-2xl bg-card border border-border rounded-os-card p-6 sm:p-8">
+        <div className="mx-auto max-w-2xl bg-card border border-border rounded-os-card p-5 sm:p-8">
           <div className="flex items-center gap-2 mb-6">
             <div className="w-7 h-7 bg-os-accent rounded-md flex items-center justify-center">
               <span className="text-white font-bold text-base leading-none font-heading">

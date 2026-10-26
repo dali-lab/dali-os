@@ -94,12 +94,22 @@ describe("Rail", () => {
     expect(search.textContent).toContain("⌘K");
   });
 
-  it("only shows a label on the active quick item", async () => {
+  it("opens only the active quick item's label; the others stay collapsed, ready to morph", async () => {
     await mount({ path: "/calendar" });
-    expect(q("button[aria-label='Calendar']")!.textContent).toBe("Calendar");
+    const labelSpan = (name: string) =>
+      Array.from(container.querySelectorAll(`button[aria-label='${name}'] span`)).find(
+        (s) => s.textContent === name,
+      )!;
+    expect(labelSpan("Calendar").className).toContain("grid-cols-[1fr]");
     expect(q("button[aria-label='Calendar']")!.getAttribute("aria-current")).toBe("page");
-    expect(q("button[aria-label='Home']")!.textContent).toBe("");
-    expect(q("button[aria-label='Home']")!.getAttribute("aria-current")).toBeNull();
+    expect(labelSpan("Email").className).toContain("grid-cols-[0fr]");
+    expect(q("button[aria-label='Email']")!.getAttribute("aria-current")).toBeNull();
+  });
+
+  it("offers no Home quick item; the wordmark is the home button", async () => {
+    await mount({ path: "/" });
+    expect(q("button[aria-label='Home']")).toBeNull();
+    expect(q("button[aria-label='DALI OS home']")).not.toBeNull();
   });
 
   it("hides Email and Drive for alumni and sends Home to Connect", async () => {
@@ -113,7 +123,7 @@ describe("Rail", () => {
     });
     expect(q("button[aria-label='Email']")).toBeNull();
     expect(q("button[aria-label='Drive']")).toBeNull();
-    expect(q("button[aria-label='Home']")!.getAttribute("aria-current")).toBe("page");
+    // The wordmark carries the alumni home (Connect).
     expect(tabClickProps).toHaveBeenCalledWith({ url: "/connect", label: "Home" });
   });
 
@@ -152,7 +162,7 @@ describe("Rail", () => {
     expect(q("[data-area-tile='core']")).not.toBeNull();
   });
 
-  it("lists areas in rail order with descriptions", async () => {
+  it("lists areas in rail order, labels only", async () => {
     const keys = ["admin", "core", "hiring", "education", "community", "projects"];
     const list = keys.map((k) => ({ ...area(k), label: k, description: `About ${k}` }));
     await mount({ areas: list, activeArea: list[0] });
@@ -168,7 +178,8 @@ describe("Rail", () => {
       "hiring",
       "admin",
     ]);
-    expect(options[0].textContent).toContain("About projects");
+    expect(options[0].textContent).toContain("projects");
+    expect(options[0].textContent).not.toContain("About projects");
     expect(options.filter((o) => o.getAttribute("aria-selected") === "true")).toHaveLength(1);
   });
 
@@ -236,5 +247,56 @@ describe("Rail", () => {
     });
     expect(q("[role='menu']")?.textContent).toContain("Settings");
     expect(q("[role='menu']")?.textContent).toContain("Log out");
+  });
+});
+
+describe("Rail scalable sizing", () => {
+  const lab = { key: "lab", label: "Lab", icon: Settings, hubPath: "/lab", subtabs: [] };
+  const subtabs = [
+    { label: "Overview", href: "/lab", icon: Settings },
+    { label: "Courses", href: "/lab/courses", icon: Settings },
+  ];
+
+  it("swaps the hide control for a size toggle when the rail is scalable", async () => {
+    await mount({ onHideRail: undefined, onToggleSize: vi.fn() });
+    expect(q("button[aria-label='Hide sidebar']")).toBeNull();
+    expect(q("button[aria-label='Collapse sidebar']")).not.toBeNull();
+  });
+
+  it("collapses from the toggle", async () => {
+    const onToggleSize = vi.fn();
+    await mount({ onToggleSize });
+    await act(async () => {
+      q("button[aria-label='Collapse sidebar']")!.click();
+    });
+    expect(onToggleSize).toHaveBeenCalledOnce();
+  });
+
+  it("compact: shows an Expand toggle, an icon-only search and the short wordmark", async () => {
+    await mount({ size: "compact", onToggleSize: vi.fn() });
+    expect(q("button[aria-label='Expand sidebar']")).not.toBeNull();
+    expect(q("button[aria-label='Search']")!.textContent).toBe("");
+    expect(q("button[aria-label='DALI OS home']")!.textContent).toBe("d.");
+  });
+
+  it("compact: quick items and sub-tabs are icon-only with their labels as aria-labels", async () => {
+    await mount({
+      size: "compact",
+      path: "/calendar",
+      areas: [lab],
+      activeArea: lab,
+      activeSubtabs: subtabs,
+      activeHref: "/lab",
+    });
+    expect(q("button[aria-label='Calendar']")!.textContent).toBe("");
+    const row = q("button[aria-label='Overview']")!;
+    expect(row.textContent).toBe("");
+    expect(row.getAttribute("aria-current")).toBe("page");
+  });
+
+  it("expanded: the active sub-tab shows its label and marks the page", async () => {
+    await mount({ areas: [lab], activeArea: lab, activeSubtabs: subtabs, activeHref: "/lab/courses" });
+    const active = Array.from(container.querySelectorAll("button")).find((b) => b.textContent === "Courses")!;
+    expect(active.getAttribute("aria-current")).toBe("page");
   });
 });

@@ -181,7 +181,7 @@ export const FEATURE_FLAGS = [
     key: "desktop-tabs",
     label: "Desktop tabs",
     description:
-      "Tabs become a desktop app feature built on the single-page shell instead of one iframe per tab. The desktop app shows a tab strip (on by default, switchable in Settings); browsers never do, and the tabbed workspace setting leaves browser Settings. Project documents and member notes open in a side panel beside the page, in the browser and the app. Ships off.",
+      "Tabs become a desktop app feature built on the single-page shell instead of one iframe per tab. The desktop app shows a tab strip (on by default, switchable in Settings); browsers never do, and the tabbed workspace setting leaves browser Settings. Project documents and member notes open in a side panel beside the page, in the browser and the app. Also carries the v2 design: the scalable sidebar (full width to a 68px icon rail, remembered per browser, auto-compact on narrow windows), the smaller app-wide scale, the squarer control dress, and mode-colored page accents and loading bar. Ships off.",
   },
   {
     key: "drive-slides",

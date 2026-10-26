@@ -43,7 +43,7 @@ export function JourneyFeatureCard({ journey, href, creator }: { journey: Journe
   const preview = journey.modules.slice(0, PREVIEW_COUNT);
   const first = startModule(journey);
   return (
-    <article className="rounded-os-card bg-os-card p-6 lg:p-8">
+    <article className="rounded-os-card bg-os-card p-5 lg:p-8">
       <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_280px] lg:gap-12">
         <div className="flex flex-col">
           <p className="text-sm font-medium text-os-accent">Recommended for new members</p>
@@ -92,7 +92,7 @@ export function JourneyInProgressCard({
   const { done, total } = getJourneyProgress(journey, completed);
   const next = nextAvailableModule(journey, completed);
   return (
-    <article className="flex flex-col rounded-os-card bg-os-card p-6">
+    <article className="flex flex-col rounded-os-card bg-os-card p-5">
       <p className="flex items-center gap-2 text-sm font-medium text-os-amber">
         <span className="h-2 w-2 rounded-full bg-os-amber" aria-hidden />
         In progress

@@ -1,19 +1,32 @@
 // Shared split-panel chrome for all auth/onboarding screens.
-// Extracted verbatim from login.tsx — pixel-identical markup and classes.
 // Props:
 //   heading  – page heading shown in the right form panel
 //   error    – optional inline error string (shown as a red banner)
 //   children – form content placed inside the right panel
+//   v2       – the dali.os redesign (behind the desktop-tabs flag); stepKey
+//              and notice only apply there.
+
+import { AuthShellV2 } from "~/components/auth/v2";
 
 interface AuthShellProps {
   heading: string;
   error?: string | null;
   children: React.ReactNode;
+  v2?: boolean;
+  stepKey?: string;
+  notice?: string | null;
 }
 
-export default function AuthShell({ heading, error, children }: AuthShellProps) {
+export default function AuthShell({ heading, error, children, v2 = false, stepKey, notice }: AuthShellProps) {
+  if (v2) {
+    return (
+      <AuthShellV2 title={heading} stepKey={stepKey} error={error} notice={notice}>
+        {children}
+      </AuthShellV2>
+    );
+  }
   return (
-    <div className="min-h-screen bg-page flex relative overflow-hidden">
+    <div className="os-type min-h-screen bg-page flex relative overflow-hidden">
       {/* Decorative blocks along right edge — rotated so original width spans viewport height */}
       <img
         src="/spread-out-blocks.png"
@@ -26,8 +39,9 @@ export default function AuthShell({ heading, error, children }: AuthShellProps) 
           transform: "translateY(-50%) rotate(-90deg)",
         }}
       />
-      {/* Left decorative panel */}
-      <div className="hidden md:flex w-1/2 min-h-screen bg-brand-tint flex-col justify-center px-12 lg:px-16 relative overflow-hidden">
+      {/* Left decorative panel: copy up top, the tile mosaic anchored to the
+          bottom, like the design. */}
+      <div className="hidden md:flex w-1/2 min-h-screen bg-brand-tint flex-col justify-between py-14 px-12 lg:px-16 relative overflow-hidden">
         <div className="relative z-10">
           <img
             src="/logo-blue.svg"
@@ -45,16 +59,20 @@ export default function AuthShell({ heading, error, children }: AuthShellProps) 
           </p>
         </div>
 
+        {/* Animated tile mosaic — the tiles pop in on load (CSS animation
+            inside the SVG; it honors prefers-reduced-motion itself). */}
         <img
-          src="/three-blocks.png"
+          src="/dali-tile-pop.svg"
           alt=""
-          className="relative z-10 mt-10 w-64 lg:w-72 dark:opacity-90"
+          className="relative z-10 mt-10 w-full max-w-md dark:opacity-90"
         />
       </div>
 
       {/* Right form panel */}
       <div className="w-full md:w-1/2 min-h-screen flex items-center justify-center px-6 md:px-12 lg:px-16 bg-page">
-        <div className="w-full max-w-sm">
+        {/* The column rises in on load; the heading re-runs the same rise when
+            a step changes it (keyed below), so the flow reads as advancing. */}
+        <div className="w-full max-w-sm motion-safe:animate-auth-rise">
           {/* Mobile-only logo + wordmark (left panel is hidden on small screens) */}
           <div className="md:hidden mb-8 flex items-center gap-3">
             <img
@@ -66,12 +84,12 @@ export default function AuthShell({ heading, error, children }: AuthShellProps) 
               DALI OS
             </span>
           </div>
-          <h1 className="font-heading text-3xl font-bold text-dark-blue mb-5">
+          <h1 key={heading} className="font-heading text-3xl font-bold text-dark-blue mb-5 motion-safe:animate-auth-rise">
             {heading}
           </h1>
 
           {error && (
-            <p className="mb-6 text-sm text-red-600 bg-red-50 rounded-lg px-4 py-3">
+            <p role="alert" className="mb-6 text-sm text-red-600 bg-red-50 rounded-lg px-4 py-3 motion-safe:animate-auth-rise">
               {error}
             </p>
           )}

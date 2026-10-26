@@ -167,7 +167,7 @@ export function VersionResults({
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-sm min-w-[640px]">
-                  <thead className="text-os-grey text-xs uppercase tracking-wide">
+                  <thead className="text-os-grey text-xs">
                     <tr>
                       <th className="text-left font-medium px-4 py-3">
                         Respondent ({filteredRows.length}

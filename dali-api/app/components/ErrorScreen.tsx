@@ -31,7 +31,7 @@ export function ErrorScreen({
         <p className="max-w-xl text-base text-os-grey leading-relaxed">{description}</p>
         {children && <div className="mt-2 flex flex-wrap items-center gap-3">{children}</div>}
       </div>
-      <section className="flex flex-col gap-4 rounded-os-card bg-os-card p-6" aria-label="While you wait">
+      <section className="flex flex-col gap-4 rounded-os-card bg-os-card p-5" aria-label="While you wait">
         {mounted ? <DinoGame /> : <div className="h-[150px] rounded-os-item bg-os-well" />}
       </section>
       {stack && (

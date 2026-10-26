@@ -805,7 +805,7 @@ export default function HiringOnboarding() {
         <div className={cn(panel, "overflow-hidden")}>
           <div className="overflow-x-auto">
             <table className="w-full text-sm min-w-[900px]">
-              <thead className="text-left text-xs uppercase tracking-wide text-os-grey">
+              <thead className="text-left text-xs text-os-grey">
                 <tr>
                   <th className="px-6 py-4 font-medium">Member</th>
                   {allCycles && <th className="px-6 py-4 font-medium">Cycle</th>}

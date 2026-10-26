@@ -91,7 +91,7 @@ export default function PortalSettings({ actionData }: Route.ComponentProps) {
         <p className="text-sm text-destructive bg-destructive/10 rounded-lg px-4 py-3">{error}</p>
       )}
 
-      <section className="rounded-os-card bg-os-card p-6">
+      <section className="rounded-os-card bg-os-card p-5">
         <h2 className="font-heading text-[19px] font-semibold text-foreground mb-4">Profile</h2>
         <Form method="post" className="os-form flex flex-col gap-4">
           <PhotoUploadField
@@ -211,12 +211,12 @@ export default function PortalSettings({ actionData }: Route.ComponentProps) {
         </Form>
       </section>
 
-      <section className="rounded-os-card bg-os-card p-6">
+      <section className="rounded-os-card bg-os-card p-5">
         <h2 className="font-heading text-[19px] font-semibold text-foreground mb-4">Appearance</h2>
         <AppearanceSettingsBlock />
       </section>
 
-      <section className="rounded-os-card bg-os-card p-6">
+      <section className="rounded-os-card bg-os-card p-5">
         <h2 className="font-heading text-[19px] font-semibold text-foreground mb-4">Passkeys</h2>
         <PasskeysSettingsBlock />
       </section>

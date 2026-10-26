@@ -462,7 +462,7 @@ function StatusTabs({ status }: { status: MemberStatus }) {
     <div
       className={cn(
         "inline-flex items-center border border-border p-1 w-fit",
-        "rounded-full bg-os-card",
+        "rounded-lg bg-os-card",
       )}
     >
       {tabs.map((t) => (
@@ -473,9 +473,9 @@ function StatusTabs({ status }: { status: MemberStatus }) {
           aria-pressed={status === t.key}
           className={cn(
             "text-sm transition-colors",
-            "rounded-full px-4 py-1.5",
+            "rounded-md px-4 py-1.5",
             status === t.key
-              ? "bg-os-container font-medium text-foreground"
+              ? "bg-os-hover-strong font-medium text-foreground"
               : "text-muted-foreground hover:text-foreground",
           )}
         >
@@ -527,7 +527,7 @@ function MembersTable({ rows, status }: { rows: MemberRow[]; status: MemberStatu
   return (
     <div className="overflow-x-auto">
       <table className={cn("w-full min-w-[640px]", "text-base")}>
-        <thead className="bg-muted/30 text-muted-foreground text-xs uppercase tracking-wide">
+        <thead className="bg-muted/30 text-muted-foreground text-xs">
           <tr>
             <th className="text-left font-medium px-4 py-2">Name</th>
             <th className="text-left font-medium px-4 py-2">Email</th>

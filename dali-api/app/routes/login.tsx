@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Form, Link, redirect, useActionData, useNavigation, useSearchParams } from "react-router";
+import { ArrowLeft, KeyRound, Mail } from "lucide-react";
 import type { Route } from "./+types/login";
 import { humanDuration, EMAIL_OTP_TTL_SECONDS } from "~/email/lib/auth-email";
 import { requireAuth } from "~/lib/auth";
@@ -8,9 +9,14 @@ import {
   pickSafeLoginNext,
   setLoginNextCookie,
 } from "~/lib/login-next";
+import { isFeatureSwitchedOn } from "~/lib/feature-flags.server";
 import { resolveLoginIdentifier } from "~/lib/user-email.server";
 import { auth } from "~/lib/betterauth.server";
 import AuthShell from "~/components/auth/AuthShell";
+import { AuthButton } from "~/components/auth/AuthButton";
+import { CodeInput } from "~/components/auth/CodeInput";
+import { AuthInput, AuthNotice } from "~/components/auth/v2";
+import { cn } from "~/lib/cn";
 
 export const meta: Route.MetaFunction = () => [{ title: "DALI OS · Sign in" }];
 
@@ -52,7 +58,9 @@ export async function loader({ request }: Route.LoaderArgs) {
     return redirect("/portal");
   }
 
-  return null;
+  // Visitors here are signed out, so per-user targeting has no user to
+  // match: the dali.os auth dress follows the flag's master switch alone.
+  return { authV2: await isFeatureSwitchedOn("desktop-tabs", request) };
 }
 
 export async function action({ request }: Route.ActionArgs) {
@@ -148,12 +156,17 @@ export async function action({ request }: Route.ActionArgs) {
   return redirect("/login");
 }
 
-function LoginBetterAuth({ next, actionData }: {
+function LoginBetterAuth({ next, actionData, v2 = false }: {
   next: string | null;
   actionData: Awaited<ReturnType<typeof action>> | undefined;
+  v2?: boolean;
 }) {
+  const link = v2
+    ? "font-semibold text-os-accent transition-colors duration-150 hover:text-os-accent-hover"
+    : "font-semibold text-dark-blue transition-colors duration-150 hover:text-foreground";
   const navigation = useNavigation();
   const submitting = navigation.state === "submitting";
+  const submittingProvider = submitting ? navigation.formData?.get("provider") : null;
 
   const actionError = actionData && "error" in actionData ? actionData.error : null;
   const codeSent =
@@ -161,6 +174,27 @@ function LoginBetterAuth({ next, actionData }: {
 
   const [passkeyError, setPasskeyError] = useState<string | null>(null);
   const [passkeyBusy, setPasskeyBusy] = useState(false);
+  const [email, setEmail] = useState("");
+
+  // Each rejected submit re-keys the fields, re-running the shake animation —
+  // the same error twice still shakes twice.
+  const [shakeCount, setShakeCount] = useState(0);
+  useEffect(() => {
+    if (actionData && "error" in actionData && actionData.error) setShakeCount((n) => n + 1);
+  }, [actionData]);
+
+  // Resend feedback: the link reads "Code sent" for a beat after the round
+  // trip completes, since a resend otherwise lands back on an unchanged screen.
+  const [resent, setResent] = useState(false);
+  const resendInFlight = useRef(false);
+  if (submitting && codeSent && submittingProvider === "email-code") resendInFlight.current = true;
+  useEffect(() => {
+    if (navigation.state !== "idle" || !resendInFlight.current) return;
+    resendInFlight.current = false;
+    setResent(true);
+    const t = window.setTimeout(() => setResent(false), 2400);
+    return () => window.clearTimeout(t);
+  }, [navigation.state]);
 
   async function signInWithPasskey() {
     setPasskeyError(null);
@@ -207,68 +241,74 @@ function LoginBetterAuth({ next, actionData }: {
   // Server sent a code — collect it. A wrong code returns here with an error.
   if (codeSent) {
     return (
-      <div className="flex flex-col gap-4">
-        {actionError && (
-          <p className="text-sm text-red-600 bg-red-50 rounded-lg px-4 py-3">{actionError}</p>
-        )}
+      <div key="step-code" className="flex flex-col gap-4 motion-safe:animate-auth-step">
         {/* Anti-enumeration: we never confirm whether the account exists, so the
             copy is conditional — a real account gets a code, an unknown or
             mistyped address gets nothing but sees the same screen. Honest
             phrasing keeps the no-account case from waiting on a code that will
             never arrive. */}
-        <div className="rounded-2xl bg-brand-tint p-4">
-          <p className="text-sm text-muted-foreground">
-            If there's a DALI OS account for{" "}
-            <span className="font-medium text-dark-blue">{codeSent.email}</span>,
-            we've emailed a 6-digit code. Enter it below. Codes expire in{" "}
-            {humanDuration(EMAIL_OTP_TTL_SECONDS)}.
-          </p>
-        </div>
-        <Form method="post" className="flex flex-col gap-3">
+        <p
+          className={cn(
+            "text-sm leading-relaxed text-muted-foreground",
+            v2 && "rounded-xl border border-os-container bg-os-card p-4",
+          )}
+        >
+          If there's a DALI OS account for{" "}
+          <span className={cn("font-medium", v2 ? "text-foreground" : "text-dark-blue")}>{codeSent.email}</span>,
+          we've emailed a 6-digit code. Enter it below. Codes expire in{" "}
+          {humanDuration(EMAIL_OTP_TTL_SECONDS)}.
+        </p>
+        {actionError &&
+          (v2 ? (
+            <AuthNotice message={actionError} />
+          ) : (
+            <p role="alert" className="text-sm text-red-600 bg-red-50 rounded-lg px-4 py-3 motion-safe:animate-auth-rise">
+              {actionError}
+            </p>
+          ))}
+        <Form method="post" className="flex flex-col gap-4">
           <input type="hidden" name="provider" value="verify-code" />
           <input type="hidden" name="identifier" value={codeSent.identifier} />
           <input type="hidden" name="displayEmail" value={codeSent.email} />
           {next && <input type="hidden" name="next" value={next} />}
-          <input
-            type="text"
-            name="otp"
-            inputMode="numeric"
-            pattern="[0-9]*"
-            autoComplete="one-time-code"
-            maxLength={6}
-            required
-            autoFocus
-            placeholder="123456"
-            className="w-full rounded-xl border border-border bg-card px-4 py-3 text-center text-lg tracking-[0.4em] focus:outline-none focus:ring-2 focus:ring-accent-coral"
-          />
-          <button
+          <div key={`code-${shakeCount}`} className={shakeCount > 0 ? "motion-safe:animate-auth-shake" : undefined}>
+            <CodeInput name="otp" invalid={Boolean(actionError)} disabled={submittingProvider === "verify-code"} v2={v2} />
+          </div>
+          <AuthButton
             type="submit"
+            v2={v2}
+            loading={submittingProvider === "verify-code"}
+            loadingLabel="Verifying…"
             disabled={submitting}
-            className="w-full rounded-xl bg-dark-blue text-white font-heading font-semibold py-3 hover:opacity-90 transition disabled:opacity-50"
           >
-            {submitting ? "Verifying…" : "Verify code"}
-          </button>
+            Verify code
+          </AuthButton>
         </Form>
-        <div className="flex items-center justify-between text-xs text-muted-foreground">
+        <div className="flex items-center justify-between text-sm">
+          <a href="/login" className={cn("group inline-flex items-center gap-1.5", link)}>
+            <ArrowLeft className="h-4 w-4 transition-transform duration-150 ease-out group-hover:-translate-x-0.5" aria-hidden />
+            Use a different email
+          </a>
           <Form method="post">
             <input type="hidden" name="provider" value="email-code" />
             <input type="hidden" name="email" value={codeSent.email} />
             {next && <input type="hidden" name="next" value={next} />}
-            <button type="submit" disabled={submitting} className="hover:text-foreground underline underline-offset-2 disabled:opacity-50">
-              Resend code
+            <button
+              type="submit"
+              disabled={submitting || resent}
+              className={cn(link, "disabled:text-muted-foreground")}
+            >
+              {submittingProvider === "email-code" ? "Sending…" : resent ? "Code sent" : "Resend code"}
             </button>
           </Form>
-          <a href="/login" className="hover:text-foreground">
-            Use a different email
-          </a>
         </div>
         {/* Shown unconditionally (to real and no-account visitors alike), so it
             gives the no-account case a way forward without confirming existence. */}
-        <p className="text-center text-xs text-muted-foreground">
+        <p className={cn("text-xs text-muted-foreground", v2 ? "text-left text-sm" : "text-center")}>
           New to DALI OS?{" "}
           <Link
             to={next ? `/signup?next=${encodeURIComponent(next)}` : "/signup"}
-            className="underline hover:text-foreground"
+            className={v2 ? link : "underline hover:text-foreground"}
           >
             Create an account
           </Link>
@@ -278,35 +318,64 @@ function LoginBetterAuth({ next, actionData }: {
   }
 
   return (
-    <div className="flex flex-col gap-4">
-      {(actionError || passkeyError) && (
-        <p className="text-sm text-red-600 bg-red-50 rounded-lg px-4 py-3">
-          {actionError ?? passkeyError}
-        </p>
-      )}
+    <div key="step-email" className="flex flex-col gap-4 motion-safe:animate-auth-step">
+      {(actionError || passkeyError) &&
+        (v2 ? (
+          <AuthNotice message={actionError ?? passkeyError} />
+        ) : (
+          <p role="alert" className="text-sm text-red-600 bg-red-50 rounded-lg px-4 py-3 motion-safe:animate-auth-rise">
+            {actionError ?? passkeyError}
+          </p>
+        ))}
 
       {/* Primary path: enter your email, we send a 6-digit sign-in code. The
           `webauthn` autocomplete token lets a saved passkey surface in this
-          field's autofill (the conditional-UI effect above). */}
+          field's autofill (the conditional-UI effect above). The field is
+          controlled so the shake remount can't clear what was typed. */}
       <Form method="post" className="flex flex-col gap-3">
         <input type="hidden" name="provider" value="email-code" />
         {next && <input type="hidden" name="next" value={next} />}
-        <input
-          type="email"
-          name="email"
-          required
-          autoFocus
-          autoComplete="username webauthn"
-          placeholder="you@email.com"
-          className="w-full rounded-xl border border-border bg-card px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-accent-coral"
-        />
-        <button
+        <div key={`email-${shakeCount}`} className={shakeCount > 0 ? "motion-safe:animate-auth-shake" : undefined}>
+          {v2 ? (
+            <AuthInput
+              label="Email"
+              type="email"
+              name="email"
+              required
+              autoFocus
+              autoComplete="username webauthn"
+              placeholder="you@email.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              aria-invalid={Boolean(actionError)}
+            />
+          ) : (
+            <input
+              type="email"
+              name="email"
+              required
+              autoFocus
+              autoComplete="username webauthn"
+              placeholder="you@email.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              aria-invalid={Boolean(actionError)}
+              className={`w-full rounded-xl border bg-card px-4 py-3 text-sm transition-[border-color] duration-150 focus:outline-none focus:ring-2 focus:ring-accent-coral ${
+                actionError ? "border-red-400" : "border-border hover:border-dark-blue/40"
+              }`}
+            />
+          )}
+        </div>
+        <AuthButton
           type="submit"
+          v2={v2}
+          icon={Mail}
+          loading={submittingProvider === "email-code"}
+          loadingLabel="Sending…"
           disabled={submitting}
-          className="w-full rounded-xl bg-dark-blue text-white font-heading font-semibold py-3 hover:opacity-90 transition disabled:opacity-50"
         >
-          {submitting ? "Sending…" : "Email me a 6-digit code"}
-        </button>
+          Email me a 6-digit code
+        </AuthButton>
       </Form>
 
       {/* or divider */}
@@ -318,21 +387,24 @@ function LoginBetterAuth({ next, actionData }: {
 
       {/* Passkey — secondary. A discoverable credential needs no email, so a
           returning user signs in with one tap (Face ID / Touch ID / device). */}
-      <button
-        type="button"
+      <AuthButton
+        variant="secondary"
+        v2={v2}
+        icon={KeyRound}
         onClick={() => void signInWithPasskey()}
+        loading={passkeyBusy}
+        loadingLabel="Waiting for passkey…"
         disabled={submitting || passkeyBusy}
-        className="w-full rounded-xl border border-border bg-card text-dark-blue font-heading font-semibold py-3 hover:border-accent-coral transition disabled:opacity-50"
       >
-        {passkeyBusy ? "Waiting for passkey…" : "Sign in with a passkey"}
-      </button>
+        Sign in with a passkey
+      </AuthButton>
 
       {/* Crossover to signup */}
-      <p className="text-center text-sm text-muted-foreground mt-2">
+      <p className={cn("text-sm text-muted-foreground mt-2", v2 ? "text-left" : "text-center")}>
         New to DALI OS?{" "}
         <Link
           to={next ? `/signup?next=${encodeURIComponent(next)}` : "/signup"}
-          className="underline hover:text-foreground"
+          className={v2 ? link : "underline hover:text-foreground"}
         >
           Create an account
         </Link>
@@ -341,13 +413,12 @@ function LoginBetterAuth({ next, actionData }: {
   );
 }
 
-// ── Flag-OFF: legacy 3-door UI ────────────────────────────────────────────────
-
-export default function Login() {
+export default function Login({ loaderData }: Route.ComponentProps) {
   const actionData = useActionData<typeof action>();
   const [searchParams] = useSearchParams();
   const error = searchParams.get("error");
   const next = pickSafeLoginNext(searchParams.get("next"));
+  const v2 = loaderData?.authV2 ?? false;
 
   const errorMessages: Record<string, string> = {
     access_denied:
@@ -359,10 +430,16 @@ export default function Login() {
   };
 
   const urlError = error ? (errorMessages[error] ?? "Sign-in failed. Please try again.") : null;
+  const onCodeStep = Boolean(actionData && "codeSent" in actionData && actionData.codeSent);
 
   return (
-    <AuthShell heading="Sign in to DALI OS" error={urlError}>
-      <LoginBetterAuth next={next} actionData={actionData} />
+    <AuthShell
+      heading={onCodeStep ? "Check your email" : "Sign in to DALI OS"}
+      error={urlError}
+      v2={v2}
+      stepKey={onCodeStep ? "code" : "email"}
+    >
+      <LoginBetterAuth next={next} actionData={actionData} v2={v2} />
     </AuthShell>
   );
 }

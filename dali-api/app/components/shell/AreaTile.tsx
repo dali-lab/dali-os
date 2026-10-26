@@ -1,17 +1,20 @@
 import type { LucideIcon } from "lucide-react";
 import { cn } from "~/lib/cn";
-import { AREA_TONES, areaIconFor } from "~/lib/nav-areas";
+import { areaIconFor, areaTint } from "~/lib/nav-areas";
 
-export type AreaTileSize = 20 | 22 | 26 | 32 | 40;
+export type AreaTileSize = 20 | 22 | 24 | 26 | 32 | 40;
 
-const DIMENSIONS: Record<AreaTileSize, { radius: string; glyph: number }> = {
-  20: { radius: "rounded-[6px]", glyph: 12 },
-  22: { radius: "rounded-[6px]", glyph: 13 },
-  26: { radius: "rounded-[7px]", glyph: 14 },
-  32: { radius: "rounded-[8px]", glyph: 17 },
-  40: { radius: "rounded-[10px]", glyph: 22 },
+const RADIUS: Record<AreaTileSize, string> = {
+  20: "rounded-[6px]",
+  22: "rounded-[6px]",
+  24: "rounded-[7px]",
+  26: "rounded-[7px]",
+  32: "rounded-[8px]",
+  40: "rounded-[10px]",
 };
 
+// The section "logo": the area's accent as a translucent wash with the glyph
+// drawn in the accent itself, so the tile always matches the rail's tinting.
 export function AreaTile({
   areaKey,
   size,
@@ -22,27 +25,19 @@ export function AreaTile({
   icon?: LucideIcon;
 }) {
   const Icon = icon ?? areaIconFor(areaKey);
-  const tone = AREA_TONES[areaKey];
-  const { radius, glyph } = DIMENSIONS[size];
+  const tint = areaTint(areaKey);
   if (!Icon) return null;
+  const glyph = Math.round(size * 0.6);
   return (
     <span
       data-area-tile={areaKey}
       aria-hidden
-      className={cn(
-        "flex shrink-0 items-center justify-center",
-        radius,
-        !tone && "bg-os-container text-os-grey",
-        tone?.ring && "area-tile-ring",
-      )}
+      className={cn("flex shrink-0 items-center justify-center", RADIUS[size])}
       style={{
         width: size,
         height: size,
-        ...(tone && {
-          background: tone.tile,
-          color: tone.glyph,
-          ...(tone.outline && { border: "1px solid #C6CACC" }),
-        }),
+        backgroundColor: `${tint}2e`,
+        color: tint,
       }}
     >
       <Icon width={glyph} height={glyph} />

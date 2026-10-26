@@ -18,7 +18,7 @@ const SIZES: Record<RolePillSize, string> = {
   md: "text-xs px-2 py-0.5",
 };
 
-const PILL_BASE = "inline-flex items-center rounded-full font-medium";
+const PILL_BASE = "inline-flex items-center rounded-[6px] font-medium";
 // Admin is the one role the brand shell singles out with the accent tone —
 // the pill stands apart from the neutral ones beside it.
 const OS_ADMIN_TONE = "bg-os-accent/15 text-os-accent";

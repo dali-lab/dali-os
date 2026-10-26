@@ -198,7 +198,7 @@ export function CourseHub({
           {/* About the course: what it is, who teaches it, who else is in it.
               None of this was reachable from inside the hub before — a student
               had to go back out to the listing page to read the description. */}
-          <section className="rounded-os-card bg-os-card p-6">
+          <section className="rounded-os-card bg-os-card p-5">
             <h2 className="font-heading text-[19px] font-semibold text-foreground">
               About this course
             </h2>

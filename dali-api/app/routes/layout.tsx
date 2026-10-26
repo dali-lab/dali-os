@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type CSSProperties } from 'react'
 import { redirect, useLoaderData, useLocation, useMatches, useNavigate, useNavigationType, useSearchParams, type ShouldRevalidateFunctionArgs } from 'react-router'
 import { cn } from '~/lib/cn'
+import { areaForPath, areaInk, areaTint } from '~/lib/nav-areas'
 import { LayoutOS } from '~/components/LayoutOS'
 import { useOsShellRoot } from '~/lib/os-shell'
 import { PageDocProvider, ShellGuideProvider } from '~/components/page-docs/PageDocButton'
@@ -466,6 +467,12 @@ export default function AppLayoutRoute() {
 
   // Skip the sidebar shell when rendered inside a TabWorkspace iframe. Each
   // iframe runs this loader, so the flag map is present in every document.
+  // The iframe document has no LayoutOS to set the mode-accent vars, so this
+  // shell div states them itself from the page's own mode.
+  const embeddedArea =
+    embedded && flags['desktop-tabs'] === true
+      ? areaForPath(`${location.pathname}${location.search}`, flags)
+      : undefined
   if (embedded) {
     return (
       <FeatureFlagsProvider flags={flags}>
@@ -491,6 +498,18 @@ export default function AppLayoutRoute() {
               fitViewport && 'flex flex-col md:h-dvh md:overflow-hidden',
               'os-shell bg-os-bg text-foreground',
             )}
+            style={
+              {
+                ...(embeddedArea
+                  ? {
+                      '--mode-accent': areaTint(embeddedArea.key),
+                      '--mode-accent-hover': `color-mix(in srgb, ${areaTint(embeddedArea.key)} 78%, white)`,
+                      '--mode-accent-ink': areaInk(embeddedArea.key),
+                      '--mode-accent-ink-hover': `color-mix(in srgb, ${areaInk(embeddedArea.key)} 82%, black)`,
+                    }
+                  : {}),
+              } as CSSProperties
+            }
           >
             {pageContent}
           </div>

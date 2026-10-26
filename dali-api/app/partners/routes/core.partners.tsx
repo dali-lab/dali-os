@@ -726,7 +726,7 @@ function ApplicationsTable({ rows }: { rows: ApplicationRow[] }) {
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm min-w-[760px]">
-        <thead className="bg-muted/30 text-muted-foreground text-xs uppercase tracking-wide">
+        <thead className="bg-muted/30 text-muted-foreground text-xs">
           <tr>
             <th className="text-left font-medium px-4 py-2">Title</th>
             <th className="text-left font-medium px-4 py-2">Partner</th>

@@ -125,7 +125,7 @@ export default function McpHelpPage({ loaderData }: Route.ComponentProps) {
         <div className="mt-3 overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="text-left text-xs uppercase tracking-wide text-muted-foreground">
+              <tr className="text-left text-xs text-muted-foreground">
                 <th className="py-1 pr-4 font-medium">Area</th>
                 <th className="py-1 pr-4 font-medium">Scope</th>
                 <th className="py-1 font-medium">Examples</th>

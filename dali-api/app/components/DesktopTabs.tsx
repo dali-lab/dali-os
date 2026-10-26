@@ -233,6 +233,7 @@ export function DesktopTabStrip({
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }))
 
   const lastPinned = tabs.reduce((last, t, i) => (t.pinned ? i : last), -1)
+  const activeIndex = tabs.findIndex((t) => t.id === activeId)
 
   const onDragEnd = (e: DragEndEvent) => {
     if (!e.over || e.active.id === e.over.id) return
@@ -248,9 +249,21 @@ export function DesktopTabStrip({
       {leading}
       <DndContext id="desktop-tabs" sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
         <SortableContext items={tabs.map((t) => t.id)} strategy={horizontalListSortingStrategy}>
-          <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
+          <div className="flex min-w-0 flex-1 items-center overflow-x-auto">
             {tabs.map((tab, index) => (
               <Fragment key={tab.id}>
+              {/* Tabs sit flush as one connected strip; a hairline separates
+                  neighbours except beside the active tab, which reads as its
+                  own raised card. */}
+              {index > 0 && index - 1 !== lastPinned && (
+                <span
+                  aria-hidden
+                  className={cn(
+                    'h-4 w-px shrink-0 bg-os-container transition-opacity',
+                    (index === activeIndex || index - 1 === activeIndex) && 'opacity-0',
+                  )}
+                />
+              )}
               <ContextMenu
                 ariaLabel="Tab actions"
                 items={

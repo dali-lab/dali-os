@@ -6,7 +6,11 @@ import { captureDartmouthIdentity } from "~/lib/dartmouth-capture.server";
 import { pickSafeLoginNext } from "~/lib/login-next";
 import { shouldOfferPasskey, setPasskeyPromptDismissed } from "~/lib/passkey-prompt.server";
 import { prisma } from "~/lib/db";
+import { isFeatureSwitchedOn } from "~/lib/feature-flags.server";
 import AuthShell from "~/components/auth/AuthShell";
+import { AuthButton } from "~/components/auth/AuthButton";
+import { AuthInput } from "~/components/auth/v2";
+import { cn } from "~/lib/cn";
 
 export const meta: Route.MetaFunction = () => [{ title: "DALI OS · Finish setup" }];
 
@@ -49,7 +53,10 @@ export async function loader({ request }: Route.LoaderArgs) {
     if (!(await shouldOfferPasskey(request, user.sub))) {
       return redirect(destination);
     }
-    return { step: "passkey" as const, destination };
+    // Same master-switch rule as login/signup, so one sign-in flow never
+    // mixes the two designs.
+    const authV2 = await isFeatureSwitchedOn("desktop-tabs", request);
+    return { step: "passkey" as const, destination, authV2 };
   }
 
   // The setup step is the signup flow only, so it requires a valid door.
@@ -63,6 +70,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     // Magic-link signups arrive without a name (no Google to supply one), so
     // ask for it when the session user has no firstName yet.
     needsName: !user.firstName,
+    authV2: await isFeatureSwitchedOn("desktop-tabs", request),
   };
 }
 
@@ -147,19 +155,21 @@ export async function action({ request }: Route.ActionArgs) {
 export default function Welcome() {
   const data = useLoaderData<typeof loader>();
   if (data.step === "passkey") {
-    return <PasskeyStep destination={data.destination} />;
+    return <PasskeyStep destination={data.destination} v2={data.authV2} />;
   }
-  return <SetupStep email={data.email} door={data.door} needsName={data.needsName} />;
+  return <SetupStep email={data.email} door={data.door} needsName={data.needsName} v2={data.authV2} />;
 }
 
 function SetupStep({
   email,
   door,
   needsName,
+  v2 = false,
 }: {
   email: string;
   door: Door;
   needsName: boolean;
+  v2?: boolean;
 }) {
   const actionData = useActionData<typeof action>();
   const navigation = useNavigation();
@@ -168,58 +178,79 @@ function SetupStep({
   const actionError = actionData && "error" in actionData ? actionData.error : null;
 
   return (
-    <AuthShell heading="One last thing" error={actionError}>
-      <p className="text-muted-foreground mb-6 -mt-2">
+    <AuthShell heading="One last thing" error={actionError} v2={v2} stepKey="setup">
+      <p className={cn("mb-6 -mt-2", v2 ? "text-sm text-os-grey" : "text-muted-foreground")}>
         You're signed in as{" "}
-        <span className="font-medium text-dark-blue">{email}</span>.
+        <span className={cn("font-medium", v2 ? "text-foreground" : "text-dark-blue")}>{email}</span>.
       </p>
 
       <Form method="post" className="flex flex-col gap-4">
         <input type="hidden" name="door" value={door} />
 
         {/* Verified email — display-only */}
-        <div>
-          <label className="block text-sm font-medium text-dark-blue mb-1">
-            Email
-          </label>
-          <input
-            type="email"
-            value={email}
-            readOnly
-            className="w-full rounded-xl border border-border bg-card/60 px-4 py-3 text-sm text-muted-foreground cursor-not-allowed"
-          />
-        </div>
-
-        {needsName && (
+        {v2 ? (
+          <AuthInput label="Email" type="email" value={email} readOnly disabled />
+        ) : (
           <div>
-            <label
-              htmlFor="fullName"
-              className="block text-sm font-medium text-dark-blue mb-1"
-            >
-              Full name
+            <label className="block text-sm font-medium text-dark-blue mb-1">
+              Email
             </label>
             <input
+              type="email"
+              value={email}
+              readOnly
+              className="w-full rounded-xl border border-border bg-card/60 px-4 py-3 text-sm text-muted-foreground cursor-not-allowed"
+            />
+          </div>
+        )}
+
+        {needsName &&
+          (v2 ? (
+            <AuthInput
+              label="Full name"
               id="fullName"
               type="text"
               name="fullName"
               required
               autoComplete="name"
               placeholder="Ada Lovelace"
-              className="w-full rounded-xl border border-border bg-card px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-accent-coral"
             />
-          </div>
-        )}
+          ) : (
+            <div>
+              <label
+                htmlFor="fullName"
+                className="block text-sm font-medium text-dark-blue mb-1"
+              >
+                Full name
+              </label>
+              <input
+                id="fullName"
+                type="text"
+                name="fullName"
+                required
+                autoComplete="name"
+                placeholder="Ada Lovelace"
+                className="w-full rounded-xl border border-border bg-card px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-accent-coral"
+              />
+            </div>
+          ))}
 
         {/* Continue → the passkey offer. Passkeys are the only credential; there
             is no password to set here. */}
         <div className="flex flex-col gap-2 mt-2">
-          <button
-            type="submit"
-            disabled={submitting}
-            className="w-full rounded-xl bg-dark-blue text-white font-heading font-semibold py-3 hover:opacity-90 transition disabled:opacity-50"
-          >
-            {submitting ? "Saving…" : "Continue"}
-          </button>
+          {v2 ? (
+            <AuthButton type="submit" v2 loading={submitting} loadingLabel="Saving…" disabled={submitting}>
+              Continue
+            </AuthButton>
+          ) : (
+            <button
+              type="submit"
+              disabled={submitting}
+              className="w-full rounded-xl bg-dark-blue text-white font-heading font-semibold py-3 hover:opacity-90 transition disabled:opacity-50"
+            >
+              {submitting ? "Saving…" : "Continue"}
+            </button>
+          )}
         </div>
       </Form>
     </AuthShell>
@@ -229,7 +260,7 @@ function SetupStep({
 // Post-setup passkey offer. Registration is a client-side WebAuthn ceremony via
 // the browser BetterAuth client (dynamically imported so it never loads on the
 // server). Benefit-framed copy ("sign in faster") outperforms security framing.
-function PasskeyStep({ destination }: { destination: string }) {
+function PasskeyStep({ destination, v2 = false }: { destination: string; v2?: boolean }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
@@ -268,30 +299,47 @@ function PasskeyStep({ destination }: { destination: string }) {
   if (!ready) return null;
 
   return (
-    <AuthShell heading="Sign in faster next time" error={error}>
-      <p className="text-muted-foreground mb-6 -mt-2">
+    <AuthShell heading="Sign in faster next time" error={error} v2={v2} stepKey="passkey">
+      <p className={cn("mb-6 -mt-2", v2 ? "text-sm text-os-grey" : "text-muted-foreground")}>
         Set up a passkey and next time you can sign in with Face ID, Touch ID, or
         your device — no code or password to type.
       </p>
       <div className="flex flex-col gap-2">
-        <button
-          type="button"
-          onClick={() => void setUpPasskey()}
-          disabled={busy}
-          className="w-full rounded-xl bg-dark-blue text-white font-heading font-semibold py-3 hover:opacity-90 transition disabled:opacity-50"
-        >
-          {busy ? "Waiting for passkey…" : "Set up a passkey"}
-        </button>
-        <Form method="post">
-          <input type="hidden" name="intent" value="dismiss-passkey" />
-          <input type="hidden" name="next" value={destination} />
-          <button
-            type="submit"
-            className="w-full rounded-xl border border-border bg-card text-dark-blue font-heading font-semibold py-3 text-center hover:border-accent-coral transition"
-          >
-            Not now
-          </button>
-        </Form>
+        {v2 ? (
+          <>
+            <AuthButton type="button" v2 onClick={() => void setUpPasskey()} loading={busy} loadingLabel="Waiting for passkey…" disabled={busy}>
+              Set up a passkey
+            </AuthButton>
+            <Form method="post">
+              <input type="hidden" name="intent" value="dismiss-passkey" />
+              <input type="hidden" name="next" value={destination} />
+              <AuthButton type="submit" v2 variant="secondary">
+                Not now
+              </AuthButton>
+            </Form>
+          </>
+        ) : (
+          <>
+            <button
+              type="button"
+              onClick={() => void setUpPasskey()}
+              disabled={busy}
+              className="w-full rounded-xl bg-dark-blue text-white font-heading font-semibold py-3 hover:opacity-90 transition disabled:opacity-50"
+            >
+              {busy ? "Waiting for passkey…" : "Set up a passkey"}
+            </button>
+            <Form method="post">
+              <input type="hidden" name="intent" value="dismiss-passkey" />
+              <input type="hidden" name="next" value={destination} />
+              <button
+                type="submit"
+                className="w-full rounded-xl border border-border bg-card text-dark-blue font-heading font-semibold py-3 text-center hover:border-accent-coral transition"
+              >
+                Not now
+              </button>
+            </Form>
+          </>
+        )}
       </div>
     </AuthShell>
   );

@@ -16,17 +16,17 @@ export interface SearchInputProps
   size?: "sm" | "md";
 }
 
-// The one dali.os search field: a card-surface pill with a hairline border, a
-// leading glyph, and the brand's coral focus ring. Nothing else should
-// hand-roll a search box — reach for this (or <SearchInput size="sm">) so a
-// look change lands everywhere at once. The ref forwards to the <input> so a
-// modal's initialFocusRef (or any focus/scroll logic) still lands on the field.
+// The one dali.os search field: a card surface with the design's 8px corner, a
+// hairline border, a leading glyph, and the accent focus ring. Nothing else
+// should hand-roll a search box — reach for this (or <SearchInput size="sm">)
+// so a look change lands everywhere at once. The ref forwards to the <input> so
+// a modal's initialFocusRef (or any focus/scroll logic) still lands on the field.
 const BASE =
-  "w-full border border-border rounded-full bg-card text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-os-accent/30";
+  "w-full border border-border rounded-lg bg-card text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-os-accent/30";
 
 const SIZES = {
-  md: { input: "pl-10 pr-4 py-2.5 text-sm", icon: "left-4 w-4 h-4" },
-  sm: { input: "pl-9 pr-3 py-1.5 text-sm", icon: "left-3 w-3.5 h-3.5" },
+  md: { input: "h-9 pl-10 pr-4 text-sm", icon: "left-4 w-4 h-4" },
+  sm: { input: "h-8 pl-9 pr-3 text-sm", icon: "left-3 w-3.5 h-3.5" },
 } as const;
 
 export const SearchInput = forwardRef<HTMLInputElement, SearchInputProps>(

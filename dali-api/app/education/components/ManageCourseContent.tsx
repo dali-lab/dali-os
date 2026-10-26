@@ -985,7 +985,7 @@ export function ManageAnnouncements({
       </AddFormModal>
 
       {announcements.map((a) => (
-        <div key={a.id} className="rounded-os-card bg-os-card p-6">
+        <div key={a.id} className="rounded-os-card bg-os-card p-5">
           <p className="text-sm text-os-grey">
             {a.authorName} · {formatDateTime(a.sentAt, tz)}
           </p>

@@ -58,7 +58,7 @@ export default function NewOffering() {
 
       <Form
         method="post"
-        className="os-form flex flex-col gap-4 rounded-os-card bg-os-card p-6"
+        className="os-form flex flex-col gap-4 rounded-os-card bg-os-card p-5"
       >
         <OfferingFields />
         {actionData?.error && (
