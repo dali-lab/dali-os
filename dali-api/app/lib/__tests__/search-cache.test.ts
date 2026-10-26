@@ -27,6 +27,13 @@ describe("createSearchCache", () => {
     expect(cache.peek("g")).toMatchObject({ items: ["grace"], exact: false });
   });
 
+  it("serves exact hits only when no matcher is given", async () => {
+    const cache = createSearchCache<string>({ fetch: async (q) => names.filter((n) => n.includes(q)) });
+    await cache.load("a");
+    expect(cache.peek("a")?.exact).toBe(true);
+    expect(cache.peek("al")).toBeNull();
+  });
+
   it("misses when nothing is a prefix", async () => {
     const { cache } = make();
     await cache.load("a");

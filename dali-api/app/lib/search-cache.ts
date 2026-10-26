@@ -19,7 +19,8 @@ const keyOf = (query: string) => query.trim().toLowerCase();
  */
 export function createSearchCache<T>(opts: {
   fetch: (query: string) => Promise<T[] | null>;
-  matches: (item: T, query: string) => boolean;
+  /** Omit to serve exact hits only. */
+  matches?: (item: T, query: string) => boolean;
   maxEntries?: number;
   debounceMs?: number;
 }): SearchCache<T> {
@@ -32,11 +33,13 @@ export function createSearchCache<T>(opts: {
     const key = keyOf(query);
     const exact = entries.get(key);
     if (exact) return { ...exact, exact: true };
+    const { matches } = opts;
+    if (!matches) return null;
     for (let len = key.length - 1; len >= 0; len--) {
       const prefix = entries.get(key.slice(0, len));
       if (prefix) {
         return {
-          items: prefix.items.filter((item) => opts.matches(item, key)),
+          items: prefix.items.filter((item) => matches(item, key)),
           exact: false,
           fetchedAt: prefix.fetchedAt,
         };

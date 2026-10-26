@@ -2,7 +2,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { createElement, act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { useDriveDestinations } from "~/components/drive/use-drive-destinations";
+import { resetDriveDestinationsForTests, useDriveDestinations } from "~/components/drive/use-drive-destinations";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -28,6 +28,7 @@ async function render(enabled: boolean, movingIds?: string[]) {
 }
 
 beforeEach(() => {
+  resetDriveDestinationsForTests();
   onError.mockReset();
   container = document.createElement("div");
   document.body.appendChild(container);
@@ -86,5 +87,74 @@ describe("useDriveDestinations", () => {
     });
     expect(ok).toBe(true);
     expect(box.current?.status).toBe("ready");
+  });
+
+  it("serves a later mount from the session cache and refreshes it once stale", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const fresh = { drives: [{ id: "core", label: "Core" }], folders: [] };
+    const fetchMock = vi.fn().mockResolvedValueOnce(Response.json(rows));
+    fetchMock.mockResolvedValueOnce(Response.json(fresh));
+    vi.stubGlobal("fetch", fetchMock);
+    await render(true);
+    await act(async () => root.unmount());
+    vi.advanceTimersByTime(11_000);
+
+    root = createRoot(container);
+    let first: ReturnType<typeof useDriveDestinations> | null = null;
+    function Spy() {
+      const value = useDriveDestinations({ enabled: false });
+      first ??= value;
+      return null;
+    }
+    await act(async () => root.render(createElement(Spy)));
+    expect(first!.rows).toEqual(rows);
+    expect(first!.status).toBe("ready");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    await render(true);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(box.current?.rows).toEqual(fresh);
+    vi.useRealTimers();
+  });
+
+  it("does not refetch rows loaded moments ago when another picker mounts", async () => {
+    const fetchMock = vi.fn(async () => Response.json(rows));
+    vi.stubGlobal("fetch", fetchMock);
+    await render(true);
+    await act(async () => root.unmount());
+    root = createRoot(container);
+    await render(true);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(box.current?.rows).toEqual(rows);
+  });
+
+  it("keeps the cached rows if the background refresh fails", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const fetchMock = vi.fn().mockResolvedValueOnce(Response.json(rows));
+    fetchMock.mockResolvedValueOnce(new Response("no", { status: 500 }));
+    vi.stubGlobal("fetch", fetchMock);
+    await render(true);
+    await act(async () => root.unmount());
+    vi.advanceTimersByTime(11_000);
+    root = createRoot(container);
+    await render(true);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(box.current?.rows).toEqual(rows);
+    expect(box.current?.status).toBe("ready");
+    expect(onError).not.toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
+  it("shares one request between pickers asking at the same time", async () => {
+    const fetchMock = vi.fn(async () => Response.json(rows));
+    vi.stubGlobal("fetch", fetchMock);
+    const other = document.createElement("div");
+    const otherRoot = createRoot(other);
+    await act(async () => {
+      root.render(createElement(Harness, { enabled: true }));
+      otherRoot.render(createElement(Harness, { enabled: true }));
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    act(() => otherRoot.unmount());
   });
 });
