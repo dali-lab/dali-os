@@ -1343,40 +1343,29 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   };
 }
 
-// Search params the loader actually reads. `tab` gates the Meetings month grid
-// and `month` pages it — a navigation that changes either has to re-run the
-// loader or the tab renders with data built for the previous URL. Everything
-// else on this page (?task=, ?epic=, ?sprint=, ?view=) is client-only.
+// `tab` and `month` only matter to the Meetings month grid; everything else on
+// this page (?task=, ?epic=, ?sprint=, ?view=) is client-only. Every other tab's
+// data is loaded up front, so switching to or between them needs no loader run.
 const LOADER_SEARCH_PARAMS = ["tab", "month"] as const;
 
-// The loader depends on only the params above, so any other search-param change
-// (opening/closing the task modal via ?task=, switching the ?epic= filter)
-// shouldn't re-run it. Skipping that revalidation avoids a needless DB
-// round-trip and the re-render that otherwise bounces the board's scroll
-// position to the top when you open a task.
 export function shouldRevalidate({
   currentUrl,
   nextUrl,
   formMethod,
   defaultShouldRevalidate,
 }: ShouldRevalidateFunctionArgs) {
-  // Skip revalidation only for a pure search-param *navigation* — opening/
-  // closing the task modal (?task=), switching the board filter (?epic=/
-  // ?sprint=) or the planning view (?view=). Those don't change loader data,
-  // and re-running the loader would bounce the board's scroll to the top.
-  //
-  // Crucially, this must NOT swallow an explicit revalidator.revalidate()
-  // (same URL, search unchanged), which the page relies on to refresh after a
-  // mutation — pinning a doc, partner-sharing, file uploads, epic/task edits.
+  // Must not swallow an explicit revalidator.revalidate() (same URL), which
+  // the page relies on to refresh after a mutation.
   if (
     !formMethod &&
     currentUrl.pathname === nextUrl.pathname &&
-    currentUrl.search !== nextUrl.search &&
-    LOADER_SEARCH_PARAMS.every(
-      (key) => currentUrl.searchParams.get(key) === nextUrl.searchParams.get(key),
-    )
+    currentUrl.search !== nextUrl.search
   ) {
-    return false;
+    const changed = (key: (typeof LOADER_SEARCH_PARAMS)[number]) =>
+      currentUrl.searchParams.get(key) !== nextUrl.searchParams.get(key);
+    const needsMeetingsGrid =
+      nextUrl.searchParams.get("tab") === "meetings" && LOADER_SEARCH_PARAMS.some(changed);
+    return needsMeetingsGrid;
   }
   return defaultShouldRevalidate;
 }

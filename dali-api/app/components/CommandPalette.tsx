@@ -39,6 +39,7 @@ import {
 } from "lucide-react";
 import { Modal } from "~/components/Modal";
 import { Avatar } from "~/components/ui/Avatar";
+import { createSearchCache } from "~/lib/search-cache";
 import { setTablessPreference } from "~/lib/tabless";
 import { setFocusPreference } from "~/lib/focus-mode";
 import { COPY_PAGE_LINK_EVENT } from "~/lib/page-link";
@@ -155,6 +156,21 @@ const NO_ROLES: CommandPaletteRoles = {
   isAlumni: false,
 };
 
+async function fetchPaletteResults(q: string): Promise<SearchResult[] | null> {
+  try {
+    const r = await fetch(`/api/search?q=${encodeURIComponent(q)}`, { credentials: "include" });
+    if (!r.ok) return null;
+    return ((await r.json()) as { results?: SearchResult[] }).results ?? [];
+  } catch {
+    return null;
+  }
+}
+
+export const paletteSearchCache = createSearchCache<SearchResult>({
+  fetch: fetchPaletteResults,
+  debounceMs: 150,
+});
+
 export function CommandPalette({ open, onClose, tabless, focusMode, roles = NO_ROLES, flags = {}, portalNav, onOpen, onOpenInDesktop }: CommandPaletteProps) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
@@ -176,8 +192,9 @@ export function CommandPalette({ open, onClose, tabless, focusMode, roles = NO_R
     }
   }, [open]);
 
-  // Debounced, abortable entity search. Aborting on each keystroke also drops
-  // stale in-flight responses so a slow one can't overwrite a newer query.
+  // Debounced entity search. Queries seen this session show their last results
+  // at once while a fresh request runs; a stale response never overwrites a
+  // newer query because the effect that asked for it has been cleaned up.
   useEffect(() => {
     if (!open) return;
     const q = query.trim();
@@ -186,26 +203,19 @@ export function CommandPalette({ open, onClose, tabless, focusMode, roles = NO_R
       setResultsQuery(q);
       return;
     }
-    const ctrl = new AbortController();
-    const t = setTimeout(() => {
-      fetch(`/api/search?q=${encodeURIComponent(q)}`, {
-        credentials: "include",
-        signal: ctrl.signal,
-      })
-        .then((r) => (r.ok ? r.json() : { results: [] }))
-        .then((d) => {
-          setResults(d.results ?? []);
-          setResultsQuery(q);
-        })
-        .catch(() => {
-          // Abort means a newer query is already in flight and owns the state.
-          // A real failure still has to settle, or the spinner never stops.
-          if (!ctrl.signal.aborted) setResultsQuery(q);
-        });
-    }, 150);
+    let live = true;
+    const hit = paletteSearchCache.peek(q);
+    if (hit) {
+      setResults(hit.items);
+      setResultsQuery(q);
+    }
+    void paletteSearchCache.loadDebounced(q).then((items) => {
+      if (!live) return;
+      if (items) setResults(items);
+      setResultsQuery(q);
+    });
     return () => {
-      clearTimeout(t);
-      ctrl.abort();
+      live = false;
     };
   }, [open, query]);
 
