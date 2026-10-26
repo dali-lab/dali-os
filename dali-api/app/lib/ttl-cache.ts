@@ -26,9 +26,15 @@ function enabled(): boolean {
 
 /**
  * Run `compute` at most once per `ttlMs` for `key`, sharing an in-flight
- * promise with concurrent callers. A rejection is not cached.
+ * promise with concurrent callers. A rejection is not cached, nor is a value
+ * `shouldCache` rejects.
  */
-export function cachedForTtl<T>(key: string, ttlMs: number, compute: () => Promise<T>): Promise<T> {
+export function cachedForTtl<T>(
+  key: string,
+  ttlMs: number,
+  compute: () => Promise<T>,
+  shouldCache: (value: T) => boolean = () => true,
+): Promise<T> {
   if (!enabled()) return compute();
   const now = Date.now();
   const hit = entries.get(key);
@@ -38,12 +44,14 @@ export function cachedForTtl<T>(key: string, ttlMs: number, compute: () => Promi
 
   const promise = compute().then(
     (value) => {
-      entries.set(key, { value, expiresAt: Date.now() + ttlMs });
-      inflight.delete(key);
+      if (inflight.get(key) === promise) {
+        if (shouldCache(value)) entries.set(key, { value, expiresAt: Date.now() + ttlMs });
+        inflight.delete(key);
+      }
       return value;
     },
     (err) => {
-      inflight.delete(key);
+      if (inflight.get(key) === promise) inflight.delete(key);
       throw err;
     },
   );

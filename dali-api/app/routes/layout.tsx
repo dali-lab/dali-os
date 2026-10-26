@@ -15,12 +15,7 @@ import { TimeZonePrompt } from '~/components/TimeZonePrompt'
 import { requireAuth, redirectPartnerToPortal, impersonationAllowsWrites, isImpersonating, isNonMember } from "~/lib/auth"
 import { maybeUpgradeLegacyToBetterAuth } from "~/lib/betterauth-upgrade.server"
 import { redirectToLogin } from '~/lib/login-next';
-import { getUserRoles, isLabMentor } from '~/lib/roles'
-import { isNewMemberCohort } from '~/hiring/lib/new-member-cohort.server'
-import { getAppGateOutstanding } from '~/signing/lib/state.server'
-import { getBoundFormGateOutstanding } from '~/forms/lib/gate.server'
 import { getActiveCycles } from '~/hiring/lib/cycles'
-import { prisma } from '~/lib/db'
 import { resolvePhotoUrl } from '~/lib/photo'
 import { isTablessRequest } from '~/lib/tabless'
 import { PageViewReporter } from '~/components/PageViewReporter'
@@ -29,11 +24,20 @@ import { isValidTimezone, resolveUserTimeZone } from '~/lib/timezone'
 import { readDismissedTimeZone } from '~/lib/tz-prompt'
 import { isNavbarHubPage } from '~/lib/navbar-routes'
 import { hasSubnavRow } from '~/lib/nav-areas'
-import { listFavoritesAndRecents } from '~/lib/user-pages.server'
 import { loadShellUser } from '~/lib/shell-user.server'
+import {
+  layoutAppGate,
+  layoutFavorites,
+  layoutFormGate,
+  layoutHasLiveCycleRole,
+  layoutHasUnseenReleaseNotes,
+  layoutIsAnyCycleReviewer,
+  layoutIsLabMentor,
+  layoutIsLiveInterviewer,
+  layoutIsNewMember,
+  layoutRoles,
+} from '~/lib/layout-reads.server'
 import { resolveFeatureFlags } from '~/lib/feature-flags.server'
-import { viewerHasUnseenReleaseNotes } from '~/lib/release-notes.server'
-import { listVisibleGroupIdsForUser } from '~/lib/groups'
 import { FeatureFlagsProvider } from '~/components/FeatureFlags'
 import { resolveActiveActivitiesForUser } from '~/lib/activities.server'
 import { ActivitiesProvider } from '~/components/activities/ActivitiesProvider'
@@ -77,13 +81,13 @@ export async function loader({ request }: Route.LoaderArgs) {
   // the launch tour whether to offer the "connect your calendar" step.
   const [partnerRedirect, roles, activeCycles, sidebarPages, me] = await Promise.all([
     timed(request, 'partnerCheck', () => redirectPartnerToPortal(auth)),
-    timed(request, 'roles', () => getUserRoles(auth.user.sub, request)),
+    timed(request, 'roles', () => layoutRoles(auth.user.sub, request)),
     // Every active cycle, whoever it's for: any number can be live at once.
     timed(request, 'activeCycles', () => getActiveCycles()),
     // Powers the sidebar Favorites + Recent lists (same source as the Home
     // panel). Access re-checked per read, so a restricted/moved page drops out.
     // `request` shares one read with the Home panel on the same navigation.
-    timed(request, 'favorites', () => listFavoritesAndRecents(auth.user.sub, request)),
+    timed(request, 'favorites', () => layoutFavorites(auth.user.sub, request)),
     // Per-request memoized so the Home loader reads the same row (its timezone)
     // without a second lookup — both loaders run concurrently for one nav.
     timed(request, 'shellUser', () => loadShellUser(auth.user.sub, request)),
@@ -139,10 +143,10 @@ export async function loader({ request }: Route.LoaderArgs) {
       path.startsWith('/forms/fill/') || path.startsWith('/logout') || path.startsWith('/sign')
     const [outstanding, owed] = await Promise.all([
       isLabMember && !signExempt
-        ? timed(request, 'appGate', () => getAppGateOutstanding(auth.user.sub, request))
+        ? timed(request, 'appGate', () => layoutAppGate(auth.user.sub, request))
         : Promise.resolve(null),
       isLabMember && !formExempt
-        ? timed(request, 'formGate', () => getBoundFormGateOutstanding(auth.user.sub, request))
+        ? timed(request, 'formGate', () => layoutFormGate(auth.user.sub, request))
         : Promise.resolve(null),
     ])
     if (outstanding) {
@@ -160,7 +164,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   // Whether to show the Hiring tab at all. Core/Admin/DomainLead always; other
   // lab members only if they're a reviewer or interviewer on ANY cycle (not
   // just the active one — a reviewer on a past/future cycle still needs in).
-  // getUserRoles already ran the any-cycle interviewer lookup, so only the
+  // The roles read already ran the any-cycle interviewer lookup, so only the
   // reviewer half needs its own query here.
   let hasHiringAccess =
     core || admin || domainLead || (isLabMember && isInterviewerAnyCycle)
@@ -171,34 +175,20 @@ export async function loader({ request }: Route.LoaderArgs) {
   // closes, instead of sticking around forever.
   const liveCycleIds = activeCycles.map((c) => c.id)
 
-  const [activeInterviewer, anyCycleReviewer, liveCycleRole, labMentor, photoUrl, flags, activeActivities] = await Promise.all([
+  const [isInterviewer, anyCycleReviewer, liveCycleRole, labMentor, photoUrl, flags, activeActivities] = await Promise.all([
     timed(request, 'hiringGate', () =>
       isLabMember && liveCycleIds.length > 0
-        ? prisma.cycleInterviewer.findFirst({
-            where: { userId: auth.user.sub, applicationCycleId: { in: liveCycleIds } },
-            select: { id: true },
-          })
-        : Promise.resolve(null)),
-    !hasHiringAccess && isLabMember
-      ? prisma.cycleReviewer.findFirst({ where: { userId: auth.user.sub }, select: { id: true } })
-      : null,
+        ? layoutIsLiveInterviewer(auth.user.sub, liveCycleIds)
+        : Promise.resolve(false)),
+    !hasHiringAccess && isLabMember ? layoutIsAnyCycleReviewer(auth.user.sub) : false,
     timed(request, 'liveCycleGate', () =>
       isLabMember && !core && !admin && !domainLead && liveCycleIds.length > 0
-        ? Promise.all([
-            prisma.cycleReviewer.findFirst({
-              where: { userId: auth.user.sub, applicationCycleId: { in: liveCycleIds } },
-              select: { id: true },
-            }),
-            prisma.cycleInterviewer.findFirst({
-              where: { userId: auth.user.sub, applicationCycleId: { in: liveCycleIds } },
-              select: { id: true },
-            }),
-          ]).then(([reviewer, interviewer]) => reviewer !== null || interviewer !== null)
+        ? layoutHasLiveCycleRole(auth.user.sub, liveCycleIds)
         : Promise.resolve(false)),
     // Mentorship area gate: Core (with admin) + any active lab mentor. Hidden
     // from mentees and non-mentor members entirely.
     timed(request, 'mentorGate', () =>
-      isLabMember && !core ? isLabMentor(auth.user.sub, undefined, request) : Promise.resolve(false)),
+      isLabMember && !core ? layoutIsLabMentor(auth.user.sub, request) : Promise.resolve(false)),
     resolvePhotoUrl(me?.photoUrl),
     // Feature flags resolved once, plumbed to the client via FeatureFlagsProvider.
     timed(request, 'flags', () => resolveFeatureFlags(auth.user.sub, roles)),
@@ -212,22 +202,15 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const [hasUnseenReleaseNotes, isNewMember] = await Promise.all([
     flags['release-notes'] && isLabMember
-      ? timed(request, 'releaseNotes', async () =>
-          viewerHasUnseenReleaseNotes({
-            userId: auth.user.sub,
-            isCore: core,
-            groupIds: (await listVisibleGroupIdsForUser(auth.user.sub, request)).map((g) => g.id),
-          }),
-        )
+      ? timed(request, 'releaseNotes', () => layoutHasUnseenReleaseNotes(auth.user.sub, core, request))
       : false,
     // Where Onboarding sits in the sidebar: pinned for the incoming cohort.
     flags['onboarding-journeys'] && isLabMember && !core
-      ? timed(request, 'newMember', () => isNewMemberCohort(auth.user.sub))
+      ? timed(request, 'newMember', () => layoutIsNewMember(auth.user.sub))
       : false,
   ])
 
-  const isInterviewer = !!activeInterviewer
-  if (!hasHiringAccess && isLabMember) hasHiringAccess = anyCycleReviewer !== null
+  if (!hasHiringAccess && isLabMember) hasHiringAccess = anyCycleReviewer
   const hasActiveHiringAccess = core || admin || domainLead || liveCycleRole
   const isLabMentorFlag = isLabMember ? core || labMentor : false
   const hasCalendarLink = (me?.calendarLinks.length ?? 0) > 0

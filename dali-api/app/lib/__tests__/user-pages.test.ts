@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/db");
+vi.mock("~/lib/layout-cache.server", () => ({ invalidateLayoutCache: vi.fn() }));
 vi.mock("~/lib/pageAccess.server", async (importOriginal) => {
   const getPageAccess = vi.fn();
   return {
@@ -18,6 +19,7 @@ vi.mock("~/lib/pageAccess.server", async (importOriginal) => {
 
 import { prisma } from "~/lib/db";
 import { getPageAccess } from "~/lib/pageAccess.server";
+import { invalidateLayoutCache } from "~/lib/layout-cache.server";
 import {
   favoriteHrefs,
   listFavoritesAndRecents,
@@ -479,4 +481,47 @@ describe("starTargetForUrl", () => {
       expect(starTargetForUrl(url)).toEqual({ kind: "route", href: url });
     },
   );
+});
+
+describe("the shell's cached favorites", () => {
+  const transaction = (prisma as unknown as { $transaction: ReturnType<typeof vi.fn> }).$transaction;
+
+  it.each([true, false])("starring a page (favorited=%s) clears the user's cached list", async (on) => {
+    mockPrisma.userFavorite.aggregate.mockResolvedValueOnce({ _max: { position: 0 } });
+    await setFavorite(USER, "page-1", on);
+    expect(invalidateLayoutCache).toHaveBeenCalledExactlyOnceWith("favorites", [USER]);
+  });
+
+  it("starring an existing route row clears the user's cached list", async () => {
+    mockPrisma.userFavorite.aggregate.mockResolvedValueOnce({ _max: { position: 0 } });
+    mockPrisma.userFavorite.findFirst.mockResolvedValue({ id: "row-1" });
+    await setRouteFavorite(USER, "/projects/p1", "Hood", true);
+    expect(invalidateLayoutCache).toHaveBeenCalledExactlyOnceWith("favorites", [USER]);
+  });
+
+  it("starring a new route clears the user's cached list", async () => {
+    mockPrisma.userFavorite.aggregate.mockResolvedValueOnce({ _max: { position: 0 } });
+    mockPrisma.userFavorite.findFirst.mockResolvedValue(null);
+    await setRouteFavorite(USER, "/projects/p1", "Hood", true);
+    expect(invalidateLayoutCache).toHaveBeenCalledExactlyOnceWith("favorites", [USER]);
+  });
+
+  it("reordering clears the user's cached list", async () => {
+    transaction.mockImplementation(async (ops: unknown[]) => Promise.all(ops));
+    mockPrisma.userFavorite.findMany.mockResolvedValueOnce([{ id: "r1", pageId: "pg-a", href: null }]);
+    await reorderFavorites(USER, ["pg-a"]);
+    expect(invalidateLayoutCache).toHaveBeenCalledExactlyOnceWith("favorites", [USER]);
+  });
+
+  it("a reorder that matches none of the user's favorites writes and clears nothing", async () => {
+    mockPrisma.userFavorite.findMany.mockResolvedValueOnce([]);
+    await reorderFavorites(USER, ["not-mine"]);
+    expect(invalidateLayoutCache).not.toHaveBeenCalled();
+  });
+
+  it("reading the list clears nothing", async () => {
+    rows([], []);
+    await listFavoritesAndRecents(USER);
+    expect(invalidateLayoutCache).not.toHaveBeenCalled();
+  });
 });

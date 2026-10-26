@@ -11,6 +11,7 @@ import { PAGE_ACCESS_SELECT, getPageAccessBulk, type PageShape } from "~/lib/pag
 import { isNavbarRoute } from "~/lib/navbar-routes";
 import { isAreaSubtabPath } from "~/lib/nav-areas";
 import { cachedForRequest } from "~/lib/request-cache";
+import { invalidateLayoutCache } from "~/lib/layout-cache.server";
 import { isPrefetchRequest } from "~/lib/prefetch";
 import { resolvePhotoUrl } from "~/lib/photo";
 
@@ -486,11 +487,13 @@ export async function setRouteFavorite(
       where: { id: existing.id },
       data: { favoritedAt, label, position },
     });
+    invalidateLayoutCache("favorites", [userId]);
     return;
   }
   await prisma.userFavorite.create({
     data: { userId, href: canonical, label, favoritedAt, position },
   });
+  invalidateLayoutCache("favorites", [userId]);
 }
 
 /**
@@ -586,6 +589,7 @@ export async function setFavorite(
     create: { userId, pageId, favoritedAt, position },
     update: { favoritedAt, position },
   });
+  invalidateLayoutCache("favorites", [userId]);
 }
 
 async function nextFavoritePosition(userId: string): Promise<number> {
@@ -629,6 +633,7 @@ export async function reorderFavorites(userId: string, ids: string[]): Promise<v
       prisma.userFavorite.updateMany({ where: { id, userId }, data: { position } }),
     ),
   );
+  invalidateLayoutCache("favorites", [userId]);
 }
 
 export type StarTarget =

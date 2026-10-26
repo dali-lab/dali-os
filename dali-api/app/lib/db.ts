@@ -1,6 +1,7 @@
 import { Pool } from "pg";
 import { PrismaClient } from "../generated/prisma/client.js";
 import { PrismaPg } from "@prisma/adapter-pg";
+import { invalidateLayoutCacheForWrite } from "~/lib/layout-cache.server";
 
 // Re-export the Prisma namespace through this module so callers can reach
 // runtime values like `Prisma.DbNull` without a direct value-import of the
@@ -44,11 +45,24 @@ function watchPoolSaturation(pool: Pool): void {
   timer.unref();
 }
 
-function createPrismaClient() {
+function createPrismaClient(): PrismaClient {
   const pool = new Pool({ connectionString: process.env.DATABASE_URL!, max: poolMax() });
   watchPoolSaturation(pool);
   const adapter = new PrismaPg(pool, { disposeExternalPool: true });
-  return new PrismaClient({ adapter });
+  // A query-only extension leaves the client API unchanged, and its extended
+  // type is heavy enough to exhaust tsc, so it is typed as the plain client.
+  const client = new PrismaClient({ adapter }).$extends({
+    query: {
+      $allModels: {
+        async $allOperations({ model, operation, args, query }) {
+          const result = await query(args);
+          invalidateLayoutCacheForWrite(model, operation);
+          return result;
+        },
+      },
+    },
+  });
+  return client as unknown as PrismaClient;
 }
 
 export const prisma = globalForPrisma.prisma ?? createPrismaClient();
