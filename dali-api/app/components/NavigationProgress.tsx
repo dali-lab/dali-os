@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useLocation, useNavigation } from "react-router";
 import { subscribeTabs, tabsActive } from "~/lib/desktop-tabs-store";
+import { useDisplayedTab } from "~/components/shell/displayed-tab";
 import { areaForPath, areaTint } from "~/lib/nav-areas";
 import { cn } from "~/lib/cn";
 
@@ -25,7 +26,10 @@ export function NavigationProgress() {
 export function NavigationProgressBar({ className }: { className?: string }) {
   const navigation = useNavigation();
   const location = useLocation();
-  const isLoading = navigation.state !== "idle";
+  // A switch to a kept tab shows that page instantly, so no loading bar.
+  const showingKeptTab = useDisplayedTab() !== null;
+  const isTabSwitch = (navigation.location?.state as { tabSwitch?: boolean } | null)?.tabSwitch === true;
+  const isLoading = navigation.state !== "idle" && !(isTabSwitch && showingKeptTab);
 
   // Under the v2 design (the data-v2 marker root.tsx sets from the
   // desktop-tabs flag) the bar wears the color of the mode being loaded — the

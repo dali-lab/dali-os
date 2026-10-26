@@ -73,8 +73,8 @@ export function useDesktopTabs(enabled: boolean, hint: boolean): boolean {
 
   useEffect(() => {
     if (!show) return
-    return startTabs({ url: arrivalRef.current, label: pageTitle() || fallbackPageLabel(arrivalRef.current) || 'Home' }, (to) =>
-      navigateRef.current(to, { replace: true }),
+    return startTabs({ url: arrivalRef.current, label: pageTitle() || fallbackPageLabel(arrivalRef.current) || 'Home' }, (to, opts) =>
+      navigateRef.current(to, { replace: true, state: opts?.tabSwitch ? { tabSwitch: true } : undefined }),
     )
   }, [show])
 

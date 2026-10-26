@@ -13,6 +13,7 @@ import { PageBarVisibility } from '~/components/shell/page-bar-slot'
 import { sameUrl } from '~/lib/desktop-tabs'
 import { getTabsSnapshot } from '~/lib/desktop-tabs-store'
 import { useDesktopTabsState } from '~/components/DesktopTabs'
+import { publishDisplayedTab } from '~/components/shell/displayed-tab'
 
 const BOOT_SLOT = 'boot'
 
@@ -95,6 +96,23 @@ function KeepAliveHost({ children }: { children: ReactNode }) {
   }
 
   const showId = displayed && snapshots.current.has(displayed.id) ? displayed.id : live
+
+  const pendingSnapshot = showId !== live ? snapshots.current.get(showId) : undefined
+  const pendingTab = pendingSnapshot ? displayed : null
+  useLayoutEffect(() => {
+    publishDisplayedTab(
+      pendingSnapshot && pendingTab
+        ? {
+            id: pendingTab.id,
+            label: pendingTab.label,
+            data: pendingSnapshot.data,
+            location: pendingSnapshot.location,
+            route: pendingSnapshot.route,
+          }
+        : null,
+    )
+  })
+  useLayoutEffect(() => () => publishDisplayedTab(null), [])
 
   const lastShown = useRef(showId)
   useLayoutEffect(() => {

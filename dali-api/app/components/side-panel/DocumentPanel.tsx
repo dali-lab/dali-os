@@ -6,6 +6,23 @@ import { PanelFrame } from "~/components/side-panel/PanelFrame";
 import { type PanelLoad, type SidePanel } from "~/lib/side-panel";
 import type { loader as documentLoader } from "~/routes/documents.$pageId";
 
+type PanelHeader = { title: string; icon: string | null };
+
+const MAX_CACHED_HEADERS = 50;
+const headerCache = new Map<string, PanelHeader>();
+
+export function clearDocumentPanelHeaders() {
+  headerCache.clear();
+}
+
+function rememberHeader(id: string, header: PanelHeader) {
+  headerCache.delete(id);
+  headerCache.set(id, header);
+  if (headerCache.size > MAX_CACHED_HEADERS) {
+    headerCache.delete(headerCache.keys().next().value as string);
+  }
+}
+
 type DocumentData = Extract<Awaited<ReturnType<typeof documentLoader>>, { pageId: string }>;
 
 export default function DocumentPanel({ panel, onClose }: { panel: SidePanel; onClose: () => void }) {
@@ -17,10 +34,21 @@ export default function DocumentPanel({ panel, onClose }: { panel: SidePanel; on
 
   const result = fetcher.data;
   const doc = result?.kind === "doc" ? (result.data as DocumentData) : null;
+  const cached = doc ? undefined : headerCache.get(panel.id);
+
+  useEffect(() => {
+    if (doc) rememberHeader(panel.id, { title: doc.title, icon: doc.iconEmoji ?? null });
+  }, [doc, panel.id]);
 
   let body: ReactNode;
   if (!result) {
-    body = (
+    body = cached ? (
+      <div data-testid="panel-body-placeholder" aria-busy="true" className="space-y-3 px-6 py-8">
+        <div className="h-4 w-2/3 animate-pulse rounded bg-os-hover motion-reduce:animate-none" />
+        <div className="h-4 w-full animate-pulse rounded bg-os-hover motion-reduce:animate-none" />
+        <div className="h-4 w-5/6 animate-pulse rounded bg-os-hover motion-reduce:animate-none" />
+      </div>
+    ) : (
       <div className="flex justify-center py-12">
         <Loader2 className="h-5 w-5 animate-spin text-os-accent motion-reduce:animate-none" />
       </div>
@@ -74,7 +102,12 @@ export default function DocumentPanel({ panel, onClose }: { panel: SidePanel; on
   }
 
   return (
-    <PanelFrame panel={panel} title={doc?.title ?? ""} icon={doc?.iconEmoji} onClose={onClose}>
+    <PanelFrame
+      panel={panel}
+      title={doc?.title ?? cached?.title ?? ""}
+      icon={doc ? doc.iconEmoji : cached?.icon}
+      onClose={onClose}
+    >
       {body}
     </PanelFrame>
   );

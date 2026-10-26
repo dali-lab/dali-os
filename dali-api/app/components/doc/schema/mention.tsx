@@ -14,6 +14,13 @@ import type { DefaultReactSuggestionItem } from "@blocknote/react";
 // imports MentionSpec as a value).
 import type { DocEditorInstance } from "./build";
 import { mentionConfig, pageMentionConfig, taskMentionConfig } from "./configs";
+import {
+  cachedPageSearch,
+  cachedUserSearch,
+  type MentionPage,
+  type MentionSearch,
+  type MentionUser,
+} from "~/lib/mention-search";
 import { MentionHoverCard } from "./MentionHoverCard";
 import { Tooltip } from "~/components/ui/floating";
 import { TaskStatusDot, taskMentionHoverContent, useTaskMentionCard } from "./TaskMentionHoverCard";
@@ -26,18 +33,13 @@ import {
   useState,
 } from "react";
 
-export type MentionUser = {
-  id: string;
-  name: string;
-  handle: string;
-  photoUrl?: string | null;
-};
-
-export type MentionPage = {
-  id: string;
-  title: string;
-  iconEmoji?: string | null;
-};
+export type { MentionUser, MentionPage } from "~/lib/mention-search";
+export {
+  mentionUserCache,
+  mentionPageCache,
+  searchMentionableUsers,
+  searchMentionablePages,
+} from "~/lib/mention-search";
 
 // Same chip styling as the legacy MENTION_CLASS.
 const MENTION_CLASS =
@@ -238,49 +240,23 @@ export const TaskMentionSpec = createReactInlineContentSpec(taskMentionConfig, {
   },
 });
 
-/** Thin wrapper over the member-search endpoint (session-authed). */
-export async function searchMentionableUsers(q: string): Promise<MentionUser[]> {
-  try {
-    const res = await fetch(`/api/mentions/search?q=${encodeURIComponent(q)}`, {
-      credentials: "include",
-    });
-    if (!res.ok) return [];
-    const data = (await res.json()) as { members?: MentionUser[] };
-    return data.members ?? [];
-  } catch {
-    return [];
-  }
-}
-
-/** Thin wrapper over the page-mention search endpoint (session-authed, permission-scoped). */
-export async function searchMentionablePages(q: string): Promise<MentionPage[]> {
-  try {
-    const res = await fetch(
-      `/api/mentions/pages?q=${encodeURIComponent(q)}`,
-      { credentials: "include" },
-    );
-    if (!res.ok) return [];
-    const data = (await res.json()) as { pages?: MentionPage[] };
-    return data.pages ?? [];
-  } catch {
-    return [];
-  }
-}
-
 /**
  * Async "@" suggestion items for SuggestionMenuController. Returns People
  * first (group: "People"), then Pages (group: "Pages"). Both are filtered
- * server-side so BlockNote's local filterSuggestionItems is skipped.
+ * server-side so BlockNote's local filterSuggestionItems is skipped. Results
+ * come from the session cache first; `onFresh` fires when a background
+ * refresh changes what was shown.
  */
 export async function getMentionMenuItems(
   editor: DocEditorInstance,
   query: string,
-  searchUsers: (q: string) => Promise<MentionUser[]> = searchMentionableUsers,
-  searchPages: (q: string) => Promise<MentionPage[]> = searchMentionablePages,
+  searchUsers: MentionSearch<MentionUser> = cachedUserSearch,
+  searchPages: MentionSearch<MentionPage> = cachedPageSearch,
+  onFresh?: () => void,
 ): Promise<DefaultReactSuggestionItem[]> {
   const [users, pages] = await Promise.all([
-    searchUsers(query),
-    searchPages(query),
+    searchUsers(query, onFresh),
+    searchPages(query, onFresh),
   ]);
 
   const userItems: DefaultReactSuggestionItem[] = users.map((user) => ({
@@ -314,13 +290,17 @@ export async function getMentionMenuItems(
 }
 
 // SuggestionMenuController refetches whenever getItems changes identity, so an
-// inline arrow refetches on every host render while the menu is open.
+// inline arrow refetches on every host render while the menu is open. The
+// identity changes deliberately (via `rev`) when a background refresh brings
+// results different from the cached ones the menu is showing.
 export function useMentionMenuItems(
   editor: DocEditorInstance,
-  searchPages: (q: string) => Promise<MentionPage[]> = searchMentionablePages,
+  searchPages: MentionSearch<MentionPage> = cachedPageSearch,
 ): (query: string) => Promise<DefaultReactSuggestionItem[]> {
+  const [rev, setRev] = useState(0);
+  const onFresh = useCallback(() => setRev((r) => r + 1), []);
   return useCallback(
-    (query: string) => getMentionMenuItems(editor, query, searchMentionableUsers, searchPages),
-    [editor, searchPages],
+    (query: string) => getMentionMenuItems(editor, query, cachedUserSearch, searchPages, onFresh),
+    [editor, searchPages, onFresh, rev],
   );
 }

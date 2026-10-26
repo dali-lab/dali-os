@@ -67,13 +67,13 @@ describe("desktop tabs store", () => {
     const navigate = vi.fn();
     store.startTabs({ url: "/a", label: "A" }, navigate);
     store.tabActions.open({ url: "/b", label: "B" });
-    expect(navigate).toHaveBeenLastCalledWith("/b");
+    expect(navigate).toHaveBeenLastCalledWith("/b", { tabSwitch: true });
     expect(store.tabActions.record("/b", "REPLACE")).toBe(0);
 
     window.scrollY = 640;
     const [a] = store.getTabsSnapshot().tabs;
     store.tabActions.activate(a.id);
-    expect(navigate).toHaveBeenLastCalledWith("/a");
+    expect(navigate).toHaveBeenLastCalledWith("/a", { tabSwitch: true });
     expect(store.tabActions.record("/a", "REPLACE")).toBe(0);
 
     const b = store.getTabsSnapshot().tabs[1];
@@ -105,7 +105,7 @@ describe("desktop tabs store", () => {
     store.startTabs({ url: "/a", label: "A" }, navigate);
     store.tabActions.closeActive();
     expect(store.getTabsSnapshot().tabs.map((t) => t.url)).toEqual(["/"]);
-    expect(navigate).toHaveBeenLastCalledWith("/");
+    expect(navigate).toHaveBeenLastCalledWith("/", { tabSwitch: true });
   });
 
   it("walks the active tab's history through the navigator", async () => {
@@ -114,7 +114,7 @@ describe("desktop tabs store", () => {
     store.startTabs({ url: "/a", label: "A" }, navigate);
     store.tabActions.record("/a/1", "PUSH");
     store.tabActions.step("back");
-    expect(navigate).toHaveBeenLastCalledWith("/a");
+    expect(navigate).toHaveBeenLastCalledWith("/a", { tabSwitch: true });
     store.tabActions.record("/a", "REPLACE");
     expect(store.getTabsSnapshot().tabs[0]).toMatchObject({ url: "/a", forwardStack: ["/a/1"] });
     store.tabActions.step("forward", 5);

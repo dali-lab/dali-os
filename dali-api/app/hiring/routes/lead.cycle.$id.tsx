@@ -13,6 +13,7 @@ import { redirectToLogin } from "~/lib/login-next";
 import { getUserRoles, isAdmin, isCore, isCycleAdmin } from "~/lib/roles";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { listHiringEvents, isEventCheckInOpen } from "~/hiring/lib/hiring-events.server";
+import { useCurrentMembers } from "~/hiring/lib/current-members";
 import { countAnnouncementRecipients } from "~/hiring/lib/hiring-event-notice";
 import { countDomainAddedRecipients, sendDomainAddedNotice } from "~/hiring/lib/domain-added-notice";
 import { openSiblingDomains } from "~/hiring/lib/accept-preemption.server";
@@ -1524,7 +1525,7 @@ export default function HiringLeadCycleDetails() {
 
   // ── Reviewers state ──
   const [reviewers, setReviewers] = useState<CycleReviewer[]>([])
-  const [allMembers, setAllMembers] = useState<{ id: string; daliEmail: string; firstName?: string | null; lastName?: string | null }[]>([])
+  const allMembers = useCurrentMembers(!isMemberCycle || hasInterviews)
 
   // ── Interviewers state ──
   const [interviewers, setInterviewers] = useState<any[]>([])
@@ -1691,15 +1692,6 @@ export default function HiringLeadCycleDetails() {
     } catch {}
   }, [cycleId])
 
-  const loadMembers = useCallback(async () => {
-    try {
-      // Reviewer assignment is current-cycle work — exclude alumni so a stale
-      // suggestion can't pick someone who's no longer on the lab roster.
-      const r = await fetch('/api/members?scope=current', { credentials: 'include' })
-      setAllMembers(r.ok ? await r.json() : [])
-    } catch {}
-  }, [])
-
   const loadInterviewers = useCallback(async () => {
     if (!cycleId) return
     try {
@@ -1771,10 +1763,6 @@ export default function HiringLeadCycleDetails() {
     if (!cycleId) return
     loadStatus()
     if (!isMemberCycle) loadReviewers()
-    // Member pickers feed the per-domain reviewer and interviewer rosters.
-    if (!isMemberCycle || hasInterviews) {
-      loadMembers()
-    }
     if (hasInterviews) {
       loadConfig()
       loadRooms()
@@ -1782,7 +1770,7 @@ export default function HiringLeadCycleDetails() {
       loadInterviews()
       loadCoverage()
     }
-  }, [cycleId, isMemberCycle, hasInterviews, loadStatus, loadConfig, loadRooms, loadReviewers, loadMembers, loadInterviewers, loadInterviews, loadCoverage])
+  }, [cycleId, isMemberCycle, hasInterviews, loadStatus, loadConfig, loadRooms, loadReviewers, loadInterviewers, loadInterviews, loadCoverage])
 
   // An action on this page (e.g. adding a domain's mentors) revalidates the
   // loader but not these client-fetched rosters, so refetch them with it.

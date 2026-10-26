@@ -10,7 +10,8 @@ import { TablessHistoryNav } from '~/components/TablessHistoryNav'
 import { usePageBarTargetSetters } from '~/components/shell/page-bar-slot'
 import { pageBarCrumbs } from '~/components/shell/page-bar-model'
 import { useFeatureFlag } from '~/components/FeatureFlags'
-import { useLocation } from 'react-router'
+import { UNSAFE_DataRouterStateContext, UNSAFE_LocationContext, UNSAFE_RouteContext, useLocation } from 'react-router'
+import { useDisplayedTab } from '~/components/shell/displayed-tab'
 import { useIsBrowserDesktopCandidate } from '~/lib/desktop-candidate'
 import { useOpenCurrentPageInDesktop } from '~/components/shell/useOpenCurrentPageInDesktop'
 
@@ -32,6 +33,42 @@ export function starLabels(star: Pick<PageStar, 'favorited' | 'inSidebar'>) {
   return { tooltip: star.inSidebar ? 'Already in the sidebar' : action, aria: action }
 }
 
+/** Renders its children against the kept tab on screen while the router is still loading that tab's location. */
+function DisplayedPage({ children }: { children: ReactNode }) {
+  const displayed = useDisplayedTab()
+  if (!displayed) return <>{children}</>
+  return (
+    <UNSAFE_DataRouterStateContext.Provider value={displayed.data}>
+      <UNSAFE_LocationContext.Provider value={displayed.location}>
+        <UNSAFE_RouteContext.Provider value={displayed.route}>{children}</UNSAFE_RouteContext.Provider>
+      </UNSAFE_LocationContext.Provider>
+    </UNSAFE_DataRouterStateContext.Provider>
+  )
+}
+
+function usePageBarHeading() {
+  const displayed = useDisplayedTab()
+  const trail = usePageTrail()
+  const documentTitle = useDocumentTitle()
+  const { pathname, search } = useLocation()
+  const community = useFeatureFlag('community')
+  const crumbs = pageBarCrumbs({
+    path: pathname + search,
+    trail: trail?.crumbs ?? [],
+    title: displayed ? displayed.label : documentTitle,
+    flags: { community },
+  })
+  return { trail, crumbs }
+}
+
+function PageBarCrumbs() {
+  return <PageBarTrail crumbs={usePageBarHeading().crumbs} />
+}
+
+function PageBarTrailAction() {
+  return <>{usePageBarHeading().trail?.action}</>
+}
+
 export function PageBar({
   tabs,
   leading,
@@ -46,16 +83,6 @@ export function PageBar({
   star: PageStar
   onCopyLink: () => void
 }) {
-  const trail = usePageTrail()
-  const title = useDocumentTitle()
-  const { pathname, search } = useLocation()
-  const community = useFeatureFlag('community')
-  const crumbs = pageBarCrumbs({
-    path: pathname + search,
-    trail: trail?.crumbs ?? [],
-    title,
-    flags: { community },
-  })
   const { actionsRef, presenceRef } = usePageBarTargetSetters()
   const labels = starLabels(star)
   const desktopTabs = useFeatureFlag('desktop-tabs')
@@ -81,12 +108,16 @@ export function PageBar({
           <TablessHistoryNav tabless tabs={tabs} />
         </div>
         {areaKey && <AreaTile areaKey={areaKey} size={22} />}
-        <PageBarTrail crumbs={crumbs} />
+        <DisplayedPage>
+          <PageBarCrumbs />
+        </DisplayedPage>
       </div>
       <div className="flex shrink-0 items-center gap-0.5">
         <div ref={actionsRef} className="flex items-center gap-1 empty:hidden" />
         <div ref={presenceRef} className="flex items-center empty:hidden" />
-        {trail?.action}
+        <DisplayedPage>
+          <PageBarTrailAction />
+        </DisplayedPage>
         <PageDocButton variant="pagebar" />
         <Tooltip content={`${labels.tooltip} · ${FAVORITE_SHORTCUT}`}>
           <button

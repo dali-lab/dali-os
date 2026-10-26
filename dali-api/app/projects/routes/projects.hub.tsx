@@ -3,6 +3,7 @@ import {
   Form,
   Link,
   redirect,
+  type ShouldRevalidateFunctionArgs,
   useActionData,
   useLoaderData,
   useNavigate,
@@ -97,6 +98,19 @@ type ProjectRow = {
   // has none yet. Distinct from `status`, which is the internal lifecycle.
   showcaseStatus: ShowcaseStatusValue | null;
 };
+
+export function shouldRevalidate({
+  currentUrl,
+  nextUrl,
+  formMethod,
+  defaultShouldRevalidate,
+}: ShouldRevalidateFunctionArgs) {
+  if (formMethod && formMethod.toUpperCase() !== "GET") return defaultShouldRevalidate;
+  if (currentUrl.pathname === nextUrl.pathname && currentUrl.search !== nextUrl.search) {
+    return currentUrl.searchParams.get("term") !== nextUrl.searchParams.get("term");
+  }
+  return defaultShouldRevalidate;
+}
 
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
