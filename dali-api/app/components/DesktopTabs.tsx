@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from 'react'
+import { Fragment, useEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type MouseEventHandler, type ReactNode } from 'react'
 import { useLocation, useNavigate, useNavigationType } from 'react-router'
 import {
   DndContext,
@@ -129,7 +129,15 @@ export function useDesktopTabs(enabled: boolean, hint: boolean): boolean {
 
 const TAB_W = 168
 
-function SortableTab({ tab, active }: { tab: DesktopTab; active: boolean }) {
+function SortableTab({
+  tab,
+  active,
+  onContextMenu,
+}: {
+  tab: DesktopTab
+  active: boolean
+  onContextMenu?: MouseEventHandler<HTMLButtonElement>
+}) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: tab.id,
   })
@@ -149,6 +157,7 @@ function SortableTab({ tab, active }: { tab: DesktopTab; active: boolean }) {
       type="button"
       onClick={() => tabActions.activate(tab.id)}
       onDoubleClick={() => tabActions.promote(tab.id)}
+      onContextMenu={onContextMenu}
       onAuxClick={(e) => {
         if (e.button !== 1) return
         e.preventDefault()
