@@ -7,8 +7,8 @@
 // signed policy, so a malicious client cannot exceed the size cap. The cap
 // depends on the key (`uploadCapForKey`): 100 MB for the project-file / Drive
 // store (lab members only), 50 MB for form file-upload answers under
-// `applications/` (anyone signed in, so applicants get it), 10 MB for
-// everything else.
+// `applications/` (anyone signed in, so applicants get it) and gallery
+// originals under `gallery-originals/`, 10 MB for everything else.
 // After upload, store the key in the DB and use GET /api/upload/url?key=... to read it.
 
 import { requireAuth } from "~/lib/auth";
@@ -24,7 +24,8 @@ import {
 import { isLabMember } from '~/lib/roles'
 import { checkRateLimit } from '~/lib/rate-limit'
 
-const RATE_LIMIT_MAX = 20
+// A full gallery batch is 10 photos × 3 uploads (original, display copy, tile).
+const RATE_LIMIT_MAX = 30
 const RATE_LIMIT_WINDOW_MS = 60_000
 
 function filenameFromKey(key: string): string {

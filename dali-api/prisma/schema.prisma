@@ -1636,8 +1636,12 @@ model FeedbackComment {
 model GalleryPost {
   id         String    @id @default(cuid())
   authorId   String
-  // S3 key (uploads/gallery/<uuid>.<ext>).
+  // The untouched original, kept for Download and print. New posts store it
+  // under uploads/gallery-originals/; older ones under uploads/gallery/.
   imageKey   String
+  // A copy at most 2048px on its long side for the post page. Null when the
+  // original is already that small, is a GIF, or predates display copies.
+  displayKey String?
   // A ~640px-wide WebP the composer makes for the feed's tiles. Null when the
   // original is already that small (or for posts from before thumbnails).
   thumbKey   String?
