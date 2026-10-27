@@ -46,6 +46,7 @@ function fleet(over: Partial<ProjectFleet> = {}): ProjectFleet {
     neonFetchedAt: null,
     usage: [],
     neonDaily: [],
+    flyDaily: [],
     ...over,
   };
 }
@@ -142,5 +143,29 @@ describe("ProjectInfraView", () => {
     expect(container.querySelector('[aria-label="Date range"]')).toBeNull();
     expect(stripLabels()).toEqual(["Compute (CU·h)"]);
     expect(container.textContent).toContain("Neon Launch plan");
+  });
+
+  it("shows the Fly traffic chart once daily Fly usage exists", () => {
+    render(
+      fleet({
+        flyDaily: [{ day: "2026-10-24", app: "web", requests: 1200, errors_5xx: 3, p95_ms: 420, memory_peak_bytes: 5e8 }],
+      }),
+    );
+    expect(container.textContent).toContain("Requests1,200");
+    expect(container.textContent).toContain("Server errors3");
+  });
+
+  it("doesn't say there are no samples when only a chart has data", () => {
+    render(
+      fleet({
+        flyDaily: [{ day: "2026-10-24", app: "web", requests: 1, errors_5xx: 0, p95_ms: null, memory_peak_bytes: null }],
+      }),
+    );
+    expect(container.textContent).not.toContain("No usage samples yet.");
+  });
+
+  it("has no Fly chart without daily Fly usage", () => {
+    render();
+    expect(container.textContent).not.toContain("Server errors");
   });
 });

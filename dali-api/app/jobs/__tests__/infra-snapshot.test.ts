@@ -8,7 +8,7 @@ const { prismaMock, listCreds, getCreds, neonMock, flyMock } = vi.hoisted(() => 
   listCreds: vi.fn(),
   getCreds: vi.fn(),
   neonMock: { getNeonInventory: vi.fn(), getConsumption: vi.fn(), neonConfigured: vi.fn() },
-  flyMock: { getFlyInventory: vi.fn(), getFlyEgressByApp: vi.fn(), getFlyMachineHoursByApp: vi.fn() },
+  flyMock: { getFlyInventory: vi.fn(), getFlyEgressByApp: vi.fn(), getFlyMachineHoursByApp: vi.fn(), getFlyDayByApp: vi.fn() },
 }));
 
 vi.mock("~/lib/db", () => ({ prisma: prismaMock }));
@@ -19,7 +19,7 @@ vi.mock("~/lib/infra/project-infra.server", () => ({
 vi.mock("~/lib/infra/fly.server", () => flyMock);
 vi.mock("~/lib/infra/neon.server", () => neonMock);
 
-import { adoptOrgSnapshot, refreshProjectInfra, runInfraSnapshot } from "../infra-snapshot.server";
+import { adoptOrgSnapshot, flyDailyDays, refreshProjectInfra, runInfraSnapshot } from "../infra-snapshot.server";
 
 const now = new Date("2026-10-25T12:00:00Z");
 const ctx = { now, lastSuccessAt: new Date("2026-10-25T11:00:00Z"), settings: {} };
@@ -189,6 +189,7 @@ describe("runInfraSnapshot Fly", () => {
       { appName: "ultrasound", egressBytes: 20 },
     ]);
     flyMock.getFlyMachineHoursByApp.mockResolvedValue([{ appName: "web", machineHours: 48 }]);
+    flyMock.getFlyDayByApp.mockResolvedValue([]);
   });
 
   it("reads a shared org once per run", async () => {
@@ -239,6 +240,32 @@ describe("runInfraSnapshot Fly", () => {
     flyMock.getFlyEgressByApp.mockRejectedValue(new Error("Fly Prometheus 401"));
     await runInfraSnapshot(ctx);
     expect(error).toHaveBeenCalledWith("infra-snapshot fly egress read failed", "dali-os", "Fly Prometheus 401");
+    error.mockRestore();
+  });
+
+  it("stores one row per app, metric and day for linked apps", async () => {
+    listCreds.mockResolvedValue([flyCreds("p1", ["web"])]);
+    flyMock.getFlyDayByApp.mockImplementation(async (_t: string, _o: string, day: Date) => [
+      { appName: "web", metric: "requests", value: day.getUTCDate() },
+      { appName: "ultrasound", metric: "requests", value: 1 },
+    ]);
+    await runInfraSnapshot(ctx);
+    const daily = upserts().filter((u) => u.create.scopeType === "fly-app-day").map((u) => u.create);
+    expect(daily).toEqual([
+      expect.objectContaining({ scopeId: "web", metric: "requests", value: 24, at: new Date("2026-10-24T00:00:00Z") }),
+      expect.objectContaining({ scopeId: "web", metric: "requests", value: 25, at: new Date("2026-10-25T00:00:00Z") }),
+    ]);
+  });
+
+  it("logs a failed day and keeps the others", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    listCreds.mockResolvedValue([flyCreds("p1", ["web"])]);
+    flyMock.getFlyDayByApp
+      .mockRejectedValueOnce(new Error("Fly Prometheus 429"))
+      .mockResolvedValueOnce([{ appName: "web", metric: "requests", value: 5 }]);
+    await runInfraSnapshot(ctx);
+    expect(error).toHaveBeenCalledWith("infra-snapshot fly daily read failed", "dali-os", "Fly Prometheus 429");
+    expect(upserts().filter((u) => u.create.scopeType === "fly-app-day")).toHaveLength(1);
     error.mockRestore();
   });
 
@@ -341,5 +368,25 @@ describe("refreshProjectInfra Fly", () => {
     await refreshProjectInfra("p1");
     expect(prismaMock.infraSnapshot.create.mock.calls[0][0].data).toMatchObject({ projectId: "p1", provider: "fly" });
     await vi.waitFor(() => expect(flyMock.getFlyInventory).toHaveBeenCalledWith("tok", "dali-os"));
+  });
+});
+
+describe("flyDailyDays", () => {
+  const days = (c: { now: Date; lastSuccessAt: Date | null }) =>
+    flyDailyDays({ ...c, settings: {} }).map((d) => d.toISOString().slice(0, 10));
+
+  it("reads the 12 days Fly keeps on the first run of a UTC day", () => {
+    const out = days({ now, lastSuccessAt: new Date("2026-10-24T23:00:00Z") });
+    expect(out).toHaveLength(12);
+    expect(out[0]).toBe("2026-10-14");
+    expect(out[11]).toBe("2026-10-25");
+  });
+
+  it("reads them all on the very first run", () => {
+    expect(days({ now, lastSuccessAt: null })).toHaveLength(12);
+  });
+
+  it("reads yesterday and today on later runs that day", () => {
+    expect(days({ now, lastSuccessAt: new Date("2026-10-25T11:00:00Z") })).toEqual(["2026-10-24", "2026-10-25"]);
   });
 });

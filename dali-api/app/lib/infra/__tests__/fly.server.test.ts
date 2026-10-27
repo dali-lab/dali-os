@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { flyPromAuth, getFlyEgressByApp, getFlyMachineHoursByApp } from "../fly.server";
+import { flyPromAuth, getFlyDayByApp, getFlyEgressByApp, getFlyMachineHoursByApp } from "../fly.server";
 
 const fetchMock = vi.fn();
 beforeEach(() => vi.stubGlobal("fetch", fetchMock));
@@ -55,5 +55,48 @@ describe("flyPromAuth", () => {
 
   it("swaps a Bearer prefix and trims whitespace", () => {
     expect(flyPromAuth("  Bearer fo1_abc \n")).toBe("FlyV1 fo1_abc");
+  });
+});
+
+describe("getFlyDayByApp", () => {
+  const day = new Date("2026-10-25T00:00:00Z");
+  const queries = () => fetchMock.mock.calls.map((c) => new URL(c[0] as string).searchParams);
+
+  it("reads a whole past day ending at midnight", async () => {
+    fetchMock.mockImplementation(async () => prom([]));
+    await getFlyDayByApp("tok", "dali", day, new Date("2026-10-27T15:00:00Z"));
+    expect(queries().map((q) => q.get("time"))).toEqual(Array(4).fill(String(Date.parse("2026-10-26T00:00:00Z") / 1000)));
+    expect(queries().map((q) => q.get("query"))).toEqual([
+      "sum by (app) (increase(fly_edge_http_responses_count[86400s]))",
+      'sum by (app) (increase(fly_edge_http_responses_count{status=~"5.."}[86400s]))',
+      "histogram_quantile(0.95, sum by (app, le) (rate(fly_app_http_response_time_seconds_bucket[86400s]))) * 1000",
+      "max by (app) (max_over_time((fly_instance_memory_mem_total - fly_instance_memory_mem_available)[86400s:5m]))",
+    ]);
+  });
+
+  it("reads today only up to now", async () => {
+    fetchMock.mockImplementation(async () => prom([]));
+    await getFlyDayByApp("tok", "dali", day, new Date("2026-10-25T06:00:00Z"));
+    expect(queries()[0].get("time")).toBe(String(Date.parse("2026-10-25T06:00:00Z") / 1000));
+    expect(queries()[0].get("query")).toContain("[21600s]");
+  });
+
+  it("reads nothing for a day that hasn't started", async () => {
+    expect(await getFlyDayByApp("tok", "dali", day, new Date("2026-10-24T23:00:00Z"))).toEqual([]);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("rounds counts, keeps measurements, and drops a quantile over no requests", async () => {
+    fetchMock
+      .mockResolvedValueOnce(prom([{ app: "web", v: "1199.6" }]))
+      .mockResolvedValueOnce(prom([{ app: "web", v: "2.4" }]))
+      .mockResolvedValueOnce(prom([{ app: "web", v: "412.5" }, { app: "worker", v: "NaN" }]))
+      .mockResolvedValueOnce(prom([{ app: "web", v: "500000000" }]));
+    expect(await getFlyDayByApp("tok", "dali", day, new Date("2026-10-27T00:00:00Z"))).toEqual([
+      { appName: "web", metric: "requests", value: 1200 },
+      { appName: "web", metric: "errors_5xx", value: 2 },
+      { appName: "web", metric: "p95_ms", value: 412.5 },
+      { appName: "web", metric: "memory_peak_bytes", value: 5e8 },
+    ]);
   });
 });

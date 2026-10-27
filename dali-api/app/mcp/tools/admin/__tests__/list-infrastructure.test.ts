@@ -127,6 +127,7 @@ const FLEET_RESULT = {
       neonFetchedAt: null,
       usage: [],
         neonDaily: [],
+        flyDaily: [],
     },
   ],
 };
