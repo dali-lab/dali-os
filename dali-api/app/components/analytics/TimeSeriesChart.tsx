@@ -19,7 +19,8 @@ export type ChartSeries = {
   dashed?: boolean;
 };
 
-type Row = { day: string } & Record<string, number | string>;
+// null leaves a gap, for days with nothing to measure.
+type Row = { day: string } & Record<string, number | string | null>;
 
 /**
  * Daily line chart. With `onSelectRange`, dragging across the plot picks the
@@ -56,7 +57,7 @@ export function TimeSeriesChart({
       <ResponsiveContainer width="100%" height="100%">
         <LineChart
           data={data}
-          margin={{ top: 8, right: 8, left: -12, bottom: 0 }}
+          margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
           onMouseDown={(s) => {
             const day = selectable ? labelOf(s) : null;
             if (day) setDrag({ start: day, end: day });
@@ -86,7 +87,7 @@ export function TimeSeriesChart({
             tickFormatter={formatValue}
             tickLine={false}
             axisLine={false}
-            width={56}
+            width="auto"
             allowDecimals={allowDecimals}
           />
           <ChartTooltip

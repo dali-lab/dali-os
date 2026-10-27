@@ -13,6 +13,7 @@ export const SCOPE = {
   neonMonth: "neon-project-month",
   neonBranchMonth: "neon-branch-month",
   flyApp: "fly-app",
+  flyDaily: "fly-app-day",
 } as const;
 
 export function scopeNeonInventory(
@@ -151,6 +152,52 @@ export function neonDailyUsage(samples: ScopedSample[]): NeonDailyRow[] {
     const row = byDay.get(day) ?? { day, compute_unit_seconds: 0, public_network_transfer_bytes: 0 };
     row[metric] += s.value;
     byDay.set(day, row);
+  }
+  return [...byDay.values()].sort((a, b) => a.day.localeCompare(b.day));
+}
+
+export type FlyDailyRow = {
+  day: string;
+  app: string;
+  requests: number;
+  errors_5xx: number;
+  p95_ms: number | null;
+  memory_peak_bytes: number | null;
+};
+
+/** One row per (day, app) from the daily Fly rows, oldest first. */
+export function flyDailyUsage(samples: ScopedSample[]): FlyDailyRow[] {
+  const rows = new Map<string, FlyDailyRow>();
+  for (const s of samples) {
+    if (s.scopeType !== SCOPE.flyDaily) continue;
+    const day = s.at.toISOString().slice(0, 10);
+    const key = `${day}|${s.scopeId}`;
+    const row = rows.get(key) ?? { day, app: s.scopeId, requests: 0, errors_5xx: 0, p95_ms: null, memory_peak_bytes: null };
+    if (s.metric === "requests" || s.metric === "errors_5xx" || s.metric === "p95_ms" || s.metric === "memory_peak_bytes") {
+      row[s.metric] = s.value;
+    }
+    rows.set(key, row);
+  }
+  return [...rows.values()].sort((a, b) => a.day.localeCompare(b.day) || a.app.localeCompare(b.app));
+}
+
+export type FlyDayTotals = Omit<FlyDailyRow, "app">;
+
+/**
+ * Daily totals for one app, or every app when `app` is null: requests, errors
+ * and memory add up across apps; response time is the slowest app's.
+ */
+export function flyDayTotals(rows: FlyDailyRow[], app: string | null): FlyDayTotals[] {
+  const byDay = new Map<string, FlyDayTotals>();
+  const add = (a: number | null, b: number | null) => (a == null ? b : b == null ? a : a + b);
+  for (const r of rows) {
+    if (app !== null && r.app !== app) continue;
+    const t = byDay.get(r.day) ?? { day: r.day, requests: 0, errors_5xx: 0, p95_ms: null, memory_peak_bytes: null };
+    t.requests += r.requests;
+    t.errors_5xx += r.errors_5xx;
+    t.p95_ms = r.p95_ms == null ? t.p95_ms : Math.max(t.p95_ms ?? 0, r.p95_ms);
+    t.memory_peak_bytes = add(t.memory_peak_bytes, r.memory_peak_bytes);
+    byDay.set(r.day, t);
   }
   return [...byDay.values()].sort((a, b) => a.day.localeCompare(b.day));
 }

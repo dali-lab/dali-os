@@ -21,6 +21,7 @@ import {
   UsageStrip,
   volumeSummary,
 } from "./format";
+import { FlyUsageChart } from "./FlyUsageChart";
 import { NeonUsageChart } from "./NeonUsageChart";
 import { NEON_CHART_METRICS } from "~/lib/infra/infra-scope";
 
@@ -28,14 +29,14 @@ export function ProjectInfraView({ project: p }: { project: ProjectFleet }) {
   const flyApps = p.fly?.apps ?? [];
   const neonProjects = p.neon?.projects ?? [];
   const neonChart = p.neonDaily.length > 0;
+  const flyChart = p.flyDaily.length > 0;
   const stripUsage = neonChart
     ? p.usage.filter((u) => !(NEON_CHART_METRICS as readonly string[]).includes(u.metric))
     : p.usage;
 
   return (
     <div className="flex flex-col gap-4">
-      {neonChart && <NeonUsageChart project={p} />}
-      {(!neonChart || stripUsage.length > 0) && <UsageStrip usage={stripUsage} />}
+      {((!neonChart && !flyChart) || stripUsage.length > 0) && <UsageStrip usage={stripUsage} />}
 
       <div className="flex flex-wrap items-center gap-3 text-xs">
         {p.flyOrgSlug && (
@@ -65,6 +66,11 @@ export function ProjectInfraView({ project: p }: { project: ProjectFleet }) {
       {p.flyOrgSlug && (
         <div>
           <h4 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Fly</h4>
+          {flyChart && (
+            <div className="mb-4">
+              <FlyUsageChart project={p} />
+            </div>
+          )}
           {flyApps.length === 0 ? (
             <p className="text-xs text-muted-foreground">No apps (or not swept yet).</p>
           ) : (
@@ -123,6 +129,11 @@ export function ProjectInfraView({ project: p }: { project: ProjectFleet }) {
       {p.neonOrgId && (
         <div>
           <h4 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Neon</h4>
+          {neonChart && (
+            <div className="mb-4">
+              <NeonUsageChart project={p} />
+            </div>
+          )}
           {neonProjects.length === 0 ? (
             <p className="text-xs text-muted-foreground">
               {p.neonProjectIds.length === 0

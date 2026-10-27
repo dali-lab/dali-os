@@ -6,6 +6,8 @@ import {
   keepLinkedInOrg,
   neonCostSummary,
   neonDailyUsage,
+  flyDailyUsage,
+  flyDayTotals,
   orgResourceOptions,
   flyAppOptions,
   knownOrgs,
@@ -505,5 +507,60 @@ describe("neonDailyUsage", () => {
         sample({ provider: "fly", scopeType: SCOPE.flyApp, scopeId: "web", metric: "egress_bytes", value: 1e9 }),
       ]),
     ).toEqual([]);
+  });
+});
+
+describe("flyDailyUsage", () => {
+  const fly = (app: string, iso: string, metric: string, value: number, scopeType: string = SCOPE.flyDaily) =>
+    sample({ provider: "fly", scopeType, scopeId: app, metric, value, at: new Date(iso) });
+
+  it("collects one row per day and app, oldest first", () => {
+    expect(
+      flyDailyUsage([
+        fly("web", "2026-10-25T00:00:00Z", "requests", 10),
+        fly("web", "2026-10-24T00:00:00Z", "requests", 7),
+        fly("web", "2026-10-24T00:00:00Z", "errors_5xx", 1),
+        fly("web", "2026-10-24T00:00:00Z", "p95_ms", 300),
+        fly("api", "2026-10-24T00:00:00Z", "memory_peak_bytes", 5e8),
+      ]),
+    ).toEqual([
+      { day: "2026-10-24", app: "api", requests: 0, errors_5xx: 0, p95_ms: null, memory_peak_bytes: 5e8 },
+      { day: "2026-10-24", app: "web", requests: 7, errors_5xx: 1, p95_ms: 300, memory_peak_bytes: null },
+      { day: "2026-10-25", app: "web", requests: 10, errors_5xx: 0, p95_ms: null, memory_peak_bytes: null },
+    ]);
+  });
+
+  it("leaves out hourly Fly rows and Neon rows", () => {
+    expect(
+      flyDailyUsage([
+        fly("web", "2026-10-24T05:00:00Z", "egress_bytes", 10, SCOPE.flyApp),
+        sample({ scopeType: SCOPE.neonDaily }),
+      ]),
+    ).toEqual([]);
+  });
+});
+
+describe("flyDayTotals", () => {
+  const row = (app: string, requests: number, p95: number | null, mem: number | null, day = "2026-10-24") => ({
+    day,
+    app,
+    requests,
+    errors_5xx: requests / 100,
+    p95_ms: p95,
+    memory_peak_bytes: mem,
+  });
+  const rows = [row("web", 1000, 300, 5e8), row("api", 200, 900, null), row("web", 50, null, null, "2026-10-25")];
+
+  it("adds requests, errors and memory across apps and keeps the slowest p95", () => {
+    expect(flyDayTotals(rows, null)).toEqual([
+      { day: "2026-10-24", requests: 1200, errors_5xx: 12, p95_ms: 900, memory_peak_bytes: 5e8 },
+      { day: "2026-10-25", requests: 50, errors_5xx: 0.5, p95_ms: null, memory_peak_bytes: null },
+    ]);
+  });
+
+  it("narrows to one app", () => {
+    expect(flyDayTotals(rows, "api")).toEqual([
+      { day: "2026-10-24", requests: 200, errors_5xx: 2, p95_ms: 900, memory_peak_bytes: null },
+    ]);
   });
 });
