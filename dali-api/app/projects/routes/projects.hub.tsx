@@ -34,13 +34,10 @@ import {
 import { NewProjectInfraFields } from "~/projects/components/NewProjectInfraFields";
 import { ViewToggle, useViewPreference } from "~/components/ViewToggle";
 import { buttonClasses } from "~/components/ui/Button";
-import { TermFilter } from "~/components/TermFilter";
-import { resolveTermFilter } from "~/lib/terms";
-import { ALL_TERMS } from "~/lib/terms.shared";
 import { ProjectCoverImage } from "~/projects/components/ProjectCoverImage";
 import { ProjectIcon } from "~/components/ProjectIcon";
 import { ProjectIconPicker } from "~/projects/components/ProjectIconPicker";
-import { CircleDot, Globe, Handshake, Plus } from "lucide-react";
+import { CalendarRange, CircleDot, Globe, Handshake, Plus } from "lucide-react";
 import { Modal, ModalFooter, ModalHeader } from "~/components/Modal";
 import { modalCardClass } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
@@ -71,6 +68,11 @@ type ProjectStatus = "Active" | "Paused" | "Archived";
 // asked most.
 const FILTER_COLUMNS: FilterColumn[] = [
   { key: "status", label: "Status", icon: CircleDot },
+  // A project matches a term when it's anywhere in the ProjectTerm set — a
+  // project may span several terms. Status is deliberately a separate column:
+  // most of the lab's history is Archived, so folding it into Term made past
+  // terms read as empty.
+  { key: "term", label: "Term", icon: CalendarRange },
   { key: "website", label: "Website", icon: Globe },
   { key: "partner", label: "Partner", icon: Handshake },
 ];
@@ -96,6 +98,7 @@ type ProjectRow = {
   iconEmoji: string | null;
   status: ProjectStatus;
   firstTermCode: string | null;
+  termCodes: string[];
   imageUrl: string | null;
   partners: ProjectPartnerOut[];
   // Publication state of the project's public showcase card, or null when it
@@ -110,8 +113,10 @@ export function shouldRevalidate({
   defaultShouldRevalidate,
 }: ShouldRevalidateFunctionArgs) {
   if (formMethod && formMethod.toUpperCase() !== "GET") return defaultShouldRevalidate;
+  // The loader reads no search params (?new= and ?public= are client-only),
+  // so a search-only change never needs a reload.
   if (currentUrl.pathname === nextUrl.pathname && currentUrl.search !== nextUrl.search) {
-    return currentUrl.searchParams.get("term") !== nextUrl.searchParams.get("term");
+    return false;
   }
   return defaultShouldRevalidate;
 }
@@ -122,17 +127,15 @@ export async function loader({ request }: Route.LoaderArgs) {
   const portalRedirect = await redirectNonMemberToPortal(auth, request);
   if (portalRedirect) return portalRedirect;
 
-  const { terms, selected, termId, isAll } = await timed(request, 'hub.terms', () =>
-    resolveTermFilter(request));
+  // The create modal's "Start term" picker. Term *filtering* happens client-side
+  // in the advanced filter bar, off each row's term set.
+  const terms = await timed(request, 'hub.terms', () =>
+    prisma.term.findMany({
+      orderBy: { sortKey: "desc" },
+      select: { id: true, code: true },
+    }));
 
   const projects = await timed(request, 'hub.projects', () => prisma.project.findMany({
-    // A term filter scopes to projects that run in the selected term — i.e. the
-    // term is in the project's ProjectTerm set — since a project may span
-    // several terms. Status is deliberately not part of the filter: most of the
-    // lab's history is Archived, so excluding it made past terms read as empty.
-    // The status pill on each card carries that distinction instead.
-    where:
-      isAll || !termId ? undefined : { projectTerms: { some: { termId } } },
     orderBy: [{ status: "asc" }, { name: "asc" }],
     select: {
       id: true,
@@ -140,12 +143,10 @@ export async function loader({ request }: Route.LoaderArgs) {
       iconEmoji: true,
       status: true,
       imageUrl: true,
-      // Start term is derived as the earliest term in the set. Fetch ascending
-      // by sortKey and take the first row only — Postgres returns one row
-      // rather than the full set.
+      // The full term set, ascending: the first row is the derived start term,
+      // and every code feeds the Term column of the filter bar.
       projectTerms: {
         orderBy: { term: { sortKey: "asc" } },
-        take: 1,
         select: { term: { select: { code: true, sortKey: true } } },
       },
       partners: {
@@ -157,14 +158,13 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const rows: ProjectRow[] = await Promise.all(
     projects.map(async (p) => {
-      // projectTerms is already ordered asc by sortKey and limited to 1 row.
-      const startTerm = p.projectTerms[0]?.term;
       return {
         id: p.id,
         name: p.name,
         iconEmoji: p.iconEmoji,
         status: p.status,
-        firstTermCode: startTerm?.code ?? null,
+        firstTermCode: p.projectTerms[0]?.term.code ?? null,
+        termCodes: p.projectTerms.map((pt) => pt.term.code),
         // Uploaded images are stored as S3 keys; presign for display.
         imageUrl: await resolvePhotoUrl(p.imageUrl),
         partners: await Promise.all(
@@ -178,20 +178,15 @@ export async function loader({ request }: Route.LoaderArgs) {
     }),
   );
 
-  const filteringByTerm = !isAll && !!termId;
-
   // getUserRoles(sub, request) resolves isCore and canViewStaffing in one cached
   // round-trip — no second hit even though canViewStaffing delegates to isCore.
-  const [roles, partnerOrgs, totalProjects] =
+  const [roles, partnerOrgs] =
     await timed(request, 'hub.meta', () => Promise.all([
       getUserRoles(auth.user.sub, request),
       prisma.partnerOrg.findMany({
         orderBy: { name: "asc" },
         select: { id: true, name: true },
       }),
-      // Only needed to tell "the term filter hid everything" apart from "no
-      // projects at all"; with the filter off, rows already is everything.
-      filteringByTerm ? prisma.project.count() : Promise.resolve(0),
     ]));
   const canEdit = roles.isCore;
   const canStaff = roles.canViewStaffing;
@@ -214,11 +209,9 @@ export async function loader({ request }: Route.LoaderArgs) {
   return {
     rows,
     terms,
-    selectedTerm: selected,
     partnerOrgs,
     canEdit,
     canStaff,
-    hiddenByTermFilter: filteringByTerm && rows.length === 0 && totalProjects > 0,
     projectTemplates,
     provisionTargets,
   };
@@ -348,16 +341,14 @@ export default function ProjectsListPage() {
   const {
     rows,
     terms,
-    selectedTerm,
     partnerOrgs,
     canEdit,
     canStaff,
-    hiddenByTermFilter,
     projectTemplates,
     provisionTargets,
   } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
-  const [searchParams, setSearchParams] = useSearchParams();
+  const [searchParams] = useSearchParams();
   // Deep link from the Drive templates gallery: ?new=<templateId> opens the
   // create modal prefilled with that project template.
   const presetTemplateId = searchParams.get("new") ?? "";
@@ -388,6 +379,7 @@ export default function ProjectsListPage() {
         ...r,
         cells: {
           status: r.status,
+          term: r.termCodes,
           website: r.showcaseStatus ? SHOWCASE_LABELS[r.showcaseStatus] : NO_SHOWCASE_LABEL,
           partner: r.partners.map((p) => p.name),
         },
@@ -553,10 +545,6 @@ export default function ProjectsListPage() {
           placeholder="Search by project or partner name"
           containerClassName="flex-1 min-w-[260px] max-w-[420px]"
         />
-        <label className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-          Term
-          <TermFilter terms={terms} selected={selectedTerm} />
-        </label>
         <div className="min-w-[220px] flex-1">
           <ColumnFilters
             columns={FILTER_COLUMNS}
@@ -582,23 +570,6 @@ export default function ProjectsListPage() {
                 className="font-medium text-os-accent hover:underline"
               >
                 Clear the filters
-              </button>
-            </>
-          ) : hiddenByTermFilter ? (
-            // Projects exist — the default current-term filter just hides them
-            // all. Say so, and offer the one-click way out.
-            <>
-              No projects run in this term.{" "}
-              <button
-                type="button"
-                onClick={() => {
-                  const next = new URLSearchParams(searchParams);
-                  next.set("term", ALL_TERMS);
-                  setSearchParams(next);
-                }}
-                className="font-medium text-os-accent hover:underline"
-              >
-                Show all terms
               </button>
             </>
           ) : (
