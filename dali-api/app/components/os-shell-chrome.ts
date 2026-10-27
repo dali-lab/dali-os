@@ -57,9 +57,6 @@ export function useAccountMenuStyle(
   anchorRef: RefObject<HTMLElement | null>,
   open: boolean,
   side: 'up' | 'right' = 'up',
-  // The ancestor's CSS zoom: a fixed element inside a zoomed subtree has its
-  // coordinates multiplied by it, so the measured (visual) values divide out.
-  zoom = 1,
 ): CSSProperties | null {
   const [style, setStyle] = useState<CSSProperties | null>(null)
 
@@ -69,17 +66,17 @@ export function useAccountMenuStyle(
     setStyle(
       side === 'right'
         ? {
-            left: (rect.right + 8) / zoom,
-            bottom: (window.innerHeight - rect.bottom) / zoom,
-            width: (ACCOUNT_MENU_MIN_WIDTH + 40) / zoom,
+            left: rect.right + 8,
+            bottom: window.innerHeight - rect.bottom,
+            width: ACCOUNT_MENU_MIN_WIDTH + 40,
           }
         : {
-            left: rect.left / zoom,
-            bottom: (window.innerHeight - rect.top + 8) / zoom,
-            width: Math.max(rect.width, ACCOUNT_MENU_MIN_WIDTH) / zoom,
+            left: rect.left,
+            bottom: window.innerHeight - rect.top + 8,
+            width: Math.max(rect.width, ACCOUNT_MENU_MIN_WIDTH),
           },
     )
-  }, [anchorRef, side, zoom])
+  }, [anchorRef, side])
 
   useLayoutEffect(() => {
     if (open) measure()
