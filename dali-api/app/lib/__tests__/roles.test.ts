@@ -16,6 +16,7 @@ import {
   isLabMember,
   isProjectMember,
   currentTermMemberWhere,
+  getUserRoles,
 } from "~/lib/roles";
 
 // Phase 2: roles helpers now query AdminMembership / CoreAssignment /
@@ -434,6 +435,51 @@ describe("request-scoped memoization", () => {
 // never deleted, so a member who graduates mid-term still matches the current
 // term — and with no current term the clause disappears and every alumnus the
 // lab ever had matches.
+describe("getUserRoles — isAlumni (the alumni experience)", () => {
+  function setAlumniStatus() {
+    mockPrisma.cycleInterviewer.findFirst.mockResolvedValue(null);
+    mockPrisma.user.findUnique.mockResolvedValue({ membershipStatus: "Alumni" });
+  }
+
+  it("true for a plain graduated member", async () => {
+    setRoleFlags();
+    setAlumniStatus();
+    expect((await getUserRoles("u1")).isAlumni).toBe(true);
+  });
+
+  it("suppressed for an alum who is Admin — they keep the member view", async () => {
+    setRoleFlags({ admin: true });
+    setAlumniStatus();
+    expect((await getUserRoles("u1")).isAlumni).toBe(false);
+  });
+
+  it("suppressed for an alum with a current-cycle Core assignment", async () => {
+    setRoleFlags({ core: true });
+    setAlumniStatus();
+    expect((await getUserRoles("u1")).isAlumni).toBe(false);
+  });
+
+  it("suppressed for an alum who is admin via ADMIN_USER_IDS", async () => {
+    process.env.ADMIN_USER_IDS = "u1";
+    setRoleFlags();
+    setAlumniStatus();
+    expect((await getUserRoles("u1")).isAlumni).toBe(false);
+  });
+
+  it("not suppressed by lesser authority (domain lead, instructor)", async () => {
+    setRoleFlags({ domainLead: true, instructor: true });
+    setAlumniStatus();
+    expect((await getUserRoles("u1")).isAlumni).toBe(true);
+  });
+
+  it("false for an active member regardless of authority", async () => {
+    setRoleFlags();
+    mockPrisma.cycleInterviewer.findFirst.mockResolvedValue(null);
+    mockPrisma.user.findUnique.mockResolvedValue({ membershipStatus: "Active" });
+    expect((await getUserRoles("u1")).isAlumni).toBe(false);
+  });
+});
+
 describe("currentTermMemberWhere (directory + picker scope)", () => {
   it("requires a current membership status alongside the term activity", async () => {
     mockPrisma.term.findFirst.mockResolvedValue({ id: "term-1", sortKey: 262 });
