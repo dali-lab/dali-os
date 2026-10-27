@@ -47,12 +47,17 @@ export type PillTone = keyof typeof PILL_TONES;
 
 // A state's colour as a dot instead of a whole tinted chip: rows that carry one
 // pill per item (a decision, a reviewer) stay quiet, and the dot does the work.
+// Dots draw from the mid-strength --os-status-*-edge ramp, not the text-ink
+// tokens: os-green/os-amber resolve to deep inks in light mode and os-accent
+// follows the section colour, so dots drawn from those swing between pastel
+// and near-black. The edge ramp holds one middle strength across hues in both
+// themes.
 const DOT_TONES: Record<PillTone, string> = {
   neutral: "bg-os-grey",
-  accent: "bg-os-accent",
-  success: "bg-os-green",
-  warning: "bg-os-amber",
-  danger: "bg-destructive",
+  accent: "bg-[var(--os-status-progress-edge)]",
+  success: "bg-[var(--os-status-done-edge)]",
+  warning: "bg-[var(--os-status-review-edge)]",
+  danger: "bg-os-red",
 };
 
 export function Pill({

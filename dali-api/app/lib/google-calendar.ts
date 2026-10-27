@@ -921,6 +921,9 @@ export async function patchGoogleCalendarEvent(input: {
   // Replace the guest list (interviews re-sync attendees on reassignment so the
   // new interviewer is a recognized guest on the Meet event).
   attendees?: GoogleAttendee[];
+  // Mint a Google Meet conference on the event, same as create. Google keeps
+  // an existing conference, so this is safe to send on an event that has one.
+  addMeet?: boolean;
   // Defaults to Google's own default for patch (no notifications). Pass "all"
   // to have Google email guests about the change.
   sendUpdates?: "all" | "none";
@@ -940,9 +943,20 @@ export async function patchGoogleCalendarEvent(input: {
       ? [input.recurrenceRule.startsWith("RRULE:") ? input.recurrenceRule : `RRULE:${input.recurrenceRule}`]
       : [];
   }
+  if (input.addMeet) {
+    body.conferenceData = {
+      createRequest: {
+        requestId: `dali-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`,
+        conferenceSolutionKey: { type: "hangoutsMeet" },
+      },
+    };
+  }
+  const params = new URLSearchParams();
+  if (input.sendUpdates) params.set("sendUpdates", input.sendUpdates);
+  if (input.addMeet) params.set("conferenceDataVersion", "1");
   const patchUrl =
     `https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events/${encodeURIComponent(input.eventId)}` +
-    (input.sendUpdates ? `?sendUpdates=${input.sendUpdates}` : "");
+    (params.size > 0 ? `?${params.toString()}` : "");
   const res = await fetch(
     patchUrl,
     {

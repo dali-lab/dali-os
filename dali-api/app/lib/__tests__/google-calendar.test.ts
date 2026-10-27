@@ -26,6 +26,7 @@ const {
   fetchBusyEvents,
   buildEncryptedTokens,
   createGoogleCalendarEvent,
+  patchGoogleCalendarEvent,
   respondToGoogleEventAsSelf,
   NotAGuestError,
 } = await import("~/lib/google-calendar");
@@ -660,6 +661,45 @@ describe("createGoogleCalendarEvent", () => {
     expect(body.conferenceData.createRequest.conferenceSolutionKey.type).toBe("hangoutsMeet");
     expect(body.conferenceData.createRequest.requestId).toMatch(/^dali-/);
     expect(result.meetUrl).toBe("https://meet.google.com/abc-defg-hij");
+  });
+});
+
+describe("patchGoogleCalendarEvent", () => {
+  function mockValidToken() {
+    prismaMock.userCalendarLink.findUnique.mockResolvedValueOnce({
+      oauthTokens: encryptedTokens({
+        accessToken: "good",
+        refreshToken: "r1",
+        expiresAt: new Date(Date.now() + 10 * 60_000).toISOString(),
+      }),
+    });
+  }
+
+  it("mints a Meet conference on an existing event when addMeet is set", async () => {
+    mockValidToken();
+    const fetchMock = mockFetchOnce({});
+    await patchGoogleCalendarEvent({
+      linkId: "link1",
+      eventId: "evt1",
+      summary: "Standup",
+      addMeet: true,
+    });
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(init.method).toBe("PATCH");
+    expect(String(url)).toContain("conferenceDataVersion=1");
+    const body = JSON.parse(init.body as string);
+    expect(body.conferenceData.createRequest.conferenceSolutionKey.type).toBe("hangoutsMeet");
+    expect(body.conferenceData.createRequest.requestId).toMatch(/^dali-/);
+  });
+
+  it("sends no conference fields on a plain patch", async () => {
+    mockValidToken();
+    const fetchMock = mockFetchOnce({});
+    await patchGoogleCalendarEvent({ linkId: "link1", eventId: "evt1", summary: "Standup" });
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(String(url)).not.toContain("conferenceDataVersion");
+    expect(String(url)).not.toContain("?");
+    expect(JSON.parse(init.body as string).conferenceData).toBeUndefined();
   });
 });
 

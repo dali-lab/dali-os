@@ -68,6 +68,7 @@ import {
   areaTint,
   pinnedNavItems,
   homeNavItem,
+  shellPageIcon,
   ROOM_BOOKING_NAV_ITEM,
   activeSubtabHref,
   isPinnedActive,
@@ -1188,7 +1189,8 @@ export function LayoutOS({
               leading={
                 hideRail && !showTabs ? <div className="hidden md:block">{railToggle}</div> : undefined
               }
-              areaKey={routeArea?.key}
+              areaKey={accentArea?.key}
+              icon={routeArea ? undefined : shellPageIcon(path, home.href)}
               star={pageStar}
               onCopyLink={() => void copyCurrentPageLink()}
             />
