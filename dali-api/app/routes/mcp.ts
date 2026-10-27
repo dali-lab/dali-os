@@ -8,6 +8,7 @@ import { authenticateMcpRequest } from "~/lib/mcp-auth";
 import { checkRateLimit } from "~/lib/rate-limit";
 import { logAuditEvent } from "~/lib/audit";
 import { logMcpToolCall } from "~/mcp/audit.server";
+import { enterAgentContext } from "~/collab/agent-presence.server";
 import { safeJson } from "~/lib/safe-json";
 import { validateInput, type JsonSchema } from "~/lib/mcp-input";
 import {
@@ -487,6 +488,11 @@ export async function action({ request }: Route.ActionArgs) {
     case "tools/call": {
       const params = body.params as { name?: string; arguments?: unknown } | undefined;
       const toolName = params?.name;
+      enterAgentContext({
+        clientName: auth.clientName,
+        userId: auth.user.id,
+        ownerName: `${auth.user.firstName} ${auth.user.lastName}`.trim(),
+      });
 
       // Registry path (additive). New tools live in app/mcp/registry.ts and are
       // dispatched here; the legacy switch below covers tools not yet migrated.
