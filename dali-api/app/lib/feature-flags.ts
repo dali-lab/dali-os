@@ -154,12 +154,6 @@ export const FEATURE_FLAGS = [
       "Help hours, socials and info sessions on a hiring cycle. Core creates events on the cycle page, emails everyone who started an application, and takes attendance by QR self check-in or by hand. Attendance shows on application reviews as an engagement signal. Ships off.",
   },
   {
-    key: "drive-home",
-    label: "Drive Home",
-    description:
-      "Shows your upcoming meetings and recently opened documents above the space chooser at the Drive root. Ships off.",
-  },
-  {
     key: "forms-page-access",
     label: "Forms use page access",
     description:
@@ -181,7 +175,7 @@ export const FEATURE_FLAGS = [
     key: "desktop-tabs",
     label: "Desktop tabs",
     description:
-      "Tabs become a desktop app feature built on the single-page shell instead of one iframe per tab. The desktop app shows a tab strip (on by default, switchable in Settings); browsers never do, and the tabbed workspace setting leaves browser Settings. Project documents and member notes open in a side panel beside the page, in the browser and the app. Also carries the v2 design: the v2 sidebar (hides to just an expand button, auto-compacts to a 68px icon rail on narrow windows), the smaller app-wide scale, the squarer control dress, and mode-colored page accents and loading bar. Ships off.",
+      "Tabs become a desktop app feature built on the single-page shell instead of one iframe per tab. The desktop app shows a tab strip (on by default, switchable in Settings); browsers never do, and the tabbed workspace setting leaves browser Settings. Project documents and member notes open in a side panel beside the page, in the browser and the app. Also carries the v2 design: the v2 sidebar (full width, or hidden to just an expand button), the smaller app-wide scale, the squarer control dress, and mode-colored page accents and loading bar. Ships off.",
   },
   {
     key: "drive-slides",

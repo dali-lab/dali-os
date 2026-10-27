@@ -51,11 +51,21 @@ describe("MiniMonth focus highlight", () => {
     expect(render(view, new Date(Date.UTC(2026, 9, 11)))).toEqual([]);
   });
 
-  it("keeps today's accent inside the week band", () => {
+  it("fills today's cell with the accent, square and full-bleed inside the band", () => {
     vi.setSystemTime(new Date("2026-10-20T12:00:00Z"));
     const marked = render("week", new Date(Date.UTC(2026, 9, 18)));
     const today = marked.find((b) => b.textContent === "20")!;
     expect(today.className).toContain("bg-os-accent");
     expect(today.className).not.toContain("bg-muted");
+    expect(today.className).not.toContain("rounded");
+    expect(today.querySelector("span")).toBeNull();
+  });
+
+  it("keeps the band's end rounding when today is its first day", () => {
+    vi.setSystemTime(new Date("2026-10-18T12:00:00Z"));
+    const marked = render("week", new Date(Date.UTC(2026, 9, 18)));
+    const today = marked.find((b) => b.textContent === "18")!;
+    expect(today.className).toContain("bg-os-accent");
+    expect(today.className).toContain("rounded-l-md");
   });
 });

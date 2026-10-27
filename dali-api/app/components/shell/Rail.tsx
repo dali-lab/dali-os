@@ -24,7 +24,9 @@ import { FavoritesBar } from '~/components/FavoritesBar'
 import { osMenuClass, osMenuItemClass, useAccountMenuStyle } from '~/components/os-shell-chrome'
 import { AreaTile } from '~/components/shell/AreaTile'
 import { activeQuickItem, badgeLabel, orderRailAreas, type SidebarSize } from '~/components/shell/rail-model'
+import { RailUpcoming } from '~/components/shell/RailUpcoming'
 import type { NavArea, SubTab } from '~/lib/nav-areas'
+import type { UpcomingMeeting } from '~/lib/upcoming-meetings.server'
 import type { FeatureFlagMap } from '~/lib/feature-flags'
 import type { FavoritePage } from '~/lib/user-pages.server'
 import type { OpenTabRequest } from '~/components/TabWorkspace'
@@ -57,6 +59,7 @@ export type RailProps = {
   favorites: FavoritePage[]
   onFavoritesChange?: (next: FavoritePage[]) => void
   favoritesActiveHref: string | null
+  upcoming?: UpcomingMeeting[]
   areas: NavArea[]
   activeArea: NavArea | undefined
   activeSubtabs: SubTab[]
@@ -132,6 +135,10 @@ function QuickItem({
   )
 }
 
+function RailDivider() {
+  return <div className="h-px shrink-0 bg-os-container" role="separator" />
+}
+
 export function Rail({
   userName,
   initials,
@@ -154,6 +161,7 @@ export function Rail({
   favorites,
   onFavoritesChange,
   favoritesActiveHref,
+  upcoming = [],
   areas,
   activeArea,
   activeSubtabs,
@@ -393,20 +401,23 @@ export function Rail({
         </div>
 
         {!compact && favorites.length > 0 && onFavoritesChange && (
-          <div className="shrink-0">
-            <FavoritesBar
-              orientation="vertical"
-              favorites={favorites}
-              onChange={onFavoritesChange}
-              tabClickProps={tabClickProps}
-              activeHref={favoritesActiveHref ?? undefined}
-            />
-          </div>
+          <>
+            <RailDivider />
+            <div className="shrink-0">
+              <FavoritesBar
+                orientation="vertical"
+                favorites={favorites}
+                onChange={onFavoritesChange}
+                tabClickProps={tabClickProps}
+                activeHref={favoritesActiveHref ?? undefined}
+              />
+            </div>
+          </>
         )}
 
         {activeArea && (
           <>
-            <div className="h-px shrink-0 bg-os-container" role="separator" />
+            <RailDivider />
             <div className="flex min-h-0 flex-col gap-2">
               <div ref={areaMenuRef} className={cn('shrink-0', compact && 'flex justify-center')}>
                 {singleArea ? (
@@ -578,6 +589,15 @@ export function Rail({
                   })}
                 </div>
               )}
+            </div>
+          </>
+        )}
+
+        {!compact && upcoming.length > 0 && (
+          <>
+            <RailDivider />
+            <div className="shrink-0">
+              <RailUpcoming meetings={upcoming} tabClickProps={tabClickProps} />
             </div>
           </>
         )}

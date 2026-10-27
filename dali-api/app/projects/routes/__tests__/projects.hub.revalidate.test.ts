@@ -27,19 +27,14 @@ describe("projects hub shouldRevalidate", () => {
     expect(check({ current: "?public=Published", next: "?public=Published&new=tpl1" })).toBe(false);
   });
 
-  it("re-runs when the term changes", () => {
-    expect(check({ current: "?term=a", next: "?term=b" })).toBe(true);
-    expect(check({ current: "", next: "?term=b" })).toBe(true);
-    expect(check({ current: "?term=a", next: "" })).toBe(true);
-  });
-
-  it("skips a client-only change while a term is set", () => {
-    expect(check({ current: "?term=a", next: "?term=a&public=none" })).toBe(false);
+  it("skips a stale term deep link (filtering is client-side now)", () => {
+    expect(check({ current: "", next: "?term=b" })).toBe(false);
+    expect(check({ current: "?term=a", next: "" })).toBe(false);
   });
 
   it("uses the default for an unchanged URL", () => {
-    expect(check({ current: "?term=a", next: "?term=a" })).toBe(true);
-    expect(check({ current: "?term=a", next: "?term=a", defaultShouldRevalidate: false })).toBe(false);
+    expect(check({ current: "?public=x", next: "?public=x" })).toBe(true);
+    expect(check({ current: "?public=x", next: "?public=x", defaultShouldRevalidate: false })).toBe(false);
   });
 
   it("uses the default for a path change", () => {

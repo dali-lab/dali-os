@@ -8,7 +8,6 @@ vi.mock("~/lib/login-next", () => ({ redirectToLogin: vi.fn() }));
 vi.mock("~/lib/roles", () => ({ getUserRoles: vi.fn() }));
 vi.mock("~/lib/terms", () => ({ resolveTermFilter: vi.fn() }));
 vi.mock("~/lib/drive-scopes.server", () => ({ loadDriveScopes: vi.fn() }));
-vi.mock("~/lib/drive-home.server", () => ({ loadDriveHome: vi.fn() }));
 vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabled: vi.fn() }));
 vi.mock("~/forms/lib/form-access.server", () => ({ formsUsePageAccess: vi.fn() }));
 vi.mock("~/lib/drive-hub.server", () => ({

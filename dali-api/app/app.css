@@ -2353,26 +2353,84 @@ html[data-v2].os-shell {
 /* The page accent is the same pastel the sidebar mode wears — in light too,
    not the deeper on-white ink: one highlight per mode, identical in both
    themes. (This sits after the html.light token block, so it wins there.)
-   Modeless pages (home, calendar, a meeting opened from Attendance) have no
-   --mode-accent and fall back to the Lab blue instead of the old teal. */
+   The shell keys --mode-accent on the page's own area, and calendar, email
+   and drive follow the rail's selected mode; only truly modeless pages (home,
+   a meeting opened from Attendance) fall back to the Lab blue. */
+/* The accent's readable half, for text, borders and selection washes: the v2
+   accent is a pale ground wash, too pale to read as ink. Tint on dark, deep
+   ink on light — the per-mode read --color-os-accent had before v2. Defined
+   on <html> (not just .os-shell) so portaled content resolves it even before
+   the os-shell mirror mounts; the .os-shell forms refine it with the page's
+   own mode tone. */
+html[data-v2] {
+  --os-accent-ink: #8fb6f2;
+}
+html.light[data-v2] {
+  --os-accent-ink: #2f5fb5;
+}
 html[data-v2] .os-shell,
 html[data-v2].os-shell {
   /* A step lighter than the raw mode tint: 70% tint over white, hover lighter
      still. */
   --color-os-accent: color-mix(in srgb, var(--mode-accent, #8fb6f2) 70%, white);
   --color-os-accent-hover: color-mix(in srgb, var(--mode-accent, #8fb6f2) 55%, white);
-  /* The accent's readable half, for text: the wash above is a ground, too
-     pale to read as ink on light. Tint on dark, deep ink on light — the same
-     per-mode read --color-os-accent had before this override. */
   --os-accent-ink: var(--mode-accent, #8fb6f2);
 }
 html.light[data-v2] .os-shell,
 html.light[data-v2].os-shell {
   --os-accent-ink: var(--mode-accent-ink, #2f5fb5);
 }
-/* Text set in the accent (See all, inline links) reads from the ink half. */
-html[data-v2] .os-shell .text-os-accent {
+/* Accent-as-ink utilities all read from the ink half: text (See all, inline
+   links, the RSVP chips), borders, and the thin selection washes — at 15% of
+   the pale wash a selected chip or today-column tint all but vanished. */
+html[data-v2] .text-os-accent {
   color: var(--os-accent-ink);
+}
+html[data-v2] .text-os-accent\/80 {
+  color: color-mix(in srgb, var(--os-accent-ink) 80%, transparent);
+}
+html[data-v2] .border-os-accent {
+  border-color: var(--os-accent-ink);
+}
+html[data-v2] .border-os-accent\/30 {
+  border-color: color-mix(in srgb, var(--os-accent-ink) 30%, transparent);
+}
+html[data-v2] .border-os-accent\/35 {
+  border-color: color-mix(in srgb, var(--os-accent-ink) 35%, transparent);
+}
+html[data-v2] .border-os-accent\/40 {
+  border-color: color-mix(in srgb, var(--os-accent-ink) 40%, transparent);
+}
+html[data-v2] .border-os-accent\/50 {
+  border-color: color-mix(in srgb, var(--os-accent-ink) 50%, transparent);
+}
+html[data-v2] .border-os-accent\/60 {
+  border-color: color-mix(in srgb, var(--os-accent-ink) 60%, transparent);
+}
+html[data-v2] .bg-os-accent\/5 {
+  background-color: color-mix(in srgb, var(--os-accent-ink) 5%, transparent);
+}
+html[data-v2] .bg-os-accent\/10 {
+  background-color: color-mix(in srgb, var(--os-accent-ink) 10%, transparent);
+}
+html[data-v2] .bg-os-accent\/15 {
+  background-color: color-mix(in srgb, var(--os-accent-ink) 15%, transparent);
+}
+html[data-v2] .bg-os-accent\/20 {
+  background-color: color-mix(in srgb, var(--os-accent-ink) 20%, transparent);
+}
+html[data-v2] .bg-os-accent\/25 {
+  background-color: color-mix(in srgb, var(--os-accent-ink) 25%, transparent);
+}
+/* Accent-filled controls written as utilities (Add event, the composer's Save,
+   the mini-month's today pill): on light the v2 accent is a pale wash, and the
+   page-background ink that read on the old deep accent disappears into it. The
+   label takes a deep shade of the mode ink instead — the .os-btn-tint recipe. */
+html.light[data-v2] .bg-os-accent.text-os-bg {
+  color: color-mix(in srgb, var(--os-accent-ink) 70%, black);
+}
+html.light[data-v2] .os-btn-primary {
+  color: color-mix(in srgb, var(--os-accent-ink) 70%, black);
 }
 
 /* Page/section titles written as literal classes (the useOsChrome hook gates
@@ -2479,14 +2537,18 @@ html[data-v2] .os-shell .dali-btn--size-md {
 /* Filled-accent buttons sit on the pale wash in both modes, so the os-bg
    numeral (white in light) vanishes — the label flips to a near-black ink
    warmed by the area's own hue. */
-html[data-v2] .os-shell .dali-btn--primary {
+html[data-v2] .os-shell .dali-btn--primary,
+html[data-v2].os-shell .dali-btn--primary {
   color: color-mix(in srgb, var(--mode-accent-ink, #2f5fb5) 55%, black);
 }
-/* Task/notification card CTAs: back on the 32px control height (the min-h-9
-   they carry is the pre-redesign touch size). */
-html[data-v2] .os-shell .os-cta {
-  min-height: 32px;
-  padding-inline: 12px;
+/* Task/notification card CTAs (Open task, Confirm, RSVP): a small chip, well
+   under the 32px control height — the cards are dense and the CTA is not the
+   page's lead action. */
+html[data-v2] .os-shell .os-cta,
+html[data-v2].os-shell .os-cta {
+  height: 26px;
+  min-height: 26px;
+  padding-inline: 10px;
 }
 /* Task/notification cards, one notch tighter. */
 html[data-v2] .os-shell .os-task-card {

@@ -1,7 +1,9 @@
 import {
   ArrowUpCircle,
   Award,
+  Bell,
   BookOpen,
+  Calendar,
   Briefcase,
   ClipboardCheck,
   ClipboardList,
@@ -20,12 +22,14 @@ import {
   Handshake,
   HardDrive,
   Heart,
+  HelpCircle,
   Home,
   Kanban,
   LayoutGrid,
   Images,
   Map as MapIcon,
   Lightbulb,
+  Mail,
   MapPinned,
   Newspaper,
   RotateCw,
@@ -335,7 +339,10 @@ export const AREA_TONES: Record<string, AreaTone> = {
   education: { tint: "#FFD461", ink: "#8F6500" },
   hiring: { tint: "#C9B2F5", ink: "#6B4AC2" },
   core: { tint: "#FF8B81", ink: "#C13D33" },
-  admin: { tint: "#bababa", ink: "#4d5c69" },
+  // Steel blue, not flat gray: the gray pastel vanished against the muted
+  // surfaces its washes sit on (week bands, wells), while this keeps admin
+  // reading neutral next to the brighter area tones.
+  admin: { tint: "#9FB8D1", ink: "#46637F" },
 };
 
 export const DEFAULT_AREA_TINT = "#bababa";
@@ -511,6 +518,22 @@ export function areaForPath(
     }
   }
   return best;
+}
+
+const SHELL_PAGE_ICONS: [string, LucideIcon][] = [
+  ["/notifications", Bell],
+  ["/calendar", Calendar],
+  ["/email", Mail],
+  ["/drive", HardDrive],
+  ["/settings", Settings],
+  ["/help", HelpCircle],
+];
+
+/** The glyph for a page outside every area (Home, My Tasks, Calendar, ...), matching its sidebar row. */
+export function shellPageIcon(path: string, homeHref: string): LucideIcon | undefined {
+  const p = pathnameOf(path);
+  if (p === homeHref) return Home;
+  return SHELL_PAGE_ICONS.find(([href]) => p === href || p.startsWith(href + "/"))?.[1];
 }
 
 // The sub-tab to highlight for a path within its area. The Hub tab (href ===

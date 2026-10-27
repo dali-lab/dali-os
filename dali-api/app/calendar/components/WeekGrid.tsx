@@ -1697,7 +1697,7 @@ export function WeekGrid({
                     type="button"
                     onClick={block.onClick}
                     className={cn(
-                      "w-full text-left truncate rounded px-1.5 py-0.5 text-[11px] font-medium leading-tight",
+                      "w-full text-left truncate rounded-[3px] px-1.5 py-0.5 text-[11px] font-medium leading-tight",
                       block.onClick ? "cursor-pointer" : "cursor-default",
                       outlined
                         ? cn("border bg-transparent text-foreground", !hasColor && "border-border")

@@ -859,7 +859,7 @@ function GroupCard({
                   <div
                     key={uid}
                     className={cn(
-                      "p-2 bg-os-card text-xs text-muted-foreground",
+                      "p-2 bg-os-bg dark:bg-os-card text-xs text-muted-foreground",
                       "rounded-os-item",
                     )}
                   >
@@ -894,7 +894,7 @@ function GroupCard({
           {!isSystem && addingMember && (
             <div
               className={cn(
-                "bg-os-card p-2 space-y-2",
+                "bg-os-bg dark:bg-os-card p-2 space-y-2",
                 "rounded-os-item",
               )}
             >
@@ -962,7 +962,10 @@ function ExpandedMemberCard({
   return (
     <div
       className={cn(
-        "relative p-2 bg-os-card flex items-start gap-2 hover:bg-os-card-hover transition-colors",
+        // On the open group's accent wash the card plane vanishes (the wash is
+        // mixed from os-card), so these sit a plane up: white in light, where
+        // the ramp inverts; os-card in dark, where card is already the top.
+        "relative p-2 bg-os-bg dark:bg-os-card flex items-start gap-2 hover:bg-os-card-hover transition-colors",
         "rounded-os-item",
       )}
     >

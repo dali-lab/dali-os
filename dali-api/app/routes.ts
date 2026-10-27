@@ -714,6 +714,7 @@ export default [
   route("api/favorites/reorder", "routes/api.favorites.reorder.ts"),
   route("api/move-destinations", "routes/api.move-destinations.ts"),
   route("api/drive/destinations", "routes/api.drive.destinations.ts"),
+  route("api/upcoming-meetings", "routes/api.upcoming-meetings.ts"),
   // Drive unified tree: placement move for files and forms (Wave 3).
   route("api/drive/move", "routes/api.drive.move.ts"),
   // Drive unified file upload: scope-agnostic file registration (Lab or Project).
