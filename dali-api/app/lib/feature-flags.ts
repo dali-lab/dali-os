@@ -148,6 +148,12 @@ export const FEATURE_FLAGS = [
       "Finance tab, invoices and deal terms on partner records. Ships off.",
   },
   {
+    key: "partner-planning",
+    label: "Partner term planning",
+    description:
+      "Adds plan status, notes and to-do columns to the Partners list view, per target term. Ships off.",
+  },
+  {
     key: "application-events",
     label: "Application events",
     description:

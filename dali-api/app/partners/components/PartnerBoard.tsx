@@ -4,7 +4,7 @@
 // conventions. specs/partner-crm.md §4.
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useRevalidator, useSearchParams } from "react-router";
+import { useRevalidator } from "react-router";
 import type { DragEndEvent } from "@dnd-kit/core";
 import { ChevronsLeft, ChevronsRight, MoreHorizontal } from "lucide-react";
 import { Menu, MenuItem, Tooltip } from "~/components/ui/floating";
@@ -21,12 +21,12 @@ import {
 } from "../lib/partner-application";
 import {
   buildPartnerBoard,
+  filterPartnerCards,
   movePartnerInBoard,
-  partnerMatchesQuery,
   type PartnerCardModel,
+  type PartnerFilters,
 } from "../lib/partner-board";
 import { PartnerCard } from "./PartnerCard";
-import { PartnerApplicationModal } from "./PartnerApplicationModal";
 
 const META_TEXT = (os: boolean) => (os ? "text-xs" : "text-[11px]");
 
@@ -75,90 +75,33 @@ const STAGE_ACCENT_CLASSIC: Record<PartnerStage, StatusAccent> = {
   },
 };
 
-const stageAccent = (stage: PartnerStage, os: boolean): StatusAccent =>
+export const stageAccent = (stage: PartnerStage, os: boolean): StatusAccent =>
   (os ? STAGE_ACCENT_OS : STAGE_ACCENT_CLASSIC)[stage];
-
-// The board's own search + Customize controls live in the page's nav row
-// (specs/partner-crm.md §18: one row above the board), so the filter
-// vocabulary below is exported for core.partners.tsx to build that row from
-// — this component just applies whatever it's handed.
-export const SOURCE_OPTIONS: { value: string; label: string }[] = [
-  { value: "Form", label: "Form" },
-  { value: "Email", label: "Email" },
-  { value: "Referral", label: "Referral" },
-  { value: "Manual", label: "Manual" },
-  { value: "Renewal", label: "Renewal" },
-];
-
-export type PartnerFilters = {
-  term: string | null;
-  domain: string | null;
-  source: string | null;
-  staleOnly: boolean;
-  showPaused: boolean;
-  showRejectedPastTerms: boolean;
-};
-
-export const DEFAULT_FILTERS: PartnerFilters = {
-  term: null,
-  domain: null,
-  source: null,
-  staleOnly: false,
-  showPaused: true,
-  showRejectedPastTerms: false,
-};
-
-export function isPartnerFilters(v: unknown): v is PartnerFilters {
-  if (!v || typeof v !== "object") return false;
-  const o = v as Record<string, unknown>;
-  return (
-    (o.term === null || typeof o.term === "string") &&
-    (o.domain === null || typeof o.domain === "string") &&
-    (o.source === null || typeof o.source === "string") &&
-    typeof o.staleOnly === "boolean" &&
-    typeof o.showPaused === "boolean" &&
-    typeof o.showRejectedPastTerms === "boolean"
-  );
-}
 
 export function PartnerBoard({
   cards: initialCards,
   canEdit,
   staleDays,
-  domainOptions,
-  termOptions,
   currentTermStartIso,
   query,
   filters,
-  isCreating,
-  onCreateClose,
+  onOpen,
 }: {
   cards: PartnerCardModel[];
   canEdit: boolean;
   staleDays: number;
-  domainOptions: { id: string; name: string }[];
-  termOptions: { id: string; code: string }[];
-  /** Current term's start — "Show rejected from past terms" compares against it. Null when there is no current term. */
   currentTermStartIso: string | null;
-  /** Search text and Customize filters — owned by the page's single nav row
-   *  (core.partners.tsx) rather than this component, so there is exactly one
-   *  search/filter control for the board. */
   query: string;
   filters: PartnerFilters;
-  /** The nav row's "New application" button, in board view, opens the create
-   *  modal — this component no longer has a create affordance of its own. */
-  isCreating: boolean;
-  onCreateClose: () => void;
+  onOpen: (id: string) => void;
 }) {
   const { os } = useOsChrome();
-  const { items: cards, move, error, setError } = useOptimisticBoardMove<PartnerCardModel>(initialCards);
+  const { items: cards, move, error } = useOptimisticBoardMove<PartnerCardModel>(initialCards);
   const revalidator = useRevalidator();
   const refresh = useCallback(() => {
     if (revalidator.state === "idle") void revalidator.revalidate();
   }, [revalidator]);
 
-  const [searchParams, setSearchParams] = useSearchParams();
-  const openId = searchParams.get("application");
   const [celebrate, setCelebrate] = useState(false);
 
   const [collapsedCols, setCollapsedCols] = useState<PartnerStage[]>([]);
@@ -191,57 +134,12 @@ export function PartnerBoard({
     [collapsedCols, persistCollapsed],
   );
 
-  const setOpenId = useCallback(
-    (id: string | null) => {
-      setSearchParams(
-        (prev) => {
-          const next = new URLSearchParams(prev);
-          if (id) next.set("application", id);
-          else next.delete("application");
-          return next;
-        },
-        { replace: true, preventScrollReset: true },
-      );
-    },
-    [setSearchParams],
+  const filteredCards = useMemo(
+    () => filterPartnerCards(cards, filters, query, { staleDays, currentTermStartIso }),
+    [cards, filters, query, staleDays, currentTermStartIso],
   );
 
-  const closeModal = useCallback(() => {
-    setOpenId(null);
-    onCreateClose();
-  }, [setOpenId, onCreateClose]);
-
-  const currentTermStartMs = currentTermStartIso ? new Date(currentTermStartIso).getTime() : null;
-
-  const filteredCards = useMemo(() => {
-    let cs = cards;
-    if (filters.term) cs = cs.filter((c) => c.targetTerms.some((t) => t.id === filters.term));
-    if (filters.domain) cs = cs.filter((c) => c.domains.some((d) => d.id === filters.domain));
-    if (filters.source) cs = cs.filter((c) => c.source === filters.source);
-    if (filters.staleOnly) {
-      const cutoff = staleDays * 24 * 60 * 60 * 1000;
-      cs = cs.filter(
-        (c) =>
-          (c.stage === "New" || c.stage === "Interview") &&
-          !c.holdUntil &&
-          Date.now() - new Date(c.lastActivityAt).getTime() > cutoff,
-      );
-    }
-    if (!filters.showPaused) {
-      cs = cs.filter((c) => !c.holdUntil || new Date(c.holdUntil).getTime() <= Date.now());
-    }
-    if (!filters.showRejectedPastTerms && currentTermStartMs !== null) {
-      cs = cs.filter(
-        (c) =>
-          c.stage !== "Rejected" || new Date(c.lastActivityAt).getTime() >= currentTermStartMs,
-      );
-    }
-    if (query.trim()) cs = cs.filter((c) => partnerMatchesQuery(c, query));
-    return cs;
-  }, [cards, filters, query, staleDays, currentTermStartMs]);
-
   const board = useMemo(() => buildPartnerBoard(filteredCards), [filteredCards]);
-  const openCard = openId ? cards.find((c) => c.id === openId) ?? null : null;
 
   async function persistMove(id: string, stage: PartnerStage, orderedIds: string[]): Promise<void> {
     const res = await fetch(`/api/partner-applications/${id}/move`, {
@@ -418,24 +316,10 @@ export function PartnerBoard({
             staleDays={staleDays}
             dragHandleProps={dragHandleProps}
             isDragging={isDragging}
-            onOpen={() => setOpenId(c.id)}
+            onOpen={() => onOpen(c.id)}
           />
         )}
       />
-
-      {(openCard || isCreating) && (
-        <PartnerApplicationModal
-          card={openCard}
-          canEdit={canEdit}
-          domainOptions={domainOptions}
-          termOptions={termOptions}
-          onClose={closeModal}
-          onChanged={() => {
-            setError(null);
-            refresh();
-          }}
-        />
-      )}
     </div>
   );
 }

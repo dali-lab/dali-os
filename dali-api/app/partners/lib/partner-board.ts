@@ -10,7 +10,7 @@ import {
   nextPositionInColumn,
   type Board,
 } from "~/components/board/board-order";
-import { PARTNER_STAGES, type PartnerStage } from "./partner-application";
+import { PARTNER_STAGES, isPaused, isStale, type PartnerStage } from "./partner-application";
 
 // Cards not on a recognized stage (shouldn't happen — the enum is closed, but
 // board-order.ts takes a fallback for the same reason task-board.ts does)
@@ -81,4 +81,70 @@ export function partnerMatchesQuery(card: PartnerCardModel, query: string): bool
   if (card.domains.some((d) => d.name.toLowerCase().includes(q))) return true;
   if (card.nextStep && card.nextStep.toLowerCase().includes(q)) return true;
   return false;
+}
+
+export const SOURCE_OPTIONS: { value: string; label: string }[] = [
+  { value: "Form", label: "Form" },
+  { value: "Email", label: "Email" },
+  { value: "Referral", label: "Referral" },
+  { value: "Manual", label: "Manual" },
+  { value: "Renewal", label: "Renewal" },
+];
+
+export type PartnerFilters = {
+  term: string | null;
+  domain: string | null;
+  source: string | null;
+  staleOnly: boolean;
+  showPaused: boolean;
+  showRejectedPastTerms: boolean;
+};
+
+export const DEFAULT_FILTERS: PartnerFilters = {
+  term: null,
+  domain: null,
+  source: null,
+  staleOnly: false,
+  showPaused: true,
+  showRejectedPastTerms: false,
+};
+
+export function isPartnerFilters(v: unknown): v is PartnerFilters {
+  if (!v || typeof v !== "object") return false;
+  const o = v as Record<string, unknown>;
+  return (
+    (o.term === null || typeof o.term === "string") &&
+    (o.domain === null || typeof o.domain === "string") &&
+    (o.source === null || typeof o.source === "string") &&
+    typeof o.staleOnly === "boolean" &&
+    typeof o.showPaused === "boolean" &&
+    typeof o.showRejectedPastTerms === "boolean"
+  );
+}
+
+export function filterPartnerCards<T extends PartnerCardModel>(
+  cards: T[],
+  filters: PartnerFilters,
+  query: string,
+  opts: { staleDays: number; currentTermStartIso: string | null; now?: Date },
+): T[] {
+  const now = opts.now ?? new Date();
+  const currentTermStartMs = opts.currentTermStartIso
+    ? new Date(opts.currentTermStartIso).getTime()
+    : null;
+  return cards.filter((c) => {
+    if (filters.term && !c.targetTerms.some((t) => t.id === filters.term)) return false;
+    if (filters.domain && !c.domains.some((d) => d.id === filters.domain)) return false;
+    if (filters.source && c.source !== filters.source) return false;
+    if (filters.staleOnly && !isStale(c, opts.staleDays, now)) return false;
+    if (!filters.showPaused && isPaused(c.holdUntil, now)) return false;
+    if (
+      !filters.showRejectedPastTerms &&
+      currentTermStartMs !== null &&
+      c.stage === "Rejected" &&
+      new Date(c.lastActivityAt).getTime() < currentTermStartMs
+    )
+      return false;
+    return partnerMatchesQuery(c, query);
+  });
 }

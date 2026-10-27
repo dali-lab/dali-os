@@ -1,9 +1,13 @@
 import { describe, it, expect } from "vitest";
 import {
+  DEFAULT_FILTERS,
   buildPartnerBoard,
+  filterPartnerCards,
+  isPartnerFilters,
   movePartnerInBoard,
   partnerMatchesQuery,
   type PartnerCardModel,
+  type PartnerFilters,
 } from "../partner-board";
 
 function card(overrides: Partial<PartnerCardModel> & { id: string }): PartnerCardModel {
@@ -115,5 +119,71 @@ describe("partnerMatchesQuery", () => {
   it("handles a null orgName without throwing", () => {
     const noOrg = card({ id: "b", orgName: null });
     expect(partnerMatchesQuery(noOrg, "anything")).toBe(false);
+  });
+});
+
+describe("filterPartnerCards", () => {
+  const now = new Date("2026-10-20T00:00:00Z");
+  const opts = { staleDays: 14, currentTermStartIso: "2026-09-01T00:00:00Z", now };
+  const run = (cards: PartnerCardModel[], f: Partial<PartnerFilters> = {}, q = "") =>
+    filterPartnerCards(cards, { ...DEFAULT_FILTERS, ...f }, q, opts).map((c) => c.id);
+
+  it("keeps everything recent on the defaults", () => {
+    expect(run([card({ id: "a" }), card({ id: "b", stage: "Accepted", status: "Accepted" })])).toEqual(["a", "b"]);
+  });
+
+  it("filters by term, domain and source", () => {
+    const cards = [
+      card({ id: "a", targetTerms: [{ id: "t1", code: "26F" }], domains: [{ id: "dev", name: "Dev" }], source: "Email" }),
+      card({ id: "b", targetTerms: [{ id: "t2", code: "27W" }], domains: [{ id: "ux", name: "UX" }] }),
+    ];
+    expect(run(cards, { term: "t1" })).toEqual(["a"]);
+    expect(run(cards, { domain: "ux" })).toEqual(["b"]);
+    expect(run(cards, { source: "Email" })).toEqual(["a"]);
+  });
+
+  it("stale only keeps open, unpaused applications quiet past the threshold", () => {
+    const old = "2026-09-01T00:00:00Z";
+    const cards = [
+      card({ id: "stale", lastActivityAt: old }),
+      card({ id: "fresh", lastActivityAt: "2026-10-19T00:00:00Z" }),
+      card({ id: "paused", lastActivityAt: old, holdUntil: "2026-12-01T00:00:00Z" }),
+      card({ id: "hold-over", lastActivityAt: old, holdUntil: "2026-10-01T00:00:00Z" }),
+      card({ id: "accepted", lastActivityAt: old, stage: "Accepted", status: "Accepted" }),
+    ];
+    expect(run(cards, { staleOnly: true })).toEqual(["stale", "hold-over"]);
+  });
+
+  it("hides only currently paused applications when Show paused is off", () => {
+    const cards = [
+      card({ id: "paused", holdUntil: "2026-12-01T00:00:00Z" }),
+      card({ id: "resumed", holdUntil: "2026-10-01T00:00:00Z" }),
+    ];
+    expect(run(cards, { showPaused: false })).toEqual(["resumed"]);
+  });
+
+  it("hides rejections from before the current term unless asked", () => {
+    const cards = [
+      card({ id: "old", stage: "Rejected", status: "Rejected", lastActivityAt: "2026-08-01T00:00:00Z" }),
+      card({ id: "recent", stage: "Rejected", status: "Rejected", lastActivityAt: "2026-09-15T00:00:00Z" }),
+    ];
+    expect(run(cards)).toEqual(["recent"]);
+    expect(run(cards, { showRejectedPastTerms: true })).toEqual(["old", "recent"]);
+    expect(
+      filterPartnerCards(cards, DEFAULT_FILTERS, "", { ...opts, currentTermStartIso: null }).map((c) => c.id),
+    ).toEqual(["old", "recent"]);
+  });
+
+  it("applies the search query", () => {
+    expect(run([card({ id: "a", title: "Campus map" }), card({ id: "b" })], {}, "campus")).toEqual(["a"]);
+  });
+});
+
+describe("isPartnerFilters", () => {
+  it("accepts the defaults and rejects malformed values", () => {
+    expect(isPartnerFilters(DEFAULT_FILTERS)).toBe(true);
+    expect(isPartnerFilters(null)).toBe(false);
+    expect(isPartnerFilters({ ...DEFAULT_FILTERS, term: 3 })).toBe(false);
+    expect(isPartnerFilters({ ...DEFAULT_FILTERS, staleOnly: "yes" })).toBe(false);
   });
 });
