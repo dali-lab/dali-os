@@ -50,7 +50,9 @@ import { pageDocName } from "~/collab/roomName";
 import { canManageNotebook } from "~/lib/notebooks.server";
 import { nextNoteTargets } from "~/lib/notebook-series.server";
 import { NotebookRail, NoteLocationLine, type NotebookView } from "~/components/notebooks/NotebookRail";
-import { itemTrail, noteTabLabel, noteTrail, withLeafEmoji } from "~/components/notebooks/note-trail";
+import { itemTrail, noteTabLabel, noteTrail, tabWeekLabels, withLeafEmoji } from "~/components/notebooks/note-trail";
+import { termWindows } from "~/lib/terms";
+import { APPLICATION_TZ } from "~/lib/timezone";
 import { EmptyNotebook } from "~/components/notebooks/EmptyNotebook";
 import { redirectToLogin } from "~/lib/login-next";
 import { walletTokensConfigured } from "~/lib/wallet-token";
@@ -236,7 +238,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   let notebook: NotebookView | null = null;
   let noteLocation: { location: ItemLocation; tabLabel: string } | null = null;
   if (page.parent?.kind === "Notebook") {
-    const [tabRows, notebookAccess, nextNotes, notebookManager, notebookPlace] = await Promise.all([
+    const [tabRows, notebookAccess, nextNotes, notebookManager, notebookPlace, terms] = await Promise.all([
       prisma.page.findMany({
         where: { parentPageId: page.parent.id, OR: [{ archivedAt: null }, { id: page.id }] },
         orderBy: { meetingOccurrenceStart: "desc" },
@@ -252,6 +254,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       nextNoteTargets(page.parent.id),
       canManageNotebook(auth.user.sub, page.parent, request),
       notebookItemLocation(page.parent, auth.user.sub, request),
+      termWindows(),
     ]);
     noteLocation = {
       location: notebookPlace,
@@ -264,13 +267,19 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     // Naming the meeting only helps when the notebook holds more than one.
     const mixed = new Set(visible.map((t) => t.meetingNote?.title)).size > 1;
     const canEditNotebook = notebookAccess.canEdit && !trashed;
+    const weeks = tabWeekLabels(
+      visible.map((t) => t.meetingOccurrenceStart),
+      terms,
+      APPLICATION_TZ,
+    );
     notebook = {
       ...notebookShell(page.parent, { canEdit: canEditNotebook, manager: notebookManager && !trashed, nextNotes }),
-      tabs: visible.map((t) => ({
+      tabs: visible.map((t, i) => ({
         id: t.id,
         label: noteTabLabel(t),
         meeting: mixed ? (t.meetingNote?.title ?? null) : null,
         isNote: t.meetingNoteId !== null,
+        week: weeks[i] ?? null,
       })),
     };
   }

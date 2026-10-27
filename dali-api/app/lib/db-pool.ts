@@ -14,6 +14,10 @@ const DEFAULT_POOL_MAX = 25;
 const DEFAULT_POOL_MIN = 5;
 const DEFAULT_IDLE_TIMEOUT_MS = 300_000;
 
+// Scripts (the seed, scripts/*.ts) import ~/lib/db and never disconnect it.
+// Warm idle clients would otherwise hold the event loop open forever; the
+// server stays up on its own listener.
+
 function positiveInt(raw: string | undefined, fallback: number): number {
   const n = Number(raw);
   return raw !== undefined && raw !== "" && Number.isInteger(n) && n > 0 ? n : fallback;
@@ -26,6 +30,7 @@ export function poolConfig(env: NodeJS.ProcessEnv = process.env): PoolConfig {
     max,
     min: Math.min(positiveInt(env.DATABASE_POOL_MIN, DEFAULT_POOL_MIN), max),
     idleTimeoutMillis: positiveInt(env.DATABASE_POOL_IDLE_TIMEOUT_MS, DEFAULT_IDLE_TIMEOUT_MS),
+    allowExitOnIdle: true,
   };
 }
 

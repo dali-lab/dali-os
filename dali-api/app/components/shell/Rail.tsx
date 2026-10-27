@@ -54,9 +54,6 @@ export type RailProps = {
   size?: SidebarSize
   /** Entrance animations (section-change stagger, label fades). */
   animated?: boolean
-  /** The CSS zoom applied around this rail (see `.os-rail-zoom`); the rail's
-      fixed-position menus divide their measured coordinates by it. */
-  zoom?: number
   favorites: FavoritePage[]
   onFavoritesChange?: (next: FavoritePage[]) => void
   favoritesActiveHref: string | null
@@ -154,7 +151,6 @@ export function Rail({
   onHideRail,
   size = 'expanded',
   animated = false,
-  zoom = 1,
   favorites,
   onFavoritesChange,
   favoritesActiveHref,
@@ -182,7 +178,7 @@ export function Rail({
   const areaMenuRef = useRef<HTMLDivElement | null>(null)
   const areaTriggerRef = useRef<HTMLButtonElement | null>(null)
   const userMenuRef = useRef<HTMLDivElement | null>(null)
-  const userMenuStyle = useAccountMenuStyle(userMenuRef, userMenuOpen, compact ? 'right' : 'up', zoom)
+  const userMenuStyle = useAccountMenuStyle(userMenuRef, userMenuOpen, compact ? 'right' : 'up')
   const [areaMenuRect, setAreaMenuRect] = useState<{ top: number; left: number; width: number } | null>(null)
 
   useEffect(() => {
@@ -222,10 +218,10 @@ export function Rail({
     if (!rect) return
     setAreaMenuRect(
       compact
-        ? { top: rect.top / zoom, left: (rect.right + 8) / zoom, width: 264 / zoom }
-        : { top: (rect.bottom + 6) / zoom, left: rect.left / zoom, width: rect.width / zoom },
+        ? { top: rect.top, left: rect.right + 8, width: 264 }
+        : { top: rect.bottom + 6, left: rect.left, width: rect.width },
     )
-  }, [compact, zoom])
+  }, [compact])
 
   const toggleAreaMenu = useCallback(() => {
     setAreaMenuOpen((v) => {
@@ -506,7 +502,7 @@ export function Rail({
                   key={areaKey}
                   ref={subtabListRef}
                   className={cn(
-                    'relative flex min-h-[5rem] flex-col gap-1.5 overflow-y-auto overflow-x-hidden',
+                    'relative flex min-h-20 flex-col gap-1.5 overflow-y-auto overflow-x-hidden',
                     // Breathing room between the rows (and the pill below) and
                     // the list's own scrollbar.
                     compact ? 'items-center' : 'pr-1.5',

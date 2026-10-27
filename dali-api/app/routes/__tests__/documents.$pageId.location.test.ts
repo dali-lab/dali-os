@@ -6,6 +6,7 @@ vi.mock("~/lib/db", () => ({
     docTag: { findMany: vi.fn() },
     pageLink: { findMany: vi.fn() },
     meetingShareGrant: { findFirst: vi.fn() },
+    term: { findMany: vi.fn() },
   },
 }));
 vi.mock("~/lib/auth", () => ({
@@ -102,6 +103,7 @@ beforeEach(() => {
   db.docTag.findMany.mockResolvedValue([]);
   db.pageLink.findMany.mockResolvedValue([]);
   db.meetingShareGrant.findFirst.mockResolvedValue(null);
+  db.term.findMany.mockResolvedValue([]);
   vi.mocked(getPageAccessBulk).mockResolvedValue(new Map());
   vi.mocked(groupIdsForUser).mockResolvedValue(["g1"]);
   vi.mocked(notebookItemLocation).mockResolvedValue(LOCATION as any);

@@ -23,9 +23,9 @@ const notebook: NotebookView = {
   projectId: null,
   nextNotes: [],
   tabs: [
-    { id: "nb1", label: "Oct 6", meeting: "Weekly sync", isNote: true },
-    { id: "p2", label: "Oct 13", meeting: "Weekly sync", isNote: true },
-    { id: "p3", label: "Agenda", meeting: null, isNote: false },
+    { id: "nb1", label: "Oct 6", meeting: "Weekly sync", isNote: true, week: null },
+    { id: "p2", label: "Oct 13", meeting: "Weekly sync", isNote: true, week: null },
+    { id: "p3", label: "Agenda", meeting: null, isNote: false, week: null },
   ],
 };
 
@@ -315,6 +315,17 @@ describe("NotebookRail collapse", () => {
     expect(nav().className).toContain("bg-os-card");
   });
 
+  it("drops the expanded card by the doc canvas's top padding so the two tops line up", async () => {
+    await rail();
+    expect(nav().className).toContain("lg:mt-4");
+  });
+
+  it("leaves the collapsed pill where it was", async () => {
+    window.localStorage.setItem(NOTEBOOK_RAIL_COLLAPSED_KEY, "1");
+    await rail();
+    expect(nav().className).not.toContain("lg:mt-4");
+  });
+
   it("ignores any other stored value", async () => {
     window.localStorage.setItem(NOTEBOOK_RAIL_COLLAPSED_KEY, "0");
     await rail();
@@ -379,6 +390,69 @@ describe("NotebookRail tab list", () => {
     expect(add.querySelector(".sr-only")?.textContent).toBe("Add");
     expect(header.querySelector("[aria-label='Notebook options']")).toBeTruthy();
     expect(header.querySelector("[aria-label='Hide tabs']")).toBeTruthy();
+  });
+});
+
+describe("NotebookRail week dividers", () => {
+  const dividers = () => [...nav().querySelectorAll("[data-testid='notebook-rail-week']")];
+  const weeks = [
+    { id: "nb1", label: "Oct 23", meeting: null, isNote: true, week: "Week 7" },
+    { id: "p2", label: "Oct 20", meeting: null, isNote: true, week: "Week 7" },
+    { id: "p3", label: "Oct 16", meeting: null, isNote: true, week: "Week 6" },
+    { id: "p4", label: "Oct 6", meeting: null, isNote: true, week: "Week 5" },
+  ];
+
+  it("labels each run of tabs from the same week once, in the order the tabs come", async () => {
+    await rail({ tabs: weeks });
+    expect(dividers().map((d) => d.textContent)).toEqual(["Week 7", "Week 6", "Week 5"]);
+  });
+
+  it("puts each divider directly above the first tab of its week", async () => {
+    await rail({ tabs: weeks });
+    const rows = [...nav().querySelectorAll("ul > li")].map((li) => li.textContent);
+    expect(rows).toEqual(["Week 7", "Oct 23", "Oct 20", "Week 6", "Oct 16", "Week 5", "Oct 6"]);
+  });
+
+  it("draws no divider for undated tabs", async () => {
+    await rail({
+      tabs: [{ id: "a", label: "Agenda", meeting: null, isNote: false, week: null }, ...weeks.slice(0, 1)],
+    });
+    expect(dividers().map((d) => d.textContent)).toEqual(["Week 7"]);
+  });
+
+  it("draws no dividers when no tab has a week", async () => {
+    await rail();
+    expect(dividers()).toHaveLength(0);
+  });
+
+  const spaced = () => dividers().map((d) => d.className.split(" ").includes("pt-3"));
+
+  it("spaces every divider off the tabs above it, except a divider on the first row", async () => {
+    await rail({ tabs: weeks });
+    expect(spaced()).toEqual([false, true, true]);
+  });
+
+  it("spaces the first divider when undated tabs sit above it", async () => {
+    await rail({
+      tabs: [{ id: "a", label: "Agenda", meeting: null, isNote: false, week: null }, ...weeks],
+    });
+    expect(spaced()).toEqual([true, true, true]);
+  });
+
+  it("is a presentational row, not a link", async () => {
+    await rail({ tabs: weeks });
+    for (const d of dividers()) {
+      expect(d.getAttribute("role")).toBe("presentation");
+      expect(d.querySelector("a")).toBeNull();
+    }
+  });
+
+  it("only shows at lg and up, where the rail is a column", async () => {
+    await rail({ tabs: weeks });
+    for (const d of dividers()) {
+      expect(d.className).toMatch(/(^|\s)hidden(\s|$)/);
+      expect(d.className).toContain("lg:flex");
+    }
   });
 });
 

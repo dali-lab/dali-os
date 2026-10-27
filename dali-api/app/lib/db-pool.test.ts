@@ -11,6 +11,7 @@ describe("poolConfig", () => {
       max: 25,
       min: 5,
       idleTimeoutMillis: 300_000,
+      allowExitOnIdle: true,
     });
   });
 
