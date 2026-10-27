@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { Settings } from "lucide-react";
-import { activeQuickItem, badgeLabel, orderRailAreas, splitFavorites, userMenuEntries } from "~/components/shell/rail-model";
+import { activeQuickItem, badgeLabel, orderRailAreas, splitFavorites, upcomingWhen, userMenuEntries } from "~/components/shell/rail-model";
 import { homeNavItem, pinnedNavItems } from "~/lib/nav-areas";
 
 const member = { isAlumni: false, isNewMember: false };
@@ -110,5 +110,30 @@ describe("orderRailAreas", () => {
 
   it("puts unknown areas last", () => {
     expect(orderRailAreas([mk("zzz"), mk("core")]).map((a) => a.key)).toEqual(["core", "zzz"]);
+  });
+});
+
+describe("upcomingWhen", () => {
+  const NY = "America/New_York";
+  const now = new Date("2026-10-13T16:00:00Z"); // Tue Oct 13, noon in New York
+
+  it("shows the time for a meeting later today", () => {
+    expect(upcomingWhen("2026-10-13T18:00:00Z", now, NY)).toBe("2:00 PM");
+    expect(upcomingWhen("2026-10-13T19:30:00Z", now, NY)).toBe("3:30 PM");
+  });
+
+  it("shows the weekday for a meeting on a later day", () => {
+    expect(upcomingWhen("2026-10-14T14:00:00Z", now, NY)).toBe("Wed");
+    expect(upcomingWhen("2026-10-19T14:00:00Z", now, NY)).toBe("Mon");
+  });
+
+  it("decides today by the viewer's zone, not UTC", () => {
+    // 11:30 PM Tuesday in New York is already Wednesday in UTC.
+    expect(upcomingWhen("2026-10-14T03:30:00Z", now, NY)).toBe("11:30 PM");
+    expect(upcomingWhen("2026-10-14T03:30:00Z", now, "UTC")).toBe("Wed");
+  });
+
+  it("uses a plain space before AM/PM", () => {
+    expect(upcomingWhen("2026-10-13T18:00:00Z", now, NY)).not.toMatch(/ /);
   });
 });
