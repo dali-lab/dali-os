@@ -9,6 +9,8 @@ import { FeatureFlagsProvider } from "~/components/FeatureFlags";
 import { ToastProvider } from "~/components/ui/toast";
 import { Menu } from "~/components/ui/floating";
 import { ProjectViewSwitch } from "~/projects/components/ProjectViewSwitch";
+import { Mail } from "lucide-react";
+import { DEFAULT_AREA_TINT } from "~/lib/nav-areas";
 
 vi.mock("~/components/page-docs/PageDocButton", () => ({
   PageDocButton: () => createElement("button", { type: "button", "aria-label": "Open this page's guide" }),
@@ -25,7 +27,13 @@ async function mount({
   page,
   tabs = true,
   onCopyLink = () => {},
-}: { page?: ReactNode; tabs?: boolean; onCopyLink?: () => void } = {}) {
+  tile = {},
+}: {
+  page?: ReactNode;
+  tabs?: boolean;
+  onCopyLink?: () => void;
+  tile?: { areaKey?: string; icon?: typeof Mail };
+} = {}) {
   const Stub = createRoutesStub([
     {
       path: "*",
@@ -36,7 +44,7 @@ async function mount({
           createElement(FeatureFlagsProvider, {
             flags: {},
             children: createElement(PageBarSlotProvider, {
-              children: createElement("div", null, page, createElement(PageBar, { tabs, star, onCopyLink })),
+              children: createElement("div", null, page, createElement(PageBar, { tabs, star, onCopyLink, ...tile })),
             }),
           }),
         ),
@@ -67,6 +75,30 @@ afterEach(() => {
 });
 
 describe("PageBar overflow", () => {
+  it("shows no section tile on a page with no area and no glyph", async () => {
+    await mount();
+    expect(container.querySelector("[data-area-tile]")).toBeNull();
+  });
+
+  it("shows the area's tile with the area's glyph", async () => {
+    await mount({ tile: { areaKey: "core" } });
+    const tile = container.querySelector<HTMLElement>("[data-area-tile='core']")!;
+    expect(tile.querySelector("svg")).not.toBeNull();
+  });
+
+  it("draws a page's own glyph in the selected area's tone", async () => {
+    await mount({ tile: { areaKey: "education", icon: Mail } });
+    const tile = container.querySelector<HTMLElement>("[data-area-tile='education']")!;
+    expect(tile.querySelector("svg.lucide-mail")).not.toBeNull();
+  });
+
+  it("draws a page's own glyph in the default tone when no area is selected", async () => {
+    await mount({ tile: { icon: Mail } });
+    const tile = container.querySelector<HTMLElement>("[data-area-tile]")!;
+    expect(tile.querySelector("svg.lucide-mail")).not.toBeNull();
+    expect(tile.style.getPropertyValue("--tile-tint")).toBe(DEFAULT_AREA_TINT);
+  });
+
   it("shows the guide, favorite and one more-actions button, and nothing else by default", async () => {
     await mount();
     expect(barButtons()).toEqual([
