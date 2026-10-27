@@ -82,7 +82,6 @@ import { useAdminAttention } from '~/admin/useAdminAttention'
 import { useEmailUnread } from '~/email/lib/use-email-unread'
 import { Rail } from '~/components/shell/Rail'
 import { RailEdgeHandle } from '~/components/shell/RailEdgeHandle'
-import { useSidebarSize } from '~/components/shell/useSidebarSize'
 import { userMenuEntries } from '~/components/shell/rail-model'
 import { PageBar } from '~/components/shell/PageBar'
 import { DockedNavigationProgress } from '~/components/NavigationProgress'
@@ -172,11 +171,9 @@ export function LayoutOS({
   const desktopTabsFlag = useFeatureFlag('desktop-tabs')
   const showTabs = useDesktopTabs(desktopTabsFlag && tabless, tabStripHint)
   const shellV2 = desktopTabsFlag && tabless
-  // Under the v2 shell the rail auto-compacts to an icon column on narrow
-  // windows; collapsing it (button, edge, ⌘\) hides it entirely, leaving only
-  // the expand button in the tab strip / page bar.
-  const { size: railSize, instant: railInstant } = useSidebarSize(shellV2)
-  const compactRail = shellV2 && railSize === 'compact'
+  // Under the v2 shell the rail is full width or hidden, nothing in between;
+  // collapsing it (button, edge, ⌘\) hides it entirely, leaving only the
+  // expand button in the tab strip / page bar.
   const [railHidden, setRailHidden] = useState(focusMode)
   const hideRail = shellV2 ? railHidden : focusMode
   const toggleRail = () => {
@@ -385,6 +382,11 @@ export function LayoutOS({
   const pinned = pinnedNavItems(roleFlags, navFlags)
   const home = homeNavItem(roleFlags)
   const activeArea = routeArea ?? areas.find((a) => a.key === lastAreaKey) ?? areas[0]
+  // Calendar, email and drive have no area of their own, so their page accent
+  // follows the rail's selected mode (home keeps the default accent).
+  const accentArea =
+    routeArea ??
+    (['/calendar', '/email', '/drive'].some((p) => path.startsWith(p)) ? activeArea : undefined)
   const adminAttention = useAdminAttention(activeArea?.key === 'admin', path)
   const activeSubtabs = activeArea ? visibleSubtabs(activeArea, roleFlags) : []
   const activeHref = activeArea ? activeSubtabHref(activeArea, path) : undefined
@@ -1008,7 +1010,7 @@ export function LayoutOS({
       onToggleBell={() => setBellOpen((o) => !o)}
       onOpenSearch={() => setPaletteOpen(true)}
       onHideRail={hideable ? toggleRail : undefined}
-      size={hideable ? railSize : 'expanded'}
+      size="expanded"
       animated={hideable}
       favorites={favorites}
       onFavoritesChange={onFavoritesChange}
@@ -1040,15 +1042,15 @@ export function LayoutOS({
           '--area-tint': areaTint(activeArea?.key),
           '--area-ink': areaInk(activeArea?.key),
           // The page accent (--color-os-accent resolves from these) follows the
-          // page's own mode — v2 design only. Keyed on routeArea, not
-          // activeArea: a modeless page (home, calendar) keeps the default
-          // accent even while the rail still shows the last section.
-          ...(desktopTabsFlag && routeArea
+          // page's own mode — v2 design only. Keyed on accentArea: the page's
+          // own area, or the rail's selected mode on the shared pages
+          // (calendar, email, drive); home keeps the default accent.
+          ...(desktopTabsFlag && accentArea
             ? {
-                '--mode-accent': areaTint(routeArea.key),
-                '--mode-accent-hover': `color-mix(in srgb, ${areaTint(routeArea.key)} 78%, white)`,
-                '--mode-accent-ink': areaInk(routeArea.key),
-                '--mode-accent-ink-hover': `color-mix(in srgb, ${areaInk(routeArea.key)} 82%, black)`,
+                '--mode-accent': areaTint(accentArea.key),
+                '--mode-accent-hover': `color-mix(in srgb, ${areaTint(accentArea.key)} 78%, white)`,
+                '--mode-accent-ink': areaInk(accentArea.key),
+                '--mode-accent-ink-hover': `color-mix(in srgb, ${areaInk(accentArea.key)} 82%, black)`,
               }
             : {}),
         } as React.CSSProperties
@@ -1067,15 +1069,7 @@ export function LayoutOS({
     >
       {shellV2
         ? !hideRail && (
-            <aside
-              data-size={railSize}
-              className={cn(
-                'fixed inset-y-0 left-0 z-20 hidden flex-col border-r border-os-container bg-os-nav md:flex',
-                compactRail ? 'w-[68px]' : 'w-[264px]',
-                !railInstant &&
-                  'transition-[width] duration-[220ms] ease-[cubic-bezier(0.23,1,0.32,1)] motion-reduce:transition-none',
-              )}
-            >
+            <aside className="fixed inset-y-0 left-0 z-20 hidden w-[264px] flex-col border-r border-os-container bg-os-nav md:flex">
               <div className="os-rail-scale h-full">{renderRail(true)}</div>
               <RailEdgeHandle onToggle={toggleRail} />
             </aside>
@@ -1164,13 +1158,10 @@ export function LayoutOS({
         className={cn(
           'flex min-w-0 flex-1 flex-col',
           shellV2
-            ? !railInstant &&
-                'transition-[padding] duration-[220ms] ease-[cubic-bezier(0.23,1,0.32,1)] motion-reduce:transition-none'
+            ? 'transition-[padding] duration-[220ms] ease-[cubic-bezier(0.23,1,0.32,1)] motion-reduce:transition-none'
             : 'transition-[padding] duration-200',
           fitViewport && 'min-h-0',
-          shellV2
-            ? !hideRail && (compactRail ? 'md:pl-[68px]' : 'md:pl-[264px]')
-            : !focusMode && mainPad,
+          shellV2 ? !hideRail && 'md:pl-[264px]' : !focusMode && mainPad,
         )}
       >
         {/* Impersonation is a session-mode indicator, so it sits above the top
