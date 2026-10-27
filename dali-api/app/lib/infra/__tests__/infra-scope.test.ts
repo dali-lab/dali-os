@@ -5,6 +5,7 @@ import {
   isSampleInScope,
   keepLinkedInOrg,
   neonCostSummary,
+  neonDailyUsage,
   orgResourceOptions,
   flyAppOptions,
   knownOrgs,
@@ -474,5 +475,35 @@ describe("unlinkedResources", () => {
 
   it("is empty when everything is linked", () => {
     expect(unlinkedResources(orgs, ["web", "dali-api-pr-9", "taken"])).toEqual([]);
+  });
+});
+
+describe("neonDailyUsage", () => {
+  const day = (iso: string, metric: string, value: number, scopeId = "np-a") =>
+    sample({ scopeType: SCOPE.neonDaily, scopeId, metric, value, at: new Date(iso) });
+
+  it("sums compute and data out per day across databases, oldest first", () => {
+    expect(
+      neonDailyUsage([
+        day("2026-10-25T00:00:00Z", "compute_unit_seconds", 10),
+        day("2026-10-24T00:00:00Z", "compute_unit_seconds", 5),
+        day("2026-10-24T00:00:00Z", "compute_unit_seconds", 7, "np-c"),
+        day("2026-10-24T00:00:00Z", "public_network_transfer_bytes", 100),
+      ]),
+    ).toEqual([
+      { day: "2026-10-24", compute_unit_seconds: 12, public_network_transfer_bytes: 100 },
+      { day: "2026-10-25", compute_unit_seconds: 10, public_network_transfer_bytes: 0 },
+    ]);
+  });
+
+  it("leaves out other metrics and monthly, branch and Fly rows", () => {
+    expect(
+      neonDailyUsage([
+        day("2026-10-24T00:00:00Z", "root_branch_bytes_month", 1e9),
+        sample({ scopeType: SCOPE.neonMonth, at: OCT, value: 1e9 }),
+        sample({ scopeType: SCOPE.neonBranchMonth, scopeId: "np-a:br", at: OCT, value: 1e9 }),
+        sample({ provider: "fly", scopeType: SCOPE.flyApp, scopeId: "web", metric: "egress_bytes", value: 1e9 }),
+      ]),
+    ).toEqual([]);
   });
 });

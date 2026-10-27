@@ -16,13 +16,13 @@ import {
   protectedFlyApps,
   protectedNeonProjectIds,
 } from "./guard.server";
-import { monthStart } from "./neon-cost";
 import {
   branchUsage,
   flyAppOptions,
   isSampleInScope,
   knownOrgs,
   neonCostSummary,
+  neonDailyUsage,
   neonProjectOptions,
   projectUsage,
   scopeFlyInventory,
@@ -31,6 +31,7 @@ import {
   type KnownOrg,
   type NeonBranchUsage,
   type NeonCostSummary,
+  type NeonDailyRow,
   type ScopedSample,
   type UsageSeries,
 } from "./infra-scope";
@@ -66,6 +67,8 @@ export type ProjectFleet = {
   flyFetchedAt: string | null;
   neonFetchedAt: string | null;
   usage: UsageSeries[];
+  /** Daily Neon totals for the usage chart, oldest first. */
+  neonDaily: NeonDailyRow[];
 };
 
 export type CleanupCandidate = {
@@ -125,17 +128,20 @@ export function buildProjectFleet(
     flyFetchedAt: fly?.fetchedAt.toISOString() ?? null,
     neonFetchedAt: neon?.fetchedAt.toISOString() ?? null,
     usage: projectUsage(mine, now),
+    neonDaily: neonDailyUsage(mine),
   };
 }
 
 const FLY_SAMPLE_DAYS = 3;
+const NEON_SAMPLE_DAYS = 90;
 
-// Neon rows back to last month's start (estimates + daily sparklines); Fly rows
-// are hourly per app, so a few days covers the 40-point sparkline.
+// Neon rows cover the chart's longest range, which always reaches back past
+// last month's start for the estimates; Fly rows are hourly per app, so a few
+// days covers the 40-point sparkline.
 function recentSamplesWhere(now: Date) {
   return {
     OR: [
-      { provider: "neon", at: { gte: monthStart(now, -1) } },
+      { provider: "neon", at: { gte: new Date(now.getTime() - NEON_SAMPLE_DAYS * 86_400_000) } },
       { provider: "fly", at: { gte: new Date(now.getTime() - FLY_SAMPLE_DAYS * 86_400_000) } },
     ],
   };

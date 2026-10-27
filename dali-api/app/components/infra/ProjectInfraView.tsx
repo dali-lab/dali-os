@@ -21,14 +21,21 @@ import {
   UsageStrip,
   volumeSummary,
 } from "./format";
+import { NeonUsageChart } from "./NeonUsageChart";
+import { NEON_CHART_METRICS } from "~/lib/infra/infra-scope";
 
 export function ProjectInfraView({ project: p }: { project: ProjectFleet }) {
   const flyApps = p.fly?.apps ?? [];
   const neonProjects = p.neon?.projects ?? [];
+  const neonChart = p.neonDaily.length > 0;
+  const stripUsage = neonChart
+    ? p.usage.filter((u) => !(NEON_CHART_METRICS as readonly string[]).includes(u.metric))
+    : p.usage;
 
   return (
     <div className="flex flex-col gap-4">
-      <UsageStrip usage={p.usage} />
+      {neonChart && <NeonUsageChart project={p} />}
+      {(!neonChart || stripUsage.length > 0) && <UsageStrip usage={stripUsage} />}
 
       <div className="flex flex-wrap items-center gap-3 text-xs">
         {p.flyOrgSlug && (
@@ -51,7 +58,7 @@ export function ProjectInfraView({ project: p }: { project: ProjectFleet }) {
             Neon billing <ExternalLink className="h-3 w-3" />
           </a>
         )}
-        <NeonCostLine plan={p.neonPlan} cost={p.neonCost} />
+        {!neonChart && <NeonCostLine plan={p.neonPlan} cost={p.neonCost} />}
       </div>
 
       {/* Fly */}
