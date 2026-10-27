@@ -821,7 +821,7 @@ export function DocumentEditor({
           <span
             data-testid="doc-sync-status"
             tabIndex={0}
-            className={cn("shrink-0 inline-flex items-center", syncState === "offline" && "text-os-amber")}
+            className={cn("shrink-0 inline-flex items-center", syncState === "offline" && "mr-1.5 text-os-amber")}
           >
             {SYNC_ICONS[syncState]}
             <span className="sr-only">{SYNC_LABELS[syncState]}</span>
@@ -860,17 +860,15 @@ export function DocumentEditor({
   );
 
   const shareButton = canManageAccess && (
-    <Tooltip content="Share">
-      <button
-        type="button"
-        onClick={() => setAccessOpen(true)}
-        aria-label="Share"
-        className={inPageBar ? "os-edit-btn os-edit-btn--sm os-edit-btn--strong" : actionBtn()}
-      >
-        <Users className={actionIcon} />
-        <span className="hidden sm:inline">Share</span>
-      </button>
-    </Tooltip>
+    <button
+      type="button"
+      onClick={() => setAccessOpen(true)}
+      aria-label="Share"
+      className={inPageBar ? "os-edit-btn os-edit-btn--strong h-8" : actionBtn()}
+    >
+      <Users className={actionIcon} />
+      <span className="hidden sm:inline">Share</span>
+    </button>
   );
 
   // In the page-bar shell the breadcrumb row keeps only the lightweight status

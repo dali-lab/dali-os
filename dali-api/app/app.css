@@ -2353,8 +2353,9 @@ html[data-v2].os-shell {
 /* The page accent is the same pastel the sidebar mode wears — in light too,
    not the deeper on-white ink: one highlight per mode, identical in both
    themes. (This sits after the html.light token block, so it wins there.)
-   Modeless pages (home, calendar, a meeting opened from Attendance) have no
-   --mode-accent and fall back to the Lab blue instead of the old teal. */
+   The shell keys --mode-accent on the page's own area, and calendar, email
+   and drive follow the rail's selected mode; only truly modeless pages (home,
+   a meeting opened from Attendance) fall back to the Lab blue. */
 html[data-v2] .os-shell,
 html[data-v2].os-shell {
   /* A step lighter than the raw mode tint: 70% tint over white, hover lighter
@@ -2370,9 +2371,20 @@ html.light[data-v2] .os-shell,
 html.light[data-v2].os-shell {
   --os-accent-ink: var(--mode-accent-ink, #2f5fb5);
 }
-/* Text set in the accent (See all, inline links) reads from the ink half. */
-html[data-v2] .os-shell .text-os-accent {
+/* Text set in the accent (See all, inline links) reads from the ink half.
+   `.os-shell` sits on <html> too, so the second form reaches content portaled
+   to <body> (drawers, modals) that the descendant form misses. */
+html[data-v2] .os-shell .text-os-accent,
+html[data-v2].os-shell .text-os-accent {
   color: var(--os-accent-ink);
+}
+/* Accent-filled controls written as utilities (Add event, the mini-month's
+   today pill): on light the v2 accent is a pale wash, and the page-background
+   ink that read on the old deep accent disappears into it. The label takes a
+   deep shade of the mode ink instead — the .os-btn-tint recipe. */
+html.light[data-v2] .os-shell .bg-os-accent.text-os-bg,
+html.light[data-v2].os-shell .bg-os-accent.text-os-bg {
+  color: color-mix(in srgb, var(--os-accent-ink) 70%, black);
 }
 
 /* Page/section titles written as literal classes (the useOsChrome hook gates
@@ -2479,14 +2491,18 @@ html[data-v2] .os-shell .dali-btn--size-md {
 /* Filled-accent buttons sit on the pale wash in both modes, so the os-bg
    numeral (white in light) vanishes — the label flips to a near-black ink
    warmed by the area's own hue. */
-html[data-v2] .os-shell .dali-btn--primary {
+html[data-v2] .os-shell .dali-btn--primary,
+html[data-v2].os-shell .dali-btn--primary {
   color: color-mix(in srgb, var(--mode-accent-ink, #2f5fb5) 55%, black);
 }
-/* Task/notification card CTAs: back on the 32px control height (the min-h-9
-   they carry is the pre-redesign touch size). */
-html[data-v2] .os-shell .os-cta {
-  min-height: 32px;
-  padding-inline: 12px;
+/* Task/notification card CTAs (Open task, Confirm, RSVP): a small chip, well
+   under the 32px control height — the cards are dense and the CTA is not the
+   page's lead action. */
+html[data-v2] .os-shell .os-cta,
+html[data-v2].os-shell .os-cta {
+  height: 26px;
+  min-height: 26px;
+  padding-inline: 10px;
 }
 /* Task/notification cards, one notch tighter. */
 html[data-v2] .os-shell .os-task-card {

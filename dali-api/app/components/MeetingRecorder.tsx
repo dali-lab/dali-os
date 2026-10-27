@@ -67,7 +67,7 @@ export function MeetingRecorder({
       aria-pressed={rec.phase !== "idle" ? rec.open : undefined}
       data-recording={live || undefined}
       className={cn(
-        settled ? "os-edit-btn os-edit-btn--sm os-edit-btn--strong" : actionBtnPrimary,
+        settled ? "os-edit-btn os-edit-btn--strong h-8" : actionBtnPrimary,
         live && "border-os-accent bg-os-accent text-navy-deep hover:border-accent-coral-light hover:bg-accent-coral-light",
       )}
     >
@@ -83,6 +83,8 @@ export function MeetingRecorder({
         <Popover trigger={button} ariaLabel="Recording">
           <LivePopoverBody rec={rec} />
         </Popover>
+      ) : settled ? (
+        button
       ) : (
         <Tooltip content={status ?? triggerLabel}>{button}</Tooltip>
       )}
