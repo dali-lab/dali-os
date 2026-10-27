@@ -1185,10 +1185,23 @@ select:not(:disabled) {
 }
 
 /* The sidebar's scale: one notch above the app's 15px grid, back on the 16px
-   grid the sidebar design was drawn on. Keep in sync with RAIL_ZOOM
-   (rail-model.ts), which un-scales the rail's fixed-position menus. */
-.os-rail-zoom {
-  zoom: calc(16 / 15);
+   grid the sidebar design was drawn on. Restated through Tailwind's theme
+   variables rather than CSS zoom: WebKit measures a zoomed subtree in its own
+   unzoomed pixels and Chrome in viewport pixels, so the rail's anchored menus
+   could not be placed right in both. */
+.os-rail-scale {
+  font-size: 16px;
+  --spacing: 4px;
+  --text-xs: 12px;
+  --text-sm: 14px;
+  --text-base: 16px;
+  --text-lg: 18px;
+  --text-xl: 20px;
+  --radius-xs: 2px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
 }
 
 /* The dali.os type system alone (Plus Jakarta Sans headings over Mulish),
