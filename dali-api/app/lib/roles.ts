@@ -39,10 +39,11 @@ export interface UserRoles {
   /** Interviewer on any cycle — mirrors the reviewer/interviewer sidebar convention. */
   isInterviewer: boolean;
   /**
-   * Graduated former member — reads the stored `User.membershipStatus`
-   * (recomputed at transitions; see membership-status.ts). Informational for
-   * now: access is NOT suppressed here. The alumni sidebar variant + route
-   * guards land in a follow-up, where this flag will gate them.
+   * Gets the alumni experience (the single-area sidebar, Connect as home,
+   * the single notification feed). Reads the stored `User.membershipStatus`
+   * (recomputed at transitions; see membership-status.ts), but authority wins
+   * like it does for `tier()`: an alum who is currently Admin or Core is
+   * working in the lab, so they keep the member view.
    */
   isAlumni: boolean;
   /**
@@ -110,7 +111,7 @@ async function computeGetUserRoles(userId: string, request?: Request): Promise<U
     isDomainLead: domainLead !== null,
     isInstructor: isInstructorVal,
     isInterviewer: interviewer !== null,
-    isAlumni: userRow?.membershipStatus === "Alumni",
+    isAlumni: userRow?.membershipStatus === "Alumni" && !isAdminVal && !isCoreVal,
     isStaff: admin?.isStaff === true,
     canViewForms: isAdminVal || isCoreVal || isInstructorVal,
     canViewStaffing: isAdminVal || isCoreVal,

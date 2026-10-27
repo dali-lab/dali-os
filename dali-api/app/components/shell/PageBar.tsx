@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { AppWindow, Link as LinkIcon, Star } from 'lucide-react'
+import { AppWindow, Link as LinkIcon, Star, type LucideIcon } from 'lucide-react'
 import { Menu, Tooltip } from '~/components/ui/floating'
 import { AreaTile } from '~/components/shell/AreaTile'
 import { OverflowMenu } from '~/components/shell/OverflowMenu'
@@ -73,6 +73,7 @@ export function PageBar({
   tabs,
   leading,
   areaKey,
+  icon,
   star,
   onCopyLink,
 }: {
@@ -80,6 +81,8 @@ export function PageBar({
   leading?: ReactNode
   /** The page's section, shown as its tile beside the breadcrumb. */
   areaKey?: string
+  /** Overrides the area's glyph; with no areaKey the tile wears the default tone. */
+  icon?: LucideIcon
   star: PageStar
   onCopyLink: () => void
 }) {
@@ -107,7 +110,7 @@ export function PageBar({
         <div className="-ml-2 hidden empty:ml-0 md:block">
           <TablessHistoryNav tabless tabs={tabs} />
         </div>
-        {areaKey && <AreaTile areaKey={areaKey} size={22} />}
+        {(areaKey || icon) && <AreaTile areaKey={areaKey ?? 'default'} size={22} icon={icon} />}
         <DisplayedPage>
           <PageBarCrumbs />
         </DisplayedPage>

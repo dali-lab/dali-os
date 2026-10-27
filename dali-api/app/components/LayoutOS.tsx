@@ -68,6 +68,7 @@ import {
   areaTint,
   pinnedNavItems,
   homeNavItem,
+  shellPageIcon,
   ROOM_BOOKING_NAV_ITEM,
   activeSubtabHref,
   isPinnedActive,
@@ -81,6 +82,7 @@ import { UnreadBadge } from '~/email/components/UnreadBadge'
 import { useAdminAttention } from '~/admin/useAdminAttention'
 import { useEmailUnread } from '~/email/lib/use-email-unread'
 import { Rail } from '~/components/shell/Rail'
+import { useUpcomingMeetings } from '~/components/shell/RailUpcoming'
 import { RailEdgeHandle } from '~/components/shell/RailEdgeHandle'
 import { userMenuEntries } from '~/components/shell/rail-model'
 import { PageBar } from '~/components/shell/PageBar'
@@ -444,6 +446,7 @@ export function LayoutOS({
   // feed rows that aren't already a task, and assigned project work — so the
   // two can't disagree.
   const taskCount = attentionCount(openTasks, feedItems, projectTasks)
+  const upcoming = useUpcomingMeetings(shellV2)
 
   /* ---------------- Tasks drawer (bell, top bar) ---------------- */
   // The bell owns the attention stack that used to be a banner on Home: open
@@ -1015,6 +1018,7 @@ export function LayoutOS({
       favorites={favorites}
       onFavoritesChange={onFavoritesChange}
       favoritesActiveHref={stripHash(cleanTabUrl(location.pathname + location.search))}
+      upcoming={upcoming}
       areas={areas}
       activeArea={activeArea}
       activeSubtabs={activeSubtabs}
@@ -1185,7 +1189,8 @@ export function LayoutOS({
               leading={
                 hideRail && !showTabs ? <div className="hidden md:block">{railToggle}</div> : undefined
               }
-              areaKey={routeArea?.key}
+              areaKey={accentArea?.key}
+              icon={routeArea ? undefined : shellPageIcon(path, home.href)}
               star={pageStar}
               onCopyLink={() => void copyCurrentPageLink()}
             />

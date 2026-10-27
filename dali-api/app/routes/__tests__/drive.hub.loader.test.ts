@@ -9,8 +9,6 @@ vi.mock("~/lib/login-next", () => ({ redirectToLogin: vi.fn(() => new Response(n
 vi.mock("~/lib/roles", () => ({ getUserRoles: vi.fn() }));
 vi.mock("~/lib/terms", () => ({ resolveTermFilter: vi.fn() }));
 vi.mock("~/lib/drive-scopes.server", () => ({ loadDriveScopes: vi.fn() }));
-vi.mock("~/lib/drive-home.server", () => ({ loadDriveHome: vi.fn() }));
-vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabled: vi.fn() }));
 vi.mock("~/forms/lib/form-access.server", () => ({ formsUsePageAccess: vi.fn() }));
 vi.mock("~/lib/drive-hub.server", () => ({
   loadProjectWorkspaces: vi.fn(),
@@ -23,8 +21,6 @@ import { requireAuth, isNonMember, redirectPartnerToPortal } from "~/lib/auth";
 import { getUserRoles } from "~/lib/roles";
 import { resolveTermFilter } from "~/lib/terms";
 import { loadDriveScopes } from "~/lib/drive-scopes.server";
-import { loadDriveHome } from "~/lib/drive-home.server";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { formsUsePageAccess } from "~/forms/lib/form-access.server";
 import {
   loadProjectWorkspaces,
@@ -51,8 +47,6 @@ beforeEach(() => {
   vi.mocked(loadDriveScopes).mockResolvedValue([{ id: "lab", items: [] }] as never);
   vi.mocked(loadItemTagIds).mockResolvedValue({ d1: ["t1"] });
   vi.mocked(loadAllDocTags).mockResolvedValue([{ id: "t1" }] as never);
-  vi.mocked(isFeatureEnabled).mockResolvedValue(true);
-  vi.mocked(loadDriveHome).mockResolvedValue({ recent: [] } as never);
   vi.mocked(formsUsePageAccess).mockResolvedValue(false);
 });
 
@@ -72,8 +66,6 @@ describe("drive hub loader", () => {
       itemTagIds: { d1: ["t1"] },
       canViewForms: true,
       canManageAgreements: false,
-      homeEnabled: true,
-      home: { recent: [] },
       viewerId: "u1",
     });
   });
@@ -118,14 +110,13 @@ describe("drive hub loader", () => {
     expect(loadProjectWorkspaces).toHaveBeenCalledWith(expect.objectContaining({ termId: null }));
   });
 
-  it("skips the home query when the flag is off", async () => {
-    vi.mocked(isFeatureEnabled).mockResolvedValue(false);
+  it("loads no upcoming or recent strip; those live in the sidebar", async () => {
     const data = await run();
-    expect(loadDriveHome).not.toHaveBeenCalled();
-    expect(data).toMatchObject({ homeEnabled: false, home: null });
+    expect(data).not.toHaveProperty("home");
+    expect(data).not.toHaveProperty("homeEnabled");
   });
 
-  it("starts the tags, receivers flag and home before the slow scope load finishes", async () => {
+  it("starts the tags before the slow scope load finishes", async () => {
     let finishScopes!: () => void;
     vi.mocked(loadDriveScopes).mockImplementation(
       () => new Promise((resolve) => (finishScopes = () => resolve([]))) as never,
@@ -135,7 +126,6 @@ describe("drive hub loader", () => {
     await vi.waitFor(() => {
       expect(loadDriveScopes).toHaveBeenCalled();
       expect(loadAllDocTags).toHaveBeenCalled();
-      expect(loadDriveHome).toHaveBeenCalled();
     });
     expect(loadItemTagIds).not.toHaveBeenCalled();
     finishScopes();

@@ -37,6 +37,7 @@ const AUTHOR_SELECT = {
 const TILE_SELECT = {
   id: true,
   imageKey: true,
+  displayKey: true,
   thumbKey: true,
   width: true,
   height: true,
@@ -87,7 +88,7 @@ async function toTiles(rows: TileRow[], viewer: GalleryViewer) {
   return Promise.all(
     rows.map(async (r) => ({
       id: r.id,
-      imageUrl: await galleryImageUrl(r.thumbKey ?? r.imageKey),
+      imageUrl: await galleryImageUrl(r.thumbKey ?? r.displayKey ?? r.imageKey),
       width: r.width,
       height: r.height,
       color: r.color,
@@ -249,7 +250,7 @@ export async function loadGalleryPost(viewer: GalleryViewer, postId: string) {
   const person = personResolver();
   const [[tile], fullImageUrl] = await Promise.all([
     toTiles([row], viewer),
-    galleryImageUrl(row.imageKey),
+    galleryImageUrl(row.displayKey ?? row.imageKey),
   ]);
   return {
     ...tile,
@@ -270,9 +271,11 @@ export async function loadGalleryPost(viewer: GalleryViewer, postId: string) {
 
 export type GalleryPostDetail = NonNullable<Awaited<ReturnType<typeof loadGalleryPost>>>;
 
-// Returned, not thrown: every intent posts through a fetcher, and a thrown
-// response would replace the feed with the error boundary.
-const fail = (status: number, error?: string) => data({ ok: false as const, error }, { status });
+export type GalleryIntentResult =
+  | { ok: true; created?: number }
+  | { ok: false; status: number; error?: string };
+
+const fail = (status: number, error?: string): GalleryIntentResult => ({ ok: false, status, error });
 
 async function visiblePost(viewer: GalleryViewer, id: string) {
   return prisma.galleryPost.findFirst({
@@ -285,13 +288,28 @@ function captionPreview(caption: string | null) {
   return caption ? `"${caption.length > 80 ? `${caption.slice(0, 79)}…` : caption}"` : "Your photo";
 }
 
+// Returned, not thrown: every intent posts through a fetcher, and a thrown
+// response would replace the feed with the error boundary.
 export async function galleryAction(request: Request, viewer: GalleryViewer) {
   const form = await request.formData();
-  const text = (name: string) => String(form.get(name) ?? "").trim();
+  const fields: Record<string, string> = {};
+  for (const [name, value] of form) if (typeof value === "string") fields[name] = value;
+  const result = await applyGalleryIntent(request, viewer, fields);
+  if (result.ok) return result;
+  return data({ ok: false as const, error: result.error }, { status: result.status });
+}
+
+/** One gallery write, shared by the feed and post page actions and MCP. `fields.intent` names it. */
+export async function applyGalleryIntent(
+  request: Request,
+  viewer: GalleryViewer,
+  fields: Record<string, string>,
+): Promise<GalleryIntentResult> {
+  const text = (name: string) => (fields[name] ?? "").trim();
   const postId = text("postId");
   const link = `/community/gallery/${postId}`;
 
-  switch (form.get("intent")) {
+  switch (fields.intent) {
     case "create": {
       const limited = checkRateLimit(request, { max: 10, windowMs: 60_000 }, `gallery:${viewer.id}`);
       if (limited) return fail(429, "Too many uploads. Try again in a minute.");
@@ -307,7 +325,7 @@ export async function galleryAction(request: Request, viewer: GalleryViewer) {
           createdAt: new Date(now + (posts.length - 1 - i)),
         })),
       });
-      return { ok: true as const, created: posts.length };
+      return { ok: true, created: posts.length };
     }
     case "react": {
       const emoji = text("emoji");
@@ -411,5 +429,5 @@ export async function galleryAction(request: Request, viewer: GalleryViewer) {
     default:
       return fail(400);
   }
-  return { ok: true as const };
+  return { ok: true };
 }

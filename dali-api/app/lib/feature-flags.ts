@@ -154,12 +154,6 @@ export const FEATURE_FLAGS = [
       "Help hours, socials and info sessions on a hiring cycle. Core creates events on the cycle page, emails everyone who started an application, and takes attendance by QR self check-in or by hand. Attendance shows on application reviews as an engagement signal. Ships off.",
   },
   {
-    key: "drive-home",
-    label: "Drive Home",
-    description:
-      "Shows your upcoming meetings and recently opened documents above the space chooser at the Drive root. Ships off.",
-  },
-  {
     key: "forms-page-access",
     label: "Forms use page access",
     description:

@@ -345,3 +345,36 @@ describe("Rail compact sizing", () => {
     expect(active.getAttribute("aria-current")).toBe("page");
   });
 });
+
+describe("Rail section order", () => {
+  const fav = { id: "p1", title: "Roadmap", href: "/documents/p1", iconKind: "page", isRoute: false } as unknown as RailProps["favorites"][number];
+  const meeting = { meetingId: "m1", title: "Weekly sync", startsAt: "2026-10-14T18:00:00Z", href: "/documents/n1" };
+  const lab = area("lab");
+
+  // Each section sits right after its own divider; the last divider belongs to the account row.
+  const sectionsAfterDividers = () =>
+    Array.from(container.querySelectorAll("[role='separator']"))
+      .slice(0, -1)
+      .map((d) => (d.nextElementSibling?.textContent ?? "").slice(0, 8));
+
+  it("stacks Favorites, then the section, then Upcoming, each under a divider", async () => {
+    await mount({ favorites: [fav], areas: [lab, area("core")], activeArea: lab, upcoming: [meeting] });
+    expect(sectionsAfterDividers()).toEqual(["Favorite", "LAB", "Upcoming"]);
+  });
+
+  it("drops a missing section and its divider", async () => {
+    await mount({ areas: [lab, area("core")], activeArea: lab, upcoming: [meeting] });
+    expect(sectionsAfterDividers()).toEqual(["LAB", "Upcoming"]);
+  });
+
+  it("shows no Upcoming section without meetings", async () => {
+    await mount({ favorites: [fav], areas: [lab, area("core")], activeArea: lab });
+    expect(sectionsAfterDividers()).toEqual(["Favorite", "LAB"]);
+    expect(container.textContent).not.toContain("Upcoming");
+  });
+
+  it("keeps Upcoming out of the compact rail", async () => {
+    await mount({ size: "compact", areas: [lab, area("core")], activeArea: lab, upcoming: [meeting] });
+    expect(container.textContent).not.toContain("Weekly sync");
+  });
+});

@@ -12,11 +12,17 @@ import {
   layoutMasonry,
   parseNewPosts,
   toggleReaction,
-  encodeGalleryThumb,
+  encodeGalleryImage,
+  galleryDisplaySize,
+  galleryOriginalKeyPrefix,
+  isGalleryOriginalKey,
+  GALLERY_DISPLAY_MAX,
 } from "../gallery";
 
 const UUID = "0b8f4a52-6a51-4c3e-9d5b-2f1a7c9e8d10";
 const key = (userId = "u1", name = "photo.jpg") => `uploads/gallery/${userId}/${UUID}-${name}`;
+const originalKey = (userId = "u1", name = "photo.jpg") =>
+  `uploads/gallery-originals/${userId}/${UUID}-${name}`;
 const row = (over: Record<string, unknown> = {}) => ({
   imageKey: key(),
   width: 1200,
@@ -44,18 +50,43 @@ describe("isGalleryImageKey", () => {
   });
 });
 
+describe("isGalleryOriginalKey", () => {
+  it("accepts the poster's originals prefix", () => {
+    expect(galleryOriginalKeyPrefix("u1")).toBe("gallery-originals/u1");
+    expect(isGalleryOriginalKey(originalKey(), "u1")).toBe(true);
+  });
+
+  it("still accepts an original under the gallery prefix, from a composer loaded before the split", () => {
+    expect(isGalleryOriginalKey(key(), "u1")).toBe(true);
+  });
+
+  it("rejects someone else's original and path tricks", () => {
+    expect(isGalleryOriginalKey(originalKey("u2"), "u1")).toBe(false);
+    expect(isGalleryOriginalKey(`uploads/gallery-originals/u1/../x/${UUID}-a.png`, "u1")).toBe(false);
+  });
+
+  it("keeps originals out of the display and tile keys", () => {
+    expect(isGalleryImageKey(originalKey(), "u1")).toBe(false);
+  });
+});
+
 describe("parseNewPosts", () => {
   it("trims captions, lowercases colours and keeps composer order", () => {
     const posts = parseNewPosts(JSON.stringify([row(), row({ caption: "", width: 10 })]), "u1");
+    const base = { imageKey: key(), displayKey: null, thumbKey: null, height: 800, color: "#aabbcc" };
     expect(posts).toEqual([
-      { imageKey: key(), thumbKey: null, width: 1200, height: 800, color: "#aabbcc", caption: "Demo day" },
-      { imageKey: key(), thumbKey: null, width: 10, height: 800, color: "#aabbcc", caption: null },
+      { ...base, width: 1200, caption: "Demo day" },
+      { ...base, width: 10, caption: null },
     ]);
   });
 
-  it("keeps the poster's own thumbnail key", () => {
-    const thumb = key("u1", "thumb.webp");
-    expect(parseNewPosts(JSON.stringify([row({ thumbKey: thumb })]), "u1")?.[0].thumbKey).toBe(thumb);
+  it("keeps the poster's own original, display and thumbnail keys", () => {
+    const keys = {
+      imageKey: originalKey(),
+      displayKey: key("u1", "display.webp"),
+      thumbKey: key("u1", "thumb.webp"),
+    };
+    expect(parseNewPosts(JSON.stringify([row(keys)]), "u1")?.[0]).toMatchObject(keys);
   });
 
   it("treats a missing caption as none", () => {
@@ -69,6 +100,10 @@ describe("parseNewPosts", () => {
     ["a foreign key", JSON.stringify([row({ imageKey: key("u2") })])],
     ["a foreign thumbnail", JSON.stringify([row({ thumbKey: key("u2", "thumb.webp") })])],
     ["a numeric thumbnail", JSON.stringify([row({ thumbKey: 7 })])],
+    ["a foreign display copy", JSON.stringify([row({ displayKey: key("u2", "display.webp") })])],
+    ["a display copy under originals", JSON.stringify([row({ displayKey: originalKey() })])],
+    ["a numeric display copy", JSON.stringify([row({ displayKey: 7 })])],
+    ["a foreign original", JSON.stringify([row({ imageKey: originalKey("u2") })])],
     ["a zero width", JSON.stringify([row({ width: 0 })])],
     ["a fractional height", JSON.stringify([row({ height: 1.5 })])],
     ["a huge side", JSON.stringify([row({ width: 20_001 })])],
@@ -209,7 +244,7 @@ describe("galleryDownloadName", () => {
   });
 });
 
-describe("encodeGalleryThumb", () => {
+describe("encodeGalleryImage", () => {
   // A canvas that encodes the listed types and falls back to PNG for anything else, as browsers do.
   const canvas = (supported: string[]) => {
     const calls: Array<[string, number]> = [];
@@ -222,29 +257,57 @@ describe("encodeGalleryThumb", () => {
 
   it("uses WebP where the browser can encode it", async () => {
     const { calls, toBlob } = canvas(["image/webp", "image/jpeg"]);
-    const file = await encodeGalleryThumb(toBlob);
+    const file = await encodeGalleryImage(toBlob, "thumb");
     expect(file?.type).toBe("image/webp");
     expect(file?.name).toBe("thumb.webp");
     expect(calls).toEqual([["image/webp", 0.82]]);
   });
 
+  it("encodes the display copy at a higher quality, named for what it is", async () => {
+    const { calls, toBlob } = canvas(["image/webp"]);
+    const file = await encodeGalleryImage(toBlob, "display");
+    expect(file?.name).toBe("display.webp");
+    expect(calls).toEqual([["image/webp", 0.85]]);
+  });
+
   it("falls back to JPEG when WebP comes back as PNG (Safari, the macOS desktop app)", async () => {
     const { calls, toBlob } = canvas(["image/jpeg"]);
-    const file = await encodeGalleryThumb(toBlob);
+    const file = await encodeGalleryImage(toBlob, "display");
     expect(file?.type).toBe("image/jpeg");
-    expect(file?.name).toBe("thumb.jpg");
+    expect(file?.name).toBe("display.jpg");
     expect(calls.map(([type]) => type)).toEqual(["image/webp", "image/jpeg"]);
   });
 
-  it("names the thumbnail so it passes the gallery accept list and key check", async () => {
-    for (const supported of [["image/webp"], ["image/jpeg"]]) {
-      const file = await encodeGalleryThumb(canvas(supported).toBlob);
-      expect(isGalleryImageKey(key("u1", file!.name), "u1")).toBe(true);
+  it("names both copies so they pass the gallery accept list and key check", async () => {
+    for (const kind of ["thumb", "display"] as const) {
+      for (const supported of [["image/webp"], ["image/jpeg"]]) {
+        const file = await encodeGalleryImage(canvas(supported).toBlob, kind);
+        expect(isGalleryImageKey(key("u1", file!.name), "u1")).toBe(true);
+      }
     }
   });
 
-  it("gives up when neither format encodes, so the tile uses the original", async () => {
-    expect(await encodeGalleryThumb(canvas([]).toBlob)).toBeNull();
-    expect(await encodeGalleryThumb(async () => null)).toBeNull();
+  it("gives up when neither format encodes, so the page uses the original", async () => {
+    expect(await encodeGalleryImage(canvas([]).toBlob, "thumb")).toBeNull();
+    expect(await encodeGalleryImage(async () => null, "display")).toBeNull();
+  });
+});
+
+describe("galleryDisplaySize", () => {
+  it("skips the copy when the long side already fits", () => {
+    expect(galleryDisplaySize(GALLERY_DISPLAY_MAX, 1000)).toBeNull();
+    expect(galleryDisplaySize(640, 480)).toBeNull();
+  });
+
+  it("scales a landscape photo to the cap on its width", () => {
+    expect(galleryDisplaySize(4032, 3024)).toEqual({ width: 2048, height: 1536 });
+  });
+
+  it("scales a portrait photo to the cap on its height", () => {
+    expect(galleryDisplaySize(3024, 4032)).toEqual({ width: 1536, height: 2048 });
+  });
+
+  it("never rounds a thin side down to nothing", () => {
+    expect(galleryDisplaySize(20_000, 2)).toEqual({ width: 2048, height: 1 });
   });
 });
