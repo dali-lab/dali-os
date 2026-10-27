@@ -188,7 +188,10 @@ export async function claimRecording(
 ): Promise<{ ok: true; offset: number; segment: number } | { ok: false }> {
   if (rec.status !== "Pending" && rec.status !== "Recording") return { ok: false };
   if (rec.status === "Pending") {
-    await prisma.meetingRecording.update({ where: { id: rec.id }, data: { status: "Recording" } });
+    await prisma.meetingRecording.update({
+      where: { id: rec.id },
+      data: { status: "Recording", sessionStartedAt: new Date() },
+    });
   }
   const segment = Math.max(0, rec.segmentStarts.length - 1);
   return { ok: true, offset: rec.segmentStarts[segment] ?? 0, segment };
@@ -234,7 +237,7 @@ export async function recordChunk(
         voicedChannels,
         chunkIndex,
         lastChunkAt: new Date(),
-        ...(fresh.status === "Pending" ? { status: "Recording" as const } : {}),
+        ...(fresh.status === "Pending" ? { status: "Recording" as const, sessionStartedAt: new Date() } : {}),
       },
       select: { stopRequested: true },
     });

@@ -58,6 +58,8 @@ export type PollRecordingResponse = {
   status: RecordingStatus;
   channels: Channel[];
   recordedSeconds: number;
+  /** How long the live session has run, on the server's clock; null unless Recording. */
+  sessionSeconds?: number | null;
   lines: TranscriptLine[];
   speakers: Speakers;
   /** Server-resolved display name per assigned speaker key (a renamed

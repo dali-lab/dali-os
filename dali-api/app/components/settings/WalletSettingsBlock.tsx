@@ -42,7 +42,7 @@ export function WalletSettingsBlock({
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex flex-col gap-5 rounded-os-card bg-os-card p-6 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-5 rounded-os-card bg-os-card p-5 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-4">
           <SettingsIconTile accent>
             <Wallet className="h-5 w-5" />

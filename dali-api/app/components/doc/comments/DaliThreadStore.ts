@@ -397,7 +397,6 @@ export class DaliThreadStore extends ThreadStore {
     };
 
     es.addEventListener("change", scheduleRefetch);
-    // `sync` doubles as a cross-instance backstop — treat it like a nudge.
     es.addEventListener("sync", scheduleRefetch);
   }
 

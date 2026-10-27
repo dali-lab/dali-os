@@ -8,6 +8,7 @@ import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { listVisibleGroupIdsForUser } from "~/lib/groups";
 import { copyObject, getDownloadUrl, isS3Configured } from "~/lib/s3";
 import { logAuditEvent } from "~/lib/audit";
+import { invalidateLayoutCache } from "~/lib/layout-cache.server";
 import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
 import { notify } from "~/lib/notify.server";
 import { getFrontendUrl } from "~/lib/app-env";
@@ -100,6 +101,7 @@ export async function markReleaseNotesSeen(userId: string): Promise<void> {
     where: { id: userId },
     data: { releaseNotesSeenAt: new Date() },
   });
+  invalidateLayoutCache("releaseNotes", [userId]);
 }
 
 export async function listReleaseNotesForCore() {

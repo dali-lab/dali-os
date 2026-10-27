@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { Link, useMatches, useLocation } from 'react-router'
 import { Check, ChevronDown, ChevronRight } from 'lucide-react'
 import { cn } from '~/lib/cn'
@@ -8,11 +8,13 @@ import { FavoriteRouteButton } from '~/components/FavoriteRouteButton'
 import { isNavbarRoute } from '~/lib/navbar-routes'
 import { isAreaSubtabPath } from '~/lib/nav-areas'
 import { useFeatureFlag } from '~/components/FeatureFlags'
+import { stripAppTitle } from '~/lib/page-title'
 
 export type Crumb = {
   label: string
   to?: string
   icon?: ReactNode
+  emoji?: string | null
   // When set, the crumb renders as a dropdown "switcher" listing sibling
   // destinations (nested areas like Admin use this for lateral navigation).
   // `current` marks the active sibling. Purely additive — crumbs without
@@ -63,6 +65,9 @@ type Handle = {
   /** DB-backed detail pages (project, person, partner org) — star sits inline
    *  after the trail, not in the layout header. */
   favoriteRoute?: boolean
+  /** The page bar's trail for a page with no trail of its own (a document's
+   *  place in the Drive). The in-page breadcrumb row ignores it. */
+  shellTrail?: (data: unknown, params: URLSearchParams) => Crumb[] | null | undefined
 }
 
 // Shared shape so PageDocButton can read the same handle contract. Exported
@@ -237,10 +242,20 @@ export function CrumbSwitcher({
   )
 }
 
-export function Breadcrumbs() {
-  const matches = useMatches()
-  const { pathname, search } = useLocation()
-  const favoritesBar = useFeatureFlag('favorites-bar')
+export type ResolvedTrail = {
+  crumbs: Crumb[]
+  action: ReactNode
+  favoriteRoute: boolean
+}
+
+export type MatchLike = { pathname: string; handle?: unknown; data?: unknown }
+
+/** The trail for the current route, or null when the route shows none. */
+export function resolveTrail(
+  matches: MatchLike[],
+  pathname: string,
+  search: string,
+): ResolvedTrail | null {
   // Hiring and Mentorship drop the trail section-wide; their sidebar sub-tabs
   // are the wayfinding there.
   if (
@@ -291,7 +306,7 @@ export function Breadcrumbs() {
   if (fullTrail) {
     fullTrail.forEach((c, i) => {
       const leaf = i === fullTrail!.length - 1
-      crumbs.push({ label: c.label, to: leaf ? undefined : c.to, icon: c.icon, siblings: c.siblings })
+      crumbs.push({ label: c.label, to: leaf ? undefined : c.to, icon: c.icon, emoji: c.emoji, siblings: c.siblings })
     })
   }
   let afterDroppedId = false
@@ -312,7 +327,7 @@ export function Breadcrumbs() {
         // must never end on a link.
         dynamicLabel.forEach((c, j) => {
           const leaf = isLast && j === dynamicLabel.length - 1
-          crumbs.push({ label: c.label, to: leaf ? undefined : c.to, icon: c.icon, siblings: c.siblings })
+          crumbs.push({ label: c.label, to: leaf ? undefined : c.to, icon: c.icon, emoji: c.emoji, siblings: c.siblings })
         })
       } else {
         crumbs.push({ label: dynamicLabel, to: linkable ? to : undefined })
@@ -345,6 +360,17 @@ export function Breadcrumbs() {
   // pinnable too, without each route opting in via handle.
   if (!favoriteRoute && isAreaSubtabPath(pathname)) favoriteRoute = true
   if (favoriteRoute && isNavbarRoute(`${pathname}${search}`)) favoriteRoute = false
+
+  return { crumbs, action, favoriteRoute }
+}
+
+export function Breadcrumbs() {
+  const matches = useMatches()
+  const { pathname, search } = useLocation()
+  const favoritesBar = useFeatureFlag('favorites-bar')
+  const trail = resolveTrail(matches as MatchLike[], pathname, search)
+  if (!trail) return null
+  const { crumbs, action, favoriteRoute } = trail
 
   // Home / single-segment pages get no trail (but still show a page action).
   if (crumbs.length <= 1) {
@@ -381,5 +407,76 @@ export function Breadcrumbs() {
       </div>
       {action}
     </div>
+  )
+}
+
+export function useDocumentTitle(): string {
+  const { pathname, search } = useLocation()
+  const [title, setTitle] = useState('')
+  useEffect(() => {
+    const read = () => setTitle(stripAppTitle(document.title))
+    read()
+    const el = document.querySelector('title')
+    if (!el) return
+    const observer = new MutationObserver(read)
+    observer.observe(el, { childList: true, characterData: true, subtree: true })
+    return () => observer.disconnect()
+  }, [pathname, search])
+  return title
+}
+
+/** `resolveTrail`, falling back to the deepest route's `shellTrail` when the route has no trail of its own. */
+export function resolvePageBarTrail(
+  matches: MatchLike[],
+  pathname: string,
+  search: string,
+): ResolvedTrail | null {
+  const trail = resolveTrail(matches, pathname, search)
+  if (trail && trail.crumbs.length > 1) return trail
+  let shell: Crumb[] | null = null
+  const params = new URLSearchParams(search)
+  for (const m of matches as { handle?: Handle; data?: unknown }[]) {
+    if (m.handle?.shellTrail && m.data != null) shell = m.handle.shellTrail(m.data, params) ?? shell
+  }
+  if (!shell || shell.length < 2) return trail
+  return { crumbs: shell, action: trail?.action ?? null, favoriteRoute: trail?.favoriteRoute ?? false }
+}
+
+export function usePageTrail(): ResolvedTrail | null {
+  const matches = useMatches()
+  const { pathname, search } = useLocation()
+  return resolvePageBarTrail(matches as MatchLike[], pathname, search)
+}
+
+export function PageBarTrail({ crumbs }: { crumbs: Crumb[] }) {
+  if (crumbs.length === 0) return null
+  return (
+    <nav
+      aria-label="Breadcrumb"
+      className="flex min-w-0 items-center gap-1.5 whitespace-nowrap text-[13px] text-os-muted"
+    >
+      {crumbs.map((c, i) => {
+        const leaf = i === crumbs.length - 1
+        return (
+          <span key={i} className={cn('flex items-center gap-1.5', leaf ? 'min-w-0' : 'shrink-0')}>
+            {i > 0 && (
+              <span aria-hidden className="text-os-container-hi">
+                /
+              </span>
+            )}
+            {c.icon}
+            {c.siblings ? (
+              <CrumbSwitcher label={c.label} siblings={c.siblings} />
+            ) : c.to ? (
+              <Link to={c.to} className="transition-colors hover:text-foreground">
+                {c.label}
+              </Link>
+            ) : (
+              <span className="truncate font-semibold text-foreground">{c.label}</span>
+            )}
+          </span>
+        )
+      })}
+    </nav>
   )
 }

@@ -1131,7 +1131,7 @@ export default function PartnerApplicationDetail() {
           </p>
         ))}
       {tab === "details" && (
-        <div className="rounded-os-card bg-os-card p-6">
+        <div className="rounded-os-card bg-os-card p-5">
           <DetailsLayout>
             {propertyRail}
             {details}

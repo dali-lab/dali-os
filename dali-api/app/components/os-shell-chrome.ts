@@ -48,25 +48,35 @@ export function railRowClass(active: boolean, collapsed: boolean) {
 
 const ACCOUNT_MENU_MIN_WIDTH = 180
 
-// The account menu opens upward from the foot of the rail. It is pinned to the
+// The account menu opens upward from the foot of the rail — or, when the rail
+// is a compact icon column, out of its right edge. It is pinned to the
 // viewport rather than positioned inside the rail: the rail is a scroll
 // container, so anything wider than it is clipped, and collapsed the rail is
 // far narrower than the menu. Null while closed or not yet measured.
 export function useAccountMenuStyle(
   anchorRef: RefObject<HTMLElement | null>,
   open: boolean,
+  side: 'up' | 'right' = 'up',
 ): CSSProperties | null {
   const [style, setStyle] = useState<CSSProperties | null>(null)
 
   const measure = useCallback(() => {
     const rect = anchorRef.current?.getBoundingClientRect()
     if (!rect) return
-    setStyle({
-      left: rect.left,
-      bottom: window.innerHeight - rect.top + 8,
-      width: Math.max(rect.width, ACCOUNT_MENU_MIN_WIDTH),
-    })
-  }, [anchorRef])
+    setStyle(
+      side === 'right'
+        ? {
+            left: rect.right + 8,
+            bottom: window.innerHeight - rect.bottom,
+            width: ACCOUNT_MENU_MIN_WIDTH + 40,
+          }
+        : {
+            left: rect.left,
+            bottom: window.innerHeight - rect.top + 8,
+            width: Math.max(rect.width, ACCOUNT_MENU_MIN_WIDTH),
+          },
+    )
+  }, [anchorRef, side])
 
   useLayoutEffect(() => {
     if (open) measure()

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { redirect, useLoaderData, useSearchParams } from "react-router";
 import { ExternalLink, RotateCcw } from "lucide-react";
 import { SearchInput } from "~/components/ui/SearchInput";
@@ -123,7 +123,7 @@ function timeLabel(iso: string, tz: string): string {
   });
 }
 
-function HistoryTab({
+export function HistoryTab({
   initial,
   initialStatus,
 }: {
@@ -147,8 +147,13 @@ function HistoryTab({
     return () => window.clearTimeout(id);
   }, [q]);
 
-  // (Re)load the first page whenever a filter changes.
+  // (Re)load the first page whenever a filter changes. The loader already
+  // sent the page for the starting filters, so the first run has nothing to fetch.
+  const shownFilters = useRef(`${initialStatus}|`);
   useEffect(() => {
+    const filters = `${status}|${debouncedQ}`;
+    if (shownFilters.current === filters) return;
+    shownFilters.current = filters;
     let cancelled = false;
     setLoading(true);
     const params = new URLSearchParams({ status });
@@ -265,7 +270,7 @@ function HistoryTab({
               <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 {g.label}
               </h2>
-              <div className="grid grid-cols-1 gap-3.5 lg:grid-cols-2">
+              <div className="grid grid-cols-1 gap-3.5 lg:grid-cols-2 xl:grid-cols-3">
                 {g.rows.map((n) => (
                   <CardShell
                     key={n.id}

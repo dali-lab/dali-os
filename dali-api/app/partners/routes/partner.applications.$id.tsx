@@ -243,7 +243,7 @@ export default function PartnerApplicationDetail({
         <p className="text-sm text-destructive bg-destructive/10 rounded-lg px-4 py-3">{error}</p>
       )}
 
-      <section className="rounded-os-card bg-os-card p-6">
+      <section className="rounded-os-card bg-os-card p-5">
         <h2 className="font-heading text-[19px] font-semibold text-foreground mb-3">Pitch</h2>
         {canEditDetails && (
           <Form method="post" className="os-form flex flex-col gap-4">
@@ -295,7 +295,7 @@ export default function PartnerApplicationDetail({
       </section>
 
       {formAnswers.length > 0 && (
-        <section className="rounded-os-card bg-os-card p-6">
+        <section className="rounded-os-card bg-os-card p-5">
           <h2 className="font-heading text-[19px] font-semibold text-foreground mb-3">
             Application answers
           </h2>
@@ -314,7 +314,7 @@ export default function PartnerApplicationDetail({
         </section>
       )}
 
-      <section className="rounded-os-card bg-os-card p-6">
+      <section className="rounded-os-card bg-os-card p-5">
         <h2 className="font-heading text-[19px] font-semibold text-foreground">
           Statement of Work
         </h2>

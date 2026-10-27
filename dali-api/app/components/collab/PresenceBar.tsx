@@ -3,16 +3,19 @@ import { Link } from "react-router";
 import { usePresence, type Peer } from "./PresenceProvider";
 import { initialsFromName } from "./util";
 import { Tooltip } from "~/components/ui/floating";
+import { PageBarPortal, usePageBarSlot } from "~/components/shell/page-bar-slot";
 
 // Short grace period so moving the cursor from the chip across the gap to the
 // hover card doesn't briefly drop hover state and dismiss the card.
 const HOVER_CLOSE_DELAY_MS = 120;
+const DEFAULT_MAX = 4;
+const PAGE_BAR_MAX = 5;
 
 interface PresenceBarProps {
   className?: string;
   /**
    * Maximum avatars to show before collapsing into a "+N" chip.
-   * Defaults to 4.
+   * Defaults to 4, or 5 in the page bar.
    */
   max?: number;
 }
@@ -24,7 +27,8 @@ interface PresenceBarProps {
  * Reads from the surrounding <PresenceProvider>; renders nothing if none is
  * in tree, or if the only peer present is the local user.
  */
-export function PresenceBar({ className, max = 4 }: PresenceBarProps) {
+export function PresenceBar({ className, max }: PresenceBarProps) {
+  const inPageBar = usePageBarSlot();
   const ctx = usePresence();
   const peers = ctx?.peers;
 
@@ -59,10 +63,10 @@ export function PresenceBar({ className, max = 4 }: PresenceBarProps) {
   const remoteCount = visiblePeers.filter((p) => !p.isMe).length;
   if (remoteCount === 0) return null;
 
-  const shown = visiblePeers.slice(0, max);
+  const shown = visiblePeers.slice(0, max ?? (inPageBar ? PAGE_BAR_MAX : DEFAULT_MAX));
   const overflow = Math.max(0, visiblePeers.length - shown.length);
 
-  return (
+  const bar = (
     <div
       className={`inline-flex items-center gap-2 text-xs text-muted-foreground/70 ${className ?? ""}`}
     >
@@ -83,12 +87,17 @@ export function PresenceBar({ className, max = 4 }: PresenceBarProps) {
             key={p.clientId}
             peer={p}
             onFollow={ctx.followPeer}
+            inPageBar={inPageBar}
           />
         ))}
         {overflow > 0 && (
           <Tooltip content={`${overflow} more ${overflow === 1 ? "person" : "people"} also viewing`}>
             <span
-              className="relative inline-flex items-center justify-center w-6 h-6 rounded-full text-[10px] font-semibold text-muted-foreground bg-muted ring-2 ring-white"
+              className={
+                inPageBar
+                  ? "relative inline-flex h-[26px] items-center justify-center rounded-full bg-os-bg pl-2.5 text-[13px] font-semibold text-os-grey"
+                  : "relative inline-flex items-center justify-center w-6 h-6 rounded-full text-[10px] font-semibold text-muted-foreground bg-muted ring-2 ring-white"
+              }
             >
               +{overflow}
             </span>
@@ -97,6 +106,8 @@ export function PresenceBar({ className, max = 4 }: PresenceBarProps) {
       </div>
     </div>
   );
+
+  return inPageBar ? <PageBarPortal slot="presence">{bar}</PageBarPortal> : bar;
 }
 
 function ChipAvatar({ peer }: { peer: Peer }) {
@@ -123,9 +134,11 @@ function ChipAvatar({ peer }: { peer: Peer }) {
 function PresenceChip({
   peer,
   onFollow,
+  inPageBar = false,
 }: {
   peer: Peer;
   onFollow: (clientId: number) => void;
+  inPageBar?: boolean;
 }) {
   const followable = !peer.isMe && !!peer.currentEditor;
   const linkable = !!peer.userId && !peer.isMe;
@@ -161,7 +174,9 @@ function PresenceChip({
 
   const chipInner = (
     <span
-      className={`relative inline-flex items-center justify-center w-6 h-6 rounded-full overflow-hidden ring-2 ring-white transition-transform ${interactiveClass} ${idleClass}`}
+      className={`relative inline-flex items-center justify-center rounded-full overflow-hidden ring-2 transition-transform ${
+        inPageBar ? "h-[26px] w-[26px] ring-os-bg" : "h-6 w-6 ring-white"
+      } ${interactiveClass} ${idleClass}`}
       onPointerEnter={show}
       onPointerLeave={hideSoon}
       onFocus={show}

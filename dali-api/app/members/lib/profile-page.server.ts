@@ -33,7 +33,7 @@ import {
   isCore,
   isLabMentor,
 } from "~/lib/roles";
-import { listAllGroups } from "~/lib/groups";
+import { listActiveGroupsForUser } from "~/lib/groups";
 import { groupKind, orderGroupsForPicker, type GroupKind } from "~/lib/group-kind";
 import {
   ALLOWED_LEVELS,
@@ -357,7 +357,7 @@ export async function loadProfilePage({
   });
   if (!member) throw new Response("Not found", { status: 404 });
 
-  const [roles, term, allDomains, photoUrlResolved, presenceUser, canSeeGroups, allGroups] =
+  const [roles, term, allDomains, photoUrlResolved, presenceUser, canSeeGroups, memberGroups] =
     await Promise.all([
       getUserRoles(targetId),
       currentTerm(),
@@ -369,16 +369,19 @@ export async function loadProfilePage({
       resolvePhotoUrl(member.photoUrl),
       getPresenceUser(auth.user.sub),
       canViewForms(auth.user.sub, request),
-      listAllGroups(),
+      listActiveGroupsForUser(targetId, request),
     ]);
 
-  const groups = orderGroupsForPicker(
-    allGroups.filter((g) => {
-      if (g.archived || !g.memberIds.includes(targetId)) return false;
-      const kind = groupKind(g);
-      return kind === "custom" || kind === "lab";
-    }),
-  ).map((g) => ({ id: g.id, name: g.name, kind: groupKind(g) }));
+  const profileGroups = memberGroups.filter((g) => {
+    const kind = groupKind(g);
+    return kind === "custom" || kind === "lab";
+  });
+  // Keep every one: the member is in each, so none is an empty auto group.
+  const groups = orderGroupsForPicker(profileGroups, profileGroups.map((g) => g.id)).map((g) => ({
+    id: g.id,
+    name: g.name,
+    kind: groupKind(g),
+  }));
 
   const [projectAssignmentRows, pendingReviews] = await Promise.all([
     prisma.projectAssignment.findMany({

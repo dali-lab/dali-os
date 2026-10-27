@@ -1,0 +1,347 @@
+// @vitest-environment jsdom
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { act, createElement } from "react";
+import { createRoot, type Root } from "react-dom/client";
+import { createRoutesStub } from "react-router";
+import { Rail, type RailProps } from "~/components/shell/Rail";
+import { ToastProvider } from "~/components/ui/toast";
+import { Settings } from "lucide-react";
+import { homeNavItem, pinnedNavItems } from "~/lib/nav-areas";
+
+(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
+let container: HTMLDivElement;
+let root: Root;
+
+const base: RailProps = {
+  userName: "Ada Lovelace",
+  initials: "AL",
+  photoUrl: null,
+  path: "/",
+  navFlags: {},
+  isAlumni: false,
+  home: homeNavItem({ isAlumni: false }),
+  pinned: pinnedNavItems(),
+  tabClickProps: () => ({ onClick: vi.fn() }),
+  emailUnread: 0,
+  taskCount: 0,
+  bellOpen: false,
+  onToggleBell: vi.fn(),
+  onOpenSearch: vi.fn(),
+  onHideRail: vi.fn(),
+  favorites: [],
+  onFavoritesChange: vi.fn(),
+  favoritesActiveHref: null,
+  areas: [],
+  activeArea: undefined,
+  activeSubtabs: [],
+  activeHref: undefined,
+  onSelectArea: vi.fn(),
+  userMenuItems: [{ url: "/settings", label: "Settings", icon: Settings }],
+  showWhatsNewDot: false,
+};
+
+async function mount(over: Partial<RailProps> = {}) {
+  const props = { ...base, ...over };
+  const Stub = createRoutesStub([
+    { path: "*", Component: () => createElement(ToastProvider, null, createElement(Rail, props)) },
+  ]);
+  container = document.createElement("div");
+  document.body.appendChild(container);
+  root = createRoot(container);
+  await act(async () => {
+    root.render(createElement(Stub, { initialEntries: ["/"] }));
+  });
+}
+
+afterEach(() => {
+  act(() => root.unmount());
+  container.remove();
+});
+
+const area = (key: string) => ({ key, label: key.toUpperCase(), icon: Settings, hubPath: `/${key}`, subtabs: [] });
+
+const q = (sel: string) => container.querySelector(sel) as HTMLElement | null;
+
+describe("Rail top inset", () => {
+  it("adds 10px of top padding to the wordmark row when the tab strip is hidden", async () => {
+    await mount({ topInset: true });
+    expect(q("button[aria-label='DALI OS home']")!.parentElement!.className).toContain("pt-2.5");
+  });
+
+  it("adds none by default", async () => {
+    await mount();
+    expect(q("button[aria-label='DALI OS home']")!.parentElement!.className).not.toContain("pt-2.5");
+  });
+});
+
+describe("Rail", () => {
+  it("puts the wordmark, bell and sidebar toggle in the top row, above search", async () => {
+    const tabClickProps = vi.fn(() => ({ onClick: vi.fn() }));
+    await mount({ tabClickProps });
+    const wordmark = q("button[aria-label='DALI OS home']")!;
+    expect(wordmark.textContent).toBe("dali.os");
+    const topRow = wordmark.parentElement!;
+    expect(topRow.querySelector("button[aria-label^='Notifications']")).not.toBeNull();
+    expect(topRow.querySelector("button[aria-label='Hide sidebar']")).not.toBeNull();
+    expect(topRow.querySelector("button[aria-label='Search']")).toBeNull();
+    expect(tabClickProps).toHaveBeenCalledWith({ url: "/", label: "Home" });
+  });
+
+  it("labels the search box Search with the shortcut", async () => {
+    await mount();
+    const search = q("button[aria-label='Search']")!;
+    expect(search.textContent).toContain("Search");
+    expect(search.textContent).not.toContain("ask");
+    expect(search.textContent).toContain("⌘K");
+  });
+
+  it("opens only the active quick item's label; the others stay collapsed, ready to morph", async () => {
+    await mount({ path: "/calendar" });
+    const labelSpan = (name: string) =>
+      Array.from(container.querySelectorAll(`button[aria-label='${name}'] span`)).find(
+        (s) => s.textContent === name,
+      )!;
+    expect(labelSpan("Calendar").className).toContain("grid-cols-[1fr]");
+    expect(q("button[aria-label='Calendar']")!.getAttribute("aria-current")).toBe("page");
+    expect(labelSpan("Email").className).toContain("grid-cols-[0fr]");
+    expect(q("button[aria-label='Email']")!.getAttribute("aria-current")).toBeNull();
+  });
+
+  it("offers no Home quick item; the wordmark is the home button", async () => {
+    await mount({ path: "/" });
+    expect(q("button[aria-label='Home']")).toBeNull();
+    expect(q("button[aria-label='DALI OS home']")).not.toBeNull();
+  });
+
+  it("hides Email and Drive for alumni and sends Home to Connect", async () => {
+    const tabClickProps = vi.fn(() => ({ onClick: vi.fn() }));
+    await mount({
+      isAlumni: true,
+      home: homeNavItem({ isAlumni: true }),
+      pinned: pinnedNavItems({ isAlumni: true }),
+      path: "/connect",
+      tabClickProps,
+    });
+    expect(q("button[aria-label='Email']")).toBeNull();
+    expect(q("button[aria-label='Drive']")).toBeNull();
+    // The wordmark carries the alumni home (Connect).
+    expect(tabClickProps).toHaveBeenCalledWith({ url: "/connect", label: "Home" });
+  });
+
+  it("shows the pinned items it is given", async () => {
+    await mount({ pinned: [...pinnedNavItems(), { label: "Journeys", href: "/journeys", icon: Settings }] });
+    expect(q("button[aria-label='Drive']")).not.toBeNull();
+    expect(q("button[aria-label='Journeys']")).not.toBeNull();
+  });
+
+
+  it("names a lone area without offering a switch", async () => {
+    const only = area("connect");
+    await mount({ areas: [only], activeArea: only });
+    expect(container.textContent).toContain("CONNECT");
+    expect(q("button[aria-haspopup='listbox']")).toBeNull();
+  });
+
+  it("offers the area switch when there is more than one area", async () => {
+    const lab = area("lab");
+    await mount({ areas: [lab, area("core")], activeArea: lab });
+    expect(q("button[aria-haspopup='listbox']")!.getAttribute("aria-label")).toBe("Section: LAB. Switch section");
+  });
+
+  it("shows the active area tile and label on the switcher row", async () => {
+    const core = { ...area("core"), label: "Core" };
+    await mount({ areas: [area("projects"), core], activeArea: core });
+    const trigger = q("button[aria-haspopup='listbox']")!;
+    expect(trigger.textContent).toContain("Core");
+    expect(trigger.querySelector("[data-area-tile='core']")).not.toBeNull();
+  });
+
+  it("shows the tile on a lone area too", async () => {
+    const only = area("core");
+    await mount({ areas: [only], activeArea: only });
+    expect(q("[data-area-tile='core']")).not.toBeNull();
+  });
+
+  it("lists areas in rail order, labels only", async () => {
+    const keys = ["admin", "core", "hiring", "education", "community", "projects"];
+    const list = keys.map((k) => ({ ...area(k), label: k, description: `About ${k}` }));
+    await mount({ areas: list, activeArea: list[0] });
+    await act(async () => {
+      q("button[aria-haspopup='listbox']")!.click();
+    });
+    const options = Array.from(container.querySelectorAll("[role='option']"));
+    expect(options.map((o) => o.querySelector("[data-area-tile]")!.getAttribute("data-area-tile"))).toEqual([
+      "projects",
+      "community",
+      "core",
+      "education",
+      "hiring",
+      "admin",
+    ]);
+    expect(options[0].textContent).toContain("projects");
+    expect(options[0].textContent).not.toContain("About projects");
+    expect(options.filter((o) => o.getAttribute("aria-selected") === "true")).toHaveLength(1);
+  });
+
+  it("closes the area menu on Escape", async () => {
+    const list = [area("projects"), area("core")];
+    await mount({ areas: list, activeArea: list[0] });
+    await act(async () => {
+      q("button[aria-haspopup='listbox']")!.click();
+    });
+    expect(q("[role='listbox']")).not.toBeNull();
+    await act(async () => {
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    });
+    expect(q("[role='listbox']")).toBeNull();
+  });
+
+  it("dots Email when there is unread mail", async () => {
+    await mount({ emailUnread: 3 });
+    expect(q("button[aria-label='Email'] span.rounded-full")).not.toBeNull();
+  });
+
+  it("hides the bell badge at zero and caps it at 99+", async () => {
+    await mount({ taskCount: 0 });
+    expect(q("button[aria-haspopup='dialog']")!.textContent).toBe("");
+    act(() => root.unmount());
+    container.remove();
+    await mount({ taskCount: 120 });
+    expect(q("button[aria-haspopup='dialog']")!.textContent).toBe("99+");
+  });
+
+  it("omits the hide control when the rail is not hideable", async () => {
+    await mount({ onHideRail: undefined });
+    expect(q("button[aria-label='Hide sidebar']")).toBeNull();
+  });
+
+  it("shows the toggle shortcut in the hide tooltip", async () => {
+    await mount({ onHideRail: vi.fn() });
+    const hide = q("button[aria-label='Hide sidebar']")!;
+    await act(async () => {
+      hide.dispatchEvent(new FocusEvent("focus"));
+      hide.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+    });
+    expect(document.body.querySelector("[role='tooltip']")?.textContent).toContain("⌘\\");
+  });
+
+  it("hides the rail from its toggle", async () => {
+    const onHideRail = vi.fn();
+    await mount({ onHideRail });
+    await act(async () => {
+      q("button[aria-label='Hide sidebar']")!.click();
+    });
+    expect(onHideRail).toHaveBeenCalledOnce();
+  });
+
+  it("shows no Favorites section without favorites", async () => {
+    await mount();
+    expect(container.textContent).not.toContain("Favorites");
+  });
+
+  it("opens the account menu with the full name on the button", async () => {
+    await mount();
+    expect(container.textContent).toContain("Ada Lovelace");
+    await act(async () => {
+      q("button[aria-haspopup='menu']")!.click();
+    });
+    expect(q("[role='menu']")?.textContent).toContain("Settings");
+    expect(q("[role='menu']")?.textContent).toContain("Log out");
+  });
+});
+
+describe("Rail menu placement", () => {
+  const rect = { top: 600, bottom: 640, left: 12, right: 252, width: 240, height: 40, x: 12, y: 600 };
+
+  afterEach(() => vi.restoreAllMocks());
+
+  function stubRects() {
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({ ...rect, toJSON: () => rect } as DOMRect);
+    vi.spyOn(window, "innerHeight", "get").mockReturnValue(800);
+  }
+
+  it("opens the area menu 6px under its trigger, at the trigger's measured left and width", async () => {
+    stubRects();
+    const list = [area("projects"), area("core")];
+    await mount({ areas: list, activeArea: list[0] });
+    await act(async () => {
+      q("button[aria-haspopup='listbox']")!.click();
+    });
+    const menu = q("[role='listbox']")!;
+    expect(menu.style.top).toBe("646px");
+    expect(menu.style.left).toBe("12px");
+    expect(menu.style.width).toBe("240px");
+  });
+
+  it("compact: opens the area menu 8px right of its trigger, level with its top", async () => {
+    stubRects();
+    const list = [area("projects"), area("core")];
+    await mount({ areas: list, activeArea: list[0], size: "compact" });
+    await act(async () => {
+      q("button[aria-haspopup='listbox']")!.click();
+    });
+    const menu = q("[role='listbox']")!;
+    expect(menu.style.top).toBe("600px");
+    expect(menu.style.left).toBe("260px");
+    expect(menu.style.width).toBe("264px");
+  });
+
+  it("opens the account menu 8px above its button, at the button's measured left", async () => {
+    stubRects();
+    await mount();
+    await act(async () => {
+      q("button[aria-haspopup='menu']")!.click();
+    });
+    const menu = q("[role='menu']")!;
+    expect(menu.style.bottom).toBe("208px");
+    expect(menu.style.left).toBe("12px");
+  });
+
+  it("compact: opens the account menu 8px right of its button, level with its bottom", async () => {
+    stubRects();
+    await mount({ size: "compact" });
+    await act(async () => {
+      q("button[aria-haspopup='menu']")!.click();
+    });
+    const menu = q("[role='menu']")!;
+    expect(menu.style.bottom).toBe("160px");
+    expect(menu.style.left).toBe("260px");
+  });
+});
+
+describe("Rail compact sizing", () => {
+  const lab = { key: "lab", label: "Lab", icon: Settings, hubPath: "/lab", subtabs: [] };
+  const subtabs = [
+    { label: "Overview", href: "/lab", icon: Settings },
+    { label: "Courses", href: "/lab/courses", icon: Settings },
+  ];
+
+  it("compact: keeps the hide control, an icon-only search and the short wordmark", async () => {
+    await mount({ size: "compact" });
+    expect(q("button[aria-label='Hide sidebar']")).not.toBeNull();
+    expect(q("button[aria-label='Search']")!.textContent).toBe("");
+    expect(q("button[aria-label='DALI OS home']")!.textContent).toBe("d.");
+  });
+
+  it("compact: quick items and sub-tabs are icon-only with their labels as aria-labels", async () => {
+    await mount({
+      size: "compact",
+      path: "/calendar",
+      areas: [lab],
+      activeArea: lab,
+      activeSubtabs: subtabs,
+      activeHref: "/lab",
+    });
+    expect(q("button[aria-label='Calendar']")!.textContent).toBe("");
+    const row = q("button[aria-label='Overview']")!;
+    expect(row.textContent).toBe("");
+    expect(row.getAttribute("aria-current")).toBe("page");
+  });
+
+  it("expanded: the active sub-tab shows its label and marks the page", async () => {
+    await mount({ areas: [lab], activeArea: lab, activeSubtabs: subtabs, activeHref: "/lab/courses" });
+    const active = Array.from(container.querySelectorAll("button")).find((b) => b.textContent === "Courses")!;
+    expect(active.getAttribute("aria-current")).toBe("page");
+  });
+});

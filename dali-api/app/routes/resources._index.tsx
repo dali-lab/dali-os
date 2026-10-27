@@ -222,7 +222,7 @@ function UnpublishedList({
   showAuthor?: boolean;
 }) {
   return (
-    <section className="border-t border-foreground pt-6">
+    <section className="border-t border-os-container pt-6">
       <h2 className="text-xs font-semibold uppercase tracking-widest text-os-grey">{title}</h2>
       <ul className="mt-2 divide-y divide-border">
         {posts.map((p) => (
@@ -286,7 +286,7 @@ export default function ResourcesFrontPage() {
         </section>
       )}
       {more.length > 0 && (
-        <section className="grid gap-x-8 gap-y-10 border-t border-foreground pt-8 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
+        <section className="grid gap-x-8 gap-y-10 border-t border-os-container pt-8 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
           {more.map((p) => (
             <Story key={p.id} post={p} size="more" curate={curate} showPin={canCurate} />
           ))}

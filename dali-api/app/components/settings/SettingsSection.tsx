@@ -73,7 +73,7 @@ export function SettingsIconTile({ children, accent = false }: { children: React
 
 /** The outlined red pill for a destructive row action (Disconnect, Revoke). */
 export const settingsDangerBtn =
-  "inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-full border border-destructive/40 px-3 py-1.5 text-sm font-semibold text-destructive transition-colors hover:bg-destructive/10 disabled:cursor-not-allowed disabled:opacity-50";
+  "inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border border-destructive/40 px-3 py-1.5 text-sm font-semibold text-destructive transition-colors hover:bg-destructive/10 disabled:cursor-not-allowed disabled:opacity-50";
 
 /** A divided list on the settings surface. */
 export const settingsList = "rounded-os-card bg-os-card divide-y divide-os-container/70";

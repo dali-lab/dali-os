@@ -1207,7 +1207,7 @@ function ComponentTile({
 function CanvasDropZone({ children }: { children: ReactNode }) {
   const { setNodeRef } = useDroppable({ id: CANVAS_ID })
   return (
-    <div ref={setNodeRef} className="os-form flex-1 min-w-0 w-full rounded-os-card bg-os-card p-6 space-y-4">
+    <div ref={setNodeRef} className="os-form flex-1 min-w-0 w-full rounded-os-card bg-os-card p-5 space-y-4">
       {children}
     </div>
   )

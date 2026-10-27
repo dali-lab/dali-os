@@ -35,7 +35,7 @@ export function BoardCard({
       className={cn(
         "relative border border-l-4 flex focus-within:ring-2",
         os
-          ? "rounded-os-item border-transparent bg-os-well text-[15px] focus-within:ring-os-accent/40"
+          ? "rounded-os-item border-transparent bg-os-bg text-[15px] focus-within:ring-os-accent/40"
           : "rounded-md border-border bg-background text-sm focus-within:ring-os-accent/30",
         isDragging ? "opacity-40" : os ? "hover:bg-os-container/60" : "hover:bg-muted/20",
       )}

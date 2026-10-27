@@ -60,7 +60,7 @@ export function WaitlistOrder({ applications }: { applications: ReviewApplicatio
   if (waitlisted.length === 0) return null;
 
   return (
-    <section className="rounded-os-card bg-os-card p-6">
+    <section className="rounded-os-card bg-os-card p-5">
       <div className="flex items-center gap-1.5">
         <h3 className="font-heading text-sm font-semibold text-foreground">
           Waitlist order
@@ -216,7 +216,7 @@ export function ApplicationsReview({
           formatSubmitted={formatSubmitted}
         />
       ) : (
-        <p className="rounded-os-card bg-os-card p-6 text-sm italic text-os-grey">
+        <p className="rounded-os-card bg-os-card p-5 text-sm italic text-os-grey">
           Pick an applicant to read their responses.
         </p>
       )}
@@ -235,7 +235,7 @@ function ApplicationDetail({
 }) {
   const confirmSubmit = useConfirmSubmit();
   return (
-    <div className="flex flex-col gap-5 rounded-os-card bg-os-card p-6">
+    <div className="flex flex-col gap-5 rounded-os-card bg-os-card p-5">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0">
           <h3 className="font-heading text-base font-semibold text-foreground">

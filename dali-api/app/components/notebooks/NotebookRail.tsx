@@ -1,4 +1,4 @@
-import { useEffect, useId, useState } from "react";
+import { Fragment, useEffect, useId, useState } from "react";
 import { createPortal } from "react-dom";
 import { Link, useNavigate, useRevalidator } from "react-router";
 import { EllipsisVertical, FilePlus, FileText, List, MoreHorizontal, PanelLeftClose, Plus } from "lucide-react";
@@ -25,7 +25,7 @@ import { useOpenMeetingNote } from "~/calendar/components/AddMeetingNoteModal";
 import { cn } from "~/lib/cn";
 import { formatDateShort } from "~/lib/display";
 
-export type NotebookTab = { id: string; label: string; meeting: string | null; isNote: boolean };
+export type NotebookTab = { id: string; label: string; meeting: string | null; isNote: boolean; week: string | null };
 
 export type NotebookView = {
   id: string;
@@ -60,8 +60,20 @@ function useNotebookRequest() {
 type Panel = "add-document" | "merge" | "template" | null;
 
 /** The Add and ⋯ menus plus the dialogs they open; shared by the tab rail and
- *  the single-note line. `iconOnly` draws Add as a bare plus, the rail's header style. */
-function NotebookControls({ notebook, iconOnly = false }: { notebook: NotebookView; iconOnly?: boolean }) {
+ *  the single-note line. `iconOnly` draws Add as a bare plus, the rail's header style.
+ *  `show` renders just one of the two menus — the rail keeps ⋯ beside the title
+ *  and draws Add as its own row (`addRow`) at the foot of the tab list. */
+function NotebookControls({
+  notebook,
+  iconOnly = false,
+  show = "all",
+  addRow = false,
+}: {
+  notebook: NotebookView;
+  iconOnly?: boolean;
+  show?: "all" | "add" | "options";
+  addRow?: boolean;
+}) {
   const dialog = useDialog();
   const toast = useToast();
   const navigate = useNavigate();
@@ -102,11 +114,19 @@ function NotebookControls({ notebook, iconOnly = false }: { notebook: NotebookVi
 
   return (
     <>
-      <div className="flex items-center gap-1">
+      <div className={cn("flex items-center gap-1", addRow && "w-full")}>
+        {show !== "options" && (
         <Menu
           ariaLabel="Add to notebook"
           trigger={
-            iconOnly ? (
+            addRow ? (
+              <button
+                type="button"
+                className="flex w-full items-center gap-2 rounded-os-item px-3 py-2 text-sm text-os-grey transition-colors hover:bg-os-container hover:text-foreground"
+              >
+                <Plus className="h-4 w-4" aria-hidden /> Add
+              </button>
+            ) : iconOnly ? (
               <Tooltip content="Add">
                 <button type="button" className="os-icon-btn">
                   <Plus className="h-4 w-4" aria-hidden />
@@ -144,7 +164,8 @@ function NotebookControls({ notebook, iconOnly = false }: { notebook: NotebookVi
             Existing document…
           </Menu.Item>
         </Menu>
-        {notebook.canManage && (
+        )}
+        {notebook.canManage && show !== "add" && (
           <Menu
             align="right"
             ariaLabel="Notebook options"
@@ -464,7 +485,10 @@ export function NotebookRail({ notebook, currentId }: { notebook: NotebookView; 
         "flex min-w-0 shrink-0 flex-col gap-3 lg:sticky lg:top-4",
         // Collapsed, the pill stands on the page by itself: a card around it
         // made a third nested surface.
-        collapsed ? cn(card, "p-3 lg:w-auto lg:items-start lg:border-0 lg:bg-transparent lg:p-0") : cn(card, "p-3 lg:w-60"),
+        // Expanded, mt-4 matches the pt-4 DocumentEditor puts above the doc card so the two tops line up.
+        collapsed
+          ? cn(card, "p-3 lg:w-auto lg:items-start lg:border-0 lg:bg-transparent lg:p-0")
+          : cn(card, "p-3 lg:mt-4 lg:w-60"),
       )}
     >
       {/* pt-2 matches the doc top bar's py-2 so the pill centers on that row. */}
@@ -484,9 +508,11 @@ export function NotebookRail({ notebook, currentId }: { notebook: NotebookView; 
         </div>
       )}
       <div className={cn("contents", collapsed && "lg:hidden")}>
+        {/* The name keeps most of the row (only the two quiet icons beside
+            it); Add lives as its own row at the foot of the tab list. */}
         <div className="flex items-center gap-1">
           <NotebookTitle notebook={notebook} />
-          <NotebookControls notebook={notebook} iconOnly />
+          <NotebookControls notebook={notebook} iconOnly show="options" />
           <IconButton
             label="Hide tabs"
             icon={PanelLeftClose}
@@ -495,34 +521,52 @@ export function NotebookRail({ notebook, currentId }: { notebook: NotebookView; 
           />
         </div>
         <ul className="flex gap-1 overflow-x-auto lg:max-h-[70vh] lg:flex-col lg:gap-0.5 lg:overflow-y-auto">
-          {notebook.tabs.map((tab) => {
+          {notebook.tabs.map((tab, i) => {
             const current = tab.id === currentId;
+            const newWeek = tab.week !== null && tab.week !== notebook.tabs[i - 1]?.week;
             return (
-              <li
-                key={tab.id}
-                className={cn(
-                  "group relative flex shrink-0 items-center rounded-full pr-1 transition-colors",
-                  current ? "bg-os-accent/15" : "hover:bg-os-container",
+              <Fragment key={tab.id}>
+                {newWeek && (
+                  <li
+                    role="presentation"
+                    data-testid="notebook-rail-week"
+                    className={cn("hidden items-center gap-2 px-3 pb-1 lg:flex", i > 0 && "pt-3")}
+                  >
+                    <span className="whitespace-nowrap text-xs font-bold uppercase tracking-wider text-os-muted">
+                      {tab.week}
+                    </span>
+                    <span aria-hidden className="h-px flex-1 bg-os-container" />
+                  </li>
                 )}
-              >
-                <Link
-                  to={`/documents/${tab.id}`}
-                  aria-current={current ? "page" : undefined}
+                <li
                   className={cn(
-                    "flex min-w-0 flex-1 items-center gap-3 rounded-full py-2 pl-3 pr-2 text-sm",
-                    current ? "font-medium text-os-accent" : "text-foreground",
+                    "group relative flex shrink-0 items-center rounded-os-item pr-1 transition-colors",
+                    current ? "bg-os-accent/25" : "hover:bg-os-container",
                   )}
                 >
-                  <FileText className={cn("h-4 w-4 shrink-0", current ? "text-os-accent" : "text-os-grey")} aria-hidden />
-                  <span className="min-w-0">
-                    <Truncated text={tab.label} />
-                    {tab.meeting && <span className="block truncate text-xs text-os-grey">{tab.meeting}</span>}
-                  </span>
-                </Link>
-                {notebook.canManage && <TabMenu notebook={notebook} tab={tab} current={current} />}
-              </li>
+                  <Link
+                    to={`/documents/${tab.id}`}
+                    aria-current={current ? "page" : undefined}
+                    className={cn(
+                      "flex min-w-0 flex-1 items-center rounded-os-item py-2 pl-3 pr-2 text-sm",
+                      current ? "font-medium text-os-accent" : "text-foreground",
+                    )}
+                  >
+                    <span className="min-w-0">
+                      <Truncated text={tab.label} />
+                      {tab.meeting && <span className="block truncate text-xs text-os-grey">{tab.meeting}</span>}
+                    </span>
+                  </Link>
+                  {notebook.canManage && <TabMenu notebook={notebook} tab={tab} current={current} />}
+                </li>
+              </Fragment>
             );
           })}
+          {/* The Add entry closes the list itself, shaped like the page rows,
+              so it's right under the last page rather than off in the chrome. */}
+          <li className="shrink-0 lg:w-full">
+            <NotebookControls notebook={notebook} show="add" addRow />
+          </li>
         </ul>
       </div>
     </nav>

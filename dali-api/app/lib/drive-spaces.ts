@@ -14,6 +14,7 @@ import {
   Shield,
   Star,
   UserPlus,
+  Users,
   type LucideIcon,
 } from "lucide-react";
 import type { RoleFlags } from "~/lib/nav-areas";
@@ -109,7 +110,7 @@ export const DRIVE_SPACES: DriveSpaceDef[] = [
   {
     key: "lab",
     label: "General",
-    icon: FolderKanban,
+    icon: Users,
     backing: "lab-open",
     // Always visible — the lab-wide space is open to all members.
   },
@@ -182,3 +183,12 @@ export function isVirtualSpace(scopeId: string): boolean {
 export function sharedSpaceItems(items: DriveItem[]): DriveItem[] {
   return items.filter((it) => it.type === "doc" && it.sharedWithMe === true);
 }
+
+export const DRIVE_SPACE_AREA: Record<string, string> = {
+  lab: "projects",
+  projects: "projects",
+  mentorship: "projects",
+  education: "education",
+  hiring: "hiring",
+  core: "core",
+};

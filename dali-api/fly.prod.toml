@@ -29,9 +29,12 @@ primary_region = "iad"
   # Fly's default is 20 connections per machine. Every open tab holds an SSE
   # stream here (and a WebSocket on 3002) for its whole life, so the default
   # read as "full" at ~20 tabs and autostarted machines that never drained.
+  # The proxy only spreads load past the soft limit, so 200 parked ~90% of
+  # traffic on one machine and queued its DB pool; 75 splits the daytime tab
+  # count across the two running machines.
   [http_service.concurrency]
     type = "requests"
-    soft_limit = 200
+    soft_limit = 75
     hard_limit = 400
 
 # Hocuspocus collab server runs in the same Node process on a second port.

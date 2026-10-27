@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { SegmentedTabButtons } from "./AreaPillNav";
+import { cn } from "~/lib/cn";
 
 // The parts a dali.os hub page is built from — the hero's labelled clusters,
 // the tab strip under it, and the hairlined facts card its sections state their
@@ -66,7 +66,7 @@ export function DetailEditRow({
   );
 }
 
-/** The label a hero cluster wears (TERMS, ROLES) with its contents beside it. */
+/** The label a hero cluster wears (Terms, Roles) above its chips. */
 export function HeroClusterLabel({
   label,
   children,
@@ -75,18 +75,18 @@ export function HeroClusterLabel({
   children: ReactNode;
 }) {
   return (
-    <div className="flex items-center gap-2.5">
-      <span className="text-xs font-semibold tracking-widest text-os-grey uppercase">
-        {label}
-      </span>
-      {children}
+    <div className="flex flex-col gap-2">
+      <span className="text-xs font-medium text-os-grey">{label}</span>
+      <div className="flex flex-wrap items-center gap-2">{children}</div>
     </div>
   );
 }
 
-// The hub page's tab strip is the same segmented pill the rest of the os uses,
-// so a project page, a member profile and the Core hub switch sections with
-// one control.
+// The hub page's tab strip is a header: a hairline rule spanning the page with
+// the open tab as a filled, top-rounded plate that meets the rule — a clear
+// seam between the page's head and the section below, unlike the floating
+// segmented pill (SegmentedTabButtons), which stays the switcher for sections
+// that aren't a page header (calendar views, settings).
 
 export function OsTabBar<T extends string>({
   tabs,
@@ -103,16 +103,31 @@ export function OsTabBar<T extends string>({
   ariaLabel?: string;
 }) {
   return (
-    <div className="flex items-center gap-3">
-      <SegmentedTabButtons
-        label={ariaLabel}
-        items={tabs.map((t) => ({
-          label: t.label,
-          active: active === t.key,
-          onClick: () => onSelect(t.key),
-        }))}
-      />
-      {trailing && <div className="ml-auto">{trailing}</div>}
+    <div className="flex items-end gap-3 border-b border-os-container">
+      <div
+        role="tablist"
+        aria-label={ariaLabel}
+        className="no-scrollbar flex min-w-0 items-end gap-1 overflow-x-auto"
+      >
+        {tabs.map((t) => (
+          <button
+            key={t.key}
+            type="button"
+            role="tab"
+            aria-selected={active === t.key}
+            onClick={() => onSelect(t.key)}
+            className={cn(
+              "shrink-0 whitespace-nowrap rounded-t-[10px] px-4 py-2 text-sm font-medium transition-colors",
+              active === t.key
+                ? "bg-os-container text-foreground"
+                : "text-muted-foreground hover:bg-os-hover hover:text-foreground",
+            )}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+      {trailing && <div className="ml-auto mb-1">{trailing}</div>}
     </div>
   );
 }

@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import type { Map as LeafletMap, LayerGroup, Marker } from "leaflet";
 import "leaflet/dist/leaflet.css";
+import { cn } from "~/lib/cn";
 import { MAX_LAT, minZoomToFill, type ConnectPlace } from "~/members/lib/connect";
 
 // OpenStreetMap's own tile server: keyless. It only draws a light map, so the
@@ -108,21 +109,32 @@ export function ConnectMap({
         })
         .addTo(pins.current);
     }
+    fitIfNeeded();
+  }
+
+  // Separate from draw() so the resize observer can run a pending fit without
+  // rebuilding every marker. A fit against a 0-height container (the page can
+  // mount inside a hidden kept tab) computes a garbage zoom, so it waits until
+  // the container has a size.
+  function fitIfNeeded() {
+    const L = leaflet.current;
+    if (!L || !map.current || !el.current || el.current.clientHeight === 0) return;
     const fitKey = places.map((p) => p.key).join("|");
-    if (fittedFor.current !== fitKey) {
-      fittedFor.current = fitKey;
-      if (places.length > 0) {
-        map.current.fitBounds(L.latLngBounds(places.map((p) => [p.lat, p.lng])), {
-          padding: [48, 48],
-          maxZoom: 6,
-        });
-      } else {
-        map.current.setView([25, 0], 2);
-      }
+    if (fittedFor.current === fitKey) return;
+    fittedFor.current = fitKey;
+    if (places.length > 0) {
+      map.current.fitBounds(L.latLngBounds(places.map((p) => [p.lat, p.lng])), {
+        padding: [48, 48],
+        maxZoom: 6,
+      });
+    } else {
+      map.current.setView([25, 0], 2);
     }
   }
   const drawRef = useRef(draw);
   drawRef.current = draw;
+  const fitRef = useRef(fitIfNeeded);
+  fitRef.current = fitIfNeeded;
 
   // Leaflet reads `window` at import, so it loads in the browser only.
   useEffect(() => {
@@ -147,8 +159,19 @@ export function ConnectMap({
       pins.current = L.layerGroup().addTo(map.current);
       drawRef.current();
     });
+    // Leaflet only re-measures itself on window resize. The map can initialize
+    // at 0×0 (hidden kept tab, display:none ancestor) or get resized by layout
+    // alone (pane changes), and without this it stays a grey void until the
+    // window itself resizes.
+    const ro = new ResizeObserver(() => {
+      if (!map.current || !el.current || el.current.clientHeight === 0) return;
+      map.current.invalidateSize();
+      fitRef.current();
+    });
+    if (el.current) ro.observe(el.current);
     return () => {
       cancelled = true;
+      ro.disconnect();
       map.current?.remove();
       map.current = null;
     };
@@ -159,5 +182,16 @@ export function ConnectMap({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [places, selectedKey]);
 
-  return <div ref={el} className={className} role="application" aria-label="Map of alumni" />;
+  // isolate: Leaflet stacks its panes at z-index 400–700, which would
+  // otherwise float the map (and pins at 600+) over the app's own fixed
+  // overlays — the ⌘K palette sits at z-50. Trapping them in their own
+  // stacking context keeps every overlay above the map.
+  return (
+    <div
+      ref={el}
+      className={cn("isolate", className)}
+      role="application"
+      aria-label="Map of alumni"
+    />
+  );
 }

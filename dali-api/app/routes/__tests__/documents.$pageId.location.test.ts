@@ -6,6 +6,7 @@ vi.mock("~/lib/db", () => ({
     docTag: { findMany: vi.fn() },
     pageLink: { findMany: vi.fn() },
     meetingShareGrant: { findFirst: vi.fn() },
+    term: { findMany: vi.fn() },
   },
 }));
 vi.mock("~/lib/auth", () => ({
@@ -20,7 +21,8 @@ vi.mock("~/lib/pageAccess.server", () => ({
   getPageAccessBulk: vi.fn(),
 }));
 vi.mock("~/lib/page-sharing.server", () => ({ groupIdsForUser: vi.fn() }));
-vi.mock("~/lib/note-path.server", () => ({ notebookItemLocation: vi.fn() }));
+vi.mock("~/lib/note-path.server", () => ({ notebookItemLocation: vi.fn(), pageItemLocation: vi.fn() }));
+vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabled: vi.fn() }));
 vi.mock("~/lib/notebooks.server", () => ({ canManageNotebook: vi.fn() }));
 vi.mock("~/lib/notebook-series.server", () => ({ nextNoteTargets: vi.fn() }));
 vi.mock("~/lib/user-pages.server", () => ({ isFavorited: vi.fn(), recordPageVisit: vi.fn() }));
@@ -39,7 +41,8 @@ import { prisma } from "~/lib/db";
 import { requireAuth, redirectPartnerToPortal, isNonMember } from "~/lib/auth";
 import { getPageAccess, getPageAccessBulk } from "~/lib/pageAccess.server";
 import { groupIdsForUser } from "~/lib/page-sharing.server";
-import { notebookItemLocation } from "~/lib/note-path.server";
+import { notebookItemLocation, pageItemLocation } from "~/lib/note-path.server";
+import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { canManageNotebook } from "~/lib/notebooks.server";
 import { nextNoteTargets } from "~/lib/notebook-series.server";
 import { getUserRoles } from "~/lib/roles";
@@ -100,6 +103,7 @@ beforeEach(() => {
   db.docTag.findMany.mockResolvedValue([]);
   db.pageLink.findMany.mockResolvedValue([]);
   db.meetingShareGrant.findFirst.mockResolvedValue(null);
+  db.term.findMany.mockResolvedValue([]);
   vi.mocked(getPageAccessBulk).mockResolvedValue(new Map());
   vi.mocked(groupIdsForUser).mockResolvedValue(["g1"]);
   vi.mocked(notebookItemLocation).mockResolvedValue(LOCATION as any);
@@ -141,6 +145,36 @@ describe("documents.$pageId loader location line", () => {
 
     expect(data.noteLocation).toBeNull();
     expect(notebookItemLocation).not.toHaveBeenCalled();
+  });
+
+  it("gives a plain document its Drive place when the new shell is on", async () => {
+    db.page.findUnique.mockResolvedValue(page({ parent: null, parentPageId: "f1" }));
+    vi.mocked(getPageAccess).mockResolvedValue(access(true) as any);
+    vi.mocked(isFeatureEnabled).mockResolvedValue(true);
+    vi.mocked(pageItemLocation).mockResolvedValue(LOCATION as any);
+
+    const data = await call();
+
+    expect(isFeatureEnabled).toHaveBeenCalledWith("desktop-tabs", "u1", expect.anything(), expect.any(Request));
+    expect(data.docLocation).toEqual(LOCATION);
+    expect(pageItemLocation).toHaveBeenCalledWith(expect.objectContaining({ id: "t1" }), "u1", expect.any(Request));
+  });
+
+  it("skips the Drive lookup when the new shell is off", async () => {
+    db.page.findUnique.mockResolvedValue(page({ parent: null, parentPageId: "f1" }));
+    vi.mocked(getPageAccess).mockResolvedValue(access(true) as any);
+    vi.mocked(isFeatureEnabled).mockResolvedValue(false);
+
+    expect((await call()).docLocation).toBeNull();
+    expect(pageItemLocation).not.toHaveBeenCalled();
+  });
+
+  it("leaves a note's place to its notebook", async () => {
+    vi.mocked(getPageAccess).mockResolvedValue(access(true) as any);
+    vi.mocked(isFeatureEnabled).mockResolvedValue(true);
+
+    expect((await call()).docLocation).toBeNull();
+    expect(pageItemLocation).not.toHaveBeenCalled();
   });
 
   it("passes the notebook's next-note targets to editors only", async () => {

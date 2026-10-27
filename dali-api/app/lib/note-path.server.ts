@@ -2,7 +2,8 @@
 // just landed in the Drive, for the toast that follows creating one.
 
 import { prisma } from "~/lib/db";
-import { DRIVE_SPACES } from "~/lib/drive-spaces";
+import { DRIVE_SPACES, SHARED_SPACE_KEY } from "~/lib/drive-spaces";
+import { getPageAccess, type PageShape } from "~/lib/pageAccess.server";
 import { driveLocation, locationFromCrumbs } from "~/lib/drive-reveal.server";
 import type { ItemLocation } from "~/components/drive/location";
 import { driveFolderCrumbsBulk, type DriveCrumbs } from "~/lib/drive-crumbs.server";
@@ -63,6 +64,22 @@ export async function notebookItemLocation(
     folders,
     path: formatFiledPath([scopeLabel, ...titles]),
   };
+}
+
+/**
+ * Where a page sits in the viewer's own Drive. A page they reach only through
+ * a named share has no place in their tree, so it sits in Shared with me (the
+ * same rule as Reveal in Drive).
+ */
+export async function pageItemLocation(
+  page: NotebookPlace & PageShape,
+  viewerSub: string,
+  request?: Request,
+): Promise<ItemLocation> {
+  const base = await getPageAccess(viewerSub, page, request, { ignoreShares: true });
+  if (base.canView) return notebookItemLocation(page, viewerSub, request);
+  const label = DRIVE_SPACES.find((s) => s.key === SHARED_SPACE_KEY)?.label ?? "Shared with me";
+  return { scopeId: SHARED_SPACE_KEY, scopeLabel: label, folderId: null, folders: [], path: label };
 }
 
 /** Where a notebook sits: its space, the project, and the folders above it. */

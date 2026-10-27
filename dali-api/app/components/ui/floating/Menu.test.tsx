@@ -23,6 +23,7 @@ function openMenu() {
       <MemoryRouter>
         <Menu trigger={<button type="button">Open</button>} ariaLabel="Actions">
           <Menu.Item>Rename</Menu.Item>
+          <Menu.Item shortcut="⌥ click">Beside</Menu.Item>
           <Menu.Item destructive>Delete</Menu.Item>
           <Menu.LinkItem to="/x">Open page</Menu.LinkItem>
         </Menu>
@@ -36,7 +37,7 @@ function openMenu() {
 describe("Menu rows", () => {
   it("use the os row shape", () => {
     const rows = openMenu();
-    expect(rows).toHaveLength(3);
+    expect(rows).toHaveLength(4);
     for (const row of rows) {
       expect(row.classList.contains("rounded-lg")).toBe(true);
       expect(row.classList.contains("px-3")).toBe(true);
@@ -45,15 +46,22 @@ describe("Menu rows", () => {
   });
 
   it("colour a destructive row with the destructive token and nothing else", () => {
-    const [, del] = openMenu();
+    const del = openMenu()[2];
     expect(del.classList.contains("text-destructive")).toBe(true);
     expect(del.classList.contains("text-foreground")).toBe(false);
     expect(del.className).not.toContain("red-600");
   });
 
   it("give a plain row and a link row the same colour", () => {
-    const [rename, , link] = openMenu();
+    const [rename, , , link] = openMenu();
     expect(rename.classList.contains("text-foreground")).toBe(true);
     expect(link.classList.contains("text-foreground")).toBe(true);
+  });
+
+  it("show a shortcut hint only on the row that has one", () => {
+    const [rename, beside] = openMenu();
+    expect(beside.textContent).toContain("⌥ click");
+    expect(beside.textContent).toContain("Beside");
+    expect(rename.textContent).toBe("Rename");
   });
 });

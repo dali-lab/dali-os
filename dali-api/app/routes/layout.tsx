@@ -1,11 +1,10 @@
-import { useEffect, useState } from 'react'
-import { paneFlag } from '~/lib/pane-flags'
-import { Outlet, redirect, useLoaderData, useLocation, useMatches, useNavigate, useNavigationType, useSearchParams, type ShouldRevalidateFunctionArgs } from 'react-router'
+import { useEffect, useState, type CSSProperties } from 'react'
+import { redirect, useLoaderData, useLocation, useMatches, useNavigate, useNavigationType, useSearchParams, type ShouldRevalidateFunctionArgs } from 'react-router'
 import { cn } from '~/lib/cn'
+import { areaForPath, areaInk, areaTint } from '~/lib/nav-areas'
 import { LayoutOS } from '~/components/LayoutOS'
 import { useOsShellRoot } from '~/lib/os-shell'
-import { Breadcrumbs } from '~/components/Breadcrumbs'
-import { PageDocProvider, PageDocButton, PageDocOutlet, ShellGuideProvider } from '~/components/page-docs/PageDocButton'
+import { PageDocProvider, ShellGuideProvider } from '~/components/page-docs/PageDocButton'
 import { useLiveFavorites } from '~/components/favorites-live'
 import { LaunchWelcome } from '~/components/LaunchWelcome'
 import { BannerHost } from '~/components/banners/BannerHost'
@@ -15,34 +14,39 @@ import { TimeZonePrompt } from '~/components/TimeZonePrompt'
 import { requireAuth, redirectPartnerToPortal, impersonationAllowsWrites, isImpersonating, isNonMember } from "~/lib/auth"
 import { maybeUpgradeLegacyToBetterAuth } from "~/lib/betterauth-upgrade.server"
 import { redirectToLogin } from '~/lib/login-next';
-import { getUserRoles, isLabMentor } from '~/lib/roles'
-import { isNewMemberCohort } from '~/hiring/lib/new-member-cohort.server'
-import { getAppGateOutstanding } from '~/signing/lib/state.server'
-import { getBoundFormGateOutstanding } from '~/forms/lib/gate.server'
 import { getActiveCycles } from '~/hiring/lib/cycles'
-import { prisma } from '~/lib/db'
 import { resolvePhotoUrl } from '~/lib/photo'
 import { isTablessRequest } from '~/lib/tabless'
 import { PageViewReporter } from '~/components/PageViewReporter'
 import { isFocusRequest } from '~/lib/focus-mode'
 import { isValidTimezone, resolveUserTimeZone } from '~/lib/timezone'
 import { readDismissedTimeZone } from '~/lib/tz-prompt'
-import { isNavbarHubPage } from '~/lib/navbar-routes'
-import { hasSubnavRow } from '~/lib/nav-areas'
-import { listFavoritesAndRecents } from '~/lib/user-pages.server'
+import { RoutedPage, paneFlags } from '~/components/shell/RoutedPage'
+import { TabKeepAlive } from '~/components/shell/TabKeepAlive'
 import { loadShellUser } from '~/lib/shell-user.server'
+import {
+  layoutAppGate,
+  layoutFavorites,
+  layoutFormGate,
+  layoutHasLiveCycleRole,
+  layoutHasUnseenReleaseNotes,
+  layoutIsAnyCycleReviewer,
+  layoutIsLabMentor,
+  layoutIsLiveInterviewer,
+  layoutIsNewMember,
+  layoutRoles,
+} from '~/lib/layout-reads.server'
 import { resolveFeatureFlags } from '~/lib/feature-flags.server'
-import { viewerHasUnseenReleaseNotes } from '~/lib/release-notes.server'
-import { listVisibleGroupIdsForUser } from '~/lib/groups'
 import { FeatureFlagsProvider } from '~/components/FeatureFlags'
 import { resolveActiveActivitiesForUser } from '~/lib/activities.server'
 import { ActivitiesProvider } from '~/components/activities/ActivitiesProvider'
-import { ActivityOverlay } from '~/components/activities/ActivityChrome'
 import { InstructorChrome } from '~/components/InstructorChrome'
 import { timed } from '~/lib/server-timing'
 import { educationPortalTwin } from '~/education/lib/portal-twin'
 import { publicDocRedirectForPath } from '~/lib/public-doc.server'
 import { cleanTabUrl } from '~/lib/page-link'
+import { tabStripHintFromRequest, tabsSnapshotFromRequest } from '~/lib/desktop-tabs-pref'
+import { SidePanelHost } from '~/components/side-panel/SidePanel'
 import type { Route } from './+types/layout'
 
 export async function loader({ request }: Route.LoaderArgs) {
@@ -75,13 +79,13 @@ export async function loader({ request }: Route.LoaderArgs) {
   // the launch tour whether to offer the "connect your calendar" step.
   const [partnerRedirect, roles, activeCycles, sidebarPages, me] = await Promise.all([
     timed(request, 'partnerCheck', () => redirectPartnerToPortal(auth)),
-    timed(request, 'roles', () => getUserRoles(auth.user.sub, request)),
+    timed(request, 'roles', () => layoutRoles(auth.user.sub, request)),
     // Every active cycle, whoever it's for: any number can be live at once.
     timed(request, 'activeCycles', () => getActiveCycles()),
     // Powers the sidebar Favorites + Recent lists (same source as the Home
     // panel). Access re-checked per read, so a restricted/moved page drops out.
     // `request` shares one read with the Home panel on the same navigation.
-    timed(request, 'favorites', () => listFavoritesAndRecents(auth.user.sub, request)),
+    timed(request, 'favorites', () => layoutFavorites(auth.user.sub, request)),
     // Per-request memoized so the Home loader reads the same row (its timezone)
     // without a second lookup — both loaders run concurrently for one nav.
     timed(request, 'shellUser', () => loadShellUser(auth.user.sub, request)),
@@ -137,10 +141,10 @@ export async function loader({ request }: Route.LoaderArgs) {
       path.startsWith('/forms/fill/') || path.startsWith('/logout') || path.startsWith('/sign')
     const [outstanding, owed] = await Promise.all([
       isLabMember && !signExempt
-        ? timed(request, 'appGate', () => getAppGateOutstanding(auth.user.sub, request))
+        ? timed(request, 'appGate', () => layoutAppGate(auth.user.sub, request))
         : Promise.resolve(null),
       isLabMember && !formExempt
-        ? timed(request, 'formGate', () => getBoundFormGateOutstanding(auth.user.sub, request))
+        ? timed(request, 'formGate', () => layoutFormGate(auth.user.sub, request))
         : Promise.resolve(null),
     ])
     if (outstanding) {
@@ -158,7 +162,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   // Whether to show the Hiring tab at all. Core/Admin/DomainLead always; other
   // lab members only if they're a reviewer or interviewer on ANY cycle (not
   // just the active one — a reviewer on a past/future cycle still needs in).
-  // getUserRoles already ran the any-cycle interviewer lookup, so only the
+  // The roles read already ran the any-cycle interviewer lookup, so only the
   // reviewer half needs its own query here.
   let hasHiringAccess =
     core || admin || domainLead || (isLabMember && isInterviewerAnyCycle)
@@ -169,34 +173,20 @@ export async function loader({ request }: Route.LoaderArgs) {
   // closes, instead of sticking around forever.
   const liveCycleIds = activeCycles.map((c) => c.id)
 
-  const [activeInterviewer, anyCycleReviewer, liveCycleRole, labMentor, photoUrl, flags, activeActivities] = await Promise.all([
+  const [isInterviewer, anyCycleReviewer, liveCycleRole, labMentor, photoUrl, flags, activeActivities] = await Promise.all([
     timed(request, 'hiringGate', () =>
       isLabMember && liveCycleIds.length > 0
-        ? prisma.cycleInterviewer.findFirst({
-            where: { userId: auth.user.sub, applicationCycleId: { in: liveCycleIds } },
-            select: { id: true },
-          })
-        : Promise.resolve(null)),
-    !hasHiringAccess && isLabMember
-      ? prisma.cycleReviewer.findFirst({ where: { userId: auth.user.sub }, select: { id: true } })
-      : null,
+        ? layoutIsLiveInterviewer(auth.user.sub, liveCycleIds)
+        : Promise.resolve(false)),
+    !hasHiringAccess && isLabMember ? layoutIsAnyCycleReviewer(auth.user.sub) : false,
     timed(request, 'liveCycleGate', () =>
       isLabMember && !core && !admin && !domainLead && liveCycleIds.length > 0
-        ? Promise.all([
-            prisma.cycleReviewer.findFirst({
-              where: { userId: auth.user.sub, applicationCycleId: { in: liveCycleIds } },
-              select: { id: true },
-            }),
-            prisma.cycleInterviewer.findFirst({
-              where: { userId: auth.user.sub, applicationCycleId: { in: liveCycleIds } },
-              select: { id: true },
-            }),
-          ]).then(([reviewer, interviewer]) => reviewer !== null || interviewer !== null)
+        ? layoutHasLiveCycleRole(auth.user.sub, liveCycleIds)
         : Promise.resolve(false)),
     // Mentorship area gate: Core (with admin) + any active lab mentor. Hidden
     // from mentees and non-mentor members entirely.
     timed(request, 'mentorGate', () =>
-      isLabMember && !core ? isLabMentor(auth.user.sub, undefined, request) : Promise.resolve(false)),
+      isLabMember && !core ? layoutIsLabMentor(auth.user.sub, request) : Promise.resolve(false)),
     resolvePhotoUrl(me?.photoUrl),
     // Feature flags resolved once, plumbed to the client via FeatureFlagsProvider.
     timed(request, 'flags', () => resolveFeatureFlags(auth.user.sub, roles)),
@@ -210,22 +200,15 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const [hasUnseenReleaseNotes, isNewMember] = await Promise.all([
     flags['release-notes'] && isLabMember
-      ? timed(request, 'releaseNotes', async () =>
-          viewerHasUnseenReleaseNotes({
-            userId: auth.user.sub,
-            isCore: core,
-            groupIds: (await listVisibleGroupIdsForUser(auth.user.sub, request)).map((g) => g.id),
-          }),
-        )
+      ? timed(request, 'releaseNotes', () => layoutHasUnseenReleaseNotes(auth.user.sub, core, request))
       : false,
     // Where Onboarding sits in the sidebar: pinned for the incoming cohort.
     flags['onboarding-journeys'] && isLabMember && !core
-      ? timed(request, 'newMember', () => isNewMemberCohort(auth.user.sub))
+      ? timed(request, 'newMember', () => layoutIsNewMember(auth.user.sub))
       : false,
   ])
 
-  const isInterviewer = !!activeInterviewer
-  if (!hasHiringAccess && isLabMember) hasHiringAccess = anyCycleReviewer !== null
+  if (!hasHiringAccess && isLabMember) hasHiringAccess = anyCycleReviewer
   const hasActiveHiringAccess = core || admin || domainLead || liveCycleRole
   const isLabMentorFlag = isLabMember ? core || labMentor : false
   const hasCalendarLink = (me?.calendarLinks.length ?? 0) > 0
@@ -246,7 +229,11 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   // Tabless mode: render pages directly in the shell instead of the tabbed
   // workspace. Cookie-backed so this SSR branch is decided per-request.
-  const tabless = isTablessRequest(request)
+  // Desktop tabs sit on the tabless shell, so the flag always takes it.
+  const desktopTabs = flags['desktop-tabs'] === true
+  const tabless = desktopTabs || isTablessRequest(request)
+  const tabStripHint = desktopTabs && tabStripHintFromRequest(request)
+  const tabsSnapshot = tabStripHint ? tabsSnapshotFromRequest(request) : null
 
   // Focus mode: hide the sidebar (navigate via ⌘K + breadcrumbs). Independent
   // of tabless; also cookie-backed so there's no flash of the sidebar.
@@ -266,7 +253,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   const __loaderTotal = performance.now() - __loaderStart
   if (__loaderTotal >= 400) console.log(`[perf-total] layout loader ${__loaderTotal.toFixed(0)}ms`)
 
-  return { user: auth.user, photoUrl, hasCalendarLink, shouldShowTour, isCore: core, isAdmin: admin, isDomainLead: domainLead, canViewForms, canViewStaffing, isInterviewer, hasHiringAccess, hasActiveHiringAccess, isInstructor, isLabMentor: isLabMentorFlag, isAlumni, isNewMember, instructorChrome, favorites: sidebarPages.favorites, recents: sidebarPages.recents, flags, impersonating, impersonationWrites, isEmbedded, tabless, focus, userTimeZone, userTimeZoneIsExplicit, tzDismissedZone, activeActivities, hasUnseenReleaseNotes }
+  return { user: auth.user, photoUrl, hasCalendarLink, shouldShowTour, isCore: core, isAdmin: admin, isDomainLead: domainLead, canViewForms, canViewStaffing, isInterviewer, hasHiringAccess, hasActiveHiringAccess, isInstructor, isLabMentor: isLabMentorFlag, isAlumni, isNewMember, instructorChrome, favorites: sidebarPages.favorites, recents: sidebarPages.recents, flags, impersonating, impersonationWrites, isEmbedded, tabless, tabStripHint, tabsSnapshot, focus, userTimeZone, userTimeZoneIsExplicit, tzDismissedZone, activeActivities, hasUnseenReleaseNotes, desktopHintDismissed: !!me?.desktopHintDismissedAt }
 }
 
 // Layout data (roles, avatar, hiring access) changes rarely, but default
@@ -300,7 +287,7 @@ export function shouldRevalidate({ formAction, currentUrl, nextUrl, defaultShoul
 }
 
 export default function AppLayoutRoute() {
-  const { user, photoUrl, hasCalendarLink, shouldShowTour, isCore, isAdmin, isDomainLead, canViewForms, canViewStaffing, isInterviewer, hasHiringAccess, hasActiveHiringAccess, isInstructor, isLabMentor: isLabMentorFlag, isAlumni, isNewMember, instructorChrome, favorites, recents, flags, impersonating, impersonationWrites, isEmbedded, tabless, focus, userTimeZone, userTimeZoneIsExplicit, tzDismissedZone, activeActivities, hasUnseenReleaseNotes } = useLoaderData<typeof loader>()
+  const { user, photoUrl, hasCalendarLink, shouldShowTour, isCore, isAdmin, isDomainLead, canViewForms, canViewStaffing, isInterviewer, hasHiringAccess, hasActiveHiringAccess, isInstructor, isLabMentor: isLabMentorFlag, isAlumni, isNewMember, instructorChrome, favorites, recents, flags, impersonating, impersonationWrites, isEmbedded, tabless, tabStripHint, tabsSnapshot, focus, userTimeZone, userTimeZoneIsExplicit, tzDismissedZone, activeActivities, hasUnseenReleaseNotes, desktopHintDismissed } = useLoaderData<typeof loader>()
 
   // Non-member (external instructor) shell: the lightweight, sidebar-free chrome
   // for the education-management routes they're allowed into. Rendered before the
@@ -332,30 +319,7 @@ export default function AppLayoutRoute() {
   // Mirror the os-shell class to <html> so portals that escape the shell div
   // keep the palette. In the tab-mode iframe this is the only place that runs it.
   useOsShellRoot(true)
-  const hasAreaSubnav = hasSubnavRow(matches)
-  // Pages that land directly on their own title, with no subnav in between,
-  // ask for a wider gap under the trail (see adminHandle).
-  const roomyBreadcrumb = matches.some(
-    (m) => (m as { handle?: { roomyBreadcrumb?: boolean } }).handle?.roomyBreadcrumb,
-  )
-  // A page's Guide CTA lives on this row when its pill row is gone (redesign on).
-  // Keep the row on hub pages that declare a docKey so the button has somewhere
-  // to render — otherwise the redesign hides it entirely.
-  const hasDoc = matches.some(
-    (m) => (m as { handle?: { docKey?: string } }).handle?.docKey,
-  )
-  // A page that declares `fitViewport` fills the shell's main column rather
-  // than growing with its content, so a page short enough to fit can centre
-  // itself against the window instead of forcing a scrollbar with a
-  // viewport-height box stacked under the shell's own chrome and gutters.
-  const fitViewport = matches.some((m) => paneFlag(m, 'fitViewport'))
-  const flushPane = matches.some(
-    (m) => (m as { handle?: { flushPane?: boolean } }).handle?.flushPane,
-  )
-  // `bleedPane` pages (the home hero) paint edge to edge with no gutter at all.
-  const bleedPane = matches.some((m) => paneFlag(m, 'bleedPane'))
-  const hideBreadcrumbRow =
-    !hasAreaSubnav && !hasDoc && isNavbarHubPage(`${location.pathname}${location.search}`)
+  const { fitViewport } = paneFlags(matches, location)
   // Starring a page is a fetcher write, which shouldRevalidate below keeps out
   // of this loader — so the shells read the list through this instead, and a
   // new favorite reaches the header without a reload.
@@ -494,52 +458,21 @@ export default function AppLayoutRoute() {
   // (tab mode) or directly in the shell's main column (tabless mode). The
   // breadcrumb trail lives here either way: it picks up each detail route's
   // `handle.breadcrumb` for the dynamic leaf crumb.
+  const shellV2 = flags['desktop-tabs'] === true && tabless && !embedded
   const pageContent = (
-    <div
-      className={cn(
-        'w-full',
-        fitViewport && 'flex min-h-0 flex-1 flex-col',
-        // The dali.os view gutter: 64px sides, 60px top on a page that starts
-        // with its own title. A page's own sub-nav is a segmented pill sized to
-        // its content, not a bar bleeding to the window edges, so it wants the
-        // same gutter every other page gets. `flushPane` pages (calendar) fill
-        // the pane instead — large side/bottom gutters left a floating box and
-        // a page scrollbar.
-        bleedPane
-          ? ''
-          : flushPane
-            ? 'px-4 pb-3 pt-3 sm:px-5 lg:px-5 lg:pb-3 lg:pt-4'
-            : 'px-5 pb-12 sm:px-10 lg:px-16 pt-8 lg:pt-[60px]',
-      )}
-    >
-      {!hideBreadcrumbRow && (
-        <div
-          className={cn(
-            'flex shrink-0 items-start justify-between gap-3',
-            roomyBreadcrumb ? 'mb-5 sm:mb-6 empty:mb-0' : 'mb-2 empty:mb-0',
-          )}
-        >
-          <Breadcrumbs />
-          {/* Under the dali.os shell the top bar carries the Guide — in tab
-              mode too, over the guide bridge — and ShellGuideProvider stands
-              this copy down for it. */}
-          <PageDocButton suppressWhenPills />
-        </div>
-      )}
-      <div className={cn(fitViewport && 'flex min-h-0 min-w-0 flex-1 flex-col')}>
-        <PageDocOutlet>
-          <Outlet />
-        </PageDocOutlet>
-      </div>
-      {/* On-page activity codes for the current route. Inside pageContent so in
-          tab mode they render within the page's iframe (where the page lives),
-          not in the outer shell. */}
-      <ActivityOverlay />
-    </div>
+    <TabKeepAlive>
+      <RoutedPage shellV2={shellV2} />
+    </TabKeepAlive>
   )
 
   // Skip the sidebar shell when rendered inside a TabWorkspace iframe. Each
   // iframe runs this loader, so the flag map is present in every document.
+  // The iframe document has no LayoutOS to set the mode-accent vars, so this
+  // shell div states them itself from the page's own mode.
+  const embeddedArea =
+    embedded && flags['desktop-tabs'] === true
+      ? areaForPath(`${location.pathname}${location.search}`, flags)
+      : undefined
   if (embedded) {
     return (
       <FeatureFlagsProvider flags={flags}>
@@ -565,6 +498,18 @@ export default function AppLayoutRoute() {
               fitViewport && 'flex flex-col md:h-dvh md:overflow-hidden',
               'os-shell bg-os-bg text-foreground',
             )}
+            style={
+              {
+                ...(embeddedArea
+                  ? {
+                      '--mode-accent': areaTint(embeddedArea.key),
+                      '--mode-accent-hover': `color-mix(in srgb, ${areaTint(embeddedArea.key)} 78%, white)`,
+                      '--mode-accent-ink': areaInk(embeddedArea.key),
+                      '--mode-accent-ink-hover': `color-mix(in srgb, ${areaInk(embeddedArea.key)} 82%, black)`,
+                    }
+                  : {}),
+              } as CSSProperties
+            }
           >
             {pageContent}
           </div>
@@ -578,7 +523,9 @@ export default function AppLayoutRoute() {
   }
 
   const tablessChild = tabless ? (
-    <div className={cn('flex-1 overflow-x-clip', fitViewport && 'flex min-h-0 flex-col')}>{pageContent}</div>
+    <div className={cn('flex-1 overflow-x-clip', fitViewport && 'flex min-h-0 flex-col')}>
+      {flags['desktop-tabs'] ? <SidePanelHost>{pageContent}</SidePanelHost> : pageContent}
+    </div>
   ) : undefined
 
   return (
@@ -588,7 +535,7 @@ export default function AppLayoutRoute() {
       {/* Above Layout, not inside pageContent: the tabless desktop nav row
           renders the Guide CTA from the shell, outside the routed page. */}
       <PageDocProvider>
-        <LayoutOS fitViewport={fitViewport} user={user} photoUrl={photoUrl} isCore={isCore} isAdmin={isAdmin} isDomainLead={isDomainLead} canViewForms={canViewForms} canViewStaffing={canViewStaffing} isInterviewer={isInterviewer} hasHiringAccess={hasHiringAccess} hasActiveHiringAccess={hasActiveHiringAccess} isInstructor={isInstructor} isLabMentor={isLabMentorFlag} isAlumni={isAlumni} isNewMember={isNewMember} favorites={liveFavorites} onFavoritesChange={setLiveFavorites} impersonating={impersonating} impersonationAllowsWrites={impersonationWrites} focusMode={focus} hasUnseenReleaseNotes={hasUnseenReleaseNotes}>
+        <LayoutOS fitViewport={fitViewport} user={user} photoUrl={photoUrl} isCore={isCore} isAdmin={isAdmin} isDomainLead={isDomainLead} canViewForms={canViewForms} canViewStaffing={canViewStaffing} isInterviewer={isInterviewer} hasHiringAccess={hasHiringAccess} hasActiveHiringAccess={hasActiveHiringAccess} isInstructor={isInstructor} isLabMentor={isLabMentorFlag} isAlumni={isAlumni} isNewMember={isNewMember} favorites={liveFavorites} onFavoritesChange={setLiveFavorites} impersonating={impersonating} impersonationAllowsWrites={impersonationWrites} focusMode={focus} hasUnseenReleaseNotes={hasUnseenReleaseNotes} desktopHintDismissed={desktopHintDismissed} tabStripHint={tabStripHint} tabsSnapshot={tabsSnapshot}>
           {tablessChild}
         </LayoutOS>
       </PageDocProvider>

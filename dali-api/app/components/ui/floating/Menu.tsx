@@ -155,13 +155,21 @@ function MenuRoot({
 
 function itemClass(active: boolean, destructive?: boolean, override?: string) {
   if (override) return override;
-  return `${OS_MENU_ITEM_CLASS} ${destructive ? "text-destructive" : "text-foreground"} ${active ? "bg-muted" : "hover:bg-muted"}`;
+  // A destructive row sits on its own pastel red plate (ink and icon in the
+  // danger red) so it never reads as one more neutral action.
+  if (destructive) {
+    return `${OS_MENU_ITEM_CLASS} text-destructive ${
+      active ? "bg-destructive/20" : "bg-destructive/10 hover:bg-destructive/20"
+    }`;
+  }
+  return `${OS_MENU_ITEM_CLASS} text-foreground ${active ? "bg-muted" : "hover:bg-muted"}`;
 }
 
 export function MenuItem({
   children,
   label,
   icon,
+  shortcut,
   onSelect,
   disabled,
   destructive,
@@ -171,6 +179,8 @@ export function MenuItem({
   /** Type-ahead text; defaults to `children` when it's a string. */
   label?: string;
   icon?: ReactNode;
+  /** A muted hint at the row's trailing edge, e.g. the key that does the same thing. */
+  shortcut?: string;
   onSelect?: () => void;
   disabled?: boolean;
   destructive?: boolean;
@@ -196,7 +206,8 @@ export function MenuItem({
       })}
     >
       {icon && <span className="shrink-0 text-muted-foreground">{icon}</span>}
-      {children}
+      {shortcut ? <span className="min-w-0 flex-1">{children}</span> : children}
+      {shortcut && <span className="ml-4 shrink-0 text-xs text-muted-foreground">{shortcut}</span>}
     </button>
   );
 }

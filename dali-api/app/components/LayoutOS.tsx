@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
-import { Link, useLocation, useMatches } from 'react-router'
+import { TOGGLE_SIDEBAR_SHORTCUT } from '~/lib/shortcuts'
+import { useToggleSidebarShortcut } from '~/components/shell/useToggleSidebarShortcut'
+import { Link, useLocation, useMatches, useNavigation } from 'react-router'
 import { Tooltip } from "~/components/ui/floating";
 import {
   ArrowRight,
@@ -7,18 +9,15 @@ import {
   Calendar,
   Check,
   ChevronsUpDown,
-  HelpCircle,
   Link as LinkIcon,
   LogOut,
   Mail,
   Menu,
+  PanelLeft,
   PanelLeftClose,
   PanelLeftOpen,
   Search,
-  Settings,
-  Sparkles,
   Star,
-  UserRound,
   X,
 } from 'lucide-react'
 import type { FavoritePage } from '~/lib/user-pages.server'
@@ -29,6 +28,10 @@ import { deepLinkTabLabel } from '~/lib/deep-link-tab'
 import { useAttentionFeed } from '~/components/NotificationBell'
 import { TasksDrawer, attentionCount } from '~/components/AttentionPanel'
 import { DesktopBanner } from '~/components/DesktopBanner'
+import { OpenInDesktopRedirect } from '~/components/shell/OpenInDesktopRedirect'
+import { useOpenCurrentPageInDesktop } from '~/components/shell/useOpenCurrentPageInDesktop'
+import { useIsBrowserDesktopCandidate } from '~/lib/desktop-candidate'
+import { useDesktopHint } from '~/components/shell/useDesktopHint'
 import { ImpersonationBanner } from '~/components/ImpersonationBanner'
 import { ActivityLauncher } from '~/components/activities/ActivityLauncher'
 import { CommandPalette } from '~/components/CommandPalette'
@@ -42,6 +45,10 @@ import {
   useTablessHistoryShortcuts,
 } from '~/components/TablessHistoryNav'
 import { useShellNav } from '~/components/shell-nav'
+import { DesktopTabStrip, useDesktopTabs } from '~/components/DesktopTabs'
+import { TabsShowingProvider } from '~/components/shell/TabKeepAlive'
+import { tabActions } from '~/lib/desktop-tabs-store'
+import type { DesktopTabsState } from '~/lib/desktop-tabs'
 import { buildPageLink, cleanTabUrl, COPY_PAGE_LINK_EVENT, stripHash, writePageLink } from '~/lib/page-link'
 import { useToast } from '~/components/ui/toast'
 import { FavoritesBar } from '~/components/FavoritesBar'
@@ -57,6 +64,8 @@ import {
 } from '~/components/os-shell-chrome'
 import {
   areaForPath,
+  areaInk,
+  areaTint,
   pinnedNavItems,
   homeNavItem,
   ROOM_BOOKING_NAV_ITEM,
@@ -71,6 +80,13 @@ import { useFeatureFlag } from '~/components/FeatureFlags'
 import { UnreadBadge } from '~/email/components/UnreadBadge'
 import { useAdminAttention } from '~/admin/useAdminAttention'
 import { useEmailUnread } from '~/email/lib/use-email-unread'
+import { Rail } from '~/components/shell/Rail'
+import { RailEdgeHandle } from '~/components/shell/RailEdgeHandle'
+import { useSidebarSize } from '~/components/shell/useSidebarSize'
+import { userMenuEntries } from '~/components/shell/rail-model'
+import { PageBar } from '~/components/shell/PageBar'
+import { DockedNavigationProgress } from '~/components/NavigationProgress'
+import { PageBarSlotProvider, useShellHeaderHeight } from '~/components/shell/page-bar-slot'
 
 interface LayoutOSProps {
   user: { email: string; firstName?: string; lastName?: string }
@@ -97,10 +113,16 @@ interface LayoutOSProps {
   focusMode?: boolean
   /** A published release note the viewer can see is newer than their last visit. */
   hasUnseenReleaseNotes?: boolean
+  desktopHintDismissed?: boolean
   /** The routed page fills the shell's main column instead of growing past it
    *  (see `handle.fitViewport`) — the shell is then bounded to the window and
    *  the page scrolls inside its own panes. */
   fitViewport?: boolean
+  /** The server's guess that this window shows desktop tabs (strip cookie), so
+   *  the strip's row is there on first paint. */
+  tabStripHint?: boolean
+  /** The open tabs as the server last saw them, so the strip paints with them. */
+  tabsSnapshot?: DesktopTabsState | null
   children?: React.ReactNode
 }
 
@@ -138,15 +160,34 @@ export function LayoutOS({
   impersonationAllowsWrites = false,
   focusMode = false,
   hasUnseenReleaseNotes = false,
+  desktopHintDismissed = false,
   fitViewport = false,
+  tabStripHint = false,
+  tabsSnapshot = null,
   children,
 }: LayoutOSProps) {
   const location = useLocation()
   const matches = useMatches()
-  useRecordTablessHistory()
-  useTablessHistoryShortcuts(useShowTablessHistoryNav())
   const tabless = children !== undefined
+  const desktopTabsFlag = useFeatureFlag('desktop-tabs')
+  const showTabs = useDesktopTabs(desktopTabsFlag && tabless, tabStripHint)
+  const shellV2 = desktopTabsFlag && tabless
+  // Under the v2 shell the rail auto-compacts to an icon column on narrow
+  // windows; collapsing it (button, edge, ⌘\) hides it entirely, leaving only
+  // the expand button in the tab strip / page bar.
+  const { size: railSize, instant: railInstant } = useSidebarSize(shellV2)
+  const compactRail = shellV2 && railSize === 'compact'
+  const [railHidden, setRailHidden] = useState(focusMode)
+  const hideRail = shellV2 ? railHidden : focusMode
+  const toggleRail = () => {
+    setFocusPreference(!railHidden)
+    setRailHidden(!railHidden)
+  }
+  useToggleSidebarShortcut(shellV2, toggleRail)
+  useRecordTablessHistory()
+  useTablessHistoryShortcuts(useShowTablessHistoryNav(tabless), showTabs)
   useOsShellRoot(true)
+  const shellHeaderRef = useShellHeaderHeight()
 
   const {
     workspaceRef,
@@ -156,7 +197,7 @@ export function LayoutOS({
     openInWorkspace,
     openFromPalette,
     tabClickProps,
-  } = useShellNav(tabless)
+  } = useShellNav(tabless, { tabs: showTabs, sidePanel: desktopTabsFlag })
 
   const [focusedTabUrl, setFocusedTabUrl] = useState<string | null>(null)
   const [focusedTabLabel, setFocusedTabLabel] = useState<string | null>(null)
@@ -185,7 +226,8 @@ export function LayoutOS({
     return () => window.removeEventListener(COPY_PAGE_LINK_EVENT, onCopy)
   }, [copyCurrentPageLink])
   const favoritesBar = useFeatureFlag('favorites-bar')
-  const starUrl = favoritesBar
+  const starEnabled = favoritesBar || shellV2
+  const starUrl = starEnabled
     ? stripHash(cleanTabUrl(!tabless && focusedTabUrl !== null ? focusedTabUrl : location.pathname + location.search))
     : null
   // Titles are "<page> · DALI OS"; keep the page part.
@@ -194,19 +236,19 @@ export function LayoutOS({
     (typeof document !== 'undefined' ? document.title.split(' · ')[0] : '') ||
     starUrl ||
     ''
-  const pageStar = useCurrentPageFavorite(starUrl, starLabel, favoritesBar)
+  const pageStar = useCurrentPageFavorite(starUrl, starLabel, starEnabled)
   const toggleStarRef = useRef(pageStar)
   toggleStarRef.current = pageStar
 
   useEffect(() => {
-    if (!favoritesBar) return
+    if (!starEnabled) return
     const onToggle = (e: Event) => {
       e.preventDefault()
       if (toggleStarRef.current.canToggle) void toggleStarRef.current.toggle()
     }
     window.addEventListener(TOGGLE_FAVORITE_EVENT, onToggle)
     return () => window.removeEventListener(TOGGLE_FAVORITE_EVENT, onToggle)
-  }, [favoritesBar])
+  }, [starEnabled])
 
   // Tab mode: the focused tab's frame reports its page guide over the guide
   // bridge, since only that document knows the route's docKey.
@@ -215,7 +257,15 @@ export function LayoutOS({
   // need the query to tell a Core deep-link into the Drive (/drive?type=agreement)
   // from the plain Drive pin. In tab mode the focused-tab url already carries it;
   // in tabless mode location.pathname would drop it, so append the search.
-  const path = focusedTabUrl ?? location.pathname + location.search
+  // While a navigation is loading, the destination wins: the sidebar highlights
+  // where you're headed at click time, so its morph and slide animations run
+  // during the fetch instead of competing with the new page's render.
+  const navigation = useNavigation()
+  const pendingPath =
+    navigation.state === 'loading' && navigation.location
+      ? navigation.location.pathname + navigation.location.search
+      : null
+  const path = pendingPath ?? focusedTabUrl ?? location.pathname + location.search
   const [collapsed, setCollapsed] = useState(false)
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const [lastAreaKey, setLastAreaKey] = useState('projects')
@@ -414,12 +464,13 @@ export function LayoutOS({
       </span>
     )
 
-  const userMenuItems = [
-    { url: '/profile', label: 'Profile', icon: UserRound },
-    { url: '/settings', label: 'Settings', icon: Settings },
-    ...(releaseNotesEnabled ? [{ url: '/release-notes', label: "What's new", icon: Sparkles }] : []),
-    { url: '/help', label: 'Help', icon: HelpCircle },
-  ]
+  const browserDesktop = useIsBrowserDesktopCandidate()
+  const openCurrentPageInDesktop = useOpenCurrentPageInDesktop()
+  useDesktopHint({ enabled: desktopTabsFlag && browserDesktop, dismissed: desktopHintDismissed })
+  const userMenuItems = userMenuEntries({
+    releaseNotes: releaseNotesEnabled,
+    desktopDownload: desktopTabsFlag && browserDesktop,
+  })
   const onReleaseNotes = path.startsWith('/release-notes')
   // The layout loader rarely revalidates, so its flag stays stale after a visit.
   const [visitedReleaseNotes, setVisitedReleaseNotes] = useState(onReleaseNotes)
@@ -787,11 +838,44 @@ export function LayoutOS({
 
   /* ---------------- Top bar ---------------- */
 
+  const tasksDrawer = (
+    <TasksDrawer
+      open={bellOpen}
+      onClose={closeBellPanel}
+      tasks={openTasks}
+      notifications={feedItems}
+      projectTasks={projectTasks}
+      singleFeed={isAlumni}
+      onOpen={(url, label) => {
+        closeBellPanel()
+        openInWorkspace({ url, label })
+      }}
+      seeAll={
+        // Close after opening, in the same handler. Closing on capture
+        // flushed the state update before the bubble phase, unmounting
+        // this button so its navigation never ran.
+        <button
+          type="button"
+          {...seeAllProps}
+          onClick={(e) => {
+            seeAllProps.onClick(e)
+            closeBellPanel()
+          }}
+          className="inline-flex items-center gap-1.5 rounded-[10px] px-2.5 py-2 text-[13.5px] font-semibold text-os-accent hover:bg-os-container"
+        >
+          See all
+          <ArrowRight strokeWidth={1.5} className="h-[15px] w-[15px]" aria-hidden />
+        </button>
+      }
+    />
+  )
+
+
   const topBar = (
     <div className="os-nav-edge-b flex items-center justify-between gap-4 border-l-2 border-os-bg bg-os-nav px-6 py-2.5">
       <div className="flex min-w-0 items-center gap-3">
         {/* Back/forward arrows — tabless desktop shell only; renders nothing elsewhere. */}
-        <TablessHistoryNav />
+        <TablessHistoryNav tabless={tabless} tabs={showTabs} />
         {favorites.length === 0 ? (
           <div className="flex items-center gap-3 text-sm text-os-muted">
             <Star className="h-4 w-4 flex-shrink-0 opacity-70" />
@@ -888,44 +972,87 @@ export function LayoutOS({
             </span>
           </button>
         </Tooltip>
-        <TasksDrawer
-          open={bellOpen}
-          onClose={closeBellPanel}
-          tasks={openTasks}
-          notifications={feedItems}
-          projectTasks={projectTasks}
-          singleFeed={isAlumni}
-          onOpen={(url, label) => {
-            closeBellPanel()
-            openInWorkspace({ url, label })
-          }}
-          seeAll={
-            // Close after opening, in the same handler. Closing on capture
-            // flushed the state update before the bubble phase, unmounting
-            // this button so its navigation never ran.
-            <button
-              type="button"
-              {...seeAllProps}
-              onClick={(e) => {
-                seeAllProps.onClick(e)
-                closeBellPanel()
-              }}
-              className="inline-flex items-center gap-1.5 rounded-[10px] px-2.5 py-2 text-[13.5px] font-bold text-os-accent hover:bg-os-container"
-            >
-              See all
-              <ArrowRight className="h-[15px] w-[15px]" aria-hidden />
-            </button>
-          }
-        />
+        {tasksDrawer}
       </div>
     </div>
   )
+
+  const railToggle = (
+    <Tooltip content={`Show sidebar · ${TOGGLE_SIDEBAR_SHORTCUT}`}>
+      <button
+        type="button"
+        onClick={toggleRail}
+        aria-label="Show sidebar"
+        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-os-grey transition-colors hover:bg-os-hover hover:text-foreground"
+      >
+        <PanelLeft strokeWidth={1.5} className="h-[18px] w-[18px]" />
+      </button>
+    </Tooltip>
+  )
+
+  const renderRail = (hideable: boolean) => (
+    <Rail
+      userName={[user.firstName, user.lastName].filter(Boolean).join(' ') || user.email}
+      initials={initials}
+      photoUrl={photoUrl}
+      path={path}
+      navFlags={navFlags}
+      isAlumni={isAlumni}
+      isNewMember={isNewMember}
+      home={home}
+      pinned={pinned}
+      tabClickProps={tabClickProps}
+      emailUnread={emailUnread}
+      taskCount={taskCount}
+      bellOpen={bellOpen}
+      onToggleBell={() => setBellOpen((o) => !o)}
+      onOpenSearch={() => setPaletteOpen(true)}
+      onHideRail={hideable ? toggleRail : undefined}
+      size={hideable ? railSize : 'expanded'}
+      animated={hideable}
+      favorites={favorites}
+      onFavoritesChange={onFavoritesChange}
+      favoritesActiveHref={stripHash(cleanTabUrl(location.pathname + location.search))}
+      areas={areas}
+      activeArea={activeArea}
+      activeSubtabs={activeSubtabs}
+      activeHref={activeHref}
+      onSelectArea={selectArea}
+      userMenuItems={userMenuItems}
+      showWhatsNewDot={showWhatsNewDot}
+      topInset={shellV2 && !showTabs}
+    />
+  )
+
+  const ShellSlots = shellV2 ? PageBarSlotProvider : React.Fragment
 
   const sidebarWidth = collapsed ? 'w-[76px]' : 'w-[276px]'
   const mainPad = collapsed ? 'md:pl-[76px]' : 'md:pl-[276px]'
 
   return (
     <div
+      // `--area` carries the active section's accent: the rail's active row,
+      // its icons and the section switcher all tint from it. Both halves of
+      // the tone go up; app.css resolves `--area` per mode (tint on the dark
+      // nav, ink on light — the tints are too pale to read on white).
+      style={
+        {
+          '--area-tint': areaTint(activeArea?.key),
+          '--area-ink': areaInk(activeArea?.key),
+          // The page accent (--color-os-accent resolves from these) follows the
+          // page's own mode — v2 design only. Keyed on routeArea, not
+          // activeArea: a modeless page (home, calendar) keeps the default
+          // accent even while the rail still shows the last section.
+          ...(desktopTabsFlag && routeArea
+            ? {
+                '--mode-accent': areaTint(routeArea.key),
+                '--mode-accent-hover': `color-mix(in srgb, ${areaTint(routeArea.key)} 78%, white)`,
+                '--mode-accent-ink': areaInk(routeArea.key),
+                '--mode-accent-ink-hover': `color-mix(in srgb, ${areaInk(routeArea.key)} 82%, black)`,
+              }
+            : {}),
+        } as React.CSSProperties
+      }
       className={cn(
         'os-shell flex min-h-screen min-h-dvh flex-col bg-os-bg pt-14 text-foreground md:flex-row md:pt-0',
         // `min-h-dvh` alone is a floor, so a page taller than the window still
@@ -938,16 +1065,31 @@ export function LayoutOS({
         fitViewport && 'md:h-dvh md:overflow-hidden',
       )}
     >
-      {!focusMode && (
-        <aside
-          className={cn(
-            'os-nav-edge-r fixed inset-y-0 left-0 z-20 hidden flex-col bg-os-nav transition-[width] duration-200 md:flex',
-            sidebarWidth,
+      {shellV2
+        ? !hideRail && (
+            <aside
+              data-size={railSize}
+              className={cn(
+                'fixed inset-y-0 left-0 z-20 hidden flex-col border-r border-os-container bg-os-nav md:flex',
+                compactRail ? 'w-[68px]' : 'w-[264px]',
+                !railInstant &&
+                  'transition-[width] duration-[220ms] ease-[cubic-bezier(0.23,1,0.32,1)] motion-reduce:transition-none',
+              )}
+            >
+              <div className="os-rail-scale h-full">{renderRail(true)}</div>
+              <RailEdgeHandle onToggle={toggleRail} />
+            </aside>
+          )
+        : !focusMode && (
+            <aside
+              className={cn(
+                'os-nav-edge-r fixed inset-y-0 left-0 z-20 hidden flex-col bg-os-nav transition-[width] duration-200 md:flex',
+                sidebarWidth,
+              )}
+            >
+              {renderSidebar(collapsed)}
+            </aside>
           )}
-        >
-          {renderSidebar(collapsed)}
-        </aside>
-      )}
 
       {/* Mobile top bar */}
       <div className="os-nav-edge-b fixed inset-x-0 top-0 z-20 flex h-14 items-center justify-between bg-os-nav px-4 md:hidden">
@@ -1012,16 +1154,23 @@ export function LayoutOS({
             id="os-mobile-nav"
             className="os-nav-edge-r fixed inset-y-0 left-0 z-40 flex w-[276px] flex-col bg-os-nav shadow-xl md:hidden"
           >
-            {renderSidebar(false)}
+            {shellV2 ? renderRail(false) : renderSidebar(false)}
           </aside>
         </>
       )}
 
+      <ShellSlots>
       <main
         className={cn(
-          'flex min-w-0 flex-1 flex-col transition-[padding] duration-200',
+          'flex min-w-0 flex-1 flex-col',
+          shellV2
+            ? !railInstant &&
+                'transition-[padding] duration-[220ms] ease-[cubic-bezier(0.23,1,0.32,1)] motion-reduce:transition-none'
+            : 'transition-[padding] duration-200',
           fitViewport && 'min-h-0',
-          !focusMode && mainPad,
+          shellV2
+            ? !hideRail && (compactRail ? 'md:pl-[68px]' : 'md:pl-[264px]')
+            : !focusMode && mainPad,
         )}
       >
         {/* Impersonation is a session-mode indicator, so it sits above the top
@@ -1031,15 +1180,51 @@ export function LayoutOS({
             userName={`${user.firstName ?? ''} ${user.lastName ?? ''}`.trim() || user.email}
           />
         )}
-        {/* `shrink-0` so a bounded shell takes the height out of the page's
-            own scrollport rather than squashing the favourites bar. */}
-        {!focusMode && <div className="hidden shrink-0 md:block">{topBar}</div>}
+        {shellV2 ? (
+          // Sticky because the page bar now carries the document toolbar,
+          // which used to stick on its own (.doc-topbar).
+          <div ref={shellHeaderRef} className="relative sticky top-14 z-20 shrink-0 bg-os-bg md:top-0">
+            {showTabs && (
+              <div className="hidden md:block">
+                <DesktopTabStrip leading={hideRail ? railToggle : undefined} initial={tabsSnapshot} />
+              </div>
+            )}
+            <PageBar
+              tabs={showTabs}
+              leading={
+                hideRail && !showTabs ? <div className="hidden md:block">{railToggle}</div> : undefined
+              }
+              areaKey={routeArea?.key}
+              star={pageStar}
+              onCopyLink={() => void copyCurrentPageLink()}
+            />
+            {showTabs && <DockedNavigationProgress />}
+          </div>
+        ) : (
+          <>
+            {showTabs && (
+              <div className="hidden shrink-0 md:block">
+                <DesktopTabStrip leading={hideRail ? railToggle : undefined} initial={tabsSnapshot} />
+              </div>
+            )}
+            {/* `shrink-0` so a bounded shell takes the height out of the page's
+                own scrollport rather than squashing the favourites bar. */}
+            {!focusMode && <div className="hidden shrink-0 md:block">{topBar}</div>}
+          </>
+        )}
+        {shellV2 && tasksDrawer}
         <DesktopBanner />
         <ActivityLauncher />
         {tabless ? (
           <ShellGuideProvider>
-            <div className="flex min-h-0 flex-1 flex-col">
-              {children}
+            <div
+              className="flex min-h-0 flex-1 flex-col"
+              // A press or keystroke in a preview tab's page is real engagement:
+              // keep the tab, so the next sidebar click can't replace it.
+              onPointerDownCapture={showTabs ? tabActions.promoteActive : undefined}
+              onKeyDownCapture={showTabs ? tabActions.promoteActive : undefined}
+            >
+              <TabsShowingProvider value={showTabs && shellV2}>{children}</TabsShowingProvider>
             </div>
           </ShellGuideProvider>
         ) : (
@@ -1055,9 +1240,10 @@ export function LayoutOS({
           />
         )}
       </main>
+      </ShellSlots>
 
       {/* Focus mode: with the rail hidden, keep search + a way back. */}
-      {focusMode && (
+      {!shellV2 && focusMode && (
         <div className={cn('fixed bottom-4 left-4 z-30 hidden items-center gap-1 md:flex', osMenuClass)}>
           <button
             type="button"
@@ -1097,11 +1283,13 @@ export function LayoutOS({
         open={paletteOpen}
         onClose={() => setPaletteOpen(false)}
         tabless={tabless}
-        focusMode={focusMode}
+        focusMode={hideRail}
         roles={roleFlags}
         flags={navFlags}
         onOpen={openFromPalette}
+        onOpenInDesktop={desktopTabsFlag && browserDesktop ? openCurrentPageInDesktop : undefined}
       />
+      <OpenInDesktopRedirect />
     </div>
   )
 }

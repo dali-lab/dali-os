@@ -1,6 +1,7 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { delibsQualifier } from "~/hiring/lib/cycle-stages.server";
 import { cn } from "~/lib/cn";
+import { useCurrentMembers } from "~/hiring/lib/current-members";
 import { Form, Link, useActionData, useLoaderData, useNavigate, useNavigation, useSearchParams, useRevalidator, useSubmit } from "react-router";
 import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
 import { redirect } from "react-router";
@@ -628,7 +629,11 @@ function DomainPanel({ entry, allForms, emailEngagement }: { entry: any; allForm
   const revalidator = useRevalidator();
   const toast = useToast();
   const dialog = useDialog();
-  const [members, setMembers] = useState<{ id: string; name: string }[]>([]);
+  const currentMembers = useCurrentMembers();
+  const members = useMemo(
+    () => currentMembers.map((m) => ({ id: m.id, name: personName(m) ?? m.id })),
+    [currentMembers],
+  );
   const [, setSearchParams] = useSearchParams();
   const setCycle = (cycleId: string) =>
     setSearchParams(
@@ -639,14 +644,6 @@ function DomainPanel({ entry, allForms, emailEngagement }: { entry: any; allForm
       },
       { replace: true, preventScrollReset: true },
     );
-
-  useEffect(() => {
-    // Rosters take current-term members only.
-    fetch("/api/members?scope=current", { credentials: "include" })
-      .then((r) => (r.ok ? r.json() : []))
-      .then((list: any[]) => setMembers(list.map((m) => ({ id: m.id, name: personName(m) ?? m.id }))))
-      .catch(() => {});
-  }, []);
 
   // The picker carries every cycle this domain has run, so a name alone no
   // longer identifies one — two Students cycles a year apart read the same.
@@ -1215,7 +1212,7 @@ function DomainPanel({ entry, allForms, emailEngagement }: { entry: any; allForm
   );
 }
 
-const OS_TABLE_HEAD = "text-os-grey text-xs uppercase tracking-wide";
+const OS_TABLE_HEAD = "text-os-grey text-xs";
 const OS_TABLE_ROW = "border-t border-os-container hover:bg-os-card-hover transition-colors";
 
 function personName(u: any): string | undefined {
@@ -1774,7 +1771,7 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
               <button
                 type="button"
                 onClick={() => toggleSort("name")}
-                className="inline-flex items-center gap-1 uppercase tracking-wide hover:text-foreground"
+                className="inline-flex items-center gap-1 hover:text-foreground"
                 aria-label={`Sort by applicant name (${sortKey === "name" ? (sortDir === "asc" ? "ascending" : "descending") : "not sorted"})`}
               >
                 Applicant
@@ -1787,7 +1784,7 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
               <button
                 type="button"
                 onClick={() => toggleSort("reviewers")}
-                className="inline-flex items-center gap-1 uppercase tracking-wide hover:text-foreground"
+                className="inline-flex items-center gap-1 hover:text-foreground"
                 aria-label={`Sort by reviewer progress (${sortKey === "reviewers" ? (sortDir === "asc" ? "ascending" : "descending") : "not sorted"})`}
               >
                 Reviewers

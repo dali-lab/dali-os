@@ -1,6 +1,6 @@
 import { useNavigate } from "react-router";
 import { Plus, X } from "lucide-react";
-import { SegmentedTabButtons } from "~/components/AreaPillNav";
+import { Segmented } from "~/components/ui/Segmented";
 import { Avatar } from "~/components/ui/Avatar";
 import type { GalleryPerson } from "~/community/lib/gallery.server";
 import { galleryFeedHref } from "~/community/lib/gallery";
@@ -25,11 +25,17 @@ export function GalleryNavRow({
   return (
     <div className="flex flex-wrap items-center gap-3">
       <div className="flex items-center gap-2">
-        <SegmentedTabButtons
-          label="Show"
-          items={[
-            { label: "All", active: !mine && !person, onClick: () => navigate(galleryFeedHref({ q })) },
-            { label: "Mine", active: mine && !person, onClick: () => navigate(galleryFeedHref({ mine: true, q })) },
+        <Segmented<"all" | "mine">
+          value={mine && !person ? "mine" : "all"}
+          onChange={(next) =>
+            navigate(galleryFeedHref(next === "mine" ? { mine: true, q } : { q }))
+          }
+          ariaLabel="Show"
+          size="md"
+          pill
+          options={[
+            { value: "all", label: "All" },
+            { value: "mine", label: "Mine" },
           ]}
         />
         {person && (
@@ -48,7 +54,7 @@ export function GalleryNavRow({
         )}
       </div>
       <GallerySearch mine={mine} results={results} />
-      <button type="button" onClick={onPost} className="os-add-btn ml-auto">
+      <button type="button" onClick={onPost} className="os-btn-primary os-btn-tint ml-auto">
         <Plus className="h-[17px] w-[17px]" strokeWidth={3} aria-hidden />
         Post
       </button>

@@ -16,6 +16,7 @@ import type {
   CalendarLinkDTO,
   CalendarView,
   LoaderData,
+  UserOption,
   TimesheetHoursScope,
 } from "~/calendar/lib/types";
 import type { LayerVisibility } from "~/calendar/lib/layers";
@@ -121,7 +122,7 @@ function MeetWith({
   users,
   onPick,
 }: {
-  users: LoaderData["users"];
+  users: UserOption[];
   onPick: (userId: string) => void;
 }) {
   const [query, setQuery] = useState("");
@@ -313,6 +314,8 @@ type CalendarSidebarProps = {
   onHoverRole: (roleKey: string | null) => void;
   /** Opens the create modal with this person already invited, on the current
    *  week, so their availability is on screen immediately. */
+  /** The lab directory for Meet with; fetched after load, so empty at first. */
+  users: UserOption[];
   onMeetWith: (userId: string) => void;
 };
 
@@ -334,6 +337,7 @@ function CalendarSidebarContent({
   hoursRangeLabel,
   setRoleColor,
   onHoverRole,
+  users,
   onMeetWith,
 }: CalendarSidebarProps) {
   const revalidator = useRevalidator();
@@ -379,8 +383,8 @@ function CalendarSidebarContent({
           about hours already worked, so the search box only gets in the way.
           A viewer with nobody to search (the portal calendar withholds the lab
           directory) gets no box at all rather than one that can never answer. */}
-      {!layers.logged && data.users.length > 0 && (
-        <MeetWith users={data.users} onPick={onMeetWith} />
+      {!layers.logged && data.hasDirectory && (
+        <MeetWith users={users} onPick={onMeetWith} />
       )}
 
       {/* Which calendars to draw is a question about events. In timesheet

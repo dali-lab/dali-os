@@ -527,6 +527,7 @@ export default [
   route("api/notifications/stream", "routes/api.notifications.stream.ts"),
   route("api/presence/statuses", "routes/api.presence.statuses.ts"),
   route("api/presence/hide-activity", "routes/api.presence.hide-activity.ts"),
+  route("api/desktop-hint/dismiss", "routes/api.desktop-hint.dismiss.ts"),
   route("api/notifications/send", "admin/routes/api.notifications.send.ts"),
   route("api/notifications/:id/read", "routes/api.notifications.$id.read.ts"),
   route("api/notifications/:id/rsvp", "routes/api.notifications.$id.rsvp.ts"),
@@ -616,6 +617,7 @@ export default [
   route("api/calendar/group-availability", "calendar/routes/api.calendar.group-availability.ts"),
   route("api/calendar/search", "calendar/routes/api.calendar.search.ts"),
   route("api/scheduling-data", "calendar/routes/api.scheduling-data.ts"),
+  route("api/calendar/participants", "calendar/routes/api.calendar.participants.ts"),
   route("api/timetable/courses", "calendar/routes/api.timetable.courses.ts"),
   // JobX browser extension export — see jobx-extension/README.md.
   route("api/timesheets/export", "routes/api.timesheets.export.ts"),
@@ -690,6 +692,7 @@ export default [
   // Lab-wide documents (collab Pages scoped to the Lab workspace)
   route("api/lab-documents", "routes/api.lab-documents.ts"),
   route("api/documents/:id", "projects/routes/api.documents.$id.ts"),
+  route("api/documents/:pageId/panel", "routes/api.documents.$pageId.panel.ts"),
   route("api/notebooks", "routes/api.notebooks.ts"),
   route("api/notebooks/default", "routes/api.notebooks.default.ts"),
   route("api/notebooks/mentorship-pair", "routes/api.notebooks.mentorship-pair.ts"),
@@ -816,6 +819,7 @@ export default [
   route("api/hiring/cycles/:cycleId/interviewers", "hiring/routes/api.cycles.$cycleId.interviewers.ts"),
   route("api/hiring/cycles/:cycleId/coverage", "hiring/routes/api.cycles.$cycleId.coverage.ts"),
   route("api/hiring/cycles/:cycleId/delibs", "hiring/routes/api.cycles.$cycleId.delibs.ts"),
+  route("api/hiring/cycles/:cycleId/delibs/events", "hiring/routes/api.cycles.$cycleId.delibs.events.ts"),
   route("api/hiring/cycles/:cycleId/domains/:domainId/auto-assign", "hiring/routes/api.cycles.$cycleId.domains.$domainId.auto-assign.ts"),
   route("api/hiring/cycles/:cycleId/confidentiality/sign", "hiring/routes/api.cycles.$cycleId.confidentiality.sign.ts"),
 

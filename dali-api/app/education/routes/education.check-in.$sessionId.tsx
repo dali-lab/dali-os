@@ -107,7 +107,7 @@ export default function EducationSessionCheckIn() {
 
   return (
     <div className="os-shell min-h-screen flex items-center justify-center bg-os-bg text-foreground p-4">
-      <div className="w-full max-w-sm rounded-os-card bg-os-card p-6 text-center">
+      <div className="w-full max-w-sm rounded-os-card bg-os-card p-5 text-center">
         <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           {data.courseTitle}
         </p>

@@ -1,8 +1,12 @@
 import { describe, it, expect } from "vitest";
 import {
   applicableFilters,
+  cellValues,
+  clearFilterColumn,
   columnResponses,
+  filterValues,
   matchesFilters,
+  toggleFilterValue,
   type ColumnFilter,
 } from "../submission-filters";
 
@@ -13,44 +17,28 @@ const rows: { cells: Record<string, string> }[] = [
   { cells: { status: "Maybe" } },
 ];
 
-const f = (over: Partial<ColumnFilter>): ColumnFilter => ({
-  id: "1",
-  columnKey: "status",
-  operator: "is",
-  value: "",
-  ...over,
-});
-
 const run = (...filters: ColumnFilter[]) =>
   rows.filter((r) => matchesFilters(r.cells, filters)).length;
 
-describe("submission-filters", () => {
-  it("matches each operator against the cell text", () => {
-    expect(run(f({ operator: "is", value: "Yes" }))).toBe(2);
-    expect(run(f({ operator: "isNot", value: "Yes" }))).toBe(2);
-    expect(run(f({ columnKey: "why", operator: "contains", value: "DESIGN" }))).toBe(1);
-    expect(run(f({ columnKey: "why", operator: "notContains", value: "design" }))).toBe(3);
-    expect(run(f({ columnKey: "why", operator: "isEmpty" }))).toBe(2);
-    expect(run(f({ columnKey: "why", operator: "isNotEmpty" }))).toBe(2);
+describe("matchesFilters", () => {
+  it("matches a row whose cell is any picked value (OR within a column)", () => {
+    expect(run({ columnKey: "status", values: ["Yes"] })).toBe(2);
+    expect(run({ columnKey: "status", values: ["Yes", "Maybe"] })).toBe(3);
+    expect(run({ columnKey: "status", values: ["Nope"] })).toBe(0);
   });
 
-  it("ANDs multiple filters", () => {
+  it("ANDs filters across columns", () => {
     expect(
       run(
-        f({ operator: "is", value: "Yes" }),
-        f({ id: "2", columnKey: "why", operator: "contains", value: "mentor" }),
+        { columnKey: "status", values: ["Yes"] },
+        { columnKey: "why", values: ["Want to mentor"] },
       ),
     ).toBe(1);
   });
 
-  it("skips filters with no value yet or a column the board no longer has", () => {
-    const filters = [
-      f({ operator: "is", value: "" }),
-      f({ id: "2", columnKey: "gone", operator: "is", value: "x" }),
-      f({ id: "3", operator: "isEmpty" }),
-      f({ id: "4", operator: "is", value: "No" }),
-    ];
-    expect(applicableFilters(filters, ["status", "why"]).map((x) => x.id)).toEqual(["3", "4"]);
+  it("never matches an empty or missing cell", () => {
+    expect(run({ columnKey: "why", values: ["Love design work"] })).toBe(1);
+    expect(run({ columnKey: "gone", values: ["x"] })).toBe(0);
   });
 
   it("matches a list cell on any one of its entries", () => {
@@ -59,19 +47,91 @@ describe("submission-filters", () => {
       { cells: { domain: ["Engineering"] } },
       { cells: { domain: [] } },
     ];
-    const count = (operator: ColumnFilter["operator"], value = "") =>
-      people.filter((p) =>
-        matchesFilters(p.cells, [{ id: "1", columnKey: "domain", operator, value }]),
-      ).length;
-    expect(count("is", "Design")).toBe(1);
-    expect(count("isNot", "Design")).toBe(2);
-    expect(count("contains", "eng")).toBe(2);
-    expect(count("isEmpty")).toBe(1);
-    expect(columnResponses(people, "domain")).toEqual(["Design", "Engineering"]);
+    const count = (values: string[]) =>
+      people.filter((p) => matchesFilters(p.cells, [{ columnKey: "domain", values }])).length;
+    expect(count(["Design"])).toBe(1);
+    expect(count(["Design", "Engineering"])).toBe(2);
+  });
+});
+
+describe("applicableFilters", () => {
+  it("skips filters with no values yet or a column the board no longer has", () => {
+    const filters: ColumnFilter[] = [
+      { columnKey: "status", values: [] },
+      { columnKey: "gone", values: ["x"] },
+      { columnKey: "why", values: ["Want to mentor"] },
+    ];
+    expect(applicableFilters(filters, ["status", "why"])).toEqual([
+      { columnKey: "why", values: ["Want to mentor"] },
+    ]);
+  });
+});
+
+describe("toggleFilterValue", () => {
+  it("starts a column's filter on the first value", () => {
+    expect(toggleFilterValue([], "status", "Yes")).toEqual([
+      { columnKey: "status", values: ["Yes"] },
+    ]);
   });
 
+  it("adds and removes values on an existing column in place", () => {
+    const one: ColumnFilter[] = [{ columnKey: "status", values: ["Yes"] }];
+    const two = toggleFilterValue(one, "status", "No");
+    expect(two).toEqual([{ columnKey: "status", values: ["Yes", "No"] }]);
+    expect(toggleFilterValue(two, "status", "Yes")).toEqual([
+      { columnKey: "status", values: ["No"] },
+    ]);
+  });
+
+  it("drops a column whose last value is removed, keeping the others", () => {
+    const filters: ColumnFilter[] = [
+      { columnKey: "status", values: ["Yes"] },
+      { columnKey: "why", values: ["Want to mentor"] },
+    ];
+    expect(toggleFilterValue(filters, "status", "Yes")).toEqual([
+      { columnKey: "why", values: ["Want to mentor"] },
+    ]);
+  });
+});
+
+describe("filterValues / clearFilterColumn", () => {
+  const filters: ColumnFilter[] = [
+    { columnKey: "status", values: ["Yes", "No"] },
+    { columnKey: "why", values: ["Want to mentor"] },
+  ];
+
+  it("reads one column's picked values, empty when unfiltered", () => {
+    expect(filterValues(filters, "status")).toEqual(["Yes", "No"]);
+    expect(filterValues(filters, "gone")).toEqual([]);
+  });
+
+  it("removes one column's filter entirely", () => {
+    expect(clearFilterColumn(filters, "status")).toEqual([
+      { columnKey: "why", values: ["Want to mentor"] },
+    ]);
+  });
+});
+
+describe("cellValues", () => {
+  it("normalizes missing, string and list cells, trimming blanks", () => {
+    expect(cellValues(undefined)).toEqual([]);
+    expect(cellValues("  ")).toEqual([]);
+    expect(cellValues("Yes")).toEqual(["Yes"]);
+    expect(cellValues([" Design ", "", "Engineering"])).toEqual(["Design", "Engineering"]);
+  });
+});
+
+describe("columnResponses", () => {
   it("lists a column's distinct non-empty responses, sorted", () => {
     expect(columnResponses(rows, "status")).toEqual(["Maybe", "No", "Yes"]);
     expect(columnResponses(rows, "why")).toEqual(["Love design work", "Want to mentor"]);
+  });
+
+  it("flattens and dedupes list cells, sorting numerically", () => {
+    const people = [
+      { cells: { year: ["2024", "2026"] } },
+      { cells: { year: ["2024", "2028"] } },
+    ];
+    expect(columnResponses(people, "year")).toEqual(["2024", "2026", "2028"]);
   });
 });

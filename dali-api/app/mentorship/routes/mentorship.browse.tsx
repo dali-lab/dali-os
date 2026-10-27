@@ -1,13 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  Link,
   redirect,
   useLoaderData,
   useNavigate,
-  useRevalidator,
   useSearchParams,
 } from "react-router";
-import { LayoutTemplate, Link2, PencilLine, Send } from "lucide-react";
+import {
+  Activity,
+  FolderKanban,
+  Layers,
+  LayoutTemplate,
+  Link2,
+  Send,
+} from "lucide-react";
 import type { Route } from "./+types/mentorship.browse";
 import { requireAuth, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
@@ -21,27 +26,23 @@ import {
 import { isCore, currentTerm } from "~/lib/roles";
 import { TemplatesModal } from "../components/TemplatesModal";
 import { NudgeModal } from "../components/NudgeModal";
-import { MentorGrid, type MentorGridEdit } from "../components/MentorGrid";
+import { MentorGrid } from "../components/MentorGrid";
 import { EmptyState } from "../components/EmptyState";
 import { Select, Tooltip } from "~/components/ui/floating";
 import { SearchInput } from "~/components/ui/SearchInput";
 import { filterPillClass } from "~/components/ui/floating/styles";
 import { useOsChrome } from "~/components/os-chrome";
-import { useDialog } from "~/components/ui/dialog";
 import { useToast } from "~/components/ui/toast";
 import { cn } from "~/lib/cn";
+import { buildGrid, type MentorGridResult } from "../lib/mentor-grid.server";
+import { isUnfilled } from "../lib/grid-cell";
 import {
-  buildGrid,
-  isUnfilled,
-  type MentorGridResult,
-} from "../lib/mentor-grid.server";
-import {
-  AddPairForm,
-  memberName,
-  usePairMutations,
-  useRoster,
-} from "../components/pair-editing";
-import { VIBES, VIBE_META } from "../lib/vibe";
+  ColumnFilters,
+  useColumnFilters,
+  type FilterColumn,
+} from "~/projects/components/ColumnFilters";
+import type { ColumnFilter, FilterCells } from "~/projects/lib/submission-filters";
+import { VIBES, VIBE_META, type Vibe } from "../lib/vibe";
 import { isTermFormRole, type TermForms } from "../lib/term-forms";
 import { loadTermForms, setTermForm } from "../lib/term-forms.server";
 import { LinkFormsModal } from "../components/TermFormStatus";
@@ -53,24 +54,31 @@ export const meta: Route.MetaFunction = () => [
 
 type FilterOption = { id: string; label: string };
 
+// The filter bar's columns. Values are the display strings each row carries
+// (project name, domain label, vibe label), matched in the browser.
+const FILTER_COLUMNS: FilterColumn[] = [
+  { key: "project", label: "Project", icon: FolderKanban },
+  { key: "domain", label: "Domain", icon: Layers },
+  { key: "status", label: "Status", icon: Activity },
+];
+
+// The synthetic status value for a due week with no rating (see isUnfilled).
+const UNFILLED_LABEL = "Not filled in";
+
 type LoaderData = {
   filters: {
     // Free-text people search, matched against the mentor and the mentee of
     // every row. Seeded from the URL; typing filters in the browser.
     query: string;
-    projectId: string;
-    domainId: string;
     termId: string;
-    // Vibe ("" = any). When set, only mentee rows with at least one weekly
-    // note of this vibe are shown.
-    status: string;
   };
+  // Seed for the filter bar, mapped from the legacy ?projectId / ?domainId /
+  // ?status deep-link params (the Members profile and saved filter sets still
+  // send them). An unknown id is ignored so a stale link just shows everyone.
+  initialFilters: ColumnFilter[];
   options: {
-    projects: FilterOption[];
     domains: FilterOption[];
     terms: FilterOption[];
-    // Vibe filter options (Good / Ok / Bad with user-facing labels).
-    statuses: FilterOption[];
   };
   grid: MentorGridResult;
   // Mentors with at least one unfilled note in the current term/project/domain
@@ -122,11 +130,11 @@ export async function loader({ request }: Route.LoaderArgs) {
     query:
       url.searchParams.get("q") ??
       (seeded ? `${seeded.firstName} ${seeded.lastName}`.trim() : ""),
-    projectId: pickFilter(url.searchParams.get("projectId")),
-    domainId: pickFilter(url.searchParams.get("domainId")),
     termId: termParam !== null ? termParam : defaultTerm?.id ?? "",
-    status: pickFilter(url.searchParams.get("status")),
   };
+  const projectParam = pickFilter(url.searchParams.get("projectId"));
+  const domainParam = pickFilter(url.searchParams.get("domainId"));
+  const statusParam = pickFilter(url.searchParams.get("status"));
 
   // Every lab mentor sees all pairs/notes lab-wide (Core included); the scope
   // helpers only narrow a caller who isn't a mentor at all.
@@ -161,7 +169,6 @@ export async function loader({ request }: Route.LoaderArgs) {
   const selectedTerm = terms.find((t) => t.id === filters.termId) ?? null;
 
   const options = {
-    projects: projectsWithPairs.map((p) => ({ id: p.id, label: p.name })),
     domains: domainsWithPairs.map((d) => ({
       id: d.id,
       label: `${d.displayName} (${d.code})`,
@@ -171,30 +178,39 @@ export async function loader({ request }: Route.LoaderArgs) {
     // TermFilter — but it labels the current term the same way for consistency.
     terms: terms.map((t) => ({
       id: t.id,
-      label: t.id === current?.id ? `${t.code} · current` : t.code,
+      label: t.id === current?.id ? `${t.code} (current)` : t.code,
     })),
-    // Vibe filter options — the note's at-a-glance status — plus a synthetic
-    // "Not filled in" (a due week with no rating recorded).
-    statuses: [
-      ...VIBES.map((v) => ({ id: v, label: VIBE_META[v].label })),
-      { id: "unfilled", label: "Not filled in" },
-    ],
   };
+
+  const linkedProject = projectsWithPairs.find((p) => p.id === projectParam);
+  const linkedDomain = options.domains.find((d) => d.id === domainParam);
+  const statusLabel =
+    statusParam === "unfilled"
+      ? UNFILLED_LABEL
+      : VIBES.includes(statusParam as Vibe)
+        ? VIBE_META[statusParam as Vibe].label
+        : null;
+  const initialFilters: ColumnFilter[] = [
+    ...(linkedProject ? [{ columnKey: "project", values: [linkedProject.name] }] : []),
+    ...(linkedDomain ? [{ columnKey: "domain", values: [linkedDomain.label] }] : []),
+    ...(statusLabel ? [{ columnKey: "status", values: [statusLabel] }] : []),
+  ];
 
   // The grid is a mentor → mentees → weeks matrix, scoped to one term. Without
   // a selected term there's no week axis, so we render an empty-state prompt.
-  let grid: LoaderData["grid"] = selectedTerm
+  // Project/domain/status narrowing happens in the browser (the filter bar),
+  // so the grid loads the viewer's full term scope.
+  const grid: LoaderData["grid"] = selectedTerm
     ? await buildGrid({
         term: selectedTerm,
-        filters,
         viewerId: auth.user.sub,
         pairScope,
         noteScope,
       })
     : { weeks: [], currentWeek: null, mentors: [], termSelected: false };
 
-  // Who's behind on notes, computed over the full project/domain/term scope
-  // (before the status/search view lenses) so it matches what the nudge action
+  // Who's behind on notes, computed over the full term scope (before the
+  // filter-bar/search view lenses) so it matches what the nudge action
   // re-derives server-side.
   const nudgeRecipients = grid.mentors
     .map((m) => ({
@@ -206,24 +222,6 @@ export async function loader({ request }: Route.LoaderArgs) {
       ),
     }))
     .filter((r) => r.count > 0);
-
-  // Status filter: "unfilled" keeps rows with a due week that has no rating;
-  // a vibe keeps rows with at least one weekly note of that vibe. Either way,
-  // drop mentors left with no matching rows.
-  if (filters.status) {
-    const rowMatches =
-      filters.status === "unfilled"
-        ? (r: MentorGridResult["mentors"][number]["rows"][number]) =>
-            r.cells.some(isUnfilled)
-        : (r: MentorGridResult["mentors"][number]["rows"][number]) =>
-            r.cells.some((c) => c.vibe === filters.status);
-    grid = {
-      ...grid,
-      mentors: grid.mentors
-        .map((m) => ({ ...m, rows: m.rows.filter(rowMatches) }))
-        .filter((m) => m.rows.length > 0),
-    };
-  }
 
   const me = await prisma.user.findUnique({
     where: { id: auth.user.sub },
@@ -241,6 +239,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const data: LoaderData = {
     filters,
+    initialFilters,
     options,
     grid,
     nudgeRecipients,
@@ -325,70 +324,56 @@ export default function MentorshipBrowse() {
     [data.nudgeRecipients],
   );
 
-  // Core-only manual pair editing, behind the mentorship-manage flag.
-  const canManage = data.isCore;
-  const [editing, setEditing] = useState(false);
-  const revalidator = useRevalidator();
-  const dialog = useDialog();
-
-  // `q` only enters the URL on a filter change or a deep link, so re-syncing on
-  // its value can't fight the keystrokes it isn't recording.
+  // `q` only enters the URL on a deep link, so re-syncing on its value can't
+  // fight the keystrokes it isn't recording.
   useEffect(() => setQuery(data.filters.query), [data.filters.query]);
 
-  const groups = useMemo(
-    () => searchGrid(data.grid.mentors, query),
-    [data.grid.mentors, query],
+  const columnFilters = useColumnFilters(FILTER_COLUMNS, data.initialFilters);
+
+  // What the filter bar matches per row, keyed by the row's grid key: the
+  // project name, the domain label (as the pickers once showed it), and every
+  // vibe recorded for the pair plus "Not filled in" when a due week lacks one.
+  const domainLabelById = useMemo(
+    () => new Map(data.options.domains.map((d) => [d.id, d.label])),
+    [data.options.domains],
+  );
+  const cellsByRowKey = useMemo(() => {
+    const map = new Map<string, FilterCells>();
+    for (const m of data.grid.mentors) {
+      for (const r of m.rows) {
+        map.set(r.key, {
+          project: r.projectName,
+          domain: domainLabelById.get(r.domainId) ?? r.domainCode,
+          status: [
+            ...new Set(
+              r.cells.flatMap((c) => (c.vibe ? [VIBE_META[c.vibe].label] : [])),
+            ),
+            ...(r.cells.some(isUnfilled) ? [UNFILLED_LABEL] : []),
+          ],
+        });
+      }
+    }
+    return map;
+  }, [data.grid.mentors, domainLabelById]);
+  const allRows = useMemo(
+    () => [...cellsByRowKey.values()].map((cells) => ({ cells })),
+    [cellsByRowKey],
   );
 
-  // Add & reassign need the project's roster, which we only fetch when a single
-  // project + term is pinned; remove works on any visible row.
-  const editProject =
-    canManage && data.filters.projectId && data.filters.termId
-      ? { projectId: data.filters.projectId, termId: data.filters.termId }
-      : null;
-  const { roster } = useRoster(
-    editProject?.projectId ?? null,
-    editProject?.termId ?? null,
-    editing,
-  );
-  const { addPair, reassign, removePair, busy } = usePairMutations(() =>
-    revalidator.revalidate(),
-  );
-
-  const gridEdit: MentorGridEdit | undefined =
-    editing && canManage
-      ? {
-          busy,
-          mentorOptionsFor: (row) =>
-            roster.members
-              .filter((m) => m.domainId === row.domainId)
-              .map((m) => ({ value: m.id, label: `${memberName(m)} · ${m.level}` })),
-          onReassign: (row, mentorUserId) => reassign(row.pairId, mentorUserId),
-          onRemove: async (row) => {
-            const name = `${row.mentee.firstName} ${row.mentee.lastName}`.trim();
-            if (
-              await dialog.confirm({
-                title: "Remove pairing?",
-                description: `Remove ${name} from this mentor? This deletes the pairing but keeps any notes already written.`,
-                confirmLabel: "Remove",
-                tone: "destructive",
-              })
-            ) {
-              removePair(row.pairId);
-            }
-          },
-        }
-      : undefined;
-
-  function setFilter(name: string, value: string) {
-    const next = new URLSearchParams(params);
-    next.set("termId", data.filters.termId);
-    if (value) next.set(name, value);
-    else next.delete(name);
-    if (query.trim()) next.set("q", query);
-    else next.delete("q");
-    navigate(`/mentorship/browse?${next.toString()}`);
-  }
+  const groups = useMemo(() => {
+    const searched = searchGrid(data.grid.mentors, query);
+    if (columnFilters.active.length === 0) return searched;
+    return searched
+      .map((m) => ({
+        ...m,
+        rows: m.rows.filter((r) =>
+          columnFilters.predicate({ cells: cellsByRowKey.get(r.key) ?? {} }),
+        ),
+      }))
+      .filter((m) => m.rows.length > 0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data.grid.mentors, query, cellsByRowKey, columnFilters.active]);
+  const shownCount = groups.reduce((n, m) => n + m.rows.length, 0);
 
   async function nudgeMentor(mentorId: string) {
     setNudgingId(mentorId);
@@ -398,8 +383,8 @@ export default function MentorshipBrowse() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           termId: data.filters.termId,
-          projectId: data.filters.projectId,
-          domainId: data.filters.domainId,
+          projectId: "",
+          domainId: "",
           mentorId,
         }),
       });
@@ -453,19 +438,20 @@ export default function MentorshipBrowse() {
       <header className="flex items-center justify-between gap-3 flex-wrap">
         <h1 className={pageTitle}>Mentorship notes</h1>
         <div className="flex items-center gap-2 ml-auto">
-          {canManage && (
-            <button
-              type="button"
-              onClick={() => setEditing((v) => !v)}
-              aria-pressed={editing}
-              className={editing ? "os-btn-primary" : "os-edit-btn"}
-            >
-              <PencilLine
-                className={cn("w-4 h-4", editing ? "" : "text-os-grey")}
-                aria-hidden
-              />
-              {editing ? "Done editing" : "Edit pairs"}
-            </button>
+          {data.termForms && (
+            <Tooltip content={data.filters.termId ? null : "Pick a term first."}>
+              <span>
+                <button
+                  type="button"
+                  onClick={() => setLinkFormsOpen(true)}
+                  disabled={!data.filters.termId}
+                  className="os-edit-btn disabled:opacity-50"
+                >
+                  <Link2 className="w-4 h-4 text-os-grey" aria-hidden />
+                  Link forms
+                </button>
+              </span>
+            </Tooltip>
           )}
           {canNudge && (
             <button
@@ -521,8 +507,8 @@ export default function MentorshipBrowse() {
           open={nudgeOpen}
           onClose={() => setNudgeOpen(false)}
           termId={data.filters.termId}
-          projectId={data.filters.projectId}
-          domainId={data.filters.domainId}
+          projectId=""
+          domainId=""
           recipients={data.nudgeRecipients.map((r) => ({
             name: r.name,
             count: r.count,
@@ -530,62 +516,23 @@ export default function MentorshipBrowse() {
         />
       )}
 
-      <SearchInput
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        placeholder="Search mentors and mentees…"
-        aria-label="Search mentors and mentees"
-        containerClassName="sm:max-w-sm"
-      />
-
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
-        <FilterSelect
-          label="Project"
-          options={data.options.projects}
-          value={data.filters.projectId}
-          onChange={(v) => setFilter("projectId", v)}
+      <div className="flex items-center gap-3 flex-wrap">
+        <SearchInput
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search mentors and mentees…"
+          aria-label="Search mentors and mentees"
+          containerClassName="flex-1 min-w-[200px] max-w-[420px]"
         />
-        <FilterSelect
-          label="Domain"
-          options={data.options.domains}
-          value={data.filters.domainId}
-          onChange={(v) => setFilter("domainId", v)}
-        />
-        <FilterSelect
-          label="Status"
-          options={data.options.statuses}
-          value={data.filters.status}
-          onChange={(v) => setFilter("status", v)}
-        />
-        <div className="ml-auto flex items-center gap-2">
-          {data.termForms && (
-            <Tooltip content={data.filters.termId ? null : "Pick a term first."}>
-              <span>
-                <button
-                  type="button"
-                  onClick={() => setLinkFormsOpen(true)}
-                  disabled={!data.filters.termId}
-                  className="os-edit-btn disabled:opacity-50"
-                >
-                  <Link2 className="w-4 h-4 text-os-grey" aria-hidden />
-                  Link forms
-                </button>
-              </span>
-            </Tooltip>
-          )}
-          {params.toString() && (
-            <Link
-              to="/mentorship/browse"
-              onClick={() => {
-                if (typeof window !== "undefined") {
-                  window.localStorage.removeItem(FILTERS_STORAGE_KEY);
-                }
-              }}
-              className="os-btn-ghost"
-            >
-              Clear
-            </Link>
-          )}
+        <div className="min-w-[220px] flex-1">
+          <ColumnFilters
+            columns={FILTER_COLUMNS}
+            rows={allRows}
+            filters={columnFilters.filters}
+            onChange={columnFilters.setFilters}
+            shownCount={shownCount}
+            noun={["pair", "pairs"]}
+          />
         </div>
       </div>
 
@@ -595,28 +542,11 @@ export default function MentorshipBrowse() {
           onClose={() => setLinkFormsOpen(false)}
           termId={data.filters.termId}
           domains={data.options.domains}
-          initialDomainId={data.filters.domainId}
+          initialDomainId=""
           termForms={data.termForms}
           forms={data.formOptions}
         />
       )}
-
-      {editing &&
-        canManage &&
-        (editProject ? (
-          <AddPairForm
-            projectId={editProject.projectId}
-            termId={editProject.termId}
-            roster={roster}
-            busy={busy}
-            onAdd={addPair}
-          />
-        ) : (
-          <p className="text-sm text-muted-foreground">
-            Filter by a single <strong>Project</strong> (with a term) to add or
-            reassign pairs. You can still remove pairs on any row below.
-          </p>
-        ))}
 
       {!data.grid.termSelected ? (
         <EmptyState>Pick a term to see the weekly mentorship grid.</EmptyState>
@@ -635,7 +565,6 @@ export default function MentorshipBrowse() {
             currentWeek={data.grid.currentWeek}
             termId={data.filters.termId}
             highlightMissing={data.isCore}
-            edit={gridEdit}
             termForms={data.termForms ?? undefined}
             nudge={
               canNudge
@@ -653,31 +582,3 @@ export default function MentorshipBrowse() {
   );
 }
 
-function FilterSelect({
-  label,
-  options,
-  value,
-  onChange,
-}: {
-  label: string;
-  options: FilterOption[];
-  value: string;
-  onChange: (value: string) => void;
-}) {
-  const { bodyText } = useOsChrome();
-  return (
-    <label className={cn("inline-flex items-center gap-1.5", bodyText)}>
-      {label}
-      <Select
-        ariaLabel={`Filter by ${label.toLowerCase()}`}
-        value={value}
-        onChange={onChange}
-        options={[
-          { value: "", label: "Any" },
-          ...options.map((o) => ({ value: o.id, label: o.label })),
-        ]}
-        buttonClassName={filterPillClass()}
-      />
-    </label>
-  );
-}

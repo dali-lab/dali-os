@@ -1,7 +1,6 @@
 import { useMemo, useState } from "react";
 import {
   Form,
-  Link,
   redirect,
   useActionData,
   useLoaderData,
@@ -11,7 +10,7 @@ import {
 import type { Route } from "./+types/members";
 import { requireAuth, redirectNonMemberToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
-import { isCore, canViewForms } from "~/lib/roles";
+import { isCore } from "~/lib/roles";
 import { graduateProgramLabel } from "~/lib/dartmouth-people";
 import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
 import { prisma } from "~/lib/db";
@@ -27,14 +26,26 @@ import { isNewMember, isBirthdayToday } from "~/members/lib/warmth";
 import { NewBadge, BirthdayBadge } from "~/members/components/WarmthBadges";
 import { LAB_MEMBER_WHERE, MEMBER_LIST_ORDER_BY } from "~/lib/prisma-shapes";
 import { resolvePhotoUrl } from "~/lib/photo";
-import { TermFilter } from "~/components/TermFilter";
-import { resolveTermFilter } from "~/lib/terms";
 import { deriveCoreTitles } from "~/lib/core-titles";
-import { Plus, UsersRound } from "lucide-react";
+import {
+  BookOpen,
+  Briefcase,
+  Building2,
+  FolderKanban,
+  GraduationCap,
+  Home,
+  Layers,
+  MapPin,
+  Plus,
+} from "lucide-react";
 import { SearchInput } from "~/components/ui/SearchInput";
-import { ColumnFilters, useColumnFilters } from "~/projects/components/ColumnFilters";
+import { Segmented } from "~/components/ui/Segmented";
+import {
+  ColumnFilters,
+  useColumnFilters,
+  type FilterColumn,
+} from "~/projects/components/ColumnFilters";
 import type { ColumnFilter } from "~/projects/lib/submission-filters";
-import { buttonClasses } from "~/components/ui/Button";
 import { cn } from "~/lib/cn";
 export const meta: Route.MetaFunction = () => [{ title: "Directory · People · DALI OS" }];
 
@@ -63,17 +74,17 @@ type MemberRow = {
   cells: Record<string, string | string[]>;
 };
 
-// The filter builder's columns. A list-valued cell (domains, projects, roles,
-// companies) matches "is" on any one of its entries.
-const FILTER_COLUMNS = [
-  { key: "domain", label: "Domain" },
-  { key: "project", label: "Project" },
-  { key: "classYear", label: "Class year" },
-  { key: "role", label: "Role" },
-  { key: "major", label: "Major" },
-  { key: "basedIn", label: "Based in" },
-  { key: "company", label: "Company" },
-  { key: "hometown", label: "Hometown" },
+// The filter bar's columns. A list-valued cell (domains, projects, roles,
+// companies) matches a picked value on any one of its entries.
+const FILTER_COLUMNS: FilterColumn[] = [
+  { key: "domain", label: "Domain", icon: Layers },
+  { key: "project", label: "Project", icon: FolderKanban },
+  { key: "classYear", label: "Class year", icon: GraduationCap },
+  { key: "role", label: "Role", icon: Briefcase },
+  { key: "major", label: "Major", icon: BookOpen },
+  { key: "basedIn", label: "Based in", icon: MapPin },
+  { key: "company", label: "Company", icon: Building2 },
+  { key: "hometown", label: "Hometown", icon: Home },
 ];
 
 type MemberStatus = "active" | "alumni";
@@ -91,53 +102,34 @@ export async function loader({ request }: Route.LoaderArgs) {
   const url = new URL(request.url);
   const status = parseStatus(url.searchParams.get("status"));
 
-  // Domain, project and class are filter-builder columns now, matched in the
+  // Domain, project and class are filter-bar columns now, matched in the
   // browser. The old ?domain= / ?project= / ?class= links (the Groups page
-  // still sends the first two) open with that filter already in the builder;
-  // an unknown id is ignored so a stale link just shows everyone.
+  // still sends the first two) open with that filter already applied; an
+  // unknown id is ignored so a stale link just shows everyone.
   const [domainParam, projectParam] = ["domain", "project"].map(
     (k) => url.searchParams.get(k) ?? "",
   );
 
-  // None of these five depend on each other's result — resolveTermFilter only
-  // needs `request`, the linked domain/project lookups only need the parsed
-  // url params, and canEdit/canSeeGroups only need the viewer id — so they run
-  // as one wave instead of a chain of sequential round-trips.
-  const [{ terms, selected, termId, isAll }, linkedDomain, linkedProject, canEdit, canSeeGroups] =
-    await Promise.all([
-      resolveTermFilter(request),
-      domainParam
-        ? prisma.domain.findUnique({ where: { id: domainParam }, select: { displayName: true } })
-        : null,
-      projectParam
-        ? prisma.project.findUnique({ where: { id: projectParam }, select: { name: true } })
-        : null,
-      isCore(auth.user.sub, request),
-      canViewForms(auth.user.sub, request),
-    ]);
-
-  // "Active in a term" = the member held a Core role OR a project assignment
-  // that term. "All terms" drops the constraint and shows every member. The
-  // Alumni view ignores the term filter (term doesn't apply post-grad).
-  const activeInTerm =
-    status === "alumni" || isAll || !termId
-      ? {}
-      : {
-          OR: [
-            { coreAssignments: { some: { termId } } },
-            { projectAssignments: { some: { termId } } },
-            // Full-time staff have no term assignments but are always current —
-            // keep them visible in the default (Active) directory view.
-            { adminMembership: { isStaff: true } },
-          ],
-        };
+  // None of these three depend on each other's result — the linked
+  // domain/project lookups only need the parsed url params and canEdit only
+  // needs the viewer id — so they run as one wave instead of a chain of
+  // sequential round-trips.
+  const [linkedDomain, linkedProject, canEdit] = await Promise.all([
+    domainParam
+      ? prisma.domain.findUnique({ where: { id: domainParam }, select: { displayName: true } })
+      : null,
+    projectParam
+      ? prisma.project.findUnique({ where: { id: projectParam }, select: { name: true } })
+      : null,
+    isCore(auth.user.sub, request),
+  ]);
 
   const classParam = Number(url.searchParams.get("class"));
   const initialFilters: ColumnFilter[] = [
-    ...(linkedDomain ? [{ id: "link-domain", columnKey: "domain", operator: "is" as const, value: linkedDomain.displayName }] : []),
-    ...(linkedProject ? [{ id: "link-project", columnKey: "project", operator: "is" as const, value: linkedProject.name }] : []),
+    ...(linkedDomain ? [{ columnKey: "domain", values: [linkedDomain.displayName] }] : []),
+    ...(linkedProject ? [{ columnKey: "project", values: [linkedProject.name] }] : []),
     ...(Number.isInteger(classParam) && classParam > 0
-      ? [{ id: "link-class", columnKey: "classYear", operator: "is" as const, value: String(classParam) }]
+      ? [{ columnKey: "classYear", values: [String(classParam)] }]
       : []),
   ];
 
@@ -145,11 +137,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   // AdminMembership + CoreAssignment per the Phase 2 identity model — see
   // app/admin/routes/api.members.ts for the canonical shape.
   // Each view pins the stored membership status onto the same base set (both
-  // still require a DALIMember row). Alumni drops the term filter and sorts by
-  // class year; Active excludes alumni outright rather than leaning on the term
-  // filter to hide them — assignment rows are never deleted, so a member who
-  // graduated mid-term still matches this term, and "All terms" dropped the
-  // clause entirely and listed every alumnus the lab ever had under Active.
+  // still require a DALIMember row); Alumni sorts by class year.
   // membershipStatus is authoritative — no derivation here.
   const statusCondition =
     status === "alumni"
@@ -159,7 +147,6 @@ export async function loader({ request }: Route.LoaderArgs) {
   const users = await prisma.user.findMany({
     where: {
       ...LAB_MEMBER_WHERE,
-      ...activeInTerm,
       ...statusCondition,
     },
     orderBy:
@@ -184,10 +171,9 @@ export async function loader({ request }: Route.LoaderArgs) {
       major: true,
       hometown: true,
       currentLocation: true,
-      // Scoped to the selected term so "Project is X" composes with the term
-      // filter; every term for alumni and "All terms".
+      // Every term's assignments: the Project filter matches anyone who was
+      // ever on the project, for active members and alumni alike.
       projectAssignments: {
-        where: termId && !isAll && status === "active" ? { termId } : {},
         select: { project: { select: { name: true } } },
       },
       workExperiences: { where: { endDate: null }, select: { company: true } },
@@ -240,11 +226,8 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   return {
     rows,
-    terms,
-    selectedTerm: selected,
     initialFilters,
     canEdit,
-    canSeeGroups,
     status,
   };
 }
@@ -282,11 +265,8 @@ export async function action({ request }: Route.ActionArgs) {
 export default function MembersList() {
   const {
     rows,
-    terms,
-    selectedTerm,
     initialFilters,
     canEdit,
-    canSeeGroups,
     status,
   } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
@@ -321,12 +301,6 @@ export default function MembersList() {
           </h1>
         </div>
         <div className="flex items-center gap-2">
-          {canSeeGroups && (
-            <Link to="/members/groups" className={buttonClasses("secondary", "md")}>
-              <UsersRound className="h-[17px] w-[17px]" aria-hidden />
-              Groups
-            </Link>
-          )}
           {canEdit && !creating && (
             <button
               type="button"
@@ -412,17 +386,17 @@ export default function MembersList() {
           placeholder={status === "alumni" ? "Search alumni by name or email" : "Search by name or email"}
           containerClassName="flex-1 min-w-[200px] max-w-[420px]"
         />
-        {status === "active" && <TermFilter terms={terms} selected={selectedTerm} />}
+        <div className="min-w-[220px] flex-1">
+          <ColumnFilters
+            columns={FILTER_COLUMNS}
+            rows={rows}
+            filters={columnFilters.filters}
+            onChange={columnFilters.setFilters}
+            shownCount={filtered.length}
+            noun={status === "alumni" ? ["alum", "alumni"] : ["member", "members"]}
+          />
+        </div>
       </div>
-
-      <ColumnFilters
-        columns={FILTER_COLUMNS}
-        rows={rows}
-        filters={columnFilters.filters}
-        onChange={columnFilters.setFilters}
-        shownCount={filtered.length}
-        noun={status === "alumni" ? ["alum", "alumni"] : ["member", "members"]}
-      />
 
       {filtered.length === 0 ? (
         <div className="px-4 py-8 text-center text-sm text-muted-foreground">
@@ -439,50 +413,31 @@ export default function MembersList() {
   );
 }
 
-// Active ↔ Alumni segmented tab. Drives the loader via `?status=`. Switching to
-// Alumni drops the `?term=` filter (term doesn't apply post-grad) and scopes the
-// list to members whose stored membershipStatus is Alumni.
+// Active ↔ Alumni segmented tab. Drives the loader via `?status=`: Alumni
+// scopes the list to members whose stored membershipStatus is Alumni.
 function StatusTabs({ status }: { status: MemberStatus }) {
   const [searchParams, setSearchParams] = useSearchParams();
   function set(next: MemberStatus) {
     const params = new URLSearchParams(searchParams);
     if (next === "alumni") {
       params.set("status", "alumni");
-      params.delete("term");
     } else {
       params.delete("status");
     }
     setSearchParams(params);
   }
-  const tabs: { key: MemberStatus; label: string }[] = [
-    { key: "active", label: "Active" },
-    { key: "alumni", label: "Alumni" },
-  ];
   return (
-    <div
-      className={cn(
-        "inline-flex items-center border border-border p-1 w-fit",
-        "rounded-full bg-os-card",
-      )}
-    >
-      {tabs.map((t) => (
-        <button
-          key={t.key}
-          type="button"
-          onClick={() => set(t.key)}
-          aria-pressed={status === t.key}
-          className={cn(
-            "text-sm transition-colors",
-            "rounded-full px-4 py-1.5",
-            status === t.key
-              ? "bg-os-container font-medium text-foreground"
-              : "text-muted-foreground hover:text-foreground",
-          )}
-        >
-          {t.label}
-        </button>
-      ))}
-    </div>
+    <Segmented<MemberStatus>
+      value={status}
+      onChange={set}
+      ariaLabel="Member status"
+      size="md"
+      pill
+      options={[
+        { value: "active", label: "Active" },
+        { value: "alumni", label: "Alumni" },
+      ]}
+    />
   );
 }
 
@@ -527,7 +482,7 @@ function MembersTable({ rows, status }: { rows: MemberRow[]; status: MemberStatu
   return (
     <div className="overflow-x-auto">
       <table className={cn("w-full min-w-[640px]", "text-base")}>
-        <thead className="bg-muted/30 text-muted-foreground text-xs uppercase tracking-wide">
+        <thead className="bg-muted/30 text-muted-foreground text-xs">
           <tr>
             <th className="text-left font-medium px-4 py-2">Name</th>
             <th className="text-left font-medium px-4 py-2">Email</th>

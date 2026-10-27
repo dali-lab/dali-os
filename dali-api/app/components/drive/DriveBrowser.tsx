@@ -45,6 +45,7 @@ import {
   Shapes,
   Handshake,
   MoreHorizontal,
+  PanelRight,
   Pencil,
   Trash2,
   FolderInput,
@@ -56,14 +57,10 @@ import {
   LayoutGrid,
   Upload,
   FolderOpen,
-  Download,
   Share2,
   Columns,
   ClipboardCheck,
   Mail,
-  Info,
-  PanelRightClose,
-  History,
   NotebookPen,
   SlidersHorizontal,
 } from "lucide-react";
@@ -73,24 +70,26 @@ import { categorize } from "~/lib/file-type";
 import { iconForCategory } from "~/lib/file-icon";
 import type { DriveTreeScope } from "~/lib/drive-scopes.server";
 import { Menu, ContextMenu, Tooltip, isInFloatingLayer } from "~/components/ui/floating";
+import { useSidePanel } from "~/components/side-panel/use-side-panel";
+import { sidePanelForUrl } from "~/lib/side-panel";
 import { ShareDialog } from "~/components/sharing/ShareDialog";
 import { relativeTime } from "~/lib/relative-time";
 import { useRevalidator } from "react-router";
 import { useToast } from "~/components/ui/toast";
+import { useFeatureFlag } from "~/components/FeatureFlags";
 import { notebookRequest, sendJson } from "~/components/notebooks/notebook-requests";
 import { cn } from "~/lib/cn";
 import { FAVORITES_SPACE_KEY, isProcessRootSpace, SHARED_SPACE_KEY } from "~/lib/drive-spaces";
 import { scopeIconFor } from "~/components/drive/scope-icon";
 import { ProcessLinkPill } from "~/components/drive/ProcessLinkPill";
-import { AudienceSignal, AudienceDetail } from "~/components/drive/AudienceSignal";
-import { TagDots, TagLabels } from "~/components/drive/TagDots";
+import { AudienceSignal } from "~/components/drive/AudienceSignal";
+import { TagDots } from "~/components/drive/TagDots";
 import { Button, buttonClasses } from "~/components/ui/Button";
 import { IconButton } from "~/components/ui/IconButton";
 import { Truncated } from "~/components/ui/Truncated";
 import { useOsChrome } from "~/components/os-chrome";
-import { crumbsFor, locationOf, type ItemLocation } from "~/components/drive/location";
+import { crumbsFor, driveScopeLabel, locationOf, type ItemLocation } from "~/components/drive/location";
 import { LocationLink } from "~/components/drive/LocationLink";
-import { DetailFact } from "~/components/drive/DetailFact";
 import { menuEntries, type MenuEntry } from "~/components/drive/item-menu";
 import { clickIntent } from "~/components/drive/column-click";
 import { gridStepBlocks, perRowFromTops, type GridBlock } from "~/components/drive/grid-nav";
@@ -171,6 +170,8 @@ export type DriveBrowserProps = {
   /** A row to select and scroll to whenever this changes, once it appears in the listing (a freshly created item). */
   revealId?: string;
   onOpenItem: (item: DriveItem) => void;
+  /** Open a document in the side panel. Omitted, the browser offers no way to open beside. */
+  onOpenBeside?: (item: DriveItem) => void;
   /** Re-file every item into `destFolderId` within the scope it already sits
    *  in. Takes a list because dragging one row of a multi-selection drags the
    *  whole selection, the way Finder and Drive do. */
@@ -419,12 +420,12 @@ function ItemGlyphTip({ item, size }: { item: DriveItem; size?: IconSize }) {
   );
 }
 
-function scopeIcon(scope: DriveTreeScope, size: IconSize = "sm") {
-  return scopeIconFor(scope, size);
+function scopeIcon(scope: DriveTreeScope, size: IconSize = "sm", tiles = false) {
+  return scopeIconFor(scope, size, tiles);
 }
 
 function scopeLabel(scope: DriveTreeScope): string {
-  return scope.id === "mine" ? "My Drive" : scope.id === "lab" ? "Lab" : scope.label;
+  return driveScopeLabel(scope);
 }
 
 /** The synthetic "projects" / "education" headers: dropping on one is ambiguous (which project?), so only the projects inside take drops. */
@@ -439,6 +440,58 @@ function useScopeDrop(scopeId: string, dragging: boolean) {
     data: { destScopeId: scopeId },
     disabled: !dragging || isGroupScope(scopeId),
   });
+}
+
+type BesideState = { open: ((item: DriveItem) => void) | null; activeId: string | null };
+const BesideContext = createContext<BesideState>({ open: null, activeId: null });
+
+function besideTarget(item: DriveItem) {
+  return item.type === "doc" ? sidePanelForUrl(item.href) : null;
+}
+
+/** How a row opens beside: an opener when it can, and whether it is the document showing in the panel now. */
+function useBeside(item: DriveItem) {
+  const { open, activeId } = useContext(BesideContext);
+  const target = open ? besideTarget(item) : null;
+  return { openBeside: target && open ? () => open(item) : null, active: !!target && activeId === target.id };
+}
+
+function BesideMark({ item }: { item: DriveItem }) {
+  const { active } = useBeside(item);
+  if (!active) return null;
+  return <span className="shrink-0 rounded-full bg-os-container px-2 py-0.5 text-xs font-medium text-os-accent">Open beside</span>;
+}
+
+function OpenBesideButton({ item }: { item: DriveItem }) {
+  const { openBeside } = useBeside(item);
+  if (!openBeside) return null;
+  return (
+    <Tooltip content="Open to the side · ⌥ click">
+      <button
+        type="button"
+        aria-label="Open to the side"
+        data-testid={`drive-item-beside-${item.id}`}
+        onClick={(e) => {
+          e.stopPropagation();
+          openBeside();
+        }}
+        onPointerDown={(e) => e.stopPropagation()}
+        className="shrink-0 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-muted/60 hover:text-foreground group-hover:opacity-100 focus-visible:opacity-100"
+      >
+        <PanelRight className="h-4 w-4" />
+      </button>
+    </Tooltip>
+  );
+}
+
+function OpenBesideMenuItem({ item }: { item: DriveItem }) {
+  const { openBeside } = useBeside(item);
+  if (!openBeside) return null;
+  return (
+    <Menu.Item icon={<PanelRight className="h-3.5 w-3.5" />} shortcut="⌥ click" onSelect={openBeside}>
+      Open to the side
+    </Menu.Item>
+  );
 }
 
 // Menu.Item nodes shared by the row "⋯" dropdown and the right-click menu.
@@ -479,6 +532,7 @@ function itemMenuItems(
       <Menu.Item icon={<FolderOpen className="h-3.5 w-3.5" />} onSelect={onOpen}>
         Open
       </Menu.Item>
+      <OpenBesideMenuItem item={item} />
       {canFavorite && onToggleFavorite && (
         <Menu.Item
           icon={<Star className={`h-3.5 w-3.5 ${item.favorited ? "fill-current text-os-accent" : ""}`} />}
@@ -542,6 +596,8 @@ function RowActionsMenu({
   onTogglePartnerVisible?: (item: DriveItem, next: boolean) => void;
 }) {
   return (
+    <>
+    <OpenBesideButton item={item} />
     <Menu
       align="right"
       ariaLabel="Item actions"
@@ -559,6 +615,7 @@ function RowActionsMenu({
     >
       {itemMenuItems(item, actions, onOpen, onToggleFavorite, onTogglePartnerVisible)}
     </Menu>
+    </>
   );
 }
 
@@ -681,6 +738,7 @@ export function DriveBrowser({
   initialSelectedId,
   revealId,
   onOpenItem,
+  onOpenBeside,
   onMove,
   getScopeActions,
   onToggleFavorite,
@@ -790,8 +848,8 @@ export function DriveBrowser({
   // ── Selection state ────────────────────────────────────────────────────────
   // One model for every view. `selected` is what bulk actions apply to,
   // `anchorId` is where a shift-click range starts, and `focusId` is the row the
-  // keyboard, Quick Look, rename and the details rail talk about: the last one
-  // clicked, checked or arrowed to.
+  // keyboard, Quick Look and rename talk about: the last one clicked, checked
+  // or arrowed to.
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [anchorId, setAnchorId] = useState<string | null>(null);
   const [focusId, setFocusId] = useState<string | null>(null);
@@ -806,11 +864,6 @@ export function DriveBrowser({
           : prev,
     );
   }, [currentScopeId]);
-  // The details rail is a horizontal side-peek: opening it reflows the body's
-  // width once, never its vertical position, so it can never re-target the
-  // cursor the way an inserted top bar did. Toggled from the toolbar, persisted,
-  // and auto-opened the first time a selection is made (see below).
-  const [detailsOpen, setDetailsOpen] = useState(false);
   // Search rests collapsed as a round icon button; focus (or a query already in
   // the box) stretches it into a field.
   const [searchFocused, setSearchFocused] = useState(false);
@@ -846,32 +899,17 @@ export function DriveBrowser({
   // in the focused pool whose name starts with them.
   const typeAhead = useRef<{ buf: string; at: number }>({ buf: "", at: 0 });
 
-  // Restore the saved view mode + details-rail preference after mount.
+  // Restore the saved view mode after mount.
   useEffect(() => {
     try {
       const saved = window.localStorage.getItem("dali_drive_view");
       if (saved === "grid") setViewMode("grid");
       else if (saved === "list") setViewMode("list");
       // default stays "columns"
-      if (window.localStorage.getItem("dali_drive_details") === "1") {
-        setDetailsOpen(true);
-      }
     } catch {
       /* ignore */
     }
   }, []);
-
-  function toggleDetails() {
-    setDetailsOpen((prev) => {
-      const next = !prev;
-      try {
-        window.localStorage.setItem("dali_drive_details", next ? "1" : "0");
-      } catch {
-        /* ignore */
-      }
-      return next;
-    });
-  }
 
   function changeView(v: ViewMode) {
     setViewMode(v);
@@ -1094,6 +1132,13 @@ export function DriveBrowser({
   function handleRowClick(id: string, e: ReactMouseEvent<HTMLElement>) {
     // A row's own menu renders in a portal but its clicks still bubble here.
     if (isInFloatingLayer(e.target)) return;
+    const altItem = e.altKey && onOpenBeside ? itemIndex.get(id)?.item : undefined;
+    if (altItem && besideTarget(altItem)) {
+      e.stopPropagation();
+      e.preventDefault();
+      onOpenBeside!(altItem);
+      return;
+    }
     const poolIds = poolIdsFor(id);
     const intent = clickIntent({
       metaKey: e.metaKey,
@@ -1539,81 +1584,6 @@ export function DriveBrowser({
     return level.scopeId;
   }
 
-  // ── Selection detail (the details rail subject) ────────────────────────────
-  // The one selected item, else the focused one when nothing is selected.
-  const detailEntry =
-    selectedItems.length === 1
-      ? (itemIndex.get(selectedItems[0].id) ?? null)
-      : selectedItems.length === 0
-        ? focusEntry
-        : null;
-  const detailItem: DriveItem | null = detailEntry?.item ?? null;
-  const detailScopeId: string | null = detailEntry?.scopeId ?? null;
-  const detailActions = detailScopeId ? getInternalScopeActions(detailScopeId) : null;
-
-  const canItemRename =
-    !!detailItem &&
-    (detailItem.type === "folder" ||
-      detailItem.type === "doc" ||
-      detailItem.type === "file" ||
-      detailItem.type === "form" ||
-      detailItem.type === "agreement");
-  // drive-spaces: email templates are movable in Drive (card-grid list retired).
-  const canItemMove =
-    !!detailItem &&
-    detailItem.type !== "agreement" &&
-    detailItem.type !== "rubric";
-  const canItemDelete =
-    !!detailItem &&
-    (detailItem.type === "folder" ||
-      detailItem.type === "doc" ||
-      detailItem.type === "file" ||
-      detailItem.type === "form");
-  const canItemDownload = !!detailItem && detailItem.type === "file";
-  // Share: page-backed items only (doc and folder). Folders support sharing via
-  // PageShare, which was previously impossible from the Drive surface.
-  const canItemShare =
-    !!detailItem &&
-    (detailItem.type === "doc" || detailItem.type === "folder" || (detailItem.type === "form" && formShare)) &&
-    !!detailActions?.onShare;
-
-  // How many items the current column / folder holds. The listing itself no
-  // longer carries a count banner (Finder doesn't), so this survives only for
-  // the details rail's empty state, where it answers "what am I looking at?".
-  const restingCount = columnsActive
-    ? (() => {
-        const last = levels[levels.length - 1];
-        return last && last.kind === "scope" ? itemsForLevel(last).length : scopes.length;
-      })()
-    : searching
-      ? hits.length
-      : currentScope
-        ? listing.length
-        : scopes.length;
-
-  // "Location" line for the rail: scope name + folder chain to the item.
-  const detailScope = detailScopeId ? scopes.find((s) => s.id === detailScopeId) ?? null : null;
-  const detailPathLabel =
-    detailItem && detailScope
-      ? [
-          scopeLabel(detailScope),
-          ...crumbsFor(detailScope.items, detailItem.parentFolderId).map((c) => c.title),
-        ].join(" / ")
-      : "";
-
-  // The details rail only opens on an explicit Info-button toggle (and restores
-  // that choice from localStorage) — selecting a file never springs it open on
-  // its own, so a click never reflows the body out from under the cursor.
-
-  function closeDetails() {
-    setDetailsOpen(false);
-    try {
-      window.localStorage.setItem("dali_drive_details", "0");
-    } catch {
-      /* ignore */
-    }
-  }
-
   // ── The listing header's controls ─────────────────────────────────────────
   // Built here rather than inline so the header itself stays a readable row of
   // four parts: where you are, and the three ways of changing what you see.
@@ -1777,6 +1747,12 @@ export function DriveBrowser({
 
   const draggedCount = activeDrag ? draggedItemsFor(activeDrag).length : 0;
 
+  const sidePanel = useSidePanel().panel;
+  const besideState = useMemo<BesideState>(
+    () => ({ open: onOpenBeside ?? null, activeId: sidePanel?.id ?? null }),
+    [onOpenBeside, sidePanel?.id],
+  );
+
   const rowHandlers: RowHandlers = {
     onClick: handleRowClick,
     onDoubleClick: handleRowDoubleClick,
@@ -1786,6 +1762,7 @@ export function DriveBrowser({
 
   return (
     <>
+    <BesideContext.Provider value={besideState}>
     <FileDropContext.Provider value={fileOverFolder}>
     <DndContext sensors={sensors} collisionDetection={pointerWithin} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
       <div ref={rootRef} className="flex flex-col gap-3" data-testid="drive-browser" onClick={handleBackgroundClick}>
@@ -1795,28 +1772,7 @@ export function DriveBrowser({
         <div className="flex items-center gap-3 flex-wrap">
           {filterControl}
 
-          <div className="ml-auto flex shrink-0 items-center gap-3">
-            <Tooltip content={detailsOpen ? "Hide details" : "Show details"}>
-              <button
-                type="button"
-                data-testid="drive-details-toggle"
-                aria-label={detailsOpen ? "Hide details" : "Show details"}
-                aria-pressed={detailsOpen}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  toggleDetails();
-                }}
-                className={cn(
-                  "inline-flex items-center justify-center border border-border shrink-0",
-                  "rounded-full bg-card px-3.5 py-2.5",
-                  detailsOpen
-                    ? "bg-os-container text-foreground"
-                    : "text-muted-foreground hover:bg-muted/50",
-                )}
-              >
-                <Info className="w-4 h-4" />
-              </button>
-            </Tooltip>
+          <div className="ml-auto flex shrink-0 items-center gap-2">
             {newMenu}
             {overflowMenu}
           </div>
@@ -1824,11 +1780,6 @@ export function DriveBrowser({
 
         {tagChips}
 
-        {/* ── Body + details rail ────────────────────────────────────────────
-            Horizontal split: the browser body flexes, the side-peek rail takes
-            a fixed width on the right. Opening the rail reflows the body's WIDTH
-            once — never its vertical position — so the columns/rows the cursor
-            is over stay put. ── */}
         <div className="flex gap-3 min-w-0 items-start">
           {/* The listing is a window: one surface whose header carries
               where you are (the trail), how you got there (< >), how you are
@@ -1836,7 +1787,7 @@ export function DriveBrowser({
               (search). The page title above no longer has a stray folder name
               hanging under it, and every control that acts on the table now
               sits on the table. */}
-          <div className="relative min-w-0 flex-1 overflow-hidden rounded-os-card bg-card p-5">
+          <div className="relative min-w-0 flex-1 overflow-hidden rounded-os-card bg-background p-5">
             <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-2">
               {historyPair}
               <Breadcrumb
@@ -2061,26 +2012,6 @@ export function DriveBrowser({
           />
           </div>
 
-          {detailsOpen && (
-            <DriveDetailsPane
-              item={detailItem}
-              actions={detailActions}
-              scopePathLabel={detailPathLabel}
-              canDownload={!!canItemDownload}
-              canRename={!!canItemRename}
-              canMove={!!canItemMove}
-              canShare={!!canItemShare}
-              canDelete={!!canItemDelete}
-              restingCount={restingCount}
-              scopes={scopes}
-              onNavigate={onNavigate}
-              onToggleFavorite={onToggleFavorite}
-              onOpenItem={onOpenItem}
-              onOpenFolder={(folderId) => onNavigate(detailScopeId, folderId)}
-              onPreview={setPreviewItem}
-              onClose={closeDetails}
-            />
-          )}
         </div>
       </div>
 
@@ -2099,6 +2030,7 @@ export function DriveBrowser({
       </DragOverlay>
     </DndContext>
     </FileDropContext.Provider>
+    </BesideContext.Provider>
 
     {/* In-place Share dialog — mounted outside DndContext so DnD events don't
         bleed through; keyed by item id so state resets on a different target. */}
@@ -2203,173 +2135,6 @@ function DriveBulkBar({
   );
 }
 
-// ── Details rail (side-peek) ─────────────────────────────────────────────────
-// A fixed-width right rail: opening it reflows the body width once (not its
-// vertical position), and switching selection swaps the rail's contents in place
-// — the Google-Drive details-pane / Notion side-peek pattern.
-
-function DriveDetailsPane({
-  item,
-  actions,
-  scopePathLabel,
-  canDownload,
-  canRename,
-  canMove,
-  canShare,
-  canDelete,
-  restingCount,
-  scopes,
-  onNavigate,
-  onToggleFavorite,
-  onOpenItem,
-  onOpenFolder,
-  onPreview,
-  onClose,
-}: {
-  item: DriveItem | null;
-  actions: RowActions | null;
-  scopePathLabel: string;
-  canDownload: boolean;
-  canRename: boolean;
-  canMove: boolean;
-  canShare: boolean;
-  canDelete: boolean;
-  restingCount: number;
-  scopes: DriveTreeScope[];
-  onNavigate: (scopeId: string | null, folderId: string | null) => void;
-  onToggleFavorite?: (item: DriveItem) => void;
-  onOpenItem: (item: DriveItem) => void;
-  /** Jump to a folder in the Drive (the "inherited from" link). */
-  onOpenFolder: (folderId: string) => void;
-  onPreview: (item: DriveItem) => void;
-  onClose: () => void;
-}) {
-  const t = useDriveText();
-  const canFavorite =
-    !!item && (item.type === "doc" || item.type === "folder" || item.type === "form") && !!onToggleFavorite;
-  return (
-    <aside
-      data-testid="drive-details-pane"
-      onClick={(e) => e.stopPropagation()}
-      className="hidden w-[280px] shrink-0 self-stretch rounded-os-card bg-card md:flex md:flex-col"
-    >
-      {/* The close control sits alone at the top: the item's identity is the
-          centred block below, so repeating its name up here would say it
-          twice on a 280px panel. */}
-      <div className="flex justify-end px-3 pt-3">
-        <button
-          type="button"
-          aria-label="Hide details"
-          data-testid="drive-details-close"
-          onClick={onClose}
-          className="os-icon-btn"
-        >
-          <PanelRightClose className="h-4 w-4" />
-        </button>
-      </div>
-
-      {item ? (
-        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-5 pb-5">
-          <div className="flex flex-col items-center text-center">
-            <div className="mb-3.5 flex h-12 w-12 items-center justify-center">
-              {itemIcon(item, "xl")}
-            </div>
-            <span className="text-base font-semibold leading-snug text-foreground break-words">
-              {item.title || "Untitled"}
-            </span>
-            <span className="mt-1 text-[13px] text-muted-foreground">{kindLabel(item)}</span>
-          </div>
-
-          {/* Metadata */}
-          <dl className="mt-4 flex flex-col gap-3.5 border-t border-border pt-3.5">
-            <DetailFact label="Where" value={scopePathLabel || "—"} />
-            <DetailFact label="Modified" value={relativeTime(item.updatedAt as unknown as string)} />
-            {item.type === "folder" && receivesLabel(item.folderType) && (
-              <DetailFact label="Receives" value={receivesLabel(item.folderType)!} />
-            )}
-            {item.type === "file" && item.sizeBytes != null && (
-              <DetailFact label="Size" value={formatSize(item.sizeBytes)} />
-            )}
-            {(item.type === "doc" || item.type === "file") &&
-              (item as { partnerVisible?: boolean | null }).partnerVisible && (
-                <DetailFact label="Sharing" value="Shared with partner" />
-              )}
-            {(item.type === "doc" || item.type === "folder" || item.type === "form") && !!item.tags?.length && (
-              <DetailFact label="Tags" value={<TagLabels tags={item.tags} />} />
-            )}
-            {(item.type === "doc" || item.type === "folder" || item.type === "file" || item.type === "form") &&
-              item.audience && (
-              <DetailFact
-                label="Who can see this"
-                value={
-                  <AudienceDetail
-                    audience={item.audience}
-                    onOpenFolder={onOpenFolder}
-                    onManage={canShare && actions?.onShare ? () => actions.onShare!(item) : undefined}
-                  />
-                }
-              />
-            )}
-          </dl>
-
-          {/* Actions */}
-          <div className="mt-4 flex flex-col border-t border-border pt-2">
-            {item.type !== "folder" && (
-              <DetailAction icon={<FolderOpen />} label="Open" onClick={() => onOpenItem(item)} />
-            )}
-            {isPreviewable(item) && (
-              <DetailAction icon={<Search />} label="Preview" onClick={() => onPreview(item)} />
-            )}
-            {canFavorite && (
-              <DetailAction
-                icon={<Star className={cn(item.favorited && "fill-current")} />}
-                label={item.favorited ? "Remove from favorites" : "Add to favorites"}
-                active={!!item.favorited}
-                onClick={() => onToggleFavorite!(item)}
-              />
-            )}
-            {canDownload && item.href && (
-              <DetailAction icon={<Download />} label="Download" href={item.href} />
-            )}
-            {canRename && actions && (
-              <DetailAction icon={<Pencil />} label="Rename" onClick={() => actions.onRename(item)} />
-            )}
-            {canMove && actions && (
-              <DetailAction icon={<FolderInput />} label="Move to…" onClick={() => actions.onRequestMove(item)} />
-            )}
-            {canShare && actions?.onShare && (
-              <DetailAction icon={<Share2 />} label="Share…" onClick={() => actions.onShare!(item)} />
-            )}
-            {canDelete && actions && (
-              <DetailAction icon={<Trash2 />} label="Delete" destructive onClick={() => actions.onDelete(item)} />
-            )}
-          </div>
-
-          {/* Activity — the timeline we can show today; version history slots in
-              here once per-item revisions are surfaced. */}
-          <div className="mt-4 border-t border-border pt-3.5">
-            <h4 className={`mb-1 ${t.label} font-bold uppercase tracking-[0.5px] text-muted-foreground`}>
-              Activity
-            </h4>
-            <div className={`flex items-center gap-2 text-muted-foreground ${t.meta}`}>
-              <History className="h-3.5 w-3.5 shrink-0" />
-              <span>Last modified {relativeTime(item.updatedAt as unknown as string)}</span>
-            </div>
-          </div>
-        </div>
-      ) : (
-        <div className="flex flex-1 flex-col items-center justify-center gap-2 px-5 pb-10 text-center">
-          <FolderOpen className="h-8 w-8 text-muted-foreground/60" />
-          <p className={`text-muted-foreground ${t.meta}`}>Select an item to see its details.</p>
-          <p className={`text-muted-foreground/70 ${t.meta}`}>
-            {restingCount} {restingCount === 1 ? "item" : "items"} here
-          </p>
-        </div>
-      )}
-    </aside>
-  );
-}
-
 // ── Quick Look overlay (spacebar preview) ────────────────────────────────────
 // A fixed, full-screen modal. Renders images/PDFs inline; everything else gets a
 // large icon + Open. Escape or a backdrop click closes it.
@@ -2468,6 +2233,7 @@ function ColumnScopeRow({
   isDragging: boolean;
   onClick: () => void;
 }) {
+  const tiles = useFeatureFlag("desktop-tabs");
   const t = useDriveText();
   const drop = useScopeDrop(scope.id, isDragging);
 
@@ -2495,7 +2261,7 @@ function ColumnScopeRow({
             : "text-foreground hover:bg-os-hover"
       } ${isFocused && !drop.isOver ? "ring-1 ring-inset ring-os-accent/50" : ""}`}
     >
-      {scopeIcon(scope)}
+      {scopeIcon(scope, "sm", tiles)}
       <span className="min-w-0 flex-1 truncate font-medium">{scopeLabel(scope)}</span>
       {audienceChip}
     </div>
@@ -2549,6 +2315,7 @@ function ColumnItemRow({
     disabled: !acceptsDrops(item) || !scopeId,
   });
   const fileDrop = useFileDropFolder(item);
+  const besideActive = useBeside(item).active;
   function setRefs(node: HTMLDivElement | null) {
     drag.setNodeRef(node);
     if (acceptsDrops(item)) drop.setNodeRef(node);
@@ -2580,13 +2347,16 @@ function ColumnItemRow({
           ? "bg-os-container text-os-accent"
           : isOpen
             ? "bg-os-container text-foreground"
-            : "text-foreground hover:bg-os-hover"
+            : besideActive
+              ? "bg-os-accent/10 text-foreground"
+              : "text-foreground hover:bg-os-hover"
       } ${isFocused && !drop.isOver && !fileDrop.over ? "ring-1 ring-inset ring-os-accent/50" : ""}`}
     >
       <ItemGlyphTip item={item} />
       <Truncated text={item.title || "Untitled"} className="flex-1 font-medium" />
       <ModifiedCaption item={item} />
-      <RowTags item={item} actions={scopeActions} />
+      <BesideMark item={item} />
+<RowTags item={item} actions={scopeActions} />
       <RowAudience item={item} actions={scopeActions} />
       {/* Signal ②: process linkage pill. */}
       {item.linkedProcess && (
@@ -2653,63 +2423,6 @@ function RowAudience({ item, actions }: { item: DriveItem; actions: RowActions |
   if (!item.audience) return null;
   const share = item.type !== "file" && (item.type !== "form" || actions?.formShare) ? actions?.onShare : undefined;
   return <AudienceSignal audience={item.audience} onOpenShare={share ? () => share(item) : undefined} />;
-}
-
-function DetailAction({
-  icon,
-  label,
-  onClick,
-  href,
-  testid,
-  active = false,
-  destructive = false,
-}: {
-  icon: ReactNode;
-  label: string;
-  onClick?: () => void;
-  /** Set for Download, which has to stay an anchor to download anything. */
-  href?: string;
-  testid?: string;
-  active?: boolean;
-  destructive?: boolean;
-}) {
-  const cls = cn(
-    "flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm font-semibold",
-    "[&_svg]:h-4 [&_svg]:w-4 [&_svg]:shrink-0 [&_svg]:text-muted-foreground",
-    destructive
-      ? "text-destructive [&_svg]:text-destructive hover:bg-destructive/10"
-      : active
-        ? "text-os-accent [&_svg]:text-os-accent hover:bg-os-hover"
-        : "text-foreground hover:bg-os-hover hover:text-os-accent hover:[&_svg]:text-os-accent",
-  );
-  if (href) {
-    return (
-      <a
-        href={href}
-        download
-        data-testid={testid}
-        onClick={(e) => e.stopPropagation()}
-        className={cls}
-      >
-        {icon}
-        {label}
-      </a>
-    );
-  }
-  return (
-    <button
-      type="button"
-      data-testid={testid}
-      onClick={(e) => {
-        e.stopPropagation();
-        onClick?.();
-      }}
-      className={cls}
-    >
-      {icon}
-      {label}
-    </button>
-  );
 }
 
 // ── Miller column wrapper ─────────────────────────────────────────────────────
@@ -2953,6 +2666,7 @@ type ScopeEntryProps = {
 };
 
 function ScopeTile({ scope, focused, dragging, onOpen }: ScopeEntryProps) {
+  const tiles = useFeatureFlag("desktop-tabs");
   const drop = useScopeDrop(scope.id, dragging);
   return (
     <div
@@ -2966,7 +2680,7 @@ function ScopeTile({ scope, focused, dragging, onOpen }: ScopeEntryProps) {
       }}
       className={`${GRID_TILE} ${drop.isOver ? DROP_RING : focused ? "bg-os-container/40" : "hover:bg-os-hover"}`}
     >
-      {scopeIcon(scope, "xl")}
+      {scopeIcon(scope, "xl", tiles)}
       <span className={`${GRID_LABEL} ${focused ? "bg-os-accent text-os-bg" : "text-foreground"}`}>
         {scopeLabel(scope)}
       </span>
@@ -2975,6 +2689,7 @@ function ScopeTile({ scope, focused, dragging, onOpen }: ScopeEntryProps) {
 }
 
 function ScopeRow({ scope, focused, dragging, onOpen }: ScopeEntryProps) {
+  const tiles = useFeatureFlag("desktop-tabs");
   const t = useDriveText();
   const drop = useScopeDrop(scope.id, dragging);
   return (
@@ -2991,7 +2706,7 @@ function ScopeRow({ scope, focused, dragging, onOpen }: ScopeEntryProps) {
         drop.isOver ? DROP_RING : focused ? "bg-os-container text-os-accent" : "hover:bg-os-hover"
       }`}
     >
-      {scopeIcon(scope)}
+      {scopeIcon(scope, "sm", tiles)}
       <span className="min-w-0 flex-1 truncate font-medium text-foreground">{scopeLabel(scope)}</span>
       {/* Signal ③: scope audience chip — hover-reveal via group-hover. */}
       {scope.scopeAudience ? (
@@ -3210,6 +2925,7 @@ function ListRow({
     disabled: !acceptsDrops(item),
   });
   const fileDrop = useFileDropFolder(item);
+  const besideActive = useBeside(item).active;
   function setRefs(node: HTMLDivElement | null) {
     drag.setNodeRef(node);
     if (acceptsDrops(item)) drop.setNodeRef(node);
@@ -3235,15 +2951,18 @@ function ListRow({
           ? DROP_RING
           : selected
             ? "bg-os-container"
-            : focused
-              ? "bg-os-hover"
-              : "hover:bg-os-hover"
+            : besideActive
+              ? "bg-os-accent/10"
+              : focused
+                ? "bg-os-hover"
+                : "hover:bg-os-hover"
       }`}
     >
       <span className="flex items-center gap-2 min-w-0">
         <ItemGlyphTip item={item} />
         <Truncated text={item.title || "Untitled"} className="font-medium text-foreground" />
-        <RowTags item={item} actions={actions} />
+        <BesideMark item={item} />
+<RowTags item={item} actions={actions} />
         <RowAudience item={item} actions={actions} />
         {/* Signal ②: process linkage pill. */}
         {item.linkedProcess && (
@@ -3381,7 +3100,8 @@ function GridTile({
         }`}
       />
       <ModifiedCaption item={item} />
-      <RowTags item={item} actions={actions} />
+      <BesideMark item={item} />
+<RowTags item={item} actions={actions} />
       <RowAudience item={item} actions={actions} />
       {/* Signal ②: process linkage pill. Centered below the title. */}
       {item.linkedProcess && (
@@ -3470,7 +3190,8 @@ function FolderCard({
         <Truncated text={item.title || "Untitled"} className={`${t.row} font-medium text-foreground`} />
         <span className="flex items-center gap-2">
           <ModifiedCaption item={item} />
-          <RowTags item={item} actions={actions} />
+          <BesideMark item={item} />
+<RowTags item={item} actions={actions} />
           <RowAudience item={item} actions={actions} />
         </span>
       </div>
@@ -3550,7 +3271,8 @@ export function SearchResults({
               <span className="flex min-w-0 items-center gap-2">
                 <ItemGlyphTip item={hit.item} />
                 <Truncated text={hit.item.title || "Untitled"} className="font-medium text-foreground" />
-                <RowTags item={hit.item} actions={getScopeActions(hit.scope.id)} />
+                <BesideMark item={hit.item} />
+<RowTags item={hit.item} actions={getScopeActions(hit.scope.id)} />
                 {/* Signal ②: process linkage pill in search results. */}
                 {hit.item.linkedProcess && (
                   <ProcessLinkPill label={hit.item.linkedProcess.label} href={hit.item.linkedProcess.href} />

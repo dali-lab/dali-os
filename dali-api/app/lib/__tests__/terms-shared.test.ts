@@ -13,7 +13,7 @@ describe("termFilterOrder", () => {
   it("leads with All terms, then the current term (labelled), then older ones", () => {
     expect(termFilterOrder(TERMS).map((o) => o.label)).toEqual([
       "All terms",
-      "25F · current",
+      "25F (current)",
       "26W",
       "25X",
       "25S",
@@ -55,6 +55,6 @@ describe("termFilterOrder", () => {
   it("omits All terms for a mandatory single-term switcher", () => {
     const opts = termFilterOrder(TERMS, { includeAll: false });
     expect(opts.map((o) => o.value)).not.toContain(ALL_TERMS);
-    expect(opts[0]).toEqual({ value: "t-25f", label: "25F · current" });
+    expect(opts[0]).toEqual({ value: "t-25f", label: "25F (current)" });
   });
 });

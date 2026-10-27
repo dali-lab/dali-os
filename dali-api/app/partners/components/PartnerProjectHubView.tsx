@@ -354,7 +354,7 @@ export function PartnerProjectHubView({
           Roadmap
         </h2>
         {timelineEpics.length === 0 ? (
-          <div className="rounded-os-card bg-os-card p-6 text-sm text-os-grey">
+          <div className="rounded-os-card bg-os-card p-5 text-sm text-os-grey">
             Nothing on the roadmap yet. Work will appear here once the team
             plans it.
           </div>
@@ -381,7 +381,7 @@ export function PartnerProjectHubView({
           <Folder className="h-4 w-4" /> Drive
         </h2>
         {isDriveEmpty ? (
-          <div className="rounded-os-card bg-os-card p-6 text-sm text-os-grey">
+          <div className="rounded-os-card bg-os-card p-5 text-sm text-os-grey">
             The team hasn't shared any documents or files yet.
           </div>
         ) : (
@@ -410,7 +410,7 @@ export function PartnerProjectHubView({
           <h2 className="font-heading text-[19px] font-semibold text-foreground mb-3">
             Your DALI team{currentTermCode ? ` · ${termCodeLabel(currentTermCode)}` : ""}
           </h2>
-          <div className="rounded-os-card bg-os-card p-6 grid gap-x-6 gap-y-4 sm:grid-cols-2">
+          <div className="rounded-os-card bg-os-card p-5 grid gap-x-6 gap-y-4 sm:grid-cols-2">
             {team.map((m) => (
               <div key={m.name} className="flex items-center gap-3 min-w-0">
                 <Avatar photoUrl={m.photoUrl} name={m.name} size="md" />

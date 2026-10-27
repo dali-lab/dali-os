@@ -5,6 +5,7 @@ import { cn } from "~/lib/cn";
 import type { ItemLocation, LocationFolder } from "~/components/drive/location";
 import { CORAL_FOLDER, pickGlyph } from "~/components/drive/glyphs";
 import { FolderGlyph } from "~/components/drive/FolderGlyph";
+import { useFeatureFlag } from "~/components/FeatureFlags";
 import { scopeIconFor } from "~/components/drive/scope-icon";
 
 export type LocationNotebook = { id: string; title: string; href: string };
@@ -94,6 +95,7 @@ export function LocationLink({
   hrefFor?: (scopeId: string, folderId: string | null) => string;
   notebook?: LocationNotebook;
 }) {
+  const tiles = useFeatureFlag("desktop-tabs");
   if (!location) return <span aria-hidden="true" />;
   const { scopeId } = location;
   const target = (folderId: string | null) => ({
@@ -106,7 +108,7 @@ export function LocationLink({
       node: (
         <Crumb
           kind="space"
-          glyph={scopeIconFor({ id: scopeId }, "sm")}
+          glyph={scopeIconFor({ id: scopeId }, "sm", tiles)}
           label={location.scopeLabel}
           {...target(null)}
         />

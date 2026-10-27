@@ -1,21 +1,11 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
+import { mentionUserCache } from "~/lib/mention-search";
+import { searchWithCache } from "~/lib/search-cache";
 
 export type SearchMember = { id: string; name: string; handle: string };
 
 const SEARCH_MIN_CHARS = 2;
-const SEARCH_DEBOUNCE_MS = 200;
 const SEARCH_LIMIT = 8;
-
-async function searchLabMembers(query: string): Promise<SearchMember[]> {
-  try {
-    const res = await fetch(`/api/mentions/search?q=${encodeURIComponent(query)}`, { credentials: "include" });
-    if (!res.ok) return [];
-    const data = (await res.json()) as { members?: SearchMember[] };
-    return (data.members ?? []).slice(0, SEARCH_LIMIT);
-  } catch {
-    return [];
-  }
-}
 
 export function isSearchableQuery(query: string): boolean {
   return query.trim().length >= SEARCH_MIN_CHARS;
@@ -24,7 +14,6 @@ export function isSearchableQuery(query: string): boolean {
 export function useLabMemberSearch(): { query: string; setQuery: (q: string) => void; results: SearchMember[] } {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchMember[]>([]);
-  const seqRef = useRef(0);
 
   useEffect(() => {
     const q = query.trim();
@@ -32,13 +21,14 @@ export function useLabMemberSearch(): { query: string; setQuery: (q: string) => 
       setResults([]);
       return;
     }
-    const seq = ++seqRef.current;
-    const timer = setTimeout(() => {
-      void searchLabMembers(q).then((members) => {
-        if (seq === seqRef.current) setResults(members);
-      });
-    }, SEARCH_DEBOUNCE_MS);
-    return () => clearTimeout(timer);
+    let active = true;
+    const show = (items: SearchMember[]) => {
+      if (active) setResults(items.slice(0, SEARCH_LIMIT));
+    };
+    void searchWithCache(mentionUserCache, q, () => show(mentionUserCache.peek(q)?.items ?? [])).then(show);
+    return () => {
+      active = false;
+    };
   }, [query]);
 
   return { query, setQuery, results };

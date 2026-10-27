@@ -8,29 +8,23 @@ import {
   EPIC_STATUS_LABEL,
   OS_LEVEL,
   STORY_STATUS_LABEL,
-  TASK_STATUS_LABEL,
   rangeLabel,
   type EpicStatus,
   type TimelineEpic,
-  type TimelineStory,
   type EpicDependencyEdge,
   type StoryDependencyEdge,
   type TaskDependencyEdge,
 } from "./EpicsTimeline";
+import { TASK_STATUSES, TASK_STATUS_LABELS } from "../lib/task-board";
 
 const EPIC_STATUSES: EpicStatus[] = ["Backlog", "Open", "InProgress", "Done", "Cancelled"];
+const STORY_STATUSES = Object.keys(STORY_STATUS_LABEL) as (keyof typeof STORY_STATUS_LABEL)[];
 const ALL_STATUSES = "all" as const;
 
 // The filters are toolbar controls, not form fields, so they wear the row's own
-// pill (`.os-edit-btn`) rather than the select trigger — same height, radius and
-// type as Edit and New beside them.
-const FILTER_PILL = "os-edit-btn max-w-[220px]";
-
-/** Done/total for a story: cancelled tasks are out of both numbers. */
-function storyCounts(story: TimelineStory): { done: number; total: number } {
-  const counted = story.tasks.filter((t) => t.status !== "Cancelled");
-  return { done: counted.filter((t) => t.status === "Done").length, total: counted.length };
-}
+// pill (`.os-edit-btn`, one size down) rather than the select trigger — same
+// height, radius and type as Edit and New beside them.
+const FILTER_PILL = "os-edit-btn os-edit-btn--sm max-w-[220px]";
 
 /**
  * The timeline's other half: the same epic → story → task tree read as an
@@ -54,6 +48,8 @@ export function EpicList({
   onStoryClick,
   onTaskClick,
   onAddTask,
+  onAddStory,
+  onStatusChange,
 }: {
   epics: TimelineEpic[];
   /** Term-filter options, newest first. */
@@ -75,6 +71,11 @@ export function EpicList({
   /** Files a new task under a story. Omitted (no board to receive it, or no
    *  edit rights) hides the per-story add affordance. */
   onAddTask?: (epicId: string, storyId: string) => void;
+  /** Starts a new story under an epic. Same gating as onAddTask. */
+  onAddStory?: (epicId: string) => void;
+  /** Sets a row's status in place. Omitted (no edit rights) leaves the status
+   *  a plain pill. */
+  onStatusChange?: (kind: "epic" | "story" | "task", id: string, status: string) => void;
 }) {
   const termOptions = useMemo(
     () => termFilterOrder(terms.map((t) => ({ ...t, isCurrent: t.id === currentTermId }))),
@@ -178,12 +179,29 @@ export function EpicList({
                     onToggle={() => setCollapsedEpics((s) => toggle(s, epic.id))}
                     title={epic.title}
                     onTitleClick={onEpicClick && (() => onEpicClick(epic.id))}
-                    status={EPIC_STATUS_LABEL[epic.status]}
+                    status={epic.status}
+                    statusLabel={EPIC_STATUS_LABEL[epic.status]}
+                    statusOptions={EPIC_STATUSES.map((s) => ({
+                      value: s,
+                      label: EPIC_STATUS_LABEL[s],
+                    }))}
+                    onStatusChange={
+                      onStatusChange && ((s) => onStatusChange("epic", epic.id, s))
+                    }
                     blocked={blocked.epicIds.has(epic.id)}
                     dates={
                       epic.startsAt && epic.endsAt
                         ? rangeLabel(epic.startsAt, epic.endsAt)
                         : "Unscheduled"
+                    }
+                    addAction={
+                      onAddStory && (
+                        <AddButton
+                          tooltip="Add story"
+                          ariaLabel={`Add story to ${epic.title}`}
+                          onClick={() => onAddStory(epic.id)}
+                        />
+                      )
                     }
                   />
                   {open &&
@@ -201,28 +219,25 @@ export function EpicList({
                             onTitleClick={
                               onStoryClick && (() => onStoryClick(epic.id))
                             }
-                            status={STORY_STATUS_LABEL[story.status]}
+                            status={story.status}
+                            statusLabel={STORY_STATUS_LABEL[story.status]}
+                            statusOptions={STORY_STATUSES.map((s) => ({
+                              value: s,
+                              label: STORY_STATUS_LABEL[s],
+                            }))}
+                            onStatusChange={
+                              onStatusChange &&
+                              ((s) => onStatusChange("story", story.id, s))
+                            }
                             blocked={blocked.storyIds.has(story.id)}
                             dates={rangeLabel(story.startsAt, story.endsAt)}
-                            counts={
-                              story.tasks.length > 0 ? storyCounts(story) : null
-                            }
-                            trailing={
+                            addAction={
                               onAddTask && (
-                                <Tooltip content="Add task">
-                                  <button
-                                    type="button"
-                                    aria-label={`Add task to ${story.title}`}
-                                    onClick={() => onAddTask(epic.id, story.id)}
-                                    className="os-icon-btn h-5 w-5 flex-shrink-0 opacity-0 transition-opacity group-hover/row:opacity-100 focus-visible:opacity-100"
-                                  >
-                                    <Plus
-                                      className="h-3.5 w-3.5 text-os-grey"
-                                      strokeWidth={3}
-                                      aria-hidden
-                                    />
-                                  </button>
-                                </Tooltip>
+                                <AddButton
+                                  tooltip="Add task"
+                                  ariaLabel={`Add task to ${story.title}`}
+                                  onClick={() => onAddTask(epic.id, story.id)}
+                                />
                               )
                             }
                           />
@@ -237,7 +252,20 @@ export function EpicList({
                                 onTitleClick={
                                   onTaskClick && (() => onTaskClick(task.id))
                                 }
-                                status={TASK_STATUS_LABEL[task.status]}
+                                status={task.status}
+                                statusLabel={
+                                  TASK_STATUS_LABELS[
+                                    task.status as keyof typeof TASK_STATUS_LABELS
+                                  ] ?? task.status
+                                }
+                                statusOptions={TASK_STATUSES.map((s) => ({
+                                  value: s,
+                                  label: TASK_STATUS_LABELS[s],
+                                }))}
+                                onStatusChange={
+                                  onStatusChange &&
+                                  ((s) => onStatusChange("task", task.id, s))
+                                }
                                 blocked={blocked.taskIds.has(task.id)}
                                 dates={rangeLabel(task.startsAt, task.endsAt)}
                                 meta={
@@ -260,6 +288,31 @@ export function EpicList({
   );
 }
 
+/** The 20px square a row-level control sits in. Spelled out rather than
+ *  `.os-icon-btn h-5 w-5`: the class's own 32px wins the cascade over the
+ *  utilities, so expandable rows sat 12px further right than their spacer. */
+const ROW_ICON_BTN =
+  "flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-[6px] text-os-grey transition-colors hover:bg-os-hover-strong hover:text-foreground";
+
+/** The + that files a child under a row, sitting right beside the name. */
+function AddButton({
+  tooltip,
+  ariaLabel,
+  onClick,
+}: {
+  tooltip: string;
+  ariaLabel: string;
+  onClick: () => void;
+}) {
+  return (
+    <Tooltip content={tooltip}>
+      <button type="button" aria-label={ariaLabel} onClick={onClick} className={ROW_ICON_BTN}>
+        <Plus className="h-3.5 w-3.5" strokeWidth={3} aria-hidden />
+      </button>
+    </Tooltip>
+  );
+}
+
 /** One line of the outline. The three levels differ only in indent, dot colour
  *  and type weight, so they read as one tree rather than three lists. */
 function Row({
@@ -271,11 +324,13 @@ function Row({
   title,
   onTitleClick,
   status,
+  statusLabel,
+  statusOptions,
+  onStatusChange,
   blocked = false,
   dates,
-  counts,
   meta,
-  trailing,
+  addAction,
 }: {
   level: "epic" | "story" | "task";
   depth: 0 | 1 | 2;
@@ -285,12 +340,15 @@ function Row({
   title: string;
   onTitleClick?: (() => void) | undefined;
   status: string;
+  statusLabel: string;
+  statusOptions: { value: string; label: string }[];
+  /** Present: the status pill is a select that sets it in place. */
+  onStatusChange?: ((status: string) => void) | undefined;
   blocked?: boolean;
   dates: string;
-  counts?: { done: number; total: number } | null;
   meta?: string | null;
-  /** Row-end action, revealed on hover of this row (see group/row). */
-  trailing?: ReactNode;
+  /** The add-a-child control, rendered beside the name. */
+  addAction?: ReactNode;
 }) {
   return (
     <div
@@ -307,10 +365,10 @@ function Row({
           onClick={onToggle}
           aria-expanded={open}
           aria-label={open ? `Collapse ${title}` : `Expand ${title}`}
-          className="os-icon-btn h-5 w-5 flex-shrink-0"
+          className={ROW_ICON_BTN}
         >
           <ChevronRight
-            className={cn("h-4 w-4 text-os-grey transition-transform", open && "rotate-90")}
+            className={cn("h-4 w-4 transition-transform", open && "rotate-90")}
             aria-hidden
           />
         </button>
@@ -322,35 +380,33 @@ function Row({
         style={{ background: OS_LEVEL[level].edge }}
         aria-hidden
       />
-      {onTitleClick ? (
-        <button
-          type="button"
-          onClick={onTitleClick}
-          className={cn(
-            "min-w-0 flex-1 truncate text-left text-sm text-foreground hover:underline",
-            level === "epic" && "font-semibold",
-          )}
-        >
-          {title}
-        </button>
-      ) : (
-        <span
-          className={cn(
-            "min-w-0 flex-1 truncate text-sm text-foreground",
-            level === "epic" && "font-semibold",
-          )}
-        >
-          {title}
-        </span>
-      )}
+      <span className="flex min-w-0 flex-1 items-center gap-1.5">
+        {onTitleClick ? (
+          <button
+            type="button"
+            onClick={onTitleClick}
+            className={cn(
+              "min-w-0 truncate text-left text-sm text-foreground hover:underline",
+              level === "epic" && "font-semibold",
+            )}
+          >
+            {title}
+          </button>
+        ) : (
+          <span
+            className={cn(
+              "min-w-0 truncate text-sm text-foreground",
+              level === "epic" && "font-semibold",
+            )}
+          >
+            {title}
+          </span>
+        )}
+        {addAction}
+      </span>
       {meta && (
         <span className="hidden max-w-[180px] flex-shrink-0 truncate text-xs text-os-grey md:inline">
           {meta}
-        </span>
-      )}
-      {counts && (
-        <span className="flex-shrink-0 text-xs tabular-nums text-os-grey">
-          {counts.done}/{counts.total}
         </span>
       )}
       <span className="hidden flex-shrink-0 text-xs tabular-nums text-os-muted sm:inline">
@@ -361,10 +417,19 @@ function Row({
           Blocked
         </span>
       )}
-      <span className="flex-shrink-0 rounded-full border border-os-container px-2 py-0.5 text-[11px] font-semibold text-os-grey">
-        {status}
-      </span>
-      {trailing}
+      {onStatusChange ? (
+        <Select
+          value={status}
+          options={statusOptions}
+          onChange={onStatusChange}
+          ariaLabel={`Change status of ${title}`}
+          buttonClassName="flex-shrink-0 rounded-full border border-os-container px-2 py-0.5 text-[11px] font-semibold text-os-grey transition-colors hover:border-os-container-hi hover:text-foreground"
+        />
+      ) : (
+        <span className="flex-shrink-0 rounded-full border border-os-container px-2 py-0.5 text-[11px] font-semibold text-os-grey">
+          {statusLabel}
+        </span>
+      )}
     </div>
   );
 }

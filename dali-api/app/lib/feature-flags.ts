@@ -178,6 +178,12 @@ export const FEATURE_FLAGS = [
       "Lets the DALI OS mobile app (iOS and Android) sign in and load your profile, timesheet, projects, calendar, meeting notes and member pass. Off, the app's data endpoints return not found for that member. Ships off.",
   },
   {
+    key: "desktop-tabs",
+    label: "Desktop tabs",
+    description:
+      "Tabs become a desktop app feature built on the single-page shell instead of one iframe per tab. The desktop app shows a tab strip (on by default, switchable in Settings); browsers never do, and the tabbed workspace setting leaves browser Settings. Project documents and member notes open in a side panel beside the page, in the browser and the app. Also carries the v2 design: the v2 sidebar (hides to just an expand button, auto-compacts to a 68px icon rail on narrow windows), the smaller app-wide scale, the squarer control dress, and mode-colored page accents and loading bar. Ships off.",
+  },
+  {
     key: "drive-slides",
     label: "Drive slide decks",
     description:

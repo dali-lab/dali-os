@@ -21,7 +21,7 @@ export function ToggleChip({
       disabled={disabled}
       onClick={onToggle}
       className={cn(
-        "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-50",
+        "inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-50",
         on
           ? "border-os-accent bg-os-accent/15 text-os-accent"
           : "border-os-container text-os-grey hover:border-os-container-hi hover:text-foreground",

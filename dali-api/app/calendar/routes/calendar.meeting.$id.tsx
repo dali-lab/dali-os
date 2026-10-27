@@ -6,7 +6,6 @@ import {
   ChevronRight,
   FileText,
   Users,
-  Shield,
   Video,
   Pencil,
   Clock,
@@ -663,7 +662,7 @@ function formatWhen(iso: string) {
 
 export default function CalendarMeetingPage() {
   const d = useLoaderData<typeof loader>();
-  const { card, pageTitle, sectionTitle } = useOsChrome();
+  const { pageTitle, sectionTitle } = useOsChrome();
   const when = d.selectedAtIso ? formatWhen(d.selectedAtIso) : "Time not set";
   const [liveRoster, setLiveRoster] = useState<{ occurrenceStart: string; rows: AttendanceRow[] } | null>(null);
   const rosterRows = liveRoster?.occurrenceStart === d.occurrenceStart ? liveRoster.rows : d.rows;
@@ -753,19 +752,13 @@ export default function CalendarMeetingPage() {
         />
       )}
       <header className="flex flex-col gap-5">
-        <div className="flex flex-wrap items-center gap-2">
-          <Pill tone="accent">{d.typeLabel}</Pill>
-          {d.isCoreMeeting && (
-            <Pill>
-              <Shield className="h-3.5 w-3.5" /> Core
-            </Pill>
-          )}
-          {d.liveRecordingName && (
+        {d.liveRecordingName && (
+          <div className="flex flex-wrap items-center gap-2">
             <Pill tone="danger" dot="danger">
               Recording · {d.liveRecordingName}
             </Pill>
-          )}
-        </div>
+          </div>
+        )}
         <h1 className={pageTitle}>{d.meetingLabel}</h1>
         {d.description && (
           <p className="max-w-3xl whitespace-pre-wrap text-base text-os-grey">{d.description}</p>
@@ -837,7 +830,7 @@ export default function CalendarMeetingPage() {
         </div>
       </header>
 
-      <div className={cn(card, "grid gap-6 p-6 sm:grid-cols-2 lg:grid-cols-4")}>
+      <div className="-mt-4 rounded-os-card bg-os-container/40 grid gap-6 p-6 sm:grid-cols-2 lg:grid-cols-4">
         <Fact label="When">
           {d.prevOccurrence && (
             <Link

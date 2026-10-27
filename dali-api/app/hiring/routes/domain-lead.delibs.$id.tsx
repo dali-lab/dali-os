@@ -10,8 +10,9 @@ import { getCollabToken } from "~/lib/collab-token.server";
 import { isCycleAdmin } from "~/lib/roles";
 import { requirePageSignedOrRedirect } from "~/hiring/lib/confidentiality";
 import { GripVertical } from "lucide-react";
+import { useEventStream } from "~/hooks/useEventStream";
 import { KanbanBoard, type KanbanColumn } from "~/components/board/KanbanBoard";
-import { buildColumnOrder, dropCard } from "~/hiring/lib/delibs";
+import { buildColumnOrder, dropCard, missingReviewsLabel } from "~/hiring/lib/delibs";
 import { findRound, parseTimeline } from "~/hiring/lib/cycle-timeline";
 import { delibsQualifier } from "~/hiring/lib/cycle-stages.server";
 import { inReviewPipelineFilter } from "~/hiring/lib/application-pipeline-filter";
@@ -235,17 +236,24 @@ export default function DelibsKanban() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [JSON.stringify(initialOrder)]);
 
-  // Poll the loader every 5s while the session is active so other leads' moves
-  // and newly qualifying applications surface without a manual refresh.
+  // A push that lands mid-drag or mid-save is held until both settle, so the
+  // optimistic order isn't overwritten under the user's hand.
   const revalidator = useRevalidator();
+  const pendingPush = useRef(false);
+  useEventStream(
+    session.status === "Active"
+      ? [`/api/hiring/cycles/${session.applicationCycleId}/delibs/events`]
+      : [],
+    () => {
+      if (dragItemRef.current || savingRef.current) pendingPush.current = true;
+      else revalidator.revalidate();
+    },
+  );
   useEffect(() => {
-    if (session.status !== "Active") return;
-    const t = setInterval(() => {
-      if (dragItemRef.current || savingRef.current) return;
-      if (revalidator.state === "idle") revalidator.revalidate();
-    }, 5000);
-    return () => clearInterval(t);
-  }, [session.status, revalidator]);
+    if (dragItem || saving || !pendingPush.current) return;
+    pendingPush.current = false;
+    revalidator.revalidate();
+  }, [dragItem, saving, revalidator]);
 
   const sendMove = useCallback(
     async (cardId: string, toColumn: string, order: string[]) => {
@@ -450,10 +458,12 @@ function DelibsCard({
   overlay?: boolean;
 }) {
   const reviewCount = da.reviews.length;
-  const submittedCount = da.reviews.filter((r: any) => r.submittedAt).length;
+  const submitted = da.reviews.filter((r: any) => r.submittedAt);
+  const submittedCount = submitted.length;
+  const missingReviews = missingReviewsLabel(submittedCount, reviewCount);
   const avgScore =
-    da.reviews.length > 0
-      ? da.reviews.reduce((sum: number, r: any) => {
+    submitted.length > 0
+      ? submitted.reduce((sum: number, r: any) => {
           const scores = r.scores as Record<string, number>;
           const vals = Object.values(scores);
           return (
@@ -462,7 +472,7 @@ function DelibsCard({
               ? vals.reduce((a: number, b: number) => a + b, 0) / vals.length
               : 0)
           );
-        }, 0) / da.reviews.length
+        }, 0) / submitted.length
       : null;
 
   const fmt = (u: any) =>
@@ -480,7 +490,7 @@ function DelibsCard({
         .filter(Boolean),
     ),
   );
-  const reviewerRecs = (da.reviews ?? [])
+  const reviewerRecs = submitted
     .filter((r: any) => r.overallRecommendation)
     .map((r: any) => ({ id: r.id, rec: r.overallRecommendation as string }));
   // Interviewer recommendation: the joint interview rec.
@@ -532,9 +542,15 @@ function DelibsCard({
             {da.application.user.firstName} {da.application.user.lastName}
           </h4>
           <div className="flex items-center gap-2 mt-1">
-            <span className="text-xs text-os-grey">
-              {submittedCount}/{reviewCount} reviews
-            </span>
+            {missingReviews ? (
+              <span className="rounded-full bg-os-amber/15 px-2 py-0.5 text-xs font-medium text-os-amber">
+                {missingReviews}
+              </span>
+            ) : (
+              <span className="text-xs text-os-grey">
+                {submittedCount}/{reviewCount} reviews
+              </span>
+            )}
             {avgScore !== null && (
               <span className="rounded-full bg-os-container px-2 py-0.5 text-xs font-medium text-foreground">
                 avg {avgScore.toFixed(1)}

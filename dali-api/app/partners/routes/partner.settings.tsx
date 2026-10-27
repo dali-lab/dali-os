@@ -245,7 +245,7 @@ export default function PartnerSettings({ actionData }: Route.ComponentProps) {
         <p className="text-sm text-destructive bg-destructive/10 rounded-lg px-4 py-3">{error}</p>
       )}
 
-      <section className="rounded-os-card bg-os-card p-6">
+      <section className="rounded-os-card bg-os-card p-5">
         <h2 className="font-heading text-[19px] font-semibold text-foreground mb-4">Profile</h2>
         <Form method="post" className="os-form flex flex-col gap-4">
           <input type="hidden" name="intent" value="profile" />
@@ -304,19 +304,19 @@ export default function PartnerSettings({ actionData }: Route.ComponentProps) {
         </Form>
       </section>
 
-      <section className="rounded-os-card bg-os-card p-6">
+      <section className="rounded-os-card bg-os-card p-5">
         <h2 className="font-heading text-[19px] font-semibold text-foreground mb-4">Appearance</h2>
         <AppearanceSettingsBlock />
       </section>
 
-      <section className="rounded-os-card bg-os-card p-6">
+      <section className="rounded-os-card bg-os-card p-5">
         <h2 className="font-heading text-[19px] font-semibold text-foreground mb-4">Passkeys</h2>
         <PasskeysSettingsBlock />
       </section>
 
       {hasOrg && org && (
         <>
-          <section className="rounded-os-card bg-os-card p-6">
+          <section className="rounded-os-card bg-os-card p-5">
             <h2 className="font-heading text-[19px] font-semibold text-foreground mb-4">
               Organization
             </h2>
@@ -346,7 +346,7 @@ export default function PartnerSettings({ actionData }: Route.ComponentProps) {
             </Form>
           </section>
 
-          <section className="rounded-os-card bg-os-card p-6">
+          <section className="rounded-os-card bg-os-card p-5">
             <div className="flex items-center justify-between mb-4">
               <h2 className="font-heading text-[19px] font-semibold text-foreground">Team</h2>
               <button

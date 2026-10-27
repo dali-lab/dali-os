@@ -51,6 +51,13 @@ pub fn on_navigation(app: &AppHandle, url: &Url) -> bool {
         if url.scheme() == "about" {
             return true;
         }
+        // Close Tab's fallback when the page has no tabs (window::tab_command).
+        // Matched here rather than in deeplink.rs so only this webview, not any
+        // site via Launch Services, can hide the window.
+        if url.as_str() == window::CLOSE_WINDOW_URL {
+            window::hide_main(app);
+            return false;
+        }
         if url.scheme() == config::DEEP_LINK_SCHEME {
             deeplink::handle_urls(app, std::slice::from_ref(url));
             return false;

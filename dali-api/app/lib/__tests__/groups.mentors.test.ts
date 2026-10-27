@@ -11,6 +11,7 @@ import { prisma } from "~/lib/db";
 import { currentTerm, getActiveCoreCycleTermIds, isLabMentor } from "~/lib/roles";
 import {
   resolveDynamicQuery,
+  resolveDynamicQueries,
   listVisibleGroupIdsForUser,
   ensureMentorsGroup,
   syncDefaultGroups,
@@ -94,11 +95,19 @@ describe("mentors group membership", () => {
     expect(mockPrisma.user!.findMany).not.toHaveBeenCalled();
   });
 
-  it("reuses a shared Core promise instead of querying Core again", async () => {
-    const coreMembers = Promise.resolve(["shared-core"]);
+  it("reads Core once when core, hiring and mentors resolve together", async () => {
+    mockPrisma.cycleReviewer!.findMany.mockResolvedValue([]);
+    mockPrisma.cycleInterviewer!.findMany.mockResolvedValue([]);
+    mockPrisma.coreAssignment!.findMany.mockResolvedValue([{ userId: "shared-core" }]);
 
-    expect(await resolveDynamicQuery("mentors", { coreMembers })).toEqual(["shared-core"]);
-    expect(mockPrisma.coreAssignment!.findMany).not.toHaveBeenCalled();
+    const members = await resolveDynamicQueries(["core", "hiring", "mentors"]);
+
+    expect(Object.fromEntries(members)).toEqual({
+      core: ["shared-core"],
+      hiring: ["shared-core"],
+      mentors: ["shared-core"],
+    });
+    expect(mockPrisma.coreAssignment!.findMany).toHaveBeenCalledOnce();
   });
 });
 

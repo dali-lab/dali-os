@@ -14,6 +14,10 @@ vi.mock("~/hiring/lib/email-engagement.server", () => ({
 vi.mock("~/hiring/lib/hiring-events.server", () => ({
   getHiringEventEngagement: vi.fn(async () => []),
 }));
+vi.mock("~/hiring/lib/confidentiality", () => ({
+  requirePageSignedOrRedirect: vi.fn(async () => null),
+}));
+vi.mock("~/lib/user-pages.server", () => ({ recordRouteVisit: vi.fn() }));
 
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
@@ -22,6 +26,9 @@ import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { getHiringEventEngagement } from "~/hiring/lib/hiring-events.server";
 import { logAuditEvent } from "~/lib/audit";
 import { logApplicationView } from "~/hiring/lib/application-view-audit.server";
+import { requirePageSignedOrRedirect } from "~/hiring/lib/confidentiality";
+import { recordRouteVisit } from "~/lib/user-pages.server";
+import { getApplicantEmailEngagement } from "~/hiring/lib/email-engagement.server";
 import { loader, action } from "~/hiring/routes/reviewer.application.$id";
 
 const mockPrisma = prisma as unknown as Record<string, any>;
@@ -111,6 +118,7 @@ beforeEach(() => {
     user: { sub: USER_ID, email: "rev@x.com", type: "user" },
   } as any);
   vi.mocked(hasCycleAccess).mockResolvedValue(true);
+  vi.mocked(requirePageSignedOrRedirect).mockResolvedValue(null);
   vi.mocked(getUserRoles).mockResolvedValue({
     isCore: false,
     isAdmin: false,
@@ -232,6 +240,102 @@ describe("reviewer.application.$id loader — domain scoping", () => {
     expect(mockPrisma.domainApplication.findMany).not.toHaveBeenCalled();
     expect(mockPrisma.cycleReviewer.findMany).not.toHaveBeenCalled();
     expect(logApplicationView).not.toHaveBeenCalled();
+  });
+});
+
+describe("reviewer.application.$id loader — gates and query fan-out", () => {
+  function deferred<T>() {
+    let resolve!: (v: T) => void;
+    const promise = new Promise<T>((r) => (resolve = r));
+    return { promise, resolve };
+  }
+  const flush = () => new Promise((r) => setTimeout(r, 0));
+
+  it("returns the confidentiality redirect without reading or recording anything", async () => {
+    const signRedirect = new Response(null, { status: 302, headers: { location: "/sign" } });
+    vi.mocked(requirePageSignedOrRedirect).mockResolvedValue(signRedirect);
+    mockPrisma.cycleReviewer.findMany.mockResolvedValue([]);
+    mockPrisma.domainApplication.findMany.mockResolvedValue([]);
+
+    const result = await callLoader();
+
+    expect(result).toBe(signRedirect);
+    expect(mockPrisma.cycleReviewer.findMany).not.toHaveBeenCalled();
+    expect(mockPrisma.domainApplication.findMany).not.toHaveBeenCalled();
+    expect(mockPrisma.applicationReview.findFirst).not.toHaveBeenCalled();
+    expect(mockPrisma.applicationReview.upsert).not.toHaveBeenCalled();
+    expect(getApplicantEmailEngagement).not.toHaveBeenCalled();
+    expect(logApplicationView).not.toHaveBeenCalled();
+    expect(recordRouteVisit).not.toHaveBeenCalled();
+  });
+
+  it("redirects to login, not the agreement, when access is denied and unsigned", async () => {
+    vi.mocked(hasCycleAccess).mockResolvedValue(false);
+    vi.mocked(requirePageSignedOrRedirect).mockResolvedValue(
+      new Response(null, { status: 302, headers: { location: "/sign" } }),
+    );
+
+    const thrown: any = await callLoader().catch((e) => e);
+
+    expect(thrown.headers.get("location")).toMatch(/^\/login\?next=/);
+    expect(mockPrisma.applicationReview.findFirst).not.toHaveBeenCalled();
+  });
+
+  it("checks access and confidentiality together, after the application loads", async () => {
+    const access = deferred<boolean>();
+    vi.mocked(hasCycleAccess).mockReturnValue(access.promise);
+    mockPrisma.cycleReviewer.findMany.mockResolvedValue([]);
+    mockPrisma.domainApplication.findMany.mockResolvedValue([]);
+
+    const pending = callLoader();
+    await flush();
+
+    expect(hasCycleAccess).toHaveBeenCalledWith(USER_ID, CYCLE_ID);
+    expect(requirePageSignedOrRedirect).toHaveBeenCalledWith(USER_ID, CYCLE_ID, expect.any(Request));
+    expect(mockPrisma.cycleReviewer.findMany).not.toHaveBeenCalled();
+
+    access.resolve(true);
+    await pending;
+    expect(mockPrisma.cycleReviewer.findMany).toHaveBeenCalled();
+  });
+
+  it("starts the independent reads without waiting on the reviewer's domains", async () => {
+    const crs = deferred<unknown[]>();
+    mockPrisma.cycleReviewer.findMany.mockReturnValue(crs.promise);
+    mockPrisma.domainApplication.findMany.mockResolvedValue([makeDA(DESIGN_DA_ID, DESIGN_DOMAIN_ID)]);
+
+    const pending = callLoader();
+    await flush();
+
+    expect(mockPrisma.applicationReview.findFirst).toHaveBeenCalled();
+    expect(getApplicantEmailEngagement).toHaveBeenCalledWith("u-1", { blinded: false });
+    expect(mockPrisma.domainApplication.findMany).not.toHaveBeenCalled();
+
+    crs.resolve([{ id: DESIGN_REVIEWER_ID, domainId: DESIGN_DOMAIN_ID }]);
+    const result: any = await pending;
+    expect(mockPrisma.domainApplication.findMany.mock.calls[0][0].where.domainId.in).toEqual([
+      DESIGN_DOMAIN_ID,
+    ]);
+    expect(result.application.domainApplications.map((da: any) => da.id)).toEqual([DESIGN_DA_ID]);
+  });
+
+  it("presigns each domain application's answers alongside its continued-interest lookup", async () => {
+    mockPrisma.cycleReviewer.findMany.mockResolvedValue([
+      { id: DESIGN_REVIEWER_ID, domainId: DESIGN_DOMAIN_ID },
+      { id: WEB_REVIEWER_ID, domainId: WEB_DOMAIN_ID },
+    ]);
+    mockPrisma.domainApplication.findMany.mockResolvedValue([
+      makeDA(DESIGN_DA_ID, DESIGN_DOMAIN_ID),
+      makeDA(WEB_DA_ID, WEB_DOMAIN_ID),
+    ]);
+
+    const result: any = await callLoader();
+
+    for (const da of result.application.domainApplications) {
+      expect(da).toHaveProperty("answers");
+      expect(da).toHaveProperty("continuedInterest");
+      expect(da.challengeVersion.challenge.name).toBe("Challenge");
+    }
   });
 });
 

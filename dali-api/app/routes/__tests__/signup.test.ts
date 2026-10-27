@@ -62,17 +62,17 @@ describe("GET /signup loader", () => {
 
   it("flag-ON with no door returns null door", async () => {
     const result = await loader({ request: makeUrl("/signup") } as any);
-    expect(result).toEqual({ door: null, next: null });
+    expect(result).toEqual({ door: null, next: null, authV2: false });
   });
 
   it("flag-ON with valid door=dartmouth returns it", async () => {
     const result = await loader({ request: makeUrl("/signup?door=dartmouth") } as any);
-    expect(result).toEqual({ door: "dartmouth", next: null });
+    expect(result).toEqual({ door: "dartmouth", next: null, authV2: false });
   });
 
   it("flag-ON with invalid door returns null", async () => {
     const result = await loader({ request: makeUrl("/signup?door=hacker") } as any);
-    expect(result).toEqual({ door: null, next: null });
+    expect(result).toEqual({ door: null, next: null, authV2: false });
   });
 });
 
@@ -212,14 +212,14 @@ describe("GET /signup loader — next", () => {
     const result = await loader({
       request: makeUrl("/signup?door=dartmouth&next=%2Feducation%2Fcheck-in%2Fabc"),
     } as any);
-    expect(result).toEqual({ door: "dartmouth", next: "/education/check-in/abc" });
+    expect(result).toEqual({ door: "dartmouth", next: "/education/check-in/abc", authV2: false });
   });
 
   it("drops an unsafe next rather than forwarding it", async () => {
     const result = await loader({
       request: makeUrl("/signup?door=dartmouth&next=https%3A%2F%2Fevil.example.com"),
     } as any);
-    expect(result).toEqual({ door: "dartmouth", next: null });
+    expect(result).toEqual({ door: "dartmouth", next: null, authV2: false });
   });
 });
 

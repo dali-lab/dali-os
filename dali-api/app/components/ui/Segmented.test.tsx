@@ -9,7 +9,7 @@ import { Segmented } from "./Segmented";
 let container: HTMLDivElement;
 let root: Root;
 
-function mount(value: "a" | "b", onChange = vi.fn(), fullWidth?: boolean, size?: "sm" | "md") {
+function mount(value: "a" | "b", onChange = vi.fn(), fullWidth?: boolean, size?: "sm" | "md", pill?: boolean) {
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
@@ -21,6 +21,7 @@ function mount(value: "a" | "b", onChange = vi.fn(), fullWidth?: boolean, size?:
         ariaLabel: "Pick one",
         fullWidth,
         size,
+        pill,
         options: [
           { value: "a", label: "Alpha" },
           { value: "b", label: "Beta" },
@@ -76,12 +77,24 @@ describe("Segmented", () => {
     expect(radios().every((r) => r.className.includes("px-1.5") && r.className.includes("whitespace-nowrap"))).toBe(true);
   });
 
+  it("is square-cornered by default and fully rounded as a pill", () => {
+    mount("a");
+    expect(container.querySelector("[role='radiogroup']")!.className).toContain("rounded-lg");
+    expect(radios().every((r) => r.className.includes("rounded-md"))).toBe(true);
+    act(() => root.unmount());
+    container.remove();
+    mount("a", vi.fn(), false, undefined, true);
+    expect(container.querySelector("[role='radiogroup']")!.className).toContain("rounded-full");
+    expect(radios().every((r) => r.className.includes("rounded-full"))).toBe(true);
+  });
+
   it("uses the small size by default and a larger one for md", () => {
     mount("a");
     expect(radios()[0]!.className).toContain("text-xs");
+    expect(radios()[0]!.className).toContain("h-6");
     act(() => root.unmount());
     container.remove();
     mount("a", vi.fn(), false, "md");
-    expect(radios().every((r) => r.className.includes("text-sm") && r.className.includes("py-2"))).toBe(true);
+    expect(radios().every((r) => r.className.includes("text-sm") && r.className.includes("h-7"))).toBe(true);
   });
 });

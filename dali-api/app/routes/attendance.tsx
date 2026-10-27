@@ -4,7 +4,6 @@ import {
   ClipboardCheck,
   ChevronDown,
   ChevronRight,
-  ExternalLink,
   UserCheck,
   UserX,
   CalendarClock,
@@ -301,15 +300,12 @@ export default function AttendancePage() {
     <div className="flex flex-col gap-4">
       <header>
         <h1 className={pageTitle}>Attendance</h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          Every meeting and event you're invited to, with its roster.
-        </p>
       </header>
 
       {events.length === 0 ? (
         <div className={cn(panel, "p-10 text-center")}>
-          <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-os-accent/10">
-            <ClipboardCheck className="w-6 h-6 text-os-accent" aria-hidden />
+          <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-[color-mix(in_srgb,var(--area)_12%,transparent)]">
+            <ClipboardCheck className="w-6 h-6 text-[var(--area)]" aria-hidden />
           </div>
           <p className="font-heading font-semibold text-foreground">
             No attendance events yet
@@ -322,7 +318,7 @@ export default function AttendancePage() {
         </div>
       ) : (
         <>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="mb-2 flex flex-wrap items-center gap-2">
             <SearchInput
               size="sm"
               value={query}
@@ -345,8 +341,8 @@ export default function AttendancePage() {
             </div>
           ) : (
             <>
-              <EventSection title="Upcoming" events={upcoming} panel={panel} sort={sort} />
-              <EventSection title="Past" events={past} panel={panel} sort={sort} />
+              <EventSection title="Upcoming" events={upcoming} sort={sort} />
+              <EventSection title="Past" events={past} sort={sort} />
             </>
           )}
         </>
@@ -358,12 +354,10 @@ export default function AttendancePage() {
 function EventSection({
   title,
   events,
-  panel,
   sort,
 }: {
   title: string;
   events: AttendanceEvent[];
-  panel: string;
   sort: AttendeeSort;
 }) {
   if (events.length === 0) return null;
@@ -375,7 +369,7 @@ function EventSection({
       </h2>
       <ul className="flex flex-col gap-3">
         {events.map((event) => (
-          <EventCard key={event.id} event={event} panel={panel} sort={sort} />
+          <EventCard key={event.id} event={event} sort={sort} />
         ))}
       </ul>
     </section>
@@ -384,11 +378,9 @@ function EventSection({
 
 function EventCard({
   event,
-  panel,
   sort,
 }: {
   event: AttendanceEvent;
-  panel: string;
   sort: AttendeeSort;
 }) {
   const tz = useUserTimeZone();
@@ -416,34 +408,21 @@ function EventCard({
   }
 
   return (
-    <li className={cn(panel, "overflow-hidden")}>
-      <div className="flex items-stretch">
+    <li className="rounded-os-card bg-os-container/40 overflow-hidden">
+      <div className="flex items-stretch hover:bg-muted/30 transition-colors">
         <button
           type="button"
           onClick={() => setOpen(!open)}
           aria-expanded={open}
-          className="min-w-0 flex-1 text-left px-4 py-3.5 flex items-start gap-3 hover:bg-muted/30 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-os-accent/40"
+          className="min-w-0 flex-1 text-left px-4 py-3.5 flex items-start gap-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-os-accent/40"
         >
           <span className="mt-1 text-muted-foreground flex-shrink-0" aria-hidden>
             {open ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
           </span>
           <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <h3 className="font-heading font-semibold text-foreground truncate">
-                {event.title}
-              </h3>
-              <span className="text-[11px] rounded-md px-2 py-0.5 bg-os-accent/10 text-os-accent font-medium">
-                {event.typeLabel}
-              </span>
-              <span className="text-[11px] rounded-md px-2 py-0.5 bg-muted text-muted-foreground font-medium">
-                {event.scope}
-              </span>
-              {event.viewerPresent && (
-                <span className="text-[11px] rounded-md px-2 py-0.5 bg-os-green/15 text-os-green font-medium inline-flex items-center gap-1">
-                  <UserCheck className="w-3 h-3" aria-hidden /> You're checked in
-                </span>
-              )}
-            </div>
+            <h3 className="font-heading font-semibold text-foreground truncate">
+              {event.title}
+            </h3>
             <p className="text-xs text-muted-foreground mt-1">
               {[
                 event.startsAt ? formatDateShort(new Date(event.startsAt), tz) : "No start time",
@@ -453,7 +432,7 @@ function EventCard({
             <div className="mt-2.5 flex items-center gap-3">
               <div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden max-w-xs">
                 <div
-                  className="h-full bg-os-accent rounded-full transition-[width] duration-300"
+                  className="h-full rounded-full bg-[var(--area)] transition-[width] duration-300"
                   style={{ width: `${pct}%` }}
                 />
               </div>
@@ -466,11 +445,11 @@ function EventCard({
         <div className="flex items-start gap-0.5 pr-3 pt-3.5 flex-shrink-0">
           <Link
             to={meetingOccurrenceHref(event.meetingId, event.occurrenceStart)}
-            className="p-1.5 rounded-md text-muted-foreground hover:text-os-accent hover:bg-os-accent/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-os-accent/40"
-            aria-label="Open meeting — check in or mark attendance"
-            title="Open meeting"
+            className="p-1.5 rounded-md text-muted-foreground hover:text-[var(--area)] hover:bg-[color-mix(in_srgb,var(--area)_12%,transparent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-os-accent/40"
+            aria-label="Check in or mark attendance"
+            title="Check in"
           >
-            <ExternalLink className="w-4 h-4" />
+            <ClipboardCheck className="w-4 h-4" />
           </Link>
           {event.canEdit && (
             <Menu

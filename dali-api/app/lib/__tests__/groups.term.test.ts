@@ -21,19 +21,20 @@ const instructors: InstructorRow[] = [
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mockPrisma.projectAssignment!.findMany.mockResolvedValue([{ userId: "project-member" }]);
-  mockPrisma.coreAssignment!.findMany.mockResolvedValue([{ userId: "core-member" }]);
-  mockPrisma.mentorshipPair!.findMany.mockImplementation(
-    async (args: { select: Record<string, boolean> }) =>
-      args.select.menteeUserId ? [{ menteeUserId: "mentee" }] : [{ mentorUserId: "mentor" }],
-  );
+  mockPrisma.projectAssignment!.findMany.mockResolvedValue([
+    { termId: TERM, userId: "project-member" },
+  ]);
+  mockPrisma.coreAssignment!.findMany.mockResolvedValue([{ termId: TERM, userId: "core-member" }]);
+  mockPrisma.mentorshipPair!.findMany.mockResolvedValue([
+    { termId: TERM, menteeUserId: "mentee", mentorUserId: "mentor" },
+  ]);
   // Stand in for the DB's own filtering so the test asserts the query.
   mockPrisma.instructorAssignment!.findMany.mockImplementation(
-    async (args: { where: { termId: string; user?: { daliMember?: { isNot: null } } } }) =>
+    async (args: { where: { termId: { in: string[] }; user?: { daliMember?: { isNot: null } } } }) =>
       instructors
-        .filter((r) => r.termId === args.where.termId)
+        .filter((r) => args.where.termId.in.includes(r.termId))
         .filter((r) => !args.where.user?.daliMember || r.isMember)
-        .map((r) => ({ userId: r.userId })),
+        .map((r) => ({ termId: r.termId, userId: r.userId })),
   );
 });
 
@@ -53,13 +54,15 @@ describe("term group membership", () => {
     await resolveDynamicQuery(`term:${TERM}`);
     expect(mockPrisma.instructorAssignment!.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { termId: TERM, user: { daliMember: { isNot: null } } },
+        where: { termId: { in: [TERM] }, user: { daliMember: { isNot: null } } },
       }),
     );
   });
 
   it("lists someone with several roles once", async () => {
-    mockPrisma.coreAssignment!.findMany.mockResolvedValue([{ userId: "project-member" }]);
+    mockPrisma.coreAssignment!.findMany.mockResolvedValue([
+      { termId: TERM, userId: "project-member" },
+    ]);
     const members = await resolveDynamicQuery(`term:${TERM}`);
     expect(members.filter((id) => id === "project-member")).toHaveLength(1);
   });

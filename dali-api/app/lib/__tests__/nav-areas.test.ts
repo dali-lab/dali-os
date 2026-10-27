@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  AREA_TONES,
   NAV_AREAS,
   areaForPath,
   areasFor,
@@ -305,14 +306,15 @@ describe("areaForPath", () => {
     }
   });
 
-  it("Groups is no longer a General sub-tab (it lives under People)", () => {
+  it("Groups is a Lab sub-tab, gated on canViewForms", () => {
     const projectsArea = areasFor(REGROUP).find((a) => a.key === "projects")!;
-    expect(visibleSubtabs(projectsArea, CORE).map((t) => t.href)).not.toContain(
+    expect(visibleSubtabs(projectsArea, CORE).map((t) => t.href)).toContain(
       "/members/groups",
     );
     expect(visibleSubtabs(projectsArea, NOBODY).map((t) => t.href)).not.toContain(
       "/members/groups",
     );
+    expect(areaForPath("/members/groups", REGROUP)?.key).toBe("projects");
   });
 
   it("keeps borrowed sub-tabs inside Projects", () => {
@@ -559,5 +561,21 @@ describe("onboarding placement", () => {
     const ALUM: RoleFlags = { ...NOBODY, isAlumni: true };
     expect(pinnedNavItems(ALUM, ON)).toEqual([]);
     expect(visibleAreas(ALUM, ON).flatMap((a) => a.subtabs.map((t) => t.href))).not.toContain("/journeys");
+  });
+});
+
+describe("area tones and descriptions", () => {
+  const everyone = { community: true } as const;
+  const all = areasFor(everyone);
+
+  it("gives every area a tone and a description", () => {
+    for (const a of all) {
+      expect(AREA_TONES[a.key], a.key).toBeDefined();
+      expect(a.description, a.key).toBeTruthy();
+    }
+  });
+
+  it("keeps descriptions free of em dashes", () => {
+    for (const a of all) expect(a.description).not.toContain("\u2014");
   });
 });

@@ -8,6 +8,8 @@ import { Button } from "~/components/ui/Button";
 import { useToast } from "~/components/ui/toast";
 import { Modal, ModalHeader } from "~/components/Modal";
 import { modalCardClass, useOsChrome } from "~/components/os-chrome";
+import { PageBarMenuItems, usePageBarSlot } from "~/components/shell/page-bar-slot";
+import { Menu, Tooltip } from "~/components/ui/floating";
 import type { Route } from "./+types/documents.$pageId";
 import { prisma } from "~/lib/db";
 import { ensureOccurrenceRoster } from "~/lib/scheduled-meeting";
@@ -19,11 +21,12 @@ import { fullName } from "~/lib/display";
 import { getPresenceUser } from "~/lib/presence-user";
 import { PAGE_ACCESS_SELECT, getPageAccess, getPageAccessBulk } from "~/lib/pageAccess.server";
 import { getUserRoles, isProjectMember } from "~/lib/roles";
+import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import type { MeetingType } from "~/generated/prisma/client";
 import { isFavorited, recordPageVisit } from "~/lib/user-pages.server";
 import { canManageSharing } from "~/lib/page-share-access.server";
 import { groupIdsForUser } from "~/lib/page-sharing.server";
-import { notebookItemLocation } from "~/lib/note-path.server";
+import { notebookItemLocation, pageItemLocation } from "~/lib/note-path.server";
 import { normalizePageTypography } from "~/lib/page-typography";
 import { driveFolderCrumbs } from "~/lib/drive-crumbs.server";
 import { workspaceDriveScope } from "~/lib/drive-crumbs";
@@ -47,7 +50,9 @@ import { pageDocName } from "~/collab/roomName";
 import { canManageNotebook } from "~/lib/notebooks.server";
 import { nextNoteTargets } from "~/lib/notebook-series.server";
 import { NotebookRail, NoteLocationLine, type NotebookView } from "~/components/notebooks/NotebookRail";
-import { noteTabLabel, noteTrail } from "~/components/notebooks/note-trail";
+import { itemTrail, noteTabLabel, noteTrail, tabWeekLabels, withLeafEmoji } from "~/components/notebooks/note-trail";
+import { termWindows } from "~/lib/terms";
+import { APPLICATION_TZ } from "~/lib/timezone";
 import { EmptyNotebook } from "~/components/notebooks/EmptyNotebook";
 import { redirectToLogin } from "~/lib/login-next";
 import { walletTokensConfigured } from "~/lib/wallet-token";
@@ -64,9 +69,19 @@ export const handle = {
   /** A note in a notebook names its place in the shell's trail: space, folders, notebook, tab. */
   breadcrumbTrail: (data: unknown) => {
     const d = data as
-      | { notebook?: { id: string; title: string } | null; noteLocation?: { location: ItemLocation; tabLabel: string } | null }
+      | {
+          notebook?: { id: string; title: string } | null;
+          noteLocation?: { location: ItemLocation; tabLabel: string } | null;
+          iconEmoji?: string | null;
+        }
       | undefined;
-    return d?.notebook && d.noteLocation ? noteTrail(d.noteLocation.location, d.notebook, d.noteLocation.tabLabel) : null;
+    return d?.notebook && d.noteLocation
+      ? withLeafEmoji(noteTrail(d.noteLocation.location, d.notebook, d.noteLocation.tabLabel), d.iconEmoji)
+      : null;
+  },
+  shellTrail: (data: unknown) => {
+    const d = data as { title?: string; docLocation?: ItemLocation | null; iconEmoji?: string | null } | undefined;
+    return d?.docLocation ? withLeafEmoji(itemTrail(d.docLocation, d.title || "Untitled"), d.iconEmoji) : null;
   },
 };
 
@@ -223,7 +238,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   let notebook: NotebookView | null = null;
   let noteLocation: { location: ItemLocation; tabLabel: string } | null = null;
   if (page.parent?.kind === "Notebook") {
-    const [tabRows, notebookAccess, nextNotes, notebookManager, notebookPlace] = await Promise.all([
+    const [tabRows, notebookAccess, nextNotes, notebookManager, notebookPlace, terms] = await Promise.all([
       prisma.page.findMany({
         where: { parentPageId: page.parent.id, OR: [{ archivedAt: null }, { id: page.id }] },
         orderBy: { meetingOccurrenceStart: "desc" },
@@ -239,6 +254,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       nextNoteTargets(page.parent.id),
       canManageNotebook(auth.user.sub, page.parent, request),
       notebookItemLocation(page.parent, auth.user.sub, request),
+      termWindows(),
     ]);
     noteLocation = {
       location: notebookPlace,
@@ -251,13 +267,19 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     // Naming the meeting only helps when the notebook holds more than one.
     const mixed = new Set(visible.map((t) => t.meetingNote?.title)).size > 1;
     const canEditNotebook = notebookAccess.canEdit && !trashed;
+    const weeks = tabWeekLabels(
+      visible.map((t) => t.meetingOccurrenceStart),
+      terms,
+      APPLICATION_TZ,
+    );
     notebook = {
       ...notebookShell(page.parent, { canEdit: canEditNotebook, manager: notebookManager && !trashed, nextNotes }),
-      tabs: visible.map((t) => ({
+      tabs: visible.map((t, i) => ({
         id: t.id,
         label: noteTabLabel(t),
         meeting: mixed ? (t.meetingNote?.title ?? null) : null,
         isNote: t.meetingNoteId !== null,
+        week: weeks[i] ?? null,
       })),
     };
   }
@@ -328,6 +350,13 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       latestRecordingFor(pageDocName(page.id)),
       getUserRoles(auth.user.sub, request),
     ]);
+
+  // The Direction I shell's page bar shows a plain document's place in the
+  // Drive; notes already carry theirs in noteLocation.
+  const docLocation =
+    !noteLocation && (await isFeatureEnabled("desktop-tabs", auth.user.sub, roles, request))
+      ? await pageItemLocation(page, auth.user.sub, request)
+      : null;
 
   let attendance:
     | {
@@ -473,6 +502,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     attendance,
     notebook,
     noteLocation,
+    docLocation,
     editViaMeeting,
     notebookConversion:
       canEdit &&
@@ -571,6 +601,7 @@ function AttendanceButton({
   };
 }) {
   const { actionBtnPrimary, actionIcon } = useOsChrome();
+  const inPageBar = usePageBarSlot();
   const revalidator = useRevalidator();
   const [open, setOpen] = useState(false);
   const close = () => {
@@ -579,10 +610,17 @@ function AttendanceButton({
   };
   return (
     <>
-      <button type="button" onClick={() => setOpen(true)} aria-label="Attendance" className={actionBtnPrimary}>
-        <UserCheck className={actionIcon} />
-        <span className="hidden sm:inline">Attendance</span>
-      </button>
+      <Tooltip content="Attendance">
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          aria-label="Attendance"
+          className={inPageBar ? "os-edit-btn os-edit-btn--sm os-edit-btn--strong" : actionBtnPrimary}
+        >
+          <UserCheck className={actionIcon} />
+          <span className="hidden sm:inline">Attendance</span>
+        </button>
+      </Tooltip>
       <Modal
         open={open}
         onClose={close}
@@ -607,6 +645,26 @@ function AttendanceButton({
         />
       </Modal>
     </>
+  );
+}
+
+function WhiteboardLink({ pageId }: { pageId: string }) {
+  const { actionBtnPrimary, actionIcon } = useOsChrome();
+  const to = `/whiteboard/${pageId}`;
+  if (usePageBarSlot()) {
+    return (
+      <PageBarMenuItems>
+        <Menu.LinkItem to={to} icon={<Shapes className="h-3.5 w-3.5" />}>
+          Whiteboard
+        </Menu.LinkItem>
+      </PageBarMenuItems>
+    );
+  }
+  return (
+    <Link to={to} aria-label="Whiteboard" className={actionBtnPrimary}>
+      <Shapes className={actionIcon} />
+      <span className="hidden sm:inline">Whiteboard</span>
+    </Link>
   );
 }
 
@@ -674,7 +732,6 @@ function DocumentPage() {
   // (specs/meeting-recording-rail.md "Wiring").
   const [containerWide, setContainerWide] = useState(false);
   const toast = useToast();
-  const { actionBtnPrimary, actionIcon } = useOsChrome();
 
   async function dontSuggestRecording() {
     if (!attendance) return;
@@ -749,6 +806,7 @@ function DocumentPage() {
             meetingNoteTemplateAction={meetingNoteTemplateAction}
             notebookConversion={notebookConversion}
             aiEnabled
+            chrome="pageBar"
             onEditorReady={onEditorReady}
             onContainerWideChange={setContainerWide}
             belowTabs={rec ? <EnhanceBar rec={rec} /> : undefined}
@@ -763,22 +821,15 @@ function DocumentPage() {
                 : undefined
             }
             topBarActions={
+              // Attendance sits last so it lands at the far right of the
+              // document's action row (Share leads it on the left).
               <>
-                {attendance && <AttendanceButton attendance={attendance} />}
                 <RecordingPresencePill documentName={pageDocName(pageId)} collabToken={collabToken} />
                 {rec && <MeetingRecorder rec={rec} containerWide={containerWide} />}
                 {attendance?.whiteboardPageId && (
-                  // This meeting also has a whiteboard — link across to it (the
-                  // board carries the matching link back).
-                  <Link
-                    to={`/whiteboard/${attendance.whiteboardPageId}`}
-                    aria-label="Whiteboard"
-                    className={actionBtnPrimary}
-                  >
-                    <Shapes className={actionIcon} />
-                    <span className="hidden sm:inline">Whiteboard</span>
-                  </Link>
+                  <WhiteboardLink pageId={attendance.whiteboardPageId} />
                 )}
+                {attendance && <AttendanceButton attendance={attendance} />}
               </>
             }
           />

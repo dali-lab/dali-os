@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import type { GroupOption, LoaderData } from "~/calendar/lib/types";
+import type { GroupOption, SchedulingData } from "~/calendar/lib/types";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -62,7 +62,7 @@ const loaderData = (groups: GroupOption[], calendarLinks: unknown[] = []) =>
     workingHours: [],
     hasPersistedWorkingHours: false,
     weekStartIso: "2026-10-19T04:00:00.000Z",
-  }) as unknown as LoaderData;
+  }) as unknown as SchedulingData;
 
 const SERIES = {
   kind: "series",

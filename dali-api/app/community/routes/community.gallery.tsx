@@ -93,7 +93,7 @@ export default function CommunityGallery() {
     <div className="flex flex-col gap-4">
       <h1 className="sr-only">Gallery</h1>
       <NewPostsPill newestAt={data.posts[0]?.createdAt ?? null} enabled={!filtered} />
-      <section className="flex flex-col gap-6 rounded-os-card bg-os-card p-5">
+      <section className="flex flex-col gap-6">
         <div className="flex flex-col gap-4">
           <GalleryNavRow
             mine={query.mine}
@@ -154,7 +154,7 @@ function FeedEnd({ firstPostAt, onPost }: { firstPostAt: string | null; onPost: 
         </span>
         <span className="h-px flex-1 bg-os-container" aria-hidden />
       </div>
-      <button type="button" onClick={onPost} className="os-add-btn">
+      <button type="button" onClick={onPost} className="os-btn-primary os-btn-tint">
         <Plus className="h-[17px] w-[17px]" strokeWidth={3} aria-hidden />
         Post
       </button>
@@ -177,7 +177,7 @@ function EmptyFeed({ mine, q, onPost }: { mine: boolean; q: string; onPost: () =
       <p className="max-w-sm text-sm text-os-grey">
         Share a photo from the lab. Members, staff, and alumni will see it.
       </p>
-      <button type="button" onClick={onPost} className="os-add-btn mt-2">
+      <button type="button" onClick={onPost} className="os-btn-primary os-btn-tint mt-2">
         <Plus className="h-[17px] w-[17px]" strokeWidth={3} aria-hidden />
         {mine ? "Post a photo" : "Post the first one"}
       </button>

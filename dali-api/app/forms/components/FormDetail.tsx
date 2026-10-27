@@ -543,7 +543,7 @@ export function FormDetail() {
               </div>
             )
           ) : (
-            <div className="rounded-os-card bg-os-card p-6 space-y-4">
+            <div className="rounded-os-card bg-os-card p-5 space-y-4">
               {!isEmptyBlocks(selectedVersion.description) && (
                 <div className="px-4 py-3 rounded-os-item bg-os-well">
                   {/* Keyed per version: DocEditor reads initialContent once,

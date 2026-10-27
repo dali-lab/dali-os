@@ -8,6 +8,7 @@ import { findRound } from "~/hiring/lib/cycle-timeline";
 import { loadCycleTimeline } from "~/hiring/lib/cycle-timeline.server";
 import { requireApiSignedOrForbidden } from "~/hiring/lib/confidentiality";
 import { logAuditEvent } from "~/lib/audit";
+import { publishDelibsChange } from "~/hiring/lib/delibs-events.server";
 
 const CreateDelibsSchema = z.object({
   domainId: idSchema,
@@ -89,5 +90,6 @@ export async function action({ request, params }: Route.ActionArgs) {
     request,
   });
 
+  publishDelibsChange(params.cycleId);
   return Response.json(session, { status: 201 });
 }
