@@ -83,7 +83,7 @@ import { useEmailUnread } from '~/email/lib/use-email-unread'
 import { Rail } from '~/components/shell/Rail'
 import { RailEdgeHandle } from '~/components/shell/RailEdgeHandle'
 import { useSidebarSize } from '~/components/shell/useSidebarSize'
-import { RAIL_ZOOM, userMenuEntries } from '~/components/shell/rail-model'
+import { userMenuEntries } from '~/components/shell/rail-model'
 import { PageBar } from '~/components/shell/PageBar'
 import { PageBarSlotProvider, useShellHeaderHeight } from '~/components/shell/page-bar-slot'
 
@@ -1020,7 +1020,6 @@ export function LayoutOS({
       userMenuItems={userMenuItems}
       showWhatsNewDot={showWhatsNewDot}
       topInset={shellV2 && !showTabs}
-      zoom={hideable ? RAIL_ZOOM : 1}
     />
   )
 
@@ -1073,7 +1072,7 @@ export function LayoutOS({
                   'transition-[width] duration-[220ms] ease-[cubic-bezier(0.23,1,0.32,1)] motion-reduce:transition-none',
               )}
             >
-              <div className="os-rail-zoom h-full">{renderRail(true)}</div>
+              <div className="os-rail-scale h-full">{renderRail(true)}</div>
               <RailEdgeHandle onToggle={toggleRail} />
             </aside>
           )

@@ -59,6 +59,8 @@ afterEach(() => {
   container.remove();
 });
 
+const area = (key: string) => ({ key, label: key.toUpperCase(), icon: Settings, hubPath: `/${key}`, subtabs: [] });
+
 const q = (sel: string) => container.querySelector(sel) as HTMLElement | null;
 
 describe("Rail top inset", () => {
@@ -133,7 +135,6 @@ describe("Rail", () => {
     expect(q("button[aria-label='Journeys']")).not.toBeNull();
   });
 
-  const area = (key: string) => ({ key, label: key.toUpperCase(), icon: Settings, hubPath: `/${key}`, subtabs: [] });
 
   it("names a lone area without offering a switch", async () => {
     const only = area("connect");
@@ -247,6 +248,65 @@ describe("Rail", () => {
     });
     expect(q("[role='menu']")?.textContent).toContain("Settings");
     expect(q("[role='menu']")?.textContent).toContain("Log out");
+  });
+});
+
+describe("Rail menu placement", () => {
+  const rect = { top: 600, bottom: 640, left: 12, right: 252, width: 240, height: 40, x: 12, y: 600 };
+
+  afterEach(() => vi.restoreAllMocks());
+
+  function stubRects() {
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({ ...rect, toJSON: () => rect } as DOMRect);
+    vi.spyOn(window, "innerHeight", "get").mockReturnValue(800);
+  }
+
+  it("opens the area menu 6px under its trigger, at the trigger's measured left and width", async () => {
+    stubRects();
+    const list = [area("projects"), area("core")];
+    await mount({ areas: list, activeArea: list[0] });
+    await act(async () => {
+      q("button[aria-haspopup='listbox']")!.click();
+    });
+    const menu = q("[role='listbox']")!;
+    expect(menu.style.top).toBe("646px");
+    expect(menu.style.left).toBe("12px");
+    expect(menu.style.width).toBe("240px");
+  });
+
+  it("compact: opens the area menu 8px right of its trigger, level with its top", async () => {
+    stubRects();
+    const list = [area("projects"), area("core")];
+    await mount({ areas: list, activeArea: list[0], size: "compact" });
+    await act(async () => {
+      q("button[aria-haspopup='listbox']")!.click();
+    });
+    const menu = q("[role='listbox']")!;
+    expect(menu.style.top).toBe("600px");
+    expect(menu.style.left).toBe("260px");
+    expect(menu.style.width).toBe("264px");
+  });
+
+  it("opens the account menu 8px above its button, at the button's measured left", async () => {
+    stubRects();
+    await mount();
+    await act(async () => {
+      q("button[aria-haspopup='menu']")!.click();
+    });
+    const menu = q("[role='menu']")!;
+    expect(menu.style.bottom).toBe("208px");
+    expect(menu.style.left).toBe("12px");
+  });
+
+  it("compact: opens the account menu 8px right of its button, level with its bottom", async () => {
+    stubRects();
+    await mount({ size: "compact" });
+    await act(async () => {
+      q("button[aria-haspopup='menu']")!.click();
+    });
+    const menu = q("[role='menu']")!;
+    expect(menu.style.bottom).toBe("160px");
+    expect(menu.style.left).toBe("260px");
   });
 });
 
