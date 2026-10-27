@@ -2191,6 +2191,12 @@ html.os-shell > body::-webkit-scrollbar-track {
   gap: 5px;
 }
 
+/* Full-ink label for an edit button that is a real action, not a quiet
+   toggle — the grey base label washes out beside the document title. */
+.os-edit-btn--strong {
+  color: var(--color-os-fg);
+}
+
 /* The inline version, for an add control sitting in a section heading rather
    than a toolbar. */
 .os-add-btn--sm {

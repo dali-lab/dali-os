@@ -102,7 +102,16 @@ afterEach(() => {
 describe.each(["pageBar", "panel"] as const)("DocumentEditor in the %s", (chrome) => {
   it("keeps Share as a button and has no Download or own more button", async () => {
     await mount(chrome);
-    expect(actions()).toEqual(["Share"]);
+    if (chrome === "pageBar") {
+      // The breadcrumb row carries only status; Share lives in the document's
+      // own action row above the paper.
+      expect(actions()).toEqual([]);
+      const row = container.querySelector("[data-testid=doc-action-row]");
+      expect(row).not.toBeNull();
+      expect(row!.querySelector("[aria-label='Share']")).not.toBeNull();
+    } else {
+      expect(actions()).toEqual(["Share"]);
+    }
     expect(container.querySelector("[aria-label='Download']")).toBeNull();
     expect(container.querySelector("[aria-label='More options']")).toBeNull();
     expect(container.querySelectorAll("[aria-label='More actions']")).toHaveLength(1);

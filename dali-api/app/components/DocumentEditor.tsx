@@ -865,7 +865,7 @@ export function DocumentEditor({
         type="button"
         onClick={() => setAccessOpen(true)}
         aria-label="Share"
-        className={actionBtn()}
+        className={inPageBar ? "os-edit-btn os-edit-btn--sm os-edit-btn--strong" : actionBtn()}
       >
         <Users className={actionIcon} />
         <span className="hidden sm:inline">Share</span>
@@ -873,6 +873,9 @@ export function DocumentEditor({
     </Tooltip>
   );
 
+  // In the page-bar shell the breadcrumb row keeps only the lightweight status
+  // (sync + presence); the document's own actions (Attendance, Record, Share)
+  // render in their own row above the paper instead — see pageActionRow.
   const topBar = docked ? (
     <div
       ref={topBarRef}
@@ -883,8 +886,8 @@ export function DocumentEditor({
     >
       {statusNodes}
       <PresenceBar />
-      {topBarActions}
-      {shareButton}
+      {inPanel && topBarActions}
+      {inPanel && shareButton}
     </div>
   ) : (
     <div ref={topBarRef} className={cn("doc-topbar flex items-center gap-2 py-2", bodyText)}>
@@ -1013,7 +1016,7 @@ export function DocumentEditor({
           />
         )}
 
-        <div className={inPanel ? "px-1 pt-6 pb-6" : "px-4 sm:px-[54px] pt-12 pb-6"}>
+        <div className={inPanel ? "px-1 pt-6 pb-6" : "px-4 sm:px-7 pt-12 pb-6"}>
           {/* Hover-reveal row: icon · Add icon · Add cover · Add tag
               The header/title block adds an extra pl-[54px] to match the body
               text, which sits at the 54px outer padding PLUS BlockNote's own
@@ -1295,11 +1298,31 @@ export function DocumentEditor({
     </Drawer>
   );
 
+  // The document's action row, under the breadcrumb bar and above the paper,
+  // on the same column as the canvas.
+  // No horizontal padding: the inner column mirrors the canvas (same
+  // max-width, centered), so the row's last button ends flush with the
+  // paper's right edge.
+  const pageActionRow = inPageBar && (topBarActions || shareButton) && (
+    <div data-testid="doc-action-row" className="flex justify-center bg-page pt-3">
+      <div
+        className={cn(
+          "flex w-full items-center justify-end gap-1 text-[13px] text-os-muted",
+          !typo.fullWidth && "max-w-[1400px]",
+        )}
+      >
+        {shareButton}
+        {topBarActions}
+      </div>
+    </div>
+  );
+
   const body = (
     <div ref={docSurfaceRef} className="doc-surface flex flex-col min-h-screen">
       {docked ? <PageBarPortal slot="actions">{topBar}</PageBarPortal> : topBar}
       {docked && <PageBarMenuItems>{overflowRows}</PageBarMenuItems>}
       {tocDialog}
+      {pageActionRow}
       {canvas}
       {inlineComments}
       {recordingDrawer}

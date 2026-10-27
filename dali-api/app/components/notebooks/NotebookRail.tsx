@@ -60,8 +60,20 @@ function useNotebookRequest() {
 type Panel = "add-document" | "merge" | "template" | null;
 
 /** The Add and ⋯ menus plus the dialogs they open; shared by the tab rail and
- *  the single-note line. `iconOnly` draws Add as a bare plus, the rail's header style. */
-function NotebookControls({ notebook, iconOnly = false }: { notebook: NotebookView; iconOnly?: boolean }) {
+ *  the single-note line. `iconOnly` draws Add as a bare plus, the rail's header style.
+ *  `show` renders just one of the two menus — the rail keeps ⋯ beside the title
+ *  and draws Add as its own row (`addRow`) at the foot of the tab list. */
+function NotebookControls({
+  notebook,
+  iconOnly = false,
+  show = "all",
+  addRow = false,
+}: {
+  notebook: NotebookView;
+  iconOnly?: boolean;
+  show?: "all" | "add" | "options";
+  addRow?: boolean;
+}) {
   const dialog = useDialog();
   const toast = useToast();
   const navigate = useNavigate();
@@ -102,11 +114,19 @@ function NotebookControls({ notebook, iconOnly = false }: { notebook: NotebookVi
 
   return (
     <>
-      <div className="flex items-center gap-1">
+      <div className={cn("flex items-center gap-1", addRow && "w-full")}>
+        {show !== "options" && (
         <Menu
           ariaLabel="Add to notebook"
           trigger={
-            iconOnly ? (
+            addRow ? (
+              <button
+                type="button"
+                className="flex w-full items-center gap-2 rounded-os-item px-3 py-2 text-sm text-os-grey transition-colors hover:bg-os-container hover:text-foreground"
+              >
+                <Plus className="h-4 w-4" aria-hidden /> Add
+              </button>
+            ) : iconOnly ? (
               <Tooltip content="Add">
                 <button type="button" className="os-icon-btn">
                   <Plus className="h-4 w-4" aria-hidden />
@@ -144,7 +164,8 @@ function NotebookControls({ notebook, iconOnly = false }: { notebook: NotebookVi
             Existing document…
           </Menu.Item>
         </Menu>
-        {notebook.canManage && (
+        )}
+        {notebook.canManage && show !== "add" && (
           <Menu
             align="right"
             ariaLabel="Notebook options"
@@ -487,9 +508,11 @@ export function NotebookRail({ notebook, currentId }: { notebook: NotebookView; 
         </div>
       )}
       <div className={cn("contents", collapsed && "lg:hidden")}>
+        {/* The name keeps most of the row (only the two quiet icons beside
+            it); Add lives as its own row at the foot of the tab list. */}
         <div className="flex items-center gap-1">
           <NotebookTitle notebook={notebook} />
-          <NotebookControls notebook={notebook} iconOnly />
+          <NotebookControls notebook={notebook} iconOnly show="options" />
           <IconButton
             label="Hide tabs"
             icon={PanelLeftClose}
@@ -517,19 +540,18 @@ export function NotebookRail({ notebook, currentId }: { notebook: NotebookView; 
                 )}
                 <li
                   className={cn(
-                    "group relative flex shrink-0 items-center rounded-full pr-1 transition-colors",
-                    current ? "bg-os-accent/15" : "hover:bg-os-container",
+                    "group relative flex shrink-0 items-center rounded-os-item pr-1 transition-colors",
+                    current ? "bg-os-accent/25" : "hover:bg-os-container",
                   )}
                 >
                   <Link
                     to={`/documents/${tab.id}`}
                     aria-current={current ? "page" : undefined}
                     className={cn(
-                      "flex min-w-0 flex-1 items-center gap-3 rounded-full py-2 pl-3 pr-2 text-sm",
+                      "flex min-w-0 flex-1 items-center rounded-os-item py-2 pl-3 pr-2 text-sm",
                       current ? "font-medium text-os-accent" : "text-foreground",
                     )}
                   >
-                    <FileText className={cn("h-4 w-4 shrink-0", current ? "text-os-accent" : "text-os-grey")} aria-hidden />
                     <span className="min-w-0">
                       <Truncated text={tab.label} />
                       {tab.meeting && <span className="block truncate text-xs text-os-grey">{tab.meeting}</span>}
@@ -540,6 +562,11 @@ export function NotebookRail({ notebook, currentId }: { notebook: NotebookView; 
               </Fragment>
             );
           })}
+          {/* The Add entry closes the list itself, shaped like the page rows,
+              so it's right under the last page rather than off in the chrome. */}
+          <li className="shrink-0 lg:w-full">
+            <NotebookControls notebook={notebook} show="add" addRow />
+          </li>
         </ul>
       </div>
     </nav>

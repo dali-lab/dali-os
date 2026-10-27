@@ -53,6 +53,12 @@ export function MeetingRecorder({
 
   const triggerLabel = recorderTriggerLabel(rec, live, processing?.pillLabel ?? null);
 
+  // Settled states (Enhanced / Transcript / Show recording) are status entry
+  // points, not calls to action: they wear the bordered edit button with a
+  // full-ink label, which stays readable on any mode accent. Record, live and
+  // processing keep the primary fill.
+  const settled = !live && !processing && rec.phase !== "idle";
+
   const button = (
     <button
       type="button"
@@ -61,7 +67,7 @@ export function MeetingRecorder({
       aria-pressed={rec.phase !== "idle" ? rec.open : undefined}
       data-recording={live || undefined}
       className={cn(
-        actionBtnPrimary,
+        settled ? "os-edit-btn os-edit-btn--sm os-edit-btn--strong" : actionBtnPrimary,
         live && "border-os-accent bg-os-accent text-navy-deep hover:border-accent-coral-light hover:bg-accent-coral-light",
       )}
     >
