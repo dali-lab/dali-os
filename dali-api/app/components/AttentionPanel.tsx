@@ -17,6 +17,8 @@ import { useDialog } from "~/components/ui/dialog";
 import { useToast } from "~/components/ui/toast";
 import { Truncated } from "~/components/ui/Truncated";
 import { Drawer } from "~/components/ui/Drawer";
+import { IconButton } from "~/components/ui/IconButton";
+import { Tooltip } from "~/components/ui/floating";
 import { SegmentedTabButtons } from "~/components/AreaPillNav";
 import { RsvpButtons, notifyTasksChanged } from "~/components/RsvpButtons";
 import { buttonClasses } from "~/components/ui/Button";
@@ -324,7 +326,7 @@ export function TaskFeed({
   if (cards.length === 0) {
     return (
       <div className="m-auto flex flex-col items-center gap-2.5 py-10 text-center text-os-grey">
-        <CheckCircle2 className="h-5 w-5" aria-hidden />
+        <CheckCircle2 strokeWidth={1.5} className="h-5 w-5" aria-hidden />
         <strong className="text-base text-foreground">You&apos;re all caught up</strong>
         <span className="text-sm">
           {tab === "work"
@@ -339,7 +341,7 @@ export function TaskFeed({
   return (
     <div
       className={cn(
-        grid ? "grid grid-cols-1 gap-3.5 lg:grid-cols-2" : "flex flex-col gap-3",
+        grid ? "grid grid-cols-1 gap-3.5 lg:grid-cols-2 xl:grid-cols-3" : "flex flex-col gap-3",
       )}
     >
       {cards.map((card) => (
@@ -376,12 +378,16 @@ function FeedCardView({
 // actions. So the buttons sit at the same place on every card, and `h-full` +
 // `mt-auto` keeps them bottom-aligned across a grid row. Drawer cards are
 // outlined on the drawer's card fill; page cards take the fill themselves.
+// Secondary actions (dismiss, mark done, a bare open link) ride in the
+// top-right `corner` as icon-only buttons; the bottom row keeps only the
+// card's primary choice.
 export function CardShell({
   filled,
   project,
   title,
   body,
   meta,
+  corner,
   children,
 }: {
   filled: boolean;
@@ -389,18 +395,23 @@ export function CardShell({
   title: string;
   body?: string | null;
   meta: ReactNode;
+  /** Icon-only secondary actions, pinned to the card's top-right corner. */
+  corner?: ReactNode;
   children?: ReactNode;
 }) {
   return (
     <article
       className={cn(
-        "flex h-full min-w-0 flex-col rounded-os-card border border-os-container px-[18px] py-4",
+        "os-task-card relative flex h-full min-w-0 flex-col rounded-os-card border border-os-container px-[18px] py-4",
         filled && "bg-os-card",
       )}
     >
-      <div className="flex min-h-[76px] flex-col gap-1.5">
+      {corner != null && (
+        <div className="absolute right-2.5 top-2.5 flex items-center gap-0.5">{corner}</div>
+      )}
+      <div className={cn("flex min-h-[4.75rem] flex-col gap-1.5", corner != null && "pr-8")}>
         {project && (
-          <span className="flex min-w-0 items-center gap-1.5 text-xs font-bold leading-5 text-os-muted">
+          <span className="flex min-w-0 items-center gap-1.5 text-xs font-semibold leading-5 text-os-muted">
             <i className="h-[7px] w-[7px] shrink-0 rounded-full bg-os-accent" aria-hidden />
             <Truncated text={project} />
           </span>
@@ -408,7 +419,7 @@ export function CardShell({
         <Truncated
           as="h3"
           text={title}
-          className="text-[15.5px] font-bold leading-6 text-foreground"
+          className="text-[15px] font-semibold leading-6 text-foreground"
         />
         {body && (
           <Truncated as="p" text={body} className="text-[13px] leading-5 text-os-grey" />
@@ -439,7 +450,7 @@ export function Meta({
         warn ? "text-os-amber" : "text-os-grey",
       )}
     >
-      {Icon && <Icon className="h-[15px] w-[15px] shrink-0" aria-hidden />}
+      {Icon && <Icon strokeWidth={1.5} className="h-[15px] w-[15px] shrink-0" aria-hidden />}
       {lead}
       <Truncated text={text} />
     </div>
@@ -447,8 +458,8 @@ export function Meta({
 }
 
 export const ctaClass = (primary: boolean) =>
-  buttonClasses(primary ? "primary" : "secondary", "md", "min-h-10");
-export const ctaIcon = "h-[15px] w-[15px]";
+  buttonClasses(primary ? "primary" : "secondary", "sm", "os-cta min-h-9 px-3.5");
+export const ctaIcon = "h-[15px] w-[15px] [stroke-width:1.5]";
 
 export function CtaLink({
   href,
@@ -482,6 +493,35 @@ export function CtaLink({
   );
 }
 
+/** Icon-only corner link (the anchor twin of `IconButton`). */
+function CornerLink({
+  href,
+  label,
+  onOpen,
+  onBeforeOpen,
+}: {
+  href: string;
+  label: string;
+  onOpen?: OpenLink;
+  onBeforeOpen?: () => void;
+}) {
+  return (
+    <Tooltip content={label} placement="bottom">
+      <a
+        href={href}
+        aria-label={label}
+        onClick={(e) => {
+          onBeforeOpen?.();
+          openTarget(e, href, label, onOpen);
+        }}
+        className="inline-flex items-center justify-center rounded-md p-1.5 text-os-grey transition-colors hover:bg-os-hover hover:text-foreground"
+      >
+        <ExternalLink strokeWidth={1.5} className="h-4 w-4" aria-hidden />
+      </a>
+    </Tooltip>
+  );
+}
+
 /* ------------------------------------------------------------------ */
 /* Task card. Three shapes, by how the task clears:                     */
 /*   - meeting invite  → RSVP buttons (Accept/Maybe/Decline)             */
@@ -511,8 +551,8 @@ function TaskCard({
   ) : (
     <Meta text={t.source === "meeting" ? "Awaiting your response" : "Action needed"} />
   );
-  const shell = (children?: ReactNode) => (
-    <CardShell filled={filled} title={t.title} meta={meta}>
+  const shell = (children?: ReactNode, corner?: ReactNode) => (
+    <CardShell filled={filled} title={t.title} meta={meta} corner={corner}>
       {children}
     </CardShell>
   );
@@ -520,7 +560,7 @@ function TaskCard({
   // Meeting invites clear only on RSVP, never on a click — Accept/Maybe/Decline
   // inline. The RSVP revalidates, dropping the answered invite.
   if (t.source === "meeting") {
-    return shell(<RsvpButtons notificationId={t.id} size="md" className="gap-2" />);
+    return shell(<RsvpButtons notificationId={t.id} size="sm" className="gap-2" />);
   }
 
   // A form todo self-clears on submit, so the card links to the form. But a
@@ -552,15 +592,10 @@ function TaskCard({
 
   if (t.formTodo && t.link) {
     return shell(
-      <>
-        <CtaLink href={t.link} label={t.title} onOpen={onOpen} icon={ArrowRight} primary>
-          Open form
-        </CtaLink>
-        <button type="button" onClick={dismissForm} disabled={dismissing} className={ctaClass(false)}>
-          <X className={ctaIcon} aria-hidden />
-          {dismissing ? "Dismissing…" : "Dismiss"}
-        </button>
-      </>,
+      <CtaLink href={t.link} label={t.title} onOpen={onOpen} icon={ArrowRight} primary>
+        Open form
+      </CtaLink>,
+      <IconButton label="Dismiss" icon={X} onClick={dismissForm} disabled={dismissing} />,
     );
   }
 
@@ -592,17 +627,11 @@ function TaskCard({
   }
 
   return shell(
-    <>
-      <button type="button" onClick={confirm} disabled={confirming} className={ctaClass(true)}>
-        <Check className={ctaIcon} aria-hidden />
-        {confirming ? "Confirming…" : "Confirm"}
-      </button>
-      {t.link && (
-        <CtaLink href={t.link} label={t.title} onOpen={onOpen} icon={ExternalLink}>
-          Open
-        </CtaLink>
-      )}
-    </>,
+    <button type="button" onClick={confirm} disabled={confirming} className={ctaClass(true)}>
+      <Check className={ctaIcon} aria-hidden />
+      {confirming ? "Confirming…" : "Confirm"}
+    </button>,
+    t.link ? <CornerLink href={t.link} label="Open" onOpen={onOpen} /> : undefined,
   );
 }
 
@@ -649,23 +678,36 @@ function NotificationCard({
     />
   );
 
+  const isCoffeeChatAnswer =
+    !!notification.eventType &&
+    ANSWER_TO_CLEAR_EVENTS.includes(notification.eventType) &&
+    !!notification.link;
+  const awaitingRsvp = isInvite && !rsvp;
+  // Dismiss rides the corner when the card keeps a primary Open; without a
+  // link it stays the card's one visible (text) action.
+  const cornerDismiss =
+    !isInvite && !isCoffeeChatAnswer && !!notification.link ? (
+      <IconButton label="Dismiss" icon={Check} onClick={dismiss} disabled={dismissing} />
+    ) : undefined;
+
   return (
     <CardShell
       filled={filled}
       title={notification.title}
       body={notification.body}
       meta={meta}
+      corner={cornerDismiss}
     >
-      {isInvite && !rsvp ? (
+      {awaitingRsvp ? (
         <RsvpButtons
           notificationId={notification.id}
           onResponded={setRsvp}
           onFailed={() => setRsvp(notification.rsvp)}
-          size="md"
+          size="sm"
           className="gap-2"
         />
-      ) : notification.eventType && ANSWER_TO_CLEAR_EVENTS.includes(notification.eventType) && notification.link ? (
-        <CoffeeChatAnswer action={notification.link} />
+      ) : isCoffeeChatAnswer ? (
+        <CoffeeChatAnswer action={notification.link!} />
       ) : (
         <>
           {notification.link && (
@@ -689,12 +731,12 @@ function NotificationCard({
               Open
             </CtaLink>
           )}
-          {!isInvite && (
+          {!isInvite && !notification.link && (
             <button
               type="button"
               onClick={dismiss}
               disabled={dismissing}
-              className={ctaClass(!notification.link)}
+              className={ctaClass(true)}
             >
               <Check className={ctaIcon} aria-hidden />
               {dismissing ? "Dismissing…" : "Dismiss"}
@@ -815,6 +857,14 @@ function ProjectTaskCard({
       meta={
         <Meta icon={WORK_META_ICON[meta.kind]} warn={meta.warn} text={meta.text} />
       }
+      corner={
+        <IconButton
+          label="Mark done"
+          icon={Check}
+          onClick={markDone}
+          disabled={state === "saving"}
+        />
+      }
     >
       <CtaLink
         href={item.link}
@@ -828,15 +878,6 @@ function ProjectTaskCard({
       >
         Open task
       </CtaLink>
-      <button
-        type="button"
-        onClick={markDone}
-        disabled={state === "saving"}
-        className={ctaClass(false)}
-      >
-        <Check className={ctaIcon} aria-hidden />
-        {state === "saving" ? "Saving…" : "Mark done"}
-      </button>
     </CardShell>
   );
 }

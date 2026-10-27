@@ -26,23 +26,23 @@ afterEach(() => {
   document.documentElement.classList.remove("light");
 });
 
-const rgb = (hex: string) =>
-  `${parseInt(hex.slice(1, 3), 16)}, ${parseInt(hex.slice(3, 5), 16)}, ${parseInt(hex.slice(5, 7), 16)}`;
-
 describe("AreaTile", () => {
   it.each(["projects", "community", "education", "hiring", "core", "admin"])(
-    "paints %s as a wash of its own tint with the glyph in the tint",
+    "exposes %s's tone pair and paints from the mode-resolved --tile",
     async (key) => {
       const el = await render(key);
-      const tint = AREA_TONES[key].tint;
-      expect(el.style.color).toBe(`rgb(${rgb(tint)})`);
-      expect(el.style.backgroundColor).toContain(`rgba(${rgb(tint)}`);
+      expect(el.style.getPropertyValue("--tile-tint")).toBe(AREA_TONES[key].tint);
+      expect(el.style.getPropertyValue("--tile-ink")).toBe(AREA_TONES[key].ink);
+      const style = el.getAttribute("style") ?? "";
+      expect(style).toContain("color: var(--tile)");
+      expect(style).toContain("color-mix(in srgb, var(--tile) 18%, transparent)");
     },
   );
 
-  it("keeps every area tint a plain hex so the wash can derive from it", () => {
+  it("keeps every area tone a plain hex so the wash can derive from it", () => {
     for (const [key, tone] of Object.entries(AREA_TONES)) {
       expect(tone.tint, key).toMatch(/^#[0-9a-fA-F]{6}$/);
+      expect(tone.ink, key).toMatch(/^#[0-9a-fA-F]{6}$/);
     }
   });
 

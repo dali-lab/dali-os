@@ -188,7 +188,7 @@ export default function HiringLeadDashboard() {
               defaultValue={data?.currentTermId ?? ""}
               options={(data?.terms ?? []).map((t: { id: string; code: string }) => ({
                 value: t.id,
-                label: t.id === data?.currentTermId ? `${t.code} · current` : t.code,
+                label: t.id === data?.currentTermId ? `${t.code} (current)` : t.code,
               }))}
               buttonClassName={formTrigger}
             />

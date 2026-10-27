@@ -416,7 +416,7 @@ export function EpicSprintManager({
       {canManage && view === "timeline" && (
         <button
           type="button"
-          className="os-edit-btn"
+          className="os-edit-btn os-edit-btn--sm"
           aria-pressed={editMode}
           onClick={() => setEditMode((v) => !v)}
           title={
@@ -433,7 +433,7 @@ export function EpicSprintManager({
       {view === "timeline" && (
         <button
           type="button"
-          className="os-edit-btn"
+          className="os-edit-btn os-edit-btn--sm"
           aria-pressed={fullscreen}
           onClick={() => setFullscreen((v) => !v)}
           title={
@@ -455,7 +455,7 @@ export function EpicSprintManager({
         <div ref={addMenuRef} className="relative">
           <button
             type="button"
-            className="os-add-btn"
+            className="os-add-btn os-add-btn--sm"
             aria-haspopup="menu"
             aria-expanded={addMenuOpen}
             onClick={() => {
@@ -463,7 +463,7 @@ export function EpicSprintManager({
               setAddStoryPicking(false);
             }}
           >
-            <Plus className="h-[17px] w-[17px]" strokeWidth={3} aria-hidden />
+            <Plus className="h-[15px] w-[15px]" strokeWidth={3} aria-hidden />
             New
           </button>
           {addMenuOpen && (
@@ -694,6 +694,29 @@ export function EpicSprintManager({
           onAddTask={
             canManage && onAddTask
               ? (epicId, storyId) => onAddTask({ epicId, storyId })
+              : undefined
+          }
+          onAddStory={
+            canManage
+              ? (epicId) => {
+                  // Same handoff as the add menu's "Add story to": open the
+                  // epic's detail with a fresh story form primed.
+                  setAutoNewStoryEpicId(epicId);
+                  openEpic(epicId);
+                }
+              : undefined
+          }
+          onStatusChange={
+            canManage
+              ? (kind, id, status) =>
+                  void run(async () => {
+                    if (kind === "epic") await api(`/api/epics/${id}`, "POST", { status });
+                    else if (kind === "story") await api(`/api/stories/${id}`, "POST", { status });
+                    // The board's move endpoint is the status writer for tasks
+                    // (GitHub sync + assignee notify ride on it); the legacy
+                    // position shape appends to the target column.
+                    else await api(`/api/tasks/${id}/move`, "POST", { status, position: 999999 });
+                  }).catch(() => {})
               : undefined
           }
         />
@@ -1671,7 +1694,7 @@ function ViewToggleButton({
       aria-label={label}
       title={label}
       className={cn(
-        "px-3.5 py-2.5 transition-colors",
+        "px-2.5 py-1.5 transition-colors",
         active ? "bg-os-container text-foreground" : "text-os-grey hover:bg-os-hover",
       )}
     >

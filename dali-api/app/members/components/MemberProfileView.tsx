@@ -25,7 +25,6 @@ import {
   Layers,
   Linkedin,
   Lock,
-  LogOut,
   Mail,
   MapPin,
   MapPinned,
@@ -48,11 +47,9 @@ import { ProfilePhotoAvatar } from "~/components/ProfilePhotoAvatar";
 import { Avatar } from "~/components/ui/Avatar";
 import { PresenceProvider } from "~/components/collab/PresenceProvider";
 import { PresenceBar } from "~/components/collab/PresenceBar";
-import { DomainChips } from "~/components/DomainChips";
 import {
   DetailEditRow,
   DetailRow,
-  HeroClusterLabel,
   OS_DETAIL_ICON,
   OsTabBar,
 } from "~/components/os-page";
@@ -129,13 +126,11 @@ export function MemberProfileView({
     roleLabels,
     isStaff,
     isAlumni,
-    termCode,
     projectHistory,
     pendingReviews,
     showReviewsRow,
     isSelf,
     resume,
-    coffeeChatSent,
     resumeReviewSent,
     openTo,
     canEdit,
@@ -256,12 +251,10 @@ export function MemberProfileView({
         photoUrlResolved={photoUrlResolved}
         canEdit={canEdit}
         isSelf={isSelf}
-        coffeeChatSent={coffeeChatSent}
         resumeReviewSent={resumeReviewSent}
         openTo={openTo}
         isStaff={isStaff}
         isAlumni={isAlumni}
-        termCode={termCode}
         presenceState={presence?.state ?? null}
         presenceLabel={presenceLabel}
         showNewBadge={showNewBadge}
@@ -369,12 +362,10 @@ function MemberHeader({
   photoUrlResolved,
   canEdit,
   isSelf,
-  coffeeChatSent,
   resumeReviewSent,
   openTo,
   isStaff,
   isAlumni,
-  termCode,
   presenceState,
   presenceLabel,
   showNewBadge,
@@ -384,19 +375,17 @@ function MemberHeader({
   photoUrlResolved: string | null;
   canEdit: boolean;
   isSelf: boolean;
-  coffeeChatSent: boolean;
   resumeReviewSent: boolean;
   openTo: ProfilePageData["openTo"];
   isStaff: boolean;
   isAlumni: boolean;
-  termCode: string | null;
   presenceState: string | null;
   presenceLabel: string | null;
   showNewBadge: boolean;
   showBirthday: boolean;
 }) {
   return (
-    <header className="flex items-start gap-7">
+    <header className="flex items-center gap-7">
       <ProfilePhotoAvatar
         userId={member.id}
         name={`${member.firstName} ${member.lastName}`}
@@ -405,38 +394,21 @@ function MemberHeader({
         size="lg"
       />
 
-      <div className="min-w-0 flex flex-col gap-3 pt-2 flex-1">
+      <div className="min-w-0 flex flex-col gap-3 flex-1">
         {/* Name row */}
         <div className="flex items-start justify-between gap-3">
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          <div className="min-w-0 flex flex-col gap-1">
             <h1 className="font-heading text-[32px] font-medium text-foreground leading-none">
               {member.firstName} {member.lastName}
             </h1>
             {member.handle && (
-              <span className={cn(HERO_PILL, "bg-os-container text-os-grey")}>
-                @{member.handle}
-              </span>
-            )}
-            {member.pronouns && (
-              <span className="text-[13px] text-os-muted">{member.pronouns}</span>
+              <span className="text-[13px] text-os-grey">@{member.handle}</span>
             )}
           </div>
-          {!isSelf && (openTo.coffeeChats || openTo.resumeReviews) && (
+          {!isSelf && openTo.resumeReviews && (
             <div className="flex shrink-0 flex-wrap justify-end gap-1.5">
-              {openTo.coffeeChats && <RequestButton kind="CoffeeChat" firstName={member.firstName} sent={coffeeChatSent} />}
-              {openTo.resumeReviews && (
-                <RequestButton kind="ResumeReview" firstName={member.firstName} sent={resumeReviewSent} />
-              )}
+              <RequestButton kind="ResumeReview" firstName={member.firstName} sent={resumeReviewSent} />
             </div>
-          )}
-          {isSelf && (
-            <a
-              href="/logout"
-              className="shrink-0 inline-flex items-center gap-1 text-[12px] font-semibold text-destructive border border-destructive/30 hover:bg-destructive/10 px-2.5 py-1 rounded-full transition-colors mt-1"
-            >
-              <LogOut className="w-3 h-3" />
-              Log out
-            </a>
           )}
         </div>
 
@@ -485,31 +457,6 @@ function MemberHeader({
           </div>
         )}
 
-        {/* Term + Roles clusters */}
-        <div className="flex flex-col gap-3.5">
-          <HeroClusterLabel label="Roles">
-            {member.domainEligibilities.length === 0 ? (
-              <span className="text-[13px] text-os-muted">No roles yet</span>
-            ) : (
-              <DomainChips
-                items={member.domainEligibilities.map((e) => ({
-                  id: e.domain.id,
-                  name: e.domain.displayName,
-                }))}
-              />
-            )}
-          </HeroClusterLabel>
-
-          <HeroClusterLabel label="Term">
-            {termCode ? (
-              <span className={cn(HERO_PILL, "bg-os-container text-foreground")}>
-                {termCode}
-              </span>
-            ) : (
-              <span className="text-[13px] text-os-muted">No term</span>
-            )}
-          </HeroClusterLabel>
-        </div>
       </div>
     </header>
   );

@@ -14,19 +14,22 @@ export const VIBE_META: Record<
     pill: string;
   }
 > = {
+  // Fixed pastel fills, not the os-green/amber/red tokens: those resolve to
+  // deep ink shades in light mode, and a solid dot should stay pastel in both
+  // themes.
   Good: {
     label: "Excellent",
-    dot: "bg-os-green",
+    dot: "bg-[#9fe0a8]",
     pill: "bg-os-green/15 text-os-green border-os-green/40",
   },
   Ok: {
     label: "Room for improvement",
-    dot: "bg-os-amber",
+    dot: "bg-[#f2b84b]",
     pill: "bg-os-amber/15 text-os-amber border-os-amber/40",
   },
   Bad: {
     label: "Concerning",
-    dot: "bg-destructive",
-    pill: "bg-destructive/10 text-destructive border-destructive/40",
+    dot: "bg-[#ff6b6b]",
+    pill: "bg-os-red/15 text-os-red border-os-red/40",
   },
 };

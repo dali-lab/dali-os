@@ -31,41 +31,34 @@ afterEach(() => {
   container.remove();
 });
 
-const sidebar = () => container.querySelector('nav[aria-label="Domains"]')!;
-const links = () => [...sidebar().querySelectorAll("a")];
+const trigger = () => container.querySelector<HTMLElement>('[aria-label="Domain"]')!;
 
 describe("DomainNav", () => {
-  it("lists every domain vertically in the given order", () => {
+  it("renders a domain dropdown, not a sidebar", () => {
     mount("fullstack");
-    expect(sidebar().querySelector("ul")!.className).toContain("flex-col");
-    expect(links().map((a) => a.textContent)).toEqual(["Full-stack", "Design", "iOS"]);
+    expect(container.querySelector("nav")).toBeNull();
+    expect(trigger()).not.toBeNull();
   });
 
-  it("links each domain to its journeys page", () => {
-    mount("fullstack");
-    expect(links().map((a) => a.getAttribute("href"))).toEqual([
-      "/journeys/fullstack",
-      "/journeys/design",
-      "/journeys/ios",
-    ]);
-  });
-
-  it("marks only the active domain as the current page", () => {
+  it("shows the active domain on the trigger", () => {
     mount("design");
-    expect(links().map((a) => a.getAttribute("aria-current"))).toEqual([null, "page", null]);
+    expect(trigger().textContent).toContain("Design");
   });
 
-  it("navigates when another domain is clicked", () => {
+  it("lists every domain in the given order when opened", () => {
     mount("fullstack");
-    act(() => links()[2].click());
+    act(() => trigger().click());
+    const options = [...document.querySelectorAll('[role="option"]')];
+    expect(options.map((o) => o.textContent)).toEqual(["Full-stack", "Design", "iOS"]);
+  });
+
+  it("navigates to the picked domain's journeys page", () => {
+    mount("fullstack");
+    act(() => trigger().click());
+    const ios = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(
+      (o) => o.textContent === "iOS",
+    )!;
+    act(() => ios.click());
     expect(router.state.location.pathname).toBe("/journeys/ios");
-  });
-
-  it("hides the sidebar below lg and shows a domain select there instead", () => {
-    mount("design");
-    expect(sidebar().className.split(" ")).toEqual(expect.arrayContaining(["hidden", "lg:block"]));
-    const narrow = container.querySelector(".lg\\:hidden")!;
-    expect(narrow.querySelector('[aria-label="Domain"]')).not.toBeNull();
-    expect(narrow.textContent).toContain("Design");
   });
 });

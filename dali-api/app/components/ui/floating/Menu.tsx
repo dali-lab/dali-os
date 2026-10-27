@@ -155,7 +155,14 @@ function MenuRoot({
 
 function itemClass(active: boolean, destructive?: boolean, override?: string) {
   if (override) return override;
-  return `${OS_MENU_ITEM_CLASS} ${destructive ? "text-destructive" : "text-foreground"} ${active ? "bg-muted" : "hover:bg-muted"}`;
+  // A destructive row sits on its own pastel red plate (ink and icon in the
+  // danger red) so it never reads as one more neutral action.
+  if (destructive) {
+    return `${OS_MENU_ITEM_CLASS} text-destructive ${
+      active ? "bg-destructive/20" : "bg-destructive/10 hover:bg-destructive/20"
+    }`;
+  }
+  return `${OS_MENU_ITEM_CLASS} text-foreground ${active ? "bg-muted" : "hover:bg-muted"}`;
 }
 
 export function MenuItem({

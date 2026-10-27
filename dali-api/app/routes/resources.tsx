@@ -62,7 +62,7 @@ export default function ResourcesLayout() {
 
   return (
     <div className="min-h-dvh bg-card px-6 pb-16 sm:px-10">
-      <header className="relative border-b border-foreground pb-4 pt-8 text-center">
+      <header className="relative border-b border-os-container pb-4 pt-8 text-center">
         <p className="text-xs font-semibold uppercase tracking-widest text-os-grey">
           {new Date().toLocaleDateString("en-US", {
             weekday: "long",
@@ -81,7 +81,7 @@ export default function ResourcesLayout() {
               type="button"
               onClick={() => setEditing((on) => !on)}
               aria-pressed={editing}
-              className="os-btn-primary os-btn-primary--sm"
+              className="os-btn-primary os-btn-primary--sm os-btn-tint"
             >
               {editing ? <Check className="h-4 w-4" /> : <Pencil className="h-4 w-4" />}
               {editing ? "Done" : "Edit"}
@@ -93,7 +93,7 @@ export default function ResourcesLayout() {
               fetcher.submit({ intent: "createPost" }, { method: "post", action: "/resources" })
             }
             disabled={fetcher.state !== "idle"}
-            className="os-btn-primary os-btn-primary--sm"
+            className="os-btn-primary os-btn-primary--sm os-btn-tint"
           >
             <PenLine className="h-4 w-4" />
             Write

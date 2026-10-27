@@ -30,7 +30,7 @@ export type TermOption = { id: string; code: string; isCurrent?: boolean };
  * rather than jumping the current term: a future cycle that exists in the DB
  * shouldn't outrank the term you're actually in.
  *
- * The current term is labelled `26S · current` so a glance at the dropdown (or
+ * The current term is labelled `26S (current)` so a glance at the dropdown (or
  * the trigger, when it's the selection) shows which term "now" is.
  *
  * - `includeAll` (default true): show the "All terms" row. Mandatory single-term
@@ -48,7 +48,7 @@ export function termFilterOrder(
   return [
     ...(includeUpcoming ? [{ value: UPCOMING, label: "Current & upcoming" }] : []),
     ...(includeAll ? [{ value: ALL_TERMS, label: "All terms" }] : []),
-    ...(current ? [{ value: current.id, label: `${current.code} · current` }] : []),
+    ...(current ? [{ value: current.id, label: `${current.code} (current)` }] : []),
     ...terms
       .filter((t) => t.id !== current?.id)
       .map((t) => ({ value: t.id, label: t.code })),

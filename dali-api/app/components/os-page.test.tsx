@@ -25,7 +25,7 @@ const TABS = [
 ] as const;
 
 describe("OsTabBar", () => {
-  it("renders the os segmented pill track, not a bordered folder strip", () => {
+  it("renders a ruled header strip: top-rounded plates on a hairline, not a pill", () => {
     mount(
       createElement(OsTabBar, {
         tabs: [...TABS],
@@ -36,11 +36,21 @@ describe("OsTabBar", () => {
     );
     const list = container.querySelector('[role="tablist"]')!;
     expect(list.getAttribute("aria-label")).toBe("Sections");
-    expect(list.className).toContain("rounded-full");
-    expect(list.className.split(" ")).not.toContain("border-b");
-    const tabs = container.querySelectorAll('[role="tab"]');
+    // The rule that separates the header from the content below spans the
+    // whole row, outside the scrolling tablist.
+    const row = list.parentElement!;
+    expect(row.className.split(" ")).toContain("border-b");
+    expect(list.className).not.toContain("rounded-full");
+    const tabs = Array.from(container.querySelectorAll('[role="tab"]'));
     expect(tabs).toHaveLength(2);
-    for (const tab of tabs) expect(tab.className).toContain("rounded-full");
+    for (const tab of tabs) {
+      expect(tab.className).toContain("rounded-t-[10px]");
+      expect(tab.className).not.toContain("rounded-full");
+    }
+    // Only the open tab is a filled plate.
+    const [overview, members] = tabs;
+    expect(overview.className).toContain("bg-os-container");
+    expect(members.className).not.toContain("bg-os-container");
   });
 
   it("marks the active tab and reports the selected key", () => {

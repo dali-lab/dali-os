@@ -306,14 +306,15 @@ describe("areaForPath", () => {
     }
   });
 
-  it("Groups is no longer a General sub-tab (it lives under People)", () => {
+  it("Groups is a Lab sub-tab, gated on canViewForms", () => {
     const projectsArea = areasFor(REGROUP).find((a) => a.key === "projects")!;
-    expect(visibleSubtabs(projectsArea, CORE).map((t) => t.href)).not.toContain(
+    expect(visibleSubtabs(projectsArea, CORE).map((t) => t.href)).toContain(
       "/members/groups",
     );
     expect(visibleSubtabs(projectsArea, NOBODY).map((t) => t.href)).not.toContain(
       "/members/groups",
     );
+    expect(areaForPath("/members/groups", REGROUP)?.key).toBe("projects");
   });
 
   it("keeps borrowed sub-tabs inside Projects", () => {

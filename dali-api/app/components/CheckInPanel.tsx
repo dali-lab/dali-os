@@ -66,7 +66,7 @@ export function CheckInPanel({
   return (
     <div className="flex flex-col gap-3">
       {viewerInvited && (
-        <section className="rounded-os-card bg-os-card p-5 flex items-center justify-between gap-4">
+        <section className="rounded-os-card bg-os-container/40 p-5 flex items-center justify-between gap-4">
           <div>
             <h2 className="font-heading text-lg font-semibold text-foreground">{meetingLabel}</h2>
             <p className="text-sm text-os-grey mt-1">
@@ -85,7 +85,7 @@ export function CheckInPanel({
         </section>
       )}
       {checkInUrl && checkInQrSvg && (
-        <section className="rounded-os-card bg-os-card p-5 flex flex-col gap-5 sm:flex-row sm:items-center">
+        <section className="rounded-os-card bg-os-container/40 p-5 flex flex-col gap-5 sm:flex-row sm:items-center">
           <button
             type="button"
             onClick={() => setQrOpen(true)}

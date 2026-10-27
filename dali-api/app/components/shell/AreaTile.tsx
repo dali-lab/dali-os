@@ -1,6 +1,6 @@
 import type { LucideIcon } from "lucide-react";
 import { cn } from "~/lib/cn";
-import { areaIconFor, areaTint } from "~/lib/nav-areas";
+import { areaIconFor, areaInk, areaTint } from "~/lib/nav-areas";
 
 export type AreaTileSize = 20 | 22 | 24 | 26 | 32 | 40;
 
@@ -25,7 +25,6 @@ export function AreaTile({
   icon?: LucideIcon;
 }) {
   const Icon = icon ?? areaIconFor(areaKey);
-  const tint = areaTint(areaKey);
   if (!Icon) return null;
   const glyph = Math.round(size * 0.6);
   return (
@@ -33,12 +32,18 @@ export function AreaTile({
       data-area-tile={areaKey}
       aria-hidden
       className={cn("flex shrink-0 items-center justify-center", RADIUS[size])}
-      style={{
-        width: size,
-        height: size,
-        backgroundColor: `${tint}2e`,
-        color: tint,
-      }}
+      style={
+        {
+          width: size,
+          height: size,
+          // Both halves of the tone; app.css resolves `--tile` per mode, the
+          // same way the rail's `--area` resolves (tint on dark, ink on light).
+          "--tile-tint": areaTint(areaKey),
+          "--tile-ink": areaInk(areaKey),
+          backgroundColor: "color-mix(in srgb, var(--tile) 18%, transparent)",
+          color: "var(--tile)",
+        } as React.CSSProperties
+      }
     >
       <Icon width={glyph} height={glyph} />
     </span>
