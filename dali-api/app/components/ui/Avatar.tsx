@@ -53,12 +53,12 @@ export function Avatar({ photoUrl, name, size = "md", className, userId }: Avata
     <img
       src={photoUrl}
       alt={name}
-      className={cn("rounded-[6px] object-cover", SIZES[size], className)}
+      className={cn("rounded-full object-cover", SIZES[size], className)}
     />
   ) : (
     <div
       className={cn(
-        "font-medium rounded-[6px] flex items-center justify-center",
+        "font-medium rounded-full flex items-center justify-center",
         tint,
         SIZES[size],
         className,

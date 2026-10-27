@@ -89,7 +89,7 @@ export default function DomainJourneys({ loaderData }: Route.ComponentProps) {
   const href = (j: Journey) => journeyPath(domain.slug, j.id);
 
   return (
-    <div className="flex flex-col gap-6 lg:grid lg:grid-cols-[12rem_minmax(0,1fr)] lg:gap-8">
+    <div className="flex flex-col gap-6">
       <DomainNav domains={tabs} active={domain.slug} />
       <div className="flex min-w-0 flex-col gap-8">
         <header className="flex items-end justify-between gap-4">

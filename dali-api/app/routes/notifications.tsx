@@ -270,7 +270,7 @@ export function HistoryTab({
               <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 {g.label}
               </h2>
-              <div className="grid grid-cols-1 gap-3.5 lg:grid-cols-2">
+              <div className="grid grid-cols-1 gap-3.5 lg:grid-cols-2 xl:grid-cols-3">
                 {g.rows.map((n) => (
                   <CardShell
                     key={n.id}

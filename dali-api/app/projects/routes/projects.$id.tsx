@@ -108,7 +108,6 @@ import {
   factsFingerprint,
   type ProjectWorkStatus,
 } from "../lib/project-status";
-import { ProjectStatusBar } from "../components/ProjectStatusBar";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { isAiEnabled } from "~/lib/ai.server";
 import { groupFilesByEpic } from "../lib/file-groups";
@@ -118,6 +117,7 @@ import { PROJECT_PAGE_SELECT, PROJECT_FILE_SELECT } from "~/lib/drive.server";
 import type { DriveItem } from "~/lib/drive.server";
 import { DriveBrowser } from "~/components/drive/DriveBrowser";
 import type { RowActions } from "~/components/drive/DriveBrowser";
+import { DRIVE_TOOLBAR_BTN } from "~/components/drive/toolbar";
 import { FolderPicker } from "~/components/drive/FolderPicker";
 import type { PickerDrive, PickerFolder, Destination } from "~/components/drive/FolderPicker";
 import { moveDriveItem, driveErrorFrom } from "~/components/drive/move-item";
@@ -1761,11 +1761,6 @@ export default function ProjectDetail() {
     timelineTerms,
     tasks,
     boardOptions,
-    statusFacts,
-    statusBreakdown,
-    aiTldr,
-    aiTldrStale,
-    aiLineEnabled,
     allDomainOptions,
     plannedTerms,
     allTermOptions,
@@ -2077,14 +2072,6 @@ export default function ProjectDetail() {
           // surfaces sharing one tab, and at the page rhythm the board's
           // toolbar read as another row of the timeline card.
           <div className="flex flex-col gap-10">
-            <ProjectStatusBar
-              facts={statusFacts}
-              breakdown={statusBreakdown}
-              projectId={project.id}
-              aiTldr={aiTldr}
-              aiTldrStale={aiTldrStale}
-              aiLineEnabled={aiLineEnabled}
-            />
             {planningNode}
             {board}
           </div>
@@ -2112,7 +2099,6 @@ export default function ProjectDetail() {
           <ProjectMentorshipTab
             projectId={project.id}
             currentTermId={currentTerm?.id ?? null}
-            isCore={canEditAssignmentLevel}
           />
         )}
       </div>
@@ -2149,7 +2135,7 @@ const TERMS_TAIL = 3;
 
 function TermChip({ code }: { code: string }) {
   return (
-    <span className="rounded-full bg-os-container px-3 py-[5px] text-[13px] font-semibold text-foreground">
+    <span className="rounded-os-item bg-os-container px-3 py-1 text-[13px] font-semibold text-foreground">
       {code}
     </span>
   );
@@ -2169,7 +2155,7 @@ function TermsChips({ terms }: { terms: { code: string }[] }) {
           <button
             type="button"
             onClick={() => setExpanded(false)}
-            className="rounded-full px-2.5 py-[5px] text-[13px] font-medium text-os-grey transition-colors hover:text-foreground"
+            className="rounded-os-item px-2.5 py-1 text-[13px] font-medium text-os-grey transition-colors hover:text-foreground"
           >
             Show less
           </button>
@@ -2191,7 +2177,7 @@ function TermsChips({ terms }: { terms: { code: string }[] }) {
         type="button"
         onClick={() => setExpanded(true)}
         aria-label={`Show ${hidden} more terms`}
-        className="rounded-full bg-os-container/60 px-3 py-[5px] text-[13px] font-semibold text-os-grey transition-colors hover:bg-os-container hover:text-foreground"
+        className="rounded-os-item bg-os-container/60 px-3 py-1 text-[13px] font-semibold text-os-grey transition-colors hover:bg-os-container hover:text-foreground"
       >
         +{hidden}
       </button>
@@ -2252,41 +2238,27 @@ function ProjectHeader({
     );
   }
 
-  // Actual terms vs the expected span: when they differ, show "N of M" so a
-  // partially-scheduled project reads as such. termCount is the expected target.
+  // Actual terms vs the expected span: when they differ, the label reads
+  // "Terms · N of M" so a partially-scheduled project reads as such.
+  // termCount is the expected target.
   const actualTermCount = project.actualTermCount;
-  const termCountLabel =
+  const termsClusterLabel =
     actualTermCount === project.termCount
-      ? `${project.termCount} ${project.termCount === 1 ? "term" : "terms"}`
-      : `${actualTermCount} of ${project.termCount} terms`;
+      ? "Terms"
+      : `Terms · ${actualTermCount} of ${project.termCount}`;
 
-  const termsLabel =
-    project.terms.length > 0
-      ? project.terms.map((t) => t.code).join(", ")
-      : "No terms yet";
-
-  const subtitle = (
-    <p className="text-sm text-muted-foreground mt-1">
-      {termsLabel}
-      {" · "}
-      {termCountLabel}
-    </p>
-  );
-
-  // The design's right-hand clusters: TERMS as chips, ROLES as tinted chips.
-  // Same two facts the subtitle above states in prose — the "N of M terms"
-  // count rides the end of the term row so a partially-scheduled project still
-  // reads as one. Read-only in the hero: terms and roles are project scope, so
-  // Core edits them in Project settings (the gear), not from the title row.
+  // The design's right-hand clusters: a muted label over a row of plain chips,
+  // the same dress for terms and roles. Read-only in the hero: terms and roles
+  // are project scope, so Core edits them in Project settings (the gear), not
+  // from the title row.
   const osTagGroup = (
-    <div className="flex flex-wrap items-center gap-6">
-      <HeroClusterLabel label="Terms">
+    <div className="flex flex-wrap items-start gap-6">
+      <HeroClusterLabel label={termsClusterLabel}>
         {project.terms.length === 0 ? (
           <span className="text-[13px] text-os-muted">No terms yet</span>
         ) : (
           <TermsChips terms={project.terms} />
         )}
-        <span className="text-xs text-os-grey">{termCountLabel}</span>
       </HeroClusterLabel>
 
       <HeroClusterLabel label="Roles">
@@ -2294,8 +2266,8 @@ function ProjectHeader({
           <span className="text-[13px] text-os-muted">No roles yet</span>
         ) : (
           // A role is a role: the set derived from bids and assignments (a
-          // project staffed before anyone declared its domains) wears the same
-          // colours as a declared one.
+          // project staffed before anyone declared its domains) reads the same
+          // as a declared one.
           <DomainChips
             items={project.domains.length > 0 ? project.domains : project.derivedDomains}
           />
@@ -2379,11 +2351,6 @@ function ProjectHeader({
           {project.name}
         </h1>
       )}
-      {/* Status is display-only in the hero — the pill still states the
-          project's lifecycle, but changing it lives in Project settings (the
-          gear) with the rest of the project's scope, so Core owns lifecycle
-          changes in one place. */}
-      <StatusBadge status={project.status} />
     </>
   );
 
@@ -2431,7 +2398,6 @@ function DescriptionSegment({
 }) {
   const submit = useSubmit();
   const formRef = useRef<HTMLFormElement | null>(null);
-  const { panel } = useOsChrome();
 
   return (
     <EditableSection
@@ -2447,7 +2413,7 @@ function DescriptionSegment({
           <Form
             method="post"
             ref={formRef}
-            className={cn("flex flex-col gap-1.5", cn(panel, "os-form p-5"))}
+            className={cn("flex flex-col gap-1.5", "rounded-os-card bg-os-container/40 os-form p-5")}
           >
             <input type="hidden" name="intent" value="description" />
             <textarea
@@ -2460,7 +2426,7 @@ function DescriptionSegment({
             />
           </Form>
         ) : (
-          <div className={cn(panel, "p-5")}>
+          <div className="rounded-os-card bg-os-container/40 p-5">
             {description ? (
               <Markdown>{description}</Markdown>
             ) : (
@@ -3117,7 +3083,7 @@ function DetailsEditOs({
       <DetailEditRow
         icon={<Figma className={ic} />}
         label="Figma"
-        hint="One URL per line"
+        infoTip={<InfoTip content="One URL per line" />}
       >
         <textarea
           name="figmaUrls"
@@ -3359,7 +3325,7 @@ function TeamTermGroup({
         {team.members.map((m) => (
           <div
             key={m.assignmentId}
-            className="flex items-center gap-3 rounded-os-item bg-os-card p-3"
+            className="flex items-center gap-3 rounded-os-item bg-os-container/40 p-3"
           >
             <Avatar photoUrl={m.photoUrl} name={m.name} size="sm" />
             <div className="min-w-0 flex-1">
@@ -3430,7 +3396,7 @@ function TeamSection({
                 type="button"
                 onClick={() => setShowPrevious((v) => !v)}
                 aria-expanded={showPrevious}
-                className="flex w-full items-center gap-2 rounded-os-item bg-os-card px-3 py-2.5 text-left text-sm font-semibold text-os-grey transition-colors hover:text-foreground"
+                className="flex w-full items-center gap-2 rounded-os-item bg-os-container/40 px-3 py-2.5 text-left text-sm font-semibold text-os-grey transition-colors hover:text-foreground"
               >
                 {showPrevious ? (
                   <ChevronDown className="h-4 w-4 flex-shrink-0" />
@@ -3632,7 +3598,7 @@ function OverviewTab({
   const tz = useUserTimeZone();
   // Under dali.os a section is a title over its content, not a box around it —
   // so the cards these sections hold stop showing a second border inside a first.
-  const { sectionShell, sectionTitle, panel } = useOsChrome();
+  const { sectionShell, sectionTitle } = useOsChrome();
 
   // The current term's per-domain challenge, read-only on Overview. Edited in
   // the Scope settings popup. Only non-empty cells for the current term show.
@@ -3693,7 +3659,7 @@ function OverviewTab({
             </div>
             {/* The body takes the surface under os; the section around it is
                 only a title, so this is the one card here. */}
-            <div className={cn(panel, "p-4")}>
+            <div className="rounded-os-card bg-os-container/40 p-4">
               {currentChallenges.length > 0 ? (
                 <div className="flex flex-col gap-2">
                   {currentChallenges.map((c) => (
@@ -3817,7 +3783,7 @@ function OverviewTab({
           <h2 className={sectionTitle}>
             Recent activity
           </h2>
-          <ul className={cn("flex flex-col gap-2", cn(panel, "p-4"))}>
+          <ul className={cn("flex flex-col gap-2", "rounded-os-card bg-os-container/40 p-4")}>
             {recentActivity.map((a) => (
               <li key={a.id} className="text-xs text-muted-foreground">
                 <span className="text-foreground font-medium">{a.actorName}</span>{" "}
@@ -4896,19 +4862,19 @@ function ProjectDriveTab({
     </div>
   );
 
-  // The same New pill the unified Drive wears — this tab is the same browser,
-  // and a smaller square button here read as a different app's control sitting
-  // in Drive's toolbar. Without edit rights it greys out in place rather than
-  // leaving a hole for the controls beside it to slide into.
+  // The same New control the unified Drive wears — this tab is the same
+  // browser, and a different button here read as a different app's control
+  // sitting in Drive's toolbar. Without edit rights it greys out in place
+  // rather than leaving a hole for the controls beside it to slide into.
   const newMenu = !canEdit ? (
     <button
       type="button"
       disabled
       data-testid={`drive-new-menu-${scopeId}-disabled`}
       title="You don't have edit access to this project"
-      className="os-add-btn shrink-0 cursor-not-allowed opacity-40"
+      className={cn(DRIVE_TOOLBAR_BTN, "cursor-not-allowed opacity-40")}
     >
-      <Plus className="w-4 h-4" /> New
+      <Plus className="h-[18px] w-[18px]" strokeWidth={1.5} /> New
       <ChevronDown className="w-3.5 h-3.5 opacity-80" />
     </button>
   ) : (
@@ -4919,9 +4885,9 @@ function ProjectDriveTab({
         <button
           type="button"
           data-testid={`drive-new-menu-${scopeId}`}
-          className="os-add-btn shrink-0"
+          className={DRIVE_TOOLBAR_BTN}
         >
-          <Plus className="w-4 h-4" /> New
+          <Plus className="h-[18px] w-[18px]" strokeWidth={1.5} /> New
           <ChevronDown className="w-3.5 h-3.5 opacity-80" />
         </button>
       }

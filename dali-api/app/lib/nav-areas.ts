@@ -226,6 +226,7 @@ const REGROUPED_AREAS: NavArea[] = [
     subtabs: [
       { label: "Projects", href: "/projects", icon: FolderKanban },
       { label: "People", href: "/members", icon: UsersRound },
+      { label: "Groups", href: "/members/groups", icon: Users, gate: (r) => r.canViewForms },
       { label: "Connect", href: "/connect", icon: MapPinned },
       { label: "Mentorship", href: "/mentorship", icon: Heart, gate: (r) => !r.isAlumni && (r.isLabMentor || r.isCore) },
       // Lab-wide Attendance: every meeting/event you're invited to, with each

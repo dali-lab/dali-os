@@ -10,6 +10,7 @@ export function Segmented<T extends string>({
   ariaLabel,
   fullWidth = false,
   size = "sm",
+  pill = false,
   className,
 }: {
   value: T;
@@ -19,6 +20,8 @@ export function Segmented<T extends string>({
   /** Stretch across the container, splitting it evenly between options. */
   fullWidth?: boolean;
   size?: "sm" | "md";
+  /** Fully rounded capsule instead of the square-cornered switcher. */
+  pill?: boolean;
   className?: string;
 }) {
   return (
@@ -26,8 +29,10 @@ export function Segmented<T extends string>({
       role="radiogroup"
       aria-label={ariaLabel}
       className={cn(
-        // Square-cornered switcher, matching the sidebar's active row.
-        "rounded-lg border border-border bg-muted/40",
+        // Square corners match the sidebar's active row; pill matches the
+        // dali.os badge/pill shape language.
+        pill ? "rounded-full" : "rounded-lg",
+        "border border-border bg-muted/40",
         size === "md" ? "p-1" : "p-0.5",
         fullWidth ? "flex w-full" : "inline-flex",
         className,
@@ -44,7 +49,8 @@ export function Segmented<T extends string>({
             onClick={() => onChange(o.value)}
             className={cn(
               // 36px total at md (28px thumb inside the 4px-padded frame).
-              "inline-flex items-center justify-center rounded-md font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-os-accent/40",
+              "inline-flex items-center justify-center font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-os-accent/40",
+              pill ? "rounded-full" : "rounded-md",
               size === "md" ? "h-7 text-sm" : "h-6 text-xs",
               // Full width splits the row evenly, so side padding would only
               // push a long label past its share.

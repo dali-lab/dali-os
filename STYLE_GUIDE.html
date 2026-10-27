@@ -8,7 +8,8 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Mulish:wght@400;500;600;700;900&family=Plus+Jakarta+Sans:wght@600&display=swap">
 <style>
   :root {
-    --bg: #e9eef3; --nav: #dde5ed; --card: #ffffff; --card-hover: #eaf3f8; --well: #eaeff5;
+    --bg: #ffffff; --nav: #eef1f5; --card: #f3f6f9; --card-hover: #eaf3f8; --well: #eaeff5;
+    --rail-pill-mix: 24%;
     --container: #ccd7e2; --container-hi: #a9b9c9;
     --fg: #13293a; --grey: #4d5c69; --muted: #78899a;
     --accent: #0f6e7d; --accent-hover: #0b5964;
@@ -46,6 +47,7 @@
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
       --bg: #282830; --nav: #24242a; --card: #2b2b36; --card-hover: #323240; --well: #26262f;
+      --rail-pill-mix: 16%;
       --container: #3f3f48; --container-hi: #54545f;
       --fg: #ffffff; --grey: #bababa; --muted: #6a6a73;
       --accent: #a8d3de; --accent-hover: #bfe1e9;
@@ -222,7 +224,7 @@
   .elev .plate.pop { border-radius: 12px; border: 1px solid var(--container); box-shadow: 0 16px 40px var(--shadow); }
   .elev .plate.dlg { border: 1px solid var(--container); box-shadow: 0 24px 64px var(--shadow); }
   .elev .plate small { display: block; font-weight: 400; color: var(--grey); }
-  .elev-wrap { background: var(--bg); border-radius: 16px; padding: 18px; }
+  .elev-wrap { background: var(--bg); border: 1px solid var(--container); border-radius: 16px; padding: 18px; }
 
   .space { display: flex; flex-direction: column; gap: 10px; }
   .space .bar { display: flex; align-items: center; gap: 12px; font-size: 12px; color: var(--grey); }
@@ -286,9 +288,10 @@
   .tabs { display: flex; align-items: center; gap: 8px; border-bottom: 1px solid var(--container); }
   .tabs span { padding: 10px 20px; font-size: 16px; font-weight: 500; color: var(--grey); border-radius: 10px 10px 0 0; }
   .tabs span.on { background: var(--container); color: var(--fg); }
-  .subtab { display: flex; flex-direction: column; gap: 4px; max-width: 220px; background: var(--nav); border-radius: 12px; padding: 10px 0 10px 10px; }
-  .subtab span { padding: 7px 12px; font-size: 14px; color: var(--grey); border-radius: 10px 0 0 10px; }
-  .subtab span.on { background: var(--container); color: var(--fg); box-shadow: inset 3px 0 0 var(--accent); }
+  .subtab { display: flex; flex-direction: column; gap: 6px; max-width: 220px; background: var(--nav); border-radius: 12px; padding: 10px; }
+  .subtab span { position: relative; padding: 7px 13px; font-size: 14px; color: var(--grey); border-radius: 8px; }
+  .subtab span.on { background: color-mix(in srgb, var(--accent) var(--rail-pill-mix), transparent); color: var(--fg); font-weight: 600; }
+  .subtab span.on::before { content: ""; position: absolute; left: 0; top: 50%; transform: translateY(-50%); height: 16px; width: 3px; border-radius: 0 3px 3px 0; background: var(--accent); }
 
   .menu { width: 220px; background: var(--card); border: 1px solid var(--container); border-radius: 12px; box-shadow: 0 16px 40px var(--shadow); padding: 6px; }
   .menu div { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 8px; font-size: 14px; color: var(--fg); }
@@ -306,7 +309,7 @@
   .dialog .foot { display: flex; justify-content: flex-end; gap: 12px; margin-top: 28px; }
   .dialog p { margin: 0; color: var(--grey); }
 
-  .card-demo { background: var(--bg); border-radius: 16px; padding: 20px; display: grid; gap: 16px; }
+  .card-demo { background: var(--bg); border: 1px solid var(--container); border-radius: 16px; padding: 20px; display: grid; gap: 16px; }
   .os-card { background: var(--card); border-radius: 24px; padding: 24px; }
   .os-card h3 { margin: 0 0 6px; font-size: 19px; font-weight: 600; }
   .os-card .ey { font-size: 12px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--grey); display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
@@ -568,8 +571,9 @@
         <div>
           <div class="eyebrow" style="margin-top:0">Tooltip</div>
           <span class="tip">Mark as read</span>
-          <div class="eyebrow">Sidebar sub-tab</div>
+          <div class="eyebrow">Sidebar subtabs</div>
           <div class="subtab"><span>Members</span><span class="on">Groups</span><span>Staffing</span></div>
+          <p class="note" style="margin-top:8px">The active row is one sliding pill: a wash of the section's area tone with a 3px stripe. Shown here with the accent standing in for the area tone.</p>
         </div>
       </div>
       <div class="eyebrow">Dialog</div>
@@ -690,9 +694,9 @@
   paint();
 
   var surface = [
-    ['os-nav', '#dde5ed', '#24242a', 'Sidebar and top bar'],
-    ['os-bg', '#e9eef3', '#282830', 'Page ground'],
-    ['os-card', '#ffffff', '#2b2b36', 'Cards, menus, dialogs'],
+    ['os-nav', '#eef1f5', '#24242a', 'Sidebar and top bar'],
+    ['os-bg', '#ffffff', '#282830', 'Page ground'],
+    ['os-card', '#f3f6f9', '#2b2b36', 'Cards, menus, dialogs'],
     ['os-card-hover', '#eaf3f8', '#323240', 'Hovered card'],
     ['os-well', '#eaeff5', '#26262f', 'Inputs, nested rows'],
     ['os-container', '#ccd7e2', '#3f3f48', 'Hairlines, chips, active fill'],

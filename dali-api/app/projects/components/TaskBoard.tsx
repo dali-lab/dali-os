@@ -871,9 +871,12 @@ export function TaskBoard({
       headerStyle: { background: accent.fill, color: accent.ink },
       headerExtra: (
         <div className="flex shrink-0 items-center gap-1 text-current">
+          {/* Neutral plate, not the column's hue, so the count reads as a
+              number rather than one more swatch of the status color. */}
           <span
             className={cn(
-              "rounded-full border border-current/30 px-2 py-0.5 font-medium tabular-nums",
+              "rounded-full px-2 py-0.5 font-medium tabular-nums text-foreground",
+              os ? "bg-os-bg" : "bg-background",
               META_TEXT(os),
             )}
           >

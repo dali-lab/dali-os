@@ -48,7 +48,7 @@ export function Drawer({ open, onClose, title, headerActions, labelledBy, childr
             {title}
           </h2>
           {headerActions}
-          <IconButton label="Close" icon={X} onClick={onClose} className="h-9 w-9" iconClassName="h-5 w-5" />
+          <IconButton label="Close" icon={X} onClick={onClose} className="h-9 w-9" iconClassName="h-5 w-5 [stroke-width:1.5]" />
         </div>
       )}
       <div className="flex min-h-0 flex-1 flex-col">{children}</div>

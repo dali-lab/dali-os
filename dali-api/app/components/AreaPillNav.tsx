@@ -21,15 +21,15 @@ export type SegmentedSize = "sm" | "md";
 
 function osSegmentedTrackClass(size: SegmentedSize) {
   return cn(
-    "inline-flex w-fit max-w-full items-center overflow-x-auto no-scrollbar rounded-full border border-border bg-os-card",
+    "os-seg-track inline-flex w-fit max-w-full items-center overflow-x-auto no-scrollbar rounded-full border border-border bg-os-card",
     size === "sm" ? "gap-0.5 p-0.5" : "gap-1 p-1",
   );
 }
 
 function osSegmentedItemClass(active: boolean, size: SegmentedSize) {
   return cn(
-    "inline-flex shrink-0 items-center gap-1.5 rounded-full font-medium transition-colors",
-    size === "sm" ? "px-3 py-1 text-xs" : "px-4 py-2 text-sm",
+    "os-seg-item inline-flex shrink-0 items-center gap-1.5 rounded-full font-medium transition-colors",
+    size === "sm" ? "px-3 py-1 text-xs" : "os-seg-item-md px-4 py-2 text-sm",
     active
       ? "bg-os-container text-foreground"
       : "text-muted-foreground hover:text-foreground",
@@ -55,7 +55,7 @@ function SubtabLabel({
         <span
           className={cn(
             "grid h-5 min-w-5 place-items-center rounded-full px-1.5 text-[11px] font-bold",
-            active ? "bg-os-accent text-os-bg" : "bg-os-card text-os-grey",
+            active ? "os-seg-count--active bg-os-accent text-os-bg" : "bg-os-card text-os-grey",
           )}
         >
           {count}

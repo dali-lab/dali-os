@@ -1,9 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useFetcher } from "react-router";
-import { ChevronRight, Handshake, PencilLine } from "lucide-react";
-import { useOsChrome } from "~/components/os-chrome";
-import { cn } from "~/lib/cn";
-import { PairingReviewPanel } from "./PairingReviewPanel";
+import { ChevronRight } from "lucide-react";
 
 type Person = { id: string; firstName: string; lastName: string };
 
@@ -43,18 +40,15 @@ function notesHref(
 interface Props {
   projectId: string;
   currentTermId: string | null;
-  // Core gets the manual pair editor for this project.
-  isCore: boolean;
 }
 
 // Mentorship view on a project page. Lists confirmed pairings for the current
 // term (auto-derived from ProjectAssignment by staffing finalize, one mentor per
 // mentee); each row links to that pairing's notes in the mentorship hub. Visible
 // to lab mentors + Core only — gated server-side via the project loader's
-// canViewMentorshipTab. Core can reassign here via the shared review panel;
-// those edits are tagged manual and survive a staffing re-finalize.
-export function ProjectMentorshipTab({ projectId, currentTermId, isCore }: Props) {
-  const { panel, panelPad, heading, headingIcon } = useOsChrome();
+// canViewMentorshipTab. Pair reassignment lives in the staffing finalize
+// review panel, not here.
+export function ProjectMentorshipTab({ projectId, currentTermId }: Props) {
   const pairsFetcher = useFetcher<PairsResponse>();
   const [loaded, setLoaded] = useState(false);
 
@@ -69,14 +63,6 @@ export function ProjectMentorshipTab({ projectId, currentTermId, isCore }: Props
     // Loaders are idempotent; intentionally one-shot per mount.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  const canManage = isCore && Boolean(currentTermId);
-  const [editing, setEditing] = useState(false);
-
-  const reloadPairs = useCallback(() => {
-    pairsFetcher.load(pairsUrl);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pairsUrl]);
 
   const pairs = pairsFetcher.data?.pairs ?? [];
 
@@ -105,40 +91,12 @@ export function ProjectMentorshipTab({ projectId, currentTermId, isCore }: Props
     return m;
   }, [pairs]);
 
-  const editToggleClass = editing ? "os-btn-primary" : "os-edit-btn";
-
   return (
     <div className="flex flex-col gap-4">
-      <section className={cn(panel, panelPad, "flex flex-col gap-3")}>
-        <div className="flex items-center justify-between gap-2">
-          <h2 className={heading}>
-            <Handshake className={headingIcon} aria-hidden />
-            Pairings ({pairs.length})
-            {currentTermId ? "" : " — no current term"}
-          </h2>
-          {canManage && (
-            <button
-              type="button"
-              onClick={() => {
-                if (editing) reloadPairs();
-                setEditing((v) => !v);
-              }}
-              aria-pressed={editing}
-              className={editToggleClass}
-            >
-              <PencilLine className="w-4 h-4" aria-hidden />
-              {editing ? "Done" : "Edit"}
-            </button>
-          )}
-        </div>
-
-        {editing && canManage && currentTermId ? (
-          <PairingReviewPanel
-            projectId={projectId}
-            termId={currentTermId}
-            onChanged={reloadPairs}
-          />
-        ) : pairsFetcher.state !== "idle" && pairs.length === 0 ? (
+      {/* Transparent on the page ground — the pairing list is rows, not an
+          object that earns a card. */}
+      <section className="flex flex-col gap-3">
+        {pairsFetcher.state !== "idle" && pairs.length === 0 ? (
           <p className="text-sm text-muted-foreground">Loading…</p>
         ) : pairs.length === 0 ? (
           <p className="text-sm text-muted-foreground">
@@ -146,7 +104,7 @@ export function ProjectMentorshipTab({ projectId, currentTermId, isCore }: Props
             when staffing is finalized.
           </p>
         ) : (
-          <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-7">
             {[...grouped.values()].map(({ domain, mentees }) => (
               <div key={domain.id} className="flex flex-col gap-2">
                 <h3 className="text-sm font-semibold text-muted-foreground">

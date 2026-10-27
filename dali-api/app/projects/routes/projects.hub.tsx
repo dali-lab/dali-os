@@ -40,13 +40,18 @@ import { ALL_TERMS } from "~/lib/terms.shared";
 import { ProjectCoverImage } from "~/projects/components/ProjectCoverImage";
 import { ProjectIcon } from "~/components/ProjectIcon";
 import { ProjectIconPicker } from "~/projects/components/ProjectIconPicker";
-import { Globe, Plus } from "lucide-react";
+import { CircleDot, Globe, Handshake, Plus } from "lucide-react";
+import { Modal, ModalFooter, ModalHeader } from "~/components/Modal";
+import { modalCardClass } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
 import { SearchInput } from "~/components/ui/SearchInput";
-import { filterPillClass } from "~/components/ui/floating/styles";
 import {
-  matchesShowcaseFilter,
-  SHOWCASE_FILTER_ALL,
+  ColumnFilters,
+  useColumnFilters,
+  type FilterColumn,
+} from "~/projects/components/ColumnFilters";
+import type { ColumnFilter } from "~/projects/lib/submission-filters";
+import {
   SHOWCASE_FILTER_NONE,
   type ShowcaseStatusValue,
 } from "../lib/showcase-filter";
@@ -60,18 +65,17 @@ export const meta: Route.MetaFunction = () => [{ title: "Projects · DALI OS" }]
 
 type ProjectStatus = "Active" | "Paused" | "Archived";
 
-// "none" is its own filter value, not a showcase status: a project whose Public
-// view has never been opened has no row at all, and "which projects has nobody
-// written up yet" is the question this filter gets asked most.
-const SHOWCASE_FILTERS: { value: string; label: string }[] = [
-  { value: SHOWCASE_FILTER_ALL, label: "Any" },
-  { value: "Published", label: "Published" },
-  { value: "NeedsReview", label: "Needs review" },
-  { value: "InProgress", label: "In progress" },
-  { value: "NotStarted", label: "Not started" },
-  { value: "Archive", label: "Archived" },
-  { value: SHOWCASE_FILTER_NONE, label: "Not written up" },
+// The filter bar's columns (the People page's advanced filter). "Not written
+// up" is the website column's value for a project with no showcase row at all:
+// "which projects has nobody written up yet" is the question that column gets
+// asked most.
+const FILTER_COLUMNS: FilterColumn[] = [
+  { key: "status", label: "Status", icon: CircleDot },
+  { key: "website", label: "Website", icon: Globe },
+  { key: "partner", label: "Partner", icon: Handshake },
 ];
+
+const NO_SHOWCASE_LABEL = "Not written up";
 
 const SHOWCASE_LABELS: Record<ShowcaseStatusValue, string> = {
   Published: "Published",
@@ -359,26 +363,50 @@ export default function ProjectsListPage() {
   const presetTemplateId = searchParams.get("new") ?? "";
   const [creating, setCreating] = useState(() => canEdit && presetTemplateId !== "");
   const [newIconEmoji, setNewIconEmoji] = useState<string | null>(null);
+  const startCreating = () => {
+    setNewIconEmoji(null);
+    setCreating(true);
+  };
   const [query, setQuery] = useState("");
-  // In the URL (like ?term=) rather than component state, so "show me every
-  // project still needing a write-up" is a link someone can share.
-  const showcaseFilter = searchParams.get("public") ?? SHOWCASE_FILTER_ALL;
   const [view, setView] = useViewPreference("dali:view:projects", "list");
 
+  // An old ?public= link (from the Drive templates gallery era of this filter)
+  // opens with the matching Website filter already in the builder; an unknown
+  // value is ignored so a stale link just shows everything.
+  const publicParam = searchParams.get("public");
+  const linkedWebsite =
+    publicParam === SHOWCASE_FILTER_NONE
+      ? NO_SHOWCASE_LABEL
+      : (SHOWCASE_LABELS[publicParam as ShowcaseStatusValue] ?? null);
+  const initialFilters: ColumnFilter[] = linkedWebsite
+    ? [{ columnKey: "website", values: [linkedWebsite] }]
+    : [];
+
+  const filterRows = useMemo(
+    () =>
+      rows.map((r) => ({
+        ...r,
+        cells: {
+          status: r.status,
+          website: r.showcaseStatus ? SHOWCASE_LABELS[r.showcaseStatus] : NO_SHOWCASE_LABEL,
+          partner: r.partners.map((p) => p.name),
+        },
+      })),
+    [rows],
+  );
+
+  const columnFilters = useColumnFilters(FILTER_COLUMNS, initialFilters);
+
   const filtered = useMemo(() => {
-    let base = rows;
-    if (showcaseFilter !== SHOWCASE_FILTER_ALL) {
-      base = base.filter((r) =>
-        matchesShowcaseFilter(r.showcaseStatus, showcaseFilter),
-      );
-    }
     const q = query.trim().toLowerCase();
-    if (!q) return base;
-    return base.filter((r) => {
+    return filterRows.filter((r) => {
+      if (!columnFilters.predicate(r)) return false;
+      if (!q) return true;
       if (r.name.toLowerCase().includes(q)) return true;
       return r.partners.some((p) => p.name.toLowerCase().includes(q));
     });
-  }, [rows, query, showcaseFilter]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filterRows, query, columnFilters.active]);
 
   return (
     <div className="flex flex-col gap-4">
@@ -391,24 +419,6 @@ export default function ProjectsListPage() {
         >
           Projects
         </h1>
-        {canEdit && !creating && (
-          <button
-            type="button"
-            onClick={() => {
-              setNewIconEmoji(null);
-              setCreating(true);
-            }}
-            className={cn(
-              "shrink-0",
-              "os-add-btn",
-            )}
-          >
-            <>
-              <Plus className="h-[17px] w-[17px]" strokeWidth={3} aria-hidden />
-              New project
-            </>
-          </button>
-        )}
       </header>
 
       {actionData?.error && (
@@ -417,13 +427,24 @@ export default function ProjectsListPage() {
         </div>
       )}
 
-      {creating && canEdit && (
-        <Form
-          method="post"
-          onSubmit={() => setCreating(false)}
-          className="bg-card border border-border rounded-lg p-4 flex flex-col gap-3"
-        >
-          <h2 className="text-sm font-semibold text-foreground">New project</h2>
+      <Modal
+        open={creating && canEdit}
+        onClose={() => {
+          setNewIconEmoji(null);
+          setCreating(false);
+        }}
+        labelledBy="new-project-title"
+        containerClassName={modalCardClass("max-w-xl")}
+      >
+        <ModalHeader
+          titleId="new-project-title"
+          title="New project"
+          onClose={() => {
+            setNewIconEmoji(null);
+            setCreating(false);
+          }}
+        />
+        <Form method="post" onSubmit={() => setCreating(false)} className="flex flex-col gap-3">
           <input type="hidden" name="iconEmoji" value={newIconEmoji ?? ""} />
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <label className="flex flex-col gap-1 text-xs sm:col-span-2">
@@ -512,26 +533,18 @@ export default function ProjectsListPage() {
             </label>
           </div>
           {provisionTargets && <NewProjectInfraFields targets={provisionTargets} />}
-          <div className="flex justify-end gap-2">
-            <button
-              type="button"
-              onClick={() => {
-                setNewIconEmoji(null);
-                setCreating(false);
-              }}
-              className="os-btn-ghost"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className="os-btn-primary"
-            >
+          <ModalFooter
+            onCancel={() => {
+              setNewIconEmoji(null);
+              setCreating(false);
+            }}
+          >
+            <button type="submit" className="os-btn-primary">
               Create
             </button>
-          </div>
+          </ModalFooter>
         </Form>
-      )}
+      </Modal>
 
       <div className={cn("flex items-center gap-3 flex-wrap", "gap-4 pt-2 pb-4")}>
         <SearchInput
@@ -544,47 +557,31 @@ export default function ProjectsListPage() {
           Term
           <TermFilter terms={terms} selected={selectedTerm} />
         </label>
-        <label className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-          Website
-          <Select
-            value={showcaseFilter}
-            onChange={(value) => {
-              const next = new URLSearchParams(searchParams);
-              if (value === SHOWCASE_FILTER_ALL) next.delete("public");
-              else next.set("public", value);
-              setSearchParams(next);
-            }}
-            ariaLabel="Filter by status on dali.website"
-            options={SHOWCASE_FILTERS.map((f) => ({ value: f.value, label: f.label }))}
-            buttonClassName={cn(filterPillClass(), "w-full sm:w-40")}
+        <div className="min-w-[220px] flex-1">
+          <ColumnFilters
+            columns={FILTER_COLUMNS}
+            rows={filterRows}
+            filters={columnFilters.filters}
+            onChange={columnFilters.setFilters}
+            shownCount={filtered.length}
+            noun={["project", "projects"]}
           />
-        </label>
-        <span className={cn("ml-auto text-muted-foreground", "text-base")}>
-          {filtered.length} {filtered.length === 1 ? "project" : "projects"}
-          {(query || showcaseFilter !== SHOWCASE_FILTER_ALL) &&
-          filtered.length !== rows.length
-            ? ` of ${rows.length}`
-            : ""}
-        </span>
+        </div>
       </div>
 
-      {filtered.length === 0 ? (
+      {filtered.length === 0 && !(rows.length === 0 && canEdit) ? (
         <div className="px-4 py-8 text-center text-sm text-muted-foreground">
           {query ? (
             "No projects match this search."
-          ) : showcaseFilter !== SHOWCASE_FILTER_ALL && rows.length > 0 ? (
+          ) : columnFilters.active.length > 0 && rows.length > 0 ? (
             <>
-              No projects have that public status.{" "}
+              No projects match these filters.{" "}
               <button
                 type="button"
-                onClick={() => {
-                  const next = new URLSearchParams(searchParams);
-                  next.delete("public");
-                  setSearchParams(next);
-                }}
+                onClick={() => columnFilters.setFilters([])}
                 className="font-medium text-os-accent hover:underline"
               >
-                Clear the filter
+                Clear the filters
               </button>
             </>
           ) : hiddenByTermFilter ? (
@@ -609,7 +606,7 @@ export default function ProjectsListPage() {
           )}
         </div>
       ) : (
-        <ProjectsCards rows={filtered} />
+        <ProjectsCards rows={filtered} onNew={canEdit ? startCreating : undefined} />
       )}
     </div>
   );
@@ -676,7 +673,7 @@ function ProjectsTable({ rows }: { rows: ProjectRow[] }) {
   );
 }
 
-function ProjectsCards({ rows }: { rows: ProjectRow[] }) {
+function ProjectsCards({ rows, onNew }: { rows: ProjectRow[]; onNew?: () => void }) {
   return (
     // auto-fill rather than fixed columns: the design's cards hold their
     // 280px minimum and the row simply fits fewer of them as the pane
@@ -687,6 +684,16 @@ function ProjectsCards({ rows }: { rows: ProjectRow[] }) {
       {rows.map((p) => (
         <OsProjectCard key={p.id} project={p} />
       ))}
+      {onNew && (
+        <button
+          type="button"
+          onClick={onNew}
+          className="flex min-h-[290px] flex-col items-center justify-center gap-2 rounded-os-card border-2 border-dashed border-os-container bg-transparent text-os-grey transition-colors hover:border-os-container-hi hover:bg-os-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-os-accent/60"
+        >
+          <Plus className="h-6 w-6" aria-hidden />
+          <span className="text-sm font-medium">New project</span>
+        </button>
+      )}
     </div>
   );
 }

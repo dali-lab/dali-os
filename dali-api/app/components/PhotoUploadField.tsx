@@ -165,12 +165,12 @@ export function PhotoUploadField({
             <img
               src={previewUrl}
               alt=""
-              className="w-20 h-20 rounded-lg object-cover border border-border"
+              className="w-20 h-20 rounded-full object-cover border border-border"
             />
           ) : (
             <div
               className={cn(
-                "w-20 h-20 rounded-lg border border-border flex items-center justify-center font-bold text-xl",
+                "w-20 h-20 rounded-full border border-border flex items-center justify-center font-bold text-xl",
                 tint,
               )}
             >
@@ -178,7 +178,7 @@ export function PhotoUploadField({
             </div>
           )}
           {uploading && (
-            <div className="absolute inset-0 rounded-lg bg-black/40 flex items-center justify-center">
+            <div className="absolute inset-0 rounded-full bg-black/40 flex items-center justify-center">
               <span className="inline-block w-5 h-5 border-2 border-white/40 border-t-white rounded-full animate-spin" />
             </div>
           )}

@@ -406,11 +406,11 @@ test.describe('Drive hub', () => {
     await expect(page.getByTestId('drive-sort-name')).toBeVisible();
   });
 
-  // ── Test M: the action strip stays out of the way + the details rail toggles ─
+  // ── Test M: the action strip stays out of the way ────────────────────────────
   // The strip carries selection actions only: with nothing selected it renders
-  // nothing and takes no room over the listing. The details rail is a horizontal
-  // side-peek rather than a top bar that pushes the list down.
-  test('(M) Action strip is absent at rest and the details rail toggles', async ({ page }) => {
+  // nothing and takes no room over the listing. The details rail is gone, so no
+  // toggle sits on the toolbar.
+  test('(M) Action strip is absent at rest and the details rail is gone', async ({ page }) => {
     await page.goto('/drive?scope=lab&embed=1');
     await page.waitForLoadState('networkidle');
 
@@ -418,14 +418,7 @@ test.describe('Drive hub', () => {
     await expect(page.getByTestId('drive-action-strip')).toHaveCount(0);
     await expect(page.getByTestId('drive-bulk-bar')).toHaveCount(0);
 
-    // The details rail is closed by default; the toolbar toggle opens it.
-    await expect(page.getByTestId('drive-details-pane')).toHaveCount(0);
-    await page.getByTestId('drive-details-toggle').click();
-    await expect(page.getByTestId('drive-details-toggle')).toHaveAttribute('aria-pressed', 'true');
-    await expect(page.getByTestId('drive-details-pane')).toBeVisible();
-
-    // Closing the rail from its own control hides it again.
-    await page.getByTestId('drive-details-close').click();
+    await expect(page.getByTestId('drive-details-toggle')).toHaveCount(0);
     await expect(page.getByTestId('drive-details-pane')).toHaveCount(0);
   });
 });

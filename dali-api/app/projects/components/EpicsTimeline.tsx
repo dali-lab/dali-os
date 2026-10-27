@@ -1490,7 +1490,7 @@ export function EpicsTimeline({
                 setVisibleLevels((prev) => ({ ...prev, [lvl]: !prev[lvl] }))
               }
               className={cn(
-                "flex items-center gap-2 rounded-full border px-[18px] py-2.5 text-sm font-semibold transition-opacity",
+                "flex items-center gap-1.5 rounded-full border px-3 py-1 text-[13px] font-semibold transition-opacity",
                 on
                   ? "text-foreground"
                   : "border-os-container bg-os-well text-os-grey opacity-60",
@@ -1818,7 +1818,12 @@ export function EpicsTimeline({
                   })}
 
                 {shown("story") &&
-                  storyBars.map((b) => (
+                  storyBars.map((b) => {
+                    // Same narrow-bar escape as tasks: a short story's name
+                    // moves out beside the bar rather than truncating to one
+                    // letter in the header.
+                    const narrow = barX("story", b.left, b.width).width < 80;
+                    return (
                     <HoverBar
                       key={b.story.id}
                       kind="story"
@@ -1872,19 +1877,34 @@ export function EpicsTimeline({
                           {b.story.incomplete && (
                             <span className="os-incomplete-dot mr-1.5 shrink-0">!</span>
                           )}
-                          <span className="truncate">{b.story.title}</span>
+                          {!narrow && <span className="truncate">{b.story.title}</span>}
                         </span>
                       </span>
+                      {narrow && (
+                        <span
+                          className="absolute left-full top-0 ml-1.5 flex max-w-[200px] items-center truncate whitespace-nowrap text-[11px] font-semibold tracking-[0.2px] text-foreground"
+                          style={{ height: BAR_HEADER_H }}
+                        >
+                          {b.story.title}
+                        </span>
+                      )}
                     </HoverBar>
-                  ))}
+                    );
+                  })}
 
                 {shown("task") &&
-                  taskBars.map((b) => (
+                  taskBars.map((b) => {
+                    // A bar too short to hold its own name (a one-day task
+                    // truncates to a single letter) prints it beside the bar
+                    // instead, on the grid.
+                    const narrow = barX("task", b.left, b.width).width < 72;
+                    return (
                     <HoverBar
                       key={b.task.id}
                       kind="task"
                       className={cn(
-                        "absolute z-10 flex items-center overflow-hidden px-2",
+                        "absolute z-10 flex items-center px-2",
+                        !narrow && "overflow-hidden",
                         "os-bar-label os-bar-label--task rounded-xl",
                       )}
                       style={{
@@ -1939,11 +1959,18 @@ export function EpicsTimeline({
                           aria-hidden
                         />
                       )}
-                      <span className="truncate text-[12px] font-semibold tracking-[0.24px]">
-                        {b.task.title}
-                      </span>
+                      {narrow ? (
+                        <span className="absolute left-full top-1/2 ml-1.5 max-w-[200px] -translate-y-1/2 truncate whitespace-nowrap text-[12px] font-semibold tracking-[0.24px] text-foreground">
+                          {b.task.title}
+                        </span>
+                      ) : (
+                        <span className="truncate text-[12px] font-semibold tracking-[0.24px]">
+                          {b.task.title}
+                        </span>
+                      )}
                     </HoverBar>
-                  ))}
+                    );
+                  })}
                 {/* Sits over the empty grid rather than replacing it. `sticky
                     left-0` at the scroll box's own width is what centres it in
                     what you can see — the grid behind it is months wide. */}

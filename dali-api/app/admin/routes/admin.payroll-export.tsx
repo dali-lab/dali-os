@@ -405,7 +405,7 @@ export default function PayrollExport() {
               ariaLabel="Term"
               options={terms.map((t) => ({
                 value: t.id,
-                label: t.isCurrent ? `${t.code} · current` : t.code,
+                label: t.isCurrent ? `${t.code} (current)` : t.code,
               }))}
               // Submit the picked value explicitly: the form's DOM still holds
               // the old value in the same tick.

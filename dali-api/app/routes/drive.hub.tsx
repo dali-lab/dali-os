@@ -41,6 +41,7 @@ import { DriveBrowser } from "~/components/drive/DriveBrowser";
 import { DriveHome } from "~/components/drive/DriveHome";
 import type { FileDropOptions, RowActions } from "~/components/drive/DriveBrowser";
 import { DriveTagFilter } from "~/components/drive/DriveTagFilter";
+import { DRIVE_TOOLBAR_BTN, DRIVE_TOOLBAR_ICON_BTN } from "~/components/drive/toolbar";
 import { FolderPicker } from "~/components/drive/FolderPicker";
 import type { PickerDrive, PickerFolder, Destination } from "~/components/drive/FolderPicker";
 import { buildPickerRows } from "~/components/drive/picker-rows";
@@ -1032,9 +1033,9 @@ export function NewMenu({
         <button
           type="button"
           data-testid={`drive-new-menu-${scope.id}`}
-          className="os-add-btn shrink-0"
+          className={DRIVE_TOOLBAR_BTN}
         >
-          <Plus className="w-4 h-4" /> New
+          <Plus className="h-[18px] w-[18px]" strokeWidth={1.5} /> New
           <ChevronDown className="w-3.5 h-3.5 opacity-80" />
         </button>
       }
@@ -1887,9 +1888,9 @@ export default function DriveHub() {
             ? `Nothing can be created in ${driveScopes.find((s) => s.id === effectiveScopeId)?.label ?? "this space"}`
             : "Open a drive to create something"
         }
-        className="os-add-btn shrink-0 cursor-not-allowed opacity-40"
+        className={cn(DRIVE_TOOLBAR_BTN, "cursor-not-allowed opacity-40")}
       >
-        <Plus className="w-4 h-4" /> New
+        <Plus className="h-[18px] w-[18px]" strokeWidth={1.5} /> New
         <ChevronDown className="w-3.5 h-3.5 opacity-80" />
       </button>
     );
@@ -1906,9 +1907,9 @@ export default function DriveHub() {
           type="button"
           data-testid="drive-more-menu"
           aria-label="More Drive actions"
-          className="shrink-0 inline-flex items-center justify-center rounded-full border border-border bg-card px-3.5 py-2.5 text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
+          className={DRIVE_TOOLBAR_ICON_BTN}
         >
-          <MoreHorizontal className="w-4 h-4" />
+          <MoreHorizontal className="h-[18px] w-[18px]" strokeWidth={1.5} />
         </button>
       }
     >

@@ -1,87 +1,78 @@
-// Column filters for the form-bound submission boards (Intent to Work, Project
-// Bids, Level Up). Pure and client-safe: rows already carry their resolved cell
-// strings, so filtering is string comparison against those.
-
-export const FILTER_OPERATORS = [
-  { value: "is", label: "is" },
-  { value: "isNot", label: "is not" },
-  { value: "contains", label: "contains" },
-  { value: "notContains", label: "does not contain" },
-  { value: "isEmpty", label: "is empty" },
-  { value: "isNotEmpty", label: "is not empty" },
-] as const;
-
-export type FilterOperator = (typeof FILTER_OPERATORS)[number]["value"];
+// Column filters for the People directory and the form-bound submission boards
+// (Intent to Work, Project Bids, Level Up). Pure and client-safe: rows already
+// carry their resolved cell strings, so filtering is string comparison against
+// those.
+//
+// A filter is a column plus the values picked for it: values within a column
+// OR together (a row matches on any of them), columns AND together.
 
 export type ColumnFilter = {
-  id: string;
   columnKey: string;
-  operator: FilterOperator;
-  value: string;
+  values: string[];
 };
 
 // A cell is one string, or a list when the column holds several values per row
-// (a member's domains). A list matches `is` when any entry is the value, so
-// "Domain is Design" finds someone who is also in Engineering.
+// (a member's domains). A list matches a picked value on any of its entries,
+// so filtering Domain to Design finds someone who is also in Engineering.
 export type FilterCell = string | readonly string[];
 export type FilterCells = Record<string, FilterCell | undefined>;
 
-function cellValues(cell: FilterCell | undefined): string[] {
+export function cellValues(cell: FilterCell | undefined): string[] {
   const list = cell === undefined ? [] : typeof cell === "string" ? [cell] : cell;
   return list.map((v) => v.trim()).filter((v) => v !== "");
 }
 
-export function operatorNeedsValue(op: FilterOperator): boolean {
-  return op !== "isEmpty" && op !== "isNotEmpty";
-}
-
-/** `is` / `is not` pick from existing responses; the text operators take free text. */
-export function operatorPicksResponse(op: FilterOperator): boolean {
-  return op === "is" || op === "isNot";
-}
-
 // Filters that can actually run: the column still exists on this board (a term
-// switch can change the mapping) and a value has been chosen where one is
-// needed. A half-built row filters nothing rather than hiding every row.
+// switch can change the mapping) and at least one value is picked.
 export function applicableFilters(
   filters: readonly ColumnFilter[],
   columnKeys: readonly string[],
 ): ColumnFilter[] {
   return filters.filter(
-    (f) =>
-      columnKeys.includes(f.columnKey) &&
-      (!operatorNeedsValue(f.operator) || f.value.trim() !== ""),
+    (f) => columnKeys.includes(f.columnKey) && f.values.length > 0,
   );
 }
 
-function matches(values: string[], f: ColumnFilter): boolean {
-  const needle = f.value.trim().toLowerCase();
-  const has = () => values.some((v) => v.toLowerCase().includes(needle));
-  switch (f.operator) {
-    case "is":
-      return values.includes(f.value);
-    case "isNot":
-      return !values.includes(f.value);
-    case "contains":
-      return has();
-    case "notContains":
-      return !has();
-    case "isEmpty":
-      return values.length === 0;
-    case "isNotEmpty":
-      return values.length > 0;
-  }
-}
-
-/** All filters must pass (AND). */
 export function matchesFilters(
   cells: FilterCells,
   filters: readonly ColumnFilter[],
 ): boolean {
-  return filters.every((f) => matches(cellValues(cells[f.columnKey]), f));
+  return filters.every((f) =>
+    cellValues(cells[f.columnKey]).some((v) => f.values.includes(v)),
+  );
 }
 
-/** Distinct non-empty responses in a column, sorted, for the value dropdown. */
+/** The values picked for one column; `[]` when the column has no filter. */
+export function filterValues(
+  filters: readonly ColumnFilter[],
+  columnKey: string,
+): string[] {
+  return filters.find((f) => f.columnKey === columnKey)?.values ?? [];
+}
+
+/** Toggle one value on a column; a column whose last value is removed is dropped. */
+export function toggleFilterValue(
+  filters: readonly ColumnFilter[],
+  columnKey: string,
+  value: string,
+): ColumnFilter[] {
+  const current = filterValues(filters, columnKey);
+  const values = current.includes(value)
+    ? current.filter((v) => v !== value)
+    : [...current, value];
+  if (values.length === 0) return clearFilterColumn(filters, columnKey);
+  if (current.length === 0) return [...filters, { columnKey, values }];
+  return filters.map((f) => (f.columnKey === columnKey ? { columnKey, values } : f));
+}
+
+export function clearFilterColumn(
+  filters: readonly ColumnFilter[],
+  columnKey: string,
+): ColumnFilter[] {
+  return filters.filter((f) => f.columnKey !== columnKey);
+}
+
+/** Distinct non-empty responses in a column, sorted, for the value picker. */
 export function columnResponses(
   rows: readonly { cells: FilterCells }[],
   columnKey: string,

@@ -184,6 +184,7 @@
   --color-os-muted:        #6a6a73;  /* tertiary text / placeholders */
   --color-os-green:        #9fe0a8;  /* "Active" status */
   --color-os-amber:        #f2b84b;
+  --color-os-red:          #ff6b6b;  /* status red — same read as --os-danger-ink */
 
   /* Inks & shadow that flip in light mode — see the `.light .os-shell` block.
      Defaults are the design's dark values, so dark mode is unchanged. */
@@ -1294,6 +1295,16 @@ html.os-shell {
 
   /* The "this field is required" mark. Pure #ff6b6b is a dark-surface red. */
   --os-danger-ink:       #ff6b6b;
+
+  /* The rail's active-subtab pill: how much of the area tint goes into the
+     wash. Light mode runs stronger — the same mix fades on a pale ground. */
+  --os-rail-pill-mix:    16%;
+
+  /* The section switcher's card wash: rest and hover shares of the area tone
+     mixed over the card. Light mode runs lighter — `--area` is the deep ink
+     there, and the dark shares read as a slab on white. */
+  --os-area-wash-mix:        9%;
+  --os-area-wash-mix-hover:  15%;
 }
 
 /* ── dali.os light mode ────────────────────────────────────
@@ -1319,23 +1330,19 @@ html.os-shell {
  * a saturation low enough to read as paper rather than as a tint. The ink is
  * the navy, not charcoal.
  *
- * And it is not three whites. In dark, the nav is *recessed* below the page
- * and the card sits *above* it — three planes you can see. Inverting that gave
- * a white nav beside a white card on an almost-white page, so the sidebar
- * stopped reading as a plane at all and the borderless cards lost their edges.
- * The order is restored instead of mirrored: nav below page below card, with
- * the card taking pure white as the one surface that earns it. That single
- * step is what puts the cards back — they carry no border and no shadow by
- * design, so their ground has to do the work. */
+ * The page ground is pure white and the planes invert: cards sit a quiet cool
+ * step DARKER than the page (white cards on a white page were
+ * indistinguishable, and tinting the page read as too opinionated). The
+ * recessed nav and the container hairlines draw the rest of the structure. */
 html.light,
 /* The shell's wrapper div re-declares the dark status tokens, so the light
    ones have to land on it too or every kanban column keeps its dark fill. */
 html.light .os-shell,
 .light {
 
-  --color-os-bg:           #e9eef3;  /* page — cool paper, deliberately not white */
-  --color-os-nav:          #dde5ed;  /* sidebar + top bar — the recessed frame */
-  --color-os-card:         #ffffff;  /* cards, wells, menus — the raised plane */
+  --color-os-bg:           #ffffff;  /* page — pure white */
+  --color-os-nav:          #eef1f5;  /* sidebar + top bar — the recessed frame */
+  --color-os-card:         #f3f6f9;  /* cards, menus — a cool step darker than the page */
   --color-os-card-hover:   #eaf3f8;  /* a wash toward the accent, not toward grey */
   --color-os-well:         #eaeff5;  /* inputs, nested rows */
   --color-os-container:    #ccd7e2;  /* borders, chips, active fill */
@@ -1347,6 +1354,7 @@ html.light .os-shell,
   --color-os-muted:        #78899a;  /* tertiary text / placeholders */
   --color-os-green:        #0f7a4d;  /* "Active" status */
   --color-os-amber:        #8f5400;
+  --color-os-red:          #c0362f;  /* status red — same read as --os-danger-ink */
   --color-os-fg:           #13293a;  /* primary ink = the brand's deep navy */
   --color-os-shadow:       rgba(19, 41, 58, 0.16);
   --color-os-add-bg:       #d9e2ec;  /* the add-pill fill — a step under the page */
@@ -1414,6 +1422,11 @@ html.light .os-shell,
 
   --os-danger-ink:       #c0362f;
 
+  --os-rail-pill-mix:    55%;
+
+  --os-area-wash-mix:        7%;
+  --os-area-wash-mix-hover:  11%;
+
   /* The domain chips invert rather than darken: on paper the plate is a pale
      wash of the hue and the ink is a deep shade of the same one. Carrying the
      dark fills over was what made a row of domains read as black slabs on a
@@ -1433,6 +1446,31 @@ html.light .os-shell,
   --os-role-lime-fill:    #e8f2c8;  --os-role-lime-ink:    #4d5a12;
   --os-role-indigo-fill:  #dfe0fb;  --os-role-indigo-ink:  #33377f;
   --os-role-sand-fill:    #f0e4d3;  --os-role-sand-ink:    #5f4726;
+}
+
+/* The active section's accent: the shell sets both halves of the area tone
+   inline (--area-tint / --area-ink) and the mode picks which one `--area`
+   means. The tints are chosen as ink on the dark nav and are far too pale to
+   read on white, so light resolves to the area's ink. */
+.os-shell {
+  --area: var(--area-tint);
+}
+html.light.os-shell,
+html.light .os-shell,
+.light.os-shell,
+.light .os-shell {
+  --area: var(--area-ink);
+}
+
+/* The section tiles (AreaTile) carry their own tone pair the same way —
+   they can show any area, not just the active one, so they can't lean on
+   `--area`. */
+[data-area-tile] {
+  --tile: var(--tile-tint);
+}
+html.light [data-area-tile],
+.light [data-area-tile] {
+  --tile: var(--tile-ink);
 }
 
 /* The nav is a plane, and on paper a plane wants an edge. In dark the tone
@@ -2145,12 +2183,20 @@ html.os-shell > body::-webkit-scrollbar-track {
   color: var(--color-os-bg);
 }
 
+/* One size down, for a toggle in a section's control row — mirrors
+   .os-add-btn--sm. */
+.os-edit-btn--sm {
+  padding: 4px 10px;
+  font-size: 12px;
+  gap: 5px;
+}
+
 /* The inline version, for an add control sitting in a section heading rather
    than a toolbar. */
 .os-add-btn--sm {
-  padding: 5px 12px;
+  padding: 4px 10px;
   font-size: 12px;
-  gap: 6px;
+  gap: 5px;
 }
 
 .os-btn-primary {
@@ -2175,6 +2221,22 @@ html.os-shell > body::-webkit-scrollbar-track {
   padding: 6px 14px;
   font-size: 13px;
   gap: 6px;
+}
+
+/* Mode-tinted modifier on .os-btn-primary: the area's light pastel as the
+   fill with its deep ink as the label — the kanban plate recipe. The pastel
+   (not the strong ink) carries the highlight in both modes, so one of these
+   per view reads as the page's action without the accent weight. */
+.os-btn-tint {
+  /* The tint at half strength over white: a pale wash, not a solid plate.
+     Hover steps toward the full tint. */
+  background: color-mix(in srgb, var(--mode-accent, var(--color-os-accent)) 45%, white);
+  /* A deep shade of the mode's own hue: the pastel fill is light in both
+     modes, and the plain ink is a step short of readable on it. */
+  color: color-mix(in srgb, var(--mode-accent-ink, #0f6e7d) 70%, black);
+}
+.os-btn-tint:hover {
+  background: color-mix(in srgb, var(--mode-accent, var(--color-os-accent)) 65%, white);
 }
 
 .os-btn-ghost {
@@ -2282,6 +2344,31 @@ html[data-v2].os-shell {
   --font-heading: var(--font-os-logo);
 }
 
+/* The page accent is the same pastel the sidebar mode wears — in light too,
+   not the deeper on-white ink: one highlight per mode, identical in both
+   themes. (This sits after the html.light token block, so it wins there.)
+   Modeless pages (home, calendar, a meeting opened from Attendance) have no
+   --mode-accent and fall back to the Lab blue instead of the old teal. */
+html[data-v2] .os-shell,
+html[data-v2].os-shell {
+  /* A step lighter than the raw mode tint: 70% tint over white, hover lighter
+     still. */
+  --color-os-accent: color-mix(in srgb, var(--mode-accent, #8fb6f2) 70%, white);
+  --color-os-accent-hover: color-mix(in srgb, var(--mode-accent, #8fb6f2) 55%, white);
+  /* The accent's readable half, for text: the wash above is a ground, too
+     pale to read as ink on light. Tint on dark, deep ink on light — the same
+     per-mode read --color-os-accent had before this override. */
+  --os-accent-ink: var(--mode-accent, #8fb6f2);
+}
+html.light[data-v2] .os-shell,
+html.light[data-v2].os-shell {
+  --os-accent-ink: var(--mode-accent-ink, #2f5fb5);
+}
+/* Text set in the accent (See all, inline links) reads from the ink half. */
+html[data-v2] .os-shell .text-os-accent {
+  color: var(--os-accent-ink);
+}
+
 /* Page/section titles written as literal classes (the useOsChrome hook gates
    its own strings): the old 36px heading dress renders as the v2 title — the
    text-2xl size, bold, in the shell body face. Spared: responsive display
@@ -2296,30 +2383,64 @@ html[data-v2] .font-heading.text-\[19px\] {
   font-size: var(--text-base);
   line-height: var(--tw-leading, var(--text-base--line-height));
 }
+/* Hero titles written at a literal 32px (project, member profile) take the
+   same v2 title dress as the 36px page headings above. */
+html[data-v2] .font-heading.text-\[32px\] {
+  font-family: var(--font-os);
+  font-size: var(--text-2xl);
+  line-height: var(--tw-leading, var(--text-2xl--line-height));
+  font-weight: 700;
+}
 
 /* Controls, one notch down and squared to the 8px corner. */
 html[data-v2] .os-add-btn {
-  padding: 8px 16px;
+  padding: 6px 14px;
   border-radius: 8px;
   font-size: 13px;
 }
 html[data-v2] .os-edit-btn {
-  padding: 8px 16px;
+  padding: 6px 14px;
   border-radius: 8px;
   font-size: 13px;
 }
 html[data-v2] .os-btn-primary {
-  padding: 8px 18px;
+  padding: 6px 16px;
   border-radius: 8px;
   font-size: 13px;
 }
 html[data-v2] .os-btn-primary--sm {
   font-size: 12px;
 }
+/* The --sm variants, restated at this layer's specificity so the full-size v2
+   dress above doesn't swallow them. */
+html[data-v2] .os-add-btn--sm,
+html[data-v2] .os-edit-btn--sm {
+  padding: 4px 10px;
+  font-size: 12px;
+}
 html[data-v2] .os-btn-ghost {
-  padding: 8px 16px;
+  padding: 6px 14px;
   border-radius: 8px;
   font-size: 13px;
+}
+/* The segmented pill's md segments (section tab bars), one notch down. */
+html[data-v2] .os-seg-item-md {
+  padding: 6px 14px;
+  font-size: 13px;
+}
+/* …and the whole switcher squares from a capsule to the control corner, like
+   the sidebar rows. */
+html[data-v2] .os-seg-track {
+  border-radius: 10px;
+}
+html[data-v2] .os-seg-item {
+  border-radius: 8px;
+}
+/* The active segment's count: the v2 accent is a pale wash the os-bg numeral
+   disappears into (white on light blue), so the chip flips to ink-on-ground. */
+html[data-v2] .os-seg-count--active {
+  background: var(--color-foreground);
+  color: var(--color-os-bg);
 }
 html[data-v2] .os-type-badge {
   border-radius: 6px;
@@ -2348,6 +2469,22 @@ html[data-v2] .os-shell .dali-btn {
 }
 html[data-v2] .os-shell .dali-btn--size-md {
   height: 36px;
+}
+/* Filled-accent buttons sit on the pale wash in both modes, so the os-bg
+   numeral (white in light) vanishes — the label flips to a near-black ink
+   warmed by the area's own hue. */
+html[data-v2] .os-shell .dali-btn--primary {
+  color: color-mix(in srgb, var(--mode-accent-ink, #2f5fb5) 55%, black);
+}
+/* Task/notification card CTAs: back on the 32px control height (the min-h-9
+   they carry is the pre-redesign touch size). */
+html[data-v2] .os-shell .os-cta {
+  min-height: 32px;
+  padding-inline: 12px;
+}
+/* Task/notification cards, one notch tighter. */
+html[data-v2] .os-shell .os-task-card {
+  padding: 12px 14px;
 }
 /* The sidebar rows' soft white highlight, shared by every hover state. */
 html[data-v2] .os-shell .dali-btn--secondary:hover {

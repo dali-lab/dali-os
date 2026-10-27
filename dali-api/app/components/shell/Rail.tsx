@@ -101,7 +101,12 @@ function QuickItem({
         active ? 'bg-os-hover-strong text-sm font-medium text-foreground' : 'text-os-grey hover:bg-os-hover hover:text-foreground',
       )}
     >
-      <Icon className={cn('h-[18px] w-[18px] shrink-0', ICON_MOTION, 'group-hover:scale-110')} aria-hidden />
+      <span className={cn('relative flex shrink-0', ICON_MOTION, 'group-hover:scale-110')}>
+        <Icon strokeWidth={1.5} className="h-[18px] w-[18px]" aria-hidden />
+        {dot && (
+          <span className="absolute -right-0.5 -top-0.5 h-[7px] w-[7px] rounded-full bg-os-accent ring-2 ring-os-nav" aria-hidden />
+        )}
+      </span>
       {/* Always mounted so the pill can morph open and closed. The 0fr↔1fr
           grid track animates to the label's exact width — a max-width tween
           overshoots and reads as a pause, then a snap. */}
@@ -116,7 +121,6 @@ function QuickItem({
           <span className="min-w-0 overflow-hidden whitespace-nowrap">{label}</span>
         </span>
       )}
-      {dot && <span className="absolute right-[7px] top-[6px] h-[7px] w-[7px] rounded-full bg-os-accent ring-2 ring-os-nav" aria-hidden />}
     </button>
   )
   // Always the same tree shape: toggling the wrapper with the active state
@@ -289,7 +293,7 @@ export function Rail({
         aria-label={bellLabel}
         className={cn(ICON_BUTTON, compact ? 'h-9 w-9' : 'h-[30px] w-[30px]')}
       >
-        <Bell className={cn('h-[18px] w-[18px]', ICON_MOTION, 'group-hover:scale-110')} />
+        <Bell strokeWidth={1.5} className={cn('h-[18px] w-[18px]', ICON_MOTION, 'group-hover:scale-110')} />
         {taskCount > 0 && (
           <span className="absolute right-px top-0.5 flex h-[14px] min-w-[14px] items-center justify-center rounded-full bg-[var(--os-danger-ink)] px-[3px] text-[9px] font-extrabold leading-none text-white">
             {badgeLabel(taskCount)}
@@ -307,7 +311,7 @@ export function Rail({
         aria-label="Hide sidebar"
         className={cn(ICON_BUTTON, compact ? 'h-9 w-9' : 'h-7 w-7')}
       >
-        <PanelLeft className="h-[18px] w-[18px]" />
+        <PanelLeft strokeWidth={1.5} className="h-[18px] w-[18px]" />
       </button>
     </Tooltip>
   ) : null
@@ -434,10 +438,8 @@ export function Rail({
                       className={cn(
                         'group flex h-9 shrink-0 items-center rounded-lg border text-left text-sm font-semibold text-foreground outline-none transition-[background-color,border-color,transform] duration-150 ease-out active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-os-accent/60',
                         compact ? 'w-9 justify-center' : 'w-full gap-2.5 pl-[9px] pr-2',
-                        'bg-[color-mix(in_srgb,var(--area)_9%,var(--color-os-card))] hover:bg-[color-mix(in_srgb,var(--area)_15%,var(--color-os-card))]',
-                        areaMenuOpen
-                          ? 'border-[color-mix(in_srgb,var(--area)_60%,transparent)]'
-                          : 'border-[color-mix(in_srgb,var(--area)_30%,transparent)] hover:border-[color-mix(in_srgb,var(--area)_50%,transparent)]',
+                        'bg-[color-mix(in_srgb,var(--area)_var(--os-area-wash-mix,9%),var(--color-os-card))] hover:bg-[color-mix(in_srgb,var(--area)_var(--os-area-wash-mix-hover,15%),var(--color-os-card))]',
+                        'border-[var(--area)]',
                       )}
                     >
                       <span className={cn('flex shrink-0', ICON_MOTION, 'group-hover:scale-105')}>
@@ -511,7 +513,12 @@ export function Rail({
                       aria-hidden
                       style={pill}
                       className={cn(
-                        'absolute rounded-lg bg-[color-mix(in_srgb,var(--area)_16%,transparent)]',
+                        // The wash mixes from the pastel tint, not the
+                        // mode-resolved `--area`: in light mode the ink makes
+                        // a muddy slab, while the tint (Community's light
+                        // green, Lab's light blue) reads as the highlight. The
+                        // notch, icon and text stay on `--area` for contrast.
+                        'absolute rounded-lg bg-[color-mix(in_srgb,var(--area-tint)_var(--os-rail-pill-mix,16%),transparent)]',
                         compact ? 'left-1/2 w-9 -translate-x-1/2' : 'left-0 right-1.5',
                         animated &&
                           'transition-[top,height] duration-[220ms] ease-[cubic-bezier(0.23,1,0.32,1)] motion-reduce:transition-none',
@@ -546,6 +553,7 @@ export function Rail({
                           />
                         )}
                         <t.icon
+                          strokeWidth={1.5}
                           className={cn(
                             'relative h-[18px] w-[18px] shrink-0 transition-[transform,color] duration-150 ease-out',
                             active ? 'text-[var(--area)]' : 'group-hover:text-[var(--area)]',
@@ -616,9 +624,9 @@ export function Rail({
             >
               <span className={cn('relative flex shrink-0', ICON_MOTION, 'group-hover:scale-105')}>
                 {photoUrl ? (
-                  <img src={photoUrl} alt="" className="h-6 w-6 rounded-md object-cover" />
+                  <img src={photoUrl} alt="" className="h-6 w-6 rounded-full object-cover" />
                 ) : (
-                  <span className="flex h-6 w-6 items-center justify-center rounded-md bg-os-accent text-[10px] font-extrabold text-os-bg">
+                  <span className="flex h-6 w-6 items-center justify-center rounded-full bg-os-accent text-[10px] font-extrabold text-os-bg">
                     {initials}
                   </span>
                 )}

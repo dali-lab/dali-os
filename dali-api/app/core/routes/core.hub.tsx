@@ -4,7 +4,7 @@
 import { useEffect, useState } from "react";
 import { redirect, useFetcher, useFetchers, useSearchParams, useSubmit } from "react-router";
 import type { DragEndEvent } from "@dnd-kit/core";
-import { Pin, Plus, Trash2 } from "lucide-react";
+import { Layers, Pin, Plus, Trash2 } from "lucide-react";
 import { z } from "zod";
 import type { Route } from "./+types/core.hub";
 import { prisma } from "~/lib/db";
@@ -18,12 +18,10 @@ import { fullName, SEASON_NAMES } from "~/lib/display";
 import { cn } from "~/lib/cn";
 import { coreHandle } from "~/core/coreNav";
 import {
-  ALL_LAB,
   LAST_MILESTONE_WEEK,
   MILESTONE_SEASONS,
   MILESTONE_WEEKS,
   dropOrder,
-  matchesDomainFilter,
   termWeek,
   weekLabel,
   type MilestoneSeason,
@@ -39,7 +37,11 @@ import {
 import { Modal, ModalFooter, ModalHeader } from "~/components/Modal";
 import { IconButton } from "~/components/ui/IconButton";
 import { MultiSelect, Select } from "~/components/ui/floating";
-import { filterPillClass } from "~/components/ui/floating/styles";
+import {
+  ColumnFilters,
+  useColumnFilters,
+  type FilterColumn,
+} from "~/projects/components/ColumnFilters";
 import { useDialog } from "~/components/ui/dialog";
 import { useToast } from "~/components/ui/toast";
 
@@ -269,11 +271,16 @@ type Editing = Milestone | { id: null; week: number };
 const SEASON_TABS = MILESTONE_SEASONS.map((s) => ({ key: s, label: SEASON_NAMES[s]! }));
 const columnId = (w: number) => `week-${w}`;
 
+// The filter bar's one column (the People page's advanced filter). A milestone
+// with no domains is lab-wide, which filters as its own "All lab" value.
+const ALL_LAB_LABEL = "All lab";
+const FILTER_COLUMNS: FilterColumn[] = [{ key: "domain", label: "Domain", icon: Layers }];
+
 export default function CoreMilestones({ loaderData }: Route.ComponentProps) {
   const { milestones, domains, coreMembers, current } = loaderData;
   const chrome = useOsChrome();
   const [params, setParams] = useSearchParams();
-  const [filter, setFilter] = useState<string[]>([]);
+  const columnFilters = useColumnFilters(FILTER_COLUMNS);
   const [editing, setEditing] = useState<Editing | null>(null);
   const submit = useSubmit();
 
@@ -305,9 +312,14 @@ export default function CoreMilestones({ loaderData }: Route.ComponentProps) {
       week: pendingWeek.get(m.id) ?? m.week,
       position: pendingPosition.get(m.id) ?? m.position,
       pinned: pendingPinned.get(m.id) ?? m.pinned,
+      cells: {
+        domain: m.domainIds.length
+          ? m.domainIds.map((id) => domainName.get(id) ?? "Unknown")
+          : ALL_LAB_LABEL,
+      },
     }))
     .sort((x, y) => x.position - y.position);
-  const visible = inSeason.filter((m) => matchesDomainFilter(m.domainIds, filter));
+  const visible = inSeason.filter((m) => columnFilters.predicate(m));
 
   const columns: KanbanColumn<Milestone>[] = MILESTONE_WEEKS.map((w) => {
     const cards = visible.filter((m) => m.week === w);
@@ -445,19 +457,14 @@ export default function CoreMilestones({ loaderData }: Route.ComponentProps) {
         onSelect={(key) => setParams({ term: key }, { replace: true })}
       />
 
-      <div className="w-full sm:w-64">
-        <MultiSelect
-          values={filter}
-          options={[
-            { value: ALL_LAB, label: "All lab" },
-            ...domains.map((d) => ({ value: d.id, label: d.name })),
-          ]}
-          onChange={setFilter}
-          ariaLabel="Filter by domain"
-          placeholder="All domains"
-          buttonClassName={cn(filterPillClass(), "w-full")}
-        />
-      </div>
+      <ColumnFilters
+        columns={FILTER_COLUMNS}
+        rows={inSeason}
+        filters={columnFilters.filters}
+        onChange={columnFilters.setFilters}
+        shownCount={visible.length}
+        noun={["milestone", "milestones"]}
+      />
 
       <KanbanBoard<Milestone>
         id="core-milestones-board"

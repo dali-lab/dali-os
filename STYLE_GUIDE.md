@@ -15,6 +15,8 @@ Where it lives:
 | `dali-api/app/components/os-chrome.ts` | `useOsChrome()`, the page dress as class strings, and `modalCardClass(size)` |
 | `dali-api/app/components/os-page.tsx` | Hub-page parts: `OsTabBar`, `DetailRow`, `DetailEditRow`, `OS_DETAIL_CARD`, `HeroClusterLabel` |
 | `dali-api/app/components/ui/floating/styles.ts` | Popover, menu, select and filter-pill dress (`OS_SURFACE_CLASS`, `OS_PANEL_CLASS`, `OS_FILTER_PILL_CLASS`) |
+| `dali-api/app/components/shell/` | The sidebar: `Rail`, `AreaTile`, sizing (`rail-model.ts`, `useSidebarSize`) |
+| `dali-api/app/lib/nav-areas.ts` | The nav sections and their area tones (`AREA_TONES`, `areaTint`, `areaInk`) |
 | `dali-api/app/components/ui/` | Shared primitives: `Button`, `IconButton`, `SearchInput`, `Checkbox`, `Radio`, `Toggle`, `DateField`, `TimeField`, `dialog`, `toast`, `floating/*` |
 
 ---
@@ -24,8 +26,9 @@ Where it lives:
 - **Rounded.** Cards and dialogs take a 24px corner, items take 12px, fields
   10px, and every button and chip is a full pill.
 - **Blue.** The light palette sits on a cool ~205° axis between DALI teal and
-  navy. Grounds read as paper, ink is the brand's deep navy, and there is
-  **one** accent (`os-accent`). Don't bring in coral or teal to mean a second
+  navy. The page ground is pure white with cards a quiet cool step darker; the
+  wells, hairlines and hovers keep the cool cast, ink is the brand's deep
+  navy, and there is **one** accent (`os-accent`). Don't bring in coral or teal to mean a second
   thing; surfaces converted from the old brand dress collapse both to
   `os-accent`.
 - **Big.** Page titles are 4xl, section titles 19px, body and controls 14px.
@@ -46,14 +49,17 @@ onto them (`bg-card`, `text-foreground`, `border-border`,
 
 ### 2.1 Surface ramp
 
-Three visible planes: the nav is recessed below the page, and the card sits
-above it.
+Three visible planes in both modes: the nav is recessed below the page. In
+dark mode the card sits above the page; in light mode the page is pure white
+and the planes invert — a card is a quiet cool step **darker** than the page
+(white cards on a white page were indistinguishable), and the nav keeps a
+hairline at its seam.
 
 | Token | Light | Dark | Use |
 |---|---|---|---|
-| `os-nav` | `#dde5ed` | `#24242a` | Sidebar and top bar |
-| `os-bg` | `#e9eef3` | `#282830` | Page ground |
-| `os-card` | `#ffffff` | `#2b2b36` | Cards, menus, dialogs |
+| `os-nav` | `#eef1f5` | `#24242a` | Sidebar and top bar |
+| `os-bg` | `#ffffff` | `#282830` | Page ground |
+| `os-card` | `#f3f6f9` | `#2b2b36` | Cards, menus, dialogs |
 | `os-card-hover` | `#eaf3f8` | `#323240` | Hovered card |
 | `os-well` | `#eaeff5` | `#26262f` | Inputs, nested rows |
 | `os-container` | `#ccd7e2` | `#3f3f48` | Hairlines, chips, active fill |
@@ -94,6 +100,37 @@ The design honors the Appearance setting (`html.light` / `html.dark`, see
 `lib/theme.ts`). The light block in `app.css` redefines every `--color-os-*`
 variable, so anything built from tokens works in both modes for free. Check
 every new surface in both.
+
+### 2.6 Area tones
+
+Each nav section carries a two-half tone defined in `AREA_TONES`
+(`app/lib/nav-areas.ts`): a pale **tint** that reads as ink on the dark nav,
+and a deep **ink** for light mode (the tints are far too pale to read on
+white).
+
+| Area | Tint (dark) | Ink (light) |
+|---|---|---|
+| Projects | `#8FB6F2` | `#2F5FB5` |
+| Community | `#80D5CD` | `#0f6e7d` |
+| Education | `#FFD461` | `#8F6500` |
+| Hiring | `#C9B2F5` | `#6B4AC2` |
+| Core | `#FF8B81` | `#C13D33` |
+| Admin | `#bababa` | `#4d5c69` |
+
+The shell sets both halves inline (`--area-tint` / `--area-ink`) and `app.css`
+resolves `--area` per mode, so anything inside the shell colors from
+`var(--area)` and gets the right half for free. `AreaTile` carries its own pair
+the same way (`--tile-tint` / `--tile-ink` → `--tile`) because a tile can show
+any area, not just the active one.
+
+Washes of the area tone are `color-mix` with a mode-tuned share, never a fixed
+alpha: `--os-rail-pill-mix` (the active-subtab pill, 16% dark / 24% light) and
+`--os-area-wash-mix` / `--os-area-wash-mix-hover` (the section switcher card,
+9%/15% dark, 7%/11% light). Light runs the pill stronger (the mix fades on a
+pale ground) and the card wash lighter (`--area` is the deep ink there, and the
+dark shares read as a slab on white). Never hardcode an area hex in a
+component; read it through `var(--area)`, `AreaTile`, or `areaTint()` /
+`areaInk()`.
 
 ---
 
@@ -266,7 +303,49 @@ in-progress work, and clearing a configured binding.
 - Linked item rows: `.os-item-list` of `.os-item-row`.
 - Page tabs: `OsTabBar`. The open tab is a filled, top-rounded plate that
   meets the rule below it, not an underline.
-- Sidebar sub-tab: `.os-subtab-active` (container fill with an accent stripe).
+- `.os-subtab-active` (container fill with an accent stripe) marks the active
+  item in the mobile nav drawer and page-doc outlines. The desktop rail uses
+  the sliding area pill instead (§6.7).
+
+### 6.7 Sidebar (the rail)
+
+The desktop sidebar is `Rail` (`app/components/shell/Rail.tsx`), tinted by the
+active section's area tone (§2.6).
+
+- **Geometry.** 264px expanded, 68px compact — an icon column the rail drops
+  to automatically under 1280px, with every row's label becoming a
+  right-placed tooltip. The whole rail renders one notch above the app's 15px
+  grid via `.os-rail-zoom` (zoom 16/15, mirrored by `RAIL_ZOOM` in
+  `rail-model.ts`). The rail can also be hidden entirely; only the expand
+  button remains in the tab strip.
+- **Icons.** 18px lucide at `strokeWidth={1.5}` — the rail's lighter stroke is
+  deliberate and stays inside the rail; everywhere else keeps the default.
+- **Rows.** 32px tall with a `rounded-lg` corner and 14px type (36px squares
+  when compact). Inactive rows are grey and wash with `bg-os-hover` on hover;
+  active rows carry the foreground ink.
+- **Quick items** (Calendar, Email, pinned pages) are icon-only until active;
+  the active row's label morphs open with a 0fr↔1fr grid-track animation.
+  Unread state is a 7px accent dot on the icon's top-right corner, ringed in
+  `os-nav` — not a dot floating in the row.
+- **Search** is a bordered card pill (`os-card` fill, container hairline) with
+  the ⌘K kbd plate at its right edge.
+- **Section switcher.** A card washed with the area tone
+  (`color-mix(var(--area) var(--os-area-wash-mix), var(--color-os-card))`,
+  hover share `--os-area-wash-mix-hover`), bordered in `var(--area)`, led by
+  the section's `AreaTile`.
+- **Subtabs.** One sliding pill marks the active row:
+  `color-mix(var(--area) var(--os-rail-pill-mix), transparent)` with a 3px
+  round-ended `var(--area)` stripe on its left edge, animating between rows at
+  220ms. Row icons tint to `var(--area)` when active or hovered; labels stay
+  in the ink.
+- **User row.** The avatar is a circle, like every avatar (§6.8).
+
+### 6.8 Avatars
+
+People are circles. `Avatar`, `ProfilePhotoAvatar`, the `PhotoUploadField`
+preview and the rail's user row all use `rounded-full` — never a rounded
+square for a person. Initials fallbacks keep the same circle with the tinted
+fill.
 
 ---
 
@@ -274,7 +353,9 @@ in-progress work, and clearing a configured binding.
 
 `lucide-react` line icons. 16px in controls (`chrome.actionIcon`), 17px in
 detail rows (`OS_DETAIL_ICON`), 14px in eyebrows (`chrome.headingIcon`). Icons
-are monochrome grey (`text-os-grey`) and go to `text-foreground` on hover.
+are monochrome grey (`text-os-grey`) and go to `text-foreground` on hover. The
+sidebar is the exception twice over: its icons run 18px at `strokeWidth={1.5}`
+(§6.7), and its subtab icons tint to the area tone.
 
 ---
 

@@ -85,6 +85,7 @@ import { RailEdgeHandle } from '~/components/shell/RailEdgeHandle'
 import { useSidebarSize } from '~/components/shell/useSidebarSize'
 import { userMenuEntries } from '~/components/shell/rail-model'
 import { PageBar } from '~/components/shell/PageBar'
+import { DockedNavigationProgress } from '~/components/NavigationProgress'
 import { PageBarSlotProvider, useShellHeaderHeight } from '~/components/shell/page-bar-slot'
 
 interface LayoutOSProps {
@@ -860,10 +861,10 @@ export function LayoutOS({
             seeAllProps.onClick(e)
             closeBellPanel()
           }}
-          className="inline-flex items-center gap-1.5 rounded-[10px] px-2.5 py-2 text-[13.5px] font-bold text-os-accent hover:bg-os-container"
+          className="inline-flex items-center gap-1.5 rounded-[10px] px-2.5 py-2 text-[13.5px] font-semibold text-os-accent hover:bg-os-container"
         >
           See all
-          <ArrowRight className="h-[15px] w-[15px]" aria-hidden />
+          <ArrowRight strokeWidth={1.5} className="h-[15px] w-[15px]" aria-hidden />
         </button>
       }
     />
@@ -984,7 +985,7 @@ export function LayoutOS({
         aria-label="Show sidebar"
         className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-os-grey transition-colors hover:bg-os-hover hover:text-foreground"
       >
-        <PanelLeft className="h-[18px] w-[18px]" />
+        <PanelLeft strokeWidth={1.5} className="h-[18px] w-[18px]" />
       </button>
     </Tooltip>
   )
@@ -1031,10 +1032,13 @@ export function LayoutOS({
   return (
     <div
       // `--area` carries the active section's accent: the rail's active row,
-      // its icons and the section switcher all tint from it.
+      // its icons and the section switcher all tint from it. Both halves of
+      // the tone go up; app.css resolves `--area` per mode (tint on the dark
+      // nav, ink on light — the tints are too pale to read on white).
       style={
         {
-          '--area': areaTint(activeArea?.key),
+          '--area-tint': areaTint(activeArea?.key),
+          '--area-ink': areaInk(activeArea?.key),
           // The page accent (--color-os-accent resolves from these) follows the
           // page's own mode — v2 design only. Keyed on routeArea, not
           // activeArea: a modeless page (home, calendar) keeps the default
@@ -1179,7 +1183,7 @@ export function LayoutOS({
         {shellV2 ? (
           // Sticky because the page bar now carries the document toolbar,
           // which used to stick on its own (.doc-topbar).
-          <div ref={shellHeaderRef} className="sticky top-14 z-20 shrink-0 bg-os-bg md:top-0">
+          <div ref={shellHeaderRef} className="relative sticky top-14 z-20 shrink-0 bg-os-bg md:top-0">
             {showTabs && (
               <div className="hidden md:block">
                 <DesktopTabStrip leading={hideRail ? railToggle : undefined} initial={tabsSnapshot} />
@@ -1194,6 +1198,7 @@ export function LayoutOS({
               star={pageStar}
               onCopyLink={() => void copyCurrentPageLink()}
             />
+            {showTabs && <DockedNavigationProgress />}
           </div>
         ) : (
           <>
