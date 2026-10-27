@@ -5,6 +5,9 @@ import {
   isSampleInScope,
   keepLinkedInOrg,
   neonCostSummary,
+  neonDailyUsage,
+  flyDailyUsage,
+  flyDayTotals,
   orgResourceOptions,
   flyAppOptions,
   knownOrgs,
@@ -190,6 +193,18 @@ describe("projectUsage", () => {
     expect(usage[0].current).toBe(150);
   });
 
+  it("adds up this month's daily rows when the monthly row is missing", () => {
+    const usage = projectUsage(
+      [
+        sample({ scopeType: SCOPE.neonDaily, at: new Date("2026-09-30T00:00:00Z"), value: 1000 }),
+        sample({ scopeType: SCOPE.neonDaily, at: new Date("2026-10-01T00:00:00Z"), value: 10 }),
+        sample({ scopeType: SCOPE.neonDaily, at: new Date("2026-10-24T00:00:00Z"), value: 20 }),
+      ],
+      NOW,
+    );
+    expect(usage[0].current).toBe(30);
+  });
+
   it("ignores last month's total for the headline", () => {
     const usage = projectUsage(
       [sample({ scopeType: SCOPE.neonDaily, value: 1 }), sample({ scopeType: SCOPE.neonMonth, at: SEP, value: 999 })],
@@ -293,12 +308,46 @@ describe("neonCostSummary", () => {
     expect(neonCostSummary([month("np-a", "compute_unit_seconds", 3600)], "launch", NOW)!.lastMonth).toBeNull();
   });
 
-  it("ignores daily and branch rows so usage isn't counted twice", () => {
+  const day = (scopeId: string, iso: string, value: number) =>
+    sample({ scopeType: SCOPE.neonDaily, scopeId, at: new Date(iso), value });
+
+  it("prefers a database's monthly rows over its daily rows so usage isn't counted twice", () => {
+    const cost = neonCostSummary(
+      [month("np-a", "compute_unit_seconds", 10 * 3600), day("np-a", "2026-10-24T00:00:00Z", 1e9)],
+      "launch",
+      NOW,
+    )!;
+    expect(cost.thisMonth).toBeCloseTo(1.06);
+  });
+
+  it("estimates from the daily rows for a database with no monthly rows", () => {
     const cost = neonCostSummary(
       [
-        sample({ scopeType: SCOPE.neonDaily, value: 1e9 }),
-        sample({ scopeType: SCOPE.neonBranchMonth, scopeId: "np-a:br", at: OCT, value: 1e9 }),
+        month("np-a", "compute_unit_seconds", 10 * 3600),
+        day("np-c", "2026-10-01T00:00:00Z", 5 * 3600),
+        day("np-c", "2026-10-24T00:00:00Z", 15 * 3600),
       ],
+      "launch",
+      NOW,
+    )!;
+    expect(cost.byProject["np-a"]).toBeCloseTo(1.06);
+    expect(cost.byProject["np-c"]).toBeCloseTo(2.12);
+    expect(cost.thisMonth).toBeCloseTo(3.18);
+  });
+
+  it("estimates last month from its daily rows when it has no monthly rows", () => {
+    const cost = neonCostSummary(
+      [day("np-a", "2026-09-01T00:00:00Z", 40 * 3600), day("np-a", "2026-09-30T00:00:00Z", 60 * 3600)],
+      "launch",
+      NOW,
+    )!;
+    expect(cost.thisMonth).toBe(0);
+    expect(cost.lastMonth).toBeCloseTo(10.6);
+  });
+
+  it("ignores branch rows so usage isn't counted twice", () => {
+    const cost = neonCostSummary(
+      [sample({ scopeType: SCOPE.neonBranchMonth, scopeId: "np-a:br", at: OCT, value: 1e9 })],
       "launch",
       NOW,
     )!;
@@ -307,7 +356,10 @@ describe("neonCostSummary", () => {
 
   it("ignores months older than last month", () => {
     const cost = neonCostSummary(
-      [month("np-a", "compute_unit_seconds", 1e9, new Date("2026-08-01T00:00:00Z"))],
+      [
+        month("np-a", "compute_unit_seconds", 1e9, new Date("2026-08-01T00:00:00Z")),
+        day("np-a", "2026-08-31T00:00:00Z", 1e9),
+      ],
       "launch",
       NOW,
     )!;
@@ -425,5 +477,90 @@ describe("unlinkedResources", () => {
 
   it("is empty when everything is linked", () => {
     expect(unlinkedResources(orgs, ["web", "dali-api-pr-9", "taken"])).toEqual([]);
+  });
+});
+
+describe("neonDailyUsage", () => {
+  const day = (iso: string, metric: string, value: number, scopeId = "np-a") =>
+    sample({ scopeType: SCOPE.neonDaily, scopeId, metric, value, at: new Date(iso) });
+
+  it("sums compute and data out per day across databases, oldest first", () => {
+    expect(
+      neonDailyUsage([
+        day("2026-10-25T00:00:00Z", "compute_unit_seconds", 10),
+        day("2026-10-24T00:00:00Z", "compute_unit_seconds", 5),
+        day("2026-10-24T00:00:00Z", "compute_unit_seconds", 7, "np-c"),
+        day("2026-10-24T00:00:00Z", "public_network_transfer_bytes", 100),
+      ]),
+    ).toEqual([
+      { day: "2026-10-24", compute_unit_seconds: 12, public_network_transfer_bytes: 100 },
+      { day: "2026-10-25", compute_unit_seconds: 10, public_network_transfer_bytes: 0 },
+    ]);
+  });
+
+  it("leaves out other metrics and monthly, branch and Fly rows", () => {
+    expect(
+      neonDailyUsage([
+        day("2026-10-24T00:00:00Z", "root_branch_bytes_month", 1e9),
+        sample({ scopeType: SCOPE.neonMonth, at: OCT, value: 1e9 }),
+        sample({ scopeType: SCOPE.neonBranchMonth, scopeId: "np-a:br", at: OCT, value: 1e9 }),
+        sample({ provider: "fly", scopeType: SCOPE.flyApp, scopeId: "web", metric: "egress_bytes", value: 1e9 }),
+      ]),
+    ).toEqual([]);
+  });
+});
+
+describe("flyDailyUsage", () => {
+  const fly = (app: string, iso: string, metric: string, value: number, scopeType: string = SCOPE.flyDaily) =>
+    sample({ provider: "fly", scopeType, scopeId: app, metric, value, at: new Date(iso) });
+
+  it("collects one row per day and app, oldest first", () => {
+    expect(
+      flyDailyUsage([
+        fly("web", "2026-10-25T00:00:00Z", "requests", 10),
+        fly("web", "2026-10-24T00:00:00Z", "requests", 7),
+        fly("web", "2026-10-24T00:00:00Z", "errors_5xx", 1),
+        fly("web", "2026-10-24T00:00:00Z", "p95_ms", 300),
+        fly("api", "2026-10-24T00:00:00Z", "memory_peak_bytes", 5e8),
+      ]),
+    ).toEqual([
+      { day: "2026-10-24", app: "api", requests: 0, errors_5xx: 0, p95_ms: null, memory_peak_bytes: 5e8 },
+      { day: "2026-10-24", app: "web", requests: 7, errors_5xx: 1, p95_ms: 300, memory_peak_bytes: null },
+      { day: "2026-10-25", app: "web", requests: 10, errors_5xx: 0, p95_ms: null, memory_peak_bytes: null },
+    ]);
+  });
+
+  it("leaves out hourly Fly rows and Neon rows", () => {
+    expect(
+      flyDailyUsage([
+        fly("web", "2026-10-24T05:00:00Z", "egress_bytes", 10, SCOPE.flyApp),
+        sample({ scopeType: SCOPE.neonDaily }),
+      ]),
+    ).toEqual([]);
+  });
+});
+
+describe("flyDayTotals", () => {
+  const row = (app: string, requests: number, p95: number | null, mem: number | null, day = "2026-10-24") => ({
+    day,
+    app,
+    requests,
+    errors_5xx: requests / 100,
+    p95_ms: p95,
+    memory_peak_bytes: mem,
+  });
+  const rows = [row("web", 1000, 300, 5e8), row("api", 200, 900, null), row("web", 50, null, null, "2026-10-25")];
+
+  it("adds requests, errors and memory across apps and keeps the slowest p95", () => {
+    expect(flyDayTotals(rows, null)).toEqual([
+      { day: "2026-10-24", requests: 1200, errors_5xx: 12, p95_ms: 900, memory_peak_bytes: 5e8 },
+      { day: "2026-10-25", requests: 50, errors_5xx: 0.5, p95_ms: null, memory_peak_bytes: null },
+    ]);
+  });
+
+  it("narrows to one app", () => {
+    expect(flyDayTotals(rows, "api")).toEqual([
+      { day: "2026-10-24", requests: 200, errors_5xx: 2, p95_ms: 900, memory_peak_bytes: null },
+    ]);
   });
 });

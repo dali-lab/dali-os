@@ -620,9 +620,14 @@ function CreateGroupForm({
                 <button
                   key={m.id}
                   type="button"
-                  onClick={() =>
-                    setSelected(isSel ? selected.filter((s) => s !== m.id) : [...selected, m.id])
-                  }
+                  onClick={() => {
+                    if (isSel) {
+                      setSelected(selected.filter((s) => s !== m.id));
+                    } else {
+                      setSelected([...selected, m.id]);
+                      setQuery("");
+                    }
+                  }}
                   className={`w-full text-left px-3 py-1.5 text-sm hover:bg-muted/50 flex justify-between items-center ${
                     isSel ? "bg-muted/30" : ""
                   }`}

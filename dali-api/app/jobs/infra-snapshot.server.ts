@@ -16,7 +16,13 @@ import {
   listEnabledInfraProjectCreds,
   type InfraProjectCreds,
 } from "~/lib/infra/project-infra.server";
-import { getFlyEgressByApp, getFlyInventory, getFlyMachineHoursByApp } from "~/lib/infra/fly.server";
+import {
+  getFlyDayByApp,
+  getFlyEgressByApp,
+  getFlyInventory,
+  getFlyMachineHoursByApp,
+  type FlyDailyMetric,
+} from "~/lib/infra/fly.server";
 import {
   getConsumption,
   getNeonInventory,
@@ -39,47 +45,79 @@ type UsageRow = {
 
 const DAY_MS = 86_400_000;
 const NEON_DAILY_DAYS = 60;
+const FLY_DAILY_DAYS = 12;
 
 function startOfUtcDay(d: Date): Date {
   return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
 }
 
+function isFirstRunOfDay(ctx: JobContext): boolean {
+  return !ctx.lastSuccessAt || startOfUtcDay(ctx.lastSuccessAt).getTime() !== startOfUtcDay(ctx.now).getTime();
+}
+
+// Every day Fly still has on the first run of a UTC day, then just yesterday
+// (to settle it) and today on later runs.
+export function flyDailyDays(ctx: JobContext): Date[] {
+  const today = startOfUtcDay(ctx.now).getTime();
+  const count = isFirstRunOfDay(ctx) ? FLY_DAILY_DAYS : 2;
+  return Array.from({ length: count }, (_, i) => new Date(today - (count - 1 - i) * DAY_MS));
+}
+
 function neonDailyFrom(ctx: JobContext): Date {
   const today = startOfUtcDay(ctx.now);
-  const fullRefresh = !ctx.lastSuccessAt || startOfUtcDay(ctx.lastSuccessAt).getTime() !== today.getTime();
+  const fullRefresh = isFirstRunOfDay(ctx);
   const earliest = new Date(today.getTime() - (NEON_DAILY_DAYS - 1) * DAY_MS);
   if (!fullRefresh) return new Date(today.getTime() - DAY_MS);
   const lastMonth = monthStart(ctx.now, -1);
   return lastMonth > earliest ? lastMonth : earliest;
 }
 
+type FlyDaySample = { appName: string; metric: FlyDailyMetric; value: number; day: Date };
+
 type FlyOrgUsage = {
   egress: { appName: string; egressBytes: number }[];
   machineHours: { appName: string; machineHours: number }[];
+  daily: FlyDaySample[];
 };
 
-// Prometheus is optional (token scope, outages); inventory still renders.
-async function loadFlyOrgUsage(token: string, org: string): Promise<FlyOrgUsage> {
+// Logs and degrades to empty so a failed usage read never blanks the
+// inventory, but never fails silently either.
+function usageReadFailed<T>(what: string, org: string): (err: unknown) => T[] {
+  return (err) => {
+    console.error(`infra-snapshot ${what} read failed`, org, err instanceof Error ? err.message : err);
+    return [];
+  };
+}
+
+async function loadFlyOrgUsage(token: string, org: string, ctx: JobContext): Promise<FlyOrgUsage> {
   const [egress, machineHours] = await Promise.all([
-    getFlyEgressByApp(token, org).catch(() => []),
-    getFlyMachineHoursByApp(token, org).catch(() => []),
+    getFlyEgressByApp(token, org).catch(usageReadFailed<{ appName: string; egressBytes: number }>("fly egress", org)),
+    getFlyMachineHoursByApp(token, org).catch(usageReadFailed<{ appName: string; machineHours: number }>("fly machine hours", org)),
   ]);
-  return { egress, machineHours };
+  const daily: FlyDaySample[] = [];
+  for (const day of flyDailyDays(ctx)) {
+    const rows = await getFlyDayByApp(token, org, day, ctx.now).catch(
+      usageReadFailed<{ appName: string; metric: FlyDailyMetric; value: number }>("fly daily", org),
+    );
+    daily.push(...rows.map((r) => ({ ...r, day })));
+  }
+  return { egress, machineHours, daily };
 }
 
 function flyUsageRows(usage: FlyOrgUsage, at: Date): UsageRow[] {
-  const row = (appName: string, metric: string, value: number): UsageRow => ({
+  const row = (appName: string, metric: string, value: number, scopeType: string = SCOPE.flyApp, when = at): UsageRow => ({
     provider: "fly",
-    scopeType: SCOPE.flyApp,
+    scopeType,
     scopeId: appName,
     scopeName: appName,
     metric,
     value,
-    at,
+    at: when,
   });
   return [
     ...usage.egress.map((e) => row(e.appName, "egress_bytes", e.egressBytes)),
     ...usage.machineHours.map((m) => row(m.appName, "machine_hours_24h", m.machineHours)),
+    ...usage.daily.map((d) => row(d.appName, d.metric, d.value, SCOPE.flyDaily, d.day)),
   ];
 }
 
@@ -93,11 +131,14 @@ type NeonOrgUsage = {
 // missing series doesn't blank the others.
 async function loadNeonOrgUsage(orgId: string, inv: NeonInventory, ctx: JobContext): Promise<NeonOrgUsage> {
   const to = ctx.now.toISOString();
-  const quiet = (p: Promise<NeonConsumptionSample[]>) => p.catch(() => [] as NeonConsumptionSample[]);
+  const quiet = (what: string, p: Promise<NeonConsumptionSample[]>) =>
+    p.catch(usageReadFailed<NeonConsumptionSample>(what, orgId));
   const daily = await quiet(
+    "neon daily",
     getConsumption({ orgId, scope: "projects", granularity: "daily", from: neonDailyFrom(ctx).toISOString(), to }),
   );
   const monthly = await quiet(
+    "neon monthly",
     getConsumption({ orgId, scope: "projects", granularity: "monthly", from: monthStart(ctx.now, -1).toISOString(), to }),
   );
   const ids = inv.projects.map((p) => p.id);
@@ -105,6 +146,7 @@ async function loadNeonOrgUsage(orgId: string, inv: NeonInventory, ctx: JobConte
   for (let i = 0; i < ids.length; i += 100) {
     branches.push(
       ...(await quiet(
+        "neon branches",
         getConsumption({
           orgId,
           scope: "branches",
@@ -243,7 +285,7 @@ async function sweepProjects(projects: InfraProjectCreds[], ctx: JobContext): Pr
         const inv = await once(flyInventories, org, () => getFlyInventory(token, org));
         await writeSnapshot(p.projectId, "fly", inv);
         providersSwept++;
-        const usage = await once(flyUsage, org, () => loadFlyOrgUsage(token, org));
+        const usage = await once(flyUsage, org, () => loadFlyOrgUsage(token, org, ctx));
         const linked = new Set(p.flyAppNames);
         for (const r of flyUsageRows(usage, ctx.now).filter((r) => linked.has(r.scopeId))) {
           await upsertUsage(p.projectId, r);
