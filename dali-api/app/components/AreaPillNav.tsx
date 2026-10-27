@@ -55,7 +55,7 @@ function SubtabLabel({
         <span
           className={cn(
             "grid h-5 min-w-5 place-items-center rounded-full px-1.5 text-[11px] font-bold",
-            active ? "os-seg-count--active bg-os-accent text-os-bg" : "bg-os-card text-os-grey",
+            active ? "bg-os-accent text-os-bg" : "bg-os-card text-os-grey",
           )}
         >
           {count}

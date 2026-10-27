@@ -2500,12 +2500,6 @@ html[data-v2] .os-seg-track {
 html[data-v2] .os-seg-item {
   border-radius: 8px;
 }
-/* The active segment's count: the v2 accent is a pale wash the os-bg numeral
-   disappears into (white on light blue), so the chip flips to ink-on-ground. */
-html[data-v2] .os-seg-count--active {
-  background: var(--color-foreground);
-  color: var(--color-os-bg);
-}
 html[data-v2] .os-type-badge {
   border-radius: 6px;
 }
