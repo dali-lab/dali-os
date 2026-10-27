@@ -9,6 +9,7 @@
 import { prisma } from "~/lib/db";
 import { canEditProject } from "./access";
 import { pageDepth, MAX_PAGE_DEPTH, isAncestorOf } from "~/lib/pages";
+import { announceAgent, pagePresenceRoom } from "~/collab/agent-presence.server";
 
 export const UPDATE_PAGE_TOOL = {
   name: "update_page",
@@ -171,6 +172,7 @@ export async function runUpdatePage(callerId: string, input: Input) {
     data,
     select: { id: true, title: true, iconEmoji: true, parentPageId: true, archivedAt: true },
   });
+  void announceAgent({ action: "editing", presenceRoom: pagePresenceRoom(page.id) });
 
   return {
     id: updated.id,

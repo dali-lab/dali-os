@@ -19,6 +19,7 @@ import {
   getCollabUrl,
   nameToColor,
 } from "./util";
+import type { AwarenessAgent } from "./agent";
 
 /**
  * Page-scoped collaborative presence. Opens a sidecar y-doc per pageId used
@@ -41,6 +42,7 @@ export interface Peer {
   userId?: string;
   photoUrl?: string | null;
   subtitle?: string | null;
+  agent?: AwarenessAgent;
 }
 
 interface EditorRegistration {
@@ -129,7 +131,9 @@ function peersEqual(a: Peer[], b: Peer[]): boolean {
       x.currentEditor !== y.currentEditor ||
       x.userId !== y.userId ||
       x.photoUrl !== y.photoUrl ||
-      x.subtitle !== y.subtitle
+      x.subtitle !== y.subtitle ||
+      x.agent?.kind !== y.agent?.kind ||
+      x.agent?.action !== y.agent?.action
     ) {
       return false;
     }
@@ -215,6 +219,7 @@ export function PresenceProvider({
           userId: u.userId,
           photoUrl: u.photoUrl ?? null,
           subtitle: u.subtitle ?? null,
+          ...(u.agent ? { agent: u.agent } : {}),
         });
       });
       // Bail when shape-relevant fields are unchanged. Awareness fires on

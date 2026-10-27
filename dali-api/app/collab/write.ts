@@ -16,6 +16,7 @@
 import * as Y from "yjs";
 import { prisma } from "~/lib/db";
 import { getCollabServer } from "./server";
+import { announceAgent } from "./agent-presence.server";
 import { maybeSnapshot, storeDocument } from "./persistence";
 import {
   BLOCKNOTE_FRAGMENT,
@@ -47,6 +48,7 @@ export async function replaceCollabDocContent(
     } finally {
       await conn.disconnect();
     }
+    void announceAgent({ action: "editing", docRoom: name });
     return;
   }
 

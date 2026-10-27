@@ -14,6 +14,7 @@ import { readDocAsBlocks } from "~/collab/read";
 import { blocksToMarkdown } from "~/collab/blocknote-server";
 import { pageDocName } from "~/collab/roomName";
 import { authorizeCollabDoc } from "~/lib/collabAuth";
+import { announceAgent, pagePresenceRoom } from "~/collab/agent-presence.server";
 
 export const READ_PAGE_TOOL = {
   name: "read_page",
@@ -65,6 +66,7 @@ export async function runReadPage(callerId: string, input: Input) {
 
   const blocks = await readDocAsBlocks(page.contentDocId ?? pageDocName(page.id));
   const markdown = blocks.length ? await blocksToMarkdown(blocks) : "";
+  void announceAgent({ action: "reading", presenceRoom: pagePresenceRoom(page.id) });
 
   return {
     id: page.id,
