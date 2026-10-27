@@ -17,6 +17,7 @@ import {
   BookOpen,
   Plus,
   Check,
+  Video,
 } from "lucide-react";
 import { AnchoredPopover } from "~/calendar/components/AnchoredPopover";
 import { WorkingHoursCard } from "~/calendar/components/settings-cards";
@@ -466,6 +467,17 @@ export function EventComposer({
   const loggingWork = canLogWork && isWork;
   const role = parseRoleOptionKey(roleKey);
 
+  // A writable Google event saved without a Meet link can mint one here. DALI
+  // meetings and manual blocks manage their video link elsewhere.
+  const canAddMeet =
+    editing &&
+    !!ev?.writable &&
+    !!ev?.eventId &&
+    !ev?.manualBlockId &&
+    !canManageMeeting &&
+    !ev?.links?.some((l) => l.kind === "video");
+  const [addMeet, setAddMeet] = useState(false);
+
   // Timed inputs are split into one date + start/end times (custom DateField /
   // TimeField), seeded as wall-clock in the user's timezone (the grid's) so the
   // composer and the on-grid block agree even when the browser timezone differs.
@@ -840,6 +852,20 @@ export function EventComposer({
               />
             </div>
 
+            {/* Google Meet, for an event saved without one */}
+            {canAddMeet && (
+              <div className="flex items-center gap-3">
+                <Video className="h-4 w-4 shrink-0 text-muted-foreground" />
+                {addMeet && <input type="hidden" name="addMeet" value="1" />}
+                <Checkbox
+                  checked={addMeet}
+                  onChange={(e) => setAddMeet(e.target.checked)}
+                  label="Add Google Meet"
+                  description="Creates a Meet link on this event when you save."
+                />
+              </div>
+            )}
+
             {/* Description */}
             <div className="flex items-start gap-3">
               <AlignLeft className="mt-2 h-4 w-4 shrink-0 text-muted-foreground" />
@@ -891,8 +917,12 @@ export function EventComposer({
               </div>
             ) : null}
 
-            {/* Timesheet — the event and its hours are one thing, saved together */}
-            {canLogWork ? (
+            {/* Timesheet — only when creating: an existing event's hours are
+                toggled from the detail popover and edited in the Timesheet
+                view, not here. An edit keeps a linked log untouched through
+                the hidden inputs above, and only warns when the edit is about
+                to invalidate it. */}
+            {!editing && canLogWork ? (
               <TimesheetFields
                 isWork={isWork}
                 onIsWorkChange={setIsWork}
@@ -901,14 +931,10 @@ export function EventComposer({
                 roleOptions={data.myRoles.map((r) => ({ value: roleOptionKey(r), label: r.label }))}
                 workNote={workNote}
                 onWorkNoteChange={setWorkNote}
-                description={
-                  linkedEntry
-                    ? "These hours are on your timesheet. Unticking removes them; the event stays."
-                    : "Logs these hours to your timesheet against the role you pick."
-                }
+                description="Logs these hours to your timesheet against the role you pick."
                 fieldClass={fieldCls}
               />
-            ) : linkedEntry ? (
+            ) : linkedEntry && !canLogWork ? (
               // Editing pushed the event into a shape hours can't hang off (made
               // it all-day, say). Say so rather than silently dropping the log
               // the save is about to clear.
