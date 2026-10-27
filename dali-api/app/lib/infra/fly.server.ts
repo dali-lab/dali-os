@@ -139,11 +139,17 @@ export async function getFlyEgressByApp(
   return rows.map((r) => ({ appName: r.appName, egressBytes: r.value }));
 }
 
+// Prometheus rejects `Bearer` with a 401 and only accepts the `FlyV1` scheme,
+// which `fly tokens create` prints as part of the token.
+export function flyPromAuth(token: string): string {
+  return `FlyV1 ${token.trim().replace(/^(FlyV1|Bearer)\s+/i, "")}`;
+}
+
 type PromVector = { data?: { result?: { metric?: { app?: string }; value?: [number, string] }[] } };
 
 async function flyPromByApp(token: string, orgSlug: string, query: string): Promise<{ appName: string; value: number }[]> {
   const url = `${FLY_PROM}/${encodeURIComponent(orgSlug)}/api/v1/query?query=${encodeURIComponent(query)}`;
-  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  const res = await fetch(url, { headers: { Authorization: flyPromAuth(token) } });
   if (!res.ok) throw new FlyApiError(res.status, `Fly Prometheus ${res.status}`);
   const json = (await res.json()) as PromVector;
   return (json.data?.result ?? [])

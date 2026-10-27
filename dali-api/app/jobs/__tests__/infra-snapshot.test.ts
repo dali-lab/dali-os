@@ -156,6 +156,22 @@ describe("runInfraSnapshot Neon", () => {
     await runInfraSnapshot(ctx);
     expect(upserts().map((u) => u.create.scopeType)).toEqual(["neon-project-month", "neon-branch-month"]);
   });
+
+  it("logs which consumption read failed and why", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    listCreds.mockResolvedValue([creds("p1", ["np-a"])]);
+    neonMock.getConsumption.mockImplementation(async (opts: Opts) => {
+      if (opts.scope === "branches") throw new Error("Neon API 400 on /consumption_history/v2/branches");
+      return consumption(opts);
+    });
+    await runInfraSnapshot(ctx);
+    expect(error).toHaveBeenCalledWith(
+      "infra-snapshot neon branches read failed",
+      "org-dali-1",
+      "Neon API 400 on /consumption_history/v2/branches",
+    );
+    error.mockRestore();
+  });
 });
 
 describe("runInfraSnapshot Fly", () => {
@@ -215,6 +231,15 @@ describe("runInfraSnapshot Fly", () => {
     flyMock.getFlyMachineHoursByApp.mockRejectedValue(new Error("403"));
     await runInfraSnapshot(ctx);
     expect(upserts().map((u) => u.create.metric)).toEqual(["egress_bytes"]);
+  });
+
+  it("logs a failed Prometheus read with its status", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    listCreds.mockResolvedValue([flyCreds("p1", ["web"])]);
+    flyMock.getFlyEgressByApp.mockRejectedValue(new Error("Fly Prometheus 401"));
+    await runInfraSnapshot(ctx);
+    expect(error).toHaveBeenCalledWith("infra-snapshot fly egress read failed", "dali-os", "Fly Prometheus 401");
+    error.mockRestore();
   });
 
   it("skips a project without a read token", async () => {

@@ -58,11 +58,19 @@ type FlyOrgUsage = {
   machineHours: { appName: string; machineHours: number }[];
 };
 
-// Prometheus is optional (token scope, outages); inventory still renders.
+// Logs and degrades to empty so a failed usage read never blanks the
+// inventory, but never fails silently either.
+function usageReadFailed<T>(what: string, org: string): (err: unknown) => T[] {
+  return (err) => {
+    console.error(`infra-snapshot ${what} read failed`, org, err instanceof Error ? err.message : err);
+    return [];
+  };
+}
+
 async function loadFlyOrgUsage(token: string, org: string): Promise<FlyOrgUsage> {
   const [egress, machineHours] = await Promise.all([
-    getFlyEgressByApp(token, org).catch(() => []),
-    getFlyMachineHoursByApp(token, org).catch(() => []),
+    getFlyEgressByApp(token, org).catch(usageReadFailed<{ appName: string; egressBytes: number }>("fly egress", org)),
+    getFlyMachineHoursByApp(token, org).catch(usageReadFailed<{ appName: string; machineHours: number }>("fly machine hours", org)),
   ]);
   return { egress, machineHours };
 }
@@ -93,11 +101,14 @@ type NeonOrgUsage = {
 // missing series doesn't blank the others.
 async function loadNeonOrgUsage(orgId: string, inv: NeonInventory, ctx: JobContext): Promise<NeonOrgUsage> {
   const to = ctx.now.toISOString();
-  const quiet = (p: Promise<NeonConsumptionSample[]>) => p.catch(() => [] as NeonConsumptionSample[]);
+  const quiet = (what: string, p: Promise<NeonConsumptionSample[]>) =>
+    p.catch(usageReadFailed<NeonConsumptionSample>(what, orgId));
   const daily = await quiet(
+    "neon daily",
     getConsumption({ orgId, scope: "projects", granularity: "daily", from: neonDailyFrom(ctx).toISOString(), to }),
   );
   const monthly = await quiet(
+    "neon monthly",
     getConsumption({ orgId, scope: "projects", granularity: "monthly", from: monthStart(ctx.now, -1).toISOString(), to }),
   );
   const ids = inv.projects.map((p) => p.id);
@@ -105,6 +116,7 @@ async function loadNeonOrgUsage(orgId: string, inv: NeonInventory, ctx: JobConte
   for (let i = 0; i < ids.length; i += 100) {
     branches.push(
       ...(await quiet(
+        "neon branches",
         getConsumption({
           orgId,
           scope: "branches",

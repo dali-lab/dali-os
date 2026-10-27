@@ -6,7 +6,8 @@ import { bucketHours, estimateNeonProjectMonth, monthStart } from "./neon-cost";
 import type { FlyInventory, NeonInventory } from "./types";
 
 // Sample scopes the sweep writes. Daily and Fly rows draw the sparklines; the
-// monthly rows hold month-to-date totals for the headline and cost estimates.
+// monthly rows, or the daily rows when those are missing, give the headline
+// and cost estimates.
 export const SCOPE = {
   neonDaily: "neon-project",
   neonMonth: "neon-project-month",
@@ -89,20 +90,51 @@ export type UsageSeries = {
 };
 
 /**
- * Sparkline series for a project's in-scope samples. Neon headlines come from
- * the monthly rows (the daily points are one day each); series that are zero
- * throughout are dropped so unused metrics don't crowd the strip.
+ * Sparkline series for a project's in-scope samples. Neon headlines are month
+ * to date; series that are zero throughout are dropped so unused metrics don't
+ * crowd the strip.
  */
 export function projectUsage(samples: ScopedSample[], now: Date): UsageSeries[] {
   const thisMonth = monthStart(now).getTime();
   const monthToDate = new Map<string, number>();
-  for (const s of samples) {
-    if (s.scopeType !== SCOPE.neonMonth || s.at.getTime() !== thisMonth) continue;
-    monthToDate.set(s.metric, (monthToDate.get(s.metric) ?? 0) + s.value);
+  for (const { month, metrics } of neonMonthTotals(samples, now)) {
+    if (month.getTime() !== thisMonth) continue;
+    for (const [metric, value] of Object.entries(metrics)) {
+      monthToDate.set(metric, (monthToDate.get(metric) ?? 0) + value);
+    }
   }
   return usageSeries(samples.filter((s) => s.scopeType === SCOPE.neonDaily || s.scopeType === SCOPE.flyApp))
     .map((u) => (monthToDate.has(u.metric) ? { ...u, current: monthToDate.get(u.metric)! } : u))
     .filter((u) => (u.current ?? 0) > 0 || u.points.some((p) => p.value > 0));
+}
+
+// Neon's monthly read has come back empty for the month in progress, so a
+// database's month falls back to the sum of its daily rows when no monthly
+// rows exist for it.
+function neonMonthTotals(
+  samples: ScopedSample[],
+  now: Date,
+): { month: Date; projectId: string; metrics: Record<string, number> }[] {
+  const months = [monthStart(now, -1), monthStart(now)];
+  const monthly = new Map<string, Record<string, number>>();
+  const daily = new Map<string, Record<string, number>>();
+  for (const s of samples) {
+    const isMonthly = s.scopeType === SCOPE.neonMonth;
+    if (!isMonthly && s.scopeType !== SCOPE.neonDaily) continue;
+    const month = isMonthly ? s.at : monthStart(s.at);
+    if (!months.some((m) => m.getTime() === month.getTime())) continue;
+    const target = isMonthly ? monthly : daily;
+    const key = `${month.getTime()}|${s.scopeId}`;
+    const metrics = target.get(key) ?? {};
+    metrics[s.metric] = (metrics[s.metric] ?? 0) + s.value;
+    target.set(key, metrics);
+  }
+  const out: { month: Date; projectId: string; metrics: Record<string, number> }[] = [];
+  for (const key of new Set([...monthly.keys(), ...daily.keys()])) {
+    const [t, projectId] = key.split("|");
+    out.push({ month: new Date(Number(t)), projectId, metrics: monthly.get(key) ?? daily.get(key)! });
+  }
+  return out;
 }
 
 export type NeonBranchUsage = {
@@ -157,33 +189,20 @@ export type NeonCostSummary = {
   byProject: Record<string, number>;
 };
 
-/** Estimated dollars from the monthly rows, or null when the plan has no known rates. */
+/** Estimated dollars for this month and last, or null when the plan has no known rates. */
 export function neonCostSummary(
   samples: ScopedSample[],
   plan: string | null | undefined,
   now: Date,
 ): NeonCostSummary | null {
   if (!plan || estimateNeonProjectMonth({}, plan, 0) === null) return null;
-  const current = monthStart(now);
-  const previous = monthStart(now, -1);
-  const buckets = new Map<string, Record<string, number>>();
-  for (const s of samples) {
-    if (s.scopeType !== SCOPE.neonMonth) continue;
-    const t = s.at.getTime();
-    if (t !== current.getTime() && t !== previous.getTime()) continue;
-    const key = `${t}|${s.scopeId}`;
-    const metrics = buckets.get(key) ?? {};
-    metrics[s.metric] = (metrics[s.metric] ?? 0) + s.value;
-    buckets.set(key, metrics);
-  }
+  const current = monthStart(now).getTime();
   let thisMonth = 0;
   let lastMonth: number | null = null;
   const byProject: Record<string, number> = {};
-  for (const [key, metrics] of buckets) {
-    const [t, projectId] = key.split("|");
-    const month = new Date(Number(t));
+  for (const { month, projectId, metrics } of neonMonthTotals(samples, now)) {
     const total = estimateNeonProjectMonth(metrics, plan, bucketHours(month, now))!.total;
-    if (month.getTime() === current.getTime()) {
+    if (month.getTime() === current) {
       thisMonth += total;
       byProject[projectId] = (byProject[projectId] ?? 0) + total;
     } else {

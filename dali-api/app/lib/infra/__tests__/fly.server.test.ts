@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { getFlyEgressByApp, getFlyMachineHoursByApp } from "../fly.server";
+import { flyPromAuth, getFlyEgressByApp, getFlyMachineHoursByApp } from "../fly.server";
 
 const fetchMock = vi.fn();
 beforeEach(() => vi.stubGlobal("fetch", fetchMock));
@@ -22,6 +22,12 @@ describe("getFlyMachineHoursByApp", () => {
     );
   });
 
+  it("authenticates with the FlyV1 scheme", async () => {
+    fetchMock.mockResolvedValueOnce(prom([]));
+    await getFlyMachineHoursByApp("fm2_abc", "dali");
+    expect((fetchMock.mock.calls[0][1] as RequestInit).headers).toEqual({ Authorization: "FlyV1 fm2_abc" });
+  });
+
   it("throws on a Prometheus error", async () => {
     fetchMock.mockResolvedValueOnce(new Response("", { status: 401 }));
     await expect(getFlyMachineHoursByApp("tok", "dali")).rejects.toThrow("401");
@@ -35,5 +41,19 @@ describe("getFlyEgressByApp", () => {
     expect(new URL(fetchMock.mock.calls[0][0] as string).searchParams.get("query")).toBe(
       "sum by (app) (increase(fly_edge_data_out[24h]))",
     );
+  });
+});
+
+describe("flyPromAuth", () => {
+  it("prefixes a bare token", () => {
+    expect(flyPromAuth("fm2_abc")).toBe("FlyV1 fm2_abc");
+  });
+
+  it("keeps a token pasted with its FlyV1 prefix as is", () => {
+    expect(flyPromAuth("FlyV1 fm2_abc,fm2_def")).toBe("FlyV1 fm2_abc,fm2_def");
+  });
+
+  it("swaps a Bearer prefix and trims whitespace", () => {
+    expect(flyPromAuth("  Bearer fo1_abc \n")).toBe("FlyV1 fo1_abc");
   });
 });
