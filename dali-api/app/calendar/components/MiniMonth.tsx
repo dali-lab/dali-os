@@ -110,18 +110,21 @@ export function MiniMonth({
                 "grid h-8 place-items-center text-xs",
                 weekBand
                   ? cn(
-                      i % 7 === 0 ? "rounded-l-md" : "",
-                      i % 7 === 6 ? "rounded-r-md" : "",
-                      isToday ? "rounded-md" : "",
+                      "font-semibold",
+                      isToday ? "bg-os-accent text-os-bg" : "bg-muted text-foreground",
+                      i % 7 === 0 && "rounded-l-md",
+                      i % 7 === 6 && "rounded-r-md",
                     )
-                  : "rounded-md",
-                isToday
-                  ? "bg-os-accent font-semibold text-os-bg"
-                  : isFocus
-                    ? "bg-muted font-semibold text-foreground"
-                    : inMonth
-                      ? "text-foreground hover:bg-muted"
-                      : "text-muted-foreground hover:bg-muted",
+                  : cn(
+                      "rounded-md",
+                      isToday
+                        ? "bg-os-accent font-semibold text-os-bg"
+                        : isFocus
+                          ? "bg-muted font-semibold text-foreground"
+                          : inMonth
+                            ? "text-foreground hover:bg-muted"
+                            : "text-muted-foreground hover:bg-muted",
+                    ),
               )}
             >
               {d.getUTCDate()}
