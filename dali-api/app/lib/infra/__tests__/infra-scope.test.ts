@@ -190,6 +190,18 @@ describe("projectUsage", () => {
     expect(usage[0].current).toBe(150);
   });
 
+  it("adds up this month's daily rows when the monthly row is missing", () => {
+    const usage = projectUsage(
+      [
+        sample({ scopeType: SCOPE.neonDaily, at: new Date("2026-09-30T00:00:00Z"), value: 1000 }),
+        sample({ scopeType: SCOPE.neonDaily, at: new Date("2026-10-01T00:00:00Z"), value: 10 }),
+        sample({ scopeType: SCOPE.neonDaily, at: new Date("2026-10-24T00:00:00Z"), value: 20 }),
+      ],
+      NOW,
+    );
+    expect(usage[0].current).toBe(30);
+  });
+
   it("ignores last month's total for the headline", () => {
     const usage = projectUsage(
       [sample({ scopeType: SCOPE.neonDaily, value: 1 }), sample({ scopeType: SCOPE.neonMonth, at: SEP, value: 999 })],
@@ -293,12 +305,46 @@ describe("neonCostSummary", () => {
     expect(neonCostSummary([month("np-a", "compute_unit_seconds", 3600)], "launch", NOW)!.lastMonth).toBeNull();
   });
 
-  it("ignores daily and branch rows so usage isn't counted twice", () => {
+  const day = (scopeId: string, iso: string, value: number) =>
+    sample({ scopeType: SCOPE.neonDaily, scopeId, at: new Date(iso), value });
+
+  it("prefers a database's monthly rows over its daily rows so usage isn't counted twice", () => {
+    const cost = neonCostSummary(
+      [month("np-a", "compute_unit_seconds", 10 * 3600), day("np-a", "2026-10-24T00:00:00Z", 1e9)],
+      "launch",
+      NOW,
+    )!;
+    expect(cost.thisMonth).toBeCloseTo(1.06);
+  });
+
+  it("estimates from the daily rows for a database with no monthly rows", () => {
     const cost = neonCostSummary(
       [
-        sample({ scopeType: SCOPE.neonDaily, value: 1e9 }),
-        sample({ scopeType: SCOPE.neonBranchMonth, scopeId: "np-a:br", at: OCT, value: 1e9 }),
+        month("np-a", "compute_unit_seconds", 10 * 3600),
+        day("np-c", "2026-10-01T00:00:00Z", 5 * 3600),
+        day("np-c", "2026-10-24T00:00:00Z", 15 * 3600),
       ],
+      "launch",
+      NOW,
+    )!;
+    expect(cost.byProject["np-a"]).toBeCloseTo(1.06);
+    expect(cost.byProject["np-c"]).toBeCloseTo(2.12);
+    expect(cost.thisMonth).toBeCloseTo(3.18);
+  });
+
+  it("estimates last month from its daily rows when it has no monthly rows", () => {
+    const cost = neonCostSummary(
+      [day("np-a", "2026-09-01T00:00:00Z", 40 * 3600), day("np-a", "2026-09-30T00:00:00Z", 60 * 3600)],
+      "launch",
+      NOW,
+    )!;
+    expect(cost.thisMonth).toBe(0);
+    expect(cost.lastMonth).toBeCloseTo(10.6);
+  });
+
+  it("ignores branch rows so usage isn't counted twice", () => {
+    const cost = neonCostSummary(
+      [sample({ scopeType: SCOPE.neonBranchMonth, scopeId: "np-a:br", at: OCT, value: 1e9 })],
       "launch",
       NOW,
     )!;
@@ -307,7 +353,10 @@ describe("neonCostSummary", () => {
 
   it("ignores months older than last month", () => {
     const cost = neonCostSummary(
-      [month("np-a", "compute_unit_seconds", 1e9, new Date("2026-08-01T00:00:00Z"))],
+      [
+        month("np-a", "compute_unit_seconds", 1e9, new Date("2026-08-01T00:00:00Z")),
+        day("np-a", "2026-08-31T00:00:00Z", 1e9),
+      ],
       "launch",
       NOW,
     )!;
