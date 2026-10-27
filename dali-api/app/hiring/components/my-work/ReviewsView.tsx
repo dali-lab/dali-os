@@ -138,12 +138,13 @@ function ReviewCard({
   const user = da?.application?.user
   const domain = da?.domain ?? da?.challengeVersion?.domain
   const appId = da?.applicationId ?? da?.application?.id
+  const statusToken = COLUMNS.find((c) => c.status === status)!.token
 
   return (
     // Inline border colour: app.css's unlayered `* { border-color }` outranks
     // Tailwind border-colour utilities (same as the task board's cards).
     <div
-      className="flex flex-col gap-2 rounded-os-item border border-l-4 border-transparent bg-os-well p-3"
+      className="flex flex-col gap-2 rounded-os-item border border-l-4 border-transparent bg-os-bg p-3"
       style={{ borderLeftColor: edge }}
     >
       <div className="flex items-start justify-between gap-2">
@@ -171,7 +172,18 @@ function ReviewCard({
       {appId && (
         <Link
           to={`/hiring/reviewer/application/${appId}`}
-          className={buttonClasses(status === 'submitted' ? 'secondary' : 'primary', 'sm', 'w-full')}
+          className={buttonClasses(
+            status === 'submitted' ? 'secondary' : 'primary',
+            'sm',
+            status === 'submitted' ? 'w-full' : 'w-full hover:brightness-110',
+          )}
+          // The action wears its column's status colour (the same fill/ink the
+          // header uses); inline so it outranks the os primary-accent rule.
+          style={
+            status === 'submitted'
+              ? undefined
+              : { background: token(statusToken, 'fill'), color: token(statusToken, 'ink') }
+          }
         >
           {ACTION_LABEL[status]}
         </Link>

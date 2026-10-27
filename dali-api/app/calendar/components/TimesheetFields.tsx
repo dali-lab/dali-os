@@ -77,7 +77,7 @@ export function TimesheetFields({
               onChange={(e) => onWorkNoteChange(e.target.value)}
               placeholder="Briefly describe what you worked on…"
               rows={2}
-              className={cn(fieldClass, "resize-y")}
+              className={cn(fieldClass, "w-full resize-y")}
             />
           </div>
         </div>

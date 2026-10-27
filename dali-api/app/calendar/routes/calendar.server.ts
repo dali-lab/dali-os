@@ -1101,7 +1101,17 @@ async function handleEventAction(
     if (intent === "event-update") {
       const eventId = get("eventId");
       if (!eventId) return Response.json({ error: "Missing event id" }, { status: 400 });
-      const fields = { summary: title, description, location, allDay, timeZone };
+      // addMeet mints a Meet link on an event saved without one; it rides the
+      // shared fields so every patch path below carries it.
+      const addMeet = get("addMeet") === "1";
+      const fields = {
+        summary: title,
+        description,
+        location,
+        allDay,
+        timeZone,
+        ...(addMeet ? { addMeet: true } : {}),
+      };
       // Same order as create: validate the work half before touching Google.
       // A recurring edit can patch the master or split the series, so there's
       // no single occurrence to key a log on — the composer hides the toggle
@@ -1177,6 +1187,7 @@ async function handleEventAction(
             recurrenceRule: bareRrule(master.recurrence),
             timeZone,
             attendees: [],
+            addMeet: addMeet || undefined,
           });
         } catch (err) {
           await releaseRoomBookings(newBookingIds);
