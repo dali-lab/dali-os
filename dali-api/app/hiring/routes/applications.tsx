@@ -24,7 +24,6 @@ import { getUserRoles } from "~/lib/roles";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { prisma } from "~/lib/db";
 import { getEngagementSummaries, type EngagementSummary } from "~/hiring/lib/email-engagement.server";
-import { ApplicantEngagementChip } from "~/hiring/components/ApplicantEmailPanel";
 import { Popover, Select } from "~/components/ui/floating";
 import { filterPillClass } from "~/components/ui/floating/styles";
 import {
@@ -768,10 +767,7 @@ export default function ApplicationsDatabase() {
                     className="border-t border-os-container hover:bg-os-card-hover cursor-pointer transition-colors"
                   >
                     <td className="px-6 py-3.5 font-medium text-foreground">
-                      <span className="inline-flex items-center gap-2">
-                        {r.name}
-                        <ApplicantEngagementChip summary={r.emailEngagement ?? undefined} />
-                      </span>
+                      {r.name}
                     </td>
                     <td className="px-6 py-3.5 text-foreground">{r.domain}</td>
                     <td className="px-6 py-3.5">

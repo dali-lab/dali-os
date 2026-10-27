@@ -2356,34 +2356,80 @@ html[data-v2].os-shell {
    The shell keys --mode-accent on the page's own area, and calendar, email
    and drive follow the rail's selected mode; only truly modeless pages (home,
    a meeting opened from Attendance) fall back to the Lab blue. */
+/* The accent's readable half, for text, borders and selection washes: the v2
+   accent is a pale ground wash, too pale to read as ink. Tint on dark, deep
+   ink on light — the per-mode read --color-os-accent had before v2. Defined
+   on <html> (not just .os-shell) so portaled content resolves it even before
+   the os-shell mirror mounts; the .os-shell forms refine it with the page's
+   own mode tone. */
+html[data-v2] {
+  --os-accent-ink: #8fb6f2;
+}
+html.light[data-v2] {
+  --os-accent-ink: #2f5fb5;
+}
 html[data-v2] .os-shell,
 html[data-v2].os-shell {
   /* A step lighter than the raw mode tint: 70% tint over white, hover lighter
      still. */
   --color-os-accent: color-mix(in srgb, var(--mode-accent, #8fb6f2) 70%, white);
   --color-os-accent-hover: color-mix(in srgb, var(--mode-accent, #8fb6f2) 55%, white);
-  /* The accent's readable half, for text: the wash above is a ground, too
-     pale to read as ink on light. Tint on dark, deep ink on light — the same
-     per-mode read --color-os-accent had before this override. */
   --os-accent-ink: var(--mode-accent, #8fb6f2);
 }
 html.light[data-v2] .os-shell,
 html.light[data-v2].os-shell {
   --os-accent-ink: var(--mode-accent-ink, #2f5fb5);
 }
-/* Text set in the accent (See all, inline links) reads from the ink half.
-   `.os-shell` sits on <html> too, so the second form reaches content portaled
-   to <body> (drawers, modals) that the descendant form misses. */
-html[data-v2] .os-shell .text-os-accent,
-html[data-v2].os-shell .text-os-accent {
+/* Accent-as-ink utilities all read from the ink half: text (See all, inline
+   links, the RSVP chips), borders, and the thin selection washes — at 15% of
+   the pale wash a selected chip or today-column tint all but vanished. */
+html[data-v2] .text-os-accent {
   color: var(--os-accent-ink);
 }
-/* Accent-filled controls written as utilities (Add event, the mini-month's
-   today pill): on light the v2 accent is a pale wash, and the page-background
-   ink that read on the old deep accent disappears into it. The label takes a
-   deep shade of the mode ink instead — the .os-btn-tint recipe. */
-html.light[data-v2] .os-shell .bg-os-accent.text-os-bg,
-html.light[data-v2].os-shell .bg-os-accent.text-os-bg {
+html[data-v2] .text-os-accent\/80 {
+  color: color-mix(in srgb, var(--os-accent-ink) 80%, transparent);
+}
+html[data-v2] .border-os-accent {
+  border-color: var(--os-accent-ink);
+}
+html[data-v2] .border-os-accent\/30 {
+  border-color: color-mix(in srgb, var(--os-accent-ink) 30%, transparent);
+}
+html[data-v2] .border-os-accent\/35 {
+  border-color: color-mix(in srgb, var(--os-accent-ink) 35%, transparent);
+}
+html[data-v2] .border-os-accent\/40 {
+  border-color: color-mix(in srgb, var(--os-accent-ink) 40%, transparent);
+}
+html[data-v2] .border-os-accent\/50 {
+  border-color: color-mix(in srgb, var(--os-accent-ink) 50%, transparent);
+}
+html[data-v2] .border-os-accent\/60 {
+  border-color: color-mix(in srgb, var(--os-accent-ink) 60%, transparent);
+}
+html[data-v2] .bg-os-accent\/5 {
+  background-color: color-mix(in srgb, var(--os-accent-ink) 5%, transparent);
+}
+html[data-v2] .bg-os-accent\/10 {
+  background-color: color-mix(in srgb, var(--os-accent-ink) 10%, transparent);
+}
+html[data-v2] .bg-os-accent\/15 {
+  background-color: color-mix(in srgb, var(--os-accent-ink) 15%, transparent);
+}
+html[data-v2] .bg-os-accent\/20 {
+  background-color: color-mix(in srgb, var(--os-accent-ink) 20%, transparent);
+}
+html[data-v2] .bg-os-accent\/25 {
+  background-color: color-mix(in srgb, var(--os-accent-ink) 25%, transparent);
+}
+/* Accent-filled controls written as utilities (Add event, the composer's Save,
+   the mini-month's today pill): on light the v2 accent is a pale wash, and the
+   page-background ink that read on the old deep accent disappears into it. The
+   label takes a deep shade of the mode ink instead — the .os-btn-tint recipe. */
+html.light[data-v2] .bg-os-accent.text-os-bg {
+  color: color-mix(in srgb, var(--os-accent-ink) 70%, black);
+}
+html.light[data-v2] .os-btn-primary {
   color: color-mix(in srgb, var(--os-accent-ink) 70%, black);
 }
 
