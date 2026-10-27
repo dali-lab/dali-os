@@ -350,18 +350,20 @@ describe("NotebookRail tab list", () => {
   const items = () => [...nav().querySelectorAll("li")];
   const linkOf = (li: Element) => li.querySelector("a")!;
 
-  it("draws every tab as a pill with a document glyph, the open one filled and tinted", async () => {
+  it("draws every tab as a squared row with no glyph, the open one tinted", async () => {
     await rail();
-    const [open, ...rest] = items();
+    const [open, ...rest] = items().filter((li) => li.querySelector("a"));
     expect(linkOf(open).getAttribute("aria-current")).toBe("page");
-    expect(open.className).toContain("rounded-full");
-    expect(open.className).toContain("bg-os-accent/15");
+    expect(open.className).toContain("rounded-os-item");
+    expect(open.className).toContain("bg-os-accent/25");
     expect(linkOf(open).className).toContain("text-os-accent");
-    expect(linkOf(open).querySelector("svg.lucide-file-text")).toBeTruthy();
+    expect(linkOf(open).querySelector("svg")).toBeNull();
+    expect(rest).toHaveLength(2);
     for (const li of rest) {
-      expect(li.className).not.toContain("bg-os-accent/15");
+      expect(li.className).toContain("rounded-os-item");
+      expect(li.className).not.toContain("bg-os-accent/25");
       expect(linkOf(li).getAttribute("aria-current")).toBeNull();
-      expect(linkOf(li).querySelector("svg.lucide-file-text")).toBeTruthy();
+      expect(linkOf(li).querySelector("svg")).toBeNull();
     }
   });
 
@@ -382,14 +384,21 @@ describe("NotebookRail tab list", () => {
     expect(open.querySelector("svg.lucide-ellipsis-vertical")).toBeTruthy();
   });
 
-  it("puts the title, a plus and the options on one header row", async () => {
+  it("puts the title and the options on the header row, with no Add there", async () => {
     await rail();
     const header = nav().querySelector("input[aria-label='Notebook title']")!.parentElement!;
-    const add = [...header.querySelectorAll("button")].find((b) => b.textContent?.trim() === "Add")!;
-    expect(add.querySelector("svg.lucide-plus")).toBeTruthy();
-    expect(add.querySelector(".sr-only")?.textContent).toBe("Add");
     expect(header.querySelector("[aria-label='Notebook options']")).toBeTruthy();
     expect(header.querySelector("[aria-label='Hide tabs']")).toBeTruthy();
+    expect([...header.querySelectorAll("button")].some((b) => b.textContent?.trim() === "Add")).toBe(false);
+  });
+
+  it("closes the tab list with an Add row", async () => {
+    await rail();
+    const last = items().at(-1)!;
+    expect(last.querySelector("a")).toBeNull();
+    const add = last.querySelector("button")!;
+    expect(add.textContent?.trim()).toBe("Add");
+    expect(add.querySelector("svg.lucide-plus")).toBeTruthy();
   });
 });
 
@@ -409,8 +418,8 @@ describe("NotebookRail week dividers", () => {
 
   it("puts each divider directly above the first tab of its week", async () => {
     await rail({ tabs: weeks });
-    const rows = [...nav().querySelectorAll("ul > li")].map((li) => li.textContent);
-    expect(rows).toEqual(["Week 7", "Oct 23", "Oct 20", "Week 6", "Oct 16", "Week 5", "Oct 6"]);
+    const rows = [...nav().querySelectorAll("ul > li")].map((li) => li.textContent?.trim());
+    expect(rows).toEqual(["Week 7", "Oct 23", "Oct 20", "Week 6", "Oct 16", "Week 5", "Oct 6", "Add"]);
   });
 
   it("draws no divider for undated tabs", async () => {
