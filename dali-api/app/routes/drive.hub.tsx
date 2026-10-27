@@ -33,12 +33,9 @@ import { setPageFavorite } from "~/components/favorites-live";
 import { TermFilter } from "~/components/TermFilter";
 import { loadProjectWorkspaces, loadEducationWorkspaces, loadAllDocTags, loadItemTagIds } from "~/lib/drive-hub.server";
 import { loadDriveScopes } from "~/lib/drive-scopes.server";
-import { loadDriveHome } from "~/lib/drive-home.server";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import type { DriveTreeScope } from "~/lib/drive-scopes.server";
 import type { DriveItem } from "~/lib/drive.server";
 import { DriveBrowser } from "~/components/drive/DriveBrowser";
-import { DriveHome } from "~/components/drive/DriveHome";
 import type { FileDropOptions, RowActions } from "~/components/drive/DriveBrowser";
 import { DriveTagFilter } from "~/components/drive/DriveTagFilter";
 import { DRIVE_TOOLBAR_BTN, DRIVE_TOOLBAR_ICON_BTN } from "~/components/drive/toolbar";
@@ -173,7 +170,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   // Only the item tags wait on the scopes (they're keyed by the ids the scopes
   // resolved to). Everything else starts now and is awaited together.
-  const [{ driveScopes, itemTagIds }, allTags, { homeEnabled, home }] = await Promise.all([
+  const [{ driveScopes, itemTagIds }, allTags] = await Promise.all([
     (async () => {
       const [projectWorkspaces, educationWorkspaces] = await Promise.all([
         loadProjectWorkspaces(viewer),
@@ -191,10 +188,6 @@ export async function loader({ request }: Route.LoaderArgs) {
       return { driveScopes, itemTagIds: await loadItemTagIds(driveScopes) };
     })(),
     loadAllDocTags(),
-    (async () => {
-      const homeEnabled = await isFeatureEnabled("drive-home", userId, roles, request);
-      return { homeEnabled, home: homeEnabled ? await loadDriveHome(userId, request) : null };
-    })(),
   ]);
 
   return {
@@ -206,8 +199,6 @@ export async function loader({ request }: Route.LoaderArgs) {
     canViewForms: userCanViewForms,
     formsPageAccess,
     canManageAgreements: userCanManageAgreements,
-    homeEnabled,
-    home,
     // My Drive is the Member workspace keyed by the viewer's own id — the
     // cross-drive move needs it to name the source workspace it's leaving.
     viewerId: userId,
@@ -1130,8 +1121,6 @@ export default function DriveHub() {
     canViewForms,
     formsPageAccess,
     canManageAgreements,
-    homeEnabled,
-    home,
     viewerId,
   } = useLoaderData() as LoaderData;
   const [searchParams, setSearchParams] = useSearchParams();
@@ -1958,8 +1947,6 @@ export default function DriveHub() {
         </h1>
       </header>
       {uploadError && <p className="text-sm text-destructive">{uploadError}</p>}
-
-      {homeEnabled && home && !isHiringLibrary && !search && <DriveHome data={home} onOpen={onOpenItem} />}
 
       <DriveBrowser
         formShare={formsPageAccess}

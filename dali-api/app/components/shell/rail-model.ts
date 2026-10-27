@@ -81,3 +81,19 @@ export function orderRailAreas(areas: NavArea[]): NavArea[] {
   }
   return [...areas].sort((a, b) => rank(a.key) - rank(b.key))
 }
+
+function dayKey(at: Date, timeZone: string): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(at)
+}
+
+/** An upcoming meeting's trailing label: its time today, otherwise its weekday. */
+export function upcomingWhen(startsAt: string, now: Date, timeZone: string): string {
+  const at = new Date(startsAt)
+  if (dayKey(at, timeZone) !== dayKey(now, timeZone)) {
+    return new Intl.DateTimeFormat('en-US', { timeZone, weekday: 'short' }).format(at)
+  }
+  // Newer ICU puts a narrow no-break space before AM/PM; keep the label stable across runtimes.
+  return new Intl.DateTimeFormat('en-US', { timeZone, hour: 'numeric', minute: '2-digit' })
+    .format(at)
+    .replace(/\s/g, ' ')
+}
