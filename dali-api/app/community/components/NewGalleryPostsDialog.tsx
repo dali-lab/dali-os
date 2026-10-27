@@ -15,8 +15,10 @@ import {
   GALLERY_CAPTION_MAX,
   GALLERY_MAX_PHOTOS,
   GALLERY_THUMB_WIDTH,
-  encodeGalleryThumb,
+  encodeGalleryImage,
+  galleryDisplaySize,
   galleryKeyPrefix,
+  galleryOriginalKeyPrefix,
   type NewGalleryPost,
 } from "~/community/lib/gallery";
 
@@ -30,8 +32,20 @@ type Row = {
   upload?: Omit<NewGalleryPost, "caption">;
 };
 
-// Size, average colour and a feed-sized thumbnail, read before upload so the feed
-// can reserve each tile's shape, paint it while it loads, and load the small copy.
+function scaledCopy(bitmap: ImageBitmap, width: number, height: number, kind: "thumb" | "display") {
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  canvas.getContext("2d")?.drawImage(bitmap, 0, 0, width, height);
+  return encodeGalleryImage(
+    (type, quality) => new Promise((resolve) => canvas.toBlob(resolve, type, quality)),
+    kind,
+  );
+}
+
+// Size, average colour and the two smaller copies, read before upload so the
+// feed can reserve each tile's shape, paint it while it loads, and load the
+// small copy. A GIF keeps its original on the post page so it still animates.
 async function readImage(file: File) {
   const bitmap = await createImageBitmap(file);
   try {
@@ -42,32 +56,36 @@ async function readImage(file: File) {
     const [r, g, b] = ctx?.getImageData(0, 0, 1, 1).data ?? [128, 128, 128];
     const hex = (n: number) => n.toString(16).padStart(2, "0");
 
-    let thumb: File | null = null;
-    if (bitmap.width > GALLERY_THUMB_WIDTH) {
-      const canvas = document.createElement("canvas");
-      canvas.width = GALLERY_THUMB_WIDTH;
-      canvas.height = Math.round((bitmap.height * GALLERY_THUMB_WIDTH) / bitmap.width);
-      canvas.getContext("2d")?.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-      thumb = await encodeGalleryThumb(
-        (type, quality) => new Promise((resolve) => canvas.toBlob(resolve, type, quality)),
-      );
-    }
+    const thumb =
+      bitmap.width > GALLERY_THUMB_WIDTH
+        ? await scaledCopy(
+            bitmap,
+            GALLERY_THUMB_WIDTH,
+            Math.round((bitmap.height * GALLERY_THUMB_WIDTH) / bitmap.width),
+            "thumb",
+          )
+        : null;
+    const displaySize = file.type === "image/gif" ? null : galleryDisplaySize(bitmap.width, bitmap.height);
+    const display = displaySize
+      ? await scaledCopy(bitmap, displaySize.width, displaySize.height, "display")
+      : null;
     return {
       width: bitmap.width,
       height: bitmap.height,
       color: `#${hex(r)}${hex(g)}${hex(b)}`,
       thumb,
+      display,
     };
   } finally {
     bitmap.close();
   }
 }
 
-// A failed thumbnail upload shouldn't fail the post; the tile shows the original.
-async function uploadThumb(thumb: File | null, prefix: string): Promise<string | null> {
-  if (!thumb) return null;
+// A failed copy shouldn't fail the post; the page falls back to the original.
+async function uploadCopy(copy: File | null, prefix: string): Promise<string | null> {
+  if (!copy) return null;
   try {
-    return (await uploadFileToS3(thumb, prefix, GALLERY_ACCEPT)).s3Key;
+    return (await uploadFileToS3(copy, prefix, GALLERY_ACCEPT)).s3Key;
   } catch {
     return null;
   }
@@ -130,14 +148,17 @@ export function NewGalleryPostsDialog({
     await runPool(added, MAX_CONCURRENT_UPLOADS, async ({ file, row }) => {
       try {
         const prefix = galleryKeyPrefix(userId);
-        const [{ thumb, ...shape }, uploaded] = await Promise.all([
+        const [{ thumb, display, ...shape }, original] = await Promise.all([
           readImage(file),
-          uploadFileToS3(file, prefix, GALLERY_ACCEPT),
+          uploadFileToS3(file, galleryOriginalKeyPrefix(userId), GALLERY_ACCEPT),
         ]);
-        const thumbKey = await uploadThumb(thumb, prefix);
+        const [displayKey, thumbKey] = await Promise.all([
+          uploadCopy(display, prefix),
+          uploadCopy(thumb, prefix),
+        ]);
         patch(row.id, {
           status: "ready",
-          upload: { imageKey: uploaded.s3Key, thumbKey, ...shape },
+          upload: { imageKey: original.s3Key, displayKey, thumbKey, ...shape },
         });
       } catch (err) {
         patch(row.id, {
