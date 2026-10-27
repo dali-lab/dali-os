@@ -9,7 +9,7 @@ import { useToast } from "~/components/ui/toast";
 import { Modal, ModalHeader } from "~/components/Modal";
 import { modalCardClass, useOsChrome } from "~/components/os-chrome";
 import { PageBarMenuItems, usePageBarSlot } from "~/components/shell/page-bar-slot";
-import { Menu, Tooltip } from "~/components/ui/floating";
+import { Menu } from "~/components/ui/floating";
 import type { Route } from "./+types/documents.$pageId";
 import { prisma } from "~/lib/db";
 import { ensureOccurrenceRoster } from "~/lib/scheduled-meeting";
@@ -610,17 +610,15 @@ function AttendanceButton({
   };
   return (
     <>
-      <Tooltip content="Attendance">
-        <button
-          type="button"
-          onClick={() => setOpen(true)}
-          aria-label="Attendance"
-          className={inPageBar ? "os-edit-btn os-edit-btn--sm os-edit-btn--strong" : actionBtnPrimary}
-        >
-          <UserCheck className={actionIcon} />
-          <span className="hidden sm:inline">Attendance</span>
-        </button>
-      </Tooltip>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        aria-label="Attendance"
+        className={inPageBar ? "os-edit-btn os-edit-btn--strong h-8" : actionBtnPrimary}
+      >
+        <UserCheck className={actionIcon} />
+        <span className="hidden sm:inline">Attendance</span>
+      </button>
       <Modal
         open={open}
         onClose={close}
@@ -821,15 +819,15 @@ function DocumentPage() {
                 : undefined
             }
             topBarActions={
-              // Attendance sits last so it lands at the far right of the
+              // Record sits last so it lands at the far right of the
               // document's action row (Share leads it on the left).
               <>
                 <RecordingPresencePill documentName={pageDocName(pageId)} collabToken={collabToken} />
-                {rec && <MeetingRecorder rec={rec} containerWide={containerWide} />}
                 {attendance?.whiteboardPageId && (
                   <WhiteboardLink pageId={attendance.whiteboardPageId} />
                 )}
                 {attendance && <AttendanceButton attendance={attendance} />}
+                {rec && <MeetingRecorder rec={rec} containerWide={containerWide} />}
               </>
             }
           />
