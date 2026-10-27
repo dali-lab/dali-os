@@ -11,11 +11,13 @@ import {
   pinnedNavItems,
   homeNavItem,
   ROOM_BOOKING_NAV_ITEM,
+  shellPageIcon,
   visibleAreas,
   visibleSubtabs,
   type RoleFlags,
 } from "~/lib/nav-areas";
 import { ADMIN_SECTIONS } from "~/admin/adminNav";
+import { Bell, Calendar, HardDrive, HelpCircle, Home, Mail, Settings } from "lucide-react";
 
 const projects = NAV_AREAS.find((a) => a.key === "projects")!;
 
@@ -577,5 +579,31 @@ describe("area tones and descriptions", () => {
 
   it("keeps descriptions free of em dashes", () => {
     for (const a of all) expect(a.description).not.toContain("\u2014");
+  });
+});
+
+describe("shellPageIcon", () => {
+  it.each([
+    ["/", Home],
+    ["/notifications", Bell],
+    ["/calendar", Calendar],
+    ["/calendar/meeting/abc", Calendar],
+    ["/email?folder=inbox", Mail],
+    ["/drive", HardDrive],
+    ["/drive/folder/abc?scope=lab", HardDrive],
+    ["/settings/notifications", Settings],
+    ["/help", HelpCircle],
+  ])("gives %s its sidebar glyph", (path, icon) => {
+    expect(shellPageIcon(path, "/")).toBe(icon);
+  });
+
+  it("matches Home only on the exact home path", () => {
+    expect(shellPageIcon("/connect", "/connect")).toBe(Home);
+    expect(shellPageIcon("/projects", "/")).toBeUndefined();
+  });
+
+  it("does not match a path that only shares a prefix", () => {
+    expect(shellPageIcon("/drivers", "/")).toBeUndefined();
+    expect(shellPageIcon("/emails", "/")).toBeUndefined();
   });
 });
