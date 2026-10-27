@@ -1,7 +1,8 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { Link, useMatches, useLocation } from 'react-router'
-import { Check, ChevronDown, ChevronRight } from 'lucide-react'
+import { Check, ChevronDown, ChevronRight, MoreHorizontal } from 'lucide-react'
 import { cn } from '~/lib/cn'
+import { collapseMiddle } from '~/lib/collapse-middle'
 import { Menu } from "~/components/ui/floating";
 import { OS_MENU_ITEM_CLASS } from "~/components/ui/floating/styles";
 import { FavoriteRouteButton } from '~/components/FavoriteRouteButton'
@@ -242,6 +243,42 @@ export function CrumbSwitcher({
   )
 }
 
+/** A trail's crumbs with the middle run folded into one entry (an array). */
+export function trailEntries(crumbs: Crumb[]): (Crumb | Crumb[])[] {
+  const { head, hidden, tail } = collapseMiddle(crumbs, 1, 2)
+  return hidden.length > 0 ? [...head, hidden, ...tail] : head
+}
+
+export function CrumbOverflow({ crumbs }: { crumbs: Crumb[] }) {
+  return (
+    <Menu
+      align="left"
+      ariaLabel="Hidden path segments"
+      trigger={
+        <button
+          type="button"
+          aria-label="Show hidden path segments"
+          className="inline-flex items-center rounded px-1 py-0.5 text-muted-foreground transition hover:bg-muted/50 hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-os-accent"
+        >
+          <MoreHorizontal className="h-4 w-4" aria-hidden />
+        </button>
+      }
+    >
+      {crumbs.map((c, i) =>
+        c.to ? (
+          <Menu.LinkItem key={i} to={c.to} icon={c.icon}>
+            {c.label}
+          </Menu.LinkItem>
+        ) : (
+          <Menu.Item key={i} icon={c.icon} disabled>
+            {c.label}
+          </Menu.Item>
+        ),
+      )}
+    </Menu>
+  )
+}
+
 export type ResolvedTrail = {
   crumbs: Crumb[]
   action: ReactNode
@@ -384,8 +421,16 @@ export function Breadcrumbs() {
           aria-label="Breadcrumb"
           className="flex flex-wrap items-center gap-1 text-sm text-muted-foreground"
         >
-          {crumbs.map((c, i) => {
-            const leaf = i === crumbs.length - 1
+          {trailEntries(crumbs).map((c, i, entries) => {
+            const leaf = i === entries.length - 1
+            if (Array.isArray(c)) {
+              return (
+                <span key={i} className="flex items-center gap-1">
+                  <ChevronRight className="w-3.5 h-3.5 opacity-50" />
+                  <CrumbOverflow crumbs={c} />
+                </span>
+              )
+            }
             return (
               <span key={i} className="flex items-center gap-1">
                 {i > 0 && <ChevronRight className="w-3.5 h-3.5 opacity-50" />}
@@ -455,15 +500,24 @@ export function PageBarTrail({ crumbs }: { crumbs: Crumb[] }) {
       aria-label="Breadcrumb"
       className="flex min-w-0 items-center gap-1.5 whitespace-nowrap text-[13px] text-os-muted"
     >
-      {crumbs.map((c, i) => {
-        const leaf = i === crumbs.length - 1
+      {trailEntries(crumbs).map((c, i, entries) => {
+        const leaf = i === entries.length - 1
+        const separator = i > 0 && (
+          <span aria-hidden className="text-os-container-hi">
+            /
+          </span>
+        )
+        if (Array.isArray(c)) {
+          return (
+            <span key={i} className="flex shrink-0 items-center gap-1.5">
+              {separator}
+              <CrumbOverflow crumbs={c} />
+            </span>
+          )
+        }
         return (
           <span key={i} className={cn('flex items-center gap-1.5', leaf ? 'min-w-0' : 'shrink-0')}>
-            {i > 0 && (
-              <span aria-hidden className="text-os-container-hi">
-                /
-              </span>
-            )}
+            {separator}
             {c.icon}
             {c.siblings ? (
               <CrumbSwitcher label={c.label} siblings={c.siblings} />

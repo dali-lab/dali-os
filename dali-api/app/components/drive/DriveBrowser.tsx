@@ -79,6 +79,7 @@ import { useToast } from "~/components/ui/toast";
 import { useFeatureFlag } from "~/components/FeatureFlags";
 import { notebookRequest, sendJson } from "~/components/notebooks/notebook-requests";
 import { cn } from "~/lib/cn";
+import { collapseMiddle } from "~/lib/collapse-middle";
 import { FAVORITES_SPACE_KEY, isProcessRootSpace, SHARED_SPACE_KEY } from "~/lib/drive-spaces";
 import { scopeIconFor } from "~/components/drive/scope-icon";
 import { ProcessLinkPill } from "~/components/drive/ProcessLinkPill";
@@ -2485,9 +2486,9 @@ function Breadcrumb({
   // a drive root, where the scope crumb ("My Drive" / "Lab" / the project name)
   // stands in as a stable "you are here" — matching Google Drive, whose
   // breadcrumb is always present.
-  const collapse = folderCrumbs.length > 3;
-  const hidden = collapse ? folderCrumbs.slice(0, folderCrumbs.length - 2) : [];
-  const shown = collapse ? folderCrumbs.slice(folderCrumbs.length - 2) : folderCrumbs;
+  const { hidden, tail } = collapseMiddle(folderCrumbs, 0, 2);
+  const collapse = hidden.length > 0;
+  const shown = collapse ? tail : folderCrumbs;
 
   return (
     <nav
