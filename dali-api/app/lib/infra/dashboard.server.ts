@@ -16,21 +16,25 @@ import {
   protectedFlyApps,
   protectedNeonProjectIds,
 } from "./guard.server";
-import { monthStart } from "./neon-cost";
 import {
   branchUsage,
   flyAppOptions,
   isSampleInScope,
   knownOrgs,
   neonCostSummary,
+  neonDailyUsage,
+  flyDailyUsage,
   neonProjectOptions,
   projectUsage,
+  SCOPE,
   scopeFlyInventory,
   scopeNeonInventory,
   unlinkedResources,
   type KnownOrg,
   type NeonBranchUsage,
   type NeonCostSummary,
+  type NeonDailyRow,
+  type FlyDailyRow,
   type ScopedSample,
   type UsageSeries,
 } from "./infra-scope";
@@ -66,6 +70,10 @@ export type ProjectFleet = {
   flyFetchedAt: string | null;
   neonFetchedAt: string | null;
   usage: UsageSeries[];
+  /** Daily Neon totals for the usage chart, oldest first. */
+  neonDaily: NeonDailyRow[];
+  /** Daily Fly totals per app for the usage chart, oldest first. */
+  flyDaily: FlyDailyRow[];
 };
 
 export type CleanupCandidate = {
@@ -125,18 +133,23 @@ export function buildProjectFleet(
     flyFetchedAt: fly?.fetchedAt.toISOString() ?? null,
     neonFetchedAt: neon?.fetchedAt.toISOString() ?? null,
     usage: projectUsage(mine, now),
+    neonDaily: neonDailyUsage(mine),
+    flyDaily: flyDailyUsage(mine),
   };
 }
 
 const FLY_SAMPLE_DAYS = 3;
+const CHART_DAYS = 90;
 
-// Neon rows back to last month's start (estimates + daily sparklines); Fly rows
-// are hourly per app, so a few days covers the 40-point sparkline.
+// Neon and daily Fly rows cover the chart's longest range, which always reaches
+// back past last month's start for the estimates; hourly Fly rows only feed the
+// 40-point sparkline, so a few days covers them.
 function recentSamplesWhere(now: Date) {
   return {
     OR: [
-      { provider: "neon", at: { gte: monthStart(now, -1) } },
-      { provider: "fly", at: { gte: new Date(now.getTime() - FLY_SAMPLE_DAYS * 86_400_000) } },
+      { provider: "neon", at: { gte: new Date(now.getTime() - CHART_DAYS * 86_400_000) } },
+      { provider: "fly", scopeType: SCOPE.flyDaily, at: { gte: new Date(now.getTime() - CHART_DAYS * 86_400_000) } },
+      { provider: "fly", scopeType: SCOPE.flyApp, at: { gte: new Date(now.getTime() - FLY_SAMPLE_DAYS * 86_400_000) } },
     ],
   };
 }
