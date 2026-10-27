@@ -137,6 +137,24 @@ function neonMonthTotals(
   return out;
 }
 
+export const NEON_CHART_METRICS = ["compute_unit_seconds", "public_network_transfer_bytes"] as const;
+export type NeonDailyRow = { day: string } & Record<(typeof NEON_CHART_METRICS)[number], number>;
+
+/** Per-day totals of the charted Neon metrics across a project's databases, oldest first. */
+export function neonDailyUsage(samples: ScopedSample[]): NeonDailyRow[] {
+  const byDay = new Map<string, NeonDailyRow>();
+  for (const s of samples) {
+    if (s.scopeType !== SCOPE.neonDaily) continue;
+    const metric = NEON_CHART_METRICS.find((m) => m === s.metric);
+    if (!metric) continue;
+    const day = s.at.toISOString().slice(0, 10);
+    const row = byDay.get(day) ?? { day, compute_unit_seconds: 0, public_network_transfer_bytes: 0 };
+    row[metric] += s.value;
+    byDay.set(day, row);
+  }
+  return [...byDay.values()].sort((a, b) => a.day.localeCompare(b.day));
+}
+
 export type NeonBranchUsage = {
   branchId: string;
   name: string;
