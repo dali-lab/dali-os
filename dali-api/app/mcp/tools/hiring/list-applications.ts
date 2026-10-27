@@ -1,16 +1,5 @@
-// MCP `list_applications` — summary rows for domain applications in a cycle.
-// Access mirrors the /hiring/applications web route:
-//   Core / domain leads → all domains in the cycle.
-//   CycleReviewers → only their assigned domains for this cycle.
-//   CycleInterviewers without a reviewer row → same as reviewers (cycle access
-//   check passes, but they see only their own reviewer domains; if they have no
-//   reviewer row they get an empty list).
-//   No cycle access → McpForbiddenError.
-//
-// No confidentiality gate — same as the web route (the list view does not
-// expose raw applicant answers).
-
 import { prisma } from "~/lib/db";
+import { applicationBlindLabelsForCycle } from "~/hiring/lib/anonymization.server";
 import { getUserRoles, hasCycleAccess } from "~/lib/roles";
 import { McpForbiddenError, McpNotFoundError } from "../../registry";
 
@@ -45,10 +34,9 @@ export const LIST_APPLICATIONS_TOOL = {
 type Input = { cycleId: string; domainId?: string; status?: string };
 
 export async function runListApplications(userId: string, input: Input): Promise<unknown> {
-  // Verify cycle exists first.
   const cycle = await prisma.applicationCycle.findUnique({
     where: { id: input.cycleId },
-    select: { id: true },
+    select: { id: true, anonymizeReview: true },
   });
   if (!cycle) throw new McpNotFoundError("Cycle not found");
 
@@ -58,32 +46,26 @@ export async function runListApplications(userId: string, input: Input): Promise
 
   const roles = await getUserRoles(userId);
 
-  // Determine which domain IDs this caller may see.
   let visibleDomainIds: string[] | null = null; // null = all
 
   if (!roles.isCore && !roles.isDomainLead) {
-    // Reviewer-scoped: only the domains they're a CycleReviewer for on THIS cycle.
     const reviewerRows = await prisma.cycleReviewer.findMany({
       where: { userId, applicationCycleId: input.cycleId },
       select: { domainId: true },
     });
     visibleDomainIds = reviewerRows.map((r) => r.domainId);
-    // If they have no reviewer rows but still passed hasCycleAccess (they're
-    // an interviewer only), return empty — they can't see the list view.
     if (visibleDomainIds.length === 0) return { applications: [] };
   }
 
-  // Build domain filter combining caller visibility + optional input filter.
   const effectiveDomainIds: string[] | undefined =
     input.domainId
       ? visibleDomainIds
         ? visibleDomainIds.includes(input.domainId)
           ? [input.domainId]
-          : [] // requested domain not in their scope → empty result
+          : []
         : [input.domainId]
       : visibleDomainIds ?? undefined;
 
-  // If scope collapses to zero domains, return early.
   if (effectiveDomainIds !== undefined && effectiveDomainIds.length === 0) return { applications: [] };
 
   const whereOr = effectiveDomainIds
@@ -103,9 +85,7 @@ export async function runListApplications(userId: string, input: Input): Promise
       application: {
         select: {
           id: true,
-          user: {
-            select: { firstName: true, lastName: true },
-          },
+          user: { select: { firstName: true, lastName: true } },
           statusUpdates: {
             orderBy: { createdAt: "desc" },
             select: { newStatus: true, createdAt: true },
@@ -114,43 +94,71 @@ export async function runListApplications(userId: string, input: Input): Promise
       },
       _count: { select: { reviews: true } },
     },
-    orderBy: [
-      { application: { user: { lastName: "asc" } } },
-      { application: { user: { firstName: "asc" } } },
-    ],
   });
 
-  // Filter by status client-side (mirrors the web route approach; status is
-  // event-sourced so we can't push the filter into Prisma directly).
+  // Status is event-sourced, so the filter can't be pushed into Prisma.
   const filtered = input.status
     ? domainApps.filter((da) => (da.application.statusUpdates[0]?.newStatus ?? "Draft") === input.status)
     : domainApps;
 
+  const blindLabels = await blindLabelsFor(
+    input.cycleId,
+    cycle.anonymizeReview,
+    filtered.map((da) => da.application.id),
+  );
+
   // Wrapped in an object: MCP `structuredContent` must be a JSON object, so a
   // bare array fails result validation on the client before the caller sees it.
+  // Sorted after blinding (as the web list is) so row order can't leak the
+  // alphabetical position of a blinded applicant's real name.
   return {
-    applications: filtered.map((da) => {
-      const u = da.application.user;
-      const updates = da.application.statusUpdates;
-      const currentStatus = updates[0]?.newStatus ?? "Draft";
-      const submittedAt =
-        updates.find((s) => s.newStatus === "Submitted")?.createdAt ?? null;
-      const domainDisplay =
-        da.domain?.displayName ??
-        da.domain?.name ??
-        null;
-      return {
-        domainApplicationId: da.id,
-        applicationId: da.application.id,
-        applicantName: `${u.firstName ?? ""} ${u.lastName ?? ""}`.trim() || null,
-        domain: domainDisplay,
-        domainId:
-          da.domainId ??
-          null,
-        status: currentStatus,
-        submittedAt: submittedAt ? submittedAt.toISOString() : null,
-        reviewCount: da._count.reviews,
-      };
-    }),
+    applications: filtered
+      .map((da) => {
+        const u = da.application.user;
+        const updates = da.application.statusUpdates;
+        const submittedAt = updates.find((s) => s.newStatus === "Submitted")?.createdAt ?? null;
+        return {
+          domainApplicationId: da.id,
+          applicationId: da.application.id,
+          applicantName:
+            blindLabels.get(da.application.id) ??
+            (`${u.firstName ?? ""} ${u.lastName ?? ""}`.trim() || null),
+          domain: da.domain?.displayName ?? da.domain?.name ?? null,
+          domainId: da.domainId ?? null,
+          status: updates[0]?.newStatus ?? "Draft",
+          submittedAt: submittedAt ? submittedAt.toISOString() : null,
+          reviewCount: da._count.reviews,
+        };
+      })
+      .sort(
+        (a, b) =>
+          (a.applicantName ?? "").localeCompare(b.applicantName ?? "", undefined, { numeric: true }) ||
+          (a.domain ?? "").localeCompare(b.domain ?? ""),
+      ),
   };
+}
+
+// Blinding is a whole-application state: every selected domain counts, including
+// ones outside this caller's visible set, so they're looked up separately.
+async function blindLabelsFor(
+  cycleId: string,
+  anonymizeReview: boolean,
+  applicationIds: string[],
+): Promise<Map<string, string>> {
+  if (!anonymizeReview || applicationIds.length === 0) return new Map();
+  const allSelected = await prisma.domainApplication.findMany({
+    where: { applicationId: { in: [...new Set(applicationIds)] }, selected: true },
+    select: { id: true, applicationId: true },
+  });
+  const daIdsByApplication = new Map<string, string[]>();
+  for (const row of allSelected) {
+    const arr = daIdsByApplication.get(row.applicationId) ?? [];
+    arr.push(row.id);
+    daIdsByApplication.set(row.applicationId, arr);
+  }
+  return applicationBlindLabelsForCycle({
+    cycleId,
+    anonymizeReview,
+    applications: [...daIdsByApplication.entries()].map(([id, daIds]) => ({ id, daIds })),
+  });
 }

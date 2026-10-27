@@ -103,9 +103,10 @@ describe("parseFeedQuery", () => {
   });
 });
 
-const rowFor = (id: string, thumbKey: string | null = null) => ({
+const rowFor = (id: string, thumbKey: string | null = null, displayKey: string | null = null) => ({
   id,
   imageKey: `uploads/gallery/a/${UUID}-x.jpg`,
+  displayKey,
   thumbKey,
   width: 4,
   height: 3,
@@ -170,6 +171,17 @@ describe("loadGalleryPage", () => {
     expect(s3.getDownloadUrl).toHaveBeenCalledWith(thumb, { cacheFor: 3600 });
   });
 
+  it("falls back to the display copy, then the original, when a tile has no thumbnail", async () => {
+    s3.isS3Configured.mockReturnValue(true);
+    const display = `uploads/gallery/a/${UUID}-display.webp`;
+    db.galleryPost.findMany.mockResolvedValue([rowFor("d", null, display), rowFor("o")]);
+    const { posts } = await loadGalleryPage(member, { by: null, mine: false, q: "", cursor: null });
+    expect(posts.map((p) => p.imageUrl)).toEqual([
+      `https://s3.test/${display}`,
+      `https://s3.test/uploads/gallery/a/${UUID}-x.jpg`,
+    ]);
+  });
+
   it("leaves out the post a closeup is showing", async () => {
     db.galleryPost.findMany.mockResolvedValue([]);
     await loadGalleryPage(member, { by: null, mine: false, q: "", cursor: null, excludeId: "p9" });
@@ -203,6 +215,17 @@ describe("galleryAction create", () => {
     expect(rows.map((r: { caption: string }) => r.caption)).toEqual(["one", "two"]);
     expect(rows.every((r: { authorId: string }) => r.authorId === "me")).toBe(true);
     expect(rows[0].createdAt.getTime()).toBeGreaterThan(rows[1].createdAt.getTime());
+  });
+
+  it("stores the original, display copy and tile keys the composer uploaded", async () => {
+    const keys = {
+      imageKey: `uploads/gallery-originals/me/${UUID}-a.jpg`,
+      displayKey: `uploads/gallery/me/${UUID}-display.webp`,
+      thumbKey: `uploads/gallery/me/${UUID}-thumb.webp`,
+    };
+    const res = await run({ intent: "create", posts: JSON.stringify([{ ...photo("x"), ...keys }]) });
+    expect(res).toMatchObject({ ok: true, created: 1 });
+    expect(db.galleryPost.createMany.mock.calls[0][0].data[0]).toMatchObject(keys);
   });
 
   it("refuses photos uploaded under someone else's prefix", async () => {
@@ -366,7 +389,14 @@ describe("galleryAction moderation", () => {
 });
 
 describe("loadGalleryPost", () => {
-  it("gives the closeup the original and keeps the thumbnail for its placeholder", async () => {
+  it("gives the closeup the display copy, not the original", async () => {
+    s3.isS3Configured.mockReturnValue(true);
+    const display = `uploads/gallery/a/${UUID}-display.webp`;
+    db.galleryPost.findFirst.mockResolvedValue({ ...rowFor("p1", null, display), comments: [], reports: [] });
+    expect((await loadGalleryPost(member, "p1"))?.fullImageUrl).toBe(`https://s3.test/${display}`);
+  });
+
+  it("gives the closeup the original when there's no display copy, and keeps the thumbnail for its placeholder", async () => {
     s3.isS3Configured.mockReturnValue(true);
     const thumb = `uploads/gallery/a/${UUID}-thumb.webp`;
     db.galleryPost.findFirst.mockResolvedValue({ ...rowFor("p1", thumb), comments: [], reports: [] });

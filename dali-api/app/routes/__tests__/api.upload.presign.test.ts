@@ -363,15 +363,16 @@ describe("POST /api/upload/presign response shape", () => {
 });
 
 describe("POST /api/upload/presign rate limiting", () => {
+  // 30: a full gallery batch of 10 photos is three uploads each.
   it("allows requests under the limit", async () => {
-    for (let i = 0; i < 20; i++) {
+    for (let i = 0; i < 30; i++) {
       const res = await action({ request: makeRequest() } as any);
       expect(res.status).toBe(200);
     }
   });
 
   it("returns 429 with Retry-After once the limit is exceeded", async () => {
-    for (let i = 0; i < 20; i++) {
+    for (let i = 0; i < 30; i++) {
       await action({ request: makeRequest() } as any);
     }
     const res = await action({ request: makeRequest() } as any);
@@ -380,7 +381,7 @@ describe("POST /api/upload/presign rate limiting", () => {
   });
 
   it("scopes the rate limit per user", async () => {
-    for (let i = 0; i < 20; i++) {
+    for (let i = 0; i < 30; i++) {
       await action({ request: makeRequest() } as any);
     }
     // First user is now rate-limited.
@@ -401,7 +402,7 @@ describe("POST /api/upload/presign rate limiting", () => {
       ok: false,
       response: new Response(null, { status: 401 }),
     } as any);
-    for (let i = 0; i < 25; i++) {
+    for (let i = 0; i < 35; i++) {
       const res = await action({ request: makeRequest() } as any);
       expect(res.status).toBe(401);
     }

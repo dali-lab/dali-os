@@ -82,7 +82,9 @@ describe("uploadCapForKey", () => {
     "uploads/applications/portfolio/uuid-portfolio.pdf",
     "release-notes/uploads/uuid-demo.mp4",
     "uploads/release-notes/uploads/uuid-demo.mp4",
-  ])("gives form file-upload answers and release note videos 50 MB: %s", (key) => {
+    "gallery-originals/u1/uuid-IMG_0001.jpg",
+    "uploads/gallery-originals/u1/uuid-IMG_0001.jpg",
+  ])("gives form file-upload answers, release note videos and gallery originals 50 MB: %s", (key) => {
     const cap = uploadCapForKey(key);
     expect(cap.maxBytes).toBe(MAX_FORM_UPLOAD_BYTES);
     expect(cap.maxBytes).toBe(50 * 1024 * 1024);
@@ -98,6 +100,8 @@ describe("uploadCapForKey", () => {
     "whiteboard-images/uuid.png",
     // A look-alike segment deeper in the key doesn't count.
     "avatars/project-files/uuid.png",
+    // Display copies and tiles stay small.
+    "uploads/gallery/u1/uuid-display.webp",
   ])("keeps everything else at 10 MB: %s", (key) => {
     const cap = uploadCapForKey(key);
     expect(cap.maxBytes).toBe(MAX_UPLOAD_BYTES);
