@@ -16,7 +16,8 @@ const {
   announceAgent,
   applyAgentAnnouncement,
   attachAgentPresence,
-  bodyTextRange,
+  bodyTexts,
+  changedTextRange,
   enterAgentContext,
   pagePresenceRoom,
 } = await import("../agent-presence.server");
@@ -132,17 +133,84 @@ describe("pagePresenceRoom", () => {
   });
 });
 
-describe("bodyTextRange", () => {
-  it("spans the first to the last non-empty text", () => {
-    const doc = liveDoc(["", "Hello", "", "World", ""]);
-    const range = bodyTextRange(doc)!;
-    expect(resolve(doc, Y.relativePositionToJSON(range.start))).toEqual({ text: "Hello", index: 0 });
-    expect(resolve(doc, Y.relativePositionToJSON(range.end))).toEqual({ text: "World", index: 5 });
+/** Replace the whole body the way blocksToFragment does: every node rebuilt. */
+function rewrite(doc: LiveDoc, paragraphs: string[]): string[] {
+  const before = bodyTexts(doc).map((t) => t.toString());
+  const fragment = doc.getXmlFragment("blocknote");
+  fragment.delete(0, fragment.length);
+  const fresh = liveDoc(paragraphs).getXmlFragment("blocknote").toArray() as Y.XmlElement[];
+  fragment.insert(0, fresh.map((n) => n.clone()));
+  return before;
+}
+
+function changed(before: string[], doc: LiveDoc) {
+  const range = changedTextRange(before, doc);
+  return range && { start: resolve(doc, range.start), end: resolve(doc, range.end) };
+}
+
+describe("changedTextRange", () => {
+  it("spans only an appended line", () => {
+    const doc = liveDoc(["Intro", "One", "Two", "Outro"]);
+    const before = rewrite(doc, ["Intro", "One", "Two", "Three", "Outro"]);
+    expect(changed(before, doc)).toEqual({
+      start: { text: "Three", index: 0 },
+      end: { text: "Three", index: 5 },
+    });
   });
 
-  it("is null for an empty body", () => {
-    expect(bodyTextRange(liveDoc(["", ""]))).toBeNull();
-    expect(bodyTextRange(new Y.Doc())).toBeNull();
+  it("spans a line edited in place", () => {
+    const doc = liveDoc(["One", "Two", "Three"]);
+    const before = rewrite(doc, ["One", "Two!", "Three"]);
+    expect(changed(before, doc)).toEqual({
+      start: { text: "Two!", index: 0 },
+      end: { text: "Two!", index: 4 },
+    });
+  });
+
+  it("spans every line between the first and last change", () => {
+    const doc = liveDoc(["One", "Two", "Three", "Four"]);
+    const before = rewrite(doc, ["One", "2", "Three", "4"]);
+    expect(changed(before, doc)).toEqual({
+      start: { text: "2", index: 0 },
+      end: { text: "4", index: 1 },
+    });
+  });
+
+  it("matches repeated lines from both ends without overlapping", () => {
+    const doc = liveDoc(["Same", "Same"]);
+    const before = rewrite(doc, ["Same", "Same", "Same"]);
+    expect(changed(before, doc)).toEqual({
+      start: { text: "Same", index: 0 },
+      end: { text: "Same", index: 4 },
+    });
+  });
+
+  it("skips empty lines at the edges of the change", () => {
+    const doc = liveDoc(["One"]);
+    const before = rewrite(doc, ["One", "", "Two", ""]);
+    expect(changed(before, doc)).toEqual({
+      start: { text: "Two", index: 0 },
+      end: { text: "Two", index: 3 },
+    });
+  });
+
+  it("is null when nothing changed, only lines were removed, or only empty lines were added", () => {
+    let doc = liveDoc(["One", "Two"]);
+    expect(changedTextRange(rewrite(doc, ["One", "Two"]), doc)).toBeNull();
+    doc = liveDoc(["One", "Two", "Three"]);
+    expect(changedTextRange(rewrite(doc, ["One", "Three"]), doc)).toBeNull();
+    doc = liveDoc(["One"]);
+    expect(changedTextRange(rewrite(doc, ["One", ""]), doc)).toBeNull();
+  });
+
+  it("spans the whole body when there is no prior text", () => {
+    const doc = liveDoc(["", "Hello", "", "World", ""]);
+    expect(changed([], doc)).toEqual({
+      start: { text: "Hello", index: 0 },
+      end: { text: "World", index: 5 },
+    });
+    expect(changedTextRange([], liveDoc(["", ""]))).toBeNull();
+    expect(changedTextRange([], new Y.Doc())).toBeNull();
   });
 });
 
@@ -185,6 +253,33 @@ describe("applyAgentAnnouncement", () => {
     state = doc.awareness.getStates().get(ID)!;
     expect(resolve(doc, state.cursor.anchor)).toEqual({ text: "World", index: 5 });
     expect(resolve(doc, state.cursor.head)).toEqual({ text: "World", index: 5 });
+  });
+
+  it("highlights only the announced range, then collapses to its end", () => {
+    const doc = liveDoc(["Intro", "Outro"]);
+    const before = rewrite(doc, ["Intro", "Added", "Outro"]);
+    const range = changedTextRange(before, doc);
+    applyAgentAnnouncement(
+      fakeHocuspocus({ "doc:p1:body": doc }),
+      announcement({ docRoom: "doc:p1:body", range }),
+    );
+
+    let cursor = doc.awareness.getStates().get(ID)!.cursor;
+    expect(resolve(doc, cursor.anchor)).toEqual({ text: "Added", index: 0 });
+    expect(resolve(doc, cursor.head)).toEqual({ text: "Added", index: 5 });
+
+    vi.advanceTimersByTime(AGENT_HIGHLIGHT_MS);
+    cursor = doc.awareness.getStates().get(ID)!.cursor;
+    expect(resolve(doc, cursor.anchor)).toEqual({ text: "Added", index: 5 });
+  });
+
+  it("shows no cursor when the write added no text", () => {
+    const doc = liveDoc(["Hello"]);
+    applyAgentAnnouncement(
+      fakeHocuspocus({ "doc:p1:body": doc }),
+      announcement({ docRoom: "doc:p1:body", range: null }),
+    );
+    expect(doc.awareness.getStates().get(ID)!.cursor).toBeNull();
   });
 
   it("shows no cursor for a read or an empty body", () => {
