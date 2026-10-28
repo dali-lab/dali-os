@@ -25,7 +25,7 @@ jobs:
       - name: Restore staging database from prod
         env:
           NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
-          PROJECT_ID: falling-morning-15858013
+          PROJECT_ID: super-queen-83493050
         run: |
           BRANCHES=$(curl -sf "https://console.neon.tech/api/v2/projects/$PROJECT_ID/branches" \
             -H "Authorization: Bearer $NEON_API_KEY")
