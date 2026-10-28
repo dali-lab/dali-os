@@ -16,7 +16,7 @@
 import * as Y from "yjs";
 import { prisma } from "~/lib/db";
 import { getCollabServer } from "./server";
-import { announceAgent } from "./agent-presence.server";
+import { agentAnnouncer } from "./agent-presence.server";
 import { maybeSnapshot, storeDocument } from "./persistence";
 import {
   BLOCKNOTE_FRAGMENT,
@@ -40,15 +40,18 @@ export async function replaceCollabDocContent(
 
   const server = getCollabServer();
   if (server) {
+    const announcer = agentAnnouncer();
     const conn = await server.hocuspocus.openDirectConnection(name);
     try {
-      await conn.transact((live) => {
+      // transact applies the change synchronously, then awaits the store.
+      const stored = conn.transact((live) => {
         blocksToFragment(blocks, live.getXmlFragment(BLOCKNOTE_FRAGMENT));
       });
+      void announcer.then((announce) => announce({ action: "editing", docRoom: name }));
+      await stored;
     } finally {
       await conn.disconnect();
     }
-    void announceAgent({ action: "editing", docRoom: name });
     return;
   }
 

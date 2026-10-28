@@ -60,17 +60,34 @@ export function pagePresenceRoom(pageId: string): string {
  * No-op outside an MCP request or when the caller's agent-presence flag is
  * off. Never throws: presence is decoration on top of the real operation.
  */
-export async function announceAgent(target: {
+export async function announceAgent(target: AnnounceTarget): Promise<void> {
+  (await agentAnnouncer())(target);
+}
+
+type AnnounceTarget = {
   action: AgentAction;
   presenceRoom?: string;
   docRoom?: string;
-}): Promise<void> {
+};
+
+/**
+ * Resolves the caller's flag up front so the announcement itself is
+ * synchronous: a writer starts this before its write and announces the moment
+ * the body changes, not after the document finishes saving.
+ */
+export async function agentAnnouncer(): Promise<(target: AnnounceTarget) => void> {
+  const noop = () => {};
   const agent = currentAgent();
-  if (!agent) return;
+  if (!agent) return noop;
   try {
     const roles = await getUserRoles(agent.userId);
-    if (!(await isFeatureEnabled("agent-presence", agent.userId, roles))) return;
-    const kind = agentKindFromClientName(agent.clientName);
+    if (!(await isFeatureEnabled("agent-presence", agent.userId, roles))) return noop;
+  } catch (err) {
+    console.error("[agent-presence] announce failed", err);
+    return noop;
+  }
+  const kind = agentKindFromClientName(agent.clientName);
+  return (target) => {
     const msg: AgentAnnouncement = {
       kind,
       name: agentDisplayName(kind, agent.clientName),
@@ -78,10 +95,12 @@ export async function announceAgent(target: {
       ownerName: agent.ownerName,
       ...target,
     };
-    publish(BUS_TOPIC, JSON.stringify(msg));
-  } catch (err) {
-    console.error("[agent-presence] announce failed", err);
-  }
+    try {
+      publish(BUS_TOPIC, JSON.stringify(msg));
+    } catch (err) {
+      console.error("[agent-presence] announce failed", err);
+    }
+  };
 }
 
 type Live = {
