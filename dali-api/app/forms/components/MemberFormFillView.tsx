@@ -261,7 +261,7 @@ export function MemberFormFillView({
           {doneContent ?? (
             <>
               <h1 className="font-heading text-2xl font-bold text-foreground">
-                Thanks, your response is in.
+                Thanks for submitting!
               </h1>
               <p className="text-sm text-muted-foreground mt-2">
                 Your response to “{data.name}” has been recorded.

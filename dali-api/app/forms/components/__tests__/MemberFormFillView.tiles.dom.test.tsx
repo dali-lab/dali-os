@@ -90,6 +90,7 @@ describe("MemberFormFillView with a tile strip", () => {
     await submit();
     expect(strip()?.dataset.phase).toBe("settled");
     expect(tileCount()).toBe(1);
+    expect(text()).toContain("Thanks for submitting!");
     expect(text()).toContain("Your response to “Winter Demo Day RSVP” has been recorded.");
     expect(container.querySelector("form")).toBeNull();
   });
