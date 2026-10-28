@@ -86,9 +86,9 @@ export async function runSetPageContent(callerId: string, input: Input) {
     throw new SetPageContentError("Markdown could not be parsed", 400);
   }
 
+  void announceAgent({ action: "editing", presenceRoom: pagePresenceRoom(page.id) });
   // Same doc-name derivation as read_page so the two tools round-trip.
   await replaceCollabDocContent(page.contentDocId ?? pageDocName(page.id), blocks, callerId);
-  void announceAgent({ action: "editing", presenceRoom: pagePresenceRoom(page.id) });
 
   await prisma.page.update({
     where: { id: page.id },
