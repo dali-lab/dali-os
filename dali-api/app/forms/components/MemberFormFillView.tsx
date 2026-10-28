@@ -90,6 +90,8 @@ export function MemberFormFillView({
 
   useLayoutEffect(() => {
     if (tilePhase !== "settled") return;
+    fade.current?.cancel();
+    fade.current = null;
     const root = rootRef.current;
     const from = heightBeforeSettle.current;
     if (!motionOk(root) || from === null) return;
@@ -257,7 +259,7 @@ export function MemberFormFillView({
     <div ref={rootRef} className="overflow-hidden">
       <FormTileStrip cells={tiles} phase={tilePhase} onFolded={() => setTilePhase("folded")} />
       {tilePhase === "settled" ? (
-        <div ref={doneRef} className="p-5 sm:p-8">
+        <div key="done" ref={doneRef} className="p-5 sm:p-8">
           {doneContent ?? (
             <>
               <h1 className="font-heading text-2xl font-bold text-foreground">
@@ -271,7 +273,7 @@ export function MemberFormFillView({
           {continueButton}
         </div>
       ) : (
-        <div ref={formRef} className="p-5 sm:p-8">
+        <div key="form" ref={formRef} className="p-5 sm:p-8">
           <div className="flex items-center gap-2 mb-5">
             {allowExit && <FormExitButton />}
             <span className="font-os-logo text-[15px] font-semibold text-os-accent">dali.os</span>
