@@ -323,6 +323,56 @@ describe("DesktopTabStrip", () => {
     expect(second.querySelector("svg.h-4")).not.toBeNull();
   });
 
+  describe("looking up a background document's emoji", () => {
+    let fetchMock: ReturnType<typeof vi.fn>;
+    beforeEach(() => {
+      fetchMock = vi.fn(async () => Response.json({ iconEmoji: "🌲" }));
+      vi.stubGlobal("fetch", fetchMock);
+    });
+    afterEach(() => vi.unstubAllGlobals());
+
+    const docTab = () => mod.store.getTabsSnapshot().tabs.find((t) => t.url === "/documents/d1");
+
+    it("fills it in without the tab being clicked", async () => {
+      await mountStrip();
+      await act(async () => mod.store.tabActions.open({ url: "/documents/d1", label: "Doc" }, { background: true }));
+      await flush();
+      expect(fetchMock).toHaveBeenCalledWith("/api/documents/d1");
+      expect(docTab()?.emoji).toBe("🌲");
+      expect(strip().textContent).toContain("🌲");
+    });
+
+    it("skips a tab that already has one, the active tab, and pages that aren't documents", async () => {
+      await mountStrip();
+      await act(async () => {
+        mod.store.tabActions.open({ url: "/documents/d1", label: "Doc", emoji: "🍂" }, { background: true });
+        mod.store.tabActions.open({ url: "/projects/p1", label: "Project" }, { background: true });
+      });
+      await flush();
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(docTab()?.emoji).toBe("🍂");
+    });
+
+    it("asks once for a page with no emoji", async () => {
+      fetchMock.mockImplementation(async () => Response.json({ iconEmoji: null }));
+      await mountStrip();
+      await act(async () => mod.store.tabActions.open({ url: "/documents/d1", label: "Doc" }, { background: true }));
+      await flush();
+      await act(async () => mod.store.tabActions.open({ url: "/documents/d2", label: "Doc 2" }, { background: true }));
+      await flush();
+      expect(fetchMock.mock.calls.filter(([url]) => url === "/api/documents/d1")).toHaveLength(1);
+      expect(docTab()).not.toHaveProperty("emoji");
+    });
+
+    it("leaves the tab alone when the lookup fails", async () => {
+      fetchMock.mockImplementation(async () => new Response(null, { status: 404 }));
+      await mountStrip();
+      await act(async () => mod.store.tabActions.open({ url: "/documents/d1", label: "Doc" }, { background: true }));
+      await flush();
+      expect(docTab()).not.toHaveProperty("emoji");
+    });
+  });
+
   const snapshot = {
     tabs: [
       { id: "s1", url: "/x", origin: "/x", label: "Saved X", pinned: false, ephemeral: false, lastActivatedAt: 0, scrollY: 0, backStack: [], forwardStack: [] },
