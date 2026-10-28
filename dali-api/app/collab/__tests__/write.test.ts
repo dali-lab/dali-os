@@ -9,7 +9,12 @@ vi.mock("../blocknote-server", () => ({ BLOCKNOTE_FRAGMENT: "blocknote", blocksT
 vi.mock("../legacy/pm-to-blocknote", () => ({ ensureBlocks: (c: unknown) => c }));
 const announce = vi.fn();
 const agentAnnouncer = vi.fn();
-vi.mock("../agent-presence.server", () => ({ agentAnnouncer }));
+const changedTextRange = vi.fn();
+vi.mock("../agent-presence.server", () => ({
+  agentAnnouncer,
+  bodyTexts: () => [],
+  changedTextRange,
+}));
 
 const { replaceCollabDocContent } = await import("../write");
 
@@ -41,6 +46,7 @@ const flush = () => new Promise((r) => setTimeout(r, 0));
 beforeEach(() => {
   vi.clearAllMocks();
   agentAnnouncer.mockResolvedValue(announce);
+  changedTextRange.mockReturnValue({ start: "s", end: "e" });
 });
 
 describe("replaceCollabDocContent on a live server", () => {
@@ -50,7 +56,11 @@ describe("replaceCollabDocContent on a live server", () => {
     await flush();
 
     expect(events).toEqual(["body written", "announced"]);
-    expect(announce).toHaveBeenCalledWith({ action: "editing", docRoom: "doc:p1:body" });
+    expect(announce).toHaveBeenCalledWith({
+      action: "editing",
+      docRoom: "doc:p1:body",
+      range: { start: "s", end: "e" },
+    });
 
     finishStore();
     await done;

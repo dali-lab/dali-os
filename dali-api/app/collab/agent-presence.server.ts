@@ -38,6 +38,8 @@ export type AgentAnnouncement = {
   action: AgentAction;
   presenceRoom?: string;
   docRoom?: string;
+  /** Relative-position JSON of what the write added; null when it added no text. */
+  range?: { start: unknown; end: unknown } | null;
 };
 
 const agentContext = new AsyncLocalStorage<AgentIdentity>();
@@ -64,11 +66,7 @@ export async function announceAgent(target: AnnounceTarget): Promise<void> {
   (await agentAnnouncer())(target);
 }
 
-type AnnounceTarget = {
-  action: AgentAction;
-  presenceRoom?: string;
-  docRoom?: string;
-};
+type AnnounceTarget = Pick<AgentAnnouncement, "action" | "presenceRoom" | "docRoom" | "range">;
 
 /**
  * Resolves the caller's flag up front so the announcement itself is
@@ -131,9 +129,7 @@ export function presenceRoomState(msg: AgentAnnouncement) {
 }
 
 /** First and last text positions of the BlockNote body, or null when empty. */
-export function bodyTextRange(
-  doc: Y.Doc,
-): { start: Y.RelativePosition; end: Y.RelativePosition } | null {
+export function bodyTexts(doc: Y.Doc): Y.XmlText[] {
   const texts: Y.XmlText[] = [];
   const walk = (node: Y.XmlFragment | Y.XmlElement) => {
     for (const child of node.toArray()) {
@@ -142,29 +138,51 @@ export function bodyTextRange(
     }
   };
   walk(doc.getXmlFragment(BLOCKNOTE_FRAGMENT));
-  const first = texts.find((t) => t.length > 0);
-  const last = [...texts].reverse().find((t) => t.length > 0);
+  return texts;
+}
+
+/**
+ * Span of the texts a write added or changed, found by trimming the texts it
+ * left alone from both ends. A full-body replace rebuilds every node, so Yjs
+ * item identity can't tell an unchanged line from a new one; the strings can.
+ */
+export function changedTextRange(
+  before: string[],
+  doc: Y.Doc,
+): { start: unknown; end: unknown } | null {
+  const after = bodyTexts(doc);
+  let head = 0;
+  while (head < before.length && head < after.length && before[head] === after[head]!.toString()) {
+    head++;
+  }
+  let tail = 0;
+  while (
+    tail < before.length - head &&
+    tail < after.length - head &&
+    before[before.length - 1 - tail] === after[after.length - 1 - tail]!.toString()
+  ) {
+    tail++;
+  }
+  const changed = after.slice(head, after.length - tail);
+  const first = changed.find((t) => t.length > 0);
+  const last = [...changed].reverse().find((t) => t.length > 0);
   if (!first || !last) return null;
   return {
-    start: Y.createRelativePositionFromTypeIndex(first, 0),
-    end: Y.createRelativePositionFromTypeIndex(last, last.length),
+    start: Y.relativePositionToJSON(Y.createRelativePositionFromTypeIndex(first, 0)),
+    end: Y.relativePositionToJSON(Y.createRelativePositionFromTypeIndex(last, last.length)),
   };
 }
 
 export function docRoomState(msg: AgentAnnouncement, doc: Y.Doc, highlight: boolean) {
-  const range = msg.action === "editing" ? bodyTextRange(doc) : null;
+  const range =
+    msg.action !== "editing" ? null : msg.range !== undefined ? msg.range : changedTextRange([], doc);
   return {
     user: {
       name: msg.name,
       color: AGENT_COLORS[msg.kind],
       agent: { kind: msg.kind, action: msg.action },
     },
-    cursor: range
-      ? {
-          anchor: Y.relativePositionToJSON(highlight ? range.start : range.end),
-          head: Y.relativePositionToJSON(range.end),
-        }
-      : null,
+    cursor: range ? { anchor: highlight ? range.start : range.end, head: range.end } : null,
   };
 }
 

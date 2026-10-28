@@ -16,7 +16,7 @@
 import * as Y from "yjs";
 import { prisma } from "~/lib/db";
 import { getCollabServer } from "./server";
-import { agentAnnouncer } from "./agent-presence.server";
+import { agentAnnouncer, bodyTexts, changedTextRange } from "./agent-presence.server";
 import { maybeSnapshot, storeDocument } from "./persistence";
 import {
   BLOCKNOTE_FRAGMENT,
@@ -44,10 +44,13 @@ export async function replaceCollabDocContent(
     const conn = await server.hocuspocus.openDirectConnection(name);
     try {
       // transact applies the change synchronously, then awaits the store.
+      let range: ReturnType<typeof changedTextRange> = null;
       const stored = conn.transact((live) => {
+        const before = bodyTexts(live).map((t) => t.toString());
         blocksToFragment(blocks, live.getXmlFragment(BLOCKNOTE_FRAGMENT));
+        range = changedTextRange(before, live);
       });
-      void announcer.then((announce) => announce({ action: "editing", docRoom: name }));
+      void announcer.then((announce) => announce({ action: "editing", docRoom: name, range }));
       await stored;
     } finally {
       await conn.disconnect();
