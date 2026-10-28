@@ -2,11 +2,10 @@
 // can access. Mirrors GET /api/drive/trash access model:
 //   - Pages: getPageAccess(...).canView
 //   - Files: canEditFile (restore/delete requires edit, not just view)
-//   - Forms: canViewForms (Core/Admin/Instructor)
+//   - Forms: view access on the form's page
 
 import { prisma } from "~/lib/db";
-import { canViewForms } from "~/lib/roles";
-import { canSeeForm, formsUsePageAccess } from "~/forms/lib/form-access.server";
+import { canSeeForm } from "~/forms/lib/form-access.server";
 import { getPageAccess } from "~/lib/pageAccess.server";
 import { canEditFile } from "~/lib/fileAccess.server";
 
@@ -31,8 +30,6 @@ export class ListDriveTrashError extends Error {
 }
 
 export async function runListDriveTrash(callerId: string) {
-  const userCanViewForms = await canViewForms(callerId);
-
   // Archived pages (docs + folders).
   const archivedPages = await prisma.page.findMany({
     where: {
@@ -78,22 +75,14 @@ export async function runListDriveTrash(callerId: string) {
     )
   ).filter(Boolean) as typeof archivedFiles;
 
-  // Archived forms — canViewForms gate.
-  // With forms-page-access on, each one is filtered by its page like a doc.
-  const byPage = await formsUsePageAccess();
-  const archivedFormRows =
-    byPage || userCanViewForms
-      ? await prisma.form.findMany({
-          where: { archivedAt: { not: null } },
-          select: { id: true, name: true, archivedAt: true },
-          orderBy: { archivedAt: "desc" },
-        })
-      : [];
-  const archivedForms = byPage
-    ? (await Promise.all(archivedFormRows.map((f) => canSeeForm(callerId, f.id)))).flatMap((ok, i) =>
-        ok ? [archivedFormRows[i]] : [],
-      )
-    : archivedFormRows;
+  const archivedFormRows = await prisma.form.findMany({
+    where: { archivedAt: { not: null } },
+    select: { id: true, name: true, archivedAt: true },
+    orderBy: { archivedAt: "desc" },
+  });
+  const archivedForms = (await Promise.all(archivedFormRows.map((f) => canSeeForm(callerId, f.id)))).flatMap(
+    (ok, i) => (ok ? [archivedFormRows[i]] : []),
+  );
 
   const items = [
     ...accessiblePages.map((p) => ({

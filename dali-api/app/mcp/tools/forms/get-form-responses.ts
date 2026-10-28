@@ -1,9 +1,8 @@
 // MCP tool: get_form_responses — paginated submission grid for a form.
-// Scope: mcp:read, Core only.
+// Scope: mcp:read; edit access on the form.
 
 import { prisma } from "~/lib/db";
-import { isCore } from "~/lib/roles";
-import { canBuildForm, formsUsePageAccess } from "~/forms/lib/form-access.server";
+import { canBuildForm } from "~/forms/lib/form-access.server";
 import { buildResponseGrid } from "~/forms/lib/answer-rows.server";
 import type { Question } from "~/types";
 import {
@@ -16,7 +15,7 @@ import {
 export const GET_FORM_RESPONSES_TOOL = {
   name: "get_form_responses",
   description:
-    "Return paginated form submissions as a response grid (columns + per-submission answer rows). Core only.",
+    "Return paginated form submissions as a response grid (columns + per-submission answer rows). Needs edit access on the form.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -51,11 +50,8 @@ type Args = {
 };
 
 export async function runGetFormResponses(ctx: McpCtx, args: Args) {
-  const allowed = (await formsUsePageAccess())
-    ? await canBuildForm(ctx.user.id, args.formId)
-    : await isCore(ctx.user.id);
-  if (!allowed) {
-    throw new McpForbiddenError("Only Core members can view form responses");
+  if (!(await canBuildForm(ctx.user.id, args.formId))) {
+    throw new McpForbiddenError("You do not have edit access to this form");
   }
 
   const form = await prisma.form.findUnique({

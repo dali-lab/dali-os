@@ -27,7 +27,6 @@ import type { ReactNode } from "react";
 import { requireAuth, redirectPartnerToPortal, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { getUserRoles } from "~/lib/roles";
-import { formsUsePageAccess } from "~/forms/lib/form-access.server";
 import { resolveTermFilter } from "~/lib/terms";
 import { setPageFavorite } from "~/components/favorites-live";
 import { TermFilter } from "~/components/TermFilter";
@@ -149,14 +148,12 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (partnerRedirect) return partnerRedirect;
 
   const userId = auth.user.sub;
-  const [roles, termFilter, formsPageAccess] = await Promise.all([
+  const [roles, termFilter] = await Promise.all([
     getUserRoles(userId, request),
     resolveTermFilter(request),
-    formsUsePageAccess(request),
   ]);
   // isCore is the gate for agreement authoring. Passed down as canManageAgreements
-  // so drive.server.ts doesn't re-derive it (matches the canViewForms pattern).
-  const userCanViewForms = roles.canViewForms;
+  // so drive.server.ts doesn't re-derive it.
   const userCanManageAgreements = roles.isCore;
 
   // `?term=` scopes which project (and Education) drives appear, exactly as it
@@ -180,7 +177,6 @@ export async function loader({ request }: Route.LoaderArgs) {
         auth,
         projectWorkspaces,
         educationWorkspaces,
-        canViewForms: userCanViewForms,
         canManageAgreements: userCanManageAgreements,
         isCore: roles.isCore,
         request,
@@ -196,8 +192,6 @@ export async function loader({ request }: Route.LoaderArgs) {
     itemTagIds,
     terms: termFilter.terms,
     selectedTerm: termFilter.selected,
-    canViewForms: userCanViewForms,
-    formsPageAccess,
     canManageAgreements: userCanManageAgreements,
     // My Drive is the Member workspace keyed by the viewer's own id — the
     // cross-drive move needs it to name the source workspace it's leaving.
@@ -215,7 +209,7 @@ const TYPE_FILTERS: {
   label: string;
   icon: React.ReactNode;
   /** When set, chip is only visible if the viewer holds this capability. */
-  requiresCap?: "canViewForms" | "canManageAgreements";
+  requiresCap?: "canManageAgreements";
 }[] = [
   { value: "all", label: "All", icon: null },
   { value: "doc", label: "Documents", icon: <FileText className="w-3.5 h-3.5" /> },
@@ -223,7 +217,7 @@ const TYPE_FILTERS: {
   { value: "whiteboard", label: "Whiteboards", icon: <Shapes className="w-3.5 h-3.5" /> },
   { value: "slides", label: "Slide decks", icon: <Presentation className="w-3.5 h-3.5" /> },
   { value: "file", label: "Files", icon: <Paperclip className="w-3.5 h-3.5" /> },
-  { value: "form", label: "Forms", icon: <ClipboardList className="w-3.5 h-3.5" />, requiresCap: "canViewForms" },
+  { value: "form", label: "Forms", icon: <ClipboardList className="w-3.5 h-3.5" /> },
   { value: "agreement", label: "Agreements", icon: <FileSignature className="w-3.5 h-3.5" />, requiresCap: "canManageAgreements" },
   { value: "rubric", label: "Rubrics", icon: <ClipboardList className="w-3.5 h-3.5" />, requiresCap: "canManageAgreements" },
 ];
@@ -914,7 +908,6 @@ export function notebookPlacement(scope: DriveScope, currentFolderId: string | n
 export function NewMenu({
   scope,
   actions,
-  canViewForms,
   canManageAgreements,
   onUploadClick,
   uploading,
@@ -924,7 +917,6 @@ export function NewMenu({
 }: {
   scope: DriveScope;
   actions: ScopeActions;
-  canViewForms: boolean;
   canManageAgreements: boolean;
   onUploadClick: () => void;
   uploading: boolean;
@@ -1083,11 +1075,9 @@ export function NewMenu({
           </CreateLabel>
         </Menu.Item>
       )}
-      {canViewForms && (
-        <Menu.Item icon={<ClipboardList className="w-3.5 h-3.5" />} onSelect={() => void createForm()}>
-          <span data-testid="drive-new-form">New form</span>
-        </Menu.Item>
-      )}
+      <Menu.Item icon={<ClipboardList className="w-3.5 h-3.5" />} onSelect={() => void createForm()}>
+        <span data-testid="drive-new-form">New form</span>
+      </Menu.Item>
       {scope.id === "core" && canManageAgreements && (
         <Menu.Item icon={<FileSignature className="w-3.5 h-3.5" />} onSelect={() => void createAgreement()}>
           <span data-testid="drive-new-agreement">New agreement</span>
@@ -1118,8 +1108,6 @@ export default function DriveHub() {
     itemTagIds,
     terms,
     selectedTerm,
-    canViewForms,
-    formsPageAccess,
     canManageAgreements,
     viewerId,
   } = useLoaderData() as LoaderData;
@@ -1810,7 +1798,7 @@ export default function DriveHub() {
       </div>
     ) : null;
 
-  const caps = { canViewForms: canViewForms || formsPageAccess, canManageAgreements };
+  const caps = { canManageAgreements };
   const visibleFilters = TYPE_FILTERS.filter((f) => !f.requiresCap || caps[f.requiresCap]);
 
   // Type filter as the site's Select dropdown (matches members/forms filters),
@@ -1859,7 +1847,6 @@ export default function DriveHub() {
       <NewMenu
         scope={currentScope}
         actions={currentActions}
-        canViewForms={canViewForms || formsPageAccess}
         canManageAgreements={canManageAgreements}
         onUploadClick={() => inputRef.current?.click()}
         uploading={uploading}
@@ -1949,7 +1936,6 @@ export default function DriveHub() {
       {uploadError && <p className="text-sm text-destructive">{uploadError}</p>}
 
       <DriveBrowser
-        formShare={formsPageAccess}
         scopes={visibleScopes}
         currentScopeId={effectiveScopeId}
         currentFolderId={currentFolderId}

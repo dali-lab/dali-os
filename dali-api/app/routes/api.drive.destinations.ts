@@ -54,7 +54,6 @@ export async function loader({ request }: Route.LoaderArgs) {
       projectIconEmoji: p.iconEmoji,
     })),
     educationWorkspaces: offerings.map((o) => ({ key: o.id, label: o.title, kind: "education" as const })),
-    canViewForms: false,
     canManageAgreements: false,
     isCore: core,
     request,

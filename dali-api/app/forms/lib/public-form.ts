@@ -5,15 +5,13 @@
 // so the fill surface stays small and auditable.
 
 import { prisma } from "~/lib/db";
-import type { FormAudience } from "~/generated/prisma/client";
 import type { Question } from "~/types";
 import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
 import { normalizeQuestionBodies } from "~/lib/question-blocks.server";
 import { resolveReferenceOptions } from "./reference-sources";
 import { safeParseJsonString } from "./forms-data";
 import { requireMember } from "~/lib/roles";
-import { isUserInAnyGroup } from "~/lib/groups";
-import { fillAccessByPage, formsUsePageAccess } from "./form-access.server";
+import { fillAccessByPage } from "./form-access.server";
 import { interpretBidForm } from "~/projects/lib/bid-form-interpreter";
 import { validateBids, replaceBidSet } from "~/projects/lib/bid-validation";
 import { interpretIntentForm } from "~/projects/lib/intent-form-interpreter";
@@ -359,8 +357,6 @@ export async function ordinaryFillBlock(
 export type FormAccessMeta = {
   id: string;
   name: string;
-  audience: FormAudience;
-  audienceGroupIds: string[];
 };
 
 export async function formAccessMeta(
@@ -368,50 +364,27 @@ export async function formAccessMeta(
 ): Promise<FormAccessMeta | null> {
   const form = await prisma.form.findUnique({
     where: { publicToken: token },
-    select: {
-      id: true,
-      name: true,
-      published: true,
-      audience: true,
-      audienceGroupIds: true,
-    },
+    select: { id: true, name: true, published: true },
   });
   if (!form || !form.published) return null;
-  return {
-    id: form.id,
-    name: form.name,
-    audience: form.audience,
-    audienceGroupIds: form.audienceGroupIds,
-  };
+  return { id: form.id, name: form.name };
 }
 
 export type FillAccess = "ok" | "login" | "denied";
 
 // The single fill gate — the fill loader, the submit action, the bound-form
 // app lock, and "Forms for you" all call this so their decisions can't drift.
-// `userId` is null when there is no session. Under `forms-page-access` the
-// form's Drive page decides (see form-access.server.ts); otherwise the form's
-// own audience does. Note Groups does NOT fall back to lab membership: only
-// the selected groups admit.
+// `userId` is null when there is no session.
 export async function formFillAccess(
-  form: Pick<FormAccessMeta, "id" | "audience" | "audienceGroupIds">,
+  form: Pick<FormAccessMeta, "id">,
   userId: string | null,
   request?: Request,
 ): Promise<FillAccess> {
-  if (await formsUsePageAccess(request)) return fillAccessByPage(form.id, userId, request);
-  if (form.audience === "Public") return "ok";
-  if (!userId) return "login";
-  if (form.audience === "SignedIn") return "ok";
-  if (form.audience === "Members") {
-    return (await requireMember(userId)) ? "ok" : "denied";
-  }
-  return (await isUserInAnyGroup(userId, form.audienceGroupIds))
-    ? "ok"
-    : "denied";
+  return fillAccessByPage(form.id, userId, request);
 }
 
-// "Forms for you" (member Home): published + listed forms whose audience
-// admits the viewer. Listing is opt-in per form (Form.listed) — audience
+// "Forms for you" (member Home): published + listed forms the viewer may
+// fill. Listing is opt-in per form (Form.listed) — page access
 // controls who CAN fill, listed controls whether the form is discoverable
 // at all; unlisted forms stay reachable only by link. One-response forms the
 // member already submitted are dropped (no point nudging them toward the
@@ -426,8 +399,6 @@ export async function listedFormsFor(userId: string, request?: Request): Promise
       id: true,
       name: true,
       publicToken: true,
-      audience: true,
-      audienceGroupIds: true,
       oneResponsePerMember: true,
     },
   });
@@ -501,7 +472,7 @@ function staleVersionError(
   return null;
 }
 
-// Anonymous (Public-audience) submit: records a plain, unattributed row with
+// Anonymous (Public general access) submit: records a plain, unattributed row with
 // the client IP for abuse tracing. Deliberately none of the member-path side
 // effects — no todo closing, no one-response gate (no identity to key on),
 // no profile/staffing/education interpretation even when the form happens to
@@ -520,7 +491,6 @@ export async function submitAnonymousForm(args: {
     select: {
       id: true,
       published: true,
-      audience: true,
       versions: {
         where: { id: args.versionId },
         select: { id: true, questions: true, updatedAt: true },
@@ -533,7 +503,7 @@ export async function submitAnonymousForm(args: {
   // Defense-in-depth: this is the only entry point that creates unattributed
   // rows, so it enforces its own precondition even though the action gates
   // with formFillAccess first.
-  if (form.audience !== "Public") {
+  if ((await fillAccessByPage(form.id, null)) !== "ok") {
     return { error: "This form requires signing in.", status: 403 };
   }
   const stale = staleVersionError(form.versions[0], args.versionUpdatedAt);

@@ -15,9 +15,7 @@
 //     docs — we reuse the project-id list derived from the same project query
 //     the docs hub uses, so a file in project X is visible iff the viewer is
 //     Core or staffed on project X.
-//   • Forms:          only returned when the caller passes `canViewForms: true`
-//     (the same `canViewForms` boolean from `~/lib/roles`). `folderPageId` is
-//     ORGANISATION only — it does not change who can see or fill a form.
+//   • Forms:          Pages (kind Form), filtered by page access like docs.
 
 import { prisma } from "~/lib/db";
 import { pageOpenHref } from "~/lib/page-href";
@@ -31,10 +29,6 @@ import type { PageKind, Prisma } from "~/generated/prisma/client";
 
 /** Every page kind a Drive listing (and the Trash) surfaces. */
 export const DRIVE_PAGE_KINDS: PageKind[] = ["Folder", "FreeForm", "Structured", "Whiteboard", "Notebook", "Form", "Slides"];
-
-/** The kinds My Drive holds until forms follow page access: a Form is a Lab or workspace artifact, never a personal note. */
-const MEMBER_PAGE_KINDS = DRIVE_PAGE_KINDS.filter((k) => k !== "Form");
-const MEMBER_PAGE_KINDS_WITH_FORMS = DRIVE_PAGE_KINDS;
 
 /** The tag relation both Drive page loaders select: live tags only, one include per page query. */
 const PAGE_TAGS_SELECT = {
@@ -329,33 +323,8 @@ export function formRowToDriveItem(
 }
 
 /**
- * Which Form rows a workspace listing shows, and where they sit. Forms are gated
- * on `canViewForms` rather than page access, so they skip the per-page walk,
- * but they still follow their folder: one inside a folder the viewer cannot open
- * stays hidden with it. A folder that is archived or gone is absent from `all`,
- * and its forms are lifted to the workspace top level so none are lost.
- */
-function placeForms<T extends { id: string; parentPageId: string | null; kind: PageKind }>(
-  all: T[],
-  visiblePages: { id: string }[],
-  canViewForms: boolean,
-): { row: T; parentFolderId: string | null }[] {
-  if (!canViewForms) return [];
-  const present = new Set(all.map((r) => r.id));
-  const visible = new Set(visiblePages.map((r) => r.id));
-  const out: { row: T; parentFolderId: string | null }[] = [];
-  for (const row of all) {
-    if (row.kind !== "Form") continue;
-    const parent = row.parentPageId;
-    if (parent === null || !present.has(parent)) out.push({ row, parentFolderId: null });
-    else if (visible.has(parent)) out.push({ row, parentFolderId: parent });
-  }
-  return out;
-}
-
-/**
- * Form rows under the forms-page-access cutover: a Form is just another Page,
- * so it has already been through the same visibility filter as its siblings.
+ * A Form is just another Page, so it has already been through the same
+ * visibility filter as its siblings.
  * Splits the visible rows into the non-form rows and the placed forms, each
  * hanging off its own parent folder (a dead parent is lifted by the caller).
  */
@@ -381,19 +350,14 @@ async function resolveVisibleRows<T extends ProjectPageRow>(
   userSub: string,
   request: Request | undefined,
   managerPending: Promise<boolean>,
-  canViewForms: boolean,
-  formsByPage: boolean,
   linkedProcessMap: LinkedProcessMap | undefined,
 ) {
   const governing = governingScopeMap(rows);
-  const pageRows = formsByPage ? rows : rows.filter((row) => row.kind !== "Form");
   const [visibleAll, manager] = await Promise.all([
-    filterScoped(pageRows, userSub, request, governing),
+    filterScoped(rows, userSub, request, governing),
     managerPending,
   ]);
-  const { visible, placedForms } = formsByPage
-    ? splitVisibleForms(visibleAll)
-    : { visible: visibleAll, placedForms: placeForms(rows, visibleAll, canViewForms) };
+  const { visible, placedForms } = splitVisibleForms(visibleAll);
   const audiencesPending = audiencesFor(
     userSub,
     [...visible, ...placedForms.map((f) => f.row)],
@@ -412,8 +376,6 @@ async function resolveVisibleRows<T extends ProjectPageRow>(
 async function loadLabPages(
   userSub: string,
   request: Request | undefined,
-  canViewForms: boolean,
-  formsByPage: boolean,
   linkedProcessMap: LinkedProcessMap | undefined,
 ): Promise<DriveItem[]> {
   const rowsQuery = prisma.page.findMany({
@@ -453,13 +415,10 @@ async function loadLabPages(
   // One batched pageShare query instead of N individual ones; the ancestry walk
   // runs over the rows in hand instead of one query per level per page.
   const governing = governingScopeMap(rows);
-  const pageRows = formsByPage ? rows : rows.filter((row) => row.kind !== "Form");
-  const accessMap = await getPageAccessBulk(userSub, pageRows, request, undefined, governing);
+  const accessMap = await getPageAccessBulk(userSub, rows, request, undefined, governing);
 
-  const visibleAll = pageRows.filter((row) => accessMap.get(row.id)?.canView);
-  const { visible, placedForms } = formsByPage
-    ? splitVisibleForms(visibleAll)
-    : { visible: visibleAll, placedForms: placeForms(rows, visibleAll, canViewForms) };
+  const visibleAll = rows.filter((row) => accessMap.get(row.id)?.canView);
+  const { visible, placedForms } = splitVisibleForms(visibleAll);
   const audiencesPending = audiencesFor(
     userSub,
     [...visible, ...placedForms.map((f) => f.row)],
@@ -595,8 +554,6 @@ async function loadProjectPages(
   userSub: string,
   request: Request | undefined,
   preloaded: ProjectPageRow[] | undefined,
-  canViewForms: boolean,
-  formsByPage: boolean,
   linkedProcessMap: LinkedProcessMap | undefined,
 ): Promise<DriveItem[]> {
   const rows =
@@ -617,8 +574,6 @@ async function loadProjectPages(
     userSub,
     request,
     (async () => (await isCore(userSub, request)) || (await isProjectMember(userSub, projectId, request)))(),
-    canViewForms,
-    formsByPage,
     linkedProcessMap,
   );
 
@@ -664,8 +619,6 @@ async function loadEducationPages(
   offeringId: string,
   userSub: string,
   request: Request | undefined,
-  canViewForms: boolean,
-  formsByPage: boolean,
   linkedProcessMap: LinkedProcessMap | undefined,
 ): Promise<DriveItem[]> {
   const rows = await prisma.page.findMany({
@@ -711,8 +664,6 @@ async function loadEducationPages(
         where: { userId: userSub, offeringId },
         select: { id: true },
       })) !== null)(),
-    canViewForms,
-    formsByPage,
     linkedProcessMap,
   );
 
@@ -751,13 +702,13 @@ async function loadEducationPages(
 /** Load pages (folders + docs) for the viewer's own Member drive — their
  *  personal notes. Owner-only by construction: every row is workspaceId=userSub,
  *  and getPageAccess grants the owner FULL, so no per-page filtering is needed. */
-async function loadMemberPages(userSub: string, request: Request | undefined, formsByPage: boolean): Promise<DriveItem[]> {
+async function loadMemberPages(userSub: string, request: Request | undefined): Promise<DriveItem[]> {
   const rows = await prisma.page.findMany({
     where: {
       workspaceType: "Member",
       workspaceId: userSub,
       archivedAt: null,
-      kind: { in: formsByPage ? MEMBER_PAGE_KINDS_WITH_FORMS : MEMBER_PAGE_KINDS },
+      kind: { in: DRIVE_PAGE_KINDS },
     },
     orderBy: { position: "asc" },
     select: {
@@ -1125,19 +1076,6 @@ export interface LoadDriveScopeOptions {
    */
   scope: DriveScope;
   /**
-   * Whether this viewer may see forms (`canViewForms` from `~/lib/roles`).
-   * Must be computed by the caller and passed here; this function does NOT
-   * re-derive it, so the gate can't be accidentally bypassed by omission.
-   * Pass `false` (or omit) to exclude forms entirely.
-   */
-  canViewForms?: boolean;
-  /**
-   * The forms-page-access cutover is on: Form pages go through page access
-   * like any other page, and `canViewForms` is ignored. Computed once by the
-   * caller (`formsUsePageAccess`); defaults to the legacy gate.
-   */
-  formsByPageAccess?: boolean;
-  /**
    * Whether this viewer may manage (author/view) agreements (= isCore).
    * Must be computed by the caller — this function does NOT re-derive it, so
    * the Core-only gate cannot be bypassed by omission. Only meaningful for
@@ -1184,15 +1122,11 @@ export interface LoadDriveScopeOptions {
  *     membership (same as the documents hub — no per-page extra checks).
  *   - Files: returned only for projects already in the viewer's visible project
  *     set (derived upstream by the caller from the docs-hub project query).
- *   - Forms: with `formsByPageAccess`, listed by page access like any page;
- *     otherwise returned only when `canViewForms === true`. `folderPageId` is
- *     organisation metadata only; it does NOT widen who can see or fill a form.
+ *   - Forms: listed by page access like any page.
  */
 export async function loadDriveScope({
   userSub,
   scope,
-  canViewForms = false,
-  formsByPageAccess = false,
   canManageAgreements = false,
   request,
   preloadedProjectPages,
@@ -1203,7 +1137,7 @@ export async function loadDriveScope({
     // Private drive: the viewer's own personal notes + files, owner-scoped. No
     // forms or agreements live here.
     const [pages, files] = await Promise.all([
-      loadMemberPages(userSub, request, formsByPageAccess),
+      loadMemberPages(userSub, request),
       loadMemberFiles(userSub),
     ]);
     return [...pages, ...files];
@@ -1215,7 +1149,7 @@ export async function loadDriveScope({
     // Project-owned files are NOT included here — they appear only in their
     // respective project scope.
     const [pages, files, agreements, rubrics] = await Promise.all([
-      loadLabPages(userSub, request, canViewForms, formsByPageAccess, linkedProcessMap),
+      loadLabPages(userSub, request, linkedProcessMap),
       loadLabFiles(userSub, request),
       // Agreements and rubrics are Core-only artifacts living under the Core
       // drive. Both gated on real Core, derived upstream — never widened for the
@@ -1230,7 +1164,7 @@ export async function loadDriveScope({
   if (scope.kind === "EducationOffering") {
     const { offeringId } = scope;
     const [pages, files] = await Promise.all([
-      loadEducationPages(offeringId, userSub, request, canViewForms, formsByPageAccess, linkedProcessMap),
+      loadEducationPages(offeringId, userSub, request, linkedProcessMap),
       loadEducationFiles(offeringId),
     ]);
     return withFileAudience([...pages, ...files], false);
@@ -1243,7 +1177,7 @@ export async function loadDriveScope({
   // on project access — we don't re-check membership here; the route loader
   // must enforce it before calling loadDriveScope).
   const [pages, files] = await Promise.all([
-    loadProjectPages(projectId, userSub, request, preloadedProjectPages, canViewForms, formsByPageAccess, linkedProcessMap),
+    loadProjectPages(projectId, userSub, request, preloadedProjectPages, linkedProcessMap),
     loadFiles([projectId], userSub, request, preloadedProjectFiles),
   ]);
 

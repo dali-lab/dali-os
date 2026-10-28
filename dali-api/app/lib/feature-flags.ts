@@ -154,12 +154,6 @@ export const FEATURE_FLAGS = [
       "Help hours, socials and info sessions on a hiring cycle. Core creates events on the cycle page, emails everyone who started an application, and takes attendance by QR self check-in or by hand. Attendance shows on application reviews as an engagement signal. Ships off.",
   },
   {
-    key: "forms-page-access",
-    label: "Forms use page access",
-    description:
-      "Who can see, build, and fill a form comes from its Drive page (folder scope, named shares, general access) instead of the Core/Instructor role gate and the form's own audience setting. Share a form from the same dialog as a document. A cutover switch: only 'everyone' counts, role or user targeting is ignored. Ships off.",
-  },
-  {
     key: "work-history-import",
     label: "Work history import",
     description:

@@ -51,8 +51,6 @@ export async function getBoundFormGateOutstanding(
         select: {
           name: true,
           publicToken: true,
-          audience: true,
-          audienceGroupIds: true,
         },
       },
     },
@@ -88,7 +86,7 @@ export async function getBoundFormGateOutstanding(
     // mismatch would dead-end them on the fill page's access screen. Re-check
     // the real fill gate before redirecting.
     const access = await formFillAccess(
-      { id: b.formId, audience: b.form.audience, audienceGroupIds: b.form.audienceGroupIds },
+      { id: b.formId },
       userId,
       request,
     );

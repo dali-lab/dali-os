@@ -72,7 +72,7 @@ type FormVersion = ReturnType<
 //                         (save-version) and clears the draft. Frozen versions
 //                         are read-only and are what publishing serves.
 export function FormDetail() {
-  const { form, terms, usages, groups, managing, hiringLinks: rawHiringLinks, collabToken, results, page, pageAccess } = useLoaderData<typeof loader>();
+  const { form, terms, usages, managing, hiringLinks: rawHiringLinks, collabToken, results, page } = useLoaderData<typeof loader>();
   // The staffing slot binding, if any: {{term}} in this form's questions
   // resolves from it (see FormBuilderTab's termBinding).
   const staffingBinding = usages.find((u) => u.kind === "staffing") ?? null;
@@ -371,12 +371,8 @@ export function FormDetail() {
           oneResponsePerMember={form.oneResponsePerMember}
           notifyOnSubmission={form.notifyOnSubmission}
           listed={form.listed}
-          audience={form.audience}
-          audienceGroupIds={form.audienceGroupIds}
-          groups={groups}
           opensAt={form.opensAt}
           closesAt={form.closesAt}
-          pageAccess={pageAccess}
         />
         <Button
           variant="secondary"
@@ -424,19 +420,17 @@ export function FormDetail() {
           </>
         ) : (
           <>
-            {pageAccess && (
-              <FormPageShare
-                formId={form.id}
-                formName={form.name}
-                workspaceType={page.workspaceType ?? "Lab"}
-                fillUrl={form.published && form.publicToken ? `/forms/fill/${form.publicToken}` : null}
-              />
-            )}
+            <FormPageShare
+              formId={form.id}
+              formName={form.name}
+              workspaceType={page.workspaceType ?? "Lab"}
+              fillUrl={form.published && form.publicToken ? `/forms/fill/${form.publicToken}` : null}
+            />
             <FormShareButton
               published={form.published}
               publicToken={form.publicToken}
               formName={form.name}
-              label={pageAccess ? "Link" : "Share"}
+              label="Link"
             />
             <PublishButton
               formId={form.id}

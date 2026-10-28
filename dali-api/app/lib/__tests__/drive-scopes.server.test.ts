@@ -7,7 +7,6 @@ vi.mock("~/lib/drive.server", () => ({
   loadDriveScope: vi.fn(),
   buildLinkedProcessMap: vi.fn(),
 }));
-vi.mock("~/forms/lib/form-access.server", () => ({ formsUsePageAccess: vi.fn() }));
 vi.mock("~/lib/auth", () => ({ isImpersonating: vi.fn() }));
 vi.mock("~/lib/user-pages.server", () => ({ favoritePageIds: vi.fn() }));
 vi.mock("~/lib/drive-shared.server", () => ({ loadSharedWithMe: vi.fn() }));
@@ -25,7 +24,6 @@ import { favoritePageIds } from "~/lib/user-pages.server";
 import { getPageAccess } from "~/lib/pageAccess.server";
 import { findAllRoots, ensureAllRoots } from "~/lib/drive-roots.server";
 import { loadSharedWithMe } from "~/lib/drive-shared.server";
-import { formsUsePageAccess } from "~/forms/lib/form-access.server";
 import { favoriteSpaceItems, liftOrphans, loadDriveScopes } from "~/lib/drive-scopes.server";
 import type { DriveItem } from "~/lib/drive.server";
 
@@ -120,7 +118,6 @@ describe("loadDriveScopes: process-root spaces", () => {
       auth: VIEWER,
       projectWorkspaces: [],
       educationWorkspaces: [],
-      canViewForms: opts.isCore ?? true,
       canManageAgreements: opts.isCore ?? true,
       isCore: opts.isCore ?? true,
       request: new Request("http://localhost/drive"),
@@ -285,7 +282,6 @@ describe("loadDriveScopes: Shared with me space", () => {
       auth: VIEWER,
       projectWorkspaces: [],
       educationWorkspaces: [],
-      canViewForms: false,
       canManageAgreements: false,
       isCore: opts.isCore ?? false,
       request: new Request("http://localhost/drive"),
@@ -403,7 +399,6 @@ describe("loadDriveScopes: Favorites space", () => {
       auth: VIEWER,
       projectWorkspaces: [{ key: "p1", label: "Project One", kind: "project" }],
       educationWorkspaces: [],
-      canViewForms: false,
       canManageAgreements: false,
       isCore: false,
       request: new Request("http://localhost/drive"),
@@ -464,7 +459,7 @@ describe("loadDriveScopes: what starts without waiting for the Lab load", () => 
     labResolve!(items);
   };
 
-  function start(opts: { isCore?: boolean; canViewForms?: boolean; projects?: string[] } = {}) {
+  function start(opts: { isCore?: boolean; projects?: string[] } = {}) {
     const isCore = opts.isCore ?? true;
     labResolve = undefined;
     vi.mocked(loadDriveScope).mockImplementation(({ scope }: any) =>
@@ -474,7 +469,6 @@ describe("loadDriveScopes: what starts without waiting for the Lab load", () => 
       auth: VIEWER,
       projectWorkspaces: (opts.projects ?? []).map((key) => ({ key, label: key, kind: "project" as const })),
       educationWorkspaces: [{ key: "off1", label: "Offering", kind: "education" as const }],
-      canViewForms: opts.canViewForms ?? isCore,
       canManageAgreements: isCore,
       isCore,
       request: new Request("http://localhost/drive"),
@@ -516,32 +510,6 @@ describe("loadDriveScopes: what starts without waiting for the Lab load", () => 
   const loadsFor = (kind: string) =>
     vi.mocked(loadDriveScope).mock.calls.map(([o]: any) => o).filter((o: any) => o.scope.kind === kind);
 
-  it("hands the forms gate to the Lab, project and education loads", async () => {
-    const pending = start({ isCore: false, canViewForms: true, projects: ["p1"] });
-    await finishLab([]);
-    await pending;
-    expect(loadsFor("Lab")[0].canViewForms).toBe(true);
-    expect(loadsFor("Project")[0].canViewForms).toBe(true);
-    expect(loadsFor("EducationOffering")[0].canViewForms).toBe(true);
-    expect(loadsFor("Member")[0].canViewForms).toBeUndefined();
-  });
-
-  it("withholds forms from loads when the viewer can't see them", async () => {
-    const pending = start({ isCore: false, canViewForms: false, projects: ["p1"] });
-    await finishLab([]);
-    await pending;
-    expect(loadsFor("Lab")[0].canViewForms).toBe(false);
-    expect(loadsFor("Project")[0].canViewForms).toBe(false);
-    expect(loadsFor("EducationOffering")[0].canViewForms).toBe(false);
-  });
-
-  it("loads the Lab wide enough for Core's process roots even without the forms gate", async () => {
-    const pending = start({ isCore: true, canViewForms: false });
-    await finishLab([]);
-    await pending;
-    expect(loadsFor("Lab")[0].canViewForms).toBe(true);
-  });
-
   it("passes the process linkage map to the project and education loads", async () => {
     const map = new Map([["f", { label: "L", href: "/h" }]]);
     vi.mocked(buildLinkedProcessMap).mockResolvedValue(map as any);
@@ -572,78 +540,21 @@ describe("loadDriveScopes: what starts without waiting for the Lab load", () => 
     expect(ids("core")).toEqual(["coreFolder", "inCore"]);
   });
 
-  it("drops forms from General for a Core viewer who lacks the forms gate, but keeps them in Core", async () => {
-    const pending = start({ isCore: true, canViewForms: false });
-    await vi.waitFor(() => expect(loadDriveScope).toHaveBeenCalled());
-    await finishLab([
-      folderItem("coreRoot", null),
-      folderItem("hiringRoot", null),
-      folderItem("mentorRoot", null),
-      form("unfiled", null),
-      form("inCore", "coreRoot"),
-    ]);
-    const scopes = await pending;
-    const ids = (id: string) => scopes.find((s) => s.id === id)!.items.map((i) => i.id);
-    expect(ids("lab")).toEqual([]);
-    expect(ids("core")).toEqual(["inCore"]);
-  });
-
-  it("keeps forms out of a root's space for a viewer who isn't Core", async () => {
-    vi.mocked(getPageAccess).mockResolvedValue({ canView: true, canEdit: false, canComment: true });
-    const pending = start({ isCore: false, canViewForms: true });
-    await vi.waitFor(() => expect(loadDriveScope).toHaveBeenCalled());
-    await finishLab([folderItem("coreRoot", null), form("inCore", "coreRoot"), form("unfiled", null)]);
-    const scopes = await pending;
-    expect(scopes.find((s) => s.id === "lab")!.items.map((i) => i.id)).toEqual(["unfiled"]);
-    expect(scopes.some((s) => s.id === "core" && s.items.some((i) => i.type === "form"))).toBe(false);
-  });
-
-  it("strips every form from General when the viewer has neither the gate nor Core", async () => {
-    const pending = start({ isCore: false, canViewForms: false });
+  it("keeps General's forms for a viewer who isn't Core", async () => {
+    const pending = start({ isCore: false });
     await vi.waitFor(() => expect(loadDriveScope).toHaveBeenCalled());
     await finishLab([form("unfiled", null)]);
     const scopes = await pending;
-    expect(scopes.find((s) => s.id === "lab")!.items).toEqual([]);
+    expect(scopes.find((s) => s.id === "lab")!.items.map((i) => i.id)).toEqual(["unfiled"]);
   });
 
-  describe("forms-page-access on", () => {
-    beforeEach(() => vi.mocked(formsUsePageAccess).mockResolvedValue(true));
-
-    it("hands the cutover to every scope load, My Drive included", async () => {
-      const pending = start({ isCore: false, canViewForms: false, projects: ["p1"] });
-      await finishLab([]);
-      await pending;
-      for (const kind of ["Member", "Lab", "Project", "EducationOffering"]) {
-        expect(loadsFor(kind)[0].formsByPageAccess).toBe(true);
-      }
-    });
-
-    it("keeps the cutover off the loads while the flag is off", async () => {
-      vi.mocked(formsUsePageAccess).mockResolvedValue(false);
-      const pending = start({ projects: ["p1"] });
-      await finishLab([]);
-      await pending;
-      for (const kind of ["Member", "Lab", "Project", "EducationOffering"]) {
-        expect(loadsFor(kind)[0].formsByPageAccess).toBe(false);
-      }
-    });
-
-    it("keeps General's forms for a viewer with neither the gate nor Core", async () => {
-      const pending = start({ isCore: false, canViewForms: false });
-      await vi.waitFor(() => expect(loadDriveScope).toHaveBeenCalled());
-      await finishLab([form("unfiled", null)]);
-      const scopes = await pending;
-      expect(scopes.find((s) => s.id === "lab")!.items.map((i) => i.id)).toEqual(["unfiled"]);
-    });
-
-    it("keeps a form inside a root's space for a viewer who isn't Core", async () => {
-      vi.mocked(getPageAccess).mockResolvedValue({ canView: true, canEdit: false, canComment: true });
-      const pending = start({ isCore: false, canViewForms: false });
-      await vi.waitFor(() => expect(loadDriveScope).toHaveBeenCalled());
-      await finishLab([folderItem("coreRoot", null), form("inCore", "coreRoot")]);
-      const scopes = await pending;
-      expect(scopes.find((s) => s.id === "core")!.items.map((i) => i.id)).toEqual(["inCore"]);
-    });
+  it("keeps a form inside a root's space for a viewer who isn't Core", async () => {
+    vi.mocked(getPageAccess).mockResolvedValue({ canView: true, canEdit: false, canComment: true });
+    const pending = start({ isCore: false });
+    await vi.waitFor(() => expect(loadDriveScope).toHaveBeenCalled());
+    await finishLab([folderItem("coreRoot", null), form("inCore", "coreRoot")]);
+    const scopes = await pending;
+    expect(scopes.find((s) => s.id === "core")!.items.map((i) => i.id)).toEqual(["inCore"]);
   });
 
   it("tags a form favorite like a doc", async () => {
