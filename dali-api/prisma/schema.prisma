@@ -6413,6 +6413,7 @@ model PartnerContact {
   activities      PartnerActivity[]
   meetingRequests PartnerMeetingRequest[]
   mailMessages    MailMessageIndex[]
+  referrals       PartnerReferral[]
 
   createdAt DateTime @default(now())
 
@@ -7198,8 +7199,7 @@ model PartnerReferral {
   // tiers rely on; dali-os does not compute or store a reward amount.
   type PartnerReferralType
 
-  // Raw contact the member typed. Not normalized into PartnerContact until
-  // Core promotes the referral — a cold lead may never surface again.
+  // Raw contact the member typed, kept verbatim for Core's inbox view.
   rawName        String?
   rawEmail       String?
   rawOrg         String?
@@ -7212,10 +7212,16 @@ model PartnerReferral {
 
   notes String?
 
-  // Warm-lead token: unguessable string that keys the referral when the
-  // partner opens /partner/apply?ref=<token>. Set only when type = WarmLead;
-  // nullable + unique so cold / funded rows don't need one.
-  token String? @unique
+  // Attribution-by-email. On create, if the referrer gave an email, we
+  // upsert a PartnerContact for it and attach it here. When the referred
+  // partner later signs in (findOrLinkPartnerContact matches on email),
+  // their new User links to this same contact row — so partner.apply can
+  // auto-attribute by looking up pending referrals on ctx.contact without
+  // relying on a URL token that doesn't survive the login round-trip.
+  // SetNull: if Core merges or deletes the contact, the referral record
+  // stays in the inbox for manual linking.
+  partnerContactId String?
+  partnerContact   PartnerContact? @relation(fields: [partnerContactId], references: [id], onDelete: SetNull)
 
   // Set when Core has acted on this row (linked it to an application,
   // declined it, or marked it a duplicate). `resolvedById` is loose: SetNull
@@ -7230,6 +7236,7 @@ model PartnerReferral {
 
   @@index([referrerUserId, createdAt])
   @@index([resolvedAt])
+  @@index([partnerContactId])
 }
 
 enum PartnerReferralType {

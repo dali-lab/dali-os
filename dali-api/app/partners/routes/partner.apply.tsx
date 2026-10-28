@@ -5,7 +5,7 @@ import { prisma } from "~/lib/db";
 import { logAuditEvent } from "~/lib/audit";
 import { requirePartnerAccount } from "~/partners/lib/partner-auth.server";
 import { loadApplicationForm } from "~/partners/lib/application-form.server";
-import { resolveReferralToken } from "~/partners/lib/partner-referral.server";
+import { findPendingReferralForContact } from "~/partners/lib/partner-referral.server";
 import { validateAnswers } from "~/forms/lib/public-form";
 import { notifyFormSubmission } from "~/forms/lib/submission-notify.server";
 import { logPartnerActivity } from "~/partners/lib/partner-activity.server";
@@ -32,15 +32,6 @@ export const meta: Route.MetaFunction = () => [
 export async function loader({ request }: Route.LoaderArgs) {
   await requirePartnerAccount(request);
   const applicationForm = await loadApplicationForm();
-  // Member referral attribution. When a member shares the warm-ref link
-  // (/partner/apply?ref=<token>), we resolve the token to the referral row
-  // and pass the id forward in a hidden input. The partner never sees it.
-  // Note: if partner auth bounces them to /partner/login, the ?ref= in the
-  // URL doesn't survive the round-trip — this is acceptable for v1; most
-  // warm-ref partners either land already-authed or re-open the link after
-  // sign-in. If this becomes a real friction, carry the token in a cookie.
-  const refToken = new URL(request.url).searchParams.get("ref");
-  const referral = refToken ? await resolveReferralToken(refToken) : null;
   return {
     applicationForm: applicationForm
       ? {
@@ -49,7 +40,6 @@ export async function loader({ request }: Route.LoaderArgs) {
           versionUpdatedAt: applicationForm.versionUpdatedAt,
         }
       : null,
-    referralId: referral?.id ?? null,
   };
 }
 
@@ -113,17 +103,6 @@ export async function action({ request }: Route.ActionArgs) {
 
   const title = deriveApplicationTitle(applicationForm.questions, formAnswers);
 
-  // Warm-ref carry: a hidden input on the form echoes the referralId the
-  // loader resolved from ?ref=. We re-resolve inside the transaction so a
-  // tampered or stale token can't inject a referrer.
-  const postedReferralId = form.get("referralId");
-  const refToken = new URL(request.url).searchParams.get("ref");
-  let resolvedReferral: Awaited<ReturnType<typeof resolveReferralToken>> = null;
-  if (typeof postedReferralId === "string" && postedReferralId && refToken) {
-    const current = await resolveReferralToken(refToken);
-    if (current && current.id === postedReferralId) resolvedReferral = current;
-  }
-
   const application = await prisma.$transaction(async (tx) => {
     const submission = await tx.formSubmission.create({
       data: {
@@ -134,25 +113,28 @@ export async function action({ request }: Route.ActionArgs) {
       },
       select: { id: true },
     });
+    // Attribute to the oldest pending referral attached to this contact,
+    // if one exists. A member who referred this partner by email created
+    // that contact row at referral time; findOrLinkPartnerContact (upstream
+    // of requirePartnerAccount) has since linked the partner's new User to
+    // the same row — so the match is by contact id, not by URL token.
+    const referral = await findPendingReferralForContact(tx, ctx.contact.id);
     const app = await tx.partnerApplication.create({
       data: {
         applicantContactId: ctx.contact.id,
         partnerOrgId: null,
         stage: "New",
-        source: resolvedReferral ? "Referral" : "Form",
+        source: referral ? "Referral" : "Form",
         title,
         formSubmissionId: submission.id,
-        referralId: resolvedReferral?.id ?? null,
-        referredByUserId: resolvedReferral?.referrerUserId ?? null,
+        referralId: referral?.id ?? null,
+        referredByUserId: referral?.referrerUserId ?? null,
       },
       select: { id: true },
     });
-    if (resolvedReferral) {
-      // Mark the referral resolved and point it back at this app. The @unique
-      // on referralId guards against two apps claiming the same referral if
-      // the partner somehow submits twice through the same link.
+    if (referral) {
       await tx.partnerReferral.update({
-        where: { id: resolvedReferral.id },
+        where: { id: referral.id },
         data: { resolvedAt: new Date() },
       });
     }
@@ -162,19 +144,21 @@ export async function action({ request }: Route.ActionArgs) {
       actorUserId: null,
       type: "Created",
       metadata: {
-        source: resolvedReferral ? "Referral" : "Form",
-        ...(resolvedReferral ? { referralId: resolvedReferral.id } : {}),
+        source: referral ? "Referral" : "Form",
+        ...(referral ? { referralId: referral.id } : {}),
       },
     });
-    return app;
+    return { app, referralId: referral?.id ?? null };
   });
 
-  if (resolvedReferral) {
+  const applicationId = application.app.id;
+
+  if (application.referralId) {
     await logAuditEvent({
       action: "partner.referral.linked",
       userId: auth.user.sub,
-      targetId: resolvedReferral.id,
-      metadata: { applicationId: application.id },
+      targetId: application.referralId,
+      metadata: { applicationId },
       request,
     });
   }
@@ -182,7 +166,7 @@ export async function action({ request }: Route.ActionArgs) {
   await logAuditEvent({
     action: "partner.application.submitted",
     userId: auth.user.sub,
-    targetId: application.id,
+    targetId: applicationId,
     metadata: { contactId: ctx.contact.id },
     request,
   });
@@ -197,7 +181,7 @@ export async function action({ request }: Route.ActionArgs) {
     eventType: "partner.inquiry_received",
     title: `New partner opportunity: ${title}`,
     body: ctx.contact.name ? `From ${ctx.contact.name} (${ctx.contact.email})` : ctx.contact.email,
-    link: `/core/partners?application=${application.id}`,
+    link: `/core/partners?application=${applicationId}`,
   });
   // notifyFormSubmission tells the form's creator. Confirm to the partner too —
   // submitting used to be met with silence until someone triaged them.
@@ -207,21 +191,21 @@ export async function action({ request }: Route.ActionArgs) {
       await sendApplicationReceivedEmail(
         ctx.contact.email,
         ctx.contact.name,
-        application.id,
+        applicationId,
       );
     }
   } catch (err) {
     console.error("partner application confirmation failed", {
-      applicationId: application.id,
+      applicationId,
       error: err instanceof Error ? err.message : String(err),
     });
   }
 
-  return redirect(`/partner/applications/${application.id}`);
+  return redirect(`/partner/applications/${applicationId}`);
 }
 
 export default function PartnerApply({ actionData }: Route.ComponentProps) {
-  const { applicationForm, referralId } = useLoaderData<typeof loader>();
+  const { applicationForm } = useLoaderData<typeof loader>();
   const navigation = useNavigation();
   const submitting = navigation.state === "submitting";
   const [formAnswers, setFormAnswers] = useState<Record<string, string>>({});
@@ -315,9 +299,6 @@ export default function PartnerApply({ actionData }: Route.ComponentProps) {
             name="formVersionUpdatedAt"
             value={applicationForm.versionUpdatedAt}
           />
-          {referralId && (
-            <input type="hidden" name="referralId" value={referralId} />
-          )}
         </section>
 
         <FormPagerNav

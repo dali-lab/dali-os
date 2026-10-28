@@ -50,6 +50,12 @@ beforeEach(() => {
   (validateAnswers as any).mockResolvedValue(null);
   db.formSubmission.create.mockResolvedValue({ id: "sub-1" });
   db.partnerApplication.create.mockResolvedValue({ id: "app-1" });
+  // Default: this contact has no pending referral, so the action takes the
+  // non-attributed path (source: Form). The attribution test overrides this.
+  db.partnerReferral = {
+    findFirst: vi.fn().mockResolvedValue(null),
+    update: vi.fn().mockResolvedValue(undefined),
+  };
   db.$transaction.mockImplementation((fn: (tx: any) => Promise<any>) => fn(db));
 });
 
@@ -81,5 +87,37 @@ describe("partner.apply action", () => {
     const result = await callAction({});
     expect(result).toEqual({ error: "Pitch is required." });
     expect(notifyPartners).not.toHaveBeenCalled();
+  });
+
+  it("attributes to a pending referral on the applicant's contact", async () => {
+    db.partnerReferral.findFirst.mockResolvedValueOnce({
+      id: "ref-1",
+      referrerUserId: "member-7",
+    });
+    await callAction({ pitch: "A pitch" });
+    // Application carries the referral linkage and source flips to Referral.
+    expect(db.partnerApplication.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          source: "Referral",
+          referralId: "ref-1",
+          referredByUserId: "member-7",
+        }),
+      }),
+    );
+    // Referral is marked resolved as part of the same transaction.
+    expect(db.partnerReferral.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "ref-1" },
+        data: expect.objectContaining({ resolvedAt: expect.any(Date) }),
+      }),
+    );
+    // Audit event mirrors the application linkage.
+    expect(logAuditEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "partner.referral.linked",
+        targetId: "ref-1",
+      }),
+    );
   });
 });

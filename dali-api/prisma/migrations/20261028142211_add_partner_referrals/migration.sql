@@ -15,7 +15,7 @@ CREATE TABLE "PartnerReferral" (
     "pitchTitle" TEXT,
     "pitchSummary" TEXT,
     "notes" TEXT,
-    "token" TEXT,
+    "partnerContactId" TEXT,
     "resolvedAt" TIMESTAMP(3),
     "resolvedById" TEXT,
 
@@ -23,19 +23,22 @@ CREATE TABLE "PartnerReferral" (
 );
 
 -- CreateIndex
-CREATE UNIQUE INDEX "PartnerReferral_token_key" ON "PartnerReferral"("token");
-
--- CreateIndex
 CREATE INDEX "PartnerReferral_referrerUserId_createdAt_idx" ON "PartnerReferral"("referrerUserId", "createdAt");
 
 -- CreateIndex
 CREATE INDEX "PartnerReferral_resolvedAt_idx" ON "PartnerReferral"("resolvedAt");
+
+-- CreateIndex
+CREATE INDEX "PartnerReferral_partnerContactId_idx" ON "PartnerReferral"("partnerContactId");
 
 -- AddForeignKey
 ALTER TABLE "PartnerReferral" ADD CONSTRAINT "PartnerReferral_referrerUserId_fkey" FOREIGN KEY ("referrerUserId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "PartnerReferral" ADD CONSTRAINT "PartnerReferral_resolvedById_fkey" FOREIGN KEY ("resolvedById") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "PartnerReferral" ADD CONSTRAINT "PartnerReferral_partnerContactId_fkey" FOREIGN KEY ("partnerContactId") REFERENCES "PartnerContact"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AlterTable
 ALTER TABLE "PartnerApplication" ADD COLUMN "referredByUserId" TEXT,

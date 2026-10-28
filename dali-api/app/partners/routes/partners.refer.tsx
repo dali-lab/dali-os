@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Form, redirect, useActionData, useLoaderData, useNavigation } from "react-router";
-import { Copy, Mail, Lightbulb, UserPlus } from "lucide-react";
+import { Mail, Lightbulb, UserPlus } from "lucide-react";
 import type { Route } from "./+types/partners.refer";
 import { requireAuth, isNonMember, redirectPartnerToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
@@ -11,7 +11,6 @@ import { useOsChrome } from "~/components/os-chrome";
 import {
   createReferral,
   validateReferral,
-  warmReferralLink,
 } from "~/partners/lib/partner-referral.server";
 import type { PartnerReferralType } from "~/generated/prisma/client";
 
@@ -44,7 +43,10 @@ type ActionSuccess = {
   ok: true;
   mode: ReferralMode;
   referralId: string;
-  shareLink: string | null;
+  /** The email we attached the referral to, so the success panel can tell
+   *  the member which address the partner needs to apply with for the
+   *  attribution to land. Null when the member didn't give one. */
+  attributionEmail: string | null;
 };
 type ActionError = { ok: false; error: string; mode: ReferralMode };
 type ActionResult = ActionSuccess | ActionError;
@@ -86,10 +88,12 @@ export async function action({ request }: Route.ActionArgs): Promise<ActionResul
     request,
   });
 
-  const shareLink =
-    row.type === "WarmLead" && row.token ? warmReferralLink(request, row.token) : null;
-
-  return { ok: true, mode, referralId: row.id, shareLink };
+  return {
+    ok: true,
+    mode,
+    referralId: row.id,
+    attributionEmail: input.rawEmail?.trim().toLowerCase() || null,
+  };
 }
 
 const TAB_META: Record<
@@ -100,13 +104,13 @@ const TAB_META: Record<
     label: "Refer a contact",
     icon: UserPlus,
     blurb:
-      "Drop a name, email, or anything else that helps us reach out. We'll follow up with them.",
+      "Drop a name, email, or anything else that helps us reach out. If they later apply using the email you give us, we'll attribute the referral to you automatically.",
   },
   warm: {
     label: "Send them our application",
     icon: Mail,
     blurb:
-      "Already talked to them? Submit this and we'll give you a personal link to send — we'll know they came through you when they apply.",
+      "Already talked to them? Submit this with their email, then point them at dali.dartmouth.edu/partner/apply. We'll attribute the referral to you as long as they apply using that email.",
   },
   pitch: {
     label: "Pitch an idea",
@@ -154,7 +158,10 @@ export default function PartnersReferPage() {
       <p className="text-sm text-os-grey">{TAB_META[mode].blurb}</p>
 
       {success && success.mode === mode && (
-        <SuccessPanel mode={success.mode} shareLink={success.shareLink} />
+        <SuccessPanel
+          mode={success.mode}
+          attributionEmail={success.attributionEmail}
+        />
       )}
 
       <Form method="post" className={chrome.formClass + " flex flex-col gap-4"}>
@@ -297,55 +304,34 @@ function UncontrolledTextarea({
 
 function SuccessPanel({
   mode,
-  shareLink,
+  attributionEmail,
 }: {
   mode: ReferralMode;
-  shareLink: string | null;
+  attributionEmail: string | null;
 }) {
-  if (mode === "warm" && shareLink) {
+  if (mode === "warm") {
     return (
-      <div className="rounded-lg border border-accent-coral/40 bg-accent-coral/5 px-4 py-3 flex flex-col gap-2">
-        <p className="text-sm font-medium text-foreground">
-          Nice — here's your personal link.
-        </p>
-        <p className="text-xs text-os-grey">
-          Send this to the partner. When they apply through this link, we'll
-          know you brought them in.
-        </p>
-        <WarmLinkCopy link={shareLink} />
+      <div className="rounded-lg border border-accent-coral/40 bg-accent-coral/5 px-4 py-3 flex flex-col gap-2 text-sm">
+        <p className="font-medium text-foreground">Got it — point them at the application.</p>
+        {attributionEmail ? (
+          <p className="text-foreground">
+            Send them to{" "}
+            <code className="text-xs">dali.dartmouth.edu/partner/apply</code>.
+            Attribution lands as long as they apply using{" "}
+            <strong>{attributionEmail}</strong>.
+          </p>
+        ) : (
+          <p className="text-foreground">
+            Add their email next time so we can auto-attribute. For now Core
+            will link your referral when they process the application.
+          </p>
+        )}
       </div>
     );
   }
   return (
     <div className="rounded-lg border border-emerald-500/40 bg-emerald-500/5 px-4 py-3 text-sm text-foreground">
       Got it. Core will reach out when they're processing this.
-    </div>
-  );
-}
-
-function WarmLinkCopy({ link }: { link: string }) {
-  const [copied, setCopied] = useState(false);
-  async function copy() {
-    try {
-      await navigator.clipboard.writeText(link);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1500);
-    } catch {
-      // clipboard access can fail in locked-down browsers; the raw link
-      // is still visible for the member to select manually.
-    }
-  }
-  return (
-    <div className="flex items-center gap-2 rounded-md border border-border bg-card px-3 py-2">
-      <code className="flex-1 truncate text-xs text-foreground">{link}</code>
-      <button
-        type="button"
-        onClick={copy}
-        className={buttonClasses("secondary", "xs")}
-      >
-        <Copy className="h-3.5 w-3.5" aria-hidden />
-        {copied ? "Copied" : "Copy"}
-      </button>
     </div>
   );
 }

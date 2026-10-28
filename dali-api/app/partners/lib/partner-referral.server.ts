@@ -1,11 +1,5 @@
-import { randomBytes } from "node:crypto";
 import { prisma } from "~/lib/db";
 import type { Prisma, PartnerReferralType } from "~/generated/prisma/client";
-
-/** Unguessable warm-ref token embedded in /partner/apply?ref=<token>. */
-function newReferralToken(): string {
-  return randomBytes(24).toString("base64url");
-}
 
 export type CreateReferralInput = {
   referrerUserId: string;
@@ -20,7 +14,6 @@ export type CreateReferralInput = {
   notes?: string | null;
 };
 
-/** Normalize whitespace-only strings to null so empty inputs don't persist as "". */
 function trimOrNull(v: string | null | undefined): string | null {
   if (v == null) return null;
   const t = v.trim();
@@ -33,10 +26,11 @@ function normalizeEmail(v: string | null | undefined): string | null {
 }
 
 /**
- * Shape-level validation of a referral submission. Returns an error message
- * when the chosen type is missing fields it semantically requires:
+ * Shape-level validation of a referral submission:
  *   - ColdLead / WarmLead need at least a name OR an email.
  *   - FundedPitch needs a pitch title.
+ * Email isn't required (members may know only a name), but email is what
+ * enables auto-attribution later — the member UI calls that out.
  */
 export function validateReferral(input: CreateReferralInput): string | null {
   const name = trimOrNull(input.rawName);
@@ -55,54 +49,68 @@ export function validateReferral(input: CreateReferralInput): string | null {
   return null;
 }
 
+/**
+ * Upsert a PartnerContact for an email. Email is the natural key on the
+ * contact table (@unique), so upsert is race-safe. The returned contact is
+ * what we attach the referral to; later, when the partner authenticates with
+ * the same email, findOrLinkPartnerContact links their new User to this same
+ * row and auto-attribution falls out for free.
+ */
+async function upsertContactByEmail(
+  tx: Prisma.TransactionClient,
+  email: string,
+  name: string | null,
+) {
+  return tx.partnerContact.upsert({
+    where: { email },
+    create: { email, name: name ?? email },
+    update: {},
+    select: { id: true },
+  });
+}
+
 export async function createReferral(input: CreateReferralInput) {
-  const data: Prisma.PartnerReferralCreateInput = {
-    referrer: { connect: { id: input.referrerUserId } },
-    type: input.type,
-    rawName: trimOrNull(input.rawName),
-    rawEmail: normalizeEmail(input.rawEmail),
-    rawOrg: trimOrNull(input.rawOrg),
-    rawPhone: trimOrNull(input.rawPhone),
-    rawLinkedinUrl: trimOrNull(input.rawLinkedinUrl),
-    pitchTitle: trimOrNull(input.pitchTitle),
-    pitchSummary: trimOrNull(input.pitchSummary),
-    notes: trimOrNull(input.notes),
-    token: input.type === "WarmLead" ? newReferralToken() : null,
-  };
-  return prisma.partnerReferral.create({
-    data,
-    select: { id: true, token: true, type: true },
+  const email = normalizeEmail(input.rawEmail);
+  const name = trimOrNull(input.rawName);
+  return prisma.$transaction(async (tx) => {
+    const contact = email ? await upsertContactByEmail(tx, email, name) : null;
+    const data: Prisma.PartnerReferralCreateInput = {
+      referrer: { connect: { id: input.referrerUserId } },
+      type: input.type,
+      rawName: name,
+      rawEmail: email,
+      rawOrg: trimOrNull(input.rawOrg),
+      rawPhone: trimOrNull(input.rawPhone),
+      rawLinkedinUrl: trimOrNull(input.rawLinkedinUrl),
+      pitchTitle: trimOrNull(input.pitchTitle),
+      pitchSummary: trimOrNull(input.pitchSummary),
+      notes: trimOrNull(input.notes),
+      ...(contact ? { partnerContact: { connect: { id: contact.id } } } : {}),
+    };
+    return tx.partnerReferral.create({
+      data,
+      select: { id: true, type: true, partnerContactId: true },
+    });
   });
 }
 
 /**
- * Resolve a warm-ref token to the referral it points at. Returns null when
- * the token doesn't match a known referral, when the referral isn't WarmLead,
- * or when a resulting application has already been linked (one warm referral
- * attaches at most one application).
+ * Find the oldest pending (unresolved, not already linked to an application)
+ * referral attached to a given PartnerContact. Used by partner.apply to
+ * auto-attribute an incoming application to the member who referred it.
+ * Returns null when there's nothing to attribute.
  */
-export async function resolveReferralToken(token: string) {
-  if (!token) return null;
-  const row = await prisma.partnerReferral.findUnique({
-    where: { token },
-    select: {
-      id: true,
-      type: true,
-      referrerUserId: true,
-      application: { select: { id: true } },
+export async function findPendingReferralForContact(
+  tx: Prisma.TransactionClient,
+  partnerContactId: string,
+) {
+  return tx.partnerReferral.findFirst({
+    where: {
+      partnerContactId,
+      resolvedAt: null,
+      application: null,
     },
+    orderBy: { createdAt: "asc" },
+    select: { id: true, referrerUserId: true },
   });
-  if (!row) return null;
-  if (row.type !== "WarmLead") return null;
-  if (row.application) return null;
-  return {
-    id: row.id,
-    referrerUserId: row.referrerUserId,
-  };
-}
-
-/** Build the member-facing URL used when sharing a warm-ref link. */
-export function warmReferralLink(request: Request, token: string): string {
-  const url = new URL(request.url);
-  return `${url.origin}/partner/apply?ref=${token}`;
 }
