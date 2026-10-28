@@ -153,6 +153,7 @@ export default [
     // (singular) is a separate surface and does not move.
     route("core/partners", "partners/routes/core.partners.tsx"),
     route("core/partners/directory", "partners/routes/core.partners.directory.tsx"),
+    route("core/partners/referrals", "partners/routes/core.partners.referrals.tsx"),
     route("core/partners/reports", "partners/routes/core.partners.reports.tsx"),
     route("core/partners/settings", "partners/routes/core.partners.settings.tsx"),
     // Literal segments above the param routes (repo route-ordering convention).
@@ -263,6 +264,8 @@ export default [
     route("partners", "partners/routes/partners.legacy-redirect.ts", { id: "legacy-partners-hub" }),
     route("partners/applications", "partners/routes/partners.legacy-redirect.ts", { id: "legacy-partners-applications" }),
     route("partners/applications/:id", "partners/routes/partners.legacy-redirect.ts", { id: "legacy-partners-application-id" }),
+    // Member-facing: refer a partner. Literal segment above the :orgId catch-all.
+    route("partners/refer", "partners/routes/partners.refer.tsx"),
     // Literal segments above the param route (repo route-ordering convention).
     route("partners/:orgId", "partners/routes/partners.legacy-redirect.ts", { id: "legacy-partners-org-id" }),
 

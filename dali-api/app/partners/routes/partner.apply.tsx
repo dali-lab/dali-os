@@ -5,6 +5,7 @@ import { prisma } from "~/lib/db";
 import { logAuditEvent } from "~/lib/audit";
 import { requirePartnerAccount } from "~/partners/lib/partner-auth.server";
 import { loadApplicationForm } from "~/partners/lib/application-form.server";
+import { findPendingReferralForContact } from "~/partners/lib/partner-referral.server";
 import { validateAnswers } from "~/forms/lib/public-form";
 import { notifyFormSubmission } from "~/forms/lib/submission-notify.server";
 import { logPartnerActivity } from "~/partners/lib/partner-activity.server";
@@ -112,31 +113,60 @@ export async function action({ request }: Route.ActionArgs) {
       },
       select: { id: true },
     });
+    // Attribute to the oldest pending referral attached to this contact,
+    // if one exists. A member who referred this partner by email created
+    // that contact row at referral time; findOrLinkPartnerContact (upstream
+    // of requirePartnerAccount) has since linked the partner's new User to
+    // the same row — so the match is by contact id, not by URL token.
+    const referral = await findPendingReferralForContact(tx, ctx.contact.id);
     const app = await tx.partnerApplication.create({
       data: {
         applicantContactId: ctx.contact.id,
         partnerOrgId: null,
         stage: "New",
-        source: "Form",
+        source: referral ? "Referral" : "Form",
         title,
         formSubmissionId: submission.id,
+        referralId: referral?.id ?? null,
+        referredByUserId: referral?.referrerUserId ?? null,
       },
       select: { id: true },
     });
+    if (referral) {
+      await tx.partnerReferral.update({
+        where: { id: referral.id },
+        data: { resolvedAt: new Date() },
+      });
+    }
     // actorUserId null = partner-originated (the applicant, not a Core member).
     await logPartnerActivity(tx, {
       applicationId: app.id,
       actorUserId: null,
       type: "Created",
-      metadata: { source: "Form" },
+      metadata: {
+        source: referral ? "Referral" : "Form",
+        ...(referral ? { referralId: referral.id } : {}),
+      },
     });
-    return app;
+    return { app, referralId: referral?.id ?? null };
   });
+
+  const applicationId = application.app.id;
+
+  if (application.referralId) {
+    await logAuditEvent({
+      action: "partner.referral.linked",
+      userId: auth.user.sub,
+      targetId: application.referralId,
+      metadata: { applicationId },
+      request,
+    });
+  }
 
   await logAuditEvent({
     action: "partner.application.submitted",
     userId: auth.user.sub,
-    targetId: application.id,
+    targetId: applicationId,
     metadata: { contactId: ctx.contact.id },
     request,
   });
@@ -151,7 +181,7 @@ export async function action({ request }: Route.ActionArgs) {
     eventType: "partner.inquiry_received",
     title: `New partner opportunity: ${title}`,
     body: ctx.contact.name ? `From ${ctx.contact.name} (${ctx.contact.email})` : ctx.contact.email,
-    link: `/core/partners?application=${application.id}`,
+    link: `/core/partners?application=${applicationId}`,
   });
   // notifyFormSubmission tells the form's creator. Confirm to the partner too —
   // submitting used to be met with silence until someone triaged them.
@@ -161,17 +191,17 @@ export async function action({ request }: Route.ActionArgs) {
       await sendApplicationReceivedEmail(
         ctx.contact.email,
         ctx.contact.name,
-        application.id,
+        applicationId,
       );
     }
   } catch (err) {
     console.error("partner application confirmation failed", {
-      applicationId: application.id,
+      applicationId,
       error: err instanceof Error ? err.message : String(err),
     });
   }
 
-  return redirect(`/partner/applications/${application.id}`);
+  return redirect(`/partner/applications/${applicationId}`);
 }
 
 export default function PartnerApply({ actionData }: Route.ComponentProps) {
