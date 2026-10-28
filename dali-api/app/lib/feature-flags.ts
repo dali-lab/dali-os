@@ -189,6 +189,12 @@ export const FEATURE_FLAGS = [
     description:
       "When a member's AI agent (Claude, ChatGPT, Cursor) reads or edits a page over MCP, it shows up for everyone on that page: an agent avatar in the presence bar (hover says whose agent it is) and, for edits, a cursor and a brief highlight of what it wrote. Targeting applies to the member whose agent it is. Ships off.",
   },
+  {
+    key: "form-blocks",
+    label: "Form tile strip",
+    description:
+      "Forms opened from a form link show a strip of DALI tiles across the top of the card. Each form gets its own pattern. On submit the strip folds into one block and the card settles on a short confirmation. Signed-out visitors see it whenever the flag is switched on, whatever its targeting. Ships off.",
+  },
 ] as const satisfies readonly FeatureFlagDef[];
 
 export type FeatureFlagKey = (typeof FEATURE_FLAGS)[number]["key"];

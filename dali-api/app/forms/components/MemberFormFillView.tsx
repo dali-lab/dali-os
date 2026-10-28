@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ChevronLeft } from "lucide-react";
 import { useNavigate } from "react-router";
 import { desktopVersion } from "~/lib/desktop";
@@ -9,6 +9,13 @@ import {
   FormPagerNav,
   FormPageHeading,
 } from "~/forms/components/FormPager";
+import {
+  FormTileStrip,
+  TILE_MOTION,
+  type TileStripPhase,
+} from "~/forms/components/FormTileStrip";
+import { stripPattern } from "~/forms/lib/tile-strip";
+import { canAnimate, prefersReducedMotion } from "~/components/meeting-recorder/motion";
 import { paginateQuestions } from "~/lib/form-pages";
 import { DocEditor } from "~/components/doc";
 import { isEmptyBlocks } from "~/lib/blocks";
@@ -32,6 +39,10 @@ export type MemberFormData = {
   token: string;
 };
 
+const SETTLE_EASE = "cubic-bezier(.23,1,.32,1)";
+
+const motionOk = (el: Element | null): el is Element => canAnimate(el) && !prefersReducedMotion();
+
 export function MemberFormFillView({
   data,
   // Optional: rendered on the "Submitted" screen instead of the default copy.
@@ -43,11 +54,16 @@ export function MemberFormFillView({
   // gate so a required fill lands the member back where they were headed. Shown
   // as a "Continue" button on the done screen.
   next,
+  // Seeds the tile strip; the form renders full-bleed inside a flush shell.
+  tileSeed,
+  allowExit = false,
 }: {
   data: MemberFormData;
   doneContent?: React.ReactNode;
   extraBody?: Record<string, string | null>;
   next?: string | null;
+  tileSeed?: string | null;
+  allowExit?: boolean;
 }) {
   const navigate = useNavigate();
   const [answers, setAnswers] = useState<Record<string, string>>({});
@@ -57,8 +73,57 @@ export function MemberFormFillView({
   const pages = useMemo(() => paginateQuestions(questions), [questions]);
   const pager = useFormPager(pages, { excludeFileType: true });
 
+  const tiles = useMemo(() => (tileSeed ? stripPattern(tileSeed) : null), [tileSeed]);
+  const [tilePhase, setTilePhase] = useState<TileStripPhase>("idle");
+  const rootRef = useRef<HTMLDivElement>(null);
+  const formRef = useRef<HTMLDivElement>(null);
+  const doneRef = useRef<HTMLDivElement>(null);
+  const fade = useRef<Animation | null>(null);
+  const heightBeforeSettle = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (tiles && state === "done" && tilePhase === "folded") {
+      heightBeforeSettle.current = rootRef.current?.offsetHeight ?? null;
+      setTilePhase("settled");
+    }
+  }, [tiles, state, tilePhase]);
+
+  useLayoutEffect(() => {
+    if (tilePhase !== "settled") return;
+    const root = rootRef.current;
+    const from = heightBeforeSettle.current;
+    if (!motionOk(root) || from === null) return;
+    const timing = { duration: TILE_MOTION.settle, easing: SETTLE_EASE };
+    root.animate([{ height: `${from}px` }, { height: `${root.offsetHeight}px` }], timing);
+    doneRef.current?.animate(
+      [{ opacity: 0, transform: "translateY(8px)" }, { opacity: 1, transform: "none" }],
+      { ...timing, delay: TILE_MOTION.settle / 4, fill: "backwards" },
+    );
+  }, [tilePhase]);
+
   function set(key: string, v: string) {
     setAnswers((a) => ({ ...a, [key]: v }));
+  }
+
+  function startFold() {
+    setTilePhase("folding");
+    const el = formRef.current;
+    if (!motionOk(el)) return;
+    fade.current = el.animate([{ opacity: 1 }, { opacity: 0 }], {
+      duration: TILE_MOTION.fade,
+      delay: TILE_MOTION.fadeDelay,
+      easing: "ease-out",
+      fill: "forwards",
+    });
+  }
+
+  function failSubmit(message: string) {
+    setError(message);
+    setState("idle");
+    if (!tiles) return;
+    fade.current?.cancel();
+    fade.current = null;
+    setTilePhase("idle");
   }
 
   async function submit(e: React.FormEvent) {
@@ -72,6 +137,7 @@ export function MemberFormFillView({
       return;
     }
     setState("submitting");
+    if (tiles) startFold();
     try {
       const res = await fetch(`/api/forms/fill/${data.token}`, {
         method: "POST",
@@ -86,18 +152,24 @@ export function MemberFormFillView({
       });
       const out = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok) {
-        setError(out.error ?? `Submission failed (${res.status}).`);
-        setState("idle");
+        failSubmit(out.error ?? `Submission failed (${res.status}).`);
         return;
       }
       setState("done");
     } catch {
-      setError("Network error — please try again.");
-      setState("idle");
+      failSubmit("Network error — please try again.");
     }
   }
 
-  if (state === "done") {
+  const continueButton = next && (
+    <div className="mt-6">
+      <Button variant="primary" size="sm" onClick={() => navigate(next)}>
+        Continue
+      </Button>
+    </div>
+  );
+
+  if (state === "done" && !tiles) {
     return (
       <div className="text-center py-10">
         {doneContent ?? (
@@ -110,18 +182,12 @@ export function MemberFormFillView({
             </p>
           </>
         )}
-        {next && (
-          <div className="mt-6">
-            <Button variant="primary" size="sm" onClick={() => navigate(next)}>
-              Continue
-            </Button>
-          </div>
-        )}
+        {continueButton}
       </div>
     );
   }
 
-  return (
+  const formBody = (
     <>
       <h1 className="font-heading text-2xl font-bold text-foreground">
         {data.name}
@@ -184,25 +250,50 @@ export function MemberFormFillView({
       </form>
     </>
   );
+
+  if (!tiles) return formBody;
+
+  return (
+    <div ref={rootRef} className="overflow-hidden">
+      <FormTileStrip cells={tiles} phase={tilePhase} onFolded={() => setTilePhase("folded")} />
+      {tilePhase === "settled" ? (
+        <div ref={doneRef} className="p-5 sm:p-8">
+          {doneContent ?? (
+            <>
+              <h1 className="font-heading text-2xl font-bold text-foreground">
+                Thanks for submitting!
+              </h1>
+              <p className="text-sm text-muted-foreground mt-2">
+                Your response to “{data.name}” has been recorded.
+              </p>
+            </>
+          )}
+          {continueButton}
+        </div>
+      ) : (
+        <div ref={formRef} className="p-5 sm:p-8">
+          <div className="flex items-center gap-2 mb-5">
+            {allowExit && <FormExitButton />}
+            <span className="font-os-logo text-[15px] font-semibold text-os-accent">dali.os</span>
+          </div>
+          {formBody}
+        </div>
+      )}
+    </div>
+  );
 }
 
-// The branded card chrome both routes wrap the form in. This route renders
-// outside the app layout, so on the desktop shell (a bare WKWebView with no
-// browser back button) `allowExit` adds a Back control — otherwise the form is
-// a dead end with no way out. Web keeps its own browser chrome; onboarding
-// opts out entirely.
-export function MemberFormShell({
-  children,
-  allowExit = false,
-}: {
-  children: React.ReactNode;
-  allowExit?: boolean;
-}) {
+// This route renders outside the app layout, so on the desktop shell (a bare
+// WKWebView with no browser back button) the form would otherwise be a dead
+// end. Web keeps its own browser chrome.
+export function FormExitButton() {
   const navigate = useNavigate();
   const [isDesktop, setIsDesktop] = useState(false);
   useEffect(() => {
     setIsDesktop(desktopVersion() !== null);
   }, []);
+
+  if (!isDesktop) return null;
 
   const exit = () => {
     if (typeof window !== "undefined" && window.history.length > 1) {
@@ -213,28 +304,51 @@ export function MemberFormShell({
   };
 
   return (
+    <button
+      type="button"
+      onClick={exit}
+      aria-label="Back"
+      className="-ml-1 mr-1 flex items-center justify-center rounded-md p-1 text-muted-foreground hover:text-foreground hover:bg-muted"
+    >
+      <ChevronLeft className="w-[18px] h-[18px]" />
+    </button>
+  );
+}
+
+// The branded card chrome both routes wrap the form in. Onboarding opts out of
+// the Back control. `flush` drops the padding and brand row for a child that
+// draws its own (the tile strip runs edge to edge).
+export function MemberFormShell({
+  children,
+  allowExit = false,
+  flush = false,
+}: {
+  children: React.ReactNode;
+  allowExit?: boolean;
+  flush?: boolean;
+}) {
+  return (
     <div className="min-h-screen bg-section-bg p-4 sm:p-8 pt-10 sm:pt-16">
-      <div className="mx-auto max-w-2xl bg-card border border-border rounded-os-card p-5 sm:p-8">
-        <div className="flex items-center gap-2 mb-6">
-          {allowExit && isDesktop && (
-            <button
-              type="button"
-              onClick={exit}
-              aria-label="Back"
-              className="-ml-1 mr-1 flex items-center justify-center rounded-md p-1 text-muted-foreground hover:text-foreground hover:bg-muted"
-            >
-              <ChevronLeft className="w-[18px] h-[18px]" />
-            </button>
-          )}
-          <div className="w-7 h-7 bg-os-accent rounded-md flex items-center justify-center">
-            <span className="text-white font-bold text-base leading-none font-heading">
-              D
+      <div
+        className={
+          flush
+            ? "mx-auto max-w-2xl bg-card border border-border rounded-os-card overflow-hidden"
+            : "mx-auto max-w-2xl bg-card border border-border rounded-os-card p-5 sm:p-8"
+        }
+      >
+        {!flush && (
+          <div className="flex items-center gap-2 mb-6">
+            {allowExit && <FormExitButton />}
+            <div className="w-7 h-7 bg-os-accent rounded-md flex items-center justify-center">
+              <span className="text-white font-bold text-base leading-none font-heading">
+                D
+              </span>
+            </div>
+            <span className="font-heading text-sm font-bold text-foreground">
+              DALI OS
             </span>
           </div>
-          <span className="font-heading text-sm font-bold text-foreground">
-            DALI OS
-          </span>
-        </div>
+        )}
         {children}
       </div>
     </div>
