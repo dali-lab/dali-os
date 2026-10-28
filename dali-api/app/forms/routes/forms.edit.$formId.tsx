@@ -2,7 +2,7 @@ import { redirect } from "react-router";
 import type { Route } from "./+types/forms.edit.$formId";
 import { requireAuth, forbidden, redirectNonMemberToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
-import { canBuildForm, canSeeForm, formsUsePageAccess } from "~/forms/lib/form-access.server";
+import { canBuildForm, canSeeForm } from "~/forms/lib/form-access.server";
 import type { DriveNoticeKey } from "~/lib/drive-notices";
 import { prisma } from "~/lib/db";
 import {
@@ -16,7 +16,6 @@ import {
   loadFormHiringLinks,
   unlinkHiringForm,
 } from "~/hiring/lib/form-links.server";
-import { listAllGroups } from "~/lib/groups";
 import { FormDetail } from "~/forms/components/FormDetail";
 import { loadVersionResponses } from "~/forms/lib/version-responses.server";
 import { driveRootCrumbs } from "~/lib/drive-crumbs";
@@ -84,16 +83,13 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   if (!form) return redirect("/drive?type=form");
   // Terms for term-scoped reference questions (e.g. projects active in a
   // chosen term). Newest first so the most likely choices are at the top.
-  const [terms, usages, allGroups, hiringLinks, driveCrumbs] =
+  const [terms, usages, hiringLinks, driveCrumbs] =
     await Promise.all([
       prisma.term.findMany({
         orderBy: { sortKey: "desc" },
         select: { id: true, code: true },
       }),
       formUsages(params.formId),
-      // Audience picker choices. listAllGroups (not the per-user visibility
-      // helper): a Core author must be able to target groups they aren't in.
-      listAllGroups(),
       loadFormHiringLinks(params.formId),
       driveFolderCrumbs(form.folderPageId, auth.user.sub, request),
     ]);
@@ -124,16 +120,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     hiringLinks,
     driveCrumbs,
     page: { workspaceType: form.workspaceType },
-    pageAccess: await formsUsePageAccess(request),
-    groups: allGroups
-      .filter((g) => !g.archived)
-      .map((g) => ({
-        id: g.id,
-        name: g.name,
-        type: g.type,
-        systemKey: g.systemKey,
-        memberCount: g.memberIds.length,
-      })),
     // Session cookie forwarded to the client so FormBuilderTab can authenticate
     // its Hocuspocus connection for the form's structured collab room.
     collabToken: await getCollabToken(request),
@@ -150,10 +136,10 @@ export async function action({ request, params }: Route.ActionArgs) {
   const formData = await request.formData();
   const intent = formData.get("intent") as string | null;
 
-  // The gate above is for this route's form; with page access a builder of one
-  // form must not reach another through a crafted id.
+  // The gate above is for this route's form; a builder of one form must not
+  // reach another through a crafted id.
   const targetId = formData.get("id");
-  if (typeof targetId === "string" && targetId && targetId !== params.formId && (await formsUsePageAccess(request)))
+  if (typeof targetId === "string" && targetId && targetId !== params.formId)
     return forbidden(request);
 
   if (intent === "unlink-hiring-form") {

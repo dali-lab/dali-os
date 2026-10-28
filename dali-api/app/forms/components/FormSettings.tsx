@@ -5,17 +5,15 @@ import { Modal, ModalHeader } from "~/components/Modal";
 import { modalCardClass, useOsChrome } from "~/components/os-chrome";
 import { Button } from "~/components/ui/Button";
 import { Checkbox } from "~/components/ui/Checkbox";
-import { Radio } from "~/components/ui/Radio";
 import { DateField } from "~/components/ui/DateField";
 import { Tooltip } from "~/components/ui/floating";
 import { useConfirmSubmit } from "~/components/ui/dialog";
 import type { HiringFormLink } from "~/hiring/lib/form-links.server";
-import { orderGroupsForPicker } from "~/lib/group-kind";
 
 type Usage = { kind: string; label: string; href?: string | null };
 
 // Everything about a form that isn't its questions — response rules, the
-// publish schedule, the audience, and where it's in use — behind the editor's
+// publish schedule, and where it's in use — behind the editor's
 // settings button. A managed form (its distribution owned by a hiring cycle,
 // offering, etc.) shows only where it's managed and used.
 export function FormSettingsButton({
@@ -116,22 +114,6 @@ export function FormSettingsButton({
   );
 }
 
-type AudienceValue = "Members" | "SignedIn" | "Groups" | "Public";
-type GroupOption = {
-  id: string;
-  name: string;
-  type: "Static" | "Dynamic";
-  systemKey: string | null;
-  memberCount: number;
-};
-
-const AUDIENCE_OPTIONS: { value: AudienceValue; label: string }[] = [
-  { value: "Members", label: "Lab members" },
-  { value: "SignedIn", label: "Anyone signed in" },
-  { value: "Groups", label: "Specific groups" },
-  { value: "Public", label: "Public" },
-];
-
 // ISO timestamp → the local wall-time string a datetime-local input expects.
 function toLocalInputValue(iso: string | null): string {
   if (!iso) return "";
@@ -140,32 +122,22 @@ function toLocalInputValue(iso: string | null): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-// Per-form response settings + audience. Toggles submit both boolean values
-// (single idempotent update); audience submits on radio change — except
-// "Specific groups", which waits until at least one group is checked (the
-// server enforces the same rule). Pending fetcher FormData drives optimistic
-// state so changes feel instant and settle to the loader's truth.
+// Per-form response settings. Toggles submit both boolean values (single
+// idempotent update). Pending fetcher FormData drives optimistic state so
+// changes feel instant and settle to the loader's truth. Who can fill is set
+// under Share.
 function FormSettingsFields({
   formId,
   oneResponsePerMember,
   notifyOnSubmission,
   listed,
-  audience,
-  audienceGroupIds,
-  groups,
   opensAt,
   closesAt,
-  pageAccess = false,
 }: {
-  /** Who can fill is set under Share (forms-page-access), not here. */
-  pageAccess?: boolean;
   formId: string;
   oneResponsePerMember: boolean;
   notifyOnSubmission: boolean;
   listed: boolean;
-  audience: AudienceValue;
-  audienceGroupIds: string[];
-  groups: GroupOption[];
   opensAt: string | null;
   closesAt: string | null;
 }) {
@@ -208,14 +180,6 @@ function FormSettingsFields({
     );
   }
 
-  // Audience edits stage locally: picking "Specific groups" with nothing
-  // checked must not submit (the saved audience stays live until a valid
-  // selection exists).
-  const [draftAudience, setDraftAudience] = useState<AudienceValue>(audience);
-  const [groupSel, setGroupSel] = useState<Set<string>>(
-    () => new Set(audienceGroupIds),
-  );
-
   function saveSettings(
     nextOneResponse: boolean,
     nextNotify: boolean,
@@ -231,37 +195,6 @@ function FormSettingsFields({
       },
       { method: "post" },
     );
-  }
-
-  function saveAudience(nextAudience: AudienceValue, ids: Set<string>) {
-    fetcher.submit(
-      {
-        intent: "update-form-audience",
-        id: formId,
-        audience: nextAudience,
-        groupIds: JSON.stringify([...ids]),
-      },
-      { method: "post" },
-    );
-  }
-
-  function pickAudience(next: AudienceValue) {
-    setDraftAudience(next);
-    if (next !== "Groups") {
-      saveAudience(next, new Set());
-      return;
-    }
-    if (groupSel.size > 0) saveAudience("Groups", groupSel);
-  }
-
-  function toggleGroup(id: string) {
-    const next = new Set(groupSel);
-    if (next.has(id)) next.delete(id);
-    else next.add(id);
-    setGroupSel(next);
-    if (draftAudience === "Groups" && next.size > 0) {
-      saveAudience("Groups", next);
-    }
   }
 
   return (
@@ -317,54 +250,7 @@ function FormSettingsFields({
         )}
       </div>
 
-      {pageAccess ? (
-        <p className="text-sm text-os-grey">Who can fill this form is set under Share.</p>
-      ) : (
-      <div className="flex flex-col gap-2">
-        <span className={heading}>Who can fill this form</span>
-        {AUDIENCE_OPTIONS.map((opt) => (
-          <Radio
-            key={opt.value}
-            name="form-audience"
-            checked={draftAudience === opt.value}
-            onChange={() => pickAudience(opt.value)}
-            label={opt.label}
-          />
-        ))}
-
-        {draftAudience === "Groups" && (
-          <div className="ml-6 flex flex-col gap-1.5">
-            {groups.length === 0 ? (
-              <span className="text-xs text-muted-foreground">
-                No groups yet. Create them in People › Groups.
-              </span>
-            ) : (
-              orderGroupsForPicker(groups, groupSel).map((g) => (
-                <Checkbox
-                  key={g.id}
-                  checked={groupSel.has(g.id)}
-                  onChange={() => toggleGroup(g.id)}
-                  label={
-                    <>
-                      <span className="text-sm text-foreground truncate">{g.name}</span>
-                      <span className="text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full shrink-0">
-                        {g.type}
-                      </span>
-                    </>
-                  }
-                />
-              ))
-            )}
-            {groupSel.size === 0 && (
-              <span className="text-xs text-os-amber">
-                Select at least one group. Until then the saved audience stays
-                in effect.
-              </span>
-            )}
-          </div>
-        )}
-      </div>
-      )}
+      <p className="text-sm text-os-grey">Who can fill this form is set under Share.</p>
 
       {err && <div className="text-destructive text-xs">{err}</div>}
     </div>

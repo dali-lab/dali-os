@@ -9,22 +9,19 @@ vi.mock("~/lib/cors", () => ({
   withCors: (_req: unknown, res: unknown) => res,
   handlePreflight: () => null,
 }));
-vi.mock("~/lib/roles", () => ({ canViewForms: vi.fn() }));
 vi.mock("~/lib/pageAccess.server", () => ({
   getPageAccess: vi.fn(),
   getPageAccessBulk: vi.fn(),
 }));
 vi.mock("~/lib/fileAccess.server", () => ({ canEditFile: vi.fn() }));
 vi.mock("~/forms/lib/form-access.server", () => ({
-  formsUsePageAccess: vi.fn(),
   canManageFormPlacement: vi.fn(),
 }));
 
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
-import { canViewForms } from "~/lib/roles";
 import { getPageAccessBulk } from "~/lib/pageAccess.server";
-import { canManageFormPlacement, formsUsePageAccess } from "~/forms/lib/form-access.server";
+import { canManageFormPlacement } from "~/forms/lib/form-access.server";
 import { deleteForm, setFormArchived } from "~/forms/lib/form-page.server";
 import { formDeletionBlockers } from "~/forms/lib/form-usages.server";
 import { logAuditEvent } from "~/lib/audit";
@@ -50,11 +47,9 @@ beforeEach(() => {
   vi.mocked(requireAuth).mockResolvedValue({ ok: true, user: { sub: "user-1" } } as never);
   mockPrisma.page.findMany.mockResolvedValue([]);
   mockPrisma.projectFile.findMany.mockResolvedValue([]);
-  vi.mocked(canViewForms).mockResolvedValue(true);
-  vi.mocked(formsUsePageAccess).mockResolvedValue(true);
 });
 
-describe("GET /api/drive/trash, forms-page-access on", () => {
+describe("GET /api/drive/trash (forms)", () => {
   const list = async () =>
     ((await (loader({ request: new Request("http://os.test/api/drive/trash") } as never) as Promise<Response>)).json()) as Promise<{
       items: { id: string; type: string; parentFolderId: string | null }[];
@@ -75,7 +70,7 @@ describe("GET /api/drive/trash, forms-page-access on", () => {
     expect(batch[3]).toEqual({ includeArchived: true });
   });
 
-  it("hides a form the viewer cannot view, even with canViewForms", async () => {
+  it("hides a form the viewer cannot view", async () => {
     mockPrisma.page.findMany.mockResolvedValue([formPage, docPage]);
     vi.mocked(getPageAccessBulk).mockImplementation(async (_u, pages) =>
       new Map(pages.map((p) => [p.id, { canView: p.id !== "form-1", canEdit: false, canComment: false }])),
@@ -83,13 +78,9 @@ describe("GET /api/drive/trash, forms-page-access on", () => {
     expect((await list()).items.map((i) => i.id)).toEqual(["doc-1"]);
   });
 
-  it("does not consult canViewForms for the listing", async () => {
-    await list();
-    expect(canViewForms).not.toHaveBeenCalled();
-  });
 });
 
-describe("POST /api/drive/trash (forms), forms-page-access on", () => {
+describe("POST /api/drive/trash (forms)", () => {
   it("asks canManageFormPlacement for the form id on archive, restore and purge", async () => {
     vi.mocked(canManageFormPlacement).mockResolvedValue(true);
     mockPrisma.form.findUnique.mockResolvedValue({ id: "form-1", archivedAt: null });
@@ -116,6 +107,13 @@ describe("POST /api/drive/trash (forms), forms-page-access on", () => {
       ["drive.trash.restore", "user-1", "form-1", { type: "form", title: "Intake" }],
       ["drive.trash.purge", "user-1", "form-1", { type: "form", title: "Intake" }],
     ]);
+  });
+
+  it("refuses to purge a form that is still in use", async () => {
+    vi.mocked(canManageFormPlacement).mockResolvedValue(true);
+    vi.mocked(formDeletionBlockers).mockResolvedValue(["the 26F application"]);
+    expect((await post({ intent: "purge", type: "form", id: "form-1" })).status).toBe(409);
+    expect(deleteForm).not.toHaveBeenCalled();
   });
 
   it("logs nothing when the form is not editable", async () => {

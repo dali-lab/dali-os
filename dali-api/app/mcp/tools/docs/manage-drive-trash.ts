@@ -2,7 +2,7 @@
 // Mirrors POST /api/drive/trash (intent=restore|purge). Access model:
 //   - Pages (doc/folder): getPageAccess(...).canEdit
 //   - Files: canEditFile
-//   - Forms: canViewForms (Core/Admin/Instructor)
+//   - Forms: edit on the form's page
 //
 // Purge of forms checks formDeletionBlockers before deleting.
 
@@ -18,7 +18,7 @@ import type { McpCtx, McpTool } from "~/mcp/registry";
 export const MANAGE_DRIVE_TRASH_TOOL_DEF = {
   name: "manage_drive_trash",
   description:
-    "Restore or permanently purge an archived drive item. Pages require edit access; files require edit-file access; forms require Core/Admin/Instructor role (edit access once forms follow page access). Purging a form fails if the form is still bound to active hiring or education workflows.",
+    "Restore or permanently purge an archived drive item. Pages require edit access; files require edit-file access; forms require edit access on the form. Purging a form fails if the form is still bound to active hiring or education workflows.",
   inputSchema: {
     type: "object" as const,
     properties: {

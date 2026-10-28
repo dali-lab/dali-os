@@ -10,13 +10,11 @@ vi.mock("~/lib/login-next", () => ({ redirectToLogin: vi.fn() }));
 vi.mock("~/forms/lib/form-access.server", () => ({
   canBuildForm: vi.fn(),
   canSeeForm: vi.fn(),
-  formsUsePageAccess: vi.fn(),
 }));
 vi.mock("~/forms/lib/forms-data", () => ({ loadFormForEdit: vi.fn(), runFormsAction: vi.fn() }));
 vi.mock("~/lib/drive-crumbs.server", () => ({ driveFolderCrumbs: vi.fn() }));
 vi.mock("~/forms/lib/form-usages.server", () => ({ formUsages: vi.fn(), managingUsage: vi.fn() }));
 vi.mock("~/hiring/lib/form-links.server", () => ({ loadFormHiringLinks: vi.fn(), unlinkHiringForm: vi.fn() }));
-vi.mock("~/lib/groups", () => ({ listAllGroups: vi.fn() }));
 vi.mock("~/forms/lib/version-responses.server", () => ({ loadVersionResponses: vi.fn() }));
 vi.mock("~/lib/collab-token.server", () => ({ getCollabToken: vi.fn() }));
 vi.mock("~/forms/components/FormDetail", () => ({ FormDetail: () => null }));
@@ -24,12 +22,11 @@ vi.mock("~/components/PageIcon", () => ({ PageIcon: () => null }));
 
 import { prisma } from "~/lib/db";
 import { requireAuth, redirectNonMemberToPortal } from "~/lib/auth";
-import { canBuildForm, canSeeForm, formsUsePageAccess } from "~/forms/lib/form-access.server";
+import { canBuildForm, canSeeForm } from "~/forms/lib/form-access.server";
 import { loadFormForEdit, runFormsAction } from "~/forms/lib/forms-data";
 import { driveFolderCrumbs } from "~/lib/drive-crumbs.server";
 import { formUsages, managingUsage } from "~/forms/lib/form-usages.server";
 import { loadFormHiringLinks } from "~/hiring/lib/form-links.server";
-import { listAllGroups } from "~/lib/groups";
 import { getCollabToken } from "~/lib/collab-token.server";
 import { loader, action } from "~/forms/routes/forms.edit.$formId";
 
@@ -41,7 +38,6 @@ beforeEach(() => {
   vi.mocked(requireAuth).mockResolvedValue({ ok: true, user: { sub: "u1" } } as never);
   vi.mocked(redirectNonMemberToPortal).mockResolvedValue(null as never);
   vi.mocked(canBuildForm).mockResolvedValue(true);
-  vi.mocked(formsUsePageAccess).mockResolvedValue(true);
   vi.mocked(loadFormForEdit).mockResolvedValue({
     id: "f1",
     name: "Intake",
@@ -53,7 +49,6 @@ beforeEach(() => {
   vi.mocked(formUsages).mockResolvedValue([]);
   vi.mocked(managingUsage).mockReturnValue(null as never);
   vi.mocked(loadFormHiringLinks).mockResolvedValue([] as never);
-  vi.mocked(listAllGroups).mockResolvedValue([]);
   vi.mocked(driveFolderCrumbs).mockResolvedValue(null as never);
   vi.mocked(getCollabToken).mockResolvedValue("tok" as never);
 });
@@ -97,12 +92,9 @@ describe("forms.edit loader", () => {
     });
   });
 
-  it("returns the page workspace and the access mode for the UI", async () => {
+  it("returns the page workspace for the UI", async () => {
     const data = await run();
     expect(data.page).toEqual({ workspaceType: "Project" });
-    expect(data.pageAccess).toBe(true);
-    vi.mocked(formsUsePageAccess).mockResolvedValue(false);
-    expect((await run()).pageAccess).toBe(false);
   });
 });
 

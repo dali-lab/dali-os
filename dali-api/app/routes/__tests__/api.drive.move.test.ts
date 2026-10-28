@@ -16,18 +16,15 @@ vi.mock("~/lib/cors", () => ({
 vi.mock("~/lib/roles", () => ({
   isCore: vi.fn(),
   isProjectMember: vi.fn(),
-  canViewForms: vi.fn(),
 }));
 vi.mock("~/lib/pageAccess.server", () => ({ getPageAccess: vi.fn(), PAGE_ACCESS_SELECT: { id: true } }));
-vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabledForEveryone: vi.fn() }));
 vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
 vi.mock("~/lib/page-ancestry.server", () => ({ loadAncestorChain: vi.fn() }));
 
-import { isFeatureEnabledForEveryone } from "~/lib/feature-flags.server";
 import { moveForm } from "~/forms/lib/form-page.server";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
-import { isCore, isProjectMember, canViewForms } from "~/lib/roles";
+import { isCore, isProjectMember } from "~/lib/roles";
 import { getPageAccess } from "~/lib/pageAccess.server";
 import { logAuditEvent } from "~/lib/audit";
 import { loadAncestorChain } from "~/lib/page-ancestry.server";
@@ -54,8 +51,6 @@ beforeEach(() => {
   vi.mocked(requireAuth).mockResolvedValue({ ok: true, user: { sub: "u1" } } as never);
   vi.mocked(isCore).mockResolvedValue(false);
   vi.mocked(isProjectMember).mockResolvedValue(true);
-  vi.mocked(canViewForms).mockResolvedValue(true);
-  vi.mocked(isFeatureEnabledForEveryone).mockResolvedValue(false);
   vi.mocked(getPageAccess).mockResolvedValue({ canView: true, canEdit: true, canComment: true } as never);
   m.projectFile.findUnique.mockResolvedValue({ projectId: "proj", archivedAt: null });
   m.form.findUnique.mockResolvedValue({ id: "fm1" });
@@ -141,11 +136,6 @@ describe("POST /api/drive/move", () => {
       expect(await call(FORM_MOVE)).toEqual({ status: 404, json: { error: "Form not found" } });
     });
 
-    it("403s a form for a viewer without the forms gate", async () => {
-      vi.mocked(canViewForms).mockResolvedValue(false);
-      expect(await call(FORM_MOVE)).toEqual({ status: 403, json: { error: "You can't move this form" } });
-      expect(moveForm).not.toHaveBeenCalled();
-    });
   });
 
   describe("destination refusals", () => {
@@ -184,7 +174,7 @@ describe("POST /api/drive/move", () => {
   });
 });
 
-describe("POST /api/drive/move (forms-page-access on)", () => {
+describe("POST /api/drive/move (forms)", () => {
   const formEdit = (canEdit: boolean) =>
     vi.mocked(getPageAccess).mockImplementation((async (_u: string, page: { id: string }) => ({
       canView: true,
@@ -193,7 +183,6 @@ describe("POST /api/drive/move (forms-page-access on)", () => {
     })) as never);
 
   beforeEach(() => {
-    vi.mocked(isFeatureEnabledForEveryone).mockResolvedValue(true);
     m.page.findUnique.mockImplementation(async ({ where }: { where: { id: string; kind?: string } }) =>
       where.kind === "Form"
         ? { id: "fm1" }
@@ -201,14 +190,13 @@ describe("POST /api/drive/move (forms-page-access on)", () => {
     );
   });
 
-  it("moves a form the viewer can edit, even without canViewForms", async () => {
-    vi.mocked(canViewForms).mockResolvedValue(false);
+  it("moves a form the viewer can edit", async () => {
     formEdit(true);
     expect((await call(FORM_MOVE)).status).toBe(200);
     expect(moveForm).toHaveBeenCalledWith("fm1", "folder");
   });
 
-  it("refuses a form the viewer cannot edit, even with canViewForms", async () => {
+  it("refuses a form the viewer cannot edit", async () => {
     formEdit(false);
     expect(await call(FORM_MOVE)).toEqual({ status: 403, json: { error: "You can't move this form" } });
     expect(moveForm).not.toHaveBeenCalled();

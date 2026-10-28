@@ -7,7 +7,7 @@
 //
 // ACCESS MODEL (matches the no-widening guarantee in drive.server.ts):
 //   - File:  the caller must be Core OR a member of the file's project.
-//   - Form:  the caller must pass the `canViewForms` gate (Core/Admin/Instructor).
+//   - Form:  the caller must be able to EDIT the form's page.
 //   - Destination folder: the caller must be able to EDIT the folder page (via
 //     `getPageAccess(...).canEdit`). Null dest (unplace) requires no folder check.
 //
@@ -93,7 +93,7 @@ export async function action({ request }: Route.ActionArgs) {
     // form — agreements and rubrics are rejected by the guard above.
     const [form, canManage] = await Promise.all([
       prisma.form.findUnique({ where: { id: itemId }, select: { id: true, folderPageId: true } }),
-      // Form manage: the canViewForms gate, or page edit once forms follow page access.
+      // Form manage: edit on the form's page.
       canManageFormPlacement(userId, itemId, request),
     ]);
     if (!form) return refuse("Form not found", 404);

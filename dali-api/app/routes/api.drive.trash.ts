@@ -7,21 +7,20 @@
 //   - The viewer must be an authenticated lab member.
 //   - Pages (doc/folder): viewer must have at least View access (getPageAccess).
 //   - Files:              Core or project-member (canViewFile).
-//   - Forms:              canViewForms gate (Core/Admin/Instructor).
+//   - Forms:              View on the form's page, like a doc.
 //
 // Restore/purge require the same level of access as deletion (edit access for
-// pages; canViewForms for forms; file owner/core for files).
+// pages and forms; file owner/core for files).
 
 import { deleteForm, setFormArchived } from "~/forms/lib/form-page.server";
 import type { Route } from "./+types/api.drive.trash";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
-import { canViewForms as checkCanViewForms } from "~/lib/roles";
 import { getPageAccess, getPageAccessBulk } from "~/lib/pageAccess.server";
 import { canEditFile } from "~/lib/fileAccess.server";
 import { DRIVE_PAGE_KINDS } from "~/lib/drive.server";
 import { isRoot, ROOT_DELETE_ERROR } from "~/lib/drive-roots";
-import { canManageFormPlacement, formsUsePageAccess } from "~/forms/lib/form-access.server";
+import { canManageFormPlacement } from "~/forms/lib/form-access.server";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { logAuditEvent } from "~/lib/audit";
 
@@ -46,9 +45,6 @@ export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return withCors(request, auth.response);
   const userId = auth.user.sub;
-
-  const formsByPage = await formsUsePageAccess(request);
-  const userCanViewForms = formsByPage ? false : await checkCanViewForms(userId, request);
 
   // Archived pages (docs, folders, whiteboards) — filtered through access
   // checks. Whiteboard belongs here with the rest: the Drive deletes one
@@ -92,9 +88,8 @@ export async function loader({ request }: Route.LoaderArgs) {
   // One batched access resolution instead of N sequential getPageAccess calls.
   // includeArchived: every page here is archived by definition, so the default
   // deny would empty the whole listing.
-  const listedPages = formsByPage ? archivedPages : archivedPages.filter((p) => p.kind !== "Form");
-  const pageAccess = await getPageAccessBulk(userId, listedPages, request, { includeArchived: true });
-  const accessiblePages = listedPages
+  const pageAccess = await getPageAccessBulk(userId, archivedPages, request, { includeArchived: true });
+  const accessiblePages = archivedPages
     .filter((p) => pageAccess.get(p.id)?.canView)
     .slice(0, PER_TYPE_LIMIT);
 
@@ -126,12 +121,6 @@ export async function loader({ request }: Route.LoaderArgs) {
     .filter((_, i) => fileAccess[i])
     .slice(0, PER_TYPE_LIMIT);
 
-  // Until the forms-page-access cutover, the canViewForms gate (not page
-  // access) decides who sees archived forms.
-  const archivedForms = userCanViewForms
-    ? archivedPages.filter((p) => p.kind === "Form").slice(0, PER_TYPE_LIMIT)
-    : [];
-
   const items = [
     ...accessiblePages.map((p) => ({
       id: p.id,
@@ -145,13 +134,6 @@ export async function loader({ request }: Route.LoaderArgs) {
       type: "file" as const,
       title: f.title,
       parentFolderId: f.folderPageId,
-      archivedAt: f.archivedAt!.toISOString(),
-    })),
-    ...archivedForms.map((f) => ({
-      id: f.id,
-      type: "form" as const,
-      title: f.title,
-      parentFolderId: null,
       archivedAt: f.archivedAt!.toISOString(),
     })),
   ].sort((a, b) => new Date(b.archivedAt).getTime() - new Date(a.archivedAt).getTime());

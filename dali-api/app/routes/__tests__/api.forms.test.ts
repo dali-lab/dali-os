@@ -1,18 +1,15 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn(), forbidden: vi.fn(() => new Response("Forbidden", { status: 403 })) }));
-vi.mock("~/lib/roles", () => ({ canViewForms: vi.fn() }));
 vi.mock("~/forms/lib/forms-data", () => ({ runFormsAction: vi.fn() }));
 vi.mock("~/forms/lib/form-access.server", () => ({
-  formsUsePageAccess: vi.fn(),
   canBuildForm: vi.fn(),
   canCreateForm: vi.fn(),
 }));
 
 import { requireAuth } from "~/lib/auth";
-import { canViewForms } from "~/lib/roles";
 import { runFormsAction } from "~/forms/lib/forms-data";
-import { canBuildForm, canCreateForm, formsUsePageAccess } from "~/forms/lib/form-access.server";
+import { canBuildForm, canCreateForm } from "~/forms/lib/form-access.server";
 import { action } from "~/routes/api.forms";
 
 function post(fields: Record<string, string>) {
@@ -27,25 +24,7 @@ beforeEach(() => {
   vi.mocked(runFormsAction).mockResolvedValue({ ok: true, formId: "f1" });
 });
 
-describe("POST /api/forms, flag off", () => {
-  beforeEach(() => vi.mocked(formsUsePageAccess).mockResolvedValue(false));
-
-  it("is gated by canViewForms for every intent", async () => {
-    vi.mocked(canViewForms).mockResolvedValue(false);
-    expect((await post({ intent: "rename-form", id: "f1", name: "x" })).status).toBe(403);
-    vi.mocked(canViewForms).mockResolvedValue(true);
-    expect((await post({ intent: "create-form", name: "x" })).status).toBe(200);
-    expect(canBuildForm).not.toHaveBeenCalled();
-    expect(canCreateForm).not.toHaveBeenCalled();
-  });
-});
-
-describe("POST /api/forms, flag on", () => {
-  beforeEach(() => {
-    vi.mocked(formsUsePageAccess).mockResolvedValue(true);
-    vi.mocked(canViewForms).mockResolvedValue(true);
-  });
-
+describe("POST /api/forms", () => {
   it("create-form asks canCreateForm for the destination folder", async () => {
     vi.mocked(canCreateForm).mockResolvedValue(true);
     expect((await post({ intent: "create-form", name: "x", folderPageId: "folder-1" })).status).toBe(200);
@@ -58,7 +37,7 @@ describe("POST /api/forms, flag on", () => {
     expect(canCreateForm).toHaveBeenCalledWith("u1", null, expect.any(Request));
   });
 
-  it("refuses create-form when the folder is not editable, whatever canViewForms says", async () => {
+  it("refuses create-form when the folder is not editable", async () => {
     vi.mocked(canCreateForm).mockResolvedValue(false);
     expect((await post({ intent: "create-form", name: "x", folderPageId: "folder-1" })).status).toBe(403);
     expect(runFormsAction).not.toHaveBeenCalled();

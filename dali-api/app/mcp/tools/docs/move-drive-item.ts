@@ -5,7 +5,7 @@
 //
 // ACCESS MODEL:
 //   file         — Core OR project member
-//   form         — canViewForms (Core/Admin/Instructor)
+//   form         — edit on the form's page
 //   Destination folder — getPageAccess(...).canEdit (or null to unplace)
 
 import { moveForm } from "~/forms/lib/form-page.server";

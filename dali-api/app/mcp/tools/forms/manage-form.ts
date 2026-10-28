@@ -1,10 +1,9 @@
 // MCP tool: manage_form — create, version, publish, configure, or delete a form.
 // All mutations go through runFormsAction, which owns validation and business logic.
-// Scope: mcp:admin, Core only.
+// Scope: mcp:admin; edit access on the form (create: on the folder).
 
 import { runFormsAction } from "~/forms/lib/forms-data";
-import { isCore } from "~/lib/roles";
-import { canBuildForm, canCreateForm, formsUsePageAccess } from "~/forms/lib/form-access.server";
+import { canBuildForm, canCreateForm } from "~/forms/lib/form-access.server";
 import {
   requireForAction,
   McpForbiddenError,
@@ -17,7 +16,7 @@ import {
 export const MANAGE_FORM_TOOL = {
   name: "manage_form",
   description:
-    "Create, version, publish, configure, or delete a form. Actions: create · save_version · save_draft · publish · unpublish · set_window · set_audience · set_settings · rename · move · duplicate · delete. Core only.",
+    "Create, version, publish, configure, or delete a form. Actions: create · save_version · save_draft · publish · unpublish · set_window · set_audience · set_settings · rename · move · duplicate · delete. Needs edit access on the form (create: on the folder). set_audience sets the form page's general access.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -144,20 +143,13 @@ type Args = {
 };
 
 export async function runManageForm(ctx: McpCtx, args: Args) {
-  const byPage = await formsUsePageAccess();
-  if (!byPage && !(await isCore(ctx.user.id))) {
-    throw new McpForbiddenError("Only Core members can manage forms");
-  }
-
   requireForAction(args.action, args, ACTION_REQUIRED);
 
-  if (byPage) {
-    const allowed =
-      args.action === "create"
-        ? await canCreateForm(ctx.user.id, args.folderPageId || null)
-        : await canBuildForm(ctx.user.id, args.formId!);
-    if (!allowed) throw new McpForbiddenError("You do not have edit access to this form");
-  }
+  const allowed =
+    args.action === "create"
+      ? await canCreateForm(ctx.user.id, args.folderPageId || null)
+      : await canBuildForm(ctx.user.id, args.formId!);
+  if (!allowed) throw new McpForbiddenError("You do not have edit access to this form");
 
   const intent = ACTION_INTENT[args.action];
   const fd = new FormData();
