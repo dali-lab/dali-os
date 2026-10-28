@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
-import { Awareness } from "y-protocols/awareness";
+import { Awareness, applyAwarenessUpdate, encodeAwarenessUpdate } from "y-protocols/awareness";
 import type { Hocuspocus } from "@hocuspocus/server";
 
 const publish = vi.fn();
@@ -213,6 +213,42 @@ describe("applyAgentAnnouncement", () => {
 
     vi.advanceTimersByTime(1);
     expect(room.awareness.getStates().has(ID)).toBe(false);
+  });
+
+  it("shows the agent again on a call after it has lingered out", () => {
+    const room = liveDoc(["Hello"]);
+    const hp = fakeHocuspocus({ "doc:p1:body": room });
+    const msg = announcement({ docRoom: "doc:p1:body" });
+
+    applyAgentAnnouncement(hp, msg);
+    vi.advanceTimersByTime(AGENT_LINGER_MS);
+    expect(room.awareness.getStates().has(ID)).toBe(false);
+
+    applyAgentAnnouncement(hp, msg);
+    expect(room.awareness.getStates().has(ID)).toBe(true);
+    vi.advanceTimersByTime(AGENT_HIGHLIGHT_MS);
+    expect(room.awareness.getStates().has(ID)).toBe(true);
+  });
+
+  it("reaches a connected viewer again after it has lingered out", () => {
+    const room = liveDoc(["Hello"]);
+    const viewer = new Awareness(new Y.Doc());
+    room.awareness.on("update", ({ added, updated, removed }: Record<string, number[]>) => {
+      const changed = [...added!, ...updated!, ...removed!];
+      applyAwarenessUpdate(viewer, encodeAwarenessUpdate(room.awareness, changed), null);
+    });
+    const hp = fakeHocuspocus({ "doc:p1:body": room });
+    const msg = announcement({ docRoom: "doc:p1:body" });
+
+    applyAgentAnnouncement(hp, msg);
+    expect(viewer.getStates().has(ID)).toBe(true);
+    vi.advanceTimersByTime(AGENT_LINGER_MS);
+    expect(viewer.getStates().has(ID)).toBe(false);
+
+    applyAgentAnnouncement(hp, msg);
+    expect(viewer.getStates().has(ID)).toBe(true);
+    vi.advanceTimersByTime(AGENT_LINGER_MS);
+    expect(viewer.getStates().has(ID)).toBe(false);
   });
 
   it("keeps one entry per agent across repeated calls", () => {

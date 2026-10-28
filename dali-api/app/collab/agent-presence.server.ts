@@ -168,6 +168,10 @@ function inject(
     const ydoc = new Y.Doc();
     ydoc.clientID = id;
     entry = { awareness: new Awareness(ydoc), linger: null, collapse: null };
+    // Peers drop awareness updates whose clock isn't above the last one they
+    // saw for this id, and they remember it after the agent lingers out.
+    const prior = document.awareness.meta.get(id);
+    if (prior) entry.awareness.meta.set(id, { clock: prior.clock, lastUpdated: Date.now() });
     live.set(key, entry);
   }
   const current = entry;
