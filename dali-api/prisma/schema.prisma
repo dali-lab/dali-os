@@ -358,6 +358,11 @@ model User {
   // ─── Public showcase ──────────────────────────────────────────────────────
   projectShowcasesUpdated ProjectShowcase[] @relation("ProjectShowcaseUpdatedBy")
 
+  // ─── Partner referrals ────────────────────────────────────────────────────
+  partnerReferralsSubmitted   PartnerReferral[]    @relation("PartnerReferralReferrer")
+  partnerReferralsResolved    PartnerReferral[]    @relation("PartnerReferralResolver")
+  partnerApplicationsReferred PartnerApplication[] @relation("PartnerApplicationReferredBy")
+
   // ─── Easter-egg games ─────────────────────────────────────────────────────
   tetrisScore TetrisScore?
   dinoScore   DinoScore?
@@ -2210,17 +2215,17 @@ model MeetingRecording {
 
   // Seconds recorded across finished sessions. Continue starts a new session
   // whose timeline is stamped from here, so the transcript reads as one.
-  recordedSeconds Float     @default(0)
+  recordedSeconds  Float     @default(0)
   // When the latest session went Pending → Recording. The live clock is
   // recordedSeconds + (now - this); only meaningful while status is Recording.
   sessionStartedAt DateTime?
-  error           String?
+  error            String?
   // Latest Modal progress while Processing; cleared by applyResult.
-  progress        Json?
-  insertedAt      DateTime? // notes or transcript inserted into the doc
-  finalizedAt     DateTime? // audio deleted
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  progress         Json?
+  insertedAt       DateTime? // notes or transcript inserted into the doc
+  finalizedAt      DateTime? // audio deleted
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
   // Enhance (specs/meeting-notes-model.md §2): the last server-verified merge
   // plan, keyed to the editor snapshot it was computed from. A function of
@@ -3947,7 +3952,7 @@ model Project {
   neonProjectIds   String[] @default([])
   flyReadTokenEnc  String? // read-only Fly token (drives the sweep), encrypted
   flyWriteTokenEnc String? // write Fly token (gates console actions), encrypted
-  infraEnabled     Boolean @default(true) // off keeps config but skips the sweep
+  infraEnabled     Boolean  @default(true) // off keeps config but skips the sweep
 
   // Private projects are excluded from every `projects:*` form reference
   // source, so they can't be picked as an answer on a bid/preference form.
@@ -6874,9 +6879,18 @@ model PartnerApplication {
   // cascades its submissions away — the application must survive that.
   formSubmissionId   String?                  @unique
 
+  // Member-driven referral attribution. `referredByUserId` is the member who
+  // brought us this partner (editable by Core from the application modal);
+  // `referralId` points back to the inbox row they submitted so Core can see
+  // the original raw text. Both nullable: most applications have no referral.
+  referredByUserId String?
+  referralId       String? @unique
+
   applicantContact PartnerContact                 @relation(fields: [applicantContactId], references: [id])
   partnerOrg       PartnerOrg?                    @relation(fields: [partnerOrgId], references: [id])
   formSubmission   FormSubmission?                @relation(fields: [formSubmissionId], references: [id], onDelete: SetNull)
+  referredBy       User?                          @relation("PartnerApplicationReferredBy", fields: [referredByUserId], references: [id], onDelete: SetNull)
+  referral         PartnerReferral?               @relation(fields: [referralId], references: [id], onDelete: SetNull)
   // The terms the partner wants the project to run / be staffed in. Drives
   // the "expected lab members per term" projection on the list page — an
   // application's expected headcount counts toward every target term.
@@ -6894,6 +6908,7 @@ model PartnerApplication {
   @@index([applicantContactId])
   @@index([stage, position])
   @@index([lastActivityAt])
+  @@index([referredByUserId])
 }
 
 enum PartnerStage {
@@ -7164,6 +7179,63 @@ model PartnerApplicationDomain {
 
   @@unique([applicationId, domainId])
   @@index([domainId])
+}
+
+// Member-submitted partner referral, captured at /partners/refer. One row per
+// submission — the inbox the Partners hub's Referrals tab reads. Not the
+// payout ledger: dali-os only records *who* referred *whom* so Core can see
+// it when they triage the resulting application. Reward amounts and payments
+// live outside dali-os.
+model PartnerReferral {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  // The lab member making the referral.
+  referrerUserId String
+  referrer       User   @relation("PartnerReferralReferrer", fields: [referrerUserId], references: [id], onDelete: Cascade)
+
+  // Which referral path the member chose. Carries the semantics the three
+  // tiers rely on; dali-os does not compute or store a reward amount.
+  type PartnerReferralType
+
+  // Raw contact the member typed. Not normalized into PartnerContact until
+  // Core promotes the referral — a cold lead may never surface again.
+  rawName        String?
+  rawEmail       String?
+  rawOrg         String?
+  rawPhone       String?
+  rawLinkedinUrl String?
+
+  // FundedPitch only.
+  pitchTitle   String?
+  pitchSummary String?
+
+  notes String?
+
+  // Warm-lead token: unguessable string that keys the referral when the
+  // partner opens /partner/apply?ref=<token>. Set only when type = WarmLead;
+  // nullable + unique so cold / funded rows don't need one.
+  token String? @unique
+
+  // Set when Core has acted on this row (linked it to an application,
+  // declined it, or marked it a duplicate). `resolvedById` is loose: SetNull
+  // keeps the audit if the Core member is deleted.
+  resolvedAt   DateTime?
+  resolvedById String?
+  resolvedBy   User?     @relation("PartnerReferralResolver", fields: [resolvedById], references: [id], onDelete: SetNull)
+
+  // Back-ref to the application this referral became, if any. The FK is on
+  // PartnerApplication (referralId @unique) so this is the inverse.
+  application PartnerApplication?
+
+  @@index([referrerUserId, createdAt])
+  @@index([resolvedAt])
+}
+
+enum PartnerReferralType {
+  ColdLead
+  WarmLead
+  FundedPitch
 }
 
 // ─── Payroll: Reconcile ──────────────────────────────────────────────────────

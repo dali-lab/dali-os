@@ -30,6 +30,10 @@ export type ApplicationDetail = {
   rejectReason: PartnerRejectReason | null;
   partner: { id: string; name: string; logoUrl: string | null } | null;
   applicant: { id: string; name: string; email: string };
+  /** Lab member who referred this partner, when attribution is on file. Set
+   *  via the Referrals tab's "Link to application" action; shown as display
+   *  on the application record. */
+  referredBy: { userId: string; name: string } | null;
   targetTerms: { id: string; code: string }[];
   domains: {
     id: string;

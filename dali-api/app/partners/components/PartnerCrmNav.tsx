@@ -1,10 +1,11 @@
 import { useLocation, useNavigate } from "react-router";
-import { BarChart3, Building2, Kanban } from "lucide-react";
+import { BarChart3, Building2, Kanban, Inbox } from "lucide-react";
 import { SegmentedTabButtons } from "~/components/AreaPillNav";
 
 const TABS = [
   { label: "Applications", href: "/core/partners", icon: Kanban },
   { label: "Directory", href: "/core/partners/directory", icon: Building2 },
+  { label: "Referrals", href: "/core/partners/referrals", icon: Inbox },
   { label: "Reports", href: "/core/partners/reports", icon: BarChart3 },
 ];
 

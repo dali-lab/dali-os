@@ -57,6 +57,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       rejectReason: true,
       partnerOrg: { select: { id: true, name: true, logoUrl: true } },
       applicantContact: { select: { id: true, name: true, email: true } },
+      referredBy: {
+        select: { id: true, firstName: true, lastName: true, email: true },
+      },
       targetTerms: {
         orderBy: { term: { sortKey: "asc" } },
         select: { termId: true, term: { select: { id: true, code: true } } },
@@ -201,6 +204,15 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         rejectReason: application.rejectReason,
         partner: application.partnerOrg,
         applicant: application.applicantContact,
+        referredBy: application.referredBy
+          ? {
+              userId: application.referredBy.id,
+              name:
+                `${application.referredBy.firstName ?? ""} ${application.referredBy.lastName ?? ""}`.trim() ||
+                application.referredBy.email ||
+                "Unknown",
+            }
+          : null,
         targetTerms: application.targetTerms.map((t) => ({
           id: t.term.id,
           code: t.term.code,

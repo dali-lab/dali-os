@@ -23,6 +23,7 @@ import { Pill } from "~/hiring/components/cycle-setup/SetupCard";
 import { buttonClasses } from "~/components/ui/Button";
 import type { Route } from "./+types/core.partners.applications.$id";
 import { prisma } from "~/lib/db";
+import { logAuditEvent } from "~/lib/audit";
 import { githubTeamSlug } from "~/lib/github-slug";
 import { requireAuth, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
@@ -128,6 +129,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       rejectReason: true,
       partnerOrg: { select: { id: true, name: true, logoUrl: true } },
       applicantContact: { select: { id: true, name: true, email: true } },
+      referredBy: {
+        select: { id: true, firstName: true, lastName: true, email: true },
+      },
       targetTerms: {
         orderBy: { term: { sortKey: "asc" } },
         select: { termId: true, term: { select: { code: true } } },
@@ -305,6 +309,15 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       })),
       partner: application.partnerOrg,
       applicant: application.applicantContact,
+      referredBy: application.referredBy
+        ? {
+            userId: application.referredBy.id,
+            name:
+              `${application.referredBy.firstName ?? ""} ${application.referredBy.lastName ?? ""}`.trim() ||
+              application.referredBy.email ||
+              "Unknown",
+          }
+        : null,
       source: application.source,
       evalRubric: application.evalRubric,
       interviewRating: application.interviewRating,
@@ -580,7 +593,8 @@ export async function action({ request, params }: Route.ActionArgs) {
     intent === "deal-terms" ||
     intent === "summary" ||
     intent === "contract-send" ||
-    intent === "sow-state"
+    intent === "sow-state" ||
+    intent === "clear-referred-by"
   ) {
     if (intent === "offer-meeting") {
       const when = (form.get("when") as string | null)?.trim() ?? "";
@@ -927,6 +941,22 @@ export async function action({ request, params }: Route.ActionArgs) {
         actorUserId: auth.user.sub,
       });
       if ("error" in result) return { error: result.error };
+
+    } else if (intent === "clear-referred-by") {
+      // Unlink any referral attribution. The PartnerReferral row stays — it
+      // keeps the inbox record intact; this only disclaims it from this
+      // application so Core can re-link the correct one from the Referrals tab.
+      await prisma.partnerApplication.update({
+        where: { id: params.id },
+        data: { referredByUserId: null, referralId: null },
+      });
+      await logAuditEvent({
+        action: "partner.application.referred-by.set",
+        userId: auth.user.sub,
+        targetId: params.id,
+        metadata: { cleared: true },
+        request,
+      });
     }
 
   } else {
@@ -1072,6 +1102,7 @@ export default function PartnerApplicationDetail() {
         paymentSchedule: application.paymentSchedule,
         sowState: application.sowState,
         contractBindingId: application.contractBindingId,
+        referredBy: application.referredBy ?? null,
       }}
       canEdit={canEdit}
       domainOptions={availableDomains.map((d) => ({ id: d.id, name: d.displayName }))}

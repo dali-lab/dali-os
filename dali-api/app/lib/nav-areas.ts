@@ -125,6 +125,7 @@ export const NAV_AREAS: NavArea[] = [
       { label: "Intent to Work", href: "/projects/intent-to-work", icon: ClipboardPen, gate: (r) => r.canViewStaffing },
       { label: "Project Bids", href: "/projects/project-bids", icon: Gavel, gate: (r) => r.canViewStaffing },
       { label: "Level Up", href: "/projects/level-up", icon: ArrowUpCircle, gate: (r) => r.canViewStaffing },
+      { label: "Refer a partner", href: "/partners/refer", icon: Handshake },
     ],
   },
   {
@@ -233,6 +234,7 @@ const REGROUPED_AREAS: NavArea[] = [
       { label: "Groups", href: "/members/groups", icon: Users, gate: (r) => r.canViewForms },
       { label: "Connect", href: "/connect", icon: MapPinned },
       { label: "Mentorship", href: "/mentorship", icon: Heart, gate: (r) => !r.isAlumni && (r.isLabMentor || r.isCore) },
+      { label: "Refer a partner", href: "/partners/refer", icon: Handshake },
       // Lab-wide Attendance: every meeting/event you're invited to, with each
       // event's roster (invited-scoped, see app/routes/attendance.tsx).
       { label: "Attendance", href: "/attendance", icon: ClipboardCheck, gate: (r) => !r.isAlumni },

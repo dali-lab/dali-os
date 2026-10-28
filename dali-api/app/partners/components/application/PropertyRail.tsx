@@ -57,6 +57,7 @@ export type PropertyRailApplication = Pick<
   | "paymentSchedule"
   | "sowState"
   | "contractBindingId"
+  | "referredBy"
 >;
 
 export function PropertyRail({
@@ -170,6 +171,7 @@ export function PropertyRail({
           )}
         </RailField>
         <RailFact label="Source">{PARTNER_SOURCE_LABELS[application.source] ?? application.source}</RailFact>
+        <ReferredByField application={application} canEdit={canEdit} onCleared={onChanged} />
       </RailGroup>
 
       <RailGroup title="Terms and team">
@@ -231,6 +233,51 @@ export function PropertyRail({
 }
 
 type RunFn = (intent: string, fields: Record<string, string | string[] | null>) => Promise<boolean>;
+
+function ReferredByField({
+  application,
+  canEdit,
+  onCleared,
+}: {
+  application: PropertyRailApplication;
+  canEdit: boolean;
+  onCleared: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const ref = application.referredBy;
+  if (!ref) {
+    // Hide the row entirely when there's no referral — the Source line above
+    // already covers "where did this come from" in the common case. Core sets
+    // this field via the Referrals tab's "Link to application" action.
+    return null;
+  }
+  async function clear() {
+    setBusy(true);
+    try {
+      await postPartnerApplicationIntent(application.id, "clear-referred-by");
+      onCleared();
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <RailField label="Referred by">
+      <div className="flex items-center gap-2">
+        <span className="text-foreground">{ref.name}</span>
+        {canEdit && (
+          <button
+            type="button"
+            onClick={() => void clear()}
+            disabled={busy}
+            className="text-xs text-os-grey hover:text-foreground underline disabled:opacity-50"
+          >
+            Clear
+          </button>
+        )}
+      </div>
+    </RailField>
+  );
+}
 
 function NextStepField({
   application,

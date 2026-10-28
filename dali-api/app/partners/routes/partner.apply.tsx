@@ -5,6 +5,7 @@ import { prisma } from "~/lib/db";
 import { logAuditEvent } from "~/lib/audit";
 import { requirePartnerAccount } from "~/partners/lib/partner-auth.server";
 import { loadApplicationForm } from "~/partners/lib/application-form.server";
+import { resolveReferralToken } from "~/partners/lib/partner-referral.server";
 import { validateAnswers } from "~/forms/lib/public-form";
 import { notifyFormSubmission } from "~/forms/lib/submission-notify.server";
 import { logPartnerActivity } from "~/partners/lib/partner-activity.server";
@@ -31,6 +32,15 @@ export const meta: Route.MetaFunction = () => [
 export async function loader({ request }: Route.LoaderArgs) {
   await requirePartnerAccount(request);
   const applicationForm = await loadApplicationForm();
+  // Member referral attribution. When a member shares the warm-ref link
+  // (/partner/apply?ref=<token>), we resolve the token to the referral row
+  // and pass the id forward in a hidden input. The partner never sees it.
+  // Note: if partner auth bounces them to /partner/login, the ?ref= in the
+  // URL doesn't survive the round-trip — this is acceptable for v1; most
+  // warm-ref partners either land already-authed or re-open the link after
+  // sign-in. If this becomes a real friction, carry the token in a cookie.
+  const refToken = new URL(request.url).searchParams.get("ref");
+  const referral = refToken ? await resolveReferralToken(refToken) : null;
   return {
     applicationForm: applicationForm
       ? {
@@ -39,6 +49,7 @@ export async function loader({ request }: Route.LoaderArgs) {
           versionUpdatedAt: applicationForm.versionUpdatedAt,
         }
       : null,
+    referralId: referral?.id ?? null,
   };
 }
 
@@ -102,6 +113,17 @@ export async function action({ request }: Route.ActionArgs) {
 
   const title = deriveApplicationTitle(applicationForm.questions, formAnswers);
 
+  // Warm-ref carry: a hidden input on the form echoes the referralId the
+  // loader resolved from ?ref=. We re-resolve inside the transaction so a
+  // tampered or stale token can't inject a referrer.
+  const postedReferralId = form.get("referralId");
+  const refToken = new URL(request.url).searchParams.get("ref");
+  let resolvedReferral: Awaited<ReturnType<typeof resolveReferralToken>> = null;
+  if (typeof postedReferralId === "string" && postedReferralId && refToken) {
+    const current = await resolveReferralToken(refToken);
+    if (current && current.id === postedReferralId) resolvedReferral = current;
+  }
+
   const application = await prisma.$transaction(async (tx) => {
     const submission = await tx.formSubmission.create({
       data: {
@@ -117,21 +139,45 @@ export async function action({ request }: Route.ActionArgs) {
         applicantContactId: ctx.contact.id,
         partnerOrgId: null,
         stage: "New",
-        source: "Form",
+        source: resolvedReferral ? "Referral" : "Form",
         title,
         formSubmissionId: submission.id,
+        referralId: resolvedReferral?.id ?? null,
+        referredByUserId: resolvedReferral?.referrerUserId ?? null,
       },
       select: { id: true },
     });
+    if (resolvedReferral) {
+      // Mark the referral resolved and point it back at this app. The @unique
+      // on referralId guards against two apps claiming the same referral if
+      // the partner somehow submits twice through the same link.
+      await tx.partnerReferral.update({
+        where: { id: resolvedReferral.id },
+        data: { resolvedAt: new Date() },
+      });
+    }
     // actorUserId null = partner-originated (the applicant, not a Core member).
     await logPartnerActivity(tx, {
       applicationId: app.id,
       actorUserId: null,
       type: "Created",
-      metadata: { source: "Form" },
+      metadata: {
+        source: resolvedReferral ? "Referral" : "Form",
+        ...(resolvedReferral ? { referralId: resolvedReferral.id } : {}),
+      },
     });
     return app;
   });
+
+  if (resolvedReferral) {
+    await logAuditEvent({
+      action: "partner.referral.linked",
+      userId: auth.user.sub,
+      targetId: resolvedReferral.id,
+      metadata: { applicationId: application.id },
+      request,
+    });
+  }
 
   await logAuditEvent({
     action: "partner.application.submitted",
@@ -175,7 +221,7 @@ export async function action({ request }: Route.ActionArgs) {
 }
 
 export default function PartnerApply({ actionData }: Route.ComponentProps) {
-  const { applicationForm } = useLoaderData<typeof loader>();
+  const { applicationForm, referralId } = useLoaderData<typeof loader>();
   const navigation = useNavigation();
   const submitting = navigation.state === "submitting";
   const [formAnswers, setFormAnswers] = useState<Record<string, string>>({});
@@ -269,6 +315,9 @@ export default function PartnerApply({ actionData }: Route.ComponentProps) {
             name="formVersionUpdatedAt"
             value={applicationForm.versionUpdatedAt}
           />
+          {referralId && (
+            <input type="hidden" name="referralId" value={referralId} />
+          )}
         </section>
 
         <FormPagerNav
