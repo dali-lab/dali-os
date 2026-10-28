@@ -59,7 +59,7 @@ function SortablePill({
       <Tooltip content={page.title || 'Untitled'}>
         <button
           type="button"
-          {...tabClickProps({ url: page.href, label: page.title || 'Untitled' })}
+          {...tabClickProps({ url: page.href, label: page.title || 'Untitled', emoji: page.iconEmoji })}
           className="flex max-w-[180px] items-center gap-1.5 rounded-full bg-os-card px-2.5 py-1 text-xs text-os-grey transition-colors hover:bg-os-card-hover hover:text-foreground"
         >
           <FavoriteIcon page={page} glyphClassName="text-os-accent" />
@@ -91,7 +91,7 @@ function SortableRailRow({
     <div ref={setNodeRef} style={style} {...attributes} {...listeners} role="presentation" tabIndex={-1}>
       <button
         type="button"
-        {...tabClickProps({ url: page.href, label: page.title || 'Untitled' })}
+        {...tabClickProps({ url: page.href, label: page.title || 'Untitled', emoji: page.iconEmoji })}
         aria-current={active ? 'page' : undefined}
         className={cn(
           'flex h-8 w-full items-center gap-2.5 rounded-lg pl-2.5 pr-2 text-left text-sm transition-colors',

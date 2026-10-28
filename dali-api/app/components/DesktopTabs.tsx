@@ -29,6 +29,7 @@ import { stripAppTitle } from '~/lib/page-title'
 import { fallbackPageLabel } from '~/components/shell/page-bar-model'
 import { usePageTrail } from '~/components/Breadcrumbs'
 import { tabIcon } from '~/lib/tab-icon'
+import { sidePanelForUrl } from '~/lib/side-panel'
 
 /** Fired by the desktop app's File menu (desktop/src-tauri/src/menu.rs), which
  *  owns ⌘T / ⌘W / ⌘⇧T so the native Close Window shortcut can't win. */
@@ -225,6 +226,24 @@ function SortableTab({
   return tab.pinned ? <Tooltip content={tab.label}>{button}</Tooltip> : button
 }
 
+// Each url once per window: a page with no emoji answers null and would
+// otherwise be asked again on every strip update.
+function useBackgroundTabEmoji(tabs: DesktopTab[], activeId: string | null) {
+  const asked = useRef(new Set<string>())
+  useEffect(() => {
+    for (const tab of tabs) {
+      if (tab.id === activeId || tab.emoji || asked.current.has(tab.url)) continue
+      const docId = sidePanelForUrl(tab.url)?.id
+      if (!docId) continue
+      asked.current.add(tab.url)
+      fetch(`/api/documents/${docId}`)
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data: { iconEmoji?: string | null } | null) => tabActions.fillEmoji(tab.id, tab.url, data?.iconEmoji ?? null))
+        .catch(() => {})
+    }
+  }, [tabs, activeId])
+}
+
 export function DesktopTabStrip({
   leading,
   initial = null,
@@ -235,6 +254,7 @@ export function DesktopTabStrip({
   const live = useDesktopTabsState()
   const { tabs, activeId } = tabsActive() || !initial ? live : initial
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }))
+  useBackgroundTabEmoji(live.tabs, live.activeId)
 
   const lastPinned = tabs.reduce((last, t, i) => (t.pinned ? i : last), -1)
   const activeIndex = tabs.findIndex((t) => t.id === activeId)

@@ -6,6 +6,7 @@ import {
   closeOtherTabs,
   closeTab,
   emptyTabsState,
+  fillTabEmoji,
   labelTab,
   MAX_TABS,
   migrateWorkspaceState,
@@ -273,6 +274,51 @@ describe("setTabEmoji", () => {
     s = setTabEmoji(s, "/projects/p1", "🌲");
     expect(setTabEmoji(s, "/projects/p1", "🌲")).toBe(s);
     expect(setTabEmoji(emptyTabsState(), "/", null)).toEqual(emptyTabsState());
+  });
+});
+
+describe("an emoji on the open request", () => {
+  it("lands on a tab opened in the background, before it is ever shown", () => {
+    let s = openTab(emptyTabsState(), { url: "/a", label: "A" }, { id: "a", now: 1 });
+    s = openTab(s, { url: "/documents/d1", label: "Doc", emoji: "🌲" }, { id: "d", now: 2, background: true });
+    expect(s.activeId).toBe("a");
+    expect(s.tabs.find((t) => t.id === "d")?.emoji).toBe("🌲");
+  });
+
+  it("adds no emoji field for a request without one", () => {
+    const s = openTab(emptyTabsState(), { url: "/a", label: "A", emoji: null }, { id: "a", now: 1 });
+    expect(activeTab(s)).not.toHaveProperty("emoji");
+  });
+
+  it("gives way to the page's own emoji once the tab is shown", () => {
+    let s = openTab(emptyTabsState(), { url: "/documents/d1", label: "Doc", emoji: "🌲" }, { id: "d", now: 1 });
+    s = setTabEmoji(s, "/documents/d1", "🍂");
+    expect(activeTab(s)?.emoji).toBe("🍂");
+  });
+});
+
+describe("fillTabEmoji", () => {
+  const base = () =>
+    openTab(
+      openTab(emptyTabsState(), { url: "/a", label: "A" }, { id: "a", now: 1 }),
+      { url: "/documents/d1", label: "Doc" },
+      { id: "d", now: 2, background: true },
+    );
+
+  it("gives a background tab its looked-up emoji", () => {
+    expect(fillTabEmoji(base(), "d", "/documents/d1", "🌲").tabs.find((t) => t.id === "d")?.emoji).toBe("🌲");
+  });
+
+  it("keeps an emoji the tab already has", () => {
+    const s = fillTabEmoji(base(), "d", "/documents/d1", "🌲");
+    expect(fillTabEmoji(s, "d", "/documents/d1", "🍂")).toBe(s);
+  });
+
+  it("drops a lookup for a page the tab has left, a missing tab, or no emoji", () => {
+    const s = base();
+    expect(fillTabEmoji(s, "d", "/documents/other", "🌲")).toBe(s);
+    expect(fillTabEmoji(s, "gone", "/documents/d1", "🌲")).toBe(s);
+    expect(fillTabEmoji(s, "d", "/documents/d1", null)).toBe(s);
   });
 });
 

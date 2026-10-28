@@ -901,7 +901,7 @@ export function LayoutOS({
                   <Tooltip key={p.id} content={p.title || 'Untitled'}>
                     <button
                       type="button"
-                      {...tabClickProps({ url: p.href, label: p.title || 'Untitled' })}
+                      {...tabClickProps({ url: p.href, label: p.title || 'Untitled', emoji: p.iconEmoji })}
                       className="flex max-w-[180px] flex-shrink-0 items-center gap-1.5 rounded-full bg-os-card px-2.5 py-1 text-xs text-os-grey transition-colors hover:bg-os-card-hover hover:text-foreground"
                     >
                       <FavoriteIcon page={p} glyphClassName="text-os-accent" />
