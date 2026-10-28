@@ -1,6 +1,12 @@
 import type { CSSProperties } from "react";
 import { cn } from "~/lib/cn";
-import { AUTH_TILES, AUTH_TILE_GRID, type AuthTile } from "~/components/auth/auth-tiles";
+import {
+  AUTH_TILES,
+  AUTH_TILE_GRID,
+  type AuthTile,
+  type AuthTileLoop,
+  type AuthTileMotif,
+} from "~/components/auth/auth-tiles";
 
 // The framer-motion prototype re-done as pure CSS (keyframes in app.css,
 // `auth-tile-*`): each tile pops in diagonally, then runs its own idle loop —
@@ -64,25 +70,33 @@ function Tile({ tile, columns, rows }: { tile: AuthTile; columns: number; rows: 
             } as CSSProperties
           }
         >
-          <Motif tile={tile} loopDelay={loopDelay} />
+          <TileMotif motif={tile.motif} loop={tile.loop} loopDelay={loopDelay} />
         </div>
       </div>
     </div>
   );
 }
 
-function Motif({ tile, loopDelay }: { tile: AuthTile; loopDelay: string }) {
-  const loopClass = LOOP_CLASS[tile.loop];
+export function TileMotif({
+  motif,
+  loop = "none",
+  loopDelay,
+}: {
+  motif: AuthTileMotif;
+  loop?: AuthTileLoop;
+  loopDelay?: string;
+}) {
+  const loopClass = LOOP_CLASS[loop];
   const loopStyle = loopClass ? { animationDelay: loopDelay } : undefined;
 
-  if (tile.motif === "solid") return null;
+  if (motif === "solid") return null;
 
-  if (tile.motif === "quarter") {
+  if (motif === "quarter") {
     return <div className="absolute bottom-0 left-0 h-[60%] w-[60%] rounded-tr-full bg-current" />;
   }
 
-  if (tile.motif === "dot" || tile.motif === "loose") {
-    const size = tile.motif === "loose" ? "h-[40%] w-[40%]" : tile.loop === "orbit" ? "h-[36%] w-[36%]" : "h-1/2 w-1/2";
+  if (motif === "dot" || motif === "loose") {
+    const size = motif === "loose" ? "h-[40%] w-[40%]" : loop === "orbit" ? "h-[36%] w-[36%]" : "h-1/2 w-1/2";
     return (
       <div className="flex h-full w-full items-center justify-center">
         <div className={cn("rounded-full bg-current", size, loopClass)} style={loopStyle} />
@@ -90,7 +104,7 @@ function Motif({ tile, loopDelay }: { tile: AuthTile; loopDelay: string }) {
     );
   }
 
-  if (tile.motif === "ring") {
+  if (motif === "ring") {
     return (
       <div className="flex h-full w-full items-center justify-center">
         <div
@@ -105,7 +119,7 @@ function Motif({ tile, loopDelay }: { tile: AuthTile; loopDelay: string }) {
 
   // flower: four petals around a hole in the tile's own colour.
   return (
-    <div className={cn("absolute inset-0", tile.loop === "spin" && LOOP_CLASS.spin)} style={loopStyle}>
+    <div className={cn("absolute inset-0", loop === "spin" && LOOP_CLASS.spin)} style={loopStyle}>
       <div className="absolute left-[33%] top-[14%] h-[34%] w-[34%] rounded-full bg-current" />
       <div className="absolute left-[52%] top-[33%] h-[34%] w-[34%] rounded-full bg-current" />
       <div className="absolute left-[33%] top-[52%] h-[34%] w-[34%] rounded-full bg-current" />
