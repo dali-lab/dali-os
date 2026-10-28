@@ -133,3 +133,57 @@ describe("MemberFormFillView without a tile strip", () => {
     expect(text()).toContain("has been recorded.");
   });
 });
+
+describe("MemberFormFillView tile strip with animations running", () => {
+  type Call = { el: Element; frames: Keyframe[]; anim: { cancel: ReturnType<typeof vi.fn>; onfinish: (() => void) | null } };
+  let calls: Call[];
+  const realAnimate = Element.prototype.animate;
+
+  beforeEach(() => {
+    calls = [];
+    Element.prototype.animate = function (this: Element, frames: Keyframe[] | PropertyIndexedKeyframes | null) {
+      const anim = { cancel: vi.fn(), onfinish: null as (() => void) | null, finished: Promise.resolve() };
+      calls.push({ el: this, frames: frames as Keyframe[], anim });
+      setTimeout(() => anim.onfinish?.(), 0);
+      return anim as unknown as Animation;
+    };
+  });
+
+  afterEach(() => {
+    Element.prototype.animate = realAnimate;
+  });
+
+  const runAnimations = async () => {
+    for (let i = 0; i < 200 && strip()?.dataset.phase !== "settled"; i++) {
+      await act(async () => {
+        await new Promise((r) => setTimeout(r, 0));
+      });
+    }
+  };
+
+  const isFormFade = (c: Call) => c.frames.length === 2 && c.frames[0].opacity === 1 && c.frames[1].opacity === 0;
+
+  it("shows the confirmation on a fresh element, not the faded-out form", async () => {
+    respond(200, {});
+    mount({ tileSeed: "cm_form_rsvp" });
+    await submit();
+    await runAnimations();
+
+    expect(strip()?.dataset.phase).toBe("settled");
+    const fade = calls.find(isFormFade);
+    expect(fade).toBeDefined();
+    const heading = [...container.querySelectorAll("h1")].find((h) => h.textContent === "Thanks for submitting!");
+    expect(heading).toBeDefined();
+    expect(fade!.el.contains(heading!)).toBe(false);
+    expect(fade!.anim.cancel).toHaveBeenCalled();
+  });
+
+  it("plays every fold before settling", async () => {
+    respond(200, {});
+    mount({ tileSeed: "cm_form_rsvp" });
+    await submit();
+    await runAnimations();
+    const folds = calls.filter((c) => String(c.frames[0].transform ?? "").startsWith("rotate"));
+    expect(folds).toHaveLength(8);
+  });
+});
