@@ -36,6 +36,7 @@ import { notifyFormSubmission } from "./submission-notify.server";
 export type PublicForm = {
   formId: string;
   name: string;
+  iconEmoji?: string | null;
   versionId: string;
   // Fingerprint of the served version's content — the filler echoes it back on
   // submit so an in-place edit between load and submit is caught server-side.
@@ -92,6 +93,7 @@ export async function loadPublicForm(
       id: true,
       name: true,
       published: true,
+      page: { select: { iconEmoji: true } },
       versions: {
         orderBy: { versionNumber: "desc" },
         take: 1,
@@ -137,6 +139,7 @@ export async function loadPublicForm(
   return {
     formId: form.id,
     name: form.name,
+    iconEmoji: form.page?.iconEmoji ?? null,
     versionId: version.id,
     versionUpdatedAt: version.updatedAt.toISOString(),
     // Versions may hold legacy ProseMirror JSON — convert on read so fill

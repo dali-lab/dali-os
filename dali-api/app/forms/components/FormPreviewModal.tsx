@@ -8,6 +8,7 @@ import { modalCardClass } from "~/components/os-chrome";
 export interface FormPreviewModalProps {
   formId: string;
   formName: string;
+  iconEmoji?: string | null;
   description?: unknown;
   questions: Question[];
   onClose: () => void;
@@ -16,6 +17,7 @@ export interface FormPreviewModalProps {
 export function FormPreviewModal({
   formId,
   formName,
+  iconEmoji,
   description,
   questions,
   onClose,
@@ -55,6 +57,7 @@ export function FormPreviewModal({
               tileSeed={tileSeed}
               data={{
                 name: formName,
+                iconEmoji,
                 description,
                 questions,
                 versionId: "",

@@ -35,7 +35,7 @@ export const handle = {
   docTitle: "Forms",
   breadcrumbTrail: (data: unknown) => {
     const d = data as {
-      form?: { name: string };
+      form?: { name: string; iconEmoji: string | null };
       driveCrumbs?: { scope: string; folders: { id: string; title: string; iconEmoji: string | null }[] } | null;
     } | undefined;
     if (!d?.form) return null;
@@ -47,7 +47,11 @@ export const handle = {
         to: `/drive?scope=${scope}&folder=${f.id}`,
         icon: <PageIcon iconEmoji={f.iconEmoji} />,
       })),
-      { label: d.form.name },
+      {
+        label: d.form.name,
+        emoji: d.form.iconEmoji,
+        icon: d.form.iconEmoji ? <PageIcon iconEmoji={d.form.iconEmoji} /> : undefined,
+      },
     ];
   },
 };

@@ -10,7 +10,7 @@
 
 import { z } from "zod";
 import { prisma, Prisma } from "~/lib/db";
-import { createForm, deleteForm, moveForm, renameForm, setFormAudience } from "./form-page.server";
+import { createForm, deleteForm, moveForm, renameForm, setFormAudience, setFormIcon } from "./form-page.server";
 import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
 import type { Question } from "~/types";
 import { isReferenceSourceKey, referenceSourceNeedsTerm } from "./reference-sources.shared";
@@ -189,6 +189,7 @@ export type FormDetail = {
   // to fillers.
   draft: { questions: Question[]; description: unknown } | null;
   workspaceType: string | null;
+  iconEmoji: string | null;
 };
 
 // The full form + every version (newest last), for the dedicated editor page.
@@ -200,7 +201,7 @@ export async function loadFormForEdit(
     prisma.form.findUnique({
       where: { id: formId },
       include: {
-        page: { select: { workspaceType: true } },
+        page: { select: { workspaceType: true, iconEmoji: true } },
         versions: {
           orderBy: { versionNumber: "asc" },
           include: {
@@ -231,6 +232,7 @@ export async function loadFormForEdit(
     audience: form.audience,
     audienceGroupIds: form.audienceGroupIds,
     workspaceType: form.page?.workspaceType ?? null,
+    iconEmoji: form.page?.iconEmoji ?? null,
     versions: form.versions.map((v) => ({
       id: v.id,
       versionNumber: v.versionNumber,
@@ -287,6 +289,11 @@ export const ActionSchema = z.discriminatedUnion("intent", [
     intent: z.literal("rename-form"),
     id: z.string().min(1),
     name: z.string().trim().min(1).max(120),
+  }),
+  z.object({
+    intent: z.literal("set-form-icon"),
+    id: z.string().min(1),
+    iconEmoji: z.string().trim().max(64),
   }),
   z.object({ intent: z.literal("delete-form"), id: z.string().min(1) }),
   z.object({
@@ -469,6 +476,15 @@ export async function runFormsAction(
       });
       if (!exists) return { error: "Not found", status: 404 };
       await renameForm(input.id, input.name);
+      return { ok: true };
+    }
+    case "set-form-icon": {
+      const exists = await prisma.form.findUnique({
+        where: { id: input.id },
+        select: { id: true },
+      });
+      if (!exists) return { error: "Not found", status: 404 };
+      await setFormIcon(input.id, input.iconEmoji || null);
       return { ok: true };
     }
     case "delete-form": {

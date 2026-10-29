@@ -102,6 +102,18 @@ describe("loadPublicForm term token", () => {
   });
 });
 
+describe("loadPublicForm icon", () => {
+  it("serves the form page's emoji to the fill view", async () => {
+    mockPrisma.form.findUnique.mockResolvedValue({ ...formRow([]), page: { iconEmoji: "📋" } });
+    expect((await loadPublicForm("tok"))?.iconEmoji).toBe("📋");
+  });
+
+  it("serves null when the form has no emoji", async () => {
+    mockPrisma.form.findUnique.mockResolvedValue({ ...formRow([]), page: { iconEmoji: null } });
+    expect((await loadPublicForm("tok"))?.iconEmoji).toBeNull();
+  });
+});
+
 describe("ordinary forms are untouched by the term token", () => {
   it("returns an unbound form's questions unchanged, including an unlabelled one", async () => {
     // A standalone form has no cycle bindings, so there are no vars to
