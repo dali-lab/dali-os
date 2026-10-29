@@ -623,7 +623,7 @@ export function SlotColumnMapper({
             variant="primary"
             size="sm"
             onClick={save}
-            disabled={saving || !dirty || missing.length > 0}
+            disabled={saving || missing.length > 0}
           >
             {saving ? "Saving…" : "Save columns"}
           </Button>
