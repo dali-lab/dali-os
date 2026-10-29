@@ -15,9 +15,9 @@ import { prisma } from "~/lib/db";
 import { markCalendarChanged } from "~/calendar/lib/external-cache.server";
 import { buildEncryptedTokens } from "~/lib/google-calendar";
 import { requireAuth, isNonMember } from "~/lib/auth";
-import { CAL_STATE_COOKIE, GOOGLE_CALENDAR_SCOPE } from "~/routes/oauth.calendar.google.start";
+import { CAL_STATE_COOKIE } from "~/routes/oauth.calendar.google.start";
 import { getApiBaseUrl } from "~/lib/app-env";
-import { exchangeGoogleCode, GoogleOAuthError, resolveGoogleEmail } from "~/lib/google-oauth";
+import { exchangeGoogleCode, GOOGLE_CALENDAR_SCOPE, GoogleOAuthError, resolveGoogleEmail } from "~/lib/google-oauth";
 import { completeMailConnect, isMailConnectCallback } from "~/email/lib/mail-connect.server";
 
 function parseCookies(request: Request): Record<string, string> {

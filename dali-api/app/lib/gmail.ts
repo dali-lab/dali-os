@@ -16,7 +16,7 @@ import { htmlToPlainText } from '~/lib/email'
 const CLIENT_ID = process.env.GMAIL_CLIENT_ID ?? process.env.GOOGLE_CLIENT_ID!
 const CLIENT_SECRET = process.env.GMAIL_CLIENT_SECRET ?? process.env.GOOGLE_CLIENT_SECRET!
 
-async function getAccessToken(refreshToken: string): Promise<string> {
+export async function getGmailAccessToken(refreshToken: string): Promise<string> {
   const tokens = await refreshGoogleToken({
     refreshToken,
     clientId: CLIENT_ID,
@@ -268,7 +268,7 @@ export async function sendEmail({
     }
   }
 
-  const accessToken = await getAccessToken(refreshToken)
+  const accessToken = await getGmailAccessToken(refreshToken)
   const actualText =
     text && env === 'staging' ? `[STAGING] would have gone to ${to}\n\n${text}` : text
   const raw = makeRawEmail(

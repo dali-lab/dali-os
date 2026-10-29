@@ -1,6 +1,6 @@
 import { prisma } from "~/lib/db";
 import type { EmailSendPurpose } from "~/generated/prisma/client";
-import { GMAIL_READONLY_SCOPE } from "~/lib/google-oauth";
+import { GMAIL_READONLY_SCOPE, GOOGLE_CALENDAR_SCOPE } from "~/lib/google-oauth";
 
 // Purpose-keyed Gmail send-as identities (GmailIntegration rows, connected
 // via /admin/authorize-gmail?purpose=…). Every outbound-email call site
@@ -123,6 +123,27 @@ export async function getMailboxReader(
       enabled: true,
       sendAsEmail: { equals: address, mode: "insensitive" },
       scopes: { has: GMAIL_READONLY_SCOPE },
+    },
+    orderBy: { linkedAt: "desc" },
+    select: { id: true, oauthTokens: true },
+  });
+  return row ? { id: row.id, refreshToken: row.oauthTokens } : null;
+}
+
+/**
+ * The Hiring identity, when it authenticates as `address` and was granted the
+ * Calendar scope. Online interviews host their Meet events on it. Null until
+ * it is connected (Admin → Email senders) with Calendar access.
+ */
+export async function getHiringCalendarSender(
+  address: string,
+): Promise<{ id: string; refreshToken: string } | null> {
+  const row = await prisma.gmailIntegration.findFirst({
+    where: {
+      purpose: "Hiring",
+      enabled: true,
+      sendAsEmail: { equals: address, mode: "insensitive" },
+      scopes: { has: GOOGLE_CALENDAR_SCOPE },
     },
     orderBy: { linkedAt: "desc" },
     select: { id: true, oauthTokens: true },

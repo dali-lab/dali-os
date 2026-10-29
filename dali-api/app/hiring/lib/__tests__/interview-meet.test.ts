@@ -12,6 +12,11 @@ vi.mock("~/lib/google-calendar", () => ({
   getGoogleEventMeetUrl: vi.fn(),
   patchGoogleCalendarEvent: vi.fn(),
 }));
+vi.mock("~/lib/gmail-integration", () => ({
+  getHiringCalendarSender: vi.fn(),
+  noteSenderHealth: vi.fn(),
+}));
+vi.mock("~/lib/gmail", () => ({ getGmailAccessToken: vi.fn() }));
 
 import { prisma } from "~/lib/db";
 import {
@@ -19,6 +24,8 @@ import {
   deleteGoogleCalendarEvent,
   getGoogleEventMeetUrl,
 } from "~/lib/google-calendar";
+import { getHiringCalendarSender, noteSenderHealth } from "~/lib/gmail-integration";
+import { getGmailAccessToken } from "~/lib/gmail";
 import {
   deprovisionInterviewMeet,
   ensureInterviewMeetUrl,
@@ -45,6 +52,8 @@ const onlineInterview = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(getHiringCalendarSender).mockResolvedValue(null);
+  vi.mocked(noteSenderHealth).mockResolvedValue();
   db.userCalendarLink.findFirst.mockResolvedValue(LINK);
   db.userCalendarLink.update.mockResolvedValue({});
   db.interview.update.mockResolvedValue({});
@@ -128,5 +137,78 @@ describe("hiring calendar link health", () => {
     await provisionInterviewMeet("iv1");
     expect(db.interview.findUnique).not.toHaveBeenCalled();
     expect(db.userCalendarLink.update).not.toHaveBeenCalled();
+  });
+});
+
+describe("hiring sender as the Meet account", () => {
+  const SENDER = { id: "sender-hiring", refreshToken: "refresh" };
+  const created = { eventId: "evt", iCalUID: null, htmlLink: null, meetUrl: "https://meet.google.com/abc" };
+
+  beforeEach(() => {
+    vi.mocked(getHiringCalendarSender).mockResolvedValue(SENDER);
+    vi.mocked(getGmailAccessToken).mockResolvedValue("access-from-sender");
+    db.interview.findUnique.mockResolvedValue(onlineInterview);
+  });
+
+  it("looks up the sender by the applications@ address", async () => {
+    vi.mocked(createGoogleCalendarEvent).mockResolvedValue(created);
+    await provisionInterviewMeet("iv1");
+    expect(getHiringCalendarSender).toHaveBeenCalledWith("applications@dali.dartmouth.edu");
+  });
+
+  it("creates the Meet event with the sender's token, not a calendar link", async () => {
+    vi.mocked(createGoogleCalendarEvent).mockResolvedValue(created);
+    await provisionInterviewMeet("iv1");
+    const input = vi.mocked(createGoogleCalendarEvent).mock.calls[0][0];
+    expect(input).toMatchObject({ accessToken: "access-from-sender", addMeet: true, sendUpdates: "none" });
+    expect(input).not.toHaveProperty("linkId");
+    expect(db.userCalendarLink.findFirst).not.toHaveBeenCalled();
+    expect(db.interview.update).toHaveBeenCalledWith({
+      where: { id: "iv1" },
+      data: { calendarEventId: "evt", videoUrl: "https://meet.google.com/abc", videoProvider: "GoogleMeet" },
+    });
+  });
+
+  it("records success on the sender row", async () => {
+    vi.mocked(createGoogleCalendarEvent).mockResolvedValue(created);
+    await provisionInterviewMeet("iv1");
+    expect(noteSenderHealth).toHaveBeenCalledWith(SENDER.id, null);
+    expect(db.userCalendarLink.update).not.toHaveBeenCalled();
+  });
+
+  it("records a Google failure on the sender row", async () => {
+    vi.mocked(createGoogleCalendarEvent).mockRejectedValue(new Error("insufficientPermissions"));
+    await provisionInterviewMeet("iv1");
+    expect(noteSenderHealth).toHaveBeenCalledWith(SENDER.id, "insufficientPermissions");
+    expect(db.interview.update).not.toHaveBeenCalled();
+  });
+
+  it("records a failed token refresh and skips Google", async () => {
+    vi.mocked(getGmailAccessToken).mockRejectedValue(new Error("invalid_grant"));
+    await provisionInterviewMeet("iv1");
+    expect(noteSenderHealth).toHaveBeenCalledWith(SENDER.id, "invalid_grant");
+    expect(createGoogleCalendarEvent).not.toHaveBeenCalled();
+    expect(db.interview.findUnique).not.toHaveBeenCalled();
+  });
+
+  it("reads a late Meet link with the sender's token", async () => {
+    vi.mocked(getGoogleEventMeetUrl).mockResolvedValue("https://meet.google.com/late");
+    const url = await ensureInterviewMeetUrl({ id: "iv1", calendarEventId: "evt", videoUrl: null });
+    expect(url).toBe("https://meet.google.com/late");
+    expect(getGoogleEventMeetUrl).toHaveBeenCalledWith({ accessToken: "access-from-sender", eventId: "evt" });
+  });
+
+  it("deletes the event with the sender's token", async () => {
+    vi.mocked(deleteGoogleCalendarEvent).mockResolvedValue(undefined);
+    await deprovisionInterviewMeet({ id: "iv1", calendarEventId: "evt" });
+    expect(deleteGoogleCalendarEvent).toHaveBeenCalledWith({ accessToken: "access-from-sender", eventId: "evt" });
+  });
+
+  it("falls back to a calendar link when the sender lacks Calendar access", async () => {
+    vi.mocked(getHiringCalendarSender).mockResolvedValue(null);
+    vi.mocked(createGoogleCalendarEvent).mockResolvedValue(created);
+    await provisionInterviewMeet("iv1");
+    expect(vi.mocked(createGoogleCalendarEvent).mock.calls[0][0]).toMatchObject({ linkId: LINK.id });
+    expect(getGmailAccessToken).not.toHaveBeenCalled();
   });
 });
