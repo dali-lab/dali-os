@@ -180,9 +180,13 @@ describe("projectToPlanningItem", () => {
     expect(projectToPlanningItem({ ...base, inPreviousTerm: false })).toBeNull();
   });
 
-  it("treats a renewal with planned role requests but no decision as continuing", () => {
-    expect(projectToPlanningItem({ ...base, thisTermSpots: { eng: 1 } })).toMatchObject({
-      state: "Continuing",
+  it("keeps a renewal with spots set for the term but no decision undecided, on this term's spots", () => {
+    expect(
+      projectToPlanningItem({ ...base, thisTermSpots: { eng: 1 }, previousTermSpots: { eng: 3 } }),
+    ).toMatchObject({ source: "renewing", state: "Undecided", spotsByDomain: { eng: 1 } });
+    expect(projectToPlanningItem({ ...base, inPreviousTerm: false, thisTermSpots: { eng: 1 } })).toMatchObject({
+      state: "Undecided",
+      spotsByDomain: { eng: 1 },
     });
   });
 

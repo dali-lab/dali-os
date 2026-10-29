@@ -171,11 +171,12 @@ export function projectToPlanningItem(p: ProjectPlanningInput): PlanningItem | n
       : null;
   }
   if (p.decision === false) return null;
-  if (p.decision === true || has(p.thisTermSpots)) {
+  if (p.decision === true) {
     return has(p.thisTermSpots)
       ? { ...base, source: "renewing", state: "Continuing", spotsByDomain: p.thisTermSpots }
       : null;
   }
+  if (has(p.thisTermSpots)) return { ...base, source: "renewing", state: "Undecided", spotsByDomain: p.thisTermSpots };
   return p.inPreviousTerm && has(p.previousTermSpots)
     ? { ...base, source: "renewing", state: "Undecided", spotsByDomain: p.previousTermSpots }
     : null;
