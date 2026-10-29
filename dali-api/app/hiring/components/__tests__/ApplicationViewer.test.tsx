@@ -87,6 +87,28 @@ describe("ApplicationViewer file/url rendering", () => {
     expect(html).toContain(`href="${presignedUrl}"`);
   });
 
+  it("names the challenge section from the DA's domain when the challenge version carries none", () => {
+    const application = {
+      answers: {},
+      generalChallengeVersion: { questions: [] },
+      domainApplications: [
+        {
+          id: "da-1",
+          answers: { essay: "Pixels all day." },
+          challengeVersion: { questions: [essayQ] },
+          domain: { name: "design", displayName: "Design" },
+        },
+      ],
+    };
+
+    const html = renderToStaticMarkup(
+      createElement(Viewer, { application, questionLabels: { essay: "Why DALI?" } }),
+    );
+
+    expect(html).toContain("Design");
+    expect(html).toContain("Pixels all day.");
+  });
+
   it("renders github_url answers as an external link without annotation", () => {
     const application = {
       answers: { gh: "https://github.com/carol/x" },
