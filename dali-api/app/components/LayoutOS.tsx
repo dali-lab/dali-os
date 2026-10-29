@@ -46,6 +46,7 @@ import {
 } from '~/components/TablessHistoryNav'
 import { useShellNav } from '~/components/shell-nav'
 import { DesktopTabStrip, useDesktopTabs } from '~/components/DesktopTabs'
+import { RecordingPill } from '~/components/meeting-recorder/RecordingPill'
 import { TabsShowingProvider } from '~/components/shell/TabKeepAlive'
 import { tabActions } from '~/lib/desktop-tabs-store'
 import type { DesktopTabsState } from '~/lib/desktop-tabs'
@@ -916,6 +917,7 @@ export function LayoutOS({
       </div>
 
       <div className="flex flex-shrink-0 items-center gap-3">
+        <RecordingPill />
         {favoritesBar && (
           <Tooltip
             content={
