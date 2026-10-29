@@ -152,21 +152,13 @@ export function WorkspaceSettingsBlock() {
                     aria-checked={active}
                     onClick={() => chooseTabless(o.tabless)}
                     className={cn(
-                      "flex items-start gap-3 rounded-os-item border bg-os-well p-4 text-left transition-colors",
-                      active ? "border-os-accent" : "border-os-container hover:border-os-container-hi",
+                      "flex flex-col gap-3 rounded-os-item border-2 bg-os-well p-3 text-left transition-colors",
+                      active ? "border-os-accent" : "border-transparent hover:border-os-container-hi",
                     )}
                   >
-                    <span
-                      className={cn(
-                        "mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2",
-                        active ? "border-os-accent" : "border-os-container-hi",
-                      )}
-                      aria-hidden
-                    >
-                      {active && <span className="h-1.5 w-1.5 rounded-full bg-os-accent" />}
-                    </span>
+                    <TabsPreview tabs={!o.tabless} />
                     <span>
-                      <span className="block text-sm font-semibold text-foreground">{o.label}</span>
+                      <span className="block text-sm text-foreground">{o.label}</span>
                       <span className="mt-0.5 block text-sm text-os-grey">{o.help}</span>
                     </span>
                   </button>

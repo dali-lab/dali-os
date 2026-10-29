@@ -99,4 +99,17 @@ describe("NotificationsSettingsBlock", () => {
     expect(fields["meeting.invite:present"]).toBe("1");
     expect(fields["meeting.invite:inApp"]).toBe("on");
   });
+
+  it("pictures each channel above its column header, in column order", async () => {
+    await mount();
+    const previews = Array.from(container.querySelectorAll("[data-channel-preview]"));
+    expect(previews.map((p) => p.getAttribute("data-channel-preview"))).toEqual([
+      "inApp",
+      "desktop",
+      "slackDm",
+      "email",
+    ]);
+    expect(previews.map((p) => p.parentElement?.textContent)).toEqual(["In-app", "Desktop", "Slack DM", "Email"]);
+    expect(previews.every((p) => p.getAttribute("aria-hidden") === "true")).toBe(true);
+  });
 });

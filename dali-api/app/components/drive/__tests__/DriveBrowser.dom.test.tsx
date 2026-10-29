@@ -1863,3 +1863,18 @@ describe("DriveBrowser open to the side", () => {
     expect(row("doc", "d1").textContent).not.toContain("Open beside");
   });
 });
+
+describe("DriveBrowser columns: empty folder", () => {
+  it("pictures an empty folder's column", async () => {
+    await mount({ folderId: "f2" });
+    const empty = container.querySelector("[data-empty-folder-art]");
+    expect(empty).not.toBeNull();
+    expect(empty!.getAttribute("aria-hidden")).toBe("true");
+    expect(empty!.parentElement!.textContent).toBe("This folder is empty.");
+  });
+
+  it("keeps a full folder's column free of the empty art", async () => {
+    await mount({ folderId: "f1" });
+    expect(container.querySelector("[data-empty-folder-art]")).toBeNull();
+  });
+});

@@ -140,3 +140,23 @@ describe("WorkspaceSettingsBlock open links row", () => {
     expect(toggle()).toBeNull();
   });
 });
+
+describe("WorkspaceSettingsBlock Opening pages row", () => {
+  const radios = () =>
+    Array.from(container.querySelectorAll<HTMLButtonElement>('[role="radiogroup"][aria-label="Opening pages"] [role="radio"]'));
+
+  it("previews a page with no tabs for Single page and with tabs for Tabbed workspace", async () => {
+    await mount({});
+    const [single, tabbed] = radios();
+    expect(single!.textContent).toContain("Single page");
+    expect(single!.querySelector('[data-tabs-preview="off"]')).not.toBeNull();
+    expect(single!.querySelector("[data-preview-tabs]")).toBeNull();
+    expect(tabbed!.textContent).toContain("Tabbed workspace");
+    expect(tabbed!.querySelector('[data-tabs-preview="on"] [data-preview-tabs]')).not.toBeNull();
+  });
+
+  it("is absent with desktop-tabs on", async () => {
+    await mount({ "desktop-tabs": true });
+    expect(radios()).toHaveLength(0);
+  });
+});

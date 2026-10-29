@@ -99,6 +99,7 @@ import { CORAL_FOLDER, glyphLabel, pickGlyph, type ItemGlyph } from "~/component
 import { droppedFiles } from "~/components/drive/dropped-files";
 import { FolderGlyph, GlyphBadge } from "~/components/drive/FolderGlyph";
 import { FolderSettingsModal } from "~/components/drive/FolderSettingsModal";
+import { EmptyFolder } from "~/components/drive/EmptyFolder";
 import { isPageFolder, meetingsOptionFor, receivesLabel } from "~/components/drive/receiver-options";
 
 function useDriveText() {
@@ -1872,7 +1873,7 @@ export function DriveBrowser({
                           ? "Documents shared with you by name appear here."
                           : sId === FAVORITES_SPACE_KEY
                             ? "Items you favorite appear here."
-                            : "This folder is empty."
+                            : <EmptyFolder className="py-6">This folder is empty.</EmptyFolder>
                       }
                       marquee={marqueeFor(levelIdx)}
                     >
@@ -2432,7 +2433,7 @@ function MillerColumn({
   children: ReactNode;
   testid?: string;
   isEmpty: boolean;
-  emptyMessage: string;
+  emptyMessage: ReactNode;
   /** Drag-to-select on the column's empty space; omitted for the list of drives. */
   marquee?: Parameters<typeof useMarquee>[0];
 }) {
@@ -2449,7 +2450,11 @@ function MillerColumn({
     >
       <MarqueeBox box={box} />
       {isEmpty ? (
-        <p className={`px-2.5 py-4 ${t.meta} text-os-muted`}>{emptyMessage}</p>
+        typeof emptyMessage === "string" ? (
+          <p className={`px-2.5 py-4 ${t.meta} text-os-muted`}>{emptyMessage}</p>
+        ) : (
+          emptyMessage
+        )
       ) : (
         <div className="flex flex-col">{children}</div>
       )}
@@ -2750,12 +2755,10 @@ export function ScopeContents({
   const t = useDriveText();
   const isSharedSpace = scope.id === SHARED_SPACE_KEY;
   if (listing.length === 0) {
-    return (
-      <EmptyLine>
-        {isSharedSpace
-          ? "Documents shared with you by name appear here."
-          : "This folder is empty. Drop files here to upload."}
-      </EmptyLine>
+    return isSharedSpace ? (
+      <EmptyLine>Documents shared with you by name appear here.</EmptyLine>
+    ) : (
+      <EmptyFolder>This folder is empty. Drop files here to upload.</EmptyFolder>
     );
   }
 
