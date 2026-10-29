@@ -13,6 +13,7 @@ export type PlanningItem = {
   kind: "project" | "application";
   refId: string;
   name: string;
+  iconEmoji?: string | null;
   source: PlanningSource;
   state: PlanningState;
   spotsByDomain: Record<string, number>;
@@ -150,6 +151,7 @@ function sumCounted(rows: PlanningBreakdownRow[], source: PlanningSource): numbe
 export type ProjectPlanningInput = {
   id: string;
   name: string;
+  iconEmoji?: string | null;
   termSortKey: number;
   earliestSortKey: number | null;
   inPreviousTerm: boolean;
@@ -160,7 +162,7 @@ export type ProjectPlanningInput = {
 
 export function projectToPlanningItem(p: ProjectPlanningInput): PlanningItem | null {
   if (p.earliestSortKey === null || p.earliestSortKey > p.termSortKey) return null;
-  const base = { key: `project:${p.id}`, kind: "project" as const, refId: p.id, name: p.name };
+  const base = { key: `project:${p.id}`, kind: "project" as const, refId: p.id, name: p.name, iconEmoji: p.iconEmoji ?? null };
   const has = (s: Record<string, number>) => Object.values(s).some((n) => n > 0);
 
   if (p.earliestSortKey === p.termSortKey) {

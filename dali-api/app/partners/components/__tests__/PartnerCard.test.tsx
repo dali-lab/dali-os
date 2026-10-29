@@ -22,6 +22,7 @@ function card(overrides: Partial<PartnerCardModel> = {}): PartnerCardModel {
     lastActivityAt: new Date().toISOString(),
     holdUntil: null,
     resultingProjectId: null,
+    projectIconEmoji: null,
     meetingRequestedAt: null,
     pendingRequestCount: 0,
     meetingCount: 0,
@@ -152,6 +153,11 @@ describe("PartnerCard", () => {
 
   it("does not show Paused once the hold has lifted", () => {
     expect(render(card({ holdUntil: days(-1) }))).not.toContain("Paused");
+  });
+
+  it("shows the project icon before the title only when the project has one", () => {
+    expect(render(card({ projectIconEmoji: "🚀" }))).toContain("🚀");
+    expect(render(card({ projectIconEmoji: null }))).not.toContain("🚀");
   });
 
   it("links the resulting project", () => {

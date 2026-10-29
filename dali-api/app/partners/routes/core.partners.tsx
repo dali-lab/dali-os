@@ -94,6 +94,14 @@ export async function loader({ request }: Route.LoaderArgs) {
     currentTerm(request),
   ]);
 
+  const projectIds = applications.flatMap((a) => (a.resultingProjectId ? [a.resultingProjectId] : []));
+  const projectIcons = new Map(
+    (projectIds.length
+      ? await prisma.project.findMany({ where: { id: { in: projectIds } }, select: { id: true, iconEmoji: true } })
+      : []
+    ).map((p) => [p.id, p.iconEmoji]),
+  );
+
   const cards: PartnerCardModel[] = applications.map((a) => ({
     id: a.id,
     title: a.title,
@@ -114,6 +122,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     lastActivityAt: a.lastActivityAt.toISOString(),
     holdUntil: a.holdUntil?.toISOString() ?? null,
     resultingProjectId: a.resultingProjectId,
+    projectIconEmoji: a.resultingProjectId ? (projectIcons.get(a.resultingProjectId) ?? null) : null,
     meetingRequestedAt: a.meetingRequestedAt?.toISOString() ?? null,
     pendingRequestCount: a.meetingRequests.length,
     meetingCount: a.meetings.length,
@@ -199,15 +208,15 @@ export default function PartnersApplications() {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center gap-2">
-        <PartnerCrmNav />
+      <div className="flex flex-wrap items-center gap-2 md:flex-nowrap">
+        <PartnerCrmNav className="shrink-0 self-start md:self-center" />
         <div className="flex-1" />
         <SearchInput
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search applications…"
           aria-label="Search applications"
-          containerClassName="w-full max-w-[420px] sm:w-72"
+          containerClassName="w-full sm:w-36 sm:shrink-0"
         />
         <Popover
           align="right"
@@ -341,7 +350,7 @@ export default function PartnersApplications() {
           onClick={() => setParam("settings", "1")}
           className="os-icon-btn"
         />
-        <button type="button" onClick={() => setCreating(true)} className="os-add-btn">
+        <button type="button" onClick={() => setCreating(true)} className="os-add-btn shrink-0 whitespace-nowrap">
           <Plus className="h-[17px] w-[17px]" strokeWidth={3} aria-hidden />
           New application
         </button>

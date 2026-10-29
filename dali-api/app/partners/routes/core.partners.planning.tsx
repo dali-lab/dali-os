@@ -45,19 +45,19 @@ export default function PartnersPlanning() {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center gap-3">
-        <PartnerCrmNav />
+      <div className="flex flex-wrap items-center gap-2 md:flex-nowrap">
+        <PartnerCrmNav className="shrink-0 self-start md:self-center" />
         <div className="flex-1" />
         {data.hasIntentData && (
           <Link
             to={termHref}
-            className={cn("text-sm text-muted-foreground hover:text-foreground", !os && "underline")}
+            className={cn("shrink-0 whitespace-nowrap text-sm text-muted-foreground hover:text-foreground", !os && "underline")}
           >
             {data.replied} of {data.roster} replied
           </Link>
         )}
         <Tooltip content="Adds New, Interview and Deciding applications and undecided renewals">
-          <span>
+          <span className="inline-flex h-9 shrink-0 items-center rounded-lg border border-os-container bg-os-card px-3">
             <Toggle
               tone="os"
               label="Include potential"
@@ -71,7 +71,6 @@ export default function PartnersPlanning() {
             terms={data.terms}
             selected={data.termId}
             includeAll={false}
-            buttonClassName="w-full sm:w-40"
             replace
           />
         )}

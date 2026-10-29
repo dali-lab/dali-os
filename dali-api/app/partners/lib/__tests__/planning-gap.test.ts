@@ -143,6 +143,10 @@ describe("buildPlanningGap", () => {
 import { projectToPlanningItem, type ProjectPlanningInput } from "../planning-gap";
 
 describe("projectToPlanningItem", () => {
+  it("carries the project icon through", () => {
+    expect(projectToPlanningItem({ ...base, iconEmoji: "🚀" })?.iconEmoji).toBe("🚀");
+  });
+
   const base: ProjectPlanningInput = {
     id: "p1",
     name: "Project",

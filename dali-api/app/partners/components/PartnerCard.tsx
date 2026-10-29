@@ -80,7 +80,10 @@ export function PartnerCard({
       onOpen={onOpen}
       testId="partner-card"
     >
-      <span className="min-w-0 text-foreground">{card.title}</span>
+      <span className="min-w-0 text-foreground">
+        {card.projectIconEmoji && <span aria-hidden className="mr-1.5">{card.projectIconEmoji}</span>}
+        {card.title}
+      </span>
 
       <div className="mt-1 truncate text-muted-foreground text-xs">
         {card.contactName}

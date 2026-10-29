@@ -23,5 +23,5 @@ export function PartnerCrmNav({ className }: { className?: string }) {
       tab.href === "/core/partners" ? pathname === tab.href : pathname.startsWith(tab.href),
     onClick: () => navigate(tab.href),
   }));
-  return <SegmentedTabButtons label="Partners" items={items} className={className ?? "self-start"} />;
+  return <SegmentedTabButtons label="Partners" size="sm" items={items} className={className ?? "self-start"} />;
 }

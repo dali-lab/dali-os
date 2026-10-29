@@ -1,8 +1,8 @@
 import type { ReactNode } from "react";
 import { BoardCard } from "~/components/board/BoardCard";
 import { cn } from "~/lib/cn";
+import { relativeTime } from "~/lib/relative-time";
 import {
-  daysAgo,
   isContactStale,
   isNextStepOverdue,
   rolesLabel,
@@ -31,7 +31,6 @@ export function RenewalCard({
   dragHandleProps = {},
   isDragging,
   onOpen,
-  children,
 }: {
   card: RenewalCardModel;
   accentEdge: string;
@@ -42,7 +41,6 @@ export function RenewalCard({
   dragHandleProps?: Record<string, unknown>;
   isDragging: boolean;
   onOpen: () => void;
-  children?: ReactNode;
 }) {
   const stale = isContactStale(card.lastContactAt, staleDays, now);
   return (
@@ -53,7 +51,10 @@ export function RenewalCard({
       onOpen={onOpen}
       testId="renewal-card"
     >
-      <span className="min-w-0 text-foreground">{card.name}</span>
+      <span className="flex min-w-0 items-center gap-1.5 text-foreground">
+        {card.iconEmoji && <span aria-hidden className="shrink-0">{card.iconEmoji}</span>}
+        <span className="min-w-0">{card.name}</span>
+      </span>
       <div className="mt-1 truncate text-xs text-muted-foreground">
         {card.orgName ? `${card.orgName} · ` : ""}
         {card.termCount} {card.termCount === 1 ? "term" : "terms"}
@@ -67,7 +68,7 @@ export function RenewalCard({
           </Field>
         )}
         <Field label="Last contact" warn={stale}>
-          {card.lastContactAt ? `${daysAgo(card.lastContactAt, now)} days ago` : "None yet"}
+          {card.lastContactAt ? relativeTime(card.lastContactAt) : "None yet"}
         </Field>
         <Field label="Spots">
           {card.column === "not_continuing"
@@ -78,7 +79,6 @@ export function RenewalCard({
         </Field>
         {card.column === "not_continuing" && card.reason && <Field label="Reason">{card.reason}</Field>}
       </dl>
-      {children}
     </BoardCard>
   );
 }

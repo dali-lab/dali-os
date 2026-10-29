@@ -42,7 +42,7 @@ test.describe('partner directory (Core)', () => {
     await expect(page.getByText('Tuck School of Business')).toBeVisible();
     await expect(page.getByText('Hood Museum of Art')).toBeVisible();
 
-    await page.getByRole('tab', { name: 'Contacts' }).click();
+    await page.getByRole('tab', { name: /^Contacts/ }).click();
     await expect(page.getByText('Pat Tuck').first()).toBeVisible();
     await expect(page.getByText('Harper Hood').first()).toBeVisible();
   });
@@ -96,16 +96,19 @@ test.describe('partner CRM reports (Core)', () => {
     await loginAs({ daliEmail: 'admin@dali.dartmouth.edu' });
   });
 
-  test('renders headline tiles for every section', async ({ page }) => {
+  test('renders every report panel', async ({ page }) => {
     await page.goto('/core/partners/reports?embed=1');
     await expect(page.getByRole('heading', { name: 'Reports' })).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'Funnel' })).toBeVisible();
-    const funnel = page.locator('section', { has: page.getByRole('heading', { name: 'Funnel' }) });
-    await expect(funnel.getByText('Applications', { exact: true })).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'Cycle time' })).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'Rejection reasons' })).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'Partner mix' })).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'Capacity' })).toBeVisible();
+    for (const name of [
+      'Funnel',
+      'Where applications came from',
+      'Time to decision',
+      'Why applications were rejected',
+      'New and returning partners',
+      'Fees by organization',
+    ]) {
+      await expect(page.getByRole('heading', { name })).toBeVisible();
+    }
   });
 
   test('switching the term re-renders without an error', async ({ page }) => {

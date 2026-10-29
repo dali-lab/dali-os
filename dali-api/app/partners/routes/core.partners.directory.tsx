@@ -424,15 +424,15 @@ export default function PartnersDirectory() {
       <NewOrgModal open={creatingOrg} onClose={() => setCreatingOrg(false)} orgs={orgs} />
       <NewContactModal open={creatingContact} onClose={() => setCreatingContact(false)} />
 
-      <div className="flex flex-wrap items-center gap-2">
-        <PartnerCrmNav />
+      <div className="flex flex-wrap items-center gap-2 md:flex-nowrap">
+        <PartnerCrmNav className="shrink-0 self-start md:self-center" />
         <div className="flex-1" />
         <SearchInput
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder={activeView === "orgs" ? "Search organizations…" : "Search contacts…"}
           aria-label={activeView === "orgs" ? "Search organizations" : "Search contacts"}
-          containerClassName="w-full max-w-[420px] sm:w-72"
+          containerClassName="w-full sm:w-36 sm:shrink-0"
         />
         {activeView === "orgs" && (
           <Popover
@@ -506,12 +506,12 @@ export default function PartnersDirectory() {
           onClick={() => window.location.assign(directoryExportHref(activeView, query, filters))}
         />
         {activeView === "orgs" ? (
-          <button type="button" onClick={() => setCreatingOrg(true)} className="os-add-btn">
+          <button type="button" onClick={() => setCreatingOrg(true)} className="os-add-btn shrink-0 whitespace-nowrap">
             <Plus className="h-[17px] w-[17px]" strokeWidth={3} aria-hidden />
             New organization
           </button>
         ) : (
-          <button type="button" onClick={() => setCreatingContact(true)} className="os-add-btn">
+          <button type="button" onClick={() => setCreatingContact(true)} className="os-add-btn shrink-0 whitespace-nowrap">
             <Plus className="h-[17px] w-[17px]" strokeWidth={3} aria-hidden />
             New contact
           </button>

@@ -12,6 +12,7 @@ export type RenewalRole = { domainId: string; name: string; slots: number };
 export type RenewalCardModel = {
   projectId: string;
   name: string;
+  iconEmoji: string | null;
   orgName: string | null;
   termCount: number;
   column: RenewalColumn;
@@ -25,7 +26,7 @@ export type RenewalCardModel = {
   decidedRoles: RenewalRole[];
 };
 
-export type StatusRow = { sortKey: number; code: string; isContinuing: boolean };
+export type StatusRow = { sortKey: number; code: string; isContinuing: boolean | null };
 
 export function classifyDecision(
   rows: StatusRow[],
@@ -33,6 +34,9 @@ export function classifyDecision(
 ): { column: RenewalColumn; fromTermCode: string | null; effectiveCode: string | null } {
   const atDecision = rows.find((r) => r.sortKey === decisionSortKey);
   if (!atDecision) return { column: "undecided", fromTermCode: null, effectiveCode: null };
+  if (atDecision.isContinuing == null) {
+    return { column: "undecided", fromTermCode: null, effectiveCode: null };
+  }
   if (atDecision.isContinuing) {
     return { column: "continuing", fromTermCode: null, effectiveCode: atDecision.code };
   }
@@ -41,6 +45,19 @@ export function classifyDecision(
     .sort((a, b) => a.sortKey - b.sortKey)[0];
   if (later) return { column: "continuing", fromTermCode: later.code, effectiveCode: later.code };
   return { column: "not_continuing", fromTermCode: null, effectiveCode: null };
+}
+
+export type NextStepFields = { nextStep: string | null; nextStepDueAt: Date | null };
+
+export function normalizeNextStep(step: string, dueIso: string): NextStepFields {
+  const nextStep = step.trim();
+  if (!nextStep) return { nextStep: null, nextStepDueAt: null };
+  const due = /^\d{4}-\d{2}-\d{2}$/.test(dueIso) ? new Date(`${dueIso}T00:00:00.000Z`) : null;
+  return { nextStep, nextStepDueAt: due && !Number.isNaN(due.getTime()) ? due : null };
+}
+
+export function dueToInput(iso: string | null): string {
+  return iso ? iso.slice(0, 10) : "";
 }
 
 export function totalSlots(roles: RenewalRole[]): number {
@@ -68,10 +85,6 @@ export function isNextStepOverdue(dueIso: string | null, now: Date): boolean {
 export function isContactStale(lastIso: string | null, staleDays: number, now: Date): boolean {
   if (!lastIso) return false;
   return now.getTime() - new Date(lastIso).getTime() > staleDays * 86_400_000;
-}
-
-export function daysAgo(iso: string, now: Date): number {
-  return Math.max(0, Math.floor((now.getTime() - new Date(iso).getTime()) / 86_400_000));
 }
 
 export function matchesRenewalQuery(card: RenewalCardModel, query: string): boolean {

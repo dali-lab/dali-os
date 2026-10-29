@@ -3,6 +3,7 @@ import {
   classifyDecision,
   continueStatusWrites,
   normalizeRoles,
+  type NextStepFields,
   nextTerm,
   type RenewalCardModel,
   type RenewalRole,
@@ -20,6 +21,7 @@ export async function loadRenewalCards(
     select: {
       id: true,
       name: true,
+      iconEmoji: true,
       projectTerms: { select: { termId: true } },
       partners: {
         orderBy: { startedAt: "asc" },
@@ -96,6 +98,7 @@ export async function loadRenewalCards(
     return {
       projectId: p.id,
       name: p.name,
+      iconEmoji: p.iconEmoji,
       orgName: linked[0]?.partnerOrg.name ?? null,
       termCount: p.projectTerms.length,
       column: verdict.column,
@@ -123,7 +126,7 @@ export async function applyContinue(
     feeCents: number | null;
     roles: { domainId: string; slots: number }[];
     userId: string;
-  },
+  } & Partial<NextStepFields>,
 ): Promise<void> {
   const roles = normalizeRoles(input.roles);
   const writes = continueStatusWrites(input.decisionTermId, input.chosenTermId);
@@ -134,7 +137,14 @@ export async function applyContinue(
         isContinuing: w.isContinuing,
         setBy: input.userId,
         setAt: new Date(),
-        ...(isChosen ? { feeCents: input.feeCents, reason: null } : {}),
+        ...(isChosen
+          ? {
+              feeCents: input.feeCents,
+              reason: null,
+              nextStep: input.nextStep ?? null,
+              nextStepDueAt: input.nextStepDueAt ?? null,
+            }
+          : {}),
       };
       await tx.projectTermStatus.upsert({
         where: { projectId_termId: { projectId: input.projectId, termId: w.termId } },
@@ -166,12 +176,14 @@ export async function applyContinue(
 
 export async function applyNotContinuing(
   db: Db,
-  input: { projectId: string; decisionTermId: string; reason: string; userId: string },
+  input: { projectId: string; decisionTermId: string; reason: string; userId: string } & Partial<NextStepFields>,
 ): Promise<void> {
   const data = {
     isContinuing: false,
     reason: input.reason,
     feeCents: null,
+    nextStep: input.nextStep ?? null,
+    nextStepDueAt: input.nextStepDueAt ?? null,
     setBy: input.userId,
     setAt: new Date(),
   };
@@ -184,14 +196,31 @@ export async function applyNotContinuing(
 
 export async function applyUndecided(
   db: Db,
-  input: { projectId: string; decisionTermId: string },
+  input: { projectId: string; decisionTermId: string; userId?: string } & Partial<NextStepFields>,
 ): Promise<void> {
+  const keepRow = !!input.nextStep;
+  const undecidedData = {
+    isContinuing: null,
+    feeCents: null,
+    reason: null,
+    nextStep: input.nextStep ?? null,
+    nextStepDueAt: input.nextStepDueAt ?? null,
+    setBy: input.userId ?? null,
+    setAt: new Date(),
+  };
   await db.$transaction(async (tx) => {
     const decision = await tx.projectTermStatus.findUnique({
       where: { projectId_termId: { projectId: input.projectId, termId: input.decisionTermId } },
       select: { isContinuing: true, term: { select: { sortKey: true } } },
     });
-    if (!decision) return;
+    if (!decision) {
+      if (keepRow) {
+        await tx.projectTermStatus.create({
+          data: { projectId: input.projectId, termId: input.decisionTermId, ...undecidedData },
+        });
+      }
+      return;
+    }
     const toClear = [input.decisionTermId];
     if (!decision.isContinuing) {
       const later = await tx.projectTermStatus.findMany({
@@ -211,7 +240,14 @@ export async function applyUndecided(
         where: { projectId_termId: { projectId: input.projectId, termId } },
         select: { isContinuing: true },
       });
-      await tx.projectTermStatus.deleteMany({ where: { projectId: input.projectId, termId } });
+      if (keepRow && termId === input.decisionTermId) {
+        await tx.projectTermStatus.update({
+          where: { projectId_termId: { projectId: input.projectId, termId } },
+          data: undecidedData,
+        });
+      } else {
+        await tx.projectTermStatus.deleteMany({ where: { projectId: input.projectId, termId } });
+      }
       if (status?.isContinuing) {
         const assigned = await tx.projectAssignment.count({
           where: { projectId: input.projectId, termId },

@@ -10,7 +10,7 @@ import { SearchInput } from "~/components/ui/SearchInput";
 import { PartnerCrmNav } from "../components/PartnerCrmNav";
 import { RenewalsBoard } from "../components/RenewalsBoard";
 import { useState } from "react";
-import type { RenewalCardModel } from "../lib/partner-renewals";
+import { normalizeNextStep, type RenewalCardModel } from "../lib/partner-renewals";
 
 type TermRef = { id: string; code: string; sortKey: number };
 import {
@@ -75,6 +75,8 @@ export async function action({ request }: Route.ActionArgs) {
   const decisionTermId = String(form.get("decisionTermId") ?? "");
   if (!projectId || !decisionTermId) return { error: "Missing project or term." };
 
+  const next = normalizeNextStep(String(form.get("nextStep") ?? ""), String(form.get("nextStepDue") ?? ""));
+
   if (intent === "continue") {
     const termId = String(form.get("termId") ?? "");
     const [chosen, decision] = await Promise.all([
@@ -92,13 +94,13 @@ export async function action({ request }: Route.ActionArgs) {
     const feeRaw = String(form.get("feeCents") ?? "");
     const feeCents = feeRaw === "" ? null : Number(feeRaw);
     if (feeCents != null && !Number.isInteger(feeCents)) return { error: "Fee is not a valid amount." };
-    await applyContinue(prisma, { projectId, decisionTermId, chosenTermId: termId, feeCents, roles, userId: g.userId });
+    await applyContinue(prisma, { projectId, decisionTermId, chosenTermId: termId, feeCents, roles, userId: g.userId, ...next });
   } else if (intent === "not-continuing") {
     const reason = String(form.get("reason") ?? "").trim();
     if (!reason) return { error: "Add a reason." };
-    await applyNotContinuing(prisma, { projectId, decisionTermId, reason, userId: g.userId });
+    await applyNotContinuing(prisma, { projectId, decisionTermId, reason, userId: g.userId, ...next });
   } else if (intent === "undecided") {
-    await applyUndecided(prisma, { projectId, decisionTermId });
+    await applyUndecided(prisma, { projectId, decisionTermId, userId: g.userId, ...next });
   } else {
     return { error: "Unknown action." };
   }
@@ -121,16 +123,9 @@ export default function PartnersRenewals() {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2 md:flex-nowrap">
         <PartnerCrmNav />
         <div className="flex-1" />
-        <SearchInput
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search projects or partners"
-          aria-label="Search renewals"
-          containerClassName="w-full max-w-[420px] sm:w-72"
-        />
         {picked && (
           <Select
             ariaLabel="Active in term"
@@ -141,6 +136,13 @@ export default function PartnersRenewals() {
             options={[...terms].reverse().map((t) => ({ value: t.code, label: `Active in ${t.code}` }))}
           />
         )}
+        <SearchInput
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search projects or partners"
+          aria-label="Search renewals"
+          containerClassName="w-full sm:w-56 shrink-0"
+        />
       </div>
       {!picked || !decisionTerm ? (
         <p className="text-sm text-muted-foreground">

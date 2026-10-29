@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { useFetcher, useNavigate } from "react-router";
+import { useFetcher } from "react-router";
 import type { DragEndEvent } from "@dnd-kit/core";
 import { KanbanBoard, type KanbanColumn } from "~/components/board/KanbanBoard";
 import { BOARD_TITLE_CLASS, boardTitleStyle, osStatusAccent } from "~/components/board/status-accent";
@@ -14,10 +14,15 @@ import {
   totalSlots,
   type RenewalCardModel,
   type RenewalColumn,
-  type RenewalRole,
 } from "../lib/partner-renewals";
 import { RenewalCard } from "./renewals/RenewalCard";
-import { ContinueForm, ReasonForm, type DomainOption, type TermOption } from "./renewals/RenewalForms";
+import {
+  RenewalModal,
+  toFormFields,
+  type DomainOption,
+  type RenewalSubmission,
+  type TermOption,
+} from "./renewals/RenewalModal";
 
 const ACCENTS = {
   undecided: osStatusAccent("review"),
@@ -25,7 +30,7 @@ const ACCENTS = {
   not_continuing: osStatusAccent("cancelled"),
 };
 
-type Pending = { projectId: string; target: "continuing" | "not_continuing" };
+type Editing = { projectId: string; decision: RenewalColumn };
 
 export function RenewalsBoard({
   cards,
@@ -44,9 +49,8 @@ export function RenewalsBoard({
   termOptions: TermOption[];
   domains: DomainOption[];
 }) {
-  const navigate = useNavigate();
   const fetcher = useFetcher<{ error?: string }>();
-  const [pending, setPending] = useState<Pending | null>(null);
+  const [editing, setEditing] = useState<Editing | null>(null);
   const now = useMemo(() => new Date(), []);
   const saving =
     fetcher.state !== "idle" && fetcher.formData
@@ -57,9 +61,9 @@ export function RenewalsBoard({
     [cards, query, saving?.intent, saving?.projectId],
   );
 
-  const submit = (fields: Record<string, string>) => {
-    fetcher.submit({ ...fields, decisionTermId: decisionTerm.id }, { method: "post" });
-    setPending(null);
+  const save = (v: RenewalSubmission) => {
+    fetcher.submit({ ...toFormFields(v), decisionTermId: decisionTerm.id }, { method: "post" });
+    setEditing(null);
   };
 
   function handleDragEnd(event: DragEndEvent) {
@@ -67,11 +71,7 @@ export function RenewalsBoard({
     const to = event.over?.id as RenewalColumn | undefined;
     if (!data?.projectId || !data.column || !to || to === data.column) return;
     if (!RENEWAL_COLUMNS.includes(to)) return;
-    if (to === "undecided") {
-      submit({ intent: "undecided", projectId: data.projectId });
-      return;
-    }
-    setPending({ projectId: data.projectId, target: to });
+    setEditing({ projectId: data.projectId, decision: to });
   }
 
   const columns: KanbanColumn<RenewalCardModel>[] = RENEWAL_COLUMNS.map((col) => {
@@ -106,17 +106,7 @@ export function RenewalsBoard({
     };
   });
 
-  const confirmContinue = (
-    projectId: string,
-    v: { termId: string; roles: RenewalRole[]; feeCents: number | null },
-  ) =>
-    submit({
-      intent: "continue",
-      projectId,
-      termId: v.termId,
-      feeCents: v.feeCents == null ? "" : String(v.feeCents),
-      roles: JSON.stringify(v.roles.map((r) => ({ domainId: r.domainId, slots: r.slots }))),
-    });
+  const editingCard = editing ? cards.find((c) => c.projectId === editing.projectId) : null;
 
   return (
     <div className="flex flex-col gap-3">
@@ -131,42 +121,50 @@ export function RenewalsBoard({
         getCardData={(c) => ({ projectId: c.projectId, column: c.column })}
         draggable
         onDragEnd={handleDragEnd}
-        renderCard={(c, { isDragging, dragHandleProps }) => {
-          const open = pending?.projectId === c.projectId ? pending : null;
-          return (
-            <RenewalCard
-              card={c}
-              accentEdge={ACCENTS[c.column].edge}
-              staleDays={staleDays}
-              lastTermCode={lastTermCode}
-              decisionTermCode={decisionTerm.code}
-              now={now}
-              dragHandleProps={open ? {} : dragHandleProps}
-              isDragging={isDragging}
-              onOpen={() => navigate(`/projects/${c.projectId}`)}
-            >
-              {open?.target === "continuing" && (
-                <ContinueForm
-                  card={c}
-                  decisionTermId={decisionTerm.id}
-                  termOptions={termOptions}
-                  domains={domains}
-                  busy={fetcher.state !== "idle"}
-                  onCancel={() => setPending(null)}
-                  onConfirm={(v) => confirmContinue(c.projectId, v)}
-                />
-              )}
-              {open?.target === "not_continuing" && (
-                <ReasonForm
-                  busy={fetcher.state !== "idle"}
-                  onCancel={() => setPending(null)}
-                  onConfirm={(reason) => submit({ intent: "not-continuing", projectId: c.projectId, reason })}
-                />
-              )}
-            </RenewalCard>
-          );
+        renderOverlay={(activeId) => {
+          const c = activeId ? cards.find((x) => x.projectId === activeId) : null;
+          return c ? (
+            <div className="w-64 rotate-1 shadow-xl">
+              <RenewalCard
+                card={c}
+                accentEdge={ACCENTS[c.column].edge}
+                staleDays={staleDays}
+                lastTermCode={lastTermCode}
+                decisionTermCode={decisionTerm.code}
+                now={now}
+                isDragging={false}
+                onOpen={() => {}}
+              />
+            </div>
+          ) : null;
         }}
+        renderCard={(c, { isDragging, dragHandleProps }) => (
+          <RenewalCard
+            card={c}
+            accentEdge={ACCENTS[c.column].edge}
+            staleDays={staleDays}
+            lastTermCode={lastTermCode}
+            decisionTermCode={decisionTerm.code}
+            now={now}
+            dragHandleProps={dragHandleProps}
+            isDragging={isDragging}
+            onOpen={() => setEditing({ projectId: c.projectId, decision: c.column })}
+          />
+        )}
       />
+      {editing && editingCard && (
+        <RenewalModal
+          key={`${editing.projectId}:${editing.decision}`}
+          card={editingCard}
+          initialDecision={editing.decision}
+          decisionTerm={decisionTerm}
+          termOptions={termOptions}
+          domains={domains}
+          busy={fetcher.state !== "idle"}
+          onClose={() => setEditing(null)}
+          onSave={save}
+        />
+      )}
     </div>
   );
 }

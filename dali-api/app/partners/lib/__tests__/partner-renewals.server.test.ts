@@ -8,6 +8,8 @@ function fakeDb() {
   const tx = {
     projectTermStatus: {
       upsert: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
       findUnique: vi.fn(),
       findMany: vi.fn().mockResolvedValue([]),
       deleteMany: vi.fn(),
@@ -69,6 +71,26 @@ describe("applyContinue", () => {
   });
 });
 
+describe("next step on decisions", () => {
+  it("writes the next step on the chosen continuing row only", async () => {
+    const { db, tx } = fakeDb();
+    const due = new Date("2026-11-02T00:00:00.000Z");
+    await applyContinue(db, {
+      projectId: "p", decisionTermId: "t1", chosenTermId: "t3", feeCents: null, roles: [], userId: "u",
+      nextStep: "Send SOW", nextStepDueAt: due,
+    });
+    const [skipped, chosen] = tx.projectTermStatus.upsert.mock.calls.map((c) => c[0].create);
+    expect(skipped.nextStep).toBeUndefined();
+    expect(chosen).toMatchObject({ nextStep: "Send SOW", nextStepDueAt: due });
+  });
+
+  it("writes the next step with a not-continuing decision", async () => {
+    const { db, raw } = fakeDb();
+    await applyNotContinuing(db, { projectId: "p", decisionTermId: "t1", reason: "x", userId: "u", nextStep: "Thank them" });
+    expect(raw.projectTermStatus.upsert.mock.calls[0][0].create).toMatchObject({ nextStep: "Thank them" });
+  });
+});
+
 describe("applyNotContinuing", () => {
   it("upserts a false status with the reason", async () => {
     const { db, raw } = fakeDb();
@@ -102,6 +124,44 @@ describe("applyUndecided", () => {
     tx.projectAssignment.count.mockResolvedValue(2);
     await applyUndecided(db, { projectId: "p", decisionTermId: "t1" });
     expect(tx.projectRoleRequest.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it("creates an undecided row when a next step is set and no row exists", async () => {
+    const { db, tx } = fakeDb();
+    tx.projectTermStatus.findUnique.mockResolvedValue(null);
+    await applyUndecided(db, { projectId: "p", decisionTermId: "t1", userId: "u", nextStep: "Call", nextStepDueAt: null });
+    expect(tx.projectTermStatus.create.mock.calls[0][0].data).toMatchObject({
+      projectId: "p",
+      termId: "t1",
+      isContinuing: null,
+      nextStep: "Call",
+    });
+  });
+
+  it("keeps the row as undecided with the next step instead of deleting it", async () => {
+    const { db, tx } = fakeDb();
+    tx.projectTermStatus.findUnique.mockResolvedValue({ isContinuing: true, term: { sortKey: 271 } });
+    await applyUndecided(db, { projectId: "p", decisionTermId: "t1", userId: "u", nextStep: "Call", nextStepDueAt: null });
+    expect(tx.projectTermStatus.update.mock.calls[0][0].data).toMatchObject({
+      isContinuing: null,
+      reason: null,
+      feeCents: null,
+      nextStep: "Call",
+    });
+    expect(tx.projectTermStatus.deleteMany).not.toHaveBeenCalled();
+    expect(tx.projectRoleRequest.deleteMany).toHaveBeenCalledWith({ where: { projectId: "p", termId: "t1" } });
+  });
+
+  it("still deletes the later continuing row of a skipped term when keeping the next step", async () => {
+    const { db, tx } = fakeDb();
+    tx.projectTermStatus.findUnique
+      .mockResolvedValueOnce({ isContinuing: false, term: { sortKey: 271 } })
+      .mockResolvedValueOnce({ isContinuing: false })
+      .mockResolvedValueOnce({ isContinuing: true });
+    tx.projectTermStatus.findMany.mockResolvedValue([{ termId: "t3" }]);
+    await applyUndecided(db, { projectId: "p", decisionTermId: "t1", nextStep: "Call" });
+    expect(tx.projectTermStatus.update).toHaveBeenCalledOnce();
+    expect(tx.projectTermStatus.deleteMany.mock.calls.map((c) => c[0].where.termId)).toEqual(["t3"]);
   });
 
   it("also clears the later continuing row of a skipped term", async () => {

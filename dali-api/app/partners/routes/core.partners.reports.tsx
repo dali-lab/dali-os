@@ -5,6 +5,7 @@ import { requireAuth, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { isCore } from "~/lib/roles";
 import { Popover, Select } from "~/components/ui/floating";
+import { OS_PANEL_CLASS } from "~/components/ui/floating/styles";
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
 import { formatUsd } from "~/lib/money";
@@ -206,7 +207,7 @@ function BucketBar({
     <Popover
       align="left"
       ariaLabel={`${label} applications`}
-      panelClassName="z-[60] w-96 max-w-[90vw] p-2"
+      panelClassName={cn(OS_PANEL_CLASS, "w-96 max-w-[90vw] p-2")}
       trigger={
         <button type="button" className={cn(ROW_BASE, ROW_CLICKABLE)}>
           <BarContent label={label} value={value} percent={percent} />
@@ -249,8 +250,8 @@ export default function PartnerReports() {
   return (
     <div className="flex flex-col gap-4">
       <h1 className="sr-only">Reports</h1>
-      <div className="flex flex-wrap items-center gap-2">
-        <PartnerCrmNav />
+      <div className="flex flex-wrap items-center gap-2 md:flex-nowrap">
+        <PartnerCrmNav className="shrink-0 self-start md:self-center" />
         <div className="flex-1" />
         <Select
           value={selectedTermId ?? "all"}

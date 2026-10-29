@@ -55,6 +55,7 @@ export async function loadPlanningData(requestedTermId: string | null): Promise<
       select: {
         id: true,
         name: true,
+        iconEmoji: true,
         projectTerms: { select: { termId: true } },
         termStatuses: { where: { termId: term.id }, select: { isContinuing: true } },
         roleRequests: {
@@ -93,6 +94,7 @@ export async function loadPlanningData(requestedTermId: string | null): Promise<
     const item = projectToPlanningItem({
       id: p.id,
       name: p.name,
+      iconEmoji: p.iconEmoji,
       termSortKey: term.sortKey,
       earliestSortKey: sortKeys.length ? Math.min(...sortKeys) : null,
       inPreviousTerm: !!prevTerm && p.projectTerms.some((pt) => pt.termId === prevTerm.id),

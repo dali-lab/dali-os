@@ -10,6 +10,8 @@ import {
   isNextStepOverdue,
   matchesRenewalQuery,
   nextTerm,
+  normalizeNextStep,
+  dueToInput,
   normalizeRoles,
   rolesLabel,
   spotsHeader,
@@ -24,6 +26,7 @@ const NOW = new Date("2026-10-28T12:00:00Z");
 const card = (o: Partial<RenewalCardModel>): RenewalCardModel => ({
   projectId: "p",
   name: "Alpha",
+  iconEmoji: null,
   orgName: "Acme",
   termCount: 2,
   column: "undecided",
@@ -65,6 +68,39 @@ describe("classifyDecision", () => {
     expect(classifyDecision([{ sortKey: 271, code: "27W", isContinuing: false }], 271).column).toBe(
       "not_continuing",
     );
+  });
+});
+
+describe("classifyDecision with an undecided row", () => {
+  it("treats a null decision as undecided even when a later term continues", () => {
+    const rows = [
+      { sortKey: 271, code: "27W", isContinuing: null },
+      { sortKey: 274, code: "27F", isContinuing: true },
+    ];
+    expect(classifyDecision(rows, 271)).toEqual({ column: "undecided", fromTermCode: null, effectiveCode: null });
+  });
+});
+
+describe("normalizeNextStep", () => {
+  it("drops the due date when there is no step", () => {
+    expect(normalizeNextStep("  ", "2026-11-02")).toEqual({ nextStep: null, nextStepDueAt: null });
+  });
+  it("trims the step and parses the due date as UTC midnight", () => {
+    expect(normalizeNextStep(" Call them ", "2026-11-02")).toEqual({
+      nextStep: "Call them",
+      nextStepDueAt: new Date("2026-11-02T00:00:00.000Z"),
+    });
+  });
+  it("ignores a malformed due date", () => {
+    expect(normalizeNextStep("Call", "11/02").nextStepDueAt).toBeNull();
+    expect(normalizeNextStep("Call", "2026-13-45").nextStepDueAt).toBeNull();
+  });
+});
+
+describe("dueToInput", () => {
+  it("returns the date part or empty", () => {
+    expect(dueToInput("2026-11-02T00:00:00.000Z")).toBe("2026-11-02");
+    expect(dueToInput(null)).toBe("");
   });
 });
 

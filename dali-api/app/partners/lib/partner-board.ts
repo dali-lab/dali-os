@@ -34,6 +34,7 @@ export type PartnerCardModel = {
   lastActivityAt: string;
   holdUntil: string | null;
   resultingProjectId: string | null;
+  projectIconEmoji: string | null;
   meetingRequestedAt: string | null;
   pendingRequestCount: number;
   meetingCount: number;

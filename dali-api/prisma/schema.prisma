@@ -4169,7 +4169,7 @@ model ProjectTermStatus {
   id           String   @id @default(cuid())
   projectId    String
   termId       String
-  isContinuing Boolean
+  isContinuing Boolean?
   // Free-form actor userId.
   setBy        String?
   setAt        DateTime @default(now())

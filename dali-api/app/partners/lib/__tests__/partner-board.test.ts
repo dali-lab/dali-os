@@ -31,6 +31,7 @@ function card(overrides: Partial<PartnerCardModel> & { id: string }): PartnerCar
     lastActivityAt: new Date().toISOString(),
     holdUntil: null,
     resultingProjectId: null,
+    projectIconEmoji: null,
     meetingRequestedAt: null,
     pendingRequestCount: 0,
     meetingCount: 0,
