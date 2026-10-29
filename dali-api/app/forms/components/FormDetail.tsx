@@ -636,6 +636,7 @@ export function FormDetail() {
 
       {previewData && (
         <FormPreviewModal
+          formId={form.id}
           formName={form.name}
           description={previewData.description}
           questions={previewData.questions}
