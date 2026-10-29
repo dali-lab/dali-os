@@ -30,7 +30,12 @@ import {
 import { Confetti } from "~/components/Confetti";
 import { Modal } from "~/components/Modal";
 import { KanbanBoard, type KanbanColumn } from "~/components/board/KanbanBoard";
-import { osStatusAccent, type StatusAccent } from "~/components/board/status-accent";
+import {
+  BOARD_TITLE_CLASS,
+  boardTitleStyle,
+  osStatusAccent,
+  type StatusAccent,
+} from "~/components/board/status-accent";
 import { BoardCard, BoardCardMeta, BoardCardMetaRow, BoardCardChip } from "~/components/board/BoardCard";
 import { modalCardClass, useOsChrome } from "~/components/os-chrome";
 import {
@@ -862,7 +867,7 @@ export function TaskBoard({
       // The title carries the band's ink itself: BoardColumn puts
       // `text-foreground` on its title slot, which would otherwise win over
       // the colour inherited from the header.
-      title: <span style={{ color: accent.ink }}>{label}</span>,
+      title: <span className={BOARD_TITLE_CLASS} style={boardTitleStyle(accent)}>{label}</span>,
       className: cn(shell, "w-full md:w-64"),
       headerClassName: cn(
         "flex items-center justify-between gap-2 px-3 py-2",
