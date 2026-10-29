@@ -1,8 +1,11 @@
 import { prisma } from "~/lib/db";
 import { currentTerm } from "~/lib/roles";
 import { ACTIVE_LAB_MEMBER_WHERE } from "~/lib/prisma-shapes";
+import { parseColumnMapping } from "~/projects/lib/slot-roles";
 import {
+  intentSetupState,
   projectToPlanningItem,
+  type IntentSetup,
   type PlanningItem,
   type PlanningState,
   type ReturningPerson,
@@ -19,6 +22,7 @@ export type PlanningData = {
   replied: number;
   roster: number;
   hasIntentData: boolean;
+  intentSetup: IntentSetup;
 };
 
 const APPLICATION_STAGES = ["New", "Interview", "Deciding", "Accepted"] as const;
@@ -43,7 +47,17 @@ export async function loadPlanningData(requestedTermId: string | null): Promise<
   const fallback = allTerms[currentIdx + 1] ?? allTerms[currentIdx] ?? allTerms[allTerms.length - 1];
   const term = allTerms.find((t) => t.id === requestedTermId) ?? fallback;
   if (!term) {
-    return { terms, termId: null, items: [], domains: [], returning: [], replied: 0, roster: 0, hasIntentData: false };
+    return {
+      terms,
+      termId: null,
+      items: [],
+      domains: [],
+      returning: [],
+      replied: 0,
+      roster: 0,
+      hasIntentData: false,
+      intentSetup: { kind: "no-form" },
+    };
   }
   const prevTerm = [...allTerms].reverse().find((t) => t.sortKey < term.sortKey) ?? null;
   const sortKeyById = new Map(allTerms.map((t) => [t.id, t.sortKey]));
@@ -77,7 +91,14 @@ export async function loadPlanningData(requestedTermId: string | null): Promise<
         domains: { select: { domainId: true, expectedMembers: true } },
       },
     }),
-    prisma.staffingCycle.findUnique({ where: { termId: term.id }, select: { id: true } }),
+    prisma.staffingCycle.findUnique({
+      where: { termId: term.id },
+      select: {
+        id: true,
+        formBindings: { where: { slot: "intent-to-work" }, select: { columnMapping: true } },
+        _count: { select: { formSubmissions: { where: { slot: "intent-to-work" } } } },
+      },
+    }),
     prisma.user.count({ where: ACTIVE_LAB_MEMBER_WHERE }),
   ]);
 
@@ -148,5 +169,11 @@ export async function loadPlanningData(requestedTermId: string | null): Promise<
     replied,
     roster,
     hasIntentData: replied > 0,
+    intentSetup: intentSetupState({
+      bound: !!cycle && cycle.formBindings.length > 0,
+      mapping: cycle?.formBindings[0] ? parseColumnMapping(cycle.formBindings[0].columnMapping) : null,
+      submissions: cycle?._count.formSubmissions ?? 0,
+      replied,
+    }),
   };
 }

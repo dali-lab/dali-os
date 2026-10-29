@@ -140,7 +140,7 @@ describe("buildPlanningGap", () => {
   });
 });
 
-import { projectToPlanningItem, type ProjectPlanningInput } from "../planning-gap";
+import { intentSetupState, projectToPlanningItem, type ProjectPlanningInput } from "../planning-gap";
 
 describe("projectToPlanningItem", () => {
   it("carries the project icon through", () => {
@@ -202,5 +202,44 @@ describe("projectToPlanningItem", () => {
 
   it("ignores projects with no spots", () => {
     expect(projectToPlanningItem({ ...base, earliestSortKey: 30 })).toBeNull();
+  });
+});
+
+describe("intentSetupState", () => {
+  const status = (termId?: string) =>
+    ({
+      version: 1,
+      entries: [{ source: "question", questionKey: "q", role: "intent-status", label: "Status", ...(termId ? { termId } : {}) }],
+    }) as never;
+
+  it("is ready once anyone has a status for the term, whatever the setup", () => {
+    expect(intentSetupState({ bound: false, mapping: null, submissions: 0, replied: 3 })).toEqual({ kind: "ready" });
+  });
+
+  it("says no form is bound", () => {
+    expect(intentSetupState({ bound: false, mapping: null, submissions: 0, replied: 0 })).toEqual({ kind: "no-form" });
+  });
+
+  it("says the status question isn't mapped, with the submissions waiting on it", () => {
+    expect(intentSetupState({ bound: true, mapping: null, submissions: 7, replied: 0 })).toEqual({
+      kind: "unmapped",
+      submissions: 7,
+    });
+    expect(
+      intentSetupState({ bound: true, mapping: { version: 1, entries: [] } as never, submissions: 0, replied: 0 }),
+    ).toEqual({ kind: "unmapped", submissions: 0 });
+  });
+
+  it("says submissions exist but none gave a status", () => {
+    expect(intentSetupState({ bound: true, mapping: status(), submissions: 4, replied: 0 })).toEqual({
+      kind: "no-statuses",
+      submissions: 4,
+    });
+  });
+
+  it("says nobody has responded yet", () => {
+    expect(intentSetupState({ bound: true, mapping: status("t27w"), submissions: 0, replied: 0 })).toEqual({
+      kind: "no-responses",
+    });
   });
 });
