@@ -1,6 +1,6 @@
 import { useMemo, useState, useEffect } from "react";
 import { buttonClasses } from "~/components/ui/Button";
-import { redirect, useLoaderData, useFetcher } from "react-router";
+import { redirect, useLoaderData, useFetcher, useSearchParams } from "react-router";
 import type { Route } from "./+types/projects.level-up";
 import { useFilteredList } from "~/hooks/useFilteredList";
 import { requireAuth, redirectNonMemberToPortal } from "~/lib/auth";
@@ -17,6 +17,7 @@ import {
   setSlotBinding,
   setSlotColumnMapping,
   setSlotGate,
+  setSlotPublished,
 } from "../lib/form-slots";
 import { SubmissionFilters } from "../components/SubmissionFilters";
 import { ColumnFilters, useColumnFilters } from "../components/ColumnFilters";
@@ -339,7 +340,8 @@ export async function action({ request }: Route.ActionArgs) {
   if (
     intent === "set-slot-form" ||
     intent === "set-slot-mapping" ||
-    intent === "set-slot-gate"
+    intent === "set-slot-gate" ||
+    intent === "set-slot-published"
   ) {
     if (!(await canManageStaffing(auth.user.sub)))
       return Response.json({ error: "Forbidden" }, { status: 403 });
@@ -396,6 +398,17 @@ export async function action({ request }: Route.ActionArgs) {
         return Response.json({ error: result.error }, { status: 400 });
       return Response.json({ ok: true });
     }
+
+    if (intent === "set-slot-published") {
+      const result = await setSlotPublished(
+        cycle.id,
+        SLOT,
+        form.get("published") === "1",
+      );
+      if (!result.ok)
+        return Response.json({ error: result.error }, { status: 400 });
+      return Response.json({ ok: true });
+    }
   }
 
   // Note saving: anyone who can view the page.
@@ -444,7 +457,10 @@ type LoadedData = Extract<Awaited<ReturnType<typeof loader>>, { gate: "ok" }>;
 
 function Loaded({ data }: { data: LoadedData }) {
   const [domainId, setDomainId] = useState("");
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [searchParams] = useSearchParams();
+  const [settingsOpen, setSettingsOpen] = useState(
+    () => searchParams.get("settings") === "1",
+  );
   const [confirmRow, setConfirmRow] = useState<{
     userId: string;
     name: string;

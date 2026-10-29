@@ -15,6 +15,7 @@ beforeEach(() => {
   // Every other usage source empty; only the staffing binding matters here.
   for (const delegate of [
     "partnerApplicationFormBinding",
+    "partnerSurveyFormBinding",
     "applicationCycle",
     "cycleDomainForm",
     "educationOffering",
@@ -32,7 +33,7 @@ describe("staffing usage", () => {
     mockPrisma.staffingCycleFormBinding.findMany.mockResolvedValue([
       {
         slot: "intent-to-work",
-        staffingCycle: { term: { code: "27W" } },
+        staffingCycle: { term: { id: "term-27w", code: "27W" } },
       },
     ]);
 
@@ -49,11 +50,43 @@ describe("staffing usage", () => {
     expect(managingUsage(usages)?.kind).toBe("staffing");
   });
 
+  it.each(["intent-to-work", "project-bids", "level-up"])(
+    "links %s to its own page, on the bound term, with settings open",
+    async (slot) => {
+      mockPrisma.staffingCycleFormBinding.findMany.mockResolvedValue([
+        { slot, staffingCycle: { term: { id: "term-27w", code: "27W" } } },
+      ]);
+
+      const usages = await formUsages("form-1");
+
+      expect(managingUsage(usages)?.href).toBe(
+        `/core/${slot}?term=term-27w&settings=1`,
+      );
+    },
+  );
+
   it("reports no staffing usage for an unbound form", async () => {
     mockPrisma.staffingCycleFormBinding.findMany.mockResolvedValue([]);
 
     const usages = await formUsages("form-1");
 
     expect(staffingUsage(usages)).toBeNull();
+  });
+});
+
+describe("partner usages", () => {
+  it.each([
+    ["partnerApplicationFormBinding", "partner-application"],
+    ["partnerSurveyFormBinding", "partner-survey"],
+  ])("%s links to the partner settings modal", async (delegate, kind) => {
+    mockPrisma.staffingCycleFormBinding.findMany.mockResolvedValue([]);
+    mockPrisma[delegate].findFirst.mockResolvedValue({ id: "b1" });
+
+    const usages = await formUsages("form-1");
+
+    expect(managingUsage(usages)).toMatchObject({
+      kind,
+      href: "/core/partners?settings=1",
+    });
   });
 });
