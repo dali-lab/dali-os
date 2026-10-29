@@ -4,6 +4,7 @@ import { useNavigate } from "react-router";
 import { desktopVersion } from "~/lib/desktop";
 import { FormQuestionField } from "~/components/form-builder/QuestionField";
 import { FormFieldList } from "~/forms/components/FormField";
+import { PageIconPicker } from "~/components/doc-chrome/PageIconPicker";
 import {
   useFormPager,
   FormPagerNav,
@@ -31,6 +32,7 @@ import type { Question } from "~/types";
 
 export type MemberFormData = {
   name: string;
+  iconEmoji?: string | null;
   description: unknown;
   versionId: string;
   // Fingerprint echoed back on submit so a mid-fill in-place edit is caught.
@@ -198,9 +200,12 @@ export function MemberFormFillView({
 
   const formBody = (
     <>
-      <h1 className="font-heading text-2xl font-bold text-foreground">
-        {data.name}
-      </h1>
+      <div className="flex items-center gap-3">
+        {data.iconEmoji && <PageIconPicker iconEmoji={data.iconEmoji} canEdit={false} onChange={() => {}} />}
+        <h1 className="min-w-0 font-heading text-2xl font-bold text-foreground">
+          {data.name}
+        </h1>
+      </div>
       {!isEmptyBlocks(data.description) && (
         <div className="mt-2 text-sm text-muted-foreground">
           <DocEditor

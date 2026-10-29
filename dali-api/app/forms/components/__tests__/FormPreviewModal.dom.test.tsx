@@ -36,7 +36,11 @@ const submit = () =>
     document.body.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
   });
 
-function mount({ blocks, questions = [question()] }: { blocks: boolean; questions?: Question[] }) {
+function mount({
+  blocks,
+  questions = [question()],
+  iconEmoji = null,
+}: { blocks: boolean; questions?: Question[]; iconEmoji?: string | null }) {
   act(() => {
     root.render(
       createElement(
@@ -45,6 +49,7 @@ function mount({ blocks, questions = [question()] }: { blocks: boolean; question
         createElement(FormPreviewModal, {
           formId,
           formName: "Winter Demo Day RSVP",
+          iconEmoji,
           description: null,
           questions,
           onClose: () => {},
@@ -92,6 +97,13 @@ describe("FormPreviewModal with form-blocks on", () => {
     await submit();
     expect(strip()?.dataset.phase).toBe("idle");
     expect(text()).toContain("\"Your name\" is required.");
+  });
+});
+
+describe("FormPreviewModal icon", () => {
+  it.each([true, false])("shows the form's emoji beside its title (form-blocks %s)", (blocks) => {
+    mount({ blocks, iconEmoji: "📋" });
+    expect(text()).toContain("📋");
   });
 });
 
