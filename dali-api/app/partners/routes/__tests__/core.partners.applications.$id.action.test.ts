@@ -197,3 +197,19 @@ describe("meeting intents", () => {
     expect(arg.data.outcome).toBeUndefined(); // invalid outcome dropped
   });
 });
+
+
+describe("details preserve term planning", () => {
+  it("only removes deselected terms and preserves existing rows when adding terms", async () => {
+    db.partnerApplicationTargetTerm = { deleteMany: vi.fn(), createMany: vi.fn() };
+    db.term.findMany.mockResolvedValue([{ id: "retained" }, { id: "added" }]);
+    await callAction({ intent: "details", summary: "Updated", targetTermId: ["retained", "added"] });
+    expect(db.partnerApplicationTargetTerm.deleteMany).toHaveBeenCalledWith({
+      where: { applicationId: APP_ID, termId: { notIn: ["retained", "added"] } },
+    });
+    expect(db.partnerApplicationTargetTerm.createMany).toHaveBeenCalledWith({
+      data: [{ applicationId: APP_ID, termId: "retained" }, { applicationId: APP_ID, termId: "added" }],
+      skipDuplicates: true,
+    });
+  });
+});

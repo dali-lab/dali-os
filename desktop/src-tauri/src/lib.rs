@@ -20,6 +20,7 @@ mod tray;
 mod tray_badge;
 mod tray_model;
 mod updater;
+mod wake;
 mod window;
 
 use tauri::{Manager, WindowEvent};
@@ -30,7 +31,14 @@ use state::{AppState, AuthState};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    // macOS kills the web content process of a long-hidden window under
+    // memory pressure; without a reload the window comes back blank.
+    #[cfg(target_os = "macos")]
+    let builder = builder.on_web_content_process_terminate(|webview| {
+        let _ = webview.reload();
+    });
+    builder
         // Single-instance must be registered first: it routes a second-launch
         // deep link into the running instance and focuses it.
         .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
@@ -86,6 +94,8 @@ pub fn run() {
 
             // Pairing window stays built + hidden, ready to show.
             window::build_pairing(&handle)?;
+
+            wake::install(&handle);
 
             // Route deep links delivered to the already-running instance.
             {

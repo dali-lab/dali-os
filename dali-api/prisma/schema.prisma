@@ -4169,10 +4169,16 @@ model ProjectTermStatus {
   id           String   @id @default(cuid())
   projectId    String
   termId       String
-  isContinuing Boolean
+  isContinuing Boolean?
   // Free-form actor userId.
   setBy        String?
   setAt        DateTime @default(now())
+
+  // Renewal decision details, written from Core → Partners → Renewals.
+  feeCents      Int?
+  reason        String?
+  nextStep      String?
+  nextStepDueAt DateTime?
 
   // Per-term meeting links and Statement of Work. Calendar/Zoom rotate per
   // term; SOW is a collab Page (loose reference, app-layer dispatch like
@@ -6906,6 +6912,7 @@ enum PartnerStage {
   Backlog
   New
   Interview
+  Deciding
   Accepted
   Rejected
 }

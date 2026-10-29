@@ -4,21 +4,21 @@
 // scoping resolved first.
 
 import { prisma } from "~/lib/db";
-import { PROJECTING_STAGES } from "./partner-application";
+import type { PartnerStage } from "~/generated/prisma/enums";
 import {
   computeFunnel,
+  computeFunnelReached,
   computeFunnelBySource,
   computeCycleTimes,
   computeRejectionReasons,
   computePartnerMix,
-  computeCapacity,
   computeRevenueByOrg,
   type FunnelResult,
+  type FunnelReached,
   type FunnelBySourceRow,
   type CycleTimeResult,
   type RejectionReasonRow,
   type PartnerMixResult,
-  type CapacityCell,
   type RevenueRow,
 } from "./partner-reports";
 
@@ -76,13 +76,39 @@ async function termWindow(termId: string | null): Promise<{ start: Date; end: Da
   return term ? { start: term.startDate, end: term.endDate } : null;
 }
 
-export async function loadFunnelSection(
-  termId: string | null,
-): Promise<{ funnel: FunnelResult; bySource: FunnelBySourceRow[] }> {
-  const apps = await prisma.partnerApplication.findMany({
+export type ReportApplication = {
+  id: string;
+  title: string;
+  orgName: string | null;
+  stage: PartnerStage;
+};
+
+const FUNNEL_TARGETS: readonly string[] = ["New", "Interview", "Deciding", "Accepted", "Rejected"];
+
+export async function loadFunnelSection(termId: string | null): Promise<{
+  funnel: FunnelResult;
+  reached: FunnelReached;
+  bySource: FunnelBySourceRow[];
+  applications: ReportApplication[];
+}> {
+  const rows = await prisma.partnerApplication.findMany({
     where: termId ? { targetTerms: { some: { termId } } } : undefined,
-    select: { id: true, stage: true, source: true },
+    select: {
+      id: true,
+      stage: true,
+      source: true,
+      title: true,
+      partnerOrg: { select: { name: true } },
+      applicantContact: { select: { name: true } },
+    },
   });
+  const apps = rows.map((r) => ({ id: r.id, stage: r.stage, source: r.source }));
+  const applications = rows.map((r) => ({
+    id: r.id,
+    title: r.title,
+    orgName: r.partnerOrg?.name ?? r.applicantContact?.name ?? null,
+    stage: r.stage,
+  }));
   const appIds = apps.map((a) => a.id);
   const statusChanges =
     appIds.length > 0
@@ -93,13 +119,15 @@ export async function loadFunnelSection(
       : [];
   const changes = statusChanges
     .map((r) => ({ applicationId: r.applicationId!, to: (r.metadata as { to?: string } | null)?.to }))
-    .filter((r): r is { applicationId: string; to: "New" | "Interview" | "Accepted" | "Rejected" } =>
-      r.to === "New" || r.to === "Interview" || r.to === "Accepted" || r.to === "Rejected",
+    .filter((r): r is { applicationId: string; to: PartnerStage } =>
+      FUNNEL_TARGETS.includes(r.to as string),
     );
 
   return {
     funnel: computeFunnel(apps, changes),
+    reached: computeFunnelReached(apps, changes),
     bySource: computeFunnelBySource(apps),
+    applications,
   };
 }
 
@@ -125,7 +153,7 @@ export async function loadRejectionReasonsSection(termId: string | null): Promis
       stage: "Rejected",
       ...(termId ? { targetTerms: { some: { termId } } } : {}),
     },
-    select: { rejectReason: true },
+    select: { id: true, rejectReason: true },
   });
   return computeRejectionReasons(apps);
 }
@@ -149,36 +177,6 @@ export async function loadPartnerMixSection(termId: string | null): Promise<Part
   return computePartnerMix(
     orgsInScope.map((o) => ({ orgId: o.id, orgName: o.name, links: o.projects })),
     window?.start ?? null,
-  );
-}
-
-export async function loadCapacitySection(termId: string | null): Promise<CapacityCell[]> {
-  if (!termId) return [];
-
-  const [expectedRows, staffedRows] = await Promise.all([
-    prisma.partnerApplicationDomain.findMany({
-      where: {
-        application: {
-          stage: { in: PROJECTING_STAGES },
-          resultingProjectId: null,
-          targetTerms: { some: { termId } },
-        },
-      },
-      select: {
-        domainId: true,
-        expectedMembers: true,
-        domain: { select: { displayName: true } },
-      },
-    }),
-    prisma.projectAssignment.findMany({
-      where: { termId },
-      select: { domainId: true, domain: { select: { displayName: true } } },
-    }),
-  ]);
-
-  return computeCapacity(
-    expectedRows.map((r) => ({ domainId: r.domainId, domainName: r.domain.displayName, expectedMembers: r.expectedMembers })),
-    staffedRows.map((r) => ({ domainId: r.domainId, domainName: r.domain.displayName })),
   );
 }
 

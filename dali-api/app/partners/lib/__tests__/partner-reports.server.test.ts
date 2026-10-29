@@ -6,7 +6,7 @@ import { prisma } from "~/lib/db";
 import {
   resolveReportsTerm,
   loadFunnelSection,
-  loadCapacitySection,
+  loadRejectionReasonsSection,
   loadRevenueSection,
 } from "../partner-reports.server";
 
@@ -58,8 +58,8 @@ describe("loadFunnelSection", () => {
   it("scopes applications by term and only keeps recognized StatusChanged targets", async () => {
     mockPrisma.partnerApplication = {
       findMany: vi.fn().mockResolvedValue([
-        { id: "a1", stage: "Interview", source: "Form" },
-        { id: "a2", stage: "Rejected", source: "Email" },
+        { id: "a1", stage: "Interview", source: "Form", title: "Alpha", partnerOrg: { name: "Acme" }, applicantContact: null },
+        { id: "a2", stage: "Rejected", source: "Email", title: "Beta", partnerOrg: null, applicantContact: { name: "Jo" } },
       ]),
     };
     mockPrisma.partnerActivity = {
@@ -75,11 +75,23 @@ describe("loadFunnelSection", () => {
 
     expect(mockPrisma.partnerApplication.findMany).toHaveBeenCalledWith({
       where: { targetTerms: { some: { termId: "term-1" } } },
-      select: { id: true, stage: true, source: true },
+      select: {
+        id: true,
+        stage: true,
+        source: true,
+        title: true,
+        partnerOrg: { select: { name: true } },
+        applicantContact: { select: { name: true } },
+      },
     });
     expect(result.funnel.total).toBe(2);
     // a2 ever reached Interview before being Rejected.
     expect(result.funnel.newToInterviewRate).toBe(1);
+    expect(result.reached.interview).toEqual(["a1", "a2"]);
+    expect(result.applications).toEqual([
+      { id: "a1", title: "Alpha", orgName: "Acme", stage: "Interview" },
+      { id: "a2", title: "Beta", orgName: "Jo", stage: "Rejected" },
+    ]);
     expect(result.bySource).toEqual([
       { source: "Form", count: 1 },
       { source: "Email", count: 1 },
@@ -97,38 +109,43 @@ describe("loadFunnelSection", () => {
   });
 });
 
-describe("loadCapacitySection", () => {
-  it("returns an empty list for All time (no term to project against)", async () => {
-    expect(await loadCapacitySection(null)).toEqual([]);
-  });
-
-  it("combines expected (open, unpromoted) domain scope with staffed assignments", async () => {
-    mockPrisma.partnerApplicationDomain = {
+describe("loadFunnelSection with Deciding", () => {
+  it("keeps Deciding status changes so the application counts as interviewed", async () => {
+    mockPrisma.partnerApplication = {
       findMany: vi.fn().mockResolvedValue([
-        { domainId: "d1", expectedMembers: 2, domain: { displayName: "Engineering" } },
+        { id: "a1", stage: "Rejected", source: "Form", title: "A", partnerOrg: null, applicantContact: null },
       ]),
     };
-    mockPrisma.projectAssignment = {
-      findMany: vi.fn().mockResolvedValue([{ domainId: "d1", domain: { displayName: "Engineering" } }]),
+    mockPrisma.partnerActivity = {
+      findMany: vi.fn().mockResolvedValue([
+        { applicationId: "a1", metadata: { to: "Deciding" } },
+        { applicationId: "a1", metadata: { to: "Rejected" } },
+      ]),
     };
 
-    const result = await loadCapacitySection("term-1");
+    const result = await loadFunnelSection(null);
 
-    expect(mockPrisma.partnerApplicationDomain.findMany).toHaveBeenCalledWith({
-      where: {
-        application: {
-          stage: { in: ["Interview", "Accepted"] },
-          resultingProjectId: null,
-          targetTerms: { some: { termId: "term-1" } },
-        },
-      },
-      select: {
-        domainId: true,
-        expectedMembers: true,
-        domain: { select: { displayName: true } },
-      },
+    expect(result.reached.interview).toEqual(["a1"]);
+    expect(result.funnel.newToInterviewRate).toBe(1);
+  });
+});
+
+describe("loadRejectionReasonsSection", () => {
+  it("returns the ids behind each reason", async () => {
+    mockPrisma.partnerApplication = {
+      findMany: vi.fn().mockResolvedValue([
+        { id: "a1", rejectReason: "Timing" },
+        { id: "a2", rejectReason: "Timing" },
+      ]),
+    };
+
+    const result = await loadRejectionReasonsSection("term-1");
+
+    expect(mockPrisma.partnerApplication.findMany).toHaveBeenCalledWith({
+      where: { stage: "Rejected", targetTerms: { some: { termId: "term-1" } } },
+      select: { id: true, rejectReason: true },
     });
-    expect(result).toEqual([{ domainId: "d1", domainName: "Engineering", expected: 2, staffed: 1 }]);
+    expect(result).toEqual([{ reason: "Timing", count: 2, ids: ["a1", "a2"] }]);
   });
 });
 
