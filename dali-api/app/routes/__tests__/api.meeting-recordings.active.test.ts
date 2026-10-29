@@ -94,11 +94,22 @@ describe("GET /api/meeting-recordings/active", () => {
     expect((await (await run()).json()).recording.title).toBe("Untitled");
   });
 
-  it("gives a non-document room no link and a generic title", async () => {
+  it("links an interview's notes to the interview page, titled without the applicant's name", async () => {
     vi.mocked(prisma.meetingRecording.findFirst).mockResolvedValue(row({ documentName: "interview:i1:notes" }) as never);
     const { recording } = await (await run()).json();
-    expect(recording.href).toBeNull();
-    expect(recording.title).toBe("Recording");
+    expect(recording.href).toBe("/hiring/interviews/i1");
+    expect(recording.title).toBe("Interview");
     expect(documentTitle).not.toHaveBeenCalled();
   });
+
+  it.each(["interview:i1:recommendation", "interview:i1:rec-notes-a1", "project:p1", "doc:"])(
+    "gives %s no link and a generic title",
+    async (documentName) => {
+      vi.mocked(prisma.meetingRecording.findFirst).mockResolvedValue(row({ documentName }) as never);
+      const { recording } = await (await run()).json();
+      expect(recording.href).toBeNull();
+      expect(recording.title).toBe("Recording");
+      expect(documentTitle).not.toHaveBeenCalled();
+    },
+  );
 });

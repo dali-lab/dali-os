@@ -25,9 +25,17 @@ export async function loader({ request }: Route.LoaderArgs) {
   });
   if (!rec) return Response.json({ recording: null });
 
-  const [entity, pageId] = rec.documentName.split(":");
-  const isDoc = entity === "doc" && Boolean(pageId);
-  const title = isDoc ? ((await documentTitle(rec.documentName)) ?? "") || "Untitled" : "Recording";
+  const [entity, id, part] = rec.documentName.split(":");
+  let href: string | null = null;
+  let title = "Recording";
+  if (entity === "doc" && id) {
+    href = `/documents/${id}`;
+    title = ((await documentTitle(rec.documentName)) ?? "") || "Untitled";
+  } else if (entity === "interview" && id && part === "notes") {
+    href = `/hiring/interviews/${id}`;
+    // Not the applicant's name: the pill shows on every page, screen shares included.
+    title = "Interview";
+  }
   const sessionSeconds =
     rec.status === "Recording" && rec.sessionStartedAt
       ? Math.max(0, (Date.now() - rec.sessionStartedAt.getTime()) / 1000)
@@ -39,7 +47,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       documentName: rec.documentName,
       status: rec.status,
       title,
-      href: isDoc ? `/documents/${pageId}` : null,
+      href,
       sessionSeconds,
     },
   });
