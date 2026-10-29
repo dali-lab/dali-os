@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { emailTemplateDef } from "~/email/lib/registry";
 import {
   ALL_TEMPLATE_VARIABLES,
   TEMPLATE_VARIABLES,
@@ -138,8 +139,9 @@ describe("registry/call-site drift guard", () => {
     "decision:Rejected": ["firstName", "domain"],
     "decision:InvitedToInterview": ["firstName", "domain"],
     "decision:InvitedToLaterInterview": ["firstName", "domain"],
-    "decision:Accepted": ["firstName", "domain"],
-    "decision:Waitlisted": ["firstName", "domain"],
+    // Accepted + Waitlisted add decisionEmailVars; waitlist.server's acceptFromWaitlist matches.
+    "decision:Accepted": ["firstName", "domain", "startTerm", "respondBy"],
+    "decision:Waitlisted": ["firstName", "domain", "respondBy"],
     // api.my-application.ts
     "notification:ApplicationReceived": ["firstName"],
     // extension-notice.ts
@@ -168,6 +170,29 @@ describe("registry/call-site drift guard", () => {
       expect([...registered].sort()).toEqual([...expected].sort());
     },
   );
+});
+
+describe("admin editor registry offers what the decision sends fill", () => {
+  it.each([
+    ["hiring:decision:Accepted", "decision:Accepted"],
+    ["hiring:decision:Waitlisted", "decision:Waitlisted"],
+  ] as const)("%s lists the same variables as %s", (key, slot) => {
+    expect([...emailTemplateDef(key).variables].sort()).toEqual([...TEMPLATE_VARIABLES[slot]].sort());
+  });
+
+  it("offers {{startTerm}} and {{respondBy}} on the next-steps block, with samples for the preview", () => {
+    const def = emailTemplateDef("hiring:onboarding:NextSteps");
+    expect(def.variables).toEqual(expect.arrayContaining(["slackUrl", "startTerm", "respondBy"]));
+    expect(def.sample).toMatchObject({ startTerm: expect.any(String), respondBy: expect.any(String) });
+  });
+
+  it("no longer hardcodes the spring deadline or term in the next-steps fallback copy", () => {
+    const body = emailTemplateDef("hiring:onboarding:NextSteps").defaults?.body ?? "";
+    expect(body).toContain("{{respondBy}}");
+    expect(body).toContain("{{startTerm}}");
+    expect(body).not.toContain("June 8th");
+    expect(body).not.toContain("26F");
+  });
 });
 
 describe("renderForSlot", () => {
