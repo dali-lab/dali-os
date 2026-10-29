@@ -164,7 +164,7 @@ export type DriveItem =
       title: string;
       /** `folderPageId` — null when unplaced. */
       parentFolderId: string | null;
-      iconEmoji: null; // forms have no emoji; callers use a fixed icon
+      iconEmoji: string | null;
       updatedAt: Date;
       href: string;
       /** File size in bytes (files only; null elsewhere). Drives the Size column. */
@@ -312,7 +312,7 @@ export function formRowToDriveItem(
     id: row.id,
     title: row.title,
     parentFolderId,
-    iconEmoji: null,
+    iconEmoji: row.iconEmoji,
     updatedAt: row.updatedAt,
     href: `/forms/edit/${row.id}`,
     audience,

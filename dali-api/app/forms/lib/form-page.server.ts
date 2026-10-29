@@ -106,6 +106,10 @@ export async function renameForm(id: string, name: string): Promise<void> {
   ]);
 }
 
+export async function setFormIcon(id: string, iconEmoji: string | null): Promise<void> {
+  await prisma.page.update({ where: { id }, data: { iconEmoji } });
+}
+
 export async function moveForm(id: string, folderPageId: string | null): Promise<void> {
   const ws = await workspaceForFolder(folderPageId);
   await prisma.$transaction([

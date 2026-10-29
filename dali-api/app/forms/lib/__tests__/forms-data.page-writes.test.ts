@@ -8,6 +8,7 @@ vi.mock("~/forms/lib/form-page.server", () => ({
   deleteForm: vi.fn(),
   setFormAudience: vi.fn(),
   setFormArchived: vi.fn(),
+  setFormIcon: vi.fn(),
 }));
 vi.mock("~/forms/lib/form-usages.server", () => ({
   formDeletionBlockers: vi.fn(),
@@ -17,7 +18,7 @@ vi.mock("~/forms/lib/form-usages.server", () => ({
 
 import { prisma } from "~/lib/db";
 import { runFormsAction } from "~/forms/lib/forms-data";
-import { createForm, deleteForm, renameForm } from "~/forms/lib/form-page.server";
+import { createForm, deleteForm, renameForm, setFormIcon } from "~/forms/lib/form-page.server";
 import { formDeletionBlockers, formUsages, managingUsage } from "~/forms/lib/form-usages.server";
 
 const mockPrisma = prisma as unknown as {
@@ -81,6 +82,33 @@ describe("runFormsAction rename-form", () => {
     const res = await runFormsAction(fd({ intent: "rename-form", id: "ghost", name: "x" }), "user-1");
     expect(res).toEqual({ error: "Not found", status: 404 });
     expect(renameForm).not.toHaveBeenCalled();
+  });
+});
+
+describe("runFormsAction set-form-icon", () => {
+  it("sets the icon on the form's page", async () => {
+    const res = await runFormsAction(fd({ intent: "set-form-icon", id: "form-1", iconEmoji: "📋" }), "user-1");
+    expect(res).toEqual({ ok: true });
+    expect(setFormIcon).toHaveBeenCalledWith("form-1", "📋");
+  });
+
+  it("clears the icon on an empty value", async () => {
+    const res = await runFormsAction(fd({ intent: "set-form-icon", id: "form-1", iconEmoji: "  " }), "user-1");
+    expect(res).toEqual({ ok: true });
+    expect(setFormIcon).toHaveBeenCalledWith("form-1", null);
+  });
+
+  it("rejects an icon longer than the reaction emoji limit", async () => {
+    const res = await runFormsAction(fd({ intent: "set-form-icon", id: "form-1", iconEmoji: "x".repeat(65) }), "user-1");
+    expect(res).toEqual({ error: "Invalid input", status: 400 });
+    expect(setFormIcon).not.toHaveBeenCalled();
+  });
+
+  it("404s an unknown form", async () => {
+    mockPrisma.form.findUnique.mockResolvedValue(null);
+    const res = await runFormsAction(fd({ intent: "set-form-icon", id: "ghost", iconEmoji: "📋" }), "user-1");
+    expect(res).toEqual({ error: "Not found", status: 404 });
+    expect(setFormIcon).not.toHaveBeenCalled();
   });
 });
 

@@ -28,7 +28,7 @@ import { driveFolderCrumbs } from "~/lib/drive-crumbs.server";
 import { formUsages, managingUsage } from "~/forms/lib/form-usages.server";
 import { loadFormHiringLinks } from "~/hiring/lib/form-links.server";
 import { getCollabToken } from "~/lib/collab-token.server";
-import { loader, action } from "~/forms/routes/forms.edit.$formId";
+import { loader, action, handle } from "~/forms/routes/forms.edit.$formId";
 
 const request = new Request("http://os.test/forms/edit/f1");
 const run = () => loader({ request, params: { formId: "f1" } } as never) as Promise<any>;
@@ -95,6 +95,27 @@ describe("forms.edit loader", () => {
   it("returns the page workspace for the UI", async () => {
     const data = await run();
     expect(data.page).toEqual({ workspaceType: "Project" });
+  });
+});
+
+describe("forms.edit breadcrumb trail", () => {
+  const leaf = (iconEmoji: string | null) =>
+    handle.breadcrumbTrail({ form: { name: "Intake", iconEmoji }, driveCrumbs: null })!.at(-1) as {
+      label: string;
+      emoji?: string | null;
+      icon?: unknown;
+    };
+
+  it("ends at the form, carrying its emoji for the tab and an icon for the crumb", () => {
+    const crumb = leaf("📋");
+    expect(crumb).toMatchObject({ label: "Intake", emoji: "📋" });
+    expect(crumb.icon).toBeTruthy();
+  });
+
+  it("leaves the leaf bare when the form has no emoji", () => {
+    const crumb = leaf(null);
+    expect(crumb).toMatchObject({ label: "Intake", emoji: null });
+    expect(crumb.icon).toBeUndefined();
   });
 });
 

@@ -286,6 +286,12 @@ describe("loadDriveScope — forms are Form-kind pages by page access", () => {
     });
   });
 
+  it.each(scopes)("$name: carries a form's emoji like a doc's", async ({ scope }) => {
+    mockPrisma.page.findMany.mockResolvedValue([formRow({ iconEmoji: "📋" })]);
+    const items = await loadDriveScope({ userSub: "u1", scope });
+    expect(items.find((i) => i.id === "form-1")).toMatchObject({ type: "form", iconEmoji: "📋" });
+  });
+
   it("keeps a form in a live folder under that folder", async () => {
     mockPrisma.page.findMany.mockResolvedValue([
       pageRow({ id: "folder-1", kind: "Folder" }),

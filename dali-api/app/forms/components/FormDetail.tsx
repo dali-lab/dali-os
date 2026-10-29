@@ -28,6 +28,7 @@ import { ShareDialog } from "~/components/sharing/ShareDialog";
 import { FormSettingsButton } from "~/forms/components/FormSettings";
 import { VersionResults } from "~/forms/components/VersionResults";
 import { DocEditor } from "~/components/doc";
+import { PageIconPicker } from "~/components/doc-chrome/PageIconPicker";
 import { isEmptyBlocks } from "~/lib/blocks";
 import { Button, buttonClasses } from "~/components/ui/Button";
 import { Popover, Tooltip } from "~/components/ui/floating";
@@ -336,9 +337,7 @@ export function FormDetail() {
   return (
     <div className="space-y-8">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
-        <div className="flex-1 min-w-[12rem]">
-          <FormNameInput formId={form.id} name={form.name} />
-        </div>
+        <FormTitle formId={form.id} name={form.name} iconEmoji={form.iconEmoji} />
         <FormVersionMenu
           formId={form.id}
           versions={form.versions}
@@ -638,6 +637,7 @@ export function FormDetail() {
         <FormPreviewModal
           formId={form.id}
           formName={form.name}
+          iconEmoji={form.iconEmoji}
           description={previewData.description}
           questions={previewData.questions}
           onClose={() => setPreviewData(null)}
@@ -1091,6 +1091,35 @@ function PublishButton({
         </Button>
       </span>
     </Tooltip>
+  );
+}
+
+// Same affordance as a document's header: "Add icon" shows on hover until an
+// icon is set, then the icon sits before the title.
+function FormTitle({ formId, name, iconEmoji }: { formId: string; name: string; iconEmoji: string | null }) {
+  const fetcher = useFetcher();
+  const [icon, setIcon] = useState(iconEmoji);
+  useEffect(() => setIcon(iconEmoji), [iconEmoji]);
+
+  function save(next: string | null) {
+    setIcon(next);
+    fetcher.submit({ intent: "set-form-icon", id: formId, iconEmoji: next ?? "" }, { method: "post" });
+  }
+
+  return (
+    <div className="group/header flex-1 min-w-[12rem]">
+      {!icon && (
+        <div className="flex items-center h-6 mb-1 opacity-0 transition-opacity duration-150 group-hover/header:opacity-100 group-focus-within/header:opacity-100 touch:opacity-100">
+          <PageIconPicker iconEmoji={null} canEdit onChange={save} />
+        </div>
+      )}
+      <div className="flex items-center gap-2">
+        {icon && <PageIconPicker iconEmoji={icon} canEdit onChange={save} />}
+        <div className="min-w-0 flex-1">
+          <FormNameInput formId={formId} name={name} />
+        </div>
+      </div>
+    </div>
   );
 }
 
