@@ -47,7 +47,7 @@ describe("runPartnerNextStepReminders", () => {
     expect(mockPrisma.partnerApplication.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: {
-          stage: { in: ["New", "Interview"] },
+          stage: { in: ["New", "Interview", "Deciding"] },
           nextStepDueAt: { not: null, lt: new Date("2026-10-07T00:00:00.000Z") },
         },
         take: 200,

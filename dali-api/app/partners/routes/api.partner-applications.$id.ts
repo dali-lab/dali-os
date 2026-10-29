@@ -1,8 +1,7 @@
 import type { Route } from "./+types/api.partner-applications.$id";
 import { prisma } from "~/lib/db";
 import { requireAuth, forbidden } from "~/lib/auth";
-import { isCore, getUserRoles, getActiveCoreCycleTermIds } from "~/lib/roles";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
+import { isCore, getActiveCoreCycleTermIds } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { formAnswerRows } from "~/forms/lib/answer-rows.server";
 import type { Question } from "~/types";
@@ -142,12 +141,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     ]),
   );
 
-  const roles = await getUserRoles(auth.user.sub, request);
-  const partnerEmailOn = await isFeatureEnabled("partner-email", auth.user.sub, roles, request);
-  const financeOn = await isFeatureEnabled("partner-finance", auth.user.sub, roles, request);
-  const emailThreads = partnerEmailOn
-    ? await getPartnerContactEmailThreads(application.applicantContact.id)
-    : [];
+  const emailThreads = await getPartnerContactEmailThreads(application.applicantContact.id);
   const contract = await partnerContractStatus(application.id);
   const contractDocuments = canEdit ? await listPartnerContractDocuments() : [];
 
@@ -249,8 +243,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       })),
       actorNames,
       emailThreads,
-      partnerEmailOn,
-      financeOn,
       contract,
       contractDocuments,
       coreMembers,

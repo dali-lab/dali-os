@@ -99,7 +99,7 @@ describe("runPartnerStaleSweep", () => {
     expect(mockPrisma.partnerApplication.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: {
-          stage: { in: ["New", "Interview"] },
+          stage: { in: ["New", "Interview", "Deciding"] },
           OR: [{ holdUntil: null }, { holdUntil: { lte: NOW } }],
         },
         take: 200,

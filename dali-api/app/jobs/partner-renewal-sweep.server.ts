@@ -1,21 +1,13 @@
 // Partner renewal sweep: when a still-active ProjectPartner link's project is
-// in its last planned term and that term ends within 30 days, auto-create a
-// renewal application — unless the org already has one open.
+// in its last planned term and that term ends within 30 days with no decision
+// for the next term, remind Core to decide in Renewals.
 //
 // "Project's current term" = the project's own latest planned term (max
 // Term.sortKey among its ProjectTerm rows), not the lab's wall-clock current
-// term — a project can run ahead of or behind the lab's term cursor, and it's
-// the project's own schedule that determines when its partnership is up for
-// renewal.
-//
-// Idempotent without a ledger: the renewal application this job creates is
-// itself in an open stage, so the next tick's "no open application for the
-// org" check finds it and skips re-creating one.
+// term.
 
 import { prisma } from "~/lib/db";
 import { notifyPartners } from "~/partners/lib/partner-notify.server";
-import { logPartnerActivity } from "~/partners/lib/partner-activity.server";
-import { UNDECIDED_STAGES } from "~/partners/lib/partner-application";
 import type { JobContext, JobResult } from "~/jobs/registry";
 
 const CAP = 200;
@@ -42,72 +34,44 @@ export async function runPartnerRenewalSweep({ now }: JobContext): Promise<JobRe
     take: CAP,
   });
 
-  let created = 0;
+  let reminded = 0;
   for (const link of links) {
     const terms = link.project.projectTerms.map((pt) => pt.term);
     if (terms.length === 0) continue;
     const currentTerm = terms.reduce((latest, t) => (t.sortKey > latest.sortKey ? t : latest));
     if (currentTerm.endDate < now || currentTerm.endDate > horizon) continue;
 
-    const existingOpen = await prisma.partnerApplication.findFirst({
-      where: { partnerOrgId: link.partnerOrgId, stage: { in: [...UNDECIDED_STAGES] } },
+    const following = await prisma.term.findFirst({
+      where: { sortKey: { gt: currentTerm.sortKey } },
+      orderBy: { sortKey: "asc" },
       select: { id: true },
     });
-    if (existingOpen) continue;
-
-    const org = await prisma.partnerOrg.findUnique({
+    if (following) {
+      const decided = await prisma.projectTermStatus.findFirst({
+        where: { projectId: link.project.id, termId: following.id },
+        select: { id: true },
+      });
+      if (decided) continue;
+    }
+    const planningOrg = await prisma.partnerOrg.findUnique({
       where: { id: link.partnerOrgId },
-      select: { name: true, primaryContactId: true },
+      select: { name: true },
     });
-    if (!org) continue;
-
-    // `primaryContactId` is really a PartnerMembership.id (see schema
-    // comment) — resolve it to that membership's contactId, falling back to
-    // the org's earliest membership. Skip the org entirely if it has none.
-    let contactId: string | null = null;
-    if (org.primaryContactId) {
-      const primary = await prisma.partnerMembership.findUnique({
-        where: { id: org.primaryContactId },
-        select: { contactId: true },
-      });
-      contactId = primary?.contactId ?? null;
-    }
-    if (!contactId) {
-      const earliest = await prisma.partnerMembership.findFirst({
-        where: { orgId: link.partnerOrgId },
-        orderBy: { createdAt: "asc" },
-        select: { contactId: true },
-      });
-      contactId = earliest?.contactId ?? null;
-    }
-    if (!contactId) continue;
-
-    const application = await prisma.partnerApplication.create({
-      data: {
-        applicantContactId: contactId,
-        partnerOrgId: link.partnerOrgId,
-        source: "Renewal",
-        stage: "New",
-        title: `Renew: ${link.project.name}`,
-      },
-      select: { id: true },
+    if (!planningOrg) continue;
+    const ends = currentTerm.endDate.toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      timeZone: "UTC",
     });
-
-    await logPartnerActivity(prisma, {
-      applicationId: application.id,
-      type: "Created",
-      metadata: { renewalOfProjectId: link.project.id },
-    });
-
     await notifyPartners({
       eventType: "partner.renewal_due",
-      title: `Renewal created: ${link.project.name}`,
-      body: `${org.name}'s project is ending soon.`,
-      link: `/core/partners?application=${application.id}`,
+      title: `Renewal decision due: ${link.project.name}`,
+      body: `${planningOrg.name}'s project ends ${ends}. Decide in Renewals.`,
+      link: "/core/partners/renewals",
       dedupKey: `partner-renewal:${link.id}:${currentTerm.id}`,
     });
-    created += 1;
+    reminded += 1;
   }
 
-  return { items: created };
+  return { items: reminded };
 }

@@ -9,10 +9,11 @@ test.describe('partner CRM board (Core)', () => {
     await loginAs({ daliEmail: 'admin@dali.dartmouth.edu' });
   });
 
-  test('renders four columns with the seeded cards', async ({ page }) => {
+  test('renders six columns with the seeded cards', async ({ page }) => {
     await page.goto('/core/partners?embed=1');
     await expect(page.getByText('New', { exact: true })).toBeVisible();
     await expect(page.getByText('Interview', { exact: true })).toBeVisible();
+    await expect(page.getByText('Deciding', { exact: true })).toBeVisible();
     await expect(page.getByText('Accepted', { exact: true })).toBeVisible();
     await expect(page.getByText('Rejected', { exact: true })).toBeVisible();
 

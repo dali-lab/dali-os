@@ -785,10 +785,6 @@ export default [
   route("api/partner-applications/:id", "partners/routes/api.partner-applications.$id.ts"),
   route("api/partner-application-domains/:id", "partners/routes/api.partner-application-domains.$id.ts"),
   route(
-    "api/partner-application-target-terms/:id",
-    "partners/routes/api.partner-application-target-terms.$id.ts",
-  ),
-  route(
     "api/partner-contacts/:id/email-thread/:indexId",
     "partners/routes/api.partner-contacts.$id.email-thread.$indexId.ts",
   ),

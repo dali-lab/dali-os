@@ -2,6 +2,11 @@ import { describe, it, expect } from "vitest";
 import {
   DEFAULT_FILTERS,
   buildPartnerBoard,
+  filtersFromParams,
+  formatCardSpots,
+  sortPartnerBoard,
+  sortPartnerCards,
+  SOURCE_OPTIONS,
   filterPartnerCards,
   isPartnerFilters,
   movePartnerInBoard,
@@ -22,6 +27,7 @@ function card(overrides: Partial<PartnerCardModel> & { id: string }): PartnerCar
     targetTerms: [],
     nextStep: null,
     nextStepDueAt: null,
+    feeCents: null,
     lastActivityAt: new Date().toISOString(),
     holdUntil: null,
     resultingProjectId: null,
@@ -95,7 +101,7 @@ describe("partnerMatchesQuery", () => {
     title: "Gallery kiosk",
     contactName: "Grace Hopper",
     orgName: "Acme Co",
-    domains: [{ id: "d1", name: "Mobile" }],
+    domains: [{ id: "d1", name: "Mobile", expectedMembers: 0 }],
     nextStep: "Send contract",
   });
 
@@ -134,8 +140,8 @@ describe("filterPartnerCards", () => {
 
   it("filters by term, domain and source", () => {
     const cards = [
-      card({ id: "a", targetTerms: [{ id: "t1", code: "26F" }], domains: [{ id: "dev", name: "Dev" }], source: "Email" }),
-      card({ id: "b", targetTerms: [{ id: "t2", code: "27W" }], domains: [{ id: "ux", name: "UX" }] }),
+      card({ id: "a", targetTerms: [{ id: "t1", code: "26F" }], domains: [{ id: "dev", name: "Dev", expectedMembers: 0 }], source: "Email" }),
+      card({ id: "b", targetTerms: [{ id: "t2", code: "27W" }], domains: [{ id: "ux", name: "UX", expectedMembers: 0 }] }),
     ];
     expect(run(cards, { term: "t1" })).toEqual(["a"]);
     expect(run(cards, { domain: "ux" })).toEqual(["b"]);
@@ -185,5 +191,89 @@ describe("isPartnerFilters", () => {
     expect(isPartnerFilters(null)).toBe(false);
     expect(isPartnerFilters({ ...DEFAULT_FILTERS, term: 3 })).toBe(false);
     expect(isPartnerFilters({ ...DEFAULT_FILTERS, staleOnly: "yes" })).toBe(false);
+  });
+});
+
+const ids = (cs: PartnerCardModel[]) => cs.map((c) => c.id);
+
+describe("sortPartnerCards", () => {
+  const cards = [
+    card({ id: "a", nextStepDueAt: "2026-11-05T00:00:00Z", lastActivityAt: "2026-10-20T00:00:00Z", feeCents: 100 }),
+    card({ id: "b", nextStepDueAt: null, lastActivityAt: "2026-09-01T00:00:00Z", feeCents: null }),
+    card({ id: "c", nextStepDueAt: "2026-11-01T00:00:00Z", lastActivityAt: "2026-10-25T00:00:00Z", feeCents: 900 }),
+  ];
+
+  it("keeps the incoming order for manual", () => {
+    expect(ids(sortPartnerCards(cards, "manual"))).toEqual(["a", "b", "c"]);
+  });
+
+  it("puts the soonest next step first and cards without one last", () => {
+    expect(ids(sortPartnerCards(cards, "next-step"))).toEqual(["c", "a", "b"]);
+  });
+
+  it("puts the longest quiet first", () => {
+    expect(ids(sortPartnerCards(cards, "last-contact"))).toEqual(["b", "a", "c"]);
+  });
+
+  it("puts the highest fee first and cards without one last", () => {
+    expect(ids(sortPartnerCards(cards, "fee"))).toEqual(["c", "a", "b"]);
+  });
+
+  it("does not mutate its input", () => {
+    sortPartnerCards(cards, "fee");
+    expect(ids(cards)).toEqual(["a", "b", "c"]);
+  });
+
+  it("sorts every column of a board", () => {
+    const board = buildPartnerBoard([
+      card({ id: "x", stage: "New", status: "New", feeCents: 1 }),
+      card({ id: "y", stage: "New", status: "New", feeCents: 5, position: 1 }),
+      card({ id: "z", stage: "Deciding", status: "Deciding", feeCents: 2 }),
+    ]);
+    const sorted = sortPartnerBoard(board, "fee");
+    expect(ids(sorted.New)).toEqual(["y", "x"]);
+    expect(ids(sorted.Deciding)).toEqual(["z"]);
+  });
+});
+
+describe("Deciding column", () => {
+  it("groups Deciding cards into their own column", () => {
+    const board = buildPartnerBoard([card({ id: "d", stage: "Deciding", status: "Deciding" })]);
+    expect(ids(board.Deciding)).toEqual(["d"]);
+  });
+});
+
+describe("formatCardSpots", () => {
+  it("spells domains out with their spot counts and skips empty ones", () => {
+    expect(
+      formatCardSpots([
+        { id: "1", name: "Engineering", expectedMembers: 2 },
+        { id: "2", name: "Design", expectedMembers: 1 },
+        { id: "3", name: "Strategy", expectedMembers: 0 },
+      ]),
+    ).toBe("Engineering 2, Design 1");
+  });
+});
+
+describe("SOURCE_OPTIONS", () => {
+  it("never offers Renewal", () => {
+    expect(SOURCE_OPTIONS.map((s) => s.value)).not.toContain("Renewal");
+  });
+});
+
+describe("filtersFromParams", () => {
+  const valid = { sources: ["Form", "Email"], termIds: ["t1"] };
+
+  it("seeds source and term from the URL", () => {
+    expect(filtersFromParams(DEFAULT_FILTERS, new URLSearchParams("source=Form&term=t1"), valid)).toEqual({
+      ...DEFAULT_FILTERS,
+      source: "Form",
+      term: "t1",
+    });
+  });
+
+  it("ignores unknown values and keeps the stored filters", () => {
+    const base = { ...DEFAULT_FILTERS, source: "Email" };
+    expect(filtersFromParams(base, new URLSearchParams("source=Bogus&term=nope"), valid)).toEqual(base);
   });
 });

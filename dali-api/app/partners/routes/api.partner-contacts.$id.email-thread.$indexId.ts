@@ -8,8 +8,6 @@
 import type { Route } from "./+types/api.partner-contacts.$id.email-thread.$indexId";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
-import { getUserRoles } from "~/lib/roles";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { PARTNERS_FROM_EMAIL } from "~/lib/app-env";
 import { canViewPartnerThread } from "~/partners/lib/partner-email.server";
 import { getSharedInboxToken } from "~/email/lib/mail-index.server";
@@ -19,11 +17,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return auth.response;
   const userId = auth.user.sub;
-
-  const roles = await getUserRoles(userId, request);
-  if (!(await isFeatureEnabled("partner-email", userId, roles, request))) {
-    return new Response("Not found", { status: 404 });
-  }
 
   if (!(await canViewPartnerThread(userId, params.indexId, request))) {
     return new Response("Not found", { status: 404 });

@@ -16,7 +16,7 @@ import { McpForbiddenError, McpNotFoundError } from "../../registry";
 export const PROMOTE_PARTNER_APPLICATION_TOOL = {
   name: "promote_partner_application",
   description:
-    "Promote a partner application to a Project. Seeds the project from the application's title, summary, target terms, and domain scope. Creates ProjectRoleRequest rows (level P1) for domains with expectedMembers > 0 using the earliest target term. Idempotent: if the application was already promoted, returns the existing projectId with alreadyExisted=true. Requires Core access.",
+    "Promote a partner application to a Project. Seeds the project from the application's title, summary, target terms, and domain scope. Creates ProjectRoleRequest rows (level P1) for domains with expectedMembers > 0 in every target term. Idempotent: if the application was already promoted, returns the existing projectId with alreadyExisted=true. Requires Core access.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -67,21 +67,18 @@ export async function runPromotePartnerApplication(
     return { projectId: app.resultingProjectId, alreadyExisted: true };
   }
 
-  // Earliest target term seeds the project term set and scopes per-domain
-  // role requests (targetTerms already sorted by sortKey asc).
   const firstTermId = app.targetTerms[0]?.termId ?? null;
 
-  // Domains with headcount > 0 get a P1 role request (staffing board refines later).
-  const roleRequestRows = firstTermId
-    ? app.domains
-        .filter((d) => d.expectedMembers > 0)
-        .map((d) => ({
-          termId: firstTermId,
-          domainId: d.domainId,
-          level: "P1" as const,
-          slots: d.expectedMembers,
-        }))
-    : [];
+  const roleRequestRows = app.targetTerms.flatMap(({ termId }) =>
+    app.domains
+      .filter((d) => d.expectedMembers > 0)
+      .map((d) => ({
+        termId,
+        domainId: d.domainId,
+        level: "P1" as const,
+        slots: d.expectedMembers,
+      })),
+  );
 
   // The project's domain set is inherited from the distinct domains in role requests.
   const inheritedDomainIds = Array.from(new Set(roleRequestRows.map((r) => r.domainId)));

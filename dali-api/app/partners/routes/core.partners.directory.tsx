@@ -1,11 +1,10 @@
-import { useId, useMemo, useState } from "react";
+import { useId, useMemo, useState, type MouseEvent, type ReactNode } from "react";
 import {
   Form,
   Link,
   redirect,
   useActionData,
   useLoaderData,
-  useNavigate,
   useSearchParams,
 } from "react-router";
 import type { Route } from "./+types/core.partners.directory";
@@ -16,21 +15,45 @@ import { isCore } from "~/lib/roles";
 import { logAuditEvent } from "~/lib/audit";
 import { classifyPartnerEmail, normalizeEmail } from "../lib/magic-link.server";
 import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
-import { ViewToggle, useViewPreference } from "~/components/ViewToggle";
-import { Download, Plus } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpDown, ChevronRight, Download, Plus, SlidersHorizontal } from "lucide-react";
 import { Checkbox } from "~/components/ui/Checkbox";
-import { Select } from "~/components/ui/floating";
+import { Popover } from "~/components/ui/floating";
 import { SearchInput } from "~/components/ui/SearchInput";
+import { IconButton } from "~/components/ui/IconButton";
 import { SegmentedTabButtons } from "~/components/AreaPillNav";
+import { useOsChrome } from "~/components/os-chrome";
+import { usePersistedState } from "~/hooks/usePersistedState";
+import { cn } from "~/lib/cn";
+import {
+  FilterCountBadge,
+  FilterGroup,
+  FilterPill,
+  FilterResetButton,
+  FilterSectionLabel,
+  FilterToggleRow,
+  customizeButtonClass,
+  filterPanelClass,
+} from "~/components/ui/filter-panel";
 import { Modal, ModalHeader, ModalFooter } from "~/components/Modal";
 import { PartnerCrmNav } from "../components/PartnerCrmNav";
-import { OrgAvatar } from "../components/org/OrgAvatar";
-import { OrgStatusPill, OrgTypePill } from "../components/org/OrgStatusPill";
 import { ContactAvatar } from "../components/contact/ContactAvatar";
 import { relativeTime } from "~/lib/relative-time";
 import {
+  DEFAULT_DIRECTORY_SORT,
+  DEFAULT_ORG_FILTERS,
+  activeOrgFilterCount,
+  directoryExportHref,
+  filterContactRows,
+  filterOrgRows,
+  isDirectorySort,
   listPartnerContactRows,
   listPartnerOrgRows,
+  nextDirectorySort,
+  orgInitials,
+  sortDirectoryRows,
+  type DirectorySort,
+  type DirectorySortKey,
+  type OrgDirectoryFilters,
   type PartnerContactDirectoryRow,
   type PartnerOrgDirectoryRow,
 } from "../lib/partner-directory";
@@ -39,14 +62,18 @@ import {
   PARTNER_ORG_TYPE_LABELS,
   PARTNER_RELATIONSHIP_STATUSES,
   PARTNER_RELATIONSHIP_STATUS_LABELS,
+  type PartnerRelationshipStatus,
 } from "../lib/partner-org";
 
-const FILTER_TRIGGER =
-  "inline-flex h-10 items-center justify-between gap-1.5 rounded-full border border-os-container bg-os-card px-4 text-sm text-foreground transition-colors hover:bg-os-hover";
+const STATUS_DOT: Record<PartnerRelationshipStatus, string> = {
+  Active: "bg-os-green",
+  Prospect: "bg-os-accent",
+  Dormant: "bg-os-amber",
+  Past: "bg-os-muted",
+};
 
-// areaSubnav: this page mounts PartnerCrmNav (Applications/Directory/Reports/
-// Settings) itself at the top, so the shell must not add its own sub-nav
-// row above it.
+// areaSubnav: this page mounts PartnerCrmNav itself, so the shell must not add
+// its own sub-nav row above it.
 export const handle = { hideBreadcrumbs: true, areaSubnav: true };
 
 export const meta: Route.MetaFunction = () => [{ title: "Partners · DALI OS" }];
@@ -347,15 +374,21 @@ function NewContactModal({ open, onClose }: { open: boolean; onClose: () => void
 
 export default function PartnersDirectory() {
   const { orgs, contacts } = useLoaderData<typeof loader>();
-  const navigate = useNavigate();
+  const os = useOsChrome();
   const [searchParams, setSearchParams] = useSearchParams();
   const [creatingOrg, setCreatingOrg] = useState(false);
   const [creatingContact, setCreatingContact] = useState(false);
   const [query, setQuery] = useState("");
-  const [typeFilter, setTypeFilter] = useState("all");
-  const [statusFilter, setStatusFilter] = useState("all");
-  const [includeIndividuals, setIncludeIndividuals] = useState(true);
-  const [view, setView] = useViewPreference("partners:directory", "list");
+  const [filters, setFilters] = useState<Omit<OrgDirectoryFilters, "query">>({
+    type: DEFAULT_ORG_FILTERS.type,
+    status: DEFAULT_ORG_FILTERS.status,
+    includeIndividuals: DEFAULT_ORG_FILTERS.includeIndividuals,
+  });
+  const [sort, setSort] = usePersistedState<DirectorySort>(
+    "dali:partners:directory:sort",
+    DEFAULT_DIRECTORY_SORT,
+    isDirectorySort,
+  );
 
   const activeView: DirectoryView = searchParams.get("view") === "contacts" ? "contacts" : "orgs";
   const setActiveView = (next: DirectoryView) =>
@@ -367,308 +400,346 @@ export default function PartnersDirectory() {
       { replace: true, preventScrollReset: true },
     );
 
-  const filteredOrgs = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return orgs.filter((o) => {
-      if (q && !o.name.toLowerCase().includes(q)) return false;
-      if (typeFilter !== "all" && o.type !== typeFilter) return false;
-      if (statusFilter !== "all" && o.status !== statusFilter) return false;
-      if (!includeIndividuals && o.isIndividual) return false;
-      return true;
-    });
-  }, [orgs, query, typeFilter, statusFilter, includeIndividuals]);
+  const filteredOrgs = useMemo(
+    () => sortDirectoryRows(filterOrgRows(orgs, { ...filters, query }), sort),
+    [orgs, filters, query, sort],
+  );
+  const filteredContacts = useMemo(
+    () => sortDirectoryRows(filterContactRows(contacts, query), sort),
+    [contacts, query, sort],
+  );
 
-  const filteredContacts = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return contacts;
-    return contacts.filter(
-      (c) =>
-        c.name.toLowerCase().includes(q) ||
-        (c.email ?? "").toLowerCase().includes(q) ||
-        c.orgs.some((o) => o.name.toLowerCase().includes(q)),
-    );
-  }, [contacts, query]);
+  const filterCount = activeOrgFilterCount({ ...filters, query });
+  const resetFilters = () =>
+    setFilters({
+      type: DEFAULT_ORG_FILTERS.type,
+      status: DEFAULT_ORG_FILTERS.status,
+      includeIndividuals: DEFAULT_ORG_FILTERS.includeIndividuals,
+    });
+  const onSort = (key: DirectorySortKey) => setSort((current) => nextDirectorySort(current, key));
 
   return (
     <div className="flex flex-col gap-4">
-      <PartnerCrmNav />
       <h1 className="sr-only">Partners</h1>
 
       <NewOrgModal open={creatingOrg} onClose={() => setCreatingOrg(false)} orgs={orgs} />
       <NewContactModal open={creatingContact} onClose={() => setCreatingContact(false)} />
 
-      <div className="flex items-center gap-3 flex-wrap">
-        <SegmentedTabButtons
-          label="Directory"
-          items={[
-            { label: "Organizations", active: activeView === "orgs", onClick: () => setActiveView("orgs") },
-            { label: "Contacts", active: activeView === "contacts", onClick: () => setActiveView("contacts") },
-          ]}
-        />
-        <div className="ml-auto flex items-center gap-2">
-          <ViewToggle value={view} onChange={setView} />
-          <a
-            href={`/api/partner-directory.csv?view=${activeView}`}
-            className="os-btn-ghost inline-flex items-center gap-1.5"
-          >
-            <Download className="h-4 w-4" aria-hidden /> Export
-          </a>
-          {activeView === "orgs" ? (
-            <button type="button" onClick={() => setCreatingOrg(true)} className="os-add-btn">
-              <Plus className="h-[17px] w-[17px]" strokeWidth={3} aria-hidden />
-              New organization
-            </button>
-          ) : (
-            <button type="button" onClick={() => setCreatingContact(true)} className="os-add-btn">
-              <Plus className="h-[17px] w-[17px]" strokeWidth={3} aria-hidden />
-              New contact
-            </button>
-          )}
-        </div>
-      </div>
-
-      <div className="flex items-center gap-3 flex-wrap">
+      <div className="flex flex-wrap items-center gap-2">
+        <PartnerCrmNav />
+        <div className="flex-1" />
         <SearchInput
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder={activeView === "orgs" ? "Search organizations" : "Search contacts"}
-          containerClassName="w-full max-w-[420px]"
+          placeholder={activeView === "orgs" ? "Search organizations…" : "Search contacts…"}
+          aria-label={activeView === "orgs" ? "Search organizations" : "Search contacts"}
+          containerClassName="w-full max-w-[420px] sm:w-72"
         />
         {activeView === "orgs" && (
-          <>
-            <Select
-              value={typeFilter}
-              onChange={setTypeFilter}
-              ariaLabel="Organization type"
-              options={[
-                { value: "all", label: "All types" },
-                ...PARTNER_ORG_TYPES.map((t) => ({ value: t, label: PARTNER_ORG_TYPE_LABELS[t] })),
-              ]}
-              buttonClassName={FILTER_TRIGGER}
-            />
-            <Select
-              value={statusFilter}
-              onChange={setStatusFilter}
-              ariaLabel="Relationship status"
-              options={[
-                { value: "all", label: "All statuses" },
-                ...PARTNER_RELATIONSHIP_STATUSES.map((st) => ({
-                  value: st,
-                  label: PARTNER_RELATIONSHIP_STATUS_LABELS[st],
-                })),
-              ]}
-              buttonClassName={FILTER_TRIGGER}
-            />
-            <Checkbox
-              checked={includeIndividuals}
-              onChange={(e) => setIncludeIndividuals(e.target.checked)}
-              label="Include individuals"
-              className="text-sm text-foreground"
-            />
-          </>
+          <Popover
+            align="right"
+            ariaLabel="Customize directory"
+            panelClassName={filterPanelClass(true)}
+            trigger={
+              <button type="button" className={customizeButtonClass(true, filterCount > 0)}>
+                <SlidersHorizontal className="h-3.5 w-3.5" aria-hidden />
+                Customize
+                <FilterCountBadge os={true} count={filterCount} />
+              </button>
+            }
+          >
+            <div className="flex flex-col gap-3">
+              <div className="flex items-center justify-between">
+                <FilterSectionLabel os={true}>Filters</FilterSectionLabel>
+                {filterCount > 0 && <FilterResetButton os={true} onClick={resetFilters} />}
+              </div>
+              <FilterGroup label="Type" os={true}>
+                <FilterPill
+                  os={true}
+                  selected={filters.type === "all"}
+                  onClick={() => setFilters((f) => ({ ...f, type: "all" }))}
+                >
+                  All
+                </FilterPill>
+                {PARTNER_ORG_TYPES.map((t) => (
+                  <FilterPill
+                    key={t}
+                    os={true}
+                    selected={filters.type === t}
+                    onClick={() => setFilters((f) => ({ ...f, type: t }))}
+                  >
+                    {PARTNER_ORG_TYPE_LABELS[t]}
+                  </FilterPill>
+                ))}
+              </FilterGroup>
+              <FilterGroup label="Status" os={true}>
+                <FilterPill
+                  os={true}
+                  selected={filters.status === "all"}
+                  onClick={() => setFilters((f) => ({ ...f, status: "all" }))}
+                >
+                  All
+                </FilterPill>
+                {PARTNER_RELATIONSHIP_STATUSES.map((st) => (
+                  <FilterPill
+                    key={st}
+                    os={true}
+                    selected={filters.status === st}
+                    onClick={() => setFilters((f) => ({ ...f, status: st }))}
+                  >
+                    {PARTNER_RELATIONSHIP_STATUS_LABELS[st]}
+                  </FilterPill>
+                ))}
+              </FilterGroup>
+              <FilterToggleRow
+                label="Include individuals"
+                os={true}
+                checked={filters.includeIndividuals}
+                onChange={(checked) => setFilters((f) => ({ ...f, includeIndividuals: checked }))}
+              />
+            </div>
+          </Popover>
+        )}
+        <IconButton
+          label="Export CSV"
+          icon={Download}
+          className="os-icon-btn"
+          onClick={() => window.location.assign(directoryExportHref(activeView, query, filters))}
+        />
+        {activeView === "orgs" ? (
+          <button type="button" onClick={() => setCreatingOrg(true)} className="os-add-btn">
+            <Plus className="h-[17px] w-[17px]" strokeWidth={3} aria-hidden />
+            New organization
+          </button>
+        ) : (
+          <button type="button" onClick={() => setCreatingContact(true)} className="os-add-btn">
+            <Plus className="h-[17px] w-[17px]" strokeWidth={3} aria-hidden />
+            New contact
+          </button>
         )}
       </div>
 
-      {activeView === "orgs" ? (
-        filteredOrgs.length === 0 ? (
-          <div className="px-4 py-8 text-center text-sm text-muted-foreground">
-            {query ? "No organizations match this search." : "No partner organizations yet."}
-          </div>
-        ) : view === "list" ? (
-          <OrgsTable rows={filteredOrgs} navigate={navigate} />
-        ) : (
-          <OrgsCards rows={filteredOrgs} />
-        )
-      ) : filteredContacts.length === 0 ? (
-        <div className="px-4 py-8 text-center text-sm text-muted-foreground">
-          {query ? "No contacts match this search." : "No partner contacts yet."}
+      <div className={cn(os.panel, "overflow-hidden")}>
+        <div className="flex items-center px-4 py-3">
+          <SegmentedTabButtons
+            label="Directory"
+            size="sm"
+            items={[
+              {
+                label: "Organizations",
+                count: orgs.length,
+                active: activeView === "orgs",
+                onClick: () => setActiveView("orgs"),
+              },
+              {
+                label: "Contacts",
+                count: contacts.length,
+                active: activeView === "contacts",
+                onClick: () => setActiveView("contacts"),
+              },
+            ]}
+          />
         </div>
-      ) : view === "list" ? (
-        <ContactsTable rows={filteredContacts} navigate={navigate} />
-      ) : (
-        <ContactsCards rows={filteredContacts} />
-      )}
+        {activeView === "orgs" ? (
+          filteredOrgs.length === 0 ? (
+            <EmptyPanel>
+              {query || filterCount > 0
+                ? "No organizations match this search."
+                : "No partner organizations yet."}
+            </EmptyPanel>
+          ) : (
+            <OrgsTable rows={filteredOrgs} sort={sort} onSort={onSort} />
+          )
+        ) : filteredContacts.length === 0 ? (
+          <EmptyPanel>{query ? "No contacts match this search." : "No partner contacts yet."}</EmptyPanel>
+        ) : (
+          <ContactsTable rows={filteredContacts} sort={sort} onSort={onSort} />
+        )}
+      </div>
     </div>
+  );
+}
+
+function EmptyPanel({ children }: { children: ReactNode }) {
+  return <div className="border-t border-os-container/70 px-4 py-10 text-center text-sm text-muted-foreground">{children}</div>;
+}
+
+const TH = "whitespace-nowrap px-4 py-2.5 text-left text-xs font-semibold text-os-muted first:pl-6 last:pr-6";
+const TD = "px-4 py-3 text-sm first:pl-6 last:pr-6";
+const ROW = "group relative border-t border-os-container/70 transition-colors hover:bg-os-card-hover";
+
+function SortableTh({
+  label,
+  sortKey,
+  sort,
+  onSort,
+}: {
+  label: string;
+  sortKey: DirectorySortKey;
+  sort: DirectorySort;
+  onSort: (key: DirectorySortKey) => void;
+}) {
+  const active = sort.key === sortKey;
+  const Icon = active ? (sort.dir === "asc" ? ArrowUp : ArrowDown) : ArrowUpDown;
+  return (
+    <th
+      className={TH}
+      aria-sort={active ? (sort.dir === "asc" ? "ascending" : "descending") : "none"}
+    >
+      <button
+        type="button"
+        onClick={() => onSort(sortKey)}
+        className={cn(
+          "group/sort inline-flex items-center gap-1 font-semibold transition-colors",
+          active ? "text-foreground" : "hover:text-foreground",
+        )}
+      >
+        {label}
+        <Icon
+          className={cn(
+            "h-3 w-3",
+            active ? "text-os-accent" : "opacity-0 group-hover/sort:opacity-60 focus-visible:opacity-60",
+          )}
+          aria-hidden
+        />
+      </button>
+    </th>
+  );
+}
+
+function RowLink({ to, label, children }: { to: string; label: string; children: ReactNode }) {
+  const onClick = (e: MouseEvent<HTMLAnchorElement>) => {
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
+    if (requestOpenTabIfEmbedded(to, label)) e.preventDefault();
+  };
+  return (
+    <Link
+      to={to}
+      onClick={onClick}
+      className="flex min-w-0 items-center gap-3 after:absolute after:inset-0 after:content-[''] focus-visible:outline-none focus-visible:after:ring-2 focus-visible:after:ring-inset focus-visible:after:ring-os-accent"
+    >
+      {children}
+    </Link>
+  );
+}
+
+function StatusPill({ status }: { status: PartnerRelationshipStatus }) {
+  return (
+    <span className="inline-flex items-center gap-1.5 rounded-full bg-os-well px-2.5 py-0.5 text-xs text-foreground">
+      <span className={cn("h-1.5 w-1.5 rounded-full", STATUS_DOT[status])} aria-hidden />
+      {PARTNER_RELATIONSHIP_STATUS_LABELS[status]}
+    </span>
+  );
+}
+
+function Chevron() {
+  return (
+    <td className={cn(TD, "w-10 text-right text-muted-foreground")}>
+      <ChevronRight className="ml-auto h-4 w-4 opacity-60 group-hover:opacity-100" aria-hidden />
+    </td>
   );
 }
 
 function OrgsTable({
   rows,
-  navigate,
+  sort,
+  onSort,
 }: {
   rows: PartnerOrgDirectoryRow[];
-  navigate: (url: string) => void;
+  sort: DirectorySort;
+  onSort: (key: DirectorySortKey) => void;
 }) {
   return (
     <div className="overflow-x-auto">
-      <table className="w-full text-sm min-w-[720px]">
-        <thead className="bg-muted/30 text-muted-foreground text-xs">
+      <table className="w-full min-w-[720px] text-sm">
+        <thead>
           <tr>
-            <th className="text-left font-medium px-4 py-2">Organization</th>
-            <th className="text-left font-medium px-4 py-2">Status</th>
-            <th className="text-left font-medium px-4 py-2">Members</th>
-            <th className="text-left font-medium px-4 py-2">Active projects</th>
+            <SortableTh label="Organization" sortKey="name" sort={sort} onSort={onSort} />
+            <th className={TH}>Type</th>
+            <th className={TH}>Status</th>
+            <th className={TH}>Members</th>
+            <th className={TH}>Active projects</th>
+            <SortableTh label="Last activity" sortKey="activity" sort={sort} onSort={onSort} />
+            <th className={cn(TH, "w-10")} aria-label="Open" />
           </tr>
         </thead>
         <tbody>
           {rows.map((o) => (
-            <tr
-              key={o.id}
-              onClick={() => {
-                const url = `/core/partners/orgs/${o.id}`;
-                if (!requestOpenTabIfEmbedded(url, o.name)) navigate(url);
-              }}
-              className="border-t border-border hover:bg-muted/20 cursor-pointer"
-            >
-              <td className="px-4 py-2">
-                <div className="flex items-center gap-3 min-w-0">
-                  <OrgAvatar org={o} />
-                  <div className="min-w-0">
-                    <span className="font-medium text-foreground truncate block">{o.name}</span>
-                    {o.isIndividual && (
-                      <span className="text-xs text-muted-foreground">Individual</span>
-                    )}
-                  </div>
-                </div>
+            <tr key={o.id} className={ROW}>
+              <td className={TD}>
+                <RowLink to={`/core/partners/orgs/${o.id}`} label={o.name}>
+                  <span
+                    className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg bg-os-well text-[11px] font-semibold text-os-grey"
+                    aria-hidden
+                  >
+                    {orgInitials(o.name)}
+                  </span>
+                  <span className="truncate font-medium text-foreground">{o.name}</span>
+                </RowLink>
               </td>
-              <td className="px-4 py-2">
-                <div className="flex items-center gap-1.5">
-                  <OrgStatusPill status={o.status} />
-                  <OrgTypePill type={o.type} />
-                </div>
+              <td className={cn(TD, "text-muted-foreground")}>
+                {o.isIndividual ? "Individual" : o.type ? PARTNER_ORG_TYPE_LABELS[o.type] : "—"}
               </td>
-              <td className="px-4 py-2 text-muted-foreground">{o.memberCount}</td>
-              <td className="px-4 py-2 text-muted-foreground">
-                {o.activeProjectCount}
-                {o.totalProjectCount > o.activeProjectCount && (
-                  <span className="text-xs"> / {o.totalProjectCount} total</span>
-                )}
+              <td className={TD}>
+                <StatusPill status={o.status} />
               </td>
+              <td className={cn(TD, "tabular-nums text-muted-foreground")}>{o.memberCount}</td>
+              <td className={cn(TD, "tabular-nums text-muted-foreground")}>{o.activeProjectCount}</td>
+              <td className={cn(TD, "whitespace-nowrap text-muted-foreground")}>
+                {o.lastActivityAt ? relativeTime(o.lastActivityAt) : "—"}
+              </td>
+              <Chevron />
             </tr>
           ))}
         </tbody>
       </table>
-    </div>
-  );
-}
-
-function OrgsCards({ rows }: { rows: PartnerOrgDirectoryRow[] }) {
-  return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-      {rows.map((org) => (
-        <Link
-          key={org.id}
-          to={`/core/partners/orgs/${org.id}`}
-          className="border border-border rounded-md p-3 bg-background flex items-start gap-3 hover:bg-muted/10 transition-colors"
-        >
-          <OrgAvatar org={org} />
-          <div className="min-w-0 flex-1">
-            <div className="flex items-baseline gap-2 flex-wrap">
-              <span className="font-semibold text-foreground truncate">{org.name}</span>
-              {org.isIndividual && (
-                <span className="text-xs text-muted-foreground">Individual</span>
-              )}
-            </div>
-            <div className="mt-1 flex items-center gap-1.5">
-              <OrgStatusPill status={org.status} />
-              <OrgTypePill type={org.type} />
-            </div>
-            <div className="mt-2 space-y-0.5 text-xs text-muted-foreground">
-              {!org.isIndividual && (
-                <div>
-                  {org.memberCount} {org.memberCount === 1 ? "member" : "members"}
-                </div>
-              )}
-              <div>
-                {org.activeProjectCount} active
-                {org.totalProjectCount > org.activeProjectCount
-                  ? ` / ${org.totalProjectCount} total`
-                  : ""}
-              </div>
-            </div>
-          </div>
-        </Link>
-      ))}
     </div>
   );
 }
 
 function ContactsTable({
   rows,
-  navigate,
+  sort,
+  onSort,
 }: {
   rows: PartnerContactDirectoryRow[];
-  navigate: (url: string) => void;
+  sort: DirectorySort;
+  onSort: (key: DirectorySortKey) => void;
 }) {
   return (
     <div className="overflow-x-auto">
-      <table className="w-full text-sm min-w-[720px]">
-        <thead className="bg-muted/30 text-muted-foreground text-xs">
+      <table className="w-full min-w-[720px] text-sm">
+        <thead>
           <tr>
-            <th className="text-left font-medium px-4 py-2">Contact</th>
-            <th className="text-left font-medium px-4 py-2">Organization</th>
-            <th className="text-left font-medium px-4 py-2">Applications</th>
-            <th className="text-left font-medium px-4 py-2">Last activity</th>
+            <SortableTh label="Contact" sortKey="name" sort={sort} onSort={onSort} />
+            <th className={TH}>Organization</th>
+            <th className={TH}>Applications</th>
+            <SortableTh label="Last activity" sortKey="activity" sort={sort} onSort={onSort} />
+            <th className={cn(TH, "w-10")} aria-label="Open" />
           </tr>
         </thead>
         <tbody>
           {rows.map((c) => (
-            <tr
-              key={c.id}
-              onClick={() => {
-                const url = `/core/partners/contacts/${c.id}`;
-                if (!requestOpenTabIfEmbedded(url, c.name)) navigate(url);
-              }}
-              className="border-t border-border hover:bg-muted/20 cursor-pointer"
-            >
-              <td className="px-4 py-2">
-                <div className="flex items-center gap-3 min-w-0">
+            <tr key={c.id} className={ROW}>
+              <td className={TD}>
+                <RowLink to={`/core/partners/contacts/${c.id}`} label={c.name}>
                   <ContactAvatar contact={c} />
-                  <div className="min-w-0">
-                    <span className="font-medium text-foreground truncate block">{c.name}</span>
-                    {c.title && (
-                      <span className="text-xs text-muted-foreground">{c.title}</span>
-                    )}
-                  </div>
-                </div>
+                  <span className="min-w-0">
+                    <span className="block truncate font-medium text-foreground">{c.name}</span>
+                    {c.title && <span className="block truncate text-xs text-muted-foreground">{c.title}</span>}
+                  </span>
+                </RowLink>
               </td>
-              <td className="px-4 py-2 text-muted-foreground">
-                {c.orgs.map((o) => o.name).join(", ") || "—"}
-              </td>
-              <td className="px-4 py-2 text-muted-foreground">{c.applicationCount}</td>
-              <td className="px-4 py-2 text-muted-foreground">
+              <td className={cn(TD, "text-muted-foreground")}>{c.orgs.map((o) => o.name).join(", ") || "—"}</td>
+              <td className={cn(TD, "tabular-nums text-muted-foreground")}>{c.applicationCount}</td>
+              <td className={cn(TD, "whitespace-nowrap text-muted-foreground")}>
                 {c.lastActivityAt ? relativeTime(c.lastActivityAt) : "—"}
               </td>
+              <Chevron />
             </tr>
           ))}
         </tbody>
       </table>
-    </div>
-  );
-}
-
-function ContactsCards({ rows }: { rows: PartnerContactDirectoryRow[] }) {
-  return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-      {rows.map((c) => (
-        <Link
-          key={c.id}
-          to={`/core/partners/contacts/${c.id}`}
-          className="border border-border rounded-md p-3 bg-background flex items-start gap-3 hover:bg-muted/10 transition-colors"
-        >
-          <ContactAvatar contact={c} />
-          <div className="min-w-0 flex-1">
-            <span className="font-semibold text-foreground truncate block">{c.name}</span>
-            {c.title && <span className="text-xs text-muted-foreground">{c.title}</span>}
-            <div className="mt-2 space-y-0.5 text-xs text-muted-foreground">
-              <div>{c.orgs.map((o) => o.name).join(", ") || "No organization"}</div>
-              <div>
-                {c.applicationCount} {c.applicationCount === 1 ? "application" : "applications"}
-              </div>
-            </div>
-          </div>
-        </Link>
-      ))}
     </div>
   );
 }

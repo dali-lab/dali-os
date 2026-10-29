@@ -16,7 +16,7 @@ const DEFAULT_STALE_DAYS = 14;
 export const LIST_PARTNER_APPLICATIONS_TOOL = {
   name: "list_partner_applications",
   description:
-    "List partner applications, optionally filtered by stage. Valid stages: New, Interview, Accepted, Rejected. Requires staffing-view access.",
+    "List partner applications, optionally filtered by stage. Valid stages: Backlog, New, Interview, Deciding, Accepted, Rejected. Requires staffing-view access.",
   inputSchema: {
     type: "object" as const,
     properties: {

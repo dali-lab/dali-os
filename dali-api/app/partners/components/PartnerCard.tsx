@@ -7,7 +7,7 @@ import { Link } from "react-router";
 import { BoardCard } from "~/components/board/BoardCard";
 import { cn } from "~/lib/cn";
 import { isPaused, isStale, PARTNER_SOURCE_LABELS } from "../lib/partner-application";
-import type { PartnerCardModel } from "../lib/partner-board";
+import { formatCardSpots, type PartnerCardModel } from "../lib/partner-board";
 
 function isOverdue(dueIso: string | null): boolean {
   if (!dueIso) return false;
@@ -69,6 +69,7 @@ export function PartnerCard({
     card.meetingCount > 0 && `${card.meetingCount} held`,
     card.pendingRequestCount > 0 && `${card.pendingRequestCount} requested`,
   ].filter(Boolean);
+  const spots = formatCardSpots(card.domains);
   const quietDays = staleDaysCount(card.lastActivityAt);
 
   return (
@@ -93,7 +94,9 @@ export function PartnerCard({
             {card.targetTerms.map((t) => t.code).join(", ")}
           </Field>
         )}
-        {card.domains.length > 0 && (
+        {spots ? (
+          <Field label="Spots">{spots}</Field>
+        ) : card.domains.length > 0 && (
           <Field label={plural(card.domains.length, "Domain", "Domains")}>
             {card.domains.map((d) => d.name).join(", ")}
           </Field>

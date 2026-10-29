@@ -1,14 +1,13 @@
 import { useLocation, useNavigate } from "react-router";
 import { BarChart3, Building2, CalendarRange, Kanban, RefreshCcw } from "lucide-react";
 import { SegmentedTabButtons } from "~/components/AreaPillNav";
-import { useFeatureFlag } from "~/components/FeatureFlags";
 
 const TABS = [
-  { label: "Applications", href: "/core/partners", icon: Kanban, flagged: false },
-  { label: "Renewals", href: "/core/partners/renewals", icon: RefreshCcw, flagged: true },
-  { label: "Planning", href: "/core/partners/planning", icon: CalendarRange, flagged: true },
-  { label: "Directory", href: "/core/partners/directory", icon: Building2, flagged: false },
-  { label: "Reports", href: "/core/partners/reports", icon: BarChart3, flagged: false },
+  { label: "Applications", href: "/core/partners", icon: Kanban },
+  { label: "Renewals", href: "/core/partners/renewals", icon: RefreshCcw },
+  { label: "Planning", href: "/core/partners/planning", icon: CalendarRange },
+  { label: "Directory", href: "/core/partners/directory", icon: Building2 },
+  { label: "Reports", href: "/core/partners/reports", icon: BarChart3 },
 ];
 
 /** The tab switcher shared by the Partner CRM pages. Each page puts it at the
@@ -17,8 +16,7 @@ const TABS = [
 export function PartnerCrmNav({ className }: { className?: string }) {
   const { pathname } = useLocation();
   const navigate = useNavigate();
-  const planning = useFeatureFlag("partner-planning");
-  const items = TABS.filter((tab) => planning || !tab.flagged).map((tab) => ({
+  const items = TABS.map((tab) => ({
     label: tab.label,
     icon: tab.icon,
     active:

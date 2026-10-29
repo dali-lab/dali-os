@@ -14,10 +14,11 @@ function card(overrides: Partial<PartnerCardModel> = {}): PartnerCardModel {
     position: 0,
     contactName: "Ada Lovelace",
     orgName: "Acme Co",
-    domains: [{ id: "d1", name: "Mobile" }],
+    domains: [{ id: "d1", name: "Mobile", expectedMembers: 0 }],
     targetTerms: [{ id: "t1", code: "26F" }],
     nextStep: null,
     nextStepDueAt: null,
+    feeCents: null,
     lastActivityAt: new Date().toISOString(),
     holdUntil: null,
     resultingProjectId: null,
@@ -84,12 +85,27 @@ describe("PartnerCard", () => {
       render(
         card({
           targetTerms: [{ id: "t1", code: "26F" }, { id: "t2", code: "27W" }],
-          domains: [{ id: "d1", name: "Design" }, { id: "d2", name: "Engineering" }],
+          domains: [{ id: "d1", name: "Design", expectedMembers: 0 }, { id: "d2", name: "Engineering", expectedMembers: 0 }],
         }),
       ),
     );
     expect(f).toContain("Terms: 26F, 27W");
     expect(f).toContain("Domains: Design, Engineering");
+  });
+
+  it("labels the headcount row Spots and spells domains out", () => {
+    const f = fields(
+      render(
+        card({
+          domains: [
+            { id: "d1", name: "Engineering", expectedMembers: 2 },
+            { id: "d2", name: "Design", expectedMembers: 1 },
+          ],
+        }),
+      ),
+    );
+    expect(f).toContain("Spots: Engineering 2, Design 1");
+    expect(f.some((x) => x.startsWith("Domain"))).toBe(false);
   });
 
   it("leaves out term and domain rows when there are none", () => {

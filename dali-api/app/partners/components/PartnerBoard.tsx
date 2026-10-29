@@ -28,7 +28,9 @@ import {
   buildPartnerBoard,
   filterPartnerCards,
   movePartnerInBoard,
+  sortPartnerBoard,
   type PartnerCardModel,
+  type PartnerCardSort,
   type PartnerFilters,
 } from "../lib/partner-board";
 import { PartnerCard } from "./PartnerCard";
@@ -39,12 +41,13 @@ const COLLAPSED_KEY = "partnerboard:collapsedCols";
 
 // The os shell's accent reads the same status-token families TaskBoard draws
 // its columns from, so the two boards share a palette. Backlog~backlog,
-// New~todo (not yet worked), Interview~progress, Accepted~done,
-// Rejected~cancelled.
+// New~todo (not yet worked), Interview~progress, Deciding~review,
+// Accepted~done, Rejected~cancelled.
 const STAGE_ACCENT_OS: Record<PartnerStage, StatusAccent> = {
   Backlog: osStatusAccent("backlog"),
   New: osStatusAccent("todo"),
   Interview: osStatusAccent("progress"),
+  Deciding: osStatusAccent("review"),
   Accepted: osStatusAccent("done"),
   Rejected: osStatusAccent("cancelled"),
 };
@@ -68,6 +71,11 @@ const STAGE_ACCENT_CLASSIC: Record<PartnerStage, StatusAccent> = {
     ink: "#00706f",
     edge: "var(--color-accent-teal)",
   },
+  Deciding: {
+    fill: "color-mix(in srgb, var(--color-accent-coral) 22%, transparent)",
+    ink: "#a8402f",
+    edge: "var(--color-accent-coral)",
+  },
   Accepted: {
     fill: "color-mix(in srgb, var(--color-accent-green) 30%, transparent)",
     ink: "#166a41",
@@ -90,6 +98,7 @@ export function PartnerBoard({
   currentTermStartIso,
   query,
   filters,
+  sort,
   onOpen,
 }: {
   cards: PartnerCardModel[];
@@ -98,6 +107,7 @@ export function PartnerBoard({
   currentTermStartIso: string | null;
   query: string;
   filters: PartnerFilters;
+  sort: PartnerCardSort;
   onOpen: (id: string) => void;
 }) {
   const { os } = useOsChrome();
@@ -144,7 +154,11 @@ export function PartnerBoard({
     [cards, filters, query, staleDays, currentTermStartIso],
   );
 
-  const board = useMemo(() => buildPartnerBoard(filteredCards), [filteredCards]);
+  const manualSort = sort === "manual";
+  const board = useMemo(
+    () => sortPartnerBoard(buildPartnerBoard(filteredCards), sort),
+    [filteredCards, sort],
+  );
 
   async function persistMove(id: string, stage: PartnerStage, orderedIds: string[]): Promise<void> {
     const res = await fetch(`/api/partner-applications/${id}/move`, {
@@ -180,7 +194,10 @@ export function PartnerBoard({
       const overCard = cards.find((c) => c.id === overId);
       if (!overCard || overCard.id === id) return;
       toStage = overCard.stage;
-      targetIndex = buildPartnerBoard(cards)[toStage].findIndex((c) => c.id === overId);
+      if (!manualSort && toStage === fromStage) return;
+      targetIndex = manualSort
+        ? buildPartnerBoard(cards)[toStage].findIndex((c) => c.id === overId)
+        : -1;
     }
 
     const orderedIds = movePartnerInBoard(cards, id, toStage, targetIndex).orderedIds;
@@ -259,6 +276,7 @@ export function PartnerBoard({
               "rounded-full border border-current/30 px-2 py-0.5 font-medium tabular-nums",
               META_TEXT(os),
             )}
+            style={{ color: accent.ink }}
           >
             {stageCards.length}
           </span>
@@ -306,8 +324,8 @@ export function PartnerBoard({
         getCardId={(c) => c.id}
         getCardData={(c) => ({ applicationId: c.id, fromStage: c.stage })}
         draggable={canEdit}
-        sortable
-        dropPlaceholder
+        sortable={manualSort}
+        dropPlaceholder={manualSort}
         onDragEnd={handleDragEnd}
         error={error}
         renderOverlay={(activeId) => {

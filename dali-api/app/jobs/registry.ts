@@ -531,7 +531,7 @@ export const JOBS: JobDefinition[] = [
   {
     name: "partner-renewal-sweep",
     description:
-      "Auto-creates a renewal application when a partner's project is in its last planned term and that term ends within 30 days, unless the org already has one open.",
+      "Reminds Core when a project's last planned term ends within 30 days and no decision exists for the next term. Links to Renewals.",
     intervalMinutes: 1440,
     handler: runPartnerRenewalSweep,
   },

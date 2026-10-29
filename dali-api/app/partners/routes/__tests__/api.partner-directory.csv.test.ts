@@ -77,4 +77,45 @@ describe("GET /api/partner-directory.csv", () => {
     expect(body).toContain("Jo");
     expect(listPartnerOrgRows).not.toHaveBeenCalled();
   });
+
+  it("exports only the filtered orgs", async () => {
+    const base = {
+      logoUrl: null,
+      website: null,
+      isIndividual: false,
+      type: null,
+      status: "Active" as const,
+      memberCount: 1,
+      activeProjectCount: 1,
+      totalProjectCount: 1,
+      lastActivityAt: null,
+    };
+    vi.mocked(listPartnerOrgRows).mockResolvedValue([
+      { ...base, id: "1", name: "Acme" },
+      { ...base, id: "2", name: "Beta" },
+    ]);
+    const res = (await get("http://localhost/api/partner-directory.csv?q=acme")) as Response;
+    const body = await res.text();
+    expect(body).toContain("Acme");
+    expect(body).not.toContain("Beta");
+  });
+
+  it("exports only the filtered contacts", async () => {
+    const base = {
+      email: null,
+      title: null,
+      affiliation: null,
+      orgs: [],
+      applicationCount: 0,
+      lastActivityAt: null,
+    };
+    vi.mocked(listPartnerContactRows).mockResolvedValue([
+      { ...base, id: "1", name: "Jo" },
+      { ...base, id: "2", name: "Sam" },
+    ]);
+    const res = (await get("http://localhost/api/partner-directory.csv?view=contacts&q=sam")) as Response;
+    const body = await res.text();
+    expect(body).toContain("Sam");
+    expect(body).not.toContain("Jo");
+  });
 });
