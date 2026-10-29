@@ -378,7 +378,7 @@ export interface ApplicationViewerProps {
       challengeVersion?: {
         questions: unknown
         description?: unknown
-        domain: { name: string; displayName?: string }
+        domain?: { name: string; displayName?: string }
         challenge?: { name: string }
       } | null
       domain?: { name: string; displayName?: string } | null
@@ -501,7 +501,7 @@ export function ApplicationViewer({ application, questionLabels, initialAnnotati
       {application.domainApplications.map((dapp) => {
         const cv = dapp.challengeVersion
         const directDomain = dapp.domain
-        const domainName = cv?.domain.displayName ?? cv?.domain.name ?? directDomain?.displayName ?? directDomain?.name ?? 'Domain'
+        const domainName = cv?.domain?.displayName ?? cv?.domain?.name ?? directDomain?.displayName ?? directDomain?.name ?? 'Domain'
         const ci = dapp.continuedInterest
         const ciQuestions = (ci?.questions as unknown as Question[] | undefined) ?? []
         const ciQuestionsByKey = buildQuestionMap(ciQuestions)
