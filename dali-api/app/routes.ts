@@ -152,6 +152,8 @@ export default [
     // application records), Core-only. The external portal at /partner/*
     // (singular) is a separate surface and does not move.
     route("core/partners", "partners/routes/core.partners.tsx"),
+    route("core/partners/renewals", "partners/routes/core.partners.renewals.tsx"),
+    route("core/partners/planning", "partners/routes/core.partners.planning.tsx"),
     route("core/partners/directory", "partners/routes/core.partners.directory.tsx"),
     route("core/partners/reports", "partners/routes/core.partners.reports.tsx"),
     route("core/partners/settings", "partners/routes/core.partners.settings.tsx"),

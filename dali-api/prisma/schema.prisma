@@ -4174,6 +4174,12 @@ model ProjectTermStatus {
   setBy        String?
   setAt        DateTime @default(now())
 
+  // Renewal decision details, written from Core → Partners → Renewals.
+  feeCents      Int?
+  reason        String?
+  nextStep      String?
+  nextStepDueAt DateTime?
+
   // Per-term meeting links and Statement of Work. Calendar/Zoom rotate per
   // term; SOW is a collab Page (loose reference, app-layer dispatch like
   // Project.overviewPageId).
@@ -6906,6 +6912,7 @@ enum PartnerStage {
   Backlog
   New
   Interview
+  Deciding
   Accepted
   Rejected
 }
@@ -6923,16 +6930,6 @@ enum PartnerSowState {
   Draft
   Shared
   Accepted
-}
-
-// Term-planning intent for a (PartnerApplication, Term) pair. Drives the
-// color-coded row in the Partner Relations term planner (/core/partners/plan):
-// green = Continuing, red = Later, yellow = Maybe, blue = New.
-enum PartnerPlanningStatus {
-  Continuing
-  Later
-  Maybe
-  New
 }
 
 // A partner's ask for a meeting, made from the portal on the real scheduler
@@ -7026,9 +7023,6 @@ model PartnerCrmSettings {
   // interview. Empty = every active Core member.
   interviewPanelUserIds String[] @default([])
   staleDays             Int      @default(14)
-  // Domains left out of the term planner's headcount columns (inactive or
-  // never staffed on partner work, but still active elsewhere).
-  plannerHiddenDomainIds String[] @default([])
   updatedAt             DateTime @updatedAt
 }
 
@@ -7155,15 +7149,6 @@ model PartnerApplicationTargetTerm {
   id            String @id @default(cuid())
   applicationId String
   termId        String
-
-  // Partner Relations term plan: color-coded intent for this application in
-  // this term. Null = not yet set by the lead. See /core/partners/plan.
-  planningStatus PartnerPlanningStatus?
-  // Short free-text notes/description scoped to this specific term plan (not
-  // the application's long-form summary). Mirrors Alejandro's Notion planner.
-  plannerNotes   String?
-  // Short free-text to-do for this term plan ("confirm budget", "ping Chris").
-  plannerTodo    String?
 
   application PartnerApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
   term        Term               @relation(fields: [termId], references: [id])

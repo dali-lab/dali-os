@@ -149,9 +149,9 @@ export const FEATURE_FLAGS = [
   },
   {
     key: "partner-planning",
-    label: "Partner term planning",
+    label: "Partner renewals and planning",
     description:
-      "Adds plan status, notes and to-do columns to the Partners list view, per target term. Ships off.",
+      "Adds the Renewals board and the Planning tab to Core → Partners: decide which projects continue next term, and compare open spots with intent to work per domain. Ships off.",
   },
   {
     key: "application-events",
