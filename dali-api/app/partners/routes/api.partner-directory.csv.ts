@@ -1,4 +1,4 @@
-// GET /api/partner-directory.csv?view=orgs|contacts
+// GET /api/partner-directory.csv?view=orgs|contacts&q=&type=&status=&individuals=0
 // Resource route — no default export, no layout wrapping (see the forms
 // responses CSV export for the same bare-body reasoning).
 
@@ -9,11 +9,13 @@ import { redirectToLogin } from "~/lib/login-next";
 import { isCore } from "~/lib/roles";
 import { csvResponse, rowsToCsv } from "~/lib/csv";
 import {
-  listPartnerContactRows,
-  listPartnerOrgRows,
+  filterContactRows,
+  filterOrgRows,
+  orgFiltersFromParams,
   partnerContactsCsvRows,
   partnerOrgsCsvRows,
 } from "../lib/partner-directory";
+import { listPartnerContactRows, listPartnerOrgRows } from "../lib/partner-directory.server";
 
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
@@ -21,19 +23,20 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (await isNonMember(auth, request)) return redirect("/portal");
   if (!(await isCore(auth.user.sub))) return redirect("/");
 
-  const view = new URL(request.url).searchParams.get("view") === "contacts" ? "contacts" : "orgs";
+  const params = new URL(request.url).searchParams;
+  const view = params.get("view") === "contacts" ? "contacts" : "orgs";
   const fileStamp = new Date().toISOString().slice(0, 10);
 
   if (view === "contacts") {
     const contacts = await listPartnerContactRows();
-    const csv = rowsToCsv(partnerContactsCsvRows(contacts));
+    const csv = rowsToCsv(partnerContactsCsvRows(filterContactRows(contacts, params.get("q") ?? "")));
     return csvResponse(csv, `partner-contacts-${fileStamp}.csv`, {
       headers: { "Cache-Control": "no-store" },
     });
   }
 
   const orgs = await listPartnerOrgRows();
-  const csv = rowsToCsv(partnerOrgsCsvRows(orgs));
+  const csv = rowsToCsv(partnerOrgsCsvRows(filterOrgRows(orgs, orgFiltersFromParams(params))));
   return csvResponse(csv, `partner-orgs-${fileStamp}.csv`, {
     headers: { "Cache-Control": "no-store" },
   });

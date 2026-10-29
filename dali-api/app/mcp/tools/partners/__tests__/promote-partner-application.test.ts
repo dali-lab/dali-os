@@ -136,6 +136,40 @@ describe("promote_partner_application", () => {
     );
   });
 
+  it("creates role requests for every target term", async () => {
+    vi.mocked(isCore).mockResolvedValue(true);
+    mockPrisma.partnerApplication = {
+      findUnique: vi.fn().mockResolvedValue({
+        id: "app-3",
+        title: "Two Terms",
+        summary: null,
+        resultingProjectId: null,
+        partnerOrgId: "org-3",
+        targetTerms: [{ termId: "term-26f" }, { termId: "term-27w" }],
+        domains: [
+          { domainId: "domain-ml", expectedMembers: 2 },
+          { domainId: "domain-web", expectedMembers: 0 },
+        ],
+      }),
+    };
+    const createFn = vi.fn().mockResolvedValue({ id: "proj-two", name: "Two Terms" });
+    mockPrisma.$transaction = vi.fn().mockImplementation(async (fn: unknown) => {
+      const cb = fn as (tx: typeof prisma) => Promise<unknown>;
+      return cb({
+        project: { create: createFn },
+        partnerApplication: { update: vi.fn() },
+      } as unknown as typeof prisma);
+    });
+
+    await runPromotePartnerApplication("u1", { applicationId: "app-3" });
+    const data = (createFn.mock.calls[0][0] as { data: Record<string, any> }).data;
+    expect(data.roleRequests.create).toEqual([
+      { termId: "term-26f", domainId: "domain-ml", level: "P1", slots: 2 },
+      { termId: "term-27w", domainId: "domain-ml", level: "P1", slots: 2 },
+    ]);
+    expect(data.projectTerms.create).toEqual({ termId: "term-26f" });
+  });
+
   it("promotes without terms or domains when none provided", async () => {
     vi.mocked(isCore).mockResolvedValue(true);
     mockPrisma.partnerApplication = {

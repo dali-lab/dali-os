@@ -29,8 +29,7 @@ import { requireAuth, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { recordRouteVisit } from "~/lib/user-pages.server";
 import { prisma } from "~/lib/db";
-import { isCore, getUserRoles } from "~/lib/roles";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
+import { isCore } from "~/lib/roles";
 import { coreHandle } from "~/core/coreNav";
 import { logAuditEvent } from "~/lib/audit";
 import { resolvePhotoUrl } from "~/lib/photo";
@@ -94,8 +93,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   if (!canEdit) return redirect("/");
 
   const now = new Date();
-  const roles = await getUserRoles(auth.user.sub, request);
-  const financeEnabled = await isFeatureEnabled("partner-finance", auth.user.sub, roles, request);
 
   const org = await prisma.partnerOrg.findUnique({
     where: { id: params.orgId },
@@ -263,34 +260,32 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     termCode: string;
     projectName: string;
   }[] = [];
-  if (financeEnabled) {
-    const projectIds = org.projects.map((p) => p.projectId);
-    if (projectIds.length > 0) {
-      const rows = await prisma.projectChartString.findMany({
-        where: { projectId: { in: projectIds }, isCurrent: true },
-        select: {
-          id: true,
-          raw: true,
-          normalized: true,
-          type: true,
-          fundingType: true,
-          projectId: true,
-          term: { select: { code: true, sortKey: true } },
-        },
-      });
-      const projectNameById = new Map(org.projects.map((p) => [p.projectId, p.project.name]));
-      chartStrings = rows
-        .sort((a, b) => b.term.sortKey - a.term.sortKey)
-        .map((r) => ({
-          id: r.id,
-          raw: r.raw,
-          normalized: r.normalized,
-          type: r.type,
-          fundingType: r.fundingType,
-          termCode: r.term.code,
-          projectName: projectNameById.get(r.projectId ?? "") ?? "",
-        }));
-    }
+  const projectIds = org.projects.map((p) => p.projectId);
+  if (projectIds.length > 0) {
+    const rows = await prisma.projectChartString.findMany({
+      where: { projectId: { in: projectIds }, isCurrent: true },
+      select: {
+        id: true,
+        raw: true,
+        normalized: true,
+        type: true,
+        fundingType: true,
+        projectId: true,
+        term: { select: { code: true, sortKey: true } },
+      },
+    });
+    const projectNameById = new Map(org.projects.map((p) => [p.projectId, p.project.name]));
+    chartStrings = rows
+      .sort((a, b) => b.term.sortKey - a.term.sortKey)
+      .map((r) => ({
+        id: r.id,
+        raw: r.raw,
+        normalized: r.normalized,
+        type: r.type,
+        fundingType: r.fundingType,
+        termCode: r.term.code,
+        projectName: projectNameById.get(r.projectId ?? "") ?? "",
+      }));
   }
 
   return {
@@ -318,7 +313,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     allContacts,
     activities,
     actorNames,
-    financeEnabled,
     chartStrings,
     canEdit,
     // Cleanup affordance for duplicate-org husks: deletable only when truly
@@ -1255,7 +1249,6 @@ export default function PartnerOrgDetail() {
     allContacts,
     activities,
     actorNames,
-    financeEnabled,
     chartStrings,
     canDeleteOrg,
     canEdit,
@@ -1284,7 +1277,7 @@ export default function PartnerOrgDetail() {
 
   const tabParam = searchParams.get("tab");
   const tab: OrgTab =
-    isOrgTab(tabParam) && (tabParam !== "finance" || financeEnabled) ? tabParam : "timeline";
+    isOrgTab(tabParam) ? tabParam : "timeline";
   const setTab = (next: OrgTab) =>
     setSearchParams(
       (prev) => {
@@ -1302,9 +1295,7 @@ export default function PartnerOrgDetail() {
     { label: "Contacts", value: "contacts" as const, icon: Users },
     { label: "Applications", value: "applications" as const, icon: ClipboardList },
     { label: "Projects", value: "projects" as const, icon: FolderKanban },
-    ...(financeEnabled
-      ? [{ label: "Finance", value: "finance" as const, icon: CircleDollarSign }]
-      : []),
+    { label: "Finance", value: "finance" as const, icon: CircleDollarSign },
     { label: "Settings", value: "settings" as const, icon: SettingsIcon },
   ];
 
@@ -1859,7 +1850,7 @@ export default function PartnerOrgDetail() {
         </section>
       )}
 
-      {tab === "finance" && financeEnabled && (
+      {tab === "finance" && (
         <div className="flex flex-col gap-4">
           <section className="bg-card border border-border rounded-lg p-4 flex flex-col gap-3">
             <h2 className="font-heading font-semibold text-foreground">Deal terms</h2>

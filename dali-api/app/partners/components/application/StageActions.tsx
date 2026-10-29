@@ -38,6 +38,8 @@ export function StageActions({
   const [learnMoreError, setLearnMoreError] = useState<string | null>(null);
   const [promoting, setPromoting] = useState(false);
   const [promoteError, setPromoteError] = useState<string | null>(null);
+  const [movingToDeciding, setMovingToDeciding] = useState(false);
+  const [moveError, setMoveError] = useState<string | null>(null);
   const dialog = useDialog();
   const navigate = useNavigate();
 
@@ -65,6 +67,28 @@ export function StageActions({
     setShowing(null);
     setWhatWeNeed("");
     onChanged();
+  }
+
+  async function moveToDeciding() {
+    setMovingToDeciding(true);
+    setMoveError(null);
+    try {
+      const res = await fetch(`/api/partner-applications/${application.id}/status`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ stage: "Deciding" }),
+      });
+      if (!res.ok) {
+        const j = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(j.error ?? `Request failed: ${res.status}`);
+      }
+      onChanged();
+    } catch (e) {
+      setMoveError(e instanceof Error ? e.message : "Couldn't move this application.");
+    } finally {
+      setMovingToDeciding(false);
+    }
   }
 
   async function promote() {
@@ -111,7 +135,7 @@ export function StageActions({
           </Button>
         )}
 
-        {stage === "Interview" && (
+        {(stage === "Interview" || stage === "Deciding") && (
           <Button variant="secondary" size="sm" onClick={() => toggle("learn-more")}>
             Request more info
           </Button>
@@ -124,6 +148,17 @@ export function StageActions({
         )}
 
         {stage === "Interview" && (
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => void moveToDeciding()}
+            disabled={movingToDeciding}
+          >
+            {movingToDeciding ? "Moving…" : "Move to deciding"}
+          </Button>
+        )}
+
+        {(stage === "Interview" || stage === "Deciding") && (
           <Button variant="primary" size="sm" onClick={() => toggle("accept")}>
             Accept
           </Button>
@@ -137,6 +172,7 @@ export function StageActions({
       </div>
 
       {promoteError && <p className="text-xs text-destructive">{promoteError}</p>}
+      {moveError && <p className="text-xs text-destructive">{moveError}</p>}
 
       {showing === "accept" && (
         <AcceptForm

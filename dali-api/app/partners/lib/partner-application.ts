@@ -3,11 +3,11 @@
 // pill palette, derived sets, and guard, imported by every route, API and MCP
 // tool that touches PartnerApplication.stage.
 //
-// Five board columns. "Promoted" is not a stage — an Accepted application with
+// Six board columns. "Promoted" is not a stage — an Accepted application with
 // a resultingProjectId is shown with a Project chip. Hold and learn-more are
 // actions (holdUntil, the Request-more-info email), not columns.
 
-export const PARTNER_STAGES = ["Backlog", "New", "Interview", "Accepted", "Rejected"] as const;
+export const PARTNER_STAGES = ["Backlog", "New", "Interview", "Deciding", "Accepted", "Rejected"] as const;
 
 export type PartnerStage = (typeof PARTNER_STAGES)[number];
 
@@ -15,6 +15,7 @@ export const PARTNER_STAGE_LABELS: Record<PartnerStage, string> = {
   Backlog: "Backlog",
   New: "New",
   Interview: "Interview",
+  Deciding: "Deciding",
   Accepted: "Accepted",
   Rejected: "Rejected",
 };
@@ -33,6 +34,7 @@ export const PARTNER_STAGE_PILL: Record<PartnerStage, string> = {
   Backlog: "bg-muted text-muted-foreground",
   New: "bg-muted text-foreground",
   Interview: "bg-accent-coral/15 text-accent-coral",
+  Deciding: "bg-accent-coral/25 text-accent-coral",
   Accepted: "bg-accent-teal/25 text-accent-teal",
   Rejected: "bg-destructive/10 text-destructive",
 };
@@ -41,11 +43,11 @@ export const PARTNER_STAGE_PILL: Record<PartnerStage, string> = {
 // speculative; Rejected is dead. Accepted stays in until a project exists —
 // callers exclude applications with a resultingProjectId, which already carry
 // their own role requests.
-export const PROJECTING_STAGES: PartnerStage[] = ["Interview", "Accepted"];
+export const PROJECTING_STAGES: PartnerStage[] = ["Interview", "Deciding", "Accepted"];
 
 // Still in play: anything a stale sweep or next-step reminder should watch.
 // Backlog is parked on purpose, so it is left out.
-export const OPEN_STAGES: PartnerStage[] = ["New", "Interview"];
+export const OPEN_STAGES: PartnerStage[] = ["New", "Interview", "Deciding"];
 
 // Not yet decided, parked or not: an org with one of these has no need for a renewal.
 export const UNDECIDED_STAGES: PartnerStage[] = ["Backlog", ...OPEN_STAGES];
@@ -105,6 +107,7 @@ export function partnerTrackIndex(input: {
       return 0;
     case "Interview":
       return 1;
+    case "Deciding":
     case "Accepted":
     case "Rejected":
       return 2;
