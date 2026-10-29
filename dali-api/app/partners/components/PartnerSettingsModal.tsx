@@ -8,6 +8,7 @@ import { X } from "lucide-react";
 import { Modal } from "~/components/Modal";
 import { MultiSelect, Select } from "~/components/ui/floating";
 import { Button } from "~/components/ui/Button";
+import { Toggle } from "~/components/ui/Toggle";
 import { useConfirmSubmit } from "~/components/ui/dialog";
 import { modalCardClass } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
@@ -59,6 +60,7 @@ export function PartnerSettingsModal({ onClose }: { onClose: () => void }) {
               forms={d.selectableForms}
               bindIntent="bind-form"
               clearIntent="clear-form"
+              publishSlot="application"
               removeDescription="New applicants will have no form to fill in until another is chosen. Submitted responses are kept."
               unpublishedNote="Partners only see the built-in pitch fields."
               onSaved={reload}
@@ -70,8 +72,9 @@ export function PartnerSettingsModal({ onClose }: { onClose: () => void }) {
               forms={d.selectableForms}
               bindIntent="bind-survey-form"
               clearIntent="clear-survey-form"
+              publishSlot="survey"
               removeDescription="Partners whose project ends will get no survey until another is chosen. Submitted responses are kept."
-              unpublishedNote="Partners won't see a survey until it is."
+              unpublishedNote="Partners won't get a survey until it's open."
               onSaved={reload}
             />
             <p className="text-sm text-os-grey">
@@ -151,6 +154,7 @@ function FormBindingRow({
   forms,
   bindIntent,
   clearIntent,
+  publishSlot,
   removeDescription,
   unpublishedNote,
   onSaved,
@@ -161,6 +165,7 @@ function FormBindingRow({
   forms: SettingsData["selectableForms"];
   bindIntent: string;
   clearIntent: string;
+  publishSlot: "application" | "survey";
   removeDescription: string;
   unpublishedNote: string;
   onSaved: () => void;
@@ -168,9 +173,14 @@ function FormBindingRow({
   const confirmSubmit = useConfirmSubmit();
   const bind = useFetcher<ActionResult>();
   const clear = useFetcher<ActionResult>();
+  const publish = useFetcher<ActionResult>();
   useOnSaved(bind, onSaved);
   useOnSaved(clear, onSaved);
-  const error = bind.data?.error ?? clear.data?.error;
+  useOnSaved(publish, onSaved);
+  const error = bind.data?.error ?? clear.data?.error ?? publish.data?.error;
+  const pendingPublished = publish.formData?.get("published");
+  const published =
+    pendingPublished != null ? pendingPublished === "1" : !!binding?.published;
 
   return (
     <div className="flex flex-col gap-2">
@@ -223,10 +233,25 @@ function FormBindingRow({
           </clear.Form>
         )}
       </div>
+      {binding?.hasVersion && (
+        <Toggle
+          tone="os"
+          checked={published}
+          disabled={publish.state !== "idle"}
+          onChange={(e) =>
+            publish.submit(
+              { intent: "set-form-published", slot: publishSlot, published: e.currentTarget.checked ? "1" : "0" },
+              { method: "post", action: SETTINGS_PATH },
+            )
+          }
+          label="Open for responses"
+          description={published ? "Partners can fill this form now." : `Closed. ${unpublishedNote}`}
+        />
+      )}
       {error && <p className="text-sm text-destructive">{error}</p>}
-      {binding && (!binding.published || !binding.hasVersion) && (
+      {binding && !binding.hasVersion && (
         <p className="text-sm text-os-amber">
-          {binding.hasVersion ? "This form isn't published yet." : "This form has no saved version yet."} {unpublishedNote}
+          This form has no saved version yet. {unpublishedNote}
         </p>
       )}
     </div>

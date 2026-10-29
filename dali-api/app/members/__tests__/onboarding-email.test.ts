@@ -7,6 +7,7 @@ vi.mock("~/lib/db", () => ({
   prisma: { emailTemplate: { findUnique: vi.fn(async () => null) } },
 }));
 
+import { prisma } from "~/lib/db";
 import { onboardingEmailHtml } from "~/members/lib/welcome.server";
 
 describe("onboardingEmailHtml", () => {
@@ -53,5 +54,40 @@ describe("onboardingEmailHtml", () => {
     expect(html).toContain("teammate will add you");
     expect(html).not.toContain("Join the DALI Slack");
     expect(html).not.toContain("https://join.slack.com/t/dali-lab/shared_invite/zt-abc");
+  });
+
+  describe("next-steps block", () => {
+    it("fills the start term and respond-by date into the default copy", async () => {
+      const html = await onboardingEmailHtml("a@dali.dartmouth.edu", "pw", {
+        startTerm: "27W",
+        respondBy: "Monday, June 8, 2026",
+      });
+      expect(html).toContain("The deadline to accept your offer and complete onboarding is Monday, June 8, 2026.");
+      expect(html).toContain("an incredible 27W together");
+      expect(html).not.toContain("26F");
+      expect(html).not.toContain("June 8th");
+    });
+
+    it("fills them into an operator-edited template too", async () => {
+      vi.mocked(prisma.emailTemplate.findUnique).mockResolvedValueOnce({
+        key: "hiring:onboarding:NextSteps",
+        subject: "Next steps",
+        body: "Accept by {{respondBy}}. See you in {{startTerm}}.",
+      } as any);
+      const html = await onboardingEmailHtml("a@dali.dartmouth.edu", "pw", {
+        startTerm: "26F",
+        respondBy: "Friday, September 4, 2026",
+      });
+      expect(html).toContain("Accept by Friday, September 4, 2026. See you in 26F.");
+      expect(vi.mocked(prisma.emailTemplate.findUnique)).toHaveBeenCalledWith({
+        where: { key: "hiring:onboarding:NextSteps" },
+      });
+    });
+
+    it("escapes the values it splices in", async () => {
+      const html = await onboardingEmailHtml("a@dali.dartmouth.edu", "pw", { startTerm: "<b>27W</b>" });
+      expect(html).not.toContain("<b>27W</b>");
+      expect(html).toContain("&lt;b&gt;27W&lt;/b&gt;");
+    });
   });
 });

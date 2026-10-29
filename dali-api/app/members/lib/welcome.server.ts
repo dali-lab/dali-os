@@ -255,6 +255,7 @@ export async function sendOnboardingReminders(args: {
 export async function onboardingEmailHtml(
   daliEmail: string | null,
   tempPassword: string | null = null,
+  decisionVars: { startTerm?: string; respondBy?: string } = {},
 ): Promise<string> {
   // getFrontendUrl(), not process.env.FRONTEND_URL: a PR preview app sets only
   // API_BASE_URL, so reading the raw var there left base="" and shipped a
@@ -287,7 +288,7 @@ export async function onboardingEmailHtml(
   }
 
   // whenMissing is "default", so this never comes back empty.
-  const nextSteps = await renderEmailTemplate("hiring:onboarding:NextSteps", { slackUrl });
+  const nextSteps = await renderEmailTemplate("hiring:onboarding:NextSteps", { slackUrl, ...decisionVars });
 
   return `
     ${accountBlock}

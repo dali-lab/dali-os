@@ -5,7 +5,7 @@
 // job never revisits a boundary it already processed.
 
 import { prisma } from "~/lib/db";
-import { newPublicToken } from "~/forms/lib/forms-data";
+import { newPublicToken } from "~/forms/lib/form-publish.server";
 import type { JobContext, JobResult } from "~/jobs/registry";
 
 // First run (or a rebuilt jobs table) has no cursor; sweeping all history
