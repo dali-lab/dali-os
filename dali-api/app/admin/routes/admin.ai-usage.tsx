@@ -9,7 +9,8 @@ import { loadPeopleById } from "~/admin/lib/people.server";
 import { cn } from "~/lib/cn";
 import { EmptyState, Figure, MiniBar, Sparkline, adminTable } from "~/admin/components/console-ui";
 import { RangeSegmented } from "~/admin/components/RangeSegmented";
-import { resolveRange } from "~/admin/lib/insights-range";
+import { resolveWindow, wantsAllTime } from "~/admin/lib/insights-range";
+import { fillDays } from "~/components/analytics/chart-range";
 import { AI_COST_PER_MILLION_TOKENS, estimateAiCost, formatUsd } from "~/admin/lib/ai-cost";
 import { useOsChrome } from "~/components/os-chrome";
 import { Avatar } from "~/components/ui/Avatar";
@@ -20,14 +21,6 @@ export const handle = adminHandle("ai-usage");
 export const meta: Route.MetaFunction = () => [
   { title: "AI Usage · Admin · DALI OS" },
 ];
-
-// AiUsage.day is a "YYYY-MM-DD" string, so ISO dates compare correctly as
-// strings. Inclusive of today: 7 days = today plus the six before it.
-function sinceDay(days: number): string {
-  return new Date(Date.now() - (days - 1) * 24 * 60 * 60 * 1000)
-    .toISOString()
-    .slice(0, 10);
-}
 
 const compact = new Intl.NumberFormat("en", {
   notation: "compact",
@@ -40,12 +33,20 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (!(await isCore(auth.user.sub))) return redirect("/");
 
   const url = new URL(request.url);
-  const range = resolveRange(url.searchParams.get("range"));
-  const since = sinceDay(range.days);
+  const earliest = wantsAllTime(url.searchParams)
+    ? (await prisma.aiUsage.aggregate({ _min: { day: true } }))._min.day
+    : null;
+  const range = resolveWindow(
+    url.searchParams,
+    new Date(),
+    earliest ? new Date(`${earliest}T00:00:00Z`) : null,
+  );
+  // AiUsage.day is a "YYYY-MM-DD" string, so day keys compare correctly as strings.
+  const inWindow = { day: { gte: range.firstDay, lte: range.lastDay } };
 
   const perUser = await prisma.aiUsage.groupBy({
     by: ["userId"],
-    where: { day: { gte: since } },
+    where: inWindow,
     _sum: { count: true, inputTokens: true, outputTokens: true },
     _max: { day: true },
     orderBy: { _sum: { count: "desc" } },
@@ -79,15 +80,15 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const dayRows = await prisma.aiUsage.groupBy({
     by: ["day"],
-    where: { day: { gte: since } },
+    where: inWindow,
     _sum: { count: true },
   });
-  const byDay = new Map(dayRows.map((r) => [r.day, r._sum.count ?? 0]));
-  const series: number[] = [];
-  for (let i = range.days - 1; i >= 0; i--) {
-    const key = new Date(Date.now() - i * 86400000).toISOString().slice(0, 10);
-    series.push(byDay.get(key) ?? 0);
-  }
+  const series = fillDays(
+    range.firstDay,
+    range.lastDay,
+    dayRows.map((r) => ({ day: r.day, count: r._sum.count ?? 0 })),
+    { count: 0 },
+  ).map((d) => d.count);
 
   const admin = await isAdmin(auth.user.sub);
   return {
@@ -127,11 +128,11 @@ export default function AdminConsoleAiUsage() {
           <div className="flex flex-wrap items-end gap-x-12 gap-y-4">
             <Figure
               size="lg"
-              label={`Tokens · last ${rangeLabel}`}
+              label={`Tokens · ${rangeLabel}`}
               value={compact.format(totalTokens)}
               detail={`${compact.format(totals.inputTokens)} input · ${compact.format(totals.outputTokens)} output`}
             />
-            <Figure label="Requests" value={totals.requests.toLocaleString()} detail={`Last ${rangeLabel}`} />
+            <Figure label="Requests" value={totals.requests.toLocaleString()} detail={rangeLabel} />
             <Figure label="Members" value={rows.length.toLocaleString()} detail="Used AI in window" />
             <Figure
               label={
@@ -149,7 +150,7 @@ export default function AdminConsoleAiUsage() {
               label="About quotas"
               content="Each member is limited to 200 AI doc-writing requests per day and 10 per minute (burst). Token counts are best-effort. A request can appear without tokens if the call was cancelled or failed."
             />
-            <RangeSegmented value={rangeKey} />
+            <RangeSegmented value={rangeKey} customLabel={rangeLabel} />
           </div>
         </div>
         <div className="mt-6">

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { DEFAULT_RANGE, resolveRange, resolveWindow } from "~/admin/lib/insights-range";
+import { DEFAULT_RANGE, INSIGHTS_RANGE_OPTIONS, RANGE_OPTIONS, resolveRange, resolveWindow, wantsAllTime } from "~/admin/lib/insights-range";
 
 describe("resolveRange", () => {
   it("accepts 7d, 30d and 90d", () => {
@@ -12,6 +12,25 @@ describe("resolveRange", () => {
     expect(DEFAULT_RANGE).toBe("30d");
     expect(resolveRange(null).key).toBe("30d");
     expect(resolveRange("14d").key).toBe("30d");
+  });
+
+  it("does not treat all time as a day preset", () => {
+    expect(resolveRange("all").key).toBe("30d");
+    expect(RANGE_OPTIONS.map((r) => r.key)).toEqual(["7d", "30d", "90d"]);
+  });
+});
+
+describe("INSIGHTS_RANGE_OPTIONS", () => {
+  it("adds All time after the day presets", () => {
+    expect(INSIGHTS_RANGE_OPTIONS.map((r) => r.label)).toEqual(["7 days", "30 days", "90 days", "All time"]);
+  });
+});
+
+describe("wantsAllTime", () => {
+  it("is true only for range=all", () => {
+    expect(wantsAllTime(new URLSearchParams("range=all"))).toBe(true);
+    expect(wantsAllTime(new URLSearchParams("range=90d"))).toBe(false);
+    expect(wantsAllTime(new URLSearchParams(""))).toBe(false);
   });
 });
 
@@ -53,5 +72,29 @@ describe("resolveWindow", () => {
     ["missing an end", "from=2026-10-03"],
   ])("falls back to the preset when the range is %s", (_, search) => {
     expect(win(`range=90d&${search}`)).toMatchObject({ key: "90d", days: 90 });
+  });
+
+  describe("all time", () => {
+    it("counts from the epoch and charts from the first recorded day", () => {
+      const w = resolveWindow(new URLSearchParams("range=all"), now, new Date("2026-04-27T09:30:00Z"));
+      expect(w).toMatchObject({ key: "all", firstDay: "2026-04-27", lastDay: "2026-10-27", days: 184 });
+      expect(w.since).toEqual(new Date(0));
+      expect(w.until).toEqual(new Date("2026-10-28T00:00:00Z"));
+      expect(w.label).toBe("All time");
+      expect(w.phrase).toBe("the full history");
+    });
+
+    it("covers just today when nothing is recorded yet", () => {
+      expect(win("range=all")).toMatchObject({ key: "all", firstDay: "2026-10-27", lastDay: "2026-10-27", days: 1 });
+    });
+
+    it("clamps an earliest row dated after today to today", () => {
+      const w = resolveWindow(new URLSearchParams("range=all"), now, new Date("2026-11-02T00:00:00Z"));
+      expect(w).toMatchObject({ firstDay: "2026-10-27", days: 1 });
+    });
+
+    it("yields to a dragged range", () => {
+      expect(win("range=all&from=2026-10-03&to=2026-10-10")).toMatchObject({ key: null, days: 8 });
+    });
   });
 });

@@ -5,7 +5,7 @@ import type { Route } from "./+types/admin.analytics";
 import { AdminSectionHeader, adminHandle } from "~/admin/adminNav";
 import { EmptyState, Figure, MiniBar, adminTable } from "~/admin/components/console-ui";
 import { RangeSegmented } from "~/admin/components/RangeSegmented";
-import { resolveWindow } from "~/admin/lib/insights-range";
+import { ALL_TIME, resolveWindow, wantsAllTime } from "~/admin/lib/insights-range";
 import { fillDays, shortDay } from "~/components/analytics/chart-range";
 import { ChartLegend, TimeSeriesChart, type ChartSeries } from "~/components/analytics/TimeSeriesChart";
 import { useOsChrome } from "~/components/os-chrome";
@@ -56,13 +56,28 @@ function sinceDate(days: number): Date {
   return new Date(Date.now() - days * 24 * 60 * 60 * 1000);
 }
 
+async function earliestPageViewOrError(): Promise<Date | null> {
+  const [row] = await prisma.$queryRaw<{ earliest: Date | null }[]>`
+    SELECT LEAST(
+      (SELECT MIN("createdAt") FROM "PageView"),
+      (SELECT MIN("createdAt") FROM "ClientError")
+    ) AS earliest
+  `;
+  return row?.earliest ?? null;
+}
+
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
   if (!(await isCore(auth.user.sub))) return redirect("/");
 
   const url = new URL(request.url);
-  const range = resolveWindow(url.searchParams);
+  const range = resolveWindow(
+    url.searchParams,
+    new Date(),
+    wantsAllTime(url.searchParams) ? await earliestPageViewOrError() : null,
+  );
+  const allTime = range.key === ALL_TIME.key;
   const { since, until } = range;
   const sevenDaysAgo = sinceDate(7);
 
@@ -96,12 +111,14 @@ export async function loader({ request }: Route.LoaderArgs) {
     ORDER BY views DESC
     LIMIT 10
   `;
-  const prior = await priorViewsByPath(
-    prisma,
-    topRoutes.map((r) => r.path),
-    since,
-    range.days,
-  );
+  const prior = allTime
+    ? null
+    : await priorViewsByPath(
+        prisma,
+        topRoutes.map((r) => r.path),
+        since,
+        range.days,
+      );
 
   // "Rarely visited" rather than "never visited": a route with zero PageView
   // rows isn't measurable from this table. The long tail is the actionable
@@ -188,7 +205,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     trend,
     topRoutes: topRoutes.map((r) => ({
       ...r,
-      change: percentChange(r.views, prior.get(r.path) ?? 0),
+      change: prior ? percentChange(r.views, prior.get(r.path) ?? 0) : null,
     })),
     bottomRoutes,
     clientRows,
@@ -354,7 +371,9 @@ export default function AdminConsoleAnalytics() {
                   <th className={cn(adminTable.th, "text-right")}>Users</th>
                   <th className={cn(adminTable.th, "text-right")}>Median time</th>
                   <th className={cn(adminTable.th, "w-[28%]")}>Views</th>
-                  <th className={cn(adminTable.th, "text-right")}>vs. prior {rangeDays} days</th>
+                  {rangeKey !== ALL_TIME.key && (
+                    <th className={cn(adminTable.th, "text-right")}>vs. prior {rangeDays} days</th>
+                  )}
                 </tr>
               </thead>
               <tbody>
@@ -373,9 +392,11 @@ export default function AdminConsoleAnalytics() {
                         </span>
                       </div>
                     </td>
-                    <td className={cn(adminTable.td, "text-right tabular-nums")}>
-                      <Change value={r.change} />
-                    </td>
+                    {rangeKey !== ALL_TIME.key && (
+                      <td className={cn(adminTable.td, "text-right tabular-nums")}>
+                        <Change value={r.change} />
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>
