@@ -14,6 +14,7 @@ import { UNSAFE_DataRouterStateContext, UNSAFE_LocationContext, UNSAFE_RouteCont
 import { useDisplayedTab } from '~/components/shell/displayed-tab'
 import { useIsBrowserDesktopCandidate } from '~/lib/desktop-candidate'
 import { useOpenCurrentPageInDesktop } from '~/components/shell/useOpenCurrentPageInDesktop'
+import { RecordingPill } from '~/components/meeting-recorder/RecordingPill'
 
 export const PAGE_BAR_BUTTON =
   'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-os-grey transition-colors hover:bg-os-hover hover:text-foreground disabled:opacity-40'
@@ -116,6 +117,7 @@ export function PageBar({
         </DisplayedPage>
       </div>
       <div className="flex shrink-0 items-center gap-0.5">
+        <RecordingPill />
         <div ref={actionsRef} className="flex items-center gap-1 empty:hidden" />
         <div ref={presenceRef} className="flex items-center empty:hidden" />
         <DisplayedPage>

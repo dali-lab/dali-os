@@ -323,6 +323,64 @@ describe("DesktopTabStrip", () => {
     expect(second.querySelector("svg.h-4")).not.toBeNull();
   });
 
+  describe("the tab of a note being recorded", () => {
+    const withNotes = {
+      tabs: [
+        { ...snapshot.tabs[0], url: "/documents/a?tab=1", origin: "/documents/a", label: "Note A", emoji: "🌲" },
+        { ...snapshot.tabs[1], url: "/documents/b", origin: "/documents/b", label: "Note B" },
+      ],
+      activeId: "s2",
+      closed: [],
+    };
+    const dots = () => strip().querySelectorAll("[data-testid='tab-recording-dot']");
+
+    async function record(status: "Pending" | "Recording" | "Stopped") {
+      const live = await import("~/components/meeting-recorder/live-session");
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () =>
+          Response.json({
+            recording: { id: "r1", documentName: "doc:a:body", status, title: "Note A", href: "/documents/a", sessionSeconds: null },
+          }),
+        ),
+      );
+      await act(async () => {
+        live.adoptDesktopSession({ recordingId: "r1", documentName: "doc:a:body", status: "recording", startedAt: 1 });
+        await new Promise((r) => setTimeout(r, 0));
+      });
+    }
+
+    afterEach(async () => {
+      const live = await import("~/components/meeting-recorder/live-session");
+      live.resetLiveSession();
+      vi.unstubAllGlobals();
+    });
+
+    it("replaces that tab's emoji with a red dot and leaves the other tab alone", async () => {
+      await mountStrip({ enabled: false, initial: withNotes });
+      expect(dots()).toHaveLength(0);
+      await record("Recording");
+      expect(dots()).toHaveLength(1);
+      const [first, second] = tabButtons();
+      expect(first.querySelector("[data-testid='tab-recording-dot']")).not.toBeNull();
+      expect(first.textContent).not.toContain("🌲");
+      expect(second.querySelector("[data-testid='tab-recording-dot']")).toBeNull();
+    });
+
+    it("shows the dot while the recording is starting", async () => {
+      await mountStrip({ enabled: false, initial: withNotes });
+      await record("Pending");
+      expect(dots()).toHaveLength(1);
+    });
+
+    it("drops the dot once the recording has stopped", async () => {
+      await mountStrip({ enabled: false, initial: withNotes });
+      await record("Stopped");
+      expect(dots()).toHaveLength(0);
+      expect(tabButtons()[0].textContent).toContain("🌲");
+    });
+  });
+
   describe("looking up a background document's emoji", () => {
     let fetchMock: ReturnType<typeof vi.fn>;
     beforeEach(() => {

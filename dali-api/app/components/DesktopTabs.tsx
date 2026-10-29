@@ -30,6 +30,7 @@ import { fallbackPageLabel } from '~/components/shell/page-bar-model'
 import { usePageTrail } from '~/components/Breadcrumbs'
 import { tabIcon } from '~/lib/tab-icon'
 import { sidePanelForUrl } from '~/lib/side-panel'
+import { useLiveSession } from '~/components/meeting-recorder/live-session'
 
 /** Fired by the desktop app's File menu (desktop/src-tauri/src/menu.rs), which
  *  owns ⌘T / ⌘W / ⌘⇧T so the native Close Window shortcut can't win. */
@@ -150,6 +151,11 @@ function SortableTab({
     id: tab.id,
   })
   const Icon = tabIcon(tab.url)
+  const session = useLiveSession()
+  const recording =
+    session?.href != null &&
+    session.status !== 'stopped' &&
+    tab.url.split(/[?#]/)[0] === session.href
   const style: CSSProperties = {
     transform: CSS.Transform.toString(transform),
     transition,
@@ -183,7 +189,15 @@ function SortableTab({
         active ? 'bg-os-bg text-foreground' : 'text-os-grey hover:bg-os-hover',
       )}
     >
-      {tab.emoji ? (
+      {recording ? (
+        <span
+          data-testid="tab-recording-dot"
+          aria-hidden
+          className="pointer-events-none flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-os-red/[0.18]"
+        >
+          <span className="h-2 w-2 rounded-full bg-os-red" />
+        </span>
+      ) : tab.emoji ? (
         <span aria-hidden className="pointer-events-none w-4 shrink-0 text-center text-[14px] leading-none">
           {tab.emoji}
         </span>
