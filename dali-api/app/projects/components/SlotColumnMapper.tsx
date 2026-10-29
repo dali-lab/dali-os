@@ -15,6 +15,13 @@
 // not a component change.
 import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import { mappingSaveStatus, sameDraftCols } from "~/projects/lib/slot-mapper-state";
+import { defaultStatusMap } from "~/projects/lib/intent-form-interpreter";
+import {
+  INTENT_STATUSES,
+  INTENT_STATUS_LABELS,
+  isIntentStatus,
+  type IntentStatusValue,
+} from "~/projects/lib/intent-status";
 import { useFetcher } from "react-router";
 import {
   DndContext,
@@ -52,6 +59,7 @@ type FormQuestion = {
   label: string;
   type: string;
   referenceSource?: string;
+  options?: string[];
 };
 
 // One editable column in the builder. `role` is the meaning it carries
@@ -67,6 +75,7 @@ type DraftCol = {
   termId?: string;
   label: string;
   hidden: boolean;
+  statusMap?: Record<string, IntentStatusValue>;
 };
 
 let _uid = 0;
@@ -168,6 +177,7 @@ export function SlotColumnMapper({
         termId: e.termId,
         label: e.label,
         hidden: e.hidden === true,
+        ...(e.statusMap ? { statusMap: e.statusMap } : {}),
       }));
   }, [mapping, slot, slotRoles]);
 
@@ -306,6 +316,7 @@ export function SlotColumnMapper({
           ...common,
           source: "question",
           questionKey: c.questionKey,
+          ...statusMapFor(c),
         });
       }
     });
@@ -392,7 +403,7 @@ export function SlotColumnMapper({
             : [];
         }
         return c.questionKey
-          ? [{ ...common, source: "question", questionKey: c.questionKey }]
+          ? [{ ...common, source: "question", questionKey: c.questionKey, ...statusMapFor(c) }]
           : [];
       }),
     }),
@@ -483,7 +494,14 @@ export function SlotColumnMapper({
                     ariaLabel={`Question for ${c.label}`}
                     value={c.questionKey}
                     disabled={saving}
-                    onChange={(v) => patch(c.uid, { questionKey: v })}
+                    onChange={(v) =>
+                      patch(c.uid, {
+                        questionKey: v,
+                        ...(c.role === "intent-status"
+                          ? { statusMap: defaultStatusMap(questions.find((q) => q.key === v)?.options ?? []) }
+                          : {}),
+                      })
+                    }
                     options={[
                       { value: "", label: "— Pick a question —" },
                       ...questions.map((q) => ({
@@ -532,6 +550,16 @@ export function SlotColumnMapper({
                       Remove
                     </button>
                   </div>
+                )}
+
+                {c.role === "intent-status" && c.questionKey && (
+                  <StatusAnswerMap
+                    options={questions.find((q) => q.key === c.questionKey)?.options ?? []}
+                    statusMap={c.statusMap ?? {}}
+                    canManage={canManage}
+                    disabled={saving}
+                    onChange={(statusMap) => patch(c.uid, { statusMap })}
+                  />
                 )}
               </>
               )}
@@ -669,6 +697,74 @@ function SortableColRow({
       } ${isDragging ? "opacity-50" : ""}`}
     >
       {children(dragHandleProps)}
+    </div>
+  );
+}
+
+function statusMapFor(c: DraftCol): { statusMap?: Record<string, IntentStatusValue> } {
+  return c.role === "intent-status" && c.statusMap && Object.keys(c.statusMap).length > 0
+    ? { statusMap: c.statusMap }
+    : {};
+}
+
+function StatusAnswerMap({
+  options,
+  statusMap,
+  canManage,
+  disabled,
+  onChange,
+}: {
+  options: string[];
+  statusMap: Record<string, IntentStatusValue>;
+  canManage: boolean;
+  disabled: boolean;
+  onChange: (next: Record<string, IntentStatusValue>) => void;
+}) {
+  if (options.length === 0) {
+    return (
+      <p className="lg:col-span-full text-xs text-muted-foreground">
+        This question has no answer options, so answers must be a status name:{" "}
+        {INTENT_STATUSES.join(", ")}.
+      </p>
+    );
+  }
+  const unmapped = options.filter((o) => !statusMap[o]).length;
+  const set = (option: string, value: string) => {
+    const next = { ...statusMap };
+    if (isIntentStatus(value)) next[option] = value;
+    else delete next[option];
+    onChange(next);
+  };
+  return (
+    <div className="lg:col-span-full flex flex-col gap-1.5 rounded-md bg-muted/40 px-3 py-2">
+      <div className="text-xs text-muted-foreground">What each answer means</div>
+      {options.map((o) => (
+        <div key={o} className="grid grid-cols-[minmax(0,1fr)_11rem] items-center gap-2">
+          <span className="min-w-0 truncate text-sm text-foreground">{o}</span>
+          {canManage ? (
+            <Select
+              ariaLabel={`Status for ${o}`}
+              value={statusMap[o] ?? ""}
+              disabled={disabled}
+              onChange={(v) => set(o, v)}
+              options={[
+                { value: "", label: "Pick a status" },
+                ...INTENT_STATUSES.map((st) => ({ value: st, label: INTENT_STATUS_LABELS[st] })),
+              ]}
+              buttonClassName="min-w-0 w-full px-2 py-1 text-sm border border-border rounded-md bg-background text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+            />
+          ) : (
+            <span className="text-sm text-muted-foreground">
+              {statusMap[o] ? INTENT_STATUS_LABELS[statusMap[o]] : "Not set"}
+            </span>
+          )}
+        </div>
+      ))}
+      {unmapped > 0 && (
+        <p className="text-xs text-os-amber">
+          {unmapped === 1 ? "1 answer has" : `${unmapped} answers have`} no status, so those responses won't count.
+        </p>
+      )}
     </div>
   );
 }
