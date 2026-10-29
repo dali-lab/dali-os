@@ -8,21 +8,9 @@
 // (no DB/HTTP) so it's exhaustively unit-testable.
 
 import type { ColumnMapping } from "./slot-roles";
+import { INTENT_STATUSES, type IntentStatusValue } from "./intent-status";
 
-export type IntentStatusValue =
-  | "Returning"
-  | "Off"
-  | "Graduating"
-  | "Leave"
-  | "Unsure";
-
-const STATUSES: IntentStatusValue[] = [
-  "Returning",
-  "Off",
-  "Graduating",
-  "Leave",
-  "Unsure",
-];
+export type { IntentStatusValue };
 
 // Accepts the canonical enum value, or a few human option labels a flexible
 // form might use, mapped onto the enum. Anything else is rejected (the form
@@ -38,10 +26,13 @@ const LABEL_ALIASES: Record<string, IntentStatusValue> = {
   unsure: "Unsure",
 };
 
-function coerceStatus(v: unknown): IntentStatusValue | null {
+function coerceStatus(v: unknown, statusMap?: Record<string, IntentStatusValue>): IntentStatusValue | null {
   if (typeof v !== "string") return null;
   const trimmed = v.trim();
-  if ((STATUSES as string[]).includes(trimmed)) return trimmed as IntentStatusValue;
+  const mapped =
+    statusMap?.[v] ?? Object.entries(statusMap ?? {}).find(([answer]) => answer.trim() === trimmed)?.[1];
+  if (mapped) return mapped;
+  if ((INTENT_STATUSES as string[]).includes(trimmed)) return trimmed as IntentStatusValue;
   return LABEL_ALIASES[trimmed.toLowerCase()] ?? null;
 }
 
@@ -93,7 +84,7 @@ export function interpretIntentForm(
     const raw = answers[e.questionKey];
     // An unanswered optional term is simply skipped (no row written).
     if (raw == null || (typeof raw === "string" && raw.trim() === "")) continue;
-    const status = coerceStatus(raw);
+    const status = coerceStatus(raw, e.statusMap);
     if (!status) {
       return {
         ok: false,
@@ -133,4 +124,15 @@ export function planIntentResync(
     else failed += 1;
   }
   return { sets, failed };
+}
+
+// Prefills the answer-to-status picker: options that already read as a
+// status (by name or a known label) start mapped, the rest start blank.
+export function defaultStatusMap(options: string[]): Record<string, IntentStatusValue> {
+  const out: Record<string, IntentStatusValue> = {};
+  for (const o of options) {
+    const s = coerceStatus(o);
+    if (s) out[o] = s;
+  }
+  return out;
 }

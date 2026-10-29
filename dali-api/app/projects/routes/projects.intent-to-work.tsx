@@ -133,6 +133,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     label: string;
     type: string;
     referenceSource?: string;
+    options?: string[];
   }[] = [];
   // Submissions always record; a mapping problem just means status columns
   // can't feed IntentToWork / render. Advisory, not a block.
@@ -149,6 +150,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       label: q.data.label,
       type: q.type,
       referenceSource: q.data.referenceSource,
+      options: q.data.options,
     }));
     const check = validateMapping("intent-to-work", qs, binding.mapping);
     if (!check.ok) mappingWarning = check.reason;

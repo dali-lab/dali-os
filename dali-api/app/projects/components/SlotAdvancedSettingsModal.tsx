@@ -31,6 +31,7 @@ type FormQuestion = {
   label: string;
   type: string;
   referenceSource?: string;
+  options?: string[];
 };
 
 export function SlotAdvancedSettingsModal({
