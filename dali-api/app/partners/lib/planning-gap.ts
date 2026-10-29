@@ -1,3 +1,5 @@
+import type { ColumnMapping } from "~/projects/lib/slot-roles";
+
 export type PlanningSource = "renewing" | "new";
 
 export type PlanningState =
@@ -180,4 +182,27 @@ export function projectToPlanningItem(p: ProjectPlanningInput): PlanningItem | n
   return p.inPreviousTerm && has(p.previousTermSpots)
     ? { ...base, source: "renewing", state: "Undecided", spotsByDomain: p.previousTermSpots }
     : null;
+}
+
+export type IntentSetup =
+  | { kind: "ready" }
+  | { kind: "no-form" }
+  | { kind: "unmapped"; submissions: number }
+  | { kind: "no-statuses"; submissions: number }
+  | { kind: "no-responses" };
+
+// The planning term's own staffing cycle collects its intent, so a status
+// column with no term set means this term.
+export function intentSetupState(input: {
+  bound: boolean;
+  mapping: ColumnMapping | null;
+  submissions: number;
+  replied: number;
+}): IntentSetup {
+  if (input.replied > 0) return { kind: "ready" };
+  if (!input.bound) return { kind: "no-form" };
+  const mapped = input.mapping?.entries.some((e) => e.role === "intent-status") ?? false;
+  if (!mapped) return { kind: "unmapped", submissions: input.submissions };
+  if (input.submissions > 0) return { kind: "no-statuses", submissions: input.submissions };
+  return { kind: "no-responses" };
 }

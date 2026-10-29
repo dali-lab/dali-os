@@ -109,3 +109,28 @@ export function interpretIntentForm(
   // manager fixes them.
   return { ok: true, rows };
 }
+
+export type IntentResyncPlan = {
+  sets: { userId: string; rows: RawIntent[] }[];
+  failed: number;
+};
+
+// Saving or changing the mapping re-reads every submission already in the
+// cycle, so responses that came in before the status question was mapped
+// still count.
+export function planIntentResync(
+  submissions: { userId: string; answers: unknown }[],
+  mapping: ColumnMapping,
+  cycleTermIds: string[],
+  cycleTermId: string | null,
+): IntentResyncPlan {
+  const sets: IntentResyncPlan["sets"] = [];
+  let failed = 0;
+  for (const s of submissions) {
+    const answers = s.answers && typeof s.answers === "object" ? (s.answers as Record<string, unknown>) : {};
+    const result = interpretIntentForm(answers, mapping, cycleTermIds, cycleTermId);
+    if (result.ok) sets.push({ userId: s.userId, rows: result.rows });
+    else failed += 1;
+  }
+  return { sets, failed };
+}

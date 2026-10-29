@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { interpretIntentForm } from "../intent-form-interpreter";
+import { interpretIntentForm, planIntentResync } from "../intent-form-interpreter";
 import type { ColumnMapping } from "../slot-roles";
 
 function m(entries: ColumnMapping["entries"]): ColumnMapping {
@@ -133,5 +133,56 @@ describe("cycle-term status columns", () => {
     expect(
       interpretIntentForm({ "q-status": "Off" }, fixed, ["t-27w"], "t-27w").ok,
     ).toBe(false);
+  });
+});
+
+describe("planIntentResync", () => {
+  const mapping = m([{ source: "question", questionKey: "status", role: "intent-status", label: "Status" }]);
+
+  it("turns every existing submission into rows for the cycle's term", () => {
+    expect(
+      planIntentResync(
+        [
+          { userId: "ada", answers: { status: "Returning" } },
+          { userId: "grace", answers: { status: "Off" } },
+        ],
+        mapping,
+        ["t27w"],
+        "t27w",
+      ),
+    ).toEqual({
+      sets: [
+        { userId: "ada", rows: [{ termId: "t27w", status: "Returning" }] },
+        { userId: "grace", rows: [{ termId: "t27w", status: "Off" }] },
+      ],
+      failed: 0,
+    });
+  });
+
+  it("clears a member's rows when they left the status unanswered", () => {
+    expect(planIntentResync([{ userId: "ada", answers: {} }], mapping, ["t27w"], "t27w")).toEqual({
+      sets: [{ userId: "ada", rows: [] }],
+      failed: 0,
+    });
+  });
+
+  it("counts answers that don't fit the mapping as failed and leaves them out", () => {
+    expect(
+      planIntentResync(
+        [
+          { userId: "ada", answers: { status: "Maybe later" } },
+          { userId: "grace", answers: { status: "Returning" } },
+        ],
+        mapping,
+        ["t27w"],
+        "t27w",
+      ),
+    ).toEqual({ sets: [{ userId: "grace", rows: [{ termId: "t27w", status: "Returning" }] }], failed: 1 });
+  });
+
+  it("treats non-object answers as unanswered", () => {
+    expect(planIntentResync([{ userId: "ada", answers: null }], mapping, ["t27w"], "t27w").sets).toEqual([
+      { userId: "ada", rows: [] },
+    ]);
   });
 });

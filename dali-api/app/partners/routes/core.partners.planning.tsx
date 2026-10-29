@@ -7,7 +7,7 @@ import { isCore } from "~/lib/roles";
 import { PartnerCrmNav } from "../components/PartnerCrmNav";
 import { PlanningTable } from "../components/PlanningTable";
 import { loadPlanningData } from "../lib/planning-gap.server";
-import { buildPlanningGap } from "../lib/planning-gap";
+import { buildPlanningGap, type IntentSetup } from "../lib/planning-gap";
 import { TermFilter } from "~/components/TermFilter";
 import { Toggle } from "~/components/ui/Toggle";
 import { Tooltip } from "~/components/ui/floating";
@@ -41,6 +41,7 @@ export default function PartnersPlanning() {
       }),
     [data, includePotential],
   );
+  const termCode = data.terms.find((t) => t.id === data.termId)?.code ?? "this term";
   const termHref = data.termId ? `/core/intent-to-work?term=${data.termId}` : "/core/intent-to-work";
 
   return (
@@ -78,9 +79,9 @@ export default function PartnersPlanning() {
 
       {!data.termId ? (
         <div className="rounded-os-card bg-os-card p-5 text-sm text-muted-foreground">No terms exist yet.</div>
-      ) : !data.hasIntentData ? (
+      ) : data.intentSetup.kind !== "ready" ? (
         <div className="rounded-os-card bg-os-card p-5 text-sm text-muted-foreground">
-          No intent to work responses for this term yet.{" "}
+          {intentSetupMessage(data.intentSetup, termCode)}{" "}
           <Link to={termHref} className="text-foreground underline">
             Open intent to work
           </Link>
@@ -90,4 +91,20 @@ export default function PartnersPlanning() {
       )}
     </div>
   );
+}
+
+function intentSetupMessage(setup: Exclude<IntentSetup, { kind: "ready" }>, termCode: string): string {
+  const responses = (n: number) => `${n} ${n === 1 ? "response" : "responses"}`;
+  switch (setup.kind) {
+    case "no-form":
+      return `No intent to work form is bound for ${termCode}. Bind one in its settings.`;
+    case "unmapped":
+      return setup.submissions > 0
+        ? `${responses(setup.submissions)} for ${termCode}, but the form's status question isn't mapped. Map it in settings and save.`
+        : `The ${termCode} intent to work form's status question isn't mapped. Map it in settings and save.`;
+    case "no-statuses":
+      return `${responses(setup.submissions)} for ${termCode}, but none answered the mapped status question.`;
+    case "no-responses":
+      return `No intent to work responses for ${termCode} yet.`;
+  }
 }
