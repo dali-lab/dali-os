@@ -5,7 +5,7 @@ import { requireAuth } from "~/lib/auth";
 import { hasCycleAccess } from "~/lib/roles";
 import { parseJson } from "~/lib/validate";
 // import { provisionZoomMeeting, deprovisionZoomMeeting } from "~/lib/zoom"; // S2S Zoom not configured yet
-import { provisionInterviewMeet, deprovisionInterviewMeet } from "~/hiring/lib/interview-meet";
+import { provisionInterviewMeet, deprovisionInterviewMeet, ensureInterviewMeetUrl } from "~/hiring/lib/interview-meet";
 import { sendLocationChangeEmails } from "~/hiring/lib/interview-emails";
 import { createRoomBooking } from "~/lib/rooms.server";
 import { releaseInterviewRoom } from "~/hiring/lib/scheduling";
@@ -118,6 +118,7 @@ export async function action({ request, params }: Route.ActionArgs) {
       where: { id: params.id },
       include: { room: { select: { id: true, name: true } } },
     });
+    if (fresh && !fresh.roomId) fresh.videoUrl = await ensureInterviewMeetUrl(fresh);
 
     // Best-effort: notify applicant + interviewers of location change
     sendLocationChangeEmails(interview.id, interview.domainApplicationId).catch(() => {});

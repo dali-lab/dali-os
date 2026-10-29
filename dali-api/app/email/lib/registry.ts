@@ -63,7 +63,7 @@ const INTERVIEW_SAMPLE = {
   domain: "Engineering",
   time: "Tuesday, April 8 at 2:00 PM ET",
   location: "Pod Appa, DALI Lab",
-  meetingUrl: "https://dartmouth.zoom.us/j/000000",
+  meetingUrl: "https://meet.google.com/abc-defg-hij",
 };
 
 export const EMAIL_TEMPLATES = {
