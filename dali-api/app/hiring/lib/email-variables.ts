@@ -58,12 +58,14 @@ export const notificationSlot = (t: NotificationSlotType): TemplateSlot => `noti
 // that all paths populate — so leads can rely on the listed vars rendering
 // without a content drift on some paths.
 export const TEMPLATE_VARIABLES: Record<TemplateSlot, readonly TemplateVariableName[]> = {
-  // Decision emails — api.decisions.$id.release passes firstName + domain.
+  // Decision emails — api.decisions.$id.release passes firstName + domain,
+  // plus decisionEmailVars (decision-email-vars.ts) for Accepted/Waitlisted.
+  // acceptFromWaitlist reaches Accepted with the same set.
   "decision:Rejected": ["firstName", "domain"],
   "decision:InvitedToInterview": ["firstName", "domain"],
   [LATER_INTERVIEW_INVITE_SLOT]: ["firstName", "domain"],
-  "decision:Accepted": ["firstName", "domain"],
-  "decision:Waitlisted": ["firstName", "domain"],
+  "decision:Accepted": ["firstName", "domain", "startTerm", "respondBy"],
+  "decision:Waitlisted": ["firstName", "domain", "respondBy"],
 
   // Waitlist removal — removeFromWaitlist passes firstName + domain.
   [CONTINUED_INTEREST_SLOT]: ["firstName", "domain"],

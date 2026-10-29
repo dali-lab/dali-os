@@ -82,6 +82,7 @@ import { reassignCandidates } from "~/hiring/lib/interviewer-pool";
 import { Checkbox } from "~/components/ui/Checkbox";
 import { Toggle } from "~/components/ui/Toggle";
 import { DateField } from "~/components/ui/DateField";
+import { decisionEmailVars, type DecisionEmailDates } from "~/hiring/lib/decision-email-vars";
 import { useToast } from "~/components/ui/toast";
 import { useConfirmSubmit, useDialog } from "~/components/ui/dialog";
 import { AlertTriangle, Trash2, Plus, CheckCircle, ArrowRight, X, Eye, CheckCircle2, CircleDot, AlertCircle } from 'lucide-react'
@@ -361,7 +362,12 @@ export async function loader({ request, params }: Route.LoaderArgs) {
             include: {
               domainApplication: {
                 include: {
-                  application: { include: { user: { select: { firstName: true, lastName: true, dartmouthEmail: true, netId: true } } } },
+                  application: {
+                    include: {
+                      user: { select: { firstName: true, lastName: true, dartmouthEmail: true, netId: true } },
+                      startTerm: { select: { code: true } },
+                    },
+                  },
                   domain: { select: { name: true } },
                 },
               },
@@ -725,6 +731,17 @@ export async function action({ request, params }: Route.ActionArgs) {
     // disturbs an active extension. The open date is fixed once applications open.
     if (openRaw !== ymd(before.openDate) && (before.statusUpdates[0]?.newStatus ?? "Draft") === "Draft") {
       await applyOpenDate(openRaw);
+    }
+    // Absent fields = a card rendered without them (in-app decision cycles).
+    const respondBy: { offerRespondBy?: Date | null; waitlistRespondBy?: Date | null } = {};
+    for (const key of ["offerRespondBy", "waitlistRespondBy"] as const) {
+      const raw = formData.get(key);
+      if (typeof raw !== "string") continue;
+      const [y, m, d] = raw.split("-").map(Number);
+      respondBy[key] = raw ? zonedDayEndUtc(y, m, d, APPLICATION_TZ) : null;
+    }
+    if (Object.keys(respondBy).length > 0) {
+      await prisma.applicationCycle.update({ where: { id: params.id }, data: respondBy });
     }
     if (closeRaw !== ymd(before.originalCloseDate ?? before.closeDate) && (openRaw || closeRaw || before.closeDate)) {
       const notice = await applyCloseDate(closeRaw);
@@ -2120,6 +2137,14 @@ export default function HiringLeadCycleDetails() {
             decision={d}
             email={loaderData?.hiringEmails?.[slotFor(d)] ?? null}
             slot={slotFor(d)}
+            dates={{
+              startTermCode:
+                d.domainApplication.application.startTerm?.code ??
+                (loaderData?.termOptions ?? []).find((t: any) => t.id === cycle?.termId)?.code ??
+                null,
+              offerRespondBy: cycle?.offerRespondBy ? new Date(cycle.offerRespondBy) : null,
+              waitlistRespondBy: cycle?.waitlistRespondBy ? new Date(cycle.waitlistRespondBy) : null,
+            }}
             onClose={() => setPreviewDecisionId(null)}
           />
         )
@@ -2292,6 +2317,9 @@ export default function HiringLeadCycleDetails() {
             startTermIds={cycle?.startTermIds ?? []}
             startTermCandidates={loaderData?.startTermCandidates ?? []}
             showStartTerms={cycle?.applicants === "Students"}
+            offerRespondBy={cycle?.offerRespondBy ?? null}
+            waitlistRespondBy={cycle?.waitlistRespondBy ?? null}
+            showRespondBy={cycle?.applicants !== "LabMembers"}
           />
           </NavSection>
 
@@ -3184,11 +3212,12 @@ function PreviewLintWarning({ unknown, unfilled }: { unknown: string[]; unfilled
   );
 }
 
-function DecisionEmailPreviewModal({ decision, email, slot, onClose }: {
+function DecisionEmailPreviewModal({ decision, email, slot, dates, onClose }: {
   decision: any;
   /** The decision's shared email, or null when none is written. */
   email: { subject: string; body: string } | null;
   slot: TemplateSlot;
+  dates: DecisionEmailDates;
   onClose: () => void;
 }) {
   const firstName = decision.domainApplication.application.user.firstName ?? ''
@@ -3196,7 +3225,9 @@ function DecisionEmailPreviewModal({ decision, email, slot, onClose }: {
     decision.domainApplication.domain?.name ??
     ''
   const tmpl = email
-  const rendered = tmpl ? renderEmail(tmpl, { firstName, domain }) : null
+  const rendered = tmpl
+    ? renderEmail(tmpl, { firstName, domain, ...decisionEmailVars(decision.type, dates) })
+    : null
   const lint = tmpl
     ? (() => {
         const subj = lintTemplate(tmpl.subject, slot)

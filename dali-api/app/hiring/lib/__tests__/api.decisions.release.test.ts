@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterAll, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, afterAll, vi } from "vitest";
 
 vi.mock("~/lib/db");
 vi.mock("~/lib/auth", () => ({
@@ -17,8 +17,15 @@ vi.mock("~/members/lib/membership.server", () => ({
 }));
 vi.mock("~/members/lib/welcome.server", () => ({
   sendWelcome: vi.fn().mockResolvedValue({ notified: true }),
-  onboardingEmailHtml: vi.fn((daliEmail: string | null, tempPassword: string | null = null) =>
-    `<onboarding dali="${daliEmail ?? ""}" pw="${tempPassword ?? ""}"/>`,
+  // Async like the real one: a sync stub is what let a missing `await` ship
+  // "[object Promise]" in place of the onboarding block.
+  onboardingEmailHtml: vi.fn(
+    async (
+      daliEmail: string | null,
+      tempPassword: string | null = null,
+      vars: { startTerm?: string; respondBy?: string } = {},
+    ) =>
+      `<onboarding dali="${daliEmail ?? ""}" pw="${tempPassword ?? ""}" term="${vars.startTerm ?? ""}" by="${vars.respondBy ?? ""}"/>`,
   ),
 }));
 vi.mock("~/members/lib/provisioning.server", () => ({
@@ -89,7 +96,15 @@ function setupFinalDecision(type: "Rejected" | "InvitedToInterview" | "Accepted"
   });
 }
 
-function setupApplicantContext(opts: { domainName?: string | null } = {}) {
+function setupApplicantContext(
+  opts: {
+    domainName?: string | null;
+    startTermCode?: string | null;
+    cycleTermCode?: string | null;
+    offerRespondBy?: Date | null;
+    waitlistRespondBy?: Date | null;
+  } = {},
+) {
   const domainName = opts.domainName === undefined ? "Engineering" : opts.domainName;
   mockPrisma.domainApplication.findUnique.mockResolvedValue({
     id: "da-1",
@@ -97,7 +112,13 @@ function setupApplicantContext(opts: { domainName?: string | null } = {}) {
     application: {
       userId: "applicant-user-id",
       applicationCycleId: CYCLE_ID,
-      applicationCycle: { applicants: "Students" },
+      startTerm: opts.startTermCode ? { code: opts.startTermCode } : null,
+      applicationCycle: {
+        applicants: "Students",
+        term: opts.cycleTermCode ? { code: opts.cycleTermCode } : null,
+        offerRespondBy: opts.offerRespondBy ?? null,
+        waitlistRespondBy: opts.waitlistRespondBy ?? null,
+      },
       user: {
         firstName: "Ada",
         dartmouthEmail: "ada@dartmouth.edu",
@@ -156,6 +177,7 @@ describe("POST /api/hiring/decisions/:id/release", () => {
     // The onboarding block is appended to the Accepted decision email so the
     // member gets a single email (no separate welcome message).
     expect(emailCall.bodyHtml).toContain("<onboarding");
+    expect(emailCall.bodyHtml).not.toContain("[object Promise]");
   });
 
   it("interpolates {{domain}} from domainApplication.domain.name", async () => {
@@ -395,6 +417,7 @@ describe("POST /api/hiring/decisions/:id/release", () => {
     expect(vi.mocked(onboardingEmailHtml)).toHaveBeenCalledWith(
       "ada.lovelace@dali.dartmouth.edu",
       "s3cr3t-temp-pw",
+      {},
     );
 
     // …and it must NOT appear anywhere in the audit metadata.
@@ -435,5 +458,163 @@ describe("POST /api/hiring/decisions/:id/release", () => {
     expect(promoteToMember).toHaveBeenCalledOnce();
     expect(sendWelcome).toHaveBeenCalledOnce();
     errSpy.mockRestore();
+  });
+});
+
+describe("POST /api/hiring/decisions/:id/release — {{startTerm}} and {{respondBy}}", () => {
+  // 11:59:59 PM Eastern, Monday June 8 2026 / Friday January 15 2027.
+  const OFFER_BY = new Date("2026-06-09T03:59:59.999Z");
+  const WAITLIST_BY = new Date("2027-01-16T04:59:59.999Z");
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-06-01T12:00:00Z"));
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  // The decision letter and the appended next-steps block are separate templates.
+  function templates(letter: { subject: string; body: string }, nextStepsBody = "Next steps.") {
+    mockPrisma.emailTemplate.findUnique.mockImplementation(async ({ where }: any) =>
+      where.key === "hiring:onboarding:NextSteps" ? { subject: "Next steps", body: nextStepsBody } : letter,
+    );
+  }
+
+  async function release() {
+    return action({ request: makeRequest(), params: { id: DECISION_ID }, context: {} } as any);
+  }
+
+  function sentEmail() {
+    return mockEnqueue.mock.calls.map((c: any[]) => c[0]).find((a: any) => a.channel === "email");
+  }
+
+  it("fills the applicant's start term and the offer deadline into the Accepted letter", async () => {
+    setupAuth();
+    setupFinalDecision("Accepted");
+    setupApplicantContext({ startTermCode: "27W", cycleTermCode: "26F", offerRespondBy: OFFER_BY });
+    templates({ subject: "Join us in {{startTerm}}", body: "Reply by {{respondBy}}." });
+
+    const res = await release();
+    expect(res.status).toBe(201);
+    expect(sentEmail().subject).toBe("Join us in 27W");
+    expect(sentEmail().bodyHtml).toContain("Reply by Monday, June 8, 2026.");
+  });
+
+  it("falls back to the cycle's term when the applicant didn't pick a start term", async () => {
+    setupAuth();
+    setupFinalDecision("Accepted");
+    setupApplicantContext({ startTermCode: null, cycleTermCode: "26F", offerRespondBy: OFFER_BY });
+    templates({ subject: "Welcome", body: "Starting in {{startTerm}}." });
+
+    await release();
+    expect(sentEmail().bodyHtml).toContain("Starting in 26F.");
+  });
+
+  it("passes the same values to the next-steps block and appends it awaited", async () => {
+    setupAuth();
+    setupFinalDecision("Accepted");
+    setupApplicantContext({ startTermCode: "27W", offerRespondBy: OFFER_BY });
+    templates({ subject: "Welcome", body: "Hi" }, "Deadline {{respondBy}} for {{startTerm}}");
+
+    await release();
+    expect(vi.mocked(onboardingEmailHtml)).toHaveBeenCalledWith(null, null, {
+      startTerm: "27W",
+      respondBy: "Monday, June 8, 2026",
+    });
+    expect(sentEmail().bodyHtml).toContain('term="27W" by="Monday, June 8, 2026"');
+    expect(sentEmail().bodyHtml).not.toContain("[object Promise]");
+  });
+
+  it("fills the waitlist deadline into the Waitlisted letter", async () => {
+    setupAuth();
+    setupFinalDecision("Waitlisted");
+    setupApplicantContext({ offerRespondBy: OFFER_BY, waitlistRespondBy: WAITLIST_BY });
+    templates({ subject: "Waitlist", body: "Opt in by {{respondBy}}." });
+
+    const res = await release();
+    expect(res.status).toBe(201);
+    expect(sentEmail().bodyHtml).toContain("Opt in by Friday, January 15, 2027.");
+  });
+
+  it("refuses an Accepted release whose letter quotes {{respondBy}} when the cycle has no offer date", async () => {
+    setupAuth();
+    setupFinalDecision("Accepted");
+    setupApplicantContext({ startTermCode: "27W" });
+    templates({ subject: "Welcome", body: "Reply by {{respondBy}}." });
+
+    const res = await release();
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toMatch(/no offer response date/);
+    expect(mockPrisma.decision.create).not.toHaveBeenCalled();
+    expect(promoteToMember).not.toHaveBeenCalled();
+    expect(provisionNewMember).not.toHaveBeenCalled();
+    expect(mockEnqueue).not.toHaveBeenCalled();
+  });
+
+  it("refuses when only the next-steps block quotes {{respondBy}}", async () => {
+    setupAuth();
+    setupFinalDecision("Accepted");
+    setupApplicantContext({ startTermCode: "27W" });
+    templates({ subject: "Welcome", body: "Hi {{firstName}}" }, "Accept by {{respondBy}}.");
+
+    const res = await release();
+    expect(res.status).toBe(409);
+    expect(mockPrisma.decision.create).not.toHaveBeenCalled();
+  });
+
+  it("refuses once the offer deadline has passed", async () => {
+    setupAuth();
+    setupFinalDecision("Accepted");
+    setupApplicantContext({ startTermCode: "27W", offerRespondBy: OFFER_BY });
+    templates({ subject: "Welcome", body: "Reply by {{respondBy}}." });
+    vi.setSystemTime(new Date("2026-06-10T12:00:00Z"));
+
+    const res = await release();
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toMatch(/has passed/);
+    expect(mockPrisma.decision.create).not.toHaveBeenCalled();
+  });
+
+  it("refuses an Accepted letter quoting {{startTerm}} when neither the application nor the cycle has a term", async () => {
+    setupAuth();
+    setupFinalDecision("Accepted");
+    setupApplicantContext({ startTermCode: null, cycleTermCode: null, offerRespondBy: OFFER_BY });
+    templates({ subject: "Welcome", body: "Starting in {{startTerm}}." });
+
+    const res = await release();
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toMatch(/\{\{startTerm\}\}/);
+  });
+
+  it("refuses a Waitlisted release quoting {{respondBy}} with no waitlist date, even with an offer date", async () => {
+    setupAuth();
+    setupFinalDecision("Waitlisted");
+    setupApplicantContext({ offerRespondBy: OFFER_BY });
+    templates({ subject: "Waitlist", body: "Opt in by {{respondBy}}." });
+
+    const res = await release();
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toMatch(/no waitlist response date/);
+  });
+
+  it("doesn't check the next-steps block for a Waitlisted release", async () => {
+    setupAuth();
+    setupFinalDecision("Waitlisted");
+    setupApplicantContext({ waitlistRespondBy: WAITLIST_BY });
+    templates({ subject: "Waitlist", body: "Hi" }, "Accept by {{respondBy}}.");
+
+    const res = await release();
+    expect(res.status).toBe(201);
+  });
+
+  it("releases a letter that uses neither token with no dates set", async () => {
+    setupAuth();
+    setupFinalDecision("Accepted");
+    setupApplicantContext();
+    templates({ subject: "Welcome", body: "Hi {{firstName}}" });
+
+    const res = await release();
+    expect(res.status).toBe(201);
   });
 });

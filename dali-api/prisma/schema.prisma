@@ -504,6 +504,12 @@ model ApplicationCycle {
   // resets the close date via the picker. Nullable, no backfill needed.
   originalCloseDate DateTime?
 
+  // Respond-by deadlines the decision emails quote as {{respondBy}}: an
+  // accepted applicant's deadline to accept, and a waitlisted applicant's to
+  // opt in. 11:59 PM Eastern on the chosen day, like closeDate.
+  offerRespondBy    DateTime?
+  waitlistRespondBy DateTime?
+
   // Idempotency marker for the extension-notice blast. Set when the notice
   // is sent; cleared when the extension is removed so re-extending later
   // can re-trigger the notice.
