@@ -8,6 +8,7 @@ import { parseFormDataJson } from "~/lib/safe-json";
 import { canManageStaffing, canViewStaffing, currentTerm } from "~/lib/roles";
 import { prisma } from "~/lib/db";
 import { ensureStaffingCycle } from "../lib/staffing-cycle";
+import { resyncIntentSets } from "../lib/intent-validation";
 import {
   getSlotBinding,
   isGateAudience,
@@ -251,7 +252,8 @@ export async function action({ request }: Route.ActionArgs) {
     );
     if (!result.ok)
       return Response.json({ error: result.error }, { status: 400 });
-    return Response.json({ ok: true });
+    const resync = await resyncIntentSets(cycle.id, mapping as ColumnMapping);
+    return Response.json({ ok: true, ...resync });
   }
 
   if (intent === "set-slot-gate") {

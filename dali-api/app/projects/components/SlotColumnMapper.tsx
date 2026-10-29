@@ -13,7 +13,8 @@
 // per-term status column) the manager uses the role-specific "+ Add" button.
 // Slot-parameterised via SLOT_ROLES, so adding a slot is a registry change,
 // not a component change.
-import { useMemo, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
+import { mappingSaveStatus, sameDraftCols } from "~/projects/lib/slot-mapper-state";
 import { useFetcher } from "react-router";
 import {
   DndContext,
@@ -95,6 +96,7 @@ export function SlotColumnMapper({
   mapping,
   cycleTerms,
   canManage,
+  onDirtyChange,
 }: {
   slot: Slot;
   questions: FormQuestion[];
@@ -102,6 +104,7 @@ export function SlotColumnMapper({
   // Terms this cycle collects (only used by the per-term intent-status role).
   cycleTerms: { id: string; code: string }[];
   canManage: boolean;
+  onDirtyChange?: (dirty: boolean) => void;
 }) {
   const fetcher = useFetcher();
   const saving = fetcher.state !== "idle";
@@ -169,7 +172,17 @@ export function SlotColumnMapper({
   }, [mapping, slot, slotRoles]);
 
   const [cols, setCols] = useState<DraftCol[]>(initial);
-  const dirty = JSON.stringify(cols) !== JSON.stringify(initial);
+  // A save drops empty columns and trims labels, so adopt the saved shape.
+  // Keyed on content: any other action revalidates the loader with an equal
+  // but new mapping object, which must not wipe unsaved edits.
+  const savedKey = JSON.stringify(mapping);
+  useEffect(() => {
+    setCols(initial);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [savedKey]);
+  const dirty = !sameDraftCols(cols, initial);
+  useEffect(() => onDirtyChange?.(dirty), [dirty, onDirtyChange]);
+  const saveStatus = mappingSaveStatus({ saving, dirty, result: fetcher.data });
 
   function patch(uid: string, p: Partial<DraftCol>) {
     setCols((cs) => cs.map((c) => (c.uid === uid ? { ...c, ...p } : c)));
@@ -593,15 +606,28 @@ export function SlotColumnMapper({
           >
             + Extra column
           </button>
+          <span className="ml-auto flex items-center gap-3">
+            {saveStatus && (
+              <span
+                role="status"
+                className={
+                  saveStatus.tone === "warn"
+                    ? "text-xs text-os-amber"
+                    : "text-xs text-muted-foreground"
+                }
+              >
+                {saveStatus.text}
+              </span>
+            )}
           <Button
             variant="primary"
             size="sm"
             onClick={save}
-            disabled={saving || !dirty || missing.length > 0}
-            className="ml-auto"
+            disabled={saving || missing.length > 0}
           >
             {saving ? "Saving…" : "Save columns"}
           </Button>
+          </span>
         </div>
       )}
     </div>
