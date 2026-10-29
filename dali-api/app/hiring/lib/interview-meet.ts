@@ -7,7 +7,7 @@
 // (app/hiring/lib/interview-emails.ts) are still the single invite, now carrying
 // the Meet link.
 //
-// Everything here is best-effort: a missing hiring calendar link or a Google
+// Everything here is best-effort: an unconnected hiring account or a Google
 // error never blocks booking / reschedule / cancel. The zoom*
 // columns and app/lib/zoom.ts (the still-blocked S2S path) are untouched.
 
@@ -19,39 +19,57 @@ import {
   getGoogleEventMeetUrl,
   patchGoogleCalendarEvent,
   type GoogleAttendee,
+  type GoogleCalendarAuth,
 } from "~/lib/google-calendar";
+import { getHiringCalendarSender, noteSenderHealth } from "~/lib/gmail-integration";
+import { getGmailAccessToken } from "~/lib/gmail";
 
-// The shared Google account interview events are hosted on. An admin links it
-// once through the normal calendar-connect flow; we resolve it by email so no
-// extra config table is needed. Override via env for non-DALI deployments.
 const HIRING_CALENDAR_EMAIL =
   process.env.HIRING_CALENDAR_EMAIL ?? "applications@dali.dartmouth.edu";
 
-/** The enabled Google calendar link for the shared hiring account, or null when
- *  it hasn't been connected yet (in which case interviews simply get no Meet
- *  link). */
-export async function getHiringCalendarLink(): Promise<{ id: string } | null> {
-  return prisma.userCalendarLink.findFirst({
-    where: {
-      provider: "Google",
-      enabled: true,
-      externalEmail: HIRING_CALENDAR_EMAIL,
-    },
-    select: { id: true },
-    orderBy: { linkedAt: "asc" },
-  });
+function errorMessage(err: unknown): string | null {
+  return err == null ? null : err instanceof Error ? err.message : String(err);
 }
 
 // A Google failure on the shared hiring account (a revoked token, a lost
 // Calendar scope) would otherwise only reach the server log while every online
-// interview quietly went out without a link. The link's syncError is what the
-// calendar settings cards already render, so the admin who owns that account
-// sees it there; a later success clears it.
-async function recordHiringLinkHealth(linkId: string, err: unknown): Promise<void> {
-  const syncError = err == null ? null : err instanceof Error ? err.message : String(err);
+// interview quietly went out without a link. The error lands on whichever row
+// supplied the token, where its admin card already renders syncError; a later
+// success clears it.
+async function recordLinkHealth(linkId: string, err: unknown): Promise<void> {
+  const syncError = errorMessage(err);
   await prisma.userCalendarLink
     .update({ where: { id: linkId }, data: { syncError, ...(syncError ? {} : { lastSyncedAt: new Date() }) } })
     .catch(() => {});
+}
+
+export type HiringCalendar = {
+  auth: GoogleCalendarAuth;
+  recordHealth: (err: unknown) => Promise<void>;
+};
+
+// The Hiring sender (Admin → Email senders) already signs in as applications@
+// with Calendar access, so it is the account admins actually connect. A
+// calendar link on that address is the older route and still works.
+export async function getHiringCalendar(): Promise<HiringCalendar | null> {
+  const sender = await getHiringCalendarSender(HIRING_CALENDAR_EMAIL);
+  if (sender) {
+    const recordHealth = (err: unknown) => noteSenderHealth(sender.id, errorMessage(err));
+    try {
+      return { auth: { accessToken: await getGmailAccessToken(sender.refreshToken) }, recordHealth };
+    } catch (err) {
+      console.error("Failed to refresh the Hiring sender token for Meet:", err);
+      await recordHealth(err);
+      return null;
+    }
+  }
+  const link = await prisma.userCalendarLink.findFirst({
+    where: { provider: "Google", enabled: true, externalEmail: HIRING_CALENDAR_EMAIL },
+    select: { id: true },
+    orderBy: { linkedAt: "asc" },
+  });
+  if (!link) return null;
+  return { auth: { linkId: link.id }, recordHealth: (err) => recordLinkHealth(link.id, err) };
 }
 
 const MEET_INCLUDE = {
@@ -119,8 +137,8 @@ function meetAttendees(interview: InterviewWithMeet): GoogleAttendee[] {
 // is connected, the interview is Online, and it hasn't already been provisioned. Await before sending the invite emails so they
 // re-read the row with the link present.
 export async function provisionInterviewMeet(interviewId: string): Promise<void> {
-  const link = await getHiringCalendarLink();
-  if (!link) return;
+  const cal = await getHiringCalendar();
+  if (!cal) return;
   try {
     const interview = await prisma.interview.findUnique({
       where: { id: interviewId },
@@ -135,7 +153,7 @@ export async function provisionInterviewMeet(interviewId: string): Promise<void>
 
     const domainName = interview.domainApplication.domain?.name ?? "DALI Lab";
     const result = await createGoogleCalendarEvent({
-      linkId: link.id,
+      ...cal.auth,
       summary: `DALI Interview — ${domainName}`,
       startIso: interview.startTime.toISOString(),
       endIso: interview.endTime.toISOString(),
@@ -157,10 +175,10 @@ export async function provisionInterviewMeet(interviewId: string): Promise<void>
         videoProvider: "GoogleMeet",
       },
     });
-    await recordHiringLinkHealth(link.id, null);
+    await cal.recordHealth(null);
   } catch (err) {
     console.error("Failed to provision interview Meet:", err);
-    await recordHiringLinkHealth(link.id, err);
+    await cal.recordHealth(err);
   }
 }
 
@@ -173,20 +191,20 @@ export async function ensureInterviewMeetUrl(interview: {
   videoUrl: string | null;
 }): Promise<string | null> {
   if (interview.videoUrl || !interview.calendarEventId) return interview.videoUrl;
-  const link = await getHiringCalendarLink();
-  if (!link) return null;
+  const cal = await getHiringCalendar();
+  if (!cal) return null;
   try {
-    const meetUrl = await getGoogleEventMeetUrl({ linkId: link.id, eventId: interview.calendarEventId });
+    const meetUrl = await getGoogleEventMeetUrl({ ...cal.auth, eventId: interview.calendarEventId });
     if (!meetUrl) return null;
     await prisma.interview.update({
       where: { id: interview.id },
       data: { videoUrl: meetUrl, videoProvider: "GoogleMeet" },
     });
-    await recordHiringLinkHealth(link.id, null);
+    await cal.recordHealth(null);
     return meetUrl;
   } catch (err) {
     console.error("Failed to read interview Meet link:", err);
-    await recordHiringLinkHealth(link.id, err);
+    await cal.recordHealth(err);
     return null;
   }
 }
@@ -199,19 +217,19 @@ export async function deprovisionInterviewMeet(interview: {
   calendarEventId: string | null;
 }): Promise<void> {
   if (!interview.calendarEventId) return;
-  const link = await getHiringCalendarLink();
+  const cal = await getHiringCalendar();
   try {
-    if (link) {
-      await deleteGoogleCalendarEvent({ linkId: link.id, eventId: interview.calendarEventId });
+    if (cal) {
+      await deleteGoogleCalendarEvent({ ...cal.auth, eventId: interview.calendarEventId });
     }
     await prisma.interview.update({
       where: { id: interview.id },
       data: { calendarEventId: null, videoUrl: null, videoProvider: null },
     });
-    if (link) await recordHiringLinkHealth(link.id, null);
+    if (cal) await cal.recordHealth(null);
   } catch (err) {
     console.error("Failed to deprovision interview Meet:", err);
-    if (link) await recordHiringLinkHealth(link.id, err);
+    if (cal) await cal.recordHealth(err);
   }
 }
 
@@ -224,18 +242,18 @@ export async function syncInterviewMeetAttendees(interviewId: string): Promise<v
     include: MEET_INCLUDE,
   });
   if (!interview?.calendarEventId) return;
-  const link = await getHiringCalendarLink();
-  if (!link) return;
+  const cal = await getHiringCalendar();
+  if (!cal) return;
   try {
     await patchGoogleCalendarEvent({
-      linkId: link.id,
+      ...cal.auth,
       eventId: interview.calendarEventId,
       attendees: meetAttendees(interview),
       sendUpdates: "none",
     });
-    await recordHiringLinkHealth(link.id, null);
+    await cal.recordHealth(null);
   } catch (err) {
     console.error("Failed to sync interview Meet attendees:", err);
-    await recordHiringLinkHealth(link.id, err);
+    await cal.recordHealth(err);
   }
 }

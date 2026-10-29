@@ -13,7 +13,7 @@ import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { isCore, isAdmin } from "~/lib/roles";
 import { listSenderIntegrations } from "~/lib/gmail-integration";
-import { GMAIL_READONLY_SCOPE } from "~/lib/google-oauth";
+import { GMAIL_READONLY_SCOPE, GOOGLE_CALENDAR_SCOPE } from "~/lib/google-oauth";
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
 import { Pill, UsageGauge, usageTone, type Tone } from "~/admin/components/console-ui";
@@ -79,6 +79,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       lastUsedAt: row?.lastUsedAt?.toISOString() ?? null,
       syncError: row?.syncError ?? null,
       readsInbox: row?.scopes.includes(GMAIL_READONLY_SCOPE) ?? false,
+      hostsMeet: row?.scopes.includes(GOOGLE_CALENDAR_SCOPE) ?? false,
       dailyCap,
       todayCount,
       capped: dailyCap != null && todayCount >= dailyCap,
@@ -269,11 +270,17 @@ function SenderRow({ sender: s }: { sender: SenderInfo }) {
           <p className="mt-1 text-xs text-os-muted">
             Connected {formatTime(s.linkedAt)} · last used {formatTime(s.lastUsedAt)}
             {s.readsInbox ? " · reads inbox" : ""}
+            {s.purpose === "Hiring" && s.hostsMeet ? " · hosts interview Meet links" : ""}
           </p>
         )}
         {s.syncError && (
           <p className="mt-2 break-all rounded-lg bg-destructive/10 px-3 py-2 font-mono text-xs text-destructive">
             {s.syncError}
+          </p>
+        )}
+        {s.sendAsEmail && s.purpose === "Hiring" && !s.hostsMeet && (
+          <p className="mt-2 text-xs text-os-grey">
+            Reconnect to grant Calendar access. Online interviews get their Google Meet links from this account.
           </p>
         )}
         {s.sendAsEmail && s.purpose === "Hiring" && !s.readsInbox && (
