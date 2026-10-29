@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { redirect, useLoaderData } from "react-router";
+import { redirect, useLoaderData, useSearchParams } from "react-router";
 import type { Route } from "./+types/projects.project-bids";
 import { useFilteredList } from "~/hooks/useFilteredList";
 import { requireAuth, redirectNonMemberToPortal } from "~/lib/auth";
@@ -15,6 +15,7 @@ import {
   setSlotBinding,
   setSlotColumnMapping,
   setSlotGate,
+  setSlotPublished,
 } from "../lib/form-slots";
 import { SubmissionFilters } from "../components/SubmissionFilters";
 import { ColumnFilters, useColumnFilters } from "../components/ColumnFilters";
@@ -263,6 +264,17 @@ export async function action({ request }: Route.ActionArgs) {
     return Response.json({ ok: true });
   }
 
+  if (intent === "set-slot-published") {
+    const result = await setSlotPublished(
+      cycle.id,
+      SLOT,
+      form.get("published") === "1",
+    );
+    if (!result.ok)
+      return Response.json({ error: result.error }, { status: 400 });
+    return Response.json({ ok: true });
+  }
+
   return Response.json({ error: "Unknown intent" }, { status: 400 });
 }
 
@@ -289,7 +301,10 @@ function Loaded({
   data: Extract<Awaited<ReturnType<typeof loader>>, { gate: "ok" }>;
 }) {
   const [domainId, setDomainId] = useState("");
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [searchParams] = useSearchParams();
+  const [settingsOpen, setSettingsOpen] = useState(
+    () => searchParams.get("settings") === "1",
+  );
 
   const columnFilters = useColumnFilters(data.tableColumns);
 
