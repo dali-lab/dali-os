@@ -1,6 +1,6 @@
 // Core ▸ Rooms. The bookable DALI rooms and the iPad door displays. Each iPad
 // hangs between two doors and shows both rooms: it's listed under its own room
-// and names the second. A display is paired by minting a single-use setup code
+// and names the second, and the second room lists it read-only. A display is paired by minting a single-use setup code
 // here and typing it into the iPad, which redeems it for its own token (see
 // app/lib/room-display.server.ts).
 
@@ -86,16 +86,35 @@ export async function loader({ request }: Route.LoaderArgs) {
       description: r.description,
       capacity: r.capacity,
       archived: r.archivedAt !== null,
-      displays: r.displays.map((d) => ({
-        id: d.id,
-        label: d.label,
-        activated: d.activatedAt !== null,
-        lastSeenAt: d.lastSeenAt?.toISOString() ?? null,
-        appVersion: d.appVersion,
-        setupExpired: !d.activatedAt && (!d.setupCodeExpiresAt || d.setupCodeExpiresAt < new Date()),
-        secondRoom: d.secondRoom,
-      })),
+      displays: r.displays.map(toLoaderDisplay),
+      sharedDisplays: rooms.flatMap((home) =>
+        home.id === r.id || home.archivedAt
+          ? []
+          : home.displays
+              .filter((d) => d.secondRoom?.id === r.id)
+              .map((d) => ({ ...toLoaderDisplay(d), homeRoom: { id: home.id, name: home.name } })),
+      ),
     })),
+  };
+}
+
+function toLoaderDisplay(d: {
+  id: string;
+  label: string;
+  activatedAt: Date | null;
+  lastSeenAt: Date | null;
+  appVersion: string | null;
+  setupCodeExpiresAt: Date | null;
+  secondRoom: { id: string; name: string } | null;
+}) {
+  return {
+    id: d.id,
+    label: d.label,
+    activated: d.activatedAt !== null,
+    lastSeenAt: d.lastSeenAt?.toISOString() ?? null,
+    appVersion: d.appVersion,
+    setupExpired: !d.activatedAt && (!d.setupCodeExpiresAt || d.setupCodeExpiresAt < new Date()),
+    secondRoom: d.secondRoom,
   };
 }
 
@@ -430,7 +449,7 @@ function RoomCard({
               Add display
             </button>
           </div>
-          {room.displays.length === 0 ? (
+          {room.displays.length === 0 && room.sharedDisplays.length === 0 ? (
             <p className={chrome.bodyText}>No display paired.</p>
           ) : (
             <ul className="os-item-list">
@@ -443,22 +462,20 @@ function RoomCard({
                     </span>
                   </span>
                   <span className="flex shrink-0 items-center gap-2">
-                    {d.activated ? (
-                      <>
-                        {d.appVersion && (
-                          <span className="text-xs text-muted-foreground" title="App version">
-                            v{d.appVersion}
-                          </span>
-                        )}
-                        <Pill dot="success">Seen {timeAgo(d.lastSeenAt)}</Pill>
-                      </>
-                    ) : d.setupExpired ? (
-                      <Pill dot="danger">Setup code expired</Pill>
-                    ) : (
-                      <Pill dot="warning">Waiting for setup</Pill>
-                    )}
+                    <DisplayStatus display={d} />
                     <IconButton label="Edit display" icon={Pencil} onClick={() => onEditDisplay(d)} />
                     <IconButton label="Remove display" icon={Trash2} onClick={() => revoke(d)} />
+                  </span>
+                </li>
+              ))}
+              {room.sharedDisplays.map((d) => (
+                <li key={d.id} className="os-item-row flex items-center justify-between gap-3">
+                  <span className="min-w-0 truncate text-sm text-foreground">
+                    {d.label}
+                    <span className="text-muted-foreground"> · paired to {d.homeRoom.name}</span>
+                  </span>
+                  <span className="flex shrink-0 items-center gap-2">
+                    <DisplayStatus display={d} />
                   </span>
                 </li>
               ))}
@@ -468,6 +485,23 @@ function RoomCard({
       )}
     </section>
   );
+}
+
+function DisplayStatus({ display: d }: { display: LoaderDisplay }) {
+  if (d.activated) {
+    return (
+      <>
+        {d.appVersion && (
+          <span className="text-xs text-muted-foreground" title="App version">
+            v{d.appVersion}
+          </span>
+        )}
+        <Pill dot="success">Seen {timeAgo(d.lastSeenAt)}</Pill>
+      </>
+    );
+  }
+  if (d.setupExpired) return <Pill dot="danger">Setup code expired</Pill>;
+  return <Pill dot="warning">Waiting for setup</Pill>;
 }
 
 function RoomModal({ room, onClose }: { room: LoaderRoom | "new" | null; onClose: () => void }) {
