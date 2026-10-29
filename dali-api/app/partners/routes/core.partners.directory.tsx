@@ -46,8 +46,6 @@ import {
   filterContactRows,
   filterOrgRows,
   isDirectorySort,
-  listPartnerContactRows,
-  listPartnerOrgRows,
   nextDirectorySort,
   orgInitials,
   sortDirectoryRows,
@@ -57,6 +55,7 @@ import {
   type PartnerContactDirectoryRow,
   type PartnerOrgDirectoryRow,
 } from "../lib/partner-directory";
+import { listPartnerContactRows, listPartnerOrgRows } from "../lib/partner-directory.server";
 import {
   PARTNER_ORG_TYPES,
   PARTNER_ORG_TYPE_LABELS,

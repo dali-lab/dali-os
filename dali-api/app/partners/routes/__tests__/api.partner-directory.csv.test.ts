@@ -3,15 +3,14 @@ vi.mock("~/lib/db", () => ({ prisma: {} }));
 
 vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn(), isNonMember: vi.fn().mockResolvedValue(false) }));
 vi.mock("~/lib/roles", () => ({ isCore: vi.fn() }));
-vi.mock("../../lib/partner-directory", async (orig) => ({
-  ...(await orig<typeof import("../../lib/partner-directory")>()),
+vi.mock("../../lib/partner-directory.server", () => ({
   listPartnerOrgRows: vi.fn(),
   listPartnerContactRows: vi.fn(),
 }));
 
 import { requireAuth } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
-import { listPartnerOrgRows, listPartnerContactRows } from "../../lib/partner-directory";
+import { listPartnerOrgRows, listPartnerContactRows } from "../../lib/partner-directory.server";
 import { loader } from "../api.partner-directory.csv";
 
 function get(url: string) {

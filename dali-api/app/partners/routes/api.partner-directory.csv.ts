@@ -11,12 +11,11 @@ import { csvResponse, rowsToCsv } from "~/lib/csv";
 import {
   filterContactRows,
   filterOrgRows,
-  listPartnerContactRows,
-  listPartnerOrgRows,
   orgFiltersFromParams,
   partnerContactsCsvRows,
   partnerOrgsCsvRows,
 } from "../lib/partner-directory";
+import { listPartnerContactRows, listPartnerOrgRows } from "../lib/partner-directory.server";
 
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);

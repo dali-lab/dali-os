@@ -1,5 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
-vi.mock("~/lib/db", () => ({ prisma: {} }));
+import { describe, it, expect } from "vitest";
 import {
   DEFAULT_DIRECTORY_SORT,
   DEFAULT_ORG_FILTERS,
