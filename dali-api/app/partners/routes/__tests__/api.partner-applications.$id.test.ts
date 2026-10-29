@@ -6,13 +6,11 @@ vi.mock("~/lib/auth", () => ({
   forbidden: vi.fn(() => new Response(JSON.stringify({ error: "Forbidden" }), { status: 403 })),
 }));
 vi.mock("~/lib/roles");
-vi.mock("~/lib/feature-flags.server");
 vi.mock("~/partners/lib/partner-email.server");
 
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
-import { isCore, getUserRoles, getActiveCoreCycleTermIds } from "~/lib/roles";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
+import { isCore, getActiveCoreCycleTermIds } from "~/lib/roles";
 import { getPartnerContactEmailThreads } from "~/partners/lib/partner-email.server";
 import { loader } from "~/partners/routes/api.partner-applications.$id";
 
@@ -62,9 +60,7 @@ beforeEach(() => {
     user: { sub: "core-1", type: "member", email: "c@dali" },
   });
   (isCore as any).mockResolvedValue(true);
-  (getUserRoles as any).mockResolvedValue({ isCore: true });
   (getActiveCoreCycleTermIds as any).mockResolvedValue([]);
-  (isFeatureEnabled as any).mockResolvedValue(false);
   (getPartnerContactEmailThreads as any).mockResolvedValue([]);
   db.partnerApplication.findUnique.mockResolvedValue(baseApplication);
   db.partnerActivity.findMany.mockResolvedValue([]);
@@ -87,7 +83,7 @@ describe("GET /api/partner-applications/:id — guards", () => {
 });
 
 describe("GET /api/partner-applications/:id — payload", () => {
-  it("returns the application, empty activity, and no email threads when the flag is off", async () => {
+  it("returns the application, empty activity, and email threads", async () => {
     const res = (await callLoader()) as Response;
     expect(res.status).toBe(200);
     const body = await res.json();
@@ -96,9 +92,8 @@ describe("GET /api/partner-applications/:id — payload", () => {
     expect(body.formAnswers).toEqual([]);
     expect(body.activities).toEqual([]);
     expect(body.emailThreads).toEqual([]);
-    expect(body.partnerEmailOn).toBe(false);
     expect(body.coreMembers).toEqual([]);
-    expect(getPartnerContactEmailThreads).not.toHaveBeenCalled();
+    expect(getPartnerContactEmailThreads).toHaveBeenCalledWith("contact-1");
   });
 
   it("returns the active cycle's Core members, name-sorted, for the manual log form", async () => {
@@ -115,8 +110,7 @@ describe("GET /api/partner-applications/:id — payload", () => {
     ]);
   });
 
-  it("loads email threads for the applicant contact when partner-email is on", async () => {
-    (isFeatureEnabled as any).mockResolvedValue(true);
+  it("loads email threads for the applicant contact", async () => {
     (getPartnerContactEmailThreads as any).mockResolvedValue([
       { indexId: "m1", subject: "Hi", firstAt: "2026-01-01", lastAt: "2026-01-01", messageCount: 1, inbound: 1, outbound: 0 },
     ]);

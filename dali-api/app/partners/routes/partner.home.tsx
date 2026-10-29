@@ -76,6 +76,8 @@ function stageHint(stage: PartnerStage, resultingProjectId: string | null): stri
       return "We've received your pitch and will be in touch to schedule a meeting.";
     case "Interview":
       return "A meeting with the DALI team is being arranged.";
+    case "Deciding":
+      return "We've met and are making our decision. We'll be in touch soon.";
     case "Accepted":
       return "Accepted! We'll draft a statement of work together.";
     case "Rejected":

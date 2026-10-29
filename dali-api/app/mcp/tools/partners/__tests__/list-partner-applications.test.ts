@@ -83,6 +83,14 @@ describe("list_partner_applications", () => {
     });
   });
 
+  it("accepts Deciding as a stage filter", async () => {
+    vi.mocked(canViewStaffing).mockResolvedValue(true);
+    const findMany = vi.fn().mockResolvedValue([]);
+    mockPrisma.partnerApplication = { findMany };
+    await runListPartnerApplications("u1", { stage: ["Deciding"] });
+    expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { stage: { in: ["Deciding"] } } }));
+  });
+
   it("flags a card past the stale threshold as isStale", async () => {
     vi.mocked(canViewStaffing).mockResolvedValue(true);
     const staleCard = app({

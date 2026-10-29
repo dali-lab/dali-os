@@ -322,11 +322,12 @@ export async function runManagePartnerApplication(
         });
         if (termIds !== null) {
           await tx.partnerApplicationTargetTerm.deleteMany({
-            where: { applicationId },
+            where: { applicationId, termId: { notIn: termIds } },
           });
           if (termIds.length > 0) {
             await tx.partnerApplicationTargetTerm.createMany({
               data: termIds.map((termId) => ({ applicationId, termId })),
+              skipDuplicates: true,
             });
           }
         }

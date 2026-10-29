@@ -10,7 +10,7 @@ import {
   nextPositionInColumn,
   type Board,
 } from "~/components/board/board-order";
-import { PARTNER_STAGES, type PartnerStage } from "./partner-application";
+import { PARTNER_STAGES, isPaused, isStale, type PartnerStage } from "./partner-application";
 
 // Cards not on a recognized stage (shouldn't happen — the enum is closed, but
 // board-order.ts takes a fallback for the same reason task-board.ts does)
@@ -26,13 +26,15 @@ export type PartnerCardModel = {
   position: number;
   contactName: string;
   orgName: string | null;
-  domains: { id: string; name: string }[];
+  domains: { id: string; name: string; expectedMembers: number }[];
   targetTerms: { id: string; code: string }[];
   nextStep: string | null;
   nextStepDueAt: string | null;
+  feeCents: number | null;
   lastActivityAt: string;
   holdUntil: string | null;
   resultingProjectId: string | null;
+  projectIconEmoji: string | null;
   meetingRequestedAt: string | null;
   pendingRequestCount: number;
   meetingCount: number;
@@ -81,4 +83,131 @@ export function partnerMatchesQuery(card: PartnerCardModel, query: string): bool
   if (card.domains.some((d) => d.name.toLowerCase().includes(q))) return true;
   if (card.nextStep && card.nextStep.toLowerCase().includes(q)) return true;
   return false;
+}
+
+export const CARD_SORTS = ["manual", "next-step", "last-contact", "fee"] as const;
+
+export type PartnerCardSort = (typeof CARD_SORTS)[number];
+
+export const CARD_SORT_LABELS: Record<PartnerCardSort, string> = {
+  manual: "Manual",
+  "next-step": "Next step",
+  "last-contact": "Last contact",
+  fee: "Fee",
+};
+
+export function isCardSort(v: unknown): v is PartnerCardSort {
+  return typeof v === "string" && (CARD_SORTS as readonly string[]).includes(v);
+}
+
+function byNullsLast(a: number | null, b: number | null, dir: 1 | -1): number {
+  if (a === null && b === null) return 0;
+  if (a === null) return 1;
+  if (b === null) return -1;
+  return (a - b) * dir;
+}
+
+/** Orders one column's cards. Manual keeps the incoming (drag) order. */
+export function sortPartnerCards<T extends PartnerCardModel>(cards: T[], sort: PartnerCardSort): T[] {
+  if (sort === "manual") return cards;
+  const time = (iso: string | null) => (iso ? new Date(iso).getTime() : null);
+  const cmp: Record<Exclude<PartnerCardSort, "manual">, (a: T, b: T) => number> = {
+    "next-step": (a, b) => byNullsLast(time(a.nextStepDueAt), time(b.nextStepDueAt), 1),
+    "last-contact": (a, b) => byNullsLast(time(a.lastActivityAt), time(b.lastActivityAt), 1),
+    fee: (a, b) => byNullsLast(a.feeCents, b.feeCents, -1),
+  };
+  return [...cards].sort(cmp[sort]);
+}
+
+export function sortPartnerBoard(board: PartnerCardBoard, sort: PartnerCardSort): PartnerCardBoard {
+  if (sort === "manual") return board;
+  return Object.fromEntries(
+    PARTNER_STAGES.map((stage) => [stage, sortPartnerCards(board[stage] ?? [], sort)]),
+  ) as PartnerCardBoard;
+}
+
+export function filtersFromParams(
+  base: PartnerFilters,
+  params: URLSearchParams,
+  valid: { sources: string[]; termIds: string[] },
+): PartnerFilters {
+  const source = params.get("source");
+  const term = params.get("term");
+  return {
+    ...base,
+    source: source && valid.sources.includes(source) ? source : base.source,
+    term: term && valid.termIds.includes(term) ? term : base.term,
+  };
+}
+
+export function formatCardSpots(domains: PartnerCardModel["domains"]): string {
+  return domains
+    .filter((d) => d.expectedMembers > 0)
+    .map((d) => `${d.name} ${d.expectedMembers}`)
+    .join(", ");
+}
+
+export const SOURCE_OPTIONS: { value: string; label: string }[] = [
+  { value: "Form", label: "Form" },
+  { value: "Email", label: "Email" },
+  { value: "Referral", label: "Referral" },
+  { value: "Manual", label: "Manual" },
+];
+
+export type PartnerFilters = {
+  term: string | null;
+  domain: string | null;
+  source: string | null;
+  staleOnly: boolean;
+  showPaused: boolean;
+  showRejectedPastTerms: boolean;
+};
+
+export const DEFAULT_FILTERS: PartnerFilters = {
+  term: null,
+  domain: null,
+  source: null,
+  staleOnly: false,
+  showPaused: true,
+  showRejectedPastTerms: false,
+};
+
+export function isPartnerFilters(v: unknown): v is PartnerFilters {
+  if (!v || typeof v !== "object") return false;
+  const o = v as Record<string, unknown>;
+  return (
+    (o.term === null || typeof o.term === "string") &&
+    (o.domain === null || typeof o.domain === "string") &&
+    (o.source === null || typeof o.source === "string") &&
+    typeof o.staleOnly === "boolean" &&
+    typeof o.showPaused === "boolean" &&
+    typeof o.showRejectedPastTerms === "boolean"
+  );
+}
+
+export function filterPartnerCards<T extends PartnerCardModel>(
+  cards: T[],
+  filters: PartnerFilters,
+  query: string,
+  opts: { staleDays: number; currentTermStartIso: string | null; now?: Date },
+): T[] {
+  const now = opts.now ?? new Date();
+  const currentTermStartMs = opts.currentTermStartIso
+    ? new Date(opts.currentTermStartIso).getTime()
+    : null;
+  return cards.filter((c) => {
+    if (filters.term && !c.targetTerms.some((t) => t.id === filters.term)) return false;
+    if (filters.domain && !c.domains.some((d) => d.id === filters.domain)) return false;
+    if (filters.source && c.source !== filters.source) return false;
+    if (filters.staleOnly && !isStale(c, opts.staleDays, now)) return false;
+    if (!filters.showPaused && isPaused(c.holdUntil, now)) return false;
+    if (
+      !filters.showRejectedPastTerms &&
+      currentTermStartMs !== null &&
+      c.stage === "Rejected" &&
+      new Date(c.lastActivityAt).getTime() < currentTermStartMs
+    )
+      return false;
+    return partnerMatchesQuery(c, query);
+  });
 }

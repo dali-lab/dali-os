@@ -3,15 +3,14 @@ vi.mock("~/lib/db", () => ({ prisma: {} }));
 
 vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn(), isNonMember: vi.fn().mockResolvedValue(false) }));
 vi.mock("~/lib/roles", () => ({ isCore: vi.fn() }));
-vi.mock("../../lib/partner-directory", async (orig) => ({
-  ...(await orig<typeof import("../../lib/partner-directory")>()),
+vi.mock("../../lib/partner-directory.server", () => ({
   listPartnerOrgRows: vi.fn(),
   listPartnerContactRows: vi.fn(),
 }));
 
 import { requireAuth } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
-import { listPartnerOrgRows, listPartnerContactRows } from "../../lib/partner-directory";
+import { listPartnerOrgRows, listPartnerContactRows } from "../../lib/partner-directory.server";
 import { loader } from "../api.partner-directory.csv";
 
 function get(url: string) {
@@ -76,5 +75,46 @@ describe("GET /api/partner-directory.csv", () => {
     const body = await res.text();
     expect(body).toContain("Jo");
     expect(listPartnerOrgRows).not.toHaveBeenCalled();
+  });
+
+  it("exports only the filtered orgs", async () => {
+    const base = {
+      logoUrl: null,
+      website: null,
+      isIndividual: false,
+      type: null,
+      status: "Active" as const,
+      memberCount: 1,
+      activeProjectCount: 1,
+      totalProjectCount: 1,
+      lastActivityAt: null,
+    };
+    vi.mocked(listPartnerOrgRows).mockResolvedValue([
+      { ...base, id: "1", name: "Acme" },
+      { ...base, id: "2", name: "Beta" },
+    ]);
+    const res = (await get("http://localhost/api/partner-directory.csv?q=acme")) as Response;
+    const body = await res.text();
+    expect(body).toContain("Acme");
+    expect(body).not.toContain("Beta");
+  });
+
+  it("exports only the filtered contacts", async () => {
+    const base = {
+      email: null,
+      title: null,
+      affiliation: null,
+      orgs: [],
+      applicationCount: 0,
+      lastActivityAt: null,
+    };
+    vi.mocked(listPartnerContactRows).mockResolvedValue([
+      { ...base, id: "1", name: "Jo" },
+      { ...base, id: "2", name: "Sam" },
+    ]);
+    const res = (await get("http://localhost/api/partner-directory.csv?view=contacts&q=sam")) as Response;
+    const body = await res.text();
+    expect(body).toContain("Sam");
+    expect(body).not.toContain("Jo");
   });
 });

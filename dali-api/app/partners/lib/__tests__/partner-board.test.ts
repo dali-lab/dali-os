@@ -1,9 +1,18 @@
 import { describe, it, expect } from "vitest";
 import {
+  DEFAULT_FILTERS,
   buildPartnerBoard,
+  filtersFromParams,
+  formatCardSpots,
+  sortPartnerBoard,
+  sortPartnerCards,
+  SOURCE_OPTIONS,
+  filterPartnerCards,
+  isPartnerFilters,
   movePartnerInBoard,
   partnerMatchesQuery,
   type PartnerCardModel,
+  type PartnerFilters,
 } from "../partner-board";
 
 function card(overrides: Partial<PartnerCardModel> & { id: string }): PartnerCardModel {
@@ -18,9 +27,11 @@ function card(overrides: Partial<PartnerCardModel> & { id: string }): PartnerCar
     targetTerms: [],
     nextStep: null,
     nextStepDueAt: null,
+    feeCents: null,
     lastActivityAt: new Date().toISOString(),
     holdUntil: null,
     resultingProjectId: null,
+    projectIconEmoji: null,
     meetingRequestedAt: null,
     pendingRequestCount: 0,
     meetingCount: 0,
@@ -91,7 +102,7 @@ describe("partnerMatchesQuery", () => {
     title: "Gallery kiosk",
     contactName: "Grace Hopper",
     orgName: "Acme Co",
-    domains: [{ id: "d1", name: "Mobile" }],
+    domains: [{ id: "d1", name: "Mobile", expectedMembers: 0 }],
     nextStep: "Send contract",
   });
 
@@ -115,5 +126,155 @@ describe("partnerMatchesQuery", () => {
   it("handles a null orgName without throwing", () => {
     const noOrg = card({ id: "b", orgName: null });
     expect(partnerMatchesQuery(noOrg, "anything")).toBe(false);
+  });
+});
+
+describe("filterPartnerCards", () => {
+  const now = new Date("2026-10-20T00:00:00Z");
+  const opts = { staleDays: 14, currentTermStartIso: "2026-09-01T00:00:00Z", now };
+  const run = (cards: PartnerCardModel[], f: Partial<PartnerFilters> = {}, q = "") =>
+    filterPartnerCards(cards, { ...DEFAULT_FILTERS, ...f }, q, opts).map((c) => c.id);
+
+  it("keeps everything recent on the defaults", () => {
+    expect(run([card({ id: "a" }), card({ id: "b", stage: "Accepted", status: "Accepted" })])).toEqual(["a", "b"]);
+  });
+
+  it("filters by term, domain and source", () => {
+    const cards = [
+      card({ id: "a", targetTerms: [{ id: "t1", code: "26F" }], domains: [{ id: "dev", name: "Dev", expectedMembers: 0 }], source: "Email" }),
+      card({ id: "b", targetTerms: [{ id: "t2", code: "27W" }], domains: [{ id: "ux", name: "UX", expectedMembers: 0 }] }),
+    ];
+    expect(run(cards, { term: "t1" })).toEqual(["a"]);
+    expect(run(cards, { domain: "ux" })).toEqual(["b"]);
+    expect(run(cards, { source: "Email" })).toEqual(["a"]);
+  });
+
+  it("stale only keeps open, unpaused applications quiet past the threshold", () => {
+    const old = "2026-09-01T00:00:00Z";
+    const cards = [
+      card({ id: "stale", lastActivityAt: old }),
+      card({ id: "fresh", lastActivityAt: "2026-10-19T00:00:00Z" }),
+      card({ id: "paused", lastActivityAt: old, holdUntil: "2026-12-01T00:00:00Z" }),
+      card({ id: "hold-over", lastActivityAt: old, holdUntil: "2026-10-01T00:00:00Z" }),
+      card({ id: "accepted", lastActivityAt: old, stage: "Accepted", status: "Accepted" }),
+    ];
+    expect(run(cards, { staleOnly: true })).toEqual(["stale", "hold-over"]);
+  });
+
+  it("hides only currently paused applications when Show paused is off", () => {
+    const cards = [
+      card({ id: "paused", holdUntil: "2026-12-01T00:00:00Z" }),
+      card({ id: "resumed", holdUntil: "2026-10-01T00:00:00Z" }),
+    ];
+    expect(run(cards, { showPaused: false })).toEqual(["resumed"]);
+  });
+
+  it("hides rejections from before the current term unless asked", () => {
+    const cards = [
+      card({ id: "old", stage: "Rejected", status: "Rejected", lastActivityAt: "2026-08-01T00:00:00Z" }),
+      card({ id: "recent", stage: "Rejected", status: "Rejected", lastActivityAt: "2026-09-15T00:00:00Z" }),
+    ];
+    expect(run(cards)).toEqual(["recent"]);
+    expect(run(cards, { showRejectedPastTerms: true })).toEqual(["old", "recent"]);
+    expect(
+      filterPartnerCards(cards, DEFAULT_FILTERS, "", { ...opts, currentTermStartIso: null }).map((c) => c.id),
+    ).toEqual(["old", "recent"]);
+  });
+
+  it("applies the search query", () => {
+    expect(run([card({ id: "a", title: "Campus map" }), card({ id: "b" })], {}, "campus")).toEqual(["a"]);
+  });
+});
+
+describe("isPartnerFilters", () => {
+  it("accepts the defaults and rejects malformed values", () => {
+    expect(isPartnerFilters(DEFAULT_FILTERS)).toBe(true);
+    expect(isPartnerFilters(null)).toBe(false);
+    expect(isPartnerFilters({ ...DEFAULT_FILTERS, term: 3 })).toBe(false);
+    expect(isPartnerFilters({ ...DEFAULT_FILTERS, staleOnly: "yes" })).toBe(false);
+  });
+});
+
+const ids = (cs: PartnerCardModel[]) => cs.map((c) => c.id);
+
+describe("sortPartnerCards", () => {
+  const cards = [
+    card({ id: "a", nextStepDueAt: "2026-11-05T00:00:00Z", lastActivityAt: "2026-10-20T00:00:00Z", feeCents: 100 }),
+    card({ id: "b", nextStepDueAt: null, lastActivityAt: "2026-09-01T00:00:00Z", feeCents: null }),
+    card({ id: "c", nextStepDueAt: "2026-11-01T00:00:00Z", lastActivityAt: "2026-10-25T00:00:00Z", feeCents: 900 }),
+  ];
+
+  it("keeps the incoming order for manual", () => {
+    expect(ids(sortPartnerCards(cards, "manual"))).toEqual(["a", "b", "c"]);
+  });
+
+  it("puts the soonest next step first and cards without one last", () => {
+    expect(ids(sortPartnerCards(cards, "next-step"))).toEqual(["c", "a", "b"]);
+  });
+
+  it("puts the longest quiet first", () => {
+    expect(ids(sortPartnerCards(cards, "last-contact"))).toEqual(["b", "a", "c"]);
+  });
+
+  it("puts the highest fee first and cards without one last", () => {
+    expect(ids(sortPartnerCards(cards, "fee"))).toEqual(["c", "a", "b"]);
+  });
+
+  it("does not mutate its input", () => {
+    sortPartnerCards(cards, "fee");
+    expect(ids(cards)).toEqual(["a", "b", "c"]);
+  });
+
+  it("sorts every column of a board", () => {
+    const board = buildPartnerBoard([
+      card({ id: "x", stage: "New", status: "New", feeCents: 1 }),
+      card({ id: "y", stage: "New", status: "New", feeCents: 5, position: 1 }),
+      card({ id: "z", stage: "Deciding", status: "Deciding", feeCents: 2 }),
+    ]);
+    const sorted = sortPartnerBoard(board, "fee");
+    expect(ids(sorted.New)).toEqual(["y", "x"]);
+    expect(ids(sorted.Deciding)).toEqual(["z"]);
+  });
+});
+
+describe("Deciding column", () => {
+  it("groups Deciding cards into their own column", () => {
+    const board = buildPartnerBoard([card({ id: "d", stage: "Deciding", status: "Deciding" })]);
+    expect(ids(board.Deciding)).toEqual(["d"]);
+  });
+});
+
+describe("formatCardSpots", () => {
+  it("spells domains out with their spot counts and skips empty ones", () => {
+    expect(
+      formatCardSpots([
+        { id: "1", name: "Engineering", expectedMembers: 2 },
+        { id: "2", name: "Design", expectedMembers: 1 },
+        { id: "3", name: "Strategy", expectedMembers: 0 },
+      ]),
+    ).toBe("Engineering 2, Design 1");
+  });
+});
+
+describe("SOURCE_OPTIONS", () => {
+  it("never offers Renewal", () => {
+    expect(SOURCE_OPTIONS.map((s) => s.value)).not.toContain("Renewal");
+  });
+});
+
+describe("filtersFromParams", () => {
+  const valid = { sources: ["Form", "Email"], termIds: ["t1"] };
+
+  it("seeds source and term from the URL", () => {
+    expect(filtersFromParams(DEFAULT_FILTERS, new URLSearchParams("source=Form&term=t1"), valid)).toEqual({
+      ...DEFAULT_FILTERS,
+      source: "Form",
+      term: "t1",
+    });
+  });
+
+  it("ignores unknown values and keeps the stored filters", () => {
+    const base = { ...DEFAULT_FILTERS, source: "Email" };
+    expect(filtersFromParams(base, new URLSearchParams("source=Bogus&term=nope"), valid)).toEqual(base);
   });
 });

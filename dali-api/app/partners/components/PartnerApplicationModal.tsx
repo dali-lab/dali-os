@@ -388,7 +388,7 @@ export function PartnerApplicationModal({
                       applicationId={detail.application.id}
                       activities={detail.activities}
                       actorNames={detail.actorNames}
-                      emailThreads={detail.partnerEmailOn ? detail.emailThreads : []}
+                      emailThreads={detail.emailThreads}
                       canEdit={canEdit}
                       limit={TAB_ROW_LIMIT}
                       viewAllHref={`/core/partners/applications/${detail.application.id}?tab=activity`}
@@ -404,7 +404,6 @@ export function PartnerApplicationModal({
                       termOptions={termOptions}
                       contract={detail.contract}
                       contractDocuments={detail.contractDocuments}
-                      financeOn={detail.financeOn}
                       onChanged={refresh}
                     />
                     <DetailsTab
@@ -451,7 +450,6 @@ export function PartnerApplicationModal({
                     <EmailTab
                       contactId={detail.application.applicant.id}
                       threads={detail.emailThreads}
-                      partnerEmailOn={detail.partnerEmailOn}
                     />
                   )}
                 </div>

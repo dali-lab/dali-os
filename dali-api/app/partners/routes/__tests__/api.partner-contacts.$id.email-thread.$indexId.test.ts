@@ -4,8 +4,6 @@ vi.mock("~/lib/db", () => ({
   prisma: { mailMessageIndex: { findUnique: vi.fn() } },
 }));
 vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn() }));
-vi.mock("~/lib/roles", () => ({ getUserRoles: vi.fn() }));
-vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabled: vi.fn() }));
 vi.mock("~/partners/lib/partner-email.server", () => ({ canViewPartnerThread: vi.fn() }));
 vi.mock("~/email/lib/mail-index.server", () => ({ getSharedInboxToken: vi.fn() }));
 
@@ -25,8 +23,6 @@ vi.mock("~/email/lib/gmail-mailbox.server", () => ({
 
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
-import { getUserRoles } from "~/lib/roles";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { canViewPartnerThread } from "~/partners/lib/partner-email.server";
 import { getSharedInboxToken } from "~/email/lib/mail-index.server";
 import { getThread } from "~/email/lib/gmail-mailbox.server";
@@ -44,8 +40,6 @@ function call() {
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(requireAuth).mockResolvedValue({ ok: true, user: { sub: "u1" } } as any);
-  vi.mocked(getUserRoles).mockResolvedValue({ isCore: true } as any);
-  vi.mocked(isFeatureEnabled).mockResolvedValue(true);
   vi.mocked(canViewPartnerThread).mockResolvedValue(true);
   db.mailMessageIndex.findUnique.mockResolvedValue({ threadId: "t1", linkedPartnerContactId: CONTACT_ID });
   vi.mocked(getSharedInboxToken).mockResolvedValue({
@@ -74,13 +68,6 @@ describe("GET /api/partner-contacts/:id/email-thread/:indexId", () => {
     vi.mocked(requireAuth).mockResolvedValue({ ok: false, response: new Response(null, { status: 401 }) } as any);
     const res = await call();
     expect(res.status).toBe(401);
-  });
-
-  it("404s when the partner-email flag is off", async () => {
-    vi.mocked(isFeatureEnabled).mockResolvedValue(false);
-    const res = await call();
-    expect(res.status).toBe(404);
-    expect(canViewPartnerThread).not.toHaveBeenCalled();
   });
 
   it("404s when canViewPartnerThread refuses (not Core, or not a partners@ row)", async () => {

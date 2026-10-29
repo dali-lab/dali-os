@@ -56,8 +56,6 @@ import {
 } from "../lib/partner-activity.server";
 import { getFrontendUrl } from "~/lib/app-env";
 import type { PartnerMeetingOutcome } from "~/generated/prisma/enums";
-import { getUserRoles } from "~/lib/roles";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { getPartnerContactEmailThreads } from "../lib/partner-email.server";
 import {
   partnerContractStatus,
@@ -281,12 +279,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     );
   }
 
-  const roles = await getUserRoles(auth.user.sub, request);
-  const partnerEmailOn = await isFeatureEnabled("partner-email", auth.user.sub, roles, request);
-  const financeOn = await isFeatureEnabled("partner-finance", auth.user.sub, roles, request);
-  const emailThreads = partnerEmailOn
-    ? await getPartnerContactEmailThreads(application.applicantContact.id)
-    : [];
+  const emailThreads = await getPartnerContactEmailThreads(application.applicantContact.id);
   const contract = await partnerContractStatus(application.id);
   const contractDocuments = canEdit ? await listPartnerContractDocuments() : [];
 
@@ -364,8 +357,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     activities,
     actorNames,
     emailThreads,
-    partnerEmailOn,
-    financeOn,
     contract,
     contractDocuments,
     trailLabel: application.title,
@@ -422,21 +413,21 @@ export async function action({ request, params }: Route.ActionArgs) {
         return { error: "One of those terms no longer exists." };
       }
     }
-    // Replace the whole target-term set in one transaction: scalar fields,
-    // then drop and recreate the join rows.
+    // Keep retained join rows: they now own term-specific planning metadata.
     await prisma.$transaction([
       prisma.partnerApplication.update({
         where: { id: params.id },
         data: { summary: summaryRaw === "" ? null : summaryRaw },
       }),
       prisma.partnerApplicationTargetTerm.deleteMany({
-        where: { applicationId: params.id },
+        where: { applicationId: params.id, termId: { notIn: termIds } },
       }),
       prisma.partnerApplicationTargetTerm.createMany({
         data: termIds.map((termId) => ({
           applicationId: params.id,
           termId,
         })),
+        skipDuplicates: true,
       }),
     ]);
   } else if (intent === "promote") {
@@ -952,8 +943,6 @@ export default function PartnerApplicationDetail() {
     activities,
     actorNames,
     emailThreads,
-    partnerEmailOn,
-    financeOn,
     contract,
     contractDocuments,
   } = useLoaderData() as LoaderData;
@@ -1043,7 +1032,7 @@ export default function PartnerApplicationDetail() {
       applicationId={application.id}
       activities={activities}
       actorNames={actorNames}
-      emailThreads={partnerEmailOn ? emailThreads : []}
+      emailThreads={emailThreads}
       canEdit={canEdit}
       onChanged={refresh}
     />
@@ -1078,13 +1067,12 @@ export default function PartnerApplicationDetail() {
       termOptions={terms.map((t) => ({ id: t.id, code: t.code }))}
       contract={contract}
       contractDocuments={contractDocuments}
-      financeOn={financeOn}
       onChanged={refresh}
     />
   );
 
   const emailTab = (
-    <EmailTab contactId={application.applicant?.id ?? ""} threads={emailThreads} partnerEmailOn={partnerEmailOn} />
+    <EmailTab contactId={application.applicant?.id ?? ""} threads={emailThreads} />
   );
 
   const TABS = [
