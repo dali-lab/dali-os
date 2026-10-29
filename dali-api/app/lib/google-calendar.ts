@@ -781,8 +781,15 @@ export type GoogleAttendee = {
   displayName?: string;
 };
 
-export type CreateGoogleEventInput = {
-  linkId: string;
+// The shared hiring account authenticates through its Gmail sender token, not
+// a calendar link, so event writers take either.
+export type GoogleCalendarAuth = { linkId: string } | { accessToken: string };
+
+function tokenFor(auth: GoogleCalendarAuth): Promise<string> {
+  return "accessToken" in auth ? Promise.resolve(auth.accessToken) : getValidAccessTokenForLink(auth.linkId);
+}
+
+export type CreateGoogleEventInput = GoogleCalendarAuth & {
   summary: string;
   description?: string;
   location?: string;
@@ -814,7 +821,7 @@ export type CreateGoogleEventInput = {
 export async function createGoogleCalendarEvent(
   input: CreateGoogleEventInput,
 ): Promise<{ eventId: string; iCalUID: string | null; htmlLink: string | null; meetUrl: string | null }> {
-  const token = await getValidAccessTokenForLink(input.linkId);
+  const token = await tokenFor(input);
   const calendarId = encodeURIComponent(input.calendarId ?? "primary");
   const timeZone = input.timeZone ?? APPLICATION_TZ;
   const body: Record<string, unknown> = {
@@ -878,12 +885,11 @@ export async function createGoogleCalendarEvent(
 /** The Meet link on an event we created earlier, or null if Google still hasn't
  *  minted it. For callers that stored the event id while the conference was
  *  pending and want to pick the link up later. */
-export async function getGoogleEventMeetUrl(opts: {
-  linkId: string;
+export async function getGoogleEventMeetUrl(opts: GoogleCalendarAuth & {
   calendarId?: string;
   eventId: string;
 }): Promise<string | null> {
-  const token = await getValidAccessTokenForLink(opts.linkId);
+  const token = await tokenFor(opts);
   return fetchEventMeetUrl(token, encodeURIComponent(opts.calendarId ?? "primary"), opts.eventId);
 }
 
@@ -906,8 +912,7 @@ async function fetchEventMeetUrl(
 
 /** Edit an event we created (a class's time / title / recurrence changed). Only
  *  the passed fields are patched; recurrenceRule:null clears the recurrence. */
-export async function patchGoogleCalendarEvent(input: {
-  linkId: string;
+export async function patchGoogleCalendarEvent(input: GoogleCalendarAuth & {
   calendarId?: string;
   eventId: string;
   summary?: string;
@@ -928,7 +933,7 @@ export async function patchGoogleCalendarEvent(input: {
   // to have Google email guests about the change.
   sendUpdates?: "all" | "none";
 }): Promise<void> {
-  const token = await getValidAccessTokenForLink(input.linkId);
+  const token = await tokenFor(input);
   const calendarId = encodeURIComponent(input.calendarId ?? "primary");
   const timeZone = input.timeZone ?? APPLICATION_TZ;
   const body: Record<string, unknown> = {};
@@ -973,12 +978,11 @@ export async function patchGoogleCalendarEvent(input: {
 
 /** Delete an event we created. A 404/410 (already gone) counts as success — the
  *  caller's goal is that the event no longer exists. */
-export async function deleteGoogleCalendarEvent(opts: {
-  linkId: string;
+export async function deleteGoogleCalendarEvent(opts: GoogleCalendarAuth & {
   calendarId?: string;
   eventId: string;
 }): Promise<void> {
-  const token = await getValidAccessTokenForLink(opts.linkId);
+  const token = await tokenFor(opts);
   const calendarId = encodeURIComponent(opts.calendarId ?? "primary");
   const res = await fetch(
     `https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events/${encodeURIComponent(opts.eventId)}`,
