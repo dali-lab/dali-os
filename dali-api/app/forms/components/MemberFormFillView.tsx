@@ -57,6 +57,8 @@ export function MemberFormFillView({
   // Seeds the tile strip; the form renders full-bleed inside a flush shell.
   tileSeed,
   allowExit = false,
+  // The editor's preview: submit plays the same done sequence without saving.
+  preview = false,
 }: {
   data: MemberFormData;
   doneContent?: React.ReactNode;
@@ -64,6 +66,7 @@ export function MemberFormFillView({
   next?: string | null;
   tileSeed?: string | null;
   allowExit?: boolean;
+  preview?: boolean;
 }) {
   const navigate = useNavigate();
   const [answers, setAnswers] = useState<Record<string, string>>({});
@@ -140,6 +143,10 @@ export function MemberFormFillView({
     }
     setState("submitting");
     if (tiles) startFold();
+    if (preview) {
+      setState("done");
+      return;
+    }
     try {
       const res = await fetch(`/api/forms/fill/${data.token}`, {
         method: "POST",
@@ -331,28 +338,44 @@ export function MemberFormShell({
 }) {
   return (
     <div className="min-h-screen bg-section-bg p-4 sm:p-8 pt-10 sm:pt-16">
-      <div
-        className={
-          flush
-            ? "mx-auto max-w-2xl bg-card border border-border rounded-os-card overflow-hidden"
-            : "mx-auto max-w-2xl bg-card border border-border rounded-os-card p-5 sm:p-8"
-        }
-      >
-        {!flush && (
-          <div className="flex items-center gap-2 mb-6">
-            {allowExit && <FormExitButton />}
-            <div className="w-7 h-7 bg-os-accent rounded-md flex items-center justify-center">
-              <span className="text-white font-bold text-base leading-none font-heading">
-                D
-              </span>
-            </div>
-            <span className="font-heading text-sm font-bold text-foreground">
-              DALI OS
+      <MemberFormCard allowExit={allowExit} flush={flush}>
+        {children}
+      </MemberFormCard>
+    </div>
+  );
+}
+
+export function MemberFormCard({
+  children,
+  allowExit = false,
+  flush = false,
+}: {
+  children: React.ReactNode;
+  allowExit?: boolean;
+  flush?: boolean;
+}) {
+  return (
+    <div
+      className={
+        flush
+          ? "mx-auto max-w-2xl bg-card border border-border rounded-os-card overflow-hidden"
+          : "mx-auto max-w-2xl bg-card border border-border rounded-os-card p-5 sm:p-8"
+      }
+    >
+      {!flush && (
+        <div className="flex items-center gap-2 mb-6">
+          {allowExit && <FormExitButton />}
+          <div className="w-7 h-7 bg-os-accent rounded-md flex items-center justify-center">
+            <span className="text-white font-bold text-base leading-none font-heading">
+              D
             </span>
           </div>
-        )}
-        {children}
-      </div>
+          <span className="font-heading text-sm font-bold text-foreground">
+            DALI OS
+          </span>
+        </div>
+      )}
+      {children}
     </div>
   );
 }
