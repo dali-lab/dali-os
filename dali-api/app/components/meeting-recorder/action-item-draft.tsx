@@ -53,6 +53,7 @@ export function enhanceWasUndone(rec: Pick<UseMeetingRecording, "getNoteState" |
   const lines = liveChecklist(rec);
   if (lines === null || rec.reviewedAt) return false;
   const items = rec.enhanceNotes?.plan.actionItems ?? NO_ITEMS;
+  if (items.length === 0) return false;
   return !items.some((item) => item.taskId || onLiveChecklist(item, lines));
 }
 
