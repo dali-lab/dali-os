@@ -29,10 +29,8 @@ import {
   type GuideState,
 } from '~/components/page-docs/guide-bridge'
 
-export interface OpenTabRequest {
-  url: string
-  label: string
-}
+import type { OpenTabRequest } from '~/lib/desktop-tabs'
+export type { OpenTabRequest }
 
 export interface TabWorkspaceHandle {
   /** Open a tab in the focused pane, or focus it if already open anywhere.

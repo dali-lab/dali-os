@@ -54,6 +54,17 @@ export const TEMPLATE_VARIABLES_REGISTRY = {
     description: "Link to the cycle's apply page.",
     contexts: ["email"],
   },
+  // Not {{term}}: that is the cycle's own term on forms, and a hire can start
+  // in a later term than the one the hiring runs in.
+  startTerm: {
+    description: "The term the hire starts in, e.g. 27W: the applicant's pick, or the cycle's term.",
+    contexts: ["email"],
+  },
+  respondBy: {
+    description:
+      "The cycle's respond-by date for this decision (offer or waitlist), e.g. Monday, June 8, 2026. Set on the cycle's Setup tab.",
+    contexts: ["email"],
+  },
 
   // ── Notifications ───────────────────────────────────────────────────────
   // Deliberately generic and few. 24 of the 44 notify() call sites interpolate

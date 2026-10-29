@@ -2500,12 +2500,6 @@ html[data-v2] .os-seg-track {
 html[data-v2] .os-seg-item {
   border-radius: 8px;
 }
-/* The active segment's count: the v2 accent is a pale wash the os-bg numeral
-   disappears into (white on light blue), so the chip flips to ink-on-ground. */
-html[data-v2] .os-seg-count--active {
-  background: var(--color-foreground);
-  color: var(--color-os-bg);
-}
 html[data-v2] .os-type-badge {
   border-radius: 6px;
 }
@@ -2602,4 +2596,52 @@ html[data-v2] .os-field-label {
   font-weight: 600;
   letter-spacing: normal;
   text-transform: none;
+}
+
+/* Kanban column headers under v2: a tint of the stage hue over the column,
+   not the 0.8-alpha band. With the area tone as the page accent, five solid
+   bands read as six competing hues; the tint keeps each column identifiable
+   while the full-strength edge on every card carries the colour down the
+   column. Read only through osStatusAccent(), so the hiring views that share
+   --os-status-* keep their bands. */
+html[data-v2] .os-shell,
+html[data-v2].os-shell {
+  --os-status-backlog-header:   color-mix(in srgb, var(--os-status-backlog-edge) 40%, var(--color-os-card));
+  --os-status-todo-header:      color-mix(in srgb, var(--os-status-todo-edge) 22%, var(--color-os-card));
+  --os-status-progress-header:  color-mix(in srgb, var(--os-status-progress-edge) 22%, var(--color-os-card));
+  --os-status-review-header:    color-mix(in srgb, var(--os-status-review-edge) 22%, var(--color-os-card));
+  --os-status-done-header:      color-mix(in srgb, var(--os-status-done-edge) 22%, var(--color-os-card));
+  --os-status-cancelled-header: color-mix(in srgb, var(--os-status-cancelled-edge) 50%, var(--color-os-card));
+  /* The dark inks are chosen against the band (near-black on amber and
+     green), so on a dark tint the title takes the light tone instead. */
+  --os-status-todo-header-ink:      var(--os-epic-title);
+  --os-status-progress-header-ink:  var(--os-story-title);
+  --os-status-review-header-ink:    var(--os-task-title);
+  --os-status-done-header-ink:      var(--os-status-done-edge);
+  /* The backlog edge is the grey of its own header and vanishes as a dot. */
+  --os-status-backlog-dot:          #9a9aa8;
+}
+html.light[data-v2] .os-shell,
+html.light[data-v2].os-shell {
+  --os-status-backlog-header:   color-mix(in srgb, var(--os-status-backlog-fill) 40%, var(--color-os-card));
+  --os-status-todo-header:      color-mix(in srgb, var(--os-status-todo-fill) 28%, var(--color-os-card));
+  --os-status-progress-header:  color-mix(in srgb, var(--os-status-progress-fill) 28%, var(--color-os-card));
+  --os-status-review-header:    color-mix(in srgb, var(--os-status-review-fill) 30%, var(--color-os-card));
+  --os-status-done-header:      color-mix(in srgb, var(--os-status-done-fill) 30%, var(--color-os-card));
+  --os-status-cancelled-header: color-mix(in srgb, var(--os-status-cancelled-fill) 40%, var(--color-os-card));
+  --os-status-todo-header-ink:      var(--os-status-todo-ink);
+  --os-status-progress-header-ink:  var(--os-status-progress-ink);
+  --os-status-review-header-ink:    var(--os-status-review-ink);
+  --os-status-done-header-ink:      var(--os-status-done-ink);
+  --os-status-backlog-dot:          var(--os-status-backlog-edge);
+}
+html[data-v2] .os-board-title::before {
+  content: "";
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 8px;
+  border-radius: 9999px;
+  vertical-align: 1px;
+  background: var(--os-board-dot);
 }

@@ -33,10 +33,11 @@ vi.mock("~/mcp/registry", async () => {
 });
 
 vi.mock("~/lib/db");
-vi.mock("~/lib/roles", async (orig) => {
-  const real = await orig<typeof import("~/lib/roles")>();
-  return { ...real, isCore: vi.fn(), canViewForms: vi.fn() };
-});
+vi.mock("~/forms/lib/form-access.server", () => ({
+  canSeeForm: vi.fn(),
+  canBuildForm: vi.fn(),
+  canCreateForm: vi.fn(),
+}));
 vi.mock("~/forms/lib/forms-data", () => ({
   loadFormForEdit: vi.fn(),
   runFormsAction: vi.fn(),
@@ -50,7 +51,7 @@ vi.mock("~/forms/lib/answer-rows.server", () => ({
   buildResponseGrid: vi.fn(),
 }));
 
-import { isCore } from "~/lib/roles";
+import { canSeeForm, canBuildForm, canCreateForm } from "~/forms/lib/form-access.server";
 import { runFormsAction } from "~/forms/lib/forms-data";
 import { formAccessMeta, formFillAccess, submitMemberForm } from "~/forms/lib/public-form";
 import { buildResponseGrid } from "~/forms/lib/answer-rows.server";
@@ -111,17 +112,14 @@ describe("scopes", () => {
 // ─── list_forms ──────────────────────────────────────────────────────────────
 
 describe("list_forms", () => {
-  it("throws forbidden when not Core", async () => {
-    vi.mocked(isCore).mockResolvedValue(false);
-    await expect(runListForms(ctx())).rejects.toMatchObject({ name: "McpForbiddenError" });
-  });
+  const rows = [
+    { id: "fm1", name: "Application", folderPageId: "page-1", published: true, publicToken: "tok123", _count: { versions: 1 } },
+    { id: "fm2", name: "Feedback", folderPageId: null, published: false, publicToken: null, _count: { versions: 2 } },
+  ];
 
-  it("returns every form with its Drive folder placement for a Core member", async () => {
-    vi.mocked(isCore).mockResolvedValue(true);
-    mockPrisma.form.findMany.mockResolvedValue([
-      { id: "fm1", name: "Application", folderPageId: "page-1", published: true, publicToken: "tok123", _count: { versions: 1 } },
-      { id: "fm2", name: "Feedback", folderPageId: null, published: false, publicToken: null, _count: { versions: 2 } },
-    ]);
+  it("returns every form the caller can see with its Drive folder placement", async () => {
+    vi.mocked(canSeeForm).mockResolvedValue(true);
+    mockPrisma.form.findMany.mockResolvedValue(rows);
     const result = await runListForms(ctx());
     expect(result.forms).toHaveLength(2);
     expect(result.forms[0]).toMatchObject({ id: "fm1", folderPageId: "page-1", versionCount: 1, published: true });
@@ -132,15 +130,8 @@ describe("list_forms", () => {
 // ─── get_form_responses ───────────────────────────────────────────────────────
 
 describe("get_form_responses", () => {
-  it("throws forbidden when not Core", async () => {
-    vi.mocked(isCore).mockResolvedValue(false);
-    await expect(
-      runGetFormResponses(ctx(), { formId: "fm1" })
-    ).rejects.toMatchObject({ name: "McpForbiddenError" });
-  });
-
   it("throws not-found when form does not exist", async () => {
-    vi.mocked(isCore).mockResolvedValue(true);
+    vi.mocked(canBuildForm).mockResolvedValue(true);
     mockPrisma.form.findUnique.mockResolvedValue(null);
     await expect(
       runGetFormResponses(ctx(), { formId: "missing" })
@@ -148,7 +139,7 @@ describe("get_form_responses", () => {
   });
 
   it("returns paginated responses with grid", async () => {
-    vi.mocked(isCore).mockResolvedValue(true);
+    vi.mocked(canBuildForm).mockResolvedValue(true);
     mockPrisma.form.findUnique.mockResolvedValue({ id: "fm1", name: "Application" });
     mockPrisma.formSubmission.count.mockResolvedValue(1);
     mockPrisma.formSubmission.findMany.mockResolvedValue([
@@ -177,7 +168,7 @@ describe("get_form_responses", () => {
   });
 
   it("caps limit at 200", async () => {
-    vi.mocked(isCore).mockResolvedValue(true);
+    vi.mocked(canBuildForm).mockResolvedValue(true);
     mockPrisma.form.findUnique.mockResolvedValue({ id: "fm1", name: "App" });
     mockPrisma.formSubmission.count.mockResolvedValue(0);
     mockPrisma.formSubmission.findMany.mockResolvedValue([]);
@@ -203,8 +194,6 @@ describe("submit_form", () => {
     vi.mocked(formAccessMeta).mockResolvedValue({
       id: "fm1",
       name: "App",
-      audience: "Members",
-      audienceGroupIds: [],
     });
     vi.mocked(formFillAccess).mockResolvedValue("denied");
     await expect(
@@ -216,8 +205,6 @@ describe("submit_form", () => {
     vi.mocked(formAccessMeta).mockResolvedValue({
       id: "fm1",
       name: "App",
-      audience: "SignedIn",
-      audienceGroupIds: [],
     });
     vi.mocked(formFillAccess).mockResolvedValue("login");
     await expect(
@@ -229,8 +216,6 @@ describe("submit_form", () => {
     vi.mocked(formAccessMeta).mockResolvedValue({
       id: "fm1",
       name: "App",
-      audience: "Members",
-      audienceGroupIds: [],
     });
     vi.mocked(formFillAccess).mockResolvedValue("ok");
     vi.mocked(submitMemberForm).mockResolvedValue({ ok: true });
@@ -254,8 +239,6 @@ describe("submit_form", () => {
     vi.mocked(formAccessMeta).mockResolvedValue({
       id: "fm1",
       name: "App",
-      audience: "Public",
-      audienceGroupIds: [],
     });
     vi.mocked(formFillAccess).mockResolvedValue("ok");
     vi.mocked(submitMemberForm).mockResolvedValue({
@@ -271,29 +254,25 @@ describe("submit_form", () => {
 // ─── manage_form ──────────────────────────────────────────────────────────────
 
 describe("manage_form", () => {
-  it("throws forbidden when not Core", async () => {
-    vi.mocked(isCore).mockResolvedValue(false);
-    await expect(
-      runManageForm(ctx(), { action: "create", name: "New Form" })
-    ).rejects.toMatchObject({ name: "McpForbiddenError" });
-  });
-
   it("throws invalid for unknown action", async () => {
-    vi.mocked(isCore).mockResolvedValue(true);
+    vi.mocked(canBuildForm).mockResolvedValue(true);
+    vi.mocked(canCreateForm).mockResolvedValue(true);
     await expect(
       runManageForm(ctx(), { action: "bogus" })
     ).rejects.toMatchObject({ name: "McpInvalidError" });
   });
 
   it("throws invalid when required args are missing", async () => {
-    vi.mocked(isCore).mockResolvedValue(true);
+    vi.mocked(canBuildForm).mockResolvedValue(true);
+    vi.mocked(canCreateForm).mockResolvedValue(true);
     await expect(
       runManageForm(ctx(), { action: "rename", formId: "fm1" }) // name missing
     ).rejects.toMatchObject({ name: "McpInvalidError" });
   });
 
   it("calls runFormsAction for create and returns ok", async () => {
-    vi.mocked(isCore).mockResolvedValue(true);
+    vi.mocked(canBuildForm).mockResolvedValue(true);
+    vi.mocked(canCreateForm).mockResolvedValue(true);
     vi.mocked(runFormsAction).mockResolvedValue({ ok: true });
     const result = await runManageForm(ctx(), { action: "create", name: "New Form" });
     expect(runFormsAction).toHaveBeenCalled();
@@ -301,14 +280,16 @@ describe("manage_form", () => {
   });
 
   it("returns formId on duplicate", async () => {
-    vi.mocked(isCore).mockResolvedValue(true);
+    vi.mocked(canBuildForm).mockResolvedValue(true);
+    vi.mocked(canCreateForm).mockResolvedValue(true);
     vi.mocked(runFormsAction).mockResolvedValue({ ok: true, formId: "fm-copy" });
     const result = await runManageForm(ctx(), { action: "duplicate", formId: "fm1" });
     expect(result).toEqual({ ok: true, formId: "fm-copy" });
   });
 
   it("throws not-found when runFormsAction returns 404", async () => {
-    vi.mocked(isCore).mockResolvedValue(true);
+    vi.mocked(canBuildForm).mockResolvedValue(true);
+    vi.mocked(canCreateForm).mockResolvedValue(true);
     vi.mocked(runFormsAction).mockResolvedValue({ error: "Not found", status: 404 });
     await expect(
       runManageForm(ctx(), { action: "delete", formId: "gone" })

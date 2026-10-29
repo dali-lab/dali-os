@@ -10,7 +10,12 @@ import { ChevronsLeft, ChevronsRight, MoreHorizontal } from "lucide-react";
 import { Menu, MenuItem, Tooltip } from "~/components/ui/floating";
 import { Confetti } from "~/components/Confetti";
 import { KanbanBoard, type KanbanColumn } from "~/components/board/KanbanBoard";
-import { osStatusAccent, type StatusAccent } from "~/components/board/status-accent";
+import {
+  BOARD_TITLE_CLASS,
+  boardTitleStyle,
+  osStatusAccent,
+  type StatusAccent,
+} from "~/components/board/status-accent";
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
 import { useOptimisticBoardMove } from "~/components/board/useOptimisticBoardMove";
@@ -239,7 +244,11 @@ export function PartnerBoard({
 
     return {
       id: stage,
-      title: <span className="text-sm font-medium">{label}</span>,
+      title: (
+        <span className={cn("text-sm font-medium", BOARD_TITLE_CLASS)} style={boardTitleStyle(accent)}>
+          {label}
+        </span>
+      ),
       className: cn(shell, "w-full md:flex-1 md:min-w-[15rem]"),
       headerClassName: cn("flex items-center justify-between gap-2 px-3 py-2", roundedTop),
       headerStyle: { background: accent.fill, color: accent.ink },

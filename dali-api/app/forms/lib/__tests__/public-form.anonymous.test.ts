@@ -5,7 +5,10 @@ vi.mock("~/forms/lib/submission-notify.server", () => ({
   notifyFormSubmission: vi.fn().mockResolvedValue(undefined),
 }));
 
+vi.mock("~/forms/lib/form-access.server", () => ({ fillAccessByPage: vi.fn() }));
+
 import { prisma } from "~/lib/db";
+import { fillAccessByPage } from "~/forms/lib/form-access.server";
 import { submitAnonymousForm } from "~/forms/lib/public-form";
 import { notifyFormSubmission } from "~/forms/lib/submission-notify.server";
 
@@ -14,6 +17,7 @@ const mockPrisma = prisma as unknown as Record<
   Record<string, ReturnType<typeof vi.fn>>
 >;
 const mockNotify = notifyFormSubmission as ReturnType<typeof vi.fn>;
+const mockFillAccess = fillAccessByPage as ReturnType<typeof vi.fn>;
 
 const QUESTIONS = [
   { key: "q1", type: "textarea", required: true, data: { label: "Feedback" } },
@@ -23,7 +27,6 @@ function formRow(overrides: Record<string, unknown> = {}) {
   return {
     id: "form-1",
     published: true,
-    audience: "Public",
     versions: [{ id: "ver-1", questions: QUESTIONS }],
     ...overrides,
   };
@@ -42,6 +45,7 @@ function submit(overrides: Record<string, unknown> = {}) {
 beforeEach(() => {
   vi.resetAllMocks();
   mockNotify.mockResolvedValue(undefined);
+  mockFillAccess.mockResolvedValue("ok");
   mockPrisma.form.findUnique.mockResolvedValue(formRow());
   mockPrisma.formSubmission.create.mockResolvedValue({ id: "sub-1" });
 });
@@ -66,12 +70,22 @@ describe("submitAnonymousForm", () => {
     expect(mockPrisma.formSubmission.findFirst).not.toHaveBeenCalled();
   });
 
-  it("403s any non-Public audience (defense in depth)", async () => {
-    mockPrisma.form.findUnique.mockResolvedValue(
-      formRow({ audience: "Members" }),
-    );
+  it("accepts a form whose page is Public even when Form.audience is Members", async () => {
+    mockPrisma.form.findUnique.mockResolvedValue(formRow({ audience: "Members" }));
+    expect(await submit()).toEqual({ ok: true });
+    expect(mockFillAccess).toHaveBeenCalledWith("form-1", null);
+    expect(mockPrisma.formSubmission.create).toHaveBeenCalled();
+  });
+
+  it("accepts a Public page when the form has no audience selected", async () => {
+    mockPrisma.form.findUnique.mockResolvedValue(formRow({ audience: null }));
+    expect(await submit()).toEqual({ ok: true });
+  });
+
+  it.each(["login", "denied"])("403s a page that is not Public (%s) and writes nothing", async (decision) => {
+    mockFillAccess.mockResolvedValue(decision);
     const result = await submit();
-    expect(result).toMatchObject({ status: 403 });
+    expect(result).toEqual({ error: "This form requires signing in.", status: 403 });
     expect(mockPrisma.formSubmission.create).not.toHaveBeenCalled();
     expect(mockNotify).not.toHaveBeenCalled();
   });

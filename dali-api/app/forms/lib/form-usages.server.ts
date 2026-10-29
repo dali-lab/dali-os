@@ -78,7 +78,7 @@ export async function formUsages(formId: string): Promise<FormUsage[]> {
       where: { formId },
       select: {
         slot: true,
-        staffingCycle: { select: { term: { select: { code: true } } } },
+        staffingCycle: { select: { term: { select: { id: true, code: true } } } },
       },
     }),
     prisma.partnerApplicationFormBinding.findFirst({
@@ -126,7 +126,9 @@ export async function formUsages(formId: string): Promise<FormUsage[]> {
     usages.push({
       kind: "staffing",
       label: `${b.staffingCycle.term.code} ${slotName}`,
-      href: "/core/staffing",
+      href: isSlot(b.slot)
+        ? `/core/${b.slot}?term=${encodeURIComponent(b.staffingCycle.term.id)}&settings=1`
+        : "/core/staffing",
       termCode: b.staffingCycle.term.code,
     });
   }
@@ -134,14 +136,14 @@ export async function formUsages(formId: string): Promise<FormUsage[]> {
     usages.push({
       kind: "partner-application",
       label: "Partner application (/partner/apply)",
-      href: "/core/partners",
+      href: "/core/partners?settings=1",
     });
   }
   if (partnerSurveyBinding) {
     usages.push({
       kind: "partner-survey",
       label: "Post-project survey (/partner/survey)",
-      href: "/core/partners/settings",
+      href: "/core/partners?settings=1",
     });
   }
   for (const c of hiringCycles) {

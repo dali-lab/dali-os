@@ -942,6 +942,7 @@ export default [
   // lands on /result. Desktop app depends on these (see
   // desktop/src-tauri/src/recording.rs).
   route("api/meeting-recordings", "routes/api.meeting-recordings.ts"),
+  route("api/meeting-recordings/active", "routes/api.meeting-recordings.active.ts"),
   route("api/meeting-recordings/:id", "routes/api.meeting-recordings.$id.ts"),
   route("api/meeting-recordings/:id/chunks", "routes/api.meeting-recordings.$id.chunks.ts"),
   route("api/meeting-recordings/:id/result", "routes/api.meeting-recordings.$id.result.ts"),

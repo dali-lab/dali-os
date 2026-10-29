@@ -160,12 +160,6 @@ export const FEATURE_FLAGS = [
       "Help hours, socials and info sessions on a hiring cycle. Core creates events on the cycle page, emails everyone who started an application, and takes attendance by QR self check-in or by hand. Attendance shows on application reviews as an engagement signal. Ships off.",
   },
   {
-    key: "forms-page-access",
-    label: "Forms use page access",
-    description:
-      "Who can see, build, and fill a form comes from its Drive page (folder scope, named shares, general access) instead of the Core/Instructor role gate and the form's own audience setting. Share a form from the same dialog as a document. A cutover switch: only 'everyone' counts, role or user targeting is ignored. Ships off.",
-  },
-  {
     key: "work-history-import",
     label: "Work history import",
     description:
@@ -194,6 +188,18 @@ export const FEATURE_FLAGS = [
     label: "Onboarding journeys",
     description:
       "Self-paced onboarding at /journeys: per-domain journeys of modules on a prerequisite map, each with lesson pages, slides, an in-browser coding lab and a quiz, with progress saved per member. First-term members find Journeys pinned under Drive; everyone else finds it in the Lab area. Core and domain leads create journeys and share edit access per journey. Ships off.",
+  },
+  {
+    key: "agent-presence",
+    label: "Agent presence",
+    description:
+      "When a member's AI agent (Claude, ChatGPT, Cursor) reads or edits a page over MCP, it shows up for everyone on that page: an agent avatar in the presence bar (hover says whose agent it is) and, for edits, a cursor and a brief highlight of what it wrote. Targeting applies to the member whose agent it is. Ships off.",
+  },
+  {
+    key: "form-blocks",
+    label: "Form tile strip",
+    description:
+      "Forms opened from a form link show a strip of DALI tiles across the top of the card. Each form gets its own pattern. On submit the strip folds into one block and the card settles on a short confirmation. Signed-out visitors see it whenever the flag is switched on, whatever its targeting. Ships off.",
   },
 ] as const satisfies readonly FeatureFlagDef[];
 

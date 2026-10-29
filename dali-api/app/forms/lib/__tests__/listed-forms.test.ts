@@ -1,34 +1,23 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/db");
-vi.mock("~/lib/roles", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("~/lib/roles")>()),
-  requireMember: vi.fn(),
-}));
-vi.mock("~/lib/groups", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("~/lib/groups")>()),
-  isUserInAnyGroup: vi.fn(),
-}));
+vi.mock("~/forms/lib/form-access.server", () => ({ fillAccessByPage: vi.fn() }));
 
 import { prisma } from "~/lib/db";
-import { requireMember } from "~/lib/roles";
-import { isUserInAnyGroup } from "~/lib/groups";
+import { fillAccessByPage } from "~/forms/lib/form-access.server";
 import { listedFormsFor } from "~/forms/lib/public-form";
 
 const mockPrisma = prisma as unknown as Record<
   string,
   Record<string, ReturnType<typeof vi.fn>>
 >;
-const mockMember = requireMember as ReturnType<typeof vi.fn>;
-const mockInGroup = isUserInAnyGroup as ReturnType<typeof vi.fn>;
+const mockFillAccess = fillAccessByPage as ReturnType<typeof vi.fn>;
 
 function formRow(overrides: Record<string, unknown> = {}) {
   return {
     id: "form-1",
     name: "Lab Survey",
     publicToken: "tok-1",
-    audience: "Members",
-    audienceGroupIds: [],
     oneResponsePerMember: false,
     ...overrides,
   };
@@ -38,8 +27,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mockPrisma.form.findMany.mockResolvedValue([]);
   mockPrisma.formSubmission.findFirst.mockResolvedValue(null);
-  mockMember.mockResolvedValue({ userId: "user-1" });
-  mockInGroup.mockResolvedValue(false);
+  mockFillAccess.mockResolvedValue("ok");
 });
 
 describe("listedFormsFor", () => {
@@ -60,20 +48,15 @@ describe("listedFormsFor", () => {
     ]);
   });
 
-  it("filters forms whose audience denies the viewer", async () => {
+  it("filters forms whose page denies the viewer", async () => {
     mockPrisma.form.findMany.mockResolvedValue([
-      formRow({ id: "f-members", publicToken: "t1", audience: "Members" }),
-      formRow({
-        id: "f-groups",
-        publicToken: "t2",
-        audience: "Groups",
-        audienceGroupIds: ["g1"],
-      }),
+      formRow({ id: "f-open", publicToken: "t1" }),
+      formRow({ id: "f-closed", publicToken: "t2" }),
     ]);
-    mockMember.mockResolvedValue(null); // not a member
-    mockInGroup.mockResolvedValue(false); // not in the group
+    mockFillAccess.mockImplementation(async (id: string) => (id === "f-open" ? "ok" : "denied"));
 
-    expect(await listedFormsFor("user-1")).toEqual([]);
+    expect((await listedFormsFor("user-1")).map((f) => f.id)).toEqual(["f-open"]);
+    expect(mockFillAccess).toHaveBeenCalledWith("f-closed", "user-1", undefined);
   });
 
   it("drops one-response forms the member already submitted, keeps unfilled ones", async () => {

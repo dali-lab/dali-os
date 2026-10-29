@@ -1,6 +1,7 @@
 import { prisma } from "~/lib/db";
 import type { SigningAudience } from "~/generated/prisma/enums";
 import { parseColumnMapping, type ColumnMapping } from "./slot-roles";
+import { setFormPublished } from "~/forms/lib/form-publish.server";
 
 // Audiences an operator can lock a bound form to (a subset of the signing
 // SigningAudience enum, whose resolvers the gate reuses). Manual/HiringParticipants
@@ -261,6 +262,25 @@ export async function setSlotGate(
     },
   });
   return { ok: true };
+}
+
+// Open or close the bound form for submissions. The form is managed, so Forms
+// refuses to publish it; this is the only place a staffing manager can.
+export async function setSlotPublished(
+  staffingCycleId: string,
+  slot: Slot,
+  published: boolean,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const binding = await prisma.staffingCycleFormBinding.findUnique({
+    where: { staffingCycleId_slot: { staffingCycleId, slot } },
+    select: { formId: true },
+  });
+  if (!binding)
+    return { ok: false, error: "Connect a form before opening it." };
+  const result = await setFormPublished(binding.formId, published, {
+    clearWindow: true,
+  });
+  return "error" in result ? { ok: false, error: result.error } : { ok: true };
 }
 
 // Clearing a slot returns it to default (no form surfaced to members).

@@ -11,6 +11,8 @@ import type { ProvisionResult } from "~/members/lib/provisioning.server";
 import { applicantGroup, type AcceptContext } from "~/hiring/lib/applicant-groups.server";
 import { notify } from "~/lib/notify.server";
 import { getHiringEmail } from "~/hiring/lib/hiring-emails.server";
+import { getEmailTemplate } from "~/email/lib/templates.server";
+import { decisionEmailVars, decisionEmailVarsProblem } from "~/hiring/lib/decision-email-vars";
 import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
 
 export async function action({ request, params }: Route.ActionArgs) {
@@ -61,7 +63,16 @@ export async function action({ request, params }: Route.ActionArgs) {
               netId: true,
             },
           },
-          applicationCycle: { select: { applicants: true, timeline: true } },
+          startTerm: { select: { code: true } },
+          applicationCycle: {
+            select: {
+              applicants: true,
+              timeline: true,
+              offerRespondBy: true,
+              waitlistRespondBy: true,
+              term: { select: { code: true } },
+            },
+          },
         },
       },
     },
@@ -111,6 +122,27 @@ export async function action({ request, params }: Route.ActionArgs) {
           { status: 409 }
         );
   }
+
+  const cycle = domainApp.application.applicationCycle;
+  const emailDates = {
+    startTermCode: domainApp.application.startTerm?.code ?? cycle.term?.code ?? null,
+    offerRespondBy: cycle.offerRespondBy ?? null,
+    waitlistRespondBy: cycle.waitlistRespondBy ?? null,
+  };
+  if (binding) {
+    // Students/Interns acceptances append the next-steps block, so its tokens count too.
+    const nextSteps =
+      decision.type === "Accepted" && decisionChannel === "email"
+        ? await getEmailTemplate("hiring:onboarding:NextSteps")
+        : null;
+    const problem = decisionEmailVarsProblem(decision.type, emailDates, [
+      binding.subject,
+      binding.body,
+      nextSteps?.body ?? "",
+    ]);
+    if (problem) return Response.json({ error: problem }, { status: 409 });
+  }
+  const dateVars = decisionEmailVars(decision.type, emailDates);
 
   const released = await prisma.decision.create({
     data: {
@@ -186,6 +218,7 @@ export async function action({ request, params }: Route.ActionArgs) {
         {
           firstName: user.firstName,
           domain: domainName,
+          ...dateVars,
         },
       );
 
@@ -196,9 +229,10 @@ export async function action({ request, params }: Route.ActionArgs) {
       // (see the audit metadata below, which omits it). Lab members acceptances don't
       // provision an account, so there's no onboarding block.
       const onboarding = provisionResult
-        ? onboardingEmailHtml(
+        ? await onboardingEmailHtml(
             provisionResult.daliEmail ?? null,
             provisionResult.daliTempPassword ?? null,
+            dateVars,
           )
         : "";
 

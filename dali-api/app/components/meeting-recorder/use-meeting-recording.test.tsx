@@ -14,6 +14,7 @@ import { DialogProvider } from "~/components/ui/dialog";
 import { useMeetingRecording, type UseMeetingRecording } from "./use-meeting-recording";
 import type { EnhanceBlockChange, EnhanceMarkEntry, SnapshotBlock } from "./enhance-plan";
 import type { LatestRecording } from "./types";
+import { resetLiveSession } from "./live-session";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -189,6 +190,7 @@ afterEach(() => {
   act(() => root?.unmount());
   container?.remove();
   vi.unstubAllGlobals();
+  resetLiveSession();
   box.current = null;
 });
 
@@ -468,7 +470,7 @@ describe("latestRecording pickup (Fix 1B: a finished recording reaches any viewe
   });
 });
 
-describe("leaving mid-recording: only the capturing tab is guarded", () => {
+describe("leaving mid-recording: in-app navigation never prompts", () => {
   let navigateTo: (path: string) => void = () => {};
   const at: { path: string } = { path: "" };
 
@@ -581,7 +583,7 @@ describe("leaving mid-recording: only the capturing tab is guarded", () => {
     expect(awarenessWrites.filter(([field]) => field === "recording")).toEqual([]);
   });
 
-  it("still asks before leaving the tab that drives the recording, and announces it", async () => {
+  it("leaves the tab that drives the recording without any prompt, and announces it", async () => {
     window.localStorage.setItem(
       backupKey("doc-leave"),
       JSON.stringify({ id: "rMine", link: "", aiEnabled: false, captureMode: "desktop" }),
@@ -590,11 +592,11 @@ describe("leaving mid-recording: only the capturing tab is guarded", () => {
     expect(box.current!.phase).toBe("recording");
     expect(box.current!.remote).toBeNull();
 
-    expect(beforeUnloadPrevented()).toBe(true);
+    expect(beforeUnloadPrevented()).toBe(false);
     await leave();
 
-    expect(at.path).toBe("/test");
-    expect(document.body.textContent).toContain("Leave while recording?");
+    expect(at.path).toBe("/elsewhere");
+    expect(document.body.textContent).not.toContain("Leave while recording?");
     expect(awarenessWrites).toContainEqual(["recording", expect.objectContaining({ userId: "me" })]);
   });
 });

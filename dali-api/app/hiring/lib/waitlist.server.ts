@@ -36,6 +36,8 @@ import {
   type ProvisionResult,
 } from "~/members/lib/provisioning.server";
 import type { Prisma } from "~/generated/prisma/client";
+import { getEmailTemplate } from "~/email/lib/templates.server";
+import { decisionEmailVars, decisionEmailVarsProblem } from "~/hiring/lib/decision-email-vars";
 import { getHiringEmail } from "~/hiring/lib/hiring-emails.server";
 import { compactRanks } from "~/hiring/lib/waitlist";
 
@@ -234,6 +236,7 @@ export type AcceptResult =
         | "not-found"
         | "not-waitlisted"
         | "no-email-binding"
+        | "email-vars"
         | "no-domain";
       message: string;
     };
@@ -270,6 +273,14 @@ export async function acceptFromWaitlist(args: {
           user: {
             select: { firstName: true, dartmouthEmail: true, netId: true },
           },
+          startTerm: { select: { code: true } },
+          applicationCycle: {
+            select: {
+              offerRespondBy: true,
+              waitlistRespondBy: true,
+              term: { select: { code: true } },
+            },
+          },
         },
       },
       decisions: {
@@ -305,6 +316,21 @@ export async function acceptFromWaitlist(args: {
         "There's no Accepted email yet. Write one on a cycle's Setup tab before accepting off the waitlist.",
     };
   }
+
+  const cycle = da.application.applicationCycle;
+  const emailDates = {
+    startTermCode: da.application.startTerm?.code ?? cycle?.term?.code ?? null,
+    offerRespondBy: cycle?.offerRespondBy ?? null,
+    waitlistRespondBy: cycle?.waitlistRespondBy ?? null,
+  };
+  const nextSteps = await getEmailTemplate("hiring:onboarding:NextSteps");
+  const problem = decisionEmailVarsProblem("Accepted", emailDates, [
+    binding.subject,
+    binding.body,
+    nextSteps?.body ?? "",
+  ]);
+  if (problem) return { ok: false, reason: "email-vars", message: problem };
+  const dateVars = decisionEmailVars("Accepted", emailDates);
 
   // Transactional core: reopen → create Released Accept → shift ranks → re-complete.
   // Side-effects (provisioning, email) run after the transaction so a Gmail or
@@ -407,11 +433,12 @@ export async function acceptFromWaitlist(args: {
       const { subject, html } = renderForSlot(
         decisionSlot("Accepted"),
         binding,
-        { firstName: user.firstName, domain: domainName },
+        { firstName: user.firstName, domain: domainName, ...dateVars },
       );
-      const onboarding = onboardingEmailHtml(
+      const onboarding = await onboardingEmailHtml(
         provisionResult?.daliEmail ?? null,
         provisionResult?.daliTempPassword ?? null,
+        dateVars,
       );
       const { id, deduped } = await enqueueOutbound({
         channel: "email",

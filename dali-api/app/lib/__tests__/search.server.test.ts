@@ -526,22 +526,33 @@ describe("runSearch — help articles", () => {
 });
 
 describe("runSearch — forms", () => {
-  const FORMS_VIEWER: UserRoles = { ...MEMBER, canViewForms: true };
-
-  it("searches only live forms, so a trashed one never matches", async () => {
-    mockPrisma.form.findMany.mockResolvedValue([{ id: "frm1", name: "Query intake" }]);
-
-    const results = await runSearch({ userId: "u1", roles: FORMS_VIEWER, q: "query" });
-
-    expect(mockPrisma.form.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { name: like("query"), archivedAt: null } }),
+  const viewable = (ids: string[]) =>
+    vi.mocked(getPageAccessBulk).mockImplementation(
+      async (_u, pages) =>
+        new Map(pages.map((p) => [p.id, { canView: ids.includes(p.id), canEdit: false, canComment: false }])),
     );
-    expect(results).toContainEqual(expect.objectContaining({ type: "form", id: "frm1", subtitle: "Form" }));
+
+  it("returns the Form pages the viewer can view, without canViewForms", async () => {
+    mockPrisma.page.findMany.mockImplementation(async (args: any) =>
+      args.where.kind === "Form"
+        ? [
+            { id: "seen", title: "Intake form", iconEmoji: null },
+            { id: "hidden", title: "Intake secret", iconEmoji: null },
+          ]
+        : [],
+    );
+    viewable(["seen"]);
+    const results = await runSearch({ userId: "u1", roles: MEMBER, q: "intake" });
+    expect(results.filter((r) => r.type === "form")).toEqual([
+      expect.objectContaining({ id: "seen", title: "Intake form", subtitle: "Form" }),
+    ]);
+    expect(mockPrisma.form.findMany).not.toHaveBeenCalled();
   });
 
-  it("does not search forms for a viewer without the forms gate", async () => {
-    await runSearch({ userId: "u1", roles: MEMBER, q: "query" });
-    expect(mockPrisma.form.findMany).not.toHaveBeenCalled();
+  it("queries live Form pages by title only", async () => {
+    await runSearch({ userId: "u1", roles: MEMBER, q: "intake" });
+    const formQuery = mockPrisma.page.findMany.mock.calls.map((c) => c[0]).find((a: any) => a.where.kind === "Form");
+    expect(formQuery.where).toEqual({ kind: "Form", archivedAt: null, title: like("intake") });
   });
 
   it("keeps Form pages out of the page-title search so a form is not listed twice or leaked", async () => {

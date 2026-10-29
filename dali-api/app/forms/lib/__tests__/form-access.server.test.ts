@@ -1,15 +1,11 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/db");
-vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabledForEveryone: vi.fn() }));
 vi.mock("~/lib/pageAccess.server", () => ({ PAGE_ACCESS_SELECT: { id: true }, getPageAccess: vi.fn() }));
-vi.mock("~/lib/roles", () => ({ canViewForms: vi.fn(), isCore: vi.fn(), requireMember: vi.fn() }));
-vi.mock("~/lib/groups", () => ({ isUserInAnyGroup: vi.fn() }));
+vi.mock("~/lib/roles", () => ({ isLabMember: vi.fn() }));
 
 import { prisma } from "~/lib/db";
-import { isFeatureEnabledForEveryone } from "~/lib/feature-flags.server";
 import { getPageAccess } from "~/lib/pageAccess.server";
-import { canViewForms, isCore, requireMember } from "~/lib/roles";
 import { canBuildForm, canSeeForm, fillAccessByPage } from "~/forms/lib/form-access.server";
 import { formFillAccess } from "~/forms/lib/public-form";
 
@@ -22,37 +18,11 @@ beforeEach(() => {
   (prisma as any).page.findUnique.mockResolvedValue(page);
 });
 
-describe("flag off: legacy gates", () => {
-  beforeEach(() => vi.mocked(isFeatureEnabledForEveryone).mockResolvedValue(false));
-
-  it("canSeeForm is canViewForms", async () => {
-    vi.mocked(canViewForms).mockResolvedValue(true);
-    expect(await canSeeForm("u1", "f1")).toBe(true);
-    expect(getPageAccess).not.toHaveBeenCalled();
-  });
-
-  it("canBuildForm is isCore", async () => {
-    vi.mocked(isCore).mockResolvedValue(false);
-    expect(await canBuildForm("u1", "f1")).toBe(false);
-    expect(getPageAccess).not.toHaveBeenCalled();
-  });
-
-  it("formFillAccess reads the form's own audience", async () => {
-    vi.mocked(requireMember).mockResolvedValue(true as any);
-    expect(await formFillAccess({ id: "f1", audience: "Members", audienceGroupIds: [] }, "u1")).toBe("ok");
-    expect(await formFillAccess({ id: "f1", audience: "Members", audienceGroupIds: [] }, null)).toBe("login");
-    expect(getPageAccess).not.toHaveBeenCalled();
-  });
-});
-
-describe("flag on: the form's page decides", () => {
-  beforeEach(() => vi.mocked(isFeatureEnabledForEveryone).mockResolvedValue(true));
-
+describe("the form's page decides", () => {
   it("canSeeForm is the page's canView, even for a trashed form", async () => {
     vi.mocked(getPageAccess).mockResolvedValue(access({ canView: true }));
     expect(await canSeeForm("u1", "f1")).toBe(true);
     expect(getPageAccess).toHaveBeenCalledWith("u1", page, undefined, { includeArchived: true });
-    expect(canViewForms).not.toHaveBeenCalled();
   });
 
   it("canBuildForm is the page's canEdit", async () => {
@@ -60,7 +30,6 @@ describe("flag on: the form's page decides", () => {
     expect(await canBuildForm("u1", "f1")).toBe(false);
     vi.mocked(getPageAccess).mockResolvedValue(access({ canView: true, canEdit: true }));
     expect(await canBuildForm("u1", "f1")).toBe(true);
-    expect(isCore).not.toHaveBeenCalled();
   });
 
   it("a form with no page is neither visible nor buildable", async () => {
@@ -88,9 +57,27 @@ describe("flag on: the form's page decides", () => {
     expect(await fillAccessByPage("f1", "u1")).toBe("denied");
   });
 
-  it("formFillAccess ignores the form's own audience", async () => {
+  it("formFillAccess delegates to the page: Public admits without a session", async () => {
+    (prisma as any).page.findUnique.mockResolvedValue({ ...page, linkAccess: "Public" });
+    expect(await formFillAccess({ id: "f1" }, null)).toBe("ok");
+    expect(getPageAccess).not.toHaveBeenCalled();
+  });
+
+  it("formFillAccess sends a sessionless visitor of a non-Public page to login", async () => {
+    expect(await formFillAccess({ id: "f1" }, null)).toBe("login");
+  });
+
+  it("formFillAccess follows the page's canView for a signed-in viewer", async () => {
     vi.mocked(getPageAccess).mockResolvedValue(access({ canView: true }));
-    expect(await formFillAccess({ id: "f1", audience: "Groups", audienceGroupIds: ["g9"] }, "u1")).toBe("ok");
-    expect(requireMember).not.toHaveBeenCalled();
+    expect(await formFillAccess({ id: "f1" }, "u1")).toBe("ok");
+    vi.mocked(getPageAccess).mockResolvedValue(access({ canView: false }));
+    expect(await formFillAccess({ id: "f1" }, "u1")).toBe("denied");
+  });
+
+  it("formFillAccess denies a missing or trashed page", async () => {
+    (prisma as any).page.findUnique.mockResolvedValue(null);
+    expect(await formFillAccess({ id: "f1" }, "u1")).toBe("denied");
+    (prisma as any).page.findUnique.mockResolvedValue({ ...page, archivedAt: new Date() });
+    expect(await formFillAccess({ id: "f1" }, "u1")).toBe("denied");
   });
 });

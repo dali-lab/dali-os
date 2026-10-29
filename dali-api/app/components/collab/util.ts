@@ -1,6 +1,8 @@
 // Shared helpers and types used by the collaborative editor and the
 // page-level presence layer.
 
+import type { AwarenessAgent } from "./agent";
+
 export { initialsFromName } from "~/lib/display";
 
 export const IDLE_AFTER_MS = 30_000;
@@ -44,4 +46,6 @@ export interface AwarenessUser {
   photoUrl?: string | null;
   /** One-line headline shown in the hover card (e.g. email · class-year). */
   subtitle?: string | null;
+  /** Set on entries injected server-side for an MCP agent; userId is its owner. */
+  agent?: AwarenessAgent;
 }

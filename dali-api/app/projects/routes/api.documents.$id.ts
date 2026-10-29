@@ -9,6 +9,8 @@ import { getPageAccess } from "~/lib/pageAccess.server";
 import { loadManageableNotebook, notebookErrorResponse, trashNotebook } from "~/lib/notebooks.server";
 import { isRoot, ROOT_DELETE_ERROR, CLEARED_FOLDER_TYPE } from "~/lib/drive-roots";
 
+// GET    /api/documents/:id — { iconEmoji }, for a desktop tab that hasn't
+//                             shown its page yet.
 // POST   /api/documents/:id — partial update. Body: any of
 //                             { title?, iconEmoji?, coverImageUrl? }.
 // DELETE /api/documents/:id — archive (sets archivedAt; archived pages drop
@@ -52,6 +54,16 @@ function isBody(x: unknown): x is Body {
   const hasOne =
     b.title !== undefined || b.iconEmoji !== undefined || b.coverImageUrl !== undefined;
   return okTitle && okIcon && okCover && hasOne;
+}
+
+export async function loader({ request, params }: Route.LoaderArgs) {
+  const gate = await requireMemberSession(request);
+  if (!gate.ok) return gate.response;
+  const pageId = params.id!;
+  const access = await getPageAccess(gate.auth.user.sub, pageId, request);
+  if (!access.canView) return Response.json({ error: "Document not found" }, { status: 404 });
+  const page = await prisma.page.findUnique({ where: { id: pageId }, select: { iconEmoji: true } });
+  return Response.json({ iconEmoji: page?.iconEmoji ?? null });
 }
 
 export async function action({ request, params }: Route.ActionArgs) {

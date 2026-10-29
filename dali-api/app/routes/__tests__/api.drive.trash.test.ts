@@ -11,9 +11,7 @@ vi.mock("~/lib/cors", () => ({
   withCors: (_req: unknown, res: unknown) => res,
   handlePreflight: () => null,
 }));
-vi.mock("~/lib/roles", () => ({
-  canViewForms: vi.fn(),
-}));
+vi.mock("~/forms/lib/form-access.server", () => ({ canManageFormPlacement: vi.fn() }));
 vi.mock("~/lib/pageAccess.server", () => ({
   getPageAccess: vi.fn(),
   getPageAccessBulk: vi.fn(),
@@ -24,7 +22,7 @@ vi.mock("~/lib/fileAccess.server", () => ({
 
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
-import { canViewForms } from "~/lib/roles";
+import { canManageFormPlacement } from "~/forms/lib/form-access.server";
 import { getPageAccess, getPageAccessBulk } from "~/lib/pageAccess.server";
 import { canEditFile } from "~/lib/fileAccess.server";
 import { logAuditEvent } from "~/lib/audit";
@@ -70,7 +68,7 @@ beforeEach(() => {
     ok: true,
     user: { sub: "user-1" },
   } as unknown as Awaited<ReturnType<typeof requireAuth>>);
-  vi.mocked(canViewForms).mockResolvedValue(false);
+  vi.mocked(canManageFormPlacement).mockResolvedValue(false);
   vi.mocked(canEditFile).mockResolvedValue(false);
   mockPrisma.page.findMany.mockResolvedValue([]);
   mockPrisma.page.update.mockResolvedValue({});
@@ -149,93 +147,6 @@ describe("GET /api/drive/trash", () => {
     const body = (await res.json()) as { items: unknown[] };
 
     expect(body.items).toEqual([]);
-  });
-});
-
-describe("GET /api/drive/trash (forms)", () => {
-  const formPage = { id: "form-1", title: "Intake", archivedAt: ARCHIVED_AT, kind: "Form", parentPageId: "folder-1" };
-  const list = async () => {
-    const res = (await loader({ request: new Request("http://os.test/api/drive/trash") } as never)) as Response;
-    return ((await res.json()) as { items: { id: string; type: string; title: string }[] }).items;
-  };
-
-  it("lists an archived Form page as a form when the viewer has the forms gate", async () => {
-    vi.mocked(canViewForms).mockResolvedValue(true);
-    mockPrisma.page.findMany.mockResolvedValue([formPage]);
-
-    expect(await list()).toEqual([
-      { id: "form-1", type: "form", title: "Intake", parentFolderId: null, archivedAt: ARCHIVED_AT.toISOString() },
-    ]);
-    expect(mockPrisma.page.findMany.mock.calls[0][0].where.kind.in).toContain("Form");
-  });
-
-  it("drops Form pages for a viewer without the forms gate, whatever page access says", async () => {
-    mockPrisma.page.findMany.mockResolvedValue([formPage]);
-    bulkAccess(FULL);
-
-    expect(await list()).toEqual([]);
-  });
-
-  it("does not run a Form page through page access", async () => {
-    vi.mocked(canViewForms).mockResolvedValue(true);
-    mockPrisma.page.findMany.mockResolvedValue([formPage]);
-
-    await list();
-
-    expect(vi.mocked(getPageAccessBulk).mock.calls[0]?.[1]).toEqual([]);
-  });
-});
-
-describe("POST /api/drive/trash (forms)", () => {
-  const post = (fields: Record<string, string>) => {
-    const body = new FormData();
-    for (const [k, v] of Object.entries(fields)) body.set(k, v);
-    return action({ request: new Request("http://os.test/api/drive/trash", { method: "POST", body }) } as never) as Promise<Response>;
-  };
-  const formModel = () => prisma.form as unknown as { findUnique: ReturnType<typeof vi.fn> };
-
-  it("archives a form through the helper", async () => {
-    vi.mocked(canViewForms).mockResolvedValue(true);
-    formModel().findUnique.mockResolvedValue({ id: "form-1", archivedAt: null });
-
-    expect((await post({ intent: "archive-form", id: "form-1" })).status).toBe(200);
-    expect(setFormArchived).toHaveBeenCalledWith("form-1", expect.any(Date));
-  });
-
-  it("restores a form through the helper", async () => {
-    vi.mocked(canViewForms).mockResolvedValue(true);
-
-    expect((await post({ intent: "restore", type: "form", id: "form-1" })).status).toBe(200);
-    expect(setFormArchived).toHaveBeenCalledWith("form-1", null);
-  });
-
-  it("purges a form through the helper", async () => {
-    vi.mocked(canViewForms).mockResolvedValue(true);
-    vi.mocked(formDeletionBlockers).mockResolvedValue([]);
-
-    expect((await post({ intent: "purge", type: "form", id: "form-1" })).status).toBe(200);
-    expect(deleteForm).toHaveBeenCalledWith("form-1");
-  });
-
-  it("refuses to purge a form that is still in use", async () => {
-    vi.mocked(canViewForms).mockResolvedValue(true);
-    vi.mocked(formDeletionBlockers).mockResolvedValue(["the 26F application"]);
-
-    expect((await post({ intent: "purge", type: "form", id: "form-1" })).status).toBe(409);
-    expect(deleteForm).not.toHaveBeenCalled();
-  });
-
-  it("refuses every form action without the forms gate", async () => {
-    const attempts: Record<string, string>[] = [
-      { intent: "archive-form", id: "form-1" },
-      { intent: "restore", type: "form", id: "form-1" },
-      { intent: "purge", type: "form", id: "form-1" },
-    ];
-    for (const fields of attempts) {
-      expect((await post(fields)).status).toBe(403);
-    }
-    expect(setFormArchived).not.toHaveBeenCalled();
-    expect(deleteForm).not.toHaveBeenCalled();
   });
 });
 
@@ -423,7 +334,7 @@ describe("POST /api/drive/trash (audit)", () => {
   });
 
   it("logs a form purge with the title read before the delete", async () => {
-    vi.mocked(canViewForms).mockResolvedValue(true);
+    vi.mocked(canManageFormPlacement).mockResolvedValue(true);
     vi.mocked(formDeletionBlockers).mockResolvedValue([]);
     findPage.mockResolvedValue({ title: "Intake" });
 

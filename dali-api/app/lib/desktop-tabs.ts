@@ -36,6 +36,7 @@ export interface DesktopTabsState {
 export interface OpenTabRequest {
   url: string;
   label: string;
+  emoji?: string | null;
 }
 
 export const MAX_TABS = 20;
@@ -59,6 +60,7 @@ function newTab(req: OpenTabRequest, id: string, now: number, ephemeral: boolean
     url: req.url,
     origin: req.url,
     label: req.label,
+    ...(req.emoji ? { emoji: req.emoji } : {}),
     pinned: false,
     ephemeral,
     lastActivatedAt: now,
@@ -255,6 +257,13 @@ export function setTabEmoji(state: DesktopTabsState, url: string, emoji: string 
   const tab = activeTab(state);
   if (!tab || !sameUrl(tab.url, url) || (tab.emoji ?? null) === emoji) return state;
   return updateTab(state, tab.id, ({ emoji: _, ...rest }) => (emoji ? { ...rest, emoji } : rest));
+}
+
+/** A looked-up emoji for a tab that hasn't shown its page yet. Dropped if the
+ *  tab has moved on or already has one. */
+export function fillTabEmoji(state: DesktopTabsState, id: string, url: string, emoji: string | null): DesktopTabsState {
+  if (!emoji) return state;
+  return updateTab(state, id, (t) => (t.emoji || !sameUrl(t.url, url) ? t : { ...t, emoji }));
 }
 
 /** Move a tab to `toIndex`, keeping pinned tabs clustered on the left. */

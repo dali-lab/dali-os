@@ -48,7 +48,7 @@ import { requireMemberSession, requireProjectEditAccess } from "~/lib/auth";
 import { getPageAccess } from "~/lib/pageAccess.server";
 import { NotebookError, loadManageableNotebook, trashNotebook } from "~/lib/notebooks.server";
 import { findNameConflict } from "~/lib/page-names.server";
-import { action } from "../api.documents.$id";
+import { action, loader } from "../api.documents.$id";
 
 const m = prisma as any;
 
@@ -403,5 +403,42 @@ describe("POST /api/documents/:id — names", () => {
     const res = await post({ iconEmoji: "x" });
     expect(res.status).toBe(200);
     expect(findNameConflict).not.toHaveBeenCalled();
+  });
+});
+
+describe("GET /api/documents/:id — a background tab's emoji", () => {
+  function get() {
+    return loader({
+      request: new Request("http://localhost/api/documents/p1"),
+      params: { id: "p1" },
+    } as any) as Promise<Response>;
+  }
+
+  it("returns the emoji of a page the caller can view", async () => {
+    vi.mocked(getPageAccess).mockResolvedValue({ canView: true } as any);
+    m.page.findUnique.mockResolvedValue({ iconEmoji: "🌲" });
+    const res = await get();
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ iconEmoji: "🌲" });
+    expect(getPageAccess).toHaveBeenCalledWith("u1", "p1", expect.any(Request));
+  });
+
+  it("returns null for a page without one", async () => {
+    vi.mocked(getPageAccess).mockResolvedValue({ canView: true } as any);
+    m.page.findUnique.mockResolvedValue({ iconEmoji: null });
+    expect(await (await get()).json()).toEqual({ iconEmoji: null });
+  });
+
+  it("404s a page the caller can't view, without reading it", async () => {
+    vi.mocked(getPageAccess).mockResolvedValue({ canView: false } as any);
+    const res = await get();
+    expect(res.status).toBe(404);
+    expect(m.page.findUnique).not.toHaveBeenCalled();
+  });
+
+  it("needs a member session", async () => {
+    vi.mocked(requireMemberSession).mockResolvedValue({ ok: false, response: new Response(null, { status: 401 }) } as any);
+    expect((await get()).status).toBe(401);
+    expect(getPageAccess).not.toHaveBeenCalled();
   });
 });

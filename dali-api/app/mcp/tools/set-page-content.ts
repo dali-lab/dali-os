@@ -10,6 +10,7 @@ import { prisma } from "~/lib/db";
 import { PAGE_ACCESS_SELECT, getPageAccess } from "~/lib/pageAccess.server";
 import { markdownToBlocks } from "~/collab/blocknote-server";
 import { replaceCollabDocContent } from "~/collab/write";
+import { announceAgent, pagePresenceRoom } from "~/collab/agent-presence.server";
 import { pageDocName } from "~/collab/roomName";
 
 // Generous but bounded — a huge page body is ~100 KB of markdown.
@@ -85,6 +86,7 @@ export async function runSetPageContent(callerId: string, input: Input) {
     throw new SetPageContentError("Markdown could not be parsed", 400);
   }
 
+  void announceAgent({ action: "editing", presenceRoom: pagePresenceRoom(page.id) });
   // Same doc-name derivation as read_page so the two tools round-trip.
   await replaceCollabDocContent(page.contentDocId ?? pageDocName(page.id), blocks, callerId);
 

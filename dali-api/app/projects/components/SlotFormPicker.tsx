@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 import { useFetcher } from "react-router";
 import { Button } from "~/components/ui/Button";
 import { Select, Tooltip } from "~/components/ui/floating";
+import { Toggle } from "~/components/ui/Toggle";
 import { useDialog } from "~/components/ui/dialog";
 import { useToast } from "~/components/ui/toast";
 import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
@@ -39,6 +40,7 @@ export function SlotFormPicker({
   canManage: boolean;
 }) {
   const fetcher = useFetcher();
+  const publishFetcher = useFetcher<{ ok?: boolean; error?: string }>();
   const { confirm } = useDialog();
   const toast = useToast();
   const [selected, setSelected] = useState(binding?.formId ?? "");
@@ -86,8 +88,12 @@ export function SlotFormPicker({
   // submission is attributed to the member (and, for Project Bids, can be
   // interpreted into their StaffingPreference). The token is still the form's
   // publicToken — it's only the addressing key; that route requires a session.
+  const pendingPublished = publishFetcher.formData?.get("published");
+  const published =
+    pendingPublished != null ? pendingPublished === "1" : !!binding?.published;
+  const publishError = publishFetcher.data?.error ?? null;
   const fillUrl =
-    binding?.published && binding.publicToken
+    published && binding?.publicToken
       ? `/forms/fill/${binding.publicToken}`
       : null;
 
@@ -142,6 +148,34 @@ export function SlotFormPicker({
 
       {error && <p className="text-xs text-destructive">{error}</p>}
 
+      {binding && (
+        <div className="flex flex-col gap-1">
+          <Toggle
+            tone="os"
+            checked={published}
+            disabled={!canManage || publishFetcher.state !== "idle"}
+            onChange={(e) =>
+              publishFetcher.submit(
+                {
+                  intent: "set-slot-published",
+                  published: e.currentTarget.checked ? "1" : "0",
+                },
+                { method: "post" },
+              )
+            }
+            label="Open for submissions"
+            description={
+              published
+                ? "Members can fill this form now."
+                : "Closed. Members can't fill this form until you open it."
+            }
+          />
+          {publishError && (
+            <p className="text-xs text-destructive">{publishError}</p>
+          )}
+        </div>
+      )}
+
       {/* Binding a form and telling members about it are two separate steps —
           setSlotBinding sends nothing. Surface the send action right here so a
           form can't be bound but silently never announced. Deep-links to the
@@ -161,7 +195,7 @@ export function SlotFormPicker({
           ) : (
             <Tooltip
               variant="rich"
-              content="Publish this form in Drive before sending — unpublished forms can't be filled by members."
+              content="Open this form for submissions before sending. Members can't fill a closed form."
             >
               <span
                 className="px-3 py-1.5 text-xs font-medium rounded-md border border-border text-muted-foreground opacity-60 cursor-not-allowed"
@@ -176,30 +210,21 @@ export function SlotFormPicker({
         </div>
       )}
 
-      {binding && (
+      {binding && fillUrl && (
         <p className="text-xs text-muted-foreground">
-          {fillUrl ? (
-            <>
-              Members fill this at{" "}
-              {/* Not target="_blank": the desktop shell has no second window
-                  to open into, so the click did nothing. */}
-              <a
-                href={fillUrl}
-                onClick={(e) => {
-                  if (requestOpenTabIfEmbedded(fillUrl, binding.formName))
-                    e.preventDefault();
-                }}
-                className="text-os-accent hover:underline"
-              >
-                {fillUrl}
-              </a>
-            </>
-          ) : (
-            <>
-              “{binding.formName}” is selected but not published yet — publish
-              it in Forms so members can fill it.
-            </>
-          )}
+          Members fill this at{" "}
+          {/* Not target="_blank": the desktop shell has no second window
+              to open into, so the click did nothing. */}
+          <a
+            href={fillUrl}
+            onClick={(e) => {
+              if (requestOpenTabIfEmbedded(fillUrl, binding.formName))
+                e.preventDefault();
+            }}
+            className="text-os-accent hover:underline"
+          >
+            {fillUrl}
+          </a>
         </p>
       )}
     </div>

@@ -907,6 +907,52 @@ describe("lead.cycle.$id action — save-term-dates (one Save for the card)", ()
     const datas = mockPrisma.applicationCycle.update.mock.calls.map((c: any) => c[0].data);
     expect(datas).toEqual([{ termId: "term-26f" }]);
   });
+
+  function respondByWrites() {
+    return mockPrisma.applicationCycle.update.mock.calls
+      .map((c: any) => c[0].data)
+      .filter((d: any) => "offerRespondBy" in d || "waitlistRespondBy" in d);
+  }
+
+  it("saves both respond-by dates as 11:59 PM Eastern on the chosen day", async () => {
+    mockPrisma.applicationCycle.findUniqueOrThrow = vi.fn().mockResolvedValue(before("UnderReview"));
+    await callAction({
+      intent: "save-term-dates",
+      termId: "term-26f",
+      openDate: "2026-10-05",
+      closeDate: "2026-10-18",
+      offerRespondBy: "2026-11-06",
+      waitlistRespondBy: "2027-01-15",
+    });
+    expect(respondByWrites()).toEqual([
+      {
+        // EST on both days (DST ended Nov 1).
+        offerRespondBy: new Date("2026-11-07T04:59:59.000Z"),
+        waitlistRespondBy: new Date("2027-01-16T04:59:59.000Z"),
+      },
+    ]);
+  });
+
+  it("clears a respond-by date posted empty", async () => {
+    mockPrisma.applicationCycle.findUniqueOrThrow = vi.fn().mockResolvedValue(before("UnderReview"));
+    await callAction({
+      intent: "save-term-dates",
+      termId: "term-26f",
+      openDate: "2026-10-05",
+      closeDate: "2026-10-18",
+      offerRespondBy: "",
+      waitlistRespondBy: "2027-01-15",
+    });
+    expect(respondByWrites()).toEqual([
+      { offerRespondBy: null, waitlistRespondBy: new Date("2027-01-16T04:59:59.000Z") },
+    ]);
+  });
+
+  it("leaves the respond-by dates alone when the card didn't render them", async () => {
+    mockPrisma.applicationCycle.findUniqueOrThrow = vi.fn().mockResolvedValue(before("UnderReview"));
+    await callAction({ intent: "save-term-dates", termId: "term-26f", openDate: "2026-10-05", closeDate: "2026-10-18" });
+    expect(respondByWrites()).toEqual([]);
+  });
 });
 
 // The picker posts a JSON array alongside the term and dates, so one Save

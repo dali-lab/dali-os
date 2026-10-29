@@ -11,6 +11,7 @@ import {
   listSelectableForms,
   setSlotBinding,
   setSlotGate,
+  setSlotPublished,
 } from "~/projects/lib/form-slots";
 import { prisma } from "~/lib/db";
 
@@ -395,5 +396,70 @@ describe("setSlotBinding", () => {
         update: expect.objectContaining({ formId: "form-1" }),
       }),
     );
+  });
+});
+
+describe("setSlotPublished", () => {
+  it("refuses when no form is connected to the slot", async () => {
+    vi.resetAllMocks();
+    mockPrisma.staffingCycleFormBinding.findUnique.mockResolvedValue(null);
+
+    const result = await setSlotPublished("cyc-1", "intent-to-work", true);
+
+    expect(result.ok).toBe(false);
+    expect(mockPrisma.form.update).not.toHaveBeenCalled();
+  });
+
+  it("opens the bound form and clears its hidden schedule", async () => {
+    vi.resetAllMocks();
+    mockPrisma.staffingCycleFormBinding.findUnique.mockResolvedValue({ formId: "form-1" });
+    mockPrisma.form.findUnique.mockResolvedValue({
+      publicToken: "tok",
+      _count: { versions: 2 },
+    });
+
+    const result = await setSlotPublished("cyc-1", "intent-to-work", true);
+
+    expect(result).toEqual({ ok: true });
+    expect(mockPrisma.staffingCycleFormBinding.findUnique).toHaveBeenCalledWith({
+      where: { staffingCycleId_slot: { staffingCycleId: "cyc-1", slot: "intent-to-work" } },
+      select: { formId: true },
+    });
+    expect(mockPrisma.form.update).toHaveBeenCalledWith({
+      where: { id: "form-1" },
+      data: { published: true, publicToken: "tok", opensAt: null, closesAt: null },
+    });
+  });
+
+  it("closes the bound form", async () => {
+    vi.resetAllMocks();
+    mockPrisma.staffingCycleFormBinding.findUnique.mockResolvedValue({ formId: "form-1" });
+    mockPrisma.form.findUnique.mockResolvedValue({
+      publicToken: "tok",
+      _count: { versions: 2 },
+    });
+
+    await setSlotPublished("cyc-1", "level-up", false);
+
+    expect(mockPrisma.form.update).toHaveBeenCalledWith({
+      where: { id: "form-1" },
+      data: { published: false, opensAt: null, closesAt: null },
+    });
+  });
+
+  it("passes the publish error through", async () => {
+    vi.resetAllMocks();
+    mockPrisma.staffingCycleFormBinding.findUnique.mockResolvedValue({ formId: "form-1" });
+    mockPrisma.form.findUnique.mockResolvedValue({
+      publicToken: null,
+      _count: { versions: 0 },
+    });
+
+    const result = await setSlotPublished("cyc-1", "project-bids", true);
+
+    expect(result).toEqual({
+      ok: false,
+      error: "Add at least one question version before publishing.",
+    });
   });
 });

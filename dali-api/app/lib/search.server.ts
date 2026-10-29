@@ -21,7 +21,6 @@ import { searchPageContent } from "~/lib/doc-search.server";
 import { resolveSections } from "~/lib/page-doc-sections";
 import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
 import { blocksToPlainText } from "~/components/doc/schema/configs";
-import { formsUsePageAccess } from "~/forms/lib/form-access.server";
 import { PAGE_ACCESS_SELECT, getPageAccessBulk } from "~/lib/pageAccess.server";
 import { HELP_ARTICLES } from "~/lib/help-articles";
 import { categorize } from "~/lib/file-type";
@@ -50,8 +49,6 @@ export async function runSearch(opts: {
   const roles = opts.roles;
   const like: Like = { contains: q, mode: "insensitive" };
 
-  const formsByPage = await formsUsePageAccess();
-
   const tasks: Promise<SearchResult[]>[] = [
     searchPeople(q, like),
     searchProjects(q, like),
@@ -64,10 +61,8 @@ export async function runSearch(opts: {
     searchHelpArticles(q),
     searchProjectFiles(q, like),
     searchApplications(opts.userId, roles, q, like),
-    // Groups & forms — Forms area gate. Form folders are Drive Pages, already
-    // surfaced by searchDocuments.
     roles.canViewForms ? searchGroups(q, like) : NONE,
-    formsByPage ? searchFormPages(opts.userId, q, like) : roles.canViewForms ? searchForms(q, like) : NONE,
+    searchFormPages(opts.userId, q, like),
     // Hiring library (reusable artifacts) — Core or Domain Lead, mirroring the
     // library routes. Names aren't sensitive; the routes already gate.
     roles.isCore || roles.isDomainLead ? searchRubrics(q, like) : NONE,
@@ -402,15 +397,6 @@ async function searchGroups(q: string, like: Like): Promise<SearchResult[]> {
     take: RAW_TAKE,
   });
   return simpleResults("group", "Group", rows.map((r) => ({ id: r.id, label: r.name })), q);
-}
-
-async function searchForms(q: string, like: Like): Promise<SearchResult[]> {
-  const rows = await prisma.form.findMany({
-    where: { name: like, archivedAt: null },
-    select: { id: true, name: true },
-    take: RAW_TAKE,
-  });
-  return simpleResults("form", "Form", rows.map((r) => ({ id: r.id, label: r.name })), q);
 }
 
 async function searchFormPages(userId: string, q: string, like: Like): Promise<SearchResult[]> {
