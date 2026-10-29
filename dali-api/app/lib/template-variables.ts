@@ -32,7 +32,7 @@ export const TEMPLATE_VARIABLES_REGISTRY = {
     contexts: ["email"],
   },
   location: { description: "Interview or event location.", contexts: ["email"] },
-  meetingUrl: { description: "Zoom join URL for online interviews.", contexts: ["email"] },
+  meetingUrl: { description: "Google Meet link for online interviews. Empty for in-person ones; {{location}} already includes it.", contexts: ["email"] },
   eventTitle: { description: "The application event's title.", contexts: ["email"] },
   originalCloseDate: {
     description: "The cycle's original close date (pre-extension), formatted in Eastern Time.",
