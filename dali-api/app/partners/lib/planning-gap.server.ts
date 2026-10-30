@@ -3,6 +3,7 @@ import { currentTerm } from "~/lib/roles";
 import { ACTIVE_LAB_MEMBER_WHERE } from "~/lib/prisma-shapes";
 import { parseColumnMapping } from "~/projects/lib/slot-roles";
 import {
+  hasSpots,
   intentSetupState,
   projectToPlanningItem,
   type IntentSetup,
@@ -17,6 +18,7 @@ export type PlanningData = {
   terms: PlanningTermOption[];
   termId: string | null;
   items: PlanningItem[];
+  listOnlyItems: PlanningItem[];
   domains: { id: string; name: string }[];
   returning: ReturningPerson[];
   replied: number;
@@ -25,7 +27,7 @@ export type PlanningData = {
   intentSetup: IntentSetup;
 };
 
-const APPLICATION_STAGES = ["New", "Interview", "Deciding", "Accepted"] as const;
+const APPLICATION_STAGES = ["Backlog", "New", "Interview", "Deciding", "Accepted"] as const;
 
 function addSpots(into: Record<string, number>, domainId: string, n: number) {
   into[domainId] = (into[domainId] ?? 0) + n;
@@ -51,6 +53,7 @@ export async function loadPlanningData(requestedTermId: string | null): Promise<
       terms,
       termId: null,
       items: [],
+      listOnlyItems: [],
       domains: [],
       returning: [],
       replied: 0,
@@ -70,6 +73,7 @@ export async function loadPlanningData(requestedTermId: string | null): Promise<
         id: true,
         name: true,
         iconEmoji: true,
+        status: true,
         projectTerms: { select: { termId: true } },
         termStatuses: { where: { termId: term.id }, select: { isContinuing: true } },
         roleRequests: {
@@ -103,6 +107,7 @@ export async function loadPlanningData(requestedTermId: string | null): Promise<
   ]);
 
   const items: PlanningItem[] = [];
+  const listOnlyItems: PlanningItem[] = [];
   for (const p of projects) {
     const thisTermSpots: Record<string, number> = {};
     const previousTermSpots: Record<string, number> = {};
@@ -122,14 +127,14 @@ export async function loadPlanningData(requestedTermId: string | null): Promise<
       decision: p.termStatuses[0]?.isContinuing ?? null,
       thisTermSpots,
       previousTermSpots,
+      archived: p.status === "Archived",
     });
-    if (item) items.push(item);
+    if (item) (hasSpots(item) ? items : listOnlyItems).push(item);
   }
   for (const a of applications) {
     const spotsByDomain: Record<string, number> = {};
     for (const d of a.domains) if (d.expectedMembers > 0) addSpots(spotsByDomain, d.domainId, d.expectedMembers);
-    if (Object.keys(spotsByDomain).length === 0) continue;
-    items.push({
+    const item: PlanningItem = {
       key: `application:${a.id}`,
       kind: "application",
       refId: a.id,
@@ -137,7 +142,8 @@ export async function loadPlanningData(requestedTermId: string | null): Promise<
       source: "new",
       state: a.stage as PlanningState,
       spotsByDomain,
-    });
+    };
+    (a.stage !== "Backlog" && hasSpots(item) ? items : listOnlyItems).push(item);
   }
 
   let returning: ReturningPerson[] = [];
@@ -164,6 +170,7 @@ export async function loadPlanningData(requestedTermId: string | null): Promise<
     terms,
     termId: term.id,
     items,
+    listOnlyItems,
     domains: domains.map((d) => ({ id: d.id, name: d.displayName })),
     returning,
     replied,
