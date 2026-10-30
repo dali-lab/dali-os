@@ -819,13 +819,20 @@ export function useMeetingRecording({
     }
   }
 
-  async function createRow(): Promise<StartRecordingResponse | null> {
+  async function createRow(captureSource: "desktop" | "browser"): Promise<StartRecordingResponse | null> {
     try {
       const res = await fetch("/api/meeting-recordings", {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ documentName, scheduledMeetingId, occurrenceStart }),
+        body: JSON.stringify({
+          documentName,
+          scheduledMeetingId,
+          occurrenceStart,
+          captureSource,
+          appVersion: desktopVer,
+          clientPlatform: navigator.platform,
+        }),
       });
       const json = await res.json().catch(() => null);
       if (res.status === 409 && json?.error === "alreadyRecording" && typeof json.recordingId === "string") {
@@ -852,7 +859,7 @@ export function useMeetingRecording({
 
   async function startDesktop() {
     setError(null);
-    const created = await createRow();
+    const created = await createRow("desktop");
     if (!created) {
       setOpen(true);
       return;
@@ -897,7 +904,7 @@ export function useMeetingRecording({
       setOpen(true);
       return;
     }
-    const created = await createRow();
+    const created = await createRow("browser");
     if (!created) {
       setOpen(true);
       return;

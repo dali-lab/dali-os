@@ -121,7 +121,7 @@ export const FEATURE_FLAGS = [
     key: "ai-meeting-notes",
     label: "AI meeting notes",
     description:
-      "Audio is processed by a GPU job DALI runs, then deleted within minutes of the recording ending. Only the transcript is kept, visible to whoever can see the note.",
+      "Audio is processed by a GPU job DALI runs, then deleted after. Only the transcript is kept, visible to whoever can see the note.",
   },
   {
     key: "email-personal",

@@ -2562,7 +2562,7 @@ function RecordingPolicySegment({
     <EditableSection
       title="Meeting recording"
       canEdit={canEdit}
-      description="Lets anyone editing a meeting note on this project record it. Audio is transcribed, then deleted."
+      description="Lets anyone editing a meeting note on this project record it. Audio is transcribed, then deleted after."
       onSave={() => {
         if (formRef.current) submit(formRef.current);
       }}
