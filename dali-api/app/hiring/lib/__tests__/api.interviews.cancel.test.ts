@@ -75,6 +75,7 @@ describe("POST /api/hiring/interviews/:id/cancel", () => {
     expect(notifyInterviewCancelled).toHaveBeenCalledWith({
       interviewId: "iv1",
       interviewerUserIds: ["u-in", "u-cross"],
+      reason: "lead",
       createdByUserId: "u-core",
     });
   });

@@ -1,3 +1,4 @@
+import type { Prisma } from "~/generated/prisma/client";
 import { prisma } from "~/lib/db";
 import { notify } from "~/lib/notify.server";
 import { formatInstantWithZoneLabel, resolveUserTimeZone } from "~/lib/timezone";
@@ -85,14 +86,32 @@ export async function notifyInterviewAssigned(args: {
   });
 }
 
-// A hiring lead cancelled the interview. The assigned-interview tiles clear
-// on their own (the tasks loader hides them once the interview isn't
-// Scheduled); this tells the two interviewers why. Best-effort, outside the
-// cancel transaction; pass the interviewer userIds captured before the
-// assignments flipped to Declined.
+const CANCEL_REASON_DETAIL = {
+  lead: "cancelled by the hiring lead",
+  applicant: "cancelled by the applicant",
+  moved: "moved to a new time by the applicant",
+} as const;
+
+// Read before a cancel declines the assignments: afterwards they can't be told
+// apart from interviewers who were reassigned off earlier.
+export async function getActiveInterviewerUserIds(
+  interviewId: string,
+  db: Prisma.TransactionClient = prisma,
+): Promise<string[]> {
+  const assignments = await db.interviewAssignment.findMany({
+    where: { interviewId, status: "Active" },
+    select: { cycleInterviewer: { select: { userId: true } } },
+  });
+  return assignments.map((a) => a.cycleInterviewer.userId);
+}
+
+// The interview came off the calendar. The assigned-interview tiles clear on
+// their own (the feed hides them once the interview isn't Scheduled); this
+// tells the interviewers why. Best-effort, outside the cancel transaction.
 export async function notifyInterviewCancelled(args: {
   interviewId: string;
   interviewerUserIds: string[];
+  reason: keyof typeof CANCEL_REASON_DETAIL;
   createdByUserId?: string | null;
 }): Promise<void> {
   if (args.interviewerUserIds.length === 0) return;
@@ -131,7 +150,7 @@ export async function notifyInterviewCancelled(args: {
         userId: u.id,
         vars: {
           personName,
-          itemDetail: `${domain ? `${domain} • ` : ""}${when} • ${where} • cancelled by the hiring lead`,
+          itemDetail: `${domain ? `${domain} • ` : ""}${when} • ${where} • ${CANCEL_REASON_DETAIL[args.reason]}`,
         },
         link: `/hiring/interviews/${args.interviewId}`,
       };
