@@ -1,5 +1,5 @@
 import type { Route } from "./+types/api.domain-applications.$id.resend-invite";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
 import { renderForSlot, notificationSlot } from "~/hiring/lib/email-variables";

@@ -1,4 +1,4 @@
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { currentTerm, getActiveCoreCycleTermIds, isLabMentor } from "~/lib/roles";
 import { ACTIVE_LAB_MEMBER_WHERE } from "~/lib/prisma-shapes";
 

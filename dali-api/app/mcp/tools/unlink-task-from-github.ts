@@ -2,7 +2,7 @@
 // Leaves the GH issue itself alone; just severs the dalios↔GH connection so
 // future edits stop syncing. Core or project member.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { canEditProject } from "./access";
 
 export const UNLINK_TASK_FROM_GITHUB_TOOL = {

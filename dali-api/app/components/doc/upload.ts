@@ -28,3 +28,20 @@ export async function uploadEditorImage(file: File): Promise<string> {
   const meta = await uploadFileToS3(file, UPLOAD_KEY_PREFIX);
   return rawUploadUrl(meta.s3Key);
 }
+
+/** BlockNote swallows upload errors: the upload panel shows a generic
+ * "Upload failed" and paste/drop show nothing, so surface the real reason
+ * (e.g. the size cap) ourselves. Rethrows so BlockNote still resets its UI. */
+export function withUploadErrorToast(
+  upload: (file: File) => Promise<string>,
+  showError: (message: string) => void,
+): (file: File) => Promise<string> {
+  return async (file) => {
+    try {
+      return await upload(file);
+    } catch (err) {
+      showError(err instanceof Error && err.message ? err.message : "Upload failed");
+      throw err;
+    }
+  };
+}

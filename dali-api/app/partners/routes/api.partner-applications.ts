@@ -6,14 +6,10 @@ import { createPartnerApplication } from "../lib/partner-application-create.serv
 
 // POST /api/partner-applications
 //
-// JSON create path for the board's create-mode modal (specs/partner-crm.md
-// §5): unlike the route's form-based create intent (core.partners.tsx,
-// still used by the list view's inline form), this returns `{ id }` instead
-// of redirecting, so the modal can close and let the board revalidate in
-// place rather than navigating to the new application's full page. Same
-// validation and side effects via the shared createPartnerApplication()
-// helper. Same permission model as the board's other write endpoints
-// (isCore).
+// JSON create path for the Partners page's create-mode modal (board and list
+// views share it, specs/partner-crm.md §5). Returns `{ id }` rather than
+// redirecting so the modal can close and the page revalidates in place. Same
+// permission model as the board's other write endpoints (isCore).
 
 type Body = {
   title: string;

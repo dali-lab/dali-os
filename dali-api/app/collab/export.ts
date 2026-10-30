@@ -1,6 +1,6 @@
 import * as Y from "yjs";
 import { yDocToProsemirrorJSON } from "y-prosemirror";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import type { PMNode } from "./export-html";
 import { BLOCKNOTE_FRAGMENT, LEGACY_PM_FRAGMENT, blocksToHtml, fragmentToBlocks } from "./blocknote-server";
 import { blocksToPmDoc } from "./legacy/blocknote-to-pm";

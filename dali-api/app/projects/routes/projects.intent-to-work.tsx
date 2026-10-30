@@ -1,13 +1,14 @@
 import { useMemo, useState } from "react";
-import { redirect, useLoaderData } from "react-router";
+import { redirect, useLoaderData, useSearchParams } from "react-router";
 import type { Route } from "./+types/projects.intent-to-work";
 import { useFilteredList } from "~/hooks/useFilteredList";
 import { requireAuth, redirectNonMemberToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { parseFormDataJson } from "~/lib/safe-json";
 import { canManageStaffing, canViewStaffing, currentTerm } from "~/lib/roles";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { ensureStaffingCycle } from "../lib/staffing-cycle";
+import { resyncIntentSets } from "../lib/intent-validation";
 import {
   getSlotBinding,
   isGateAudience,
@@ -15,6 +16,7 @@ import {
   setSlotBinding,
   setSlotColumnMapping,
   setSlotGate,
+  setSlotPublished,
 } from "../lib/form-slots";
 import { SubmissionFilters } from "../components/SubmissionFilters";
 import { ColumnFilters, useColumnFilters } from "../components/ColumnFilters";
@@ -131,6 +133,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     label: string;
     type: string;
     referenceSource?: string;
+    options?: string[];
   }[] = [];
   // Submissions always record; a mapping problem just means status columns
   // can't feed IntentToWork / render. Advisory, not a block.
@@ -147,6 +150,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       label: q.data.label,
       type: q.type,
       referenceSource: q.data.referenceSource,
+      options: q.data.options,
     }));
     const check = validateMapping("intent-to-work", qs, binding.mapping);
     if (!check.ok) mappingWarning = check.reason;
@@ -250,7 +254,8 @@ export async function action({ request }: Route.ActionArgs) {
     );
     if (!result.ok)
       return Response.json({ error: result.error }, { status: 400 });
-    return Response.json({ ok: true });
+    const resync = await resyncIntentSets(cycle.id, mapping as ColumnMapping);
+    return Response.json({ ok: true, ...resync });
   }
 
   if (intent === "set-slot-gate") {
@@ -259,6 +264,17 @@ export async function action({ request }: Route.ActionArgs) {
     if (audience !== null && !isGateAudience(audience))
       return Response.json({ error: "Invalid audience." }, { status: 400 });
     const result = await setSlotGate(cycle.id, SLOT, audience, null, auth.user.sub);
+    if (!result.ok)
+      return Response.json({ error: result.error }, { status: 400 });
+    return Response.json({ ok: true });
+  }
+
+  if (intent === "set-slot-published") {
+    const result = await setSlotPublished(
+      cycle.id,
+      SLOT,
+      form.get("published") === "1",
+    );
     if (!result.ok)
       return Response.json({ error: result.error }, { status: 400 });
     return Response.json({ ok: true });
@@ -293,7 +309,10 @@ function Loaded({
   >;
 }) {
   const [domainId, setDomainId] = useState("");
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [searchParams] = useSearchParams();
+  const [settingsOpen, setSettingsOpen] = useState(
+    () => searchParams.get("settings") === "1",
+  );
 
   const columnFilters = useColumnFilters(data.tableColumns);
 

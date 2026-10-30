@@ -1,6 +1,6 @@
 // MCP `update_story` — Core or project member. Mirrors api.stories.$id POST.
 
-import { prisma, Prisma } from "~/lib/db";
+import { prisma, Prisma } from "~/lib/db.server";
 import { canEditProject } from "./access";
 
 const STORY_STATUSES = ["Todo", "InProgress", "Done"] as const;

@@ -11,6 +11,7 @@ import { Menu } from "~/components/ui/floating";
 import { ProjectViewSwitch } from "~/projects/components/ProjectViewSwitch";
 import { Mail } from "lucide-react";
 import { DEFAULT_AREA_TINT } from "~/lib/nav-areas";
+import { adoptDesktopSession, resetLiveSession } from "~/components/meeting-recorder/live-session";
 
 vi.mock("~/components/page-docs/PageDocButton", () => ({
   PageDocButton: () => createElement("button", { type: "button", "aria-label": "Open this page's guide" }),
@@ -28,11 +29,13 @@ async function mount({
   tabs = true,
   onCopyLink = () => {},
   tile = {},
+  flags = {},
 }: {
   page?: ReactNode;
   tabs?: boolean;
   onCopyLink?: () => void;
   tile?: { areaKey?: string; icon?: typeof Mail };
+  flags?: Record<string, boolean>;
 } = {}) {
   const Stub = createRoutesStub([
     {
@@ -42,7 +45,7 @@ async function mount({
           ToastProvider,
           null,
           createElement(FeatureFlagsProvider, {
-            flags: {},
+            flags,
             children: createElement(PageBarSlotProvider, {
               children: createElement("div", null, page, createElement(PageBar, { tabs, star, onCopyLink, ...tile })),
             }),
@@ -195,5 +198,38 @@ describe("PageBar top spacing", () => {
     await mount({ tabs: true });
     expect(bar().className).toContain("h-11");
     expect(bar().className).not.toContain("pt-2.5");
+  });
+});
+
+describe("PageBar recording pill", () => {
+  afterEach(() => resetLiveSession());
+
+  async function recording() {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json({
+          recording: { id: "r1", documentName: "doc:z:body", status: "Recording", title: "Weekly sync", href: "/documents/z", sessionSeconds: 5 },
+        }),
+      ),
+    );
+    await act(async () => {
+      adoptDesktopSession({ recordingId: "r1", documentName: "doc:z:body", status: "recording", startedAt: Date.now() });
+      await new Promise((r) => setTimeout(r, 0));
+    });
+  }
+
+  it("leads the right-hand cluster, ahead of the page's own actions", async () => {
+    await recording();
+    await mount({ flags: { "ai-meeting-notes": true }, page: createElement(PageBarPortal, { slot: "actions", children: createElement("button", { "aria-label": "Page action" }) }) });
+    const right = bar().lastElementChild!;
+    expect(right.firstElementChild?.textContent).toContain("Weekly sync");
+    expect(barButtons().indexOf("Stop recording")).toBeLessThan(barButtons().indexOf("Page action"));
+  });
+
+  it("is absent without the flag", async () => {
+    await recording();
+    await mount();
+    expect(bar().textContent).not.toContain("Weekly sync");
   });
 });

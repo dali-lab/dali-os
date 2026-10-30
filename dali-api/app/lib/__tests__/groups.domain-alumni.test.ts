@@ -1,12 +1,12 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/roles", () => ({
   currentTerm: vi.fn().mockResolvedValue({ id: "term-26S" }),
   getActiveCoreCycleTermIds: vi.fn().mockResolvedValue([]),
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { resolveDynamicQuery, listVisibleGroupIdsForUser } from "../groups";
 
 const mockPrisma = prisma as unknown as Record<string, Record<string, ReturnType<typeof vi.fn>>>;

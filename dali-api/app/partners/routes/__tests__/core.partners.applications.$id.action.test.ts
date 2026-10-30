@@ -1,12 +1,12 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn(), isNonMember: vi.fn(async () => false) }));
 vi.mock("~/lib/roles");
 vi.mock("~/lib/feature-flags.server");
 vi.mock("~/partners/lib/partner-emails.server");
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { isCore, getUserRoles } from "~/lib/roles";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
@@ -195,5 +195,21 @@ describe("meeting intents", () => {
     await callAction({ intent: "meeting-debrief", meetingId: "m-1", debrief: "x", outcome: "Bogus" });
     const arg = db.partnerMeeting.update.mock.calls[0][0];
     expect(arg.data.outcome).toBeUndefined(); // invalid outcome dropped
+  });
+});
+
+
+describe("details preserve term planning", () => {
+  it("only removes deselected terms and preserves existing rows when adding terms", async () => {
+    db.partnerApplicationTargetTerm = { deleteMany: vi.fn(), createMany: vi.fn() };
+    db.term.findMany.mockResolvedValue([{ id: "retained" }, { id: "added" }]);
+    await callAction({ intent: "details", summary: "Updated", targetTermId: ["retained", "added"] });
+    expect(db.partnerApplicationTargetTerm.deleteMany).toHaveBeenCalledWith({
+      where: { applicationId: APP_ID, termId: { notIn: ["retained", "added"] } },
+    });
+    expect(db.partnerApplicationTargetTerm.createMany).toHaveBeenCalledWith({
+      data: [{ applicationId: APP_ID, termId: "retained" }, { applicationId: APP_ID, termId: "added" }],
+      skipDuplicates: true,
+    });
   });
 });

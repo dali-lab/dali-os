@@ -1,12 +1,12 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-// groups.ts pulls in ~/lib/db at import time, which loads the generated Prisma
+// groups.ts pulls in ~/lib/db.server at import time, which loads the generated Prisma
 // client — absent in CI before `prisma generate`. isGroupArchived is pure and
 // never touches the DB, so mock db so importing the module doesn't require the
 // real client (matches every other db-touching suite).
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isGroupArchived, isUserInAnyGroup } from "../groups";
 
 const mockPrisma = prisma as unknown as Record<

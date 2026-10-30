@@ -1,7 +1,7 @@
 // MCP tool: get_signed_document — retrieves a member's own signed copy of a
 // binding, including the frozen body snapshot captured at signing time.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { McpNotFoundError, type McpTool, type McpCtx } from "../../registry";
 
 export const GET_SIGNED_DOCUMENT_TOOL = {

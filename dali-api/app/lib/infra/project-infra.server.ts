@@ -4,7 +4,7 @@
 // builds the Project update for the config editor. Fly tokens are decrypted only
 // here and never returned to the client.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { decryptSecret, encryptSecret } from "./crypto.server";
 
 const CONFIG_SELECT = {

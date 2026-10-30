@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { interpretIntentForm } from "../intent-form-interpreter";
+import { defaultStatusMap, interpretIntentForm, planIntentResync } from "../intent-form-interpreter";
 import type { ColumnMapping } from "../slot-roles";
 
 function m(entries: ColumnMapping["entries"]): ColumnMapping {
@@ -133,5 +133,117 @@ describe("cycle-term status columns", () => {
     expect(
       interpretIntentForm({ "q-status": "Off" }, fixed, ["t-27w"], "t-27w").ok,
     ).toBe(false);
+  });
+});
+
+describe("planIntentResync", () => {
+  const mapping = m([{ source: "question", questionKey: "status", role: "intent-status", label: "Status" }]);
+
+  it("turns every existing submission into rows for the cycle's term", () => {
+    expect(
+      planIntentResync(
+        [
+          { userId: "ada", answers: { status: "Returning" } },
+          { userId: "grace", answers: { status: "Off" } },
+        ],
+        mapping,
+        ["t27w"],
+        "t27w",
+      ),
+    ).toEqual({
+      sets: [
+        { userId: "ada", rows: [{ termId: "t27w", status: "Returning" }] },
+        { userId: "grace", rows: [{ termId: "t27w", status: "Off" }] },
+      ],
+      failed: 0,
+    });
+  });
+
+  it("clears a member's rows when they left the status unanswered", () => {
+    expect(planIntentResync([{ userId: "ada", answers: {} }], mapping, ["t27w"], "t27w")).toEqual({
+      sets: [{ userId: "ada", rows: [] }],
+      failed: 0,
+    });
+  });
+
+  it("counts answers that don't fit the mapping as failed and leaves them out", () => {
+    expect(
+      planIntentResync(
+        [
+          { userId: "ada", answers: { status: "Maybe later" } },
+          { userId: "grace", answers: { status: "Returning" } },
+        ],
+        mapping,
+        ["t27w"],
+        "t27w",
+      ),
+    ).toEqual({ sets: [{ userId: "grace", rows: [{ termId: "t27w", status: "Returning" }] }], failed: 1 });
+  });
+
+  it("treats non-object answers as unanswered", () => {
+    expect(planIntentResync([{ userId: "ada", answers: null }], mapping, ["t27w"], "t27w").sets).toEqual([
+      { userId: "ada", rows: [] },
+    ]);
+  });
+});
+
+describe("answer-to-status map", () => {
+  const mapping = m([
+    {
+      source: "question",
+      questionKey: "q",
+      role: "intent-status",
+      label: "Status",
+      statusMap: { Yes: "Returning", No: "Off", "Maybe (D-Plan is TBD) ": "Unsure" },
+    },
+  ]);
+
+  it("reads each answer through the manager's map", () => {
+    for (const [answer, status] of [
+      ["Yes", "Returning"],
+      ["No", "Off"],
+      ["Maybe (D-Plan is TBD) ", "Unsure"],
+    ] as const) {
+      expect(interpretIntentForm({ q: answer }, mapping, ["t"], "t")).toEqual({
+        ok: true,
+        rows: [{ termId: "t", status }],
+      });
+    }
+  });
+
+  it("matches an option despite trailing spaces on the stored answer", () => {
+    expect(interpretIntentForm({ q: "Yes " }, mapping, ["t"], "t")).toMatchObject({ ok: true });
+  });
+
+  it("still accepts status names for answers outside the map", () => {
+    expect(interpretIntentForm({ q: "Graduating" }, mapping, ["t"], "t")).toEqual({
+      ok: true,
+      rows: [{ termId: "t", status: "Graduating" }],
+    });
+  });
+
+  it("rejects an answer neither the map nor the status names cover", () => {
+    expect(interpretIntentForm({ q: "Perhaps" }, mapping, ["t"], "t").ok).toBe(false);
+  });
+});
+
+describe("defaultStatusMap", () => {
+  it("prefills options that already read as a status and leaves the rest blank", () => {
+    expect(defaultStatusMap(["Returning", "Not this term", "Yes", "No"])).toEqual({
+      Returning: "Returning",
+      "Not this term": "Off",
+    });
+  });
+});
+
+describe("answer-to-status map whitespace", () => {
+  it("matches an option saved with a trailing space to a trimmed answer", () => {
+    const mapping = m([
+      { source: "question", questionKey: "q", role: "intent-status", label: "S", statusMap: { "Maybe ": "Unsure" } },
+    ]);
+    expect(interpretIntentForm({ q: "Maybe" }, mapping, ["t"], "t")).toEqual({
+      ok: true,
+      rows: [{ termId: "t", status: "Unsure" }],
+    });
   });
 });

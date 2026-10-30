@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     room: { findMany: vi.fn(), count: vi.fn() },
     roomDisplay: { findUnique: vi.fn(), update: vi.fn() },
@@ -13,7 +13,7 @@ vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
 vi.mock("~/lib/room-display.server", () => ({ createDisplaySetupCode: vi.fn() }));
 vi.mock("~/lib/display-scan.server", () => ({ getActiveDisplayScan: vi.fn(), stopDisplayScan: vi.fn() }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { isAdmin, isCore } from "~/lib/roles";
 import { logAuditEvent } from "~/lib/audit";
@@ -184,5 +184,55 @@ describe("Core ▸ Rooms two-room displays", () => {
     ] as never);
     const { rooms } = await load();
     expect(rooms[0]!.displays[0]!.secondRoom).toEqual({ id: "r2", name: "Garage" });
+  });
+
+  const display = (id: string, secondRoom: { id: string; name: string } | null) => ({
+    id,
+    label: `${id} door`,
+    activatedAt: new Date(),
+    lastSeenAt: new Date(),
+    appVersion: "0.4.0",
+    setupCodeExpiresAt: null,
+    secondRoom,
+  });
+  const room = (id: string, name: string, displays: unknown[], archivedAt: Date | null = null) => ({
+    id,
+    name,
+    description: null,
+    capacity: null,
+    archivedAt,
+    displays,
+  });
+
+  it("lists a display under the second room it also shows, naming its home room", async () => {
+    vi.mocked(prisma.room.findMany).mockResolvedValue([
+      room("r1", "Pod Appa", [display("d1", { id: "r2", name: "Conference Table" })]),
+      room("r2", "Conference Table", []),
+    ] as never);
+    const { rooms } = await load();
+    expect(rooms[1]!.displays).toEqual([]);
+    expect(rooms[1]!.sharedDisplays).toEqual([
+      expect.objectContaining({ id: "d1", label: "d1 door", activated: true, homeRoom: { id: "r1", name: "Pod Appa" } }),
+    ]);
+    expect(rooms[0]!.sharedDisplays).toEqual([]);
+  });
+
+  it("doesn't list one-room displays or another room's pairing as shared", async () => {
+    vi.mocked(prisma.room.findMany).mockResolvedValue([
+      room("r1", "Pod Appa", [display("d1", null)]),
+      room("r2", "Pod Momo", [display("d2", { id: "r3", name: "Couches" })]),
+      room("r3", "Couches", []),
+    ] as never);
+    const { rooms } = await load();
+    expect(rooms.map((r) => r.sharedDisplays.map((d) => d.id))).toEqual([[], [], ["d2"]]);
+  });
+
+  it("skips displays whose home room is archived", async () => {
+    vi.mocked(prisma.room.findMany).mockResolvedValue([
+      room("r2", "Conference Table", []),
+      room("r1", "Pod Appa", [display("d1", { id: "r2", name: "Conference Table" })], new Date()),
+    ] as never);
+    const { rooms } = await load();
+    expect(rooms[0]!.sharedDisplays).toEqual([]);
   });
 });

@@ -9,7 +9,6 @@ vi.mock("~/lib/roles", () => ({ getUserRoles: vi.fn() }));
 vi.mock("~/lib/terms", () => ({ resolveTermFilter: vi.fn() }));
 vi.mock("~/lib/drive-scopes.server", () => ({ loadDriveScopes: vi.fn() }));
 vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabled: vi.fn() }));
-vi.mock("~/forms/lib/form-access.server", () => ({ formsUsePageAccess: vi.fn() }));
 vi.mock("~/lib/drive-hub.server", () => ({
   loadProjectWorkspaces: vi.fn(),
   loadEducationWorkspaces: vi.fn(),
@@ -57,7 +56,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-async function mountMenu(s: Scope, currentFolderId: string | null = null, canViewForms = false) {
+async function mountMenu(s: Scope, currentFolderId: string | null = null) {
   container = document.createElement("div");
   document.body.appendChild(container);
   const mounted = createRoot(container);
@@ -67,7 +66,6 @@ async function mountMenu(s: Scope, currentFolderId: string | null = null, canVie
       createElement(NewMenu, {
         scope: s,
         actions: {} as never,
-        canViewForms,
         canManageAgreements: false,
         onUploadClick: () => {},
         uploading: false,
@@ -278,7 +276,7 @@ describe("New menu: creating in place", () => {
   it("a new form still opens its editor", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true, formId: "form1" }) }));
     prompt.mockResolvedValue("Survey");
-    await mountMenu(scope({ id: "lab" }), null, true);
+    await mountMenu(scope({ id: "lab" }));
     await act(async () => {
       document.querySelector<HTMLElement>('[data-testid="drive-new-form"]')!.closest<HTMLElement>('[role="menuitem"]')!.click();
     });

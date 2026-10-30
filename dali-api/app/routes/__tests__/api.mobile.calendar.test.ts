@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 const requireMobileUser = vi.fn();
 const listUpcomingMeetings = vi.fn();
 const listMemberSummaries = vi.fn();
@@ -15,7 +15,7 @@ vi.mock("~/lib/google-calendar", () => ({ fetchCalendarEvents: vi.fn().mockResol
 vi.mock("~/lib/mobile-members.server", () => ({ listMemberSummaries: (...a: unknown[]) => listMemberSummaries(...a) }));
 vi.mock("~/lib/scheduled-meeting", () => ({ createScheduledMeeting: (...a: unknown[]) => createScheduledMeeting(...a) }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { action, loader } from "../api.mobile.calendar";
 
 const mockPrisma = prisma as unknown as Record<string, Record<string, ReturnType<typeof vi.fn>>>;

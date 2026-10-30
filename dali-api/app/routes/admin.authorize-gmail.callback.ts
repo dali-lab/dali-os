@@ -7,7 +7,7 @@
 
 import { requireAuth } from "~/lib/auth";
 import { isCore } from '~/lib/roles'
-import { prisma } from '~/lib/db'
+import { prisma } from '~/lib/db.server'
 import { getApiBaseUrl } from '~/lib/app-env'
 import { exchangeGoogleCode, GoogleOAuthError } from '~/lib/google-oauth'
 import { EMAIL_PURPOSES, isEmailPurpose, type EmailPurposeKey } from '~/lib/email-identities'

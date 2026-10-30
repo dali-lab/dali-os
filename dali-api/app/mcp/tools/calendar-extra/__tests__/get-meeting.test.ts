@@ -20,7 +20,7 @@ vi.mock("~/mcp/registry", () => {
   }
   return { McpError, McpNotFoundError, McpForbiddenError, McpInvalidError };
 });
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/roles", async (orig) => {
   const real = await orig<typeof import("~/lib/roles")>();
   return { ...real, isCore: vi.fn(), isProjectMember: vi.fn() };
@@ -31,7 +31,7 @@ vi.mock("~/lib/display", () => ({
 }));
 vi.mock("~/lib/meeting-recording.server", () => ({ canReadRecording: vi.fn() }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore, isProjectMember } from "~/lib/roles";
 import { canReadRecording } from "~/lib/meeting-recording.server";
 import { runGetMeeting, GET_MEETING_DEF } from "~/mcp/tools/calendar-extra/get-meeting";
@@ -222,8 +222,7 @@ describe("get_meeting", () => {
     const out = await runGetMeeting("u-org", { meetingId: "m1" });
     expect(mockPrisma.meetingRecording.findMany).toHaveBeenCalledWith({
       where: { scheduledMeetingId: "m1" },
-      orderBy: { occurrenceStart: "desc" },
-      take: 20,
+      orderBy: [{ occurrenceStart: { sort: "desc", nulls: "last" } }, { id: "asc" }],
       select: {
         id: true,
         status: true,
@@ -238,6 +237,55 @@ describe("get_meeting", () => {
       { id: "rec2", status: "Done", recordedSeconds: 900, occurrenceStart: "2026-09-22T14:00:00.000Z" },
       { id: "rec1", status: "Failed", recordedSeconds: 60, occurrenceStart: "2026-09-15T14:00:00.000Z" },
     ]);
+  });
+
+  it("pages recordings with a cursor and reports transcriptAvailable across every page", async () => {
+    mockPrisma.scheduledMeeting.findUnique.mockResolvedValue(MEETING_BASE);
+    const rows = Array.from({ length: 5 }, (_, i) => ({
+      id: `rec${i}`,
+      status: i === 4 ? "Done" : "Failed",
+      recordedSeconds: 10,
+      occurrenceStart: new Date(Date.UTC(2026, 8, 28 - i * 7, 14)),
+      userId: "u-org",
+      documentName: "doc:page1:body",
+    }));
+    mockPrisma.meetingRecording.findMany.mockResolvedValue(rows);
+    mockCanReadRecording.mockResolvedValue("owner");
+    vi.mocked(isCore).mockResolvedValue(false);
+    vi.mocked(isProjectMember).mockResolvedValue(false);
+
+    const first = await runGetMeeting("u-org", { meetingId: "m1", limit: 2 });
+    expect(first.recordings.map((r) => r.id)).toEqual(["rec0", "rec1"]);
+    expect(first.page).toMatchObject({ hasMore: true, limit: 2, total: 5 });
+    expect(first.transcriptAvailable).toBe(true);
+
+    const second = await runGetMeeting("u-org", { meetingId: "m1", limit: 2, cursor: first.page.nextCursor! });
+    expect(second.recordings.map((r) => r.id)).toEqual(["rec2", "rec3"]);
+
+    const last = await runGetMeeting("u-org", { meetingId: "m1", limit: 2, cursor: second.page.nextCursor! });
+    expect(last.recordings.map((r) => r.id)).toEqual(["rec4"]);
+    expect(last.page).toMatchObject({ nextCursor: null, hasMore: false });
+  });
+
+  it("applies the read filter before paging, so unreadable rows never take a page slot", async () => {
+    mockPrisma.scheduledMeeting.findUnique.mockResolvedValue(MEETING_BASE);
+    mockPrisma.meetingRecording.findMany.mockResolvedValue(
+      ["a", "b", "c", "d"].map((id, i) => ({
+        id,
+        status: "Done",
+        recordedSeconds: 1,
+        occurrenceStart: new Date(Date.UTC(2026, 8, 28 - i * 7, 14)),
+        userId: i < 2 ? "someone-else" : "u-org",
+        documentName: "doc:page1:body",
+      })),
+    );
+    mockCanReadRecording.mockImplementation(async (r: { userId: string }) => (r.userId === "u-org" ? "owner" : null));
+    vi.mocked(isCore).mockResolvedValue(false);
+    vi.mocked(isProjectMember).mockResolvedValue(false);
+
+    const out = await runGetMeeting("u-org", { meetingId: "m1", limit: 2 });
+    expect(out.recordings.map((r) => r.id)).toEqual(["c", "d"]);
+    expect(out.page).toMatchObject({ hasMore: false, total: 2 });
   });
 
   it("transcriptAvailable is false with no Done recording", async () => {

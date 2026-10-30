@@ -9,7 +9,7 @@ import { McpInvalidError } from "../../registry";
 export const GET_GROUP_AVAILABILITY_DEF = {
   name: "get_group_availability",
   description:
-    "Compute group availability for a set of users over a week window. Returns day-bucketed match windows, busy blocks, and shared working hours, plus per-user free and working-hours intervals. A user who isn't free during a slot that falls outside their working intervals is outside their working hours, not busy.",
+    "Compute group availability for a set of users over a window of up to 14 days. Returns day-bucketed match windows, busy blocks, and shared working hours, plus per-user free and working-hours intervals. A user who isn't free during a slot that falls outside their working intervals is outside their working hours, not busy.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -28,7 +28,7 @@ export const GET_GROUP_AVAILABILITY_DEF = {
       weekEndIso: {
         type: "string",
         minLength: 1,
-        description: "ISO 8601 end of the window (exclusive).",
+        description: "ISO 8601 end of the window (exclusive). Span must be at most 14 days.",
       },
       durationMinutes: {
         type: "integer",
@@ -58,6 +58,8 @@ type Input = {
 
 // ─── Handler ──────────────────────────────────────────────────────────────────
 
+const MAX_SPAN_MS = 14 * 24 * 60 * 60 * 1000;
+
 export async function runGetGroupAvailability(input: Input) {
   const windowStart = new Date(input.weekStartIso);
   const windowEnd = new Date(input.weekEndIso);
@@ -67,6 +69,9 @@ export async function runGetGroupAvailability(input: Input) {
   }
   if (windowEnd <= windowStart) {
     throw new McpInvalidError("weekEndIso must be after weekStartIso");
+  }
+  if (windowEnd.getTime() - windowStart.getTime() > MAX_SPAN_MS) {
+    throw new McpInvalidError("Window span must be ≤ 14 days");
   }
 
   const userIds = Array.from(new Set(input.userIds));

@@ -1,7 +1,7 @@
 // MCP `manage_outbound_message` — retry a Dead message or cancel a Pending one.
 // Reuses admin.outbound-messages.tsx action logic. mcp:admin, Core leads only.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore } from "~/lib/roles";
 import {
   AdminForbiddenError as McpForbiddenError,

@@ -25,12 +25,13 @@ export type FunnelStatusChange = { applicationId: string; to: PartnerStage };
 export type FunnelResult = {
   stageCounts: Record<PartnerStage, number>;
   total: number;
-  // "Ever reached" Interview/Accepted, not just currently sitting there — a
-  // Rejected card that was interviewed first still counts toward
-  // newToInterviewRate. Null when there's nothing to divide by.
   newToInterviewRate: number | null;
   interviewToAcceptedRate: number | null;
 };
+
+export type FunnelReached = { applied: string[]; interview: string[]; accepted: string[] };
+
+const INTERVIEW_OR_LATER: PartnerStage[] = ["Interview", "Deciding", "Accepted"];
 
 /** Every stage an application has ever been in: its current stage, "New" (the
  *  implicit start of every card), plus every stage named in a StatusChanged
@@ -47,32 +48,41 @@ function stagesEverReached(
   return reached;
 }
 
+export function computeFunnelReached(
+  apps: FunnelInputApp[],
+  statusChanges: FunnelStatusChange[],
+): FunnelReached {
+  const reached = stagesEverReached(apps, statusChanges);
+  const interview: string[] = [];
+  const accepted: string[] = [];
+  for (const a of apps) {
+    const set = reached.get(a.id);
+    if (!set) continue;
+    if (INTERVIEW_OR_LATER.some((stage) => set.has(stage))) interview.push(a.id);
+    if (set.has("Accepted")) accepted.push(a.id);
+  }
+  return { applied: apps.map((a) => a.id), interview, accepted };
+}
+
 export function computeFunnel(
   apps: FunnelInputApp[],
   statusChanges: FunnelStatusChange[],
 ): FunnelResult {
-  const reached = stagesEverReached(apps, statusChanges);
   const stageCounts: Record<PartnerStage, number> = {
     Backlog: 0,
     New: 0,
     Interview: 0,
+    Deciding: 0,
     Accepted: 0,
     Rejected: 0,
   };
-  let reachedInterview = 0;
-  let reachedAccepted = 0;
-  for (const a of apps) {
-    stageCounts[a.stage] += 1;
-    const set = reached.get(a.id);
-    if (!set) continue;
-    if (set.has("Interview") || set.has("Accepted")) reachedInterview += 1;
-    if (set.has("Accepted")) reachedAccepted += 1;
-  }
+  for (const a of apps) stageCounts[a.stage] += 1;
+  const { interview, accepted } = computeFunnelReached(apps, statusChanges);
   return {
     stageCounts,
     total: apps.length,
-    newToInterviewRate: apps.length > 0 ? reachedInterview / apps.length : null,
-    interviewToAcceptedRate: reachedInterview > 0 ? reachedAccepted / reachedInterview : null,
+    newToInterviewRate: apps.length > 0 ? interview.length / apps.length : null,
+    interviewToAcceptedRate: interview.length > 0 ? accepted.length / interview.length : null,
   };
 }
 
@@ -167,18 +177,20 @@ export function computeCycleTimes(activities: CycleTimeActivity[]): CycleTimeRes
 
 // ─── Rejection reasons ────────────────────────────────────────────────────
 
-export type RejectionReasonRow = { reason: PartnerRejectReason; count: number };
+export type RejectionReasonRow = { reason: PartnerRejectReason; count: number; ids: string[] };
 
 export function computeRejectionReasons(
-  apps: { rejectReason: PartnerRejectReason | null }[],
+  apps: { id: string; rejectReason: PartnerRejectReason | null }[],
 ): RejectionReasonRow[] {
-  const counts = new Map<PartnerRejectReason, number>();
+  const byReason = new Map<PartnerRejectReason, string[]>();
   for (const a of apps) {
     if (!a.rejectReason) continue;
-    counts.set(a.rejectReason, (counts.get(a.rejectReason) ?? 0) + 1);
+    const ids = byReason.get(a.rejectReason);
+    if (ids) ids.push(a.id);
+    else byReason.set(a.rejectReason, [a.id]);
   }
-  return [...counts.entries()]
-    .map(([reason, count]) => ({ reason, count }))
+  return [...byReason.entries()]
+    .map(([reason, ids]) => ({ reason, count: ids.length, ids }))
     .sort((a, b) => b.count - a.count);
 }
 
@@ -226,37 +238,6 @@ export function computePartnerMix(orgs: PartnerMixOrg[], termStart?: Date | null
   };
 }
 
-// ─── Capacity ─────────────────────────────────────────────────────────────
-
-export type CapacityExpectedRow = { domainId: string; domainName: string; expectedMembers: number };
-export type CapacityStaffedRow = { domainId: string; domainName: string };
-
-export type CapacityCell = {
-  domainId: string;
-  domainName: string;
-  expected: number;
-  staffed: number;
-};
-
-/** Projected headcount (expected) vs. already-staffed count, by domain. */
-export function computeCapacity(
-  expectedRows: CapacityExpectedRow[],
-  staffedRows: CapacityStaffedRow[],
-): CapacityCell[] {
-  const cells = new Map<string, CapacityCell>();
-  const ensure = (domainId: string, domainName: string) => {
-    let cell = cells.get(domainId);
-    if (!cell) {
-      cell = { domainId, domainName, expected: 0, staffed: 0 };
-      cells.set(domainId, cell);
-    }
-    return cell;
-  };
-  for (const r of expectedRows) ensure(r.domainId, r.domainName).expected += r.expectedMembers;
-  for (const r of staffedRows) ensure(r.domainId, r.domainName).staffed += 1;
-  return [...cells.values()].sort((a, b) => a.domainName.localeCompare(b.domainName));
-}
-
 // ─── Revenue by org ───────────────────────────────────────────────────────
 
 export type RevenueInvoiceRow = {
@@ -279,4 +260,75 @@ export function computeRevenueByOrg(invoices: RevenueInvoiceRow[]): RevenueRow[]
     else totals.set(inv.orgId, { orgId: inv.orgId, orgName: inv.orgName, totalCents: inv.amountCents });
   }
   return [...totals.values()].sort((a, b) => b.totalCents - a.totalCents);
+}
+
+// ─── Presentation helpers ────────────────────────────────────────────────
+
+export type FunnelStep = {
+  key: "applied" | "interview" | "accepted";
+  label: string;
+  count: number;
+  conversion: number | null;
+  ids: string[];
+};
+
+export function computeFunnelSteps(reached: FunnelReached): FunnelStep[] {
+  const defs = [
+    { key: "applied", label: "Applied" },
+    { key: "interview", label: "Reached interview" },
+    { key: "accepted", label: "Accepted" },
+  ] as const;
+  return defs.map((def, i) => {
+    const ids = reached[def.key];
+    const previous = i === 0 ? null : reached[defs[i - 1].key].length;
+    return {
+      key: def.key,
+      label: def.label,
+      count: ids.length,
+      conversion: previous && previous > 0 ? ids.length / previous : null,
+      ids,
+    };
+  });
+}
+
+export function formatFunnelValue(step: Pick<FunnelStep, "count" | "conversion">): string {
+  return step.conversion === null
+    ? String(step.count)
+    : `${step.count} · ${Math.round(step.conversion * 100)}%`;
+}
+
+export function barPercent(value: number, max: number): number {
+  if (max <= 0 || value <= 0) return 0;
+  return Math.min(100, Math.max(2, (value / max) * 100));
+}
+
+export function formatMedianDays(days: number | null): string {
+  if (days === null) return "—";
+  const rounded = Math.round(days * 10) / 10;
+  return `${rounded} ${rounded === 1 ? "day" : "days"}`;
+}
+
+export function topWithRemainder<T extends { totalCents: number }>(
+  rows: T[],
+  limit: number,
+): { top: T[]; moreCount: number; moreCents: number } {
+  const rest = rows.slice(limit);
+  return {
+    top: rows.slice(0, limit),
+    moreCount: rest.length,
+    moreCents: rest.reduce((sum, r) => sum + r.totalCents, 0),
+  };
+}
+
+export function reportSourceHref(source: string, termId: string | null): string {
+  const params = new URLSearchParams({ source });
+  if (termId) params.set("term", termId);
+  return `/core/partners?${params.toString()}`;
+}
+
+export function splitPercent(a: number, b: number): [number, number] {
+  const total = a + b;
+  if (total === 0) return [0, 0];
+  const first = Math.round((a / total) * 100);
+  return [first, 100 - first];
 }

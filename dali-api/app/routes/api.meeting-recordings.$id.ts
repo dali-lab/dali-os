@@ -19,7 +19,7 @@ import { z } from "zod";
 import type { Prisma } from "~/generated/prisma/client";
 import { requireAuth } from "~/lib/auth";
 import { logAuditEvent } from "~/lib/audit";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore } from "~/lib/roles";
 import { deletePrefix } from "~/lib/transcription/chunks.server";
 import {

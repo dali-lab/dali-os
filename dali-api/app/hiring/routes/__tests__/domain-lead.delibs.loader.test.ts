@@ -3,7 +3,7 @@
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn() }));
 vi.mock("~/lib/roles", () => ({ isCycleAdmin: vi.fn().mockResolvedValue(true) }));
 vi.mock("~/lib/user-pages.server", () => ({ recordRouteVisit: vi.fn() }));
@@ -12,7 +12,7 @@ vi.mock("~/hiring/lib/confidentiality", () => ({ requirePageSignedOrRedirect: vi
 vi.mock("~/hiring/lib/cycle-stages.server", () => ({ delibsQualifier: vi.fn().mockResolvedValue({}) }));
 vi.mock("~/hiring/lib/email-engagement.server", () => ({ getEngagementSummaries: vi.fn() }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { delibsQualifier } from "~/hiring/lib/cycle-stages.server";
 import { getEngagementSummaries } from "~/hiring/lib/email-engagement.server";

@@ -3,7 +3,7 @@
 // devices and the Banners list can total views, clicks and snoozes.
 
 import { z } from "zod";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { parseJson } from "~/lib/validate";
 import { recordBannerEvent } from "~/core/lib/banners.server";

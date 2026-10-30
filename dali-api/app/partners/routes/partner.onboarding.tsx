@@ -1,6 +1,6 @@
 import { Form, redirect, useLoaderData, useNavigation } from "react-router";
 import type { Route } from "./+types/partner.onboarding";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requirePartnerCandidate } from "~/partners/lib/partner-auth.server";
 import { findOrLinkPartnerContact } from "~/partners/lib/partner-auth.server";
 import { useOsShellRoot } from "~/lib/os-shell";

@@ -1,4 +1,4 @@
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { getPageAccessBulk, PAGE_ACCESS_SELECT } from "~/lib/pageAccess.server";
 import { expandOccurrences } from "~/lib/meeting-occurrences";
 import { pageOpenHref } from "~/lib/page-href";

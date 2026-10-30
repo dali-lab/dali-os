@@ -6,7 +6,7 @@ import { redirectToLogin } from "~/lib/login-next";
 import { STAFFING_MEMBER_SELECT } from "~/lib/prisma-shapes";
 import { primaryEmail } from "~/lib/display";
 import { canManageStaffing, canViewStaffing } from "~/lib/roles";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { getCollabToken } from "~/lib/collab-token.server";
 import { getPresenceUser } from "~/lib/presence-user";

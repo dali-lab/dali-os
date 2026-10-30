@@ -2,10 +2,11 @@ import { Navigate, redirect, useSearchParams } from "react-router";
 import type { Route } from "./+types/core.partners.settings";
 import { requireAuth, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { logAuditEvent } from "~/lib/audit";
 import { isCore, getActiveCoreCycleTermIds } from "~/lib/roles";
 import { listSelectableForms } from "~/projects/lib/form-slots";
+import { setFormPublished } from "~/forms/lib/form-publish.server";
 import {
   clearApplicationFormBinding,
   getApplicationFormBinding,
@@ -146,6 +147,22 @@ export async function action({ request }: Route.ActionArgs) {
   if (intent === "clear-survey-form") {
     await clearSurveyFormBinding();
     await logBinding("partner.form-binding.clear", "survey");
+    return { ok: true };
+  }
+
+  if (intent === "set-form-published") {
+    const slot = form.get("slot");
+    const binding =
+      slot === "application"
+        ? await getApplicationFormBinding()
+        : slot === "survey"
+          ? await getSurveyFormBinding()
+          : null;
+    if (!binding) return { error: "Choose a form first." };
+    const result = await setFormPublished(binding.formId, form.get("published") === "1", {
+      clearWindow: true,
+    });
+    if ("error" in result) return { error: result.error };
     return { ok: true };
   }
 

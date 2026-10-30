@@ -5,7 +5,7 @@
 // never connect an account here. Current-term project inboxes are automatic
 // and never need a category.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { logAuditEvent } from "~/lib/audit";
 import { fullName } from "~/lib/display";
 import { MEMBER_LIST_ORDER_BY } from "~/lib/prisma-shapes";

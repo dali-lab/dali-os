@@ -1,4 +1,4 @@
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import type { Prisma, EduApplicationStatus } from "~/generated/prisma/client";
 import { logAuditEvent } from "~/lib/audit";
 import { lockOffering, approvedCount, nextWaitlistRank } from "./apply.server";

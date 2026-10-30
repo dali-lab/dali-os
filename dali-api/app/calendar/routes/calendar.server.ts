@@ -1,5 +1,5 @@
 import { redirect } from "react-router";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import {
   cachedExternalRead,
   invalidateExternalCache,

@@ -6,13 +6,13 @@ vi.mock("~/lib/auth", () => ({
     () => new Response(JSON.stringify({ error: "Forbidden" }), { status: 403 }),
   ),
 }));
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/members/lib/welcome.server", () => ({
   ONBOARDING_EVENT_TYPE: "member.onboarding",
 }));
 
 import { requireAuth } from "~/lib/auth";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { action } from "~/routes/api.notifications.$id.read";
 
 const USER_ID = "user-1";

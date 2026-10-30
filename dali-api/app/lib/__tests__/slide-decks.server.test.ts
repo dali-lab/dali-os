@@ -6,7 +6,7 @@ const db = vi.hoisted(() => ({
 }));
 const access = vi.hoisted(() => ({ getPageAccess: vi.fn() }));
 
-vi.mock("~/lib/db", () => ({ prisma: db, Prisma: {} }));
+vi.mock("~/lib/db.server", () => ({ prisma: db, Prisma: {} }));
 vi.mock("~/lib/pageAccess.server", () => ({ PAGE_ACCESS_SELECT: {}, getPageAccess: access.getPageAccess }));
 
 import { DECK_CONFLICT, deckAccess, editDeck, loadDeck, saveDeck } from "~/lib/slide-decks.server";

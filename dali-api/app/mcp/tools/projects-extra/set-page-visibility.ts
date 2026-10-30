@@ -8,7 +8,7 @@
 // Gate: canEditProject (Core or project member). The page must be in a Project
 // workspace and must not be archived.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { McpNotFoundError, McpForbiddenError, McpInvalidError, requireForAction } from "./errors";
 import { canEditProject } from "../access";
 

@@ -84,8 +84,6 @@ export type ApplicationDetailResponse = {
   activities: ApplicationActivity[];
   actorNames: Record<string, string>;
   emailThreads: ApplicationEmailThread[];
-  partnerEmailOn: boolean;
-  financeOn: boolean;
   contract: PartnerContractStatus;
   /** PartnerContract-kind SigningDocuments with a published version — empty when the viewer can't edit. */
   contractDocuments: { id: string; title: string }[];

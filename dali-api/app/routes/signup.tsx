@@ -9,7 +9,7 @@ import {
 import { pickSafeLoginNext } from "~/lib/login-next";
 import { requireAuth } from "~/lib/auth";
 import { auth } from "~/lib/betterauth.server";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import {
   classifyPartnerEmail,
   normalizeEmail,

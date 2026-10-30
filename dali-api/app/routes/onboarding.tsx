@@ -11,7 +11,7 @@ import type { Route } from "./+types/onboarding";
 import { redirect, useLoaderData } from "react-router";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { loadPublicForm } from "~/forms/lib/public-form";
 import {
   MemberFormFillView,

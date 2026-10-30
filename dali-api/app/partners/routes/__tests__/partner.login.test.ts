@@ -3,7 +3,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 const mockRequireAuth = vi.hoisted(() => vi.fn());
 const mockContactFind = vi.hoisted(() => vi.fn());
 
-vi.mock("~/lib/db", () => ({ prisma: { partnerContact: { findUnique: mockContactFind } } }));
+vi.mock("~/lib/db.server", () => ({ prisma: { partnerContact: { findUnique: mockContactFind } } }));
 vi.mock("~/lib/auth", () => ({ requireAuth: mockRequireAuth }));
 
 import { loader } from "~/partners/routes/partner.login";

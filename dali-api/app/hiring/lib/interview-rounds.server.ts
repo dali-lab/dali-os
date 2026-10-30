@@ -1,4 +1,4 @@
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { FIRST_INTERVIEW_ROUND_ID } from "./cycle-timeline";
 
 /**

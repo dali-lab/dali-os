@@ -4,7 +4,7 @@
 // Every write except the Core review path goes through requireNoteOwner —
 // sharing is read-only, so nobody but the owner ever mutates one of these.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { logAuditEvent } from "~/lib/audit";
 import { pageDocName } from "~/collab/roomName";
 import {

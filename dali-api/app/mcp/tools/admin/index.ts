@@ -44,6 +44,12 @@ import {
   BACKFILL_PROJECT_ASSIGNMENTS_TOOL,
   runBackfillProjectAssignments,
 } from "./backfill-project-assignments";
+import {
+  BACKFILL_CORE_ASSIGNMENTS_TOOL,
+  runBackfillCoreAssignments,
+} from "./backfill-core-assignments";
+import { BACKFILL_TERMS_TOOL, runBackfillTerms } from "./backfill-terms";
+import { GET_BACKFILL_STATE_TOOL, runGetBackfillState } from "./get-backfill-state";
 
 export const ADMIN_TOOLS: McpTool[] = [
   {
@@ -58,7 +64,7 @@ export const ADMIN_TOOLS: McpTool[] = [
   },
   {
     def: LIST_DOMAINS_TOOL,
-    run: (ctx) => runListDomains(ctx.user.id),
+    run: (ctx, args) => runListDomains(ctx.user.id, args as Parameters<typeof runListDomains>[1]),
   },
   {
     def: SEND_ANNOUNCEMENT_TOOL,
@@ -105,7 +111,7 @@ export const ADMIN_TOOLS: McpTool[] = [
   },
   {
     def: LIST_ANNOUNCEMENTS_TOOL,
-    run: (ctx) => runListAnnouncements(ctx),
+    run: (ctx, args) => runListAnnouncements(ctx, args as Parameters<typeof runListAnnouncements>[1]),
   },
   {
     def: MANAGE_EMAIL_SENDER_TOOL,
@@ -150,5 +156,20 @@ export const ADMIN_TOOLS: McpTool[] = [
     def: BACKFILL_PROJECT_ASSIGNMENTS_TOOL,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     run: (ctx, args) => runBackfillProjectAssignments(ctx, args as any),
+  },
+  {
+    def: BACKFILL_CORE_ASSIGNMENTS_TOOL,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    run: (ctx, args) => runBackfillCoreAssignments(ctx, args as any),
+  },
+  {
+    def: BACKFILL_TERMS_TOOL,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    run: (ctx, args) => runBackfillTerms(ctx, args as any),
+  },
+  {
+    def: GET_BACKFILL_STATE_TOOL,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    run: (ctx, args) => runGetBackfillState(ctx, args as any),
   },
 ];

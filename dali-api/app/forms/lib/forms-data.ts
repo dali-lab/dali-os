@@ -9,12 +9,13 @@
 // as serialized ProseMirror JSON.
 
 import { z } from "zod";
-import { prisma, Prisma } from "~/lib/db";
-import { createForm, deleteForm, moveForm, renameForm, setFormAudience } from "./form-page.server";
+import { prisma, Prisma } from "~/lib/db.server";
+import { createForm, deleteForm, moveForm, renameForm, setFormAudience, setFormIcon } from "./form-page.server";
 import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
 import type { Question } from "~/types";
 import { isReferenceSourceKey, referenceSourceNeedsTerm } from "./reference-sources.shared";
 import { formDeletionBlockers, formUsages, managingUsage } from "./form-usages.server";
+import { newPublicToken, setFormPublished } from "./form-publish.server";
 import { isGroupArchived, loadGroupArchiveContext } from "~/lib/groups";
 import { isEmptyBlocks } from "~/lib/blocks";
 import { isLayoutOnly } from "~/lib/form-answers";
@@ -188,6 +189,7 @@ export type FormDetail = {
   // to fillers.
   draft: { questions: Question[]; description: unknown } | null;
   workspaceType: string | null;
+  iconEmoji: string | null;
 };
 
 // The full form + every version (newest last), for the dedicated editor page.
@@ -199,7 +201,7 @@ export async function loadFormForEdit(
     prisma.form.findUnique({
       where: { id: formId },
       include: {
-        page: { select: { workspaceType: true } },
+        page: { select: { workspaceType: true, iconEmoji: true } },
         versions: {
           orderBy: { versionNumber: "asc" },
           include: {
@@ -230,6 +232,7 @@ export async function loadFormForEdit(
     audience: form.audience,
     audienceGroupIds: form.audienceGroupIds,
     workspaceType: form.page?.workspaceType ?? null,
+    iconEmoji: form.page?.iconEmoji ?? null,
     versions: form.versions.map((v) => ({
       id: v.id,
       versionNumber: v.versionNumber,
@@ -286,6 +289,11 @@ export const ActionSchema = z.discriminatedUnion("intent", [
     intent: z.literal("rename-form"),
     id: z.string().min(1),
     name: z.string().trim().min(1).max(120),
+  }),
+  z.object({
+    intent: z.literal("set-form-icon"),
+    id: z.string().min(1),
+    iconEmoji: z.string().trim().max(64),
   }),
   z.object({ intent: z.literal("delete-form"), id: z.string().min(1) }),
   z.object({
@@ -353,14 +361,6 @@ export const ActionSchema = z.discriminatedUnion("intent", [
     groupIds: z.string().optional(), // JSON-encoded string[]; Groups only
   }),
 ]);
-
-// Unguessable public token for a published form's external fill URL.
-// Exported for the form-windows job, which mints one on scheduled publish.
-export function newPublicToken(): string {
-  // 24 bytes of URL-safe randomness — collision-resistant, not enumerable.
-  const bytes = crypto.getRandomValues(new Uint8Array(24));
-  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
-}
 
 // Published-flag update for save-version/update-version's `publish`. Mints the
 // link token on first publish and reuses it after, like publish-form. Null
@@ -476,6 +476,15 @@ export async function runFormsAction(
       });
       if (!exists) return { error: "Not found", status: 404 };
       await renameForm(input.id, input.name);
+      return { ok: true };
+    }
+    case "set-form-icon": {
+      const exists = await prisma.form.findUnique({
+        where: { id: input.id },
+        select: { id: true },
+      });
+      if (!exists) return { error: "Not found", status: 404 };
+      await setFormIcon(input.id, input.iconEmoji || null);
       return { ok: true };
     }
     case "delete-form": {
@@ -636,42 +645,10 @@ export async function runFormsAction(
       }
       return { ok: true };
     }
-    case "publish-form": {
-      const form = await prisma.form.findUnique({
-        where: { id: input.id },
-        select: { id: true, publicToken: true, _count: { select: { versions: true } } },
-      });
-      if (!form) return { error: "Not found", status: 404 };
-      if (form._count.versions === 0)
-        return {
-          error: "Add at least one question version before publishing.",
-          status: 400,
-        };
-      await prisma.form.update({
-        where: { id: input.id },
-        data: {
-          published: true,
-          // Mint a token on first publish; reuse it on re-publish so a
-          // shared link stays valid.
-          publicToken: form.publicToken ?? newPublicToken(),
-        },
-      });
-      return { ok: true };
-    }
-    case "unpublish-form": {
-      const exists = await prisma.form.findUnique({
-        where: { id: input.id },
-        select: { id: true },
-      });
-      if (!exists) return { error: "Not found", status: 404 };
-      // Keep publicToken so re-publishing restores the same link; just flip
-      // the flag so the public route 404s.
-      await prisma.form.update({
-        where: { id: input.id },
-        data: { published: false },
-      });
-      return { ok: true };
-    }
+    case "publish-form":
+      return setFormPublished(input.id, true);
+    case "unpublish-form":
+      return setFormPublished(input.id, false);
     case "update-form-window": {
       const exists = await prisma.form.findUnique({
         where: { id: input.id },

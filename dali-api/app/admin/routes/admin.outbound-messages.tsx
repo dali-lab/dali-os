@@ -12,11 +12,13 @@ import { EmptyState, Pill, type Tone } from "~/admin/components/console-ui";
 import { SearchInput } from "~/components/ui/SearchInput";
 import { Segmented } from "~/components/ui/Segmented";
 import { Tooltip } from "~/components/ui/floating";
+import { PagerLinks } from "~/components/ui/Pager";
+import { offsetPage, offsetWindow, parsePageParam } from "~/lib/pagination";
 import { useDialog } from "~/components/ui/dialog";
 import { useToast } from "~/components/ui/toast";
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { logAuditEvent } from "~/lib/audit";
 import { redirectToLogin } from "~/lib/login-next";
@@ -28,7 +30,7 @@ export const handle = adminHandle("outbox");
 export const meta: Route.MetaFunction = () => [{ title: "Outbox · Admin · DALI OS" }];
 
 const STATUSES = ["Pending", "Sending", "Sent", "Dead", "Canceled"] as const;
-const ROW_LIMIT = 100;
+export const PAGE_SIZE = 50;
 
 export function outboxSearchWhere(q: string): Prisma.OutboundMessageWhereInput {
   if (!q) return {};
@@ -50,6 +52,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   const url = new URL(request.url);
   const statusFilter = url.searchParams.get("status") ?? "";
   const q = url.searchParams.get("q")?.trim() ?? "";
+  const page = parsePageParam(url.searchParams.get("page"));
   const search = outboxSearchWhere(q);
 
   // Counts honor the search but not the status filter, so every segment shows its true size.
@@ -58,10 +61,10 @@ export async function loader({ request }: Route.LoaderArgs) {
   for (const g of grouped) counts[g.status] = g._count;
   const total = Object.values(counts).reduce((a, b) => a + b, 0);
 
-  const rows = await prisma.outboundMessage.findMany({
+  const found = await prisma.outboundMessage.findMany({
     where: { ...(statusFilter ? { status: statusFilter } : {}), ...search },
-    orderBy: { createdAt: "desc" },
-    take: ROW_LIMIT,
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    ...offsetWindow(page, PAGE_SIZE),
     select: {
       id: true,
       channel: true,
@@ -78,6 +81,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     },
   });
 
+  const { items: rows, hasNext } = offsetPage(found, PAGE_SIZE);
   const recipientIds = [...new Set(rows.flatMap((r) => (r.recipientUserId ? [r.recipientUserId] : [])))];
   const users =
     recipientIds.length === 0
@@ -107,7 +111,8 @@ export async function loader({ request }: Route.LoaderArgs) {
   });
 
   const admin = await isAdmin(auth.user.sub);
-  return { messages, statusFilter, q, isAdmin: admin, counts, total };
+  const matching = statusFilter ? (counts[statusFilter] ?? 0) : total;
+  return { messages, statusFilter, q, isAdmin: admin, counts, total, matching, page, hasNext };
 }
 
 export async function action({ request }: Route.ActionArgs) {
@@ -382,7 +387,7 @@ function RetryAllButton({ count, q }: { count: number; q: string }) {
 type StatusFilter = "" | (typeof STATUSES)[number];
 
 export default function AdminOutboundMessages() {
-  const { messages, statusFilter, q, counts, total } = useLoaderData<typeof loader>();
+  const { messages, statusFilter, q, counts, total, matching, page, hasNext } = useLoaderData<typeof loader>();
   const { panel, actionBtn } = useOsChrome();
   const [, setSearchParams] = useSearchParams();
   const [open, setOpen] = useState<string | null>(null);
@@ -393,9 +398,21 @@ export default function AdminOutboundMessages() {
       const params = new URLSearchParams(prev);
       if (next) params.set("status", next);
       else params.delete("status");
+      params.delete("page");
       return params;
     });
   }
+
+  function pageHref(nextPage: number): string {
+    const params = new URLSearchParams();
+    if (statusFilter) params.set("status", statusFilter);
+    if (q) params.set("q", q);
+    if (nextPage > 1) params.set("page", String(nextPage));
+    const qs = params.toString();
+    return qs ? `?${qs}` : "?";
+  }
+
+  const firstShown = (page - 1) * PAGE_SIZE + 1;
 
   const filterLabel = statusFilter ? statusView(statusFilter).label.toLowerCase() : "";
 
@@ -456,9 +473,13 @@ export default function AdminOutboundMessages() {
         )}
       </ul>
 
+      <PagerLinks page={page} hasNext={hasNext} hrefFor={pageHref} label="Outbox pagination" endLabel="End of outbox" />
+
       <p className="text-xs text-os-muted">
-        Newest first, up to {ROW_LIMIT} rows. Narrow the filter to see older ones. Message bodies and attachments
-        aren&apos;t shown; they are cleared from sent messages after delivery.
+        Newest first.
+        {messages.length > 0 &&
+          ` Showing ${firstShown}-${firstShown + messages.length - 1} of ${matching.toLocaleString()}.`}{" "}
+        Message bodies and attachments aren&apos;t shown; they are cleared from sent messages after delivery.
       </p>
     </div>
   );

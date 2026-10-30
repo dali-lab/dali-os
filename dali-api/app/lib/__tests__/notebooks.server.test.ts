@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     page: {
       findUnique: vi.fn(),
@@ -35,7 +35,7 @@ vi.mock("~/lib/pages", () => ({
 vi.mock("~/lib/scheduled-meeting", () => ({ resolveMeetingOccurrence: vi.fn(), seedPageFromTemplate: vi.fn() }));
 vi.mock("~/lib/meeting-shares.server", () => ({ syncMeetingShares: vi.fn(), removeMeetingShares: vi.fn() }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore, isLabMember, isProjectMember } from "~/lib/roles";
 import { getPageAccess, getPageAccessBulk, isUnderGoverningScope } from "~/lib/pageAccess.server";
 import {

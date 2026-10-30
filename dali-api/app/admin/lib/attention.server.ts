@@ -1,4 +1,4 @@
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import type { AdminAlertKey } from "~/admin/adminNav";
 
 export type AttentionItem = {

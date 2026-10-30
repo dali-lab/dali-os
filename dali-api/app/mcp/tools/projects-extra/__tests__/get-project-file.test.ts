@@ -1,13 +1,13 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: { projectFile: { findUnique: vi.fn() } },
 }));
 vi.mock("~/lib/fileAccess.server", () => ({ canViewFile: vi.fn() }));
 vi.mock("~/lib/s3", () => ({ getDownloadUrl: vi.fn().mockResolvedValue("https://signed.example/x") }));
 vi.mock("~/lib/collabAuth", () => ({ hydrateAuthors: vi.fn().mockResolvedValue([]) }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { canViewFile } from "~/lib/fileAccess.server";
 import { runGetProjectFile } from "~/mcp/tools/projects-extra/get-project-file";
 

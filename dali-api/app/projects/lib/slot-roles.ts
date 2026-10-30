@@ -10,6 +10,7 @@
 // Pure module (no DB, no HTTP) so it's exhaustively unit-testable, like the
 // interpreters that consume it.
 
+import { isIntentStatus, type IntentStatusValue } from "./intent-status";
 import type { Question } from "~/types";
 import type { Slot } from "./form-slots";
 
@@ -186,6 +187,9 @@ type CommonEntry = {
   // Hidden from the default table but still shown on the row's detail page.
   // Absent/false = visible.
   hidden?: boolean;
+  // Only for intent-status: which status each answer option means, e.g.
+  // { "Yes": "Returning" }. Answers not listed fall back to the status names.
+  statusMap?: Record<string, IntentStatusValue>;
 };
 
 export type ColumnMappingEntry =
@@ -233,6 +237,7 @@ export function parseColumnMapping(json: unknown): ColumnMapping | null {
       // mapping renders in the same order it always did.
       order: typeof r.order === "number" ? r.order : idx,
       ...(r.hidden === true ? { hidden: true } : {}),
+      ...parseStatusMap(r.statusMap),
     };
     // Back-compat: entries saved before builtins have no `source` and are
     // question-sourced. A missing/"question" source needs a questionKey; a
@@ -248,6 +253,15 @@ export function parseColumnMapping(json: unknown): ColumnMapping | null {
     }
   }
   return { version: 1, entries };
+}
+
+function parseStatusMap(raw: unknown): { statusMap?: Record<string, IntentStatusValue> } {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const out: Record<string, IntentStatusValue> = {};
+  for (const [answer, status] of Object.entries(raw as Record<string, unknown>)) {
+    if (isIntentStatus(status)) out[answer] = status;
+  }
+  return Object.keys(out).length > 0 ? { statusMap: out } : {};
 }
 
 function questionFitsConstraint(

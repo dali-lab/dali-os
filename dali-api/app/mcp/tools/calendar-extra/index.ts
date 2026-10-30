@@ -72,7 +72,7 @@ export const CALENDAR_TOOLS: McpTool[] = [
   {
     def: LIST_SCHEDULED_MEETINGS_DEF,
     run: (ctx, args) =>
-      runListScheduledMeetings(ctx.user.id, args as { status?: "Searching" | "Confirmed" | "Cancelled"; role?: "organizer" | "participant" | "any"; limit?: number }),
+      runListScheduledMeetings(ctx.user.id, args as { status?: "Searching" | "Confirmed" | "Cancelled"; role?: "organizer" | "participant" | "any"; limit?: number; cursor?: string }),
   },
   {
     def: GET_MEETING_ATTENDANCE_DEF,
@@ -112,7 +112,7 @@ export const CALENDAR_TOOLS: McpTool[] = [
   {
     def: GET_MEETING_DEF,
     run: (ctx, args) =>
-      runGetMeeting(ctx.user.id, args as { meetingId: string; occurrenceStart?: string }),
+      runGetMeeting(ctx.user.id, args as Parameters<typeof runGetMeeting>[1]),
   },
   {
     def: GET_MEETING_TRANSCRIPT_DEF,
@@ -126,7 +126,7 @@ export const CALENDAR_TOOLS: McpTool[] = [
   {
     def: SEARCH_CALENDAR_DEF,
     run: (ctx, args) =>
-      runSearchCalendar(ctx.user.id, args as { q: string; scope?: "near" | "all"; rangeStart?: string; rangeEnd?: string }),
+      runSearchCalendar(ctx.user.id, args as Parameters<typeof runSearchCalendar>[1]),
   },
   {
     def: MANAGE_CLASS_DEF,
@@ -136,7 +136,7 @@ export const CALENDAR_TOOLS: McpTool[] = [
   {
     def: SEARCH_TIMETABLE_COURSES_DEF,
     run: (ctx, args) =>
-      runSearchTimetableCourses(ctx.user.id, args as { termId: string; q: string }),
+      runSearchTimetableCourses(ctx.user.id, args as Parameters<typeof runSearchTimetableCourses>[1]),
   },
   {
     def: SCAN_ATTENDEE_DEF,

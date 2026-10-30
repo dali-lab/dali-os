@@ -20,9 +20,8 @@ import {
 import type { Route } from "./+types/core.partners.contacts.$contactId";
 import { requireAuth, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
-import { prisma } from "~/lib/db";
-import { isCore, getUserRoles } from "~/lib/roles";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
+import { prisma } from "~/lib/db.server";
+import { isCore } from "~/lib/roles";
 import { coreHandle } from "~/core/coreNav";
 import { logAuditEvent } from "~/lib/audit";
 import { UnderlineTabButtons } from "~/components/AreaPillNav";
@@ -31,6 +30,7 @@ import { PartnerActivityFeed } from "../components/PartnerActivityFeed";
 import { PartnerEmailPanel } from "../components/PartnerEmailPanel";
 import { ContactAvatar } from "../components/contact/ContactAvatar";
 import { getPartnerContactEmailThreads } from "../lib/partner-email.server";
+import { loadPartnerActivityPage } from "../lib/partner-activity-page.server";
 import { logPartnerActivity } from "../lib/partner-activity.server";
 import {
   PARTNER_CHANNELS,
@@ -62,9 +62,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const canEdit = await isCore(auth.user.sub);
   if (!canEdit) return redirect("/");
 
-  const roles = await getUserRoles(auth.user.sub, request);
-  const emailEnabled = await isFeatureEnabled("partner-email", auth.user.sub, roles, request);
-
   const contact = await prisma.partnerContact.findUnique({
     where: { id: params.contactId },
     select: {
@@ -86,7 +83,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   });
   if (!contact) throw new Response("Not found", { status: 404 });
 
-  const [applications, meetingRows, activityRows, threads] = await Promise.all([
+  const [applications, meetingRows, activityPage, threads] = await Promise.all([
     prisma.partnerApplication.findMany({
       where: { applicantContactId: contact.id },
       orderBy: { createdAt: "desc" },
@@ -103,48 +100,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         scheduledMeeting: { select: { selectedAt: true } },
       },
     }),
-    prisma.partnerActivity.findMany({
-      where: { contactId: contact.id },
-      orderBy: { createdAt: "desc" },
-      take: 50,
-      select: {
-        id: true,
-        createdAt: true,
-        applicationId: true,
-        actorUserId: true,
-        type: true,
-        body: true,
-        metadata: true,
-      },
-    }),
-    emailEnabled ? getPartnerContactEmailThreads(contact.id) : Promise.resolve([]),
+    loadPartnerActivityPage({ contactId: contact.id }),
+    getPartnerContactEmailThreads(contact.id),
   ]);
-
-  const activities = activityRows.map((r) => ({
-    id: r.id,
-    createdAt: r.createdAt.toISOString(),
-    applicationId: r.applicationId,
-    actorUserId: r.actorUserId,
-    type: r.type,
-    body: r.body,
-    metadata: (r.metadata ?? null) as Record<string, unknown> | null,
-  }));
-  const actorIds = [
-    ...new Set(activityRows.map((r) => r.actorUserId).filter(Boolean)),
-  ] as string[];
-  let actorNames: Record<string, string> = {};
-  if (actorIds.length > 0) {
-    const users = await prisma.user.findMany({
-      where: { id: { in: actorIds } },
-      select: { id: true, firstName: true, lastName: true, daliEmail: true },
-    });
-    actorNames = Object.fromEntries(
-      users.map((u) => [
-        u.id,
-        [u.firstName, u.lastName].filter(Boolean).join(" ") || u.daliEmail || u.id,
-      ]),
-    );
-  }
 
   const meetings = meetingRows.map((m) => ({
     id: m.id,
@@ -158,9 +116,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     contact,
     applications,
     meetings,
-    activities,
-    actorNames,
-    emailEnabled,
+    activities: activityPage.items,
+    activitiesNextCursor: activityPage.nextCursor,
+    actorNames: activityPage.actorNames,
     threads,
     canEdit,
     trailLabel: contact.name,
@@ -348,7 +306,7 @@ function isContactTab(x: string | null): x is ContactTab {
 }
 
 export default function PartnerContactDetail() {
-  const { contact, applications, meetings, activities, actorNames, emailEnabled, threads, canEdit } =
+  const { contact, applications, meetings, activities, activitiesNextCursor, actorNames, threads, canEdit } =
     useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const submit = useSubmit();
@@ -444,7 +402,13 @@ export default function PartnerContactDetail() {
       />
 
       {tab === "timeline" && (
-        <PartnerActivityFeed activities={activities} actorNames={actorNames} canEdit={canEdit} />
+        <PartnerActivityFeed
+          activities={activities}
+          nextCursor={activitiesNextCursor}
+          scope={{ contactId: contact.id }}
+          actorNames={actorNames}
+          canEdit={canEdit}
+        />
       )}
 
       {tab === "applications" && (
@@ -507,14 +471,10 @@ export default function PartnerContactDetail() {
 
       {tab === "email" && (
         <section className="bg-card border border-border rounded-lg p-4 flex flex-col gap-3">
-          {emailEnabled ? (
-            threads.length > 0 ? (
-              <PartnerEmailPanel contactId={contact.id} threads={threads} />
-            ) : (
-              <p className="text-sm text-muted-foreground">No email history with partners@ yet.</p>
-            )
+          {threads.length > 0 ? (
+            <PartnerEmailPanel contactId={contact.id} threads={threads} />
           ) : (
-            <p className="text-sm text-muted-foreground">Email capture isn't turned on yet.</p>
+            <p className="text-sm text-muted-foreground">No email history with partners@ yet.</p>
           )}
         </section>
       )}

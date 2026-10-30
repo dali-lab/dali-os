@@ -8,7 +8,7 @@ import {
 import type { Route } from "./+types/mentorship";
 import { requireAuth, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore, currentTermPhase } from "~/lib/roles";
 import { interimLabel } from "~/lib/terms.shared";
 import { canViewMentorship } from "../lib/visibility";

@@ -3,7 +3,7 @@
 
 import { redirect } from "react-router";
 import { requireAuth, forbidden, unauthorized, isPartnerAccount, isNonMember } from "~/lib/auth";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { CalendarActionSchema } from "~/lib/calendar-schemas";
 import { markCalendarChanged } from "~/calendar/lib/external-cache.server";
 import { setSubCalendarEnabled } from "~/calendar/lib/sub-calendar.server";

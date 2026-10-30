@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-vi.mock("~/lib/db", () => ({ prisma: { $queryRawUnsafe: vi.fn() } }));
+vi.mock("~/lib/db.server", () => ({ prisma: { $queryRawUnsafe: vi.fn() } }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import {
   loadAncestorChain,
   loadAncestorChains,

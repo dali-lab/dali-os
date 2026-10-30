@@ -11,7 +11,7 @@
 //
 // Students cycles only, and only on cycles that bind a continued interest form.
 
-import { prisma, Prisma } from "~/lib/db";
+import { prisma, Prisma } from "~/lib/db.server";
 import type { Question } from "~/types";
 import { presignAnswers } from "~/hiring/lib/presign";
 

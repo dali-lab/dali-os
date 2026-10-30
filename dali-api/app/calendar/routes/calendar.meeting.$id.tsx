@@ -25,7 +25,7 @@ import { Pill } from "~/hiring/components/cycle-setup/SetupCard";
 import { cn } from "~/lib/cn";
 import { requireAuth, redirectNonMemberToPortal, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { getUserRoles, isProjectMember } from "~/lib/roles";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { walletTokensConfigured } from "~/lib/wallet-token";

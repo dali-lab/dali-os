@@ -7,6 +7,7 @@ import { isPresenceRoom } from "./roomName";
 import { authorizeCollabDoc } from "~/lib/collabAuth";
 import { notifyCollabDocMentions } from "./mentions.server";
 import { reconcilePageLinks } from "./page-links.server";
+import { attachAgentPresence } from "./agent-presence.server";
 
 const WS_MAX_PAYLOAD_BYTES = 1_048_576; // 1 MB
 const WS_MAX_CONNECTIONS = 100;
@@ -179,6 +180,8 @@ export function startCollabServer() {
       }
     },
   }, { maxPayload: WS_MAX_PAYLOAD_BYTES });
+
+  attachAgentPresence(server.hocuspocus);
 
   server.listen().catch((err: any) => {
     if (err?.code === "EADDRINUSE") {

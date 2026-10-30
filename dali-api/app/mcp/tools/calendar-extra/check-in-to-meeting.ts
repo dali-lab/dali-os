@@ -2,7 +2,7 @@
 // Mirrors the logic of api.scheduled-meetings.$id.check-in.ts exactly.
 // Requires the `mcp:write` scope.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { markMeetingAttendance, isWithinCheckInWindow } from "~/lib/scheduled-meeting";
 import { McpNotFoundError, McpInvalidError, McpForbiddenError } from "../../registry";
 

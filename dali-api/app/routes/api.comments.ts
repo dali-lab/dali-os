@@ -1,10 +1,9 @@
 import type { Route } from "./+types/api.comments";
 import { z } from "zod";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth, forbidden, type AuthSuccess } from "~/lib/auth";
 import { isLabMember, isProjectMember } from "~/lib/roles";
 import { notifyFileComment } from "~/projects/lib/file-notifications.server";
-import { partnerHasProjectAccess } from "~/partners/lib/partner-access";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson } from "~/lib/validate";
 import { hydrateAuthors } from "~/lib/collabAuth";

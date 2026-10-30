@@ -7,7 +7,8 @@
 #   - An already-released version: publish an EAS Update (over the air) to the
 #     `production` channel. runtimeVersion follows the app version, so the update
 #     only reaches builds it is compatible with.
-# workflow_dispatch can force either path.
+# workflow_dispatch can force either path, and can limit a build to one
+# platform (e.g. to retry Android after a failed submit without re-shipping iOS).
 #
 # REQUIRES (provisioned once by the repo owner, see mobile/README.md "Releasing"):
 #   Repo secret EXPO_TOKEN (an Expo robot/access token for the project's account).
@@ -29,6 +30,11 @@ on:
         type: choice
         options: [auto, build, update]
         default: auto
+      platform:
+        description: "Platform to build (ignored for updates)"
+        type: choice
+        options: [all, ios, android]
+        default: all
 
 permissions:
   contents: write # push the mobile-v* release tag
@@ -89,13 +95,37 @@ jobs:
       - run: npm ci
       - run: npx tsc --noEmit
       # Builds run on EAS; --no-wait returns once they're queued, and
-      # --auto-submit sends each finished build to its store.
-      - run: eas build --platform all --profile production --non-interactive --no-wait --auto-submit
+      # --auto-submit sends each finished build to its store. Each platform is
+      # queued separately so one store's failure doesn't block the other; any
+      # failure is re-raised at the end, after the surviving platform shipped
+      # and the release was tagged.
+      - name: Build and submit iOS
+        id: ios
+        if: ${{ (inputs.platform || 'all') != 'android' }}
+        continue-on-error: true
+        run: eas build --platform ios --profile production --non-interactive --no-wait --auto-submit
+      - name: Build and submit Android
+        id: android
+        if: ${{ (inputs.platform || 'all') != 'ios' }}
+        continue-on-error: true
+        run: eas build --platform android --profile production --non-interactive --no-wait --auto-submit
       - name: Tag the release
+        if: ${{ steps.ios.outcome == 'success' || steps.android.outcome == 'success' }}
         working-directory: .
         run: |
-          git tag "mobile-v${{ needs.decide.outputs.version }}"
-          git push origin "mobile-v${{ needs.decide.outputs.version }}"
+          TAG="mobile-v${{ needs.decide.outputs.version }}"
+          if git ls-remote --exit-code --tags origin "refs/tags/${TAG}" >/dev/null 2>&1; then
+            echo "${TAG} already exists; leaving it."
+          else
+            git tag "${TAG}"
+            git push origin "${TAG}"
+          fi
+      - name: Surface platform failures
+        if: ${{ steps.ios.outcome == 'failure' || steps.android.outcome == 'failure' }}
+        run: |
+          [ "${{ steps.ios.outcome }}" = "failure" ] && echo "::error::iOS build/submit failed."
+          [ "${{ steps.android.outcome }}" = "failure" ] && echo "::error::Android build/submit failed. Re-run it alone via Run workflow with kind=build, platform=android."
+          exit 1
 
   update:
     needs: decide

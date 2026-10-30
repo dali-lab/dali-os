@@ -14,7 +14,7 @@
 
 import { MCP_SCOPES } from "~/lib/mcp-scopes";
 import type { Route } from "./+types/oauth.register";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { withCors, handlePreflight, preflightLoader } from "~/lib/cors";
 import { checkRateLimit, getClientIp } from "~/lib/rate-limit";
 import { safeJson } from "~/lib/safe-json";

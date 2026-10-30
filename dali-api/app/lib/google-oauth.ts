@@ -12,6 +12,11 @@ export interface GoogleTokenResponse {
 
 export const GMAIL_SEND_SCOPE = "https://www.googleapis.com/auth/gmail.send";
 export const GMAIL_READONLY_SCOPE = "https://www.googleapis.com/auth/gmail.readonly";
+// Full calendar scope: needed for events.insert / events.patch, plus
+// calendarList + freebusy reads. A partial grant (granular consent, or a
+// Workspace policy that blocks the scope) still completes the OAuth flow, so
+// callers check the granted scopes rather than assume it.
+export const GOOGLE_CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar";
 
 export class GoogleOAuthError extends Error {
   constructor(

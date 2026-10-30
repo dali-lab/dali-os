@@ -14,7 +14,7 @@ vi.mock("better-auth/api", () => ({ APIError: FakeAPIError }));
 vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
 const mockCount = vi.hoisted(() => vi.fn());
 const mockFindMany = vi.hoisted(() => vi.fn());
-vi.mock("~/lib/db", () => ({ prisma: { auditLog: { count: mockCount, findMany: mockFindMany } } }));
+vi.mock("~/lib/db.server", () => ({ prisma: { auditLog: { count: mockCount, findMany: mockFindMany } } }));
 const ipRules = vi.hoisted(() => ({
   isIpBlocked: vi.fn(),
   isIpTrusted: vi.fn(),

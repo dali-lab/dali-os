@@ -12,7 +12,7 @@
 // canonical identifier (it has no multi-email concept), so resolution maps an
 // alias TO that canonical value and hands BetterAuth an address it can find.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { findNetIdByAddress } from "~/lib/dartmouth-people";
 
 /** Trimmed + lowercased. The only form ever written to UserEmail.address. */

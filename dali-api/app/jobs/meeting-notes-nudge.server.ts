@@ -6,7 +6,7 @@
 // — same ledger as meeting-reminders / meeting-record-prompts, a dedicated
 // `kind` so the three don't collide on the unique index.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { notify } from "~/lib/notify.server";
 import { getUserRoles } from "~/lib/roles";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";

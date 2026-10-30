@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { createPortal } from "react-dom";
 import { useRevalidator } from "react-router";
-import { CalendarDays, Check, ChevronDown, ChevronRight, X } from "lucide-react";
+import { CalendarDays, Check, ChevronDown, ChevronRight, UsersRound, X } from "lucide-react";
 import { cn } from "~/lib/cn";
 import { SearchInput } from "~/components/ui/SearchInput";
 import { useDialog } from "~/components/ui/dialog";
@@ -15,6 +15,7 @@ import { SegmentedTabButtons } from "~/components/AreaPillNav";
 import type {
   CalendarLinkDTO,
   CalendarView,
+  GroupOption,
   LoaderData,
   UserOption,
   TimesheetHoursScope,
@@ -116,17 +117,25 @@ function AccountGroup({
   );
 }
 
-/** Google's "Meet with…" box. Picking someone opens the create modal with them
- *  invited rather than filtering the grid, so the next step is scheduling. */
-function MeetWith({
+/** Google's "Meet with…" box. Picking someone — or a whole group — opens the
+ *  create modal with them invited rather than filtering the grid, so the next
+ *  step is scheduling. */
+export function MeetWith({
   users,
+  groups,
   onPick,
+  onPickGroup,
 }: {
   users: UserOption[];
+  groups: GroupOption[];
   onPick: (userId: string) => void;
+  onPickGroup: (groupId: string) => void;
 }) {
   const [query, setQuery] = useState("");
   const q = query.trim().toLowerCase();
+  const groupMatches = q
+    ? groups.filter((g) => g.name.toLowerCase().includes(q)).slice(0, 4)
+    : [];
   const matches = q
     ? users
         .filter(
@@ -147,10 +156,29 @@ function MeetWith({
           size="sm"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search for people"
+          placeholder="Search people or groups"
         />
-        {matches.length > 0 && (
+        {(groupMatches.length > 0 || matches.length > 0) && (
           <div className="absolute left-0 right-0 top-[calc(100%+4px)] z-40 max-h-56 overflow-y-auto rounded-lg cal-surface p-1">
+            {groupMatches.map((g) => (
+              <button
+                key={g.id}
+                type="button"
+                onClick={() => {
+                  onPickGroup(g.id);
+                  setQuery("");
+                }}
+                className="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted/60"
+              >
+                <span className="inline-flex min-w-0 items-center gap-1.5">
+                  <UsersRound className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                  <span className="truncate">{g.name}</span>
+                </span>
+                <span className="shrink-0 text-[11px] text-muted-foreground">
+                  {g.memberIds.length} member{g.memberIds.length === 1 ? "" : "s"}
+                </span>
+              </button>
+            ))}
             {matches.map((u) => (
               <button
                 key={u.id}
@@ -312,11 +340,14 @@ type CalendarSidebarProps = {
   setRoleColor: (roleKey: string, hex: string) => void;
   /** The role the pointer is over in the rail, or null, so the grid can pick out its hours. */
   onHoverRole: (roleKey: string | null) => void;
-  /** Opens the create modal with this person already invited, on the current
-   *  week, so their availability is on screen immediately. */
   /** The lab directory for Meet with; fetched after load, so empty at first. */
   users: UserOption[];
+  groups: GroupOption[];
+  /** Open the create modal with this person (or this whole group) already
+   *  invited, on the current week, so their availability is on screen
+   *  immediately. */
   onMeetWith: (userId: string) => void;
+  onMeetWithGroup: (groupId: string) => void;
 };
 
 /** Inner content shared by the desktop rail and the mobile drawer. */
@@ -338,7 +369,9 @@ function CalendarSidebarContent({
   setRoleColor,
   onHoverRole,
   users,
+  groups,
   onMeetWith,
+  onMeetWithGroup,
 }: CalendarSidebarProps) {
   const revalidator = useRevalidator();
   const dialog = useDialog();
@@ -384,7 +417,7 @@ function CalendarSidebarContent({
           A viewer with nobody to search (the portal calendar withholds the lab
           directory) gets no box at all rather than one that can never answer. */}
       {!layers.logged && data.hasDirectory && (
-        <MeetWith users={users} onPick={onMeetWith} />
+        <MeetWith users={users} groups={groups} onPick={onMeetWith} onPickGroup={onMeetWithGroup} />
       )}
 
       {/* Which calendars to draw is a question about events. In timesheet

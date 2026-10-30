@@ -10,7 +10,7 @@ import {
   type DocSyncState,
 } from "~/components/doc";
 import { blogPostRoomName } from "~/collab/roomName";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isAiEnabled } from "~/lib/ai.server";
 import { DEFAULT_BLOG_COVER, blogListing } from "~/lib/blog-preview";
 import {

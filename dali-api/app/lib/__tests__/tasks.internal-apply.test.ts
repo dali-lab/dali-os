@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/hiring/lib/cycles", () => ({ getOpenCycles: vi.fn() }));
 vi.mock("~/hiring/lib/applicant-groups.server", () => ({
   applicantGroup: vi.fn((applicants: string, cycleId: string) => ({
@@ -9,7 +9,7 @@ vi.mock("~/hiring/lib/applicant-groups.server", () => ({
   })),
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { getOpenCycles } from "~/hiring/lib/cycles";
 import { getInternalCycleApplyTasks } from "~/lib/tasks";
 

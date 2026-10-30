@@ -5,7 +5,7 @@
 // deleted-prior counts in a TimesheetImport audit row.
 
 import { createHash } from "node:crypto";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import {
   parsePayPeriodName,
   matchTermForPeriod,

@@ -28,7 +28,7 @@ const s3 = vi.hoisted(() => ({
   getDownloadUrl: vi.fn(async (key: string) => `https://s3.test/${key}`),
 }));
 
-vi.mock("~/lib/db", () => ({ prisma: db }));
+vi.mock("~/lib/db.server", () => ({ prisma: db }));
 vi.mock("~/lib/notify.server", () => ({ notify }));
 vi.mock("~/lib/photo", () => ({ resolvePhotoUrl: vi.fn(async () => null) }));
 vi.mock("~/lib/s3", () => s3);

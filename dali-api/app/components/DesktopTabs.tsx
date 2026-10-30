@@ -29,6 +29,8 @@ import { stripAppTitle } from '~/lib/page-title'
 import { fallbackPageLabel } from '~/components/shell/page-bar-model'
 import { usePageTrail } from '~/components/Breadcrumbs'
 import { tabIcon } from '~/lib/tab-icon'
+import { sidePanelForUrl } from '~/lib/side-panel'
+import { useLiveSession } from '~/components/meeting-recorder/live-session'
 
 /** Fired by the desktop app's File menu (desktop/src-tauri/src/menu.rs), which
  *  owns ⌘T / ⌘W / ⌘⇧T so the native Close Window shortcut can't win. */
@@ -149,6 +151,11 @@ function SortableTab({
     id: tab.id,
   })
   const Icon = tabIcon(tab.url)
+  const session = useLiveSession()
+  const recording =
+    session?.href != null &&
+    session.status !== 'stopped' &&
+    tab.url.split(/[?#]/)[0] === session.href
   const style: CSSProperties = {
     transform: CSS.Transform.toString(transform),
     transition,
@@ -182,7 +189,15 @@ function SortableTab({
         active ? 'bg-os-bg text-foreground' : 'text-os-grey hover:bg-os-hover',
       )}
     >
-      {tab.emoji ? (
+      {recording ? (
+        <span
+          data-testid="tab-recording-dot"
+          aria-hidden
+          className="pointer-events-none flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-os-red/[0.18]"
+        >
+          <span className="h-2 w-2 rounded-full bg-os-red" />
+        </span>
+      ) : tab.emoji ? (
         <span aria-hidden className="pointer-events-none w-4 shrink-0 text-center text-[14px] leading-none">
           {tab.emoji}
         </span>
@@ -225,6 +240,24 @@ function SortableTab({
   return tab.pinned ? <Tooltip content={tab.label}>{button}</Tooltip> : button
 }
 
+// Each url once per window: a page with no emoji answers null and would
+// otherwise be asked again on every strip update.
+function useBackgroundTabEmoji(tabs: DesktopTab[], activeId: string | null) {
+  const asked = useRef(new Set<string>())
+  useEffect(() => {
+    for (const tab of tabs) {
+      if (tab.id === activeId || tab.emoji || asked.current.has(tab.url)) continue
+      const docId = sidePanelForUrl(tab.url)?.id
+      if (!docId) continue
+      asked.current.add(tab.url)
+      fetch(`/api/documents/${docId}`)
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data: { iconEmoji?: string | null } | null) => tabActions.fillEmoji(tab.id, tab.url, data?.iconEmoji ?? null))
+        .catch(() => {})
+    }
+  }, [tabs, activeId])
+}
+
 export function DesktopTabStrip({
   leading,
   initial = null,
@@ -235,6 +268,7 @@ export function DesktopTabStrip({
   const live = useDesktopTabsState()
   const { tabs, activeId } = tabsActive() || !initial ? live : initial
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }))
+  useBackgroundTabEmoji(live.tabs, live.activeId)
 
   const lastPinned = tabs.reduce((last, t, i) => (t.pinned ? i : last), -1)
   const activeIndex = tabs.findIndex((t) => t.id === activeId)

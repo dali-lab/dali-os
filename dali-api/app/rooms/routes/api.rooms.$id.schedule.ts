@@ -1,5 +1,5 @@
 import type { Route } from "./+types/api.rooms.$id.schedule";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { requireRoomBookingUser } from "~/rooms/lib/access.server";
 import { getRoomSchedule, parseWindow, serializeScheduleItem } from "~/lib/rooms.server";

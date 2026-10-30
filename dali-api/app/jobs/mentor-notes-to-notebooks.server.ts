@@ -1,4 +1,4 @@
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { resolveCoreActor } from "~/jobs/core-actor.server";
 import { ensureMentorNotePage } from "~/mentorship/lib/pair-notebook.server";
 import type { JobResult } from "~/jobs/registry";

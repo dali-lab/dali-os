@@ -21,7 +21,7 @@ vi.mock("~/mcp/registry", () => {
   return { McpError, McpNotFoundError, McpForbiddenError, McpInvalidError };
 });
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/roles", async (orig) => {
   const real = await orig<typeof import("~/lib/roles")>();
   return { ...real, hasCycleAccess: vi.fn() };
@@ -31,7 +31,7 @@ vi.mock("~/hiring/lib/scheduling", () => ({
   isInterviewerFree: vi.fn().mockReturnValue(false),
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { hasCycleAccess } from "~/lib/roles";
 import { GET_HIRING_CYCLE_TOOL, runGetHiringCycle } from "../get-hiring-cycle";
 

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     form: { findUnique: vi.fn() },
     scheduledAnnouncement: { create: vi.fn(), updateMany: vi.fn() },
@@ -13,7 +13,7 @@ vi.mock("~/lib/announcements.server", () => ({
   sendAnnouncement: vi.fn(),
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore } from "~/lib/roles";
 import { sendAnnouncement } from "~/lib/announcements.server";
 import { runSendAnnouncement, SEND_ANNOUNCEMENT_TOOL } from "~/mcp/tools/admin/send-announcement";

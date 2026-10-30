@@ -8,7 +8,7 @@
 //   Everyone else → McpForbiddenError.
 // Requires mcp:read scope.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { getUserRoles } from "~/lib/roles";
 import { blockLabel, delibRounds, parseTimeline } from "~/hiring/lib/cycle-timeline";
 import { McpForbiddenError } from "../../registry";

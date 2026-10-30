@@ -1,11 +1,11 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/hiring/lib/new-member-cohort.server", () => ({
   getNewMemberCohortIds: vi.fn(),
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { getNewMemberCohortIds } from "~/hiring/lib/new-member-cohort.server";
 import {
   partitionStaffedMembers,

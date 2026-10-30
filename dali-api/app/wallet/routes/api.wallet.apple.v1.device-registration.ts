@@ -1,5 +1,5 @@
 import type { Route } from "./+types/api.wallet.apple.v1.device-registration";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { verifyWalletAuthToken } from "~/lib/wallet-token";
 
 // PassKit web-service device registration endpoints.

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn(), forbidden: vi.fn() }));
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/roles", () => ({ canManageStaffing: vi.fn() }));
 vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
 vi.mock("~/lib/cors", () => ({
@@ -11,7 +11,7 @@ vi.mock("~/lib/cors", () => ({
 vi.mock("../../lib/staffing-events.server", () => ({ publishCycleChange: vi.fn() }));
 
 import { requireAuth } from "~/lib/auth";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { canManageStaffing } from "~/lib/roles";
 import { action } from "~/projects/routes/api.staffing.assign";
 

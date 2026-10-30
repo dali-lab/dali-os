@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/auth", () => ({ requireProjectEditAccess: vi.fn() }));
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
 vi.mock("~/lib/cors", () => ({
   withCors: (_req: Request, res: Response) => res,
@@ -14,7 +14,7 @@ vi.mock("~/projects/lib/task-notifications.server", () => ({
 
 import { requireProjectEditAccess } from "~/lib/auth";
 import { logAuditEvent } from "~/lib/audit";
-import { prisma, Prisma } from "~/lib/db";
+import { prisma, Prisma } from "~/lib/db.server";
 import { action, loader } from "~/projects/routes/api.tasks.$id";
 
 const TASK_ID = "task-1";

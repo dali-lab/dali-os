@@ -13,6 +13,7 @@ import { Segmented } from "~/components/ui/Segmented";
 import { Select, Tooltip } from "~/components/ui/floating";
 import { useToast } from "~/components/ui/toast";
 import { useOsChrome } from "~/components/os-chrome";
+import { ChannelPreview, type Channel } from "~/components/settings/ChannelPreview";
 import {
   WEEKDAY_NAMES,
   digestHourLabel,
@@ -102,7 +103,14 @@ export function choicesToFormData(choices: Choices): FormData {
   return fd;
 }
 
-const COLS = "grid grid-cols-[minmax(0,1fr)_64px_64px_64px_160px] items-center gap-2";
+const CHANNEL_HEADERS: { channel: Channel; label: string }[] = [
+  { channel: "inApp", label: "In-app" },
+  { channel: "desktop", label: "Desktop" },
+  { channel: "slackDm", label: "Slack DM" },
+  { channel: "email", label: "Email" },
+];
+
+const COLS ="grid grid-cols-[minmax(0,1fr)_64px_64px_64px_160px] items-center gap-2";
 
 export function NotificationsSettingsBlock({
   prefs,
@@ -220,12 +228,17 @@ export function NotificationsSettingsBlock({
 
       <div className="no-scrollbar overflow-x-auto">
         <div className="flex min-w-[700px] flex-col gap-3">
-          <div className={cn(COLS, "px-6 text-xs font-semibold text-os-muted")}>
+          <div className={cn(COLS, "items-end px-6 text-xs font-semibold text-os-muted")}>
             <span>Notification</span>
-            <span className="text-center">In-app</span>
-            <span className="text-center">Desktop</span>
-            <span className="text-center">Slack DM</span>
-            <span>Email</span>
+            {CHANNEL_HEADERS.map(({ channel, label }) => (
+              <span
+                key={channel}
+                className={cn("flex flex-col gap-1.5", channel === "email" ? "items-start" : "items-center")}
+              >
+                <ChannelPreview channel={channel} />
+                {label}
+              </span>
+            ))}
           </div>
 
           {areas.map(({ area, events }) => {

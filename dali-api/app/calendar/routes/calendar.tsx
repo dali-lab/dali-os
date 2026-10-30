@@ -946,7 +946,9 @@ function CalendarScreen({ data }: { data: LoaderData }) {
             setRoleColor={setRoleColor}
             onHoverRole={setHoveredRoleKey}
             users={participants.users}
+            groups={participants.groups}
             onMeetWith={(userId) => openCreateModal(undefined, undefined, [userId])}
+            onMeetWithGroup={(groupId) => openCreateModal(undefined, undefined, [], [groupId])}
           />
           {/* No card around the grid — the hour rules and day rules are the
               only structure it needs, the way Google's week view reads.

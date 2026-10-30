@@ -5,7 +5,7 @@ import { getBetterAuthUser } from "~/lib/betterauth-compat.server";
 import { captureDartmouthIdentity } from "~/lib/dartmouth-capture.server";
 import { pickSafeLoginNext } from "~/lib/login-next";
 import { shouldOfferPasskey, setPasskeyPromptDismissed } from "~/lib/passkey-prompt.server";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isFeatureSwitchedOn } from "~/lib/feature-flags.server";
 import AuthShell from "~/components/auth/AuthShell";
 import { AuthButton } from "~/components/auth/AuthButton";

@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/partners/lib/partner-activity.server", () => ({ logPartnerActivity: vi.fn() }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { logPartnerActivity } from "~/partners/lib/partner-activity.server";
 import { runPartnerRequestExpiry } from "~/jobs/partner-request-expiry.server";
 

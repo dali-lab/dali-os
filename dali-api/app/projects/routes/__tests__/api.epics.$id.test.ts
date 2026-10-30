@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/auth", () => ({ requireProjectEditAccess: vi.fn() }));
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
 vi.mock("~/lib/cors", () => ({
   withCors: (_req: Request, res: Response) => res,
@@ -9,7 +9,7 @@ vi.mock("~/lib/cors", () => ({
 }));
 
 import { requireProjectEditAccess } from "~/lib/auth";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { logAuditEvent } from "~/lib/audit";
 import { action } from "~/projects/routes/api.epics.$id";
 

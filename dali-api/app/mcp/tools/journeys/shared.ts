@@ -2,7 +2,7 @@
 // app/journeys/lib/journeys.server.ts, the same functions the editor uses, so
 // permissions and the draft version check are identical.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import type { JsonSchema } from "~/lib/mcp-input";
 import { McpError, McpForbiddenError, McpNotFoundError } from "../../errors";
 import type { McpCtx } from "../../registry";

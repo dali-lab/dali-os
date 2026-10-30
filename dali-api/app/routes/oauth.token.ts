@@ -11,7 +11,7 @@ import { getClientIp } from "~/lib/request-meta";
 import { withCors, handlePreflight, preflightLoader } from "~/lib/cors";
 import { checkRateLimit } from "~/lib/rate-limit";
 import { safeJson } from "~/lib/safe-json";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { logAuditEvent } from "~/lib/audit";
 import { mintBetterAuthSession } from "~/lib/betterauth-session.server";
 

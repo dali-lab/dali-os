@@ -14,7 +14,7 @@ import { requireAuth } from "~/lib/auth";
 import { resolveAiProvider } from "~/lib/ai.server";
 import { recordTokenUsage } from "~/lib/ai-usage.server";
 import { checkRateLimit } from "~/lib/rate-limit";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 
 // ── Contract ──────────────────────────────────────────────────────────────────
 

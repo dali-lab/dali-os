@@ -138,6 +138,8 @@ export const AUDIT_ACTIONS = [
   "staffing.eligibility.set",
   "project.assignment.level",
   "project.assignment.backfill",
+  "core.assignment.backfill",
+  "term.backfill",
   "member.create",
   "member.resume.view",
   "member.resume.upload",

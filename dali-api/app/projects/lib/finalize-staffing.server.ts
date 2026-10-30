@@ -6,7 +6,7 @@
 // request payload), and a Request object for logAuditEvent (may be a synthetic
 // Request in the MCP path).
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import {
   postMessage,
   ensureChannel,

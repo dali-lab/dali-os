@@ -9,7 +9,7 @@
 import type { Route } from "./+types/api.activities.$id";
 import { requireAuth } from "~/lib/auth";
 import { getUserRoles, isCore } from "~/lib/roles";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { fullName } from "~/lib/display";
 import { getActivityForMember, listActivityTeams } from "~/lib/activities.server";
 import { mechanicServer } from "~/activities/mechanics/registry.server";

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     mailAccount: { findFirst: vi.fn(), update: vi.fn() },
     gmailIntegration: { findFirst: vi.fn().mockResolvedValue(null), update: vi.fn() },
@@ -33,7 +33,7 @@ vi.mock("~/lib/google-oauth", () => ({
   GMAIL_READONLY_SCOPE: "https://www.googleapis.com/auth/gmail.readonly",
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { getMailboxToken, getMessageMetadata, listMessageIds } from "~/email/lib/gmail-mailbox.server";
 import { refreshGoogleToken } from "~/lib/google-oauth";
 import { runSharedInboxIndex, runPartnerEmailIndex } from "~/jobs/shared-inbox-index.server";

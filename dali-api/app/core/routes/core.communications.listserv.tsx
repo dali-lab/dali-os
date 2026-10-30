@@ -1,5 +1,5 @@
 import type { Route } from "./+types/core.communications.listserv";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { fullName } from "~/lib/display";
 import { MEMBER_LIST_ORDER_BY } from "~/lib/prisma-shapes";
 import { coreHandle } from "~/core/coreNav";

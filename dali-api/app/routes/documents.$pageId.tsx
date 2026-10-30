@@ -11,7 +11,7 @@ import { modalCardClass, useOsChrome } from "~/components/os-chrome";
 import { PageBarMenuItems, usePageBarSlot } from "~/components/shell/page-bar-slot";
 import { Menu } from "~/components/ui/floating";
 import type { Route } from "./+types/documents.$pageId";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { ensureOccurrenceRoster } from "~/lib/scheduled-meeting";
 import { ACTIVE_RECORDING_STATUSES, latestRecordingFor } from "~/lib/meeting-recording.server";
 import { requireAuth, redirectPartnerToPortal, isNonMember } from "~/lib/auth";

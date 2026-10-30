@@ -14,6 +14,8 @@ import { useDialog } from "~/components/ui/dialog";
 import { useToast } from "~/components/ui/toast";
 import { Modal, ModalHeader } from "~/components/Modal";
 import { modalCardClass, useOsChrome } from "~/components/os-chrome";
+import { LoadMore } from "~/components/ui/Pager";
+import { useClientSlice } from "~/hooks/useClientSlice";
 import { Pill } from "~/hiring/components/cycle-setup/SetupCard";
 import { cn } from "~/lib/cn";
 import type { Level } from "~/lib/level";
@@ -78,6 +80,9 @@ export function RolesDomainsPage({ data }: { data: Data }) {
       ),
     [data.members, query, role, domainId],
   );
+  const { visible: shown, pager } = useClientSlice(visible, {
+    resetKey: JSON.stringify([query, role, domainId]),
+  });
   const count = (f: RoleFilter) => data.members.filter(ROLE_FILTERS[f]).length;
 
   return (
@@ -189,7 +194,7 @@ export function RolesDomainsPage({ data }: { data: Data }) {
             </tr>
           </thead>
           <tbody>
-            {visible.map((m) => (
+            {shown.map((m) => (
               <tr
                 key={m.id}
                 className="cursor-pointer border-t border-os-container/70 transition-colors hover:bg-os-card-hover"
@@ -261,6 +266,7 @@ export function RolesDomainsPage({ data }: { data: Data }) {
           </tbody>
         </table>
       </div>
+      <LoadMore {...pager} />
 
       <MemberAccessDrawer
         member={selected}

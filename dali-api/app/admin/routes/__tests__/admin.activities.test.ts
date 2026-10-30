@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     term: { findMany: vi.fn() },
     activity: { findUnique: vi.fn() },
@@ -25,7 +25,7 @@ vi.mock("~/lib/activities.server", () => ({
   updateActivity: vi.fn(),
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { isAdmin, isCore } from "~/lib/roles";
 import { listAllGroups } from "~/lib/groups";

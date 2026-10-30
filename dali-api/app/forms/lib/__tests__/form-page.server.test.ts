@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   Prisma: {},
   prisma: {
     form: { create: vi.fn(), update: vi.fn() },
@@ -10,7 +10,7 @@ vi.mock("~/lib/db", () => ({
   },
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import {
   createForm,
   deleteForm,

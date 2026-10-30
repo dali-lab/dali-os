@@ -1,5 +1,5 @@
 import type { Route } from "./+types/api.cycles.$cycleId.coverage";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { hasCycleAccess } from "~/lib/roles";
 import { generateCandidateSlots, isInterviewerFree, explainAvailableSlots } from "~/hiring/lib/scheduling";

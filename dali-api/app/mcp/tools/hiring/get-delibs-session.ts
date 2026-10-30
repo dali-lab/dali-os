@@ -4,7 +4,7 @@
 // Access: hasCycleAccess + signed confidentiality agreement.
 // This is a read-only tool; MCP never mutates delibs (no close action).
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { hasCycleAccess } from "~/lib/roles";
 import { confidentialityCleared, getCycleConfidentialityState } from "~/hiring/lib/confidentiality";
 import { findRound, parseTimeline } from "~/hiring/lib/cycle-timeline";

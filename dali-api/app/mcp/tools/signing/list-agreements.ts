@@ -17,7 +17,7 @@ import {
 export const LIST_AGREEMENTS_TOOL = {
   name: "list_agreements",
   description:
-    "Core-only. Return the agreements console overview for a term: every non-archived agreement with its binding status, signatory roster (signed / outstanding), needs-activation flag, and a recent-signatures activity feed. Pass termId to focus on a specific term (e.g. an upcoming term); defaults to the current term.",
+    "Core-only. Return the agreements console overview for a term: every non-archived agreement with its binding status, signatory roster (signed / outstanding), needs-activation flag, and a recent-signatures activity feed of the latest 15 (activityMayBeTruncated is true when there may be more; use list_agreement_signatures for a full list). Bindings are limited to the current term by default, with pastBindingCount giving how many were left out; pass includePastBindings to return them all. Pass termId to focus on a specific term (e.g. an upcoming term); defaults to the current term.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -26,13 +26,19 @@ export const LIST_AGREEMENTS_TOOL = {
         description:
           "Optional term id to focus the console on. Defaults to the current term. Accepts upcoming terms so Core can manage agreements before a term starts.",
       },
+      includePastBindings: {
+        type: "boolean",
+        description: "Return bindings for past terms too. Default false.",
+      },
     },
     additionalProperties: false,
   },
   requiredScope: "mcp:admin" as const,
 };
 
-type Args = { termId?: string };
+const ACTIVITY_FEED_LIMIT = 15;
+
+type Args = { termId?: string; includePastBindings?: boolean };
 
 export async function runListAgreements(ctx: McpCtx, args: Args = {}) {
   if (!(await isCore(ctx.user.id))) {
@@ -56,19 +62,23 @@ export async function runListAgreements(ctx: McpCtx, args: Args = {}) {
       latestPublishedVersionId: a.latestPublishedVersionId,
       needsActivation: a.needsActivation,
       pendingRecipients: a.pendingRecipients,
-      bindings: a.bindings.map((b) => ({
-        bindingId: b.bindingId,
-        versionNumber: b.versionNumber,
-        scopeKey: b.scopeKey,
-        scopeLabel: b.scopeLabel,
-        termId: b.termId,
-        isCurrent: b.isCurrent,
-        signedCount: b.signedCount,
-        total: b.total,
-        outstanding: b.outstanding,
-        lastRemindedAt: b.lastRemindedAt ? b.lastRemindedAt.toISOString() : null,
-      })),
+      pastBindingCount: args.includePastBindings ? 0 : a.bindings.filter((b) => !b.isCurrent).length,
+      bindings: a.bindings
+        .filter((b) => args.includePastBindings || b.isCurrent)
+        .map((b) => ({
+          bindingId: b.bindingId,
+          versionNumber: b.versionNumber,
+          scopeKey: b.scopeKey,
+          scopeLabel: b.scopeLabel,
+          termId: b.termId,
+          isCurrent: b.isCurrent,
+          signedCount: b.signedCount,
+          total: b.total,
+          outstanding: b.outstanding,
+          lastRemindedAt: b.lastRemindedAt ? b.lastRemindedAt.toISOString() : null,
+        })),
     })),
+    activityMayBeTruncated: overview.activity.length >= ACTIVITY_FEED_LIMIT,
     activity: overview.activity.map((a) => ({
       signatureId: a.signatureId,
       documentId: a.documentId,

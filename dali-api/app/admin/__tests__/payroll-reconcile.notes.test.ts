@@ -1,10 +1,10 @@
 import { describe, it, expect, vi } from "vitest";
 
-// payroll-reconcile.server imports ~/lib/db at module load, which eagerly
+// payroll-reconcile.server imports ~/lib/db.server at module load, which eagerly
 // instantiates a PrismaClient the unit-test job doesn't generate. Mock it so the
 // (pure) groupNotesByJobKey import resolves — same convention as the other
 // server-edge tests.
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 
 import { groupNotesByJobKey } from "~/admin/lib/payroll-reconcile.server";
 

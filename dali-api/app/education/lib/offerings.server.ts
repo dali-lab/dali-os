@@ -1,4 +1,4 @@
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { currentTerm, isCore } from "~/lib/roles";
 import { logAuditEvent } from "~/lib/audit";
 import { notifyAdminsOfPromotion } from "~/lib/promotion-notify.server";

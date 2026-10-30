@@ -9,7 +9,7 @@ const tetrisScore = {
   upsert: vi.fn(),
   count: vi.fn(),
 };
-vi.mock("~/lib/db", () => ({ prisma: { tetrisScore } }));
+vi.mock("~/lib/db.server", () => ({ prisma: { tetrisScore } }));
 
 const { readLeaderboard, recordScore } = await import("~/lib/tetris-scores.server");
 

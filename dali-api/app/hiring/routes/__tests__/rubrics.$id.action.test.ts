@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     user: { findUnique: vi.fn() },
     rubricVersion: { findFirst: vi.fn(), create: vi.fn() },
@@ -12,7 +12,7 @@ vi.mock("~/lib/login-next", () => ({ redirectToLogin: vi.fn() }));
 vi.mock("~/lib/collab-token.server", () => ({ getCollabToken: vi.fn() }));
 vi.mock("~/hiring/components/RubricDetail", () => ({ RubricDetail: () => null }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireCoreOrDomainLead } from "~/lib/auth";
 import { logAuditEvent } from "~/lib/audit";
 import { action } from "~/hiring/routes/rubrics.$id";

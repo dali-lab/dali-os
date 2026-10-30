@@ -3,7 +3,7 @@
 // auto-linked to the User it was exchanged with by address. Mail content
 // stays in Gmail — this table only ever records who/when/subject.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import type { EmailSendPurpose } from "~/generated/prisma/client";
 import { findUserIdsByAddresses } from "~/lib/user-email.server";
 import { PARTNERS_FROM_EMAIL } from "~/lib/app-env";

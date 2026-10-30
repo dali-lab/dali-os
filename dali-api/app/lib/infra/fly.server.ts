@@ -139,11 +139,24 @@ export async function getFlyEgressByApp(
   return rows.map((r) => ({ appName: r.appName, egressBytes: r.value }));
 }
 
+// Prometheus rejects `Bearer` with a 401 and only accepts the `FlyV1` scheme,
+// which `fly tokens create` prints as part of the token.
+export function flyPromAuth(token: string): string {
+  return `FlyV1 ${token.trim().replace(/^(FlyV1|Bearer)\s+/i, "")}`;
+}
+
 type PromVector = { data?: { result?: { metric?: { app?: string }; value?: [number, string] }[] } };
 
-async function flyPromByApp(token: string, orgSlug: string, query: string): Promise<{ appName: string; value: number }[]> {
-  const url = `${FLY_PROM}/${encodeURIComponent(orgSlug)}/api/v1/query?query=${encodeURIComponent(query)}`;
-  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+async function flyPromByApp(
+  token: string,
+  orgSlug: string,
+  query: string,
+  time?: Date,
+): Promise<{ appName: string; value: number }[]> {
+  const url =
+    `${FLY_PROM}/${encodeURIComponent(orgSlug)}/api/v1/query?query=${encodeURIComponent(query)}` +
+    (time ? `&time=${Math.floor(time.getTime() / 1000)}` : "");
+  const res = await fetch(url, { headers: { Authorization: flyPromAuth(token) } });
   if (!res.ok) throw new FlyApiError(res.status, `Fly Prometheus ${res.status}`);
   const json = (await res.json()) as PromVector;
   return (json.data?.result ?? [])
@@ -160,6 +173,45 @@ export async function getFlyMachineHoursByApp(
 ): Promise<{ appName: string; machineHours: number }[]> {
   const rows = await flyPromByApp(token, orgSlug, `sum by (app) (sum_over_time((fly_instance_up == bool 1)[24h:1m])) / 60`);
   return rows.map((r) => ({ appName: r.appName, machineHours: r.value }));
+}
+
+// Per-app totals for one UTC day, or the part of today so far. Fly keeps about
+// 12 days of metrics, so the sweep stores these to keep a longer history.
+export const FLY_DAILY_QUERIES = {
+  requests: (w: string) => `sum by (app) (increase(fly_edge_http_responses_count[${w}]))`,
+  errors_5xx: (w: string) => `sum by (app) (increase(fly_edge_http_responses_count{status=~"5.."}[${w}]))`,
+  p95_ms: (w: string) =>
+    `histogram_quantile(0.95, sum by (app, le) (rate(fly_app_http_response_time_seconds_bucket[${w}]))) * 1000`,
+  memory_peak_bytes: (w: string) =>
+    `max by (app) (max_over_time((fly_instance_memory_mem_total - fly_instance_memory_mem_available)[${w}:5m]))`,
+} as const;
+
+export type FlyDailyMetric = keyof typeof FLY_DAILY_QUERIES;
+const COUNTED: FlyDailyMetric[] = ["requests", "errors_5xx"];
+
+export async function getFlyDayByApp(
+  token: string,
+  orgSlug: string,
+  dayStart: Date,
+  now: Date,
+): Promise<{ appName: string; metric: FlyDailyMetric; value: number }[]> {
+  const end = new Date(Math.min(dayStart.getTime() + 86_400_000, now.getTime()));
+  const seconds = Math.floor((end.getTime() - dayStart.getTime()) / 1000);
+  if (seconds <= 0) return [];
+  const metrics = Object.keys(FLY_DAILY_QUERIES) as FlyDailyMetric[];
+  const results = await Promise.all(
+    metrics.map((metric) => flyPromByApp(token, orgSlug, FLY_DAILY_QUERIES[metric](`${seconds}s`), end)),
+  );
+  return results.flatMap((rows, i) =>
+    rows
+      // A quantile over no requests comes back NaN.
+      .filter((r) => Number.isFinite(r.value))
+      .map((r) => ({
+        appName: r.appName,
+        metric: metrics[i],
+        value: COUNTED.includes(metrics[i]) ? Math.round(r.value) : r.value,
+      })),
+  );
 }
 
 // ── Writes ───────────────────────────────────────────────────────────────────

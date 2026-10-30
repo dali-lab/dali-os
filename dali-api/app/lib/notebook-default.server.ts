@@ -1,4 +1,4 @@
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { DRIVE_SPACES } from "~/lib/drive-spaces";
 import { findReceiver, projectSlot, singletonSlot } from "~/lib/drive-receivers.server";
 import { formatFiledPath, notebookLocationParts } from "~/lib/note-path.server";

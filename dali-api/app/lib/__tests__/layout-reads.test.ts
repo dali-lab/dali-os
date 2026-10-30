@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     cycleInterviewer: { findFirst: vi.fn() },
     cycleReviewer: { findFirst: vi.fn() },
@@ -15,7 +15,7 @@ vi.mock("~/forms/lib/gate.server", () => ({ getBoundFormGateOutstanding: vi.fn()
 vi.mock("~/hiring/lib/new-member-cohort.server", () => ({ isNewMemberCohort: vi.fn() }));
 vi.mock("~/lib/realtime-bus.server", () => ({ publish: vi.fn(), subscribe: vi.fn() }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { getUserRoles, isLabMentor } from "~/lib/roles";
 import { listFavoritesAndRecents } from "~/lib/user-pages.server";
 import { viewerHasUnseenReleaseNotes } from "~/lib/release-notes.server";

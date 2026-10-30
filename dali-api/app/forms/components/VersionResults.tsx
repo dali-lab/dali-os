@@ -1,7 +1,8 @@
-import { useMemo, useState } from "react";
-import { Link } from "react-router";
+import { useEffect, useMemo, useState } from "react";
+import { Link, useSearchParams } from "react-router";
 import { Download } from "lucide-react";
 import { SearchInput } from "~/components/ui/SearchInput";
+import { PagerLinks } from "~/components/ui/Pager";
 import { Select, Tooltip } from "~/components/ui/floating";
 import { Modal, ModalHeader } from "~/components/Modal";
 import type {
@@ -55,9 +56,10 @@ function ResponseDetailBody({ response }: { response: ResponseRow }) {
   );
 }
 
-// One version's responses: a table of submissions (newest 200) with a detail
-// modal, a slot filter when staffing fills are present, and CSV export of the
-// full set for this version.
+// One version's responses: a page of submissions with a detail modal, a slot
+// filter when staffing fills are present, and CSV export of the full set for
+// this version. Page, search and slot filter live in the URL and are applied by
+// the loader.
 export function VersionResults({
   formId,
   versionNumber,
@@ -70,13 +72,36 @@ export function VersionResults({
   const {
     isPartnerApplicationForm,
     totalCount,
+    matchCount,
+    page,
+    hasNext,
     columns,
     slotOptions,
     responses,
   } = results;
-  const [query, setQuery] = useState("");
-  const [slot, setSlot] = useState("");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const urlQuery = searchParams.get("q") ?? "";
+  const slot = searchParams.get("slot") ?? "";
+  const [query, setQuery] = useState(urlQuery);
   const [openId, setOpenId] = useState<string | null>(null);
+
+  // Filters start over at the first page; every other param (view, version) stays.
+  function updateParams(changes: Record<string, string>) {
+    const next = new URLSearchParams(searchParams);
+    next.delete("page");
+    for (const [key, value] of Object.entries(changes)) {
+      if (value) next.set(key, value);
+      else next.delete(key);
+    }
+    setSearchParams(next, { replace: true, preventScrollReset: true });
+  }
+
+  useEffect(() => {
+    if (query.trim() === urlQuery) return;
+    const timer = setTimeout(() => updateParams({ q: query.trim() }), 300);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query]);
 
   const rows = useMemo(
     () =>
@@ -87,15 +112,12 @@ export function VersionResults({
     [responses],
   );
 
-  const filteredRows = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return rows.filter((r) => {
-      if (slot && r.slot !== slot) return false;
-      if (q && !`${r.name} ${r.email ?? ""}`.toLowerCase().includes(q))
-        return false;
-      return true;
-    });
-  }, [rows, query, slot]);
+  function pageHref(target: number) {
+    const next = new URLSearchParams(searchParams);
+    if (target > 1) next.set("page", String(target));
+    else next.delete("page");
+    return `?${next.toString()}`;
+  }
 
   const selected = responses.find((r) => r.id === openId) ?? null;
   const hasSlotColumn = slotOptions.length > 0;
@@ -123,14 +145,13 @@ export function VersionResults({
           <div className="flex flex-col sm:flex-row sm:items-center gap-2">
             <span className="text-sm text-os-grey">
               {totalCount} {totalCount === 1 ? "response" : "responses"}
-              {totalCount > responses.length &&
-                ` · showing the ${responses.length} most recent`}
+              {matchCount !== totalCount && ` · ${matchCount} match`}
             </span>
             {hasSlotColumn && (
               <Select
                 ariaLabel="Filter by slot"
                 value={slot}
-                onChange={(v) => setSlot(v)}
+                onChange={(v) => updateParams({ slot: v })}
                 placeholder="All slots"
                 options={[
                   { value: "", label: "All slots" },
@@ -160,7 +181,7 @@ export function VersionResults({
           </div>
 
           <div className="rounded-os-card bg-os-card overflow-hidden">
-            {filteredRows.length === 0 ? (
+            {rows.length === 0 ? (
               <div className="px-4 py-8 text-center text-sm text-muted-foreground">
                 No responses match the current filters.
               </div>
@@ -170,11 +191,7 @@ export function VersionResults({
                   <thead className="text-os-grey text-xs">
                     <tr>
                       <th className="text-left font-medium px-4 py-3">
-                        Respondent ({filteredRows.length}
-                        {filteredRows.length === rows.length
-                          ? ""
-                          : ` of ${rows.length}`}
-                        )
+                        Respondent ({matchCount})
                       </th>
                       <th className="text-left font-medium px-4 py-3">Email</th>
                       <th className="text-left font-medium px-4 py-3">
@@ -198,7 +215,7 @@ export function VersionResults({
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredRows.map((r) => (
+                    {rows.map((r) => (
                       <tr
                         key={r.id}
                         onClick={() => setOpenId(r.id)}
@@ -253,6 +270,15 @@ export function VersionResults({
               </div>
             )}
           </div>
+          {(page > 1 || hasNext) && (
+            <PagerLinks
+              page={page}
+              hasNext={hasNext}
+              hrefFor={pageHref}
+              label="Responses pagination"
+              endLabel="End of responses"
+            />
+          )}
         </>
       )}
 

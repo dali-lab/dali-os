@@ -1,5 +1,5 @@
 import DOMPurify from "isomorphic-dompurify";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { decrypt, encrypt } from "~/lib/calendar-crypto";
 import { GoogleOAuthError, refreshGoogleToken } from "~/lib/google-oauth";
 import { APPLICATION_TZ } from "~/lib/timezone";
@@ -352,6 +352,38 @@ async function pruneDeadSubCalendars(
     .catch(() => {});
 }
 
+export const MAX_EVENT_PAGES = 10;
+
+/** Pass one in to learn whether any calendar still had events past MAX_EVENT_PAGES. */
+export type EventReadReport = { truncated: boolean };
+
+async function listEventPages<E>(
+  token: string,
+  calendarId: string,
+  params: URLSearchParams,
+  report?: EventReadReport,
+): Promise<E[]> {
+  const items: E[] = [];
+  let pageToken: string | undefined;
+  for (let page = 0; page < MAX_EVENT_PAGES; page++) {
+    if (pageToken) params.set("pageToken", pageToken);
+    const res = await fetch(
+      `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events?${params}`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+    if (!res.ok) {
+      const detail = await extractGoogleErrorDetail(res);
+      throw new GoogleCalendarApiError(res.status, `Google events.list failed (${res.status}): ${detail}`);
+    }
+    const data = (await res.json()) as { items?: E[]; nextPageToken?: string };
+    items.push(...(data.items ?? []));
+    pageToken = data.nextPageToken;
+    if (!pageToken) return items;
+  }
+  if (report) report.truncated = true;
+  return items;
+}
+
 // One sub-calendar's confirmed, time-bounded, not-declined, busy events in the
 // window. Uses events.list (not freeBusy) so we get the real title; freeBusy
 // returns only opaque time ranges. `color` is the calendar's backgroundColor,
@@ -362,6 +394,7 @@ async function fetchEventsForCalendar(
   color: string | undefined,
   start: Date,
   end: Date,
+  report?: EventReadReport,
 ): Promise<BusyEvent[]> {
   const params = new URLSearchParams({
     timeMin: start.toISOString(),
@@ -375,17 +408,9 @@ async function fetchEventsForCalendar(
       "organizer(email,displayName,self)," +
       "attendees(email,displayName,self,organizer,optional,responseStatus))",
   });
-  const res = await fetch(
-    `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events?${params}`,
-    { headers: { Authorization: `Bearer ${token}` } },
-  );
-  if (!res.ok) {
-    const detail = await extractGoogleErrorDetail(res);
-    throw new GoogleCalendarApiError(res.status, `Google events.list failed (${res.status}): ${detail}`);
-  }
-  const data = (await res.json()) as { items?: GoogleEvent[] };
+  const items = await listEventPages<GoogleEvent>(token, calendarId, params, report);
   const out: BusyEvent[] = [];
-  for (const ev of data.items ?? []) {
+  for (const ev of items) {
     // Skip cancelled, all-day (date-only, no dateTime), free/transparent, and
     // events this user has declined — matching the old "busy" semantics.
     if (ev.status === "cancelled") continue;
@@ -432,6 +457,7 @@ async function fetchBusyForLink(
   end: Date,
   prefetchedToken?: string,
   prefetchedColorById?: Map<string, string | undefined>,
+  report?: EventReadReport,
 ): Promise<BusyEvent[]> {
   const token = prefetchedToken ?? await getValidAccessTokenForLink(linkId);
   // Map calendarId → backgroundColor so each event can be tinted by its source.
@@ -449,7 +475,7 @@ async function fetchBusyForLink(
   }
   const { events, deadCalendarIds, fatalError } = await readSubCalendars(
     calendarIds,
-    (id) => fetchEventsForCalendar(token, id, colorById.get(id), start, end),
+    (id) => fetchEventsForCalendar(token, id, colorById.get(id), start, end, report),
   );
   // Self-heal deleted/unshared sub-calendars; only a real (auth/scope/transient)
   // failure should mark the whole link as errored.
@@ -480,6 +506,7 @@ export async function fetchBusyEvents(
   prefetchedCalendarLists?: Map<string, GoogleCalendarListEntry[] | undefined>,
   prefetchedTokens?: Map<string, string>,
   scope: CalendarReadScope = "availability",
+  report?: EventReadReport,
 ): Promise<BusyEvent[]> {
   const links = await prisma.userCalendarLink.findMany({
     where: { userId, provider: "Google", enabled: true },
@@ -515,6 +542,7 @@ export async function fetchBusyEvents(
           end,
           token,
           colorById,
+          report,
         );
         await prisma.userCalendarLink.update({
           where: { id: l.id },
@@ -580,6 +608,7 @@ async function fetchAllEventsForCalendar(
   // Free-text query — when set, Google filters events server-side (summary,
   // description, location, attendees). Used by searchCalendarEvents.
   q?: string,
+  report?: EventReadReport,
 ): Promise<CalendarEvent[]> {
   const params = new URLSearchParams({
     timeMin: start.toISOString(),
@@ -595,20 +624,17 @@ async function fetchAllEventsForCalendar(
       "attendees(email,displayName,self,organizer,optional,responseStatus))",
   });
   if (q && q.trim()) params.set("q", q.trim());
-  const res = await fetch(
-    `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events?${params}`,
-    { headers: { Authorization: `Bearer ${token}` } },
+  const items = await listEventPages<GoogleEvent & { recurringEventId?: string }>(
+    token,
+    calendarId,
+    params,
+    report,
   );
-  if (!res.ok) {
-    const detail = await extractGoogleErrorDetail(res);
-    throw new GoogleCalendarApiError(res.status, `Google events.list failed (${res.status}): ${detail}`);
-  }
-  const data = (await res.json()) as { items?: (GoogleEvent & { recurringEventId?: string })[] };
   const color = calendarMeta?.backgroundColor;
   const writable =
     calendarMeta?.accessRole === "owner" || calendarMeta?.accessRole === "writer";
   const out: CalendarEvent[] = [];
-  for (const ev of data.items ?? []) {
+  for (const ev of items) {
     if (ev.status === "cancelled") continue;
     const allDay = Boolean(ev.start?.date && !ev.start?.dateTime);
     let startIso: string;
@@ -679,6 +705,7 @@ export async function fetchCalendarEvents(
   prefetchedCalendarLists?: Map<string, GoogleCalendarListEntry[] | undefined>,
   prefetchedTokens?: Map<string, string>,
   scope: CalendarReadScope = "availability",
+  report?: EventReadReport,
 ): Promise<CalendarEvent[]> {
   const links = await prisma.userCalendarLink.findMany({
     where: { userId, provider: "Google", enabled: true },
@@ -706,7 +733,7 @@ export async function fetchCalendarEvents(
         const calendarIds = calendarIdsForScope(l.subCalendarIds, calendarList, scope);
         const { events, deadCalendarIds, fatalError } = await readSubCalendars(
           calendarIds,
-          (id) => fetchAllEventsForCalendar(token, id, l.id, entryById.get(id), start, end),
+          (id) => fetchAllEventsForCalendar(token, id, l.id, entryById.get(id), start, end, undefined, report),
         );
         await pruneDeadSubCalendars(l.id, l.subCalendarIds, deadCalendarIds);
         if (fatalError) throw fatalError;
@@ -740,6 +767,7 @@ export async function searchCalendarEvents(
   q: string,
   start: Date,
   end: Date,
+  report?: EventReadReport,
 ): Promise<CalendarEvent[]> {
   if (!q.trim()) return [];
   const links = await prisma.userCalendarLink.findMany({
@@ -763,7 +791,7 @@ export async function searchCalendarEvents(
         // the rest) but don't prune or record sync errors here.
         const { events } = await readSubCalendars(
           calendarIds,
-          (id) => fetchAllEventsForCalendar(token, id, l.id, entryById.get(id), start, end, q),
+          (id) => fetchAllEventsForCalendar(token, id, l.id, entryById.get(id), start, end, q, report),
         );
         return events;
       } catch {
@@ -781,8 +809,15 @@ export type GoogleAttendee = {
   displayName?: string;
 };
 
-export type CreateGoogleEventInput = {
-  linkId: string;
+// The shared hiring account authenticates through its Gmail sender token, not
+// a calendar link, so event writers take either.
+export type GoogleCalendarAuth = { linkId: string } | { accessToken: string };
+
+function tokenFor(auth: GoogleCalendarAuth): Promise<string> {
+  return "accessToken" in auth ? Promise.resolve(auth.accessToken) : getValidAccessTokenForLink(auth.linkId);
+}
+
+export type CreateGoogleEventInput = GoogleCalendarAuth & {
   summary: string;
   description?: string;
   location?: string;
@@ -814,7 +849,7 @@ export type CreateGoogleEventInput = {
 export async function createGoogleCalendarEvent(
   input: CreateGoogleEventInput,
 ): Promise<{ eventId: string; iCalUID: string | null; htmlLink: string | null; meetUrl: string | null }> {
-  const token = await getValidAccessTokenForLink(input.linkId);
+  const token = await tokenFor(input);
   const calendarId = encodeURIComponent(input.calendarId ?? "primary");
   const timeZone = input.timeZone ?? APPLICATION_TZ;
   const body: Record<string, unknown> = {
@@ -878,12 +913,11 @@ export async function createGoogleCalendarEvent(
 /** The Meet link on an event we created earlier, or null if Google still hasn't
  *  minted it. For callers that stored the event id while the conference was
  *  pending and want to pick the link up later. */
-export async function getGoogleEventMeetUrl(opts: {
-  linkId: string;
+export async function getGoogleEventMeetUrl(opts: GoogleCalendarAuth & {
   calendarId?: string;
   eventId: string;
 }): Promise<string | null> {
-  const token = await getValidAccessTokenForLink(opts.linkId);
+  const token = await tokenFor(opts);
   return fetchEventMeetUrl(token, encodeURIComponent(opts.calendarId ?? "primary"), opts.eventId);
 }
 
@@ -906,8 +940,7 @@ async function fetchEventMeetUrl(
 
 /** Edit an event we created (a class's time / title / recurrence changed). Only
  *  the passed fields are patched; recurrenceRule:null clears the recurrence. */
-export async function patchGoogleCalendarEvent(input: {
-  linkId: string;
+export async function patchGoogleCalendarEvent(input: GoogleCalendarAuth & {
   calendarId?: string;
   eventId: string;
   summary?: string;
@@ -928,7 +961,7 @@ export async function patchGoogleCalendarEvent(input: {
   // to have Google email guests about the change.
   sendUpdates?: "all" | "none";
 }): Promise<void> {
-  const token = await getValidAccessTokenForLink(input.linkId);
+  const token = await tokenFor(input);
   const calendarId = encodeURIComponent(input.calendarId ?? "primary");
   const timeZone = input.timeZone ?? APPLICATION_TZ;
   const body: Record<string, unknown> = {};
@@ -973,12 +1006,11 @@ export async function patchGoogleCalendarEvent(input: {
 
 /** Delete an event we created. A 404/410 (already gone) counts as success — the
  *  caller's goal is that the event no longer exists. */
-export async function deleteGoogleCalendarEvent(opts: {
-  linkId: string;
+export async function deleteGoogleCalendarEvent(opts: GoogleCalendarAuth & {
   calendarId?: string;
   eventId: string;
 }): Promise<void> {
-  const token = await getValidAccessTokenForLink(opts.linkId);
+  const token = await tokenFor(opts);
   const calendarId = encodeURIComponent(opts.calendarId ?? "primary");
   const res = await fetch(
     `https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events/${encodeURIComponent(opts.eventId)}`,

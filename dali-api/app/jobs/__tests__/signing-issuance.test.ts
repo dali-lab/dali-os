@@ -1,10 +1,10 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/roles", () => ({ currentTerm: vi.fn() }));
 vi.mock("~/signing/lib/notify.server", () => ({ notifySignRequest: vi.fn() }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { currentTerm } from "~/lib/roles";
 import { notifySignRequest } from "~/signing/lib/notify.server";
 import { runSigningIssuance } from "~/jobs/signing-issuance.server";

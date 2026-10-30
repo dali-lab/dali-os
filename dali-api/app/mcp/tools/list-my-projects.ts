@@ -3,7 +3,7 @@
 // their role on the project this term, the current sprint, open task count.
 // Requires the `mcp:read` scope.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { currentTerm } from "~/lib/roles";
 import { currentSprintBand } from "~/projects/lib/task-board";
 import { DAY } from "~/projects/lib/timeline-days";

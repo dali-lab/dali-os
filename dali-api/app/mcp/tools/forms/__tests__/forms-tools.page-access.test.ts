@@ -1,5 +1,4 @@
-// The forms MCP tools with the forms-page-access flag on: forms follow their
-// Drive page, not isCore.
+// The forms MCP tools follow the form's Drive page, not isCore.
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
@@ -29,22 +28,21 @@ vi.mock("~/mcp/registry", async () => {
   return { McpError, McpNotFoundError, McpForbiddenError, McpInvalidError, requireForAction };
 });
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/roles", () => ({ isCore: vi.fn() }));
 vi.mock("~/forms/lib/forms-data", () => ({ runFormsAction: vi.fn() }));
 vi.mock("~/forms/lib/answer-rows.server", () => ({ buildResponseGrid: vi.fn() }));
 vi.mock("~/forms/lib/form-access.server", () => ({
-  formsUsePageAccess: vi.fn(),
   canSeeForm: vi.fn(),
   canBuildForm: vi.fn(),
   canCreateForm: vi.fn(),
 }));
 
 import { isCore } from "~/lib/roles";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { runFormsAction } from "~/forms/lib/forms-data";
 import { buildResponseGrid } from "~/forms/lib/answer-rows.server";
-import { canBuildForm, canCreateForm, canSeeForm, formsUsePageAccess } from "~/forms/lib/form-access.server";
+import { canBuildForm, canCreateForm, canSeeForm } from "~/forms/lib/form-access.server";
 import { runListForms } from "../list-forms";
 import { runGetFormResponses } from "../get-form-responses";
 import { runManageForm } from "../manage-form";
@@ -54,7 +52,6 @@ const ctx = { user: { id: "u1" }, scopes: [], request: new Request("http://local
 
 beforeEach(() => {
   vi.resetAllMocks();
-  vi.mocked(formsUsePageAccess).mockResolvedValue(true);
   vi.mocked(isCore).mockResolvedValue(false);
 });
 
@@ -85,7 +82,8 @@ describe("get_form_responses", () => {
     m.formSubmission.findMany.mockResolvedValue([]);
     vi.mocked(buildResponseGrid).mockResolvedValue({ columns: [], rowsBySubmission: [] } as never);
     const out = await runGetFormResponses(ctx, { formId: "f1" });
-    expect(out).toMatchObject({ formId: "f1", formName: "Intake", totalCount: 0 });
+    expect(out).toMatchObject({ formId: "f1", formName: "Intake" });
+    expect(out.page.total).toBe(0);
   });
 });
 

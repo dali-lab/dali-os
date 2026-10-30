@@ -62,6 +62,5 @@ Bump `MARKETING_VERSION` and `CURRENT_PROJECT_VERSION` in the Xcode project (Tar
 
 ## TODO before TestFlight
 
-- App icon: add a 1024×1024 opaque PNG to `Assets.xcassets/AppIcon`. `desktop/app-icon.png` has transparent padded corners, so it isn't suitable as-is.
 - Sign-in. Google blocks OAuth in embedded webviews, so use `ASWebAuthenticationSession`, as the desktop pairing flow does.
 - CI build/test workflow.

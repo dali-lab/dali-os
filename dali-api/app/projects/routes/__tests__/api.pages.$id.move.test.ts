@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     page: { findUnique: vi.fn(), findMany: vi.fn(), aggregate: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
     projectFile: { findMany: vi.fn(), updateMany: vi.fn() },
@@ -54,7 +54,7 @@ vi.mock("~/lib/page-names.server", async (importActual) => ({
 }));
 vi.mock("~/lib/drive-receivers.server", () => ({ clearTypeIfLeavingRoot: vi.fn() }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { isCore, isProjectMember, isLabMember } from "~/lib/roles";
 import { canManageSharing } from "~/lib/page-share-access.server";

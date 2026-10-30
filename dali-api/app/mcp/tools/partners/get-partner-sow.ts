@@ -11,7 +11,7 @@
 // pipeline and would not be broadcast to active sessions. SOW writes are intentionally
 // web-only for now.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore } from "~/lib/roles";
 import { readDocAsBlocks } from "~/collab/read";
 import { McpForbiddenError, McpNotFoundError } from "../../registry";

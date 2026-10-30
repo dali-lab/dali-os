@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/auth", () => ({
   requireAuth: vi.fn(),
   isNonMember: vi.fn(async () => false),
@@ -12,7 +12,7 @@ vi.mock("~/lib/cors", () => ({
 }));
 vi.mock("~/lib/roles", () => ({ isCore: vi.fn() }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth, isNonMember } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
 import { loader } from "../api.scheduled-meetings.$id.attendees";

@@ -62,7 +62,7 @@ function RecordingRow({ note: n, onOpen }: { note: NoteSummary; onOpen: () => vo
 }
 
 export function NotesHome({ onOpenProfile, onError }: { onOpenProfile: () => void; onError: (message: string) => void }) {
-  const { notes, error, load, active, recorderVisible, startRecording, showRecorder, openNote, openEditor } = useNotes();
+  const { notes, error, load, loadingMore, loadMore, active, recorderVisible, startRecording, showRecorder, openNote, openEditor } = useNotes();
   const { weeks } = useData();
   const now = useNow(1000, active?.phase === 'recording');
   const [refreshing, setRefreshing] = useState(false);
@@ -229,6 +229,11 @@ export function NotesHome({ onOpenProfile, onError }: { onOpenProfile: () => voi
                   )}
                 </View>
               )}
+              {notes.nextCursor ? (
+                <Button fullWidth variant="secondary" loading={loadingMore} disabled={loadingMore} style={tw`mt-3`} onPress={() => void loadMore().then((message) => message && onError(message))}>
+                  Load more
+                </Button>
+              ) : null}
             </View>
 
             <View style={tw`mt-5 flex-row items-center justify-center gap-1.5 px-6`}>

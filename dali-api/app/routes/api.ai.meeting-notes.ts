@@ -17,7 +17,7 @@ import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { canRecordInto, documentTitle, formatRecordingTranscript } from "~/lib/meeting-recording.server";
 import { getUserRoles } from "~/lib/roles";
 import { checkRateLimit } from "~/lib/rate-limit";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 
 export interface MeetingNotesResponse {
   markdown: string;

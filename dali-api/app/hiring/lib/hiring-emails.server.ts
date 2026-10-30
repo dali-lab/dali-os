@@ -12,7 +12,7 @@ import {
   saveEmailTemplate,
 } from "~/email/lib/templates.server";
 import { hiringKey } from "~/email/lib/registry";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 
 import type { TemplateSlot } from "./email-variables";
 

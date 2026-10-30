@@ -1,5 +1,5 @@
 import type { Route } from "./+types/api.domain-applications.$id.full-context";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { getUserRoles, hasCycleAccess } from "~/lib/roles";
 import { requireApiSignedOrForbidden } from "~/hiring/lib/confidentiality";

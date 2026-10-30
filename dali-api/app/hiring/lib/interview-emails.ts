@@ -4,8 +4,9 @@
 // Every send goes through the outbox (app/lib/outbound.server.ts): enqueue +
 // inline drain, so delivery gets retry + per-sender cap + history for free.
 
+import type { Prisma } from "~/generated/prisma/client";
 import type { NotificationType } from "~/generated/prisma/enums";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { type InterpolationVars } from "~/lib/email";
 import { APPLICATION_TZ, APPLICATION_TZ_LABEL } from "~/lib/timezone";
 import { renderForSlot, notificationSlot } from "./email-variables";
@@ -13,9 +14,10 @@ import { buildInviteIcs, buildCancelIcs, type IcsAttendee } from "./interview-ic
 import { getHiringEmail } from "~/hiring/lib/hiring-emails.server";
 import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
 import { ensureInterviewMeetUrl } from "~/hiring/lib/interview-meet";
+import { interviewJoinUrl, interviewLocationVars, interviewPlace } from "./interview-location";
 
-// The invite and reminders are the two sends an applicant actually joins
-// from, so each picks up a Meet link Google minted after the event insert.
+// Every send that carries a join link picks up one Google minted after the
+// event insert.
 async function withMeetUrl<T extends { id: string; calendarEventId: string | null; videoUrl: string | null }>(
   interview: T,
 ): Promise<T> {
@@ -28,18 +30,6 @@ const ORGANIZER: IcsAttendee = {
   name: "DALI Lab",
 };
 
-// The interview's video-conference join link for the invite/ICS: the
-// auto-provisioned Google Meet URL (app/hiring/lib/interview-meet.ts), falling
-// back to a legacy Zoom link if one was ever set.
-function meetingLink(iv: { videoUrl: string | null; zoomJoinUrl: string | null }): string | null {
-  return iv.videoUrl ?? iv.zoomJoinUrl;
-}
-
-function formatLocation(room: { name: string } | null, meetingUrl?: string | null): string {
-  if (room) return `${room.name}, DALI Lab`;
-  return meetingUrl ? `Online — ${meetingUrl}` : "Online";
-}
-
 function formatTime(d: Date): string {
   return d.toLocaleString("en-US", {
     weekday: "long",
@@ -51,7 +41,7 @@ function formatTime(d: Date): string {
   }) + ` ${APPLICATION_TZ_LABEL}`;
 }
 
-interface Recipient {
+export interface Recipient {
   email: string;
   firstName: string;
 }
@@ -74,8 +64,11 @@ async function getApplicantRecipient(domainApplicationId: string): Promise<Recip
   return { email, firstName: user.firstName };
 }
 
-async function getInterviewerRecipients(interviewId: string): Promise<Recipient[]> {
-  const assignments = await prisma.interviewAssignment.findMany({
+export async function getInterviewerRecipients(
+  interviewId: string,
+  db: Prisma.TransactionClient = prisma,
+): Promise<Recipient[]> {
+  const assignments = await db.interviewAssignment.findMany({
     where: { interviewId, status: "Active" },
     include: {
       cycleInterviewer: {
@@ -138,16 +131,14 @@ export async function sendInterviewReminderEmails(interviewId: string): Promise<
     const baseVars: Omit<InterpolationVars, "firstName"> = {
       domain: da?.domain?.name ?? "DALI Lab",
       time: formatTime(interview.startTime),
-      location: formatLocation(interview.room, meetingLink(interview)),
-      meetingUrl: meetingLink(interview) ?? undefined,
+      ...interviewLocationVars(interview),
     };
 
     const applicant = await getApplicantRecipient(interview.domainApplicationId);
     const interviewers = await getInterviewerRecipients(interviewId);
 
-    // No dedupKey: the interview-reminders job already claims an
-    // InterviewReminderLog(interviewId, kind) row before calling this, and the
-    // 24h + 1h reminders legitimately both send.
+    // No dedupKey: the interview-reminders job claims an
+    // InterviewReminderLog(interviewId, kind) row before calling this.
     const enqueues: Promise<string | null>[] = [];
     if (applicant) {
       const rendered = await renderSlot(
@@ -212,8 +203,7 @@ export async function sendInterviewInviteEmails(
     const baseVars: Omit<InterpolationVars, "firstName"> = {
       domain: domainName,
       time: formatTime(interview.startTime),
-      location: formatLocation(interview.room, meetingLink(interview)),
-      meetingUrl: meetingLink(interview) ?? undefined,
+      ...interviewLocationVars(interview),
     };
 
     const applicant = await getApplicantRecipient(domainApplicationId);
@@ -235,8 +225,8 @@ export async function sendInterviewInviteEmails(
       summary: `DALI Interview — ${domainName}`,
       startTime: interview.startTime,
       endTime: interview.endTime,
-      location: formatLocation(interview.room, meetingLink(interview)),
-      meetingUrl: meetingLink(interview),
+      location: interviewPlace(interview),
+      meetingUrl: interviewJoinUrl(interview),
       organizer: ORGANIZER,
       // Initial REQUEST uses the row's current sequence (0 for a fresh
       // interview). No bump here — bumps happen on updates / cancels.
@@ -310,6 +300,9 @@ export async function sendInterviewInviteEmails(
 export async function sendInterviewCancelEmails(
   interviewId: string,
   domainApplicationId: string,
+  // Read before the cancel declines the assignments: afterwards they can't be
+  // told apart from interviewers who were reassigned off earlier.
+  interviewers: Recipient[],
   // A team-side cancel tells the applicant to rebook; the plain cancel email
   // is the fallback when that template hasn't been written.
   opts: { byTeam?: boolean; skipApplicant?: boolean } = {},
@@ -327,11 +320,10 @@ export async function sendInterviewCancelEmails(
     const baseVars: Omit<InterpolationVars, "firstName"> = {
       domain: domainName,
       time: formatTime(interview.startTime),
-      location: formatLocation(interview.room, meetingLink(interview)),
+      location: interviewLocationVars(interview).location,
     };
 
     const applicant = await getApplicantRecipient(domainApplicationId);
-    const interviewers = await getInterviewerRecipients(interviewId);
 
     // Per-recipient ICS so the applicant's cancellation only lists themselves.
     // See sendInterviewInviteEmails for the rationale.
@@ -415,7 +407,7 @@ export async function sendReassignmentEmails(
   newCycleInterviewerId: string,
 ): Promise<void> {
   try {
-    const interview = await prisma.interview.findUnique({ where: { id: interviewId }, include: { room: { select: { id: true, name: true } } } });
+    const interview = await prisma.interview.findUnique({ where: { id: interviewId }, include: { room: { select: { id: true, name: true } } } }).then((iv) => (iv ? withMeetUrl(iv) : null));
     if (!interview) return;
 
     const da = await prisma.domainApplication.findUnique({
@@ -427,8 +419,7 @@ export async function sendReassignmentEmails(
     const baseVars: Omit<InterpolationVars, "firstName"> = {
       domain: domainName,
       time: formatTime(interview.startTime),
-      location: formatLocation(interview.room, meetingLink(interview)),
-      meetingUrl: meetingLink(interview) ?? undefined,
+      ...interviewLocationVars(interview),
     };
 
     // Bump once for the whole reassignment so the CANCEL to the removed
@@ -484,6 +475,10 @@ export async function sendReassignmentEmails(
     // the removed assignment is "Replaced" and the new one is "Active".
     const applicant = await getApplicantRecipient(domainApplicationId);
     const currentInterviewers = await getInterviewerRecipients(interviewId);
+    const newCI = await prisma.cycleInterviewer.findUnique({
+      where: { id: newCycleInterviewerId },
+      select: { user: { select: { daliEmail: true } } },
+    });
     const applicantAttendee: IcsAttendee[] = applicant
       ? [{ email: applicant.email, name: applicant.firstName }]
       : [];
@@ -496,8 +491,8 @@ export async function sendReassignmentEmails(
       summary: `DALI Interview — ${domainName}`,
       startTime: interview.startTime,
       endTime: interview.endTime,
-      location: formatLocation(interview.room, meetingLink(interview)),
-      meetingUrl: meetingLink(interview),
+      location: interviewPlace(interview),
+      meetingUrl: interviewJoinUrl(interview),
       organizer: ORGANIZER,
       sequence,
     } as const;
@@ -526,10 +521,13 @@ export async function sendReassignmentEmails(
     }
 
     for (const interviewer of currentInterviewers) {
-      const rendered = await renderSlot(
-        "InterviewInviteMentor",
-        { firstName: interviewer.firstName, ...baseVars },
-      );
+      const vars = { firstName: interviewer.firstName, ...baseVars };
+      const stayedOn = interviewer.email !== newCI?.user.daliEmail;
+      // The invite is the fallback so the calendar update still goes out when
+      // the changed-interviewer email hasn't been written.
+      const rendered =
+        (stayedOn ? await renderSlot("InterviewInterviewerChanged", vars) : null) ??
+        await renderSlot("InterviewInviteMentor", vars);
       if (rendered) {
         enqueues.push(enqueueOutbound({
           channel: "email",
@@ -554,7 +552,7 @@ export async function sendLocationChangeEmails(
   domainApplicationId: string,
 ): Promise<void> {
   try {
-    const interview = await prisma.interview.findUnique({ where: { id: interviewId }, include: { room: { select: { id: true, name: true } } } });
+    const interview = await prisma.interview.findUnique({ where: { id: interviewId }, include: { room: { select: { id: true, name: true } } } }).then((iv) => (iv ? withMeetUrl(iv) : null));
     if (!interview) return;
 
     const da = await prisma.domainApplication.findUnique({
@@ -566,8 +564,7 @@ export async function sendLocationChangeEmails(
     const baseVars: Omit<InterpolationVars, "firstName"> = {
       domain: domainName,
       time: formatTime(interview.startTime),
-      location: formatLocation(interview.room, meetingLink(interview)),
-      meetingUrl: meetingLink(interview) ?? undefined,
+      ...interviewLocationVars(interview),
     };
 
     const applicant = await getApplicantRecipient(domainApplicationId);
@@ -592,8 +589,8 @@ export async function sendLocationChangeEmails(
       summary: `DALI Interview — ${domainName}`,
       startTime: interview.startTime,
       endTime: interview.endTime,
-      location: formatLocation(interview.room, meetingLink(interview)),
-      meetingUrl: meetingLink(interview),
+      location: interviewPlace(interview),
+      meetingUrl: interviewJoinUrl(interview),
       description: "Updated location",
       organizer: ORGANIZER,
       sequence,

@@ -13,7 +13,15 @@
 // per-term status column) the manager uses the role-specific "+ Add" button.
 // Slot-parameterised via SLOT_ROLES, so adding a slot is a registry change,
 // not a component change.
-import { useMemo, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
+import { mappingSaveStatus, sameDraftCols } from "~/projects/lib/slot-mapper-state";
+import { defaultStatusMap } from "~/projects/lib/intent-form-interpreter";
+import {
+  INTENT_STATUSES,
+  INTENT_STATUS_LABELS,
+  isIntentStatus,
+  type IntentStatusValue,
+} from "~/projects/lib/intent-status";
 import { useFetcher } from "react-router";
 import {
   DndContext,
@@ -51,6 +59,7 @@ type FormQuestion = {
   label: string;
   type: string;
   referenceSource?: string;
+  options?: string[];
 };
 
 // One editable column in the builder. `role` is the meaning it carries
@@ -66,6 +75,7 @@ type DraftCol = {
   termId?: string;
   label: string;
   hidden: boolean;
+  statusMap?: Record<string, IntentStatusValue>;
 };
 
 let _uid = 0;
@@ -95,6 +105,7 @@ export function SlotColumnMapper({
   mapping,
   cycleTerms,
   canManage,
+  onDirtyChange,
 }: {
   slot: Slot;
   questions: FormQuestion[];
@@ -102,6 +113,7 @@ export function SlotColumnMapper({
   // Terms this cycle collects (only used by the per-term intent-status role).
   cycleTerms: { id: string; code: string }[];
   canManage: boolean;
+  onDirtyChange?: (dirty: boolean) => void;
 }) {
   const fetcher = useFetcher();
   const saving = fetcher.state !== "idle";
@@ -165,11 +177,22 @@ export function SlotColumnMapper({
         termId: e.termId,
         label: e.label,
         hidden: e.hidden === true,
+        ...(e.statusMap ? { statusMap: e.statusMap } : {}),
       }));
   }, [mapping, slot, slotRoles]);
 
   const [cols, setCols] = useState<DraftCol[]>(initial);
-  const dirty = JSON.stringify(cols) !== JSON.stringify(initial);
+  // A save drops empty columns and trims labels, so adopt the saved shape.
+  // Keyed on content: any other action revalidates the loader with an equal
+  // but new mapping object, which must not wipe unsaved edits.
+  const savedKey = JSON.stringify(mapping);
+  useEffect(() => {
+    setCols(initial);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [savedKey]);
+  const dirty = !sameDraftCols(cols, initial);
+  useEffect(() => onDirtyChange?.(dirty), [dirty, onDirtyChange]);
+  const saveStatus = mappingSaveStatus({ saving, dirty, result: fetcher.data });
 
   function patch(uid: string, p: Partial<DraftCol>) {
     setCols((cs) => cs.map((c) => (c.uid === uid ? { ...c, ...p } : c)));
@@ -293,6 +316,7 @@ export function SlotColumnMapper({
           ...common,
           source: "question",
           questionKey: c.questionKey,
+          ...statusMapFor(c),
         });
       }
     });
@@ -379,7 +403,7 @@ export function SlotColumnMapper({
             : [];
         }
         return c.questionKey
-          ? [{ ...common, source: "question", questionKey: c.questionKey }]
+          ? [{ ...common, source: "question", questionKey: c.questionKey, ...statusMapFor(c) }]
           : [];
       }),
     }),
@@ -470,7 +494,14 @@ export function SlotColumnMapper({
                     ariaLabel={`Question for ${c.label}`}
                     value={c.questionKey}
                     disabled={saving}
-                    onChange={(v) => patch(c.uid, { questionKey: v })}
+                    onChange={(v) =>
+                      patch(c.uid, {
+                        questionKey: v,
+                        ...(c.role === "intent-status"
+                          ? { statusMap: defaultStatusMap(questions.find((q) => q.key === v)?.options ?? []) }
+                          : {}),
+                      })
+                    }
                     options={[
                       { value: "", label: "— Pick a question —" },
                       ...questions.map((q) => ({
@@ -519,6 +550,16 @@ export function SlotColumnMapper({
                       Remove
                     </button>
                   </div>
+                )}
+
+                {c.role === "intent-status" && c.questionKey && (
+                  <StatusAnswerMap
+                    options={questions.find((q) => q.key === c.questionKey)?.options ?? []}
+                    statusMap={c.statusMap ?? {}}
+                    canManage={canManage}
+                    disabled={saving}
+                    onChange={(statusMap) => patch(c.uid, { statusMap })}
+                  />
                 )}
               </>
               )}
@@ -593,15 +634,28 @@ export function SlotColumnMapper({
           >
             + Extra column
           </button>
+          <span className="ml-auto flex items-center gap-3">
+            {saveStatus && (
+              <span
+                role="status"
+                className={
+                  saveStatus.tone === "warn"
+                    ? "text-xs text-os-amber"
+                    : "text-xs text-muted-foreground"
+                }
+              >
+                {saveStatus.text}
+              </span>
+            )}
           <Button
             variant="primary"
             size="sm"
             onClick={save}
-            disabled={saving || !dirty || missing.length > 0}
-            className="ml-auto"
+            disabled={saving || missing.length > 0}
           >
             {saving ? "Saving…" : "Save columns"}
           </Button>
+          </span>
         </div>
       )}
     </div>
@@ -643,6 +697,74 @@ function SortableColRow({
       } ${isDragging ? "opacity-50" : ""}`}
     >
       {children(dragHandleProps)}
+    </div>
+  );
+}
+
+function statusMapFor(c: DraftCol): { statusMap?: Record<string, IntentStatusValue> } {
+  return c.role === "intent-status" && c.statusMap && Object.keys(c.statusMap).length > 0
+    ? { statusMap: c.statusMap }
+    : {};
+}
+
+function StatusAnswerMap({
+  options,
+  statusMap,
+  canManage,
+  disabled,
+  onChange,
+}: {
+  options: string[];
+  statusMap: Record<string, IntentStatusValue>;
+  canManage: boolean;
+  disabled: boolean;
+  onChange: (next: Record<string, IntentStatusValue>) => void;
+}) {
+  if (options.length === 0) {
+    return (
+      <p className="lg:col-span-full text-xs text-muted-foreground">
+        This question has no answer options, so answers must be a status name:{" "}
+        {INTENT_STATUSES.join(", ")}.
+      </p>
+    );
+  }
+  const unmapped = options.filter((o) => !statusMap[o]).length;
+  const set = (option: string, value: string) => {
+    const next = { ...statusMap };
+    if (isIntentStatus(value)) next[option] = value;
+    else delete next[option];
+    onChange(next);
+  };
+  return (
+    <div className="lg:col-span-full flex flex-col gap-1.5 rounded-md bg-muted/40 px-3 py-2">
+      <div className="text-xs text-muted-foreground">What each answer means</div>
+      {options.map((o) => (
+        <div key={o} className="grid grid-cols-[minmax(0,1fr)_11rem] items-center gap-2">
+          <span className="min-w-0 truncate text-sm text-foreground">{o}</span>
+          {canManage ? (
+            <Select
+              ariaLabel={`Status for ${o}`}
+              value={statusMap[o] ?? ""}
+              disabled={disabled}
+              onChange={(v) => set(o, v)}
+              options={[
+                { value: "", label: "Pick a status" },
+                ...INTENT_STATUSES.map((st) => ({ value: st, label: INTENT_STATUS_LABELS[st] })),
+              ]}
+              buttonClassName="min-w-0 w-full px-2 py-1 text-sm border border-border rounded-md bg-background text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+            />
+          ) : (
+            <span className="text-sm text-muted-foreground">
+              {statusMap[o] ? INTENT_STATUS_LABELS[statusMap[o]] : "Not set"}
+            </span>
+          )}
+        </div>
+      ))}
+      {unmapped > 0 && (
+        <p className="text-xs text-os-amber">
+          {unmapped === 1 ? "1 answer has" : `${unmapped} answers have`} no status, so those responses won't count.
+        </p>
+      )}
     </div>
   );
 }

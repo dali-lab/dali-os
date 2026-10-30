@@ -1,7 +1,7 @@
 // MCP `get_project_file` — return full version history + signed download URLs
 // for a single project file. Mirrors GET /api/files/:id.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { canViewFile } from "~/lib/fileAccess.server";
 import { getDownloadUrl } from "~/lib/s3";
 import { hydrateAuthors } from "~/lib/collabAuth";

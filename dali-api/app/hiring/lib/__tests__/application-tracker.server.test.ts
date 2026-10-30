@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { loadApplicationTracker, describeOpenDomainsNote } from "~/hiring/lib/application-tracker.server";
 
 const mockPrisma = prisma as unknown as Record<string, any>;

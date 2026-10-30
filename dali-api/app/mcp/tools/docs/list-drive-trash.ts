@@ -2,21 +2,24 @@
 // can access. Mirrors GET /api/drive/trash access model:
 //   - Pages: getPageAccess(...).canView
 //   - Files: canEditFile (restore/delete requires edit, not just view)
-//   - Forms: canViewForms (Core/Admin/Instructor)
+//   - Forms: view access on the form's page
 
-import { prisma } from "~/lib/db";
-import { canViewForms } from "~/lib/roles";
-import { canSeeForm, formsUsePageAccess } from "~/forms/lib/form-access.server";
+import { prisma } from "~/lib/db.server";
+import { canSeeForm } from "~/forms/lib/form-access.server";
 import { getPageAccess } from "~/lib/pageAccess.server";
 import { canEditFile } from "~/lib/fileAccess.server";
+import { pageArray, pageProps, type PageArgs } from "../../pagination";
+
+const SCAN_LIMIT = 500;
+const PAGE_LIMITS = { defaultLimit: 50, maxLimit: 200 };
 
 export const LIST_DRIVE_TRASH_TOOL = {
   name: "list_drive_trash",
   description:
-    "List archived (trashed) drive items the caller can access: docs, folders, files, and forms. Pages require at least view access; files require edit access; forms require Core/Admin/Instructor role. Returns items sorted newest-archived first.",
+    "List archived (trashed) drive items the caller can access: docs, folders, files, and forms. Pages require at least view access; files require edit access; forms require Core/Admin/Instructor role. Returns items sorted newest-archived first. Only the newest 500 archived rows of each kind (pages, files, forms) are checked, and scanLimited is true when any kind hit that bound, so older items may not appear. Pass page.nextCursor as cursor to read the next page until page.hasMore is false.",
   inputSchema: {
     type: "object" as const,
-    properties: {},
+    properties: { ...pageProps(PAGE_LIMITS) },
     required: [],
     additionalProperties: false,
   },
@@ -30,9 +33,10 @@ export class ListDriveTrashError extends Error {
   }
 }
 
-export async function runListDriveTrash(callerId: string) {
-  const userCanViewForms = await canViewForms(callerId);
-
+export async function runListDriveTrash(
+  callerId: string,
+  input: PageArgs = {},
+) {
   // Archived pages (docs + folders).
   const archivedPages = await prisma.page.findMany({
     where: {
@@ -40,7 +44,8 @@ export async function runListDriveTrash(callerId: string) {
       kind: { in: ["FreeForm", "Folder", "Structured", "Notebook"] },
     },
     select: { id: true, title: true, archivedAt: true, kind: true },
-    orderBy: { archivedAt: "desc" },
+    orderBy: [{ archivedAt: "desc" }, { id: "asc" }],
+    take: SCAN_LIMIT,
   });
 
   const accessiblePages = (
@@ -66,7 +71,8 @@ export async function runListDriveTrash(callerId: string) {
       workspaceId: true,
       folderPageId: true,
     },
-    orderBy: { archivedAt: "desc" },
+    orderBy: [{ archivedAt: "desc" }, { id: "asc" }],
+    take: SCAN_LIMIT,
   });
 
   const accessibleFiles = (
@@ -78,22 +84,15 @@ export async function runListDriveTrash(callerId: string) {
     )
   ).filter(Boolean) as typeof archivedFiles;
 
-  // Archived forms — canViewForms gate.
-  // With forms-page-access on, each one is filtered by its page like a doc.
-  const byPage = await formsUsePageAccess();
-  const archivedFormRows =
-    byPage || userCanViewForms
-      ? await prisma.form.findMany({
-          where: { archivedAt: { not: null } },
-          select: { id: true, name: true, archivedAt: true },
-          orderBy: { archivedAt: "desc" },
-        })
-      : [];
-  const archivedForms = byPage
-    ? (await Promise.all(archivedFormRows.map((f) => canSeeForm(callerId, f.id)))).flatMap((ok, i) =>
-        ok ? [archivedFormRows[i]] : [],
-      )
-    : archivedFormRows;
+  const archivedFormRows = await prisma.form.findMany({
+    where: { archivedAt: { not: null } },
+    select: { id: true, name: true, archivedAt: true },
+    orderBy: [{ archivedAt: "desc" }, { id: "asc" }],
+    take: SCAN_LIMIT,
+  });
+  const archivedForms = (await Promise.all(archivedFormRows.map((f) => canSeeForm(callerId, f.id)))).flatMap(
+    (ok, i) => (ok ? [archivedFormRows[i]] : []),
+  );
 
   const items = [
     ...accessiblePages.map((p) => ({
@@ -114,7 +113,12 @@ export async function runListDriveTrash(callerId: string) {
       title: f.name,
       archivedAt: f.archivedAt!.toISOString(),
     })),
-  ].sort((a, b) => new Date(b.archivedAt).getTime() - new Date(a.archivedAt).getTime());
+  ].sort(
+    (a, b) =>
+      new Date(b.archivedAt).getTime() - new Date(a.archivedAt).getTime() || a.id.localeCompare(b.id),
+  );
 
-  return { items };
+  const scanLimited = [archivedPages, archivedFiles, archivedFormRows].some((rows) => rows.length >= SCAN_LIMIT);
+  const { rows, page } = pageArray(items, input, PAGE_LIMITS);
+  return { page, scanLimited, items: rows };
 }

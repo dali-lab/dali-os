@@ -15,7 +15,7 @@ import { formatRecordingTranscript, storedLines } from "~/lib/meeting-recording.
 import { verifyEnhancePlan, type VerifyRosterUser } from "~/lib/meeting-notes-verify";
 import { fullName } from "~/lib/display";
 import { currentTerm } from "~/lib/roles";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import type { MeetingRecording, Prisma } from "~/generated/prisma/client";
 import {
   actionItemMatchesBlock,

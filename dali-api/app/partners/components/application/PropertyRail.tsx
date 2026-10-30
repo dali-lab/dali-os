@@ -66,7 +66,6 @@ export function PropertyRail({
   termOptions,
   contract,
   contractDocuments,
-  financeOn,
   onChanged,
 }: {
   application: PropertyRailApplication;
@@ -77,7 +76,6 @@ export function PropertyRail({
   contract: PartnerContractStatus;
   /** PartnerContract-kind SigningDocuments with a published version — empty when the viewer can't edit. */
   contractDocuments: { id: string; title: string }[];
-  financeOn: boolean;
   onChanged: () => void;
 }) {
   const [stageBusy, setStageBusy] = useState(false);
@@ -212,20 +210,18 @@ export function PropertyRail({
         />
       </RailGroup>
 
-      {financeOn && (
-        <RailGroup title="Deal terms">
-          <FinancePanel
-            applicationId={application.id}
-            fundingType={application.fundingType as ProjectFundingType | null}
-            feeCents={application.feeCents}
-            legalEntityName={application.legalEntityName}
-            legalEntityAddress={application.legalEntityAddress}
-            paymentSchedule={application.paymentSchedule}
-            canEdit={canEdit}
-            onChanged={onChanged}
-          />
-        </RailGroup>
-      )}
+      <RailGroup title="Deal terms">
+        <FinancePanel
+          applicationId={application.id}
+          fundingType={application.fundingType as ProjectFundingType | null}
+          feeCents={application.feeCents}
+          legalEntityName={application.legalEntityName}
+          legalEntityAddress={application.legalEntityAddress}
+          paymentSchedule={application.paymentSchedule}
+          canEdit={canEdit}
+          onChanged={onChanged}
+        />
+      </RailGroup>
     </>
   );
 }

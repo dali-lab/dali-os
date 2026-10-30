@@ -2,6 +2,8 @@ import { useMemo, useState } from "react";
 import { useFetcher, useRevalidator, useSearchParams } from "react-router";
 import { Plus, X } from "lucide-react";
 import { SegmentedTabButtons } from "~/components/AreaPillNav";
+import { LoadMore } from "~/components/ui/Pager";
+import { fetchCursorPage, useLoadMore } from "~/hooks/useLoadMore";
 import { Drawer } from "~/components/ui/Drawer";
 import { Toggle } from "~/components/ui/Toggle";
 import { DateField } from "~/components/ui/DateField";
@@ -33,8 +35,12 @@ export type AnnouncementsData = {
   groups: { id: string; name: string; systemKey: string | null; memberCount: number }[];
   publishedForms: { id: string; name: string }[];
   scheduled: (Base & { lastError: string | null })[];
-  sent: (Base & { completed: number })[];
+  sent: SentItem[];
+  sentNextCursor: string | null;
+  sentTotal: number;
 };
+
+export type SentItem = Base & { completed: number };
 
 type View = "scheduled" | "sent";
 
@@ -55,7 +61,14 @@ export function AnnouncementsPage({ data }: { data: AnnouncementsData }) {
     : "";
   const [view, setView] = useState<View>("scheduled");
   const [composing, setComposing] = useState(Boolean(seedFormId));
-  const visible = view === "scheduled" ? data.scheduled : data.sent;
+  const { items: sent, pager: sentPager } = useLoadMore<SentItem>({
+    items: data.sent,
+    nextCursor: data.sentNextCursor,
+    fetchPage: (cursor) => fetchCursorPage<SentItem>(`/api/announcements/sent?cursor=${encodeURIComponent(cursor)}`),
+    idOf: (a) => a.id,
+    total: data.sentTotal,
+  });
+  const visible = view === "scheduled" ? data.scheduled : sent;
 
   return (
     <div className="flex flex-col gap-5">
@@ -64,7 +77,7 @@ export function AnnouncementsPage({ data }: { data: AnnouncementsData }) {
           label="Announcement status"
           items={[
             { label: "Scheduled", count: data.scheduled.length, active: view === "scheduled", onClick: () => setView("scheduled") },
-            { label: "Sent", count: data.sent.length, active: view === "sent", onClick: () => setView("sent") },
+            { label: "Sent", count: data.sentTotal, active: view === "sent", onClick: () => setView("sent") },
           ]}
         />
         <button type="button" className="os-add-btn" onClick={() => setComposing(true)}>
@@ -120,6 +133,7 @@ export function AnnouncementsPage({ data }: { data: AnnouncementsData }) {
           <li className="px-6 py-14 text-center text-sm text-os-muted">Nothing {view} yet.</li>
         )}
       </ul>
+      {view === "sent" && <LoadMore {...sentPager} />}
 
       <Composer
         open={composing}

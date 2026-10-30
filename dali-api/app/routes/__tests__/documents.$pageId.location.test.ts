@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     page: { findUnique: vi.fn(), findMany: vi.fn() },
     docTag: { findMany: vi.fn() },
@@ -37,7 +37,7 @@ vi.mock("~/lib/roles", () => ({ getUserRoles: vi.fn(), isProjectMember: vi.fn() 
 vi.mock("~/lib/scheduled-meeting", () => ({ ensureOccurrenceRoster: vi.fn() }));
 vi.mock("~/lib/drive-crumbs.server", () => ({ driveFolderCrumbs: vi.fn() }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth, redirectPartnerToPortal, isNonMember } from "~/lib/auth";
 import { getPageAccess, getPageAccessBulk } from "~/lib/pageAccess.server";
 import { groupIdsForUser } from "~/lib/page-sharing.server";

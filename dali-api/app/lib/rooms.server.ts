@@ -7,7 +7,7 @@
 // room with a transaction-scoped advisory lock so two simultaneous "Book now"s
 // can't both win.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import {
   buildRule,
   expandOccurrences,

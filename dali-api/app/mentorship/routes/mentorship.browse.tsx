@@ -16,7 +16,7 @@ import {
 import type { Route } from "./+types/mentorship.browse";
 import { requireAuth, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { getCollabToken } from "~/lib/collab-token.server";
 import {
   canViewMentorship,

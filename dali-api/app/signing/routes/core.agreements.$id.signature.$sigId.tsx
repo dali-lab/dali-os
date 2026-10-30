@@ -5,7 +5,7 @@
 import { redirect, useLoaderData } from "react-router";
 import { Download, ShieldCheck } from "lucide-react";
 import type { Route } from "./+types/core.agreements.$id.signature.$sigId";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { isCore } from "~/lib/roles";

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { getActiveCoreCycleTermIds, currentTerm } from "~/lib/roles";
 import { coreCycleTermIds } from "~/lib/core-cycle";
 import { notifyAdminsOfPromotion } from "~/lib/promotion-notify.server";
@@ -9,7 +9,7 @@ import {
   coreOnAccept,
 } from "~/hiring/lib/core-hiring.server";
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     user: { findFirst: vi.fn(), findMany: vi.fn() },
     coreAssignment: { findMany: vi.fn(), createMany: vi.fn() },

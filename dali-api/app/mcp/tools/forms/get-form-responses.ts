@@ -1,9 +1,8 @@
 // MCP tool: get_form_responses — paginated submission grid for a form.
-// Scope: mcp:read, Core only.
+// Scope: mcp:read; edit access on the form.
 
-import { prisma } from "~/lib/db";
-import { isCore } from "~/lib/roles";
-import { canBuildForm, formsUsePageAccess } from "~/forms/lib/form-access.server";
+import { prisma } from "~/lib/db.server";
+import { canBuildForm } from "~/forms/lib/form-access.server";
 import { buildResponseGrid } from "~/forms/lib/answer-rows.server";
 import type { Question } from "~/types";
 import {
@@ -12,11 +11,14 @@ import {
   type McpCtx,
   type McpTool,
 } from "../../registry";
+import { keysetPage, keysetWindow, pageProps, type PageArgs } from "../../pagination";
+
+const PAGE_LIMITS = { defaultLimit: 50, maxLimit: 200 };
 
 export const GET_FORM_RESPONSES_TOOL = {
   name: "get_form_responses",
   description:
-    "Return paginated form submissions as a response grid (columns + per-submission answer rows). Core only.",
+    "Return form submissions, newest first, as a response grid (columns + per-submission answer rows). Needs edit access on the form. Pass page.nextCursor as cursor to read the next page until page.hasMore is false; page.total is the full submission count.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -24,14 +26,7 @@ export const GET_FORM_RESPONSES_TOOL = {
         type: "string",
         description: "The form ID to load responses for.",
       },
-      limit: {
-        type: "number",
-        description: "Max responses to return (default 50, max 200).",
-      },
-      offset: {
-        type: "number",
-        description: "Number of responses to skip (default 0).",
-      },
+      ...pageProps(PAGE_LIMITS),
       versionNumber: {
         type: "number",
         description: "If provided, filter to submissions for this version only.",
@@ -43,19 +38,14 @@ export const GET_FORM_RESPONSES_TOOL = {
   requiredScope: "mcp:read" as const,
 };
 
-type Args = {
+type Args = PageArgs & {
   formId: string;
-  limit?: number;
-  offset?: number;
   versionNumber?: number;
 };
 
 export async function runGetFormResponses(ctx: McpCtx, args: Args) {
-  const allowed = (await formsUsePageAccess())
-    ? await canBuildForm(ctx.user.id, args.formId)
-    : await isCore(ctx.user.id);
-  if (!allowed) {
-    throw new McpForbiddenError("Only Core members can view form responses");
+  if (!(await canBuildForm(ctx.user.id, args.formId))) {
+    throw new McpForbiddenError("You do not have edit access to this form");
   }
 
   const form = await prisma.form.findUnique({
@@ -66,28 +56,18 @@ export async function runGetFormResponses(ctx: McpCtx, args: Args) {
     throw new McpNotFoundError(`Form not found: ${args.formId}`);
   }
 
-  const take = Math.min(args.limit ?? 50, 200);
-  const skip = args.offset ?? 0;
+  const window = keysetWindow(args, PAGE_LIMITS, [{ field: "createdAt", direction: "desc", type: "date" }]);
+  const baseWhere = {
+    formId: args.formId,
+    ...(args.versionNumber != null ? { formVersion: { versionNumber: args.versionNumber } } : {}),
+  };
 
-  const [totalCount, submissions] = await Promise.all([
-    prisma.formSubmission.count({
-      where: {
-        formId: args.formId,
-        ...(args.versionNumber != null
-          ? { formVersion: { versionNumber: args.versionNumber } }
-          : {}),
-      },
-    }),
+  const [totalCount, fetched] = await Promise.all([
+    prisma.formSubmission.count({ where: baseWhere }),
     prisma.formSubmission.findMany({
-      where: {
-        formId: args.formId,
-        ...(args.versionNumber != null
-          ? { formVersion: { versionNumber: args.versionNumber } }
-          : {}),
-      },
-      orderBy: { createdAt: "desc" },
-      skip,
-      take,
+      where: { AND: [baseWhere, window.where] },
+      orderBy: window.orderBy,
+      take: window.take,
       select: {
         id: true,
         createdAt: true,
@@ -109,6 +89,7 @@ export async function runGetFormResponses(ctx: McpCtx, args: Args) {
       },
     }),
   ]);
+  const { rows: submissions, page } = keysetPage(fetched, window, totalCount);
 
   const grid = await buildResponseGrid(
     submissions.map((s) => ({
@@ -141,7 +122,7 @@ export async function runGetFormResponses(ctx: McpCtx, args: Args) {
   return {
     formId: form.id,
     formName: form.name,
-    totalCount,
+    page,
     columns: grid.columns,
     responses,
   };

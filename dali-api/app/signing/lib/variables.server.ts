@@ -4,7 +4,7 @@
 // app-scoped agreements with no bound term. {{upcomingTerm}} is always the one
 // after {{term}}. Then hands off to the pure resolveSigningVariables.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { currentTerm } from "~/lib/roles";
 import { nextTermCode } from "~/lib/terms.shared";
 import { fullName } from "~/lib/display";

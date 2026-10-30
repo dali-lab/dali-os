@@ -3,7 +3,7 @@
 // MeetingAttendance rows markMeetingAttendance writes, so a check-in on one
 // iPad shows up on every other one at their next poll.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { resolvePhotoUrl } from "~/lib/photo";
 
 export type DisplayCheckIn = {

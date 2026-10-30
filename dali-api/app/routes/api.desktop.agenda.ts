@@ -2,7 +2,7 @@
 // panel's "Up next" card. Same auth/CORS shape as api.notifications.ts.
 
 import type { Route } from "./+types/api.desktop.agenda";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { listUpcomingMeetings } from "~/lib/upcoming-meetings";

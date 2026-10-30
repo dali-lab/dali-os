@@ -1,6 +1,6 @@
 import { redirect } from "react-router";
 import type { Prisma } from "~/generated/prisma/client";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth, redirectPartnerToPortal, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { getUserRoles } from "~/lib/roles";
@@ -13,7 +13,13 @@ import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
 import { notify } from "~/lib/notify.server";
 import { getFrontendUrl } from "~/lib/app-env";
 import { resolveAllLabMembers, resolveGroupMembers } from "~/lib/groups";
-import { releaseNotePost, type RecapNote } from "~/lib/release-notes-recap";
+import {
+  groupRecapsByWeek,
+  releaseNotePost,
+  type RecapNote,
+  type RecapWeek,
+} from "~/lib/release-notes-recap";
+import { decodeCursor, keysetAfter, keysetPage, offsetPage, offsetWindow } from "~/lib/pagination";
 import {
   canViewReleaseNote,
   hasUnseenReleaseNotes,
@@ -57,15 +63,92 @@ export async function requireReleaseNoteEditor(request: Request) {
 
 const PUBLISHED = { status: "Published" } as const;
 
-export async function listVisibleReleaseNotes(
+export const RELEASE_NOTES_PAGE_SIZE = 30;
+export const RECAP_WEEKS_PAGE_SIZE = 8;
+const CORE_PUBLISHED_PAGE_SIZE = 30;
+
+// The SQL form of canViewReleaseNote, so a page is never shorter than asked.
+export function audienceWhere(viewer: ReleaseNoteViewer): Prisma.ReleaseNoteWhereInput {
+  if (viewer.isCore) return {};
+  return { OR: [{ allMembers: true }, { groupIds: { hasSome: [...viewer.groupIds] } }] };
+}
+
+export async function loadReleaseNotesPage(
   viewer: ReleaseNoteViewerContext,
-  opts: { area?: string | null } = {},
+  opts: { area?: string | null; cursor?: string | null } = {},
 ) {
   const rows = await prisma.releaseNote.findMany({
-    where: { ...PUBLISHED, ...(opts.area ? { area: opts.area } : {}) },
-    orderBy: { publishedAt: "desc" },
+    where: {
+      AND: [
+        { ...PUBLISHED, publishedAt: { not: null }, ...(opts.area ? { area: opts.area } : {}) },
+        audienceWhere(viewer),
+        keysetAfter("publishedAt", decodeCursor(opts.cursor)),
+      ],
+    },
+    orderBy: [{ publishedAt: "desc" }, { id: "desc" }],
+    take: RELEASE_NOTES_PAGE_SIZE + 1,
   });
-  return rows.filter((n) => canViewReleaseNote(n, viewer));
+  const { items, nextCursor } = keysetPage(rows, RELEASE_NOTES_PAGE_SIZE, (n) => ({
+    at: n.publishedAt!.toISOString(),
+    id: n.id,
+  }));
+  return {
+    nextCursor,
+    items: await Promise.all(
+      items.map(async (n) => ({
+        id: n.id,
+        title: n.title,
+        summary: n.summary,
+        area: n.area,
+        highlight: n.highlight,
+        publishedAt: n.publishedAt!.toISOString(),
+        hasBody: Array.isArray(n.contentJson) && n.contentJson.length > 0,
+        videoUrl: await releaseNoteVideoUrl(n.videoKey).catch(() => null),
+      })),
+    ),
+  };
+}
+
+const WEEK_KEY = /^\d{4}-W\d{2}$/;
+
+// Pages by whole weeks: a week's notes are never split across pages.
+export async function loadRecapWeeksPage(
+  viewer: ReleaseNoteViewerContext,
+  cursor: string | null = null,
+): Promise<{ items: RecapWeek[]; nextCursor: string | null }> {
+  const after = cursor && WEEK_KEY.test(cursor) ? cursor : null;
+  const visible = {
+    ...PUBLISHED,
+    recapWeek: after ? { not: null, lt: after } : { not: null },
+    ...audienceWhere(viewer),
+  } satisfies Prisma.ReleaseNoteWhereInput;
+  const weekRows = await prisma.releaseNote.groupBy({
+    by: ["recapWeek"],
+    where: visible,
+    orderBy: { recapWeek: "desc" },
+    take: RECAP_WEEKS_PAGE_SIZE + 1,
+  });
+  const weeks = weekRows.flatMap((r) => (r.recapWeek ? [r.recapWeek] : []));
+  const pageWeeks = weeks.slice(0, RECAP_WEEKS_PAGE_SIZE);
+  if (pageWeeks.length === 0) return { items: [], nextCursor: null };
+  const notes = await prisma.releaseNote.findMany({
+    where: { ...PUBLISHED, recapWeek: { in: pageWeeks }, ...audienceWhere(viewer) },
+    orderBy: [{ publishedAt: "desc" }, { id: "desc" }],
+    select: {
+      id: true,
+      title: true,
+      summary: true,
+      area: true,
+      highlight: true,
+      allMembers: true,
+      groupIds: true,
+      recapWeek: true,
+    },
+  });
+  return {
+    items: groupRecapsByWeek(notes, viewer),
+    nextCursor: weeks.length > RECAP_WEEKS_PAGE_SIZE ? pageWeeks[pageWeeks.length - 1] : null,
+  };
 }
 
 export async function getVisibleReleaseNote(
@@ -104,19 +187,21 @@ export async function markReleaseNotesSeen(userId: string): Promise<void> {
   invalidateLayoutCache("releaseNotes", [userId]);
 }
 
-export async function listReleaseNotesForCore() {
-  const [drafts, published] = await Promise.all([
+export async function listReleaseNotesForCore(page = 1) {
+  const [drafts, publishedRows, publishedTotal] = await Promise.all([
     prisma.releaseNote.findMany({
       where: { status: "Draft" },
       orderBy: { draftedAt: "desc" },
     }),
     prisma.releaseNote.findMany({
       where: PUBLISHED,
-      orderBy: { publishedAt: "desc" },
-      take: 100,
+      orderBy: [{ publishedAt: "desc" }, { id: "desc" }],
+      ...offsetWindow(page, CORE_PUBLISHED_PAGE_SIZE),
     }),
+    prisma.releaseNote.count({ where: PUBLISHED }),
   ]);
-  return { drafts, published };
+  const { items: published, hasNext } = offsetPage(publishedRows, CORE_PUBLISHED_PAGE_SIZE);
+  return { drafts, published, hasNext, publishedTotal };
 }
 
 export async function createReleaseNoteDraft() {
@@ -265,14 +350,6 @@ export async function releaseNoteSlackStatuses(
   return Object.fromEntries(
     notes.map((n) => [n.id, slackStatus(n.allMembers, byKey.get(releaseNoteSlackKey(n.id)))]),
   );
-}
-
-export async function listRecapNotes() {
-  return prisma.releaseNote.findMany({
-    where: { ...PUBLISHED, recapWeek: { not: null } },
-    orderBy: { publishedAt: "desc" },
-    take: 500,
-  });
 }
 
 export async function dismissReleaseNotes(

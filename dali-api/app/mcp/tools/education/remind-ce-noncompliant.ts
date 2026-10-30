@@ -13,7 +13,7 @@ import {
   type McpCtx,
   type McpTool,
 } from "../../registry";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 
 export const REMIND_CE_NONCOMPLIANT_TOOL = {
   name: "remind_ce_noncompliant",

@@ -72,14 +72,22 @@ export function clearFilterColumn(
   return filters.filter((f) => f.columnKey !== columnKey);
 }
 
-/** Distinct non-empty responses in a column, sorted, for the value picker. */
+/**
+ * The value picker's options. A column with a natural order (terms) passes
+ * `order`: every listed value shows in that order, row or not, and any other
+ * response follows sorted. Otherwise the distinct responses, sorted.
+ */
 export function columnResponses(
   rows: readonly { cells: FilterCells }[],
   columnKey: string,
+  order?: readonly string[],
 ): string[] {
   const values = new Set<string>();
   for (const r of rows) {
     for (const v of cellValues(r.cells[columnKey])) values.add(v);
   }
-  return [...values].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  const rest = [...values]
+    .filter((v) => !order?.includes(v))
+    .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  return [...(order ?? []), ...rest];
 }

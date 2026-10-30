@@ -134,6 +134,38 @@ describe("ColumnFilters", () => {
     expect(all("button[aria-haspopup='listbox']")).toHaveLength(0);
   });
 
+  it("lists a column's options in its given order with display labels", async () => {
+    const termRows: { cells: FilterCells }[] = [
+      { cells: { term: ["24F", "25W"] } },
+      { cells: { term: ["26F"] } },
+    ];
+    const term: FilterColumn = {
+      key: "term",
+      label: "Term",
+      order: ["26F", "25W", "24X", "24F"],
+      optionLabel: (v) => (v === "26F" ? "26F (current)" : v),
+    };
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    await act(async () => {
+      root.render(
+        createElement(ColumnFilters, {
+          columns: [term],
+          rows: termRows,
+          filters: [{ columnKey: "term", values: ["26F"] }],
+          onChange: () => {},
+          shownCount: 1,
+        }),
+      );
+    });
+
+    expect(q("button[aria-label='Term: 26F (current). Edit']")).not.toBeNull();
+    await click(q("button[aria-haspopup='listbox']"));
+    const options = all("[role='option']").map((o) => o.querySelector(".truncate")?.textContent);
+    expect(options).toEqual(["26F (current)", "25W", "24X", "24F"]);
+  });
+
   it("badges the Filter button with the number of picked values", async () => {
     await mount([{ columnKey: "domain", values: ["Design", "Engineering"] }]);
     expect(q("button[aria-haspopup='menu']")!.textContent).toContain("2");

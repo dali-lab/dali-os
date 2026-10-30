@@ -8,7 +8,7 @@ import {
   saveEmailTemplate,
 } from "~/email/lib/templates.server";
 import { educationKey } from "~/email/lib/registry";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 
 import type { EducationEmailSlot } from "./education-emails";
 

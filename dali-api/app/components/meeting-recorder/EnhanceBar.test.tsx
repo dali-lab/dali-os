@@ -423,6 +423,21 @@ describe("EnhanceBar after Enhance is undone", () => {
     expect(container.textContent).toBe("");
     unmount();
   });
+
+  it("stays quiet after an Enhance that found no action items", () => {
+    const { container, unmount } = mountBar(enhanced({ enhanceNotes: notes() }));
+    expect(container.textContent).toBe("");
+    unmount();
+  });
+
+  it("stays quiet after an Enhance with no action items once the transcript is inserted", () => {
+    const { container, unmount } = mountBar(
+      enhanced({ enhanceNotes: notes(), insertedAt: "2026-10-10T00:05:00Z" }),
+    );
+    expect(container.textContent).not.toContain("Transcript ready");
+    expect(container.textContent).not.toContain("Insert transcript");
+    unmount();
+  });
 });
 
 describe("EnhanceBar review title and notes", () => {

@@ -21,7 +21,7 @@ vi.mock("~/mcp/registry", () => {
   return { McpError, McpNotFoundError, McpForbiddenError, McpInvalidError };
 });
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/roles", async (orig) => {
   const real = await orig<typeof import("~/lib/roles")>();
   return { ...real, hasCycleAccess: vi.fn() };
@@ -32,7 +32,7 @@ vi.mock("~/hiring/lib/confidentiality", async (importOriginal) => ({
   getCycleConfidentialityState: vi.fn(),
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { hasCycleAccess } from "~/lib/roles";
 import { getCycleConfidentialityState } from "~/hiring/lib/confidentiality";
 import { GET_DELIBS_SESSION_TOOL, runGetDelibsSession } from "../get-delibs-session";

@@ -3,7 +3,7 @@
 // open — the applicant may still be mid-challenge there when
 // api.decisions.$id.release closes it as AcceptedElsewhere.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { domainCloseDate, isDomainClosed } from "./domain-windows";
 
 export interface OpenSiblingDomain {

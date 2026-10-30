@@ -8,7 +8,7 @@ const hits = new Map<string, { windowMs: number; timestamps: number[] }>();
 // Periodically purge expired entries so the map doesn't grow unbounded.
 // Started lazily on the first checkRateLimit() call rather than at module load:
 // a top-level setInterval is a module side effect that Vite/rolldown cannot
-// tree-shake, which pinned this module — and its transitive `~/lib/db` import,
+// tree-shake, which pinned this module — and its transitive `~/lib/db.server` import,
 // the 4.8MB Prisma query-compiler wasm — into the client bundle of every route
 // that (even transitively, via ~/lib/audit) imports it. Deferring the timer
 // makes the module side-effect-free so it drops out of client chunks entirely.

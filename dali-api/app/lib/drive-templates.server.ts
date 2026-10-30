@@ -7,7 +7,7 @@
 //   - page    : any lab member (Lab pages flagged isTemplate)
 //   - project : Core only (a captured project blueprint)
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore } from "~/lib/roles";
 import { listPageTemplates } from "~/lib/page-templates.server";
 import { MEETING_NOTE_DEFAULT_LABEL } from "~/components/doc-chrome/template-menu";

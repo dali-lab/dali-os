@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { displayEmail } from "~/lib/display";
 import type { OAuthProvider, OAuthAccountType } from "~/generated/prisma/enums";
 import type { OAuthClient } from "~/generated/prisma/client";

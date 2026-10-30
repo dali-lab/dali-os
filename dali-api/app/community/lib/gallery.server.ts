@@ -1,6 +1,6 @@
 import { data } from "react-router";
 import type { Prisma } from "~/generated/prisma/client";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { fullName } from "~/lib/display";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { getDownloadUrl, isS3Configured } from "~/lib/s3";

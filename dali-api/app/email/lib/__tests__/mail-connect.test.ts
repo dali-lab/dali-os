@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 
-vi.mock("~/lib/db", () => ({ prisma: {} }));
+vi.mock("~/lib/db.server", () => ({ prisma: {} }));
 vi.mock("~/lib/roles", () => ({}));
 
 import { MAIL_STATE_COOKIE, isMailConnectCallback } from "~/email/lib/mail-connect.server";

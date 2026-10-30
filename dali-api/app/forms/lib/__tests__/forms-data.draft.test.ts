@@ -1,11 +1,11 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 
-// `Prisma` comes from the mocked ~/lib/db (which re-exports the namespace), so
+// `Prisma` comes from the mocked ~/lib/db.server (which re-exports the namespace), so
 // the test and forms-data.ts share the same DbNull sentinel — and neither
 // touches the generated client, which isn't built in the unit-test CI job.
-import { prisma, Prisma } from "~/lib/db";
+import { prisma, Prisma } from "~/lib/db.server";
 import { runFormsAction } from "~/forms/lib/forms-data";
 
 const mockPrisma = prisma as unknown as {

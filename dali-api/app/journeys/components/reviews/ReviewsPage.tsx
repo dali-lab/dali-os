@@ -6,6 +6,9 @@ import { Avatar } from "~/components/ui/Avatar";
 import { Segmented } from "~/components/ui/Segmented";
 import { cn } from "~/lib/cn";
 import { relativeTime } from "~/lib/relative-time";
+import { LoadMore } from "~/components/ui/Pager";
+import { fetchCursorPage, useLoadMore } from "~/hooks/useLoadMore";
+import type { ReviewEntry } from "~/journeys/lib/studio.server";
 import type { loader } from "~/journeys/routes/journeys.reviews";
 import { BackLink } from "~/journeys/components/BackLink";
 import { JOURNEYS_HOME } from "~/journeys/lib/paths";
@@ -15,16 +18,22 @@ type Filter = "waiting" | "reviewed";
 
 /** Lab work sent for review on journeys the viewer can edit. */
 export function ReviewsPage() {
-  const { entries } = useLoaderData<typeof loader>();
+  const data = useLoaderData<typeof loader>();
   const { pageTitle, bodyText } = useOsChrome();
   const [params, setParams] = useSearchParams();
   const requested = params.get("submission");
   const [filter, setFilter] = useState<Filter>(() =>
-    entries.find((e) => e.submission.id === requested && e.submission.status !== "submitted") ? "reviewed" : "waiting",
+    data.reviewed.find((e) => e.submission.id === requested && e.submission.status !== "submitted") ? "reviewed" : "waiting",
   );
 
-  const waiting = entries.filter((e) => e.submission.status === "submitted");
-  const reviewed = entries.filter((e) => e.submission.status !== "submitted");
+  const waiting = data.waiting;
+  const { items: loadedReviewed, pager } = useLoadMore<ReviewEntry>({
+    items: data.reviewed,
+    nextCursor: data.nextCursor,
+    fetchPage: (cursor) => fetchCursorPage<ReviewEntry>(`/journeys/reviews/more?cursor=${encodeURIComponent(cursor)}`),
+    idOf: (e) => e.submission.id,
+  });
+  const reviewed = loadedReviewed.filter((e) => e.submission.status !== "submitted");
   const visible = filter === "waiting" ? waiting : reviewed;
   const selected = visible.find((e) => e.submission.id === requested) ?? visible[0] ?? null;
 
@@ -45,8 +54,8 @@ export function ReviewsPage() {
             value={filter}
             onChange={setFilter}
             options={[
-              { value: "waiting", label: `Waiting ${waiting.length}` },
-              { value: "reviewed", label: `Reviewed ${reviewed.length}` },
+              { value: "waiting", label: `Waiting ${data.counts.waiting}` },
+              { value: "reviewed", label: `Reviewed ${data.counts.reviewed}` },
             ]}
           />
           <ul className="max-h-[320px] min-h-0 flex-1 space-y-0.5 overflow-y-auto lg:max-h-none">
@@ -88,6 +97,11 @@ export function ReviewsPage() {
                 </li>
               );
             })}
+            {filter === "reviewed" && (
+              <li>
+                <LoadMore {...pager} />
+              </li>
+            )}
           </ul>
         </div>
 

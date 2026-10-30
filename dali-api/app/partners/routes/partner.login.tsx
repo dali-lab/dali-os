@@ -1,7 +1,7 @@
 import { redirect } from "react-router";
 import type { Route } from "./+types/partner.login";
 import { requireAuth } from "~/lib/auth";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 
 // Partners sign in on /login like everyone else. This path stays for old links
 // and bookmarks.

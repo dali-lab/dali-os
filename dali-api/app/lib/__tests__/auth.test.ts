@@ -3,7 +3,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 vi.mock("~/lib/audit", () => ({
   logAuditEvent: vi.fn(),
 }));
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 // The BetterAuth coexistence fallback in computeAuth lazy-imports these two.
 // Mocking them keeps the BetterAuth instance out of this unit test and lets us
 // drive the flag + session state directly.
@@ -11,7 +11,7 @@ vi.mock("~/lib/betterauth-compat.server", () => ({
   resolveBetterAuthAuth: vi.fn(),
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { logAuditEvent } from "~/lib/audit";
 import { resolveBetterAuthAuth } from "~/lib/betterauth-compat.server";

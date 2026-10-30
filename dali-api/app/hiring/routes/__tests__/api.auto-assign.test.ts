@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/auth", () => ({
   requireAuth: vi.fn(),
 }));
@@ -9,7 +9,7 @@ vi.mock("~/hiring/lib/confidentiality", () => ({
   requireApiSignedOrForbidden: vi.fn().mockResolvedValue(null),
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { isCore, isDomainLead } from "~/lib/roles";
 import { action } from "~/hiring/routes/api.cycles.$cycleId.domains.$domainId.auto-assign";

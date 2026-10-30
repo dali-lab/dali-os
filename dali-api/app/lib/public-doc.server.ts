@@ -1,5 +1,5 @@
 import { redirect } from "react-router";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 
 // "Anyone with the link" documents render the same shell-free read-only view
 // to every visitor who has no member access: signed out, applicant, partner,

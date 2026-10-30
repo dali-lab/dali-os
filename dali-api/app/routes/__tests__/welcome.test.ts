@@ -6,7 +6,7 @@ const mockCaptureDartmouthIdentity = vi.hoisted(() => vi.fn());
 const mockUserUpdate = vi.hoisted(() => vi.fn());
 const mockPasskeyCount = vi.hoisted(() => vi.fn());
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     user: { update: mockUserUpdate },
     passkey: { count: mockPasskeyCount },

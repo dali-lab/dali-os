@@ -6,7 +6,7 @@ import { Form, Link, useActionData, useLoaderData, useNavigate, useNavigation, u
 import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
 import { redirect } from "react-router";
 import type { Route } from "./+types/domain-lead";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { getUserRoles } from "~/lib/roles";
 import { requireAuth } from "~/lib/auth";
 import { Plus, Trash2, X, ChevronDown, ChevronUp } from "lucide-react";

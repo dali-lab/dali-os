@@ -1,4 +1,4 @@
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 
 // The type of hiring link a Form has to a cycle — either the general
 // application form for the cycle itself, or a per-domain challenge form.

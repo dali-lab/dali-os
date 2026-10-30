@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore, isProjectMember, isLabMember } from "~/lib/roles";
 import { isOfferingManager } from "~/education/lib/access.server";
 import { canManageSharing } from "~/lib/page-share-access.server";

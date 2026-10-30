@@ -3,7 +3,7 @@
 //   get_personal_note     — mcp:read   (single note with body access check)
 //   manage_personal_note  — mcp:write  (faceted: create/update/delete/set_visibility/share_add/share_remove)
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isLabMember } from "~/lib/roles";
 import { requireForAction } from "~/mcp/registry";
 import {
@@ -20,13 +20,16 @@ import {
   removeNoteShare,
   deleteNote,
 } from "~/members/lib/personal-notes-actions.server";
+import { offsetPage, offsetWindow, pageProps, type PageArgs } from "../../pagination";
+
+const PAGE_LIMITS = { defaultLimit: 50, maxLimit: 200 };
 
 // ─── list_personal_notes ─────────────────────────────────────────────────────
 
 export const LIST_PERSONAL_NOTES_TOOL = {
   name: "list_personal_notes",
   description:
-    "List personal notes visible to the caller: own notes plus notes shared with them (by direct share or group). Returns note metadata without body content — use get_personal_note to read body.",
+    "List personal notes visible to the caller: own notes plus notes shared with them (by direct share or group). Returns note metadata without body content: use get_personal_note to read body. Pass page.nextCursor as cursor to read the next page until page.hasMore is false.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -36,13 +39,28 @@ export const LIST_PERSONAL_NOTES_TOOL = {
         description:
           "'own' for the caller's own notes (default); 'shared' for notes others shared with them.",
       },
+      ...pageProps(PAGE_LIMITS),
     },
     additionalProperties: false,
   },
   requiredScope: "mcp:read" as const,
 };
 
-type ListInput = { scope?: "own" | "shared" };
+type ListInput = PageArgs & { scope?: "own" | "shared" };
+
+const NOTE_SELECT = {
+  id: true,
+  title: true,
+  iconEmoji: true,
+  kind: true,
+  parentPageId: true,
+  workspaceId: true,
+  profileVisible: true,
+  labListing: true,
+  updatedAt: true,
+  tags: { select: { tag: { select: { id: true, label: true, color: true } } } },
+  _count: { select: { shares: true } },
+} as const;
 
 export class PersonalNoteError extends Error {
   constructor(
@@ -60,16 +78,16 @@ export async function runListPersonalNotes(callerId: string, input: ListInput) {
   }
 
   const scope = input.scope ?? "own";
+  const window = offsetWindow(input, PAGE_LIMITS);
 
   if (scope === "shared") {
     const groupIds = await groupIdsForUser(callerId);
-    const rows = await prisma.page.findMany({
-      where: {
-        workspaceType: "Member",
+    const sharedWhere = {
+        workspaceType: "Member" as const,
         archivedAt: null,
         workspaceId: { not: callerId },
         OR: [
-          { shares: { some: { principalType: "User", principalId: callerId } } },
+          { shares: { some: { principalType: "User" as const, principalId: callerId } } },
           ...(groupIds.length
             ? [
                 {
@@ -80,22 +98,18 @@ export async function runListPersonalNotes(callerId: string, input: ListInput) {
               ]
             : []),
         ],
-      },
-      orderBy: { updatedAt: "desc" },
-      select: {
-        id: true,
-        title: true,
-        iconEmoji: true,
-        kind: true,
-        parentPageId: true,
-        workspaceId: true,
-        profileVisible: true,
-        labListing: true,
-        updatedAt: true,
-        tags: { select: { tag: { select: { id: true, label: true, color: true } } } },
-        _count: { select: { shares: true } },
-      },
-    });
+    };
+    const [fetched, total] = await Promise.all([
+      prisma.page.findMany({
+        where: sharedWhere,
+        orderBy: [{ updatedAt: "desc" }, { id: "asc" }],
+        skip: window.skip,
+        take: window.take,
+        select: NOTE_SELECT,
+      }),
+      prisma.page.count({ where: sharedWhere }),
+    ]);
+    const { rows, page } = offsetPage(fetched, window, total);
     const ownerIds = [
       ...new Set(rows.map((r) => r.workspaceId).filter(Boolean) as string[]),
     ];
@@ -107,6 +121,7 @@ export async function runListPersonalNotes(callerId: string, input: ListInput) {
       owners.map((o) => [o.id, `${o.firstName} ${o.lastName}`.trim()]),
     );
     return {
+      page,
       notes: rows.map((p) => ({
         id: p.id,
         title: p.title,
@@ -126,25 +141,21 @@ export async function runListPersonalNotes(callerId: string, input: ListInput) {
   }
 
   // Own notes
-  const rows = await prisma.page.findMany({
-    where: { workspaceType: "Member", workspaceId: callerId, archivedAt: null },
-    orderBy: [{ parentPageId: "asc" }, { position: "asc" }],
-    select: {
-      id: true,
-      title: true,
-      iconEmoji: true,
-      kind: true,
-      parentPageId: true,
-      workspaceId: true,
-      profileVisible: true,
-      labListing: true,
-      updatedAt: true,
-      tags: { select: { tag: { select: { id: true, label: true, color: true } } } },
-      _count: { select: { shares: true } },
-    },
-  });
+  const ownWhere = { workspaceType: "Member" as const, workspaceId: callerId, archivedAt: null };
+  const [fetched, total] = await Promise.all([
+    prisma.page.findMany({
+      where: ownWhere,
+      orderBy: [{ parentPageId: "asc" }, { position: "asc" }, { id: "asc" }],
+      skip: window.skip,
+      take: window.take,
+      select: NOTE_SELECT,
+    }),
+    prisma.page.count({ where: ownWhere }),
+  ]);
+  const { rows, page } = offsetPage(fetched, window, total);
 
   return {
+    page,
     notes: rows.map((p) => ({
       id: p.id,
       title: p.title,

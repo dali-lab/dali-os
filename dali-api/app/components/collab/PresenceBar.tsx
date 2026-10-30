@@ -2,6 +2,7 @@ import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router";
 import { usePresence, type Peer } from "./PresenceProvider";
 import { initialsFromName } from "./util";
+import { AgentAvatar } from "./AgentAvatar";
 import { Tooltip } from "~/components/ui/floating";
 import { PageBarPortal, usePageBarSlot } from "~/components/shell/page-bar-slot";
 
@@ -39,7 +40,12 @@ export function PresenceBar({ className, max }: PresenceBarProps) {
     // the active record over an idle dupe, and the "me" record over others.
     const seen = new Map<string, Peer>();
     for (const p of peers) {
-      const key = p.userId ? `id:${p.userId}` : `nc:${p.name}|${p.color}`;
+      // An agent shares its owner's userId but is its own presence.
+      const key = p.agent
+        ? `agent:${p.clientId}`
+        : p.userId
+          ? `id:${p.userId}`
+          : `nc:${p.name}|${p.color}`;
       const existing = seen.get(key);
       if (
         !existing ||
@@ -111,6 +117,7 @@ export function PresenceBar({ className, max }: PresenceBarProps) {
 }
 
 function ChipAvatar({ peer }: { peer: Peer }) {
+  if (peer.agent) return <AgentAvatar kind={peer.agent.kind} />;
   if (peer.photoUrl) {
     return (
       <img
@@ -191,7 +198,7 @@ function PresenceChip({
       {linkable ? (
         <Link
           to={`/members/${peer.userId}`}
-          aria-label={`View ${peer.name}'s profile`}
+          aria-label={peer.agent && peer.subtitle ? `${peer.name}, ${peer.subtitle}` : `View ${peer.name}'s profile`}
           className="block focus:outline-none focus-visible:ring-2 focus-visible:ring-foreground rounded-full"
         >
           {chipInner}
@@ -235,7 +242,7 @@ function HoverCard({
   onPointerLeave: () => void;
 }) {
   const meTag = peer.isMe ? " (you)" : "";
-  const idleTag = peer.idle ? " · idle" : "";
+  const idleTag = peer.agent ? ` · ${peer.agent.action}` : peer.idle ? " · idle" : "";
 
   // Clamp the centered card inside the viewport: the presence bar usually
   // sits near the right edge of the page, where a chip-centered card would

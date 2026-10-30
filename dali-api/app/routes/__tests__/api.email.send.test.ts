@@ -3,7 +3,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 vi.mock("~/lib/auth", () => ({
   requireAuth: vi.fn(),
 }));
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/roles", () => ({
   isCore: vi.fn(async () => true),
 }));
@@ -14,7 +14,7 @@ vi.mock("~/lib/outbound.server", () => ({
 
 import { requireAuth } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
 import { _resetForTests } from "~/lib/rate-limit";
 import { action } from "~/routes/api.email.send";

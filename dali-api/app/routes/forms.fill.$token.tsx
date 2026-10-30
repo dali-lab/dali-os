@@ -2,7 +2,8 @@ import { Link, redirect, useLoaderData } from "react-router";
 import type { Route } from "./+types/forms.fill.$token";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
-import { requireMember } from "~/lib/roles";
+import { getUserRoles, requireMember } from "~/lib/roles";
+import { isFeatureEnabled, isFeatureSwitchedOn } from "~/lib/feature-flags.server";
 import {
   formAccessMeta,
   formFillAccess,
@@ -97,6 +98,10 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       ? nextParam
       : null;
 
+  const tileStrip = userId
+    ? await isFeatureEnabled("form-blocks", userId, await getUserRoles(userId, request), request)
+    : await isFeatureSwitchedOn("form-blocks", request);
+
   // loadPublicForm doesn't echo the token back; the submit endpoint is
   // addressed by it, so pass it through explicitly.
   return {
@@ -107,6 +112,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     educationOfferingId,
     next,
     alreadySubmitted: block ? { at: block.at.toISOString() } : null,
+    tileSeed: tileStrip ? form.formId : null,
   };
 }
 
@@ -159,10 +165,12 @@ export default function MemberFormFill() {
   }
   return (
     <div className="os-shell min-h-screen bg-os-bg text-foreground">
-      <MemberFormShell allowExit>
+      <MemberFormShell allowExit flush={Boolean(data.tileSeed)}>
         <MemberFormFillView
           data={data}
           next={data.next}
+          tileSeed={data.tileSeed}
+          allowExit
           extraBody={
             data.educationSessionId || data.educationOfferingId
               ? {

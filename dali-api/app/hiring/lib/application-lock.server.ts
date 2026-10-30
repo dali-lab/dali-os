@@ -1,4 +1,4 @@
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isDomainClosed } from "./domain-windows";
 
 type DomainWindowRow = { domainId: string; closeDate: Date | string | null };

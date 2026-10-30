@@ -466,3 +466,24 @@ describe("validateMapping (intent-to-work)", () => {
     expect(r).toEqual({ ok: true });
   });
 });
+
+describe("parseColumnMapping status map", () => {
+  const entry = (statusMap: unknown) => ({
+    version: 1,
+    entries: [{ source: "question", questionKey: "q", role: "intent-status", label: "Status", statusMap }],
+  });
+
+  it("keeps answers mapped to real statuses", () => {
+    expect(parseColumnMapping(entry({ Yes: "Returning", No: "Off" }))?.entries[0]).toMatchObject({
+      statusMap: { Yes: "Returning", No: "Off" },
+    });
+  });
+
+  it("drops unknown statuses, and the map when nothing valid is left", () => {
+    expect(parseColumnMapping(entry({ Yes: "Returning", No: "Gone" }))?.entries[0]).toMatchObject({
+      statusMap: { Yes: "Returning" },
+    });
+    expect(parseColumnMapping(entry({ No: "Gone" }))?.entries[0]).not.toHaveProperty("statusMap");
+    expect(parseColumnMapping(entry(["Returning"]))?.entries[0]).not.toHaveProperty("statusMap");
+  });
+});

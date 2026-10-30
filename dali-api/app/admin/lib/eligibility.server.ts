@@ -1,4 +1,4 @@
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import type { Level } from "./eligibility";
 import { notifyAdminsOfLevelAdvance } from "~/lib/promotion-notify.server";
 

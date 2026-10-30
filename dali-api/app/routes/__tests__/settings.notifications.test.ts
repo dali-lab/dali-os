@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/auth", async (importOriginal) => ({
   ...(await importOriginal<typeof import("~/lib/auth")>()),
   requireAuth: vi.fn(),
@@ -10,7 +10,7 @@ vi.mock("~/lib/settings-page.server", () => ({
   loadDigestSchedule: vi.fn(async () => ({ dailyHour: 9, weeklyHour: 9, weeklyWeekday: 1 })),
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth, isPartnerAccount } from "~/lib/auth";
 import { action } from "~/routes/settings.notifications";
 

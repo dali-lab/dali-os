@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
 vi.mock("~/partners/lib/partner-auth.server", () => ({ requirePartnerAccount: vi.fn() }));
 vi.mock("~/partners/lib/application-form.server", () => ({ loadApplicationForm: vi.fn() }));
@@ -10,7 +10,7 @@ vi.mock("~/partners/lib/partner-activity.server", () => ({ logPartnerActivity: v
 vi.mock("~/partners/lib/partner-notify.server", () => ({ notifyPartners: vi.fn().mockResolvedValue({ inApp: 0, emailed: 0, slackDmed: 0 }) }));
 vi.mock("~/partners/lib/partner-emails.server", () => ({ sendApplicationReceivedEmail: vi.fn().mockResolvedValue(undefined) }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { logAuditEvent } from "~/lib/audit";
 import { requirePartnerAccount } from "~/partners/lib/partner-auth.server";
 import { loadApplicationForm } from "~/partners/lib/application-form.server";

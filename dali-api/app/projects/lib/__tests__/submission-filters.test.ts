@@ -134,4 +134,23 @@ describe("columnResponses", () => {
     ];
     expect(columnResponses(people, "year")).toEqual(["2024", "2026", "2028"]);
   });
+
+  it("follows a given order instead of sorting, so terms aren't lexical", () => {
+    const projects = [{ cells: { term: ["24F", "25W"] } }, { cells: { term: ["25S"] } }];
+    expect(columnResponses(projects, "term", ["25S", "25W", "24F"])).toEqual([
+      "25S",
+      "25W",
+      "24F",
+    ]);
+  });
+
+  it("lists every ordered value even when no row has it", () => {
+    const projects = [{ cells: { term: "25W" } }];
+    expect(columnResponses(projects, "term", ["26F", "25W"])).toEqual(["26F", "25W"]);
+  });
+
+  it("puts responses missing from the order after it, sorted", () => {
+    const projects = [{ cells: { term: ["25W", "Zeta", "Alpha"] } }];
+    expect(columnResponses(projects, "term", ["25W"])).toEqual(["25W", "Alpha", "Zeta"]);
+  });
 });

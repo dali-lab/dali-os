@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db", () => ({ prisma: { mentorshipPair: { findMany: vi.fn(), findFirst: vi.fn() } } }));
+vi.mock("~/lib/db.server", () => ({ prisma: { mentorshipPair: { findMany: vi.fn(), findFirst: vi.fn() } } }));
 vi.mock("~/lib/roles", () => ({ currentTerm: vi.fn() }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { currentTerm } from "~/lib/roles";
 import { findMentorPair, listMentorPairs } from "../pair-suggestion.server";
 

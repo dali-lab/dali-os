@@ -21,7 +21,7 @@
  *   npx tsx --env-file .env scripts/backfill-meeting-notebooks.ts --commit  # write to DB
  */
 
-import { prisma } from "../app/lib/db.js";
+import { prisma } from "../app/lib/db.server.js";
 import { ensureMeetingNotebook, moveIntoNotebook } from "../app/lib/pages.js";
 import { meetingNotebookIdentity, termForDate } from "../app/lib/meeting-notebook.js";
 import { termWindows } from "../app/lib/terms.js";

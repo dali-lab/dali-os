@@ -1,7 +1,7 @@
 import { Form, Link, redirect, useLoaderData } from "react-router";
 import { ShieldCheck, AlertTriangle } from "lucide-react";
 import type { Route } from "./+types/cycles.$cycleId.confidentiality";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { logAuditEvent } from "~/lib/audit";

@@ -6,7 +6,7 @@
 // description: plain-text Markdown stored on the Task.description column.
 // startsAt: timeline start (planning only — fires no reminders).
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { canEditProject } from "./access";
 import { syncIssueForTask } from "~/projects/lib/github-task-sync";
 import { notifyTaskAssigned } from "~/projects/lib/task-notifications.server";

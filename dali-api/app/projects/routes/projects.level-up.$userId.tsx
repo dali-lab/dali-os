@@ -3,7 +3,7 @@ import type { Route } from "./+types/projects.level-up.$userId";
 import { requireAuth, redirectNonMemberToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { canViewStaffing, currentTerm } from "~/lib/roles";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { ensureStaffingCycle } from "../lib/staffing-cycle";
 import { getSlotBinding } from "../lib/form-slots";
 import { resolveTermFilter } from "~/lib/terms";

@@ -4,7 +4,7 @@
 // route uses getActivityForMember + the mechanic registry; the admin routes use
 // the CRUD helpers. `kind` is validated against the registry, never a DB enum.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import type {
   Prisma,
   Activity,

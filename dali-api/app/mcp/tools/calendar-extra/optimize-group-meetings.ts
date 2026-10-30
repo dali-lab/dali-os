@@ -17,7 +17,7 @@ import {
   optimizeMeetingSchedule,
   type OptimizerMeeting,
 } from "~/lib/meeting-optimizer";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import {
   formatDateTimeInZone,
   getZonedYMD,

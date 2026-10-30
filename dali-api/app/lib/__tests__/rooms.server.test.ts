@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db", () => {
+vi.mock("~/lib/db.server", () => {
   const prisma = {
     room: { findUnique: vi.fn(), findMany: vi.fn() },
     roomBooking: { findMany: vi.fn(), create: vi.fn(), findUnique: vi.fn(), update: vi.fn(), deleteMany: vi.fn(), updateMany: vi.fn() },
@@ -15,7 +15,7 @@ vi.mock("~/lib/db", () => {
 vi.mock("~/lib/scheduled-meeting", () => ({ CHECK_IN_GRACE_MIN: 15 }));
 vi.mock("~/lib/roles", () => ({ currentTerm: vi.fn() }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { currentTerm } from "~/lib/roles";
 import { APPLICATION_TZ, getZonedParts, zonedWallTimeUtc } from "~/lib/timezone";
 import {

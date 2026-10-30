@@ -1,5 +1,5 @@
 import type { Route } from "./+types/api.staffing.board-member";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth, forbidden } from "~/lib/auth";
 import { primaryEmail } from "~/lib/display";
 import { canManageStaffing } from "~/lib/roles";

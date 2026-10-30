@@ -1,4 +1,4 @@
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
 import { getFrontendUrl } from "~/lib/app-env";
 import type { JobContext, JobResult } from "~/jobs/registry";

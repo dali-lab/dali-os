@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/auth", () => ({
   requireAuth: vi.fn(),
 }));
@@ -24,7 +24,7 @@ vi.mock("~/hiring/lib/email-variables", async () => {
   };
 });
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { enqueueOutbound } from "~/lib/outbound.server";
 import { getActiveCycleById } from "~/hiring/lib/cycles";

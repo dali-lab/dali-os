@@ -22,7 +22,7 @@
 // for the (a)/(b) create paths. The legacy (c) path and debrief stay direct
 // Prisma calls, same as the original web action.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore } from "~/lib/roles";
 import { logPartnerActivity } from "~/partners/lib/partner-activity.server";
 import { linkScheduledMeetingToApplication } from "~/partners/lib/partner-meetings.server";

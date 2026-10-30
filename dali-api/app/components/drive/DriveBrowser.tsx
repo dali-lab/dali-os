@@ -88,6 +88,8 @@ import { TagDots } from "~/components/drive/TagDots";
 import { Button, buttonClasses } from "~/components/ui/Button";
 import { IconButton } from "~/components/ui/IconButton";
 import { Truncated } from "~/components/ui/Truncated";
+import { LoadMore } from "~/components/ui/Pager";
+import { useClientSlice } from "~/hooks/useClientSlice";
 import { useOsChrome } from "~/components/os-chrome";
 import { crumbsFor, driveScopeLabel, locationOf, type ItemLocation } from "~/components/drive/location";
 import { LocationLink } from "~/components/drive/LocationLink";
@@ -99,6 +101,7 @@ import { CORAL_FOLDER, glyphLabel, pickGlyph, type ItemGlyph } from "~/component
 import { droppedFiles } from "~/components/drive/dropped-files";
 import { FolderGlyph, GlyphBadge } from "~/components/drive/FolderGlyph";
 import { FolderSettingsModal } from "~/components/drive/FolderSettingsModal";
+import { EmptyFolder } from "~/components/drive/EmptyFolder";
 import { isPageFolder, meetingsOptionFor, receivesLabel } from "~/components/drive/receiver-options";
 
 function useDriveText() {
@@ -135,10 +138,8 @@ export type RowActions = {
   onRename: (item: DriveItem) => void;
   onRequestMove: (item: DriveItem) => void;
   onDelete: (item: DriveItem) => void;
-  /** Open the in-place Share dialog for a page-backed item (doc or folder). */
+  /** Open the in-place Share dialog for a page-backed item (doc, folder, or form). */
   onShare?: (item: DriveItem) => void;
-  /** Whether forms can be shared (set by the browser from its `formShare` prop). */
-  formShare?: boolean;
   /** Apply a tag to the Drive's tag filter (clicking a tag dot). */
   onTagClick?: (tagId: string) => void;
   /** Rename, Move and Delete are left off the item menu (the Shared with me space). */
@@ -155,8 +156,6 @@ type ViewMode = "columns" | "list" | "grid";
 type DriveLocation = { scopeId: string | null; folderId: string | null };
 
 export type DriveBrowserProps = {
-  /** Forms follow page access (forms-page-access flag): a form row can be shared like a doc. */
-  formShare?: boolean;
   scopes: DriveTreeScope[];
   currentScopeId: string | null;
   currentFolderId: string | null;
@@ -508,7 +507,6 @@ function itemMenuItems(
     favorite: !!onToggleFavorite,
     partner: !!onTogglePartnerVisible,
     readOnly: !!actions.readOnly,
-    formShare: !!actions.formShare,
   });
   const has = (entry: MenuEntry) => entries.includes(entry);
   const canRename = has("rename");
@@ -755,7 +753,6 @@ export function DriveBrowser({
   onShareItem,
   onTagClick,
   onSharingChanged,
-  formShare = false,
   embeddedScopeId,
   onTogglePartnerVisible,
   hasActivePartner,
@@ -812,7 +809,6 @@ export function DriveBrowser({
     const inSelection = (item: DriveItem) => selected.has(item.id) && selectedItems.length > 1;
     return {
       ...base,
-      formShare,
       onDelete: (item: DriveItem) =>
         inSelection(item) && onBulkDelete ? onBulkDelete(selectedItems) : base.onDelete(item),
       onRequestMove: (item: DriveItem) =>
@@ -825,7 +821,7 @@ export function DriveBrowser({
           }
         : {}),
       onShare: (item: DriveItem) => {
-        if (item.type !== "doc" && item.type !== "folder" && !(item.type === "form" && formShare)) return;
+        if (item.type !== "doc" && item.type !== "folder" && item.type !== "form") return;
         // workspaceType is not on DriveItem directly; infer from the scope id
         // so the ShareDialog can show the correct audience label (Lab/Project/Member).
         const scope = scopes.find((s) => s.id === scopeId);
@@ -971,10 +967,17 @@ export function DriveBrowser({
   const searching = search.trim().length > 0 || !!tagFilter;
   const columnsActive = viewMode === "columns" && !searching;
   const searchExpanded = searchFocused || search.length > 0;
-  const hits = useMemo(
+  const allHits = useMemo(
     () => (searching ? searchAll(scopes, search, typeFilter, tagFilter) : []),
     [searching, scopes, search, typeFilter, tagFilter],
   );
+  const tagFilterRef = useRef({ fn: tagFilter, generation: 0 });
+  if (tagFilterRef.current.fn !== tagFilter) {
+    tagFilterRef.current = { fn: tagFilter, generation: tagFilterRef.current.generation + 1 };
+  }
+  const { visible: hits, pager: hitsPager } = useClientSlice(allHits, {
+    resetKey: JSON.stringify([search, tagFilterRef.current.generation, typeFilter]),
+  });
 
   const folderCrumbs = currentScope ? crumbsFor(currentScope.items, currentFolderId) : [];
 
@@ -1879,7 +1882,7 @@ export function DriveBrowser({
                           ? "Documents shared with you by name appear here."
                           : sId === FAVORITES_SPACE_KEY
                             ? "Items you favorite appear here."
-                            : "This folder is empty."
+                            : <EmptyFolder className="py-6">This folder is empty.</EmptyFolder>
                       }
                       marquee={marqueeFor(levelIdx)}
                     >
@@ -1922,78 +1925,85 @@ export function DriveBrowser({
               </div>
             </div>
           ) : (
-            /* ── LIST / GRID / SEARCH ──────────────────────────────────── */
-            <div
-              ref={listRef}
-              tabIndex={0}
-              data-drive-pane
-              data-testid="drive-list-pane"
-              onKeyDown={onPaneKeyDown}
-              {...paneMarquee.handlers}
-              onDragEnter={onFileDragEnter}
-              onDragOver={onFileDragOver}
-              onDragLeave={onFileDragLeave}
-              onDrop={onFileDrop}
-              className={cn(
-                "relative min-w-0 min-h-[420px] overflow-hidden rounded-os-item border border-border select-none",
-                "p-1.5 focus:outline-none focus:ring-1 focus:ring-inset focus:ring-os-accent/30",
-                // Room under the last row for the floating selection bar.
-                // Padding below the content moves nothing above it.
-                showBulk && "pb-14",
-              )}
-            >
-              {uploadOver && !fileOverFolder && (
-                <div className={DROP_OVERLAY}>
-                  <span className="flex items-center gap-2 text-sm font-medium text-os-accent">
-                    <Upload className="w-4 h-4" /> Drop files to upload
-                  </span>
+            <>
+              /* ── LIST / GRID / SEARCH ──────────────────────────────────── */
+              <div
+                ref={listRef}
+                tabIndex={0}
+                data-drive-pane
+                data-testid="drive-list-pane"
+                onKeyDown={onPaneKeyDown}
+                {...paneMarquee.handlers}
+                onDragEnter={onFileDragEnter}
+                onDragOver={onFileDragOver}
+                onDragLeave={onFileDragLeave}
+                onDrop={onFileDrop}
+                className={cn(
+                  "relative min-w-0 min-h-[420px] overflow-hidden rounded-os-item border border-border select-none",
+                  "p-1.5 focus:outline-none focus:ring-1 focus:ring-inset focus:ring-os-accent/30",
+                  // Room under the last row for the floating selection bar.
+                  // Padding below the content moves nothing above it.
+                  showBulk && "pb-14",
+                )}
+              >
+                {uploadOver && !fileOverFolder && (
+                  <div className={DROP_OVERLAY}>
+                    <span className="flex items-center gap-2 text-sm font-medium text-os-accent">
+                      <Upload className="w-4 h-4" /> Drop files to upload
+                    </span>
+                  </div>
+                )}
+                <MarqueeBox box={paneMarquee.box} />
+
+                {searching ? (
+                  <SearchResults
+                    hits={hits}
+                    selected={selected}
+                    focusId={focusId}
+                    handlers={rowHandlers}
+                    onOpenLocation={onNavigate}
+                    getScopeActions={getInternalScopeActions}
+                    onToggleFavorite={onToggleFavorite}
+                  />
+                ) : !currentScope ? (
+                  // In embedded mode the scope is always pre-selected, so this
+                  // branch only renders in the full /drive browser. Embedded mode
+                  // always has a currentScope because currentScopeId = embeddedScopeId.
+                  <ScopeList
+                    scopes={scopes}
+                    viewMode={viewMode === "grid" ? "grid" : "list"}
+                    focusId={focusId}
+                    dragging={!!activeDrag}
+                    onOpen={(id) => {
+                      if (!consumeSuppressedClick()) openById(id);
+                    }}
+                  />
+                ) : (
+                  <ScopeContents
+                    scope={currentScope}
+                    atScopeTop={currentFolderId === null}
+                    listing={listing}
+                    viewMode={viewMode === "grid" ? "grid" : "list"}
+                    sort={sort}
+                    onToggleSort={toggleSort}
+                    selected={selected}
+                    focusId={focusId}
+                    handlers={rowHandlers}
+                    actions={getInternalScopeActions(currentScope.id)}
+                    onToggleFavorite={onToggleFavorite}
+                    onTogglePartnerVisible={
+                      hasActivePartner && onTogglePartnerVisible ? onTogglePartnerVisible : undefined
+                    }
+                    dragging={!!activeDrag}
+                  />
+                )}
+              </div>
+              {searching && (
+                <div onClick={(e) => e.stopPropagation()}>
+                  <LoadMore {...hitsPager} />
                 </div>
               )}
-              <MarqueeBox box={paneMarquee.box} />
-
-              {searching ? (
-                <SearchResults
-                  hits={hits}
-                  selected={selected}
-                  focusId={focusId}
-                  handlers={rowHandlers}
-                  onOpenLocation={onNavigate}
-                  getScopeActions={getInternalScopeActions}
-                  onToggleFavorite={onToggleFavorite}
-                />
-              ) : !currentScope ? (
-                // In embedded mode the scope is always pre-selected, so this
-                // branch only renders in the full /drive browser. Embedded mode
-                // always has a currentScope because currentScopeId = embeddedScopeId.
-                <ScopeList
-                  scopes={scopes}
-                  viewMode={viewMode === "grid" ? "grid" : "list"}
-                  focusId={focusId}
-                  dragging={!!activeDrag}
-                  onOpen={(id) => {
-                    if (!consumeSuppressedClick()) openById(id);
-                  }}
-                />
-              ) : (
-                <ScopeContents
-                  scope={currentScope}
-                  atScopeTop={currentFolderId === null}
-                  listing={listing}
-                  viewMode={viewMode === "grid" ? "grid" : "list"}
-                  sort={sort}
-                  onToggleSort={toggleSort}
-                  selected={selected}
-                  focusId={focusId}
-                  handlers={rowHandlers}
-                  actions={getInternalScopeActions(currentScope.id)}
-                  onToggleFavorite={onToggleFavorite}
-                  onTogglePartnerVisible={
-                    hasActivePartner && onTogglePartnerVisible ? onTogglePartnerVisible : undefined
-                  }
-                  dragging={!!activeDrag}
-                />
-              )}
-            </div>
+            </>
           )}
 
           {/* ── Bulk selection actions ────────────────────────────────────────
@@ -2422,7 +2432,7 @@ function RowTags({ item, actions }: { item: DriveItem; actions: RowActions | nul
 function RowAudience({ item, actions }: { item: DriveItem; actions: RowActions | null }) {
   if (item.type !== "doc" && item.type !== "folder" && item.type !== "file" && item.type !== "form") return null;
   if (!item.audience) return null;
-  const share = item.type !== "file" && (item.type !== "form" || actions?.formShare) ? actions?.onShare : undefined;
+  const share = item.type !== "file" ? actions?.onShare : undefined;
   return <AudienceSignal audience={item.audience} onOpenShare={share ? () => share(item) : undefined} />;
 }
 
@@ -2439,7 +2449,7 @@ function MillerColumn({
   children: ReactNode;
   testid?: string;
   isEmpty: boolean;
-  emptyMessage: string;
+  emptyMessage: ReactNode;
   /** Drag-to-select on the column's empty space; omitted for the list of drives. */
   marquee?: Parameters<typeof useMarquee>[0];
 }) {
@@ -2456,7 +2466,11 @@ function MillerColumn({
     >
       <MarqueeBox box={box} />
       {isEmpty ? (
-        <p className={`px-2.5 py-4 ${t.meta} text-os-muted`}>{emptyMessage}</p>
+        typeof emptyMessage === "string" ? (
+          <p className={`px-2.5 py-4 ${t.meta} text-os-muted`}>{emptyMessage}</p>
+        ) : (
+          emptyMessage
+        )
       ) : (
         <div className="flex flex-col">{children}</div>
       )}
@@ -2757,12 +2771,10 @@ export function ScopeContents({
   const t = useDriveText();
   const isSharedSpace = scope.id === SHARED_SPACE_KEY;
   if (listing.length === 0) {
-    return (
-      <EmptyLine>
-        {isSharedSpace
-          ? "Documents shared with you by name appear here."
-          : "This folder is empty. Drop files here to upload."}
-      </EmptyLine>
+    return isSharedSpace ? (
+      <EmptyLine>Documents shared with you by name appear here.</EmptyLine>
+    ) : (
+      <EmptyFolder>This folder is empty. Drop files here to upload.</EmptyFolder>
     );
   }
 

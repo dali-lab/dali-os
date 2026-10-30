@@ -9,7 +9,6 @@ vi.mock("~/lib/login-next", () => ({ redirectToLogin: vi.fn(() => new Response(n
 vi.mock("~/lib/roles", () => ({ getUserRoles: vi.fn() }));
 vi.mock("~/lib/terms", () => ({ resolveTermFilter: vi.fn() }));
 vi.mock("~/lib/drive-scopes.server", () => ({ loadDriveScopes: vi.fn() }));
-vi.mock("~/forms/lib/form-access.server", () => ({ formsUsePageAccess: vi.fn() }));
 vi.mock("~/lib/drive-hub.server", () => ({
   loadProjectWorkspaces: vi.fn(),
   loadEducationWorkspaces: vi.fn(),
@@ -21,7 +20,6 @@ import { requireAuth, isNonMember, redirectPartnerToPortal } from "~/lib/auth";
 import { getUserRoles } from "~/lib/roles";
 import { resolveTermFilter } from "~/lib/terms";
 import { loadDriveScopes } from "~/lib/drive-scopes.server";
-import { formsUsePageAccess } from "~/forms/lib/form-access.server";
 import {
   loadProjectWorkspaces,
   loadEducationWorkspaces,
@@ -47,24 +45,15 @@ beforeEach(() => {
   vi.mocked(loadDriveScopes).mockResolvedValue([{ id: "lab", items: [] }] as never);
   vi.mocked(loadItemTagIds).mockResolvedValue({ d1: ["t1"] });
   vi.mocked(loadAllDocTags).mockResolvedValue([{ id: "t1" }] as never);
-  vi.mocked(formsUsePageAccess).mockResolvedValue(false);
 });
 
 describe("drive hub loader", () => {
-  it("tells the client whether forms follow page access", async () => {
-    expect(await run()).toMatchObject({ formsPageAccess: false });
-    vi.mocked(formsUsePageAccess).mockResolvedValue(true);
-    expect(await run()).toMatchObject({ formsPageAccess: true });
-    expect(formsUsePageAccess).toHaveBeenCalledWith(request);
-  });
-
   it("returns the scopes, tags and flags together", async () => {
     const data = await run();
     expect(data).toMatchObject({
       driveScopes: [{ id: "lab", items: [] }],
       allTags: [{ id: "t1" }],
       itemTagIds: { d1: ["t1"] },
-      canViewForms: true,
       canManageAgreements: false,
       viewerId: "u1",
     });
@@ -96,7 +85,6 @@ describe("drive hub loader", () => {
         auth: AUTH,
         projectWorkspaces: [{ key: "p1" }],
         educationWorkspaces: [{ key: "o1" }],
-        canViewForms: true,
         isCore: false,
         request,
       }),

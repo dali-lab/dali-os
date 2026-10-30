@@ -51,8 +51,6 @@ function loaderData(overrides: Record<string, unknown> = {}) {
       oneResponsePerMember: false,
       notifyOnSubmission: false,
       listed: false,
-      audience: "Members",
-      audienceGroupIds: [],
       opensAt: null,
       closesAt: null,
       folderPageId: null,
@@ -75,7 +73,7 @@ function loaderData(overrides: Record<string, unknown> = {}) {
     managing: null,
     hiringLinks: [],
     driveCrumbs: null,
-    groups: [],
+    page: { workspaceType: "Lab" },
     collabToken: null,
     results: null,
     ...overrides,
@@ -143,6 +141,19 @@ describe("FormDetail", () => {
     await mount(data);
     expect(container.textContent).toContain("Name");
     expect(container.textContent).not.toContain("Unexpected Application Error");
+  });
+
+  it("offers Add icon on a form without one", async () => {
+    await mount(loaderData());
+    expect(container.textContent).toContain("Add icon");
+  });
+
+  it("shows the form's icon before its name", async () => {
+    const data = loaderData();
+    (data.form as Record<string, unknown>).iconEmoji = "📋";
+    await mount(data);
+    expect(container.textContent).toContain("📋");
+    expect(container.textContent).not.toContain("Add icon");
   });
 
   it("renders the builder for a brand-new form", async () => {

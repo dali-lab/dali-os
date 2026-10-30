@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { Link, redirect, useLoaderData, useFetcher } from "react-router";
 import type { Route } from "./+types/portal.apply";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { logAuditEvent } from "~/lib/audit";
 import { redirectToLogin } from "~/lib/login-next";

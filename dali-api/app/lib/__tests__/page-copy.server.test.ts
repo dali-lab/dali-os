@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // Mock prisma and its dependencies before importing the module under test.
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     page: {
       findUnique: vi.fn(),
@@ -25,7 +25,7 @@ vi.mock("~/lib/pageAccess.server", () => ({
   getPageAccess: vi.fn(),
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { getPageAccess } from "~/lib/pageAccess.server";
 import { duplicatePage } from "../page-copy.server";
 

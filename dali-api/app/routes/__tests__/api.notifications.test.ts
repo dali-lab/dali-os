@@ -3,15 +3,17 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 vi.mock("~/lib/auth", () => ({
   requireAuth: vi.fn(),
 }));
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/tasks", async (importOriginal) => ({
   // SELF_CLEARING_FORM_TODO stays real — the mark-all-read test asserts the
   // exact predicate the endpoint excludes.
   SELF_CLEARING_FORM_TODO: (
     await importOriginal<typeof import("~/lib/tasks")>()
   ).SELF_CLEARING_FORM_TODO,
-  listOpenTasks: vi.fn(),
-  listMyProjectTasks: vi.fn(),
+  listOpenTasksPage: vi.fn(),
+  listMyProjectTasksPage: vi.fn(),
+  openTasksTotal: vi.fn(),
+  projectTasksTotal: vi.fn(),
   listNotificationHistory: vi.fn(),
 }));
 vi.mock("~/lib/roles", () => ({ getUserRoles: vi.fn(async () => ({})) }));
@@ -24,10 +26,12 @@ vi.mock("~/lib/notifications", async (importOriginal) => ({
 }));
 
 import { requireAuth } from "~/lib/auth";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import {
-  listOpenTasks,
-  listMyProjectTasks,
+  listOpenTasksPage,
+  listMyProjectTasksPage,
+  openTasksTotal,
+  projectTasksTotal,
   listNotificationHistory,
   SELF_CLEARING_FORM_TODO,
 } from "~/lib/tasks";
@@ -52,11 +56,14 @@ beforeEach(() => {
     ],
     unreadCount: 2,
   } as any);
-  vi.mocked(listOpenTasks).mockResolvedValue([
-    { id: "t1", title: "Do it", link: "/x" },
-  ] as any);
+  vi.mocked(listOpenTasksPage).mockResolvedValue({
+    items: [{ id: "t1", title: "Do it", link: "/x" }],
+    nextCursor: null,
+  } as any);
+  vi.mocked(openTasksTotal).mockResolvedValue(1);
+  vi.mocked(projectTasksTotal).mockResolvedValue(1);
   vi.mocked(listRetiredMeetingPingIds).mockResolvedValue(["stale-1"]);
-  vi.mocked(listMyProjectTasks).mockResolvedValue([{ id: "w1" }] as any);
+  vi.mocked(listMyProjectTasksPage).mockResolvedValue({ items: [{ id: "w1" }], nextCursor: null } as any);
   vi.mocked(listNotificationHistory).mockResolvedValue({
     items: [{ id: "h1" }],
     nextCursor: null,
@@ -87,6 +94,7 @@ describe("GET /api/notifications", () => {
       retiredIds: ["stale-1"],
       // Assigned project tasks ride along, outside taskCount.
       projectTasks: [{ id: "w1" }],
+      projectTaskCount: 1,
     });
     expect(listNotificationHistory).not.toHaveBeenCalled();
   });
@@ -95,6 +103,15 @@ describe("GET /api/notifications", () => {
     const json = await (await loader({ request: req() } as any)).json();
     expect(json.projectTasks).toEqual([{ id: "w1" }]);
     expect(json.taskCount).toBe(1);
+  });
+
+  it("reports the true task count, not the length of the page it returns", async () => {
+    vi.mocked(openTasksTotal).mockResolvedValue(120);
+    vi.mocked(projectTasksTotal).mockResolvedValue(75);
+    const json = await (await loader({ request: req() } as any)).json();
+    expect(json.tasks).toHaveLength(1);
+    expect(json.taskCount).toBe(120);
+    expect(json.projectTaskCount).toBe(75);
   });
 
   it("returns the history payload when a history param is present", async () => {
@@ -109,7 +126,7 @@ describe("GET /api/notifications", () => {
       USER_ID,
       expect.objectContaining({ status: "cleared" }),
     );
-    expect(listOpenTasks).not.toHaveBeenCalled();
+    expect(listOpenTasksPage).not.toHaveBeenCalled();
   });
 
   it("parses a JSON cursor param", async () => {

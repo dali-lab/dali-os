@@ -1,6 +1,6 @@
 import type { Route } from "./+types/api.events.$eventId";
 import { z } from "zod";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth, forbidden } from "~/lib/auth";
 import { getUserRoles, isCycleAdmin } from "~/lib/roles";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";

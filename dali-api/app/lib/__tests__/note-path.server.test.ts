@@ -1,12 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: { page: { findUnique: vi.fn() }, project: { findUnique: vi.fn() } },
 }));
 vi.mock("~/lib/drive-reveal.server", () => ({ driveLocation: vi.fn() }));
 vi.mock("~/lib/pageAccess.server", () => ({ getPageAccess: vi.fn() }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { driveLocation } from "~/lib/drive-reveal.server";
 import { formatFiledPath, meetingNotePath, notebookItemLocation, pageItemLocation } from "~/lib/note-path.server";
 import { getPageAccess } from "~/lib/pageAccess.server";

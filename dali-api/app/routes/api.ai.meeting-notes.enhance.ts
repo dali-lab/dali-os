@@ -20,7 +20,7 @@ import { canRecordInto } from "~/lib/meeting-recording.server";
 import { getUserRoles } from "~/lib/roles";
 import { checkRateLimit } from "~/lib/rate-limit";
 import { parseJson } from "~/lib/validate";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { generateAndVerifyEnhancePlan, EnhanceBlocksSchema } from "~/lib/meeting-notes-enhance.server";
 import { AI_BURST_MAX, AI_BURST_WINDOW_MS } from "./api.ai.meeting-notes";
 

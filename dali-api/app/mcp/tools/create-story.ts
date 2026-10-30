@@ -1,6 +1,6 @@
 // MCP `create_story` — Core or project member. Mirrors api.epics.$id.stories.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { canEditProject } from "./access";
 
 const STORY_STATUSES = ["Todo", "InProgress", "Done"] as const;

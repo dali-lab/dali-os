@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: { partnerApplication: { findFirst: vi.fn() } },
 }));
 vi.mock("~/partners/lib/partner-auth.server", () => ({ requirePartnerAccount: vi.fn() }));
@@ -13,7 +13,7 @@ vi.mock("~/lib/availability", async (orig) => {
   return { ...real, computeUserFreeBusy: vi.fn().mockResolvedValue({ free: [], busy: [], working: [] }) };
 });
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { computeUserFreeBusy } from "~/lib/availability";
 import { requirePartnerAccount } from "~/partners/lib/partner-auth.server";
 import { partnerHasProjectAccess } from "~/partners/lib/partner-access";

@@ -8,7 +8,7 @@ import { logAuditEvent } from "~/lib/audit";
 import { lookupSession, rollSession, hashSessionId } from "~/lib/session";
 import { withCors } from "~/lib/cors";
 import { isCore, isDomainLead, isLabMember, isProjectMember } from "~/lib/roles";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { displayEmail } from "~/lib/display";
 import { cachedForRequest } from "~/lib/request-cache";
 import { getAppEnv } from "~/lib/app-env";
@@ -391,7 +391,7 @@ export async function forbidNonMember(
 // consumers don't need a db mock (same pattern as lib/audit.ts).
 export async function isPartnerAccount(auth: AuthSuccess): Promise<boolean> {
   if (auth.user.type !== "partner") return false;
-  const { prisma } = await import("~/lib/db");
+  const { prisma } = await import("~/lib/db.server");
   const contact = await prisma.partnerContact.findUnique({
     where: { userId: auth.user.sub },
     select: { id: true },

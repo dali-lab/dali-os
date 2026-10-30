@@ -2,7 +2,7 @@
 // Mirrors the Admin → Jobs panel and api.jobs.$name.ts route.
 // Requires the `mcp:admin` scope; caller must be isCore.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore } from "~/lib/roles";
 import { jobByName, JOBS, resolveJobSettings } from "~/jobs/registry";
 import type { JobDefinition } from "~/jobs/registry";

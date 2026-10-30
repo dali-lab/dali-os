@@ -4,7 +4,7 @@
 // hard-gated into the fill page before they can use the rest of the app.
 // Reuses the signing audience resolvers so
 // "who owes this" is defined in exactly one place.
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { currentTerm } from "~/lib/roles";
 import { resolveGroupMembers } from "~/lib/groups";
 import { getSignerCohorts } from "~/signing/lib/state.server";
@@ -51,8 +51,6 @@ export async function getBoundFormGateOutstanding(
         select: {
           name: true,
           publicToken: true,
-          audience: true,
-          audienceGroupIds: true,
         },
       },
     },
@@ -88,7 +86,7 @@ export async function getBoundFormGateOutstanding(
     // mismatch would dead-end them on the fill page's access screen. Re-check
     // the real fill gate before redirecting.
     const access = await formFillAccess(
-      { id: b.formId, audience: b.form.audience, audienceGroupIds: b.form.audienceGroupIds },
+      { id: b.formId },
       userId,
       request,
     );

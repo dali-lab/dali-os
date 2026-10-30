@@ -2,9 +2,9 @@ import { redirect } from "react-router";
 import type { Route } from "./+types/forms.edit.$formId";
 import { requireAuth, forbidden, redirectNonMemberToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
-import { canBuildForm, canSeeForm, formsUsePageAccess } from "~/forms/lib/form-access.server";
+import { canBuildForm, canSeeForm } from "~/forms/lib/form-access.server";
 import type { DriveNoticeKey } from "~/lib/drive-notices";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import {
   loadFormForEdit,
   runFormsAction,
@@ -16,8 +16,8 @@ import {
   loadFormHiringLinks,
   unlinkHiringForm,
 } from "~/hiring/lib/form-links.server";
-import { listAllGroups } from "~/lib/groups";
 import { FormDetail } from "~/forms/components/FormDetail";
+import { parsePageParam } from "~/lib/pagination";
 import { loadVersionResponses } from "~/forms/lib/version-responses.server";
 import { driveRootCrumbs } from "~/lib/drive-crumbs";
 import { getCollabToken } from "~/lib/collab-token.server";
@@ -36,7 +36,7 @@ export const handle = {
   docTitle: "Forms",
   breadcrumbTrail: (data: unknown) => {
     const d = data as {
-      form?: { name: string };
+      form?: { name: string; iconEmoji: string | null };
       driveCrumbs?: { scope: string; folders: { id: string; title: string; iconEmoji: string | null }[] } | null;
     } | undefined;
     if (!d?.form) return null;
@@ -48,7 +48,11 @@ export const handle = {
         to: `/drive?scope=${scope}&folder=${f.id}`,
         icon: <PageIcon iconEmoji={f.iconEmoji} />,
       })),
-      { label: d.form.name },
+      {
+        label: d.form.name,
+        emoji: d.form.iconEmoji,
+        icon: d.form.iconEmoji ? <PageIcon iconEmoji={d.form.iconEmoji} /> : undefined,
+      },
     ];
   },
 };
@@ -84,16 +88,13 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   if (!form) return redirect("/drive?type=form");
   // Terms for term-scoped reference questions (e.g. projects active in a
   // chosen term). Newest first so the most likely choices are at the top.
-  const [terms, usages, allGroups, hiringLinks, driveCrumbs] =
+  const [terms, usages, hiringLinks, driveCrumbs] =
     await Promise.all([
       prisma.term.findMany({
         orderBy: { sortKey: "desc" },
         select: { id: true, code: true },
       }),
       formUsages(params.formId),
-      // Audience picker choices. listAllGroups (not the per-user visibility
-      // helper): a Core author must be able to target groups they aren't in.
-      listAllGroups(),
       loadFormHiringLinks(params.formId),
       driveFolderCrumbs(form.folderPageId, auth.user.sub, request),
     ]);
@@ -112,7 +113,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         ) ?? form.versions[form.versions.length - 1])
       : undefined;
   const results = resultsVersion
-    ? await loadVersionResponses(form.id, resultsVersion.id)
+    ? await loadVersionResponses(form.id, resultsVersion.id, {
+        page: parsePageParam(url.searchParams.get("page")),
+        q: url.searchParams.get("q") ?? "",
+        slot: url.searchParams.get("slot") ?? "",
+      })
     : null;
 
   return {
@@ -124,16 +129,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     hiringLinks,
     driveCrumbs,
     page: { workspaceType: form.workspaceType },
-    pageAccess: await formsUsePageAccess(request),
-    groups: allGroups
-      .filter((g) => !g.archived)
-      .map((g) => ({
-        id: g.id,
-        name: g.name,
-        type: g.type,
-        systemKey: g.systemKey,
-        memberCount: g.memberIds.length,
-      })),
     // Session cookie forwarded to the client so FormBuilderTab can authenticate
     // its Hocuspocus connection for the form's structured collab room.
     collabToken: await getCollabToken(request),
@@ -150,10 +145,10 @@ export async function action({ request, params }: Route.ActionArgs) {
   const formData = await request.formData();
   const intent = formData.get("intent") as string | null;
 
-  // The gate above is for this route's form; with page access a builder of one
-  // form must not reach another through a crafted id.
+  // The gate above is for this route's form; a builder of one form must not
+  // reach another through a crafted id.
   const targetId = formData.get("id");
-  if (typeof targetId === "string" && targetId && targetId !== params.formId && (await formsUsePageAccess(request)))
+  if (typeof targetId === "string" && targetId && targetId !== params.formId)
     return forbidden(request);
 
   if (intent === "unlink-hiring-form") {

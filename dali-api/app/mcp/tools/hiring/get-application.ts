@@ -9,7 +9,7 @@
 //     they're assigned to for this cycle — mirrors the web detail page)
 //   + signed confidentiality agreement for the cycle.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { getUserRoles, hasCycleAccess } from "~/lib/roles";
 import { confidentialityCleared, getCycleConfidentialityState } from "~/hiring/lib/confidentiality";
 import { buildCriteriaLabelMap } from "~/hiring/lib/rubric-criteria";
@@ -24,7 +24,7 @@ import { McpNotFoundError, McpForbiddenError } from "../../registry";
 export const GET_APPLICATION_TOOL = {
   name: "get_application",
   description:
-    "Get the full context for a domain application: answers, reviews, decisions, interviews, and rubric criteria. Requires cycle access and a signed confidentiality agreement for the cycle.",
+    "Get the full context for a domain application: answers, reviews, decisions, every interview round (newest first), and rubric criteria. Requires cycle access and a signed confidentiality agreement for the cycle.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -78,7 +78,6 @@ export async function runGetApplication(userId: string, input: Input): Promise<u
       interviews: {
         where: { status: { in: ["Scheduled", "Completed"] } },
         orderBy: { createdAt: "desc" },
-        take: 1,
         include: {
           room: { select: { id: true, name: true } },
           assignments: {

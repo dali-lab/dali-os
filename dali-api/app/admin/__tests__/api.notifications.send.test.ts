@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     form: { findUnique: vi.fn() },
     scheduledAnnouncement: { create: vi.fn(), update: vi.fn(), delete: vi.fn() },
@@ -19,7 +19,7 @@ vi.mock("~/lib/cors", () => ({
 vi.mock("~/lib/announcements.server", () => ({ sendAnnouncement: vi.fn() }));
 vi.mock("~/collab/blocknote-server", () => ({ renderAnnouncementBody: vi.fn() }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
 import { logAuditEvent } from "~/lib/audit";

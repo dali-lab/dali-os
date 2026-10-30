@@ -10,7 +10,6 @@ vi.mock("~/lib/roles", () => ({ getUserRoles: vi.fn() }));
 vi.mock("~/lib/terms", () => ({ resolveTermFilter: vi.fn() }));
 vi.mock("~/lib/drive-scopes.server", () => ({ loadDriveScopes: vi.fn() }));
 vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabled: vi.fn() }));
-vi.mock("~/forms/lib/form-access.server", () => ({ formsUsePageAccess: vi.fn() }));
 vi.mock("~/lib/drive-hub.server", () => ({
   loadProjectWorkspaces: vi.fn(),
   loadEducationWorkspaces: vi.fn(),
@@ -49,8 +48,6 @@ const loaderData = {
   itemTagIds: {},
   terms: [],
   selectedTerm: null,
-  canViewForms: false,
-  formsPageAccess: null,
   canManageAgreements: false,
   viewerId: "u1",
 };

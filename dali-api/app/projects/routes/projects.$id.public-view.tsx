@@ -5,7 +5,7 @@ import { useDialog } from "~/components/ui/dialog";
 import { Select } from "~/components/ui/floating";
 import { Calendar, Globe, Plus, Users, X } from "lucide-react";
 import type { Route } from "./+types/projects.$id.public-view";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth, redirectNonMemberToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { isCore, isProjectMember } from "~/lib/roles";

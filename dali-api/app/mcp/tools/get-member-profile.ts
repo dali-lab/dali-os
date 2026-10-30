@@ -14,7 +14,7 @@
 //
 // Requires the `mcp:read` scope.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { currentTerm, isAdminViaEnv, isCore } from "~/lib/roles";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { achievementsForMember } from "~/members/lib/achievements.server";

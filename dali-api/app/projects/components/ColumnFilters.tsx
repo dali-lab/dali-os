@@ -30,7 +30,15 @@ import {
   type FilterCells,
 } from "../lib/submission-filters";
 
-export type FilterColumn = { key: string; label: string; icon?: LucideIcon };
+export type FilterColumn = {
+  key: string;
+  label: string;
+  icon?: LucideIcon;
+  // Option order when alphabetical is wrong for the column (terms, newest first).
+  order?: readonly string[];
+  // Display text for an option; the value itself is what rows are matched on.
+  optionLabel?: (value: string) => string;
+};
 
 // Filter state for a board plus the row predicate to hand useFilteredList
 // (put `active` in its `deps`).
@@ -161,7 +169,7 @@ export function ColumnFilters({
             key={addStage.key}
             column={addStage}
             selected={filterValues(filters, addStage.key)}
-            options={columnResponses(rows, addStage.key)}
+            options={columnResponses(rows, addStage.key, addStage.order)}
             countFor={countFor}
             onToggle={(v) => onChange(toggleFilterValue(filters, addStage.key, v))}
             onClear={() => onChange(clearFilterColumn(filters, addStage.key))}
@@ -177,7 +185,7 @@ export function ColumnFilters({
           key={col.key}
           column={col}
           selected={filterValues(filters, col.key)}
-          options={columnResponses(rows, col.key)}
+          options={columnResponses(rows, col.key, col.order)}
           open={openPill === col.key}
           onOpenChange={(open) => {
             if (open) closeAdd();
@@ -226,8 +234,9 @@ function FilterPill({
 }) {
   const ref = useRef<HTMLDivElement>(null);
   useDismiss(ref, open, () => onOpenChange(false));
+  const labels = selected.map(column.optionLabel ?? ((v) => v));
   const summary =
-    selected.length <= 2 ? selected.join(", ") : `${selected[0]} +${selected.length - 1}`;
+    labels.length <= 2 ? labels.join(", ") : `${labels[0]} +${labels.length - 1}`;
 
   return (
     <div ref={ref} className="relative">
@@ -246,7 +255,7 @@ function FilterPill({
           onClick={() => onOpenChange(!open)}
           aria-haspopup="listbox"
           aria-expanded={open}
-          aria-label={`${column.label}: ${selected.join(", ")}. Edit`}
+          aria-label={`${column.label}: ${labels.join(", ")}. Edit`}
           className="flex h-full max-w-[220px] items-center gap-1 border-l border-os-container px-2 font-semibold text-foreground transition-colors hover:bg-os-hover focus-visible:bg-os-hover focus-visible:outline-none"
         >
           <span className="truncate">{summary}</span>
@@ -296,8 +305,9 @@ function FilterValuePicker({
   onBack?: () => void;
 }) {
   const [search, setSearch] = useState("");
+  const labelOf = column.optionLabel ?? ((v: string) => v);
   const shown = options.filter((o) =>
-    o.toLowerCase().includes(search.trim().toLowerCase()),
+    labelOf(o).toLowerCase().includes(search.trim().toLowerCase()),
   );
 
   return (
@@ -358,7 +368,7 @@ function FilterValuePicker({
               >
                 {checked && <Check className="h-3 w-3" strokeWidth={3} />}
               </span>
-              <span className={cn("truncate", checked && "font-semibold")}>{opt}</span>
+              <span className={cn("truncate", checked && "font-semibold")}>{labelOf(opt)}</span>
               <span className="ml-auto text-xs tabular-nums text-os-muted">{count}</span>
             </button>
           );

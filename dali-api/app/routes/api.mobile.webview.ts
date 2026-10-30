@@ -1,6 +1,6 @@
 import type { Route } from "./+types/api.mobile.webview";
 import { z } from "zod";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { parseJson } from "~/lib/validate";
 import { generateRawCode, hashCode, HANDOFF_TTL_MS } from "~/lib/pairing";
 import { getApiBaseUrl } from "~/lib/app-env";

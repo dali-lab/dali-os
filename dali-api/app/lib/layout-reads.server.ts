@@ -1,4 +1,4 @@
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { getUserRoles, isLabMentor } from "~/lib/roles";
 import { listFavoritesAndRecents } from "~/lib/user-pages.server";
 import { viewerHasUnseenReleaseNotes } from "~/lib/release-notes.server";

@@ -16,7 +16,7 @@ import { recordTokenUsage } from "~/lib/ai-usage.server";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { getUserRoles } from "~/lib/roles";
 import { checkRateLimit } from "~/lib/rate-limit";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import {
   computeProjectStatus,
   factsFingerprint,

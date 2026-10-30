@@ -1,5 +1,5 @@
 import { requireAuth, unauthorized, forbidden, isPartnerAccount, isNonMember } from "~/lib/auth";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isAdmin, isCore } from "~/lib/roles";
 import {
   EVENT_TYPES,

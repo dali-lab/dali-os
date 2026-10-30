@@ -8,7 +8,7 @@ import { redirect } from "react-router";
 import type { Route } from "./+types/auth.pair.approve";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { logAuditEvent } from "~/lib/audit";
 import { formatUserCode, normalizeUserCode } from "~/lib/pairing";
 

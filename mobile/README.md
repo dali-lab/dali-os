@@ -43,7 +43,7 @@ Releases ship from `prod` through `.github/workflows/mobile-release.yml` (EAS Bu
 
 - **Bump `version` in `app.json`** when anything native changes: a new native module, a plugin, permission or other `app.json` change, or an Expo SDK upgrade. Merging the bump to `prod` builds iOS and Android on EAS, submits them (TestFlight and the Play internal track), and tags `mobile-v<version>`.
 - **Anything else in `mobile/`** that reaches `prod` goes out as an over-the-air EAS Update on the `production` channel. `runtimeVersion` follows the app version, so an update only reaches builds it's compatible with.
-- Run the workflow by hand (Actions → Mobile Release → Run workflow) to force a build or an update.
+- Run the workflow by hand (Actions → Mobile Release → Run workflow) to force a build or an update. iOS and Android are built and submitted independently: if one platform fails, the other still ships and the release is still tagged, and the failed platform can be retried alone (kind `build`, platform `ios` or `android`).
 
 Release builds always use the Production server, so the matching `dali-api` changes must be on prod first, with the `mobile-app` flag on for testers.
 

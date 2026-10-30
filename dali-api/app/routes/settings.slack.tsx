@@ -1,6 +1,6 @@
 import { redirect } from "react-router";
 import { requireAuth, unauthorized, forbidden, isPartnerAccount, isNonMember } from "~/lib/auth";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { lookupSlackUserByEmail } from "~/slack/lib/slack-client";
 import { logAuditEvent } from "~/lib/audit";
 import type { Route } from "./+types/settings.slack";

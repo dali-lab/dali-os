@@ -1,6 +1,6 @@
 import rrulePkg from "rrule";
 import type { RRule as RRuleType } from "rrule";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { fetchBusyEvents } from "~/lib/google-calendar";
 import { APPLICATION_TZ as DEFAULT_TIMEZONE, getZonedYMD, pickUserTimezone, zonedDayStartUtc } from "~/lib/timezone";
 

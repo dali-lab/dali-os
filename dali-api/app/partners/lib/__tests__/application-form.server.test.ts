@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     partnerApplicationFormBinding: {
       findFirst: vi.fn(),
@@ -15,7 +15,7 @@ vi.mock("~/forms/lib/public-form", () => ({
   loadPublicForm: vi.fn(),
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { loadPublicForm } from "~/forms/lib/public-form";
 import {
   getApplicationFormBinding,

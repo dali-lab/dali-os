@@ -13,7 +13,7 @@
 // the collab pipeline (same as create_page) and mirror it into contentJson,
 // which new notes seed from.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore } from "~/lib/roles";
 import { markdownToBlocks } from "~/collab/blocknote-server";
 import { replaceCollabDocContent } from "~/collab/write";

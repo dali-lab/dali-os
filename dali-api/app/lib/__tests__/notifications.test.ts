@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import {
   listMyNotifications,
   listRetiredMeetingPingIds,
@@ -79,6 +79,16 @@ describe("liveMeetingPingClauses", () => {
       ],
     });
   });
+
+  it("hides an assignment unless it is Active on a Scheduled interview", () => {
+    const [, , assignment] = liveMeetingPingClauses(NOW);
+    expect(assignment).toEqual({
+      OR: [
+        { interviewAssignmentId: null },
+        { interviewAssignment: { status: "Active", interview: { status: "Scheduled" } } },
+      ],
+    });
+  });
 });
 
 describe("listMyNotifications", () => {
@@ -145,11 +155,11 @@ describe("listRetiredMeetingPingIds", () => {
     expect(await listRetiredMeetingPingIds("user-1")).toEqual(["past-reminder"]);
 
     const [candidates, live] = mockPrisma.notification.findMany.mock.calls;
-    // Candidates: unread, meeting-backed, within the lookback window.
+    // Candidates: unread, meeting- or interview-backed, within the lookback window.
     expect(candidates[0].where).toEqual({
       recipientUserId: "user-1",
       readAt: null,
-      scheduledMeetingId: { not: null },
+      OR: [{ scheduledMeetingId: { not: null } }, { interviewAssignmentId: { not: null } }],
       createdAt: { gte: new Date(NOW.getTime() - 30 * 24 * 3_600_000) },
     });
     expect(live[0].where).toEqual({

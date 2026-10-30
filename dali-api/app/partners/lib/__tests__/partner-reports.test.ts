@@ -7,7 +7,14 @@ import {
   computeRejectionReasons,
   isReturningOrg,
   computePartnerMix,
-  computeCapacity,
+  computeFunnelReached,
+  computeFunnelSteps,
+  formatFunnelValue,
+  barPercent,
+  formatMedianDays,
+  topWithRemainder,
+  reportSourceHref,
+  splitPercent,
   computeRevenueByOrg,
 } from "../partner-reports";
 
@@ -35,7 +42,7 @@ describe("computeFunnel", () => {
       { id: "a4", stage: "Rejected" as const },
     ];
     const result = computeFunnel(apps, []);
-    expect(result.stageCounts).toEqual({ Backlog: 1, New: 1, Interview: 1, Accepted: 1, Rejected: 1 });
+    expect(result.stageCounts).toEqual({ Backlog: 1, New: 1, Interview: 1, Deciding: 0, Accepted: 1, Rejected: 1 });
     expect(result.total).toBe(5);
   });
 
@@ -128,14 +135,14 @@ describe("computeCycleTimes", () => {
 describe("computeRejectionReasons", () => {
   it("counts non-null reasons and sorts descending", () => {
     const rows = computeRejectionReasons([
-      { rejectReason: "NotAFit" as const },
-      { rejectReason: null },
-      { rejectReason: "NotAFit" as const },
-      { rejectReason: "Timing" as const },
+      { id: "a1", rejectReason: "NotAFit" as const },
+      { id: "a2", rejectReason: null },
+      { id: "a3", rejectReason: "NotAFit" as const },
+      { id: "a4", rejectReason: "Timing" as const },
     ]);
     expect(rows).toEqual([
-      { reason: "NotAFit", count: 2 },
-      { reason: "Timing", count: 1 },
+      { reason: "NotAFit", count: 2, ids: ["a1", "a3"] },
+      { reason: "Timing", count: 1, ids: ["a4"] },
     ]);
   });
 });
@@ -190,23 +197,108 @@ describe("computePartnerMix", () => {
   });
 });
 
-describe("computeCapacity", () => {
-  it("sums expected members and counts staffed assignments per domain", () => {
-    const cells = computeCapacity(
-      [
-        { domainId: "d1", domainName: "Engineering", expectedMembers: 3 },
-        { domainId: "d1", domainName: "Engineering", expectedMembers: 2 },
-        { domainId: "d2", domainName: "Design", expectedMembers: 1 },
-      ],
-      [
-        { domainId: "d1", domainName: "Engineering" },
-        { domainId: "d1", domainName: "Engineering" },
-      ],
-    );
-    expect(cells).toEqual([
-      { domainId: "d2", domainName: "Design", expected: 1, staffed: 0 },
-      { domainId: "d1", domainName: "Engineering", expected: 5, staffed: 2 },
-    ]);
+describe("Deciding in the funnel", () => {
+  it("counts a Deciding application in stageCounts and as having reached interview", () => {
+    const apps = [
+      { id: "a1", stage: "Deciding" as const },
+      { id: "a2", stage: "New" as const },
+    ];
+    const result = computeFunnel(apps, []);
+    expect(result.stageCounts.Deciding).toBe(1);
+    expect(result.newToInterviewRate).toBe(0.5);
+    expect(computeFunnelReached(apps, []).interview).toEqual(["a1"]);
+  });
+
+  it("credits a Rejected card that passed through Deciding", () => {
+    const apps = [{ id: "a1", stage: "Rejected" as const }];
+    const reached = computeFunnelReached(apps, [{ applicationId: "a1", to: "Deciding" }]);
+    expect(reached.interview).toEqual(["a1"]);
+    expect(reached.accepted).toEqual([]);
+  });
+});
+
+describe("computeFunnelReached", () => {
+  it("lists ids per step, nested from applied to accepted", () => {
+    const apps = [
+      { id: "a1", stage: "Accepted" as const },
+      { id: "a2", stage: "Interview" as const },
+      { id: "a3", stage: "New" as const },
+    ];
+    expect(computeFunnelReached(apps, [])).toEqual({
+      applied: ["a1", "a2", "a3"],
+      interview: ["a1", "a2"],
+      accepted: ["a1"],
+    });
+  });
+});
+
+describe("computeFunnelSteps and formatFunnelValue", () => {
+  const reached = {
+    applied: ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n", "o", "p", "q", "r", "s"],
+    interview: ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k"],
+    accepted: ["a", "b", "c", "d", "e", "f"],
+  };
+
+  it("reports counts and the share of the stage before", () => {
+    const steps = computeFunnelSteps(reached);
+    expect(steps.map((s) => s.label)).toEqual(["Applied", "Reached interview", "Accepted"]);
+    expect(steps.map((s) => s.count)).toEqual([19, 11, 6]);
+    expect(steps.map(formatFunnelValue)).toEqual(["19", "11 · 58%", "6 · 55%"]);
+  });
+
+  it("has no conversion when the previous step is empty", () => {
+    const steps = computeFunnelSteps({ applied: [], interview: [], accepted: [] });
+    expect(steps.map(formatFunnelValue)).toEqual(["0", "0", "0"]);
+  });
+});
+
+describe("barPercent", () => {
+  it("scales to the max with a visible floor for non-zero values", () => {
+    expect(barPercent(5, 10)).toBe(50);
+    expect(barPercent(10, 10)).toBe(100);
+    expect(barPercent(1, 1000)).toBe(2);
+    expect(barPercent(0, 10)).toBe(0);
+    expect(barPercent(3, 0)).toBe(0);
+  });
+});
+
+describe("formatMedianDays", () => {
+  it("rounds to one decimal and pluralizes", () => {
+    expect(formatMedianDays(null)).toBe("—");
+    expect(formatMedianDays(1)).toBe("1 day");
+    expect(formatMedianDays(12.34)).toBe("12.3 days");
+  });
+});
+
+describe("topWithRemainder", () => {
+  const rows = [10, 9, 8, 7, 6, 5, 4].map((n) => ({ totalCents: n * 100 }));
+
+  it("splits the top rows from a count and total of the rest", () => {
+    const result = topWithRemainder(rows, 5);
+    expect(result.top).toHaveLength(5);
+    expect(result.moreCount).toBe(2);
+    expect(result.moreCents).toBe(900);
+  });
+
+  it("has no remainder when everything fits", () => {
+    expect(topWithRemainder(rows.slice(0, 3), 5)).toMatchObject({ moreCount: 0, moreCents: 0 });
+  });
+});
+
+describe("reportSourceHref", () => {
+  it("links to the board with source and term", () => {
+    expect(reportSourceHref("Form", "t1")).toBe("/core/partners?source=Form&term=t1");
+  });
+
+  it("omits the term for all time", () => {
+    expect(reportSourceHref("Form", null)).toBe("/core/partners?source=Form");
+  });
+});
+
+describe("splitPercent", () => {
+  it("sums to 100 and handles zero", () => {
+    expect(splitPercent(1, 2)).toEqual([33, 67]);
+    expect(splitPercent(0, 0)).toEqual([0, 0]);
   });
 });
 

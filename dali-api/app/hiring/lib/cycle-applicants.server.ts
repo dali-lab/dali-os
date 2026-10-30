@@ -1,4 +1,4 @@
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import type { CycleApplicants } from "~/generated/prisma/client";
 import { APPLICANT_GROUP_CONFIG, DEFAULT_STAGES, defaultTimelineFor, isAdminOnlyCycle } from "./applicant-groups.server";
 import { getCoreDomain } from "./core-hiring.server";

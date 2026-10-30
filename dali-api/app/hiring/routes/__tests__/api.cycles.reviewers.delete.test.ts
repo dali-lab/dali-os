@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/auth", () => ({
   requireAuth: vi.fn(),
   requireCore: vi.fn(),
@@ -21,7 +21,7 @@ vi.mock("~/lib/cors", () => ({
 vi.mock("~/lib/roles");
 vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn().mockResolvedValue(undefined) }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth, requireCoreOrDomainLead } from "~/lib/auth";
 import { isCore, isDomainLead } from "~/lib/roles";
 import { logAuditEvent } from "~/lib/audit";

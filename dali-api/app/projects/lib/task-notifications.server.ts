@@ -4,7 +4,7 @@
 // and dispatches via notify(); callers fire-and-forget so a delivery hiccup
 // never fails the underlying write.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { notify } from "~/lib/notify.server";
 import { extractHandlesFromText, notifyMentions, resolveHandles } from "~/lib/mentions";
 import { TASK_STATUS_LABELS } from "./task-board";

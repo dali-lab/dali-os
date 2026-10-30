@@ -1,13 +1,13 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/notify.server", () => ({ notify: vi.fn() }));
 vi.mock("~/lib/groups", () => ({
   resolveGroupMembers: vi.fn(),
   resolveAllLabMembers: vi.fn(),
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { notify } from "~/lib/notify.server";
 import { resolveGroupMembers, resolveAllLabMembers } from "~/lib/groups";
 import { sendAnnouncement } from "~/lib/announcements.server";

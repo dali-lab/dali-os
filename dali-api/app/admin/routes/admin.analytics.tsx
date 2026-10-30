@@ -1,28 +1,21 @@
-import { redirect, useLoaderData } from "react-router";
-import {
-  CartesianGrid,
-  Line,
-  LineChart,
-  ResponsiveContainer,
-  Tooltip as ChartTooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
+import { redirect, useLoaderData, useNavigate } from "react-router";
 import type { ReactNode } from "react";
 import { AlertTriangle } from "lucide-react";
 import type { Route } from "./+types/admin.analytics";
 import { AdminSectionHeader, adminHandle } from "~/admin/adminNav";
 import { EmptyState, Figure, MiniBar, adminTable } from "~/admin/components/console-ui";
 import { RangeSegmented } from "~/admin/components/RangeSegmented";
-import { resolveRange } from "~/admin/lib/insights-range";
+import { ALL_TIME, resolveWindow, wantsAllTime } from "~/admin/lib/insights-range";
+import { fillDays, shortDay } from "~/components/analytics/chart-range";
+import { ChartLegend, TimeSeriesChart, type ChartSeries } from "~/components/analytics/TimeSeriesChart";
 import { useOsChrome } from "~/components/os-chrome";
 import { Tooltip } from "~/components/ui/floating";
 import { cn } from "~/lib/cn";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { isCore, isAdmin } from "~/lib/roles";
-import { formatDuration } from "~/lib/analytics";
+import { formatDuration } from "~/lib/format-duration";
 import { percentChange, priorViewsByPath } from "~/lib/analytics-compare.server";
 
 export const handle = adminHandle("analytics");
@@ -63,14 +56,14 @@ function sinceDate(days: number): Date {
   return new Date(Date.now() - days * 24 * 60 * 60 * 1000);
 }
 
-function backfillDays<T extends { day: string }>(days: number, rows: T[], empty: Omit<T, "day">): T[] {
-  const map = new Map(rows.map((r) => [r.day, r]));
-  const out: T[] = [];
-  for (let i = days - 1; i >= 0; i--) {
-    const key = new Date(Date.now() - i * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-    out.push(map.get(key) ?? ({ ...empty, day: key } as T));
-  }
-  return out;
+async function earliestPageViewOrError(): Promise<Date | null> {
+  const [row] = await prisma.$queryRaw<{ earliest: Date | null }[]>`
+    SELECT LEAST(
+      (SELECT MIN("createdAt") FROM "PageView"),
+      (SELECT MIN("createdAt") FROM "ClientError")
+    ) AS earliest
+  `;
+  return row?.earliest ?? null;
 }
 
 export async function loader({ request }: Route.LoaderArgs) {
@@ -79,8 +72,13 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (!(await isCore(auth.user.sub))) return redirect("/");
 
   const url = new URL(request.url);
-  const range = resolveRange(url.searchParams.get("range"));
-  const since = sinceDate(range.days);
+  const range = resolveWindow(
+    url.searchParams,
+    new Date(),
+    wantsAllTime(url.searchParams) ? await earliestPageViewOrError() : null,
+  );
+  const allTime = range.key === ALL_TIME.key;
+  const { since, until } = range;
   const sevenDaysAgo = sinceDate(7);
 
   // Always 7d regardless of the range selector, so it stays a stable
@@ -96,10 +94,10 @@ export async function loader({ request }: Route.LoaderArgs) {
            COUNT(*)::int AS count,
            COUNT(DISTINCT "userId")::int AS users
     FROM "PageView"
-    WHERE "createdAt" >= ${since}
+    WHERE "createdAt" >= ${since} AND "createdAt" < ${until}
     GROUP BY 1 ORDER BY 1 ASC
   `;
-  const trend = backfillDays(range.days, dayRows, { count: 0, users: 0 });
+  const trend = fillDays(range.firstDay, range.lastDay, dayRows, { count: 0, users: 0 });
 
   // Paths are normalized, so /projects/:id collapses across all projects.
   const topRoutes = await prisma.$queryRaw<RouteRow[]>`
@@ -108,17 +106,19 @@ export async function loader({ request }: Route.LoaderArgs) {
            COUNT(DISTINCT "userId")::int AS users,
            percentile_cont(0.5) WITHIN GROUP (ORDER BY "durationMs")::float AS "medianMs"
     FROM "PageView"
-    WHERE "createdAt" >= ${since}
+    WHERE "createdAt" >= ${since} AND "createdAt" < ${until}
     GROUP BY "path"
     ORDER BY views DESC
     LIMIT 10
   `;
-  const prior = await priorViewsByPath(
-    prisma,
-    topRoutes.map((r) => r.path),
-    since,
-    range.days,
-  );
+  const prior = allTime
+    ? null
+    : await priorViewsByPath(
+        prisma,
+        topRoutes.map((r) => r.path),
+        since,
+        range.days,
+      );
 
   // "Rarely visited" rather than "never visited": a route with zero PageView
   // rows isn't measurable from this table. The long tail is the actionable
@@ -129,7 +129,7 @@ export async function loader({ request }: Route.LoaderArgs) {
            COUNT(DISTINCT "userId")::int AS users,
            NULL::float AS "medianMs"
     FROM "PageView"
-    WHERE "createdAt" >= ${since}
+    WHERE "createdAt" >= ${since} AND "createdAt" < ${until}
     GROUP BY "path"
     HAVING COUNT(*) < 5
     ORDER BY views ASC, "path" ASC
@@ -141,7 +141,7 @@ export async function loader({ request }: Route.LoaderArgs) {
            COUNT(*)::int AS views,
            COUNT(DISTINCT "userId")::int AS users
     FROM "PageView"
-    WHERE "createdAt" >= ${since}
+    WHERE "createdAt" >= ${since} AND "createdAt" < ${until}
     GROUP BY "client"
     ORDER BY views DESC
   `;
@@ -150,14 +150,14 @@ export async function loader({ request }: Route.LoaderArgs) {
     SELECT COUNT(*)::int AS calls,
            COUNT(DISTINCT "userId")::int AS users
     FROM "AuditLog"
-    WHERE "action" IN ('mcp.tool_called', 'mcp.tool_read') AND "createdAt" >= ${since}
+    WHERE "action" IN ('mcp.tool_called', 'mcp.tool_read') AND "createdAt" >= ${since} AND "createdAt" < ${until}
   `;
   const mcpTools = await prisma.$queryRaw<McpRow[]>`
     SELECT COALESCE("metadata"->>'toolName', 'unknown') AS name,
            COUNT(*)::int AS calls,
            COUNT(DISTINCT "userId")::int AS users
     FROM "AuditLog"
-    WHERE "action" IN ('mcp.tool_called', 'mcp.tool_read') AND "createdAt" >= ${since}
+    WHERE "action" IN ('mcp.tool_called', 'mcp.tool_read') AND "createdAt" >= ${since} AND "createdAt" < ${until}
     GROUP BY 1
     ORDER BY calls DESC, name ASC
     LIMIT 10
@@ -167,7 +167,7 @@ export async function loader({ request }: Route.LoaderArgs) {
            COUNT(*)::int AS calls,
            COUNT(DISTINCT "userId")::int AS users
     FROM "AuditLog"
-    WHERE "action" IN ('mcp.tool_called', 'mcp.tool_read') AND "createdAt" >= ${since}
+    WHERE "action" IN ('mcp.tool_called', 'mcp.tool_read') AND "createdAt" >= ${since} AND "createdAt" < ${until}
     GROUP BY 1
     ORDER BY calls DESC, name ASC
     LIMIT 10
@@ -177,10 +177,10 @@ export async function loader({ request }: Route.LoaderArgs) {
     SELECT to_char(date_trunc('day', "createdAt"), 'YYYY-MM-DD') AS day,
            COUNT(*)::int AS count
     FROM "ClientError"
-    WHERE "createdAt" >= ${since}
+    WHERE "createdAt" >= ${since} AND "createdAt" < ${until}
     GROUP BY 1 ORDER BY 1 ASC
   `;
-  const errorTrend = backfillDays(range.days, errorDayRows, { count: 0 });
+  const errorTrend = fillDays(range.firstDay, range.lastDay, errorDayRows, { count: 0 });
 
   const errorRows = await prisma.$queryRaw<ErrorRow[]>`
     SELECT "message",
@@ -189,7 +189,7 @@ export async function loader({ request }: Route.LoaderArgs) {
            MIN("createdAt") AS "firstSeen",
            MAX("createdAt") AS "lastSeen"
     FROM "ClientError"
-    WHERE "createdAt" >= ${since}
+    WHERE "createdAt" >= ${since} AND "createdAt" < ${until}
     GROUP BY "message"
     ORDER BY "lastSeen" DESC
     LIMIT 50
@@ -199,12 +199,13 @@ export async function loader({ request }: Route.LoaderArgs) {
   return {
     rangeKey: range.key,
     rangeLabel: range.label,
+    rangePhrase: range.phrase,
     rangeDays: range.days,
     wau: wauRow?.wau ?? 0,
     trend,
     topRoutes: topRoutes.map((r) => ({
       ...r,
-      change: percentChange(r.views, prior.get(r.path) ?? 0),
+      change: prior ? percentChange(r.views, prior.get(r.path) ?? 0) : null,
     })),
     bottomRoutes,
     clientRows,
@@ -220,14 +221,6 @@ export async function loader({ request }: Route.LoaderArgs) {
     })),
     isAdmin: admin,
   };
-}
-
-function shortDay(day: string): string {
-  return new Date(`${day}T12:00:00Z`).toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    timeZone: "UTC",
-  });
 }
 
 function ErrorBars({ series }: { series: { day: string; count: number }[] }) {
@@ -246,65 +239,10 @@ function ErrorBars({ series }: { series: { day: string; count: number }[] }) {
   );
 }
 
-function TrafficChart({ data }: { data: DayRow[] }) {
-  const rows = data.map((d) => ({ day: shortDay(d.day), views: d.count, visitors: d.users }));
-  return (
-    <div className="h-72">
-      <ResponsiveContainer width="100%" height="100%">
-        <LineChart data={rows} margin={{ top: 8, right: 8, left: -12, bottom: 0 }}>
-          <CartesianGrid stroke="var(--color-os-container)" strokeDasharray="3 3" vertical={false} />
-          <XAxis
-            dataKey="day"
-            tick={{ fontSize: 12, fill: "var(--color-os-muted)" }}
-            tickLine={false}
-            axisLine={false}
-            minTickGap={24}
-          />
-          <YAxis
-            tick={{ fontSize: 12, fill: "var(--color-os-muted)" }}
-            tickLine={false}
-            axisLine={false}
-            width={48}
-            allowDecimals={false}
-          />
-          <ChartTooltip
-            contentStyle={{
-              background: "var(--color-os-card)",
-              border: "1px solid var(--color-os-container)",
-              borderRadius: 12,
-              fontSize: 13,
-              color: "var(--color-foreground)",
-            }}
-            labelStyle={{ color: "var(--color-os-grey)" }}
-            itemStyle={{ color: "var(--color-foreground)" }}
-            cursor={{ stroke: "var(--color-os-container-hi)" }}
-          />
-          <Line
-            type="monotone"
-            dataKey="views"
-            name="Pageviews"
-            stroke="var(--color-os-accent)"
-            strokeWidth={2}
-            dot={false}
-            activeDot={{ r: 4 }}
-            isAnimationActive={false}
-          />
-          <Line
-            type="monotone"
-            dataKey="visitors"
-            name="Visitors"
-            stroke="var(--color-os-grey)"
-            strokeWidth={2}
-            strokeDasharray="5 4"
-            dot={false}
-            activeDot={{ r: 4 }}
-            isAnimationActive={false}
-          />
-        </LineChart>
-      </ResponsiveContainer>
-    </div>
-  );
-}
+const TRAFFIC_SERIES: ChartSeries[] = [
+  { key: "views", name: "Pageviews", color: "var(--color-os-accent)" },
+  { key: "visitors", name: "Visitors (distinct users per day)", color: "var(--color-os-grey)", dashed: true },
+];
 
 function Change({ value }: { value: number | null }) {
   if (value == null) return <span className="text-os-muted">New</span>;
@@ -350,6 +288,8 @@ function CountTable({
 export default function AdminConsoleAnalytics() {
   const {
     rangeKey,
+    rangeLabel,
+    rangePhrase,
     rangeDays,
     wau,
     trend,
@@ -364,6 +304,7 @@ export default function AdminConsoleAnalytics() {
     errors,
   } = useLoaderData<typeof loader>();
   const { panel, sectionTitle } = useOsChrome();
+  const navigate = useNavigate();
 
   const views = trend.reduce((s, d) => s + d.count, 0);
   const avgVisitors = Math.round(trend.reduce((s, d) => s + d.users, 0) / Math.max(1, trend.length));
@@ -382,7 +323,7 @@ export default function AdminConsoleAnalytics() {
           <div className="flex flex-wrap items-end gap-x-10 gap-y-4">
             <Figure
               size="lg"
-              label={<span id="traffic-title">Pageviews · last {rangeDays} days</span>}
+              label={<span id="traffic-title">Pageviews · {rangeLabel}</span>}
               value={views.toLocaleString()}
             />
             <Figure label="Active users" value={wau.toLocaleString()} detail="Distinct logins, last 7 days" />
@@ -398,24 +339,26 @@ export default function AdminConsoleAnalytics() {
               detail={`${errors.length} distinct`}
             />
           </div>
-          <RangeSegmented value={rangeKey} />
+          <RangeSegmented value={rangeKey} customLabel={rangeLabel} />
         </div>
         <div className="mt-6">
-          <TrafficChart data={trend} />
+          <TimeSeriesChart
+            data={trend.map((d) => ({ day: d.day, views: d.count, visitors: d.users }))}
+            series={TRAFFIC_SERIES}
+            onSelectRange={({ from, to }) =>
+              navigate(`?from=${from}&to=${to}`, { preventScrollReset: true })
+            }
+          />
         </div>
-        <div className="mt-3 flex gap-5 text-xs text-os-grey">
-          <span className="flex items-center gap-2">
-            <span className="h-0.5 w-4 rounded bg-os-accent" /> Pageviews
-          </span>
-          <span className="flex items-center gap-2">
-            <span className="w-4 border-t-2 border-dashed border-os-grey" /> Visitors (distinct users per day)
-          </span>
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+          <ChartLegend series={TRAFFIC_SERIES} />
+          <span className="text-xs text-os-muted">Drag across the chart to zoom in</span>
         </div>
       </section>
 
       <section className="flex flex-col gap-3" aria-labelledby="pages-title">
         <h2 id="pages-title" className={sectionTitle}>
-          Top pages · last {rangeDays} days
+          Top pages · {rangeLabel}
         </h2>
         <div className={cn(adminTable.wrap, "os-scroll")}>
           {topRoutes.length === 0 ? (
@@ -428,7 +371,9 @@ export default function AdminConsoleAnalytics() {
                   <th className={cn(adminTable.th, "text-right")}>Users</th>
                   <th className={cn(adminTable.th, "text-right")}>Median time</th>
                   <th className={cn(adminTable.th, "w-[28%]")}>Views</th>
-                  <th className={cn(adminTable.th, "text-right")}>vs. prior {rangeDays} days</th>
+                  {rangeKey !== ALL_TIME.key && (
+                    <th className={cn(adminTable.th, "text-right")}>vs. prior {rangeDays} days</th>
+                  )}
                 </tr>
               </thead>
               <tbody>
@@ -447,9 +392,11 @@ export default function AdminConsoleAnalytics() {
                         </span>
                       </div>
                     </td>
-                    <td className={cn(adminTable.td, "text-right tabular-nums")}>
-                      <Change value={r.change} />
-                    </td>
+                    {rangeKey !== ALL_TIME.key && (
+                      <td className={cn(adminTable.td, "text-right tabular-nums")}>
+                        <Change value={r.change} />
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>
@@ -519,7 +466,7 @@ export default function AdminConsoleAnalytics() {
         </div>
         <div className={adminTable.wrap}>
           {mcpTotals.calls === 0 ? (
-            <EmptyState>No MCP tool calls in the last {rangeDays} days.</EmptyState>
+            <EmptyState>No MCP tool calls in {rangePhrase}.</EmptyState>
           ) : (
             <div className="grid divide-y divide-os-container/70 md:grid-cols-2 md:divide-x md:divide-y-0">
               {[
@@ -558,7 +505,7 @@ export default function AdminConsoleAnalytics() {
             <ErrorBars series={errorTrend} />
           </div>
           {errors.length === 0 ? (
-            <EmptyState>No client errors in the last {rangeDays} days.</EmptyState>
+            <EmptyState>No client errors in {rangePhrase}.</EmptyState>
           ) : (
             <table className="w-full min-w-[560px]">
               <thead>

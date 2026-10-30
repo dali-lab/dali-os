@@ -67,7 +67,7 @@ export function LandingScreen() {
                 </View>
               ) : null}
               <Button fullWidth size="lg" leftIcon={LogIn} loading={status === 'pairing'} onPress={() => void startPairing()}>
-                Sign in with Dartmouth
+                Sign in with your DALI email
               </Button>
               <View style={tw`mt-3 flex-row items-center justify-center gap-1.5`}>
                 <RefreshCw size={12} color="rgba(255,255,255,0.65)" />

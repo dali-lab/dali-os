@@ -5,7 +5,7 @@
 import { useMemo, useState } from "react";
 import { Form, redirect, useLoaderData, useNavigation } from "react-router";
 import type { Route } from "./+types/partner.survey.$projectPartnerId";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requirePartnerOrgAccess } from "~/partners/lib/partner-auth.server";
 import { loadSurveyForm } from "~/partners/lib/partner-survey.server";
 import { validateAnswers } from "~/forms/lib/public-form";

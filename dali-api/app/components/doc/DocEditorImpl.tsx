@@ -73,7 +73,7 @@ import { getFilteredDocSlashMenuItems } from "./schema/slash-menu";
 import { DEFAULT_SIGNING_CTX, SigningContext } from "./signing-context";
 import { usePresence, useRegisterCollabEditor } from "../collab/PresenceProvider";
 import type { DocCollabConfig, DocCommentsConfig, DocEditorProps } from "./types";
-import { uploadEditorImage } from "./upload";
+import { uploadEditorImage, withUploadErrorToast } from "./upload";
 import { useAiSlashMenuItems } from "./ai/AiSlashMenuItems";
 import { isAiEnvEnabled } from "./ai/env";
 import { Modal } from "~/components/Modal";
@@ -98,6 +98,8 @@ type ResolvedProps = Omit<DocEditorProps, "features"> & { features: Features };
 function LocalDoc(props: ResolvedProps) {
   const schema = useDocSchema(props.features);
   const dictionary = useDocDictionary(props.placeholder);
+  const toast = useToast();
+  const uploadFile = useMemo(() => withUploadErrorToast(uploadEditorImage, toast.error), [toast]);
   // Normalized once per (schema, content) pair; the editor is recreated on
   // schema/dictionary change anyway, so this rides the same memo.
   // Read-only embeds also drop the trailing blank line an author left; there
@@ -113,7 +115,7 @@ function LocalDoc(props: ResolvedProps) {
       schema,
       initialContent,
       dictionary,
-      uploadFile: (props.features.images || props.features.files) ? uploadEditorImage : undefined,
+      uploadFile: (props.features.images || props.features.files) ? uploadFile : undefined,
       tables: { splitCells: true, cellBackgroundColor: true, cellTextColor: true, headers: true },
       pasteHandler: enhancePasteHandler,
       ...(props.features.columns ? { dropCursor: multiColumnDropCursor } : {}),
@@ -152,6 +154,8 @@ function CollabDocInner(
   const { userName, userId, seedContent } = props.collab;
   const schema = useDocSchema(props.features);
   const dictionary = useDocDictionary(props.placeholder);
+  const toast = useToast();
+  const uploadFile = useMemo(() => withUploadErrorToast(uploadEditorImage, toast.error), [toast]);
   const threadStore = useThreadStore(props.comments);
 
   const editor = useCreateBlockNote(
@@ -162,7 +166,7 @@ function CollabDocInner(
     withCollaboration({
       schema,
       dictionary,
-      uploadFile: (props.features.images || props.features.files) ? uploadEditorImage : undefined,
+      uploadFile: (props.features.images || props.features.files) ? uploadFile : undefined,
       tables: { splitCells: true, cellBackgroundColor: true, cellTextColor: true, headers: true },
       pasteHandler: enhancePasteHandler,
       // The edge-drop cursor is what turns "drag a block to the side of

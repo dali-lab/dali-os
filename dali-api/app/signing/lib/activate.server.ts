@@ -3,7 +3,7 @@
 // Extracted from the Drive agreement detail action so the agreements console can
 // trigger the same one-click term rollover — one code path, no drift.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { logAuditEvent } from "~/lib/audit";
 import { resolveAdminScope } from "./scope.server";
 import { applyAdminSignatures } from "./presign.server";

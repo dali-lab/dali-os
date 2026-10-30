@@ -2,7 +2,7 @@ import { describe, expect, it, beforeEach, vi } from "vitest";
 
 // wallet-token imports prisma at module level; mock the module so tests don't
 // need a real DB connection.
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 
 import { signWalletAuthToken, verifyWalletAuthToken } from "./wallet-token";
 

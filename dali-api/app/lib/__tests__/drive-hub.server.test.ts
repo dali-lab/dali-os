@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     project: { findMany: vi.fn() },
     term: { findUnique: vi.fn() },
@@ -11,7 +11,7 @@ vi.mock("~/lib/db", () => ({
   },
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import {
   loadProjectWorkspaces,
   loadEducationWorkspaces,

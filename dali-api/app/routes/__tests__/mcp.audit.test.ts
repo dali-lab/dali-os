@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const mockLogAuditEvent = vi.hoisted(() => vi.fn());
 const mockAuthenticate = vi.hoisted(() => vi.fn());
 
-vi.mock("~/lib/db", () => ({ prisma: {} }));
+vi.mock("~/lib/db.server", () => ({ prisma: {} }));
 vi.mock("~/lib/audit", () => ({ logAuditEvent: mockLogAuditEvent }));
 vi.mock("~/lib/mcp-auth", () => ({ authenticateMcpRequest: mockAuthenticate }));
 vi.mock("~/lib/rate-limit", () => ({ checkRateLimit: () => null }));

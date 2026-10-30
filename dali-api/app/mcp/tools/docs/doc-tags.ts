@@ -3,7 +3,7 @@
 //   manage_doc_tags  — mcp:admin  (Core: create, archive)
 //   apply_doc_tag    — mcp:write  (Core: add/remove tag on doc or file)
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore } from "~/lib/roles";
 import { requireForAction } from "~/mcp/registry";
 import { logAuditEvent } from "~/lib/audit";

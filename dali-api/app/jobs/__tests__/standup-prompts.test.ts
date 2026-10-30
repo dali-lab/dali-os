@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/slack/lib/slack-client", () => ({
   slackConfigured: vi.fn().mockReturnValue(true),
   postMessage: vi.fn().mockResolvedValue({ ts: "1" }),
@@ -10,7 +10,7 @@ vi.mock("~/lib/outbound.server", () => ({
   drainNow: vi.fn(async () => {}),
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
 import { runStandupPrompts } from "~/jobs/standup-prompts.server";
 

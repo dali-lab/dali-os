@@ -1,7 +1,7 @@
 import { Link, useLoaderData } from "react-router";
 import { ArrowLeft } from "lucide-react";
 import { useOsChrome } from "~/components/os-chrome";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { hasCycleAccess } from "~/lib/roles";

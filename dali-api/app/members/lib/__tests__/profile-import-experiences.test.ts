@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/auth", () => ({
   requireAuth: vi.fn(),
   redirectNonMemberToPortal: vi.fn().mockResolvedValue(null),
@@ -14,7 +14,7 @@ vi.mock("~/lib/roles", () => ({
 vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabled: vi.fn() }));
 
 import { requireAuth } from "~/lib/auth";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isAdmin } from "~/lib/roles";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { runProfileAction } from "~/members/lib/profile-page.server";

@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { loadPublicForm } from "~/forms/lib/public-form";
 
 const mockPrisma = prisma as unknown as Record<
@@ -99,6 +99,18 @@ describe("loadPublicForm term token", () => {
     const form = await loadPublicForm("tok");
 
     expect(form?.questions[0].data.label).toContain("{{term}}");
+  });
+});
+
+describe("loadPublicForm icon", () => {
+  it("serves the form page's emoji to the fill view", async () => {
+    mockPrisma.form.findUnique.mockResolvedValue({ ...formRow([]), page: { iconEmoji: "📋" } });
+    expect((await loadPublicForm("tok"))?.iconEmoji).toBe("📋");
+  });
+
+  it("serves null when the form has no emoji", async () => {
+    mockPrisma.form.findUnique.mockResolvedValue({ ...formRow([]), page: { iconEmoji: null } });
+    expect((await loadPublicForm("tok"))?.iconEmoji).toBeNull();
   });
 });
 

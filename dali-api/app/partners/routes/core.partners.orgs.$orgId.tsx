@@ -28,9 +28,8 @@ import type { Route } from "./+types/core.partners.orgs.$orgId";
 import { requireAuth, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { recordRouteVisit } from "~/lib/user-pages.server";
-import { prisma } from "~/lib/db";
-import { isCore, getUserRoles } from "~/lib/roles";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
+import { prisma } from "~/lib/db.server";
+import { isCore } from "~/lib/roles";
 import { coreHandle } from "~/core/coreNav";
 import { logAuditEvent } from "~/lib/audit";
 import { resolvePhotoUrl } from "~/lib/photo";
@@ -39,6 +38,7 @@ import { formatUsd } from "~/lib/money";
 import { PROJECT_FUNDING_TYPE_LABELS } from "~/lib/chart-string";
 import { EditableSection } from "~/components/EditableSection";
 import { PartnerActivityFeed } from "../components/PartnerActivityFeed";
+import { loadPartnerActivityPage } from "../lib/partner-activity-page.server";
 import { OrgAvatar } from "../components/org/OrgAvatar";
 import { OrgStatusPill, OrgTypePill } from "../components/org/OrgStatusPill";
 import { InvoicesPanel } from "../components/org/InvoicesPanel";
@@ -94,8 +94,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   if (!canEdit) return redirect("/");
 
   const now = new Date();
-  const roles = await getUserRoles(auth.user.sub, request);
-  const financeEnabled = await isFeatureEnabled("partner-finance", auth.user.sub, roles, request);
 
   const org = await prisma.partnerOrg.findUnique({
     where: { id: params.orgId },
@@ -179,7 +177,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   // failed bookkeeping write must not cost the reader their org page.
   recordRouteVisit(auth.user.sub, `/core/partners/orgs/${org.id}`, org.name, request);
 
-  const [pendingInvites, linkableProjects, otherOrgs, allContacts, activityRows, lastActivityRow] =
+  const [pendingInvites, linkableProjects, otherOrgs, allContacts, activityPage, lastActivityRow] =
     await Promise.all([
       listPendingInvites(org.id),
       prisma.project.findMany({
@@ -201,52 +199,13 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         orderBy: { name: "asc" },
         select: { id: true, name: true, email: true },
       }),
-      prisma.partnerActivity.findMany({
-        where: { orgId: org.id },
-        orderBy: { createdAt: "desc" },
-        take: 50,
-        select: {
-          id: true,
-          createdAt: true,
-          applicationId: true,
-          actorUserId: true,
-          type: true,
-          body: true,
-          metadata: true,
-        },
-      }),
+      loadPartnerActivityPage({ orgId: org.id }),
       prisma.partnerActivity.findFirst({
         where: { orgId: org.id },
         orderBy: { createdAt: "desc" },
         select: { createdAt: true },
       }),
     ]);
-
-  const activities = activityRows.map((r) => ({
-    id: r.id,
-    createdAt: r.createdAt.toISOString(),
-    applicationId: r.applicationId,
-    actorUserId: r.actorUserId,
-    type: r.type,
-    body: r.body,
-    metadata: (r.metadata ?? null) as Record<string, unknown> | null,
-  }));
-  const actorIds = [
-    ...new Set(activityRows.map((r) => r.actorUserId).filter(Boolean)),
-  ] as string[];
-  let actorNames: Record<string, string> = {};
-  if (actorIds.length > 0) {
-    const users = await prisma.user.findMany({
-      where: { id: { in: actorIds } },
-      select: { id: true, firstName: true, lastName: true, daliEmail: true },
-    });
-    actorNames = Object.fromEntries(
-      users.map((u) => [
-        u.id,
-        [u.firstName, u.lastName].filter(Boolean).join(" ") || u.daliEmail || u.id,
-      ]),
-    );
-  }
 
   const status = partnerRelationshipStatus({
     projectLinks: org.projects.map((p) => ({ endedAt: p.endedAt })),
@@ -263,34 +222,32 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     termCode: string;
     projectName: string;
   }[] = [];
-  if (financeEnabled) {
-    const projectIds = org.projects.map((p) => p.projectId);
-    if (projectIds.length > 0) {
-      const rows = await prisma.projectChartString.findMany({
-        where: { projectId: { in: projectIds }, isCurrent: true },
-        select: {
-          id: true,
-          raw: true,
-          normalized: true,
-          type: true,
-          fundingType: true,
-          projectId: true,
-          term: { select: { code: true, sortKey: true } },
-        },
-      });
-      const projectNameById = new Map(org.projects.map((p) => [p.projectId, p.project.name]));
-      chartStrings = rows
-        .sort((a, b) => b.term.sortKey - a.term.sortKey)
-        .map((r) => ({
-          id: r.id,
-          raw: r.raw,
-          normalized: r.normalized,
-          type: r.type,
-          fundingType: r.fundingType,
-          termCode: r.term.code,
-          projectName: projectNameById.get(r.projectId ?? "") ?? "",
-        }));
-    }
+  const projectIds = org.projects.map((p) => p.projectId);
+  if (projectIds.length > 0) {
+    const rows = await prisma.projectChartString.findMany({
+      where: { projectId: { in: projectIds }, isCurrent: true },
+      select: {
+        id: true,
+        raw: true,
+        normalized: true,
+        type: true,
+        fundingType: true,
+        projectId: true,
+        term: { select: { code: true, sortKey: true } },
+      },
+    });
+    const projectNameById = new Map(org.projects.map((p) => [p.projectId, p.project.name]));
+    chartStrings = rows
+      .sort((a, b) => b.term.sortKey - a.term.sortKey)
+      .map((r) => ({
+        id: r.id,
+        raw: r.raw,
+        normalized: r.normalized,
+        type: r.type,
+        fundingType: r.fundingType,
+        termCode: r.term.code,
+        projectName: projectNameById.get(r.projectId ?? "") ?? "",
+      }));
   }
 
   return {
@@ -316,9 +273,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     linkableProjects,
     otherOrgs,
     allContacts,
-    activities,
-    actorNames,
-    financeEnabled,
+    activities: activityPage.items,
+    activitiesNextCursor: activityPage.nextCursor,
+    actorNames: activityPage.actorNames,
     chartStrings,
     canEdit,
     // Cleanup affordance for duplicate-org husks: deletable only when truly
@@ -1254,8 +1211,8 @@ export default function PartnerOrgDetail() {
     otherOrgs,
     allContacts,
     activities,
+    activitiesNextCursor,
     actorNames,
-    financeEnabled,
     chartStrings,
     canDeleteOrg,
     canEdit,
@@ -1284,7 +1241,7 @@ export default function PartnerOrgDetail() {
 
   const tabParam = searchParams.get("tab");
   const tab: OrgTab =
-    isOrgTab(tabParam) && (tabParam !== "finance" || financeEnabled) ? tabParam : "timeline";
+    isOrgTab(tabParam) ? tabParam : "timeline";
   const setTab = (next: OrgTab) =>
     setSearchParams(
       (prev) => {
@@ -1302,9 +1259,7 @@ export default function PartnerOrgDetail() {
     { label: "Contacts", value: "contacts" as const, icon: Users },
     { label: "Applications", value: "applications" as const, icon: ClipboardList },
     { label: "Projects", value: "projects" as const, icon: FolderKanban },
-    ...(financeEnabled
-      ? [{ label: "Finance", value: "finance" as const, icon: CircleDollarSign }]
-      : []),
+    { label: "Finance", value: "finance" as const, icon: CircleDollarSign },
     { label: "Settings", value: "settings" as const, icon: SettingsIcon },
   ];
 
@@ -1377,7 +1332,13 @@ export default function PartnerOrgDetail() {
       />
 
       {tab === "timeline" && (
-        <PartnerActivityFeed activities={activities} actorNames={actorNames} canEdit={canEdit} />
+        <PartnerActivityFeed
+          activities={activities}
+          nextCursor={activitiesNextCursor}
+          scope={{ orgId: org.id }}
+          actorNames={actorNames}
+          canEdit={canEdit}
+        />
       )}
 
       {tab === "contacts" && (
@@ -1859,7 +1820,7 @@ export default function PartnerOrgDetail() {
         </section>
       )}
 
-      {tab === "finance" && financeEnabled && (
+      {tab === "finance" && (
         <div className="flex flex-col gap-4">
           <section className="bg-card border border-border rounded-lg p-4 flex flex-col gap-3">
             <h2 className="font-heading font-semibold text-foreground">Deal terms</h2>

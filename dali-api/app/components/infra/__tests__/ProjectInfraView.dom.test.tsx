@@ -9,7 +9,7 @@ import type { ProjectFleet } from "~/lib/infra/dashboard.server";
 
 const quota = { activeTimeSeconds: null, computeTimeSeconds: null, writtenDataBytes: null, dataTransferBytes: null, logicalSizeBytes: null };
 
-function fleet(): ProjectFleet {
+function fleet(over: Partial<ProjectFleet> = {}): ProjectFleet {
   return {
     projectId: "p1",
     name: "Work Health",
@@ -45,16 +45,19 @@ function fleet(): ProjectFleet {
     flyFetchedAt: null,
     neonFetchedAt: null,
     usage: [],
+    neonDaily: [],
+    flyDaily: [],
+    ...over,
   };
 }
 
 let root: Root | null = null;
 let container: HTMLDivElement;
-function render() {
+function render(project = fleet()) {
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
-  act(() => root!.render(createElement(ProjectInfraView, { project: fleet() })));
+  act(() => root!.render(createElement(ProjectInfraView, { project })));
 }
 afterEach(() => {
   act(() => root?.unmount());
@@ -104,5 +107,65 @@ describe("ProjectInfraView", () => {
     expect(container.textContent).toContain("Est. $4.12 this month");
     expect(container.textContent).toContain("last month est. $3.00");
     expect(container.textContent).toContain("est. $4.12 this month");
+  });
+
+  const series = (metric: string, current: number) => ({ metric, points: [], current });
+  const withDaily = () =>
+    fleet({
+      neonDaily: [{ day: "2026-10-24", compute_unit_seconds: 7200, public_network_transfer_bytes: 1e9 }],
+      usage: [
+        series("compute_unit_seconds", 36_000),
+        series("public_network_transfer_bytes", 2e9),
+        series("root_branch_bytes_month", 5e8),
+        series("egress_bytes", 1024),
+      ],
+    });
+  const stripLabels = () =>
+    Array.from(container.querySelectorAll("span.uppercase")).map((el) => el.textContent);
+
+  it("shows the usage chart's month figures once daily Neon usage exists", () => {
+    render(withDaily());
+    expect(container.textContent).toContain("Est. Neon cost this month$4.12");
+    expect(container.textContent).toContain("Launch plan · Last month est. $3.00");
+    expect(container.textContent).toContain("Compute this month10.0 CU·h");
+    expect(container.textContent).toContain("Data out this month");
+    expect(container.querySelector('[aria-label="Date range"]')).not.toBeNull();
+  });
+
+  it("drops the cost line and the charted metrics from the strip when the chart shows", () => {
+    render(withDaily());
+    expect(container.textContent).not.toContain("Neon Launch plan");
+    expect(stripLabels()).toEqual(["Root storage", "Fly egress (24h)"]);
+  });
+
+  it("keeps the strip and cost line without daily Neon usage", () => {
+    render(fleet({ usage: [series("compute_unit_seconds", 3600)] }));
+    expect(container.querySelector('[aria-label="Date range"]')).toBeNull();
+    expect(stripLabels()).toEqual(["Compute (CU·h)"]);
+    expect(container.textContent).toContain("Neon Launch plan");
+  });
+
+  it("shows the Fly traffic chart once daily Fly usage exists", () => {
+    render(
+      fleet({
+        flyDaily: [{ day: "2026-10-24", app: "web", requests: 1200, errors_5xx: 3, p95_ms: 420, memory_peak_bytes: 5e8 }],
+      }),
+    );
+    expect(container.textContent).toContain("Requests1,200");
+    expect(container.textContent).toContain("Server errors3");
+  });
+
+  it("doesn't say there are no samples when only a chart has data", () => {
+    render(
+      fleet({
+        flyDaily: [{ day: "2026-10-24", app: "web", requests: 1, errors_5xx: 0, p95_ms: null, memory_peak_bytes: null }],
+      }),
+    );
+    expect(container.textContent).not.toContain("No usage samples yet.");
+  });
+
+  it("has no Fly chart without daily Fly usage", () => {
+    render();
+    expect(container.textContent).not.toContain("Server errors");
   });
 });

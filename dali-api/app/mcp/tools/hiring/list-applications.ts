@@ -1,12 +1,15 @@
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { applicationBlindLabelsForCycle } from "~/hiring/lib/anonymization.server";
 import { getUserRoles, hasCycleAccess } from "~/lib/roles";
 import { McpForbiddenError, McpNotFoundError } from "../../registry";
+import { pageArray, pageProps, type PageArgs } from "../../pagination";
+
+const PAGE_LIMITS = { defaultLimit: 50, maxLimit: 200 };
 
 export const LIST_APPLICATIONS_TOOL = {
   name: "list_applications",
   description:
-    "List domain application summary rows for a hiring cycle. Optionally filter by domain or application status. Core/domain-leads see all domains; reviewers see only their assigned domains. Returns applicant summary rows (no full answers).",
+    "List domain application summary rows for a hiring cycle. Optionally filter by domain or application status. Core/domain-leads see all domains; reviewers see only their assigned domains. Returns applicant summary rows (no full answers). Pass page.nextCursor as cursor to read the next page until page.hasMore is false.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -24,6 +27,7 @@ export const LIST_APPLICATIONS_TOOL = {
         description:
           "Optional application status filter (e.g. Submitted, Draft, Withdrawn).",
       },
+      ...pageProps(PAGE_LIMITS),
     },
     required: ["cycleId"],
     additionalProperties: false,
@@ -31,7 +35,7 @@ export const LIST_APPLICATIONS_TOOL = {
   requiredScope: "mcp:read" as const,
 };
 
-type Input = { cycleId: string; domainId?: string; status?: string };
+type Input = PageArgs & { cycleId: string; domainId?: string; status?: string };
 
 export async function runListApplications(userId: string, input: Input): Promise<unknown> {
   const cycle = await prisma.applicationCycle.findUnique({
@@ -54,7 +58,7 @@ export async function runListApplications(userId: string, input: Input): Promise
       select: { domainId: true },
     });
     visibleDomainIds = reviewerRows.map((r) => r.domainId);
-    if (visibleDomainIds.length === 0) return { applications: [] };
+    if (visibleDomainIds.length === 0) return emptyResult(input);
   }
 
   const effectiveDomainIds: string[] | undefined =
@@ -66,7 +70,7 @@ export async function runListApplications(userId: string, input: Input): Promise
         : [input.domainId]
       : visibleDomainIds ?? undefined;
 
-  if (effectiveDomainIds !== undefined && effectiveDomainIds.length === 0) return { applications: [] };
+  if (effectiveDomainIds !== undefined && effectiveDomainIds.length === 0) return emptyResult(input);
 
   const whereOr = effectiveDomainIds
     ? [{ domainId: { in: effectiveDomainIds } }]
@@ -107,12 +111,9 @@ export async function runListApplications(userId: string, input: Input): Promise
     filtered.map((da) => da.application.id),
   );
 
-  // Wrapped in an object: MCP `structuredContent` must be a JSON object, so a
-  // bare array fails result validation on the client before the caller sees it.
   // Sorted after blinding (as the web list is) so row order can't leak the
   // alphabetical position of a blinded applicant's real name.
-  return {
-    applications: filtered
+  const sorted = filtered
       .map((da) => {
         const u = da.application.user;
         const updates = da.application.statusUpdates;
@@ -133,9 +134,16 @@ export async function runListApplications(userId: string, input: Input): Promise
       .sort(
         (a, b) =>
           (a.applicantName ?? "").localeCompare(b.applicantName ?? "", undefined, { numeric: true }) ||
-          (a.domain ?? "").localeCompare(b.domain ?? ""),
-      ),
-  };
+          (a.domain ?? "").localeCompare(b.domain ?? "") ||
+          a.domainApplicationId.localeCompare(b.domainApplicationId),
+      );
+  const { rows, page } = pageArray(sorted, input, PAGE_LIMITS);
+  return { applications: rows, page };
+}
+
+function emptyResult(input: Input) {
+  const { rows, page } = pageArray([], input, PAGE_LIMITS);
+  return { applications: rows, page };
 }
 
 // Blinding is a whole-application state: every selected domain counts, including

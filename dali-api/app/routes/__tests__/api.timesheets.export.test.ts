@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
 vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn() }));
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     timeEntry: { findMany: vi.fn() },
     userAvailabilitySettings: { findUnique: vi.fn() },
@@ -15,7 +15,7 @@ vi.mock("~/lib/cors", () => ({
 }));
 
 import { requireAuth } from "~/lib/auth";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { getRoleLabel, getUserRoleInstances } from "~/lib/roles";
 import { loader } from "~/routes/api.timesheets.export";
 

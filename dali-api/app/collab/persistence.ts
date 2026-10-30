@@ -1,7 +1,7 @@
 import * as Y from "yjs";
 import { yDocToProsemirrorJSON } from "y-prosemirror";
 import type { Server as HocuspocusServer } from "@hocuspocus/server";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { blocksToPlainText } from "~/components/doc/schema/configs";
 import { indexPageBody } from "~/lib/doc-search.server";
 import { isPresenceRoom } from "./roomName";

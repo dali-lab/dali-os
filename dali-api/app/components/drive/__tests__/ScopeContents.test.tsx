@@ -97,6 +97,36 @@ describe("ScopeContents folder band", () => {
   });
 });
 
+describe("ScopeContents empty folder", () => {
+  it.each(["list", "grid"] as const)("pictures an empty folder with the drop hint in %s view", (viewMode) => {
+    const out = render([], { atScopeTop: false, viewMode });
+    expect(out).toContain("data-empty-folder-art");
+    expect(out).toContain("This folder is empty. Drop files here to upload.");
+  });
+
+  it("keeps the shared space to plain text", () => {
+    const out = renderToStaticMarkup(
+      <DndContext>
+        <ScopeContents
+          scope={{ ...scope, id: "shared" }}
+          atScopeTop
+          listing={[]}
+          viewMode="list"
+          sort={{ key: "name", dir: "asc" }}
+          onToggleSort={vi.fn()}
+          selected={new Set()}
+          focusId={null}
+          handlers={handlers}
+          actions={actions}
+          dragging={false}
+        />
+      </DndContext>,
+    );
+    expect(out).toContain("Documents shared with you by name appear here.");
+    expect(out).not.toContain("data-empty-folder-art");
+  });
+});
+
 describe("SearchResults location column", () => {
   const scopes: DriveTreeScope[] = [
     { id: "lab", label: "Lab-wide", iconEmoji: null, items: [folder("f1"), { ...doc("d1"), parentFolderId: "f1" }] },

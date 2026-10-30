@@ -1,5 +1,5 @@
 import type { Route } from "./+types/api.mentions.search";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { isLabMember } from "~/lib/roles";
 import { LAB_MEMBER_WHERE } from "~/lib/prisma-shapes";

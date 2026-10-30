@@ -8,7 +8,7 @@
 // is still Alumni, and the algorithm is immune to churn in the staffing schema.
 
 import type { MembershipStatus } from "~/generated/prisma/client";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import {
   refreshDartmouthSignals,
   type RefreshOptions,

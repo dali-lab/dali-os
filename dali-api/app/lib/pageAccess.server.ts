@@ -18,7 +18,7 @@
 // the same result as before — the ancestry walk falls through to the existing
 // workspaceType-derived logic.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore, isProjectMember, isLabMember } from "~/lib/roles";
 import { partnerHasProjectAccess } from "~/partners/lib/partner-access";
 import { groupIdsForUser, permissionAtLeast, PERMISSION_RANK } from "~/lib/page-sharing.server";

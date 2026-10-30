@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/roles", () => ({ canManageStaffing: vi.fn() }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { canManageStaffing } from "~/lib/roles";
 import {
   runGetStaffingBoard,
@@ -96,6 +96,30 @@ describe("get_staffing_board", () => {
     mockPrisma.domain.findMany.mockResolvedValue([{ id: "d1", displayName: "Fullstack Dev" }]);
     const out = await runGetStaffingBoard(ME, {});
     expect(out.columns.every((c) => c.projectId !== null)).toBe(true);
+  });
+
+  it("filters to one project and leaves out the unassigned column", async () => {
+    mockPrisma.staffingAssignment.findMany.mockResolvedValue([
+      {
+        userId: "u1",
+        projectId: "p1",
+        domainId: "d1",
+        level: "P2",
+        status: "Proposed",
+        user: { firstName: "Ada", lastName: "Lovelace" },
+      },
+    ]);
+    mockPrisma.project.findMany.mockResolvedValue([{ id: "p1", name: "DALI OS" }]);
+    mockPrisma.domain.findMany.mockResolvedValue([{ id: "d1", displayName: "Fullstack Dev" }]);
+    mockPrisma.staffingBoardMember.findMany.mockClear();
+
+    const out = await runGetStaffingBoard(ME, { projectId: "p1" });
+    expect(mockPrisma.staffingAssignment.findMany.mock.calls.at(-1)![0].where).toMatchObject({
+      projectId: "p1",
+      status: { not: "Declined" },
+    });
+    expect(mockPrisma.staffingBoardMember.findMany).not.toHaveBeenCalled();
+    expect(out.columns.map((c) => c.projectId)).toEqual(["p1"]);
   });
 
   it("404s when no cycle exists at all", async () => {

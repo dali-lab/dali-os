@@ -21,13 +21,13 @@ vi.mock("~/mcp/registry", () => {
   return { McpError, McpNotFoundError, McpForbiddenError, McpInvalidError };
 });
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/roles", async (orig) => {
   const real = await orig<typeof import("~/lib/roles")>();
   return { ...real, getUserRoles: vi.fn(), hasCycleAccess: vi.fn() };
 });
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { getUserRoles, hasCycleAccess } from "~/lib/roles";
 import { LIST_APPLICATIONS_TOOL, runListApplications } from "../list-applications";
 
@@ -187,7 +187,10 @@ describe("list_applications", () => {
     mockPrisma.cycleReviewer.findMany.mockResolvedValue([]);
 
     const result = await runListApplications("u2", { cycleId: "cy1" });
-    expect(result).toEqual({ applications: [] });
+    expect(result).toEqual({
+      applications: [],
+      page: { nextCursor: null, hasMore: false, limit: 50, total: 0 },
+    });
     expect(mockPrisma.domainApplication.findMany).not.toHaveBeenCalled();
   });
 
@@ -198,7 +201,10 @@ describe("list_applications", () => {
     mockPrisma.cycleReviewer.findMany.mockResolvedValue([{ domainId: "dom1" }]);
 
     const result = await runListApplications("u2", { cycleId: "cy1", domainId: "dom2" });
-    expect(result).toEqual({ applications: [] });
+    expect(result).toEqual({
+      applications: [],
+      page: { nextCursor: null, hasMore: false, limit: 50, total: 0 },
+    });
     expect(mockPrisma.domainApplication.findMany).not.toHaveBeenCalled();
   });
 
@@ -355,5 +361,67 @@ describe("list_applications blind review", () => {
     expect((await list()).map((r) => r.applicantName)).toEqual(["Ada Lovelace", "Grace Hopper"]);
     expect(mockPrisma.domainApplication.findMany).toHaveBeenCalledTimes(1);
     expect(mockPrisma.decision.findMany).not.toHaveBeenCalled();
+  });
+});
+
+describe("list_applications paging", () => {
+  const names = ["Ada", "Bea", "Cy", "Di", "Eve"];
+  function setupPaged() {
+    setupBlindCycle({
+      anonymizeReview: false,
+      listed: names.map((n, i) => makeApp({ daId: `da${i}`, appId: `app${i}`, first: n, last: "Test" })),
+      selected: [],
+      creationOrder: [],
+    });
+  }
+  const run = (input: object) =>
+    runListApplications("u1", { cycleId: "cy1", ...input }) as Promise<{
+      applications: Row[];
+      page: { nextCursor: string | null; hasMore: boolean; total: number };
+    }>;
+
+  it("walks pages in sorted order and ends with a null cursor", async () => {
+    setupPaged();
+    const first = await run({ limit: 2 });
+    expect(first.applications.map((r) => r.applicantName)).toEqual(["Ada Test", "Bea Test"]);
+    expect(first.page).toMatchObject({ hasMore: true, total: 5 });
+    const second = await run({ limit: 2, cursor: first.page.nextCursor! });
+    expect(second.applications.map((r) => r.applicantName)).toEqual(["Cy Test", "Di Test"]);
+    const third = await run({ limit: 2, cursor: second.page.nextCursor! });
+    expect(third.applications.map((r) => r.applicantName)).toEqual(["Eve Test"]);
+    expect(third.page).toMatchObject({ hasMore: false, nextCursor: null });
+  });
+
+  it("pages blinded rows in label order, not name order", async () => {
+    setupBlindCycle({
+      listed: [
+        makeApp({ daId: "da1", appId: "app1", first: "Ada", last: "Adams" }),
+        makeApp({ daId: "da2", appId: "app2", first: "Zed", last: "Zimmer" }),
+      ],
+      selected: [
+        { id: "da1", applicationId: "app1" },
+        { id: "da2", applicationId: "app2" },
+      ],
+      creationOrder: ["app2", "app1"],
+    });
+    const first = await run({ limit: 1 });
+    expect(first.applications.map((r) => r.applicantName)).toEqual(["Applicant 1"]);
+    const second = await run({ limit: 1, cursor: first.page.nextCursor! });
+    expect(second.applications.map((r) => r.applicantName)).toEqual(["Applicant 2"]);
+  });
+
+  it("counts only the reviewer's scoped and status-filtered rows in total", async () => {
+    vi.mocked(getUserRoles).mockResolvedValue(reviewerRoles);
+    mockPrisma.applicationCycle.findUnique.mockResolvedValue({ id: "cy1", anonymizeReview: false });
+    vi.mocked(hasCycleAccess).mockResolvedValue(true);
+    mockPrisma.cycleReviewer.findMany.mockResolvedValue([{ domainId: "dom1" }]);
+    const draft = { ...makeApp({ daId: "da9", appId: "app9", first: "Zoe", last: "Test" }) };
+    draft.application.statusUpdates = [{ newStatus: "Draft", createdAt: new Date("2026-09-10") }];
+    mockPrisma.domainApplication.findMany.mockResolvedValue([
+      makeApp({ daId: "da1", appId: "app1", first: "Ada", last: "Test" }),
+      draft,
+    ]);
+    const out = await run({ status: "Submitted" });
+    expect(out.page.total).toBe(1);
   });
 });

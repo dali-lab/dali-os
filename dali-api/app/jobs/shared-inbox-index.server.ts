@@ -19,7 +19,7 @@
 // backfill fills in the earliest gaps before the most recent ones, making
 // steady forward progress across runs instead of thrashing on new mail.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import type { EmailSendPurpose } from "~/generated/prisma/client";
 import type { JobContext, JobResult } from "~/jobs/registry";
 import { PARTNERS_FROM_EMAIL } from "~/lib/app-env";

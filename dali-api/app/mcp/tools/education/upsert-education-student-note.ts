@@ -3,7 +3,7 @@
 
 import { upsertStudentNote } from "~/education/lib/student-notes.server";
 import { isOfferingManager } from "~/education/lib/access.server";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import type { McpCtx, McpTool } from "../../registry";
 import { McpForbiddenError, McpNotFoundError, McpInvalidError } from "../../registry";
 

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 // Availability comes from each member's DALI OS calendar. By default every
 // interviewer's calendar is free for the whole window (every fixture here is);
 // a test narrows it with setCalendarFree.
@@ -11,8 +11,16 @@ vi.mock("~/lib/rooms.server", () => ({
   getRoomSchedule: vi.fn(),
   blockedBy: vi.fn(),
 }));
+vi.mock("~/hiring/lib/interview-emails", () => ({
+  sendReassignmentEmails: vi.fn().mockResolvedValue(undefined),
+}));
+vi.mock("~/hiring/lib/interview-notifications", () => ({
+  notifyInterviewAssigned: vi.fn().mockResolvedValue(undefined),
+}));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
+import { sendReassignmentEmails } from "~/hiring/lib/interview-emails";
+import { notifyInterviewAssigned } from "~/hiring/lib/interview-notifications";
 import { interviewerCalendars } from "~/hiring/lib/interview-availability.server";
 import { createRoomBooking, getRoomSchedule, blockedBy } from "~/lib/rooms.server";
 
@@ -1079,6 +1087,7 @@ describe("reassignInterviewer", () => {
               applicationCycleId: "cycle1",
               startTime: new Date("2026-04-13T14:00:00Z"),
               endTime: new Date("2026-04-13T14:30:00Z"),
+              domainApplicationId: "da1",
               domainApplication: {
                 domain: { id: "domain1" },
               },
@@ -1087,13 +1096,14 @@ describe("reassignInterviewer", () => {
                 { cycleInterviewerId: "r3" },
               ],
             },
+            cycleInterviewerId: "r1",
           }),
           findMany: vi.fn().mockResolvedValue([
             { cycleInterviewer: { userId: "m1" } },
             { cycleInterviewer: { userId: "m3" } },
           ]),
           update: vi.fn().mockResolvedValue({}),
-          create: vi.fn().mockResolvedValue({ cycleInterviewerId: "r2" }),
+          create: vi.fn().mockResolvedValue({ id: "a2", cycleInterviewerId: "r2" }),
         },
         interviewConfig: {
           findUnique: vi.fn().mockResolvedValue({ bufferMinutes: 15 }),
@@ -1121,6 +1131,9 @@ describe("reassignInterviewer", () => {
     const result = await reassignInterviewer("int1", "a1");
     expect(result.reassigned).toBe(true);
     expect(result.newInterviewerId).toBe("r2");
+    // Names the decliner directly: their assignment is no longer Active by now.
+    expect(sendReassignmentEmails).toHaveBeenCalledWith("int1", "da1", "r1", "r2");
+    expect(notifyInterviewAssigned).toHaveBeenCalledWith({ assignmentIds: ["a2"] });
   });
 
   it("does not pick a different row for the same human as replacement", async () => {
@@ -1217,6 +1230,8 @@ describe("reassignInterviewer", () => {
     await expect(reassignInterviewer("int1", "a1")).rejects.toThrow(
       "No replacement interviewer available",
     );
+    expect(sendReassignmentEmails).not.toHaveBeenCalled();
+    expect(notifyInterviewAssigned).not.toHaveBeenCalled();
   });
 
   it("throws when assignment not found", async () => {

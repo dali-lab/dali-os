@@ -4,7 +4,7 @@ import { Bell, LogOut, Menu, PanelLeftClose, PanelLeftOpen, Search, Settings, X 
 import { Tooltip } from '~/components/ui/floating'
 import { userInitials } from '~/lib/display'
 import { useAttentionFeed } from '~/components/NotificationBell'
-import { TasksDrawer, attentionCount } from '~/components/AttentionPanel'
+import { TasksDrawer, attentionTotal } from '~/components/AttentionPanel'
 import { CommandPalette } from '~/components/CommandPalette'
 import { useShellNav } from '~/components/shell-nav'
 import { useOsShellRoot } from '~/lib/os-shell'
@@ -121,8 +121,11 @@ export function LayoutPortalOS({
   }
 
   const initials = userInitials(user)
-  const { tasks: openTasks, items: feedItems, projectTasks } = useAttentionFeed()
-  const taskCount = attentionCount(openTasks, feedItems, projectTasks)
+  const { tasks: openTasks, items: feedItems, projectTasks, taskTotal, projectTaskTotal } = useAttentionFeed()
+  const taskCount = attentionTotal(openTasks, feedItems, projectTasks, {
+    tasks: taskTotal,
+    projectTasks: projectTaskTotal,
+  })
 
   /* ---------------- Tasks drawer (bell, top bar) ---------------- */
   const [bellOpen, setBellOpen] = useState(false)
@@ -305,6 +308,8 @@ export function LayoutPortalOS({
         tasks={openTasks}
         notifications={feedItems}
         projectTasks={projectTasks}
+        total={taskCount}
+        allTasksLink={false}
         onOpen={(url, label) => {
           closeBellPanel()
           openInWorkspace({ url, label })

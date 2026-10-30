@@ -1,10 +1,10 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: { scheduledMeeting: { findMany: vi.fn() }, page: { findMany: vi.fn() } },
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { nextNoteTargets } from "~/lib/notebook-series.server";
 
 const m = prisma as any;

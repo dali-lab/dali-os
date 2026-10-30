@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { runListMyTasks, LIST_MY_TASKS_TOOL } from "~/mcp/tools/list-my-tasks";
 
 const mockPrisma = prisma as unknown as {
@@ -65,5 +65,40 @@ describe("list_my_tasks", () => {
         }),
       }),
     );
+  });
+
+  it("pages by offset with an id tiebreak on the nullable dueAt sort", async () => {
+    const row = (id: string) => ({
+      id,
+      title: id,
+      status: "Todo",
+      priority: "Normal",
+      dueAt: null,
+      createdAt: new Date("2026-06-01T00:00:00Z"),
+      projectId: "p1",
+      project: { name: "Alpha" },
+      epicId: null,
+      epic: null,
+      domain: null,
+      assignees: [],
+    });
+    mockPrisma.task.findMany.mockResolvedValueOnce([row("a"), row("b")]);
+    const first = await runListMyTasks("u1", { limit: 1 });
+    expect(first.tasks.map((t) => t.id)).toEqual(["a"]);
+    expect(first.page).toMatchObject({ hasMore: true, limit: 1 });
+    expect(mockPrisma.task.findMany.mock.calls[0][0].orderBy.at(-1)).toEqual({ id: "asc" });
+
+    mockPrisma.task.findMany.mockResolvedValueOnce([row("b")]);
+    const second = await runListMyTasks("u1", { limit: 1, cursor: first.page.nextCursor! });
+    expect(mockPrisma.task.findMany.mock.calls[1][0]).toMatchObject({ skip: 1, take: 2 });
+    expect(second.tasks.map((t) => t.id)).toEqual(["b"]);
+    expect(second.page).toMatchObject({ hasMore: false, nextCursor: null });
+  });
+
+  it("caps the limit at 100 and rejects a bad cursor", async () => {
+    mockPrisma.task.findMany.mockResolvedValue([]);
+    await runListMyTasks("u1", { limit: 5000 });
+    expect(mockPrisma.task.findMany.mock.calls[0][0].take).toBe(101);
+    await expect(runListMyTasks("u1", { cursor: "nope" })).rejects.toThrow(/Invalid cursor/);
   });
 });

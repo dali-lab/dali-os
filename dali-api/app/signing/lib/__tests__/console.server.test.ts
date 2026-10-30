@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/roles", () => ({ currentTerm: vi.fn() }));
 vi.mock("~/signing/lib/audiences", () => ({
   AUDIENCE_RESOLVERS: {
@@ -9,7 +9,7 @@ vi.mock("~/signing/lib/audiences", () => ({
   },
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { currentTerm } from "~/lib/roles";
 import { AUDIENCE_RESOLVERS } from "~/signing/lib/audiences";
 import { getAgreementsOverview } from "~/signing/lib/console.server";

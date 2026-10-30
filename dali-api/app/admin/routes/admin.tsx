@@ -4,7 +4,7 @@ import type { Route } from "./+types/admin";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { isAdmin, isCore } from "~/lib/roles";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { cn } from "~/lib/cn";
 import { listSenderIntegrations } from "~/lib/gmail-integration";
 import { EMAIL_PURPOSE_KEYS, EMAIL_PURPOSES } from "~/lib/email-identities";

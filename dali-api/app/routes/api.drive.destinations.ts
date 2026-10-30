@@ -1,5 +1,5 @@
 import type { Route } from "./+types/api.drive.destinations";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireMemberSession } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
 import { PAGE_ACCESS_SELECT, getPageAccessBulk } from "~/lib/pageAccess.server";
@@ -54,7 +54,6 @@ export async function loader({ request }: Route.LoaderArgs) {
       projectIconEmoji: p.iconEmoji,
     })),
     educationWorkspaces: offerings.map((o) => ({ key: o.id, label: o.title, kind: "education" as const })),
-    canViewForms: false,
     canManageAgreements: false,
     isCore: core,
     request,

@@ -215,11 +215,13 @@ export interface TypedNote {
   notebook: string | null; // the notebook it's filed in; null for a personal note
 }
 
-// GET /api/mobile/notes -> the member's latest 30 recordings and 30 typed notes
+// GET /api/mobile/notes[?cursor=] -> a page of up to 30 recordings and 30 typed notes, newest first
 export interface NotesResponse {
   recordingEnabled: boolean; // AI meeting notes flag on and transcription configured
   notes: NoteSummary[];
   pages: TypedNote[];
+  /** Pass as ?cursor= for the next page. Absent from older servers; null on the last page. */
+  nextCursor?: string | null;
 }
 // POST /api/mobile/notes { title } | { scheduledMeetingId, occurrenceStart } -> { pageId, documentName }
 //   a new personal note, or a calendar meeting occurrence's notes page

@@ -5,7 +5,7 @@
 // timeline and task board draw. A task belongs to a sprint by its dates. This
 // tool computes that grid so callers can see the sprint calendar.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { DAY, SPRINT_DAYS, utcDayOf, localTodayUtcDay } from "~/projects/lib/timeline-days";
 
 const SPRINT_STEP = SPRINT_DAYS * DAY;
