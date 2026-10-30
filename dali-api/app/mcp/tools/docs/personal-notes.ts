@@ -29,7 +29,7 @@ const PAGE_LIMITS = { defaultLimit: 50, maxLimit: 200 };
 export const LIST_PERSONAL_NOTES_TOOL = {
   name: "list_personal_notes",
   description:
-    "List personal notes visible to the caller: own notes plus notes shared with them (by direct share or group). Returns note metadata without body content — use get_personal_note to read body. Pass page.nextCursor as cursor to read the next page until page.hasMore is false.",
+    "List personal notes visible to the caller: own notes plus notes shared with them (by direct share or group). Returns note metadata without body content: use get_personal_note to read body. Pass page.nextCursor as cursor to read the next page until page.hasMore is false.",
   inputSchema: {
     type: "object" as const,
     properties: {

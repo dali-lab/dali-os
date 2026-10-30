@@ -90,7 +90,7 @@ async function loadProjectPage(pageId: string) {
 export const LIST_DOCUMENT_SHARING_TOOL = {
   name: "list_document_sharing",
   description:
-    "List a project's documents and files with their sharing state — which are shared with the partner org, which is the public write-up on dali.website, and which are pinned. Use it before changing sharing. Each call returns one kind, so call it once with kind \"pages\" and once with kind \"files\" to see both. Pass page.nextCursor as cursor to read the next page of that kind until page.hasMore is false.",
+    "List a project's documents and files with their sharing state: which are shared with the partner org, which is the public write-up on dali.website, and which are pinned. Use it before changing sharing. Each call returns one kind, so call it once with kind \"pages\" and once with kind \"files\" to see both. Pass page.nextCursor as cursor to read the next page of that kind until page.hasMore is false.",
   inputSchema: {
     type: "object" as const,
     properties: {

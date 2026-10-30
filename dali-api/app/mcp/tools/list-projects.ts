@@ -13,7 +13,7 @@ const PAGE_LIMITS = { defaultLimit: 50, maxLimit: 200 };
 export const LIST_PROJECTS_TOOL = {
   name: "list_projects",
   description:
-    "List every project in the lab (id, name, status, terms, partner orgs) — the full directory, not just the caller's assignments. Use list_my_projects for staffed-on detail; get_project_overview to drill into one. Pass page.nextCursor as cursor to read the next page until page.hasMore is false.",
+    "List every project in the lab (id, name, status, terms, partner orgs): the full directory, not just the caller's assignments. Use list_my_projects for staffed-on detail; get_project_overview to drill into one. Pass page.nextCursor as cursor to read the next page until page.hasMore is false.",
   inputSchema: {
     type: "object" as const,
     properties: {
