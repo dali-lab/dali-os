@@ -7,13 +7,16 @@ import { isCore, isLabMember } from "~/lib/roles";
 import { createLabPage } from "~/lib/pages";
 import { duplicatePage } from "~/lib/page-copy.server";
 import { isRoot, ROOT_DELETE_ERROR, CLEARED_FOLDER_TYPE } from "~/lib/drive-roots";
+import { offsetPage, offsetWindow, pageProps, type PageArgs } from "../../pagination";
+
+const PAGE_LIMITS = { defaultLimit: 50, maxLimit: 200 };
 
 // ─── list_lab_documents ───────────────────────────────────────────────────────
 
 export const LIST_LAB_DOCUMENTS_TOOL = {
   name: "list_lab_documents",
   description:
-    "List lab-wide documents and folders visible to the caller. Returns all non-archived Lab-workspace pages. Optionally filter to the children of a specific folder.",
+    "List lab-wide documents and folders visible to the caller. Returns non-archived Lab-workspace pages at the top level, or the children of parentPageId when given. Pass page.nextCursor as cursor to read the next page until page.hasMore is false.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -21,13 +24,14 @@ export const LIST_LAB_DOCUMENTS_TOOL = {
         type: "string",
         description: "If provided, return only pages nested under this folder.",
       },
+      ...pageProps(PAGE_LIMITS),
     },
     additionalProperties: false,
   },
   requiredScope: "mcp:read" as const,
 };
 
-type ListInput = { parentPageId?: string };
+type ListInput = PageArgs & { parentPageId?: string };
 
 export class LabDocumentError extends Error {
   constructor(message: string, public status: number) {
@@ -41,28 +45,37 @@ export async function runListLabDocuments(callerId: string, input: ListInput) {
     throw new LabDocumentError("Forbidden", 403);
   }
 
-  const pages = await prisma.page.findMany({
-    where: {
-      workspaceType: "Lab",
-      workspaceId: null,
-      archivedAt: null,
-      parentPageId: input.parentPageId ?? null,
-    },
-    orderBy: [{ pinnedAt: "desc" }, { position: "asc" }],
-    select: {
-      id: true,
-      title: true,
-      kind: true,
-      parentPageId: true,
-      pinnedAt: true,
-      position: true,
-      updatedAt: true,
-      iconEmoji: true,
-      tags: { select: { tag: { select: { id: true, label: true, color: true } } } },
-    },
-  });
+  const where = {
+    workspaceType: "Lab" as const,
+    workspaceId: null,
+    archivedAt: null,
+    parentPageId: input.parentPageId ?? null,
+  };
+  const window = offsetWindow(input, PAGE_LIMITS);
+  const [fetched, total] = await Promise.all([
+    prisma.page.findMany({
+      where,
+      orderBy: [{ pinnedAt: "desc" }, { position: "asc" }, { id: "asc" }],
+      skip: window.skip,
+      take: window.take,
+      select: {
+        id: true,
+        title: true,
+        kind: true,
+        parentPageId: true,
+        pinnedAt: true,
+        position: true,
+        updatedAt: true,
+        iconEmoji: true,
+        tags: { select: { tag: { select: { id: true, label: true, color: true } } } },
+      },
+    }),
+    prisma.page.count({ where }),
+  ]);
+  const { rows: pages, page } = offsetPage(fetched, window, total);
 
   return {
+    page,
     documents: pages.map((p) => ({
       id: p.id,
       title: p.title,

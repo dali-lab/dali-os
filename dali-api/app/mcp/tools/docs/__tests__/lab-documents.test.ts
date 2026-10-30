@@ -25,6 +25,7 @@ import {
 const mockPrisma = prisma as unknown as {
   page: {
     findMany: ReturnType<typeof vi.fn>;
+    count: ReturnType<typeof vi.fn>;
     findUnique: ReturnType<typeof vi.fn>;
     update: ReturnType<typeof vi.fn>;
   };
@@ -56,6 +57,28 @@ describe("list_lab_documents", () => {
     const out = await runListLabDocuments("u1", {});
     expect(out.documents).toHaveLength(1);
     expect(out.documents[0]).toMatchObject({ id: "p1", title: "Docs", pinned: false });
+  });
+
+  it("pages with an id tiebreak and a cursor, and the last page has none", async () => {
+    vi.mocked(isLabMember).mockResolvedValue(true);
+    mockPrisma.page.count.mockResolvedValue(3);
+    const row = (id: string) => ({ id, title: id, kind: "FreeForm", parentPageId: null, pinnedAt: null, position: 0, updatedAt: new Date("2026-01-01"), iconEmoji: null, tags: [] });
+    mockPrisma.page.findMany.mockResolvedValueOnce([row("a"), row("b"), row("c")]);
+
+    const first = await runListLabDocuments("u1", { limit: 2 });
+    expect(mockPrisma.page.findMany.mock.calls[0][0]).toMatchObject({
+      orderBy: [{ pinnedAt: "desc" }, { position: "asc" }, { id: "asc" }],
+      skip: 0,
+      take: 3,
+    });
+    expect(first.documents.map((d) => d.id)).toEqual(["a", "b"]);
+    expect(first.page).toMatchObject({ hasMore: true, limit: 2, total: 3 });
+
+    mockPrisma.page.findMany.mockResolvedValueOnce([row("c")]);
+    const second = await runListLabDocuments("u1", { limit: 2, cursor: first.page.nextCursor! });
+    expect(mockPrisma.page.findMany.mock.calls[1][0]).toMatchObject({ skip: 2 });
+    expect(second.documents.map((d) => d.id)).toEqual(["c"]);
+    expect(second.page).toMatchObject({ nextCursor: null, hasMore: false });
   });
 });
 

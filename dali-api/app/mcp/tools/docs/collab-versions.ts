@@ -7,6 +7,16 @@ import { prisma } from "~/lib/db";
 import { authorizeCollabDoc, hydrateAuthors } from "~/lib/collabAuth";
 import { getCollabServer } from "~/collab/server";
 import { restoreVersion } from "~/collab/persistence";
+import {
+  TEXT_PAGE_LIMITS,
+  keysetPage,
+  keysetWindow,
+  pageProps,
+  pageText,
+  type PageArgs,
+} from "../../pagination";
+
+const PAGE_LIMITS = { defaultLimit: 50, maxLimit: 200 };
 
 const PREVIEW_CHARS = 200;
 
@@ -15,7 +25,7 @@ const PREVIEW_CHARS = 200;
 export const LIST_COLLAB_VERSIONS_TOOL = {
   name: "list_collab_versions",
   description:
-    "List version history snapshots for a collaborative document. Access is gated by the doc's own permission model. Returns versions newest-first with a short plain-text preview.",
+    "List version history snapshots for a collaborative document. Access is gated by the doc's own permission model. Returns versions newest-first with a short plain-text preview. Pass page.nextCursor as cursor to read the next page until page.hasMore is false.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -25,6 +35,7 @@ export const LIST_COLLAB_VERSIONS_TOOL = {
         description:
           "The collab room name (e.g. 'doc:{pageId}:body', 'task:{taskId}:description'). Use read_page to find a page's doc name.",
       },
+      ...pageProps(PAGE_LIMITS),
     },
     required: ["docName"],
     additionalProperties: false,
@@ -42,17 +53,20 @@ export class CollabVersionError extends Error {
   }
 }
 
-type ListVersionsInput = { docName: string };
+type ListVersionsInput = PageArgs & { docName: string };
 
 export async function runListCollabVersions(callerId: string, input: ListVersionsInput) {
   const { allowed } = await authorizeCollabDoc(callerId, input.docName);
   if (!allowed) throw new CollabVersionError("Forbidden", 403);
 
-  const versions = await prisma.collabDocumentVersion.findMany({
-    where: { name: input.docName },
-    orderBy: { createdAt: "desc" },
+  const window = keysetWindow(input, PAGE_LIMITS, [{ field: "createdAt", direction: "desc", type: "date" }]);
+  const fetched = await prisma.collabDocumentVersion.findMany({
+    where: { AND: [{ name: input.docName }, window.where] },
+    orderBy: window.orderBy,
+    take: window.take,
     select: { id: true, createdAt: true, plainText: true, authorIds: true },
   });
+  const { rows: versions, page } = keysetPage(fetched, window);
 
   const allAuthorIds = new Set<string>();
   for (const v of versions) for (const id of v.authorIds) allAuthorIds.add(id);
@@ -62,6 +76,7 @@ export async function runListCollabVersions(callerId: string, input: ListVersion
   // Wrapped in an object: MCP `structuredContent` must be a JSON object, so a
   // bare array fails result validation on the client before the caller sees it.
   return {
+    page,
     versions: versions.map((v) => ({
       id: v.id,
       createdAt: v.createdAt.toISOString(),
@@ -79,7 +94,7 @@ export async function runListCollabVersions(callerId: string, input: ListVersion
 export const GET_COLLAB_VERSION_TOOL = {
   name: "get_collab_version",
   description:
-    "Get the full plain-text content of a specific collab document version snapshot.",
+    "Get the plain-text content of a specific collab document version snapshot. Long versions come back in chunks of limit characters (default 50000, max 200000): pass page.nextCursor as cursor until page.hasMore is false. page.total is the full length.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -88,6 +103,7 @@ export const GET_COLLAB_VERSION_TOOL = {
         minLength: 1,
         description: "Version ID from list_collab_versions.",
       },
+      ...pageProps(TEXT_PAGE_LIMITS),
     },
     required: ["versionId"],
     additionalProperties: false,
@@ -95,7 +111,7 @@ export const GET_COLLAB_VERSION_TOOL = {
   requiredScope: "mcp:read" as const,
 };
 
-type GetVersionInput = { versionId: string };
+type GetVersionInput = PageArgs & { versionId: string };
 
 export async function runGetCollabVersion(callerId: string, input: GetVersionInput) {
   const version = await prisma.collabDocumentVersion.findUnique({
@@ -107,11 +123,14 @@ export async function runGetCollabVersion(callerId: string, input: GetVersionInp
   const { allowed } = await authorizeCollabDoc(callerId, version.name);
   if (!allowed) throw new CollabVersionError("Forbidden", 403);
 
+  const chunk = pageText(version.plainText, input);
+
   return {
     id: version.id,
     docName: version.name,
     createdAt: version.createdAt.toISOString(),
-    plainText: version.plainText,
+    plainText: chunk.text,
+    page: chunk.page,
     authors: await hydrateAuthors(version.authorIds),
   };
 }

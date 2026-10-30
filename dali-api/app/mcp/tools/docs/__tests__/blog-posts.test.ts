@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/db", () => ({
-  prisma: { blogPost: { findMany: vi.fn(), create: vi.fn(), update: vi.fn() } },
+  prisma: { blogPost: { findMany: vi.fn(), count: vi.fn(), create: vi.fn(), update: vi.fn() } },
 }));
 vi.mock("~/lib/roles", () => ({ isAdmin: vi.fn() }));
 vi.mock("~/lib/resources.server", () => ({ resourcesAccess: vi.fn() }));
@@ -104,7 +104,7 @@ describe("list_blog_posts", () => {
       post({ id: "mine" }),
     ]);
     const res = await runListBlogPosts("me", {});
-    expect(db.blogPost.findMany.mock.calls[0][0].where.OR).toEqual(
+    expect(db.blogPost.findMany.mock.calls[0][0].where.AND[0].OR).toEqual(
       expect.arrayContaining([{ publishedAt: { not: null } }]),
     );
     expect(res.posts).toEqual([
@@ -116,17 +116,40 @@ describe("list_blog_posts", () => {
   it("only an Admin is listed posts waiting for approval", async () => {
     db.blogPost.findMany.mockResolvedValue([]);
     await runListBlogPosts("me", {});
-    expect(db.blogPost.findMany.mock.calls[0][0].where.OR).not.toContainEqual({ submittedAt: { not: null } });
+    expect(db.blogPost.findMany.mock.calls[0][0].where.AND[0].OR).not.toContainEqual({ submittedAt: { not: null } });
 
     vi.mocked(isAdmin).mockResolvedValue(true);
     await runListBlogPosts("me", {});
-    expect(db.blogPost.findMany.mock.calls[1][0].where.OR).toContainEqual({ submittedAt: { not: null } });
+    expect(db.blogPost.findMany.mock.calls[1][0].where.AND[0].OR).toContainEqual({ submittedAt: { not: null } });
   });
 
-  it("filters by status", async () => {
-    db.blogPost.findMany.mockResolvedValue([post({ id: "a", publishedAt: new Date() }), post({ id: "b" })]);
-    const res = await runListBlogPosts("me", { status: "draft" });
-    expect(res.posts.map((p) => p.id)).toEqual(["b"]);
+  it("filters by status in the query, before the page is cut", async () => {
+    db.blogPost.findMany.mockResolvedValue([]);
+    await runListBlogPosts("me", { status: "draft" });
+    expect(db.blogPost.findMany.mock.calls[0][0].where.AND).toContainEqual({ publishedAt: null, submittedAt: null });
+    await runListBlogPosts("me", { status: "review" });
+    expect(db.blogPost.findMany.mock.calls[1][0].where.AND).toContainEqual({
+      publishedAt: null,
+      submittedAt: { not: null },
+    });
+    await runListBlogPosts("me", { status: "published" });
+    expect(db.blogPost.findMany.mock.calls[2][0].where.AND).toContainEqual({ publishedAt: { not: null } });
+  });
+
+  it("pages with an id tiebreak, the last page has no cursor", async () => {
+    db.blogPost.count.mockResolvedValue(3);
+    db.blogPost.findMany.mockResolvedValueOnce([post({ id: "a" }), post({ id: "b" }), post({ id: "c" })]);
+    const first = await runListBlogPosts("me", { limit: 2 });
+    expect(db.blogPost.findMany.mock.calls[0][0]).toMatchObject({ skip: 0, take: 3 });
+    expect(db.blogPost.findMany.mock.calls[0][0].orderBy.at(-1)).toEqual({ id: "asc" });
+    expect(first.posts.map((p) => p.id)).toEqual(["a", "b"]);
+    expect(first.page).toMatchObject({ hasMore: true, limit: 2, total: 3 });
+
+    db.blogPost.findMany.mockResolvedValueOnce([post({ id: "c" })]);
+    const second = await runListBlogPosts("me", { limit: 2, cursor: first.page.nextCursor! });
+    expect(db.blogPost.findMany.mock.calls[1][0]).toMatchObject({ skip: 2, take: 3 });
+    expect(second.posts.map((p) => p.id)).toEqual(["c"]);
+    expect(second.page).toMatchObject({ nextCursor: null, hasMore: false });
   });
 });
 

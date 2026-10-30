@@ -168,6 +168,31 @@ describe("pages + files tools", () => {
     expect(out.markdown).toBe("");
   });
 
+  it("read_page returns long markdown in chunks that join back to the whole page", async () => {
+    vi.mocked(authorizeCollabDoc).mockResolvedValue({ allowed: true, readOnly: false });
+    mockPrisma.page.findUnique.mockResolvedValue({
+      id: "pg1", title: "Long", kind: "FreeForm", workspaceType: "Lab", workspaceId: null, contentDocId: null, iconEmoji: null,
+    });
+    const paragraph = (text: string) => ({ id: text, type: "paragraph", props: {}, content: [{ type: "text", text, styles: {} }], children: [] });
+    vi.mocked(readDocAsBlocks).mockResolvedValue([paragraph("alpha bravo"), paragraph("charlie delta")] as never);
+
+    const whole = await runReadPage("u1", { pageId: "pg1" });
+    expect(whole.page).toEqual({ nextCursor: null, hasMore: false, limit: 50_000, total: whole.markdown.length });
+
+    const first = await runReadPage("u1", { pageId: "pg1", limit: 10 });
+    expect(first.markdown).toHaveLength(10);
+    expect(first.page).toMatchObject({ hasMore: true, limit: 10, total: whole.markdown.length });
+
+    let text = first.markdown;
+    let cursor = first.page.nextCursor;
+    while (cursor) {
+      const next = await runReadPage("u1", { pageId: "pg1", limit: 10, cursor });
+      text += next.markdown;
+      cursor = next.page.nextCursor;
+    }
+    expect(text).toBe(whole.markdown);
+  });
+
   it("read_page 404s missing page", async () => {
     mockPrisma.page.findUnique.mockResolvedValue(null);
     await expect(runReadPage("u1", { pageId: "x" })).rejects.toBeInstanceOf(ReadPageError);

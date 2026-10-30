@@ -35,49 +35,108 @@ type Like = { contains: string; mode: "insensitive" };
 const RAW_TAKE = 40; // over-fetch per category, then rank+cap in JS.
 const NONE = Promise.resolve<SearchResult[]>([]);
 
-export async function runSearch(opts: {
-  userId: string;
-  roles: UserRoles;
-  q: string;
-}): Promise<SearchResult[]> {
-  const q = opts.q.trim();
-  if (q.length < MIN_QUERY_LENGTH) return [];
-  // Not a lab member (e.g. an applicant who reached the endpoint directly) —
-  // nothing to surface. The palette itself only mounts in the member shell.
-  if (!opts.roles.isLabMember) return [];
+type SearchBudget = { rawTake: number; cap: number; ordered: boolean };
+const DEFAULT_BUDGET: SearchBudget = { rawTake: RAW_TAKE, cap: PER_CATEGORY_CAP, ordered: false };
+const order = (b: SearchBudget) => (b.ordered ? { id: "asc" as const } : undefined);
 
+/** Most candidates one category can rank when a single category is requested. */
+export const CATEGORY_RAW_TAKE = 500;
+
+type SearchSource = {
+  type: SearchResultType;
+  enabled: boolean;
+  run: (b: SearchBudget) => Promise<SearchResult[]>;
+};
+
+type SearchOpts = { userId: string; roles: UserRoles; q: string };
+
+function searchSources(opts: SearchOpts, q: string): SearchSource[] {
   const roles = opts.roles;
   const like: Like = { contains: q, mode: "insensitive" };
-
-  const tasks: Promise<SearchResult[]>[] = [
-    searchPeople(q, like),
-    searchProjects(q, like),
-    searchTasks(q, like),
-    searchOfferings(q, like),
-    searchDocuments(opts.userId, q, like),
+  return [
+    { type: "person", enabled: true, run: (b) => searchPeople(q, like, b) },
+    { type: "project", enabled: true, run: (b) => searchProjects(q, like, b) },
+    { type: "task", enabled: true, run: (b) => searchTasks(q, like, b) },
+    { type: "education", enabled: true, run: (b) => searchOfferings(q, like, b) },
+    { type: "document", enabled: true, run: (b) => searchDocuments(opts.userId, q, like, b) },
     // Page guides ("Docs") and /help articles — both readable by every lab
     // member, so ungated like docs.
-    searchGuides(q),
-    searchHelpArticles(q),
-    searchProjectFiles(q, like),
-    searchApplications(opts.userId, roles, q, like),
-    roles.canViewForms ? searchGroups(q, like) : NONE,
-    searchFormPages(opts.userId, q, like),
+    { type: "guide", enabled: true, run: (b) => searchGuides(q, b) },
+    { type: "helpArticle", enabled: true, run: (b) => searchHelpArticles(q, b) },
+    { type: "document", enabled: true, run: (b) => searchProjectFiles(q, like, b) },
+    { type: "application", enabled: true, run: (b) => searchApplications(opts.userId, roles, q, like, b) },
+    { type: "group", enabled: roles.canViewForms, run: (b) => searchGroups(q, like, b) },
+    { type: "form", enabled: true, run: (b) => searchFormPages(opts.userId, q, like, b) },
     // Hiring library (reusable artifacts) — Core or Domain Lead, mirroring the
     // library routes. Names aren't sensitive; the routes already gate.
-    roles.isCore || roles.isDomainLead ? searchRubrics(q, like) : NONE,
-    roles.isCore || roles.isDomainLead ? searchAgreements(q, like) : NONE,
+    { type: "rubric", enabled: roles.isCore || roles.isDomainLead, run: (b) => searchRubrics(q, like, b) },
+    {
+      type: "confidentialityAgreement",
+      enabled: roles.isCore || roles.isDomainLead,
+      run: (b) => searchAgreements(q, like, b),
+    },
     // Core-only artifacts.
-    roles.isCore ? searchCycles(q, like) : NONE,
+    { type: "cycle", enabled: roles.isCore, run: (b) => searchCycles(q, like, b) },
     // Partner orgs/contacts — Core-only, like every /core/partners/orgs and
     // /core/partners/contacts route.
-    roles.isCore ? searchPartnerOrgs(q, like) : NONE,
-    roles.isCore ? searchPartnerContacts(q, like) : NONE,
+    { type: "partner", enabled: roles.isCore, run: (b) => searchPartnerOrgs(q, like, b) },
+    { type: "partnerContact", enabled: roles.isCore, run: (b) => searchPartnerContacts(q, like, b) },
     // Partner applications — Core/Admin (canViewStaffing), like the internal view.
-    roles.canViewStaffing ? searchPartnerApplications(q, like) : NONE,
+    { type: "partnerApplication", enabled: roles.canViewStaffing, run: (b) => searchPartnerApplications(q, like, b) },
   ];
+}
 
+function normalizedQuery(opts: SearchOpts): string | null {
+  const q = opts.q.trim();
+  if (q.length < MIN_QUERY_LENGTH) return null;
+  // Not a lab member (e.g. an applicant who reached the endpoint directly) —
+  // nothing to surface. The palette itself only mounts in the member shell.
+  if (!opts.roles.isLabMember) return null;
+  return q;
+}
+
+export async function runSearch(opts: SearchOpts): Promise<SearchResult[]> {
+  const q = normalizedQuery(opts);
+  if (q === null) return [];
+  const tasks = searchSources(opts, q).map((s) => (s.enabled ? s.run(DEFAULT_BUDGET) : NONE));
   return (await Promise.all(tasks)).flat();
+}
+
+/** Like `runSearch`, but reports which categories had more than the usual cap. */
+export async function runSearchWithOverflow(
+  opts: SearchOpts,
+): Promise<{ results: SearchResult[]; categoriesWithMore: SearchResultType[] }> {
+  const q = normalizedQuery(opts);
+  if (q === null) return { results: [], categoriesWithMore: [] };
+  const budget: SearchBudget = { ...DEFAULT_BUDGET, cap: PER_CATEGORY_CAP + 1 };
+  const sources = searchSources(opts, q);
+  const settled = await Promise.all(sources.map((s) => (s.enabled ? s.run(budget) : NONE)));
+  const more = new Set<SearchResultType>();
+  const results = settled.flatMap((rows, i) => {
+    if (rows.length <= PER_CATEGORY_CAP) return rows;
+    more.add(sources[i].type);
+    return rows.slice(0, PER_CATEGORY_CAP);
+  });
+  return { results, categoriesWithMore: [...more] };
+}
+
+/** One category's window: rows `skip` to `skip + limit` inclusive, so one extra row
+ *  means more. Candidates are fetched in a fixed order and
+ *  ranked in memory, so only the first CATEGORY_RAW_TAKE matches are reachable. */
+export async function runCategorySearch(
+  opts: SearchOpts & { category: SearchResultType; skip: number; limit: number },
+): Promise<SearchResult[]> {
+  const q = normalizedQuery(opts);
+  if (q === null) return [];
+  const end = opts.skip + opts.limit;
+  const budget: SearchBudget = {
+    rawTake: CATEGORY_RAW_TAKE,
+    cap: Math.min(end + 1, CATEGORY_RAW_TAKE),
+    ordered: true,
+  };
+  const sources = searchSources(opts, q).filter((s) => s.type === opts.category && s.enabled);
+  const merged = (await Promise.all(sources.map((s) => s.run(budget)))).flat();
+  return merged.slice(opts.skip, end + 1);
 }
 
 // Map a set of {id, label} rows of a single type to ranked results. Used by the
@@ -87,6 +146,7 @@ function simpleResults(
   subtitle: string,
   rows: { id: string; label: string | null; iconEmoji?: string | null }[],
   q: string,
+  cap: number,
 ): SearchResult[] {
   return rankResults(
     rows.map((r) => ({
@@ -101,10 +161,11 @@ function simpleResults(
       text: [r.label || ""],
     })),
     q,
+    cap,
   );
 }
 
-async function searchPeople(q: string, like: Like): Promise<SearchResult[]> {
+async function searchPeople(q: string, like: Like, b: SearchBudget): Promise<SearchResult[]> {
   const rows = await prisma.user.findMany({
     where: {
       ...LAB_MEMBER_WHERE,
@@ -118,7 +179,8 @@ async function searchPeople(q: string, like: Like): Promise<SearchResult[]> {
       dartmouthEmail: true,
       photoUrl: true,
     },
-    take: RAW_TAKE,
+    take: b.rawTake,
+    orderBy: order(b),
   });
   const ranked = rankResults(
     rows.map((u) => {
@@ -130,6 +192,7 @@ async function searchPeople(q: string, like: Like): Promise<SearchResult[]> {
       };
     }),
     q,
+    b.cap,
   );
   // Resolve avatars only for the ranked survivors (≤ PER_CATEGORY_CAP), not the
   // full over-fetch — keeps per-keystroke work tiny.
@@ -142,14 +205,15 @@ async function searchPeople(q: string, like: Like): Promise<SearchResult[]> {
   );
 }
 
-async function searchProjects(q: string, like: Like): Promise<SearchResult[]> {
+async function searchProjects(q: string, like: Like, b: SearchBudget): Promise<SearchResult[]> {
   // Archived projects are effectively retired — keep them out of quick-jump.
   // Description matches too (a project is often findable by what it does, not
   // what it's called), so it must feed the ranker as a scored field.
   const rows = await prisma.project.findMany({
     where: { status: { not: "Archived" }, OR: [{ name: like }, { description: like }] },
     select: { id: true, name: true, description: true, iconEmoji: true },
-    take: RAW_TAKE,
+    take: b.rawTake,
+    orderBy: order(b),
   });
   return rankResults(
     rows.map((p) => ({
@@ -164,10 +228,11 @@ async function searchProjects(q: string, like: Like): Promise<SearchResult[]> {
       text: [p.name, p.description ?? ""],
     })),
     q,
+    b.cap,
   );
 }
 
-async function searchTasks(q: string, like: Like): Promise<SearchResult[]> {
+async function searchTasks(q: string, like: Like, b: SearchBudget): Promise<SearchResult[]> {
   // Every member can open every project's board, so tasks get the same
   // scoping as projects: members-only auth, Archived projects excluded.
   const rows = await prisma.task.findMany({
@@ -181,7 +246,8 @@ async function searchTasks(q: string, like: Like): Promise<SearchResult[]> {
       projectId: true,
       project: { select: { name: true } },
     },
-    take: RAW_TAKE,
+    take: b.rawTake,
+    orderBy: order(b),
   });
   return rankResults(
     rows.map((t) => ({
@@ -195,10 +261,11 @@ async function searchTasks(q: string, like: Like): Promise<SearchResult[]> {
       text: [t.title],
     })),
     q,
+    b.cap,
   );
 }
 
-async function searchProjectFiles(q: string, like: Like): Promise<SearchResult[]> {
+async function searchProjectFiles(q: string, like: Like, b: SearchBudget): Promise<SearchResult[]> {
   // Uploaded project files; archived ones are out, mirroring pages. Matches
   // the display title or the current version's original filename (a file is
   // often remembered by what it was uploaded as). Reuses the "document" result
@@ -214,7 +281,8 @@ async function searchProjectFiles(q: string, like: Like): Promise<SearchResult[]
       currentVersion: { select: { fileName: true } },
       project: { select: { name: true } },
     },
-    take: RAW_TAKE,
+    take: b.rawTake,
+    orderBy: order(b),
   });
   return rankResults(
     rows.map((f) => ({
@@ -229,33 +297,37 @@ async function searchProjectFiles(q: string, like: Like): Promise<SearchResult[]
       text: [f.title, f.currentVersion?.fileName ?? ""],
     })),
     q,
+    b.cap,
   );
 }
 
-async function searchOfferings(q: string, like: Like): Promise<SearchResult[]> {
+async function searchOfferings(q: string, like: Like, b: SearchBudget): Promise<SearchResult[]> {
   // Only Published offerings are member-visible; Draft/Archived stay hidden.
   const rows = await prisma.educationOffering.findMany({
     where: { status: "Published", title: like },
     select: { id: true, title: true },
-    take: RAW_TAKE,
+    take: b.rawTake,
+    orderBy: order(b),
   });
-  return simpleResults("education", "Education", rows.map((r) => ({ id: r.id, label: r.title })), q);
+  return simpleResults("education", "Education", rows.map((r) => ({ id: r.id, label: r.title })), q, b.cap);
 }
 
-async function searchPartnerOrgs(q: string, like: Like): Promise<SearchResult[]> {
+async function searchPartnerOrgs(q: string, like: Like, b: SearchBudget): Promise<SearchResult[]> {
   const rows = await prisma.partnerOrg.findMany({
     where: { name: like },
     select: { id: true, name: true },
-    take: RAW_TAKE,
+    take: b.rawTake,
+    orderBy: order(b),
   });
-  return simpleResults("partner", "Partner", rows.map((r) => ({ id: r.id, label: r.name })), q);
+  return simpleResults("partner", "Partner", rows.map((r) => ({ id: r.id, label: r.name })), q, b.cap);
 }
 
-async function searchPartnerContacts(q: string, like: Like): Promise<SearchResult[]> {
+async function searchPartnerContacts(q: string, like: Like, b: SearchBudget): Promise<SearchResult[]> {
   const rows = await prisma.partnerContact.findMany({
     where: { OR: [{ name: like }, { email: like }] },
     select: { id: true, name: true, email: true },
-    take: RAW_TAKE,
+    take: b.rawTake,
+    orderBy: order(b),
   });
   return rankResults(
     rows.map((c) => ({
@@ -269,10 +341,11 @@ async function searchPartnerContacts(q: string, like: Like): Promise<SearchResul
       text: [c.name, c.email],
     })),
     q,
+    b.cap,
   );
 }
 
-async function searchDocuments(userId: string, q: string, like: Like): Promise<SearchResult[]> {
+async function searchDocuments(userId: string, q: string, like: Like, b: SearchBudget): Promise<SearchResult[]> {
   // Titles and bodies are searched separately and merged rather than scored
   // together: a title match is what someone means the overwhelming majority of
   // the time, so it keeps its place at the top of the category and body
@@ -284,9 +357,10 @@ async function searchDocuments(userId: string, q: string, like: Like): Promise<S
     prisma.page.findMany({
       where: { archivedAt: null, kind: { not: "Form" }, title: like },
       select: { ...PAGE_ACCESS_SELECT, title: true, iconEmoji: true, kind: true },
-      take: RAW_TAKE * 3,
+      take: b.rawTake * 3,
+    orderBy: order(b),
     }),
-    searchPageContent(q, PER_CATEGORY_CAP * 3),
+    searchPageContent(q, b.cap * 3),
   ]);
 
   const contentPages = rawContentHits.length
@@ -307,6 +381,7 @@ async function searchDocuments(userId: string, q: string, like: Like): Promise<S
     "Document",
     rows.map((r) => ({ id: r.id, label: r.title, iconEmoji: r.iconEmoji })),
     q,
+    b.cap,
   ).map((r) => {
     const pageKind = kindById.get(r.id);
     return pageKind ? { ...r, pageKind, subtitle: pageKindLabel(pageKind) } : r;
@@ -330,7 +405,7 @@ async function searchDocuments(userId: string, q: string, like: Like): Promise<S
       };
     });
 
-  return [...titleResults, ...contentResults].slice(0, PER_CATEGORY_CAP);
+  return [...titleResults, ...contentResults].slice(0, b.cap);
 }
 
 // Flatten a guide's authored content into one searchable string: each section's
@@ -341,7 +416,7 @@ function guideContentText(row: { body: unknown; sections: unknown }): string {
     .join(" ");
 }
 
-async function searchGuides(q: string): Promise<SearchResult[]> {
+async function searchGuides(q: string, b: SearchBudget): Promise<SearchResult[]> {
   // The guide set is fixed and tiny (GUIDE_PAGES), so load the authored rows and
   // rank in memory. A guide still ranks on its declared title/keywords before
   // anyone has opened it to create its PageDoc row.
@@ -367,12 +442,13 @@ async function searchGuides(q: string): Promise<SearchResult[]> {
       };
     }),
     q,
+    b.cap,
   );
 }
 
 // Help-center articles (/help/*). A fully static set (HELP_ARTICLES), so there's
 // no query — just rank its title/summary/keywords in memory.
-async function searchHelpArticles(q: string): Promise<SearchResult[]> {
+async function searchHelpArticles(q: string, b: SearchBudget): Promise<SearchResult[]> {
   return rankResults(
     HELP_ARTICLES.map((a) => ({
       result: {
@@ -385,25 +461,28 @@ async function searchHelpArticles(q: string): Promise<SearchResult[]> {
       text: [a.title, a.summary, ...(a.keywords ?? [])],
     })),
     q,
+    b.cap,
   );
 }
 
-async function searchGroups(q: string, like: Like): Promise<SearchResult[]> {
+async function searchGroups(q: string, like: Like, b: SearchBudget): Promise<SearchResult[]> {
   // Member groups (People → Groups). Archived groups are out, mirroring the
   // list's default "active" filter. Gated with the Forms area, like the sub-tab.
   const rows = await prisma.groupDefinition.findMany({
     where: { name: like, archivedAt: null },
     select: { id: true, name: true },
-    take: RAW_TAKE,
+    take: b.rawTake,
+    orderBy: order(b),
   });
-  return simpleResults("group", "Group", rows.map((r) => ({ id: r.id, label: r.name })), q);
+  return simpleResults("group", "Group", rows.map((r) => ({ id: r.id, label: r.name })), q, b.cap);
 }
 
-async function searchFormPages(userId: string, q: string, like: Like): Promise<SearchResult[]> {
+async function searchFormPages(userId: string, q: string, like: Like, b: SearchBudget): Promise<SearchResult[]> {
   const pages = await prisma.page.findMany({
     where: { kind: "Form", archivedAt: null, title: like },
     select: { ...PAGE_ACCESS_SELECT, title: true, iconEmoji: true },
-    take: RAW_TAKE,
+    take: b.rawTake,
+    orderBy: order(b),
   });
   const access = await getPageAccessBulk(userId, pages);
   return simpleResults(
@@ -411,46 +490,52 @@ async function searchFormPages(userId: string, q: string, like: Like): Promise<S
     "Form",
     pages.filter((p) => access.get(p.id)?.canView).map((p) => ({ id: p.id, label: p.title, iconEmoji: p.iconEmoji })),
     q,
+    b.cap,
   );
 }
 
-async function searchRubrics(q: string, like: Like): Promise<SearchResult[]> {
+async function searchRubrics(q: string, like: Like, b: SearchBudget): Promise<SearchResult[]> {
   const rows = await prisma.rubric.findMany({
     where: { name: like },
     select: { id: true, name: true },
-    take: RAW_TAKE,
+    take: b.rawTake,
+    orderBy: order(b),
   });
-  return simpleResults("rubric", "Rubric", rows.map((r) => ({ id: r.id, label: r.name })), q);
+  return simpleResults("rubric", "Rubric", rows.map((r) => ({ id: r.id, label: r.name })), q, b.cap);
 }
 
-async function searchAgreements(q: string, like: Like): Promise<SearchResult[]> {
+async function searchAgreements(q: string, like: Like, b: SearchBudget): Promise<SearchResult[]> {
   const rows = await prisma.signingDocument.findMany({
     where: { name: like, gateScope: "HiringCycle", archivedAt: null },
     select: { id: true, name: true },
-    take: RAW_TAKE,
+    take: b.rawTake,
+    orderBy: order(b),
   });
   return simpleResults(
     "confidentialityAgreement",
     "Confidentiality agreement",
     rows.map((r) => ({ id: r.id, label: r.name })),
     q,
+    b.cap,
   );
 }
 
-async function searchCycles(q: string, like: Like): Promise<SearchResult[]> {
+async function searchCycles(q: string, like: Like, b: SearchBudget): Promise<SearchResult[]> {
   const rows = await prisma.applicationCycle.findMany({
     where: { name: like },
     select: { id: true, name: true },
-    take: RAW_TAKE,
+    take: b.rawTake,
+    orderBy: order(b),
   });
-  return simpleResults("cycle", "Hiring cycle", rows.map((r) => ({ id: r.id, label: r.name })), q);
+  return simpleResults("cycle", "Hiring cycle", rows.map((r) => ({ id: r.id, label: r.name })), q, b.cap);
 }
 
-async function searchPartnerApplications(q: string, like: Like): Promise<SearchResult[]> {
+async function searchPartnerApplications(q: string, like: Like, b: SearchBudget): Promise<SearchResult[]> {
   const rows = await prisma.partnerApplication.findMany({
     where: { title: like },
     select: { id: true, title: true, partnerOrg: { select: { name: true } } },
-    take: RAW_TAKE,
+    take: b.rawTake,
+    orderBy: order(b),
   });
   return rankResults(
     rows.map((r) => ({
@@ -464,6 +549,7 @@ async function searchPartnerApplications(q: string, like: Like): Promise<SearchR
       text: [r.title || ""],
     })),
     q,
+    b.cap,
   );
 }
 
@@ -476,6 +562,7 @@ async function searchApplications(
   roles: UserRoles,
   q: string,
   like: Like,
+  b: SearchBudget,
 ): Promise<SearchResult[]> {
   const reviewerRows = await prisma.cycleReviewer.findMany({
     where: { userId },
@@ -532,7 +619,8 @@ async function searchApplications(
       domain: { select: { displayName: true } },
       application: { select: { user: { select: { firstName: true, lastName: true } } } },
     },
-    take: RAW_TAKE,
+    take: b.rawTake,
+    orderBy: order(b),
   });
 
   return rankResults(
@@ -552,5 +640,6 @@ async function searchApplications(
       };
     }),
     q,
+    b.cap,
   );
 }

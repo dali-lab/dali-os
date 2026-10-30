@@ -60,6 +60,36 @@ describe("registration", () => {
   });
 });
 
+describe("get_journey", () => {
+  const editorJourney = () => ({
+    id: "j",
+    domain: { id: "dom", slug: "fullstack", code: "Fullstack", displayName: "Fullstack" },
+    role: "owner",
+    draft: state.draft,
+    published: null,
+  });
+  type Mods = { id: string; slides: unknown }[];
+  const modules = (out: unknown) => (out as { modules: Mods }).modules;
+
+  it("expands every module in full detail by default", async () => {
+    server.loadJourneyById.mockResolvedValue(editorJourney());
+    const out = await call("get_journey", { journeyId: "j", detail: "full" });
+    expect(modules(out).map((m) => Array.isArray(m.slides))).toEqual([true, true]);
+  });
+
+  it("expands only the requested module and keeps the rest as outline", async () => {
+    server.loadJourneyById.mockResolvedValue(editorJourney());
+    const out = await call("get_journey", { journeyId: "j", detail: "full", moduleId: "b" });
+    expect(modules(out).map((m) => [m.id, Array.isArray(m.slides)])).toEqual([["a", false], ["b", true]]);
+  });
+
+  it("rejects an unknown module and moduleId without full detail", async () => {
+    server.loadJourneyById.mockResolvedValue(editorJourney());
+    await expect(call("get_journey", { journeyId: "j", detail: "full", moduleId: "nope" })).rejects.toMatchObject({ status: 404 });
+    await expect(call("get_journey", { journeyId: "j", moduleId: "a" })).rejects.toMatchObject({ status: 400 });
+  });
+});
+
 describe("manage_journey", () => {
   it("creates in a domain and applies the given details", async () => {
     server.findDomain.mockResolvedValue({ id: "dom" });
