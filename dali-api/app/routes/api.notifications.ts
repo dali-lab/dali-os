@@ -3,8 +3,10 @@ import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import {
-  listOpenTasks,
-  listMyProjectTasks,
+  listOpenTasksPage,
+  listMyProjectTasksPage,
+  openTasksTotal,
+  projectTasksTotal,
   listNotificationHistory,
   SELF_CLEARING_FORM_TODO,
 } from "~/lib/tasks";
@@ -74,34 +76,41 @@ export async function loader({ request }: Route.LoaderArgs) {
   // still shows tasks (Tasks-nav feature). Items additionally carry the
   // desktop-app annotations (`desktop`, `urgent`); web clients ignore them,
   // as they do the `retiredIds` list alongside them.
-  const [{ items, unreadCount }, tasks, desktopPrefs, retiredIds, projectTasks] =
+  const [{ items, unreadCount }, taskPage, desktopPrefs, retiredIds, projectPage] =
     await Promise.all([
       listMyNotifications(userId),
-      listOpenTasks(userId),
+      listOpenTasksPage(userId),
       prisma.notificationPreference.findMany({
         where: { userId },
         select: { eventType: true, desktop: true },
       }),
       listRetiredMeetingPingIds(userId),
-      listMyProjectTasks(userId),
+      listMyProjectTasksPage(userId),
     ]);
 
-  const withRecordPrompt = await annotateRecordPromptFeed(items);
+  // A count query runs only when the first page was full, so the common poll
+  // costs nothing extra.
+  const [taskCount, projectTaskCount, withRecordPrompt] = await Promise.all([
+    openTasksTotal(userId, taskPage),
+    projectTasksTotal(userId, projectPage),
+    annotateRecordPromptFeed(items),
+  ]);
 
   return withCors(
     request,
     Response.json({
       items: annotateDesktopFeed(withRecordPrompt, desktopPrefs),
       unreadCount,
-      taskCount: tasks.length,
-      tasks,
+      taskCount,
+      tasks: taskPage.items,
       // Rows that went stale unread rather than being read, so the desktop
       // shell can retire banners it already delivered for them. Web clients
       // ignore this.
       retiredIds,
       // Assigned project tasks for the drawer's Project work tab. Not in taskCount, which the desktop
       // badge reads.
-      projectTasks,
+      projectTasks: projectPage.items,
+      projectTaskCount,
     }),
   );
 }
