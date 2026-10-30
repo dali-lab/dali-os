@@ -109,6 +109,7 @@ export function RecordingPill() {
       <span className="font-bold tabular-nums text-os-red">
         {session.status === "starting" ? "Starting" : formatClock((now - session.startedAt) / 1000)}
       </span>
+      {session.noSound && <span className="shrink-0 font-semibold text-destructive">No sound</span>}
       <Title session={session} />
       <StopButton />
     </div>

@@ -27,6 +27,7 @@ export function makeRec(overrides: Partial<UseMeetingRecording> = {}): UseMeetin
     channelsActive: ["mic"],
     levels: { mic: 0, call: 0 },
     stalled: { mic: false, call: false },
+    noSound: false,
     recordedSeconds: 724,
     now: 0,
     lines: [],

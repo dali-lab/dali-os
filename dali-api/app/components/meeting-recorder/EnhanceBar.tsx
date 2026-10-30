@@ -320,6 +320,14 @@ function barContent(
   const owner = rec.remote ? ` · ${rec.remote.ownerIsYou ? "another device" : rec.remote.ownerName}` : "";
 
   switch (state) {
+    case "recording":
+      return rec.noSound
+        ? {
+            key: "noSound",
+            node: <BarShell title="No sound detected" detail="Nothing has been picked up so far. Stop and record again." />,
+          }
+        : null;
+
     case "processing": {
       const d = describeProcessing(rec.processingStage ?? "starting", rec.progress);
       return {
