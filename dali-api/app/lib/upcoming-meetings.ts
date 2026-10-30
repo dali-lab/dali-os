@@ -27,14 +27,14 @@ export type UpcomingMeeting = {
   scheduledMeetingId: string | null;
 };
 
+const MAX_MEETING_MINUTES = 480;
+const MEETING_ROW_CAP = 200;
+
 /**
  * Meetings the user is invited to or attending whose occurrence falls in
  * [now, windowEnd]: ScheduledMeeting occurrences (organizer or participant)
  * and assigned Interviews, sorted by start.
  */
-const MAX_MEETING_MINUTES = 480;
-const MEETING_ROW_CAP = 200;
-
 export async function listUpcomingMeetings(
   userId: string,
   now: Date,
@@ -60,7 +60,9 @@ export async function listUpcomingMeetings(
       ],
     },
     include: { exceptions: true, rooms: { select: { name: true } } },
-    orderBy: [{ selectedAt: "asc" }, { id: "asc" }],
+    // Newest first: only recurring series can reach the cap, and a series' end
+    // lives in its rule string, so this sheds the oldest (likely ended) ones.
+    orderBy: [{ selectedAt: { sort: "desc", nulls: "last" } }, { id: "asc" }],
     take: MEETING_ROW_CAP,
   });
 

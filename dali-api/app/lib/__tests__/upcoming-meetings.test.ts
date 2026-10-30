@@ -197,7 +197,10 @@ describe("listUpcomingMeetings", () => {
         { selectedAt: { gte: new Date("2026-05-14T04:00:00Z"), lt: WINDOW_END } },
       ],
     });
-    expect(args.orderBy).toEqual([{ selectedAt: "asc" }, { id: "asc" }]);
+    expect(args.orderBy).toEqual([
+      { selectedAt: { sort: "desc", nulls: "last" } },
+      { id: "asc" },
+    ]);
   });
 
   it("still expands a recurring meeting that started long before the window", async () => {
