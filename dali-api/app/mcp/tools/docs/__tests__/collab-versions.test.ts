@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/collabAuth", () => ({
   authorizeCollabDoc: vi.fn(),
   hydrateAuthors: vi.fn().mockResolvedValue([]),
@@ -12,7 +12,7 @@ vi.mock("~/collab/persistence", () => ({
   restoreVersion: vi.fn().mockResolvedValue(undefined),
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { authorizeCollabDoc } from "~/lib/collabAuth";
 import { getCollabServer } from "~/collab/server";
 import { restoreVersion } from "~/collab/persistence";
@@ -33,7 +33,7 @@ const mockPrisma = prisma as unknown as {
   };
 };
 
-// Ensure vi.mock("~/lib/db") gives us actual vi.fn() on the methods we need
+// Ensure vi.mock("~/lib/db.server") gives us actual vi.fn() on the methods we need
 beforeEach(() => {
   if (!mockPrisma.collabDocumentVersion.findUnique) {
     (mockPrisma.collabDocumentVersion as Record<string, unknown>).findUnique = vi.fn();

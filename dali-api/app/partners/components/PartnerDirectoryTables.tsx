@@ -8,6 +8,7 @@ import { cn } from "~/lib/cn";
 import { relativeTime } from "~/lib/relative-time";
 import { ContactAvatar } from "./contact/ContactAvatar";
 import {
+  DIRECTORY_ROW_CLASS,
   orgInitials,
   type DirectorySort,
   type DirectorySortKey,
@@ -29,7 +30,6 @@ const STATUS_DOT: Record<PartnerRelationshipStatus, string> = {
 
 const TH = "whitespace-nowrap px-4 py-2.5 text-left text-xs font-semibold text-os-muted first:pl-6 last:pr-6";
 const TD = "px-4 py-3 text-sm first:pl-6 last:pr-6";
-const ROW = "group relative border-t border-os-container/70 transition-colors hover:bg-os-card-hover";
 
 function SortableTh({
   label,
@@ -131,7 +131,7 @@ export function OrgsTable({
         </thead>
         <tbody>
           {visible.map((o) => (
-            <tr key={o.id} className={ROW}>
+            <tr key={o.id} className={DIRECTORY_ROW_CLASS}>
               <td className={TD}>
                 <RowLink to={`/core/partners/orgs/${o.id}`} label={o.name}>
                   <span
@@ -190,7 +190,7 @@ export function ContactsTable({
         </thead>
         <tbody>
           {visible.map((c) => (
-            <tr key={c.id} className={ROW}>
+            <tr key={c.id} className={DIRECTORY_ROW_CLASS}>
               <td className={TD}>
                 <RowLink to={`/core/partners/contacts/${c.id}`} label={c.name}>
                   <ContactAvatar contact={c} />

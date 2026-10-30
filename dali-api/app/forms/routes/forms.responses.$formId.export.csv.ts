@@ -1,6 +1,6 @@
 import type { Route } from "./+types/forms.responses.$formId.export.csv";
 import { redirect } from "react-router";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth, redirectNonMemberToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { canBuildForm } from "~/forms/lib/form-access.server";

@@ -3,7 +3,7 @@ import type { Route } from "./+types/applicant-layout";
 import { requireAuth, redirectPartnerToPortal, impersonationAllowsWrites, isImpersonating } from "~/lib/auth";
 import { maybeUpgradeLegacyToBetterAuth } from "~/lib/betterauth-upgrade.server";
 import { redirectToLogin } from "~/lib/login-next";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { getUserRoles } from "~/lib/roles";
 import { resolveFeatureFlags } from "~/lib/feature-flags.server";

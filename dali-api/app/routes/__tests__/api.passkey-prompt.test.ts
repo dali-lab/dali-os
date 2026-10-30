@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 const mockCount = vi.hoisted(() => vi.fn());
-vi.mock("~/lib/db", () => ({ prisma: { passkey: { count: mockCount } } }));
+vi.mock("~/lib/db.server", () => ({ prisma: { passkey: { count: mockCount } } }));
 vi.mock("~/lib/betterauth-compat.server", () => ({ getBetterAuthUser: vi.fn() }));
 vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
 

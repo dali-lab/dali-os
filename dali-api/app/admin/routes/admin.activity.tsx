@@ -2,7 +2,7 @@ import { Form, Link, redirect, useLoaderData } from "react-router";
 import { useMemo, useState } from "react";
 import type { Route } from "./+types/admin.activity";
 import { AdminSectionHeader, adminHandle } from "~/admin/adminNav";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { isCore, isAdmin } from "~/lib/roles";

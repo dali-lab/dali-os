@@ -1,5 +1,5 @@
 import type { Route } from "./+types/api.mobile.pass";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { currentTerm } from "~/lib/roles";
 import { resolveWalletPassFields } from "~/lib/wallet-pass-fields.server";
 import { ensureWalletSecret, signWalletToken, walletTokensConfigured } from "~/lib/wallet-token";

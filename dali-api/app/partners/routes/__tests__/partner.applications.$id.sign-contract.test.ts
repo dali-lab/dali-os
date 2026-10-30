@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/partners/lib/partner-auth.server", () => ({ requirePartnerAccount: vi.fn() }));
 vi.mock("~/partners/lib/partner-contract.server", () => ({
   partnerContractStatus: vi.fn(),
@@ -9,7 +9,7 @@ vi.mock("~/partners/lib/partner-contract.server", () => ({
 }));
 vi.mock("~/signing/lib/sign.server", () => ({ recordSignature: vi.fn() }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requirePartnerAccount } from "~/partners/lib/partner-auth.server";
 import { loader, action } from "~/partners/routes/partner.applications.$id.sign-contract";
 

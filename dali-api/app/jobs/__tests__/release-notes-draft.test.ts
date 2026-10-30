@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     scheduledJob: { findUnique: vi.fn(), update: vi.fn() },
     releaseNote: { findMany: vi.fn(), create: vi.fn() },
@@ -20,7 +20,7 @@ vi.mock("~/lib/ai.server", () => ({
 vi.mock("~/lib/ai-usage.server", () => ({ recordTokenUsage: vi.fn() }));
 vi.mock("~/lib/s3", () => ({ listObjectKeys: vi.fn(async () => []) }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { getAppEnv } from "~/lib/app-env";
 import { getFeatureFlagRows } from "~/lib/feature-flags.server";
 import { githubAppClient } from "~/lib/github";

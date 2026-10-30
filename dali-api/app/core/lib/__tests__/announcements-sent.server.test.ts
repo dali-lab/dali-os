@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     scheduledAnnouncement: { findMany: vi.fn(), count: vi.fn() },
     notification: { groupBy: vi.fn() },
@@ -8,7 +8,7 @@ vi.mock("~/lib/db", () => ({
   },
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import {
   SENT_PAGE_SIZE,
   SENT_WHERE,

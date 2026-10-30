@@ -11,7 +11,7 @@ import { requireAuth, redirectNonMemberToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { isCore } from "~/lib/roles";
 import { graduateProgramLabel } from "~/lib/dartmouth-people";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import {
   createOrPromoteMember,
   MemberInputError,

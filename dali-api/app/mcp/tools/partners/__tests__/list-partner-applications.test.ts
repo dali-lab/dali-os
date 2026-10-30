@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/roles", async (orig) => {
   const real = await orig<typeof import("~/lib/roles")>();
   return { ...real, canViewStaffing: vi.fn() };
@@ -23,7 +23,7 @@ vi.mock("~/mcp/registry", () => {
   return { McpError, McpForbiddenError, McpInvalidError, REGISTRY_TOOLS: [], findRegistryTool: () => undefined, registryToolDefs: () => [] };
 });
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { canViewStaffing } from "~/lib/roles";
 import { runListPartnerApplications, LIST_PARTNER_APPLICATIONS_TOOL } from "../list-partner-applications";
 

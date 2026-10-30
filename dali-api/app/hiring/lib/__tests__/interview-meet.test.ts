@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     userCalendarLink: { findFirst: vi.fn(), update: vi.fn() },
     interview: { findUnique: vi.fn(), update: vi.fn() },
@@ -18,7 +18,7 @@ vi.mock("~/lib/gmail-integration", () => ({
 }));
 vi.mock("~/lib/gmail", () => ({ getGmailAccessToken: vi.fn() }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import {
   createGoogleCalendarEvent,
   deleteGoogleCalendarEvent,

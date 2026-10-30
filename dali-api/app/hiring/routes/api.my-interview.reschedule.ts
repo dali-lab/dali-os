@@ -1,6 +1,6 @@
 import type { Route } from "./+types/api.my-interview.reschedule";
 import { z } from "zod";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { logAuditEvent } from "~/lib/audit";
 import { withCors, handlePreflight } from "~/lib/cors";

@@ -22,7 +22,7 @@ import { requireAuth, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { getUserRoles } from "~/lib/roles";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { getEngagementSummaries, type EngagementSummary } from "~/hiring/lib/email-engagement.server";
 import { Popover, Select } from "~/components/ui/floating";
 import { filterPillClass } from "~/components/ui/floating/styles";

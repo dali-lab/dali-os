@@ -15,7 +15,7 @@ import type { Route } from "./+types/attendance";
 import { requireAuth, isNonMember } from "~/lib/auth";
 import { isCore, isProjectMember } from "~/lib/roles";
 import { redirectToLogin } from "~/lib/login-next";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { loadAttendanceFeed, type AttendanceCard } from "~/lib/attendance-feed.server";
 import { meetingOccurrenceHref } from "~/calendar/lib/meeting-href";
 import { parseOccurrenceParam } from "~/lib/scheduled-meeting";

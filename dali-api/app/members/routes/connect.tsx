@@ -8,7 +8,7 @@ import { getUserRoles } from "~/lib/roles";
 import { listUpcomingMeetings } from "~/lib/upcoming-meetings";
 import { formatInTimeZone, resolveUserTimeZone } from "~/lib/timezone";
 import { meetingOccurrenceHref } from "~/calendar/lib/meeting-href";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { LAB_MEMBER_WHERE, MEMBER_LIST_ORDER_BY } from "~/lib/prisma-shapes";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { fullName } from "~/lib/display";

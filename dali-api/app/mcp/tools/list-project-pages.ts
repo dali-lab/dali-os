@@ -2,7 +2,7 @@
 // top-level pages with their immediate children (2-level cap, matching
 // schema invariant). Excludes archived pages by default.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 
 export const LIST_PROJECT_PAGES_TOOL = {
   name: "list_project_pages",

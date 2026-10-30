@@ -1,12 +1,12 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db", () => ({ prisma: { user: { findMany: vi.fn(), count: vi.fn() } } }));
+vi.mock("~/lib/db.server", () => ({ prisma: { user: { findMany: vi.fn(), count: vi.fn() } } }));
 vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn() }));
 vi.mock("~/lib/roles", () => ({ isAdmin: vi.fn(), isAdminViaEnv: vi.fn(() => false) }));
 vi.mock("~/lib/login-next", () => ({ redirectToLogin: vi.fn(() => new Response(null, { status: 302 })) }));
 vi.mock("~/lib/photo", () => ({ resolvePhotoUrl: vi.fn(async (u: string | null) => u) }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { isAdmin } from "~/lib/roles";
 import { SITE_USER_KINDS, kindOf, kindWhere, loader } from "~/admin/routes/admin.site-users";

@@ -13,7 +13,7 @@
  *   npx tsx scripts/backfill-interview-room-bookings.ts
  */
 
-import { prisma } from "../app/lib/db.js";
+import { prisma } from "../app/lib/db.server.js";
 import { createRoomBooking } from "../app/lib/rooms.server.js";
 
 async function main() {

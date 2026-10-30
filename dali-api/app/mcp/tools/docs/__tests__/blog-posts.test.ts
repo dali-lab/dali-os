@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: { blogPost: { findMany: vi.fn(), create: vi.fn(), update: vi.fn() } },
 }));
 vi.mock("~/lib/roles", () => ({ isAdmin: vi.fn() }));
@@ -23,7 +23,7 @@ vi.mock("~/collab/blocknote-server", () => ({
 vi.mock("~/collab/write", () => ({ replaceCollabDocContent: vi.fn() }));
 vi.mock("../../set-page-content", () => ({ MAX_MARKDOWN_LENGTH: 300_000 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isAdmin } from "~/lib/roles";
 import { resourcesAccess } from "~/lib/resources.server";
 import { findBlogPost, publishBlogPost, unpublishBlogPost } from "~/lib/blog-post.server";

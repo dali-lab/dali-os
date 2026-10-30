@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     releaseNote: {
       findMany: vi.fn(),
@@ -32,7 +32,7 @@ vi.mock("~/lib/groups", () => ({
   resolveGroupMembers: vi.fn(async (g: string) => (g === "g1" ? ["u2", "u3"] : ["u4"])),
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
 import { notify } from "~/lib/notify.server";
 import { copyObject } from "~/lib/s3";

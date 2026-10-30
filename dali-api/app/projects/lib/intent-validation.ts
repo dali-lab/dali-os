@@ -3,7 +3,7 @@
 // role-request gating — the interpreter already enforced the status enum and
 // term membership. This is just the replace-whole-set write.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { planIntentResync, type RawIntent } from "./intent-form-interpreter";
 import type { ColumnMapping } from "./slot-roles";
 

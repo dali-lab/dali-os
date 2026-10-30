@@ -5,7 +5,7 @@
 // this module owns the prisma writes and the Google CRUD.
 
 import { markCalendarChanged } from "~/calendar/lib/external-cache.server";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import {
   createGoogleCalendarEvent,
   deleteGoogleCalendarEvent,

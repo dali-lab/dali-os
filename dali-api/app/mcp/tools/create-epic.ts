@@ -1,6 +1,6 @@
 // MCP `create_epic` — Core or project member. Mirrors api.projects.$id.epics.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { canEditProject } from "./access";
 
 const EPIC_STATUSES = ["Backlog", "Open", "InProgress", "Done", "Cancelled"] as const;

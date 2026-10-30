@@ -3,7 +3,7 @@
 // unit test needs no Prisma client). Writes to the caller's AiUsage row created
 // by that request's daily-quota upsert.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 
 /**
  * Best-effort token accounting on the caller's AiUsage row. Never throws — a

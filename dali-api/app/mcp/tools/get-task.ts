@@ -3,7 +3,7 @@
 // tools/resources intentionally return summary rows; this is the detail read.
 // Read access is any authenticated member (mirrors get_project_overview).
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { fullName } from "~/lib/display";
 
 export const GET_TASK_TOOL = {

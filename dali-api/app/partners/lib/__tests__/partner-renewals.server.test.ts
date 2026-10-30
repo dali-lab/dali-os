@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 
 import { applyContinue, applyNotContinuing, applyUndecided } from "../partner-renewals.server";
 

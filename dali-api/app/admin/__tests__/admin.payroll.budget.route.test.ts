@@ -11,7 +11,7 @@ vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
 vi.mock("~/lib/terms", () => ({ resolveTermFilter: vi.fn() }));
 // Mutation helpers + the loader's data source are stubbed so this stays a pure
 // gating/validation/dispatch test. Plain factory only — no importActual: the
-// real budget.ts imports ~/lib/db, and loading it here would require the
+// real budget.ts imports ~/lib/db.server, and loading it here would require the
 // generated Prisma client (absent in CI, where prisma generate never runs).
 // The route gets the real PROJECT_TYPES from budget.shared (client-safe).
 vi.mock("~/admin/lib/budget", () => ({

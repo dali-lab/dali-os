@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { Form, redirect, useLoaderData, useNavigation } from "react-router";
 import type { Route } from "./+types/partner.apply";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { logAuditEvent } from "~/lib/audit";
 import { requirePartnerAccount } from "~/partners/lib/partner-auth.server";
 import { loadApplicationForm } from "~/partners/lib/application-form.server";

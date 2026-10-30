@@ -6,7 +6,7 @@ import { createMemoryRouter, RouterProvider } from "react-router";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/auth", () => ({}));
 vi.mock("~/lib/login-next", () => ({}));
 vi.mock("~/lib/roles", () => ({}));

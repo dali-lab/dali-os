@@ -3,7 +3,7 @@ import { describe, it, expect, afterEach, vi } from "vitest";
 
 // The hub route module pulls the server stack in at import time; the component
 // under test needs none of it.
-vi.mock("~/lib/db", () => ({ prisma: {} }));
+vi.mock("~/lib/db.server", () => ({ prisma: {} }));
 vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn() }));
 vi.mock("~/lib/login-next", () => ({ redirectToLogin: vi.fn() }));
 vi.mock("~/lib/roles", () => ({

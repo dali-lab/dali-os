@@ -20,7 +20,7 @@ vi.mock("~/mcp/registry", () => {
   }
   return { McpError, McpNotFoundError, McpForbiddenError, McpInvalidError };
 });
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/availability", async (orig) => {
   const real = await orig<typeof import("~/lib/availability")>();
   return { ...real, computeUserFreeBusy: vi.fn() };

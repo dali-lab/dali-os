@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/gmail", () => ({ sendEmail: vi.fn() }));
 vi.mock("~/lib/gmail-integration", () => ({ getSender: vi.fn(), noteSenderHealth: vi.fn() }));
 vi.mock("~/slack/lib/slack-client", () => ({
@@ -13,7 +13,7 @@ vi.mock("~/slack/lib/slack-client", () => ({
 vi.mock("~/lib/s3", () => ({ getObjectBytes: vi.fn() }));
 vi.mock("~/lib/app-env", () => ({ getAppEnv: vi.fn(() => "prod") }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { sendEmail } from "~/lib/gmail";
 import { getSender, noteSenderHealth } from "~/lib/gmail-integration";
 import { sendDm, postMessage, postBlocks, uploadFileToThread } from "~/slack/lib/slack-client";

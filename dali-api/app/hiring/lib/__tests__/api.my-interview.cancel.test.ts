@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/auth", () => ({
   requireAuth: vi.fn(),
 }));
@@ -17,7 +17,7 @@ vi.mock("~/hiring/lib/interview-notifications", () => ({
   notifyInterviewCancelled: vi.fn().mockResolvedValue(undefined),
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { getInterviewerRecipients, sendInterviewCancelEmails } from "~/hiring/lib/interview-emails";
 import { getActiveInterviewerUserIds, notifyInterviewCancelled } from "~/hiring/lib/interview-notifications";

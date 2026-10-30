@@ -4,7 +4,7 @@ const mockUpdateMany = vi.hoisted(() => vi.fn());
 const mockFindFirst = vi.hoisted(() => vi.fn());
 const mockLogAuditEvent = vi.hoisted(() => vi.fn());
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     devicePairing: { updateMany: mockUpdateMany, findFirst: mockFindFirst },
   },

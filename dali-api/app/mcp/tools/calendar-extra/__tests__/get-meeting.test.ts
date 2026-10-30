@@ -20,7 +20,7 @@ vi.mock("~/mcp/registry", () => {
   }
   return { McpError, McpNotFoundError, McpForbiddenError, McpInvalidError };
 });
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/roles", async (orig) => {
   const real = await orig<typeof import("~/lib/roles")>();
   return { ...real, isCore: vi.fn(), isProjectMember: vi.fn() };
@@ -31,7 +31,7 @@ vi.mock("~/lib/display", () => ({
 }));
 vi.mock("~/lib/meeting-recording.server", () => ({ canReadRecording: vi.fn() }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore, isProjectMember } from "~/lib/roles";
 import { canReadRecording } from "~/lib/meeting-recording.server";
 import { runGetMeeting, GET_MEETING_DEF } from "~/mcp/tools/calendar-extra/get-meeting";

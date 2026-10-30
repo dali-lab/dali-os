@@ -11,7 +11,7 @@
 // error never blocks booking / reschedule / cancel. The zoom*
 // columns and app/lib/zoom.ts (the still-blocked S2S path) are untouched.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import type { Prisma } from "~/generated/prisma/client";
 import {
   createGoogleCalendarEvent,

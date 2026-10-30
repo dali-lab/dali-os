@@ -14,7 +14,7 @@
 
 import { deleteForm, setFormArchived } from "~/forms/lib/form-page.server";
 import type { Route } from "./+types/api.drive.trash";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { getPageAccess, getPageAccessBulk } from "~/lib/pageAccess.server";
 import { canEditFile } from "~/lib/fileAccess.server";

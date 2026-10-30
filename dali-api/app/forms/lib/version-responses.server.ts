@@ -1,5 +1,5 @@
 import type { Prisma } from "~/generated/prisma/client";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { offsetPage, offsetWindow } from "~/lib/pagination";
 import { buildResponseGrid } from "~/forms/lib/answer-rows.server";
 import type { Question } from "~/types";

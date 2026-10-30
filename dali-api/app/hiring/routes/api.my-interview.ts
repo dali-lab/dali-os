@@ -1,5 +1,5 @@
 import type { Route } from "./+types/api.my-interview";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 

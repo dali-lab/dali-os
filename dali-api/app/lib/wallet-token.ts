@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 
 // Signed member token carried in the barcode of a member's Apple/Google Wallet
 // membership pass. Format:

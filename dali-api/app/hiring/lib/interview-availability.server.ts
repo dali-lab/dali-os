@@ -1,5 +1,5 @@
 import { zonedDayStartUtc, zonedWallTimeUtc } from "~/lib/timezone";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { computeUserFreeBusy, intersectFreeIntervals, type Interval } from "~/lib/availability";
 
 // Interviewer availability for scheduling, read straight from each member's

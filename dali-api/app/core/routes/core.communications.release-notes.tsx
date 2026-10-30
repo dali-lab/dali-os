@@ -3,7 +3,7 @@ import { Link, useFetcher, useLoaderData } from "react-router";
 import { AlertTriangle, Film, Plus, Upload } from "lucide-react";
 import type { Route } from "./+types/core.communications.release-notes";
 import { coreHandle } from "~/core/coreNav";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { formatDateShort } from "~/lib/display";
 import {
   createReleaseNoteDraft,

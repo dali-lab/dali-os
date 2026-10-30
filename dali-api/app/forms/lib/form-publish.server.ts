@@ -1,4 +1,4 @@
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 
 // Unguessable public token for a published form's external fill URL.
 export function newPublicToken(): string {

@@ -13,7 +13,7 @@
 // writing the booleans directly, so partner and public sharing keep their audit
 // events.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore, isProjectMember } from "~/lib/roles";
 import { CLEARED_FOLDER_TYPE } from "~/lib/drive-roots";
 import { logAuditEvent, type AuditAction } from "~/lib/audit";

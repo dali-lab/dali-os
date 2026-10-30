@@ -4,7 +4,7 @@
 // document has a published version in force for a context they're in the
 // audience of, and they haven't signed that version.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { currentTerm } from "~/lib/roles";
 import { isUserActiveInTerm, resolveGroupMembers } from "~/lib/groups";
 import { isNewMemberCohort } from "~/hiring/lib/new-member-cohort.server";

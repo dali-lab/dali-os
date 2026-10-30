@@ -1,7 +1,7 @@
 // MCP tool: get_form_responses — paginated submission grid for a form.
 // Scope: mcp:read; edit access on the form.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { canBuildForm } from "~/forms/lib/form-access.server";
 import { buildResponseGrid } from "~/forms/lib/answer-rows.server";
 import type { Question } from "~/types";

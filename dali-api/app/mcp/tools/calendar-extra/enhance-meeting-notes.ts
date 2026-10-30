@@ -16,7 +16,7 @@
 //
 // NEVER log the transcript, the note's text, or the model's raw response.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { getUserRoles } from "~/lib/roles";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { checkRateLimit } from "~/lib/rate-limit";

@@ -22,7 +22,7 @@ vi.mock("~/mcp/registry", () => {
   }
   return { McpError, McpNotFoundError, McpForbiddenError, McpInvalidError };
 });
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/roles", () => ({ getUserRoles: vi.fn().mockResolvedValue({}) }));
 vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabled: vi.fn() }));
 vi.mock("~/lib/meeting-recording.server", () => ({
@@ -44,7 +44,7 @@ vi.mock("~/lib/meeting-notes-apply.server", async (importOriginal) => ({
   ensureTranscriptToggle: vi.fn((blocks: unknown) => blocks),
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { getUserRoles } from "~/lib/roles";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { canRecordInto, resolveSpeakerNames, storedLines } from "~/lib/meeting-recording.server";

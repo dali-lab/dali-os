@@ -6,7 +6,7 @@ vi.mock("~/lib/auth", () => ({
   isNonMember: vi.fn(),
   redirectPartnerToPortal: vi.fn(),
 }));
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/cors", () => ({
   withCors: (_req: Request, res: Response) => res,
   handlePreflight: () => null,
@@ -21,7 +21,7 @@ vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
 vi.mock("../../lib/file-notifications.server", () => ({ notifyFileNewVersion: vi.fn() }));
 
 import { requireAuth, isNonMember, redirectPartnerToPortal } from "~/lib/auth";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { canViewFile } from "~/lib/fileAccess.server";
 import { loader } from "~/projects/routes/api.files.$id";
 

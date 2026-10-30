@@ -4,7 +4,7 @@
 // app-enforced documents are notified proactively; hiring-cycle confidentiality
 // is caught by its own gate (its resolver enumerates no one here).
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { notify } from "~/lib/notify.server";
 import { type EmailAttachment } from "~/lib/gmail";
 import { getFrontendUrl } from "~/lib/app-env";

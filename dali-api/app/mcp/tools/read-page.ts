@@ -9,7 +9,7 @@
 // partners) on Project pages, and the offering's instructors on
 // EducationOffering pages.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { readDocAsBlocks } from "~/collab/read";
 import { blocksToMarkdown } from "~/collab/blocknote-server";
 import { pageDocName } from "~/collab/roomName";

@@ -1,4 +1,4 @@
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isAdmin } from "~/lib/roles";
 import { AdminForbiddenError as McpForbiddenError } from "./errors";
 import type { McpCtx } from "../../registry";

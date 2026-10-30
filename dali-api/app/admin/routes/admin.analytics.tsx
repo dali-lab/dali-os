@@ -11,11 +11,11 @@ import { ChartLegend, TimeSeriesChart, type ChartSeries } from "~/components/ana
 import { useOsChrome } from "~/components/os-chrome";
 import { Tooltip } from "~/components/ui/floating";
 import { cn } from "~/lib/cn";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { isCore, isAdmin } from "~/lib/roles";
-import { formatDuration } from "~/lib/analytics";
+import { formatDuration } from "~/lib/format-duration";
 import { percentChange, priorViewsByPath } from "~/lib/analytics-compare.server";
 
 export const handle = adminHandle("analytics");

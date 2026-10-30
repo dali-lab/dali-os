@@ -1,5 +1,5 @@
 import type { Prisma } from "~/generated/prisma/client";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { getOpenCycles, type ActiveCycle } from "~/hiring/lib/cycles";
 import { applicantDeadline } from "~/hiring/lib/domain-windows";
 import { applicantGroup } from "~/hiring/lib/applicant-groups.server";

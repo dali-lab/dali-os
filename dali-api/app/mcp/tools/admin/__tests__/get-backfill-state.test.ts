@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/roles", () => ({ isAdmin: vi.fn() }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isAdmin } from "~/lib/roles";
 import { runGetBackfillState, GET_BACKFILL_STATE_TOOL } from "~/mcp/tools/admin/get-backfill-state";
 import type { McpCtx } from "~/mcp/registry";

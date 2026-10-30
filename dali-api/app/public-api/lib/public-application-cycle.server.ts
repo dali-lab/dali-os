@@ -1,4 +1,4 @@
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { getOpenCycles } from "~/hiring/lib/cycles";
 import { domainCloseDate, earliestCloseDate, isDomainClosed } from "~/hiring/lib/domain-windows";
 

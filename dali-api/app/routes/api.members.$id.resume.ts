@@ -7,7 +7,7 @@
 import type { Route } from "./+types/api.members.$id.resume";
 import { randomUUID } from "node:crypto";
 import { requireAuth } from "~/lib/auth";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { logAuditEvent } from "~/lib/audit";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { getUserRoles, isAdmin } from "~/lib/roles";

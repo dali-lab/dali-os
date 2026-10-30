@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     mailMessageIndex: { findMany: vi.fn(), createMany: vi.fn() },
     partnerContact: { findMany: vi.fn() },
@@ -8,7 +8,7 @@ vi.mock("~/lib/db", () => ({
 }));
 vi.mock("~/lib/user-email.server", () => ({ findUserIdsByAddresses: vi.fn() }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { findUserIdsByAddresses } from "~/lib/user-email.server";
 import { PARTNERS_FROM_EMAIL } from "~/lib/app-env";
 import { parseAddressList } from "~/email/lib/address-list";

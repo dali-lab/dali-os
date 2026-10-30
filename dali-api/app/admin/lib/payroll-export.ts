@@ -1,4 +1,4 @@
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { rowsToCsv as rowsToCsvShared } from "~/lib/csv";
 import type { Level } from "~/lib/level";
 import { DALI_PROGRAMS_GL, type ChartStringType } from "~/lib/chart-string";

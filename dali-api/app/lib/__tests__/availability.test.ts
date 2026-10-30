@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/google-calendar");
 
 import {
@@ -9,7 +9,7 @@ import {
   type ComputeInput,
   type Interval,
 } from "~/lib/availability";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { fetchBusyEvents } from "~/lib/google-calendar";
 
 // Helpers ------------------------------------------------------------------

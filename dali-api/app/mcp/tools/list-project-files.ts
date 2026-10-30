@@ -1,7 +1,7 @@
 // MCP `list_project_files` — files uploaded to a project. Read access for any
 // authenticated member.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 
 export const LIST_PROJECT_FILES_TOOL = {
   name: "list_project_files",

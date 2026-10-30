@@ -4,7 +4,7 @@
 
 import type { Route } from "./+types/api.meeting-recordings.active";
 import { requireAuth } from "~/lib/auth";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { getUserRoles } from "~/lib/roles";
 import { documentTitle } from "~/lib/meeting-recording.server";

@@ -18,7 +18,7 @@ import { useDialog } from "~/components/ui/dialog";
 import { useToast } from "~/components/ui/toast";
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { logAuditEvent } from "~/lib/audit";
 import { redirectToLogin } from "~/lib/login-next";

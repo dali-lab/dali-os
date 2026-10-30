@@ -5,7 +5,7 @@ import type { Route } from "./+types/api.infra.config";
 import { requireAuth, forbidden } from "~/lib/auth";
 import { getUserRoles } from "~/lib/roles";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { saveInfraConfig } from "~/lib/infra/config-save.server";
 
 export async function action({ request }: Route.ActionArgs) {

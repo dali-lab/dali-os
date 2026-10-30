@@ -5,7 +5,7 @@
 // notification read on submit. We expose the title, dueAt, and the fill URL.
 // Requires the `mcp:read` scope.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 
 export const FORMS_PENDING_RESOURCE = {
   uri: "dali://forms/pending",

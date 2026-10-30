@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     partnerApplicationFormBinding: { findFirst: vi.fn() },
     formSubmission: { count: vi.fn(), findMany: vi.fn() },
@@ -13,7 +13,7 @@ vi.mock("~/forms/lib/answer-rows.server", () => ({
   })),
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import {
   RESPONSES_PAGE_SIZE,
   loadVersionResponses,

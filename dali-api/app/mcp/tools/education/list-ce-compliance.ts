@@ -11,7 +11,7 @@ import {
   type McpCtx,
   type McpTool,
 } from "../../registry";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 
 export const LIST_CE_COMPLIANCE_TOOL = {
   name: "list_ce_compliance",

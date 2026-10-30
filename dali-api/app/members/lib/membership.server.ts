@@ -1,4 +1,4 @@
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { addOrUpdateEligibility } from "~/admin/lib/eligibility.server";
 import type { Level } from "~/admin/lib/eligibility";
 import { assignHandleIfMissing } from "~/lib/handle";

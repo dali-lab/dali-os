@@ -7,7 +7,7 @@ import { requireAuth, redirectNonMemberToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { parseFormDataJson } from "~/lib/safe-json";
 import { canManageStaffing, canViewStaffing, currentTerm } from "~/lib/roles";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { applyEligibilityWithNotify } from "~/admin/lib/eligibility.server";
 import { ensureStaffingCycle } from "../lib/staffing-cycle";
 import {

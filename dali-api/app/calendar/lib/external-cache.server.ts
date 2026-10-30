@@ -1,4 +1,4 @@
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 
 /**
  * Short-lived cache for Google reads, keyed by who is asking and which window.

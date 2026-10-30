@@ -1,6 +1,6 @@
 import type { Route } from "./+types/api.mobile.notes";
 import { z } from "zod";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { getUserRoles } from "~/lib/roles";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { isTranscriptionEnabled } from "~/lib/transcription/provider";

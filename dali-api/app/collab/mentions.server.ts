@@ -1,5 +1,5 @@
 import * as Y from "yjs";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { notify } from "~/lib/notify.server";
 import { ydocToBlocks } from "./read";
 

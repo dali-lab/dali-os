@@ -11,7 +11,7 @@ const db = vi.hoisted(() => ({
   },
   user: { findUnique: vi.fn(), findMany: vi.fn() },
 }));
-vi.mock("~/lib/db", () => ({ prisma: db }));
+vi.mock("~/lib/db.server", () => ({ prisma: db }));
 vi.mock("~/lib/notify.server", () => ({ notify: vi.fn() }));
 vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
 

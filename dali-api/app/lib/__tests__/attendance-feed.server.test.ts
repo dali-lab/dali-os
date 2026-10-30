@@ -9,7 +9,7 @@ const { db } = vi.hoisted(() => ({
   },
 }));
 
-vi.mock("~/lib/db", () => ({ prisma: db }));
+vi.mock("~/lib/db.server", () => ({ prisma: db }));
 vi.mock("~/lib/display", () => ({
   fullName: (u: { firstName: string; lastName: string }) => `${u.firstName} ${u.lastName}`,
 }));

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/auth", () => ({ requireProjectEditAccess: vi.fn() }));
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/cors", () => ({
   withCors: (_req: Request, res: Response) => res,
   handlePreflight: () => null,
@@ -12,7 +12,7 @@ vi.mock("~/projects/lib/github-task-sync", () => ({
 }));
 
 import { requireProjectEditAccess } from "~/lib/auth";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { loader, ARCHIVED_TASKS_PAGE_SIZE } from "~/projects/routes/api.projects.$id.tasks";
 
 const mockPrisma = prisma as unknown as { task: { findMany: ReturnType<typeof vi.fn> } };

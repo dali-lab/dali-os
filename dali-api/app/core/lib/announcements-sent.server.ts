@@ -1,5 +1,5 @@
 import type { Prisma } from "~/generated/prisma/client";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { fullName } from "~/lib/display";
 import { decodeCursor, keysetAfter, keysetPage } from "~/lib/pagination";
 

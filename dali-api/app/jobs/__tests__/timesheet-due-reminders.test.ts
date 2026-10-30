@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/notify.server", () => ({
   notify: vi.fn().mockResolvedValue({ inApp: 0, emailed: 0, slackDmed: 0 }),
 }));
@@ -8,7 +8,7 @@ vi.mock("~/lib/roles", () => ({
   currentTerm: vi.fn().mockResolvedValue({ id: "term-26f" }),
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { notify } from "~/lib/notify.server";
 import { currentTerm } from "~/lib/roles";
 import { JOBS } from "~/jobs/registry";

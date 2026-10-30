@@ -3,7 +3,7 @@
 //   get_personal_note     — mcp:read   (single note with body access check)
 //   manage_personal_note  — mcp:write  (faceted: create/update/delete/set_visibility/share_add/share_remove)
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isLabMember } from "~/lib/roles";
 import { requireForAction } from "~/mcp/registry";
 import {

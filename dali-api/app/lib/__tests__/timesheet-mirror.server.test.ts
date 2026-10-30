@@ -30,7 +30,7 @@ const rolesMock = vi.hoisted(() => ({
   getRoleLabel: vi.fn(),
 }));
 
-vi.mock("~/lib/db", () => ({ prisma: prismaMock }));
+vi.mock("~/lib/db.server", () => ({ prisma: prismaMock }));
 vi.mock("~/lib/google-calendar", () => googleCalendarMock);
 vi.mock("~/lib/roles", () => rolesMock);
 // APPLICATION_TZ is a plain string export — keep the real value

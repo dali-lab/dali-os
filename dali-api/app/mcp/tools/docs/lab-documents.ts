@@ -2,7 +2,7 @@
 // list_lab_documents (mcp:read), create_lab_document (mcp:write),
 // delete_lab_document (mcp:write).
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore, isLabMember } from "~/lib/roles";
 import { createLabPage } from "~/lib/pages";
 import { duplicatePage } from "~/lib/page-copy.server";

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/outbound.server", () => ({
   enqueueOutbound: vi.fn(async () => ({ id: "om-1", deduped: false })),
   drainNow: vi.fn(async () => {}),
@@ -15,7 +15,7 @@ vi.mock("~/lib/audit", () => ({
   logAuditEvent: vi.fn().mockResolvedValue(undefined),
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
 import { getApplicationsGmailRefreshToken } from "~/lib/gmail-integration";
 import { getHiringEmail } from "~/hiring/lib/hiring-emails.server";

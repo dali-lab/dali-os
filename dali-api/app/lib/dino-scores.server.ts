@@ -1,4 +1,4 @@
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { scoreBoard } from "~/lib/game-scores.server";
 
 // The leaderboard for the runner game on every error screen. See the DinoScore

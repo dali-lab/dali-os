@@ -13,7 +13,7 @@
 //
 // See specs/communication-idempotency.md.
 
-import { prisma, Prisma } from "~/lib/db";
+import { prisma, Prisma } from "~/lib/db.server";
 import { sendEmail, type EmailAttachment } from "~/lib/gmail";
 import { getSender, noteSenderHealth } from "~/lib/gmail-integration";
 import {

@@ -1,4 +1,4 @@
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { logAuditEvent } from "~/lib/audit";
 import { notify } from "~/lib/notify.server";
 import { educationLink } from "./notifications.server";

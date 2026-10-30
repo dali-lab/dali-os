@@ -1,7 +1,7 @@
 // The one save path for a project's infra config, shared by the project hub's
 // Infrastructure section and the Admin console. Callers check permission.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { logAuditEvent } from "~/lib/audit";
 import { refreshProjectInfra } from "~/jobs/infra-snapshot.server";
 import { buildInfraConfigUpdate, infraConfigFromForm, inheritFlyTokens } from "./project-infra.server";

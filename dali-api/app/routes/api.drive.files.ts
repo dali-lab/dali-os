@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { isCore, isLabMember, isProjectMember } from "~/lib/roles";

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/layout-cache.server", () => ({ invalidateLayoutCache: vi.fn() }));
 vi.mock("~/lib/pageAccess.server", async (importOriginal) => {
   const getPageAccess = vi.fn();
@@ -17,7 +17,7 @@ vi.mock("~/lib/pageAccess.server", async (importOriginal) => {
   };
 });
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { getPageAccess } from "~/lib/pageAccess.server";
 import { invalidateLayoutCache } from "~/lib/layout-cache.server";
 import {

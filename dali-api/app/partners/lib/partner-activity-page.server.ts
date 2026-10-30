@@ -1,4 +1,4 @@
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { decodeCursor, keysetAfter, keysetPage } from "~/lib/pagination";
 import type { PartnerActivity, PartnerActivityScope } from "../components/PartnerActivityFeed";
 

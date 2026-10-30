@@ -1,7 +1,7 @@
 // MCP `manage_page` — faceted page management tool.
 // Actions: pin · move · duplicate · favorite · set_template · typography.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore, isLabMember, isProjectMember } from "~/lib/roles";
 import { getPageAccess } from "~/lib/pageAccess.server";
 import { canEditProject } from "~/mcp/tools/access";

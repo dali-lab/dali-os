@@ -2,7 +2,7 @@
 // Mentors are the journey's owners and editors (and Core), never the learner.
 
 import type { OnboardingLabSubmissionStatus } from "~/generated/prisma/enums";
-import { prisma, Prisma } from "~/lib/db";
+import { prisma, Prisma } from "~/lib/db.server";
 import { fullName } from "~/lib/display";
 import { notify } from "~/lib/notify.server";
 import { decodeCursor, keysetAfter, keysetPage } from "~/lib/pagination";

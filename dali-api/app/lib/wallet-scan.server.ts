@@ -1,4 +1,4 @@
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { classifyWalletScanFailure, memberIdFromToken, verifyWalletToken } from "~/lib/wallet-token";
 

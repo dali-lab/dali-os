@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { runGetTask, GET_TASK_TOOL, GetTaskError } from "~/mcp/tools/get-task";
 
 const mockPrisma = prisma as unknown as {

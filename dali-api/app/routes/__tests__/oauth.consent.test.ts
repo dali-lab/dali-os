@@ -17,7 +17,7 @@ vi.mock("~/lib/oauth", () => ({
       Object.fromEntries(Object.entries(query).filter(([, v]) => v)) as Record<string, string>,
     )}`,
 }));
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     oAuthSession: { findUnique: vi.fn(), update: vi.fn() },
     user: { findUnique: vi.fn() },
@@ -25,7 +25,7 @@ vi.mock("~/lib/db", () => ({
   },
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { action, loader } from "~/routes/oauth.consent";
 
 const OAUTH_SESSION = {

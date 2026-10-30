@@ -5,7 +5,7 @@
 // Gate: mcp:read (any authenticated member — mirrors the web loader's
 // requireProjectEditAccess which is the same gate used for reading the board).
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { McpNotFoundError } from "./errors";
 import { fullName } from "~/lib/display";
 import { USER_NAME_SELECT } from "~/lib/prisma-shapes";

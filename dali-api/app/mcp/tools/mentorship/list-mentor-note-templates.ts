@@ -2,7 +2,7 @@
 // Scope: mcp:read. Visibility: any lab mentor or Core (same gate as the route).
 // Mirrors the logic in api.mentorship.templates.ts GET handler.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { canViewMentorship } from "~/mentorship/lib/visibility";
 import type { McpCtx, McpTool } from "../../registry";
 import { McpForbiddenError } from "../../registry";

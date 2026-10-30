@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("~/lib/db", () => ({ prisma: { feedbackPost: { findMany: vi.fn() } } }));
+vi.mock("~/lib/db.server", () => ({ prisma: { feedbackPost: { findMany: vi.fn() } } }));
 vi.mock("~/lib/photo", () => ({ resolvePhotoUrl: vi.fn(async (u: string | null) => (u ? `signed:${u}` : null)) }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { encodeCursor } from "~/lib/pagination";
 import { FEED_PAGE_SIZE, loadFeedbackPage, loadFeedbackPostsByIds } from "~/lib/feedback-feed.server";

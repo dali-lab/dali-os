@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/auth", () => ({
   requireAuth: vi.fn(),
   requireCore: vi.fn(),
@@ -23,7 +23,7 @@ vi.mock("~/lib/core-cycle", () => ({
   cycleSortKeyRange: vi.fn(),
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { logAuditEvent } from "~/lib/audit";
 import { requireAuth } from "~/lib/auth";
 import { isAdmin, isCore, currentTerm } from "~/lib/roles";

@@ -1,5 +1,5 @@
 import type { Route } from "./+types/core.communications.banners";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { coreHandle } from "~/core/coreNav";
 import { requireCommsViewer } from "~/core/lib/communications.server";
 import { listBanners } from "~/core/lib/banners.server";
