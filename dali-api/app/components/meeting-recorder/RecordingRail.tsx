@@ -454,6 +454,7 @@ export function RecordingBody({ rec }: { rec: UseMeetingRecording }) {
   const channelLabel: Record<Channel, string> = { mic: "Microphone", call: "Call audio" };
   return (
     <div className="flex flex-col gap-2 rounded-xl bg-os-well px-3 py-3">
+      {rec.noSound && <p className="text-sm text-destructive">No sound detected. Stop and record again.</p>}
       {rec.captureMode === "browser" ? (
         <>
           {rec.channelsActive.length > 0 && (

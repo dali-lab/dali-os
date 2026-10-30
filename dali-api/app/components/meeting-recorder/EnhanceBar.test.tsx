@@ -298,6 +298,16 @@ describe("EnhanceBar pending review", () => {
 });
 
 describe("EnhanceBar other states", () => {
+  it("recording: warns when no sound has been detected, and shows nothing otherwise", () => {
+    const silent = mountBar(makeRec({ phase: "recording", noSound: true }));
+    expect(silent.container.textContent).toContain("No sound detected");
+    silent.unmount();
+
+    const fine = mountBar(makeRec({ phase: "recording", noSound: false }));
+    expect(fine.container.textContent).toBe("");
+    fine.unmount();
+  });
+
   it.each([
     ["recording", { phase: "recording" as const }],
     ["review", { phase: "review" as const }],

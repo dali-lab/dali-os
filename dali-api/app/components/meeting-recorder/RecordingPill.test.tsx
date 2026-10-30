@@ -5,7 +5,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { createRoutesStub } from "react-router";
 import { FeatureFlagsProvider } from "~/components/FeatureFlags";
 import { RECORDING_FAVICON, RecordingPill } from "./RecordingPill";
-import { adoptDesktopSession, getLiveSession, resetLiveSession } from "./live-session";
+import { adoptDesktopSession, getLiveSession, refreshLiveSession, resetLiveSession } from "./live-session";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 vi.mock("./worklet-processor.js?url", () => ({ default: "worklet.js" }));
@@ -87,6 +87,19 @@ describe("RecordingPill", () => {
     serverRow = null;
     await mount();
     expect(container.textContent).toBe("");
+  });
+
+  it("flags a recording with no sound, and clears it once sound arrives", async () => {
+    serverRow = row({ noSound: true });
+    await mount();
+    expect(container.textContent).toContain("No sound");
+    expect(stopButton()).not.toBeNull();
+
+    serverRow = row({ noSound: false });
+    await act(async () => {
+      await refreshLiveSession();
+    });
+    expect(container.textContent).not.toContain("No sound");
   });
 
   it("picks up a recording the server already has on first load", async () => {

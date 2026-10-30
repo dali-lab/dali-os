@@ -24,6 +24,8 @@ const row = (over: Record<string, unknown> = {}) => ({
   documentName: "doc:p1:body",
   status: "Recording",
   sessionStartedAt: null,
+  voicedChannels: [] as string[],
+  lastChunkAt: null,
   ...over,
 });
 
@@ -40,6 +42,36 @@ beforeEach(() => {
 });
 
 describe("GET /api/meeting-recordings/active", () => {
+  describe("noSound", () => {
+    const ago = (seconds: number) => new Date(Date.now() - seconds * 1000);
+    const noSoundFor = async (over: Record<string, unknown>) => {
+      vi.mocked(prisma.meetingRecording.findFirst).mockResolvedValue(
+        row({ sessionStartedAt: ago(90), lastChunkAt: ago(5), voicedChannels: [], ...over }) as never,
+      );
+      return (await (await run()).json()).recording.noSound;
+    };
+
+    it("is true a minute in with chunks arriving and none of them voiced", async () => {
+      expect(await noSoundFor({})).toBe(true);
+    });
+
+    it("is false once any channel has sound", async () => {
+      expect(await noSoundFor({ voicedChannels: ["call"] })).toBe(false);
+    });
+
+    it("waits out a quiet opening", async () => {
+      expect(await noSoundFor({ sessionStartedAt: ago(45) })).toBe(false);
+    });
+
+    it("does not blame the audio when no chunks have arrived", async () => {
+      expect(await noSoundFor({ lastChunkAt: null })).toBe(false);
+    });
+
+    it("is false once recording has stopped", async () => {
+      expect(await noSoundFor({ status: "Stopped" })).toBe(false);
+    });
+  });
+
   it("is off without the flag", async () => {
     vi.mocked(isFeatureEnabled).mockResolvedValue(false);
     expect((await run()).status).toBe(403);
