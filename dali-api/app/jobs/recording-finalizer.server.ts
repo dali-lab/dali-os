@@ -1,7 +1,7 @@
 // Backstop for recordings whose client never confirmed Stop cleanly, or
 // whose transcription job never called back. See specs/meeting-transcription
-// .md "Jobs" (a)(b)(c)(d). Idempotent: a row only matches one of the four
-// queries at a time, and each branch's own update moves it out of that
+// .md "Jobs" (a)(b)(c)(d), plus (e) deleting audio past its retention. Idempotent:
+// a row only matches one of the five queries at a time, and each branch's own update moves it out of that
 // query for the next tick.
 
 import { prisma } from "~/lib/db.server";
@@ -19,6 +19,7 @@ const LAST_CHUNK_STALE_MS = 10 * 60_000;
 const PROCESSING_TIMEOUT_MS = 30 * 60_000;
 const PENDING_UNCLAIMED_MS = 30 * 60_000;
 const STOPPED_UNFINISHED_MS = 30 * 60_000;
+const AUDIO_RETENTION_MS = 24 * 60 * 60_000;
 
 export async function runRecordingFinalizer({ now }: JobContext): Promise<JobResult> {
   // (a) A client that stopped uploading without confirming Stop (closed tab,
@@ -86,8 +87,18 @@ export async function runRecordingFinalizer({ now }: JobContext): Promise<JobRes
     }
   }
 
+  // (e) Finished recordings keep their audio for a day, then lose it.
+  const expiredAudio = await prisma.meetingRecording.findMany({
+    where: { finalizedAt: { lt: new Date(now.getTime() - AUDIO_RETENTION_MS) }, audioDeletedAt: null },
+    take: TAKE,
+  });
+  for (const rec of expiredAudio) {
+    await deletePrefix(rec.id);
+    await prisma.meetingRecording.update({ where: { id: rec.id }, data: { audioDeletedAt: now } });
+  }
+
   return {
-    items: abandoned.length + stuck.length + unclaimed.length + stoppedUnfinished.length,
-    note: `abandoned=${abandoned.length} stuck=${stuck.length} unclaimed=${unclaimed.length} stoppedUnfinished=${stoppedUnfinished.length}`,
+    items: abandoned.length + stuck.length + unclaimed.length + stoppedUnfinished.length + expiredAudio.length,
+    note: `abandoned=${abandoned.length} stuck=${stuck.length} unclaimed=${unclaimed.length} stoppedUnfinished=${stoppedUnfinished.length} expiredAudio=${expiredAudio.length}`,
   };
 }
