@@ -5,6 +5,7 @@ const db = vi.hoisted(() => ({
   onboardingLabSubmission: {
     findUnique: vi.fn(),
     findMany: vi.fn(),
+    findFirst: vi.fn(),
     upsert: vi.fn(),
     update: vi.fn(),
     deleteMany: vi.fn(),
@@ -23,7 +24,7 @@ vi.mock("~/lib/photo", () => ({ resolvePhotoUrl: vi.fn(async () => null) }));
 vi.mock("~/lib/roles", () => ({ getUserRoles: vi.fn() }));
 vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabled: vi.fn() }));
 
-import { labApproved, listReviews, resetMyWork, reviewSubmission, saveMyWork, submitMyWork } from "../studio.server";
+import { countReviews, labApproved, listReviewedPage, listWaitingReviews, loadReviewEntry, REVIEWED_PAGE_SIZE, resetMyWork, reviewSubmission, saveMyWork, submitMyWork } from "../studio.server";
 import type { JourneyViewer } from "../journeys.server";
 import type { StudioLab } from "../studio-types";
 import { mod } from "./fixtures";
@@ -165,14 +166,77 @@ describe("reviewing", () => {
 });
 
 describe("queue and approval", () => {
-  it("lists work on journeys the viewer edits, excluding their own", async () => {
+  const scope = { userId: { not: "mentor" }, journey: { collaborators: { some: { userId: "mentor" } } } };
+  const row = (id: string, status: string, updatedAt: Date) => ({
+    ...submission(status),
+    id,
+    updatedAt,
+    moduleId: "m1",
+    journeyId: "j1",
+    user: { id: "learner", firstName: "Ada", lastName: "Lovelace", photoUrl: null },
+    journey: { published: journeyRow().published, domain: { code: "UIUX", displayName: "Design" } },
+  });
+
+  it("loads every waiting submission with no cap, excluding the viewer's own", async () => {
     db.onboardingLabSubmission.findMany.mockResolvedValue([]);
-    await listReviews(mentor);
-    expect(db.onboardingLabSubmission.findMany.mock.calls[0][0].where).toEqual({
+    await listWaitingReviews(mentor);
+    const args = db.onboardingLabSubmission.findMany.mock.calls[0][0];
+    expect(args.where).toEqual({ status: "Submitted", ...scope });
+    expect(args.take).toBeUndefined();
+  });
+
+  it("scopes Core viewers to every journey", async () => {
+    db.onboardingLabSubmission.findMany.mockResolvedValue([]);
+    await listWaitingReviews({ id: "core", isCore: true, leadDomainIds: [] });
+    expect(db.onboardingLabSubmission.findMany.mock.calls[0][0].where.journey).toEqual({});
+  });
+
+  it("pages reviewed work by updatedAt and id, with a cursor from the last row returned", async () => {
+    const base = new Date("2026-10-01T00:00:00Z");
+    const rows = Array.from({ length: REVIEWED_PAGE_SIZE + 1 }, (_, i) =>
+      row(`r${i}`, "Approved", new Date(base.getTime() - i * 1000)),
+    );
+    db.onboardingLabSubmission.findMany.mockResolvedValue(rows);
+    const page = await listReviewedPage(mentor, null);
+    const args = db.onboardingLabSubmission.findMany.mock.calls[0][0];
+    expect(args.where.status).toEqual({ in: ["Approved", "ChangesRequested"] });
+    expect(args.orderBy).toEqual([{ updatedAt: "desc" }, { id: "desc" }]);
+    expect(args.take).toBe(REVIEWED_PAGE_SIZE + 1);
+    expect(page.items).toHaveLength(REVIEWED_PAGE_SIZE);
+    expect(page.nextCursor).toBe(`${rows[REVIEWED_PAGE_SIZE - 1].updatedAt.toISOString()}|r${REVIEWED_PAGE_SIZE - 1}`);
+  });
+
+  it("has no cursor on the last reviewed page, and resumes after a cursor", async () => {
+    db.onboardingLabSubmission.findMany.mockResolvedValue([row("r1", "ChangesRequested", new Date("2026-09-01T00:00:00Z"))]);
+    const page = await listReviewedPage(mentor, "2026-10-01T00:00:00.000Z|r0");
+    expect(page.nextCursor).toBeNull();
+    expect(db.onboardingLabSubmission.findMany.mock.calls[0][0].where.OR).toEqual([
+      { updatedAt: { lt: new Date("2026-10-01T00:00:00.000Z") } },
+      { updatedAt: new Date("2026-10-01T00:00:00.000Z"), id: { lt: "r0" } },
+    ]);
+  });
+
+  it("fetches one submission by id inside the viewer's scope, any state but in-progress", async () => {
+    db.onboardingLabSubmission.findFirst.mockResolvedValue(row("old", "Approved", new Date()));
+    const entry = await loadReviewEntry(mentor, "old");
+    expect(entry?.submission.id).toBe("old");
+    expect(db.onboardingLabSubmission.findFirst.mock.calls[0][0].where).toEqual({
+      id: "old",
       status: { not: "InProgress" },
-      userId: { not: "mentor" },
-      journey: { collaborators: { some: { userId: "mentor" } } },
+      ...scope,
     });
+  });
+
+  it("returns null for a submission outside the viewer's scope", async () => {
+    db.onboardingLabSubmission.findFirst.mockResolvedValue(null);
+    expect(await loadReviewEntry(mentor, "nope")).toBeNull();
+  });
+
+  it("counts waiting and reviewed work from the database, not from loaded rows", async () => {
+    db.onboardingLabSubmission.count.mockResolvedValueOnce(412).mockResolvedValueOnce(97);
+    expect(await countReviews(mentor)).toEqual({ waiting: 412, reviewed: 97 });
+    const wheres = db.onboardingLabSubmission.count.mock.calls.map((c) => c[0].where.status);
+    expect(wheres).toEqual(["Submitted", { in: ["Approved", "ChangesRequested"] }]);
   });
 
   it("treats labs without mentor review as approved", async () => {

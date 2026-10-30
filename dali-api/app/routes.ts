@@ -249,6 +249,7 @@ export default [
     route("journeys", "journeys/routes/journeys.tsx"),
     route("journeys/access", "journeys/routes/journeys.access.tsx"),
     route("journeys/reviews", "journeys/routes/journeys.reviews.tsx"),
+    route("journeys/reviews/more", "journeys/routes/journeys.reviews.more.ts"),
     route("journeys/:domain", "journeys/routes/journeys.$domain.tsx"),
     route("journeys/:domain/:journeyId", "journeys/routes/journeys.$domain.$journeyId.tsx"),
     route("journeys/:domain/:journeyId/edit", "journeys/routes/journeys.$domain.$journeyId.edit.tsx"),

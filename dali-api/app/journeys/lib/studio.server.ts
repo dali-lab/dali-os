@@ -5,6 +5,7 @@ import type { OnboardingLabSubmissionStatus } from "~/generated/prisma/enums";
 import { prisma, Prisma } from "~/lib/db";
 import { fullName } from "~/lib/display";
 import { notify } from "~/lib/notify.server";
+import { decodeCursor, keysetAfter, keysetPage } from "~/lib/pagination";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { getModule, journeyTitle, moduleTitle } from "./journey";
 import { roleOn, toDomain, type JourneyResult, type JourneyViewer } from "./journeys.server";
@@ -173,24 +174,30 @@ export interface ReviewEntry {
   labHref: string;
 }
 
-/** Work sent for review on journeys the viewer can edit, newest first. Their own work never shows. */
-export async function listReviews(viewer: JourneyViewer): Promise<ReviewEntry[]> {
-  const rows = await prisma.onboardingLabSubmission.findMany({
-    where: {
-      status: { not: "InProgress" },
-      userId: { not: viewer.id },
-      journey: viewer.isCore ? {} : { collaborators: { some: { userId: viewer.id } } },
-    },
-    select: {
-      ...SUBMISSION_SELECT,
-      moduleId: true,
-      journeyId: true,
-      user: { select: { id: true, firstName: true, lastName: true, photoUrl: true } },
-      journey: { select: { published: true, domain: { select: { code: true, displayName: true } } } },
-    },
-    orderBy: { submittedAt: "desc" },
-    take: 200,
-  });
+export const REVIEWED_PAGE_SIZE = 30;
+
+const REVIEWED_STATUSES: OnboardingLabSubmissionStatus[] = ["Approved", "ChangesRequested"];
+
+/** The viewer's own work never shows, and non-Core viewers only see journeys they collaborate on. */
+function reviewScope(viewer: JourneyViewer) {
+  return {
+    userId: { not: viewer.id },
+    journey: viewer.isCore ? {} : { collaborators: { some: { userId: viewer.id } } },
+  };
+}
+
+const REVIEW_SELECT = {
+  ...SUBMISSION_SELECT,
+  updatedAt: true,
+  moduleId: true,
+  journeyId: true,
+  user: { select: { id: true, firstName: true, lastName: true, photoUrl: true } },
+  journey: { select: { published: true, domain: { select: { code: true, displayName: true } } } },
+} as const;
+
+type ReviewRow = Prisma.OnboardingLabSubmissionGetPayload<{ select: typeof REVIEW_SELECT }>;
+
+async function toEntries(rows: ReviewRow[]): Promise<ReviewEntry[]> {
   const entries: ReviewEntry[] = [];
   for (const row of rows) {
     const journey = row.journey.published as unknown as JourneyContent | null;
@@ -206,6 +213,54 @@ export async function listReviews(viewer: JourneyViewer): Promise<ReviewEntry[]>
     });
   }
   return entries;
+}
+
+/** Every submission still waiting on a mentor, newest first. The queue drains, so it is never capped. */
+export async function listWaitingReviews(viewer: JourneyViewer): Promise<ReviewEntry[]> {
+  const rows = await prisma.onboardingLabSubmission.findMany({
+    where: { status: "Submitted", ...reviewScope(viewer) },
+    select: REVIEW_SELECT,
+    orderBy: [{ submittedAt: { sort: "desc", nulls: "last" } }, { id: "desc" }],
+  });
+  return toEntries(rows);
+}
+
+// Reviewed work pages on updatedAt, not submittedAt or reviewedAt: both are
+// nullable in the schema, while updatedAt is always set and is stamped when the
+// review is saved.
+export async function listReviewedPage(
+  viewer: JourneyViewer,
+  cursorRaw: string | null,
+): Promise<{ items: ReviewEntry[]; nextCursor: string | null }> {
+  const rows = await prisma.onboardingLabSubmission.findMany({
+    where: {
+      status: { in: REVIEWED_STATUSES },
+      ...reviewScope(viewer),
+      ...keysetAfter("updatedAt", decodeCursor(cursorRaw)),
+    },
+    select: REVIEW_SELECT,
+    orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
+    take: REVIEWED_PAGE_SIZE + 1,
+  });
+  const page = keysetPage(rows, REVIEWED_PAGE_SIZE, (r) => ({ at: r.updatedAt.toISOString(), id: r.id }));
+  return { items: await toEntries(page.items), nextCursor: page.nextCursor };
+}
+
+/** One submission the viewer may review, in any state but in-progress. */
+export async function loadReviewEntry(viewer: JourneyViewer, submissionId: string): Promise<ReviewEntry | null> {
+  const row = await prisma.onboardingLabSubmission.findFirst({
+    where: { id: submissionId, status: { not: "InProgress" }, ...reviewScope(viewer) },
+    select: REVIEW_SELECT,
+  });
+  return row ? (await toEntries([row]))[0] ?? null : null;
+}
+
+export async function countReviews(viewer: JourneyViewer): Promise<{ waiting: number; reviewed: number }> {
+  const [waiting, reviewed] = await Promise.all([
+    prisma.onboardingLabSubmission.count({ where: { status: "Submitted", ...reviewScope(viewer) } }),
+    prisma.onboardingLabSubmission.count({ where: { status: { in: REVIEWED_STATUSES }, ...reviewScope(viewer) } }),
+  ]);
+  return { waiting, reviewed };
 }
 
 /** Whether the viewer mentors anything: Core, or an owner or editor of some journey. */

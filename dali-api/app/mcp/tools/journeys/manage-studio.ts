@@ -8,7 +8,7 @@ import { createId } from "~/lib/short-id";
 import { markdownToRichDoc, richDocToMarkdown } from "~/components/slides/slide-markdown.server";
 import { evaluateCriteria, foundHotspots } from "~/journeys/lib/studio";
 import { studioLabSchema } from "~/journeys/lib/studio-schema";
-import { listReviews, reviewSubmission } from "~/journeys/lib/studio.server";
+import { listReviewedPage, listWaitingReviews, loadReviewEntry, reviewSubmission } from "~/journeys/lib/studio.server";
 import type { StudioLab } from "~/journeys/lib/studio-types";
 import { findModule, inputSchema, journeyViewer, replaceModule, saveEdit, unwrap } from "./shared";
 
@@ -85,6 +85,7 @@ export const SET_JOURNEY_STUDIO_LAB: McpTool = {
 type ReviewArgs = {
   action: "list" | "get" | "review";
   status?: "waiting" | "reviewed";
+  cursor?: string;
   submissionId?: string;
   decision?: "approved" | "changes-requested";
   note?: string;
@@ -95,12 +96,13 @@ export const MANAGE_JOURNEY_REVIEWS: McpTool = {
   def: {
     name: "manage_journey_reviews",
     description:
-      "Review learners' whiteboard and document lab work on onboarding journeys you own or edit. Actions: list (status waiting, the default, or reviewed), get (submissionId: the work as text, with every check's result and which hidden problem areas were found), review (submissionId, decision approved or changes-requested, note, mentorChecks {criterionId: true}; approving needs every mentor criterion ticked, requesting changes needs a note). The learner is notified.",
+      "Review learners' whiteboard and document lab work on onboarding journeys you own or edit. Actions: list (status waiting, the default, or reviewed; reviewed pages, pass the returned nextCursor as cursor for older work), get (submissionId: the work as text, with every check's result and which hidden problem areas were found), review (submissionId, decision approved or changes-requested, note, mentorChecks {criterionId: true}; approving needs every mentor criterion ticked, requesting changes needs a note). The learner is notified.",
     inputSchema: inputSchema({
       type: "object",
       properties: {
         action: { type: "string", enum: ["list", "get", "review"] },
         status: { type: "string", enum: ["waiting", "reviewed"] },
+        cursor: { type: "string", description: "list reviewed: the nextCursor from the previous page." },
         submissionId: { type: "string" },
         decision: { type: "string", enum: ["approved", "changes-requested"] },
         note: { type: "string", maxLength: 10_000 },
@@ -119,25 +121,26 @@ export const MANAGE_JOURNEY_REVIEWS: McpTool = {
       unwrap(await reviewSubmission(viewer, args.submissionId!, { mentorChecks: args.mentorChecks ?? {}, note: args.note ?? "", decision: args.decision! }));
       return { ok: true, submissionId: args.submissionId, decision: args.decision };
     }
-    const entries = await listReviews(viewer);
     if (args.action === "list") {
       const waiting = (args.status ?? "waiting") === "waiting";
+      const page = waiting
+        ? { items: await listWaitingReviews(viewer), nextCursor: null }
+        : await listReviewedPage(viewer, args.cursor ?? null);
       return {
-        submissions: entries
-          .filter((e) => (e.submission.status === "submitted") === waiting)
-          .map((e) => ({
-            submissionId: e.submission.id,
-            learner: e.learner.name,
-            lab: e.studio.title,
-            kind: e.studio.kind,
-            module: e.moduleTitle,
-            journey: e.journeyTitle,
-            status: e.submission.status,
-            submittedAt: e.submission.submittedAt,
-          })),
+        submissions: page.items.map((e) => ({
+          submissionId: e.submission.id,
+          learner: e.learner.name,
+          lab: e.studio.title,
+          kind: e.studio.kind,
+          module: e.moduleTitle,
+          journey: e.journeyTitle,
+          status: e.submission.status,
+          submittedAt: e.submission.submittedAt,
+        })),
+        nextCursor: page.nextCursor,
       };
     }
-    const entry = entries.find((e) => e.submission.id === args.submissionId);
+    const entry = await loadReviewEntry(viewer, args.submissionId!);
     if (!entry) throw new McpNotFoundError("Submission not found.");
     const { submission: s, studio } = entry;
     const results = evaluateCriteria(studio, s.work, s.selfChecks, s.mentorChecks, s.status);

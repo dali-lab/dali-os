@@ -3,7 +3,7 @@ import { z } from "zod";
 import type { Route } from "./+types/journeys.reviews";
 import { requireJourneyViewer } from "~/journeys/lib/journeys.server";
 import { safeJsonParse } from "~/journeys/lib/safe-json-field";
-import { listReviews, reviewSubmission } from "~/journeys/lib/studio.server";
+import { countReviews, listReviewedPage, listWaitingReviews, loadReviewEntry, reviewSubmission } from "~/journeys/lib/studio.server";
 
 export const meta: Route.MetaFunction = () => [{ title: "Reviews · Journeys · DALI OS" }];
 
@@ -11,7 +11,20 @@ export const handle = { fitViewport: true, hideBreadcrumbs: true };
 
 export async function loader({ request }: Route.LoaderArgs) {
   const viewer = await requireJourneyViewer(request);
-  return { entries: await listReviews(viewer) };
+  const requested = new URL(request.url).searchParams.get("submission");
+  const [waiting, reviewed, counts] = await Promise.all([
+    listWaitingReviews(viewer),
+    listReviewedPage(viewer, null),
+    countReviews(viewer),
+  ]);
+  const inLists = (id: string) => [...waiting, ...reviewed.items].some((e) => e.submission.id === id);
+  const deepLinked = requested && !inLists(requested) ? await loadReviewEntry(viewer, requested) : null;
+  return {
+    waiting,
+    reviewed: deepLinked ? [...reviewed.items, deepLinked] : reviewed.items,
+    nextCursor: reviewed.nextCursor,
+    counts,
+  };
 }
 
 const reviewSchema = z.object({

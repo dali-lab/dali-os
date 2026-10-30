@@ -6,7 +6,7 @@ const server = vi.hoisted(() => ({
   resolveJourneyViewer: vi.fn(),
   editDraft: vi.fn(),
 }));
-const studioServer = vi.hoisted(() => ({ listReviews: vi.fn(), reviewSubmission: vi.fn() }));
+const studioServer = vi.hoisted(() => ({ listWaitingReviews: vi.fn(), listReviewedPage: vi.fn(), loadReviewEntry: vi.fn(), reviewSubmission: vi.fn() }));
 
 vi.mock("~/journeys/lib/journeys.server", () => server);
 vi.mock("~/journeys/lib/studio.server", () => studioServer);
@@ -98,13 +98,30 @@ describe("manage_journey_reviews", () => {
     labHref: "/x",
   });
 
-  beforeEach(() => studioServer.listReviews.mockResolvedValue([entry("submitted"), entry("approved")]));
+  beforeEach(() => {
+    studioServer.listWaitingReviews.mockResolvedValue([entry("submitted")]);
+    studioServer.listReviewedPage.mockResolvedValue({ items: [entry("approved")], nextCursor: "2026-10-01T00:00:00.000Z|sub-approved" });
+    studioServer.loadReviewEntry.mockImplementation(async (_v: unknown, id: string) => (id === "sub-submitted" ? entry("submitted") : null));
+  });
 
   it("lists waiting work by default, and reviewed work on request", async () => {
     const waiting = (await MANAGE_JOURNEY_REVIEWS.run(ctx, { action: "list" })) as { submissions: { submissionId: string }[] };
     expect(waiting.submissions.map((s) => s.submissionId)).toEqual(["sub-submitted"]);
-    const done = (await MANAGE_JOURNEY_REVIEWS.run(ctx, { action: "list", status: "reviewed" })) as { submissions: { submissionId: string }[] };
+    const done = (await MANAGE_JOURNEY_REVIEWS.run(ctx, { action: "list", status: "reviewed" })) as {
+      submissions: { submissionId: string }[];
+      nextCursor: string | null;
+    };
     expect(done.submissions.map((s) => s.submissionId)).toEqual(["sub-approved"]);
+    expect(done.nextCursor).toBe("2026-10-01T00:00:00.000Z|sub-approved");
+  });
+
+  it("passes the cursor through when paging reviewed work", async () => {
+    await MANAGE_JOURNEY_REVIEWS.run(ctx, { action: "list", status: "reviewed", cursor: "c1" });
+    expect(studioServer.listReviewedPage).toHaveBeenCalledWith(expect.anything(), "c1");
+  });
+
+  it("reports an unknown submission as not found", async () => {
+    await expect(MANAGE_JOURNEY_REVIEWS.run(ctx, { action: "get", submissionId: "missing" })).rejects.toThrow(/not found/i);
   });
 
   it("describes the learner's own board items and found problem areas", async () => {
