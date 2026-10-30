@@ -4,6 +4,7 @@
 // Every send goes through the outbox (app/lib/outbound.server.ts): enqueue +
 // inline drain, so delivery gets retry + per-sender cap + history for free.
 
+import type { Prisma } from "~/generated/prisma/client";
 import type { NotificationType } from "~/generated/prisma/enums";
 import { prisma } from "~/lib/db";
 import { type InterpolationVars } from "~/lib/email";
@@ -40,7 +41,7 @@ function formatTime(d: Date): string {
   }) + ` ${APPLICATION_TZ_LABEL}`;
 }
 
-interface Recipient {
+export interface Recipient {
   email: string;
   firstName: string;
 }
@@ -63,8 +64,11 @@ async function getApplicantRecipient(domainApplicationId: string): Promise<Recip
   return { email, firstName: user.firstName };
 }
 
-async function getInterviewerRecipients(interviewId: string): Promise<Recipient[]> {
-  const assignments = await prisma.interviewAssignment.findMany({
+export async function getInterviewerRecipients(
+  interviewId: string,
+  db: Prisma.TransactionClient = prisma,
+): Promise<Recipient[]> {
+  const assignments = await db.interviewAssignment.findMany({
     where: { interviewId, status: "Active" },
     include: {
       cycleInterviewer: {
@@ -296,6 +300,9 @@ export async function sendInterviewInviteEmails(
 export async function sendInterviewCancelEmails(
   interviewId: string,
   domainApplicationId: string,
+  // Read before the cancel declines the assignments: afterwards they can't be
+  // told apart from interviewers who were reassigned off earlier.
+  interviewers: Recipient[],
   // A team-side cancel tells the applicant to rebook; the plain cancel email
   // is the fallback when that template hasn't been written.
   opts: { byTeam?: boolean; skipApplicant?: boolean } = {},
@@ -317,7 +324,6 @@ export async function sendInterviewCancelEmails(
     };
 
     const applicant = await getApplicantRecipient(domainApplicationId);
-    const interviewers = await getInterviewerRecipients(interviewId);
 
     // Per-recipient ICS so the applicant's cancellation only lists themselves.
     // See sendInterviewInviteEmails for the rationale.
@@ -469,6 +475,10 @@ export async function sendReassignmentEmails(
     // the removed assignment is "Replaced" and the new one is "Active".
     const applicant = await getApplicantRecipient(domainApplicationId);
     const currentInterviewers = await getInterviewerRecipients(interviewId);
+    const newCI = await prisma.cycleInterviewer.findUnique({
+      where: { id: newCycleInterviewerId },
+      select: { user: { select: { daliEmail: true } } },
+    });
     const applicantAttendee: IcsAttendee[] = applicant
       ? [{ email: applicant.email, name: applicant.firstName }]
       : [];
@@ -511,10 +521,13 @@ export async function sendReassignmentEmails(
     }
 
     for (const interviewer of currentInterviewers) {
-      const rendered = await renderSlot(
-        "InterviewInviteMentor",
-        { firstName: interviewer.firstName, ...baseVars },
-      );
+      const vars = { firstName: interviewer.firstName, ...baseVars };
+      const stayedOn = interviewer.email !== newCI?.user.daliEmail;
+      // The invite is the fallback so the calendar update still goes out when
+      // the changed-interviewer email hasn't been written.
+      const rendered =
+        (stayedOn ? await renderSlot("InterviewInterviewerChanged", vars) : null) ??
+        await renderSlot("InterviewInviteMentor", vars);
       if (rendered) {
         enqueues.push(enqueueOutbound({
           channel: "email",

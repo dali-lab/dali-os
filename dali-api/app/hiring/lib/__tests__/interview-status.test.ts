@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { splitInterviewsByTime } from "../interview-status";
+import { splitInterviewsByTime, viewerAssignment } from "../interview-status";
 
 const now = new Date("2026-10-16T15:00:00.000Z");
 
@@ -73,5 +73,41 @@ describe("splitInterviewsByTime", () => {
       now,
     );
     expect(ids(past)).toEqual(["a"]);
+  });
+});
+
+describe("viewerAssignment", () => {
+  const assignment = (id: string, status: string, userId = "ada") => ({
+    id,
+    status,
+    cycleInterviewer: { userId },
+  });
+
+  it("finds an Active assignment on a live interview", () => {
+    const interview = { status: "Scheduled" as const, assignments: [assignment("a1", "Active")] };
+    expect(viewerAssignment(interview, "ada")?.id).toBe("a1");
+  });
+
+  it.each(["Declined", "Replaced"])("shuts out a %s interviewer while the interview is live", (status) => {
+    const interview = { status: "Scheduled" as const, assignments: [assignment("a1", status)] };
+    expect(viewerAssignment(interview, "ada")).toBeNull();
+  });
+
+  it("keeps a cancelled interview readable from an old link", () => {
+    const interview = { status: "CancelledByApplicant" as const, assignments: [assignment("a1", "Declined")] };
+    expect(viewerAssignment(interview, "ada")?.id).toBe("a1");
+  });
+
+  it("prefers the Active row when a member was swapped off and back on", () => {
+    const interview = {
+      status: "Scheduled" as const,
+      assignments: [assignment("old", "Replaced"), assignment("new", "Active")],
+    };
+    expect(viewerAssignment(interview, "ada")?.id).toBe("new");
+  });
+
+  it("returns null for someone who was never assigned", () => {
+    const interview = { status: "Completed" as const, assignments: [assignment("a1", "Active", "grace")] };
+    expect(viewerAssignment(interview, "ada")).toBeNull();
   });
 });

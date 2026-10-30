@@ -6,7 +6,7 @@ import { isCore } from "~/lib/roles";
 import { logAuditEvent } from "~/lib/audit";
 import { parseJson } from "~/lib/validate";
 import { deprovisionInterviewMeet } from "~/hiring/lib/interview-meet";
-import { sendInterviewCancelEmails } from "~/hiring/lib/interview-emails";
+import { getInterviewerRecipients, sendInterviewCancelEmails } from "~/hiring/lib/interview-emails";
 import { notifyInterviewCancelled } from "~/hiring/lib/interview-notifications";
 import { releaseInterviewRoom } from "~/hiring/lib/scheduling";
 
@@ -51,7 +51,8 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   const interviewerUserIds = interview.assignments.map((a) => a.cycleInterviewer.userId);
 
-  const updated = await prisma.$transaction(async (tx) => {
+  const { updated, interviewers } = await prisma.$transaction(async (tx) => {
+    const interviewers = await getInterviewerRecipients(interview.id, tx);
     const row = await tx.interview.update({
       where: { id: interview.id },
       data: { status: "CancelledByAdmin" },
@@ -61,7 +62,7 @@ export async function action({ request, params }: Route.ActionArgs) {
       data: { status: "Declined" },
     });
     await releaseInterviewRoom(interview, tx);
-    return row;
+    return { updated: row, interviewers };
   });
 
   await deprovisionInterviewMeet({ id: interview.id, calendarEventId: interview.calendarEventId });
@@ -82,13 +83,14 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   // Best-effort after commit: ICS cancellations by email, in-app tile for the
   // interviewers. Interviewers always hear; the applicant email is optional.
-  sendInterviewCancelEmails(interview.id, interview.domainApplicationId, {
+  sendInterviewCancelEmails(interview.id, interview.domainApplicationId, interviewers, {
     byTeam: true,
     skipApplicant: !body.notifyApplicant,
   }).catch(() => {});
   notifyInterviewCancelled({
     interviewId: interview.id,
     interviewerUserIds,
+    reason: "lead",
     createdByUserId: auth.user.sub,
   }).catch(() => {});
 
