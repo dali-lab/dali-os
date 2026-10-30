@@ -21,7 +21,10 @@ import { prisma } from "~/lib/db.server";
 import { notify } from "~/lib/notify.server";
 import { adminRecipientIds } from "~/lib/promotion-notify.server";
 import {
+  BLOG_FEED_PAGE_SIZE,
   findBlogPost,
+  loadBlogFeedPage,
+  loadBlogFrontPage,
   moveBlogPostPin,
   pinBlogPostToTop,
   publishBlogPost,
@@ -147,5 +150,93 @@ describe("review", () => {
       where: { id: "p1" },
       data: { publishedAt: null, submittedAt: null, frontPageRank: null },
     });
+  });
+});
+
+describe("the front page feed", () => {
+  const row = (id: string, extra: Record<string, unknown> = {}) => ({
+    id,
+    title: `Post ${id}`,
+    excerpt: "",
+    summary: null,
+    coverImageUrl: null,
+    customCoverUrl: null,
+    visibility: "Private",
+    publishedAt: new Date("2026-10-01T12:00:00Z"),
+    submittedAt: null,
+    frontPageRank: null,
+    authorId: "author",
+    author: { firstName: "Ada", lastName: "Tester" },
+    ...extra,
+  });
+
+  it("pages only unpinned published posts on (publishedAt, id) with one extra row to find the end", async () => {
+    db.blogPost.findMany.mockResolvedValue([]);
+    await loadBlogFeedPage("viewer", null);
+    expect(db.blogPost.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { publishedAt: { not: null }, frontPageRank: null },
+        orderBy: [{ publishedAt: "desc" }, { id: "desc" }],
+        take: BLOG_FEED_PAGE_SIZE + 1,
+      }),
+    );
+  });
+
+  it("continues strictly after the cursor and hands back the next one when more remain", async () => {
+    const rows = Array.from({ length: BLOG_FEED_PAGE_SIZE + 1 }, (_, i) =>
+      row(`p${i}`, { publishedAt: new Date(Date.UTC(2026, 9, 1, 12, 0, 59 - i)) }),
+    );
+    db.blogPost.findMany.mockResolvedValue(rows);
+    const page = await loadBlogFeedPage("viewer", "2026-10-02T00:00:00.000Z|p99");
+    const where = db.blogPost.findMany.mock.calls[0][0].where;
+    expect(where.OR).toEqual([
+      { publishedAt: { lt: new Date("2026-10-02T00:00:00.000Z") } },
+      { publishedAt: new Date("2026-10-02T00:00:00.000Z"), id: { lt: "p99" } },
+    ]);
+    expect(page.items).toHaveLength(BLOG_FEED_PAGE_SIZE);
+    expect(page.nextCursor).toBe(`${rows[BLOG_FEED_PAGE_SIZE - 1].publishedAt.toISOString()}|p${BLOG_FEED_PAGE_SIZE - 1}`);
+  });
+
+  it("ends the feed on a short page", async () => {
+    db.blogPost.findMany.mockResolvedValue([row("p1")]);
+    expect(await loadBlogFeedPage("viewer", null)).toMatchObject({ nextCursor: null });
+  });
+
+  it("marks the viewer's own posts and the pinned ones", async () => {
+    db.blogPost.findMany.mockResolvedValue([row("p1", { authorId: "viewer" })]);
+    const { items } = await loadBlogFeedPage("viewer", null);
+    expect(items[0]).toMatchObject({ id: "p1", mine: true, pinned: false, status: "published", author: "Ada Tester" });
+  });
+
+  it("lists every pinned post first, then the first feed page, and keeps drafts and review items whole", async () => {
+    const pinned = [row("pin1", { frontPageRank: 1 }), row("pin2", { frontPageRank: 2 })];
+    const unpublished = [
+      row("review1", { publishedAt: null, submittedAt: new Date(), authorId: "someone" }),
+      row("mine-review", { publishedAt: null, submittedAt: new Date(), authorId: "viewer" }),
+      row("draft1", { publishedAt: null, authorId: "viewer" }),
+    ];
+    db.blogPost.findMany.mockImplementation(async (args: any) => {
+      if (args.where.frontPageRank?.not === null) return pinned;
+      if (args.where.publishedAt === null) return unpublished;
+      return [row("feed1")];
+    });
+    const page = await loadBlogFrontPage("viewer", true);
+    expect(page.published.map((p) => p.id)).toEqual(["pin1", "pin2", "feed1"]);
+    expect(page.toReview.map((p) => p.id)).toEqual(["review1"]);
+    expect(page.drafts.map((p) => p.id)).toEqual(["mine-review", "draft1"]);
+    expect(page.nextCursor).toBeNull();
+    const unpublishedQuery = db.blogPost.findMany.mock.calls.map((c: any) => c[0]).find((a: any) => a.where.publishedAt === null);
+    expect(unpublishedQuery.where.OR).toEqual([
+      { publishedAt: { not: null } },
+      { authorId: "viewer", NOT: expect.anything() },
+      { submittedAt: { not: null } },
+    ]);
+  });
+
+  it("does not ask for posts waiting on approval when the viewer is not an Admin", async () => {
+    db.blogPost.findMany.mockResolvedValue([]);
+    await loadBlogFrontPage("viewer", false);
+    const unpublishedQuery = db.blogPost.findMany.mock.calls.map((c: any) => c[0]).find((a: any) => a.where.publishedAt === null);
+    expect(unpublishedQuery.where.OR).not.toContainEqual({ submittedAt: { not: null } });
   });
 });

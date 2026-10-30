@@ -32,6 +32,8 @@ import { Checkbox } from "~/components/ui/Checkbox";
 import { Toggle } from "~/components/ui/Toggle";
 import { Field } from "~/components/ui/modal-fields";
 import { Select } from "~/components/ui/floating";
+import { PagerLinks } from "~/components/ui/Pager";
+import { parsePageParam } from "~/lib/pagination";
 import { MultiSelect } from "~/components/ui/floating/MultiSelect";
 import { useDialog } from "~/components/ui/dialog";
 import { useToast } from "~/components/ui/toast";
@@ -48,8 +50,9 @@ const SUMMARY_MAX = 200;
 
 export async function loader({ request }: Route.LoaderArgs) {
   await requireReleaseNoteEditor(request);
-  const [{ drafts, published }, groups] = await Promise.all([
-    listReleaseNotesForCore(),
+  const page = parsePageParam(new URL(request.url).searchParams.get("page"));
+  const [{ drafts, published, hasNext, publishedTotal }, groups] = await Promise.all([
+    listReleaseNotesForCore(page),
     prisma.groupDefinition.findMany({
       where: { archivedAt: null },
       orderBy: { name: "asc" },
@@ -77,6 +80,9 @@ export async function loader({ request }: Route.LoaderArgs) {
   return {
     drafts: await Promise.all(drafts.map(serialize)),
     published: await Promise.all(published.map(serialize)),
+    page,
+    hasNext,
+    publishedTotal,
     groups,
   };
 }
@@ -171,7 +177,7 @@ function audienceLabel(n: Pick<Note, "allMembers" | "groupIds">, groups: GroupOp
 }
 
 export default function CoreReleaseNotesPage({ loaderData }: Route.ComponentProps) {
-  const { drafts, published, groups } = loaderData;
+  const { drafts, published, groups, page, hasNext, publishedTotal } = loaderData;
   const { pageTitle, card, cardPad } = useOsChrome();
   const fetcher = useFetcher<ActionResult>();
   const toast = useToast();
@@ -291,9 +297,16 @@ export default function CoreReleaseNotesPage({ loaderData }: Route.ComponentProp
       </section>
 
       <section className={cn(card, cardPad, "flex flex-col gap-3")}>
-        <h2 className="text-sm font-semibold text-foreground">Published</h2>
+        <h2 className="text-sm font-semibold text-foreground">
+          Published
+          {publishedTotal > 0 && (
+            <span className="ml-2 font-normal text-muted-foreground">{publishedTotal.toLocaleString()}</span>
+          )}
+        </h2>
         {published.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Nothing published yet.</p>
+          <p className="text-sm text-muted-foreground">
+            {page > 1 ? "No entries on this page." : "Nothing published yet."}
+          </p>
         ) : (
           <ul className="divide-y divide-border">
             {published.map((n) => (
@@ -314,6 +327,15 @@ export default function CoreReleaseNotesPage({ loaderData }: Route.ComponentProp
               </li>
             ))}
           </ul>
+        )}
+        {(page > 1 || hasNext) && (
+          <PagerLinks
+            page={page}
+            hasNext={hasNext}
+            hrefFor={(next) => (next > 1 ? `?page=${next}` : "?")}
+            label="Published entries pagination"
+            endLabel="End of published entries"
+          />
         )}
       </section>
 

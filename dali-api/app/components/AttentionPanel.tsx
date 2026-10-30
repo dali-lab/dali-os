@@ -22,6 +22,7 @@ import { Tooltip } from "~/components/ui/floating";
 import { SegmentedTabButtons } from "~/components/AreaPillNav";
 import { RsvpButtons, notifyTasksChanged } from "~/components/RsvpButtons";
 import { buttonClasses } from "~/components/ui/Button";
+import { LoadMore, type LoadMoreProps } from "~/components/ui/Pager";
 import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
 import { cn } from "~/lib/cn";
 import { projectWorkMeta, type ProjectWorkItem } from "~/lib/project-work";
@@ -150,6 +151,24 @@ export function attentionCount(
   ).length;
 }
 
+/**
+ * attentionCount plus the open and project tasks the feed holds but has not
+ * loaded, so the badge and titles show the real number once a list outgrows
+ * its first page.
+ */
+export function attentionTotal(
+  tasks: OpenTask[],
+  notifications: AttentionNotification[],
+  projectTasks: ProjectWorkItem[],
+  totals: { tasks?: number; projectTasks?: number } = {},
+): number {
+  return (
+    attentionCount(tasks, notifications, projectTasks) +
+    Math.max(0, (totals.tasks ?? tasks.length) - tasks.length) +
+    Math.max(0, (totals.projectTasks ?? projectTasks.length) - projectTasks.length)
+  );
+}
+
 /* ------------------------------------------------------------------ */
 /* Tabs                                                                 */
 /* ------------------------------------------------------------------ */
@@ -163,6 +182,10 @@ export type FeedCard =
   | { type: "project"; item: ProjectWorkItem; pings: string[] };
 
 export type FeedTab = "work" | "admin";
+
+/** A card the viewer finished, so the page can drop it from pages it loaded. */
+export type ClearedKind = "task" | "project" | "notification";
+export type OnCleared = (id: string, kind: ClearedKind) => void;
 
 export const FEED_TAB_LABELS: Record<FeedTab, string> = {
   work: "Project work",
@@ -254,6 +277,8 @@ export function TasksDrawer({
   onOpen,
   seeAll,
   singleFeed = false,
+  total,
+  allTasksLink = true,
 }: {
   open: boolean;
   onClose: () => void;
@@ -263,10 +288,15 @@ export function TasksDrawer({
   onOpen?: OpenLink;
   seeAll?: ReactNode;
   singleFeed?: boolean;
+  // The true number of cards, when more exist than the feed carries.
+  total?: number;
+  // False where /notifications is not reachable (the partner portal).
+  allTasksLink?: boolean;
 }) {
   const [tab, setTab] = useState<FeedTab>("work");
   const feed = splitFeed(tasks, notifications, projectTasks);
-  const count = attentionCount(tasks, notifications, projectTasks);
+  const shown = attentionCount(tasks, notifications, projectTasks);
+  const count = Math.max(shown, total ?? shown);
 
   return (
     <Drawer open={open} onClose={onClose} title={`Tasks (${count})`} headerActions={seeAll} width={480}>
@@ -281,6 +311,27 @@ export function TasksDrawer({
           tab={singleFeed ? undefined : tab}
           onOpen={onOpen}
         />
+        {count > shown && (
+          <p className="text-center text-xs text-os-muted">
+            Showing {shown.toLocaleString()} of {count.toLocaleString()}
+            {allTasksLink && (
+              <>
+                {" "}
+                <a
+                  href="/notifications"
+                  className="underline"
+                  onClick={(e) => {
+                    if (!onOpen) return;
+                    e.preventDefault();
+                    onOpen("/notifications", "My Tasks");
+                  }}
+                >
+                  See all in My Tasks
+                </a>
+              </>
+            )}
+          </p>
+        )}
       </div>
     </Drawer>
   );
@@ -317,13 +368,17 @@ export function TaskFeed({
   tab,
   onOpen,
   grid = false,
+  pager,
+  onCleared,
 }: {
   cards: FeedCard[];
   tab?: FeedTab;
   onOpen?: OpenLink;
   grid?: boolean;
+  pager?: LoadMoreProps;
+  onCleared?: OnCleared;
 }) {
-  if (cards.length === 0) {
+  if (cards.length === 0 && !pager?.hasMore) {
     return (
       <div className="m-auto flex flex-col items-center gap-2.5 py-10 text-center text-os-grey">
         <CheckCircle2 strokeWidth={1.5} className="h-5 w-5" aria-hidden />
@@ -339,15 +394,18 @@ export function TaskFeed({
     );
   }
   return (
-    <div
-      className={cn(
-        grid ? "grid grid-cols-1 gap-3.5 lg:grid-cols-2 xl:grid-cols-3" : "flex flex-col gap-3",
-      )}
-    >
-      {cards.map((card) => (
-        <FeedCardView key={cardKey(card)} card={card} onOpen={onOpen} filled={grid} />
-      ))}
-    </div>
+    <>
+      <div
+        className={cn(
+          grid ? "grid grid-cols-1 gap-3.5 lg:grid-cols-2 xl:grid-cols-3" : "flex flex-col gap-3",
+        )}
+      >
+        {cards.map((card) => (
+          <FeedCardView key={cardKey(card)} card={card} onOpen={onOpen} filled={grid} onCleared={onCleared} />
+        ))}
+      </div>
+      {pager && <LoadMore {...pager} />}
+    </>
   );
 }
 
@@ -355,17 +413,23 @@ function FeedCardView({
   card,
   onOpen,
   filled,
+  onCleared,
 }: {
   card: FeedCard;
   onOpen?: OpenLink;
   filled: boolean;
+  onCleared?: OnCleared;
 }) {
-  if (card.type === "task") return <TaskCard task={card.task} onOpen={onOpen} filled={filled} />;
+  if (card.type === "task") {
+    return <TaskCard task={card.task} onOpen={onOpen} filled={filled} onCleared={onCleared} />;
+  }
   if (card.type === "notification") {
-    return <NotificationCard notification={card.notification} onOpen={onOpen} filled={filled} />;
+    return (
+      <NotificationCard notification={card.notification} onOpen={onOpen} filled={filled} onCleared={onCleared} />
+    );
   }
   return (
-    <ProjectTaskCard item={card.item} pings={card.pings} onOpen={onOpen} filled={filled} />
+    <ProjectTaskCard item={card.item} pings={card.pings} onOpen={onOpen} filled={filled} onCleared={onCleared} />
   );
 }
 
@@ -536,10 +600,12 @@ function TaskCard({
   task: t,
   onOpen,
   filled,
+  onCleared,
 }: {
   task: OpenTask;
   onOpen?: OpenLink;
   filled: boolean;
+  onCleared?: OnCleared;
 }) {
   const revalidator = useRevalidator();
   const { confirm: confirmDialog } = useDialog();
@@ -560,7 +626,7 @@ function TaskCard({
   // Meeting invites clear only on RSVP, never on a click — Accept/Maybe/Decline
   // inline. The RSVP revalidates, dropping the answered invite.
   if (t.source === "meeting") {
-    return shell(<RsvpButtons notificationId={t.id} size="sm" className="gap-2" />);
+    return shell(<RsvpButtons notificationId={t.id} onSaved={() => onCleared?.(t.id, "task")} size="sm" className="gap-2" />);
   }
 
   // A form todo self-clears on submit, so the card links to the form. But a
@@ -583,6 +649,7 @@ function TaskCard({
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ intent: "dismiss" }),
       });
+      onCleared?.(t.id, "task");
       revalidator.revalidate();
       notifyTasksChanged();
     } catch {
@@ -619,6 +686,7 @@ function TaskCard({
         method: "POST",
         credentials: "include",
       });
+      onCleared?.(t.id, "task");
       revalidator.revalidate();
       notifyTasksChanged();
     } catch {
@@ -643,10 +711,12 @@ function NotificationCard({
   notification,
   onOpen,
   filled,
+  onCleared,
 }: {
   notification: AttentionNotification;
   onOpen?: OpenLink;
   filled: boolean;
+  onCleared?: OnCleared;
 }) {
   const revalidator = useRevalidator();
   const isInvite =
@@ -664,6 +734,7 @@ function NotificationCard({
         method: "POST",
         credentials: "include",
       });
+      onCleared?.(notification.id, "notification");
       revalidator.revalidate();
       notifyTasksChanged();
     } catch {
@@ -797,11 +868,13 @@ function ProjectTaskCard({
   pings,
   onOpen,
   filled,
+  onCleared,
 }: {
   item: ProjectWorkItem;
   pings: string[];
   onOpen?: OpenLink;
   filled: boolean;
+  onCleared?: OnCleared;
 }) {
   const revalidator = useRevalidator();
   const toast = useToast();
@@ -838,6 +911,7 @@ function ProjectTaskCard({
       // surface as its own card.
       await clearPings();
       setState("done");
+      onCleared?.(item.id, "project");
       toast.success("Marked done");
       revalidator.revalidate();
       notifyTasksChanged();

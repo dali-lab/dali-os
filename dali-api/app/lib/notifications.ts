@@ -69,7 +69,7 @@ const LIVE_INTERVIEW_ASSIGNMENT: Prisma.NotificationWhereInput = {
 /**
  * Staleness hides for meeting- and interview-backed notifications that are still
  * awaiting action, as AND clauses. Both read paths build on this — the tasks path
- * (listOpenTasks/countOpenTasks, which drives the web bell's `taskCount`) and
+ * (listOpenTasksPage/countOpenTasks, which drive the bell's `taskCount`) and
  * the inbox path (listMyNotifications, which drives the desktop app's feed and
  * dock badge) — so the two counts can't disagree.
  *

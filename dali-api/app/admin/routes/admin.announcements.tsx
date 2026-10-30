@@ -10,6 +10,7 @@ import { isCore, isAdmin } from "~/lib/roles";
 import { MEMBER_LIST_ORDER_BY } from "~/lib/prisma-shapes";
 import { fullName } from "~/lib/display";
 import { AnnouncementsPage } from "~/core/components/AnnouncementsPage";
+import { audienceLabel, countSentAnnouncements, loadSentAnnouncements } from "~/core/lib/announcements-sent.server";
 import { regroupRedirect } from "~/core/lib/regroup-redirect.server";
 
 export const handle = adminHandle("announcements");
@@ -64,35 +65,19 @@ export async function loader({ request }: Route.LoaderArgs) {
     }),
   ]);
 
-  const sentRows = await prisma.scheduledAnnouncement.findMany({
-    where: { canceledAt: null, sentAt: { not: null }, lastError: null },
-    orderBy: { sentAt: "desc" },
-    take: SENT_LIMIT,
-  });
-  const sentIds = sentRows.map((r) => r.id);
-  const [totals, cleared, authors] = await Promise.all([
-    prisma.notification.groupBy({
-      by: ["announcementId"],
-      where: { announcementId: { in: sentIds } },
-      _count: { _all: true },
-    }),
-    prisma.notification.groupBy({
-      by: ["announcementId"],
-      where: { announcementId: { in: sentIds }, readAt: { not: null } },
-      _count: { _all: true },
-    }),
+  const groupById = new Map(visibleGroups.map((g) => [g.id, g]));
+  const [sentPage, sentTotal, authors] = await Promise.all([
+    loadSentAnnouncements(null, groupById),
+    countSentAnnouncements(),
     prisma.user.findMany({
-      where: { id: { in: [...new Set([...scheduledRows, ...sentRows].map((r) => r.createdByUserId))] } },
+      where: { id: { in: [...new Set(scheduledRows.map((r) => r.createdByUserId))] } },
       select: { id: true, firstName: true, lastName: true },
     }),
   ]);
-  const totalById = new Map(totals.map((t) => [t.announcementId, t._count._all]));
-  const clearedById = new Map(cleared.map((t) => [t.announcementId, t._count._all]));
   const authorById = new Map(authors.map((a) => [a.id, fullName(a) || "Core"]));
-  const groupById = new Map(visibleGroups.map((g) => [g.id, g]));
   const memberIds = users.map((u) => u.id);
 
-  const describe = (r: (typeof sentRows)[number]) => ({
+  const describe = (r: (typeof scheduledRows)[number]) => ({
     id: r.id,
     title: r.title,
     body: r.body,
@@ -121,31 +106,14 @@ export async function loader({ request }: Route.LoaderArgs) {
       lastError: s.lastError,
       recipients: estimateRecipients(s, memberIds, groupById),
     })),
-    sent: sentRows.map((s) => ({
-      ...describe(s),
-      // Pre-tracking sends have no linked rows; fall back to the stored count.
-      recipients: totalById.get(s.id) ?? s.sentCount ?? 0,
-      completed: clearedById.get(s.id) ?? 0,
-    })),
+    sent: sentPage.items,
+    sentNextCursor: sentPage.nextCursor,
+    sentTotal,
     viewerIsAdmin: await isAdmin(auth.user.sub),
   };
 }
 
-const SENT_LIMIT = 30;
-
 type AudienceRow = { allMembers: boolean; groupIds: string[]; userIds: string[] };
-
-export function audienceLabel(
-  r: AudienceRow,
-  groupById: Map<string, { name: string }>,
-): string {
-  if (r.allMembers) return "Whole lab";
-  const parts = r.groupIds.map((id) => groupById.get(id)?.name ?? "A group");
-  if (r.userIds.length > 0) {
-    parts.push(`${r.userIds.length} ${r.userIds.length === 1 ? "person" : "people"}`);
-  }
-  return parts.join(", ") || "No one";
-}
 
 /** Who a scheduled send would reach if it went out now. Groups can change before it fires. */
 export function estimateRecipients(

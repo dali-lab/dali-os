@@ -17,6 +17,7 @@ import {
   unlinkHiringForm,
 } from "~/hiring/lib/form-links.server";
 import { FormDetail } from "~/forms/components/FormDetail";
+import { parsePageParam } from "~/lib/pagination";
 import { loadVersionResponses } from "~/forms/lib/version-responses.server";
 import { driveRootCrumbs } from "~/lib/drive-crumbs";
 import { getCollabToken } from "~/lib/collab-token.server";
@@ -112,7 +113,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         ) ?? form.versions[form.versions.length - 1])
       : undefined;
   const results = resultsVersion
-    ? await loadVersionResponses(form.id, resultsVersion.id)
+    ? await loadVersionResponses(form.id, resultsVersion.id, {
+        page: parsePageParam(url.searchParams.get("page")),
+        q: url.searchParams.get("q") ?? "",
+        slot: url.searchParams.get("slot") ?? "",
+      })
     : null;
 
   return {

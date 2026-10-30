@@ -88,6 +88,8 @@ import { TagDots } from "~/components/drive/TagDots";
 import { Button, buttonClasses } from "~/components/ui/Button";
 import { IconButton } from "~/components/ui/IconButton";
 import { Truncated } from "~/components/ui/Truncated";
+import { LoadMore } from "~/components/ui/Pager";
+import { useClientSlice } from "~/hooks/useClientSlice";
 import { useOsChrome } from "~/components/os-chrome";
 import { crumbsFor, driveScopeLabel, locationOf, type ItemLocation } from "~/components/drive/location";
 import { LocationLink } from "~/components/drive/LocationLink";
@@ -965,10 +967,17 @@ export function DriveBrowser({
   const searching = search.trim().length > 0 || !!tagFilter;
   const columnsActive = viewMode === "columns" && !searching;
   const searchExpanded = searchFocused || search.length > 0;
-  const hits = useMemo(
+  const allHits = useMemo(
     () => (searching ? searchAll(scopes, search, typeFilter, tagFilter) : []),
     [searching, scopes, search, typeFilter, tagFilter],
   );
+  const tagFilterRef = useRef({ fn: tagFilter, generation: 0 });
+  if (tagFilterRef.current.fn !== tagFilter) {
+    tagFilterRef.current = { fn: tagFilter, generation: tagFilterRef.current.generation + 1 };
+  }
+  const { visible: hits, pager: hitsPager } = useClientSlice(allHits, {
+    resetKey: JSON.stringify([search, tagFilterRef.current.generation, typeFilter]),
+  });
 
   const folderCrumbs = currentScope ? crumbsFor(currentScope.items, currentFolderId) : [];
 
@@ -1916,78 +1925,85 @@ export function DriveBrowser({
               </div>
             </div>
           ) : (
-            /* ── LIST / GRID / SEARCH ──────────────────────────────────── */
-            <div
-              ref={listRef}
-              tabIndex={0}
-              data-drive-pane
-              data-testid="drive-list-pane"
-              onKeyDown={onPaneKeyDown}
-              {...paneMarquee.handlers}
-              onDragEnter={onFileDragEnter}
-              onDragOver={onFileDragOver}
-              onDragLeave={onFileDragLeave}
-              onDrop={onFileDrop}
-              className={cn(
-                "relative min-w-0 min-h-[420px] overflow-hidden rounded-os-item border border-border select-none",
-                "p-1.5 focus:outline-none focus:ring-1 focus:ring-inset focus:ring-os-accent/30",
-                // Room under the last row for the floating selection bar.
-                // Padding below the content moves nothing above it.
-                showBulk && "pb-14",
-              )}
-            >
-              {uploadOver && !fileOverFolder && (
-                <div className={DROP_OVERLAY}>
-                  <span className="flex items-center gap-2 text-sm font-medium text-os-accent">
-                    <Upload className="w-4 h-4" /> Drop files to upload
-                  </span>
+            <>
+              /* ── LIST / GRID / SEARCH ──────────────────────────────────── */
+              <div
+                ref={listRef}
+                tabIndex={0}
+                data-drive-pane
+                data-testid="drive-list-pane"
+                onKeyDown={onPaneKeyDown}
+                {...paneMarquee.handlers}
+                onDragEnter={onFileDragEnter}
+                onDragOver={onFileDragOver}
+                onDragLeave={onFileDragLeave}
+                onDrop={onFileDrop}
+                className={cn(
+                  "relative min-w-0 min-h-[420px] overflow-hidden rounded-os-item border border-border select-none",
+                  "p-1.5 focus:outline-none focus:ring-1 focus:ring-inset focus:ring-os-accent/30",
+                  // Room under the last row for the floating selection bar.
+                  // Padding below the content moves nothing above it.
+                  showBulk && "pb-14",
+                )}
+              >
+                {uploadOver && !fileOverFolder && (
+                  <div className={DROP_OVERLAY}>
+                    <span className="flex items-center gap-2 text-sm font-medium text-os-accent">
+                      <Upload className="w-4 h-4" /> Drop files to upload
+                    </span>
+                  </div>
+                )}
+                <MarqueeBox box={paneMarquee.box} />
+
+                {searching ? (
+                  <SearchResults
+                    hits={hits}
+                    selected={selected}
+                    focusId={focusId}
+                    handlers={rowHandlers}
+                    onOpenLocation={onNavigate}
+                    getScopeActions={getInternalScopeActions}
+                    onToggleFavorite={onToggleFavorite}
+                  />
+                ) : !currentScope ? (
+                  // In embedded mode the scope is always pre-selected, so this
+                  // branch only renders in the full /drive browser. Embedded mode
+                  // always has a currentScope because currentScopeId = embeddedScopeId.
+                  <ScopeList
+                    scopes={scopes}
+                    viewMode={viewMode === "grid" ? "grid" : "list"}
+                    focusId={focusId}
+                    dragging={!!activeDrag}
+                    onOpen={(id) => {
+                      if (!consumeSuppressedClick()) openById(id);
+                    }}
+                  />
+                ) : (
+                  <ScopeContents
+                    scope={currentScope}
+                    atScopeTop={currentFolderId === null}
+                    listing={listing}
+                    viewMode={viewMode === "grid" ? "grid" : "list"}
+                    sort={sort}
+                    onToggleSort={toggleSort}
+                    selected={selected}
+                    focusId={focusId}
+                    handlers={rowHandlers}
+                    actions={getInternalScopeActions(currentScope.id)}
+                    onToggleFavorite={onToggleFavorite}
+                    onTogglePartnerVisible={
+                      hasActivePartner && onTogglePartnerVisible ? onTogglePartnerVisible : undefined
+                    }
+                    dragging={!!activeDrag}
+                  />
+                )}
+              </div>
+              {searching && (
+                <div onClick={(e) => e.stopPropagation()}>
+                  <LoadMore {...hitsPager} />
                 </div>
               )}
-              <MarqueeBox box={paneMarquee.box} />
-
-              {searching ? (
-                <SearchResults
-                  hits={hits}
-                  selected={selected}
-                  focusId={focusId}
-                  handlers={rowHandlers}
-                  onOpenLocation={onNavigate}
-                  getScopeActions={getInternalScopeActions}
-                  onToggleFavorite={onToggleFavorite}
-                />
-              ) : !currentScope ? (
-                // In embedded mode the scope is always pre-selected, so this
-                // branch only renders in the full /drive browser. Embedded mode
-                // always has a currentScope because currentScopeId = embeddedScopeId.
-                <ScopeList
-                  scopes={scopes}
-                  viewMode={viewMode === "grid" ? "grid" : "list"}
-                  focusId={focusId}
-                  dragging={!!activeDrag}
-                  onOpen={(id) => {
-                    if (!consumeSuppressedClick()) openById(id);
-                  }}
-                />
-              ) : (
-                <ScopeContents
-                  scope={currentScope}
-                  atScopeTop={currentFolderId === null}
-                  listing={listing}
-                  viewMode={viewMode === "grid" ? "grid" : "list"}
-                  sort={sort}
-                  onToggleSort={toggleSort}
-                  selected={selected}
-                  focusId={focusId}
-                  handlers={rowHandlers}
-                  actions={getInternalScopeActions(currentScope.id)}
-                  onToggleFavorite={onToggleFavorite}
-                  onTogglePartnerVisible={
-                    hasActivePartner && onTogglePartnerVisible ? onTogglePartnerVisible : undefined
-                  }
-                  dragging={!!activeDrag}
-                />
-              )}
-            </div>
+            </>
           )}
 
           {/* ── Bulk selection actions ────────────────────────────────────────

@@ -5,6 +5,7 @@ import { applicantDeadline } from "~/hiring/lib/domain-windows";
 import { applicantGroup } from "~/hiring/lib/applicant-groups.server";
 import { ONBOARDING_EVENT_TYPE } from "~/members/lib/welcome.server";
 import { fullName } from "~/lib/display";
+import { decodeCursor, keysetAfter, keysetPage } from "~/lib/pagination";
 import { NOT_CANCELLED_MEETING, liveMeetingPingClauses } from "~/lib/notifications";
 import {
   OPEN_WORK_STATUSES,
@@ -240,17 +241,43 @@ async function getInternalCycleApplyTask(
   };
 }
 
-/** Open project tasks assigned to a user, soonest deadline first. */
-export async function listMyProjectTasks(userId: string): Promise<ProjectWorkItem[]> {
+export const TASKS_PAGE_SIZE = 50;
+
+export interface TasksPage<T> {
+  items: T[];
+  nextCursor: string | null;
+}
+
+const myProjectTasksWhere = (userId: string): Prisma.TaskWhereInput => ({
+  assignees: { some: { userId } },
+  status: { in: [...OPEN_WORK_STATUSES] },
+  archivedAt: null,
+  project: { status: { not: "Archived" } },
+});
+
+/** How many open project tasks are assigned to a user. */
+export function countMyProjectTasks(userId: string): Promise<number> {
+  return prisma.task.count({ where: myProjectTasksWhere(userId) });
+}
+
+// dueAt is nullable, so this list pages by offset: the cursor is the number of
+// rows to skip. `id` is the last sort key so equal deadlines keep one order.
+export function parseOffsetCursor(raw: string | null | undefined): number {
+  const n = Number(raw);
+  return Number.isInteger(n) && n > 0 ? n : 0;
+}
+
+/** One page of open project tasks assigned to a user, soonest deadline first. */
+export async function listMyProjectTasksPage(
+  userId: string,
+  { cursor = null, limit = TASKS_PAGE_SIZE }: { cursor?: string | null; limit?: number } = {},
+): Promise<TasksPage<ProjectWorkItem>> {
+  const skip = parseOffsetCursor(cursor);
   const rows = await prisma.task.findMany({
-    where: {
-      assignees: { some: { userId } },
-      status: { in: [...OPEN_WORK_STATUSES] },
-      archivedAt: null,
-      project: { status: { not: "Archived" } },
-    },
-    orderBy: [{ dueAt: { sort: "asc", nulls: "last" } }, { createdAt: "desc" }],
-    take: 50,
+    where: myProjectTasksWhere(userId),
+    orderBy: [{ dueAt: { sort: "asc", nulls: "last" } }, { createdAt: "desc" }, { id: "desc" }],
+    skip,
+    take: limit + 1,
     select: {
       id: true,
       title: true,
@@ -261,7 +288,7 @@ export async function listMyProjectTasks(userId: string): Promise<ProjectWorkIte
       project: { select: { name: true } },
     },
   });
-  return rows.map((t) => ({
+  const items = rows.slice(0, limit).map((t) => ({
     id: t.id,
     title: t.title,
     projectId: t.projectId,
@@ -271,15 +298,38 @@ export async function listMyProjectTasks(userId: string): Promise<ProjectWorkIte
     activityAt: t.activityAt.toISOString(),
     link: projectTaskLink(t.projectId, t.id),
   }));
+  return { items, nextCursor: rows.length > limit ? String(skip + limit) : null };
 }
 
-/** Open tasks for a user, newest first, with deadlines resolved. */
-export async function listOpenTasks(userId: string, request?: Request): Promise<Task[]> {
-  const [rows, applyTasks] = await Promise.all([
+/** Open project tasks assigned to a user, soonest deadline first (first page). */
+export async function listMyProjectTasks(userId: string): Promise<ProjectWorkItem[]> {
+  return (await listMyProjectTasksPage(userId)).items;
+}
+
+/** The true project-task total, given the first page (a count only when more exist). */
+export async function projectTasksTotal(userId: string, page: TasksPage<ProjectWorkItem>): Promise<number> {
+  return page.nextCursor ? countMyProjectTasks(userId) : page.items.length;
+}
+
+/**
+ * One page of open tasks for a user, newest first, with deadlines resolved.
+ * The synthetic apply-to-cycle tasks lead the first page only; they are not
+ * Notification rows, so they sit outside the keyset.
+ */
+export async function listOpenTasksPage(
+  userId: string,
+  {
+    cursor: rawCursor = null,
+    limit = TASKS_PAGE_SIZE,
+    request,
+  }: { cursor?: string | null; limit?: number; request?: Request } = {},
+): Promise<TasksPage<Task>> {
+  const cursor = decodeCursor(rawCursor);
+  const [fetched, applyTasks] = await Promise.all([
     prisma.notification.findMany({
-      where: TASK_WHERE(userId),
-      orderBy: { createdAt: "desc" },
-      take: 50,
+      where: cursor ? { AND: [TASK_WHERE(userId), keysetAfter("createdAt", cursor)] } : TASK_WHERE(userId),
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      take: limit + 1,
       select: {
         id: true,
         kind: true,
@@ -301,26 +351,12 @@ export async function listOpenTasks(userId: string, request?: Request): Promise<
         form: { select: { published: true, publicToken: true } },
       },
     }),
-    getInternalCycleApplyTasks(userId, request),
+    cursor ? Promise.resolve([] as Task[]) : getInternalCycleApplyTasks(userId, request),
   ]);
 
-  const notifTasks = rows
-    // TASK_WHERE already excludes Cancelled-meeting / inactive-assignment rows
-    // at the DB level; running them back through the shared resolver keeps the
-    // "is this still a live task" definition in one place (no behavior change —
-    // Expired/Open both remain tasks; only Cancelled is dropped, which the
-    // WHERE already prevents).
-    .filter(
-      (n) =>
-        resolveNotificationState({
-          readAt: n.readAt,
-          dueAt: n.dueAt,
-          formId: n.formId,
-          scheduledMeetingId: n.scheduledMeetingId,
-          scheduledMeeting: n.scheduledMeeting,
-          interviewAssignment: n.interviewAssignment,
-        }) !== "Cancelled",
-    )
+  const page = keysetPage(fetched, limit, (n) => ({ at: n.createdAt.toISOString(), id: n.id }));
+  const notifTasks = fetched
+    .slice(0, limit)
     .map((n) => {
     // Only invites backed by a ScheduledMeeting get RSVP UI. A MeetingInvite
     // without scheduledMeetingId (e.g. a mis-tagged admin blast) is general.
@@ -384,7 +420,21 @@ export async function listOpenTasks(userId: string, request?: Request): Promise<
     };
   });
 
-  return [...applyTasks, ...notifTasks];
+  return { items: [...applyTasks, ...notifTasks], nextCursor: page.nextCursor };
+}
+
+/** Open tasks for a user, newest first, with deadlines resolved (first page). */
+export async function listOpenTasks(userId: string, request?: Request): Promise<Task[]> {
+  return (await listOpenTasksPage(userId, { request })).items;
+}
+
+/** The true open-task total, given the first page (a count only when more exist). */
+export async function openTasksTotal(
+  userId: string,
+  page: TasksPage<Task>,
+  request?: Request,
+): Promise<number> {
+  return page.nextCursor ? countOpenTasks(userId, request) : page.items.length;
 }
 
 export interface NotificationHistoryOptions {

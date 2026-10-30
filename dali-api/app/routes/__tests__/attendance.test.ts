@@ -178,6 +178,12 @@ describe("GET /attendance - scope label", () => {
       row("plain"),
     ]);
     mockPrisma.projectAssignment.findMany.mockResolvedValue([]);
+    mockPrisma.meetingException.findMany.mockResolvedValue([]);
+    mockPrisma.meetingAttendance.groupBy.mockImplementation(async (args: { by: string[] }) =>
+      args.by.length === 1
+        ? ["flagged", "unflagged-with-notebook", "project", "plain"].map((scheduledMeetingId) => ({ scheduledMeetingId }))
+        : [],
+    );
 
     const { events } = (await loader({
       request: new Request("http://localhost/attendance"),

@@ -34,12 +34,14 @@ export function RsvpButtons({
   notificationId,
   onResponded,
   onFailed,
+  onSaved,
   size = "xs",
   className = "mt-2 gap-1",
 }: {
   notificationId: string;
   onResponded?: (rsvp: "Accepted" | "Declined" | "Tentative") => void;
   onFailed?: () => void;
+  onSaved?: () => void;
   size?: ButtonSize;
   className?: string;
 }) {
@@ -68,6 +70,7 @@ export function RsvpButtons({
         return;
       }
       if (json.gcalError) toast.error(`Recorded in-app, but Google sync failed: ${json.gcalError}`);
+      onSaved?.();
       await revalidator.revalidate();
       notifyTasksChanged();
     } catch (err) {

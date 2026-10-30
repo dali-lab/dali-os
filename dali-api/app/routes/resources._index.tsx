@@ -2,20 +2,19 @@ import { Link, useFetcher, useLoaderData, useOutletContext } from "react-router"
 import { ArrowDown, ArrowUp, Globe, Pin, PinOff } from "lucide-react";
 import type { Route } from "./+types/resources._index";
 import type { ResourcesOutletContext } from "./resources";
-import { prisma } from "~/lib/db.server";
 import { cn } from "~/lib/cn";
-import { fullName, formatDateShort } from "~/lib/display";
-import { DEFAULT_BLOG_COVER, blogListing } from "~/lib/blog-preview";
+import { DEFAULT_BLOG_COVER } from "~/lib/blog-preview";
 import { requireResourcesViewer } from "~/lib/resources.server";
 import {
-  BLOG_LISTING_ORDER,
-  blogStatus,
-  listedBlogPostsWhere,
+  loadBlogFrontPage,
   moveBlogPostPin,
   pinBlogPostToTop,
   unpinBlogPost,
+  type ListedBlogPost,
 } from "~/lib/blog-post.server";
 import { IconButton } from "~/components/ui/IconButton";
+import { LoadMore } from "~/components/ui/Pager";
+import { fetchCursorPage, useLoadMore } from "~/hooks/useLoadMore";
 import { Tooltip } from "~/components/ui/floating/Tooltip";
 import { BlogStatusPill } from "~/components/blog/BlogStatusPill";
 import { isAdmin } from "~/lib/roles";
@@ -27,41 +26,7 @@ import { isAdmin } from "~/lib/roles";
 export async function loader({ request }: Route.LoaderArgs) {
   const { user, core } = await requireResourcesViewer(request);
   const canApprove = await isAdmin(user.sub);
-  const rows = await prisma.blogPost.findMany({
-    where: listedBlogPostsWhere(user.sub, canApprove),
-    orderBy: BLOG_LISTING_ORDER,
-    select: {
-      id: true,
-      title: true,
-      excerpt: true,
-      summary: true,
-      coverImageUrl: true,
-      customCoverUrl: true,
-      visibility: true,
-      publishedAt: true,
-      submittedAt: true,
-      frontPageRank: true,
-      authorId: true,
-      author: { select: { firstName: true, lastName: true } },
-    },
-  });
-  const posts = rows.map((r) => ({
-    id: r.id,
-    title: r.title,
-    ...blogListing(r),
-    isPublic: r.visibility === "Public",
-    status: blogStatus(r),
-    mine: r.authorId === user.sub,
-    pinned: r.frontPageRank !== null,
-    date: r.publishedAt ? formatDateShort(r.publishedAt) : null,
-    author: fullName(r.author),
-  }));
-  return {
-    published: posts.filter((p) => p.status === "published"),
-    toReview: posts.filter((p) => p.status === "review" && !p.mine),
-    drafts: posts.filter((p) => p.status !== "published" && p.mine),
-    canCurate: core,
-  };
+  return { ...(await loadBlogFrontPage(user.sub, canApprove)), canCurate: core };
 }
 
 // Core's curation. Each change names one post; the order is worked out
@@ -87,7 +52,7 @@ export async function action({ request }: Route.ActionArgs) {
   return { ok: true };
 }
 
-type Post = Awaited<ReturnType<typeof loader>>["published"][number];
+type Post = ListedBlogPost;
 
 function Byline({ post, showPin }: { post: Post; showPin: boolean }) {
   return (
@@ -245,7 +210,13 @@ function UnpublishedList({
 }
 
 export default function ResourcesFrontPage() {
-  const { published, toReview, drafts, canCurate } = useLoaderData<typeof loader>();
+  const { published: firstPage, nextCursor, toReview, drafts, canCurate } = useLoaderData<typeof loader>();
+  const { items: published, pager } = useLoadMore<Post>({
+    items: firstPage,
+    nextCursor,
+    idOf: (p) => p.id,
+    fetchPage: (cursor) => fetchCursorPage<Post>(`/api/resources/blog-posts?cursor=${encodeURIComponent(cursor)}`),
+  });
   const fetcher = useFetcher();
   const { editing } = useOutletContext<ResourcesOutletContext>();
   const [lead, ...rest] = published;
@@ -292,6 +263,7 @@ export default function ResourcesFrontPage() {
           ))}
         </section>
       )}
+      <LoadMore {...pager} />
       {toReview.length > 0 && (
         <UnpublishedList title="Waiting for approval" posts={toReview} to="blog" showAuthor />
       )}
