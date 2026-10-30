@@ -7,6 +7,8 @@ import {
   type ReactNode,
 } from "react";
 import { useDialog } from "~/components/ui/dialog";
+import { LoadMore } from "~/components/ui/Pager";
+import { useLoadMore, type CursorPage } from "~/hooks/useLoadMore";
 import { useRevalidator, useSearchParams } from "react-router";
 import { Menu, MenuItem, Popover, Tooltip, InfoTip } from "~/components/ui/floating";
 import type { DragEndEvent } from "@dnd-kit/core";
@@ -1495,6 +1497,17 @@ type ArchivedTask = {
   assignees: { id: string; name: string }[];
 };
 
+async function fetchArchivedTasksPage(
+  projectId: string,
+  cursor?: string,
+): Promise<CursorPage<ArchivedTask>> {
+  const query = cursor ? `?cursor=${encodeURIComponent(cursor)}` : "";
+  const res = await fetch(`/api/projects/${projectId}/tasks${query}`, { credentials: "include" });
+  if (!res.ok) throw new Error(`Request failed: ${res.status}`);
+  const body = (await res.json()) as { tasks: ArchivedTask[]; nextCursor: string | null };
+  return { items: body.tasks, nextCursor: body.nextCursor };
+}
+
 // Lazily fetches and lists a project's archived tasks. Read-only — archived
 // tasks aren't editable/restorable from here (they live off the board by
 // design); this is a record of what was auto-archived.
@@ -1506,27 +1519,29 @@ function ArchivedTasksModal({
   onClose: () => void;
 }) {
   const { os } = useOsChrome();
-  const [tasks, setTasks] = useState<ArchivedTask[] | null>(null);
+  const [first, setFirst] = useState<{ tasks: ArchivedTask[]; nextCursor: string | null } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    (async () => {
-      try {
-        const res = await fetch(`/api/projects/${projectId}/tasks`, {
-          credentials: "include",
-        });
-        if (!res.ok) throw new Error(`Request failed: ${res.status}`);
-        const body = (await res.json()) as { tasks: ArchivedTask[] };
-        if (!cancelled) setTasks(body.tasks);
-      } catch (e) {
+    fetchArchivedTasksPage(projectId)
+      .then((page) => {
+        if (!cancelled) setFirst({ tasks: page.items, nextCursor: page.nextCursor });
+      })
+      .catch((e) => {
         if (!cancelled) setError(e instanceof Error ? e.message : "Failed to load");
-      }
-    })();
+      });
     return () => {
       cancelled = true;
     };
   }, [projectId]);
+
+  const { items: tasks, pager } = useLoadMore<ArchivedTask>({
+    items: first?.tasks ?? [],
+    nextCursor: first?.nextCursor ?? null,
+    fetchPage: (cursor) => fetchArchivedTasksPage(projectId, cursor),
+    idOf: (t) => t.id,
+  });
 
   return (
     <Modal
@@ -1557,17 +1572,17 @@ function ArchivedTasksModal({
       </div>
 
       {error && <p className="text-sm text-destructive">{error}</p>}
-      {!error && tasks === null && (
+      {!error && first === null && (
         <p className="text-sm text-muted-foreground">Loading…</p>
       )}
-      {tasks !== null && tasks.length === 0 && (
+      {first !== null && tasks.length === 0 && (
         <p className="text-sm text-muted-foreground">
           No archived tasks yet. Use Archive on the board to clear Done/Cancelled
           tasks now, or wait for the weekly auto-archive of idle ones.
         </p>
       )}
 
-      {tasks !== null && tasks.length > 0 && (
+      {first !== null && tasks.length > 0 && (
         <ul className="flex flex-col gap-2 overflow-y-auto -mx-1 px-1">
           {tasks.map((t) => (
             <li
@@ -1606,6 +1621,7 @@ function ArchivedTasksModal({
           ))}
         </ul>
       )}
+      <LoadMore {...pager} />
     </Modal>
   );
 }
