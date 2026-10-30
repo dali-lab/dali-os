@@ -8,7 +8,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 import { useDialog } from "~/components/ui/dialog";
 import { useToast } from "~/components/ui/toast";
-import { desktopVersion } from "~/lib/desktop";
+import { desktopVersion, hasNativeRecorder } from "~/lib/desktop";
 import { acquireCollabDoc, releaseCollabDoc } from "~/components/doc/collab-doc";
 import { captureCallAudio, describeMicError, listMicDevices, openMic, startLevelMeter } from "./capture";
 import {
@@ -375,7 +375,7 @@ export function useMeetingRecording({
   const [scrollTarget, setScrollTarget] = useState<number | null>(null);
 
   // Start-sheet config.
-  const [useDesktopApp, setUseDesktopApp] = useState(desktopVer != null);
+  const [useDesktopApp, setUseDesktopApp] = useState(hasNativeRecorder);
   const [micDeviceId, setMicDeviceId] = useState<string | undefined>(undefined);
   const [micDevices, setMicDevices] = useState<MediaDeviceInfo[]>([]);
   const [micLevel, setMicLevel] = useState(0);
@@ -1053,7 +1053,12 @@ export function useMeetingRecording({
    *  the "inserted" state (specs/meeting-recording-rail.md) until Discard. */
   function insert(notes: string | null) {
     const paragraphs = transcriptParagraphs(lines, speakers, roster);
-    if (!onInsert(meetingNotesMarkdown(notes), paragraphs)) {
+    const markdown = meetingNotesMarkdown(notes);
+    if (!markdown && paragraphs.length === 0) {
+      setError("There's nothing in this recording to insert.");
+      return false;
+    }
+    if (!onInsert(markdown, paragraphs)) {
       setError("The note is still loading. Try again in a moment.");
       return false;
     }
@@ -1437,7 +1442,6 @@ export function useMeetingRecording({
 
     // Start-sheet config.
     useDesktopApp,
-    setUseDesktopApp,
     micDeviceId,
     setMicDeviceId,
     micDevices,

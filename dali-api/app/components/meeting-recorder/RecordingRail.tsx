@@ -25,6 +25,7 @@ export type RailState =
   | "review"
   | "processing"
   | "failed"
+  | "noSpeech"
   | "ready"
   | "generating"
   | "pendingReview"
@@ -38,10 +39,11 @@ export type RailState =
  *  derived from the document (rec.pendingMarks), not a flag: Step 2,
  *  "Pending is derived from the document". */
 export function deriveRailState(
-  rec: Pick<UseMeetingRecording, "phase" | "insertedAt" | "stalePreview" | "enhanceBusy" | "pendingMarks" | "enhancedAt">,
+  rec: Pick<UseMeetingRecording, "phase" | "insertedAt" | "stalePreview" | "enhanceBusy" | "pendingMarks" | "enhancedAt" | "hasTranscript">,
 ): RailState | null {
   if (rec.phase === "idle") return null;
   if (rec.phase !== "done") return rec.phase;
+  if (!rec.hasTranscript) return "noSpeech";
   if (rec.stalePreview) return "stalePreview";
   if (rec.enhanceBusy) return "generating";
   if (rec.pendingMarks.length > 0) return "pendingReview";
@@ -175,6 +177,9 @@ export function statusLineFor(rec: UseMeetingRecording, state: RailState): React
       break;
     case "failed":
       text = rec.error ?? "Recording failed.";
+      break;
+    case "noSpeech":
+      text = "No speech was captured. Discard this recording and record again.";
       break;
     case "ready": {
       const n = rec.speakerKeys.length;
@@ -312,6 +317,11 @@ function RailActions({ rec, state }: { rec: UseMeetingRecording; state: RailStat
       );
 
     case "processing":
+      return rec.canDiscard ? (
+        <IconButton label="Discard recording" icon={Trash2} tone="destructive" onClick={() => void rec.discard()} />
+      ) : null;
+
+    case "noSpeech":
       return rec.canDiscard ? (
         <IconButton label="Discard recording" icon={Trash2} tone="destructive" onClick={() => void rec.discard()} />
       ) : null;
