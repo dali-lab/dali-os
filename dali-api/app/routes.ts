@@ -560,6 +560,8 @@ export default [
   route("api/public/blogs", "public-api/routes/api.public.blogs.ts"),
   route("api/public/blogs/:id", "public-api/routes/api.public.blogs.$id.ts"),
 
+  route("api/attendance/feed", "routes/api.attendance.feed.ts"),
+
   // Scheduled meetings
   route("api/scheduled-meetings", "calendar/routes/api.scheduled-meetings.ts"),
   route("api/scheduled-meetings/:id/update", "calendar/routes/api.scheduled-meetings.$id.update.ts"),

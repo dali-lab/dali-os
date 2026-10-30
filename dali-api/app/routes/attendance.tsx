@@ -1,5 +1,5 @@
-import { useMemo, useState } from "react";
-import { Link, redirect, useFetcher, useLoaderData } from "react-router";
+import { useEffect, useMemo, useState } from "react";
+import { Link, redirect, useFetcher, useLoaderData, useSearchParams } from "react-router";
 import {
   ClipboardCheck,
   ChevronDown,
@@ -16,12 +16,15 @@ import { requireAuth, isNonMember } from "~/lib/auth";
 import { isCore, isProjectMember } from "~/lib/roles";
 import { redirectToLogin } from "~/lib/login-next";
 import { prisma } from "~/lib/db";
+import { loadAttendanceFeed, type AttendanceCard } from "~/lib/attendance-feed.server";
 import { meetingOccurrenceHref } from "~/calendar/lib/meeting-href";
 import { parseOccurrenceParam } from "~/lib/scheduled-meeting";
 import { fullName, formatDateShort, formatDateTime } from "~/lib/display";
 import { useUserTimeZone } from "~/hooks/useUserTimeZone";
 import { useOsChrome } from "~/components/os-chrome";
 import { SearchInput } from "~/components/ui/SearchInput";
+import { LoadMore } from "~/components/ui/Pager";
+import { fetchCursorPage, useLoadMore } from "~/hooks/useLoadMore";
 import { useDialog } from "~/components/ui/dialog";
 import { Menu, Select } from "~/components/ui/floating";
 import { EditMeetingModal } from "~/calendar/components/EditMeetingModal";
@@ -44,137 +47,16 @@ export const handle = {
   breadcrumb: () => "Attendance",
 };
 
-// Lab-wide Attendance: every meeting/event the
-// viewer is invited to, across projects / teams / Core / general lab meetings,
-// with each event's roster. A recurring meeting lists once per occurrence that
-// has a roster, since each occurrence keeps its own. Access is by invitation — we only surface a meeting
-// whose participant list (or organizer) includes the viewer, so "you can see the
-// attendance for an event you're invited to" is enforced by the query itself,
-// with no Core-wide blanket. Marking still happens on the per-meeting page,
-// which enforces its own organizer/Core/project-member gate.
+// Lab-wide Attendance: access is by invitation, enforced by the feed query.
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
   if (await isNonMember(auth, request)) return redirect("/portal");
-  const userId = auth.user.sub;
 
-  const meetings = await prisma.scheduledMeeting.findMany({
-    where: {
-      status: { not: "Cancelled" },
-      // Invited = organizer or on the participant list (mirrors calendar.server).
-      AND: [
-        { OR: [{ organizerId: userId }, { participantUserIds: { has: userId } }] },
-        // Any meeting with a roster is attendance-tracked — notes, self check-in,
-        // or a plain event with guests (createScheduledMeeting fans out a
-        // MeetingAttendance row per participant whenever there are guests).
-        { attendance: { some: {} } },
-      ],
-    },
-    orderBy: [{ selectedAt: "desc" }, { createdAt: "desc" }],
-    select: {
-      id: true,
-      title: true,
-      selectedAt: true,
-      durationMinutes: true,
-      meetingType: true,
-      meetingTypeLabel: true,
-      isCoreMeeting: true,
-      notebookId: true,
-      organizerId: true,
-      project: { select: { id: true, name: true } },
-      organizer: { select: { firstName: true, lastName: true, daliEmail: true } },
-      exceptions: { select: { originalStart: true, overrideStart: true, cancelled: true } },
-      attendance: {
-        orderBy: { user: { lastName: "asc" } },
-        select: {
-          occurrenceStart: true,
-          present: true,
-          markedAt: true,
-          absenceNote: true,
-          userId: true,
-          user: {
-            select: { id: true, firstName: true, lastName: true, daliEmail: true },
-          },
-        },
-      },
-    },
-  });
-
-  // Who may write an absence note is the same gate as marking attendance, so
-  // resolve it here per event rather than letting the roster offer an editor
-  // the action would only reject. One membership query covers every event.
-  const [core, assignments] = await Promise.all([
-    isCore(userId, request),
-    prisma.projectAssignment.findMany({
-      where: { userId },
-      select: { projectId: true },
-    }),
-  ]);
-  const memberProjectIds = new Set(assignments.map((a) => a.projectId));
-
-  const now = Date.now();
-  const events = meetings.flatMap((m) => {
-    const canManage =
-      m.organizerId === userId ||
-      core ||
-      (m.project !== null && memberProjectIds.has(m.project.id));
-    // Editing/cancelling the event itself is the organizer's or Core's call —
-    // narrower than canManage (project members can mark attendance but not
-    // reschedule or delete a meeting they don't own). Mirrors the update/cancel
-    // server gates.
-    const canEdit = m.organizerId === userId || core;
-    const scope = m.project
-      ? m.project.name
-      : m.isCoreMeeting
-        ? "Core"
-        : "General";
-    const typeLabel =
-      m.meetingType === "Other"
-        ? m.meetingTypeLabel || "Meeting"
-        : (m.meetingType ?? "Meeting");
-    const byOccurrence = new Map<number, typeof m.attendance>();
-    for (const a of m.attendance) {
-      const key = a.occurrenceStart.getTime();
-      byOccurrence.set(key, [...(byOccurrence.get(key) ?? []), a]);
-    }
-    const exceptions = new Map(m.exceptions.map((e) => [e.originalStart.getTime(), e]));
-    return [...byOccurrence].flatMap(([key, rows]) => {
-      const exception = exceptions.get(key);
-      if (exception?.cancelled) return [];
-      const start = m.selectedAt ? (exception?.overrideStart ?? new Date(key)) : null;
-      const end = start ? start.getTime() + m.durationMinutes * 60_000 : null;
-      return [
-        {
-          id: `${m.id}:${key}`,
-          meetingId: m.id,
-          occurrenceStart: new Date(key).toISOString(),
-          title: m.title,
-          typeLabel,
-          scope,
-          startsAt: start?.toISOString() ?? null,
-          // Unscheduled meetings (no time yet) sort with upcoming so they don't vanish.
-          isPast: end !== null && end < now,
-          organizerName: fullName(m.organizer) || m.organizer.daliEmail || "—",
-          invited: rows.length,
-          checkedIn: rows.filter((a) => a.present).length,
-          viewerPresent: rows.find((a) => a.userId === userId)?.present ?? false,
-          canManage,
-          canEdit,
-          attendees: rows.map((a) => ({
-            id: a.user.id,
-            name: fullName(a.user) || a.user.daliEmail || a.user.id,
-            present: a.present,
-            markedAt: a.markedAt?.toISOString() ?? null,
-            // Withheld rather than merely hidden: a plain invitee's payload
-            // shouldn't carry a note they aren't allowed to read.
-            absenceNote: canManage ? a.absenceNote : null,
-          })),
-        },
-      ];
-    });
-  });
-
-  return { events };
+  const q = (new URL(request.url).searchParams.get("q") ?? "").trim();
+  const core = await isCore(auth.user.sub, request);
+  const { items, nextCursor } = await loadAttendanceFeed({ userId: auth.user.sub, core }, { q });
+  return { events: items, nextCursor, q };
 }
 
 // Save (or clear) the absence note on one roster row. Writing is gated by the
@@ -238,63 +120,57 @@ export async function action({ request }: Route.ActionArgs) {
   return Response.json({ ok: true });
 }
 
-type Attendee = {
-  id: string;
-  name: string;
-  present: boolean;
-  markedAt: string | null;
-  absenceNote: string | null;
-};
-
-type AttendanceEvent = {
-  id: string;
-  meetingId: string;
-  occurrenceStart: string;
-  title: string;
-  typeLabel: string;
-  scope: string;
-  startsAt: string | null;
-  isPast: boolean;
-  organizerName: string;
-  invited: number;
-  checkedIn: number;
-  viewerPresent: boolean;
-  canManage: boolean;
-  canEdit: boolean;
-  attendees: Attendee[];
-};
+type AttendanceEvent = AttendanceCard;
+type Attendee = AttendanceCard["attendees"][number];
 
 function startMs(e: AttendanceEvent, fallback: number): number {
   return e.startsAt ? Date.parse(e.startsAt) : fallback;
 }
 
+const fetchOlder = (q: string) => (cursor: string) => {
+  const params = new URLSearchParams({ cursor });
+  if (q) params.set("q", q);
+  return fetchCursorPage<AttendanceEvent>(`/api/attendance/feed?${params}`);
+};
+
 export default function AttendancePage() {
-  const { events } = useLoaderData<typeof loader>();
+  const data = useLoaderData<typeof loader>();
   const { pageTitle, panel } = useOsChrome();
-  const [query, setQuery] = useState("");
+  const [, setSearchParams] = useSearchParams();
+  const [query, setQuery] = useState(data.q);
   // One control for every roster on the page: the cards all show the same kind
   // of list, so a per-card picker would just repeat itself down the page.
   const [sort, setSort] = useState<AttendeeSort>("name-asc");
 
+  useEffect(() => {
+    const next = query.trim();
+    if (next === data.q) return;
+    const id = window.setTimeout(
+      () =>
+        setSearchParams(next ? { q: next } : {}, { replace: true, preventScrollReset: true }),
+      300,
+    );
+    return () => window.clearTimeout(id);
+  }, [query, data.q, setSearchParams]);
+
+  const { items: events, pager } = useLoadMore<AttendanceEvent>({
+    items: data.events,
+    nextCursor: data.nextCursor,
+    fetchPage: fetchOlder(data.q),
+    idOf: (e) => e.id,
+    resetKey: data.q,
+  });
+
   const { upcoming, past } = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    const matched = !q
-      ? events
-      : events.filter((e) =>
-          [e.title, e.typeLabel, e.scope, e.organizerName, ...e.attendees.map((a) => a.name)]
-            .join(" ")
-            .toLowerCase()
-            .includes(q),
-        );
     // Upcoming soonest-first (unscheduled last); past newest-first.
-    const up = matched
+    const up = events
       .filter((e) => !e.isPast)
       .sort((a, b) => startMs(a, Number.POSITIVE_INFINITY) - startMs(b, Number.POSITIVE_INFINITY));
-    const pa = matched
+    const pa = events
       .filter((e) => e.isPast)
       .sort((a, b) => startMs(b, Number.NEGATIVE_INFINITY) - startMs(a, Number.NEGATIVE_INFINITY));
     return { upcoming: up, past: pa };
-  }, [events, query]);
+  }, [events]);
 
   return (
     <div className="flex flex-col gap-4">
@@ -302,7 +178,7 @@ export default function AttendancePage() {
         <h1 className={pageTitle}>Attendance</h1>
       </header>
 
-      {events.length === 0 ? (
+      {events.length === 0 && !data.q && !query ? (
         <div className={cn(panel, "p-10 text-center")}>
           <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-[color-mix(in_srgb,var(--area)_12%,transparent)]">
             <ClipboardCheck className="w-6 h-6 text-[var(--area)]" aria-hidden />
@@ -323,7 +199,7 @@ export default function AttendancePage() {
               size="sm"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search by event, organizer, scope, or attendee…"
+              placeholder="Search by event, organizer, project, or attendee…"
               aria-label="Search attendance events"
               containerClassName="min-w-48 flex-1"
             />
@@ -335,7 +211,7 @@ export default function AttendancePage() {
               align="right"
             />
           </div>
-          {upcoming.length === 0 && past.length === 0 ? (
+          {events.length === 0 ? (
             <div className={cn(panel, "px-4 py-8 text-center text-sm text-muted-foreground")}>
               No events match this search.
             </div>
@@ -343,6 +219,7 @@ export default function AttendancePage() {
             <>
               <EventSection title="Upcoming" events={upcoming} sort={sort} />
               <EventSection title="Past" events={past} sort={sort} />
+              <LoadMore {...pager} />
             </>
           )}
         </>
@@ -389,8 +266,16 @@ function EventCard({
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(false);
   const pct = event.invited > 0 ? Math.round((event.checkedIn / event.invited) * 100) : 0;
-  const present = sortAttendees(event.attendees.filter((a) => a.present), sort);
-  const missing = sortAttendees(event.attendees.filter((a) => !a.present), sort);
+  // Cards from loaded older pages are not refreshed by loader revalidation, so
+  // a saved note is kept here to show it either way.
+  const [notes, setNotes] = useState<Record<string, string | null>>({});
+  const attendees = event.attendees.map((a) =>
+    a.id in notes ? { ...a, absenceNote: notes[a.id] } : a,
+  );
+  const present = sortAttendees(attendees.filter((a) => a.present), sort);
+  const missing = sortAttendees(attendees.filter((a) => !a.present), sort);
+  const onNoteSaved = (userId: string, note: string | null) =>
+    setNotes((prev) => ({ ...prev, [userId]: note }));
 
   async function cancelEvent() {
     const ok = await dialog.confirm({
@@ -501,6 +386,7 @@ function EventCard({
                 occurrenceStart={event.occurrenceStart}
                 canManage={event.canManage}
                 attendees={present}
+                onNoteSaved={onNoteSaved}
                 empty="Nobody has checked in yet."
               />
               <RosterColumn
@@ -511,6 +397,7 @@ function EventCard({
                 occurrenceStart={event.occurrenceStart}
                 canManage={event.canManage}
                 attendees={missing}
+                onNoteSaved={onNoteSaved}
                 empty="Everyone checked in."
               />
             </div>
@@ -529,6 +416,7 @@ function RosterColumn({
   occurrenceStart,
   canManage,
   attendees,
+  onNoteSaved,
   empty,
 }: {
   icon: typeof UserCheck;
@@ -538,6 +426,7 @@ function RosterColumn({
   occurrenceStart: string;
   canManage: boolean;
   attendees: Attendee[];
+  onNoteSaved: (userId: string, note: string | null) => void;
   empty: string;
 }) {
   const tz = useUserTimeZone();
@@ -578,6 +467,7 @@ function RosterColumn({
                       userId={a.id}
                       name={a.name}
                       note={a.absenceNote}
+                      onSaved={(note) => onNoteSaved(a.id, note)}
                     />
                   )}
                 </div>
