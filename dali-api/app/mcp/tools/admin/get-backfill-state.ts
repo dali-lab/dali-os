@@ -1,13 +1,20 @@
 import { prisma } from "~/lib/db.server";
 import { isAdmin } from "~/lib/roles";
-import { AdminForbiddenError as McpForbiddenError } from "./errors";
+import { AdminForbiddenError as McpForbiddenError, AdminInvalidError as McpInvalidError } from "./errors";
 import type { McpCtx } from "../../registry";
+import { keysetPage, keysetWindow, pageProps, type PageArgs } from "../../pagination";
+
+const PAGE_LIMITS = { defaultLimit: 50, maxLimit: 200 };
 
 export const GET_BACKFILL_STATE_TOOL = {
   name: "get_backfill_state",
   description:
     "Read what a backfill needs to reconcile against: the users holding the given NetIDs, and the " +
-    "project and Core assignments in the given terms. Read-only. Admins only.",
+    "project and Core assignments in the given terms. Read-only. Admins only. " +
+    "Assignments are paged one kind at a time: `assignments` picks project (default) or core, and " +
+    "that kind comes back in its own key with the other key null. Pass page.nextCursor as cursor, with " +
+    "the same `assignments` and `termIds`, until page.hasMore is false, then repeat with the other kind. " +
+    "`members` is returned on the first page only.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -23,13 +30,19 @@ export const GET_BACKFILL_STATE_TOOL = {
         maxItems: 60,
         description: "Terms to read assignments for.",
       },
+      assignments: {
+        type: "string",
+        enum: ["project", "core"],
+        description: "Which assignments to page: project (default) or core.",
+      },
+      ...pageProps(PAGE_LIMITS),
     },
     additionalProperties: false,
   },
   requiredScope: "mcp:admin" as const,
 };
 
-type Input = { netIds?: string[]; termIds?: string[] };
+type Input = PageArgs & { netIds?: string[]; termIds?: string[]; assignments?: "project" | "core" };
 
 export async function runGetBackfillState(ctx: McpCtx, args: Input) {
   if (!(await isAdmin(ctx.user.id))) {
@@ -38,9 +51,17 @@ export async function runGetBackfillState(ctx: McpCtx, args: Input) {
 
   const netIds = (args.netIds ?? []).map((id) => id.trim()).filter(Boolean);
   const termIds = args.termIds ?? [];
+  const kind = args.assignments === "core" ? "core" : "project";
+  if (args.assignments !== undefined && args.assignments !== "project" && args.assignments !== "core") {
+    throw new McpInvalidError("assignments must be project or core.");
+  }
 
-  const [members, projectAssignments, coreAssignments] = await Promise.all([
-    netIds.length
+  const window = keysetWindow(args, PAGE_LIMITS, [], "asc");
+  const where = { termId: { in: termIds } };
+  const firstPage = !args.cursor;
+
+  const [members, projectRows, coreRows, total] = await Promise.all([
+    netIds.length && firstPage
       ? prisma.user.findMany({
           where: {
             netId: {
@@ -50,9 +71,11 @@ export async function runGetBackfillState(ctx: McpCtx, args: Input) {
           select: { id: true, netId: true, firstName: true, lastName: true },
         })
       : [],
-    termIds.length
+    termIds.length && kind === "project"
       ? prisma.projectAssignment.findMany({
-          where: { termId: { in: termIds } },
+          where: { AND: [where, window.where] },
+          orderBy: window.orderBy,
+          take: window.take,
           select: {
             id: true,
             userId: true,
@@ -63,13 +86,27 @@ export async function runGetBackfillState(ctx: McpCtx, args: Input) {
           },
         })
       : [],
-    termIds.length
+    termIds.length && kind === "core"
       ? prisma.coreAssignment.findMany({
-          where: { termId: { in: termIds } },
-          select: { userId: true, termId: true, leadTitle: true, backfilled: true },
+          where: { AND: [where, window.where] },
+          orderBy: window.orderBy,
+          take: window.take,
+          select: { id: true, userId: true, termId: true, leadTitle: true, backfilled: true },
         })
       : [],
+    termIds.length
+      ? kind === "project"
+        ? prisma.projectAssignment.count({ where })
+        : prisma.coreAssignment.count({ where })
+      : 0,
   ]);
 
-  return { members, projectAssignments, coreAssignments };
+  const { rows, page } = keysetPage<object>(kind === "project" ? projectRows : coreRows, window, total);
+
+  return {
+    members,
+    projectAssignments: kind === "project" ? rows : null,
+    coreAssignments: kind === "core" ? rows : null,
+    page,
+  };
 }

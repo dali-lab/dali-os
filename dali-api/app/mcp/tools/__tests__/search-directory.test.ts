@@ -104,4 +104,36 @@ describe("search_directory", () => {
     const out = await runSearchDirectory({ query: "ada" });
     expect(out.results[0]).not.toHaveProperty("netId");
   });
+
+  it("orders with an id tiebreak and overfetches one row", async () => {
+    mockPrisma.user.findMany.mockResolvedValue([]);
+    await runSearchDirectory({ query: "x", limit: 5 });
+    const call = mockPrisma.user.findMany.mock.calls[0][0];
+    expect(call.orderBy.at(-1)).toEqual({ id: "asc" });
+    expect(call.take).toBe(6);
+    expect(call.skip).toBe(0);
+  });
+
+  it("walks pages with the cursor and ends with a null cursor", async () => {
+    const row = (id: string) => ({
+      id,
+      firstName: "Ada",
+      lastName: id,
+      daliEmail: null,
+      adminMembership: null,
+      coreAssignments: [],
+      domainLeadAssignmentsAsUser: [],
+      domainEligibilities: [],
+    });
+    mockPrisma.user.findMany.mockResolvedValueOnce([row("a"), row("b"), row("c")]);
+    const first = await runSearchDirectory({ query: "ada", limit: 2 });
+    expect(first.results.map((r) => r.id)).toEqual(["a", "b"]);
+    expect(first.page.hasMore).toBe(true);
+
+    mockPrisma.user.findMany.mockResolvedValueOnce([row("c")]);
+    const second = await runSearchDirectory({ query: "ada", limit: 2, cursor: first.page.nextCursor! });
+    expect(mockPrisma.user.findMany.mock.calls[1][0].skip).toBe(2);
+    expect(second.results.map((r) => r.id)).toEqual(["c"]);
+    expect(second.page).toMatchObject({ hasMore: false, nextCursor: null });
+  });
 });

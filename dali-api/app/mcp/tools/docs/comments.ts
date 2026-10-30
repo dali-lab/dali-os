@@ -5,11 +5,29 @@ import { prisma } from "~/lib/db.server";
 import { isCore, isLabMember, isProjectMember } from "~/lib/roles";
 import { getPageAccess } from "~/lib/pageAccess.server";
 import { hydrateAuthors } from "~/lib/collabAuth";
+import { keysetPage, keysetWindow, pageProps, type PageArgs } from "../../pagination";
+
+const PAGE_LIMITS = { defaultLimit: 50, maxLimit: 200 };
+
+const COMMENT_SELECT = {
+  id: true,
+  parentId: true,
+  authorId: true,
+  body: true,
+  anchor: true,
+  createdAt: true,
+  versionId: true,
+  updatedAt: true,
+  reactions: {
+    select: { userId: true, emoji: true, createdAt: true },
+    orderBy: { createdAt: "asc" as const },
+  },
+};
 
 export const LIST_COMMENTS_TOOL = {
   name: "list_comments",
   description:
-    "List comment threads on a document (Page), project file, or page-doc FAQ. Returns root comments and their replies in creation order. Permissions: docs require view access; files require Core or project membership; page-docs require lab membership.",
+    "List comment threads on a document (Page), project file, or page-doc FAQ. Pages by root comment, oldest first, and each root is followed by all of its replies. limit counts root comments. Pass page.nextCursor as cursor to read the next page until page.hasMore is false. Permissions: docs require view access; files require Core or project membership; page-docs require lab membership.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -20,6 +38,7 @@ export const LIST_COMMENTS_TOOL = {
           "The kind of target: 'doc' (Page), 'file' (ProjectFile), or 'pagedoc' (page-doc FAQ).",
       },
       targetId: { type: "string", minLength: 1, description: "ID of the target." },
+      ...pageProps(PAGE_LIMITS),
     },
     required: ["targetType", "targetId"],
     additionalProperties: false,
@@ -29,7 +48,7 @@ export const LIST_COMMENTS_TOOL = {
 
 type CommentTarget = "doc" | "file" | "pagedoc";
 
-type Input = { targetType: CommentTarget; targetId: string };
+type Input = PageArgs & { targetType: CommentTarget; targetId: string };
 
 export class ListCommentsError extends Error {
   constructor(message: string, public status: number) {
@@ -62,24 +81,32 @@ export async function runListComments(callerId: string, input: Input) {
     throw new ListCommentsError("Forbidden", 403);
   }
 
-  const rows = await prisma.docComment.findMany({
-    where: { targetType: input.targetType, targetId: input.targetId },
-    orderBy: { createdAt: "asc" },
-    select: {
-      id: true,
-      parentId: true,
-      authorId: true,
-      body: true,
-      anchor: true,
-      createdAt: true,
-      versionId: true,
-      updatedAt: true,
-      reactions: {
-        select: { userId: true, emoji: true, createdAt: true },
-        orderBy: { createdAt: "asc" },
-      },
-    },
-  });
+  const rootWhere = { targetType: input.targetType, targetId: input.targetId, parentId: null };
+  const window = keysetWindow(input, PAGE_LIMITS, [{ field: "createdAt", direction: "asc", type: "date" }], "asc");
+  const [fetchedRoots, total] = await Promise.all([
+    prisma.docComment.findMany({
+      where: { AND: [rootWhere, window.where] },
+      orderBy: window.orderBy,
+      take: window.take,
+      select: COMMENT_SELECT,
+    }),
+    prisma.docComment.count({ where: rootWhere }),
+  ]);
+  const { rows: roots, page } = keysetPage(fetchedRoots, window, total);
+  const replies = roots.length
+    ? await prisma.docComment.findMany({
+        where: { parentId: { in: roots.map((r) => r.id) } },
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+        select: COMMENT_SELECT,
+      })
+    : [];
+  const repliesByRoot = new Map<string, typeof replies>();
+  for (const reply of replies) {
+    const siblings = repliesByRoot.get(reply.parentId as string) ?? [];
+    siblings.push(reply);
+    repliesByRoot.set(reply.parentId as string, siblings);
+  }
+  const rows = roots.flatMap((root) => [root, ...(repliesByRoot.get(root.id) ?? [])]);
 
   const authors = await hydrateAuthors([...new Set(rows.map((r) => r.authorId))]);
   const nameById = new Map(authors.map((a) => [a.id, a.name]));
@@ -99,5 +126,5 @@ export async function runListComments(callerId: string, input: Input) {
     reactions: r.reactions,
   }));
 
-  return { comments };
+  return { page, comments };
 }

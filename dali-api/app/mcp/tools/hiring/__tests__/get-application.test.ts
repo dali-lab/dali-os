@@ -224,3 +224,44 @@ describe("get_application", () => {
     expect(result.application.applicant.firstName).toBe("Alice");
   });
 });
+
+describe("get_application interview rounds", () => {
+  const round = (id: string, status: string) => ({
+    id,
+    status,
+    startTime: new Date("2026-10-01T15:00:00Z"),
+    endTime: new Date("2026-10-01T15:30:00Z"),
+    room: null,
+    assignments: [
+      { id: `${id}-a`, cycleInterviewer: { user: { firstName: "Ada", lastName: "Lovelace" } } },
+    ],
+  });
+
+  it("queries every scheduled or completed round and returns each with its notes", async () => {
+    mockPrisma.domainApplication.findUnique.mockResolvedValue({
+      ...fakeDa,
+      interviews: [round("iv2", "Scheduled"), round("iv1", "Completed")],
+    });
+    vi.mocked(hasCycleAccess).mockResolvedValue(true);
+    vi.mocked(getCycleConfidentialityState).mockResolvedValue({
+      status: "signed",
+      activeVersionId: "v1",
+      exempt: false,
+    });
+    mockPrisma.domainApplicationCycle.findUnique.mockResolvedValue(null);
+    mockPrisma.rubricVersion.findUnique.mockResolvedValue(null);
+    mockPrisma.collabDocumentVersion.findMany.mockResolvedValue([
+      { name: "interview:iv1:notes", plainText: "first round" },
+      { name: "interview:iv2:rec-notes-iv2-a", plainText: "second round rec" },
+    ]);
+
+    const result = (await runGetApplication("u1", { domainApplicationId: "da1" })) as any;
+    expect(mockPrisma.domainApplication.findUnique.mock.calls.at(-1)![0].include.interviews).not.toHaveProperty("take");
+    expect(result.interviews.map((i: any) => i.id)).toEqual(["iv2", "iv1"]);
+    expect(result.interviews[1].jointNotes).toBe("first round");
+    expect(result.interviews[0].assignments[0].recNotes).toBe("second round rec");
+    expect(mockPrisma.collabDocumentVersion.findMany.mock.calls.at(-1)![0].where.name.in).toEqual(
+      expect.arrayContaining(["interview:iv1:notes", "interview:iv2:notes"]),
+    );
+  });
+});

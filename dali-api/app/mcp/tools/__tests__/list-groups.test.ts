@@ -62,10 +62,32 @@ describe("list_groups", () => {
     expect(out.groups.map((g) => g.id)).toEqual(["g1", "g2"]);
   });
 
-  it("returns the full memberIds roster to any caller", async () => {
+  it("omits memberIds by default and keeps memberCount", async () => {
     vi.mocked(listAllGroups).mockResolvedValue([ACTIVE_GROUP]);
     const out = await runListGroups("u1", {});
-    expect(out.groups[0].memberIds).toEqual(["u1", "u2"]);
+    expect(out.groups[0]).not.toHaveProperty("memberIds");
     expect(out.groups[0].memberCount).toBe(2);
+  });
+
+  it("returns the memberIds roster when includeMemberIds is set", async () => {
+    vi.mocked(listAllGroups).mockResolvedValue([ACTIVE_GROUP]);
+    const out = await runListGroups("u1", { includeMemberIds: true });
+    expect(out.groups[0].memberIds).toEqual(["u1", "u2"]);
+  });
+
+  it("pages after the archived filter, with a total over the filtered list", async () => {
+    const g = (id: string, archived = false) => ({ ...ACTIVE_GROUP, id, archived });
+    vi.mocked(listAllGroups).mockResolvedValue([g("a"), g("x", true), g("b"), g("c")]);
+    const first = await runListGroups("u1", { limit: 2 });
+    expect(first.groups.map((x) => x.id)).toEqual(["a", "b"]);
+    expect(first.page).toMatchObject({ hasMore: true, total: 3 });
+    const second = await runListGroups("u1", { limit: 2, cursor: first.page.nextCursor! });
+    expect(second.groups.map((x) => x.id)).toEqual(["c"]);
+    expect(second.page).toMatchObject({ hasMore: false, nextCursor: null });
+  });
+
+  it("rejects a bad cursor", async () => {
+    vi.mocked(listAllGroups).mockResolvedValue([ACTIVE_GROUP]);
+    await expect(runListGroups("u1", { cursor: "nope" })).rejects.toThrow(/Invalid cursor/);
   });
 });

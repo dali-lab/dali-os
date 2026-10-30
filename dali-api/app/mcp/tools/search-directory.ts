@@ -11,11 +11,14 @@
 
 import { prisma } from "~/lib/db.server";
 import { currentTerm, currentTermMemberWhere, isAdminViaEnv } from "~/lib/roles";
+import { offsetPage, offsetWindow, pageProps, type PageArgs, type PageInfo } from "~/mcp/pagination";
+
+const PAGE_LIMITS = { defaultLimit: 20, maxLimit: 50 };
 
 export const SEARCH_DIRECTORY_TOOL = {
   name: "search_directory",
   description:
-    "Search the DALI member directory. Matches against name fragments, daliEmail, netId, domain names, and role titles. Returns current-term-active members by default (set includeInactive to also match alumni / members inactive this term).",
+    "Search the DALI member directory. Matches against name fragments, daliEmail, netId, domain names, and role titles. Returns current-term-active members by default (set includeInactive to also match alumni / members inactive this term). Pass page.nextCursor as cursor to read the next page until page.hasMore is false.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -25,12 +28,7 @@ export const SEARCH_DIRECTORY_TOOL = {
         maxLength: 100,
         description: "Search query (≤ 100 chars). Case-insensitive substring match.",
       },
-      limit: {
-        type: "integer",
-        minimum: 1,
-        maximum: 50,
-        description: "Maximum results to return (default 20, max 50).",
-      },
+      ...pageProps(PAGE_LIMITS),
       includeInactive: {
         type: "boolean",
         description:
@@ -43,7 +41,7 @@ export const SEARCH_DIRECTORY_TOOL = {
   requiredScope: "mcp:read" as const,
 };
 
-type Input = { query: string; limit?: number; includeInactive?: boolean };
+type Input = PageArgs & { query: string; includeInactive?: boolean };
 
 type DirectoryRow = {
   id: string;
@@ -55,10 +53,10 @@ type DirectoryRow = {
   currentTermRoles: string[];
 };
 
-export async function runSearchDirectory(input: Input): Promise<{ results: DirectoryRow[] }> {
+export async function runSearchDirectory(input: Input): Promise<{ results: DirectoryRow[]; page: PageInfo }> {
   const q = input.query.trim();
-  if (q.length === 0) return { results: [] };
-  const limit = Math.max(1, Math.min(input.limit ?? 20, 50));
+  const window = offsetWindow(input, PAGE_LIMITS);
+  if (q.length === 0) return { results: [], page: { nextCursor: null, hasMore: false, limit: window.limit } };
 
   const term = await currentTerm();
   const termId = term?.id ?? null;
@@ -101,8 +99,9 @@ export async function runSearchDirectory(input: Input): Promise<{ results: Direc
         },
       ],
     },
-    orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
-    take: limit,
+    orderBy: [{ lastName: "asc" }, { firstName: "asc" }, { id: "asc" }],
+    skip: window.skip,
+    take: window.take,
     select: {
       id: true,
       firstName: true,
@@ -124,7 +123,7 @@ export async function runSearchDirectory(input: Input): Promise<{ results: Direc
     },
   });
 
-  const results: DirectoryRow[] = users.map((u) => {
+  const rows: DirectoryRow[] = users.map((u) => {
     const isAdminUser = u.adminMembership !== null || isAdminViaEnv(u.id);
     const isCoreUser = isAdminUser || u.coreAssignments.length > 0;
     const isDomainLeadUser = u.domainLeadAssignmentsAsUser.length > 0;
@@ -155,5 +154,6 @@ export async function runSearchDirectory(input: Input): Promise<{ results: Direc
     };
   });
 
-  return { results };
+  const { rows: results, page } = offsetPage(rows, window);
+  return { results, page };
 }

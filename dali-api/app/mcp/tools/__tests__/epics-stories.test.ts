@@ -23,6 +23,7 @@ import { runDeleteStory, DELETE_STORY_TOOL } from "~/mcp/tools/delete-story";
 const mockPrisma = prisma as unknown as {
   epic: {
     findMany: ReturnType<typeof vi.fn>;
+    count: ReturnType<typeof vi.fn>;
     findFirst: ReturnType<typeof vi.fn>;
     findUnique: ReturnType<typeof vi.fn>;
     create: ReturnType<typeof vi.fn>;
@@ -66,8 +67,40 @@ describe("epic + story tools", () => {
         stories: [],
       },
     ]);
+    mockPrisma.epic.count = vi.fn().mockResolvedValue(1);
     const out = await runListEpics("u1", { projectId: "p1" });
     expect(out.epics[0]).toMatchObject({ id: "e1", title: "Onboarding", stories: [] });
+  });
+
+  it("list_epics pages by offset with an id tiebreak and keeps nested stories", async () => {
+    const epic = (id: string) => ({
+      id,
+      title: id,
+      description: null,
+      status: "Open",
+      startsAt: null,
+      endsAt: null,
+      stories: [{ id: `${id}-s`, title: "S", notes: "n", status: "Open" }],
+    });
+    mockPrisma.epic.count = vi.fn().mockResolvedValue(3);
+    mockPrisma.epic.findMany.mockResolvedValueOnce([epic("e1"), epic("e2")]);
+    const first = await runListEpics("u1", { projectId: "p1", limit: 1 });
+    expect(first.epics.map((e) => e.id)).toEqual(["e1"]);
+    expect(first.epics[0].stories).toHaveLength(1);
+    expect(first.page).toMatchObject({ hasMore: true, limit: 1, total: 3 });
+    expect(mockPrisma.epic.findMany.mock.calls.at(-1)![0].orderBy).toEqual([
+      { position: "asc" },
+      { id: "asc" },
+    ]);
+
+    mockPrisma.epic.findMany.mockResolvedValueOnce([epic("e2")]);
+    const second = await runListEpics("u1", { projectId: "p1", limit: 1, cursor: first.page.nextCursor! });
+    expect(mockPrisma.epic.findMany.mock.calls.at(-1)![0]).toMatchObject({ skip: 1, take: 2 });
+    expect(second.page).toMatchObject({ hasMore: false, nextCursor: null });
+  });
+
+  it("list_epics rejects a bad cursor", async () => {
+    await expect(runListEpics("u1", { projectId: "p1", cursor: "nope" })).rejects.toThrow(/Invalid cursor/);
   });
 
   it("create_epic enforces title and date order", async () => {

@@ -86,6 +86,8 @@ export interface ListNotificationsOptions {
   limit?: number;
   /** When true, only return notifications with readAt = null. */
   onlyUnread?: boolean;
+  /** Upper bound for `limit`. Defaults to 50. */
+  maxLimit?: number;
 }
 
 export interface NotificationListResult {
@@ -102,7 +104,7 @@ export async function listMyNotifications(
   userId: string,
   opts: ListNotificationsOptions = {},
 ): Promise<NotificationListResult> {
-  const limit = Math.max(1, Math.min(opts.limit ?? 50, 50));
+  const limit = Math.max(1, Math.min(opts.limit ?? 50, opts.maxLimit ?? 50));
   const now = new Date();
   const live = liveMeetingPingClauses(now);
   const where: Prisma.NotificationWhereInput = {

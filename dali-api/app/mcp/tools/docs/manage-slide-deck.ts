@@ -13,6 +13,9 @@ import {
 } from "~/components/slides/slide-markdown.server";
 import { moveItem } from "~/components/slides/slide-edit";
 import type { Slide } from "~/components/slides/types";
+import { pageArray, pageProps, type PageArgs } from "../../pagination";
+
+const PAGE_LIMITS = { defaultLimit: 50, maxLimit: 200 };
 
 const ACTIONS = ["get", "set_slides", "add_slide", "update_slide", "delete_slide", "move_slide"] as const;
 type Action = (typeof ACTIONS)[number];
@@ -20,7 +23,7 @@ type Action = (typeof ACTIONS)[number];
 export const MANAGE_SLIDE_DECK_TOOL_DEF = {
   name: "manage_slide_deck",
   description:
-    "Read or edit a Drive slide deck. Actions: get · set_slides (replace every slide) · add_slide (optional index, else at the end) · update_slide (fields left out are kept) · delete_slide · move_slide (to toIndex). Slide bodies are Markdown. Create a deck with create_lab_document kind 'Slides'.",
+    "Read or edit a Drive slide deck. Actions: get · set_slides (replace every slide) · add_slide (optional index, else at the end) · update_slide (fields left out are kept) · delete_slide · move_slide (to toIndex). Slide bodies are Markdown. Create a deck with create_lab_document kind 'Slides'. get returns slides in pages of limit: pass page.nextCursor as cursor until page.hasMore is false (page.total is the slide count). The edit actions return the whole deck.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -31,6 +34,7 @@ export const MANAGE_SLIDE_DECK_TOOL_DEF = {
       slideId: { type: "string", description: "update_slide, delete_slide and move_slide." },
       index: { type: "number", minimum: 0, description: "add_slide: where to insert, 0-based." },
       toIndex: { type: "number", minimum: 0, description: "move_slide: the new 0-based position." },
+      ...pageProps(PAGE_LIMITS),
     },
     required: ["action", "pageId"],
     additionalProperties: false,
@@ -38,7 +42,7 @@ export const MANAGE_SLIDE_DECK_TOOL_DEF = {
   requiredScope: "mcp:write" as const,
 };
 
-type Args = {
+type Args = PageArgs & {
   action: Action;
   pageId: string;
   slides?: SlideInput[];
@@ -76,7 +80,8 @@ export async function runManageSlideDeck(userId: string, args: Args) {
 
   if (args.action === "get") {
     const deck = await loadDeck(args.pageId);
-    return deckOutput(page.title, deck.slides, deck.version);
+    const { rows, page: pageInfo } = pageArray(deck.slides, args, PAGE_LIMITS);
+    return { ...(await deckOutput(page.title, rows, deck.version)), page: pageInfo };
   }
 
   const saved = unwrap(

@@ -125,6 +125,18 @@ describe("list_forms", () => {
     expect(result.forms[0]).toMatchObject({ id: "fm1", folderPageId: "page-1", versionCount: 1, published: true });
     expect(result.forms[1]).toMatchObject({ id: "fm2", folderPageId: null, versionCount: 2 });
   });
+
+  it("applies the access filter before paging", async () => {
+    const many = Array.from({ length: 5 }, (_, i) => ({ ...rows[0], id: `f${i}`, name: `F${i}` }));
+    vi.mocked(canSeeForm).mockImplementation(async (_u, id) => id !== "f0" && id !== "f1");
+    mockPrisma.form.findMany.mockResolvedValue(many);
+    const first = await runListForms(ctx(), { limit: 2 });
+    expect(first.forms.map((f) => f.id)).toEqual(["f2", "f3"]);
+    expect(first.page).toMatchObject({ hasMore: true, total: 3 });
+    const second = await runListForms(ctx(), { limit: 2, cursor: first.page.nextCursor! });
+    expect(second.forms.map((f) => f.id)).toEqual(["f4"]);
+    expect(second.page).toMatchObject({ hasMore: false, nextCursor: null });
+  });
 });
 
 // ─── get_form_responses ───────────────────────────────────────────────────────
@@ -160,7 +172,7 @@ describe("get_form_responses", () => {
     });
     const result = await runGetFormResponses(ctx(), { formId: "fm1" });
     expect(result.formId).toBe("fm1");
-    expect(result.totalCount).toBe(1);
+    expect(result.page).toMatchObject({ total: 1, hasMore: false, nextCursor: null });
     expect(result.responses).toHaveLength(1);
     expect(result.responses[0].name).toBe("Alice Smith");
     expect(result.responses[0].createdAt).toBe("2026-08-01T00:00:00.000Z");
@@ -175,8 +187,39 @@ describe("get_form_responses", () => {
     vi.mocked(buildResponseGrid).mockResolvedValue({ columns: [], rowsBySubmission: [] });
     await runGetFormResponses(ctx(), { formId: "fm1", limit: 999 });
     expect(mockPrisma.formSubmission.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ take: 200 })
+      expect.objectContaining({ take: 201 })
     );
+  });
+
+  it("orders newest first with an id tiebreak and walks pages with the cursor", async () => {
+    vi.mocked(canBuildForm).mockResolvedValue(true);
+    mockPrisma.form.findUnique.mockResolvedValue({ id: "fm1", name: "App" });
+    mockPrisma.formSubmission.count.mockResolvedValue(3);
+    vi.mocked(buildResponseGrid).mockResolvedValue({ columns: [], rowsBySubmission: [] });
+    const sub = (id: string) => ({
+      id,
+      createdAt: new Date("2026-08-01T00:00:00Z"),
+      answers: {},
+      user: null,
+      formVersion: { versionNumber: 1, questions: [] },
+      slot: null,
+      submitterName: "Ada",
+      submitterEmail: "ada@example.edu",
+    });
+    mockPrisma.formSubmission.findMany.mockResolvedValueOnce([sub("s3"), sub("s2"), sub("s1")]);
+    const first = await runGetFormResponses(ctx(), { formId: "fm1", limit: 2 });
+    expect(mockPrisma.formSubmission.findMany.mock.calls[0][0].orderBy).toEqual([
+      { createdAt: "desc" },
+      { id: "desc" },
+    ]);
+    expect(first.responses.map((r) => r.id)).toEqual(["s3", "s2"]);
+    expect(first.page).toMatchObject({ hasMore: true, total: 3 });
+
+    mockPrisma.formSubmission.findMany.mockResolvedValueOnce([sub("s1")]);
+    const second = await runGetFormResponses(ctx(), { formId: "fm1", limit: 2, cursor: first.page.nextCursor! });
+    expect(JSON.stringify(mockPrisma.formSubmission.findMany.mock.calls[1][0].where.AND[1])).toContain("s2");
+    expect(second.responses.map((r) => r.id)).toEqual(["s1"]);
+    expect(second.page).toMatchObject({ hasMore: false, nextCursor: null });
   });
 });
 

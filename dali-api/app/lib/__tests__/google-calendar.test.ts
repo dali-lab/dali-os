@@ -24,6 +24,8 @@ const { encrypt } = await import("~/lib/calendar-crypto");
 const {
   getValidAccessTokenForLink,
   fetchBusyEvents,
+  searchCalendarEvents,
+  MAX_EVENT_PAGES,
   buildEncryptedTokens,
   createGoogleCalendarEvent,
   patchGoogleCalendarEvent,
@@ -580,6 +582,94 @@ describe("fetchBusyEvents", () => {
       new Date("2026-05-13T00:00:00Z"),
     );
     expect(out).toEqual([]);
+  });
+});
+
+describe("events.list paging", () => {
+  const event = (id: string, h: number) => ({
+    id,
+    summary: id,
+    status: "confirmed",
+    start: { dateTime: `2026-05-12T${String(h).padStart(2, "0")}:00:00Z` },
+    end: { dateTime: `2026-05-12T${String(h).padStart(2, "0")}:30:00Z` },
+  });
+  const range = [new Date("2026-05-12T00:00:00Z"), new Date("2026-05-13T00:00:00Z")] as const;
+
+  function linkWithToken() {
+    prismaMock.userCalendarLink.findMany.mockResolvedValueOnce([{ id: "L1", subCalendarIds: [] }]);
+    prismaMock.userCalendarLink.findUnique.mockResolvedValue({
+      oauthTokens: encryptedTokens({
+        accessToken: "tok",
+        refreshToken: "r",
+        expiresAt: new Date(Date.now() + 10 * 60_000).toISOString(),
+      }),
+    });
+    prismaMock.userCalendarLink.update.mockResolvedValue({});
+  }
+
+  it("follows nextPageToken so busy events past the first page are kept", async () => {
+    linkWithToken();
+    const fetchMock = mockFetchSequence([
+      { items: [] },
+      { items: [event("a", 9)], nextPageToken: "p2" },
+      { items: [event("b", 10)] },
+    ]);
+
+    const report = { truncated: false };
+    const out = await fetchBusyEvents("userX", ...range, undefined, undefined, "availability", report);
+
+    expect(out.map((e) => e.title)).toEqual(["a", "b"]);
+    expect(report.truncated).toBe(false);
+    const urls = fetchMock.mock.calls.map((c) => String(c[0]));
+    expect(urls[1]).not.toContain("pageToken");
+    expect(urls[2]).toContain("pageToken=p2");
+  });
+
+  it("stops at the page bound and flags truncation", async () => {
+    linkWithToken();
+    const fetchMock = mockFetchSequence([
+      { items: [] },
+      ...Array.from({ length: MAX_EVENT_PAGES + 2 }, (_, i) => ({ items: [event(`e${i}`, 8)], nextPageToken: `p${i + 2}` })),
+    ]);
+
+    const report = { truncated: false };
+    const out = await fetchBusyEvents("userX", ...range, undefined, undefined, "availability", report);
+
+    expect(out).toHaveLength(MAX_EVENT_PAGES);
+    expect(report.truncated).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(1 + MAX_EVENT_PAGES);
+  });
+
+  it("surfaces an error on a later page like it does on the first", async () => {
+    linkWithToken();
+    const fetchMock = vi.fn();
+    const ok = (body: unknown) => ({ ok: true, status: 200, json: async () => body, text: async () => "" });
+    fetchMock
+      .mockResolvedValueOnce(ok({ items: [] }))
+      .mockResolvedValueOnce(ok({ items: [event("a", 9)], nextPageToken: "p2" }))
+      .mockResolvedValueOnce({ ok: false, status: 500, json: async () => ({}), text: async () => "boom" });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await fetchBusyEvents("userX", ...range);
+    expect(prismaMock.userCalendarLink.update).toHaveBeenCalledWith({
+      where: { id: "L1" },
+      data: { syncError: expect.stringContaining("Google events.list failed (500)") },
+    });
+  });
+
+  it("pages search results and flags truncation too", async () => {
+    linkWithToken();
+    mockFetchSequence([
+      { items: [] },
+      { items: [event("a", 9)], nextPageToken: "p2" },
+      { items: [event("b", 10)] },
+    ]);
+
+    const report = { truncated: false };
+    const out = await searchCalendarEvents("userX", "sync", ...range, report);
+
+    expect(out.map((e) => e.title)).toEqual(["a", "b"]);
+    expect(report.truncated).toBe(false);
   });
 });
 

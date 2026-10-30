@@ -6,11 +6,14 @@ import { prisma } from "~/lib/db.server";
 import { runListProjects, LIST_PROJECTS_TOOL } from "~/mcp/tools/list-projects";
 
 const mockPrisma = prisma as unknown as {
-  project: { findMany: ReturnType<typeof vi.fn> };
+  project: { findMany: ReturnType<typeof vi.fn>; count: ReturnType<typeof vi.fn> };
   projectAssignment: { findMany: ReturnType<typeof vi.fn> };
 };
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => {
+  vi.clearAllMocks();
+  mockPrisma.project.count = vi.fn().mockResolvedValue(0);
+});
 
 describe("list_projects", () => {
   it("scope is read (mirrors the member-browsable web hub)", () => {
@@ -76,5 +79,25 @@ describe("list_projects", () => {
     expect(mockPrisma.project.findMany).toHaveBeenCalledWith(
       expect.objectContaining({ where: undefined }),
     );
+  });
+
+  it("pages by offset with an id tiebreak and a real total", async () => {
+    const row = (id: string) => ({ id, name: id, status: "Active", projectTerms: [], partners: [] });
+    mockPrisma.projectAssignment.findMany.mockResolvedValue([]);
+    mockPrisma.project.count.mockResolvedValue(3);
+    mockPrisma.project.findMany.mockResolvedValueOnce([row("a"), row("b")]);
+    const first = await runListProjects("u1", { limit: 1 });
+    expect(first.projects.map((p) => p.id)).toEqual(["a"]);
+    expect(first.page).toMatchObject({ hasMore: true, limit: 1, total: 3 });
+    expect(mockPrisma.project.findMany.mock.calls[0][0].orderBy.at(-1)).toEqual({ id: "asc" });
+
+    mockPrisma.project.findMany.mockResolvedValueOnce([row("b"), row("c")]);
+    const second = await runListProjects("u1", { limit: 2, cursor: first.page.nextCursor! });
+    expect(mockPrisma.project.findMany.mock.calls[1][0]).toMatchObject({ skip: 1, take: 3 });
+    expect(second.page).toMatchObject({ hasMore: false, nextCursor: null });
+  });
+
+  it("rejects a bad cursor", async () => {
+    await expect(runListProjects("u1", { cursor: "nope" })).rejects.toThrow(/Invalid cursor/);
   });
 });

@@ -6,11 +6,14 @@ import { getUserRoles } from "~/lib/roles";
 import { isAdminOnlyCycle } from "~/hiring/lib/applicant-groups";
 import { listActiveWaitlistEntries } from "~/hiring/lib/waitlist.server";
 import { McpForbiddenError } from "../../registry";
+import { pageArray, pageProps, type PageArgs } from "../../pagination";
+
+const PAGE_LIMITS = { defaultLimit: 50, maxLimit: 200 };
 
 export const LIST_WAITLIST_TOOL = {
   name: "list_waitlist",
   description:
-    "List active waitlisted applicants. Returns entries from all cycles unless filtered by cycleId. Core only.",
+    "List active waitlisted applicants. Returns entries from all cycles unless filtered by cycleId. Core only. Pass page.nextCursor as cursor to read the next page until page.hasMore is false.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -19,6 +22,7 @@ export const LIST_WAITLIST_TOOL = {
         description:
           "Optional cycle filter. If omitted, returns waitlist entries across all cycles.",
       },
+      ...pageProps(PAGE_LIMITS),
     },
     required: [],
     additionalProperties: false,
@@ -26,7 +30,7 @@ export const LIST_WAITLIST_TOOL = {
   requiredScope: "mcp:read" as const,
 };
 
-type Input = { cycleId?: string };
+type Input = PageArgs & { cycleId?: string };
 
 export async function runListWaitlist(userId: string, input: Input): Promise<unknown> {
   const roles = await getUserRoles(userId);
@@ -37,7 +41,9 @@ export async function runListWaitlist(userId: string, input: Input): Promise<unk
   const entries = await listActiveWaitlistEntries({ cycleId: input.cycleId });
   // Lab members cycle waitlisters are current lab members, so Admin-only
   // (mirrors the waitlists.tsx loader). Hide them from non-admin Core members.
-  return roles.isAdmin
+  const visible = roles.isAdmin
     ? entries
     : entries.filter((e) => !isAdminOnlyCycle(e.cycle.applicants));
+  const { rows, page } = pageArray(visible, input, PAGE_LIMITS);
+  return { entries: rows, page };
 }

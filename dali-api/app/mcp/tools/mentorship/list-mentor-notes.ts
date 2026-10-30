@@ -7,11 +7,14 @@ import { canViewMentorship, mentorNoteWhere } from "~/mentorship/lib/visibility"
 import { startOfWeekUTC } from "~/mentorship/lib/week";
 import type { McpCtx, McpTool } from "../../registry";
 import { McpForbiddenError } from "../../registry";
+import { keysetPage, keysetWindow, pageProps, type PageArgs } from "../../pagination";
+
+const PAGE_LIMITS = { defaultLimit: 50, maxLimit: 200 };
 
 export const LIST_MENTOR_NOTES_TOOL = {
   name: "list_mentor_notes",
   description:
-    "List mentor notes the caller can see. Every lab mentor (and Core) sees all mentor notes lab-wide; mentees are never granted access. All filters are optional and AND-combined.",
+    "List mentor notes the caller can see. Every lab mentor (and Core) sees all mentor notes lab-wide; mentees are never granted access. All filters are optional and AND-combined. Newest week first. Pass page.nextCursor as cursor to read the next page until page.hasMore is false.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -25,6 +28,7 @@ export const LIST_MENTOR_NOTES_TOOL = {
         description:
           "Filter by week (yyyy-mm-dd). Collapsed to the Monday-UTC start of that ISO week.",
       },
+      ...pageProps(PAGE_LIMITS),
     },
     required: [],
     additionalProperties: false,
@@ -34,7 +38,7 @@ export const LIST_MENTOR_NOTES_TOOL = {
 
 export async function runListMentorNotes(
   callerId: string,
-  input: {
+  input: PageArgs & {
     mentorId?: string;
     menteeId?: string;
     projectId?: string;
@@ -56,10 +60,11 @@ export async function runListMentorNotes(
   if (input.weekOf) filters.weekOf = startOfWeekUTC(input.weekOf);
 
   const scope = await mentorNoteWhere(callerId);
-  const notes = await prisma.mentorNote.findMany({
-    where: { AND: [scope, filters] },
-    orderBy: [{ weekOf: "desc" }, { updatedAt: "desc" }],
-    take: 200,
+  const window = keysetWindow(input, PAGE_LIMITS, [{ field: "weekOf", direction: "desc", type: "date" }]);
+  const fetched = await prisma.mentorNote.findMany({
+    where: { AND: [scope, filters, window.where] },
+    orderBy: window.orderBy,
+    take: window.take,
     select: {
       id: true,
       mentorId: true,
@@ -74,6 +79,7 @@ export async function runListMentorNotes(
       mentee: { select: { id: true, firstName: true, lastName: true } },
     },
   });
+  const { rows: notes, page } = keysetPage(fetched, window);
 
   const projectIds = [...new Set(notes.map((n) => n.projectId))];
   const termIds = [...new Set(notes.map((n) => n.termId))];
@@ -97,6 +103,7 @@ export async function runListMentorNotes(
   const domainMap = new Map(domains.map((d) => [d.id, d]));
 
   return {
+    page,
     notes: notes.map((n) => ({
       id: n.id,
       weekOf: n.weekOf.toISOString(),

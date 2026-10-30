@@ -5,11 +5,15 @@ import { prisma } from "~/lib/db.server";
 import { isCore } from "~/lib/roles";
 import { AdminForbiddenError as McpForbiddenError } from "./errors";
 import type { McpCtx } from "../../registry";
+import { keysetPage, keysetWindow, pageProps, type PageArgs } from "../../pagination";
+
+const PAGE_LIMITS = { defaultLimit: 100, maxLimit: 200 };
 
 export const LIST_OUTBOUND_MESSAGES_TOOL = {
   name: "list_outbound_messages",
   description:
-    "List recent outbound messages from the transactional outbox (up to 100 rows, newest-first). " +
+    "List outbound messages from the transactional outbox, newest first. " +
+    "Pass page.nextCursor as cursor to read the next page until page.hasMore is false. " +
     "Optionally filter by status or search recipient/subject/event. Core leads only.",
   inputSchema: {
     type: "object" as const,
@@ -23,6 +27,7 @@ export const LIST_OUTBOUND_MESSAGES_TOOL = {
         type: "string",
         description: "Text search across target, recipientUserId, eventType, subject.",
       },
+      ...pageProps(PAGE_LIMITS),
     },
     required: [],
     additionalProperties: false,
@@ -30,7 +35,7 @@ export const LIST_OUTBOUND_MESSAGES_TOOL = {
   requiredScope: "mcp:admin" as const,
 };
 
-type Args = { status?: string; q?: string };
+type Args = PageArgs & { status?: string; q?: string };
 
 export async function runListOutboundMessages(ctx: McpCtx, args: Args) {
   if (!(await isCore(ctx.user.id))) {
@@ -40,22 +45,30 @@ export async function runListOutboundMessages(ctx: McpCtx, args: Args) {
   const { status, q } = args;
   const qTrim = q?.trim() ?? "";
 
-  const rows = await prisma.outboundMessage.findMany({
+  const window = keysetWindow(args, PAGE_LIMITS, [
+    { field: "createdAt", direction: "desc", type: "date" },
+  ]);
+  const fetched = await prisma.outboundMessage.findMany({
     where: {
-      ...(status ? { status } : {}),
-      ...(qTrim
-        ? {
-            OR: [
-              { target: { contains: qTrim, mode: "insensitive" } },
-              { recipientUserId: { contains: qTrim, mode: "insensitive" } },
-              { eventType: { contains: qTrim, mode: "insensitive" } },
-              { subject: { contains: qTrim, mode: "insensitive" } },
-            ],
-          }
-        : {}),
+      AND: [
+        {
+          ...(status ? { status } : {}),
+          ...(qTrim
+            ? {
+                OR: [
+                  { target: { contains: qTrim, mode: "insensitive" } },
+                  { recipientUserId: { contains: qTrim, mode: "insensitive" } },
+                  { eventType: { contains: qTrim, mode: "insensitive" } },
+                  { subject: { contains: qTrim, mode: "insensitive" } },
+                ],
+              }
+            : {}),
+        },
+        window.where,
+      ],
     },
-    orderBy: { createdAt: "desc" },
-    take: 100,
+    orderBy: window.orderBy,
+    take: window.take,
     select: {
       id: true,
       channel: true,
@@ -70,8 +83,10 @@ export async function runListOutboundMessages(ctx: McpCtx, args: Args) {
       createdAt: true,
     },
   });
+  const { rows, page } = keysetPage(fetched, window);
 
   return {
+    page,
     messages: rows.map((r) => ({
       id: r.id,
       channel: r.channel,
@@ -85,6 +100,5 @@ export async function runListOutboundMessages(ctx: McpCtx, args: Args) {
       sentAt: r.sentAt?.toISOString() ?? null,
       createdAt: r.createdAt.toISOString(),
     })),
-    total: rows.length,
   };
 }
