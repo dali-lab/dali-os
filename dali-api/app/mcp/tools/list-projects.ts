@@ -6,11 +6,14 @@
 // projects so agents can tell the two sets apart.
 
 import { prisma } from "~/lib/db";
+import { offsetPage, offsetWindow, pageProps, type PageArgs } from "../pagination";
+
+const PAGE_LIMITS = { defaultLimit: 50, maxLimit: 200 };
 
 export const LIST_PROJECTS_TOOL = {
   name: "list_projects",
   description:
-    "List every project in the lab (id, name, status, terms, partner orgs) — the full directory, not just the caller's assignments. Use list_my_projects for staffed-on detail; get_project_overview to drill into one.",
+    "List every project in the lab (id, name, status, terms, partner orgs) — the full directory, not just the caller's assignments. Use list_my_projects for staffed-on detail; get_project_overview to drill into one. Pass page.nextCursor as cursor to read the next page until page.hasMore is false.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -20,19 +23,24 @@ export const LIST_PROJECTS_TOOL = {
         items: { enum: ["Active", "Paused", "Archived"], type: "string" },
         maxItems: 3,
       },
+      ...pageProps(PAGE_LIMITS),
     },
     additionalProperties: false,
   },
   requiredScope: "mcp:read" as const,
 };
 
-type Input = { status?: ("Active" | "Paused" | "Archived")[] };
+type Input = PageArgs & { status?: ("Active" | "Paused" | "Archived")[] };
 
 export async function runListProjects(callerId: string, input: Input) {
-  const [projects, assignments] = await Promise.all([
+  const window = offsetWindow(input, PAGE_LIMITS);
+  const where = input.status?.length ? { status: { in: input.status } } : undefined;
+  const [fetched, total, assignments] = await Promise.all([
     prisma.project.findMany({
-      where: input.status?.length ? { status: { in: input.status } } : undefined,
-      orderBy: [{ status: "asc" }, { name: "asc" }],
+      where,
+      orderBy: [{ status: "asc" }, { name: "asc" }, { id: "asc" }],
+      skip: window.skip,
+      take: window.take,
       select: {
         id: true,
         name: true,
@@ -45,14 +53,17 @@ export async function runListProjects(callerId: string, input: Input) {
         },
       },
     }),
+    prisma.project.count({ where }),
     prisma.projectAssignment.findMany({
       where: { userId: callerId },
       select: { projectId: true },
     }),
   ]);
   const staffedIds = new Set(assignments.map((a) => a.projectId));
+  const { rows: projects, page } = offsetPage(fetched, window, total);
 
   return {
+    page,
     projects: projects.map((p) => ({
       id: p.id,
       name: p.name,

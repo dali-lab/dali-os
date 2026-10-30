@@ -12,15 +12,19 @@ import {
   type McpTool,
 } from "../../registry";
 import { prisma } from "~/lib/db";
+import { pageArray, pageProps, type PageArgs } from "../../pagination";
+
+const PAGE_LIMITS = { defaultLimit: 50, maxLimit: 200 };
 
 export const LIST_CE_COMPLIANCE_TOOL = {
   name: "list_ce_compliance",
   description:
-    "List per-member CE credit compliance for a term. Returns every current lab member with their credit count and whether they meet the ≥1 credit minimum. Full-time staff are excluded (they are exempt). Core only.",
+    "List per-member CE credit compliance for a term. Returns every current lab member with their credit count and whether they meet the ≥1 credit minimum. Full-time staff are excluded (they are exempt). Core only. Pass page.nextCursor as cursor to read the next page of members until page.hasMore is false. compliantCount and nonCompliantCount cover the whole roster, not just the page.",
   inputSchema: {
     type: "object" as const,
     properties: {
       termId: { type: "string", minLength: 1 },
+      ...pageProps(PAGE_LIMITS),
     },
     required: ["termId"],
     additionalProperties: false,
@@ -28,7 +32,7 @@ export const LIST_CE_COMPLIANCE_TOOL = {
   requiredScope: "mcp:admin" as const,
 };
 
-type Args = { termId: string };
+type Args = PageArgs & { termId: string };
 
 export async function runListCeCompliance(ctx: McpCtx, args: Args) {
   if (!(await isCore(ctx.user.id))) {
@@ -44,10 +48,13 @@ export async function runListCeCompliance(ctx: McpCtx, args: Args) {
 
   const rows = await complianceForTerm(args.termId);
 
+  const { rows: members, page } = pageArray(rows, args, PAGE_LIMITS);
+
   return {
     termId: args.termId,
     termCode: term.code,
-    members: rows,
+    page,
+    members,
     compliantCount: rows.filter((r) => r.compliant).length,
     nonCompliantCount: rows.filter((r) => !r.compliant).length,
   };

@@ -17,6 +17,17 @@ import { prisma } from "~/lib/db";
 import { isCore, isProjectMember } from "~/lib/roles";
 import { CLEARED_FOLDER_TYPE } from "~/lib/drive-roots";
 import { logAuditEvent, type AuditAction } from "~/lib/audit";
+import {
+  keysetPage,
+  keysetWindow,
+  offsetPage,
+  offsetWindow,
+  pageProps,
+  type PageArgs,
+  type PageInfo,
+} from "../pagination";
+
+const SHARING_PAGE_LIMITS = { defaultLimit: 50, maxLimit: 200 };
 
 export class CurationNotFoundError extends Error {
   status = 404;
@@ -79,43 +90,55 @@ async function loadProjectPage(pageId: string) {
 export const LIST_DOCUMENT_SHARING_TOOL = {
   name: "list_document_sharing",
   description:
-    "List a project's documents and files with their sharing state — which are shared with the partner org, which is the public write-up on dali.website, and which are pinned. Use it before changing sharing.",
+    "List a project's documents and files with their sharing state — which are shared with the partner org, which is the public write-up on dali.website, and which are pinned. Use it before changing sharing. Each call returns one kind, so call it once with kind \"pages\" and once with kind \"files\" to see both. Pass page.nextCursor as cursor to read the next page of that kind until page.hasMore is false.",
   inputSchema: {
     type: "object" as const,
     properties: {
       projectId: { type: "string", minLength: 1 },
+      kind: {
+        type: "string",
+        enum: ["pages", "files"],
+        description: "Which list to return: the project's documents or its files.",
+      },
       includeArchived: { type: "boolean", description: "Defaults to false." },
+      ...pageProps(SHARING_PAGE_LIMITS),
     },
-    required: ["projectId"],
+    required: ["projectId", "kind"],
     additionalProperties: false,
   },
   requiredScope: "mcp:read" as const,
 };
 
-export type DocumentSharingOut = {
-  pages: {
-    id: string;
-    title: string;
-    kind: string;
-    partnerVisible: boolean;
-    publicVisible: boolean;
-    pinned: boolean;
-    archived: boolean;
-  }[];
-  files: {
-    id: string;
-    title: string;
-    partnerVisible: boolean;
-    archived: boolean;
-    fileName: string | null;
-    sizeBytes: number | null;
-  }[];
+export type SharingPageOut = {
+  id: string;
+  title: string;
+  kind: string;
+  partnerVisible: boolean;
+  publicVisible: boolean;
+  pinned: boolean;
+  archived: boolean;
 };
+
+export type SharingFileOut = {
+  id: string;
+  title: string;
+  partnerVisible: boolean;
+  archived: boolean;
+  fileName: string | null;
+  sizeBytes: number | null;
+};
+
+export type DocumentSharingOut =
+  | { kind: "pages"; page: PageInfo; pages: SharingPageOut[] }
+  | { kind: "files"; page: PageInfo; files: SharingFileOut[] };
 
 export async function runListDocumentSharing(
   callerId: string,
-  input: { projectId: string; includeArchived?: boolean },
+  input: PageArgs & { projectId: string; kind: "pages" | "files"; includeArchived?: boolean },
 ): Promise<DocumentSharingOut> {
+  if (input.kind !== "pages" && input.kind !== "files") {
+    throw new CurationInvalidError('kind must be "pages" or "files"');
+  }
   const project = await prisma.project.findUnique({
     where: { id: input.projectId },
     select: { id: true },
@@ -124,44 +147,72 @@ export async function runListDocumentSharing(
   await requireProjectEdit(callerId, input.projectId);
 
   const archivedFilter = input.includeArchived ? {} : { archivedAt: null };
-  const [pages, files] = await Promise.all([
-    prisma.page.findMany({
-      where: { workspaceType: "Project", workspaceId: input.projectId, ...archivedFilter },
-      orderBy: { position: "asc" },
-      select: {
-        id: true,
-        title: true,
-        kind: true,
-        partnerVisible: true,
-        publicVisible: true,
-        pinnedAt: true,
-        archivedAt: true,
-      },
-    }),
+
+  if (input.kind === "pages") {
+    const window = offsetWindow(input, SHARING_PAGE_LIMITS);
+    const where = { workspaceType: "Project" as const, workspaceId: input.projectId, ...archivedFilter };
+    const [fetched, total] = await Promise.all([
+      prisma.page.findMany({
+        where,
+        orderBy: [{ position: "asc" }, { id: "asc" }],
+        skip: window.skip,
+        take: window.take,
+        select: {
+          id: true,
+          title: true,
+          kind: true,
+          partnerVisible: true,
+          publicVisible: true,
+          pinnedAt: true,
+          archivedAt: true,
+        },
+      }),
+      prisma.page.count({ where }),
+    ]);
+    const { rows, page } = offsetPage(fetched, window, total);
+    return {
+      kind: "pages",
+      page,
+      pages: rows.map((p) => ({
+        id: p.id,
+        title: p.title,
+        kind: p.kind,
+        partnerVisible: p.partnerVisible,
+        publicVisible: p.publicVisible,
+        pinned: p.pinnedAt !== null,
+        archived: p.archivedAt !== null,
+      })),
+    };
+  }
+
+  const window = keysetWindow(
+    input,
+    SHARING_PAGE_LIMITS,
+    [{ field: "createdAt", direction: "asc", type: "date" }],
+    "asc",
+  );
+  const where = { projectId: input.projectId, ...archivedFilter };
+  const [fetched, total] = await Promise.all([
     prisma.projectFile.findMany({
-      where: { projectId: input.projectId, ...archivedFilter },
-      orderBy: { createdAt: "asc" },
+      where: { AND: [where, window.where] },
+      orderBy: window.orderBy,
+      take: window.take,
       select: {
         id: true,
+        createdAt: true,
         title: true,
         partnerVisible: true,
         archivedAt: true,
         currentVersion: { select: { fileName: true, sizeBytes: true } },
       },
     }),
+    prisma.projectFile.count({ where }),
   ]);
-
+  const { rows, page } = keysetPage(fetched, window, total);
   return {
-    pages: pages.map((p) => ({
-      id: p.id,
-      title: p.title,
-      kind: p.kind,
-      partnerVisible: p.partnerVisible,
-      publicVisible: p.publicVisible,
-      pinned: p.pinnedAt !== null,
-      archived: p.archivedAt !== null,
-    })),
-    files: files.map((f) => ({
+    kind: "files",
+    page,
+    files: rows.map((f) => ({
       id: f.id,
       title: f.title,
       partnerVisible: f.partnerVisible,

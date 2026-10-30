@@ -16,7 +16,7 @@ export const PROJECT_BOARD_RESOURCE = {
   uriTemplate: "dali://projects/{projectId}/board",
   name: "Project board",
   description:
-    "A project's full sprint board: every sprint (term-anchored week) with its tasks grouped by status (Todo, InProgress, InReview, Done, Cancelled), plus the undated backlog. One round-trip; sized to one project.",
+    "A project's full sprint board: every sprint (term-anchored week) with its tasks grouped by status (Todo, InProgress, InReview, Done, Cancelled), plus the undated backlog. Archived tasks (Done or Cancelled tasks moved off the board) are left out: read them with list_archived_tasks. One round-trip; sized to one project.",
   mimeType: "application/json",
   requiredScope: "mcp:read" as const,
 };
@@ -53,7 +53,7 @@ export async function readProjectBoardResource(projectId: string): Promise<strin
 
   const [tasks, backlogCount] = await Promise.all([
     prisma.task.findMany({
-      where: { projectId },
+      where: { projectId, archivedAt: null },
       orderBy: [{ status: "asc" }, { position: "asc" }],
       select: {
         id: true,

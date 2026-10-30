@@ -346,14 +346,48 @@ describe("list_my_time_entries", () => {
       },
     ]);
     const { entries } = await runListMyTimeEntries(ME, {});
-    expect(mockPrisma.timeEntry.findMany.mock.calls[0][0].where.userId).toBe(ME);
+    expect(mockPrisma.timeEntry.findMany.mock.calls[0][0].where.AND[0].userId).toBe(ME);
     expect(entries[0]).toMatchObject({ id: "a", date: "2026-07-29", source: "Manual", editable: true });
     expect(entries[1]).toMatchObject({ id: "b", source: "Meeting", editable: true });
   });
 
   it("caps the limit", async () => {
     await runListMyTimeEntries(ME, { limit: 5000 });
-    expect(mockPrisma.timeEntry.findMany.mock.calls[0][0].take).toBe(200);
+    expect(mockPrisma.timeEntry.findMany.mock.calls[0][0].take).toBe(201);
+  });
+
+  it("walks keyset pages on date, createdAt and id", async () => {
+    const row = (id: string, day: string) => ({
+      id,
+      date: new Date(`${day}T00:00:00.000Z`),
+      createdAt: new Date(`${day}T12:00:00.000Z`),
+      hours: 1,
+      note: null,
+      source: "Manual",
+      assignmentType: null,
+      roleRefId: null,
+      projectId: null,
+      startTime: null,
+      endTime: null,
+    });
+    mockPrisma.timeEntry.findMany.mockResolvedValueOnce([row("a", "2026-07-29"), row("b", "2026-07-29")]);
+    const first = await runListMyTimeEntries(ME, { limit: 1 });
+    expect(first.entries.map((e) => e.id)).toEqual(["a"]);
+    expect(first.page).toMatchObject({ hasMore: true, limit: 1 });
+    expect(first.page.nextCursor).toEqual(expect.any(String));
+
+    mockPrisma.timeEntry.findMany.mockResolvedValueOnce([row("b", "2026-07-29")]);
+    const second = await runListMyTimeEntries(ME, { limit: 1, cursor: first.page.nextCursor! });
+    const args = mockPrisma.timeEntry.findMany.mock.calls[1][0];
+    expect(args.orderBy).toEqual([{ date: "desc" }, { createdAt: "desc" }, { id: "desc" }]);
+    expect(args.where.AND[1].OR).toHaveLength(3);
+    expect(args.where.AND[0].userId).toBe(ME);
+    expect(second.entries.map((e) => e.id)).toEqual(["b"]);
+    expect(second.page).toMatchObject({ hasMore: false, nextCursor: null });
+  });
+
+  it("rejects a bad cursor", async () => {
+    await expect(runListMyTimeEntries(ME, { cursor: "nope" })).rejects.toThrow(/Invalid cursor/);
   });
 });
 

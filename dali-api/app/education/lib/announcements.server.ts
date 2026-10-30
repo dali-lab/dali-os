@@ -1,4 +1,5 @@
 import { prisma } from "~/lib/db";
+import type { Prisma } from "~/generated/prisma/client";
 import { logAuditEvent } from "~/lib/audit";
 import { notify } from "~/lib/notify.server";
 import { educationLink } from "./notifications.server";
@@ -17,10 +18,14 @@ const REPLY_LIMIT = 200;
  * Top-level posts, newest first, each with its replies oldest-first (a thread
  * reads forwards even though the list reads backwards).
  */
-export async function listDiscussion(offeringId: string) {
+export async function listDiscussion(
+  offeringId: string,
+  opts: { and?: Prisma.EducationAnnouncementWhereInput; take?: number } = {},
+) {
   const posts = await prisma.educationAnnouncement.findMany({
-    where: { offeringId, parentId: null },
-    orderBy: { sentAt: "desc" },
+    where: { AND: [{ offeringId, parentId: null }, ...(opts.and ? [opts.and] : [])] },
+    orderBy: [{ sentAt: "desc" }, { id: "desc" }],
+    take: opts.take,
     select: {
       id: true,
       body: true,
@@ -28,6 +33,7 @@ export async function listDiscussion(offeringId: string) {
       sentAt: true,
       authorId: true,
       author: { select: { firstName: true, lastName: true } },
+      _count: { select: { replies: true } },
       replies: {
         orderBy: { sentAt: "asc" },
         take: REPLY_LIMIT,

@@ -247,7 +247,40 @@ describe("list_education_offerings", () => {
     vi.mocked(listCatalog).mockResolvedValue([]);
     const result = await runListEducationOfferings(ctx(), {});
     expect(listCatalog).toHaveBeenCalledWith("u1");
-    expect(result).toEqual({ offerings: [] });
+    expect(result).toEqual({
+      offerings: [],
+      page: { nextCursor: null, hasMore: false, limit: 50, total: 0 },
+    });
+  });
+
+  it("walks catalog pages with a cursor and a final null cursor", async () => {
+    vi.mocked(listCatalog).mockResolvedValue([{ id: "o1" }, { id: "o2" }, { id: "o3" }] as never);
+    const first = await runListEducationOfferings(ctx(), { limit: 2 });
+    expect(first.offerings.map((o) => o.id)).toEqual(["o1", "o2"]);
+    expect(first.page).toMatchObject({ hasMore: true, total: 3 });
+    const second = await runListEducationOfferings(ctx(), { limit: 2, cursor: first.page.nextCursor! });
+    expect(second.offerings.map((o) => o.id)).toEqual(["o3"]);
+    expect(second.page).toMatchObject({ hasMore: false, nextCursor: null });
+  });
+
+  it("pages the manageable list the same way", async () => {
+    vi.mocked(isCore).mockResolvedValue(true);
+    vi.mocked(manageableOfferingIds).mockResolvedValue("all");
+    vi.mocked(listManageable).mockResolvedValue([{ id: "m1" }, { id: "m2" }] as never);
+    const first = await runListEducationOfferings(ctx(), { manageable: true, limit: 1 });
+    expect(first.offerings.map((o) => o.id)).toEqual(["m1"]);
+    const second = await runListEducationOfferings(ctx(), {
+      manageable: true,
+      limit: 1,
+      cursor: first.page.nextCursor!,
+    });
+    expect(second.offerings.map((o) => o.id)).toEqual(["m2"]);
+    expect(second.page.nextCursor).toBeNull();
+  });
+
+  it("rejects a bad cursor", async () => {
+    vi.mocked(listCatalog).mockResolvedValue([]);
+    await expect(runListEducationOfferings(ctx(), { cursor: "nope" })).rejects.toThrow(/Invalid cursor/);
   });
 
   it("rejects non-instructors requesting manageable list", async () => {
@@ -264,7 +297,7 @@ describe("list_education_offerings", () => {
     vi.mocked(listManageable).mockResolvedValue([]);
     const result = await runListEducationOfferings(ctx(), { manageable: true });
     expect(listManageable).toHaveBeenCalledWith("u1");
-    expect(result).toEqual({ offerings: [] });
+    expect(result.offerings).toEqual([]);
   });
 });
 

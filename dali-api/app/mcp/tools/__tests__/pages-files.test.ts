@@ -48,7 +48,7 @@ const mockPrisma = prisma as unknown as {
     create: ReturnType<typeof vi.fn>;
     update: ReturnType<typeof vi.fn>;
   };
-  projectFile: { findMany: ReturnType<typeof vi.fn> };
+  projectFile: { findMany: ReturnType<typeof vi.fn>; count: ReturnType<typeof vi.fn> };
 };
 
 beforeEach(() => vi.clearAllMocks());
@@ -395,5 +395,36 @@ describe("pages + files tools", () => {
       title: "Spec",
       currentVersion: { fileName: "spec.pdf" },
     });
+  });
+
+  it("list_project_files pages by offset with an id tiebreak on updatedAt", async () => {
+    const file = (id: string) => ({
+      id,
+      title: id,
+      archivedAt: null,
+      createdAt: new Date("2026-01-01T00:00:00Z"),
+      updatedAt: new Date("2026-01-02T00:00:00Z"),
+      currentVersion: null,
+    });
+    mockPrisma.project.findUnique.mockResolvedValue({ id: "p1" });
+    mockPrisma.projectFile.count = vi.fn().mockResolvedValue(3);
+    mockPrisma.projectFile.findMany.mockResolvedValueOnce([file("f1"), file("f2")]);
+    const first = await runListProjectFiles("u1", { projectId: "p1", limit: 1 });
+    expect(first.files.map((f) => f.id)).toEqual(["f1"]);
+    expect(first.page).toMatchObject({ hasMore: true, total: 3 });
+    expect(mockPrisma.projectFile.findMany.mock.calls.at(-1)![0].orderBy).toEqual([
+      { updatedAt: "desc" },
+      { id: "asc" },
+    ]);
+
+    mockPrisma.projectFile.findMany.mockResolvedValueOnce([file("f2")]);
+    const second = await runListProjectFiles("u1", { projectId: "p1", limit: 1, cursor: first.page.nextCursor! });
+    expect(mockPrisma.projectFile.findMany.mock.calls.at(-1)![0]).toMatchObject({ skip: 1, take: 2 });
+    expect(second.page).toMatchObject({ hasMore: false, nextCursor: null });
+  });
+
+  it("list_project_files rejects a bad cursor", async () => {
+    mockPrisma.project.findUnique.mockResolvedValue({ id: "p1" });
+    await expect(runListProjectFiles("u1", { projectId: "p1", cursor: "nope" })).rejects.toThrow(/Invalid cursor/);
   });
 });

@@ -91,4 +91,24 @@ describe("project-board resource", () => {
     expect(data.backlog.openCount).toBe(1);
     expect(data.backlog.tasks.Todo.map((c: { id: string }) => c.id)).toEqual(["t2"]);
   });
+
+  it("leaves archived tasks off the board", async () => {
+    mockPrisma.project.findUnique.mockResolvedValue({
+      id: "p1",
+      name: "Alpha",
+      status: "Active",
+      projectTerms: [],
+    });
+    mockPrisma.task.findMany.mockResolvedValue([]);
+    mockPrisma.task.count.mockResolvedValue(0);
+    await readProjectBoardResource("p1");
+    expect(mockPrisma.task.findMany.mock.calls[0][0].where).toEqual({
+      projectId: "p1",
+      archivedAt: null,
+    });
+  });
+
+  it("names list_archived_tasks in the description", () => {
+    expect(PROJECT_BOARD_RESOURCE.description).toContain("list_archived_tasks");
+  });
 });

@@ -6,6 +6,7 @@
 import { readMaterialPage } from "~/education/lib/lms.server";
 import { isOfferingManager } from "~/education/lib/access.server";
 import { prisma } from "~/lib/db";
+import { pageProps, pageText, TEXT_PAGE_LIMITS, type PageArgs } from "../../pagination";
 import {
   McpForbiddenError,
   McpNotFoundError,
@@ -16,12 +17,13 @@ import {
 export const READ_EDUCATION_PAGE_TOOL = {
   name: "read_education_page",
   description:
-    "Read the content of a material page in an education offering's workspace. Requires an Approved enrollment or offering-manager role.",
+    "Read the content of a material page in an education offering's workspace. Requires an Approved enrollment or offering-manager role. The content is a JSON string of the page's ProseMirror document, returned in chunks of limit characters: pass page.nextCursor as cursor until page.hasMore is false, then join the chunks in order and parse the result. page.total is the full length in characters.",
   inputSchema: {
     type: "object" as const,
     properties: {
       offeringId: { type: "string", minLength: 1 },
       pageId: { type: "string", minLength: 1 },
+      ...pageProps(TEXT_PAGE_LIMITS),
     },
     required: ["offeringId", "pageId"],
     additionalProperties: false,
@@ -29,7 +31,7 @@ export const READ_EDUCATION_PAGE_TOOL = {
   requiredScope: "mcp:read" as const,
 };
 
-type Args = { offeringId: string; pageId: string };
+type Args = PageArgs & { offeringId: string; pageId: string };
 
 export async function runReadEducationPage(ctx: McpCtx, args: Args) {
   // Gate: enrolled student or manager.
@@ -52,12 +54,13 @@ export async function runReadEducationPage(ctx: McpCtx, args: Args) {
   const page = await readMaterialPage(args.offeringId, args.pageId);
   if (!page) throw new McpNotFoundError("Page not found");
 
+  const chunk = pageText(JSON.stringify(page.content ?? null), args);
+
   return {
     id: page.id,
     title: page.title,
-    // content is ProseMirror JSON. Callers that need plain text should render it
-    // or ask for a summary; we return the structured content as-is.
-    content: page.content,
+    content: chunk.text,
+    page: chunk.page,
   };
 }
 
