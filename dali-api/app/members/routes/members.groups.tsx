@@ -10,12 +10,11 @@ import { redirectToLogin } from "~/lib/login-next";
 import { canViewForms, currentTermMemberWhere } from "~/lib/roles";
 import { MEMBER_LIST_ORDER_BY } from "~/lib/prisma-shapes";
 import { resolvePhotoUrl } from "~/lib/photo";
-import { Avatar } from "~/components/ui/Avatar";
-import { RolePills } from "~/components/ui/RolePills";
 import { deriveCoreTitles } from "~/lib/core-titles";
 import { Modal, ModalHeader } from "~/components/Modal";
 import { useConfirmSubmit } from "~/components/ui/dialog";
 import { cn } from "~/lib/cn";
+import { GroupRoster, type MemberCardData } from "~/members/components/GroupRoster";
 import {
   Users,
   Plus,
@@ -61,16 +60,6 @@ type GroupRow = {
 // card (photo, name, role pills) and link to the member's page. `isCurrentMember`
 // distinguishes pickable users (current-term lab members) from alumni who only
 // appear here because they're still listed in an existing group.
-type MemberCardData = {
-  id: string;
-  firstName: string;
-  lastName: string;
-  daliEmail: string | null;
-  photoUrl: string | null;
-  coreTitles: string[];
-  domainRoles: { domainName: string; level: string }[];
-  isCurrentMember: boolean;
-};
 
 type TermOption = { id: string; code: string };
 
@@ -856,32 +845,12 @@ function GroupCard({
           {group.memberIds.length === 0 && (
             <p className="text-sm text-muted-foreground/70">No members.</p>
           )}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-            {group.memberIds.map((uid) => {
-              const m = membersById.get(uid);
-              if (!m) {
-                return (
-                  <div
-                    key={uid}
-                    className={cn(
-                      "p-2 bg-os-bg dark:bg-os-card text-xs text-muted-foreground",
-                      "rounded-os-item",
-                    )}
-                  >
-                    Unknown member
-                  </div>
-                );
-              }
-              return (
-                <ExpandedMemberCard
-                  key={uid}
-                  member={m}
-                  removable={!isSystem}
-                  groupId={group.id}
-                />
-              );
-            })}
-          </div>
+          <GroupRoster
+            memberIds={group.memberIds}
+            membersById={membersById}
+            removable={!isSystem}
+            groupId={group.id}
+          />
 
           {!isSystem && !addingMember && available.length > 0 && (
             <button
@@ -947,76 +916,6 @@ function GroupCard({
             </div>
           )}
         </div>
-      )}
-    </div>
-  );
-}
-
-function ExpandedMemberCard({
-  member,
-  removable,
-  groupId,
-}: {
-  member: MemberCardData;
-  removable: boolean;
-  groupId: string;
-}) {
-  const fetcher = useFetcher();
-  const confirmSubmit = useConfirmSubmit();
-  const fullName = `${member.firstName} ${member.lastName}`.trim();
-  return (
-    <div
-      className={cn(
-        // On the open group's accent wash the card plane vanishes (the wash is
-        // mixed from os-card), so these sit a plane up: white in light, where
-        // the ramp inverts; os-card in dark, where card is already the top.
-        "relative p-2 bg-os-bg dark:bg-os-card flex items-start gap-2 hover:bg-os-card-hover transition-colors",
-        "rounded-os-item",
-      )}
-    >
-      <Link to={`/members/${member.id}`} className="flex items-start gap-2 min-w-0 flex-1">
-        <Avatar photoUrl={member.photoUrl} name={fullName} size="sm" className="flex-shrink-0" />
-        <div className="min-w-0 flex-1">
-          <div className="text-sm font-medium text-foreground truncate">{fullName}</div>
-          <div className="mt-1">
-            {member.coreTitles.length === 0 && member.domainRoles.length === 0 ? (
-              <span className="text-muted-foreground text-xs">—</span>
-            ) : (
-              <RolePills
-                coreTitles={member.coreTitles}
-                domainRoles={member.domainRoles}
-                size="sm"
-                showLevel
-              />
-            )}
-          </div>
-        </div>
-      </Link>
-      {removable && (
-        <fetcher.Form
-          method="post"
-          className="flex-shrink-0"
-          onSubmit={confirmSubmit({
-            title: `Remove ${fullName} from this group?`,
-            description:
-              "They lose anything shared with the group — document shares and scheduling audiences that name it. You can add them back.",
-            confirmLabel: "Remove",
-            tone: "destructive",
-          })}
-        >
-          <input type="hidden" name="intent" value="remove-member" />
-          <input type="hidden" name="groupId" value={groupId} />
-          <input type="hidden" name="userId" value={member.id} />
-          <Tooltip content={`Remove ${fullName} from group`}>
-            <button
-              type="submit"
-              aria-label={`Remove ${fullName} from group`}
-              className="text-muted-foreground hover:text-destructive p-0.5"
-            >
-              <X className="w-3 h-3" />
-            </button>
-          </Tooltip>
-        </fetcher.Form>
       )}
     </div>
   );
