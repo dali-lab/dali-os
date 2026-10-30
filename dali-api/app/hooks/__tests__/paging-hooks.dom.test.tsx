@@ -103,6 +103,38 @@ describe("useLoadMore", () => {
     expect(result.pager.hasMore).toBe(true);
   });
 
+  it("keeps a row pushed off the first page by a new arrival", async () => {
+    const fetchPage = vi.fn().mockResolvedValue({ items: rows("d"), nextCursor: "c2" });
+    render(createElement(Harness, { items: rows("b", "c"), nextCursor: "c1", fetchPage }));
+    await load();
+    render(createElement(Harness, { items: rows("a", "b"), nextCursor: "c0", fetchPage }));
+    expect(result.items.map((r) => r.id)).toEqual(["a", "b", "c", "d"]);
+  });
+
+  it("drops a deleted row rather than keeping it as pushed", async () => {
+    const fetchPage = vi.fn().mockResolvedValue({ items: rows("d"), nextCursor: "c2" });
+    render(createElement(Harness, { items: rows("a", "b", "c"), nextCursor: "c1", fetchPage }));
+    await load();
+    render(createElement(Harness, { items: rows("a", "c", "d"), nextCursor: "c1", fetchPage }));
+    expect(result.items.map((r) => r.id)).toEqual(["a", "c", "d"]);
+  });
+
+  it("leaves paging to the loader cursor until a page has been loaded", () => {
+    const fetchPage = vi.fn();
+    render(createElement(Harness, { items: rows("b", "c"), nextCursor: "c1", fetchPage }));
+    render(createElement(Harness, { items: rows("a", "b"), nextCursor: "c0", fetchPage }));
+    expect(result.items.map((r) => r.id)).toEqual(["a", "b"]);
+  });
+
+  it("forgets pushed rows when the filter changes", async () => {
+    const fetchPage = vi.fn().mockResolvedValue({ items: rows("d"), nextCursor: "c2" });
+    render(createElement(Harness, { items: rows("b", "c"), nextCursor: "c1", fetchPage, resetKey: "x" }));
+    await load();
+    render(createElement(Harness, { items: rows("a", "b"), nextCursor: "c0", fetchPage, resetKey: "x" }));
+    render(createElement(Harness, { items: rows("z"), nextCursor: null, fetchPage, resetKey: "y" }));
+    expect(result.items.map((r) => r.id)).toEqual(["z"]);
+  });
+
   it("drops older pages and uses the new cursor when the filter changes", async () => {
     const fetchPage = vi.fn().mockResolvedValue({ items: rows("b"), nextCursor: null });
     render(createElement(Harness, { items: rows("a"), nextCursor: "c1", fetchPage, resetKey: "x" }));

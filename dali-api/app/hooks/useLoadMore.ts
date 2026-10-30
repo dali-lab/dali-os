@@ -38,6 +38,11 @@ export function useLoadMore<T>({
   total,
 }: Options<T>): { items: T[]; pager: LoadMoreProps } {
   const [extra, setExtra] = useState<Extra<T>>({ key: resetKey, items: [], cursor: undefined });
+  const [firstPage, setFirstPage] = useState({
+    rows: items,
+    ids: items.map(idOf).join("\n"),
+    pushed: [] as T[],
+  });
   const [loading, setLoading] = useState(false);
   const [failed, setFailed] = useState(false);
   const liveKey = useRef(resetKey);
@@ -50,8 +55,33 @@ export function useLoadMore<T>({
   const current = extra.key === resetKey ? extra : { items: [] as T[], cursor: undefined };
   const cursor = current.cursor === undefined ? nextCursor : current.cursor;
 
-  const seen = new Set(items.map(idOf));
-  const merged = [...items, ...current.items.filter((item) => !seen.has(idOf(item)))];
+  // Once older pages are loaded their cursor is fixed, so a row that new arrivals
+  // push off the end of the first page belongs to neither list. Keep it here.
+  const firstPageIds = items.map(idOf).join("\n");
+  const resetting = extra.key !== resetKey;
+  if (firstPage.ids !== firstPageIds || (resetting && firstPage.pushed.length > 0)) {
+    const incoming = new Set(items.map(idOf));
+    const before = new Set(firstPage.rows.map(idOf));
+    const added = items.filter((item) => !before.has(idOf(item))).length;
+    const carried =
+      added > 0 && current.items.length > 0
+        ? firstPage.rows.slice(-added).filter((row) => !incoming.has(idOf(row)))
+        : [];
+    setFirstPage({
+      rows: items,
+      ids: firstPageIds,
+      pushed: resetting ? [] : [...carried, ...firstPage.pushed],
+    });
+  }
+  const pushed = resetting ? [] : firstPage.pushed;
+
+  const seen = new Set<string>();
+  const merged = [...items, ...pushed, ...current.items].filter((item) => {
+    const id = idOf(item);
+    if (seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  });
 
   const onLoadMore = async () => {
     if (!cursor || loading) return;
