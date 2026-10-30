@@ -10,24 +10,14 @@ import { createNote } from "~/members/lib/personal-notes-actions.server";
 import { PageNameConflictError } from "~/lib/page-names.server";
 import { attachMeetingNote } from "~/lib/scheduled-meeting";
 import { actionItemsOf, notePageId } from "~/lib/mobile-notes";
-import { decodeCursor, encodeCursor, keysetAfter, keysetPage } from "~/lib/pagination";
+import { CURSOR_DONE, decodeCursor, joinPairCursor, keysetAfter, keysetPage, splitPairCursor } from "~/lib/pagination";
 import { mobileError, mobileJson, requireMobileUser } from "~/lib/mobile-auth.server";
 
 export const MAX_NOTES = 30;
 
-const DONE = "done";
-
-// Recordings and typed notes are two lists, so one cursor string carries a
-// position for each: "<recordings>~<pages>", each "start", "done" or "<at>|<id>".
 export function parseNotesCursor(raw: string | null): { recordings: string | null; pages: string | null } {
-  const [recordings = "start", pages = "start"] = (raw ?? "").split("~");
-  const part = (v: string) => (v === "start" || v === "" ? null : v);
-  return { recordings: part(recordings), pages: part(pages) };
-}
-
-function formatNotesCursor(recordings: string | null, pages: string | null): string | null {
-  if (recordings === null && pages === null) return null;
-  return `${recordings ?? DONE}~${pages ?? DONE}`;
+  const [recordings, pages] = splitPairCursor(raw);
+  return { recordings, pages };
 }
 
 function after(field: "createdAt" | "updatedAt", position: string | null) {
@@ -54,7 +44,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const [recordingEnabled, recordingRows, typedRows] = await Promise.all([
     canRecord(userId, request),
-    cursors.recordings === DONE
+    cursors.recordings === CURSOR_DONE
       ? []
       : prisma.meetingRecording.findMany({
         where: { userId, ...after("createdAt", cursors.recordings) },
@@ -74,7 +64,7 @@ export async function loader({ request }: Route.LoaderArgs) {
         },
       }),
     // Typed notes: pages the member started in their own space or in a notebook.
-    cursors.pages === DONE
+    cursors.pages === CURSOR_DONE
       ? []
       : prisma.page.findMany({
         where: {
@@ -128,7 +118,7 @@ export async function loader({ request }: Route.LoaderArgs) {
         updatedAt: p.updatedAt.toISOString(),
         notebook: p.parent?.kind === "Notebook" ? p.parent.title : null,
       })),
-    nextCursor: formatNotesCursor(recordingPage.nextCursor, typedPage.nextCursor),
+    nextCursor: joinPairCursor(recordingPage.nextCursor, typedPage.nextCursor),
   });
 }
 

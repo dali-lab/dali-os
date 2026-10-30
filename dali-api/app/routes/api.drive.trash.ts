@@ -23,25 +23,15 @@ import { isRoot, ROOT_DELETE_ERROR } from "~/lib/drive-roots";
 import { canManageFormPlacement } from "~/forms/lib/form-access.server";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { logAuditEvent } from "~/lib/audit";
-import { decodeCursor, encodeCursor, keysetAfter, type KeysetCursor } from "~/lib/pagination";
+import { CURSOR_DONE, decodeCursor, encodeCursor, joinPairCursor, keysetAfter, splitPairCursor, type KeysetCursor } from "~/lib/pagination";
 
 export const TRASH_PAGE_SIZE = 50;
 export const TRASH_BATCH_SIZE = 200;
 export const TRASH_MAX_BATCHES = 10;
 
-const DONE = "done";
-
-// Pages and files live in separate tables, so one cursor string carries a
-// position for each: "<pages>~<files>", each "start", "done" or "<at>|<id>".
 export function parseTrashCursor(raw: string | null): { pages: string | null; files: string | null } {
-  const [pages = "start", files = "start"] = (raw ?? "").split("~");
-  const part = (v: string) => (v === "start" || v === "" ? null : v);
-  return { pages: part(pages), files: part(files) };
-}
-
-function formatTrashCursor(pages: string | null, files: string | null): string | null {
-  if (pages === null && files === null) return null;
-  return `${pages ?? DONE}~${files ?? DONE}`;
+  const [pages, files] = splitPairCursor(raw);
+  return { pages, files };
 }
 
 // Access is checked in JS, so a page of results is built by scanning batches
@@ -53,7 +43,7 @@ async function scanVisible<T extends { id: string; archivedAt: Date | null }>(
   fetchBatch: (cursor: KeysetCursor | null) => Promise<T[]>,
   filterVisible: (rows: T[]) => Promise<T[]>,
 ): Promise<{ items: T[]; nextCursor: string | null }> {
-  if (startCursor === DONE) return { items: [], nextCursor: null };
+  if (startCursor === CURSOR_DONE) return { items: [], nextCursor: null };
   let cursor = decodeCursor(startCursor);
   const visible: T[] = [];
   let lastScanned: T | undefined;
@@ -188,7 +178,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   return withCors(
     request,
-    Response.json({ items, nextCursor: formatTrashCursor(pageScan.nextCursor, fileScan.nextCursor) }),
+    Response.json({ items, nextCursor: joinPairCursor(pageScan.nextCursor, fileScan.nextCursor) }),
   );
 }
 

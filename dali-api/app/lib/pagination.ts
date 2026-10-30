@@ -31,6 +31,21 @@ export function decodeCursor(raw: string | null | undefined): KeysetCursor | nul
   return { at, id };
 }
 
+export const CURSOR_DONE = "done";
+
+// Two independently paged lists share one cursor string: "<a>~<b>", each part
+// "start", "done" or an encoded keyset position.
+export function splitPairCursor(raw: string | null): [string | null, string | null] {
+  const [a = "start", b = "start"] = (raw ?? "").split("~");
+  const part = (v: string) => (v === "start" || v === "" ? null : v);
+  return [part(a), part(b)];
+}
+
+export function joinPairCursor(a: string | null, b: string | null): string | null {
+  if (a === null && b === null) return null;
+  return `${a ?? CURSOR_DONE}~${b ?? CURSOR_DONE}`;
+}
+
 export function keysetPage<T>(
   rows: T[],
   limit: number,

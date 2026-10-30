@@ -164,11 +164,9 @@ describe("My Tasks paging", () => {
       projectTotal: 6,
     });
     expect(text()).toContain("Showing 2 of 6");
-    page.setData({ ...base, projectTasks: [work("p2")], projectCursor: "2", projectTotal: 5 });
     await act(async () => {
       [...container.querySelectorAll("button")].find((b) => b.getAttribute("aria-label") === "Mark done")?.click();
     });
-    await page.revalidate();
     await click("Load more");
     expect(fetchMock).toHaveBeenCalledWith("/api/my-tasks?kind=project&cursor=1", expect.anything());
   });

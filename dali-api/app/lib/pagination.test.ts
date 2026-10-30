@@ -1,12 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
+  CURSOR_DONE,
   decodeCursor,
   encodeCursor,
+  joinPairCursor,
   keysetAfter,
   keysetPage,
   offsetPage,
   offsetWindow,
   parsePageParam,
+  splitPairCursor,
 } from "./pagination";
 
 describe("parsePageParam", () => {
@@ -60,6 +63,23 @@ describe("cursors", () => {
       expect(decodeCursor(raw)).toBeNull();
     },
   );
+});
+
+describe("pair cursors", () => {
+  it("reads a missing cursor as both lists at the start", () => {
+    expect(splitPairCursor(null)).toEqual([null, null]);
+    expect(splitPairCursor("start~start")).toEqual([null, null]);
+  });
+
+  it("keeps each list's position", () => {
+    expect(splitPairCursor("a|1~done")).toEqual(["a|1", CURSOR_DONE]);
+  });
+
+  it("marks a finished list done and ends when both are finished", () => {
+    expect(joinPairCursor("a|1", null)).toBe("a|1~done");
+    expect(joinPairCursor(null, "b|2")).toBe("done~b|2");
+    expect(joinPairCursor(null, null)).toBeNull();
+  });
 });
 
 describe("keysetPage", () => {
