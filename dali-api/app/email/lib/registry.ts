@@ -334,7 +334,7 @@ export const EMAIL_TEMPLATES = {
   "hiring:notification:InterviewReminderApplicant": {
     area: "Hiring",
     label: "Interview reminder (applicant)",
-    description: "Sent 24 hours and 1 hour before the interview.",
+    description: "Sent 1 hour before the interview.",
     purpose: "Hiring",
     variables: ["firstName", "domain", "time", "location", "meetingUrl"],
     sample: INTERVIEW_SAMPLE,
@@ -344,7 +344,7 @@ export const EMAIL_TEMPLATES = {
   "hiring:notification:InterviewReminderInterviewer": {
     area: "Hiring",
     label: "Interview reminder (interviewer)",
-    description: "Sent 24 hours and 1 hour before the interview.",
+    description: "Sent 1 hour before the interview.",
     purpose: "Hiring",
     variables: ["firstName", "domain", "time", "location", "meetingUrl"],
     sample: INTERVIEW_SAMPLE,

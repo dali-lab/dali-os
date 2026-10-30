@@ -21,6 +21,10 @@ function p2002() {
   return Object.assign(new Error("unique violation"), { code: "P2002" });
 }
 
+function run() {
+  return runInterviewReminders({ now: NOW, lastSuccessAt: null, settings: {} });
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   mockSend.mockResolvedValue(2);
@@ -29,80 +33,71 @@ beforeEach(() => {
 });
 
 describe("interview-reminders", () => {
-  it("claims DayBefore for an interview ~20h out and sends once", async () => {
-    mockPrisma.interview.findMany.mockResolvedValue([
-      { id: "i1", startTime: new Date("2026-07-16T08:00:00Z") },
-    ]);
-
-    const result = await runInterviewReminders({
-      now: NOW,
-      lastSuccessAt: null,
-      settings: {},
-    });
-
-    expect(mockPrisma.interviewReminderLog.create).toHaveBeenCalledTimes(1);
-    expect(mockPrisma.interviewReminderLog.create).toHaveBeenCalledWith({
-      data: { interviewId: "i1", kind: "DayBefore" },
-    });
-    expect(mockSend).toHaveBeenCalledTimes(1);
-    expect(result.items).toBe(2);
-  });
-
-  it("claims both tiers for an interview inside the hour but sends one reminder", async () => {
-    mockPrisma.interview.findMany.mockResolvedValue([
-      { id: "i1", startTime: new Date("2026-07-15T12:30:00Z") },
-    ]);
-
-    await runInterviewReminders({ now: NOW, lastSuccessAt: null, settings: {} });
-
-    expect(mockPrisma.interviewReminderLog.create).toHaveBeenCalledTimes(2);
-    expect(mockSend).toHaveBeenCalledTimes(1);
-  });
-
-  it("sends the HourBefore tier even when DayBefore already went out", async () => {
-    mockPrisma.interview.findMany.mockResolvedValue([
-      { id: "i1", startTime: new Date("2026-07-15T12:30:00Z") },
-    ]);
-    mockPrisma.interviewReminderLog.create
-      .mockRejectedValueOnce(p2002()) // DayBefore already claimed yesterday
-      .mockResolvedValueOnce({});
-
-    const result = await runInterviewReminders({
-      now: NOW,
-      lastSuccessAt: null,
-      settings: {},
-    });
-
-    expect(mockSend).toHaveBeenCalledTimes(1);
-    expect(result.items).toBe(2);
-  });
-
-  it("does nothing when every applicable tier was already claimed", async () => {
-    mockPrisma.interview.findMany.mockResolvedValue([
-      { id: "i1", startTime: new Date("2026-07-16T08:00:00Z") },
-    ]);
-    mockPrisma.interviewReminderLog.create.mockRejectedValue(p2002());
-
-    const result = await runInterviewReminders({
-      now: NOW,
-      lastSuccessAt: null,
-      settings: {},
-    });
-
-    expect(mockSend).not.toHaveBeenCalled();
-    expect(result.items).toBe(0);
-  });
-
-  it("only queries Scheduled interviews starting within 24h", async () => {
-    await runInterviewReminders({ now: NOW, lastSuccessAt: null, settings: {} });
+  it("only queries Scheduled interviews starting within the next hour", async () => {
+    await run();
 
     expect(mockPrisma.interview.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: {
           status: "Scheduled",
-          startTime: { gt: NOW, lte: new Date("2026-07-16T12:00:00Z") },
+          startTime: { gt: NOW, lte: new Date("2026-07-15T13:00:00Z") },
         },
       }),
     );
+  });
+
+  it("claims HourBefore and sends once for an interview inside the hour", async () => {
+    mockPrisma.interview.findMany.mockResolvedValue([{ id: "i1" }]);
+
+    const result = await run();
+
+    expect(mockPrisma.interviewReminderLog.create).toHaveBeenCalledTimes(1);
+    expect(mockPrisma.interviewReminderLog.create).toHaveBeenCalledWith({
+      data: { interviewId: "i1", kind: "HourBefore" },
+    });
+    expect(mockSend).toHaveBeenCalledTimes(1);
+    expect(mockSend).toHaveBeenCalledWith("i1");
+    expect(result.items).toBe(2);
+  });
+
+  it("never claims a DayBefore tier", async () => {
+    mockPrisma.interview.findMany.mockResolvedValue([{ id: "i1" }, { id: "i2" }]);
+
+    await run();
+
+    const kinds = mockPrisma.interviewReminderLog.create.mock.calls.map(
+      ([arg]) => arg.data.kind,
+    );
+    expect(kinds).toEqual(["HourBefore", "HourBefore"]);
+  });
+
+  it("skips an interview whose reminder was already claimed", async () => {
+    mockPrisma.interview.findMany.mockResolvedValue([{ id: "i1" }, { id: "i2" }]);
+    mockPrisma.interviewReminderLog.create
+      .mockRejectedValueOnce(p2002())
+      .mockResolvedValueOnce({});
+
+    const result = await run();
+
+    expect(mockSend).toHaveBeenCalledTimes(1);
+    expect(mockSend).toHaveBeenCalledWith("i2");
+    expect(result.items).toBe(2);
+  });
+
+  it("rethrows non-unique ledger errors without sending", async () => {
+    mockPrisma.interview.findMany.mockResolvedValue([{ id: "i1" }]);
+    mockPrisma.interviewReminderLog.create.mockRejectedValue(new Error("db down"));
+
+    await expect(run()).rejects.toThrow("db down");
+    expect(mockSend).not.toHaveBeenCalled();
+  });
+
+  it("sums sent counts across interviews", async () => {
+    mockPrisma.interview.findMany.mockResolvedValue([{ id: "i1" }, { id: "i2" }]);
+    mockSend.mockResolvedValueOnce(2).mockResolvedValueOnce(3);
+
+    const result = await run();
+
+    expect(result.items).toBe(5);
   });
 });
