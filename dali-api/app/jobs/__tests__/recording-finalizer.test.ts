@@ -159,11 +159,11 @@ describe("recording-finalizer", () => {
     expect(startProcessing).not.toHaveBeenCalled();
   });
 
-  it("(d) the stoppedUnfinished query would exclude a recently-Stopped row", async () => {
+  it("(d) the stoppedUnfinished query would exclude a recently-Stopped row and an already finalized one", async () => {
     await runRecordingFinalizer({ now: NOW, lastSuccessAt: null, settings: {} });
 
     expect(mockPrisma.meetingRecording.findMany).toHaveBeenNthCalledWith(4, {
-      where: { status: "Stopped", updatedAt: { lt: new Date(NOW.getTime() - 30 * 60_000) } },
+      where: { status: "Stopped", finalizedAt: null, updatedAt: { lt: new Date(NOW.getTime() - 30 * 60_000) } },
       take: 50,
     });
   });
