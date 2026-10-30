@@ -1,15 +1,18 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { redirect, useLoaderData, useSearchParams } from "react-router";
 import { ExternalLink, RotateCcw } from "lucide-react";
 import { SearchInput } from "~/components/ui/SearchInput";
 import { LoadMore } from "~/components/ui/Pager";
+import { fetchCursorPage, useLoadMore } from "~/hooks/useLoadMore";
 import { SegmentedTabButtons } from "~/components/AreaPillNav";
 import { getUserRoles } from "~/lib/roles";
 import { requireAuth, redirectPartnerToPortal, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import {
-  listOpenTasks,
-  listMyProjectTasks,
+  listOpenTasksPage,
+  listMyProjectTasksPage,
+  openTasksTotal,
+  projectTasksTotal,
   listNotificationHistory,
   type Task,
   type NotificationHistoryItem,
@@ -33,8 +36,10 @@ import {
   mergedFeed,
   splitFeed,
   type AttentionNotification,
+  type ClearedKind,
   type FeedTab,
 } from "~/components/AttentionPanel";
+import type { ProjectWorkItem } from "~/lib/project-work";
 import type { Route } from "./+types/notifications";
 
 export const meta: Route.MetaFunction = () => [
@@ -61,11 +66,15 @@ export async function loader({ request }: Route.LoaderArgs) {
   const userId = auth.user.sub;
   const url = new URL(request.url);
 
-  const [tasks, { items }, projectTasks, roles] = await Promise.all([
-    listOpenTasks(userId),
+  const [taskPage, { items }, projectPage, roles] = await Promise.all([
+    listOpenTasksPage(userId),
     listMyNotifications(userId),
-    listMyProjectTasks(userId),
+    listMyProjectTasksPage(userId),
     getUserRoles(userId, request),
+  ]);
+  const [taskTotal, projectTotal] = await Promise.all([
+    openTasksTotal(userId, taskPage),
+    projectTasksTotal(userId, projectPage),
   ]);
   const notifications: AttentionNotification[] = items.map((n) => ({
     id: n.id,
@@ -88,7 +97,17 @@ export async function loader({ request }: Route.LoaderArgs) {
     });
   }
 
-  return { tasks, notifications, projectTasks, history, singleFeed: roles.isAlumni };
+  return {
+    tasks: taskPage.items,
+    tasksCursor: taskPage.nextCursor,
+    taskTotal,
+    notifications,
+    projectTasks: projectPage.items,
+    projectCursor: projectPage.nextCursor,
+    projectTotal,
+    history,
+    singleFeed: roles.isAlumni,
+  };
 }
 
 // History state as the status line's leading dot (quiet, like other status
@@ -356,17 +375,53 @@ export default function NotificationsRoute() {
     setSearchParams(params);
   }
 
-  const tasks: Task[] = data.tasks;
-  const feed = splitFeed(tasks, data.notifications, data.projectTasks);
-  const count = attentionCount(tasks, data.notifications, data.projectTasks);
+  const [cleared, setCleared] = useState<ReadonlySet<string>>(new Set());
+  // Clears the loader's totals do not reflect yet; reset once it revalidates.
+  const [pending, setPending] = useState({ task: 0, project: 0 });
+  useEffect(() => setPending({ task: 0, project: 0 }), [data]);
+  const onCleared = useCallback((id: string, kind: ClearedKind) => {
+    setCleared((prev) => new Set(prev).add(id));
+    if (kind !== "notification") setPending((prev) => ({ ...prev, [kind]: prev[kind] + 1 }));
+  }, []);
+
+  const loadedProjects = useRef(0);
+  const openMore = useLoadMore<Task>({
+    items: data.tasks,
+    nextCursor: data.tasksCursor,
+    fetchPage: (cursor) => fetchCursorPage(`/api/my-tasks?kind=open&cursor=${encodeURIComponent(cursor)}`),
+    idOf: (t) => t.id,
+  });
+  // The offset is the number of project tasks still loaded rather than the
+  // server's cursor, so finishing a task does not skip the row behind it.
+  const projectMore = useLoadMore<ProjectWorkItem>({
+    items: data.projectTasks,
+    nextCursor: data.projectCursor,
+    fetchPage: () => fetchCursorPage(`/api/my-tasks?kind=project&cursor=${loadedProjects.current}`),
+    idOf: (t) => t.id,
+  });
+
+  const tasks: Task[] = openMore.items.filter((t) => !cleared.has(t.id));
+  const projectTasks = projectMore.items.filter((t) => !cleared.has(t.id));
+  loadedProjects.current = projectTasks.length;
+  const notifications = data.notifications.filter((n) => !cleared.has(n.id));
+
+  const taskTotal = Math.max(0, data.taskTotal - pending.task);
+  const projectTotal = Math.max(0, data.projectTotal - pending.project);
+  const unloadedTasks = Math.max(0, taskTotal - tasks.length);
+  const unloadedProjects = Math.max(0, projectTotal - projectTasks.length);
+  const openPager = { ...openMore.pager, shown: tasks.length, total: taskTotal };
+  const projectPager = { ...projectMore.pager, shown: projectTasks.length, total: projectTotal };
+
+  const feed = splitFeed(tasks, notifications, projectTasks);
+  const count = attentionCount(tasks, notifications, projectTasks) + unloadedTasks + unloadedProjects;
   const feedTab: FeedTab = tab === "work" ? "work" : "admin";
 
   const initialStatus =
     (searchParams.get("status") as "open" | "cleared" | "all") || "all";
 
   const tabs: { key: PageTab; label: string; count?: number }[] = [
-    { key: "work", label: FEED_TAB_LABELS.work, count: feed.work.length },
-    { key: "open", label: FEED_TAB_LABELS.admin, count: feed.admin.length },
+    { key: "work", label: FEED_TAB_LABELS.work, count: feed.work.length + unloadedProjects },
+    { key: "open", label: FEED_TAB_LABELS.admin, count: feed.admin.length + unloadedTasks },
     { key: "history", label: "History" },
   ];
 
@@ -388,7 +443,10 @@ export default function NotificationsRoute() {
       </div>
 
       {data.singleFeed ? (
-        <TaskFeed grid cards={mergedFeed(feed)} />
+        <>
+          <TaskFeed grid cards={mergedFeed(feed)} pager={openPager} onCleared={onCleared} />
+          <LoadMore {...projectPager} />
+        </>
       ) : tab === "history" && data.history ? (
         <HistoryTab initial={data.history} initialStatus={initialStatus} />
       ) : (
@@ -396,6 +454,8 @@ export default function NotificationsRoute() {
           grid
           cards={feed[feedTab]}
           tab={feedTab}
+          pager={feedTab === "work" ? projectPager : openPager}
+          onCleared={onCleared}
         />
       )}
     </div>
