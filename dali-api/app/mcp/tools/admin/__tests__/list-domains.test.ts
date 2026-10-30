@@ -9,10 +9,11 @@ vi.mock("~/lib/roles", () => ({
   isCore: vi.fn(),
   isDomainLead: vi.fn(),
   isAdmin: vi.fn(),
+  currentTerm: vi.fn(),
 }));
 
 import { prisma } from "~/lib/db";
-import { isCore, isDomainLead, isAdmin } from "~/lib/roles";
+import { isCore, isDomainLead, isAdmin, currentTerm } from "~/lib/roles";
 import { runListDomains, LIST_DOMAINS_TOOL } from "~/mcp/tools/admin/list-domains";
 
 const mockPrisma = prisma as unknown as {
@@ -21,6 +22,7 @@ const mockPrisma = prisma as unknown as {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(currentTerm).mockResolvedValue({ id: "t-now" } as never);
 });
 
 const DOMAIN = {
@@ -100,5 +102,50 @@ describe("list_domains", () => {
     const out = await runListDomains("u-core");
     expect(out.domains[0].domainLeadAssignments).toHaveLength(1);
     expect(out.domains[0]._count.cycleReviewers).toBe(3);
+  });
+
+  describe("lead assignments", () => {
+    beforeEach(() => {
+      vi.mocked(isCore).mockResolvedValue(true);
+      vi.mocked(isDomainLead).mockResolvedValue(false);
+      vi.mocked(isAdmin).mockResolvedValue(false);
+      mockPrisma.domain.findMany.mockResolvedValue([DOMAIN]);
+    });
+
+    const assignmentArgs = () =>
+      mockPrisma.domain.findMany.mock.calls[0][0].include.domainLeadAssignments;
+
+    it("defaults to the current term", async () => {
+      const out = await runListDomains("u-core");
+      expect(assignmentArgs().where).toEqual({ termId: "t-now" });
+      expect(out.termId).toBe("t-now");
+    });
+
+    it("uses termId when given and skips the current-term lookup", async () => {
+      const out = await runListDomains("u-core", { termId: "t-old" });
+      expect(assignmentArgs().where).toEqual({ termId: "t-old" });
+      expect(out.termId).toBe("t-old");
+      expect(currentTerm).not.toHaveBeenCalled();
+    });
+
+    it("returns every term with allTerms", async () => {
+      const out = await runListDomains("u-core", { allTerms: true });
+      expect(assignmentArgs().where).toBeUndefined();
+      expect(out.termId).toBeNull();
+    });
+
+    it("lets termId win over allTerms", async () => {
+      await runListDomains("u-core", { termId: "t-old", allTerms: true });
+      expect(assignmentArgs().where).toEqual({ termId: "t-old" });
+    });
+
+    it("selects a narrow user, never the whole row", async () => {
+      await runListDomains("u-core");
+      const select = assignmentArgs().select;
+      expect(select.user).toEqual({
+        select: { id: true, firstName: true, lastName: true, daliEmail: true },
+      });
+      expect(assignmentArgs().include).toBeUndefined();
+    });
   });
 });

@@ -10,7 +10,7 @@ import { McpForbiddenError, McpNotFoundError } from "../../registry";
 export const GET_PARTNER_ORG_TOOL = {
   name: "get_partner_org",
   description:
-    "Get the account-360 view of a partner organization: status (Active/Past/Prospect/Dormant), type, tags, members/contacts, project links, applications with stage, pending invites, and recent activity. Requires staffing-view access.",
+    "Get the account-360 view of a partner organization: status (Active/Past/Prospect/Dormant), type, tags, members/contacts, project links, applications with stage, pending invites, and the 20 most recent activity rows with recentActivityTotal (read older ones with list_partner_activity). Requires staffing-view access.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -77,6 +77,7 @@ export async function runGetPartnerOrg(
         take: 20,
         select: { id: true, createdAt: true, type: true, body: true, metadata: true },
       },
+      _count: { select: { activities: true } },
     },
   });
 
@@ -141,6 +142,7 @@ export async function runGetPartnerOrg(
       displayRole: i.displayRole,
       expiresAt: i.expiresAt,
     })),
+    recentActivityTotal: org._count.activities,
     recentActivity: org.activities.map((a) => ({
       id: a.id,
       createdAt: a.createdAt,

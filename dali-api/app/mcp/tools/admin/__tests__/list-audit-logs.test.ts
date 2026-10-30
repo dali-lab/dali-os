@@ -79,20 +79,18 @@ describe("list_audit_logs", () => {
     expect(mockPrisma.auditLog.findMany).not.toHaveBeenCalled();
   });
 
-  it("returns entries, total, limit, and offset on happy path", async () => {
+  it("returns entries and a page with the filtered total on the happy path", async () => {
     const out = await runListAuditLogs(makeCtx(), {});
-    expect(out.total).toBe(1);
-    expect(out.limit).toBe(50);
-    expect(out.offset).toBe(0);
+    expect(out.page).toEqual({ nextCursor: null, hasMore: false, limit: 50, total: 1 });
     expect(out.entries).toHaveLength(1);
     expect(out.entries[0].id).toBe("al-1");
   });
 
-  it("clamps limit to 1–200 and floors offset at 0", async () => {
-    await runListAuditLogs(makeCtx(), { limit: 999, offset: -5 });
+  it("clamps limit to 200 and fetches one extra row to detect more", async () => {
+    await runListAuditLogs(makeCtx(), { limit: 999 });
     const [call] = mockPrisma.auditLog.findMany.mock.calls;
-    expect(call[0].take).toBe(200);
-    expect(call[0].skip).toBe(0);
+    expect(call[0].take).toBe(201);
+    expect(call[0].skip).toBeUndefined();
   });
 
   it("passes filter args through parseAuditFilters", async () => {
@@ -109,31 +107,60 @@ describe("list_audit_logs", () => {
     expect(mockPrisma.auditLog.findMany).toHaveBeenCalled();
   });
 
-  it("paginates correctly when offset and limit are provided", async () => {
-    mockPrisma.auditLog.findMany.mockResolvedValue([]);
-    mockPrisma.auditLog.count.mockResolvedValue(100);
+  it("walks pages with the cursor and ends with a null cursor", async () => {
+    const a = { ...ENTRY, id: "al-3", createdAt: new Date("2026-08-03T00:00:00Z") };
+    const b = { ...ENTRY, id: "al-2", createdAt: new Date("2026-08-02T00:00:00Z") };
+    const c = { ...ENTRY, id: "al-1", createdAt: new Date("2026-08-02T00:00:00Z") };
+    mockPrisma.auditLog.count.mockResolvedValue(3);
+    mockPrisma.auditLog.findMany.mockResolvedValueOnce([a, b, c]);
 
-    const out = await runListAuditLogs(makeCtx(), { limit: 10, offset: 20 });
-    expect(out.limit).toBe(10);
-    expect(out.offset).toBe(20);
-    const [call] = mockPrisma.auditLog.findMany.mock.calls;
-    expect(call[0].take).toBe(10);
-    expect(call[0].skip).toBe(20);
+    const first = await runListAuditLogs(makeCtx(), { limit: 2 });
+    expect(first.entries.map((e) => e.id)).toEqual(["al-3", "al-2"]);
+    expect(first.page).toMatchObject({ hasMore: true, limit: 2, total: 3 });
+
+    mockPrisma.auditLog.findMany.mockResolvedValueOnce([c]);
+    const second = await runListAuditLogs(makeCtx(), { limit: 2, cursor: first.page.nextCursor! });
+    expect(second.entries.map((e) => e.id)).toEqual(["al-1"]);
+    expect(second.page.nextCursor).toBeNull();
+    expect(second.page.hasMore).toBe(false);
+
+    const where = mockPrisma.auditLog.findMany.mock.calls[1][0].where;
+    expect(where.AND[1]).toEqual({
+      OR: [
+        { createdAt: { lt: new Date("2026-08-02T00:00:00Z") } },
+        { createdAt: new Date("2026-08-02T00:00:00Z"), id: { lt: "al-2" } },
+      ],
+    });
   });
 
-  it("orders results by createdAt descending", async () => {
+  it("keeps the total on the filters alone, not the cursor", async () => {
+    await runListAuditLogs(makeCtx(), { action: "user.login" });
+    expect(mockPrisma.auditLog.count.mock.calls[0][0].where.AND).toBeUndefined();
+  });
+
+  it("rejects a malformed cursor", async () => {
+    await expect(runListAuditLogs(makeCtx(), { cursor: "garbage" })).rejects.toMatchObject({
+      name: "McpInvalidError",
+    });
+  });
+
+  it("orders by createdAt then id, both descending", async () => {
     await runListAuditLogs(makeCtx(), {});
     const [call] = mockPrisma.auditLog.findMany.mock.calls;
-    expect(call[0].orderBy).toEqual({ createdAt: "desc" });
+    expect(call[0].orderBy).toEqual([{ createdAt: "desc" }, { id: "desc" }]);
+  });
+
+  it("does not accept offset in the schema", () => {
+    expect(LIST_AUDIT_LOGS_TOOL.inputSchema.properties).not.toHaveProperty("offset");
   });
 
   it("filters by area and does not hide mcp reads by default", async () => {
     await runListAuditLogs(makeCtx(), { area: "staffing" });
-    const where = mockPrisma.auditLog.findMany.mock.calls[0][0].where;
+    const where = mockPrisma.auditLog.findMany.mock.calls[0][0].where.AND[0];
     expect(where.action.in).toContain("staffing.assign");
 
     mockPrisma.auditLog.findMany.mockClear();
     await runListAuditLogs(makeCtx(), {});
-    expect(mockPrisma.auditLog.findMany.mock.calls[0][0].where.action).toBeUndefined();
+    expect(mockPrisma.auditLog.findMany.mock.calls[0][0].where.AND[0].action).toBeUndefined();
   });
 });

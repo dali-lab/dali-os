@@ -94,6 +94,7 @@ describe("get_partner_org", () => {
           { id: "app-1", title: "Kiosk pitch", stage: "Accepted", createdAt: new Date(), nextStep: null },
         ],
         activities: [{ id: "a1", createdAt: new Date(), type: "Note", body: "hi", metadata: null }],
+        _count: { activities: 45 },
       }),
     };
 
@@ -107,5 +108,6 @@ describe("get_partner_org", () => {
     expect(out.applications).toMatchObject([{ id: "app-1", stage: "Accepted" }]);
     expect(out.projects).toMatchObject([{ projectName: "Kiosk", active: true }]);
     expect(out.recentActivity).toMatchObject([{ id: "a1", type: "Note" }]);
+    expect(out.recentActivityTotal).toBe(45);
   });
 });

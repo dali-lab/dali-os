@@ -88,6 +88,39 @@ describe("manage_activity", () => {
   });
 
   describe("action: list", () => {
+    const row = (id: string, day: number) => ({
+      ...ACTIVITY_ROW,
+      id,
+      startsAt: new Date(`2026-09-${String(day).padStart(2, "0")}T00:00:00Z`),
+    });
+
+    it("walks pages newest first with the cursor and ends with a null cursor", async () => {
+      vi.mocked(listActivitiesForAdmin).mockResolvedValue([row("a-1", 1), row("a-3", 3), row("a-2", 2)]);
+      const first = (await runManageActivity(makeCtx(), { action: "list", limit: 2 })) as {
+        activities: { id: string }[];
+        page: { nextCursor: string | null; hasMore: boolean; total: number };
+      };
+      expect(first.activities.map((a) => a.id)).toEqual(["a-3", "a-2"]);
+      expect(first.page).toMatchObject({ hasMore: true, limit: 2, total: 3 });
+
+      const second = (await runManageActivity(makeCtx(), {
+        action: "list",
+        limit: 2,
+        cursor: first.page.nextCursor!,
+      })) as typeof first;
+      expect(second.activities.map((a) => a.id)).toEqual(["a-1"]);
+      expect(second.page.nextCursor).toBeNull();
+      expect(second.page.hasMore).toBe(false);
+    });
+
+    it("breaks start-time ties on id", async () => {
+      vi.mocked(listActivitiesForAdmin).mockResolvedValue([row("b", 1), row("a", 1)]);
+      const out = (await runManageActivity(makeCtx(), { action: "list" })) as {
+        activities: { id: string }[];
+      };
+      expect(out.activities.map((a) => a.id)).toEqual(["a", "b"]);
+    });
+
     it("returns activities with ISO timestamps", async () => {
       const out = (await runManageActivity(makeCtx(), { action: "list" })) as {
         activities: any[];
