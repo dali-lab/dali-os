@@ -209,7 +209,7 @@ export function partnerActivityUrl(scope: PartnerActivityScope, cursor: string):
 
 export function PartnerActivityFeed({
   activities: firstPage,
-  nextCursor,
+  nextCursor = null,
   scope,
   actorNames: firstNames,
   canEdit,
@@ -217,8 +217,8 @@ export function PartnerActivityFeed({
   flat = false,
 }: {
   activities: PartnerActivity[];
-  nextCursor: string | null;
-  scope: PartnerActivityScope;
+  nextCursor?: string | null;
+  scope?: PartnerActivityScope;
   actorNames: Record<string, string>;
   canEdit: boolean;
   /** Extra affordances for the pinned header (e.g. a "Log meeting" button). */
@@ -238,7 +238,7 @@ export function PartnerActivityFeed({
     idOf: (a) => a.id,
     resetKey: JSON.stringify(scope),
     fetchPage: async (cursor) => {
-      const page = await fetchCursorPage<PartnerActivity>(partnerActivityUrl(scope, cursor));
+      const page = await fetchCursorPage<PartnerActivity>(partnerActivityUrl(scope!, cursor));
       const names = (page as CursorPage<PartnerActivity> & { actorNames?: Record<string, string> }).actorNames;
       if (names) setOlderNames((prev) => ({ ...prev, ...names }));
       return page;
