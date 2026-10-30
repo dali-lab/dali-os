@@ -40,7 +40,7 @@ vi.mock("~/mcp/tools/calendar-extra/enhance-meeting-notes", () => ({
 import { prisma } from "~/lib/db";
 import { McpError } from "~/mcp/errors";
 import { PageNameConflictError } from "~/lib/page-names.server";
-import { loader as listLoader, action as quickNote } from "../api.mobile.notes";
+import { loader as listLoader, action as quickNote, parseNotesCursor, MAX_NOTES } from "../api.mobile.notes";
 import { loader as detailLoader, action as detailAction } from "../api.mobile.notes.$id";
 
 const mockPrisma = prisma as unknown as Record<string, Record<string, ReturnType<typeof vi.fn>>>;
@@ -120,8 +120,13 @@ describe("GET /api/mobile/notes", () => {
       select: { id: true, title: true },
     });
     expect(mockPrisma.meetingRecording.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { userId: "u1" }, take: 30 }),
+      expect.objectContaining({
+        where: { userId: "u1" },
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        take: 31,
+      }),
     );
+    expect(body.nextCursor).toBeNull();
   });
 
   it("lists the member's typed notes after their recordings, once each", async () => {
@@ -163,6 +168,81 @@ describe("GET /api/mobile/notes", () => {
     mockPrisma.meetingRecording.findMany.mockResolvedValue([]);
     const res = (await listLoader({ request: new Request("https://os.example/api/mobile/notes") } as never)) as Response;
     expect((await res.json()).recordingEnabled).toBe(false);
+  });
+});
+
+describe("GET /api/mobile/notes paging", () => {
+  const list = async (query = "") =>
+    (await listLoader({ request: new Request(`https://os.example/api/mobile/notes${query}`) } as never)) as Response;
+  const recordings = (n: number) =>
+    Array.from({ length: n }, (_, i) =>
+      recording({ id: `r${i + 1}`, documentName: "project:p1:readme", createdAt: new Date(Date.UTC(2026, 9, 20, 18) - i * 1000) }),
+    );
+  const typedNotes = (n: number) =>
+    Array.from({ length: n }, (_, i) => ({
+      id: `pg${i + 1}`,
+      title: `Note ${i + 1}`,
+      updatedAt: new Date(Date.UTC(2026, 9, 20, 18) - i * 1000),
+      parent: null,
+    }));
+  const typedCall = () =>
+    mockPrisma.page.findMany.mock.calls.map((c) => c[0]).find((a: { where: { createdById?: string } }) => a.where.createdById);
+
+  it("parses a two-part cursor and reads a bad one as the first page", () => {
+    expect(parseNotesCursor(null)).toEqual({ recordings: null, pages: null });
+    expect(parseNotesCursor("garbage")).toEqual({ recordings: "garbage", pages: null });
+    expect(parseNotesCursor("2026-10-20T18:00:00.000Z|r1~done")).toEqual({
+      recordings: "2026-10-20T18:00:00.000Z|r1",
+      pages: "done",
+    });
+    expect(parseNotesCursor("start~start")).toEqual({ recordings: null, pages: null });
+  });
+
+  it("keeps the first page the same size and drops the lookahead row", async () => {
+    mockPrisma.meetingRecording.findMany.mockResolvedValue(recordings(MAX_NOTES + 1));
+    mockPrisma.page.findMany.mockImplementation(async (args: { where: { createdById?: string } }) =>
+      args.where.createdById ? typedNotes(3) : [],
+    );
+    const body = await (await list()).json();
+    expect(body.notes).toHaveLength(MAX_NOTES);
+    expect(body.pages).toHaveLength(3);
+    expect(body.recordingEnabled).toBe(true);
+  });
+
+  it("carries each source's position and marks an exhausted source done", async () => {
+    mockPrisma.meetingRecording.findMany.mockResolvedValue(recordings(MAX_NOTES + 1));
+    mockPrisma.page.findMany.mockImplementation(async (args: { where: { createdById?: string } }) =>
+      args.where.createdById ? typedNotes(2) : [],
+    );
+    const last = recordings(MAX_NOTES)[MAX_NOTES - 1];
+    expect((await (await list()).json()).nextCursor).toBe(`${last.createdAt.toISOString()}|${last.id}~done`);
+  });
+
+  it("has no cursor when both sources are exhausted", async () => {
+    mockPrisma.meetingRecording.findMany.mockResolvedValue(recordings(2));
+    expect((await (await list()).json()).nextCursor).toBeNull();
+  });
+
+  it("continues each source strictly after its own position", async () => {
+    mockPrisma.meetingRecording.findMany.mockResolvedValue([]);
+    const rAt = new Date("2026-10-20T18:00:00.000Z");
+    const pAt = new Date("2026-10-19T09:00:00.000Z");
+    await list(`?cursor=${encodeURIComponent("2026-10-20T18:00:00.000Z|r9~2026-10-19T09:00:00.000Z|pg4")}`);
+    expect(mockPrisma.meetingRecording.findMany.mock.calls[0][0].where).toEqual({
+      userId: "u1",
+      AND: [{ OR: [{ createdAt: { lt: rAt } }, { createdAt: rAt, id: { lt: "r9" } }] }],
+    });
+    expect(typedCall().where.AND).toEqual([{ OR: [{ updatedAt: { lt: pAt } }, { updatedAt: pAt, id: { lt: "pg4" } }] }]);
+    expect(typedCall().orderBy).toEqual([{ updatedAt: "desc" }, { id: "desc" }]);
+  });
+
+  it("does not query a source that is done", async () => {
+    mockPrisma.meetingRecording.findMany.mockResolvedValue([]);
+    mockPrisma.page.findMany.mockResolvedValue([]);
+    const body = await (await list(`?cursor=${encodeURIComponent("2026-10-20T18:00:00.000Z|r9~done")}`)).json();
+    expect(typedCall()).toBeUndefined();
+    expect(body.pages).toEqual([]);
+    expect(body.nextCursor).toBeNull();
   });
 });
 

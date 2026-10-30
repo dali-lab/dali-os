@@ -10,9 +10,30 @@ import { createNote } from "~/members/lib/personal-notes-actions.server";
 import { PageNameConflictError } from "~/lib/page-names.server";
 import { attachMeetingNote } from "~/lib/scheduled-meeting";
 import { actionItemsOf, notePageId } from "~/lib/mobile-notes";
+import { decodeCursor, encodeCursor, keysetAfter, keysetPage } from "~/lib/pagination";
 import { mobileError, mobileJson, requireMobileUser } from "~/lib/mobile-auth.server";
 
-const MAX_NOTES = 30;
+export const MAX_NOTES = 30;
+
+const DONE = "done";
+
+// Recordings and typed notes are two lists, so one cursor string carries a
+// position for each: "<recordings>~<pages>", each "start", "done" or "<at>|<id>".
+export function parseNotesCursor(raw: string | null): { recordings: string | null; pages: string | null } {
+  const [recordings = "start", pages = "start"] = (raw ?? "").split("~");
+  const part = (v: string) => (v === "start" || v === "" ? null : v);
+  return { recordings: part(recordings), pages: part(pages) };
+}
+
+function formatNotesCursor(recordings: string | null, pages: string | null): string | null {
+  if (recordings === null && pages === null) return null;
+  return `${recordings ?? DONE}~${pages ?? DONE}`;
+}
+
+function after(field: "createdAt" | "updatedAt", position: string | null) {
+  const keyset = keysetAfter(field, decodeCursor(position));
+  return "OR" in keyset ? { AND: [keyset] } : {};
+}
 
 const NewNoteSchema = z.union([
   z.object({ title: z.string().trim().min(1).max(200) }),
@@ -29,38 +50,50 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (!guard.ok) return guard.response;
   const { userId } = guard;
 
-  const [recordingEnabled, rows, typed] = await Promise.all([
+  const cursors = parseNotesCursor(new URL(request.url).searchParams.get("cursor"));
+
+  const [recordingEnabled, recordingRows, typedRows] = await Promise.all([
     canRecord(userId, request),
-    prisma.meetingRecording.findMany({
-      where: { userId },
-      orderBy: { createdAt: "desc" },
-      take: MAX_NOTES,
-      select: {
-        id: true,
-        documentName: true,
-        status: true,
-        createdAt: true,
-        recordedSeconds: true,
-        scheduledMeetingId: true,
-        occurrenceStart: true,
-        enhancedAt: true,
-        notes: true,
-        scheduledMeeting: { select: { title: true } },
-      },
-    }),
+    cursors.recordings === DONE
+      ? []
+      : prisma.meetingRecording.findMany({
+        where: { userId, ...after("createdAt", cursors.recordings) },
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        take: MAX_NOTES + 1,
+        select: {
+          id: true,
+          documentName: true,
+          status: true,
+          createdAt: true,
+          recordedSeconds: true,
+          scheduledMeetingId: true,
+          occurrenceStart: true,
+          enhancedAt: true,
+          notes: true,
+          scheduledMeeting: { select: { title: true } },
+        },
+      }),
     // Typed notes: pages the member started in their own space or in a notebook.
-    prisma.page.findMany({
-      where: {
-        createdById: userId,
-        kind: "FreeForm",
-        archivedAt: null,
-        OR: [{ workspaceType: "Member", workspaceId: userId }, { parent: { kind: "Notebook" } }],
-      },
-      orderBy: { updatedAt: "desc" },
-      take: MAX_NOTES,
-      select: { id: true, title: true, updatedAt: true, parent: { select: { kind: true, title: true } } },
-    }),
+    cursors.pages === DONE
+      ? []
+      : prisma.page.findMany({
+        where: {
+          createdById: userId,
+          kind: "FreeForm",
+          archivedAt: null,
+          OR: [{ workspaceType: "Member", workspaceId: userId }, { parent: { kind: "Notebook" } }],
+          ...after("updatedAt", cursors.pages),
+        },
+        orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
+        take: MAX_NOTES + 1,
+        select: { id: true, title: true, updatedAt: true, parent: { select: { kind: true, title: true } } },
+      }),
   ]);
+
+  const recordingPage = keysetPage(recordingRows, MAX_NOTES, (r) => ({ at: r.createdAt.toISOString(), id: r.id }));
+  const typedPage = keysetPage(typedRows, MAX_NOTES, (p) => ({ at: p.updatedAt.toISOString(), id: p.id }));
+  const rows = recordingPage.items;
+  const typed = typedPage.items;
 
   const pageIds = [...new Set(rows.map((r) => notePageId(r.documentName)).filter((id): id is string => Boolean(id)))];
   const pages = pageIds.length
@@ -95,6 +128,7 @@ export async function loader({ request }: Route.LoaderArgs) {
         updatedAt: p.updatedAt.toISOString(),
         notebook: p.parent?.kind === "Notebook" ? p.parent.title : null,
       })),
+    nextCursor: formatNotesCursor(recordingPage.nextCursor, typedPage.nextCursor),
   });
 }
 
