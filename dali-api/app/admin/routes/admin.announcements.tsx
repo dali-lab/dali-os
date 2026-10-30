@@ -115,8 +115,6 @@ export async function loader({ request }: Route.LoaderArgs) {
 
 type AudienceRow = { allMembers: boolean; groupIds: string[]; userIds: string[] };
 
-export { audienceLabel };
-
 /** Who a scheduled send would reach if it went out now. Groups can change before it fires. */
 export function estimateRecipients(
   r: AudienceRow,
