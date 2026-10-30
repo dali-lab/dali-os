@@ -2,7 +2,9 @@ import { prisma } from "~/lib/db";
 import type { Prisma } from "~/generated/prisma/client";
 import { requireResourcesViewer } from "~/lib/resources.server";
 import { isAdmin } from "~/lib/roles";
-import { fullName } from "~/lib/display";
+import { formatDateShort, fullName } from "~/lib/display";
+import { blogListing } from "~/lib/blog-preview";
+import { decodeCursor, keysetAfter, keysetPage } from "~/lib/pagination";
 import { notify } from "~/lib/notify.server";
 import { adminRecipientIds } from "~/lib/promotion-notify.server";
 
@@ -43,6 +45,85 @@ export const BLOG_LISTING_ORDER: Prisma.BlogPostOrderByWithRelationInput[] = [
   { publishedAt: "desc" },
   { updatedAt: "desc" },
 ];
+
+export const BLOG_FEED_PAGE_SIZE = 24;
+
+const BLOG_LISTING_SELECT = {
+  id: true,
+  title: true,
+  excerpt: true,
+  summary: true,
+  coverImageUrl: true,
+  customCoverUrl: true,
+  visibility: true,
+  publishedAt: true,
+  submittedAt: true,
+  frontPageRank: true,
+  authorId: true,
+  author: { select: { firstName: true, lastName: true } },
+} satisfies Prisma.BlogPostSelect;
+
+type BlogListingRow = Prisma.BlogPostGetPayload<{ select: typeof BLOG_LISTING_SELECT }>;
+
+export function toListedBlogPost(r: BlogListingRow, viewerId: string) {
+  return {
+    id: r.id,
+    title: r.title,
+    ...blogListing(r),
+    isPublic: r.visibility === "Public",
+    status: blogStatus(r),
+    mine: r.authorId === viewerId,
+    pinned: r.frontPageRank !== null,
+    date: r.publishedAt ? formatDateShort(r.publishedAt) : null,
+    author: fullName(r.author),
+  };
+}
+
+export type ListedBlogPost = ReturnType<typeof toListedBlogPost>;
+
+// Pinned posts lead in Core's order and are always all loaded. The rest of the
+// published posts are keyset-paged on (publishedAt, id): publishedAt is non-null
+// for every row here and, unlike updatedAt, a pin or an edit never moves a post.
+export async function loadBlogFeedPage(viewerId: string, cursor: string | null) {
+  const rows = await prisma.blogPost.findMany({
+    where: {
+      publishedAt: { not: null },
+      frontPageRank: null,
+      ...keysetAfter("publishedAt", decodeCursor(cursor)),
+    },
+    orderBy: [{ publishedAt: "desc" }, { id: "desc" }],
+    take: BLOG_FEED_PAGE_SIZE + 1,
+    select: BLOG_LISTING_SELECT,
+  });
+  const page = keysetPage(rows, BLOG_FEED_PAGE_SIZE, (r) => ({
+    at: r.publishedAt!.toISOString(),
+    id: r.id,
+  }));
+  return { items: page.items.map((r) => toListedBlogPost(r, viewerId)), nextCursor: page.nextCursor };
+}
+
+export async function loadBlogFrontPage(viewerId: string, canApprove: boolean) {
+  const [pinned, unpublished, feed] = await Promise.all([
+    prisma.blogPost.findMany({
+      where: { publishedAt: { not: null }, frontPageRank: { not: null } },
+      orderBy: BLOG_LISTING_ORDER,
+      select: BLOG_LISTING_SELECT,
+    }),
+    prisma.blogPost.findMany({
+      where: { publishedAt: null, ...listedBlogPostsWhere(viewerId, canApprove) },
+      orderBy: BLOG_LISTING_ORDER,
+      select: BLOG_LISTING_SELECT,
+    }),
+    loadBlogFeedPage(viewerId, null),
+  ]);
+  const unpublishedPosts = unpublished.map((r) => toListedBlogPost(r, viewerId));
+  return {
+    published: [...pinned.map((r) => toListedBlogPost(r, viewerId)), ...feed.items],
+    nextCursor: feed.nextCursor,
+    toReview: unpublishedPosts.filter((p) => p.status === "review" && !p.mine),
+    drafts: unpublishedPosts.filter((p) => p.mine),
+  };
+}
 
 export type BlogStatus = "published" | "review" | "draft";
 
