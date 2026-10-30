@@ -3,16 +3,17 @@
 // Requires `mcp:read` scope.
 
 import { prisma } from "~/lib/db";
-import { searchCalendarEvents } from "~/lib/google-calendar";
+import { searchCalendarEvents, type EventReadReport } from "~/lib/google-calendar";
 import { searchWindow, sortHits } from "~/calendar/lib/search";
 import { McpInvalidError } from "../../registry";
+import { keysetPage, keysetWindow, pageProps, type PageArgs, type PageInfo } from "../../pagination";
 
-const LOCAL_TAKE = 20;
+const PAGE_LIMITS = { defaultLimit: 20, maxLimit: 100 };
 
 export const SEARCH_CALENDAR_DEF = {
   name: "search_calendar",
   description:
-    "Search calendar events by text query. Returns matching DALI meetings the caller is invited to, plus Google Calendar events if the caller has a linked calendar. Set scope='all' to search a wide two-year window (default: near the provided date range).",
+    "Search calendar events by text query. Returns matching DALI meetings the caller is invited to, plus Google Calendar events if the caller has a linked calendar. Set scope='all' to search a wide two-year window (default: near the provided date range). Paging walks the DALI meeting matches (local); pass page.nextCursor for the next page. Google events are returned in full on the first page only and come back empty on later pages. googleTruncated is true when a Google calendar had more matches than one call reads.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -26,6 +27,7 @@ export const SEARCH_CALENDAR_DEF = {
         enum: ["near", "all"],
         description: "'near' pads the provided range by 2 weeks (default); 'all' searches a two-year window.",
       },
+      ...pageProps(PAGE_LIMITS),
       rangeStart: {
         type: "string",
         format: "date-time",
@@ -43,7 +45,7 @@ export const SEARCH_CALENDAR_DEF = {
   requiredScope: "mcp:read" as const,
 };
 
-type Input = {
+type Input = PageArgs & {
   q: string;
   scope?: "near" | "all";
   rangeStart?: string;
@@ -62,24 +64,36 @@ export async function runSearchCalendar(userId: string, input: Input) {
 
   const like = { contains: input.q, mode: "insensitive" as const };
 
-  const meetingRows = await prisma.notification.findMany({
+  const window = keysetWindow(input, PAGE_LIMITS, [
+    { field: "createdAt", direction: "desc", type: "date" },
+  ]);
+  const fetchedRows = await prisma.notification.findMany({
     where: {
-      recipientUserId: userId,
-      kind: "MeetingInvite",
-      scheduledMeeting: {
-        status: { not: "Cancelled" },
-        selectedAt: { not: null },
-        title: like,
-      },
+      AND: [
+        {
+          recipientUserId: userId,
+          kind: "MeetingInvite",
+          scheduledMeeting: {
+            status: { not: "Cancelled" },
+            selectedAt: { not: null },
+            title: like,
+          },
+        },
+        window.where,
+      ],
     },
-    orderBy: { createdAt: "desc" },
-    take: LOCAL_TAKE,
+    orderBy: window.orderBy,
+    take: window.take,
     select: {
+      id: true,
+      createdAt: true,
       scheduledMeeting: {
         select: { id: true, title: true, selectedAt: true, durationMinutes: true },
       },
     },
   });
+
+  const { rows: meetingRows, page } = keysetPage(fetchedRows, window);
 
   const seenMeeting = new Set<string>();
   const localHits: {
@@ -115,24 +129,27 @@ export async function runSearchCalendar(userId: string, input: Input) {
 
   let google: ReturnType<typeof sortHits> = [];
   let googleError: string | null = null;
+  const googleReport: EventReadReport = { truncated: false };
 
-  try {
-    const { start, end } = searchWindow(scope, rangeStartIso, rangeEndIso, nowIso);
-    const events = await searchCalendarEvents(userId, input.q, start, end);
-    const googleHits = events.map((e) => ({
-      id: `google:${e.calendarId}:${e.eventId}:${e.startIso}`,
-      source: "google" as const,
-      title: e.title,
-      startIso: e.startIso,
-      endIso: e.endIso,
-      allDay: e.allDay,
-      location: e.location ?? null,
-      recurring: e.recurringEventId != null,
-    }));
-    google = sortHits(googleHits, nowIso);
-  } catch (err) {
-    googleError = err instanceof Error ? err.message : "Google search failed";
+  if (!input.cursor) {
+    try {
+      const { start, end } = searchWindow(scope, rangeStartIso, rangeEndIso, nowIso);
+      const events = await searchCalendarEvents(userId, input.q, start, end, googleReport);
+      const googleHits = events.map((e) => ({
+        id: `google:${e.calendarId}:${e.eventId}:${e.startIso}`,
+        source: "google" as const,
+        title: e.title,
+        startIso: e.startIso,
+        endIso: e.endIso,
+        allDay: e.allDay,
+        location: e.location ?? null,
+        recurring: e.recurringEventId != null,
+      }));
+      google = sortHits(googleHits, nowIso);
+    } catch (err) {
+      googleError = err instanceof Error ? err.message : "Google search failed";
+    }
   }
 
-  return { local, google, googleError, scope };
+  return { local, google, googleError, googleTruncated: googleReport.truncated, scope, page };
 }

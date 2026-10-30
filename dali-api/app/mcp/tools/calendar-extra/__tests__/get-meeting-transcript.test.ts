@@ -120,7 +120,7 @@ describe("get_meeting_transcript", () => {
       { at: 5, end: 10, speaker: "call", text: "hey" },
       { at: 10, end: 15, speaker: "mic:2", text: "go ahead" },
     ]);
-    expect(out.nextCursor).toBeNull();
+    expect(out.page).toEqual({ nextCursor: null, hasMore: false, limit: 2000, total: 3 });
   });
 
   it("pages lines at 2000 per call", async () => {
@@ -135,12 +135,33 @@ describe("get_meeting_transcript", () => {
     const page1 = await runGetMeetingTranscript("u-owner", { recordingId: "rec1" });
     expect(page1.lines).toHaveLength(2000);
     expect(page1.lines[0].at).toBe(0);
-    expect(page1.nextCursor).toBe(2000);
+    expect(page1.page).toMatchObject({ hasMore: true, limit: 2000, total: 2500 });
 
-    const page2 = await runGetMeetingTranscript("u-owner", { recordingId: "rec1", cursor: 2000 });
+    const page2 = await runGetMeetingTranscript("u-owner", { recordingId: "rec1", cursor: page1.page.nextCursor! });
     expect(page2.lines).toHaveLength(500);
     expect(page2.lines[0].at).toBe(2000);
-    expect(page2.nextCursor).toBeNull();
+    expect(page2.page).toMatchObject({ nextCursor: null, hasMore: false });
+  });
+
+  it("honors a smaller limit and walks the whole transcript", async () => {
+    const lines = Array.from({ length: 5 }, (_, i) => ({ at: i, end: i + 1, text: `line ${i}`, channel: "mic" as const }));
+    mockPrisma.meetingRecording.findUnique.mockResolvedValue(recording({ lines }));
+
+    const seen: number[] = [];
+    let cursor: string | undefined;
+    do {
+      const out = await runGetMeetingTranscript("u-owner", { recordingId: "rec1", limit: 2, cursor });
+      seen.push(...out.lines.map((l) => l.at));
+      cursor = out.page.nextCursor ?? undefined;
+    } while (cursor);
+    expect(seen).toEqual([0, 1, 2, 3, 4]);
+  });
+
+  it("rejects a malformed cursor", async () => {
+    mockPrisma.meetingRecording.findUnique.mockResolvedValue(recording({ lines: [] }));
+    await expect(runGetMeetingTranscript("u-owner", { recordingId: "rec1", cursor: "nope" })).rejects.toMatchObject({
+      name: "McpInvalidError",
+    });
   });
 
   it("filters lines by from/to seconds", async () => {

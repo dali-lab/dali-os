@@ -32,6 +32,9 @@ export type UpcomingMeeting = {
  * [now, windowEnd]: ScheduledMeeting occurrences (organizer or participant)
  * and assigned Interviews, sorted by start.
  */
+const MAX_MEETING_MINUTES = 480;
+const MEETING_ROW_CAP = 200;
+
 export async function listUpcomingMeetings(
   userId: string,
   now: Date,
@@ -41,13 +44,24 @@ export async function listUpcomingMeetings(
   const meetings = await prisma.scheduledMeeting.findMany({
     where: {
       status: { not: "Cancelled" },
-      OR: [
-        { organizerId: userId },
-        { participantUserIds: { has: userId } },
+      AND: [
+        { OR: [{ organizerId: userId }, { participantUserIds: { has: userId } }] },
+        {
+          OR: [
+            { recurrenceRule: { not: null } },
+            {
+              selectedAt: {
+                gte: new Date(now.getTime() - MAX_MEETING_MINUTES * 60_000),
+                lt: windowEnd,
+              },
+            },
+          ],
+        },
       ],
     },
     include: { exceptions: true, rooms: { select: { name: true } } },
-    take: 200,
+    orderBy: [{ selectedAt: "asc" }, { id: "asc" }],
+    take: MEETING_ROW_CAP,
   });
 
   const out: UpcomingMeeting[] = [];
@@ -100,7 +114,7 @@ export async function listUpcomingMeetings(
         select: { id: true, cycleInterviewer: { select: { userId: true } } },
       },
     },
-    take: 100,
+    orderBy: [{ startTime: "asc" }, { id: "asc" }],
   });
 
   for (const iv of interviews) {
