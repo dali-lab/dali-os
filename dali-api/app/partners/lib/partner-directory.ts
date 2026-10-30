@@ -5,6 +5,12 @@
 import type { PartnerOrgType } from "~/generated/prisma/enums";
 import type { PartnerRelationshipStatus } from "./partner-org";
 
+// The row's link stretches over it, so the row must contain that overlay. macOS
+// WKWebView (the desktop app) ignores `relative` on a <tr>: without the
+// transform every overlay escapes the row and the last row takes all clicks.
+export const DIRECTORY_ROW_CLASS =
+  "group relative [transform:translate(0)] border-t border-os-container/70 transition-colors hover:bg-os-card-hover";
+
 export type PartnerOrgDirectoryRow = {
   id: string;
   name: string;
