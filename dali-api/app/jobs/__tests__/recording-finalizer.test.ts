@@ -168,6 +168,28 @@ describe("recording-finalizer", () => {
     });
   });
 
+  it("(e) deletes audio a day after a recording finalizes and records when", async () => {
+    mockPrisma.meetingRecording.findMany
+      .mockResolvedValueOnce([]) // abandoned
+      .mockResolvedValueOnce([]) // stuck
+      .mockResolvedValueOnce([]) // unclaimed
+      .mockResolvedValueOnce([]) // stoppedUnfinished
+      .mockResolvedValueOnce([{ id: "r9" }]); // expiredAudio
+
+    const result = await runRecordingFinalizer({ now: NOW, lastSuccessAt: null, settings: {} });
+
+    expect(mockPrisma.meetingRecording.findMany).toHaveBeenNthCalledWith(5, {
+      where: { finalizedAt: { lt: new Date("2026-10-08T12:00:00Z") }, audioDeletedAt: null },
+      take: 50,
+    });
+    expect(deletePrefix).toHaveBeenCalledWith("r9");
+    expect(mockPrisma.meetingRecording.update).toHaveBeenCalledWith({
+      where: { id: "r9" },
+      data: { audioDeletedAt: NOW },
+    });
+    expect(result.items).toBe(1);
+  });
+
   it("is a no-op tick when nothing matches any branch", async () => {
     const result = await runRecordingFinalizer({ now: NOW, lastSuccessAt: null, settings: {} });
     expect(result.items).toBe(0);
