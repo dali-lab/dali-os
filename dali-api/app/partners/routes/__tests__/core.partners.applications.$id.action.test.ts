@@ -213,3 +213,24 @@ describe("details preserve term planning", () => {
     });
   });
 });
+
+describe("summary intent", () => {
+  it("updates only the summary, leaving target terms untouched", async () => {
+    db.partnerApplicationTargetTerm = { deleteMany: vi.fn(), createMany: vi.fn() };
+    await callAction({ intent: "summary", summary: "A fresh synopsis" });
+    expect(db.partnerApplication.update).toHaveBeenCalledWith({
+      where: { id: APP_ID },
+      data: { summary: "A fresh synopsis" },
+    });
+    expect(db.partnerApplicationTargetTerm.deleteMany).not.toHaveBeenCalled();
+    expect(db.partnerApplicationTargetTerm.createMany).not.toHaveBeenCalled();
+  });
+
+  it("clears the summary when the submitted value is blank", async () => {
+    await callAction({ intent: "summary", summary: "   " });
+    expect(db.partnerApplication.update).toHaveBeenCalledWith({
+      where: { id: APP_ID },
+      data: { summary: null },
+    });
+  });
+});

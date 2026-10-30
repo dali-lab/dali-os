@@ -407,9 +407,12 @@ export function PartnerApplicationModal({
                       onChanged={refresh}
                     />
                     <DetailsTab
+                      applicationId={detail.application.id}
                       summary={detail.application.summary}
                       formAnswers={detail.formAnswers}
                       domains={detail.application.domains}
+                      canEdit={canEdit}
+                      onChanged={refresh}
                       viewAllHref={`/core/partners/applications/${detail.application.id}?tab=details`}
                     />
                     </DetailsLayout>
