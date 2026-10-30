@@ -2,7 +2,7 @@
 // assigned to, with epic/project context. By default hides Done and
 // Cancelled. Filter by status or project. Requires the `mcp:read` scope.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { TASK_STATUSES, type TaskStatus } from "~/projects/lib/task-board";
 
 export const LIST_MY_TASKS_TOOL = {

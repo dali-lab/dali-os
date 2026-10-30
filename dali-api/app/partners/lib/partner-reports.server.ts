@@ -3,7 +3,7 @@
 // kept here (not in the route) only because every query needs the same term
 // scoping resolved first.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import type { PartnerStage } from "~/generated/prisma/enums";
 import {
   computeFunnel,

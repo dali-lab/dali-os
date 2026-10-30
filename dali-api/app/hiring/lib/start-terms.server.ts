@@ -2,7 +2,7 @@
 // start-terms.ts operate on, and apply the writes that have to stay floored at
 // the cycle's own term.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import {
   eligibleStartTerms,
   resolveStartTerms,

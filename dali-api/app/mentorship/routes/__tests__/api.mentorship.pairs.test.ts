@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     mentorshipPair: {
       findMany: vi.fn(),
@@ -25,7 +25,7 @@ vi.mock("../lib/visibility", () => ({
   mentorshipPairWhere: vi.fn(),
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { logAuditEvent } from "~/lib/audit";
 import { isCore } from "~/lib/roles";

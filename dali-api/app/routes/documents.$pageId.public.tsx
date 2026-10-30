@@ -1,6 +1,6 @@
 import { useLoaderData } from "react-router";
 import type { Route } from "./+types/documents.$pageId.public";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { cn } from "~/lib/cn";
 import { normalizePageTypography } from "~/lib/page-typography";
 import { DocEditor } from "~/components/doc";

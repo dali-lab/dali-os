@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/outbound.server", () => ({
   enqueueOutbound: vi.fn(),
   drainNow: vi.fn(),
@@ -11,7 +11,7 @@ vi.mock("~/lib/app-env", () => ({
   getFrontendUrl: vi.fn(() => "https://os.dali.dartmouth.edu"),
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { enqueueOutbound } from "~/lib/outbound.server";
 import { slackConfigured } from "~/slack/lib/slack-client";
 import { getAppEnv } from "~/lib/app-env";

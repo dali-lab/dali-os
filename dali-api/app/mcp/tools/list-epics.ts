@@ -1,6 +1,6 @@
 // MCP `list_epics` — epics on a project with their user stories.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 
 const EPIC_STATUSES = ["Backlog", "Open", "InProgress", "Done", "Cancelled"] as const;
 type EpicStatus = (typeof EPIC_STATUSES)[number];

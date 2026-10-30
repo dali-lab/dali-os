@@ -1,7 +1,7 @@
 import { Link, useLoaderData } from "react-router";
 import { ArrowUpRight } from "lucide-react";
 import type { Route } from "./+types/partner.home";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requirePartnerAccount } from "~/partners/lib/partner-auth.server";
 import { partnerProjectsWhereForOrgs } from "~/partners/lib/partner-access";
 import { resolvePhotoUrl } from "~/lib/photo";

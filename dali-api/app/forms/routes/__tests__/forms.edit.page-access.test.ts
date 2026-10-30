@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db", () => ({ prisma: { term: { findMany: vi.fn() }, form: { findUnique: vi.fn() } } }));
+vi.mock("~/lib/db.server", () => ({ prisma: { term: { findMany: vi.fn() }, form: { findUnique: vi.fn() } } }));
 vi.mock("~/lib/auth", () => ({
   requireAuth: vi.fn(),
   forbidden: vi.fn(() => new Response("Forbidden", { status: 403 })),
@@ -20,7 +20,7 @@ vi.mock("~/lib/collab-token.server", () => ({ getCollabToken: vi.fn() }));
 vi.mock("~/forms/components/FormDetail", () => ({ FormDetail: () => null }));
 vi.mock("~/components/PageIcon", () => ({ PageIcon: () => null }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth, redirectNonMemberToPortal } from "~/lib/auth";
 import { canBuildForm, canSeeForm } from "~/forms/lib/form-access.server";
 import { loadFormForEdit, runFormsAction } from "~/forms/lib/forms-data";

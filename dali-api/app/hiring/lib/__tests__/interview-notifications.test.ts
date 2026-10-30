@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/notify.server", () => ({ notify: vi.fn().mockResolvedValue(undefined) }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { notify } from "~/lib/notify.server";
 import { getActiveInterviewerUserIds, notifyInterviewCancelled } from "~/hiring/lib/interview-notifications";
 

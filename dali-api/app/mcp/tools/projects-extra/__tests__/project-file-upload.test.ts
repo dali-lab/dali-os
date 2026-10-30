@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/roles", async (orig) => {
   const real = await orig<typeof import("~/lib/roles")>();
   return { ...real, isCore: vi.fn(), isProjectMember: vi.fn() };
@@ -12,7 +12,7 @@ vi.mock("~/lib/s3", () => ({
 }));
 vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn().mockResolvedValue(undefined) }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore, isProjectMember } from "~/lib/roles";
 import { getUploadPost, headObject, isS3Configured } from "~/lib/s3";
 import { logAuditEvent } from "~/lib/audit";

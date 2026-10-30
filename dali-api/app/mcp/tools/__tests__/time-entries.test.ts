@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/roles", () => ({
   resolveRoleRef: vi.fn(),
   currentTerm: vi.fn(),
@@ -14,7 +14,7 @@ vi.mock("~/lib/time-entries.server", () => ({
   deleteTimeEntry: vi.fn(),
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { resolveRoleRef, currentTerm } from "~/lib/roles";
 import { addTimeEntry, updateTimeEntry, deleteTimeEntry } from "~/lib/time-entries.server";
 import {

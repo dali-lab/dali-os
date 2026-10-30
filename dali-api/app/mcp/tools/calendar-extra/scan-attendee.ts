@@ -2,7 +2,7 @@
 // scan station; the member's barcode token marks that member present. Mirrors
 // api.scheduled-meetings.$id.scan-attendee.ts logic. Requires `mcp:write`.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore, isProjectMember } from "~/lib/roles";
 import { markMeetingAttendance } from "~/lib/scheduled-meeting";
 import {

@@ -8,7 +8,7 @@
 //
 // Requires the `mcp:admin` scope; caller must be a Core lead.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore } from "~/lib/roles";
 import {
   EMAIL_TEMPLATE_KEYS,

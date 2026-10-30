@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     user: { findUnique: vi.fn() },
   },
@@ -11,7 +11,7 @@ vi.mock("~/lib/roles", () => ({
 }));
 
 import { resolveWalletPassFields } from "~/lib/wallet-pass-fields.server";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore } from "~/lib/roles";
 
 const mockFindUnique = prisma.user.findUnique as unknown as ReturnType<typeof vi.fn>;

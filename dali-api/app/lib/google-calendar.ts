@@ -1,5 +1,5 @@
 import DOMPurify from "isomorphic-dompurify";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { decrypt, encrypt } from "~/lib/calendar-crypto";
 import { GoogleOAuthError, refreshGoogleToken } from "~/lib/google-oauth";
 import { APPLICATION_TZ } from "~/lib/timezone";

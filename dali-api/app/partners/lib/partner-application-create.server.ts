@@ -8,7 +8,7 @@
 // and the partner.inquiry_received notification — so neither path drifts
 // from the other.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { logPartnerActivity } from "./partner-activity.server";
 import { notifyPartners } from "./partner-notify.server";
 

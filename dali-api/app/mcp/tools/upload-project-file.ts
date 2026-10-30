@@ -11,7 +11,7 @@
 // inside long-lived page content. Gate mirrors the app's file routes: Core,
 // or staffed on the project.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { canEditProject } from "./access";
 import { putObject } from "~/lib/s3";
 import { MAX_UPLOAD_BYTES, MAX_UPLOAD_LABEL, isBlockedUpload } from "~/lib/file-validation";

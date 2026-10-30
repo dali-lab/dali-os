@@ -1,5 +1,5 @@
 import { redirect } from "react-router";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore } from "~/lib/roles";
 
 // Status of a user's confidentiality state for a given cycle.

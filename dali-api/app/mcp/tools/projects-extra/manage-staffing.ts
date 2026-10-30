@@ -13,7 +13,7 @@
 // canManageStaffing gate. After each write the cycle SSE channel is pulsed
 // via publishCycleChange().
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { canManageStaffing } from "~/lib/roles";
 import { logAuditEvent } from "~/lib/audit";
 import { McpForbiddenError, McpNotFoundError, McpInvalidError, requireForAction } from "./errors";

@@ -9,7 +9,7 @@
 //     they're assigned to for this cycle — mirrors the web detail page)
 //   + signed confidentiality agreement for the cycle.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { getUserRoles, hasCycleAccess } from "~/lib/roles";
 import { confidentialityCleared, getCycleConfidentialityState } from "~/hiring/lib/confidentiality";
 import { buildCriteriaLabelMap } from "~/hiring/lib/rubric-criteria";

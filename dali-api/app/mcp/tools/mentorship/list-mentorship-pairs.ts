@@ -2,7 +2,7 @@
 // Scope: mcp:read. Visibility: mentor/Core only (mentees are explicitly excluded).
 // Mirrors the logic in api.mentorship.pairs.ts GET handler.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { canViewMentorship, mentorshipPairWhere } from "~/mentorship/lib/visibility";
 import type { McpCtx, McpTool } from "../../registry";
 import { McpForbiddenError } from "../../registry";

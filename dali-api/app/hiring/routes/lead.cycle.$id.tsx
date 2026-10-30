@@ -5,7 +5,7 @@ import { EmailEditorModal } from "~/admin/components/EmailTemplatesAdmin";
 import { Form, Link, useParams, useLoaderData, useLocation, useSearchParams, useFetcher, redirect } from 'react-router'
 import { Select, type SelectOption, Tooltip } from "~/components/ui/floating";
 import type { Route } from "./+types/lead.cycle.$id";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { recordRouteVisit } from "~/lib/user-pages.server";
 import { requireAuth } from "~/lib/auth";
 import { logAuditEvent } from "~/lib/audit";

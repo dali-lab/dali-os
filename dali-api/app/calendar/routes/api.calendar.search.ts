@@ -1,6 +1,6 @@
 import type { Route } from "./+types/api.calendar.search";
 import { requireAuth, isImpersonating } from "~/lib/auth";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { searchCalendarEvents } from "~/lib/google-calendar";
 import { searchWindow, sortHits, type CalendarSearchHit } from "../lib/search";
 

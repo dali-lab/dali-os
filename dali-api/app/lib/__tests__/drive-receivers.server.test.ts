@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     page: { findUnique: vi.fn(), findFirst: vi.fn(), findMany: vi.fn(), update: vi.fn(), updateMany: vi.fn(), create: vi.fn() },
     $transaction: vi.fn(),
@@ -17,7 +17,7 @@ vi.mock("~/lib/drive-roots.server", () => ({
   },
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { logAuditEvent } from "~/lib/audit";
 import { getUserRoles } from "~/lib/roles";
 import { ensureRoot } from "~/lib/drive-roots.server";

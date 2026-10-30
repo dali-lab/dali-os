@@ -1,5 +1,5 @@
 // Tests for POST /admin/impersonate
-// Mocks: ~/lib/db, ~/lib/roles (isAdmin), ~/lib/betterauth-compat.server
+// Mocks: ~/lib/db.server, ~/lib/roles (isAdmin), ~/lib/betterauth-compat.server
 // (getBetterAuthUser), ~/lib/betterauth.server (auth.api.impersonateUser),
 // ~/lib/audit.
 
@@ -11,7 +11,7 @@ vi.mock("~/lib/betterauth-compat.server", () => ({
 vi.mock("~/lib/roles", () => ({
   isAdmin: vi.fn(),
 }));
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/betterauth.server", () => ({
   auth: {
     api: {
@@ -25,7 +25,7 @@ vi.mock("~/lib/audit", () => ({
 
 import { getBetterAuthUser } from "~/lib/betterauth-compat.server";
 import { isAdmin } from "~/lib/roles";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { auth } from "~/lib/betterauth.server";
 import { logAuditEvent } from "~/lib/audit";
 import { action } from "~/routes/admin.impersonate";

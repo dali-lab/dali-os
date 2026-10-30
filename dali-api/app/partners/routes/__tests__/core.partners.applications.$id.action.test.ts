@@ -1,12 +1,12 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn(), isNonMember: vi.fn(async () => false) }));
 vi.mock("~/lib/roles");
 vi.mock("~/lib/feature-flags.server");
 vi.mock("~/partners/lib/partner-emails.server");
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { isCore, getUserRoles } from "~/lib/roles";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";

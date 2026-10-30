@@ -1,7 +1,7 @@
 // MCP `list_outbound_messages` — transactional outbox viewer.
 // Reuses admin.outbound-messages.tsx loader query. mcp:admin, Core leads only.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore } from "~/lib/roles";
 import { AdminForbiddenError as McpForbiddenError } from "./errors";
 import type { McpCtx } from "../../registry";

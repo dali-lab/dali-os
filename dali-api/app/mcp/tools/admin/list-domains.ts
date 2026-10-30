@@ -2,7 +2,7 @@
 // activity counts. Mirrors the api.domains.ts loader gate: isCore, isDomainLead,
 // or isAdmin (any one suffices). Requires the `mcp:read` scope.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore, isDomainLead, isAdmin } from "~/lib/roles";
 import { AdminForbiddenError as McpForbiddenError } from "./errors";
 

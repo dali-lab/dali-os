@@ -1,6 +1,6 @@
 import type { Route } from "./+types/api.members.$memberId.roles";
 import { z } from "zod";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth, forbidden } from "~/lib/auth";
 import { isAdmin, currentTerm } from "~/lib/roles";
 import { coreCycleTermIds } from "~/lib/core-cycle";

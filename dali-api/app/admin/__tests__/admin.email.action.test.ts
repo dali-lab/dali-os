@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db", () => ({ prisma: { user: { findUnique: vi.fn() } } }));
+vi.mock("~/lib/db.server", () => ({ prisma: { user: { findUnique: vi.fn() } } }));
 vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn() }));
 vi.mock("~/lib/roles", () => ({ isCore: vi.fn() }));
 vi.mock("~/lib/login-next", () => ({ redirectToLogin: vi.fn() }));

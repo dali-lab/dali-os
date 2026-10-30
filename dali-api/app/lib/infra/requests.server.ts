@@ -4,7 +4,7 @@
 // actions, then marks the request resolved. userIds are free-form (AuditLog
 // style), so names are resolved with a follow-up query.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import type { InfraRequestStatus } from "~/generated/prisma/client";
 
 export type PendingInfraRequest = {

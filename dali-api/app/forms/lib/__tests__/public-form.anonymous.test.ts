@@ -1,13 +1,13 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/forms/lib/submission-notify.server", () => ({
   notifyFormSubmission: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock("~/forms/lib/form-access.server", () => ({ fillAccessByPage: vi.fn() }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { fillAccessByPage } from "~/forms/lib/form-access.server";
 import { submitAnonymousForm } from "~/forms/lib/public-form";
 import { notifyFormSubmission } from "~/forms/lib/submission-notify.server";

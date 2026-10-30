@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db", () => ({ prisma: { ipRule: { findMany: vi.fn() } } }));
+vi.mock("~/lib/db.server", () => ({ prisma: { ipRule: { findMany: vi.fn() } } }));
 vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn() }));
 vi.mock("~/lib/roles", () => ({ isCore: vi.fn(), isAdmin: vi.fn() }));
 vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
@@ -20,7 +20,7 @@ vi.mock("~/lib/ip-rules.server", async () => {
 import { requireAuth } from "~/lib/auth";
 import { isAdmin, isCore } from "~/lib/roles";
 import { logAuditEvent } from "~/lib/audit";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { action, loader } from "~/admin/routes/admin.security";
 
 const mockAuth = vi.mocked(requireAuth);

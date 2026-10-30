@@ -1,5 +1,5 @@
 import type { Route } from "./+types/api.reviews.$id.submit";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireMemberSession } from "~/lib/auth";
 import { isCycleAdmin, isDomainLeadForCycle } from "~/lib/roles";
 import { requireApiSignedOrForbidden } from "~/hiring/lib/confidentiality";

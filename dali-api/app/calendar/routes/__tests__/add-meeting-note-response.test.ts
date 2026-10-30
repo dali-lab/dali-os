@@ -5,7 +5,7 @@ const mockAttach = vi.hoisted(() => vi.fn());
 const mockNotePath = vi.hoisted(() => vi.fn());
 
 // calendar.server pulls in the Prisma client; CI has no generated client.
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/auth", async (importOriginal) => ({
   ...(await importOriginal<typeof import("~/lib/auth")>()),
   requireAuth: mockRequireAuth,

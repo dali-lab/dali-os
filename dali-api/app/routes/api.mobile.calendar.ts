@@ -1,5 +1,5 @@
 import type { Route } from "./+types/api.mobile.calendar";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { listUpcomingMeetings } from "~/lib/upcoming-meetings";
 import { fetchCalendarEvents } from "~/lib/google-calendar";
 import { expandClassOccurrences } from "~/calendar/lib/class-schedule";

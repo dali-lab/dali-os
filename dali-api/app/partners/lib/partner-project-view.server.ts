@@ -1,4 +1,4 @@
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { currentTerm } from "~/lib/roles";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { getDownloadUrl } from "~/lib/s3";
@@ -18,7 +18,7 @@ import type { EditableEpic } from "~/projects/components/EpicSprintManager";
 
 // Which of the account's orgs holds the active partnership with this project —
 // used to surface the correct partnerSince date. Lives here (a .server helper)
-// so the rendering route never imports ~/lib/db directly (see the client-bundle
+// so the rendering route never imports ~/lib/db.server directly (see the client-bundle
 // leak guard). Returns null when none matches; access is checked separately.
 export async function resolvePartnerProjectOrgId(
   projectId: string,

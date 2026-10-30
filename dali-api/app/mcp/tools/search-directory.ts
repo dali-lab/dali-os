@@ -9,7 +9,7 @@
 // returned in bulk rows — the web list view never shows it either; use
 // get_member_profile for a single member's netId.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { currentTerm, currentTermMemberWhere, isAdminViaEnv } from "~/lib/roles";
 
 export const SEARCH_DIRECTORY_TOOL = {

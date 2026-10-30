@@ -2,14 +2,14 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 
 // Self-contained db mock: buildTechnigalaRows only touches technigalaAssignment
 // + term, so stub just those rather than the whole shared client.
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     technigalaAssignment: { findMany: vi.fn() },
     term: { findUnique: vi.fn() },
   },
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import {
   buildTechnigalaRows,
   listTechnigalaCandidates,

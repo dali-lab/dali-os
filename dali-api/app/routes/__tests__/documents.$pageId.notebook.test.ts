@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-vi.mock("~/lib/db", () => ({ prisma: { page: { findUnique: vi.fn(), findMany: vi.fn() } } }));
+vi.mock("~/lib/db.server", () => ({ prisma: { page: { findUnique: vi.fn(), findMany: vi.fn() } } }));
 vi.mock("~/lib/auth", () => ({
   requireAuth: vi.fn(),
   redirectPartnerToPortal: vi.fn(),
@@ -16,7 +16,7 @@ vi.mock("~/lib/notebooks.server", () => ({ canManageNotebook: vi.fn() }));
 vi.mock("~/lib/notebook-series.server", () => ({ nextNoteTargets: vi.fn() }));
 vi.mock("~/lib/user-pages.server", () => ({ isFavorited: vi.fn(), recordPageVisit: vi.fn() }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth, redirectPartnerToPortal, isNonMember } from "~/lib/auth";
 import { getPageAccess } from "~/lib/pageAccess.server";
 import { canManageNotebook } from "~/lib/notebooks.server";

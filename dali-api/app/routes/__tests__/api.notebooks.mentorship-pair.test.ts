@@ -5,7 +5,7 @@ vi.mock("~/lib/cors", () => ({
   withCors: (_req: unknown, res: unknown) => res,
   handlePreflight: () => null,
 }));
-vi.mock("~/lib/db", () => ({ prisma: { page: { findUniqueOrThrow: vi.fn() } } }));
+vi.mock("~/lib/db.server", () => ({ prisma: { page: { findUniqueOrThrow: vi.fn() } } }));
 vi.mock("~/lib/note-path.server", () => ({
   formatFiledPath: (parts: string[]) => parts.join(" ▸ "),
   notebookLocationParts: vi.fn(),
@@ -14,7 +14,7 @@ vi.mock("~/mentorship/lib/pair-notebook.server", () => ({ ensurePairNotebook: vi
 vi.mock("~/mentorship/lib/pair-suggestion.server", () => ({ findMentorPair: vi.fn() }));
 
 import { requireMemberSession } from "~/lib/auth";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { notebookLocationParts } from "~/lib/note-path.server";
 import { ensurePairNotebook } from "~/mentorship/lib/pair-notebook.server";
 import { findMentorPair } from "~/mentorship/lib/pair-suggestion.server";

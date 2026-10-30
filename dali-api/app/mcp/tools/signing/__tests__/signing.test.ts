@@ -61,7 +61,7 @@ vi.mock("~/mcp/registry", async () => {
   };
 });
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     signingSignature: {
       findUnique: vi.fn(),
@@ -133,7 +133,7 @@ vi.mock("~/lib/display", () => ({
 
 // Imports after mocks.
 import { isCore } from "~/lib/roles";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import {
   listOutstandingBindings,
   getSignerCohorts,

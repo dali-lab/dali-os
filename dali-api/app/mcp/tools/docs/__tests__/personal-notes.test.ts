@@ -14,7 +14,7 @@ vi.mock("~/mcp/registry", () => {
   }
   return { requireForAction, REGISTRY_TOOLS: [], findRegistryTool: () => undefined, registryToolDefs: () => [] };
 });
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/roles", async (orig) => {
   const real = await orig<typeof import("~/lib/roles")>();
   return { ...real, isLabMember: vi.fn() };
@@ -38,7 +38,7 @@ vi.mock("~/members/lib/personal-notes-actions.server", () => ({
   deleteNote: vi.fn(),
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isLabMember } from "~/lib/roles";
 import { noteAccess, NoteNotFoundError } from "~/members/lib/personal-notes.server";
 import { createNote, deleteNote } from "~/members/lib/personal-notes-actions.server";

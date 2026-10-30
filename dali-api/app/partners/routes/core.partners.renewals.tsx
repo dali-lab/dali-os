@@ -3,7 +3,7 @@ import type { Route } from "./+types/core.partners.renewals";
 import { requireAuth, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { isCore, currentTerm } from "~/lib/roles";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { logAuditEvent } from "~/lib/audit";
 import { Select } from "~/components/ui/floating";
 import { SearchInput } from "~/components/ui/SearchInput";

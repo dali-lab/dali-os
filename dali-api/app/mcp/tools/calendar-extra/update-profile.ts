@@ -13,7 +13,7 @@
 //   bio — lives in a Yjs/BlockNote collab doc; edit via the collab layer.
 //   netId — CAS-authoritative; editing here risks unique-key conflicts.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { normalizeHandle } from "~/lib/handle";
 import { isValidTimezone } from "~/lib/timezone";
 import { McpInvalidError } from "../../registry";

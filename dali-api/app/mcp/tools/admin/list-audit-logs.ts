@@ -3,7 +3,7 @@
 // the HTML viewer it returns MCP reads unless filtered out.
 // Requires the `mcp:admin` scope; caller must be isCore.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore } from "~/lib/roles";
 import {
   parseAuditFilters,

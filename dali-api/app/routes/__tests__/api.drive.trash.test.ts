@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
 vi.mock("~/forms/lib/form-page.server", () => ({ setFormArchived: vi.fn(), deleteForm: vi.fn() }));
 vi.mock("~/forms/lib/form-usages.server", () => ({ formDeletionBlockers: vi.fn() }));
@@ -20,7 +20,7 @@ vi.mock("~/lib/fileAccess.server", () => ({
   canEditFile: vi.fn(),
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { canManageFormPlacement } from "~/forms/lib/form-access.server";
 import { getPageAccess, getPageAccessBulk } from "~/lib/pageAccess.server";

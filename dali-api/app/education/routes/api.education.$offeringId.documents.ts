@@ -1,6 +1,6 @@
 import type { Route } from "./+types/api.education.$offeringId.documents";
 import { z } from "zod";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireOfferingManager } from "~/education/lib/access.server";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson } from "~/lib/validate";

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/auth", () => ({
   requireAuth: vi.fn(),
   isNonMember: vi.fn(async () => false),
@@ -11,7 +11,7 @@ vi.mock("~/lib/roles", async (importOriginal) => ({
   isProjectMember: vi.fn(),
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth, isNonMember } from "~/lib/auth";
 import { isCore, isProjectMember } from "~/lib/roles";
 import { action, loader } from "~/routes/attendance";

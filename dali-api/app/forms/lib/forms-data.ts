@@ -9,7 +9,7 @@
 // as serialized ProseMirror JSON.
 
 import { z } from "zod";
-import { prisma, Prisma } from "~/lib/db";
+import { prisma, Prisma } from "~/lib/db.server";
 import { createForm, deleteForm, moveForm, renameForm, setFormAudience, setFormIcon } from "./form-page.server";
 import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
 import type { Question } from "~/types";

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     page: { findUnique: vi.fn(), findFirst: vi.fn(), findMany: vi.fn() },
     instructorAssignment: { findFirst: vi.fn() },
@@ -26,7 +26,7 @@ vi.mock("~/lib/groups", () => ({
   listVisibleGroupIdsForUser: vi.fn().mockResolvedValue([]),
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore, isProjectMember, isLabMember } from "~/lib/roles";
 import { partnerHasProjectAccess } from "~/partners/lib/partner-access";
 import { resolveGroupMembers, listVisibleGroupIdsForUser } from "~/lib/groups";

@@ -5,14 +5,14 @@ vi.mock("~/lib/auth", () => ({ requireAuth: mockRequireAuth }));
 const mockRevokeAllForGrant = vi.hoisted(() => vi.fn());
 vi.mock("~/lib/session", () => ({ revokeAllForGrant: mockRevokeAllForGrant }));
 vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     oAuthGrant: { findUnique: vi.fn(), update: vi.fn() },
     authSession: { deleteMany: vi.fn() },
   },
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { action } from "~/routes/settings.connected-apps";
 
 function revoke(grantId: string) {

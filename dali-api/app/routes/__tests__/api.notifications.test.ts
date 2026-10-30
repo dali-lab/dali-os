@@ -3,7 +3,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 vi.mock("~/lib/auth", () => ({
   requireAuth: vi.fn(),
 }));
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/tasks", async (importOriginal) => ({
   // SELF_CLEARING_FORM_TODO stays real — the mark-all-read test asserts the
   // exact predicate the endpoint excludes.
@@ -24,7 +24,7 @@ vi.mock("~/lib/notifications", async (importOriginal) => ({
 }));
 
 import { requireAuth } from "~/lib/auth";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import {
   listOpenTasks,
   listMyProjectTasks,

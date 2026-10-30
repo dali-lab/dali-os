@@ -4,7 +4,7 @@
 // the single lab-wide default (isDefault); issuance stamps the resolved id onto
 // the EducationCertificate.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { getObjectBytes, getDownloadUrl } from "~/lib/s3";
 import { resolveFilingFolder, singletonSlot } from "~/lib/drive-receivers.server";
 import { parsePlacedFields, type PlacedField } from "./certificate-fields";

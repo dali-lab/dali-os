@@ -28,7 +28,7 @@ vi.mock("~/mcp/registry", async () => {
   return { McpError, McpNotFoundError, McpForbiddenError, McpInvalidError, requireForAction };
 });
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/roles", () => ({ isCore: vi.fn() }));
 vi.mock("~/forms/lib/forms-data", () => ({ runFormsAction: vi.fn() }));
 vi.mock("~/forms/lib/answer-rows.server", () => ({ buildResponseGrid: vi.fn() }));
@@ -39,7 +39,7 @@ vi.mock("~/forms/lib/form-access.server", () => ({
 }));
 
 import { isCore } from "~/lib/roles";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { runFormsAction } from "~/forms/lib/forms-data";
 import { buildResponseGrid } from "~/forms/lib/answer-rows.server";
 import { canBuildForm, canCreateForm, canSeeForm } from "~/forms/lib/form-access.server";

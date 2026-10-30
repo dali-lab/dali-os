@@ -1,12 +1,12 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/mcp/tools/access", () => ({ canEditProject: vi.fn() }));
 vi.mock("~/projects/lib/task-notifications.server", () => ({
   notifyTaskComment: vi.fn().mockResolvedValue(undefined),
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { canEditProject } from "~/mcp/tools/access";
 import {
   runAddTaskComment,

@@ -1,7 +1,7 @@
 // MCP `manage_group` — create, update, or delete a Static lab group.
 // Requires the `mcp:admin` scope; caller must be an admin.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isAdmin } from "~/lib/roles";
 import { logAuditEvent } from "~/lib/audit";
 import {

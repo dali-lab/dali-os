@@ -14,7 +14,7 @@ const DEFAULT_POOL_MAX = 25;
 const DEFAULT_POOL_MIN = 5;
 const DEFAULT_IDLE_TIMEOUT_MS = 300_000;
 
-// Scripts (the seed, scripts/*.ts) import ~/lib/db and never disconnect it.
+// Scripts (the seed, scripts/*.ts) import ~/lib/db.server and never disconnect it.
 // Warm idle clients would otherwise hold the event loop open forever; the
 // server stays up on its own listener.
 

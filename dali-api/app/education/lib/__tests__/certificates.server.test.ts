@@ -1,13 +1,13 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/gmail", () => ({ sendEmail: vi.fn() }));
 vi.mock("~/lib/gmail-integration", () => ({
   getSender: vi.fn().mockResolvedValue(null),
   noteSenderHealth: vi.fn(),
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import {
   certificateEligibility,
   closeOutOffering,

@@ -8,7 +8,7 @@
 //
 // Gate: mcp:admin, isCore.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore } from "~/lib/roles";
 import { McpForbiddenError, McpNotFoundError, McpInvalidError } from "./errors";
 

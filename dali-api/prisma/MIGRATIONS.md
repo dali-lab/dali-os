@@ -17,7 +17,7 @@ Migrations run automatically as a Fly.io release command (`npx prisma migrate de
 
 So the CLI and the runtime need different URLs:
 
-- Runtime traffic uses `DATABASE_URL` directly (pooled endpoint, serverless-friendly, plays well with `@prisma/adapter-pg` / `@prisma/adapter-neon`). The runtime client in `app/lib/db.ts` reads `process.env.DATABASE_URL` and never goes through `prisma.config.ts`.
+- Runtime traffic uses `DATABASE_URL` directly (pooled endpoint, serverless-friendly, plays well with `@prisma/adapter-pg` / `@prisma/adapter-neon`). The runtime client in `app/lib/db.server.ts` reads `process.env.DATABASE_URL` and never goes through `prisma.config.ts`.
 - The Prisma CLI (`migrate`, `db`, `generate`) loads `prisma.config.ts`, which overrides `datasource.url` with a non-pooled URL.
 
 `prisma.config.ts` resolves the CLI URL automatically:

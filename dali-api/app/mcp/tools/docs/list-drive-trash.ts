@@ -4,7 +4,7 @@
 //   - Files: canEditFile (restore/delete requires edit, not just view)
 //   - Forms: view access on the form's page
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { canSeeForm } from "~/forms/lib/form-access.server";
 import { getPageAccess } from "~/lib/pageAccess.server";
 import { canEditFile } from "~/lib/fileAccess.server";

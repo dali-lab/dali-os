@@ -1,8 +1,8 @@
 import type { Route } from "./+types/api.comments.$id";
 import { z } from "zod";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth, forbidden } from "~/lib/auth";
-import { isCore, isLabMember } from "~/lib/roles";
+import { isCore } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { logAuditEvent } from "~/lib/audit";
 import { getPageAccess } from "~/lib/pageAccess.server";

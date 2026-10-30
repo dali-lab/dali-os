@@ -7,14 +7,14 @@ vi.mock("~/lib/session", () => ({
 }));
 const mockAudit = vi.hoisted(() => vi.fn());
 vi.mock("~/lib/audit", () => ({ logAuditEvent: mockAudit }));
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     session: { findUnique: vi.fn() },
     authSession: { findUnique: vi.fn(), deleteMany: vi.fn() },
   },
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { action } from "~/routes/oauth.revoke";
 
 function revoke(token: string) {

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn() }));
 vi.mock("~/lib/cors", () => ({
   handlePreflight: () => null,
@@ -15,7 +15,7 @@ vi.mock("~/hiring/lib/scheduling", () => ({
   isNoReplacementError: (err: Error) => err.message === "none",
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { logAuditEvent } from "~/lib/audit";
 import { reassignInterviewer } from "~/hiring/lib/scheduling";

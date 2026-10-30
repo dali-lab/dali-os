@@ -1,7 +1,7 @@
 import { redirect, useLoaderData } from "react-router";
 import type { Route } from "./+types/admin.announcements";
 import { adminHandle } from "~/admin/adminNav";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { listVisibleGroupsForUser } from "~/lib/groups";
 import { requireAuth } from "~/lib/auth";
 import { logAuditEvent } from "~/lib/audit";

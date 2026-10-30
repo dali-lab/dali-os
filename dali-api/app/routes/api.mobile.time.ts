@@ -1,5 +1,5 @@
 import type { Route } from "./+types/api.mobile.time";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { getUserRoleInstances } from "~/lib/roles";
 import { payPeriodFor } from "~/lib/pay-period";
 import { resolveUserTimeZone } from "~/lib/timezone";

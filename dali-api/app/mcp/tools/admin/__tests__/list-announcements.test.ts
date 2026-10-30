@@ -1,13 +1,13 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     scheduledAnnouncement: { findMany: vi.fn() },
   },
 }));
 vi.mock("~/lib/roles", () => ({ isCore: vi.fn() }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore } from "~/lib/roles";
 import { runListAnnouncements, LIST_ANNOUNCEMENTS_TOOL } from "~/mcp/tools/admin/list-announcements";
 import type { McpCtx } from "~/mcp/registry";

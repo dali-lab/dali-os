@@ -9,7 +9,7 @@
 import { canEditProject } from "../access";
 import { archiveTerminalTasks } from "~/jobs/task-auto-archive.server";
 import { McpNotFoundError, McpForbiddenError } from "./errors";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 
 export const ARCHIVE_DONE_TASKS_TOOL = {
   name: "archive_done_tasks",

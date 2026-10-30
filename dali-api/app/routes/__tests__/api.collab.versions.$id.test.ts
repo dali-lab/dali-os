@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: { collabDocumentVersion: { findUnique: vi.fn(), update: vi.fn() } },
 }));
 vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
@@ -14,7 +14,7 @@ vi.mock("~/collab/persistence", () => ({ restoreVersion: vi.fn() }));
 vi.mock("~/collab/read", () => ({ stateToBlocks: vi.fn() }));
 vi.mock("~/collab/blocknote-server", () => ({ blocksToHtml: vi.fn() }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { authorizeCollabDoc } from "~/lib/collabAuth";
 import { getCollabServer } from "~/collab/server";

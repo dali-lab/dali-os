@@ -7,7 +7,7 @@ import type { DragEndEvent } from "@dnd-kit/core";
 import { Layers, Pin, Plus, Trash2 } from "lucide-react";
 import { z } from "zod";
 import type { Route } from "./+types/core.hub";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { currentTerm, getActiveCoreCycleTermIds, isAdmin, isCore } from "~/lib/roles";

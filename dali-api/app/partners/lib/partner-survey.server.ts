@@ -4,7 +4,7 @@
 // refuses destructive edits. `sendPartnerSurvey` is called by the
 // partner-survey-send job once a ProjectPartner's endedAt is set.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { loadPublicForm, type PublicForm } from "~/forms/lib/public-form";
 import { getFrontendUrl } from "~/lib/app-env";
 import { sendPartnerSurveyEmail } from "./partner-emails.server";

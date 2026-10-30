@@ -7,7 +7,7 @@
 // mailbox connect needs no Google Cloud change. That route hands a request
 // over when isMailConnectCallback() recognises it by this flow's own cookie.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { getApiBaseUrl } from "~/lib/app-env";
 import { buildEncryptedTokens } from "~/lib/google-calendar";

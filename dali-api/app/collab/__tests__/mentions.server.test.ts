@@ -3,7 +3,7 @@ import * as Y from "yjs";
 
 // extractMentionUserIds is pure, but ../mentions.server imports prisma + notify
 // at load; mock them so the CI test job (no generated client) can import it.
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/notify.server", () => ({ notify: vi.fn() }));
 
 import { extractMentionUserIds } from "../mentions.server";

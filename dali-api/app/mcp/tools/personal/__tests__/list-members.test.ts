@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     user: {
       findMany: vi.fn(),
@@ -26,7 +26,7 @@ vi.mock("~/lib/roles", async (importOriginal) => {
   };
 });
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { runListMembers, LIST_MEMBERS_DEF } from "~/mcp/tools/personal/list-members";
 
 const mockUser = prisma as unknown as {

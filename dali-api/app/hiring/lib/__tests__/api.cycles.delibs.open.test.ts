@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     dALIMember: { findUnique: vi.fn() },
     delibsSession: { upsert: vi.fn() },
@@ -17,7 +17,7 @@ vi.mock("~/hiring/lib/confidentiality", () => ({ requireApiSignedOrForbidden: vi
 vi.mock("~/hiring/lib/cycle-timeline.server", () => ({ loadCycleTimeline: vi.fn() }));
 vi.mock("~/hiring/lib/cycle-timeline", () => ({ findRound: vi.fn() }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireCoreOrDomainLead } from "~/lib/auth";
 import { requireApiSignedOrForbidden } from "~/hiring/lib/confidentiality";
 import { findRound } from "~/hiring/lib/cycle-timeline";
