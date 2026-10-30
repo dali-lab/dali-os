@@ -259,7 +259,7 @@ export const JOBS: JobDefinition[] = [
   {
     name: "interview-reminders",
     description:
-      "Emails applicant and interviewers 24 hours and 1 hour before a scheduled interview.",
+      "Emails applicant and interviewers 1 hour before a scheduled interview.",
     intervalMinutes: 5,
     handler: runInterviewReminders,
   },

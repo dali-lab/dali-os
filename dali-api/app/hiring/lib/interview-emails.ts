@@ -133,9 +133,8 @@ export async function sendInterviewReminderEmails(interviewId: string): Promise<
     const applicant = await getApplicantRecipient(interview.domainApplicationId);
     const interviewers = await getInterviewerRecipients(interviewId);
 
-    // No dedupKey: the interview-reminders job already claims an
-    // InterviewReminderLog(interviewId, kind) row before calling this, and the
-    // 24h + 1h reminders legitimately both send.
+    // No dedupKey: the interview-reminders job claims an
+    // InterviewReminderLog(interviewId, kind) row before calling this.
     const enqueues: Promise<string | null>[] = [];
     if (applicant) {
       const rendered = await renderSlot(
