@@ -306,6 +306,8 @@ describe("EnhanceBar other states", () => {
     const fine = mountBar(makeRec({ phase: "recording", noSound: false }));
     expect(fine.container.textContent).toBe("");
     fine.unmount();
+  });
+
   it("noSpeech: says nothing was captured and offers no Insert or Enhance", () => {
     const { container } = mountBar(makeRec({ phase: "done", hasTranscript: false, aiEnabled: true }));
     expect(container.textContent).toContain("No speech was captured");

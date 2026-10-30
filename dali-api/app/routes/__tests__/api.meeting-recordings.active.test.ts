@@ -115,7 +115,7 @@ describe("GET /api/meeting-recordings/active", () => {
       href: "/documents/p1",
     });
     expect(recording.sessionSeconds).toBeGreaterThanOrEqual(89);
-    expect(Object.keys(recording).sort()).toEqual(["documentName", "href", "id", "sessionSeconds", "status", "title"]);
+    expect(Object.keys(recording).sort()).toEqual(["documentName", "href", "id", "noSound", "sessionSeconds", "status", "title"]);
   });
 
   it("has no session length unless the row is Recording", async () => {
