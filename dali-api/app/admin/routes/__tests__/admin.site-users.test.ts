@@ -107,7 +107,33 @@ describe("admin.site-users loader", () => {
     expect(where.AND[1]).toEqual(kindWhere("Member"));
 
     expect(findMany.mock.calls[0][0]!.where).toEqual(where.AND[0]);
-    expect(findMany.mock.calls[0][0]!.take).toBe(100);
+    expect(findMany.mock.calls[0][0]!.take).toBe(51);
+    expect(findMany.mock.calls[0][0]!.skip).toBe(0);
+  });
+
+  it("pages by offset with an id tiebreak and reports whether another page follows", async () => {
+    const rows = Array.from({ length: 51 }, (_, i) => user({ id: `u${i}` }));
+    findMany.mockResolvedValue(rows as never);
+    const data = await load("?page=3");
+    const args = findMany.mock.calls[0][0]!;
+    expect(args.skip).toBe(100);
+    expect(args.take).toBe(51);
+    expect(args.orderBy).toEqual([
+      { lastActiveAt: { sort: "desc", nulls: "last" } },
+      { createdAt: "desc" },
+      { id: "desc" },
+    ]);
+    expect(data.users).toHaveLength(50);
+    expect(data.page).toBe(3);
+    expect(data.hasNext).toBe(true);
+  });
+
+  it("treats a bad page as page one and reports no next page on a short result", async () => {
+    findMany.mockResolvedValue([user()] as never);
+    const data = await load("?page=-4");
+    expect(findMany.mock.calls[0][0]!.skip).toBe(0);
+    expect(data.page).toBe(1);
+    expect(data.hasNext).toBe(false);
   });
 
   it("applies ?kind= to the rows and reports that kind's count as the total", async () => {
@@ -149,6 +175,7 @@ describe("admin.site-users loader", () => {
     expect(findMany.mock.calls[0][0]!.orderBy).toEqual([
       { lastActiveAt: { sort: "desc", nulls: "last" } },
       { createdAt: "desc" },
+      { id: "desc" },
     ]);
     expect(data.users[0]).toMatchObject({ kind: "Member", isAdmin: true, banned: true, email: "ada@example.com" });
     expect(data.viewerUserId).toBe("admin-1");
