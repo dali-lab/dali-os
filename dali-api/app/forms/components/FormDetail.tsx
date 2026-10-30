@@ -526,6 +526,7 @@ export function FormDetail() {
           {view === "results" ? (
             results && results.versionId === selectedVersion.id ? (
               <VersionResults
+                key={selectedVersion.id}
                 formId={form.id}
                 versionNumber={selectedVersion.versionNumber}
                 results={results}

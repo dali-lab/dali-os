@@ -16,8 +16,7 @@ import type { Question } from "~/types";
 // around it; registering the download under its own non-layout path keeps it
 // a pure byte stream.
 //
-// Unlike the results view (newest 200), this exports EVERY submission —
-// it's the full-export escape hatch behind the view cap. `?version=N` limits
+// Unlike the paged results view, this exports EVERY submission. `?version=N` limits
 // the export to one version.
 
 export async function loader({ request, params }: Route.LoaderArgs) {
