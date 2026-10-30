@@ -83,6 +83,7 @@ export const TEMPLATE_VARIABLES: Record<TemplateSlot, readonly TemplateVariableN
 
   // Interview invites — interview-emails sends with full vars.
   "notification:InterviewInviteMentor": ["firstName", "domain", "time", "location", "meetingUrl"],
+  "notification:InterviewInterviewerChanged": ["firstName", "domain", "time", "location", "meetingUrl"],
   "notification:InterviewConfirmedApplicant": ["firstName", "domain", "time", "location", "meetingUrl"],
 
   // Manual "Resend invite" nudge fired from the unscheduled-invites row on

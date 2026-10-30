@@ -4489,6 +4489,7 @@ const NOTIFICATION_EMAIL_SLOTS: ReadonlyArray<{ type: NotificationSlotType; labe
   { type: "ApplicationEventAnnouncement", label: "Application event announcement", description: "Sent by hand from an event card to everyone who started an application." },
   { type: "DomainAddedNotice", label: "Domain added to an open cycle", description: "Sent by hand from a domain row, once per domain, to everyone with a non-Withdrawn application." },
   { type: "InterviewInviteMentor", label: "Interview invite (interviewer)", description: "Sent when an interview is booked or reassigned." },
+  { type: "InterviewInterviewerChanged", label: "Co-interviewer changed (interviewer)", description: "Sent to the interviewer who stays on when the other one changes. Uses the invite above if left empty." },
   { type: "InterviewInviteReminder", label: "Invite reminder (applicant)", description: "Sent by Resend invite when an applicant hasn't booked." },
   { type: "InterviewConfirmedApplicant", label: "Interview confirmed (applicant)", description: "Sent when the applicant books." },
   { type: "InterviewCancelledApplicant", label: "Interview cancelled (applicant)", description: "Sent when the interview is cancelled." },

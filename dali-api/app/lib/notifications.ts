@@ -55,9 +55,20 @@ const notPastMeetingInvite = (now: Date): Prisma.NotificationWhereInput => ({
   ],
 });
 
+// A notification linked to an InterviewAssignment is only live while that
+// assignment is still Active on a still-Scheduled interview. Once it moves to
+// Declined/Replaced or the interview is Cancelled/Completed, the row hides with
+// no fan-out writes.
+const LIVE_INTERVIEW_ASSIGNMENT: Prisma.NotificationWhereInput = {
+  OR: [
+    { interviewAssignmentId: null },
+    { interviewAssignment: { status: "Active", interview: { status: "Scheduled" } } },
+  ],
+};
+
 /**
- * Staleness hides for meeting-backed notifications that are still awaiting
- * action, as AND clauses. Both read paths build on this — the tasks path
+ * Staleness hides for meeting- and interview-backed notifications that are still
+ * awaiting action, as AND clauses. Both read paths build on this — the tasks path
  * (listOpenTasks/countOpenTasks, which drives the web bell's `taskCount`) and
  * the inbox path (listMyNotifications, which drives the desktop app's feed and
  * dock badge) — so the two counts can't disagree.
@@ -67,7 +78,7 @@ const notPastMeetingInvite = (now: Date): Prisma.NotificationWhereInput => ({
  * annotates the rows via resolveNotificationState instead.
  */
 export function liveMeetingPingClauses(now: Date): Prisma.NotificationWhereInput[] {
-  return [notExpiredMeetingReminder(now), notPastMeetingInvite(now)];
+  return [notExpiredMeetingReminder(now), notPastMeetingInvite(now), LIVE_INTERVIEW_ASSIGNMENT];
 }
 
 export interface ListNotificationsOptions {
@@ -216,7 +227,7 @@ const RETIRED_CAP = 200;
  * Ids of meeting-backed rows that the live-surface hides have dropped while
  * still unread: a "Starting soon" reminder whose occurrence has passed, an
  * un-RSVP'd one-off invite to a meeting that already happened, anything on a
- * Cancelled meeting.
+ * Cancelled meeting, an assignment to an interview the member is no longer on.
  *
  * The desktop app retires a delivered banner when its row comes back through
  * the feed with `readAt` set — which never happens to these, because going
@@ -234,7 +245,7 @@ export async function listRetiredMeetingPingIds(
     where: {
       recipientUserId: userId,
       readAt: null,
-      scheduledMeetingId: { not: null },
+      OR: [{ scheduledMeetingId: { not: null } }, { interviewAssignmentId: { not: null } }],
       createdAt: { gte: new Date(now.getTime() - RETIRED_LOOKBACK_MS) },
     },
     orderBy: { createdAt: "desc" },
