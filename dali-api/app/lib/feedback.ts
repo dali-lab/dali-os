@@ -36,3 +36,5 @@ export function summarizeReactions(
     return [{ emoji, count: hits.length, mine: hits.some((r) => r.userId === viewerId) }];
   });
 }
+
+export const FEED_IDS_MAX = 50;
