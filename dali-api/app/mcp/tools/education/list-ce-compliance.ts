@@ -11,7 +11,7 @@ import {
   type McpCtx,
   type McpTool,
 } from "../../registry";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { pageArray, pageProps, type PageArgs } from "../../pagination";
 
 const PAGE_LIMITS = { defaultLimit: 50, maxLimit: 200 };

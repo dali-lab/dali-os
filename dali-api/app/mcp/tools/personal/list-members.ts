@@ -4,7 +4,7 @@
 // derivation as `search_directory`, but without the required query param and
 // with additional optional filters. Requires the `mcp:read` scope.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { currentTerm, currentTermMemberWhere, isAdminViaEnv } from "~/lib/roles";
 import { offsetPage, offsetWindow, pageArray, pageProps, type PageArgs } from "~/mcp/pagination";
 

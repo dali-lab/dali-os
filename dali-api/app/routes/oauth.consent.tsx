@@ -1,6 +1,6 @@
 import type { Route } from "./+types/oauth.consent";
 import { Form, redirect } from "react-router";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import {
   authorizationResponseUrl,
   getOAuthClient,

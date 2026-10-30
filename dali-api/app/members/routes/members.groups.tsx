@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { Link, redirect, useLoaderData, useFetcher } from "react-router";
 import { Tooltip } from "~/components/ui/floating";
 import type { Route } from "./+types/members.groups";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { logAuditEvent } from "~/lib/audit";
 import { listAllGroups } from "~/lib/groups";
 import { requireAuth, forbidden } from "~/lib/auth";

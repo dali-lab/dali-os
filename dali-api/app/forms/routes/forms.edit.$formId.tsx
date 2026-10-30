@@ -4,7 +4,7 @@ import { requireAuth, forbidden, redirectNonMemberToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { canBuildForm, canSeeForm } from "~/forms/lib/form-access.server";
 import type { DriveNoticeKey } from "~/lib/drive-notices";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import {
   loadFormForEdit,
   runFormsAction,

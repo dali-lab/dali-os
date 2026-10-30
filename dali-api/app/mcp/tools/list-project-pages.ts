@@ -3,7 +3,7 @@
 // below it. Pages are the top-level pages; subtrees are never split across
 // pages. Excludes archived pages by default.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { MAX_PAGE_DEPTH } from "~/lib/pages";
 import { pageArray, pageProps, type PageArgs } from "~/mcp/pagination";
 

@@ -1,6 +1,6 @@
 import { vi } from "vitest";
 
-// Stub of the Prisma namespace re-exported from the real ~/lib/db. Only the
+// Stub of the Prisma namespace re-exported from the real ~/lib/db.server. Only the
 // JSON-null sentinels are referenced by callers (e.g. forms-data clearing a
 // Json? column); they're identity-compared, so a stable stub object suffices.
 export const Prisma = {

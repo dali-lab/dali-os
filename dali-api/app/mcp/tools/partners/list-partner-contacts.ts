@@ -2,7 +2,7 @@
 // scoped to one organization. Scope: mcp:read. Gated to canViewStaffing
 // (Core / Domain Lead), matching list_partner_orgs.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { canViewStaffing } from "~/lib/roles";
 import { McpForbiddenError } from "../../registry";
 import { offsetPage, offsetWindow, pageProps, type PageArgs } from "../../pagination";

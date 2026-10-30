@@ -4,7 +4,7 @@ import { createAuthMiddleware } from "better-auth/api";
 import { bearer, magicLink, admin, emailOTP } from "better-auth/plugins";
 import { passkey } from "@better-auth/passkey";
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { getApiBaseUrl, getFrontendUrl, getAppEnv } from "~/lib/app-env";
 import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
 import { freshKey } from "~/lib/outbound-keys";

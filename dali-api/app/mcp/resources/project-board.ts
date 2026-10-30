@@ -5,7 +5,7 @@
 // task belongs to the sprint its date falls in. Lets a client cache one payload
 // instead of looping through list_sprints/list_my_tasks. Read-only.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { TASK_STATUSES, type TaskStatus } from "~/projects/lib/task-board";
 import { DAY, SPRINT_DAYS, utcDayOf, localTodayUtcDay } from "~/projects/lib/timeline-days";
 import { fullName } from "~/lib/display";

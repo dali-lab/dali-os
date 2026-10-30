@@ -4,7 +4,7 @@ import { buttonClasses } from '~/components/ui/Button'
 import { cn } from '~/lib/cn'
 import { redirect, useLoaderData, useSubmit } from 'react-router'
 import { HelpCircle, X, Check } from 'lucide-react'
-import { prisma } from '~/lib/db'
+import { prisma } from '~/lib/db.server'
 import { recordRouteVisit } from '~/lib/user-pages.server'
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from '~/lib/login-next'

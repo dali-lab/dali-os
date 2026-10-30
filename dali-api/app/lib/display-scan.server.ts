@@ -2,7 +2,7 @@
 // DisplayScanSession is live, every door display scans wallet passes for its
 // event occurrence instead of showing its room (see api.room-display.*).
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { fullName } from "~/lib/display";
 import { CHECK_IN_GRACE_MIN, resolveMeetingOccurrence } from "~/lib/scheduled-meeting";
 

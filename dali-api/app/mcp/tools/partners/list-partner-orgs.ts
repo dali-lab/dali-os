@@ -1,7 +1,7 @@
 // MCP tool: list_partner_orgs — list all partner organizations.
 // Scope: mcp:read. Gated to canViewStaffing (Core / Domain Lead).
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { canViewStaffing } from "~/lib/roles";
 import { partnerRelationshipStatus } from "~/partners/lib/partner-org";
 import { McpForbiddenError } from "../../registry";

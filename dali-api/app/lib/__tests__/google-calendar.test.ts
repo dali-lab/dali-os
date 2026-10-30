@@ -17,7 +17,7 @@ const prismaMock = vi.hoisted(() => ({
   user: { findUnique: vi.fn() },
 }));
 
-vi.mock("~/lib/db", () => ({ prisma: prismaMock }));
+vi.mock("~/lib/db.server", () => ({ prisma: prismaMock }));
 
 // Import after mocking so the lib picks up the mocked prisma.
 const { encrypt } = await import("~/lib/calendar-crypto");

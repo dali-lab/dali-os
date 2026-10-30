@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     term: { findUnique: vi.fn() },
     scheduledMeeting: { findMany: vi.fn(), count: vi.fn() },
@@ -8,7 +8,7 @@ vi.mock("~/lib/db", () => ({
 }));
 vi.mock("~/lib/roles", () => ({ isCore: vi.fn() }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore } from "~/lib/roles";
 import {
   runGetAttendanceOverview,

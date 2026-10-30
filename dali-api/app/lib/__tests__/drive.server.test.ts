@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/pageAccess.server", () => {
   const getPageAccess = vi.fn();
   return {
@@ -29,7 +29,7 @@ vi.mock("~/lib/page-audience.server", () => ({
   ),
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { getPageAccess, getPageAccessBulk, governingScopeMap } from "~/lib/pageAccess.server";
 import { isCore, isProjectMember } from "~/lib/roles";
 import { summarizeAudience } from "~/lib/page-audience.server";

@@ -2,8 +2,8 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 
 // `~/routes/login` transitively imports `~/lib/auth`, which now reaches into
 // `~/lib/oauth` for the silent-refresh path; `oauth` imports the real Prisma
-// client. Mocking `~/lib/db` keeps these tests Prisma-free.
-vi.mock("~/lib/db");
+// client. Mocking `~/lib/db.server` keeps these tests Prisma-free.
+vi.mock("~/lib/db.server");
 
 // The loader routes by membership, so it calls requireAuth + prisma directly.
 // Mock requireAuth so each test can drive the authenticated user without
@@ -23,7 +23,7 @@ vi.mock("~/lib/betterauth.server", () => ({
 
 import { _resetForTests } from "~/lib/rate-limit";
 import { requireAuth } from "~/lib/auth";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { action, loader } from "~/routes/login";
 
 const mockRequireAuth = vi.mocked(requireAuth);

@@ -32,7 +32,7 @@ vi.mock("~/mcp/registry", async () => {
   return { McpError, McpNotFoundError, McpForbiddenError, McpInvalidError, requireForAction };
 });
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/forms/lib/form-access.server", () => ({
   canSeeForm: vi.fn(),
   canBuildForm: vi.fn(),
@@ -55,7 +55,7 @@ import { canSeeForm, canBuildForm, canCreateForm } from "~/forms/lib/form-access
 import { runFormsAction } from "~/forms/lib/forms-data";
 import { formAccessMeta, formFillAccess, submitMemberForm } from "~/forms/lib/public-form";
 import { buildResponseGrid } from "~/forms/lib/answer-rows.server";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 
 import { LIST_FORMS_TOOL, runListForms } from "../list-forms";
 import { GET_FORM_RESPONSES_TOOL, runGetFormResponses } from "../get-form-responses";

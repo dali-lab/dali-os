@@ -5,7 +5,7 @@
 // team's hub for a Notion-export sync. `staffed` marks the caller's own
 // projects so agents can tell the two sets apart.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { offsetPage, offsetWindow, pageProps, type PageArgs } from "../pagination";
 
 const PAGE_LIMITS = { defaultLimit: 50, maxLimit: 200 };

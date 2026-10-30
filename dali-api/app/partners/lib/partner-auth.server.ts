@@ -1,6 +1,6 @@
 import { redirect } from "react-router";
 import { requireAuth, type AuthSuccess } from "~/lib/auth";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 
 // A single org the account belongs to (current membership). A partner can hold
 // several of these over time — the portal picks an "active" one for org-scoped

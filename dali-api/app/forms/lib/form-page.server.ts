@@ -5,7 +5,7 @@
 // general access). The Form columns stay written until the cleanup PR drops
 // them; readers may use either side meanwhile.
 
-import { prisma, Prisma } from "~/lib/db";
+import { prisma, Prisma } from "~/lib/db.server";
 import type { FormAudience, LinkAccess, WorkspaceType } from "~/generated/prisma/client";
 
 export function linkAccessForAudience(audience: FormAudience): LinkAccess {

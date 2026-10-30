@@ -3,7 +3,7 @@
 // overview page was retired for the lab-wide /attendance surface). mcp:admin,
 // Core leads only.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore } from "~/lib/roles";
 import { AdminForbiddenError as McpForbiddenError } from "./errors";
 import type { McpCtx } from "../../registry";

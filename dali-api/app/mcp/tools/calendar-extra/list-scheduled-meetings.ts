@@ -2,7 +2,7 @@
 // attends (past + future), with optional status/role filters.
 // Requires the `mcp:read` scope.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import type { Prisma } from "~/generated/prisma/client";
 import { keysetPage, keysetWindow, pageProps, type PageArgs } from "../../pagination";
 

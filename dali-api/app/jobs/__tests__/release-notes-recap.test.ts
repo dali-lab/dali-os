@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: { releaseNote: { findMany: vi.fn(), updateMany: vi.fn() } },
 }));
 vi.mock("~/lib/outbound.server", () => ({
@@ -12,7 +12,7 @@ vi.mock("~/lib/release-notes.server", () => ({
   releaseNotesSlackChannel: vi.fn(() => "C999"),
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { enqueueOutbound } from "~/lib/outbound.server";
 import { releaseNotesSlackChannel } from "~/lib/release-notes.server";
 import { runReleaseNotesRecap } from "../release-notes-recap.server";

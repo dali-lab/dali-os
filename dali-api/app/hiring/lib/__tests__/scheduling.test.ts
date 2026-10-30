@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 // Availability comes from each member's DALI OS calendar. By default every
 // interviewer's calendar is free for the whole window (every fixture here is);
 // a test narrows it with setCalendarFree.
@@ -18,7 +18,7 @@ vi.mock("~/hiring/lib/interview-notifications", () => ({
   notifyInterviewAssigned: vi.fn().mockResolvedValue(undefined),
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { sendReassignmentEmails } from "~/hiring/lib/interview-emails";
 import { notifyInterviewAssigned } from "~/hiring/lib/interview-notifications";
 import { interviewerCalendars } from "~/hiring/lib/interview-availability.server";

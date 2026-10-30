@@ -22,7 +22,7 @@ const h = vi.hoisted(() => ({
 
 vi.mock("~/lib/notify.server", () => ({ notify: h.notify }));
 vi.mock("~/signing/lib/audiences", () => ({ AUDIENCE_RESOLVERS: { Members: { listMembers: h.listMembers } } }));
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     signingBinding: { findUnique: vi.fn(async () => h.state.bindingRow) },
     signingSignature: {

@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { JOBS, resolveJobSettings, type JobDefinition } from "~/jobs/registry";
 import { tick, runJob } from "~/jobs/runner.server";
 

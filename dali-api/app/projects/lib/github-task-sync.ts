@@ -1,4 +1,4 @@
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { githubAppClient, parseRepo, isNotFound } from "~/lib/github";
 import type { TaskStatus } from "./task-board";
 

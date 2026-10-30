@@ -1,5 +1,5 @@
 import * as Y from "yjs";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { ydocToBlocks } from "./read";
 
 // Backlink index maintenance. Called from the collab store hook (onStoreDocument /

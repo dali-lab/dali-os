@@ -1,7 +1,7 @@
 // MCP tool: list_partner_applications — list partner applications with optional stage filter.
 // Scope: mcp:read. Gated to canViewStaffing (Core / Domain Lead).
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { canViewStaffing } from "~/lib/roles";
 import {
   PARTNER_STAGES,

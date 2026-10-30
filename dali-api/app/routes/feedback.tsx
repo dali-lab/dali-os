@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import { data, useFetcher, useLoaderData } from "react-router";
 import { MessageCircle, Trash2 } from "lucide-react";
 import type { Route } from "./+types/feedback";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { cn } from "~/lib/cn";
 import { fullName } from "~/lib/display";
 import { resolvePhotoUrl } from "~/lib/photo";

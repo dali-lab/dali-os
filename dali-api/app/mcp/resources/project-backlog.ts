@@ -4,7 +4,7 @@
 // exposed separately because it can be large and a client may only need it when
 // planning the next sprint.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { fullName } from "~/lib/display";
 
 export const PROJECT_BACKLOG_RESOURCE = {

@@ -1,6 +1,6 @@
 import type { Route } from "./+types/api.room-display.bookings.$id";
 import { z } from "zod";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore } from "~/lib/roles";
 import { parseJson } from "~/lib/validate";
 import { walletTokensConfigured } from "~/lib/wallet-token";

@@ -4,7 +4,7 @@
 
 import { getAssignmentForStudent, offeringIdForAssignment } from "~/education/lib/assignments.server";
 import { isOfferingManager } from "~/education/lib/access.server";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import type { McpCtx, McpTool } from "../../registry";
 import { McpNotFoundError, McpForbiddenError } from "../../registry";
 

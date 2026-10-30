@@ -1,7 +1,7 @@
 // MCP tool: get_partner_org — get the account-360 view of one partner
 // organization. Scope: mcp:read. Gated to canViewStaffing (Core / Domain Lead).
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { canViewStaffing } from "~/lib/roles";
 import { listPendingInvites } from "~/partners/lib/invites.server";
 import { partnerRelationshipStatus } from "~/partners/lib/partner-org";

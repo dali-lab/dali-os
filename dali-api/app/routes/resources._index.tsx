@@ -2,7 +2,7 @@ import { Link, useFetcher, useLoaderData, useOutletContext } from "react-router"
 import { ArrowDown, ArrowUp, Globe, Pin, PinOff } from "lucide-react";
 import type { Route } from "./+types/resources._index";
 import type { ResourcesOutletContext } from "./resources";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { cn } from "~/lib/cn";
 import { fullName, formatDateShort } from "~/lib/display";
 import { DEFAULT_BLOG_COVER, blogListing } from "~/lib/blog-preview";

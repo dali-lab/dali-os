@@ -14,7 +14,7 @@
 // then on.
 
 import * as Y from "yjs";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { getCollabServer } from "./server";
 import { agentAnnouncer, bodyTexts, changedTextRange } from "./agent-presence.server";
 import { maybeSnapshot, storeDocument } from "./persistence";

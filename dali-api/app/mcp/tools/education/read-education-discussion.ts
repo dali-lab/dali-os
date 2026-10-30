@@ -7,7 +7,7 @@
 import { listDiscussion } from "~/education/lib/announcements.server";
 import { listThreadPage, offeringInstructorIds } from "~/education/lib/discussions.server";
 import { isOfferingManager } from "~/education/lib/access.server";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import {
   McpForbiddenError,
   McpInvalidError,

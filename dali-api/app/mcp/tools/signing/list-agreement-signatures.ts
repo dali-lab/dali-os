@@ -1,7 +1,7 @@
 // MCP tool: list_agreement_signatures — Core-only view of all member signatures
 // on a document's bindings. Useful for auditing who has signed.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore } from "~/lib/roles";
 import { McpForbiddenError, type McpTool, type McpCtx } from "../../registry";
 import { keysetPage, keysetWindow, pageProps, type PageArgs } from "../../pagination";

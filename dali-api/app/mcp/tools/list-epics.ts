@@ -1,6 +1,6 @@
 // MCP `list_epics` — epics on a project with their user stories.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { offsetPage, offsetWindow, pageProps, type PageArgs } from "../pagination";
 
 const PAGE_LIMITS = { defaultLimit: 50, maxLimit: 200 };

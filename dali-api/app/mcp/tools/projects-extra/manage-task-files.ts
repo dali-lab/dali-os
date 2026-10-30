@@ -5,7 +5,7 @@
 //
 // Gate: canEditProject (Core or project member).
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { McpNotFoundError, McpForbiddenError, McpInvalidError, requireForAction } from "./errors";
 import { canEditProject } from "../access";
 

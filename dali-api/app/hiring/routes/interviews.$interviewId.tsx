@@ -2,7 +2,7 @@ import { useState, useCallback } from 'react'
 import { useLoaderData, useSearchParams } from 'react-router'
 import { redirect } from 'react-router'
 import { Check, Video, MapPin, Users } from 'lucide-react'
-import { prisma } from '~/lib/db'
+import { prisma } from '~/lib/db.server'
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from '~/lib/login-next'
 import { resolvePhotoUrl } from '~/lib/photo'

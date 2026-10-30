@@ -6,7 +6,7 @@ const { prismaMock, audit, refresh, inherit } = vi.hoisted(() => ({
   refresh: vi.fn(),
   inherit: vi.fn(),
 }));
-vi.mock("~/lib/db", () => ({ prisma: prismaMock }));
+vi.mock("~/lib/db.server", () => ({ prisma: prismaMock }));
 vi.mock("~/lib/audit", () => ({ logAuditEvent: audit }));
 vi.mock("~/jobs/infra-snapshot.server", () => ({ refreshProjectInfra: refresh }));
 vi.mock("../project-infra.server", async () => {

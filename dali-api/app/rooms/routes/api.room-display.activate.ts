@@ -1,6 +1,6 @@
 import type { Route } from "./+types/api.room-display.activate";
 import { z } from "zod";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { parseJson } from "~/lib/validate";
 import { checkRateLimit, getClientIp } from "~/lib/rate-limit";
 import { redeemDisplaySetupCode } from "~/lib/room-display.server";

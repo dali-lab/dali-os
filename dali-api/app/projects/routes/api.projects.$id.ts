@@ -1,5 +1,5 @@
 import type { Route } from "./+types/api.projects.$id";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireCore } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { logAuditEvent } from "~/lib/audit";

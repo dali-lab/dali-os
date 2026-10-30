@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { liveMeetingPingClauses, NOT_CANCELLED_MEETING } from "~/lib/notifications";
 import { runListMyNotifications, LIST_MY_NOTIFICATIONS_TOOL } from "~/mcp/tools/list-my-notifications";
 import { validateInput, type JsonSchema } from "~/lib/mcp-input";

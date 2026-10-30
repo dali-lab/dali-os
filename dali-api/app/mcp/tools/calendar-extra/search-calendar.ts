@@ -2,7 +2,7 @@
 // Google Calendar events). Reuses the logic from api.calendar.search.ts.
 // Requires `mcp:read` scope.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { searchCalendarEvents, type EventReadReport } from "~/lib/google-calendar";
 import { searchWindow, sortHits } from "~/calendar/lib/search";
 import { McpInvalidError } from "../../registry";

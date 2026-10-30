@@ -3,7 +3,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 // Kept off the credential key so secret scanners don't read the fixture as a real one.
 const ONE_TIME = vi.hoisted(() => "provisioned-once");
 
-vi.mock("~/lib/db", () => ({ prisma: {} }));
+vi.mock("~/lib/db.server", () => ({ prisma: {} }));
 vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn(async () => undefined) }));
 vi.mock("~/lib/outbound.server", () => ({
   enqueueOutbound: vi.fn(async () => ({ id: "om-1", deduped: false })),
@@ -34,7 +34,7 @@ vi.mock("~/members/lib/welcome.server", () => ({
 vi.mock("~/hiring/lib/hiring-emails.server", () => ({ getHiringEmail: vi.fn() }));
 vi.mock("~/email/lib/templates.server", () => ({ getEmailTemplate: vi.fn() }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { enqueueOutbound } from "~/lib/outbound.server";
 import { promoteToMember } from "~/members/lib/membership.server";
 import { onboardingEmailHtml } from "~/members/lib/welcome.server";

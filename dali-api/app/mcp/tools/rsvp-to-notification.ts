@@ -3,7 +3,7 @@
 // including the best-effort Google Calendar attendee response push. Requires
 // the `mcp:write` scope.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { updateGoogleAttendeeRsvp } from "~/lib/google-calendar";
 import { markCalendarChanged } from "~/calendar/lib/external-cache.server";
 import { primaryEmail } from "~/lib/display";

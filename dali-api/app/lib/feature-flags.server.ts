@@ -1,4 +1,4 @@
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { cachedForRequest } from "~/lib/request-cache";
 import { cachedForTtl, clearTtlCache } from "~/lib/ttl-cache";
 import type { UserRoles } from "~/lib/roles";

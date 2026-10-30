@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db", () => ({ prisma: { page: { findUnique: vi.fn() } } }));
+vi.mock("~/lib/db.server", () => ({ prisma: { page: { findUnique: vi.fn() } } }));
 vi.mock("~/lib/auth", () => ({ requireMemberSession: vi.fn() }));
 vi.mock("~/lib/cors", () => ({ withCors: (_r: Request, res: Response) => res, handlePreflight: () => null }));
 vi.mock("~/lib/pages", () => ({ createLabPage: vi.fn(), pageDepth: vi.fn(), MAX_PAGE_DEPTH: 6 }));

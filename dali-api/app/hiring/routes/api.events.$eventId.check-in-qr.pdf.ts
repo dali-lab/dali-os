@@ -1,6 +1,6 @@
 import type { Route } from "./+types/api.events.$eventId.check-in-qr.pdf";
 import { requireAuth } from "~/lib/auth";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { getUserRoles, isCycleAdmin } from "~/lib/roles";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { renderCheckInQrPdf } from "~/calendar/lib/check-in-qr-pdf.server";

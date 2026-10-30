@@ -4,7 +4,7 @@
 //
 // NEVER log transcript text here.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { fullName } from "~/lib/display";
 import { parseOccurrenceParam } from "~/lib/scheduled-meeting";
 import { canReadRecording, storedLines } from "~/lib/meeting-recording.server";

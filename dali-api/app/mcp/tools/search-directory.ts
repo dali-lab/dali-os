@@ -9,7 +9,7 @@
 // returned in bulk rows — the web list view never shows it either; use
 // get_member_profile for a single member's netId.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { currentTerm, currentTermMemberWhere, isAdminViaEnv } from "~/lib/roles";
 import { offsetPage, offsetWindow, pageProps, type PageArgs, type PageInfo } from "~/mcp/pagination";
 

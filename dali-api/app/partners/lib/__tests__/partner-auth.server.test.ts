@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn() }));
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     partnerContact: {
       findUnique: vi.fn(),
@@ -14,7 +14,7 @@ vi.mock("~/lib/db", () => ({
 }));
 
 import { requireAuth } from "~/lib/auth";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requirePartner, requirePartnerCandidate } from "../partner-auth.server";
 
 const mockPrisma = prisma as any;

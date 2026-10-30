@@ -4,7 +4,7 @@
 // scheduled-meeting (if any) is not Cancelled, mirroring the inbox filter in
 // `listMyNotifications`. Requires the `mcp:read` scope.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 
 export const ANNOUNCEMENTS_ACTIVE_RESOURCE = {
   uri: "dali://announcements/active",

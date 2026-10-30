@@ -4,7 +4,7 @@
 // thread pointer are stripped so the payload carries nothing a blinded
 // reviewer couldn't already infer from the counts.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { APPLICATIONS_FROM_EMAIL } from "~/lib/app-env";
 
 export type EngagementSummary = {

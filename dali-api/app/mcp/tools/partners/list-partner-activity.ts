@@ -1,7 +1,7 @@
 // MCP tool: list_partner_activity — the full activity timeline of one partner
 // organization. Scope: mcp:read. Gated to canViewStaffing (Core / Domain Lead).
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { canViewStaffing } from "~/lib/roles";
 import { McpForbiddenError, McpNotFoundError } from "../../registry";
 import { keysetPage, keysetWindow, pageProps, type PageArgs, type PageInfo } from "../../pagination";

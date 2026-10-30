@@ -20,7 +20,7 @@ vi.mock("~/mcp/registry", () => {
   }
   return { McpError, McpInvalidError, McpNotFoundError, McpForbiddenError };
 });
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/google-calendar", () => ({
   searchCalendarEvents: vi.fn(),
 }));
@@ -29,7 +29,7 @@ vi.mock("~/calendar/lib/search", async (orig) => {
   return { ...real };
 });
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { searchCalendarEvents } from "~/lib/google-calendar";
 import { runSearchCalendar, SEARCH_CALENDAR_DEF } from "~/mcp/tools/calendar-extra/search-calendar";
 

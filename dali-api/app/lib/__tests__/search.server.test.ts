@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 // Only reached by the hiring-application category, which these tests keep
 // empty (no reviewer rows, not Core) — stubbed so the module loads without
 // the real hiring stack.
@@ -15,7 +15,7 @@ vi.mock("~/lib/pageAccess.server", () => ({
   getPageAccessBulk: vi.fn(),
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { searchPageContent } from "~/lib/doc-search.server";
 import { getPageAccessBulk } from "~/lib/pageAccess.server";
 import { CATEGORY_RAW_TAKE, runCategorySearch, runSearch, runSearchWithOverflow } from "~/lib/search.server";

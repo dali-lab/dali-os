@@ -1,11 +1,11 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/education/lib/feedback.server", () => ({
   requestSessionFeedback: vi.fn(),
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requestSessionFeedback } from "~/education/lib/feedback.server";
 import { runSessionFeedbackSweep } from "~/jobs/session-feedback-sweep.server";
 

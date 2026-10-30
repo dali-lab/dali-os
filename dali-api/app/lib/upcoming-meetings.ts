@@ -4,7 +4,7 @@
 // calendar/hiring tables — no helper existed before because the calendar UI
 // is per-week-grid, not "next-N-days inbox".
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { expandOccurrences } from "~/lib/meeting-occurrences";
 
 export type UpcomingMeeting = {

@@ -1,4 +1,4 @@
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isAdmin } from "~/lib/roles";
 import { logAuditEvent } from "~/lib/audit";
 import type { Season } from "~/generated/prisma/client";

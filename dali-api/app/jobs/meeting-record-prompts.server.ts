@@ -8,7 +8,7 @@
 // start, user, kind) — same ledger as meeting-reminders.server.ts, a
 // different `kind` so the two reminders don't collide on the unique index.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { notify } from "~/lib/notify.server";
 import { expandOccurrences, noteForOccurrence, rruleUntilBasic } from "~/lib/meeting-occurrences";
 import { meetingOccurrenceHref } from "~/calendar/lib/meeting-href";

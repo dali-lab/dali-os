@@ -35,7 +35,7 @@ vi.mock("~/mcp/registry", async () => {
 
 // ─── DB mock ─────────────────────────────────────────────────────────────────
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 
 // ─── Role + access mocks ──────────────────────────────────────────────────────
 
@@ -122,7 +122,7 @@ import { complianceForTerm, grantManualCredit, remindNonCompliant } from "~/educ
 import { setFormBinding } from "~/education/lib/feedback.server";
 import { runOfferingAction } from "~/education/lib/offerings.server";
 import { saveEducationEmail } from "~/education/lib/education-emails.server";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 
 import { SUBMIT_ASSIGNMENT_TOOL, runSubmitAssignment } from "../submit-assignment";
 import { CHECK_IN_TO_SESSION_TOOL, runCheckInToSession } from "../check-in-to-session";

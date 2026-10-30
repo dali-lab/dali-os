@@ -20,7 +20,7 @@ vi.mock("~/mcp/registry", () => {
   }
   return { McpError, McpNotFoundError, McpForbiddenError, McpInvalidError };
 });
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/display", () => ({
   fullName: (u: { firstName: string; lastName: string }) =>
     `${u.firstName} ${u.lastName}`.trim(),
@@ -30,7 +30,7 @@ vi.mock("~/lib/meeting-recording.server", () => ({
   storedLines: (rec: { lines: unknown }) => (Array.isArray(rec.lines) ? rec.lines : []),
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { canReadRecording } from "~/lib/meeting-recording.server";
 import {
   runGetMeetingTranscript,

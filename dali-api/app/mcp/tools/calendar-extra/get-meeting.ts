@@ -1,7 +1,7 @@
 // MCP `get_meeting` — full detail for a single ScheduledMeeting including
 // roster. Mirrors the calendar.meeting.$id loader. Requires `mcp:read` scope.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore, isProjectMember } from "~/lib/roles";
 import { fullName } from "~/lib/display";
 import { noteForOccurrence } from "~/lib/meeting-occurrences";

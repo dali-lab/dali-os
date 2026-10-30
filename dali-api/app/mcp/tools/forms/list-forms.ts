@@ -1,7 +1,7 @@
 // MCP tool: list_forms — every form with its Drive folder placement.
 // Scope: mcp:read; forms you can view.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { canSeeForm } from "~/forms/lib/form-access.server";
 import { McpForbiddenError, type McpCtx, type McpTool } from "../../registry";
 import { pageArray, pageProps, type PageArgs } from "../../pagination";

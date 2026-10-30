@@ -18,7 +18,7 @@ vi.mock("~/mcp/registry", () => {
   return { requireForAction, REGISTRY_TOOLS: [], findRegistryTool: () => undefined, registryToolDefs: () => [] };
 });
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     page: {
       findMany: vi.fn(),
@@ -75,7 +75,7 @@ vi.mock("~/forms/lib/form-usages.server", () => ({
   formDeletionBlockers: vi.fn().mockResolvedValue([]),
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore, isProjectMember } from "~/lib/roles";
 import { deleteForm, moveForm, setFormArchived } from "~/forms/lib/form-page.server";
 import { formDeletionBlockers } from "~/forms/lib/form-usages.server";

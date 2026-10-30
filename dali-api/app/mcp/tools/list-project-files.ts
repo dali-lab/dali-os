@@ -1,7 +1,7 @@
 // MCP `list_project_files` — files uploaded to a project. Read access for any
 // authenticated member.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { offsetPage, offsetWindow, pageProps, type PageArgs } from "../pagination";
 
 const PAGE_LIMITS = { defaultLimit: 50, maxLimit: 200 };

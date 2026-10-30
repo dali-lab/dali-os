@@ -1,4 +1,4 @@
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { cachedForTtl, clearTtlCache } from "~/lib/ttl-cache";
 import type { ApplicationCycleStatus, CycleApplicants } from "~/generated/prisma/enums";
 import { cycleCloseDate } from "./domain-windows";

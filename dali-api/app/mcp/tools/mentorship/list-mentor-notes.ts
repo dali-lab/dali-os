@@ -2,7 +2,7 @@
 // Scope: mcp:read. Visibility: mentor/Core only (mentees are explicitly excluded).
 // Mirrors the logic in api.mentorship.notes.ts GET handler.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { canViewMentorship, mentorNoteWhere } from "~/mentorship/lib/visibility";
 import { startOfWeekUTC } from "~/mentorship/lib/week";
 import type { McpCtx, McpTool } from "../../registry";

@@ -21,7 +21,7 @@ vi.mock("~/mcp/registry", () => {
   return { McpError, McpNotFoundError, McpForbiddenError, McpInvalidError };
 });
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/roles", async (orig) => {
   const real = await orig<typeof import("~/lib/roles")>();
   return { ...real, hasCycleAccess: vi.fn(), getUserRoles: vi.fn() };
@@ -36,7 +36,7 @@ vi.mock("~/hiring/lib/rubric-criteria", () => ({
   buildCriteriaLabelMap: vi.fn().mockResolvedValue({}),
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { getUserRoles, hasCycleAccess } from "~/lib/roles";
 import { getCycleConfidentialityState } from "~/hiring/lib/confidentiality";
 import { GET_APPLICATION_TOOL, runGetApplication } from "../get-application";

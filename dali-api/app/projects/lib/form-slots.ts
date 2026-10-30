@@ -1,4 +1,4 @@
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import type { SigningAudience } from "~/generated/prisma/enums";
 import { parseColumnMapping, type ColumnMapping } from "./slot-roles";
 import { setFormPublished } from "~/forms/lib/form-publish.server";

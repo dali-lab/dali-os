@@ -13,7 +13,7 @@ const prismaMock = vi.hoisted(() => ({
   $transaction: vi.fn(),
 }));
 
-vi.mock("~/lib/db", () => ({ prisma: prismaMock }));
+vi.mock("~/lib/db.server", () => ({ prisma: prismaMock }));
 vi.mock("~/lib/groups", () => ({ ensureProjectGroup: vi.fn() }));
 vi.mock("~/lib/page-copy.server", () => ({ duplicatePage: vi.fn() }));
 

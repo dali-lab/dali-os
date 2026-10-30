@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-vi.mock("~/lib/db", () => ({ prisma: {} }));
+vi.mock("~/lib/db.server", () => ({ prisma: {} }));
 vi.mock("~/core/components/AnnouncementsPage", () => ({ AnnouncementsPage: () => null }));
 
 import { audienceLabel, estimateRecipients } from "~/admin/routes/admin.announcements";

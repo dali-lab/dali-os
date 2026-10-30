@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: { scheduledMeeting: { findUnique: vi.fn(), findMany: vi.fn() }, page: { findUnique: vi.fn() } },
 }));
 vi.mock("~/mentorship/lib/pair-suggestion.server", () => ({ findMentorPair: vi.fn() }));
@@ -19,7 +19,7 @@ vi.mock("~/lib/note-path.server", () => ({
   notebookLocationParts: vi.fn(),
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { getPageAccessBulk } from "~/lib/pageAccess.server";
 import { findReceiver, resolveFilingFolder } from "~/lib/drive-receivers.server";
 import { notebookLocationParts } from "~/lib/note-path.server";

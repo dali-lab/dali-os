@@ -4,7 +4,7 @@ import { ArrowLeft, KeyRound, Mail } from "lucide-react";
 import type { Route } from "./+types/login";
 import { humanDuration, EMAIL_OTP_TTL_SECONDS } from "~/email/lib/auth-email";
 import { requireAuth } from "~/lib/auth";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import {
   pickSafeLoginNext,
   setLoginNextCookie,

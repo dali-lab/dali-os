@@ -1,9 +1,9 @@
 import { describe, it, expect, vi } from "vitest";
-// form-slots.ts imports the real ~/lib/db at module load (for other helpers);
+// form-slots.ts imports the real ~/lib/db.server at module load (for other helpers);
 // stub it so importing this pure function doesn't pull in the generated Prisma
 // client, which isn't built during the unit-test CI job. pickStaffingBinding
 // never touches prisma, so the mock is inert.
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 import {
   pickStaffingBinding,
   boundSlotCycleIds,
@@ -13,7 +13,7 @@ import {
   setSlotGate,
   setSlotPublished,
 } from "~/projects/lib/form-slots";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 
 const mockPrisma = prisma as unknown as Record<
   string,

@@ -14,7 +14,7 @@ import { Select, Tooltip } from "~/components/ui/floating";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { isAdmin, isCore } from "~/lib/roles";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { logAuditEvent } from "~/lib/audit";
 import { cn } from "~/lib/cn";
 import {

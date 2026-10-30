@@ -1,7 +1,7 @@
 // MCP `list_announcements` — pending and recently sent announcements.
 // Requires mcp:admin (Core leads only).
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore } from "~/lib/roles";
 import { AdminForbiddenError as McpForbiddenError } from "./errors";
 import type { McpCtx } from "../../registry";

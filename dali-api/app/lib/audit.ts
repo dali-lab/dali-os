@@ -25,7 +25,7 @@ export async function logAuditEvent(event: AuditEvent): Promise<void> {
 
     // Lazy-imported so tests that only mock ~/lib/auth (or other transitive
     // importers of this module) don't have to also mock the prisma client.
-    const { prisma } = await import("~/lib/db");
+    const { prisma } = await import("~/lib/db.server");
 
     await prisma.auditLog.create({
       data: {

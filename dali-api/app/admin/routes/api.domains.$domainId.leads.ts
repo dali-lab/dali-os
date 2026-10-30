@@ -1,6 +1,6 @@
 import type { Route } from "./+types/api.domains.$domainId.leads";
 import { z } from "zod";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth, forbidden } from "~/lib/auth";
 import { isAdmin, currentTerm } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";

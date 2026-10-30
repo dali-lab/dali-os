@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { resolveFilingFolder } from "~/lib/drive-receivers.server";
 import { resolveReferenceOptions } from "~/forms/lib/reference-sources";
 import {
@@ -11,7 +11,7 @@ import {
 
 const mockCreateForm = vi.hoisted(() => vi.fn());
 vi.mock("~/forms/lib/form-page.server", () => ({ createForm: mockCreateForm }));
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     form: { findFirst: vi.fn(), findUnique: vi.fn(), create: vi.fn(), update: vi.fn(), count: vi.fn() },
     page: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn(), count: vi.fn() },

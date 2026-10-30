@@ -5,7 +5,7 @@
 //   read_blog_post    — mcp:read
 //   manage_blog_post  — mcp:write  (faceted: create/update/publish/unpublish)
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { fullName } from "~/lib/display";
 import { isAdmin } from "~/lib/roles";
 import { resourcesAccess } from "~/lib/resources.server";

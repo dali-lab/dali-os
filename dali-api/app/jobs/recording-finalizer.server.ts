@@ -4,7 +4,7 @@
 // queries at a time, and each branch's own update moves it out of that
 // query for the next tick.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import {
   RETRY_PENDING_MARKER,
   applyResult,
