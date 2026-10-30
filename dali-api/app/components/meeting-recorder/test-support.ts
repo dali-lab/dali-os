@@ -55,7 +55,6 @@ export function makeRec(overrides: Partial<UseMeetingRecording> = {}): UseMeetin
     processingStage: null,
 
     useDesktopApp: false,
-    setUseDesktopApp: vi.fn(),
     micDeviceId: undefined,
     setMicDeviceId: vi.fn(),
     micDevices: [],
@@ -67,7 +66,7 @@ export function makeRec(overrides: Partial<UseMeetingRecording> = {}): UseMeetin
     callAudioUnsupported: false,
 
     live: false,
-    hasTranscript: false,
+    hasTranscript: true,
     drives: true,
     canDiscard: true,
     canStopOthers: false,

@@ -16,8 +16,8 @@ afterEach(() => {
   unmount = null;
 });
 
-function show(consent?: typeof CONSENT) {
-  const mounted = mountDom(createElement(RecordStartSheet, { rec: makeRec(), consent }));
+function show(consent?: typeof CONSENT, rec = makeRec()) {
+  const mounted = mountDom(createElement(RecordStartSheet, { rec, consent }));
   unmount = mounted.unmount;
   const start = () =>
     [...document.querySelectorAll("button")].find((b) => b.textContent?.includes("Start recording"))!;
@@ -40,5 +40,32 @@ describe("RecordStartSheet", () => {
     const box = document.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
     act(() => box.click());
     expect(start().disabled).toBe(false);
+  });
+
+  it("offers no source choice with the native recorder and starts it", () => {
+    const rec = makeRec({ desktopVer: "0.1.21", useDesktopApp: true });
+    const { start } = show(undefined, rec);
+    expect(document.querySelector('input[type="radio"]')).toBeNull();
+    expect(document.body.textContent).not.toContain("browser instead");
+    expect(document.body.textContent).not.toContain("Microphone");
+    act(() => start().click());
+    expect(rec.startDesktop).toHaveBeenCalled();
+    expect(rec.startBrowser).not.toHaveBeenCalled();
+  });
+
+  it("records through the webview, with no call audio toggle, in a shell without the native recorder", () => {
+    const rec = makeRec({ desktopVer: "0.1.21", useDesktopApp: false });
+    const { start } = show(undefined, rec);
+    expect(document.querySelector('input[type="radio"]')).toBeNull();
+    expect(document.body.textContent).toContain("Microphone");
+    expect(document.body.textContent).not.toContain("Include call audio");
+    act(() => start().click());
+    expect(rec.startBrowser).toHaveBeenCalled();
+  });
+
+  it("keeps the mic picker and call audio toggle in a regular browser", () => {
+    show(undefined, makeRec({ desktopVer: null, useDesktopApp: false }));
+    expect(document.body.textContent).toContain("Microphone");
+    expect(document.body.textContent).toContain("Include call audio");
   });
 });

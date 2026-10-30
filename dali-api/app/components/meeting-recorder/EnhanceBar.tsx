@@ -368,6 +368,12 @@ function barContent(
       if (!enhanceWasUndone(rec)) return tasksBar(rec, draft);
       return readyBar(rec, "ready", celebrate, owner);
 
+    case "noSpeech":
+      return {
+        key: "noSpeech",
+        node: <BarShell title="No speech was captured" detail="Nothing was transcribed from this recording. Discard it and record again." />,
+      };
+
     case "ready":
     case "inserted":
       return readyBar(rec, state, celebrate, owner);

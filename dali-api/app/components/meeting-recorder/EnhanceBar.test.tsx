@@ -298,6 +298,14 @@ describe("EnhanceBar pending review", () => {
 });
 
 describe("EnhanceBar other states", () => {
+  it("noSpeech: says nothing was captured and offers no Insert or Enhance", () => {
+    const { container } = mountBar(makeRec({ phase: "done", hasTranscript: false, aiEnabled: true }));
+    expect(container.textContent).toContain("No speech was captured");
+    expect(container.textContent).not.toContain("Transcript ready");
+    expect(container.textContent).not.toContain("Insert transcript");
+    expect(container.textContent).not.toContain("Enhance notes");
+  });
+
   it.each([
     ["recording", { phase: "recording" as const }],
     ["review", { phase: "review" as const }],
