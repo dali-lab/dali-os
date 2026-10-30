@@ -67,6 +67,8 @@ import { Menu, Select } from "~/components/ui/floating";
 import { parseTypeFilter, type DriveTypeFilter } from "~/components/drive/type-filter";
 import { createNotebookRequest, sendJson } from "~/components/notebooks/notebook-requests";
 import { Modal } from "~/components/Modal";
+import { LoadMore } from "~/components/ui/Pager";
+import { fetchCursorPage, useLoadMore } from "~/hooks/useLoadMore";
 import { cn } from "~/lib/cn";
 import { isProcessRootSpace, isVirtualSpace, sharedSpaceItems, SHARED_SPACE_KEY } from "~/lib/drive-spaces";
 import { filterPillClass } from "~/components/ui/floating/styles";
@@ -2011,6 +2013,8 @@ export default function DriveHub() {
 
 // ── Trash panel ────────────────────────────────────────────────────────────────
 
+const trashKey = (item: { type: string; id: string }) => `${item.type}:${item.id}`;
+
 type TrashItem = {
   id: string;
   type: "doc" | "folder" | "file" | "form";
@@ -2034,32 +2038,37 @@ function TrashPanel({
   dialog: ReturnType<typeof useDialog>;
   toast: ReturnType<typeof useToast>;
 }) {
-  const [items, setItems] = useState<TrashItem[]>([]);
+  const [first, setFirst] = useState<{ items: TrashItem[]; nextCursor: string | null }>({ items: [], nextCursor: null });
+  const [removed, setRemoved] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  async function fetchTrash() {
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await fetch("/api/drive/trash", { credentials: "include" });
-      if (!res.ok) throw new Error("Failed to load trash");
-      const data = await res.json() as { items: TrashItem[] };
-      setItems(data.items ?? []);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load trash");
-    } finally {
-      setLoading(false);
-    }
-  }
+  useEffect(() => {
+    let live = true;
+    fetchCursorPage<TrashItem>("/api/drive/trash")
+      .then((page) => live && setFirst(page))
+      .catch((err) => live && setError(err instanceof Error ? err.message : "Failed to load trash"))
+      .finally(() => live && setLoading(false));
+    return () => { live = false; };
+  }, []);
 
-  useEffect(() => { void fetchTrash(); }, []);
+  const { items: loaded, pager } = useLoadMore<TrashItem>({
+    items: first.items,
+    nextCursor: first.nextCursor,
+    fetchPage: (cursor) => fetchCursorPage<TrashItem>(`/api/drive/trash?cursor=${encodeURIComponent(cursor)}`),
+    idOf: trashKey,
+  });
+  const items = loaded.filter((item) => !removed.has(trashKey(item)));
+
+  function dropLocally(item: TrashItem) {
+    setRemoved((prev) => new Set(prev).add(trashKey(item)));
+  }
 
   async function restore(item: TrashItem) {
     const res = await restoreFromTrashRequest(item);
     if (res.ok) {
       toast.success(restoredToast([item.title]));
-      void fetchTrash();
+      dropLocally(item);
       onRevalidate();
     } else {
       toast.error("Couldn't restore");
@@ -2081,7 +2090,7 @@ function TrashPanel({
     const res = await fetch("/api/drive/trash", { method: "POST", body: fd, credentials: "include" });
     if (res.ok) {
       toast.success("Deleted permanently");
-      void fetchTrash();
+      dropLocally(item);
       onRevalidate();
     } else {
       toast.error("Couldn't delete");
@@ -2113,10 +2122,10 @@ function TrashPanel({
       </div>
       {loading && <p className="text-sm text-muted-foreground py-8 text-center">Loading…</p>}
       {error && <p className="text-sm text-destructive py-2">{error}</p>}
-      {!loading && !error && items.length === 0 && (
+      {!loading && !error && items.length === 0 && !pager.hasMore && (
         <p className="text-sm text-muted-foreground italic py-8 text-center">Trash is empty.</p>
       )}
-      {!loading && !error && items.length > 0 && (
+      {!loading && !error && (items.length > 0 || pager.hasMore) && (
         <div className="flex flex-col gap-0.5 overflow-y-auto flex-1 -mx-1 px-1">
           {items.map((item) => (
             <div
@@ -2153,6 +2162,7 @@ function TrashPanel({
               </div>
             </div>
           ))}
+          <LoadMore {...pager} />
         </div>
       )}
     </Modal>
