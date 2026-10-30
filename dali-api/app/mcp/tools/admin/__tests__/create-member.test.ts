@@ -5,10 +5,12 @@ vi.mock("~/lib/roles", () => ({ isCore: vi.fn() }));
 vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn().mockResolvedValue(undefined) }));
 vi.mock("~/lib/handle", () => ({ assignHandleIfMissing: vi.fn().mockResolvedValue(undefined) }));
 vi.mock("~/admin/lib/eligibility.server", () => ({ addOrUpdateEligibility: vi.fn() }));
+vi.mock("~/lib/dartmouth-people", () => ({ peopleByNetId: vi.fn() }));
 
 import { prisma } from "~/lib/db";
 import { isCore } from "~/lib/roles";
 import { logAuditEvent } from "~/lib/audit";
+import { peopleByNetId } from "~/lib/dartmouth-people";
 import { assignHandleIfMissing } from "~/lib/handle";
 import { runCreateMember, CREATE_MEMBER_TOOL } from "~/mcp/tools/admin/create-member";
 import type { McpCtx } from "~/mcp/registry";
@@ -34,6 +36,15 @@ function makeCtx(userId = "core-u1"): McpCtx {
 }
 
 const BASE = { firstName: "Ada", lastName: "Lovelace" };
+const PERSON = {
+  dartmouthAffiliation: "ALUMNI",
+  isAlum: true,
+  isStudent: false,
+  classYear: 2019,
+  departmentClass: "'19",
+  email: "ada.lovelace.19@dartmouth.edu",
+  name: "Ada Lovelace",
+};
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -97,6 +108,56 @@ describe("create_member", () => {
     await expect(runCreateMember(makeCtx(), BASE)).rejects.toMatchObject({
       name: "McpInvalidError",
       message: "An email is required.",
+    });
+  });
+
+  describe("NetID with no email", () => {
+    it("fills the email and class year from the Dartmouth directory", async () => {
+      vi.mocked(peopleByNetId).mockResolvedValue(PERSON);
+      await runCreateMember(makeCtx(), { ...BASE, netId: "F00ABCD" });
+      expect(peopleByNetId).toHaveBeenCalledWith("f00abcd");
+      expect(mockPrisma.user.create.mock.calls[0][0].data).toMatchObject({
+        netId: "f00abcd",
+        dartmouthEmail: "ada.lovelace.19@dartmouth.edu",
+        classYear: 2019,
+      });
+    });
+
+    it("keeps a class year the caller gave over the directory's", async () => {
+      vi.mocked(peopleByNetId).mockResolvedValue(PERSON);
+      await runCreateMember(makeCtx(), { ...BASE, netId: "f00abcd", classYear: 2020 });
+      expect(mockPrisma.user.create.mock.calls[0][0].data.classYear).toBe(2020);
+    });
+
+    it("creates the member with no email when the directory has no record", async () => {
+      vi.mocked(peopleByNetId).mockResolvedValue(null);
+      await runCreateMember(makeCtx(), { ...BASE, netId: "f00abcd" });
+      const data = mockPrisma.user.create.mock.calls[0][0].data;
+      expect(data.netId).toBe("f00abcd");
+      expect(data.dartmouthEmail).toBeUndefined();
+    });
+
+    it("creates the member with no email when the directory record has none", async () => {
+      vi.mocked(peopleByNetId).mockResolvedValue({ ...PERSON, email: null });
+      await runCreateMember(makeCtx(), { ...BASE, netId: "f00abcd" });
+      expect(mockPrisma.user.create.mock.calls[0][0].data.netId).toBe("f00abcd");
+    });
+
+    it("writes nothing when the directory lookup fails", async () => {
+      vi.mocked(peopleByNetId).mockRejectedValue(new Error("HTTP 503"));
+      await expect(runCreateMember(makeCtx(), { ...BASE, netId: "f00abcd" })).rejects.toThrow(
+        "Dartmouth directory lookup failed",
+      );
+      expect(mockPrisma.user.create).not.toHaveBeenCalled();
+    });
+
+    it("skips the directory when an email is given", async () => {
+      await runCreateMember(makeCtx(), {
+        ...BASE,
+        netId: "f00abcd",
+        personalEmail: "ada@example.edu",
+      });
+      expect(peopleByNetId).not.toHaveBeenCalled();
     });
   });
 
