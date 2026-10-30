@@ -90,6 +90,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   notifyInterviewCancelled({
     interviewId: interview.id,
     interviewerUserIds,
+    reason: "lead",
     createdByUserId: auth.user.sub,
   }).catch(() => {});
 
