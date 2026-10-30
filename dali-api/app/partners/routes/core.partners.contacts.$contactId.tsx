@@ -30,6 +30,7 @@ import { PartnerActivityFeed } from "../components/PartnerActivityFeed";
 import { PartnerEmailPanel } from "../components/PartnerEmailPanel";
 import { ContactAvatar } from "../components/contact/ContactAvatar";
 import { getPartnerContactEmailThreads } from "../lib/partner-email.server";
+import { loadPartnerActivityPage } from "../lib/partner-activity-page.server";
 import { logPartnerActivity } from "../lib/partner-activity.server";
 import {
   PARTNER_CHANNELS,
@@ -82,7 +83,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   });
   if (!contact) throw new Response("Not found", { status: 404 });
 
-  const [applications, meetingRows, activityRows, threads] = await Promise.all([
+  const [applications, meetingRows, activityPage, threads] = await Promise.all([
     prisma.partnerApplication.findMany({
       where: { applicantContactId: contact.id },
       orderBy: { createdAt: "desc" },
@@ -99,48 +100,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         scheduledMeeting: { select: { selectedAt: true } },
       },
     }),
-    prisma.partnerActivity.findMany({
-      where: { contactId: contact.id },
-      orderBy: { createdAt: "desc" },
-      take: 50,
-      select: {
-        id: true,
-        createdAt: true,
-        applicationId: true,
-        actorUserId: true,
-        type: true,
-        body: true,
-        metadata: true,
-      },
-    }),
+    loadPartnerActivityPage({ contactId: contact.id }),
     getPartnerContactEmailThreads(contact.id),
   ]);
-
-  const activities = activityRows.map((r) => ({
-    id: r.id,
-    createdAt: r.createdAt.toISOString(),
-    applicationId: r.applicationId,
-    actorUserId: r.actorUserId,
-    type: r.type,
-    body: r.body,
-    metadata: (r.metadata ?? null) as Record<string, unknown> | null,
-  }));
-  const actorIds = [
-    ...new Set(activityRows.map((r) => r.actorUserId).filter(Boolean)),
-  ] as string[];
-  let actorNames: Record<string, string> = {};
-  if (actorIds.length > 0) {
-    const users = await prisma.user.findMany({
-      where: { id: { in: actorIds } },
-      select: { id: true, firstName: true, lastName: true, daliEmail: true },
-    });
-    actorNames = Object.fromEntries(
-      users.map((u) => [
-        u.id,
-        [u.firstName, u.lastName].filter(Boolean).join(" ") || u.daliEmail || u.id,
-      ]),
-    );
-  }
 
   const meetings = meetingRows.map((m) => ({
     id: m.id,
@@ -154,8 +116,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     contact,
     applications,
     meetings,
-    activities,
-    actorNames,
+    activities: activityPage.items,
+    activitiesNextCursor: activityPage.nextCursor,
+    actorNames: activityPage.actorNames,
     threads,
     canEdit,
     trailLabel: contact.name,
@@ -343,7 +306,7 @@ function isContactTab(x: string | null): x is ContactTab {
 }
 
 export default function PartnerContactDetail() {
-  const { contact, applications, meetings, activities, actorNames, threads, canEdit } =
+  const { contact, applications, meetings, activities, activitiesNextCursor, actorNames, threads, canEdit } =
     useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const submit = useSubmit();
@@ -439,7 +402,13 @@ export default function PartnerContactDetail() {
       />
 
       {tab === "timeline" && (
-        <PartnerActivityFeed activities={activities} actorNames={actorNames} canEdit={canEdit} />
+        <PartnerActivityFeed
+          activities={activities}
+          nextCursor={activitiesNextCursor}
+          scope={{ contactId: contact.id }}
+          actorNames={actorNames}
+          canEdit={canEdit}
+        />
       )}
 
       {tab === "applications" && (

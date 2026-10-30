@@ -24,6 +24,8 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { buttonClasses } from "~/components/ui/Button";
+import { LoadMore } from "~/components/ui/Pager";
+import { fetchCursorPage, useLoadMore, type CursorPage } from "~/hooks/useLoadMore";
 import { relativeTime } from "~/lib/relative-time";
 import { PARTNER_STAGE_LABELS } from "../lib/partner-application";
 
@@ -197,14 +199,26 @@ function actorLabel(a: PartnerActivity, names: Record<string, string>): string {
   return str((a.metadata ?? {}).source) === "Form" ? "Partner" : "System";
 }
 
+export type PartnerActivityScope = { orgId: string } | { contactId: string };
+
+export function partnerActivityUrl(scope: PartnerActivityScope, cursor: string): string {
+  const params = new URLSearchParams(scope);
+  params.set("cursor", cursor);
+  return `/api/partner-activity?${params}`;
+}
+
 export function PartnerActivityFeed({
-  activities,
-  actorNames,
+  activities: firstPage,
+  nextCursor,
+  scope,
+  actorNames: firstNames,
   canEdit,
   headerActions,
   flat = false,
 }: {
   activities: PartnerActivity[];
+  nextCursor: string | null;
+  scope: PartnerActivityScope;
   actorNames: Record<string, string>;
   canEdit: boolean;
   /** Extra affordances for the pinned header (e.g. a "Log meeting" button). */
@@ -217,6 +231,20 @@ export function PartnerActivityFeed({
 }) {
   const [composing, setComposing] = useState(false);
   const [note, setNote] = useState("");
+  const [olderNames, setOlderNames] = useState<Record<string, string>>({});
+  const { items: activities, pager } = useLoadMore<PartnerActivity>({
+    items: firstPage,
+    nextCursor,
+    idOf: (a) => a.id,
+    resetKey: JSON.stringify(scope),
+    fetchPage: async (cursor) => {
+      const page = await fetchCursorPage<PartnerActivity>(partnerActivityUrl(scope, cursor));
+      const names = (page as CursorPage<PartnerActivity> & { actorNames?: Record<string, string> }).actorNames;
+      if (names) setOlderNames((prev) => ({ ...prev, ...names }));
+      return page;
+    },
+  });
+  const actorNames = { ...olderNames, ...firstNames };
 
   const list =
     activities.length === 0 ? (
@@ -245,7 +273,14 @@ export function PartnerActivityFeed({
       </ul>
     );
 
-  if (flat) return list;
+  const listWithMore = (
+    <>
+      {list}
+      <LoadMore {...pager} />
+    </>
+  );
+
+  if (flat) return listWithMore;
 
   return (
     <section className="rounded-os-card bg-os-card">
@@ -306,7 +341,7 @@ export function PartnerActivityFeed({
         </Form>
       )}
 
-      {list}
+      {listWithMore}
     </section>
   );
 }
