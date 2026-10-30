@@ -65,7 +65,6 @@ function makeRec(overrides: Partial<UseMeetingRecording> = {}): UseMeetingRecord
     processingStage: null,
 
     useDesktopApp: false,
-    setUseDesktopApp: vi.fn(),
     micDeviceId: undefined,
     setMicDeviceId: vi.fn(),
     micDevices: [],

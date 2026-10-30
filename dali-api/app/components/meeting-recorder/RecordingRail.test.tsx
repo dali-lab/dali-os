@@ -17,6 +17,13 @@ describe("deriveRailState", () => {
     expect(deriveRailState(makeRec({ phase: "failed" }))).toBe("failed");
   });
 
+  it("treats a finished recording with no transcript as noSpeech, even after an Insert", () => {
+    const done = { phase: "done" as const, hasTranscript: false };
+    expect(deriveRailState(makeRec(done))).toBe("noSpeech");
+    expect(deriveRailState(makeRec({ ...done, insertedAt: "2026-10-10T00:00:00Z" }))).toBe("noSpeech");
+    expect(deriveRailState(makeRec({ phase: "processing", hasTranscript: false }))).toBe("processing");
+  });
+
   it("splits phase 'done' into ready/generating/pendingReview/enhanced/inserted/stalePreview", () => {
     const done = { phase: "done" as const };
     expect(deriveRailState(makeRec({ ...done }))).toBe("ready");
