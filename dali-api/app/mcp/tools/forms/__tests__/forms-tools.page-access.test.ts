@@ -82,7 +82,8 @@ describe("get_form_responses", () => {
     m.formSubmission.findMany.mockResolvedValue([]);
     vi.mocked(buildResponseGrid).mockResolvedValue({ columns: [], rowsBySubmission: [] } as never);
     const out = await runGetFormResponses(ctx, { formId: "f1" });
-    expect(out).toMatchObject({ formId: "f1", formName: "Intake", totalCount: 0 });
+    expect(out).toMatchObject({ formId: "f1", formName: "Intake" });
+    expect(out.page.total).toBe(0);
   });
 });
 

@@ -65,6 +65,48 @@ describe("pages + files tools", () => {
     expect(GET_TASK_TOOL.requiredScope).toBe("mcp:read");
   });
 
+  const pageRow = (id: string, parentPageId: string | null, position = 0) => ({
+    id,
+    parentPageId,
+    title: id,
+    kind: "FreeForm",
+    iconEmoji: null,
+    position,
+    archivedAt: null,
+  });
+
+  it("list_project_pages renders every level up to MAX_PAGE_DEPTH", async () => {
+    mockPrisma.project.findUnique.mockResolvedValue({ id: "p1", overviewPageId: null, prdPageId: null });
+    mockPrisma.page.findMany.mockResolvedValue(
+      Array.from({ length: 8 }, (_, i) => pageRow(`d${i}`, i === 0 ? null : `d${i - 1}`)),
+    );
+    const out = await runListProjectPages("u1", { projectId: "p1" });
+    let node: any = out.pages[0];
+    const seen = [node.id];
+    while (node.children.length > 0) {
+      node = node.children[0];
+      seen.push(node.id);
+    }
+    expect(seen).toEqual(["d0", "d1", "d2", "d3", "d4", "d5", "d6"]);
+  });
+
+  it("list_project_pages pages top-level pages with their subtrees intact", async () => {
+    mockPrisma.project.findUnique.mockResolvedValue({ id: "p1", overviewPageId: null, prdPageId: null });
+    mockPrisma.page.findMany.mockResolvedValue([
+      pageRow("r1", null, 0),
+      pageRow("r2", null, 1),
+      pageRow("r3", null, 2),
+      pageRow("r1-c", "r1"),
+    ]);
+    const first = await runListProjectPages("u1", { projectId: "p1", limit: 2 });
+    expect(first.pages.map((p) => p.id)).toEqual(["r1", "r2"]);
+    expect(first.pages[0].children.map((c) => c.id)).toEqual(["r1-c"]);
+    expect(first.page).toMatchObject({ hasMore: true, total: 3 });
+    const second = await runListProjectPages("u1", { projectId: "p1", limit: 2, cursor: first.page.nextCursor! });
+    expect(second.pages.map((p) => p.id)).toEqual(["r3"]);
+    expect(second.page).toMatchObject({ hasMore: false, nextCursor: null });
+  });
+
   it("list_project_pages builds a 2-level tree", async () => {
     mockPrisma.project.findUnique.mockResolvedValue({
       id: "p1",

@@ -1,18 +1,24 @@
 // MCP `list_project_pages` — workspace page tree for a project. Returns
-// top-level pages with their immediate children (2-level cap, matching
-// schema invariant). Excludes archived pages by default.
+// top-level pages, each with its full subtree down to MAX_PAGE_DEPTH levels
+// below it. Pages are the top-level pages; subtrees are never split across
+// pages. Excludes archived pages by default.
 
 import { prisma } from "~/lib/db";
+import { MAX_PAGE_DEPTH } from "~/lib/pages";
+import { pageArray, pageProps, type PageArgs } from "~/mcp/pagination";
+
+const PAGE_LIMITS = { defaultLimit: 50, maxLimit: 200 };
 
 export const LIST_PROJECT_PAGES_TOOL = {
   name: "list_project_pages",
   description:
-    "List the page tree for a project's workspace (overview, PRD, retros, free-form docs). Excludes archived pages. Includes the project's Overview and PRD page ids on the project itself.",
+    "List the page tree for a project's workspace (overview, PRD, retros, free-form docs). Excludes archived pages. Each top-level page carries its whole subtree. Pass page.nextCursor as cursor to read the next page of top-level pages until page.hasMore is false; page.total counts top-level pages. Includes the project's Overview and PRD page ids on the project itself.",
   inputSchema: {
     type: "object" as const,
     properties: {
       projectId: { type: "string", minLength: 1 },
       includeArchived: { type: "boolean" },
+      ...pageProps(PAGE_LIMITS),
     },
     required: ["projectId"],
     additionalProperties: false,
@@ -20,7 +26,7 @@ export const LIST_PROJECT_PAGES_TOOL = {
   requiredScope: "mcp:read" as const,
 };
 
-type Input = { projectId: string; includeArchived?: boolean };
+type Input = PageArgs & { projectId: string; includeArchived?: boolean };
 
 export class ListProjectPagesError extends Error {
   constructor(message: string, public status: number) {
@@ -79,18 +85,19 @@ export async function runListProjectPages(_callerId: string, input: Input) {
     if (!byParent.has(key)) byParent.set(key, []);
     byParent.get(key)!.push(node);
   }
-  function attach(node: Node) {
+  function attach(node: Node, depth: number) {
+    if (depth >= MAX_PAGE_DEPTH) return;
     node.children = byParent.get(node.id) ?? [];
+    for (const child of node.children) attach(child, depth + 1);
   }
-  const roots = byParent.get(null) ?? [];
-  for (const root of roots) {
-    attach(root);
-    for (const child of root.children) attach(child);
-  }
+  const allRoots = byParent.get(null) ?? [];
+  for (const root of allRoots) attach(root, 0);
+  const { rows: roots, page } = pageArray(allRoots, input, PAGE_LIMITS);
 
   return {
     overviewPageId: project.overviewPageId,
     prdPageId: project.prdPageId,
     pages: roots,
+    page,
   };
 }
