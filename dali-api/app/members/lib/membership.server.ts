@@ -96,6 +96,7 @@ function parseBirthday(raw: string): Date {
 export async function createOrPromoteMember(
   input: CreateMemberInput,
   actorId: string,
+  options: { allowMissingEmail?: boolean } = {},
 ): Promise<{ id: string; created: boolean }> {
   const firstName = input.firstName?.trim() ?? "";
   const lastName = input.lastName?.trim() ?? "";
@@ -119,7 +120,8 @@ export async function createOrPromoteMember(
     const value = lowered(input[column]);
     if (value) identity[column] = value;
   }
-  if (!EMAIL_COLUMNS.some((c) => identity[c])) {
+  const hasEmail = EMAIL_COLUMNS.some((c) => identity[c]);
+  if (!hasEmail && !(options.allowMissingEmail && identity.netId)) {
     throw new MemberInputError("An email is required.");
   }
   if (identity.daliEmail && !identity.daliEmail.endsWith("@dali.dartmouth.edu")) {

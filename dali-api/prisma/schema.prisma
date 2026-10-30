@@ -3696,6 +3696,9 @@ model CoreAssignment {
   userId    String
   termId    String
   leadTitle String?
+  // Imported from payroll history rather than granted in the app. Excluded
+  // from the public team list, which these members never opted into.
+  backfilled Boolean @default(false)
 
   user User @relation(fields: [userId], references: [id])
   term Term @relation(fields: [termId], references: [id])

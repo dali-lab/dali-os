@@ -147,6 +147,15 @@ describe("createOrPromoteMember identity backfill", () => {
     ).rejects.toThrow("An email is required.");
   });
 
+  it("allows a missing email only when the caller opts in and gives a netId", async () => {
+    const base = { firstName: "Ada", lastName: "Lovelace" };
+    await expect(
+      createOrPromoteMember(base, "actor", { allowMissingEmail: true }),
+    ).rejects.toThrow("An email is required.");
+    await createOrPromoteMember({ ...base, netId: "f001" }, "actor", { allowMissingEmail: true });
+    expect(mockPrisma.user.create.mock.calls[0][0].data).toMatchObject({ netId: "f001" });
+  });
+
   it.each([
     [{ daliEmail: "ada@gmail.com" }, "The DALI email must be an @dali.dartmouth.edu address."],
     [{ dartmouthEmail: "ada@dali.dartmouth.edu" }, "The Dartmouth email must be an @dartmouth.edu address."],

@@ -34,6 +34,10 @@ export type PublicTeamMember = {
   linkedinUrl: string;
 };
 
+// Imported payroll history. These members never opted into being listed, and
+// "Legacy" is a storage bucket, not a role anyone holds.
+const LEGACY_DOMAIN_ID = "domain_legacy";
+
 const USER_PUBLIC_SELECT = {
   id: true,
   firstName: true,
@@ -44,6 +48,7 @@ const USER_PUBLIC_SELECT = {
   linkedinUrl: true,
   projectAssignments: {
     select: {
+      domainId: true,
       domain: { select: { displayName: true } },
       term: { select: { code: true, sortKey: true } },
     },
@@ -62,8 +67,8 @@ export async function listPublicTeam(): Promise<PublicTeamMember[]> {
     // someone "on the team", and it keeps applicants (no assignments) out.
     where: {
       OR: [
-        { projectAssignments: { some: {} } },
-        { coreAssignments: { some: {} } },
+        { projectAssignments: { some: { domainId: { not: LEGACY_DOMAIN_ID } } } },
+        { coreAssignments: { some: { backfilled: false } } },
       ],
     },
     orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
@@ -76,7 +81,13 @@ export async function listPublicTeam(): Promise<PublicTeamMember[]> {
     const byRecency = [...u.projectAssignments].sort(
       (a, b) => b.term.sortKey - a.term.sortKey,
     );
-    const roles = [...new Set(byRecency.map((a) => a.domain.displayName))];
+    const roles = [
+      ...new Set(
+        byRecency
+          .filter((a) => a.domainId !== LEGACY_DOMAIN_ID)
+          .map((a) => a.domain.displayName),
+      ),
+    ];
     const coreRoleNames = [
       ...new Set(
         u.coreAssignments

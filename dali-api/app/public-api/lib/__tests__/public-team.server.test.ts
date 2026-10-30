@@ -16,14 +16,14 @@ beforeEach(() => {
 });
 
 describe("listPublicTeam query shape", () => {
-  it("scopes to staffed members (a project or core assignment)", async () => {
+  it("scopes to staffed members, ignoring backfilled history", async () => {
     mockPrisma.user.findMany.mockResolvedValue([]);
     await listPublicTeam();
     expect(mockPrisma.user.findMany).toHaveBeenCalledTimes(1);
     expect(mockPrisma.user.findMany.mock.calls[0][0].where).toEqual({
       OR: [
-        { projectAssignments: { some: {} } },
-        { coreAssignments: { some: {} } },
+        { projectAssignments: { some: { domainId: { not: "domain_legacy" } } } },
+        { coreAssignments: { some: { backfilled: false } } },
       ],
     });
   });
@@ -101,6 +101,40 @@ describe("listPublicTeam mapping", () => {
     // Chronological, deduped.
     expect(m.termsInDali).toEqual(["24F", "25S", "25F"]);
     expect(m.profileImage).toBe("/api/media?key=uploads%2Favatars%2Fu1.webp");
+  });
+
+  it("never shows Legacy as a role, but counts its terms", async () => {
+    mockPrisma.user.findMany.mockResolvedValue([
+      {
+        id: "u3",
+        firstName: "Ada",
+        lastName: "Lovelace",
+        classYear: 2027,
+        major: null,
+        photoUrl: null,
+        linkedinUrl: null,
+        projectAssignments: [
+          {
+            domainId: "domain_legacy",
+            domain: { displayName: "Legacy" },
+            term: term("26W", 20261),
+          },
+          {
+            domainId: "d1",
+            domain: { displayName: "UI/UX" },
+            term: term("25F", 20254),
+          },
+        ],
+        coreAssignments: [],
+      },
+    ]);
+
+    const [m] = await listPublicTeam();
+    expect(m.roles).toEqual(["UI/UX"]);
+    expect(m.hiredRoles).toEqual(["UI/UX"]);
+    expect(m.role).toBe("UI/UX");
+    expect(m.currentRole).toBe("UI/UX");
+    expect(m.termsInDali).toEqual(["25F", "26W"]);
   });
 
   it("lets a Core title outrank a domain as the headline role", async () => {
