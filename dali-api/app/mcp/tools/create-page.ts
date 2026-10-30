@@ -4,7 +4,7 @@
 // nesting rules (documents nest only inside Folders up to MAX_PAGE_DEPTH;
 // folders never nest) and same gate (Core, or staffed on the project).
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { canEditProject } from "./access";
 import { markdownToBlocks } from "~/collab/blocknote-server";
 import { replaceCollabDocContent } from "~/collab/write";

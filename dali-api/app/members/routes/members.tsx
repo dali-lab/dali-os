@@ -13,7 +13,7 @@ import { redirectToLogin } from "~/lib/login-next";
 import { isCore } from "~/lib/roles";
 import { graduateProgramLabel } from "~/lib/dartmouth-people";
 import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import {
   createOrPromoteMember,
   MemberInputError,

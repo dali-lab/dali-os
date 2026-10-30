@@ -9,7 +9,7 @@ import { defineConfig, env } from "prisma/config";
 // (P1002). See dali-api/prisma/MIGRATIONS.md and issue #101.
 //
 // `prisma.config.ts` is loaded only by the Prisma CLI; the app runtime builds
-// its own client from process.env.DATABASE_URL (see app/lib/db.ts), so the URL
+// its own client from process.env.DATABASE_URL (see app/lib/db.server.ts), so the URL
 // chosen here does not affect runtime traffic.
 //
 // Resolution order:

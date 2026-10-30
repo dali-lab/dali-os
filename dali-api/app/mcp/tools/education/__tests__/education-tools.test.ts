@@ -34,7 +34,7 @@ vi.mock("~/mcp/registry", async () => {
   return { McpError, McpNotFoundError, McpForbiddenError, McpInvalidError, requireForAction };
 });
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/roles", async (orig) => {
   const real = await orig<typeof import("~/lib/roles")>();
   return { ...real, isCore: vi.fn() };
@@ -105,7 +105,7 @@ import { saveAttendance } from "~/education/lib/attendance.server";
 import { upsertStudentNote } from "~/education/lib/student-notes.server";
 import { closeOutOffering, previewCloseOut } from "~/education/lib/certificates.server";
 import { myCreditStanding, creditHistory } from "~/education/lib/ce-credits.server";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 
 import {
   LIST_EDUCATION_OFFERINGS_TOOL,

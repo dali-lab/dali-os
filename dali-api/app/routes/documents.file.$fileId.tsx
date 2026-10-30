@@ -3,7 +3,7 @@ import { redirect, useLoaderData, useRevalidator, useSearchParams } from "react-
 import { Download, Upload } from "lucide-react";
 import { Tooltip } from "~/components/ui/floating";
 import type { Route } from "./+types/documents.file.$fileId";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth, redirectPartnerToPortal, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { isCore } from "~/lib/roles";

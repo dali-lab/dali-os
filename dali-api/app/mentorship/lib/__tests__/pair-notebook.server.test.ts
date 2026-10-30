@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     page: { findUnique: vi.fn(), delete: vi.fn(), updateMany: vi.fn() },
     user: { findUnique: vi.fn() },
@@ -20,7 +20,7 @@ vi.mock("~/lib/drive-receivers.server", () => ({
 }));
 vi.mock("~/collab/write", () => ({ replaceCollabDocContent: vi.fn() }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { createNotebookTab, ensureMeetingNotebook } from "~/lib/pages";
 import { resolveFilingFolder } from "~/lib/drive-receivers.server";
 import { replaceCollabDocContent } from "~/collab/write";

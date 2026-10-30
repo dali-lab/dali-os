@@ -9,7 +9,7 @@ import { Link, redirect, useFetcher, useLoaderData } from "react-router";
 import { Archive, ArchiveRestore, Pencil, Plus, Tablet, Trash2 } from "lucide-react";
 import { z } from "zod";
 import type { Route } from "./+types/core.rooms";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { isAdmin, isCore } from "~/lib/roles";

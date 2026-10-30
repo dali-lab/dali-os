@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     auditLog: {
       findMany: vi.fn(),
@@ -20,7 +20,7 @@ vi.mock("~/lib/audit-query", async (orig) => {
   };
 });
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore } from "~/lib/roles";
 import { resolveAuditTextFilters } from "~/lib/audit-query";
 import { runListAuditLogs, LIST_AUDIT_LOGS_TOOL } from "~/mcp/tools/admin/list-audit-logs";

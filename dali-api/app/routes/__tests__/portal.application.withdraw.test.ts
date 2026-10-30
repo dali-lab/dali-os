@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/auth", () => ({
   requireAuth: vi.fn(),
 }));
@@ -21,7 +21,7 @@ vi.mock("~/hiring/lib/interview-meet", () => ({
   deprovisionInterviewMeet: vi.fn().mockResolvedValue(undefined),
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { deprovisionInterviewMeet } from "~/hiring/lib/interview-meet";
 import { requireAuth } from "~/lib/auth";
 import { getActiveCycleById } from "~/hiring/lib/cycles";

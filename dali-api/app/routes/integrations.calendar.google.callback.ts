@@ -11,7 +11,7 @@
 // cookie and finished in ~/email/lib/mail-connect.server.
 
 import type { Route } from "./+types/integrations.calendar.google.callback";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { markCalendarChanged } from "~/calendar/lib/external-cache.server";
 import { buildEncryptedTokens } from "~/lib/google-calendar";
 import { requireAuth, isNonMember } from "~/lib/auth";

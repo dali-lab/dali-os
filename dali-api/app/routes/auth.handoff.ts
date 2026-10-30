@@ -8,7 +8,7 @@
 
 import { redirect } from "react-router";
 import type { Route } from "./+types/auth.handoff";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { getClientIp } from "~/lib/rate-limit";
 import { logAuditEvent } from "~/lib/audit";
 import { hashCode, desktopWebviewUserAgent } from "~/lib/pairing";

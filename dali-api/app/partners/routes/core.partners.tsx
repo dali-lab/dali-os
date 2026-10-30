@@ -4,7 +4,7 @@ import { Popover } from "~/components/ui/floating";
 import type { Route } from "./+types/core.partners";
 import { requireAuth, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore, currentTerm } from "~/lib/roles";
 import { PartnerCrmNav } from "../components/PartnerCrmNav";
 import { PartnerBoard } from "../components/PartnerBoard";

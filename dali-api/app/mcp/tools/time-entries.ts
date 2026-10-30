@@ -8,7 +8,7 @@
 // `add` and `update` are gated on `confirmed: true` server-side: an agent
 // logging payroll-adjacent hours must show the user the preview first.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { resolveRoleRef, currentTerm, coreRoleLabel } from "~/lib/roles";
 import { validateTimeEntryRange, ASSIGNMENT_TYPES } from "~/lib/calendar-schemas";
 import { addTimeEntry, updateTimeEntry, deleteTimeEntry } from "~/lib/time-entries.server";

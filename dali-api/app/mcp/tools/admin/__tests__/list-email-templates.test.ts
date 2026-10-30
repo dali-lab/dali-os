@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     emailTemplate: { findMany: vi.fn() },
     emailTemplateVersion: { findMany: vi.fn() },
@@ -10,7 +10,7 @@ vi.mock("~/lib/roles", () => ({
   isCore: vi.fn(),
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore } from "~/lib/roles";
 import {
   runListEmailTemplates,

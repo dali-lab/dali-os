@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     page: { findUnique: vi.fn(), update: vi.fn(), count: vi.fn() },
     projectFile: { count: vi.fn() },
@@ -43,7 +43,7 @@ vi.mock("~/lib/cors", () => ({
   handlePreflight: () => null,
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireMemberSession, requireProjectEditAccess } from "~/lib/auth";
 import { getPageAccess } from "~/lib/pageAccess.server";
 import { NotebookError, loadManageableNotebook, trashNotebook } from "~/lib/notebooks.server";

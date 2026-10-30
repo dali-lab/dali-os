@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Form, useLoaderData, useNavigation } from "react-router";
 import type { Route } from "./+types/partner.settings";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { logAuditEvent } from "~/lib/audit";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { isValidTimezone } from "~/lib/timezone";

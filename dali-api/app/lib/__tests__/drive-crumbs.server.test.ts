@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: { page: { findUnique: vi.fn() }, groupDefinition: { findUnique: vi.fn() } },
 }));
 
@@ -8,7 +8,7 @@ vi.mock("../pageAccess.server", () => ({
   getPageAccess: vi.fn(),
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { getPageAccess } from "../pageAccess.server";
 import { driveFolderCrumbs } from "../drive-crumbs.server";
 

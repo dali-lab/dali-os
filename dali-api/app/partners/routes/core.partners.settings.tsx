@@ -2,7 +2,7 @@ import { Navigate, redirect, useSearchParams } from "react-router";
 import type { Route } from "./+types/core.partners.settings";
 import { requireAuth, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { logAuditEvent } from "~/lib/audit";
 import { isCore, getActiveCoreCycleTermIds } from "~/lib/roles";
 import { listSelectableForms } from "~/projects/lib/form-slots";

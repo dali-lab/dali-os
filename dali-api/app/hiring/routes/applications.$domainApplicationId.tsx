@@ -2,7 +2,7 @@ import { redirect, useLoaderData, useSearchParams } from "react-router";
 import { isAdminOnlyCycle } from "~/hiring/lib/applicant-groups";
 import { safeParseJsonString } from "~/forms/lib/forms-data";
 import type { Route } from "./+types/applications.$domainApplicationId";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { recordRouteVisit } from "~/lib/user-pages.server";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";

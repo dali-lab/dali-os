@@ -1,13 +1,13 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/notify.server", () => ({ notify: vi.fn() }));
 vi.mock("~/lib/roles", () => ({
   getAdminUserIdsFromEnv: vi.fn(() => []),
   getActiveCoreCycleTermIds: vi.fn(async () => []),
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { notify } from "~/lib/notify.server";
 import { getAdminUserIdsFromEnv, getActiveCoreCycleTermIds } from "~/lib/roles";
 import { partnerNotifyRecipients, notifyPartners } from "~/partners/lib/partner-notify.server";

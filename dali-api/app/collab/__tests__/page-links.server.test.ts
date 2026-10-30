@@ -3,7 +3,7 @@ import * as Y from "yjs";
 
 // extractPageMentionIds reads via ydocToBlocks which imports prisma + read
 // (for persistence); mock them so the test runs without a DB.
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/notify.server", () => ({ notify: vi.fn() }));
 
 import { extractPageMentionIds } from "../page-links.server";

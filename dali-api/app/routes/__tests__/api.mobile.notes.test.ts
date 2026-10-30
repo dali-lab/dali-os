@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 const requireMobileUser = vi.fn();
 const getUserRoles = vi.fn();
 const isFeatureEnabled = vi.fn();
@@ -37,7 +37,7 @@ vi.mock("~/mcp/tools/calendar-extra/enhance-meeting-notes", () => ({
   runEnhanceMeetingNotes: (...a: unknown[]) => runEnhanceMeetingNotes(...a),
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { McpError } from "~/mcp/errors";
 import { PageNameConflictError } from "~/lib/page-names.server";
 import { loader as listLoader, action as quickNote } from "../api.mobile.notes";

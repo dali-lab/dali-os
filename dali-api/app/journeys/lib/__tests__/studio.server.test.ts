@@ -14,8 +14,8 @@ const db = vi.hoisted(() => ({
 }));
 const notify = vi.hoisted(() => vi.fn());
 
-vi.mock("~/lib/db", async () => {
-  const { Prisma } = await import("~/lib/__mocks__/db");
+vi.mock("~/lib/db.server", async () => {
+  const { Prisma } = await import("~/lib/__mocks__/db.server");
   return { prisma: db, Prisma };
 });
 vi.mock("~/lib/notify.server", () => ({ notify }));

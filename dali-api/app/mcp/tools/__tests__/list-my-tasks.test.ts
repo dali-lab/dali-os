@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { runListMyTasks, LIST_MY_TASKS_TOOL } from "~/mcp/tools/list-my-tasks";
 
 const mockPrisma = prisma as unknown as {

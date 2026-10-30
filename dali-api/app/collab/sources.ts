@@ -19,7 +19,7 @@
 // their plainText snapshot mirror instead.
 
 import * as Y from "yjs";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore, isDomainLead } from "~/lib/roles";
 import {
   BLOCKNOTE_FRAGMENT,

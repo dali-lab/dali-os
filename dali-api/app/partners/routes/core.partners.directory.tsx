@@ -10,7 +10,7 @@ import {
 import type { Route } from "./+types/core.partners.directory";
 import { requireAuth, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore } from "~/lib/roles";
 import { logAuditEvent } from "~/lib/audit";
 import { classifyPartnerEmail, normalizeEmail } from "../lib/magic-link.server";

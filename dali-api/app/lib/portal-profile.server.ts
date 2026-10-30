@@ -1,4 +1,4 @@
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { displayEmail } from "~/lib/display";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { isValidTimezone } from "~/lib/timezone";

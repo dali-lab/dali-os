@@ -2,7 +2,7 @@ import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import { Link, redirect, useLoaderData, useNavigate, useRevalidator } from "react-router";
 import type { Route } from "./+types/domain-lead.delibs.$id";
 import type { DragEndEvent } from "@dnd-kit/core";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { recordRouteVisit } from "~/lib/user-pages.server";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";

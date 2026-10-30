@@ -6,7 +6,7 @@
 // from Version history). Gate mirrors the web's getPageAccess canEdit check
 // — works for Project, Lab, and personal-note (Member) workspace pages.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { PAGE_ACCESS_SELECT, getPageAccess } from "~/lib/pageAccess.server";
 import { markdownToBlocks } from "~/collab/blocknote-server";
 import { replaceCollabDocContent } from "~/collab/write";

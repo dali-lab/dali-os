@@ -1,7 +1,7 @@
 // MCP `list_comments` — fetch comment threads for a document, file, or page-doc.
 // Permission mirrors api.comments.ts GET.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore, isLabMember, isProjectMember } from "~/lib/roles";
 import { getPageAccess } from "~/lib/pageAccess.server";
 import { hydrateAuthors } from "~/lib/collabAuth";

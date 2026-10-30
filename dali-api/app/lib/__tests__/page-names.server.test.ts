@@ -1,10 +1,10 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: { page: { findFirst: vi.fn() }, projectFile: { findFirst: vi.fn() } },
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { assertUniqueName, findNameConflict, nameConflictResponse, PageNameConflictError } from "../page-names.server";
 
 const pageFind = prisma.page.findFirst as unknown as ReturnType<typeof vi.fn>;

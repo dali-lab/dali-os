@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     blogPost: {
       aggregate: vi.fn(),
@@ -17,7 +17,7 @@ vi.mock("~/lib/roles", () => ({ isAdmin: vi.fn() }));
 vi.mock("~/lib/notify.server", () => ({ notify: vi.fn() }));
 vi.mock("~/lib/promotion-notify.server", () => ({ adminRecipientIds: vi.fn() }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { notify } from "~/lib/notify.server";
 import { adminRecipientIds } from "~/lib/promotion-notify.server";
 import {

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     page: { findUnique: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
     groupDefinition: { findUnique: vi.fn() },
@@ -13,7 +13,7 @@ vi.mock("~/lib/page-sharing.server", () => ({ sharePermissionFor: vi.fn() }));
 vi.mock("~/lib/pages", () => ({ collectSubtree: vi.fn() }));
 vi.mock("~/lib/groups", () => ({ resolveGroupMembers: vi.fn() }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { collectSubtree } from "~/lib/pages";
 import { resolveGroupMembers } from "~/lib/groups";
 import { setFolderScope, setGeneralAccess } from "~/lib/page-share-access.server";

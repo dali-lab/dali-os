@@ -3,7 +3,7 @@
 // "what counts as a recent notification" policy lives in one place.
 
 import type { Prisma } from "~/generated/prisma/client";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { EVENT_TYPES, isEventType, type EventDef } from "~/lib/notification-events";
 import { noteForOccurrence } from "~/lib/meeting-occurrences";
 

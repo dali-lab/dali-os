@@ -1,4 +1,4 @@
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 
 // Blind review hides applicant identity during the reading + Initial-delibs
 // stage of a hiring cycle, so a read of an application isn't biased by who

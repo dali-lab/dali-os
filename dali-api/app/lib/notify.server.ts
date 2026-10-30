@@ -10,7 +10,7 @@
 // Works identically from a request or a background job — nothing here reads
 // request state (Gmail token comes from the DB, URLs from env).
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
 import { getAppEnv, getFrontendUrl } from "~/lib/app-env";
 import { renderMemberEmail } from "~/email/lib/layout.server";

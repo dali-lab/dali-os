@@ -7,7 +7,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { redirect, useLoaderData, useSearchParams } from "react-router";
 import { ChevronLeft, ChevronRight, Repeat, X } from "lucide-react";
 import type { Route } from "./+types/rooms";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { useOsChrome } from "~/components/os-chrome";

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     applicationReview: { findUnique: vi.fn() },
     interviewAssignment: { findFirst: vi.fn() },
@@ -45,7 +45,7 @@ vi.mock("~/lib/pageAccess.server", async (importOriginal) => ({
   getPageAccess: vi.fn(),
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isDomainLead, isCore, isProjectMember, isLabMember } from "~/lib/roles";
 import { partnerHasProjectAccess } from "~/partners/lib/partner-access";
 import { getCycleConfidentialityState } from "~/hiring/lib/confidentiality";

@@ -4,7 +4,7 @@
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/hiring/lib/cycles", () => ({ getActiveCycles: vi.fn() }));
 vi.mock("~/hiring/lib/email-engagement.server", () => ({ getEngagementSummaries: vi.fn() }));
 vi.mock("~/hiring/lib/confidentiality", async (importOriginal) => ({
@@ -13,7 +13,7 @@ vi.mock("~/hiring/lib/confidentiality", async (importOriginal) => ({
   getCycleConfidentialityState: vi.fn(),
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { getActiveCycles } from "~/hiring/lib/cycles";
 import { getCycleConfidentialityState } from "~/hiring/lib/confidentiality";
 import { getMyWorkData } from "~/hiring/lib/my-work.server";

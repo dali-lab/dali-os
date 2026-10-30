@@ -5,7 +5,7 @@ vi.mock("~/lib/auth", () => ({
   isNonMember: vi.fn(async () => false),
   forbidden: vi.fn(() => new Response("Forbidden", { status: 403 })),
 }));
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     scheduledMeeting: { findUnique: vi.fn() },
     user: { findUnique: vi.fn() },
@@ -29,7 +29,7 @@ vi.mock("~/lib/wallet-token", () => ({
 }));
 
 import { requireAuth, isNonMember } from "~/lib/auth";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore, isProjectMember } from "~/lib/roles";
 import { parseJson } from "~/lib/validate";
 import { resolvePhotoUrl } from "~/lib/photo";

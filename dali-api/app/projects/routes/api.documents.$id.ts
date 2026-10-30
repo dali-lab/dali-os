@@ -1,6 +1,6 @@
 import type { Route } from "./+types/api.documents.$id";
 import type { AuthSuccess } from "~/lib/auth";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireProjectEditAccess, requireMemberSession } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { logAuditEvent } from "~/lib/audit";

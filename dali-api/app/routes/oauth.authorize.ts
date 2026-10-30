@@ -9,7 +9,7 @@ import {
 import { checkRateLimit } from "~/lib/rate-limit";
 import { isImpersonating, requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import type { OAuthAccountType, OAuthProvider } from "~/generated/prisma/enums";
 import { getOAuthIssuer } from "~/lib/app-env";
 

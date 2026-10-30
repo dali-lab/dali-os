@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { SESSION_TTL_SECONDS } from "./cookies";
 
 // 30 days rolling expiry; same value as the absolute cap so a session

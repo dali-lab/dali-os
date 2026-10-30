@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     user: { findFirst: vi.fn(), create: vi.fn() },
     dALIMember: { findUnique: vi.fn() },
@@ -16,7 +16,7 @@ vi.mock("../partner-emails.server", () => ({
   sendMemberEmailConflictEmail: vi.fn(),
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { checkRateLimit } from "~/lib/rate-limit";
 import { sendMemberEmailConflictEmail } from "../partner-emails.server";
 import {

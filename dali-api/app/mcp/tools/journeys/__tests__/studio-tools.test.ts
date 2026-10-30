@@ -10,7 +10,7 @@ const studioServer = vi.hoisted(() => ({ listReviews: vi.fn(), reviewSubmission:
 
 vi.mock("~/journeys/lib/journeys.server", () => server);
 vi.mock("~/journeys/lib/studio.server", () => studioServer);
-vi.mock("~/lib/db", () => ({ prisma: { onboardingJourney: { findUnique: vi.fn(async () => ({ domain: { code: "UIUX" } })) } } }));
+vi.mock("~/lib/db.server", () => ({ prisma: { onboardingJourney: { findUnique: vi.fn(async () => ({ domain: { code: "UIUX" } })) } } }));
 vi.mock("~/collab/blocknote-server", () => ({
   markdownToBlocks: vi.fn(async (md: string) => [{ type: "heading", content: [{ type: "text", text: md, styles: {} }], children: [] }]),
   blocksToMarkdown: vi.fn(async () => "### Why\nBecause"),

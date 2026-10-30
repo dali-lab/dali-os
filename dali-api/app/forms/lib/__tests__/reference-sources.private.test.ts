@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { resolveReferenceOptions } from "~/forms/lib/reference-sources";
 
 const findMany = prisma.project.findMany as ReturnType<typeof vi.fn>;
