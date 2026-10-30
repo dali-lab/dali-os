@@ -4,11 +4,14 @@
 
 import { prisma } from "~/lib/db.server";
 import type { Prisma } from "~/generated/prisma/client";
+import { keysetPage, keysetWindow, pageProps, type PageArgs } from "../../pagination";
+
+const PAGE_LIMITS = { defaultLimit: 50, maxLimit: 200 };
 
 export const LIST_SCHEDULED_MEETINGS_DEF = {
   name: "list_scheduled_meetings",
   description:
-    "List all meetings the authenticated member organizes or attends. Returns past and future meetings. Supports filtering by status, role, and limit.",
+    "List all meetings the authenticated member organizes or attends. Returns past and future meetings. Newest first. Supports filtering by status and role. Pass page.nextCursor as cursor to read the next page until page.hasMore is false.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -22,26 +25,20 @@ export const LIST_SCHEDULED_MEETINGS_DEF = {
         enum: ["organizer", "participant", "any"],
         description: "Filter by caller's role in the meeting (default: any).",
       },
-      limit: {
-        type: "integer",
-        minimum: 1,
-        maximum: 200,
-        description: "Maximum number of meetings to return (default 50).",
-      },
+      ...pageProps(PAGE_LIMITS),
     },
     additionalProperties: false,
   },
   requiredScope: "mcp:read" as const,
 };
 
-type Input = {
+type Input = PageArgs & {
   status?: "Searching" | "Confirmed" | "Cancelled";
   role?: "organizer" | "participant" | "any";
-  limit?: number;
 };
 
 export async function runListScheduledMeetings(userId: string, input: Input) {
-  const limit = Math.min(Math.max(input.limit ?? 50, 1), 200);
+  const window = keysetWindow(input, PAGE_LIMITS, [{ field: "createdAt", direction: "desc", type: "date" }]);
   const role = input.role ?? "any";
 
   const statusFilter: Prisma.ScheduledMeetingWhereInput = input.status
@@ -60,10 +57,11 @@ export async function runListScheduledMeetings(userId: string, input: Input) {
     };
   }
 
-  const meetings = await prisma.scheduledMeeting.findMany({
-    where: whereClause,
+  const fetched = await prisma.scheduledMeeting.findMany({
+    where: { AND: [whereClause, window.where] },
     select: {
       id: true,
+      createdAt: true,
       title: true,
       status: true,
       selectedAt: true,
@@ -75,9 +73,10 @@ export async function runListScheduledMeetings(userId: string, input: Input) {
       participantUserIds: true,
       meetingUrl: true,
     },
-    orderBy: { createdAt: "desc" },
-    take: limit,
+    orderBy: window.orderBy,
+    take: window.take,
   });
+  const { rows: meetings, page } = keysetPage(fetched, window);
 
   return {
     meetings: meetings.map((m) => ({
@@ -92,5 +91,6 @@ export async function runListScheduledMeetings(userId: string, input: Input) {
       meetingUrl: m.meetingUrl,
       participantCount: new Set([m.organizerId, ...m.participantUserIds]).size,
     })),
+    page,
   };
 }

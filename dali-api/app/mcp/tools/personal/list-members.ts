@@ -6,13 +6,17 @@
 
 import { prisma } from "~/lib/db.server";
 import { currentTerm, currentTermMemberWhere, isAdminViaEnv } from "~/lib/roles";
+import { offsetPage, offsetWindow, pageArray, pageProps, type PageArgs } from "~/mcp/pagination";
+
+const PAGE_LIMITS = { defaultLimit: 50, maxLimit: 100 };
 
 export const LIST_MEMBERS_DEF = {
   name: "list_members",
   description:
     "Browse the DALI member directory. Returns current-term-active members by default. " +
     "Optionally filter by domain name/code, tier, or a name/email substring. " +
-    "Use `includeInactive` to also include alumni and members inactive this term.",
+    "Use `includeInactive` to also include alumni and members inactive this term. " +
+    "Pass page.nextCursor as cursor to read the next page until page.hasMore is false; page.total is the full match count.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -35,28 +39,21 @@ export const LIST_MEMBERS_DEF = {
         description:
           "If true, also include alumni and members with no current-term assignment. Default false.",
       },
-      limit: {
-        type: "integer",
-        minimum: 1,
-        maximum: 100,
-        description: "Maximum results to return (default 50, max 100).",
-      },
+      ...pageProps(PAGE_LIMITS),
     },
     additionalProperties: false,
   },
   requiredScope: "mcp:read" as const,
 };
 
-type Input = {
+type Input = PageArgs & {
   q?: string;
   domain?: string;
   tier?: "admin" | "core" | "domain-lead" | "member";
   includeInactive?: boolean;
-  limit?: number;
 };
 
 export async function runListMembers(input: Input) {
-  const limit = Math.max(1, Math.min(input.limit ?? 50, 100));
   const term = await currentTerm();
   const termId = term?.id ?? null;
 
@@ -98,30 +95,38 @@ export async function runListMembers(input: Input) {
     }
   }
 
-  const users = await prisma.user.findMany({
-    where: { AND: andFilters },
-    orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
-    take: limit,
-    select: {
-      id: true,
-      firstName: true,
-      lastName: true,
-      daliEmail: true,
-      adminMembership: { select: { id: true } },
-      coreAssignments: termId
-        ? { where: { termId }, select: { leadTitle: true } }
-        : { select: { leadTitle: true } },
-      domainLeadAssignmentsAsUser: termId
-        ? {
-            where: { termId },
-            select: { domain: { select: { displayName: true } } },
-          }
-        : { select: { domain: { select: { displayName: true } } } },
-      domainEligibilities: {
-        select: { domain: { select: { displayName: true } } },
-      },
+  const where = { AND: andFilters };
+  const orderBy = [{ lastName: "asc" as const }, { firstName: "asc" as const }, { id: "asc" as const }];
+  const select = {
+    id: true,
+    firstName: true,
+    lastName: true,
+    daliEmail: true,
+    adminMembership: { select: { id: true } },
+    coreAssignments: termId
+      ? { where: { termId }, select: { leadTitle: true } }
+      : { select: { leadTitle: true } },
+    domainLeadAssignmentsAsUser: termId
+      ? {
+          where: { termId },
+          select: { domain: { select: { displayName: true } } },
+        }
+      : { select: { domain: { select: { displayName: true } } } },
+    domainEligibilities: {
+      select: { domain: { select: { displayName: true } } },
     },
-  });
+  };
+
+  type UserRow = {
+    id: string;
+    firstName: string;
+    lastName: string;
+    daliEmail: string | null;
+    adminMembership: { id: string } | null;
+    coreAssignments: { leadTitle: string | null }[];
+    domainLeadAssignmentsAsUser: { domain: { displayName: string } }[];
+    domainEligibilities: { domain: { displayName: string } }[];
+  };
 
   type MemberRow = {
     id: string;
@@ -133,9 +138,7 @@ export async function runListMembers(input: Input) {
     currentTermRoles: string[];
   };
 
-  const results: MemberRow[] = [];
-
-  for (const u of users) {
+  const toRow = (u: UserRow): MemberRow => {
     const isAdminUser = u.adminMembership !== null || isAdminViaEnv(u.id);
     const isCoreUser = isAdminUser || u.coreAssignments.length > 0;
     const isDomainLeadUser = u.domainLeadAssignmentsAsUser.length > 0;
@@ -147,9 +150,6 @@ export async function runListMembers(input: Input) {
           ? "domain-lead"
           : "member";
 
-    // Apply tier filter here (avoids a costly Prisma filter on computed fields).
-    if (input.tier && tier !== input.tier) continue;
-
     const currentTermRoles: string[] = [];
     for (const c of u.coreAssignments) {
       if (c.leadTitle) currentTermRoles.push(c.leadTitle);
@@ -158,7 +158,7 @@ export async function runListMembers(input: Input) {
       currentTermRoles.push(`${dl.domain.displayName} Lead`);
     }
 
-    results.push({
+    return {
       id: u.id,
       firstName: u.firstName,
       lastName: u.lastName,
@@ -166,8 +166,21 @@ export async function runListMembers(input: Input) {
       tier,
       domains: u.domainEligibilities.map((e) => e.domain.displayName),
       currentTermRoles,
-    });
+    };
+  };
+
+  if (input.tier) {
+    const users = await prisma.user.findMany({ where, orderBy, select });
+    const matching = users.map(toRow).filter((m) => m.tier === input.tier);
+    const { rows, page } = pageArray(matching, input, PAGE_LIMITS);
+    return { members: rows, page };
   }
 
-  return { members: results, count: results.length };
+  const window = offsetWindow(input, PAGE_LIMITS);
+  const [users, total] = await Promise.all([
+    prisma.user.findMany({ where, orderBy, select, skip: window.skip, take: window.take }),
+    prisma.user.count({ where }),
+  ]);
+  const { rows, page } = offsetPage(users.map(toRow), window, total);
+  return { members: rows, page };
 }

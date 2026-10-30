@@ -6,11 +6,14 @@ import { prisma } from "~/lib/db.server";
 import { canViewMentorship, mentorshipPairWhere } from "~/mentorship/lib/visibility";
 import type { McpCtx, McpTool } from "../../registry";
 import { McpForbiddenError } from "../../registry";
+import { keysetPage, keysetWindow, pageProps, type PageArgs } from "../../pagination";
+
+const PAGE_LIMITS = { defaultLimit: 50, maxLimit: 200 };
 
 export const LIST_MENTORSHIP_PAIRS_TOOL = {
   name: "list_mentorship_pairs",
   description:
-    "List mentorship pairs the caller can see. Every lab mentor (and Core) sees all pairs lab-wide. All filters are optional and AND-combined.",
+    "List mentorship pairs the caller can see. Every lab mentor (and Core) sees all pairs lab-wide. All filters are optional and AND-combined. Ordered by term, then id. Pass page.nextCursor as cursor to read the next page until page.hasMore is false.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -18,6 +21,7 @@ export const LIST_MENTORSHIP_PAIRS_TOOL = {
       termId: { type: "string", description: "Filter by term id." },
       mentorUserId: { type: "string", description: "Filter by mentor user id." },
       menteeUserId: { type: "string", description: "Filter by mentee user id." },
+      ...pageProps(PAGE_LIMITS),
     },
     required: [],
     additionalProperties: false,
@@ -27,7 +31,7 @@ export const LIST_MENTORSHIP_PAIRS_TOOL = {
 
 export async function runListMentorshipPairs(
   callerId: string,
-  input: {
+  input: PageArgs & {
     projectId?: string;
     termId?: string;
     mentorUserId?: string;
@@ -45,9 +49,11 @@ export async function runListMentorshipPairs(
   if (input.menteeUserId) filters.menteeUserId = input.menteeUserId;
 
   const scope = await mentorshipPairWhere(callerId);
-  const pairs = await prisma.mentorshipPair.findMany({
-    where: { AND: [scope, filters] },
-    take: 500,
+  const window = keysetWindow(input, PAGE_LIMITS, [{ field: "termId", direction: "asc", type: "string" }], "asc");
+  const fetched = await prisma.mentorshipPair.findMany({
+    where: { AND: [scope, filters, window.where] },
+    orderBy: window.orderBy,
+    take: window.take,
     select: {
       id: true,
       projectId: true,
@@ -57,6 +63,7 @@ export async function runListMentorshipPairs(
       mentee: { select: { id: true, firstName: true, lastName: true } },
     },
   });
+  const { rows: pairs, page } = keysetPage(fetched, window);
 
   const projectIds = [...new Set(pairs.map((p) => p.projectId))];
   const termIds = [...new Set(pairs.map((p) => p.termId))];
@@ -80,6 +87,7 @@ export async function runListMentorshipPairs(
   const domainMap = new Map(domains.map((d) => [d.id, d]));
 
   return {
+    page,
     pairs: pairs.map((p) => ({
       id: p.id,
       mentor: p.mentor,

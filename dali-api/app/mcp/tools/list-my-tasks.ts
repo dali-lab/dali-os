@@ -4,11 +4,14 @@
 
 import { prisma } from "~/lib/db.server";
 import { TASK_STATUSES, type TaskStatus } from "~/projects/lib/task-board";
+import { offsetPage, offsetWindow, pageProps, type PageArgs } from "../pagination";
+
+const PAGE_LIMITS = { defaultLimit: 50, maxLimit: 100 };
 
 export const LIST_MY_TASKS_TOOL = {
   name: "list_my_tasks",
   description:
-    "List project tasks the authenticated DALI OS member is assigned to. Defaults to open work (excludes Done and Cancelled). Filter by status or projectId.",
+    "List project tasks the authenticated DALI OS member is assigned to. Defaults to open work (excludes Done and Cancelled). Filter by status or projectId. Pass page.nextCursor as cursor to read the next page until page.hasMore is false.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -27,39 +30,34 @@ export const LIST_MY_TASKS_TOOL = {
         minLength: 1,
         description: "Restrict to a single project.",
       },
-      limit: {
-        type: "integer",
-        minimum: 1,
-        maximum: 100,
-        description: "Maximum tasks to return (default 50, max 100).",
-      },
+      ...pageProps(PAGE_LIMITS),
     },
     additionalProperties: false,
   },
   requiredScope: "mcp:read" as const,
 };
 
-type Input = {
+type Input = PageArgs & {
   status?: TaskStatus[];
   projectId?: string;
-  limit?: number;
 };
 
 const DEFAULT_OPEN_STATUSES: TaskStatus[] = ["Todo", "InProgress", "InReview"];
 
 export async function runListMyTasks(callerId: string, input: Input) {
-  const limit = Math.max(1, Math.min(input.limit ?? 50, 100));
+  const window = offsetWindow(input, PAGE_LIMITS);
   const statuses =
     input.status && input.status.length > 0 ? input.status : DEFAULT_OPEN_STATUSES;
 
-  const rows = await prisma.task.findMany({
+  const fetched = await prisma.task.findMany({
     where: {
       assignees: { some: { userId: callerId } },
       status: { in: statuses },
       ...(input.projectId ? { projectId: input.projectId } : {}),
     },
-    orderBy: [{ dueAt: "asc" }, { priority: "desc" }, { createdAt: "desc" }],
-    take: limit,
+    orderBy: [{ dueAt: "asc" }, { priority: "desc" }, { createdAt: "desc" }, { id: "asc" }],
+    skip: window.skip,
+    take: window.take,
     select: {
       id: true,
       title: true,
@@ -76,7 +74,10 @@ export async function runListMyTasks(callerId: string, input: Input) {
     },
   });
 
+  const { rows, page } = offsetPage(fetched, window);
+
   return {
+    page,
     tasks: rows.map((t) => ({
       id: t.id,
       title: t.title,

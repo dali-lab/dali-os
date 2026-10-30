@@ -5,30 +5,37 @@ import { prisma } from "~/lib/db.server";
 import { isCore } from "~/lib/roles";
 import { AdminForbiddenError as McpForbiddenError } from "./errors";
 import type { McpCtx } from "../../registry";
+import { keysetPage, keysetWindow, pageProps, type PageArgs } from "../../pagination";
+
+const PAGE_LIMITS = { defaultLimit: 20, maxLimit: 100 };
+const PENDING_LIMIT = 20;
 
 export const LIST_ANNOUNCEMENTS_TOOL = {
   name: "list_announcements",
   description:
-    "List scheduled (pending) and recently sent announcements. Returns up to 20 pending + 20 recently sent rows. Core leads only.",
+    "List scheduled (pending) and sent announcements. `pending` holds the next 20 scheduled sends, soonest first, and `pendingTotal` is how many are scheduled in all. `recentlySent` is paged, newest first: pass page.nextCursor as cursor to read the next page until page.hasMore is false. Core leads only.",
   inputSchema: {
     type: "object" as const,
-    properties: {},
+    properties: { ...pageProps(PAGE_LIMITS) },
     required: [],
     additionalProperties: false,
   },
   requiredScope: "mcp:admin" as const,
 };
 
-export async function runListAnnouncements(ctx: McpCtx) {
+export async function runListAnnouncements(ctx: McpCtx, args: PageArgs = {}) {
   if (!(await isCore(ctx.user.id))) {
     throw new McpForbiddenError("Only Core leads can list announcements.");
   }
 
-  const [pending, recent] = await Promise.all([
+  const window = keysetWindow(args, PAGE_LIMITS, [
+    { field: "sentAt", direction: "desc", type: "date" },
+  ]);
+  const [pending, pendingTotal, fetchedSent] = await Promise.all([
     prisma.scheduledAnnouncement.findMany({
       where: { canceledAt: null, sentAt: null },
       orderBy: { sendAt: "asc" },
-      take: 20,
+      take: PENDING_LIMIT,
       select: {
         id: true,
         title: true,
@@ -40,10 +47,11 @@ export async function runListAnnouncements(ctx: McpCtx) {
         lastError: true,
       },
     }),
+    prisma.scheduledAnnouncement.count({ where: { canceledAt: null, sentAt: null } }),
     prisma.scheduledAnnouncement.findMany({
-      where: { sentAt: { not: null } },
-      orderBy: { sentAt: "desc" },
-      take: 20,
+      where: { AND: [{ sentAt: { not: null } }, window.where] },
+      orderBy: window.orderBy,
+      take: window.take,
       select: {
         id: true,
         title: true,
@@ -56,6 +64,7 @@ export async function runListAnnouncements(ctx: McpCtx) {
       },
     }),
   ]);
+  const { rows: recent, page } = keysetPage(fetchedSent, window);
 
   const toRow = (s: typeof pending[number]) => ({
     id: s.id,
@@ -70,6 +79,8 @@ export async function runListAnnouncements(ctx: McpCtx) {
 
   return {
     pending: pending.map(toRow),
+    pendingTotal,
+    page,
     recentlySent: recent.map(toRow),
   };
 }

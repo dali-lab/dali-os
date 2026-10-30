@@ -78,7 +78,7 @@ vi.mock("~/education/lib/announcements.server", () => ({
 }));
 
 vi.mock("~/education/lib/discussions.server", () => ({
-  listThreads: vi.fn(),
+  listThreadPage: vi.fn(),
   offeringInstructorIds: vi.fn(),
 }));
 
@@ -117,7 +117,7 @@ import {
   readMaterialPage,
 } from "~/education/lib/lms.server";
 import { postAnnouncement, listDiscussion } from "~/education/lib/announcements.server";
-import { listThreads, offeringInstructorIds } from "~/education/lib/discussions.server";
+import { listThreadPage, offeringInstructorIds } from "~/education/lib/discussions.server";
 import { complianceForTerm, grantManualCredit, remindNonCompliant } from "~/education/lib/ce-credits.server";
 import { setFormBinding } from "~/education/lib/feedback.server";
 import { runOfferingAction } from "~/education/lib/offerings.server";
@@ -165,6 +165,8 @@ const mockPrisma = prisma as unknown as {
   educationOffering: {
     findUnique: ReturnType<typeof vi.fn>;
   };
+  educationAnnouncement: { count: ReturnType<typeof vi.fn> };
+  educationDiscussionPost: { count: ReturnType<typeof vi.fn> };
   educationSession: {
     findUnique: ReturnType<typeof vi.fn>;
   };
@@ -536,6 +538,50 @@ describe("read_education_page", () => {
     const result = await runReadEducationPage(ctx(), { offeringId: "o1", pageId: "page1" });
     expect(result.id).toBe("page1");
     expect(result.title).toBe("Week 1");
+    expect(result.content).toBe('{"type":"doc","content":[]}');
+    expect(result.page).toMatchObject({ hasMore: false, nextCursor: null });
+  });
+
+  it("chunks long content and the chunks join back to the document", async () => {
+    vi.mocked(isOfferingManager).mockResolvedValue(true);
+    const doc = { type: "doc", content: [{ type: "paragraph", text: "x".repeat(50) }] };
+    vi.mocked(readMaterialPage).mockResolvedValue({
+      id: "page1",
+      title: "Week 1",
+      studentEditable: false,
+      content: doc,
+    });
+    const total = JSON.stringify(doc).length;
+    let joined = "";
+    let cursor: string | undefined;
+    let calls = 0;
+    do {
+      const out = await runReadEducationPage(ctx(), {
+        offeringId: "o1",
+        pageId: "page1",
+        limit: 30,
+        cursor,
+      });
+      expect(out.page.total).toBe(total);
+      joined += out.content;
+      cursor = out.page.nextCursor ?? undefined;
+      calls += 1;
+    } while (cursor);
+    expect(calls).toBeGreaterThan(1);
+    expect(JSON.parse(joined)).toEqual(doc);
+  });
+
+  it("rejects a bad cursor", async () => {
+    vi.mocked(isOfferingManager).mockResolvedValue(true);
+    vi.mocked(readMaterialPage).mockResolvedValue({
+      id: "page1",
+      title: "Week 1",
+      studentEditable: false,
+      content: { type: "doc", content: [] },
+    });
+    await expect(
+      runReadEducationPage(ctx(), { offeringId: "o1", pageId: "page1", cursor: "nope" }),
+    ).rejects.toThrow(/Invalid cursor/);
   });
 
   it("throws not-found when page not in this offering", async () => {
@@ -596,28 +642,133 @@ describe("read_education_discussion", () => {
     ).rejects.toMatchObject({ name: "McpForbiddenError" });
   });
 
-  it("returns discussion for enrolled student", async () => {
-    vi.mocked(isOfferingManager).mockResolvedValue(false);
-    mockPrisma.educationApplication.findFirst.mockResolvedValue({ id: "app1" });
-    mockPrisma.educationOffering.findUnique.mockResolvedValue({ id: "o1" });
-    vi.mocked(offeringInstructorIds).mockResolvedValue(new Set(["instr1"]));
-    vi.mocked(listDiscussion).mockResolvedValue([
-      {
-        id: "ann1",
-        body: "Welcome!",
-        kind: "Announcement",
-        sentAt: new Date("2026-05-01"),
-        authorId: "instr1",
-        author: { firstName: "Bob", lastName: "Jones" },
-        replies: [],
-      },
-    ]);
-    vi.mocked(listThreads).mockResolvedValue([]);
-    const result = await runReadEducationDiscussion(ctx(), { offeringId: "o1" });
-    expect(result.announcements).toHaveLength(1);
-    expect(result.announcements[0].sentAt).toBe("2026-05-01T00:00:00.000Z");
-    expect(result.announcements[0].authorName).toBe("Bob Jones");
-    expect(result.threads).toHaveLength(0);
+  describe("with access", () => {
+    const ann = (id: string, at: string, replies: number, replyTotal = replies) => ({
+      id,
+      body: id,
+      kind: "Announcement",
+      sentAt: new Date(at),
+      authorId: "instr1",
+      author: { firstName: "Bob", lastName: "Jones" },
+      _count: { replies: replyTotal },
+      replies: Array.from({ length: replies }, (_, i) => ({
+        id: `${id}-r${i}`,
+        body: "reply",
+        sentAt: new Date(at),
+        authorId: "u2",
+        author: { firstName: "Ada", lastName: "Lovelace" },
+      })),
+    });
+    const thread = (id: string, at: string) => ({
+      id,
+      body: id,
+      createdAt: new Date(at),
+      authorId: "u2",
+      authorName: "Ada Lovelace",
+      isInstructor: false,
+      replies: [],
+    });
+
+    beforeEach(() => {
+      vi.mocked(isOfferingManager).mockResolvedValue(false);
+      mockPrisma.educationApplication.findFirst.mockResolvedValue({ id: "app1" });
+      mockPrisma.educationOffering.findUnique.mockResolvedValue({ id: "o1" });
+      mockPrisma.educationAnnouncement = { count: vi.fn().mockResolvedValue(1) };
+      mockPrisma.educationDiscussionPost = { count: vi.fn().mockResolvedValue(0) };
+      vi.mocked(offeringInstructorIds).mockResolvedValue(new Set(["instr1"]));
+      vi.mocked(listDiscussion).mockReset();
+      vi.mocked(listThreadPage).mockReset();
+      vi.mocked(listThreadPage).mockResolvedValue([]);
+    });
+
+    it("returns the first page of both feeds when no feed is given", async () => {
+      vi.mocked(listDiscussion).mockResolvedValue([ann("ann1", "2026-05-01", 0)] as never);
+      const result = (await runReadEducationDiscussion(ctx(), { offeringId: "o1" })) as Record<string, any>;
+      expect(result.announcements).toHaveLength(1);
+      expect(result.announcements[0].sentAt).toBe("2026-05-01T00:00:00.000Z");
+      expect(result.announcements[0].authorName).toBe("Bob Jones");
+      expect(result.announcementsPage).toMatchObject({ hasMore: false, nextCursor: null, total: 1 });
+      expect(result.threads).toHaveLength(0);
+      expect(result.threadsPage).toMatchObject({ hasMore: false, total: 0 });
+      expect(result).not.toHaveProperty("page");
+    });
+
+    it("rejects a cursor without a feed", async () => {
+      await expect(
+        runReadEducationDiscussion(ctx(), { offeringId: "o1", cursor: "x" }),
+      ).rejects.toMatchObject({ name: "McpInvalidError" });
+    });
+
+    it("walks the announcements feed by keyset and never calls the thread query", async () => {
+      vi.mocked(listDiscussion).mockResolvedValueOnce([
+        ann("a2", "2026-05-02", 0),
+        ann("a1", "2026-05-01", 0),
+      ] as never);
+      mockPrisma.educationAnnouncement.count.mockResolvedValue(2);
+      const first = (await runReadEducationDiscussion(ctx(), {
+        offeringId: "o1",
+        feed: "announcements",
+        limit: 1,
+      })) as Record<string, any>;
+      expect(first.announcements.map((a: { id: string }) => a.id)).toEqual(["a2"]);
+      expect(first.page).toMatchObject({ hasMore: true, limit: 1, total: 2 });
+      expect(listDiscussion).toHaveBeenCalledWith("o1", { and: {}, take: 2 });
+      expect(listThreadPage).not.toHaveBeenCalled();
+
+      vi.mocked(listDiscussion).mockResolvedValueOnce([ann("a1", "2026-05-01", 0)] as never);
+      const second = (await runReadEducationDiscussion(ctx(), {
+        offeringId: "o1",
+        feed: "announcements",
+        limit: 1,
+        cursor: first.page.nextCursor,
+      })) as Record<string, any>;
+      const opts = vi.mocked(listDiscussion).mock.calls[1][1] as { and: { OR: unknown[] } };
+      expect(opts.and.OR).toHaveLength(2);
+      expect(second.announcements.map((a: { id: string }) => a.id)).toEqual(["a1"]);
+      expect(second.page).toMatchObject({ hasMore: false, nextCursor: null });
+    });
+
+    it("walks the threads feed by keyset", async () => {
+      vi.mocked(listThreadPage).mockResolvedValueOnce([
+        thread("t2", "2026-05-02"),
+        thread("t1", "2026-05-01"),
+      ]);
+      mockPrisma.educationDiscussionPost.count.mockResolvedValue(2);
+      const first = (await runReadEducationDiscussion(ctx(), {
+        offeringId: "o1",
+        feed: "threads",
+        limit: 1,
+      })) as Record<string, any>;
+      expect(first.threads[0].createdAt).toBe("2026-05-02T00:00:00.000Z");
+      expect(first.page).toMatchObject({ hasMore: true, total: 2 });
+      expect(listDiscussion).not.toHaveBeenCalled();
+
+      vi.mocked(listThreadPage).mockResolvedValueOnce([thread("t1", "2026-05-01")]);
+      const second = (await runReadEducationDiscussion(ctx(), {
+        offeringId: "o1",
+        feed: "threads",
+        limit: 1,
+        cursor: first.page.nextCursor,
+      })) as Record<string, any>;
+      expect(second.threads.map((t: { id: string }) => t.id)).toEqual(["t1"]);
+      expect(second.page.nextCursor).toBeNull();
+    });
+
+    it("reports the true reply count when replies are capped", async () => {
+      vi.mocked(listDiscussion).mockResolvedValue([ann("a1", "2026-05-01", 2, 250)] as never);
+      const result = (await runReadEducationDiscussion(ctx(), {
+        offeringId: "o1",
+        feed: "announcements",
+      })) as Record<string, any>;
+      expect(result.announcements[0].replies).toHaveLength(2);
+      expect(result.announcements[0].replyTotal).toBe(250);
+    });
+
+    it("rejects a bad cursor", async () => {
+      await expect(
+        runReadEducationDiscussion(ctx(), { offeringId: "o1", feed: "threads", cursor: "nope" }),
+      ).rejects.toThrow(/Invalid cursor/);
+    });
   });
 });
 
@@ -643,6 +794,34 @@ describe("list_ce_compliance", () => {
     expect(result.compliantCount).toBe(1);
     expect(result.nonCompliantCount).toBe(1);
     expect(result.members).toHaveLength(2);
+    expect(result.page).toMatchObject({ hasMore: false, nextCursor: null, total: 2 });
+  });
+
+  it("pages members while the counts stay global", async () => {
+    vi.mocked(isCore).mockResolvedValue(true);
+    mockPrisma.term.findUnique.mockResolvedValue({ id: "t1", code: "26S" });
+    vi.mocked(complianceForTerm).mockResolvedValue([
+      { userId: "u1", name: "Ada Lovelace", credits: 1, compliant: true },
+      { userId: "u2", name: "Grace Hopper", credits: 0, compliant: false },
+      { userId: "u3", name: "Alan Turing", credits: 0, compliant: false },
+    ]);
+    const first = await runListCeCompliance(ctx(), { termId: "t1", limit: 2 });
+    expect(first.members.map((m) => m.userId)).toEqual(["u1", "u2"]);
+    expect(first.page).toMatchObject({ hasMore: true, total: 3 });
+    expect(first.compliantCount).toBe(1);
+    expect(first.nonCompliantCount).toBe(2);
+    const second = await runListCeCompliance(ctx(), { termId: "t1", limit: 2, cursor: first.page.nextCursor! });
+    expect(second.members.map((m) => m.userId)).toEqual(["u3"]);
+    expect(second.page).toMatchObject({ hasMore: false, nextCursor: null });
+    expect(second.compliantCount).toBe(1);
+    expect(second.nonCompliantCount).toBe(2);
+  });
+
+  it("rejects a bad cursor", async () => {
+    vi.mocked(isCore).mockResolvedValue(true);
+    mockPrisma.term.findUnique.mockResolvedValue({ id: "t1", code: "26S" });
+    vi.mocked(complianceForTerm).mockResolvedValue([]);
+    await expect(runListCeCompliance(ctx(), { termId: "t1", cursor: "nope" })).rejects.toThrow(/Invalid cursor/);
   });
 
   it("throws not-found for missing term", async () => {

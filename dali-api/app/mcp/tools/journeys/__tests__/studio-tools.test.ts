@@ -6,7 +6,7 @@ const server = vi.hoisted(() => ({
   resolveJourneyViewer: vi.fn(),
   editDraft: vi.fn(),
 }));
-const studioServer = vi.hoisted(() => ({ listWaitingReviews: vi.fn(), listReviewedPage: vi.fn(), loadReviewEntry: vi.fn(), reviewSubmission: vi.fn() }));
+const studioServer = vi.hoisted(() => ({ listReviewIds: vi.fn(), loadReviewEntries: vi.fn(), reviewSubmission: vi.fn() }));
 
 vi.mock("~/journeys/lib/journeys.server", () => server);
 vi.mock("~/journeys/lib/studio.server", () => studioServer);
@@ -98,30 +98,48 @@ describe("manage_journey_reviews", () => {
     labHref: "/x",
   });
 
+  const entries = [entry("submitted"), entry("approved")];
   beforeEach(() => {
-    studioServer.listWaitingReviews.mockResolvedValue([entry("submitted")]);
-    studioServer.listReviewedPage.mockResolvedValue({ items: [entry("approved")], nextCursor: "2026-10-01T00:00:00.000Z|sub-approved" });
-    studioServer.loadReviewEntry.mockImplementation(async (_v: unknown, id: string) => (id === "sub-submitted" ? entry("submitted") : null));
+    studioServer.listReviewIds.mockImplementation(async (_v, status) =>
+      entries.filter((e) => (e.submission.status === "submitted") === (status === "waiting")).map((e) => e.submission.id),
+    );
+    studioServer.loadReviewEntries.mockImplementation(async (_v, ids: string[]) =>
+      ids.flatMap((id) => entries.filter((e) => e.submission.id === id)),
+    );
   });
 
   it("lists waiting work by default, and reviewed work on request", async () => {
     const waiting = (await MANAGE_JOURNEY_REVIEWS.run(ctx, { action: "list" })) as { submissions: { submissionId: string }[] };
     expect(waiting.submissions.map((s) => s.submissionId)).toEqual(["sub-submitted"]);
-    const done = (await MANAGE_JOURNEY_REVIEWS.run(ctx, { action: "list", status: "reviewed" })) as {
-      submissions: { submissionId: string }[];
-      nextCursor: string | null;
-    };
+    const done = (await MANAGE_JOURNEY_REVIEWS.run(ctx, { action: "list", status: "reviewed" })) as { submissions: { submissionId: string }[] };
     expect(done.submissions.map((s) => s.submissionId)).toEqual(["sub-approved"]);
-    expect(done.nextCursor).toBe("2026-10-01T00:00:00.000Z|sub-approved");
+    expect(studioServer.listReviewIds).toHaveBeenCalledWith(expect.anything(), "reviewed");
   });
 
-  it("passes the cursor through when paging reviewed work", async () => {
-    await MANAGE_JOURNEY_REVIEWS.run(ctx, { action: "list", status: "reviewed", cursor: "c1" });
-    expect(studioServer.listReviewedPage).toHaveBeenCalledWith(expect.anything(), "c1");
+  it("pages the list with the cursor and loads only the page's entries", async () => {
+    const ids = ["a", "b", "c"];
+    studioServer.listReviewIds.mockResolvedValue(ids);
+    studioServer.loadReviewEntries.mockImplementation(async (_v, page: string[]) =>
+      page.map((id) => ({ ...entry("submitted"), submission: { ...entry("submitted").submission, id } })),
+    );
+    const first = (await MANAGE_JOURNEY_REVIEWS.run(ctx, { action: "list", limit: 2 })) as any;
+    expect(studioServer.loadReviewEntries).toHaveBeenLastCalledWith(expect.anything(), ["a", "b"]);
+    expect(first.page).toMatchObject({ hasMore: true, total: 3 });
+    const second = (await MANAGE_JOURNEY_REVIEWS.run(ctx, { action: "list", limit: 2, cursor: first.page.nextCursor })) as any;
+    expect(second.submissions.map((s: any) => s.submissionId)).toEqual(["c"]);
+    expect(second.page).toMatchObject({ hasMore: false, nextCursor: null });
   });
 
-  it("reports an unknown submission as not found", async () => {
-    await expect(MANAGE_JOURNEY_REVIEWS.run(ctx, { action: "get", submissionId: "missing" })).rejects.toThrow(/not found/i);
+  it("gets a submission by id even when it is not on the first page of the list", async () => {
+    const out = (await MANAGE_JOURNEY_REVIEWS.run(ctx, { action: "get", submissionId: "sub-approved" })) as Record<string, unknown>;
+    expect(studioServer.loadReviewEntries).toHaveBeenCalledWith(expect.anything(), ["sub-approved"]);
+    expect(studioServer.listReviewIds).not.toHaveBeenCalled();
+    expect(out.submissionId).toBe("sub-approved");
+  });
+
+  it("reports a missing submission", async () => {
+    studioServer.loadReviewEntries.mockResolvedValue([]);
+    await expect(MANAGE_JOURNEY_REVIEWS.run(ctx, { action: "get", submissionId: "nope" })).rejects.toThrow(/not found/);
   });
 
   it("describes the learner's own board items and found problem areas", async () => {

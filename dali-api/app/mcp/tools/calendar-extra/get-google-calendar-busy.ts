@@ -2,13 +2,13 @@
 // blocks for a given time range. Self-only (always the caller's own tokens).
 // Requires the `mcp:read` scope.
 
-import { fetchBusyEvents } from "~/lib/google-calendar";
+import { fetchBusyEvents, type EventReadReport } from "~/lib/google-calendar";
 import { McpInvalidError } from "../../registry";
 
 export const GET_GOOGLE_CALENDAR_BUSY_DEF = {
   name: "get_google_calendar_busy",
   description:
-    "Fetch your own Google Calendar busy blocks for a time range. Returns an empty array if no Google calendar is linked.",
+    "Fetch your own Google Calendar busy blocks for a time range. Returns an empty array if no Google calendar is linked. Every page of events is read, up to 2,500 events per calendar; truncated is true when a calendar had more events than that, so the busy list may be missing some.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -43,12 +43,13 @@ export async function runGetGoogleCalendarBusy(userId: string, input: Input) {
   }
 
   let busy;
+  const report: EventReadReport = { truncated: false };
   try {
-    busy = await fetchBusyEvents(userId, start, end);
+    busy = await fetchBusyEvents(userId, start, end, undefined, undefined, "availability", report);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     throw new McpInvalidError(`Google Calendar error: ${message}`);
   }
 
-  return { busy };
+  return { busy, truncated: report.truncated };
 }

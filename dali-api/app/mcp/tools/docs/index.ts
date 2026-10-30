@@ -160,7 +160,7 @@ export const DOCS_TOOLS: McpTool[] = [
   },
   {
     def: LIST_DRIVE_TRASH_TOOL,
-    run: (_ctx: McpCtx) => runListDriveTrash(_ctx.user.id),
+    run: (_ctx: McpCtx, args) => runListDriveTrash(_ctx.user.id, args as Parameters<typeof runListDriveTrash>[1]),
   },
   {
     def: MANAGE_DRIVE_TRASH_TOOL_DEF,

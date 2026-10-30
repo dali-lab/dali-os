@@ -9,11 +9,12 @@ import {
 } from "~/mcp/resources/announcements-active";
 
 const mockPrisma = prisma as unknown as {
-  notification: { findMany: ReturnType<typeof vi.fn> };
+  notification: { findMany: ReturnType<typeof vi.fn>; count: ReturnType<typeof vi.fn> };
 };
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockPrisma.notification.count = vi.fn().mockResolvedValue(0);
 });
 
 describe("dali://announcements/active", () => {
@@ -33,7 +34,9 @@ describe("dali://announcements/active", () => {
         createdBy: { firstName: "Pat", lastName: "Smith" },
       },
     ]);
+    mockPrisma.notification.count.mockResolvedValue(1);
     const text = await readAnnouncementsActiveResource("u1");
+    expect(text).not.toContain("Showing");
     expect(text).toContain("## Lab dinner Friday");
     expect(text).toContain("RSVP by Wed.");
     expect(text).toContain("by Pat Smith");
@@ -55,5 +58,25 @@ describe("dali://announcements/active", () => {
     mockPrisma.notification.findMany.mockResolvedValue([]);
     const text = await readAnnouncementsActiveResource("u1");
     expect(text).toBe("_No active announcements._");
+  });
+
+  it("says how many are shown out of the real total when capped", async () => {
+    const row = (i: number) => ({
+      id: `n${i}`,
+      title: `A${i}`,
+      body: null,
+      link: null,
+      dueAt: null,
+      createdAt: new Date("2026-06-01T15:00:00Z"),
+      createdBy: null,
+    });
+    mockPrisma.notification.findMany.mockResolvedValue(Array.from({ length: 50 }, (_, i) => row(i)));
+    mockPrisma.notification.count.mockResolvedValue(73);
+    const text = await readAnnouncementsActiveResource("u1");
+    expect(text.startsWith("_Showing 50 of 73 active announcements, newest first._")).toBe(true);
+    expect(mockPrisma.notification.findMany.mock.calls[0][0]).toMatchObject({
+      take: 50,
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    });
   });
 });

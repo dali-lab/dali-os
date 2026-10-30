@@ -176,11 +176,11 @@ export interface ReviewEntry {
 
 export const REVIEWED_PAGE_SIZE = 30;
 
-const REVIEWED_STATUSES: OnboardingLabSubmissionStatus[] = ["Approved", "ChangesRequested"];
+export type ReviewStatusFilter = "waiting" | "reviewed";
 
-/** The viewer's own work never shows, and non-Core viewers only see journeys they collaborate on. */
-function reviewScope(viewer: JourneyViewer) {
+function reviewWhere(viewer: JourneyViewer, status?: ReviewStatusFilter): Prisma.OnboardingLabSubmissionWhereInput {
   return {
+    status: status === "waiting" ? "Submitted" : status === "reviewed" ? { in: ["Approved", "ChangesRequested"] } : { not: "InProgress" },
     userId: { not: viewer.id },
     journey: viewer.isCore ? {} : { collaborators: { some: { userId: viewer.id } } },
   };
@@ -197,20 +197,60 @@ const REVIEW_SELECT = {
 
 type ReviewRow = Prisma.OnboardingLabSubmissionGetPayload<{ select: typeof REVIEW_SELECT }>;
 
+async function toReviewEntry(row: ReviewRow): Promise<ReviewEntry | null> {
+  const journey = row.journey.published as unknown as JourneyContent | null;
+  const mod = journey ? getModule(journey, row.moduleId) : undefined;
+  if (!journey || !mod?.studio) return null;
+  return {
+    submission: toSubmission(row),
+    studio: mod.studio,
+    learner: { id: row.user.id, name: fullName(row.user), photoUrl: await resolvePhotoUrl(row.user.photoUrl) },
+    moduleTitle: moduleTitle(mod),
+    journeyTitle: journeyTitle(journey),
+    labHref: `${modulePath(toDomain(row.journey.domain).slug, row.journeyId, row.moduleId)}?view=lab`,
+  };
+}
+
 async function toEntries(rows: ReviewRow[]): Promise<ReviewEntry[]> {
   const entries: ReviewEntry[] = [];
   for (const row of rows) {
-    const journey = row.journey.published as unknown as JourneyContent | null;
-    const mod = journey ? getModule(journey, row.moduleId) : undefined;
-    if (!journey || !mod?.studio) continue;
-    entries.push({
-      submission: toSubmission(row),
-      studio: mod.studio,
-      learner: { id: row.user.id, name: fullName(row.user), photoUrl: await resolvePhotoUrl(row.user.photoUrl) },
-      moduleTitle: moduleTitle(mod),
-      journeyTitle: journeyTitle(journey),
-      labHref: `${modulePath(toDomain(row.journey.domain).slug, row.journeyId, row.moduleId)}?view=lab`,
-    });
+    const entry = await toReviewEntry(row);
+    if (entry) entries.push(entry);
+  }
+  return entries;
+}
+
+/** Ids of every reviewable submission, newest first, without loading their work. Rows whose module no longer has a published lab are left out. */
+export async function listReviewIds(viewer: JourneyViewer, status?: ReviewStatusFilter): Promise<string[]> {
+  const rows = await prisma.onboardingLabSubmission.findMany({
+    where: reviewWhere(viewer, status),
+    select: { id: true, moduleId: true, journeyId: true },
+    orderBy: [{ submittedAt: "desc" }, { id: "desc" }],
+  });
+  const journeyIds = [...new Set(rows.map((r) => r.journeyId))];
+  const journeys = await prisma.onboardingJourney.findMany({ where: { id: { in: journeyIds } }, select: { id: true, published: true } });
+  const published = new Map(journeys.map((j) => [j.id, j.published as unknown as JourneyContent | null]));
+  return rows
+    .filter((r) => {
+      const journey = published.get(r.journeyId);
+      return journey && getModule(journey, r.moduleId)?.studio;
+    })
+    .map((r) => r.id);
+}
+
+/** Full entries for the given submission ids, in the order given. Ids the viewer can't review or that lost their lab are left out. */
+export async function loadReviewEntries(viewer: JourneyViewer, ids: string[]): Promise<ReviewEntry[]> {
+  if (ids.length === 0) return [];
+  const rows = await prisma.onboardingLabSubmission.findMany({
+    where: { AND: [reviewWhere(viewer), { id: { in: ids } }] },
+    select: REVIEW_SELECT,
+  });
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  const entries: ReviewEntry[] = [];
+  for (const id of ids) {
+    const row = byId.get(id);
+    const entry = row ? await toReviewEntry(row) : null;
+    if (entry) entries.push(entry);
   }
   return entries;
 }
@@ -218,7 +258,7 @@ async function toEntries(rows: ReviewRow[]): Promise<ReviewEntry[]> {
 /** Every submission still waiting on a mentor, newest first. The queue drains, so it is never capped. */
 export async function listWaitingReviews(viewer: JourneyViewer): Promise<ReviewEntry[]> {
   const rows = await prisma.onboardingLabSubmission.findMany({
-    where: { status: "Submitted", ...reviewScope(viewer) },
+    where: reviewWhere(viewer, "waiting"),
     select: REVIEW_SELECT,
     orderBy: [{ submittedAt: { sort: "desc", nulls: "last" } }, { id: "desc" }],
   });
@@ -233,11 +273,7 @@ export async function listReviewedPage(
   cursorRaw: string | null,
 ): Promise<{ items: ReviewEntry[]; nextCursor: string | null }> {
   const rows = await prisma.onboardingLabSubmission.findMany({
-    where: {
-      status: { in: REVIEWED_STATUSES },
-      ...reviewScope(viewer),
-      ...keysetAfter("updatedAt", decodeCursor(cursorRaw)),
-    },
+    where: { AND: [reviewWhere(viewer, "reviewed"), keysetAfter("updatedAt", decodeCursor(cursorRaw))] },
     select: REVIEW_SELECT,
     orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
     take: REVIEWED_PAGE_SIZE + 1,
@@ -249,7 +285,7 @@ export async function listReviewedPage(
 /** One submission the viewer may review, in any state but in-progress. */
 export async function loadReviewEntry(viewer: JourneyViewer, submissionId: string): Promise<ReviewEntry | null> {
   const row = await prisma.onboardingLabSubmission.findFirst({
-    where: { id: submissionId, status: { not: "InProgress" }, ...reviewScope(viewer) },
+    where: { AND: [reviewWhere(viewer), { id: submissionId }] },
     select: REVIEW_SELECT,
   });
   return row ? (await toEntries([row]))[0] ?? null : null;
@@ -257,8 +293,8 @@ export async function loadReviewEntry(viewer: JourneyViewer, submissionId: strin
 
 export async function countReviews(viewer: JourneyViewer): Promise<{ waiting: number; reviewed: number }> {
   const [waiting, reviewed] = await Promise.all([
-    prisma.onboardingLabSubmission.count({ where: { status: "Submitted", ...reviewScope(viewer) } }),
-    prisma.onboardingLabSubmission.count({ where: { status: { in: REVIEWED_STATUSES }, ...reviewScope(viewer) } }),
+    prisma.onboardingLabSubmission.count({ where: reviewWhere(viewer, "waiting") }),
+    prisma.onboardingLabSubmission.count({ where: reviewWhere(viewer, "reviewed") }),
   ]);
   return { waiting, reviewed };
 }

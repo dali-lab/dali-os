@@ -64,7 +64,7 @@ export const ADMIN_TOOLS: McpTool[] = [
   },
   {
     def: LIST_DOMAINS_TOOL,
-    run: (ctx) => runListDomains(ctx.user.id),
+    run: (ctx, args) => runListDomains(ctx.user.id, args as Parameters<typeof runListDomains>[1]),
   },
   {
     def: SEND_ANNOUNCEMENT_TOOL,
@@ -111,7 +111,7 @@ export const ADMIN_TOOLS: McpTool[] = [
   },
   {
     def: LIST_ANNOUNCEMENTS_TOOL,
-    run: (ctx) => runListAnnouncements(ctx),
+    run: (ctx, args) => runListAnnouncements(ctx, args as Parameters<typeof runListAnnouncements>[1]),
   },
   {
     def: MANAGE_EMAIL_SENDER_TOOL,

@@ -183,4 +183,55 @@ describe("listUpcomingMeetings", () => {
     });
     expect(out[1]).toMatchObject({ location: "Dirt Cowboy", attendeeIds: ["user-1"] });
   });
+
+  it("puts the date window in the query, keeping every recurring series", async () => {
+    mockPrisma.scheduledMeeting.findMany.mockResolvedValue([]);
+    mockPrisma.interview.findMany.mockResolvedValue([]);
+
+    await listUpcomingMeetings("user-1", NOW, WINDOW_END);
+
+    const args = mockPrisma.scheduledMeeting.findMany.mock.calls[0][0];
+    expect(args.where.AND[1]).toEqual({
+      OR: [
+        { recurrenceRule: { not: null } },
+        { selectedAt: { gte: new Date("2026-05-14T04:00:00Z"), lt: WINDOW_END } },
+      ],
+    });
+    expect(args.orderBy).toEqual([
+      { selectedAt: { sort: "desc", nulls: "last" } },
+      { id: "asc" },
+    ]);
+  });
+
+  it("still expands a recurring meeting that started long before the window", async () => {
+    mockPrisma.scheduledMeeting.findMany.mockResolvedValue([
+      {
+        id: "weekly",
+        organizerId: "user-1",
+        title: "Weekly",
+        durationMinutes: 30,
+        selectedAt: new Date("2025-01-06T15:00:00Z"),
+        recurrenceRule: "FREQ=WEEKLY;BYDAY=MO",
+        participantUserIds: [],
+        status: "Confirmed",
+        exceptions: [],
+        rooms: [],
+      },
+    ]);
+    mockPrisma.interview.findMany.mockResolvedValue([]);
+
+    const out = await listUpcomingMeetings("user-1", NOW, WINDOW_END);
+    expect(out.map((o) => o.startsAt)).toEqual(["2026-05-18T14:00:00.000Z"]);
+  });
+
+  it("reads interviews in a stable order with no row cap", async () => {
+    mockPrisma.scheduledMeeting.findMany.mockResolvedValue([]);
+    mockPrisma.interview.findMany.mockResolvedValue([]);
+
+    await listUpcomingMeetings("user-1", NOW, WINDOW_END);
+
+    const args = mockPrisma.interview.findMany.mock.calls[0][0];
+    expect(args.orderBy).toEqual([{ startTime: "asc" }, { id: "asc" }]);
+    expect(args).not.toHaveProperty("take");
+  });
 });

@@ -12,24 +12,24 @@
 // Requires the `mcp:read` scope.
 
 import { listMyNotifications, type ListNotificationsOptions } from "~/lib/notifications";
-import { listNotificationHistory, type NotificationHistoryOptions } from "~/lib/tasks";
+import { listNotificationHistory } from "~/lib/tasks";
+import { keysetPage, keysetWindow, pageProps, type PageArgs, type PageInfo } from "../pagination";
+
+const PAGE_LIMITS = { defaultLimit: 30, maxLimit: 50 };
 
 export const LIST_MY_NOTIFICATIONS_TOOL = {
   name: "list_my_notifications",
   description:
     "Return the authenticated DALI OS member's in-app notifications. " +
-    "By default returns the live inbox (newest 30, with staleness hides). " +
-    "Pass any of status/kind/q/cursor to switch to history mode: paginated full " +
-    "history with open/cleared counts and a `state` annotation on each item.",
+    "By default returns the live inbox (newest 30, with staleness hides). The inbox has no cursor: " +
+    "page.hasMore says older items exist, and history mode reaches them. " +
+    "Pass any of status/kind/q/cursor to switch to history mode: full history, newest first, " +
+    "with open/cleared counts and a `state` annotation on each item. " +
+    "In history mode pass page.nextCursor as cursor to read the next page until page.hasMore is false.",
   inputSchema: {
     type: "object" as const,
     properties: {
-      limit: {
-        type: "integer",
-        minimum: 1,
-        maximum: 50,
-        description: "Maximum number of notifications to return (inbox default 30, history default 30; max 50).",
-      },
+      ...pageProps(PAGE_LIMITS),
       onlyUnread: {
         type: "boolean",
         description: "Inbox mode only: if true, only return notifications that have not been read.",
@@ -47,24 +47,18 @@ export const LIST_MY_NOTIFICATIONS_TOOL = {
         type: "string",
         description: "History mode: case-insensitive substring match against title and body.",
       },
-      cursor: {
-        type: "string",
-        description: "History mode: opaque pagination cursor returned as `nextCursor` from a previous call.",
-      },
     },
     additionalProperties: false,
   },
   requiredScope: "mcp:read" as const,
 };
 
-type Input = {
-  limit?: number;
+type Input = PageArgs & {
   onlyUnread?: boolean;
   // history-mode params
   status?: "open" | "cleared" | "all";
   kind?: string;
   q?: string;
-  cursor?: string;
 };
 
 const HISTORY_TRIGGER_PARAMS = ["status", "kind", "q", "cursor"] as const;
@@ -76,45 +70,54 @@ export async function runListMyNotifications(
   const isHistory = HISTORY_TRIGGER_PARAMS.some((p) => input[p] !== undefined);
 
   if (isHistory) {
-    // Parse the cursor string (JSON {createdAt, id}) if provided.
-    let cursor: NotificationHistoryOptions["cursor"] = null;
-    if (input.cursor) {
-      try {
-        const parsed = JSON.parse(input.cursor) as { createdAt?: unknown; id?: unknown };
-        if (typeof parsed.createdAt === "string" && typeof parsed.id === "string") {
-          cursor = { createdAt: parsed.createdAt, id: parsed.id };
-        }
-      } catch {
-        // Malformed cursor — treat as first page.
-      }
-    }
-
+    const window = keysetWindow(input, PAGE_LIMITS, [
+      { field: "createdAt", direction: "desc", type: "date" },
+    ]);
+    // listNotificationHistory keeps its {createdAt, id} cursor for the web
+    // routes, so the shared cursor is decoded from the keyset predicate.
+    const [, tie] = (window.where.OR ?? []) as { createdAt: Date; id: { lt: string } }[];
     const result = await listNotificationHistory(userId, {
       status: input.status,
       kind: input.kind,
       q: input.q,
-      cursor,
-      limit: input.limit,
+      cursor: tie ? { createdAt: tie.createdAt.toISOString(), id: tie.id.lt } : null,
+      limit: window.limit,
     });
+    const { page } = keysetPage(
+      [
+        ...result.items.map((i) => ({ createdAt: i.sentAt, id: i.id })),
+        ...(result.nextCursor ? [result.nextCursor] : []),
+      ],
+      window,
+    );
 
     return {
       mode: "history" as const,
       items: result.items,
-      nextCursor: result.nextCursor ? JSON.stringify(result.nextCursor) : null,
+      page,
       counts: result.counts,
     };
   }
 
   // ── Inbox mode ────────────────────────────────────────────────────────────
+  const limit = Math.min(
+    Math.max(Math.trunc(input.limit ?? (input.onlyUnread ? 20 : PAGE_LIMITS.defaultLimit)) || 1, 1),
+    PAGE_LIMITS.maxLimit,
+  );
   const opts: ListNotificationsOptions = {
-    limit: input.limit ?? (input.onlyUnread ? 20 : 30),
+    limit: limit + 1,
+    maxLimit: PAGE_LIMITS.maxLimit + 1,
     onlyUnread: input.onlyUnread ?? false,
   };
-  const { items, unreadCount } = await listMyNotifications(userId, opts);
+  const { items: fetched, unreadCount } = await listMyNotifications(userId, opts);
+  const hasMore = fetched.length > limit;
+  const items = hasMore ? fetched.slice(0, limit) : fetched;
+  const page: PageInfo = { nextCursor: null, hasMore, limit };
 
   return {
     mode: "inbox" as const,
     unreadCount,
+    page,
     notifications: items.map((n) => ({
       id: n.id,
       kind: n.kind,
