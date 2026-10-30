@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/roles", () => ({
   isAdmin: vi.fn(),
 }));
@@ -8,7 +8,7 @@ vi.mock("~/lib/audit", () => ({
   logAuditEvent: vi.fn().mockResolvedValue(undefined),
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isAdmin } from "~/lib/roles";
 import { logAuditEvent } from "~/lib/audit";
 import { runManageGroup, MANAGE_GROUP_TOOL } from "~/mcp/tools/admin/manage-group";

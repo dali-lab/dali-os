@@ -1,4 +1,4 @@
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { publicMediaUrl } from "./public-media";
 
 // The public team directory on dali.website.

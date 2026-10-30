@@ -4,7 +4,7 @@ import { CheckCircle2 } from "lucide-react";
 import type { Route } from "./+types/events.check-in.$eventId";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { getUserRoles } from "~/lib/roles";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { isEventCheckInOpen } from "~/hiring/lib/hiring-events.server";

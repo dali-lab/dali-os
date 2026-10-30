@@ -5,7 +5,7 @@
 
 import { readMaterialPage } from "~/education/lib/lms.server";
 import { isOfferingManager } from "~/education/lib/access.server";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import {
   McpForbiddenError,
   McpNotFoundError,

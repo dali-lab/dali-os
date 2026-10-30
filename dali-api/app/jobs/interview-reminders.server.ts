@@ -3,7 +3,7 @@
 // is claimed before sending (MeetingReminderLog pattern): a crash loses a
 // reminder, never duplicates.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { sendInterviewReminderEmails } from "~/hiring/lib/interview-emails";
 import type { JobContext, JobResult } from "~/jobs/registry";
 

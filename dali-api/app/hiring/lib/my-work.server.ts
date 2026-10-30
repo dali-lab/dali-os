@@ -1,4 +1,4 @@
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { getEngagementSummaries } from "~/hiring/lib/email-engagement.server";
 import { getUserRoles } from "~/lib/roles";
 import { getActiveCycles, type ActiveCycle } from "./cycles";

@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/partners/lib/partner-notify.server", () => ({ notifyPartners: vi.fn() }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { notifyPartners } from "~/partners/lib/partner-notify.server";
 import { runPartnerNextStepReminders } from "~/jobs/partner-next-step-reminders.server";
 

@@ -11,7 +11,7 @@
 // outside the lab, and an agent drafting a showcase card shouldn't be able to
 // ship it in the same breath.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore, isProjectMember } from "~/lib/roles";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { logAuditEvent } from "~/lib/audit";

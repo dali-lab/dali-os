@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     educationOffering: { findMany: vi.fn() },
     // Term windows: the payload's term code and the ?term= filter are both
@@ -13,7 +13,7 @@ vi.mock("~/lib/db", () => ({
 vi.mock("~/collab/read", () => ({ readDocAsBlocks: vi.fn() }));
 vi.mock("~/components/doc/schema/configs", () => ({ blocksToPlainText: vi.fn() }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { readDocAsBlocks } from "~/collab/read";
 import { blocksToPlainText } from "~/components/doc/schema/configs";
 import {

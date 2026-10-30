@@ -1,4 +1,4 @@
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { applicationBlindLabelsForCycle } from "~/hiring/lib/anonymization.server";
 import { getUserRoles, hasCycleAccess } from "~/lib/roles";
 import { McpForbiddenError, McpNotFoundError } from "../../registry";

@@ -4,7 +4,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn() }));
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/roles", () => ({ isCore: vi.fn().mockResolvedValue(false) }));
 vi.mock("~/lib/transcription/chunks.server", () => ({ deletePrefix: vi.fn() }));
 vi.mock("~/lib/meeting-recording.server", () => ({
@@ -34,7 +34,7 @@ vi.mock("~/mcp/tools/create-task", () => {
 });
 
 import { requireAuth } from "~/lib/auth";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { canRecordInto } from "~/lib/meeting-recording.server";
 import { runCreateTask, CreateTaskError } from "~/mcp/tools/create-task";
 import { action } from "~/routes/api.meeting-recordings.$id";

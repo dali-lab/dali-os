@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn() }));
 vi.mock("~/lib/roles", () => ({ requireMember: vi.fn() }));
 vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
@@ -21,7 +21,7 @@ vi.mock("~/hiring/lib/applicant-groups.server", () => ({
   applicantPortalPath: (_applicants: string, cycleId: string) => `/fellowship/${cycleId}`,
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { requireMember } from "~/lib/roles";
 import { getActiveCycleById, getActiveCycles } from "~/hiring/lib/cycles";

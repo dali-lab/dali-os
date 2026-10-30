@@ -320,7 +320,7 @@ export const NOTIFICATION_COPY = {
     purpose: "Hiring",
     eventType: "hiring.interview_cancelled",
     label: "Interview cancelled",
-    description: "Sent to an interviewer when a hiring lead cancels an interview they were assigned to.",
+    description: "Sent to an interviewer when an interview they were assigned to is cancelled or moved to a new time.",
     variables: ["personName", "itemDetail"],
     subject: "Interview cancelled: {{personName}}",
     body: "{{itemDetail}}",

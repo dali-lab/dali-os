@@ -1,6 +1,6 @@
 import type { Route } from "./+types/api.my-interview.reschedule";
 import { z } from "zod";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { logAuditEvent } from "~/lib/audit";
 import { withCors, handlePreflight } from "~/lib/cors";
@@ -9,7 +9,11 @@ import { assignInterviewers, releaseInterviewRoom } from "~/hiring/lib/schedulin
 // import { provisionZoomMeeting, deprovisionZoomMeeting } from "~/lib/zoom"; // S2S Zoom not configured yet
 import { provisionInterviewMeet, deprovisionInterviewMeet } from "~/hiring/lib/interview-meet";
 import { getInterviewerRecipients, sendInterviewCancelEmails, sendInterviewInviteEmails } from "~/hiring/lib/interview-emails";
-import { notifyInterviewAssigned } from "~/hiring/lib/interview-notifications";
+import {
+  getActiveInterviewerUserIds,
+  notifyInterviewAssigned,
+  notifyInterviewCancelled,
+} from "~/hiring/lib/interview-notifications";
 
 const RescheduleSchema = z
   .object({
@@ -42,7 +46,7 @@ export async function action({ request }: Route.ActionArgs) {
   // If assignInterviewers throws (no free interviewers at the new slot), the
   // whole transaction rolls back and the old interview stays Scheduled.
   try {
-    const { newInterview, oldInterviewId, oldCalendarEventId, oldInterviewers } = await prisma.$transaction(
+    const { newInterview, oldInterviewId, oldCalendarEventId, oldInterviewers, oldInterviewerUserIds } = await prisma.$transaction(
       async (tx) => {
         const current = await tx.interview.findFirst({
           where: {
@@ -93,6 +97,7 @@ export async function action({ request }: Route.ActionArgs) {
           .filter((id): id is string => id !== null);
 
         const oldInterviewers = await getInterviewerRecipients(current.id, tx);
+        const oldInterviewerUserIds = await getActiveInterviewerUserIds(current.id, tx);
 
         await tx.interview.update({
           where: { id: current.id },
@@ -123,6 +128,7 @@ export async function action({ request }: Route.ActionArgs) {
           oldInterviewId: current.id,
           oldCalendarEventId: current.calendarEventId,
           oldInterviewers,
+          oldInterviewerUserIds,
         };
       },
       { isolationLevel: "Serializable" },
@@ -151,6 +157,12 @@ export async function action({ request }: Route.ActionArgs) {
     // Best-effort: cancel old calendar event + send new invite
     sendInterviewCancelEmails(oldInterviewId, domainApplicationId, oldInterviewers).catch(() => {});
     sendInterviewInviteEmails(newInterview.id, domainApplicationId).catch(() => {});
+    notifyInterviewCancelled({
+      interviewId: oldInterviewId,
+      interviewerUserIds: oldInterviewerUserIds,
+      reason: "moved",
+      createdByUserId: auth.user.sub,
+    }).catch(() => {});
     notifyInterviewAssigned({
       assignmentIds: (newInterview.assignments ?? []).map((a) => a.id),
     }).catch(() => {});

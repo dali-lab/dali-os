@@ -2,7 +2,7 @@
 // flag. Reuses the same Prisma call as api.presence.hide-activity.ts.
 // Self-only. Requires `mcp:write`.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 
 export const SET_ACTIVITY_VISIBILITY_DEF = {
   name: "set_activity_visibility",

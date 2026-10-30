@@ -1,4 +1,4 @@
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { fetchThread, getPermalink, postReply } from "./slack-client";
 import type { SlackThreadMessage } from "./slack-client";
 import { formatIssue } from "./format-issue";

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     domain: { findMany: vi.fn() },
   },
@@ -11,7 +11,7 @@ vi.mock("~/lib/roles", () => ({
   isAdmin: vi.fn(),
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore, isDomainLead, isAdmin } from "~/lib/roles";
 import { runListDomains, LIST_DOMAINS_TOOL } from "~/mcp/tools/admin/list-domains";
 

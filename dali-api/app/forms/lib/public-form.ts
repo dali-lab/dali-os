@@ -4,7 +4,7 @@
 // name/email capture). Kept separate from forms-data.ts (which is staff-only)
 // so the fill surface stays small and auditable.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import type { Question } from "~/types";
 import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
 import { normalizeQuestionBodies } from "~/lib/question-blocks.server";

@@ -1,13 +1,13 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/roles", () => ({
   currentTerm: vi.fn(),
   getActiveCoreCycleTermIds: vi.fn(),
   isLabMentor: vi.fn(),
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { currentTerm, getActiveCoreCycleTermIds } from "~/lib/roles";
 import {
   listActiveGroupNamesForUser,

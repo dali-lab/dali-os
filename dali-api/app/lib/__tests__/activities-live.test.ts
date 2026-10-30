@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("~/lib/db", () => ({ prisma: { activity: { findMany: vi.fn() } } }));
+vi.mock("~/lib/db.server", () => ({ prisma: { activity: { findMany: vi.fn() } } }));
 vi.mock("~/lib/roles", () => ({
   getActiveCoreCycleTermIds: vi.fn(),
   getAdminUserIdsFromEnv: () => [],
@@ -9,7 +9,7 @@ vi.mock("~/lib/groups", () => ({ resolveGroupMembers: vi.fn() }));
 vi.mock("~/activities/mechanics/registry.server", () => ({ mechanicServer: () => null }));
 vi.mock("~/lib/realtime-bus.server", () => ({ publish: vi.fn(), subscribe: vi.fn() }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { clearTtlCache, setTtlCacheEnabledForTests } from "~/lib/ttl-cache";
 import { invalidateLayoutCache } from "~/lib/layout-cache.server";
 import { resolveActiveActivitiesForUser } from "~/lib/activities.server";

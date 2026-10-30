@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { notify } from "~/lib/notify.server";
 import type { NotificationCopyKey } from "~/email/lib/notification-copy";
 import type { EventType } from "~/lib/notification-events";

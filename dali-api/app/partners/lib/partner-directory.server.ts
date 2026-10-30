@@ -1,4 +1,4 @@
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { partnerRelationshipStatus } from "./partner-org";
 import type { PartnerContactDirectoryRow, PartnerOrgDirectoryRow } from "./partner-directory";

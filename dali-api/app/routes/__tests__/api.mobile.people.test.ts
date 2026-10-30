@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 
 const requireMobileUser = vi.fn();
 const runSearchDirectory = vi.fn();

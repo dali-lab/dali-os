@@ -12,7 +12,7 @@
 // Gate: canEditProject (Core or project member) — mirrors the web route.
 
 import { randomUUID } from "node:crypto";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { canEditProject } from "../access";
 import { McpNotFoundError, McpForbiddenError } from "./errors";
 import { replaceCollabDocContent } from "~/collab/write";

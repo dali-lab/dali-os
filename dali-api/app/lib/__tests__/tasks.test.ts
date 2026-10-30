@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import {
   listOpenTasks,
   countOpenTasks,
@@ -78,10 +78,12 @@ function expectedWhere(userId: string) {
           { scheduledMeeting: { selectedAt: { gt: expect.any(Date) } } },
         ],
       },
-    ],
-    OR: [
-      { interviewAssignmentId: null },
-      { interviewAssignment: { status: "Active", interview: { status: "Scheduled" } } },
+      {
+        OR: [
+          { interviewAssignmentId: null },
+          { interviewAssignment: { status: "Active", interview: { status: "Scheduled" } } },
+        ],
+      },
     ],
   };
 }

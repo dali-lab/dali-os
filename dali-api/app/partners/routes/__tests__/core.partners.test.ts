@@ -1,5 +1,5 @@
 import { beforeEach, expect, it, vi } from "vitest";
-vi.mock("~/lib/db", () => ({ prisma: {
+vi.mock("~/lib/db.server", () => ({ prisma: {
   partnerApplication: { findMany: vi.fn() },
   term: { findMany: vi.fn() }, domain: { findMany: vi.fn() },
   partnerCrmSettings: { findUnique: vi.fn() },
@@ -10,7 +10,7 @@ vi.mock("../../components/PartnerBoard", () => ({ PartnerBoard: () => null }));
 vi.mock("../../components/PartnerApplicationModal", () => ({ PartnerApplicationModal: () => null }));
 vi.mock("../../components/PartnerSettingsModal", () => ({ PartnerSettingsModal: () => null }));
 vi.mock("../../components/PartnerCrmNav", () => ({ PartnerCrmNav: () => null }));
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth, isNonMember } from "~/lib/auth";
 import { isCore, currentTerm } from "~/lib/roles";
 import { loader } from "../core.partners";

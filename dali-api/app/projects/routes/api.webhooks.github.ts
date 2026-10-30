@@ -1,5 +1,5 @@
 import type { Route } from "./+types/api.webhooks.github";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { verifyGithubSignature } from "~/lib/github-webhook";
 import { wasRecentOutbound } from "../lib/github-task-sync";
 import {

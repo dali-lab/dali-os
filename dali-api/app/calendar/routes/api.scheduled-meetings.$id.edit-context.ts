@@ -1,7 +1,7 @@
 import type { Route } from "./+types/api.scheduled-meetings.$id.edit-context";
 import { requireAuth, forbidden, isNonMember } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore } from "~/lib/roles";
 import { meetingIsUpcoming } from "~/lib/scheduled-meeting";
 import { resolveUserTimeZone } from "~/lib/timezone";

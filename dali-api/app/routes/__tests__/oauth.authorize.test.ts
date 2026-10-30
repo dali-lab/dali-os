@@ -21,7 +21,7 @@ vi.mock("~/lib/auth", () => ({
   requireAuth: mockRequireAuth,
   isImpersonating: (auth: { impersonatedBy?: string }) => auth.impersonatedBy != null,
 }));
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     dALIMember: { findUnique: vi.fn() },
     oAuthGrant: { findUnique: vi.fn() },
@@ -31,7 +31,7 @@ vi.mock("~/lib/db", () => ({
 
 import { _resetForTests } from "~/lib/rate-limit";
 import { createOAuthSession, generateAuthorizationCode } from "~/lib/oauth";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { loader } from "~/routes/oauth.authorize";
 
 function makeRequest(ip = "1.2.3.4", scope?: string) {

@@ -1,12 +1,12 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/roles");
 vi.mock("~/lib/audit", () => ({
   logAuditEvent: vi.fn().mockResolvedValue(undefined),
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCycleAdmin } from "~/lib/roles";
 import { logAuditEvent } from "~/lib/audit";
 import {

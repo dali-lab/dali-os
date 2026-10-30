@@ -19,7 +19,7 @@
  *   npx tsx --env-file .env scripts/backfill-showcase-details.ts --commit --force
  */
 
-import { prisma } from "../app/lib/db.js";
+import { prisma } from "../app/lib/db.server.js";
 import { readDocAsBlocks } from "../app/collab/read.js";
 import { parseDetails, type ShowcaseDetail } from "../app/projects/lib/showcase-content.js";
 import type { DocBlock } from "../app/collab/blocknote-server.js";

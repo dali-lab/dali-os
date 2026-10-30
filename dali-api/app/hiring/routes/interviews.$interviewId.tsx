@@ -2,7 +2,7 @@ import { useState, useCallback } from 'react'
 import { useLoaderData, useSearchParams } from 'react-router'
 import { redirect } from 'react-router'
 import { Check, Video, MapPin, Users } from 'lucide-react'
-import { prisma } from '~/lib/db'
+import { prisma } from '~/lib/db.server'
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from '~/lib/login-next'
 import { resolvePhotoUrl } from '~/lib/photo'
@@ -33,6 +33,7 @@ import { buildCriteriaLabelMap } from '~/hiring/lib/rubric-criteria'
 import type { Route } from './+types/interviews.$interviewId'
 import type { Question } from '~/types'
 import { INTERVIEW_STATUS_TONES } from '~/hiring/lib/labels'
+import { viewerAssignment } from '~/hiring/lib/interview-status'
 import { Pill } from '~/hiring/components/cycle-setup/SetupCard'
 import { Select, InfoTip } from "~/components/ui/floating";
 import { useOsChrome } from '~/components/os-chrome'
@@ -118,9 +119,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   if (!interview) throw redirect('/hiring?view=interviews')
 
-  const myAssignment = interview.assignments.find(
-    (a: any) => a.cycleInterviewer.userId === auth.user.sub,
-  )
+  const myAssignment = viewerAssignment(interview, auth.user.sub)
 
   if (!myAssignment) throw redirect('/hiring?view=interviews')
 

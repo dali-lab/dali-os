@@ -20,7 +20,7 @@ vi.mock("~/lib/google-calendar", () => ({
   fetchBusyEvents: mockFetchBusyEvents,
   searchCalendarEvents: mockSearchCalendarEvents,
 }));
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: { notification: { findMany: vi.fn().mockResolvedValue([]) } },
 }));
 

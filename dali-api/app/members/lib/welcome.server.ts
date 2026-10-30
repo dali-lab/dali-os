@@ -1,4 +1,4 @@
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { notify } from "~/lib/notify.server";
 import { renderMemberEmail } from "~/email/lib/layout.server";
 import { renderEmailTemplate } from "~/email/lib/templates.server";

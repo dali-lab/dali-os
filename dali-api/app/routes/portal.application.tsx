@@ -1,6 +1,6 @@
 import { redirect, useLoaderData, useFetcher, Link } from "react-router";
 import type { Route } from "./+types/portal.application";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { logAuditEvent } from "~/lib/audit";
 import { redirectToLogin } from "~/lib/login-next";
@@ -17,6 +17,7 @@ import {
 } from "~/hiring/lib/continued-interest.server";
 import { getInterviewerRecipients, sendInterviewCancelEmails } from "~/hiring/lib/interview-emails";
 import { deprovisionInterviewMeet } from "~/hiring/lib/interview-meet";
+import { getActiveInterviewerUserIds, notifyInterviewCancelled } from "~/hiring/lib/interview-notifications";
 import { releaseInterviewRoom } from "~/hiring/lib/scheduling";
 
 export const meta: Route.MetaFunction = () => [{ title: "My application · DALI OS" }];
@@ -150,7 +151,11 @@ export async function action({ request }: Route.ActionArgs) {
 
     const withInterviewers = [];
     for (const iv of scheduled) {
-      withInterviewers.push({ ...iv, interviewers: await getInterviewerRecipients(iv.id, tx) });
+      withInterviewers.push({
+        ...iv,
+        interviewers: await getInterviewerRecipients(iv.id, tx),
+        interviewerUserIds: await getActiveInterviewerUserIds(iv.id, tx),
+      });
     }
 
     if (scheduled.length > 0) {
@@ -181,9 +186,15 @@ export async function action({ request }: Route.ActionArgs) {
 
   // Drop each cancelled interview's hiring-calendar event, then send the
   // cancellation ICS. Both best-effort, like the single-interview cancel route.
-  for (const { id, domainApplicationId, calendarEventId, interviewers } of cancelledInterviews) {
+  for (const { id, domainApplicationId, calendarEventId, interviewers, interviewerUserIds } of cancelledInterviews) {
     await deprovisionInterviewMeet({ id, calendarEventId });
     sendInterviewCancelEmails(id, domainApplicationId, interviewers).catch(() => {});
+    notifyInterviewCancelled({
+      interviewId: id,
+      interviewerUserIds,
+      reason: "applicant",
+      createdByUserId: auth.user.sub,
+    }).catch(() => {});
   }
 
   return Response.json({ ok: true });

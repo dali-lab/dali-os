@@ -6,7 +6,7 @@ const mockSignInMagicLink = vi.hoisted(() => vi.fn());
 const mockClassifyPartnerEmail = vi.hoisted(() => vi.fn());
 const mockSendMemberEmailConflictEmail = vi.hoisted(() => vi.fn());
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 
 vi.mock("~/lib/betterauth.server", () => ({
   auth: {
@@ -28,7 +28,7 @@ vi.mock("~/partners/lib/partner-emails.server", () => ({
 }));
 
 import { loader, action } from "~/routes/signup";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 
 const mockUserFindFirst = vi.mocked(prisma.user.findFirst);
 

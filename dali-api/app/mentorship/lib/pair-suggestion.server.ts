@@ -1,4 +1,4 @@
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { fullName } from "~/lib/display";
 import { currentTerm } from "~/lib/roles";
 import type { MentorPairOption } from "~/calendar/lib/types";

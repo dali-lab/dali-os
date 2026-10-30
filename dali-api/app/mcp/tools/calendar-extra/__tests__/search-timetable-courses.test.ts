@@ -20,9 +20,9 @@ vi.mock("~/mcp/registry", () => {
   }
   return { McpError, McpInvalidError, McpNotFoundError, McpForbiddenError };
 });
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import {
   runSearchTimetableCourses,
   SEARCH_TIMETABLE_COURSES_DEF,

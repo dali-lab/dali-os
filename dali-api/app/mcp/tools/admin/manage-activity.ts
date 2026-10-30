@@ -1,7 +1,7 @@
 // MCP `manage_activity` — list/create/update/publish/archive/delete activities.
 // Reuses ~/lib/activities.server.ts server functions. mcp:admin, Core leads only.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore } from "~/lib/roles";
 import { logAuditEvent } from "~/lib/audit";
 import {

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     activity: { findUnique: vi.fn() },
     activityEvent: { count: vi.fn() },
@@ -17,7 +17,7 @@ vi.mock("~/lib/activities.server", () => ({
 }));
 vi.mock("~/lib/activities", () => ({ isActivityKind: vi.fn() }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore } from "~/lib/roles";
 import { logAuditEvent } from "~/lib/audit";
 import {

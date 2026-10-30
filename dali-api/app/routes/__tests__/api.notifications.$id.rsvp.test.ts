@@ -4,13 +4,13 @@ vi.mock("~/lib/auth", () => ({
   requireAuth: vi.fn(),
   forbidden: vi.fn(() => new Response(JSON.stringify({ error: "Forbidden" }), { status: 403 })),
 }));
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/notify-stream.server", () => ({ publishNotificationChange: vi.fn() }));
 vi.mock("~/lib/google-calendar", () => ({ updateGoogleAttendeeRsvp: vi.fn() }));
 vi.mock("~/calendar/lib/external-cache.server", () => ({ markCalendarChanged: vi.fn() }));
 
 import { requireAuth } from "~/lib/auth";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { updateGoogleAttendeeRsvp } from "~/lib/google-calendar";
 import { markCalendarChanged } from "~/calendar/lib/external-cache.server";
 import { action } from "~/routes/api.notifications.$id.rsvp";

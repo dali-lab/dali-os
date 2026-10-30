@@ -7,7 +7,7 @@
 // review: Core/Admin/leads get no special exemption here any more, only a
 // release (or, for an assigned reviewer, their own reviewerBlindLabel) lifts it.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { hasCycleAccess } from "~/lib/roles";
 import { requirePageSignedOrRedirect } from "~/hiring/lib/confidentiality";
 import { applicationBlindLabel, reviewerBlindLabel } from "~/hiring/lib/anonymization.server";

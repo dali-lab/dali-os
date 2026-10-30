@@ -3,7 +3,7 @@
 // project-scoped meetings; project-less falls back to Core-only.
 // Requires the `mcp:read` scope.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore, isProjectMember } from "~/lib/roles";
 import { parseOccurrenceParam, resolveMeetingOccurrence } from "~/lib/scheduled-meeting";
 import { McpNotFoundError, McpForbiddenError } from "../../registry";

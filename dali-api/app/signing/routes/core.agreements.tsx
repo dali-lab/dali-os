@@ -8,7 +8,7 @@
 
 import { redirect, useLoaderData } from "react-router";
 import type { Route } from "./+types/core.agreements";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { getUserRoles, isCore } from "~/lib/roles";

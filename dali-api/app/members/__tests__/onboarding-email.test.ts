@@ -3,11 +3,11 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 // onboardingEmailHtml reads its prose from the template store now, so the stub
 // needs the one accessor that path uses. findUnique → null means no operator has
 // edited it, which falls back to the registry wording these assertions describe.
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: { emailTemplate: { findUnique: vi.fn(async () => null) } },
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { onboardingEmailHtml } from "~/members/lib/welcome.server";
 
 describe("onboardingEmailHtml", () => {

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn() }));
 vi.mock("~/lib/cors", () => ({
   handlePreflight: () => null,
@@ -26,7 +26,7 @@ vi.mock("~/lib/page-share-access.server", () => ({
 vi.mock("~/lib/page-audience.server", () => ({ describePageAudience: vi.fn() }));
 
 import { requireAuth } from "~/lib/auth";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { listPageShares } from "~/lib/page-sharing.server";
 import { requirePageShareManager, PageShareForbiddenError } from "~/lib/page-share-access.server";
 import { describePageAudience } from "~/lib/page-audience.server";

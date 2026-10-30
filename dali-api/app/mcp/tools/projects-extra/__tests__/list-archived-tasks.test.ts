@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     project: { findUnique: vi.fn() },
     task: { findMany: vi.fn() },
@@ -14,7 +14,7 @@ vi.mock("~/lib/prisma-shapes", () => ({
   USER_NAME_SELECT: { id: true, firstName: true, lastName: true },
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import {
   runListArchivedTasks,
   LIST_ARCHIVED_TASKS_TOOL,

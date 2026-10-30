@@ -1,4 +1,4 @@
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import type { Prisma, AttendanceStatus } from "~/generated/prisma/client";
 import { currentTerm, currentTermMemberWhere } from "~/lib/roles";
 import { logAuditEvent } from "~/lib/audit";

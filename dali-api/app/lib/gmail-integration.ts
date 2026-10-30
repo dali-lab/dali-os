@@ -1,4 +1,4 @@
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import type { EmailSendPurpose } from "~/generated/prisma/client";
 import { GMAIL_READONLY_SCOPE, GOOGLE_CALENDAR_SCOPE } from "~/lib/google-oauth";
 

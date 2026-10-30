@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/auth", () => ({
   requireAuth: vi.fn(),
 }));
@@ -12,10 +12,15 @@ vi.mock("~/hiring/lib/interview-emails", () => ({
   getInterviewerRecipients: vi.fn(),
   sendInterviewCancelEmails: vi.fn().mockResolvedValue(undefined),
 }));
+vi.mock("~/hiring/lib/interview-notifications", () => ({
+  getActiveInterviewerUserIds: vi.fn().mockResolvedValue([]),
+  notifyInterviewCancelled: vi.fn().mockResolvedValue(undefined),
+}));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { getInterviewerRecipients, sendInterviewCancelEmails } from "~/hiring/lib/interview-emails";
+import { getActiveInterviewerUserIds, notifyInterviewCancelled } from "~/hiring/lib/interview-notifications";
 import { action } from "~/hiring/routes/api.my-interview.cancel";
 
 const mockTx: any = {
@@ -177,6 +182,39 @@ describe("POST /api/hiring/my-interview/cancel", () => {
       mockTx.interviewAssignment.updateMany.mock.invocationCallOrder[0],
     );
     expect(sendInterviewCancelEmails).toHaveBeenCalledWith("int-design", DA_ID_A, interviewers);
+  });
+
+  it("tells the interviewers in-app, with ids read before their assignments were declined", async () => {
+    vi.mocked(getActiveInterviewerUserIds).mockResolvedValue(["u-ada", "u-grace"]);
+    mockPrisma.interview.findFirst.mockResolvedValue({
+      id: "int-design",
+      domainApplicationId: DA_ID_A,
+      applicationCycleId: "cycle-1",
+      interviewRoundId: "interviews",
+      startTime: new Date("2027-01-01T10:00:00Z"),
+      status: "Scheduled",
+      calendarEventId: null,
+      roomBookingId: null,
+      roomBooking: null,
+    });
+    mockTx.interview.update.mockResolvedValue({ id: "int-design", status: "CancelledByApplicant" });
+
+    await action({
+      request: makeRequest({ domainApplicationId: DA_ID_A }),
+      params: {},
+      context: {},
+    } as any);
+
+    expect(getActiveInterviewerUserIds).toHaveBeenCalledWith("int-design", mockTx);
+    expect(vi.mocked(getActiveInterviewerUserIds).mock.invocationCallOrder[0]).toBeLessThan(
+      mockTx.interviewAssignment.updateMany.mock.invocationCallOrder[0],
+    );
+    expect(notifyInterviewCancelled).toHaveBeenCalledWith({
+      interviewId: "int-design",
+      interviewerUserIds: ["u-ada", "u-grace"],
+      reason: "applicant",
+      createdByUserId: USER_ID,
+    });
   });
 
   it("returns 404 when no scheduled interview exists for that DA", async () => {

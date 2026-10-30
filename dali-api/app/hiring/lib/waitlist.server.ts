@@ -21,7 +21,7 @@
 //     Accepted/Rejected Released Decision, the previous Waitlisted entry
 //     becomes inactive automatically because the latest-released record wins.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import type { CycleApplicants } from "~/generated/prisma/enums";
 import { renderForSlot, decisionSlot, CONTINUED_INTEREST_SLOT } from "~/hiring/lib/email-variables";
 import { logAuditEvent } from "~/lib/audit";

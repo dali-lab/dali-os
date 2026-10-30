@@ -7,7 +7,7 @@
 //   - Links the application to the created project via resultingProjectId.
 //   - Idempotent: if resultingProjectId is already set, returns alreadyExisted=true.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore } from "~/lib/roles";
 import { githubTeamSlug } from "~/lib/github-slug";
 import { setApplicationStage } from "~/partners/lib/partner-activity.server";

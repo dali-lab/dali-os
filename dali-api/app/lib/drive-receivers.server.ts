@@ -1,4 +1,4 @@
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { logAuditEvent } from "~/lib/audit";
 import { MAX_PAGE_DEPTH } from "~/lib/pages";
 import { ensureRoot, rootKeyFor, type RootKey } from "~/lib/drive-roots.server";

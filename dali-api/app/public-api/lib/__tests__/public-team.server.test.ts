@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db", () => ({ prisma: { user: { findMany: vi.fn() } } }));
+vi.mock("~/lib/db.server", () => ({ prisma: { user: { findMany: vi.fn() } } }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { listPublicTeam } from "~/public-api/lib/public-team.server";
 
 const mockPrisma = prisma as unknown as {

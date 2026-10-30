@@ -5,7 +5,7 @@
 import { redirect, Link, useLoaderData, useActionData } from "react-router";
 import { ShieldCheck, Download } from "lucide-react";
 import type { Route } from "./+types/sign.$bindingId";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { DocEditor, looksLikeProseMirrorDoc } from "~/components/doc";

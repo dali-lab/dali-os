@@ -6,7 +6,7 @@
 // Term.sortKey among its ProjectTerm rows), not the lab's wall-clock current
 // term.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { notifyPartners } from "~/partners/lib/partner-notify.server";
 import type { JobContext, JobResult } from "~/jobs/registry";
 

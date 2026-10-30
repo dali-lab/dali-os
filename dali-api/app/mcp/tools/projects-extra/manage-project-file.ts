@@ -13,7 +13,7 @@
 // Gate: canEditProject (Core or project member). Project files (workspaceType
 // "Project") are the scope — lab-drive / My-Drive files are out of scope here.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { logAuditEvent } from "~/lib/audit";
 import { notifyFileNewVersion } from "~/projects/lib/file-notifications.server";
 import { McpNotFoundError, McpForbiddenError, McpInvalidError, requireForAction } from "./errors";

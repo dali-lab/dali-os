@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { redirect, useLoaderData } from "react-router";
 import type { Route } from "./+types/domain-lead.application.$id";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { recordRouteVisit } from "~/lib/user-pages.server";
 import { requireAuth } from "~/lib/auth";
 import { isDomainLeadForCycle } from "~/lib/roles";

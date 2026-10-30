@@ -3,7 +3,7 @@
 // so re-ticks/retries never double-send. Fires for sessions starting within
 // leadHours (default 24) that are still in the future.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { notifySessionReminder } from "~/education/lib/notifications.server";
 import type { JobContext, JobResult } from "~/jobs/registry";
 

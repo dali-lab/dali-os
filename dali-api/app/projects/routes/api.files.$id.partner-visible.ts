@@ -1,5 +1,5 @@
 import type { Route } from "./+types/api.files.$id.partner-visible";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireProjectEditAccess } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { logAuditEvent } from "~/lib/audit";

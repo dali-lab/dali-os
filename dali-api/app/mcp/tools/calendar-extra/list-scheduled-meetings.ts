@@ -2,7 +2,7 @@
 // attends (past + future), with optional status/role filters.
 // Requires the `mcp:read` scope.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import type { Prisma } from "~/generated/prisma/client";
 
 export const LIST_SCHEDULED_MEETINGS_DEF = {

@@ -1,6 +1,6 @@
 import type { Route } from "./+types/api.scheduled-meetings.$id.check-in-qr.pdf";
 import { requireAuth } from "~/lib/auth";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore } from "~/lib/roles";
 import { renderCheckInQrPdf } from "~/calendar/lib/check-in-qr-pdf.server";
 

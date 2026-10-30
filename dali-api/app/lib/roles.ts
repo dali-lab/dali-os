@@ -1,4 +1,4 @@
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isAdminOnlyCycle } from "~/hiring/lib/applicant-groups";
 import { cycleSortKeyRange } from "~/lib/core-cycle";
 import { cachedForRequest } from "~/lib/request-cache";

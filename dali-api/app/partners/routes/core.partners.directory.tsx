@@ -10,7 +10,7 @@ import {
 import type { Route } from "./+types/core.partners.directory";
 import { requireAuth, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore } from "~/lib/roles";
 import { logAuditEvent } from "~/lib/audit";
 import { classifyPartnerEmail, normalizeEmail } from "../lib/magic-link.server";
@@ -41,6 +41,7 @@ import { relativeTime } from "~/lib/relative-time";
 import {
   DEFAULT_DIRECTORY_SORT,
   DEFAULT_ORG_FILTERS,
+  DIRECTORY_ROW_CLASS,
   activeOrgFilterCount,
   directoryExportHref,
   filterContactRows,
@@ -565,7 +566,6 @@ function EmptyPanel({ children }: { children: ReactNode }) {
 
 const TH = "whitespace-nowrap px-4 py-2.5 text-left text-xs font-semibold text-os-muted first:pl-6 last:pr-6";
 const TD = "px-4 py-3 text-sm first:pl-6 last:pr-6";
-const ROW = "group relative border-t border-os-container/70 transition-colors hover:bg-os-card-hover";
 
 function SortableTh({
   label,
@@ -664,7 +664,7 @@ function OrgsTable({
         </thead>
         <tbody>
           {rows.map((o) => (
-            <tr key={o.id} className={ROW}>
+            <tr key={o.id} className={DIRECTORY_ROW_CLASS}>
               <td className={TD}>
                 <RowLink to={`/core/partners/orgs/${o.id}`} label={o.name}>
                   <span
@@ -719,7 +719,7 @@ function ContactsTable({
         </thead>
         <tbody>
           {rows.map((c) => (
-            <tr key={c.id} className={ROW}>
+            <tr key={c.id} className={DIRECTORY_ROW_CLASS}>
               <td className={TD}>
                 <RowLink to={`/core/partners/contacts/${c.id}`} label={c.name}>
                   <ContactAvatar contact={c} />

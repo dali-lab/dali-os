@@ -14,7 +14,7 @@
 // Assignments are written as Proposed, exactly as the board writes them.
 // Confirmed and Declined rows are staffing's audit trail and are never touched.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { canManageStaffing } from "~/lib/roles";
 import { fullName } from "~/lib/display";
 import type { Level } from "~/generated/prisma/client";

@@ -1,4 +1,4 @@
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import type { Prisma, EduApplicationStatus } from "~/generated/prisma/client";
 import { validateAnswers } from "~/forms/lib/public-form";
 import { notifyFormSubmission } from "~/forms/lib/submission-notify.server";

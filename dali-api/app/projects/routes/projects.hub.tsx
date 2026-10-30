@@ -20,7 +20,7 @@ import {
   instantiateProjectTemplate,
 } from "~/lib/project-templates.server";
 import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { timed } from "~/lib/server-timing";
 import { githubTeamSlug } from "~/lib/github-slug";

@@ -4,7 +4,7 @@ vi.mock("~/lib/auth", () => ({
   requireAuth: vi.fn(),
   forbidden: vi.fn(() => new Response("forbidden", { status: 403 })),
 }));
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/roles", () => ({ canManageStaffing: vi.fn(), currentTerm: vi.fn() }));
 vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
 vi.mock("~/lib/cors", () => ({
@@ -18,7 +18,7 @@ vi.mock("~/slack/lib/slack-client", () => ({
 vi.mock("~/projects/lib/github-team-sync", () => ({ syncProjectTeam: vi.fn() }));
 
 import { requireAuth } from "~/lib/auth";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { canManageStaffing, currentTerm } from "~/lib/roles";
 import { logAuditEvent } from "~/lib/audit";
 import { syncProjectTeam } from "~/projects/lib/github-team-sync";

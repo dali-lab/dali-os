@@ -9,7 +9,7 @@
 import { redirect, Link, useLoaderData, useActionData } from "react-router";
 import { ShieldCheck, Download } from "lucide-react";
 import type { Route } from "./+types/partner.applications.$id.sign-contract";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requirePartnerAccount } from "~/partners/lib/partner-auth.server";
 import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
 import { collectSigningFields } from "~/lib/signing-fields";

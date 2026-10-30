@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/auth", () => ({
   requireAuth: vi.fn(),
 }));
@@ -12,16 +12,21 @@ vi.mock("~/hiring/lib/interview-emails", () => ({
   getInterviewerRecipients: vi.fn(),
   sendInterviewCancelEmails: vi.fn().mockResolvedValue(undefined),
 }));
+vi.mock("~/hiring/lib/interview-notifications", () => ({
+  getActiveInterviewerUserIds: vi.fn().mockResolvedValue([]),
+  notifyInterviewCancelled: vi.fn().mockResolvedValue(undefined),
+}));
 
 vi.mock("~/hiring/lib/interview-meet", () => ({
   deprovisionInterviewMeet: vi.fn().mockResolvedValue(undefined),
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { deprovisionInterviewMeet } from "~/hiring/lib/interview-meet";
 import { requireAuth } from "~/lib/auth";
 import { getActiveCycleById } from "~/hiring/lib/cycles";
 import { getInterviewerRecipients, sendInterviewCancelEmails } from "~/hiring/lib/interview-emails";
+import { getActiveInterviewerUserIds, notifyInterviewCancelled } from "~/hiring/lib/interview-notifications";
 import { action } from "~/routes/portal.application";
 
 const mockTx: any = {
@@ -176,6 +181,7 @@ describe("POST /portal/application (withdraw)", () => {
     const ada = { email: "ada@example.edu", firstName: "Ada" };
     const grace = { email: "grace@example.edu", firstName: "Grace" };
     vi.mocked(getInterviewerRecipients).mockImplementation(async (id) => (id === "int-1" ? [ada] : [grace]));
+    vi.mocked(getActiveInterviewerUserIds).mockImplementation(async (id) => (id === "int-1" ? ["u-ada"] : ["u-grace"]));
 
     const res = await action({ request: makeRequest(), params: {}, context: {} } as any);
     expect(res.status).toBe(200);
@@ -213,6 +219,21 @@ describe("POST /portal/application (withdraw)", () => {
     );
     expect(sendInterviewCancelEmails).toHaveBeenCalledWith("int-1", "da-1", [ada]);
     expect(sendInterviewCancelEmails).toHaveBeenCalledWith("int-2", "da-2", [grace]);
+    expect(vi.mocked(getActiveInterviewerUserIds).mock.invocationCallOrder[1]).toBeLessThan(
+      mockTx.interviewAssignment.updateMany.mock.invocationCallOrder[0],
+    );
+    expect(notifyInterviewCancelled).toHaveBeenCalledWith({
+      interviewId: "int-1",
+      interviewerUserIds: ["u-ada"],
+      reason: "applicant",
+      createdByUserId: USER_ID,
+    });
+    expect(notifyInterviewCancelled).toHaveBeenCalledWith({
+      interviewId: "int-2",
+      interviewerUserIds: ["u-grace"],
+      reason: "applicant",
+      createdByUserId: USER_ID,
+    });
   });
 
   it("skips interview cancellation work when no scheduled interviews exist", async () => {

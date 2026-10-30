@@ -4,7 +4,7 @@
 // pre-signed admin-signature counter-signatures placed in the body; update
 // edits the config facets (gate scope / audience / cadence).
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore } from "~/lib/roles";
 import { logAuditEvent } from "~/lib/audit";
 import { resolveAdminScope } from "~/signing/lib/scope.server";

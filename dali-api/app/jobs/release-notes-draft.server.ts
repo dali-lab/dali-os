@@ -1,5 +1,5 @@
 import type { Prisma } from "~/generated/prisma/client";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { getAppEnv } from "~/lib/app-env";
 import { getFeatureFlagRows } from "~/lib/feature-flags.server";
 import { githubAppClient, parseRepo } from "~/lib/github";

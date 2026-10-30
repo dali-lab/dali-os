@@ -14,7 +14,7 @@
 // Arg change: `partnerUserId` renamed to `membershipId` (PartnerMembership.id).
 //   The old name `partnerUserId` is also accepted for backwards compatibility.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore } from "~/lib/roles";
 import { logAuditEvent } from "~/lib/audit";
 import { logPartnerActivity } from "~/partners/lib/partner-activity.server";

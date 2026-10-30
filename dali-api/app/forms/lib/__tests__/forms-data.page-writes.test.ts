@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/forms/lib/form-page.server", () => ({
   createForm: vi.fn(),
   renameForm: vi.fn(),
@@ -16,7 +16,7 @@ vi.mock("~/forms/lib/form-usages.server", () => ({
   managingUsage: vi.fn(),
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { runFormsAction } from "~/forms/lib/forms-data";
 import { createForm, deleteForm, renameForm, setFormIcon } from "~/forms/lib/form-page.server";
 import { formDeletionBlockers, formUsages, managingUsage } from "~/forms/lib/form-usages.server";

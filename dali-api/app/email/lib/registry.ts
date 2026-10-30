@@ -289,6 +289,17 @@ export const EMAIL_TEMPLATES = {
     footer: "transactional",
     whenMissing: "skip",
   },
+  "hiring:notification:InterviewInterviewerChanged": {
+    area: "Hiring",
+    label: "Co-interviewer changed (interviewer)",
+    description:
+      "Sent to the interviewer who stays on an interview when the other interviewer changes. Carries the calendar update. Falls back to the interview booked email if this one isn't written.",
+    purpose: "Hiring",
+    variables: ["firstName", "domain", "time", "location", "meetingUrl"],
+    sample: INTERVIEW_SAMPLE,
+    footer: "transactional",
+    whenMissing: "skip",
+  },
   "hiring:notification:InterviewCancelledApplicant": {
     area: "Hiring",
     label: "Interview cancelled (applicant)",

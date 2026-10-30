@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/auth", () => ({
   requireAuth: vi.fn(),
 }));
@@ -10,15 +10,21 @@ vi.mock("~/hiring/lib/interview-emails", () => ({
   sendInterviewCancelEmails: vi.fn().mockResolvedValue(undefined),
   sendInterviewInviteEmails: vi.fn().mockResolvedValue(undefined),
 }));
+vi.mock("~/hiring/lib/interview-notifications", () => ({
+  getActiveInterviewerUserIds: vi.fn().mockResolvedValue([]),
+  notifyInterviewAssigned: vi.fn().mockResolvedValue(undefined),
+  notifyInterviewCancelled: vi.fn().mockResolvedValue(undefined),
+}));
 vi.mock("~/lib/cors", () => ({
   handlePreflight: () => null,
   withCors: (_req: Request, res: Response) => res,
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { assignInterviewers } from "~/hiring/lib/scheduling";
 import { getInterviewerRecipients, sendInterviewCancelEmails } from "~/hiring/lib/interview-emails";
+import { getActiveInterviewerUserIds, notifyInterviewCancelled } from "~/hiring/lib/interview-notifications";
 import { action } from "~/hiring/routes/api.my-interview.reschedule";
 
 const USER_ID = "user-1";
@@ -210,6 +216,44 @@ describe("POST /api/hiring/my-interview/reschedule", () => {
       mockTx.interviewAssignment.updateMany.mock.invocationCallOrder[0],
     );
     expect(sendInterviewCancelEmails).toHaveBeenCalledWith("int-design", DA_ID_A, oldInterviewers);
+  });
+
+  it("tells the old slot's interviewers in-app that the interview moved", async () => {
+    vi.mocked(getActiveInterviewerUserIds).mockResolvedValue(["u-ada", "u-grace"]);
+    mockTx.interview.findFirst.mockResolvedValue({
+      id: "int-design",
+      applicationCycleId: CYCLE_ID,
+      interviewRoundId: "interviews",
+      domainApplicationId: DA_ID_A,
+      startTime: new Date(Date.now() + 48 * 60 * 60_000),
+      domainApplication: { application: { domainApplications: [{ domainId: "domain-design" }] } },
+    });
+    vi.mocked(assignInterviewers).mockResolvedValue({
+      id: "int-new",
+      applicationCycleId: CYCLE_ID,
+      assignments: [],
+    } as any);
+
+    await action({
+      request: makeRequest({
+        domainApplicationId: DA_ID_A,
+        newStart: "2027-01-01T10:00:00Z",
+        newEnd: "2027-01-01T10:30:00Z",
+      }),
+      params: {},
+      context: {},
+    } as any);
+
+    expect(getActiveInterviewerUserIds).toHaveBeenCalledWith("int-design", mockTx);
+    expect(vi.mocked(getActiveInterviewerUserIds).mock.invocationCallOrder[0]).toBeLessThan(
+      mockTx.interviewAssignment.updateMany.mock.invocationCallOrder[0],
+    );
+    expect(notifyInterviewCancelled).toHaveBeenCalledWith({
+      interviewId: "int-design",
+      interviewerUserIds: ["u-ada", "u-grace"],
+      reason: "moved",
+      createdByUserId: USER_ID,
+    });
   });
 
   it("returns 404 when no scheduled interview for that DA", async () => {

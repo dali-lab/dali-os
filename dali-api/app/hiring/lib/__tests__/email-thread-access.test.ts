@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     application: { findUnique: vi.fn() },
     mailMessageIndex: { findUnique: vi.fn() },
@@ -13,7 +13,7 @@ vi.mock("~/hiring/lib/anonymization.server", () => ({
   applicationBlindLabel: vi.fn(),
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { hasCycleAccess } from "~/lib/roles";
 import { requirePageSignedOrRedirect } from "~/hiring/lib/confidentiality";
 import { applicationBlindLabel, reviewerBlindLabel } from "~/hiring/lib/anonymization.server";

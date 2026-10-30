@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
-vi.mock("~/lib/db", () => {
+vi.mock("~/lib/db.server", () => {
   const prisma = {
     applicationCycle: { findUnique: vi.fn() },
     scheduledMeeting: { update: vi.fn() },
@@ -17,7 +17,7 @@ vi.mock("~/lib/rooms.server", () => ({
 }));
 vi.mock("~/lib/notify.server", () => ({ notify: vi.fn() }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import {
   createRoomBooking,
   cancelRoomBooking,

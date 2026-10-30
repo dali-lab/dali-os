@@ -1,5 +1,5 @@
 import type { Prisma } from "~/generated/prisma/client";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { getOpenCycles, type ActiveCycle } from "~/hiring/lib/cycles";
 import { applicantDeadline } from "~/hiring/lib/domain-windows";
 import { applicantGroup } from "~/hiring/lib/applicant-groups.server";
@@ -156,24 +156,10 @@ const TASK_WHERE = (
   // Cancelled — no fan-out delete needed. Notifications not tied to a meeting
   // (the common case) pass via the `null` branch. The staleness hides (a
   // reminder whose occurrence has started, an un-RSVP'd invite to a meeting
-  // that already happened) are shared with the inbox path so the sidebar count
-  // and the desktop dock badge can't disagree — see liveMeetingPingClauses.
+  // that already happened, an assignment to an interview the member is no
+  // longer on) are shared with the inbox path so the sidebar count and the
+  // desktop dock badge can't disagree — see liveMeetingPingClauses.
   AND: [NOT_CANCELLED_MEETING, ...liveMeetingPingClauses(now)],
-  // A notification linked to an InterviewAssignment is only a task while
-  // that assignment is still Active on a still-Scheduled interview. As
-  // soon as the assignment moves to Declined/Replaced or the interview
-  // is Cancelled/Completed, the row drops off both Tasks views without
-  // needing any extra fan-out writes. Unlinked notifications (the common
-  // case) pass via the `null` branch.
-  OR: [
-    { interviewAssignmentId: null },
-    {
-      interviewAssignment: {
-        status: "Active",
-        interview: { status: "Scheduled" },
-      },
-    },
-  ],
 });
 
 /** Count of open tasks for a user. Cheap — used by the sidebar poller. */

@@ -8,7 +8,7 @@ import { PowerOff } from "lucide-react";
 import { useDialog } from "~/components/ui/dialog";
 import type { Route } from "./+types/admin.email-senders";
 import { AdminSectionHeader, adminHandle } from "~/admin/adminNav";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { isCore, isAdmin } from "~/lib/roles";

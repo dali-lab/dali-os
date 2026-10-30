@@ -3,14 +3,14 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 const mockVerifyIdToken = vi.hoisted(() => vi.fn());
 const mockGetPayload = vi.hoisted(() => vi.fn());
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("google-auth-library", () => ({
   OAuth2Client: vi.fn().mockImplementation(function () {
     return { verifyIdToken: mockVerifyIdToken };
   }),
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import {
   authorizationResponseUrl,
   verifyPKCE,

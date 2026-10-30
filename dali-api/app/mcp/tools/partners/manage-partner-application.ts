@@ -20,7 +20,7 @@
 // move the stage silently (logs the change; no email sent). No ownership in this
 // model — there is no meeter to assign.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore } from "~/lib/roles";
 import {
   PARTNER_STAGES,

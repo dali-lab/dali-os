@@ -10,7 +10,7 @@ import { readDocAsBlocks } from "~/collab/read";
 import { AssignmentWorkArea } from "~/education/components/AssignmentWorkArea";
 import { formatDateTime } from "~/lib/display";
 import { useUserTimeZone } from "~/hooks/useUserTimeZone";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { getCollabToken } from "~/lib/collab-token.server";
 
 export const meta: Route.MetaFunction = ({ data }) => [

@@ -23,7 +23,7 @@ const db = vi.hoisted(() => ({
 }));
 
 vi.mock("~/journeys/lib/journeys.server", () => server);
-vi.mock("~/lib/db", () => ({ prisma: db }));
+vi.mock("~/lib/db.server", () => ({ prisma: db }));
 vi.mock("~/collab/blocknote-server", () => ({
   markdownToBlocks: vi.fn(async (md: string) => [{ type: "paragraph", content: [{ type: "text", text: md, styles: {} }], children: [] }]),
   blocksToMarkdown: vi.fn(async (blocks: { content?: { text: string }[] }[]) => blocks.map((b) => b.content?.[0]?.text ?? "").join("\n")),

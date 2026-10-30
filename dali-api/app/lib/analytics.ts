@@ -79,7 +79,7 @@ export async function recordPageView(
 ): Promise<void> {
   if (!shouldTrackPath(input.path)) return;
   try {
-    const { prisma } = await import("~/lib/db");
+    const { prisma } = await import("~/lib/db.server");
     await prisma.pageView.create({
       data: {
         id: input.id,
@@ -109,7 +109,7 @@ export async function recordPageDuration(input: {
     Math.max(0, Math.round(input.durationMs)),
   );
   try {
-    const { prisma } = await import("~/lib/db");
+    const { prisma } = await import("~/lib/db.server");
     await prisma.pageView.updateMany({
       where: { id: input.id, userId: input.userId },
       data: { durationMs },
@@ -134,7 +134,7 @@ export async function recordClientError(
   input: RecordClientErrorInput,
 ): Promise<void> {
   try {
-    const { prisma } = await import("~/lib/db");
+    const { prisma } = await import("~/lib/db.server");
     await prisma.clientError.create({
       data: {
         userId: input.userId,
@@ -152,13 +152,4 @@ export async function recordClientError(
       error: err instanceof Error ? err.message : String(err),
     });
   }
-}
-
-export function formatDuration(ms: number | null): string {
-  if (ms === null || !Number.isFinite(ms) || ms < 0) return "n/a";
-  const totalSeconds = Math.round(ms / 1000);
-  if (totalSeconds < 60) return `${totalSeconds}s`;
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  return seconds === 0 ? `${minutes}m` : `${minutes}m ${seconds}s`;
 }

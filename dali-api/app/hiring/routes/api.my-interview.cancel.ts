@@ -1,6 +1,6 @@
 import type { Route } from "./+types/api.my-interview.cancel";
 import { z } from "zod";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { logAuditEvent } from "~/lib/audit";
 import { withCors, handlePreflight } from "~/lib/cors";
@@ -8,6 +8,7 @@ import { idSchema, parseJson } from "~/lib/validate";
 // import { deprovisionZoomMeeting } from "~/lib/zoom"; // S2S Zoom not configured yet
 import { deprovisionInterviewMeet } from "~/hiring/lib/interview-meet";
 import { getInterviewerRecipients, sendInterviewCancelEmails } from "~/hiring/lib/interview-emails";
+import { getActiveInterviewerUserIds, notifyInterviewCancelled } from "~/hiring/lib/interview-notifications";
 import { releaseInterviewRoom } from "~/hiring/lib/scheduling";
 
 const CancelSchema = z.object({
@@ -61,8 +62,9 @@ export async function action({ request }: Route.ActionArgs) {
     }
   }
 
-  const { updated, interviewers } = await prisma.$transaction(async (tx) => {
+  const { updated, interviewers, interviewerUserIds } = await prisma.$transaction(async (tx) => {
     const interviewers = await getInterviewerRecipients(interview.id, tx);
+    const interviewerUserIds = await getActiveInterviewerUserIds(interview.id, tx);
     const interviewUpdate = await tx.interview.update({
       where: { id: interview.id },
       data: { status: "CancelledByApplicant" },
@@ -72,7 +74,7 @@ export async function action({ request }: Route.ActionArgs) {
       data: { status: "Declined" },
     });
     await releaseInterviewRoom(interview, tx);
-    return { updated: interviewUpdate, interviewers };
+    return { updated: interviewUpdate, interviewers, interviewerUserIds };
   });
 
   // Tear down the Google Meet link / hiring-calendar event. Best-effort no-op
@@ -93,6 +95,12 @@ export async function action({ request }: Route.ActionArgs) {
 
   // Best-effort: send cancellation ICS to applicant + interviewers
   sendInterviewCancelEmails(interview.id, domainApplicationId, interviewers).catch(() => {});
+  notifyInterviewCancelled({
+    interviewId: interview.id,
+    interviewerUserIds,
+    reason: "applicant",
+    createdByUserId: auth.user.sub,
+  }).catch(() => {});
 
   return withCors(request, Response.json(updated));
 }

@@ -2042,6 +2042,8 @@ enum NotificationType {
   // close date (domain-windows.ts), to everyone with a non-Withdrawn
   // Application in the cycle.
   DomainAddedNotice
+  // The other interviewer changed: same slot, so not a new invite.
+  InterviewInterviewerChanged
 }
 
 // One row per (cycle, notificationType, applicant). Enforces single-send

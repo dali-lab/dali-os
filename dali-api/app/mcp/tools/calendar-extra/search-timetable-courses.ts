@@ -2,7 +2,7 @@
 // Reuses the Prisma query from api.timetable.courses.ts loader.
 // Requires `mcp:read` scope.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { McpInvalidError } from "../../registry";
 
 const LIMIT = 20;

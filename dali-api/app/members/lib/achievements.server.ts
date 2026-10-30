@@ -7,7 +7,7 @@
 // The set is deliberately factual. Every one is a thing that either happened or
 // didn't, so nobody has to argue about who deserves one.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { payPeriodFor } from "~/lib/pay-period";
 
 export type AchievementKey =

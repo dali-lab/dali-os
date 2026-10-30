@@ -6,7 +6,7 @@
 // drift; loadCalendarData itself is untouched.
 
 import { redirect } from "react-router";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth, isNonMember } from "~/lib/auth";
 import { canViewForms, isCore, currentTerm } from "~/lib/roles";
 import { resolveUserTimeZone } from "~/lib/timezone";

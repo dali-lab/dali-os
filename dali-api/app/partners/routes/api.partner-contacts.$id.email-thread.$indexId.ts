@@ -6,7 +6,7 @@
 // app/hiring/routes/api.applications.$id.email-thread.$indexId.ts.
 
 import type { Route } from "./+types/api.partner-contacts.$id.email-thread.$indexId";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { PARTNERS_FROM_EMAIL } from "~/lib/app-env";
 import { canViewPartnerThread } from "~/partners/lib/partner-email.server";
