@@ -526,6 +526,7 @@ export default [
   route("api/tour/complete", "routes/api.tour.complete.ts"),
   route("api/timezone/update", "routes/api.timezone.update.ts"),
   route("api/feedback/posts", "routes/api.feedback.posts.ts"),
+  route("api/release-notes", "routes/api.release-notes.ts"),
   route("api/notifications", "routes/api.notifications.ts"),
   route("api/my-tasks", "routes/api.my-tasks.ts"),
   route("api/notifications/stream", "routes/api.notifications.stream.ts"),

@@ -1,14 +1,15 @@
 import { Link, useSearchParams } from "react-router";
 import type { Route } from "./+types/release-notes._index";
 import {
-  listRecapNotes,
-  listVisibleReleaseNotes,
+  loadRecapWeeksPage,
+  loadReleaseNotesPage,
   markReleaseNotesSeen,
-  releaseNoteVideoUrl,
   requireReleaseNoteViewer,
 } from "~/lib/release-notes.server";
 import { RELEASE_NOTE_AREAS, releaseNoteAreaLabel } from "~/lib/release-notes";
-import { groupRecapsByWeek } from "~/lib/release-notes-recap";
+import type { RecapWeek } from "~/lib/release-notes-recap";
+import { LoadMore } from "~/components/ui/Pager";
+import { fetchCursorPage, useLoadMore } from "~/hooks/useLoadMore";
 import { Segmented } from "~/components/ui/Segmented";
 import { formatDateShort } from "~/lib/display";
 import { useOsChrome } from "~/components/os-chrome";
@@ -22,32 +23,12 @@ export async function loader({ request }: Route.LoaderArgs) {
   const viewer = await requireReleaseNoteViewer(request);
   const url = new URL(request.url);
   if (url.searchParams.get("view") === "recaps") {
-    const [recapNotes] = await Promise.all([
-      listRecapNotes(),
-      markReleaseNotesSeen(viewer.userId),
-    ]);
-    return { view: "recaps" as const, recaps: groupRecapsByWeek(recapNotes, viewer) };
+    const [page] = await Promise.all([loadRecapWeeksPage(viewer), markReleaseNotesSeen(viewer.userId)]);
+    return { view: "recaps" as const, recaps: page.items, nextCursor: page.nextCursor };
   }
   const area = url.searchParams.get("area");
-  const [notes] = await Promise.all([
-    listVisibleReleaseNotes(viewer, { area }),
-    markReleaseNotesSeen(viewer.userId),
-  ]);
-  return {
-    view: "all" as const,
-    notes: await Promise.all(
-      notes.map(async (n) => ({
-        id: n.id,
-        title: n.title,
-        summary: n.summary,
-        area: n.area,
-        highlight: n.highlight,
-        publishedAt: n.publishedAt!.toISOString(),
-        hasBody: Array.isArray(n.contentJson) && n.contentJson.length > 0,
-        videoUrl: await releaseNoteVideoUrl(n.videoKey).catch(() => null),
-      })),
-    ),
-  };
+  const [page] = await Promise.all([loadReleaseNotesPage(viewer, { area }), markReleaseNotesSeen(viewer.userId)]);
+  return { view: "all" as const, notes: page.items, nextCursor: page.nextCursor };
 }
 
 export default function ReleaseNotesPage({ loaderData }: Route.ComponentProps) {
@@ -82,20 +63,23 @@ export default function ReleaseNotesPage({ loaderData }: Route.ComponentProps) {
         </div>
       </header>
       {loaderData.view === "recaps" ? (
-        <Recaps recaps={loaderData.recaps} />
+        <Recaps recaps={loaderData.recaps} nextCursor={loaderData.nextCursor} />
       ) : (
-        <AllNotes notes={loaderData.notes} area={params.get("area") ?? ""} />
+        <AllNotes notes={loaderData.notes} nextCursor={loaderData.nextCursor} area={params.get("area") ?? ""} />
       )}
     </div>
   );
 }
 
-function Recaps({
-  recaps,
-}: {
-  recaps: Extract<Route.ComponentProps["loaderData"], { view: "recaps" }>["recaps"];
-}) {
+function Recaps({ recaps: firstWeeks, nextCursor }: { recaps: RecapWeek[]; nextCursor: string | null }) {
   const { card, cardPad } = useOsChrome();
+  const { items: recaps, pager } = useLoadMore<RecapWeek>({
+    items: firstWeeks,
+    nextCursor,
+    fetchPage: (cursor) =>
+      fetchCursorPage<RecapWeek>(`/api/release-notes?view=recaps&cursor=${encodeURIComponent(cursor)}`),
+    idOf: (w) => w.week,
+  });
   if (recaps.length === 0) {
     return <p className="text-sm text-muted-foreground">No weekly recaps yet.</p>;
   }
@@ -134,18 +118,33 @@ function Recaps({
           ))}
         </section>
       ))}
+      <LoadMore {...pager} />
     </>
   );
 }
 
+type NoteItem = Extract<Route.ComponentProps["loaderData"], { view: "all" }>["notes"][number];
+
 function AllNotes({
-  notes,
+  notes: firstNotes,
+  nextCursor,
   area,
 }: {
-  notes: Extract<Route.ComponentProps["loaderData"], { view: "all" }>["notes"];
+  notes: NoteItem[];
+  nextCursor: string | null;
   area: string;
 }) {
   const { card, cardPad } = useOsChrome();
+  const { items: notes, pager } = useLoadMore<NoteItem>({
+    items: firstNotes,
+    nextCursor,
+    fetchPage: (cursor) =>
+      fetchCursorPage<NoteItem>(
+        `/api/release-notes?cursor=${encodeURIComponent(cursor)}${area ? `&area=${encodeURIComponent(area)}` : ""}`,
+      ),
+    idOf: (n) => n.id,
+    resetKey: area,
+  });
   if (notes.length === 0) {
     return (
       <p className="text-sm text-muted-foreground">
@@ -180,6 +179,7 @@ function AllNotes({
           )}
         </article>
       ))}
+      <LoadMore {...pager} />
     </>
   );
 }
