@@ -5,6 +5,11 @@ vi.mock("~/lib/auth", () => ({
   requireAuth: vi.fn(),
 }));
 vi.mock("~/hiring/lib/scheduling");
+vi.mock("~/hiring/lib/interview-emails", () => ({
+  getInterviewerRecipients: vi.fn(),
+  sendInterviewCancelEmails: vi.fn().mockResolvedValue(undefined),
+  sendInterviewInviteEmails: vi.fn().mockResolvedValue(undefined),
+}));
 vi.mock("~/lib/cors", () => ({
   handlePreflight: () => null,
   withCors: (_req: Request, res: Response) => res,
@@ -13,6 +18,7 @@ vi.mock("~/lib/cors", () => ({
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { assignInterviewers } from "~/hiring/lib/scheduling";
+import { getInterviewerRecipients, sendInterviewCancelEmails } from "~/hiring/lib/interview-emails";
 import { action } from "~/hiring/routes/api.my-interview.reschedule";
 
 const USER_ID = "user-1";
@@ -170,6 +176,40 @@ describe("POST /api/hiring/my-interview/reschedule", () => {
       mockTx,
       "online",
     );
+  });
+
+  it("cancels the old slot's calendar event for the interviewers who held it", async () => {
+    const oldInterviewers = [{ email: "ada@example.edu", firstName: "Ada" }];
+    vi.mocked(getInterviewerRecipients).mockResolvedValue(oldInterviewers);
+    mockTx.interview.findFirst.mockResolvedValue({
+      id: "int-design",
+      applicationCycleId: CYCLE_ID,
+      interviewRoundId: "interviews",
+      domainApplicationId: DA_ID_A,
+      startTime: new Date(Date.now() + 48 * 60 * 60_000),
+      domainApplication: { application: { domainApplications: [{ domainId: "domain-design" }] } },
+    });
+    vi.mocked(assignInterviewers).mockResolvedValue({
+      id: "int-new",
+      applicationCycleId: CYCLE_ID,
+      assignments: [],
+    } as any);
+
+    await action({
+      request: makeRequest({
+        domainApplicationId: DA_ID_A,
+        newStart: "2027-01-01T10:00:00Z",
+        newEnd: "2027-01-01T10:30:00Z",
+      }),
+      params: {},
+      context: {},
+    } as any);
+
+    expect(getInterviewerRecipients).toHaveBeenCalledWith("int-design", mockTx);
+    expect(vi.mocked(getInterviewerRecipients).mock.invocationCallOrder[0]).toBeLessThan(
+      mockTx.interviewAssignment.updateMany.mock.invocationCallOrder[0],
+    );
+    expect(sendInterviewCancelEmails).toHaveBeenCalledWith("int-design", DA_ID_A, oldInterviewers);
   });
 
   it("returns 404 when no scheduled interview for that DA", async () => {

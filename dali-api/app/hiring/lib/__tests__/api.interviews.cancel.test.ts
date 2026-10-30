@@ -5,14 +5,17 @@ vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn() }));
 vi.mock("~/lib/roles", () => ({ isCore: vi.fn() }));
 vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn().mockResolvedValue(undefined) }));
 vi.mock("~/hiring/lib/interview-meet", () => ({ deprovisionInterviewMeet: vi.fn().mockResolvedValue(undefined) }));
-vi.mock("~/hiring/lib/interview-emails", () => ({ sendInterviewCancelEmails: vi.fn().mockResolvedValue(undefined) }));
+vi.mock("~/hiring/lib/interview-emails", () => ({
+  getInterviewerRecipients: vi.fn(),
+  sendInterviewCancelEmails: vi.fn().mockResolvedValue(undefined),
+}));
 vi.mock("~/hiring/lib/interview-notifications", () => ({ notifyInterviewCancelled: vi.fn().mockResolvedValue(undefined) }));
 vi.mock("~/hiring/lib/scheduling", () => ({ releaseInterviewRoom: vi.fn().mockResolvedValue(undefined) }));
 
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
-import { sendInterviewCancelEmails } from "~/hiring/lib/interview-emails";
+import { getInterviewerRecipients, sendInterviewCancelEmails } from "~/hiring/lib/interview-emails";
 import { notifyInterviewCancelled } from "~/hiring/lib/interview-notifications";
 import { releaseInterviewRoom } from "~/hiring/lib/scheduling";
 import { action } from "~/hiring/routes/api.interviews.$id.cancel";
@@ -38,6 +41,8 @@ const interview = {
   ],
 };
 
+const interviewers = [{ email: "ada@example.edu", firstName: "Ada" }];
+
 function post(body?: Record<string, unknown>) {
   return new Request("http://localhost/api/hiring/interviews/iv1/cancel", {
     method: "POST",
@@ -53,6 +58,7 @@ beforeEach(() => {
   tx.interview.update.mockResolvedValue({ ...interview, status: "CancelledByAdmin" });
   vi.mocked(requireAuth).mockResolvedValue({ ok: true, user: { sub: "u-core" } } as any);
   vi.mocked(isCore).mockResolvedValue(true);
+  vi.mocked(getInterviewerRecipients).mockResolvedValue(interviewers);
 });
 
 describe("POST /api/hiring/interviews/:id/cancel", () => {
@@ -65,7 +71,7 @@ describe("POST /api/hiring/interviews/:id/cancel", () => {
       data: { status: "Declined" },
     });
     expect(releaseInterviewRoom).toHaveBeenCalledWith(interview, tx);
-    expect(sendInterviewCancelEmails).toHaveBeenCalledWith("iv1", "da1", { byTeam: true, skipApplicant: false });
+    expect(sendInterviewCancelEmails).toHaveBeenCalledWith("iv1", "da1", interviewers, { byTeam: true, skipApplicant: false });
     expect(notifyInterviewCancelled).toHaveBeenCalledWith({
       interviewId: "iv1",
       interviewerUserIds: ["u-in", "u-cross"],
@@ -75,7 +81,15 @@ describe("POST /api/hiring/interviews/:id/cancel", () => {
 
   it("skips the applicant email when notifyApplicant is false", async () => {
     await call(post({ notifyApplicant: false }));
-    expect(sendInterviewCancelEmails).toHaveBeenCalledWith("iv1", "da1", { byTeam: true, skipApplicant: true });
+    expect(sendInterviewCancelEmails).toHaveBeenCalledWith("iv1", "da1", interviewers, { byTeam: true, skipApplicant: true });
+  });
+
+  it("reads the interviewers in the transaction before declining their assignments", async () => {
+    await call(post());
+    expect(getInterviewerRecipients).toHaveBeenCalledWith("iv1", tx);
+    expect(vi.mocked(getInterviewerRecipients).mock.invocationCallOrder[0]).toBeLessThan(
+      tx.interviewAssignment.updateMany.mock.invocationCallOrder[0],
+    );
   });
 
   it("403s a non-Core member, even an interviewer on the cycle", async () => {

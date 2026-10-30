@@ -15,7 +15,7 @@ import {
   loadContinuedInterestView,
   type ContinuedInterestView,
 } from "~/hiring/lib/continued-interest.server";
-import { sendInterviewCancelEmails } from "~/hiring/lib/interview-emails";
+import { getInterviewerRecipients, sendInterviewCancelEmails } from "~/hiring/lib/interview-emails";
 import { deprovisionInterviewMeet } from "~/hiring/lib/interview-meet";
 import { releaseInterviewRoom } from "~/hiring/lib/scheduling";
 
@@ -148,6 +148,11 @@ export async function action({ request }: Route.ActionArgs) {
       },
     });
 
+    const withInterviewers = [];
+    for (const iv of scheduled) {
+      withInterviewers.push({ ...iv, interviewers: await getInterviewerRecipients(iv.id, tx) });
+    }
+
     if (scheduled.length > 0) {
       const ids = scheduled.map((i) => i.id);
       await tx.interview.updateMany({
@@ -163,7 +168,7 @@ export async function action({ request }: Route.ActionArgs) {
       }
     }
 
-    return scheduled;
+    return withInterviewers;
   });
 
   await logAuditEvent({
@@ -176,9 +181,9 @@ export async function action({ request }: Route.ActionArgs) {
 
   // Drop each cancelled interview's hiring-calendar event, then send the
   // cancellation ICS. Both best-effort, like the single-interview cancel route.
-  for (const { id, domainApplicationId, calendarEventId } of cancelledInterviews) {
+  for (const { id, domainApplicationId, calendarEventId, interviewers } of cancelledInterviews) {
     await deprovisionInterviewMeet({ id, calendarEventId });
-    sendInterviewCancelEmails(id, domainApplicationId).catch(() => {});
+    sendInterviewCancelEmails(id, domainApplicationId, interviewers).catch(() => {});
   }
 
   return Response.json({ ok: true });

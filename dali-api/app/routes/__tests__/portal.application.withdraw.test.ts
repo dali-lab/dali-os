@@ -9,6 +9,7 @@ vi.mock("~/lib/s3", () => ({
   getDownloadUrl: vi.fn(),
 }));
 vi.mock("~/hiring/lib/interview-emails", () => ({
+  getInterviewerRecipients: vi.fn(),
   sendInterviewCancelEmails: vi.fn().mockResolvedValue(undefined),
 }));
 
@@ -20,7 +21,7 @@ import { prisma } from "~/lib/db";
 import { deprovisionInterviewMeet } from "~/hiring/lib/interview-meet";
 import { requireAuth } from "~/lib/auth";
 import { getActiveCycleById } from "~/hiring/lib/cycles";
-import { sendInterviewCancelEmails } from "~/hiring/lib/interview-emails";
+import { getInterviewerRecipients, sendInterviewCancelEmails } from "~/hiring/lib/interview-emails";
 import { action } from "~/routes/portal.application";
 
 const mockTx: any = {
@@ -172,6 +173,10 @@ describe("POST /portal/application (withdraw)", () => {
       { id: "int-2", domainApplicationId: "da-2", calendarEventId: null },
     ]);
 
+    const ada = { email: "ada@example.edu", firstName: "Ada" };
+    const grace = { email: "grace@example.edu", firstName: "Grace" };
+    vi.mocked(getInterviewerRecipients).mockImplementation(async (id) => (id === "int-1" ? [ada] : [grace]));
+
     const res = await action({ request: makeRequest(), params: {}, context: {} } as any);
     expect(res.status).toBe(200);
 
@@ -201,8 +206,13 @@ describe("POST /portal/application (withdraw)", () => {
       data: { status: "Declined" },
     });
     expect(sendInterviewCancelEmails).toHaveBeenCalledTimes(2);
-    expect(sendInterviewCancelEmails).toHaveBeenCalledWith("int-1", "da-1");
-    expect(sendInterviewCancelEmails).toHaveBeenCalledWith("int-2", "da-2");
+    expect(getInterviewerRecipients).toHaveBeenCalledWith("int-1", mockTx);
+    expect(getInterviewerRecipients).toHaveBeenCalledWith("int-2", mockTx);
+    expect(vi.mocked(getInterviewerRecipients).mock.invocationCallOrder[1]).toBeLessThan(
+      mockTx.interviewAssignment.updateMany.mock.invocationCallOrder[0],
+    );
+    expect(sendInterviewCancelEmails).toHaveBeenCalledWith("int-1", "da-1", [ada]);
+    expect(sendInterviewCancelEmails).toHaveBeenCalledWith("int-2", "da-2", [grace]);
   });
 
   it("skips interview cancellation work when no scheduled interviews exist", async () => {
