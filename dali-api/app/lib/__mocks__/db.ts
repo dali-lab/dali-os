@@ -468,6 +468,7 @@ export const prisma = {
     findMany: vi.fn().mockResolvedValue([]),
   },
   meetingAttendance: {
+    groupBy: vi.fn().mockResolvedValue([]),
     findUnique: vi.fn(),
     findFirst: vi.fn().mockResolvedValue(null),
     findMany: vi.fn().mockResolvedValue([]),
