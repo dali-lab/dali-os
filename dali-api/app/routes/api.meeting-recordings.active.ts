@@ -19,7 +19,12 @@ export async function loader({ request }: Route.LoaderArgs) {
   }
 
   const rec = await prisma.meetingRecording.findFirst({
-    where: { userId: auth.user.sub, status: { in: ["Pending", "Recording", "Stopped"] }, insertedAt: null },
+    where: {
+      userId: auth.user.sub,
+      status: { in: ["Pending", "Recording", "Stopped"] },
+      insertedAt: null,
+      finalizedAt: null,
+    },
     orderBy: { createdAt: "desc" },
     select: { id: true, documentName: true, status: true, sessionStartedAt: true },
   });

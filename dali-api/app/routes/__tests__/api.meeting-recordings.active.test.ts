@@ -56,11 +56,16 @@ describe("GET /api/meeting-recordings/active", () => {
     expect(await res.json()).toEqual({ recording: null });
   });
 
-  it("looks only at the caller's own, not-yet-inserted, unfinished rows", async () => {
+  it("looks only at the caller's own, not-yet-inserted, unfinished rows, skipping finalized ones", async () => {
     await run();
     expect(prisma.meetingRecording.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { userId: "u1", status: { in: ["Pending", "Recording", "Stopped"] }, insertedAt: null },
+        where: {
+          userId: "u1",
+          status: { in: ["Pending", "Recording", "Stopped"] },
+          insertedAt: null,
+          finalizedAt: null,
+        },
         orderBy: { createdAt: "desc" },
       }),
     );

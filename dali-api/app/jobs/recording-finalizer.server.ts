@@ -75,7 +75,7 @@ export async function runRecordingFinalizer({ now }: JobContext): Promise<JobRes
   // Discard. Same disposition as (a): transcribe what's there, or finalize
   // empty.
   const stoppedUnfinished = await prisma.meetingRecording.findMany({
-    where: { status: "Stopped", updatedAt: { lt: new Date(now.getTime() - STOPPED_UNFINISHED_MS) } },
+    where: { status: "Stopped", finalizedAt: null, updatedAt: { lt: new Date(now.getTime() - STOPPED_UNFINISHED_MS) } },
     take: TAKE,
   });
   for (const rec of stoppedUnfinished) {
