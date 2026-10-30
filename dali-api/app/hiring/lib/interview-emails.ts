@@ -475,6 +475,10 @@ export async function sendReassignmentEmails(
     // the removed assignment is "Replaced" and the new one is "Active".
     const applicant = await getApplicantRecipient(domainApplicationId);
     const currentInterviewers = await getInterviewerRecipients(interviewId);
+    const newCI = await prisma.cycleInterviewer.findUnique({
+      where: { id: newCycleInterviewerId },
+      select: { user: { select: { daliEmail: true } } },
+    });
     const applicantAttendee: IcsAttendee[] = applicant
       ? [{ email: applicant.email, name: applicant.firstName }]
       : [];
@@ -517,10 +521,13 @@ export async function sendReassignmentEmails(
     }
 
     for (const interviewer of currentInterviewers) {
-      const rendered = await renderSlot(
-        "InterviewInviteMentor",
-        { firstName: interviewer.firstName, ...baseVars },
-      );
+      const vars = { firstName: interviewer.firstName, ...baseVars };
+      const stayedOn = interviewer.email !== newCI?.user.daliEmail;
+      // The invite is the fallback so the calendar update still goes out when
+      // the changed-interviewer email hasn't been written.
+      const rendered =
+        (stayedOn ? await renderSlot("InterviewInterviewerChanged", vars) : null) ??
+        await renderSlot("InterviewInviteMentor", vars);
       if (rendered) {
         enqueues.push(enqueueOutbound({
           channel: "email",
