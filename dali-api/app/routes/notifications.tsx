@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { redirect, useLoaderData, useSearchParams } from "react-router";
 import { ExternalLink, RotateCcw } from "lucide-react";
 import { SearchInput } from "~/components/ui/SearchInput";
-import { buttonClasses } from "~/components/ui/Button";
+import { LoadMore } from "~/components/ui/Pager";
 import { SegmentedTabButtons } from "~/components/AreaPillNav";
 import { getUserRoles } from "~/lib/roles";
 import { requireAuth, redirectPartnerToPortal, isNonMember } from "~/lib/auth";
@@ -329,16 +329,7 @@ export function HistoryTab({
               </div>
             </div>
           ))}
-          {cursor && (
-            <button
-              type="button"
-              onClick={() => void loadMore()}
-              disabled={loading}
-              className={buttonClasses("secondary", "md", "self-center")}
-            >
-              {loading ? "Loading…" : "Load more"}
-            </button>
-          )}
+          <LoadMore hasMore={!!cursor} onLoadMore={loadMore} loading={loading} />
         </div>
       )}
     </div>
