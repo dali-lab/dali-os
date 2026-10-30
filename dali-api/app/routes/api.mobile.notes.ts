@@ -31,8 +31,8 @@ function formatNotesCursor(recordings: string | null, pages: string | null): str
 }
 
 function after(field: "createdAt" | "updatedAt", position: string | null) {
-  const keyset = keysetAfter(field, decodeCursor(position));
-  return "OR" in keyset ? { AND: [keyset] } : {};
+  const cursor = decodeCursor(position);
+  return cursor ? { AND: [keysetAfter(field, cursor)] } : {};
 }
 
 const NewNoteSchema = z.union([
