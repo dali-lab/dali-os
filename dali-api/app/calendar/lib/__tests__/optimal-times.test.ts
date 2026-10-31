@@ -6,9 +6,12 @@ import {
   findOptimalSlots,
   type MsInterval,
 } from "~/calendar/lib/optimal-times";
+import { zonedWallTimeUtc } from "~/lib/timezone";
 
 const HOUR = 3_600_000;
 const iv = (startMs: number, endMs: number): MsInterval => ({ startMs, endMs });
+// A day with no clock change: wall minutes count straight up from midnight.
+const dayFrom = (midnightMs: number) => (minute: number) => midnightMs + minute * 60_000;
 
 describe("slotIsFree", () => {
   it("is true when one interval fully covers the slot", () => {
@@ -37,7 +40,7 @@ describe("candidateSlots", () => {
   it("steps starts across the band and stops so the meeting ends within it", () => {
     // One day, band 9–11, 30-min step, 60-min meeting → starts 9:00, 9:30, 10:00.
     const day0 = 0;
-    const slots = candidateSlots([day0], 9, 11, 30, 60);
+    const slots = candidateSlots([dayFrom(day0)], 9, 11, 30, 60);
     expect(slots.map((s) => s.startMs / HOUR)).toEqual([9, 9.5, 10]);
     expect(slots.every((s) => s.endMs - s.startMs === HOUR)).toBe(true);
     // Last one ends exactly at the band edge (11:00), none spill past it.
@@ -46,15 +49,21 @@ describe("candidateSlots", () => {
 
   it("emits candidates per day, anchored to each day's local midnight", () => {
     const day = 24 * HOUR;
-    const slots = candidateSlots([0, day], 9, 10, 60, 60);
+    const slots = candidateSlots([dayFrom(0), dayFrom(day)], 9, 10, 60, 60);
     expect(slots).toHaveLength(2);
     expect(slots[0].startMs).toBe(9 * HOUR);
     expect(slots[1].startMs).toBe(day + 9 * HOUR);
   });
 
+  it("keeps wall-clock hours on the day clocks fall back", () => {
+    const tz = "America/New_York";
+    const slots = candidateSlots([(minute) => zonedWallTimeUtc(2026, 11, 1, 0, minute, tz).getTime()], 9, 10, 60, 60);
+    expect(new Date(slots[0].startMs).toISOString()).toBe("2026-11-01T14:00:00.000Z");
+  });
+
   it("skips slots that start before minStartMs (no times in the past)", () => {
     // Band 9–12, 60-min step/meeting → starts 9, 10, 11; cut off at 10:30.
-    const slots = candidateSlots([0], 9, 12, 60, 60, 10.5 * HOUR);
+    const slots = candidateSlots([dayFrom(0)], 9, 12, 60, 60, 10.5 * HOUR);
     expect(slots.map((s) => s.startMs / HOUR)).toEqual([11]);
   });
 });
@@ -107,7 +116,7 @@ describe("findOptimalSlots", () => {
       [iv(9 * HOUR, 10 * HOUR), iv(11 * HOUR, 13 * HOUR)], // B free 9–10 and 11+
     ];
     const best = findOptimalSlots({
-      dayStartMs: [0],
+      dayMinuteMs: [dayFrom(0)],
       perUserFree,
       bandStartHour: 9,
       bandEndHour: 13,
@@ -122,7 +131,7 @@ describe("findOptimalSlots", () => {
     // Everyone free all day, but 'now' is 10:30 → the 9:00/10:00 slots are past
     // and must be dropped; the first suggestion is 11:00.
     const best = findOptimalSlots({
-      dayStartMs: [0],
+      dayMinuteMs: [dayFrom(0)],
       perUserFree: [[iv(0, 24 * HOUR)]],
       bandStartHour: 9,
       bandEndHour: 13,

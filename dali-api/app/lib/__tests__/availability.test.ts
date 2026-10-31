@@ -184,5 +184,32 @@ describe("computeFreeIntervals — DST boundary", () => {
     // Only Sunday's 9–17 falls fully inside the window — Monday's 9–17 is
     // past windowEnd (Mon 00:00 EST).
     expect(totalMinutes(out.free)).toBe(8 * 60);
+    expect(out.working[0].start.toISOString()).toBe("2026-11-01T14:00:00.000Z"); // 9:00 EST
+    expect(out.working[0].end.toISOString()).toBe("2026-11-01T22:00:00.000Z"); // 17:00 EST
+  });
+
+  it("keeps wall-clock working hours on a spring-forward day", () => {
+    const out = computeFreeIntervals({
+      windowStart: new Date("2027-03-14T05:00:00Z"), // Sun 00:00 EST
+      windowEnd: new Date("2027-03-15T04:00:00Z"), // Mon 00:00 EDT
+      workingHours: [{ dayOfWeek: 0, enabled: true, startMinute: 9 * 60, endMinute: 17 * 60 }],
+      externalBusy: [],
+      bufferMin: 0,
+      timezone: TZ,
+    });
+    expect(out.working[0].start.toISOString()).toBe("2027-03-14T13:00:00.000Z"); // 9:00 EDT
+    expect(out.working[0].end.toISOString()).toBe("2027-03-14T21:00:00.000Z"); // 17:00 EDT
+  });
+
+  it("treats minute 1440 as the next local midnight on a 25-hour day", () => {
+    const out = computeFreeIntervals({
+      windowStart: new Date("2026-11-01T04:00:00Z"),
+      windowEnd: new Date("2026-11-02T05:00:00Z"),
+      workingHours: [{ dayOfWeek: 0, enabled: true, startMinute: 0, endMinute: 1440 }],
+      externalBusy: [],
+      bufferMin: 0,
+      timezone: TZ,
+    });
+    expect(totalMinutes(out.free)).toBe(25 * 60);
   });
 });
