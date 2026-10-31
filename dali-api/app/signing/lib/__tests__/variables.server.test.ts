@@ -12,7 +12,7 @@ const h = vi.hoisted(() => ({
   mentees: [] as { mentee: { firstName: string; lastName: string } }[],
 }));
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     user: { findUnique: vi.fn(async () => h.user) },
     mentorshipPair: { findMany: vi.fn(async () => h.mentees) },

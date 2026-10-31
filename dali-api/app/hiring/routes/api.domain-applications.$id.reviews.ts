@@ -1,6 +1,6 @@
 import type { Route } from "./+types/api.domain-applications.$id.reviews";
 import { z } from "zod";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { isCore, hasCycleAccess } from "~/lib/roles";
 import { parseJson, idSchema } from "~/lib/validate";

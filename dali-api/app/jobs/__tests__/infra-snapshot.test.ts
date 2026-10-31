@@ -11,7 +11,7 @@ const { prismaMock, listCreds, getCreds, neonMock, flyMock } = vi.hoisted(() => 
   flyMock: { getFlyInventory: vi.fn(), getFlyEgressByApp: vi.fn(), getFlyMachineHoursByApp: vi.fn(), getFlyDayByApp: vi.fn() },
 }));
 
-vi.mock("~/lib/db", () => ({ prisma: prismaMock }));
+vi.mock("~/lib/db.server", () => ({ prisma: prismaMock }));
 vi.mock("~/lib/infra/project-infra.server", () => ({
   listEnabledInfraProjectCreds: listCreds,
   getProjectInfraCreds: getCreds,

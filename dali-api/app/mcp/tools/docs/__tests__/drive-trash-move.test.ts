@@ -18,7 +18,7 @@ vi.mock("~/mcp/registry", () => {
   return { requireForAction, REGISTRY_TOOLS: [], findRegistryTool: () => undefined, registryToolDefs: () => [] };
 });
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     page: {
       findMany: vi.fn(),
@@ -75,7 +75,7 @@ vi.mock("~/forms/lib/form-usages.server", () => ({
   formDeletionBlockers: vi.fn().mockResolvedValue([]),
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore, isProjectMember } from "~/lib/roles";
 import { deleteForm, moveForm, setFormArchived } from "~/forms/lib/form-page.server";
 import { formDeletionBlockers } from "~/forms/lib/form-usages.server";
@@ -171,6 +171,61 @@ describe("list_drive_trash", () => {
 
     const out = await runListDriveTrash("u1");
     expect(out.items).toHaveLength(0);
+  });
+
+  describe("paging and the scan bound", () => {
+    const pageRow = (id: string, archivedAt: string) => ({ id, title: id, archivedAt: new Date(archivedAt), kind: "FreeForm" });
+
+    it("filters by access before paging, so a page is full of visible items", async () => {
+      mockPrisma.page.findMany.mockResolvedValue([
+        pageRow("p1", "2026-05-05"),
+        pageRow("hidden", "2026-05-04"),
+        pageRow("p2", "2026-05-03"),
+        pageRow("p3", "2026-05-02"),
+      ]);
+      mockPrisma.projectFile.findMany.mockResolvedValue([]);
+      vi.mocked(getPageAccess).mockImplementation((async (_u: string, id: string) => ({
+        canView: id !== "hidden", canComment: false, canEdit: false,
+      })) as never);
+
+      const first = await runListDriveTrash("u1", { limit: 2 });
+      expect(first.items.map((i) => i.id)).toEqual(["p1", "p2"]);
+      expect(first.page).toMatchObject({ hasMore: true, limit: 2, total: 3 });
+
+      const second = await runListDriveTrash("u1", { limit: 2, cursor: first.page.nextCursor! });
+      expect(second.items.map((i) => i.id)).toEqual(["p3"]);
+      expect(second.page).toMatchObject({ nextCursor: null, hasMore: false });
+    });
+
+    it("breaks archivedAt ties by id so pages do not shift", async () => {
+      mockPrisma.page.findMany.mockResolvedValue([pageRow("b", "2026-05-05"), pageRow("a", "2026-05-05")]);
+      mockPrisma.projectFile.findMany.mockResolvedValue([]);
+      vi.mocked(getPageAccess).mockResolvedValue({ canView: true, canComment: false, canEdit: false } as never);
+      const out = await runListDriveTrash("u1");
+      expect(out.items.map((i) => i.id)).toEqual(["a", "b"]);
+    });
+
+    it("bounds each kind's scan at 500 newest rows with an id tiebreak", async () => {
+      mockPrisma.page.findMany.mockResolvedValue([]);
+      mockPrisma.projectFile.findMany.mockResolvedValue([]);
+      await runListDriveTrash("u1");
+      for (const model of [mockPrisma.page, mockPrisma.projectFile, mockPrisma.form]) {
+        expect(model.findMany.mock.calls[0][0]).toMatchObject({
+          take: 500,
+          orderBy: [{ archivedAt: "desc" }, { id: "asc" }],
+        });
+      }
+    });
+
+    it("signals when a scan hit the bound and not when it did not", async () => {
+      mockPrisma.projectFile.findMany.mockResolvedValue([]);
+      mockPrisma.page.findMany.mockResolvedValue(Array.from({ length: 500 }, (_, i) => pageRow(`p${i}`, "2026-01-01")));
+      vi.mocked(getPageAccess).mockResolvedValue({ canView: false, canComment: false, canEdit: false } as never);
+      expect((await runListDriveTrash("u1")).scanLimited).toBe(true);
+
+      mockPrisma.page.findMany.mockResolvedValue([pageRow("p1", "2026-01-01")]);
+      expect((await runListDriveTrash("u1")).scanLimited).toBe(false);
+    });
   });
 });
 

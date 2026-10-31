@@ -1,6 +1,6 @@
 import { vi } from "vitest";
 
-// Stub of the Prisma namespace re-exported from the real ~/lib/db. Only the
+// Stub of the Prisma namespace re-exported from the real ~/lib/db.server. Only the
 // JSON-null sentinels are referenced by callers (e.g. forms-data clearing a
 // Json? column); they're identity-compared, so a stable stub object suffices.
 export const Prisma = {
@@ -441,6 +441,7 @@ export const prisma = {
     create: vi.fn(),
     findUnique: vi.fn(),
     findMany: vi.fn().mockResolvedValue([]),
+    count: vi.fn().mockResolvedValue(0),
     update: vi.fn(),
     delete: vi.fn(),
   },
@@ -468,6 +469,7 @@ export const prisma = {
     findMany: vi.fn().mockResolvedValue([]),
   },
   meetingAttendance: {
+    groupBy: vi.fn().mockResolvedValue([]),
     findUnique: vi.fn(),
     findFirst: vi.fn().mockResolvedValue(null),
     findMany: vi.fn().mockResolvedValue([]),

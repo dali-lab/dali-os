@@ -1,4 +1,4 @@
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { weekNumberInTerm, weekStartForNumber, weeksInTerm } from "./week";
 import type { Vibe } from "./vibe";

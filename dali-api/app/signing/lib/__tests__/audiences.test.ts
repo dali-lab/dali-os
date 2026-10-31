@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/groups", () => ({
   resolveGroupMembers: vi.fn(),
   resolveDynamicQuery: vi.fn(),
@@ -13,7 +13,7 @@ vi.mock("~/signing/lib/staffing-audience.server", () => ({
   listStaffedMentors: vi.fn(),
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { resolveGroupMembers, resolveDynamicQuery } from "~/lib/groups";
 import { currentTerm } from "~/lib/roles";
 import {

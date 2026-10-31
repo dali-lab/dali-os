@@ -9,7 +9,7 @@
 //   Destination folder — getPageAccess(...).canEdit (or null to unplace)
 
 import { moveForm } from "~/forms/lib/form-page.server";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore, isProjectMember } from "~/lib/roles";
 import { canManageFormPlacement } from "~/forms/lib/form-access.server";
 import { getPageAccess } from "~/lib/pageAccess.server";

@@ -9,7 +9,7 @@
 //   update — update contact fields. Requires contactId. Email is re-validated
 //            for uniqueness.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore } from "~/lib/roles";
 import { logAuditEvent } from "~/lib/audit";
 import { normalizeEmail } from "~/partners/lib/magic-link.server";

@@ -20,7 +20,7 @@ vi.mock("~/mcp/registry", () => {
   }
   return { McpError, McpInvalidError, McpNotFoundError, McpForbiddenError };
 });
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/google-calendar", () => ({
   searchCalendarEvents: vi.fn(),
 }));
@@ -29,7 +29,7 @@ vi.mock("~/calendar/lib/search", async (orig) => {
   return { ...real };
 });
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { searchCalendarEvents } from "~/lib/google-calendar";
 import { runSearchCalendar, SEARCH_CALENDAR_DEF } from "~/mcp/tools/calendar-extra/search-calendar";
 
@@ -122,6 +122,53 @@ describe("search_calendar", () => {
       title: "External Sync",
       location: "Zoom",
     });
+  });
+
+  it("pages local hits by Notification order, and skips Google on continuation pages", async () => {
+    const row = (id: string, day: number) => ({
+      id: `n${id}`,
+      createdAt: new Date(Date.UTC(2026, 8, day)),
+      scheduledMeeting: { id, title: `Sync ${id}`, selectedAt: new Date(Date.UTC(2026, 9, day)), durationMinutes: 30 },
+    });
+    mockPrisma.notification.findMany.mockResolvedValueOnce([row("m3", 3), row("m2", 2), row("m1", 1)]);
+    vi.mocked(searchCalendarEvents).mockResolvedValue([]);
+
+    const first = await runSearchCalendar("u1", { q: "Sync", limit: 2 });
+    expect(first.local.map((h) => h.id).sort()).toEqual(["meeting:m2", "meeting:m3"]);
+    expect(first.page).toMatchObject({ hasMore: true, limit: 2 });
+    expect(mockPrisma.notification.findMany.mock.calls[0][0]).toMatchObject({
+      take: 3,
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    });
+    expect(searchCalendarEvents).toHaveBeenCalledTimes(1);
+
+    mockPrisma.notification.findMany.mockResolvedValueOnce([row("m1", 1)]);
+    const second = await runSearchCalendar("u1", { q: "Sync", limit: 2, cursor: first.page.nextCursor! });
+    expect(mockPrisma.notification.findMany.mock.calls[1][0].where.AND[1].OR[0]).toEqual({
+      createdAt: { lt: new Date(Date.UTC(2026, 8, 2)) },
+    });
+    expect(second.local.map((h) => h.id)).toEqual(["meeting:m1"]);
+    expect(second.page).toMatchObject({ nextCursor: null, hasMore: false });
+    expect(second.google).toEqual([]);
+    expect(searchCalendarEvents).toHaveBeenCalledTimes(1);
+  });
+
+  it("defaults to 20 local hits per page", async () => {
+    mockPrisma.notification.findMany.mockResolvedValue([]);
+    vi.mocked(searchCalendarEvents).mockResolvedValue([]);
+    const out = await runSearchCalendar("u1", { q: "meeting" });
+    expect(out.page.limit).toBe(20);
+    expect(mockPrisma.notification.findMany.mock.calls[0][0].take).toBe(21);
+  });
+
+  it("reports googleTruncated when the Google read hit its page bound", async () => {
+    mockPrisma.notification.findMany.mockResolvedValue([]);
+    vi.mocked(searchCalendarEvents).mockImplementation(async (...args) => {
+      (args[4] as { truncated: boolean }).truncated = true;
+      return [];
+    });
+    const out = await runSearchCalendar("u1", { q: "meeting" });
+    expect(out.googleTruncated).toBe(true);
   });
 
   it("defaults to near scope", async () => {

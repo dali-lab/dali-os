@@ -1,13 +1,13 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/roles", () => ({ isCore: vi.fn() }));
 vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn().mockResolvedValue(undefined) }));
 vi.mock("~/lib/handle", () => ({ assignHandleIfMissing: vi.fn().mockResolvedValue(undefined) }));
 vi.mock("~/admin/lib/eligibility.server", () => ({ addOrUpdateEligibility: vi.fn() }));
 vi.mock("~/lib/dartmouth-people", () => ({ peopleByNetId: vi.fn() }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore } from "~/lib/roles";
 import { logAuditEvent } from "~/lib/audit";
 import { peopleByNetId } from "~/lib/dartmouth-people";

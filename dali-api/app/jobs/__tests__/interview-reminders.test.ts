@@ -1,11 +1,11 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/hiring/lib/interview-emails", () => ({
   sendInterviewReminderEmails: vi.fn().mockResolvedValue(2),
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { sendInterviewReminderEmails } from "~/hiring/lib/interview-emails";
 import { runInterviewReminders } from "~/jobs/interview-reminders.server";
 

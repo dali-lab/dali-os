@@ -58,6 +58,7 @@ function installLocalStoragePolyfill() {
 let container: HTMLDivElement;
 let root: Root;
 const box: { current: UseMeetingRecording | null } = { current: null };
+const harnessInsert = vi.fn((_markdown: string, _transcript: string[]) => true);
 
 function Harness({
   documentName,
@@ -73,7 +74,7 @@ function Harness({
   box.current = useMeetingRecording({
     documentName,
     canEdit: true,
-    onInsert: () => true,
+    onInsert: harnessInsert,
     latestRecording,
     onSpeakersChanged,
     getNoteState,
@@ -637,6 +638,34 @@ describe("setSpeaker: onSpeakersChanged + speakersChangedAt (Fix 4: stale names 
 
     expect(onSpeakersChanged).toHaveBeenCalledWith(["[00:00] Alex Kim: hi"]);
     expect(box.current!.speakersChangedAt).not.toBeNull();
+  });
+
+  it("does not touch the note or mark it inserted when there is nothing to insert", async () => {
+    const documentName = "doc-insert-empty";
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+      if ((init?.method ?? "GET") === "GET") {
+        return jsonRes({ status: "Done", channels: [], recordedSeconds: 40, lines: [], speakers: {} });
+      }
+      return jsonRes({ ok: true });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    window.localStorage.setItem(backupKey(documentName), JSON.stringify({ id: "rEmpty", link: "l", aiEnabled: true }));
+    harnessInsert.mockClear();
+
+    await mountWithOnSpeakersChanged(documentName, () => true);
+    expect(box.current!.hasTranscript).toBe(false);
+
+    let inserted = true;
+    act(() => {
+      inserted = box.current!.insert(null);
+    });
+
+    expect(inserted).toBe(false);
+    expect(harnessInsert).not.toHaveBeenCalled();
+    expect(box.current!.insertedAt).toBeNull();
+    expect(box.current!.error).toBe("There's nothing in this recording to insert.");
+    const posted = fetchMock.mock.calls.filter(([, init]) => init?.method === "POST").map(([, init]) => init?.body);
+    expect(posted).not.toContainEqual(JSON.stringify({ action: "inserted" }));
   });
 
   it("does not call onSpeakersChanged when the transcript was never inserted or enhanced", async () => {

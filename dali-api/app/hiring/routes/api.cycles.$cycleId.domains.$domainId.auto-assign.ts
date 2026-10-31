@@ -1,5 +1,5 @@
 import type { Route } from "./+types/api.cycles.$cycleId.domains.$domainId.auto-assign";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { logAuditEvent } from "~/lib/audit";
 import { isCore, isDomainLead } from "~/lib/roles";

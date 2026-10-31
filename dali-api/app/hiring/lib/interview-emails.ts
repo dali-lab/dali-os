@@ -6,7 +6,7 @@
 
 import type { Prisma } from "~/generated/prisma/client";
 import type { NotificationType } from "~/generated/prisma/enums";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { type InterpolationVars } from "~/lib/email";
 import { APPLICATION_TZ, APPLICATION_TZ_LABEL } from "~/lib/timezone";
 import { renderForSlot, notificationSlot } from "./email-variables";

@@ -1,7 +1,7 @@
 // SOW state transitions and org-level finance (chart strings, deal terms,
 // invoices) for the Partner CRM. See specs/partner-crm.md §10.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import type { PartnerSowState, PartnerInvoiceStatus, ProjectFundingType } from "~/generated/prisma/enums";
 import { logPartnerActivity } from "./partner-activity.server";
 import { sendSowSharedEmail } from "./partner-emails.server";

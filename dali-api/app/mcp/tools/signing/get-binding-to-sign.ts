@@ -3,7 +3,7 @@
 // to sign. Lets a caller inspect what they're signing before calling sign_document.
 // Mirrors the data the sign.$bindingId.tsx loader supplies to the fill surface.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { collectSigningFields } from "~/lib/signing-fields";
 import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
 import { getBindingStateForUser, getSignerCohortsForBinding } from "~/signing/lib/state.server";

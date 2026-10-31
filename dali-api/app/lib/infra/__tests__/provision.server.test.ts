@@ -9,7 +9,7 @@ const { prismaMock, audit, refresh, flyMock, neonMock, infraMock } = vi.hoisted(
   infraMock: { listInfraProjects: vi.fn(), getProjectInfraCreds: vi.fn(), inheritFlyTokens: vi.fn() },
 }));
 
-vi.mock("~/lib/db", () => ({ prisma: prismaMock }));
+vi.mock("~/lib/db.server", () => ({ prisma: prismaMock }));
 vi.mock("~/lib/audit", () => ({ logAuditEvent: audit }));
 vi.mock("~/jobs/infra-snapshot.server", () => ({ refreshProjectInfra: refresh }));
 vi.mock("../fly.server", () => flyMock);

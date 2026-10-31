@@ -47,6 +47,7 @@ const onMoveToScope = vi.fn();
 const onUploadFiles = vi.fn();
 
 let swapScopes: (scopes: DriveTreeScope[]) => void = () => {};
+let swapSearch: (search: string) => void = () => {};
 
 type MountOptions = {
   view?: "columns" | "list" | "grid";
@@ -70,13 +71,15 @@ async function mount(opts: MountOptions = {}) {
   function Harness() {
     const [scopesState, setScopesState] = useState(opts.scopes ?? [lab, mine]);
     swapScopes = setScopesState;
+    const [searchState, setSearchState] = useState(opts.search ?? "");
+    swapSearch = setSearchState;
     const [loc, setLoc] = useState({ scopeId: opts.scopeId === undefined ? "lab" : opts.scopeId, folderId: opts.folderId ?? null });
     return createElement(ToastProvider, null, createElement(DialogProvider, null, createElement(DriveBrowser, {
       scopes: scopesState,
       currentScopeId: loc.scopeId,
       currentFolderId: loc.folderId,
       typeFilter: opts.typeFilter ?? "all",
-      search: opts.search ?? "",
+      search: searchState,
       onSearchChange: vi.fn(),
       onNavigate: (scopeId: string | null, folderId: string | null) => {
         onNavigate(scopeId, folderId);
@@ -1876,5 +1879,64 @@ describe("DriveBrowser columns: empty folder", () => {
   it("keeps a full folder's column free of the empty art", async () => {
     await mount({ folderId: "f1" });
     expect(container.querySelector("[data-empty-folder-art]")).toBeNull();
+  });
+});
+
+describe("DriveBrowser: search results are sliced", { timeout: 30000 }, () => {
+  const manyDocs = (count: number): DriveTreeScope => ({
+    id: "big",
+    label: "Big drive",
+    iconEmoji: null,
+    items: Array.from({ length: count }, (_, i) => ({ ...doc(`b${String(i).padStart(3, "0")}`), title: `Doc ${String(i).padStart(3, "0")}` })),
+  });
+  const hitRows = () => container.querySelectorAll('[data-testid^="drive-search-hit-"]');
+  const loadMore = () =>
+    [...container.querySelectorAll("button")].find((b) => b.textContent === "Load more") as HTMLButtonElement | undefined;
+
+  it("renders 50 hits and reveals the next 50 with Load more", async () => {
+    await mount({ scopes: [manyDocs(110)], search: "Doc" });
+    expect(hitRows()).toHaveLength(50);
+    expect(container.textContent).toContain("Showing 50 of 110");
+    await click(loadMore()!);
+    expect(hitRows()).toHaveLength(100);
+    await click(loadMore()!);
+    expect(hitRows()).toHaveLength(110);
+    expect(loadMore()).toBeUndefined();
+  });
+
+  it("selects only the rendered hits with select-all, then more after Load more", async () => {
+    await mount({ scopes: [manyDocs(110)], search: "Doc" });
+    await key(byTestId("drive-list-pane"), "a", { metaKey: true });
+    expect(selectedCount()).toBe(50);
+    expect(bar()?.textContent).toContain("50 selected");
+    await click(loadMore()!);
+    expect(selectedCount()).toBe(50);
+    await key(byTestId("drive-list-pane"), "a", { metaKey: true });
+    expect(bar()?.textContent).toContain("100 selected");
+  });
+
+  it("stops arrow-down at the last rendered hit and continues after Load more", async () => {
+    await mount({ scopes: [manyDocs(110)], search: "Doc" });
+    const pane = byTestId("drive-list-pane");
+    await click(byTestId("drive-search-hit-b049"));
+    await key(pane, "ArrowDown");
+    expect(isSelected("b049")).toBe(true);
+    await click(loadMore()!);
+    await key(pane, "ArrowDown");
+    expect(isSelected("b050")).toBe(true);
+  });
+
+  it("returns to the first slice when the query changes", async () => {
+    await mount({ scopes: [manyDocs(110)], search: "Doc" });
+    await click(loadMore()!);
+    expect(hitRows()).toHaveLength(100);
+    await act(async () => swapSearch("Doc 0"));
+    expect(hitRows()).toHaveLength(50);
+    expect(container.textContent).toContain("Showing 50 of 100");
+  });
+
+  it("keeps the Load more button out of the pane so Enter on it does not open a row", async () => {
+    await mount({ scopes: [manyDocs(60)], search: "Doc" });
+    expect(byTestId("drive-list-pane").contains(loadMore()!)).toBe(false);
   });
 });

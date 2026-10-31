@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/roles", async (orig) => {
   const real = await orig<typeof import("~/lib/roles")>();
   return { ...real, canViewStaffing: vi.fn() };
@@ -34,12 +34,12 @@ vi.mock("~/mcp/registry", () => {
   return { McpError, McpForbiddenError, McpNotFoundError, McpInvalidError, requireForAction, REGISTRY_TOOLS: [], findRegistryTool: () => undefined, registryToolDefs: () => [] };
 });
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { canViewStaffing } from "~/lib/roles";
 import { runListPartnerOrgs, LIST_PARTNER_ORGS_TOOL } from "../list-partner-orgs";
 
 const mockPrisma = prisma as unknown as {
-  partnerOrg: { findMany: ReturnType<typeof vi.fn> };
+  partnerOrg: { findMany: ReturnType<typeof vi.fn>; count: ReturnType<typeof vi.fn> };
   partnerApplication: { count: ReturnType<typeof vi.fn> };
 };
 
@@ -63,12 +63,17 @@ describe("list_partner_orgs", () => {
     vi.mocked(canViewStaffing).mockResolvedValue(true);
     mockPrisma.partnerOrg = {
       findMany: vi.fn().mockResolvedValue([]),
+      count: vi.fn().mockResolvedValue(0),
     };
     mockPrisma.partnerApplication = {
       count: vi.fn().mockResolvedValue(0),
     };
     const out = await runListPartnerOrgs("u1", {});
-    expect(out).toMatchObject({ orgs: [], openInquiryCount: 0 });
+    expect(out).toMatchObject({
+      page: { nextCursor: null, hasMore: false, limit: 50, total: 0 },
+      orgs: [],
+      openInquiryCount: 0,
+    });
   });
 
   it("computes activeProjectCount and openInquiryCount correctly", async () => {
@@ -78,6 +83,7 @@ describe("list_partner_orgs", () => {
     const future = new Date(now.getTime() + 1000 * 60 * 60 * 24 * 30);
 
     mockPrisma.partnerOrg = {
+      count: vi.fn().mockResolvedValue(1),
       findMany: vi.fn().mockResolvedValue([
         {
           id: "org-1",
@@ -115,6 +121,7 @@ describe("list_partner_orgs", () => {
   it("includes type and derived relationship status", async () => {
     vi.mocked(canViewStaffing).mockResolvedValue(true);
     mockPrisma.partnerOrg = {
+      count: vi.fn().mockResolvedValue(1),
       findMany: vi.fn().mockResolvedValue([
         {
           id: "org-1",
@@ -134,5 +141,31 @@ describe("list_partner_orgs", () => {
     const org = (out.orgs as Array<Record<string, unknown>>)[0];
     expect(org.type).toBe("Startup");
     expect(org.status).toBe("Dormant");
+  });
+
+  it("walks pages by offset with an id tiebreak and ends with a null cursor", async () => {
+    vi.mocked(canViewStaffing).mockResolvedValue(true);
+    const row = (id: string) => ({
+      id, name: "Acme", website: null, isIndividual: false, type: null,
+      memberships: [], projects: [], activities: [],
+    });
+    const findMany = vi.fn().mockResolvedValueOnce([row("o1"), row("o2"), row("o3")]);
+    mockPrisma.partnerOrg = { findMany, count: vi.fn().mockResolvedValue(3) };
+    mockPrisma.partnerApplication = { count: vi.fn().mockResolvedValue(0) };
+
+    const first = await runListPartnerOrgs("u1", { limit: 2 });
+    expect((first.orgs as { id: string }[]).map((o) => o.id)).toEqual(["o1", "o2"]);
+    expect(first.page).toMatchObject({ hasMore: true, limit: 2, total: 3 });
+    expect(findMany.mock.calls[0][0]).toMatchObject({
+      orderBy: [{ name: "asc" }, { id: "asc" }],
+      skip: 0,
+      take: 3,
+    });
+
+    findMany.mockResolvedValueOnce([row("o3")]);
+    const second = await runListPartnerOrgs("u1", { limit: 2, cursor: first.page.nextCursor! });
+    expect((second.orgs as { id: string }[]).map((o) => o.id)).toEqual(["o3"]);
+    expect(second.page).toEqual({ nextCursor: null, hasMore: false, limit: 2, total: 3 });
+    expect(findMany.mock.calls[1][0]).toMatchObject({ skip: 2 });
   });
 });

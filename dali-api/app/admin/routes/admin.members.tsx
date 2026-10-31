@@ -1,7 +1,7 @@
 import { redirect } from "react-router";
 import type { Route } from "./+types/admin.members";
 import { adminHandle } from "~/admin/adminNav";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth, forbidden } from "~/lib/auth";
 import { isAdmin, isCore, currentTerm } from "~/lib/roles";
 import { coreCycleTermIds } from "~/lib/core-cycle";

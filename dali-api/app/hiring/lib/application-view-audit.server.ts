@@ -1,4 +1,4 @@
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { logAuditEvent } from "~/lib/audit";
 
 // Every save revalidates the reviewer page loader, so without a window one

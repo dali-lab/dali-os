@@ -24,7 +24,7 @@
  * against that environment's WALLET_PASS_SECRET.
  */
 
-import { prisma } from "../app/lib/db";
+import { prisma } from "../app/lib/db.server";
 import { getApiBaseUrl } from "../app/lib/app-env";
 import { runWalletRestyleBroadcast } from "../app/lib/wallet-broadcast.server";
 

@@ -1,7 +1,7 @@
 // MCP `manage_activity` — list/create/update/publish/archive/delete activities.
 // Reuses ~/lib/activities.server.ts server functions. mcp:admin, Core leads only.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore } from "~/lib/roles";
 import { logAuditEvent } from "~/lib/audit";
 import {
@@ -18,13 +18,16 @@ import {
   AdminInvalidError as McpInvalidError,
 } from "./errors";
 import type { McpCtx } from "../../registry";
+import { pageArray, pageProps, type PageArgs } from "../../pagination";
+
+const PAGE_LIMITS = { defaultLimit: 50, maxLimit: 200 };
 import type { ActivityStatus } from "~/generated/prisma/client";
 
 export const MANAGE_ACTIVITY_TOOL = {
   name: "manage_activity",
   description:
     "Manage time-boxed Activities (onboarding hunts and site modes). " +
-    "action=list: list all activities. " +
+    "action=list: list activities, newest start first; pass page.nextCursor as cursor to read the next page until page.hasMore is false. " +
     "action=create: create a new Draft activity (name + kind required). " +
     "action=update: update name/window/audience/termId. " +
     "action=set_status: transition status to Published/Draft/Archived. " +
@@ -72,6 +75,7 @@ export const MANAGE_ACTIVITY_TOOL = {
         enum: ["Draft", "Published", "Archived"],
         description: "set_status: target status.",
       },
+      ...pageProps(PAGE_LIMITS),
     },
     required: ["action"],
     additionalProperties: false,
@@ -79,7 +83,7 @@ export const MANAGE_ACTIVITY_TOOL = {
   requiredScope: "mcp:admin" as const,
 };
 
-type Args = {
+type Args = PageArgs & {
   action: string;
   activityId?: string;
   name?: string;
@@ -99,8 +103,13 @@ export async function runManageActivity(ctx: McpCtx, args: Args) {
   const { action } = args;
 
   if (action === "list") {
-    const activities = await listActivitiesForAdmin();
+    const all = await listActivitiesForAdmin();
+    const ordered = [...all].sort(
+      (a, b) => b.startsAt.getTime() - a.startsAt.getTime() || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
+    );
+    const { rows: activities, page } = pageArray(ordered, args, PAGE_LIMITS);
     return {
+      page,
       activities: activities.map((a) => ({
         id: a.id,
         kind: a.kind,

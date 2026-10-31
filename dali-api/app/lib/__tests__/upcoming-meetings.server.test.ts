@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     scheduledMeeting: { findMany: vi.fn() },
   },
@@ -10,7 +10,7 @@ vi.mock("~/lib/pageAccess.server", async () => {
   return { ...actual, getPageAccessBulk: vi.fn() };
 });
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { getPageAccessBulk } from "~/lib/pageAccess.server";
 import { UPCOMING_LIMIT, loadUpcomingMeetings } from "~/lib/upcoming-meetings.server";
 

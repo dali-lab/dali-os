@@ -2,7 +2,7 @@ import { Form, Link, redirect, useLoaderData } from "react-router";
 import { useMemo, useState } from "react";
 import type { Route } from "./+types/admin.activity";
 import { AdminSectionHeader, adminHandle } from "~/admin/adminNav";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { isCore, isAdmin } from "~/lib/roles";
@@ -23,7 +23,9 @@ import {
   activeFilterParams,
   hasAnyFilter,
 } from "~/lib/audit-query";
-import { ChevronLeft, ChevronRight, X, ChevronDown, ChevronUp } from "lucide-react";
+import { X, ChevronDown, ChevronUp } from "lucide-react";
+import { PagerLinks } from "~/components/ui/Pager";
+import { offsetPage, offsetWindow, parsePageParam } from "~/lib/pagination";
 import { Tooltip, InfoTip, Select, Combobox } from "~/components/ui/floating";
 import { OS_SELECT_TRIGGER_CLASS } from "~/components/ui/floating/styles";
 import { SearchInput } from "~/components/ui/SearchInput";
@@ -52,8 +54,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (!(await isCore(auth.user.sub))) return redirect("/");
 
   const url = new URL(request.url);
-  const page = Math.max(1, Number(url.searchParams.get("page") ?? "1") || 1);
-  const skip = (page - 1) * PAGE_SIZE;
+  const page = parsePageParam(url.searchParams.get("page"));
   const filters = parseAuditFilters(url.searchParams, { hideMcpReads: true });
   const baseWhere = buildAuditWhere(filters);
   const textPatch = await resolveAuditTextFilters(prisma, filters);
@@ -63,12 +64,10 @@ export async function loader({ request }: Route.LoaderArgs) {
   const rows = await prisma.auditLog.findMany({
     where,
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-    take: PAGE_SIZE + 1,
-    skip,
+    ...offsetWindow(page, PAGE_SIZE),
   });
 
-  const hasNext = rows.length > PAGE_SIZE;
-  const entries = rows.slice(0, PAGE_SIZE);
+  const { items: entries, hasNext } = offsetPage(rows, PAGE_SIZE);
 
   const ids = new Set<string>();
   for (const e of entries) {
@@ -231,7 +230,7 @@ function TimelineEntry({ e, areaLabel }: { e: EntryRow; areaLabel: string }) {
 export default function AdminConsoleActivity() {
   const { page, hasNext, filters, anyFilter, actions, areas, entries, now } =
     useLoaderData<typeof loader>();
-  const { panel, actionBtn, actionBtnPrimary, iconBtn } = useOsChrome();
+  const { panel, actionBtn, actionBtnPrimary } = useOsChrome();
   const [action, setAction] = useState<string>(filters.action ?? "");
   const actionOptions = useMemo(
     () => [{ value: "", label: "All actions" }, ...actions.map((a) => ({ value: a, label: a }))],
@@ -344,36 +343,7 @@ export default function AdminConsoleActivity() {
         </div>
       )}
 
-      <nav className="flex items-center justify-between" aria-label="Audit log pagination">
-        {page > 1 ? (
-          <Tooltip content="Previous">
-            <Link
-              to={pageHref(page - 1)}
-              prefetch="render"
-              aria-label="Previous"
-              className={cn(iconBtn, "border border-os-container")}
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </Link>
-          </Tooltip>
-        ) : (
-          <span />
-        )}
-        {hasNext ? (
-          <Tooltip content="Next">
-            <Link
-              to={pageHref(page + 1)}
-              prefetch="render"
-              aria-label="Next"
-              className={cn(iconBtn, "border border-os-container")}
-            >
-              <ChevronRight className="h-4 w-4" />
-            </Link>
-          </Tooltip>
-        ) : (
-          <span className="text-xs text-os-muted">End of log</span>
-        )}
-      </nav>
+      <PagerLinks page={page} hasNext={hasNext} hrefFor={pageHref} label="Audit log pagination" endLabel="End of log" />
     </div>
   );
 }

@@ -7,7 +7,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn() }));
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/roles", () => ({ isCore: vi.fn().mockResolvedValue(false) }));
 vi.mock("~/lib/transcription/chunks.server", () => ({ deletePrefix: vi.fn() }));
 vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
@@ -30,7 +30,7 @@ import { requireAuth } from "~/lib/auth";
 import { logAuditEvent } from "~/lib/audit";
 import { isCore } from "~/lib/roles";
 import { deletePrefix } from "~/lib/transcription/chunks.server";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import {
   canReadRecording,
   canRecordInto,

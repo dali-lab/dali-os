@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/roles", async (orig) => {
   const real = await orig<typeof import("~/lib/roles")>();
   return { ...real, canViewStaffing: vi.fn() };
@@ -23,7 +23,7 @@ vi.mock("~/mcp/registry", () => {
   return { McpError, McpForbiddenError, McpNotFoundError, REGISTRY_TOOLS: [], findRegistryTool: () => undefined, registryToolDefs: () => [] };
 });
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { canViewStaffing } from "~/lib/roles";
 import { runGetPartnerOrg, GET_PARTNER_ORG_TOOL } from "../get-partner-org";
 
@@ -94,6 +94,7 @@ describe("get_partner_org", () => {
           { id: "app-1", title: "Kiosk pitch", stage: "Accepted", createdAt: new Date(), nextStep: null },
         ],
         activities: [{ id: "a1", createdAt: new Date(), type: "Note", body: "hi", metadata: null }],
+        _count: { activities: 45 },
       }),
     };
 
@@ -107,5 +108,6 @@ describe("get_partner_org", () => {
     expect(out.applications).toMatchObject([{ id: "app-1", stage: "Accepted" }]);
     expect(out.projects).toMatchObject([{ projectName: "Kiosk", active: true }]);
     expect(out.recentActivity).toMatchObject([{ id: "a1", type: "Note" }]);
+    expect(out.recentActivityTotal).toBe(45);
   });
 });

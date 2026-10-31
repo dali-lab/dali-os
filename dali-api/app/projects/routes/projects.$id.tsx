@@ -52,8 +52,7 @@ import { uploadFileToS3, formatBytes } from "~/lib/upload-client";
 import type { Route } from "./+types/projects.$id";
 import { buildProjectCalendar } from "~/projects/lib/project-calendar.server";
 import { MonthCalendarPanel } from "~/components/MonthCalendarPanel";
-import { prisma } from "~/lib/db";
-import { logAuditEvent } from "~/lib/audit";
+import { prisma } from "~/lib/db.server";
 import { listKnownOrgs, loadProjectInfra } from "~/lib/infra/dashboard.server";
 import { saveInfraConfig } from "~/lib/infra/config-save.server";
 import { listProjectInfraRequests } from "~/lib/infra/requests.server";
@@ -2563,7 +2562,7 @@ function RecordingPolicySegment({
     <EditableSection
       title="Meeting recording"
       canEdit={canEdit}
-      description="Lets anyone editing a meeting note on this project record it. Audio is transcribed, then deleted."
+      description="Lets anyone editing a meeting note on this project record it. Audio is transcribed, then deleted after."
       onSave={() => {
         if (formRef.current) submit(formRef.current);
       }}

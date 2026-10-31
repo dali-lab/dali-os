@@ -1,14 +1,14 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/auth", () => ({ requireProjectEditAccess: vi.fn() }));
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/cors", () => ({
   withCors: (_req: Request, res: Response) => res,
   handlePreflight: () => null,
 }));
 
 import { requireProjectEditAccess } from "~/lib/auth";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { action } from "~/projects/routes/api.tasks.$id.files";
 
 const TASK_ID = "task-1";

@@ -6,7 +6,7 @@
 //
 // NEVER log transcript text, chunk bytes, or a presigned chunk URL.
 
-import { prisma, Prisma } from "~/lib/db";
+import { prisma, Prisma } from "~/lib/db.server";
 import { authorizeCollabDoc } from "~/lib/collabAuth";
 import { isPresenceRoom } from "~/collab/roomName";
 import { getApiBaseUrl } from "~/lib/app-env";
@@ -120,12 +120,15 @@ export async function latestRecordingFor(documentName: string): Promise<ActiveRe
   return recordingSummaryFor(documentName);
 }
 
+export type RecordingClient = { captureSource?: string; appVersion?: string; clientPlatform?: string };
+
 export type CreateRecordingResult = MeetingRecording | null | { busy: ActiveRecordingSummary };
 
 export async function createRecording(
   userId: string,
   documentName: string,
   meeting: { scheduledMeetingId?: string; occurrenceStart?: Date | null } = {},
+  client: RecordingClient = {},
 ): Promise<CreateRecordingResult> {
   const stale = await prisma.meetingRecording.findMany({
     where: { userId, finalizedAt: null, createdAt: { lt: new Date(Date.now() - STALE_MS) } },
@@ -156,6 +159,7 @@ export async function createRecording(
         segmentStarts: [0],
         ...(meeting.scheduledMeetingId ? { scheduledMeetingId: meeting.scheduledMeetingId } : {}),
         ...(meeting.occurrenceStart ? { occurrenceStart: meeting.occurrenceStart } : {}),
+        ...client,
       },
     });
   } catch (err) {
@@ -411,6 +415,7 @@ export type ApplyResultBody = {
  * further callbacks (success or error) are no-ops, so repeat delivery never
  * re-does the work or regresses the state. A row the finalizer already
  * marked Failed still accepts a late success callback and becomes Done.
+ * The audio stays until the finalizer's retention sweep.
  */
 export async function applyResult(
   rec: Pick<MeetingRecording, "id" | "status" | "finalizedAt" | "channels">,
@@ -428,7 +433,6 @@ export async function applyResult(
         finalizedAt: rec.finalizedAt ?? new Date(),
       },
     });
-    await deletePrefix(rec.id);
     return;
   }
 
@@ -456,7 +460,6 @@ export async function applyResult(
       finalizedAt: rec.finalizedAt ?? new Date(),
     },
   });
-  await deletePrefix(rec.id);
 }
 
 const DEFAULT_SPEAKER_LABEL: Record<Channel, string> = { mic: "You", call: "Others" };

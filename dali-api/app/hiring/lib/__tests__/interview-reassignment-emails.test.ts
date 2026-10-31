@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/outbound.server", () => ({
   enqueueOutbound: vi.fn(async (msg: { target: string }) => ({ id: `out-${msg.target}` })),
   drainNow: vi.fn().mockResolvedValue(undefined),
@@ -14,7 +14,7 @@ vi.mock("~/hiring/lib/email-variables", () => ({
 }));
 vi.mock("~/hiring/lib/interview-meet", () => ({ ensureInterviewMeetUrl: vi.fn() }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { enqueueOutbound } from "~/lib/outbound.server";
 import { getHiringEmail } from "~/hiring/lib/hiring-emails.server";
 import { sendReassignmentEmails } from "~/hiring/lib/interview-emails";

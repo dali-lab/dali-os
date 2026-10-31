@@ -20,9 +20,9 @@ vi.mock("~/mcp/registry", () => {
   }
   return { McpError, McpInvalidError, McpNotFoundError, McpForbiddenError };
 });
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import {
   runSearchTimetableCourses,
   SEARCH_TIMETABLE_COURSES_DEF,
@@ -87,6 +87,37 @@ describe("search_timetable_courses", () => {
         where: { termId: "t1", searchText: { contains: "cosc" } },
       }),
     );
+  });
+
+  it("walks pages with a cursor, tiebreaking on id, and ends with a null cursor", async () => {
+    const course = (n: string) => ({ crn: n, subject: "COSC", number: n, section: "01", title: n });
+    mockPrisma.courseOffering.findMany.mockResolvedValueOnce([course("1"), course("2"), course("3")]);
+    const first = await runSearchTimetableCourses("u1", { termId: "t1", q: "cosc", limit: 2 });
+    expect(first.courses.map((c) => c.crn)).toEqual(["1", "2"]);
+    expect(first.page).toMatchObject({ hasMore: true, limit: 2 });
+    expect(mockPrisma.courseOffering.findMany.mock.calls[0][0]).toMatchObject({
+      skip: 0,
+      take: 3,
+      orderBy: [{ subject: "asc" }, { number: "asc" }, { section: "asc" }, { id: "asc" }],
+    });
+
+    mockPrisma.courseOffering.findMany.mockResolvedValueOnce([course("3")]);
+    const second = await runSearchTimetableCourses("u1", {
+      termId: "t1",
+      q: "cosc",
+      limit: 2,
+      cursor: first.page.nextCursor!,
+    });
+    expect(mockPrisma.courseOffering.findMany.mock.calls[1][0]).toMatchObject({ skip: 2, take: 3 });
+    expect(second.courses.map((c) => c.crn)).toEqual(["3"]);
+    expect(second.page).toMatchObject({ nextCursor: null, hasMore: false });
+  });
+
+  it("defaults to 20 per page", async () => {
+    mockPrisma.courseOffering.findMany.mockResolvedValue([]);
+    const out = await runSearchTimetableCourses("u1", { termId: "t1", q: "cosc" });
+    expect(out.page.limit).toBe(20);
+    expect(mockPrisma.courseOffering.findMany.mock.calls[0][0].take).toBe(21);
   });
 
   it("returns empty array when no matches", async () => {

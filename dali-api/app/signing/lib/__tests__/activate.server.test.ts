@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     signingDocumentVersion: { findUnique: vi.fn() },
     signingDocument: { findUniqueOrThrow: vi.fn() },
@@ -12,7 +12,7 @@ vi.mock("~/signing/lib/scope.server", () => ({ resolveAdminScope: vi.fn() }));
 vi.mock("~/signing/lib/presign.server", () => ({ applyAdminSignatures: vi.fn() }));
 vi.mock("~/signing/lib/notify.server", () => ({ notifySignRequest: vi.fn() }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { logAuditEvent } from "~/lib/audit";
 import { resolveAdminScope } from "~/signing/lib/scope.server";
 import { applyAdminSignatures } from "~/signing/lib/presign.server";

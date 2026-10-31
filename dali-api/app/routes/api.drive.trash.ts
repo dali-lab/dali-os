@@ -14,7 +14,7 @@
 
 import { deleteForm, setFormArchived } from "~/forms/lib/form-page.server";
 import type { Route } from "./+types/api.drive.trash";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { getPageAccess, getPageAccessBulk } from "~/lib/pageAccess.server";
 import { canEditFile } from "~/lib/fileAccess.server";
@@ -23,13 +23,49 @@ import { isRoot, ROOT_DELETE_ERROR } from "~/lib/drive-roots";
 import { canManageFormPlacement } from "~/forms/lib/form-access.server";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { logAuditEvent } from "~/lib/audit";
+import { CURSOR_DONE, decodeCursor, encodeCursor, joinPairCursor, keysetAfter, splitPairCursor, type KeysetCursor } from "~/lib/pagination";
 
-// How many archived rows of each kind to look at before filtering, and how
-// many of the survivors to return. Trash is a recovery surface — you come here
-// for something you deleted recently — so it reads the newest rows rather than
-// scanning every archived row in the database and access-checking each one.
-const SCAN_LIMIT = 500;
-const PER_TYPE_LIMIT = 100;
+export const TRASH_PAGE_SIZE = 50;
+export const TRASH_BATCH_SIZE = 200;
+export const TRASH_MAX_BATCHES = 10;
+
+export function parseTrashCursor(raw: string | null): { pages: string | null; files: string | null } {
+  const [pages, files] = splitPairCursor(raw);
+  return { pages, files };
+}
+
+// Access is checked in JS, so a page of results is built by scanning batches
+// and keeping what the viewer may see. When the scan cap is hit first, the
+// cursor comes from the last row scanned so paging continues past long runs
+// of rows the viewer cannot see.
+async function scanVisible<T extends { id: string; archivedAt: Date | null }>(
+  startCursor: string | null,
+  fetchBatch: (cursor: KeysetCursor | null) => Promise<T[]>,
+  filterVisible: (rows: T[]) => Promise<T[]>,
+): Promise<{ items: T[]; nextCursor: string | null }> {
+  if (startCursor === CURSOR_DONE) return { items: [], nextCursor: null };
+  let cursor = decodeCursor(startCursor);
+  const visible: T[] = [];
+  let lastScanned: T | undefined;
+  let exhausted = false;
+  for (let i = 0; i < TRASH_MAX_BATCHES && visible.length < TRASH_PAGE_SIZE; i++) {
+    const rows = await fetchBatch(cursor);
+    exhausted = rows.length < TRASH_BATCH_SIZE;
+    if (rows.length > 0) {
+      visible.push(...(await filterVisible(rows)));
+      lastScanned = rows[rows.length - 1];
+      cursor = { at: lastScanned.archivedAt!.toISOString(), id: lastScanned.id };
+    }
+    if (exhausted) break;
+  }
+  const items = visible.slice(0, TRASH_PAGE_SIZE);
+  const last = items[items.length - 1];
+  if (visible.length > TRASH_PAGE_SIZE && last) {
+    return { items, nextCursor: encodeCursor({ at: last.archivedAt!.toISOString(), id: last.id }) };
+  }
+  if (exhausted || !lastScanned) return { items, nextCursor: null };
+  return { items, nextCursor: encodeCursor({ at: lastScanned.archivedAt!.toISOString(), id: lastScanned.id }) };
+}
 
 async function pageTitle(id: string): Promise<string | null> {
   const page = await prisma.page.findUnique({ where: { id }, select: { title: true } });
@@ -46,80 +82,82 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (!auth.ok) return withCors(request, auth.response);
   const userId = auth.user.sub;
 
-  // Archived pages (docs, folders, whiteboards) — filtered through access
-  // checks. Whiteboard belongs here with the rest: the Drive deletes one
-  // through the same archive path as a doc, so leaving it out of this query
-  // meant a trashed whiteboard could never be found or restored.
-  //
-  // Bounded: Trash is a recovery surface, not an archive browser, and every
-  // row costs an access check. Taking the newest PAGE_SCAN keeps the cost flat
-  // as the lab accumulates deleted items; the viewer's own share of them is
-  // then trimmed to PER_TYPE_LIMIT below.
-  const archivedPages = await prisma.page.findMany({
-    where: {
-      archivedAt: { not: null },
-      kind: { in: DRIVE_PAGE_KINDS },
+  const cursors = parseTrashCursor(new URL(request.url).searchParams.get("cursor"));
+
+  // Whiteboards belong with the other pages: the Drive deletes one through the
+  // same archive path as a doc, so leaving it out meant a trashed whiteboard
+  // could never be found or restored.
+  const pageScan = await scanVisible(
+    cursors.pages,
+    (cursor) =>
+      prisma.page.findMany({
+        where: {
+          AND: [
+            { archivedAt: { not: null }, kind: { in: DRIVE_PAGE_KINDS } },
+            keysetAfter("archivedAt", cursor),
+          ],
+        },
+        // The full access shape, not just what the listing renders: the bulk
+        // resolver reads these off the row instead of re-fetching each page.
+        select: {
+          id: true,
+          title: true,
+          archivedAt: true,
+          kind: true,
+          workspaceType: true,
+          workspaceId: true,
+          parentPageId: true,
+          createdById: true,
+          partnerVisible: true,
+          profileVisible: true,
+          labListing: true,
+          linkAccess: true,
+          linkPermission: true,
+          scopeKind: true,
+          scopeGroupId: true,
+          scopePermission: true,
+        },
+        orderBy: [{ archivedAt: "desc" }, { id: "desc" }],
+        take: TRASH_BATCH_SIZE,
+      }),
+    async (rows) => {
+      // includeArchived: every page here is archived by definition, so the
+      // default deny would empty the whole listing.
+      const access = await getPageAccessBulk(userId, rows, request, { includeArchived: true });
+      return rows.filter((p) => access.get(p.id)?.canView);
     },
-    // The full access shape, not just what the listing renders: the bulk
-    // resolver reads these off the row instead of re-fetching each page, and a
-    // partial row would quietly compute the wrong answer.
-    select: {
-      id: true,
-      title: true,
-      archivedAt: true,
-      kind: true,
-      workspaceType: true,
-      workspaceId: true,
-      parentPageId: true,
-      createdById: true,
-      partnerVisible: true,
-      profileVisible: true,
-      labListing: true,
-      linkAccess: true,
-      linkPermission: true,
-      scopeKind: true,
-      scopeGroupId: true,
-      scopePermission: true,
-    },
-    orderBy: { archivedAt: "desc" },
-    take: SCAN_LIMIT,
-  });
-
-  // One batched access resolution instead of N sequential getPageAccess calls.
-  // includeArchived: every page here is archived by definition, so the default
-  // deny would empty the whole listing.
-  const pageAccess = await getPageAccessBulk(userId, archivedPages, request, { includeArchived: true });
-  const accessiblePages = archivedPages
-    .filter((p) => pageAccess.get(p.id)?.canView)
-    .slice(0, PER_TYPE_LIMIT);
-
-  // Archived files the viewer can edit (restore/delete requires edit, not just view).
-  const archivedFiles = await prisma.projectFile.findMany({
-    where: { archivedAt: { not: null } },
-    select: { id: true, title: true, archivedAt: true, projectId: true, workspaceType: true, workspaceId: true, folderPageId: true },
-    orderBy: { archivedAt: "desc" },
-    take: SCAN_LIMIT,
-  });
-
-  // Memoize canEditFile per distinct folderPageId: a folderPageId pins a file
-  // to one project/workspace, so every file sharing it gets the same
-  // ancestor-walk answer — compute it once instead of once per file. Mirrors
-  // the folderAccess memo pattern in drive.server.ts (loadLabFiles/loadFiles).
-  const folderAccessCache = new Map<string, Promise<boolean>>();
-  const fileAccess = await Promise.all(
-    archivedFiles.map((f) => {
-      if (!f.folderPageId) return canEditFile(userId, f, request);
-      let access = folderAccessCache.get(f.folderPageId);
-      if (!access) {
-        access = canEditFile(userId, f, request);
-        folderAccessCache.set(f.folderPageId, access);
-      }
-      return access;
-    }),
   );
-  const accessibleFiles = archivedFiles
-    .filter((_, i) => fileAccess[i])
-    .slice(0, PER_TYPE_LIMIT);
+  const accessiblePages = pageScan.items;
+
+  // Restore/delete requires edit, not just view. canEditFile is memoized per
+  // folderPageId: a folder pins a file to one project/workspace, so every file
+  // sharing it gets the same answer.
+  const folderAccessCache = new Map<string, Promise<boolean>>();
+  const fileScan = await scanVisible(
+    cursors.files,
+    (cursor) =>
+      prisma.projectFile.findMany({
+        where: { AND: [{ archivedAt: { not: null } }, keysetAfter("archivedAt", cursor)] },
+        select: { id: true, title: true, archivedAt: true, projectId: true, workspaceType: true, workspaceId: true, folderPageId: true },
+        orderBy: [{ archivedAt: "desc" }, { id: "desc" }],
+        take: TRASH_BATCH_SIZE,
+      }),
+    async (rows) => {
+      const allowed = await Promise.all(
+        rows.map((f) => {
+          if (!f.folderPageId) return canEditFile(userId, f, request);
+          let access = folderAccessCache.get(f.folderPageId);
+          if (!access) {
+            access = canEditFile(userId, f, request);
+            folderAccessCache.set(f.folderPageId, access);
+          }
+          return access;
+        }),
+      );
+      return rows.filter((_, i) => allowed[i]);
+    },
+  );
+  const accessibleFiles = fileScan.items;
 
   const items = [
     ...accessiblePages.map((p) => ({
@@ -136,9 +174,12 @@ export async function loader({ request }: Route.LoaderArgs) {
       parentFolderId: f.folderPageId,
       archivedAt: f.archivedAt!.toISOString(),
     })),
-  ].sort((a, b) => new Date(b.archivedAt).getTime() - new Date(a.archivedAt).getTime());
+  ].sort((a, b) => b.archivedAt.localeCompare(a.archivedAt) || b.id.localeCompare(a.id));
 
-  return withCors(request, Response.json({ items }));
+  return withCors(
+    request,
+    Response.json({ items, nextCursor: joinPairCursor(pageScan.nextCursor, fileScan.nextCursor) }),
+  );
 }
 
 // ── POST: archive-form / restore / purge ──────────────────────────────────────

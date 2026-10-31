@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn() }));
 vi.mock("~/lib/roles", () => ({ getUserRoles: vi.fn() }));
 vi.mock("~/hiring/lib/confidentiality", () => ({ requirePageSignedOrRedirect: vi.fn() }));
@@ -11,7 +11,7 @@ vi.mock("~/hiring/lib/hiring-events.server", () => ({ getHiringEventEngagement: 
 vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabled: vi.fn() }));
 vi.mock("~/collab/read", () => ({ readDocAsBlocks: vi.fn() }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { getUserRoles } from "~/lib/roles";
 import { requirePageSignedOrRedirect } from "~/hiring/lib/confidentiality";

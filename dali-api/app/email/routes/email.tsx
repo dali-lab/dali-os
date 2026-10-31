@@ -22,6 +22,7 @@ import { loadEmailPage, submitEmailAction, type FeedCursor, type FeedThread } fr
 import { useOsChrome } from "~/components/os-chrome";
 import { Button, buttonClasses } from "~/components/ui/Button";
 import { IconButton } from "~/components/ui/IconButton";
+import { LoadMore } from "~/components/ui/Pager";
 import { Tooltip } from "~/components/ui/floating";
 import { SearchInput } from "~/components/ui/SearchInput";
 import { useToast } from "~/components/ui/toast";
@@ -501,13 +502,7 @@ export default function EmailPage() {
                       </Link>
                     );
                   })}
-                  {Object.keys(nextPage).length > 0 && (
-                    <div className="flex justify-center pt-2">
-                      <Button variant="ghost" size="sm" onClick={loadMore} disabled={loadingMore}>
-                        {loadingMore ? "Loading…" : "Load more"}
-                      </Button>
-                    </div>
-                  )}
+                  <LoadMore hasMore={Object.keys(nextPage).length > 0} onLoadMore={loadMore} loading={loadingMore} />
                 </>
               )}
             </div>

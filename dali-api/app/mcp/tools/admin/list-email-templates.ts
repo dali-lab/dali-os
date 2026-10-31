@@ -8,7 +8,7 @@
 //
 // Requires the `mcp:admin` scope; caller must be a Core lead.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore } from "~/lib/roles";
 import {
   EMAIL_TEMPLATE_KEYS,
@@ -17,7 +17,7 @@ import {
   type EmailTemplateKey,
 } from "~/email/lib/registry";
 import { listEmailTemplates } from "~/email/lib/templates.server";
-import { AdminForbiddenError as McpForbiddenError } from "./errors";
+import { AdminForbiddenError as McpForbiddenError, AdminInvalidError as McpInvalidError } from "./errors";
 import type { McpCtx } from "../../registry";
 
 export const LIST_EMAIL_TEMPLATES_TOOL = {
@@ -26,7 +26,7 @@ export const LIST_EMAIL_TEMPLATES_TOOL = {
     "List every operator-editable email: its key, area, what sends it, which {{variables}} it may use, " +
     "the sender identity it goes out as, whether copy has been written, and what happens when it hasn't " +
     "(skip = nothing sends, error = the action is blocked, default = built-in copy is used). " +
-    "Pass includeVersions to also get each one's edit history. Only accessible to Core leads.",
+    "Pass includeVersions together with key to also get that email's edit history. Only accessible to Core leads.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -36,7 +36,7 @@ export const LIST_EMAIL_TEMPLATES_TOOL = {
       },
       includeVersions: {
         type: "boolean" as const,
-        description: "Include the append-only edit history for each email. Defaults to false.",
+        description: "Include the append-only edit history. Requires key. Defaults to false.",
       },
     },
     additionalProperties: false,
@@ -50,6 +50,10 @@ export async function runListEmailTemplates(
 ) {
   if (!(await isCore(ctx.user.id))) {
     throw new McpForbiddenError("Only Core leads can view email templates.");
+  }
+
+  if (args.includeVersions && !args.key) {
+    throw new McpInvalidError("includeVersions requires key. Pass the email key whose history you want.");
   }
 
   const keys: EmailTemplateKey[] = args.key

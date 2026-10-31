@@ -3,7 +3,7 @@
 // "what counts as a recent notification" policy lives in one place.
 
 import type { Prisma } from "~/generated/prisma/client";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { EVENT_TYPES, isEventType, type EventDef } from "~/lib/notification-events";
 import { noteForOccurrence } from "~/lib/meeting-occurrences";
 
@@ -69,7 +69,7 @@ const LIVE_INTERVIEW_ASSIGNMENT: Prisma.NotificationWhereInput = {
 /**
  * Staleness hides for meeting- and interview-backed notifications that are still
  * awaiting action, as AND clauses. Both read paths build on this — the tasks path
- * (listOpenTasks/countOpenTasks, which drives the web bell's `taskCount`) and
+ * (listOpenTasksPage/countOpenTasks, which drive the bell's `taskCount`) and
  * the inbox path (listMyNotifications, which drives the desktop app's feed and
  * dock badge) — so the two counts can't disagree.
  *
@@ -86,6 +86,8 @@ export interface ListNotificationsOptions {
   limit?: number;
   /** When true, only return notifications with readAt = null. */
   onlyUnread?: boolean;
+  /** Upper bound for `limit`. Defaults to 50. */
+  maxLimit?: number;
 }
 
 export interface NotificationListResult {
@@ -102,7 +104,7 @@ export async function listMyNotifications(
   userId: string,
   opts: ListNotificationsOptions = {},
 ): Promise<NotificationListResult> {
-  const limit = Math.max(1, Math.min(opts.limit ?? 50, 50));
+  const limit = Math.max(1, Math.min(opts.limit ?? 50, opts.maxLimit ?? 50));
   const now = new Date();
   const live = liveMeetingPingClauses(now);
   const where: Prisma.NotificationWhereInput = {

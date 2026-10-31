@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     project: { findUnique: vi.fn() },
-    task: { findMany: vi.fn() },
+    task: { findMany: vi.fn(), count: vi.fn().mockResolvedValue(0) },
   },
 }));
 vi.mock("~/lib/display", () => ({
@@ -14,7 +14,7 @@ vi.mock("~/lib/prisma-shapes", () => ({
   USER_NAME_SELECT: { id: true, firstName: true, lastName: true },
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import {
   runListArchivedTasks,
   LIST_ARCHIVED_TASKS_TOOL,
@@ -22,7 +22,7 @@ import {
 
 const mockPrisma = prisma as unknown as {
   project: { findUnique: ReturnType<typeof vi.fn> };
-  task: { findMany: ReturnType<typeof vi.fn> };
+  task: { findMany: ReturnType<typeof vi.fn>; count: ReturnType<typeof vi.fn> };
 };
 
 beforeEach(() => {
@@ -45,7 +45,7 @@ describe("list_archived_tasks", () => {
     mockPrisma.project.findUnique.mockResolvedValue({ id: "p1" });
     mockPrisma.task.findMany.mockResolvedValue([]);
     const out = await runListArchivedTasks("u1", { projectId: "p1" });
-    expect(out).toEqual({ tasks: [] });
+    expect(out).toEqual({ tasks: [], page: { nextCursor: null, hasMore: false, limit: 50, total: 0 } });
   });
 
   it("returns archived tasks with ISO dates and assignees", async () => {
@@ -100,5 +100,47 @@ describe("list_archived_tasks", () => {
       domain: null,
       assignees: [],
     });
+  });
+
+  it("walks keyset pages on archivedAt and id", async () => {
+    const row = (id: string, at: string) => ({
+      id,
+      title: id,
+      status: "Done",
+      priority: "Normal",
+      dueAt: null,
+      archivedAt: new Date(at),
+      domain: null,
+      assignees: [],
+    });
+    mockPrisma.project.findUnique.mockResolvedValue({ id: "p1" });
+    mockPrisma.task.count.mockResolvedValue(3);
+    mockPrisma.task.findMany.mockResolvedValueOnce([
+      row("t3", "2026-09-10T00:00:00.000Z"),
+      row("t2", "2026-09-10T00:00:00.000Z"),
+    ]);
+    const first = await runListArchivedTasks("u1", { projectId: "p1", limit: 1 });
+    expect(first.tasks.map((t) => t.id)).toEqual(["t3"]);
+    expect(first.page).toMatchObject({ hasMore: true, limit: 1, total: 3 });
+
+    mockPrisma.task.findMany.mockResolvedValueOnce([row("t2", "2026-09-10T00:00:00.000Z")]);
+    const second = await runListArchivedTasks("u1", {
+      projectId: "p1",
+      limit: 1,
+      cursor: first.page.nextCursor!,
+    });
+    const args = mockPrisma.task.findMany.mock.calls[1][0];
+    expect(args.orderBy).toEqual([{ archivedAt: "desc" }, { id: "desc" }]);
+    expect(args.where.AND[0]).toEqual({ projectId: "p1", archivedAt: { not: null } });
+    expect(args.where.AND[1].OR).toHaveLength(2);
+    expect(second.tasks.map((t) => t.id)).toEqual(["t2"]);
+    expect(second.page).toMatchObject({ hasMore: false, nextCursor: null });
+  });
+
+  it("rejects a bad cursor", async () => {
+    mockPrisma.project.findUnique.mockResolvedValue({ id: "p1" });
+    await expect(
+      runListArchivedTasks("u1", { projectId: "p1", cursor: "nope" }),
+    ).rejects.toThrow(/Invalid cursor/);
   });
 });

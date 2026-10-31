@@ -52,6 +52,9 @@ interface NotesContextValue {
   viewingId: string | null;
   editing: EditingNote | null;
   load: () => Promise<void>;
+  loadingMore: boolean;
+  /** Appends the next page of older notes, if the server has one. Resolves to an error message, or null. */
+  loadMore: () => Promise<string | null>;
   /** Starts recording into a meeting's notes or a picked page. Resolves to an error message, or null. */
   startRecording: (target: RecordTarget) => Promise<string | null>;
   pauseRecording: () => Promise<void>;
@@ -90,6 +93,7 @@ function startErrorMessage(err: unknown): string {
 export function NotesProvider({ children }: { children: React.ReactNode }) {
   const [notes, setNotes] = useState<NotesResponse | null>(null);
   const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [active, setActive] = useState<ActiveRecording | null>(null);
@@ -144,6 +148,31 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       setLoading(false);
     }
   }, []);
+
+  const loadMore = useCallback(async () => {
+    const cursor = notes?.nextCursor;
+    if (!cursor || loadingMore) return null;
+    setLoadingMore(true);
+    try {
+      const page = await api.notes(cursor);
+      setNotes((prev) => {
+        if (!prev) return page;
+        const noteIds = new Set(prev.notes.map((n) => n.id));
+        const pageIds = new Set(prev.pages.map((p) => p.id));
+        return {
+          ...prev,
+          notes: [...prev.notes, ...page.notes.filter((n) => !noteIds.has(n.id))],
+          pages: [...prev.pages, ...page.pages.filter((p) => !pageIds.has(p.id))],
+          nextCursor: page.nextCursor ?? null,
+        };
+      });
+      return null;
+    } catch (err) {
+      return errorMessage(err);
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [notes?.nextCursor, loadingMore]);
 
   const stopCapture = useCallback(async () => {
     capturing.current = false;
@@ -345,6 +374,8 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       viewingId,
       editing,
       load,
+      loadingMore,
+      loadMore,
       startRecording,
       pauseRecording,
       resumeRecording,
@@ -362,7 +393,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       noteForMeeting,
       reset,
     }),
-    [notes, loading, error, notice, active, inputLevel, recorderVisible, viewingId, editing, load, startRecording, pauseRecording, resumeRecording, finishRecording, discardRecording, noteForMeeting, reset],
+    [notes, loading, error, notice, active, inputLevel, recorderVisible, viewingId, editing, load, loadingMore, loadMore, startRecording, pauseRecording, resumeRecording, finishRecording, discardRecording, noteForMeeting, reset],
   );
 
   return <NotesContext.Provider value={value}>{children}</NotesContext.Provider>;

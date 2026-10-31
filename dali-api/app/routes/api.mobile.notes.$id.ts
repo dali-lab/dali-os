@@ -1,5 +1,5 @@
 import type { Route } from "./+types/api.mobile.notes.$id";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { readDocAsBlocks } from "~/collab/read";
 import { resolveMeetingOccurrence } from "~/lib/scheduled-meeting";
 import { canReadRecording, canRecordInto, resolveSpeakerNames, storedLines } from "~/lib/meeting-recording.server";

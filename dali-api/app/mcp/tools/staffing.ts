@@ -14,7 +14,7 @@
 // Assignments are written as Proposed, exactly as the board writes them.
 // Confirmed and Declined rows are staffing's audit trail and are never touched.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { canManageStaffing } from "~/lib/roles";
 import { fullName } from "~/lib/display";
 import type { Level } from "~/generated/prisma/client";
@@ -51,13 +51,18 @@ async function requireStaffingManager(callerId: string): Promise<void> {
 export const GET_STAFFING_BOARD_TOOL = {
   name: "get_staffing_board",
   description:
-    "Read a staffing cycle's board: every proposed and confirmed assignment grouped by project, plus the members who bid into the cycle but aren't placed yet. Staffing managers only. Omit cycleId to get the most recent cycle.",
+    "Read a staffing cycle's board: every proposed and confirmed assignment grouped by project, plus the members who bid into the cycle but aren't placed yet. Staffing managers only. Omit cycleId to get the most recent cycle. The board is not paged. Pass projectId to read one project's column only, which leaves out the unassigned column.",
   inputSchema: {
     type: "object" as const,
     properties: {
       cycleId: {
         type: "string",
         description: "StaffingCycle.id. Defaults to the latest term's cycle.",
+      },
+      projectId: {
+        type: "string",
+        minLength: 1,
+        description: "Return only this project's column.",
       },
     },
     required: [],
@@ -83,7 +88,7 @@ export type StaffingBoardOut = {
 
 export async function runGetStaffingBoard(
   callerId: string,
-  input: { cycleId?: string } = {},
+  input: { cycleId?: string; projectId?: string } = {},
 ): Promise<StaffingBoardOut> {
   await requireStaffingManager(callerId);
 
@@ -107,7 +112,11 @@ export async function runGetStaffingBoard(
     prisma.staffingAssignment.findMany({
       // Declined rows are audit trail only (a member removed from a project) —
       // exclude them so a dropped placement doesn't linger as a ghost column.
-      where: { staffingCycleId: cycle.id, status: { not: "Declined" } },
+      where: {
+        staffingCycleId: cycle.id,
+        status: { not: "Declined" },
+        ...(input.projectId ? { projectId: input.projectId } : {}),
+      },
       select: {
         userId: true,
         projectId: true,
@@ -119,10 +128,12 @@ export async function runGetStaffingBoard(
     }),
     // Everyone on the board for this cycle; those without an assignment are
     // the "unassigned" column the board shows on the left.
-    prisma.staffingBoardMember.findMany({
-      where: { staffingCycleId: cycle.id },
-      select: { userId: true, user: { select: { firstName: true, lastName: true } } },
-    }),
+    input.projectId
+      ? Promise.resolve([])
+      : prisma.staffingBoardMember.findMany({
+          where: { staffingCycleId: cycle.id },
+          select: { userId: true, user: { select: { firstName: true, lastName: true } } },
+        }),
   ]);
 
   const [projectRows, domainRows] = await Promise.all([

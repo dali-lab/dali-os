@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db", () => ({ prisma: { page: { findFirst: vi.fn(), create: vi.fn() } } }));
+vi.mock("~/lib/db.server", () => ({ prisma: { page: { findFirst: vi.fn(), create: vi.fn() } } }));
 vi.mock("~/lib/page-names.server", () => ({ assertUniqueName: vi.fn() }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { assertUniqueName } from "~/lib/page-names.server";
 import { createLabPage, createProjectPage } from "~/lib/pages";
 

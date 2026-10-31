@@ -13,7 +13,7 @@ import { requireAuth, forbidden } from "~/lib/auth";
 import { isCore, isAdmin } from "~/lib/roles";
 import { parseJson } from "~/lib/validate";
 import { logAuditEvent } from "~/lib/audit";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { getProjectInfraCreds } from "~/lib/infra/project-infra.server";
 import {
   assertFlyAppMutable,

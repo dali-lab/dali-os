@@ -8,7 +8,8 @@ export type PlanningState =
   | "Accepted"
   | "New"
   | "Interview"
-  | "Deciding";
+  | "Deciding"
+  | "Backlog";
 
 export type PlanningItem = {
   key: string;
@@ -54,7 +55,7 @@ export type PlanningGapModel = {
   };
 };
 
-const POTENTIAL_STATES: ReadonlySet<PlanningState> = new Set(["Undecided", "New", "Interview", "Deciding"]);
+const POTENTIAL_STATES: ReadonlySet<PlanningState> = new Set(["Undecided", "New", "Interview", "Deciding", "Backlog"]);
 
 export function isPotentialState(state: PlanningState): boolean {
   return POTENTIAL_STATES.has(state);
@@ -160,28 +161,91 @@ export type ProjectPlanningInput = {
   decision: boolean | null;
   thisTermSpots: Record<string, number>;
   previousTermSpots: Record<string, number>;
+  archived?: boolean;
 };
 
-export function projectToPlanningItem(p: ProjectPlanningInput): PlanningItem | null {
-  if (p.earliestSortKey === null || p.earliestSortKey > p.termSortKey) return null;
-  const base = { key: `project:${p.id}`, kind: "project" as const, refId: p.id, name: p.name, iconEmoji: p.iconEmoji ?? null };
-  const has = (s: Record<string, number>) => Object.values(s).some((n) => n > 0);
+export function hasSpots(item: Pick<PlanningItem, "spotsByDomain">): boolean {
+  return Object.values(item.spotsByDomain).some((n) => n > 0);
+}
 
+// Spots are not filtered here: an item with none is still part of the term's
+// project list, it just contributes nothing to the domain gap.
+export function projectToPlanningItem(p: ProjectPlanningInput): PlanningItem | null {
+  const placement = placeProject(p);
+  if (!placement) return null;
+  const item = {
+    key: `project:${p.id}`,
+    kind: "project" as const,
+    refId: p.id,
+    name: p.name,
+    iconEmoji: p.iconEmoji ?? null,
+    ...placement,
+  };
+  return p.archived && !hasSpots(item) ? null : item;
+}
+
+function placeProject(p: ProjectPlanningInput): Pick<PlanningItem, "source" | "state" | "spotsByDomain"> | null {
+  if (p.earliestSortKey === null || p.earliestSortKey > p.termSortKey) return null;
   if (p.earliestSortKey === p.termSortKey) {
-    return has(p.thisTermSpots)
-      ? { ...base, source: "new", state: "Accepted", spotsByDomain: p.thisTermSpots }
-      : null;
+    return { source: "new", state: "Accepted", spotsByDomain: p.thisTermSpots };
   }
   if (p.decision === false) return null;
   if (p.decision === true) {
-    return has(p.thisTermSpots)
-      ? { ...base, source: "renewing", state: "Continuing", spotsByDomain: p.thisTermSpots }
-      : null;
+    return { source: "renewing", state: "Continuing", spotsByDomain: p.thisTermSpots };
   }
-  if (has(p.thisTermSpots)) return { ...base, source: "renewing", state: "Undecided", spotsByDomain: p.thisTermSpots };
-  return p.inPreviousTerm && has(p.previousTermSpots)
-    ? { ...base, source: "renewing", state: "Undecided", spotsByDomain: p.previousTermSpots }
+  if (hasSpots({ spotsByDomain: p.thisTermSpots })) {
+    return { source: "renewing", state: "Undecided", spotsByDomain: p.thisTermSpots };
+  }
+  return p.inPreviousTerm
+    ? { source: "renewing", state: "Undecided", spotsByDomain: p.previousTermSpots }
     : null;
+}
+
+export type PlanningProjectRow = PlanningItem & {
+  spots: number;
+  counted: boolean;
+  domains: { domainId: string; name: string; count: number }[];
+};
+
+export type PlanningProjectModel = {
+  renewing: PlanningProjectRow[];
+  fresh: PlanningProjectRow[];
+  totals: { renewing: number; fresh: number; spots: number };
+};
+
+export function buildPlanningProjects(input: {
+  domains: PlanningDomain[];
+  items: PlanningItem[];
+  listOnlyItems: PlanningItem[];
+  includePotential: boolean;
+  includeBacklog: boolean;
+}): PlanningProjectModel {
+  const { domains, items, listOnlyItems, includePotential, includeBacklog } = input;
+
+  const rows = [...items, ...listOnlyItems]
+    .filter((item) => includeBacklog || item.state !== "Backlog")
+    .map((item): PlanningProjectRow => {
+      const spotted = domains
+        .map((d) => ({ domainId: d.id, name: d.name, count: item.spotsByDomain[d.id] ?? 0 }))
+        .filter((d) => d.count > 0)
+        .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+      return {
+        ...item,
+        spots: spotted.reduce((n, d) => n + d.count, 0),
+        counted: includePotential || !isPotentialState(item.state),
+        domains: spotted,
+      };
+    })
+    .sort((a, b) => Number(!a.counted) - Number(!b.counted) || a.name.localeCompare(b.name));
+
+  const renewing = rows.filter((r) => r.source === "renewing");
+  const fresh = rows.filter((r) => r.source === "new");
+  const sum = (group: PlanningProjectRow[]) => group.reduce((n, r) => (r.counted ? n + r.spots : n), 0);
+  return {
+    renewing,
+    fresh,
+    totals: { renewing: sum(renewing), fresh: sum(fresh), spots: sum(rows) },
+  };
 }
 
 export type IntentSetup =

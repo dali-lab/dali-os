@@ -5,7 +5,7 @@
 //   read_blog_post    — mcp:read
 //   manage_blog_post  — mcp:write  (faceted: create/update/publish/unpublish)
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { fullName } from "~/lib/display";
 import { isAdmin } from "~/lib/roles";
 import { resourcesAccess } from "~/lib/resources.server";
@@ -30,6 +30,15 @@ import {
   requireForAction,
 } from "~/mcp/errors";
 import { MAX_MARKDOWN_LENGTH } from "../set-page-content";
+import { offsetPage, offsetWindow, pageProps, type PageArgs } from "../../pagination";
+
+const PAGE_LIMITS = { defaultLimit: 50, maxLimit: 200 };
+
+const STATUS_WHERE = {
+  published: { publishedAt: { not: null } },
+  review: { publishedAt: null, submittedAt: { not: null } },
+  draft: { publishedAt: null, submittedAt: null },
+} as const;
 
 async function requireViewer(callerId: string) {
   const access = await resourcesAccess(callerId);
@@ -69,7 +78,7 @@ function describePost(p: PostRow, callerId: string) {
 export const LIST_BLOG_POSTS_TOOL = {
   name: "list_blog_posts",
   description:
-    "List blog posts on the Resources front page: every published post, the caller's own drafts, and (for an Admin) posts waiting for approval. Returns metadata and an excerpt; use read_blog_post for the body. status is 'draft', 'review' (submitted, waiting on an Admin) or 'published'. visibility 'Public' posts also appear on the DALI website once published.",
+    "List blog posts on the Resources front page: every published post, the caller's own drafts, and (for an Admin) posts waiting for approval. Returns metadata and an excerpt; use read_blog_post for the body. status is 'draft', 'review' (submitted, waiting on an Admin) or 'published'. visibility 'Public' posts also appear on the DALI website once published. Pass page.nextCursor as cursor to read the next page until page.hasMore is false.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -78,35 +87,48 @@ export const LIST_BLOG_POSTS_TOOL = {
         enum: ["draft", "review", "published"],
         description: "Only posts in this state. Omit for all of them.",
       },
+      ...pageProps(PAGE_LIMITS),
     },
     additionalProperties: false,
   },
   requiredScope: "mcp:read" as const,
 };
 
-type ListInput = { status?: "draft" | "review" | "published" };
+type ListInput = PageArgs & { status?: "draft" | "review" | "published" };
 
 export async function runListBlogPosts(callerId: string, input: ListInput) {
   await requireViewer(callerId);
-  const rows = await prisma.blogPost.findMany({
-    where: listedBlogPostsWhere(callerId, await isAdmin(callerId)),
-    orderBy: BLOG_LISTING_ORDER,
-    select: {
-      id: true,
-      title: true,
-      summary: true,
-      excerpt: true,
-      customCoverUrl: true,
-      coverImageUrl: true,
-      visibility: true,
-      publishedAt: true,
-      submittedAt: true,
-      authorId: true,
-      author: { select: { firstName: true, lastName: true } },
-    },
-  });
-  const posts = rows.map((r) => describePost(r, callerId));
-  return { posts: input.status ? posts.filter((p) => p.status === input.status) : posts };
+  const where = {
+    AND: [
+      listedBlogPostsWhere(callerId, await isAdmin(callerId)),
+      ...(input.status ? [STATUS_WHERE[input.status]] : []),
+    ],
+  };
+  const window = offsetWindow(input, PAGE_LIMITS);
+  const [fetched, total] = await Promise.all([
+    prisma.blogPost.findMany({
+      where,
+      orderBy: [...BLOG_LISTING_ORDER, { id: "asc" }],
+      skip: window.skip,
+      take: window.take,
+      select: {
+        id: true,
+        title: true,
+        summary: true,
+        excerpt: true,
+        customCoverUrl: true,
+        coverImageUrl: true,
+        visibility: true,
+        publishedAt: true,
+        submittedAt: true,
+        authorId: true,
+        author: { select: { firstName: true, lastName: true } },
+      },
+    }),
+    prisma.blogPost.count({ where }),
+  ]);
+  const { rows, page } = offsetPage(fetched, window, total);
+  return { page, posts: rows.map((r) => describePost(r, callerId)) };
 }
 
 // ─── read_blog_post ──────────────────────────────────────────────────────────

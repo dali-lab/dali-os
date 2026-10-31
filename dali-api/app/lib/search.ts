@@ -24,6 +24,26 @@ export type SearchResultType =
   | "guide"
   | "helpArticle";
 
+/** Types a search can return. `challenge` has a URL but no search source. */
+export const SEARCH_CATEGORIES: SearchResultType[] = [
+  "person",
+  "group",
+  "project",
+  "task",
+  "education",
+  "partner",
+  "partnerContact",
+  "document",
+  "application",
+  "form",
+  "rubric",
+  "confidentialityAgreement",
+  "partnerApplication",
+  "cycle",
+  "guide",
+  "helpArticle",
+];
+
 export interface SearchResult {
   type: SearchResultType;
   id: string;
@@ -154,12 +174,12 @@ export interface Rankable {
 }
 
 // Rank matches, tie-break alphabetically by title, cap to PER_CATEGORY_CAP.
-export function rankResults(entries: Rankable[], query: string): SearchResult[] {
+export function rankResults(entries: Rankable[], query: string, cap = PER_CATEGORY_CAP): SearchResult[] {
   return entries
     .map((e) => ({ e, score: bestScore(e.text, query) }))
     .filter((x): x is { e: Rankable; score: number } => x.score !== null)
     .sort((a, b) => a.score - b.score || a.e.result.title.localeCompare(b.e.result.title))
-    .slice(0, PER_CATEGORY_CAP)
+    .slice(0, cap)
     .map((x) => x.e.result);
 }
 

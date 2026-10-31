@@ -1,14 +1,15 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/roles", () => ({ isCore: vi.fn(), isProjectMember: vi.fn() }));
 vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore, isProjectMember } from "~/lib/roles";
 import { logAuditEvent } from "~/lib/audit";
 import {
   runListDocumentSharing,
+  type DocumentSharingOut,
   runSetDocumentSharing,
   runDeleteProjectDocument,
   runSetFileSharing,
@@ -74,27 +75,101 @@ describe("list_document_sharing", () => {
         archivedAt: null,
       },
     ]);
-    mockPrisma.projectFile.findMany.mockResolvedValue([
-      {
-        id: "f-1",
-        title: "Spec",
-        partnerVisible: true,
-        archivedAt: null,
-        currentVersion: { fileName: "spec.pdf", sizeBytes: 1024 },
-      },
-    ]);
+    mockPrisma.page.count = vi.fn().mockResolvedValue(2);
 
-    const out = await runListDocumentSharing(ME, { projectId: PID });
+    const out = (await runListDocumentSharing(ME, { projectId: PID, kind: "pages" })) as Extract<
+      DocumentSharingOut,
+      { kind: "pages" }
+    >;
+    expect(out).not.toHaveProperty("files");
     expect(out.pages[0]).toMatchObject({ partnerVisible: true, pinned: true });
     expect(out.pages[1]).toMatchObject({ kind: "Folder" });
-    expect(out.files[0]).toMatchObject({ partnerVisible: true, fileName: "spec.pdf" });
+    expect(out.page).toMatchObject({ hasMore: false, nextCursor: null, total: 2 });
     expect(mockPrisma.page.findMany.mock.calls[0][0].where).toMatchObject({ archivedAt: null });
+    expect(mockPrisma.projectFile.findMany).not.toHaveBeenCalled();
+  });
+
+  it("walks pages by offset with an id tiebreak", async () => {
+    const row = (id: string) => ({
+      id,
+      title: id,
+      kind: "FreeForm",
+      partnerVisible: false,
+      publicVisible: false,
+      pinnedAt: null,
+      archivedAt: null,
+    });
+    mockPrisma.project.findUnique.mockResolvedValue({ id: PID });
+    mockPrisma.page.count = vi.fn().mockResolvedValue(2);
+    mockPrisma.page.findMany.mockResolvedValueOnce([row("a"), row("b")]);
+    const first = (await runListDocumentSharing(ME, { projectId: PID, kind: "pages", limit: 1 })) as Extract<
+      DocumentSharingOut,
+      { kind: "pages" }
+    >;
+    expect(first.pages.map((p) => p.id)).toEqual(["a"]);
+    expect(first.page.hasMore).toBe(true);
+    expect(mockPrisma.page.findMany.mock.calls.at(-1)![0].orderBy).toEqual([
+      { position: "asc" },
+      { id: "asc" },
+    ]);
+    mockPrisma.page.findMany.mockResolvedValueOnce([row("b")]);
+    const second = (await runListDocumentSharing(ME, {
+      projectId: PID,
+      kind: "pages",
+      limit: 1,
+      cursor: first.page.nextCursor!,
+    })) as Extract<DocumentSharingOut, { kind: "pages" }>;
+    expect(mockPrisma.page.findMany.mock.calls.at(-1)![0]).toMatchObject({ skip: 1, take: 2 });
+    expect(second.pages.map((p) => p.id)).toEqual(["b"]);
+    expect(second.page).toMatchObject({ hasMore: false, nextCursor: null });
+  });
+
+  it("walks files by keyset on createdAt and id", async () => {
+    const row = (id: string) => ({
+      id,
+      title: id,
+      createdAt: new Date("2026-01-01T00:00:00Z"),
+      partnerVisible: true,
+      archivedAt: null,
+      currentVersion: { fileName: "spec.pdf", sizeBytes: 1024 },
+    });
+    mockPrisma.project.findUnique.mockResolvedValue({ id: PID });
+    mockPrisma.projectFile.count = vi.fn().mockResolvedValue(2);
+    mockPrisma.projectFile.findMany.mockResolvedValueOnce([row("f-1"), row("f-2")]);
+    const first = (await runListDocumentSharing(ME, { projectId: PID, kind: "files", limit: 1 })) as Extract<
+      DocumentSharingOut,
+      { kind: "files" }
+    >;
+    expect(first).not.toHaveProperty("pages");
+    expect(first.files[0]).toMatchObject({ partnerVisible: true, fileName: "spec.pdf" });
+    expect(first.page).toMatchObject({ hasMore: true, total: 2 });
+    mockPrisma.projectFile.findMany.mockResolvedValueOnce([row("f-2")]);
+    const second = (await runListDocumentSharing(ME, {
+      projectId: PID,
+      kind: "files",
+      limit: 1,
+      cursor: first.page.nextCursor!,
+    })) as Extract<DocumentSharingOut, { kind: "files" }>;
+    const args = mockPrisma.projectFile.findMany.mock.calls.at(-1)![0];
+    expect(args.orderBy).toEqual([{ createdAt: "asc" }, { id: "asc" }]);
+    expect(args.where.AND[1].OR).toHaveLength(2);
+    expect(second.page).toMatchObject({ hasMore: false, nextCursor: null });
+  });
+
+  it("rejects a missing kind and a bad cursor", async () => {
+    mockPrisma.project.findUnique.mockResolvedValue({ id: PID });
+    await expect(
+      runListDocumentSharing(ME, { projectId: PID } as never),
+    ).rejects.toThrow(CurationInvalidError);
+    await expect(
+      runListDocumentSharing(ME, { projectId: PID, kind: "files", cursor: "nope" }),
+    ).rejects.toThrow(/Invalid cursor/);
   });
 
   it("refuses someone with no edit access to the project", async () => {
     mockPrisma.project.findUnique.mockResolvedValue({ id: PID });
     vi.mocked(isProjectMember).mockResolvedValue(false);
-    await expect(runListDocumentSharing(ME, { projectId: PID })).rejects.toThrow(
+    await expect(runListDocumentSharing(ME, { projectId: PID, kind: "pages" })).rejects.toThrow(
       CurationForbiddenError,
     );
   });

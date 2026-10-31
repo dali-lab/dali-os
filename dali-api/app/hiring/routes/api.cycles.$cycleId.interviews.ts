@@ -1,5 +1,5 @@
 import type { Route } from "./+types/api.cycles.$cycleId.interviews";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { FIRST_INTERVIEW_ROUND_ID } from "~/hiring/lib/cycle-timeline";
 import { requireAuth } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";

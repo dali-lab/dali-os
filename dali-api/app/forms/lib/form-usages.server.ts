@@ -1,4 +1,4 @@
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { SLOTS, isSlot } from "~/projects/lib/form-slots";
 import { NEW_MEMBER_PROFILE_FORM_NAME } from "~/members/lib/profile-form-interpreter";
 import { applicantPortalPath } from "~/hiring/lib/applicant-groups";

@@ -1,15 +1,14 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     pageView: { create: vi.fn(), updateMany: vi.fn() },
   },
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import {
   classifyClient,
-  formatDuration,
   normalizePath,
   recordPageDuration,
   recordPageView,
@@ -204,21 +203,5 @@ describe("recordPageDuration", () => {
       recordPageDuration({ id: "a", userId: "u1", durationMs: 1 }),
     ).resolves.toBeUndefined();
     spy.mockRestore();
-  });
-});
-
-describe("formatDuration", () => {
-  it.each([
-    [null, "n/a"],
-    [-1, "n/a"],
-    [Number.NaN, "n/a"],
-    [0, "0s"],
-    [4_400, "4s"],
-    [59_400, "59s"],
-    [60_000, "1m"],
-    [80_000, "1m 20s"],
-    [30 * 60 * 1000, "30m"],
-  ])("formats %s as %s", (ms, out) => {
-    expect(formatDuration(ms)).toBe(out);
   });
 });

@@ -4,7 +4,7 @@
 // SigningSignature per configured signatory (idempotent). This replaces the
 // old manual "counter-sign as supervisor" step.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
 import { collectAdminSignatories, ADMIN_SIGNATURE_ROLE } from "~/lib/signing-fields";
 

@@ -9,21 +9,23 @@
 // partners) on Project pages, and the offering's instructors on
 // EducationOffering pages.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { readDocAsBlocks } from "~/collab/read";
 import { blocksToMarkdown } from "~/collab/blocknote-server";
 import { pageDocName } from "~/collab/roomName";
 import { authorizeCollabDoc } from "~/lib/collabAuth";
 import { announceAgent, pagePresenceRoom } from "~/collab/agent-presence.server";
+import { TEXT_PAGE_LIMITS, pageProps, pageText, type PageArgs } from "../pagination";
 
 export const READ_PAGE_TOOL = {
   name: "read_page",
   description:
-    "Read a workspace page's content as Markdown (headings, lists, check lists, quotes, code, tables, images). Lossy for editor-only blocks (callouts/toggles flatten; mentions render as @handle). Round-trips with set_page_content.",
+    "Read a workspace page's content as Markdown (headings, lists, check lists, quotes, code, tables, images). Lossy for editor-only blocks (callouts/toggles flatten; mentions render as @handle). Round-trips with set_page_content when the whole page fits in one chunk. Long pages come back in chunks of limit characters (default 50000, max 200000): pass page.nextCursor as cursor until page.hasMore is false. page.total is the full Markdown length.",
   inputSchema: {
     type: "object" as const,
     properties: {
       pageId: { type: "string", minLength: 1 },
+      ...pageProps(TEXT_PAGE_LIMITS),
     },
     required: ["pageId"],
     additionalProperties: false,
@@ -31,7 +33,7 @@ export const READ_PAGE_TOOL = {
   requiredScope: "mcp:read" as const,
 };
 
-type Input = { pageId: string };
+type Input = PageArgs & { pageId: string };
 
 export class ReadPageError extends Error {
   constructor(message: string, public status: number) {
@@ -65,7 +67,8 @@ export async function runReadPage(callerId: string, input: Input) {
   }
 
   const blocks = await readDocAsBlocks(page.contentDocId ?? pageDocName(page.id));
-  const markdown = blocks.length ? await blocksToMarkdown(blocks) : "";
+  const fullMarkdown = blocks.length ? await blocksToMarkdown(blocks) : "";
+  const { text: markdown, page: pageInfo } = pageText(fullMarkdown, input);
   void announceAgent({ action: "reading", presenceRoom: pagePresenceRoom(page.id) });
 
   return {
@@ -76,5 +79,6 @@ export async function runReadPage(callerId: string, input: Input) {
     workspaceId: page.workspaceId,
     iconEmoji: page.iconEmoji,
     markdown,
+    page: pageInfo,
   };
 }

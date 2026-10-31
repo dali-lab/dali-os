@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
 vi.mock("~/forms/lib/form-page.server", () => ({ setFormArchived: vi.fn(), deleteForm: vi.fn() }));
 vi.mock("~/forms/lib/form-usages.server", () => ({ formDeletionBlockers: vi.fn() }));
@@ -20,13 +20,20 @@ vi.mock("~/lib/fileAccess.server", () => ({
   canEditFile: vi.fn(),
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { canManageFormPlacement } from "~/forms/lib/form-access.server";
 import { getPageAccess, getPageAccessBulk } from "~/lib/pageAccess.server";
 import { canEditFile } from "~/lib/fileAccess.server";
 import { logAuditEvent } from "~/lib/audit";
-import { loader, action } from "~/routes/api.drive.trash";
+import {
+  loader,
+  action,
+  parseTrashCursor,
+  TRASH_BATCH_SIZE,
+  TRASH_MAX_BATCHES,
+  TRASH_PAGE_SIZE,
+} from "~/routes/api.drive.trash";
 import { deleteForm, setFormArchived } from "~/forms/lib/form-page.server";
 import { formDeletionBlockers } from "~/forms/lib/form-usages.server";
 
@@ -111,7 +118,7 @@ describe("GET /api/drive/trash", () => {
     const body = (await res.json()) as { items: { id: string }[] };
 
     expect(body.items.map((i) => i.id)).toEqual(["wb-1"]);
-    expect(mockPrisma.page.findMany.mock.calls[0][0].where.kind.in).toContain("Whiteboard");
+    expect(mockPrisma.page.findMany.mock.calls[0][0].where.AND[0].kind.in).toContain("Whiteboard");
   });
 
   it("includes archived notebooks", async () => {
@@ -126,7 +133,7 @@ describe("GET /api/drive/trash", () => {
     const body = (await res.json()) as { items: { id: string }[] };
 
     expect(body.items.map((i) => i.id)).toEqual(["nb-1"]);
-    expect(mockPrisma.page.findMany.mock.calls[0][0].where.kind.in).toContain("Notebook");
+    expect(mockPrisma.page.findMany.mock.calls[0][0].where.AND[0].kind.in).toContain("Notebook");
   });
 
   it("bounds the scan rather than reading every archived row", async () => {
@@ -147,6 +154,105 @@ describe("GET /api/drive/trash", () => {
     const body = (await res.json()) as { items: unknown[] };
 
     expect(body.items).toEqual([]);
+  });
+});
+
+function pageRows(count: number, startIndex = 0) {
+  return Array.from({ length: count }, (_, i) => {
+    const n = startIndex + i;
+    return {
+      id: `page-${String(n).padStart(5, "0")}`,
+      title: `Note ${n}`,
+      archivedAt: new Date(ARCHIVED_AT.getTime() - n * 1000),
+      kind: "FreeForm",
+    };
+  });
+}
+
+async function list(query = "") {
+  const res = (await loader({
+    request: new Request(`http://os.test/api/drive/trash${query}`),
+  } as never)) as Response;
+  return (await res.json()) as { items: { id: string; type: string }[]; nextCursor: string | null };
+}
+
+describe("GET /api/drive/trash (paging)", () => {
+  it("returns a null cursor when every row was seen", async () => {
+    mockPrisma.page.findMany.mockResolvedValue(pageRows(3));
+    bulkAccess(FULL);
+    expect((await list()).nextCursor).toBeNull();
+  });
+
+  it("returns one page of visible rows and a cursor at the last row returned", async () => {
+    mockPrisma.page.findMany.mockResolvedValue(pageRows(TRASH_BATCH_SIZE));
+    bulkAccess(FULL);
+    const body = await list();
+    expect(body.items).toHaveLength(TRASH_PAGE_SIZE);
+    expect(body.nextCursor).toBe(
+      `${pageRows(TRASH_PAGE_SIZE).at(-1)!.archivedAt.toISOString()}|page-00049~done`,
+    );
+  });
+
+  it("keeps scanning batches until enough visible rows are found", async () => {
+    mockPrisma.page.findMany
+      .mockResolvedValueOnce(pageRows(TRASH_BATCH_SIZE, 0))
+      .mockResolvedValueOnce(pageRows(2, TRASH_BATCH_SIZE));
+    vi.mocked(getPageAccessBulk).mockImplementation(async (_u, pages) =>
+      new Map(pages.map((p) => [p.id, { ...FULL, canView: p.id >= `page-${String(TRASH_BATCH_SIZE).padStart(5, "0")}` }])),
+    );
+    const body = await list();
+    expect(body.items.map((i) => i.id)).toEqual(["page-00200", "page-00201"]);
+    expect(body.nextCursor).toBeNull();
+    const secondWhere = mockPrisma.page.findMany.mock.calls[1][0].where.AND[1];
+    expect(secondWhere.OR[0].archivedAt.lt).toEqual(pageRows(TRASH_BATCH_SIZE).at(-1)!.archivedAt);
+  });
+
+  it("hands back a cursor from the last row scanned when the scan cap is hit with nothing visible", async () => {
+    mockPrisma.page.findMany.mockImplementation(async () => pageRows(TRASH_BATCH_SIZE));
+    bulkAccess(DENIED);
+    const body = await list();
+    expect(body.items).toEqual([]);
+    expect(mockPrisma.page.findMany).toHaveBeenCalledTimes(TRASH_MAX_BATCHES);
+    expect(body.nextCursor).toBe(
+      `${pageRows(TRASH_BATCH_SIZE).at(-1)!.archivedAt.toISOString()}|page-00199~done`,
+    );
+  });
+
+  it("resumes each table from its own position in the cursor", async () => {
+    const at = ARCHIVED_AT.toISOString();
+    await list(`?cursor=${encodeURIComponent(`${at}|page-1~done`)}`);
+    expect(mockPrisma.page.findMany.mock.calls[0][0].where.AND[1].OR[1]).toEqual({
+      archivedAt: ARCHIVED_AT,
+      id: { lt: "page-1" },
+    });
+    expect(mockPrisma.projectFile.findMany).not.toHaveBeenCalled();
+  });
+
+  it("treats a malformed cursor as the first page", () => {
+    expect(parseTrashCursor("garbage")).toEqual({ pages: "garbage", files: null });
+    expect(parseTrashCursor(null)).toEqual({ pages: null, files: null });
+    expect(parseTrashCursor("start~done")).toEqual({ pages: null, files: "done" });
+  });
+
+  it("never returns a row the viewer cannot see, even when paging", async () => {
+    mockPrisma.page.findMany.mockResolvedValue(pageRows(4));
+    vi.mocked(getPageAccessBulk).mockImplementation(async (_u, pages) =>
+      new Map(pages.map((p) => [p.id, { ...FULL, canView: p.id !== "page-00001" }])),
+    );
+    expect((await list()).items.map((i) => i.id)).toEqual(["page-00000", "page-00002", "page-00003"]);
+  });
+
+  it("pages files with the same keyset and edit check", async () => {
+    mockPrisma.projectFile.findMany.mockResolvedValue([
+      { id: "file-1", title: "Plan.pdf", archivedAt: ARCHIVED_AT, projectId: null, workspaceType: null, workspaceId: null, folderPageId: null },
+    ]);
+    vi.mocked(canEditFile).mockResolvedValue(true);
+    const body = await list();
+    expect(body.items.map((i) => i.id)).toEqual(["file-1"]);
+    expect(mockPrisma.projectFile.findMany.mock.calls[0][0].orderBy).toEqual([
+      { archivedAt: "desc" },
+      { id: "desc" },
+    ]);
   });
 });
 

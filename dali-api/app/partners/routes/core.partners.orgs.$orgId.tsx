@@ -28,7 +28,7 @@ import type { Route } from "./+types/core.partners.orgs.$orgId";
 import { requireAuth, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { recordRouteVisit } from "~/lib/user-pages.server";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore } from "~/lib/roles";
 import { coreHandle } from "~/core/coreNav";
 import { logAuditEvent } from "~/lib/audit";
@@ -38,6 +38,7 @@ import { formatUsd } from "~/lib/money";
 import { PROJECT_FUNDING_TYPE_LABELS } from "~/lib/chart-string";
 import { EditableSection } from "~/components/EditableSection";
 import { PartnerActivityFeed } from "../components/PartnerActivityFeed";
+import { loadPartnerActivityPage } from "../lib/partner-activity-page.server";
 import { OrgAvatar } from "../components/org/OrgAvatar";
 import { OrgStatusPill, OrgTypePill } from "../components/org/OrgStatusPill";
 import { InvoicesPanel } from "../components/org/InvoicesPanel";
@@ -176,7 +177,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   // failed bookkeeping write must not cost the reader their org page.
   recordRouteVisit(auth.user.sub, `/core/partners/orgs/${org.id}`, org.name, request);
 
-  const [pendingInvites, linkableProjects, otherOrgs, allContacts, activityRows, lastActivityRow] =
+  const [pendingInvites, linkableProjects, otherOrgs, allContacts, activityPage, lastActivityRow] =
     await Promise.all([
       listPendingInvites(org.id),
       prisma.project.findMany({
@@ -198,52 +199,13 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         orderBy: { name: "asc" },
         select: { id: true, name: true, email: true },
       }),
-      prisma.partnerActivity.findMany({
-        where: { orgId: org.id },
-        orderBy: { createdAt: "desc" },
-        take: 50,
-        select: {
-          id: true,
-          createdAt: true,
-          applicationId: true,
-          actorUserId: true,
-          type: true,
-          body: true,
-          metadata: true,
-        },
-      }),
+      loadPartnerActivityPage({ orgId: org.id }),
       prisma.partnerActivity.findFirst({
         where: { orgId: org.id },
         orderBy: { createdAt: "desc" },
         select: { createdAt: true },
       }),
     ]);
-
-  const activities = activityRows.map((r) => ({
-    id: r.id,
-    createdAt: r.createdAt.toISOString(),
-    applicationId: r.applicationId,
-    actorUserId: r.actorUserId,
-    type: r.type,
-    body: r.body,
-    metadata: (r.metadata ?? null) as Record<string, unknown> | null,
-  }));
-  const actorIds = [
-    ...new Set(activityRows.map((r) => r.actorUserId).filter(Boolean)),
-  ] as string[];
-  let actorNames: Record<string, string> = {};
-  if (actorIds.length > 0) {
-    const users = await prisma.user.findMany({
-      where: { id: { in: actorIds } },
-      select: { id: true, firstName: true, lastName: true, daliEmail: true },
-    });
-    actorNames = Object.fromEntries(
-      users.map((u) => [
-        u.id,
-        [u.firstName, u.lastName].filter(Boolean).join(" ") || u.daliEmail || u.id,
-      ]),
-    );
-  }
 
   const status = partnerRelationshipStatus({
     projectLinks: org.projects.map((p) => ({ endedAt: p.endedAt })),
@@ -311,8 +273,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     linkableProjects,
     otherOrgs,
     allContacts,
-    activities,
-    actorNames,
+    activities: activityPage.items,
+    activitiesNextCursor: activityPage.nextCursor,
+    actorNames: activityPage.actorNames,
     chartStrings,
     canEdit,
     // Cleanup affordance for duplicate-org husks: deletable only when truly
@@ -1248,6 +1211,7 @@ export default function PartnerOrgDetail() {
     otherOrgs,
     allContacts,
     activities,
+    activitiesNextCursor,
     actorNames,
     chartStrings,
     canDeleteOrg,
@@ -1368,7 +1332,13 @@ export default function PartnerOrgDetail() {
       />
 
       {tab === "timeline" && (
-        <PartnerActivityFeed activities={activities} actorNames={actorNames} canEdit={canEdit} />
+        <PartnerActivityFeed
+          activities={activities}
+          nextCursor={activitiesNextCursor}
+          scope={{ orgId: org.id }}
+          actorNames={actorNames}
+          canEdit={canEdit}
+        />
       )}
 
       {tab === "contacts" && (

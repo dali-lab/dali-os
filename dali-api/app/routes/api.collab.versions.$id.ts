@@ -1,6 +1,6 @@
 import type { Route } from "./+types/api.collab.versions.$id";
 import { z } from "zod";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth, forbidden } from "~/lib/auth";
 import { authorizeCollabDoc, hydrateAuthors } from "~/lib/collabAuth";
 import { getCollabServer } from "~/collab/server";

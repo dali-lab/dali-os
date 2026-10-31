@@ -1,11 +1,11 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/collabAuth", () => ({ authorizeCollabDoc: vi.fn() }));
 vi.mock("~/lib/transcription/chunks.server", () => ({ deletePrefix: vi.fn() }));
 vi.mock("~/lib/transcription/provider", () => ({ getTranscriptionProvider: vi.fn() }));
 
-import { prisma, Prisma } from "~/lib/db";
+import { prisma, Prisma } from "~/lib/db.server";
 import { authorizeCollabDoc } from "~/lib/collabAuth";
 import { deletePrefix } from "~/lib/transcription/chunks.server";
 import { getTranscriptionProvider } from "~/lib/transcription/provider";
@@ -576,6 +576,14 @@ describe("startProcessing / finalizeEmpty", () => {
 });
 
 describe("applyResult", () => {
+  it("keeps the audio when the job reports an error", async () => {
+    await applyResult(rec({ status: "Processing" }), { channels: {}, error: "boom" });
+    expect(prisma.meetingRecording.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: "Failed", finalizedAt: expect.any(Date) }) }),
+    );
+    expect(deletePrefix).not.toHaveBeenCalled();
+  });
+
   const success = {
     channels: {
       mic: {
@@ -596,7 +604,7 @@ describe("applyResult", () => {
         data: expect.objectContaining({ status: "Done", error: null, finalizedAt: expect.any(Date) }),
       }),
     );
-    expect(deletePrefix).toHaveBeenCalledWith("r1");
+    expect(deletePrefix).not.toHaveBeenCalled();
   });
 
   it("clears progress on Done", async () => {

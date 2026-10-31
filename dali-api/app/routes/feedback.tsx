@@ -2,10 +2,8 @@ import { useEffect, useRef } from "react";
 import { data, useFetcher, useLoaderData } from "react-router";
 import { MessageCircle, Trash2 } from "lucide-react";
 import type { Route } from "./+types/feedback";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { cn } from "~/lib/cn";
-import { fullName } from "~/lib/display";
-import { resolvePhotoUrl } from "~/lib/photo";
 import { relativeTime } from "~/lib/relative-time";
 import { checkRateLimit } from "~/lib/rate-limit";
 import { requireFeedbackViewer } from "~/lib/feedback.server";
@@ -15,8 +13,12 @@ import {
   FEEDBACK_EMOJI,
   isFeedbackEmoji,
   isFeedbackScreenshotKey,
-  summarizeReactions,
+  FEED_IDS_MAX,
 } from "~/lib/feedback";
+import { loadFeedbackPage, type FeedbackFeedPost } from "~/lib/feedback-feed.server";
+import { fetchCursorPage } from "~/hooks/useLoadMore";
+import { useRefreshedLoadMore } from "~/hooks/useRefreshedLoadMore";
+import { LoadMore } from "~/components/ui/Pager";
 import { useOsChrome } from "~/components/os-chrome";
 import { Avatar } from "~/components/ui/Avatar";
 import { Button } from "~/components/ui/Button";
@@ -26,60 +28,9 @@ import { useDialog } from "~/components/ui/dialog";
 
 export const meta: Route.MetaFunction = () => [{ title: "Feedback · DALI OS" }];
 
-const FEED_LIMIT = 100;
-const AUTHOR_SELECT = { id: true, firstName: true, lastName: true, photoUrl: true } as const;
-
 export async function loader({ request }: Route.LoaderArgs) {
   const { user, core } = await requireFeedbackViewer(request);
-  const rows = await prisma.feedbackPost.findMany({
-    orderBy: { createdAt: "desc" },
-    take: FEED_LIMIT,
-    select: {
-      id: true,
-      body: true,
-      screenshotKey: true,
-      pagePath: true,
-      createdAt: true,
-      author: { select: AUTHOR_SELECT },
-      reactions: { select: { emoji: true, userId: true } },
-      comments: {
-        orderBy: { createdAt: "asc" },
-        select: { id: true, body: true, createdAt: true, author: { select: AUTHOR_SELECT } },
-      },
-    },
-  });
-
-  // One presign per distinct author, not per post and comment.
-  const photoByUser = new Map<string, Promise<string | null>>();
-  const person = async (author: (typeof rows)[number]["author"]) => {
-    if (!photoByUser.has(author.id)) photoByUser.set(author.id, resolvePhotoUrl(author.photoUrl));
-    return { id: author.id, name: fullName(author), photoUrl: await photoByUser.get(author.id)! };
-  };
-
-  const posts = await Promise.all(
-    rows.map(async (r) => ({
-      id: r.id,
-      body: r.body,
-      pagePath: r.pagePath,
-      screenshotUrl: r.screenshotKey
-        ? `/api/upload/raw?key=${encodeURIComponent(r.screenshotKey)}`
-        : null,
-      createdAt: r.createdAt.toISOString(),
-      author: await person(r.author),
-      canDelete: core || r.author.id === user.sub,
-      reactions: summarizeReactions(r.reactions, user.sub),
-      comments: await Promise.all(
-        r.comments.map(async (c) => ({
-          id: c.id,
-          body: c.body,
-          createdAt: c.createdAt.toISOString(),
-          author: await person(c.author),
-          canDelete: core || c.author.id === user.sub,
-        })),
-      ),
-    })),
-  );
-  return { posts };
+  return loadFeedbackPage(null, { userId: user.sub, core });
 }
 
 // Returned, not thrown: the shell's feedback button posts here through a
@@ -157,7 +108,18 @@ export async function action({ request }: Route.ActionArgs) {
   return { ok: true as const };
 }
 
-type Post = Awaited<ReturnType<typeof loader>>["posts"][number];
+type Post = FeedbackFeedPost;
+
+const FEED_URL = "/api/feedback/posts";
+
+async function fetchPostsByIds(ids: string[]): Promise<Post[]> {
+  const chunks: string[][] = [];
+  for (let i = 0; i < ids.length; i += FEED_IDS_MAX) chunks.push(ids.slice(i, i + FEED_IDS_MAX));
+  const pages = await Promise.all(
+    chunks.map((chunk) => fetchCursorPage<Post>(`${FEED_URL}?ids=${encodeURIComponent(chunk.join(","))}`)),
+  );
+  return pages.flatMap((page) => page.items);
+}
 
 function Byline({ name, at, pagePath }: { name: string; at: string; pagePath?: string | null }) {
   return (
@@ -287,7 +249,13 @@ function PostCard({ post }: { post: Post }) {
 }
 
 export default function FeedbackFeed() {
-  const { posts } = useLoaderData<typeof loader>();
+  const { items, nextCursor } = useLoaderData<typeof loader>();
+  const { items: posts, pager } = useRefreshedLoadMore<Post>({
+    items,
+    nextCursor,
+    fetchPage: (cursor) => fetchCursorPage<Post>(`${FEED_URL}?cursor=${encodeURIComponent(cursor)}`),
+    fetchByIds: fetchPostsByIds,
+  });
   const { pageTitle, bodyText } = useOsChrome();
   return (
     <div className="flex flex-col gap-6">
@@ -302,6 +270,7 @@ export default function FeedbackFeed() {
           {posts.map((post) => (
             <PostCard key={post.id} post={post} />
           ))}
+          <LoadMore {...pager} />
         </div>
       )}
     </div>

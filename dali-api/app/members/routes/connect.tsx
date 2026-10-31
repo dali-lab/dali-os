@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Link, useFetcher, useLoaderData, useNavigate } from "react-router";
-import { CalendarDays, Coffee, FileText, MapPin, Trophy, UserPen, X } from "lucide-react";
+import { CalendarDays, Coffee, FileText, MapPin, Trophy, UserPen } from "lucide-react";
 import type { Route } from "./+types/connect";
 import { requireAuth, redirectNonMemberToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
@@ -8,20 +8,18 @@ import { getUserRoles } from "~/lib/roles";
 import { listUpcomingMeetings } from "~/lib/upcoming-meetings";
 import { formatInTimeZone, resolveUserTimeZone } from "~/lib/timezone";
 import { meetingOccurrenceHref } from "~/calendar/lib/meeting-href";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { LAB_MEMBER_WHERE, MEMBER_LIST_ORDER_BY } from "~/lib/prisma-shapes";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { fullName } from "~/lib/display";
-import { cn } from "~/lib/cn";
 import { Avatar } from "~/components/ui/Avatar";
-import { IconButton } from "~/components/ui/IconButton";
-import { SearchInput } from "~/components/ui/SearchInput";
 import { Segmented, type SegmentedOption } from "~/components/ui/Segmented";
 import { Button } from "~/components/ui/Button";
 import { Toggle } from "~/components/ui/Toggle";
 import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
 import { ConnectMap } from "~/members/components/ConnectMap";
-import { groupByPlace, profileCompleteness, type ConnectAlum, type ConnectPlace } from "~/members/lib/connect";
+import { PlaceList } from "~/members/components/PlaceList";
+import { groupByPlace, profileCompleteness, type ConnectAlum } from "~/members/lib/connect";
 import { loadAlumniLeaderboard } from "~/members/lib/engagement.server";
 import {
   ENGAGEMENT_ACTIVITIES,
@@ -440,74 +438,6 @@ function ViewerProfile({ viewer }: { viewer: ViewerCard }) {
   );
 }
 
-function PlaceList({
-  places,
-  selected,
-  onSelect,
-  query,
-  onQueryChange,
-  hasAlumni,
-}: {
-  places: ConnectPlace[];
-  selected: ConnectPlace | null;
-  onSelect: (key: string | null) => void;
-  query: string;
-  onQueryChange: (q: string) => void;
-  hasAlumni: boolean;
-}) {
-  const shown = selected ? [selected] : places;
-  const count = places.reduce((n, p) => n + p.alumni.length, 0);
-  return (
-    <>
-      <SearchInput
-        value={query}
-        onChange={(e) => onQueryChange(e.target.value)}
-        placeholder="Search by name, place or company"
-      />
-      <div className="flex items-center justify-between gap-2 text-xs text-os-grey">
-        {selected ? (
-          <>
-            <span className="truncate font-semibold text-foreground">{selected.label}</span>
-            <IconButton label="Show all places" icon={X} onClick={() => onSelect(null)} />
-          </>
-        ) : (
-          <span>
-            {count} {count === 1 ? "alum" : "alumni"} in {places.length}{" "}
-            {places.length === 1 ? "place" : "places"}
-          </span>
-        )}
-      </div>
-
-      <div className="-mx-1 min-h-0 flex-1 overflow-y-auto px-1">
-        {places.length === 0 ? (
-          <p className="py-6 text-center text-sm text-os-muted">
-            {hasAlumni ? "No alumni match." : "No alumni on the map yet."}
-          </p>
-        ) : (
-          shown.map((p) => (
-            <section key={p.key} className="mb-3 last:mb-0">
-              {!selected && (
-                <button
-                  type="button"
-                  onClick={() => onSelect(p.key)}
-                  className="flex w-full items-center gap-1.5 py-1.5 text-left text-xs font-semibold text-os-grey hover:text-foreground"
-                >
-                  <MapPin className="h-3.5 w-3.5 shrink-0" />
-                  <span className="truncate">{p.label}</span>
-                  <span className="ml-auto text-os-muted">{p.alumni.length}</span>
-                </button>
-              )}
-              {p.alumni.map((a) => (
-                <AlumRow key={a.id} alum={a} />
-              ))}
-            </section>
-          ))
-        )}
-      </div>
-    </>
-  );
-}
-
 function Leaderboard({ entries }: { entries: LeaderboardEntry[] }) {
   const navigate = useNavigate();
   return (
@@ -566,32 +496,5 @@ function Leaderboard({ entries }: { entries: LeaderboardEntry[] }) {
         </ol>
       )}
     </div>
-  );
-}
-
-function AlumRow({ alum }: { alum: ConnectAlum }) {
-  const navigate = useNavigate();
-  const url = `/members/${alum.id}`;
-  return (
-    <button
-      type="button"
-      onClick={() => {
-        if (!requestOpenTabIfEmbedded(url, alum.name)) navigate(url);
-      }}
-      className={cn(
-        "flex w-full items-center gap-2.5 rounded-os-item px-2 py-2 text-left transition-colors hover:bg-os-container",
-      )}
-    >
-      <Avatar photoUrl={alum.photoUrl} name={alum.name} size="sm" userId={alum.id} className="shrink-0" />
-      <span className="min-w-0">
-        <span className="block truncate text-sm text-foreground">
-          {alum.name}
-          {alum.classYear && <span className="text-os-grey"> '{String(alum.classYear).slice(2)}</span>}
-        </span>
-        {alum.currentJob && (
-          <span className="block truncate text-xs text-os-grey">{alum.currentJob}</span>
-        )}
-      </span>
-    </button>
   );
 }

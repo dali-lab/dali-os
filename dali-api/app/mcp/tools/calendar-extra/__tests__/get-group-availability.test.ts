@@ -20,7 +20,7 @@ vi.mock("~/mcp/registry", () => {
   }
   return { McpError, McpNotFoundError, McpForbiddenError, McpInvalidError };
 });
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/availability", async (orig) => {
   const real = await orig<typeof import("~/lib/availability")>();
   return { ...real, computeUserFreeBusy: vi.fn() };
@@ -67,6 +67,20 @@ describe("get_group_availability", () => {
         timezone: "America/New_York",
       }),
     ).rejects.toMatchObject({ name: "McpInvalidError" });
+  });
+
+  it("rejects a window longer than 14 days and accepts exactly 14", async () => {
+    vi.mocked(computeUserFreeBusy).mockResolvedValue({
+      userId: "u1", free: [], busy: [], working: [], hasCalendar: true, calendarError: false,
+    });
+    const base = { userIds: ["u1"], durationMinutes: 30, timezone: "America/New_York" };
+    await expect(
+      runGetGroupAvailability({ ...base, weekStartIso: "2026-08-10T00:00:00Z", weekEndIso: "2026-08-24T00:00:01Z" }),
+    ).rejects.toThrow(/14 days/);
+    expect(computeUserFreeBusy).not.toHaveBeenCalled();
+    await expect(
+      runGetGroupAvailability({ ...base, weekStartIso: "2026-08-10T00:00:00Z", weekEndIso: "2026-08-24T00:00:00Z" }),
+    ).resolves.toHaveProperty("days");
   });
 
   it("returns days and perUser arrays on success", async () => {

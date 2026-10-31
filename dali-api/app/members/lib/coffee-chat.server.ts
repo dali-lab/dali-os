@@ -1,4 +1,4 @@
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { notify } from "~/lib/notify.server";
 import { publishNotificationChange } from "~/lib/notify-stream.server";
 import { fullName } from "~/lib/display";

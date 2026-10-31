@@ -1,6 +1,6 @@
 import type { Route } from "./+types/api.interviews.$id.reassign";
 import { z } from "zod";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
 import { parseJson, idSchema } from "~/lib/validate";

@@ -1,5 +1,5 @@
 // Unit tests for the doc package's pure helpers (node environment — no DOM,
-// no BlockNote imports, no ~/lib/db).
+// no BlockNote imports, no ~/lib/db.server).
 
 import { describe, expect, it, vi } from "vitest";
 import { ENHANCE_MARK_ADDED, ENHANCE_MARK_PRIOR } from "~/components/meeting-recorder/enhance-plan";

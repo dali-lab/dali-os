@@ -22,7 +22,7 @@ import { IconButton } from "~/components/ui/IconButton";
 import { Pill } from "~/hiring/components/cycle-setup/SetupCard";
 import { buttonClasses } from "~/components/ui/Button";
 import type { Route } from "./+types/core.partners.applications.$id";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { githubTeamSlug } from "~/lib/github-slug";
 import { requireAuth, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";

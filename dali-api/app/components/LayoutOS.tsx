@@ -26,7 +26,7 @@ import { userInitials } from '~/lib/display'
 import { TabWorkspace } from '~/components/TabWorkspace'
 import { deepLinkTabLabel } from '~/lib/deep-link-tab'
 import { useAttentionFeed } from '~/components/NotificationBell'
-import { TasksDrawer, attentionCount } from '~/components/AttentionPanel'
+import { TasksDrawer, attentionTotal } from '~/components/AttentionPanel'
 import { DesktopBanner } from '~/components/DesktopBanner'
 import { OpenInDesktopRedirect } from '~/components/shell/OpenInDesktopRedirect'
 import { useOpenCurrentPageInDesktop } from '~/components/shell/useOpenCurrentPageInDesktop'
@@ -442,11 +442,14 @@ export function LayoutOS({
   )
 
   const initials = userInitials(user)
-  const { tasks: openTasks, items: feedItems, projectTasks } = useAttentionFeed()
+  const { tasks: openTasks, items: feedItems, projectTasks, taskTotal, projectTaskTotal } = useAttentionFeed()
   // The badge counts what the drawer says needs attention — open tasks, unread
   // feed rows that aren't already a task, and assigned project work — so the
   // two can't disagree.
-  const taskCount = attentionCount(openTasks, feedItems, projectTasks)
+  const taskCount = attentionTotal(openTasks, feedItems, projectTasks, {
+    tasks: taskTotal,
+    projectTasks: projectTaskTotal,
+  })
   const upcoming = useUpcomingMeetings(shellV2)
 
   /* ---------------- Tasks drawer (bell, top bar) ---------------- */
@@ -851,6 +854,7 @@ export function LayoutOS({
       tasks={openTasks}
       notifications={feedItems}
       projectTasks={projectTasks}
+      total={taskCount}
       singleFeed={isAlumni}
       onOpen={(url, label) => {
         closeBellPanel()

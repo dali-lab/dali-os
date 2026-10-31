@@ -16,7 +16,7 @@ import { cn } from "~/lib/cn";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { isAdmin, isCore } from "~/lib/roles";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { listAllGroups } from "~/lib/groups";
 import { orderGroupsForPicker } from "~/lib/group-kind";
 import { logAuditEvent } from "~/lib/audit";

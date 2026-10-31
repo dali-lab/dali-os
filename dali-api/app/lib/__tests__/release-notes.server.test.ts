@@ -1,8 +1,14 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
-    releaseNote: { findMany: vi.fn(), updateMany: vi.fn(), update: vi.fn() },
+    releaseNote: {
+      findMany: vi.fn(),
+      updateMany: vi.fn(),
+      update: vi.fn(),
+      count: vi.fn(),
+      groupBy: vi.fn(),
+    },
     outboundMessage: { findMany: vi.fn() },
     user: { update: vi.fn() },
   },
@@ -26,12 +32,19 @@ vi.mock("~/lib/groups", () => ({
   resolveGroupMembers: vi.fn(async (g: string) => (g === "g1" ? ["u2", "u3"] : ["u4"])),
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
 import { notify } from "~/lib/notify.server";
 import { copyObject } from "~/lib/s3";
 import { invalidateLayoutCache } from "~/lib/layout-cache.server";
+import { canViewReleaseNote } from "../release-notes";
 import {
+  RECAP_WEEKS_PAGE_SIZE,
+  RELEASE_NOTES_PAGE_SIZE,
+  audienceWhere,
+  listReleaseNotesForCore,
+  loadRecapWeeksPage,
+  loadReleaseNotesPage,
   markReleaseNotesSeen,
   publishReleaseNotes,
   releaseNoteSlackStatuses,
@@ -200,5 +213,140 @@ describe("markReleaseNotesSeen", () => {
     p.user.update.mockRejectedValueOnce(new Error("db down"));
     await expect(markReleaseNotesSeen("ada")).rejects.toThrow("db down");
     expect(invalidateLayoutCache).not.toHaveBeenCalled();
+  });
+});
+
+const member = { userId: "u1", isCore: false, groupIds: ["g1", "g2"] };
+const core = { userId: "u9", isCore: true, groupIds: [] };
+
+function published(id: string, day: number, o: Record<string, unknown> = {}) {
+  return {
+    ...note({ id }),
+    publishedAt: new Date(Date.UTC(2026, 2, day)),
+    contentJson: null,
+    recapWeek: null,
+    ...o,
+  };
+}
+
+describe("audienceWhere", () => {
+  it("adds no restriction for Core", () => {
+    expect(audienceWhere(core)).toEqual({});
+  });
+
+  it("matches all-members entries or a shared group, like canViewReleaseNote", () => {
+    expect(audienceWhere(member)).toEqual({
+      OR: [{ allMembers: true }, { groupIds: { hasSome: ["g1", "g2"] } }],
+    });
+    const notes = [
+      { allMembers: true, groupIds: [] },
+      { allMembers: false, groupIds: ["g2", "g7"] },
+      { allMembers: false, groupIds: ["g7"] },
+    ];
+    const clause = audienceWhere(member).OR as Array<Record<string, any>>;
+    const matches = (n: (typeof notes)[number]) =>
+      clause.some((c) => ("allMembers" in c ? n.allMembers : n.groupIds.some((g) => c.groupIds.hasSome.includes(g))));
+    for (const n of notes) expect(matches(n)).toBe(canViewReleaseNote(n, member));
+  });
+});
+
+describe("loadReleaseNotesPage", () => {
+  beforeEach(() => {
+    p.releaseNote.findMany.mockReset();
+  });
+
+  it("filters the audience in the query and keys the page on publishedAt then id", async () => {
+    p.releaseNote.findMany.mockResolvedValue([]);
+    await loadReleaseNotesPage(member, { area: "calendar", cursor: "2026-03-05T00:00:00.000Z|n5" });
+    const args = p.releaseNote.findMany.mock.calls[0][0];
+    expect(args.take).toBe(RELEASE_NOTES_PAGE_SIZE + 1);
+    expect(args.orderBy).toEqual([{ publishedAt: "desc" }, { id: "desc" }]);
+    expect(args.where.AND[0]).toEqual({ status: "Published", publishedAt: { not: null }, area: "calendar" });
+    expect(args.where.AND[1]).toEqual(audienceWhere(member));
+    expect(args.where.AND[2].OR[1]).toEqual({ publishedAt: new Date("2026-03-05T00:00:00.000Z"), id: { lt: "n5" } });
+  });
+
+  it("returns a full page plus a cursor when more rows exist, and presigns only the page", async () => {
+    const rows = Array.from({ length: RELEASE_NOTES_PAGE_SIZE + 1 }, (_, i) => published(`n${i}`, 20));
+    p.releaseNote.findMany.mockResolvedValue(rows);
+    const page = await loadReleaseNotesPage(member);
+    expect(page.items).toHaveLength(RELEASE_NOTES_PAGE_SIZE);
+    expect(page.nextCursor).toBe(`2026-03-20T00:00:00.000Z|n${RELEASE_NOTES_PAGE_SIZE - 1}`);
+    expect(page.items[0]).toMatchObject({ id: "n0", hasBody: false, videoUrl: null });
+  });
+
+  it("has no cursor on the last page", async () => {
+    p.releaseNote.findMany.mockResolvedValue([published("n1", 2, { contentJson: [{ type: "paragraph" }] })]);
+    const page = await loadReleaseNotesPage(core);
+    expect(page.nextCursor).toBeNull();
+    expect(page.items[0].hasBody).toBe(true);
+  });
+});
+
+describe("loadRecapWeeksPage", () => {
+  beforeEach(() => {
+    p.releaseNote.findMany.mockReset();
+    p.releaseNote.groupBy.mockReset();
+  });
+
+  const recapNote = (id: string, week: string, o: Record<string, unknown> = {}) => ({
+    id,
+    title: id,
+    summary: "s",
+    area: null,
+    highlight: false,
+    allMembers: true,
+    groupIds: [],
+    recapWeek: week,
+    ...o,
+  });
+
+  it("picks the next weeks with a keyset, then loads every note of those weeks", async () => {
+    p.releaseNote.groupBy.mockResolvedValue([{ recapWeek: "2026-W10" }, { recapWeek: "2026-W09" }]);
+    p.releaseNote.findMany.mockResolvedValue([recapNote("a", "2026-W10"), recapNote("b", "2026-W09")]);
+    const page = await loadRecapWeeksPage(member, "2026-W11");
+    const weeksArgs = p.releaseNote.groupBy.mock.calls[0][0];
+    expect(weeksArgs.where.recapWeek).toEqual({ not: null, lt: "2026-W11" });
+    expect(weeksArgs.where.OR).toEqual(audienceWhere(member).OR);
+    expect(weeksArgs.take).toBe(RECAP_WEEKS_PAGE_SIZE + 1);
+    const notesArgs = p.releaseNote.findMany.mock.calls[0][0];
+    expect(notesArgs.where.recapWeek).toEqual({ in: ["2026-W10", "2026-W09"] });
+    expect(notesArgs.take).toBeUndefined();
+    expect(page.items.map((w) => w.week)).toEqual(["2026-W10", "2026-W09"]);
+    expect(page.nextCursor).toBeNull();
+  });
+
+  it("returns a cursor at the oldest week of a full page and drops the lookahead week", async () => {
+    const weeks = Array.from({ length: RECAP_WEEKS_PAGE_SIZE + 1 }, (_, i) => ({
+      recapWeek: `2026-W${String(30 - i).padStart(2, "0")}`,
+    }));
+    p.releaseNote.groupBy.mockResolvedValue(weeks);
+    p.releaseNote.findMany.mockResolvedValue([]);
+    const page = await loadRecapWeeksPage(core);
+    expect(p.releaseNote.findMany.mock.calls[0][0].where.recapWeek.in).toHaveLength(RECAP_WEEKS_PAGE_SIZE);
+    expect(page.nextCursor).toBe("2026-W23");
+  });
+
+  it("ignores a malformed cursor and returns nothing when there are no weeks", async () => {
+    p.releaseNote.groupBy.mockResolvedValue([]);
+    const page = await loadRecapWeeksPage(core, "nope");
+    expect(p.releaseNote.groupBy.mock.calls[0][0].where.recapWeek).toEqual({ not: null });
+    expect(page).toEqual({ items: [], nextCursor: null });
+    expect(p.releaseNote.findMany).not.toHaveBeenCalled();
+  });
+});
+
+describe("listReleaseNotesForCore", () => {
+  it("pages the published list by offset with an id tiebreak and reports the total", async () => {
+    p.releaseNote.findMany.mockReset();
+    const drafts = [{ id: "d1" }];
+    const rows = Array.from({ length: 31 }, (_, i) => ({ id: `n${i}` }));
+    p.releaseNote.findMany.mockResolvedValueOnce(drafts).mockResolvedValueOnce(rows);
+    p.releaseNote.count.mockResolvedValue(95);
+    const result = await listReleaseNotesForCore(2);
+    const args = p.releaseNote.findMany.mock.calls[1][0];
+    expect(args).toMatchObject({ skip: 30, take: 31, orderBy: [{ publishedAt: "desc" }, { id: "desc" }] });
+    expect(result.published).toHaveLength(30);
+    expect(result).toMatchObject({ hasNext: true, publishedTotal: 95, drafts });
   });
 });

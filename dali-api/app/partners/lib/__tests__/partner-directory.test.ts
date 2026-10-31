@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   DEFAULT_DIRECTORY_SORT,
   DEFAULT_ORG_FILTERS,
+  DIRECTORY_ROW_CLASS,
   activeOrgFilterCount,
   directoryExportHref,
   filterContactRows,
@@ -18,6 +19,12 @@ import type {
   PartnerContactDirectoryRow,
   PartnerOrgDirectoryRow,
 } from "../partner-directory";
+
+describe("DIRECTORY_ROW_CLASS", () => {
+  it("contains the stretched row link with a transform, which WKWebView honors on a <tr>", () => {
+    expect(DIRECTORY_ROW_CLASS.split(" ")).toContain("[transform:translate(0)]");
+  });
+});
 
 describe("partnerOrgsCsvRows", () => {
   it("builds a header row plus one row per org", () => {

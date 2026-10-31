@@ -4,10 +4,11 @@
 
 import type { Route } from "./+types/api.meeting-recordings.active";
 import { requireAuth } from "~/lib/auth";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { getUserRoles } from "~/lib/roles";
 import { documentTitle } from "~/lib/meeting-recording.server";
+import { NO_SOUND_AFTER_SECONDS } from "~/lib/transcription/pcm-level";
 
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
@@ -19,9 +20,14 @@ export async function loader({ request }: Route.LoaderArgs) {
   }
 
   const rec = await prisma.meetingRecording.findFirst({
-    where: { userId: auth.user.sub, status: { in: ["Pending", "Recording", "Stopped"] }, insertedAt: null },
+    where: {
+      userId: auth.user.sub,
+      status: { in: ["Pending", "Recording", "Stopped"] },
+      insertedAt: null,
+      finalizedAt: null,
+    },
     orderBy: { createdAt: "desc" },
-    select: { id: true, documentName: true, status: true, sessionStartedAt: true },
+    select: { id: true, documentName: true, status: true, sessionStartedAt: true, voicedChannels: true, lastChunkAt: true },
   });
   if (!rec) return Response.json({ recording: null });
 
@@ -40,6 +46,11 @@ export async function loader({ request }: Route.LoaderArgs) {
     rec.status === "Recording" && rec.sessionStartedAt
       ? Math.max(0, (Date.now() - rec.sessionStartedAt.getTime()) / 1000)
       : null;
+  const noSound =
+    sessionSeconds !== null &&
+    sessionSeconds >= NO_SOUND_AFTER_SECONDS &&
+    rec.lastChunkAt !== null &&
+    rec.voicedChannels.length === 0;
 
   return Response.json({
     recording: {
@@ -49,6 +60,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       title,
       href,
       sessionSeconds,
+      noSound,
     },
   });
 }

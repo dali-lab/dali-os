@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db", () => ({ prisma: { auditLog: { findFirst: vi.fn() } } }));
+vi.mock("~/lib/db.server", () => ({ prisma: { auditLog: { findFirst: vi.fn() } } }));
 vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { logAuditEvent } from "~/lib/audit";
 import { logApplicationView, APPLICATION_VIEW_WINDOW_MS } from "~/hiring/lib/application-view-audit.server";
 

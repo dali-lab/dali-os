@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/auth", () => ({
   requireAuth: vi.fn(),
 }));
@@ -20,7 +20,7 @@ vi.mock("~/lib/cors", () => ({
   withCors: (_req: Request, res: Response) => res,
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { assignInterviewers } from "~/hiring/lib/scheduling";
 import { getInterviewerRecipients, sendInterviewCancelEmails } from "~/hiring/lib/interview-emails";

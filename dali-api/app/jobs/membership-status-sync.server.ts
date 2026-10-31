@@ -26,7 +26,7 @@
 // capped per run, per-user sync failures are swallowed, and force-sync of an
 // already-fresh row is harmless.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import type { JobContext, JobResult } from "~/jobs/registry";
 import { currentTerm } from "~/lib/roles";
 import {

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/roles", async (orig) => {
   const real = await orig<typeof import("~/lib/roles")>();
   return { ...real, isCore: vi.fn(), isLabMentor: vi.fn() };
@@ -47,7 +47,7 @@ vi.mock("~/mcp/registry", () => {
   return { McpError, McpForbiddenError, McpNotFoundError, McpInvalidError, requireForAction, REGISTRY_TOOLS: [], findRegistryTool: () => undefined, registryToolDefs: () => [] };
 });
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore, isLabMentor } from "~/lib/roles";
 
 import {
@@ -211,6 +211,36 @@ describe("list_mentor_notes", () => {
       domain: { displayName: "Fullstack" },
     });
   });
+
+  it("orders on (weekOf, id) desc, never updatedAt, and walks pages with the cursor", async () => {
+    const note = (id: string, weekOf: string) => ({ ...BASE_NOTE, id, weekOf: new Date(weekOf) });
+    mockPrisma.mentorNote.findMany.mockResolvedValueOnce([
+      note("n3", "2026-08-11"),
+      note("n2", "2026-08-04"),
+      note("n1", "2026-08-04"),
+    ]);
+    const first = (await runListMentorNotes(ME, { limit: 2 })) as any;
+    expect(mockPrisma.mentorNote.findMany.mock.calls[0][0].orderBy).toEqual([
+      { weekOf: "desc" },
+      { id: "desc" },
+    ]);
+    expect(first.notes.map((n: any) => n.id)).toEqual(["n3", "n2"]);
+    expect(first.page.hasMore).toBe(true);
+
+    mockPrisma.mentorNote.findMany.mockResolvedValueOnce([note("n1", "2026-08-04")]);
+    const second = (await runListMentorNotes(ME, { limit: 2, cursor: first.page.nextCursor })) as any;
+    const where = mockPrisma.mentorNote.findMany.mock.calls[1][0].where.AND[2];
+    expect(JSON.stringify(where)).toContain("n2");
+    expect(mockPrisma.mentorNote.findMany.mock.calls[1][0].take).toBe(3);
+    expect(second.notes.map((n: any) => n.id)).toEqual(["n1"]);
+    expect(second.page).toMatchObject({ hasMore: false, nextCursor: null });
+  });
+
+  it("no longer caps silently at 200", async () => {
+    mockPrisma.mentorNote.findMany.mockResolvedValue([]);
+    await runListMentorNotes(ME, { limit: 200 });
+    expect(mockPrisma.mentorNote.findMany.mock.calls[0][0].take).toBe(201);
+  });
 });
 
 // ─── get_mentor_note happy path ───────────────────────────────────────────────
@@ -314,6 +344,34 @@ describe("list_mentorship_pairs", () => {
     const out = (await runListMentorshipPairs(ME, {})) as { pairs: unknown[] };
     expect(out.pairs).toHaveLength(1);
     expect(out.pairs[0]).toMatchObject({ id: PAIR_ID, mentor: { id: ME } });
+  });
+
+  it("orders on (termId, id) and walks pages with the cursor instead of a silent 500 cap", async () => {
+    const pair = (id: string, termId: string) => ({
+      id,
+      projectId: "proj-1",
+      termId,
+      domainId: "dom-1",
+      mentor: { id: ME, firstName: "Alice", lastName: "Mentor" },
+      mentee: { id: MENTEE, firstName: "Bob", lastName: "Mentee" },
+    });
+    mockPrisma.mentorshipPair.findMany.mockResolvedValueOnce([
+      pair("p1", "t1"),
+      pair("p2", "t1"),
+      pair("p3", "t2"),
+    ]);
+    const first = (await runListMentorshipPairs(ME, { limit: 2 })) as any;
+    const call = mockPrisma.mentorshipPair.findMany.mock.calls[0][0];
+    expect(call.orderBy).toEqual([{ termId: "asc" }, { id: "asc" }]);
+    expect(call.take).toBe(3);
+    expect(first.pairs.map((p: any) => p.id)).toEqual(["p1", "p2"]);
+    expect(first.page.hasMore).toBe(true);
+
+    mockPrisma.mentorshipPair.findMany.mockResolvedValueOnce([pair("p3", "t2")]);
+    const second = (await runListMentorshipPairs(ME, { limit: 2, cursor: first.page.nextCursor })) as any;
+    expect(JSON.stringify(mockPrisma.mentorshipPair.findMany.mock.calls[1][0].where.AND[2])).toContain("p2");
+    expect(second.pairs.map((p: any) => p.id)).toEqual(["p3"]);
+    expect(second.page).toMatchObject({ hasMore: false, nextCursor: null });
   });
 });
 

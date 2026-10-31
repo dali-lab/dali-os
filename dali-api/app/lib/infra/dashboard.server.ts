@@ -3,7 +3,7 @@
 // provider APIs (the infra-snapshot job does that). Also builds the cross-project
 // cleanup review list (idle/orphan candidates, protected resources excluded).
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import {
   getInfraProjectInfo,
   hasInfraConfig,

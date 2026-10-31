@@ -9,7 +9,7 @@ import {
 import type { Route } from "./+types/admin.payroll-export";
 import { AdminSectionHeader, adminHandle } from "~/admin/adminNav";
 import { EmptyState, Pill, adminTable } from "~/admin/components/console-ui";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { isAdmin, currentTermMemberWhere } from "~/lib/roles";

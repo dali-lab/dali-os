@@ -3,7 +3,7 @@
 // return JSON-serializable results. All Decimal → number conversion happens
 // here — React Router single-fetch can't serialize Prisma Decimal.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { listChartStringsByProject } from "~/lib/chart-string.server";
 import { decimalToNumber } from "~/lib/money";
 import {

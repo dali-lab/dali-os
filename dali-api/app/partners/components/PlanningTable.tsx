@@ -12,7 +12,7 @@ export const PLANNING_OPEN_KEY = "partner-planning-open";
 const GRID =
   "grid grid-cols-[minmax(150px,1.3fr)_minmax(110px,0.9fr)_minmax(90px,0.7fr)_minmax(160px,1.6fr)_minmax(90px,0.7fr)] items-center gap-4 px-4";
 
-function spotsLabel(renewing: number, fresh: number): string {
+export function spotsLabel(renewing: number, fresh: number): string {
   const total = renewing + fresh;
   if (total === 0) return "0";
   return `${total} · ${renewing} renewing, ${fresh} new`;

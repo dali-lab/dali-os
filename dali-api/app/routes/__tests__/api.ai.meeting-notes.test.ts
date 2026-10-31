@@ -4,7 +4,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn() }));
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/roles", () => ({ getUserRoles: vi.fn().mockResolvedValue({}) }));
 vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabled: vi.fn() }));
 vi.mock("~/lib/meeting-recording.server", () => ({
@@ -16,7 +16,7 @@ vi.mock("~/lib/ai-usage.server", () => ({ recordTokenUsage: vi.fn() }));
 vi.mock("~/lib/ai.server", () => ({ generateShortText: vi.fn() }));
 
 import { requireAuth } from "~/lib/auth";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { canRecordInto, documentTitle, formatRecordingTranscript } from "~/lib/meeting-recording.server";
 import { generateShortText } from "~/lib/ai.server";

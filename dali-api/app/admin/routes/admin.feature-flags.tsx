@@ -10,7 +10,7 @@ import type { Route } from "./+types/admin.feature-flags";
 import { AdminSectionHeader, adminHandle } from "~/admin/adminNav";
 import { EmptyState, Pill } from "~/admin/components/console-ui";
 import { useOsChrome } from "~/components/os-chrome";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { isCore, isAdmin, currentTermMemberWhere } from "~/lib/roles";

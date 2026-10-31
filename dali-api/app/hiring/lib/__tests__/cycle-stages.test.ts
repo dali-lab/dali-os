@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { delibsQualifier } from "~/hiring/lib/cycle-stages.server";
 import { STANDARD_TIMELINE, defaultTimeline, type Timeline } from "~/hiring/lib/cycle-timeline";
 

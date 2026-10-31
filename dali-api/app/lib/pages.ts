@@ -1,4 +1,4 @@
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import type { PageKind } from "~/generated/prisma/client";
 import { assertUniqueName } from "~/lib/page-names.server";
 import { syncMeetingShares } from "~/lib/meeting-shares.server";

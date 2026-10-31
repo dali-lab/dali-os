@@ -5,7 +5,7 @@ import { PartnerBackLink } from "~/partners/components/PartnerBackLink";
 import { RequestMeetingModal } from "~/partners/components/RequestMeetingModal";
 import { PartnerMeetingsSection } from "~/partners/components/PartnerMeetingsSection";
 import type { Route } from "./+types/partner.applications.$id";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { getCollabToken } from "~/lib/collab-token.server";
 import { getPresenceUser } from "~/lib/presence-user";
 import { termCodeLabel } from "~/lib/display";

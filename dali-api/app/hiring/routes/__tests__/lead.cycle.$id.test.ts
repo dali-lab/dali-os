@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
 vi.mock("~/lib/auth", () => ({
   requireAuth: vi.fn(),
@@ -23,7 +23,7 @@ vi.mock("~/hiring/lib/domain-added-notice", () => ({
   countDomainAddedRecipients: vi.fn(),
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { logAuditEvent } from "~/lib/audit";
 import { isAdmin, isCycleAdmin } from "~/lib/roles";

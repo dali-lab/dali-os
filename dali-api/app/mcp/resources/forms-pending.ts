@@ -5,7 +5,7 @@
 // notification read on submit. We expose the title, dueAt, and the fill URL.
 // Requires the `mcp:read` scope.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 
 export const FORMS_PENDING_RESOURCE = {
   uri: "dali://forms/pending",
@@ -27,16 +27,20 @@ type PendingFormOut = {
   postedAt: string;
 };
 
+const PENDING_LIMIT = 50;
+
 export async function readFormsPendingResource(callerId: string) {
-  const rows = await prisma.notification.findMany({
-    where: {
-      recipientUserId: callerId,
-      readAt: null,
-      formId: { not: null },
-      form: { published: true, publicToken: { not: null } },
-    },
-    orderBy: { createdAt: "desc" },
-    take: 50,
+  const where = {
+    recipientUserId: callerId,
+    readAt: null,
+    formId: { not: null },
+    form: { published: true, publicToken: { not: null } },
+  };
+  const [rows, total] = await Promise.all([
+    prisma.notification.findMany({
+    where,
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    take: PENDING_LIMIT,
     select: {
       id: true,
       title: true,
@@ -46,7 +50,9 @@ export async function readFormsPendingResource(callerId: string) {
       formId: true,
       form: { select: { name: true, publicToken: true } },
     },
-  });
+    }),
+    prisma.notification.count({ where }),
+  ]);
 
   const items: PendingFormOut[] = rows
     .filter((r) => r.form?.publicToken && r.formId)
@@ -61,5 +67,5 @@ export async function readFormsPendingResource(callerId: string) {
       postedAt: r.createdAt.toISOString(),
     }));
 
-  return JSON.stringify({ pendingForms: items }, null, 2);
+  return JSON.stringify({ pendingForms: items, total, truncated: total > rows.length }, null, 2);
 }

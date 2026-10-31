@@ -40,8 +40,28 @@ describe("manage_slide_deck", () => {
       title: "Deck",
       version: "v1",
       slides: [{ id: "a", layout: "content", title: "A", bodyMarkdown: "- one" }],
+      page: { nextCursor: null, hasMore: false, limit: 50, total: 1 },
     });
     expect(decks.editDeck).not.toHaveBeenCalled();
+  });
+
+  it("get pages the slides in order and the last page has no cursor", async () => {
+    store.slides = ["a", "b", "c"].map((id) => s(id));
+    const first = await runManageSlideDeck("u1", { action: "get", pageId: "p1", limit: 2 });
+    expect(first).toMatchObject({ slides: [{ id: "a" }, { id: "b" }], page: { hasMore: true, limit: 2, total: 3 } });
+    const second = await runManageSlideDeck("u1", {
+      action: "get",
+      pageId: "p1",
+      limit: 2,
+      cursor: (first as { page: { nextCursor: string } }).page.nextCursor,
+    });
+    expect(second).toMatchObject({ slides: [{ id: "c" }], page: { nextCursor: null, hasMore: false } });
+  });
+
+  it("edit actions still echo the whole deck without a page", async () => {
+    const out = await runManageSlideDeck("u1", { action: "add_slide", pageId: "p1", slide: { title: "d" }, limit: 1 });
+    expect(out).not.toHaveProperty("page");
+    expect(out.slides).toHaveLength(4);
   });
 
   it("set_slides replaces the deck", async () => {

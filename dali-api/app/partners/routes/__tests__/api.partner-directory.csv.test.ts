@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-vi.mock("~/lib/db", () => ({ prisma: {} }));
+vi.mock("~/lib/db.server", () => ({ prisma: {} }));
 
 vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn(), isNonMember: vi.fn().mockResolvedValue(false) }));
 vi.mock("~/lib/roles", () => ({ isCore: vi.fn() }));

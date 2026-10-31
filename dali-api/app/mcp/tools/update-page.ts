@@ -6,7 +6,7 @@
 // duplicating. Gate mirrors web project-edit access: Core, or staffed on the
 // page's project.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { canEditProject } from "./access";
 import { pageDepth, MAX_PAGE_DEPTH, isAncestorOf } from "~/lib/pages";
 import { announceAgent, pagePresenceRoom } from "~/collab/agent-presence.server";

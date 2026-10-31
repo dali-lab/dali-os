@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     room: { findMany: vi.fn(), count: vi.fn() },
     roomDisplay: { findUnique: vi.fn(), update: vi.fn() },
@@ -13,7 +13,7 @@ vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
 vi.mock("~/lib/room-display.server", () => ({ createDisplaySetupCode: vi.fn() }));
 vi.mock("~/lib/display-scan.server", () => ({ getActiveDisplayScan: vi.fn(), stopDisplayScan: vi.fn() }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { isAdmin, isCore } from "~/lib/roles";
 import { logAuditEvent } from "~/lib/audit";

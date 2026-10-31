@@ -20,7 +20,7 @@ vi.mock("~/mcp/registry", () => {
   }
   return { McpError, McpNotFoundError, McpForbiddenError, McpInvalidError };
 });
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/google-calendar", () => ({
   fetchBusyEvents: vi.fn(),
 }));
@@ -70,11 +70,27 @@ describe("get_google_calendar_busy", () => {
       end: "2026-08-10T17:00:00Z",
     });
 
-    expect(out).toEqual({ busy: mockBusy });
+    expect(out).toEqual({ busy: mockBusy, truncated: false });
     expect(fetchBusyEvents).toHaveBeenCalledWith(
       "u1",
       new Date("2026-08-10T09:00:00Z"),
       new Date("2026-08-10T17:00:00Z"),
+      undefined,
+      undefined,
+      "availability",
+      expect.objectContaining({ truncated: false }),
     );
+  });
+
+  it("reports truncated when the read hit its page bound", async () => {
+    vi.mocked(fetchBusyEvents).mockImplementation(async (...args) => {
+      (args[6] as { truncated: boolean }).truncated = true;
+      return [];
+    });
+    const out = await runGetGoogleCalendarBusy("u1", {
+      start: "2026-08-10T09:00:00Z",
+      end: "2026-08-10T17:00:00Z",
+    });
+    expect(out.truncated).toBe(true);
   });
 });

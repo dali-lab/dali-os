@@ -1,4 +1,4 @@
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { driveRootCrumbs, workspaceDriveScope } from "~/lib/drive-crumbs";
 import {
   MAX_ANCESTOR_WALK,

@@ -100,7 +100,7 @@ import type {
   EduApplicationStatus,
   SubmissionType,
 } from "~/generated/prisma/client";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { getCollabToken } from "~/lib/collab-token.server";
 import { Button, buttonClasses } from "~/components/ui/Button";
 import { Avatar } from "~/components/ui/Avatar";

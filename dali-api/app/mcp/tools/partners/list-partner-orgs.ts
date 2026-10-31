@@ -1,18 +1,21 @@
 // MCP tool: list_partner_orgs — list all partner organizations.
 // Scope: mcp:read. Gated to canViewStaffing (Core / Domain Lead).
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { canViewStaffing } from "~/lib/roles";
 import { partnerRelationshipStatus } from "~/partners/lib/partner-org";
 import { McpForbiddenError } from "../../registry";
+import { offsetPage, offsetWindow, pageProps, type PageArgs, type PageInfo } from "../../pagination";
+
+const PAGE_LIMITS = { defaultLimit: 50, maxLimit: 200 };
 
 export const LIST_PARTNER_ORGS_TOOL = {
   name: "list_partner_orgs",
   description:
-    "List all partner organizations with summary counts (active members, active projects), type, and derived relationship status (Active/Past/Prospect/Dormant), plus a lab-wide openInquiryCount (open applications are not org-scoped until promotion). Requires staffing-view access.",
+    "List partner organizations, sorted by name, with summary counts (active members, active projects), type, and derived relationship status (Active/Past/Prospect/Dormant), plus a lab-wide openInquiryCount (open applications are not org-scoped until promotion). Pass page.nextCursor as cursor to read the next page until page.hasMore is false. Requires staffing-view access.",
   inputSchema: {
     type: "object" as const,
-    properties: {},
+    properties: { ...pageProps(PAGE_LIMITS) },
     required: [],
     additionalProperties: false,
   },
@@ -21,16 +24,19 @@ export const LIST_PARTNER_ORGS_TOOL = {
 
 export async function runListPartnerOrgs(
   callerId: string,
-  _input: Record<string, unknown>,
-): Promise<{ orgs: unknown[]; openInquiryCount: number }> {
+  input: PageArgs,
+): Promise<{ page: PageInfo; orgs: unknown[]; openInquiryCount: number }> {
   if (!(await canViewStaffing(callerId))) {
     throw new McpForbiddenError("Only Core members and domain leads can view partner organizations");
   }
 
   const now = new Date();
-  const [orgs, openInquiryCount] = await Promise.all([
+  const window = offsetWindow(input, PAGE_LIMITS);
+  const [fetched, total, openInquiryCount] = await Promise.all([
     prisma.partnerOrg.findMany({
-      orderBy: { name: "asc" },
+      orderBy: [{ name: "asc" }, { id: "asc" }],
+      skip: window.skip,
+      take: window.take,
       select: {
         id: true,
         name: true,
@@ -54,6 +60,7 @@ export async function runListPartnerOrgs(
         },
       },
     }),
+    prisma.partnerOrg.count(),
     // Open inquiries are org-independent until promotion, so this is a single
     // lab-wide number rather than a (dead) per-org count. New = not yet
     // through the interview stage.
@@ -61,8 +68,10 @@ export async function runListPartnerOrgs(
       where: { stage: "New" },
     }),
   ]);
+  const { rows: orgs, page } = offsetPage(fetched, window, total);
 
   return {
+    page,
     orgs: orgs.map((o) => ({
       id: o.id,
       name: o.name,

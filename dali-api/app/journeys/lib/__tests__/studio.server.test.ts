@@ -1,10 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const db = vi.hoisted(() => ({
-  onboardingJourney: { findUnique: vi.fn() },
+  onboardingJourney: { findUnique: vi.fn(), findMany: vi.fn() },
   onboardingLabSubmission: {
     findUnique: vi.fn(),
     findMany: vi.fn(),
+    findFirst: vi.fn(),
     upsert: vi.fn(),
     update: vi.fn(),
     deleteMany: vi.fn(),
@@ -14,8 +15,8 @@ const db = vi.hoisted(() => ({
 }));
 const notify = vi.hoisted(() => vi.fn());
 
-vi.mock("~/lib/db", async () => {
-  const { Prisma } = await import("~/lib/__mocks__/db");
+vi.mock("~/lib/db.server", async () => {
+  const { Prisma } = await import("~/lib/__mocks__/db.server");
   return { prisma: db, Prisma };
 });
 vi.mock("~/lib/notify.server", () => ({ notify }));
@@ -23,7 +24,7 @@ vi.mock("~/lib/photo", () => ({ resolvePhotoUrl: vi.fn(async () => null) }));
 vi.mock("~/lib/roles", () => ({ getUserRoles: vi.fn() }));
 vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabled: vi.fn() }));
 
-import { labApproved, listReviews, resetMyWork, reviewSubmission, saveMyWork, submitMyWork } from "../studio.server";
+import { countReviews, labApproved, listReviewedPage, listReviewIds, listWaitingReviews, loadReviewEntries, loadReviewEntry, REVIEWED_PAGE_SIZE, resetMyWork, reviewSubmission, saveMyWork, submitMyWork } from "../studio.server";
 import type { JourneyViewer } from "../journeys.server";
 import type { StudioLab } from "../studio-types";
 import { mod } from "./fixtures";
@@ -165,14 +166,112 @@ describe("reviewing", () => {
 });
 
 describe("queue and approval", () => {
-  it("lists work on journeys the viewer edits, excluding their own", async () => {
+  const scope = { userId: { not: "mentor" }, journey: { collaborators: { some: { userId: "mentor" } } } };
+  const row = (id: string, status: string, updatedAt: Date) => ({
+    ...submission(status),
+    id,
+    updatedAt,
+    moduleId: "m1",
+    journeyId: "j1",
+    user: { id: "learner", firstName: "Ada", lastName: "Lovelace", photoUrl: null },
+    journey: { published: journeyRow().published, domain: { code: "UIUX", displayName: "Design" } },
+  });
+
+  it("loads every waiting submission with no cap, excluding the viewer's own", async () => {
     db.onboardingLabSubmission.findMany.mockResolvedValue([]);
-    await listReviews(mentor);
-    expect(db.onboardingLabSubmission.findMany.mock.calls[0][0].where).toEqual({
-      status: { not: "InProgress" },
-      userId: { not: "mentor" },
-      journey: { collaborators: { some: { userId: "mentor" } } },
+    await listWaitingReviews(mentor);
+    const args = db.onboardingLabSubmission.findMany.mock.calls[0][0];
+    expect(args.where).toEqual({ status: "Submitted", ...scope });
+    expect(args.take).toBeUndefined();
+  });
+
+  it("scopes Core viewers to every journey", async () => {
+    db.onboardingLabSubmission.findMany.mockResolvedValue([]);
+    await listWaitingReviews({ id: "core", isCore: true, leadDomainIds: [] });
+    expect(db.onboardingLabSubmission.findMany.mock.calls[0][0].where.journey).toEqual({});
+  });
+
+  it("pages reviewed work by updatedAt and id, with a cursor from the last row returned", async () => {
+    const base = new Date("2026-10-01T00:00:00Z");
+    const rows = Array.from({ length: REVIEWED_PAGE_SIZE + 1 }, (_, i) =>
+      row(`r${i}`, "Approved", new Date(base.getTime() - i * 1000)),
+    );
+    db.onboardingLabSubmission.findMany.mockResolvedValue(rows);
+    const page = await listReviewedPage(mentor, null);
+    const args = db.onboardingLabSubmission.findMany.mock.calls[0][0];
+    expect(args.where.AND[0].status).toEqual({ in: ["Approved", "ChangesRequested"] });
+    expect(args.orderBy).toEqual([{ updatedAt: "desc" }, { id: "desc" }]);
+    expect(args.take).toBe(REVIEWED_PAGE_SIZE + 1);
+    expect(page.items).toHaveLength(REVIEWED_PAGE_SIZE);
+    expect(page.nextCursor).toBe(`${rows[REVIEWED_PAGE_SIZE - 1].updatedAt.toISOString()}|r${REVIEWED_PAGE_SIZE - 1}`);
+  });
+
+  it("has no cursor on the last reviewed page, and resumes after a cursor", async () => {
+    db.onboardingLabSubmission.findMany.mockResolvedValue([row("r1", "ChangesRequested", new Date("2026-09-01T00:00:00Z"))]);
+    const page = await listReviewedPage(mentor, "2026-10-01T00:00:00.000Z|r0");
+    expect(page.nextCursor).toBeNull();
+    expect(db.onboardingLabSubmission.findMany.mock.calls[0][0].where.AND[1].OR).toEqual([
+      { updatedAt: { lt: new Date("2026-10-01T00:00:00.000Z") } },
+      { updatedAt: new Date("2026-10-01T00:00:00.000Z"), id: { lt: "r0" } },
+    ]);
+  });
+
+  it("fetches one submission by id inside the viewer's scope, any state but in-progress", async () => {
+    db.onboardingLabSubmission.findFirst.mockResolvedValue(row("old", "Approved", new Date()));
+    const entry = await loadReviewEntry(mentor, "old");
+    expect(entry?.submission.id).toBe("old");
+    expect(db.onboardingLabSubmission.findFirst.mock.calls[0][0].where).toEqual({
+      AND: [{ status: { not: "InProgress" }, ...scope }, { id: "old" }],
     });
+  });
+
+  it("returns null for a submission outside the viewer's scope", async () => {
+    db.onboardingLabSubmission.findFirst.mockResolvedValue(null);
+    expect(await loadReviewEntry(mentor, "nope")).toBeNull();
+  });
+
+  it("counts waiting and reviewed work from the database, not from loaded rows", async () => {
+    db.onboardingLabSubmission.count.mockResolvedValueOnce(412).mockResolvedValueOnce(97);
+    expect(await countReviews(mentor)).toEqual({ waiting: 412, reviewed: 97 });
+    const wheres = db.onboardingLabSubmission.count.mock.calls.map((c) => c[0].where.status);
+    expect(wheres).toEqual(["Submitted", { in: ["Approved", "ChangesRequested"] }]);
+  });
+
+  it("pushes the status filter into the query so it runs before the limit", async () => {
+    db.onboardingLabSubmission.findMany.mockResolvedValue([]);
+    db.onboardingJourney.findMany.mockResolvedValue([]);
+    await listReviewIds(mentor, "waiting");
+    expect(db.onboardingLabSubmission.findMany.mock.calls[0][0].where.status).toBe("Submitted");
+    await listReviewIds(mentor, "reviewed");
+    expect(db.onboardingLabSubmission.findMany.mock.calls[1][0].where.status).toEqual({ in: ["Approved", "ChangesRequested"] });
+    expect(db.onboardingLabSubmission.findMany.mock.calls[1][0].take).toBeUndefined();
+  });
+
+  it("drops ids whose module left the published journey, keeping the rest in order", async () => {
+    db.onboardingLabSubmission.findMany.mockResolvedValue([
+      { id: "s1", moduleId: "m1", journeyId: "j1" },
+      { id: "s2", moduleId: "gone", journeyId: "j1" },
+      { id: "s3", moduleId: "m1", journeyId: "j2" },
+    ]);
+    db.onboardingJourney.findMany.mockResolvedValue([
+      { id: "j1", published: { title: "J", description: "", modules: [mod("m1", [], { studio })] } },
+      { id: "j2", published: null },
+    ]);
+    expect(await listReviewIds(mentor)).toEqual(["s1"]);
+  });
+
+  it("loads entries by id, scoped to what the viewer can review", async () => {
+    db.onboardingLabSubmission.findMany.mockResolvedValue([]);
+    expect(await loadReviewEntries(mentor, [])).toEqual([]);
+    await loadReviewEntries(mentor, ["s1"]);
+    expect(db.onboardingLabSubmission.findMany.mock.calls[0][0].where.AND).toEqual([
+      {
+        status: { not: "InProgress" },
+        userId: { not: "mentor" },
+        journey: { collaborators: { some: { userId: "mentor" } } },
+      },
+      { id: { in: ["s1"] } },
+    ]);
   });
 
   it("treats labs without mentor review as approved", async () => {

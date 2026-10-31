@@ -1,5 +1,5 @@
 import type { Route } from "./+types/api.cycles.$cycleId.available-slots";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { hasCycleAccess } from "~/lib/roles";

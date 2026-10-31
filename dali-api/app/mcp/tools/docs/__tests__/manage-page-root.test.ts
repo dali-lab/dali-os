@@ -18,7 +18,7 @@ vi.mock("~/mcp/registry", () => {
   return { requireForAction, REGISTRY_TOOLS: [], findRegistryTool: () => undefined, registryToolDefs: () => [] };
 });
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     page: {
       findUnique: vi.fn(),
@@ -68,7 +68,7 @@ vi.mock("~/mcp/tools/access", () => ({
   canEditProject: vi.fn(),
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { MANAGE_PAGE_TOOL_DEF, runManagePage } from "~/mcp/tools/docs/manage-page";
 import { canManageSharing } from "~/lib/page-share-access.server";
 import { clearTypeIfLeavingRoot } from "~/lib/drive-receivers.server";

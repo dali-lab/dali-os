@@ -61,11 +61,12 @@ vi.mock("~/mcp/registry", async () => {
   };
 });
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     signingSignature: {
       findUnique: vi.fn(),
       findMany: vi.fn(),
+      count: vi.fn(),
       upsert: vi.fn(),
     },
     signingDocument: {
@@ -133,7 +134,7 @@ vi.mock("~/lib/display", () => ({
 
 // Imports after mocks.
 import { isCore } from "~/lib/roles";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import {
   listOutstandingBindings,
   getSignerCohorts,
@@ -163,6 +164,7 @@ const mockPrisma = prisma as unknown as {
   signingSignature: {
     findUnique: ReturnType<typeof vi.fn>;
     findMany: ReturnType<typeof vi.fn>;
+    count: ReturnType<typeof vi.fn>;
     upsert: ReturnType<typeof vi.fn>;
   };
   signingDocument: {
@@ -338,6 +340,43 @@ describe("list_agreement_signatures", () => {
     });
   });
 
+  it("pages newest first with a keyset cursor and a real total", async () => {
+    vi.mocked(isCore).mockResolvedValue(true);
+    mockPrisma.signingSignature.count.mockResolvedValue(3);
+    const row = (id: string, signedAt: string) => ({
+      id,
+      typedName: "Ada Lovelace",
+      signedAt: new Date(signedAt),
+      signerUserId: "u2",
+      signer: { firstName: "Ada", lastName: "Lovelace" },
+      binding: { id: "b1", scopeKey: "app" },
+    });
+    mockPrisma.signingSignature.findMany.mockResolvedValueOnce([
+      row("s3", "2026-07-03T00:00:00.000Z"),
+      row("s2", "2026-07-02T00:00:00.000Z"),
+      row("s1", "2026-07-01T00:00:00.000Z"),
+    ]);
+    const first = await runListAgreementSignatures(ctx(), { documentId: "d1", limit: 2 });
+    expect(mockPrisma.signingSignature.findMany.mock.calls[0][0]).toMatchObject({
+      orderBy: [{ signedAt: "desc" }, { id: "desc" }],
+      take: 3,
+    });
+    expect(first.signatures.map((s) => s.signatureId)).toEqual(["s3", "s2"]);
+    expect(first.page).toMatchObject({ hasMore: true, limit: 2, total: 3 });
+
+    mockPrisma.signingSignature.findMany.mockResolvedValueOnce([row("s1", "2026-07-01T00:00:00.000Z")]);
+    const second = await runListAgreementSignatures(ctx(), {
+      documentId: "d1",
+      limit: 2,
+      cursor: first.page.nextCursor!,
+    });
+    const where = mockPrisma.signingSignature.findMany.mock.calls[1][0].where;
+    expect(where.AND[0]).toMatchObject({ roleKey: "member", binding: { documentId: "d1" } });
+    expect(where.AND[1].OR[0]).toEqual({ signedAt: { lt: new Date("2026-07-02T00:00:00.000Z") } });
+    expect(second.signatures.map((s) => s.signatureId)).toEqual(["s1"]);
+    expect(second.page).toMatchObject({ nextCursor: null, hasMore: false });
+  });
+
   it("filters by bindingId when provided", async () => {
     vi.mocked(isCore).mockResolvedValue(true);
     mockPrisma.signingSignature.findMany.mockResolvedValue([]);
@@ -347,7 +386,7 @@ describe("list_agreement_signatures", () => {
     });
     expect(mockPrisma.signingSignature.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: expect.objectContaining({ bindingId: "b1" }),
+        where: { AND: [expect.objectContaining({ bindingId: "b1" }), {}] },
       }),
     );
   });

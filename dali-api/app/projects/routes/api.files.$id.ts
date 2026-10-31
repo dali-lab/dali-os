@@ -1,6 +1,6 @@
 import type { Route } from "./+types/api.files.$id";
 import { z } from "zod";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth, requireMemberSession, isNonMember, redirectPartnerToPortal } from "~/lib/auth";
 import { canViewFile, canEditFile } from "~/lib/fileAccess.server";
 import { UNKNOWN_LABEL } from "~/lib/display";

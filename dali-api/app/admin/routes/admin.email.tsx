@@ -17,7 +17,7 @@
 import { redirect } from "react-router";
 import type { Route } from "./+types/admin.email";
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { isCore } from "~/lib/roles";

@@ -1,11 +1,14 @@
 import type { Route } from "./+types/api.projects.$id.tasks";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireProjectEditAccess } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { isTaskStatus } from "../lib/task-board";
 import { createIssueForTask, normalizeRepo } from "../lib/github-task-sync";
 import { USER_NAME_SELECT } from "~/lib/prisma-shapes";
 import { fullName } from "~/lib/display";
+import { decodeCursor, keysetAfter, keysetPage } from "~/lib/pagination";
+
+export const ARCHIVED_TASKS_PAGE_SIZE = 50;
 
 // POST /api/projects/:id/tasks
 //
@@ -60,7 +63,8 @@ function parseDueAt(raw: string | null | undefined): Date | null | "invalid" {
 // (board Archive + weekly auto-archive of Done/Cancelled), newest-archived
 // first. Backs the board's "Archived" modal, so it stays a lazy fetch rather
 // than bloating the project loader (which only ever loads the live,
-// non-archived board).
+// non-archived board). Paged by ?cursor=; `tasks` is one page and
+// `nextCursor` is null on the last.
 export async function loader({ request, params }: Route.LoaderArgs) {
   const preflight = handlePreflight(request);
   if (preflight) return preflight;
@@ -68,9 +72,13 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const gate = await requireProjectEditAccess(request, params.id!);
   if (!gate.ok) return gate.response;
 
+  const cursor = decodeCursor(new URL(request.url).searchParams.get("cursor"));
   const rows = await prisma.task.findMany({
-    where: { projectId: params.id, archivedAt: { not: null } },
-    orderBy: { archivedAt: "desc" },
+    where: {
+      AND: [{ projectId: params.id, archivedAt: { not: null } }, keysetAfter("archivedAt", cursor)],
+    },
+    orderBy: [{ archivedAt: "desc" }, { id: "desc" }],
+    take: ARCHIVED_TASKS_PAGE_SIZE + 1,
     select: {
       id: true,
       title: true,
@@ -83,7 +91,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     },
   });
 
-  const tasks = rows.map((t) => ({
+  const page = keysetPage(rows, ARCHIVED_TASKS_PAGE_SIZE, (t) => ({
+    at: t.archivedAt!.toISOString(),
+    id: t.id,
+  }));
+  const tasks = page.items.map((t) => ({
     id: t.id,
     title: t.title,
     status: t.status,
@@ -94,7 +106,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     assignees: t.assignees.map((a) => ({ id: a.user.id, name: fullName(a.user) })),
   }));
 
-  return withCors(request, Response.json({ tasks }));
+  return withCors(request, Response.json({ tasks, nextCursor: page.nextCursor }));
 }
 
 export async function action({ request, params }: Route.ActionArgs) {

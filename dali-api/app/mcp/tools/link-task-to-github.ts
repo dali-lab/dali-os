@@ -3,7 +3,7 @@
 // (v1: link = create-new-issue. Linking to an existing issue would require
 // new infrastructure; not in scope.)
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { canEditProject } from "./access";
 import {
   createIssueForTask,

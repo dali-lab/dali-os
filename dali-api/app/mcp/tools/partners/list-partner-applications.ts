@@ -1,7 +1,7 @@
 // MCP tool: list_partner_applications — list partner applications with optional stage filter.
 // Scope: mcp:read. Gated to canViewStaffing (Core / Domain Lead).
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { canViewStaffing } from "~/lib/roles";
 import {
   PARTNER_STAGES,
@@ -10,13 +10,16 @@ import {
   type PartnerStage,
 } from "~/partners/lib/partner-application";
 import { McpForbiddenError, McpInvalidError } from "../../registry";
+import { keysetPage, keysetWindow, pageProps, type PageArgs, type PageInfo } from "../../pagination";
+
+const PAGE_LIMITS = { defaultLimit: 50, maxLimit: 200 };
 
 const DEFAULT_STALE_DAYS = 14;
 
 export const LIST_PARTNER_APPLICATIONS_TOOL = {
   name: "list_partner_applications",
   description:
-    "List partner applications, optionally filtered by stage. Valid stages: Backlog, New, Interview, Deciding, Accepted, Rejected. Requires staffing-view access.",
+    "List partner applications, newest first, optionally filtered by stage. Pass page.nextCursor as cursor to read the next page until page.hasMore is false. Valid stages: Backlog, New, Interview, Deciding, Accepted, Rejected. Requires staffing-view access.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -28,6 +31,7 @@ export const LIST_PARTNER_APPLICATIONS_TOOL = {
         },
         description: "Filter to one or more stages. Omit to return all.",
       },
+      ...pageProps(PAGE_LIMITS),
     },
     required: [],
     additionalProperties: false,
@@ -37,8 +41,8 @@ export const LIST_PARTNER_APPLICATIONS_TOOL = {
 
 export async function runListPartnerApplications(
   callerId: string,
-  input: { stage?: string[] },
-): Promise<{ applications: unknown[] }> {
+  input: PageArgs & { stage?: string[] },
+): Promise<{ page: PageInfo; applications: unknown[] }> {
   if (!(await canViewStaffing(callerId))) {
     throw new McpForbiddenError("Only Core members and domain leads can view partner applications");
   }
@@ -55,10 +59,13 @@ export async function runListPartnerApplications(
     }
   }
 
-  const [applications, settings] = await Promise.all([
+  const stageWhere = validStages.length > 0 ? { stage: { in: validStages } } : {};
+  const window = keysetWindow(input, PAGE_LIMITS, [{ field: "createdAt", direction: "desc", type: "date" }]);
+  const [fetched, total, settings] = await Promise.all([
     prisma.partnerApplication.findMany({
-      where: validStages.length > 0 ? { stage: { in: validStages } } : undefined,
-      orderBy: { createdAt: "desc" },
+      where: { AND: [stageWhere, window.where] },
+      orderBy: window.orderBy,
+      take: window.take,
       select: {
         id: true,
         title: true,
@@ -83,11 +90,14 @@ export async function runListPartnerApplications(
         },
       },
     }),
+    prisma.partnerApplication.count({ where: stageWhere }),
     prisma.partnerCrmSettings.findUnique({ where: { id: "default" }, select: { staleDays: true } }),
   ]);
+  const { rows: applications, page } = keysetPage(fetched, window, total);
   const staleDays = settings?.staleDays ?? DEFAULT_STALE_DAYS;
 
   return {
+    page,
     applications: applications.map((a) => ({
       id: a.id,
       title: a.title,

@@ -1,5 +1,5 @@
 import type { Route } from "./+types/documents.$pageId.export";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth, isPartnerAccount, isNonMember } from "~/lib/auth";
 import { getPageAccess } from "~/lib/pageAccess.server";
 import { logAuditEvent } from "~/lib/audit";
