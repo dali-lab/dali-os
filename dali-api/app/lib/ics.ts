@@ -1,3 +1,5 @@
+import { APPLICATION_TZ, getZonedParts } from "~/lib/timezone";
+
 // Generic RFC 5545 VCALENDAR builder. Produces strings that Gmail, Outlook,
 // and Apple Calendar treat as inline calendar invites when attached via the
 // `ics` param on sendEmail. Feature wrappers (hiring interviews, scheduled
@@ -32,6 +34,34 @@ export interface IcsBuildParams {
 function formatIcsDate(d: Date): string {
   return d.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
 }
+
+function formatIcsLocal(d: Date): string {
+  const p = getZonedParts(d, APPLICATION_TZ);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${p.year}${pad(p.month)}${pad(p.day)}T${pad(p.hour)}${pad(p.minute)}00`;
+}
+
+// Calendar apps expand a repeat rule in its start time's zone. A UTC start
+// keeps the UTC hour, so the series moves an hour at each clock change.
+const NEW_YORK_VTIMEZONE = [
+  "BEGIN:VTIMEZONE",
+  `TZID:${APPLICATION_TZ}`,
+  "BEGIN:DAYLIGHT",
+  "TZOFFSETFROM:-0500",
+  "TZOFFSETTO:-0400",
+  "TZNAME:EDT",
+  "DTSTART:19700308T020000",
+  "RRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=2SU",
+  "END:DAYLIGHT",
+  "BEGIN:STANDARD",
+  "TZOFFSETFROM:-0400",
+  "TZOFFSETTO:-0500",
+  "TZNAME:EST",
+  "DTSTART:19701101T020000",
+  "RRULE:FREQ=YEARLY;BYMONTH=11;BYDAY=1SU",
+  "END:STANDARD",
+  "END:VTIMEZONE",
+];
 
 export function escapeIcsText(text: string): string {
   return text.replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,").replace(/\n/g, "\\n");
@@ -69,11 +99,16 @@ export function buildIcs(p: IcsBuildParams): string {
     "PRODID:-//DALI Lab//DALI OS//EN",
     "CALSCALE:GREGORIAN",
     `METHOD:${p.method}`,
+    ...(rrule ? NEW_YORK_VTIMEZONE : []),
     "BEGIN:VEVENT",
     `UID:${p.uid}`,
     `DTSTAMP:${formatIcsDate(new Date())}`,
-    `DTSTART:${formatIcsDate(p.startTime)}`,
-    `DTEND:${formatIcsDate(p.endTime)}`,
+    rrule
+      ? `DTSTART;TZID=${APPLICATION_TZ}:${formatIcsLocal(p.startTime)}`
+      : `DTSTART:${formatIcsDate(p.startTime)}`,
+    rrule
+      ? `DTEND;TZID=${APPLICATION_TZ}:${formatIcsLocal(p.endTime)}`
+      : `DTEND:${formatIcsDate(p.endTime)}`,
     ...(rrule ? [rrule] : []),
     `SUMMARY:${escapeIcsText(p.summary)}`,
     ...(locationLine && !cancel ? [`LOCATION:${escapeIcsText(locationLine)}`] : []),

@@ -872,6 +872,11 @@ export function ScheduleWeekGrid({
     return new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), h, mins).getTime();
   }
 
+  function wallHour(ms: number): number {
+    const d = new Date(ms);
+    return d.getHours() + d.getMinutes() / 60;
+  }
+
   function freeCountAtCell(cellStartMs: number, cellEndMs: number): number {
     let n = 0;
     for (const intervals of perUserFree) {
@@ -927,7 +932,6 @@ export function ScheduleWeekGrid({
             }))
             .sort((a, b) => a.startMs - b.startMs);
           return days.map((_, colIdx) => {
-            const dayStartMs = cellMs(colIdx, 0);
             const winStartMs = cellMs(colIdx, GRID_START_H);
             const winEndMs = cellMs(colIdx, GRID_END_H);
             const blocks: { startHour: number; durationHours: number }[] = [];
@@ -936,7 +940,7 @@ export function ScheduleWeekGrid({
               const e = Math.min(iv.endMs, winEndMs);
               if (e <= s) continue;
               blocks.push({
-                startHour: (s - dayStartMs) / 3_600_000,
+                startHour: wallHour(s),
                 durationHours: (e - s) / 3_600_000,
               });
             }
@@ -1050,7 +1054,7 @@ export function ScheduleWeekGrid({
   const suggestions: RankedSlot[] =
     enableOptimalTimes && !hideAvailability && !showingSelfOnly && knownCount > 0
       ? findOptimalSlots({
-          dayStartMs: days.map((_, i) => cellMs(i, 0)),
+          dayMinuteMs: days.map((_, i) => (minute: number) => cellMs(i, minute / 60)),
           perUserFree,
           bandStartHour: OPTIMAL_BAND_START_HOUR,
           bandEndHour: OPTIMAL_BAND_END_HOUR,
@@ -1158,7 +1162,7 @@ export function ScheduleWeekGrid({
                     SUGGESTION_COLORS[i]?.fill,
                   )}
                   style={{
-                    top: ((s.startMs - dayStartMs) / 3_600_000 - GRID_START_H) * HOUR_PX,
+                    top: (wallHour(s.startMs) - GRID_START_H) * HOUR_PX,
                     height: ((s.endMs - s.startMs) / 3_600_000) * HOUR_PX,
                   }}
                 >

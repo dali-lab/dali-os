@@ -6,7 +6,7 @@
 // any override.
 
 import rrulePkg from "rrule";
-import { APPLICATION_TZ, getZonedParts, zonedWallTimeUtc } from "~/lib/timezone";
+import { APPLICATION_TZ, fromWallClock, toWallClock } from "~/lib/timezone";
 
 const { RRule, rrulestr } = rrulePkg as unknown as {
   RRule: typeof import("rrule").RRule;
@@ -37,22 +37,8 @@ export type MeetingRule = {
 // rrule expands in. BYDAY and the time of day are Eastern (RepeatField and
 // Google both mean them that way), so expanding the real UTC instant puts an
 // evening series on the wrong day and keeps its UTC hour across DST.
-function toFloating(d: Date): Date {
-  const p = getZonedParts(d, APPLICATION_TZ);
-  return new Date(Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute, d.getUTCSeconds()));
-}
-
-function fromFloating(f: Date): Date {
-  const wall = zonedWallTimeUtc(
-    f.getUTCFullYear(),
-    f.getUTCMonth() + 1,
-    f.getUTCDate(),
-    f.getUTCHours(),
-    f.getUTCMinutes(),
-    APPLICATION_TZ,
-  );
-  return new Date(wall.getTime() + f.getUTCSeconds() * 1000);
-}
+const toFloating = (d: Date) => toWallClock(d, APPLICATION_TZ);
+const fromFloating = (f: Date) => fromWallClock(f, APPLICATION_TZ);
 
 // Wider than any zone offset, so a floating window covers the real one.
 const FLOATING_PAD_MS = 24 * 60 * 60_000;

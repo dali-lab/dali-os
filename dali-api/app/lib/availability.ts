@@ -2,7 +2,7 @@ import rrulePkg from "rrule";
 import type { RRule as RRuleType } from "rrule";
 import { prisma } from "~/lib/db.server";
 import { fetchBusyEvents } from "~/lib/google-calendar";
-import { APPLICATION_TZ as DEFAULT_TIMEZONE, getZonedYMD, pickUserTimezone, zonedDayStartUtc } from "~/lib/timezone";
+import { APPLICATION_TZ as DEFAULT_TIMEZONE, getZonedYMD, pickUserTimezone, zonedWallTimeUtc } from "~/lib/timezone";
 
 const { RRule, rrulestr } = rrulePkg as unknown as {
   RRule: typeof import("rrule").RRule;
@@ -75,15 +75,14 @@ export function computeFreeIntervals(input: ComputeInput): ComputeOutput {
     const y = cursor.getUTCFullYear();
     const m = cursor.getUTCMonth() + 1;
     const d = cursor.getUTCDate();
-    const dayStartUtc = zonedDayStartUtc(y, m, d, timezone);
     // Day-of-week is computed from the local date, not the UTC instant.
     const dow = dowFromYmd(y, m, d);
     const segments = whByDow.get(dow);
     if (segments) {
       for (const wh of segments) {
         if (!wh.enabled || wh.startMinute >= wh.endMinute) continue;
-        const wStart = new Date(dayStartUtc.getTime() + wh.startMinute * 60_000);
-        const wEnd = new Date(dayStartUtc.getTime() + wh.endMinute * 60_000);
+        const wStart = zonedWallTimeUtc(y, m, d, 0, wh.startMinute, timezone);
+        const wEnd = zonedWallTimeUtc(y, m, d, 0, wh.endMinute, timezone);
         const clipped = clipToWindow(wStart, wEnd, windowStart, windowEnd);
         if (clipped) workIntervals.push(clipped);
       }

@@ -104,6 +104,17 @@ describe("GET /api/timesheets/export", () => {
     });
   });
 
+  it("places a date-only entry at 9:00 on the day clocks fall back", async () => {
+    vi.setSystemTime(new Date("2026-11-03T16:00:00Z"));
+    findEntries.mockResolvedValue([
+      { ...entry("2026-11-01T00:00:00Z", 2), startTime: null, endTime: null },
+    ]);
+
+    const { body } = await get();
+
+    expect(body.entries[0]).toMatchObject({ date: "2026-11-01", start: "09:00", end: "11:00" });
+  });
+
   it("files a late-evening entry under its local day's period", async () => {
     // Sat Aug 29, 10pm ET = Sun Aug 30 02:00Z — belongs to the Aug 16 period.
     findEntries.mockResolvedValue([entry("2026-08-30T02:00:00Z", 1)]);
