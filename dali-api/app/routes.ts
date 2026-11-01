@@ -669,6 +669,7 @@ export default [
     "api/projects/:id/tasks/archive",
     "projects/routes/api.projects.$id.tasks.archive.ts",
   ),
+  route("api/task-options", "projects/routes/api.task-options.ts"),
   route("api/tasks/:id/move", "projects/routes/api.tasks.$id.move.ts"),
   route("api/tasks/:id/view", "projects/routes/api.tasks.$id.view.ts"),
   route("api/tasks/:id/comments", "projects/routes/api.tasks.$id.comments.ts"),

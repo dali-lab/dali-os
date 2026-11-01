@@ -3,6 +3,7 @@ import { prisma } from "~/lib/db.server";
 import { requireProjectEditAccess } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { isTaskStatus } from "../lib/task-board";
+import { nextColumnPosition } from "../lib/task-position.server";
 import { createIssueForTask, normalizeRepo } from "../lib/github-task-sync";
 import { USER_NAME_SELECT } from "~/lib/prisma-shapes";
 import { fullName } from "~/lib/display";
@@ -224,12 +225,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   }
 
   // Append after the current max position in the target column.
-  const last = await prisma.task.findFirst({
-    where: { projectId: params.id, status },
-    orderBy: { position: "desc" },
-    select: { position: true },
-  });
-  const position = last ? last.position + 1 : 0;
+  const position = await nextColumnPosition(params.id!, status);
 
   const description = body.description?.trim() || null;
 

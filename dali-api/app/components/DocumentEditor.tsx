@@ -2,6 +2,7 @@ import {
   useCallback,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   type KeyboardEvent,
@@ -22,6 +23,8 @@ import { TagPicker, type DocTag } from "./TagPicker";
 import { FavoriteStar } from "./FavoriteStar";
 import { PageBarMenuItems, PageBarPortal, SHELL_HEADER_VAR, pageBarTextButton, usePageBarSlot } from "~/components/shell/page-bar-slot";
 import { useFeatureFlag } from "~/components/FeatureFlags";
+import { useTaskProjects } from "~/components/doc/task/task-api";
+import { taskBlockConfig } from "~/components/doc/task/task-composer-state";
 import { PageIconPicker } from "./doc-chrome/PageIconPicker";
 import { PageCover } from "./doc-chrome/PageCover";
 import { DocToc } from "./doc-chrome/DocToc";
@@ -219,6 +222,9 @@ export function DocumentEditor({
   const [tocOpen, setTocOpen] = useState(false);
   const [moveOpen, setMoveOpen] = useState(false);
   const toast = useToast();
+  const docProjectId = workspaceType === "Project" ? workspaceId : null;
+  const taskProjects = useTaskProjects(useFeatureFlag("doc-task-block") && canEdit);
+  const taskBlock = useMemo(() => taskBlockConfig(taskProjects, docProjectId), [taskProjects, docProjectId]);
   const moveDestinations = useDriveDestinations({
     enabled: moveOpen,
     movingIds: [pageId],
@@ -1175,6 +1181,8 @@ export function DocumentEditor({
                 features="document"
                 editable={canEdit}
                 onEditorReady={(ed) => { editorRef.current = ed; liveEditorRef.current = ed; onEditorReady?.(ed); }}
+                taskBlock={taskBlock}
+                docProjectId={docProjectId}
                 collab={{
                   documentName,
                   token: collabToken,

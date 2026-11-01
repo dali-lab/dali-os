@@ -183,6 +183,12 @@ export const FEATURE_FLAGS = [
     description:
       "Forms opened from a form link show a strip of DALI tiles across the top of the card. Each form gets its own pattern. On submit the strip folds into one block and the card settles on a short confirmation. Signed-out visitors see it whenever the flag is switched on, whatever its targeting. Ships off.",
   },
+  {
+    key: "doc-task-block",
+    label: "Task blocks in documents",
+    description:
+      "Adds /task to documents: a small composer that creates a project task and leaves a live row in the note, showing its status, owner and date. Task blocks already in a document keep showing when this is off. Ships off.",
+  },
 ] as const satisfies readonly FeatureFlagDef[];
 
 export type FeatureFlagKey = (typeof FEATURE_FLAGS)[number]["key"];
