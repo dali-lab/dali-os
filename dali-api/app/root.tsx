@@ -25,6 +25,7 @@ import { DialogProvider } from "~/components/ui/dialog";
 import { ToastProvider } from "~/components/ui/toast";
 import { MeetingNoteOpenWatcher } from "~/calendar/components/MeetingNoteOpenWatcher";
 import { PresenceStatusProvider } from "~/components/presence/PresenceStatusProvider";
+import { useBackspaceNavigationGuard } from "~/hooks/useBackspaceNavigationGuard";
 import { THEME_BOOT_SRC } from "~/lib/theme";
 import { isBuildStale, isChunkLoadError, reloadForNewBuild } from "~/lib/stale-build";
 
@@ -135,6 +136,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
 }
 
 export default function App() {
+  useBackspaceNavigationGuard();
   return <Outlet />
 }
 
