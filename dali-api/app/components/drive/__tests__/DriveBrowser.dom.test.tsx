@@ -168,6 +168,19 @@ afterEach(() => {
   document.body.innerHTML = "";
 });
 
+describe("DriveBrowser: visible text", () => {
+  it.each([
+    ["columns", {}],
+    ["list", {}],
+    ["grid", {}],
+    ["search", { search: "Doc" }],
+  ] as const)("renders no source comment as text in the %s view", async (view, opts) => {
+    await mount({ view: view === "search" ? "list" : view, ...opts });
+    expect(container.textContent).toContain("Doc d1");
+    expect(container.textContent).not.toContain("/*");
+  });
+});
+
 describe.each(["columns", "list"] as const)("DriveBrowser %s: click selects, double-click opens", (view) => {
   it("selects a document alone on a plain click, opening nothing", async () => {
     await mount({ view });

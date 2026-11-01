@@ -1926,7 +1926,6 @@ export function DriveBrowser({
             </div>
           ) : (
             <>
-              /* ── LIST / GRID / SEARCH ──────────────────────────────────── */
               <div
                 ref={listRef}
                 tabIndex={0}
