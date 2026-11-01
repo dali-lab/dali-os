@@ -65,6 +65,7 @@ import { DocEditorFallback } from "./DocEditor";
 import { DaliSideMenuController } from "./DocSideMenu";
 import { resolveFeatures, type Features } from "./features";
 import { createFindReplacePlugin } from "./find";
+import { createTableDragSelectPlugin } from "./table-drag-select";
 import { enhancePasteHandler } from "./enhance-render";
 import { buildSchema, type DocEditorInstance, type DocPartialBlock } from "./schema/build";
 import { BLOCKNOTE_FRAGMENT } from "./schema/configs";
@@ -626,6 +627,14 @@ function DocView(
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editor, props.findOpen]);
+
+  useEffect(() => {
+    const key = "dali-table-drag-select-ext";
+    editor.registerExtension({ key, prosemirrorPlugins: [createTableDragSelectPlugin()] });
+    return () => {
+      editor.unregisterExtension(key);
+    };
+  }, [editor]);
 
   const hasComments = Boolean(props.comments);
   const panelOpen = props.comments?.panelOpen ?? false;
