@@ -878,8 +878,8 @@ export function DocumentEditor({
     <div
       ref={topBarRef}
       className={cn(
-        "flex items-center gap-1 text-[13px] text-os-muted",
-        inPanel && "justify-end",
+        "flex items-center gap-1 text-[13px]",
+        inPanel ? "justify-end text-os-grey" : "text-os-muted",
       )}
     >
       {statusNodes}

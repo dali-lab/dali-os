@@ -107,6 +107,7 @@ describe("PanelFrame header", () => {
     mount();
     const aside = container.querySelector("aside")!;
     expect(aside.querySelector("span.truncate")?.textContent).toBe("Notes");
+    expect(aside.querySelector("span.truncate")?.parentElement?.className).toContain("text-os-grey");
     expect(aside.textContent).not.toContain("📓");
     act(() => root.unmount());
     root = createRoot(container);

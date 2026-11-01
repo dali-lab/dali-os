@@ -168,7 +168,7 @@ function PanelFrameInner({
           </Link>
         </Tooltip>
         {(icon || title) && (
-          <span className="ml-1 flex min-w-0 items-center gap-1.5 text-[13px] text-os-muted">
+          <span className="ml-1 flex min-w-0 items-center gap-1.5 text-[13px] text-os-grey">
             {icon && <span aria-hidden className="shrink-0">{icon}</span>}
             <span className="truncate">{title}</span>
           </span>
