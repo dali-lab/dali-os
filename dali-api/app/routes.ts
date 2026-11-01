@@ -730,6 +730,7 @@ export default [
   route("api/drive/move", "routes/api.drive.move.ts"),
   // Drive unified file upload: scope-agnostic file registration (Lab or Project).
   route("api/drive/files", "routes/api.drive.files.ts"),
+  route("api/drive/download", "routes/api.drive.download.ts"),
   // Drive Trash: list/restore/purge archived items (docs, files, forms).
   route("api/drive/trash", "routes/api.drive.trash.ts"),
   route("api/pages/:id/template", "routes/api.pages.$id.template.ts"),
@@ -740,6 +741,7 @@ export default [
   // Project files (standalone uploads with versions)
   route("api/projects/:id/files", "projects/routes/api.projects.$id.files.ts"),
   route("api/files/:id", "projects/routes/api.files.$id.ts"),
+  route("api/files/:id/download", "projects/routes/api.files.$id.download.ts"),
   route("api/files/:id/partner-visible", "projects/routes/api.files.$id.partner-visible.ts"),
 
   // Lab-wide document/file tags

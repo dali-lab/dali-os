@@ -145,7 +145,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       createdAt: v.createdAt.toISOString(),
       isCurrent: v.id === file.currentVersionId,
       contentType: v.contentType,
-      downloadUrl: await getDownloadUrl(v.s3Key),
+      downloadUrl: `/api/files/${file.id}/download?version=${v.id}`,
       // Inline-preview URL: forces the known content type + inline disposition
       // so the browser renders it even when the S3 object's stored Content-Type
       // is wrong or missing (e.g. generated PDFs served as octet-stream).

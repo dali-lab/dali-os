@@ -2,6 +2,7 @@ import { prisma } from "~/lib/db.server";
 import { currentTerm } from "~/lib/roles";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { getDownloadUrl } from "~/lib/s3";
+import { downloadFileName } from "~/lib/file-download-name";
 import { fullName } from "~/lib/display";
 import { buildTimelineEpics } from "~/projects/lib/timeline-epics";
 import {
@@ -50,7 +51,10 @@ export type PartnerDriveFile = {
   fileName: string | null;
   sizeBytes: number | null;
   contentType: string | null;
+  /** Serves the file as stored, for the preview modal. */
   downloadUrl: string | null;
+  /** Saves the file under its title. */
+  saveUrl: string | null;
 };
 
 export type PartnerDriveFolder = {
@@ -326,6 +330,11 @@ export async function loadPartnerProjectView(
     contentType: f.currentVersion?.contentType ?? null,
     downloadUrl: f.currentVersion?.s3Key
       ? await getDownloadUrl(f.currentVersion.s3Key)
+      : null,
+    saveUrl: f.currentVersion?.s3Key
+      ? await getDownloadUrl(f.currentVersion.s3Key, {
+          fileName: downloadFileName(f.title, f.currentVersion.fileName),
+        })
       : null,
   });
 
