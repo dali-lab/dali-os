@@ -1,7 +1,43 @@
 import { describe, expect, it } from "vitest";
-import { isToggleSidebarShortcut, isVersionHistoryShortcut } from "../shortcuts";
+import { isToggleSidebarShortcut, isVersionHistoryShortcut, tabCycleShortcut } from "../shortcuts";
 
 const base = { metaKey: false, ctrlKey: false, shiftKey: false, altKey: false, key: "" };
+
+describe("tabCycleShortcut", () => {
+  it("cycles with ctrl+tab and ctrl+shift+tab", () => {
+    expect(tabCycleShortcut({ ...base, ctrlKey: true, key: "Tab" })).toBe(1);
+    expect(tabCycleShortcut({ ...base, ctrlKey: true, shiftKey: true, key: "Tab" })).toBe(-1);
+  });
+  it("cycles with cmd or ctrl, shift and a bracket, as the shifted key WebKit reports", () => {
+    expect(tabCycleShortcut({ ...base, metaKey: true, shiftKey: true, key: "}" })).toBe(1);
+    expect(tabCycleShortcut({ ...base, metaKey: true, shiftKey: true, key: "{" })).toBe(-1);
+    expect(tabCycleShortcut({ ...base, ctrlKey: true, shiftKey: true, key: "}" })).toBe(1);
+    expect(tabCycleShortcut({ ...base, ctrlKey: true, shiftKey: true, key: "{" })).toBe(-1);
+  });
+  it("accepts an unshifted bracket key value", () => {
+    expect(tabCycleShortcut({ ...base, metaKey: true, shiftKey: true, key: "]" })).toBe(1);
+    expect(tabCycleShortcut({ ...base, metaKey: true, shiftKey: true, key: "[" })).toBe(-1);
+  });
+  it("keeps cmd+option+arrows", () => {
+    expect(tabCycleShortcut({ ...base, metaKey: true, altKey: true, key: "ArrowRight" })).toBe(1);
+    expect(tabCycleShortcut({ ...base, metaKey: true, altKey: true, key: "ArrowLeft" })).toBe(-1);
+  });
+  it("leaves plain tab, cmd+tab, and the back/forward chords alone", () => {
+    expect(tabCycleShortcut({ ...base, key: "Tab" })).toBeNull();
+    expect(tabCycleShortcut({ ...base, shiftKey: true, key: "Tab" })).toBeNull();
+    expect(tabCycleShortcut({ ...base, metaKey: true, key: "Tab" })).toBeNull();
+    expect(tabCycleShortcut({ ...base, ctrlKey: true, altKey: true, key: "Tab" })).toBeNull();
+    expect(tabCycleShortcut({ ...base, metaKey: true, key: "[" })).toBeNull();
+    expect(tabCycleShortcut({ ...base, metaKey: true, key: "]" })).toBeNull();
+    expect(tabCycleShortcut({ ...base, altKey: true, key: "ArrowLeft" })).toBeNull();
+  });
+  it("ignores brackets without the modifiers and other chords", () => {
+    expect(tabCycleShortcut({ ...base, shiftKey: true, key: "}" })).toBeNull();
+    expect(tabCycleShortcut({ ...base, metaKey: true, shiftKey: true, altKey: true, key: "}" })).toBeNull();
+    expect(tabCycleShortcut({ ...base, metaKey: true, shiftKey: true, key: "ArrowRight" })).toBeNull();
+    expect(tabCycleShortcut({ ...base, metaKey: true, shiftKey: true, key: "k" })).toBeNull();
+  });
+});
 
 describe("isToggleSidebarShortcut", () => {
   const press = { ...base, key: "\\" };

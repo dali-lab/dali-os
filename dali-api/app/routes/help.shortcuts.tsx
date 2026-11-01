@@ -13,6 +13,10 @@ const GENERAL: Array<[string, string]> = [
 const TABS: Array<[string, string]> = [
   ["⌘ ⌥ →", "Next tab in the focused pane"],
   ["⌘ ⌥ ←", "Previous tab in the focused pane"],
+  ["⌘ ⇧ ]", "Next tab in the desktop app"],
+  ["⌘ ⇧ [", "Previous tab in the desktop app"],
+  ["Ctrl Tab", "Next tab in the desktop app"],
+  ["Ctrl ⇧ Tab", "Previous tab in the desktop app"],
   ["⌘ ⌥ 1–9", "Jump to the Nth tab in the focused pane"],
   ["⌘ ⌥ 0", "Jump to the last tab in the focused pane"],
   ["⌘ ⇧ K", "Close the active tab"],

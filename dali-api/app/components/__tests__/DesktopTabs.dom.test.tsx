@@ -183,6 +183,46 @@ describe("useDesktopTabs", () => {
     expect(tabs()).toEqual(["/b"]);
     expect(location).toBe("/b");
   });
+
+  it("cycles tabs with ⌘⇧[ ⌘⇧] and ⌃Tab ⌃⇧Tab, wrapping at the ends, and claims the key", async () => {
+    await mount();
+    await act(async () => {
+      mod.store.tabActions.open({ url: "/b", label: "B" });
+    });
+    await flush();
+    expect(location).toBe("/b");
+    const press = async (init: KeyboardEventInit) => {
+      const e = new KeyboardEvent("keydown", { cancelable: true, ...init });
+      await act(async () => {
+        window.dispatchEvent(e);
+      });
+      await flush();
+      return e;
+    };
+    expect((await press({ metaKey: true, shiftKey: true, key: "}" })).defaultPrevented).toBe(true);
+    expect(location).toBe("/a");
+    await press({ metaKey: true, shiftKey: true, key: "{" });
+    expect(location).toBe("/b");
+    await press({ ctrlKey: true, key: "Tab" });
+    expect(location).toBe("/a");
+    await press({ ctrlKey: true, shiftKey: true, key: "Tab" });
+    expect(location).toBe("/b");
+  });
+
+  it("leaves Tab for focus movement", async () => {
+    await mount();
+    await act(async () => {
+      mod.store.tabActions.open({ url: "/b", label: "B" });
+    });
+    await flush();
+    const e = new KeyboardEvent("keydown", { cancelable: true, key: "Tab" });
+    await act(async () => {
+      window.dispatchEvent(e);
+    });
+    await flush();
+    expect(e.defaultPrevented).toBe(false);
+    expect(location).toBe("/b");
+  });
 });
 
 describe("DesktopTabStrip", () => {

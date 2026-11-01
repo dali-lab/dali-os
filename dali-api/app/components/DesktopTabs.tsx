@@ -24,6 +24,7 @@ import {
 } from '~/lib/desktop-tabs-store'
 import type { DesktopTab, DesktopTabsState } from '~/lib/desktop-tabs'
 import { buildPageLink, writePageLink } from '~/lib/page-link'
+import { tabCycleShortcut } from '~/lib/shortcuts'
 import { cn } from '~/lib/cn'
 import { stripAppTitle } from '~/lib/page-title'
 import { fallbackPageLabel } from '~/components/shell/page-bar-model'
@@ -115,9 +116,10 @@ export function useDesktopTabs(enabled: boolean, hint: boolean): boolean {
         tabActions.closeActive()
         return
       }
-      if (e.altKey && !e.shiftKey && (e.key === 'ArrowRight' || e.key === 'ArrowLeft')) {
+      const delta = tabCycleShortcut(e)
+      if (delta !== null) {
         e.preventDefault()
-        tabActions.cycle(e.key === 'ArrowRight' ? 1 : -1)
+        tabActions.cycle(delta)
         return
       }
       if (!e.altKey && !e.shiftKey && e.key >= '1' && e.key <= '9') {
