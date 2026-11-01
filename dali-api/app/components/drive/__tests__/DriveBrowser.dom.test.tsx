@@ -424,8 +424,16 @@ describe.each(["columns", "list"] as const)("DriveBrowser %s: keyboard", (view) 
   it("deletes the single selected item through the item path", async () => {
     await mount({ view });
     await click(row("doc", "d3"));
-    await key(pane(view), "#");
+    await key(pane(view), "Backspace", { metaKey: true });
     expect(actions.onDelete).toHaveBeenCalledWith(expect.objectContaining({ id: "d3" }));
+    expect(onBulkDelete).not.toHaveBeenCalled();
+  });
+
+  it("leaves the selection alone on a bare # key", async () => {
+    await mount({ view });
+    await click(row("doc", "d3"));
+    await key(pane(view), "#");
+    expect(actions.onDelete).not.toHaveBeenCalled();
     expect(onBulkDelete).not.toHaveBeenCalled();
   });
 

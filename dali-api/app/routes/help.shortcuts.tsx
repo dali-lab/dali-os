@@ -1,35 +1,8 @@
 import type { Route } from "./+types/help.shortcuts";
+import { SHORTCUT_SECTIONS, type ShortcutSection } from "~/lib/shortcuts";
 
 export const meta: Route.MetaFunction = () => [
   { title: "Keyboard shortcuts · Help · DALI OS" },
-];
-
-// Source of truth for these bindings is the keydown handler in
-// components/TabWorkspace.tsx. Keep this page in sync if those change.
-const GENERAL: Array<[string, string]> = [
-  ["⌘ K", "Open the command palette — search people, projects, docs, and run commands"],
-];
-
-const TABS: Array<[string, string]> = [
-  ["⌘ ⌥ →", "Next tab in the focused pane"],
-  ["⌘ ⌥ ←", "Previous tab in the focused pane"],
-  ["⌘ ⇧ ]", "Next tab in the desktop app"],
-  ["⌘ ⇧ [", "Previous tab in the desktop app"],
-  ["Ctrl Tab", "Next tab in the desktop app"],
-  ["Ctrl ⇧ Tab", "Previous tab in the desktop app"],
-  ["⌘ ⌥ 1–9", "Jump to the Nth tab in the focused pane"],
-  ["⌘ ⌥ 0", "Jump to the last tab in the focused pane"],
-  ["⌘ ⇧ K", "Close the active tab"],
-  ["⌘ ⇧ T", "Reopen the most recently closed tab"],
-  ["⌘ \\", "Split: open the active tab to the side, or close the side pane"],
-];
-
-const NAV: Array<[string, string]> = [
-  ["⌥ ←", "Back inside the current tab"],
-  ["⌥ →", "Forward inside the current tab"],
-  ["⌘ [", "Back inside the current tab"],
-  ["⌘ ]", "Forward inside the current tab"],
-  ["Mouse back/forward", "In-tab back/forward (thumb buttons)"],
 ];
 
 export default function HelpShortcutsPage() {
@@ -38,38 +11,31 @@ export default function HelpShortcutsPage() {
       <h1 className="text-2xl font-semibold">Keyboard shortcuts</h1>
       <p className="mt-2 text-sm text-muted-foreground">
         On Windows and Linux, use <Kbd>Ctrl</Kbd> wherever <Kbd>⌘</Kbd> is
-        shown. ⌘⌥-combinations avoid clashing with browser shortcuts your
-        browser claims (like ⌘W and ⌘1–9).
+        shown and <Kbd>Alt</Kbd> wherever <Kbd>⌥</Kbd> is shown.
       </p>
 
-      <Section title="General" rows={GENERAL} />
-      <Section title="Tabs and panes" rows={TABS} />
-      <Section title="In-tab navigation" rows={NAV} />
+      {SHORTCUT_SECTIONS.map((section) => (
+        <Section key={section.title} section={section} />
+      ))}
     </main>
   );
 }
 
-function Section({
-  title,
-  rows,
-}: {
-  title: string;
-  rows: Array<[string, string]>;
-}) {
+function Section({ section }: { section: ShortcutSection }) {
   return (
     <section className="mt-6">
-      <h2 className="text-lg font-semibold">{title}</h2>
+      <h2 className="text-lg font-semibold">{section.title}</h2>
       <table className="mt-3 w-full text-sm">
         <tbody>
-          {rows.map(([combo, desc]) => (
+          {section.rows.map(({ keys, action }) => (
             <tr
-              key={combo}
+              key={`${keys} ${action}`}
               className="border-b border-border last:border-b-0"
             >
               <td className="w-48 py-2 align-top">
-                <Kbd>{combo}</Kbd>
+                <Kbd>{keys}</Kbd>
               </td>
-              <td className="py-2 text-foreground">{desc}</td>
+              <td className="py-2 text-foreground">{action}</td>
             </tr>
           ))}
         </tbody>

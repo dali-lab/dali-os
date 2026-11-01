@@ -20,6 +20,8 @@
 @custom-variant touch (@media (hover: none));
 
 @theme {
+  --default-transition-duration: 75ms;
+
   /* ── DALI brand colors (exact hex, per official style guide §3.1) ── */
   --color-accent-coral:       #FF8B81;  /* "Sunrise" — primary CTA */
   --color-accent-coral-light: #FFA991;  /* hover / soft coral */

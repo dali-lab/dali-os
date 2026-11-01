@@ -62,6 +62,11 @@ export type RoomScheduleItem = {
   source: RoomBookingSource | null;
   // The hiring cycle behind an Interview / InterviewHold booking.
   cycleId: string | null;
+  // The title the booker typed, without the "<first name>'s booking" fallback
+  // in `title`. Null for a meeting.
+  bookedTitle: string | null;
+  // Held by a Google calendar event, which owns this booking's time.
+  fromCalendarEvent: boolean;
 };
 
 /** Who is claiming room time, for the conflict rule in `blockedBy`. */
@@ -170,6 +175,8 @@ export async function getRoomSchedule(
         isEvent: false,
         source: b.source ?? "Web",
         cycleId: b.applicationCycleId ?? null,
+        bookedTitle: b.title?.trim() || null,
+        fromCalendarEvent: !!b.sourceEventId,
       });
     }
   }
@@ -195,6 +202,8 @@ export async function getRoomSchedule(
         isEvent: m.attendanceMode === "SelfCheckIn",
         source: null,
         cycleId: null,
+        bookedTitle: null,
+        fromCalendarEvent: false,
       });
     }
   }
@@ -324,8 +333,8 @@ function seriesEndOf(b: { start: Date; end: Date; recurrenceRule: string }): Dat
 /**
  * Validate a repeat rule and expand it into the occurrences a new or retimed
  * series would cover, capped to fit inside the current term (or, with no Term
- * rows at all, a flat 180-day cap). Shared by createRoomBooking and
- * retimeEventRoomBookings (scope "all" on a series).
+ * rows at all, a flat 180-day cap). Shared by createRoomBooking,
+ * retimeEventRoomBookings (scope "all" on a series) and updateRoomBookingAsMember.
  */
 async function resolveBookingSeries(input: {
   start: Date;
@@ -333,6 +342,7 @@ async function resolveBookingSeries(input: {
   recurrenceRule: string;
   // System holds (a hiring cycle's interview window) may straddle terms.
   capToTerm?: boolean;
+  exceptions?: OccurrenceException[];
 }): Promise<RoomWriteResult<Occurrence[]>> {
   const rule = buildRule(input.recurrenceRule, input.start);
   if (!rule) return { ok: false, error: "That repeat rule isn't valid", status: 400 };
@@ -353,7 +363,7 @@ async function resolveBookingSeries(input: {
   const durationMinutes = (input.end.getTime() - input.start.getTime()) / 60_000;
   const occurrences = expandOccurrences(
     { selectedAt: input.start, durationMinutes, recurrenceRule: input.recurrenceRule },
-    [],
+    input.exceptions ?? [],
     input.start,
     new Date(limit.getTime() + 7 * 24 * 60 * 60_000),
   );
@@ -636,6 +646,22 @@ const exceptionSelect = {
   select: { originalStart: true, overrideStart: true, overrideDurationMin: true, cancelled: true },
 } as const;
 
+// Exceptions are keyed by the occurrence's original start, so a retimed series
+// has to carry its keys along or every cancelled date comes back.
+function shiftExceptions(exceptions: OccurrenceException[], byMs: number): OccurrenceException[] {
+  return exceptions.map((e) => ({ ...e, originalStart: new Date(e.originalStart.getTime() + byMs) }));
+}
+
+// Delete then recreate: a shift of exactly one period would otherwise land a
+// row on a neighbour's unique key mid-update.
+async function replaceExceptions(bookingId: string, exceptions: OccurrenceException[], db: Tx) {
+  await db.roomBookingException.deleteMany({ where: { roomBookingId: bookingId } });
+  if (exceptions.length === 0) return;
+  await db.roomBookingException.createMany({
+    data: exceptions.map((e) => ({ roomBookingId: bookingId, ...e })),
+  });
+}
+
 /**
  * Cancel a booking, or — if it's already underway — end it now so the rest of
  * the slot frees up. The caller checks who may do this. For a recurring
@@ -656,10 +682,27 @@ export async function cancelRoomBooking(
   return cancelBookingOccurrence(booking, actorUserId, opts ?? {}, db);
 }
 
+const CALENDAR_HOLD_ERROR = "This booking comes from a calendar event. Change it from the calendar.";
+
+/** Why a member can't change this booking, or null if they can. */
+function memberRefusal(
+  booking: { userId: string; source: RoomBookingSource },
+  actorUserId: string,
+  core: boolean,
+): RoomWriteResult<never> | null {
+  if (booking.userId !== actorUserId && !core) return { ok: false, error: "Forbidden", status: 403 };
+  if (SYSTEM_SOURCES.has(booking.source)) {
+    return { ok: false, error: "This booking is managed by hiring. Change it from the cycle page.", status: 409 };
+  }
+  return null;
+}
+
 /**
  * cancelRoomBooking for a member acting for themselves: the booker or Core,
  * and never a booking hiring owns (interview bookings follow the interview;
- * holds follow the cycle's config).
+ * holds follow the cycle's config). A calendar event's hold belongs to the
+ * event, so only Core can release one from here, to free a room whose event
+ * nobody can reach.
  */
 export async function cancelRoomBookingAsMember(
   bookingId: string,
@@ -668,16 +711,194 @@ export async function cancelRoomBookingAsMember(
 ): Promise<RoomWriteResult<null>> {
   const booking = await prisma.roomBooking.findUnique({
     where: { id: bookingId },
-    select: { userId: true, source: true },
+    select: { userId: true, source: true, sourceEventId: true },
   });
   if (!booking) return { ok: false, error: "Not found", status: 404 };
-  if (booking.userId !== actorUserId && !(await isCore(actorUserId))) {
-    return { ok: false, error: "Forbidden", status: 403 };
-  }
-  if (SYSTEM_SOURCES.has(booking.source)) {
-    return { ok: false, error: "This booking is managed by hiring. Change it from the cycle page.", status: 409 };
-  }
+  const core = (booking.userId !== actorUserId || !!booking.sourceEventId) && (await isCore(actorUserId));
+  const refusal = memberRefusal(booking, actorUserId, core);
+  if (refusal) return refusal;
+  if (booking.sourceEventId && !core) return { ok: false, error: CALENDAR_HOLD_ERROR, status: 409 };
   return cancelRoomBooking(bookingId, actorUserId, opts);
+}
+
+export type RoomBookingEdit = {
+  start: Date;
+  end: Date;
+  // Left out, these stay as they are.
+  roomId?: string;
+  title?: string | null;
+  // A series only: "this" retimes one occurrence, "all" changes every one.
+  scope?: "this" | "all";
+  // The occurrence being edited. Required for a series.
+  occurrenceStart?: Date;
+};
+
+/**
+ * Change a booking as the booker or Core. A calendar event's hold can't be
+ * edited here because the event owns its time, and hiring's bookings follow
+ * the cycle. Nothing already past moves: a booking underway keeps its start
+ * and room and can only change its end, and a finished one is closed.
+ *
+ * On a series, "this" overrides one occurrence's time through an exception,
+ * which has nowhere to store a room or title, so those need "all". "all"
+ * keeps the series' dates and repeat rule, applies the time of day edited on
+ * `occurrenceStart` to every occurrence, and refuses to change room or time
+ * while any occurrence is underway.
+ */
+export async function updateRoomBookingAsMember(
+  bookingId: string,
+  actorUserId: string,
+  edit: RoomBookingEdit,
+): Promise<RoomWriteResult<{ start: Date; end: Date }>> {
+  const { start, end, scope = "all", occurrenceStart } = edit;
+  return prisma.$transaction(async (db) => {
+    const booking = await db.roomBooking.findUnique({
+      where: { id: bookingId },
+      include: { exceptions: exceptionSelect },
+    });
+    if (!booking || booking.cancelledAt) return { ok: false, error: "Booking not found", status: 404 };
+    const refusal = memberRefusal(booking, actorUserId, booking.userId !== actorUserId && (await isCore(actorUserId)));
+    if (refusal) return refusal;
+    if (booking.sourceEventId) return { ok: false, error: CALENDAR_HOLD_ERROR, status: 409 };
+
+    const roomId = edit.roomId ?? booking.roomId;
+    const title = edit.title === undefined ? booking.title : edit.title?.trim() || null;
+    const roomChanged = roomId !== booking.roomId;
+    const titleChanged = title !== booking.title;
+    const series = booking.recurrenceRule;
+    if (series && !occurrenceStart) return { ok: false, error: "occurrenceStart is required", status: 400 };
+
+    // Lock in a fixed order so two edits swapping rooms can't deadlock.
+    for (const id of [...new Set([booking.roomId, roomId])].sort()) await lockRoom(db, id);
+
+    const occ = series
+      ? resolveBookingOccurrence(booking, occurrenceStart!)
+      : { originalStart: booking.start, start: booking.start, end: booking.end };
+    if (!occ) return { ok: false, error: "That time isn't part of this booking", status: 404 };
+
+    const minutes = (end.getTime() - start.getTime()) / 60_000;
+    if (!(minutes > 0)) return { ok: false, error: "End must be after start", status: 400 };
+    if (minutes > MAX_BOOKING_MINUTES) {
+      return { ok: false, error: `Bookings can be at most ${MAX_BOOKING_MINUTES / 60} hours`, status: 400 };
+    }
+
+    const now = new Date();
+    if (occ.end <= now) return { ok: false, error: "This booking has already ended", status: 409 };
+    const startChanged = start.getTime() !== occ.start.getTime();
+    const endChanged = end.getTime() !== occ.end.getTime();
+    const started = occ.start <= now;
+    if (started && startChanged) {
+      return { ok: false, error: "Can't move the start of a booking that has already started", status: 409 };
+    }
+    if (started && roomChanged) {
+      return { ok: false, error: "Can't change the room of a booking that has already started", status: 409 };
+    }
+    if (started && endChanged && end <= now) {
+      return { ok: false, error: "End must be in the future", status: 400 };
+    }
+    if (startChanged && start.getTime() < now.getTime() - START_SKEW_MS) {
+      return { ok: false, error: "Can't book a time that has already started", status: 400 };
+    }
+
+    const room = await db.room.findUnique({ where: { id: roomId }, select: { archivedAt: true, name: true } });
+    if (!room || (roomChanged && room.archivedAt)) return { ok: false, error: "Room not found", status: 404 };
+
+    if (series && scope === "this") {
+      if (roomChanged || titleChanged) {
+        return { ok: false, error: "Only the whole series can change its room or title", status: 400 };
+      }
+      if (startChanged && start.getTime() > now.getTime() + MAX_BOOKING_LEAD_DAYS * 24 * 60 * 60_000) {
+        return { ok: false, error: `Bookings open ${MAX_BOOKING_LEAD_DAYS} days ahead`, status: 400 };
+      }
+      const conflict = (await getRoomSchedule(roomId, start, end, {}, db)).find(
+        (s) =>
+          blockedBy(s, WEB_WRITER) &&
+          !(s.kind === "booking" && s.id === booking.id && s.occurrenceStart.getTime() === occ.originalStart.getTime()),
+      );
+      if (conflict) return conflictError(conflict, room.name);
+      const override = { overrideStart: start, overrideDurationMin: minutes, cancelled: false };
+      await db.roomBookingException.upsert({
+        where: { roomBookingId_originalStart: { roomBookingId: booking.id, originalStart: occ.originalStart } },
+        create: { roomBookingId: booking.id, originalStart: occ.originalStart, ...override },
+        update: override,
+      });
+      return { ok: true, value: { start, end } };
+    }
+
+    if (series) {
+      const timesChanged = startChanged || endChanged;
+      if ((timesChanged || roomChanged) && bookingOccurrences(booking, now, new Date(now.getTime() + 1)).length > 0) {
+        return { ok: false, error: "This series is underway. Try again when this time ends.", status: 409 };
+      }
+      if (startChanged && labDate(start) !== labDate(occ.start)) {
+        return { ok: false, error: "A whole series can change its time, not its day", status: 400 };
+      }
+
+      // The edited occurrence may itself be overridden; the whole-series edit
+      // replaces that, so the shift is from its slot and its exception goes.
+      const shiftMs = timesChanged ? start.getTime() - occ.originalStart.getTime() : 0;
+      const exceptions = timesChanged
+        ? shiftExceptions(
+            booking.exceptions.filter((e) => e.originalStart.getTime() !== occ.originalStart.getTime()),
+            shiftMs,
+          )
+        : booking.exceptions;
+      const seriesStart = new Date(booking.start.getTime() + shiftMs);
+      const seriesEnd = timesChanged ? new Date(seriesStart.getTime() + minutes * 60_000) : booking.end;
+
+      if (timesChanged || roomChanged) {
+        const resolved = await resolveBookingSeries({
+          start: seriesStart,
+          end: seriesEnd,
+          recurrenceRule: series,
+          exceptions,
+        });
+        if (!resolved.ok) return resolved;
+        // Times already past can't collide with anything new.
+        const upcoming = resolved.value.filter((o) => o.end > now).sort((a, b) => a.start.getTime() - b.start.getTime());
+        if (upcoming.length > 0) {
+          const schedule = await getRoomSchedule(
+            roomId,
+            upcoming[0]!.start,
+            new Date(Math.max(...upcoming.map((o) => o.end.getTime()))),
+            { excludeBookingId: booking.id },
+            db,
+          );
+          for (const o of upcoming) {
+            const conflict = schedule.find((s) => overlaps(s, o.start, o.end) && blockedBy(s, WEB_WRITER));
+            if (conflict) return conflictError(conflict, room.name, true);
+          }
+        }
+      }
+
+      await db.roomBooking.update({
+        where: { id: booking.id },
+        data: {
+          roomId,
+          title,
+          ...(timesChanged
+            ? {
+                start: seriesStart,
+                end: seriesEnd,
+                seriesEnd: seriesEndOf({ start: seriesStart, end: seriesEnd, recurrenceRule: series }),
+              }
+            : {}),
+        },
+      });
+      if (timesChanged) await replaceExceptions(booking.id, exceptions, db);
+      return { ok: true, value: { start, end } };
+    }
+
+    if (startChanged && start.getTime() > now.getTime() + MAX_BOOKING_LEAD_DAYS * 24 * 60 * 60_000) {
+      return { ok: false, error: `Bookings open ${MAX_BOOKING_LEAD_DAYS} days ahead`, status: 400 };
+    }
+    const conflict = (await getRoomSchedule(roomId, start, end, { excludeBookingId: booking.id }, db)).find((s) =>
+      blockedBy(s, WEB_WRITER),
+    );
+    if (conflict) return conflictError(conflict, room.name);
+    await db.roomBooking.update({ where: { id: booking.id }, data: { roomId, title, start, end } });
+    return { ok: true, value: { start, end } };
+  });
 }
 
 /**
@@ -808,10 +1029,20 @@ export async function retimeEventRoomBookings(input: {
   return prisma.$transaction(async (tx) => {
     const holds = await tx.roomBooking.findMany({
       where: { userId, sourceEventId, cancelledAt: null },
-      select: { id: true, roomId: true, recurrenceRule: true, room: { select: { name: true } } },
+      select: {
+        id: true,
+        roomId: true,
+        start: true,
+        recurrenceRule: true,
+        room: { select: { name: true } },
+        exceptions: exceptionSelect,
+      },
     });
 
-    type Plan = { holdId: string } & ({ kind: "update"; seriesEnd?: Date } | { kind: "exception"; occ: Occurrence });
+    type Plan = { holdId: string } & (
+      | { kind: "update"; seriesEnd?: Date; exceptions?: OccurrenceException[] }
+      | { kind: "exception"; occ: Occurrence }
+    );
     const plans: Plan[] = [];
 
     for (const hold of holds) {
@@ -827,7 +1058,8 @@ export async function retimeEventRoomBookings(input: {
 
       if (isSeries) {
         // scope "all": re-anchor the whole series at the new start/end.
-        const resolved = await resolveBookingSeries({ start, end, recurrenceRule: hold.recurrenceRule! });
+        const exceptions = shiftExceptions(hold.exceptions, start.getTime() - hold.start.getTime());
+        const resolved = await resolveBookingSeries({ start, end, recurrenceRule: hold.recurrenceRule!, exceptions });
         if (!resolved.ok) return resolved;
         const schedule = await getRoomSchedule(
           hold.roomId,
@@ -840,7 +1072,12 @@ export async function retimeEventRoomBookings(input: {
           const conflict = schedule.find((s) => overlaps(s, occ.start, occ.end) && blockedBy(s, WEB_WRITER));
           if (conflict) return conflictError(conflict, hold.room.name, true);
         }
-        plans.push({ holdId: hold.id, kind: "update", seriesEnd: resolved.value[resolved.value.length - 1]!.end });
+        plans.push({
+          holdId: hold.id,
+          kind: "update",
+          seriesEnd: resolved.value[resolved.value.length - 1]!.end,
+          exceptions,
+        });
         continue;
       }
 
@@ -856,6 +1093,7 @@ export async function retimeEventRoomBookings(input: {
           where: { id: plan.holdId },
           data: { start, end, ...(plan.seriesEnd ? { seriesEnd: plan.seriesEnd } : {}) },
         });
+        if (plan.exceptions) await replaceExceptions(plan.holdId, plan.exceptions, tx);
       } else {
         const minutes = (plan.occ.end.getTime() - plan.occ.start.getTime()) / 60_000;
         await tx.roomBookingException.upsert({
@@ -940,6 +1178,8 @@ export function serializeScheduleItem(i: RoomScheduleItem) {
     organizer: { id: i.organizer.id, firstName: i.organizer.firstName, lastName: i.organizer.lastName },
     isEvent: i.isEvent,
     source: i.source,
+    bookedTitle: i.bookedTitle,
+    fromCalendarEvent: i.fromCalendarEvent,
   };
 }
 

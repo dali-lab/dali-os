@@ -82,6 +82,15 @@
   }
 }
 
+/* Side panel: the column is narrow, and the panel's own padding gives the side
+ * menu room beyond the gutter. Keep in step with the title's padding in
+ * DocumentEditor.tsx. */
+@media (min-width: 640px) {
+  .doc-canvas--panel .dali-doc:not(.dali-doc--compact) .bn-editor {
+    padding-inline: 28px;
+  }
+}
+
 /* Inline links. With no rule of our own they fell to the browser's default link
  * colour, and the shell declares `color-scheme: dark`, so that default is the
  * dark-mode pale blue-violet — on the light paper it is the one colour on the

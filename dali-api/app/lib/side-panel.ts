@@ -34,6 +34,54 @@ export function sidePanelForUrl(url: string): SidePanel | null {
   return m ? { type: "doc", id: m[1] } : null;
 }
 
+/** The url with the panel named in it, leaving a panel the url already names alone. */
+export function withSidePanel(url: string, panel: SidePanel | null): string {
+  if (!panel) return url;
+  const parsed = new URL(url, "http://shell");
+  if (parsed.searchParams.has(SIDE_PARAM)) return url;
+  parsed.searchParams.set(SIDE_PARAM, formatSidePanel(panel));
+  return parsed.pathname + parsed.search + parsed.hash;
+}
+
+/**
+ * The panel a location shows. The url wins; otherwise the kept panel carries
+ * over, unless the location is a different tab or already is that document.
+ */
+export function visibleSidePanel(
+  location: { pathname: string; search: string; state?: unknown },
+  kept: string | null,
+): SidePanel | null {
+  const state = location.state as { tabSwitch?: boolean; keepPanel?: boolean } | null | undefined;
+  const leftTab = state?.tabSwitch === true && state.keepPanel !== true;
+  const panel = parseSidePanel(new URLSearchParams(location.search).get(SIDE_PARAM)) ?? (leftTab ? null : parseSidePanel(kept));
+  return panel && sidePanelForUrl(location.pathname)?.id === panel.id ? null : panel;
+}
+
+let kept: string | null = null;
+const keptListeners = new Set<() => void>();
+
+export function getKeptSidePanel(): string | null {
+  return kept;
+}
+
+export function getServerKeptSidePanel(): null {
+  return null;
+}
+
+export function subscribeKeptSidePanel(listener: () => void): () => void {
+  keptListeners.add(listener);
+  return () => {
+    keptListeners.delete(listener);
+  };
+}
+
+export function setKeptSidePanel(next: SidePanel | null) {
+  const value = next && formatSidePanel(next);
+  if (value === kept) return;
+  kept = value;
+  keptListeners.forEach((l) => l());
+}
+
 export type PanelLoad =
   | { kind: "doc"; data: unknown }
   | { kind: "follow"; pageId: string }

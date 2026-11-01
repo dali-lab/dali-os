@@ -25,8 +25,8 @@ export const HELP_ARTICLES: HelpArticle[] = [
   {
     slug: "shortcuts",
     title: "Keyboard shortcuts",
-    summary: "Tabs, panes, in-tab navigation. Stays out of your way until you want it.",
-    keywords: ["keyboard", "hotkeys", "tabs", "panes", "navigation"],
+    summary: "Tabs, navigation, docs, Calendar, and Drive.",
+    keywords: ["keyboard", "hotkeys", "tabs", "navigation", "docs", "calendar", "drive"],
   },
   {
     slug: "calendar",
