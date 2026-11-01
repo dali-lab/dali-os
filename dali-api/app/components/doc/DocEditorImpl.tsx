@@ -80,6 +80,7 @@ import { Modal } from "~/components/Modal";
 import { useToast } from "~/components/ui/toast";
 import { useDialog } from "~/components/ui/dialog";
 import { readEmojiSuggestionsPreference } from "~/lib/emoji-suggestions";
+import { isCommandKShortcut, paintFormatShortcut } from "~/lib/shortcuts";
 import { modalCardClass } from "~/components/os-chrome";
 
 export default function DocEditorImpl(props: DocEditorProps) {
@@ -537,8 +538,7 @@ function DocView(
     if (!pmView) return;
     const dom = pmView.dom as HTMLElement;
     const onKeyDown = (e: KeyboardEvent) => {
-      const isK = e.key === "k" || e.key === "K";
-      if (!isK || !(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey) return;
+      if (!isCommandKShortcut(e)) return;
       if (pmView.state.selection.empty) return; // nothing selected to link
       e.preventDefault();
       e.stopPropagation();
@@ -562,9 +562,9 @@ function DocView(
     return () => dom.removeEventListener("keydown", onKeyDown);
   }, [editor, editable, dialog]);
 
-  // Cmd/Ctrl+Shift+C / +V — paint format, the Google Docs pair. C snapshots the
-  // styles at the cursor, V replaces the selection's styles with that snapshot.
-  // Like Cmd+K above, BlockNote ships no binding for either.
+  // Cmd/Ctrl+Shift+C / +V — paint format. C snapshots the styles at the cursor,
+  // V replaces the selection's styles with that snapshot. Like Cmd+K above,
+  // BlockNote ships no binding for either.
   //
   // V CLEARS BEFORE IT APPLIES: paint format replaces formatting rather than
   // adding to it, and removeStyles only reads the KEYS of what it's handed
@@ -573,9 +573,8 @@ function DocView(
   // carry. Passing the snapshot alone would leave the target's existing bold
   // in place.
   //
-  // Both are gated on a non-empty selection, matching Cmd+K. Note Chrome binds
-  // Cmd+Shift+C to the DevTools inspector — preventDefault on the editor DOM is
-  // what keeps it from opening while the caret is in a document.
+  // Chrome binds Cmd+Shift+C to the DevTools inspector — preventDefault on the
+  // editor DOM is what keeps it from opening while the caret is in a document.
   const paintedStylesRef = useRef<Record<string, unknown> | null>(null);
   useEffect(() => {
     if (!editable) return;
@@ -583,18 +582,19 @@ function DocView(
     if (!pmView) return;
     const dom = pmView.dom as HTMLElement;
     const onKeyDown = (e: KeyboardEvent) => {
-      if (!(e.metaKey || e.ctrlKey) || !e.shiftKey || e.altKey) return;
-      const key = e.key.toLowerCase();
-      if (key !== "c" && key !== "v") return;
-      if (pmView.state.selection.empty) return;
+      const painted = paintedStylesRef.current;
+      const intent = paintFormatShortcut(e, {
+        selection: !pmView.state.selection.empty,
+        copied: painted !== null,
+      });
+      if (!intent) return;
       e.preventDefault();
       e.stopPropagation();
-      if (key === "c") {
+      if (intent === "copy" || !painted) {
         paintedStylesRef.current = { ...editor.getActiveStyles() };
         return;
       }
-      const painted = paintedStylesRef.current;
-      if (!painted) return; // nothing copied yet — leave the selection alone
+      paintedStylesRef.current = null;
       const clearAll = Object.fromEntries(
         Object.keys(editor.schema.styleSchema).map((styleKey) => [styleKey, true]),
       );

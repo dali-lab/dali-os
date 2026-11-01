@@ -3,7 +3,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   buildPageLink,
   cleanTabUrl,
-  isCopyPageLinkShortcut,
   stripHash,
   writePageLink,
 } from "~/lib/page-link";
@@ -79,31 +78,3 @@ describe("writePageLink", () => {
   });
 });
 
-describe("isCopyPageLinkShortcut", () => {
-  const base = { metaKey: false, ctrlKey: false, shiftKey: true, altKey: false, key: "c" };
-
-  it("matches meta+shift+c in either case", () => {
-    expect(isCopyPageLinkShortcut({ ...base, metaKey: true })).toBe(true);
-    expect(isCopyPageLinkShortcut({ ...base, metaKey: true, key: "C" })).toBe(true);
-  });
-
-  it("matches ctrl+shift+c", () => {
-    expect(isCopyPageLinkShortcut({ ...base, ctrlKey: true })).toBe(true);
-  });
-
-  it("needs a modifier", () => {
-    expect(isCopyPageLinkShortcut(base)).toBe(false);
-  });
-
-  it("needs shift", () => {
-    expect(isCopyPageLinkShortcut({ ...base, metaKey: true, shiftKey: false })).toBe(false);
-  });
-
-  it("ignores alt", () => {
-    expect(isCopyPageLinkShortcut({ ...base, metaKey: true, altKey: true })).toBe(false);
-  });
-
-  it("ignores other keys", () => {
-    expect(isCopyPageLinkShortcut({ ...base, metaKey: true, key: "k" })).toBe(false);
-  });
-});

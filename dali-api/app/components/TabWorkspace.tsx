@@ -22,7 +22,8 @@ import { CSS } from '@dnd-kit/utilities'
 import { pointerFirstCollision } from './board/KanbanBoard'
 import { workspacePath } from './workspace-link'
 import { TOGGLE_FAVORITE_EVENT } from '~/components/favorites-live'
-import { buildPageLink, COPY_PAGE_LINK_EVENT, isCopyPageLinkShortcut, stripHash } from '~/lib/page-link'
+import { buildPageLink, COPY_PAGE_LINK_EVENT, stripHash } from '~/lib/page-link'
+import { isCopyPageLinkShortcut } from '~/lib/shortcuts'
 import {
   GUIDE_OPEN_MESSAGE,
   readGuideState,
