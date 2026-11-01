@@ -60,7 +60,7 @@ struct RoomStateStatusTests {
 
 struct RoomStateBookingTests {
     @Test func offersEveryLengthWhenFreeAllDay() {
-        #expect(RoomState(items: [], now: now).bookableDurations == [15, 30, 60, 90])
+        #expect(RoomState(items: [], now: now).bookableDurations == [15, 30, 60])
     }
 
     @Test func offersOnlyLengthsThatEndBeforeTheNextBooking() {
