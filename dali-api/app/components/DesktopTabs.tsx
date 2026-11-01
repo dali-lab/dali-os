@@ -24,7 +24,7 @@ import {
 } from '~/lib/desktop-tabs-store'
 import type { DesktopTab, DesktopTabsState } from '~/lib/desktop-tabs'
 import { buildPageLink, writePageLink } from '~/lib/page-link'
-import { tabCycleShortcut } from '~/lib/shortcuts'
+import { modKey, tabCycleShortcut } from '~/lib/shortcuts'
 import { cn } from '~/lib/cn'
 import { stripAppTitle } from '~/lib/page-title'
 import { fallbackPageLabel } from '~/components/shell/page-bar-model'
@@ -110,16 +110,16 @@ export function useDesktopTabs(enabled: boolean, hint: boolean): boolean {
       e.preventDefault()
     }
     const onKey = (e: KeyboardEvent) => {
-      if (!(e.metaKey || e.ctrlKey)) return
-      if (e.shiftKey && !e.altKey && (e.key === 'k' || e.key === 'K')) {
-        e.preventDefault()
-        tabActions.closeActive()
-        return
-      }
       const delta = tabCycleShortcut(e)
       if (delta !== null) {
         e.preventDefault()
         tabActions.cycle(delta)
+        return
+      }
+      if (!modKey(e)) return
+      if (e.shiftKey && !e.altKey && (e.key === 'k' || e.key === 'K')) {
+        e.preventDefault()
+        tabActions.closeActive()
         return
       }
       if (!e.altKey && !e.shiftKey && e.key >= '1' && e.key <= '9') {
