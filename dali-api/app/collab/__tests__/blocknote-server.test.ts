@@ -256,6 +256,33 @@ describe("plainTextToBlocks", () => {
   });
 });
 
+describe("task blocks", () => {
+  const block = {
+    id: "b1",
+    type: "task",
+    props: { taskId: "t1", projectId: "p1", label: "Send the SOW" },
+    children: [],
+  };
+
+  it("exports the saved title as a link to the task", async () => {
+    const html = await blocksToHtml([block] as never);
+    expect(html).toContain("/projects/p1?tab=progress&amp;task=t1");
+    expect(html).toContain("Send the SOW");
+  });
+
+  it("survives a round trip through the collaborative fragment", async () => {
+    const fragment = new Y.Doc().getXmlFragment("blocknote");
+    blocksToFragment([block] as never, fragment);
+    const [back] = fragmentToBlocks(fragment) as unknown as (typeof block)[];
+    expect(back!.type).toBe("task");
+    expect(back!.props).toMatchObject({ taskId: "t1", projectId: "p1", label: "Send the SOW" });
+  });
+
+  it("shows up in the plain text mirror used by search and previews", () => {
+    expect(blocksToPlainText([block])).toBe("Send the SOW");
+  });
+});
+
 describe("component blocks", () => {
   const component = (kind: string, data: unknown) =>
     ({

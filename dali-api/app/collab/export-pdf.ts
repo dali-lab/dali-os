@@ -2,6 +2,7 @@ import PDFDocument from "pdfkit";
 import type { DocBlock, DocInline, DocTableCell, DocTableContent } from "./blocknote-server";
 import { ensureBlocks } from "./legacy/pm-to-blocknote";
 import type { PMNode } from "./export-html";
+import { blockOwnText } from "~/components/doc/schema/configs";
 import {
   isSigningFieldType,
   isCheckboxChecked,
@@ -351,6 +352,12 @@ function renderBlock(doc: PDFKit.PDFDocument, block: DocBlock, listPrefix?: stri
       doc.text(blockText(block) || "Toggle");
       doc.moveDown(0.2);
       renderChildren(doc, block);
+      doc.moveDown(0.3);
+      break;
+    }
+    case "task": {
+      doc.font("Helvetica").fontSize(12).fillColor("#1a1a1a");
+      doc.text(blockOwnText(block) || "Untitled task");
       doc.moveDown(0.3);
       break;
     }

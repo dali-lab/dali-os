@@ -70,6 +70,8 @@ import { buildSchema, type DocEditorInstance, type DocPartialBlock } from "./sch
 import { BLOCKNOTE_FRAGMENT } from "./schema/configs";
 import { PageMentionTitleProvider, useMentionMenuItems } from "./schema/mention";
 import { getFilteredDocSlashMenuItems } from "./schema/slash-menu";
+import { TaskComposer } from "./task/TaskComposer";
+import { DocProjectProvider } from "./task/task-block-context";
 import { DEFAULT_SIGNING_CTX, SigningContext } from "./signing-context";
 import { usePresence, useRegisterCollabEditor } from "../collab/PresenceProvider";
 import type { DocCollabConfig, DocCommentsConfig, DocEditorProps } from "./types";
@@ -682,13 +684,17 @@ function DocView(
   const [emojiSuggestions] = useState(readEmojiSuggestionsPreference);
   const getMentionItems = useMentionMenuItems(editor);
 
+  const [taskAnchorId, setTaskAnchorId] = useState<string | null>(null);
+  const openTaskComposer = useCallback(() => setTaskAnchorId(editor.getTextCursorPosition().block.id), [editor]);
+  const taskBlock = props.taskBlock;
+
   const menus: ReactNode = (
     <>
       {/* Custom "/" menu: AI items first (when enabled), then the standard set. */}
       <SuggestionMenuController
         triggerCharacter="/"
         getItems={(query) =>
-          getFilteredDocSlashMenuItems(editor, features, query, aiItems ?? [])
+          getFilteredDocSlashMenuItems(editor, features, query, aiItems ?? [], taskBlock ? openTaskComposer : undefined)
         }
       />
       {features.mentions && (
@@ -755,6 +761,15 @@ function DocView(
           )
         }
       </CommentEditorProvider>
+      {taskBlock && taskAnchorId && (
+        <TaskComposer
+          key={taskAnchorId}
+          editor={editor}
+          anchorId={taskAnchorId}
+          config={taskBlock}
+          onClose={() => setTaskAnchorId(null)}
+        />
+      )}
       {/* AI inline card — anchored to the trigger block via BlockPopover.
           Rendered inside BlockNoteView children so useBlockNoteEditor is in
           scope (BlockPopover requires the editor context). Only mounts when
@@ -780,6 +795,7 @@ function DocView(
   return (
     <PageMentionTitleProvider>
     <SigningContext.Provider value={props.signing ?? DEFAULT_SIGNING_CTX}>
+    <DocProjectProvider value={props.docProjectId}>
       <div
         ref={viewRef}
         className={[
@@ -848,6 +864,7 @@ function DocView(
           />
         </Modal>
       )}
+    </DocProjectProvider>
     </SigningContext.Provider>
     </PageMentionTitleProvider>
   );

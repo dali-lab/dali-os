@@ -93,6 +93,7 @@ import {
   type EditableEpic,
 } from "../components/EpicSprintManager";
 import {
+  assignableAssignments,
   taskTermIds,
   termIdsInRange,
   isTaskFinished,
@@ -982,25 +983,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   // since rolled off. TaskModal folds that task's own assignees into its picker
   // so they stay removable — which keeps the un-assign path working without
   // widening this project-wide list back out to every past member.
-  const currentTermAssignments = current
-    ? project.assignments.filter((a) => a.termId === current.id)
-    : [];
-  const latestStaffedSortKey = project.assignments.reduce<number | null>(
-    (max, a) => (max === null || a.term.sortKey > max ? a.term.sortKey : max),
-    null,
-  );
-  const assignableAssignments =
-    currentTermAssignments.length > 0
-      ? currentTermAssignments
-      : latestStaffedSortKey === null
-        ? []
-        : project.assignments.filter((a) => a.term.sortKey === latestStaffedSortKey);
-
   const memberMap = new Map<string, string>();
   // Each member's staffed domain on this project, for the modal's "assign →
   // autofill Domain" step. First staffing row wins if someone spans domains.
   const domainByUserId = new Map<string, string>();
-  for (const a of assignableAssignments) {
+  for (const a of assignableAssignments(project.assignments, current?.id ?? null)) {
     const id = a.user.id;
     if (!memberMap.has(id)) {
       memberMap.set(id, fullName(a.user));

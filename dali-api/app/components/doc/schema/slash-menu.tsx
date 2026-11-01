@@ -22,6 +22,7 @@ import {
   Images,
   LayoutGrid,
   List,
+  ListChecks,
   Milestone,
   SeparatorHorizontal,
   Sparkles,
@@ -112,6 +113,18 @@ function embedItem(editor: DocEditorInstance): KeyedItem {
   };
 }
 
+function taskItem(editor: DocEditorInstance, onOpen: () => void): KeyedItem {
+  return {
+    key: "task",
+    title: "Task",
+    subtext: "Add a task to the project board",
+    aliases: ["task", "todo", "action", "assign"],
+    group: (editor.dictionary.slash_menu.paragraph as { group: string }).group,
+    icon: <ListChecks size={18} aria-hidden />,
+    onItemClick: onOpen,
+  };
+}
+
 const COMPONENT_ICONS: Record<string, LucideIcon> = {
   chips: Tags,
   cards: LayoutGrid,
@@ -151,6 +164,7 @@ export function getDocSlashMenuItems(
   editor: DocEditorInstance,
   features: Features,
   aiItems: DefaultReactSuggestionItem[] = [],
+  onOpenTask?: () => void,
 ): DefaultReactSuggestionItem[] {
   const defaults = (getDefaultReactSlashMenuItems(editor) as KeyedItem[]).filter(
     (item) => item.key !== undefined && ALLOWED_KEYS.has(item.key),
@@ -163,6 +177,7 @@ export function getDocSlashMenuItems(
     items = insertItemIntoGroup(items, calloutItem(editor));
     items = insertItemIntoGroup(items, embedItem(editor));
   }
+  if (features.tasks && onOpenTask) items = insertItemIntoGroup(items, taskItem(editor, onOpenTask));
   if (features.pageBreak) {
     // getPageBreakSlashMenuItems returns [] when the block isn't in the schema.
     // Cast via unknown: the core item type is compatible but the BlockNote
@@ -183,6 +198,7 @@ export async function getFilteredDocSlashMenuItems(
   features: Features,
   query: string,
   aiItems: DefaultReactSuggestionItem[] = [],
+  onOpenTask?: () => void,
 ): Promise<DefaultReactSuggestionItem[]> {
-  return filterSuggestionItems(getDocSlashMenuItems(editor, features, aiItems), query);
+  return filterSuggestionItems(getDocSlashMenuItems(editor, features, aiItems, onOpenTask), query);
 }

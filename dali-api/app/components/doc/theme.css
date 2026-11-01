@@ -158,6 +158,10 @@
 
 /* Bookmark/embed link card (schema/embed.tsx). Neutral card that reads in both
  * light and dark via BlockNote's border/background CSS vars (with fallbacks). */
+.bn-editor .node-task {
+  width: 100%;
+}
+
 .dali-embed {
   display: flex;
   align-items: center;

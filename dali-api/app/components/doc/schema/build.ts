@@ -31,6 +31,7 @@ import { ComponentSpec } from "./component";
 import { EmbedSpec } from "./embed";
 import { MentionSpec, PageMentionSpec, TaskMentionSpec } from "./mention";
 import { signingInlineSpecs } from "./signing";
+import { TaskSpec } from "./task";
 
 // Heading spec with allowToggleHeadings=true enables Notion-style collapsible
 // headings (h1–h3 only; h4–h6 are excluded per Notion convention — the app
@@ -62,6 +63,7 @@ function fullBlockSpecs() {
     callout: CalloutSpec,
     embed: EmbedSpec,
     component: ComponentSpec,
+    task: TaskSpec,
     pageBreak: createPageBreakBlockSpec(),
   };
 }
@@ -96,6 +98,7 @@ export function buildSchema(features: Features = {}) {
     delete blocks.embed;
   }
   if (!features.components) delete blocks.component;
+  if (!features.tasks) delete blocks.task;
   if (!features.mentions) {
     delete inline.mention;
     delete inline.pageMention;
