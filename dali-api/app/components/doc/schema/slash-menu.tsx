@@ -184,7 +184,7 @@ export function getDocSlashMenuItems(
     // generic parameters don't overlap with DocEditorInstance's narrow schema.
     const pbItems = getPageBreakSlashMenuItems(editor as unknown as Parameters<typeof getPageBreakSlashMenuItems>[0]);
     for (const pb of pbItems) {
-      items = [...items, pb as unknown as DefaultReactSuggestionItem];
+      items = insertItemIntoGroup(items, pb as unknown as DefaultReactSuggestionItem);
     }
   }
   if (features.components) items = [...items, ...componentItems(editor)];
