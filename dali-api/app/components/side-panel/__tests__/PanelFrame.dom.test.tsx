@@ -55,6 +55,42 @@ afterEach(() => {
   onClose.mockClear();
 });
 
+describe("PanelFrame sizing", () => {
+  afterEach(() => {
+    window.localStorage.removeItem("dali:side-panel:share");
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 1024 });
+  });
+
+  const publishedWidth = () => document.documentElement.style.getPropertyValue("--side-panel-w");
+
+  it("keeps a saved share as the window resizes", () => {
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 1000 });
+    window.localStorage.setItem("dali:side-panel:share", "0.5");
+    mount();
+    expect(publishedWidth()).toBe("500px");
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 1600 });
+    act(() => {
+      window.dispatchEvent(new Event("resize"));
+    });
+    expect(publishedWidth()).toBe("800px");
+  });
+
+  it("saves a drag as a share of the window", () => {
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 1000 });
+    mount();
+    const handle = container.querySelector<HTMLElement>("[role='separator']")!;
+    handle.setPointerCapture = vi.fn();
+    act(() => {
+      handle.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true, clientX: 600 }));
+      handle.dispatchEvent(new MouseEvent("pointermove", { bubbles: true, clientX: 500 }));
+    });
+    act(() => {
+      handle.dispatchEvent(new MouseEvent("pointerup", { bubbles: true }));
+    });
+    expect(window.localStorage.getItem("dali:side-panel:share")).toBe("0.46");
+  });
+});
+
 describe("PanelFrame header", () => {
   it("is one header row: close, open full page, then the overflow menu", () => {
     mount();
@@ -81,7 +117,7 @@ describe("PanelFrame header", () => {
   it("is a raised white layer over the page", () => {
     mount();
     const cls = container.querySelector("aside")!.className;
-    expect(cls).toContain("bg-os-card");
+    expect(cls).toContain("bg-os-bg");
     expect(cls).toContain("md:shadow-[-8px_0_24px_var(--color-os-hover)]");
     expect(cls).toContain("md:border-l");
   });

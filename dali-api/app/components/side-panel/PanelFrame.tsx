@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { Link } from "react-router";
 import { ChevronsRight, Maximize2 } from "lucide-react";
 import { isInFloatingLayer, Tooltip } from "~/components/ui/floating";
@@ -8,20 +8,32 @@ import { cn } from "~/lib/cn";
 import { sidePanelHref, type SidePanel } from "~/lib/side-panel";
 
 export const SIDE_PANEL_WIDTH_VAR = "--side-panel-w";
-const WIDTH_KEY = "dali:side-panel:width";
-const DEFAULT_WIDTH = 520;
+const SHARE_KEY = "dali:side-panel:share";
+const PRE_MEASURE_WIDTH = 520;
 const MIN_WIDTH = 360;
+const MIN_PAGE_WIDTH = 480;
+const DEFAULT_SHARE = 0.45;
+const MAX_SHARE = 0.6;
 
 export function clampPanelWidth(width: number, viewport: number): number {
-  return Math.round(Math.max(MIN_WIDTH, Math.min(width, viewport * 0.6)));
+  return Math.round(Math.max(MIN_WIDTH, Math.min(width, viewport * MAX_SHARE)));
 }
 
-function readWidth(): number {
+/** The width before anyone drags: a share of the window that leaves the page a usable column beside it. */
+export function defaultPanelWidth(viewport: number, rowWidth: number): number {
+  return clampPanelWidth(Math.min(viewport * DEFAULT_SHARE, rowWidth - MIN_PAGE_WIDTH), viewport);
+}
+
+export function parsePanelShare(saved: string | null): number | null {
+  const share = Number(saved);
+  return saved && Number.isFinite(share) && share > 0 && share <= 1 ? share : null;
+}
+
+function readShare(): number | null {
   try {
-    const saved = Number(window.localStorage.getItem(WIDTH_KEY));
-    return Number.isFinite(saved) && saved > 0 ? saved : DEFAULT_WIDTH;
+    return parsePanelShare(window.localStorage.getItem(SHARE_KEY));
   } catch {
-    return DEFAULT_WIDTH;
+    return null;
   }
 }
 
@@ -62,7 +74,8 @@ function PanelFrameInner({
   children: ReactNode;
 }) {
   const { actionsRef } = usePageBarTargetSetters();
-  const [width, setWidth] = useState(DEFAULT_WIDTH);
+  const [width, setWidth] = useState(PRE_MEASURE_WIDTH);
+  const asideRef = useRef<HTMLElement>(null);
   const dragRef = useRef<{ startX: number; startW: number } | null>(null);
 
   useEffect(() => {
@@ -79,8 +92,16 @@ function PanelFrameInner({
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [onClose]);
 
-  useEffect(() => {
-    setWidth(clampPanelWidth(readWidth(), window.innerWidth));
+  useLayoutEffect(() => {
+    const fit = () => {
+      const viewport = window.innerWidth;
+      const share = readShare();
+      const rowWidth = asideRef.current?.parentElement?.clientWidth ?? viewport;
+      setWidth(share ? clampPanelWidth(share * viewport, viewport) : defaultPanelWidth(viewport, rowWidth));
+    };
+    fit();
+    window.addEventListener("resize", fit);
+    return () => window.removeEventListener("resize", fit);
   }, []);
 
   useEffect(() => {
@@ -104,7 +125,7 @@ function PanelFrameInner({
     if (!dragRef.current) return;
     dragRef.current = null;
     try {
-      window.localStorage.setItem(WIDTH_KEY, String(width));
+      window.localStorage.setItem(SHARE_KEY, String(width / window.innerWidth));
     } catch {
       // the width just won't be remembered
     }
@@ -112,10 +133,11 @@ function PanelFrameInner({
 
   return (
     <aside
+      ref={asideRef}
       aria-label={title || "Side panel"}
       style={{ "--side-panel-w": `${width}px` } as React.CSSProperties}
       className={cn(
-        "fixed inset-0 z-40 flex flex-col bg-os-card",
+        "fixed inset-0 z-40 flex flex-col bg-os-bg",
         "md:sticky md:inset-auto md:top-0 md:z-auto md:h-dvh md:w-[var(--side-panel-w)] md:shrink-0 md:border-l md:border-border md:shadow-[-8px_0_24px_var(--color-os-hover)]",
       )}
     >
