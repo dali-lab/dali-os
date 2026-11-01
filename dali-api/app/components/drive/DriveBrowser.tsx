@@ -79,6 +79,7 @@ import { useToast } from "~/components/ui/toast";
 import { useFeatureFlag } from "~/components/FeatureFlags";
 import { notebookRequest, sendJson } from "~/components/notebooks/notebook-requests";
 import { cn } from "~/lib/cn";
+import { modKey } from "~/lib/shortcuts";
 import { collapseMiddle } from "~/lib/collapse-middle";
 import { FAVORITES_SPACE_KEY, isProcessRootSpace, SHARED_SPACE_KEY } from "~/lib/drive-spaces";
 import { scopeIconFor } from "~/components/drive/scope-icon";
@@ -1336,8 +1337,13 @@ export function DriveBrowser({
   function onPaneKeyDown(e: ReactKeyboardEvent<HTMLElement>) {
     if (isInFloatingLayer(e.target)) return;
     if ((e.target as Element).closest("input, textarea, select, [contenteditable='true']")) return;
-    const mod = e.metaKey || e.ctrlKey;
+    const mod = modKey(e);
 
+    if (e.key === "Delete" || (mod && e.key === "Backspace")) {
+      e.preventDefault();
+      deleteSelection();
+      return;
+    }
     if (e.key === "Backspace" || (mod && e.key === "ArrowUp")) {
       e.preventDefault();
       goUp();
@@ -1357,11 +1363,6 @@ export function DriveBrowser({
       if (!selectable) return;
       e.preventDefault();
       setSelected(new Set(rows.map((r) => r.id)));
-      return;
-    }
-    if (e.key === "Delete" || e.key === "#") {
-      e.preventDefault();
-      deleteSelection();
       return;
     }
     if (e.key === "F2") {
