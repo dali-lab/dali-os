@@ -590,6 +590,7 @@ export default [
   route("api/rooms", "rooms/routes/api.rooms.ts"),
   route("api/rooms/:id/schedule", "rooms/routes/api.rooms.$id.schedule.ts"),
   route("api/rooms/:id/bookings", "rooms/routes/api.rooms.$id.bookings.ts"),
+  route("api/room-bookings/:id", "rooms/routes/api.room-bookings.$id.ts"),
   route("api/room-bookings/:id/cancel", "rooms/routes/api.room-bookings.$id.cancel.ts"),
   route("api/room-display/activate", "rooms/routes/api.room-display.activate.ts"),
   route("api/room-display/schedule", "rooms/routes/api.room-display.schedule.ts"),

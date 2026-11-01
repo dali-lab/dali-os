@@ -586,7 +586,7 @@ export function CalendarEventDetailPopover({
 /** Actions in the event detail popover. A bare outline reads as text rather
  *  than a control on the popover's raised dark surface, so these carry a filled
  *  ground of their own in both themes. */
-const popoverActionBtn =
+export const popoverActionBtn =
   "inline-flex items-center gap-1.5 rounded-full border border-os-container bg-os-well px-3 py-1.5 text-[13px] font-medium text-foreground transition-colors hover:border-os-container-hi";
 
 // Per-meeting controls in the event detail popover: log the meeting on your own

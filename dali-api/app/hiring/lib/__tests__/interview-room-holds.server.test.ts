@@ -58,6 +58,8 @@ function makeItem(over: Partial<RoomScheduleItem> = {}): RoomScheduleItem {
     organizer: { id: "u1", firstName: "Ada", lastName: "Lovelace", photoUrl: null },
     isEvent: false,
     source: "Web",
+    bookedTitle: null,
+    fromCalendarEvent: false,
     cycleId: null,
     ...over,
   };

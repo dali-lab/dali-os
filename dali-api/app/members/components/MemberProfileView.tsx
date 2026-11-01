@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { SIDE_PARAM } from "~/lib/side-panel";
+import { useOpenBeside } from "~/components/side-panel/use-side-panel";
 import {
   Form,
   Link,
@@ -199,7 +199,6 @@ export function MemberProfileView({
     setSearchParams(
       (prev) => {
         prev.set("tab", next);
-        prev.delete(SIDE_PARAM);
         return prev;
       },
       { replace: true, preventScrollReset: true },
@@ -216,8 +215,10 @@ export function MemberProfileView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.hash]);
 
+  const openBeside = useOpenBeside();
   function openNote(note: { id: string; title: string }) {
-    openNoteLegacy(note.id, note.title);
+    if (openBeside) openBeside({ href: `/documents/${note.id}` });
+    else openNoteLegacy(note.id, note.title);
   }
 
   // Live "last active" for this member's header (respects their hide-activity

@@ -8,6 +8,7 @@ import {
   subscribe,
 } from "~/lib/navigation-history-store";
 import { desktopVersion } from "~/lib/desktop";
+import { historyShortcut } from "~/lib/shortcuts";
 import { activeTab } from "~/lib/desktop-tabs";
 import { tabActions } from "~/lib/desktop-tabs-store";
 import { useDesktopTabsState } from "~/components/DesktopTabs";
@@ -82,29 +83,11 @@ export function useTablessHistoryShortcuts(enabled: boolean, tabs: boolean) {
   useEffect(() => {
     if (!enabled) return;
     const onKey = (e: KeyboardEvent) => {
-      const mod = e.metaKey || e.ctrlKey;
-
-      if (!mod && e.altKey && !e.shiftKey) {
-        if (e.key === "ArrowLeft") {
-          e.preventDefault();
-          goBack();
-          return;
-        }
-        if (e.key === "ArrowRight") {
-          e.preventDefault();
-          goForward();
-          return;
-        }
-        return;
-      }
-
-      if (!mod) return;
-
-      if (!e.altKey && !e.shiftKey && (e.key === "[" || e.key === "]")) {
-        e.preventDefault();
-        if (e.key === "[") goBack();
-        else goForward();
-      }
+      const direction = historyShortcut(e);
+      if (!direction) return;
+      e.preventDefault();
+      if (direction === "back") goBack();
+      else goForward();
     };
 
     const onMouse = (e: MouseEvent) => {

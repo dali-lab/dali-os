@@ -65,6 +65,7 @@ export function TimeField({
   className,
   ariaLabel,
   placeholder = "Pick a time",
+  disabled = false,
 }: {
   /** 24h "HH:mm" or "". */
   value: string;
@@ -74,6 +75,7 @@ export function TimeField({
   className?: string;
   ariaLabel?: string;
   placeholder?: string;
+  disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [focused, setFocused] = useState(false);
@@ -205,12 +207,16 @@ export function TimeField({
     <div ref={wrapRef} className={cn("relative inline-block", className)}>
       <div
         data-time-field
-        className="flex w-full items-center rounded-md border border-border bg-background focus-within:border-os-accent"
+        className={cn(
+          "flex w-full items-center rounded-md border border-border bg-background focus-within:border-os-accent",
+          disabled && "opacity-60",
+        )}
       >
         <input
           ref={inputRef}
           type="text"
           role="combobox"
+          disabled={disabled}
           aria-expanded={open}
           aria-label={ariaLabel}
           value={text}
@@ -255,6 +261,7 @@ export function TimeField({
         <button
           type="button"
           tabIndex={-1}
+          disabled={disabled}
           aria-label={ariaLabel ? `${ariaLabel} options` : "Time options"}
           onMouseDown={(e) => {
             e.preventDefault();
