@@ -5,6 +5,8 @@ import {
   resolvePanelLoad,
   sidePanelForUrl,
   sidePanelHref,
+  visibleSidePanel,
+  withSidePanel,
 } from "~/lib/side-panel";
 
 describe("side panel param", () => {
@@ -71,5 +73,51 @@ describe("resolvePanelLoad", () => {
   it("treats anything else as missing", () => {
     expect(resolvePanelLoad(null, "x")).toEqual({ kind: "missing" });
     expect(resolvePanelLoad({ title: "?" }, "x")).toEqual({ kind: "missing" });
+  });
+});
+
+describe("withSidePanel", () => {
+  const panel = { type: "doc", id: "abc" } as const;
+
+  it("names the panel, keeping the rest of the url", () => {
+    expect(withSidePanel("/projects/1?tab=drive#top", panel)).toBe("/projects/1?tab=drive&side=doc%3Aabc#top");
+  });
+
+  it("leaves the url alone with no panel, or one it already names", () => {
+    expect(withSidePanel("/projects/1", null)).toBe("/projects/1");
+    expect(withSidePanel("/projects/1?side=doc:other", panel)).toBe("/projects/1?side=doc:other");
+  });
+});
+
+describe("visibleSidePanel", () => {
+  const page = (over = {}) => ({ pathname: "/projects/1", search: "", ...over });
+
+  it("shows the panel the url names over the kept one", () => {
+    expect(visibleSidePanel(page({ search: "?side=doc:url" }), "doc:kept")?.id).toBe("url");
+  });
+
+  it("carries the kept panel to a url that doesn't name one", () => {
+    expect(visibleSidePanel(page(), "doc:kept")?.id).toBe("kept");
+  });
+
+  it("shows nothing with neither", () => {
+    expect(visibleSidePanel(page(), null)).toBeNull();
+  });
+
+  it("drops the kept panel on a move to another tab", () => {
+    expect(visibleSidePanel(page({ state: { tabSwitch: true } }), "doc:kept")).toBeNull();
+  });
+
+  it("keeps it when stepping back inside the same tab", () => {
+    expect(visibleSidePanel(page({ state: { tabSwitch: true, keepPanel: true } }), "doc:kept")?.id).toBe("kept");
+  });
+
+  it("still shows the panel a tab's own url names after a tab move", () => {
+    expect(visibleSidePanel(page({ search: "?side=doc:tab", state: { tabSwitch: true } }), "doc:kept")?.id).toBe("tab");
+  });
+
+  it("hides the panel when the page itself is that document", () => {
+    expect(visibleSidePanel(page({ pathname: "/documents/kept" }), "doc:kept")).toBeNull();
+    expect(visibleSidePanel(page({ pathname: "/documents/abc", search: "?side=doc:abc" }), null)).toBeNull();
   });
 });

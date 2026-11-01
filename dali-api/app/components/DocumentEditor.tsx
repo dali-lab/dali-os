@@ -875,8 +875,8 @@ export function DocumentEditor({
     <div
       ref={topBarRef}
       className={cn(
-        "flex items-center gap-1 text-[13px] text-os-muted",
-        inPanel && "justify-end",
+        "flex items-center gap-1 text-[13px]",
+        inPanel ? "justify-end text-os-grey" : "text-os-muted",
       )}
     >
       {statusNodes}
@@ -990,7 +990,7 @@ export function DocumentEditor({
               : "w-full max-w-[1400px]"
         }${typo.font !== "default" ? ` doc-canvas--${typo.font}` : ""}${
           typo.smallText ? " doc-canvas--small" : ""
-        }${typo.nestingGuides ? " doc-canvas--guides" : ""}`}
+        }${typo.nestingGuides ? " doc-canvas--guides" : ""}${inPanel ? " doc-canvas--panel" : ""}`}
       >
         {belowTabs && (
           <div className="sticky z-10 overflow-hidden rounded-t-xl bg-card" style={{ top: stickyTop }}>
@@ -1013,11 +1013,10 @@ export function DocumentEditor({
 
         <div className={inPanel ? "px-1 pt-6 pb-6" : "px-4 sm:px-7 pt-12 pb-6"}>
           {/* Hover-reveal row: icon · Add icon · Add cover · Add tag
-              The header/title block adds an extra pl-[54px] to match the body
-              text, which sits at the 54px outer padding PLUS BlockNote's own
-              54px .bn-editor drag-handle gutter (padding-inline:54px in core
-              CSS). Together that puts both at 108px from the card edge (±0). */}
-          <div className="group/header relative mb-1 pl-3 sm:pl-[54px]">
+              The header/title block's left padding matches the .bn-editor
+              drag-handle gutter (54px in BlockNote's core CSS, 28px in the
+              side panel) so title and body text share a left edge. */}
+          <div className={cn("group/header relative mb-1 pl-3", inPanel ? "sm:pl-[28px]" : "sm:pl-[54px]")}>
             {/* FIX 6: One source of truth for the icon + cover affordances.
                 - When icon IS set: show it always (not in the hover row).
                 - When icon is NOT set: show "Add icon" only in the hover row.

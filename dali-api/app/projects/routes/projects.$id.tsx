@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useOpenBeside } from "~/components/side-panel/use-side-panel";
-import { SIDE_PARAM } from "~/lib/side-panel";
 import {
   Form,
   Link,
@@ -1854,7 +1853,6 @@ export default function ProjectDetail() {
       (prev) => {
         prev.set("tab", "progress");
         prev.set("task", taskId);
-        prev.delete(SIDE_PARAM);
         return prev;
       },
       { replace: true, preventScrollReset: true },
@@ -1872,7 +1870,6 @@ export default function ProjectDetail() {
     setSearchParams(
       (prev) => {
         prev.set("tab", next);
-        prev.delete(SIDE_PARAM);
         return prev;
       },
       { replace: true, preventScrollReset: true },
@@ -4600,13 +4597,15 @@ function ProjectDriveTab({
     [],
   );
 
+  const onOpenBeside = useOpenBeside();
   const onOpenItem = useCallback(
     (item: DriveItem) => {
-      if (item.href) navigate(item.href);
+      if (!item.href) return;
+      if (onOpenBeside && item.type === "doc") onOpenBeside({ href: item.href });
+      else navigate(item.href);
     },
-    [navigate],
+    [navigate, onOpenBeside],
   );
-  const onOpenBeside = useOpenBeside();
 
   // One item's move, with no reporting: the batch below speaks for the
   // selection. `onError` gets the reason a move was refused.
@@ -4978,6 +4977,11 @@ function DocumentsBlock({
   canEdit: boolean;
   hasActivePartner: boolean;
 }) {
+  const openBeside = useOpenBeside();
+  const openDocument = (id: string, title: string) => {
+    if (openBeside) openBeside({ href: `/documents/${id}` });
+    else openDocumentTab(id, title);
+  };
   const dialog = useDialog();
   const toast = useToast();
   const revalidator = useRevalidator();
@@ -5131,7 +5135,7 @@ function DocumentsBlock({
       });
       const b = (await res.json().catch(() => ({}))) as { id?: string; error?: string };
       if (!res.ok || !b.id) throw new Error(b.error ?? "Failed to create document");
-      openDocumentTab(b.id, title);
+      openDocument(b.id, title);
       revalidator.revalidate();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Something went wrong");
@@ -5456,7 +5460,7 @@ function DocumentsBlock({
     togglePin,
     setMoveDoc,
     deleteDocument,
-    openDocument: openDocumentTab,
+    openDocument,
   };
 
   const isEmpty = documents.length === 0 && files.length === 0;

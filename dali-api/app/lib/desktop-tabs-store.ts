@@ -32,9 +32,10 @@ import { writeTabsSnapshotCookie } from "~/lib/desktop-tabs-pref";
 export const TABS_STORAGE_KEY = "dali:desktop-tabs:v1";
 export const LEGACY_WORKSPACE_KEY = "dali:tabworkspace:v4";
 
-type Navigator = (url: string, opts?: { tabSwitch: true }) => void;
+type Navigator = (url: string, opts?: { tabSwitch: true; keepPanel?: true }) => void;
 
 const TAB_SWITCH = { tabSwitch: true } as const;
+const TAB_STEP = { tabSwitch: true, keepPanel: true } as const;
 
 let state: DesktopTabsState = emptyTabsState();
 let navigator: Navigator | null = null;
@@ -192,7 +193,7 @@ export const tabActions = {
     const result = stepTabHistory(state, direction, steps);
     if (!result) return;
     set(result.state);
-    navigator?.(result.target, TAB_SWITCH);
+    navigator?.(result.target, TAB_STEP);
   },
   togglePin(id: string) {
     set(togglePin(state, id));
