@@ -16,7 +16,7 @@ import { DocCommentsPanel, useDocThreadCount } from "~/components/doc/comments";
 import { pageDocName } from "~/collab/roomName";
 import { PresenceProvider } from "./collab/PresenceProvider";
 import { PresenceBar } from "./collab/PresenceBar";
-import { isVersionHistoryShortcut, VERSION_HISTORY_SHORTCUT } from "~/lib/shortcuts";
+import { FIND_SHORTCUT, isFindShortcut, isVersionHistoryShortcut, VERSION_HISTORY_SHORTCUT } from "~/lib/shortcuts";
 import { VersionHistoryPanel } from "./collab/VersionHistoryPanel";
 import { TagPicker, type DocTag } from "./TagPicker";
 import { FavoriteStar } from "./FavoriteStar";
@@ -72,8 +72,6 @@ const DOWNLOAD_FORMATS = [
   { format: "docx", label: "Word" },
   { format: "md", label: "Markdown" },
 ] as const;
-
-export const FIND_SHORTCUT = "⌘F";
 
 type HistoryEditor = { surface: { current: HTMLElement | null }; panel: boolean };
 const historyEditors = new Set<HistoryEditor>();
@@ -294,8 +292,7 @@ export function DocumentEditor({
   const docSurfaceRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     const onKeyDown = (e: globalThis.KeyboardEvent) => {
-      const isMod = e.metaKey || e.ctrlKey;
-      if (!isMod || e.key !== "f") return;
+      if (!isFindShortcut(e)) return;
       // Only intercept when the focused element is inside the doc surface.
       const surface = docSurfaceRef.current;
       if (!surface) return;

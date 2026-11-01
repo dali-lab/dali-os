@@ -15,8 +15,8 @@ vi.mock("~/components/drive/FolderPicker", () => ({ FolderPicker: () => null }))
 vi.mock("~/components/sharing/ShareDialog", () => ({ ShareDialog: () => null }));
 vi.mock("~/components/collab/VersionHistoryPanel", () => ({ VersionHistoryPanel: () => createElement("div", { "data-testid": "history" }) }));
 
-const { VERSION_HISTORY_SHORTCUT } = await import("~/lib/shortcuts");
-const { DocumentEditor, FIND_SHORTCUT } = await import("~/components/DocumentEditor");
+const { FIND_SHORTCUT, VERSION_HISTORY_SHORTCUT } = await import("~/lib/shortcuts");
+const { DocumentEditor } = await import("~/components/DocumentEditor");
 const { PageBarSlotProvider, usePageBarTargetSetters } = await import("~/components/shell/page-bar-slot");
 const { OverflowMenu } = await import("~/components/shell/OverflowMenu");
 const { FeatureFlagsProvider } = await import("~/components/FeatureFlags");
