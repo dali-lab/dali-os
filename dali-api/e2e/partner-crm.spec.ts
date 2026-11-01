@@ -39,8 +39,8 @@ test.describe('partner directory (Core)', () => {
   test('lists organizations and people in one directory', async ({ page }) => {
     await page.goto('/core/partners/directory?embed=1');
     await expect(page.getByRole('heading', { name: 'Partners' })).toBeVisible();
-    await expect(page.getByText('Tuck School of Business')).toBeVisible();
-    await expect(page.getByText('Hood Museum of Art')).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Tuck School of Business' })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Hood Museum of Art' })).toBeVisible();
     // People are rows in the same list, not a separate view.
     await expect(page.getByText('Pat Tuck').first()).toBeVisible();
     await expect(page.getByText('Harper Hood').first()).toBeVisible();
