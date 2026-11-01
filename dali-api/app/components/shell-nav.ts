@@ -6,6 +6,7 @@ import { TASKS_CHANGED_EVENT } from '~/components/NotificationBell'
 import { FAVORITES_CHANGED_EVENT, TOGGLE_FAVORITE_EVENT } from '~/components/favorites-live'
 import { COPY_PAGE_LINK_EVENT, isCopyPageLinkShortcut } from '~/lib/page-link'
 import { tabActions } from '~/lib/desktop-tabs-store'
+import { panelCoversPage } from '~/components/side-panel/use-side-panel'
 import { SIDE_PARAM, formatSidePanel, sidePanelForUrl } from '~/lib/side-panel'
 
 /**
@@ -90,7 +91,7 @@ export function useShellNav(tabless: boolean, opts: { tabs?: boolean; sidePanel?
       if (panel) {
         const params = new URLSearchParams(window.location.search)
         params.set(SIDE_PARAM, formatSidePanel(panel))
-        navigate(`${window.location.pathname}?${params}`, { preventScrollReset: true })
+        navigate(`${window.location.pathname}?${params}`, { replace: !panelCoversPage(), preventScrollReset: true })
         return
       }
       if (tabs) {

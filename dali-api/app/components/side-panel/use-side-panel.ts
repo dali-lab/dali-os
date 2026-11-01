@@ -1,11 +1,34 @@
-import { useCallback, useEffect, useMemo, useRef } from "react";
-import { useSearchParams } from "react-router";
+import { useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from "react";
+import { useLocation, useSearchParams } from "react-router";
 import { useFeatureFlag } from "~/components/FeatureFlags";
-import { SIDE_PARAM, formatSidePanel, parseSidePanel, sidePanelForUrl, type SidePanel } from "~/lib/side-panel";
+import {
+  SIDE_PARAM,
+  formatSidePanel,
+  getKeptSidePanel,
+  getServerKeptSidePanel,
+  setKeptSidePanel,
+  sidePanelForUrl,
+  subscribeKeptSidePanel,
+  visibleSidePanel,
+  withSidePanel,
+  type SidePanel,
+} from "~/lib/side-panel";
+
+// Below md the panel covers the page, so Back has to close it.
+export function panelCoversPage(): boolean {
+  return window.matchMedia?.("(max-width: 767.98px)")?.matches ?? false;
+}
+
+export function useVisibleSidePanel(): SidePanel | null {
+  const location = useLocation();
+  const kept = useSyncExternalStore(subscribeKeptSidePanel, getKeptSidePanel, getServerKeptSidePanel);
+  return visibleSidePanel(location, kept);
+}
 
 export function useSidePanel() {
   const [params, setParams] = useSearchParams();
-  const panel = parseSidePanel(params.get(SIDE_PARAM));
+  const panel = useVisibleSidePanel();
+  const urlNamesPanel = params.has(SIDE_PARAM);
   const open = useCallback(
     (next: SidePanel) =>
       setParams(
@@ -13,22 +36,44 @@ export function useSidePanel() {
           prev.set(SIDE_PARAM, formatSidePanel(next));
           return prev;
         },
-        { preventScrollReset: true },
+        { replace: !panelCoversPage(), preventScrollReset: true },
       ),
     [setParams],
   );
-  const close = useCallback(
-    () =>
+  const close = useCallback(() => {
+    setKeptSidePanel(null);
+    if (urlNamesPanel) {
       setParams(
         (prev) => {
           prev.delete(SIDE_PARAM);
           return prev;
         },
         { replace: true, preventScrollReset: true },
-      ),
-    [setParams],
-  );
+      );
+      return;
+    }
+    const url = new URL(window.location.href);
+    url.searchParams.delete(SIDE_PARAM);
+    window.history.replaceState(window.history.state, "", url);
+  }, [setParams, urlNamesPanel]);
   return { panel, open, close };
+}
+
+/**
+ * Keeps the panel open as the page beside it changes. Most navigations don't
+ * know about `side`, so the panel is held here and written back into the
+ * address bar with history.replaceState: going through the router would run
+ * every loader on the page a second time.
+ */
+export function useKeepSidePanel() {
+  const location = useLocation();
+  useEffect(() => {
+    const showing = visibleSidePanel(location, getKeptSidePanel());
+    setKeptSidePanel(panelCoversPage() ? null : showing);
+    if (!showing || panelCoversPage() || new URLSearchParams(location.search).has(SIDE_PARAM)) return;
+    const url = location.pathname + location.search + location.hash;
+    window.history.replaceState(window.history.state, "", withSidePanel(url, showing));
+  }, [location]);
 }
 
 /** Opens a document item in the side panel behind `desktop-tabs`; undefined when the flag is off. */
