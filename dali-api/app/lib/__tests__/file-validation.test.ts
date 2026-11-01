@@ -118,6 +118,8 @@ describe("isReservedUploadKey", () => {
     "//uploads/resumes/u1/a.pdf",
     "resumes/u1/a.pdf",
     "uploads/resumes/u1/a.pdf",
+    "drive-downloads/x.zip",
+    "uploads/drive-downloads/x.zip",
   ])("reserves %s", (key) => {
     expect(isReservedUploadKey(key)).toBe(true);
   });

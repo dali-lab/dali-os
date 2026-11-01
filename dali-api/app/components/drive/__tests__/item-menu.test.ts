@@ -10,6 +10,14 @@ const all = { share: true, favorite: true, partner: true };
 const none = { share: false, favorite: false, partner: false };
 
 describe("menuEntries", () => {
+  it("offers Download on files, even read-only, and on nothing else", () => {
+    expect(menuEntries(item("file"), none)).toContain("download");
+    expect(menuEntries(item("file"), { ...none, readOnly: true })).toContain("download");
+    for (const type of ["doc", "folder", "form", "agreement", "rubric"]) {
+      expect(menuEntries(item(type), all)).not.toContain("download");
+    }
+  });
+
   it("offers the full set for a page", () => {
     expect(menuEntries(item("doc"), all)).toEqual([
       "open",
@@ -49,11 +57,11 @@ describe("menuEntries", () => {
       "share",
       "partner",
     ]);
-    expect(menuEntries(item("file"), { ...none, readOnly: true })).toEqual(["open"]);
+    expect(menuEntries(item("file"), { ...none, readOnly: true })).toEqual(["open", "download"]);
   });
 
-  it("keeps a file's menu as it was", () => {
-    expect(menuEntries(item("file"), none)).toEqual(["open", "rename", "move", "delete"]);
+  it("keeps a file's menu in order", () => {
+    expect(menuEntries(item("file"), none)).toEqual(["open", "download", "rename", "move", "delete"]);
     expect(menuEntries(item("agreement"), none)).toEqual(["open", "rename"]);
     expect(menuEntries(item("rubric"), none)).toEqual(["open"]);
   });

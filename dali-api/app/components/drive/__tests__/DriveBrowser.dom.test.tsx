@@ -759,6 +759,66 @@ describe("DriveBrowser bulk bar", () => {
     expect(onBulkDelete.mock.calls[0][0].map((i: DriveItem) => i.id).sort()).toEqual(["d1", "d2"]);
   });
 
+  describe("download", () => {
+    const fileItem = (id: string) =>
+      ({ type: "file", id, title: id, parentFolderId: null, iconEmoji: null, updatedAt: new Date(), href: "/x", sizeBytes: 1 }) as unknown as DriveItem;
+    const withFiles: DriveTreeScope = { ...lab, items: [...lab.items, fileItem("x1"), fileItem("x2")] };
+    const button = () => container.querySelector<HTMLElement>('[data-testid="drive-bulk-download"]');
+
+    async function selectFiles() {
+      await mount({ scopes: [withFiles, mine] });
+      await click(row("file", "x1"), { metaKey: true });
+      await click(row("file", "x2"), { metaKey: true });
+    }
+
+    it("is absent when the selection holds no files", async () => {
+      await selectTwo();
+      expect(bar()).not.toBeNull();
+      expect(button()).toBeNull();
+    });
+
+    it("asks the server for a ZIP of the selected files", async () => {
+      const fetchMock = vi.fn().mockResolvedValue(Response.json({ error: "No" }, { status: 413 }));
+      vi.stubGlobal("fetch", fetchMock);
+      await selectFiles();
+      await click(button()!);
+      await act(async () => {
+        await new Promise((r) => setTimeout(r, 0));
+      });
+
+      const [url, init] = fetchMock.mock.calls[0];
+      expect(url).toBe("/api/drive/download");
+      expect(JSON.parse(init.body).fileIds.sort()).toEqual(["x1", "x2"]);
+      vi.unstubAllGlobals();
+    });
+
+    it("can't be pressed twice while a ZIP is being prepared", async () => {
+      let finish = (_r: Response) => {};
+      const fetchMock = vi.fn(() => new Promise<Response>((resolve) => (finish = resolve)));
+      vi.stubGlobal("fetch", fetchMock);
+      await selectFiles();
+      await click(button()!);
+
+      expect((button() as HTMLButtonElement).disabled).toBe(true);
+      expect(button()!.textContent).toContain("Preparing");
+      await act(async () => {
+        finish(Response.json({ error: "No" }, { status: 413 }));
+        await new Promise((r) => setTimeout(r, 0));
+      });
+      expect((button() as HTMLButtonElement).disabled).toBe(false);
+      vi.unstubAllGlobals();
+    });
+
+    it("offers Download in a file's menu and not a doc's", async () => {
+      await mount({ scopes: [withFiles, mine] });
+      await contextMenu(row("file", "x1"));
+      expect(menuLabels()).toContain("Download");
+      await key(document.body, "Escape");
+      await contextMenu(row("doc", "d1"));
+      expect(menuLabels()).not.toContain("Download");
+    });
+  });
+
   it("clears the selection", async () => {
     await selectTwo();
     await click(container.querySelector('[aria-label="Clear selection"]')!);
