@@ -1,10 +1,13 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/scheduled-meeting", () => ({ createScheduledMeeting: vi.fn() }));
-vi.mock("~/lib/roles", () => ({ isCore: vi.fn(), canViewForms: vi.fn() }));
+vi.mock("~/lib/roles", () => ({ isCore: vi.fn(), canViewForms: vi.fn(), isLabMember: vi.fn() }));
 vi.mock("~/lib/groups", () => ({ isCoreGroup: vi.fn() }));
+vi.mock("~/lib/rooms.server", () => ({ assertMeetingRoomsFree: vi.fn() }));
 
 import { createScheduledMeeting } from "~/lib/scheduled-meeting";
+import { isLabMember } from "~/lib/roles";
+import { assertMeetingRoomsFree } from "~/lib/rooms.server";
 import { runScheduleMeeting, ScheduleMeetingError, SCHEDULE_MEETING_TOOL } from "~/mcp/tools/schedule-meeting";
 
 const user = { id: "u1", daliEmail: "u1@dali.dartmouth.edu", dartmouthEmail: null };
@@ -82,5 +85,65 @@ describe("schedule_meeting guestEmails", () => {
         { title: "x", durationMinutes: 30, scopeType: "None" },
       ),
     ).rejects.toBeInstanceOf(ScheduleMeetingError);
+  });
+});
+
+describe("schedule_meeting roomIds", () => {
+  const startTime = "2026-11-03T14:00:00-05:00";
+
+  beforeEach(() => {
+    vi.mocked(isLabMember).mockResolvedValue(true);
+    vi.mocked(assertMeetingRoomsFree).mockResolvedValue({ ok: true, value: null });
+  });
+
+  it("checks every occurrence, then claims each room once", async () => {
+    await runScheduleMeeting(user, {
+      ...base,
+      startTime,
+      recurrenceRule: "FREQ=WEEKLY;COUNT=4",
+      roomIds: ["r1", "r2", "r1"],
+    });
+    expect(assertMeetingRoomsFree).toHaveBeenCalledWith({
+      roomIds: ["r1", "r2"],
+      selectedAt: new Date(startTime),
+      durationMinutes: 30,
+      recurrenceRule: "FREQ=WEEKLY;COUNT=4",
+    });
+    expect(created().roomIds).toEqual(["r1", "r2"]);
+  });
+
+  it("doesn't create the meeting when a room is taken", async () => {
+    vi.mocked(assertMeetingRoomsFree).mockResolvedValue({ ok: false, error: "Pod is already booked then", status: 409 });
+    await expect(runScheduleMeeting(user, { ...base, startTime, roomIds: ["r1"] })).rejects.toThrow(
+      "Pod is already booked then",
+    );
+    expect(createScheduledMeeting).not.toHaveBeenCalled();
+  });
+
+  it("refuses rooms on a meeting with no time, which wouldn't hold them", async () => {
+    await expect(runScheduleMeeting(user, { ...base, roomIds: ["r1"] })).rejects.toBeInstanceOf(ScheduleMeetingError);
+    expect(createScheduledMeeting).not.toHaveBeenCalled();
+  });
+
+  it("refuses an unparseable start time", async () => {
+    await expect(runScheduleMeeting(user, { ...base, startTime: "soon", roomIds: ["r1"] })).rejects.toBeInstanceOf(
+      ScheduleMeetingError,
+    );
+    expect(assertMeetingRoomsFree).not.toHaveBeenCalled();
+  });
+
+  it("refuses a non-member", async () => {
+    vi.mocked(isLabMember).mockResolvedValue(false);
+    await expect(runScheduleMeeting(user, { ...base, startTime, roomIds: ["r1"] })).rejects.toBeInstanceOf(
+      ScheduleMeetingError,
+    );
+    expect(createScheduledMeeting).not.toHaveBeenCalled();
+  });
+
+  it("skips the room checks when no rooms are passed", async () => {
+    await runScheduleMeeting(user, { ...base, startTime });
+    expect(isLabMember).not.toHaveBeenCalled();
+    expect(assertMeetingRoomsFree).not.toHaveBeenCalled();
+    expect(created().roomIds).toEqual([]);
   });
 });

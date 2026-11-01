@@ -16,7 +16,7 @@ import {
   type OccurrenceException,
 } from "~/lib/meeting-occurrences";
 import { CHECK_IN_GRACE_MIN } from "~/lib/scheduled-meeting";
-import { currentTerm } from "~/lib/roles";
+import { currentTerm, isCore } from "~/lib/roles";
 import { APPLICATION_TZ } from "~/lib/timezone";
 import type { Prisma, RoomBookingSource } from "~/generated/prisma/client";
 
@@ -37,6 +37,8 @@ const OCCURRENCE_SCAN_BAND_MS = 7 * 24 * 60 * 60_000;
 const MEETING_CONFLICT_HORIZON_MS = 180 * 24 * 60 * 60_000;
 // A repeating booking may have at most this many occurrences.
 const MAX_BOOKING_OCCURRENCES = 200;
+// How far past its start an availability check follows a repeat rule.
+const AVAILABILITY_SERIES_WINDOW_MS = 200 * 24 * 60 * 60_000;
 
 export type RoomScheduleItem = {
   kind: "booking" | "meeting";
@@ -222,6 +224,67 @@ export function currentEvent(items: RoomScheduleItem[], now: number = Date.now()
     items.find(
       (i) => i.isEvent && now >= i.start.getTime() - graceMs && now <= i.end.getTime() + graceMs,
     ) ?? null
+  );
+}
+
+/** Rooms that can be booked, by name. */
+export function listBookableRooms() {
+  return prisma.room.findMany({
+    where: { archivedAt: null },
+    select: { id: true, name: true, description: true, capacity: true },
+    orderBy: { name: "asc" },
+  });
+}
+
+/**
+ * Bookable rooms with what already holds each one in `window`. `conflict` is
+ * that item's title (null when free). With a valid `recurrenceRule` the check
+ * covers every occurrence of that series (capped) instead of just the first;
+ * `conflictOn` then names the colliding occurrence's date, unless it's the
+ * first one. `excludeMeetingId` leaves out the meeting being edited.
+ */
+export async function listRoomAvailability(
+  window: { start: Date; end: Date },
+  opts: { recurrenceRule?: string | null; excludeMeetingId?: string } = {},
+) {
+  const { recurrenceRule = null, excludeMeetingId } = opts;
+  const rooms = await listBookableRooms();
+  const rule = recurrenceRule ? buildRule(recurrenceRule, window.start) : null;
+
+  if (!rule) {
+    return Promise.all(
+      rooms.map(async (room) => {
+        const [first] = await getRoomSchedule(room.id, window.start, window.end, { excludeMeetingId });
+        return { ...room, conflict: first?.title ?? null, conflictOn: null as string | null };
+      }),
+    );
+  }
+
+  const durationMinutes = (window.end.getTime() - window.start.getTime()) / 60_000;
+  const occurrences = expandOccurrences(
+    { selectedAt: window.start, durationMinutes, recurrenceRule },
+    [],
+    window.start,
+    new Date(window.start.getTime() + AVAILABILITY_SERIES_WINDOW_MS),
+  ).slice(0, MAX_BOOKING_OCCURRENCES);
+
+  return Promise.all(
+    rooms.map(async (room) => {
+      if (occurrences.length === 0) return { ...room, conflict: null as string | null, conflictOn: null as string | null };
+      const schedule = await getRoomSchedule(
+        room.id,
+        occurrences[0]!.start,
+        occurrences[occurrences.length - 1]!.end,
+        { excludeMeetingId },
+      );
+      for (const occ of occurrences) {
+        const hit = schedule.find((s) => overlaps(s, occ.start, occ.end));
+        if (!hit) continue;
+        const onFirst = occ.start.getTime() === occurrences[0]!.start.getTime();
+        return { ...room, conflict: hit.title, conflictOn: onFirst ? null : labDate(occ.start) };
+      }
+      return { ...room, conflict: null as string | null, conflictOn: null as string | null };
+    }),
   );
 }
 
@@ -594,6 +657,30 @@ export async function cancelRoomBooking(
 }
 
 /**
+ * cancelRoomBooking for a member acting for themselves: the booker or Core,
+ * and never a booking hiring owns (interview bookings follow the interview;
+ * holds follow the cycle's config).
+ */
+export async function cancelRoomBookingAsMember(
+  bookingId: string,
+  actorUserId: string,
+  opts?: { scope?: "this" | "following" | "all"; occurrenceStart?: Date },
+): Promise<RoomWriteResult<null>> {
+  const booking = await prisma.roomBooking.findUnique({
+    where: { id: bookingId },
+    select: { userId: true, source: true },
+  });
+  if (!booking) return { ok: false, error: "Not found", status: 404 };
+  if (booking.userId !== actorUserId && !(await isCore(actorUserId))) {
+    return { ok: false, error: "Forbidden", status: 403 };
+  }
+  if (SYSTEM_SOURCES.has(booking.source)) {
+    return { ok: false, error: "This booking is managed by hiring. Change it from the cycle page.", status: 409 };
+  }
+  return cancelRoomBooking(bookingId, actorUserId, opts);
+}
+
+/**
  * Push an underway booking's end out by `minutes` (the door display's
  * Extend), if the room is free that long. One occurrence of a repeating
  * booking is extended through an exception; the rest of the series keeps
@@ -856,10 +943,15 @@ export function serializeScheduleItem(i: RoomScheduleItem) {
   };
 }
 
-/** Parse ?start&end ISO instants (the client's local day), capped at 8 days. */
+/** Parse ?start&end ISO instants (the client's local day). */
 export function parseWindow(url: URL): { start: Date; end: Date } | null {
-  const start = new Date(url.searchParams.get("start") ?? "");
-  const end = new Date(url.searchParams.get("end") ?? "");
+  return parseWindowParams(url.searchParams.get("start"), url.searchParams.get("end"));
+}
+
+/** A schedule window from two ISO instants, capped at 8 days. */
+export function parseWindowParams(startIso: string | null, endIso: string | null): { start: Date; end: Date } | null {
+  const start = new Date(startIso ?? "");
+  const end = new Date(endIso ?? "");
   if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end <= start) return null;
   if (end.getTime() - start.getTime() > 8 * 24 * 60 * 60_000) return null;
   return { start, end };
