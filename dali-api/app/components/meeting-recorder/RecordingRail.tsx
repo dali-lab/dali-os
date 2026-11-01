@@ -137,6 +137,21 @@ function lastAudioLabel(lastChunkAt: string | null | undefined): string {
   return `last audio ${Math.floor(minutes / 60)} hr ago`;
 }
 
+function nativeStartStuck(rec: UseMeetingRecording): boolean {
+  return rec.useDesktopApp && rec.captureMode === "desktop" && rec.appUnreachable && rec.drives;
+}
+
+function appHandoffStuck(rec: UseMeetingRecording): boolean {
+  return !rec.useDesktopApp && rec.captureMode === "desktop" && rec.appUnreachable;
+}
+
+function startingStatus(rec: UseMeetingRecording): string {
+  if (nativeStartStuck(rec)) return "Recording didn't start.";
+  if (appHandoffStuck(rec)) return "The DALI OS app didn't respond.";
+  if (rec.captureMode === "desktop" && !rec.useDesktopApp) return "Opening the DALI OS app…";
+  return "Starting…";
+}
+
 /** Exported for the top-bar narrow-canvas live Popover, which shows the same
  *  status line text beside its own meters + Stop. */
 export function statusLineFor(rec: UseMeetingRecording, state: RailState): ReactNode {
@@ -159,12 +174,7 @@ export function statusLineFor(rec: UseMeetingRecording, state: RailState): React
   let text: string;
   switch (state) {
     case "starting":
-      text =
-        rec.captureMode === "desktop"
-          ? rec.appUnreachable
-            ? "The DALI OS app didn't respond."
-            : "Opening the DALI OS app…"
-          : "Starting…";
+      text = startingStatus(rec);
       break;
     case "stopping":
       text = rec.stopStuck ? "The DALI OS app hasn't confirmed the stop." : "Stopping…";
@@ -246,7 +256,17 @@ function FollowerLiveActions({ rec }: { rec: UseMeetingRecording }) {
 function RailActions({ rec, state }: { rec: UseMeetingRecording; state: RailState }) {
   switch (state) {
     case "starting":
-      if (rec.captureMode === "desktop" && rec.appUnreachable) {
+      if (nativeStartStuck(rec)) {
+        return (
+          <div className="flex flex-wrap items-center gap-1.5">
+            <IconButton label="Cancel" icon={Trash2} tone="destructive" onClick={rec.cancelStart} />
+            <button type="button" onClick={() => void rec.retryDesktopStart()} className={buttonClasses("primary", "sm")}>
+              Try again
+            </button>
+          </div>
+        );
+      }
+      if (appHandoffStuck(rec)) {
         return (
           <div className="flex flex-wrap items-center gap-1.5">
             <IconButton label="Cancel" icon={Trash2} tone="destructive" onClick={rec.cancelStart} />
@@ -426,7 +446,14 @@ function RailActions({ rec, state }: { rec: UseMeetingRecording; state: RailStat
 function RailBody({ rec, state }: { rec: UseMeetingRecording; state: RailState }) {
   switch (state) {
     case "starting":
-      return rec.captureMode === "desktop" && rec.appUnreachable ? (
+      if (nativeStartStuck(rec)) {
+        return (
+          <p className="rounded-xl bg-os-well px-3 py-3 text-sm text-foreground">
+            If it keeps happening, quit and reopen the DALI OS app.
+          </p>
+        );
+      }
+      return appHandoffStuck(rec) ? (
         <p className="rounded-xl bg-os-well px-3 py-3 text-sm text-foreground">
           Update the DALI OS app, or record in this browser.
         </p>
