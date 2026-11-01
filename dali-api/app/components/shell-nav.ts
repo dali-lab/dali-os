@@ -4,8 +4,10 @@ import { useNavigate, useRevalidator } from 'react-router'
 import type { TabWorkspaceHandle, OpenTabRequest } from '~/components/TabWorkspace'
 import { TASKS_CHANGED_EVENT } from '~/components/NotificationBell'
 import { FAVORITES_CHANGED_EVENT, TOGGLE_FAVORITE_EVENT } from '~/components/favorites-live'
-import { COPY_PAGE_LINK_EVENT, isCopyPageLinkShortcut } from '~/lib/page-link'
+import { COPY_PAGE_LINK_EVENT } from '~/lib/page-link'
+import { isCommandKShortcut, isCopyPageLinkShortcut, isFavoriteShortcut } from '~/lib/shortcuts'
 import { tabActions } from '~/lib/desktop-tabs-store'
+import { panelCoversPage } from '~/components/side-panel/use-side-panel'
 import { SIDE_PARAM, formatSidePanel, sidePanelForUrl } from '~/lib/side-panel'
 
 /**
@@ -51,13 +53,13 @@ export function useShellNav(tabless: boolean, opts: { tabs?: boolean; sidePanel?
   useEffect(() => {
     if (!tabless) return
     const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && (e.key === 'k' || e.key === 'K')) {
+      if (isCommandKShortcut(e)) {
         e.preventDefault()
         togglePalette()
       } else if (isCopyPageLinkShortcut(e)) {
         e.preventDefault()
         window.dispatchEvent(new CustomEvent(COPY_PAGE_LINK_EVENT))
-      } else if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && (e.key === 'd' || e.key === 'D')) {
+      } else if (isFavoriteShortcut(e)) {
         const handled = !window.dispatchEvent(new CustomEvent(TOGGLE_FAVORITE_EVENT, { cancelable: true }))
         if (handled) e.preventDefault()
       }
@@ -90,7 +92,7 @@ export function useShellNav(tabless: boolean, opts: { tabs?: boolean; sidePanel?
       if (panel) {
         const params = new URLSearchParams(window.location.search)
         params.set(SIDE_PARAM, formatSidePanel(panel))
-        navigate(`${window.location.pathname}?${params}`, { preventScrollReset: true })
+        navigate(`${window.location.pathname}?${params}`, { replace: !panelCoversPage(), preventScrollReset: true })
         return
       }
       if (tabs) {

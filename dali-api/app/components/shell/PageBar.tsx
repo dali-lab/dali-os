@@ -4,6 +4,7 @@ import { Menu, Tooltip } from '~/components/ui/floating'
 import { AreaTile } from '~/components/shell/AreaTile'
 import { OverflowMenu } from '~/components/shell/OverflowMenu'
 import { cn } from '~/lib/cn'
+import { COPY_LINK_SHORTCUT, FAVORITE_SHORTCUT } from '~/lib/shortcuts'
 import { PageDocButton } from '~/components/page-docs/PageDocButton'
 import { PageBarTrail, useDocumentTitle, usePageTrail } from '~/components/Breadcrumbs'
 import { TablessHistoryNav } from '~/components/TablessHistoryNav'
@@ -18,9 +19,6 @@ import { RecordingPill } from '~/components/meeting-recorder/RecordingPill'
 
 export const PAGE_BAR_BUTTON =
   'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-os-grey transition-colors hover:bg-os-hover hover:text-foreground disabled:opacity-40'
-
-export const COPY_LINK_SHORTCUT = '⌘⇧C'
-export const FAVORITE_SHORTCUT = '⌘D'
 
 export type PageStar = {
   favorited: boolean

@@ -1,7 +1,7 @@
 import { lazy, Suspense, type ReactNode } from "react";
 import { Loader2 } from "lucide-react";
 import { PanelFrame } from "~/components/side-panel/PanelFrame";
-import { useAltClickOpensBeside, useSidePanel } from "~/components/side-panel/use-side-panel";
+import { useAltClickOpensBeside, useKeepSidePanel, useSidePanel } from "~/components/side-panel/use-side-panel";
 import { formatSidePanel } from "~/lib/side-panel";
 
 // The editor is heavy and most pages never open a panel, so it loads on demand.
@@ -11,6 +11,7 @@ const DocumentPanel = lazy(() => import("~/components/side-panel/DocumentPanel")
 export function SidePanelHost({ children }: { children: ReactNode }) {
   const { panel, close } = useSidePanel();
   useAltClickOpensBeside();
+  useKeepSidePanel();
   return (
     <div className="flex min-h-0 min-w-0 flex-1 items-start">
       <div className="flex min-h-0 min-w-0 flex-1 flex-col self-stretch">{children}</div>

@@ -24,13 +24,14 @@ import {
 } from '~/lib/desktop-tabs-store'
 import type { DesktopTab, DesktopTabsState } from '~/lib/desktop-tabs'
 import { buildPageLink, writePageLink } from '~/lib/page-link'
-import { tabCycleShortcut } from '~/lib/shortcuts'
+import { modKey, tabCycleShortcut } from '~/lib/shortcuts'
 import { cn } from '~/lib/cn'
 import { stripAppTitle } from '~/lib/page-title'
 import { fallbackPageLabel } from '~/components/shell/page-bar-model'
 import { usePageTrail } from '~/components/Breadcrumbs'
 import { tabIcon } from '~/lib/tab-icon'
-import { sidePanelForUrl } from '~/lib/side-panel'
+import { useVisibleSidePanel } from '~/components/side-panel/use-side-panel'
+import { sidePanelForUrl, withSidePanel } from '~/lib/side-panel'
 import { useLiveSession } from '~/components/meeting-recorder/live-session'
 
 /** Fired by the desktop app's File menu (desktop/src-tauri/src/menu.rs), which
@@ -70,20 +71,24 @@ export function useDesktopTabs(enabled: boolean, hint: boolean): boolean {
   const navigate = useNavigate()
   const navigateRef = useRef(navigate)
   navigateRef.current = navigate
-  const url = location.pathname + location.search
+  const sidePanel = useVisibleSidePanel()
+  const url = withSidePanel(location.pathname + location.search, sidePanel)
+  const recordedKey = useRef(location.key)
   const arrivalRef = useRef(url)
   arrivalRef.current = url
 
   useEffect(() => {
     if (!show) return
     return startTabs({ url: arrivalRef.current, label: pageTitle() || fallbackPageLabel(arrivalRef.current) || 'Home' }, (to, opts) =>
-      navigateRef.current(to, { replace: true, state: opts?.tabSwitch ? { tabSwitch: true } : undefined }),
+      navigateRef.current(to, { replace: true, state: opts }),
     )
   }, [show])
 
   useEffect(() => {
     if (!show) return
-    const restoreY = tabActions.record(url, navigationType)
+    // Same router location means only the panel changed, which isn't a page visit.
+    const restoreY = tabActions.record(url, recordedKey.current === location.key ? 'REPLACE' : navigationType)
+    recordedKey.current = location.key
     let raf = 0
     if (restoreY !== null) raf = window.requestAnimationFrame(() => window.scrollTo(0, restoreY))
     const labelTimer = window.setTimeout(() => tabActions.label(url, pageTitle() || fallbackPageLabel(url)), 50)
@@ -110,16 +115,16 @@ export function useDesktopTabs(enabled: boolean, hint: boolean): boolean {
       e.preventDefault()
     }
     const onKey = (e: KeyboardEvent) => {
-      if (!(e.metaKey || e.ctrlKey)) return
-      if (e.shiftKey && !e.altKey && (e.key === 'k' || e.key === 'K')) {
-        e.preventDefault()
-        tabActions.closeActive()
-        return
-      }
       const delta = tabCycleShortcut(e)
       if (delta !== null) {
         e.preventDefault()
         tabActions.cycle(delta)
+        return
+      }
+      if (!modKey(e)) return
+      if (e.shiftKey && !e.altKey && (e.key === 'k' || e.key === 'K')) {
+        e.preventDefault()
+        tabActions.closeActive()
         return
       }
       if (!e.altKey && !e.shiftKey && e.key >= '1' && e.key <= '9') {
