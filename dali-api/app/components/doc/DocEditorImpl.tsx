@@ -65,6 +65,7 @@ import { DocEditorFallback } from "./DocEditor";
 import { DaliSideMenuController } from "./DocSideMenu";
 import { resolveFeatures, type Features } from "./features";
 import { createFindReplacePlugin } from "./find";
+import { createSelectAllPlugin } from "./select-all";
 import { createTableDragSelectPlugin } from "./table-drag-select";
 import { enhancePasteHandler } from "./enhance-render";
 import { buildSchema, type DocEditorInstance, type DocPartialBlock } from "./schema/build";
@@ -629,8 +630,8 @@ function DocView(
   }, [editor, props.findOpen]);
 
   useEffect(() => {
-    const key = "dali-table-drag-select-ext";
-    editor.registerExtension({ key, prosemirrorPlugins: [createTableDragSelectPlugin()] });
+    const key = "dali-selection-ext";
+    editor.registerExtension({ key, prosemirrorPlugins: [createTableDragSelectPlugin(), createSelectAllPlugin()] });
     return () => {
       editor.unregisterExtension(key);
     };
