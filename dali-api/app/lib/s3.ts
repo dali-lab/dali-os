@@ -1,13 +1,18 @@
 import {
   S3Client,
+  AbortMultipartUploadCommand,
+  CompleteMultipartUploadCommand,
   CopyObjectCommand,
+  CreateMultipartUploadCommand,
   GetObjectCommand,
   HeadObjectCommand,
   PutObjectCommand,
   DeleteObjectCommand,
   DeleteObjectsCommand,
   ListObjectsV2Command,
+  NoSuchKey,
   NotFound,
+  UploadPartCommand,
 } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import { createPresignedPost, type PresignedPost } from '@aws-sdk/s3-presigned-post'
@@ -123,6 +128,20 @@ type DownloadUrlOptions = {
   cacheFor?: number
 }
 
+/**
+ * filename= is the ASCII fallback; filename* carries the real name, since names
+ * like macOS screenshots hold characters a plain header value can't.
+ */
+export function attachmentDisposition(fileName: string): string {
+  const clean = fileName.replace(/[\p{Cc}\p{Cs}"\\]/gu, "");
+  const ascii = clean.replace(/[^\x20-\x7e]/g, "_");
+  const encoded = encodeURIComponent(clean).replace(
+    /['()*]/g,
+    (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`,
+  );
+  return `attachment; filename="${ascii}"; filename*=UTF-8''${encoded}`;
+}
+
 export async function getDownloadUrl(
   key: string,
   options: number | DownloadUrlOptions = {},
@@ -137,8 +156,7 @@ export async function getDownloadUrl(
   const disposition = inline
     ? "inline"
     : fileName
-      ? // Strip quotes/control chars so the filename can't break out of the header.
-        `attachment; filename="${fileName.replace(/["\r\n]/g, "")}"`
+      ? attachmentDisposition(fileName)
       : undefined
 
   const command = new GetObjectCommand({
@@ -203,6 +221,60 @@ export async function getObjectBytes(
   const res = await s3.send(new GetObjectCommand({ Bucket: BUCKET, Key: key }))
   const bytes = await res.Body!.transformToByteArray()
   return { body: Buffer.from(bytes), contentType: res.ContentType ?? undefined }
+}
+
+// An object's bytes as they arrive, for files too large to hold in memory.
+// Null when the key doesn't exist.
+export async function getObjectStream(key: string): Promise<AsyncIterable<Uint8Array> | null> {
+  try {
+    const res = await s3.send(new GetObjectCommand({ Bucket: BUCKET, Key: key }))
+    return res.Body as unknown as AsyncIterable<Uint8Array>
+  } catch (err) {
+    if (err instanceof NoSuchKey) return null
+    throw err
+  }
+}
+
+const MULTIPART_PART_BYTES = 8 * 1024 * 1024
+
+// Multipart upload of a stream of unknown length. At most one part is buffered.
+export async function putObjectStream(
+  key: string,
+  chunks: AsyncIterable<Uint8Array>,
+  contentType: string,
+): Promise<void> {
+  const target = { Bucket: BUCKET, Key: key }
+  const { UploadId } = await s3.send(
+    new CreateMultipartUploadCommand({ ...target, ContentType: contentType }),
+  )
+  const parts: { ETag?: string; PartNumber: number }[] = []
+  const uploadPart = async (pieces: Uint8Array[]) => {
+    const PartNumber = parts.length + 1
+    const { ETag } = await s3.send(
+      new UploadPartCommand({ ...target, UploadId, PartNumber, Body: Buffer.concat(pieces) }),
+    )
+    parts.push({ ETag, PartNumber })
+  }
+  try {
+    let pending: Uint8Array[] = []
+    let pendingBytes = 0
+    for await (const chunk of chunks) {
+      pending.push(chunk)
+      pendingBytes += chunk.length
+      if (pendingBytes >= MULTIPART_PART_BYTES) {
+        await uploadPart(pending)
+        pending = []
+        pendingBytes = 0
+      }
+    }
+    if (pendingBytes > 0 || parts.length === 0) await uploadPart(pending)
+    await s3.send(
+      new CompleteMultipartUploadCommand({ ...target, UploadId, MultipartUpload: { Parts: parts } }),
+    )
+  } catch (err) {
+    await s3.send(new AbortMultipartUploadCommand({ ...target, UploadId })).catch(() => {})
+    throw err
+  }
 }
 
 export async function copyObject(sourceKey: string, destKey: string): Promise<void> {

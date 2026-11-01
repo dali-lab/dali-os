@@ -7,6 +7,7 @@ import { UNKNOWN_LABEL } from "~/lib/display";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { logAuditEvent } from "~/lib/audit";
 import { getDownloadUrl } from "~/lib/s3";
+import { downloadFileName } from "~/lib/file-download-name";
 import { hydrateAuthors } from "~/lib/collabAuth";
 import { notifyFileNewVersion } from "../lib/file-notifications.server";
 
@@ -91,7 +92,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       uploadedBy: nameById.get(v.uploadedById) ?? UNKNOWN_LABEL,
       createdAt: v.createdAt.toISOString(),
       isCurrent: v.id === file.currentVersionId,
-      downloadUrl: await getDownloadUrl(v.s3Key),
+      downloadUrl: await getDownloadUrl(v.s3Key, { fileName: downloadFileName(file.title, v.fileName) }),
     })),
   );
 

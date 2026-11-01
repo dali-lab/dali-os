@@ -4,6 +4,7 @@
 import { prisma } from "~/lib/db.server";
 import { canViewFile } from "~/lib/fileAccess.server";
 import { getDownloadUrl } from "~/lib/s3";
+import { downloadFileName } from "~/lib/file-download-name";
 import { hydrateAuthors } from "~/lib/collabAuth";
 import { UNKNOWN_LABEL } from "~/lib/display";
 import { McpNotFoundError } from "./errors";
@@ -71,7 +72,7 @@ export async function runGetProjectFile(callerId: string, input: Input) {
       uploadedBy: nameById.get(v.uploadedById) ?? UNKNOWN_LABEL,
       uploadedAt: v.createdAt.toISOString(),
       isCurrent: v.id === file.currentVersionId,
-      downloadUrl: await getDownloadUrl(v.s3Key),
+      downloadUrl: await getDownloadUrl(v.s3Key, { fileName: downloadFileName(file.title, v.fileName) }),
     })),
   );
 
