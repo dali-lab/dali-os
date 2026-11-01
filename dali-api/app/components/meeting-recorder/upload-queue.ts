@@ -55,7 +55,7 @@ export class ChunkUploadQueue {
   }
 
   private pump(): void {
-    if (this.uploading || this.stopped || this.queue.length === 0) return;
+    if (this.uploading || this.timer || this.stopped || this.queue.length === 0) return;
     this.uploading = true;
     const chunk = this.queue[0]!;
     this.upload(chunk)
@@ -75,7 +75,10 @@ export class ChunkUploadQueue {
         }
         this.callbacks.onError?.(err);
         const delay = backoffDelayMs(this.attempt++);
-        this.timer = setTimeout(() => this.pump(), delay);
+        this.timer = setTimeout(() => {
+          this.timer = null;
+          this.pump();
+        }, delay);
       });
   }
 

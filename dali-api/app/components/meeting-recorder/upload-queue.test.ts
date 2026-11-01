@@ -72,6 +72,59 @@ describe("ChunkUploadQueue", () => {
     }
   });
 
+  it("waits out the backoff when a new chunk arrives", async () => {
+    vi.useFakeTimers();
+    try {
+      const upload = vi.fn().mockRejectedValue(new Error("network"));
+      const q = new ChunkUploadQueue(upload);
+      q.enqueue(chunk(0));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(upload).toHaveBeenCalledTimes(1);
+
+      q.enqueue(chunk(1));
+      await vi.advanceTimersByTimeAsync(999);
+      expect(upload).toHaveBeenCalledTimes(1);
+
+      await vi.advanceTimersByTimeAsync(1);
+      expect(upload).toHaveBeenCalledTimes(2);
+      q.destroy();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps a failing recording to one retry per 30s", async () => {
+    vi.useFakeTimers();
+    try {
+      const upload = vi.fn().mockRejectedValue(new Error("502"));
+      const q = new ChunkUploadQueue(upload);
+      for (let i = 0; i < 90; i++) {
+        q.enqueue(chunk(i));
+        await vi.advanceTimersByTimeAsync(20_000);
+      }
+      // 30 minutes of 20s chunks: the 15s ramp, then one attempt every 30s.
+      expect(upload.mock.calls.length).toBeLessThanOrEqual(65);
+      q.destroy();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("cancels a pending retry on destroy", async () => {
+    vi.useFakeTimers();
+    try {
+      const upload = vi.fn().mockRejectedValue(new Error("network"));
+      const q = new ChunkUploadQueue(upload);
+      q.enqueue(chunk(0));
+      await vi.advanceTimersByTimeAsync(0);
+      q.destroy();
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(upload).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("stops and reports conflict on a 409 without retrying", async () => {
     const upload = vi.fn().mockRejectedValue(new ChunkConflictError("409"));
     const onConflict = vi.fn();
