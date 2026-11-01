@@ -6,7 +6,8 @@
 import type { ChunkResponse } from "./types";
 
 /** Thrown by the injected `upload` fn for a 409 (recording already finalized
- *  or processing) — never retried, unlike a transient network failure. */
+ *  or processing) or a 404 (row deleted) — never retried, unlike a transient
+ *  network failure. */
 export class ChunkConflictError extends Error {}
 
 export const MAX_QUEUED_CHUNKS = 20;
