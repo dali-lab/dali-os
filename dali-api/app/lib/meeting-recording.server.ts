@@ -231,6 +231,8 @@ export async function recordChunk(
     const voicedChannels = voiced && !priorVoiced.includes(channel) ? [...priorVoiced, channel] : priorVoiced;
     const chunkIndex = { ...(fresh.chunkIndex ?? {}) };
     const highWater = [...(chunkIndex[channel] ?? [])];
+    // A segment this channel skipped would be a hole, which Prisma rejects.
+    while (highWater.length < segment) highWater.push(-1);
     highWater[segment] = Math.max(highWater[segment] ?? -1, seq);
     chunkIndex[channel] = highWater;
 

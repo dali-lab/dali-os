@@ -129,7 +129,7 @@ async function uploadChunk(
     headers: { "Content-Type": "audio/pcm;rate=16000;channels=1" },
     body: chunk.buffer,
   });
-  if (res.status === 409) throw new ChunkConflictError();
+  if (res.status === 409 || res.status === 404) throw new ChunkConflictError();
   if (!res.ok) throw new Error(`chunk upload failed: ${res.status}`);
   return (await res.json()) as ChunkResponse;
 }
