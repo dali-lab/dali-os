@@ -4,7 +4,7 @@ vi.mock("~/lib/db.server", () => {
   const prisma = {
     room: { findUnique: vi.fn(), findMany: vi.fn() },
     roomBooking: { findMany: vi.fn(), create: vi.fn(), findUnique: vi.fn(), update: vi.fn(), deleteMany: vi.fn(), updateMany: vi.fn() },
-    roomBookingException: { upsert: vi.fn(), deleteMany: vi.fn() },
+    roomBookingException: { upsert: vi.fn(), deleteMany: vi.fn(), createMany: vi.fn() },
     scheduledMeeting: { findMany: vi.fn() },
     $executeRaw: vi.fn(),
     $transaction: vi.fn(),
@@ -52,7 +52,11 @@ const m = prisma as unknown as {
     deleteMany: ReturnType<typeof vi.fn>;
     updateMany: ReturnType<typeof vi.fn>;
   };
-  roomBookingException: { upsert: ReturnType<typeof vi.fn>; deleteMany: ReturnType<typeof vi.fn> };
+  roomBookingException: {
+    upsert: ReturnType<typeof vi.fn>;
+    deleteMany: ReturnType<typeof vi.fn>;
+    createMany: ReturnType<typeof vi.fn>;
+  };
   $transaction: ReturnType<typeof vi.fn>;
   scheduledMeeting: { findMany: ReturnType<typeof vi.fn> };
 };
@@ -214,6 +218,8 @@ describe("currentEvent", () => {
     isEvent: true,
     source: null,
     cycleId: null,
+    bookedTitle: null,
+    fromCalendarEvent: false,
   };
   it("opens 15 minutes early and closes 15 minutes late", () => {
     expect(currentEvent([event], at("2026-09-24T17:46:00Z").getTime())).toBe(event);
@@ -461,6 +467,18 @@ describe("hiring bookings (Interview / InterviewHold)", () => {
     expect(items.map((i) => i.id)).toEqual(["b1"]);
   });
 
+  it("hands clients the title as typed, without the fallback, and whether an event holds it", async () => {
+    m.roomBooking.findMany.mockResolvedValue([
+      booking({ id: "untitled", sourceEventId: "evt1" }),
+      booking({ id: "named", title: "  Design crit " }),
+    ]);
+    const items = await getRoomSchedule("r1", at("2026-09-21T00:00:00Z"), at("2026-09-22T00:00:00Z"));
+    expect(items.map(serializeScheduleItem)).toMatchObject([
+      { id: "untitled", title: "Ada's booking", bookedTitle: null, fromCalendarEvent: true },
+      { id: "named", title: "Design crit", bookedTitle: "Design crit", fromCalendarEvent: false },
+    ]);
+  });
+
   it("serializes the source so clients can tell hiring bookings apart", () => {
     const [item] = [hold()].map((b) => ({
       kind: "booking" as const,
@@ -474,6 +492,8 @@ describe("hiring bookings (Interview / InterviewHold)", () => {
       isEvent: false,
       source: "InterviewHold" as const,
       cycleId: cycle,
+      bookedTitle: null,
+      fromCalendarEvent: false,
     }));
     expect(serializeScheduleItem(item)).toMatchObject({ source: "InterviewHold" });
   });
@@ -492,6 +512,8 @@ describe("blockedBy", () => {
     isEvent: false,
     source,
     cycleId,
+    bookedTitle: null,
+    fromCalendarEvent: false,
   });
 
   it.each([
@@ -524,6 +546,8 @@ describe("withoutCoveredHolds", () => {
     isEvent: false,
     source,
     cycleId: id,
+    bookedTitle: null,
+    fromCalendarEvent: false,
   });
 
   it("shows two cycles' identical holds once", () => {
@@ -907,18 +931,71 @@ describe("event room holds", () => {
   it("scope all re-anchors a series hold and re-checks every occurrence", async () => {
     const newStart = new Date(Date.now() + H);
     const newEnd = new Date(newStart.getTime() + H);
-    const seriesHold = { id: "b1", roomId: "r1", recurrenceRule: "FREQ=WEEKLY;COUNT=3", room: { name: "Studio" } };
+    const seriesHold = { id: "b1", roomId: "r1", start: newStart, recurrenceRule: "FREQ=WEEKLY;COUNT=3", exceptions: [], room: { name: "Studio" } };
     m.roomBooking.findMany.mockResolvedValueOnce([seriesHold]).mockResolvedValue([]);
     const res = await retimeEventRoomBookings({ userId: "u1", sourceEventId: "evt1", start: newStart, end: newEnd });
     expect(res).toEqual({ ok: true, value: 1 });
     expect(m.roomBooking.update).toHaveBeenCalledWith({ where: { id: "b1" }, data: { start: newStart, end: newEnd, seriesEnd: expect.any(Date) } });
   });
 
+  it("scope all carries a series' cancelled dates along with the move", async () => {
+    const oldStart = new Date(Date.now() + H);
+    const newStart = new Date(oldStart.getTime() + H);
+    const newEnd = new Date(newStart.getTime() + H);
+    const cancelled = weeksLater(oldStart, 1);
+    const seriesHold = {
+      id: "b1",
+      roomId: "r1",
+      start: oldStart,
+      recurrenceRule: "FREQ=WEEKLY;COUNT=3",
+      exceptions: [{ originalStart: cancelled, overrideStart: null, overrideDurationMin: null, cancelled: true }],
+      room: { name: "Studio" },
+    };
+    m.roomBooking.findMany.mockResolvedValueOnce([seriesHold]).mockResolvedValue([]);
+    await retimeEventRoomBookings({ userId: "u1", sourceEventId: "evt1", start: newStart, end: newEnd });
+    expect(m.roomBookingException.deleteMany).toHaveBeenCalledWith({ where: { roomBookingId: "b1" } });
+    expect(m.roomBookingException.createMany).toHaveBeenCalledWith({
+      data: [
+        {
+          roomBookingId: "b1",
+          originalStart: new Date(cancelled.getTime() + H),
+          overrideStart: null,
+          overrideDurationMin: null,
+          cancelled: true,
+        },
+      ],
+    });
+  });
+
+  it("scope all doesn't let a cancelled date block the move", async () => {
+    const oldStart = new Date(Date.now() + H);
+    const newStart = new Date(oldStart.getTime() + H);
+    const newEnd = new Date(newStart.getTime() + H);
+    const cancelled = weeksLater(oldStart, 1);
+    const week2 = weeksLater(newStart, 1);
+    m.roomBooking.findMany
+      .mockResolvedValueOnce([
+        {
+          id: "b1",
+          roomId: "r1",
+          start: oldStart,
+          recurrenceRule: "FREQ=WEEKLY;COUNT=3",
+          exceptions: [{ originalStart: cancelled, overrideStart: null, overrideDurationMin: null, cancelled: true }],
+          room: { name: "Studio" },
+        },
+      ])
+      .mockResolvedValueOnce([
+        { id: "other", title: "Design crit", start: week2, end: new Date(week2.getTime() + H), user: ada },
+      ]);
+    const res = await retimeEventRoomBookings({ userId: "u1", sourceEventId: "evt1", start: newStart, end: newEnd });
+    expect(res).toEqual({ ok: true, value: 1 });
+  });
+
   it("scope all 409s naming the room when a later occurrence of the retimed series collides", async () => {
     const newStart = new Date(Date.now() + H);
     const newEnd = new Date(newStart.getTime() + H);
     const week2Start = weeksLater(newStart, 1);
-    const seriesHold = { id: "b1", roomId: "r1", recurrenceRule: "FREQ=WEEKLY;COUNT=3", room: { name: "Studio" } };
+    const seriesHold = { id: "b1", roomId: "r1", start: newStart, recurrenceRule: "FREQ=WEEKLY;COUNT=3", exceptions: [], room: { name: "Studio" } };
     m.roomBooking.findMany
       .mockResolvedValueOnce([seriesHold])
       .mockResolvedValueOnce([
@@ -933,7 +1010,7 @@ describe("event room holds", () => {
     const occurrenceStart = new Date(Date.now() + 7 * DAY);
     const newStart = new Date(Date.now() + 2 * H);
     const newEnd = new Date(newStart.getTime() + H);
-    const seriesHold = { id: "b1", roomId: "r1", recurrenceRule: "FREQ=WEEKLY;COUNT=3", room: { name: "Studio" } };
+    const seriesHold = { id: "b1", roomId: "r1", start: newStart, recurrenceRule: "FREQ=WEEKLY;COUNT=3", exceptions: [], room: { name: "Studio" } };
     m.roomBooking.findMany.mockResolvedValueOnce([seriesHold]).mockResolvedValue([]);
     const res = await retimeEventRoomBookings({
       userId: "u1",
