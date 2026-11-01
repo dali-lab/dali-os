@@ -4597,13 +4597,15 @@ function ProjectDriveTab({
     [],
   );
 
+  const onOpenBeside = useOpenBeside();
   const onOpenItem = useCallback(
     (item: DriveItem) => {
-      if (item.href) navigate(item.href);
+      if (!item.href) return;
+      if (onOpenBeside && item.type === "doc") onOpenBeside({ href: item.href });
+      else navigate(item.href);
     },
-    [navigate],
+    [navigate, onOpenBeside],
   );
-  const onOpenBeside = useOpenBeside();
 
   // One item's move, with no reporting: the batch below speaks for the
   // selection. `onError` gets the reason a move was refused.
