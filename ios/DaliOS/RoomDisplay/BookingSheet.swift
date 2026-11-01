@@ -1,19 +1,36 @@
 import SwiftUI
 
+/// Which booking sheet is open. Custom is wider, so moving between them swaps
+/// the sheet rather than resizing it.
+enum BookingFlow: Identifiable {
+    case quick
+    case custom(fromQuick: Bool)
+
+    var id: String {
+        switch self {
+        case .quick: "quick"
+        case .custom: "custom"
+        }
+    }
+}
+
 /// Book now, in two steps: how long (lengths that end before the next booking),
-/// then scan the booker's DALI pass to confirm.
+/// then scan the booker's DALI pass to confirm. Custom hands off to
+/// `CustomBookingSheet` for any other day, time, or length.
 struct BookingSheet: View {
     let room: DisplayRoom
     let state: RoomState
+    let onCustom: () -> Void
 
     @Environment(DisplayStore.self) private var store
     @Environment(\.dismiss) private var dismiss
     @State private var selected: Int?
     @State private var scanning = false
 
-    init(room: DisplayRoom, state: RoomState) {
+    init(room: DisplayRoom, state: RoomState, onCustom: @escaping () -> Void) {
         self.room = room
         self.state = state
+        self.onCustom = onCustom
         let options = state.bookableDurations
         _selected = State(initialValue: options.contains(30) ? 30 : options.first)
     }
@@ -107,6 +124,25 @@ struct BookingSheet: View {
                     .accessibilityLabel(DisplayFormat.duration(minutes: minutes))
                     .accessibilityAddTraits(active ? .isSelected : [])
                 }
+                Button(action: onCustom) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Custom")
+                            .font(Brand.heading(24))
+                            .foregroundStyle(Brand.textHeading)
+                        Text("Pick a day and time")
+                            .font(Brand.body(15))
+                            .foregroundStyle(Brand.textMuted)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(16)
+                    .background(Brand.surface, in: .rect(cornerRadius: Brand.cardRadius))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: Brand.cardRadius)
+                            .strokeBorder(Brand.borderSubtle, lineWidth: 2)
+                    )
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Custom")
             }
             Text("Next, you'll scan your DALI pass to confirm.")
                 .font(Brand.body(15))
@@ -168,6 +204,7 @@ struct SheetScaffold<Content: View, Footer: View>: View {
     let title: String
     let description: String
     let onClose: () -> Void
+    var wide = false
     @ViewBuilder let content: Content
     @ViewBuilder let footer: Footer
 
@@ -204,7 +241,26 @@ struct SheetScaffold<Content: View, Footer: View>: View {
         .padding(28)
         .frame(maxWidth: .infinity)
         .presentationBackground(Brand.surface)
-        .presentationSizing(.form.fitted(horizontal: false, vertical: true))
+        .modifier(SheetSizing(wide: wide))
         .presentationCornerRadius(Brand.panelRadius)
+    }
+}
+
+private struct SheetSizing: ViewModifier {
+    let wide: Bool
+
+    func body(content: Content) -> some View {
+        if wide {
+            content.presentationSizing(WideSheetSizing())
+        } else {
+            content.presentationSizing(.form.fitted(horizontal: false, vertical: true))
+        }
+    }
+}
+
+/// Room for the day slider, whose 15-minute steps need the width.
+private struct WideSheetSizing: PresentationSizing {
+    func proposedSize(for root: PresentationSizingRoot, context: PresentationSizingContext) -> ProposedViewSize {
+        ProposedViewSize(width: 1060, height: 640)
     }
 }

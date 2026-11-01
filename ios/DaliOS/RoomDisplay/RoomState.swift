@@ -10,8 +10,8 @@ struct RoomState: Equatable {
         case busy
     }
 
-    /// The "Book now" lengths, in minutes.
-    static let bookingOptions = [15, 30, 60, 90]
+    /// The "Book now" lengths, in minutes. Anything else is Custom.
+    static let bookingOptions = [15, 30, 60]
     static let soonThreshold = 10
 
     let status: Status
