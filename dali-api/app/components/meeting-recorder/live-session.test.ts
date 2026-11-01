@@ -180,6 +180,15 @@ describe("stopping", () => {
     expect(posts()).toEqual([]);
   });
 
+  it("stops capturing on a 404 instead of retrying into a deleted recording", async () => {
+    await start();
+    respond = () => jsonRes({ error: "Not found" }, 404);
+    captureInstances[0]!.onFrame!(new ArrayBuffer(4), 0);
+    await vi.waitFor(() => expect(getLiveSession()?.conflicted).toBe(true));
+    expect(captureInstances[0]!.stopped).toBe(true);
+    expect(posts()).toEqual([]);
+  });
+
   it("asks the server to stop a desktop session and leaves the rest to the poll", async () => {
     adoptDesktopSession({ recordingId: "r1", documentName: "doc:a:body", status: "recording", startedAt: 1 });
     await stopLiveSession();

@@ -372,6 +372,29 @@ describe("recordChunk", () => {
     );
   });
 
+  const chunkIndexWritten = () =>
+    (vi.mocked(prisma.meetingRecording.update).mock.calls[0][0] as unknown as {
+      data: { chunkIndex: Record<string, number[]> };
+    }).data.chunkIndex;
+
+  it("marks a skipped segment rather than leaving a hole Prisma rejects", async () => {
+    lockedRow({ chunkIndex: { mic: [45] } });
+    await recordChunk(rec(), "mic", 2, 0, true);
+    expect(chunkIndexWritten()).toEqual({ mic: [45, -1, 0] });
+  });
+
+  it("marks earlier segments for a channel that first appears after a Continue", async () => {
+    lockedRow({ chunkIndex: { mic: [45, 10] } });
+    await recordChunk(rec(), "call", 1, 3, true);
+    expect(chunkIndexWritten()).toEqual({ mic: [45, 10], call: [-1, 3] });
+  });
+
+  it("raises a segment previously marked as skipped", async () => {
+    lockedRow({ chunkIndex: { mic: [45, -1, 0] } });
+    await recordChunk(rec(), "mic", 1, 0, true);
+    expect(chunkIndexWritten()).toEqual({ mic: [45, 0, 0] });
+  });
+
   it("tells the client to stop when the row is gone", async () => {
     vi.mocked(prisma.$transaction).mockImplementation(((fn: (tx: typeof prisma) => unknown) =>
       fn(prisma)) as never);

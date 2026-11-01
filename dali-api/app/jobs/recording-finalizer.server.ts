@@ -62,14 +62,20 @@ export async function runRecordingFinalizer({ now }: JobContext): Promise<JobRes
     }
   }
 
-  // (c) Created but never claimed by a browser tab or the desktop app.
+  // (c) Pending too long. With no audio, nothing ever claimed it. With audio,
+  // a Continue never got going, so keep what was recorded. updatedAt, because
+  // Continue puts an old row back in Pending.
   const unclaimed = await prisma.meetingRecording.findMany({
-    where: { status: "Pending", createdAt: { lt: new Date(now.getTime() - PENDING_UNCLAIMED_MS) } },
+    where: { status: "Pending", updatedAt: { lt: new Date(now.getTime() - PENDING_UNCLAIMED_MS) } },
     take: TAKE,
   });
   for (const rec of unclaimed) {
-    await deletePrefix(rec.id);
-    await prisma.meetingRecording.delete({ where: { id: rec.id } });
+    if (rec.channels.length > 0) {
+      await startProcessing(rec);
+    } else {
+      await deletePrefix(rec.id);
+      await prisma.meetingRecording.delete({ where: { id: rec.id } });
+    }
   }
 
   // (d) The owner pressed Stop but never came back to press Transcribe or
