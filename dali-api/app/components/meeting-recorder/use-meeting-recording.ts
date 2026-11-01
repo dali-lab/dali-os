@@ -1349,6 +1349,21 @@ export function useMeetingRecording({
 
   // The desktop app never answered the deep link: drop that row and reset to
   // the idle sheet with the browser radio selected, ready for Start recording.
+  // The old row has to be gone before the new start, or the server answers
+  // alreadyRecording and this client ends up following its own dead row.
+  async function retryDesktopStart() {
+    const stale = recordingId;
+    setAppUnreachable(false);
+    setRecordingId(null);
+    setPhase("idle");
+    writeBackup(documentName, null);
+    if (stale) {
+      clearLiveSession(stale);
+      await fetch(`/api/meeting-recordings/${stale}`, { method: "DELETE", credentials: "include" }).catch(() => null);
+    }
+    await startDesktop();
+  }
+
   function switchToBrowserAfterUnreachable() {
     if (recordingId) {
       void fetch(`/api/meeting-recordings/${recordingId}`, { method: "DELETE", credentials: "include" }).catch(
@@ -1501,6 +1516,7 @@ export function useMeetingRecording({
     setSpeaker,
     jumpToTranscript,
     cancelStart,
+    retryDesktopStart,
     switchToBrowserAfterUnreachable,
   };
 }

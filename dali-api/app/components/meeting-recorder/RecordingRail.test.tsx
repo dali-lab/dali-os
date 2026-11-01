@@ -59,6 +59,36 @@ describe("RecordingRail per state (specs/meeting-recording-rail.md state table)"
     expect(html).not.toContain("Get the app");
   });
 
+  it("starting in the Mac app: says Starting, never that it is opening the app", () => {
+    const html = render(makeRec({ phase: "starting", captureMode: "desktop", useDesktopApp: true }));
+    expect(html).toContain("Starting…");
+    expect(html).not.toContain("Opening the DALI OS app");
+  });
+
+  it("stuck in the Mac app: offers Try again and Cancel, no download or browser fallback", () => {
+    const html = render(makeRec({ phase: "starting", captureMode: "desktop", useDesktopApp: true, appUnreachable: true }));
+    expect(html).toContain("Recording didn&#x27;t start.");
+    expect(html).toContain("If it keeps happening, quit and reopen the DALI OS app.");
+    expect(html).toContain("Try again");
+    expect(html).toContain('aria-label="Cancel"');
+    expect(html).not.toContain("Get the app");
+    expect(html).not.toContain("Record in this browser instead");
+    expect(html).not.toContain("didn&#x27;t respond");
+  });
+
+  it("following someone else's pending recording in the Mac app: no retry, which would delete their row", () => {
+    const html = render(
+      makeRec({ phase: "starting", captureMode: "desktop", useDesktopApp: true, appUnreachable: true, drives: false }),
+    );
+    expect(html).toContain("Starting…");
+    expect(html).not.toContain("Try again");
+    expect(html).not.toContain("quit and reopen");
+  });
+
+  it("starting in the Windows or Linux app: browser capture says Starting", () => {
+    expect(render(makeRec({ phase: "starting", captureMode: "browser", desktopVer: "1.0.0" }))).toContain("Starting…");
+  });
+
   it("starting (desktop, after 30s): app-didn't-respond copy, Record in this browser primary, Cancel + Get the app secondaries", () => {
     const html = render(makeRec({ phase: "starting", captureMode: "desktop", appUnreachable: true }));
     expect(html).toContain("The DALI OS app didn&#x27;t respond.");
