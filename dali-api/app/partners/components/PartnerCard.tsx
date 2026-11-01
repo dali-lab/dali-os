@@ -1,13 +1,12 @@
 // Built on the same BoardCard shell as TaskBoard's TaskCard so the two kanbans
-// read as one system. Facts are labeled rows rather than chips or bare icons:
-// an unlabeled chip or icon left Core guessing what a value was.
+// read as one system. Terms and domains read as pills; the time-sensitive
+// facts (next step, meetings, staleness) stay labeled rows.
 
 import type { ReactNode } from "react";
-import { Link } from "react-router";
-import { BoardCard } from "~/components/board/BoardCard";
+import { BoardCard, BoardCardChip } from "~/components/board/BoardCard";
 import { cn } from "~/lib/cn";
-import { isPaused, isStale, PARTNER_SOURCE_LABELS } from "../lib/partner-application";
-import { formatCardSpots, type PartnerCardModel } from "../lib/partner-board";
+import { isPaused, isStale } from "../lib/partner-application";
+import type { PartnerCardModel } from "../lib/partner-board";
 
 function isOverdue(dueIso: string | null): boolean {
   if (!dueIso) return false;
@@ -69,7 +68,6 @@ export function PartnerCard({
     card.meetingCount > 0 && `${card.meetingCount} held`,
     card.pendingRequestCount > 0 && `${card.pendingRequestCount} requested`,
   ].filter(Boolean);
-  const spots = formatCardSpots(card.domains);
   const quietDays = staleDaysCount(card.lastActivityAt);
 
   return (
@@ -90,20 +88,24 @@ export function PartnerCard({
         {card.orgName ? ` · ${card.orgName}` : ""}
       </div>
 
+      {(card.targetTerms.length > 0 || card.domains.length > 0) && (
+        <div className="mt-2 flex flex-wrap items-center gap-1 text-xs">
+          {card.targetTerms.map((t) => (
+            <BoardCardChip key={t.id} tone="accent">
+              {t.code}
+            </BoardCardChip>
+          ))}
+          {card.domains.map((d) => (
+            <BoardCardChip key={d.id}>
+              {d.name}
+              {d.expectedMembers > 0 ? ` ${d.expectedMembers}` : ""}
+            </BoardCardChip>
+          ))}
+        </div>
+      )}
+
+      {(card.nextStep || meetings.length > 0 || stale || (paused && card.holdUntil)) && (
       <dl className="mt-2 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-xs">
-        <Field label="Source">{PARTNER_SOURCE_LABELS[card.source] ?? card.source}</Field>
-        {card.targetTerms.length > 0 && (
-          <Field label={plural(card.targetTerms.length, "Term", "Terms")}>
-            {card.targetTerms.map((t) => t.code).join(", ")}
-          </Field>
-        )}
-        {spots ? (
-          <Field label="Spots">{spots}</Field>
-        ) : card.domains.length > 0 && (
-          <Field label={plural(card.domains.length, "Domain", "Domains")}>
-            {card.domains.map((d) => d.name).join(", ")}
-          </Field>
-        )}
         {card.nextStep && (
           <Field label="Next step" warn={isOverdue(card.nextStepDueAt)}>
             {card.nextStep}
@@ -117,18 +119,8 @@ export function PartnerCard({
           </Field>
         )}
         {paused && card.holdUntil && <Field label="Paused">Until {formatShortDate(card.holdUntil)}</Field>}
-        {card.resultingProjectId && (
-          <Field label="Project">
-            <Link
-              to={`/projects/${card.resultingProjectId}`}
-              onClick={(e) => e.stopPropagation()}
-              className="text-os-accent hover:underline"
-            >
-              Open
-            </Link>
-          </Field>
-        )}
       </dl>
+      )}
     </BoardCard>
   );
 }

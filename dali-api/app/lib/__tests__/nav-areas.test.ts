@@ -183,7 +183,6 @@ describe("Core area", () => {
     const hrefs = core().subtabs.map((t) => t.href);
     expect(hrefs).toEqual(
       expect.arrayContaining([
-        "/core",
         "/core/staffing",
         "/core/intent-to-work",
         "/core/project-bids",
@@ -192,6 +191,8 @@ describe("Core area", () => {
         "/core/communications",
       ]),
     );
+    // The retired Milestones board owned /core; no subtab points there now.
+    expect(hrefs).not.toContain("/core");
   });
 
   it("no longer owns Attendance — it moved to the lab-wide surface under General", () => {

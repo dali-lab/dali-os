@@ -10,11 +10,15 @@ import {
 } from "react-router";
 import { Select } from "~/components/ui/floating";
 import {
+  AtSign,
+  Briefcase,
   Building2,
-  Calendar,
-  ClipboardList,
-  Clock,
+  Landmark,
+  Linkedin,
   Mail as MailIcon,
+  MessageSquare,
+  Pencil,
+  Phone,
   User,
 } from "lucide-react";
 import type { Route } from "./+types/core.partners.contacts.$contactId";
@@ -24,11 +28,20 @@ import { prisma } from "~/lib/db.server";
 import { isCore } from "~/lib/roles";
 import { coreHandle } from "~/core/coreNav";
 import { logAuditEvent } from "~/lib/audit";
-import { UnderlineTabButtons } from "~/components/AreaPillNav";
+import { cn } from "~/lib/cn";
+import { useOsChrome } from "~/components/os-chrome";
+import {
+  DetailEditRow,
+  DetailRow,
+  OS_DETAIL_CARD,
+  OS_DETAIL_ICON,
+  OsTabBar,
+} from "~/components/os-page";
 import { EditableSection } from "~/components/EditableSection";
 import { PartnerActivityFeed } from "../components/PartnerActivityFeed";
 import { PartnerEmailPanel } from "../components/PartnerEmailPanel";
 import { ContactAvatar } from "../components/contact/ContactAvatar";
+import { PartnerStagePill } from "../components/org/OrgStatusPill";
 import { getPartnerContactEmailThreads } from "../lib/partner-email.server";
 import { loadPartnerActivityPage } from "../lib/partner-activity-page.server";
 import { logPartnerActivity } from "../lib/partner-activity.server";
@@ -37,10 +50,6 @@ import {
   PARTNER_CHANNEL_LABELS,
   isPartnerChannel,
 } from "../lib/partner-contact";
-import {
-  PARTNER_STAGE_LABELS,
-  PARTNER_STAGE_PILL,
-} from "../lib/partner-application";
 
 export const meta: Route.MetaFunction = ({ data }) => {
   const name = (data as { contact?: { name: string } } | undefined)?.contact?.name;
@@ -51,9 +60,6 @@ export const handle = {
   ...coreHandle("partners", (data) => (data as { trailLabel?: string } | null)?.trailLabel),
   favoriteRoute: true,
 };
-
-const detailInputClass =
-  "w-full rounded-lg border border-border bg-background px-3 py-2 text-sm";
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
@@ -193,85 +199,53 @@ export async function action({ request, params }: Route.ActionArgs) {
 type LoaderData = Exclude<Awaited<ReturnType<typeof loader>>, Response>;
 type LoaderContact = LoaderData["contact"];
 
+// The Details tab's facts card — the same DetailRow list the member profile
+// and project page state their facts in, swapping to fields when editing.
 function ContactDetailsFields({ contact, editing }: { contact: LoaderContact; editing: boolean }) {
-  return (
-    <div className="grid gap-3 sm:grid-cols-2">
-      <input type="hidden" name="intent" value="contact-details" />
-      <div>
-        <div className="text-xs font-medium text-muted-foreground mb-1">Name</div>
-        {editing ? (
-          <input name="name" defaultValue={contact.name} required className={detailInputClass} />
-        ) : (
-          <div className="text-sm text-foreground">{contact.name}</div>
-        )}
-      </div>
-      <div>
-        <div className="text-xs font-medium text-muted-foreground mb-1">Email</div>
-        {editing ? (
+  const { formClass } = useOsChrome();
+  const ic = OS_DETAIL_ICON;
+  const dash = <span className="text-os-muted">—</span>;
+
+  if (editing) {
+    return (
+      <div className={cn(OS_DETAIL_CARD, "pb-2 pt-1", formClass, "grid grid-cols-[max-content_1fr]")}>
+        <input type="hidden" name="intent" value="contact-details" />
+        <DetailEditRow icon={<User className={ic} />} label="Name">
+          <input name="name" type="text" defaultValue={contact.name} required className="w-full" />
+        </DetailEditRow>
+        <DetailEditRow icon={<AtSign className={ic} />} label="Email">
           <input
             name="email"
             type="email"
             defaultValue={contact.email ?? ""}
             required
-            className={detailInputClass}
+            className="w-full"
           />
-        ) : (
-          <div className="text-sm text-foreground">{contact.email ?? "—"}</div>
-        )}
-      </div>
-      <div>
-        <div className="text-xs font-medium text-muted-foreground mb-1">Title</div>
-        {editing ? (
-          <input name="title" defaultValue={contact.title ?? ""} className={detailInputClass} />
-        ) : (
-          <div className="text-sm text-foreground">{contact.title ?? "—"}</div>
-        )}
-      </div>
-      <div>
-        <div className="text-xs font-medium text-muted-foreground mb-1">Phone</div>
-        {editing ? (
-          <input name="phone" defaultValue={contact.phone ?? ""} className={detailInputClass} />
-        ) : (
-          <div className="text-sm text-foreground">{contact.phone ?? "—"}</div>
-        )}
-      </div>
-      <div>
-        <div className="text-xs font-medium text-muted-foreground mb-1">LinkedIn</div>
-        {editing ? (
+        </DetailEditRow>
+        <DetailEditRow icon={<Briefcase className={ic} />} label="Title">
+          <input name="title" type="text" defaultValue={contact.title ?? ""} className="w-full" />
+        </DetailEditRow>
+        <DetailEditRow icon={<Phone className={ic} />} label="Phone">
+          <input name="phone" type="text" defaultValue={contact.phone ?? ""} className="w-full" />
+        </DetailEditRow>
+        <DetailEditRow icon={<Linkedin className={ic} />} label="LinkedIn">
           <input
             name="linkedinUrl"
+            type="url"
             defaultValue={contact.linkedinUrl ?? ""}
             placeholder="https://"
-            className={detailInputClass}
+            className="w-full"
           />
-        ) : contact.linkedinUrl ? (
-          <a
-            href={contact.linkedinUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="text-sm text-dark-blue hover:underline"
-          >
-            {contact.linkedinUrl}
-          </a>
-        ) : (
-          <div className="text-sm text-foreground">—</div>
-        )}
-      </div>
-      <div>
-        <div className="text-xs font-medium text-muted-foreground mb-1">Affiliation</div>
-        {editing ? (
+        </DetailEditRow>
+        <DetailEditRow icon={<Landmark className={ic} />} label="Affiliation">
           <input
             name="affiliation"
+            type="text"
             defaultValue={contact.affiliation ?? ""}
-            className={detailInputClass}
+            className="w-full"
           />
-        ) : (
-          <div className="text-sm text-foreground">{contact.affiliation ?? "—"}</div>
-        )}
-      </div>
-      <div>
-        <div className="text-xs font-medium text-muted-foreground mb-1">Preferred channel</div>
-        {editing ? (
+        </DetailEditRow>
+        <DetailEditRow icon={<MessageSquare className={ic} />} label="Preferred channel">
           <Select
             name="preferredChannel"
             defaultValue={contact.preferredChannel ?? ""}
@@ -279,21 +253,59 @@ function ContactDetailsFields({ contact, editing }: { contact: LoaderContact; ed
               { value: "", label: "Not set" },
               ...PARTNER_CHANNELS.map((c) => ({ value: c, label: PARTNER_CHANNEL_LABELS[c] })),
             ]}
-            buttonClassName={`${detailInputClass} inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40`}
           />
-        ) : (
-          <div className="text-sm text-foreground">
-            {contact.preferredChannel ? PARTNER_CHANNEL_LABELS[contact.preferredChannel] : "—"}
-          </div>
-        )}
+        </DetailEditRow>
+        <div className="col-span-2 flex flex-col gap-2 py-3">
+          <span className="flex items-center gap-2.5 text-sm text-os-grey">
+            <Pencil className={ic} />
+            Notes
+          </span>
+          <textarea name="notes" defaultValue={contact.notes ?? ""} rows={3} className="w-full" />
+        </div>
       </div>
-      <div className="sm:col-span-2">
-        <div className="text-xs font-medium text-muted-foreground mb-1">Notes</div>
-        {editing ? (
-          <textarea name="notes" defaultValue={contact.notes ?? ""} rows={3} className={detailInputClass} />
+    );
+  }
+
+  return (
+    <div className={OS_DETAIL_CARD}>
+      <DetailRow icon={<User className={ic} />} label="Name">
+        {contact.name}
+      </DetailRow>
+      <DetailRow icon={<AtSign className={ic} />} label="Email">
+        {contact.email ?? dash}
+      </DetailRow>
+      <DetailRow icon={<Briefcase className={ic} />} label="Title">
+        {contact.title ?? dash}
+      </DetailRow>
+      <DetailRow icon={<Phone className={ic} />} label="Phone">
+        {contact.phone ?? dash}
+      </DetailRow>
+      <DetailRow icon={<Linkedin className={ic} />} label="LinkedIn">
+        {contact.linkedinUrl ? (
+          <a
+            href={contact.linkedinUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="text-os-accent hover:underline break-all"
+          >
+            {contact.linkedinUrl}
+          </a>
         ) : (
-          <div className="text-sm text-foreground whitespace-pre-wrap">{contact.notes ?? "—"}</div>
+          dash
         )}
+      </DetailRow>
+      <DetailRow icon={<Landmark className={ic} />} label="Affiliation">
+        {contact.affiliation ?? dash}
+      </DetailRow>
+      <DetailRow icon={<MessageSquare className={ic} />} label="Preferred channel">
+        {contact.preferredChannel ? PARTNER_CHANNEL_LABELS[contact.preferredChannel] : dash}
+      </DetailRow>
+      <div className="flex flex-col gap-2 py-3">
+        <span className="flex items-center gap-2.5 text-sm text-os-grey">
+          <Pencil className={ic} />
+          Notes
+        </span>
+        <p className="whitespace-pre-wrap text-sm text-foreground">{contact.notes ?? "—"}</p>
       </div>
     </div>
   );
@@ -305,11 +317,28 @@ function isContactTab(x: string | null): x is ContactTab {
   return !!x && (CONTACT_TAB_VALUES as readonly string[]).includes(x);
 }
 
+const CONTACT_TAB_LABELS: Record<ContactTab, string> = {
+  timeline: "Timeline",
+  applications: "Applications",
+  meetings: "Meetings",
+  email: "Email",
+  details: "Details",
+};
+
 export default function PartnerContactDetail() {
-  const { contact, applications, meetings, activities, activitiesNextCursor, actorNames, threads, canEdit } =
-    useLoaderData<typeof loader>();
+  const {
+    contact,
+    applications,
+    meetings,
+    activities,
+    activitiesNextCursor,
+    actorNames,
+    threads,
+    canEdit,
+  } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const submit = useSubmit();
+  const os = useOsChrome();
   const detailsFormRef = useRef<HTMLFormElement>(null);
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -326,173 +355,191 @@ export default function PartnerContactDetail() {
       { replace: true, preventScrollReset: true },
     );
 
-  const tabItems = [
-    { label: "Timeline", value: "timeline" as const, icon: Clock },
-    { label: "Applications", value: "applications" as const, icon: ClipboardList },
-    { label: "Meetings", value: "meetings" as const, icon: Calendar },
-    { label: "Email", value: "email" as const, icon: MailIcon },
-    { label: "Details", value: "details" as const, icon: User },
-  ];
+  const subtitle = [contact.title, contact.affiliation].filter(Boolean).join(" · ");
 
   return (
-    <div className="flex flex-col gap-6 max-w-4xl">
-      <div className="flex items-center gap-4">
+    <div className="flex flex-col gap-6">
+      <header className="flex items-center gap-6">
         <ContactAvatar contact={contact} size="lg" />
-        <div className="min-w-0 flex-1">
-          <h1 className="font-heading text-2xl font-bold text-foreground truncate">
-            {contact.name}
-          </h1>
-          <p className="text-sm text-muted-foreground flex flex-wrap items-center gap-x-2">
-            {contact.title && <span>{contact.title}</span>}
-            {contact.affiliation && <span>{contact.affiliation}</span>}
-            {contact.email && <span>{contact.email}</span>}
-            {contact.phone && <span>{contact.phone}</span>}
+        <div className="min-w-0 flex flex-1 flex-col gap-3">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0 flex flex-col gap-1">
+              <h1 className="font-heading text-[32px] font-medium leading-none text-foreground truncate">
+                {contact.name}
+              </h1>
+              {subtitle && <span className="text-[13px] text-os-grey">{subtitle}</span>}
+            </div>
+            {canEdit && tab !== "details" && (
+              <button type="button" onClick={() => setTab("details")} className={os.actionBtn()}>
+                <Pencil className="h-3.5 w-3.5" />
+                Edit
+              </button>
+            )}
+          </div>
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+            {contact.memberships.map((m) => (
+              <Link
+                key={m.id}
+                to={`/core/partners/orgs/${m.org.id}`}
+                className="inline-flex items-center gap-1.5 rounded-full bg-os-well px-3 py-[5px] text-[13px] font-semibold text-foreground transition-colors hover:bg-os-container"
+              >
+                <Building2 className="h-3.5 w-3.5 text-os-grey" aria-hidden />
+                {m.org.name}
+              </Link>
+            ))}
+            {contact.email && (
+              <a
+                href={`mailto:${contact.email}`}
+                className="inline-flex items-center gap-1.5 text-[13px] text-os-grey transition-colors hover:text-foreground"
+              >
+                <MailIcon className="h-3.5 w-3.5" aria-hidden />
+                {contact.email}
+              </a>
+            )}
+            {contact.phone && (
+              <span className="inline-flex items-center gap-1.5 text-[13px] text-os-grey">
+                <Phone className="h-3.5 w-3.5" aria-hidden />
+                {contact.phone}
+              </span>
+            )}
             {contact.linkedinUrl && (
               <a
                 href={contact.linkedinUrl}
                 target="_blank"
                 rel="noreferrer"
-                className="underline hover:text-foreground"
+                className="inline-flex items-center gap-1.5 text-[13px] text-os-grey transition-colors hover:text-foreground"
               >
+                <Linkedin className="h-3.5 w-3.5" aria-hidden />
                 LinkedIn
               </a>
             )}
             {contact.preferredChannel && (
-              <span>Prefers {PARTNER_CHANNEL_LABELS[contact.preferredChannel]}</span>
+              <span className="inline-flex items-center gap-1.5 text-[13px] text-os-grey">
+                <MessageSquare className="h-3.5 w-3.5" aria-hidden />
+                Prefers {PARTNER_CHANNEL_LABELS[contact.preferredChannel]}
+              </span>
             )}
-          </p>
-          {contact.memberships.length > 0 && (
-            <div className="mt-1.5 flex flex-wrap gap-1.5">
-              {contact.memberships.map((m) => (
-                <Link
-                  key={m.id}
-                  to={`/core/partners/orgs/${m.org.id}`}
-                  className="inline-flex items-center gap-1 text-xs rounded-full bg-muted text-muted-foreground px-2 py-0.5 hover:bg-muted/70"
-                >
-                  <Building2 className="w-3 h-3" />
-                  {m.org.name}
-                </Link>
-              ))}
-            </div>
-          )}
+          </div>
         </div>
-        {canEdit && (
-          <button
-            type="button"
-            onClick={() => setTab("details")}
-            className="px-3 py-1.5 text-sm font-medium rounded-md border border-border hover:bg-muted transition"
-          >
-            Edit
-          </button>
-        )}
-      </div>
+      </header>
 
-      {error && (
-        <p className="text-sm text-destructive bg-destructive/10 rounded-lg px-4 py-3">{error}</p>
-      )}
-
-      <UnderlineTabButtons
-        label="Contact"
-        items={tabItems.map((t) => ({
-          label: t.label,
-          icon: t.icon,
-          active: tab === t.value,
-          onClick: () => setTab(t.value),
-        }))}
+      <OsTabBar
+        ariaLabel="Contact sections"
+        tabs={CONTACT_TAB_VALUES.map((t) => ({ key: t, label: CONTACT_TAB_LABELS[t] }))}
+        active={tab}
+        onSelect={setTab}
       />
 
-      {tab === "timeline" && (
-        <PartnerActivityFeed
-          activities={activities}
-          nextCursor={activitiesNextCursor}
-          scope={{ contactId: contact.id }}
-          actorNames={actorNames}
-          canEdit={canEdit}
-        />
+      {error && (
+        <p className="rounded-os-item bg-destructive/10 px-4 py-3 text-sm text-destructive">
+          {error}
+        </p>
       )}
 
-      {tab === "applications" && (
-        <section className="bg-card border border-border rounded-lg p-4 flex flex-col gap-3">
-          <h2 className="font-heading font-semibold text-foreground">Applications</h2>
-          {applications.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No applications.</p>
-          ) : (
-            <ul className="divide-y divide-border">
-              {applications.map((a) => (
-                <li key={a.id} className="py-2.5 flex items-center gap-3">
-                  <Link
-                    to={`/core/partners/applications/${a.id}`}
-                    className="text-sm font-medium text-foreground hover:underline flex-1 min-w-0 truncate"
-                  >
-                    {a.title}
-                  </Link>
-                  <span className={`text-xs rounded-full px-2 py-0.5 ${PARTNER_STAGE_PILL[a.stage]}`}>
-                    {PARTNER_STAGE_LABELS[a.stage]}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-      )}
-
-      {tab === "meetings" && (
-        <section className="bg-card border border-border rounded-lg p-4 flex flex-col gap-3">
-          <h2 className="font-heading font-semibold text-foreground">Meetings</h2>
-          {meetings.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No meetings yet.</p>
-          ) : (
-            <ul className="divide-y divide-border">
-              {meetings.map((m) => (
-                <li key={m.id} className="py-2.5 flex items-center gap-3 flex-wrap">
-                  <Link
-                    to={`/core/partners/applications/${m.applicationId}`}
-                    className="text-sm font-medium text-foreground hover:underline flex-1 min-w-0 truncate"
-                  >
-                    {m.applicationTitle}
-                  </Link>
-                  <span className="text-xs text-muted-foreground">
-                    {new Date(m.scheduledAt).toLocaleString("en-US", {
-                      dateStyle: "medium",
-                      timeStyle: "short",
-                    })}
-                  </span>
-                  {m.outcome && (
-                    <span className="text-xs rounded-full bg-muted text-muted-foreground px-2 py-0.5">
-                      {m.outcome}
-                    </span>
-                  )}
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-      )}
-
-      {tab === "email" && (
-        <section className="bg-card border border-border rounded-lg p-4 flex flex-col gap-3">
-          {threads.length > 0 ? (
-            <PartnerEmailPanel contactId={contact.id} threads={threads} />
-          ) : (
-            <p className="text-sm text-muted-foreground">No email history with partners@ yet.</p>
-          )}
-        </section>
-      )}
-
-      {tab === "details" && (
-        <Form method="post" ref={detailsFormRef}>
-          <EditableSection
-            title="Details"
-            icon={<User className="w-4 h-4" />}
+      <div className="flex min-h-[25vh] flex-col gap-6">
+        {tab === "timeline" && (
+          <PartnerActivityFeed
+            activities={activities}
+            nextCursor={activitiesNextCursor}
+            scope={{ contactId: contact.id }}
+            actorNames={actorNames}
             canEdit={canEdit}
-            onSave={() => {
-              if (detailsFormRef.current) submit(detailsFormRef.current);
-            }}
-          >
-            {({ editing }) => <ContactDetailsFields contact={contact} editing={editing} />}
-          </EditableSection>
-        </Form>
-      )}
+          />
+        )}
+
+        {tab === "applications" && (
+          <section className={os.sectionShell}>
+            <h2 className={os.sectionTitle}>Applications</h2>
+            <div className="rounded-os-card bg-os-card px-5">
+              {applications.length === 0 ? (
+                <p className="py-6 text-sm text-os-grey">No applications.</p>
+              ) : (
+                <ul>
+                  {applications.map((a) => (
+                    <li
+                      key={a.id}
+                      className="flex items-center gap-3 border-b border-os-container py-3 last:border-0"
+                    >
+                      <Link
+                        to={`/core/partners/applications/${a.id}`}
+                        className="min-w-0 flex-1 truncate text-sm font-medium text-foreground hover:underline"
+                      >
+                        {a.title}
+                      </Link>
+                      <PartnerStagePill stage={a.stage} />
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </section>
+        )}
+
+        {tab === "meetings" && (
+          <section className={os.sectionShell}>
+            <h2 className={os.sectionTitle}>Meetings</h2>
+            <div className="rounded-os-card bg-os-card px-5">
+              {meetings.length === 0 ? (
+                <p className="py-6 text-sm text-os-grey">No meetings yet.</p>
+              ) : (
+                <ul>
+                  {meetings.map((m) => (
+                    <li
+                      key={m.id}
+                      className="flex flex-wrap items-center gap-3 border-b border-os-container py-3 last:border-0"
+                    >
+                      <Link
+                        to={`/core/partners/applications/${m.applicationId}`}
+                        className="min-w-0 flex-1 truncate text-sm font-medium text-foreground hover:underline"
+                      >
+                        {m.applicationTitle}
+                      </Link>
+                      <span className="text-xs text-os-grey">
+                        {new Date(m.scheduledAt).toLocaleString("en-US", {
+                          dateStyle: "medium",
+                          timeStyle: "short",
+                        })}
+                      </span>
+                      {m.outcome && (
+                        <span className="rounded-full bg-os-well px-2.5 py-0.5 text-xs text-foreground">
+                          {m.outcome}
+                        </span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </section>
+        )}
+
+        {tab === "email" && (
+          <section className={os.sectionShell}>
+            <h2 className={os.sectionTitle}>Email</h2>
+            <div className={cn("rounded-os-card bg-os-card", os.panelPad)}>
+              {threads.length > 0 ? (
+                <PartnerEmailPanel contactId={contact.id} threads={threads} />
+              ) : (
+                <p className="text-sm text-os-grey">No email history with partners@ yet.</p>
+              )}
+            </div>
+          </section>
+        )}
+
+        {tab === "details" && (
+          <Form method="post" ref={detailsFormRef}>
+            <EditableSection
+              title="Details"
+              canEdit={canEdit}
+              onSave={() => {
+                if (detailsFormRef.current) submit(detailsFormRef.current);
+              }}
+            >
+              {({ editing }) => <ContactDetailsFields contact={contact} editing={editing} />}
+            </EditableSection>
+          </Form>
+        )}
+      </div>
     </div>
   );
 }

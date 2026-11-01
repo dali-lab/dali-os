@@ -7,26 +7,17 @@ import { useClientSlice } from "~/hooks/useClientSlice";
 import { cn } from "~/lib/cn";
 import { relativeTime } from "~/lib/relative-time";
 import { ContactAvatar } from "./contact/ContactAvatar";
+import { OrgAvatar } from "./org/OrgAvatar";
+import { OrgStatusPill } from "./org/OrgStatusPill";
 import {
+  DIRECTORY_KIND_LABELS,
   DIRECTORY_ROW_CLASS,
-  orgInitials,
+  directoryRowHref,
   type DirectorySort,
   type DirectorySortKey,
-  type PartnerContactDirectoryRow,
-  type PartnerOrgDirectoryRow,
+  type PartnerDirectoryRow,
 } from "../lib/partner-directory";
-import {
-  PARTNER_ORG_TYPE_LABELS,
-  PARTNER_RELATIONSHIP_STATUS_LABELS,
-  type PartnerRelationshipStatus,
-} from "../lib/partner-org";
-
-const STATUS_DOT: Record<PartnerRelationshipStatus, string> = {
-  Active: "bg-os-green",
-  Prospect: "bg-os-accent",
-  Dormant: "bg-os-amber",
-  Past: "bg-os-muted",
-};
+import { PARTNER_ORG_TYPE_LABELS } from "../lib/partner-org";
 
 const TH = "whitespace-nowrap px-4 py-2.5 text-left text-xs font-semibold text-os-muted first:pl-6 last:pr-6";
 const TD = "px-4 py-3 text-sm first:pl-6 last:pr-6";
@@ -86,128 +77,85 @@ function RowLink({ to, label, children }: { to: string; label: string; children:
   );
 }
 
-function StatusPill({ status }: { status: PartnerRelationshipStatus }) {
-  return (
-    <span className="inline-flex items-center gap-1.5 rounded-full bg-os-well px-2.5 py-0.5 text-xs text-foreground">
-      <span className={cn("h-1.5 w-1.5 rounded-full", STATUS_DOT[status])} aria-hidden />
-      {PARTNER_RELATIONSHIP_STATUS_LABELS[status]}
-    </span>
-  );
+function rowSubtitle(row: PartnerDirectoryRow): string | null {
+  if (row.kind === "person") return row.title;
+  if (row.kind === "individual") return row.email;
+  return row.website?.replace(/^https?:\/\//, "").replace(/\/$/, "") ?? null;
 }
 
-function Chevron() {
-  return (
-    <td className={cn(TD, "w-10 text-right text-muted-foreground")}>
-      <ChevronRight className="ml-auto h-4 w-4 opacity-60 group-hover:opacity-100" aria-hidden />
-    </td>
-  );
-}
-
-export function OrgsTable({
+export function DirectoryTable({
   rows,
   sort,
   onSort,
   resetKey,
 }: {
-  rows: PartnerOrgDirectoryRow[];
+  rows: PartnerDirectoryRow[];
   sort: DirectorySort;
   onSort: (key: DirectorySortKey) => void;
   resetKey: string;
 }) {
   const { visible, pager } = useClientSlice(rows, { resetKey });
+  const dash = <span aria-hidden>—</span>;
   return (
     <div className="overflow-x-auto">
-      <table className="w-full min-w-[720px] text-sm">
+      <table className="w-full min-w-[760px] text-sm">
         <thead>
           <tr>
-            <SortableTh label="Organization" sortKey="name" sort={sort} onSort={onSort} />
-            <th className={TH}>Type</th>
+            <SortableTh label="Name" sortKey="name" sort={sort} onSort={onSort} />
+            <th className={TH}>Kind</th>
+            <th className={TH}>Organization</th>
             <th className={TH}>Status</th>
-            <th className={TH}>Members</th>
             <th className={TH}>Active projects</th>
             <SortableTh label="Last activity" sortKey="activity" sort={sort} onSort={onSort} />
             <th className={cn(TH, "w-10")} aria-label="Open" />
           </tr>
         </thead>
         <tbody>
-          {visible.map((o) => (
-            <tr key={o.id} className={DIRECTORY_ROW_CLASS}>
-              <td className={TD}>
-                <RowLink to={`/core/partners/orgs/${o.id}`} label={o.name}>
-                  <span
-                    className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg bg-os-well text-[11px] font-semibold text-os-grey"
+          {visible.map((r) => {
+            const subtitle = rowSubtitle(r);
+            return (
+              <tr key={`${r.kind}-${r.id}`} className={DIRECTORY_ROW_CLASS}>
+                <td className={TD}>
+                  <RowLink to={directoryRowHref(r)} label={r.name}>
+                    {r.kind === "person" ? (
+                      <ContactAvatar contact={r} />
+                    ) : (
+                      <OrgAvatar org={{ name: r.name, logoUrl: r.logoUrl }} />
+                    )}
+                    <span className="min-w-0">
+                      <span className="block truncate font-medium text-foreground">{r.name}</span>
+                      {subtitle && (
+                        <span className="block truncate text-xs text-muted-foreground">
+                          {subtitle}
+                        </span>
+                      )}
+                    </span>
+                  </RowLink>
+                </td>
+                <td className={cn(TD, "whitespace-nowrap text-muted-foreground")}>
+                  {r.kind === "org" && r.type
+                    ? PARTNER_ORG_TYPE_LABELS[r.type]
+                    : DIRECTORY_KIND_LABELS[r.kind]}
+                </td>
+                <td className={cn(TD, "max-w-[220px] truncate text-muted-foreground")}>
+                  {r.orgNames.length > 0 ? r.orgNames.join(", ") : dash}
+                </td>
+                <td className={TD}>{r.status ? <OrgStatusPill status={r.status} /> : dash}</td>
+                <td className={cn(TD, "tabular-nums text-muted-foreground")}>
+                  {r.activeProjectCount ?? dash}
+                </td>
+                <td className={cn(TD, "whitespace-nowrap text-muted-foreground")}>
+                  {r.lastActivityAt ? relativeTime(r.lastActivityAt) : dash}
+                </td>
+                <td className={cn(TD, "w-10 text-right text-muted-foreground")}>
+                  <ChevronRight
+                    className="ml-auto h-4 w-4 opacity-60 group-hover:opacity-100"
                     aria-hidden
-                  >
-                    {orgInitials(o.name)}
-                  </span>
-                  <span className="truncate font-medium text-foreground">{o.name}</span>
-                </RowLink>
-              </td>
-              <td className={cn(TD, "text-muted-foreground")}>
-                {o.isIndividual ? "Individual" : o.type ? PARTNER_ORG_TYPE_LABELS[o.type] : "—"}
-              </td>
-              <td className={TD}>
-                <StatusPill status={o.status} />
-              </td>
-              <td className={cn(TD, "tabular-nums text-muted-foreground")}>{o.memberCount}</td>
-              <td className={cn(TD, "tabular-nums text-muted-foreground")}>{o.activeProjectCount}</td>
-              <td className={cn(TD, "whitespace-nowrap text-muted-foreground")}>
-                {o.lastActivityAt ? relativeTime(o.lastActivityAt) : "—"}
-              </td>
-              <Chevron />
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      <LoadMore {...pager} />
-    </div>
-  );
-}
-
-export function ContactsTable({
-  rows,
-  sort,
-  onSort,
-  resetKey,
-}: {
-  rows: PartnerContactDirectoryRow[];
-  sort: DirectorySort;
-  onSort: (key: DirectorySortKey) => void;
-  resetKey: string;
-}) {
-  const { visible, pager } = useClientSlice(rows, { resetKey });
-  return (
-    <div className="overflow-x-auto">
-      <table className="w-full min-w-[720px] text-sm">
-        <thead>
-          <tr>
-            <SortableTh label="Contact" sortKey="name" sort={sort} onSort={onSort} />
-            <th className={TH}>Organization</th>
-            <th className={TH}>Applications</th>
-            <SortableTh label="Last activity" sortKey="activity" sort={sort} onSort={onSort} />
-            <th className={cn(TH, "w-10")} aria-label="Open" />
-          </tr>
-        </thead>
-        <tbody>
-          {visible.map((c) => (
-            <tr key={c.id} className={DIRECTORY_ROW_CLASS}>
-              <td className={TD}>
-                <RowLink to={`/core/partners/contacts/${c.id}`} label={c.name}>
-                  <ContactAvatar contact={c} />
-                  <span className="min-w-0">
-                    <span className="block truncate font-medium text-foreground">{c.name}</span>
-                    {c.title && <span className="block truncate text-xs text-muted-foreground">{c.title}</span>}
-                  </span>
-                </RowLink>
-              </td>
-              <td className={cn(TD, "text-muted-foreground")}>{c.orgs.map((o) => o.name).join(", ") || "—"}</td>
-              <td className={cn(TD, "tabular-nums text-muted-foreground")}>{c.applicationCount}</td>
-              <td className={cn(TD, "whitespace-nowrap text-muted-foreground")}>
-                {c.lastActivityAt ? relativeTime(c.lastActivityAt) : "—"}
-              </td>
-              <Chevron />
-            </tr>
-          ))}
+                  />
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
       <LoadMore {...pager} />

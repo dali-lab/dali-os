@@ -10,7 +10,6 @@ import {
   ClipboardPen,
   Clock,
   DoorOpen,
-  Flag,
   Files,
   FileSignature,
   FileText,
@@ -272,7 +271,6 @@ const REGROUPED_AREAS: NavArea[] = [
     description: "Staffing, payroll, processes",
     gate: (r) => r.isCore,
     subtabs: [
-      { label: "Milestones", href: "/core", icon: Flag },
       { label: "Staffing", href: "/core/staffing", icon: Kanban },
       { label: "Partners", href: "/core/partners", icon: Handshake },
       { label: "Intent to Work", href: "/core/intent-to-work", icon: ClipboardPen },

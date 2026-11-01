@@ -74,7 +74,7 @@ export default function PartnersPlanning() {
           )}
           <SegmentedTabButtons
             label="Group by"
-            size="sm"
+            size="toolbar"
             className="shrink-0"
             items={[
               { label: "Domain", active: view === "domain", onClick: () => setView("domain") },
@@ -83,7 +83,7 @@ export default function PartnersPlanning() {
           />
           {view === "project" && (
             <Tooltip content="Adds Backlog applications that target this term">
-              <span className="inline-flex h-9 shrink-0 items-center rounded-lg border border-os-container bg-os-card px-3">
+              <span className="inline-flex h-9 shrink-0 items-center px-1">
                 <Toggle
                   tone="os"
                   label="Include backlog"
@@ -94,7 +94,7 @@ export default function PartnersPlanning() {
             </Tooltip>
           )}
           <Tooltip content="Adds New, Interview and Deciding applications and undecided renewals">
-            <span className="inline-flex h-9 shrink-0 items-center rounded-lg border border-os-container bg-os-card px-3">
+            <span className="inline-flex h-9 shrink-0 items-center px-1">
               <Toggle
                 tone="os"
                 label="Include potential"

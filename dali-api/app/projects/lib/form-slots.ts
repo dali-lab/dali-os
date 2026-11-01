@@ -29,6 +29,7 @@ export const SLOTS = {
   "intent-to-work": "Intent to Work",
   "project-bids": "Project Bids",
   "level-up": "Level Up",
+  referrals: "Referrals",
 } as const;
 
 export type Slot = keyof typeof SLOTS;
@@ -59,7 +60,8 @@ export function pickStaffingBinding<
       (b) =>
         b.slot === "project-bids" ||
         b.slot === "intent-to-work" ||
-        b.slot === "level-up",
+        b.slot === "level-up" ||
+        b.slot === "referrals",
     )
     .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())[0];
 }

@@ -1,9 +1,9 @@
 // Initials tile for a PartnerContact — shared by the contact 360 header and
-// the directory's Contacts list.
+// the directory list.
 
 const SIZES = {
   sm: "w-8 h-8 rounded-full text-xs",
-  lg: "w-12 h-12 rounded-full text-lg",
+  lg: "w-16 h-16 rounded-full text-xl",
 } as const;
 
 export function ContactAvatar({
@@ -16,7 +16,7 @@ export function ContactAvatar({
   const label = contact.name || contact.email || "?";
   return (
     <div
-      className={`${SIZES[size]} bg-accent-teal/15 text-accent-teal flex items-center justify-center font-bold flex-shrink-0`}
+      className={`${SIZES[size]} bg-os-accent/15 text-os-accent flex items-center justify-center font-bold flex-shrink-0`}
     >
       {label.slice(0, 1).toUpperCase()}
     </div>

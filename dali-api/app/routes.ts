@@ -155,6 +155,8 @@ export default [
     route("core/partners/renewals", "partners/routes/core.partners.renewals.tsx"),
     route("core/partners/planning", "partners/routes/core.partners.planning.tsx"),
     route("core/partners/directory", "partners/routes/core.partners.directory.tsx"),
+    route("core/partners/referrals", "partners/routes/core.partners.referrals.tsx"),
+    route("core/partners/referrals/:userId", "partners/routes/core.partners.referrals.$userId.tsx"),
     route("core/partners/reports", "partners/routes/core.partners.reports.tsx"),
     route("core/partners/settings", "partners/routes/core.partners.settings.tsx"),
     // Literal segments above the param routes (repo route-ordering convention).

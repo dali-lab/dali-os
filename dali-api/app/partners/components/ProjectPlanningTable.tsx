@@ -33,8 +33,11 @@ function Group({ label, rows }: { label: string; rows: PlanningProjectRow[] }) {
   if (rows.length === 0) return null;
   return (
     <>
-      <div className="border-t border-os-container px-4 py-2 text-xs font-medium text-muted-foreground">
-        {label} · {rows.length}
+      <div className="flex items-center gap-2 border-t border-os-container px-4 py-2 text-xs font-medium text-muted-foreground">
+        {label}
+        <span className="rounded-full bg-accent-pink px-2 py-0.5 font-bold tabular-nums text-os-bg">
+          {rows.length}
+        </span>
       </div>
       {rows.map((row) => (
         <ProjectRow key={row.key} row={row} />

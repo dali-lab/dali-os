@@ -3,35 +3,30 @@ import { afterEach, describe, expect, it } from "vitest";
 import { act, createElement, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { createRoutesStub } from "react-router";
-import { ContactsTable, OrgsTable } from "../PartnerDirectoryTables";
-import type { PartnerContactDirectoryRow, PartnerOrgDirectoryRow } from "../../lib/partner-directory";
+import { DirectoryTable } from "../PartnerDirectoryTables";
+import type { PartnerDirectoryRow } from "../../lib/partner-directory";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-const org = (n: number): PartnerOrgDirectoryRow => ({
+const row = (n: number, over: Partial<PartnerDirectoryRow> = {}): PartnerDirectoryRow => ({
+  kind: "org",
   id: `o${n}`,
   name: `Org ${n}`,
-  logoUrl: null,
+  email: null,
+  title: null,
   website: null,
-  isIndividual: false,
+  logoUrl: null,
   type: null,
   status: "Active",
+  orgNames: [],
   memberCount: 1,
   activeProjectCount: 0,
   totalProjectCount: 0,
+  applicationCount: null,
   lastActivityAt: null,
+  ...over,
 });
-const contact = (n: number): PartnerContactDirectoryRow => ({
-  id: `c${n}`,
-  name: `Ada ${n}`,
-  email: `ada${n}@example.edu`,
-  title: null,
-  affiliation: null,
-  orgs: [],
-  applicationCount: 0,
-  lastActivityAt: null,
-});
-const make = <T,>(count: number, f: (n: number) => T) => Array.from({ length: count }, (_, i) => f(i));
+const make = (count: number) => Array.from({ length: count }, (_, i) => row(i));
 
 let container: HTMLDivElement;
 let root: Root;
@@ -56,23 +51,49 @@ const rows = () => container.querySelectorAll("tbody tr");
 const loadMore = () =>
   [...container.querySelectorAll("button")].find((b) => b.textContent === "Load more") as HTMLButtonElement | undefined;
 
-describe("PartnerDirectoryTables", () => {
-  it("slices organizations to 50 and Load more reveals the rest", async () => {
-    const data = make(75, org);
-    await mount(() => createElement(OrgsTable, { rows: data, sort, onSort: () => {}, resetKey: "a" }));
+describe("DirectoryTable", () => {
+  it("links org rows to the org page and person rows to the contact page", async () => {
+    const data = [
+      row(1, { kind: "org", id: "acme", name: "Acme" }),
+      row(2, {
+        kind: "person",
+        id: "jo",
+        name: "Jo",
+        status: null,
+        orgNames: ["Acme"],
+        title: "CTO",
+      }),
+    ];
+    await mount(() => createElement(DirectoryTable, { rows: data, sort, onSort: () => {}, resetKey: "a" }));
+    const hrefs = [...container.querySelectorAll("tbody a")].map((a) => a.getAttribute("href"));
+    expect(hrefs).toEqual(["/core/partners/orgs/acme", "/core/partners/contacts/jo"]);
+    // A person row shows its org affiliation and title; status stays blank.
+    const personRow = rows()[1];
+    expect(personRow.textContent).toContain("Acme");
+    expect(personRow.textContent).toContain("CTO");
+    expect(personRow.textContent).toContain("Person");
+    expect(personRow.textContent).not.toContain("Active");
+  });
+
+  it("labels a typed org by its type and an individual by its kind", async () => {
+    const data = [
+      row(1, { name: "Acme", type: "Startup" }),
+      row(2, { kind: "individual", name: "Sam Solo", email: "sam@example.com" }),
+    ];
+    await mount(() => createElement(DirectoryTable, { rows: data, sort, onSort: () => {}, resetKey: "a" }));
+    expect(rows()[0].textContent).toContain("Startup");
+    expect(rows()[1].textContent).toContain("Individual");
+    expect(rows()[1].textContent).toContain("sam@example.com");
+  });
+
+  it("slices to 50 rows and Load more reveals the rest", async () => {
+    const data = make(75);
+    await mount(() => createElement(DirectoryTable, { rows: data, sort, onSort: () => {}, resetKey: "a" }));
     expect(rows()).toHaveLength(50);
     expect(container.textContent).toContain("Showing 50 of 75");
     await act(async () => loadMore()!.click());
     expect(rows()).toHaveLength(75);
     expect(loadMore()).toBeUndefined();
-  });
-
-  it("slices contacts to 50 and Load more reveals the rest", async () => {
-    const data = make(60, contact);
-    await mount(() => createElement(ContactsTable, { rows: data, sort, onSort: () => {}, resetKey: "a" }));
-    expect(rows()).toHaveLength(50);
-    await act(async () => loadMore()!.click());
-    expect(rows()).toHaveLength(60);
   });
 
   it("returns to the first slice when the search or sort changes", async () => {
@@ -82,7 +103,7 @@ describe("PartnerDirectoryTables", () => {
         "div",
         null,
         createElement("button", { id: "resort", onClick: () => setKey("activity") }, "resort"),
-        createElement(OrgsTable, { rows: make(120, org), sort, onSort: () => {}, resetKey: key }),
+        createElement(DirectoryTable, { rows: make(120), sort, onSort: () => {}, resetKey: key }),
       );
     }
     await mount(Harness);

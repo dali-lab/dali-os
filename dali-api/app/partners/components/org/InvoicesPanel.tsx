@@ -8,9 +8,12 @@
 
 import { useState } from "react";
 import { Form } from "react-router";
+import { Plus } from "lucide-react";
 import { Select } from "~/components/ui/floating";
 import { Button } from "~/components/ui/Button";
 import { DateField } from "~/components/ui/DateField";
+import { useOsChrome } from "~/components/os-chrome";
+import { cn } from "~/lib/cn";
 import { formatUsd } from "~/lib/money";
 import type { PartnerInvoiceStatus } from "~/generated/prisma/enums";
 
@@ -21,11 +24,11 @@ const STATUS_OPTIONS: { value: PartnerInvoiceStatus; label: string }[] = [
   { value: "Void", label: "Void" },
 ];
 
-const STATUS_PILL: Record<PartnerInvoiceStatus, string> = {
-  Draft: "bg-muted text-muted-foreground",
-  Issued: "bg-accent-coral/15 text-accent-coral",
-  Paid: "bg-accent-teal/15 text-accent-teal",
-  Void: "bg-destructive/10 text-destructive",
+const STATUS_DOT: Record<PartnerInvoiceStatus, string> = {
+  Draft: "bg-os-muted",
+  Issued: "bg-os-accent",
+  Paid: "bg-os-green",
+  Void: "bg-os-red",
 };
 
 export interface InvoiceRow {
@@ -55,123 +58,127 @@ export function InvoicesPanel({
   canEdit: boolean;
 }) {
   const [adding, setAdding] = useState(false);
+  const os = useOsChrome();
 
   return (
-    <section className="bg-card border border-border rounded-lg p-4 flex flex-col gap-3">
-      <div className="flex items-center justify-between">
-        <h2 className="font-heading font-semibold text-foreground">Invoices</h2>
+    <section className={os.sectionShell}>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className={os.sectionTitle}>Invoices</h2>
         {canEdit && !adding && (
-          <button
-            type="button"
-            onClick={() => setAdding(true)}
-            className="text-xs font-medium text-accent-coral hover:underline"
-          >
-            + Add invoice
+          <button type="button" onClick={() => setAdding(true)} className={os.quietBtn}>
+            <Plus className="h-3.5 w-3.5" strokeWidth={3} aria-hidden />
+            Add invoice
           </button>
         )}
       </div>
 
-      {adding && canEdit && (
-        <Form
-          method="post"
-          onSubmit={() => setAdding(false)}
-          className="flex flex-col gap-2 p-3 bg-muted/30 rounded-md border border-border"
-        >
-          <input type="hidden" name="intent" value="invoice-save" />
-          <div className="grid grid-cols-2 gap-2">
-            <label className="flex flex-col gap-1 text-xs">
-              <span className="text-muted-foreground font-medium">Amount *</span>
-              <input
-                type="number"
-                name="amount"
-                min="0"
-                step="0.01"
-                required
-                placeholder="0.00"
-                className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
-              />
+      <div className="rounded-os-card bg-os-card px-5">
+        {adding && canEdit && (
+          <Form
+            method="post"
+            onSubmit={() => setAdding(false)}
+            className={cn(os.formClass, "flex flex-col gap-3 border-b border-os-container py-4")}
+          >
+            <input type="hidden" name="intent" value="invoice-save" />
+            <div className="grid grid-cols-2 gap-3">
+              <label className={os.fieldLabel}>
+                <span>Amount *</span>
+                <input
+                  type="number"
+                  name="amount"
+                  min="0"
+                  step="0.01"
+                  required
+                  placeholder="0.00"
+                  className="w-full"
+                />
+              </label>
+              <label className={os.fieldLabel}>
+                <span>Reference</span>
+                <input name="reference" type="text" placeholder="INV-001" className="w-full" />
+              </label>
+              <label className={os.fieldLabel}>
+                <span>Issued</span>
+                <DateField mode="date" name="issuedAt" ariaLabel="Issued date" />
+              </label>
+              <label className={os.fieldLabel}>
+                <span>Due</span>
+                <DateField mode="date" name="dueAt" ariaLabel="Due date" />
+              </label>
+            </div>
+            <label className={os.fieldLabel}>
+              <span>Note</span>
+              <textarea name="note" rows={2} placeholder="Internal note…" className="w-full resize-none" />
             </label>
-            <label className="flex flex-col gap-1 text-xs">
-              <span className="text-muted-foreground font-medium">Reference</span>
-              <input
-                name="reference"
-                placeholder="INV-001"
-                className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
-              />
-            </label>
-            <label className="flex flex-col gap-1 text-xs">
-              <span className="text-muted-foreground font-medium">Issued</span>
-              <DateField mode="date" name="issuedAt" ariaLabel="Issued date" />
-            </label>
-            <label className="flex flex-col gap-1 text-xs">
-              <span className="text-muted-foreground font-medium">Due</span>
-              <DateField mode="date" name="dueAt" ariaLabel="Due date" />
-            </label>
-          </div>
-          <label className="flex flex-col gap-1 text-xs">
-            <span className="text-muted-foreground font-medium">Note</span>
-            <textarea
-              name="note"
-              rows={2}
-              placeholder="Internal note…"
-              className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30 resize-none"
-            />
-          </label>
-          <div className="flex gap-2">
-            <Button type="submit" variant="primary" size="sm">
-              Save invoice
-            </Button>
-            <Button type="button" variant="secondary" size="sm" onClick={() => setAdding(false)}>
-              Cancel
-            </Button>
-          </div>
-        </Form>
-      )}
+            <div className="flex gap-2">
+              <Button type="submit" variant="primary" size="sm">
+                Save invoice
+              </Button>
+              <Button type="button" variant="secondary" size="sm" onClick={() => setAdding(false)}>
+                Cancel
+              </Button>
+            </div>
+          </Form>
+        )}
 
-      {invoices.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No invoices yet.</p>
-      ) : (
-        <ul className="divide-y divide-border">
-          {invoices.map((inv) => (
-            <li key={inv.id} className="py-2.5 flex items-center gap-3 flex-wrap">
-              <span className="text-sm font-medium text-foreground">
-                {formatUsd(inv.amountCents / 100)}
-              </span>
-              {canEdit ? (
-                <Form method="post" className="inline-flex">
-                  <input type="hidden" name="intent" value="invoice-status" />
-                  <input type="hidden" name="invoiceId" value={inv.id} />
-                  <Select
-                    name="status"
-                    defaultValue={inv.status}
-                    ariaLabel="Invoice status"
-                    options={STATUS_OPTIONS}
-                    onChange={(value) => {
-                      const fd = new FormData();
-                      fd.set("intent", "invoice-status");
-                      fd.set("invoiceId", inv.id);
-                      fd.set("status", value);
-                      fetch(window.location.pathname, { method: "POST", credentials: "include", body: fd }).then(
-                        () => window.location.reload(),
-                      );
-                    }}
-                    buttonClassName={`text-xs rounded-full px-2 py-0.5 border border-transparent inline-flex items-center gap-1 ${STATUS_PILL[inv.status]}`}
-                  />
-                </Form>
-              ) : (
-                <span className={`text-xs rounded-full px-2 py-0.5 ${STATUS_PILL[inv.status]}`}>
-                  {inv.status}
+        {invoices.length === 0 ? (
+          <p className="py-6 text-sm text-os-grey">No invoices yet.</p>
+        ) : (
+          <ul>
+            {invoices.map((inv) => (
+              <li
+                key={inv.id}
+                className="flex flex-wrap items-center gap-3 border-b border-os-container py-3 last:border-0"
+              >
+                <span className="text-sm font-medium text-foreground">
+                  {formatUsd(inv.amountCents / 100)}
                 </span>
-              )}
-              {inv.reference && <span className="text-xs text-muted-foreground">{inv.reference}</span>}
-              {inv.note && <span className="text-xs text-muted-foreground italic">{inv.note}</span>}
-              <span className="text-xs text-muted-foreground ml-auto">
-                {inv.dueAt ? `Due ${dateStr(inv.dueAt)}` : inv.issuedAt ? `Issued ${dateStr(inv.issuedAt)}` : ""}
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-os-well py-0.5 pl-2.5 pr-1.5 text-xs text-foreground">
+                  <span
+                    className={cn("h-1.5 w-1.5 rounded-full", STATUS_DOT[inv.status])}
+                    aria-hidden
+                  />
+                  {canEdit ? (
+                    <Form method="post" className="inline-flex">
+                      <input type="hidden" name="intent" value="invoice-status" />
+                      <input type="hidden" name="invoiceId" value={inv.id} />
+                      <Select
+                        name="status"
+                        defaultValue={inv.status}
+                        ariaLabel="Invoice status"
+                        options={STATUS_OPTIONS}
+                        onChange={(value) => {
+                          const fd = new FormData();
+                          fd.set("intent", "invoice-status");
+                          fd.set("invoiceId", inv.id);
+                          fd.set("status", value);
+                          fetch(window.location.pathname, {
+                            method: "POST",
+                            credentials: "include",
+                            body: fd,
+                          }).then(() => window.location.reload());
+                        }}
+                        buttonClassName="inline-flex items-center gap-1 text-xs text-foreground"
+                      />
+                    </Form>
+                  ) : (
+                    <span className="pr-1">{inv.status}</span>
+                  )}
+                </span>
+                {inv.reference && <span className="text-xs text-os-grey">{inv.reference}</span>}
+                {inv.note && <span className="text-xs italic text-os-grey">{inv.note}</span>}
+                <span className="ml-auto text-xs text-os-grey">
+                  {inv.dueAt
+                    ? `Due ${dateStr(inv.dueAt)}`
+                    : inv.issuedAt
+                      ? `Issued ${dateStr(inv.issuedAt)}`
+                      : ""}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
     </section>
   );
 }

@@ -67,6 +67,7 @@ export function PropertyRail({
   contract,
   contractDocuments,
   onChanged,
+  sections = "all",
 }: {
   application: PropertyRailApplication;
   canEdit: boolean;
@@ -77,6 +78,10 @@ export function PropertyRail({
   /** PartnerContract-kind SigningDocuments with a published version — empty when the viewer can't edit. */
   contractDocuments: { id: string; title: string }[];
   onChanged: () => void;
+  /** Which groups to render: the modal keeps "status" (Status / People /
+   *  Terms and team) in its sidebar and mounts "deal" (Contract / Deal terms)
+   *  in the Details tab so the sidebar stays short. */
+  sections?: "all" | "status" | "deal";
 }) {
   const [stageBusy, setStageBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -124,8 +129,13 @@ export function PropertyRail({
     return true;
   }
 
+  const showStatus = sections !== "deal";
+  const showDeal = sections !== "status";
+
   return (
     <>
+      {showStatus && (
+      <>
       <RailGroup title="Status">
         {error && <p className="text-sm text-destructive">{error}</p>}
         <RailField label="Stage">
@@ -198,7 +208,11 @@ export function PropertyRail({
           onChanged={onChanged}
         />
       </RailGroup>
+      </>
+      )}
 
+      {showDeal && (
+      <>
       <RailGroup title="Contract">
         <ContractPanel
           applicationId={application.id}
@@ -222,6 +236,8 @@ export function PropertyRail({
           onChanged={onChanged}
         />
       </RailGroup>
+      </>
+      )}
     </>
   );
 }

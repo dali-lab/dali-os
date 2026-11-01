@@ -41,9 +41,9 @@ describe("ProjectPlanningTable", () => {
   it("shows a row's state, spots and domains", () => {
     const html = render({ renewing: [row()], totals: { renewing: 4, fresh: 0, spots: 4 } });
     expect(html).toContain("Gallery kiosk");
-    expect(html).toContain("Renewal · Continuing");
+    expect(html).toContain("Continuing");
     expect(html).toContain("Engineering 3, Design 1");
-    expect(html).toContain("4 · 4 renewing, 0 new");
+    expect(html).toContain("4 (4 renewing, 0 new)");
   });
 
   it("says when a row has no spots set", () => {
@@ -52,7 +52,8 @@ describe("ProjectPlanningTable", () => {
 
   it("labels each group with its count and skips an empty one", () => {
     const html = render({ fresh: [row({ key: "application:a", source: "new", state: "Interview" })] });
-    expect(html).toContain("New · 1");
+    expect(html).toContain("New");
+    expect(html).toContain(">1</span>");
     expect(html).not.toContain("Renewing");
   });
 

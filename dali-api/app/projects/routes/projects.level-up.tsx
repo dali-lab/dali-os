@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { buttonClasses } from "~/components/ui/Button";
 import { redirect, useLoaderData, useFetcher, useSearchParams } from "react-router";
 import type { Route } from "./+types/projects.level-up";
@@ -19,11 +19,9 @@ import {
   setSlotGate,
   setSlotPublished,
 } from "../lib/form-slots";
-import { SubmissionFilters } from "../components/SubmissionFilters";
 import { ColumnFilters, useColumnFilters } from "../components/ColumnFilters";
 import { SlotAdvancedSettingsModal } from "../components/SlotAdvancedSettingsModal";
-import { DomainFilter } from "../components/DomainFilter";
-import { TermFilter } from "~/components/TermFilter";
+import { SearchInput } from "~/components/ui/SearchInput";
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
 import { Modal, ModalHeader } from "~/components/Modal";
@@ -161,11 +159,6 @@ export async function loader({ request }: Route.LoaderArgs) {
     targetPromotion: targetPromotion.get(r.userId) ?? null,
   }));
 
-  const domainOptions = await prisma.domain.findMany({
-    orderBy: { displayName: "asc" },
-    select: { id: true, displayName: true },
-  });
-
   // Per-slot guardrail status (bound / mapped / sent-to). Single-cycle view
   // only — the all-terms aggregate has no one slot to bind, mirroring binding.
   const slotStatus: SlotStatus | null = singleCycleId
@@ -176,8 +169,6 @@ export async function loader({ request }: Route.LoaderArgs) {
   return {
     gate: "ok" as const,
     cycle: { name: cycleName, id: singleCycleId },
-    termOptions,
-    selectedTerm,
     isAll,
     submissions,
     tableColumns,
@@ -187,7 +178,6 @@ export async function loader({ request }: Route.LoaderArgs) {
     formQuestions,
     mappingWarning,
     noFormConnected,
-    domainOptions,
     slotStatus,
   };
 }
@@ -456,7 +446,6 @@ export default function LevelUpDatabase() {
 type LoadedData = Extract<Awaited<ReturnType<typeof loader>>, { gate: "ok" }>;
 
 function Loaded({ data }: { data: LoadedData }) {
-  const [domainId, setDomainId] = useState("");
   const [searchParams] = useSearchParams();
   const [settingsOpen, setSettingsOpen] = useState(
     () => searchParams.get("settings") === "1",
@@ -473,17 +462,9 @@ function Loaded({ data }: { data: LoadedData }) {
 
   const { search, setSearch, filtered } = useFilteredList(data.submissions, {
     searchFields: (s) => [s.name, s.email],
-    predicates: [
-      (s) => !domainId || s.domainIds.includes(domainId),
-      columnFilters.predicate,
-    ],
-    deps: [domainId, columnFilters.active],
+    predicates: [columnFilters.predicate],
+    deps: [columnFilters.active],
   });
-
-  const domains = useMemo(
-    () => data.domainOptions.map((d) => ({ id: d.id, name: d.displayName })),
-    [data.domainOptions],
-  );
 
   const canOpenSettings = !data.isAll;
 
@@ -519,23 +500,24 @@ function Loaded({ data }: { data: LoadedData }) {
 
       {data.slotStatus && <SlotStatusStrip status={data.slotStatus} />}
 
-      <div className="flex flex-col sm:flex-row gap-2">
-        <div className="flex-1">
-          <SubmissionFilters query={search} onQueryChange={setSearch} />
-        </div>
-        <DomainFilter domains={domains} value={domainId} onChange={setDomainId} />
-        <TermFilter terms={data.termOptions} selected={data.selectedTerm} />
-      </div>
-
-      {!data.noFormConnected && (
-        <ColumnFilters
-          columns={data.tableColumns}
-          rows={data.submissions}
-          filters={columnFilters.filters}
-          onChange={columnFilters.setFilters}
-          shownCount={filtered.length}
+      <div className="flex flex-wrap items-center gap-3">
+        <SearchInput
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search by name or email"
+          aria-label="Search submissions"
+          containerClassName="flex-1 min-w-[200px] max-w-[420px]"
         />
-      )}
+        <div className="min-w-[220px] flex-1">
+          <ColumnFilters
+            columns={data.tableColumns}
+            rows={data.submissions}
+            filters={columnFilters.filters}
+            onChange={columnFilters.setFilters}
+            shownCount={filtered.length}
+          />
+        </div>
+      </div>
 
       <div
         className={cn(
