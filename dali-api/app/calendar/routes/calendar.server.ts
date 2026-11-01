@@ -94,6 +94,7 @@ import {
   retimeEventRoomBookings,
   truncateEventRoomBookings,
 } from "~/lib/rooms.server";
+import { meetingLinkRedirect } from "~/calendar/lib/meeting-link.server";
 import { fetchWindow, parseAnchor, parseView, viewWindow, weekWindow } from "~/calendar/lib/view-window";
 import type {
   SubCalendarDTO,
@@ -1507,6 +1508,8 @@ export async function loadCalendarData(
   if (!opts.portal) {
     const portalRedirect = await redirectNonMemberToPortal(auth, request);
     if (portalRedirect) return portalRedirect;
+    const meetingPage = await meetingLinkRedirect(new URL(request.url));
+    if (meetingPage) return meetingPage;
   }
 
   const userId = auth.user.sub;
