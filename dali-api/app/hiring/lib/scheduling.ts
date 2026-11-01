@@ -3,7 +3,7 @@ import { prisma } from "~/lib/db.server";
 import { notifyInterviewAssigned } from "~/hiring/lib/interview-notifications";
 import { sendReassignmentEmails } from "~/hiring/lib/interview-emails";
 import { syncInterviewMeetAttendees } from "~/hiring/lib/interview-meet";
-import { zonedWallTimeUtc } from "~/lib/timezone";
+import { getZonedYMD, zonedWallTimeUtc } from "~/lib/timezone";
 import { interviewerCalendars, type InterviewerCalendar } from "~/hiring/lib/interview-availability.server";
 import { createRoomBooking, cancelRoomBooking, getRoomSchedule, blockedBy } from "~/lib/rooms.server";
 import type { SlotBlocker } from "~/hiring/lib/slot-blockers";
@@ -638,14 +638,23 @@ export function generateCandidateSlots(
   timezone: string,
 ): Date[] {
   const slots: Date[] = [];
-  const current = new Date(startDate);
+  const first = getZonedYMD(startDate, timezone);
+  const last = getZonedYMD(endDate, timezone);
+  const lastDay = Date.UTC(last.year, last.month - 1, last.day);
 
-  while (current <= endDate) {
-    const dayStr = current.toLocaleDateString("en-CA", { timeZone: timezone }); // YYYY-MM-DD
+  // Walks calendar dates, not instants: a local midnight stepped by whole UTC
+  // days drifts onto the previous date after a clock change.
+  for (
+    let date = new Date(Date.UTC(first.year, first.month - 1, first.day));
+    date.getTime() <= lastDay;
+    date = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate() + 1))
+  ) {
+    const y = date.getUTCFullYear();
+    const mo = date.getUTCMonth() + 1;
+    const d = date.getUTCDate();
 
     for (let hour = dayStartHour; hour < dayEndHour; hour++) {
       for (let minute = 0; minute < 60; minute += 15) {
-        const [y, mo, d] = dayStr.split("-").map(Number);
         const slotStart = zonedWallTimeUtc(y, mo, d, hour, minute, timezone);
         const slotEnd = new Date(slotStart.getTime() + slotDurationMinutes * 60_000);
 
@@ -662,8 +671,6 @@ export function generateCandidateSlots(
         }
       }
     }
-
-    current.setDate(current.getDate() + 1);
   }
 
   return slots;

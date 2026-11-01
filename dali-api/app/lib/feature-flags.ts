@@ -121,7 +121,7 @@ export const FEATURE_FLAGS = [
     key: "ai-meeting-notes",
     label: "AI meeting notes",
     description:
-      "Audio is processed by a GPU job DALI runs, then deleted within minutes of the recording ending. Only the transcript is kept, visible to whoever can see the note.",
+      "Audio is processed by a GPU job DALI runs, then deleted after. Only the transcript is kept, visible to whoever can see the note.",
   },
   {
     key: "email-personal",
@@ -182,6 +182,12 @@ export const FEATURE_FLAGS = [
     label: "Form tile strip",
     description:
       "Forms opened from a form link show a strip of DALI tiles across the top of the card. Each form gets its own pattern. On submit the strip folds into one block and the card settles on a short confirmation. Signed-out visitors see it whenever the flag is switched on, whatever its targeting. Ships off.",
+  },
+  {
+    key: "doc-task-block",
+    label: "Task blocks in documents",
+    description:
+      "Adds /task to documents: a small composer that creates a project task and leaves a live row in the note, showing its status, owner and date. Task blocks already in a document keep showing when this is off. Ships off.",
   },
 ] as const satisfies readonly FeatureFlagDef[];
 

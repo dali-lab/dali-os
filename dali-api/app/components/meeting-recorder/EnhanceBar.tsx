@@ -320,6 +320,14 @@ function barContent(
   const owner = rec.remote ? ` · ${rec.remote.ownerIsYou ? "another device" : rec.remote.ownerName}` : "";
 
   switch (state) {
+    case "recording":
+      return rec.noSound
+        ? {
+            key: "noSound",
+            node: <BarShell title="No sound detected" detail="Nothing has been picked up so far. Stop and record again." />,
+          }
+        : null;
+
     case "processing": {
       const d = describeProcessing(rec.processingStage ?? "starting", rec.progress);
       return {
@@ -367,6 +375,12 @@ function barContent(
     case "enhanced":
       if (!enhanceWasUndone(rec)) return tasksBar(rec, draft);
       return readyBar(rec, "ready", celebrate, owner);
+
+    case "noSpeech":
+      return {
+        key: "noSpeech",
+        node: <BarShell title="No speech was captured" detail="Nothing was transcribed from this recording. Discard it and record again." />,
+      };
 
     case "ready":
     case "inserted":

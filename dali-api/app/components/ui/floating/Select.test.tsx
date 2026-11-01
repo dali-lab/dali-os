@@ -25,6 +25,21 @@ const opts: SelectOption<string>[] = [
 ];
 
 describe("Select", () => {
+  // ProseMirror treats an attribute change on a block as a document change and
+  // rebuilds the block, unmounting any Select that lives in it.
+  it("touches nothing outside the panel when insideEditor is set", async () => {
+    const sibling = document.createElement("div");
+    document.body.appendChild(sibling);
+    mount(createElement(Select, { value: "a", options: opts, onChange: () => {}, ariaLabel: "Fruit", insideEditor: true }));
+    await act(async () => {
+      (container.querySelector("button") as HTMLButtonElement).click();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(document.body.querySelector("[role='listbox']")).toBeTruthy();
+    expect(sibling.hasAttribute("data-floating-ui-inert")).toBe(false);
+    sibling.remove();
+  });
+
   it("renders a hidden native <select name> carrying the value for <Form> submission", () => {
     mount(createElement(Select, { name: "fruit", defaultValue: "b", options: opts, ariaLabel: "Fruit" }));
     const hidden = container.querySelector("select[name='fruit']") as HTMLSelectElement | null;

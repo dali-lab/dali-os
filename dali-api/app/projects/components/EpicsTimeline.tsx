@@ -1534,7 +1534,7 @@ export function EpicsTimeline({
 
       <div
         className={cn(
-          "overflow-hidden border border-border bg-card",
+          "isolate overflow-hidden border border-border bg-card",
           "rounded-os-card",
           fillHeight && "flex min-h-0 flex-1 flex-col",
         )}

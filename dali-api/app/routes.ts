@@ -592,6 +592,7 @@ export default [
   route("api/rooms", "rooms/routes/api.rooms.ts"),
   route("api/rooms/:id/schedule", "rooms/routes/api.rooms.$id.schedule.ts"),
   route("api/rooms/:id/bookings", "rooms/routes/api.rooms.$id.bookings.ts"),
+  route("api/room-bookings/:id", "rooms/routes/api.room-bookings.$id.ts"),
   route("api/room-bookings/:id/cancel", "rooms/routes/api.room-bookings.$id.cancel.ts"),
   route("api/room-display/activate", "rooms/routes/api.room-display.activate.ts"),
   route("api/room-display/schedule", "rooms/routes/api.room-display.schedule.ts"),
@@ -670,6 +671,7 @@ export default [
     "api/projects/:id/tasks/archive",
     "projects/routes/api.projects.$id.tasks.archive.ts",
   ),
+  route("api/task-options", "projects/routes/api.task-options.ts"),
   route("api/tasks/:id/move", "projects/routes/api.tasks.$id.move.ts"),
   route("api/tasks/:id/view", "projects/routes/api.tasks.$id.view.ts"),
   route("api/tasks/:id/comments", "projects/routes/api.tasks.$id.comments.ts"),
@@ -730,6 +732,7 @@ export default [
   route("api/drive/move", "routes/api.drive.move.ts"),
   // Drive unified file upload: scope-agnostic file registration (Lab or Project).
   route("api/drive/files", "routes/api.drive.files.ts"),
+  route("api/drive/download", "routes/api.drive.download.ts"),
   // Drive Trash: list/restore/purge archived items (docs, files, forms).
   route("api/drive/trash", "routes/api.drive.trash.ts"),
   route("api/pages/:id/template", "routes/api.pages.$id.template.ts"),
@@ -740,6 +743,7 @@ export default [
   // Project files (standalone uploads with versions)
   route("api/projects/:id/files", "projects/routes/api.projects.$id.files.ts"),
   route("api/files/:id", "projects/routes/api.files.$id.ts"),
+  route("api/files/:id/download", "projects/routes/api.files.$id.download.ts"),
   route("api/files/:id/partner-visible", "projects/routes/api.files.$id.partner-visible.ts"),
 
   // Lab-wide document/file tags

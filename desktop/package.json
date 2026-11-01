@@ -1,6 +1,6 @@
 {
   "name": "dali-os-desktop",
-  "version": "0.1.21",
+  "version": "0.1.22",
   "private": true,
   "description": "Native desktop shell for DALI OS (Tauri v2).",
   "scripts": {

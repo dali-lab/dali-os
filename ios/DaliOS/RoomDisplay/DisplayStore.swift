@@ -63,15 +63,8 @@ final class DisplayStore {
 
     func refresh(now: Date = .now) async {
         guard token != nil, !isDemo else { return }
-        let day = Calendar.current.dateInterval(of: .day, for: now)!
         do {
-            let response: ScheduleResponse = try await client.get(
-                "api/room-display/schedule",
-                query: [
-                    URLQueryItem(name: "start", value: day.start.formatted(.iso8601)),
-                    URLQueryItem(name: "end", value: day.end.formatted(.iso8601)),
-                ]
-            )
+            let response = try await schedule(on: now)
             rooms = response.roomSchedules
             attendanceScan = response.attendanceScan
             if attendanceScan?.meetingId != dismissedScanID { dismissedScanID = nil }
@@ -85,16 +78,55 @@ final class DisplayStore {
         }
     }
 
+    private func schedule(on date: Date) async throws -> ScheduleResponse {
+        let day = Calendar.current.dateInterval(of: .day, for: date)!
+        return try await client.get(
+            "api/room-display/schedule",
+            query: [
+                URLQueryItem(name: "start", value: day.start.formatted(.iso8601)),
+                URLQueryItem(name: "end", value: day.end.formatted(.iso8601)),
+            ]
+        )
+    }
+
+    /// What's on in `roomID` on any day, for the Custom booking slider.
+    func items(roomID: String, on date: Date) async throws -> [ScheduleItem] {
+        #if DEBUG
+        if isDemo {
+            guard Calendar.current.isDateInToday(date) else { return [] }
+            return rooms.first { $0.id == roomID }?.items ?? []
+        }
+        #endif
+        return try await schedule(on: date).roomSchedules.first { $0.id == roomID }?.items ?? []
+    }
+
     /// Book `roomID` from now for `minutes`, as whoever's pass was scanned.
     /// The server's clock picks the start, so a skewed iPad can't shift it.
     func book(roomID: String, minutes: Int, memberToken: String) async throws -> BookResponse {
         #if DEBUG
-        if isDemo { return try await demoBook(roomID: roomID, minutes: minutes, memberToken: memberToken) }
+        if isDemo {
+            let start = Date.now
+            return try await demoBook(roomID: roomID, start: start, end: start.addingTimeInterval(TimeInterval(minutes * 60)), memberToken: memberToken)
+        }
         #endif
         struct Body: Encodable { let memberToken: String; let roomId: String; let minutes: Int }
         let response: BookResponse = try await client.post(
             "api/room-display/book",
             body: Body(memberToken: memberToken, roomId: roomID, minutes: minutes)
+        )
+        await refresh()
+        return response
+    }
+
+    /// Book a slot picked on the Custom slider.
+    func book(roomID: String, start: Date, end: Date, memberToken: String) async throws -> BookResponse {
+        #if DEBUG
+        if isDemo { return try await demoBook(roomID: roomID, start: start, end: end, memberToken: memberToken) }
+        #endif
+        struct Body: Encodable { let memberToken: String; let roomId: String; let start: Date; let end: Date }
+        let response: BookResponse = try await client.post(
+            "api/room-display/book",
+            body: Body(memberToken: memberToken, roomId: roomID, start: start, end: end)
         )
         await refresh()
         return response
@@ -232,15 +264,16 @@ final class DisplayStore {
         return Self.demoMembers.randomElement()!
     }
 
-    private func demoBook(roomID: String, minutes: Int, memberToken: String) async throws -> BookResponse {
+    private func demoBook(roomID: String, start: Date, end: Date, memberToken: String) async throws -> BookResponse {
         let member = try await demoMember(memberToken)
-        let start = Date.now, end = start.addingTimeInterval(TimeInterval(minutes * 60))
         let booking = ScheduleItem(
             kind: .booking, id: UUID().uuidString, title: "\(member.firstName)'s booking", start: start, end: end,
             organizer: .init(id: member.id, firstName: member.firstName, lastName: member.lastName),
             isEvent: false, source: "Display"
         )
-        updateRoom(roomID) { $0.items = ($0.items + [booking]).sorted { $0.start < $1.start } }
+        if Calendar.current.isDateInToday(start) {
+            updateRoom(roomID) { $0.items = ($0.items + [booking]).sorted { $0.start < $1.start } }
+        }
         return BookResponse(booking: .init(id: booking.id, start: start, end: end), member: member)
     }
 

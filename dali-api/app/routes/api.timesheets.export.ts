@@ -2,7 +2,7 @@ import type { Route } from "./+types/api.timesheets.export";
 import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
-import { resolveUserTimeZone, zonedDayStartUtc } from "~/lib/timezone";
+import { resolveUserTimeZone, zonedWallTimeUtc } from "~/lib/timezone";
 import { getRoleLabel, getUserRoleInstances } from "~/lib/roles";
 import { formatPayPeriod, payPeriodFor, PAY_PERIOD_DAYS } from "~/lib/pay-period";
 import { timeEntryDayUtc } from "~/calendar/lib/timesheet-day";
@@ -121,15 +121,16 @@ export async function loader({ request }: Route.LoaderArgs) {
       // startTime/endTime now (see nominalDayRange in calendar.tsx), but
       // older/legacy rows or attendance on a still-unscheduled meeting may
       // not; fall back to a nominal 9am slot so every entry still exports.
-      const start = e.startTime ?? (() => {
-        const dayStart = zonedDayStartUtc(
+      const start =
+        e.startTime ??
+        zonedWallTimeUtc(
           e.date.getUTCFullYear(),
           e.date.getUTCMonth() + 1,
           e.date.getUTCDate(),
+          9,
+          0,
           timezone,
         );
-        return new Date(dayStart.getTime() + 9 * 3_600_000);
-      })();
       const end = e.endTime ?? new Date(start.getTime() + Math.max(e.hours, 0.25) * 3_600_000);
       return splitAtMidnight(
         { hireKey: e.roleRefId ?? UNASSIGNED_KEY, start, end, hours: e.hours, description: e.note ?? "" },

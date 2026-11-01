@@ -52,6 +52,8 @@ export function Select<T extends string = string>({
   placeholder,
   align = "left",
   buttonClassName,
+  triggerIcon,
+  insideEditor = false,
 }: {
   /** Controlled value. Omit for uncontrolled/form usage (see `name`). */
   value?: T;
@@ -68,6 +70,12 @@ export function Select<T extends string = string>({
   placeholder?: string;
   align?: "left" | "right";
   buttonClassName?: string;
+  /** Rendered in the trigger, left of the selected label. */
+  triggerIcon?: ReactNode;
+  /** For a Select in or over a ProseMirror document. The focus manager stamps
+   *  an attribute on everything outside the panel, and ProseMirror answers that
+   *  mutation by rebuilding the blocks, which unmounts a Select living in one. */
+  insideEditor?: boolean;
 }) {
   const panelClass = usePanelClass();
   const triggerClass = useSelectTriggerClass();
@@ -206,6 +214,7 @@ export function Select<T extends string = string>({
         {...getReferenceProps()}
         aria-haspopup="listbox"
       >
+        {triggerIcon}
         <span className={`min-w-0 truncate ${current ? "" : "text-muted-foreground"}`}>
           {current?.label ?? placeholder ?? ""}
         </span>
@@ -213,7 +222,7 @@ export function Select<T extends string = string>({
       </button>
       {open && (
         <FloatingPortal>
-          <FloatingFocusManager context={context} modal={false}>
+          <FloatingFocusManager context={context} modal={false} disabled={insideEditor}>
             <ul
               ref={refs.setFloating}
               style={floatingStyles}

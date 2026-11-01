@@ -53,6 +53,27 @@ beforeEach(() => {
 });
 
 describe("POST /api/meeting-recordings", () => {
+  it("stores what the client reports about its capture, ignoring junk", async () => {
+    await run({
+      documentName: "doc:p1:body",
+      captureSource: "desktop",
+      appVersion: "0.1.21",
+      clientPlatform: "MacIntel",
+    });
+    expect(createRecording).toHaveBeenCalledWith("u1", "doc:p1:body", expect.anything(), {
+      captureSource: "desktop",
+      appVersion: "0.1.21",
+      clientPlatform: "MacIntel",
+    });
+
+    await run({ documentName: "doc:p1:body", captureSource: "carrier-pigeon", appVersion: null, clientPlatform: "x".repeat(99) });
+    expect(createRecording).toHaveBeenLastCalledWith("u1", "doc:p1:body", expect.anything(), {
+      captureSource: undefined,
+      appVersion: undefined,
+      clientPlatform: "x".repeat(32),
+    });
+  });
+
   it("creates a recording directly from a documentName", async () => {
     const res = await run({ documentName: "doc:p1:body" });
     expect(res.status).toBe(201);

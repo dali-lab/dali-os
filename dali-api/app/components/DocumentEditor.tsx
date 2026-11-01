@@ -2,6 +2,7 @@ import {
   useCallback,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   type KeyboardEvent,
@@ -16,12 +17,14 @@ import { DocCommentsPanel, useDocThreadCount } from "~/components/doc/comments";
 import { pageDocName } from "~/collab/roomName";
 import { PresenceProvider } from "./collab/PresenceProvider";
 import { PresenceBar } from "./collab/PresenceBar";
-import { isVersionHistoryShortcut, VERSION_HISTORY_SHORTCUT } from "~/lib/shortcuts";
+import { FIND_SHORTCUT, isFindShortcut, isVersionHistoryShortcut, VERSION_HISTORY_SHORTCUT } from "~/lib/shortcuts";
 import { VersionHistoryPanel } from "./collab/VersionHistoryPanel";
 import { TagPicker, type DocTag } from "./TagPicker";
 import { FavoriteStar } from "./FavoriteStar";
 import { PageBarMenuItems, PageBarPortal, SHELL_HEADER_VAR, pageBarTextButton, usePageBarSlot } from "~/components/shell/page-bar-slot";
 import { useFeatureFlag } from "~/components/FeatureFlags";
+import { useTaskProjects } from "~/components/doc/task/task-api";
+import { taskBlockConfig } from "~/components/doc/task/task-composer-state";
 import { PageIconPicker } from "./doc-chrome/PageIconPicker";
 import { PageCover } from "./doc-chrome/PageCover";
 import { DocToc } from "./doc-chrome/DocToc";
@@ -72,8 +75,6 @@ const DOWNLOAD_FORMATS = [
   { format: "docx", label: "Word" },
   { format: "md", label: "Markdown" },
 ] as const;
-
-export const FIND_SHORTCUT = "⌘F";
 
 type HistoryEditor = { surface: { current: HTMLElement | null }; panel: boolean };
 const historyEditors = new Set<HistoryEditor>();
@@ -221,6 +222,9 @@ export function DocumentEditor({
   const [tocOpen, setTocOpen] = useState(false);
   const [moveOpen, setMoveOpen] = useState(false);
   const toast = useToast();
+  const docProjectId = workspaceType === "Project" ? workspaceId : null;
+  const taskProjects = useTaskProjects(useFeatureFlag("doc-task-block") && canEdit);
+  const taskBlock = useMemo(() => taskBlockConfig(taskProjects, docProjectId), [taskProjects, docProjectId]);
   const moveDestinations = useDriveDestinations({
     enabled: moveOpen,
     movingIds: [pageId],
@@ -294,8 +298,7 @@ export function DocumentEditor({
   const docSurfaceRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     const onKeyDown = (e: globalThis.KeyboardEvent) => {
-      const isMod = e.metaKey || e.ctrlKey;
-      if (!isMod || e.key !== "f") return;
+      if (!isFindShortcut(e)) return;
       // Only intercept when the focused element is inside the doc surface.
       const surface = docSurfaceRef.current;
       if (!surface) return;
@@ -878,8 +881,8 @@ export function DocumentEditor({
     <div
       ref={topBarRef}
       className={cn(
-        "flex items-center gap-1 text-[13px] text-os-muted",
-        inPanel && "justify-end",
+        "flex items-center gap-1 text-[13px]",
+        inPanel ? "justify-end text-os-grey" : "text-os-muted",
       )}
     >
       {statusNodes}
@@ -993,7 +996,7 @@ export function DocumentEditor({
               : "w-full max-w-[1400px]"
         }${typo.font !== "default" ? ` doc-canvas--${typo.font}` : ""}${
           typo.smallText ? " doc-canvas--small" : ""
-        }${typo.nestingGuides ? " doc-canvas--guides" : ""}`}
+        }${typo.nestingGuides ? " doc-canvas--guides" : ""}${inPanel ? " doc-canvas--panel" : ""}`}
       >
         {belowTabs && (
           <div className="sticky z-10 overflow-hidden rounded-t-xl bg-card" style={{ top: stickyTop }}>
@@ -1016,11 +1019,10 @@ export function DocumentEditor({
 
         <div className={inPanel ? "px-1 pt-6 pb-6" : "px-4 sm:px-7 pt-12 pb-6"}>
           {/* Hover-reveal row: icon · Add icon · Add cover · Add tag
-              The header/title block adds an extra pl-[54px] to match the body
-              text, which sits at the 54px outer padding PLUS BlockNote's own
-              54px .bn-editor drag-handle gutter (padding-inline:54px in core
-              CSS). Together that puts both at 108px from the card edge (±0). */}
-          <div className="group/header relative mb-1 pl-3 sm:pl-[54px]">
+              The header/title block's left padding matches the .bn-editor
+              drag-handle gutter (54px in BlockNote's core CSS, 28px in the
+              side panel) so title and body text share a left edge. */}
+          <div className={cn("group/header relative mb-1 pl-3", inPanel ? "sm:pl-[28px]" : "sm:pl-[54px]")}>
             {/* FIX 6: One source of truth for the icon + cover affordances.
                 - When icon IS set: show it always (not in the hover row).
                 - When icon is NOT set: show "Add icon" only in the hover row.
@@ -1179,6 +1181,8 @@ export function DocumentEditor({
                 features="document"
                 editable={canEdit}
                 onEditorReady={(ed) => { editorRef.current = ed; liveEditorRef.current = ed; onEditorReady?.(ed); }}
+                taskBlock={taskBlock}
+                docProjectId={docProjectId}
                 collab={{
                   documentName,
                   token: collabToken,

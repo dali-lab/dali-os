@@ -8,6 +8,7 @@ import type { TocHeading } from "./blocks-util";
 import type { Features, EditorPresetName } from "./features";
 import type { DocBlock, DocEditorInstance, DocPartialBlock } from "./schema/build";
 import type { SigningContextValue } from "./signing-context";
+import type { TaskBlockConfig } from "./task/task-composer-state";
 
 /** Collaborative save/sync state for the document body (collab mode only). */
 export type DocSyncState = "saving" | "saved" | "offline";
@@ -124,4 +125,10 @@ export interface DocEditorProps {
    * (applicant/partner) or signing surfaces.
    */
   aiEnabled?: boolean;
+  /** Offers "/task" on this surface. Omit to leave it out of the menu; task
+   * blocks in the document render either way. */
+  taskBlock?: TaskBlockConfig | null;
+  /** The doc's project, so a task block can name its project when it differs.
+   * Null for docs outside a project. */
+  docProjectId?: string | null;
 }

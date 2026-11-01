@@ -106,7 +106,7 @@ export const NOTIFICATION_COPY = {
     description: "Sent to the organizer shortly before a meeting they organize starts.",
     variables: ["itemTitle"],
     subject: "{{itemTitle}} is starting. Record it?",
-    body: "DALI can transcribe it and delete the audio once it's done.",
+    body: "DALI can transcribe it and delete the audio after.",
   },
   "meeting.transcript_ready": {
     eventType: "meeting.transcript_ready",

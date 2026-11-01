@@ -10,7 +10,7 @@ import { createOfferingApplicationForm } from "./application-form.server";
 import type { OfferingStatus, OfferingType } from "~/generated/prisma/client";
 import { isMultiSession, isOfferingType } from "./offering-type";
 import { parseCompletionRule } from "./completion-rule";
-import { APPLICATION_TZ, zonedDateTimeLocalToUtc } from "~/lib/timezone";
+import { APPLICATION_TZ, shiftWallClock, toWallClock, zonedDateTimeLocalToUtc } from "~/lib/timezone";
 
 // ─── Reads ───────────────────────────────────────────────────────────────────
 
@@ -546,11 +546,12 @@ export async function runOfferingAction(
       // deltaMs > 0 means the clone is shifted into the future; null means no shift.
       const deltaMs =
         newFirstSession && oldFirstSession
-          ? newFirstSession.getTime() - oldFirstSession.getTime()
+          ? toWallClock(newFirstSession, APPLICATION_TZ).getTime() -
+            toWallClock(oldFirstSession, APPLICATION_TZ).getTime()
           : null;
 
       const shiftDate = (d: Date) =>
-        deltaMs !== null ? new Date(d.getTime() + deltaMs) : d;
+        deltaMs !== null ? shiftWallClock(d, deltaMs, APPLICATION_TZ) : d;
 
       const created = await prisma.educationOffering.create({
         data: {
@@ -781,7 +782,10 @@ export async function runOfferingAction(
           Math.max(1, Number.parseInt(String(formData.get("intervalDays") ?? "7"), 10) || 7),
         );
         for (let i = 0; i < count; i += 1) {
-          draft.push({ datetime: new Date(start.getTime() + i * intervalDays * 86_400_000), endsAt: null });
+          draft.push({
+            datetime: shiftWallClock(start, i * intervalDays * 86_400_000, APPLICATION_TZ),
+            endsAt: null,
+          });
         }
       }
 

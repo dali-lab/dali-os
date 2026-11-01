@@ -100,6 +100,20 @@ describe("POST /api/meeting-recordings/:id/chunks", () => {
     expect(res.status).toBe(404);
   });
 
+  it("reads the whole body before a 404", async () => {
+    vi.mocked(ownRecording).mockResolvedValue(null);
+    const req = post();
+    await run(req);
+    expect(req.bodyUsed).toBe(true);
+  });
+
+  it("reads the whole body before a 409", async () => {
+    vi.mocked(ownRecording).mockResolvedValue({ ...REC, status: "Done" } as never);
+    const req = post();
+    await run(req);
+    expect(req.bodyUsed).toBe(true);
+  });
+
   it.each(["Processing", "Done", "Failed"])("409s once the recording is %s", async (status) => {
     vi.mocked(ownRecording).mockResolvedValue({ ...REC, status } as never);
     const res = await run(post());

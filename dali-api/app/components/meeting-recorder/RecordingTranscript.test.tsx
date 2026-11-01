@@ -37,6 +37,7 @@ function makeRec(overrides: Partial<UseMeetingRecording> = {}): UseMeetingRecord
     channelsActive: [],
     levels: { mic: 0, call: 0 },
     stalled: { mic: false, call: false },
+    noSound: false,
     recordedSeconds: 0,
     now: 0,
     lines,
@@ -65,7 +66,6 @@ function makeRec(overrides: Partial<UseMeetingRecording> = {}): UseMeetingRecord
     processingStage: null,
 
     useDesktopApp: false,
-    setUseDesktopApp: vi.fn(),
     micDeviceId: undefined,
     setMicDeviceId: vi.fn(),
     micDevices: [],

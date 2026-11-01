@@ -402,9 +402,12 @@ export function PartnerApplicationModal({
                   {tab === "details" && (
                     <div className="os-form flex flex-col divide-y divide-os-container">
                       <DetailsTab
+                        applicationId={detail.application.id}
                         summary={detail.application.summary}
                         formAnswers={detail.formAnswers}
                         domains={detail.application.domains}
+                        canEdit={canEdit}
+                        onChanged={refresh}
                         viewAllHref={`/core/partners/applications/${detail.application.id}?tab=details`}
                       />
                       <PropertyRail

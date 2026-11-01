@@ -34,6 +34,7 @@ import {
   pageMentionConfig,
   signingFieldConfigs,
   taskMentionConfig,
+  taskConfig,
   variableConfig,
 } from "~/components/doc/schema/configs";
 import {
@@ -179,6 +180,20 @@ const calloutSpec = createBlockSpec(calloutConfig, {
 
 // Bookmark/embed: renders as an anchor card so export / version-history HTML
 // keeps the link (content: "none" — no contentDOM).
+const taskSpec = createBlockSpec(taskConfig, {
+  render: (block) => {
+    const taskId = String(block.props.taskId ?? "");
+    const projectId = String(block.props.projectId ?? "");
+    const dom = document.createElement("a");
+    dom.setAttribute("data-task-id", taskId);
+    if (taskId && projectId) {
+      dom.setAttribute("href", `/projects/${projectId}?tab=progress&task=${taskId}`);
+    }
+    dom.textContent = String(block.props.label ?? "") || "Untitled task";
+    return { dom };
+  },
+})();
+
 const embedSpec = createBlockSpec(embedConfig, {
   render: (block) => {
     const url = String(block.props.url ?? "");
@@ -234,7 +249,7 @@ const componentSpec = createBlockSpec(componentConfig, {
 // specs are built with the core createBlockSpecFromTiptapNode — no React — so
 // they are safe under the jsdom conversions below.
 export const serverSchema = withMultiColumn(BlockNoteSchema.create({
-  blockSpecs: { ...defaultBlockSpecs, callout: calloutSpec, embed: embedSpec, component: componentSpec, pageBreak: createPageBreakBlockSpec() },
+  blockSpecs: { ...defaultBlockSpecs, callout: calloutSpec, embed: embedSpec, component: componentSpec, task: taskSpec, pageBreak: createPageBreakBlockSpec() },
   inlineContentSpecs: {
     ...defaultInlineContentSpecs,
     mention: mentionSpec,

@@ -57,7 +57,12 @@ export const FORM_UPLOAD_CAP: UploadCap = {
 
 /** Prefixes minted only by the server. A client-supplied key under one is
  *  refused at presign and never signed for read. */
-export const RESERVED_UPLOAD_PREFIXES = ["uploads/payroll-imports/", "uploads/resumes/"];
+export const DRIVE_DOWNLOAD_PREFIX = "uploads/drive-downloads/";
+export const RESERVED_UPLOAD_PREFIXES = [
+  "uploads/payroll-imports/",
+  "uploads/resumes/",
+  DRIVE_DOWNLOAD_PREFIX,
+];
 
 export function isReservedUploadKey(key: string): boolean {
   const scoped = `uploads/${key.replace(/^\/+/, "").replace(/^uploads\//, "")}`;

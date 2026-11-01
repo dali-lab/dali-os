@@ -67,6 +67,16 @@ import {
   MANAGE_CALENDAR_LINK_DEF,
   runManageCalendarLink,
 } from "./manage-calendar-link";
+import {
+  LIST_ROOMS_DEF,
+  GET_ROOM_SCHEDULE_DEF,
+  BOOK_ROOM_DEF,
+  CANCEL_ROOM_BOOKING_DEF,
+  runListRooms,
+  runGetRoomSchedule,
+  runBookRoom,
+  runCancelRoomBooking,
+} from "./rooms";
 
 export const CALENDAR_TOOLS: McpTool[] = [
   {
@@ -147,5 +157,25 @@ export const CALENDAR_TOOLS: McpTool[] = [
     def: MANAGE_CALENDAR_LINK_DEF,
     run: (ctx, args) =>
       runManageCalendarLink(ctx.user.id, args as Parameters<typeof runManageCalendarLink>[1]),
+  },
+  {
+    def: LIST_ROOMS_DEF,
+    run: (ctx, args) =>
+      runListRooms(ctx.user.id, args as Parameters<typeof runListRooms>[1]),
+  },
+  {
+    def: GET_ROOM_SCHEDULE_DEF,
+    run: (ctx, args) =>
+      runGetRoomSchedule(ctx.user.id, args as Parameters<typeof runGetRoomSchedule>[1]),
+  },
+  {
+    def: BOOK_ROOM_DEF,
+    run: (ctx, args) =>
+      runBookRoom(ctx.user.id, args as Parameters<typeof runBookRoom>[1]),
+  },
+  {
+    def: CANCEL_ROOM_BOOKING_DEF,
+    run: (ctx, args) =>
+      runCancelRoomBooking(ctx.user.id, args as Parameters<typeof runCancelRoomBooking>[1]),
   },
 ];

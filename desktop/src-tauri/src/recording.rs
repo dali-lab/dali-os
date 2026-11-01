@@ -262,6 +262,9 @@ pub async fn create_and_start(
         .json(&json!({
             "scheduledMeetingId": scheduled_meeting_id,
             "occurrenceStart": occurrence_start,
+            "captureSource": "desktop",
+            "appVersion": env!("CARGO_PKG_VERSION"),
+            "clientPlatform": std::env::consts::OS,
         }))
         .send()
         .await;

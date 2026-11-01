@@ -3,6 +3,9 @@
 // RMS: well below speech spread across a 20s chunk, well above zero.
 const SILENCE_RMS = 100;
 
+// Long enough for a couple of 20s chunks, so a quiet opening doesn't raise it.
+export const NO_SOUND_AFTER_SECONDS = 60;
+
 /** Whether a 16-bit little-endian mono PCM chunk carries any sound. */
 export function isVoiced(pcm: Buffer): boolean {
   const samples = Math.floor(pcm.byteLength / 2);

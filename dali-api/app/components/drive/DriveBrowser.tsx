@@ -48,6 +48,7 @@ import {
   PanelRight,
   Pencil,
   Trash2,
+  Download,
   FolderInput,
   HardDrive,
   Search,
@@ -79,6 +80,7 @@ import { useToast } from "~/components/ui/toast";
 import { useFeatureFlag } from "~/components/FeatureFlags";
 import { notebookRequest, sendJson } from "~/components/notebooks/notebook-requests";
 import { cn } from "~/lib/cn";
+import { modKey } from "~/lib/shortcuts";
 import { collapseMiddle } from "~/lib/collapse-middle";
 import { FAVORITES_SPACE_KEY, isProcessRootSpace, SHARED_SPACE_KEY } from "~/lib/drive-spaces";
 import { scopeIconFor } from "~/components/drive/scope-icon";
@@ -94,6 +96,7 @@ import { useOsChrome } from "~/components/os-chrome";
 import { crumbsFor, driveScopeLabel, locationOf, type ItemLocation } from "~/components/drive/location";
 import { LocationLink } from "~/components/drive/LocationLink";
 import { menuEntries, type MenuEntry } from "~/components/drive/item-menu";
+import { downloadItems, hasDownloadable } from "~/components/drive/download-files";
 import { clickIntent } from "~/components/drive/column-click";
 import { gridStepBlocks, perRowFromTops, type GridBlock } from "~/components/drive/grid-nav";
 import { MarqueeBox, useMarquee } from "~/components/drive/use-marquee";
@@ -138,6 +141,8 @@ export type RowActions = {
   onRename: (item: DriveItem) => void;
   onRequestMove: (item: DriveItem) => void;
   onDelete: (item: DriveItem) => void;
+  /** Save a file, or the whole selection when the row is part of one. */
+  onDownload?: (item: DriveItem) => void;
   /** Open the in-place Share dialog for a page-backed item (doc, folder, or form). */
   onShare?: (item: DriveItem) => void;
   /** Apply a tag to the Drive's tag filter (clicking a tag dot). */
@@ -532,6 +537,11 @@ function itemMenuItems(
         Open
       </Menu.Item>
       <OpenBesideMenuItem item={item} />
+      {has("download") && actions.onDownload && (
+        <Menu.Item icon={<Download className="h-3.5 w-3.5" />} onSelect={() => actions.onDownload!(item)}>
+          Download
+        </Menu.Item>
+      )}
       {canFavorite && onToggleFavorite && (
         <Menu.Item
           icon={<Star className={`h-3.5 w-3.5 ${item.favorited ? "fill-current text-os-accent" : ""}`} />}
@@ -768,6 +778,12 @@ export function DriveBrowser({
   const sharingChangedRef = useRef(false);
   const revalidator = useRevalidator();
   const toast = useToast();
+  const [downloading, setDownloading] = useState(false);
+  async function download(items: DriveItem[]) {
+    setDownloading(true);
+    await downloadItems(items, { toast, open: (url) => window.location.assign(url) });
+    setDownloading(false);
+  }
 
   async function dropOnNotebook(notebook: DriveItem, dragged: DriveItem[]) {
     if (!dragged.every(isPlainDocument)) {
@@ -809,6 +825,7 @@ export function DriveBrowser({
     const inSelection = (item: DriveItem) => selected.has(item.id) && selectedItems.length > 1;
     return {
       ...base,
+      onDownload: (item: DriveItem) => void download(inSelection(item) ? selectedItems : [item]),
       onDelete: (item: DriveItem) =>
         inSelection(item) && onBulkDelete ? onBulkDelete(selectedItems) : base.onDelete(item),
       onRequestMove: (item: DriveItem) =>
@@ -1336,8 +1353,13 @@ export function DriveBrowser({
   function onPaneKeyDown(e: ReactKeyboardEvent<HTMLElement>) {
     if (isInFloatingLayer(e.target)) return;
     if ((e.target as Element).closest("input, textarea, select, [contenteditable='true']")) return;
-    const mod = e.metaKey || e.ctrlKey;
+    const mod = modKey(e);
 
+    if (e.key === "Delete" || (mod && e.key === "Backspace")) {
+      e.preventDefault();
+      deleteSelection();
+      return;
+    }
     if (e.key === "Backspace" || (mod && e.key === "ArrowUp")) {
       e.preventDefault();
       goUp();
@@ -1357,11 +1379,6 @@ export function DriveBrowser({
       if (!selectable) return;
       e.preventDefault();
       setSelected(new Set(rows.map((r) => r.id)));
-      return;
-    }
-    if (e.key === "Delete" || e.key === "#") {
-      e.preventDefault();
-      deleteSelection();
       return;
     }
     if (e.key === "F2") {
@@ -1926,7 +1943,6 @@ export function DriveBrowser({
             </div>
           ) : (
             <>
-              /* ── LIST / GRID / SEARCH ──────────────────────────────────── */
               <div
                 ref={listRef}
                 tabIndex={0}
@@ -2017,6 +2033,8 @@ export function DriveBrowser({
             showBulk={showBulk}
             selectedCount={selected.size}
             selectedItems={selectedItems}
+            onBulkDownload={() => void download(selectedItems)}
+            downloading={downloading}
             onBulkMove={onBulkMove}
             onBulkDelete={onBulkDelete}
             onClearSelection={clearSelection}
@@ -2090,6 +2108,8 @@ function DriveBulkBar({
   showBulk,
   selectedCount,
   selectedItems,
+  onBulkDownload,
+  downloading,
   onBulkMove,
   onBulkDelete,
   onClearSelection,
@@ -2097,6 +2117,8 @@ function DriveBulkBar({
   showBulk: boolean;
   selectedCount: number;
   selectedItems: DriveItem[];
+  onBulkDownload: () => void;
+  downloading: boolean;
   onBulkMove?: (items: DriveItem[]) => void;
   onBulkDelete?: (items: DriveItem[]) => void;
   onClearSelection: () => void;
@@ -2115,6 +2137,17 @@ function DriveBulkBar({
       <span className="whitespace-nowrap rounded-full bg-os-container px-2.5 py-1 text-xs font-medium text-foreground">
         {selectedCount} selected
       </span>
+      {hasDownloadable(selectedItems) && (
+        <Button
+          variant="secondary"
+          size="sm"
+          disabled={downloading}
+          data-testid="drive-bulk-download"
+          onClick={onBulkDownload}
+        >
+          <Download className="h-3.5 w-3.5" /> {downloading ? "Preparing…" : "Download"}
+        </Button>
+      )}
       {onBulkMove && (
         <Button
           variant="secondary"

@@ -37,6 +37,7 @@ import {
   assignInterviewers,
   reassignInterviewer,
 } from "~/hiring/lib/scheduling";
+import { zonedDayStartUtc } from "~/lib/timezone";
 
 const mockPrisma = prisma as unknown as {
   interviewConfig: { findUnique: ReturnType<typeof vi.fn> };
@@ -207,6 +208,50 @@ describe("generateCandidateSlots", () => {
       expect(localDay).not.toBe(0); // not Sunday
       expect(localDay).not.toBe(6); // not Saturday
     }
+  });
+
+  const ET = "America/New_York";
+  const dates = (slots: Date[]) => [
+    ...new Set(slots.map((d) => d.toLocaleDateString("en-CA", { timeZone: ET }))),
+  ];
+
+  it("keeps the last day of a window that crosses the fall clock change", () => {
+    const start = zonedDayStartUtc(2030, 10, 31, ET); // Thu, still EDT
+    const end = zonedDayStartUtc(2030, 11, 8, ET); // Fri, now EST
+    const slots = generateCandidateSlots(start, end, 9, 10, 30, ET);
+    expect(dates(slots)).toEqual([
+      "2030-10-31",
+      "2030-11-01",
+      "2030-11-04",
+      "2030-11-05",
+      "2030-11-06",
+      "2030-11-07",
+      "2030-11-08",
+    ]);
+  });
+
+  it("keeps the last day of a window that crosses the spring clock change", () => {
+    const start = zonedDayStartUtc(2031, 3, 6, ET); // Thu, still EST
+    const end = zonedDayStartUtc(2031, 3, 14, ET); // Fri, now EDT
+    const slots = generateCandidateSlots(start, end, 9, 10, 30, ET);
+    expect(dates(slots)).toEqual([
+      "2031-03-06",
+      "2031-03-07",
+      "2031-03-10",
+      "2031-03-11",
+      "2031-03-12",
+      "2031-03-13",
+      "2031-03-14",
+    ]);
+  });
+
+  it("offers each slot once and on the wall clock across a clock change", () => {
+    const start = zonedDayStartUtc(2030, 11, 1, ET);
+    const end = zonedDayStartUtc(2030, 11, 4, ET);
+    const slots = generateCandidateSlots(start, end, 9, 10, 30, ET);
+    expect(new Set(slots.map((d) => d.getTime())).size).toBe(slots.length);
+    expect(slots[0].toISOString()).toBe("2030-11-01T13:00:00.000Z"); // Fri 9:00 EDT
+    expect(slots[slots.length - 3].toISOString()).toBe("2030-11-04T14:00:00.000Z"); // Mon 9:00 EST
   });
 
   it("skips weekends", () => {

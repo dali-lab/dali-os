@@ -23,7 +23,11 @@ import {
   createRecording,
   projectRecordingDisabled,
   recordingDeepLink,
+  type RecordingClient,
 } from "~/lib/meeting-recording.server";
+
+const clientString = (value: unknown) =>
+  typeof value === "string" && value ? value.slice(0, 32) : undefined;
 
 export async function action({ request }: Route.ActionArgs) {
   const auth = await requireAuth(request);
@@ -38,6 +42,11 @@ export async function action({ request }: Route.ActionArgs) {
     typeof body?.scheduledMeetingId === "string" && body.scheduledMeetingId ? body.scheduledMeetingId : undefined;
   const occurrenceStartRaw = typeof body?.occurrenceStart === "string" ? body.occurrenceStart : undefined;
   const occurrenceStart = occurrenceStartRaw ? new Date(occurrenceStartRaw) : undefined;
+  const client: RecordingClient = {
+    captureSource: body?.captureSource === "desktop" || body?.captureSource === "browser" ? body.captureSource : undefined,
+    appVersion: clientString(body?.appVersion),
+    clientPlatform: clientString(body?.clientPlatform),
+  };
   if (occurrenceStartRaw && Number.isNaN(occurrenceStart?.getTime())) {
     return Response.json({ error: "Invalid occurrenceStart" }, { status: 400 });
   }
@@ -74,7 +83,7 @@ export async function action({ request }: Route.ActionArgs) {
   const rec = await createRecording(auth.user.sub, documentName, {
     scheduledMeetingId,
     occurrenceStart: occurrenceStart ?? null,
-  });
+  }, client);
   if (!rec) {
     return Response.json(
       { error: "Recording is busy right now, try again in a few minutes." },

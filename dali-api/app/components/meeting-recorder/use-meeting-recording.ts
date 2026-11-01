@@ -8,7 +8,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 import { useDialog } from "~/components/ui/dialog";
 import { useToast } from "~/components/ui/toast";
-import { desktopVersion } from "~/lib/desktop";
+import { desktopVersion, hasNativeRecorder } from "~/lib/desktop";
 import { acquireCollabDoc, releaseCollabDoc } from "~/components/doc/collab-doc";
 import { captureCallAudio, describeMicError, listMicDevices, openMic, startLevelMeter } from "./capture";
 import {
@@ -375,7 +375,7 @@ export function useMeetingRecording({
   const [scrollTarget, setScrollTarget] = useState<number | null>(null);
 
   // Start-sheet config.
-  const [useDesktopApp, setUseDesktopApp] = useState(desktopVer != null);
+  const [useDesktopApp, setUseDesktopApp] = useState(hasNativeRecorder);
   const [micDeviceId, setMicDeviceId] = useState<string | undefined>(undefined);
   const [micDevices, setMicDevices] = useState<MediaDeviceInfo[]>([]);
   const [micLevel, setMicLevel] = useState(0);
@@ -392,6 +392,7 @@ export function useMeetingRecording({
     liveSession && liveSession.recordingId === recordingId && liveSession.captureMode === "browser" && !remote
       ? liveSession
       : null;
+  const noSound = phase === "recording" && liveSession?.recordingId === recordingId && Boolean(liveSession?.noSound);
   const channelsActive = ownSession ? ownSession.channelsActive : polledChannels;
   const levels = ownSession ? ownSession.levels : emptyLevels;
   const stalled = ownSession ? ownSession.stalled : emptyStalled;
@@ -818,13 +819,20 @@ export function useMeetingRecording({
     }
   }
 
-  async function createRow(): Promise<StartRecordingResponse | null> {
+  async function createRow(captureSource: "desktop" | "browser"): Promise<StartRecordingResponse | null> {
     try {
       const res = await fetch("/api/meeting-recordings", {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ documentName, scheduledMeetingId, occurrenceStart }),
+        body: JSON.stringify({
+          documentName,
+          scheduledMeetingId,
+          occurrenceStart,
+          captureSource,
+          appVersion: desktopVer,
+          clientPlatform: navigator.platform,
+        }),
       });
       const json = await res.json().catch(() => null);
       if (res.status === 409 && json?.error === "alreadyRecording" && typeof json.recordingId === "string") {
@@ -851,7 +859,7 @@ export function useMeetingRecording({
 
   async function startDesktop() {
     setError(null);
-    const created = await createRow();
+    const created = await createRow("desktop");
     if (!created) {
       setOpen(true);
       return;
@@ -896,7 +904,7 @@ export function useMeetingRecording({
       setOpen(true);
       return;
     }
-    const created = await createRow();
+    const created = await createRow("browser");
     if (!created) {
       setOpen(true);
       return;
@@ -1052,7 +1060,12 @@ export function useMeetingRecording({
    *  the "inserted" state (specs/meeting-recording-rail.md) until Discard. */
   function insert(notes: string | null) {
     const paragraphs = transcriptParagraphs(lines, speakers, roster);
-    if (!onInsert(meetingNotesMarkdown(notes), paragraphs)) {
+    const markdown = meetingNotesMarkdown(notes);
+    if (!markdown && paragraphs.length === 0) {
+      setError("There's nothing in this recording to insert.");
+      return false;
+    }
+    if (!onInsert(markdown, paragraphs)) {
       setError("The note is still loading. Try again in a moment.");
       return false;
     }
@@ -1405,6 +1418,7 @@ export function useMeetingRecording({
     channelsActive,
     levels,
     stalled,
+    noSound,
     recordedSeconds,
     now,
     lines,
@@ -1435,7 +1449,6 @@ export function useMeetingRecording({
 
     // Start-sheet config.
     useDesktopApp,
-    setUseDesktopApp,
     micDeviceId,
     setMicDeviceId,
     micDevices,

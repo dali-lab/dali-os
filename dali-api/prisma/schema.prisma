@@ -2209,6 +2209,13 @@ model MeetingRecording {
   // Highest seq stored per channel per segment, for the job description.
   chunkIndex     Json      @default("{}") // { mic: [41, 12], call: [41] }
   lastChunkAt    DateTime?
+  // Reported by the client at create. Null on rows from before these columns
+  // and on anything the client didn't send.
+  captureSource  String?   // "desktop" | "browser"
+  appVersion     String?   // the desktop shell's version, when there is one
+  clientPlatform String?
+  // When the chunks were removed, a day after finalizedAt.
+  audioDeletedAt DateTime?
 
   // Per-channel word arrays with absolute timestamps; lines derive from these.
   words    Json @default("{}") // { mic: [{ s, e, w, sp }], call: [...] }

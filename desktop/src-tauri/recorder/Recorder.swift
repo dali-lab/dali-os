@@ -40,11 +40,13 @@ import AVFoundation
 import AudioToolbox
 import CoreAudio
 import Foundation
+import os
 
 public typealias DaliRecorderCallback = @convention(c) (UnsafePointer<CChar>) -> Void
 public typealias DaliRecorderAudioCallback = @convention(c) (UInt8, UnsafePointer<Int16>, Int) -> Void
 
 private let recorderQueue = DispatchQueue(label: "edu.dartmouth.dali.os.recorder")
+private let recorderLog = Logger(subsystem: "edu.dartmouth.dali.os", category: "recorder")
 private var current: Recorder?
 
 private let audioCallbackLock = NSLock()
@@ -121,7 +123,7 @@ private final class Recorder {
 
     private func begin() {
         do {
-            let micConverter = PCMConverter(channel: 0)
+            let micConverter = PCMConverter(channel: 0, levelName: "mic converted")
             mic = try MicCapture { buffer in micConverter.feed(buffer) }
         } catch {
             emit(["type": "error", "message": "Couldn't open the microphone."])
@@ -131,8 +133,12 @@ private final class Recorder {
         }
 
         if #available(macOS 14.2, *) {
-            let callConverter = PCMConverter(channel: 1)
-            if let tap = try? SystemAudioCapture(onBuffer: { buffer in callConverter.feed(buffer) }) {
+            let callConverter = PCMConverter(channel: 1, levelName: "call converted")
+            let callLevel = LevelMeter("call raw")
+            if let tap = try? SystemAudioCapture(onBuffer: { buffer in
+                callLevel.add(buffer)
+                callConverter.feed(buffer)
+            }) {
                 stopSystem = tap.stop
             }
         }
@@ -169,10 +175,12 @@ private final class PCMConverter {
         commonFormat: .pcmFormatInt16, sampleRate: 16_000, channels: 1, interleaved: false)!
 
     private let channel: UInt8
+    private let level: LevelMeter
     private var converter: AVAudioConverter?
 
-    init(channel: UInt8) {
+    init(channel: UInt8, levelName: String) {
         self.channel = channel
+        level = LevelMeter(levelName)
     }
 
     func feed(_ buffer: AVAudioPCMBuffer) {
@@ -196,11 +204,53 @@ private final class PCMConverter {
             return buffer
         }
         guard converted.frameLength > 0, let data = converted.int16ChannelData?[0] else { return }
+        level.add(data, frames: Int(converted.frameLength))
         deliverAudio(channel, data, Int(converted.frameLength))
     }
 }
 
 // MARK: - Levels
+
+// Logs each source's average level every 20 s, so `log show --predicate
+// 'subsystem == "edu.dartmouth.dali.os"'` shows where a silent recording lost
+// its sound. Levels only, never samples. One instance per source thread.
+private final class LevelMeter {
+    private static let reportEvery: TimeInterval = 20
+
+    private let name: String
+    private var sumSquares: Double = 0
+    private var frames = 0
+    private var lastReport = Date()
+
+    init(_ name: String) {
+        self.name = name
+    }
+
+    func add(_ buffer: AVAudioPCMBuffer) {
+        let level = Double(rms(buffer))
+        accumulate(level * level * Double(buffer.frameLength), Int(buffer.frameLength))
+    }
+
+    func add(_ samples: UnsafePointer<Int16>, frames count: Int) {
+        var sum: Double = 0
+        for i in 0..<count {
+            let sample = Double(samples[i]) / 32768
+            sum += sample * sample
+        }
+        accumulate(sum, count)
+    }
+
+    private func accumulate(_ squares: Double, _ count: Int) {
+        sumSquares += squares
+        frames += count
+        guard Date().timeIntervalSince(lastReport) >= Self.reportEvery, frames > 0 else { return }
+        let level = (sumSquares / Double(frames)).squareRoot()
+        recorderLog.notice("\(self.name, privacy: .public) rms=\(level, format: .fixed(precision: 5), privacy: .public)")
+        sumSquares = 0
+        frames = 0
+        lastReport = Date()
+    }
+}
 
 private func rms(_ buffer: AVAudioPCMBuffer) -> Float {
     guard let channels = buffer.floatChannelData, buffer.frameLength > 0 else { return 0 }
@@ -249,22 +299,36 @@ private final class AutoGain {
 // MARK: - Microphone
 
 private final class MicCapture {
-    private let engine = AVAudioEngine()
+    // One device change arrives as a burst of notifications, and another app's
+    // voice processing can still be shutting down during it. Attaching straight
+    // away, to the same engine, left the mic silent for the rest of the recording.
+    private static let restartSettle: TimeInterval = 0.3
+    private static let maxRestartAttempts = 5
+
+    private var engine = AVAudioEngine()
     private let gain = AutoGain()
+    private let rawLevel = LevelMeter("mic raw")
     private let onBuffer: (AVAudioPCMBuffer) -> Void
     private var observer: NSObjectProtocol?
+    private var pendingRestart: DispatchWorkItem?
+    private var restartAttempts = 0
+    private var stopped = false
 
     init(onBuffer: @escaping (AVAudioPCMBuffer) -> Void) throws {
         self.onBuffer = onBuffer
         try attach()
-        // A device change (AirPods connecting, a display's mic, the system
-        // tap's aggregate device appearing) stops the engine and posts this.
-        // Without a restart the tap never fires again and the mic channel
-        // is silent for the rest of the recording.
+        observe()
+    }
+
+    // A device change (AirPods connecting, a display's mic, the system tap's
+    // aggregate device appearing, another app's voice processing) stops the
+    // engine and posts this. Without a restart the tap never fires again.
+    private func observe() {
+        if let observer { NotificationCenter.default.removeObserver(observer) }
         observer = NotificationCenter.default.addObserver(
             forName: .AVAudioEngineConfigurationChange, object: engine, queue: nil
         ) { [weak self] _ in
-            recorderQueue.async { self?.restart() }
+            recorderQueue.async { self?.scheduleRestart() }
         }
     }
 
@@ -274,9 +338,13 @@ private final class MicCapture {
         guard format.sampleRate > 0, format.channelCount > 0 else {
             throw TapError.status(kAudioHardwareBadDeviceError)
         }
+        recorderLog.notice(
+            "mic attached channels=\(format.channelCount, privacy: .public) rate=\(format.sampleRate, privacy: .public)")
         let gain = self.gain
+        let rawLevel = self.rawLevel
         let onBuffer = self.onBuffer
         input.installTap(onBus: 0, bufferSize: 4096, format: format) { buffer, _ in
+            rawLevel.add(buffer)
             gain.apply(buffer)
             onBuffer(buffer)
         }
@@ -284,18 +352,34 @@ private final class MicCapture {
         try engine.start()
     }
 
+    private func scheduleRestart() {
+        guard !stopped else { return }
+        pendingRestart?.cancel()
+        let work = DispatchWorkItem { [weak self] in self?.restart() }
+        pendingRestart = work
+        recorderQueue.asyncAfter(deadline: .now() + Self.restartSettle, execute: work)
+    }
+
     private func restart() {
-        guard observer != nil else { return }
+        guard !stopped else { return }
+        recorderLog.notice("mic restarting attempt=\(self.restartAttempts + 1, privacy: .public)")
         engine.inputNode.removeTap(onBus: 0)
         engine.stop()
+        engine = AVAudioEngine()
+        observe()
         do {
             try attach()
+            restartAttempts = 0
         } catch {
-            fputs("dali-recorder: microphone restart failed: \(error)\n", stderr)
+            recorderLog.error("mic restart failed: \(String(describing: error), privacy: .public)")
+            restartAttempts += 1
+            if restartAttempts < Self.maxRestartAttempts { scheduleRestart() }
         }
     }
 
     func stop() {
+        stopped = true
+        pendingRestart?.cancel()
         if let observer { NotificationCenter.default.removeObserver(observer) }
         observer = nil
         engine.inputNode.removeTap(onBus: 0)

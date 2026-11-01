@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useOpenBeside } from "~/components/side-panel/use-side-panel";
-import { SIDE_PARAM } from "~/lib/side-panel";
 import {
   Form,
   Link,
@@ -93,6 +92,7 @@ import {
   type EditableEpic,
 } from "../components/EpicSprintManager";
 import {
+  assignableAssignments,
   taskTermIds,
   termIdsInRange,
   isTaskFinished,
@@ -982,25 +982,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   // since rolled off. TaskModal folds that task's own assignees into its picker
   // so they stay removable — which keeps the un-assign path working without
   // widening this project-wide list back out to every past member.
-  const currentTermAssignments = current
-    ? project.assignments.filter((a) => a.termId === current.id)
-    : [];
-  const latestStaffedSortKey = project.assignments.reduce<number | null>(
-    (max, a) => (max === null || a.term.sortKey > max ? a.term.sortKey : max),
-    null,
-  );
-  const assignableAssignments =
-    currentTermAssignments.length > 0
-      ? currentTermAssignments
-      : latestStaffedSortKey === null
-        ? []
-        : project.assignments.filter((a) => a.term.sortKey === latestStaffedSortKey);
-
   const memberMap = new Map<string, string>();
   // Each member's staffed domain on this project, for the modal's "assign →
   // autofill Domain" step. First staffing row wins if someone spans domains.
   const domainByUserId = new Map<string, string>();
-  for (const a of assignableAssignments) {
+  for (const a of assignableAssignments(project.assignments, current?.id ?? null)) {
     const id = a.user.id;
     if (!memberMap.has(id)) {
       memberMap.set(id, fullName(a.user));
@@ -1854,7 +1840,6 @@ export default function ProjectDetail() {
       (prev) => {
         prev.set("tab", "progress");
         prev.set("task", taskId);
-        prev.delete(SIDE_PARAM);
         return prev;
       },
       { replace: true, preventScrollReset: true },
@@ -1872,7 +1857,6 @@ export default function ProjectDetail() {
     setSearchParams(
       (prev) => {
         prev.set("tab", next);
-        prev.delete(SIDE_PARAM);
         return prev;
       },
       { replace: true, preventScrollReset: true },
@@ -2562,7 +2546,7 @@ function RecordingPolicySegment({
     <EditableSection
       title="Meeting recording"
       canEdit={canEdit}
-      description="Lets anyone editing a meeting note on this project record it. Audio is transcribed, then deleted."
+      description="Lets anyone editing a meeting note on this project record it. Audio is transcribed, then deleted after."
       onSave={() => {
         if (formRef.current) submit(formRef.current);
       }}
@@ -4600,13 +4584,15 @@ function ProjectDriveTab({
     [],
   );
 
+  const onOpenBeside = useOpenBeside();
   const onOpenItem = useCallback(
     (item: DriveItem) => {
-      if (item.href) navigate(item.href);
+      if (!item.href) return;
+      if (onOpenBeside && item.type === "doc") onOpenBeside({ href: item.href });
+      else navigate(item.href);
     },
-    [navigate],
+    [navigate, onOpenBeside],
   );
-  const onOpenBeside = useOpenBeside();
 
   // One item's move, with no reporting: the batch below speaks for the
   // selection. `onError` gets the reason a move was refused.
@@ -4978,6 +4964,11 @@ function DocumentsBlock({
   canEdit: boolean;
   hasActivePartner: boolean;
 }) {
+  const openBeside = useOpenBeside();
+  const openDocument = (id: string, title: string) => {
+    if (openBeside) openBeside({ href: `/documents/${id}` });
+    else openDocumentTab(id, title);
+  };
   const dialog = useDialog();
   const toast = useToast();
   const revalidator = useRevalidator();
@@ -5131,7 +5122,7 @@ function DocumentsBlock({
       });
       const b = (await res.json().catch(() => ({}))) as { id?: string; error?: string };
       if (!res.ok || !b.id) throw new Error(b.error ?? "Failed to create document");
-      openDocumentTab(b.id, title);
+      openDocument(b.id, title);
       revalidator.revalidate();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Something went wrong");
@@ -5456,7 +5447,7 @@ function DocumentsBlock({
     togglePin,
     setMoveDoc,
     deleteDocument,
-    openDocument: openDocumentTab,
+    openDocument,
   };
 
   const isEmpty = documents.length === 0 && files.length === 0;
