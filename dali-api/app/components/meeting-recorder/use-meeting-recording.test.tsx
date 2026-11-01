@@ -196,6 +196,54 @@ afterEach(() => {
 });
 
 describe("useMeetingRecording phase transitions (mocked fetch, no browser capture)", () => {
+  it("retryDesktopStart: deletes the stuck row before creating the new one", async () => {
+    const documentName = "doc-retry";
+    window.localStorage.setItem(
+      backupKey(documentName),
+      JSON.stringify({ id: "stuck", link: "l", aiEnabled: true, captureMode: "desktop" }),
+    );
+    const calls: string[] = [];
+    let release: () => void = () => {};
+    const deleted = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        const method = init?.method ?? "GET";
+        if (method === "DELETE") {
+          calls.push(`DELETE ${url}`);
+          await deleted;
+          return jsonRes({});
+        }
+        if (method === "POST" && url === "/api/meeting-recordings") {
+          calls.push(`POST ${url}`);
+          return jsonRes({ id: "fresh", link: "about:blank", aiEnabled: true });
+        }
+        return jsonRes({ status: "Pending", channels: [], recordedSeconds: 0, lines: [], speakers: {} });
+      }),
+    );
+
+    await mount(documentName);
+    expect(box.current!.phase).toBe("starting");
+
+    let retry: Promise<void> = Promise.resolve();
+    await act(async () => {
+      retry = box.current!.retryDesktopStart();
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    expect(calls).toEqual(["DELETE /api/meeting-recordings/stuck"]);
+
+    await act(async () => {
+      release();
+      await retry;
+    });
+    expect(calls).toEqual(["DELETE /api/meeting-recordings/stuck", "POST /api/meeting-recordings"]);
+    expect(box.current!.recordingId).toBe("fresh");
+    expect(box.current!.phase).toBe("starting");
+    expect(box.current!.appUnreachable).toBe(false);
+  });
+
   it("recording -> stopping: stop() flips phase immediately for a desktop capture", async () => {
     const documentName = "doc-stop";
     window.localStorage.setItem(

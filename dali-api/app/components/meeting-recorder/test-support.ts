@@ -106,6 +106,7 @@ export function makeRec(overrides: Partial<UseMeetingRecording> = {}): UseMeetin
     setSpeaker: vi.fn(async () => {}),
     jumpToTranscript: vi.fn(),
     cancelStart: vi.fn(),
+    retryDesktopStart: vi.fn(),
     switchToBrowserAfterUnreachable: vi.fn(),
   };
   return { ...base, ...overrides };
