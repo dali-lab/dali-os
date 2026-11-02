@@ -15,6 +15,8 @@ export type RenewalCardModel = {
   iconEmoji: string | null;
   orgName: string | null;
   termCount: number;
+  piUserId: string | null;
+  piName: string | null;
   column: RenewalColumn;
   fromTermCode: string | null;
   nextStep: string | null;

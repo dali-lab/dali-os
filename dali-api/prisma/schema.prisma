@@ -22,6 +22,10 @@ model User {
   // unique identifier
   id String @id @default(cuid())
 
+  // Term-by-term PI assignments, and applications this person is PI of.
+  piProjectTerms        ProjectTerm[]        @relation("ProjectTermPi")
+  piPartnerApplications PartnerApplication[] @relation("PartnerApplicationPi")
+
   // metadata
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -4125,6 +4129,12 @@ model ProjectTerm {
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
   term    Term    @relation(fields: [termId], references: [id])
 
+  // The Core member in charge of this project for this term. Lives here, not on
+  // ProjectTermStatus, because a status row means a renewal decision exists: the
+  // sweep skips projects that have one and undoing a decision deletes it.
+  piUserId String?
+  pi       User?   @relation("ProjectTermPi", fields: [piUserId], references: [id], onDelete: SetNull)
+
   createdAt DateTime @default(now())
 
   @@id([projectId, termId])
@@ -6868,6 +6878,10 @@ model PartnerApplication {
   // Captured on the acceptance checklist, before promotion.
   ambiguityRating    Int?
   title              String
+  // Copied to Project.iconEmoji at promotion; the project's is the live one after.
+  iconEmoji          String?
+  // Core member in charge. Copied to the first ProjectTerm at promotion.
+  piUserId           String?
   // Short pitch summary. The long-form, versionable Statement of Work lives
   // in the collab doc named `partner-sow:{id}` (see sowDocId) — same Yjs +
   // CollabDocumentVersion machinery as project documents, so it gets
@@ -6914,6 +6928,7 @@ model PartnerApplication {
 
   applicantContact PartnerContact                 @relation(fields: [applicantContactId], references: [id])
   partnerOrg       PartnerOrg?                    @relation(fields: [partnerOrgId], references: [id])
+  pi               User?                          @relation("PartnerApplicationPi", fields: [piUserId], references: [id], onDelete: SetNull)
   formSubmission   FormSubmission?                @relation(fields: [formSubmissionId], references: [id], onDelete: SetNull)
   // The terms the partner wants the project to run / be staffed in. Drives
   // the "expected lab members per term" projection on the list page — an

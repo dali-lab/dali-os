@@ -24,6 +24,8 @@ import {
 const NOW = new Date("2026-10-28T12:00:00Z");
 
 const card = (o: Partial<RenewalCardModel>): RenewalCardModel => ({
+  piUserId: null,
+  piName: null,
   projectId: "p",
   name: "Alpha",
   iconEmoji: null,
