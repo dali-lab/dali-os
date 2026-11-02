@@ -75,6 +75,23 @@ function applyFormVariables(
   }));
 }
 
+const TERM_BINDING_SELECT = {
+  slot: true,
+  updatedAt: true,
+  staffingCycle: { select: { term: { select: { code: true } } } },
+} as const;
+
+// The questions as a filler sees them. Submit validation must check this same
+// text: an option written "Off in {{term}}" reaches the server as "Off in 27S".
+function questionsAsServed<B extends { slot: string; updatedAt: Date; staffingCycle: { term: { code: string } } }>(
+  questions: Question[],
+  cycleBindings: B[] | undefined,
+): Question[] {
+  const termCode =
+    pickStaffingBinding(cycleBindings ?? [])?.staffingCycle.term.code ?? null;
+  return applyFormVariables(questions, termCode);
+}
+
 // Resolve a public token to its form's latest version. Returns null when the
 // token is unknown, the form is unpublished, or it has no versions yet —
 // callers must treat all three as an indistinguishable 404 (don't leak which).
@@ -103,13 +120,7 @@ export async function loadPublicForm(
       // collects for names the term, which is what lets one staffing form be
       // reused every round. Same picker the gate uses, so the term a member
       // reads and the cycle their answers land in can't disagree.
-      cycleBindings: {
-        select: {
-          slot: true,
-          updatedAt: true,
-          staffingCycle: { select: { term: { select: { code: true } } } },
-        },
-      },
+      cycleBindings: { select: TERM_BINDING_SELECT },
     },
   });
   if (!form || !form.published) return null;
@@ -132,10 +143,6 @@ export async function loadPublicForm(
     }),
   );
 
-  const boundTermCode =
-    pickStaffingBinding(form.cycleBindings ?? [])?.staffingCycle.term.code ??
-    null;
-
   return {
     formId: form.id,
     name: form.name,
@@ -145,7 +152,7 @@ export async function loadPublicForm(
     // Versions may hold legacy ProseMirror JSON — convert on read so fill
     // surfaces only ever see block JSON.
     description: ensureBlocks(safeParseJsonString(version.intro)),
-    questions: applyFormVariables(normalizeQuestionBodies(resolved), boundTermCode),
+    questions: questionsAsServed(normalizeQuestionBodies(resolved), form.cycleBindings),
   };
 }
 
@@ -498,6 +505,7 @@ export async function submitAnonymousForm(args: {
         where: { id: args.versionId },
         select: { id: true, questions: true, updatedAt: true },
       },
+      cycleBindings: { select: TERM_BINDING_SELECT },
     },
   });
   if (!form || !form.published) {
@@ -517,7 +525,11 @@ export async function submitAnonymousForm(args: {
   }
 
   const questions = (version.questions as unknown as Question[]) ?? [];
-  const bad = await validateAnswers(questions, args.answers, null);
+  const bad = await validateAnswers(
+    questionsAsServed(questions, form.cycleBindings),
+    args.answers,
+    null,
+  );
   if (bad) return bad;
 
   await prisma.formSubmission.create({
@@ -575,7 +587,12 @@ export async function submitMemberForm(args: {
           columnMapping: true,
           updatedAt: true,
           staffingCycle: {
-            select: { id: true, termId: true, maxPreferencesPerMember: true },
+            select: {
+              id: true,
+              termId: true,
+              maxPreferencesPerMember: true,
+              term: { select: { code: true } },
+            },
           },
         },
       },
@@ -598,7 +615,11 @@ export async function submitMemberForm(args: {
   }
 
   const questions = (version.questions as unknown as Question[]) ?? [];
-  const bad = await validateAnswers(questions, args.answers, args.userId);
+  const bad = await validateAnswers(
+    questionsAsServed(questions, form.cycleBindings),
+    args.answers,
+    args.userId,
+  );
   if (bad) return bad;
 
   // Fired once after each success path's transaction commits (never inside
