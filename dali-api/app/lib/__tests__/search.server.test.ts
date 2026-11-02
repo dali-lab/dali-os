@@ -139,6 +139,18 @@ describe("runCategorySearch", () => {
     expect(second.map((r) => r.title)).toEqual(["Ada F", "Ada G"]);
   });
 
+  it("passes the request to page access lookups for documents and forms", async () => {
+    const request = new Request("http://localhost/api/search?q=atlas");
+    mockPrisma.page.findMany.mockResolvedValue([{ id: "d1", title: "Atlas", iconEmoji: null, kind: "FreeForm" }]);
+    vi.mocked(getPageAccessBulk).mockResolvedValue(new Map() as never);
+    vi.mocked(getPageAccessBulk).mockClear();
+    await runCategorySearch({ userId: "u1", roles: MEMBER, q: "atlas", category: "document", skip: 0, limit: 5, request });
+    await runCategorySearch({ userId: "u1", roles: MEMBER, q: "atlas", category: "form", skip: 0, limit: 5, request });
+    const calls = vi.mocked(getPageAccessBulk).mock.calls;
+    expect(calls).toHaveLength(2);
+    for (const call of calls) expect(call[2]).toBe(request);
+  });
+
   it("returns an empty window past the end", async () => {
     mockPrisma.user.findMany.mockResolvedValue(people(2));
     expect(await runCategorySearch({ userId: "u1", roles: MEMBER, q: "ada", category: "person", skip: 10, limit: 5 })).toEqual([]);

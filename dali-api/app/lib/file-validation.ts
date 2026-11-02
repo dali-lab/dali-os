@@ -64,8 +64,18 @@ export const RESERVED_UPLOAD_PREFIXES = [
   DRIVE_DOWNLOAD_PREFIX,
 ];
 
+function resolveKeySegments(key: string): string {
+  const out: string[] = [];
+  for (const seg of key.split("/")) {
+    if (seg === "" || seg === ".") continue;
+    if (seg === "..") out.pop();
+    else out.push(seg);
+  }
+  return out.join("/");
+}
+
 export function isReservedUploadKey(key: string): boolean {
-  const scoped = `uploads/${key.replace(/^\/+/, "").replace(/^uploads\//, "")}`;
+  const scoped = `uploads/${resolveKeySegments(key).replace(/^uploads\//, "")}`;
   return RESERVED_UPLOAD_PREFIXES.some((p) => scoped.startsWith(p));
 }
 

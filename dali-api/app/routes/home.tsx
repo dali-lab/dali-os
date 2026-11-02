@@ -13,7 +13,8 @@ import {
   isLandingBackgroundId,
   scheduledLandingWeek,
 } from "~/components/home/landing/backgrounds/schedule";
-import { currentTermStrict, getUserRoles } from "~/lib/roles";
+import { currentTermStrict } from "~/lib/roles";
+import { readOnlyRoles } from "~/lib/read-only-roles.server";
 import { termWeekNumber } from "~/lib/terms.shared";
 import { resultIcon } from "~/components/CommandPalette";
 import { MIN_QUERY_LENGTH, type SearchResult } from "~/lib/search";
@@ -32,7 +33,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (await isNonMember(auth, request)) return redirect("/portal");
   const partnerRedirect = await redirectPartnerToPortal(auth);
   if (partnerRedirect) return partnerRedirect;
-  if ((await getUserRoles(auth.user.sub, request)).isAlumni) return redirect("/connect");
+  if ((await readOnlyRoles(auth.user.sub, request)).isAlumni) return redirect("/connect");
 
   const me = await loadShellUser(auth.user.sub, request);
   const tz = resolveUserTimeZone(me);

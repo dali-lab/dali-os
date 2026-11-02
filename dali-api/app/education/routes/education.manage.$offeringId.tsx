@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import type { ShouldRevalidateFunctionArgs } from "react-router";
+import { skipClientOnlySearchChange } from "~/lib/should-revalidate";
 import {
   redirect,
   useLoaderData,
@@ -139,6 +141,13 @@ export const handle = {
   breadcrumb: (data: { offering: { title: string } } | undefined) =>
     data?.offering.title ?? "Offering",
 };
+
+// Only ?session= (the roster session) reaches the loader; ?tab= is client-only.
+const LOADER_SEARCH_PARAMS = ["session"] as const;
+
+export function shouldRevalidate(args: ShouldRevalidateFunctionArgs) {
+  return skipClientOnlySearchChange(args, LOADER_SEARCH_PARAMS);
+}
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const authOrRedirect = await requireAuth(request);

@@ -20,7 +20,8 @@ import { getCollabToken } from "~/lib/collab-token.server";
 import { fullName } from "~/lib/display";
 import { getPresenceUser } from "~/lib/presence-user";
 import { PAGE_ACCESS_SELECT, getPageAccess, getPageAccessBulk } from "~/lib/pageAccess.server";
-import { getUserRoles, isProjectMember } from "~/lib/roles";
+import { isProjectMember } from "~/lib/roles";
+import { readOnlyRoles } from "~/lib/read-only-roles.server";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import type { MeetingType } from "~/generated/prisma/client";
 import { isFavorited, recordPageVisit } from "~/lib/user-pages.server";
@@ -348,7 +349,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       // watched it live (specs/meeting-transcription.md; fix for a finished
       // recording being invisible to anyone without the local backup).
       latestRecordingFor(pageDocName(page.id)),
-      getUserRoles(auth.user.sub, request),
+      readOnlyRoles(auth.user.sub, request),
     ]);
 
   // The Direction I shell's page bar shows a plain document's place in the

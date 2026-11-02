@@ -173,6 +173,7 @@ export async function action({ request, params }: Route.ActionArgs) {
       where: { id: comment.id },
       data: { anchor: anchor === null ? undefined : (anchor as object) },
     });
+    publishCommentChange(comment.targetId);
     return withCors(request, Response.json({ ok: true }));
   }
 
@@ -214,6 +215,7 @@ export async function action({ request, params }: Route.ActionArgs) {
         where: { commentId: comment.id, userId: auth.user.sub, emoji },
       });
     }
+    if (comment.targetType === "doc") publishCommentChange(comment.targetId);
     return withCors(request, Response.json({ ok: true }));
   }
 

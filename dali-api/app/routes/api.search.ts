@@ -16,8 +16,8 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (!auth.ok) return withCors(request, auth.response);
 
   const q = new URL(request.url).searchParams.get("q") ?? "";
-  const roles = await getUserRoles(auth.user.sub);
-  const results = await runSearch({ userId: auth.user.sub, roles, q });
+  const roles = await getUserRoles(auth.user.sub, request);
+  const results = await runSearch({ userId: auth.user.sub, roles, q, request });
 
   return withCors(request, Response.json({ results }));
 }
