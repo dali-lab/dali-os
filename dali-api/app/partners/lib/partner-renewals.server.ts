@@ -1,4 +1,6 @@
 import { prisma } from "~/lib/db.server";
+import { personName } from "./core-members.server";
+import { effectivePi } from "./planning-gap";
 import {
   classifyDecision,
   continueStatusWrites,
@@ -22,7 +24,12 @@ export async function loadRenewalCards(
       id: true,
       name: true,
       iconEmoji: true,
-      projectTerms: { select: { termId: true } },
+      projectTerms: {
+        select: {
+          termId: true,
+          pi: { select: { id: true, firstName: true, lastName: true, daliEmail: true } },
+        },
+      },
       partners: {
         orderBy: { startedAt: "asc" },
         select: { endedAt: true, partnerOrg: { select: { id: true, name: true } } },
@@ -95,12 +102,18 @@ export async function loadRenewalCards(
       .map((l) => lastByOrg.get(l.partnerOrg.id) ?? null)
       .filter((d): d is Date => !!d)
       .sort((a, b) => b.getTime() - a.getTime())[0];
+    const pi = effectivePi(
+      p.projectTerms.map((pt) => ({ sortKey: termById.get(pt.termId)?.sortKey ?? Infinity, pi: pt.pi })),
+      pickedTerm.sortKey,
+    );
     return {
       projectId: p.id,
       name: p.name,
       iconEmoji: p.iconEmoji,
       orgName: linked[0]?.partnerOrg.name ?? null,
       termCount: p.projectTerms.length,
+      piUserId: pi?.id ?? null,
+      piName: pi ? personName(pi) : null,
       column: verdict.column,
       fromTermCode: verdict.fromTermCode,
       nextStep: detail?.nextStep ?? null,
@@ -116,6 +129,17 @@ export async function loadRenewalCards(
 }
 
 type Db = typeof prisma;
+
+export async function setTermPi(
+  db: Db,
+  input: { projectId: string; termId: string; piUserId: string | null },
+): Promise<boolean> {
+  const { count } = await db.projectTerm.updateMany({
+    where: { projectId: input.projectId, termId: input.termId },
+    data: { piUserId: input.piUserId },
+  });
+  return count > 0;
+}
 
 export async function applyContinue(
   db: Db,

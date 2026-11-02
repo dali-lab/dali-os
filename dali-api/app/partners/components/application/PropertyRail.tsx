@@ -43,6 +43,7 @@ export type PropertyRailApplication = Pick<
   | "applicant"
   | "partner"
   | "resultingProjectId"
+  | "piUserId"
   | "source"
   | "nextStep"
   | "nextStepDueAt"
@@ -66,6 +67,7 @@ export function PropertyRail({
   termOptions,
   contract,
   contractDocuments,
+  coreMembers = [],
   onChanged,
   sections = "all",
 }: {
@@ -77,6 +79,8 @@ export function PropertyRail({
   contract: PartnerContractStatus;
   /** PartnerContract-kind SigningDocuments with a published version — empty when the viewer can't edit. */
   contractDocuments: { id: string; title: string }[];
+  /** PI picker options; only the "status" sections read them. */
+  coreMembers?: { userId: string; name: string }[];
   onChanged: () => void;
   /** Which groups to render: the modal keeps "status" (Status / People /
    *  Terms and team) in its sidebar and mounts "deal" (Contract / Deal terms)
@@ -177,6 +181,21 @@ export function PropertyRail({
             <span className="text-os-grey">None yet</span>
           )}
         </RailField>
+        {!application.resultingProjectId && (
+          <RailField label="PI">
+            <Select
+              value={application.piUserId ?? ""}
+              disabled={!canEdit}
+              onChange={(v) => void run("pi", { piUserId: v || null })}
+              options={[
+                { value: "", label: "No PI" },
+                ...coreMembers.map((m) => ({ value: m.userId, label: m.name })),
+              ]}
+              ariaLabel="PI"
+              buttonClassName={RAIL_CONTROL}
+            />
+          </RailField>
+        )}
         <RailFact label="Source">{PARTNER_SOURCE_LABELS[application.source] ?? application.source}</RailFact>
       </RailGroup>
 

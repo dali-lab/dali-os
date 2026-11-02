@@ -46,6 +46,8 @@ export async function runPromotePartnerApplication(
     select: {
       id: true,
       title: true,
+      iconEmoji: true,
+      piUserId: true,
       summary: true,
       resultingProjectId: true,
       partnerOrgId: true,
@@ -111,9 +113,10 @@ export async function runPromotePartnerApplication(
     const created = await tx.project.create({
       data: {
         name: app.title,
+        iconEmoji: app.iconEmoji,
         githubTeamSlug: githubTeamSlug(app.title) || null,
         description: app.summary,
-        ...(firstTermId ? { projectTerms: { create: { termId: firstTermId } } } : {}),
+        ...(firstTermId ? { projectTerms: { create: { termId: firstTermId, piUserId: app.piUserId } } } : {}),
         partners: { create: { partnerOrgId: orgId } },
         ...(roleRequestRows.length > 0
           ? { roleRequests: { create: roleRequestRows } }
