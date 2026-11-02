@@ -61,6 +61,9 @@ export function MemberFormFillView({
   allowExit = false,
   // The editor's preview: submit plays the same done sequence without saving.
   preview = false,
+  // Changing a response already given: seeded with the stored answers, and
+  // saved over the existing response instead of submitting a new one.
+  editing,
 }: {
   data: MemberFormData;
   doneContent?: React.ReactNode;
@@ -69,9 +72,10 @@ export function MemberFormFillView({
   tileSeed?: string | null;
   allowExit?: boolean;
   preview?: boolean;
+  editing?: { answers: Record<string, string> };
 }) {
   const navigate = useNavigate();
-  const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [answers, setAnswers] = useState<Record<string, string>>(editing?.answers ?? {});
   const [state, setState] = useState<"idle" | "submitting" | "done">("idle");
   const [error, setError] = useState<string | null>(null);
   const questions = data.questions;
@@ -156,15 +160,19 @@ export function MemberFormFillView({
     }
     try {
       const res = await fetch(`/api/forms/fill/${data.token}`, {
-        method: "POST",
+        method: editing ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({
-          versionId: data.versionId,
-          versionUpdatedAt: data.versionUpdatedAt,
-          answers,
-          ...extraBody,
-        }),
+        body: JSON.stringify(
+          editing
+            ? { answers }
+            : {
+                versionId: data.versionId,
+                versionUpdatedAt: data.versionUpdatedAt,
+                answers,
+                ...extraBody,
+              },
+        ),
       });
       const out = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok) {
@@ -191,10 +199,12 @@ export function MemberFormFillView({
         {doneContent ?? (
           <>
             <h1 className="font-heading text-xl font-bold text-foreground">
-              Submitted
+              {editing ? "Response updated" : "Submitted"}
             </h1>
             <p className="text-sm text-muted-foreground mt-2">
-              Your response to “{data.name}” has been recorded.
+              {editing
+                ? `Your response to “${data.name}” has been saved.`
+                : `Your response to “${data.name}” has been recorded.`}
             </p>
           </>
         )}
@@ -262,7 +272,13 @@ export function MemberFormFillView({
               disabled={state === "submitting"}
               className="self-start"
             >
-              {state === "submitting" ? "Submitting…" : "Submit"}
+              {state === "submitting"
+                ? editing
+                  ? "Saving…"
+                  : "Submitting…"
+                : editing
+                  ? "Save changes"
+                  : "Submit"}
             </Button>
           }
         />

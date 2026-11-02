@@ -5207,6 +5207,9 @@ model Form {
   // createdById (best-effort, after the submission transaction commits).
   oneResponsePerMember Boolean @default(false)
   notifyOnSubmission   Boolean @default(false)
+  // allowResponseEdit: the respondent may change their own answers while the
+  // form is open. Only meaningful with oneResponsePerMember.
+  allowResponseEdit    Boolean @default(false)
 
   // Who may fill the form via its public link. `audienceGroupIds` is only
   // meaningful when audience == Groups (GroupDefinition ids; array rather

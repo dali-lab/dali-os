@@ -21,6 +21,9 @@ import { parsePageParam } from "~/lib/pagination";
 import { loadVersionResponses } from "~/forms/lib/version-responses.server";
 import { driveRootCrumbs } from "~/lib/drive-crumbs";
 import { getCollabToken } from "~/lib/collab-token.server";
+import { deleteFormResponse } from "~/forms/lib/form-response.server";
+import { getUserRoles } from "~/lib/roles";
+import { isFeatureEnabled } from "~/lib/feature-flags.server";
 
 export const meta: Route.MetaFunction = ({ data }) => [
   { title: `${(data as any)?.form?.name ?? "Form"} · Forms · DALI OS` },
@@ -161,6 +164,28 @@ export async function action({ request, params }: Route.ActionArgs) {
       auth.user.sub,
     );
     return Response.json(result, { status: "error" in result ? 400 : 200 });
+  }
+
+  if (intent === "delete-form-response") {
+    const flagOn = await isFeatureEnabled(
+      "form-response-edit",
+      auth.user.sub,
+      await getUserRoles(auth.user.sub, request),
+      request,
+    );
+    const submissionId = formData.get("submissionId");
+    if (!flagOn || typeof submissionId !== "string" || !submissionId) {
+      return Response.json({ error: "Invalid input" }, { status: 400 });
+    }
+    const deleted = await deleteFormResponse({
+      formId: params.formId,
+      submissionId,
+      actorId: auth.user.sub,
+      request,
+    });
+    if ("error" in deleted)
+      return Response.json({ error: deleted.error }, { status: deleted.status });
+    return deleted;
   }
 
   const result = await runFormsAction(formData, auth.user.sub);

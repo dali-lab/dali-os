@@ -81,7 +81,7 @@ function applyFormVariables(
   }));
 }
 
-const TERM_BINDING_SELECT = {
+export const TERM_BINDING_SELECT = {
   slot: true,
   updatedAt: true,
   staffingCycle: { select: { term: { select: { code: true } } } },
@@ -89,7 +89,7 @@ const TERM_BINDING_SELECT = {
 
 // The questions as a filler sees them. Submit validation must check this same
 // text: an option written "Off in {{term}}" reaches the server as "Off in 27S".
-function questionsAsServed<B extends { slot: string; updatedAt: Date; staffingCycle: { term: { code: string } } }>(
+export function questionsAsServed<B extends { slot: string; updatedAt: Date; staffingCycle: { term: { code: string } } }>(
   questions: Question[],
   cycleBindings: B[] | undefined,
 ): Question[] {
@@ -133,6 +133,23 @@ export async function loadPublicForm(
   const version = form.versions[0];
   if (!version) return null;
 
+  return buildPublicForm(form, version, userId);
+}
+
+// A form's served shape for one version row: `reference` questions get their
+// live choices, {{term}} is substituted, and legacy ProseMirror intros become
+// block JSON. loadPublicForm serves the latest version; the response editor
+// serves the version the submission was recorded against.
+export async function buildPublicForm(
+  form: {
+    id: string;
+    name: string;
+    page: { iconEmoji: string | null } | null;
+    cycleBindings: Parameters<typeof questionsAsServed>[1];
+  },
+  version: { id: string; questions: unknown; intro: string | null; updatedAt: Date },
+  userId?: string | null,
+): Promise<PublicForm> {
   const questions = (version.questions as unknown as Question[]) ?? [];
 
   // `reference` questions store only a source key; resolve the live choices
@@ -172,6 +189,10 @@ export async function validateAnswers(
   // Null on anonymous (Public-audience) fills — member-scoped reference
   // sources then resolve to [] and their answers can't validate.
   userId: string | null,
+  // Answers already stored on the response being edited. A `reference` answer
+  // that still equals its stored value skips the live option check: the project
+  // may have ended since, and that shouldn't block fixing a typo elsewhere.
+  stored?: Record<string, unknown>,
 ): Promise<{ error: string; status: number } | null> {
   // Checkbox answers arrive as a JSON-stringified array (the fill UIs keep
   // string-valued state); parse, validate against the question's options, and
@@ -248,6 +269,7 @@ export async function validateAnswers(
     if (q.type !== "reference") continue;
     const answer = answers[q.key];
     if (answer == null || answer === "") continue; // required-ness handled above
+    if (stored && answer === stored[q.key]) continue;
     const options = await resolveReferenceOptions(q.data.referenceSource, {
       userId,
       termId: q.data.referenceTermId,

@@ -195,6 +195,12 @@ export const FEATURE_FLAGS = [
     description:
       "Adds multiple choice (radio buttons), 1 to 5 scale, date, number and email questions to the form builder, and an \"Add an Other option\" setting on multiple choice and checkbox questions. Questions already in a form keep working when this is off. Ships off.",
   },
+  {
+    key: "form-response-edit",
+    label: "Delete and edit form responses",
+    description:
+      "Form owners can delete a single response from the response detail, and the form settings gain \"Let people edit their response\". Forms that already allow edits keep working when this is off. Ships off.",
+  },
 ] as const satisfies readonly FeatureFlagDef[];
 
 export type FeatureFlagKey = (typeof FEATURE_FLAGS)[number]["key"];

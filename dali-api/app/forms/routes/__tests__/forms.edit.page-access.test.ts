@@ -16,6 +16,9 @@ vi.mock("~/lib/drive-crumbs.server", () => ({ driveFolderCrumbs: vi.fn() }));
 vi.mock("~/forms/lib/form-usages.server", () => ({ formUsages: vi.fn(), managingUsage: vi.fn() }));
 vi.mock("~/hiring/lib/form-links.server", () => ({ loadFormHiringLinks: vi.fn(), unlinkHiringForm: vi.fn() }));
 vi.mock("~/forms/lib/version-responses.server", () => ({ loadVersionResponses: vi.fn() }));
+vi.mock("~/forms/lib/form-response.server", () => ({ deleteFormResponse: vi.fn() }));
+vi.mock("~/lib/roles", () => ({ getUserRoles: vi.fn() }));
+vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabled: vi.fn() }));
 vi.mock("~/lib/collab-token.server", () => ({ getCollabToken: vi.fn() }));
 vi.mock("~/forms/components/FormDetail", () => ({ FormDetail: () => null }));
 vi.mock("~/components/PageIcon", () => ({ PageIcon: () => null }));
@@ -29,6 +32,8 @@ import { formUsages, managingUsage } from "~/forms/lib/form-usages.server";
 import { loadFormHiringLinks } from "~/hiring/lib/form-links.server";
 import { getCollabToken } from "~/lib/collab-token.server";
 import { loadVersionResponses } from "~/forms/lib/version-responses.server";
+import { deleteFormResponse } from "~/forms/lib/form-response.server";
+import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { loader, action, handle } from "~/forms/routes/forms.edit.$formId";
 
 const request = new Request("http://os.test/forms/edit/f1");
@@ -174,5 +179,57 @@ describe("forms.edit action", () => {
     await post({ intent: "rename-form", id: "f1", name: "x" });
     expect(canBuildForm).toHaveBeenCalledWith("u1", "f1", expect.any(Request));
     expect(runFormsAction).toHaveBeenCalled();
+  });
+});
+
+describe("forms.edit action delete-form-response", () => {
+  const del = (fields: Record<string, string> = { submissionId: "s1" }) => {
+    const body = new FormData();
+    body.set("intent", "delete-form-response");
+    for (const [k, v] of Object.entries(fields)) body.set(k, v);
+    return action({
+      request: new Request("http://os.test/forms/edit/f1", { method: "POST", body }),
+      params: { formId: "f1" },
+    } as never) as Promise<Response>;
+  };
+
+  beforeEach(() => {
+    vi.mocked(isFeatureEnabled).mockResolvedValue(true);
+    vi.mocked(deleteFormResponse).mockResolvedValue({ ok: true });
+  });
+
+  it("deletes for a builder, scoped to this route's form", async () => {
+    await del();
+    expect(deleteFormResponse).toHaveBeenCalledWith({
+      formId: "f1",
+      submissionId: "s1",
+      actorId: "u1",
+      request: expect.any(Request),
+    });
+    expect(runFormsAction).not.toHaveBeenCalled();
+  });
+
+  it("refuses a caller who cannot build this form", async () => {
+    vi.mocked(canBuildForm).mockResolvedValue(false);
+    expect((await del()).status).toBe(403);
+    expect(deleteFormResponse).not.toHaveBeenCalled();
+  });
+
+  it("does nothing while the form-response-edit flag is off", async () => {
+    vi.mocked(isFeatureEnabled).mockResolvedValue(false);
+    expect((await del()).status).toBe(400);
+    expect(deleteFormResponse).not.toHaveBeenCalled();
+  });
+
+  it("needs a submission id", async () => {
+    expect((await del({})).status).toBe(400);
+    expect(deleteFormResponse).not.toHaveBeenCalled();
+  });
+
+  it("relays a refusal with its status", async () => {
+    vi.mocked(deleteFormResponse).mockResolvedValue({ error: "nope", status: 409 });
+    const res = await del();
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: "nope" });
   });
 });

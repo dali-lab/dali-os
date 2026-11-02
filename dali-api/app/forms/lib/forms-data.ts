@@ -209,6 +209,7 @@ export type FormDetail = {
   opensAt: string | null;
   closesAt: string | null;
   oneResponsePerMember: boolean;
+  allowResponseEdit: boolean;
   notifyOnSubmission: boolean;
   listed: boolean;
   audience: "Members" | "SignedIn" | "Groups" | "Public";
@@ -257,6 +258,7 @@ export async function loadFormForEdit(
     opensAt: form.opensAt?.toISOString() ?? null,
     closesAt: form.closesAt?.toISOString() ?? null,
     oneResponsePerMember: form.oneResponsePerMember,
+    allowResponseEdit: form.allowResponseEdit,
     notifyOnSubmission: form.notifyOnSubmission,
     listed: form.listed,
     audience: form.audience,
@@ -381,6 +383,7 @@ export const ActionSchema = z.discriminatedUnion("intent", [
     intent: z.literal("update-form-settings"),
     id: z.string().min(1),
     oneResponsePerMember: z.enum(["true", "false"]),
+    allowResponseEdit: z.enum(["true", "false"]).optional(),
     notifyOnSubmission: z.enum(["true", "false"]),
     listed: z.enum(["true", "false"]),
   }),
@@ -707,6 +710,12 @@ export async function runFormsAction(
         where: { id: input.id },
         data: {
           oneResponsePerMember: input.oneResponsePerMember === "true",
+          // Editing needs the one response to edit, so it can't outlive that setting.
+          ...(input.oneResponsePerMember === "false"
+            ? { allowResponseEdit: false }
+            : input.allowResponseEdit
+              ? { allowResponseEdit: input.allowResponseEdit === "true" }
+              : {}),
           notifyOnSubmission: input.notifyOnSubmission === "true",
           listed: input.listed === "true",
         },

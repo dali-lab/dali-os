@@ -8,6 +8,7 @@ import { Checkbox } from "~/components/ui/Checkbox";
 import { DateField } from "~/components/ui/DateField";
 import { Tooltip } from "~/components/ui/floating";
 import { useConfirmSubmit } from "~/components/ui/dialog";
+import { useFeatureFlag } from "~/components/FeatureFlags";
 import type { HiringFormLink } from "~/hiring/lib/form-links.server";
 
 type Usage = { kind: string; label: string; href?: string | null };
@@ -129,6 +130,7 @@ function toLocalInputValue(iso: string | null): string {
 function FormSettingsFields({
   formId,
   oneResponsePerMember,
+  allowResponseEdit,
   notifyOnSubmission,
   listed,
   opensAt,
@@ -136,6 +138,7 @@ function FormSettingsFields({
 }: {
   formId: string;
   oneResponsePerMember: boolean;
+  allowResponseEdit: boolean;
   notifyOnSubmission: boolean;
   listed: boolean;
   opensAt: string | null;
@@ -153,6 +156,10 @@ function FormSettingsFields({
   const oneResponse = pendingSettings
     ? pending!.get("oneResponsePerMember") === "true"
     : oneResponsePerMember;
+  const canEdit = pendingSettings
+    ? pending!.get("allowResponseEdit") === "true"
+    : allowResponseEdit;
+  const editSettingOffered = useFeatureFlag("form-response-edit") || allowResponseEdit;
   const notify = pendingSettings
     ? pending!.get("notifyOnSubmission") === "true"
     : notifyOnSubmission;
@@ -184,12 +191,14 @@ function FormSettingsFields({
     nextOneResponse: boolean,
     nextNotify: boolean,
     nextListed: boolean,
+    nextCanEdit: boolean = canEdit,
   ) {
     fetcher.submit(
       {
         intent: "update-form-settings",
         id: formId,
         oneResponsePerMember: String(nextOneResponse),
+        allowResponseEdit: String(nextOneResponse && nextCanEdit),
         notifyOnSubmission: String(nextNotify),
         listed: String(nextListed),
       },
@@ -206,6 +215,15 @@ function FormSettingsFields({
           onChange={(e) => saveSettings(e.target.checked, notify, isListed)}
           label="One response per member"
         />
+        {oneResponse && editSettingOffered && (
+          <div className="pl-[26px]">
+            <Checkbox
+              checked={canEdit}
+              onChange={(e) => saveSettings(oneResponse, notify, isListed, e.target.checked)}
+              label="Let people edit their response"
+            />
+          </div>
+        )}
         <Checkbox
           checked={notify}
           onChange={(e) => saveSettings(oneResponse, e.target.checked, isListed)}

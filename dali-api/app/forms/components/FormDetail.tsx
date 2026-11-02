@@ -368,6 +368,7 @@ export function FormDetail() {
           hiringLinks={hiringLinks}
           formId={form.id}
           oneResponsePerMember={form.oneResponsePerMember}
+          allowResponseEdit={form.allowResponseEdit}
           notifyOnSubmission={form.notifyOnSubmission}
           listed={form.listed}
           opensAt={form.opensAt}
