@@ -109,6 +109,36 @@ describe("runSharedInboxIndex", () => {
     expect(result.note).not.toContain("Hiring");
   });
 
+  it("links existing rows to partner contacts on the partners@ inbox and says so in the note", async () => {
+    connectedAccount(PARTNERS_FROM_EMAIL);
+    db.partnerContact.findMany.mockResolvedValue([{ id: "pc1", email: "ada@x.com" }]);
+    db.mailMessageIndex.findMany.mockResolvedValueOnce([
+      { id: "r1", direction: "Inbound", fromAddress: "ada@x.com", toAddresses: [] },
+    ]);
+    db.mailMessageIndex.updateMany.mockResolvedValue({ count: 1 });
+
+    const result = await runSharedInboxIndex(
+      PARTNERS_FROM_EMAIL,
+      { now: NOW, lastSuccessAt: null, settings: SETTINGS },
+      { purpose: "Partners" },
+    );
+
+    expect(db.mailMessageIndex.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { linkedPartnerContactId: "pc1", linkSource: "Auto" } }),
+    );
+    expect(result.note).toContain("linked 1 to partner contacts");
+  });
+
+  it("does not touch partner contact links on the applications@ inbox", async () => {
+    connectedAccount(APPLICATIONS_FROM_EMAIL);
+    db.partnerContact.findMany.mockResolvedValue([{ id: "pc1", email: "ada@x.com" }]);
+
+    const result = await runSharedInboxIndex(APPLICATIONS_FROM_EMAIL, { now: NOW, lastSuccessAt: null, settings: SETTINGS });
+
+    expect(db.partnerContact.findMany).not.toHaveBeenCalled();
+    expect(result.note).not.toContain("partner contacts");
+  });
+
   it("falls back to a member connection and indexes via the given address, independent of purpose", async () => {
     connectedAccount(PARTNERS_FROM_EMAIL);
     vi.mocked(listMessageIds).mockResolvedValue({ messages: [{ id: "m1", threadId: "t1" }], nextPageToken: null });
