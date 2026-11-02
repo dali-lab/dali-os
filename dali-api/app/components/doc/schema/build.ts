@@ -29,6 +29,7 @@ import type { Features } from "../features";
 import { CalloutSpec } from "./callout";
 import { ComponentSpec } from "./component";
 import { EmbedSpec } from "./embed";
+import { createMediaImageSpec, createMediaVideoSpec } from "./media";
 import { MentionSpec, PageMentionSpec, TaskMentionSpec } from "./mention";
 import { signingInlineSpecs } from "./signing";
 import { TaskSpec } from "./task";
@@ -55,9 +56,9 @@ function fullBlockSpecs() {
     checkListItem: defaultBlockSpecs.checkListItem,
     codeBlock: createCodeBlockSpec(codeBlockOptions),
     divider: defaultBlockSpecs.divider,
-    image: defaultBlockSpecs.image,
+    image: createMediaImageSpec({ live: true }),
     file: defaultBlockSpecs.file,
-    video: defaultBlockSpecs.video,
+    video: createMediaVideoSpec({ live: true }),
     table: defaultBlockSpecs.table,
     toggleListItem: defaultBlockSpecs.toggleListItem,
     callout: CalloutSpec,
