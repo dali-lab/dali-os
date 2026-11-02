@@ -7,11 +7,9 @@ import {
   galleryDownloadName,
   galleryFeedHref,
   galleryKeyPrefix,
-  isGalleryEmoji,
   isGalleryImageKey,
   layoutMasonry,
   parseNewPosts,
-  toggleReaction,
   encodeGalleryImage,
   galleryDisplaySize,
   galleryOriginalKeyPrefix,
@@ -168,29 +166,6 @@ describe("layoutMasonry", () => {
 
   it("falls back to one column", () => {
     expect(ids(layoutMasonry([tile("a", 1, 1), tile("b", 1, 1)], 0))).toEqual([["a", "b"]]);
-  });
-});
-
-describe("toggleReaction", () => {
-  it("adds a new emoji in palette order", () => {
-    expect(isGalleryEmoji("❤️")).toBe(true);
-    expect(toggleReaction([{ emoji: "🎉", count: 2, mine: false }], "❤️")).toEqual([
-      { emoji: "❤️", count: 1, mine: true },
-      { emoji: "🎉", count: 2, mine: false },
-    ]);
-  });
-
-  it("joins someone else's reaction", () => {
-    expect(toggleReaction([{ emoji: "🔥", count: 2, mine: false }], "🔥")).toEqual([
-      { emoji: "🔥", count: 3, mine: true },
-    ]);
-  });
-
-  it("takes the viewer's back and drops an emptied chip", () => {
-    expect(toggleReaction([{ emoji: "🔥", count: 3, mine: true }], "🔥")).toEqual([
-      { emoji: "🔥", count: 2, mine: false },
-    ]);
-    expect(toggleReaction([{ emoji: "🔥", count: 1, mine: true }], "🔥")).toEqual([]);
   });
 });
 

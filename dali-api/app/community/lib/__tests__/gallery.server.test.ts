@@ -10,7 +10,8 @@ const db = vi.hoisted(() => ({
     updateMany: vi.fn(),
     count: vi.fn(),
   },
-  galleryReaction: { deleteMany: vi.fn(), upsert: vi.fn() },
+  galleryReaction: { deleteMany: vi.fn(), upsert: vi.fn(), findMany: vi.fn(async () => [] as { emoji: string }[]) },
+  customEmoji: { count: vi.fn(async () => 0), findMany: vi.fn(async () => []) },
   galleryComment: { create: vi.fn(), deleteMany: vi.fn() },
   galleryReport: { upsert: vi.fn(), count: vi.fn(), deleteMany: vi.fn() },
   $transaction: vi.fn(),
@@ -266,8 +267,22 @@ describe("galleryAction react", () => {
     expect(notify).not.toHaveBeenCalled();
   });
 
-  it("rejects an emoji outside the palette", async () => {
-    expect(await run({ intent: "react", postId: "p1", emoji: "💩" })).toMatchObject({ status: 400 });
+  it("accepts any standard emoji, not just the quick row", async () => {
+    expect(await run({ intent: "react", postId: "p1", emoji: "💩" })).toMatchObject({ ok: true });
+  });
+
+  it("rejects text that isn't one emoji", async () => {
+    for (const emoji of ["hello", "🔥🔥"]) {
+      expect(await run({ intent: "react", postId: "p1", emoji })).toMatchObject({ status: 400 });
+    }
+    expect(db.galleryReaction.upsert).not.toHaveBeenCalled();
+  });
+
+  it("refuses a 21st distinct emoji but still adds to an existing chip", async () => {
+    const used = Array.from({ length: 20 }, (_, i) => ({ emoji: i === 0 ? "🔥" : `:e${i}:` }));
+    db.galleryReaction.findMany.mockResolvedValue(used);
+    expect(await run({ intent: "react", postId: "p1", emoji: "🎉" })).toMatchObject({ status: 409 });
+    expect(await run({ intent: "react", postId: "p1", emoji: "🔥" })).toMatchObject({ ok: true });
   });
 
   it("404s on a post the viewer can't see", async () => {
