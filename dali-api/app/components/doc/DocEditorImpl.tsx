@@ -65,9 +65,10 @@ import { DocEditorFallback } from "./DocEditor";
 import { DaliSideMenuController } from "./DocSideMenu";
 import { resolveFeatures, type Features } from "./features";
 import { createFindReplacePlugin } from "./find";
+import { docPasteHandler } from "./paste-embed";
+import { PasteAsMenu } from "./PasteAsMenu";
 import { createSelectAllPlugin } from "./select-all";
 import { createTableDragSelectPlugin } from "./table-drag-select";
-import { enhancePasteHandler } from "./enhance-render";
 import { buildSchema, type DocEditorInstance, type DocPartialBlock } from "./schema/build";
 import { BLOCKNOTE_FRAGMENT } from "./schema/configs";
 import { PageMentionTitleProvider, useMentionMenuItems } from "./schema/mention";
@@ -122,7 +123,7 @@ function LocalDoc(props: ResolvedProps) {
       dictionary,
       uploadFile: (props.features.images || props.features.files) ? uploadFile : undefined,
       tables: { splitCells: true, cellBackgroundColor: true, cellTextColor: true, headers: true },
-      pasteHandler: enhancePasteHandler,
+      pasteHandler: docPasteHandler as never,
       ...(props.features.columns ? { dropCursor: multiColumnDropCursor } : {}),
     },
     [schema, dictionary],
@@ -173,7 +174,7 @@ function CollabDocInner(
       dictionary,
       uploadFile: (props.features.images || props.features.files) ? uploadFile : undefined,
       tables: { splitCells: true, cellBackgroundColor: true, cellTextColor: true, headers: true },
-      pasteHandler: enhancePasteHandler,
+      pasteHandler: docPasteHandler as never,
       // The edge-drop cursor is what turns "drag a block to the side of
       // another" into a column split; without it columns are slash-menu only.
       ...(props.features.columns ? { dropCursor: multiColumnDropCursor } : {}),
@@ -700,6 +701,7 @@ function DocView(
 
   const menus: ReactNode = (
     <>
+      <PasteAsMenu editor={editor} />
       {/* Custom "/" menu: AI items first (when enabled), then the standard set. */}
       <SuggestionMenuController
         triggerCharacter="/"
