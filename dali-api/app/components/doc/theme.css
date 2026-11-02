@@ -232,6 +232,11 @@
   border: 1px solid var(--bn-colors-border, rgba(120, 120, 120, 0.25));
   cursor: pointer;
 }
+.dali-video-embed {
+  aspect-ratio: 16 / 9;
+  border: 0;
+  display: block;
+}
 .dali-embed--empty {
   opacity: 0.6;
   font-style: italic;
