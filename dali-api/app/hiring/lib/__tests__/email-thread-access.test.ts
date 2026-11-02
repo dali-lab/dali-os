@@ -9,14 +9,13 @@ vi.mock("~/lib/db.server", () => ({
 vi.mock("~/lib/roles", () => ({ hasCycleAccess: vi.fn() }));
 vi.mock("~/hiring/lib/confidentiality", () => ({ requirePageSignedOrRedirect: vi.fn() }));
 vi.mock("~/hiring/lib/anonymization.server", () => ({
-  reviewerBlindLabel: vi.fn(),
   applicationBlindLabel: vi.fn(),
 }));
 
 import { prisma } from "~/lib/db.server";
 import { hasCycleAccess } from "~/lib/roles";
 import { requirePageSignedOrRedirect } from "~/hiring/lib/confidentiality";
-import { applicationBlindLabel, reviewerBlindLabel } from "~/hiring/lib/anonymization.server";
+import { applicationBlindLabel } from "~/hiring/lib/anonymization.server";
 import { canViewApplicantThread } from "~/hiring/lib/email-thread-access.server";
 
 const db = prisma as unknown as Record<string, Record<string, ReturnType<typeof vi.fn>>>;
@@ -42,7 +41,6 @@ beforeEach(() => {
   vi.mocked(hasCycleAccess).mockResolvedValue(true);
   vi.mocked(requirePageSignedOrRedirect).mockResolvedValue(null as never);
   // Unblinded by default — most tests override one or both to test gating.
-  vi.mocked(reviewerBlindLabel).mockResolvedValue(null);
   vi.mocked(applicationBlindLabel).mockResolvedValue(null);
 });
 
@@ -81,35 +79,17 @@ describe("canViewApplicantThread", () => {
     expect(await call()).toEqual({ ok: false, status: 403 });
   });
 
-  it("403s a blinded reviewer (blinded on both the reviewer and application predicates)", async () => {
-    vi.mocked(reviewerBlindLabel).mockResolvedValue("Applicant 1");
+  it("403s while the applicant is blinded", async () => {
     vi.mocked(applicationBlindLabel).mockResolvedValue("Applicant 1");
     expect(await call()).toEqual({ ok: false, status: 403 });
   });
 
-  it("403s Core on a blinded cycle with no released decision", async () => {
-    // Core has no CycleReviewer assignment, so reviewerBlindLabel reads as
-    // blinded too (daIds.length === 0) — same as a plain reviewer here.
-    vi.mocked(reviewerBlindLabel).mockResolvedValue("Applicant 1");
-    vi.mocked(applicationBlindLabel).mockResolvedValue("Applicant 1");
-    expect(await call()).toEqual({ ok: false, status: 403 });
-  });
-
-  it("is ok for Core once the application's decision is released", async () => {
-    vi.mocked(reviewerBlindLabel).mockResolvedValue("Applicant 1");
-    vi.mocked(applicationBlindLabel).mockResolvedValue(null);
+  it("is ok once the applicant is named", async () => {
     expect(await call()).toEqual({
       ok: true,
       accountId: "account-1",
       threadId: "thread-1",
       address: "applications@dali.dartmouth.edu",
     });
-  });
-
-  it("is ok when unblinded via the reviewer-specific predicate alone", async () => {
-    vi.mocked(reviewerBlindLabel).mockResolvedValue(null);
-    vi.mocked(applicationBlindLabel).mockResolvedValue("Applicant 1");
-    const result = await call();
-    expect(result.ok).toBe(true);
   });
 });

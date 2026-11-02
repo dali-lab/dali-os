@@ -5,10 +5,15 @@ vi.mock("~/lib/auth", () => ({
   requireAuth: vi.fn(),
 }));
 vi.mock("~/lib/roles");
+vi.mock("~/hiring/lib/anonymization.server", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("~/hiring/lib/anonymization.server")>()),
+  applicationBlindLabel: vi.fn(),
+}));
 
 import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { hasCycleAccess } from "~/lib/roles";
+import { applicationBlindLabel } from "~/hiring/lib/anonymization.server";
 import { loader } from "~/hiring/routes/reviewer.application.$id.prior.$priorId";
 
 const mockPrisma = prisma as unknown as Record<string, any>;
@@ -38,7 +43,6 @@ function makeCurrent(overrides: Partial<any> = {}) {
     id: CURRENT_ID,
     userId: APPLICANT_ID,
     applicationCycleId: CYCLE_ID,
-    applicationCycle: { anonymizeReview: false },
     ...overrides,
   };
 }
@@ -77,9 +81,7 @@ beforeEach(() => {
     findUnique: vi.fn(),
     findMany: vi.fn().mockResolvedValue([]),
   };
-  mockPrisma.cycleReviewer = { findMany: vi.fn().mockResolvedValue([]) };
-  mockPrisma.domainApplication = { findMany: vi.fn().mockResolvedValue([]) };
-  mockPrisma.decision = { findMany: vi.fn().mockResolvedValue([]) };
+  vi.mocked(applicationBlindLabel).mockResolvedValue(null);
 
   vi.mocked(requireAuth).mockResolvedValue({
     ok: true,
@@ -149,37 +151,21 @@ describe("reviewer.application.$id.prior.$priorId loader", () => {
     expect(thrown.status).toBe(302);
   });
 
-  it("blinds the applicant when anonymizeReview is on and no decision is released in the reviewer's domain", async () => {
-    setupCurrentAndPrior(
-      makeCurrent({ applicationCycle: { anonymizeReview: true } }),
-      makePrior(),
-    );
-    mockPrisma.cycleReviewer.findMany.mockResolvedValue([{ domainId: "domain-1" }]);
-    mockPrisma.domainApplication.findMany.mockResolvedValue([{ id: "da-1" }]);
-    mockPrisma.decision.findMany.mockResolvedValue([]);
-    mockPrisma.application.findMany.mockResolvedValue([{ id: CURRENT_ID }]);
+  it("blinds the prior application while the current application is blinded", async () => {
+    setupCurrentAndPrior(makeCurrent(), makePrior());
+    vi.mocked(applicationBlindLabel).mockResolvedValue("Applicant 3");
+    mockPrisma.cycleReviewer.findMany.mockResolvedValue([{ domainId: "eng" }]);
 
     const result: any = await callLoader();
 
-    expect(result.application.user.firstName).toMatch(/^Applicant/);
+    expect(applicationBlindLabel).toHaveBeenCalledWith({
+      cycleId: CYCLE_ID,
+      applicationId: CURRENT_ID,
+      domainIds: ["eng"],
+    });
+    expect(result.application.user.firstName).toBe("Applicant 3");
     expect(result.application.user.lastName).toBe("");
     expect(result.application.user.daliEmail).toBeNull();
-    expect(result.blinded).toBe(true);
-  });
-
-  it("blinds a lead with no reviewer assignment while the current applicant is blinded on the detail pages", async () => {
-    setupCurrentAndPrior(
-      makeCurrent({ applicationCycle: { anonymizeReview: true } }),
-      makePrior(),
-    );
-    mockPrisma.cycleReviewer.findMany.mockResolvedValue([]);
-    mockPrisma.domainApplication.findMany.mockResolvedValue([{ id: "da-1" }]);
-    mockPrisma.decision.findMany.mockResolvedValue([]);
-    mockPrisma.application.findMany.mockResolvedValue([{ id: CURRENT_ID }]);
-
-    const result: any = await callLoader();
-
-    expect(result.application.user.firstName).toMatch(/^Applicant/);
     expect(result.blinded).toBe(true);
   });
 

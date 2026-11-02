@@ -167,6 +167,7 @@ interface InterviewRow {
   startTime: string
   endTime: string
   status: string
+  freeUserIds: string[]
   room: { id: string; name: string } | null
   zoomJoinUrl: string | null
   videoUrl: string | null
@@ -2776,11 +2777,16 @@ export default function HiringLeadCycleDetails() {
             }))
           )
             return
-          await fetch(`/api/hiring/interviews/${interview.id}/reassign`, {
+          const res = await fetch(`/api/hiring/interviews/${interview.id}/reassign`, {
             method: 'POST', credentials: 'include',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ assignmentId: a.id, newCycleInterviewerId: value }),
           })
+          if (!res.ok) {
+            const body = await res.json().catch(() => ({}))
+            toast.error(body.error ?? 'Failed to reassign interviewer')
+            return
+          }
           window.location.reload()
         }
         async function cancelInterview(interview: any) {
@@ -2952,6 +2958,14 @@ export default function HiringLeadCycleDetails() {
                               ? `${m.firstName} ${m.lastName}`
                               : m.daliEmail ?? '?'
                             const roleLabel = a.role === 'InDomain' ? a.cycleInterviewer.domain.name : 'Cross'
+                            const candidates = reassignCandidates(interviewers as any[], {
+                              role: a.role,
+                              applicantDomainId: interview.domainApplication.domainId,
+                              seatedUserIds: interview.assignments
+                                .filter((s: any) => s.status === 'Active')
+                                .map((s: any) => s.cycleInterviewer.userId),
+                              freeUserIds: interview.freeUserIds,
+                            })
                             return (
                               <span key={a.id} className="inline-flex items-center gap-2">
                                 <span className="text-foreground">{name}</span>
@@ -2960,20 +2974,14 @@ export default function HiringLeadCycleDetails() {
                                   <Select
                                     value=""
                                     onChange={(value) => reassign(interview, a, value)}
-                                    placeholder="Reassign"
+                                    placeholder={candidates.length > 0 ? 'Reassign' : 'No one free'}
+                                    disabled={candidates.length === 0}
                                     ariaLabel={`Reassign ${a.role === 'InDomain' ? 'in-domain' : 'cross-domain'} interviewer`}
-                                    options={reassignCandidates(interviewers as any[], {
-                                      role: a.role,
-                                      applicantDomainId: interview.domainApplication.domainId,
-                                      seatedUserIds: interview.assignments
-                                        .filter((s: any) => s.status === 'Active')
-                                        .map((s: any) => s.cycleInterviewer.userId),
-                                    })
-                                      .map((i: any): SelectOption => {
-                                        const im = i.user
-                                        const iName = im?.firstName && im?.lastName ? `${im.firstName} ${im.lastName}` : im?.daliEmail ?? i.id
-                                        return { value: i.id, label: iName }
-                                      })}
+                                    options={candidates.map((i: any): SelectOption => {
+                                      const im = i.user
+                                      const iName = im?.firstName && im?.lastName ? `${im.firstName} ${im.lastName}` : im?.daliEmail ?? i.id
+                                      return { value: i.id, label: iName }
+                                    })}
                                     buttonClassName={smallTrigger}
                                   />
                                 )}
@@ -3795,7 +3803,7 @@ function BlindReviewToggle({ anonymizeReview }: { anonymizeReview: boolean }) {
           onChange={(e) => e.currentTarget.form?.requestSubmit()}
           className="w-full rounded-os-item bg-os-well px-4 py-3"
           label={anonymizeReview ? "On" : "Off"}
-          description={anonymizeReview ? "Reviewers see “Applicant N”." : "Reviewers see real names."}
+          description={anonymizeReview ? "Everyone sees “Applicant N” until their domain releases interviews or closes its first delib." : "Everyone sees real names."}
         />
       </Form>
     </SetupCard>

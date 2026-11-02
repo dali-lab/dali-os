@@ -52,7 +52,9 @@ test.describe('domain lead workflow', () => {
     await page.goto('/hiring/domain-lead/application/da-alice-eng');
     // Detail page also opens inside the Domain section iframe.
     const frame = domainFrame(page);
-    await expect(frame.getByRole('heading', { name: 'Alice Johnson' })).toBeVisible();
+    // Fall 2026 is blind-reviewed and other specs advance it mid-run: Alice reads
+    // as "Applicant N" while Engineering's window is open, by name after.
+    await expect(frame.getByRole('heading', { name: /^(Alice Johnson|Applicant \d+)$/ })).toBeVisible();
     await expect(frame.getByRole('heading', { name: 'General information' })).toBeVisible();
     await expect(frame.getByRole('heading', { name: 'Engineering challenge' })).toBeVisible();
     // Delibs are no longer their own section: every stage change is one

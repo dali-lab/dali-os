@@ -5,6 +5,8 @@ import { requireAuth } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
 import { parseJson, idSchema } from "~/lib/validate";
 import { requireApiSignedOrForbidden } from "~/hiring/lib/confidentiality";
+import { reassignCandidates } from "~/hiring/lib/interviewer-pool";
+import { freeUserIdsByInterview } from "~/hiring/lib/scheduling";
 import { sendReassignmentEmails } from "~/hiring/lib/interview-emails";
 import { syncInterviewMeetAttendees } from "~/hiring/lib/interview-meet";
 import { notifyInterviewAssigned } from "~/hiring/lib/interview-notifications";
@@ -33,7 +35,9 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   const assignment = await prisma.interviewAssignment.findUnique({
     where: { id: assignmentId },
-    include: { interview: true },
+    include: {
+      interview: { include: { domainApplication: { select: { domainId: true } } } },
+    },
   });
   if (!assignment || assignment.interview.id !== params.id) {
     return Response.json({ error: "Assignment not found" }, { status: 404 });
@@ -47,15 +51,33 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   const interview = assignment.interview;
 
-  // Look up the new interviewer's member ID so we can check ALL their
-  // CycleInterviewer rows for conflicts (a member can have multiple rows
-  // across domains).
-  const newCI = await prisma.cycleInterviewer.findUnique({
-    where: { id: newCycleInterviewerId },
-    select: { userId: true },
+  const roster = await prisma.cycleInterviewer.findMany({
+    where: { applicationCycleId: interview.applicationCycleId, interviewRoundId: interview.interviewRoundId },
+    select: { id: true, userId: true, domainId: true },
   });
+  const newCI = roster.find((r) => r.id === newCycleInterviewerId);
   if (!newCI) {
     return Response.json({ error: "Interviewer not found" }, { status: 404 });
+  }
+
+  const seated = await prisma.interviewAssignment.findMany({
+    where: { interviewId: interview.id, status: "Active" },
+    select: { cycleInterviewer: { select: { userId: true } } },
+  });
+  const eligible = reassignCandidates(roster, {
+    role: assignment.role,
+    applicantDomainId: interview.domainApplication.domainId,
+    seatedUserIds: seated.map((s) => s.cycleInterviewer.userId),
+    freeUserIds: roster.map((r) => r.userId),
+  });
+  if (!eligible.some((r) => r.id === newCycleInterviewerId)) {
+    return Response.json({ error: "This interviewer can't take this seat" }, { status: 400 });
+  }
+
+  // Calendars are read here, outside the transaction (see assignInterviewers).
+  const free = await freeUserIdsByInterview(interview.applicationCycleId, interview.interviewRoundId, [interview]);
+  if (!free.get(interview.id)?.includes(newCI.userId)) {
+    return Response.json({ error: "This interviewer isn't free at this time" }, { status: 409 });
   }
 
   // Conflict check + reassign in one serializable transaction to prevent

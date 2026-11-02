@@ -5,9 +5,11 @@ vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn() }));
 vi.mock("~/lib/roles", () => ({ hasCycleAccess: vi.fn().mockResolvedValue(true) }));
 vi.mock("~/lib/cors", () => ({ handlePreflight: () => null, withCors: (_req: Request, res: Response) => res }));
 vi.mock("~/hiring/lib/confidentiality", () => ({ requireApiSignedOrForbidden: vi.fn().mockResolvedValue(null) }));
+vi.mock("~/hiring/lib/scheduling", () => ({ freeUserIdsByInterview: vi.fn() }));
 
 import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
+import { freeUserIdsByInterview } from "~/hiring/lib/scheduling";
 import { loader } from "~/hiring/routes/api.cycles.$cycleId.interviews";
 
 const mockPrisma = prisma as unknown as Record<string, any>;
@@ -55,5 +57,33 @@ describe("GET cycle interviews", () => {
     ]);
     const { pending } = await get("iv2");
     expect(pending.map((p: { id: string }) => p.id)).toEqual(["waiting"]);
+  });
+
+  it("reports who is free only for upcoming scheduled interviews", async () => {
+    const future = new Date(Date.now() + 60 * 60_000);
+    const past = new Date(Date.now() - 60 * 60_000);
+    const upcoming = { id: "upcoming", status: "Scheduled", startTime: future };
+    mockPrisma.interview.findMany.mockResolvedValue([
+      upcoming,
+      { id: "cancelled", status: "CancelledByApplicant", startTime: future },
+      { id: "past", status: "Scheduled", startTime: past },
+    ]);
+    vi.mocked(freeUserIdsByInterview).mockResolvedValue(new Map([["upcoming", ["u1"]]]));
+
+    const { interviews } = await get("iv2");
+
+    expect(vi.mocked(freeUserIdsByInterview).mock.calls[0][0]).toBe("c1");
+    expect(vi.mocked(freeUserIdsByInterview).mock.calls[0][1]).toBe("iv2");
+    expect(vi.mocked(freeUserIdsByInterview).mock.calls[0][2].map((i) => i.id)).toEqual(["upcoming"]);
+    expect(interviews.map((i: { id: string; freeUserIds: string[] }) => [i.id, i.freeUserIds])).toEqual([
+      ["upcoming", ["u1"]],
+      ["cancelled", []],
+      ["past", []],
+    ]);
+  });
+
+  it("doesn't read calendars when nothing can be reassigned", async () => {
+    await get();
+    expect(freeUserIdsByInterview).not.toHaveBeenCalled();
   });
 });
