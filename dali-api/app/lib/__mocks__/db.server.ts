@@ -45,6 +45,7 @@ export const prisma = {
     findUnique: vi.fn(),
   },
   applicationCycle: {
+    findUniqueOrThrow: vi.fn(),
     findUnique: vi.fn(),
     findFirst: vi.fn(),
     findMany: vi.fn().mockResolvedValue([]),

@@ -7,6 +7,10 @@ vi.mock("~/lib/auth", () => ({
 vi.mock("~/lib/roles");
 vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
 vi.mock("~/hiring/lib/application-view-audit.server", () => ({ logApplicationView: vi.fn() }));
+vi.mock("~/hiring/lib/anonymization.server", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("~/hiring/lib/anonymization.server")>()),
+  applicationBlindLabel: vi.fn(),
+}));
 vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabled: vi.fn(async () => false) }));
 vi.mock("~/hiring/lib/email-engagement.server", () => ({
   getApplicantEmailEngagement: vi.fn(async () => null),
@@ -29,6 +33,7 @@ import { logApplicationView } from "~/hiring/lib/application-view-audit.server";
 import { requirePageSignedOrRedirect } from "~/hiring/lib/confidentiality";
 import { recordRouteVisit } from "~/lib/user-pages.server";
 import { getApplicantEmailEngagement } from "~/hiring/lib/email-engagement.server";
+import { applicationBlindLabel } from "~/hiring/lib/anonymization.server";
 import { loader, action } from "~/hiring/routes/reviewer.application.$id";
 
 const mockPrisma = prisma as unknown as Record<string, any>;
@@ -97,6 +102,7 @@ function setupApplicationBase() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(applicationBlindLabel).mockResolvedValue(null);
   setupApplicationBase();
   mockPrisma.cycleReviewer = { findMany: vi.fn() };
   mockPrisma.user.findUniqueOrThrow = vi.fn().mockResolvedValue({
@@ -308,11 +314,16 @@ describe("reviewer.application.$id loader — gates and query fan-out", () => {
     await flush();
 
     expect(mockPrisma.applicationReview.findFirst).toHaveBeenCalled();
-    expect(getApplicantEmailEngagement).toHaveBeenCalledWith("u-1", { blinded: false });
     expect(mockPrisma.domainApplication.findMany).not.toHaveBeenCalled();
 
     crs.resolve([{ id: DESIGN_REVIEWER_ID, domainId: DESIGN_DOMAIN_ID }]);
     const result: any = await pending;
+    expect(applicationBlindLabel).toHaveBeenCalledWith({
+      cycleId: expect.any(String),
+      applicationId: expect.any(String),
+      domainIds: [DESIGN_DOMAIN_ID],
+    });
+    expect(getApplicantEmailEngagement).toHaveBeenCalledWith("u-1", { blinded: false });
     expect(mockPrisma.domainApplication.findMany.mock.calls[0][0].where.domainId.in).toEqual([
       DESIGN_DOMAIN_ID,
     ]);
@@ -398,6 +409,7 @@ describe("reviewer.application.$id loader — auto-create review row", () => {
 
 describe("reviewer.application.$id loader — prior applications", () => {
   function setApplicationBaseAnonymize(anonymizeReview: boolean) {
+    vi.mocked(applicationBlindLabel).mockResolvedValue(anonymizeReview ? "Applicant 1" : null);
     mockPrisma.application.findUniqueOrThrow = vi.fn().mockResolvedValue({
       id: APPLICATION_ID,
       applicationCycleId: CYCLE_ID,
@@ -420,9 +432,7 @@ describe("reviewer.application.$id loader — prior applications", () => {
 
   function mockHistoryQuery() {
     mockPrisma.application.findMany = vi.fn().mockImplementation(({ where }: any) => {
-      // anonLabelMapForCycle (inside reviewerBlindLabel) queries by cycle id;
       // listMyHiringApplications (inside listPriorApplications) queries by user id.
-      if (where?.applicationCycleId) return Promise.resolve([{ id: APPLICATION_ID }]);
       if (where?.userId) {
         return Promise.resolve([
           {

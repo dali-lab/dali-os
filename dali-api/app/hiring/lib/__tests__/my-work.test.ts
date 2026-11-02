@@ -6,6 +6,10 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/db.server");
 vi.mock("~/hiring/lib/cycles", () => ({ getActiveCycles: vi.fn() }));
+vi.mock("~/hiring/lib/anonymization.server", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("~/hiring/lib/anonymization.server")>()),
+  domainApplicationBlindLabels: vi.fn(),
+}));
 vi.mock("~/hiring/lib/email-engagement.server", () => ({ getEngagementSummaries: vi.fn() }));
 vi.mock("~/hiring/lib/confidentiality", async (importOriginal) => ({
   // Keep the pure access helpers real; only the DB-backed state is stubbed.
@@ -16,6 +20,7 @@ vi.mock("~/hiring/lib/confidentiality", async (importOriginal) => ({
 import { prisma } from "~/lib/db.server";
 import { getActiveCycles } from "~/hiring/lib/cycles";
 import { getCycleConfidentialityState } from "~/hiring/lib/confidentiality";
+import { domainApplicationBlindLabels } from "~/hiring/lib/anonymization.server";
 import { getMyWorkData } from "~/hiring/lib/my-work.server";
 import { getEngagementSummaries } from "~/hiring/lib/email-engagement.server";
 
@@ -37,6 +42,7 @@ function bothCyclesActive() {
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(getEngagementSummaries).mockResolvedValue(new Map());
+  vi.mocked(domainApplicationBlindLabels).mockResolvedValue(new Map());
   // "no_agreement" by default: it short-circuits the review
   // queries so picker tests don't need every downstream mock.
   vi.mocked(getCycleConfidentialityState).mockResolvedValue({
@@ -110,6 +116,33 @@ describe("getMyWorkData — which work shows", () => {
 
     expect(getEngagementSummaries).toHaveBeenCalledWith(["applicant-1"]);
     expect(res.reviews?.emailEngagement).toEqual({ "applicant-1": summary });
+  });
+
+  it("replaces a blinded applicant's identity on the review board", async () => {
+    vi.mocked(getActiveCycles).mockResolvedValue([STANDARD] as any);
+    vi.mocked(getCycleConfidentialityState).mockResolvedValue({
+      status: "signed",
+      activeVersionId: "v1",
+      exempt: false,
+    });
+    vi.mocked(domainApplicationBlindLabels).mockResolvedValue(new Map([["da-1", "Applicant 4"]]));
+    mockPrisma.cycleReviewer.findMany.mockResolvedValue([{ id: "cr-1", domainId: "dom-1" }]);
+    const application = {
+      id: "app-1",
+      userId: "applicant-1",
+      user: { firstName: "Ada", lastName: "Lovelace", photoUrl: "s3://ada" },
+    };
+    mockPrisma.applicationReview.findMany.mockResolvedValue([
+      { id: "rev-1", domainApplication: { id: "da-1", application } },
+    ]);
+
+    await getMyWorkData(USER, req());
+
+    expect(domainApplicationBlindLabels).toHaveBeenCalledWith({
+      cycleId: STANDARD.id,
+      domainApplicationIds: ["da-1"],
+    });
+    expect(application.user).toEqual({ firstName: "Applicant 4", lastName: "", photoUrl: null });
   });
 
   it("gates an unsigned cycle by name while still loading the signed one", async () => {

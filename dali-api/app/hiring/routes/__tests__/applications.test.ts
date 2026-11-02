@@ -4,11 +4,16 @@ vi.mock("~/lib/db.server");
 vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn(), isNonMember: vi.fn(async () => false) }));
 vi.mock("~/lib/roles", () => ({ getUserRoles: vi.fn() }));
 vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabled: vi.fn().mockResolvedValue(false) }));
+vi.mock("~/hiring/lib/anonymization.server", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("~/hiring/lib/anonymization.server")>()),
+  domainApplicationBlindLabels: vi.fn(),
+}));
 
 import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { getUserRoles } from "~/lib/roles";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
+import { domainApplicationBlindLabels } from "~/hiring/lib/anonymization.server";
 import { loader } from "~/hiring/routes/applications";
 
 const mockPrisma = prisma as unknown as Record<string, any>;
@@ -50,6 +55,7 @@ function baseDomainApp(overrides: Partial<{ user: any }> = {}) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(domainApplicationBlindLabels).mockResolvedValue(new Map());
   vi.mocked(requireAuth).mockResolvedValue({ ok: true, user: { sub: "viewer-1", type: "user" } } as any);
   vi.mocked(getUserRoles).mockResolvedValue({
     isCore: true,
@@ -67,61 +73,38 @@ beforeEach(() => {
         name: "Fall Cycle",
         createdAt: new Date("2026-01-01"),
         applicants: "Students",
-        anonymizeReview: true,
         statusUpdates: [{ newStatus: "Reviewing" }],
       },
     ]),
   };
   mockPrisma.domainApplicationCycle = { findMany: vi.fn().mockResolvedValue([{ domainId: DOMAIN_ID }]) };
   mockPrisma.domain = { findMany: vi.fn().mockResolvedValue([{ id: DOMAIN_ID, displayName: "Design" }]) };
-  mockPrisma.decision = { findMany: vi.fn().mockResolvedValue([]) };
-  // application.findMany serves both the anon label map and the returning-
-  // applicant lookup; neither test asserts on the latter, so one shape does.
   mockPrisma.application = { findMany: vi.fn().mockResolvedValue([{ id: APPLICATION_ID }]) };
   mockPrisma.mailMessageIndex = { findMany: vi.fn().mockResolvedValue([]) };
   mockPrisma.educationApplication = { findMany: vi.fn().mockResolvedValue([]) };
   mockPrisma.hiringEventAttendance = { findMany: vi.fn().mockResolvedValue([]) };
   mockPrisma.hiringEvent = { findMany: vi.fn().mockResolvedValue([]) };
 
-  // domainApplication.findMany is called twice with different `where` shapes:
-  // once scoped to visible domains (builds the rows), once unscoped per
-  // applicationId (the full-application blind check).
-  mockPrisma.domainApplication = {
-    findMany: vi.fn().mockImplementation(({ where }: any) => {
-      if (where.domainId) return Promise.resolve([baseDomainApp()]);
-      return Promise.resolve([{ id: DA_ID, applicationId: APPLICATION_ID }]);
-    }),
-  };
+  mockPrisma.domainApplication = { findMany: vi.fn().mockResolvedValue([baseDomainApp()]) };
 });
 
 describe("applications.tsx loader — blind review", () => {
-  it("blinds the row's name and email when the cycle anonymizes review and nothing is released", async () => {
+  it("blinds the row's name and email while the application has a label", async () => {
+    vi.mocked(domainApplicationBlindLabels).mockResolvedValue(new Map([[DA_ID, "Applicant 1"]]));
     const result: any = await callLoader();
+    expect(domainApplicationBlindLabels).toHaveBeenCalledWith({
+      cycleId: CYCLE_ID,
+      domainApplicationIds: [DA_ID],
+    });
     expect(result.rows).toHaveLength(1);
     expect(result.rows[0].name).toBe("Applicant 1");
     expect(result.rows[0].email).toBeNull();
   });
 
-  it("shows the real name and email once the domain's decision is released", async () => {
-    mockPrisma.decision.findMany.mockResolvedValue([{ domainApplicationId: DA_ID }]);
+  it("shows the real name and email when the application has no label", async () => {
     const result: any = await callLoader();
     expect(result.rows[0].name).toBe("Ada Lovelace");
     expect(result.rows[0].email).toBe("ada@dali.dartmouth.edu");
-  });
-
-  it("does not blind when the cycle has anonymizeReview off", async () => {
-    mockPrisma.applicationCycle.findMany.mockResolvedValue([
-      {
-        id: CYCLE_ID,
-        name: "Fall Cycle",
-        createdAt: new Date("2026-01-01"),
-        applicants: "Students",
-        anonymizeReview: false,
-        statusUpdates: [{ newStatus: "Reviewing" }],
-      },
-    ]);
-    const result: any = await callLoader();
-    expect(result.rows[0].name).toBe("Ada Lovelace");
   });
 });
 
@@ -209,7 +192,6 @@ describe("applications.tsx loader — reviewer and interviewer columns", () => {
         name: "Fall Cycle",
         createdAt: new Date("2026-01-01"),
         applicants: "Students",
-        anonymizeReview: false,
         statusUpdates: [{ newStatus }],
       },
     ]);

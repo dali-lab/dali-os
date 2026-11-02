@@ -10,6 +10,10 @@ vi.mock("~/hiring/lib/email-engagement.server", () => ({ getApplicantEmailEngage
 vi.mock("~/hiring/lib/hiring-events.server", () => ({ getHiringEventEngagement: vi.fn() }));
 vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabled: vi.fn() }));
 vi.mock("~/collab/read", () => ({ readDocAsBlocks: vi.fn() }));
+vi.mock("~/hiring/lib/anonymization.server", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("~/hiring/lib/anonymization.server")>()),
+  domainApplicationBlindLabel: vi.fn(),
+}));
 
 import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
@@ -21,6 +25,7 @@ import { getApplicantEmailEngagement } from "~/hiring/lib/email-engagement.serve
 import { getHiringEventEngagement } from "~/hiring/lib/hiring-events.server";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { readDocAsBlocks } from "~/collab/read";
+import { domainApplicationBlindLabel } from "~/hiring/lib/anonymization.server";
 import { loader } from "~/hiring/routes/applications.$domainApplicationId";
 
 const mockPrisma = prisma as unknown as Record<string, any>;
@@ -29,7 +34,7 @@ const DA_ID = "da-1";
 const APPLICATION_ID = "app-1";
 const CYCLE_ID = "cycle-1";
 
-function baseDa(overrides: { anonymizeReview: boolean }) {
+function baseDa() {
   return {
     id: DA_ID,
     domainId: "domain-1",
@@ -47,7 +52,6 @@ function baseDa(overrides: { anonymizeReview: boolean }) {
         applicants: "Students",
         timeline: null,
         hasChallenges: false,
-        anonymizeReview: overrides.anonymizeReview,
         generalRubricVersion: null,
         domains: [],
       },
@@ -76,9 +80,10 @@ beforeEach(() => {
   vi.mocked(getHiringEventEngagement).mockResolvedValue([] as never);
   vi.mocked(isFeatureEnabled).mockResolvedValue(false);
   vi.mocked(readDocAsBlocks).mockResolvedValue([]);
+  vi.mocked(domainApplicationBlindLabel).mockResolvedValue(null);
 
   mockPrisma.domainApplication = {
-    findUnique: vi.fn().mockResolvedValue(baseDa({ anonymizeReview: true })),
+    findUnique: vi.fn().mockResolvedValue(baseDa()),
     findMany: vi.fn().mockResolvedValue([{ id: DA_ID }]),
   };
   mockPrisma.domainLeadAssignment = { findFirst: vi.fn().mockResolvedValue(null) };
@@ -91,18 +96,18 @@ beforeEach(() => {
 });
 
 describe("applications.$domainApplicationId loader — blind review", () => {
-  it("blinds the applicant's name when the cycle anonymizes review and nothing is released", async () => {
-    mockPrisma.domainApplication.findUnique.mockResolvedValue(baseDa({ anonymizeReview: true }));
-    mockPrisma.decision.findMany.mockResolvedValue([]); // nothing released
+  it("blinds the applicant's name while the application has a label", async () => {
+    vi.mocked(domainApplicationBlindLabel).mockResolvedValue("Applicant 1");
 
     const result: any = await callLoader();
 
+    expect(domainApplicationBlindLabel).toHaveBeenCalledWith({ cycleId: CYCLE_ID, domainApplicationId: DA_ID });
     expect(result.blinded).toBe(true);
     expect(result.applicantName).toBe("Applicant 1");
   });
 
   it("passes blinded=true through to priorApplications and email engagement calls", async () => {
-    mockPrisma.domainApplication.findUnique.mockResolvedValue(baseDa({ anonymizeReview: true }));
+    vi.mocked(domainApplicationBlindLabel).mockResolvedValue("Applicant 1");
     vi.mocked(isFeatureEnabled).mockResolvedValue(true);
     vi.mocked(getApplicantEmailEngagement).mockResolvedValue({
       totals: { inbound: 0, outbound: 0, firstAt: null, lastAt: null },
@@ -117,30 +122,7 @@ describe("applications.$domainApplicationId loader — blind review", () => {
     expect(getApplicantEmailEngagement).toHaveBeenCalledWith("u-1", { blinded: true });
   });
 
-  it("shows the real name once the domain's decision is released", async () => {
-    mockPrisma.domainApplication.findUnique.mockResolvedValue(baseDa({ anonymizeReview: true }));
-    mockPrisma.decision.findMany.mockResolvedValue([
-      {
-        id: "dec-1",
-        type: "Standard",
-        stage: "Released",
-        notes: null,
-        waitlistRank: null,
-        createdAt: new Date("2026-02-01"),
-        madeBy: null,
-        domainApplicationId: DA_ID,
-      },
-    ]);
-
-    const result: any = await callLoader();
-
-    expect(result.blinded).toBe(false);
-    expect(result.applicantName).toBe("Ada Lovelace");
-  });
-
-  it("does not blind when the cycle has anonymizeReview off", async () => {
-    mockPrisma.domainApplication.findUnique.mockResolvedValue(baseDa({ anonymizeReview: false }));
-
+  it("shows the real name when the application has no label", async () => {
     const result: any = await callLoader();
 
     expect(result.blinded).toBe(false);
@@ -200,7 +182,7 @@ describe("applications.$domainApplicationId loader — interview rounds", () => 
   });
 
   it("gives each Interviews round its own section, in timeline order", async () => {
-    const da = baseDa({ anonymizeReview: false });
+    const da = baseDa();
     da.application.applicationCycle.timeline = [
       { kind: "phase", key: "setup", weeks: [1, 5] },
       { kind: "phase", key: "review", weeks: [6, 6] },
@@ -231,7 +213,7 @@ describe("applications.$domainApplicationId loader — interview rounds", () => 
     const blocks = [
       { id: "b1", type: "heading", props: { level: 2, isToggleable: true }, content: [{ type: "text", text: "Technical", styles: {} }], children: [] },
     ];
-    mockPrisma.domainApplication.findUnique.mockResolvedValue(baseDa({ anonymizeReview: false }));
+    mockPrisma.domainApplication.findUnique.mockResolvedValue(baseDa());
     mockPrisma.interview.findMany.mockResolvedValue([iv("i1", "interviews", "Alan")]);
     mockPrisma.collabDocumentVersion = {
       findMany: vi.fn().mockResolvedValue([
@@ -247,7 +229,7 @@ describe("applications.$domainApplicationId loader — interview rounds", () => 
   });
 
   it("gives an interview with no notes snapshot empty blocks and no edit time", async () => {
-    mockPrisma.domainApplication.findUnique.mockResolvedValue(baseDa({ anonymizeReview: false }));
+    mockPrisma.domainApplication.findUnique.mockResolvedValue(baseDa());
     mockPrisma.interview.findMany.mockResolvedValue([iv("i1", "interviews", "Alan")]);
     mockPrisma.collabDocumentVersion = { findMany: vi.fn().mockResolvedValue([]) };
 
