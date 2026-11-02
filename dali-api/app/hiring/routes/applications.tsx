@@ -47,7 +47,7 @@ import {
   type PipelineStage,
 } from "~/hiring/lib/pipeline-stage";
 import type { ApplicationCycleStatus } from "~/generated/prisma/enums";
-import { applicationBlindLabelsForCycle, blindUser } from "~/hiring/lib/anonymization.server";
+import { domainApplicationBlindLabels, blindUser } from "~/hiring/lib/anonymization.server";
 import { domainCloseDate } from "~/hiring/lib/domain-windows";
 import { lateByLabel } from "~/hiring/lib/late-submission";
 import { ApplicationsTable } from "~/hiring/components/ApplicationsTable";
@@ -246,8 +246,6 @@ export async function loader({ request }: Route.LoaderArgs) {
   ]);
   const domainOptions = domainOptionRows.map((d) => ({ id: d.id, name: d.displayName }));
 
-  const applicationIds = [...new Set(domainApps.map((da) => da.application.id))];
-
   // Engagement signals for the filter panel: one grouped lookup each, keyed
   // on the applicant's User id, which blinding leaves intact.
   const applicantUserIds = [...new Set(domainApps.map((da) => da.application.user.id))];
@@ -256,7 +254,10 @@ export async function loader({ request }: Route.LoaderArgs) {
   // blind-label lookup and the engagement-signal queries run concurrently
   // instead of one after the other.
   const [blindLabels, [priorRows, emailSummaries, educationRows, eventRows]] = await Promise.all([
-    applicationBlindLabelsForCycle({ cycleId: selected.id, applicationIds }),
+    domainApplicationBlindLabels({
+      cycleId: selected.id,
+      domainApplicationIds: domainApps.map((da) => da.id),
+    }),
     applicantUserIds.length
       ? Promise.all([
           prisma.application.findMany({
@@ -303,7 +304,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const rows = domainApps
     .map((da) => {
-      const blindLabel = blindLabels.get(da.application.id);
+      const blindLabel = blindLabels.get(da.id);
       const u = blindLabel ? blindUser(da.application.user, blindLabel) : da.application.user;
       const updates = da.application.statusUpdates;
       const status = updates[0]?.newStatus ?? "Draft";

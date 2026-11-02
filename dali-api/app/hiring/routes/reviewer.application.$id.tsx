@@ -107,7 +107,13 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       },
     }),
   )
-  const blindLabelP = applicationBlindLabel({ cycleId, applicationId: applicationBase.id })
+  const blindLabelP = cycleReviewersP.then((crs) =>
+    applicationBlindLabel({
+      cycleId,
+      applicationId: applicationBase.id,
+      domainIds: crs.map((cr) => cr.domainId),
+    }),
+  )
 
   const [
     cycleReviewers,

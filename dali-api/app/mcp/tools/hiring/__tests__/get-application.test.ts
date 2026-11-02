@@ -196,6 +196,9 @@ describe("get_application", () => {
     mockPrisma.rubricVersion.findUnique.mockResolvedValue(null);
     mockPrisma.collabDocumentVersion.findMany.mockResolvedValue([]);
     (prisma as any).application.findMany.mockResolvedValue([{ id: "app1" }]);
+    (prisma as any).domainApplication.findMany.mockImplementation(async ({ where }: any) =>
+      where.id ? [{ id: "da1", domainId: "dom1", applicationId: "app1" }] : [],
+    );
 
     const result = (await runGetApplication("u1", { domainApplicationId: "da1" })) as any;
     expect(result.application.applicant.firstName).toBe(name);

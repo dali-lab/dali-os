@@ -1,5 +1,5 @@
 import { prisma } from "~/lib/db.server";
-import { applicationBlindLabelsForCycle } from "~/hiring/lib/anonymization.server";
+import { domainApplicationBlindLabels } from "~/hiring/lib/anonymization.server";
 import { getUserRoles, hasCycleAccess } from "~/lib/roles";
 import { McpForbiddenError, McpNotFoundError } from "../../registry";
 import { pageArray, pageProps, type PageArgs } from "../../pagination";
@@ -105,9 +105,9 @@ export async function runListApplications(userId: string, input: Input): Promise
     ? domainApps.filter((da) => (da.application.statusUpdates[0]?.newStatus ?? "Draft") === input.status)
     : domainApps;
 
-  const blindLabels = await applicationBlindLabelsForCycle({
+  const blindLabels = await domainApplicationBlindLabels({
     cycleId: input.cycleId,
-    applicationIds: [...new Set(filtered.map((da) => da.application.id))],
+    domainApplicationIds: filtered.map((da) => da.id),
   });
 
   // Sorted after blinding (as the web list is) so row order can't leak the
@@ -121,7 +121,7 @@ export async function runListApplications(userId: string, input: Input): Promise
           domainApplicationId: da.id,
           applicationId: da.application.id,
           applicantName:
-            blindLabels.get(da.application.id) ??
+            blindLabels.get(da.id) ??
             (`${u.firstName ?? ""} ${u.lastName ?? ""}`.trim() || null),
           domain: da.domain?.displayName ?? da.domain?.name ?? null,
           domainId: da.domainId ?? null,

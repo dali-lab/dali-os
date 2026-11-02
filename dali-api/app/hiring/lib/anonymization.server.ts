@@ -1,58 +1,68 @@
 import { prisma } from "~/lib/db.server";
-import { inReviewPipelineFilter, submittedDomainApplicationFilter } from "./application-pipeline-filter";
+import { inReviewPipelineFilter } from "./application-pipeline-filter";
 import { delibRounds, parseTimeline } from "./cycle-timeline";
 import { derivedCycleStatus } from "./cycles";
+import { domainReviewStatus } from "./domain-windows";
 
 // Blind review keeps a read of an application from being biased by who the
-// applicant is, so it covers applications open through review. Any cycle can
-// opt in (ApplicationCycle.anonymizeReview). It is a cycle-wide state that
-// applies to every viewer alike, on every surface that goes through
-// applicationBlindLabel/applicationBlindLabelsForCycle.
+// applicant is. Any cycle can opt in (ApplicationCycle.anonymizeReview). Each
+// domain lifts it on its own, for every viewer alike, on every surface that goes
+// through these helpers. An applicant in two domains can read as named in one
+// and "Applicant N" in the other, so the second domain's review stays blind.
 
 type BlindScope = "none" | "inReview" | "everyone";
+type BlindTarget = { key: string; applicationId: string; domainId: string | null };
 
-// Review is over once the first delib round has closed in every domain with
-// someone in review. A domain nobody is in review for can't hold it open.
-async function firstDelibClosed(cycleId: string, timeline: unknown): Promise<boolean> {
+async function domainsPastReview(cycleId: string, timeline: unknown): Promise<Set<string>> {
   const firstRound = delibRounds(parseTimeline(timeline))[0];
-  if (!firstRound) return false;
-  const [inReview, closed] = await Promise.all([
+  const [invited, closed] = await Promise.all([
     prisma.domainApplication.findMany({
       where: {
-        selected: true,
-        ...submittedDomainApplicationFilter,
-        application: { applicationCycleId: cycleId, ...inReviewPipelineFilter },
+        application: { applicationCycleId: cycleId },
+        decisions: { some: { type: "InvitedToInterview", stage: "Released" } },
       },
       select: { domainId: true },
       distinct: ["domainId"],
     }),
-    prisma.delibsSession.findMany({
-      where: { applicationCycleId: cycleId, roundId: firstRound.id, status: "Closed" },
-      select: { domainId: true },
-    }),
+    firstRound
+      ? prisma.delibsSession.findMany({
+          where: { applicationCycleId: cycleId, roundId: firstRound.id, status: "Closed" },
+          select: { domainId: true },
+        })
+      : [],
   ]);
-  const closedDomains = new Set(closed.map((s) => s.domainId));
-  return inReview.every((da) => closedDomains.has(da.domainId));
+  return new Set([...invited, ...closed].map((row) => row.domainId));
 }
 
-async function cycleBlindScope(cycleId: string): Promise<BlindScope> {
+async function domainBlindScopes(
+  cycleId: string,
+): Promise<((domainId: string | null) => BlindScope) | null> {
   const cycle = await prisma.applicationCycle.findUniqueOrThrow({
     where: { id: cycleId },
     select: {
       anonymizeReview: true,
       closeDate: true,
       timeline: true,
-      domains: { where: { isReady: true }, select: { closeDate: true } },
+      domains: { where: { isReady: true }, select: { domainId: true, closeDate: true } },
       statusUpdates: { orderBy: { createdAt: "desc" }, take: 1, select: { newStatus: true } },
     },
   });
-  if (!cycle.anonymizeReview) return "none";
+  if (!cycle.anonymizeReview) return null;
   const status = derivedCycleStatus(cycle);
-  if (status === "Completed") return "none";
-  // A draft named while applications are open could still submit, and its
-  // answers would then read as "Applicant N" to someone who saw the name.
-  if (status !== "UnderReview") return "everyone";
-  return (await firstDelibClosed(cycleId, cycle.timeline)) ? "none" : "inReview";
+  if (status === "Completed") return null;
+  if (status !== "Open" && status !== "UnderReview") return () => "everyone";
+
+  const pastReview = await domainsPastReview(cycleId, cycle.timeline);
+  const windows = new Map(cycle.domains.map((d) => [d.domainId, d]));
+  return (domainId) => {
+    const open = domainId
+      ? domainReviewStatus(status, windows.get(domainId) ?? { closeDate: null }, cycle) === "Open"
+      : status === "Open";
+    // A draft named while its window is open could still submit, and its
+    // answers would then read as "Applicant N" to someone who saw the name.
+    if (open) return "everyone";
+    return domainId && pastReview.has(domainId) ? "none" : "inReview";
+  };
 }
 
 /** Stable pseudonym for a 1-indexed applicant sequence. */
@@ -118,42 +128,97 @@ export function blindUser<T extends { firstName?: unknown; lastName?: unknown }>
   return blinded as T;
 }
 
-/**
- * The blind labels for applications in one cycle: only the applications that
- * are blinded right now appear in the map.
- */
-export async function applicationBlindLabelsForCycle(args: {
-  cycleId: string;
-  applicationIds: string[];
-}): Promise<Map<string, string>> {
-  const { cycleId, applicationIds } = args;
+async function blindLabelsFor(
+  cycleId: string,
+  loadTargets: () => Promise<BlindTarget[]>,
+): Promise<Map<string, string>> {
   const result = new Map<string, string>();
-  if (applicationIds.length === 0) return result;
+  const scopeFor = await domainBlindScopes(cycleId);
+  if (!scopeFor) return result;
 
-  const scope = await cycleBlindScope(cycleId);
-  if (scope === "none") return result;
+  const blindable = (await loadTargets()).filter((t) => scopeFor(t.domainId) !== "none");
+  if (blindable.length === 0) return result;
 
-  const blindedIds =
-    scope === "everyone"
-      ? applicationIds
+  const toCheck = blindable.filter((t) => scopeFor(t.domainId) === "inReview");
+  const inReview = new Set(
+    toCheck.length === 0
+      ? []
       : (
           await prisma.application.findMany({
-            where: { id: { in: applicationIds }, ...inReviewPipelineFilter },
+            where: {
+              id: { in: [...new Set(toCheck.map((t) => t.applicationId))] },
+              ...inReviewPipelineFilter,
+            },
             select: { id: true },
           })
-        ).map((a) => a.id);
+        ).map((a) => a.id),
+  );
 
   const labelMap = await anonLabelMapForCycle(cycleId);
-  for (const id of blindedIds) result.set(id, labelMap.get(id) ?? anonLabel(1));
+  for (const t of blindable) {
+    if (scopeFor(t.domainId) === "everyone" || inReview.has(t.applicationId)) {
+      result.set(t.key, labelMap.get(t.applicationId) ?? anonLabel(1));
+    }
+  }
   return result;
 }
 
-/** The blind label for one application, or null when its applicant is named. */
+/**
+ * The blind labels for domain applications in one cycle, keyed by
+ * domainApplicationId: only the rows blinded right now appear in the map.
+ */
+export async function domainApplicationBlindLabels(args: {
+  cycleId: string;
+  domainApplicationIds: string[];
+}): Promise<Map<string, string>> {
+  const { cycleId, domainApplicationIds } = args;
+  if (domainApplicationIds.length === 0) return new Map();
+  return blindLabelsFor(cycleId, async () => {
+    const rows = await prisma.domainApplication.findMany({
+      where: { id: { in: domainApplicationIds } },
+      select: { id: true, domainId: true, applicationId: true },
+    });
+    return rows.map((r) => ({ key: r.id, applicationId: r.applicationId, domainId: r.domainId }));
+  });
+}
+
+/** The blind label for one domain application, or null when its applicant is named there. */
+export async function domainApplicationBlindLabel(args: {
+  cycleId: string;
+  domainApplicationId: string;
+}): Promise<string | null> {
+  const { cycleId, domainApplicationId } = args;
+  const labels = await domainApplicationBlindLabels({
+    cycleId,
+    domainApplicationIds: [domainApplicationId],
+  });
+  return labels.get(domainApplicationId) ?? null;
+}
+
+/**
+ * The blind label for a surface that shows a whole application rather than one
+ * domain's row. Blinded while any of the application's selected domains is, or
+ * only those in `domainIds` when the viewer's reach is narrower. An application
+ * with no selected domains follows the cycle.
+ */
 export async function applicationBlindLabel(args: {
   cycleId: string;
   applicationId: string;
+  domainIds?: string[];
 }): Promise<string | null> {
-  const { cycleId, applicationId } = args;
-  const labels = await applicationBlindLabelsForCycle({ cycleId, applicationIds: [applicationId] });
-  return labels.get(applicationId) ?? null;
+  const { cycleId, applicationId, domainIds } = args;
+  const labels = await blindLabelsFor(cycleId, async () => {
+    const rows = await prisma.domainApplication.findMany({
+      where: {
+        applicationId,
+        selected: true,
+        ...(domainIds?.length ? { domainId: { in: domainIds } } : {}),
+      },
+      select: { id: true, domainId: true },
+    });
+    return rows.length > 0
+      ? rows.map((r) => ({ key: r.id, applicationId, domainId: r.domainId }))
+      : [{ key: applicationId, applicationId, domainId: null }];
+  });
+  return labels.values().next().value ?? null;
 }

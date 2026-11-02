@@ -83,9 +83,14 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     throw new Response("Not found", { status: 404 });
   }
 
+  const reviewerRows = await prisma.cycleReviewer.findMany({
+    where: { applicationCycleId: current.applicationCycleId, userId: auth.user.sub },
+    select: { domainId: true },
+  });
   const blindLabel = await applicationBlindLabel({
     cycleId: current.applicationCycleId,
     applicationId: current.id,
+    domainIds: reviewerRows.map((r) => r.domainId),
   });
   if (blindLabel) prior.user = blindUser(prior.user, blindLabel);
 

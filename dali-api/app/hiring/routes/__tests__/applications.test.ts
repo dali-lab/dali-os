@@ -6,14 +6,14 @@ vi.mock("~/lib/roles", () => ({ getUserRoles: vi.fn() }));
 vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabled: vi.fn().mockResolvedValue(false) }));
 vi.mock("~/hiring/lib/anonymization.server", async (importOriginal) => ({
   ...(await importOriginal<typeof import("~/hiring/lib/anonymization.server")>()),
-  applicationBlindLabelsForCycle: vi.fn(),
+  domainApplicationBlindLabels: vi.fn(),
 }));
 
 import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { getUserRoles } from "~/lib/roles";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
-import { applicationBlindLabelsForCycle } from "~/hiring/lib/anonymization.server";
+import { domainApplicationBlindLabels } from "~/hiring/lib/anonymization.server";
 import { loader } from "~/hiring/routes/applications";
 
 const mockPrisma = prisma as unknown as Record<string, any>;
@@ -55,7 +55,7 @@ function baseDomainApp(overrides: Partial<{ user: any }> = {}) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.mocked(applicationBlindLabelsForCycle).mockResolvedValue(new Map());
+  vi.mocked(domainApplicationBlindLabels).mockResolvedValue(new Map());
   vi.mocked(requireAuth).mockResolvedValue({ ok: true, user: { sub: "viewer-1", type: "user" } } as any);
   vi.mocked(getUserRoles).mockResolvedValue({
     isCore: true,
@@ -90,11 +90,11 @@ beforeEach(() => {
 
 describe("applications.tsx loader — blind review", () => {
   it("blinds the row's name and email while the application has a label", async () => {
-    vi.mocked(applicationBlindLabelsForCycle).mockResolvedValue(new Map([[APPLICATION_ID, "Applicant 1"]]));
+    vi.mocked(domainApplicationBlindLabels).mockResolvedValue(new Map([[DA_ID, "Applicant 1"]]));
     const result: any = await callLoader();
-    expect(applicationBlindLabelsForCycle).toHaveBeenCalledWith({
+    expect(domainApplicationBlindLabels).toHaveBeenCalledWith({
       cycleId: CYCLE_ID,
-      applicationIds: [APPLICATION_ID],
+      domainApplicationIds: [DA_ID],
     });
     expect(result.rows).toHaveLength(1);
     expect(result.rows[0].name).toBe("Applicant 1");

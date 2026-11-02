@@ -8,7 +8,7 @@ vi.mock("~/lib/db.server");
 vi.mock("~/hiring/lib/cycles", () => ({ getActiveCycles: vi.fn() }));
 vi.mock("~/hiring/lib/anonymization.server", async (importOriginal) => ({
   ...(await importOriginal<typeof import("~/hiring/lib/anonymization.server")>()),
-  applicationBlindLabelsForCycle: vi.fn(),
+  domainApplicationBlindLabels: vi.fn(),
 }));
 vi.mock("~/hiring/lib/email-engagement.server", () => ({ getEngagementSummaries: vi.fn() }));
 vi.mock("~/hiring/lib/confidentiality", async (importOriginal) => ({
@@ -20,7 +20,7 @@ vi.mock("~/hiring/lib/confidentiality", async (importOriginal) => ({
 import { prisma } from "~/lib/db.server";
 import { getActiveCycles } from "~/hiring/lib/cycles";
 import { getCycleConfidentialityState } from "~/hiring/lib/confidentiality";
-import { applicationBlindLabelsForCycle } from "~/hiring/lib/anonymization.server";
+import { domainApplicationBlindLabels } from "~/hiring/lib/anonymization.server";
 import { getMyWorkData } from "~/hiring/lib/my-work.server";
 import { getEngagementSummaries } from "~/hiring/lib/email-engagement.server";
 
@@ -42,7 +42,7 @@ function bothCyclesActive() {
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(getEngagementSummaries).mockResolvedValue(new Map());
-  vi.mocked(applicationBlindLabelsForCycle).mockResolvedValue(new Map());
+  vi.mocked(domainApplicationBlindLabels).mockResolvedValue(new Map());
   // "no_agreement" by default: it short-circuits the review
   // queries so picker tests don't need every downstream mock.
   vi.mocked(getCycleConfidentialityState).mockResolvedValue({
@@ -125,7 +125,7 @@ describe("getMyWorkData — which work shows", () => {
       activeVersionId: "v1",
       exempt: false,
     });
-    vi.mocked(applicationBlindLabelsForCycle).mockResolvedValue(new Map([["app-1", "Applicant 4"]]));
+    vi.mocked(domainApplicationBlindLabels).mockResolvedValue(new Map([["da-1", "Applicant 4"]]));
     mockPrisma.cycleReviewer.findMany.mockResolvedValue([{ id: "cr-1", domainId: "dom-1" }]);
     const application = {
       id: "app-1",
@@ -138,9 +138,9 @@ describe("getMyWorkData — which work shows", () => {
 
     await getMyWorkData(USER, req());
 
-    expect(applicationBlindLabelsForCycle).toHaveBeenCalledWith({
+    expect(domainApplicationBlindLabels).toHaveBeenCalledWith({
       cycleId: STANDARD.id,
-      applicationIds: ["app-1"],
+      domainApplicationIds: ["da-1"],
     });
     expect(application.user).toEqual({ firstName: "Applicant 4", lastName: "", photoUrl: null });
   });

@@ -13,7 +13,7 @@ import { prisma } from "~/lib/db.server";
 import { getUserRoles, hasCycleAccess } from "~/lib/roles";
 import { confidentialityCleared, getCycleConfidentialityState } from "~/hiring/lib/confidentiality";
 import { buildCriteriaLabelMap } from "~/hiring/lib/rubric-criteria";
-import { applicationBlindLabel, blindUser } from "~/hiring/lib/anonymization.server";
+import { domainApplicationBlindLabel, blindUser } from "~/hiring/lib/anonymization.server";
 import { McpNotFoundError, McpForbiddenError } from "../../registry";
 
 export const GET_APPLICATION_TOOL = {
@@ -184,7 +184,7 @@ export async function runGetApplication(userId: string, input: Input): Promise<u
     })),
   }));
 
-  const blindLabel = await applicationBlindLabel({ cycleId, applicationId: da.application.id });
+  const blindLabel = await domainApplicationBlindLabel({ cycleId, domainApplicationId: da.id });
 
   return {
     domainApplication: {

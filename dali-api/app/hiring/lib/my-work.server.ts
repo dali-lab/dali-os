@@ -2,7 +2,7 @@ import { prisma } from "~/lib/db.server";
 import { getEngagementSummaries } from "~/hiring/lib/email-engagement.server";
 import { getUserRoles } from "~/lib/roles";
 import { getActiveCycles, type ActiveCycle } from "./cycles";
-import { applicationBlindLabelsForCycle, blindUser } from "./anonymization.server";
+import { domainApplicationBlindLabels, blindUser } from "./anonymization.server";
 import { confidentialityBlock, getCycleConfidentialityState } from "./confidentiality";
 import { buildColumnOrder } from "./delibs";
 import { findRound, parseTimeline } from "./cycle-timeline";
@@ -219,12 +219,12 @@ async function loadReviews(
     ...myReviews.map((r) => r.domainApplication),
     ...daIdToSummary.values(),
   ].filter(Boolean);
-  const blindLabels = await applicationBlindLabelsForCycle({
+  const blindLabels = await domainApplicationBlindLabels({
     cycleId: cycle.id,
-    applicationIds: [...new Set(blindableApps.map((da) => da.application.id as string))],
+    domainApplicationIds: [...new Set(blindableApps.map((da) => da.id as string))],
   });
   for (const da of blindableApps) {
-    const label = blindLabels.get(da.application.id);
+    const label = blindLabels.get(da.id);
     if (label) da.application.user = blindUser(da.application.user, label);
   }
 

@@ -154,10 +154,15 @@ describe("reviewer.application.$id.prior.$priorId loader", () => {
   it("blinds the prior application while the current application is blinded", async () => {
     setupCurrentAndPrior(makeCurrent(), makePrior());
     vi.mocked(applicationBlindLabel).mockResolvedValue("Applicant 3");
+    mockPrisma.cycleReviewer.findMany.mockResolvedValue([{ domainId: "eng" }]);
 
     const result: any = await callLoader();
 
-    expect(applicationBlindLabel).toHaveBeenCalledWith({ cycleId: CYCLE_ID, applicationId: CURRENT_ID });
+    expect(applicationBlindLabel).toHaveBeenCalledWith({
+      cycleId: CYCLE_ID,
+      applicationId: CURRENT_ID,
+      domainIds: ["eng"],
+    });
     expect(result.application.user.firstName).toBe("Applicant 3");
     expect(result.application.user.lastName).toBe("");
     expect(result.application.user.daliEmail).toBeNull();

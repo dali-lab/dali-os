@@ -39,7 +39,7 @@ import { listPriorApplications } from "~/hiring/lib/prior-applications.server";
 import { readDocAsBlocks } from "~/collab/read";
 import { interviewNotesRoomName } from "~/collab/roomName";
 import { PriorApplicationsPanel } from "~/hiring/components/PriorApplicationsPanel";
-import { applicationBlindLabel, blindUser } from "~/hiring/lib/anonymization.server";
+import { domainApplicationBlindLabel, blindUser } from "~/hiring/lib/anonymization.server";
 import { getApplicantEmailEngagement } from "~/hiring/lib/email-engagement.server";
 import { ApplicantEmailPanel } from "~/hiring/components/ApplicantEmailPanel";
 import type { ApplicationCycleStatus } from "~/generated/prisma/enums";
@@ -137,9 +137,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   );
   if (confRedirect) return confRedirect;
 
-  const blindLabel = await applicationBlindLabel({
+  const blindLabel = await domainApplicationBlindLabel({
     cycleId: da.application.applicationCycleId,
-    applicationId: da.application.id,
+    domainApplicationId: da.id,
   });
   const blinded = blindLabel != null;
   if (blindLabel) da.application.user = blindUser(da.application.user, blindLabel);

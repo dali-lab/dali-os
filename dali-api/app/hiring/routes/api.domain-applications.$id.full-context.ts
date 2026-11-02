@@ -4,7 +4,7 @@ import { requireAuth } from "~/lib/auth";
 import { getUserRoles, hasCycleAccess } from "~/lib/roles";
 import { requireApiSignedOrForbidden } from "~/hiring/lib/confidentiality";
 import { buildCriteriaLabelMap } from "~/hiring/lib/rubric-criteria";
-import { applicationBlindLabel, blindUser } from "~/hiring/lib/anonymization.server";
+import { domainApplicationBlindLabel, blindUser } from "~/hiring/lib/anonymization.server";
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
@@ -140,7 +140,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     })),
   }));
 
-  const blindLabel = await applicationBlindLabel({ cycleId, applicationId: da.application.id });
+  const blindLabel = await domainApplicationBlindLabel({ cycleId, domainApplicationId: da.id });
   const applicant = blindLabel ? blindUser(da.application.user, blindLabel) : da.application.user;
 
   return Response.json({

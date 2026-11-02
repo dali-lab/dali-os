@@ -41,7 +41,7 @@ import { buttonClasses } from '~/components/ui/Button'
 import { cn } from '~/lib/cn'
 import { getUserRoles } from '~/lib/roles'
 import { isFeatureEnabled } from '~/lib/feature-flags.server'
-import { applicationBlindLabel } from '~/hiring/lib/anonymization.server'
+import { domainApplicationBlindLabel } from '~/hiring/lib/anonymization.server'
 import { listPriorApplications } from '~/hiring/lib/prior-applications.server'
 import { getApplicantEmailEngagement } from '~/hiring/lib/email-engagement.server'
 import { getHiringEventEngagement } from '~/hiring/lib/hiring-events.server'
@@ -219,9 +219,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   // Same applicant context the review page shows.
   const application = interview.domainApplication.application
   const blinded =
-    (await applicationBlindLabel({
+    (await domainApplicationBlindLabel({
       cycleId: interview.applicationCycleId,
-      applicationId: application.id,
+      domainApplicationId: interview.domainApplication.id,
     })) != null
   const roles = await getUserRoles(auth.user.sub, request)
   const [educationEngagement, hiringEventEngagement, priorApplications, emailEngagement, latestRecordingRow] =

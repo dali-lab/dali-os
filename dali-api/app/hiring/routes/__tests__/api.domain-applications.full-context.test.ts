@@ -7,13 +7,13 @@ vi.mock("~/lib/auth", () => ({
 vi.mock("~/lib/roles");
 vi.mock("~/hiring/lib/anonymization.server", async (importOriginal) => ({
   ...(await importOriginal<typeof import("~/hiring/lib/anonymization.server")>()),
-  applicationBlindLabel: vi.fn(),
+  domainApplicationBlindLabel: vi.fn(),
 }));
 
 import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { getUserRoles, hasCycleAccess } from "~/lib/roles";
-import { applicationBlindLabel } from "~/hiring/lib/anonymization.server";
+import { domainApplicationBlindLabel } from "~/hiring/lib/anonymization.server";
 import { loader } from "~/hiring/routes/api.domain-applications.$id.full-context";
 
 const mockPrisma = prisma as unknown as {
@@ -33,7 +33,7 @@ const CYCLE_ID = "cycle-1";
 
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.mocked(applicationBlindLabel).mockResolvedValue(null);
+  vi.mocked(domainApplicationBlindLabel).mockResolvedValue(null);
   (mockPrisma as any).domainApplication = { findUnique: vi.fn() };
   (mockPrisma as any).domainApplicationCycle = { findUnique: vi.fn() };
   (mockPrisma as any).rubricVersion = { findUnique: vi.fn(), findMany: vi.fn() };
@@ -182,7 +182,7 @@ describe("GET /api/hiring/domain-applications/:id/full-context", () => {
   it("hides the applicant's name while the application is blinded", async () => {
     setupHappyPathDomainApp();
     vi.mocked(hasCycleAccess).mockResolvedValue(true);
-    vi.mocked(applicationBlindLabel).mockResolvedValue("Applicant 2");
+    vi.mocked(domainApplicationBlindLabel).mockResolvedValue("Applicant 2");
 
     const res = await loader({
       request: makeRequest(),

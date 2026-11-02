@@ -3795,7 +3795,7 @@ function BlindReviewToggle({ anonymizeReview }: { anonymizeReview: boolean }) {
           onChange={(e) => e.currentTarget.form?.requestSubmit()}
           className="w-full rounded-os-item bg-os-well px-4 py-3"
           label={anonymizeReview ? "On" : "Off"}
-          description={anonymizeReview ? "Everyone sees “Applicant N” until the first delib closes." : "Everyone sees real names."}
+          description={anonymizeReview ? "Everyone sees “Applicant N” until their domain releases interviews or closes its first delib." : "Everyone sees real names."}
         />
       </Form>
     </SetupCard>

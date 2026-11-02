@@ -95,16 +95,28 @@ function setupBlindCycle(opts: {
   listed: ReturnType<typeof makeApp>[];
   creationOrder: string[];
   anonymizeReview?: boolean;
+  status?: string;
+  releasedDomains?: string[];
 }) {
   mockPrisma.applicationCycle.findUnique.mockResolvedValue({ id: "cy1" });
   mockPrisma.applicationCycle.findUniqueOrThrow.mockResolvedValue({
     ...namedCycle,
     anonymizeReview: opts.anonymizeReview ?? true,
-    statusUpdates: [{ newStatus: "Open" }],
+    statusUpdates: [{ newStatus: opts.status ?? "Open" }],
   });
   vi.mocked(hasCycleAccess).mockResolvedValue(true);
   vi.mocked(getUserRoles).mockResolvedValue(coreRoles);
-  mockPrisma.domainApplication.findMany.mockResolvedValue(opts.listed);
+  mockPrisma.domainApplication.findMany.mockImplementation(async ({ where }: any) => {
+    if (where.decisions) return (opts.releasedDomains ?? []).map((domainId) => ({ domainId }));
+    if (where.id) {
+      return opts.listed.map((da) => ({
+        id: da.id,
+        domainId: da.domainId,
+        applicationId: da.application.id,
+      }));
+    }
+    return opts.listed;
+  });
   mockPrisma.application.findMany.mockResolvedValue(opts.creationOrder.map((id) => ({ id })));
 }
 
@@ -308,6 +320,25 @@ describe("list_applications blind review", () => {
     expect((await list()).map((r) => r.applicantName)).toEqual(["Ada Lovelace", "Grace Hopper"]);
     expect(mockPrisma.domainApplication.findMany).toHaveBeenCalledTimes(1);
     expect(mockPrisma.application.findMany).not.toHaveBeenCalled();
+  });
+});
+
+describe("list_applications per-domain blinding", () => {
+  it("names a two-domain applicant in the domain that released and blinds them in the other", async () => {
+    setupBlindCycle({
+      status: "UnderReview",
+      releasedDomains: ["eng"],
+      listed: [
+        makeApp({ daId: "da1", appId: "app1", first: "Ada", last: "Lovelace", domainId: "eng", domain: "Eng" }),
+        makeApp({ daId: "da2", appId: "app1", first: "Ada", last: "Lovelace", domainId: "design", domain: "Design" }),
+      ],
+      creationOrder: ["app1"],
+    });
+
+    expect((await list()).map((r) => [r.domain, r.applicantName])).toEqual([
+      ["Eng", "Ada Lovelace"],
+      ["Design", "Applicant 1"],
+    ]);
   });
 });
 

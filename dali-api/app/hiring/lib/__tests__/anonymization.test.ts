@@ -8,7 +8,8 @@ import {
   anonLabelMapForCycle,
   blindUser,
   applicationBlindLabel,
-  applicationBlindLabelsForCycle,
+  domainApplicationBlindLabel,
+  domainApplicationBlindLabels,
 } from "~/hiring/lib/anonymization.server";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -74,58 +75,70 @@ describe("anonLabelMapForCycle", () => {
   });
 });
 
-describe("applicationBlindLabelsForCycle", () => {
-  const PAST = new Date("2020-01-01");
-  const FUTURE = new Date("2100-01-01");
+const PAST = new Date("2020-01-01");
+const FUTURE = new Date("2100-01-01");
 
-  function setup(opts: {
-    anonymizeReview?: boolean;
-    status: string;
-    closeDate?: Date | null;
-    domainCloseDates?: (Date | null)[];
-    timeline?: unknown;
-    domainsInReview?: string[];
-    closedBoards?: { domainId: string; roundId?: string }[];
-    inReview?: string[];
-  }) {
-    mockPrisma.applicationCycle.findUniqueOrThrow.mockResolvedValue({
-      anonymizeReview: opts.anonymizeReview ?? true,
-      closeDate: opts.closeDate === undefined ? PAST : opts.closeDate,
-      timeline: opts.timeline ?? null,
-      domains: (opts.domainCloseDates ?? []).map((closeDate) => ({ closeDate })),
-      statusUpdates: [{ newStatus: opts.status }],
-    });
-    mockPrisma.domainApplication.findMany.mockResolvedValue(
-      (opts.domainsInReview ?? []).map((domainId) => ({ domainId })),
-    );
-    const boards = opts.closedBoards ?? [];
-    mockPrisma.delibsSession.findMany.mockImplementation(async ({ where }: any) =>
-      boards
-        .filter((b) => (b.roundId ?? "first") === where.roundId)
-        .map(({ domainId }) => ({ domainId })),
-    );
-    // The in-review lookup filters by id; anonLabelMapForCycle by cycle.
-    mockPrisma.application.findMany.mockImplementation(async ({ where }: any) =>
-      where.id
-        ? (opts.inReview ?? []).map((id) => ({ id }))
-        : [{ id: "app1" }, { id: "app2" }],
-    );
-  }
+type Row = { id: string; domainId: string; applicationId: string };
 
-  const labels = (applicationIds = ["app1", "app2"]) =>
-    applicationBlindLabelsForCycle({ cycleId: "cy1", applicationIds });
+const ENG_ROWS: Row[] = [
+  { id: "da1", domainId: "eng", applicationId: "app1" },
+  { id: "da2", domainId: "eng", applicationId: "app2" },
+];
 
-  it("names everyone when the toggle is off, whatever the stage", async () => {
+function setup(opts: {
+  anonymizeReview?: boolean;
+  status: string;
+  closeDate?: Date | null;
+  domains?: { domainId: string; closeDate: Date | null }[];
+  timeline?: unknown;
+  released?: string[];
+  closedBoards?: { domainId: string; roundId?: string }[];
+  inReview?: string[];
+  rows?: Row[];
+}) {
+  const rows = opts.rows ?? ENG_ROWS;
+  mockPrisma.applicationCycle.findUniqueOrThrow.mockResolvedValue({
+    anonymizeReview: opts.anonymizeReview ?? true,
+    closeDate: opts.closeDate === undefined ? PAST : opts.closeDate,
+    timeline: opts.timeline ?? null,
+    domains: opts.domains ?? [],
+    statusUpdates: [{ newStatus: opts.status }],
+  });
+  mockPrisma.domainApplication.findMany.mockImplementation(async ({ where }: any) => {
+    if (where.decisions) return (opts.released ?? []).map((domainId) => ({ domainId }));
+    if (where.id) return rows;
+    const ids: string[] | undefined = where.domainId?.in;
+    return rows.filter(
+      (r) => r.applicationId === where.applicationId && (!ids || ids.includes(r.domainId)),
+    );
+  });
+  const boards = opts.closedBoards ?? [];
+  mockPrisma.delibsSession.findMany.mockImplementation(async ({ where }: any) =>
+    boards
+      .filter((b) => (b.roundId ?? "first") === where.roundId)
+      .map(({ domainId }) => ({ domainId })),
+  );
+  // The in-review lookup filters by id; anonLabelMapForCycle by cycle.
+  mockPrisma.application.findMany.mockImplementation(async ({ where }: any) =>
+    where.id
+      ? (opts.inReview ?? []).map((id) => ({ id }))
+      : [{ id: "app1" }, { id: "app2" }],
+  );
+}
+
+const labels = (domainApplicationIds = ["da1", "da2"]) =>
+  domainApplicationBlindLabels({ cycleId: "cy1", domainApplicationIds });
+
+describe("domainApplicationBlindLabels", () => {
+  it("names everyone when the toggle is off, without loading the rows", async () => {
     setup({ anonymizeReview: false, status: "Open", closeDate: FUTURE });
     expect((await labels()).size).toBe(0);
+    expect(mockPrisma.domainApplication.findMany).not.toHaveBeenCalled();
   });
 
-  it("blinds everyone while applications are open, submitted or not", async () => {
-    setup({ status: "Open", closeDate: FUTURE, inReview: ["app1"] });
-    expect([...(await labels()).entries()]).toEqual([
-      ["app1", "Applicant 1"],
-      ["app2", "Applicant 2"],
-    ]);
+  it("names everyone on a Completed cycle, even with a board never closed", async () => {
+    setup({ status: "Completed", inReview: ["app1"] });
+    expect((await labels()).size).toBe(0);
   });
 
   it("blinds everyone before the cycle opens", async () => {
@@ -133,39 +146,41 @@ describe("applicationBlindLabelsForCycle", () => {
     expect((await labels()).size).toBe(2);
   });
 
-  it("treats an extended domain as still open past the cycle's own close", async () => {
-    setup({
-      status: "Open",
-      closeDate: PAST,
-      domainCloseDates: [PAST, FUTURE],
-      domainsInReview: ["dom1"],
-      closedBoards: [{ domainId: "dom1" }],
-    });
-    expect((await labels()).size).toBe(2);
+  it("blinds everyone while the domain's window is open, submitted or not", async () => {
+    setup({ status: "Open", closeDate: FUTURE, inReview: ["app1"] });
+    expect([...(await labels()).entries()]).toEqual([
+      ["da1", "Applicant 1"],
+      ["da2", "Applicant 2"],
+    ]);
   });
 
-  it("stays blinded while open even when every domain with submissions has closed its first delib", async () => {
+  it("keeps an open window blinded even after the domain released invites or closed a delib", async () => {
     setup({
       status: "Open",
       closeDate: FUTURE,
-      domainsInReview: ["dom1"],
-      closedBoards: [{ domainId: "dom1" }],
+      released: ["eng"],
+      closedBoards: [{ domainId: "eng" }],
     });
     expect((await labels()).size).toBe(2);
   });
 
   it("past close, blinds only applications in review", async () => {
-    setup({ status: "UnderReview", domainsInReview: ["dom1"], inReview: ["app2"] });
-    expect([...(await labels()).entries()]).toEqual([["app2", "Applicant 2"]]);
+    setup({ status: "UnderReview", inReview: ["app2"] });
+    expect([...(await labels()).entries()]).toEqual([["da2", "Applicant 2"]]);
   });
 
   it("reads an Open cycle past its close as under review", async () => {
-    setup({ status: "Open", closeDate: PAST, domainsInReview: ["dom1"], inReview: ["app2"] });
-    expect([...(await labels()).keys()]).toEqual(["app2"]);
+    setup({ status: "Open", closeDate: PAST, inReview: ["app2"] });
+    expect([...(await labels()).keys()]).toEqual(["da2"]);
+  });
+
+  it("treats a cycle moved to review early as closed, whatever the dates say", async () => {
+    setup({ status: "UnderReview", closeDate: FUTURE, inReview: ["app2"] });
+    expect([...(await labels()).keys()]).toEqual(["da2"]);
   });
 
   it("asks only for submitted, non-withdrawn applications", async () => {
-    setup({ status: "UnderReview", domainsInReview: ["dom1"], inReview: [] });
+    setup({ status: "UnderReview" });
     await labels();
     expect(mockPrisma.application.findMany.mock.calls[0][0].where).toEqual({
       id: { in: ["app1", "app2"] },
@@ -174,44 +189,36 @@ describe("applicationBlindLabelsForCycle", () => {
     });
   });
 
-  it("stays blinded until the first delib closes in every domain with someone in review", async () => {
-    setup({
-      status: "UnderReview",
-      domainsInReview: ["dom1", "dom2"],
-      closedBoards: [{ domainId: "dom1" }],
-      inReview: ["app1"],
-    });
-    expect((await labels()).size).toBe(1);
-  });
-
-  it("names everyone once the first delib has closed in every such domain", async () => {
-    setup({
-      status: "UnderReview",
-      domainsInReview: ["dom1", "dom2"],
-      closedBoards: [{ domainId: "dom1" }, { domainId: "dom2" }],
-      inReview: ["app1"],
-    });
+  it("names every applicant in a domain once it releases interview invites", async () => {
+    setup({ status: "UnderReview", released: ["eng"], inReview: ["app1", "app2"] });
     expect((await labels()).size).toBe(0);
   });
 
-  it("doesn't let a domain with nobody in review hold blinding open", async () => {
+  it("counts only released interview invites", async () => {
+    setup({ status: "UnderReview", inReview: ["app1"] });
+    await labels();
+    const inviteQuery = mockPrisma.domainApplication.findMany.mock.calls
+      .map(([args]: any) => args.where)
+      .find((where: any) => where.decisions);
+    expect(inviteQuery).toEqual({
+      application: { applicationCycleId: "cy1" },
+      decisions: { some: { type: "InvitedToInterview", stage: "Released" } },
+    });
+  });
+
+  it("names every applicant in a domain once it closes its first delib", async () => {
     setup({
       status: "UnderReview",
-      domainsInReview: ["dom1"],
-      closedBoards: [{ domainId: "dom1" }],
+      closedBoards: [{ domainId: "eng" }],
+      inReview: ["app1", "app2"],
     });
     expect((await labels()).size).toBe(0);
-    expect(mockPrisma.domainApplication.findMany.mock.calls[0][0].where).toMatchObject({
-      selected: true,
-      submittedAt: { not: null },
-    });
   });
 
   it("ignores a closed board from a later round", async () => {
     setup({
       status: "UnderReview",
-      domainsInReview: ["dom1"],
-      closedBoards: [{ domainId: "dom1", roundId: "final" }],
+      closedBoards: [{ domainId: "eng", roundId: "final" }],
       inReview: ["app1"],
     });
     expect((await labels()).size).toBe(1);
@@ -226,48 +233,130 @@ describe("applicationBlindLabelsForCycle", () => {
         { kind: "delib", id: "only", label: "Delib", weeks: [6, 6] },
         { kind: "phase", key: "decisions", weeks: [7, 7] },
       ],
-      domainsInReview: ["dom1"],
-      closedBoards: [{ domainId: "dom1", roundId: "only" }],
+      closedBoards: [{ domainId: "eng", roundId: "only" }],
+      inReview: ["app1"],
     });
     expect((await labels()).size).toBe(0);
   });
 
-  it("names everyone on a Completed cycle, even with a board never closed", async () => {
-    setup({ status: "Completed", domainsInReview: ["dom1"], inReview: ["app1"] });
-    expect((await labels()).size).toBe(0);
+  it("lifts one domain without touching another", async () => {
+    setup({
+      status: "UnderReview",
+      released: ["eng"],
+      inReview: ["app1", "app2"],
+      rows: [
+        { id: "da1", domainId: "eng", applicationId: "app1" },
+        { id: "da2", domainId: "design", applicationId: "app2" },
+      ],
+    });
+    expect([...(await labels()).keys()]).toEqual(["da2"]);
   });
 
-  it("short-circuits on no applications without querying", async () => {
+  it("names a two-domain applicant in the lifted domain and blinds them in the other", async () => {
+    setup({
+      status: "UnderReview",
+      released: ["eng"],
+      inReview: ["app1"],
+      rows: [
+        { id: "da1", domainId: "eng", applicationId: "app1" },
+        { id: "da2", domainId: "design", applicationId: "app1" },
+      ],
+    });
+    expect([...(await labels()).entries()]).toEqual([["da2", "Applicant 1"]]);
+  });
+
+  it("lifts a closed domain while an extended domain's window stays open", async () => {
+    setup({
+      status: "Open",
+      closeDate: PAST,
+      domains: [
+        { domainId: "eng", closeDate: PAST },
+        { domainId: "design", closeDate: FUTURE },
+      ],
+      released: ["eng"],
+      rows: [
+        { id: "da1", domainId: "eng", applicationId: "app1" },
+        { id: "da2", domainId: "design", applicationId: "app2" },
+      ],
+    });
+    expect([...(await labels()).keys()]).toEqual(["da2"]);
+  });
+
+  it("short-circuits on no rows without querying", async () => {
     expect((await labels([])).size).toBe(0);
     expect(mockPrisma.applicationCycle.findUniqueOrThrow).not.toHaveBeenCalled();
   });
 
-  it("falls back to Applicant 1 for an id missing from the label map", async () => {
-    setup({ status: "Open", closeDate: FUTURE });
-    expect((await labels(["app-new"])).get("app-new")).toBe("Applicant 1");
+  it("falls back to Applicant 1 for an application missing from the label map", async () => {
+    setup({
+      status: "Open",
+      closeDate: FUTURE,
+      rows: [{ id: "da9", domainId: "eng", applicationId: "app-new" }],
+    });
+    expect((await labels(["da9"])).get("da9")).toBe("Applicant 1");
+  });
+});
+
+describe("domainApplicationBlindLabel", () => {
+  const one = () => domainApplicationBlindLabel({ cycleId: "cy1", domainApplicationId: "da1" });
+
+  it("returns the label when the row is blinded", async () => {
+    setup({ status: "Open", closeDate: FUTURE, rows: [ENG_ROWS[0]] });
+    expect(await one()).toBe("Applicant 1");
+  });
+
+  it("returns null when the row is named", async () => {
+    setup({ status: "UnderReview", released: ["eng"], rows: [ENG_ROWS[0]] });
+    expect(await one()).toBeNull();
   });
 });
 
 describe("applicationBlindLabel", () => {
-  const openCycle = {
-    anonymizeReview: true,
-    closeDate: null,
-    timeline: null,
-    domains: [],
-    statusUpdates: [{ newStatus: "Open" }],
-  };
+  const TWO_DOMAINS: Row[] = [
+    { id: "da1", domainId: "eng", applicationId: "app1" },
+    { id: "da2", domainId: "design", applicationId: "app1" },
+  ];
+  const label = (domainIds?: string[]) =>
+    applicationBlindLabel({ cycleId: "cy1", applicationId: "app1", domainIds });
 
-  it("returns the label when blinded", async () => {
-    mockPrisma.applicationCycle.findUniqueOrThrow.mockResolvedValue(openCycle);
-    mockPrisma.application.findMany.mockResolvedValue([{ id: "app1" }]);
-    expect(await applicationBlindLabel({ cycleId: "cy1", applicationId: "app1" })).toBe("Applicant 1");
+  it("stays blinded while any selected domain is", async () => {
+    setup({ status: "UnderReview", released: ["eng"], inReview: ["app1"], rows: TWO_DOMAINS });
+    expect(await label()).toBe("Applicant 1");
   });
 
-  it("returns null when named", async () => {
-    mockPrisma.applicationCycle.findUniqueOrThrow.mockResolvedValue({
-      ...openCycle,
-      anonymizeReview: false,
+  it("names the applicant once all selected domains have lifted", async () => {
+    setup({
+      status: "UnderReview",
+      released: ["eng", "design"],
+      inReview: ["app1"],
+      rows: TWO_DOMAINS,
     });
-    expect(await applicationBlindLabel({ cycleId: "cy1", applicationId: "app1" })).toBeNull();
+    expect(await label()).toBeNull();
+  });
+
+  it("looks only at the given domains", async () => {
+    setup({ status: "UnderReview", released: ["eng"], inReview: ["app1"], rows: TWO_DOMAINS });
+    expect(await label(["eng"])).toBeNull();
+    expect(await label(["design"])).toBe("Applicant 1");
+  });
+
+  it("looks at every domain for a viewer with none assigned", async () => {
+    setup({ status: "UnderReview", released: ["eng"], inReview: ["app1"], rows: TWO_DOMAINS });
+    expect(await label([])).toBe("Applicant 1");
+  });
+
+  it("blinds an application with no selected domains while the cycle is open", async () => {
+    setup({ status: "Open", closeDate: FUTURE, rows: [] });
+    expect(await label()).toBe("Applicant 1");
+  });
+
+  it("names an unsubmitted application with no selected domains once the cycle closes", async () => {
+    setup({ status: "UnderReview", rows: [] });
+    expect(await label()).toBeNull();
+  });
+
+  it("returns null when the toggle is off", async () => {
+    setup({ anonymizeReview: false, status: "Open", closeDate: FUTURE, rows: TWO_DOMAINS });
+    expect(await label()).toBeNull();
   });
 });

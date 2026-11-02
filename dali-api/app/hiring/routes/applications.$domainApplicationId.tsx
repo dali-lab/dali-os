@@ -45,7 +45,7 @@ import { ApplicationEventsPanel } from "~/hiring/components/ApplicationEventsPan
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { listPriorApplications } from "~/hiring/lib/prior-applications.server";
 import { PriorApplicationsPanel } from "~/hiring/components/PriorApplicationsPanel";
-import { applicationBlindLabel, blindUser } from "~/hiring/lib/anonymization.server";
+import { domainApplicationBlindLabel, blindUser } from "~/hiring/lib/anonymization.server";
 import { getApplicantEmailEngagement } from "~/hiring/lib/email-engagement.server";
 import { ApplicantEmailPanel } from "~/hiring/components/ApplicantEmailPanel";
 import type { Question, RubricCriterion } from "~/types";
@@ -145,7 +145,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   // Must happen before anything below derives a display name (recents, meta
   // title, prior-applications outcomes, email engagement).
-  const blindLabel = await applicationBlindLabel({ cycleId, applicationId: da.application.id });
+  const blindLabel = await domainApplicationBlindLabel({ cycleId, domainApplicationId: da.id });
   const blinded = blindLabel != null;
   if (blindLabel) da.application.user = blindUser(da.application.user, blindLabel);
 

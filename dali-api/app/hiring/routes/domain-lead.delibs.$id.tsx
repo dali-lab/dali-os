@@ -22,7 +22,7 @@ import { Pill } from "~/hiring/components/cycle-setup/SetupCard";
 import { RECOMMENDATION_TONES } from "~/hiring/lib/labels";
 import { useOsChrome } from "~/components/os-chrome";
 import { useDialog } from "~/components/ui/dialog";
-import { applicationBlindLabelsForCycle, blindUser } from "~/hiring/lib/anonymization.server";
+import { domainApplicationBlindLabels, blindUser } from "~/hiring/lib/anonymization.server";
 import { getEngagementSummaries } from "~/hiring/lib/email-engagement.server";
 import { ApplicantEngagementChip } from "~/hiring/components/ApplicantEmailPanel";
 
@@ -144,12 +144,12 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       })
     : [];
 
-  const blindLabels = await applicationBlindLabelsForCycle({
+  const blindLabels = await domainApplicationBlindLabels({
     cycleId: session.applicationCycleId,
-    applicationIds: domainApplications.map((da) => da.application.id),
+    domainApplicationIds: domainApplications.map((da) => da.id),
   });
   for (const da of domainApplications) {
-    const label = blindLabels.get(da.application.id);
+    const label = blindLabels.get(da.id);
     if (label) da.application.user = blindUser(da.application.user, label);
   }
 

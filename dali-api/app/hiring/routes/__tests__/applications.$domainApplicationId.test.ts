@@ -12,7 +12,7 @@ vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabled: vi.fn() }));
 vi.mock("~/collab/read", () => ({ readDocAsBlocks: vi.fn() }));
 vi.mock("~/hiring/lib/anonymization.server", async (importOriginal) => ({
   ...(await importOriginal<typeof import("~/hiring/lib/anonymization.server")>()),
-  applicationBlindLabel: vi.fn(),
+  domainApplicationBlindLabel: vi.fn(),
 }));
 
 import { prisma } from "~/lib/db.server";
@@ -25,7 +25,7 @@ import { getApplicantEmailEngagement } from "~/hiring/lib/email-engagement.serve
 import { getHiringEventEngagement } from "~/hiring/lib/hiring-events.server";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { readDocAsBlocks } from "~/collab/read";
-import { applicationBlindLabel } from "~/hiring/lib/anonymization.server";
+import { domainApplicationBlindLabel } from "~/hiring/lib/anonymization.server";
 import { loader } from "~/hiring/routes/applications.$domainApplicationId";
 
 const mockPrisma = prisma as unknown as Record<string, any>;
@@ -80,7 +80,7 @@ beforeEach(() => {
   vi.mocked(getHiringEventEngagement).mockResolvedValue([] as never);
   vi.mocked(isFeatureEnabled).mockResolvedValue(false);
   vi.mocked(readDocAsBlocks).mockResolvedValue([]);
-  vi.mocked(applicationBlindLabel).mockResolvedValue(null);
+  vi.mocked(domainApplicationBlindLabel).mockResolvedValue(null);
 
   mockPrisma.domainApplication = {
     findUnique: vi.fn().mockResolvedValue(baseDa()),
@@ -97,17 +97,17 @@ beforeEach(() => {
 
 describe("applications.$domainApplicationId loader — blind review", () => {
   it("blinds the applicant's name while the application has a label", async () => {
-    vi.mocked(applicationBlindLabel).mockResolvedValue("Applicant 1");
+    vi.mocked(domainApplicationBlindLabel).mockResolvedValue("Applicant 1");
 
     const result: any = await callLoader();
 
-    expect(applicationBlindLabel).toHaveBeenCalledWith({ cycleId: CYCLE_ID, applicationId: APPLICATION_ID });
+    expect(domainApplicationBlindLabel).toHaveBeenCalledWith({ cycleId: CYCLE_ID, domainApplicationId: DA_ID });
     expect(result.blinded).toBe(true);
     expect(result.applicantName).toBe("Applicant 1");
   });
 
   it("passes blinded=true through to priorApplications and email engagement calls", async () => {
-    vi.mocked(applicationBlindLabel).mockResolvedValue("Applicant 1");
+    vi.mocked(domainApplicationBlindLabel).mockResolvedValue("Applicant 1");
     vi.mocked(isFeatureEnabled).mockResolvedValue(true);
     vi.mocked(getApplicantEmailEngagement).mockResolvedValue({
       totals: { inbound: 0, outbound: 0, firstAt: null, lastAt: null },

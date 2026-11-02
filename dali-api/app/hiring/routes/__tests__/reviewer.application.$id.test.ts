@@ -314,11 +314,16 @@ describe("reviewer.application.$id loader — gates and query fan-out", () => {
     await flush();
 
     expect(mockPrisma.applicationReview.findFirst).toHaveBeenCalled();
-    expect(getApplicantEmailEngagement).toHaveBeenCalledWith("u-1", { blinded: false });
     expect(mockPrisma.domainApplication.findMany).not.toHaveBeenCalled();
 
     crs.resolve([{ id: DESIGN_REVIEWER_ID, domainId: DESIGN_DOMAIN_ID }]);
     const result: any = await pending;
+    expect(applicationBlindLabel).toHaveBeenCalledWith({
+      cycleId: expect.any(String),
+      applicationId: expect.any(String),
+      domainIds: [DESIGN_DOMAIN_ID],
+    });
+    expect(getApplicantEmailEngagement).toHaveBeenCalledWith("u-1", { blinded: false });
     expect(mockPrisma.domainApplication.findMany.mock.calls[0][0].where.domainId.in).toEqual([
       DESIGN_DOMAIN_ID,
     ]);
