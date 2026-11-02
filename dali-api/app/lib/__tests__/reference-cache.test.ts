@@ -45,7 +45,7 @@ import {
   invalidateReferenceCacheForWrite,
 } from "~/lib/reference-cache.server";
 import { resolveTermFilter, termWindows } from "~/lib/terms";
-import { listAllGroups, loadGroupArchiveContext } from "~/lib/groups";
+import { listAllGroups, listVisibleGroupIdsForUser, loadGroupArchiveContext } from "~/lib/groups";
 
 const nextTick = () => new Promise((r) => setImmediate(r));
 const request = new Request("http://test/?term=all");
@@ -264,6 +264,23 @@ describe("groups", () => {
     await loadGroupArchiveContext();
     expect(context.termEndById.get("t-26S")).toEqual(new Date("2026-06-10T00:00:00Z"));
     expect(db.term.findMany).toHaveBeenCalledOnce();
+  });
+
+  it("reads static membership fresh for permission checks", async () => {
+    const group = (staticMemberIds: string[]) => ({
+      id: "g1",
+      name: "Ada's group",
+      type: "Static",
+      dynamicQuery: null,
+      staticMemberIds,
+      systemKey: null,
+      archivedAt: null,
+      boundTermIds: [],
+    });
+    db.groupDefinition.findMany.mockResolvedValue([group(["ada"])]);
+    expect((await listVisibleGroupIdsForUser("ada")).map((g) => g.id)).toEqual(["g1"]);
+    db.groupDefinition.findMany.mockResolvedValue([group([])]);
+    expect(await listVisibleGroupIdsForUser("ada")).toEqual([]);
   });
 
   it("listAllGroups keeps the shape it had when it selected columns, and doesn't share member arrays", async () => {

@@ -83,6 +83,10 @@ export const cachedDomains = () =>
 export const activeDomainOptions = async () =>
   (await cachedDomains()).filter((d) => d.active).map(({ id, displayName }) => ({ id, displayName }));
 
-/** Every group definition, by name (`orderBy name asc`). Membership is never cached here. */
+/**
+ * Every group definition, by name (`orderBy name asc`). Rows carry
+ * `staticMemberIds`, so this is for lists and pickers only: anything deciding
+ * access reads the table fresh.
+ */
 export const cachedGroupDefinitions = () =>
   cachedTable("GroupDefinition", () => prisma.groupDefinition.findMany({ orderBy: { name: "asc" } }));

@@ -307,6 +307,8 @@ export interface DaliThreadStoreConfig {
   pollIntervalMs?: number;
 }
 
+const FALLBACK_POLL_MS = 30_000;
+
 export class DaliThreadStore extends ThreadStore {
   private readonly pageId: string;
   private readonly pollIntervalMs: number | undefined;
@@ -353,10 +355,8 @@ export class DaliThreadStore extends ThreadStore {
       this.didMount = true;
       void this.refetch();
       const pollMs =
-        this.pollIntervalMs ?? (typeof EventSource === "undefined" ? 30_000 : 0);
-      if (pollMs > 0) {
-        this.pollTimer = setInterval(() => void this.refetch(), pollMs);
-      }
+        this.pollIntervalMs ?? (typeof EventSource === "undefined" ? FALLBACK_POLL_MS : 0);
+      if (pollMs > 0) this.startPolling(pollMs);
       this.openStream();
     }
 
@@ -375,6 +375,12 @@ export class DaliThreadStore extends ThreadStore {
         this.didMount = false;
       }
     };
+  }
+
+  private startPolling(ms: number): void {
+    if (this.pollTimer === null) {
+      this.pollTimer = setInterval(() => void this.refetch(), ms);
+    }
   }
 
   // ── SSE nudge stream ────────────────────────────────────────────────────
@@ -399,6 +405,11 @@ export class DaliThreadStore extends ThreadStore {
 
     es.addEventListener("change", scheduleRefetch);
     es.addEventListener("sync", scheduleRefetch);
+    // EventSource retries network drops itself, but a non-200 such as a 502
+    // during a deploy closes it for good.
+    es.onerror = () => {
+      if (es.readyState === EventSource.CLOSED) this.startPolling(FALLBACK_POLL_MS);
+    };
   }
 
   private closeStream(): void {

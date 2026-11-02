@@ -422,6 +422,17 @@ type GroupRow = {
   boundTermIds: string[];
 };
 
+const GROUP_ROW_SELECT = {
+  id: true,
+  name: true,
+  type: true,
+  dynamicQuery: true,
+  staticMemberIds: true,
+  systemKey: true,
+  archivedAt: true,
+  boundTermIds: true,
+} as const;
+
 async function groupRows(): Promise<GroupRow[]> {
   const groups = await cachedGroupDefinitions();
   return groups.map(
@@ -482,7 +493,8 @@ async function deriveUserGroups(userId: string, request?: Request) {
   // Fetch group definitions + terms in parallel (terms needed for archive state
   // and for resolving "term:<id>" dynamic queries).
   const [groups, terms, coreCycleTermIds] = await Promise.all([
-    groupRows(),
+    // Read fresh: staticMemberIds feeds page-share permissions, actions included.
+    prisma.groupDefinition.findMany({ orderBy: { name: "asc" }, select: GROUP_ROW_SELECT }),
     cachedTerms(),
     getActiveCoreCycleTermIds(request),
   ]);

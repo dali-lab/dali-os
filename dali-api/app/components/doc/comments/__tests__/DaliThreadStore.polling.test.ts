@@ -2,9 +2,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DaliThreadStore } from "../DaliThreadStore";
 
 class FakeEventSource {
+  static CLOSED = 2;
   static instances: FakeEventSource[] = [];
   listeners = new Map<string, () => void>();
   close = vi.fn();
+  readyState = 1;
+  onerror: (() => void) | null = null;
   constructor(public url: string) {
     FakeEventSource.instances.push(this);
   }
@@ -54,6 +57,37 @@ describe("DaliThreadStore refresh path", () => {
     es.listeners.get("sync")!();
     await vi.advanceTimersByTimeAsync(400);
     expect(fetchMock.mock.calls.length).toBe(initial + 2);
+    unsub();
+  });
+
+  it("falls back to polling once the stream closes for good, and stops on unsubscribe", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const store = new DaliThreadStore(config);
+    const unsub = store.subscribe(() => {});
+    await vi.advanceTimersByTimeAsync(0);
+    const initial = fetchMock.mock.calls.length;
+    const es = FakeEventSource.instances[0];
+    es.readyState = FakeEventSource.CLOSED;
+    es.onerror!();
+    es.onerror!();
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(fetchMock.mock.calls.length).toBe(initial + 1);
+    unsub();
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(fetchMock.mock.calls.length).toBe(initial + 1);
+  });
+
+  it("does not poll while the stream is only reconnecting", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const store = new DaliThreadStore(config);
+    const unsub = store.subscribe(() => {});
+    await vi.advanceTimersByTimeAsync(0);
+    const initial = fetchMock.mock.calls.length;
+    const es = FakeEventSource.instances[0];
+    es.readyState = 0;
+    es.onerror!();
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(fetchMock.mock.calls.length).toBe(initial);
     unsub();
   });
 

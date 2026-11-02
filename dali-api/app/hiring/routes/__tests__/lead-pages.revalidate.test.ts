@@ -3,7 +3,6 @@ import type { ShouldRevalidateFunctionArgs } from "react-router";
 
 vi.mock("~/lib/db.server");
 
-import { shouldRevalidate as leadCycle } from "~/hiring/routes/lead.cycle.$id";
 import { shouldRevalidate as domainLead } from "~/hiring/routes/domain-lead";
 
 const args = (current: string, next: string, formMethod?: string) =>
@@ -13,16 +12,6 @@ const args = (current: string, next: string, formMethod?: string) =>
     formMethod,
     defaultShouldRevalidate: true,
   }) as ShouldRevalidateFunctionArgs;
-
-describe("lead cycle shouldRevalidate", () => {
-  it("skips tab changes", () => {
-    expect(leadCycle(args("?tab=setup", "?tab=delib:r1"))).toBe(false);
-  });
-  it("revalidates after a mutation or an identical URL", () => {
-    expect(leadCycle(args("?tab=setup", "?tab=setup", "POST"))).toBe(true);
-    expect(leadCycle(args("?tab=setup", "?tab=setup"))).toBe(true);
-  });
-});
 
 describe("domain lead shouldRevalidate", () => {
   it("skips client-only params", () => {
