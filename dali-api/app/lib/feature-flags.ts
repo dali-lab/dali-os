@@ -213,6 +213,12 @@ export const FEATURE_FLAGS = [
     description:
       "Adds an \"After submitting\" section to form settings with a custom confirmation message and \"Email people a copy of their response\". A saved message or receipt setting keeps working when this is off. Ships off.",
   },
+  {
+    key: "form-save-progress",
+    label: "Save form progress",
+    description:
+      "Forms opened from a form link keep a person's answers in their browser if they leave before submitting, and offer a Start over button when they come back. Signed-out visitors get it whenever the flag is switched on, whatever its targeting. Ships off.",
+  },
 ] as const satisfies readonly FeatureFlagDef[];
 
 export type FeatureFlagKey = (typeof FEATURE_FLAGS)[number]["key"];

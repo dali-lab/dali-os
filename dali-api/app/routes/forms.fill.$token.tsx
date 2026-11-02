@@ -96,6 +96,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         canEdit: false,
         editingAnswers: editing.answers,
         tileSeed: null,
+        saveProgress: false,
+        userId,
       };
     }
   }
@@ -131,6 +133,10 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     ? await isFeatureEnabled("form-blocks", userId, await getUserRoles(userId, request), request)
     : await isFeatureSwitchedOn("form-blocks", request);
 
+  const saveProgress = userId
+    ? await isFeatureEnabled("form-save-progress", userId, await getUserRoles(userId, request), request)
+    : await isFeatureSwitchedOn("form-save-progress", request);
+
   // loadPublicForm doesn't echo the token back; the submit endpoint is
   // addressed by it, so pass it through explicitly.
   return {
@@ -144,6 +150,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     canEdit,
     editingAnswers: null,
     tileSeed: tileStrip ? form.formId : null,
+    saveProgress,
+    userId,
   };
 }
 
@@ -210,6 +218,8 @@ export default function MemberFormFill() {
           next={data.next}
           tileSeed={data.tileSeed}
           allowExit
+          saveProgress={data.saveProgress}
+          progressUserId={data.userId}
           editing={data.editingAnswers ? { answers: data.editingAnswers } : undefined}
           extraBody={
             data.educationSessionId || data.educationOfferingId
