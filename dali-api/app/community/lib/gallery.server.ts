@@ -5,17 +5,16 @@ import { fullName } from "~/lib/display";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { getDownloadUrl, isS3Configured } from "~/lib/s3";
 import { checkRateLimit } from "~/lib/rate-limit";
-import { summarizeReactions } from "~/lib/feedback";
+import { summarizeReactions } from "~/lib/reactions";
+import { reactionRefusal, withEmojiImages } from "~/lib/reactions.server";
 import { notify } from "~/lib/notify.server";
 import { extractHandlesFromText, notifyMentions, resolveHandles } from "~/lib/mentions";
 import { requireCommunityViewer } from "~/community/lib/community.server";
 import {
   GALLERY_COMMENT_MAX,
-  GALLERY_EMOJI,
   GALLERY_PAGE_SIZE,
   GALLERY_REPORTS_TO_HIDE,
   galleryDownloadName,
-  isGalleryEmoji,
   parseNewPosts,
 } from "~/community/lib/gallery";
 
@@ -46,7 +45,7 @@ const TILE_SELECT = {
   hiddenAt: true,
   createdAt: true,
   author: { select: AUTHOR_SELECT },
-  reactions: { select: { emoji: true, userId: true } },
+  reactions: { select: { emoji: true, userId: true, createdAt: true } },
   _count: { select: { comments: true } },
 } satisfies Prisma.GalleryPostSelect;
 
@@ -85,7 +84,7 @@ function personResolver() {
 
 async function toTiles(rows: TileRow[], viewer: GalleryViewer) {
   const person = personResolver();
-  return Promise.all(
+  const tiles = await Promise.all(
     rows.map(async (r) => ({
       id: r.id,
       imageUrl: await galleryImageUrl(r.thumbKey ?? r.displayKey ?? r.imageKey),
@@ -96,12 +95,13 @@ async function toTiles(rows: TileRow[], viewer: GalleryViewer) {
       hidden: r.hiddenAt !== null,
       createdAt: r.createdAt.toISOString(),
       author: await person(r.author),
-      reactions: summarizeReactions(r.reactions, viewer.id, GALLERY_EMOJI),
+      reactions: summarizeReactions(r.reactions, viewer.id),
       commentCount: r._count.comments,
       mine: r.author.id === viewer.id,
       canModerate: viewer.core,
     })),
   );
+  return withEmojiImages(tiles);
 }
 
 export type GalleryTileData = Awaited<ReturnType<typeof toTiles>>[number];
@@ -239,6 +239,14 @@ export async function loadGalleryPost(viewer: GalleryViewer, postId: string) {
     where: { AND: [{ id: postId }, visibleTo(viewer)] },
     select: {
       ...TILE_SELECT,
+      reactions: {
+        select: {
+          emoji: true,
+          userId: true,
+          createdAt: true,
+          user: { select: { firstName: true, lastName: true } },
+        },
+      },
       comments: {
         orderBy: { createdAt: "asc" },
         select: { id: true, body: true, createdAt: true, author: { select: AUTHOR_SELECT } },
@@ -328,13 +336,21 @@ export async function applyGalleryIntent(
       return { ok: true, created: posts.length };
     }
     case "react": {
+      const limited = checkRateLimit(request, { max: 60, windowMs: 60_000 }, `gallery-react:${viewer.id}`);
+      if (limited) return fail(429);
       const emoji = text("emoji");
-      if (!isGalleryEmoji(emoji)) return fail(400);
       const post = await visiblePost(viewer, postId);
       if (!post) return fail(404);
       const mine = { postId, userId: viewer.id, emoji };
       const { count } = await prisma.galleryReaction.deleteMany({ where: mine });
       if (count === 0) {
+        const used = await prisma.galleryReaction.findMany({
+          where: { postId },
+          select: { emoji: true },
+          distinct: ["emoji"],
+        });
+        const refused = await reactionRefusal(emoji, used.map((r) => r.emoji));
+        if (refused) return fail(refused);
         await prisma.galleryReaction.upsert({
           where: { postId_userId_emoji: mine },
           create: mine,

@@ -51,10 +51,6 @@ export function galleryDisplaySize(
   };
 }
 
-export function isGalleryEmoji(value: string): boolean {
-  return (GALLERY_EMOJI as readonly string[]).includes(value);
-}
-
 /** The prefix a viewer's display copies and tiles go under (the presign route adds uploads/). */
 export function galleryKeyPrefix(userId: string): string {
   return `gallery/${userId}`;
@@ -160,20 +156,6 @@ export function layoutMasonry<T extends { width: number; height: number }>(
     heights[target] += item.height / item.width + footerRatio;
   }
   return cols;
-}
-
-type Reaction = { emoji: string; count: number; mine: boolean };
-
-/** The viewer's reaction toggled locally, in palette order, so a tap shows before the server answers. */
-export function toggleReaction(reactions: Reaction[], emoji: string): Reaction[] {
-  const hit = reactions.find((r) => r.emoji === emoji);
-  const next = hit
-    ? reactions
-        .map((r) => (r.emoji === emoji ? { ...r, count: r.count + (r.mine ? -1 : 1), mine: !r.mine } : r))
-        .filter((r) => r.count > 0)
-    : [...reactions, { emoji, count: 1, mine: true }];
-  const order = (e: string) => (GALLERY_EMOJI as readonly string[]).indexOf(e);
-  return next.sort((a, b) => order(a.emoji) - order(b.emoji));
 }
 
 /** "gallery-demo-day-setup.jpg": the caption's first words, or the post's own name without one. */
