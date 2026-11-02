@@ -1,6 +1,6 @@
 import { prisma } from "~/lib/db.server";
 import { getPageAccessBulk, PAGE_ACCESS_SELECT } from "~/lib/pageAccess.server";
-import { expandOccurrences } from "~/lib/meeting-occurrences";
+import { expandOccurrences, type Occurrence } from "~/lib/meeting-occurrences";
 import { pageOpenHref } from "~/lib/page-href";
 import type { Prisma } from "~/generated/prisma/client";
 
@@ -13,8 +13,9 @@ const GUARD_MS = 24 * 60 * 60_000;
 export type UpcomingMeeting = {
   meetingId: string;
   title: string;
-  /** ISO start of the series' next occurrence. */
+  /** ISO start of the series' running or next occurrence. */
   startsAt: string;
+  endsAt: string;
   href: string;
 };
 
@@ -34,10 +35,11 @@ export async function loadUpcomingMeetings(viewerId: string, request?: Request):
   return series
     .filter(({ notebook }) => access.get(notebook.id)?.canView === true)
     .slice(0, UPCOMING_LIMIT)
-    .map(({ meetingId, title, nextAt, notebook }) => ({
+    .map(({ meetingId, title, next, notebook }) => ({
       meetingId,
       title,
-      startsAt: nextAt.toISOString(),
+      startsAt: next.start.toISOString(),
+      endsAt: next.end.toISOString(),
       href: pageOpenHref(notebook.kind, notebook.id),
     }));
 }
@@ -67,19 +69,19 @@ function upcomingMeetings(viewerId: string, now: Date, windowEnd: Date) {
   });
 }
 
-/** One entry per meeting series: its earliest occurrence starting inside [now, windowEnd], soonest first. */
+/** One entry per meeting series: its earliest occurrence still running or starting by windowEnd, soonest first. */
 function soonestPerSeries(meetings: MeetingRow[], now: Date, windowEnd: Date) {
   const scanFrom = new Date(now.getTime() - GUARD_MS);
   const scanTo = new Date(windowEnd.getTime() + GUARD_MS);
-  const rows: { meetingId: string; title: string; nextAt: Date; notebook: NotebookRow }[] = [];
+  const rows: { meetingId: string; title: string; next: Occurrence; notebook: NotebookRow }[] = [];
   for (const meeting of meetings) {
     if (!meeting.notebook) continue;
-    let nextAt: Date | null = null;
+    let next: Occurrence | null = null;
     for (const occ of expandOccurrences(meeting, meeting.exceptions, scanFrom, scanTo)) {
-      if (occ.start < now || occ.start > windowEnd) continue;
-      if (!nextAt || occ.start < nextAt) nextAt = occ.start;
+      if (occ.end <= now || occ.start > windowEnd) continue;
+      if (!next || occ.start < next.start) next = occ;
     }
-    if (nextAt) rows.push({ meetingId: meeting.id, title: meeting.title, nextAt, notebook: meeting.notebook });
+    if (next) rows.push({ meetingId: meeting.id, title: meeting.title, next, notebook: meeting.notebook });
   }
-  return rows.sort((a, b) => a.nextAt.getTime() - b.nextAt.getTime());
+  return rows.sort((a, b) => a.next.start.getTime() - b.next.start.getTime());
 }

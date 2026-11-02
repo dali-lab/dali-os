@@ -116,24 +116,38 @@ describe("orderRailAreas", () => {
 describe("upcomingWhen", () => {
   const NY = "America/New_York";
   const now = new Date("2026-10-13T16:00:00Z"); // Tue Oct 13, noon in New York
+  const FAR = "2026-12-31T00:00:00Z";
+
+  it("says Now from a meeting's start up to its end", () => {
+    expect(upcomingWhen("2026-10-13T16:00:00Z", "2026-10-13T16:30:00Z", now, NY)).toBe("Now");
+    expect(upcomingWhen("2026-10-13T15:30:00Z", "2026-10-13T16:00:01Z", now, NY)).toBe("Now");
+  });
+
+  it("stops saying Now once the meeting ends", () => {
+    expect(upcomingWhen("2026-10-13T15:30:00Z", "2026-10-13T16:00:00Z", now, NY)).toBe("11:30 AM");
+  });
+
+  it("says Now for a meeting that started yesterday and is still running", () => {
+    expect(upcomingWhen("2026-10-13T03:30:00Z", "2026-10-13T17:00:00Z", now, NY)).toBe("Now");
+  });
 
   it("shows the time for a meeting later today", () => {
-    expect(upcomingWhen("2026-10-13T18:00:00Z", now, NY)).toBe("2:00 PM");
-    expect(upcomingWhen("2026-10-13T19:30:00Z", now, NY)).toBe("3:30 PM");
+    expect(upcomingWhen("2026-10-13T18:00:00Z", FAR, now, NY)).toBe("2:00 PM");
+    expect(upcomingWhen("2026-10-13T19:30:00Z", FAR, now, NY)).toBe("3:30 PM");
   });
 
   it("shows the weekday for a meeting on a later day", () => {
-    expect(upcomingWhen("2026-10-14T14:00:00Z", now, NY)).toBe("Wed");
-    expect(upcomingWhen("2026-10-19T14:00:00Z", now, NY)).toBe("Mon");
+    expect(upcomingWhen("2026-10-14T14:00:00Z", FAR, now, NY)).toBe("Wed");
+    expect(upcomingWhen("2026-10-19T14:00:00Z", FAR, now, NY)).toBe("Mon");
   });
 
   it("decides today by the viewer's zone, not UTC", () => {
     // 11:30 PM Tuesday in New York is already Wednesday in UTC.
-    expect(upcomingWhen("2026-10-14T03:30:00Z", now, NY)).toBe("11:30 PM");
-    expect(upcomingWhen("2026-10-14T03:30:00Z", now, "UTC")).toBe("Wed");
+    expect(upcomingWhen("2026-10-14T03:30:00Z", FAR, now, NY)).toBe("11:30 PM");
+    expect(upcomingWhen("2026-10-14T03:30:00Z", FAR, now, "UTC")).toBe("Wed");
   });
 
   it("uses a plain space before AM/PM", () => {
-    expect(upcomingWhen("2026-10-13T18:00:00Z", now, NY)).not.toMatch(/ /);
+    expect(upcomingWhen("2026-10-13T18:00:00Z", FAR, now, NY)).not.toMatch(/ /);
   });
 });

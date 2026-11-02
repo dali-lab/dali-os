@@ -64,7 +64,13 @@ describe("loadUpcomingMeetings", () => {
   it("returns a one-off meeting inside the window, linking to its notes", async () => {
     stub([meeting("n1")]);
     expect(await loadUpcomingMeetings("u1")).toEqual([
-      { meetingId: "m-n1", title: "Meeting n1", startsAt: hours(2).toISOString(), href: "/documents/n1" },
+      {
+        meetingId: "m-n1",
+        title: "Meeting n1",
+        startsAt: hours(2).toISOString(),
+        endsAt: hours(2.5).toISOString(),
+        href: "/documents/n1",
+      },
     ]);
   });
 
@@ -76,7 +82,42 @@ describe("loadUpcomingMeetings", () => {
     expect((await loadUpcomingMeetings("u1")).map((u) => u.href)).toEqual(["/whiteboard/w", "/slides/s"]);
   });
 
-  it("skips one-offs that start after the 7 day window or have already started", async () => {
+  it("keeps a meeting that has started until it ends", async () => {
+    stub([meeting("n1", { selectedAt: hours(-0.25) })]);
+    const [running] = await loadUpcomingMeetings("u1");
+    expect(running.startsAt).toBe(hours(-0.25).toISOString());
+    expect(running.endsAt).toBe(hours(0.25).toISOString());
+  });
+
+  it("drops a meeting the moment it ends", async () => {
+    stub([meeting("n1", { selectedAt: hours(-0.5) })]);
+    expect(await loadUpcomingMeetings("u1")).toEqual([]);
+  });
+
+  it("uses an occurrence's overridden length for its end", async () => {
+    stub([
+      meeting("n1", {
+        selectedAt: hours(-1),
+        exceptions: [{ originalStart: hours(-1), overrideStart: null, overrideDurationMin: 120, cancelled: false }],
+      }),
+    ]);
+    expect((await loadUpcomingMeetings("u1"))[0].endsAt).toBe(hours(1).toISOString());
+  });
+
+  it("shows a series' running occurrence ahead of its next one, then moves on when it ends", async () => {
+    stub([meeting("n1", { selectedAt: hours(-48.25), recurrenceRule: "FREQ=DAILY" })]);
+    expect((await loadUpcomingMeetings("u1"))[0].startsAt).toBe(hours(-0.25).toISOString());
+
+    vi.setSystemTime(hours(1));
+    expect((await loadUpcomingMeetings("u1"))[0].startsAt).toBe(hours(23.75).toISOString());
+  });
+
+  it("sorts a running meeting ahead of ones that have not started", async () => {
+    stub([meeting("soon", { selectedAt: hours(1) }), meeting("running", { selectedAt: hours(-0.25) })]);
+    expect((await loadUpcomingMeetings("u1")).map((u) => u.meetingId)).toEqual(["m-running", "m-soon"]);
+  });
+
+  it("skips one-offs that start after the 7 day window or have already ended", async () => {
     stub([
       meeting("late", { selectedAt: new Date(NOW.getTime() + 8 * 86_400_000) }),
       meeting("past", { selectedAt: hours(-3) }),
