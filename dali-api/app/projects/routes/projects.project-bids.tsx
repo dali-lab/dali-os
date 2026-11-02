@@ -141,7 +141,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       select: { questions: true },
     });
     const qs = (latest?.questions as unknown as Question[]) ?? [];
-    formQuestions = qs.map((q) => ({
+    formQuestions = qs.filter((q) => !q.data.showIf).map((q) => ({
       key: q.key,
       label: q.data.label,
       type: q.type,

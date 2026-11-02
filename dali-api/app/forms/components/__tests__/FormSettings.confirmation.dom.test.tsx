@@ -91,7 +91,7 @@ describe("After submitting settings", () => {
   });
 
   it("shows when the flag is on", () => {
-    flags.add("form-confirmation");
+    flags.add("form-upgrades");
     mount();
     expect(text()).toContain("After submitting");
     expect(text()).toContain("Confirmation message");
@@ -108,7 +108,7 @@ describe("After submitting settings", () => {
   });
 
   it("doesn't save per keystroke, only when Save message is pressed", () => {
-    flags.add("form-confirmation");
+    flags.add("form-upgrades");
     mount();
     act(() => emitChange(MESSAGE));
     act(() => emitChange([...MESSAGE, ...MESSAGE]));
@@ -130,14 +130,14 @@ describe("After submitting settings", () => {
   });
 
   it("toggling the receipt saves it", () => {
-    flags.add("form-confirmation");
+    flags.add("form-upgrades");
     mount();
     act(() => checkbox()!.click());
     expect(submit.mock.calls[0][0].sendReceipt).toBe("true");
   });
 
   it("explains the public receipt only on public forms", () => {
-    flags.add("form-confirmation");
+    flags.add("form-upgrades");
     mount({ hasEmailQuestion: true });
     expect(text()).not.toContain("who aren't signed in");
     act(() => root.unmount());
@@ -149,7 +149,7 @@ describe("After submitting settings", () => {
   });
 
   it("prompts for an Email question on a public form without one", () => {
-    flags.add("form-confirmation");
+    flags.add("form-upgrades");
     mount({ audience: "Public", hasEmailQuestion: false });
     expect(text()).toContain("Add an Email question so people who aren't signed in get a copy too.");
     expect(text()).not.toContain("short note");

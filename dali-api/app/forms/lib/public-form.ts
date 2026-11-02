@@ -9,6 +9,7 @@ import type { Question } from "~/types";
 import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
 import { normalizeQuestionBodies } from "~/lib/question-blocks.server";
 import { resolveReferenceOptions } from "./reference-sources";
+import { dropHiddenAnswers } from "~/lib/form-logic";
 import { safeParseJsonString } from "./forms-data";
 import { requireMember } from "~/lib/roles";
 import { fillAccessByPage } from "./form-access.server";
@@ -192,7 +193,7 @@ export async function buildPublicForm(
 // against an offering-bound form without going through the public token
 // path). Returns an error result, or null when the answers are valid.
 export async function validateAnswers(
-  questions: Question[],
+  allQuestions: Question[],
   answers: Record<string, unknown>,
   // Null on anonymous (Public-audience) fills — member-scoped reference
   // sources then resolve to [] and their answers can't validate.
@@ -202,6 +203,10 @@ export async function validateAnswers(
   // may have ended since, and that shouldn't block fixing a typo elsewhere.
   stored?: Record<string, unknown>,
 ): Promise<{ error: string; status: number } | null> {
+  // Answers to questions a rule hid are dropped first, in place, so a hidden
+  // question can neither fail a check nor reach storage.
+  const questions = dropHiddenAnswers(allQuestions, answers);
+
   // Checkbox answers arrive as a JSON-stringified array (the fill UIs keep
   // string-valued state); parse, validate against the question's options, and
   // normalize IN PLACE so every caller (member fill, education apply, partner

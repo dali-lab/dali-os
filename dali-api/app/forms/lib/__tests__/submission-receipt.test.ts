@@ -175,3 +175,33 @@ describe("sendFormReceipt, gating and failure", () => {
     log.mockRestore();
   });
 });
+
+
+describe("sendFormReceipt with rules", () => {
+  const questions = [
+    { key: "returning", type: "select", required: true, data: { label: "Returning", options: ["Yes", "No"] } },
+    {
+      key: "why",
+      type: "text",
+      required: false,
+      data: { label: "Reason", showIf: { questionKey: "returning", op: "is", value: "No" } },
+    },
+  ] as Question[];
+
+  it("lists only the answers that were given, so a question that was not asked is absent", async () => {
+    db.formSubmission.findUnique.mockResolvedValue(
+      submissionRow({ answers: { returning: "Yes" }, formVersion: { versionNumber: 1, questions } }),
+    );
+    await sendFormReceipt({ formId: "f1", submissionId: "s1" });
+    expect(sent().bodyHtml).toContain("Returning: Yes");
+    expect(sent().bodyHtml).not.toContain("Reason");
+  });
+
+  it("does not list a hidden answer that was somehow stored", async () => {
+    db.formSubmission.findUnique.mockResolvedValue(
+      submissionRow({ answers: { returning: "Yes", why: "old draft" }, formVersion: { versionNumber: 1, questions } }),
+    );
+    await sendFormReceipt({ formId: "f1", submissionId: "s1" });
+    expect(sent().bodyHtml).not.toContain("old draft");
+  });
+});

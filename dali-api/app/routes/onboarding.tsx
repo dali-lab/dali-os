@@ -53,7 +53,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     : null;
 
   const saveProgress = await isFeatureEnabled(
-    "form-save-progress",
+    "form-upgrades",
     auth.user.sub,
     await getUserRoles(auth.user.sub, request),
     request,

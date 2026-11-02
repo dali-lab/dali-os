@@ -30,6 +30,7 @@ vi.mock("~/hooks/useUserTimeZone", () => ({ useUserTimeZone: () => "America/New_
 
 import { FormDetail } from "../FormDetail";
 import { DialogProvider } from "~/components/ui/dialog";
+import { FeatureFlagsProvider } from "~/components/FeatureFlags";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -83,11 +84,16 @@ function loaderData(overrides: Record<string, unknown> = {}) {
 let container: HTMLDivElement;
 let root: Root;
 
-async function mount(data: ReturnType<typeof loaderData>, url = "/forms/edit/f1") {
+async function mount(data: ReturnType<typeof loaderData>, url = "/forms/edit/f1", flagOn = false) {
   const Stub = createRoutesStub([
     {
       path: "/forms/edit/:formId",
-      Component: () => createElement(DialogProvider, null, createElement(FormDetail)),
+      Component: () =>
+        createElement(
+          FeatureFlagsProvider,
+          { flags: { "form-upgrades": flagOn } },
+          createElement(DialogProvider, null, createElement(FormDetail)),
+        ),
       loader: () => data,
     },
   ]);
@@ -161,5 +167,62 @@ describe("FormDetail", () => {
     data.form.versions = [];
     await mount(data);
     expect(container.textContent).toContain("Drag a component here");
+  });
+
+  describe("results view", () => {
+    const url = "/forms/edit/f1?view=results&version=1";
+    const table = {
+      versionId: "v1",
+      isPartnerApplicationForm: false,
+      totalCount: 1,
+      matchCount: 1,
+      page: 1,
+      hasNext: false,
+      columns: [{ key: "q1", label: "Name" }],
+      slotOptions: [],
+      responses: [
+        {
+          id: "s1",
+          createdAt: "2026-05-20T10:00:00.000Z",
+          edited: false,
+          lockReason: null,
+          name: "Ada",
+          email: null,
+          slot: null,
+          submitterIp: null,
+          partnerApplication: null,
+          rows: [{ key: "q1", label: "Name", value: "Ada" }],
+        },
+      ],
+    };
+    const summary = {
+      versionId: "v1",
+      slotOptions: [],
+      summary: {
+        total: 4,
+        questions: [{ kind: "text", key: "q1", number: 1, label: "Name", answered: 3, skipped: 1 }],
+      },
+    };
+    const buttons = () => [...container.querySelectorAll("button")].map((b) => b.textContent);
+
+    it("shows only the table while the flag is off", async () => {
+      await mount(loaderData({ results: table, summary: null } as never), url, false);
+      expect(container.querySelector("table")).not.toBeNull();
+      expect(buttons()).not.toContain("Summary");
+      expect(buttons()).not.toContain("Responses");
+    });
+
+    it("shows the summary with the Summary | Responses toggle when the flag is on", async () => {
+      await mount(loaderData({ results: null, summary } as never), url, true);
+      expect(container.querySelector("table")).toBeNull();
+      expect(buttons()).toEqual(expect.arrayContaining(["Summary", "Responses"]));
+      expect(container.textContent).toContain("3 answered, 1 skipped");
+    });
+
+    it("shows the table under the toggle on the Responses view", async () => {
+      await mount(loaderData({ results: table, summary: null } as never), `${url}&show=responses`, true);
+      expect(container.querySelector("table")).not.toBeNull();
+      expect(buttons()).toContain("Summary");
+    });
   });
 });

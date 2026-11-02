@@ -134,8 +134,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     : await isFeatureSwitchedOn("form-blocks", request);
 
   const saveProgress = userId
-    ? await isFeatureEnabled("form-save-progress", userId, await getUserRoles(userId, request), request)
-    : await isFeatureSwitchedOn("form-save-progress", request);
+    ? await isFeatureEnabled("form-upgrades", userId, await getUserRoles(userId, request), request)
+    : await isFeatureSwitchedOn("form-upgrades", request);
 
   // loadPublicForm doesn't echo the token back; the submit endpoint is
   // addressed by it, so pass it through explicitly.

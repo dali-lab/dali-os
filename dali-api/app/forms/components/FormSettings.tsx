@@ -171,12 +171,11 @@ function FormSettingsFields({
   const canEdit = pendingSettings
     ? pending!.get("allowResponseEdit") === "true"
     : allowResponseEdit;
-  const editSettingOffered = useFeatureFlag("form-response-edit") || allowResponseEdit;
-  const remindOffered = useFeatureFlag("form-tracker") || remindBeforeClose;
+  const upgrades = useFeatureFlag("form-upgrades");
+  const editSettingOffered = upgrades || allowResponseEdit;
+  const remindOffered = upgrades || remindBeforeClose;
   const afterSubmittingOffered =
-    useFeatureFlag("form-confirmation") ||
-    sendReceipt ||
-    !isEmptyBlocks(confirmationMessage);
+    upgrades || sendReceipt || !isEmptyBlocks(confirmationMessage);
   const receipt = pendingSettings
     ? pending!.get("sendReceipt") === "true"
     : sendReceipt;

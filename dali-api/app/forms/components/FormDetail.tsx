@@ -16,6 +16,7 @@ import {
   ChevronDown,
   Share2,
   Download,
+  CornerDownRight,
 } from "lucide-react";
 import QRCode from "qrcode";
 import { useConfirmSubmit, useDialog } from "~/components/ui/dialog";
@@ -23,10 +24,13 @@ import type { HiringFormLink } from "~/hiring/lib/form-links.server";
 import { BADGE, FormBuilderTab } from "~/components/form-builder/FormBuilder";
 import { InfoBody } from "~/components/form-builder/info-body";
 import { isLayoutOnly } from "~/lib/form-answers";
+import { questionNumbers, ruleDepths, showIfSentence } from "~/lib/form-logic";
 import { FormPreviewModal } from "~/forms/components/FormPreviewModal";
 import { ShareDialog } from "~/components/sharing/ShareDialog";
 import { FormSettingsButton } from "~/forms/components/FormSettings";
 import { VersionResults } from "~/forms/components/VersionResults";
+import { VersionSummary } from "~/forms/components/VersionSummary";
+import { useFeatureFlag } from "~/components/FeatureFlags";
 import { DocEditor } from "~/components/doc";
 import { PageIconPicker } from "~/components/doc-chrome/PageIconPicker";
 import { isEmptyBlocks } from "~/lib/blocks";
@@ -60,6 +64,11 @@ type FormVersion = ReturnType<
   typeof useLoaderData<typeof loader>
 >["form"]["versions"][number];
 
+function nestingStyle(questions: Question[], q: Question) {
+  const depth = ruleDepths(questions).get(q.key) ?? 0;
+  return depth > 0 ? { marginLeft: depth * 32 } : undefined;
+}
+
 // Editor page for a single form. A top bar (name, versions, settings, preview,
 // share, publish) over either the builder — component library on the left,
 // canvas on the right — or a selected version, shown as its questions or its
@@ -73,7 +82,7 @@ type FormVersion = ReturnType<
 //                         (save-version) and clears the draft. Frozen versions
 //                         are read-only and are what publishing serves.
 export function FormDetail() {
-  const { form, terms, usages, managing, hiringLinks: rawHiringLinks, collabToken, results, tracker, page } = useLoaderData<typeof loader>();
+  const { form, terms, mappedQuestions, usages, managing, hiringLinks: rawHiringLinks, collabToken, results, summary, tracker, page } = useLoaderData<typeof loader>();
   // The staffing slot binding, if any: {{term}} in this form's questions
   // resolves from it (see FormBuilderTab's termBinding).
   const staffingBinding = usages.find((u) => u.kind === "staffing") ?? null;
@@ -114,6 +123,8 @@ export function FormDetail() {
   // the loader can fetch that version's responses and links can deep-link.
   const [searchParams, setSearchParams] = useSearchParams();
   const view = searchParams.get("view") === "results" ? "results" : "questions";
+  const upgrades = useFeatureFlag("form-upgrades");
+  const showSummary = upgrades && searchParams.get("show") !== "responses";
 
   const [selectedVersionId, setSelectedVersionId] = useState<string | null>(
     () =>
@@ -478,6 +489,7 @@ export function FormDetail() {
           initialQuestions={seed.questions}
           initialDescription={seed.description}
           terms={terms}
+          mappedQuestions={mappedQuestions}
           allowCheckbox
           // Version-edit mode has one primary save (update in place) and
           // no draft — a draft would re-introduce the two-copy state we're
@@ -530,7 +542,21 @@ export function FormDetail() {
             </Button>
           </div>
 
-          {view === "results" ? (
+          {view === "results" && showSummary ? (
+            summary && summary.versionId === selectedVersion.id ? (
+              <VersionSummary
+                key={selectedVersion.id}
+                formId={form.id}
+                versionNumber={selectedVersion.versionNumber}
+                data={summary}
+                tracker={tracker}
+              />
+            ) : (
+              <div className="py-12 flex justify-center">
+                <Loader2 className="w-5 h-5 animate-spin text-os-grey" />
+              </div>
+            )
+          ) : view === "results" ? (
             results && results.versionId === selectedVersion.id ? (
               <VersionResults
                 key={selectedVersion.id}
@@ -571,8 +597,12 @@ export function FormDetail() {
                         startEditing();
                       }
                     }}
-                    className="p-4 rounded-os-item border border-os-container cursor-pointer transition-colors hover:border-os-container-hi hover:bg-os-well/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-os-accent"
+                    className="relative p-4 rounded-os-item border border-os-container cursor-pointer transition-colors hover:border-os-container-hi hover:bg-os-well/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-os-accent"
+                    style={nestingStyle(selectedVersion.questions, q)}
                   >
+                    {nestingStyle(selectedVersion.questions, q) && (
+                      <CornerDownRight aria-hidden className="absolute -left-7 top-4 w-[18px] h-[18px] text-os-accent" />
+                    )}
                     {q.type === "info" ? (
                       <div className="text-sm text-muted-foreground">
                         <InfoBody body={q.data.body} />
@@ -601,6 +631,11 @@ export function FormDetail() {
                     {q.data.description && (
                       <p className="text-sm text-muted-foreground mb-2">
                         {q.data.description}
+                      </p>
+                    )}
+                    {q.data.showIf && (
+                      <p className="text-sm text-os-accent mb-2">
+                        Shown when {showIfSentence(q.data.showIf, questionNumbers(selectedVersion.questions))}
                       </p>
                     )}
                     {(q.type === "select" ||

@@ -12,6 +12,7 @@ import {
 import { driveFolderCrumbs } from "~/lib/drive-crumbs.server";
 import { PageIcon } from "~/components/PageIcon";
 import { formUsages, managingUsage } from "~/forms/lib/form-usages.server";
+import { mappedQuestionFeatures } from "~/forms/lib/mapped-questions.server";
 import {
   loadFormHiringLinks,
   unlinkHiringForm,
@@ -19,6 +20,7 @@ import {
 import { FormDetail } from "~/forms/components/FormDetail";
 import { parsePageParam } from "~/lib/pagination";
 import { loadVersionResponses } from "~/forms/lib/version-responses.server";
+import { loadVersionSummary } from "~/forms/lib/version-summary.server";
 import { driveRootCrumbs } from "~/lib/drive-crumbs";
 import { getCollabToken } from "~/lib/collab-token.server";
 import { deleteFormResponse } from "~/forms/lib/form-response.server";
@@ -31,7 +33,7 @@ import {
 } from "~/forms/lib/form-tracker.server";
 
 async function trackerEnabled(userId: string, request: Request) {
-  return isFeatureEnabled("form-tracker", userId, await getUserRoles(userId, request), request);
+  return isFeatureEnabled("form-upgrades", userId, await getUserRoles(userId, request), request);
 }
 
 export const meta: Route.MetaFunction = ({ data }) => [
@@ -129,7 +131,15 @@ export async function loader({ request, params }: Route.LoaderArgs) {
           (v) => String(v.versionNumber) === url.searchParams.get("version"),
         ) ?? form.versions[form.versions.length - 1])
       : undefined;
-  const results = resultsVersion
+  const summaryActive =
+    trackerOn && resultsVersion != null && url.searchParams.get("show") !== "responses";
+  const summary =
+    summaryActive && resultsVersion
+      ? await loadVersionSummary(form.id, resultsVersion, {
+          slot: url.searchParams.get("slot") ?? "",
+        })
+      : null;
+  const results = resultsVersion && !summaryActive
     ? await loadVersionResponses(form.id, resultsVersion.id, {
         page: parsePageParam(url.searchParams.get("page")),
         q: url.searchParams.get("q") ?? "",
@@ -141,9 +151,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   return {
     results,
+    summary,
     tracker,
     form,
     terms,
+    mappedQuestions: Object.fromEntries(await mappedQuestionFeatures(params.formId)),
     usages,
     managing,
     hiringLinks,
@@ -185,7 +197,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   if (intent === "delete-form-response") {
     const flagOn = await isFeatureEnabled(
-      "form-response-edit",
+      "form-upgrades",
       auth.user.sub,
       await getUserRoles(auth.user.sub, request),
       request,

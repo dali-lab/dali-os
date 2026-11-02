@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useFetcher, useSearchParams } from "react-router";
-import { Download } from "lucide-react";
 import { SearchInput } from "~/components/ui/SearchInput";
 import { PagerLinks } from "~/components/ui/Pager";
-import { Select, Tooltip } from "~/components/ui/floating";
+import { Select } from "~/components/ui/floating";
 import { Modal, ModalHeader } from "~/components/Modal";
 import type {
   ResponseRow,
@@ -14,6 +13,7 @@ import { Button } from "~/components/ui/Button";
 import { useConfirmSubmit } from "~/components/ui/dialog";
 import { useFeatureFlag } from "~/components/FeatureFlags";
 import { FormTracker } from "~/forms/components/FormTracker";
+import { ExportCsvLink, ResultsViewToggle, setResultsTab } from "~/forms/components/ResultsControls";
 import type { TrackerCounts } from "~/forms/lib/form-tracker";
 
 function formatDate(iso: string): string {
@@ -125,7 +125,8 @@ export function VersionResults({
   const slot = searchParams.get("slot") ?? "";
   const [query, setQuery] = useState(urlQuery);
   const [openId, setOpenId] = useState<string | null>(null);
-  const canDelete = useFeatureFlag("form-response-edit");
+  const upgrades = useFeatureFlag("form-upgrades");
+  const canDelete = upgrades;
 
   // Filters start over at the first page; every other param (view, version) stays.
   function updateParams(changes: Record<string, string>) {
@@ -164,6 +165,17 @@ export function VersionResults({
   const selected = responses.find((r) => r.id === openId) ?? null;
   const hasSlotColumn = slotOptions.length > 0;
   const trackerLine = tracker && <FormTracker formId={formId} counts={tracker} />;
+  const viewToggle = upgrades && (
+    <ResultsViewToggle
+      value="responses"
+      onChange={(tab) =>
+        setSearchParams(setResultsTab(searchParams, tab), {
+          replace: true,
+          preventScrollReset: true,
+        })
+      }
+    />
+  );
 
   return (
     <div className="space-y-4">
@@ -179,6 +191,7 @@ export function VersionResults({
 
       {totalCount === 0 ? (
         <>
+          {viewToggle}
           {trackerLine}
           <div className="text-center py-12 rounded-os-card bg-os-card">
             <p className="text-sm text-muted-foreground">
@@ -189,6 +202,7 @@ export function VersionResults({
       ) : (
         <>
           <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+            {viewToggle}
             <span className="text-sm text-os-grey">
               {totalCount} {totalCount === 1 ? "response" : "responses"}
               {matchCount !== totalCount && ` · ${matchCount} match`}
@@ -214,16 +228,7 @@ export function VersionResults({
               size="sm"
               containerClassName="w-full sm:ml-auto sm:w-64 min-w-[12rem]"
             />
-            <Tooltip content="Export every response to this version as CSV">
-              <a
-                href={`/forms/responses/${formId}/export.csv?version=${versionNumber}`}
-                download
-                aria-label="Export CSV"
-                className="inline-flex items-center justify-center p-2 rounded-full border border-os-container text-os-grey hover:text-foreground hover:border-os-container-hi transition-colors"
-              >
-                <Download className="w-4 h-4" />
-              </a>
-            </Tooltip>
+            <ExportCsvLink formId={formId} versionNumber={versionNumber} />
           </div>
 
           {trackerLine}

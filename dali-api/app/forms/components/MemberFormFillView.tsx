@@ -17,7 +17,7 @@ import {
 } from "~/forms/components/FormTileStrip";
 import { stripPattern } from "~/forms/lib/tile-strip";
 import { canAnimate, prefersReducedMotion } from "~/components/meeting-recorder/motion";
-import { paginateQuestions } from "~/lib/form-pages";
+import { pruneHiddenAnswers, visiblePages, visibleQuestions } from "~/lib/form-logic";
 import { DocEditor } from "~/components/doc";
 import { isEmptyBlocks } from "~/lib/blocks";
 import { Button } from "~/components/ui/Button";
@@ -88,7 +88,7 @@ export function MemberFormFillView({
   const [state, setState] = useState<"idle" | "submitting" | "done">("idle");
   const [error, setError] = useState<string | null>(null);
   const questions = data.questions;
-  const pages = useMemo(() => paginateQuestions(questions), [questions]);
+  const pages = useMemo(() => visiblePages(questions, answers), [questions, answers]);
   const pager = useFormPager(pages, { excludeFileType: true });
   const { goTo } = pager;
   const progress = useFormProgress({
@@ -170,14 +170,15 @@ export function MemberFormFillView({
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
-    const missing = findMissingRequired(questions, (q) => answers[q.key], {
+    const visible = visibleQuestions(questions, answers);
+    const missing = findMissingRequired(visible, (q) => answers[q.key], {
       excludeFileType: true,
     });
     if (missing.length > 0) {
       setError(`"${missing[0].data.label}" is required.`);
       return;
     }
-    const formatErrors = validateAnswerFormats(questions, answers);
+    const formatErrors = validateAnswerFormats(visible, answers);
     if (formatErrors.length > 0) {
       setError(formatErrors[0].message);
       return;
@@ -188,6 +189,7 @@ export function MemberFormFillView({
       setState("done");
       return;
     }
+    const submitted = pruneHiddenAnswers(questions, answers);
     try {
       const res = await fetch(`/api/forms/fill/${data.token}`, {
         method: editing ? "PATCH" : "POST",
@@ -195,11 +197,11 @@ export function MemberFormFillView({
         credentials: "include",
         body: JSON.stringify(
           editing
-            ? { answers }
+            ? { answers: submitted }
             : {
                 versionId: data.versionId,
                 versionUpdatedAt: data.versionUpdatedAt,
-                answers,
+                answers: submitted,
                 ...extraBody,
               },
         ),
