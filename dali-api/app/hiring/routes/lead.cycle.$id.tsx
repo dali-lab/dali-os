@@ -2777,11 +2777,16 @@ export default function HiringLeadCycleDetails() {
             }))
           )
             return
-          await fetch(`/api/hiring/interviews/${interview.id}/reassign`, {
+          const res = await fetch(`/api/hiring/interviews/${interview.id}/reassign`, {
             method: 'POST', credentials: 'include',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ assignmentId: a.id, newCycleInterviewerId: value }),
           })
+          if (!res.ok) {
+            const body = await res.json().catch(() => ({}))
+            toast.error(body.error ?? 'Failed to reassign interviewer')
+            return
+          }
           window.location.reload()
         }
         async function cancelInterview(interview: any) {
