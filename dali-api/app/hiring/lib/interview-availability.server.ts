@@ -2,7 +2,6 @@ import { zonedDayStartUtc, zonedWallTimeUtc } from "~/lib/timezone";
 import { prisma } from "~/lib/db.server";
 import { computeUserFreeBusy, intersectFreeIntervals, type Interval } from "~/lib/availability";
 import { forEachWithLimit } from "~/lib/concurrency";
-import { sharedCacheGetMany, sharedCacheSet } from "~/lib/shared-cache.server";
 
 // Interviewer availability for scheduling, read straight from each member's
 // DALI OS calendar (there's no separate availability to fill in), plus the
@@ -113,7 +112,6 @@ async function computeInterviewerCalendar(
 // A cycle's slot list and the booking right after it read the same
 // calendars; a short cache keeps that to one read of each linked calendar.
 const CACHE_TTL_MS = 2 * 60_000;
-const SHARED_KEY_PREFIX = "dali:interviewer-calendar:";
 // One read runs several queries at once plus Google calls, so a full roster
 // unthrottled can fill the pg pool and stall every other request on the machine.
 const MAX_CONCURRENT_READS = 6;
@@ -130,45 +128,13 @@ function cacheKey(userId: string, config: InterviewWindowConfig): string {
   ].join("|");
 }
 
-type ReadCalendar = { readAt: number; calendar: InterviewerCalendar };
-
-function parseStored(raw: string): ReadCalendar {
-  const { readAt, calendar } = JSON.parse(raw) as {
-    readAt: number;
-    calendar: Omit<InterviewerCalendar, "available"> & {
-      available: { startTime: string; endTime: string }[];
-    };
-  };
-  return {
-    readAt,
-    calendar: {
-      ...calendar,
-      available: calendar.available.map((a) => ({
-        startTime: new Date(a.startTime),
-        endTime: new Date(a.endTime),
-      })),
-    },
-  };
-}
-
-/** Calendars another machine read recently, then the rest from their source. */
 async function readCalendars(
   userIds: string[],
   config: InterviewWindowConfig,
-): Promise<Map<string, ReadCalendar>> {
-  const sharedKeys = userIds.map((userId) => SHARED_KEY_PREFIX + cacheKey(userId, config));
-  const stored = await sharedCacheGetMany(sharedKeys);
-  const calendars = new Map<string, ReadCalendar>();
-  const missing: string[] = [];
-  userIds.forEach((userId, i) => {
-    const raw = stored[i];
-    if (raw) calendars.set(userId, parseStored(raw));
-    else missing.push(userId);
-  });
-  await forEachWithLimit(missing, MAX_CONCURRENT_READS, async (userId) => {
-    const read = { readAt: Date.now(), calendar: await computeInterviewerCalendar(userId, config) };
-    calendars.set(userId, read);
-    sharedCacheSet(SHARED_KEY_PREFIX + cacheKey(userId, config), JSON.stringify(read), CACHE_TTL_MS);
+): Promise<Map<string, InterviewerCalendar>> {
+  const calendars = new Map<string, InterviewerCalendar>();
+  await forEachWithLimit(userIds, MAX_CONCURRENT_READS, async (userId) => {
+    calendars.set(userId, await computeInterviewerCalendar(userId, config));
   });
   return calendars;
 }
@@ -190,19 +156,10 @@ export async function interviewerCalendars(
     const batch = readCalendars(missing, config);
     for (const userId of missing) {
       const key = cacheKey(userId, config);
-      const entry: { expires: number; value: Promise<InterviewerCalendar> } = {
-        expires: now + CACHE_TTL_MS,
-        value: batch.then((calendars) => {
-          const { readAt, calendar } = calendars.get(userId)!;
-          // A calendar another machine read keeps its age, so it can't stay
-          // twice the TTL behind by being cached again here.
-          entry.expires = readAt + CACHE_TTL_MS;
-          return calendar;
-        }),
-      };
-      cache.set(key, entry);
+      const value = batch.then((calendars) => calendars.get(userId)!);
+      cache.set(key, { expires: now + CACHE_TTL_MS, value });
       // A failed read shouldn't stick around for the whole TTL.
-      entry.value.catch(() => cache.delete(key));
+      value.catch(() => cache.delete(key));
     }
   }
   const entries = await Promise.all(

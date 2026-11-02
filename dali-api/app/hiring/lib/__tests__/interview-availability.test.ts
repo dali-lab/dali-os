@@ -5,14 +5,9 @@ vi.mock("~/lib/availability", async (importOriginal) => ({
   ...(await importOriginal<typeof import("~/lib/availability")>()),
   computeUserFreeBusy: vi.fn(),
 }));
-vi.mock("~/lib/shared-cache.server", () => ({
-  sharedCacheGetMany: vi.fn(),
-  sharedCacheSet: vi.fn(),
-}));
 
 import { prisma } from "~/lib/db.server";
 import { computeUserFreeBusy } from "~/lib/availability";
-import { sharedCacheGetMany, sharedCacheSet } from "~/lib/shared-cache.server";
 import { interviewerCalendars } from "~/hiring/lib/interview-availability.server";
 
 const mockPrisma = prisma as unknown as Record<string, any>;
@@ -31,21 +26,10 @@ function freeBusy(free: { start: Date; end: Date }[], hasCalendar: boolean) {
   return { userId: "u", free, busy: [], working: [], hasCalendar, calendarError: false };
 }
 
-const stored = (readAt: number) =>
-  JSON.stringify({
-    readAt,
-    calendar: {
-      hasCalendar: true,
-      hasWorkingHours: false,
-      available: [{ startTime: at(5, 9).toISOString(), endTime: at(5, 10).toISOString() }],
-    },
-  });
-
 let n = 0;
 beforeEach(() => {
   vi.clearAllMocks();
   mockPrisma.workingHoursDay = { findFirst: vi.fn().mockResolvedValue(null) };
-  vi.mocked(sharedCacheGetMany).mockImplementation(async (keys) => keys.map(() => null));
   n += 1; // fresh user per test, so the short-lived cache never carries over
 });
 
@@ -90,53 +74,24 @@ describe("interviewerCalendars", () => {
     expect(computeUserFreeBusy).toHaveBeenCalledTimes(1);
   });
 
-  it("uses a calendar another machine read instead of reading it again", async () => {
-    const user = `u${n}`;
-    vi.mocked(sharedCacheGetMany).mockResolvedValue([stored(Date.now())]);
-    const cal = (await interviewerCalendars([user], config)).get(user)!;
-    expect(computeUserFreeBusy).not.toHaveBeenCalled();
-    expect(cal).toEqual({
-      hasCalendar: true,
-      hasWorkingHours: false,
-      available: [{ startTime: at(5, 9), endTime: at(5, 10) }],
-    });
-  });
-
-  it("shares a calendar it read for two minutes", async () => {
-    const user = `u${n}`;
-    vi.mocked(computeUserFreeBusy).mockResolvedValue(
-      freeBusy([{ start: at(5, 9), end: at(5, 10) }], true),
-    );
-    await interviewerCalendars([user], config);
-    expect(sharedCacheSet).toHaveBeenCalledTimes(1);
-    const [key, value, ttl] = vi.mocked(sharedCacheSet).mock.calls[0];
-    expect(key).toContain(user);
-    expect(ttl).toBe(120_000);
-    expect(JSON.parse(value).calendar.available).toEqual([
-      { startTime: at(5, 9).toISOString(), endTime: at(5, 10).toISOString() },
-    ]);
-  });
-
-  it("reads only the calendars no machine has", async () => {
-    const [known, unknown] = [`u${n}a`, `u${n}b`];
-    vi.mocked(sharedCacheGetMany).mockResolvedValue([stored(Date.now()), null]);
+  it("reads only the calendars it doesn't already hold", async () => {
+    const [held, fresh] = [`u${n}a`, `u${n}b`];
     vi.mocked(computeUserFreeBusy).mockResolvedValue(freeBusy([], true));
-    await interviewerCalendars([known, unknown], config);
+    await interviewerCalendars([held], config);
+    vi.mocked(computeUserFreeBusy).mockClear();
+    await interviewerCalendars([held, fresh], config);
     expect(computeUserFreeBusy).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(computeUserFreeBusy).mock.calls[0][0]).toBe(unknown);
+    expect(vi.mocked(computeUserFreeBusy).mock.calls[0][0]).toBe(fresh);
   });
 
-  it("expires a shared calendar on its original schedule, not from when it arrived here", async () => {
+  it("reads a calendar again once it is over two minutes old", async () => {
     const user = `u${n}`;
-    const realNow = Date.now();
-    vi.mocked(sharedCacheGetMany).mockResolvedValue([stored(realNow - 110_000)]);
-    await interviewerCalendars([user], config);
-    vi.mocked(sharedCacheGetMany).mockResolvedValue([null]);
     vi.mocked(computeUserFreeBusy).mockResolvedValue(freeBusy([], true));
-    const clock = vi.spyOn(Date, "now").mockReturnValue(realNow + 20_000);
+    await interviewerCalendars([user], config);
+    const clock = vi.spyOn(Date, "now").mockReturnValue(Date.now() + 120_001);
     await interviewerCalendars([user], config);
     clock.mockRestore();
-    expect(computeUserFreeBusy).toHaveBeenCalledTimes(1);
+    expect(computeUserFreeBusy).toHaveBeenCalledTimes(2);
   });
 
   it("reads at most six calendars at once", async () => {
@@ -150,7 +105,6 @@ describe("interviewerCalendars", () => {
       return freeBusy([], true);
     });
     const users = Array.from({ length: 20 }, (_, i) => `u${n}-${i}`);
-    vi.mocked(sharedCacheGetMany).mockResolvedValue(users.map(() => null));
     const calendars = await interviewerCalendars(users, config);
     expect(calendars.size).toBe(20);
     expect(peak).toBe(6);
@@ -160,7 +114,6 @@ describe("interviewerCalendars", () => {
     const user = `u${n}`;
     vi.mocked(computeUserFreeBusy).mockRejectedValueOnce(new Error("google down"));
     await expect(interviewerCalendars([user], config)).rejects.toThrow("google down");
-    expect(sharedCacheSet).not.toHaveBeenCalled();
     vi.mocked(computeUserFreeBusy).mockResolvedValue(freeBusy([], true));
     await expect(interviewerCalendars([user], config)).resolves.toBeInstanceOf(Map);
   });
