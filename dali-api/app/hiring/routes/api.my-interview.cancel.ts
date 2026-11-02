@@ -10,6 +10,7 @@ import { deprovisionInterviewMeet } from "~/hiring/lib/interview-meet";
 import { getInterviewerRecipients, sendInterviewCancelEmails } from "~/hiring/lib/interview-emails";
 import { getActiveInterviewerUserIds, notifyInterviewCancelled } from "~/hiring/lib/interview-notifications";
 import { releaseInterviewRoom } from "~/hiring/lib/scheduling";
+import { interviewChangeDeadlines } from "~/hiring/lib/interview-time";
 
 const CancelSchema = z.object({
   domainApplicationId: idSchema,
@@ -51,15 +52,11 @@ export async function action({ request }: Route.ActionArgs) {
       },
     },
   });
-  const cancelNoticeHours = config?.cancelNoticeHours ?? 0;
-  if (cancelNoticeHours > 0) {
-    const cutoff = new Date(interview.startTime.getTime() - cancelNoticeHours * 60 * 60_000);
-    if (new Date() > cutoff) {
-      return withCors(request, Response.json(
-        { error: "Too late to cancel — please contact the DALI team" },
-        { status: 403 },
-      ));
-    }
+  if (new Date() >= interviewChangeDeadlines(interview.startTime, config).cancelBy) {
+    return withCors(request, Response.json(
+      { error: "Too late to cancel. Please contact the DALI team." },
+      { status: 403 },
+    ));
   }
 
   const { updated, interviewers, interviewerUserIds } = await prisma.$transaction(async (tx) => {

@@ -16,6 +16,18 @@ import {
 
 export const INTERVIEW_TIMEZONE_LABEL = "ET";
 
+export function interviewChangeDeadlines(
+  startTime: string | Date,
+  config?: { rescheduleNoticeHours: number; cancelNoticeHours: number } | null,
+): { rescheduleBy: Date; cancelBy: Date } {
+  const start = new Date(startTime).getTime();
+  const hoursBefore = (hours: number) => new Date(start - hours * 60 * 60_000);
+  return {
+    rescheduleBy: hoursBefore(config?.rescheduleNoticeHours ?? 12),
+    cancelBy: hoursBefore(config?.cancelNoticeHours ?? 0),
+  };
+}
+
 function formatTime(iso: string | Date): string {
   return new Date(iso).toLocaleTimeString(undefined, {
     hour: "numeric",

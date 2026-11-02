@@ -6,6 +6,7 @@ import { logAuditEvent } from "~/lib/audit";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson, idSchema } from "~/lib/validate";
 import { assignInterviewers, releaseInterviewRoom } from "~/hiring/lib/scheduling";
+import { interviewChangeDeadlines } from "~/hiring/lib/interview-time";
 // import { provisionZoomMeeting, deprovisionZoomMeeting } from "~/lib/zoom"; // S2S Zoom not configured yet
 import { provisionInterviewMeet, deprovisionInterviewMeet } from "~/hiring/lib/interview-meet";
 import { getInterviewerRecipients, sendInterviewCancelEmails, sendInterviewInviteEmails } from "~/hiring/lib/interview-emails";
@@ -72,9 +73,7 @@ export async function action({ request }: Route.ActionArgs) {
             },
           },
         });
-        const rescheduleNoticeHours = config?.rescheduleNoticeHours ?? 12;
-        const cutoff = new Date(current.startTime.getTime() - rescheduleNoticeHours * 60 * 60_000);
-        if (new Date() > cutoff) {
+        if (new Date() > interviewChangeDeadlines(current.startTime, config).rescheduleBy) {
           throw new Error("__TOO_LATE_TO_RESCHEDULE__");
         }
 
