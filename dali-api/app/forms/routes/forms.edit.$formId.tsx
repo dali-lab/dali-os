@@ -12,6 +12,7 @@ import {
 import { driveFolderCrumbs } from "~/lib/drive-crumbs.server";
 import { PageIcon } from "~/components/PageIcon";
 import { formUsages, managingUsage } from "~/forms/lib/form-usages.server";
+import { mappedQuestionFeatures } from "~/forms/lib/mapped-questions.server";
 import {
   loadFormHiringLinks,
   unlinkHiringForm,
@@ -154,6 +155,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     tracker,
     form,
     terms,
+    mappedQuestions: Object.fromEntries(await mappedQuestionFeatures(params.formId)),
     usages,
     managing,
     hiringLinks,

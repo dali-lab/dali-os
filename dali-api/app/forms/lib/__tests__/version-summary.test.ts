@@ -223,3 +223,92 @@ describe("summarizeResponses", () => {
     },
   );
 });
+
+
+describe("summarizeResponses with rules", () => {
+  const source = q("domains", "checkbox", { options: ["Design", "Eng"] });
+  const follow = (extra: Partial<Question["data"]> = {}) =>
+    q("portfolio", "text", { showIf: { questionKey: "domains", op: "includes", value: "Design" }, ...extra });
+  const rows = [
+    { domains: ["Design"], portfolio: "a.com" },
+    { domains: JSON.stringify(["Design", "Eng"]) },
+    { domains: ["Eng"] },
+    { domains: ["Eng"], portfolio: "stale" },
+    {},
+  ];
+  const summaryOf = (questions: Question[], answers: Record<string, unknown>[], index = 1) =>
+    summarizeResponses(questions, answers).questions[index];
+
+  it("counts only the people who were asked, and says who they were", () => {
+    const s = summaryOf([source, follow()], rows);
+    expect(s).toMatchObject({
+      answered: 1,
+      skipped: 1,
+      asked: { count: 2, who: "who picked Design in Q1" },
+    });
+  });
+
+  it("does not count people who were not asked as skipped", () => {
+    const s = summaryOf([source, follow()], [{ domains: ["Eng"] }, { domains: ["Eng"] }]);
+    expect(s).toMatchObject({ answered: 0, skipped: 0, asked: { count: 0 } });
+  });
+
+  it("ignores a stored answer from someone who was not asked", () => {
+    const s = summaryOf([source, follow({ options: undefined })], rows);
+    expect(s.answered).toBe(1);
+  });
+
+  it("takes percents from the people asked", () => {
+    const choice = q("pick", "select", {
+      options: ["X", "Y"],
+      showIf: { questionKey: "domains", op: "includes", value: "Design" },
+    });
+    const s = summaryOf(
+      [source, choice],
+      [
+        { domains: ["Design"], pick: "X" },
+        { domains: ["Design"], pick: "X" },
+        { domains: ["Design"], pick: "Y" },
+        { domains: ["Eng"] },
+      ],
+    );
+    expect(bars(s)).toEqual([
+      { label: "X", count: 2, percent: 67 },
+      { label: "Y", count: 1, percent: 33 },
+    ]);
+    expect(s).toMatchObject({ answered: 3, skipped: 0, asked: { count: 3 } });
+  });
+
+  it("follows a chain, and a hidden source counts as not asking", () => {
+    const gate = q("gate", "select", { options: ["Yes", "No"] });
+    const mid = q("mid", "select", {
+      options: ["A", "B"],
+      showIf: { questionKey: "gate", op: "is", value: "Yes" },
+    });
+    const last = q("last", "text", { showIf: { questionKey: "mid", op: "is", value: "A" } });
+    const s = summaryOf(
+      [gate, mid, last],
+      [
+        { gate: "Yes", mid: "A", last: "x" },
+        { gate: "Yes", mid: "B" },
+        { gate: "No", mid: "A", last: "stale" },
+      ],
+      2,
+    );
+    expect(s).toMatchObject({ answered: 1, skipped: 0, asked: { count: 1, who: "who picked A in Q2" } });
+  });
+
+  it("says nothing about who was asked for an unconditional question", () => {
+    const s = summaryOf([source, q("plain", "text")], rows);
+    expect(s).not.toHaveProperty("asked");
+    expect(s).toMatchObject({ answered: 0, skipped: 5 });
+  });
+
+  it("writes the negative audiences", () => {
+    const s = summaryOf(
+      [source, q("p", "text", { showIf: { questionKey: "domains", op: "excludes", value: "Design" } })],
+      [{ domains: ["Eng"] }],
+    );
+    expect(s.asked?.who).toBe("who didn't pick Design in Q1");
+  });
+});

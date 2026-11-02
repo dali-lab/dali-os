@@ -15,6 +15,9 @@ vi.mock("~/forms/lib/forms-data", () => ({ loadFormForEdit: vi.fn(), runFormsAct
 vi.mock("~/lib/drive-crumbs.server", () => ({ driveFolderCrumbs: vi.fn() }));
 vi.mock("~/forms/lib/form-usages.server", () => ({ formUsages: vi.fn(), managingUsage: vi.fn() }));
 vi.mock("~/hiring/lib/form-links.server", () => ({ loadFormHiringLinks: vi.fn(), unlinkHiringForm: vi.fn() }));
+vi.mock("~/forms/lib/mapped-questions.server", () => ({
+  mappedQuestionFeatures: async () => new Map(),
+}));
 vi.mock("~/forms/lib/version-responses.server", () => ({ loadVersionResponses: vi.fn() }));
 vi.mock("~/forms/lib/version-summary.server", () => ({ loadVersionSummary: vi.fn() }));
 vi.mock("~/forms/lib/form-response.server", () => ({ deleteFormResponse: vi.fn() }));

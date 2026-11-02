@@ -200,6 +200,11 @@ export function VersionSummary({
                 <p className="mt-1 pl-8 text-sm text-os-grey">
                   {q.answered} answered, {q.skipped} skipped
                 </p>
+                {q.asked && (
+                  <p className="pl-8 text-sm text-os-grey">
+                    Asked {q.asked.count} {plural(q.asked.count, "person", "people")} {q.asked.who}
+                  </p>
+                )}
               </div>
               <Answers q={q} onRead={() => switchTab("responses")} />
             </section>

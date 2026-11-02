@@ -172,3 +172,33 @@ describe("AnswerDisplay new question types", () => {
     expect(html).toContain("—");
   });
 });
+
+
+describe("QuestionList with rules", () => {
+  const questions: Question[] = [
+    { key: "returning", type: "select", required: true, data: { label: "Returning?", options: ["Yes", "No"] } },
+    {
+      key: "why",
+      type: "text",
+      required: true,
+      data: { label: "Why leaving?", showIf: { questionKey: "returning", op: "is", value: "No" } },
+    },
+  ];
+  const html = (answers: Record<string, string>) =>
+    renderToStaticMarkup(createElement(QuestionList, { questions, answers }));
+
+  it("leaves out a question that was not asked", () => {
+    expect(html({ returning: "Yes" })).not.toContain("Why leaving?");
+  });
+
+  it("shows a question that was asked, answered or not", () => {
+    expect(html({ returning: "No" })).toContain("Why leaving?");
+  });
+
+  it("is unchanged for a form without rules", () => {
+    const plain = renderToStaticMarkup(
+      createElement(QuestionList, { questions: [questions[0]], answers: {} }),
+    );
+    expect(plain).toContain("Returning?");
+  });
+});

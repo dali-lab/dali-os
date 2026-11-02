@@ -17,7 +17,7 @@ import {
   FormPagerNav,
   FormPageHeading,
 } from "~/forms/components/FormPager";
-import { paginateQuestions } from "~/lib/form-pages";
+import { visiblePages, visibleQuestions } from "~/lib/form-logic";
 import { FormQuestionField } from "~/components/form-builder/QuestionField";
 import { DocEditor } from "~/components/doc";
 import { isEmptyBlocks } from "~/lib/blocks";
@@ -137,14 +137,14 @@ export default function PartnerSurvey({ actionData }: Route.ComponentProps) {
   const [formAnswers, setFormAnswers] = useState<Record<string, string>>({});
   const [clientError, setClientError] = useState<string | null>(null);
 
-  const pages = useMemo(() => paginateQuestions(surveyForm?.questions ?? []), [surveyForm]);
+  const pages = useMemo(() => visiblePages(surveyForm?.questions ?? [], formAnswers), [surveyForm, formAnswers]);
   const pager = useFormPager(pages);
 
   const error = clientError ?? (actionData && "error" in actionData ? actionData.error : null);
 
   function checkRequired(e: React.FormEvent<HTMLFormElement>) {
     const missing = surveyForm
-      ? findMissingRequired(surveyForm.questions, (q) => formAnswers[q.key])
+      ? findMissingRequired(visibleQuestions(surveyForm.questions, formAnswers), (q) => formAnswers[q.key])
       : [];
     if (missing.length > 0) {
       e.preventDefault();

@@ -38,6 +38,7 @@ import { checkGitHubUrl, checkFigmaUrl, checkDriveUrl } from "~/lib/submission-c
 import type { SubmissionCheckResult } from "~/lib/submission-check";
 import { validateWordLimits } from "~/lib/word-count";
 import type { WordCountViolation } from "~/lib/word-count";
+import { countRequired, dropHiddenAnswers, visibleKeys, visibleQuestions } from "~/lib/form-logic";
 import { isAnswered, normalizeAnswerFormats, validateAnswerFormats } from "~/lib/form-answers";
 import { termCodeLabel } from "~/lib/display";
 import type { Question } from "~/types";
@@ -702,13 +703,23 @@ export async function action({ request }: Route.ActionArgs) {
       continued.get(dbDa.id) ??
       ((dbDa.challengeFormVersion?.questions ?? []) as unknown as Question[]);
 
+    // Answers to questions a rule hid are dropped from the posted objects (the
+    // same ones saved below) before any check, so a hidden question can't fail
+    // one or reach storage. Each form is evaluated on its own answers.
+    const visibleGeneral = dropHiddenAnswers(generalQuestions, answers);
+    const visibleByDa = new Map<string, Question[]>();
+    for (const dbDa of allDas) {
+      const posted = domainAnswers.find(da => da.domainApplicationId === dbDa.id);
+      visibleByDa.set(dbDa.id, dropHiddenAnswers(daQuestions(dbDa), postedAnswers(posted)));
+    }
+
     const wordCountErrors: Record<string, WordCountViolation> = {
-      ...validateWordLimits(generalQuestions, answers),
+      ...validateWordLimits(visibleGeneral, answers),
     };
     for (const da of domainAnswers) {
       const dbDa = allDas.find(d => d.id === da.domainApplicationId);
       if (!dbDa) continue;
-      Object.assign(wordCountErrors, validateWordLimits(daQuestions(dbDa), postedAnswers(da)));
+      Object.assign(wordCountErrors, validateWordLimits(visibleByDa.get(dbDa.id) ?? [], postedAnswers(da)));
     }
     if (Object.keys(wordCountErrors).length > 0) {
       return { wordCountErrors };
@@ -722,7 +733,7 @@ export async function action({ request }: Route.ActionArgs) {
     // submitting an open one forever.
     const missingRequired: string[] = [];
     if (!generalFrozen) {
-      for (const q of generalQuestions) {
+      for (const q of visibleGeneral) {
         if (q.required && !isAnswered(answers[q.key], q)) {
           missingRequired.push(q.data.label || q.key);
         }
@@ -735,7 +746,7 @@ export async function action({ request }: Route.ActionArgs) {
         missingRequired.push(`selected domain has no application record`);
         continue;
       }
-      const questions = daQuestions(dbDa);
+      const questions = visibleByDa.get(dbDa.id) ?? [];
       const submitted = postedAnswers(domainAnswers.find(da => da.domainApplicationId === dbDa.id));
       for (const q of questions) {
         if (q.required && !isAnswered(submitted[q.key], q)) {
@@ -750,14 +761,14 @@ export async function action({ request }: Route.ActionArgs) {
     }
 
     const answerSets: { questions: Question[]; answers: Record<string, string> }[] = [
-      { questions: generalQuestions, answers },
+      { questions: visibleGeneral, answers },
     ];
     for (const domainId of selectedDomainIds) {
       if (closedDomainIds.has(domainId)) continue;
       const dbDa = allDas.find(d => d.domainId === domainId);
       if (!dbDa) continue;
       answerSets.push({
-        questions: daQuestions(dbDa),
+        questions: visibleByDa.get(dbDa.id) ?? [],
         answers: postedAnswers(domainAnswers.find(da => da.domainApplicationId === dbDa.id)),
       });
     }
@@ -965,7 +976,18 @@ function getPickedQuestions(
 // application: how many there are and how many are answered.
 type ContinuedProgress = Record<string, { required: number; answered: number }>;
 
-function computeRequiredProgress(
+// The general form is one form split around the domains step, so a rule may
+// point across the split: visibility is settled on the whole list, then divided.
+function visibleGeneralParts(formQuestions: Question[], answers: Record<string, string>) {
+  const visible = visibleKeys(formQuestions, answers);
+  const shown = formQuestions.filter(q => visible.has(q.key));
+  return {
+    before: shown.filter(q => !q.data.afterDomains),
+    after: shown.filter(q => q.data.afterDomains),
+  };
+}
+
+export function computeRequiredProgress(
   formQuestions: Question[],
   domains: DomainShape[],
   selectedDomainIds: string[],
@@ -980,21 +1002,23 @@ function computeRequiredProgress(
   let totalAnswered = 0;
 
   if (!generalFrozen) {
-    const requiredGeneral = formQuestions.filter(q => q.required);
-    totalRequired += requiredGeneral.length;
-    totalAnswered += requiredGeneral.filter(q => isAnswered(answers[q.key], q)).length;
+    const { before, after } = visibleGeneralParts(formQuestions, answers);
+    const general = countRequired([...before, ...after], answers);
+    totalRequired += general.required;
+    totalAnswered += general.answered;
   }
 
   for (const domainId of selectedDomainIds) {
     if (closedDomainIds.has(domainId)) continue;
     const domain = domains.find(d => d.id === domainId);
     if (!domain) continue;
-    const questions = getPickedQuestions(domain, pickedChallengeByDomain[domainId]);
-    const requiredDomain = questions.filter(q => q.required);
-    totalRequired += requiredDomain.length;
-    totalAnswered += requiredDomain.filter(q =>
-      isAnswered(domainAnswers[domainId]?.[q.key], q),
-    ).length;
+    const questions = visibleQuestions(
+      getPickedQuestions(domain, pickedChallengeByDomain[domainId]),
+      domainAnswers[domainId] ?? {},
+    );
+    const counted = countRequired(questions, domainAnswers[domainId]);
+    totalRequired += counted.required;
+    totalAnswered += counted.answered;
     totalRequired += continuedProgress[domainId]?.required ?? 0;
     totalAnswered += continuedProgress[domainId]?.answered ?? 0;
   }
@@ -1002,7 +1026,7 @@ function computeRequiredProgress(
   return { totalRequired, totalAnswered };
 }
 
-function buildSections(
+export function buildSections(
   formQuestions: Question[],
   domains: DomainShape[],
   selectedDomainIds: string[],
@@ -1014,15 +1038,20 @@ function buildSections(
   generalFrozen: boolean,
 ): Section[] {
   const sections: Section[] = [];
+  const { before: beforeQuestions, after: afterQuestions } = visibleGeneralParts(
+    formQuestions,
+    answers,
+  );
 
-  const beforeQuestions = formQuestions.filter(q => !q.data.afterDomains);
   if (beforeQuestions.length > 0) {
-    const required = generalFrozen ? [] : beforeQuestions.filter(q => q.required);
+    const counted = generalFrozen
+      ? { required: 0, answered: 0 }
+      : countRequired(beforeQuestions, answers);
     sections.push({
       id: "general-before",
       label: "General",
-      requiredCount: required.length,
-      answeredRequiredCount: required.filter(q => isAnswered(answers[q.key], q)).length,
+      requiredCount: counted.required,
+      answeredRequiredCount: counted.answered,
     });
   }
 
@@ -1032,27 +1061,32 @@ function buildSections(
     const domain = domains[idx];
     if (domain.challenges.length === 0) continue;
     const frozen = closedDomainIds.has(domainId);
-    const questions = getPickedQuestions(domain, pickedChallengeByDomain[domainId]);
-    const required = frozen ? [] : questions.filter(q => q.required);
+    const questions = visibleQuestions(
+      getPickedQuestions(domain, pickedChallengeByDomain[domainId]),
+      domainAnswers[domainId] ?? {},
+    );
+    const counted = frozen
+      ? { required: 0, answered: 0 }
+      : countRequired(questions, domainAnswers[domainId]);
     sections.push({
       id: `domain-${domainId}`,
       label: domain.name,
       color: getDomainColor(idx),
-      requiredCount: required.length + (frozen ? 0 : continuedProgress[domainId]?.required ?? 0),
+      requiredCount: counted.required + (frozen ? 0 : continuedProgress[domainId]?.required ?? 0),
       answeredRequiredCount:
-        required.filter(q => isAnswered(domainAnswers[domainId]?.[q.key], q)).length +
-        (frozen ? 0 : continuedProgress[domainId]?.answered ?? 0),
+        counted.answered + (frozen ? 0 : continuedProgress[domainId]?.answered ?? 0),
     });
   }
 
-  const afterQuestions = formQuestions.filter(q => q.data.afterDomains);
   if (afterQuestions.length > 0) {
-    const required = generalFrozen ? [] : afterQuestions.filter(q => q.required);
+    const counted = generalFrozen
+      ? { required: 0, answered: 0 }
+      : countRequired(afterQuestions, answers);
     sections.push({
       id: "general-after",
       label: "Anything Else",
-      requiredCount: required.length,
-      answeredRequiredCount: required.filter(q => isAnswered(answers[q.key], q)).length,
+      requiredCount: counted.required,
+      answeredRequiredCount: counted.answered,
     });
   }
 
@@ -1587,16 +1621,14 @@ function ApplyForm() {
     }
   }, [createFetcher.data]);
 
-  const requiredContinued = (continuedInterest?.questions ?? []).filter(q => q.required);
   const continuedProgress: ContinuedProgress = Object.fromEntries(
-    Object.keys(continuedFrom).map(domainId => [
-      domainId,
-      {
-        required: requiredContinued.length,
-        answered: requiredContinued.filter(q => isAnswered(continuedAnswers[domainId]?.[q.key], q))
-          .length,
-      },
-    ]),
+    Object.keys(continuedFrom).map(domainId => {
+      const counted = countRequired(
+        visibleQuestions(continuedInterest?.questions ?? [], continuedAnswers[domainId] ?? {}),
+        continuedAnswers[domainId],
+      );
+      return [domainId, { required: counted.required, answered: counted.answered }];
+    }),
   );
 
   // Validation gate: runs before opening the review modal. Returns null on
@@ -1641,7 +1673,7 @@ function ApplyForm() {
   function collectUrlQuestions(): { key: string; url: string; type: UrlQuestionType }[] {
     const urlQuestions: { key: string; url: string; type: UrlQuestionType }[] = [];
     // Frozen waitlisted answers aren't re-checked: the applicant can't fix them.
-    for (const q of generalLocked ? [] : (formQuestions as Question[])) {
+    for (const q of generalLocked ? [] : visibleQuestions(formQuestions as Question[], answers)) {
       if (isUrlType(q.type) && answers[q.key]?.trim()) {
         urlQuestions.push({ key: q.key, url: answers[q.key], type: q.type });
       }
@@ -1652,7 +1684,7 @@ function ApplyForm() {
       const [questions, source] = continuedFrom[domainId]
         ? [continuedInterest?.questions ?? [], continuedAnswers[domainId]]
         : [getPickedQuestions(domain, pickedChallengeByDomain[domainId]), domainAnswers[domainId]];
-      for (const q of questions) {
+      for (const q of visibleQuestions(questions, source ?? {})) {
         if (isUrlType(q.type) && source?.[q.key]?.trim()) {
           urlQuestions.push({ key: q.key, url: source[q.key], type: q.type });
         }
@@ -2126,7 +2158,7 @@ function ApplyForm() {
 
         {/* General questions (before domains) */}
         {(() => {
-          const beforeQuestions = (formQuestions as Question[]).filter(q => !q.data.afterDomains);
+          const { before: beforeQuestions } = visibleGeneralParts(formQuestions as Question[], answers);
           return beforeQuestions.length > 0 ? (
             <div id="section-general-before" className="rounded-os-card bg-os-card px-6 py-5 space-y-6 scroll-mt-24">
               <h3 className="font-heading text-sm font-bold text-foreground uppercase tracking-wider">General Questions</h3>
@@ -2236,7 +2268,7 @@ function ApplyForm() {
                       />
                     </div>
                   )}
-                  {(continuedInterest?.questions ?? []).map(q => (
+                  {visibleQuestions(continuedInterest?.questions ?? [], continuedAnswers[domainId] ?? {}).map(q => (
                     <FormField
                       key={q.key}
                       id={`question-${q.key}`}
@@ -2349,7 +2381,7 @@ function ApplyForm() {
                       </div>
                     ) : null;
                   })()}
-                  {pickedQuestions.map((q: Question) => (
+                  {visibleQuestions(pickedQuestions, domainAnswers[domainId] ?? {}).map((q: Question) => (
                     <FormField
                       key={q.key}
                       id={`question-${q.key}`}
@@ -2385,7 +2417,7 @@ function ApplyForm() {
 
         {/* General questions (after domains — "anything else") */}
         {(() => {
-          const afterQuestions = (formQuestions as Question[]).filter(q => q.data.afterDomains);
+          const { after: afterQuestions } = visibleGeneralParts(formQuestions as Question[], answers);
           return afterQuestions.length > 0 ? (
             <div id="section-general-after" className="rounded-os-card bg-os-card px-6 py-5 space-y-6 scroll-mt-24">
               <h3 className="font-heading text-sm font-bold text-foreground uppercase tracking-wider">Anything Else</h3>
@@ -2553,7 +2585,7 @@ function ApplyForm() {
           </div>
 
           {(() => {
-            const beforeQuestions = (formQuestions as Question[]).filter(q => !q.data.afterDomains);
+            const { before: beforeQuestions } = visibleGeneralParts(formQuestions as Question[], answers);
             return beforeQuestions.length > 0 ? (
               <div className="rounded-os-card bg-os-card px-5 py-4">
                 <h4 className="font-heading text-xs font-bold text-foreground uppercase tracking-wider mb-4">
@@ -2607,7 +2639,7 @@ function ApplyForm() {
           })}
 
           {(() => {
-            const afterQuestions = (formQuestions as Question[]).filter(q => q.data.afterDomains);
+            const { after: afterQuestions } = visibleGeneralParts(formQuestions as Question[], answers);
             return afterQuestions.length > 0 ? (
               <div className="rounded-os-card bg-os-card px-5 py-4">
                 <h4 className="font-heading text-xs font-bold text-foreground uppercase tracking-wider mb-4">

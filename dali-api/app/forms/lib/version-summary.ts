@@ -1,6 +1,7 @@
 import type { Question } from "~/types";
 import { isLayoutOnly } from "~/lib/form-answers";
 import { parseSkillsRating } from "~/lib/skills-rating";
+import { audienceSentence, questionNumbers, visibleKeys } from "~/lib/form-logic";
 
 export type Bar = { label: string; count: number; percent: number; other?: boolean };
 
@@ -11,7 +12,16 @@ export type SkillRow = {
   distribution: number[];
 };
 
-type Base = { key: string; number: number; label: string; answered: number; skipped: number };
+// `asked` is set only on a conditional question: how many responses were shown
+// it, and who they were. Everyone else is left out of answered and skipped.
+type Base = {
+  key: string;
+  number: number;
+  label: string;
+  answered: number;
+  skipped: number;
+  asked?: { count: number; who: string };
+};
 
 export type QuestionSummary =
   | (Base & { kind: "choice"; bars: Bar[] })
@@ -165,14 +175,24 @@ export function summarizeResponses(
   refLabels?: RefLabels,
 ): ResponsesSummary {
   const total = answersList.length;
-  let number = 0;
+  const numbers = questionNumbers(questions);
+  const shown = answersList.map((a) => visibleKeys(questions, a ?? {}));
   const out: QuestionSummary[] = [];
   for (const q of questions) {
     if (isLayoutOnly(q.type)) continue;
-    number++;
-    const answers = answersList.map((a) => a?.[q.key]);
+    const number = numbers.get(q.key) ?? 0;
+    const rule = q.data.showIf;
+    const askedList = rule ? answersList.filter((_, i) => shown[i].has(q.key)) : answersList;
+    const answers = askedList.map((a) => a?.[q.key]);
     const answered = answeredCount(q, answers);
-    const base = { key: q.key, number, label: q.data.label, answered, skipped: total - answered };
+    const base: Base = {
+      key: q.key,
+      number,
+      label: q.data.label,
+      answered,
+      skipped: askedList.length - answered,
+      ...(rule ? { asked: { count: askedList.length, who: audienceSentence(rule, numbers) } } : {}),
+    };
     switch (q.type) {
       case "select":
       case "radio":

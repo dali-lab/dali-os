@@ -168,6 +168,13 @@ export interface Question {
     // ProseMirror JSON (old TipTap editor) or, before the rich-text upgrade,
     // a plain string — readers format-sniff all three.
     body?: unknown
+    // Show this question only when an earlier select, radio, scale or
+    // checkbox answer matches. See app/lib/form-logic.ts.
+    showIf?: {
+      questionKey: string
+      op: 'is' | 'isNot' | 'includes' | 'excludes'
+      value: string
+    }
   }
 }
 

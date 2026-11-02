@@ -176,3 +176,30 @@ describe('buildQuestion (new question types)', () => {
     expect(roundTripped[4].type).toBe('email')
   })
 })
+
+describe('buildQuestion (show rule)', () => {
+  const showIf = { questionKey: 'a', op: 'includes', value: 'Design' } as const
+
+  it('carries the rule onto the rebuilt question', () => {
+    const q = buildQuestion({ key: 'q2', type: 'text', required: true, label: 'Portfolio', showIf })
+    expect(q.data.showIf).toEqual(showIf)
+  })
+
+  it('survives a rebuild from the question it produced', () => {
+    const first = buildQuestion({ key: 'q2', type: 'radio', required: true, label: 'Pick', optionsText: 'A\nB', showIf })
+    const again = buildQuestion({
+      key: first.key,
+      type: first.type,
+      required: first.required,
+      label: first.data.label,
+      optionsText: first.data.options!.join('\n'),
+      showIf: first.data.showIf,
+    })
+    expect(again).toEqual(first)
+  })
+
+  it('leaves no rule when none is given', () => {
+    const q = buildQuestion({ key: 'q2', type: 'text', required: false, label: 'Name' })
+    expect(q.data.showIf).toBeUndefined()
+  })
+})

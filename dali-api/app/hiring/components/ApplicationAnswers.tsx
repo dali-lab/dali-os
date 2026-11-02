@@ -1,4 +1,5 @@
 import type { Question } from "~/types";
+import { visibleQuestions } from "~/lib/form-logic";
 
 export function renderSkillsRating(value: string): React.ReactNode {
   const ratings: { skill: string; rating: string }[] = [];
@@ -100,7 +101,8 @@ export interface QuestionListProps {
   presigned?: boolean;
 }
 
-export function QuestionList({ questions, answers, presigned = true }: QuestionListProps) {
+export function QuestionList({ questions: allQuestions, answers, presigned = true }: QuestionListProps) {
+  const questions = visibleQuestions(allQuestions, answers);
   if (questions.length === 0) {
     return <p className="text-sm text-muted-foreground italic">No questions in this section.</p>;
   }

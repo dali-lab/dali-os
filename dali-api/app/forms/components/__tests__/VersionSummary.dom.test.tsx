@@ -180,3 +180,35 @@ describe("VersionSummary", () => {
     expect(tracker.compareDocumentPosition(section) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 });
+
+
+describe("VersionSummary conditional questions", () => {
+  it("shows who was asked under the answered line", async () => {
+    await mount(
+      data([
+        {
+          kind: "text",
+          key: "p",
+          number: 5,
+          label: "Portfolio",
+          answered: 9,
+          skipped: 6,
+          asked: { count: 15, who: "who picked Design in Q4" },
+        },
+      ]),
+    );
+    expect(container.textContent).toContain("9 answered, 6 skipped");
+    expect(container.textContent).toContain("Asked 15 people who picked Design in Q4");
+  });
+
+  it("uses the singular for one person and shows nothing for an unconditional question", async () => {
+    await mount(
+      data([
+        { kind: "text", key: "p", number: 1, label: "P", answered: 1, skipped: 0, asked: { count: 1, who: "who picked No in Q1" } },
+        { kind: "text", key: "q", number: 2, label: "Q", ...base },
+      ]),
+    );
+    expect(container.textContent).toContain("Asked 1 person who picked No in Q1");
+    expect(container.textContent?.match(/Asked/g)).toHaveLength(1);
+  });
+});

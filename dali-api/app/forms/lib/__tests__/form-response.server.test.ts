@@ -307,3 +307,52 @@ describe("answersToFillState", () => {
     ).toEqual({ name: "A", tags: '["a","b"]', proj: "3" });
   });
 });
+
+describe("editOwnResponse with rules", () => {
+  const RULE_QUESTIONS = [
+    { key: "returning", type: "select", required: true, data: { label: "Returning?", options: ["Yes", "No"] } },
+    {
+      key: "why",
+      type: "textarea",
+      required: true,
+      data: { label: "Why?", showIf: { questionKey: "returning", op: "is", value: "No" } },
+    },
+    {
+      key: "cv",
+      type: "file",
+      required: true,
+      data: { label: "CV", showIf: { questionKey: "returning", op: "is", value: "No" } },
+    },
+  ];
+  const stored = (answers: Record<string, unknown>) =>
+    db.formSubmission.findFirst.mockResolvedValue(
+      submissionRow({
+        answers,
+        formVersion: { id: "v1", questions: RULE_QUESTIONS, intro: null, updatedAt: new Date() },
+      }),
+    );
+  const saved = () => db.formSubmission.update.mock.calls[0][0].data.answers;
+
+  it("removes stored answers an edit has hidden, files included", async () => {
+    stored({ returning: "No", why: "moving", cv: { key: "files/cv.pdf" } });
+    expect(await edit({ returning: "Yes" })).toEqual({ ok: true });
+    expect(saved()).toEqual({ returning: "Yes" });
+  });
+
+  it("does not require a question the edit has hidden", async () => {
+    stored({ returning: "No", why: "moving", cv: { key: "files/cv.pdf" } });
+    expect(await edit({ returning: "Yes", why: "" })).toEqual({ ok: true });
+  });
+
+  it("keeps the stored upload satisfying a shown required file", async () => {
+    stored({ returning: "No", why: "moving", cv: { key: "files/cv.pdf" } });
+    expect(await edit({ returning: "No", why: "still moving" })).toEqual({ ok: true });
+    expect(saved()).toEqual({ returning: "No", why: "still moving", cv: { key: "files/cv.pdf" } });
+  });
+
+  it("still requires a question the edit has shown", async () => {
+    stored({ returning: "Yes" });
+    expect(await edit({ returning: "No" })).toMatchObject({ status: 400 });
+    expect(db.formSubmission.update).not.toHaveBeenCalled();
+  });
+});

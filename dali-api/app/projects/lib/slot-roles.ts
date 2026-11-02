@@ -332,6 +332,12 @@ export function validateMapping(
             "The form was changed and the column mapping is out of date — re-map its questions.",
         };
       }
+      if (q.data.showIf) {
+        return {
+          ok: false,
+          reason: `Question "${q.data.label}" is only shown sometimes, so it can't fill the "${def.defaultLabel}" column.`,
+        };
+      }
       if (!questionFitsConstraint(q, def.constraint)) {
         return {
           ok: false,

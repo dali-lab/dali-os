@@ -495,3 +495,30 @@ describe("parseColumnMapping status map", () => {
     expect(parseColumnMapping(entry(["Returning"]))?.entries[0]).not.toHaveProperty("statusMap");
   });
 });
+
+
+describe("validateMapping with conditional questions", () => {
+  it("rejects a mapping to a question that is only shown sometimes", () => {
+    const conditional = q("n", "textarea", { showIf: { questionKey: "p", op: "is", value: "x" } });
+    const r = validateMapping(
+      "project-bids",
+      [projQ("p"), conditional, ...REQ_PROJ_QS],
+      withBidRequirements([
+        { source: "question", questionKey: "n", role: "display", label: "Notes", order: 0 },
+      ]),
+    );
+    expect(r).toMatchObject({ ok: false });
+    if (!r.ok) expect(r.reason).toMatch(/only shown sometimes/);
+  });
+
+  it("still accepts a mapping to an unconditional question", () => {
+    const r = validateMapping(
+      "project-bids",
+      [projQ("p"), q("n", "textarea"), ...REQ_PROJ_QS],
+      withBidRequirements([
+        { source: "question", questionKey: "n", role: "display", label: "Notes", order: 0 },
+      ]),
+    );
+    expect(r).toEqual({ ok: true });
+  });
+});

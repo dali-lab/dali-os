@@ -19,6 +19,8 @@ import { newPublicToken, setFormPublished } from "./form-publish.server";
 import { isGroupArchived, loadGroupArchiveContext } from "~/lib/groups";
 import { isEmptyBlocks } from "~/lib/blocks";
 import { isLayoutOnly } from "~/lib/form-answers";
+import { showIfProblems } from "~/lib/form-logic";
+import { mappedQuestionFeatures } from "./mapped-questions.server";
 import { normalizeQuestionBodies } from "~/lib/question-blocks.server";
 
 const QUESTION_TYPES: Question["type"][] = [
@@ -70,6 +72,9 @@ export function isQuestionArray(x: unknown): x is Question[] {
 // on success, or a ready-to-return error result.
 export function validateVersionQuestions(
   raw: string,
+  // Question key -> the staffing feature that reads it, for the form being
+  // saved. A mapped question can't carry a rule.
+  mapped?: ReadonlyMap<string, string>,
 ): { ok: true; questions: Question[] } | { error: string; status: number } {
   let questions: unknown;
   try {
@@ -124,6 +129,8 @@ export function validateVersionQuestions(
         status: 400,
       };
   }
+  const [conditionProblem] = showIfProblems(questions, mapped);
+  if (conditionProblem) return { error: conditionProblem.message, status: 400 };
   return { ok: true, questions };
 }
 
@@ -614,7 +621,10 @@ export async function runFormsAction(
         ? await publishData(input.id, exists.publicToken)
         : null;
 
-      const validated = validateVersionQuestions(input.questions);
+      const validated = validateVersionQuestions(
+        input.questions,
+        await mappedQuestionFeatures(input.id),
+      );
       if (!("ok" in validated)) return validated;
 
       const last = await prisma.formVersion.findFirst({
@@ -654,7 +664,10 @@ export async function runFormsAction(
         ? await publishData(input.id, version.form.publicToken)
         : null;
 
-      const validated = validateVersionQuestions(input.questions);
+      const validated = validateVersionQuestions(
+        input.questions,
+        await mappedQuestionFeatures(input.id),
+      );
       if (!("ok" in validated)) return validated;
 
       // Re-check the lock inside the write so a response landing between the

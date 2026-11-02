@@ -28,6 +28,7 @@ import {
   CalendarDays,
   Hash,
   Mail,
+  CornerDownRight,
   type LucideIcon,
 } from 'lucide-react'
 import {
@@ -51,6 +52,18 @@ import type { Question } from '~/types'
 import { DocEditor } from '~/components/doc'
 import { referenceSourceChoices, referenceSourceNeedsTerm } from '~/forms/lib/reference-sources.shared'
 import { Checkbox } from '~/components/ui/Checkbox'
+import { Segmented } from '~/components/ui/Segmented'
+import {
+  OP_LABELS,
+  canBeSource,
+  opsForSource,
+  questionNumbers,
+  ruleDepths,
+  showIfProblems,
+  showIfSentence,
+  valuesForSource,
+  type ShowIf,
+} from '~/lib/form-logic'
 import { isLayoutOnly } from '~/lib/form-answers'
 import { useSharedArray } from '~/components/collab/useSharedCollection'
 import { formDraftName } from '~/collab/roomName'
@@ -176,6 +189,7 @@ export interface BuildQuestionInput {
   referenceSource?: string
   referenceTermId?: string
   body?: unknown
+  showIf?: ShowIf
 }
 
 function parseBound(raw: number | string | undefined): number | undefined {
@@ -205,6 +219,7 @@ export function buildQuestion(input: BuildQuestionInput): Question {
     referenceSource,
     referenceTermId,
     body,
+    showIf,
   } = input
 
   let maxWords: number | undefined
@@ -242,6 +257,7 @@ export function buildQuestion(input: BuildQuestionInput): Question {
           ? referenceTermId || undefined
           : undefined,
       body: type === 'info' ? body : undefined,
+      showIf,
     },
   }
 }
@@ -285,6 +301,9 @@ interface FormBuilderTabProps {
   // builder (no structured-collab room for that entity).
   formId?: string
   collabToken?: string | null
+  // Question key -> the staffing feature that reads its answer. Those
+  // questions are always shown, so they can't take a condition.
+  mappedQuestions?: Record<string, string>
 }
 // A draft can hold malformed entries: an earlier collab bug stored empty
 // objects (nothing to keep, so they're dropped) and questions can lack a key
@@ -308,6 +327,7 @@ export function FormBuilderTab({
   formId,
   collabToken,
   termBinding = null,
+  mappedQuestions = {},
 }: FormBuilderTabProps) {
   const [initialQuestions] = useState(() => repairQuestions(rawInitialQuestions))
   // Local state used when the collab room is unavailable (hiring challenge
@@ -537,6 +557,7 @@ export function FormBuilderTab({
       referenceSource: editForm.data?.referenceSource,
       referenceTermId: editForm.data?.referenceTermId,
       body: editForm.data?.body,
+      showIf: editForm.data?.showIf,
     })
     setQuestions(
       questions.map((q) => (q.key === editForm.key ? rebuilt : q)),
@@ -574,6 +595,18 @@ export function FormBuilderTab({
     setAcceptPresets(new Set())
     setAcceptCustom('')
   }
+  const numbers = questionNumbers(questions)
+  const depths = ruleDepths(questions)
+  const problemByKey = new Map(
+    showIfProblems(questions, new Map(Object.entries(mappedQuestions))).map((p) => [p.key, p.message]),
+  )
+  const setRule = (showIf: ShowIf | undefined) =>
+    setEditForm({ ...editForm, data: { ...editForm.data!, showIf } })
+  const ruleFor = (source: Question): ShowIf => ({
+    questionKey: source.key,
+    op: opsForSource(source)[0],
+    value: valuesForSource(source)[0] ?? '',
+  })
   const renderEditForm = () => {
     // Soft lint, shared with the email and signing editors: a token this
     // surface doesn't offer stays literal text, so say so rather than letting
@@ -670,7 +703,7 @@ export function FormBuilderTab({
                     required: e.target.checked,
                   })
                 }
-                label="Required field"
+                label={editForm.data?.showIf ? 'Required when shown' : 'Required field'}
               />
               <InfoTip content="Respondents must answer this question before they can submit. Shown as * in the fill view." />
             </span>
@@ -948,6 +981,88 @@ export function FormBuilderTab({
           )}
         </div>
 
+        {(newTypesEnabled || editForm.data?.showIf) && editForm.type !== undefined && (() => {
+          const own = questions.findIndex((q) => q.key === editForm.key)
+          const sources = questions.slice(0, Math.max(own, 0)).filter(canBeSource)
+          const rule = editForm.data?.showIf
+          const source = rule ? questions.find((q) => q.key === rule.questionKey) : undefined
+          const feature = editForm.key ? mappedQuestions[editForm.key] : undefined
+          const noSources = sources.length === 0 && !rule
+          const problem = editForm.key ? problemByKey.get(editForm.key) : undefined
+          return (
+            <div className="space-y-2.5">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium text-foreground/80">Show this question</span>
+                <Segmented
+                  ariaLabel="Show this question"
+                  size="md"
+                  value={rule ? 'when' : 'always'}
+                  onChange={(next) =>
+                    setRule(next === 'when' && sources[0] ? ruleFor(sources[0]) : undefined)
+                  }
+                  options={[
+                    { value: 'always', label: 'Always' },
+                    { value: 'when', label: 'Only when', disabled: !!feature || noSources },
+                  ]}
+                />
+              </div>
+              {feature && (
+                <p className="text-xs text-muted-foreground">
+                  {feature} reads this answer, so the question is always shown.
+                </p>
+              )}
+              {!feature && noSources && (
+                <p className="text-xs text-muted-foreground">
+                  There is no earlier dropdown, multiple choice, scale or checkbox question to depend on.
+                </p>
+              )}
+              {rule && (
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="min-w-[12rem] flex-1">
+                    <Select
+                      value={rule.questionKey}
+                      onChange={(key) => {
+                        const next = questions.find((q) => q.key === key)
+                        if (next) setRule(ruleFor(next))
+                      }}
+                      placeholder="Pick a question…"
+                      options={sources.map((q) => ({
+                        value: q.key,
+                        label: `Q${numbers.get(q.key)} ${q.data.label || 'Untitled question'}`,
+                      }))}
+                      buttonClassName={formTrigger}
+                    />
+                  </div>
+                  <div className="w-36 shrink-0">
+                    <Select
+                      value={rule.op}
+                      onChange={(op) => setRule({ ...rule, op: op as ShowIf['op'] })}
+                      options={(source ? opsForSource(source) : [rule.op]).map((op) => ({
+                        value: op,
+                        label: OP_LABELS[op],
+                      }))}
+                      buttonClassName={formTrigger}
+                    />
+                  </div>
+                  <div className="w-44 shrink-0">
+                    <Select
+                      value={rule.value}
+                      onChange={(value) => setRule({ ...rule, value })}
+                      placeholder="Pick an answer…"
+                      options={(source ? valuesForSource(source) : []).map((v) => ({
+                        value: v,
+                        label: v,
+                      }))}
+                      buttonClassName={formTrigger}
+                    />
+                  </div>
+                </div>
+              )}
+              {problem && <p className="text-xs text-os-amber">{problem}</p>}
+            </div>
+          )
+        })()}
+
         <div className="flex justify-between items-center gap-3 pt-2">
           <Tooltip content="Remove question">
             <button
@@ -1007,7 +1122,13 @@ export function FormBuilderTab({
               {questions.map((q, index) => (
                 <SortableQuestionRow key={q.key} id={q.key} disabled={editingKey === q.key}>
                   {(dragHandleProps, isDragging) => (
-                    <div className={`space-y-2 ${isDragging ? 'opacity-40' : ''}`}>
+                    <div
+                      className={`relative space-y-2 ${isDragging ? 'opacity-40' : ''}`}
+                      style={(depths.get(q.key) ?? 0) > 0 ? { marginLeft: (depths.get(q.key) ?? 0) * 32 } : undefined}
+                    >
+                      {(depths.get(q.key) ?? 0) > 0 && (
+                        <CornerDownRight aria-hidden className="absolute -left-7 top-4 w-[18px] h-[18px] text-os-accent" />
+                      )}
                       {dropsAt(q.key, false) && insertionLine}
                       {q.type === 'info' ? (
                         <div
@@ -1138,6 +1259,15 @@ export function FormBuilderTab({
                               <p className="text-sm text-muted-foreground mb-2">
                                 {q.data.description}
                               </p>
+                            )}
+
+                            {q.data.showIf && (
+                              <p className="text-sm text-os-accent mb-2">
+                                Shown when {showIfSentence(q.data.showIf, numbers)}
+                              </p>
+                            )}
+                            {problemByKey.get(q.key) && (
+                              <p className="text-sm text-os-amber mb-2">{problemByKey.get(q.key)}</p>
                             )}
 
                             {OPTION_TYPES.includes(q.type) && q.data.options && (

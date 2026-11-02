@@ -206,3 +206,40 @@ describe("submitApplication", () => {
     );
   });
 });
+
+
+describe("submitApplication with rules", () => {
+  const RULE_QUESTIONS = [
+    { key: "diet", type: "select", required: true, data: { label: "Diet", options: ["None", "Other"] } },
+    {
+      key: "details",
+      type: "text",
+      required: true,
+      data: { label: "Details", showIf: { questionKey: "diet", op: "is", value: "Other" } },
+    },
+  ];
+  const prime = () =>
+    mockPrisma.educationOffering.findUnique
+      .mockResolvedValueOnce(offeringRow())
+      .mockResolvedValueOnce({
+        applicationForm: {
+          id: "form-1",
+          name: "Application",
+          versions: [{ id: "ver-1", questions: RULE_QUESTIONS, intro: null, updatedAt: new Date() }],
+        },
+      });
+  const apply = (answers: Record<string, unknown>) =>
+    submitApplication({ offeringId: "off-1", userId: "user-1", answers });
+
+  it("does not require a hidden question and stores no hidden answer", async () => {
+    prime();
+    expect(await apply({ diet: "None", details: "stale" })).toMatchObject({ ok: true });
+    expect(mockPrisma.formSubmission.create.mock.calls[0][0].data.answers).toEqual({ diet: "None" });
+  });
+
+  it("requires the question when its rule shows it", async () => {
+    prime();
+    expect(await apply({ diet: "Other" })).toMatchObject({ status: 400 });
+    expect(mockPrisma.formSubmission.create).not.toHaveBeenCalled();
+  });
+});
