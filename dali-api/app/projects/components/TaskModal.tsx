@@ -809,7 +809,7 @@ export function TaskModal({
           // A record's title is text, not a field with a box around it.
           <h2
             id="task-modal-title"
-            className="os-record-name os-modal-title min-w-0 flex-1 break-words"
+            className="os-modal-title min-w-0 flex-1 break-words"
           >
             {title}
           </h2>

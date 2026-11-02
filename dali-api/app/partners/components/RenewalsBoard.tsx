@@ -39,6 +39,8 @@ export function RenewalsBoard({
   decisionTerm,
   termOptions,
   domains,
+  coreMembers,
+  pickedTermId,
 }: {
   cards: RenewalCardModel[];
   query: string;
@@ -46,8 +48,11 @@ export function RenewalsBoard({
   decisionTerm: { id: string; code: string };
   termOptions: TermOption[];
   domains: DomainOption[];
+  coreMembers: { userId: string; name: string }[];
+  pickedTermId: string;
 }) {
   const fetcher = useFetcher<{ error?: string }>();
+  const piFetcher = useFetcher<{ error?: string }>();
   const [editing, setEditing] = useState<Editing | null>(null);
   const now = useMemo(() => new Date(), []);
   const saving =
@@ -107,6 +112,7 @@ export function RenewalsBoard({
   return (
     <div className="flex flex-col gap-3">
       {fetcher.data?.error && <p className="text-sm text-os-red">{fetcher.data.error}</p>}
+      {piFetcher.data?.error && <p className="text-sm text-os-red">{piFetcher.data.error}</p>}
       {query.trim() && cards.length > 0 && RENEWAL_COLUMNS.every((c) => grouped[c].length === 0) && (
         <p className="text-sm text-muted-foreground">No projects match &ldquo;{query.trim()}&rdquo;.</p>
       )}
@@ -144,6 +150,13 @@ export function RenewalsBoard({
                 if (!editingThis) setEditing({ projectId: c.projectId, decision: c.column });
               }}
               onDecide={(decision) => setEditing({ projectId: c.projectId, decision })}
+              coreMembers={coreMembers}
+              onPiChange={(piUserId) =>
+                piFetcher.submit(
+                  { intent: "pi", projectId: c.projectId, termId: pickedTermId, piUserId: piUserId ?? "" },
+                  { method: "post" },
+                )
+              }
               pendingDecision={editingThis ? editing.decision : undefined}
               expansion={
                 editingThis ? (

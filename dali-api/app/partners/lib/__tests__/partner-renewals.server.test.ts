@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("~/lib/db.server");
 
-import { applyContinue, applyNotContinuing, applyUndecided } from "../partner-renewals.server";
+import { applyContinue, applyNotContinuing, applyUndecided, setTermPi } from "../partner-renewals.server";
 
 function fakeDb() {
   const tx = {
@@ -174,5 +174,24 @@ describe("applyUndecided", () => {
     await applyUndecided(db, { projectId: "p", decisionTermId: "t1" });
     expect(tx.projectTermStatus.deleteMany.mock.calls.map((c) => c[0].where.termId)).toEqual(["t1", "t3"]);
     expect(tx.projectRoleRequest.deleteMany).toHaveBeenCalledWith({ where: { projectId: "p", termId: "t3" } });
+  });
+});
+
+describe("setTermPi", () => {
+  const input = { projectId: "p", termId: "t", piUserId: "u" };
+
+  it("writes the PI onto that term's ProjectTerm, not its renewal status", async () => {
+    const updateMany = vi.fn().mockResolvedValue({ count: 1 });
+    const db = { projectTerm: { updateMany } } as never;
+    await expect(setTermPi(db, input)).resolves.toBe(true);
+    expect(updateMany).toHaveBeenCalledWith({
+      where: { projectId: "p", termId: "t" },
+      data: { piUserId: "u" },
+    });
+  });
+
+  it("reports when the project is not active in that term", async () => {
+    const db = { projectTerm: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) } } as never;
+    await expect(setTermPi(db, input)).resolves.toBe(false);
   });
 });

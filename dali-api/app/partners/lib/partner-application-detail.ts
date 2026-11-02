@@ -9,6 +9,8 @@ import type { PartnerContractStatus } from "./partner-contract.server";
 export type ApplicationDetail = {
   id: string;
   title: string;
+  iconEmoji: string | null;
+  piUserId: string | null;
   summary: string | null;
   stage: PartnerStage;
   sowDocId: string | null;
@@ -87,7 +89,7 @@ export type ApplicationDetailResponse = {
   contract: PartnerContractStatus;
   /** PartnerContract-kind SigningDocuments with a published version — empty when the viewer can't edit. */
   contractDocuments: { id: string; title: string }[];
-  /** Attendee picker for the Meetings tab's manual "log a meeting" form. */
+  /** Attendee picker for the Meetings tab's manual "log a meeting" form, and the PI picker. */
   coreMembers: { userId: string; name: string }[];
   /** For the Statement of work tab's collab editor; null when no session token could be minted. */
   collabToken: string | null;

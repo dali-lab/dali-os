@@ -1923,17 +1923,6 @@ html.os-shell > body::-webkit-scrollbar-track {
     box-shadow 0.15s ease;
 }
 
-/* A record's own name is set in caps wherever it's shown as a label or a
-   heading — on a bar, in a hover card, at the top of its modal, in a list of
-   linked records. It's a display treatment, not the stored value: the caps
-   come off the text-transform, so what was typed is what's saved.
-   Deliberately not applied to the name *fields* in a create form — typing
-   into a box that shouts back is a different thing from reading a label. */
-.os-record-name,
-.os-bar-label,
-.os-item-row {
-  text-transform: uppercase;
-}
 .os-bar-label--epic {
   background: var(--os-epic-fill);
   color: var(--os-epic-ink);

@@ -2,7 +2,9 @@ import { prisma } from "~/lib/db.server";
 import { currentTerm } from "~/lib/roles";
 import { ACTIVE_LAB_MEMBER_WHERE } from "~/lib/prisma-shapes";
 import { parseColumnMapping } from "~/projects/lib/slot-roles";
+import { personName } from "./core-members.server";
 import {
+  effectivePi,
   hasSpots,
   intentSetupState,
   projectToPlanningItem,
@@ -31,6 +33,18 @@ const APPLICATION_STAGES = ["Backlog", "New", "Interview", "Deciding", "Accepted
 
 function addSpots(into: Record<string, number>, domainId: string, n: number) {
   into[domainId] = (into[domainId] ?? 0) + n;
+}
+
+function piNameFor(
+  projectTerms: { termId: string; pi: Parameters<typeof personName>[0] | null }[],
+  sortKeyById: Map<string, number>,
+  termSortKey: number,
+): string | null {
+  const pi = effectivePi(
+    projectTerms.map((pt) => ({ sortKey: sortKeyById.get(pt.termId) ?? Infinity, pi: pt.pi })),
+    termSortKey,
+  );
+  return pi ? personName(pi) : null;
 }
 
 export async function loadPlanningData(requestedTermId: string | null): Promise<PlanningData> {
@@ -74,7 +88,9 @@ export async function loadPlanningData(requestedTermId: string | null): Promise<
         name: true,
         iconEmoji: true,
         status: true,
-        projectTerms: { select: { termId: true } },
+        projectTerms: {
+          select: { termId: true, pi: { select: { firstName: true, lastName: true, daliEmail: true } } },
+        },
         termStatuses: { where: { termId: term.id }, select: { isContinuing: true } },
         roleRequests: {
           where: { termId: { in: [term.id, ...(prevTerm ? [prevTerm.id] : [])] } },
@@ -91,7 +107,9 @@ export async function loadPlanningData(requestedTermId: string | null): Promise<
       select: {
         id: true,
         title: true,
+        iconEmoji: true,
         stage: true,
+        pi: { select: { firstName: true, lastName: true, daliEmail: true } },
         domains: { select: { domainId: true, expectedMembers: true } },
       },
     }),
@@ -121,6 +139,7 @@ export async function loadPlanningData(requestedTermId: string | null): Promise<
       id: p.id,
       name: p.name,
       iconEmoji: p.iconEmoji,
+      piName: piNameFor(p.projectTerms, sortKeyById, term.sortKey),
       termSortKey: term.sortKey,
       earliestSortKey: sortKeys.length ? Math.min(...sortKeys) : null,
       inPreviousTerm: !!prevTerm && p.projectTerms.some((pt) => pt.termId === prevTerm.id),
@@ -139,11 +158,13 @@ export async function loadPlanningData(requestedTermId: string | null): Promise<
       kind: "application",
       refId: a.id,
       name: a.title,
+      iconEmoji: a.iconEmoji,
+      piName: a.pi ? personName(a.pi) : null,
       source: "new",
       state: a.stage as PlanningState,
       spotsByDomain,
     };
-    (a.stage !== "Backlog" && hasSpots(item) ? items : listOnlyItems).push(item);
+    (hasSpots(item) ? items : listOnlyItems).push(item);
   }
 
   let returning: ReturningPerson[] = [];

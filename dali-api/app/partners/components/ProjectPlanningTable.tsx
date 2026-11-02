@@ -4,7 +4,7 @@ import { planningStateLabel, type PlanningProjectModel, type PlanningProjectRow 
 import { breakdownHref } from "./planning/DomainBreakdown";
 import { spotsLabel } from "./PlanningTable";
 
-const GRID = "grid grid-cols-[minmax(200px,1.6fr)_minmax(130px,0.8fr)_60px_minmax(200px,1.6fr)] items-center gap-4 px-4";
+const GRID = "grid grid-cols-[minmax(200px,1.6fr)_minmax(110px,0.7fr)_minmax(120px,0.8fr)_60px_minmax(200px,1.6fr)] items-center gap-4 px-4";
 
 function ProjectRow({ row }: { row: PlanningProjectRow }) {
   return (
@@ -21,6 +21,7 @@ function ProjectRow({ row }: { row: PlanningProjectRow }) {
         {row.name}
       </span>
       <span className="text-xs text-muted-foreground">{planningStateLabel(row)}</span>
+      <span className="min-w-0 truncate text-muted-foreground">{row.piName ?? "No PI"}</span>
       <span className="tabular-nums text-foreground">{row.spots}</span>
       <span className="min-w-0 truncate text-muted-foreground">
         {row.domains.length > 0 ? row.domains.map((d) => `${d.name} ${d.count}`).join(", ") : "No spots set"}
@@ -57,10 +58,11 @@ export function ProjectPlanningTable({ model, termCode }: { model: PlanningProje
   }
   return (
     <div className="overflow-x-auto rounded-os-card bg-os-card">
-      <div className="min-w-[720px]">
+      <div className="min-w-[840px]">
         <div className={cn(GRID, "py-2.5 text-xs font-medium text-muted-foreground")}>
           <span>Project</span>
           <span>State</span>
+          <span>PI</span>
           <span>Spots</span>
           <span>Domains</span>
         </div>
@@ -68,6 +70,7 @@ export function ProjectPlanningTable({ model, termCode }: { model: PlanningProje
         <Group label="New" rows={fresh} />
         <div className={cn(GRID, "border-t border-os-container-hi py-3 text-sm font-semibold text-foreground")}>
           <span>Total</span>
+          <span />
           <span />
           <span className="col-span-2 tabular-nums">{spotsLabel(totals.renewing, totals.fresh)}</span>
         </div>

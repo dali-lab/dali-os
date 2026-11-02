@@ -64,6 +64,7 @@ export async function loader({ request }: Route.LoaderArgs) {
         holdUntil: true,
         meetingRequestedAt: true,
         createdAt: true,
+        iconEmoji: true,
         partnerOrg: { select: { name: true } },
         applicantContact: { select: { name: true } },
         targetTerms: {
@@ -117,7 +118,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     lastActivityAt: a.lastActivityAt.toISOString(),
     holdUntil: a.holdUntil?.toISOString() ?? null,
     resultingProjectId: a.resultingProjectId,
-    projectIconEmoji: a.resultingProjectId ? (projectIcons.get(a.resultingProjectId) ?? null) : null,
+    projectIconEmoji: a.resultingProjectId ? (projectIcons.get(a.resultingProjectId) ?? null) : a.iconEmoji,
     meetingRequestedAt: a.meetingRequestedAt?.toISOString() ?? null,
     pendingRequestCount: a.meetingRequests.length,
     meetingCount: a.meetings.length,

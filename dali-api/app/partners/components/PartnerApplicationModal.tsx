@@ -20,6 +20,7 @@ import { modalCardClass } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
 import { Pill } from "~/hiring/components/cycle-setup/SetupCard";
 import { PARTNER_STAGE_LABELS } from "../lib/partner-application";
+import { postPartnerApplicationIntent } from "../lib/partner-detail-fetch";
 import type { PartnerCardModel } from "../lib/partner-board";
 import type { ApplicationDetailResponse } from "../lib/partner-application-detail";
 import { ActivityTab } from "./application/ActivityTab";
@@ -32,6 +33,8 @@ import { STAGE_TONE } from "./application/rail";
 import { StageActions } from "./application/StageActions";
 import { SowTab } from "./application/SowTab";
 import { ScheduleInterviewModal } from "./ScheduleInterviewModal";
+import { ProjectIcon } from "~/components/ProjectIcon";
+import { ProjectIconPicker } from "~/projects/components/ProjectIconPicker";
 
 const TAB_ROW_LIMIT = 8;
 
@@ -187,6 +190,12 @@ export function PartnerApplicationModal({
     refresh();
   }
 
+  async function saveIcon(emoji: string | null) {
+    if (!detail) return;
+    await postPartnerApplicationIntent(detail.application.id, "icon", { iconEmoji: emoji });
+    refresh();
+  }
+
   const availableDomains = detail
     ? domainOptions.filter((d) => !detail.application.domains.some((ad) => ad.domainId === d.id))
     : domainOptions;
@@ -240,12 +249,21 @@ export function PartnerApplicationModal({
                 </Button>
               </form>
             ) : (
-              <h2
-                id="partner-application-modal-title"
-                className="os-record-name os-modal-title min-w-0 flex-1 break-words"
-              >
-                {detail?.application.title ?? "Loading…"}
-              </h2>
+              <div className="flex min-w-0 items-center gap-2">
+                {detail && canEdit && (
+                  <ProjectIconPicker
+                    iconEmoji={detail.application.iconEmoji}
+                    editing
+                    onChange={(emoji) => void saveIcon(emoji)}
+                  />
+                )}
+                {detail && !canEdit && detail.application.iconEmoji && (
+                  <ProjectIcon iconEmoji={detail.application.iconEmoji} size="lg" />
+                )}
+                <h2 id="partner-application-modal-title" className="os-modal-title min-w-0 flex-1 break-words">
+                  {detail?.application.title ?? "Loading…"}
+                </h2>
+              </div>
             )}
             {!isCreate && detail && (
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-os-grey">
@@ -474,6 +492,7 @@ export function PartnerApplicationModal({
                   termOptions={termOptions}
                   contract={detail.contract}
                   contractDocuments={detail.contractDocuments}
+                  coreMembers={detail.coreMembers}
                   onChanged={refresh}
                 />
               </aside>

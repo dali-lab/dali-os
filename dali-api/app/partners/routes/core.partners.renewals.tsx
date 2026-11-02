@@ -12,6 +12,7 @@ import { PartnerCrmNav } from "../components/PartnerCrmNav";
 import { RenewalsBoard } from "../components/RenewalsBoard";
 import { useState } from "react";
 import { normalizeNextStep, type RenewalCardModel } from "../lib/partner-renewals";
+import { listActiveCoreMembers } from "../lib/core-members.server";
 
 type TermRef = { id: string; code: string; sortKey: number };
 import {
@@ -19,6 +20,7 @@ import {
   applyNotContinuing,
   applyUndecided,
   loadRenewalCards,
+  setTermPi,
 } from "../lib/partner-renewals.server";
 
 export const handle = { hideBreadcrumbs: true, areaSubnav: true };
@@ -52,15 +54,20 @@ export async function loader({ request }: Route.LoaderArgs) {
       decisionTerm: null as TermRef | null,
       cards: [] as RenewalCardModel[],
       domains: [] as { id: string; name: string }[],
+      coreMembers: [] as { userId: string; name: string }[],
     };
   }
-  const { decisionTerm, cards } = await loadRenewalCards(picked, terms);
+  const [{ decisionTerm, cards }, coreMembers] = await Promise.all([
+    loadRenewalCards(picked, terms),
+    listActiveCoreMembers(request),
+  ]);
   return {
     terms,
     picked,
     decisionTerm,
     cards,
     domains: domains.map((d) => ({ id: d.id, name: d.displayName })),
+    coreMembers,
   };
 }
 
@@ -71,6 +78,24 @@ export async function action({ request }: Route.ActionArgs) {
   const intent = String(form.get("intent") ?? "");
   const projectId = String(form.get("projectId") ?? "");
   const decisionTermId = String(form.get("decisionTermId") ?? "");
+
+  if (intent === "pi") {
+    const termId = String(form.get("termId") ?? "");
+    const piUserId = String(form.get("piUserId") ?? "") || null;
+    if (piUserId && !(await isCore(piUserId))) return { error: "A PI must be a Core member." };
+    if (!(await setTermPi(prisma, { projectId, termId, piUserId }))) {
+      return { error: "That project is not active in that term." };
+    }
+    await logAuditEvent({
+      action: "partner.project.update",
+      userId: g.userId,
+      targetId: projectId,
+      metadata: { renewalIntent: intent, termId, piUserId },
+      request,
+    });
+    return { ok: true };
+  }
+
   if (!projectId || !decisionTermId) return { error: "Missing project or term." };
 
   const next = normalizeNextStep(String(form.get("nextStep") ?? ""), String(form.get("nextStepDue") ?? ""));
@@ -117,7 +142,7 @@ export default function PartnersRenewals() {
   const data = useLoaderData<typeof loader>();
   const [, setSearchParams] = useSearchParams();
   const [query, setQuery] = useState("");
-  const { terms, picked, decisionTerm, cards, domains } = data;
+  const { terms, picked, decisionTerm, cards, domains, coreMembers } = data;
 
   return (
     <div className="flex flex-col gap-4">
@@ -158,6 +183,8 @@ export default function PartnersRenewals() {
           decisionTerm={decisionTerm}
           termOptions={terms.filter((t) => t.sortKey >= decisionTerm.sortKey).map((t) => ({ id: t.id, code: t.code }))}
           domains={domains}
+          coreMembers={coreMembers}
+          pickedTermId={picked.id}
         />
       )}
     </div>
