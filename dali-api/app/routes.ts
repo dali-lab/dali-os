@@ -529,6 +529,7 @@ export default [
   route("api/tour/complete", "routes/api.tour.complete.ts"),
   route("api/timezone/update", "routes/api.timezone.update.ts"),
   route("api/feedback/posts", "routes/api.feedback.posts.ts"),
+  route("api/custom-emoji", "routes/api.custom-emoji.ts"),
   route("api/release-notes", "routes/api.release-notes.ts"),
   route("api/announcements/sent", "routes/api.announcements.sent.ts"),
   route("api/notifications", "routes/api.notifications.ts"),

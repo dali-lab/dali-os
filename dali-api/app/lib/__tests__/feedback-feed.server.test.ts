@@ -1,6 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("~/lib/db.server", () => ({ prisma: { feedbackPost: { findMany: vi.fn() } } }));
+vi.mock("~/lib/db.server", () => ({
+  prisma: { feedbackPost: { findMany: vi.fn() }, customEmoji: { findMany: vi.fn() } },
+}));
+vi.mock("~/lib/s3", () => ({ isS3Configured: () => false, getDownloadUrl: vi.fn() }));
 vi.mock("~/lib/photo", () => ({ resolvePhotoUrl: vi.fn(async (u: string | null) => (u ? `signed:${u}` : null)) }));
 
 import { prisma } from "~/lib/db.server";
@@ -104,5 +107,54 @@ describe("loadFeedbackPostsByIds", () => {
     expect(where.id.in).toHaveLength(50);
     expect(new Set(where.id.in).size).toBe(50);
     expect(posts[0]).toMatchObject({ id: "p1", canDelete: true });
+  });
+});
+
+describe("feed reactions", () => {
+  const row = (emoji: string, userId: string, firstName: string, at: string) => ({
+    emoji,
+    userId,
+    createdAt: new Date(at),
+    user: { firstName, lastName: "Example" },
+  });
+
+  it("names who reacted, leaving out the viewer", async () => {
+    findMany.mockResolvedValue([
+      post("p", {
+        reactions: [
+          row("🚀", "ada", "Ada", "2026-03-01T00:00:00Z"),
+          row("🚀", "grace", "Grace", "2026-03-02T00:00:00Z"),
+        ],
+      }),
+    ] as never);
+    const { items } = await loadFeedbackPage(null, viewer);
+    expect(items[0].reactions).toEqual([
+      { emoji: "🚀", count: 2, mine: true, people: ["Grace Example"] },
+    ]);
+  });
+
+  it("gives a live custom emoji its image and a deleted one null", async () => {
+    vi.mocked(prisma.customEmoji.findMany).mockResolvedValue([
+      { name: "parrot", imageKey: "uploads/custom-emoji/a-emoji.gif" },
+    ] as never);
+    findMany.mockResolvedValue([
+      post("p", {
+        reactions: [
+          row(":parrot:", "grace", "Grace", "2026-03-01T00:00:00Z"),
+          row(":gone:", "grace", "Grace", "2026-03-02T00:00:00Z"),
+        ],
+      }),
+    ] as never);
+    const { items } = await loadFeedbackPage(null, viewer);
+    expect(items[0].reactions.map((r) => r.imageUrl)).toEqual([
+      "/api/upload/raw?key=uploads%2Fcustom-emoji%2Fa-emoji.gif",
+      null,
+    ]);
+  });
+
+  it("skips the custom emoji query when a page has none", async () => {
+    findMany.mockResolvedValue([post("p")] as never);
+    await loadFeedbackPage(null, viewer);
+    expect(prisma.customEmoji.findMany).not.toHaveBeenCalled();
   });
 });

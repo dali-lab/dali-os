@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import {
   Link,
   useFetcher,
@@ -7,7 +7,7 @@ import {
   useNavigate,
   type ShouldRevalidateFunctionArgs,
 } from "react-router";
-import { ArrowLeft, EyeOff, Trash2 } from "lucide-react";
+import { ArrowLeft, EyeOff } from "lucide-react";
 import type { Route } from "./+types/community.gallery.$postId";
 import {
   galleryAction,
@@ -26,10 +26,8 @@ import {
 import { relativeTime } from "~/lib/relative-time";
 import { cn } from "~/lib/cn";
 import { Avatar } from "~/components/ui/Avatar";
-import { IconButton } from "~/components/ui/IconButton";
-import { ReactionBar } from "~/components/ReactionBar";
-import { MentionText } from "~/components/MentionText";
-import { MentionTextInput } from "~/components/MentionTextInput";
+import { PostComments } from "~/components/PostComments";
+import { ReactionBar, useReactionToggle } from "~/components/ReactionBar";
 import { GalleryMasonry } from "~/community/components/GalleryMasonry";
 import { GalleryNavRow } from "~/community/components/GalleryNavRow";
 import { GalleryPostMenu } from "~/community/components/GalleryPostMenu";
@@ -127,7 +125,7 @@ function BackButton() {
 }
 
 function PostCloseup({ post }: { post: GalleryPostDetail }) {
-  const reactor = useFetcher();
+  const { reactions, react } = useReactionToggle(post.id, post.reactions);
   const restore = useFetcher();
   const portrait = post.height > post.width;
 
@@ -194,106 +192,24 @@ function PostCloseup({ post }: { post: GalleryPostDetail }) {
           <p className="whitespace-pre-wrap break-words text-[15px] text-foreground">{post.caption}</p>
         )}
 
-        <ReactionBar
-          reactions={post.reactions}
-          palette={GALLERY_EMOJI}
-          onReact={(emoji) =>
-            reactor.submit({ intent: "react", postId: post.id, emoji }, { method: "post" })
-          }
-        />
+        <ReactionBar reactions={reactions} palette={GALLERY_EMOJI} onReact={react} />
 
-        <Comments post={post} />
+        <PostComments
+          postId={post.id}
+          comments={post.comments}
+          maxLength={GALLERY_COMMENT_MAX}
+          avatarSize="compact"
+          fill
+          renderAuthor={(c) => (
+            <Link
+              to={galleryFeedHref({ by: c.author.id })}
+              className="font-semibold text-foreground hover:underline"
+            >
+              {galleryByline(c.author.name, c.author.classYear)}
+            </Link>
+          )}
+        />
       </div>
     </article>
-  );
-}
-
-function Comments({ post }: { post: GalleryPostDetail }) {
-  const fetcher = useFetcher();
-  const remove = useFetcher();
-  const [draft, setDraft] = useState("");
-  const listRef = useRef<HTMLDivElement | null>(null);
-  const sent = fetcher.state === "idle" && fetcher.data != null;
-  useEffect(() => {
-    if (!sent) return;
-    setDraft("");
-    listRef.current?.scrollTo({ top: listRef.current.scrollHeight });
-  }, [sent, fetcher.data]);
-
-  const busy = fetcher.state !== "idle";
-  function send() {
-    const body = draft.trim();
-    if (!body || busy) return;
-    fetcher.submit({ intent: "comment", postId: post.id, body }, { method: "post" });
-  }
-
-  return (
-    <div className="flex min-h-0 flex-1 flex-col gap-3 border-t border-os-container pt-4">
-      <p className="text-xs font-semibold uppercase tracking-widest text-os-grey">
-        {post.comments.length === 0
-          ? "Comments"
-          : `${post.comments.length} ${post.comments.length === 1 ? "comment" : "comments"}`}
-      </p>
-      <div ref={listRef} className="-mx-1 flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-1">
-        {post.comments.length === 0 && <p className="text-sm text-os-muted">No comments yet.</p>}
-        {post.comments.map((c) => (
-          <div key={c.id} className="group flex items-start gap-2.5">
-            <Avatar size="compact" name={c.author.name} photoUrl={c.author.photoUrl} />
-            <div className="min-w-0 flex-1">
-              <p className="flex flex-wrap items-baseline gap-x-2 text-sm">
-                <Link
-                  to={galleryFeedHref({ by: c.author.id })}
-                  className="font-semibold text-foreground hover:underline"
-                >
-                  {galleryByline(c.author.name, c.author.classYear)}
-                </Link>
-                <span className="text-xs text-os-grey" suppressHydrationWarning>
-                  {relativeTime(c.createdAt)}
-                </span>
-              </p>
-              <p className="whitespace-pre-wrap break-words text-sm text-foreground">
-                <MentionText text={c.body} />
-              </p>
-            </div>
-            {c.canDelete && (
-              <IconButton
-                label="Delete comment"
-                icon={Trash2}
-                tone="destructive"
-                className="opacity-0 focus-visible:opacity-100 group-hover:opacity-100 touch:opacity-100"
-                onClick={() =>
-                  remove.submit({ intent: "delete-comment", commentId: c.id }, { method: "post" })
-                }
-              />
-            )}
-          </div>
-        ))}
-      </div>
-      <form
-        className="os-form flex items-center gap-2"
-        onSubmit={(e) => {
-          e.preventDefault();
-          send();
-        }}
-      >
-        <MentionTextInput
-          value={draft}
-          onChange={setDraft}
-          maxLength={GALLERY_COMMENT_MAX}
-          placeholder="Add a comment, @ to mention"
-          ariaLabel="Add a comment"
-          dropUp
-          wrapperClassName="relative min-w-0 flex-1"
-          className="w-full"
-        />
-        <button
-          type="submit"
-          disabled={busy || !draft.trim()}
-          className="os-btn-primary os-btn-primary--sm disabled:opacity-50"
-        >
-          Send
-        </button>
-      </form>
-    </div>
   );
 }

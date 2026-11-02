@@ -320,6 +320,9 @@ export const AUDIT_ACTIONS = [
   "recording.discard",
   "release_note.publish",
   "release_note.dismiss",
+  // metadata.name on add; the row itself keeps the name after a delete.
+  "custom_emoji.add",
+  "custom_emoji.delete",
   // Communications. listserv.config targets the singleton "default" row.
   "listserv.config",
   "banner.save",

@@ -347,6 +347,7 @@ model User {
   galleryReactions GalleryReaction[]
   galleryComments  GalleryComment[]
   galleryReports   GalleryReport[]
+  customEmoji      CustomEmoji[]
 
   // ─── Page documentation (per-page guides) ─────────────────────────────────
   pageDocsMaintained PageDoc[]  @relation("PageDocMaintainer")
@@ -1701,6 +1702,19 @@ model GalleryComment {
   author User        @relation(fields: [authorId], references: [id], onDelete: Cascade)
 
   @@index([postId, createdAt])
+}
+
+// A lab-wide reaction image. Reactions store ":name:" in their emoji column, so a
+// deleted row stays to keep the name from being reused on old reactions.
+model CustomEmoji {
+  id        String    @id @default(cuid())
+  name      String    @unique
+  imageKey  String
+  addedById String?
+  createdAt DateTime  @default(now())
+  deletedAt DateTime?
+
+  addedBy User? @relation(fields: [addedById], references: [id], onDelete: SetNull)
 }
 
 model GalleryReport {
