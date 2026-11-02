@@ -27,7 +27,7 @@ function open(headers: Record<string, string> = {}, topics = ["t:1"], opts?: { s
   })();
   // Everything the stream has enqueued so far.
   const read = async () => {
-    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setImmediate(r));
     const out = buffered;
     buffered = "";
     return out;
@@ -41,6 +41,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.restoreAllMocks();
   vi.useRealTimers();
   vi.unstubAllEnvs();
   __resetRealtimeBusForTests();
@@ -98,7 +99,8 @@ describe("busEventStream", () => {
   });
 
   it("sends keepalives and a sync on the default interval", async () => {
-    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "setTimeout", "clearTimeout"] });
+    vi.spyOn(Math, "random").mockReturnValue(0.999);
     const s = open();
     await s.read();
     vi.advanceTimersByTime(KEEPALIVE_INTERVAL_MS);
@@ -109,7 +111,8 @@ describe("busEventStream", () => {
   });
 
   it("uses a caller's shorter sync interval", async () => {
-    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "setTimeout", "clearTimeout"] });
+    vi.spyOn(Math, "random").mockReturnValue(0.999);
     const s = open({}, ["t:1"], { syncMs: 10_000 });
     await s.read();
     vi.advanceTimersByTime(10_000);
@@ -117,8 +120,48 @@ describe("busEventStream", () => {
     s.abort();
   });
 
+  it("starts each connection's sync at its own point in the interval", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "setTimeout", "clearTimeout"] });
+    const random = vi.spyOn(Math, "random").mockReturnValue(0.25);
+    const early = open({}, ["t:1"], { syncMs: 10_000 });
+    await early.read();
+    random.mockReturnValue(0.75);
+    const late = open({}, ["t:1"], { syncMs: 10_000 });
+    await late.read();
+    vi.advanceTimersByTime(2_500);
+    expect(await early.read()).toBe("event: sync\ndata: 1\n\n");
+    vi.advanceTimersByTime(5_000);
+    expect(await late.read()).toBe("event: sync\ndata: 1\n\n");
+    early.abort();
+    late.abort();
+  });
+
+  it("keeps syncing every interval after the first", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "setTimeout", "clearTimeout"] });
+    vi.spyOn(Math, "random").mockReturnValue(0.5);
+    const s = open({}, ["t:1"], { syncMs: 4_000 });
+    await s.read();
+    vi.advanceTimersByTime(2_000);
+    await s.read();
+    vi.advanceTimersByTime(4_000);
+    expect(await s.read()).toBe("event: sync\ndata: 1\n\n");
+    vi.advanceTimersByTime(4_000);
+    expect(await s.read()).toBe("event: sync\ndata: 1\n\n");
+    s.abort();
+  });
+
+  it("cancels a first sync that hasn't fired when the client leaves", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "setTimeout", "clearTimeout"] });
+    vi.spyOn(Math, "random").mockReturnValue(0.5);
+    const s = open({}, ["t:1"], { syncMs: 10_000 });
+    await s.read();
+    s.abort();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it("stops listening once the client disconnects", async () => {
-    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "setTimeout", "clearTimeout"] });
+    vi.spyOn(Math, "random").mockReturnValue(0.999);
     const s = open();
     await s.read();
     s.abort();
@@ -129,7 +172,8 @@ describe("busEventStream", () => {
   });
 
   it("tears down when the reader cancels", async () => {
-    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "setTimeout", "clearTimeout"] });
+    vi.spyOn(Math, "random").mockReturnValue(0.999);
     const s = open();
     await s.read();
     await s.reader.cancel();
