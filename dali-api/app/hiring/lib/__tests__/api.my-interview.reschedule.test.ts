@@ -96,14 +96,7 @@ describe("POST /api/hiring/my-interview/reschedule", () => {
       interviewRoundId: "interviews",
       domainApplicationId: DA_ID_A,
       startTime: new Date(Date.now() + 48 * 60 * 60_000),
-      domainApplication: {
-        application: {
-          domainApplications: [
-            { domainId: "domain-design" },
-            { domainId: "domain-eng" },
-          ],
-        },
-      },
+      domainApplication: { domainId: "domain-design" },
     });
     mockTx.interview.update.mockResolvedValue({});
 
@@ -135,14 +128,7 @@ describe("POST /api/hiring/my-interview/reschedule", () => {
       interviewRoundId: "interviews",
       domainApplicationId: DA_ID_A,
       startTime: new Date(Date.now() + 48 * 60 * 60_000),
-      domainApplication: {
-        application: {
-          domainApplications: [
-            { domainId: "domain-design" },
-            { domainId: "domain-eng" },
-          ],
-        },
-      },
+      domainApplication: { domainId: "domain-design" },
     });
     mockTx.interview.update.mockResolvedValue({});
 
@@ -176,12 +162,43 @@ describe("POST /api/hiring/my-interview/reschedule", () => {
       CYCLE_ID,
       "interviews",
       DA_ID_A,
-      ["domain-design", "domain-eng"],
+      ["domain-design"],
       expect.any(Date),
       expect.any(Date),
       mockTx,
       "online",
     );
+  });
+
+  it("books interviewers from the interview's own domain, not the application's other domain rows", async () => {
+    mockTx.interview.findFirst.mockResolvedValue({
+      id: "int-design",
+      applicationCycleId: CYCLE_ID,
+      interviewRoundId: "interviews",
+      domainApplicationId: DA_ID_A,
+      startTime: new Date(Date.now() + 48 * 60 * 60_000),
+      domainApplication: {
+        domainId: "domain-design",
+        application: {
+          domainApplications: [
+            { domainId: "domain-design", selected: true },
+            { domainId: "domain-eng", selected: false },
+          ],
+        },
+      },
+    });
+
+    await action({
+      request: makeRequest({
+        domainApplicationId: DA_ID_A,
+        newStart: "2027-01-01T10:00:00Z",
+        newEnd: "2027-01-01T10:30:00Z",
+      }),
+      params: {},
+      context: {},
+    } as any);
+
+    expect(vi.mocked(assignInterviewers).mock.calls[0][3]).toEqual(["domain-design"]);
   });
 
   it("cancels the old slot's calendar event for the interviewers who held it", async () => {
@@ -193,7 +210,7 @@ describe("POST /api/hiring/my-interview/reschedule", () => {
       interviewRoundId: "interviews",
       domainApplicationId: DA_ID_A,
       startTime: new Date(Date.now() + 48 * 60 * 60_000),
-      domainApplication: { application: { domainApplications: [{ domainId: "domain-design" }] } },
+      domainApplication: { domainId: "domain-design" },
     });
     vi.mocked(assignInterviewers).mockResolvedValue({
       id: "int-new",
@@ -226,7 +243,7 @@ describe("POST /api/hiring/my-interview/reschedule", () => {
       interviewRoundId: "interviews",
       domainApplicationId: DA_ID_A,
       startTime: new Date(Date.now() + 48 * 60 * 60_000),
-      domainApplication: { application: { domainApplications: [{ domainId: "domain-design" }] } },
+      domainApplication: { domainId: "domain-design" },
     });
     vi.mocked(assignInterviewers).mockResolvedValue({
       id: "int-new",

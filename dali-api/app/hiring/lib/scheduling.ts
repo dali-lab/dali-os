@@ -426,6 +426,56 @@ async function assignInterviewersWithTx(
   return interview;
 }
 
+// ─── freeUserIdsByInterview ──────────────────────────────────────────────────
+//
+// For each interview, the members of its round's roster the scheduler would
+// treat as free at that time. Backs the leads' Reassign list.
+
+export async function freeUserIdsByInterview(
+  cycleId: string,
+  roundId: string,
+  interviews: { id: string; startTime: Date; endTime: Date }[],
+): Promise<Map<string, string[]>> {
+  const [config, roster] = await Promise.all([
+    prisma.interviewConfig.findUnique({
+      where: { applicationCycleId_interviewRoundId: { applicationCycleId: cycleId, interviewRoundId: roundId } },
+    }),
+    prisma.cycleInterviewer.findMany({
+      where: { applicationCycleId: cycleId, interviewRoundId: roundId },
+      include: {
+        interviewAssignments: {
+          where: ACTIVE_ASSIGNMENT_WITH_ACTIVE_INTERVIEW,
+          include: { interview: true },
+        },
+      },
+    }),
+  ]);
+  if (!config) return new Map();
+
+  const { memberIntervals } = buildMemberAggregations(roster, config.bufferMinutes);
+  const calendars = await interviewerCalendars(roster.map((r) => r.userId), config);
+  const checks: InterviewerFreeCheck[] = roster.map((r) => ({
+    cycleInterviewerId: r.id,
+    userId: r.userId,
+    domainId: r.domainId,
+    availability: calendars.get(r.userId)?.available ?? [],
+    bookedIntervals: memberIntervals.get(r.userId) ?? [],
+  }));
+
+  return new Map(
+    interviews.map((interview) => [
+      interview.id,
+      [
+        ...new Set(
+          checks
+            .filter((c) => isInterviewerFree(c, interview.startTime, interview.endTime))
+            .map((c) => c.userId),
+        ),
+      ],
+    ]),
+  );
+}
+
 // ─── reassignInterviewer ─────────────────────────────────────────────────────
 //
 // Atomic interviewer swap. Either finds a replacement and commits the swap

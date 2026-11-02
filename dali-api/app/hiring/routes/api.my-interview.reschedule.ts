@@ -55,13 +55,7 @@ export async function action({ request }: Route.ActionArgs) {
             status: "Scheduled",
           },
           include: {
-            domainApplication: {
-              include: {
-                application: {
-                  include: { domainApplications: { select: { domainId: true } } },
-                },
-              },
-            },
+            domainApplication: { select: { domainId: true } },
             roomBooking: { select: { userId: true } },
           },
         });
@@ -90,12 +84,6 @@ export async function action({ request }: Route.ActionArgs) {
           throw new Error("__TOO_SOON_TO_BOOK__");
         }
 
-        // DomainApplication.domainId is authoritative and always set, for
-        // every applicant group.
-        const applicantDomainIds = current.domainApplication.application.domainApplications
-          .map((da) => da.domainId)
-          .filter((id): id is string => id !== null);
-
         const oldInterviewers = await getInterviewerRecipients(current.id, tx);
         const oldInterviewerUserIds = await getActiveInterviewerUserIds(current.id, tx);
 
@@ -116,7 +104,7 @@ export async function action({ request }: Route.ActionArgs) {
           current.applicationCycleId,
           current.interviewRoundId,
           current.domainApplicationId,
-          applicantDomainIds,
+          [current.domainApplication.domainId],
           new Date(newStart),
           new Date(newEnd),
           tx,
