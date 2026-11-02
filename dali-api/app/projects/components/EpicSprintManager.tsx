@@ -917,13 +917,13 @@ export function EpicDetail({
                 }}
                 aria-label="Epic name"
                 className={cn(
-                  "os-record-name w-full font-heading text-lg font-bold text-foreground bg-transparent rounded px-1 -mx-1 py-0.5 hover:bg-muted/40 focus:bg-transparent focus:outline-none focus:ring-2 focus:ring-os-accent/30",
+                  "w-full font-heading text-lg font-bold text-foreground bg-transparent rounded px-1 -mx-1 py-0.5 hover:bg-muted/40 focus:bg-transparent focus:outline-none focus:ring-2 focus:ring-os-accent/30",
                 )}
               />
             ) : (
               <h2
                 id="epic-detail-title"
-                className="os-record-name font-heading text-lg font-bold text-foreground truncate"
+                className="font-heading text-lg font-bold text-foreground truncate"
               >
                 {epic.title}
               </h2>

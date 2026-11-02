@@ -17,6 +17,7 @@ export type PlanningItem = {
   refId: string;
   name: string;
   iconEmoji?: string | null;
+  piName?: string | null;
   source: PlanningSource;
   state: PlanningState;
   spotsByDomain: Record<string, number>;
@@ -80,8 +81,10 @@ export function buildPlanningGap(input: {
   items: PlanningItem[];
   returning: ReturningPerson[];
   includePotential: boolean;
+  includeBacklog: boolean;
 }): PlanningGapModel {
-  const { domains, items, returning, includePotential } = input;
+  const { domains, returning, includePotential, includeBacklog } = input;
+  const items = input.items.filter((item) => includeBacklog || item.state !== "Backlog");
 
   const peopleByDomain = new Map<string, Set<string>>();
   const withDomain = new Set<string>();
@@ -157,6 +160,7 @@ export type ProjectPlanningInput = {
   id: string;
   name: string;
   iconEmoji?: string | null;
+  piName?: string | null;
   termSortKey: number;
   earliestSortKey: number | null;
   inPreviousTerm: boolean;
@@ -181,6 +185,7 @@ export function projectToPlanningItem(p: ProjectPlanningInput): PlanningItem | n
     refId: p.id,
     name: p.name,
     iconEmoji: p.iconEmoji ?? null,
+    piName: p.piName ?? null,
     ...placement,
   };
   return p.archived && !hasSpots(item) ? null : item;
@@ -201,6 +206,14 @@ function placeProject(p: ProjectPlanningInput): Pick<PlanningItem, "source" | "s
   return p.inPreviousTerm
     ? { source: "renewing", state: "Undecided", spotsByDomain: p.previousTermSpots }
     : null;
+}
+
+// A continuing project keeps its PI until someone sets a new one for a later term.
+export function effectivePi<P>(rows: { sortKey: number; pi: P | null }[], termSortKey: number): P | null {
+  const latest = rows
+    .filter((r) => r.pi !== null && r.sortKey <= termSortKey)
+    .sort((a, b) => b.sortKey - a.sortKey)[0];
+  return latest?.pi ?? null;
 }
 
 export type PlanningProjectRow = PlanningItem & {

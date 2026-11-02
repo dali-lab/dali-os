@@ -38,6 +38,11 @@ function render(model: Partial<PlanningProjectModel>) {
 }
 
 describe("ProjectPlanningTable", () => {
+  it("shows the PI, or says there is none", () => {
+    expect(render({ renewing: [row({ piName: "Ada Lovelace" })] })).toContain("Ada Lovelace");
+    expect(render({ renewing: [row()] })).toContain("No PI");
+  });
+
   it("shows a row's state, spots and domains", () => {
     const html = render({ renewing: [row()], totals: { renewing: 4, fresh: 0, spots: 4 } });
     expect(html).toContain("Gallery kiosk");

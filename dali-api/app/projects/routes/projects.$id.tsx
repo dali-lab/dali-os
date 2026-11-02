@@ -69,6 +69,7 @@ import { ProjectImageBanner } from "../components/ProjectImageBanner";
 import { ProjectViewSwitch } from "../components/ProjectViewSwitch";
 import { ProjectIcon } from "~/components/ProjectIcon";
 import { ProjectIconPicker } from "../components/ProjectIconPicker";
+import { replaceProjectTerms } from "../lib/project-terms.server";
 import { Markdown } from "~/components/Markdown";
 import { getCollabToken } from "~/lib/collab-token.server";
 import { getUserRoles, isCore, isProjectMember, canManageStaffing, currentTerm, isLabMentor } from "~/lib/roles";
@@ -1370,30 +1371,6 @@ async function replaceProjectDomains(projectId: string, incoming: string[]) {
       ? [
           prisma.projectDomain.createMany({
             data: ids.map((domainId) => ({ projectId, domainId })),
-            skipDuplicates: true,
-          }),
-        ]
-      : []),
-  ]);
-}
-
-// Project term set. Full-replacement too, so the one helper covers both adding
-// and removing terms. The start term and active-this-term are derived from this
-// set, not stored.
-async function replaceProjectTerms(projectId: string, incoming: string[]) {
-  const valid = incoming.length
-    ? await prisma.term.findMany({
-        where: { id: { in: incoming } },
-        select: { id: true },
-      })
-    : [];
-  const ids = valid.map((t) => t.id);
-  await prisma.$transaction([
-    prisma.projectTerm.deleteMany({ where: { projectId } }),
-    ...(ids.length
-      ? [
-          prisma.projectTerm.createMany({
-            data: ids.map((termId) => ({ projectId, termId })),
             skipDuplicates: true,
           }),
         ]

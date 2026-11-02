@@ -875,7 +875,7 @@ export async function submitMemberForm(args: {
     return { ok: true };
   }
 
-  if (slot === "level-up") {
+  if (slot === "level-up" || slot === "referrals") {
     const recorded = await recordBoundSubmission(() =>
       prisma.$transaction(async (tx) => {
         submissionId = (
@@ -885,7 +885,7 @@ export async function submitMemberForm(args: {
             formVersionId: version.id,
             userId: args.userId,
             staffingCycleId: cycle.id,
-            slot: "level-up",
+            slot,
             answers: args.answers as object,
           },
             select: { id: true },

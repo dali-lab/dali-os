@@ -32,7 +32,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 export default function PartnersPlanning() {
   const data = useLoaderData<typeof loader>();
   const { os } = useOsChrome();
-  const [view, setView] = useState<"domain" | "project">("domain");
+  const [view, setView] = useState<"domain" | "project">("project");
   const [includePotential, setIncludePotential] = useState(false);
   const [includeBacklog, setIncludeBacklog] = useState(false);
   const model = useMemo(
@@ -42,8 +42,9 @@ export default function PartnersPlanning() {
         items: data.items,
         returning: data.returning,
         includePotential,
+        includeBacklog,
       }),
-    [data, includePotential],
+    [data, includePotential, includeBacklog],
   );
   const projectModel = useMemo(
     () =>
@@ -81,18 +82,16 @@ export default function PartnersPlanning() {
               { label: "Project", active: view === "project", onClick: () => setView("project") },
             ]}
           />
-          {view === "project" && (
-            <Tooltip content="Adds Backlog applications that target this term">
-              <span className="inline-flex h-9 shrink-0 items-center px-1">
-                <Toggle
-                  tone="os"
-                  label="Include backlog"
-                  checked={includeBacklog}
-                  onChange={(e) => setIncludeBacklog(e.target.checked)}
-                />
-              </span>
-            </Tooltip>
-          )}
+          <Tooltip content="Adds Backlog applications that target this term">
+            <span className="inline-flex h-9 shrink-0 items-center px-1">
+              <Toggle
+                tone="os"
+                label="Include backlog"
+                checked={includeBacklog}
+                onChange={(e) => setIncludeBacklog(e.target.checked)}
+              />
+            </span>
+          </Tooltip>
           <Tooltip content="Adds New, Interview and Deciding applications and undecided renewals">
             <span className="inline-flex h-9 shrink-0 items-center px-1">
               <Toggle

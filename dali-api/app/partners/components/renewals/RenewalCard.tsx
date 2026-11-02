@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { BoardCard } from "~/components/board/BoardCard";
+import { Select } from "~/components/ui/floating";
 import { cn } from "~/lib/cn";
 import {
   isNextStepOverdue,
@@ -59,6 +60,8 @@ export function RenewalCard({
   isDragging,
   onOpen,
   onDecide,
+  coreMembers,
+  onPiChange,
   pendingDecision,
   expansion,
 }: {
@@ -71,6 +74,8 @@ export function RenewalCard({
   /** Continue / Not continuing right on the card; while the card is expanded
    *  the same buttons switch the pending decision. */
   onDecide?: (decision: RenewalColumn) => void;
+  coreMembers?: { userId: string; name: string }[];
+  onPiChange?: (piUserId: string | null) => void;
   /** The decision being edited while the card is expanded. */
   pendingDecision?: RenewalColumn;
   /** The decision form, appended below the card's content when editing. */
@@ -95,6 +100,28 @@ export function RenewalCard({
         {card.termCount} {card.termCount === 1 ? "term" : "terms"}
         {card.fromTermCode ? ` · From ${card.fromTermCode}` : ""}
       </div>
+      {coreMembers && onPiChange && (
+        <div
+          className="mt-2 flex items-center gap-2 text-xs"
+          onClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => e.stopPropagation()}
+          onPointerDown={(e) => e.stopPropagation()}
+        >
+          <span className="text-os-grey">PI</span>
+          <Select
+            ariaLabel={`PI for ${card.name}`}
+            value={card.piUserId ?? ""}
+            onChange={(v) => onPiChange(v || null)}
+            options={[
+              { value: "", label: "No PI" },
+              ...(card.piUserId && !coreMembers.some((m) => m.userId === card.piUserId)
+                ? [{ value: card.piUserId, label: card.piName ?? "Former Core member" }]
+                : []),
+              ...coreMembers.map((m) => ({ value: m.userId, label: m.name })),
+            ]}
+          />
+        </div>
+      )}
       {!expanded && (card.nextStep || (card.column === "not_continuing" && card.reason)) && (
         <dl className="mt-2 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-xs">
           {card.nextStep && (
