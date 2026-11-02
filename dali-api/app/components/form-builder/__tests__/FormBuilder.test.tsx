@@ -83,3 +83,96 @@ describe('buildQuestion (info rows)', () => {
     expect(q.data.body).toBeUndefined()
   })
 })
+
+describe('buildQuestion (new question types)', () => {
+  const base = { key: 'q1', required: true, label: 'Pick one' }
+
+  it('keeps radio options and allowOther', () => {
+    const q = buildQuestion({ ...base, type: 'radio', optionsText: 'A\n\nB\n', allowOther: true })
+    expect(q.data.options).toEqual(['A', 'B'])
+    expect(q.data.allowOther).toBe(true)
+  })
+
+  it('omits allowOther when off', () => {
+    const q = buildQuestion({ ...base, type: 'radio', optionsText: 'A\nB', allowOther: false })
+    expect(q.data.allowOther).toBeUndefined()
+  })
+
+  it('keeps allowOther on checkbox', () => {
+    const q = buildQuestion({ ...base, type: 'checkbox', optionsText: 'A\nB', allowOther: true })
+    expect(q.data.allowOther).toBe(true)
+  })
+
+  it('drops allowOther from a dropdown', () => {
+    const q = buildQuestion({ ...base, type: 'select', optionsText: 'A\nB', allowOther: true })
+    expect(q.data.allowOther).toBeUndefined()
+  })
+
+  it('keeps options when a dropdown becomes multiple choice and back', () => {
+    const asSelect = buildQuestion({ ...base, type: 'select', optionsText: 'A\nB' })
+    const asRadio = buildQuestion({ ...base, type: 'radio', optionsText: asSelect.data.options!.join('\n') })
+    const backToSelect = buildQuestion({ ...base, type: 'select', optionsText: asRadio.data.options!.join('\n') })
+    expect(backToSelect.data.options).toEqual(['A', 'B'])
+  })
+
+  it('keeps scale labels, trimmed, and drops blanks', () => {
+    const q = buildQuestion({ ...base, type: 'scale', scaleLow: ' Not at all ', scaleHigh: '  ' })
+    expect(q.data.scaleLow).toBe('Not at all')
+    expect(q.data.scaleHigh).toBeUndefined()
+    expect(q.data.options).toBeUndefined()
+  })
+
+  it('keeps number min and max from text or numbers, including zero and negatives', () => {
+    expect(buildQuestion({ ...base, type: 'number', minValue: '0', maxValue: '10.5' }).data).toMatchObject({
+      min: 0,
+      max: 10.5,
+    })
+    expect(buildQuestion({ ...base, type: 'number', minValue: -3, maxValue: 3 }).data).toMatchObject({
+      min: -3,
+      max: 3,
+    })
+  })
+
+  it('drops blank or unparseable number bounds', () => {
+    const q = buildQuestion({ ...base, type: 'number', minValue: '', maxValue: 'abc' })
+    expect(q.data.min).toBeUndefined()
+    expect(q.data.max).toBeUndefined()
+  })
+
+  it('date and email carry no extra settings', () => {
+    for (const type of ['date', 'email'] as const) {
+      const q = buildQuestion({
+        ...base,
+        type,
+        optionsText: 'A',
+        allowOther: true,
+        scaleLow: 'x',
+        minValue: '1',
+      })
+      expect(JSON.parse(JSON.stringify(q.data))).toEqual({ label: 'Pick one' })
+    }
+  })
+
+  it('drops number and scale settings when the type changes away', () => {
+    const q = buildQuestion({ ...base, type: 'text', scaleLow: 'x', scaleHigh: 'y', minValue: '1', maxValue: '2' })
+    expect(q.data.scaleLow).toBeUndefined()
+    expect(q.data.min).toBeUndefined()
+    expect(q.data.max).toBeUndefined()
+  })
+
+  it('round trips every new field through JSON', () => {
+    const questions = [
+      buildQuestion({ ...base, type: 'radio', optionsText: 'A\nB', allowOther: true }),
+      buildQuestion({ ...base, type: 'scale', scaleLow: 'Low', scaleHigh: 'High' }),
+      buildQuestion({ ...base, type: 'number', minValue: '1', maxValue: '9' }),
+      buildQuestion({ ...base, type: 'date' }),
+      buildQuestion({ ...base, type: 'email' }),
+    ]
+    const roundTripped = JSON.parse(JSON.stringify(questions))
+    expect(roundTripped[0].data).toMatchObject({ options: ['A', 'B'], allowOther: true })
+    expect(roundTripped[1].data).toMatchObject({ scaleLow: 'Low', scaleHigh: 'High' })
+    expect(roundTripped[2].data).toMatchObject({ min: 1, max: 9 })
+    expect(roundTripped[3].type).toBe('date')
+    expect(roundTripped[4].type).toBe('email')
+  })
+})

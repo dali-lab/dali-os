@@ -25,6 +25,11 @@ const QUESTION_TYPES: Question["type"][] = [
   "text",
   "textarea",
   "select",
+  "radio",
+  "scale",
+  "date",
+  "number",
+  "email",
   "github_url",
   "figma_url",
   "drive_url",
@@ -63,7 +68,7 @@ export function isQuestionArray(x: unknown): x is Question[] {
 // resolved). Shared by save-version and update-version so an in-place edit is
 // held to exactly the rules a fresh version is. Returns the parsed questions
 // on success, or a ready-to-return error result.
-function validateVersionQuestions(
+export function validateVersionQuestions(
   raw: string,
 ): { ok: true; questions: Question[] } | { error: string; status: number } {
   let questions: unknown;
@@ -79,6 +84,31 @@ function validateVersionQuestions(
       return { error: "Every text block needs some text.", status: 400 };
     if (!isLayoutOnly(q.type) && !q.data.label.trim())
       return { error: "Every question needs a label.", status: 400 };
+    if (q.type === "radio" && (q.data.options ?? []).length < 2)
+      return {
+        error: `"${q.data.label}" needs at least two options.`,
+        status: 400,
+      };
+    if (
+      q.type === "number" &&
+      [q.data.min, q.data.max].some(
+        (b) => b !== undefined && !(typeof b === "number" && Number.isFinite(b)),
+      )
+    )
+      return {
+        error: `"${q.data.label}" needs numbers for its minimum and maximum.`,
+        status: 400,
+      };
+    if (
+      q.type === "number" &&
+      q.data.min !== undefined &&
+      q.data.max !== undefined &&
+      q.data.min > q.data.max
+    )
+      return {
+        error: `"${q.data.label}" has a minimum higher than its maximum.`,
+        status: 400,
+      };
     if (q.type === "reference" && !isReferenceSourceKey(q.data.referenceSource))
       return {
         error: `"${q.data.label}" is a reference question but has no valid data source.`,

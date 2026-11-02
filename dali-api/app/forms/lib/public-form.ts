@@ -25,6 +25,12 @@ import { pickStaffingBinding, type Slot } from "~/projects/lib/form-slots";
 import { interpolateVars } from "~/lib/template-variables";
 import { resolveFormVariables } from "./form-variables";
 import {
+  OTHER_ANSWER_MAX_LENGTH,
+  isValidOtherText,
+  normalizeAnswerFormats,
+  validateAnswerFormats,
+} from "~/lib/form-answers";
+import {
   interpretProfileForm,
   NEW_MEMBER_PROFILE_FORM_NAME,
   type ProfileUpdate,
@@ -194,14 +200,25 @@ export async function validateAnswers(
       };
     }
     const allowed = new Set(q.data.options ?? []);
-    if (parsed.some((v) => !allowed.has(v))) {
+    const others = parsed.filter((v) => !allowed.has(v));
+    if (others.length > 0 && !q.data.allowOther) {
       return {
         error: `"${q.data.label}": that choice is no longer available.`,
         status: 400,
       };
     }
+    if (others.length > 1 || (others.length === 1 && !isValidOtherText(others[0]))) {
+      return {
+        error: `"${q.data.label}": a write-in answer can't be blank or over ${OTHER_ANSWER_MAX_LENGTH} characters.`,
+        status: 400,
+      };
+    }
     answers[q.key] = [...new Set(parsed)];
   }
+
+  const formatErrors = validateAnswerFormats(questions, answers);
+  if (formatErrors.length > 0) return { error: formatErrors[0].message, status: 400 };
+  normalizeAnswerFormats(questions, answers);
 
   // Enforce required answers. `file` questions can't be completed without an
   // authenticated upload presign, so a required file question makes the form

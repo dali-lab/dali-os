@@ -189,6 +189,12 @@ export const FEATURE_FLAGS = [
     description:
       "Adds /task to documents: a small composer that creates a project task and leaves a live row in the note, showing its status, owner and date. Task blocks already in a document keep showing when this is off. Ships off.",
   },
+  {
+    key: "form-question-types",
+    label: "More form question types",
+    description:
+      "Adds multiple choice (radio buttons), 1 to 5 scale, date, number and email questions to the form builder, and an \"Add an Other option\" setting on multiple choice and checkbox questions. Questions already in a form keep working when this is off. Ships off.",
+  },
 ] as const satisfies readonly FeatureFlagDef[];
 
 export type FeatureFlagKey = (typeof FEATURE_FLAGS)[number]["key"];

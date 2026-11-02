@@ -596,11 +596,12 @@ export function FormDetail() {
                       </p>
                     )}
                     {(q.type === "select" ||
+                      q.type === "radio" ||
                       q.type === "skills_rating" ||
                       q.type === "checkbox") &&
                       q.data.options && (
                         <div className="mt-2 flex flex-wrap gap-2">
-                          {q.data.options.map((opt) => (
+                          {[...q.data.options, ...(q.data.allowOther ? ["Other"] : [])].map((opt) => (
                             <span
                               key={opt}
                               className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-os-well text-os-grey border border-os-container"
@@ -609,6 +610,19 @@ export function FormDetail() {
                             </span>
                           ))}
                         </div>
+                      )}
+                    {q.type === "scale" && (q.data.scaleLow || q.data.scaleHigh) && (
+                      <p className="text-xs text-muted-foreground mt-1">
+                        1 to 5: {[q.data.scaleLow, q.data.scaleHigh].filter(Boolean).join(" to ")}
+                      </p>
+                    )}
+                    {q.type === "number" &&
+                      (q.data.min !== undefined || q.data.max !== undefined) && (
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {q.data.min !== undefined && `Min ${q.data.min}`}
+                          {q.data.min !== undefined && q.data.max !== undefined && ", "}
+                          {q.data.max !== undefined && `Max ${q.data.max}`}
+                        </p>
                       )}
                     {q.type === "file" && q.data.accept && (
                       <p className="text-xs text-muted-foreground mt-1">

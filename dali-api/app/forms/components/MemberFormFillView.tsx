@@ -21,7 +21,7 @@ import { paginateQuestions } from "~/lib/form-pages";
 import { DocEditor } from "~/components/doc";
 import { isEmptyBlocks } from "~/lib/blocks";
 import { Button } from "~/components/ui/Button";
-import { findMissingRequired } from "~/lib/form-answers";
+import { findMissingRequired, validateAnswerFormats } from "~/lib/form-answers";
 import type { Question } from "~/types";
 
 // The shared authenticated form-fill UI. Rendered both by /forms/fill/:token
@@ -141,6 +141,11 @@ export function MemberFormFillView({
     });
     if (missing.length > 0) {
       setError(`"${missing[0].data.label}" is required.`);
+      return;
+    }
+    const formatErrors = validateAnswerFormats(questions, answers);
+    if (formatErrors.length > 0) {
+      setError(formatErrors[0].message);
       return;
     }
     setState("submitting");

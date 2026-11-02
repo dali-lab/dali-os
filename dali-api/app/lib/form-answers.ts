@@ -36,3 +36,89 @@ export function findMissingRequired(
       !isAnswered(getValue(q), q),
   );
 }
+
+export const OTHER_ANSWER_MAX_LENGTH = 200;
+
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@.]+(\.[^\s@.]+)+$/;
+const NUMBER_PATTERN = /^-?\d+(\.\d+)?$/;
+const DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+export function isValidIsoDate(value: string): boolean {
+  const m = DATE_PATTERN.exec(value);
+  if (!m) return false;
+  const [y, mo, d] = [Number(m[1]), Number(m[2]), Number(m[3])];
+  const date = new Date(Date.UTC(y, mo - 1, d));
+  return date.getUTCFullYear() === y && date.getUTCMonth() === mo - 1 && date.getUTCDate() === d;
+}
+
+// Whether an Other write-in is acceptable: non-blank and within the cap.
+export function isValidOtherText(value: string): boolean {
+  return value.trim() !== "" && value.length <= OTHER_ANSWER_MAX_LENGTH;
+}
+
+export type AnswerFormatError = { key: string; message: string };
+
+// Format checks for the single-string question types (radio, scale, date,
+// number, email). Pure: it reads answers and never changes them. A missing or
+// blank answer passes (required-ness is checked separately), and a question
+// that already exists is always checked, whatever the flag says.
+export function validateAnswerFormats(
+  questions: Question[],
+  answers: Record<string, unknown>,
+): AnswerFormatError[] {
+  const errors: AnswerFormatError[] = [];
+  for (const q of questions) {
+    const raw = answers[q.key];
+    if (raw == null || raw === "") continue;
+    const fail = (message: string) =>
+      errors.push({ key: q.key, message: `"${q.data.label}": ${message}` });
+    if (typeof raw !== "string") {
+      if (["radio", "scale", "date", "number", "email"].includes(q.type)) {
+        fail("couldn't read the answer.");
+      }
+      continue;
+    }
+    const value = raw.trim();
+    if (value === "") continue;
+
+    if (q.type === "scale" && !/^[1-5]$/.test(value)) {
+      fail("pick a number from 1 to 5.");
+    } else if (q.type === "date" && !isValidIsoDate(value)) {
+      fail("enter a valid date.");
+    } else if (q.type === "email" && !EMAIL_PATTERN.test(value)) {
+      fail("enter a valid email address.");
+    } else if (q.type === "number") {
+      if (!NUMBER_PATTERN.test(value)) {
+        fail("enter a number.");
+        continue;
+      }
+      const n = Number(value);
+      const { min, max } = q.data;
+      if (min !== undefined && n < min) fail(`must be at least ${min}.`);
+      else if (max !== undefined && n > max) fail(`must be at most ${max}.`);
+    } else if (q.type === "radio") {
+      if ((q.data.options ?? []).includes(raw)) continue;
+      if (!q.data.allowOther) fail("that choice is no longer available.");
+      else if (!isValidOtherText(raw)) {
+        fail(`a write-in answer can't be blank or over ${OTHER_ANSWER_MAX_LENGTH} characters.`);
+      }
+    }
+  }
+  return errors;
+}
+
+// Trims the number and lowercases the email, in place, so every fill path
+// stores the same shape. Call after validateAnswerFormats passes.
+export function normalizeAnswerFormats(
+  questions: Question[],
+  answers: Record<string, unknown>,
+): void {
+  for (const q of questions) {
+    const raw = answers[q.key];
+    if (typeof raw !== "string") continue;
+    if (q.type === "email") answers[q.key] = raw.trim().toLowerCase();
+    else if (q.type === "number" || q.type === "date" || q.type === "scale") {
+      answers[q.key] = raw.trim();
+    }
+  }
+}
