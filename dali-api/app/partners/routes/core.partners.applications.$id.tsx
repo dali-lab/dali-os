@@ -27,7 +27,7 @@ import { githubTeamSlug } from "~/lib/github-slug";
 import { requireAuth, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { getCollabToken } from "~/lib/collab-token.server";
-import { isCore, getActiveCoreCycleTermIds } from "~/lib/roles";
+import { isCore } from "~/lib/roles";
 import { coreHandle } from "~/core/coreNav";
 import {
   PARTNER_STAGE_LABELS as STAGE_LABEL,
