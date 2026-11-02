@@ -1,5 +1,5 @@
-import { prisma } from "~/lib/db.server";
 import { currentTerm } from "~/lib/roles";
+import { cachedTerms } from "~/lib/reference-cache.server";
 
 // Re-exported for existing server-side importers. The definitions live in
 // terms.shared so client components (TermFilter) can import them without
@@ -43,10 +43,7 @@ export async function resolveTermFilter(
   const param = url.searchParams.get("term");
 
   const [allTerms, current] = await Promise.all([
-    prisma.term.findMany({
-      orderBy: { sortKey: "desc" },
-      select: { id: true, code: true, sortKey: true },
-    }),
+    cachedTerms(),
     currentTerm(),
   ]);
   const terms: TermOption[] = allTerms.map((t) => ({
@@ -112,10 +109,8 @@ export type TermWindow = { id: string; code: string; startDate: Date; endDate: D
 
 /** Every term's date window, newest first. */
 export async function termWindows(): Promise<TermWindow[]> {
-  return prisma.term.findMany({
-    orderBy: { sortKey: "desc" },
-    select: { id: true, code: true, startDate: true, endDate: true },
-  });
+  const terms = await cachedTerms();
+  return terms.map(({ id, code, startDate, endDate }) => ({ id, code, startDate, endDate }));
 }
 
 /**

@@ -1,6 +1,7 @@
 import { prisma } from "~/lib/db.server";
 import { currentTerm, getActiveCoreCycleTermIds, isLabMentor } from "~/lib/roles";
 import { ACTIVE_LAB_MEMBER_WHERE } from "~/lib/prisma-shapes";
+import { cachedGroupDefinitions, cachedTerms } from "~/lib/reference-cache.server";
 
 // Single source of truth for resolving a GroupDefinition to its member userIds.
 // Notification fan-out and meeting participant resolution both go through this.
@@ -342,7 +343,7 @@ export type GroupArchiveContext = {
 // (listVisibleGroupIdsForUser) reads raw archivedAt and skips it.
 export async function loadGroupArchiveContext(): Promise<GroupArchiveContext> {
   const [terms, archivedProjects] = await Promise.all([
-    prisma.term.findMany({ select: { id: true, endDate: true } }),
+    cachedTerms(),
     prisma.project.findMany({ where: { status: "Archived" }, select: { id: true } }),
   ]);
   return {
@@ -404,19 +405,7 @@ function hasEnded(endDate: Date | undefined, now: Date): boolean {
 // management list functions below.
 async function resolveAllGroups(request?: Request): Promise<VisibleGroup[]> {
   const [groups, archiveContext] = await Promise.all([
-    prisma.groupDefinition.findMany({
-      orderBy: { name: "asc" },
-      select: {
-        id: true,
-        name: true,
-        type: true,
-        dynamicQuery: true,
-        staticMemberIds: true,
-        systemKey: true,
-        archivedAt: true,
-        boundTermIds: true,
-      },
-    }),
+    groupRows(),
     loadGroupArchiveContext(),
   ]);
   return toVisibleGroups(groups, archiveContext, request);
@@ -432,6 +421,22 @@ type GroupRow = {
   archivedAt: Date | null;
   boundTermIds: string[];
 };
+
+async function groupRows(): Promise<GroupRow[]> {
+  const groups = await cachedGroupDefinitions();
+  return groups.map(
+    ({ id, name, type, dynamicQuery, staticMemberIds, systemKey, archivedAt, boundTermIds }) => ({
+      id,
+      name,
+      type,
+      dynamicQuery,
+      staticMemberIds,
+      systemKey,
+      archivedAt,
+      boundTermIds,
+    }),
+  );
+}
 
 async function toVisibleGroups(
   groups: GroupRow[],
@@ -477,20 +482,8 @@ async function deriveUserGroups(userId: string, request?: Request) {
   // Fetch group definitions + terms in parallel (terms needed for archive state
   // and for resolving "term:<id>" dynamic queries).
   const [groups, terms, coreCycleTermIds] = await Promise.all([
-    prisma.groupDefinition.findMany({
-      orderBy: { name: "asc" },
-      select: {
-        id: true,
-        name: true,
-        type: true,
-        dynamicQuery: true,
-        staticMemberIds: true,
-        systemKey: true,
-        archivedAt: true,
-        boundTermIds: true,
-      },
-    }),
-    prisma.term.findMany({ select: { id: true, endDate: true } }),
+    groupRows(),
+    cachedTerms(),
     getActiveCoreCycleTermIds(request),
   ]);
 
