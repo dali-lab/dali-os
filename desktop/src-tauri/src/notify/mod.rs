@@ -369,10 +369,8 @@ pub(crate) fn start_recording_from_prompt(app: &AppHandle, id: String, payload: 
 
 // Fire-and-forget authenticated POST. The server publishes the write to the
 // notification stream, so badge/tray/Notification Center converge through the
-// delivery loop rather than ad-hoc local state edits. `pub(crate)`: also used
-// directly by commands::tray_mark_all_read (no per-id URL, so `mark_read`
-// above doesn't fit).
-pub(crate) fn post(app: &AppHandle, url: String, json: Option<serde_json::Value>) {
+// delivery loop rather than ad-hoc local state edits.
+fn post(app: &AppHandle, url: String, json: Option<serde_json::Value>) {
     let http = app.state::<AppState>().http.clone();
     tauri::async_runtime::spawn(async move {
         let Some(token) = keychain::get_token() else {
