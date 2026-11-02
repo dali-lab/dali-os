@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   THROTTLE_MS,
   loadEmailUnread,
+  markEmailUnreadStale,
   navigatedFromEmail,
   resetEmailUnreadCache,
 } from "../use-email-unread";
@@ -38,11 +39,26 @@ describe("loadEmailUnread", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
-  it("force bypasses the throttle", async () => {
+  it("a stale count bypasses the throttle once", async () => {
     await loadEmailUnread({});
     fetchMock.mockImplementation(async () => ok(0));
-    expect(await loadEmailUnread({ force: true })).toBe(0);
+    markEmailUnreadStale();
+    expect(await loadEmailUnread({})).toBe(0);
+    await loadEmailUnread({});
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("a refresh aborted by the next navigation still runs on the next load", async () => {
+    await loadEmailUnread({});
+    markEmailUnreadStale();
+    const controller = new AbortController();
+    fetchMock.mockImplementation(async () => {
+      controller.abort();
+      return ok(0);
+    });
+    expect(await loadEmailUnread({ signal: controller.signal })).toBe(3);
+    fetchMock.mockImplementation(async () => ok(1));
+    expect(await loadEmailUnread({})).toBe(1);
   });
 
   it("an aborted fetch keeps the last total and does not start the window", async () => {
@@ -82,8 +98,13 @@ describe("navigatedFromEmail", () => {
     [null, "/email", false],
     ["/home", "/email", false],
     ["/email", "/home", true],
-    ["/email/thread/1", "/email", true],
+    ["/email?t=a", "/home?x=1", true],
+    ["/email/thread/1", "/home", true],
+    ["/email/thread/1", "/email", false],
     ["/email", "/email", false],
+    ["/email?t=a", "/email?t=b", false],
+    ["/email?t=a", "/email?q=hi", false],
+    ["/emails", "/home", false],
   ])("%s -> %s is %s", (prev, next, expected) => {
     expect(navigatedFromEmail(prev, next)).toBe(expected);
   });

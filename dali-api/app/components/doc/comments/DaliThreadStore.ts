@@ -308,6 +308,8 @@ export interface DaliThreadStoreConfig {
 }
 
 const FALLBACK_POLL_MS = 30_000;
+const REOPEN_BASE_MS = 5_000;
+const REOPEN_MAX_MS = 300_000;
 
 export class DaliThreadStore extends ThreadStore {
   private readonly pageId: string;
@@ -320,6 +322,8 @@ export class DaliThreadStore extends ThreadStore {
   // SSE nudge stream: one EventSource per store, opened when the first
   // subscriber arrives and closed when the last subscriber leaves.
   private eventSource: EventSource | null = null;
+  private reopenTimer: ReturnType<typeof setTimeout> | null = null;
+  private reopenAttempts = 0;
   // Debounce timer: collapse comment bursts (e.g. create + set-anchor) into
   // a single refetch 300ms after the last nudge.
   private nudgeTimer: ReturnType<typeof setTimeout> | null = null;
@@ -363,10 +367,7 @@ export class DaliThreadStore extends ThreadStore {
     return () => {
       this.listeners.delete(cb);
       if (this.listeners.size === 0) {
-        if (this.pollTimer !== null) {
-          clearInterval(this.pollTimer);
-          this.pollTimer = null;
-        }
+        this.stopPolling();
         if (this.nudgeTimer !== null) {
           clearTimeout(this.nudgeTimer);
           this.nudgeTimer = null;
@@ -380,6 +381,13 @@ export class DaliThreadStore extends ThreadStore {
   private startPolling(ms: number): void {
     if (this.pollTimer === null) {
       this.pollTimer = setInterval(() => void this.refetch(), ms);
+    }
+  }
+
+  private stopPolling(): void {
+    if (this.pollTimer !== null) {
+      clearInterval(this.pollTimer);
+      this.pollTimer = null;
     }
   }
 
@@ -405,14 +413,37 @@ export class DaliThreadStore extends ThreadStore {
 
     es.addEventListener("change", scheduleRefetch);
     es.addEventListener("sync", scheduleRefetch);
+    es.onopen = () => {
+      if (this.reopenAttempts === 0) return;
+      this.reopenAttempts = 0;
+      if (!this.pollIntervalMs) this.stopPolling();
+      void this.refetch();
+    };
     // EventSource retries network drops itself, but a non-200 such as a 502
     // during a deploy closes it for good.
     es.onerror = () => {
-      if (es.readyState === EventSource.CLOSED) this.startPolling(FALLBACK_POLL_MS);
+      if (es.readyState !== EventSource.CLOSED || this.eventSource !== es) return;
+      this.closeStream();
+      if (this.pollIntervalMs !== 0) this.startPolling(FALLBACK_POLL_MS);
+      this.scheduleReopen();
     };
   }
 
+  // Jittered so every doc that lost its stream in a deploy doesn't reconnect at once.
+  private scheduleReopen(): void {
+    const ceiling = Math.min(REOPEN_MAX_MS, REOPEN_BASE_MS * 2 ** this.reopenAttempts);
+    this.reopenAttempts += 1;
+    this.reopenTimer = setTimeout(() => {
+      this.reopenTimer = null;
+      this.openStream();
+    }, ceiling * (0.5 + Math.random() / 2));
+  }
+
   private closeStream(): void {
+    if (this.reopenTimer !== null) {
+      clearTimeout(this.reopenTimer);
+      this.reopenTimer = null;
+    }
     if (this.eventSource) {
       this.eventSource.close();
       this.eventSource = null;

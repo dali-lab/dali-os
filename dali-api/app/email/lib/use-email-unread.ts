@@ -5,21 +5,30 @@ export const THROTTLE_MS = 60_000;
 
 let lastFetchAt = 0;
 let lastTotal = 0;
+// Stays set until a fetch lands, so an aborted refresh carries to the next load.
+let stale = false;
 
 export function resetEmailUnreadCache(): void {
   lastFetchAt = 0;
   lastTotal = 0;
+  stale = false;
+}
+
+export function markEmailUnreadStale(): void {
+  stale = true;
+}
+
+function isUnderEmail(key: string): boolean {
+  const path = key.split(/[?#]/)[0];
+  return path === "/email" || path.startsWith("/email/");
 }
 
 export function navigatedFromEmail(prevKey: string | null, key: string): boolean {
-  return prevKey !== null && prevKey !== key && prevKey.startsWith("/email");
+  return prevKey !== null && isUnderEmail(prevKey) && !isUnderEmail(key);
 }
 
-export async function loadEmailUnread(opts: {
-  signal?: AbortSignal;
-  force?: boolean;
-}): Promise<number> {
-  if (!opts.force && Date.now() - lastFetchAt < THROTTLE_MS) return lastTotal;
+export async function loadEmailUnread(opts: { signal?: AbortSignal }): Promise<number> {
+  if (!stale && Date.now() - lastFetchAt < THROTTLE_MS) return lastTotal;
   try {
     const res = await fetch("/api/email/unread", { signal: opts.signal });
     if (!res.ok) return lastTotal;
@@ -27,6 +36,7 @@ export async function loadEmailUnread(opts: {
     if (opts.signal?.aborted) return lastTotal;
     lastTotal = total;
     lastFetchAt = Date.now();
+    stale = false;
   } catch {
     // Aborted or offline: keep the last count.
   }
@@ -42,19 +52,19 @@ export function useEmailUnread(refreshKey: string): number {
 
   useEffect(() => {
     const controller = new AbortController();
-    const load = (force = false) =>
-      loadEmailUnread({ signal: controller.signal, force }).then((t) => {
+    const load = () =>
+      loadEmailUnread({ signal: controller.signal }).then((t) => {
         if (!controller.signal.aborted) setTotal(t);
       });
-    load(navigatedFromEmail(prevKey.current, refreshKey));
+    if (navigatedFromEmail(prevKey.current, refreshKey)) markEmailUnreadStale();
+    load();
     prevKey.current = refreshKey;
-    const timer = setInterval(() => load(), POLL_MS);
-    const onFocus = () => load();
-    window.addEventListener("focus", onFocus);
+    const timer = setInterval(load, POLL_MS);
+    window.addEventListener("focus", load);
     return () => {
       controller.abort();
       clearInterval(timer);
-      window.removeEventListener("focus", onFocus);
+      window.removeEventListener("focus", load);
     };
   }, [refreshKey]);
 

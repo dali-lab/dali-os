@@ -13,26 +13,27 @@ export function runOrDeferDbOperationHooks(model: string | undefined, operation:
 }
 
 /**
- * Run an interactive transaction with its hooks held back: flushed once,
- * deduplicated, after it commits, and dropped if it rolls back.
+ * Run an interactive transaction with its hooks held back, then flush them
+ * once each. Rollbacks flush too: the queue can't tell a transaction's writes
+ * from a write on the global client made inside its callback, which did commit,
+ * and the only hooks clear caches, so a needless clear costs one extra read.
  */
 export async function withDeferredDbHooks<T>(run: () => Promise<T>): Promise<T> {
-  if (pending.getStore()) return run();
+  const outer = pending.getStore();
+  if (outer && !outer.closed) return run();
   const queue: Queue = { operations: new Map(), closed: false };
-  let result: T;
   try {
-    result = await pending.run(queue, run);
+    return await pending.run(queue, run);
   } finally {
     queue.closed = true;
-  }
-  for (const [model, operation] of queue.operations.values()) {
-    try {
-      runDbOperationHooks(model, operation);
-    } catch (err) {
-      console.error("[db-hooks] flush failed", err instanceof Error ? err.message : err);
+    for (const [model, operation] of queue.operations.values()) {
+      try {
+        runDbOperationHooks(model, operation);
+      } catch (err) {
+        console.error("[db-hooks] flush failed", err instanceof Error ? err.message : err);
+      }
     }
   }
-  return result;
 }
 
 /**

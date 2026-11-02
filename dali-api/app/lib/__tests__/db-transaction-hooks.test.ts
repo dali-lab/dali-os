@@ -48,14 +48,27 @@ describe("withDeferredDbHooks", () => {
     ]);
   });
 
-  it("drops the hooks and rethrows when the transaction rolls back", async () => {
+  it("flushes the hooks and rethrows when the transaction rolls back", async () => {
     await expect(
       withDeferredDbHooks(async () => {
         runOrDeferDbOperationHooks("CoreAssignment", "create");
         throw new Error("rollback");
       }),
     ).rejects.toThrow("rollback");
-    expect(hook).not.toHaveBeenCalled();
+    expect(hook).toHaveBeenCalledExactlyOnceWith("CoreAssignment", "create");
+  });
+
+  it("a transaction opened by work left over from a closed one defers its own hooks", async () => {
+    let lateTransaction!: () => Promise<void>;
+    await withDeferredDbHooks(async () => {
+      lateTransaction = () =>
+        withDeferredDbHooks(async () => {
+          runOrDeferDbOperationHooks("Term", "update");
+          expect(hook).not.toHaveBeenCalled();
+        });
+    });
+    await lateTransaction();
+    expect(hook).toHaveBeenCalledExactlyOnceWith("Term", "update");
   });
 
   it("returns the callback's result", async () => {
@@ -90,10 +103,10 @@ describe("withDeferredDbHooks", () => {
       throw new Error("x");
     }).catch(() => order.push("failed"));
     await failing;
-    expect(order).toEqual(["failed"]);
+    expect(order).toEqual(["hook:Domain", "failed"]);
     release();
     await slow;
-    expect(order).toEqual(["failed", "slow-commit", "hook:Term"]);
+    expect(order).toEqual(["hook:Domain", "failed", "slow-commit", "hook:Term"]);
   });
 
   it("an outside write during a transaction still runs immediately", async () => {
@@ -155,7 +168,7 @@ describe("deferHooksInTransactions", () => {
     expect(hook).toHaveBeenCalledOnce();
   });
 
-  it("drops hooks when the interactive transaction rejects", async () => {
+  it("flushes hooks when the interactive transaction rejects", async () => {
     const client = deferHooksInTransactions(fakeClient());
     await expect(
       client.$transaction(async () => {
@@ -163,7 +176,7 @@ describe("deferHooksInTransactions", () => {
         throw new Error("rollback");
       }),
     ).rejects.toThrow("rollback");
-    expect(hook).not.toHaveBeenCalled();
+    expect(hook).toHaveBeenCalledOnce();
   });
 
   it("passes the array form and its options through untouched", async () => {

@@ -12,6 +12,7 @@ import { prisma } from "~/lib/db.server";
 import { displayEmail } from "~/lib/display";
 import { cachedForRequest } from "~/lib/request-cache";
 import { getAppEnv } from "~/lib/app-env";
+import { sampleDuration } from "~/lib/perf-stats";
 
 // Session-backed auth middleware. See SESSION_AUTH_PLAN.md for design.
 // The `user.sub` shape is preserved from the legacy JWT payload so existing
@@ -141,7 +142,9 @@ export async function requireAuth(
   // Resolve (and cache) identity first, independent of the write gate, so a
   // caller passing allowImpersonatedWrite can't poison the memoized result for
   // another caller on the same request.
-  const result = await cachedForRequest(request, "requireAuth", () => computeAuth(request));
+  const result = await cachedForRequest(request, "requireAuth", () =>
+    sampleDuration("requireAuth", () => computeAuth(request)),
+  );
   if (!result.ok || isReadOnlyMethod(request.method)) return result;
   if (opts?.allowImpersonatedWrite || !isImpersonating(result)) return result;
   if (impersonationAllowsWrites()) return result;
@@ -164,11 +167,11 @@ export async function requireAuth(
 // that only exercise the legacy leg, and wrapped so a fault there can't turn a
 // clean legacy failure into a 500.
 async function computeAuth(request: Request): Promise<AuthResult> {
-  const legacy = await computeLegacyAuth(request);
+  const legacy = await sampleDuration("requireAuth.legacy", () => computeLegacyAuth(request));
   if (legacy.ok) return legacy;
   try {
     const { resolveBetterAuthAuth } = await import("~/lib/betterauth-compat.server");
-    const ba = await resolveBetterAuthAuth(request);
+    const ba = await sampleDuration("requireAuth.betterauth", () => resolveBetterAuthAuth(request));
     if (ba) {
       // Presence heartbeat, same as the legacy leg. Without it the whole
       // feature goes dark at cutover: a BetterAuth session never touched

@@ -405,7 +405,7 @@ function hasEnded(endDate: Date | undefined, now: Date): boolean {
 // management list functions below.
 async function resolveAllGroups(request?: Request): Promise<VisibleGroup[]> {
   const [groups, archiveContext] = await Promise.all([
-    groupRows(),
+    cachedGroupDefinitions(),
     loadGroupArchiveContext(),
   ]);
   return toVisibleGroups(groups, archiveContext, request);
@@ -432,22 +432,6 @@ const GROUP_ROW_SELECT = {
   archivedAt: true,
   boundTermIds: true,
 } as const;
-
-async function groupRows(): Promise<GroupRow[]> {
-  const groups = await cachedGroupDefinitions();
-  return groups.map(
-    ({ id, name, type, dynamicQuery, staticMemberIds, systemKey, archivedAt, boundTermIds }) => ({
-      id,
-      name,
-      type,
-      dynamicQuery,
-      staticMemberIds,
-      systemKey,
-      archivedAt,
-      boundTermIds,
-    }),
-  );
-}
 
 async function toVisibleGroups(
   groups: GroupRow[],

@@ -20,7 +20,6 @@ import {
   resolveRoleRef,
   type RoleInstance,
 } from "~/lib/roles";
-import { readOnlyRoles } from "~/lib/read-only-roles.server";
 import type { ScopeType } from "~/generated/prisma/client";
 import { resolveTermFilter } from "~/lib/terms";
 import {
@@ -1630,7 +1629,6 @@ export async function loadCalendarData(
   // Same gate as Forms: Core, Admin, or Instructor.
   const canSetSelfCheckInP = canViewForms(userId, request);
   const canMarkCoreMeetingP = isCore(userId, request);
-  const rolesP = readOnlyRoles(userId, request);
   // Current+upcoming term ids for the class modal's term selector, and the
   // member's classes in those terms.
   const termFilterP = resolveTermFilter(request, { default: "upcoming" }).then(async (tf) => {
@@ -1706,8 +1704,8 @@ export async function loadCalendarData(
   // Events from the DALI Timesheet mirror calendar are dropped — the
   // logged-time layer already shows those hours, so keeping them would double
   // every work block. One meetings query for the whole window, not one per event.
-  const externalP = Promise.all([googleP, canMarkCoreMeetingP, rolesP]).then(
-    async ([{ externalRaw, timesheetCalendarId }, canMarkCoreMeeting, roles]) => {
+  const externalP = Promise.all([googleP, canMarkCoreMeetingP, labMemberP]).then(
+    async ([{ externalRaw, timesheetCalendarId }, canMarkCoreMeeting, labMember]) => {
       const crudEvents = externalRaw.filter(
         (e) => !timesheetCalendarId || e.calendarId !== timesheetCalendarId,
       );
@@ -1715,7 +1713,7 @@ export async function loadCalendarData(
         crudEvents,
         userId,
         canMarkCoreMeeting,
-        roles.isLabMember,
+        labMember,
       );
       return { crudEvents, eventMeetings };
     },
@@ -1729,7 +1727,6 @@ export async function loadCalendarData(
     myRoles,
     canSetSelfCheckIn,
     canMarkCoreMeeting,
-    roles,
     termFilter,
     timeEntryRows,
     { weekStart, weekEnd, rangeStart, rangeEnd, view },
@@ -1743,7 +1740,6 @@ export async function loadCalendarData(
     myRolesP,
     canSetSelfCheckInP,
     canMarkCoreMeetingP,
-    rolesP,
     termFilterP,
     timeEntryRowsP,
     windowsP,
@@ -1789,7 +1785,7 @@ export async function loadCalendarData(
       Boolean(e.eventId) &&
       !eventMeetings.has(e.eventId) &&
       ((canMarkCoreMeeting && isGeneralCalendarEvent(e.calendarId)) ||
-        (roles.isLabMember && viewerOnEvent(e))),
+        (labMember && viewerOnEvent(e))),
   }));
 
   // Classes: load all current+upcoming terms for the modal picker.

@@ -2003,6 +2003,7 @@ function ReviewerAssignmentCell({ domainApplicationId, reviews, cycleReviewers, 
 }) {
   const toast = useToast();
   const dialog = useDialog();
+  const revalidator = useRevalidator();
   const [localReviews, setLocalReviews] = useState(reviews);
   const [adding, setAdding] = useState(false);
   const [selectedReviewerId, setSelectedReviewerId] = useState("");
@@ -2032,6 +2033,7 @@ function ReviewerAssignmentCell({ domainApplicationId, reviews, cycleReviewers, 
         setLocalReviews(prev => [...prev, { ...review, cycleReviewer: reviewer }]);
         setSelectedReviewerId("");
         setAdding(false);
+        revalidator.revalidate();
       } else {
         const err = await res.json().catch(() => ({}));
         console.error("Failed to add reviewer:", res.status, err);
@@ -2051,6 +2053,7 @@ function ReviewerAssignmentCell({ domainApplicationId, reviews, cycleReviewers, 
       });
       if (res.ok) {
         setLocalReviews(prev => prev.filter(r => r.id !== reviewId));
+        revalidator.revalidate();
       } else {
         const err = await res.json().catch(() => ({}));
         console.error("Failed to remove review:", res.status, err);

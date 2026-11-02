@@ -7,7 +7,7 @@ import { STAFFING_MEMBER_SELECT } from "~/lib/prisma-shapes";
 import { primaryEmail } from "~/lib/display";
 import { canManageStaffing, canViewStaffing } from "~/lib/roles";
 import { prisma } from "~/lib/db.server";
-import { cachedDomains } from "~/lib/reference-cache.server";
+import { cachedDomains, cachedTerms } from "~/lib/reference-cache.server";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { getCollabToken } from "~/lib/collab-token.server";
 import { getPresenceUser } from "~/lib/presence-user";
@@ -62,16 +62,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   const [canView, canManage, terms, collabToken, presenceUser] = await Promise.all([
     canViewStaffing(auth.user.sub, request),
     canManageStaffing(auth.user.sub, request),
-    prisma.term.findMany({
-      orderBy: { sortKey: "desc" },
-      select: {
-        id: true,
-        code: true,
-        startDate: true,
-        endDate: true,
-        sortKey: true,
-      },
-    }),
+    cachedTerms(),
     getCollabToken(request),
     getPresenceUser(auth.user.sub),
   ]);

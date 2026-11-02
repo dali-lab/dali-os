@@ -75,7 +75,6 @@ beforeEach(() => {
   vi.mocked(getUserRoleInstances).mockResolvedValue([] as never);
   vi.mocked(canViewForms).mockResolvedValue(false);
   vi.mocked(isCore).mockResolvedValue(false);
-  vi.mocked(getUserRoles).mockResolvedValue({ isLabMember: true } as never);
   vi.mocked(resolveTermFilter).mockResolvedValue({ terms: [], termIds: [] } as never);
   vi.mocked(getValidAccessTokenForLink).mockResolvedValue("tok");
   vi.mocked(listCalendarsForLink).mockResolvedValue([
@@ -106,7 +105,6 @@ describe("loadCalendarData", () => {
 
   it("serves a non-member on the portal mount without the directory", async () => {
     vi.mocked(isLabMember).mockResolvedValue(false);
-    vi.mocked(getUserRoles).mockResolvedValue({ isLabMember: false } as never);
     const data = await run({ portal: true });
     expect(data.hasDirectory).toBe(false);
   });
@@ -125,7 +123,7 @@ describe("loadCalendarData", () => {
     expect(data.hasDirectory).toBe(true);
     expect(data.classTerm).toEqual({ id: "t1", code: "26F" });
     expect(getUserRoleInstances).toHaveBeenCalledWith(USER, "t1", request);
-    expect(getUserRoles).toHaveBeenCalledWith(USER, request);
+    expect(getUserRoles).not.toHaveBeenCalled();
   });
 
   it("reports a Google failure as ingestionError and still returns the rest of the page", async () => {
@@ -192,7 +190,6 @@ describe("loadCalendarData", () => {
       expect(prisma.timeEntry.findMany).toHaveBeenCalled();
       expect(prisma.workingHoursDay.findMany).toHaveBeenCalled();
       expect(resolveTermFilter).toHaveBeenCalled();
-      expect(getUserRoles).toHaveBeenCalled();
     });
     release("tok");
     await expect(pending).resolves.toMatchObject({ currentUserId: USER });
