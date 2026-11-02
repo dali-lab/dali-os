@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import * as Y from "yjs";
 import {
   blocksToFragment,
+  blocksToFullHtml,
   blocksToHtml,
   blocksToMarkdown,
   fragmentToBlocks,
@@ -86,6 +87,73 @@ const x = 1;
     expect(markdown).toContain("26S");
     // No HTML junk leaks into the markdown.
     expect(markdown).not.toContain("<span");
+  });
+});
+
+describe("hosted video links", () => {
+  const URL_ = "https://www.youtube.com/watch?v=OY8fr2E96lg";
+  const media = (type: string, props: Record<string, unknown>): DocBlock =>
+    ({ id: crypto.randomUUID(), type, props: { ...BASE, ...props }, children: [] }) as unknown as DocBlock;
+
+  it.each(["video", "image"])("a %s block exports a link, never a dead player", async (type) => {
+    const html = await blocksToHtml([media(type, { url: URL_, name: "watch?v=OY8fr2E96lg" })]);
+    expect(html).toContain(`href="${URL_}"`);
+    expect(html).toContain("Watch on YouTube");
+    expect(html).not.toMatch(/<video|<img|<iframe/);
+  });
+
+  it("keeps the caption", async () => {
+    const html = await blocksToHtml([media("video", { url: URL_, caption: "Partner stories" })]);
+    expect(html).toContain("Partner stories");
+  });
+
+  it("markdown carries the link", async () => {
+    expect(await blocksToMarkdown([media("video", { url: URL_ })])).toContain(
+      `[Watch on YouTube](${URL_})`,
+    );
+  });
+
+  it("leaves the iframe out of the PDF dialect too", async () => {
+    const html = await blocksToFullHtml([media("video", { url: URL_ })]);
+    expect(html).toContain("Watch on YouTube");
+    expect(html).not.toContain("<iframe");
+  });
+
+  it.each(["video", "image"])("a %s block survives a Yjs round trip unchanged", (type) => {
+    const fragment = new Y.Doc().getXmlFragment("doc");
+    blocksToFragment([media(type, { url: URL_, name: "n", previewWidth: 400 })], fragment);
+    const [block] = fragmentToBlocks(fragment);
+    expect(block!.type).toBe(type);
+    expect(block!.props).toMatchObject({ url: URL_, name: "n", previewWidth: 400 });
+  });
+
+  it("gives an uploaded video controls, so it plays on the public site", async () => {
+    const html = await blocksToHtml([
+      media("video", { url: "/api/upload/raw?key=uploads/doc-images/demo.mp4" }),
+    ]);
+    expect(html).toMatch(/<video[^>]*controls/);
+    expect(html).toContain('src="/api/upload/raw?key=uploads/doc-images/demo.mp4"');
+  });
+
+  it("keeps an uploaded video's caption in a figure", async () => {
+    const html = await blocksToHtml([
+      media("video", { url: "/api/upload/raw?key=uploads/doc-images/demo.mp4", caption: "Demo" }),
+    ]);
+    expect(html).toMatch(/<figure[^>]*>.*<video.*<figcaption[^>]*>Demo<\/figcaption>/s);
+  });
+
+  it("exports a link when the video preview is off", async () => {
+    const html = await blocksToHtml([
+      media("video", { url: "https://cdn.example.com/a.mp4", name: "a.mp4", showPreview: false }),
+    ]);
+    expect(html).toContain('href="https://cdn.example.com/a.mp4"');
+    expect(html).not.toContain("<video");
+  });
+
+  it("leaves real images alone", async () => {
+    const html = await blocksToHtml([media("image", { url: "https://example.com/a.png", name: "A" })]);
+    expect(html).toContain('src="https://example.com/a.png"');
+    expect(html).toContain("<img");
   });
 });
 

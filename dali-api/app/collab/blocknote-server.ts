@@ -44,6 +44,7 @@ import {
   type SigningFieldType,
 } from "~/lib/signing-fields";
 import { sanitizeRichEmailHtml, htmlToPlainText, NOTIFICATION_BODY_MAX } from "~/lib/email";
+import { createMediaImageSpec, createMediaVideoSpec } from "~/components/doc/schema/media";
 import { parseComponentData } from "~/components/doc/components/kinds";
 import { ComponentView } from "~/components/doc/components/views";
 
@@ -249,7 +250,7 @@ const componentSpec = createBlockSpec(componentConfig, {
 // specs are built with the core createBlockSpecFromTiptapNode — no React — so
 // they are safe under the jsdom conversions below.
 export const serverSchema = withMultiColumn(BlockNoteSchema.create({
-  blockSpecs: { ...defaultBlockSpecs, callout: calloutSpec, embed: embedSpec, component: componentSpec, task: taskSpec, pageBreak: createPageBreakBlockSpec() },
+  blockSpecs: { ...defaultBlockSpecs, image: createMediaImageSpec(), video: createMediaVideoSpec(), callout: calloutSpec, embed: embedSpec, component: componentSpec, task: taskSpec, pageBreak: createPageBreakBlockSpec() },
   inlineContentSpecs: {
     ...defaultInlineContentSpecs,
     mention: mentionSpec,
