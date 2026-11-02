@@ -7,6 +7,7 @@ import { STAFFING_MEMBER_SELECT } from "~/lib/prisma-shapes";
 import { primaryEmail } from "~/lib/display";
 import { canManageStaffing, canViewStaffing } from "~/lib/roles";
 import { prisma } from "~/lib/db.server";
+import { cachedDomains } from "~/lib/reference-cache.server";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { getCollabToken } from "~/lib/collab-token.server";
 import { getPresenceUser } from "~/lib/presence-user";
@@ -170,7 +171,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       // githubTeamSlug pre-fills the Finalize modal's editable GitHub field.
       select: PROJECT_COLUMN_SELECT,
     }),
-    prisma.domain.findMany({ select: { id: true, displayName: true } }),
+    cachedDomains().then((rows) => rows.map(({ id, displayName }) => ({ id, displayName }))),
     // Read only to union in projects being staffed this term that have no
     // ProjectTerm row (see stagedProjectIds) — the board shows what is assigned,
     // not what was asked for.

@@ -79,6 +79,10 @@ export const cachedTerms = () => cachedTable("Term", () => prisma.term.findMany(
 export const cachedDomains = () =>
   cachedTable("Domain", () => prisma.domain.findMany({ orderBy: { displayName: "asc" } }));
 
+/** Active domains as picker options, by display name. */
+export const activeDomainOptions = async () =>
+  (await cachedDomains()).filter((d) => d.active).map(({ id, displayName }) => ({ id, displayName }));
+
 /** Every group definition, by name (`orderBy name asc`). Membership is never cached here. */
 export const cachedGroupDefinitions = () =>
   cachedTable("GroupDefinition", () => prisma.groupDefinition.findMany({ orderBy: { name: "asc" } }));

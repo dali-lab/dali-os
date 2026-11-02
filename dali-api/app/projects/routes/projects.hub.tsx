@@ -14,7 +14,6 @@ import type { Route } from "./+types/projects.hub";
 import { requireAuth, redirectNonMemberToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { currentTerm, getUserRoles } from "~/lib/roles";
-import { readOnlyRoles } from "~/lib/read-only-roles.server";
 import { termFilterOrder } from "~/lib/terms.shared";
 import {
   captureProjectTemplate,
@@ -199,7 +198,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const [roles, partnerOrgs] =
     await timed(request, 'hub.meta', () => Promise.all([
-      readOnlyRoles(auth.user.sub, request),
+      getUserRoles(auth.user.sub, request),
       prisma.partnerOrg.findMany({
         orderBy: { name: "asc" },
         select: { id: true, name: true },

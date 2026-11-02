@@ -52,6 +52,7 @@ import type { Route } from "./+types/projects.$id";
 import { buildProjectCalendar } from "~/projects/lib/project-calendar.server";
 import { MonthCalendarPanel } from "~/components/MonthCalendarPanel";
 import { prisma } from "~/lib/db.server";
+import { activeDomainOptions } from "~/lib/reference-cache.server";
 import { listKnownOrgs, loadProjectInfra } from "~/lib/infra/dashboard.server";
 import { saveInfraConfig } from "~/lib/infra/config-save.server";
 import { listProjectInfraRequests } from "~/lib/infra/requests.server";
@@ -493,11 +494,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     // in the action and downstream helpers don't re-query.
     getUserRoles(auth.user.sub, request),
     // Domain editor option list — project-independent.
-    prisma.domain.findMany({
-      where: { active: true },
-      orderBy: { displayName: "asc" },
-      select: { id: true, displayName: true },
-    }),
+    activeDomainOptions(),
     // All terms — ascending (chronological) for sprint→term resolvers;
     // display lists re-sort to newest-first where needed. Project-independent.
     prisma.term.findMany({

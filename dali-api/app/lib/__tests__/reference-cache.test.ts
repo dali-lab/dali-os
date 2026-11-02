@@ -37,6 +37,7 @@ import { cachedForTtl, clearTtlCache, setTtlCacheEnabledForTests } from "~/lib/t
 import { runDbOperationHooks } from "~/lib/db-write-hooks";
 import { currentTerm } from "~/lib/roles";
 import {
+  activeDomainOptions,
   cachedDomains,
   cachedGroupDefinitions,
   cachedTerms,
@@ -88,6 +89,14 @@ describe("reference reads", () => {
     const second = await read();
     expect(second).toEqual(first);
     expect(model.findMany).toHaveBeenCalledExactlyOnceWith(args);
+  });
+
+  it("gives active domains as id and display name only", async () => {
+    db.domain.findMany.mockResolvedValueOnce([
+      { id: "d1", displayName: "Design", active: true, code: "UIUX" },
+      { id: "d2", displayName: "Retired", active: false, code: "OLD" },
+    ]);
+    expect(await activeDomainOptions()).toEqual([{ id: "d1", displayName: "Design" }]);
   });
 
   it("hands every caller its own copy, so mutating one can't change the cache", async () => {

@@ -27,7 +27,6 @@ import { requireAuth, redirectNonMemberToPortal, isNonMember } from "~/lib/auth"
 import { redirectToLogin } from "~/lib/login-next";
 import { prisma } from "~/lib/db.server";
 import { getUserRoles, isProjectMember } from "~/lib/roles";
-import { readOnlyRoles } from "~/lib/read-only-roles.server";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { walletTokensConfigured } from "~/lib/wallet-token";
 import { getActiveDisplayScan, startDisplayScan, stopDisplayScan } from "~/lib/display-scan.server";
@@ -88,7 +87,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   if (portalRedirect) return portalRedirect;
 
   const [roles, meeting] = await Promise.all([
-    readOnlyRoles(auth.user.sub, request),
+    getUserRoles(auth.user.sub, request),
     prisma.scheduledMeeting.findUnique({
     where: { id: params.id },
     select: {
