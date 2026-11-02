@@ -4,6 +4,9 @@
 
 import { runFormsAction } from "~/forms/lib/forms-data";
 import { canBuildForm, canCreateForm } from "~/forms/lib/form-access.server";
+import { deleteFormResponse } from "~/forms/lib/form-response.server";
+import { sendFormReminder } from "~/forms/lib/form-tracker.server";
+import { requireFormUpgrades } from "./require-form-upgrades";
 import {
   requireForAction,
   McpForbiddenError,
@@ -16,7 +19,7 @@ import {
 export const MANAGE_FORM_TOOL = {
   name: "manage_form",
   description:
-    "Create, version, publish, configure, or delete a form. Actions: create · save_version · save_draft · publish · unpublish · set_window · set_audience · set_settings · rename · move · duplicate · delete. Needs edit access on the form (create: on the folder). set_audience sets the form page's general access.",
+    "Create, version, publish, configure, or delete a form, delete a response, or remind people who haven't responded. Actions: create · save_version · save_draft · publish · unpublish · set_window · set_audience · set_settings · rename · move · duplicate · delete · delete_response · send_reminder. Needs edit access on the form (create: on the folder). set_audience sets the form page's general access. set_settings changes only the settings you pass. delete_response is permanent and lets the person fill the form again. send_reminder is limited to one per form every 24 hours. allowResponseEdit, remindBeforeClose, sendReceipt, confirmationMessage, delete_response and send_reminder need the form-upgrades flag.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -35,6 +38,8 @@ export const MANAGE_FORM_TOOL = {
           "move",
           "duplicate",
           "delete",
+          "delete_response",
+          "send_reminder",
         ],
         description: "The management action to perform.",
       },
@@ -90,6 +95,33 @@ export const MANAGE_FORM_TOOL = {
         type: "boolean",
         description: "Show on 'Forms for you' member home (set_settings).",
       },
+      allowResponseEdit: {
+        type: "boolean",
+        description:
+          "Let respondents change their own answers while the form is open (set_settings). Needs oneResponsePerMember.",
+      },
+      remindBeforeClose: {
+        type: "boolean",
+        description:
+          "Remind people who haven't responded a day before the form closes (set_settings). Needs a close time.",
+      },
+      sendReceipt: {
+        type: "boolean",
+        description: "Email respondents a copy of their answers on submit (set_settings).",
+      },
+      confirmationMessage: {
+        type: "string",
+        description:
+          "JSON-encoded rich-text blocks shown after submitting, in place of the default copy (set_settings). Empty string clears.",
+      },
+      submissionId: {
+        type: "string",
+        description: "The response to delete, an id from get_form_responses (delete_response).",
+      },
+      message: {
+        type: "string",
+        description: "The reminder text (send_reminder).",
+      },
     },
     required: ["action"],
     additionalProperties: false,
@@ -110,6 +142,8 @@ const ACTION_REQUIRED: Record<string, string[]> = {
   move: ["formId"],
   duplicate: ["formId"],
   delete: ["formId"],
+  delete_response: ["formId", "submissionId"],
+  send_reminder: ["formId", "message"],
 };
 
 const ACTION_INTENT: Record<string, string> = {
@@ -141,7 +175,21 @@ type Args = {
   oneResponsePerMember?: boolean;
   notifyOnSubmission?: boolean;
   listed?: boolean;
+  allowResponseEdit?: boolean;
+  remindBeforeClose?: boolean;
+  sendReceipt?: boolean;
+  confirmationMessage?: string;
+  submissionId?: string;
+  message?: string;
 };
+
+function unwrap<T extends object>(result: T | { error: string; status: number }): T {
+  if ("error" in result) {
+    if (result.status === 404) throw new McpNotFoundError(result.error);
+    throw new McpInvalidError(result.error);
+  }
+  return result;
+}
 
 export async function runManageForm(ctx: McpCtx, args: Args) {
   requireForAction(args.action, args, ACTION_REQUIRED);
@@ -151,6 +199,44 @@ export async function runManageForm(ctx: McpCtx, args: Args) {
       ? await canCreateForm(ctx.user.id, args.folderPageId || null)
       : await canBuildForm(ctx.user.id, args.formId!);
   if (!allowed) throw new McpForbiddenError("You do not have edit access to this form");
+
+  if (args.action === "delete_response") {
+    await requireFormUpgrades(ctx);
+    return unwrap(
+      await deleteFormResponse({
+        formId: args.formId!,
+        submissionId: args.submissionId!,
+        actorId: ctx.user.id,
+        request: ctx.request,
+      }),
+    );
+  }
+
+  if (args.action === "send_reminder") {
+    await requireFormUpgrades(ctx);
+    return unwrap(
+      await sendFormReminder({
+        formId: args.formId!,
+        actorId: ctx.user.id,
+        message: args.message!,
+        request: ctx.request,
+      }),
+    );
+  }
+
+  if (args.action === "set_settings") {
+    const upgraded = [
+      args.allowResponseEdit,
+      args.remindBeforeClose,
+      args.sendReceipt,
+      args.confirmationMessage,
+    ].some((v) => v !== undefined);
+    const anySetting =
+      upgraded ||
+      [args.oneResponsePerMember, args.notifyOnSubmission, args.listed].some((v) => v !== undefined);
+    if (!anySetting) throw new McpInvalidError("action 'set_settings' needs at least one setting");
+    if (upgraded) await requireFormUpgrades(ctx);
+  }
 
   const intent = ACTION_INTENT[args.action];
   const fd = new FormData();
@@ -171,13 +257,15 @@ export async function runManageForm(ctx: McpCtx, args: Args) {
   if (args.notifyOnSubmission !== undefined)
     fd.set("notifyOnSubmission", String(args.notifyOnSubmission));
   if (args.listed !== undefined) fd.set("listed", String(args.listed));
+  if (args.allowResponseEdit !== undefined)
+    fd.set("allowResponseEdit", String(args.allowResponseEdit));
+  if (args.remindBeforeClose !== undefined)
+    fd.set("remindBeforeClose", String(args.remindBeforeClose));
+  if (args.sendReceipt !== undefined) fd.set("sendReceipt", String(args.sendReceipt));
+  if (args.confirmationMessage !== undefined)
+    fd.set("confirmationMessage", args.confirmationMessage);
 
-  const result = await runFormsAction(fd, ctx.user.id);
-
-  if ("error" in result) {
-    if (result.status === 404) throw new McpNotFoundError(result.error);
-    throw new McpInvalidError(result.error);
-  }
+  const result = unwrap(await runFormsAction(fd, ctx.user.id));
 
   if (args.action === "duplicate" && result.formId) {
     return { ok: true, formId: result.formId };
