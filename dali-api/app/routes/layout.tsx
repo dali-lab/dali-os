@@ -84,9 +84,13 @@ export async function loader({ request }: Route.LoaderArgs) {
     // without a second lookup — both loaders run concurrently for one nav.
     timed(request, 'shellUser', () => loadShellUser(auth.user.sub, request)),
   ])
-  // External instructors manage their offerings inside this shell; the
-  // non-member gate below keeps them to those pages.
-  if (nonMember && !(roles.isInstructor && isInstructorPath(pathname))) {
+  // The non-member gate below handles two cases: external instructors keep
+  // their management pages, and education deep links map to their portal twin.
+  // A `member`-type account with no DALIMember row stays out of the twin case:
+  // portal education sends that type back to /education, which would loop.
+  const instructorPage = roles.isInstructor && isInstructorPath(pathname)
+  const portalTwin = auth.user.type !== 'member' && educationPortalTwin(pathname) !== null
+  if (nonMember && !instructorPage && !portalTwin) {
     return (await publicDoc()) ?? redirect('/portal')
   }
 

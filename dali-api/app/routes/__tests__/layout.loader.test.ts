@@ -184,6 +184,48 @@ describe("layout loader gate order", () => {
     },
   );
 
+  describe("non-member education deep links", () => {
+    const student = { ok: true, user: { sub: "ada", email: "ada@example.edu", type: "dartmouth" } };
+
+    beforeEach(() => {
+      vi.mocked(requireAuth).mockResolvedValue(student as never);
+      vi.mocked(isNonMember).mockResolvedValue(true);
+      vi.mocked(layoutRoles).mockResolvedValue({ isLabMember: false, isInstructor: false } as never);
+    });
+
+    it.each([
+      ["/education", "/portal/education"],
+      ["/education/o1", "/portal/education/o1"],
+      ["/education/o1/apply", "/portal/education/o1/apply"],
+      ["/education/o1/apply?ref=flyer", "/portal/education/o1/apply?ref=flyer"],
+      ["/education/o1/hub", "/portal/education/o1/hub"],
+      ["/education/o1/page/p1", "/portal/education/o1/page/p1"],
+      ["/education/o1/assignments/a1", "/portal/education/o1/assignments/a1"],
+    ])("sends %s to %s", async (path, twin) => {
+      expect(location(await run(path).result)).toBe(twin);
+    });
+
+    it("sends an external instructor's student links to the portal too", async () => {
+      vi.mocked(layoutRoles).mockResolvedValue({ isLabMember: false, isInstructor: true } as never);
+      expect(location(await run("/education/o1").result)).toBe("/portal/education/o1");
+    });
+
+    it("keeps pages with no twin going to /portal", async () => {
+      expect(location(await run("/education/compliance").result)).toBe("/portal");
+      expect(location(await run("/projects").result)).toBe("/portal");
+    });
+
+    it("sends a partner to the partner portal, not the twin", async () => {
+      vi.mocked(redirectPartnerToPortal).mockResolvedValue(to("/partner") as never);
+      expect(location(await run("/education/o1").result)).toBe("/partner");
+    });
+
+    it("doesn't send a member-type account with no member row to the twin, which would loop", async () => {
+      vi.mocked(requireAuth).mockResolvedValue({ ...student, user: { ...student.user, type: "member" } } as never);
+      expect(location(await run("/education/o1").result)).toBe("/portal");
+    });
+  });
+
   it("propagates a failed shell read instead of redirecting", async () => {
     vi.mocked(isNonMember).mockResolvedValue(true);
     vi.mocked(loadShellUser).mockRejectedValue(new Error("db down"));
