@@ -1,4 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
+import type { ShouldRevalidateFunctionArgs } from "react-router";
+import { skipClientOnlySearchChange } from "~/lib/should-revalidate";
 import { delibsQualifier } from "~/hiring/lib/cycle-stages.server";
 import { cn } from "~/lib/cn";
 import { useCurrentMembers } from "~/hiring/lib/current-members";
@@ -61,6 +63,13 @@ import { ApplicantEngagementChip } from "~/hiring/components/ApplicantEmailPanel
 import { canAssignReviewersIn, domainReviewStatus } from "~/hiring/lib/domain-windows";
 
 export const meta: Route.MetaFunction = () => [{ title: "Domain lead · DALI OS" }];
+
+// Only ?cycle= reaches the loader; ?domain=, ?q=, ?sort= and the like are client-only.
+const LOADER_SEARCH_PARAMS = ["cycle"] as const;
+
+export function shouldRevalidate(args: ShouldRevalidateFunctionArgs) {
+  return skipClientOnlySearchChange(args, LOADER_SEARCH_PARAMS);
+}
 
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);

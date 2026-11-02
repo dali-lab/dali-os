@@ -1,4 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
+import type { ShouldRevalidateFunctionArgs } from "react-router";
+import { skipClientOnlySearchChange } from "~/lib/should-revalidate";
 import { cn } from "~/lib/cn";
 import { hiringKey } from "~/email/lib/registry";
 import { EmailEditorModal } from "~/admin/components/EmailTemplatesAdmin";
@@ -203,6 +205,13 @@ export const meta: Route.MetaFunction = ({ data }) => {
   const name = (data as any)?.cycle?.name;
   return [{ title: `${name || "Cycle"} · Hiring lead · DALI OS` }];
 };
+
+// The loader reads no search params; ?tab= is client-only state.
+const LOADER_SEARCH_PARAMS = [] as const;
+
+export function shouldRevalidate(args: ShouldRevalidateFunctionArgs) {
+  return skipClientOnlySearchChange(args, LOADER_SEARCH_PARAMS);
+}
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
