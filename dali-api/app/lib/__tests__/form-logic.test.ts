@@ -300,6 +300,14 @@ describe("source helpers", () => {
   it("offers 1 to 5 for scale and the options otherwise, never the Other write-in", () => {
     expect(valuesForSource(q("x", "scale"))).toEqual(["1", "2", "3", "4", "5"]);
     expect(valuesForSource(q("x", "radio", { options: ["A"], allowOther: true }))).toEqual(["A"]);
+  });
+
+  it("never offers an option written with a {{token}}, and rejects a rule on one", () => {
+    const source = q("x", "select", { options: ["Yes", "Off in {{term}}"] });
+    expect(valuesForSource(source)).toEqual(["Yes"]);
+
+    const rule = { questionKey: "x", op: "is" as const, value: "Off in {{term}}" };
+    expect(showIfProblems([source, q("y", "text", { showIf: rule })])).toHaveLength(1);
     expect(valuesForSource(q("x", "select"))).toEqual([]);
   });
 });

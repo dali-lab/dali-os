@@ -30,10 +30,12 @@ export function opsForSource(q: Question): ShowIfOp[] {
 }
 
 // The values a rule can name. Scale has no options of its own; an Other
-// write-in is never a value a rule can name.
+// write-in is never a value a rule can name. Nor is an option with a {{token}}:
+// stored answers hold the filled-in text, so the rule could never match it.
 export function valuesForSource(q: Question): string[] {
   if (q.type === "scale") return SCALE_VALUES;
-  return canBeSource(q) ? (q.data.options ?? []) : [];
+  if (!canBeSource(q)) return [];
+  return (q.data.options ?? []).filter((option) => !option.includes("{{"));
 }
 
 export function hasRules(questions: Question[]): boolean {
