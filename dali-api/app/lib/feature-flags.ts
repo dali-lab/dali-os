@@ -201,6 +201,12 @@ export const FEATURE_FLAGS = [
     description:
       "Form owners can delete a single response from the response detail, and the form settings gain \"Let people edit their response\". Forms that already allow edits keep working when this is off. Ships off.",
   },
+  {
+    key: "form-tracker",
+    label: "Form response tracker and reminders",
+    description:
+      "Adds a line to a form's Results showing how many expected people have responded, a list of who hasn't with a Remind button, and \"Remind people 1 day before closing\" in the form settings. Forms that already have the automatic reminder on keep sending it when this is off. Ships off.",
+  },
 ] as const satisfies readonly FeatureFlagDef[];
 
 export type FeatureFlagKey = (typeof FEATURE_FLAGS)[number]["key"];

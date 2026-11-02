@@ -435,6 +435,13 @@ export const EVENT_TYPES = {
     coalesceNoun: "response",
     defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
   },
+  "form.reminder": {
+    kind: "General",
+    area: "Forms",
+    label: "Form reminders",
+    description: "When a form you were asked to fill out is still waiting on you.",
+    defaults: { inApp: true, desktop: true, slackDm: false, email: "Instant" },
+  },
   "education.announcement": {
     kind: "Education",
     area: "Education",

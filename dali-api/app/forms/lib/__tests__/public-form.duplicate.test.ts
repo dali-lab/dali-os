@@ -356,3 +356,22 @@ describe("ordinaryFillBlock", () => {
     expect(await ordinaryFillBlock("form-1", "user-1")).toEqual({ at });
   });
 });
+
+describe("submitMemberForm closes the person's notifications", () => {
+  it("marks their open to-dos and form reminders for this form as read", async () => {
+    await submit();
+
+    expect(mockPrisma.notification.updateMany).toHaveBeenCalledWith({
+      where: {
+        recipientUserId: "user-1",
+        readAt: null,
+        formId: "form-1",
+        OR: [
+          { kind: "SystemAnnouncement", isTodo: true },
+          { eventType: "form.reminder" },
+        ],
+      },
+      data: { readAt: expect.any(Date) },
+    });
+  });
+});

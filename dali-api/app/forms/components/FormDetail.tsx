@@ -73,7 +73,7 @@ type FormVersion = ReturnType<
 //                         (save-version) and clears the draft. Frozen versions
 //                         are read-only and are what publishing serves.
 export function FormDetail() {
-  const { form, terms, usages, managing, hiringLinks: rawHiringLinks, collabToken, results, page } = useLoaderData<typeof loader>();
+  const { form, terms, usages, managing, hiringLinks: rawHiringLinks, collabToken, results, tracker, page } = useLoaderData<typeof loader>();
   // The staffing slot binding, if any: {{term}} in this form's questions
   // resolves from it (see FormBuilderTab's termBinding).
   const staffingBinding = usages.find((u) => u.kind === "staffing") ?? null;
@@ -369,6 +369,7 @@ export function FormDetail() {
           formId={form.id}
           oneResponsePerMember={form.oneResponsePerMember}
           allowResponseEdit={form.allowResponseEdit}
+          remindBeforeClose={form.remindBeforeClose}
           notifyOnSubmission={form.notifyOnSubmission}
           listed={form.listed}
           opensAt={form.opensAt}
@@ -531,6 +532,7 @@ export function FormDetail() {
                 formId={form.id}
                 versionNumber={selectedVersion.versionNumber}
                 results={results}
+                tracker={tracker}
               />
             ) : (
               <div className="py-12 flex justify-center">

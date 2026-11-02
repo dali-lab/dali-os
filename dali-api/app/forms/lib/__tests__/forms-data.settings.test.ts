@@ -135,3 +135,55 @@ describe("runFormsAction update-form-settings allowResponseEdit", () => {
     expect(res).toEqual({ error: "Invalid input", status: 400 });
   });
 });
+
+describe("runFormsAction update-form-settings remindBeforeClose", () => {
+  const settings = (extra: Record<string, string>) =>
+    fd({
+      intent: "update-form-settings",
+      id: "form-1",
+      oneResponsePerMember: "false",
+      notifyOnSubmission: "false",
+      listed: "false",
+      ...extra,
+    });
+
+  it("saves it when the form has a close time", async () => {
+    mockPrisma.form.findUnique.mockResolvedValue({ id: "form-1", closesAt: new Date("2026-11-08T05:00:00Z") });
+    await runFormsAction(settings({ remindBeforeClose: "true" }), "user-1");
+    expect(mockPrisma.form.update.mock.calls[0][0].data.remindBeforeClose).toBe(true);
+  });
+
+  it("refuses to turn it on without a close time", async () => {
+    mockPrisma.form.findUnique.mockResolvedValue({ id: "form-1", closesAt: null });
+    const res = await runFormsAction(settings({ remindBeforeClose: "true" }), "user-1");
+    expect(res).toEqual({ error: "Set a close time to use this.", status: 400 });
+    expect(mockPrisma.form.update).not.toHaveBeenCalled();
+  });
+
+  it("turns it off without a close time", async () => {
+    mockPrisma.form.findUnique.mockResolvedValue({ id: "form-1", closesAt: null });
+    await runFormsAction(settings({ remindBeforeClose: "false" }), "user-1");
+    expect(mockPrisma.form.update.mock.calls[0][0].data.remindBeforeClose).toBe(false);
+  });
+
+  it("leaves it alone when the request omits it", async () => {
+    mockPrisma.form.findUnique.mockResolvedValue({ id: "form-1", closesAt: null });
+    await runFormsAction(settings({}), "user-1");
+    expect(mockPrisma.form.update.mock.calls[0][0].data).not.toHaveProperty("remindBeforeClose");
+  });
+
+  it("turns it off when the close time is cleared", async () => {
+    mockPrisma.form.findUnique.mockResolvedValue({ id: "form-1" });
+    await runFormsAction(fd({ intent: "update-form-window", id: "form-1", opensAt: "", closesAt: "" }), "user-1");
+    expect(mockPrisma.form.update.mock.calls[0][0].data).toMatchObject({ closesAt: null, remindBeforeClose: false });
+  });
+
+  it("keeps it when the close time is only moved", async () => {
+    mockPrisma.form.findUnique.mockResolvedValue({ id: "form-1" });
+    await runFormsAction(
+      fd({ intent: "update-form-window", id: "form-1", opensAt: "", closesAt: "2026-11-09T05:00:00.000Z" }),
+      "user-1",
+    );
+    expect(mockPrisma.form.update.mock.calls[0][0].data).not.toHaveProperty("remindBeforeClose");
+  });
+});

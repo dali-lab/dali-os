@@ -13,6 +13,8 @@ import { modalCardClass } from "~/components/os-chrome";
 import { Button } from "~/components/ui/Button";
 import { useConfirmSubmit } from "~/components/ui/dialog";
 import { useFeatureFlag } from "~/components/FeatureFlags";
+import { FormTracker } from "~/forms/components/FormTracker";
+import type { TrackerCounts } from "~/forms/lib/form-tracker";
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString(undefined, {
@@ -101,10 +103,12 @@ export function VersionResults({
   formId,
   versionNumber,
   results,
+  tracker = null,
 }: {
   formId: string;
   versionNumber: number;
   results: VersionResponses;
+  tracker?: TrackerCounts | null;
 }) {
   const {
     isPartnerApplicationForm,
@@ -159,6 +163,7 @@ export function VersionResults({
 
   const selected = responses.find((r) => r.id === openId) ?? null;
   const hasSlotColumn = slotOptions.length > 0;
+  const trackerLine = tracker && <FormTracker formId={formId} counts={tracker} />;
 
   return (
     <div className="space-y-4">
@@ -173,11 +178,14 @@ export function VersionResults({
       )}
 
       {totalCount === 0 ? (
-        <div className="text-center py-12 rounded-os-card bg-os-card">
-          <p className="text-sm text-muted-foreground">
-            No responses to v{versionNumber} yet.
-          </p>
-        </div>
+        <>
+          {trackerLine}
+          <div className="text-center py-12 rounded-os-card bg-os-card">
+            <p className="text-sm text-muted-foreground">
+              No responses to v{versionNumber} yet.
+            </p>
+          </div>
+        </>
       ) : (
         <>
           <div className="flex flex-col sm:flex-row sm:items-center gap-2">
@@ -217,6 +225,8 @@ export function VersionResults({
               </a>
             </Tooltip>
           </div>
+
+          {trackerLine}
 
           <div className="rounded-os-card bg-os-card overflow-hidden">
             {rows.length === 0 ? (

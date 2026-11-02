@@ -5210,6 +5210,11 @@ model Form {
   // allowResponseEdit: the respondent may change their own answers while the
   // form is open. Only meaningful with oneResponsePerMember.
   allowResponseEdit    Boolean @default(false)
+  // remindBeforeClose: the form-reminders job nudges people who haven't
+  // responded a day before closesAt. lastRemindedAt is the last MANUAL
+  // reminder (the tracker modal), which limits those to one per 24 hours.
+  remindBeforeClose    Boolean   @default(false)
+  lastRemindedAt       DateTime?
 
   // Who may fill the form via its public link. `audienceGroupIds` is only
   // meaningful when audience == Groups (GroupDefinition ids; array rather

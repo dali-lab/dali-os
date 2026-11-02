@@ -266,6 +266,7 @@ export const AUDIT_ACTIONS = [
   "drive.trash.archive-form",
   "form.response.delete",
   "form.response.edit",
+  "form.reminder.send",
   "drive.trash.restore",
   "drive.trash.purge",
   "collab.version.restore",

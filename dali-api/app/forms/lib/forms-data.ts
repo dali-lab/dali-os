@@ -210,6 +210,7 @@ export type FormDetail = {
   closesAt: string | null;
   oneResponsePerMember: boolean;
   allowResponseEdit: boolean;
+  remindBeforeClose: boolean;
   notifyOnSubmission: boolean;
   listed: boolean;
   audience: "Members" | "SignedIn" | "Groups" | "Public";
@@ -259,6 +260,7 @@ export async function loadFormForEdit(
     closesAt: form.closesAt?.toISOString() ?? null,
     oneResponsePerMember: form.oneResponsePerMember,
     allowResponseEdit: form.allowResponseEdit,
+    remindBeforeClose: form.remindBeforeClose,
     notifyOnSubmission: form.notifyOnSubmission,
     listed: form.listed,
     audience: form.audience,
@@ -384,6 +386,7 @@ export const ActionSchema = z.discriminatedUnion("intent", [
     id: z.string().min(1),
     oneResponsePerMember: z.enum(["true", "false"]),
     allowResponseEdit: z.enum(["true", "false"]).optional(),
+    remindBeforeClose: z.enum(["true", "false"]).optional(),
     notifyOnSubmission: z.enum(["true", "false"]),
     listed: z.enum(["true", "false"]),
   }),
@@ -696,16 +699,19 @@ export async function runFormsAction(
         return { error: "Close must be after open.", status: 400 };
       await prisma.form.update({
         where: { id: input.id },
-        data: { opensAt, closesAt },
+        // The reminder is anchored to the close time, so it goes with it.
+        data: { opensAt, closesAt, ...(closesAt ? {} : { remindBeforeClose: false }) },
       });
       return { ok: true };
     }
     case "update-form-settings": {
       const exists = await prisma.form.findUnique({
         where: { id: input.id },
-        select: { id: true },
+        select: { id: true, closesAt: true },
       });
       if (!exists) return { error: "Not found", status: 404 };
+      if (input.remindBeforeClose === "true" && !exists.closesAt)
+        return { error: "Set a close time to use this.", status: 400 };
       await prisma.form.update({
         where: { id: input.id },
         data: {
@@ -716,6 +722,9 @@ export async function runFormsAction(
             : input.allowResponseEdit
               ? { allowResponseEdit: input.allowResponseEdit === "true" }
               : {}),
+          ...(input.remindBeforeClose
+            ? { remindBeforeClose: input.remindBeforeClose === "true" }
+            : {}),
           notifyOnSubmission: input.notifyOnSubmission === "true",
           listed: input.listed === "true",
         },

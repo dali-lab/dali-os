@@ -24,6 +24,15 @@ import { getCollabToken } from "~/lib/collab-token.server";
 import { deleteFormResponse } from "~/forms/lib/form-response.server";
 import { getUserRoles } from "~/lib/roles";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
+import {
+  loadTrackerCounts,
+  loadTrackerList,
+  sendFormReminder,
+} from "~/forms/lib/form-tracker.server";
+
+async function trackerEnabled(userId: string, request: Request) {
+  return isFeatureEnabled("form-tracker", userId, await getUserRoles(userId, request), request);
+}
 
 export const meta: Route.MetaFunction = ({ data }) => [
   { title: `${(data as any)?.form?.name ?? "Form"} · Forms · DALI OS` },
@@ -87,6 +96,12 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     return viewerRedirect(auth.user.sub, params.formId, request);
   }
 
+  const url = new URL(request.url);
+  const trackerOn = await trackerEnabled(auth.user.sub, request);
+  if (trackerOn && url.searchParams.get("tracker") === "list") {
+    return Response.json({ list: await loadTrackerList(params.formId) });
+  }
+
   const form = await loadFormForEdit(params.formId);
   if (!form) return redirect("/drive?type=form");
   // Terms for term-scoped reference questions (e.g. projects active in a
@@ -108,7 +123,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   // Results are per version: `?view=results&version=N` loads that version's
   // responses (the latest when N is omitted).
-  const url = new URL(request.url);
   const resultsVersion =
     url.searchParams.get("view") === "results"
       ? (form.versions.find(
@@ -122,9 +136,12 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         slot: url.searchParams.get("slot") ?? "",
       })
     : null;
+  const tracker =
+    trackerOn && resultsVersion ? await loadTrackerCounts(params.formId) : null;
 
   return {
     results,
+    tracker,
     form,
     terms,
     usages,
@@ -186,6 +203,21 @@ export async function action({ request, params }: Route.ActionArgs) {
     if ("error" in deleted)
       return Response.json({ error: deleted.error }, { status: deleted.status });
     return deleted;
+  }
+
+  if (intent === "send-form-reminder") {
+    const message = formData.get("message");
+    if (!(await trackerEnabled(auth.user.sub, request)) || typeof message !== "string") {
+      return Response.json({ error: "Invalid input" }, { status: 400 });
+    }
+    const sent = await sendFormReminder({
+      formId: params.formId,
+      actorId: auth.user.sub,
+      message,
+      request,
+    });
+    if ("error" in sent) return Response.json({ error: sent.error }, { status: sent.status });
+    return sent;
   }
 
   const result = await runFormsAction(formData, auth.user.sub);

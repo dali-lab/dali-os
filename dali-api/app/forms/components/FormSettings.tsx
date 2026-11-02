@@ -131,6 +131,7 @@ function FormSettingsFields({
   formId,
   oneResponsePerMember,
   allowResponseEdit,
+  remindBeforeClose,
   notifyOnSubmission,
   listed,
   opensAt,
@@ -139,6 +140,7 @@ function FormSettingsFields({
   formId: string;
   oneResponsePerMember: boolean;
   allowResponseEdit: boolean;
+  remindBeforeClose: boolean;
   notifyOnSubmission: boolean;
   listed: boolean;
   opensAt: string | null;
@@ -160,6 +162,11 @@ function FormSettingsFields({
     ? pending!.get("allowResponseEdit") === "true"
     : allowResponseEdit;
   const editSettingOffered = useFeatureFlag("form-response-edit") || allowResponseEdit;
+  const remindOffered = useFeatureFlag("form-tracker") || remindBeforeClose;
+  const hasCloseTime = closesAt !== null;
+  const remind = pendingSettings
+    ? pending!.get("remindBeforeClose") === "true"
+    : remindBeforeClose;
   const notify = pendingSettings
     ? pending!.get("notifyOnSubmission") === "true"
     : notifyOnSubmission;
@@ -192,6 +199,7 @@ function FormSettingsFields({
     nextNotify: boolean,
     nextListed: boolean,
     nextCanEdit: boolean = canEdit,
+    nextRemind: boolean = remind,
   ) {
     fetcher.submit(
       {
@@ -199,6 +207,7 @@ function FormSettingsFields({
         id: formId,
         oneResponsePerMember: String(nextOneResponse),
         allowResponseEdit: String(nextOneResponse && nextCanEdit),
+        ...(remindOffered ? { remindBeforeClose: String(nextRemind) } : {}),
         notifyOnSubmission: String(nextNotify),
         listed: String(nextListed),
       },
@@ -256,6 +265,21 @@ function FormSettingsFields({
             ariaLabel="Closes at"
           />
         </label>
+        {remindOffered && (
+          <div className="flex flex-col gap-1">
+            <Checkbox
+              checked={remind && hasCloseTime}
+              disabled={!hasCloseTime}
+              onChange={(e) =>
+                saveSettings(oneResponse, notify, isListed, canEdit, e.target.checked)
+              }
+              label="Remind people 1 day before closing"
+            />
+            {!hasCloseTime && (
+              <p className="pl-[26px] text-xs text-os-grey">Set a close time to use this.</p>
+            )}
+          </div>
+        )}
         {windowDirty && (
           <Button
             variant="secondary"

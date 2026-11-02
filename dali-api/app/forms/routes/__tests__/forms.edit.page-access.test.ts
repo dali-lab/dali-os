@@ -17,6 +17,11 @@ vi.mock("~/forms/lib/form-usages.server", () => ({ formUsages: vi.fn(), managing
 vi.mock("~/hiring/lib/form-links.server", () => ({ loadFormHiringLinks: vi.fn(), unlinkHiringForm: vi.fn() }));
 vi.mock("~/forms/lib/version-responses.server", () => ({ loadVersionResponses: vi.fn() }));
 vi.mock("~/forms/lib/form-response.server", () => ({ deleteFormResponse: vi.fn() }));
+vi.mock("~/forms/lib/form-tracker.server", () => ({
+  loadTrackerCounts: vi.fn(),
+  loadTrackerList: vi.fn(),
+  sendFormReminder: vi.fn(),
+}));
 vi.mock("~/lib/roles", () => ({ getUserRoles: vi.fn() }));
 vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabled: vi.fn() }));
 vi.mock("~/lib/collab-token.server", () => ({ getCollabToken: vi.fn() }));
@@ -34,6 +39,7 @@ import { getCollabToken } from "~/lib/collab-token.server";
 import { loadVersionResponses } from "~/forms/lib/version-responses.server";
 import { deleteFormResponse } from "~/forms/lib/form-response.server";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
+import { loadTrackerCounts, loadTrackerList, sendFormReminder } from "~/forms/lib/form-tracker.server";
 import { loader, action, handle } from "~/forms/routes/forms.edit.$formId";
 
 const request = new Request("http://os.test/forms/edit/f1");
@@ -231,5 +237,125 @@ describe("forms.edit action delete-form-response", () => {
     const res = await del();
     expect(res.status).toBe(409);
     expect(await res.json()).toEqual({ error: "nope" });
+  });
+});
+
+describe("forms.edit tracker", () => {
+  const flagOn = (on: boolean) =>
+    vi.mocked(isFeatureEnabled).mockImplementation(async (key) => (key === "form-tracker" ? on : false));
+  const resultsRequest = new Request("http://os.test/forms/edit/f1?view=results&version=1");
+  const withVersion = () =>
+    vi.mocked(loadFormForEdit).mockResolvedValue({
+      id: "f1",
+      folderPageId: null,
+      versions: [{ id: "v1", versionNumber: 1 }],
+      workspaceType: "Project",
+    } as never);
+
+  it("loads the counts on Results when the flag is on", async () => {
+    flagOn(true);
+    withVersion();
+    vi.mocked(loadTrackerCounts).mockResolvedValue({ expected: 71, responded: 58 });
+    const data = await loader({ request: resultsRequest, params: { formId: "f1" } } as never);
+    expect((data as any).tracker).toEqual({ expected: 71, responded: 58 });
+    expect(loadTrackerCounts).toHaveBeenCalledWith("f1");
+  });
+
+  it("skips the tracker when the flag is off", async () => {
+    flagOn(false);
+    withVersion();
+    const data = await loader({ request: resultsRequest, params: { formId: "f1" } } as never);
+    expect((data as any).tracker).toBeNull();
+    expect(loadTrackerCounts).not.toHaveBeenCalled();
+  });
+
+  it("does not count on the questions view", async () => {
+    flagOn(true);
+    withVersion();
+    await run();
+    expect(loadTrackerCounts).not.toHaveBeenCalled();
+  });
+
+  it("serves the name list only for the list request, to a builder, with the flag on", async () => {
+    flagOn(true);
+    vi.mocked(loadTrackerList).mockResolvedValue({ expected: 2 } as never);
+    const res = await loader({
+      request: new Request("http://os.test/forms/edit/f1?tracker=list"),
+      params: { formId: "f1" },
+    } as never);
+    expect(await (res as Response).json()).toEqual({ list: { expected: 2 } });
+    expect(loadFormForEdit).not.toHaveBeenCalled();
+  });
+
+  it("does not serve the list with the flag off", async () => {
+    flagOn(false);
+    await loader({
+      request: new Request("http://os.test/forms/edit/f1?tracker=list"),
+      params: { formId: "f1" },
+    } as never);
+    expect(loadTrackerList).not.toHaveBeenCalled();
+  });
+
+  it("does not serve the list to someone who cannot build the form", async () => {
+    flagOn(true);
+    vi.mocked(canBuildForm).mockResolvedValue(false);
+    vi.mocked(canSeeForm).mockResolvedValue(false);
+    await loader({
+      request: new Request("http://os.test/forms/edit/f1?tracker=list"),
+      params: { formId: "f1" },
+    } as never);
+    expect(loadTrackerList).not.toHaveBeenCalled();
+  });
+});
+
+describe("forms.edit action send-form-reminder", () => {
+  const send = (fields: Record<string, string> = { message: "Please fill it out." }) => {
+    const body = new FormData();
+    body.set("intent", "send-form-reminder");
+    for (const [k, v] of Object.entries(fields)) body.set(k, v);
+    return action({
+      request: new Request("http://os.test/forms/edit/f1", { method: "POST", body }),
+      params: { formId: "f1" },
+    } as never) as Promise<Response>;
+  };
+
+  beforeEach(() => {
+    vi.mocked(isFeatureEnabled).mockResolvedValue(true);
+    vi.mocked(sendFormReminder).mockResolvedValue({ ok: true, sent: 11 });
+  });
+
+  it("sends for a builder using only the message from the request", async () => {
+    const res = await send({ message: "Hi", userIds: "evil", recipients: "evil" });
+    expect(res).toEqual({ ok: true, sent: 11 });
+    expect(sendFormReminder).toHaveBeenCalledWith({
+      formId: "f1",
+      actorId: "u1",
+      message: "Hi",
+      request: expect.any(Request),
+    });
+  });
+
+  it("refuses a caller who cannot build this form", async () => {
+    vi.mocked(canBuildForm).mockResolvedValue(false);
+    expect((await send()).status).toBe(403);
+    expect(sendFormReminder).not.toHaveBeenCalled();
+  });
+
+  it("does nothing while the form-tracker flag is off", async () => {
+    vi.mocked(isFeatureEnabled).mockResolvedValue(false);
+    expect((await send()).status).toBe(400);
+    expect(sendFormReminder).not.toHaveBeenCalled();
+  });
+
+  it("needs a message", async () => {
+    expect((await send({})).status).toBe(400);
+    expect(sendFormReminder).not.toHaveBeenCalled();
+  });
+
+  it("relays a refusal with its status", async () => {
+    vi.mocked(sendFormReminder).mockResolvedValue({ error: "slow down", status: 429 });
+    const res = await send();
+    expect(res.status).toBe(429);
+    expect(await res.json()).toEqual({ error: "slow down" });
   });
 });

@@ -921,10 +921,12 @@ async function closeFormTodos(
   await tx.notification.updateMany({
     where: {
       recipientUserId: userId,
-      kind: "SystemAnnouncement",
-      isTodo: true,
       readAt: null,
       formId,
+      OR: [
+        { kind: "SystemAnnouncement", isTodo: true },
+        { eventType: "form.reminder" },
+      ],
     },
     data: { readAt: new Date() },
   });
