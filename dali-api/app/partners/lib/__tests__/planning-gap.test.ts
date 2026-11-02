@@ -31,9 +31,9 @@ describe("isPotentialState", () => {
 });
 
 describe("planningStateLabel", () => {
-  it("joins source and state", () => {
-    expect(planningStateLabel({ source: "renewing", state: "Undecided" })).toBe("Renewal · Undecided");
-    expect(planningStateLabel({ source: "new", state: "Interview" })).toBe("New · Interview");
+  it("shows the state alone; the tables group rows by source already", () => {
+    expect(planningStateLabel({ state: "Undecided" })).toBe("Undecided");
+    expect(planningStateLabel({ state: "Interview" })).toBe("Interview");
   });
 });
 

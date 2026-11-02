@@ -2,6 +2,14 @@ import { Link } from "react-router";
 import { cn } from "~/lib/cn";
 import { planningStateLabel, type PlanningBreakdownRow } from "../../lib/planning-gap";
 
+// The planning table's column tracks — shared with the breakdown rows below a
+// domain so a project's count sits in the same Spots column as its domain's.
+export const PLANNING_GRID =
+  "grid grid-cols-[minmax(150px,1.3fr)_minmax(110px,0.9fr)_minmax(90px,0.7fr)_minmax(160px,1.6fr)_minmax(90px,0.7fr)] items-center gap-4 px-4";
+
+// Lines project names up under their domain's: the chevron (14px) + its gap (8px).
+const INDENT = "pl-[22px]";
+
 export function breakdownHref(row: Pick<PlanningBreakdownRow, "kind" | "refId">): string {
   return row.kind === "application"
     ? `/core/partners?application=${row.refId}`
@@ -12,25 +20,30 @@ export function DomainBreakdown({ items }: { items: PlanningBreakdownRow[] }) {
   const renewals = items.filter((i) => i.source === "renewing");
   const fresh = items.filter((i) => i.source === "new");
   return (
-    <div className="mx-3 mb-3 rounded-os-item bg-os-well p-1">
+    <div className="bg-os-well py-1">
       {[renewals, fresh].map((group, gi) =>
         group.length === 0 ? null : (
-          <div key={gi} className={cn(gi === 1 && renewals.length > 0 && "mt-1 border-t border-os-container pt-1")}>
+          <div key={gi}>
+            <p className={cn(PLANNING_GRID, "pb-0.5 pt-1.5 text-xs font-medium text-muted-foreground")}>
+              <span className={INDENT}>{gi === 0 ? "Renewing" : "New"}</span>
+            </p>
             {group.map((row) => (
               <Link
                 key={row.key}
                 to={breakdownHref(row)}
                 className={cn(
-                  "flex items-center gap-3 rounded-os-item px-3 py-1.5 text-sm hover:bg-os-hover",
+                  PLANNING_GRID,
+                  "py-1.5 text-sm transition-colors hover:bg-os-hover",
                   !row.counted && "opacity-45",
                 )}
               >
-                <span className="min-w-0 flex-1 truncate text-foreground">
+                <span className={cn(INDENT, "min-w-0 truncate text-foreground")}>
                   {row.iconEmoji && <span aria-hidden className="mr-1.5">{row.iconEmoji}</span>}
                   {row.name}
                 </span>
-                <span className="shrink-0 text-xs text-muted-foreground">{planningStateLabel(row)}</span>
-                <span className="w-6 shrink-0 text-right tabular-nums text-foreground">{row.count}</span>
+                <span className="tabular-nums text-foreground">{row.count}</span>
+                <span />
+                <span className="text-xs text-muted-foreground">{planningStateLabel(row)}</span>
               </Link>
             ))}
           </div>

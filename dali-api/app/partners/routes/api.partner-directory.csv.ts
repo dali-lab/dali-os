@@ -1,4 +1,6 @@
-// GET /api/partner-directory.csv?view=orgs|contacts&q=&type=&status=&individuals=0
+// GET /api/partner-directory.csv?q=&kind=&type=&status=&org= (kind, type,
+// status and org repeat for multi-value filters — the same columns the
+// Directory's filter bar offers)
 // Resource route — no default export, no layout wrapping (see the forms
 // responses CSV export for the same bare-body reasoning).
 
@@ -9,13 +11,11 @@ import { redirectToLogin } from "~/lib/login-next";
 import { isCore } from "~/lib/roles";
 import { csvResponse, rowsToCsv } from "~/lib/csv";
 import {
-  filterContactRows,
-  filterOrgRows,
-  orgFiltersFromParams,
-  partnerContactsCsvRows,
-  partnerOrgsCsvRows,
+  directoryFiltersFromParams,
+  filterDirectoryRows,
+  partnerDirectoryCsvRows,
 } from "../lib/partner-directory";
-import { listPartnerContactRows, listPartnerOrgRows } from "../lib/partner-directory.server";
+import { listPartnerDirectoryRows } from "../lib/partner-directory.server";
 
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
@@ -24,20 +24,16 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (!(await isCore(auth.user.sub))) return redirect("/");
 
   const params = new URL(request.url).searchParams;
-  const view = params.get("view") === "contacts" ? "contacts" : "orgs";
   const fileStamp = new Date().toISOString().slice(0, 10);
 
-  if (view === "contacts") {
-    const contacts = await listPartnerContactRows();
-    const csv = rowsToCsv(partnerContactsCsvRows(filterContactRows(contacts, params.get("q") ?? "")));
-    return csvResponse(csv, `partner-contacts-${fileStamp}.csv`, {
-      headers: { "Cache-Control": "no-store" },
-    });
-  }
-
-  const orgs = await listPartnerOrgRows();
-  const csv = rowsToCsv(partnerOrgsCsvRows(filterOrgRows(orgs, orgFiltersFromParams(params))));
-  return csvResponse(csv, `partner-orgs-${fileStamp}.csv`, {
+  const rows = await listPartnerDirectoryRows();
+  const filtered = filterDirectoryRows(
+    rows,
+    params.get("q") ?? "",
+    directoryFiltersFromParams(params),
+  );
+  const csv = rowsToCsv(partnerDirectoryCsvRows(filtered));
+  return csvResponse(csv, `partner-directory-${fileStamp}.csv`, {
     headers: { "Cache-Control": "no-store" },
   });
 }

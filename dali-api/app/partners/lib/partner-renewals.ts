@@ -82,11 +82,6 @@ export function isNextStepOverdue(dueIso: string | null, now: Date): boolean {
   );
 }
 
-export function isContactStale(lastIso: string | null, staleDays: number, now: Date): boolean {
-  if (!lastIso) return false;
-  return now.getTime() - new Date(lastIso).getTime() > staleDays * 86_400_000;
-}
-
 export function matchesRenewalQuery(card: RenewalCardModel, query: string): boolean {
   const q = query.trim().toLowerCase();
   if (!q) return true;

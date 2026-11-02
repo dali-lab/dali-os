@@ -1,7 +1,18 @@
 import { prisma } from "~/lib/db.server";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { partnerRelationshipStatus } from "./partner-org";
-import type { PartnerContactDirectoryRow, PartnerOrgDirectoryRow } from "./partner-directory";
+import {
+  buildDirectoryRows,
+  type PartnerContactDirectoryRow,
+  type PartnerDirectoryRow,
+  type PartnerOrgDirectoryRow,
+} from "./partner-directory";
+
+/** The Directory's unified list: orgs, individuals and people as one set of rows. */
+export async function listPartnerDirectoryRows(): Promise<PartnerDirectoryRow[]> {
+  const [orgs, contacts] = await Promise.all([listPartnerOrgRows(), listPartnerContactRows()]);
+  return buildDirectoryRows(orgs, contacts);
+}
 
 export async function listPartnerOrgRows(now = new Date()): Promise<PartnerOrgDirectoryRow[]> {
   const orgs = await prisma.partnerOrg.findMany({

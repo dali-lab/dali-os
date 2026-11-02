@@ -173,7 +173,7 @@ describe("setSlotBinding moving between cycles", () => {
       expect.objectContaining({
         where: expect.objectContaining({
           formId: "form-1",
-          slot: { in: ["intent-to-work", "project-bids", "level-up"] },
+          slot: { in: ["intent-to-work", "project-bids", "level-up", "referrals"] },
           NOT: { staffingCycleId: "cyc-27w", slot: "intent-to-work" },
         }),
       }),

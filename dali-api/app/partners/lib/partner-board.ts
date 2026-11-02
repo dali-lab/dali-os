@@ -10,6 +10,11 @@ import {
   nextPositionInColumn,
   type Board,
 } from "~/components/board/board-order";
+import {
+  filterValues,
+  type ColumnFilter,
+  type FilterCells,
+} from "~/projects/lib/submission-filters";
 import { PARTNER_STAGES, isPaused, isStale, type PartnerStage } from "./partner-application";
 
 // Cards not on a recognized stage (shouldn't happen — the enum is closed, but
@@ -126,18 +131,20 @@ export function sortPartnerBoard(board: PartnerCardBoard, sort: PartnerCardSort)
   ) as PartnerCardBoard;
 }
 
-export function filtersFromParams(
-  base: PartnerFilters,
+/** Seed the filter builder from a report or notification link:
+ *  ?source=Form and ?term=<termId> open with those column filters set. */
+export function columnFiltersFromParams(
   params: URLSearchParams,
-  valid: { sources: string[]; termIds: string[] },
-): PartnerFilters {
+  valid: { sources: string[]; terms: { id: string; code: string }[] },
+): ColumnFilter[] {
+  const filters: ColumnFilter[] = [];
   const source = params.get("source");
-  const term = params.get("term");
-  return {
-    ...base,
-    source: source && valid.sources.includes(source) ? source : base.source,
-    term: term && valid.termIds.includes(term) ? term : base.term,
-  };
+  if (source && valid.sources.includes(source)) {
+    filters.push({ columnKey: "source", values: [source] });
+  }
+  const term = valid.terms.find((t) => t.id === params.get("term"));
+  if (term) filters.push({ columnKey: "term", values: [term.code] });
+  return filters;
 }
 
 export function formatCardSpots(domains: PartnerCardModel["domains"]): string {
@@ -154,35 +161,83 @@ export const SOURCE_OPTIONS: { value: string; label: string }[] = [
   { value: "Manual", label: "Manual" },
 ];
 
+export const ACTIVITY_OPTIONS = ["Stale", "Active"] as const;
+
+export function partnerActivityLabel(
+  card: PartnerCardModel,
+  staleDays: number,
+  now = new Date(),
+): (typeof ACTIVITY_OPTIONS)[number] {
+  return isStale(card, staleDays, now) ? "Stale" : "Active";
+}
+
+/** The cell strings the shared ColumnFilters builder matches a card on. */
+export function partnerCardCells(
+  card: PartnerCardModel,
+  staleDays: number,
+  now = new Date(),
+): FilterCells {
+  return {
+    term: card.targetTerms.map((t) => t.code),
+    domain: card.domains.map((d) => d.name),
+    source: card.source,
+    activity: partnerActivityLabel(card, staleDays, now),
+  };
+}
+
 export type PartnerFilters = {
-  term: string | null;
-  domain: string | null;
-  source: string | null;
-  staleOnly: boolean;
+  terms: string[];
+  domains: string[];
+  sources: string[];
+  activity: string[];
   showPaused: boolean;
   showRejectedPastTerms: boolean;
 };
 
 export const DEFAULT_FILTERS: PartnerFilters = {
-  term: null,
-  domain: null,
-  source: null,
-  staleOnly: false,
+  terms: [],
+  domains: [],
+  sources: [],
+  activity: [],
   showPaused: true,
   showRejectedPastTerms: false,
 };
 
-export function isPartnerFilters(v: unknown): v is PartnerFilters {
+/** Per-user board display preferences, edited in Partner settings. */
+export type PartnerBoardPrefs = {
+  sort: PartnerCardSort;
+  showPaused: boolean;
+  showRejectedPastTerms: boolean;
+};
+
+export const DEFAULT_BOARD_PREFS: PartnerBoardPrefs = {
+  sort: "manual",
+  showPaused: true,
+  showRejectedPastTerms: false,
+};
+
+export function isBoardPrefs(v: unknown): v is PartnerBoardPrefs {
   if (!v || typeof v !== "object") return false;
   const o = v as Record<string, unknown>;
   return (
-    (o.term === null || typeof o.term === "string") &&
-    (o.domain === null || typeof o.domain === "string") &&
-    (o.source === null || typeof o.source === "string") &&
-    typeof o.staleOnly === "boolean" &&
+    isCardSort(o.sort) &&
     typeof o.showPaused === "boolean" &&
     typeof o.showRejectedPastTerms === "boolean"
   );
+}
+
+export function partnerFiltersFromColumns(
+  active: readonly ColumnFilter[],
+  prefs: PartnerBoardPrefs,
+): PartnerFilters {
+  return {
+    terms: filterValues(active, "term"),
+    domains: filterValues(active, "domain"),
+    sources: filterValues(active, "source"),
+    activity: filterValues(active, "activity"),
+    showPaused: prefs.showPaused,
+    showRejectedPastTerms: prefs.showRejectedPastTerms,
+  };
 }
 
 export function filterPartnerCards<T extends PartnerCardModel>(
@@ -196,10 +251,16 @@ export function filterPartnerCards<T extends PartnerCardModel>(
     ? new Date(opts.currentTermStartIso).getTime()
     : null;
   return cards.filter((c) => {
-    if (filters.term && !c.targetTerms.some((t) => t.id === filters.term)) return false;
-    if (filters.domain && !c.domains.some((d) => d.id === filters.domain)) return false;
-    if (filters.source && c.source !== filters.source) return false;
-    if (filters.staleOnly && !isStale(c, opts.staleDays, now)) return false;
+    if (filters.terms.length && !c.targetTerms.some((t) => filters.terms.includes(t.code)))
+      return false;
+    if (filters.domains.length && !c.domains.some((d) => filters.domains.includes(d.name)))
+      return false;
+    if (filters.sources.length && !filters.sources.includes(c.source)) return false;
+    if (
+      filters.activity.length &&
+      !filters.activity.includes(partnerActivityLabel(c, opts.staleDays, now))
+    )
+      return false;
     if (!filters.showPaused && isPaused(c.holdUntil, now)) return false;
     if (
       !filters.showRejectedPastTerms &&

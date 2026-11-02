@@ -6,7 +6,7 @@ import {
   continueStatusWrites,
   dollarsToCents,
   groupRenewals,
-  isContactStale,
+
   isNextStepOverdue,
   matchesRenewalQuery,
   nextTerm,
@@ -125,11 +125,6 @@ describe("warnings", () => {
     expect(isNextStepOverdue("2026-10-27T00:00:00Z", NOW)).toBe(true);
     expect(isNextStepOverdue("2026-10-28T00:00:00Z", NOW)).toBe(false);
     expect(isNextStepOverdue(null, NOW)).toBe(false);
-  });
-  it("flags contact older than staleDays", () => {
-    expect(isContactStale("2026-10-10T12:00:00Z", 14, NOW)).toBe(true);
-    expect(isContactStale("2026-10-20T12:00:00Z", 14, NOW)).toBe(false);
-    expect(isContactStale(null, 14, NOW)).toBe(false);
   });
 });
 

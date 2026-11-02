@@ -5,6 +5,7 @@ import { requireAuth, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { isCore } from "~/lib/roles";
 import { Popover, Select } from "~/components/ui/floating";
+import { filterPillClass } from "~/components/ui/floating/styles";
 import { OS_PANEL_CLASS } from "~/components/ui/floating/styles";
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
@@ -250,12 +251,13 @@ export default function PartnerReports() {
   return (
     <div className="flex flex-col gap-4">
       <h1 className="sr-only">Reports</h1>
-      <div className="flex flex-wrap items-center gap-2 md:flex-nowrap">
-        <PartnerCrmNav className="shrink-0 self-start md:self-center" />
+      <div className="flex flex-wrap items-center gap-2">
+        <PartnerCrmNav className="shrink-0" />
         <div className="flex-1" />
         <Select
           value={selectedTermId ?? "all"}
           ariaLabel="Term"
+          buttonClassName={filterPillClass()}
           options={[
             { value: "all", label: "All time" },
             ...terms.map((t) => ({ value: t.id, label: t.code })),

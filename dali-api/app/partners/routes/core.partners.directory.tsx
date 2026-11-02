@@ -5,7 +5,6 @@ import {
   redirect,
   useActionData,
   useLoaderData,
-  useSearchParams,
 } from "react-router";
 import type { Route } from "./+types/core.partners.directory";
 import { requireAuth, isNonMember } from "~/lib/auth";
@@ -14,44 +13,35 @@ import { prisma } from "~/lib/db.server";
 import { isCore } from "~/lib/roles";
 import { logAuditEvent } from "~/lib/audit";
 import { classifyPartnerEmail, normalizeEmail } from "../lib/magic-link.server";
-import { Download, Plus, SlidersHorizontal } from "lucide-react";
-import { Checkbox } from "~/components/ui/Checkbox";
-import { Popover } from "~/components/ui/floating";
+import { Building2, CircleDot, Download, Plus, Shapes, Tag, User } from "lucide-react";
 import { SearchInput } from "~/components/ui/SearchInput";
 import { IconButton } from "~/components/ui/IconButton";
-import { SegmentedTabButtons } from "~/components/AreaPillNav";
+import { Menu, MenuItem } from "~/components/ui/floating";
 import { useOsChrome } from "~/components/os-chrome";
 import { usePersistedState } from "~/hooks/usePersistedState";
 import { cn } from "~/lib/cn";
 import {
-  FilterCountBadge,
-  FilterGroup,
-  FilterPill,
-  FilterResetButton,
-  FilterSectionLabel,
-  FilterToggleRow,
-  customizeButtonClass,
-  filterPanelClass,
-} from "~/components/ui/filter-panel";
+  ColumnFilters,
+  useColumnFilters,
+  type FilterColumn,
+} from "~/projects/components/ColumnFilters";
 import { Modal, ModalHeader, ModalFooter } from "~/components/Modal";
 import { PartnerCrmNav } from "../components/PartnerCrmNav";
-import { ContactsTable, OrgsTable } from "../components/PartnerDirectoryTables";
+import { DirectoryTable } from "../components/PartnerDirectoryTables";
 import {
   DEFAULT_DIRECTORY_SORT,
-  DEFAULT_ORG_FILTERS,
-  activeOrgFilterCount,
+  DIRECTORY_KIND_OPTIONS,
   directoryExportHref,
-  filterContactRows,
-  filterOrgRows,
+  directoryRowCells,
+  filterDirectoryRows,
   isDirectorySort,
   nextDirectorySort,
   sortDirectoryRows,
   type DirectorySort,
   type DirectorySortKey,
-  type OrgDirectoryFilters,
-  type PartnerOrgDirectoryRow,
+  type PartnerDirectoryRow,
 } from "../lib/partner-directory";
-import { listPartnerContactRows, listPartnerOrgRows } from "../lib/partner-directory.server";
+import { listPartnerDirectoryRows } from "../lib/partner-directory.server";
 import {
   PARTNER_ORG_TYPES,
   PARTNER_ORG_TYPE_LABELS,
@@ -71,8 +61,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (await isNonMember(auth, request)) return redirect("/portal");
   if (!(await isCore(auth.user.sub))) return redirect("/");
 
-  const [orgs, contacts] = await Promise.all([listPartnerOrgRows(), listPartnerContactRows()]);
-  return { orgs, contacts };
+  return { rows: await listPartnerDirectoryRows() };
 }
 
 export async function action({ request }: Route.ActionArgs) {
@@ -184,21 +173,21 @@ export async function action({ request }: Route.ActionArgs) {
   return redirect(`/core/partners/orgs/${org.id}`);
 }
 
-type DirectoryView = "orgs" | "contacts";
-
 function NewOrgModal({
   open,
+  individual,
   onClose,
   orgs,
 }: {
   open: boolean;
+  /** true = "New individual partner", false = "New organization". */
+  individual: boolean;
   onClose: () => void;
-  orgs: PartnerOrgDirectoryRow[];
+  orgs: { id: string; name: string }[];
 }) {
   const actionData = useActionData<typeof action>();
   const titleId = useId();
   const [name, setName] = useState("");
-  const [individual, setIndividual] = useState(false);
   const duplicate = useMemo(() => {
     const q = name.trim().toLowerCase();
     if (!q) return null;
@@ -216,37 +205,37 @@ function NewOrgModal({
         method="post"
         onSubmit={() => {
           setName("");
-          setIndividual(false);
           onClose();
         }}
-        className="flex flex-col gap-3"
+        className="os-form flex flex-col gap-3"
       >
         <input type="hidden" name="intent" value="org-create" />
+        {individual && <input type="hidden" name="isIndividual" value="on" />}
         {actionData && "error" in actionData && (
-          <p className="text-sm text-destructive bg-destructive/10 rounded-lg px-3 py-2">
+          <p className="rounded-os-item bg-destructive/10 px-3 py-2 text-sm text-destructive">
             {actionData.error}
           </p>
         )}
-        <label className="flex flex-col gap-1 text-xs">
-          <span className="text-muted-foreground">
+        <label className="flex flex-col gap-1.5">
+          <span>
             Name<span className="text-destructive"> *</span>
           </span>
           <input
             name="name"
+            type="text"
             autoFocus
             required
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder={individual ? "Full name" : "Organization name"}
-            className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
           />
         </label>
         {duplicate && (
-          <p className="text-xs text-muted-foreground">
+          <p className="text-xs text-os-grey">
             An organization named “{duplicate.name}” already exists.{" "}
             <Link
               to={`/core/partners/orgs/${duplicate.id}`}
-              className="text-dark-blue hover:underline"
+              className="text-os-accent hover:underline"
             >
               view it
             </Link>
@@ -254,37 +243,18 @@ function NewOrgModal({
           </p>
         )}
         {individual ? (
-          <label className="flex flex-col gap-1 text-xs">
-            <span className="text-muted-foreground">
+          <label className="flex flex-col gap-1.5">
+            <span>
               Email<span className="text-destructive"> *</span>
             </span>
-            <input
-              name="email"
-              type="email"
-              required
-              placeholder="name@example.com"
-              className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
-            />
+            <input name="email" type="email" required placeholder="name@example.com" />
           </label>
         ) : (
-          <label className="flex flex-col gap-1 text-xs">
-            <span className="text-muted-foreground">Website</span>
-            <input
-              name="website"
-              type="url"
-              placeholder="https://"
-              className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
-            />
+          <label className="flex flex-col gap-1.5">
+            <span>Website</span>
+            <input name="website" type="url" placeholder="https://" />
           </label>
         )}
-        <Checkbox
-          name="isIndividual"
-          checked={individual}
-          onChange={(e) => setIndividual(e.target.checked)}
-          label="Individual"
-          description="A single person, not an organization"
-          className="text-sm text-foreground"
-        />
         <ModalFooter onCancel={onClose}>
           <button type="submit" className="os-btn-primary">
             Create
@@ -302,52 +272,35 @@ function NewContactModal({ open, onClose }: { open: boolean; onClose: () => void
   return (
     <Modal open={open} onClose={onClose} labelledBy={titleId}>
       <ModalHeader titleId={titleId} title="New contact" onClose={onClose} />
-      <Form method="post" onSubmit={onClose} className="flex flex-col gap-3">
+      <Form method="post" onSubmit={onClose} className="os-form flex flex-col gap-3">
         <input type="hidden" name="intent" value="contact-create" />
         {actionData && "error" in actionData && (
-          <p className="text-sm text-destructive bg-destructive/10 rounded-lg px-3 py-2">
+          <p className="rounded-os-item bg-destructive/10 px-3 py-2 text-sm text-destructive">
             {actionData.error}
           </p>
         )}
-        <label className="flex flex-col gap-1 text-xs">
-          <span className="text-muted-foreground">
+        <label className="flex flex-col gap-1.5">
+          <span>
             Name<span className="text-destructive"> *</span>
           </span>
-          <input
-            name="name"
-            autoFocus
-            required
-            className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
-          />
+          <input name="name" type="text" autoFocus required />
         </label>
-        <label className="flex flex-col gap-1 text-xs">
-          <span className="text-muted-foreground">
+        <label className="flex flex-col gap-1.5">
+          <span>
             Email<span className="text-destructive"> *</span>
           </span>
-          <input
-            name="email"
-            type="email"
-            required
-            placeholder="name@example.com"
-            className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
-          />
+          <input name="email" type="email" required placeholder="name@example.com" />
         </label>
-        <p className="text-xs text-muted-foreground">
+        <p className="text-xs text-os-grey">
           An existing contact with this email opens instead of creating a duplicate.
         </p>
-        <label className="flex flex-col gap-1 text-xs">
-          <span className="text-muted-foreground">Title</span>
-          <input
-            name="title"
-            className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
-          />
+        <label className="flex flex-col gap-1.5">
+          <span>Title</span>
+          <input name="title" type="text" />
         </label>
-        <label className="flex flex-col gap-1 text-xs">
-          <span className="text-muted-foreground">Affiliation</span>
-          <input
-            name="affiliation"
-            className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
-          />
+        <label className="flex flex-col gap-1.5">
+          <span>Affiliation</span>
+          <input name="affiliation" type="text" />
         </label>
         <ModalFooter onCancel={onClose}>
           <button type="submit" className="os-btn-primary">
@@ -359,197 +312,127 @@ function NewContactModal({ open, onClose }: { open: boolean; onClose: () => void
   );
 }
 
+const FILTER_COLUMNS: FilterColumn[] = [
+  { key: "kind", label: "Kind", icon: Shapes, order: DIRECTORY_KIND_OPTIONS },
+  {
+    key: "type",
+    label: "Type",
+    icon: Tag,
+    order: PARTNER_ORG_TYPES,
+    optionLabel: (v) => PARTNER_ORG_TYPE_LABELS[v as (typeof PARTNER_ORG_TYPES)[number]] ?? v,
+  },
+  {
+    key: "status",
+    label: "Status",
+    icon: CircleDot,
+    order: PARTNER_RELATIONSHIP_STATUSES,
+    optionLabel: (v) =>
+      PARTNER_RELATIONSHIP_STATUS_LABELS[v as (typeof PARTNER_RELATIONSHIP_STATUSES)[number]] ?? v,
+  },
+  { key: "org", label: "Organization", icon: Building2 },
+];
+
+type CreateKind = "org" | "individual" | "contact";
+
 export default function PartnersDirectory() {
-  const { orgs, contacts } = useLoaderData<typeof loader>();
+  const { rows } = useLoaderData<typeof loader>();
   const os = useOsChrome();
-  const [searchParams, setSearchParams] = useSearchParams();
-  const [creatingOrg, setCreatingOrg] = useState(false);
-  const [creatingContact, setCreatingContact] = useState(false);
+  const [creating, setCreating] = useState<CreateKind | null>(null);
   const [query, setQuery] = useState("");
-  const [filters, setFilters] = useState<Omit<OrgDirectoryFilters, "query">>({
-    type: DEFAULT_ORG_FILTERS.type,
-    status: DEFAULT_ORG_FILTERS.status,
-    includeIndividuals: DEFAULT_ORG_FILTERS.includeIndividuals,
-  });
+  const columnFilters = useColumnFilters(FILTER_COLUMNS);
+  const filterRows = useMemo(() => rows.map((r) => ({ cells: directoryRowCells(r) })), [rows]);
   const [sort, setSort] = usePersistedState<DirectorySort>(
     "dali:partners:directory:sort",
     DEFAULT_DIRECTORY_SORT,
     isDirectorySort,
   );
 
-  const activeView: DirectoryView = searchParams.get("view") === "contacts" ? "contacts" : "orgs";
-  const setActiveView = (next: DirectoryView) =>
-    setSearchParams(
-      (prev) => {
-        prev.set("view", next);
-        return prev;
-      },
-      { replace: true, preventScrollReset: true },
-    );
-
-  const filteredOrgs = useMemo(
-    () => sortDirectoryRows(filterOrgRows(orgs, { ...filters, query }), sort),
-    [orgs, filters, query, sort],
-  );
-  const filteredContacts = useMemo(
-    () => sortDirectoryRows(filterContactRows(contacts, query), sort),
-    [contacts, query, sort],
+  const filtered = useMemo(
+    () => sortDirectoryRows(filterDirectoryRows(rows, query, columnFilters.active), sort),
+    [rows, query, columnFilters.active, sort],
   );
 
-  const filterCount = activeOrgFilterCount({ ...filters, query });
-  const resetFilters = () =>
-    setFilters({
-      type: DEFAULT_ORG_FILTERS.type,
-      status: DEFAULT_ORG_FILTERS.status,
-      includeIndividuals: DEFAULT_ORG_FILTERS.includeIndividuals,
-    });
+  const orgs = useMemo(
+    () => rows.filter((r) => r.kind !== "person").map((r) => ({ id: r.id, name: r.name })),
+    [rows],
+  );
+
+  const hasNarrowing = query.trim() !== "" || columnFilters.active.length > 0;
   const onSort = (key: DirectorySortKey) => setSort((current) => nextDirectorySort(current, key));
 
   return (
     <div className="flex flex-col gap-4">
       <h1 className="sr-only">Partners</h1>
 
-      <NewOrgModal open={creatingOrg} onClose={() => setCreatingOrg(false)} orgs={orgs} />
-      <NewContactModal open={creatingContact} onClose={() => setCreatingContact(false)} />
+      <NewOrgModal
+        open={creating === "org" || creating === "individual"}
+        individual={creating === "individual"}
+        onClose={() => setCreating(null)}
+        orgs={orgs}
+      />
+      <NewContactModal open={creating === "contact"} onClose={() => setCreating(null)} />
 
-      <div className="flex flex-wrap items-center gap-2 md:flex-nowrap">
-        <PartnerCrmNav className="shrink-0 self-start md:self-center" />
-        <div className="flex-1" />
+      <div className="flex flex-wrap items-center gap-2">
+        <PartnerCrmNav className="shrink-0" />
         <SearchInput
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder={activeView === "orgs" ? "Search organizations…" : "Search contacts…"}
-          aria-label={activeView === "orgs" ? "Search organizations" : "Search contacts"}
-          containerClassName="w-full sm:w-36 sm:shrink-0"
+          placeholder="Search partners and people…"
+          aria-label="Search the directory"
+          containerClassName="flex-1 min-w-[180px] max-w-[320px]"
         />
-        {activeView === "orgs" && (
-          <Popover
-            align="right"
-            ariaLabel="Customize directory"
-            panelClassName={filterPanelClass(true)}
-            trigger={
-              <button type="button" className={customizeButtonClass(true, filterCount > 0)}>
-                <SlidersHorizontal className="h-3.5 w-3.5" aria-hidden />
-                Customize
-                <FilterCountBadge os={true} count={filterCount} />
-              </button>
-            }
-          >
-            <div className="flex flex-col gap-3">
-              <div className="flex items-center justify-between">
-                <FilterSectionLabel os={true}>Filters</FilterSectionLabel>
-                {filterCount > 0 && <FilterResetButton os={true} onClick={resetFilters} />}
-              </div>
-              <FilterGroup label="Type" os={true}>
-                <FilterPill
-                  os={true}
-                  selected={filters.type === "all"}
-                  onClick={() => setFilters((f) => ({ ...f, type: "all" }))}
-                >
-                  All
-                </FilterPill>
-                {PARTNER_ORG_TYPES.map((t) => (
-                  <FilterPill
-                    key={t}
-                    os={true}
-                    selected={filters.type === t}
-                    onClick={() => setFilters((f) => ({ ...f, type: t }))}
-                  >
-                    {PARTNER_ORG_TYPE_LABELS[t]}
-                  </FilterPill>
-                ))}
-              </FilterGroup>
-              <FilterGroup label="Status" os={true}>
-                <FilterPill
-                  os={true}
-                  selected={filters.status === "all"}
-                  onClick={() => setFilters((f) => ({ ...f, status: "all" }))}
-                >
-                  All
-                </FilterPill>
-                {PARTNER_RELATIONSHIP_STATUSES.map((st) => (
-                  <FilterPill
-                    key={st}
-                    os={true}
-                    selected={filters.status === st}
-                    onClick={() => setFilters((f) => ({ ...f, status: st }))}
-                  >
-                    {PARTNER_RELATIONSHIP_STATUS_LABELS[st]}
-                  </FilterPill>
-                ))}
-              </FilterGroup>
-              <FilterToggleRow
-                label="Include individuals"
-                os={true}
-                checked={filters.includeIndividuals}
-                onChange={(checked) => setFilters((f) => ({ ...f, includeIndividuals: checked }))}
-              />
-            </div>
-          </Popover>
-        )}
+        <div className="min-w-[220px] flex-1">
+          <ColumnFilters
+            columns={FILTER_COLUMNS}
+            rows={filterRows}
+            filters={columnFilters.filters}
+            onChange={columnFilters.setFilters}
+            shownCount={filtered.length}
+            noun={["record", "records"]}
+          />
+        </div>
         <IconButton
           label="Export CSV"
           icon={Download}
           className="os-icon-btn"
-          onClick={() => window.location.assign(directoryExportHref(activeView, query, filters))}
+          onClick={() => window.location.assign(directoryExportHref(query, columnFilters.active))}
         />
-        {activeView === "orgs" ? (
-          <button type="button" onClick={() => setCreatingOrg(true)} className="os-add-btn shrink-0 whitespace-nowrap">
-            <Plus className="h-[17px] w-[17px]" strokeWidth={3} aria-hidden />
-            New organization
-          </button>
-        ) : (
-          <button type="button" onClick={() => setCreatingContact(true)} className="os-add-btn shrink-0 whitespace-nowrap">
-            <Plus className="h-[17px] w-[17px]" strokeWidth={3} aria-hidden />
-            New contact
-          </button>
-        )}
+        <Menu
+          align="right"
+          ariaLabel="Add to the directory"
+          trigger={
+            <button type="button" className="os-btn-primary shrink-0 whitespace-nowrap">
+              <Plus className="h-[17px] w-[17px]" strokeWidth={3} aria-hidden />
+              New
+            </button>
+          }
+        >
+          <MenuItem icon={<Building2 className="h-4 w-4" />} onSelect={() => setCreating("org")}>
+            Organization
+          </MenuItem>
+          <MenuItem
+            icon={<User className="h-4 w-4" />}
+            onSelect={() => setCreating("individual")}
+          >
+            Individual partner
+          </MenuItem>
+          <MenuItem icon={<User className="h-4 w-4" />} onSelect={() => setCreating("contact")}>
+            Contact
+          </MenuItem>
+        </Menu>
       </div>
 
-      <div className={cn(os.panel, "overflow-hidden")}>
-        <div className="flex items-center px-4 py-3">
-          <SegmentedTabButtons
-            label="Directory"
-            size="sm"
-            items={[
-              {
-                label: "Organizations",
-                count: orgs.length,
-                active: activeView === "orgs",
-                onClick: () => setActiveView("orgs"),
-              },
-              {
-                label: "Contacts",
-                count: contacts.length,
-                active: activeView === "contacts",
-                onClick: () => setActiveView("contacts"),
-              },
-            ]}
-          />
-        </div>
-        {activeView === "orgs" ? (
-          filteredOrgs.length === 0 ? (
-            <EmptyPanel>
-              {query || filterCount > 0
-                ? "No organizations match this search."
-                : "No partner organizations yet."}
-            </EmptyPanel>
-          ) : (
-            <OrgsTable
-              rows={filteredOrgs}
-              sort={sort}
-              onSort={onSort}
-              resetKey={JSON.stringify([query, filters, sort])}
-            />
-          )
-        ) : filteredContacts.length === 0 ? (
-          <EmptyPanel>{query ? "No contacts match this search." : "No partner contacts yet."}</EmptyPanel>
+      <div className={cn(os.panel, "overflow-hidden pt-2")}>
+        {filtered.length === 0 ? (
+          <EmptyPanel>
+            {hasNarrowing ? "No records match this search." : "No partners yet."}
+          </EmptyPanel>
         ) : (
-          <ContactsTable
-            rows={filteredContacts}
+          <DirectoryTable
+            rows={filtered}
             sort={sort}
             onSort={onSort}
-            resetKey={JSON.stringify([query, sort])}
+            resetKey={JSON.stringify([query, columnFilters.active, sort])}
           />
         )}
       </div>
@@ -558,5 +441,5 @@ export default function PartnersDirectory() {
 }
 
 function EmptyPanel({ children }: { children: ReactNode }) {
-  return <div className="border-t border-os-container/70 px-4 py-10 text-center text-sm text-muted-foreground">{children}</div>;
+  return <div className="px-4 py-10 text-center text-sm text-muted-foreground">{children}</div>;
 }

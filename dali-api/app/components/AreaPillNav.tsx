@@ -16,20 +16,24 @@ export type UnderlineTabButton = {
 };
 
 /** "sm" is the switcher at rail width — same pill, one size down, for places
- *  that can't spare 44px of height (the calendar's left rail). */
-export type SegmentedSize = "sm" | "md";
+ *  that can't spare 44px of height (the calendar's left rail). "toolbar" sits
+ *  between the two: md's text, trimmed to the h-9 of the search field and
+ *  filter pills it shares a controls row with. */
+export type SegmentedSize = "sm" | "toolbar" | "md";
 
 function osSegmentedTrackClass(size: SegmentedSize) {
   return cn(
     "os-seg-track inline-flex w-fit max-w-full items-center overflow-x-auto no-scrollbar rounded-full border border-border bg-os-card",
-    size === "sm" ? "gap-0.5 p-0.5" : "gap-1 p-1",
+    size === "md" ? "gap-1 p-1" : "gap-0.5 p-0.5",
   );
 }
 
 function osSegmentedItemClass(active: boolean, size: SegmentedSize) {
   return cn(
     "os-seg-item inline-flex shrink-0 items-center gap-1.5 rounded-full font-medium transition-colors",
-    size === "sm" ? "px-3 py-1 text-xs" : "os-seg-item-md px-4 py-2 text-sm",
+    size === "sm" && "px-3 py-1 text-xs",
+    size === "toolbar" && "h-[30px] px-3.5 text-sm",
+    size === "md" && "os-seg-item-md px-4 py-2 text-sm",
     active
       ? "bg-os-container text-foreground"
       : "text-muted-foreground hover:text-foreground",

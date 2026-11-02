@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { toFormFields } from "./RenewalModal";
+import { toFormFields } from "./RenewalEditor";
 
 const base = { projectId: "p", nextStep: "Call", nextStepDue: "2026-11-02" };
 

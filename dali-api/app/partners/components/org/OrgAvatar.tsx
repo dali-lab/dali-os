@@ -1,10 +1,12 @@
 // Logo tile (or initials fallback) for a PartnerOrg — shared by the org 360
-// header and the directory list/cards so a logo change renders identically
+// header and the directory list so a logo change renders identically
 // everywhere.
 
+import { orgInitials } from "../../lib/partner-directory";
+
 const SIZES = {
-  sm: "w-8 h-8 rounded text-xs",
-  lg: "w-12 h-12 rounded-lg text-lg",
+  sm: "w-8 h-8 rounded-lg text-[11px]",
+  lg: "w-16 h-16 rounded-2xl text-lg",
 } as const;
 
 export function OrgAvatar({
@@ -21,15 +23,15 @@ export function OrgAvatar({
       <img
         src={src}
         alt=""
-        className={`${dims} object-contain bg-background border border-border flex-shrink-0`}
+        className={`${dims} object-contain bg-os-well border border-os-container flex-shrink-0`}
       />
     );
   }
   return (
     <div
-      className={`${dims} bg-brand-tint text-dark-blue flex items-center justify-center font-bold flex-shrink-0`}
+      className={`${dims} bg-os-well text-os-grey flex items-center justify-center font-semibold flex-shrink-0`}
     >
-      {org.name.slice(0, 1).toUpperCase()}
+      {orgInitials(org.name)}
     </div>
   );
 }

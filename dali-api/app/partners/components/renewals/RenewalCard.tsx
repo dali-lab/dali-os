@@ -1,12 +1,10 @@
 import type { ReactNode } from "react";
 import { BoardCard } from "~/components/board/BoardCard";
 import { cn } from "~/lib/cn";
-import { relativeTime } from "~/lib/relative-time";
 import {
-  isContactStale,
   isNextStepOverdue,
-  rolesLabel,
   type RenewalCardModel,
+  type RenewalColumn,
 } from "../../lib/partner-renewals";
 
 function Field({ label, warn, children }: { label: string; warn?: boolean; children: ReactNode }) {
@@ -21,28 +19,65 @@ function Field({ label, warn, children }: { label: string; warn?: boolean; child
 const shortDate = (iso: string) =>
   new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric", timeZone: "UTC" });
 
+function DecisionButton({
+  active,
+  tone,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  tone: "good" | "bad";
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={active}
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick();
+      }}
+      className={cn(
+        "rounded-full px-2.5 py-1 text-xs font-semibold transition-colors",
+        tone === "good"
+          ? "bg-os-green/15 text-os-green hover:bg-os-green/25"
+          : "bg-destructive/10 text-destructive hover:bg-destructive/20",
+        active && "ring-1 ring-current",
+      )}
+    >
+      {children}
+    </button>
+  );
+}
+
 export function RenewalCard({
   card,
   accentEdge,
-  staleDays,
-  lastTermCode,
-  decisionTermCode,
   now,
   dragHandleProps = {},
   isDragging,
   onOpen,
+  onDecide,
+  pendingDecision,
+  expansion,
 }: {
   card: RenewalCardModel;
   accentEdge: string;
-  staleDays: number;
-  lastTermCode: string;
-  decisionTermCode: string;
   now: Date;
   dragHandleProps?: Record<string, unknown>;
   isDragging: boolean;
   onOpen: () => void;
+  /** Continue / Not continuing right on the card; while the card is expanded
+   *  the same buttons switch the pending decision. */
+  onDecide?: (decision: RenewalColumn) => void;
+  /** The decision being edited while the card is expanded. */
+  pendingDecision?: RenewalColumn;
+  /** The decision form, appended below the card's content when editing. */
+  expansion?: ReactNode;
 }) {
-  const stale = isContactStale(card.lastContactAt, staleDays, now);
+  const expanded = expansion != null;
+  const showButtons = onDecide && (expanded || card.column === "undecided");
   return (
     <BoardCard
       accentEdge={accentEdge}
@@ -60,25 +95,44 @@ export function RenewalCard({
         {card.termCount} {card.termCount === 1 ? "term" : "terms"}
         {card.fromTermCode ? ` · From ${card.fromTermCode}` : ""}
       </div>
-      <dl className="mt-2 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-xs">
-        {card.nextStep && (
-          <Field label="Next step" warn={isNextStepOverdue(card.nextStepDueAt, now)}>
-            {card.nextStep}
-            {card.nextStepDueAt && `, ${shortDate(card.nextStepDueAt)}`}
-          </Field>
-        )}
-        <Field label="Last contact" warn={stale}>
-          {card.lastContactAt ? relativeTime(card.lastContactAt) : "None yet"}
-        </Field>
-        <Field label="Spots">
-          {card.column === "not_continuing"
-            ? `Ends after ${lastTermCode}`
-            : card.column === "continuing"
-              ? rolesLabel(card.fromTermCode ?? decisionTermCode, card.decidedRoles)
-              : rolesLabel(lastTermCode, card.lastRoles)}
-        </Field>
-        {card.column === "not_continuing" && card.reason && <Field label="Reason">{card.reason}</Field>}
-      </dl>
+      {!expanded && (card.nextStep || (card.column === "not_continuing" && card.reason)) && (
+        <dl className="mt-2 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-xs">
+          {card.nextStep && (
+            <Field label="Next step" warn={isNextStepOverdue(card.nextStepDueAt, now)}>
+              {card.nextStep}
+              {card.nextStepDueAt && `, ${shortDate(card.nextStepDueAt)}`}
+            </Field>
+          )}
+          {card.column === "not_continuing" && card.reason && <Field label="Reason">{card.reason}</Field>}
+        </dl>
+      )}
+      {showButtons && (
+        <div className="mt-2.5 flex items-center gap-1.5">
+          <DecisionButton
+            tone="good"
+            active={pendingDecision === "continuing"}
+            onClick={() => onDecide("continuing")}
+          >
+            Continue
+          </DecisionButton>
+          <DecisionButton
+            tone="bad"
+            active={pendingDecision === "not_continuing"}
+            onClick={() => onDecide("not_continuing")}
+          >
+            Not continuing
+          </DecisionButton>
+        </div>
+      )}
+      {expanded && (
+        <div
+          className="mt-3 border-t border-os-container pt-3"
+          onClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => e.stopPropagation()}
+        >
+          {expansion}
+        </div>
+      )}
     </BoardCard>
   );
 }

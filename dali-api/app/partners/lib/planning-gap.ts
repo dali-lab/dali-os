@@ -61,8 +61,10 @@ export function isPotentialState(state: PlanningState): boolean {
   return POTENTIAL_STATES.has(state);
 }
 
-export function planningStateLabel(item: Pick<PlanningItem, "source" | "state">): string {
-  return `${item.source === "renewing" ? "Renewal" : "New"} · ${item.state}`;
+/** The row's state alone: every table that shows it already groups rows under
+ *  a Renewing / New heading, so repeating the source here just added noise. */
+export function planningStateLabel(item: Pick<PlanningItem, "state">): string {
+  return item.state;
 }
 
 export type GapPill = { tone: "bad" | "idle" | "ok"; label: string };

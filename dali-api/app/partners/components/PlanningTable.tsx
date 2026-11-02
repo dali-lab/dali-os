@@ -5,17 +5,14 @@ import { cn } from "~/lib/cn";
 import type { PlanningDomainRow, PlanningGapModel } from "../lib/planning-gap";
 import { SourceBar } from "./planning/SourceBar";
 import { GapPill } from "./planning/GapPill";
-import { DomainBreakdown } from "./planning/DomainBreakdown";
+import { DomainBreakdown, PLANNING_GRID as GRID } from "./planning/DomainBreakdown";
 
 export const PLANNING_OPEN_KEY = "partner-planning-open";
-
-const GRID =
-  "grid grid-cols-[minmax(150px,1.3fr)_minmax(110px,0.9fr)_minmax(90px,0.7fr)_minmax(160px,1.6fr)_minmax(90px,0.7fr)] items-center gap-4 px-4";
 
 export function spotsLabel(renewing: number, fresh: number): string {
   const total = renewing + fresh;
   if (total === 0) return "0";
-  return `${total} · ${renewing} renewing, ${fresh} new`;
+  return `${total} (${renewing} renewing, ${fresh} new)`;
 }
 
 function useOpenDomains() {
@@ -76,7 +73,7 @@ function DomainRow({
           />
           <span className="truncate">{row.name}</span>
         </button>
-        <span className="tabular-nums text-foreground">{spotsLabel(row.renewing, row.fresh)}</span>
+        <span className="tabular-nums text-foreground">{row.spots}</span>
         <span className="tabular-nums text-foreground">{row.intent}</span>
         <div onClick={(e) => e.stopPropagation()}>
           {hasBar && (
@@ -91,7 +88,7 @@ function DomainRow({
               }
             >
               <div tabIndex={0} className="py-1">
-                <SourceBar renewing={row.renewing} fresh={row.fresh} scale={scale} />
+                <SourceBar renewing={row.renewing} fresh={row.fresh} intent={row.intent} scale={scale} />
               </div>
             </Tooltip>
           )}
@@ -145,6 +142,8 @@ export function PlanningTable({
                   aria-hidden
                 />
                 New
+                <span className="inline-block h-2 w-2 rounded-full bg-os-grey/50" aria-hidden />
+                Intent to work
               </span>
             </span>
             <span>Gap</span>
@@ -164,7 +163,12 @@ export function PlanningTable({
             <span>Total</span>
             <span className="tabular-nums">{spotsLabel(totals.renewing, totals.fresh)}</span>
             <span className="tabular-nums">{totals.intent}</span>
-            <SourceBar renewing={totals.renewing} fresh={totals.fresh} scale={Math.max(1, totals.spots)} />
+            <SourceBar
+              renewing={totals.renewing}
+              fresh={totals.fresh}
+              intent={totals.intent}
+              scale={Math.max(1, totals.spots, totals.intent)}
+            />
             <span>
               <GapPill gap={totalGap} />
             </span>

@@ -119,14 +119,17 @@ export function ColumnFilters({
     ).length;
   };
 
-  if (columns.length === 0) return null;
-
   return (
     <div className="flex flex-wrap items-center gap-2">
       <div ref={addRef} className="relative">
         <Button
           size="sm"
           variant="secondary"
+          // No columns yet (no form bound, or nothing mapped): keep the bar
+          // and count so the toolbar reads the same on every board, with the
+          // button inert rather than opening an empty menu.
+          disabled={columns.length === 0}
+          title={columns.length === 0 ? "No columns to filter yet" : undefined}
           onClick={() => (addOpen ? closeAdd() : (setOpenPill(null), setAddOpen(true)))}
           aria-haspopup="menu"
           aria-expanded={addOpen}
@@ -135,7 +138,7 @@ export function ColumnFilters({
           <ListFilter className="h-4 w-4" aria-hidden />
           Filter
           {activeCount > 0 && (
-            <span className="-mr-1 flex h-5 min-w-5 items-center justify-center rounded-md bg-os-accent px-1.5 text-xs font-bold text-os-bg">
+            <span className="-mr-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-os-accent px-1.5 text-xs font-bold text-os-bg">
               {activeCount}
             </span>
           )}

@@ -6,6 +6,7 @@ import { isCore, currentTerm } from "~/lib/roles";
 import { prisma } from "~/lib/db.server";
 import { logAuditEvent } from "~/lib/audit";
 import { Select } from "~/components/ui/floating";
+import { filterPillClass } from "~/components/ui/floating/styles";
 import { SearchInput } from "~/components/ui/SearchInput";
 import { PartnerCrmNav } from "../components/PartnerCrmNav";
 import { RenewalsBoard } from "../components/RenewalsBoard";
@@ -36,10 +37,9 @@ export async function loader({ request }: Route.LoaderArgs) {
   const g = await gate(request);
   if ("redirect" in g) throw g.redirect;
 
-  const [terms, current, crmSettings, domains] = await Promise.all([
+  const [terms, current, domains] = await Promise.all([
     prisma.term.findMany({ orderBy: { sortKey: "asc" }, select: { id: true, code: true, sortKey: true } }),
     currentTerm(request),
-    prisma.partnerCrmSettings.findUnique({ where: { id: "default" } }),
     prisma.domain.findMany({ where: { active: true }, orderBy: { displayName: "asc" }, select: { id: true, displayName: true } }),
   ]);
   const wanted = new URL(request.url).searchParams.get("term");
@@ -51,7 +51,6 @@ export async function loader({ request }: Route.LoaderArgs) {
       picked: null as TermRef | null,
       decisionTerm: null as TermRef | null,
       cards: [] as RenewalCardModel[],
-      staleDays: 14,
       domains: [] as { id: string; name: string }[],
     };
   }
@@ -61,7 +60,6 @@ export async function loader({ request }: Route.LoaderArgs) {
     picked,
     decisionTerm,
     cards,
-    staleDays: crmSettings?.staleDays ?? 14,
     domains: domains.map((d) => ({ id: d.id, name: d.displayName })),
   };
 }
@@ -119,12 +117,19 @@ export default function PartnersRenewals() {
   const data = useLoaderData<typeof loader>();
   const [, setSearchParams] = useSearchParams();
   const [query, setQuery] = useState("");
-  const { terms, picked, decisionTerm, cards, staleDays, domains } = data;
+  const { terms, picked, decisionTerm, cards, domains } = data;
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center gap-2 md:flex-nowrap">
-        <PartnerCrmNav />
+      <div className="flex flex-wrap items-center gap-2">
+        <PartnerCrmNav className="shrink-0" />
+        <SearchInput
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search projects or partners"
+          aria-label="Search renewals"
+          containerClassName="flex-1 min-w-[180px] max-w-[320px]"
+        />
         <div className="flex-1" />
         {picked && (
           <Select
@@ -134,15 +139,9 @@ export default function PartnersRenewals() {
               setSearchParams({ term: code }, { replace: true, preventScrollReset: true })
             }
             options={[...terms].reverse().map((t) => ({ value: t.code, label: `Active in ${t.code}` }))}
+            buttonClassName={filterPillClass()}
           />
         )}
-        <SearchInput
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search projects or partners"
-          aria-label="Search renewals"
-          containerClassName="w-full sm:w-56 shrink-0"
-        />
       </div>
       {!picked || !decisionTerm ? (
         <p className="text-sm text-muted-foreground">
@@ -155,7 +154,6 @@ export default function PartnersRenewals() {
           key={picked.id}
           cards={cards}
           query={query}
-          staleDays={staleDays}
           lastTermCode={picked.code}
           decisionTerm={decisionTerm}
           termOptions={terms.filter((t) => t.sortKey >= decisionTerm.sortKey).map((t) => ({ id: t.id, code: t.code }))}
