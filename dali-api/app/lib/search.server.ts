@@ -48,7 +48,7 @@ type SearchSource = {
   run: (b: SearchBudget) => Promise<SearchResult[]>;
 };
 
-type SearchOpts = { userId: string; roles: UserRoles; q: string };
+type SearchOpts = { userId: string; roles: UserRoles; q: string; request?: Request };
 
 function searchSources(opts: SearchOpts, q: string): SearchSource[] {
   const roles = opts.roles;
@@ -58,7 +58,7 @@ function searchSources(opts: SearchOpts, q: string): SearchSource[] {
     { type: "project", enabled: true, run: (b) => searchProjects(q, like, b) },
     { type: "task", enabled: true, run: (b) => searchTasks(q, like, b) },
     { type: "education", enabled: true, run: (b) => searchOfferings(q, like, b) },
-    { type: "document", enabled: true, run: (b) => searchDocuments(opts.userId, q, like, b) },
+    { type: "document", enabled: true, run: (b) => searchDocuments(opts.userId, q, like, b, opts.request) },
     // Page guides ("Docs") and /help articles — both readable by every lab
     // member, so ungated like docs.
     { type: "guide", enabled: true, run: (b) => searchGuides(q, b) },
@@ -66,7 +66,7 @@ function searchSources(opts: SearchOpts, q: string): SearchSource[] {
     { type: "document", enabled: true, run: (b) => searchProjectFiles(q, like, b) },
     { type: "application", enabled: true, run: (b) => searchApplications(opts.userId, roles, q, like, b) },
     { type: "group", enabled: roles.canViewForms, run: (b) => searchGroups(q, like, b) },
-    { type: "form", enabled: true, run: (b) => searchFormPages(opts.userId, q, like, b) },
+    { type: "form", enabled: true, run: (b) => searchFormPages(opts.userId, q, like, b, opts.request) },
     // Hiring library (reusable artifacts) — Core or Domain Lead, mirroring the
     // library routes. Names aren't sensitive; the routes already gate.
     { type: "rubric", enabled: roles.isCore || roles.isDomainLead, run: (b) => searchRubrics(q, like, b) },
@@ -345,7 +345,13 @@ async function searchPartnerContacts(q: string, like: Like, b: SearchBudget): Pr
   );
 }
 
-async function searchDocuments(userId: string, q: string, like: Like, b: SearchBudget): Promise<SearchResult[]> {
+async function searchDocuments(
+  userId: string,
+  q: string,
+  like: Like,
+  b: SearchBudget,
+  request?: Request,
+): Promise<SearchResult[]> {
   // Titles and bodies are searched separately and merged rather than scored
   // together: a title match is what someone means the overwhelming majority of
   // the time, so it keeps its place at the top of the category and body
@@ -369,7 +375,7 @@ async function searchDocuments(userId: string, q: string, like: Like, b: SearchB
         select: PAGE_ACCESS_SELECT,
       })
     : [];
-  const access = await getPageAccessBulk(userId, [...titleRows, ...contentPages]);
+  const access = await getPageAccessBulk(userId, [...titleRows, ...contentPages], request);
   const canView = (id: string) => access.get(id)?.canView === true;
 
   const rows = titleRows.filter((r) => canView(r.id));
@@ -477,14 +483,20 @@ async function searchGroups(q: string, like: Like, b: SearchBudget): Promise<Sea
   return simpleResults("group", "Group", rows.map((r) => ({ id: r.id, label: r.name })), q, b.cap);
 }
 
-async function searchFormPages(userId: string, q: string, like: Like, b: SearchBudget): Promise<SearchResult[]> {
+async function searchFormPages(
+  userId: string,
+  q: string,
+  like: Like,
+  b: SearchBudget,
+  request?: Request,
+): Promise<SearchResult[]> {
   const pages = await prisma.page.findMany({
     where: { kind: "Form", archivedAt: null, title: like },
     select: { ...PAGE_ACCESS_SELECT, title: true, iconEmoji: true },
     take: b.rawTake,
     orderBy: order(b),
   });
-  const access = await getPageAccessBulk(userId, pages);
+  const access = await getPageAccessBulk(userId, pages, request);
   return simpleResults(
     "form",
     "Form",
