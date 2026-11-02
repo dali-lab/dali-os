@@ -1,5 +1,5 @@
-import { useState, useEffect, type CSSProperties, type MutableRefObject, type ReactNode } from 'react'
-import { Select, Tooltip, InfoTip } from "~/components/ui/floating";
+import { Fragment, useState, useEffect, type CSSProperties, type MutableRefObject, type ReactNode } from 'react'
+import { Menu, MenuItem, MenuSeparator, Select, Tooltip, InfoTip } from "~/components/ui/floating";
 import { extractPlaceholders, placeholder } from "~/lib/template-variables";
 import { lintFormText } from "~/forms/lib/form-variables";
 import {
@@ -29,6 +29,7 @@ import {
   Hash,
   Mail,
   CornerDownRight,
+  Plus,
   type LucideIcon,
 } from 'lucide-react'
 import {
@@ -1330,6 +1331,7 @@ export function FormBuilderTab({
                 Drag a component here, or click one to add it
               </div>
             )}
+            <AddComponentMenu allowCheckbox={allowCheckbox} allowNewTypes={newTypesEnabled} onAdd={addComponent} />
           </div>
 
           <div className="flex justify-end items-center gap-3 pt-4 border-t border-os-container">
@@ -1392,6 +1394,59 @@ export function FormBuilderTab({
   )
 }
 
+function offeredGroups(allowCheckbox: boolean, allowNewTypes: boolean, query = '') {
+  return COMPONENT_GROUPS.map((g) => ({
+    ...g,
+    items: g.items.filter(
+      (c) =>
+        (c.type !== 'checkbox' || allowCheckbox) &&
+        (allowNewTypes || !FLAGGED_TYPES.includes(c.type)) &&
+        (!query || c.label.toLowerCase().includes(query)),
+    ),
+  })).filter((g) => g.items.length > 0)
+}
+
+export function AddComponentMenu({
+  allowCheckbox,
+  allowNewTypes,
+  onAdd,
+}: {
+  allowCheckbox: boolean
+  allowNewTypes: boolean
+  onAdd: (type: QuestionType) => void
+}) {
+  const groups = offeredGroups(allowCheckbox, allowNewTypes)
+  return (
+    <Menu
+      ariaLabel="Add a question"
+      trigger={
+        <button
+          type="button"
+          aria-label="Add a question"
+          className="flex w-full items-center justify-center gap-2 p-3 rounded-os-item border border-dashed border-os-container-hi text-sm font-medium text-os-grey transition-colors hover:border-os-accent/60 hover:bg-os-accent/5 hover:text-foreground"
+        >
+          <Plus className="w-4 h-4" />
+          Add question
+        </button>
+      }
+    >
+      {groups.map((g, i) => (
+        <Fragment key={g.title}>
+          {i > 0 && <MenuSeparator />}
+          {g.items.map((c) => (
+            <MenuItem key={c.type} onSelect={() => onAdd(c.type)} label={c.label}>
+              <span className="flex items-center gap-2">
+                <c.icon className="w-4 h-4 text-os-accent" />
+                {c.label}
+              </span>
+            </MenuItem>
+          ))}
+        </Fragment>
+      ))}
+    </Menu>
+  )
+}
+
 // The left rail: a searchable library of components. Click a tile to append
 // it, or drag it onto the canvas to drop it at a position.
 function ComponentLibrary({
@@ -1405,16 +1460,7 @@ function ComponentLibrary({
 }) {
   const { heading } = useOsChrome()
   const [query, setQuery] = useState('')
-  const q = query.trim().toLowerCase()
-  const groups = COMPONENT_GROUPS.map((g) => ({
-    ...g,
-    items: g.items.filter(
-      (c) =>
-        (c.type !== 'checkbox' || allowCheckbox) &&
-        (allowNewTypes || !FLAGGED_TYPES.includes(c.type)) &&
-        (!q || c.label.toLowerCase().includes(q)),
-    ),
-  })).filter((g) => g.items.length > 0)
+  const groups = offeredGroups(allowCheckbox, allowNewTypes, query.trim().toLowerCase())
 
   return (
     <aside className="w-full lg:w-72 flex-shrink-0 lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto rounded-os-card bg-os-card p-4 space-y-5">

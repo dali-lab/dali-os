@@ -11,7 +11,7 @@ const PAGE_LIMITS = { defaultLimit: 50, maxLimit: 200 };
 export const LIST_FORMS_TOOL = {
   name: "list_forms",
   description:
-    "List every form: id, name, folderPageId (the Drive Page folder it lives in, null = top level), version count, and publish state, for the forms you can view. Pass page.nextCursor as cursor to read the next page until page.hasMore is false.",
+    "List every form: id, name, folderPageId (the Drive Page folder it lives in, null = top level), version count, publish state, and publicToken (for get_form and submit_form), for the forms you can view. Pass page.nextCursor as cursor to read the next page until page.hasMore is false.",
   inputSchema: {
     type: "object" as const,
     properties: { ...pageProps(PAGE_LIMITS) },

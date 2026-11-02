@@ -424,13 +424,13 @@ export const ActionSchema = z.discriminatedUnion("intent", [
   z.object({
     intent: z.literal("update-form-settings"),
     id: z.string().min(1),
-    oneResponsePerMember: z.enum(["true", "false"]),
+    oneResponsePerMember: z.enum(["true", "false"]).optional(),
     allowResponseEdit: z.enum(["true", "false"]).optional(),
     remindBeforeClose: z.enum(["true", "false"]).optional(),
     sendReceipt: z.enum(["true", "false"]).optional(),
     confirmationMessage: z.string().max(CONFIRMATION_MESSAGE_MAX).optional(), // block JSON; "" clears
-    notifyOnSubmission: z.enum(["true", "false"]),
-    listed: z.enum(["true", "false"]),
+    notifyOnSubmission: z.enum(["true", "false"]).optional(),
+    listed: z.enum(["true", "false"]).optional(),
   }),
   z.object({
     intent: z.literal("update-form-audience"),
@@ -755,11 +755,17 @@ export async function runFormsAction(
     case "update-form-settings": {
       const exists = await prisma.form.findUnique({
         where: { id: input.id },
-        select: { id: true, closesAt: true },
+        select: { id: true, closesAt: true, oneResponsePerMember: true },
       });
       if (!exists) return { error: "Not found", status: 404 };
       if (input.remindBeforeClose === "true" && !exists.closesAt)
         return { error: "Set a close time to use this.", status: 400 };
+      if (
+        input.allowResponseEdit === "true" &&
+        input.oneResponsePerMember === undefined &&
+        !exists.oneResponsePerMember
+      )
+        return { error: "Turn on one response per member to use this.", status: 400 };
       const confirmation =
         input.confirmationMessage === undefined
           ? null
@@ -769,7 +775,9 @@ export async function runFormsAction(
       await prisma.form.update({
         where: { id: input.id },
         data: {
-          oneResponsePerMember: input.oneResponsePerMember === "true",
+          ...(input.oneResponsePerMember
+            ? { oneResponsePerMember: input.oneResponsePerMember === "true" }
+            : {}),
           // Editing needs the one response to edit, so it can't outlive that setting.
           ...(input.oneResponsePerMember === "false"
             ? { allowResponseEdit: false }
@@ -781,8 +789,10 @@ export async function runFormsAction(
             : {}),
           ...(input.sendReceipt ? { sendReceipt: input.sendReceipt === "true" } : {}),
           ...(confirmation?.ok ? { confirmationMessage: confirmation.value } : {}),
-          notifyOnSubmission: input.notifyOnSubmission === "true",
-          listed: input.listed === "true",
+          ...(input.notifyOnSubmission
+            ? { notifyOnSubmission: input.notifyOnSubmission === "true" }
+            : {}),
+          ...(input.listed ? { listed: input.listed === "true" } : {}),
         },
       });
       return { ok: true };

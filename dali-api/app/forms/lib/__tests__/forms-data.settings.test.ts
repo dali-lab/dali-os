@@ -81,18 +81,45 @@ describe("runFormsAction update-form-settings", () => {
     expect(res).toEqual({ error: "Invalid input", status: 400 });
   });
 
-  it("rejects a submit missing the listed field", async () => {
+  it("writes only the settings sent", async () => {
+    mockPrisma.form.findUnique.mockResolvedValue({ id: "form-1" });
+
     const res = await runFormsAction(
-      fd({
-        intent: "update-form-settings",
-        id: "form-1",
-        oneResponsePerMember: "true",
-        notifyOnSubmission: "false",
-      }),
+      fd({ intent: "update-form-settings", id: "form-1", listed: "true" }),
       "user-1",
     );
 
-    expect(res).toEqual({ error: "Invalid input", status: 400 });
+    expect(res).toEqual({ ok: true });
+    expect(mockPrisma.form.update).toHaveBeenCalledWith({
+      where: { id: "form-1" },
+      data: { listed: true },
+    });
+  });
+
+  it("refuses response editing alone when the form allows many responses", async () => {
+    mockPrisma.form.findUnique.mockResolvedValue({ id: "form-1", oneResponsePerMember: false });
+
+    const res = await runFormsAction(
+      fd({ intent: "update-form-settings", id: "form-1", allowResponseEdit: "true" }),
+      "user-1",
+    );
+
+    expect(res).toEqual({ error: "Turn on one response per member to use this.", status: 400 });
+    expect(mockPrisma.form.update).not.toHaveBeenCalled();
+  });
+
+  it("allows response editing alone when the form is already one response", async () => {
+    mockPrisma.form.findUnique.mockResolvedValue({ id: "form-1", oneResponsePerMember: true });
+
+    await runFormsAction(
+      fd({ intent: "update-form-settings", id: "form-1", allowResponseEdit: "true" }),
+      "user-1",
+    );
+
+    expect(mockPrisma.form.update).toHaveBeenCalledWith({
+      where: { id: "form-1" },
+      data: { allowResponseEdit: true },
+    });
   });
 });
 
