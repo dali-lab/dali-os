@@ -428,6 +428,14 @@ describe("missingRequirements (project-bids)", () => {
 describe("validateMapping (intent-to-work)", () => {
   const qs = [q("s1", "select"), q("s2", "select")];
 
+  it("a multiple choice (radio) question can fill the status column like a dropdown", () => {
+    const r = validateMapping("intent-to-work", [q("r1", "radio", { options: ["Yes", "No"] })], {
+      version: 1,
+      entries: [{ source: "question", questionKey: "r1", role: "intent-status", label: "Status", order: 0 }],
+    });
+    expect(r).toEqual({ ok: true });
+  });
+
   it("empty mapping is valid", () => {
     expect(
       validateMapping("intent-to-work", qs, { version: 1, entries: [] }),

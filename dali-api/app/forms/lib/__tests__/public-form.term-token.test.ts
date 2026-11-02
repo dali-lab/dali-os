@@ -1,6 +1,10 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/db.server");
+vi.mock("~/forms/lib/submission-notify.server", () => ({
+  notifyFormSubmission: vi.fn().mockResolvedValue(undefined),
+  sendFormReceipt: vi.fn().mockResolvedValue(undefined),
+}));
 
 import { prisma } from "~/lib/db.server";
 import {
@@ -55,6 +59,7 @@ function binding(code: string, slot = "intent-to-work") {
 
 beforeEach(() => {
   vi.resetAllMocks();
+  mockPrisma.formSubmission.create.mockResolvedValue({ id: "sub-1" });
 });
 
 describe("loadPublicForm term token", () => {

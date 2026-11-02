@@ -189,6 +189,36 @@ export const FEATURE_FLAGS = [
     description:
       "Adds /task to documents: a small composer that creates a project task and leaves a live row in the note, showing its status, owner and date. Task blocks already in a document keep showing when this is off. Ships off.",
   },
+  {
+    key: "form-question-types",
+    label: "More form question types",
+    description:
+      "Adds multiple choice (radio buttons), 1 to 5 scale, date, number and email questions to the form builder, and an \"Add an Other option\" setting on multiple choice and checkbox questions. Questions already in a form keep working when this is off. Ships off.",
+  },
+  {
+    key: "form-response-edit",
+    label: "Delete and edit form responses",
+    description:
+      "Form owners can delete a single response from the response detail, and the form settings gain \"Let people edit their response\". Forms that already allow edits keep working when this is off. Ships off.",
+  },
+  {
+    key: "form-tracker",
+    label: "Form response tracker and reminders",
+    description:
+      "Adds a line to a form's Results showing how many expected people have responded, a list of who hasn't with a Remind button, and \"Remind people 1 day before closing\" in the form settings. Forms that already have the automatic reminder on keep sending it when this is off. Ships off.",
+  },
+  {
+    key: "form-confirmation",
+    label: "Form confirmation message and email receipts",
+    description:
+      "Adds an \"After submitting\" section to form settings with a custom confirmation message and \"Email people a copy of their response\". A saved message or receipt setting keeps working when this is off. Ships off.",
+  },
+  {
+    key: "form-save-progress",
+    label: "Save form progress",
+    description:
+      "Forms opened from a form link keep a person's answers in their browser if they leave before submitting, and offer a Start over button when they come back. Signed-out visitors get it whenever the flag is switched on, whatever its targeting. Ships off.",
+  },
 ] as const satisfies readonly FeatureFlagDef[];
 
 export type FeatureFlagKey = (typeof FEATURE_FLAGS)[number]["key"];

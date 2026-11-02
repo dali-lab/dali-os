@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useSearchParams } from "react-router";
+import { Link, useFetcher, useSearchParams } from "react-router";
 import { Download } from "lucide-react";
 import { SearchInput } from "~/components/ui/SearchInput";
 import { PagerLinks } from "~/components/ui/Pager";
@@ -10,6 +10,11 @@ import type {
   VersionResponses,
 } from "~/forms/lib/version-responses.server";
 import { modalCardClass } from "~/components/os-chrome";
+import { Button } from "~/components/ui/Button";
+import { useConfirmSubmit } from "~/components/ui/dialog";
+import { useFeatureFlag } from "~/components/FeatureFlags";
+import { FormTracker } from "~/forms/components/FormTracker";
+import type { TrackerCounts } from "~/forms/lib/form-tracker";
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString(undefined, {
@@ -56,6 +61,40 @@ function ResponseDetailBody({ response }: { response: ResponseRow }) {
   );
 }
 
+// Owner delete of one response, or the reason it has to stay. The form action
+// refuses locked responses too; this just says why instead of offering a button.
+function ResponseDelete({ response }: { response: ResponseRow }) {
+  const fetcher = useFetcher<{ ok?: true; error?: string }>();
+  const confirmSubmit = useConfirmSubmit();
+  if (response.lockReason) {
+    return (
+      <p className="mt-6 text-xs text-muted-foreground">
+        This response can't be deleted. {response.lockReason}
+      </p>
+    );
+  }
+  const error = fetcher.data && "error" in fetcher.data ? fetcher.data.error : null;
+  return (
+    <fetcher.Form
+      method="post"
+      className="mt-6 flex items-center gap-3"
+      onSubmit={confirmSubmit({
+        title: `Delete this response from ${response.name}?`,
+        description: "This can't be undone.",
+        tone: "destructive",
+        confirmLabel: "Delete",
+      })}
+    >
+      <input type="hidden" name="intent" value="delete-form-response" />
+      <input type="hidden" name="submissionId" value={response.id} />
+      <Button type="submit" variant="destructive" size="sm" disabled={fetcher.state !== "idle"}>
+        {fetcher.state !== "idle" ? "Deleting…" : "Delete response"}
+      </Button>
+      {error && <span className="text-xs text-destructive">{error}</span>}
+    </fetcher.Form>
+  );
+}
+
 // One version's responses: a page of submissions with a detail modal, a slot
 // filter when staffing fills are present, and CSV export of the full set for
 // this version. Page, search and slot filter live in the URL and are applied by
@@ -64,10 +103,12 @@ export function VersionResults({
   formId,
   versionNumber,
   results,
+  tracker = null,
 }: {
   formId: string;
   versionNumber: number;
   results: VersionResponses;
+  tracker?: TrackerCounts | null;
 }) {
   const {
     isPartnerApplicationForm,
@@ -84,6 +125,7 @@ export function VersionResults({
   const slot = searchParams.get("slot") ?? "";
   const [query, setQuery] = useState(urlQuery);
   const [openId, setOpenId] = useState<string | null>(null);
+  const canDelete = useFeatureFlag("form-response-edit");
 
   // Filters start over at the first page; every other param (view, version) stays.
   function updateParams(changes: Record<string, string>) {
@@ -121,6 +163,7 @@ export function VersionResults({
 
   const selected = responses.find((r) => r.id === openId) ?? null;
   const hasSlotColumn = slotOptions.length > 0;
+  const trackerLine = tracker && <FormTracker formId={formId} counts={tracker} />;
 
   return (
     <div className="space-y-4">
@@ -135,11 +178,14 @@ export function VersionResults({
       )}
 
       {totalCount === 0 ? (
-        <div className="text-center py-12 rounded-os-card bg-os-card">
-          <p className="text-sm text-muted-foreground">
-            No responses to v{versionNumber} yet.
-          </p>
-        </div>
+        <>
+          {trackerLine}
+          <div className="text-center py-12 rounded-os-card bg-os-card">
+            <p className="text-sm text-muted-foreground">
+              No responses to v{versionNumber} yet.
+            </p>
+          </div>
+        </>
       ) : (
         <>
           <div className="flex flex-col sm:flex-row sm:items-center gap-2">
@@ -179,6 +225,8 @@ export function VersionResults({
               </a>
             </Tooltip>
           </div>
+
+          {trackerLine}
 
           <div className="rounded-os-card bg-os-card overflow-hidden">
             {rows.length === 0 ? (
@@ -229,6 +277,9 @@ export function VersionResults({
                         </td>
                         <td className="px-4 py-2.5 text-muted-foreground whitespace-nowrap">
                           {formatDate(r.createdAt)}
+                          {r.edited && (
+                            <span className="ml-1.5 text-xs text-os-grey">Edited</span>
+                          )}
                         </td>
                         {hasSlotColumn && (
                           <td className="px-4 py-2.5 text-muted-foreground">
@@ -296,6 +347,7 @@ export function VersionResults({
               subtitle={[
                 selected.email,
                 formatTimestamp(selected.createdAt),
+                selected.edited && "Edited",
                 selected.slot,
                 selected.submitterIp && `IP ${selected.submitterIp}`,
               ]
@@ -304,6 +356,7 @@ export function VersionResults({
               onClose={() => setOpenId(null)}
             />
             <ResponseDetailBody response={selected} />
+            {canDelete && <ResponseDelete response={selected} />}
           </>
         )}
       </Modal>

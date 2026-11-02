@@ -10,6 +10,7 @@ export interface FormPreviewModalProps {
   formName: string;
   iconEmoji?: string | null;
   description?: unknown;
+  confirmationMessage?: unknown;
   questions: Question[];
   onClose: () => void;
 }
@@ -19,6 +20,7 @@ export function FormPreviewModal({
   formName,
   iconEmoji,
   description,
+  confirmationMessage,
   questions,
   onClose,
 }: FormPreviewModalProps) {
@@ -59,6 +61,7 @@ export function FormPreviewModal({
                 name: formName,
                 iconEmoji,
                 description,
+                confirmationMessage,
                 questions,
                 versionId: "",
                 versionUpdatedAt: "",

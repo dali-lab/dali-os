@@ -8,7 +8,7 @@ import { reconcileDomainApplications } from "~/hiring/lib/domain-application";
 import { currentInternDomains } from "~/hiring/lib/intern-eligibility";
 import type { Question } from "~/types";
 import { normalizeQuestionBodies } from "~/lib/question-blocks.server";
-import { findMissingRequired } from "~/lib/form-answers";
+import { findMissingRequired, normalizeAnswerFormats, validateAnswerFormats } from "~/lib/form-answers";
 import { resolveUserTimeZone } from "~/lib/timezone";
 import { APPLICANT_GROUP_CONFIG, applicantGroup, applicantPortalPath } from "./applicant-groups.server";
 import { getCoreDomain } from "./core-hiring.server";
@@ -286,6 +286,11 @@ export async function handleInternalCyclePortalAction(
           { status: 400 },
         );
       }
+      const formatErrors = validateAnswerFormats(questions, answers);
+      if (formatErrors.length > 0) {
+        return Response.json({ error: formatErrors[0].message }, { status: 400 });
+      }
+      normalizeAnswerFormats(questions, answers);
       if (selectedDomainIds.length === 0) {
         return Response.json(
           {

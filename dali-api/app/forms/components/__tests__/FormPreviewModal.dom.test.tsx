@@ -7,7 +7,10 @@ vi.mock("react-router", async (importOriginal) => ({
   ...(await importOriginal<typeof import("react-router")>()),
   useNavigate: () => vi.fn(),
 }));
-vi.mock("~/components/doc", () => ({ DocEditor: () => null }));
+vi.mock("~/components/doc", () => ({
+  DocEditor: ({ initialContent }: { initialContent?: unknown }) =>
+    createElement("div", null, JSON.stringify(initialContent ?? null)),
+}));
 
 import { FeatureFlagsProvider } from "~/components/FeatureFlags";
 import { FormPreviewModal } from "~/forms/components/FormPreviewModal";
@@ -40,7 +43,8 @@ function mount({
   blocks,
   questions = [question()],
   iconEmoji = null,
-}: { blocks: boolean; questions?: Question[]; iconEmoji?: string | null }) {
+  confirmationMessage,
+}: { blocks: boolean; questions?: Question[]; iconEmoji?: string | null; confirmationMessage?: unknown }) {
   act(() => {
     root.render(
       createElement(
@@ -51,6 +55,7 @@ function mount({
           formName: "Winter Demo Day RSVP",
           iconEmoji,
           description: null,
+          confirmationMessage,
           questions,
           onClose: () => {},
         }),
@@ -122,4 +127,16 @@ it("says there are no questions yet for an empty form", () => {
   mount({ blocks: true, questions: [] });
   expect(strip()).toBeNull();
   expect(text()).toContain("No questions yet.");
+});
+
+describe("FormPreviewModal confirmation message", () => {
+  it("shows the saved confirmation message on the done screen", async () => {
+    mount({
+      blocks: false,
+      confirmationMessage: [{ type: "paragraph", content: [{ type: "text", text: "See you at demo day" }] }],
+    });
+    await submit();
+    expect(text()).toContain("See you at demo day");
+    expect(text()).not.toContain("has been recorded.");
+  });
 });

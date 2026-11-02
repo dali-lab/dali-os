@@ -372,6 +372,89 @@ function makeUpdateDomainsRequest(
   });
 }
 
+describe("POST /portal/apply (submit) answer format validation", () => {
+  const typedQuestions = [
+    { key: "email", type: "email", required: true, data: { label: "Contact email" } },
+    { key: "level", type: "scale", required: false, data: { label: "Comfort" } },
+  ];
+  const domainDate = [{ key: "start", type: "date", required: true, data: { label: "Start date" } }];
+
+  it("rejects a malformed email and writes nothing", async () => {
+    mockPrisma.application.findUnique.mockResolvedValue({
+      applicationFormVersion: { questions: typedQuestions },
+    });
+    mockPrisma.domainApplication.findMany.mockResolvedValue([]);
+
+    const res = await action({
+      request: makeSubmitRequest({ answers: { email: "not-an-email" } }),
+      params: {},
+      context: {},
+    } as any);
+
+    expect((res as any).error).toBe('"Contact email": enter a valid email address.');
+    expect(mockPrisma.application.update).not.toHaveBeenCalled();
+    expect(mockPrisma.applicationStatusUpdate.create).not.toHaveBeenCalled();
+  });
+
+  it("rejects an out-of-range scale answer", async () => {
+    mockPrisma.application.findUnique.mockResolvedValue({
+      applicationFormVersion: { questions: typedQuestions },
+    });
+    mockPrisma.domainApplication.findMany.mockResolvedValue([]);
+
+    const res = await action({
+      request: makeSubmitRequest({ answers: { email: "ada@example.edu", level: "9" } }),
+      params: {},
+      context: {},
+    } as any);
+
+    expect((res as any).error).toContain("pick a number from 1 to 5");
+    expect(mockPrisma.application.update).not.toHaveBeenCalled();
+  });
+
+  it("rejects a bad answer on a selected domain's challenge form", async () => {
+    mockPrisma.application.findUnique.mockResolvedValue({
+      applicationFormVersion: { questions: typedQuestions },
+    });
+    mockPrisma.domainApplication.findMany.mockResolvedValue([
+      { id: DA_ID, domainId: "domain-x", selected: true, challengeFormVersion: { questions: domainDate } },
+    ]);
+
+    const res = await action({
+      request: makeSubmitRequest({
+        answers: { email: "ada@example.edu" },
+        domainAnswers: [{ domainApplicationId: DA_ID, answers: { start: "2026-02-30" } }],
+        selectedDomainIds: ["domain-x"],
+      }),
+      params: {},
+      context: {},
+    } as any);
+
+    expect((res as any).error).toBe('"Start date": enter a valid date.');
+    expect(mockPrisma.application.update).not.toHaveBeenCalled();
+  });
+
+  it("submits valid answers and stores the email trimmed and lowercased", async () => {
+    mockPrisma.application.findUnique.mockResolvedValue({
+      applicationFormVersion: { questions: typedQuestions },
+    });
+    mockPrisma.domainApplication.findMany.mockResolvedValue([]);
+
+    const res = await action({
+      request: makeSubmitRequest({ answers: { email: "  Ada@Example.EDU ", level: "4" } }),
+      params: {},
+      context: {},
+    } as any);
+
+    expect((res as Response).status).toBe(302);
+    expect(mockPrisma.application.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ answers: { email: "ada@example.edu", level: "4" } }),
+      }),
+    );
+  });
+});
+
 describe("POST /portal/apply (submit) confirmation email", () => {
   const CYCLE_ID = "cycle-1";
 

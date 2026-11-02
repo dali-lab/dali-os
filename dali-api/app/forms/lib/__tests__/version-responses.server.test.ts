@@ -29,6 +29,13 @@ function submission(i: number, over: Record<string, unknown> = {}) {
   return {
     id: `s${i}`,
     createdAt: new Date(Date.UTC(2026, 4, 20, 10, 0, 60 - i)),
+    updatedAt: new Date(Date.UTC(2026, 4, 20, 10, 0, 60 - i)),
+    form: { name: "Feedback" },
+    staffingCycleId: null,
+    educationOfferingId: null,
+    educationSessionId: null,
+    educationApplication: null,
+    partnerSurveyFor: null,
     answers: {},
     submitterName: null,
     submitterEmail: null,
@@ -134,5 +141,34 @@ describe("loadVersionResponses", () => {
       ["Grace", "grace@example.edu"],
       ["Anonymous", null],
     ]);
+  });
+});
+
+describe("loadVersionResponses edit and delete state", () => {
+  async function rowFor(over: Record<string, unknown>) {
+    db.formSubmission.findMany.mockResolvedValue([submission(1, over)]);
+    return (await loadVersionResponses("f1", "v1")).responses[0];
+  }
+
+  it("marks a response edited only when updatedAt is after createdAt", async () => {
+    expect((await rowFor({})).edited).toBe(false);
+    expect((await rowFor({ updatedAt: new Date(Date.UTC(2026, 4, 21)) })).edited).toBe(true);
+  });
+
+  it("leaves an ordinary response deletable", async () => {
+    expect((await rowFor({})).lockReason).toBeNull();
+  });
+
+  it.each([
+    ["slot", { slot: "project-bids" }],
+    ["staffingCycleId", { staffingCycleId: "c1" }],
+    ["educationOfferingId", { educationOfferingId: "o1" }],
+    ["educationSessionId", { educationSessionId: "s1" }],
+    ["partnerApplication", { partnerApplication: { id: "a", title: "T" } }],
+    ["educationApplication", { educationApplication: { id: "a" } }],
+    ["partnerSurveyFor", { partnerSurveyFor: { id: "a" } }],
+    ["the onboarding profile form", { form: { name: "Welcome to DALI! 👋" } }],
+  ])("gives a reason for a response with %s", async (_n, over) => {
+    expect((await rowFor(over)).lockReason).toEqual(expect.any(String));
   });
 });

@@ -23,6 +23,11 @@ import {
   Database,
   SeparatorHorizontal,
   Text,
+  CircleDot,
+  Gauge,
+  CalendarDays,
+  Hash,
+  Mail,
   type LucideIcon,
 } from 'lucide-react'
 import {
@@ -51,6 +56,7 @@ import { useSharedArray } from '~/components/collab/useSharedCollection'
 import { formDraftName } from '~/collab/roomName'
 import { SearchInput } from '~/components/ui/SearchInput'
 import { useOsChrome } from '~/components/os-chrome'
+import { useFeatureFlag } from '~/components/FeatureFlags'
 
 type QuestionType = Question['type']
 
@@ -66,13 +72,18 @@ const COMPONENT_GROUPS: {
     items: [
       { type: 'text', label: 'Short answer', icon: Type },
       { type: 'textarea', label: 'Long answer', icon: AlignLeft },
+      { type: 'number', label: 'Number', icon: Hash },
+      { type: 'email', label: 'Email', icon: Mail },
+      { type: 'date', label: 'Date', icon: CalendarDays },
     ],
   },
   {
     title: 'Choices',
     items: [
+      { type: 'radio', label: 'Multiple choice', icon: CircleDot },
       { type: 'select', label: 'Dropdown', icon: SquareChevronDown },
       { type: 'checkbox', label: 'Checkboxes', icon: ListChecks },
+      { type: 'scale', label: '1 to 5 scale', icon: Gauge },
       { type: 'skills_rating', label: 'Skills rating', icon: Star },
       { type: 'reference', label: 'Database list', icon: Database },
     ],
@@ -96,6 +107,12 @@ const COMPONENT_GROUPS: {
 ]
 
 const COMPONENTS = COMPONENT_GROUPS.flatMap((g) => g.items)
+
+// Types behind the form-question-types flag. They gate only what the builder
+// offers; a question of one of these types already in a form always works.
+export const FLAGGED_TYPES: readonly QuestionType[] = ['radio', 'scale', 'date', 'number', 'email']
+const OPTION_TYPES: readonly QuestionType[] = ['select', 'radio', 'checkbox', 'skills_rating']
+const OTHER_TYPES: readonly QuestionType[] = ['radio', 'checkbox']
 const componentLabel = (type: QuestionType) =>
   COMPONENTS.find((c) => c.type === type)?.label ?? type
 
@@ -146,6 +163,11 @@ export interface BuildQuestionInput {
   label: string
   description?: string
   optionsText?: string
+  allowOther?: boolean
+  scaleLow?: string
+  scaleHigh?: string
+  minValue?: number | string
+  maxValue?: number | string
   accept?: string
   afterDomains?: boolean
   isGeneralForm?: boolean
@@ -156,6 +178,12 @@ export interface BuildQuestionInput {
   body?: unknown
 }
 
+function parseBound(raw: number | string | undefined): number | undefined {
+  if (raw === undefined || (typeof raw === 'string' && raw.trim() === '')) return undefined
+  const n = Number(raw)
+  return Number.isFinite(n) ? n : undefined
+}
+
 export function buildQuestion(input: BuildQuestionInput): Question {
   const {
     key,
@@ -164,6 +192,11 @@ export function buildQuestion(input: BuildQuestionInput): Question {
     label,
     description,
     optionsText,
+    allowOther,
+    scaleLow,
+    scaleHigh,
+    minValue,
+    maxValue,
     accept,
     afterDomains,
     isGeneralForm,
@@ -191,10 +224,14 @@ export function buildQuestion(input: BuildQuestionInput): Question {
     data: {
       label,
       description: description || undefined,
-      options:
-        type === 'select' || type === 'skills_rating' || type === 'checkbox'
-          ? (optionsText ?? '').split('\n').filter((o) => o.trim() !== '')
-          : undefined,
+      options: OPTION_TYPES.includes(type)
+        ? (optionsText ?? '').split('\n').filter((o) => o.trim() !== '')
+        : undefined,
+      allowOther: OTHER_TYPES.includes(type) && allowOther ? true : undefined,
+      scaleLow: type === 'scale' ? scaleLow?.trim() || undefined : undefined,
+      scaleHigh: type === 'scale' ? scaleHigh?.trim() || undefined : undefined,
+      min: type === 'number' ? parseBound(minValue) : undefined,
+      max: type === 'number' ? parseBound(maxValue) : undefined,
       accept: type === 'file' ? accept || undefined : undefined,
       afterDomains: isGeneralForm && afterDomains ? true : undefined,
       maxWords,
@@ -334,6 +371,10 @@ export function FormBuilderTab({
     }
   }
 
+  const newTypesEnabled = useFeatureFlag('form-question-types')
+  const typeOffered = (type: QuestionType) =>
+    (type !== 'checkbox' || allowCheckbox || editForm.type === 'checkbox') &&
+    (!FLAGGED_TYPES.includes(type) || newTypesEnabled || editForm.type === type)
   const [description, setDescription] = useState<unknown>(initialDescription ?? null)
   const { formTrigger } = useOsChrome()
   if (snapshotRef) snapshotRef.current = () => ({ questions, description })
@@ -342,6 +383,8 @@ export function FormBuilderTab({
   const [optionsText, setOptionsText] = useState('')
   const [maxWordsEnabled, setMaxWordsEnabled] = useState(false)
   const [maxWordsValue, setMaxWordsValue] = useState<string>('')
+  const [minText, setMinText] = useState('')
+  const [maxText, setMaxText] = useState('')
   const [acceptPresets, setAcceptPresets] = useState<Set<string>>(new Set())
   const [acceptCustom, setAcceptCustom] = useState('')
   // Drag-to-reorder via dnd-kit (same idiom as EpicSprintManager / KanbanBoard).
@@ -420,6 +463,8 @@ export function FormBuilderTab({
     setOptionsText('')
     setMaxWordsEnabled(false)
     setMaxWordsValue('')
+    setMinText('')
+    setMaxText('')
     setAcceptPresets(new Set())
     setAcceptCustom('')
   }
@@ -429,6 +474,8 @@ export function FormBuilderTab({
     setOptionsText(q.data.options?.join('\n') || '')
     setMaxWordsEnabled(q.data.maxWords !== undefined)
     setMaxWordsValue(q.data.maxWords !== undefined ? String(q.data.maxWords) : '')
+    setMinText(q.data.min !== undefined ? String(q.data.min) : '')
+    setMaxText(q.data.max !== undefined ? String(q.data.max) : '')
     if (q.type === 'file' && q.data.accept) {
       const { presets, custom } = parseAcceptIntoPresets(q.data.accept)
       setAcceptPresets(presets)
@@ -477,6 +524,11 @@ export function FormBuilderTab({
       label: editForm.data?.label || '',
       description: editForm.data?.description,
       optionsText,
+      allowOther: editForm.data?.allowOther,
+      scaleLow: editForm.data?.scaleLow,
+      scaleHigh: editForm.data?.scaleHigh,
+      minValue: minText,
+      maxValue: maxText,
       accept: buildAcceptFromPresets(acceptPresets, acceptCustom),
       afterDomains: editForm.data?.afterDomains,
       isGeneralForm,
@@ -490,7 +542,7 @@ export function FormBuilderTab({
       questions.map((q) => (q.key === editForm.key ? rebuilt : q)),
     )
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editForm, optionsText, acceptPresets, acceptCustom, maxWordsEnabled, maxWordsValue])
+  }, [editForm, optionsText, acceptPresets, acceptCustom, maxWordsEnabled, maxWordsValue, minText, maxText])
 
   // Collapse the inline editor. The data is already in the list (auto-commit),
   // so this just closes the form — no save needed.
@@ -517,6 +569,8 @@ export function FormBuilderTab({
     setOptionsText('')
     setMaxWordsEnabled(false)
     setMaxWordsValue('')
+    setMinText('')
+    setMaxText('')
     setAcceptPresets(new Set())
     setAcceptCustom('')
   }
@@ -600,9 +654,7 @@ export function FormBuilderTab({
                 })
               }
               options={COMPONENTS.filter(
-                (c) =>
-                  !isLayoutOnly(c.type) &&
-                  (c.type !== 'checkbox' || allowCheckbox || editForm.type === 'checkbox'),
+                (c) => !isLayoutOnly(c.type) && typeOffered(c.type),
               ).map((c) => ({ value: c.type, label: c.label }))}
               buttonClassName={formTrigger}
             />
@@ -681,7 +733,7 @@ export function FormBuilderTab({
             </div>
           )}
 
-          {(editForm.type === 'select' || editForm.type === 'checkbox') && (
+          {(editForm.type === 'select' || editForm.type === 'radio' || editForm.type === 'checkbox') && (
             <div className="col-span-2">
               <label className="block text-sm font-medium text-foreground/80 mb-1">
                 Options (One per line)
@@ -693,7 +745,97 @@ export function FormBuilderTab({
                 className="block w-full"
                 placeholder="Option 1&#10;Option 2&#10;Option 3"
               />
+              {editForm.type === 'radio' && (
+                <p className="mt-1 text-xs text-muted-foreground">Add at least two options.</p>
+              )}
             </div>
+          )}
+
+          {editForm.type !== undefined &&
+            OTHER_TYPES.includes(editForm.type) &&
+            (newTypesEnabled || editForm.data?.allowOther) && (
+            <div className="col-span-2">
+              <Checkbox
+                checked={editForm.data?.allowOther || false}
+                onChange={(e) =>
+                  setEditForm({
+                    ...editForm,
+                    data: { ...editForm.data!, allowOther: e.target.checked },
+                  })
+                }
+                label="Add an Other option"
+              />
+            </div>
+          )}
+
+          {editForm.type === 'scale' && (
+            <>
+              <div>
+                <label className="block text-sm font-medium text-foreground/80 mb-1">
+                  1 means (Optional)
+                </label>
+                <input
+                  type="text"
+                  value={editForm.data?.scaleLow || ''}
+                  onChange={(e) =>
+                    setEditForm({
+                      ...editForm,
+                      data: { ...editForm.data!, scaleLow: e.target.value },
+                    })
+                  }
+                  className="block w-full"
+                  placeholder="e.g. Not at all"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-foreground/80 mb-1">
+                  5 means (Optional)
+                </label>
+                <input
+                  type="text"
+                  value={editForm.data?.scaleHigh || ''}
+                  onChange={(e) =>
+                    setEditForm({
+                      ...editForm,
+                      data: { ...editForm.data!, scaleHigh: e.target.value },
+                    })
+                  }
+                  className="block w-full"
+                  placeholder="e.g. Very much"
+                />
+              </div>
+            </>
+          )}
+
+          {editForm.type === 'number' && (
+            <>
+              <div>
+                <label className="block text-sm font-medium text-foreground/80 mb-1">
+                  Minimum (Optional)
+                </label>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={minText}
+                  onChange={(e) => setMinText(e.target.value)}
+                  className="block w-full"
+                  placeholder="e.g. 0"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-foreground/80 mb-1">
+                  Maximum (Optional)
+                </label>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={maxText}
+                  onChange={(e) => setMaxText(e.target.value)}
+                  className="block w-full"
+                  placeholder="e.g. 100"
+                />
+              </div>
+            </>
           )}
 
           {editForm.type === 'skills_rating' && (
@@ -842,7 +984,7 @@ export function FormBuilderTab({
       }}
     >
       <div className="flex flex-col lg:flex-row gap-6 items-start">
-        <ComponentLibrary allowCheckbox={allowCheckbox} onAdd={addComponent} />
+        <ComponentLibrary allowCheckbox={allowCheckbox} allowNewTypes={newTypesEnabled} onAdd={addComponent} />
 
         <CanvasDropZone>
           {/* Block JSON from here on: onChange hands back the BlockNote block
@@ -998,9 +1140,9 @@ export function FormBuilderTab({
                               </p>
                             )}
 
-                            {(q.type === 'select' || q.type === 'skills_rating' || q.type === 'checkbox') && q.data.options && (
+                            {OPTION_TYPES.includes(q.type) && q.data.options && (
                               <div className="mt-2 flex flex-wrap gap-2">
-                                {q.data.options.map((opt) => (
+                                {[...q.data.options, ...(q.data.allowOther ? ['Other'] : [])].map((opt) => (
                                   <span
                                     key={opt}
                                     className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-os-well text-os-grey border border-os-container"
@@ -1124,9 +1266,11 @@ export function FormBuilderTab({
 // it, or drag it onto the canvas to drop it at a position.
 function ComponentLibrary({
   allowCheckbox,
+  allowNewTypes,
   onAdd,
 }: {
   allowCheckbox: boolean
+  allowNewTypes: boolean
   onAdd: (type: QuestionType) => void
 }) {
   const { heading } = useOsChrome()
@@ -1137,6 +1281,7 @@ function ComponentLibrary({
     items: g.items.filter(
       (c) =>
         (c.type !== 'checkbox' || allowCheckbox) &&
+        (allowNewTypes || !FLAGGED_TYPES.includes(c.type)) &&
         (!q || c.label.toLowerCase().includes(q)),
     ),
   })).filter((g) => g.items.length > 0)

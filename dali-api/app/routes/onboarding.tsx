@@ -11,6 +11,8 @@ import type { Route } from "./+types/onboarding";
 import { redirect, useLoaderData } from "react-router";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
+import { getUserRoles } from "~/lib/roles";
+import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { prisma } from "~/lib/db.server";
 import { loadPublicForm } from "~/forms/lib/public-form";
 import {
@@ -50,17 +52,26 @@ export async function loader({ request }: Route.LoaderArgs) {
     ? await loadPublicForm(profileForm.publicToken, auth.user.sub)
     : null;
 
+  const saveProgress = await isFeatureEnabled(
+    "form-save-progress",
+    auth.user.sub,
+    await getUserRoles(auth.user.sub, request),
+    request,
+  );
+
   return {
+    userId: auth.user.sub,
+    saveProgress,
     form: form ? { ...form, token: profileForm!.publicToken! } : null,
   };
 }
 
 export default function OnboardingPage({ loaderData }: Route.ComponentProps) {
-  const { form } = useLoaderData<typeof loader>();
+  const { form, userId, saveProgress } = useLoaderData<typeof loader>();
   return (
     <MemberFormShell>
       {form ? (
-        <MemberFormFillView data={form} />
+        <MemberFormFillView data={form} saveProgress={saveProgress} progressUserId={userId} />
       ) : (
         <div className="py-10 text-center">
           <h1 className="font-heading text-xl font-bold text-foreground">

@@ -85,6 +85,7 @@ import { runMentorNotesToNotebooks } from "~/jobs/mentor-notes-to-notebooks.serv
 import { runOccurrenceRekey } from "~/jobs/occurrence-rekey.server";
 import { runSprintLifecycle } from "~/jobs/sprint-lifecycle.server";
 import { runFormWindows } from "~/jobs/form-windows.server";
+import { runFormReminders } from "~/jobs/form-reminders.server";
 import { runInterviewReminders } from "~/jobs/interview-reminders.server";
 import { runStandupPrompts } from "~/jobs/standup-prompts.server";
 import { runTimesheetDueReminders } from "~/jobs/timesheet-due-reminders.server";
@@ -269,6 +270,13 @@ export const JOBS: JobDefinition[] = [
       "Publishes and unpublishes forms whose scheduled open/close time has passed.",
     intervalMinutes: 1,
     handler: runFormWindows,
+  },
+  {
+    name: "form-reminders",
+    description:
+      "Reminds people who haven't responded to a form a day before it closes, for forms with that setting on. Sends once per close time.",
+    intervalMinutes: 60,
+    handler: runFormReminders,
   },
   {
     name: "sprint-lifecycle",

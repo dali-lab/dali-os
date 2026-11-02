@@ -20,7 +20,7 @@ import type { Slot } from "./form-slots";
 export type QuestionTypeConstraint =
   | "reference-project" // reference question, project source
   | "reference-domain" // reference question, domain source
-  | "choice" // select/text answer coerced to a fixed enum (intent status)
+  | "choice" // select/radio/text answer coerced to a fixed enum (intent status)
   | "text" // free text/textarea
   | "person" // not a question — the authenticated submitter (builtin source)
   | "display" // not staffing-feeding — view-only (builtin or any question)
