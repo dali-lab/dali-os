@@ -25,7 +25,9 @@ function youtubeId(url: URL): string | null {
 const YOUTUBE_EMBED_ORIGIN = "https://www.youtube-nocookie.com";
 
 // Adding a provider is one entry here: the block render, exports and CSP all
-// read from this list.
+// read from this list. The desktop shell can't, so add its embedOrigin to
+// VIDEO_EMBED_ORIGINS in desktop/src-tauri/src/config.rs too, or its player
+// opens in the system browser.
 const PROVIDERS: VideoProvider[] = [
   {
     name: "YouTube",
