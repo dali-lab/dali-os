@@ -22,6 +22,9 @@ import { safeHref } from "../components/kinds";
 
 interface MediaOptions {
   live?: boolean;
+  /** Export hosted videos as an image, the one Markdown form that comes back as
+   * a media block rather than a link, so a round trip keeps the player. */
+  markdown?: boolean;
 }
 
 // imageRender is typed for the image block alone. The video block has the same
@@ -134,7 +137,7 @@ export const createMediaImageSpec = (options: MediaOptions = {}) =>
     },
     toExternalHTML(block, editor) {
       const embed = parseVideoEmbed(block.props.url);
-      return embed
+      return embed && !options.markdown
         ? withCaption(watchLink(block.props.url, embed), block.props.caption)
         : imageToExternalHTML({})(block, editor);
     },
@@ -154,9 +157,12 @@ export const createMediaVideoSpec = (options: MediaOptions = {}) =>
         ? renderEmbed(block, editor, embed, options)
         : renderInShell(block, editor, videoPlayer(block));
     },
-    toExternalHTML(block) {
+    toExternalHTML(block, editor) {
       if (!block.props.url) return { dom: document.createElement("video") };
       const embed = parseVideoEmbed(block.props.url);
+      if (embed && options.markdown) {
+        return imageToExternalHTML({})(block as unknown as MediaBlock, editor as unknown as MediaEditor);
+      }
       if (embed) return withCaption(watchLink(block.props.url, embed), block.props.caption);
       if (!block.props.showPreview) {
         const link = document.createElement("a");

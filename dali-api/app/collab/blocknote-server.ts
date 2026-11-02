@@ -45,6 +45,7 @@ import {
 } from "~/lib/signing-fields";
 import { sanitizeRichEmailHtml, htmlToPlainText, NOTIFICATION_BODY_MAX } from "~/lib/email";
 import { createMediaImageSpec, createMediaVideoSpec } from "~/components/doc/schema/media";
+import { parseVideoEmbed } from "~/lib/video-embed";
 import { parseComponentData } from "~/components/doc/components/kinds";
 import { ComponentView } from "~/components/doc/components/views";
 
@@ -249,8 +250,8 @@ const componentSpec = createBlockSpec(componentConfig, {
 // document the server touches (export, version history, sync-back). The column
 // specs are built with the core createBlockSpecFromTiptapNode — no React — so
 // they are safe under the jsdom conversions below.
-export const serverSchema = withMultiColumn(BlockNoteSchema.create({
-  blockSpecs: { ...defaultBlockSpecs, image: createMediaImageSpec(), video: createMediaVideoSpec(), callout: calloutSpec, embed: embedSpec, component: componentSpec, task: taskSpec, pageBreak: createPageBreakBlockSpec() },
+const buildServerSchema = (media: { markdown?: boolean }) => withMultiColumn(BlockNoteSchema.create({
+  blockSpecs: { ...defaultBlockSpecs, image: createMediaImageSpec(media), video: createMediaVideoSpec(media), callout: calloutSpec, embed: embedSpec, component: componentSpec, task: taskSpec, pageBreak: createPageBreakBlockSpec() },
   inlineContentSpecs: {
     ...defaultInlineContentSpecs,
     mention: mentionSpec,
@@ -262,24 +263,35 @@ export const serverSchema = withMultiColumn(BlockNoteSchema.create({
   styleSpecs: { ...defaultStyleSpecs },
 }));
 
+export const serverSchema = buildServerSchema({});
+
 // ---------------------------------------------------------------------------
 // Singleton editor + a serialization lock. The async conversions install a
 // jsdom window on globalThis for their duration (_withJSDOM); two interleaved
 // conversions would tear each other's globals down, so they queue.
 
 let editorSingleton: ServerBlockNoteEditor<any, any, any> | null = null;
+let markdownEditorSingleton: ServerBlockNoteEditor<any, any, any> | null = null;
+
+function createServerEditor(schema: unknown): ServerBlockNoteEditor<any, any, any> {
+  const editor = ServerBlockNoteEditor.create({ schema: schema as any });
+  // server-util's default jsdom has an opaque origin, where localStorage
+  // throws. BlockNote's toggle wrapper (toggle list items, toggle headings)
+  // reads localStorage during blocksToFullHTML, so any doc with a toggle
+  // failed the full-HTML render. A real origin gives it an in-memory store.
+  (editor as unknown as { jsdom: { reconfigure(o: { url: string }): void } }).jsdom
+    .reconfigure({ url: "http://localhost/" });
+  return editor;
+}
 
 export function getServerEditor(): ServerBlockNoteEditor<any, any, any> {
-  if (!editorSingleton) {
-    editorSingleton = ServerBlockNoteEditor.create({ schema: serverSchema as any });
-    // server-util's default jsdom has an opaque origin, where localStorage
-    // throws. BlockNote's toggle wrapper (toggle list items, toggle headings)
-    // reads localStorage during blocksToFullHTML, so any doc with a toggle
-    // failed the full-HTML render. A real origin gives it an in-memory store.
-    (editorSingleton as unknown as { jsdom: { reconfigure(o: { url: string }): void } }).jsdom
-      .reconfigure({ url: "http://localhost/" });
-  }
+  editorSingleton ??= createServerEditor(serverSchema);
   return editorSingleton;
+}
+
+function getMarkdownEditor(): ServerBlockNoteEditor<any, any, any> {
+  markdownEditorSingleton ??= createServerEditor(buildServerSchema({ markdown: true }));
+  return markdownEditorSingleton;
 }
 
 let conversionChain: Promise<unknown> = Promise.resolve();
@@ -337,7 +349,7 @@ export async function renderAnnouncementBody(
  * "{{name}}"). */
 export function blocksToMarkdown(blocks: DocBlock[]): Promise<string> {
   if (blocks.length === 0) return Promise.resolve("");
-  return serialized(() => getServerEditor().blocksToMarkdownLossy(blocks as any));
+  return serialized(() => getMarkdownEditor().blocksToMarkdownLossy(blocks as any));
 }
 
 /** Markdown → blocks. Empty/whitespace input yields a single empty paragraph
@@ -345,7 +357,16 @@ export function blocksToMarkdown(blocks: DocBlock[]): Promise<string> {
 export function markdownToBlocks(markdown: string): Promise<DocBlock[]> {
   return serialized(async () => {
     const blocks = await getServerEditor().tryParseMarkdownToBlocks(markdown);
-    return blocks as unknown as DocBlock[];
+    return restoreHostedVideos(blocks as unknown as DocBlock[]);
+  });
+}
+
+// Markdown has no video syntax, so a hosted video arrives as an image.
+function restoreHostedVideos(blocks: DocBlock[]): DocBlock[] {
+  return blocks.map((block) => {
+    const children = restoreHostedVideos(block.children ?? []);
+    const isHostedVideo = block.type === "image" && parseVideoEmbed(String(block.props?.url ?? ""));
+    return { ...block, type: isHostedVideo ? "video" : block.type, children };
   });
 }
 

@@ -107,10 +107,35 @@ describe("hosted video links", () => {
     expect(html).toContain("Partner stories");
   });
 
-  it("markdown carries the link", async () => {
-    expect(await blocksToMarkdown([media("video", { url: URL_ })])).toContain(
-      `[Watch on YouTube](${URL_})`,
-    );
+  it("survives a markdown round trip as a video block", async () => {
+    const markdown = await blocksToMarkdown([media("video", { url: URL_, name: "Partner stories" })]);
+    expect(markdown.trim()).toBe(`![Partner stories](${URL_})`);
+    const [block, ...rest] = await markdownToBlocks(markdown);
+    expect(rest).toEqual([]);
+    expect(block!.type).toBe("video");
+    expect(block!.props).toMatchObject({ url: URL_, name: "Partner stories" });
+  });
+
+  it("round-trips a video with no name", async () => {
+    const [block] = await markdownToBlocks(await blocksToMarkdown([media("video", { url: URL_ })]));
+    expect(block!.type).toBe("video");
+    expect(block!.props).toMatchObject({ url: URL_ });
+  });
+
+  it("keeps a player and a written link to the same video apart", async () => {
+    const blocks = await markdownToBlocks(`![Video](${URL_})\n\n[Watch on YouTube](${URL_})\n`);
+    expect(blocks.map((block) => block.type)).toEqual(["video", "paragraph"]);
+    expect(await blocksToMarkdown(blocks)).toContain(`[Watch on YouTube](${URL_})`);
+  });
+
+  it("restores a video nested under a list item", async () => {
+    const [item] = await markdownToBlocks(`- Parent\n\n  ![Video](${URL_})\n`);
+    expect(item!.children!.map((child) => child.type)).toEqual(["video"]);
+  });
+
+  it("leaves real images as images through markdown", async () => {
+    const [block] = await markdownToBlocks("![Chart](https://example.com/a.png)\n");
+    expect(block!.type).toBe("image");
   });
 
   it("leaves the iframe out of the PDF dialect too", async () => {
