@@ -208,24 +208,10 @@ export async function indexMessages(args: {
       linkedPartnerContactId = inheritedManual.partnerContactId;
       linkSource = "Manual";
     } else {
-      for (const a of counterpartAddresses(m.direction, m, inboxAddress)) {
-        const userId = resolved.get(a);
-        if (userId) {
-          linkedUserId = userId;
-          linkSource = "Auto";
-          break;
-        }
-      }
-      if (linkSource === "None" && linkPartnerContacts) {
-        for (const a of counterpartAddresses(m.direction, m, inboxAddress)) {
-          const partnerContactId = resolvedContacts.get(a);
-          if (partnerContactId) {
-            linkedPartnerContactId = partnerContactId;
-            linkSource = "Auto";
-            break;
-          }
-        }
-      }
+      const counterparts = counterpartAddresses(m.direction, m, inboxAddress);
+      linkedUserId = firstMatch(counterparts, resolved);
+      linkedPartnerContactId = firstMatch(counterparts, resolvedContacts);
+      if (linkedUserId || linkedPartnerContactId) linkSource = "Auto";
     }
     return {
       accountId,
@@ -257,6 +243,67 @@ async function findPartnerContactIdsByAddresses(addresses: string[]): Promise<Ma
     select: { id: true, email: true },
   });
   return new Map(rows.map((r) => [r.email, r.id]));
+}
+
+function firstMatch(addresses: string[], ids: Map<string, string>): string | null {
+  for (const a of addresses) {
+    const id = ids.get(a);
+    if (id) return id;
+  }
+  return null;
+}
+
+/**
+ * Link already-indexed rows to the PartnerContact they were exchanged with.
+ * A row is only written once, so mail indexed before its contact existed, or
+ * before a User match stopped blocking the contact link, needs this to reach
+ * the partner pages. Starts from the contact list so rows that match nobody
+ * never come back as candidates. Returns how many rows were linked.
+ */
+export async function relinkPartnerContacts(
+  accountId: string,
+  inboxAddress: string,
+  limit: number,
+): Promise<number> {
+  const contacts = await prisma.partnerContact.findMany({ select: { id: true, email: true } });
+  if (contacts.length === 0) return 0;
+  const contactIds = new Map(contacts.map((c) => [c.email, c.id]));
+  const emails = [...contactIds.keys()];
+
+  const unlinked = { linkedPartnerContactId: null, linkSource: { not: "Manual" } } as const;
+  const rows = await prisma.mailMessageIndex.findMany({
+    where: {
+      accountId,
+      ...unlinked,
+      OR: [
+        { direction: "Inbound", fromAddress: { in: emails } },
+        { direction: "Outbound", toAddresses: { hasSome: emails } },
+      ],
+    },
+    orderBy: { sentAt: "desc" },
+    take: limit,
+    select: { id: true, direction: true, fromAddress: true, toAddresses: true },
+  });
+
+  const rowIdsByContact = new Map<string, string[]>();
+  for (const row of rows) {
+    const headers = { from: row.fromAddress, to: row.toAddresses.join(", "), cc: "" };
+    const contactId = firstMatch(counterpartAddresses(row.direction, headers, inboxAddress), contactIds);
+    if (!contactId) continue;
+    const rowIds = rowIdsByContact.get(contactId);
+    if (rowIds) rowIds.push(row.id);
+    else rowIdsByContact.set(contactId, [row.id]);
+  }
+
+  let relinked = 0;
+  for (const [contactId, rowIds] of rowIdsByContact) {
+    const { count } = await prisma.mailMessageIndex.updateMany({
+      where: { id: { in: rowIds }, ...unlinked },
+      data: { linkedPartnerContactId: contactId, linkSource: "Auto" },
+    });
+    relinked += count;
+  }
+  return relinked;
 }
 
 export type ThreadLinkTarget = { userId: string } | { partnerContactId: string } | null;
