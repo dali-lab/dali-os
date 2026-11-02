@@ -751,7 +751,9 @@ export function FormBuilderTab({
             </div>
           )}
 
-          {editForm.type !== undefined && OTHER_TYPES.includes(editForm.type) && (
+          {editForm.type !== undefined &&
+            OTHER_TYPES.includes(editForm.type) &&
+            (newTypesEnabled || editForm.data?.allowOther) && (
             <div className="col-span-2">
               <Checkbox
                 checked={editForm.data?.allowOther || false}
