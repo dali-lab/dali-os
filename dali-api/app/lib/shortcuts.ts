@@ -24,6 +24,11 @@ export function isEditingTarget(target: EventTarget | null | undefined): boolean
   return typeof el?.closest === 'function' && el.closest(EDITING_SURFACE) !== null
 }
 
+/** Backspace outside any editable surface, which WebKit treats as "go back a page". */
+export function isBackspaceNavigation(e: KeyEventLike): boolean {
+  return e.key === 'Backspace' && !isEditingTarget(e.target)
+}
+
 function isMac(): boolean {
   return typeof navigator !== 'undefined' && /Mac/.test(navigator.platform)
 }
