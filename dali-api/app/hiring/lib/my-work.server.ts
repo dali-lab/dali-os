@@ -2,7 +2,7 @@ import { prisma } from "~/lib/db.server";
 import { getEngagementSummaries } from "~/hiring/lib/email-engagement.server";
 import { getUserRoles } from "~/lib/roles";
 import { getActiveCycles, type ActiveCycle } from "./cycles";
-import { anonLabelMapForCycle, releasedDaIds, blindUser } from "./anonymization.server";
+import { applicationBlindLabelsForCycle, blindUser } from "./anonymization.server";
 import { confidentialityBlock, getCycleConfidentialityState } from "./confidentiality";
 import { buildColumnOrder } from "./delibs";
 import { findRound, parseTimeline } from "./cycle-timeline";
@@ -215,23 +215,17 @@ async function loadReviews(
     });
   }
 
-  // Blind review: on cycles with anonymizeReview on, replace applicant
-  // identity with a stable "Applicant N" pseudonym on the reviewer's assigned
-  // apps and the Initial-delibs mirror, until a decision is Released for that
-  // applicant. Final-delibs apps (released) keep their real names.
-  if (cycle.anonymizeReview) {
-    const labelMap = await anonLabelMapForCycle(cycle.id);
-    const released = await releasedDaIds([
-      ...myReviews.map((r) => r.domainApplication.id),
-      ...daIdToSummary.keys(),
-    ]);
-    const blind = (da: any) => {
-      if (!da || released.has(da.id)) return;
-      const label = labelMap.get(da.application.id);
-      if (label) da.application.user = blindUser(da.application.user, label);
-    };
-    for (const r of myReviews) blind(r.domainApplication);
-    for (const da of daIdToSummary.values()) blind(da);
+  const blindableApps: any[] = [
+    ...myReviews.map((r) => r.domainApplication),
+    ...daIdToSummary.values(),
+  ].filter(Boolean);
+  const blindLabels = await applicationBlindLabelsForCycle({
+    cycleId: cycle.id,
+    applicationIds: [...new Set(blindableApps.map((da) => da.application.id as string))],
+  });
+  for (const da of blindableApps) {
+    const label = blindLabels.get(da.application.id);
+    if (label) da.application.user = blindUser(da.application.user, label);
   }
 
   return {

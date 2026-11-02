@@ -14,7 +14,7 @@ import { getCollabToken } from "~/lib/collab-token.server";
 import { getPresenceUser } from '~/lib/presence-user'
 import { requirePageSignedOrRedirect } from '~/hiring/lib/confidentiality'
 import { presignAnswers } from '~/hiring/lib/presign'
-import { blindUser, reviewerBlindLabel } from '~/hiring/lib/anonymization.server'
+import { applicationBlindLabel, blindUser } from '~/hiring/lib/anonymization.server'
 import { logApplicationView } from '~/hiring/lib/application-view-audit.server'
 import { logAuditEvent } from '~/lib/audit'
 import { describeReviewChange } from '~/hiring/lib/review'
@@ -107,12 +107,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       },
     }),
   )
-  const blindLabelP = reviewerBlindLabel({
-    reviewerId: auth.user.sub,
-    cycleId,
-    applicationId: applicationBase.id,
-    anonymizeReview: applicationBase.applicationCycle.anonymizeReview,
-  })
+  const blindLabelP = applicationBlindLabel({ cycleId, applicationId: applicationBase.id })
 
   const [
     cycleReviewers,

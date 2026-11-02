@@ -137,13 +137,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   );
   if (confRedirect) return confRedirect;
 
-  // Blind review applies on this page to every viewer alike (domain leads
-  // included) — only a Released decision on every domain the applicant
-  // selected lifts it.
   const blindLabel = await applicationBlindLabel({
     cycleId: da.application.applicationCycleId,
     applicationId: da.application.id,
-    anonymizeReview: da.application.applicationCycle.anonymizeReview,
   });
   const blinded = blindLabel != null;
   if (blindLabel) da.application.user = blindUser(da.application.user, blindLabel);

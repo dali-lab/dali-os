@@ -100,7 +100,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
               applicants: true,
               timeline: true,
               hasChallenges: true,
-              anonymizeReview: true,
               closeDate: true,
               generalRubricVersion: { select: { criteria: true } },
               domains: { select: { domainId: true, closeDate: true, rubricVersion: { select: { criteria: true } } } },
@@ -144,16 +143,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const confRedirect = await requirePageSignedOrRedirect(auth.user.sub, cycleId, request);
   if (confRedirect) return confRedirect;
 
-  // Blind review applies on this page to every viewer alike (Core, Admin,
-  // leads, reviewers) — only a Released decision on every domain the
-  // applicant selected lifts it. Must happen before anything below derives a
-  // display name (recents, meta title, prior-applications outcomes, email
-  // engagement).
-  const blindLabel = await applicationBlindLabel({
-    cycleId,
-    applicationId: da.application.id,
-    anonymizeReview: da.application.applicationCycle.anonymizeReview,
-  });
+  // Must happen before anything below derives a display name (recents, meta
+  // title, prior-applications outcomes, email engagement).
+  const blindLabel = await applicationBlindLabel({ cycleId, applicationId: da.application.id });
   const blinded = blindLabel != null;
   if (blindLabel) da.application.user = blindUser(da.application.user, blindLabel);
 

@@ -527,9 +527,9 @@ model ApplicationCycle {
   generalRubricVersion   RubricVersion? @relation("CycleGeneralRubric", fields: [generalRubricVersionId], references: [id])
 
   // Blind review. When true, applicant identity (name, photo, email, class
-  // year, pronouns) is hidden from reviewers behind a stable pseudonym
-  // ("Applicant N") on the reviewer + Initial-delibs surfaces, until a decision
-  // is Released for them. Core/lead cycle-management views are never blinded.
+  // year, pronouns) is hidden from every viewer behind a stable pseudonym
+  // ("Applicant N") while applications are open and until the first delib
+  // round closes. Cycle-management views are never blinded.
   // See app/hiring/lib/anonymization.server.ts.
   anonymizeReview Boolean @default(true)
 

@@ -100,7 +100,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
             include: {
               user: true,
               applicationFormVersion: { select: { questions: true, intro: true } },
-              applicationCycle: { select: { anonymizeReview: true, name: true } },
+              applicationCycle: { select: { name: true } },
             },
           },
           challengeFormVersion: { select: { questions: true, intro: true } },
@@ -216,14 +216,12 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const presenceUser = await getPresenceUser(auth.user.sub, fallbackName)
   const userName = presenceUser?.name ?? fallbackName
 
-  // Same applicant context the review page shows. Blinding follows the
-  // applicant-wide release, which is also what gates the email thread modal.
+  // Same applicant context the review page shows.
   const application = interview.domainApplication.application
   const blinded =
     (await applicationBlindLabel({
       cycleId: interview.applicationCycleId,
       applicationId: application.id,
-      anonymizeReview: application.applicationCycle.anonymizeReview,
     })) != null
   const roles = await getUserRoles(auth.user.sub, request)
   const [educationEngagement, hiringEventEngagement, priorApplications, emailEngagement, latestRecordingRow] =
