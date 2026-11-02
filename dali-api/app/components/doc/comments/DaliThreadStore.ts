@@ -303,13 +303,13 @@ export interface DaliThreadStoreConfig {
   canModerate: boolean;
   /** Viewer's user id. */
   currentUserId: string;
-  /** Optional polling interval in ms. 0 = off. Default 30 000. */
+  /** Polling interval in ms. 0 = off. Default: off when EventSource exists, 30 000 otherwise. */
   pollIntervalMs?: number;
 }
 
 export class DaliThreadStore extends ThreadStore {
   private readonly pageId: string;
-  private readonly pollIntervalMs: number;
+  private readonly pollIntervalMs: number | undefined;
   private threads: Map<string, ThreadData> = new Map();
   private listeners: Set<(threads: Map<string, ThreadData>) => void> = new Set();
   private pollTimer: ReturnType<typeof setInterval> | null = null;
@@ -330,8 +330,7 @@ export class DaliThreadStore extends ThreadStore {
       ),
     );
     this.pageId = config.pageId;
-    this.pollIntervalMs =
-      config.pollIntervalMs !== undefined ? config.pollIntervalMs : 30_000;
+    this.pollIntervalMs = config.pollIntervalMs;
   }
 
   // ── Read interface ──────────────────────────────────────────────────────
@@ -353,8 +352,10 @@ export class DaliThreadStore extends ThreadStore {
     if (!this.didMount) {
       this.didMount = true;
       void this.refetch();
-      if (this.pollIntervalMs > 0) {
-        this.pollTimer = setInterval(() => void this.refetch(), this.pollIntervalMs);
+      const pollMs =
+        this.pollIntervalMs ?? (typeof EventSource === "undefined" ? 30_000 : 0);
+      if (pollMs > 0) {
+        this.pollTimer = setInterval(() => void this.refetch(), pollMs);
       }
       this.openStream();
     }
