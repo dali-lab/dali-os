@@ -16,6 +16,7 @@ vi.mock("~/lib/drive-crumbs.server", () => ({ driveFolderCrumbs: vi.fn() }));
 vi.mock("~/forms/lib/form-usages.server", () => ({ formUsages: vi.fn(), managingUsage: vi.fn() }));
 vi.mock("~/hiring/lib/form-links.server", () => ({ loadFormHiringLinks: vi.fn(), unlinkHiringForm: vi.fn() }));
 vi.mock("~/forms/lib/version-responses.server", () => ({ loadVersionResponses: vi.fn() }));
+vi.mock("~/forms/lib/version-summary.server", () => ({ loadVersionSummary: vi.fn() }));
 vi.mock("~/forms/lib/form-response.server", () => ({ deleteFormResponse: vi.fn() }));
 vi.mock("~/forms/lib/form-tracker.server", () => ({
   loadTrackerCounts: vi.fn(),
@@ -37,6 +38,7 @@ import { formUsages, managingUsage } from "~/forms/lib/form-usages.server";
 import { loadFormHiringLinks } from "~/hiring/lib/form-links.server";
 import { getCollabToken } from "~/lib/collab-token.server";
 import { loadVersionResponses } from "~/forms/lib/version-responses.server";
+import { loadVersionSummary } from "~/forms/lib/version-summary.server";
 import { deleteFormResponse } from "~/forms/lib/form-response.server";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { loadTrackerCounts, loadTrackerList, sendFormReminder } from "~/forms/lib/form-tracker.server";
@@ -357,5 +359,67 @@ describe("forms.edit action send-form-reminder", () => {
     const res = await send();
     expect(res.status).toBe(429);
     expect(await res.json()).toEqual({ error: "slow down" });
+  });
+});
+
+describe("forms.edit summary", () => {
+  const flagOn = (on: boolean) =>
+    vi.mocked(isFeatureEnabled).mockImplementation(async (key) => (key === "form-upgrades" ? on : false));
+  const version = { id: "v1", versionNumber: 1, questions: [{ key: "a" }] };
+  const call = (query: string) =>
+    loader({
+      request: new Request(`http://os.test/forms/edit/f1?${query}`),
+      params: { formId: "f1" },
+    } as never) as Promise<any>;
+
+  beforeEach(() => {
+    vi.mocked(loadFormForEdit).mockResolvedValue({
+      id: "f1",
+      folderPageId: null,
+      versions: [version],
+      workspaceType: "Project",
+    } as never);
+    vi.mocked(loadVersionSummary).mockResolvedValue({ versionId: "v1" } as never);
+    vi.mocked(loadVersionResponses).mockResolvedValue({ versionId: "v1" } as never);
+    vi.mocked(loadTrackerCounts).mockResolvedValue(null as never);
+  });
+
+  it("loads the summary, not the table, on Results when the flag is on", async () => {
+    flagOn(true);
+    const data = await call("view=results&version=1&slot=referrals");
+    expect(loadVersionSummary).toHaveBeenCalledWith("f1", version, { slot: "referrals" });
+    expect(loadVersionResponses).not.toHaveBeenCalled();
+    expect(data.summary).toEqual({ versionId: "v1" });
+    expect(data.results).toBeNull();
+  });
+
+  it("loads the table, not the summary, on the Responses view", async () => {
+    flagOn(true);
+    const data = await call("view=results&version=1&show=responses");
+    expect(loadVersionResponses).toHaveBeenCalled();
+    expect(loadVersionSummary).not.toHaveBeenCalled();
+    expect(data.summary).toBeNull();
+  });
+
+  it("does not load the summary on the Questions view", async () => {
+    flagOn(true);
+    await call("");
+    expect(loadVersionSummary).not.toHaveBeenCalled();
+  });
+
+  it("keeps today's table while the flag is off", async () => {
+    flagOn(false);
+    const data = await call("view=results&version=1");
+    expect(loadVersionSummary).not.toHaveBeenCalled();
+    expect(loadVersionResponses).toHaveBeenCalled();
+    expect(data.summary).toBeNull();
+  });
+
+  it("sends a caller who cannot build the form away before loading anything", async () => {
+    flagOn(true);
+    vi.mocked(canBuildForm).mockResolvedValue(false);
+    vi.mocked(canSeeForm).mockResolvedValue(false);
+    await call("view=results&version=1");
+    expect(loadVersionSummary).not.toHaveBeenCalled();
   });
 });

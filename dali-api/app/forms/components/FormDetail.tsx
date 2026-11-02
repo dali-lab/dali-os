@@ -27,6 +27,8 @@ import { FormPreviewModal } from "~/forms/components/FormPreviewModal";
 import { ShareDialog } from "~/components/sharing/ShareDialog";
 import { FormSettingsButton } from "~/forms/components/FormSettings";
 import { VersionResults } from "~/forms/components/VersionResults";
+import { VersionSummary } from "~/forms/components/VersionSummary";
+import { useFeatureFlag } from "~/components/FeatureFlags";
 import { DocEditor } from "~/components/doc";
 import { PageIconPicker } from "~/components/doc-chrome/PageIconPicker";
 import { isEmptyBlocks } from "~/lib/blocks";
@@ -73,7 +75,7 @@ type FormVersion = ReturnType<
 //                         (save-version) and clears the draft. Frozen versions
 //                         are read-only and are what publishing serves.
 export function FormDetail() {
-  const { form, terms, usages, managing, hiringLinks: rawHiringLinks, collabToken, results, tracker, page } = useLoaderData<typeof loader>();
+  const { form, terms, usages, managing, hiringLinks: rawHiringLinks, collabToken, results, summary, tracker, page } = useLoaderData<typeof loader>();
   // The staffing slot binding, if any: {{term}} in this form's questions
   // resolves from it (see FormBuilderTab's termBinding).
   const staffingBinding = usages.find((u) => u.kind === "staffing") ?? null;
@@ -114,6 +116,8 @@ export function FormDetail() {
   // the loader can fetch that version's responses and links can deep-link.
   const [searchParams, setSearchParams] = useSearchParams();
   const view = searchParams.get("view") === "results" ? "results" : "questions";
+  const upgrades = useFeatureFlag("form-upgrades");
+  const showSummary = upgrades && searchParams.get("show") !== "responses";
 
   const [selectedVersionId, setSelectedVersionId] = useState<string | null>(
     () =>
@@ -530,7 +534,21 @@ export function FormDetail() {
             </Button>
           </div>
 
-          {view === "results" ? (
+          {view === "results" && showSummary ? (
+            summary && summary.versionId === selectedVersion.id ? (
+              <VersionSummary
+                key={selectedVersion.id}
+                formId={form.id}
+                versionNumber={selectedVersion.versionNumber}
+                data={summary}
+                tracker={tracker}
+              />
+            ) : (
+              <div className="py-12 flex justify-center">
+                <Loader2 className="w-5 h-5 animate-spin text-os-grey" />
+              </div>
+            )
+          ) : view === "results" ? (
             results && results.versionId === selectedVersion.id ? (
               <VersionResults
                 key={selectedVersion.id}

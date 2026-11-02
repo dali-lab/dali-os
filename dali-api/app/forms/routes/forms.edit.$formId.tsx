@@ -19,6 +19,7 @@ import {
 import { FormDetail } from "~/forms/components/FormDetail";
 import { parsePageParam } from "~/lib/pagination";
 import { loadVersionResponses } from "~/forms/lib/version-responses.server";
+import { loadVersionSummary } from "~/forms/lib/version-summary.server";
 import { driveRootCrumbs } from "~/lib/drive-crumbs";
 import { getCollabToken } from "~/lib/collab-token.server";
 import { deleteFormResponse } from "~/forms/lib/form-response.server";
@@ -129,7 +130,15 @@ export async function loader({ request, params }: Route.LoaderArgs) {
           (v) => String(v.versionNumber) === url.searchParams.get("version"),
         ) ?? form.versions[form.versions.length - 1])
       : undefined;
-  const results = resultsVersion
+  const summaryActive =
+    trackerOn && resultsVersion != null && url.searchParams.get("show") !== "responses";
+  const summary =
+    summaryActive && resultsVersion
+      ? await loadVersionSummary(form.id, resultsVersion, {
+          slot: url.searchParams.get("slot") ?? "",
+        })
+      : null;
+  const results = resultsVersion && !summaryActive
     ? await loadVersionResponses(form.id, resultsVersion.id, {
         page: parsePageParam(url.searchParams.get("page")),
         q: url.searchParams.get("q") ?? "",
@@ -141,6 +150,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   return {
     results,
+    summary,
     tracker,
     form,
     terms,
