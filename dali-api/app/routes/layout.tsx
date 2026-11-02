@@ -49,6 +49,9 @@ import { tabStripHintFromRequest, tabsSnapshotFromRequest } from '~/lib/desktop-
 import { SidePanelHost } from '~/components/side-panel/SidePanel'
 import type { Route } from './+types/layout'
 
+const isInstructorPath = (pathname: string) =>
+  pathname.startsWith('/education/manage') || pathname === '/education/offerings'
+
 export async function loader({ request }: Route.LoaderArgs) {
   const __loaderStart = performance.now()
   const auth = await timed(request, 'auth', () => requireAuth(request))
@@ -81,7 +84,11 @@ export async function loader({ request }: Route.LoaderArgs) {
     // without a second lookup — both loaders run concurrently for one nav.
     timed(request, 'shellUser', () => loadShellUser(auth.user.sub, request)),
   ])
-  if (nonMember) return (await publicDoc()) ?? redirect('/portal')
+  // External instructors manage their offerings inside this shell; the
+  // non-member gate below keeps them to those pages.
+  if (nonMember && !(roles.isInstructor && isInstructorPath(pathname))) {
+    return (await publicDoc()) ?? redirect('/portal')
+  }
 
   // TEMPORARY (remove ~1 week post-cutover): silently migrate a validated legacy
   // session to a BetterAuth session, then reload the same URL so the new cookie
@@ -120,10 +127,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     const url = new URL(request.url)
     const twin = educationPortalTwin(url.pathname)
     if (twin) return redirect(twin + url.search)
-    const instructorPaths =
-      url.pathname.startsWith('/education/manage') ||
-      url.pathname === '/education/offerings'
-    if (!instructorPaths) return (await publicDoc()) ?? redirect('/portal')
+    if (!isInstructorPath(url.pathname)) return (await publicDoc()) ?? redirect('/portal')
   }
 
   // Hard gates, resolved together since neither depends on the other:

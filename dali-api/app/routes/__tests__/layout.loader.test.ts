@@ -39,6 +39,8 @@ import { maybeUpgradeLegacyToBetterAuth } from "~/lib/betterauth-upgrade.server"
 import { getActiveCycles } from "~/hiring/lib/cycles";
 import { layoutAppGate, layoutFavorites, layoutFormGate, layoutRoles } from "~/lib/layout-reads.server";
 import { loadShellUser } from "~/lib/shell-user.server";
+import { resolveFeatureFlags } from "~/lib/feature-flags.server";
+import { resolveActiveActivitiesForUser } from "~/lib/activities.server";
 import { publicDocRedirectForPath } from "~/lib/public-doc.server";
 import { redirectToLogin } from "~/lib/login-next";
 import { loader } from "~/routes/layout";
@@ -138,6 +140,49 @@ describe("layout loader gate order", () => {
     const response = await run().result;
     expect(location(response)).toBe(`/sign/b1?next=${encodeURIComponent("/projects?view=grid")}`);
   });
+
+  describe("external instructors", () => {
+    beforeEach(() => {
+      vi.mocked(isNonMember).mockResolvedValue(true);
+      vi.mocked(layoutRoles).mockResolvedValue({ isLabMember: false, isInstructor: true } as never);
+      vi.mocked(loadShellUser).mockResolvedValue({ photoUrl: null, calendarLinks: [] } as never);
+      vi.mocked(resolveFeatureFlags).mockResolvedValue({} as never);
+      vi.mocked(resolveActiveActivitiesForUser).mockResolvedValue([] as never);
+    });
+
+    it.each(["/education/manage/o1", "/education/manage/assignments/a1", "/education/offerings"])(
+      "reach %s in the instructor chrome",
+      async (path) => {
+        const data = (await run(path).result) as unknown as { instructorChrome: boolean };
+        expect(data).not.toBeInstanceOf(Response);
+        expect(data.instructorChrome).toBe(true);
+      },
+    );
+
+    it("skip the member-only signing and form gates", async () => {
+      await run("/education/manage/o1").result;
+      expect(layoutAppGate).not.toHaveBeenCalled();
+      expect(layoutFormGate).not.toHaveBeenCalled();
+    });
+
+    it("go back to /portal from any other page", async () => {
+      expect(location(await run("/projects").result)).toBe("/portal");
+    });
+
+    it("are still sent to the partner portal if the account is a partner", async () => {
+      vi.mocked(redirectPartnerToPortal).mockResolvedValue(to("/partner") as never);
+      expect(location(await run("/education/manage/o1").result)).toBe("/partner");
+    });
+  });
+
+  it.each(["/education/manage/o1", "/education/offerings"])(
+    "keeps a non-member who isn't an instructor out of %s",
+    async (path) => {
+      vi.mocked(isNonMember).mockResolvedValue(true);
+      vi.mocked(layoutRoles).mockResolvedValue({ isLabMember: false, isInstructor: false } as never);
+      expect(location(await run(path).result)).toBe("/portal");
+    },
+  );
 
   it("propagates a failed shell read instead of redirecting", async () => {
     vi.mocked(isNonMember).mockResolvedValue(true);
