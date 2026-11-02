@@ -252,16 +252,20 @@ function SortableTab({
 function useBackgroundTabEmoji(tabs: DesktopTab[], activeId: string | null) {
   const asked = useRef(new Set<string>())
   useEffect(() => {
-    for (const tab of tabs) {
-      if (tab.id === activeId || tab.emoji || asked.current.has(tab.url)) continue
+    const wanted = tabs.flatMap((tab) => {
+      if (tab.id === activeId || tab.emoji || asked.current.has(tab.url)) return []
       const docId = sidePanelForUrl(tab.url)?.id
-      if (!docId) continue
-      asked.current.add(tab.url)
-      fetch(`/api/documents/${docId}`)
-        .then((res) => (res.ok ? res.json() : null))
-        .then((data: { iconEmoji?: string | null } | null) => tabActions.fillEmoji(tab.id, tab.url, data?.iconEmoji ?? null))
-        .catch(() => {})
-    }
+      return docId ? [{ tab, docId }] : []
+    })
+    if (wanted.length === 0) return
+    for (const { tab } of wanted) asked.current.add(tab.url)
+    const ids = [...new Set(wanted.map((w) => w.docId))]
+    fetch(`/api/documents/emojis?ids=${ids.join(',')}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: { emojis: Record<string, string | null> } | null) => {
+        for (const { tab, docId } of wanted) tabActions.fillEmoji(tab.id, tab.url, data?.emojis[docId] ?? null)
+      })
+      .catch(() => {})
   }, [tabs, activeId])
 }
 
