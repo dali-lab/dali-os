@@ -108,7 +108,7 @@ const COMPONENT_GROUPS: {
 
 const COMPONENTS = COMPONENT_GROUPS.flatMap((g) => g.items)
 
-// Types behind the form-question-types flag. They gate only what the builder
+// Types behind the form-upgrades flag. They gate only what the builder
 // offers; a question of one of these types already in a form always works.
 export const FLAGGED_TYPES: readonly QuestionType[] = ['radio', 'scale', 'date', 'number', 'email']
 const OPTION_TYPES: readonly QuestionType[] = ['select', 'radio', 'checkbox', 'skills_rating']
@@ -371,7 +371,7 @@ export function FormBuilderTab({
     }
   }
 
-  const newTypesEnabled = useFeatureFlag('form-question-types')
+  const newTypesEnabled = useFeatureFlag('form-upgrades')
   const typeOffered = (type: QuestionType) =>
     (type !== 'checkbox' || allowCheckbox || editForm.type === 'checkbox') &&
     (!FLAGGED_TYPES.includes(type) || newTypesEnabled || editForm.type === type)

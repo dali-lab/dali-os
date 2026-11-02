@@ -125,7 +125,7 @@ export function VersionResults({
   const slot = searchParams.get("slot") ?? "";
   const [query, setQuery] = useState(urlQuery);
   const [openId, setOpenId] = useState<string | null>(null);
-  const canDelete = useFeatureFlag("form-response-edit");
+  const canDelete = useFeatureFlag("form-upgrades");
 
   // Filters start over at the first page; every other param (view, version) stays.
   function updateParams(changes: Record<string, string>) {

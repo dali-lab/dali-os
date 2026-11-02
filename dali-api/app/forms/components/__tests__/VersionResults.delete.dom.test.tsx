@@ -59,7 +59,7 @@ async function open(flagOn: boolean, over: Record<string, unknown> = {}) {
         action: () => null,
         element: createElement(
           FeatureFlagsProvider,
-          { flags: { "form-response-edit": flagOn } },
+          { flags: { "form-upgrades": flagOn } },
           createElement(
             DialogProvider,
             null,

@@ -221,7 +221,7 @@ describe("forms.edit action delete-form-response", () => {
     expect(deleteFormResponse).not.toHaveBeenCalled();
   });
 
-  it("does nothing while the form-response-edit flag is off", async () => {
+  it("does nothing while the form-upgrades flag is off", async () => {
     vi.mocked(isFeatureEnabled).mockResolvedValue(false);
     expect((await del()).status).toBe(400);
     expect(deleteFormResponse).not.toHaveBeenCalled();
@@ -242,7 +242,7 @@ describe("forms.edit action delete-form-response", () => {
 
 describe("forms.edit tracker", () => {
   const flagOn = (on: boolean) =>
-    vi.mocked(isFeatureEnabled).mockImplementation(async (key) => (key === "form-tracker" ? on : false));
+    vi.mocked(isFeatureEnabled).mockImplementation(async (key) => (key === "form-upgrades" ? on : false));
   const resultsRequest = new Request("http://os.test/forms/edit/f1?view=results&version=1");
   const withVersion = () =>
     vi.mocked(loadFormForEdit).mockResolvedValue({
@@ -341,7 +341,7 @@ describe("forms.edit action send-form-reminder", () => {
     expect(sendFormReminder).not.toHaveBeenCalled();
   });
 
-  it("does nothing while the form-tracker flag is off", async () => {
+  it("does nothing while the form-upgrades flag is off", async () => {
     vi.mocked(isFeatureEnabled).mockResolvedValue(false);
     expect((await send()).status).toBe(400);
     expect(sendFormReminder).not.toHaveBeenCalled();

@@ -31,7 +31,7 @@ import {
 } from "~/forms/lib/form-tracker.server";
 
 async function trackerEnabled(userId: string, request: Request) {
-  return isFeatureEnabled("form-tracker", userId, await getUserRoles(userId, request), request);
+  return isFeatureEnabled("form-upgrades", userId, await getUserRoles(userId, request), request);
 }
 
 export const meta: Route.MetaFunction = ({ data }) => [
@@ -185,7 +185,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   if (intent === "delete-form-response") {
     const flagOn = await isFeatureEnabled(
-      "form-response-edit",
+      "form-upgrades",
       auth.user.sub,
       await getUserRoles(auth.user.sub, request),
       request,
