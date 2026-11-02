@@ -35,6 +35,7 @@ import {
   computeAvailableSlots,
   explainAvailableSlots,
   assignInterviewers,
+  freeUserIdsByInterview,
   reassignInterviewer,
 } from "~/hiring/lib/scheduling";
 import { zonedDayStartUtc } from "~/lib/timezone";
@@ -1294,6 +1295,67 @@ describe("reassignInterviewer", () => {
 });
 
 // ─── explainAvailableSlots ─────────────────────────────────────────────────────
+
+describe("freeUserIdsByInterview", () => {
+  const interview = {
+    id: "int1",
+    startTime: new Date("2027-01-04T15:00:00Z"),
+    endTime: new Date("2027-01-04T15:30:00Z"),
+  };
+  const rosterRow = (id: string, userId: string, domainId: string, booked?: [string, string]) => ({
+    id,
+    userId,
+    domainId,
+    interviewAssignments: booked
+      ? [{ interview: { startTime: new Date(booked[0]), endTime: new Date(booked[1]) } }]
+      : [],
+  });
+
+  beforeEach(() => {
+    mockPrisma.interviewConfig.findUnique.mockResolvedValue({ bufferMinutes: 15 });
+  });
+
+  it("leaves out anyone whose calendar is busy for the slot", async () => {
+    mockPrisma.cycleInterviewer.findMany.mockResolvedValue([rosterRow("a", "u1", "pm"), rosterRow("b", "u2", "pm")]);
+    setCalendarFree("u2", []);
+
+    const free = await freeUserIdsByInterview("cycle1", "interviews", [interview]);
+
+    expect(free.get("int1")).toEqual(["u1"]);
+  });
+
+  it("leaves out anyone on another interview inside the buffer", async () => {
+    mockPrisma.cycleInterviewer.findMany.mockResolvedValue([
+      rosterRow("a", "u1", "pm", ["2027-01-04T15:35:00Z", "2027-01-04T16:05:00Z"]),
+      rosterRow("b", "u2", "pm", ["2027-01-04T15:45:00Z", "2027-01-04T16:15:00Z"]),
+    ]);
+
+    const free = await freeUserIdsByInterview("cycle1", "interviews", [interview]);
+
+    expect(free.get("int1")).toEqual(["u2"]);
+  });
+
+  it("counts a booking on a member's other domain row, and lists them once", async () => {
+    mockPrisma.cycleInterviewer.findMany.mockResolvedValue([
+      rosterRow("a", "u1", "pm", ["2027-01-04T15:00:00Z", "2027-01-04T15:30:00Z"]),
+      rosterRow("b", "u1", "data"),
+      rosterRow("c", "u2", "pm"),
+      rosterRow("d", "u2", "data"),
+    ]);
+
+    const free = await freeUserIdsByInterview("cycle1", "interviews", [interview]);
+
+    expect(free.get("int1")).toEqual(["u2"]);
+  });
+
+  it("returns nothing when the round has no config", async () => {
+    mockPrisma.interviewConfig.findUnique.mockResolvedValue(null);
+
+    const free = await freeUserIdsByInterview("cycle1", "interviews", [interview]);
+
+    expect(free.size).toBe(0);
+  });
+});
 
 describe("explainAvailableSlots", () => {
   const oneDayConfig = {

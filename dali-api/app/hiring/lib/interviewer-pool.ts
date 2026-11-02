@@ -11,16 +11,22 @@ export function isSingleDomainPool(
 type PoolRow = { id: string; userId: string; domainId: string };
 
 /** Who a seat on an interview can be handed to: the scheduler's own pairing
- *  rule, minus anyone already sitting on the interview. */
+ *  rule, limited to members free at that time and not already on the interview. */
 export function reassignCandidates<T extends PoolRow>(
   interviewers: T[],
-  seat: { role: "InDomain" | "CrossDomain"; applicantDomainId: string; seatedUserIds: string[] },
+  seat: {
+    role: "InDomain" | "CrossDomain";
+    applicantDomainId: string;
+    seatedUserIds: string[];
+    freeUserIds: string[];
+  },
 ): T[] {
   const inDomain = (r: PoolRow) => r.domainId === seat.applicantDomainId;
   const singleDomain = isSingleDomainPool(interviewers, [seat.applicantDomainId]);
   return interviewers.filter(
     (r) =>
       !seat.seatedUserIds.includes(r.userId) &&
+      seat.freeUserIds.includes(r.userId) &&
       (seat.role === "InDomain" ? inDomain(r) : singleDomain || !inDomain(r)),
   );
 }

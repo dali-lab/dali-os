@@ -15,6 +15,31 @@ describe("isSingleDomainPool", () => {
 
 describe("reassignCandidates", () => {
   const ids = (rows: Array<{ id: string }>) => rows.map((r) => r.id);
+  const everyoneFree = (
+    pool: ReturnType<typeof row>[],
+    seat: Omit<Parameters<typeof reassignCandidates>[1], "freeUserIds">,
+  ) => reassignCandidates(pool, { ...seat, freeUserIds: pool.map((r) => r.userId) });
+
+  it("never offers someone who isn't free at that time", () => {
+    const pool = [row("eng1", "u1", "eng"), row("eng2", "u2", "eng"), row("eng3", "u3", "eng"), row("des1", "u4", "des")];
+    expect(
+      ids(
+        reassignCandidates(pool, {
+          role: "InDomain",
+          applicantDomainId: "eng",
+          seatedUserIds: ["u1", "u4"],
+          freeUserIds: ["u3"],
+        }),
+      ),
+    ).toEqual(["eng3"]);
+  });
+
+  it("offers nobody when nobody is free", () => {
+    const pool = [row("eng1", "u1", "eng"), row("eng2", "u2", "eng"), row("des1", "u3", "des")];
+    expect(
+      reassignCandidates(pool, { role: "InDomain", applicantDomainId: "eng", seatedUserIds: ["u1"], freeUserIds: [] }),
+    ).toEqual([]);
+  });
 
   describe("in a multi-domain cycle", () => {
     const pool = [
@@ -26,13 +51,13 @@ describe("reassignCandidates", () => {
 
     it("offers only the applicant's domain for the in-domain seat", () => {
       expect(
-        ids(reassignCandidates(pool, { role: "InDomain", applicantDomainId: "eng", seatedUserIds: ["u1", "u3"] })),
+        ids(everyoneFree(pool, { role: "InDomain", applicantDomainId: "eng", seatedUserIds: ["u1", "u3"] })),
       ).toEqual(["eng2"]);
     });
 
     it("offers only other domains for the cross-domain seat", () => {
       expect(
-        ids(reassignCandidates(pool, { role: "CrossDomain", applicantDomainId: "eng", seatedUserIds: ["u1", "u3"] })),
+        ids(everyoneFree(pool, { role: "CrossDomain", applicantDomainId: "eng", seatedUserIds: ["u1", "u3"] })),
       ).toEqual(["des2"]);
     });
   });
@@ -42,12 +67,12 @@ describe("reassignCandidates", () => {
 
     it("offers same-domain interviewers for the cross-domain seat, as the scheduler pairs them", () => {
       expect(
-        ids(reassignCandidates(pool, { role: "CrossDomain", applicantDomainId: "eb", seatedUserIds: ["u1", "u2"] })),
+        ids(everyoneFree(pool, { role: "CrossDomain", applicantDomainId: "eb", seatedUserIds: ["u1", "u2"] })),
       ).toEqual(["c", "d"]);
     });
 
     it("never offers someone already seated on the interview", () => {
-      const out = reassignCandidates(pool, { role: "InDomain", applicantDomainId: "eb", seatedUserIds: ["u1", "u2"] });
+      const out = everyoneFree(pool, { role: "InDomain", applicantDomainId: "eb", seatedUserIds: ["u1", "u2"] });
       expect(ids(out)).toEqual(["c", "d"]);
     });
   });
@@ -55,7 +80,7 @@ describe("reassignCandidates", () => {
   it("excludes a seated member's other domain row too", () => {
     const pool = [row("eng1", "u1", "eng"), row("des-u1", "u1", "des"), row("des2", "u2", "des")];
     expect(
-      ids(reassignCandidates(pool, { role: "CrossDomain", applicantDomainId: "eng", seatedUserIds: ["u1"] })),
+      ids(everyoneFree(pool, { role: "CrossDomain", applicantDomainId: "eng", seatedUserIds: ["u1"] })),
     ).toEqual(["des2"]);
   });
 });
