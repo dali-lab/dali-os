@@ -41,7 +41,9 @@ export function installPrefetchFallback(win: Window = window, supported = prefet
     for (const [k, entry] of warmed) if (!isFresh(entry)) warmed.delete(k);
     warmed.set(key, {
       at: Date.now(),
-      response: nativeFetch(href)
+      // Purpose, not Sec-Purpose: browsers drop Sec-* headers set from script,
+      // and without one isPrefetchRequest counts this warm as a page open.
+      response: nativeFetch(href, { headers: { Purpose: "prefetch" } })
         .then(async (res) => {
           // Drain a copy so an unused response doesn't hold a connection open.
           await res.clone().arrayBuffer();

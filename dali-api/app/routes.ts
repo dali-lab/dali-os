@@ -702,6 +702,7 @@ export default [
   ),
   // Lab-wide documents (collab Pages scoped to the Lab workspace)
   route("api/lab-documents", "routes/api.lab-documents.ts"),
+  route("api/documents/emojis", "projects/routes/api.documents.emojis.ts"),
   route("api/documents/:id", "projects/routes/api.documents.$id.ts"),
   route("api/documents/:pageId/panel", "routes/api.documents.$pageId.panel.ts"),
   route("api/notebooks", "routes/api.notebooks.ts"),
