@@ -3,7 +3,7 @@ import { describe, it, expect, afterEach } from "vitest";
 import { createElement, act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { createRoutesStub, useParams } from "react-router";
-import { OfferingCatalog, type CatalogOffering } from "./OfferingCatalog";
+import { OfferingCatalog, runsValue, type CatalogOffering } from "./OfferingCatalog";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -100,12 +100,47 @@ function openedOfferingId(): string | null {
   );
 }
 
-afterEach(() => {
-  act(() => root.unmount());
-  container.remove();
+describe("runsValue", () => {
+  const tz = "America/New_York";
+
+  it("shows one date for an offering that runs within a single day", () => {
+    expect(
+      runsValue(
+        {
+          startsAt: new Date("2026-11-04T23:30:00.000Z"),
+          endsAt: new Date("2026-11-05T01:00:00.000Z"),
+        },
+        tz,
+      ),
+    ).toBe("Nov 4, 2026");
+  });
+
+  it("shows a range for an offering that spans days", () => {
+    expect(
+      runsValue(
+        {
+          startsAt: new Date("2026-11-04T23:30:00.000Z"),
+          endsAt: new Date("2026-11-12T01:00:00.000Z"),
+        },
+        tz,
+      ),
+    ).toBe("Nov 4, 2026 – Nov 11, 2026");
+  });
+
+  it("says the dates are TBD until both are set", () => {
+    expect(runsValue({ startsAt: null, endsAt: null }, tz)).toBe("Dates TBD");
+    expect(
+      runsValue({ startsAt: new Date("2026-11-04T23:30:00.000Z"), endsAt: null }, tz),
+    ).toBe("Dates TBD");
+  });
 });
 
 describe("OfferingCatalog selection", () => {
+  afterEach(() => {
+    act(() => root.unmount());
+    container.remove();
+  });
+
   // Clicking a card used to open a side pane beside the grid. It now leaves the
   // catalog for the offering's own student detail route.
   it("navigates to the clicked offering's detail page", () => {
