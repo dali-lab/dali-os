@@ -17,10 +17,10 @@ import {
   currentTerm,
   currentTermMemberWhere,
   getUserRoleInstances,
-  getUserRoles,
   resolveRoleRef,
   type RoleInstance,
 } from "~/lib/roles";
+import { readOnlyRoles } from "~/lib/read-only-roles.server";
 import type { ScopeType } from "~/generated/prisma/client";
 import { resolveTermFilter } from "~/lib/terms";
 import {
@@ -1630,7 +1630,7 @@ export async function loadCalendarData(
   // Same gate as Forms: Core, Admin, or Instructor.
   const canSetSelfCheckInP = canViewForms(userId, request);
   const canMarkCoreMeetingP = isCore(userId, request);
-  const rolesP = getUserRoles(userId, request);
+  const rolesP = readOnlyRoles(userId, request);
   // Current+upcoming term ids for the class modal's term selector, and the
   // member's classes in those terms.
   const termFilterP = resolveTermFilter(request, { default: "upcoming" }).then(async (tf) => {
