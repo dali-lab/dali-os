@@ -131,6 +131,7 @@ describe("submitMemberForm one-response gate", () => {
       id: "cyc-1",
       termId: "term-1",
       maxPreferencesPerMember: 3,
+      term: { code: "26F" },
     },
   };
 
@@ -178,6 +179,7 @@ describe("submitMemberForm one-response gate", () => {
               id: "cyc-2",
               termId: "term-2",
               maxPreferencesPerMember: 3,
+              term: { code: "27W" },
             },
           },
         ],
