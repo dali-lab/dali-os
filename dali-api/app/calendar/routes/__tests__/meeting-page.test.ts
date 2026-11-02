@@ -369,3 +369,70 @@ describe("meeting page — attendance tracking from iPad", () => {
     expect((await toggle("start-ipad-scan")).status).toBe(409);
   });
 });
+
+describe("meeting page — access gate", () => {
+  const status = async () => {
+    const err = await load().catch((e) => e);
+    return err instanceof Response ? err.status : "returned";
+  };
+
+  beforeEach(() => {
+    vi.mocked(getActiveDisplayScan).mockResolvedValue(null);
+  });
+
+  it("404s a missing meeting", async () => {
+    mockAuth.mockResolvedValue({ ok: true, user: { sub: "organizer-1", type: "member" } });
+    mockPrisma.scheduledMeeting.findUnique.mockResolvedValue(null);
+    expect(await status()).toBe(404);
+    expect(mockPrisma.meetingAttendance.findMany).not.toHaveBeenCalled();
+  });
+
+  it("404s a cancelled meeting", async () => {
+    mockAuth.mockResolvedValue({ ok: true, user: { sub: "organizer-1", type: "member" } });
+    mockPrisma.scheduledMeeting.findUnique.mockResolvedValue(meeting({ status: "Cancelled" }));
+    expect(await status()).toBe(404);
+  });
+
+  it("404s a lab member who is not invited, does not manage it, and it is not lab-wide", async () => {
+    mockAuth.mockResolvedValue({ ok: true, user: { sub: "stranger-1", type: "member" } });
+    expect(await status()).toBe(404);
+  });
+
+  it("opens a lab-wide meeting read-only to any lab member", async () => {
+    mockAuth.mockResolvedValue({ ok: true, user: { sub: "stranger-1", type: "member" } });
+    mockPrisma.scheduledMeeting.findUnique.mockResolvedValue(meeting({ scopeType: "None", projectId: null }));
+    const d = (await load()) as unknown as { canManage: boolean };
+    expect(d.canManage).toBe(false);
+  });
+
+  it("lets a project member in and manage, checking membership with the request", async () => {
+    mockAuth.mockResolvedValue({ ok: true, user: { sub: "stranger-1", type: "member" } });
+    mockIsProjectMember.mockResolvedValue(true);
+    const d = (await load()) as unknown as { canManage: boolean };
+    expect(d.canManage).toBe(true);
+    expect(mockIsProjectMember).toHaveBeenCalledWith("stranger-1", "p1", expect.any(Request));
+    expect(mockPrisma.meetingTimeProposal.findMany).toHaveBeenCalled();
+  });
+
+  it("does not read proposals or the door-display scan for a plain invitee", async () => {
+    mockAuth.mockResolvedValue({ ok: true, user: { sub: "member-1", type: "member" } });
+    await load();
+    expect(mockPrisma.meetingTimeProposal.findMany).not.toHaveBeenCalled();
+    expect(getActiveDisplayScan).not.toHaveBeenCalled();
+  });
+
+  it("passes the request to getUserRoles", async () => {
+    mockAuth.mockResolvedValue({ ok: true, user: { sub: "member-1", type: "member" } });
+    await load();
+    expect(mockRoles).toHaveBeenCalledWith("member-1", expect.any(Request));
+  });
+
+  it("names whoever is recording right now", async () => {
+    mockAuth.mockResolvedValue({ ok: true, user: { sub: "member-1", type: "member" } });
+    mockPrisma.meetingRecording.findMany.mockResolvedValue([{ id: "rec1", userId: "u9", status: "Recording" }]);
+    mockPrisma.user.findUnique.mockResolvedValue({ firstName: "Ada", lastName: "Lovelace", daliEmail: null });
+    const d = (await load()) as unknown as { liveRecordingName: string | null; activeRecording: { id: string } | null };
+    expect(d.liveRecordingName).toBe("Ada Lovelace");
+    expect(d.activeRecording).toEqual({ id: "rec1", userId: "u9" });
+  });
+});

@@ -73,4 +73,48 @@ describe("interviewerCalendars", () => {
     await interviewerCalendars([user], config);
     expect(computeUserFreeBusy).toHaveBeenCalledTimes(1);
   });
+
+  it("reads only the calendars it doesn't already hold", async () => {
+    const [held, fresh] = [`u${n}a`, `u${n}b`];
+    vi.mocked(computeUserFreeBusy).mockResolvedValue(freeBusy([], true));
+    await interviewerCalendars([held], config);
+    vi.mocked(computeUserFreeBusy).mockClear();
+    await interviewerCalendars([held, fresh], config);
+    expect(computeUserFreeBusy).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(computeUserFreeBusy).mock.calls[0][0]).toBe(fresh);
+  });
+
+  it("reads a calendar again once it is over two minutes old", async () => {
+    const user = `u${n}`;
+    vi.mocked(computeUserFreeBusy).mockResolvedValue(freeBusy([], true));
+    await interviewerCalendars([user], config);
+    const clock = vi.spyOn(Date, "now").mockReturnValue(Date.now() + 120_001);
+    await interviewerCalendars([user], config);
+    clock.mockRestore();
+    expect(computeUserFreeBusy).toHaveBeenCalledTimes(2);
+  });
+
+  it("reads at most six calendars at once", async () => {
+    let running = 0;
+    let peak = 0;
+    vi.mocked(computeUserFreeBusy).mockImplementation(async () => {
+      running += 1;
+      peak = Math.max(peak, running);
+      await new Promise((r) => setTimeout(r, 1));
+      running -= 1;
+      return freeBusy([], true);
+    });
+    const users = Array.from({ length: 20 }, (_, i) => `u${n}-${i}`);
+    const calendars = await interviewerCalendars(users, config);
+    expect(calendars.size).toBe(20);
+    expect(peak).toBe(6);
+  });
+
+  it("reads again after a failed read", async () => {
+    const user = `u${n}`;
+    vi.mocked(computeUserFreeBusy).mockRejectedValueOnce(new Error("google down"));
+    await expect(interviewerCalendars([user], config)).rejects.toThrow("google down");
+    vi.mocked(computeUserFreeBusy).mockResolvedValue(freeBusy([], true));
+    await expect(interviewerCalendars([user], config)).resolves.toBeInstanceOf(Map);
+  });
 });

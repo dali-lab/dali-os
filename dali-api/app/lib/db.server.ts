@@ -1,7 +1,7 @@
 import { Pool } from "pg";
 import { PrismaClient } from "../generated/prisma/client.js";
 import { PrismaPg } from "@prisma/adapter-pg";
-import { runDbOperationHooks } from "~/lib/db-write-hooks";
+import { deferHooksInTransactions, runOrDeferDbOperationHooks } from "~/lib/db-transaction-hooks";
 import { poolConfig, watchPoolWaits } from "~/lib/db-pool";
 
 // Re-export the Prisma namespace through this module so callers can reach
@@ -24,13 +24,13 @@ function createPrismaClient(): PrismaClient {
       $allModels: {
         async $allOperations({ model, operation, args, query }) {
           const result = await query(args);
-          runDbOperationHooks(model, operation);
+          runOrDeferDbOperationHooks(model, operation);
           return result;
         },
       },
     },
   });
-  return client as unknown as PrismaClient;
+  return deferHooksInTransactions(client) as unknown as PrismaClient;
 }
 
 export const prisma = globalForPrisma.prisma ?? createPrismaClient();

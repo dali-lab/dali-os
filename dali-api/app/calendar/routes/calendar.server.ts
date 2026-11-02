@@ -17,7 +17,6 @@ import {
   currentTerm,
   currentTermMemberWhere,
   getUserRoleInstances,
-  getUserRoles,
   resolveRoleRef,
   type RoleInstance,
 } from "~/lib/roles";
@@ -1491,6 +1490,74 @@ export async function loadParticipantOptions(
   return { groups, users: [...users, ...extraGroupMembers], mentorPairs };
 }
 
+function calendarWindows(request: Request, timezone: string) {
+  const url = new URL(request.url);
+  // `?anchor=` is the unified screen's date param; `?weekStart=` is the legacy
+  // week-nav param (still honored). Either anchors the visible range. It is
+  // built at noon UTC of the requested calendar date so getZonedYMD resolves to
+  // the intended local Y/M/D in any supported timezone.
+  const anchorParam = url.searchParams.get("anchor") ?? url.searchParams.get("weekStart");
+  let anchor: Date | undefined;
+  if (anchorParam) {
+    const ymdMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(anchorParam);
+    if (ymdMatch) {
+      const y = Number(ymdMatch[1]);
+      const m = Number(ymdMatch[2]);
+      const d = Number(ymdMatch[3]);
+      anchor = new Date(Date.UTC(y, m - 1, d, 12, 0, 0));
+    } else {
+      const parsed = new Date(anchorParam);
+      if (!isNaN(parsed.getTime())) anchor = parsed;
+    }
+  }
+  const view = parseView(url.searchParams.get("view"));
+  // The containing week (back-compat: weekStartIso + the timesheet lower bound).
+  const { start: weekStart, end: weekEnd } = weekWindow(timezone, anchor);
+  // The range the unified screen actually shows: the week in week view, wider
+  // in month view, one day in day view.
+  const { start: rangeStart, end: rangeEnd } = viewWindow(timezone, view, anchor);
+  // Fetch wide, display narrow. Blocks outside the visible days are dropped by
+  // placeBlock, so over-fetching is free on the client and saves a round-trip
+  // on every view switch.
+  const { start: fetchStart, end: fetchEnd } = fetchWindow(timezone, anchor);
+  return { view, weekStart, weekEnd, rangeStart, rangeEnd, fetchStart, fetchEnd };
+}
+
+// Rolling window of ~8 weeks either side of the visible week, so the timesheet
+// prefill form has recent entries to copy from and a month view has headroom.
+// Bounded at BOTH ends on purpose: with only a lower bound, `date desc` + take
+// 200 always returns the most recent 200 entries overall, so navigating back to
+// an earlier week drew nothing and made past logged hours look lost.
+function timeEntryQueryFor(userId: string, weekStart: Date, weekEnd: Date) {
+  return {
+    where: {
+      userId,
+      date: {
+        gte: new Date(weekStart.getTime() - 8 * 7 * 86_400_000),
+        lte: new Date(weekEnd.getTime() + 8 * 7 * 86_400_000),
+      },
+    },
+    orderBy: { date: "desc" },
+    take: 200,
+    select: {
+      id: true,
+      source: true,
+      scheduledMeetingId: true,
+      sourceEventId: true,
+      assignmentType: true,
+      roleRefId: true,
+      projectId: true,
+      date: true,
+      hours: true,
+      note: true,
+      startTime: true,
+      endTime: true,
+      occurrenceStart: true,
+      meeting: { select: { notePages: { select: { id: true, meetingOccurrenceStart: true } } } },
+    },
+  } as const;
+}
+
 /**
  * @param opts.portal true when this is the /portal/calendar mount — the same
  *   calendar, read for a non-member (a Dartmouth student, or an external
@@ -1516,229 +1583,182 @@ export async function loadCalendarData(
 
   // Keyed on the DALIMember row rather than the auth type, the same way the
   // member shell decides who it is for: a non-member instructor authenticates
-  // as a "member" account and still belongs on the portal copy.
-  // Resolve the current term once and reuse it everywhere in this loader so
-  // the per-request cache in roles.ts eliminates redundant DB reads.
-  const [labMember, term] = await Promise.all([isLabMember(userId, request), currentTerm(request)]);
-  if (opts.portal && labMember) return redirect("/calendar");
-  const termId = term?.id;
+  // as a "member" account and still belongs on the portal copy. On the portal
+  // mount nothing else starts until this answers, so a redirected member never
+  // triggers the Google token reads below.
+  const labMemberP = isLabMember(userId, request);
+  if (opts.portal && (await labMemberP)) return redirect("/calendar");
 
-  const [
-    settings,
-    userRow,
-    whRows,
-    links,
-    myRoles,
-    canSetSelfCheckIn,
-    canMarkCoreMeeting,
-  ] = await Promise.all([
-      prisma.userAvailabilitySettings.findUnique({
-        where: { userId },
-        select: {
-          defaultEventBufferMin: true,
-          timesheetGoogleSync: true,
-          timesheetCalendarId: true,
-        },
-      }),
-      prisma.user.findUnique({ where: { id: userId }, select: { timeZone: true, calendarDataChangedAt: true } }),
-      prisma.workingHoursDay.findMany({
-        where: { userId },
-        select: {
-          id: true,
-          dayOfWeek: true,
-          startMinute: true,
-          endMinute: true,
-          location: true,
-          enabled: true,
-        },
-      }),
-      prisma.userCalendarLink.findMany({
-        where: { userId },
-        orderBy: { linkedAt: "asc" },
-      }),
-      getUserRoleInstances(userId, termId, request),
-      // Same gate as Forms: Core, Admin, or Instructor.
-      canViewForms(userId, request),
-      isCore(userId, request),
-    ]);
+  // Every read starts here, before any Google call, so the Postgres round-trips
+  // overlap each other and the Google chain instead of queuing behind it.
+  // Prisma queries are lazy, so Promise.resolve is what actually starts them.
+  const termP = currentTerm(request);
+  const settingsP = Promise.resolve(
+    prisma.userAvailabilitySettings.findUnique({
+      where: { userId },
+      select: {
+        defaultEventBufferMin: true,
+        timesheetGoogleSync: true,
+        timesheetCalendarId: true,
+      },
+    }),
+  );
+  const userRowP = Promise.resolve(
+    prisma.user.findUnique({ where: { id: userId }, select: { timeZone: true, calendarDataChangedAt: true } }),
+  );
+  const whRowsP = Promise.resolve(
+    prisma.workingHoursDay.findMany({
+      where: { userId },
+      select: {
+        id: true,
+        dayOfWeek: true,
+        startMinute: true,
+        endMinute: true,
+        location: true,
+        enabled: true,
+      },
+    }),
+  );
+  const linksP = Promise.resolve(
+    prisma.userCalendarLink.findMany({
+      where: { userId },
+      orderBy: { linkedAt: "asc" },
+    }),
+  );
+  const myRolesP = termP.then((term) => getUserRoleInstances(userId, term?.id, request));
+  // Same gate as Forms: Core, Admin, or Instructor.
+  const canSetSelfCheckInP = canViewForms(userId, request);
+  const canMarkCoreMeetingP = isCore(userId, request);
+  // Current+upcoming term ids for the class modal's term selector, and the
+  // member's classes in those terms.
+  const termFilterP = resolveTermFilter(request, { default: "upcoming" }).then(async (tf) => {
+    const termIds = tf.termIds ?? [];
+    const classRows = termIds.length
+      ? await prisma.memberClass.findMany({
+          where: { userId, termId: { in: termIds } },
+          orderBy: { createdAt: "asc" },
+        })
+      : [];
+    return { ...tf, termIds, classRows };
+  });
 
   // The whole calendar renders in the user's display zone (User.timeZone) —
   // the single source of truth shared with the rest of the app. Working hours
   // are stored as wall-clock minutes and drawn literally, so they follow it.
-  const timezone = resolveUserTimeZone(userRow);
-  const bufferMin = settings?.defaultEventBufferMin ?? DEFAULT_BUFFER_MIN;
-  // The dedicated DALI Timesheet Google calendar (when the mirror is enabled).
-  // Filtered out of both the linked-calendar list and the external event read
-  // below — DALI represents those hours in its own logged-time layer.
-  const timesheetCalendarId = settings?.timesheetCalendarId ?? null;
+  const windowsP = userRowP.then((userRow) => calendarWindows(request, resolveUserTimeZone(userRow)));
+  const timeEntryRowsP = windowsP.then(({ weekStart, weekEnd }) =>
+    prisma.timeEntry.findMany(timeEntryQueryFor(userId, weekStart, weekEnd)),
+  );
 
-  // Group persisted rows by day-of-week (multiple segments allowed per day).
-  const { workingHours, hasPersisted: hasAnyPersisted } = assembleWorkingHours(whRows);
-
-  // Optional ?weekStart=YYYY-MM-DD URL param lets the user navigate weeks.
-  // We use it as an anchor inside weekWindow(), which still snaps to that
-  // date's Sunday — so any in-week date works. The anchor is built at noon
-  // UTC of the requested calendar date so getZonedYMD resolves to the intended
-  // local Y/M/D in any of the timezones we support (i.e. not split across
-  // midnight on either side).
-  const url = new URL(request.url);
-  // `?anchor=` is the unified screen's date param; `?weekStart=` is the legacy
-  // week-nav param (still honored). Either anchors the visible range.
-  const anchorParam = url.searchParams.get("anchor") ?? url.searchParams.get("weekStart");
-  let anchor: Date | undefined;
-  if (anchorParam) {
-    const ymdMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(anchorParam);
-    if (ymdMatch) {
-      const y = Number(ymdMatch[1]);
-      const m = Number(ymdMatch[2]);
-      const d = Number(ymdMatch[3]);
-      anchor = new Date(Date.UTC(y, m - 1, d, 12, 0, 0));
-    } else {
-      const parsed = new Date(anchorParam);
-      if (!isNaN(parsed.getTime())) anchor = parsed;
-    }
-  }
-  const view = parseView(url.searchParams.get("view"));
-  // The containing week (back-compat: weekStartIso + the timesheet lower bound).
-  const { start: weekStart, end: weekEnd } = weekWindow(timezone, anchor);
-  // The range the unified screen actually shows — equal to the week window in
-  // week view, wider in month view, one day in day view. Drives the event +
-  // meeting fetch so month view has a month of data.
-  const { start: rangeStart, end: rangeEnd } = viewWindow(timezone, view, anchor);
-  // Fetch wide, display narrow. Blocks outside the visible days are dropped by
-  // placeBlock, so over-fetching is free on the client and saves a round-trip
-  // on every view switch.
-  const { start: fetchStart, end: fetchEnd } = fetchWindow(timezone, anchor);
-
-  // Rolling window for time entries: ~8 weeks either side of the visible week,
-  // so the timesheet prefill form has ample recent entries to copy from and a
-  // month view has headroom past the week's end.
-  //
-  // The window is bounded at BOTH ends on purpose. With only a lower bound, the
-  // `date desc` + take-200 below always returns the most recent 200 entries
-  // overall — so navigating back to an earlier week loaded today's entries and
-  // drew nothing on the grid, making past logged hours look lost.
-  const timeEntryLowerBound = new Date(weekStart.getTime() - 8 * 7 * 86_400_000);
-  const timeEntryUpperBound = new Date(weekEnd.getTime() + 8 * 7 * 86_400_000);
-
-  // Needs weekStart/weekEnd for the date window, so it can't join the earlier
-  // Promise.all; it runs alongside the Google read below instead.
-  const timeEntryQuery = {
-      where: {
-        userId,
-        date: { gte: timeEntryLowerBound, lte: timeEntryUpperBound },
-      },
-      orderBy: { date: "desc" },
-      take: 200,
-      select: {
-        id: true,
-        source: true,
-        scheduledMeetingId: true,
-        sourceEventId: true,
-        assignmentType: true,
-        roleRefId: true,
-        projectId: true,
-        date: true,
-        hours: true,
-        note: true,
-        startTime: true,
-        endTime: true,
-        occurrenceStart: true,
-        meeting: { select: { notePages: { select: { id: true, meetingOccurrenceStart: true } } } },
-      },
-    } as const;
-
-  // Fetch external busy + sub-calendar lists in parallel. Don't fail the page
-  // if a single link errors — surface the error on the link card.
-  //
-  // Dedup: each Google link's calendar list (used for both color tinting in
-  // fetchCalendarEvents and for the SubCalendar UI) is fetched ONCE per link and
-  // the result is threaded into both consumers, eliminating a second HTTP hit
-  // per Google account.
-  //
-  // Step 1: fetch one valid token per Google link (one DB read each, with
-  // optional refresh), then use each token to fetch the calendar list. Both
-  // results are shared with fetchCalendarEvents so the full request makes exactly
-  // one token read and one calendarList HTTP call per linked Google account.
   // An admin impersonating this member sees the lab-native layers (meetings,
   // attendance, logged time) but none of their Google calendar: no event bodies,
   // and no access token minted against their Google account at all.
   const hideGoogle = isImpersonating(auth);
-  const googleLinks = hideGoogle ? [] : links.filter((l) => l.provider === "Google");
-  const prefetchedTokens = new Map<string, string>();
-  const calendarListResults = await Promise.all(
-    googleLinks.map(async (l) => {
-      try {
-        const token = await getValidAccessTokenForLink(l.id);
-        prefetchedTokens.set(l.id, token);
-        const items = await fetchCachedCalendarList(userId, l.id, token, userRow?.calendarDataChangedAt);
-        return { linkId: l.id, items } as const;
-      } catch {
-        return { linkId: l.id, items: undefined } as const;
-      }
-    }),
-  );
-  // Map of linkId → list (undefined if fetch failed); passed to
-  // fetchCalendarEvents so it skips re-fetching the list per link.
-  const prefetchedCalendarLists = new Map(
-    calendarListResults.map(({ linkId, items }) => [linkId, items]),
+  let ingestionError: string | null = null;
+  const googleP = Promise.all([linksP, userRowP, settingsP, windowsP]).then(
+    async ([links, userRow, settings, { fetchStart, fetchEnd }]) => {
+      const timesheetCalendarId = settings?.timesheetCalendarId ?? null;
+      // Each Google link's calendar list (color tinting in fetchCalendarEvents
+      // and the SubCalendar UI) is fetched ONCE per link and shared by both
+      // consumers: one token read and one calendarList call per account.
+      const googleLinks = hideGoogle ? [] : links.filter((l) => l.provider === "Google");
+      const prefetchedTokens = new Map<string, string>();
+      const calendarListResults = await Promise.all(
+        googleLinks.map(async (l) => {
+          try {
+            const token = await getValidAccessTokenForLink(l.id);
+            prefetchedTokens.set(l.id, token);
+            const items = await fetchCachedCalendarList(userId, l.id, token, userRow?.calendarDataChangedAt);
+            return { linkId: l.id, items } as const;
+          } catch {
+            return { linkId: l.id, items: undefined } as const;
+          }
+        }),
+      );
+      // linkId → list (undefined if the fetch failed).
+      const prefetchedCalendarLists = new Map(
+        calendarListResults.map(({ linkId, items }) => [linkId, items]),
+      );
+      const externalCacheKey = `${userId}:${fetchStart.getTime()}:${fetchEnd.getTime()}`;
+      const [externalRaw, calendarLinks] = await Promise.all([
+        // Read every calendar on each account ("all"), not just the ones counting
+        // toward availability: the grid's per-calendar Show toggle filters this
+        // client-side, so a calendar missing here can never be shown.
+        hideGoogle
+          ? Promise.resolve<CalendarEvent[]>([])
+          : cachedExternalRead<CalendarEvent[]>(externalCacheKey, () =>
+              fetchCalendarEvents(userId, fetchStart, fetchEnd, prefetchedCalendarLists, prefetchedTokens, "all"),
+              userRow?.calendarDataChangedAt,
+            ).catch((err): CalendarEvent[] => {
+              ingestionError = err instanceof Error ? err.message : "Failed to fetch external events";
+              return [];
+            }),
+        Promise.all(
+          links.map((l) => buildCalendarLinkDTO(l, prefetchedCalendarLists, timesheetCalendarId)),
+        ),
+      ]);
+      return { externalRaw, calendarLinks, timesheetCalendarId };
+    },
   );
 
-  let ingestionError: string | null = null;
-  const externalCacheKey = `${userId}:${fetchStart.getTime()}:${fetchEnd.getTime()}`;
-  // Every Postgres read that doesn't depend on the Google result rides in the
-  // same Promise.all as the Google read, so the slow round-trip hides them.
-  const [externalRaw, calendarLinks, roles, timeEntryRows, termFilter] = await Promise.all([
-    // Read every calendar on each account ("all"), not just the ones counting
-    // toward availability: the grid's per-calendar Show toggle filters this
-    // client-side, so a calendar missing here can never be shown.
-    hideGoogle
-      ? Promise.resolve<CalendarEvent[]>([])
-      : cachedExternalRead<CalendarEvent[]>(externalCacheKey, () =>
-          fetchCalendarEvents(userId, fetchStart, fetchEnd, prefetchedCalendarLists, prefetchedTokens, "all"),
-          userRow?.calendarDataChangedAt,
-        ).catch((err): CalendarEvent[] => {
-          ingestionError = err instanceof Error ? err.message : "Failed to fetch external events";
-          return [];
-        }),
-    Promise.all(
-      links.map((l) => buildCalendarLinkDTO(l, prefetchedCalendarLists, timesheetCalendarId)),
-    ),
-    getUserRoles(userId, request),
-    prisma.timeEntry.findMany(timeEntryQuery),
-    // Current+upcoming term ids for the class modal's term selector, and the
-    // member's classes in those terms.
-    resolveTermFilter(request, { default: "upcoming" }).then(async (tf) => {
-      const termIds = tf.termIds ?? [];
-      const classRows = termIds.length
-        ? await prisma.memberClass.findMany({
-            where: { userId, termId: { in: termIds } },
-            orderBy: { createdAt: "asc" },
-          })
-        : [];
-      return { ...tf, termIds, classRows };
-    }),
+  // Events from the DALI Timesheet mirror calendar are dropped — the
+  // logged-time layer already shows those hours, so keeping them would double
+  // every work block. One meetings query for the whole window, not one per event.
+  const externalP = Promise.all([googleP, canMarkCoreMeetingP, labMemberP]).then(
+    async ([{ externalRaw, timesheetCalendarId }, canMarkCoreMeeting, labMember]) => {
+      const crudEvents = externalRaw.filter(
+        (e) => !timesheetCalendarId || e.calendarId !== timesheetCalendarId,
+      );
+      const eventMeetings = await meetingsForExternalEvents(
+        crudEvents,
+        userId,
+        canMarkCoreMeeting,
+        labMember,
+      );
+      return { crudEvents, eventMeetings };
+    },
+  );
+
+  const [
+    labMember,
+    term,
+    settings,
+    whRows,
+    myRoles,
+    canSetSelfCheckIn,
+    canMarkCoreMeeting,
+    termFilter,
+    timeEntryRows,
+    { weekStart, weekEnd, rangeStart, rangeEnd, view },
+    { calendarLinks },
+    { crudEvents, eventMeetings },
+  ] = await Promise.all([
+    labMemberP,
+    termP,
+    settingsP,
+    whRowsP,
+    myRolesP,
+    canSetSelfCheckInP,
+    canMarkCoreMeetingP,
+    termFilterP,
+    timeEntryRowsP,
+    windowsP,
+    googleP,
+    externalP,
   ]);
+  const userRow = await userRowP;
+  const timezone = resolveUserTimeZone(userRow);
+  const bufferMin = settings?.defaultEventBufferMin ?? DEFAULT_BUFFER_MIN;
+
+  // Group persisted rows by day-of-week (multiple segments allowed per day).
+  const { workingHours, hasPersisted: hasAnyPersisted } = assembleWorkingHours(whRows);
 
   // Derived from the calendar lists already fetched above — no extra Google
   // round-trip.
   const generalCalendar = generalCalendarState(calendarLinks);
 
   // Map the external read to display DTOs, with edit identity
-  // (eventId/linkId/writable/allDay). Events from the DALI Timesheet mirror
-  // calendar are dropped — the logged-time layer already shows those hours, so
-  // keeping them would double every work block.
-  const crudEvents = externalRaw.filter(
-    (e) => !timesheetCalendarId || e.calendarId !== timesheetCalendarId,
-  );
-  // One query for the whole window, not one per event.
-  const eventMeetings = await meetingsForExternalEvents(
-    crudEvents,
-    userId,
-    canMarkCoreMeeting,
-    roles.isLabMember,
-  );
-
+  // (eventId/linkId/writable/allDay).
   const externalEvents: ExternalEventDTO[] = crudEvents.map((e) => ({
     startIso: e.startIso,
     endIso: e.endIso,
@@ -1765,7 +1785,7 @@ export async function loadCalendarData(
       Boolean(e.eventId) &&
       !eventMeetings.has(e.eventId) &&
       ((canMarkCoreMeeting && isGeneralCalendarEvent(e.calendarId)) ||
-        (roles.isLabMember && viewerOnEvent(e))),
+        (labMember && viewerOnEvent(e))),
   }));
 
   // Classes: load all current+upcoming terms for the modal picker.
