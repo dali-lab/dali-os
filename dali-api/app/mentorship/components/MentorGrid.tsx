@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, useNavigate } from "react-router";
+
 import { Plus, Send, Trash2 } from "lucide-react";
 import { Avatar } from "~/components/ui/Avatar";
 import { Select, Tooltip } from "~/components/ui/floating";
@@ -14,6 +14,7 @@ import type {
 } from "../lib/mentor-grid.server";
 import { domainTermForms, type TermForms, type TermFormSlot } from "../lib/term-forms";
 import { TermFormStatus } from "./TermFormStatus";
+import { MentorNoteOverlay } from "./MentorNoteOverlay";
 
 // Core-only inline editing (behind the mentorship-manage flag). When present,
 // each mentee row gains a reassign picker + a remove button. Left undefined for
@@ -75,6 +76,8 @@ export function MentorGrid({
       return slot?.form ? [{ domainId, domainCode, form: slot.form, responses: slot.responses }] : [];
     });
   const { panel, panelPad, heading: headingClass } = useOsChrome();
+  // The note open in the overlay; the grid stays mounted behind it.
+  const [openNoteId, setOpenNoteId] = useState<string | null>(null);
   return (
     <section className={cn(panel, panelPad, "flex flex-col gap-3")}>
       <div className="flex items-center justify-between gap-3">
@@ -121,8 +124,8 @@ export function MentorGrid({
         <table className="border-separate border-spacing-1 text-sm">
           <thead>
             <tr>
-              <th className="text-left font-medium text-muted-foreground pr-3 pb-1">
-                Mentee
+              <th className="pr-3 pb-1">
+                <span className="sr-only">Mentee</span>
               </th>
               {weeks.map((w) => (
                 <th
@@ -160,14 +163,14 @@ export function MentorGrid({
                     project · domain. Stacking (not inline) keeps the name and
                     the project text starting at the same x on every row, so the
                     column reads as a column regardless of how long either is. */}
-                <td className="pr-3 align-middle">
-                  <div className="flex items-center gap-2 max-w-[16rem]">
+                <td className="pr-3 py-2 align-middle">
+                  <div className="flex flex-col items-start gap-1.5 w-40 max-w-[10rem]">
                     <Avatar
                       photoUrl={row.mentee.photoUrl}
                       name={fullName(row.mentee)}
-                      size="xs"
+                      size="sm"
                     />
-                    <div className="flex flex-col leading-tight min-w-0">
+                    <div className="flex flex-col leading-tight min-w-0 w-full">
                       <span
                         className="font-medium text-foreground truncate"
                         title={fullName(row.mentee)}
@@ -190,6 +193,7 @@ export function MentorGrid({
                       row={row}
                       termId={termId}
                       highlightMissing={highlightMissing}
+                      onOpenNote={setOpenNoteId}
                     />
                   </td>
                 ))}
@@ -240,6 +244,7 @@ export function MentorGrid({
           </tbody>
         </table>
       </div>
+      <MentorNoteOverlay noteId={openNoteId} onClose={() => setOpenNoteId(null)} />
     </section>
   );
 }
@@ -253,13 +258,14 @@ function GridCellView({
   row,
   termId,
   highlightMissing,
+  onOpenNote,
 }: {
   cell: GridCell;
   row: GridMenteeRow;
   termId: string;
   highlightMissing: boolean;
+  onOpenNote: (noteId: string) => void;
 }) {
-  const navigate = useNavigate();
   const [busy, setBusy] = useState(false);
 
   const base =
@@ -288,12 +294,19 @@ function GridCellView({
         content={`Week ${cell.week} · ${vibeLabel}. ${vibeDesc}`}
         variant="rich"
       >
-        <Link
-          to={`/mentorship/notes/${cell.noteId}`}
+        {/* A real link (new tab / copy address still work); a plain click opens
+            the overlay instead of navigating. */}
+        <a
+          href={`/mentorship/notes/${cell.noteId}`}
+          onClick={(e) => {
+            if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
+            e.preventDefault();
+            if (cell.noteId) onOpenNote(cell.noteId);
+          }}
           className={`${base} ${cls} hover:ring-2 hover:ring-offset-1 hover:ring-border`}
         >
           <span className="sr-only">Open note</span>
-        </Link>
+        </a>
       </Tooltip>
     );
   }
@@ -341,10 +354,11 @@ function GridCellView({
       });
       if (!res.ok) throw new Error(`create failed: ${res.status}`);
       const { id } = (await res.json()) as { id: string };
-      navigate(`/mentorship/notes/${id}`);
+      onOpenNote(id);
     } catch {
-      setBusy(false);
+      // fall through to re-enable the button
     }
+    setBusy(false);
   }
 
   return (

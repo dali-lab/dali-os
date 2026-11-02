@@ -528,17 +528,13 @@ export function Rail({
                         // mode-resolved `--area`: in light mode the ink makes
                         // a muddy slab, while the tint (Community's light
                         // green, Lab's light blue) reads as the highlight. The
-                        // notch, icon and text stay on `--area` for contrast.
+                        // icon and text stay on `--area` for contrast.
                         'absolute rounded-lg bg-[color-mix(in_srgb,var(--area-tint)_var(--os-rail-pill-mix,16%),transparent)]',
                         compact ? 'left-1/2 w-9 -translate-x-1/2' : 'left-0 right-1.5',
                         animated &&
                           'transition-[top,height] duration-[220ms] ease-[cubic-bezier(0.23,1,0.32,1)] motion-reduce:transition-none',
                       )}
-                    >
-                      {!compact && (
-                        <span className="absolute left-0 top-1/2 h-4 w-[3px] -translate-y-1/2 rounded-r-full bg-[var(--area)]" />
-                      )}
-                    </span>
+                    />
                   )}
                   {activeSubtabs.map((t, i) => {
                     const active = t.href === activeHref

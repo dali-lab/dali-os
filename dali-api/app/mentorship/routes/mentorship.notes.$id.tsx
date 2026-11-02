@@ -1,40 +1,16 @@
-import { useState } from "react";
-import { Link, redirect, useLoaderData } from "react-router";
-import { Smile, Meh, Frown } from "lucide-react";
+import { redirect, useLoaderData } from "react-router";
 import type { Route } from "./+types/mentorship.notes.$id";
 import { requireAuth, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { prisma } from "~/lib/db";
 import { recordRouteVisit } from "~/lib/user-pages.server";
 import { getPageAccess } from "~/lib/pageAccess.server";
-import { pageDocName } from "~/collab/roomName";
 import { getCollabToken } from "~/lib/collab-token.server";
-import { DocEditor } from "~/components/doc";
-import { Tooltip, InfoTip } from "~/components/ui/floating";
 import { canViewMentorship, canViewMentorNote } from "../lib/visibility";
 import { ensureMentorNotePage } from "../lib/pair-notebook.server";
 import { readMentorNoteBlocks } from "../lib/note-body.server";
-import { useOsChrome } from "~/components/os-chrome";
-import { cn } from "~/lib/cn";
-import { VIBES, VIBE_META, type Vibe } from "../lib/vibe";
 import { weekNumberInTerm } from "../lib/week";
-
-type LoaderData = {
-  id: string;
-  pageId: string;
-  weekOfIso: string;
-  weekNumber: number | null;
-  contentJson: unknown;
-  vibe: Vibe | null;
-  mentor: { id: string; firstName: string; lastName: string };
-  mentee: { id: string; firstName: string; lastName: string };
-  projectName: string;
-  termCode: string;
-  domainDisplay: string;
-  canEdit: boolean;
-  collabToken: string | null;
-  userName: string;
-};
+import { MentorNoteView, type MentorNoteData } from "../components/MentorNoteView";
 
 function fullName(u: { firstName: string; lastName: string }) {
   return `${u.firstName} ${u.lastName}`.trim();
@@ -71,7 +47,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       pageId: true,
       vibe: true,
       mentor: { select: { id: true, firstName: true, lastName: true } },
-      mentee: { select: { id: true, firstName: true, lastName: true } },
+      mentee: { select: { id: true, firstName: true, lastName: true, photoUrl: true } },
     },
   });
   if (!note) throw new Response("Not found", { status: 404 });
@@ -110,7 +86,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     }),
   ]);
 
-  const data: LoaderData = {
+  const data: MentorNoteData = {
     id: note.id,
     pageId,
     weekOfIso: note.weekOf.toISOString(),
@@ -129,148 +105,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   return data;
 }
 
-function fmt(d: string) {
-  return new Date(d).toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    // weekOf is a Monday at UTC midnight; local time would show Sunday in the US.
-    timeZone: "UTC",
-  });
-}
-
-const EDITOR_CLASS = "min-h-[24rem]";
-
-const VIBE_ICON = { Good: Smile, Ok: Meh, Bad: Frown } as const;
-
 export default function MentorNoteEditor() {
-  const data = useLoaderData() as LoaderData;
-  const { pageTitle, bodyText, panel } = useOsChrome();
-  const [vibe, setVibe] = useState<Vibe | null>(data.vibe);
-  const [status, setStatus] = useState<"idle" | "saving" | "saved" | "error">(
-    "idle",
-  );
-
-  // The vibe is a discrete choice, so persist it immediately (no debounce). It's
-  // required (a note without one reads as "not filled in" on the grid), so
-  // picking is one-way — clicking the active vibe again doesn't clear it.
-  async function pickVibe(next: Vibe) {
-    if (!data.canEdit || vibe === next) return;
-    setVibe(next);
-    setStatus("saving");
-    try {
-      const res = await fetch(`/api/mentorship/notes/${data.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ vibe: next }),
-      });
-      if (!res.ok) throw new Error(`save failed: ${res.status}`);
-      setStatus("saved");
-    } catch {
-      setStatus("error");
-    }
-  }
-
+  const data = useLoaderData() as MentorNoteData;
   return (
-    <main className="flex flex-col gap-4 w-full min-w-0">
-      <header className="flex flex-col gap-1">
-        <h1 className={pageTitle}>Notes on {fullName(data.mentee)}</h1>
-        <p className="text-base text-os-grey">
-          {data.weekNumber != null && `Week ${data.weekNumber} · `}
-          {fmt(data.weekOfIso)}
-          {" · "}
-          <Link to={`/documents/${data.pageId}`} className="underline hover:text-foreground">
-            Open in Drive
-          </Link>
-        </p>
-        <p className={cn(bodyText, "inline-flex items-center gap-1")}>
-          Author: {fullName(data.mentor)}
-          <InfoTip content="Mentor notes are visible to all lab mentors and Core members — not to the mentee. Only the author or Core can edit a note." />
-        </p>
-      </header>
-
-      <section className={cn(panel, "flex flex-col gap-4 py-6")}>
-        <div className="flex items-center gap-2 flex-wrap px-3 sm:px-[54px]">
-          <span className={cn(bodyText, "inline-flex items-center gap-1")}>
-            Vibe check
-            <span className="os-required-mark" aria-hidden>
-              *
-            </span>
-            <InfoTip content="How this week went. Excellent means things are going well, Room for improvement means something to work on, Concerning means it needs follow-up. Mentors and Core can see this, the mentee can't." />
-            :
-          </span>
-          <div className="flex items-center gap-1.5">
-            {VIBES.map((v) => {
-              const Icon = VIBE_ICON[v];
-              const active = vibe === v;
-              const vibeButton = (
-                <button
-                  key={v}
-                  type="button"
-                  onClick={() => pickVibe(v)}
-                  disabled={!data.canEdit}
-                  aria-pressed={active}
-                  className={cn(
-                    "inline-flex items-center gap-1 rounded-full border transition",
-                    "px-3.5 py-1.5 text-sm font-medium",
-                    active
-                      ? VIBE_META[v].pill
-                      : "border-os-container text-os-grey hover:border-os-container-hi hover:text-foreground",
-                    data.canEdit ? "" : "cursor-default opacity-70",
-                  )}
-                >
-                  <Icon className="h-3.5 w-3.5" aria-hidden />
-                  {VIBE_META[v].label}
-                </button>
-              );
-              if (!data.canEdit) {
-                return (
-                  <Tooltip
-                    key={v}
-                    content="Read only — only the mentor or Core can set the vibe."
-                    variant="rich"
-                  >
-                    {/* Disabled buttons don't fire hover events; span captures them. */}
-                    <span>{vibeButton}</span>
-                  </Tooltip>
-                );
-              }
-              return vibeButton;
-            })}
-          </div>
-          <span className={cn(bodyText, "ml-auto")}>
-            {!data.canEdit
-              ? "Read only"
-              : status === "saving"
-              ? "Saving…"
-              : status === "saved"
-              ? "Saved"
-              : status === "error"
-              ? "Save failed, try again"
-              : null}
-          </span>
-        </div>
-
-        {data.canEdit && data.collabToken ? (
-          <DocEditor
-            features="notes"
-            collab={{
-              documentName: pageDocName(data.pageId),
-              token: data.collabToken,
-              userName: data.userName,
-            }}
-            placeholder="What went well, what's blocked, what to follow up on…"
-            className={EDITOR_CLASS}
-          />
-        ) : (
-          <DocEditor
-            features="notes"
-            editable={false}
-            initialContent={data.contentJson}
-            className={EDITOR_CLASS}
-          />
-        )}
-      </section>
+    <main className="w-full min-w-0">
+      <MentorNoteView data={data} />
     </main>
   );
 }

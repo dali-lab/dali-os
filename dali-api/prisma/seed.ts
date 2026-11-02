@@ -4646,6 +4646,124 @@ async function main() {
               contentJson: { type: "doc", content: [] },
             },
           });
+
+          // Week 5 check-in forms, one per role, linked to the term + domain so
+          // the mentorship grid shows its "Week 5 form" column. The mentee has
+          // submitted; the mentor hasn't, so both states render.
+          const checkInSeeds: {
+            role: "mentee" | "mentor";
+            id: string;
+            name: string;
+            questions: Question[];
+            answers: Record<string, string> | null;
+          }[] = [
+            {
+              role: "mentee",
+              id: "form-mentorship-checkin-mentee-26s",
+              name: "26S Week 5 Check-in (Mentee)",
+              questions: [
+                {
+                  key: "mentee-feeling",
+                  type: "select" as const,
+                  required: true,
+                  data: {
+                    label: "How is your project going so far?",
+                    options: ["Great", "Mostly fine", "Struggling"],
+                  },
+                },
+                {
+                  key: "mentee-support",
+                  type: "textarea" as const,
+                  required: false,
+                  data: { label: "What support would help most from your mentor?" },
+                },
+              ],
+              answers: {
+                "mentee-feeling": "Mostly fine",
+                "mentee-support": "More feedback on my pull requests, and help scoping the next milestone.",
+              },
+            },
+            {
+              role: "mentor",
+              id: "form-mentorship-checkin-mentor-26s",
+              name: "26S Week 5 Check-in (Mentor)",
+              questions: [
+                {
+                  key: "mentor-progress",
+                  type: "select" as const,
+                  required: true,
+                  data: {
+                    label: "How is your mentee progressing?",
+                    options: ["Ahead", "On track", "Behind"],
+                  },
+                },
+                {
+                  key: "mentor-notes",
+                  type: "textarea" as const,
+                  required: false,
+                  data: { label: "Anything Core should know?" },
+                },
+              ],
+              answers: null,
+            },
+          ];
+          for (const c of checkInSeeds) {
+            const checkInForm = await prisma.form.upsert({
+              where: { id: c.id },
+              update: { name: c.name },
+              create: {
+                name: c.name,
+                createdBy: { connect: { id: admin.id } },
+                page: {
+                  create: {
+                    id: c.id,
+                    workspaceType: "Lab" as const,
+                    title: c.name,
+                    kind: "Form" as const,
+                    createdById: admin.id,
+                    linkAccess: "LabMembers" as const,
+                    linkPermission: "View" as const,
+                  },
+                },
+              },
+            });
+            await prisma.formVersion.deleteMany({ where: { formId: checkInForm.id } });
+            const checkInVersion = await prisma.formVersion.create({
+              data: {
+                formId: checkInForm.id,
+                versionNumber: 1,
+                questions: c.questions as object,
+                createdById: admin.id,
+              },
+            });
+            await prisma.mentorshipTermForm.upsert({
+              where: {
+                termId_domainId_role: {
+                  termId: term26S.id,
+                  domainId: mentorPref.domainId,
+                  role: c.role,
+                },
+              },
+              update: { formId: checkInForm.id },
+              create: {
+                termId: term26S.id,
+                domainId: mentorPref.domainId,
+                role: c.role,
+                formId: checkInForm.id,
+              },
+            });
+            if (c.answers) {
+              await prisma.formSubmission.create({
+                data: {
+                  formId: checkInForm.id,
+                  formVersionId: checkInVersion.id,
+                  userId: c.role === "mentee" ? mentee.id : mentor.id,
+                  answers: c.answers as object,
+                },
+              });
+            }
+          }
+          console.log("  2 mentorship Week 5 check-in forms linked (mentee submitted, mentor pending)");
         }
       }
 
