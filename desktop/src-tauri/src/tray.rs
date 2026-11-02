@@ -36,15 +36,13 @@ fn snapshot(app: &AppHandle) -> TraySnapshot {
     });
 
     let next = state.agenda.lock().ok().and_then(|g| g.clone());
-    let tasks = state.tasks.lock().map(|g| g.clone()).unwrap_or_default();
-    let task_count = state.task_count.load(Ordering::SeqCst);
+    let upcoming = state.agenda_upcoming.lock().map(|g| g.clone()).unwrap_or_default();
 
     let connection = match state.connection.load(Ordering::SeqCst) {
         state::CONNECTION_LIVE => tray_model::Connection::Live,
         state::CONNECTION_OFFLINE => tray_model::Connection::Offline,
         _ => tray_model::Connection::Polling,
     };
-    let last_sync_secs = state.last_sync.lock().ok().and_then(|g| *g).map(|t| t.elapsed().as_secs());
 
     TraySnapshot {
         unread_count,
@@ -52,17 +50,16 @@ fn snapshot(app: &AppHandle) -> TraySnapshot {
         recording,
         version: app.package_info().version.to_string(),
         next,
+        upcoming,
         now_unix: now_unix(),
-        tasks,
-        task_count,
         connection,
-        last_sync_secs,
     }
 }
 
 fn build_menu(app: &AppHandle, view: &TrayView) -> tauri::Result<Menu<Wry>> {
     let menu = Menu::new(app)?;
     let recording = view.recording.is_some();
+    let version = MenuItem::with_id(app, "version", format!("Version {}", view.version), false, None::<&str>)?;
 
     if cfg!(target_os = "linux") {
         // The only surface on Linux: AppIndicator never reports tray clicks,
@@ -86,6 +83,7 @@ fn build_menu(app: &AppHandle, view: &TrayView) -> tauri::Result<Menu<Wry>> {
             menu.append(&MenuItem::with_id(app, "stop-recording", "● Stop recording", true, None::<&str>)?)?;
         }
         menu.append(&PredefinedMenuItem::separator(app)?)?;
+        menu.append(&version)?;
         menu.append(&MenuItem::with_id(app, "quit", "Quit DALI OS", true, None::<&str>)?)?;
     } else {
         if recording {
@@ -94,6 +92,7 @@ fn build_menu(app: &AppHandle, view: &TrayView) -> tauri::Result<Menu<Wry>> {
         }
         menu.append(&MenuItem::with_id(app, "open", "Open DALI OS", true, None::<&str>)?)?;
         menu.append(&PredefinedMenuItem::separator(app)?)?;
+        menu.append(&version)?;
         menu.append(&MenuItem::with_id(app, "quit", "Quit DALI OS", true, None::<&str>)?)?;
     }
     Ok(menu)
