@@ -73,7 +73,7 @@ type FormVersion = ReturnType<
 //                         (save-version) and clears the draft. Frozen versions
 //                         are read-only and are what publishing serves.
 export function FormDetail() {
-  const { form, terms, usages, managing, hiringLinks: rawHiringLinks, collabToken, results, page } = useLoaderData<typeof loader>();
+  const { form, terms, usages, managing, hiringLinks: rawHiringLinks, collabToken, results, tracker, page } = useLoaderData<typeof loader>();
   // The staffing slot binding, if any: {{term}} in this form's questions
   // resolves from it (see FormBuilderTab's termBinding).
   const staffingBinding = usages.find((u) => u.kind === "staffing") ?? null;
@@ -108,6 +108,7 @@ export function FormDetail() {
     ? form.versions[form.versions.length - 1]
     : null;
   const hasDraft = form.draft != null;
+  const hasEmailQuestion = (latestVersion?.questions ?? []).some((q) => q.type === "email");
 
   // A version's results view lives in the URL (`?view=results&version=N`) so
   // the loader can fetch that version's responses and links can deep-link.
@@ -368,6 +369,12 @@ export function FormDetail() {
           hiringLinks={hiringLinks}
           formId={form.id}
           oneResponsePerMember={form.oneResponsePerMember}
+          allowResponseEdit={form.allowResponseEdit}
+          remindBeforeClose={form.remindBeforeClose}
+          confirmationMessage={form.confirmationMessage}
+          sendReceipt={form.sendReceipt}
+          audience={form.audience}
+          hasEmailQuestion={hasEmailQuestion}
           notifyOnSubmission={form.notifyOnSubmission}
           listed={form.listed}
           opensAt={form.opensAt}
@@ -530,6 +537,7 @@ export function FormDetail() {
                 formId={form.id}
                 versionNumber={selectedVersion.versionNumber}
                 results={results}
+                tracker={tracker}
               />
             ) : (
               <div className="py-12 flex justify-center">
@@ -596,11 +604,12 @@ export function FormDetail() {
                       </p>
                     )}
                     {(q.type === "select" ||
+                      q.type === "radio" ||
                       q.type === "skills_rating" ||
                       q.type === "checkbox") &&
                       q.data.options && (
                         <div className="mt-2 flex flex-wrap gap-2">
-                          {q.data.options.map((opt) => (
+                          {[...q.data.options, ...(q.data.allowOther ? ["Other"] : [])].map((opt) => (
                             <span
                               key={opt}
                               className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-os-well text-os-grey border border-os-container"
@@ -609,6 +618,19 @@ export function FormDetail() {
                             </span>
                           ))}
                         </div>
+                      )}
+                    {q.type === "scale" && (q.data.scaleLow || q.data.scaleHigh) && (
+                      <p className="text-xs text-muted-foreground mt-1">
+                        1 to 5: {[q.data.scaleLow, q.data.scaleHigh].filter(Boolean).join(" to ")}
+                      </p>
+                    )}
+                    {q.type === "number" &&
+                      (q.data.min !== undefined || q.data.max !== undefined) && (
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {q.data.min !== undefined && `Min ${q.data.min}`}
+                          {q.data.min !== undefined && q.data.max !== undefined && ", "}
+                          {q.data.max !== undefined && `Max ${q.data.max}`}
+                        </p>
                       )}
                     {q.type === "file" && q.data.accept && (
                       <p className="text-xs text-muted-foreground mt-1">
@@ -640,6 +662,7 @@ export function FormDetail() {
           formName={form.name}
           iconEmoji={form.iconEmoji}
           description={previewData.description}
+          confirmationMessage={form.confirmationMessage}
           questions={previewData.questions}
           onClose={() => setPreviewData(null)}
         />

@@ -38,7 +38,7 @@ import { checkGitHubUrl, checkFigmaUrl, checkDriveUrl } from "~/lib/submission-c
 import type { SubmissionCheckResult } from "~/lib/submission-check";
 import { validateWordLimits } from "~/lib/word-count";
 import type { WordCountViolation } from "~/lib/word-count";
-import { isAnswered } from "~/lib/form-answers";
+import { isAnswered, normalizeAnswerFormats, validateAnswerFormats } from "~/lib/form-answers";
 import { termCodeLabel } from "~/lib/display";
 import type { Question } from "~/types";
 import { ApplicantErrorBoundary } from "~/components/ApplicantErrorBoundary";
@@ -747,6 +747,24 @@ export async function action({ request }: Route.ActionArgs) {
       return {
         error: `Please answer all required questions before submitting (${missingRequired.length} unanswered).`,
       };
+    }
+
+    const answerSets: { questions: Question[]; answers: Record<string, string> }[] = [
+      { questions: generalQuestions, answers },
+    ];
+    for (const domainId of selectedDomainIds) {
+      if (closedDomainIds.has(domainId)) continue;
+      const dbDa = allDas.find(d => d.domainId === domainId);
+      if (!dbDa) continue;
+      answerSets.push({
+        questions: daQuestions(dbDa),
+        answers: postedAnswers(domainAnswers.find(da => da.domainApplicationId === dbDa.id)),
+      });
+    }
+    for (const set of answerSets) {
+      const formatErrors = validateAnswerFormats(set.questions, set.answers);
+      if (formatErrors.length > 0) return { error: formatErrors[0].message };
+      normalizeAnswerFormats(set.questions, set.answers);
     }
 
     // The start term is required whenever the cycle offers a choice. Re-checked

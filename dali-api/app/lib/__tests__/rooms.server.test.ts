@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
 vi.mock("~/lib/db.server", () => {
   const prisma = {
@@ -319,6 +319,14 @@ describe("createRoomBooking", () => {
 });
 
 describe("hiring bookings (Interview / InterviewHold)", () => {
+  // Bookings can't start in the past, and these use fixed dates.
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"], now: new Date("2026-11-01T12:00:00Z") });
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   const cycle = "cyc1";
   const hold = () =>
     booking({

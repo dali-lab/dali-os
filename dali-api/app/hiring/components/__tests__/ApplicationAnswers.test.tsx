@@ -152,3 +152,23 @@ describe("QuestionList — review-mode rendering of every question type", () => 
     expect(html).toContain("No questions in this section.");
   });
 });
+
+describe("AnswerDisplay new question types", () => {
+  it.each([
+    ["radio", "Blue"],
+    ["scale", "4"],
+    ["date", "2026-11-02"],
+    ["number", "12.5"],
+    ["email", "ada@example.edu"],
+  ] as const)("reads a %s answer as plain text", (type, answer) => {
+    const question: Question = { key: "k", type, required: false, data: { label: "Q" } };
+    const html = renderToStaticMarkup(createElement(AnswerDisplay, { question, answer }));
+    expect(html).toBe(`<p class="text-sm text-foreground whitespace-pre-wrap">${answer}</p>`);
+  });
+
+  it("shows a dash for an empty answer", () => {
+    const question: Question = { key: "k", type: "scale", required: false, data: { label: "Q" } };
+    const html = renderToStaticMarkup(createElement(AnswerDisplay, { question, answer: "" }));
+    expect(html).toContain("—");
+  });
+});

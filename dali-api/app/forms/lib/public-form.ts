@@ -25,13 +25,19 @@ import { pickStaffingBinding, type Slot } from "~/projects/lib/form-slots";
 import { interpolateVars } from "~/lib/template-variables";
 import { resolveFormVariables } from "./form-variables";
 import {
+  OTHER_ANSWER_MAX_LENGTH,
+  isValidOtherText,
+  normalizeAnswerFormats,
+  validateAnswerFormats,
+} from "~/lib/form-answers";
+import {
   interpretProfileForm,
   NEW_MEMBER_PROFILE_FORM_NAME,
   type ProfileUpdate,
 } from "~/members/lib/profile-form-interpreter";
 import { clearOnboardingTask } from "~/members/lib/welcome.server";
 import { syncSlackUserId } from "~/members/lib/slack-sync.server";
-import { notifyFormSubmission } from "./submission-notify.server";
+import { notifyFormSubmission, sendFormReceipt } from "./submission-notify.server";
 
 export type PublicForm = {
   formId: string;
@@ -42,6 +48,9 @@ export type PublicForm = {
   // submit so an in-place edit between load and submit is caught server-side.
   versionUpdatedAt: string;
   description: unknown;
+  // Block JSON shown on the done screens in place of the default copy; null
+  // when the author hasn't written one.
+  confirmationMessage: unknown;
   // `file` questions need an authenticated upload presign, so they're not
   // fillable anonymously — they're returned but flagged unsupported and the
   // UI renders them disabled. Required file questions are reported so we can
@@ -75,7 +84,7 @@ function applyFormVariables(
   }));
 }
 
-const TERM_BINDING_SELECT = {
+export const TERM_BINDING_SELECT = {
   slot: true,
   updatedAt: true,
   staffingCycle: { select: { term: { select: { code: true } } } },
@@ -83,7 +92,7 @@ const TERM_BINDING_SELECT = {
 
 // The questions as a filler sees them. Submit validation must check this same
 // text: an option written "Off in {{term}}" reaches the server as "Off in 27S".
-function questionsAsServed<B extends { slot: string; updatedAt: Date; staffingCycle: { term: { code: string } } }>(
+export function questionsAsServed<B extends { slot: string; updatedAt: Date; staffingCycle: { term: { code: string } } }>(
   questions: Question[],
   cycleBindings: B[] | undefined,
 ): Question[] {
@@ -110,6 +119,7 @@ export async function loadPublicForm(
       id: true,
       name: true,
       published: true,
+      confirmationMessage: true,
       page: { select: { iconEmoji: true } },
       versions: {
         orderBy: { versionNumber: "desc" },
@@ -127,6 +137,24 @@ export async function loadPublicForm(
   const version = form.versions[0];
   if (!version) return null;
 
+  return buildPublicForm(form, version, userId);
+}
+
+// A form's served shape for one version row: `reference` questions get their
+// live choices, {{term}} is substituted, and legacy ProseMirror intros become
+// block JSON. loadPublicForm serves the latest version; the response editor
+// serves the version the submission was recorded against.
+export async function buildPublicForm(
+  form: {
+    id: string;
+    name: string;
+    confirmationMessage?: string | null;
+    page: { iconEmoji: string | null } | null;
+    cycleBindings: Parameters<typeof questionsAsServed>[1];
+  },
+  version: { id: string; questions: unknown; intro: string | null; updatedAt: Date },
+  userId?: string | null,
+): Promise<PublicForm> {
   const questions = (version.questions as unknown as Question[]) ?? [];
 
   // `reference` questions store only a source key; resolve the live choices
@@ -152,6 +180,9 @@ export async function loadPublicForm(
     // Versions may hold legacy ProseMirror JSON — convert on read so fill
     // surfaces only ever see block JSON.
     description: ensureBlocks(safeParseJsonString(version.intro)),
+    confirmationMessage: form.confirmationMessage
+      ? ensureBlocks(safeParseJsonString(form.confirmationMessage))
+      : null,
     questions: questionsAsServed(normalizeQuestionBodies(resolved), form.cycleBindings),
   };
 }
@@ -166,6 +197,10 @@ export async function validateAnswers(
   // Null on anonymous (Public-audience) fills — member-scoped reference
   // sources then resolve to [] and their answers can't validate.
   userId: string | null,
+  // Answers already stored on the response being edited. A `reference` answer
+  // that still equals its stored value skips the live option check: the project
+  // may have ended since, and that shouldn't block fixing a typo elsewhere.
+  stored?: Record<string, unknown>,
 ): Promise<{ error: string; status: number } | null> {
   // Checkbox answers arrive as a JSON-stringified array (the fill UIs keep
   // string-valued state); parse, validate against the question's options, and
@@ -194,14 +229,25 @@ export async function validateAnswers(
       };
     }
     const allowed = new Set(q.data.options ?? []);
-    if (parsed.some((v) => !allowed.has(v))) {
+    const others = parsed.filter((v) => !allowed.has(v));
+    if (others.length > 0 && !q.data.allowOther) {
       return {
         error: `"${q.data.label}": that choice is no longer available.`,
         status: 400,
       };
     }
+    if (others.length > 1 || (others.length === 1 && !isValidOtherText(others[0]))) {
+      return {
+        error: `"${q.data.label}": a write-in answer can't be blank or over ${OTHER_ANSWER_MAX_LENGTH} characters.`,
+        status: 400,
+      };
+    }
     answers[q.key] = [...new Set(parsed)];
   }
+
+  const formatErrors = validateAnswerFormats(questions, answers);
+  if (formatErrors.length > 0) return { error: formatErrors[0].message, status: 400 };
+  normalizeAnswerFormats(questions, answers);
 
   // Enforce required answers. `file` questions can't be completed without an
   // authenticated upload presign, so a required file question makes the form
@@ -231,6 +277,7 @@ export async function validateAnswers(
     if (q.type !== "reference") continue;
     const answer = answers[q.key];
     if (answer == null || answer === "") continue; // required-ness handled above
+    if (stored && answer === stored[q.key]) continue;
     const options = await resolveReferenceOptions(q.data.referenceSource, {
       userId,
       termId: q.data.referenceTermId,
@@ -532,7 +579,7 @@ export async function submitAnonymousForm(args: {
   );
   if (bad) return bad;
 
-  await prisma.formSubmission.create({
+  const created = await prisma.formSubmission.create({
     data: {
       formId: form.id,
       formVersionId: version.id,
@@ -540,8 +587,10 @@ export async function submitAnonymousForm(args: {
       answers: args.answers as object,
       submitterIp: args.submitterIp,
     },
+    select: { id: true },
   });
   await notifyFormSubmission({ formId: form.id });
+  await sendFormReceipt({ formId: form.id, submissionId: created.id });
   return { ok: true };
 }
 
@@ -624,8 +673,11 @@ export async function submitMemberForm(args: {
 
   // Fired once after each success path's transaction commits (never inside
   // it) — best-effort creator notification, see submission-notify.server.
-  const notifySubmitted = () =>
-    notifyFormSubmission({ formId: form.id, submitterUserId: args.userId });
+  let submissionId: string | null = null;
+  const notifySubmitted = async () => {
+    await notifyFormSubmission({ formId: form.id, submitterUserId: args.userId });
+    if (submissionId) await sendFormReceipt({ formId: form.id, submissionId });
+  };
 
   // Education feedback branch: an explicit session/offering context wins over
   // every other interpretation. The context re-derives the binding + the
@@ -653,7 +705,8 @@ export async function submitMemberForm(args: {
       ? `?session=${context.sessionId}`
       : `?offering=${context.offeringId}`;
     await prisma.$transaction(async (tx) => {
-      await tx.formSubmission.create({
+      submissionId = (
+        await tx.formSubmission.create({
         data: {
           formId: form.id,
           formVersionId: version.id,
@@ -663,7 +716,9 @@ export async function submitMemberForm(args: {
           educationOfferingId: context.offeringId,
           educationSessionId: context.sessionId,
         },
-      });
+          select: { id: true },
+        })
+      ).id;
       await closeEducationFormTodos(tx, {
         userId: args.userId,
         formId: form.id,
@@ -711,14 +766,17 @@ export async function submitMemberForm(args: {
     // close any "todo" notification that pointed them at this form so the
     // Home banner / Tasks count clears.
     await prisma.$transaction(async (tx) => {
-      await tx.formSubmission.create({
+      submissionId = (
+        await tx.formSubmission.create({
         data: {
           formId: form.id,
           formVersionId: version.id,
           userId: args.userId,
           answers: args.answers as object,
         },
-      });
+          select: { id: true },
+        })
+      ).id;
       if (profileUpdate && Object.keys(profileUpdate).length > 0) {
         await tx.user.update({ where: { id: args.userId }, data: profileUpdate });
       }
@@ -793,7 +851,8 @@ export async function submitMemberForm(args: {
 
     const recorded = await recordBoundSubmission(() =>
       prisma.$transaction(async (tx) => {
-        await tx.formSubmission.create({
+        submissionId = (
+          await tx.formSubmission.create({
           data: {
             formId: form.id,
             formVersionId: version.id,
@@ -802,7 +861,9 @@ export async function submitMemberForm(args: {
             slot: "project-bids",
             answers: args.answers as object,
           },
-        });
+            select: { id: true },
+          })
+        ).id;
         // Replace (not merge) so a resubmission with fewer bids removes the
         // old ones; an empty set clears them, matching prior behaviour.
         await replaceBidSet(tx, args.userId, cycle.id, bidsToWrite);
@@ -817,7 +878,8 @@ export async function submitMemberForm(args: {
   if (slot === "level-up") {
     const recorded = await recordBoundSubmission(() =>
       prisma.$transaction(async (tx) => {
-        await tx.formSubmission.create({
+        submissionId = (
+          await tx.formSubmission.create({
           data: {
             formId: form.id,
             formVersionId: version.id,
@@ -826,7 +888,9 @@ export async function submitMemberForm(args: {
             slot: "level-up",
             answers: args.answers as object,
           },
-        });
+            select: { id: true },
+          })
+        ).id;
         await closeFormTodos(tx, args.userId, form.id);
       }),
     );
@@ -851,7 +915,8 @@ export async function submitMemberForm(args: {
 
   const recorded = await recordBoundSubmission(() =>
     prisma.$transaction(async (tx) => {
-      await tx.formSubmission.create({
+      submissionId = (
+        await tx.formSubmission.create({
         data: {
           formId: form.id,
           formVersionId: version.id,
@@ -860,7 +925,9 @@ export async function submitMemberForm(args: {
           slot: "intent-to-work",
           answers: args.answers as object,
         },
-      });
+          select: { id: true },
+        })
+      ).id;
       await replaceIntentSet(tx, args.userId, cycle.id, intentRows);
       await closeFormTodos(tx, args.userId, form.id);
     }),
@@ -882,10 +949,12 @@ async function closeFormTodos(
   await tx.notification.updateMany({
     where: {
       recipientUserId: userId,
-      kind: "SystemAnnouncement",
-      isTodo: true,
       readAt: null,
       formId,
+      OR: [
+        { kind: "SystemAnnouncement", isTodo: true },
+        { eventType: "form.reminder" },
+      ],
     },
     data: { readAt: new Date() },
   });

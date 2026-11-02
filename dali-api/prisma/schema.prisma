@@ -5208,6 +5208,19 @@ model Form {
   // createdById (best-effort, after the submission transaction commits).
   oneResponsePerMember Boolean @default(false)
   notifyOnSubmission   Boolean @default(false)
+  // allowResponseEdit: the respondent may change their own answers while the
+  // form is open. Only meaningful with oneResponsePerMember.
+  allowResponseEdit    Boolean @default(false)
+  // remindBeforeClose: the form-reminders job nudges people who haven't
+  // responded a day before closesAt. lastRemindedAt is the last MANUAL
+  // reminder (the tracker modal), which limits those to one per 24 hours.
+  remindBeforeClose    Boolean   @default(false)
+  lastRemindedAt       DateTime?
+  // confirmationMessage: block-JSON string shown on the done screens in place
+  // of the default copy. On the form, not the version, so a typo fix needs no
+  // new version. sendReceipt: email the respondent a copy on submit.
+  confirmationMessage  String?
+  sendReceipt          Boolean   @default(false)
 
   // Who may fill the form via its public link. `audienceGroupIds` is only
   // meaningful when audience == Groups (GroupDefinition ids; array rather

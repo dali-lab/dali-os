@@ -53,7 +53,8 @@ export const MANAGE_FORM_TOOL = {
       },
       questions: {
         type: "string",
-        description: "JSON-encoded Question[] (save_version / save_draft).",
+        description:
+          "JSON-encoded Question[] (save_version / save_draft). Each question is {key, type, required, data: {label, description?, options?, ...}}. Types: text, textarea, select, radio, checkbox, scale, date, number, email, github_url, figma_url, drive_url, file, skills_rating, reference, info, pageBreak. radio is single choice and needs data.options with at least two entries. radio and checkbox accept data.allowOther: true, which adds an Other write-in (up to 200 characters). scale is a fixed 1 to 5 rating with optional data.scaleLow and data.scaleHigh end labels. number accepts optional numeric data.min and data.max. date answers are YYYY-MM-DD. email answers are stored lowercased.",
       },
       description: {
         type: "string",

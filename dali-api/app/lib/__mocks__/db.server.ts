@@ -789,6 +789,7 @@ export const prisma = {
     findMany: vi.fn().mockResolvedValue([]),
     create: vi.fn(),
     update: vi.fn(),
+    delete: vi.fn(),
     count: vi.fn().mockResolvedValue(0),
   },
   emailTemplate: {
