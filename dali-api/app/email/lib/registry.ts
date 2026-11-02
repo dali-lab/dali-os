@@ -421,6 +421,48 @@ export const EMAIL_TEMPLATES = {
     footer: "transactional",
     whenMissing: "skip",
   },
+
+  // ── Forms: receipts ──────────────────────────────────────────────────────
+  // Two keys because the copy differs in kind, not wording: the public one has
+  // no {{answers}} on purpose (anyone can type any address into a public form),
+  // so an operator can't add them back by editing a shared body.
+  "forms.receipt": {
+    area: "Forms",
+    label: "Response receipt",
+    description: "Sent to a signed-in person after they submit a form that emails a copy of the response.",
+    purpose: "General",
+    variables: ["firstName", "formName", "submittedAt", "answers"],
+    sample: {
+      firstName: "Alex",
+      formName: "Spring check-in",
+      submittedAt: "Monday, June 8, 2026 at 2:00 PM ET",
+      answers: "How is your week going?: Busy but good\nAnything blocking you?: No",
+    },
+    footer: "transactional",
+    whenMissing: "default",
+    defaults: {
+      subject: "Your response to {{formName}}",
+      body: "Hi {{firstName}},\n\nHere is a copy of your response to {{formName}}, submitted {{submittedAt}}.\n\n{{answers}}",
+    },
+  },
+  "forms.receipt-public": {
+    area: "Forms",
+    label: "Response receipt (not signed in)",
+    description:
+      "Sent to the address someone typed at a form's Email question when they weren't signed in. It never includes their answers.",
+    purpose: "General",
+    variables: ["formName", "submittedAt"],
+    sample: {
+      formName: "Spring check-in",
+      submittedAt: "Monday, June 8, 2026 at 2:00 PM ET",
+    },
+    footer: "transactional",
+    whenMissing: "default",
+    defaults: {
+      subject: "We got your response to {{formName}}",
+      body: "Thanks for filling out {{formName}}. We received your response on {{submittedAt}}.",
+    },
+  },
 } as const satisfies Record<string, EmailTemplateDef>;
 
 // ── Notification templates ──────────────────────────────────────────────────

@@ -3,7 +3,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 vi.mock("~/lib/db.server");
 
 import { prisma } from "~/lib/db.server";
-import { runFormsAction } from "~/forms/lib/forms-data";
+import { CONFIRMATION_MESSAGE_MAX, runFormsAction } from "~/forms/lib/forms-data";
 
 const mockPrisma = prisma as unknown as {
   form: {
@@ -185,5 +185,70 @@ describe("runFormsAction update-form-settings remindBeforeClose", () => {
       "user-1",
     );
     expect(mockPrisma.form.update.mock.calls[0][0].data).not.toHaveProperty("remindBeforeClose");
+  });
+});
+
+describe("runFormsAction update-form-settings confirmation and receipt", () => {
+  const settings = (extra: Record<string, string>) =>
+    fd({
+      intent: "update-form-settings",
+      id: "form-1",
+      oneResponsePerMember: "false",
+      notifyOnSubmission: "false",
+      listed: "false",
+      ...extra,
+    });
+  const blocks = (href = "https://example.edu/next") =>
+    JSON.stringify([
+      {
+        type: "paragraph",
+        content: [{ type: "link", href, content: [{ type: "text", text: "Next steps" }] }],
+      },
+    ]);
+  const dataOf = (call = 0) => mockPrisma.form.update.mock.calls[call][0].data;
+
+  beforeEach(() => {
+    mockPrisma.form.findUnique.mockResolvedValue({ id: "form-1", closesAt: null });
+  });
+
+  it("stores sendReceipt when sent and leaves it alone when omitted", async () => {
+    await runFormsAction(settings({ sendReceipt: "true" }), "user-1");
+    expect(dataOf(0).sendReceipt).toBe(true);
+    await runFormsAction(settings({}), "user-1");
+    expect(dataOf(1)).not.toHaveProperty("sendReceipt");
+    expect(dataOf(1)).not.toHaveProperty("confirmationMessage");
+  });
+
+  it("stores a valid confirmation message as normalized block JSON", async () => {
+    const res = await runFormsAction(settings({ confirmationMessage: blocks() }), "user-1");
+    expect(res).toEqual({ ok: true });
+    expect(JSON.parse(dataOf(0).confirmationMessage)).toEqual(JSON.parse(blocks()));
+  });
+
+  it("clears the message for an empty string or empty blocks", async () => {
+    await runFormsAction(settings({ confirmationMessage: "" }), "user-1");
+    expect(dataOf(0).confirmationMessage).toBeNull();
+    await runFormsAction(
+      settings({ confirmationMessage: JSON.stringify([{ type: "paragraph", content: [] }]) }),
+      "user-1",
+    );
+    expect(dataOf(1).confirmationMessage).toBeNull();
+  });
+
+  it("rejects non-JSON, non-array JSON, and oversized input without saving", async () => {
+    for (const bad of ["not json", '{"a":1}', "x".repeat(CONFIRMATION_MESSAGE_MAX + 1)]) {
+      const res = await runFormsAction(settings({ confirmationMessage: bad }), "user-1");
+      expect(res).toMatchObject({ status: 400 });
+    }
+    expect(mockPrisma.form.update).not.toHaveBeenCalled();
+  });
+
+  it("rejects a javascript: link", async () => {
+    const res = await runFormsAction(
+      settings({ confirmationMessage: blocks("javascript:alert(1)") }),
+      "user-1",
+    );
+    expect(res).toEqual({ error: "Links must start with http, https or mailto.", status: 400 });
+    expect(mockPrisma.form.update).not.toHaveBeenCalled();
   });
 });

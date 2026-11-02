@@ -108,6 +108,7 @@ export function FormDetail() {
     ? form.versions[form.versions.length - 1]
     : null;
   const hasDraft = form.draft != null;
+  const hasEmailQuestion = (latestVersion?.questions ?? []).some((q) => q.type === "email");
 
   // A version's results view lives in the URL (`?view=results&version=N`) so
   // the loader can fetch that version's responses and links can deep-link.
@@ -370,6 +371,10 @@ export function FormDetail() {
           oneResponsePerMember={form.oneResponsePerMember}
           allowResponseEdit={form.allowResponseEdit}
           remindBeforeClose={form.remindBeforeClose}
+          confirmationMessage={form.confirmationMessage}
+          sendReceipt={form.sendReceipt}
+          audience={form.audience}
+          hasEmailQuestion={hasEmailQuestion}
           notifyOnSubmission={form.notifyOnSubmission}
           listed={form.listed}
           opensAt={form.opensAt}
@@ -657,6 +662,7 @@ export function FormDetail() {
           formName={form.name}
           iconEmoji={form.iconEmoji}
           description={previewData.description}
+          confirmationMessage={form.confirmationMessage}
           questions={previewData.questions}
           onClose={() => setPreviewData(null)}
         />

@@ -37,7 +37,7 @@ import {
 } from "~/members/lib/profile-form-interpreter";
 import { clearOnboardingTask } from "~/members/lib/welcome.server";
 import { syncSlackUserId } from "~/members/lib/slack-sync.server";
-import { notifyFormSubmission } from "./submission-notify.server";
+import { notifyFormSubmission, sendFormReceipt } from "./submission-notify.server";
 
 export type PublicForm = {
   formId: string;
@@ -48,6 +48,9 @@ export type PublicForm = {
   // submit so an in-place edit between load and submit is caught server-side.
   versionUpdatedAt: string;
   description: unknown;
+  // Block JSON shown on the done screens in place of the default copy; null
+  // when the author hasn't written one.
+  confirmationMessage: unknown;
   // `file` questions need an authenticated upload presign, so they're not
   // fillable anonymously — they're returned but flagged unsupported and the
   // UI renders them disabled. Required file questions are reported so we can
@@ -116,6 +119,7 @@ export async function loadPublicForm(
       id: true,
       name: true,
       published: true,
+      confirmationMessage: true,
       page: { select: { iconEmoji: true } },
       versions: {
         orderBy: { versionNumber: "desc" },
@@ -144,6 +148,7 @@ export async function buildPublicForm(
   form: {
     id: string;
     name: string;
+    confirmationMessage?: string | null;
     page: { iconEmoji: string | null } | null;
     cycleBindings: Parameters<typeof questionsAsServed>[1];
   },
@@ -175,6 +180,9 @@ export async function buildPublicForm(
     // Versions may hold legacy ProseMirror JSON — convert on read so fill
     // surfaces only ever see block JSON.
     description: ensureBlocks(safeParseJsonString(version.intro)),
+    confirmationMessage: form.confirmationMessage
+      ? ensureBlocks(safeParseJsonString(form.confirmationMessage))
+      : null,
     questions: questionsAsServed(normalizeQuestionBodies(resolved), form.cycleBindings),
   };
 }
@@ -571,7 +579,7 @@ export async function submitAnonymousForm(args: {
   );
   if (bad) return bad;
 
-  await prisma.formSubmission.create({
+  const created = await prisma.formSubmission.create({
     data: {
       formId: form.id,
       formVersionId: version.id,
@@ -579,8 +587,10 @@ export async function submitAnonymousForm(args: {
       answers: args.answers as object,
       submitterIp: args.submitterIp,
     },
+    select: { id: true },
   });
   await notifyFormSubmission({ formId: form.id });
+  await sendFormReceipt({ formId: form.id, submissionId: created.id });
   return { ok: true };
 }
 
@@ -663,8 +673,11 @@ export async function submitMemberForm(args: {
 
   // Fired once after each success path's transaction commits (never inside
   // it) — best-effort creator notification, see submission-notify.server.
-  const notifySubmitted = () =>
-    notifyFormSubmission({ formId: form.id, submitterUserId: args.userId });
+  let submissionId: string | null = null;
+  const notifySubmitted = async () => {
+    await notifyFormSubmission({ formId: form.id, submitterUserId: args.userId });
+    if (submissionId) await sendFormReceipt({ formId: form.id, submissionId });
+  };
 
   // Education feedback branch: an explicit session/offering context wins over
   // every other interpretation. The context re-derives the binding + the
@@ -692,7 +705,8 @@ export async function submitMemberForm(args: {
       ? `?session=${context.sessionId}`
       : `?offering=${context.offeringId}`;
     await prisma.$transaction(async (tx) => {
-      await tx.formSubmission.create({
+      submissionId = (
+        await tx.formSubmission.create({
         data: {
           formId: form.id,
           formVersionId: version.id,
@@ -702,7 +716,9 @@ export async function submitMemberForm(args: {
           educationOfferingId: context.offeringId,
           educationSessionId: context.sessionId,
         },
-      });
+          select: { id: true },
+        })
+      ).id;
       await closeEducationFormTodos(tx, {
         userId: args.userId,
         formId: form.id,
@@ -750,14 +766,17 @@ export async function submitMemberForm(args: {
     // close any "todo" notification that pointed them at this form so the
     // Home banner / Tasks count clears.
     await prisma.$transaction(async (tx) => {
-      await tx.formSubmission.create({
+      submissionId = (
+        await tx.formSubmission.create({
         data: {
           formId: form.id,
           formVersionId: version.id,
           userId: args.userId,
           answers: args.answers as object,
         },
-      });
+          select: { id: true },
+        })
+      ).id;
       if (profileUpdate && Object.keys(profileUpdate).length > 0) {
         await tx.user.update({ where: { id: args.userId }, data: profileUpdate });
       }
@@ -832,7 +851,8 @@ export async function submitMemberForm(args: {
 
     const recorded = await recordBoundSubmission(() =>
       prisma.$transaction(async (tx) => {
-        await tx.formSubmission.create({
+        submissionId = (
+          await tx.formSubmission.create({
           data: {
             formId: form.id,
             formVersionId: version.id,
@@ -841,7 +861,9 @@ export async function submitMemberForm(args: {
             slot: "project-bids",
             answers: args.answers as object,
           },
-        });
+            select: { id: true },
+          })
+        ).id;
         // Replace (not merge) so a resubmission with fewer bids removes the
         // old ones; an empty set clears them, matching prior behaviour.
         await replaceBidSet(tx, args.userId, cycle.id, bidsToWrite);
@@ -856,7 +878,8 @@ export async function submitMemberForm(args: {
   if (slot === "level-up") {
     const recorded = await recordBoundSubmission(() =>
       prisma.$transaction(async (tx) => {
-        await tx.formSubmission.create({
+        submissionId = (
+          await tx.formSubmission.create({
           data: {
             formId: form.id,
             formVersionId: version.id,
@@ -865,7 +888,9 @@ export async function submitMemberForm(args: {
             slot: "level-up",
             answers: args.answers as object,
           },
-        });
+            select: { id: true },
+          })
+        ).id;
         await closeFormTodos(tx, args.userId, form.id);
       }),
     );
@@ -890,7 +915,8 @@ export async function submitMemberForm(args: {
 
   const recorded = await recordBoundSubmission(() =>
     prisma.$transaction(async (tx) => {
-      await tx.formSubmission.create({
+      submissionId = (
+        await tx.formSubmission.create({
         data: {
           formId: form.id,
           formVersionId: version.id,
@@ -899,7 +925,9 @@ export async function submitMemberForm(args: {
           slot: "intent-to-work",
           answers: args.answers as object,
         },
-      });
+          select: { id: true },
+        })
+      ).id;
       await replaceIntentSet(tx, args.userId, cycle.id, intentRows);
       await closeFormTodos(tx, args.userId, form.id);
     }),

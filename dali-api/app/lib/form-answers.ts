@@ -39,7 +39,7 @@ export function findMissingRequired(
 
 export const OTHER_ANSWER_MAX_LENGTH = 200;
 
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@.]+(\.[^\s@.]+)+$/;
+export const EMAIL_PATTERN = /^[^\s@]+@[^\s@.]+(\.[^\s@.]+)+$/;
 const NUMBER_PATTERN = /^-?\d+(\.\d+)?$/;
 const DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
 

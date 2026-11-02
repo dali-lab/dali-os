@@ -211,6 +211,8 @@ export type FormDetail = {
   oneResponsePerMember: boolean;
   allowResponseEdit: boolean;
   remindBeforeClose: boolean;
+  confirmationMessage: unknown;
+  sendReceipt: boolean;
   notifyOnSubmission: boolean;
   listed: boolean;
   audience: "Members" | "SignedIn" | "Groups" | "Public";
@@ -261,6 +263,8 @@ export async function loadFormForEdit(
     oneResponsePerMember: form.oneResponsePerMember,
     allowResponseEdit: form.allowResponseEdit,
     remindBeforeClose: form.remindBeforeClose,
+    confirmationMessage: ensureBlocks(safeParseJsonString(form.confirmationMessage)),
+    sendReceipt: form.sendReceipt,
     notifyOnSubmission: form.notifyOnSubmission,
     listed: form.listed,
     audience: form.audience,
@@ -289,6 +293,35 @@ export async function loadFormForEdit(
         }
       : null,
   };
+}
+
+export const CONFIRMATION_MESSAGE_MAX = 20_000;
+const SAFE_HREF = /^(https?:|mailto:)/i;
+
+function hasUnsafeHref(node: unknown): boolean {
+  if (Array.isArray(node)) return node.some(hasUnsafeHref);
+  if (node === null || typeof node !== "object") return false;
+  return Object.entries(node).some(([key, value]) =>
+    key === "href" && typeof value === "string"
+      ? !SAFE_HREF.test(value.trim())
+      : hasUnsafeHref(value),
+  );
+}
+
+// Block JSON from the settings editor → the string to store. Empty content
+// clears the message; anything that isn't a block array, or carries a link
+// that isn't http(s)/mailto, is refused.
+export function parseConfirmationMessage(
+  raw: string,
+): { ok: true; value: string | null } | { ok: false; error: string } {
+  if (raw.trim() === "") return { ok: true, value: null };
+  const parsed = safeParseJsonString(raw);
+  if (!Array.isArray(parsed)) return { ok: false, error: "Invalid confirmation message." };
+  if (isEmptyBlocks(parsed)) return { ok: true, value: null };
+  if (hasUnsafeHref(parsed)) {
+    return { ok: false, error: "Links must start with http, https or mailto." };
+  }
+  return { ok: true, value: JSON.stringify(parsed) };
 }
 
 export function safeParseJsonString(s: string | null | undefined): unknown {
@@ -387,6 +420,8 @@ export const ActionSchema = z.discriminatedUnion("intent", [
     oneResponsePerMember: z.enum(["true", "false"]),
     allowResponseEdit: z.enum(["true", "false"]).optional(),
     remindBeforeClose: z.enum(["true", "false"]).optional(),
+    sendReceipt: z.enum(["true", "false"]).optional(),
+    confirmationMessage: z.string().max(CONFIRMATION_MESSAGE_MAX).optional(), // block JSON; "" clears
     notifyOnSubmission: z.enum(["true", "false"]),
     listed: z.enum(["true", "false"]),
   }),
@@ -712,6 +747,12 @@ export async function runFormsAction(
       if (!exists) return { error: "Not found", status: 404 };
       if (input.remindBeforeClose === "true" && !exists.closesAt)
         return { error: "Set a close time to use this.", status: 400 };
+      const confirmation =
+        input.confirmationMessage === undefined
+          ? null
+          : parseConfirmationMessage(input.confirmationMessage);
+      if (confirmation && !confirmation.ok)
+        return { error: confirmation.error, status: 400 };
       await prisma.form.update({
         where: { id: input.id },
         data: {
@@ -725,6 +766,8 @@ export async function runFormsAction(
           ...(input.remindBeforeClose
             ? { remindBeforeClose: input.remindBeforeClose === "true" }
             : {}),
+          ...(input.sendReceipt ? { sendReceipt: input.sendReceipt === "true" } : {}),
+          ...(confirmation?.ok ? { confirmationMessage: confirmation.value } : {}),
           notifyOnSubmission: input.notifyOnSubmission === "true",
           listed: input.listed === "true",
         },

@@ -34,6 +34,8 @@ export type MemberFormData = {
   name: string;
   iconEmoji?: string | null;
   description: unknown;
+  // Block JSON the author wrote for the done screens; empty keeps the default copy.
+  confirmationMessage?: unknown;
   versionId: string;
   // Fingerprint echoed back on submit so a mid-fill in-place edit is caught.
   versionUpdatedAt: string;
@@ -193,6 +195,18 @@ export function MemberFormFillView({
     </div>
   );
 
+  const confirmation =
+    !editing && !isEmptyBlocks(data.confirmationMessage) ? (
+      <div className="text-sm text-muted-foreground mt-2">
+        <DocEditor
+          features="notes"
+          density="compact"
+          editable={false}
+          initialContent={data.confirmationMessage}
+        />
+      </div>
+    ) : null;
+
   if (state === "done" && !tiles) {
     return (
       <div className="text-center py-10">
@@ -201,11 +215,13 @@ export function MemberFormFillView({
             <h1 className="font-heading text-xl font-bold text-foreground">
               {editing ? "Response updated" : "Submitted"}
             </h1>
-            <p className="text-sm text-muted-foreground mt-2">
-              {editing
-                ? `Your response to “${data.name}” has been saved.`
-                : `Your response to “${data.name}” has been recorded.`}
-            </p>
+            {confirmation ?? (
+              <p className="text-sm text-muted-foreground mt-2">
+                {editing
+                  ? `Your response to “${data.name}” has been saved.`
+                  : `Your response to “${data.name}” has been recorded.`}
+              </p>
+            )}
           </>
         )}
         {continueButton}
@@ -298,9 +314,11 @@ export function MemberFormFillView({
               <h1 className="font-heading text-2xl font-bold text-foreground">
                 Thanks for submitting!
               </h1>
-              <p className="text-sm text-muted-foreground mt-2">
-                Your response to “{data.name}” has been recorded.
-              </p>
+              {confirmation ?? (
+                <p className="text-sm text-muted-foreground mt-2">
+                  Your response to “{data.name}” has been recorded.
+                </p>
+              )}
             </>
           )}
           {continueButton}

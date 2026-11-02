@@ -207,6 +207,12 @@ export const FEATURE_FLAGS = [
     description:
       "Adds a line to a form's Results showing how many expected people have responded, a list of who hasn't with a Remind button, and \"Remind people 1 day before closing\" in the form settings. Forms that already have the automatic reminder on keep sending it when this is off. Ships off.",
   },
+  {
+    key: "form-confirmation",
+    label: "Form confirmation message and email receipts",
+    description:
+      "Adds an \"After submitting\" section to form settings with a custom confirmation message and \"Email people a copy of their response\". A saved message or receipt setting keeps working when this is off. Ships off.",
+  },
 ] as const satisfies readonly FeatureFlagDef[];
 
 export type FeatureFlagKey = (typeof FEATURE_FLAGS)[number]["key"];
