@@ -405,15 +405,38 @@ export async function redirectPartnerToPortal(
   return (await isPartnerAccount(auth)) ? redirect("/partner") : null;
 }
 
-// Throttled presence heartbeat. Mirrors rollSession's throttle pattern:
-// a conditional UPDATE so the write is a no-op when the row is already fresh.
-// The 60s guard keeps concurrent Neon connections from hammering the same row
-// on every loader call while the user navigates quickly between pages.
+// Throttled presence heartbeat. The SQL guard keeps concurrent machines from
+// hammering one row; the process-local map skips the round trip entirely when
+// this process already bumped the user inside the window.
+const BUMP_WINDOW_MS = 60_000;
+const BUMP_SWEEP_AT = 1_000;
+const lastBumpAt = new Map<string, number>();
+
+export function resetLastActiveThrottle(): void {
+  lastBumpAt.clear();
+}
+
+export function lastActiveThrottleSize(): number {
+  return lastBumpAt.size;
+}
+
 export async function bumpLastActive(userId: string): Promise<void> {
-  await prisma.$executeRaw`
-    UPDATE "User"
-    SET "lastActiveAt" = now()
-    WHERE id = ${userId}
-      AND ("lastActiveAt" IS NULL OR "lastActiveAt" < now() - interval '60 seconds')
-  `;
+  const now = Date.now();
+  const last = lastBumpAt.get(userId);
+  if (last !== undefined && now - last < BUMP_WINDOW_MS) return;
+  if (lastBumpAt.size >= BUMP_SWEEP_AT) {
+    for (const [id, at] of lastBumpAt) if (now - at >= BUMP_WINDOW_MS) lastBumpAt.delete(id);
+  }
+  lastBumpAt.set(userId, now);
+  try {
+    await prisma.$executeRaw`
+      UPDATE "User"
+      SET "lastActiveAt" = now()
+      WHERE id = ${userId}
+        AND ("lastActiveAt" IS NULL OR "lastActiveAt" < now() - interval '60 seconds')
+    `;
+  } catch (err) {
+    lastBumpAt.delete(userId);
+    throw err;
+  }
 }

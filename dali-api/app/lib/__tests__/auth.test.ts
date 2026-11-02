@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
 vi.mock("~/lib/audit", () => ({
   logAuditEvent: vi.fn(),
@@ -12,7 +12,7 @@ vi.mock("~/lib/betterauth-compat.server", () => ({
 }));
 
 import { prisma } from "~/lib/db.server";
-import { requireAuth } from "~/lib/auth";
+import { bumpLastActive, lastActiveThrottleSize, requireAuth, resetLastActiveThrottle } from "~/lib/auth";
 import { logAuditEvent } from "~/lib/audit";
 import { resolveBetterAuthAuth } from "~/lib/betterauth-compat.server";
 import {
@@ -90,6 +90,7 @@ function makeSessionRow(overrides: Partial<{
 
 beforeEach(() => {
   vi.clearAllMocks();
+  resetLastActiveThrottle();
   mockPrisma.session ??= {
     create: vi.fn(),
     findUnique: vi.fn(),
@@ -339,6 +340,52 @@ describe("requireAuth — presence heartbeat", () => {
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.impersonatedBy).toBe("admin-user");
     expect(presenceBumpsFor()).toEqual([]);
+  });
+});
+
+describe("bumpLastActive throttle", () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ now: new Date("2026-11-02T12:00:00Z"), toFake: ["Date"] });
+    mockPrisma.$executeRaw.mockResolvedValue(1);
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("writes on the first call and skips repeats inside 60s", async () => {
+    await bumpLastActive("ada");
+    await bumpLastActive("ada");
+    vi.advanceTimersByTime(59_999);
+    await bumpLastActive("ada");
+    expect(presenceBumpsFor()).toEqual(["ada"]);
+  });
+
+  it("writes again once 60s have passed", async () => {
+    await bumpLastActive("ada");
+    vi.advanceTimersByTime(60_000);
+    await bumpLastActive("ada");
+    expect(presenceBumpsFor()).toEqual(["ada", "ada"]);
+  });
+
+  it("throttles each user independently", async () => {
+    await bumpLastActive("ada");
+    await bumpLastActive("grace");
+    expect(presenceBumpsFor()).toEqual(["ada", "grace"]);
+  });
+
+  it("does not suppress the retry after a failed write", async () => {
+    mockPrisma.$executeRaw.mockRejectedValueOnce(new Error("db down"));
+    await expect(bumpLastActive("ada")).rejects.toThrow("db down");
+    await bumpLastActive("ada");
+    expect(presenceBumpsFor()).toEqual(["ada", "ada"]);
+  });
+
+  it("sweeps expired entries so the map stays bounded", async () => {
+    for (let i = 0; i < 1_000; i++) await bumpLastActive(`u${i}`);
+    expect(lastActiveThrottleSize()).toBe(1_000);
+    vi.advanceTimersByTime(60_000);
+    await bumpLastActive("late");
+    expect(lastActiveThrottleSize()).toBe(1);
   });
 });
 
