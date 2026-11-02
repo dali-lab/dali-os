@@ -138,6 +138,24 @@ describe("hosted video links", () => {
     expect(block!.type).toBe("image");
   });
 
+  it("keeps an uploaded image an image through markdown", async () => {
+    const url = "/api/upload/raw?key=uploads%2Fdoc-images%2Fabc-chart.png";
+    const blocks = await markdownToBlocks(await blocksToMarkdown([media("image", { url, name: "chart.png" })]));
+    expect(blocks[0]).toMatchObject({ type: "image", props: { url } });
+  });
+
+  it.each([
+    ["an upload", "/api/upload/raw?key=uploads%2Fdoc-images%2Fabc-demo.mp4", "demo.mp4"],
+    ["a QuickTime upload", "/api/upload/raw?key=uploads%2Fdoc-images%2Fabc-demo.mov", "demo.mov"],
+    ["an uppercase extension", "/api/upload/raw?key=uploads%2Fdoc-images%2Fabc-DEMO.MP4", "DEMO.MP4"],
+    ["a direct file with a query string", "https://cdn.example.com/a.webm?sig=1", "a.webm"],
+    ["a file named only in the block", "https://cdn.example.com/stream", "demo.mp4"],
+  ])("round-trips %s as a video block", async (_label, url, name) => {
+    const blocks = await markdownToBlocks(await blocksToMarkdown([media("video", { url, name })]));
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]).toMatchObject({ type: "video", props: { url, name } });
+  });
+
   it("leaves the iframe out of the PDF dialect too", async () => {
     const html = await blocksToFullHtml([media("video", { url: URL_ })]);
     expect(html).toContain("Watch on YouTube");

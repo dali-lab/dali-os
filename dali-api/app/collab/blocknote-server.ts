@@ -45,6 +45,7 @@ import {
 } from "~/lib/signing-fields";
 import { sanitizeRichEmailHtml, htmlToPlainText, NOTIFICATION_BODY_MAX } from "~/lib/email";
 import { createMediaImageSpec, createMediaVideoSpec } from "~/components/doc/schema/media";
+import { categorize } from "~/lib/file-type";
 import { parseVideoEmbed } from "~/lib/video-embed";
 import { parseComponentData } from "~/components/doc/components/kinds";
 import { ComponentView } from "~/components/doc/components/views";
@@ -357,17 +358,35 @@ export function blocksToMarkdown(blocks: DocBlock[]): Promise<string> {
 export function markdownToBlocks(markdown: string): Promise<DocBlock[]> {
   return serialized(async () => {
     const blocks = await getServerEditor().tryParseMarkdownToBlocks(markdown);
-    return restoreHostedVideos(blocks as unknown as DocBlock[]);
+    return restoreVideos(blocks as unknown as DocBlock[]);
   });
 }
 
-// Markdown has no video syntax, so a hosted video arrives as an image.
-function restoreHostedVideos(blocks: DocBlock[]): DocBlock[] {
-  return blocks.map((block) => {
-    const children = restoreHostedVideos(block.children ?? []);
-    const isHostedVideo = block.type === "image" && parseVideoEmbed(String(block.props?.url ?? ""));
-    return { ...block, type: isHostedVideo ? "video" : block.type, children };
-  });
+// An upload's filename sits in the raw route's `key`, not its path.
+function urlFileName(url: string): string {
+  try {
+    const parsed = new URL(url, "http://localhost");
+    return parsed.searchParams.get("key") ?? parsed.pathname;
+  } catch {
+    return "";
+  }
+}
+
+function isVideoImage(block: DocBlock): boolean {
+  if (block.type !== "image") return false;
+  const url = String(block.props?.url ?? "");
+  if (parseVideoEmbed(url)) return true;
+  const names = [urlFileName(url), String(block.props?.name ?? "")];
+  return names.some((fileName) => categorize({ fileName }) === "video");
+}
+
+// Markdown has no video syntax, so a video arrives as an image.
+function restoreVideos(blocks: DocBlock[]): DocBlock[] {
+  return blocks.map((block) => ({
+    ...block,
+    type: isVideoImage(block) ? "video" : block.type,
+    children: restoreVideos(block.children ?? []),
+  }));
 }
 
 /** Write blocks into a Y.XmlFragment. REPLACE semantics: server-util diffs the
