@@ -3,7 +3,9 @@ import { prisma } from "~/lib/db.server";
 import { fullName } from "~/lib/display";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { decodeCursor, keysetAfter, keysetPage } from "~/lib/pagination";
-import { FEED_IDS_MAX, summarizeReactions } from "~/lib/feedback";
+import { FEED_IDS_MAX } from "~/lib/feedback";
+import { summarizeReactions } from "~/lib/reactions";
+import { withEmojiImages } from "~/lib/reactions.server";
 
 export const FEED_PAGE_SIZE = 30;
 
@@ -16,7 +18,14 @@ const POST_SELECT = {
   pagePath: true,
   createdAt: true,
   author: { select: AUTHOR_SELECT },
-  reactions: { select: { emoji: true, userId: true } },
+  reactions: {
+    select: {
+      emoji: true,
+      userId: true,
+      createdAt: true,
+      user: { select: { firstName: true, lastName: true } },
+    },
+  },
   comments: {
     orderBy: { createdAt: "asc" },
     select: { id: true, body: true, createdAt: true, author: { select: AUTHOR_SELECT } },
@@ -38,7 +47,7 @@ async function shapePosts(rows: Row[], viewer: FeedbackViewer) {
     return { id: author.id, name: fullName(author), photoUrl: await photoByUser.get(author.id)! };
   };
 
-  return Promise.all(
+  const posts = await Promise.all(
     rows.map(async (r) => ({
       id: r.id,
       body: r.body,
@@ -59,6 +68,7 @@ async function shapePosts(rows: Row[], viewer: FeedbackViewer) {
       ),
     })),
   );
+  return withEmojiImages(posts);
 }
 
 export type FeedbackFeedPost = Awaited<ReturnType<typeof shapePosts>>[number];
