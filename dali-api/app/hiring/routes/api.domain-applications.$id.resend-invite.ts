@@ -7,6 +7,9 @@ import { logAuditEvent } from "~/lib/audit";
 import { requireApiSignedOrForbidden } from "~/hiring/lib/confidentiality";
 import { getHiringEmail } from "~/hiring/lib/hiring-emails.server";
 import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
+import { applicantCancelledInterview } from "~/hiring/lib/domain-application-status";
+import { isWithdrawn } from "~/hiring/lib/application-pipeline-filter";
+import { FIRST_INTERVIEW_ROUND_ID } from "~/hiring/lib/cycle-timeline";
 
 export async function action({ request, params }: Route.ActionArgs) {
   const auth = await requireAuth(request);
@@ -36,17 +39,18 @@ export async function action({ request, params }: Route.ActionArgs) {
               netId: true,
             },
           },
+          statusUpdates: { select: { newStatus: true } },
         },
       },
       decisions: {
         where: { stage: "Released" },
         orderBy: { createdAt: "desc" },
         take: 1,
-        select: { type: true },
+        select: { type: true, interviewRoundId: true },
       },
       interviews: {
-        where: { status: "Scheduled" },
-        select: { id: true },
+        where: { status: { in: ["Scheduled", "Completed", "CancelledByApplicant"] } },
+        select: { status: true, interviewRoundId: true },
       },
     },
   });
@@ -66,9 +70,19 @@ export async function action({ request, params }: Route.ActionArgs) {
       { status: 409 },
     );
   }
-  if (domainApp.interviews.length > 0) {
+  if (domainApp.interviews.some((i) => i.status === "Scheduled")) {
     return Response.json(
       { error: "An interview is already scheduled for this applicant." },
+      { status: 409 },
+    );
+  }
+  const roundId = domainApp.decisions[0].interviewRoundId ?? FIRST_INTERVIEW_ROUND_ID;
+  if (
+    isWithdrawn(domainApp.application.statusUpdates) ||
+    applicantCancelledInterview(domainApp.interviews, roundId)
+  ) {
+    return Response.json(
+      { error: "This applicant withdrew and can't book until a lead lets them rebook." },
       { status: 409 },
     );
   }

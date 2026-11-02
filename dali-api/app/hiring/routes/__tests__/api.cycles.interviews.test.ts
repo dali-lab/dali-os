@@ -21,12 +21,16 @@ const get = (round?: string) =>
     context: {},
   } as any).then((r: Response) => r.json());
 
-const candidate = (id: string, latest: { type: string; interviewRoundId: string | null }, completed = 0) => ({
+const candidate = (
+  id: string,
+  latest: { type: string; interviewRoundId: string | null },
+  interviews: { status: string; interviewRoundId: string }[] = [],
+) => ({
   id,
   domain: { name: "Design" },
   application: { user: { id: `u-${id}`, firstName: "A", lastName: "B" } },
   decisions: [{ id: `d-${id}`, createdAt: new Date("2026-10-10"), ...latest }],
-  interviews: Array.from({ length: completed }, (_, i) => ({ id: `i-${id}-${i}` })),
+  interviews,
 });
 
 beforeEach(() => {
@@ -51,12 +55,35 @@ describe("GET cycle interviews", () => {
   it("keeps only applicants whose latest release is this round's invite and who haven't interviewed in it", async () => {
     mockPrisma.domainApplication.findMany.mockResolvedValue([
       candidate("waiting", { type: "InvitedToInterview", interviewRoundId: "iv2" }),
-      candidate("done", { type: "InvitedToInterview", interviewRoundId: "iv2" }, 1),
+      candidate("done", { type: "InvitedToInterview", interviewRoundId: "iv2" }, [
+        { status: "Completed", interviewRoundId: "iv2" },
+      ]),
       candidate("moved-on", { type: "InvitedToInterview", interviewRoundId: "iv3" }),
       candidate("rejected", { type: "Rejected", interviewRoundId: null }),
     ]);
     const { pending } = await get("iv2");
     expect(pending.map((p: { id: string }) => p.id)).toEqual(["waiting"]);
+  });
+
+  it("flags an applicant who cancelled their own interview as withdrawn, not awaiting schedule", async () => {
+    mockPrisma.domainApplication.findMany.mockResolvedValue([
+      candidate("waiting", { type: "InvitedToInterview", interviewRoundId: "iv2" }),
+      candidate("cancelled", { type: "InvitedToInterview", interviewRoundId: "iv2" }, [
+        { status: "CancelledByApplicant", interviewRoundId: "iv2" },
+      ]),
+    ]);
+    const { pending } = await get("iv2");
+    expect(pending.map((p: { id: string; withdrawn: boolean }) => [p.id, p.withdrawn])).toEqual([
+      ["waiting", false],
+      ["cancelled", true],
+    ]);
+  });
+
+  it("leaves out applicants who withdrew their whole application", async () => {
+    await get();
+    expect(mockPrisma.domainApplication.findMany.mock.calls[0][0].where.application.statusUpdates).toEqual({
+      none: { newStatus: "Withdrawn" },
+    });
   });
 
   it("reports who is free only for upcoming scheduled interviews", async () => {

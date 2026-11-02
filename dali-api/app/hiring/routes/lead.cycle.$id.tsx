@@ -192,6 +192,7 @@ interface InterviewRow {
 interface PendingInviteRow {
   id: string
   invitedAt: string
+  withdrawn: boolean
   domainApplication: {
     id: string
     domain: { name: string }
@@ -1553,6 +1554,7 @@ export default function HiringLeadCycleDetails() {
   const [pendingInvites, setPendingInvites] = useState<PendingInviteRow[]>([])
   // Per-row id while a Resend invite is in-flight; null when idle.
   const [resendingInviteId, setResendingInviteId] = useState<string | null>(null)
+  const [reopeningId, setReopeningId] = useState<string | null>(null)
   // Filters for the interviews table — domain + status. "all" disables.
   const [interviewDomainFilter, setInterviewDomainFilter] = useState<string>('all')
   const [interviewStatusFilter, setInterviewStatusFilter] = useState<string>('all')
@@ -2677,6 +2679,7 @@ export default function HiringLeadCycleDetails() {
       ) : (() => {
         // Filter inputs derived from current data so empty options never show.
         const domainFor = (p: PendingInviteRow) => p.domainApplication.domain.name
+        const pendingStatus = (p: PendingInviteRow) => (p.withdrawn ? 'Withdrawn' : 'Awaiting schedule')
         const isCancelled = (status: string) =>
           status === 'CancelledByApplicant' || status === 'CancelledByAdmin'
         // Hide cancelled interviews unless the user opted in. A cancelled-only
@@ -2691,7 +2694,7 @@ export default function HiringLeadCycleDetails() {
           ...pendingInvites.map(domainFor).filter(Boolean),
         ])).sort()
         const availableStatuses = Array.from(new Set<string>([
-          ...(pendingInvites.length > 0 ? ['Awaiting schedule'] : []),
+          ...new Set(pendingInvites.map(pendingStatus)),
           ...visibleInterviews.map(i => i.status),
         ]))
         const filtersActive = interviewDomainFilter !== 'all' || interviewStatusFilter !== 'all'
@@ -2702,7 +2705,7 @@ export default function HiringLeadCycleDetails() {
         })
         const filteredPending = pendingInvites.filter(p => {
           if (interviewDomainFilter !== 'all' && domainFor(p) !== interviewDomainFilter) return false
-          if (interviewStatusFilter !== 'all' && interviewStatusFilter !== 'Awaiting schedule') return false
+          if (interviewStatusFilter !== 'all' && interviewStatusFilter !== pendingStatus(p)) return false
           return true
         })
         const totalRows = filteredInterviews.length + filteredPending.length
@@ -2737,6 +2740,31 @@ export default function HiringLeadCycleDetails() {
             }
           } finally {
             setResendingInviteId(null)
+          }
+        }
+        async function reopenScheduling(daId: string, firstName?: string) {
+          if (
+            !(await dialog.confirm({
+              title: `Let ${firstName ?? 'this applicant'} rebook?`,
+              description: 'Clears their cancellation so they can pick a new time. They are not emailed until you resend the invite.',
+              confirmLabel: 'Let them rebook',
+            }))
+          )
+            return
+          setReopeningId(daId)
+          try {
+            const res = await fetch(`/api/hiring/domain-applications/${daId}/reopen-scheduling`, {
+              method: 'POST',
+              credentials: 'include',
+            })
+            if (!res.ok) {
+              const body = await res.json().catch(() => ({}))
+              toast.error(body.error ?? 'Failed to reopen scheduling')
+              return
+            }
+            await loadInterviews()
+          } finally {
+            setReopeningId(null)
           }
         }
         const locationLabel = (room: { name: string } | null) => room?.name ?? 'Online'
@@ -2883,19 +2911,30 @@ export default function HiringLeadCycleDetails() {
                         </span>
                       </div>
                       <div className="flex flex-wrap items-center gap-2">
-                        <Pill dot="warning">Awaiting schedule</Pill>
-                        <Tooltip content={!reminderTemplateBound ? 'Write the invite reminder email on Setup to resend invites.' : null} variant="rich">
-                          <span>
-                            <button
-                              type="button"
-                              onClick={() => resendInvite(p.domainApplication.id, u.firstName ?? undefined)}
-                              disabled={!reminderTemplateBound || resendingInviteId === p.domainApplication.id}
-                              className={buttonClasses('secondary', 'sm')}
-                            >
-                              {resendingInviteId === p.domainApplication.id ? 'Sending…' : 'Resend invite'}
-                            </button>
-                          </span>
-                        </Tooltip>
+                        <Pill dot={p.withdrawn ? 'danger' : 'warning'}>{pendingStatus(p)}</Pill>
+                        {p.withdrawn ? (
+                          <button
+                            type="button"
+                            onClick={() => reopenScheduling(p.domainApplication.id, u.firstName ?? undefined)}
+                            disabled={reopeningId === p.domainApplication.id}
+                            className={buttonClasses('secondary', 'sm')}
+                          >
+                            {reopeningId === p.domainApplication.id ? 'Saving…' : 'Let them rebook'}
+                          </button>
+                        ) : (
+                          <Tooltip content={!reminderTemplateBound ? 'Write the invite reminder email on Setup to resend invites.' : null} variant="rich">
+                            <span>
+                              <button
+                                type="button"
+                                onClick={() => resendInvite(p.domainApplication.id, u.firstName ?? undefined)}
+                                disabled={!reminderTemplateBound || resendingInviteId === p.domainApplication.id}
+                                className={buttonClasses('secondary', 'sm')}
+                              >
+                                {resendingInviteId === p.domainApplication.id ? 'Sending…' : 'Resend invite'}
+                              </button>
+                            </span>
+                          </Tooltip>
+                        )}
                       </div>
                     </div>
                   )
